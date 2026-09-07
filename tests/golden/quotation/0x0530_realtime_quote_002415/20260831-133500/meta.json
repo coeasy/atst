@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x530",
+  "command_name": "REALTIME_QUOTE",
+  "tag": "002415",
+  "note": "002415 实时快照（market=0，请求字节已按反转语义换算）",
+  "host": "218.75.126.9:7709",
+  "captured_at": "2026-08-31T13:35:00+0800",
+  "request": {
+    "method": "0x530",
+    "body_hex": "0101303032343135",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 78,
+    "unzip_size": 78,
+    "compressed": false,
+    "payload_len": 78,
+    "sha256": "f25bfc27bdb2d3f43600c2dd4fcde8b6fe101456a022cc04f1e95fd97f02a262"
+  },
+  "parse_ctx": {
+    "code": "002415",
+    "market": 0,
+    "price_scale": 100
+  },
+  "elapsed_ms": 29.94
+}

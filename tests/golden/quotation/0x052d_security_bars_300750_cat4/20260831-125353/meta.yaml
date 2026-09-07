@@ -1,0 +1,22 @@
+schema: 1
+source: "self-captured"
+family: quotation
+command: 0x52d
+command_name: SECURITY_BARS
+tag: 300750_cat4
+note: 300750 周期 4，10 根
+host: "218.75.126.9:7709"
+captured_at: "2026-08-31T12:53:53+0800"
+request:
+  method: 0x52d
+  body_hex: 00003330303735300400010000000a0000000000000000000000
+  body_len: 26
+response:
+  zip_size: 207
+  unzip_size: 207
+  compressed: false
+  payload_len: 207
+  sha256: 6f479bb46dd3f3452dc034bd2b4b4e4d9847fbf06fa4e6b10a40a30a7b3e5b28
+parse_ctx:
+  category: 4
+elapsed_ms: 27.4

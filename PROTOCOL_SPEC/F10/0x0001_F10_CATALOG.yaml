@@ -1,0 +1,68 @@
+# =============================================================================
+# F10_CATALOG — F10 栏目目录清单
+# =============================================================================
+# 命令号: 0x0001
+# 家族:  F10 资料网关（7615 / TQLEX 文件型协议，走 7709 主站）
+# 层级:  L2 (洁净室推断)
+# 状态:  inferred
+#
+# 描述: 某证券的 F10 栏目目录清单（栏目名 + 文件名），供后续 0x06B9 分块
+#       下载栏目正文使用。
+# =============================================================================
+
+spec_id: "0x0001"
+name: "f10_catalog"
+family: "F10"
+version: "1.0"
+description: "F10 column catalog (title + filename)"
+status: "inferred"
+
+request:
+  length: 8
+  fields:
+    - name: "code"
+      offset: 0
+      type: "string[6]"
+      length: 6
+      description: "证券代码"
+      format: "ascii"
+    - name: "market"
+      offset: 6
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "返回栏目条数"
+  fields:
+    - name: "title"
+      offset: 0
+      type: "string[8]"
+      length: 8
+      description: "栏目名（GBK，NUL 补齐）"
+      format: "gbk"
+    - name: "filename"
+      offset: 8
+      type: "string[8]"
+      length: 8
+      description: "栏目对应文件名（GBK）"
+      format: "gbk"
+  record_size: 16
+  encoding: "raw"
+
+context:
+  record_size: 16
+  notes: |
+    请求/响应布局为洁净室推断（``<H count>`` + ``<8s 栏目名><8s 文件名>``），
+    待真机 golden 样本定标。客户端入口：F10Client.catalog / AsyncF10Client.catalog。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。真机样本到位后翻转 status 并补
+  golden_samples。
+
+parser_reference: "tstdx/protocol/parsers/f10.py::F10CatalogParser"

@@ -1,0 +1,24 @@
+schema: 1
+source: "self-captured"
+family: quotation
+command: 0x530
+command_name: REALTIME_QUOTE
+tag: 300059
+note: "300059 实时快照（market=0，请求字节已按反转语义换算）"
+host: "218.75.126.9:7709"
+captured_at: "2026-08-31T13:35:00+0800"
+request:
+  method: 0x530
+  body_hex: 0101333030303539
+  body_len: 8
+response:
+  zip_size: 79
+  unzip_size: 79
+  compressed: false
+  payload_len: 79
+  sha256: 7fdfb9705f7467b18e3f0ef6cd17b99698919d454736570f15ffc861b9c3f826
+parse_ctx:
+  code: 300059
+  market: 0
+  price_scale: 100
+elapsed_ms: 27.23

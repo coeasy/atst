@@ -1,0 +1,176 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tstdx"
+version = "1.4.0"
+description = "通达信（TDX）行情数据通用协议库 —— 覆盖 7709 标准 / 7727 扩展市场 / MAC 专属 / F10 资料 / 商品语义 五套协议族，含本地 vipdoc 二进制解析与 HTTP Web 行情源降级"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "tstdx contributors" }]
+keywords = [
+    "tdx", "通达信", "quotation", "stock", "a-share", "kline",
+    "market-data", "protocol", "vipdoc", "realtime",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Typing :: Typed",
+]
+# 核心运行时零硬依赖：所有第三方库均为可选 extra。
+dependencies = []
+
+[project.optional-dependencies]
+# 配置校验增强（有则 strict 校验，无则回退内置轻量校验器）
+config    = ["pydantic>=2.5"]
+# 输出三态之 DataFrame
+dataframe = ["pandas>=2.0"]
+# ParquetSink
+parquet   = ["pyarrow>=14.0"]
+# DuckDBSink
+duckdb    = ["duckdb>=0.10"]
+# HTTP Web 行情源（新浪/腾讯/东财/集思录/港股/中行）
+web       = ["httpx>=0.26"]
+# 工具链（capture 时区计算：Windows 纯 pip 环境无系统 tz 数据库）
+tools     = ["tzdata>=2024.1; sys_platform == 'win32'"]
+# 可观测性：Prometheus 导出
+metrics   = ["prometheus-client>=0.19"]
+# HTTP REST 网关 + WebSocket RPC
+server    = ["fastapi>=0.110", "uvicorn>=0.27", "websockets>=12.0"]
+# MCP 工具服务
+mcp       = ["mcp>=1.0"]
+# 开发/测试工具链（pytest + ruff + mypy + pytest-cov）——本地 CI 一致体验
+# P14-D2：此前 dev/test 依赖散落在 README/CONTRIBUTING，导致 `pip install -e .[all]`
+# 无法本地跑 --cov；本 extra 补上，与 CI workflow 对齐。
+dev       = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "hatchling>=1.24",
+]
+# 完整安装
+all       = [
+    "pydantic>=2.5",
+    "pandas>=2.0",
+    "pyarrow>=14.0",
+    "duckdb>=0.10",
+    "httpx>=0.26",
+    "prometheus-client>=0.19",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "websockets>=12.0",
+    "mcp>=1.0",
+    "zstandard>=0.22",
+    "tzdata>=2024.1; sys_platform == 'win32'",
+]
+
+[project.urls]
+Homepage      = "https://github.com/tstdx/tstdx"
+Documentation = "https://github.com/tstdx/tstdx/tree/main/docs"
+Issues        = "https://github.com/tstdx/tstdx/issues"
+
+[project.scripts]
+tstdx = "tstdx.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tstdx"]
+
+[tool.hatch.build.targets.sdist]
+include = ["tstdx", "PROTOCOL_SPEC", "tests", "README.md", "LICENSE"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"
+markers = [
+    "unit: 纯单元测试，无网络无 IO",
+    "integration: 需要网络或本地通达信安装目录",
+    "golden: Golden 数据回放测试",
+    "slow: 耗时较长的测试",
+    "network: 需要访问外部网络",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+"tstdx/protocol/parsers/*" = ["E501"]
+# 再导出门面模块：导入即 API（兼容面），F401 属有意行为
+"tstdx/cli/__init__.py" = ["F401"]
+"tstdx/client/__init__.py" = ["F401"]
+"tstdx/web/base.py" = ["F401"]
+# P11-1：mcp_server 拆分为 integration/mcp/ 子包，本模块保留为兼容门面
+# （原模块级私有符号一并 re-export，保证旧引用/monkeypatch 路径不变）
+"tstdx/integration/mcp_server.py" = ["F401"]
+
+# C7：核心包严格、可选依赖单独 override——全局宽松会掩盖核心模块的类型错误
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+ignore_missing_imports = false
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+# 可选依赖：httpx/fastapi/keyring 等未安装时缺 stub 属预期，单独放宽。
+# 注：tomllib 为 3.11+ stdlib，python_version=3.10 下 mypy 视作缺失——一并放宽。
+module = [
+    "httpx.*",
+    "fastapi.*",
+    "uvicorn.*",
+    "keyring.*",
+    "pyarrow.*",
+    "pandas.*",
+    "websockets.*",
+    "prometheus_client.*",
+    "duckdb.*",
+    "zstandard.*",
+    "tomli",
+    "tomllib",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# 原生扩展（C3：源码已移除，模块保留 deprecation 兼容）
+module = ["tstdx.native.*"]
+ignore_errors = true
+
+[tool.coverage.run]
+source = ["tstdx"]
+branch = true
+
+[tool.coverage.report]
+# G1（ARCHITECTURE_AND_OPTIMIZATION_PLAN_v6 §4）：覆盖率门禁。
+# P13-E（2026-09-06）：CI --cov-fail-under 75→77；P14-D2（2026-09-07）：
+# pyproject 与本行同步，消除「门禁口径漂移」——本地与 CI 用同一阈值。
+# 当前实测 76.21%（2026-09-05 基线 + P13-A/P14 增量测试）；
+# 后续补 integration/facade 端点级单测后再上调至 80（P15-D）。
+fail_under = 77
+skip_covered = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@abstractmethod",
+]

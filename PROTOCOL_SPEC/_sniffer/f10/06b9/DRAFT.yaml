@@ -1,0 +1,24 @@
+# AUTO-GENERATED DRAFT —— 请勿直接提交，需 A 组人工补全后转为正式 spec
+# 生成时间: 2026-09-06T15:51:10
+# 数据来源: self-captured（自有环境抓包）
+
+command: 0x06b9
+family: f10
+name: UNKNOWN_06B9
+tier: DRAFT
+verified: false
+confidence: 0.85
+
+request:
+  fields: []          # TODO: 补全请求字段
+
+response:
+  head_bytes: 0
+  has_count_prefix: False
+  record_size: 4
+  fields:
+  - {name: f0, type: zero_u32, offset: 0}
+
+notes: |
+  由 ProtocolSniffer 自动推断。请对照 .bin 原始样本逐字段校验，
+  校验通过后删除本文件并新建 <command>.yaml 正式 spec。

@@ -1,0 +1,80 @@
+# =============================================================================
+# GOODS_MINUTE — 商品分时
+# =============================================================================
+# 命令号: 0x0205
+# 家族:  GOODS 商品语义协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 商品当日分时（分钟级）。与 0x0107 同构。
+# =============================================================================
+
+spec_id: "0x0205"
+name: "goods_minute"
+family: "GOODS"
+version: "1.0"
+description: "Goods intraday minute data"
+status: "inferred"
+
+request:
+  length: 9
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "count"
+      offset: 8
+      type: "uint8"
+      length: 1
+      description: "请求条数"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "返回记录条数"
+  fields:
+    - name: "minute"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "当日分钟数（解析为 time HH:MM）"
+    - name: "price"
+      offset: 2
+      type: "float32"
+      length: 4
+      description: "价格"
+    - name: "avg_price"
+      offset: 6
+      type: "float32"
+      length: 4
+      description: "均价"
+    - name: "volume"
+      offset: 10
+      type: "tdx_float"
+      length: 4
+      description: "成交量"
+  record_size: 14
+  encoding: "raw"
+
+context:
+  record_size: 14
+  notes: |
+    布局由 test_7727_goods_mac_coverage.py::TestGoodsLayout::test_0205_minute
+    合成载荷锁定（``<H count>`` + ``<H 分钟><f4 价><f4 均价><tdx_float 量>``）。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。真机样本到位后翻转 status 并补
+  golden_samples。
+
+parser_reference: "tstdx/protocol/parsers/goods.py::GoodsMinuteParser"

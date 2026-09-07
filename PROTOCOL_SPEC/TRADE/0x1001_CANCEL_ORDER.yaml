@@ -1,0 +1,78 @@
+# =============================================================================
+# CANCEL_ORDER — 撤单
+# =============================================================================
+# 命令号: 0x1001
+# 家族:  TRADE 交易协议族
+# 层级:  L1（自洽帧布局，模拟器回路验证）
+# 状态:  draft（洁净室推断占位）
+#
+# 描述: 撤销未全部成交的委托。请求体 <H order_id>；响应体回传撤单状态与
+#       错误信息。撤单成功后冻结资金/持仓解冻（模拟券商语义）。
+# =============================================================================
+
+spec_id: "0x1001"
+name: "cancel_order"
+family: "TRADE"
+version: "0.1"
+description: "Cancel outstanding order"
+status: "draft"
+aliases: ["trade_cancel_order", "trade_withdraw"]
+
+# =============================================================================
+# 请求体
+# =============================================================================
+request:
+  length: 2
+  fields:
+    - name: "order_id"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "委托编号"
+
+# =============================================================================
+# 响应体
+# =============================================================================
+response:
+  header: []
+  fields:
+    - name: "status"
+      offset: 0
+      type: "uint8"
+      length: 1
+      description: "撤单状态（0=已撤）"
+    - name: "error_code"
+      offset: 1
+      type: "uint16"
+      length: 2
+      description: "错误码（0=成功）"
+    - name: "error_msg"
+      offset: 3
+      type: "string[]"
+      length: null
+      description: "错误信息（GBK）"
+      format: "gbk"
+  record_size: null
+  encoding: "raw"
+
+# =============================================================================
+# 上下文
+# =============================================================================
+context:
+  port: 7702
+  price_scale: 100
+  header_layout: "8 字节: <H total_len><H cmd><H seq><H flags|status>"
+
+error_codes:
+  - code: 0
+    meaning: "success"
+  - code: 1
+    meaning: "委托不存在或不可撤"
+  - code: 2
+    meaning: "委托已全部成交，无法撤单"
+  - code: 3
+    meaning: "未登录或会话失效"
+
+notes: |
+  撤单仅对未全部成交的委托有效；可撤列表来自 QUERY category=4。
+  实现参考: tstdx/trade/frames.py (build_cancel_body / parse_cancel_response)

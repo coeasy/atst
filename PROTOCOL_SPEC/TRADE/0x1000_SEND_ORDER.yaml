@@ -1,0 +1,111 @@
+# =============================================================================
+# SEND_ORDER — 委托下单
+# =============================================================================
+# 命令号: 0x1000
+# 家族:  TRADE 交易协议族
+# 层级:  L1（自洽帧布局，模拟器回路验证）
+# 状态:  draft（洁净室推断占位）
+#
+# 描述: 提交买入/卖出委托。请求体固定 16 字节：<6s code><B side><B price_type>
+#       <I price><I qty>。价格以分（PRICE_SCALE=100）传输；市价单 price 传 0。
+#       响应体回传委托编号、状态与错误信息。
+# =============================================================================
+
+spec_id: "0x1000"
+name: "send_order"
+family: "TRADE"
+version: "0.1"
+description: "Submit buy/sell order (clean-room inferred layout)"
+status: "draft"
+aliases: ["trade_send_order", "trade_order"]
+
+# =============================================================================
+# 请求体
+# =============================================================================
+request:
+  length: 16
+  fields:
+    - name: "code"
+      offset: 0
+      type: "string[6]"
+      length: 6
+      description: "证券代码（6 字节 ASCII，右补 NUL）"
+    - name: "side"
+      offset: 6
+      type: "uint8"
+      length: 1
+      description: "买卖方向（0=买入 1=卖出）"
+    - name: "price_type"
+      offset: 7
+      type: "uint8"
+      length: 1
+      description: "价格类型（0=限价 1=市价）"
+    - name: "price"
+      offset: 8
+      type: "uint32"
+      length: 4
+      description: "委托价（分）；市价单可传 0"
+      scale: 100
+      unit: "分"
+    - name: "quantity"
+      offset: 12
+      type: "uint32"
+      length: 4
+      description: "委托数量（股）"
+      unit: "股"
+
+# =============================================================================
+# 响应体
+# =============================================================================
+response:
+  header: []
+  fields:
+    - name: "order_id"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "委托编号"
+    - name: "status"
+      offset: 2
+      type: "uint8"
+      length: 1
+      description: "委托状态（0=已报 1=部分 2=全成 3=已撤）"
+    - name: "error_code"
+      offset: 3
+      type: "uint8"
+      length: 1
+      description: "错误码（0=成功）"
+    - name: "error_msg"
+      offset: 4
+      type: "string[]"
+      length: null
+      description: "错误信息（GBK，成功时为空串）"
+      format: "gbk"
+  record_size: null
+  encoding: "raw"
+
+# =============================================================================
+# 上下文
+# =============================================================================
+context:
+  port: 7702
+  price_scale: 100
+  header_layout: "8 字节: <H total_len><H cmd><H seq><H flags|status>"
+  lot_size: 100
+  buy_requires_funds: true
+  sell_requires_position: true
+
+error_codes:
+  - code: 0
+    meaning: "success"
+  - code: 1
+    meaning: "资金不足（买入）"
+  - code: 2
+    meaning: "可用持仓不足（卖出）"
+  - code: 3
+    meaning: "未登录或会话失效"
+
+notes: |
+  模拟券商（TradeSimulator.send_order）负责资金冻结与持仓校验；
+  限价单缺价由客户端层（TradeClient.send_order）先行校验。
+  实现参考: tstdx/trade/frames.py (build_order_body / parse_order_response)

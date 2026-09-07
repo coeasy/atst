@@ -1,0 +1,24 @@
+schema: 1
+source: "self-captured"
+family: quotation
+command: 0x530
+command_name: REALTIME_QUOTE
+tag: 600000
+note: "600000 实时快照（market=1，请求字节已按反转语义换算）"
+host: "218.75.126.9:7709"
+captured_at: "2026-08-31T13:34:59+0800"
+request:
+  method: 0x530
+  body_hex: 0100363030303030
+  body_len: 8
+response:
+  zip_size: 79
+  unzip_size: 79
+  compressed: false
+  payload_len: 79
+  sha256: dd48c3d324f7d375b6e55819519b13ebd1336fc8a7e42d8d29567f44cf1200ed
+parse_ctx:
+  code: 600000
+  market: 1
+  price_scale: 100
+elapsed_ms: 27.92

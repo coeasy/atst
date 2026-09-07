@@ -1,0 +1,88 @@
+# =============================================================================
+# EX_INSTRUMENT_INFO — 扩展市场品种基础信息
+# =============================================================================
+# 命令号: 0x0108
+# 家族:  7727 扩展市场协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 品种基础信息（合约乘数、最小变动价位等）。
+# =============================================================================
+
+spec_id: "0x0108"
+name: "ex_instrument_info"
+family: "7727"
+version: "1.0"
+description: "Extended market instrument basic info"
+status: "inferred"
+
+request:
+  length: 9
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "count"
+      offset: 8
+      type: "uint8"
+      length: 1
+      description: "请求条数"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "返回记录条数"
+  fields:
+    - name: "code"
+      offset: 0
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "name"
+      offset: 6
+      type: "string[8]"
+      length: 8
+      description: "品种名称（GBK，≤8B 防漂移）"
+      format: "gbk"
+    - name: "multiplier"
+      offset: 14
+      type: "float32"
+      length: 4
+      description: "合约乘数"
+    - name: "tick"
+      offset: 18
+      type: "float32"
+      length: 4
+      description: "最小变动价位"
+    - name: "raw"
+      offset: 22
+      type: "raw[10]"
+      length: 10
+      description: "未锁定尾部字节（原样保留）"
+  record_size: 32
+  encoding: "raw"
+
+context:
+  record_size: 32
+  notes: |
+    布局由 test_7727_goods_mac_coverage.py::TestExExtendedLayout::
+    test_0108_instrument_info 合成载荷锁定。名称必须 ≤8B GBK，否则漂移
+    后续 float 字段（合成载荷用「腾讯控股」= 4B GBK）。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。真机样本到位后翻转 status 并补
+  golden_samples。
+
+parser_reference: "tstdx/protocol/parsers/std7727.py::ExInstrumentInfoParser"

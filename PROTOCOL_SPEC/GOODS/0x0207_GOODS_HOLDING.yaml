@@ -1,0 +1,70 @@
+# =============================================================================
+# GOODS_HOLDING — 商品持仓量 / 持仓排名
+# =============================================================================
+# 命令号: 0x0207
+# 家族:  GOODS 商品语义协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 商品持仓量 / 持仓排名。
+# =============================================================================
+
+spec_id: "0x0207"
+name: "goods_holding"
+family: "GOODS"
+version: "1.0"
+description: "Goods open interest / holding ranking"
+status: "inferred"
+
+request:
+  length: 9
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "count"
+      offset: 8
+      type: "uint8"
+      length: 1
+      description: "请求条数"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "返回记录条数"
+  fields:
+    - name: "code"
+      offset: 0
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "open_interest"
+      offset: 6
+      type: "tdx_float"
+      length: 4
+      description: "持仓量"
+  record_size: 10
+  encoding: "raw"
+
+context:
+  record_size: 10
+  notes: |
+    布局由 test_7727_goods_mac_coverage.py::TestGoodsLayout::test_0207_holding
+    合成载荷锁定（``<H count>`` + ``<6s code><tdx_float 持仓>``）。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。
+
+parser_reference: "tstdx/protocol/parsers/goods.py::GoodsHoldingParser"

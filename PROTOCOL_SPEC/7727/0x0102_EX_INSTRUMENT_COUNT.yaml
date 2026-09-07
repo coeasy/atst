@@ -1,0 +1,55 @@
+# =============================================================================
+# EX_INSTRUMENT_COUNT — 扩展市场品种数量
+# =============================================================================
+# 命令号: 0x0102
+# 家族:  7727 扩展市场协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 指定市场下的品种总数。载荷即 2 字节 uint16，无 count 头。
+# =============================================================================
+
+spec_id: "0x0102"
+name: "ex_instrument_count"
+family: "7727"
+version: "1.0"
+description: "Extended market instrument count"
+status: "inferred"
+
+request:
+  length: 4
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID（0x0101 列表返回）"
+    - name: "reserved"
+      offset: 2
+      type: "uint16"
+      length: 2
+      value: 0
+      description: "保留字段"
+
+response:
+  fields:
+    - name: "count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "品种总数"
+  record_size: null
+  encoding: "raw"
+
+context:
+  single_value: true
+  notes: |
+    与 0x0100 / 0x0200 同构（载荷即 uint16 值）。布局由
+    test_7727_goods_mac_coverage.py::TestExExtendedLayout::test_0102_instrument_count
+    合成载荷锁定。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。真机样本到位后翻转 status 并补
+  golden_samples。
+
+parser_reference: "tstdx/protocol/parsers/std7727.py::ExInstrumentCountParser"

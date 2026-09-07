@@ -1,0 +1,45 @@
+{
+  "schema": 2,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x537",
+  "command_name": "MINUTE_TODAY",
+  "tag": "600000",
+  "note": "分时图数据",
+  "host": "218.75.126.9:7709",
+  "local_host": "WPS-PM",
+  "market": 1,
+  "code": "600000",
+  "captured_at": "2026-09-02T04:43:36.462039+00:00",
+  "elapsed_ms": 24.66,
+  "request": {
+    "method": "0x537",
+    "body_hex": "363030303030010000000000",
+    "body_len": 12
+  },
+  "response": {
+    "zip_size": 4,
+    "unzip_size": 4,
+    "compressed": false,
+    "payload_len": 4,
+    "sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  "record_size_hypothesis": 4,
+  "record_count_hypothesis": 1,
+  "compression": {
+    "codec": "none",
+    "compressed_size": null
+  },
+  "parse_ctx": {
+    "market": 1,
+    "code": "600000"
+  },
+  "tool": {
+    "name": "tstdx.tools.capture",
+    "version": "0.1.0"
+  },
+  "legal": {
+    "ack": true,
+    "allow_trading_hours": false
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "schema": 2,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x52d",
+  "command_name": "SECURITY_BARS",
+  "tag": "600000_cat6",
+  "note": "600000 周期 6，10 根",
+  "host": "218.75.126.9:7709",
+  "local_host": "WPS-PM",
+  "market": 1,
+  "code": "600000",
+  "captured_at": "2026-09-02T03:32:06.701917+00:00",
+  "elapsed_ms": 29.68,
+  "request": {
+    "method": "0x52d",
+    "body_hex": "01003630303030300600010000000a0000000000000000000000",
+    "body_len": 26
+  },
+  "response": {
+    "zip_size": 191,
+    "unzip_size": 191,
+    "compressed": false,
+    "payload_len": 191,
+    "sha256": "4e980fe45a6f91ab628ea7c56dc16054dd38999ca65d106886a34fcb96f51e98"
+  },
+  "record_size_hypothesis": 0,
+  "record_count_hypothesis": 0,
+  "compression": {
+    "codec": "none",
+    "compressed_size": null
+  },
+  "parse_ctx": {
+    "category": 6,
+    "market": 1,
+    "code": "600000"
+  },
+  "tool": {
+    "name": "tstdx.tools.capture",
+    "version": "0.1.0"
+  },
+  "legal": {
+    "ack": true,
+    "allow_trading_hours": false
+  }
+}

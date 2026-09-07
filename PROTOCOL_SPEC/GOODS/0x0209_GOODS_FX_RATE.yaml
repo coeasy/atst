@@ -1,0 +1,87 @@
+# =============================================================================
+# GOODS_FX_RATE — 外汇牌价
+# =============================================================================
+# 命令号: 0x0209
+# 家族:  GOODS 商品语义协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 外汇牌价（现汇买入 / 现钞买入 / 卖出）。
+# =============================================================================
+
+spec_id: "0x0209"
+name: "goods_fx_rate"
+family: "GOODS"
+version: "1.0"
+description: "FX exchange rate (bid cash / bid transfer / ask)"
+status: "inferred"
+
+request:
+  length: 9
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "count"
+      offset: 8
+      type: "uint8"
+      length: 1
+      description: "请求条数"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "返回记录条数"
+  fields:
+    - name: "code"
+      offset: 0
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "name"
+      offset: 6
+      type: "string[8]"
+      length: 8
+      description: "货币名称（GBK，≤8B 防漂移）"
+      format: "gbk"
+    - name: "bid_cash"
+      offset: 14
+      type: "float32"
+      length: 4
+      description: "现汇买入"
+    - name: "bid_transfer"
+      offset: 18
+      type: "float32"
+      length: 4
+      description: "现钞买入"
+    - name: "ask"
+      offset: 22
+      type: "float32"
+      length: 4
+      description: "卖出"
+  record_size: 26
+  encoding: "raw"
+
+context:
+  record_size: 26
+  notes: |
+    布局由 test_7727_goods_mac_coverage.py::TestGoodsLayout::test_0209_fx_rate
+    合成载荷锁定（``<H count>`` + ``<6s code><8s name><f4×3>``）。
+    名称必须 ≤8B GBK（「美元」= 2B），保证汇率字段从偏移 14 起。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。
+
+parser_reference: "tstdx/protocol/parsers/goods.py::GoodsFxRateParser"

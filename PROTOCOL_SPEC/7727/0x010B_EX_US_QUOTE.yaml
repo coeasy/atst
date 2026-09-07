@@ -1,0 +1,112 @@
+# =============================================================================
+# EX_US_QUOTE — 美股实时报价
+# =============================================================================
+# 命令号: 0x010B
+# 家族:  7727 扩展市场协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 美股实时行情快照。布局与 0x0105 完全相同（继承
+#       ExInstrumentQuoteParser）。
+# =============================================================================
+
+spec_id: "0x010B"
+name: "ex_us_quote"
+family: "7727"
+version: "1.0"
+description: "US realtime quote (same layout as 0x0105)"
+status: "inferred"
+extends: "0x0105"
+
+request:
+  length: 9
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "reserved"
+      offset: 8
+      type: "uint8"
+      length: 1
+      value: 0
+      description: "保留字段"
+
+response:
+  header:
+    - name: "market"
+      offset: 0
+      type: "uint8"
+      length: 1
+      description: "市场 ID"
+    - name: "code_echo"
+      offset: 1
+      type: "string[6]"
+      length: 6
+      description: "品种代码回显"
+      format: "gbk"
+  fields:
+    - name: "hdr"
+      offset: 7
+      type: "raw[2]"
+      length: 2
+      description: "2 字节不透明区"
+    - name: "price"
+      type: "leb128"
+      length: "var"
+      format: "absolute"
+      scale: 100
+    - name: "d_last_close"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+    - name: "d_open"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+    - name: "d_high"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+    - name: "d_low"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+    - name: "u4"
+      type: "leb128"
+      length: "var"
+    - name: "sentinel"
+      type: "leb128"
+      length: "var"
+    - name: "volume"
+      type: "leb128"
+      length: "var"
+    - name: "v2"
+      type: "leb128"
+      length: "var"
+    - name: "amount"
+      type: "tdx_float"
+      length: 4
+    - name: "tail_leb128"
+      type: "leb128"
+      length: "var"
+  record_size: null
+  encoding: "diff"
+
+context:
+  price_scale: 100
+  notes: |
+    布局同 0x0105。合成载荷锁定见 test_7727_goods_mac_coverage.py::
+    TestExExtendedLayout::test_010a_010b_market_quotes_share_layout。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。字段详情见 0x0105_EX_INSTRUMENT_QUOTE.yaml。
+
+parser_reference: "tstdx/protocol/parsers/std7727.py::ExUsQuoteParser"

@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x52d",
+  "command_name": "SECURITY_BARS",
+  "tag": "600000_cat10",
+  "note": "600000 周期 10，10 根",
+  "host": "218.75.126.9:7709",
+  "captured_at": "2026-08-31T12:53:53+0800",
+  "request": {
+    "method": "0x52d",
+    "body_hex": "01003630303030300a00010000000a0000000000000000000000",
+    "body_len": 26
+  },
+  "response": {
+    "zip_size": 191,
+    "unzip_size": 191,
+    "compressed": false,
+    "payload_len": 191,
+    "sha256": "34c8d9945eb8aa3304408ddcd20d9f0acd0cb09b5a9b7a2db9f9cb4e4b6d07bd"
+  },
+  "parse_ctx": {
+    "category": 10
+  },
+  "elapsed_ms": 28.31
+}

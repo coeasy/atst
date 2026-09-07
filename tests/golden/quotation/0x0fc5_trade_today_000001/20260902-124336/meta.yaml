@@ -1,0 +1,37 @@
+schema: 2
+source: "self-captured"
+family: quotation
+command: 0xfc5
+command_name: TRADE_TODAY
+tag: 000001
+note: 逐笔成交（深市）
+host: "218.75.126.9:7709"
+local_host: "WPS-PM"
+market: 0
+code: 000001
+captured_at: "2026-09-02T04:43:36.701535+00:00"
+elapsed_ms: 25.85
+request:
+  method: 0xfc5
+  body_hex: 000030303030303100000a00
+  body_len: 12
+response:
+  zip_size: 77
+  unzip_size: 77
+  compressed: false
+  payload_len: 77
+  sha256: c6b86e13294d1c1061b9705c1af08fe89901ef5287601f62a0eda5567ffe9f89
+record_size_hypothesis: 0
+record_count_hypothesis: 0
+compression:
+  codec: none
+  compressed_size: null
+parse_ctx:
+  market: 0
+  code: 000001
+tool:
+  name: tstdx.tools.capture
+  version: 0.1.0
+legal:
+  ack: true
+  allow_trading_hours: false

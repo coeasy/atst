@@ -1,0 +1,31 @@
+# 可达性白名单：静态扫描器无法识别的「有意公共 API」与「特殊接线」模块。
+# 每行 = 模块路径 + # 处置理由（审计 §4 判定）。新增项须配理由评审。
+# 动态机制：tstdx/__init__.__getattr__ 按需 import 子包（AST 不可见）。
+
+# --- 顶层子系统：经 __getattr__ 惰性暴露为公共 API（_LAZY/动态）---
+tstdx.feedback            # 包：FeedbackReporter/TelemetryCollector/UserStats 对外手动 API
+tstdx.feedback.reporter   # 公开：手动提交反馈（文档化 CLI 排期 G）
+tstdx.feedback.stats      # 公开：用户统计（G 接 CLI）
+tstdx.feedback.telemetry  # 公开：遥测采集（V 补上限+测试；接线排期）
+tstdx.security            # 包：安全域（CredentialStore 已按 ADR-007-010 于 v10 删除；预留 capture/origin 扩展）
+tstdx.deprecation         # 公开：deprecated/DeprecationPolicy（_LAZY 导出）
+tstdx.output                # 包：DataFrame/Parquet/CSV/DuckDB 输出 API（面向用户，非内部）；v9 Q4-4 自 tstdx.sinks 更名，shim 至 v10 删除
+tstdx.sinks                # 兼容 shim（v9 Q4-4 改名 tstdx.output，DeprecationWarning 转发）；v10 删除
+tstdx.native              # Rust 加速实验层（自测对拍，非热路径接线，批次 H 决策）
+tstdx.profile             # 包：帧档案探测公共 API
+tstdx.profile.detect      # 公开：detect_profile（网络帧档案；reader.profile 是另一套）
+tstdx.profile.presets     # 公开：市场档案预设（detect 的标签源）
+tstdx.domain.adjust       # 复权引擎：E4 前置件，价值型孤儿（G 补测试+接线 bars 参数）
+tstdx.transport.sniff     # 被动嗅探：公共工具 API（T 修 families 死代码+导出）
+tstdx.streaming.engine    # QuoteStream 生产内核组件（M1 已接线，见 ADR-011）：DeltaMerger/BackpressureQueue/ReconnectPolicy
+tstdx.streaming.push      # 0x0547 推送通道：可选高级组件 API（传输解耦，待真机帧定标，见 ADR-011）
+tstdx.charset            # 包：字符集探测公共 API（v8 删除 i18n shim 后为现役模块；_LAZY 导出）
+tstdx.charset.encoding   # 公开：detect_encoding/decode_bytes 对外（tests/i18n、cookbook 引用）
+tstdx.trade               # 包：交易协议模拟器（P2-1，独立可选；不连真实券商，协议回路研究用）
+tstdx.trade.client        # TradeClient/SocketTransport 占位（真实券商通道范围红线，见 __init__ docstring）
+tstdx.trade.constants     # 交易命令常量（洁净室推断 draft）
+tstdx.trade.errors        # TradingUnavailable 等交易域异常
+tstdx.trade.frames        # 交易帧布局（draft，待真机样本定标）
+tstdx.trade.security      # 交易安全模块（模拟器配套）
+tstdx.trade.simulator     # SimTransport 纯内存模拟券商
+tstdx.__main__           # python -m tstdx 入口（P12：等价于控制台脚本，仅 re-export cli.main）

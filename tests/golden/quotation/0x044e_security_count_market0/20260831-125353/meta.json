@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x44e",
+  "command_name": "SECURITY_COUNT",
+  "tag": "market0",
+  "note": "深证证券数量",
+  "host": "218.75.126.9:7709",
+  "captured_at": "2026-08-31T12:53:53+0800",
+  "request": {
+    "method": "0x44e",
+    "body_hex": "000000000000",
+    "body_len": 6
+  },
+  "response": {
+    "zip_size": 2,
+    "unzip_size": 2,
+    "compressed": false,
+    "payload_len": 2,
+    "sha256": "a6f5cf908b8422a4b9384c7810c40bff2dab987f465670aaf86ea95aff26b7f4"
+  },
+  "parse_ctx": {},
+  "elapsed_ms": 26.22
+}

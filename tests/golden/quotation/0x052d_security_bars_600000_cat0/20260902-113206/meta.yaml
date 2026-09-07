@@ -1,0 +1,38 @@
+schema: 2
+source: "self-captured"
+family: quotation
+command: 0x52d
+command_name: SECURITY_BARS
+tag: 600000_cat0
+note: 600000 周期 0，10 根
+host: "218.75.126.9:7709"
+local_host: "WPS-PM"
+market: 1
+code: 600000
+captured_at: "2026-09-02T03:32:06.505755+00:00"
+elapsed_ms: 31.82
+request:
+  method: 0x52d
+  body_hex: 01003630303030300000010000000a0000000000000000000000
+  body_len: 26
+response:
+  zip_size: 164
+  unzip_size: 164
+  compressed: false
+  payload_len: 164
+  sha256: 5a1f20945da4eb11a898191306596986eb1ddce2281971cdcd856046069e4246
+record_size_hypothesis: 4
+record_count_hypothesis: 41
+compression:
+  codec: none
+  compressed_size: null
+parse_ctx:
+  category: 0
+  market: 1
+  code: 600000
+tool:
+  name: tstdx.tools.capture
+  version: 0.1.0
+legal:
+  ack: true
+  allow_trading_hours: false

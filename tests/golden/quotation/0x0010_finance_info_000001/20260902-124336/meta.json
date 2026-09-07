@@ -1,0 +1,45 @@
+{
+  "schema": 2,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x10",
+  "command_name": "FINANCE_INFO",
+  "tag": "000001",
+  "note": "财务基础信息（深市）",
+  "host": "218.75.126.9:7709",
+  "local_host": "WPS-PM",
+  "market": 0,
+  "code": "000001",
+  "captured_at": "2026-09-02T04:43:36.643090+00:00",
+  "elapsed_ms": 37.0,
+  "request": {
+    "method": "0x10",
+    "body_hex": "3030303030310000",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 5934,
+    "unzip_size": 14302,
+    "compressed": true,
+    "payload_len": 14302,
+    "sha256": "38af7570b3d52dc97169492d8ce1401867e0b0098182d2ba6f58e944c53dbf14"
+  },
+  "record_size_hypothesis": 0,
+  "record_count_hypothesis": 0,
+  "compression": {
+    "codec": "none",
+    "compressed_size": null
+  },
+  "parse_ctx": {
+    "market": 0,
+    "code": "000001"
+  },
+  "tool": {
+    "name": "tstdx.tools.capture",
+    "version": "0.1.0"
+  },
+  "legal": {
+    "ack": true,
+    "allow_trading_hours": false
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "schema": 2,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0xf",
+  "command_name": "CAPITAL_CHANGES",
+  "tag": "000001",
+  "note": "除权除息信息（深市）",
+  "host": "218.75.126.9:7709",
+  "local_host": "WPS-PM",
+  "market": 0,
+  "code": "000001",
+  "captured_at": "2026-09-02T04:43:36.598584+00:00",
+  "elapsed_ms": 95.75,
+  "request": {
+    "method": "0xf",
+    "body_hex": "3030303030310000",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 4532,
+    "unzip_size": 13707,
+    "compressed": true,
+    "payload_len": 13707,
+    "sha256": "726c9a5ad7a02e94932a026f0f9e22842ab8a8ac162a6d7f79fa2fc2eb31991b"
+  },
+  "record_size_hypothesis": 0,
+  "record_count_hypothesis": 0,
+  "compression": {
+    "codec": "none",
+    "compressed_size": null
+  },
+  "parse_ctx": {
+    "market": 0,
+    "code": "000001"
+  },
+  "tool": {
+    "name": "tstdx.tools.capture",
+    "version": "0.1.0"
+  },
+  "legal": {
+    "ack": true,
+    "allow_trading_hours": false
+  }
+}

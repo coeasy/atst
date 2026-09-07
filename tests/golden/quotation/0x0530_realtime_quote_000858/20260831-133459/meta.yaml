@@ -1,0 +1,24 @@
+schema: 1
+source: "self-captured"
+family: quotation
+command: 0x530
+command_name: REALTIME_QUOTE
+tag: 000858
+note: "000858 实时快照（market=0，请求字节已按反转语义换算）"
+host: "218.75.126.9:7709"
+captured_at: "2026-08-31T13:34:59+0800"
+request:
+  method: 0x530
+  body_hex: 0101303030383538
+  body_len: 8
+response:
+  zip_size: 75
+  unzip_size: 75
+  compressed: false
+  payload_len: 75
+  sha256: 7deb0196bd124f5a4c2b4d0effbb34572f01617e35c5b10008287af6360ed1ec
+parse_ctx:
+  code: 000858
+  market: 0
+  price_scale: 100
+elapsed_ms: 24.97

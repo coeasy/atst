@@ -1,0 +1,45 @@
+{
+  "schema": 2,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x10",
+  "command_name": "FINANCE_INFO",
+  "tag": "600000",
+  "note": "财务基础信息",
+  "host": "218.75.126.9:7709",
+  "local_host": "WPS-PM",
+  "market": 1,
+  "code": "600000",
+  "captured_at": "2026-09-02T04:43:36.434525+00:00",
+  "elapsed_ms": 38.1,
+  "request": {
+    "method": "0x10",
+    "body_hex": "3630303030300100",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 5812,
+    "unzip_size": 14302,
+    "compressed": true,
+    "payload_len": 14302,
+    "sha256": "e4f24ef5068e16833de03bcba736f2d56e2287c81aacaee631abe655a34571ab"
+  },
+  "record_size_hypothesis": 0,
+  "record_count_hypothesis": 0,
+  "compression": {
+    "codec": "none",
+    "compressed_size": null
+  },
+  "parse_ctx": {
+    "market": 1,
+    "code": "600000"
+  },
+  "tool": {
+    "name": "tstdx.tools.capture",
+    "version": "0.1.0"
+  },
+  "legal": {
+    "ack": true,
+    "allow_trading_hours": false
+  }
+}

@@ -1,0 +1,86 @@
+# =============================================================================
+# GOODS_OPTION_GREEKS — 期权希腊字母
+# =============================================================================
+# 命令号: 0x0208
+# 家族:  GOODS 商品语义协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 期权希腊字母（delta / gamma / vega / theta / rho）。
+# =============================================================================
+
+spec_id: "0x0208"
+name: "goods_option_greeks"
+family: "GOODS"
+version: "1.0"
+description: "Options greeks (delta/gamma/vega/theta/rho)"
+status: "inferred"
+
+request:
+  length: 9
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "count"
+      offset: 8
+      type: "uint8"
+      length: 1
+      description: "请求条数"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "返回记录条数"
+  fields:
+    - name: "code"
+      offset: 0
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "delta"
+      offset: 6
+      type: "float32"
+      length: 4
+    - name: "gamma"
+      offset: 10
+      type: "float32"
+      length: 4
+    - name: "vega"
+      offset: 14
+      type: "float32"
+      length: 4
+    - name: "theta"
+      offset: 18
+      type: "float32"
+      length: 4
+    - name: "rho"
+      offset: 22
+      type: "float32"
+      length: 4
+  record_size: 26
+  encoding: "raw"
+
+context:
+  record_size: 26
+  notes: |
+    布局由 test_7727_goods_mac_coverage.py::TestGoodsLayout::
+    test_0208_option_greeks 合成载荷锁定（``<H count>`` +
+    ``<6s code><f4 delta><f4 gamma><f4 vega><f4 theta><f4 rho>``）。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。
+
+parser_reference: "tstdx/protocol/parsers/goods.py::GoodsOptionGreeksParser"

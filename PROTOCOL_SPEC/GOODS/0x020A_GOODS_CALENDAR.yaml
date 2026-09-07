@@ -1,0 +1,71 @@
+# =============================================================================
+# GOODS_CALENDAR — 商品交易日历 / 合约到期
+# =============================================================================
+# 命令号: 0x020A
+# 家族:  GOODS 商品语义协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 商品交易日历 / 合约到期日。
+# =============================================================================
+
+spec_id: "0x020A"
+name: "goods_calendar"
+family: "GOODS"
+version: "1.0"
+description: "Goods trading calendar / contract expiry"
+status: "inferred"
+
+request:
+  length: 9
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "count"
+      offset: 8
+      type: "uint8"
+      length: 1
+      description: "请求条数"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "返回记录条数"
+  fields:
+    - name: "code"
+      offset: 0
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "expire_date"
+      offset: 6
+      type: "uint32"
+      length: 4
+      description: "到期日 YYYYMMDD"
+      format: "yyyymmdd"
+  record_size: 10
+  encoding: "raw"
+
+context:
+  record_size: 10
+  notes: |
+    布局由 test_7727_goods_mac_coverage.py::TestGoodsLayout::test_020a_calendar
+    合成载荷锁定（``<H count>`` + ``<6s code><I 到期日>``）。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。
+
+parser_reference: "tstdx/protocol/parsers/goods.py::GoodsCalendarParser"

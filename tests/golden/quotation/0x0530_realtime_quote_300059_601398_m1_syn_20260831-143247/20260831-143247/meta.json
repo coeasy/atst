@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "source": "synthetic",
+  "derived_from": "0x0530_realtime_quote_300059/20260831-133500",
+  "family": "quotation",
+  "command": "0x530",
+  "command_name": "REALTIME_QUOTE",
+  "tag": "601398_m1_syn",
+  "note": "合成衍生样本：解析器回归基线，非主站真实响应",
+  "captured_at": "2026-08-31T14:32:49+00:00",
+  "request": {
+    "method": "0x530",
+    "body_hex": "01363031333938",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 79,
+    "unzip_size": 79,
+    "compressed": false,
+    "payload_len": 79,
+    "sha256": "0f4aaf03338b9bba6455fe613b918a8fa261a2a665e327725d0b41ec019e4504"
+  },
+  "parse_ctx": {
+    "code": "601398",
+    "market": 1,
+    "price_scale": 100
+  }
+}

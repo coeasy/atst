@@ -1,0 +1,101 @@
+# =============================================================================
+# HANDSHAKE (login) — 连接握手
+# =============================================================================
+# 命令号: 0x000D
+# 家族:  7709 标准协议族
+# 层级:  L2 (通用解析)
+# 状态:  verified (自采集样本)
+#
+# 描述: TDX 服务端要求客户端在 TCP 连接建立后先发送握手帧才响应业务命令。
+#       握手序列共三帧：
+#       帧1  method=0x000D  body=<B 0x01>   步骤 1
+#       帧2  method=0x000D  body=<B 0x02>   步骤 2
+#       帧3  method=0x0FDB  body=<30 字节产品标识>  步骤 3
+#       每帧均读取并丢弃响应。
+# =============================================================================
+
+spec_id: "0x000D"
+name: "handshake"
+family: "7709"
+version: "1.0"
+description: "Connection handshake (3-step login sequence)"
+status: "verified"
+aliases: ["login", "handshake_setup"]
+
+# =============================================================================
+# 请求体
+# =============================================================================
+request:
+  length: 1
+  fields:
+    - name: "step"
+      offset: 0
+      type: "uint8"
+      length: 1
+      description: "Handshake step number (1=first frame, 2=second frame)"
+      value: 1
+      notes: "Frames 1 and 2 both use method=0x000D with step=1 then step=2. Frame 3 uses method=0x0FDB."
+
+# =============================================================================
+# 响应体
+# =============================================================================
+response:
+  header: []
+  fields: []
+  record_size: 0
+  encoding: "raw"
+  notes: "Handshake response is opaque and should be discarded. The exact layout is not documented."
+
+# =============================================================================
+# 握手序列（三帧完整定义）
+# =============================================================================
+handshake_sequence:
+  - step: 1
+    method: "0x000D"
+    body:
+      length: 1
+      fields:
+        - name: "step_number"
+          offset: 0
+          type: "uint8"
+          value: 1
+    response_discarded: true
+  - step: 2
+    method: "0x000D"
+    body:
+      length: 1
+      fields:
+        - name: "step_number"
+          offset: 0
+          type: "uint8"
+          value: 2
+    response_discarded: true
+  - step: 3
+    method: "0x0FDB"
+    body:
+      length: 30
+      fields:
+        - name: "product_identifier"
+          offset: 0
+          type: "raw[30]"
+          length: 30
+          description: "Opaque 30-byte product identifier block (self-captured)"
+          notes: "Server does not validate content, only length. Zeroed block also accepted."
+    response_discarded: true
+
+# =============================================================================
+# 上下文
+# =============================================================================
+context:
+  requires_handshake: true
+  applicable_families:
+    - "7709"
+    - "MAC"
+
+notes: |
+  Frames 1 and 2 use method=0x000D with a single-byte body.
+  Frame 3 uses method=0x0FDB (LOGIN2) with a 30-byte opaque product identifier.
+  All three responses should be read and discarded.
+  The product identifier block is self-captured from a real session;
+  its exact content is not validated by the server (length only).
+  Refer to tstdx/protocol/handshake.py for the complete implementation.

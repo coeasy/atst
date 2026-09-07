@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+wheels/
+*.whl
+
+# 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+
+# 测试与覆盖率
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.hypothesis/
+.test_tmp/
+_cov.txt
+base_orig_tmp.py
+
+# Rust / tstdx_native
+tstdx_native/target/
+tstdx_native/Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# 本地工作区（workbuddy session 记忆、临时诊断，不提交）
+.workbuddy/
+
+# 本地数据（勿提交）
+data/
+*.parquet
+*.duckdb
+*.db
+!tests/golden/**/*.bin
+
+# 运行时产物
+.tstdx/
+logs/
+*.log
+ops/smoke_results.jsonl
+
+# golden 回放临时
+tests/golden/**/tmp_*/

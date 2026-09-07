@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x10",
+  "command_name": "FINANCE_INFO",
+  "tag": "600000",
+  "note": "财务基础信息",
+  "host": "218.75.126.9:7709",
+  "captured_at": "2026-08-31T12:53:54+0800",
+  "request": {
+    "method": "0x10",
+    "body_hex": "3630303030300100",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 10511,
+    "unzip_size": 14302,
+    "compressed": true,
+    "payload_len": 14302,
+    "sha256": "30ffebc5066f9f0e0c0835e82998256c67336db02287abc4c00ff9d271294f15"
+  },
+  "parse_ctx": {},
+  "elapsed_ms": 49.34
+}

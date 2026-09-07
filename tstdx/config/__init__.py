@@ -1,0 +1,66 @@
+# Copyright (c) 2026 tstdx contributors
+# Licensed under the MIT License
+
+"""配置中心（§21）：strict schema + 6 源优先级合并。"""
+
+from .loader import (  # noqa: F401
+    CONFIG_FILENAMES,
+    ENV_CONFIG_FILE,
+    ENV_PREFIX,
+    config_from_env,
+    find_config_files,
+    get_config,
+    load_config,
+    load_toml,
+    parse_env_value,
+    reset_config,
+    set_config,
+)
+from .schema import (  # noqa: F401
+    DEFAULT_CONFIG,
+    CacheConfig,
+    CompatibilityConfig,
+    Config,
+    CoreConfig,
+    FeedbackConfig,
+    HostsConfig,
+    ObservabilityConfig,
+    OutputConfig,
+    ProfileConfig,
+    RateLimitConfig,
+    SecurityConfig,
+    WebConfig,
+    config_diff,
+    config_from_dict,
+    merge_config,
+    validate_keys,
+)
+
+__all__ = [
+    "Config",
+    "DEFAULT_CONFIG",
+    "CoreConfig",
+    "HostsConfig",
+    "RateLimitConfig",
+    "CacheConfig",
+    "OutputConfig",
+    "ProfileConfig",
+    "WebConfig",
+    "ObservabilityConfig",
+    "SecurityConfig",
+    "CompatibilityConfig",
+    "FeedbackConfig",
+    "load_config",
+    "get_config",
+    "set_config",
+    "reset_config",
+    "merge_config",
+    "config_from_dict",
+    "config_from_env",
+    "config_diff",
+    "validate_keys",
+    "find_config_files",
+    "load_toml",
+    "parse_env_value",
+    "ENV_PREFIX",
+]

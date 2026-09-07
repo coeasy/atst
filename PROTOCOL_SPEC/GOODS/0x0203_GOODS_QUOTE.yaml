@@ -1,0 +1,116 @@
+# =============================================================================
+# GOODS_QUOTE — 商品实时报价
+# =============================================================================
+# 命令号: 0x0203
+# 家族:  GOODS 商品语义协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 商品实时行情快照。对标 0x0530，但尾部含持仓量与结算价（未锁定，
+#       保留在 extra）。
+# =============================================================================
+
+spec_id: "0x0203"
+name: "goods_quote"
+family: "GOODS"
+version: "1.0"
+description: "Goods realtime quote (with open interest/settlement tail)"
+status: "inferred"
+
+request:
+  length: 9
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "reserved"
+      offset: 8
+      type: "uint8"
+      length: 1
+      value: 0
+      description: "保留字段"
+
+response:
+  header:
+    - name: "market"
+      offset: 0
+      type: "uint8"
+      length: 1
+      description: "市场 ID"
+    - name: "code_echo"
+      offset: 1
+      type: "string[6]"
+      length: 6
+      description: "品种代码回显"
+      format: "gbk"
+  fields:
+    - name: "hdr"
+      offset: 7
+      type: "raw[2]"
+      length: 2
+      description: "2 字节不透明区"
+    - name: "price"
+      type: "leb128"
+      length: "var"
+      format: "absolute"
+      description: "当前价（标度 100）"
+      scale: 100
+    - name: "d_last_close"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+    - name: "d_open"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+    - name: "d_high"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+    - name: "d_low"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+    - name: "u4"
+      type: "leb128"
+      length: "var"
+      description: "未知字段（保留在 extra['_u4']）"
+    - name: "sentinel"
+      type: "leb128"
+      length: "var"
+    - name: "volume"
+      type: "leb128"
+      length: "var"
+      description: "成交量（手，×100 → 股）"
+    - name: "v2"
+      type: "leb128"
+      length: "var"
+    - name: "amount"
+      type: "tdx_float"
+      length: 4
+      description: "成交额"
+    - name: "tail_leb128"
+      type: "leb128"
+      length: "var"
+      description: "持仓量/结算价等剩余 LEB128（未锁定）"
+  record_size: null
+  encoding: "diff"
+
+context:
+  price_scale: 100
+  notes: |
+    布局由 test_7727_goods_mac_coverage.py::TestGoodsLayout::test_0203_quote
+    合成载荷锁定（断言 price 与 extra 存在）。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。尾部持仓量/结算价布局未锁定。
+
+parser_reference: "tstdx/protocol/parsers/goods.py::GoodsQuoteParser"

@@ -1,0 +1,34 @@
+{
+  "captured_at": "2026-09-06T16:09:02+0800",
+  "family": "f10",
+  "command": "0x06b9",
+  "command_name": "UNKNOWN_06B9",
+  "frame": {
+    "magic": "0x74cbb1",
+    "seq": 1,
+    "method": "0x6b9",
+    "zip_size": 4,
+    "unzip_size": 4,
+    "compressed": false,
+    "payload_len": 4
+  },
+  "result": {
+    "tier": "L2",
+    "confidence": 0.85,
+    "rows": 1,
+    "warnings": []
+  },
+  "candidate": {
+    "has_count_prefix": false,
+    "count": 1,
+    "record_size": 4,
+    "field_types": [
+      "zero_u32"
+    ],
+    "score": 0.85,
+    "notes": [
+      "按候选记录长度整除"
+    ]
+  },
+  "source": "self-captured"
+}

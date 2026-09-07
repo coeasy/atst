@@ -1,0 +1,23 @@
+schema: 1
+source: "synthetic"
+derived_from: "0x0530_realtime_quote_600000/20260831-133459"
+family: "quotation"
+command: "0x530"
+command_name: "REALTIME_QUOTE"
+tag: "002415_m0_syn"
+note: "合成衍生样本：解析器回归基线，非主站真实响应"
+captured_at: "2026-08-31T14:32:49+00:00"
+request:
+  method: "0x530"
+  body_hex: "00303032343135"
+  body_len: 8
+response:
+  zip_size: 79
+  unzip_size: 79
+  compressed: False
+  payload_len: 79
+  sha256: "862e6267ccd9e9ef48513c3d6730dda035f6f824b0912d176f98209ada8f7d00"
+parse_ctx:
+  code: "002415"
+  market: 0
+  price_scale: 100

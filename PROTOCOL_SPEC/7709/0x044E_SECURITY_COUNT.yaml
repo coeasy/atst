@@ -1,0 +1,72 @@
+# =============================================================================
+# SECURITY_COUNT — 市场代码数量
+# =============================================================================
+# 命令号: 0x044E
+# 家族:  7709 标准协议族
+# 层级:  L1 (精确解析，golden-verified)
+# 状态:  stable
+#
+# 描述: 查询指定市场的证券总数。常用于初始化代码表分页。
+# =============================================================================
+
+spec_id: "0x044e"
+name: "security_count"
+family: "7709"
+version: "1.0"
+description: "Security count per market (total number of securities)"
+status: "stable"
+aliases: ["gbbq", "security_total", "market_count"]
+
+# =============================================================================
+# 请求体（6 字节）
+# =============================================================================
+request:
+  length: 6
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "Market ID (0=Shenzhen, 1=Shanghai)"
+    - name: "reserved"
+      offset: 2
+      type: "raw[4]"
+      length: 4
+      value: [0, 0, 0, 0]
+      description: "Reserved padding (4 zero bytes)"
+
+# =============================================================================
+# 响应体（✅ golden-verified）
+# =============================================================================
+response:
+  header: []
+  fields:
+    - name: "count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "Total number of securities in the specified market"
+
+  record_size: 2
+  encoding: "raw"
+  notes: |
+    Response is a single uint16 value.
+    Golden sample (market 0): payload = 2 bytes, count = 0x0398 (920)
+    Golden sample (market 1): payload = 2 bytes
+
+# =============================================================================
+# 上下文
+# =============================================================================
+context:
+  markets:
+    0: "Shenzhen"
+    1: "Shanghai"
+
+# =============================================================================
+# 参考
+# =============================================================================
+golden_samples:
+  - "tests/golden/quotation/0x044e_security_count_market0/20260831-125353/payload.bin"
+  - "tests/golden/quotation/0x044e_security_count_market1/20260831-125354/payload.bin"
+
+parser_reference: "tstdx/protocol/parsers/std7709.py::SecurityCountParser"

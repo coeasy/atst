@@ -1,0 +1,138 @@
+# =============================================================================
+# TRADE_TODAY — 当日成交明细（逐笔）
+# =============================================================================
+# 命令号: 0x0FC5
+# 家族:  7709 标准协议族
+# 层级:  L2 (通用解析)
+# 状态:  inferred (布局来自公开资料推断，待 golden 锁定)
+#
+# 描述: 当日逐笔成交明细。每条记录包含时间、价格、成交量、成交额
+#       和买卖方向。
+# =============================================================================
+
+spec_id: "0x0fc5"
+name: "trade_today"
+family: "7709"
+version: "1.0"
+description: "Today's trade details (tick-by-tick transactions)"
+status: "inferred"
+aliases: ["trade_detail", "tick_data"]
+
+# =============================================================================
+# 请求体
+# =============================================================================
+request:
+  length: 12
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "Market ID (0=Shenzhen, 1=Shanghai)"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "Stock code (6 chars, null-padded)"
+      format: "gbk"
+    - name: "start"
+      offset: 8
+      type: "uint16"
+      length: 2
+      description: "Start index (0-based)"
+    - name: "count"
+      offset: 10
+      type: "uint16"
+      length: 2
+      description: "Number of records to request"
+
+# =============================================================================
+# 响应体（⚠️ 布局来自公开资料推断）
+# =============================================================================
+response:
+  header:
+    - name: "record_count"
+      type: "uint16"
+      length: 2
+      description: "Number of trade records"
+
+  fields:
+    - name: "minute"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "Minutes since market open"
+      format: "minutes_from_open"
+      notes: "Converted to HH:MM by parser"
+    - name: "price"
+      offset: 2
+      type: "float32"
+      length: 4
+      description: "Transaction price"
+      unit: "yuan"
+    - name: "volume"
+      offset: 6
+      type: "float32"
+      length: 4
+      description: "Transaction volume"
+      unit: "share"
+    - name: "amount"
+      offset: 10
+      type: "float32"
+      length: 4
+      description: "Transaction amount (price × volume)"
+      unit: "yuan"
+    - name: "direction"
+      offset: 14
+      type: "uint8"
+      length: 1
+      description: "Trade direction flag"
+      values:
+        0: "buy (active buy)"
+        1: "sell (active sell)"
+        2: "neutral (aggregated)"
+      notes: "Some servers use 0=buy, 1=sell, 2=neutral"
+
+  record_size: 15
+  encoding: "absolute"
+  notes: |
+    P1e 三值矛盾收口（2026-09，F2 批次）：本记录长度历史上三处矛盾——
+    本 spec 曾写 17B（归因"padding"）、解析器 RECORD_SIZE 曾为 17B、
+    逐字段实际消费 15B（2 minute + 4 price + 4 volume + 4 amount + 1 direction）。
+    守卫门槛必须等于实际消费步长，故解析器 RECORD_SIZE 与本 spec 统一为 15B
+    （见 tstdx/protocol/parsers/std7709_extra.py::TradeTodayParser）。
+    **15B 消费，布局未真机锁定**：golden 样本（count=10 / body 74B）至今
+    无法被 15B 整除，说明真实布局仍含未识别字段，待真机样本定标后修正；
+    在样本到位前禁止改回任何"padding"猜测。
+
+# =============================================================================
+# 上下文
+# =============================================================================
+context:
+  price_scale: 1
+  trading_hours: "09:30-11:30, 13:00-15:00"
+
+# =============================================================================
+# 相关命令
+# =============================================================================
+related_commands:
+  - spec_id: "0x0FC6"
+    name: "trade_today_alt"
+    description: "Alternate command number for same data"
+    family: "7709"
+  - spec_id: "0x0FB5"
+    name: "trade_history"
+    description: "Historical trade details (not yet implemented)"
+    family: "7709"
+  - spec_id: "0x0FC3"
+    name: "trade_summary"
+    description: "Trade summary (aggregated, not tick-by-tick)"
+    family: "7709"
+
+# =============================================================================
+# 参考
+# =============================================================================
+golden_samples:
+  - "tests/golden/quotation/0x0fc5_trade_today_600000/20260831-125354/payload.bin"
+
+parser_reference: "tstdx/protocol/parsers/std7709_extra.py::TradeTodayParser"

@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x530",
+  "command_name": "REALTIME_QUOTE",
+  "tag": "600519",
+  "note": "600519 实时快照（market=1，请求字节已按反转语义换算）",
+  "host": "218.75.126.9:7709",
+  "captured_at": "2026-08-31T13:34:59+0800",
+  "request": {
+    "method": "0x530",
+    "body_hex": "0100363030353139",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 74,
+    "unzip_size": 74,
+    "compressed": false,
+    "payload_len": 74,
+    "sha256": "442c3ba8240304fad33915d14c82739b09da69b8dc47aaa0a20293ac309b1b79"
+  },
+  "parse_ctx": {
+    "code": "600519",
+    "market": 1,
+    "price_scale": 100
+  },
+  "elapsed_ms": 24.77
+}

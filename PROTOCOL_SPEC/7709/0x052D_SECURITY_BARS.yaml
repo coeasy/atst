@@ -1,0 +1,233 @@
+# =============================================================================
+# SECURITY_BARS (K-line) — K 线 / 周期线数据
+# =============================================================================
+# 命令号: 0x052D
+# 家族:  7709 标准协议族
+# 层级:  L1 (精确解析，golden-verified)
+# 状态:  stable
+#
+# 描述: K 线数据查询，支持分钟线（1/5/15/30/60 分钟）和日线及以上
+#       （日/周/月/季/年）。价格为差分 LEB128 编码，需累积还原。
+# =============================================================================
+
+spec_id: "0x052d"
+name: "security_bars"
+family: "7709"
+version: "1.0"
+description: "K-line / periodic bar data (multi-category)"
+status: "stable"
+aliases: ["kline", "bars", "candlestick"]
+
+# =============================================================================
+# 请求体（26 字节，✅ golden-verified）
+# =============================================================================
+request:
+  length: 26
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "Market ID (0=Shenzhen, 1=Shanghai)"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "Stock code (6 chars, null-padded, ASCII)"
+      format: "gbk"
+    - name: "category"
+      offset: 8
+      type: "uint16"
+      length: 2
+      description: "Bar category/period"
+      values:
+        0: "5-minute bars"
+        1: "15-minute bars"
+        2: "30-minute bars"
+        3: "1-hour bars"
+        4: "Daily bars"
+        5: "Weekly bars"
+        6: "Monthly bars"
+        7: "1-minute bars (primary)"
+        8: "1-minute bars (alternate)"
+        9: "Daily bars (alternate, volume in lots)"
+        10: "Quarterly bars"
+        11: "Yearly bars"
+    - name: "flag"
+      offset: 10
+      type: "uint16"
+      length: 2
+      value: 1
+      description: "Reserved flag (always 1)"
+    - name: "start"
+      offset: 12
+      type: "uint16"
+      length: 2
+      description: "Start index (0-based)"
+    - name: "count"
+      offset: 14
+      type: "uint16"
+      length: 2
+      description: "Number of bars to request (max 800)"
+      max: 800
+    - name: "reserved_1"
+      offset: 16
+      type: "uint32"
+      length: 4
+      value: 0
+      description: "Reserved padding"
+    - name: "reserved_2"
+      offset: 20
+      type: "uint32"
+      length: 4
+      value: 0
+      description: "Reserved padding"
+    - name: "reserved_3"
+      offset: 24
+      type: "uint16"
+      length: 2
+      value: 0
+      description: "Reserved padding"
+
+# =============================================================================
+# 响应体（✅ golden-verified，缓冲区按字节精确耗尽）
+# =============================================================================
+response:
+  header:
+    - name: "record_count"
+      type: "uint16"
+      length: 2
+      description: "Number of bar records"
+
+  fields:
+    # ─── 时间戳 ───────────────────────────────────────────────────────
+    - name: "datetime"
+      offset: 0
+      type: "uint32"
+      length: 4
+      format: "yyyymmdd"
+      description: "Bar timestamp (varies by category)"
+      notes: |
+        Day-like categories (4,5,6,9,10,11): uint32 YYYYMMDD (e.g. 20240115).
+        Minute-like categories (0,1,2,3,7,8):
+          uint16 lc16 date + uint16 minutes-since-midnight.
+          year = (raw_date // 2048) + 2004
+          month = (raw_date % 2048) // 100
+          day = (raw_date % 2048) % 100
+          time = hours:minutes from second uint16
+
+    # ─── 价格（差分 LEB128）────────────────────────────────────────────
+    - name: "open_diff"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_base"
+      description: "Open price differential relative to base"
+      notes: "open_abs = open_diff + base; base = 0 initially, then prev close_abs"
+    - name: "close_diff"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_open"
+      description: "Close price differential relative to open"
+      notes: "close_abs = open_abs + close_diff"
+    - name: "high_diff"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_open"
+      description: "High price differential relative to open"
+      notes: "high_abs = open_abs + high_diff"
+    - name: "low_diff"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_open"
+      description: "Low price differential relative to open"
+      notes: "low_abs = open_abs + low_diff"
+
+    # ─── 成交量与成交额（TDX 自定义浮点）────────────────────────────────
+    - name: "volume"
+      type: "tdx_float"
+      length: 4
+      description: "Trading volume"
+      unit: "share"
+      notes: |
+        For categories in VOLUME_LOT_CATEGORIES (5,6,9,10,11),
+        server sends volume in lots (手). Parser multiplies by 100
+        to convert to shares (股).
+    - name: "amount"
+      type: "tdx_float"
+      length: 4
+      description: "Trading amount (turnover value)"
+      unit: "yuan"
+
+    # ─── 指数附加字段（可选）────────────────────────────────────────────
+    - name: "up_count"
+      type: "uint16"
+      length: 2
+      description: "Number of advancing stocks (index-only)"
+      nullable: true
+      notes: "Only present when index=True in parse context"
+    - name: "down_count"
+      type: "uint16"
+      length: 2
+      description: "Number of declining stocks (index-only)"
+      nullable: true
+      notes: "Only present when index=True in parse context"
+
+  record_size: null
+  min_record_size: 16
+  encoding: "diff"
+  notes: |
+    Record size is variable due to LEB128 fields (1-8 bytes each).
+    Minimum record = 4(dt) + 4(min 4 leb128 fields) + 8(vol+amt) = 16 bytes.
+    Price scale is 1000 for 7709 standard K-line.
+    Base for differential encoding resets to 0 for each record:
+      open_abs = open_diff + base
+      close_abs = open_abs + close_diff
+      base = close_abs  (for next record)
+
+# =============================================================================
+# 上下文
+# =============================================================================
+context:
+  price_scale: 1000
+  max_batch: 800
+  category_variants:
+    - categories: [0, 1, 2, 3, 7, 8]
+      name: "minute"
+      datetime_format: "lc16+minutes"
+      volume_unit: "share"
+    - categories: [4, 9]
+      name: "day"
+      datetime_format: "yyyymmdd"
+      volume_unit: "share"
+      notes: "Category 9 has volume in lots (×100)"
+    - categories: [5, 10, 11]
+      name: "week_month_season_year"
+      datetime_format: "yyyymmdd"
+      volume_unit: "lot"
+      notes: "Volume in lots (手); multiply by 100 for shares"
+    - categories: [6]
+      name: "month"
+      datetime_format: "yyyymmdd"
+      volume_unit: "lot"
+
+# =============================================================================
+# 交叉校验
+# =============================================================================
+cross_checks:
+  - name: "price_in_range"
+    description: "Average price (amount/volume) should fall within [low, high] range"
+    tolerance: "0.5x to 1.5x of OHLC range"
+  - name: "base_consistency"
+    description: "Base for next record = close_abs of current record"
+
+# =============================================================================
+# 参考
+# =============================================================================
+golden_samples:
+  - "tests/golden/quotation/0x052d_security_bars_600000_cat4/20260831-125353/payload.bin"
+  - "tests/golden/quotation/0x052d_security_bars_600000_cat0/20260831-125353/payload.bin"
+  - "tests/golden/quotation/0x052d_security_bars_600000_cat5/20260831-125353/payload.bin"
+  - "tests/golden/quotation/0x052d_security_bars_000001_cat4/20260831-125353/payload.bin"
+  - "tests/golden/quotation/0x052d_security_bars_300750_cat4/20260831-125353/payload.bin"
+
+parser_reference: "tstdx/protocol/parsers/std7709.py::SecurityBarsParser"

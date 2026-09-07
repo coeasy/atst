@@ -1,0 +1,22 @@
+schema: 1
+source: "synthetic"
+derived_from: "0x000f_capital_changes_600000/20260831-125354"
+family: "quotation"
+command: "0xf"
+command_name: "CAPITAL_CHANGES"
+tag: "000001_m0_syn"
+note: "合成衍生样本：解析器回归基线，非主站真实响应"
+captured_at: "2026-08-31T14:32:48+00:00"
+request:
+  method: "0xf"
+  body_hex: "00303030303031"
+  body_len: 8
+response:
+  zip_size: 2252
+  unzip_size: 2252
+  compressed: False
+  payload_len: 2252
+  sha256: "7706ecf1ae196f8646af72f2697c0ee38814e7b3f58b942ff31288865d56f35c"
+parse_ctx:
+  code: "000001"
+  market: 0

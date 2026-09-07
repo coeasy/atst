@@ -1,0 +1,201 @@
+# =============================================================================
+# REALTIME_QUOTE — 实时行情快照（单只）
+# =============================================================================
+# 命令号: 0x0530
+# 家族:  7709 标准协议族
+# 层级:  L1 (精确解析，golden-verified)
+# 状态:  stable
+#
+# 描述: 单只标的实时行情快照。这是当前唯一可用的实时行情命令，
+#       批量命令（0x053E/0x054C/0x0532）在实测中已全部下线。
+#
+# ⚠️ 注意: 请求体的 market 字节语义与其余命令相反（深→1，沪→0）。
+# =============================================================================
+
+spec_id: "0x0530"
+name: "realtime_quote"
+family: "7709"
+version: "1.0"
+description: "Realtime quote snapshot (single symbol)"
+status: "stable"
+aliases: ["batch_quote", "quote", "realtime"]
+
+# =============================================================================
+# 请求体（8 字节，✅ golden-verified）
+# =============================================================================
+request:
+  length: 8
+  fields:
+    - name: "flag"
+      offset: 0
+      type: "uint8"
+      length: 1
+      value: 1
+      description: "Fixed flag byte (always 0x01)"
+    - name: "market"
+      offset: 1
+      type: "uint8"
+      length: 1
+      description: "Market ID (INVERTED: 1=Shenzhen, 0=Shanghai)"
+      notes: |
+        CRITICAL: 0x0530's market byte has INVERTED semantics compared
+        to other commands. Use quote_request_market() to convert:
+          standard SZ (0) → request byte 1
+          standard SH (1) → request byte 0
+        Wrong value returns a valid frame with echo "600839" and zero payload.
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "Stock code (6 chars, null-padded, ASCII)"
+      format: "gbk"
+
+# =============================================================================
+# 响应体（✅ golden-verified，10 只标的 × 3 台主站交叉验证）
+# =============================================================================
+response:
+  header:
+    - name: "market_echo"
+      offset: 0
+      type: "uint8"
+      length: 1
+      description: "Echo market ID (standard semantics: 0=SZ, 1=SH)"
+      notes: "Standard semantics in response, inverted in request"
+    - name: "code_echo"
+      offset: 1
+      type: "string[6]"
+      length: 6
+      description: "Echo stock code"
+      notes: "Parser validates this against request to detect 'wrong answer + valid frame'"
+
+  fields:
+    # ─── 2 字节不透明区 ────────────────────────────────────────────────
+    - name: "hdr"
+      offset: 7
+      type: "raw[2]"
+      length: 2
+      description: "2-byte opaque header (varint or 2-byte marker)"
+      notes: "Skipped at fixed offset; price always starts at offset 9"
+
+    # ─── 价格（差分 LEB128）────────────────────────────────────────────
+    - name: "price"
+      type: "leb128"
+      length: "var"
+      format: "absolute"
+      description: "Current price (absolute LEB128, scaled by 100)"
+      scale: 100
+      unit: "yuan"
+    - name: "d_last_close"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+      description: "Last close differential (relative to price)"
+      notes: "last_close = price + d_last_close"
+    - name: "d_open"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+      description: "Open price differential (relative to price)"
+      notes: "open = price + d_open"
+    - name: "d_high"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+      description: "High price differential (relative to price)"
+      notes: "high = price + d_high"
+    - name: "d_low"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+      description: "Low price differential (relative to price)"
+      notes: "low = price + d_low"
+
+    # ─── 附加字段 ──────────────────────────────────────────────────────
+    - name: "u4"
+      type: "leb128"
+      length: "var"
+      description: "Unknown field (grows ~100/sec, likely timestamp counter)"
+      notes: "Preserved in extra['_u4']"
+    - name: "sentinel"
+      type: "leb128"
+      length: "var"
+      description: "Self-check sentinel (should equal -price)"
+      notes: "Parser validates sentinel == -price; mismatch indicates field drift"
+    - name: "volume"
+      type: "leb128"
+      length: "var"
+      description: "Trading volume"
+      unit: "lot"
+      notes: "Volume in lots (手); parser multiplies by 100 for shares (股)"
+    - name: "v2"
+      type: "leb128"
+      length: "var"
+      description: "Unknown field (small value)"
+      notes: "Preserved in extra['_v2']"
+    - name: "amount"
+      type: "tdx_float"
+      length: 4
+      description: "Trading amount (turnover)"
+      unit: "yuan"
+
+    # ─── 五档盘口（尾部，布局未完全锁定）─────────────────────────────────
+    - name: "tail_leb128"
+      type: "leb128"
+      length: "var"
+      description: "Remaining LEB128 sequence (bid/ask levels + extras)"
+      notes: |
+        Five-level order book (bid/ask × 5 levels) and additional fields.
+        Exact layout is NOT fully locked; tail bytes are decoded as a raw
+        LEB128 integer sequence and preserved in extra['tail_leb128'].
+        Parser does NOT invent bid/ask prices to avoid unverified data.
+
+  record_size: null
+  min_record_size: 56
+  encoding: "diff"
+
+# =============================================================================
+# 上下文
+# =============================================================================
+context:
+  price_scale: 100
+  single_symbol_only: true
+  strict_echo: true
+  notes: |
+    Price scale is 100 (not 1000 like K-line).
+    Volume is in lots; parser converts to shares (×100).
+    Parser enforces echo validation: request code must match response code.
+    If echo fails, IntegrityViolation is raised (not silent bad data).
+
+# =============================================================================
+# 交叉校验
+# =============================================================================
+cross_checks:
+  - name: "sentinel_check"
+    description: "sentinel must equal -price"
+  - name: "amount_range"
+    description: "amount should be within [low×volume×0.5, high×volume×1.5]"
+  - name: "echo_validation"
+    description: "Response code and market must match request"
+
+# =============================================================================
+# 已知风险
+# =============================================================================
+warnings:
+  - description: "Market byte inversion"
+    detail: "Request uses inverted market (SZ=1, SH=0); response uses standard (SZ=0, SH=1)"
+  - description: "Wrong answer + valid frame"
+    detail: "Incorrect market byte returns 56-byte frame with echo '600839' and zero payload"
+  - description: "Tail layout not locked"
+    detail: "Five-level order book bytes are preserved as raw LEB128, not decoded into bid/ask"
+
+# =============================================================================
+# 参考
+# =============================================================================
+golden_samples:
+  - "tests/golden/quotation/0x0530_realtime_quote_600000/20260831-133459/payload.bin"
+  - "tests/golden/quotation/0x0530_realtime_quote_600519/20260831-133459/payload.bin"
+  - "tests/golden/quotation/0x0530_realtime_quote_601398/20260831-133459/payload.bin"
+  - "tests/golden/quotation/0x0530_realtime_quote_000001/20260831-133459/payload.bin"
+  - "tests/golden/quotation/0x0530_realtime_quote_300750/20260831-133500/payload.bin"
+
+parser_reference: "tstdx/protocol/parsers/std7709.py::RealtimeQuoteParser"

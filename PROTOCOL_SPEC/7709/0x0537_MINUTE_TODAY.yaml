@@ -1,0 +1,111 @@
+# =============================================================================
+# MINUTE_TODAY — 当日分时数据
+# =============================================================================
+# 命令号: 0x0537
+# 家族:  7709 标准协议族
+# 层级:  L2 (通用解析)
+# 状态:  inferred (布局来自公开资料推断，待 golden 锁定)
+#
+# 描述: 当日分时数据（分钟级别）。每根分时记录包含距开盘分钟数、
+#       价格、均价和成交量。
+# =============================================================================
+
+spec_id: "0x0537"
+name: "minute_today"
+family: "7709"
+version: "1.0"
+description: "Today's intraday minute-level data"
+status: "inferred"
+aliases: ["history_minute", "intraday_minute", "minute"]
+
+# =============================================================================
+# 请求体
+# =============================================================================
+request:
+  length: 8
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "Market ID (0=Shenzhen, 1=Shanghai)"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "Stock code (6 chars, null-padded)"
+      format: "gbk"
+
+# =============================================================================
+# 响应体（⚠️ 布局来自公开资料推断）
+# =============================================================================
+response:
+  header:
+    - name: "record_count"
+      type: "uint16"
+      length: 2
+      description: "Number of minute records"
+
+  fields:
+    - name: "minute"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "Minutes since market open (0-240)"
+      format: "minutes_from_open"
+      notes: "Converted to HH:MM by parser (0=09:30, 240=15:00)"
+    - name: "price"
+      offset: 2
+      type: "float32"
+      length: 4
+      description: "Current price at this minute"
+      unit: "yuan"
+    - name: "avg_price"
+      offset: 6
+      type: "float32"
+      length: 4
+      description: "Average price (VWAP) from open"
+      unit: "yuan"
+    - name: "volume"
+      offset: 10
+      type: "float32"
+      length: 4
+      description: "Trading volume at this minute"
+      unit: "share"
+
+  record_size: 14
+  encoding: "absolute"
+  notes: |
+    Record layout is inferred from public documentation.
+    Price is absolute float32 (not LEB128 differential).
+    Volume is float32 (not tdx_float as in K-line).
+    Awaiting golden sample verification.
+
+# =============================================================================
+# 上下文
+# =============================================================================
+context:
+  price_scale: 1
+  trading_hours: "09:30-11:30, 13:00-15:00"
+  total_minutes: 240
+
+# =============================================================================
+# 相关命令
+# =============================================================================
+related_commands:
+  - spec_id: "0x0FB4"
+    name: "minute_history"
+    description: "Historical minute data for a specific date"
+    family: "7709"
+  - spec_id: "0x0FEB"
+    name: "minute_recent"
+    description: "Recent multi-day minute data"
+    family: "7709"
+
+# =============================================================================
+# 参考
+# =============================================================================
+golden_samples:
+  - "tests/golden/quotation/0x0537_minute_today_600000/20260831-125354/payload.bin"
+
+parser_reference: "tstdx/protocol/parsers/std7709_extra.py::MinuteTodayParser"

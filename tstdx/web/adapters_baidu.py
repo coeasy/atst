@@ -1,0 +1,403 @@
+# Copyright (c) 2026 tstdx contributors
+# Licensed under the MIT License
+
+"""百度财经数据源适配器（B0，§OPTIMIZATION_PLAN_v3）。
+
+接口事实（2026-09-03 实测，finance.pae.baidu.com/selfselect/getstockquotation）：
+* 日/周/月 K 线（含 MA 指标）: ``group=quotation_kline_ab&ktype={1|2|3}``
+  - ``all=1`` 只返回服务端缓存窗口（实测滞后数月的快照），**不可靠**；
+    取全量须走分页 ``all=0&count≤250&end_time=<unix>``，end_time 为**闭区间**，
+    向前翻页取最旧 bar 的 ``time`` 减 1 天。
+  - 响应 ``Result`` 为 list，**旧→新**排列；每条含 ``kline``/``ma5``/``ma10``/``ma20``。
+* 当日分时 / 五档 / 逐笔 / 快照: ``group=quotation_minute_ab&all=1``
+  - 响应 ``Result`` 为 dict：``priceinfo``(分时 266 点) / ``buyinfos``+``askinfos``(五档)
+    / ``detailinfos``(逐笔 200 条) / ``cur``(快照) / ``basicinfos``。
+
+口径坑（关键，实测验证）
+------------------------
+* K 线 JSON 的 ``kline.volume`` 字段实为**成交额(元)**、``kline.amount`` 实为
+  **成交量(手)**——与常规命名相反，解析层必须交换映射：
+  ``Bar.volume = int(float(kline.amount) * 100)``、``Bar.amount = float(kline.volume)``。
+* 分时 ``priceinfo.volume`` 为「手」（×100 到股）；``amount`` 为含『万』字符串
+  （如 ``"1615.16万"``），优先用 ``oriAmount``（元）。
+* 五档 ``bidvolume``/``askvolume`` 为「手」（×100 到股）。
+* 逐笔 ``detailinfos.volume`` 为「手」；``bsFlag``：``B``=买(0) ``S``=卖(1)。
+
+约束
+----
+* 仅 A 股（``stockType=ab``）；港股/美股传入抛明确错误。**指数同样不支持**：
+  2026-09-06 实测 ``isIndex=true`` 参数无效（``000001`` 恒返回深市个股平安
+  银行而非上证指数；带市场前缀/1A0001/999999 均空结果）——沪指/成指请走
+  TDX 主站或腾讯/东财源。
+* 非官方公开接口，随时可能改版/下线——继承 :class:`~tstdx.web.base.BaseWebSource`
+  的失败计数 + 下线检测（:class:`~tstdx.errors.SourceDeprecated`）。
+* 不提供资金流（``vapi/v1/fundflow`` 2026-05 起返回空，a-stock-data issue #5）。
+"""
+
+from __future__ import annotations
+
+import json
+import time as _time
+from collections.abc import Sequence
+from typing import Any
+
+from ..domain.models import Bar, Level, MinutePoint, Quote, Tick
+from ..errors import SourceDeprecated, WebSourceError
+from .base import BaseWebSource
+from .base import num_f as _f
+from .sources import BAIDU
+
+__all__ = ["BaiduSource"]
+
+#: 周期别名 → ktype
+_KLINE_KTYPES: dict[str, int] = {
+    "day": 1,
+    "d": 1,
+    "1d": 1,
+    "week": 2,
+    "w": 2,
+    "1w": 2,
+    "month": 3,
+    "m": 3,
+    "1M": 3,
+    "1m": 3,
+}
+#: 服务端单页根数上限
+_MAX_COUNT = 250
+
+
+def _ktype(period: str) -> int:
+    try:
+        return _KLINE_KTYPES[period]
+    except KeyError:
+        raise ValueError(
+            f"百度 K 线周期 {period!r} 不支持；可选: {sorted(set(_KLINE_KTYPES.values()))}"
+        ) from None
+
+
+def _vol_to_shares(v: Any) -> int:
+    """手 → 股。"""
+    return int(round(_f(v) * 100.0))
+
+
+def _parse_amount(v: Any, ori: Any) -> float:
+    """分时 amount 字段：优先 oriAmount（元）；否则解析含『万/亿』字符串。"""
+    if ori is not None:
+        try:
+            return float(ori)
+        except (TypeError, ValueError):
+            pass
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip()
+    if not s:
+        return 0.0
+    try:
+        if s.endswith("万"):
+            return float(s[:-1]) * 10_000.0
+        if s.endswith("亿"):
+            return float(s[:-1]) * 100_000_000.0
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+def _pure_code(symbol: str) -> str:
+    """去市场前缀（sh/sz/bj）取裸代码；仅 A 股。"""
+    s = symbol.lower()
+    if s[:2] in ("sh", "sz", "bj") and s[2:].isdigit():
+        return s[2:]
+    if s.isdigit():
+        return s
+    raise WebSourceError(
+        f"百度财经仅支持 A 股（sh/sz/bj），收到 {symbol!r}",
+        context={"source": BAIDU, "symbol": symbol},
+    )
+
+
+class BaiduSource(BaseWebSource):
+    """百度财经数据源（finance.pae.baidu.com/selfselect）。
+
+    能力：``kline``（日/周/月，含 MA5/MA10/MA20 指标）/ ``minute``（当日分时）
+    / ``tick``（逐笔）/ ``quote``（五档快照）。
+
+    Quick start::
+
+        from tstdx.web.adapters_baidu import BaiduSource
+        src = BaiduSource()
+        bars   = src.fetch_kline("600519", count=320)     # -> list[Bar]
+        minute = src.fetch_minute("600519")               # -> list[MinutePoint]
+        ticks  = src.fetch_ticks("600519")                # -> list[Tick]
+        quote  = src.fetch_quote("600519")                # -> Quote
+        src.close()
+    """
+
+    BASE = "https://finance.pae.baidu.com/selfselect/getstockquotation"
+    encoding = "utf-8"  # 百度 JSON 为 UTF-8
+
+    @property
+    def source_name(self) -> str:
+        return BAIDU
+
+    def build_url(self, symbols: Sequence[str], **kwargs: Any) -> str:
+        """构造 URL（默认 quote 快照路径，供基类 :meth:`fetch` 使用）。"""
+        code = _pure_code(symbols[0])
+        group = str(kwargs.get("group", "quotation_kline_ab"))
+        params = [
+            f"code={code}",
+            "stockType=ab",
+            f"group={group}",
+            "finClientType=pc",
+        ]
+        if group == "quotation_kline_ab":
+            kt = _ktype(str(kwargs.get("period", "day")))
+            count = int(kwargs.get("count", 250))
+            end = int(kwargs.get("end_time") or _time.time())
+            params += [f"ktype={kt}", "all=0", f"count={count}", f"end_time={end}"]
+        else:
+            params += ["all=1"]
+        return self.BASE + "?" + "&".join(params)
+
+    # -- 私有工具 --------------------------------------------------------- #
+    def _get_json(self, url: str) -> Any:
+        text = self._request_text(url, encoding="utf-8")
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise SourceDeprecated(
+                "百度财经返回非 JSON",
+                context={"source": BAIDU, "sample": text[:200]},
+                cause=exc,
+            ) from exc
+
+    # -- K 线 ------------------------------------------------------------- #
+    def fetch_kline(
+        self,
+        symbol: str,
+        *,
+        period: str = "day",
+        count: int = 320,
+        end_time: int | None = None,
+    ) -> list[Bar]:
+        """日/周/月 K 线（含 MA5/MA10/MA20 指标于 ``extra``）。
+
+        Parameters
+        ----------
+        symbol:
+            A 股代码（``600519`` / ``sh600519`` / ``sz301086``）。
+        period:
+            ``day`` / ``week`` / ``month``。
+        count:
+            返回根数；超过单页上限(250)自动分页向前翻页收集。
+        end_time:
+            起始游标（unix 秒）；缺省当前时间。用于断点续取。
+
+        Returns
+        -------
+        旧→新排列的 ``list[Bar]``。指标 ma5/ma10/ma20 挂到 ``extra``。
+        """
+        code = _pure_code(symbol)
+        et = int(end_time or _time.time())
+        raw: list[Bar] = []
+        while len(raw) < count:
+            page_count = min(_MAX_COUNT, count - len(raw))
+            url = self.build_url(
+                [code],
+                group="quotation_kline_ab",
+                period=period,
+                count=page_count,
+                end_time=et,
+            )
+            page = self._parse_kline(self._get_json(url), code)
+            if not page:
+                break
+            raw.extend(page)
+            et = page[0].extra["_baidu_time"] - 1  # 最旧 bar 减 1 天向前翻页
+            if len(page) < page_count:
+                break
+        # 跨页整体排序（旧→新）并截断到 count
+        raw.sort(key=lambda b: b.extra["_baidu_time"])
+        bars = raw[-count:]
+        # 去内部游标键
+        for b in bars:
+            b.extra.pop("_baidu_time", None)
+        return bars
+
+    def _parse_kline(self, payload: Any, code: str) -> list[Bar]:
+        res = payload.get("Result") or []
+        if not isinstance(res, list):
+            return []
+        out: list[Bar] = []
+        for row in res:
+            k = row.get("kline") if isinstance(row, dict) else None
+            if not isinstance(k, dict):
+                continue
+            out.append(
+                Bar(
+                    datetime=str(row.get("date", "")),
+                    open=_f(k.get("open")),
+                    high=_f(k.get("high")),
+                    low=_f(k.get("low")),
+                    close=_f(k.get("close")),
+                    # 口径坑：volume 字段=成交额(元)；amount 字段=成交量(手)
+                    volume=_vol_to_shares(k.get("amount")),
+                    amount=_f(k.get("volume")),
+                    extra={
+                        "pre_close": _f(k.get("preClose")),
+                        "change": _f(k.get("increase")),
+                        "pct_change": _f(str(k.get("netChangeRatio")).rstrip("%")),
+                        "turnover_rate": _f(k.get("turnoverratio")),
+                        "ma5": _f((row.get("ma5") or {}).get("avgPrice")),
+                        "ma10": _f((row.get("ma10") or {}).get("avgPrice")),
+                        "ma20": _f((row.get("ma20") or {}).get("avgPrice")),
+                        "_baidu_time": int(_f(row.get("time"), 0.0)),
+                    },
+                )
+            )
+        # 旧→新（接口分页可能交叉，这里统一排序去重）
+        out.sort(key=lambda b: b.extra["_baidu_time"])
+        seen: set[str] = set()
+        uniq: list[Bar] = []
+        for b in out:
+            if b.datetime in seen:
+                continue
+            seen.add(b.datetime)
+            uniq.append(b)
+        return uniq
+
+    def parse_bars(self, text: str, symbol: str, *, period: str = "day") -> list[Bar]:
+        code = _pure_code(symbol)
+        return self._parse_kline(self._loads(text), code)
+
+    # -- 分时 ------------------------------------------------------------- #
+    def fetch_minute(self, symbol: str) -> list[MinutePoint]:
+        """当日 1 分钟分时序列（旧→新）。"""
+        code = _pure_code(symbol)
+        url = self.build_url([code], group="quotation_minute_ab")
+        return self._parse_minute(self._get_json(url), code)
+
+    def _parse_minute(self, payload: Any, code: str) -> list[MinutePoint]:
+        res = payload.get("Result")
+        if not isinstance(res, dict):
+            return []
+        out: list[MinutePoint] = []
+        for p in res.get("priceinfo") or []:
+            if not isinstance(p, dict):
+                continue
+            ts = str(p.get("datetime") or "")
+            out.append(
+                MinutePoint(
+                    time=ts,
+                    price=_f(p.get("price")),
+                    avg_price=_f(p.get("avgPrice")),
+                    volume=_vol_to_shares(p.get("volume")),
+                    amount=_parse_amount(p.get("amount"), p.get("oriAmount")),
+                )
+            )
+        return out
+
+    def parse_minute(self, text: str, symbol: str) -> list[MinutePoint]:
+        code = _pure_code(symbol)
+        return self._parse_minute(self._loads(text), code)
+
+    # -- 逐笔 ------------------------------------------------------------- #
+    def fetch_ticks(self, symbol: str, *, limit: int = 200) -> list[Tick]:
+        """当日逐笔成交明细（默认 200 条）。"""
+        code = _pure_code(symbol)
+        url = self.build_url([code], group="quotation_minute_ab")
+        return self._parse_ticks(self._get_json(url), code, limit=limit)
+
+    def _parse_ticks(self, payload: Any, code: str, *, limit: int = 200) -> list[Tick]:
+        res = payload.get("Result")
+        if not isinstance(res, dict):
+            return []
+        out: list[Tick] = []
+        for d in (res.get("detailinfos") or [])[:limit]:
+            if not isinstance(d, dict):
+                continue
+            flag = str(d.get("bsFlag", "")).upper()
+            if flag == "B":
+                direction = 0
+            elif flag == "S":
+                direction = 1
+            else:
+                direction = 2
+            out.append(
+                Tick(
+                    time=str(d.get("formatTime") or d.get("time") or ""),
+                    price=_f(d.get("price")),
+                    volume=_vol_to_shares(d.get("volume")),
+                    num=len(out),
+                    buyorsell=direction,
+                )
+            )
+        return out
+
+    def parse_ticks(self, text: str, symbol: str, *, limit: int = 200) -> list[Tick]:
+        code = _pure_code(symbol)
+        return self._parse_ticks(self._loads(text), code, limit=limit)
+
+    # -- 五档快照 ---------------------------------------------------------- #
+    def fetch_quote(self, symbol: str) -> Quote:
+        """五档快照（含分时收盘价、均价、涨跌、五档盘口）。"""
+        code = _pure_code(symbol)
+        url = self.build_url([code], group="quotation_minute_ab")
+        return self._parse_quote(self._get_json(url), code)
+
+    def _parse_quote(self, payload: Any, code: str) -> Quote:
+        res = payload.get("Result")
+        if not isinstance(res, dict):
+            return Quote(code=code)
+        cur = res.get("cur") or {}
+        basic = res.get("basicinfos") or {}
+        price = _f(cur.get("price"))
+        increase = _f(cur.get("increase"))
+        q = Quote(
+            code=str(basic.get("code") or code),
+            datetime=str(cur.get("time") or ""),
+            price=price,
+            last_close=round(price - increase, 4) if increase else 0.0,
+            volume=_vol_to_shares(cur.get("totalVolume")),
+            amount=_f(cur.get("totalAmount")),
+        )
+        q.extra = {
+            "name": str(basic.get("name") or ""),
+            "avg_price": _f(cur.get("avgPrice")),
+            "pct_change": _f(str(cur.get("ratio")).rstrip("%")),
+        }
+        for lv in (res.get("buyinfos") or [])[:5]:
+            if isinstance(lv, dict):
+                q.bid.append(Level(_f(lv.get("bidprice")), _vol_to_shares(lv.get("bidvolume"))))
+        for lv in (res.get("askinfos") or [])[:5]:
+            if isinstance(lv, dict):
+                q.ask.append(Level(_f(lv.get("askprice")), _vol_to_shares(lv.get("askvolume"))))
+        return q
+
+    def parse_quote(self, text: str, symbol: str) -> Quote:
+        code = _pure_code(symbol)
+        return self._parse_quote(self._loads(text), code)
+
+    # -- 基类出口 ---------------------------------------------------------- #
+    def parse(self, text: str, symbols: Sequence[str], **kwargs: Any) -> list[Any]:
+        """多态出口：按 kwargs 决定解析器（供 :meth:`fetch` 及直接 parse 调用）。"""
+        code = _pure_code(symbols[0])
+        kind = str(kwargs.get("kind") or kwargs.get("group", "quotation_kline_ab"))
+        payload = self._loads(text)
+        if "minute" in kind:
+            return self._parse_minute(payload, code)
+        if kind == "tick":
+            return self._parse_ticks(payload, code)
+        if kind == "quote":
+            return [self._parse_quote(payload, code)]
+        return self._parse_kline(payload, code)
+
+    @staticmethod
+    def _loads(text: str) -> Any:
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise SourceDeprecated(
+                "百度财经返回非 JSON",
+                context={"source": BAIDU, "sample": text[:200]},
+                cause=exc,
+            ) from exc

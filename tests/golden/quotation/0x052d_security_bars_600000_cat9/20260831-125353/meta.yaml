@@ -1,0 +1,22 @@
+schema: 1
+source: "self-captured"
+family: quotation
+command: 0x52d
+command_name: SECURITY_BARS
+tag: 600000_cat9
+note: 600000 周期 9，10 根
+host: "218.75.126.9:7709"
+captured_at: "2026-08-31T12:53:53+0800"
+request:
+  method: 0x52d
+  body_hex: 01003630303030300900010000000a0000000000000000000000
+  body_len: 26
+response:
+  zip_size: 180
+  unzip_size: 180
+  compressed: false
+  payload_len: 180
+  sha256: 6e0546879506e67689d8921d5bc89b507072fbf247a298cbd6f53e65639d4d81
+parse_ctx:
+  category: 9
+elapsed_ms: 25.95

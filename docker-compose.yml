@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  tstdx:
+    build: .
+    container_name: tstdx
+    ports:
+      - "8000:8000"
+    environment:
+      - TSTDX_LOG_LEVEL=INFO
+      - TSTDX_CACHE_DIR=/app/cache
+    volumes:
+      - tstdx-cache:/app/cache
+      - tstdx-data:/app/data
+    command: ["tstdx", "serve", "--bind", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+
+  tstdx-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tstdx-dev
+    ports:
+      - "8000:8000"
+      # 8001 预留：WebSocket RPC 服务需单独进程
+      # python -m tstdx.integration.ws_server（tstdx serve 不启动 WS）
+      - "8001:8001"
+    environment:
+      - TSTDX_LOG_LEVEL=DEBUG
+      - TSTDX_FEEDBACK=0
+    volumes:
+      - .:/app
+    command: ["python", "-m", "tstdx.cli", "serve", "--bind", "0.0.0.0", "--port", "8000"]
+    restart: on-failure
+
+volumes:
+  tstdx-cache:
+    driver: local
+  tstdx-data:
+    driver: local

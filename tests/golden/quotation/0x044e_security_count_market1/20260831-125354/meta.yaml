@@ -1,0 +1,21 @@
+schema: 1
+source: "self-captured"
+family: quotation
+command: 0x44e
+command_name: SECURITY_COUNT
+tag: market1
+note: 上证证券数量
+host: "218.75.126.9:7709"
+captured_at: "2026-08-31T12:53:54+0800"
+request:
+  method: 0x44e
+  body_hex: 010000000000
+  body_len: 6
+response:
+  zip_size: 2
+  unzip_size: 2
+  compressed: false
+  payload_len: 2
+  sha256: 0d67e6e921d0ad2499827d0d422274269f21a4d62da5264ffa0ba8607aac14bc
+parse_ctx: {}
+elapsed_ms: 24.15

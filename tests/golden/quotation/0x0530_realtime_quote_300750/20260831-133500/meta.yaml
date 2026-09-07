@@ -1,0 +1,24 @@
+schema: 1
+source: "self-captured"
+family: quotation
+command: 0x530
+command_name: REALTIME_QUOTE
+tag: 300750
+note: "300750 实时快照（market=0，请求字节已按反转语义换算）"
+host: "218.75.126.9:7709"
+captured_at: "2026-08-31T13:35:00+0800"
+request:
+  method: 0x530
+  body_hex: 0101333030373530
+  body_len: 8
+response:
+  zip_size: 73
+  unzip_size: 73
+  compressed: false
+  payload_len: 73
+  sha256: 58d163b8ce604419270b455f4e3f9fc351e9a43092c025e29dd2b6fce814f378
+parse_ctx:
+  code: 300750
+  market: 0
+  price_scale: 100
+elapsed_ms: 27.39

@@ -1,0 +1,46 @@
+{
+  "schema": 2,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x52d",
+  "command_name": "SECURITY_BARS",
+  "tag": "300750_cat4",
+  "note": "300750 周期 4，10 根",
+  "host": "218.75.126.9:7709",
+  "local_host": "WPS-PM",
+  "market": 0,
+  "code": "300750",
+  "captured_at": "2026-09-02T03:32:06.929549+00:00",
+  "elapsed_ms": 28.16,
+  "request": {
+    "method": "0x52d",
+    "body_hex": "00003330303735300400010000000a0000000000000000000000",
+    "body_len": 26
+  },
+  "response": {
+    "zip_size": 206,
+    "unzip_size": 206,
+    "compressed": false,
+    "payload_len": 206,
+    "sha256": "7421f51174100d2454e1f6e9f3e493312c15657123b214547d808d6b5f07ace9"
+  },
+  "record_size_hypothesis": 0,
+  "record_count_hypothesis": 0,
+  "compression": {
+    "codec": "none",
+    "compressed_size": null
+  },
+  "parse_ctx": {
+    "category": 4,
+    "market": 0,
+    "code": "300750"
+  },
+  "tool": {
+    "name": "tstdx.tools.capture",
+    "version": "0.1.0"
+  },
+  "legal": {
+    "ack": true,
+    "allow_trading_hours": false
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "source": "synthetic",
+  "derived_from": "0x044e_security_count_market1/20260831-125354",
+  "family": "quotation",
+  "command": "0x44e",
+  "command_name": "SECURITY_COUNT",
+  "tag": "601398_m1_syn",
+  "note": "合成衍生样本：解析器回归基线，非主站真实响应",
+  "captured_at": "2026-08-31T14:32:49+00:00",
+  "request": {
+    "method": "0x44e",
+    "body_hex": "01363031333938",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 2,
+    "unzip_size": 2,
+    "compressed": false,
+    "payload_len": 2,
+    "sha256": "6a246bf891ac115034cd1e95901b32e5cfb2001600ed0e43a1b9f62afaac779b"
+  },
+  "parse_ctx": {
+    "code": "601398",
+    "market": 1
+  }
+}

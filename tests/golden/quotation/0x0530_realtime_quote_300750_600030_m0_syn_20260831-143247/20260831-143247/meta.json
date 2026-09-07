@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "source": "synthetic",
+  "derived_from": "0x0530_realtime_quote_300750/20260831-133500",
+  "family": "quotation",
+  "command": "0x530",
+  "command_name": "REALTIME_QUOTE",
+  "tag": "600030_m0_syn",
+  "note": "合成衍生样本：解析器回归基线，非主站真实响应",
+  "captured_at": "2026-08-31T14:32:48+00:00",
+  "request": {
+    "method": "0x530",
+    "body_hex": "00363030303330",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 73,
+    "unzip_size": 73,
+    "compressed": false,
+    "payload_len": 73,
+    "sha256": "ec6795d5ac7cf33335ea4616b520f5b7208411dbbda9c3c5f554b5447f8b6a32"
+  },
+  "parse_ctx": {
+    "code": "600030",
+    "market": 0,
+    "price_scale": 100
+  }
+}

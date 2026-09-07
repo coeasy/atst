@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x537",
+  "command_name": "MINUTE_TODAY",
+  "tag": "600000",
+  "note": "分时图数据",
+  "host": "218.75.126.9:7709",
+  "captured_at": "2026-08-31T12:53:54+0800",
+  "request": {
+    "method": "0x537",
+    "body_hex": "363030303030010000000000",
+    "body_len": 12
+  },
+  "response": {
+    "zip_size": 4,
+    "unzip_size": 4,
+    "compressed": false,
+    "payload_len": 4,
+    "sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  "parse_ctx": {},
+  "elapsed_ms": 24.77
+}

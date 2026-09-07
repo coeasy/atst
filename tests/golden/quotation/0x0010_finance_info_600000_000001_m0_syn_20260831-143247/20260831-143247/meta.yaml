@@ -1,0 +1,22 @@
+schema: 1
+source: "synthetic"
+derived_from: "0x0010_finance_info_600000/20260831-125354"
+family: "quotation"
+command: "0x10"
+command_name: "FINANCE_INFO"
+tag: "000001_m0_syn"
+note: "合成衍生样本：解析器回归基线，非主站真实响应"
+captured_at: "2026-08-31T14:32:48+00:00"
+request:
+  method: "0x10"
+  body_hex: "00303030303031"
+  body_len: 8
+response:
+  zip_size: 14302
+  unzip_size: 14302
+  compressed: False
+  payload_len: 14302
+  sha256: "30ffebc5066f9f0e0c0835e82998256c67336db02287abc4c00ff9d271294f15"
+parse_ctx:
+  code: "000001"
+  market: 0

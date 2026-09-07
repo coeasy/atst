@@ -1,0 +1,70 @@
+# =============================================================================
+# MAC_BLOCK_QUOTE — 板块行情
+# =============================================================================
+# 命令号: 0x2000
+# 家族:  MAC 板块分析协议族（7709 MAC 服务器）
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 板块行情（代码 + 涨跌幅 + 现价）。
+# =============================================================================
+
+spec_id: "0x2000"
+name: "mac_block_quote"
+family: "MAC"
+version: "1.0"
+description: "MAC block quote (pct change + price)"
+status: "inferred"
+
+request:
+  length: 4
+  fields:
+    - name: "block_id"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "板块 ID"
+    - name: "start"
+      offset: 2
+      type: "uint16"
+      length: 2
+      description: "起始偏移（分页）"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "返回记录条数"
+  fields:
+    - name: "code"
+      offset: 0
+      type: "string[6]"
+      length: 6
+      description: "股票/板块代码"
+      format: "gbk"
+    - name: "pct_change"
+      offset: 6
+      type: "float32"
+      length: 4
+      description: "涨跌幅（%）"
+    - name: "price"
+      offset: 10
+      type: "float32"
+      length: 4
+      description: "现价"
+  record_size: 14
+  encoding: "raw"
+
+context:
+  record_size: 14
+  notes: |
+    布局由 test_7727_goods_mac_coverage.py::TestMacBlockLayout::
+    test_2000_block_quote 合成载荷锁定（``<H count>`` +
+    ``<6s code><f4 涨跌幅><f4 现价>``）。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归（MAC 族布局公开资料极少，全部待样本）。
+
+parser_reference: "tstdx/protocol/parsers/mac.py::MacBlockQuoteParser"

@@ -1,0 +1,45 @@
+{
+  "schema": 2,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0xf",
+  "command_name": "CAPITAL_CHANGES",
+  "tag": "600000",
+  "note": "除权除息信息",
+  "host": "218.75.126.9:7709",
+  "local_host": "WPS-PM",
+  "market": 1,
+  "code": "600000",
+  "captured_at": "2026-09-02T03:31:53.845387+00:00",
+  "elapsed_ms": 67.95,
+  "request": {
+    "method": "0xf",
+    "body_hex": "3630303030300100",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 8453,
+    "unzip_size": 26333,
+    "compressed": true,
+    "payload_len": 26333,
+    "sha256": "d72e0361f0bf52ba744fafc1f8a0f3bdb0d800ac097edecb4b0672eaf61b9c17"
+  },
+  "record_size_hypothesis": 0,
+  "record_count_hypothesis": 0,
+  "compression": {
+    "codec": "none",
+    "compressed_size": null
+  },
+  "parse_ctx": {
+    "market": 1,
+    "code": "600000"
+  },
+  "tool": {
+    "name": "tstdx.tools.capture",
+    "version": "0.1.0"
+  },
+  "legal": {
+    "ack": true,
+    "allow_trading_hours": false
+  }
+}

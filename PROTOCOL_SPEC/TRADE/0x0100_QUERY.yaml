@@ -1,0 +1,135 @@
+# =============================================================================
+# QUERY — 账户 / 持仓 / 委托 / 成交查询
+# =============================================================================
+# 命令号: 0x0100
+# 家族:  TRADE 交易协议族
+# 层级:  L1（自洽帧布局，模拟器回路验证）
+# 状态:  draft（洁净室推断占位）
+#
+# 描述: 按查询类别（category）拉取资金、持仓、当日委托、当日成交、可撤单、
+#       股东代码等数据。请求体为 <H category>，响应体为
+#       <H category><H count> + 记录列表；各类别记录字段布局不同。
+# =============================================================================
+
+spec_id: "0x0100"
+name: "query"
+family: "TRADE"
+version: "0.1"
+description: "Trade account / position / order / deal query (multi-category)"
+status: "draft"
+aliases: ["trade_query"]
+
+# =============================================================================
+# 请求体
+# =============================================================================
+request:
+  length: 2
+  fields:
+    - name: "category"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "查询类别（0=资金 1=持仓 2=当日委托 3=当日成交 4=可撤单 5=股东代码）"
+      format: null
+      value: null
+
+# =============================================================================
+# 响应体
+# =============================================================================
+response:
+  header:
+    - name: "category"
+      type: "uint16"
+      description: "回显查询类别"
+    - name: "count"
+      type: "uint16"
+      description: "记录条数"
+  fields:
+    - name: "records"
+      offset: null
+      type: "raw[]"
+      length: null
+      description: "记录列表；布局随 category 变化（见 context.category_variants）"
+  record_size: null
+  encoding: "raw"
+
+# =============================================================================
+# 上下文
+# =============================================================================
+context:
+  port: 7702
+  price_scale: 100
+  header_layout: "8 字节: <H total_len><H cmd><H seq><H flags|status>"
+  category_variants:
+    - category: 0
+      name: "cash"
+      record_fields:
+        - {name: "available_cash", type: "uint32", unit: "分", description: "可用资金"}
+        - {name: "frozen_cash", type: "uint32", unit: "分", description: "冻结资金"}
+        - {name: "market_value", type: "uint32", unit: "分", description: "持仓市值"}
+        - {name: "total_asset", type: "uint32", unit: "分", description: "总资产"}
+        - {name: "debt", type: "int32", unit: "分", description: "负债"}
+    - category: 1
+      name: "stocks"
+      record_fields:
+        - {name: "code", type: "string[6]", description: "证券代码（ASCII 右补 NUL）"}
+        - {name: "name", type: "string[]", format: "gbk", description: "证券名称"}
+        - {name: "qty", type: "uint32", unit: "股", description: "持仓数量"}
+        - {name: "available_qty", type: "uint32", unit: "股", description: "可用数量"}
+        - {name: "cost_price", type: "uint32", unit: "分", description: "成本价"}
+        - {name: "last_price", type: "uint32", unit: "分", description: "最新价"}
+        - {name: "profit", type: "int32", unit: "分", description: "浮动盈亏"}
+    - category: 2
+      name: "order_of_today"
+      record_fields:
+        - {name: "order_id", type: "uint16", description: "委托编号"}
+        - {name: "code", type: "string[6]", description: "证券代码"}
+        - {name: "name", type: "string[]", format: "gbk", description: "证券名称"}
+        - {name: "side", type: "uint8", description: "买卖方向（0=买 1=卖）"}
+        - {name: "price", type: "uint32", unit: "分", description: "委托价"}
+        - {name: "qty", type: "uint32", unit: "股", description: "委托数量"}
+        - {name: "filled_qty", type: "uint32", unit: "股", description: "已成交数量"}
+        - {name: "status", type: "uint8", description: "委托状态（0=已报 1=部分 2=全成 3=已撤）"}
+        - {name: "cancelable", type: "uint8", description: "是否可撤（1=可撤）"}
+    - category: 3
+      name: "deal_of_today"
+      record_fields:
+        - {name: "deal_id", type: "uint16", description: "成交编号"}
+        - {name: "order_id", type: "uint16", description: "关联委托编号"}
+        - {name: "code", type: "string[6]", description: "证券代码"}
+        - {name: "name", type: "string[]", format: "gbk", description: "证券名称"}
+        - {name: "side", type: "uint8", description: "买卖方向"}
+        - {name: "price", type: "uint32", unit: "分", description: "成交价"}
+        - {name: "qty", type: "uint32", unit: "股", description: "成交数量"}
+        - {name: "amount", type: "uint32", unit: "分", description: "成交金额"}
+        - {name: "time", type: "string[]", format: "gbk", description: "成交时间 HHMMSS"}
+    - category: 4
+      name: "cancelable_order"
+      record_fields:
+        - {name: "order_id", type: "uint16", description: "委托编号"}
+        - {name: "code", type: "string[6]", description: "证券代码"}
+        - {name: "name", type: "string[]", format: "gbk", description: "证券名称"}
+        - {name: "side", type: "uint8", description: "买卖方向"}
+        - {name: "price", type: "uint32", unit: "分", description: "委托价"}
+        - {name: "qty", type: "uint32", unit: "股", description: "委托数量"}
+        - {name: "filled_qty", type: "uint32", unit: "股", description: "已成交数量"}
+    - category: 5
+      name: "shareholders_code"
+      record_fields:
+        - {name: "code", type: "string[]", format: "gbk", description: "股东代码"}
+        - {name: "name", type: "string[]", format: "gbk", description: "股东姓名"}
+        - {name: "market", type: "uint8", description: "市场（推断）"}
+
+error_codes:
+  - code: 0
+    meaning: "success"
+  - code: 1
+    meaning: "未登录或会话失效"
+  - code: 2
+    meaning: "不支持的查询类别"
+
+notes: |
+  查询类别编号沿用 TDX 生态公开约定（如 pytdx TdxTradeApiParams）。
+  各类别记录字段布局见 context.category_variants。
+  实现参考: tstdx/trade/frames.py (build_query_body / parse_query_response) 与
+  tstdx/trade/constants.py 的 QUERY_CATEGORY_* 常量。

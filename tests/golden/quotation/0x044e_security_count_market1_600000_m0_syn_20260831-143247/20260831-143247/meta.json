@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "source": "synthetic",
+  "derived_from": "0x044e_security_count_market1/20260831-125354",
+  "family": "quotation",
+  "command": "0x44e",
+  "command_name": "SECURITY_COUNT",
+  "tag": "600000_m0_syn",
+  "note": "合成衍生样本：解析器回归基线，非主站真实响应",
+  "captured_at": "2026-08-31T14:32:47+00:00",
+  "request": {
+    "method": "0x44e",
+    "body_hex": "00363030303030",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 2,
+    "unzip_size": 2,
+    "compressed": false,
+    "payload_len": 2,
+    "sha256": "fd7e7422d5f2d0113fffb405a5ea4d3d068e851f43a8b55b97abe68b574b13da"
+  },
+  "parse_ctx": {
+    "code": "600000",
+    "market": 0
+  }
+}

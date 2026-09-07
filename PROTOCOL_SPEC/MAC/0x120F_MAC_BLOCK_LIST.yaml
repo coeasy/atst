@@ -1,0 +1,66 @@
+# =============================================================================
+# MAC_BLOCK_LIST — 板块列表
+# =============================================================================
+# 命令号: 0x120F
+# 家族:  MAC 板块分析协议族（7709 MAC 服务器）
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 板块列表（板块名称 + 板块 ID）。F2 板块数据在线化核心入口。
+# =============================================================================
+
+spec_id: "0x120F"
+name: "mac_block_list"
+family: "MAC"
+version: "1.0"
+description: "MAC block list (name + block id)"
+status: "inferred"
+
+request:
+  length: 4
+  fields:
+    - name: "block_type"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "板块类型（0=概念 / 1=行业 / 2=地域）"
+    - name: "start"
+      offset: 2
+      type: "uint16"
+      length: 2
+      description: "起始偏移（分页）"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "返回记录条数"
+  fields:
+    - name: "name"
+      offset: 0
+      type: "string[8]"
+      length: 8
+      description: "板块名称（GBK，NUL 补齐）"
+      format: "gbk"
+    - name: "block_id"
+      offset: 8
+      type: "uint16"
+      length: 2
+      description: "板块 ID"
+  record_size: 10
+  encoding: "raw"
+
+context:
+  record_size: 10
+  notes: |
+    布局由 test_7727_goods_mac_coverage.py::TestMacBlockLayout::
+    test_120f_block_list 与 client 接线（MacClient.block_list → 0x120F）
+    合成载荷锁定（``<H count>`` + ``<8s name><H id>``）。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归（MAC 族布局公开资料极少，全部待样本）。
+  真机样本到位后翻转 status 并补 golden_samples。
+
+parser_reference: "tstdx/protocol/parsers/mac.py::MacBlockListParser"

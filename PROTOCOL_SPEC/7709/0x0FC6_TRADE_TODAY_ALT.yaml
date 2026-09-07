@@ -1,0 +1,132 @@
+# =============================================================================
+# TRADE_TODAY_ALT — 当日成交明细（备用命令号）
+# =============================================================================
+# 命令号: 0x0FC6
+# 家族:  7709 标准协议族
+# 层级:  D (已声明但未验证)
+# 状态:  inferred (备用命令号，布局与 0x0FC5 相同)
+#
+# 描述: 当日成交明细的备用命令号。部分主站可能使用 0x0FC6 而非 0x0FC5。
+#       布局与 0x0FC5 完全一致，仅命令号不同。
+# =============================================================================
+
+spec_id: "0x0fc6"
+name: "trade_today_alt"
+family: "7709"
+version: "1.0"
+description: "Trade details — alternate command number (same layout as 0x0FC5)"
+status: "inferred"
+aliases: ["history_trade", "trade_today_backup"]
+
+# =============================================================================
+# 请求体
+# =============================================================================
+request:
+  length: 12
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "Market ID (0=Shenzhen, 1=Shanghai)"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "Stock code (6 chars, null-padded)"
+      format: "gbk"
+    - name: "start"
+      offset: 8
+      type: "uint16"
+      length: 2
+      description: "Start index (0-based)"
+    - name: "count"
+      offset: 10
+      type: "uint16"
+      length: 2
+      description: "Number of records to request"
+
+# =============================================================================
+# 响应体（与 0x0FC5 相同）
+# =============================================================================
+response:
+  header:
+    - name: "record_count"
+      type: "uint16"
+      length: 2
+      description: "Number of trade records"
+
+  fields:
+    - name: "minute"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "Minutes since market open"
+      format: "minutes_from_open"
+    - name: "price"
+      offset: 2
+      type: "float32"
+      length: 4
+      description: "Transaction price"
+      unit: "yuan"
+    - name: "volume"
+      offset: 6
+      type: "float32"
+      length: 4
+      description: "Transaction volume"
+      unit: "share"
+    - name: "amount"
+      offset: 10
+      type: "float32"
+      length: 4
+      description: "Transaction amount"
+      unit: "yuan"
+    - name: "direction"
+      offset: 14
+      type: "uint8"
+      length: 1
+      description: "Trade direction flag"
+      values:
+        0: "buy (active buy)"
+        1: "sell (active sell)"
+        2: "neutral (aggregated)"
+
+  record_size: 15
+  encoding: "absolute"
+  notes: |
+    Layout is identical to 0x0FC5_TRADE_TODAY.yaml.
+    This command number is used as a backup in case 0x0FC5 is not
+    recognized by the server. The parser is the same (TradeTodayParser).
+    Not yet verified with golden samples.
+    P1e 三值矛盾收口（2026-09，F2 批次）与 0x0FC5 一致：守卫门槛 =
+    逐字段实际消费步长 = 15B（2+4+4+4+1）；**15B 消费，布局未真机锁定**，
+    待真机样本定标后修正。
+
+# =============================================================================
+# 上下文
+# =============================================================================
+context:
+  price_scale: 1
+  is_backup_command: true
+
+# =============================================================================
+# 相关命令
+# =============================================================================
+related_commands:
+  - spec_id: "0x0FC5"
+    name: "trade_today"
+    description: "Primary trade detail command"
+    family: "7709"
+  - spec_id: "0x0FB5"
+    name: "trade_history"
+    description: "Historical trade details (not yet implemented)"
+    family: "7709"
+
+# =============================================================================
+# 参考
+# =============================================================================
+# 布局与 0x0FC5 完全一致，共享同一份 golden 样本。
+golden_samples:
+  - "tests/golden/quotation/0x0fc5_trade_today_600000/20260831-125354/payload.bin"
+
+parser_reference: "tstdx/protocol/parsers/std7709_extra.py::TradeTodayParser (shared with 0x0FC5)"

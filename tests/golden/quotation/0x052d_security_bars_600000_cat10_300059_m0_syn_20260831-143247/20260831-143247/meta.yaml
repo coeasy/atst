@@ -1,0 +1,23 @@
+schema: 1
+source: "synthetic"
+derived_from: "0x052d_security_bars_600000_cat10/20260831-125353"
+family: "quotation"
+command: "0x52d"
+command_name: "SECURITY_BARS"
+tag: "300059_m0_syn"
+note: "合成衍生样本：解析器回归基线，非主站真实响应"
+captured_at: "2026-08-31T14:32:49+00:00"
+request:
+  method: "0x52d"
+  body_hex: "00333030303539"
+  body_len: 8
+response:
+  zip_size: 191
+  unzip_size: 191
+  compressed: False
+  payload_len: 191
+  sha256: "599308f1f3619f5cb058d31aa3e95d06751c0417f4940c083b520092c3b4795d"
+parse_ctx:
+  category: 10
+  code: "300059"
+  market: 0

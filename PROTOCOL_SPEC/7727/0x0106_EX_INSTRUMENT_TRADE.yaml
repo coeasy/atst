@@ -1,0 +1,82 @@
+# =============================================================================
+# EX_INSTRUMENT_TRADE — 扩展市场成交明细
+# =============================================================================
+# 命令号: 0x0106
+# 家族:  7727 扩展市场协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 扩展市场逐笔成交。
+# =============================================================================
+
+spec_id: "0x0106"
+name: "ex_instrument_trade"
+family: "7727"
+version: "1.0"
+description: "Extended market trade tick detail"
+status: "inferred"
+
+request:
+  length: 9
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "count"
+      offset: 8
+      type: "uint8"
+      length: 1
+      description: "请求条数"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "返回记录条数"
+  fields:
+    - name: "second"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "当日秒（HH*3600+MM*60+SS）"
+    - name: "price"
+      offset: 2
+      type: "float32"
+      length: 4
+      description: "成交价"
+      unit: "yuan"
+    - name: "volume"
+      offset: 6
+      type: "tdx_float"
+      length: 4
+      description: "成交量"
+    - name: "direction"
+      offset: 10
+      type: "uint8"
+      length: 1
+      description: "买卖方向（0=卖 / 1=买）"
+  record_size: 11
+  encoding: "raw"
+
+context:
+  record_size: 11
+  notes: |
+    布局由 test_7727_goods_mac_coverage.py::TestExExtendedLayout::
+    test_0106_instrument_trade 合成载荷锁定（``<H count>`` +
+    ``<H 秒><f4 价><tdx_float 量><B 方向>``）。与 GOODS 0x0204 同构。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。真机样本到位后翻转 status 并补
+  golden_samples。
+
+parser_reference: "tstdx/protocol/parsers/std7727.py::ExInstrumentTradeParser"

@@ -1,0 +1,37 @@
+schema: 2
+source: "self-captured"
+family: quotation
+command: 0xf
+command_name: CAPITAL_CHANGES
+tag: 600000
+note: 除权除息信息
+host: "218.75.126.9:7709"
+local_host: "WPS-PM"
+market: 1
+code: 600000
+captured_at: "2026-09-02T04:43:36.388623+00:00"
+elapsed_ms: 91.15
+request:
+  method: 0xf
+  body_hex: 3630303030300100
+  body_len: 8
+response:
+  zip_size: 4525
+  unzip_size: 13707
+  compressed: true
+  payload_len: 13707
+  sha256: b5b1baff3b1df98d5b381c33ee52c792d659777f1e281836dc870ab0e085c56c
+record_size_hypothesis: 0
+record_count_hypothesis: 0
+compression:
+  codec: none
+  compressed_size: null
+parse_ctx:
+  market: 1
+  code: 600000
+tool:
+  name: tstdx.tools.capture
+  version: 0.1.0
+legal:
+  ack: true
+  allow_trading_hours: false

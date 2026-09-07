@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "source": "synthetic",
+  "derived_from": "0x052d_security_bars_600000_cat4/20260831-125353",
+  "family": "quotation",
+  "command": "0x52d",
+  "command_name": "SECURITY_BARS",
+  "tag": "600000_m1_syn",
+  "note": "合成衍生样本：解析器回归基线，非主站真实响应",
+  "captured_at": "2026-08-31T14:32:49+00:00",
+  "request": {
+    "method": "0x52d",
+    "body_hex": "01363030303030",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 180,
+    "unzip_size": 180,
+    "compressed": false,
+    "payload_len": 180,
+    "sha256": "83bda419546d703fe19b8e64655efe0375257004f370518567a2028a0fe88ebd"
+  },
+  "parse_ctx": {
+    "category": 4,
+    "code": "600000",
+    "market": 1
+  }
+}

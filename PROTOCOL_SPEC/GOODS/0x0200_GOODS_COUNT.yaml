@@ -1,0 +1,54 @@
+# =============================================================================
+# GOODS_COUNT — 商品数量
+# =============================================================================
+# 命令号: 0x0200
+# 家族:  GOODS 商品语义协议族（期货 / 期权 / 外汇）
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 某商品分类下的品种数量。载荷即 2 字节 uint16。
+# =============================================================================
+
+spec_id: "0x0200"
+name: "goods_count"
+family: "GOODS"
+version: "1.0"
+description: "Goods category instrument count"
+status: "inferred"
+
+request:
+  length: 4
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "category"
+      offset: 2
+      type: "uint16"
+      length: 2
+      description: "商品分类"
+
+response:
+  fields:
+    - name: "count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "品种数量"
+  record_size: null
+  encoding: "raw"
+
+context:
+  single_value: true
+  notes: |
+    与 0x0100 / 0x0102 同构（载荷即 uint16 值）。布局由
+    test_7727_goods_mac_coverage.py::TestGoodsLayout::test_0200_count
+    合成载荷锁定。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归（见 tstdx/protocol/parsers/goods.py
+  模块 docstring）。真机样本到位后翻转 status 并补 golden_samples。
+
+parser_reference: "tstdx/protocol/parsers/goods.py::GoodsCountParser"

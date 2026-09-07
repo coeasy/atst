@@ -1,0 +1,44 @@
+{
+  "schema": 2,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x44e",
+  "command_name": "SECURITY_COUNT",
+  "tag": "market0",
+  "note": "深证证券数量",
+  "host": "218.75.126.9:7709",
+  "local_host": "WPS-PM",
+  "market": 0,
+  "code": "",
+  "captured_at": "2026-09-02T03:31:53.737179+00:00",
+  "elapsed_ms": 25.81,
+  "request": {
+    "method": "0x44e",
+    "body_hex": "000000000000",
+    "body_len": 6
+  },
+  "response": {
+    "zip_size": 2,
+    "unzip_size": 2,
+    "compressed": false,
+    "payload_len": 2,
+    "sha256": "fba6c96944737281661a81a2287e71cdd6d0fb307e73327d7f5425734f1ad107"
+  },
+  "record_size_hypothesis": 0,
+  "record_count_hypothesis": 0,
+  "compression": {
+    "codec": "none",
+    "compressed_size": null
+  },
+  "parse_ctx": {
+    "market": 0
+  },
+  "tool": {
+    "name": "tstdx.tools.capture",
+    "version": "0.1.0"
+  },
+  "legal": {
+    "ack": true,
+    "allow_trading_hours": false
+  }
+}

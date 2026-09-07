@@ -1,0 +1,60 @@
+# =============================================================================
+# MAC_BLOCK_MEMBERS — 板块成分股
+# =============================================================================
+# 命令号: 0x1210
+# 家族:  MAC 板块分析协议族（7709 MAC 服务器）
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 板块成分股列表（6 字节股票代码数组）。F2 板块数据在线化核心入口。
+# =============================================================================
+
+spec_id: "0x1210"
+name: "mac_block_members"
+family: "MAC"
+version: "1.0"
+description: "MAC block members (6-byte codes)"
+status: "inferred"
+
+request:
+  length: 4
+  fields:
+    - name: "block_id"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "板块 ID（0x120F 列表返回）"
+    - name: "start"
+      offset: 2
+      type: "uint16"
+      length: 2
+      description: "起始偏移（分页）"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "返回记录条数"
+  fields:
+    - name: "code"
+      offset: 0
+      type: "string[6]"
+      length: 6
+      description: "成分股代码（GBK 解码，剥尾部 NUL）"
+      format: "gbk"
+  record_size: 6
+  encoding: "raw"
+
+context:
+  record_size: 6
+  notes: |
+    布局由 test_7727_goods_mac_coverage.py::TestMacBlockLayout::
+    test_1210_block_members 与 client 接线（MacClient.block_members →
+    0x1210）合成载荷锁定（``<H count>`` + ``<6s code>``）。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归（MAC 族布局公开资料极少，全部待样本）。
+
+parser_reference: "tstdx/protocol/parsers/mac.py::MacBlockMembersParser"

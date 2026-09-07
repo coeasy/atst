@@ -1,0 +1,116 @@
+# =============================================================================
+# EX_INSTRUMENT_BARS — 扩展市场 K 线
+# =============================================================================
+# 命令号: 0x0104
+# 家族:  7727 扩展市场协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 扩展市场（期货/期权等）K 线，与 0x052D 同构但含持仓量字段。
+#
+# ⚠️ P1c 裁决: 差分基准为 **per-record absolute**（每条 open 直接取
+#    leb128 值，close/high/low 相对本条 open，记录间不累加），与
+#    0x052D/0x0202 的跨记录 running base 不同。禁止盲改对齐。
+# =============================================================================
+
+spec_id: "0x0104"
+name: "ex_instrument_bars"
+family: "7727"
+version: "1.0"
+description: "Extended market instrument bars (K-line, with open interest)"
+status: "inferred"
+
+request:
+  length: 12
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "category"
+      offset: 8
+      type: "uint16"
+      length: 2
+      description: "K 线类别（0=5 分钟 / 4=日线 / 5=周线）"
+    - name: "count"
+      offset: 10
+      type: "uint16"
+      length: 2
+      description: "请求条数（起始条数）"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "返回记录条数"
+  fields:
+    - name: "datetime"
+      offset: 0
+      type: "uint32"
+      length: 4
+      description: "日期 YYYYMMDD"
+      format: "yyyymmdd"
+    - name: "open"
+      type: "leb128"
+      length: "var"
+      format: "absolute"
+      description: "开盘价（per-record absolute，标度 price_scale=1000）"
+      scale: 1000
+    - name: "d_close"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_open"
+      description: "收盘价差分（相对本条 open）"
+    - name: "d_high"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_open"
+      description: "最高价差分（相对本条 open）"
+    - name: "d_low"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_open"
+      description: "最低价差分（相对本条 open）"
+    - name: "volume"
+      type: "tdx_float"
+      length: 4
+      description: "成交量"
+      unit: "share"
+    - name: "amount"
+      type: "tdx_float"
+      length: 4
+      description: "成交额"
+      unit: "yuan"
+    - name: "open_interest"
+      type: "uint32"
+      length: 4
+      description: "持仓量"
+  record_size: null
+  min_record_size: 28
+  encoding: "diff"
+
+context:
+  price_scale: 1000
+  category_variants:
+    - category: 4
+      datetime: "yyyymmdd"
+      volume_unit: "share"
+  notes: |
+    P1c：per-record absolute 差分（勿改成 0x052D 的 running base 模式）。
+    行为由 tests/protocol/test_f2_protocol_correctness.py::TestP1cDiffBase
+    与 test_7727_goods_mac_coverage.py::TestExExtendedLayout::
+    test_0104_instrument_bars_with_oi 锁定，真机样本到位后一起翻转。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归（⚠️ 占位类，从未真机确认）。
+
+parser_reference: "tstdx/protocol/parsers/std7727.py::ExInstrumentBarsParser"

@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "source": "synthetic",
+  "derived_from": "0x0fc5_trade_today_600000/20260831-125354",
+  "family": "quotation",
+  "command": "0xfc5",
+  "command_name": "TRADE_TODAY",
+  "tag": "000002_m0_syn",
+  "note": "合成衍生样本：解析器回归基线，非主站真实响应",
+  "captured_at": "2026-08-31T14:32:48+00:00",
+  "request": {
+    "method": "0xfc5",
+    "body_hex": "00303030303032",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 76,
+    "unzip_size": 76,
+    "compressed": false,
+    "payload_len": 76,
+    "sha256": "12d7db369b6fbaa35ed5d506fc890c2f777eec437a606fb4d24a1ec25e58d0f0"
+  },
+  "parse_ctx": {
+    "code": "000002",
+    "market": 0
+  }
+}

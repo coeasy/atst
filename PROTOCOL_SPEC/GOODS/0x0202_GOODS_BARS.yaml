@@ -1,0 +1,110 @@
+# =============================================================================
+# GOODS_BARS — 商品 K 线
+# =============================================================================
+# 命令号: 0x0202
+# 家族:  GOODS 商品语义协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 商品 K 线。与股票 0x052D 同构（leb128 差分 + tdx_float 量额），
+#       尾部多出持仓量 4 字节。
+#
+# ⚠️ 差分基准: **跨记录 running base**（open_abs = open_diff + 上一条
+#    close_abs，记录间累加），与 0x0104 的 per-record absolute 不同。
+# =============================================================================
+
+spec_id: "0x0202"
+name: "goods_bars"
+family: "GOODS"
+version: "1.0"
+description: "Goods K-line bars (with open interest)"
+status: "inferred"
+
+request:
+  length: 12
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "category"
+      offset: 8
+      type: "uint16"
+      length: 2
+      description: "K 线类别"
+    - name: "count"
+      offset: 10
+      type: "uint16"
+      length: 2
+      description: "请求条数"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "返回记录条数"
+  fields:
+    - name: "datetime"
+      offset: 0
+      type: "uint32"
+      length: 4
+      description: "日期 YYYYMMDD"
+      format: "yyyymmdd"
+    - name: "d_open"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_prev"
+      description: "开盘差分（open_abs = d_open + 上一条 close_abs）"
+      scale: 1000
+    - name: "d_close"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_open"
+      description: "收盘差分（相对本条 open_abs）"
+    - name: "d_high"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_open"
+      description: "最高差分"
+    - name: "d_low"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_open"
+      description: "最低差分"
+    - name: "volume"
+      type: "tdx_float"
+      length: 4
+      description: "成交量"
+    - name: "amount"
+      type: "tdx_float"
+      length: 4
+      description: "成交额"
+    - name: "open_interest"
+      type: "uint32"
+      length: 4
+      description: "持仓量"
+  record_size: null
+  min_record_size: 28
+  encoding: "diff"
+
+context:
+  price_scale: 1000
+  diff_base: "running_base"
+  notes: |
+    跨记录 running base 差分。行为由 test_7727_goods_mac_coverage.py::
+    TestGoodsLayout::test_0202_bars_with_oi_running_base 锁定
+    （两条 28B 天然记录，第二条 open_diff=0 → 累加为 rec1 close）。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。
+
+parser_reference: "tstdx/protocol/parsers/goods.py::GoodsBarsParser"

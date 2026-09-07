@@ -1,0 +1,73 @@
+# =============================================================================
+# GOODS_LIST — 商品列表
+# =============================================================================
+# 命令号: 0x0201
+# 家族:  GOODS 商品语义协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 指定分类下的商品列表（代码 + 名称 + 分类）。
+#
+# ⚠️ 字段顺序待样本锁定。
+# =============================================================================
+
+spec_id: "0x0201"
+name: "goods_list"
+family: "GOODS"
+version: "1.0"
+description: "Goods instrument list"
+status: "inferred"
+
+request:
+  length: 4
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "start"
+      offset: 2
+      type: "uint16"
+      length: 2
+      description: "起始偏移（分页）"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "返回记录条数"
+  fields:
+    - name: "code"
+      offset: 0
+      type: "string[6]"
+      length: 6
+      description: "品种代码（GBK 解码）"
+      format: "gbk"
+    - name: "name"
+      offset: 6
+      type: "string[8]"
+      length: 8
+      description: "品种名称（GBK）"
+      format: "gbk"
+    - name: "category"
+      offset: 14
+      type: "uint16"
+      length: 2
+      description: "分类号"
+  record_size: 16
+  encoding: "raw"
+
+context:
+  record_size: 16
+  notes: |
+    布局由 test_7727_goods_mac_coverage.py::TestGoodsLayout::test_0201_list
+    合成载荷锁定（``<H count>`` + ``<6s code><8s name><H category>``）。
+    名称必须 ≤8B GBK（合成载荷用「螺纹钢」= 3B GBK）。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。字段顺序待真机样本锁定。
+
+parser_reference: "tstdx/protocol/parsers/goods.py::GoodsListParser"

@@ -1,0 +1,45 @@
+{
+  "schema": 2,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0xfc5",
+  "command_name": "TRADE_TODAY",
+  "tag": "600000",
+  "note": "逐笔成交（历史分时成交）",
+  "host": "218.75.126.9:7709",
+  "local_host": "WPS-PM",
+  "market": 1,
+  "code": "600000",
+  "captured_at": "2026-09-02T03:31:53.935324+00:00",
+  "elapsed_ms": 23.95,
+  "request": {
+    "method": "0xfc5",
+    "body_hex": "010036303030303000000a00",
+    "body_len": 12
+  },
+  "response": {
+    "zip_size": 75,
+    "unzip_size": 75,
+    "compressed": false,
+    "payload_len": 75,
+    "sha256": "5ed0267d2797e06df1da27643d2a32b7aa656873a08be0d1bd426dcf74b21994"
+  },
+  "record_size_hypothesis": 0,
+  "record_count_hypothesis": 0,
+  "compression": {
+    "codec": "none",
+    "compressed_size": null
+  },
+  "parse_ctx": {
+    "market": 1,
+    "code": "600000"
+  },
+  "tool": {
+    "name": "tstdx.tools.capture",
+    "version": "0.1.0"
+  },
+  "legal": {
+    "ack": true,
+    "allow_trading_hours": false
+  }
+}

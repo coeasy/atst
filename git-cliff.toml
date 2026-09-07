@@ -1,0 +1,93 @@
+# git-cliff configuration for tstdx
+# https://git-cliff.org/configuration.html
+
+[changelog]
+header = """
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+"""
+body = """
+{% if version %}\
+## v{{ version | trim_starting("v") }} - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## [unreleased]
+{% endif %}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+- {% if commit.scope %}*{{ commit.scope }}*: {% endif %}\
+    {% if commit.breaking %}[**breaking**] {% endif %}\
+    {{ commit.message | upper_first }}\
+    ({% if commit.remote.pr_number %}[#{{ commit.remote.pr_number }}]({% raw %}{{ commit.remote_url }}{% endraw %}){% else %}[{{ commit.hash | truncate(length=7, end="") }}]({% raw %}{{ commit.repository }}{% endraw %}/commit/{{ commit.hash }}){% endif %})
+{% endfor %}
+{% endfor %}
+"""
+footer = """
+---
+
+Full changelog: [GitHub Releases](https://github.com/tstdx/tstdx/releases)
+"""
+trim = true
+sort_commits = "oldest"
+
+[git]
+conventional_commits = true
+filter_unconventional = false
+split_commits = false
+protect_breaking_commits = false
+tag_pattern = "v[0-9]*"
+skip_tags = ""
+ignore_tags = ""
+topo_order = false
+sort_commits = "oldest"
+require_commit_format = ""
+
+[commit]
+exempt_prs = false
+
+# These regex patterns are used to determine the changelog group
+# and the commit type. The first matching pattern is used.
+[commit_parsers]
+# Python packages
+python = { message = "^\[python\]", group = "Python" }
+deps = { message = "^(deps|dependencies)", group = "Dependencies" }
+
+# Default parsers
+feat = { message = "^feat", group = "Features" }
+fix = { message = "^fix", group = "Bug Fixes" }
+docs = { message = "^docs", group = "Documentation" }
+style = { message = "^style", group = "Styles" }
+refactor = { message = "^refactor", group = "Refactor" }
+perf = { message = "^perf", group = "Performance" }
+test = { message = "^test", group = "Tests" }
+build = { message = "^build", group = "Build" }
+ci = { message = "^ci", group = "CI/CD" }
+chore = { message = "^chore", group = "Chores" }
+revert = { message = "^revert", group = "Reverts" }
+
+[scope_aliases]
+api = "API"
+config = "Configuration"
+client = "Client"
+protocol = "Protocol"
+parser = "Parsers"
+codec = "Codec"
+streaming = "Streaming"
+web = "Web Adapters"
+compat = "Compatibility"
+observability = "Observability"
+i18n = "Internationalization"
+security = "Security"
+feedback = "Feedback"
+sinks = "Sinks"
+reader = "Local Reader"
+sources = "Data Sources"
+
+[bump_version]
+pattern = "v[0-9]+\\.[0-9]+\\.[0-9]+.*"
+increment = true
+initial_version = "0.1.0"

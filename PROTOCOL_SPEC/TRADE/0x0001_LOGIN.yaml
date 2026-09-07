@@ -1,0 +1,112 @@
+# =============================================================================
+# LOGIN — 交易登录
+# =============================================================================
+# 命令号: 0x0001
+# 家族:  TRADE 交易协议族（独立端口 / 独立帧布局，区别于行情族）
+# 层级:  L1（自洽帧布局，模拟器回路验证）
+# 状态:  draft（洁净室推断占位，真机样本定标前不得作为协议事实）
+#
+# 描述: 客户端发起网上交易会话的登录请求，服务端返回会话 ID 与账户/营业部/
+#       姓名等身份信息，并附二次密码与下单开关。口令以可逆混淆字节传输
+#       （占位实现，见 tstdx/trade/security.py）。
+# =============================================================================
+
+spec_id: "0x0001"
+name: "login"
+family: "TRADE"
+version: "0.1"
+description: "Trade session login (clean-room inferred layout)"
+status: "draft"
+aliases: ["trade_login"]
+
+# =============================================================================
+# 请求体
+# =============================================================================
+request:
+  length: null
+  fields:
+    - name: "yyb_id"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "营业部编号（推断）"
+    - name: "version"
+      offset: 2
+      type: "uint16"
+      length: 2
+      description: "客户端协议版本号（推断）"
+    - name: "account"
+      offset: 4
+      type: "string[]"
+      length: null
+      description: "资金账号（<H 长度> + GBK 字节）"
+      format: "gbk"
+    - name: "password"
+      offset: null
+      type: "raw[]"
+      length: null
+      description: "混淆口令（<H 长度> + 混淆字节，XOR 占位实现）"
+
+# =============================================================================
+# 响应体
+# =============================================================================
+response:
+  header: []
+  fields:
+    - name: "client_id"
+      offset: 0
+      type: "uint32"
+      length: 4
+      description: "会话 ID（服务端分配，后续命令回显）"
+    - name: "account"
+      offset: 4
+      type: "string[]"
+      length: null
+      description: "资金账号（<H 长度> + GBK 字节）"
+      format: "gbk"
+    - name: "branch"
+      offset: null
+      type: "string[]"
+      length: null
+      description: "营业部名称"
+      format: "gbk"
+    - name: "name"
+      offset: null
+      type: "string[]"
+      length: null
+      description: "客户姓名"
+      format: "gbk"
+    - name: "yyb_id"
+      offset: null
+      type: "uint16"
+      length: 2
+      description: "营业部编号"
+    - name: "login_flag"
+      offset: null
+      type: "uint8"
+      length: 1
+      description: "登录标志（推断：1=需二次密码 / 0=无需）"
+    - name: "send_order_flag"
+      offset: null
+      type: "uint8"
+      length: 1
+      description: "下单开关（推断：1=允许下单 / 0=禁止）"
+  record_size: null
+  encoding: "raw"
+
+# =============================================================================
+# 上下文
+# =============================================================================
+context:
+  port: 7702
+  price_scale: 100
+  header_layout: "8 字节: <H total_len><H cmd><H seq><H flags|status>"
+  password_scheme: "XOR 占位（tstdx/trade/security.py），真机需定标真实加密"
+
+notes: |
+  本命令号与帧布局为洁净室推断占位（status: draft），用于协议探测研究与
+  模拟器回路。真实券商侧登录帧封装于闭源 trade.dll，字段序与加密算法
+  需真机抓包定标后翻转 stable。
+  口令混淆仅为可逆占位（obfuscate_password / deobfuscate_password），
+  绝不代表真实券商加密。
+  实现参考: tstdx/trade/frames.py (build_login_body / parse_login_response)

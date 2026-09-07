@@ -1,0 +1,72 @@
+# =============================================================================
+# EX_INSTRUMENT_LIST — 扩展市场品种列表
+# =============================================================================
+# 命令号: 0x0103
+# 家族:  7727 扩展市场协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 枚举指定市场下的品种（市场 + 代码 + 名称）。
+# =============================================================================
+
+spec_id: "0x0103"
+name: "ex_instrument_list"
+family: "7727"
+version: "1.0"
+description: "Extended market instrument list"
+status: "inferred"
+
+request:
+  length: 4
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID（0x0101 列表返回）"
+    - name: "start"
+      offset: 2
+      type: "uint16"
+      length: 2
+      description: "起始偏移（分页）"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "记录条数"
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID（逐条冗余，同请求）"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "品种代码（NUL 补齐，GBK 解码后剥尾部 NUL）"
+      format: "gbk"
+    - name: "name"
+      offset: 8
+      type: "string[8]"
+      length: 8
+      description: "品种名称（GBK）"
+      format: "gbk"
+  record_size: 16
+  encoding: "raw"
+
+context:
+  record_size: 16
+  notes: |
+    布局由 test_7727_goods_mac_coverage.py::TestExExtendedLayout::
+    test_0103_instrument_list 合成载荷锁定（``<H count>`` +
+    ``<H market><6s code><8s name>``）。
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。真机样本到位后翻转 status 并补
+  golden_samples。
+
+parser_reference: "tstdx/protocol/parsers/std7727.py::ExInstrumentListParser"

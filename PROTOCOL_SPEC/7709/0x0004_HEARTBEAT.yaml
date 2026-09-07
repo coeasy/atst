@@ -1,0 +1,59 @@
+# =============================================================================
+# HEARTBEAT — 心跳保活
+# =============================================================================
+# 命令号: 0x0004
+# 家族:  7709 标准协议族
+# 层级:  L2 (通用解析)
+# 状态:  verified (自采集样本)
+#
+# 描述: 心跳保活命令，用于保持与 TDX 服务端的 TCP 连接。
+#       请求体为空（仅 12 字节帧头），响应体同样为空。
+# =============================================================================
+
+spec_id: "0x0004"
+name: "heartbeat"
+family: "7709"
+version: "1.0"
+description: "Heartbeat keep-alive ping"
+status: "verified"
+aliases: ["ping"]
+
+# =============================================================================
+# 请求体
+# =============================================================================
+request:
+  length: 0
+  fields: []
+  notes: "Empty body — only the 12-byte frame header is sent."
+
+# =============================================================================
+# 响应体
+# =============================================================================
+response:
+  header: []
+  fields: []
+  record_size: 0
+  encoding: "raw"
+  notes: "Response body is empty. Used solely to detect connection liveness."
+
+# =============================================================================
+# 上下文
+# =============================================================================
+context:
+  interval_seconds: 30
+  max_missed: 3
+  timeout_seconds: 10
+  notes: |
+    Typical heartbeat interval is 30 seconds. If 3 consecutive heartbeats
+    time out without response, the connection should be considered dead
+    and re-established. The actual interval is configurable in
+    tstdx/transport/base.py.
+
+# =============================================================================
+# 备选命令
+# =============================================================================
+alternate_commands:
+  - spec_id: "0x0015"
+    name: "ping"
+    description: "Connection test (alternate heartbeat)"
+    family: "7709"

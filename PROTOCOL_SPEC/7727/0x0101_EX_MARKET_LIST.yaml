@@ -1,0 +1,74 @@
+# =============================================================================
+# EX_MARKET_LIST — 扩展市场列表
+# =============================================================================
+# 命令号: 0x0101
+# 家族:  7727 扩展市场协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 枚举扩展市场（市场 ID + 名称）。
+# =============================================================================
+
+spec_id: "0x0101"
+name: "ex_market_list"
+family: "7727"
+version: "1.0"
+description: "Extended market list"
+status: "inferred"
+
+request:
+  length: 4
+  fields:
+    - name: "reserved"
+      offset: 0
+      type: "uint16"
+      length: 2
+      value: 0
+      description: "保留字段"
+    - name: "start"
+      offset: 2
+      type: "uint16"
+      length: 2
+      value: 0
+      description: "起始偏移（分页）"
+
+response:
+  header:
+    - name: "record_count"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "记录条数"
+  fields:
+    - name: "market_id"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "name"
+      offset: 2
+      type: "string[8]"
+      length: 8
+      description: "市场名称（GBK，NUL 补齐）"
+      format: "gbk"
+  record_size: 10
+  encoding: "raw"
+
+# =============================================================================
+# 上下文
+# =============================================================================
+context:
+  record_size: 10
+  notes: |
+    布局由 tests/protocol/test_7727_goods_mac_coverage.py
+    ::TestExExtendedLayout::test_0101_market_list 合成载荷锁定
+    （``<H count>`` + ``<H id><8s name>``）。
+
+# =============================================================================
+# 参考（洁净室推断，待真机样本）
+# =============================================================================
+notes: |
+  洁净室推断布局，尚未 golden 回归。真机样本到位后翻转 status 并补
+  golden_samples。
+
+parser_reference: "tstdx/protocol/parsers/std7727.py::ExMarketListParser"

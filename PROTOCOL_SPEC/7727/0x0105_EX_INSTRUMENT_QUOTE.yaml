@@ -1,0 +1,133 @@
+# =============================================================================
+# EX_INSTRUMENT_QUOTE — 扩展市场实时报价
+# =============================================================================
+# 命令号: 0x0105
+# 家族:  7727 扩展市场协议族
+# 层级:  L2 (洁净室推断，合成载荷锁定)
+# 状态:  inferred
+#
+# 描述: 单只扩展市场品种实时行情快照。与 0x0530 同构（价格标度 100）。
+#       0x010A–0x010E（港股/美股/期货/外汇/期权）复用本布局。
+# =============================================================================
+
+spec_id: "0x0105"
+name: "ex_instrument_quote"
+family: "7727"
+version: "1.0"
+description: "Extended market realtime quote (single instrument)"
+status: "inferred"
+aliases: ["ex_hk_quote", "ex_us_quote", "ex_future_quote", "ex_fx_quote", "ex_option_quote"]
+
+request:
+  length: 9
+  fields:
+    - name: "market"
+      offset: 0
+      type: "uint16"
+      length: 2
+      description: "市场 ID"
+    - name: "code"
+      offset: 2
+      type: "string[6]"
+      length: 6
+      description: "品种代码"
+      format: "gbk"
+    - name: "reserved"
+      offset: 8
+      type: "uint8"
+      length: 1
+      value: 0
+      description: "保留字段"
+
+response:
+  header:
+    - name: "market"
+      offset: 0
+      type: "uint8"
+      length: 1
+      description: "市场 ID（标准语义）"
+    - name: "code_echo"
+      offset: 1
+      type: "string[6]"
+      length: 6
+      description: "品种代码回显"
+      format: "gbk"
+  fields:
+    - name: "hdr"
+      offset: 7
+      type: "raw[2]"
+      length: 2
+      description: "2 字节不透明区（跳过，price 从偏移 9 起）"
+    - name: "price"
+      type: "leb128"
+      length: "var"
+      format: "absolute"
+      description: "当前价（标度 100）"
+      scale: 100
+    - name: "d_last_close"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+      description: "昨收差分（last_close = price + d_last_close）"
+    - name: "d_open"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+      description: "今开差分（open = price + d_open）"
+    - name: "d_high"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+      description: "最高差分"
+    - name: "d_low"
+      type: "leb128"
+      length: "var"
+      format: "diff_from_price"
+      description: "最低差分"
+    - name: "u4"
+      type: "leb128"
+      length: "var"
+      description: "未知字段（疑似时间戳计数器）"
+    - name: "sentinel"
+      type: "leb128"
+      length: "var"
+      description: "自检哨兵（应等于 -price）"
+    - name: "volume"
+      type: "leb128"
+      length: "var"
+      description: "成交量（手，解析后 ×100 → 股）"
+      unit: "lot"
+    - name: "v2"
+      type: "leb128"
+      length: "var"
+      description: "未知字段（小值）"
+    - name: "amount"
+      type: "tdx_float"
+      length: 4
+      description: "成交额"
+      unit: "yuan"
+    - name: "tail_leb128"
+      type: "leb128"
+      length: "var"
+      description: "剩余 LEB128 序列（五档盘口，布局未锁定，贪婪消费）"
+  record_size: null
+  encoding: "diff"
+
+context:
+  price_scale: 100
+  single_symbol_only: true
+  notes: |
+    布局由 test_7727_goods_mac_coverage.py::TestExExtendedLayout::
+    test_0105_instrument_quote 合成载荷锁定。尾部五档盘口布局未锁定，
+    解析器贪婪消费到缓冲末尾。
+
+warnings:
+  - description: "Tail layout not locked"
+    detail: "五档盘口字节按 raw LEB128 序列保留，不臆造买卖价"
+
+notes: |
+  洁净室推断布局，尚未 golden 回归。0x010A–0x010E 布局同本命令
+  （对应 ExHkQuoteParser / ExUsQuoteParser / ExFutureQuoteParser /
+  ExFxQuoteParser / ExOptionQuoteParser 均继承本解析器）。
+
+parser_reference: "tstdx/protocol/parsers/std7727.py::ExInstrumentQuoteParser"
