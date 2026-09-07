@@ -56,6 +56,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     三态），新增 P15 批次规划（Native 删除执行 / 性能基线 / 社区主站
     入口 / 覆盖率 77→80）。
 
+- **P15 批次开始（2026-09-07）**：
+  * **P15-D1 hosts_audit 单测补齐**：新增 `tests/test_hosts_audit.py`
+    22 项测试，覆盖三条主链路——
+    1. `TestCliHostsAudit`：CLI `hosts audit` 子命令注册与全量参数
+       解析（`--family / --timeout / --host / --workers / --report /
+       --ranking-file / --strict / --quiet / --no-save-ranking /
+       --hosts-file`）；
+    2. `TestLoadExternalHosts`：`load_external_hosts()` 三格式（纯文本 /
+       JSON list / JSON dict）+ 家族别名（quotation/standard/std/7709/
+       extended/ex/7727/mac_quotation/mac/goods/f10）归一 + 去重 +
+       错误路径；
+    3. `TestAuditFamilyWithExternalHosts`：`audit_family(additional_hosts=...)`
+       去重注入 + baseline 回归（无 additional_hosts 时行为不变）。
+    动态导入 `scripts/audit_hosts.py`（`sys.path.insert` + `importlib`），
+    不依赖 CLI 主入口。
+
+- **工程与文档（2026-09-07）**：
+  * README.md 更新：版本 1.2.0 → 1.4.0，补 P13/P14/P15 特性说明
+    （主站池治理 / 异步门面 SourceUnavailable 契约 / dev extra /
+    CLI hosts audit 示例 / 巡检流程 / 文档导航新增
+    POTENTIAL_ISSUES_AND_PLAN.md）。
+  * `pyproject.toml` `[project.urls]` 修正到实际仓库
+    （`coeasy/tstdx` → 原为 `tstdx/tstdx` 占位）——PyPI 元数据一致。
+  * `.gitignore` 补充 `.workbuddy/` / `.test_tmp/` / `_cov.txt` /
+    `base_orig_tmp.py`，杜绝本地会话产物与临时文件入库。
+  * 项目首个 commit `f73ef61` 已推送至 `github.com:coeasy/tstdx` main
+    分支（2061 files, 133,175 insertions）。
+
 - **P12 数据源扩展与实测修复（真实环境验证）**：
   * **板块资金流排行**：新增 `sector_flow(board, sort, limit)`（session/facade
     双入口 + CLI `tstdx sector-flow [--board industry|concept|region]

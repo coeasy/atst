@@ -79,9 +79,9 @@ all       = [
 ]
 
 [project.urls]
-Homepage      = "https://github.com/tstdx/tstdx"
-Documentation = "https://github.com/tstdx/tstdx/tree/main/docs"
-Issues        = "https://github.com/tstdx/tstdx/issues"
+Homepage      = "https://github.com/coeasy/tstdx"
+Documentation = "https://github.com/coeasy/tstdx/tree/main/docs"
+Issues        = "https://github.com/coeasy/tstdx/issues"
 
 [project.scripts]
 tstdx = "tstdx.cli:main"
@@ -90,7 +90,9 @@ tstdx = "tstdx.cli:main"
 packages = ["tstdx"]
 
 [tool.hatch.build.targets.sdist]
-include = ["tstdx", "PROTOCOL_SPEC", "tests", "README.md", "LICENSE"]
+# P15 补充：CHANGELOG.md 也纳入 sdist——v1.5.0/v1.6.0 native 弃用时间线
+# 与 P13/P14/P15 优化批次记录对下游迁移至关重要，与 README/LICENSE 同级。
+include = ["tstdx", "PROTOCOL_SPEC", "tests", "README.md", "CHANGELOG.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"
