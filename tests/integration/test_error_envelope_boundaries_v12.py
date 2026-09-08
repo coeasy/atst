@@ -4,8 +4,6 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
-import pytest
-
 import tstdx.cli as cli
 from tstdx.errors import SourceUnavailable
 from tstdx.integration import JsonRpcHandler
@@ -16,6 +14,10 @@ def _assert_fail_closed_envelope(data: dict[str, Any], *, code: str) -> None:
     assert data["code"] == code
     assert data["fallback_allowed"] is False
     assert data["provider_switch_allowed"] is False
+    if data["code"] != "E9000":
+        assert data["context"]["fallback"] is False
+        assert data["context"]["fallback_allowed"] is False
+        assert data["context"]["provider_switch_allowed"] is False
     assert "traceback" not in json.dumps(data, ensure_ascii=False).lower()
 
 
@@ -30,6 +32,7 @@ def test_cli_tdx_error_emits_canonical_envelope(monkeypatch, capsys) -> None:  #
                         "channel": "quotation",
                         "capability": "quotes",
                         "authorization": "must-not-leak",
+                        "fallback": True,
                     },
                 )
 
@@ -58,6 +61,7 @@ def test_cli_native_error_is_e9000_without_native_message(monkeypatch, capsys) -
     envelope = payload["error"]
     _assert_fail_closed_envelope(envelope, code="E9000")
     assert envelope["message"] == "internal error"
+    assert envelope["context"] == {}
     assert "secret-native-detail" not in json.dumps(payload)
 
 
@@ -70,6 +74,7 @@ def test_mcp_domain_error_embeds_same_envelope() -> None:
                     "provider": "sina",
                     "channel": "quote",
                     "capability": "quotes",
+                    "fallback": True,
                 },
             )
 
@@ -92,6 +97,7 @@ def test_ws_domain_error_embeds_same_envelope() -> None:
                     "provider": "tencent",
                     "channel": "quote",
                     "capability": "quotes",
+                    "fallback": True,
                 },
             )
 
@@ -119,6 +125,7 @@ def test_ws_native_error_is_e9000_and_does_not_leak_details() -> None:
     envelope = response["error"]["data"]
     _assert_fail_closed_envelope(envelope, code="E9000")
     assert envelope["message"] == "internal error"
+    assert envelope["context"] == {}
     assert "private-upstream-detail" not in raw
 
 
