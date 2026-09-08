@@ -4,13 +4,13 @@
 """Application-level failure decisions for one already-selected Provider.
 
 Errors describe *what happened*. ``FailurePolicy`` decides what an application
-may do next. The policy has no ``switch_provider`` field by design: v12 never
-automatically executes a different Provider after failure.
+may do next. The policy has no switch-provider action: v12 never automatically
+executes a different Provider after failure.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .errors import (
     CommandOffline,
@@ -35,7 +35,7 @@ class FailureDisposition:
     retry_after: float | None
     terminal: bool
     reason: str
-    provider_switch_allowed: bool = False
+    provider_switch_allowed: bool = field(default=False, init=False)
 
     def to_context(self) -> dict[str, object]:
         return {
@@ -77,9 +77,6 @@ class FailurePolicy:
                 reason=type(exc).__name__,
             )
 
-        # SourceUnavailable is terminal for this logical query. A caller may
-        # issue a *new explicit query* for another Provider, but this policy will
-        # never turn that into continuation of the failed request.
         if isinstance(exc, SourceUnavailable):
             return FailureDisposition(
                 retry_same_provider=False,
@@ -103,9 +100,6 @@ class FailurePolicy:
                 reason="query_deadline_exhausted",
             )
 
-        # The transport/client may already have consumed its own host retry
-        # budget. This object is descriptive at the application boundary; it
-        # does not start another hidden retry loop.
         return FailureDisposition(
             retry_same_provider=retryable,
             switch_host=switch_host,
