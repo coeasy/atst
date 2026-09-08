@@ -1,22 +1,23 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""高层门面（原生命名）：在 tstdx 自有协议栈之上提供便捷客户端。
+"""High-level public APIs.
 
-当前提供：
+``tstdx.facade.UnifiedQuoteAPI`` is the v12 strict, Provider-bound compatibility
+facade. The exact pre-v12 class remains available as ``LegacyUnifiedQuoteAPI``
+and from :mod:`tstdx.facade.api` for callers intentionally preserving historical
+routing semantics during migration.
 
-* :mod:`tstdx.facade.api`    —— 统一行情接口（:class:`UnifiedQuoteAPI`，
-  local/tdx/web 三通路自动路由）
-* :mod:`tstdx.facade.binary`  —— TDX 二进制协议门面（:class:`BinaryClient`）
-* :mod:`tstdx.facade.market`  —— 标准 / 扩展 / 期权市场门面
-  （:class:`HqClient` / :class:`ExHqClient` / :class:`OptionClient`）
-* :mod:`tstdx.facade.bridge`  —— 外部补充数据源桥接门面（:class:`BridgeClient`）
-
-所有门面均为 tstdx **自有实现**，方法名与字段名统一为 tstdx 原生命名，
-不沿用任何第三方客户端的 API 约定，亦不复制任何第三方源码。
+New applications should prefer :class:`tstdx.service.UnifiedMarketDataService`
+and Direct Provider namespaces (``md.tdx``, ``md.tencent``, ``md.sina``, ...).
+The existing binary/bridge/market convenience facades remain public for
+compatibility and are migrated independently.
 """
 
-from .api import UnifiedQuoteAPI, quote_api
+from __future__ import annotations
+
+from ..service import UnifiedMarketDataService, market_data
+from .api import UnifiedQuoteAPI as LegacyUnifiedQuoteAPI
 from .async_api import AsyncUnifiedQuoteAPI
 from .binary import TDX_CATEGORY_TO_PERIOD, BinaryClient, binary_client
 from .bridge import FREQUENCY_ALIASES, BridgeClient, bridge_client
@@ -28,10 +29,14 @@ from .market import (
     market_client,
 )
 from .response import ApiResponse, err, ok, wrap
+from .strict import UnifiedQuoteAPI, quote_api
 
 __all__ = [
     "UnifiedQuoteAPI",
+    "LegacyUnifiedQuoteAPI",
     "AsyncUnifiedQuoteAPI",
+    "UnifiedMarketDataService",
+    "market_data",
     "quote_api",
     "BinaryClient",
     "binary_client",
