@@ -6,9 +6,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from functools import partial
 from typing import Any, Callable, TypeVar
 
+from ..query import QuerySpec
 from .planned import UnifiedQuoteAPI
 
 __all__ = ["AsyncUnifiedQuoteAPI"]
@@ -35,6 +37,17 @@ class AsyncUnifiedQuoteAPI:
         if self._closed:
             raise RuntimeError("AsyncUnifiedQuoteAPI 已关闭")
         return await asyncio.to_thread(partial(fn, *args, **kwargs))
+
+    async def query(self, spec: QuerySpec, *, with_meta: bool = True) -> Any:
+        return await self._call(self._sync.query, spec, with_meta=with_meta)
+
+    async def query_many(
+        self,
+        specs: Sequence[QuerySpec],
+        *,
+        with_meta: bool = True,
+    ) -> list[Any]:
+        return await self._call(self._sync.query_many, specs, with_meta=with_meta)
 
     async def quotes(self, *args: Any, **kwargs: Any) -> Any:
         return await self._call(self._sync.quotes, *args, **kwargs)
