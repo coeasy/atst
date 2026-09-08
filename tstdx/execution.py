@@ -99,26 +99,26 @@ class _Flight(Generic[T]):
     result: T | None = None
     error: BaseException | None = None
     waiters: int = 0
-    deadline_ns: int | None = None
 
 
 class SingleFlight:
-    """Coalesce identical work without changing deadline or ownership semantics.
+    """Coalesce identical work without inheriting another caller's deadline.
 
-    The leader receives the original result. Followers receive defensive deep
-    copies after the leader completes, so coalescing identical upstream work
-    never makes independent callers share mutable results.
+    One semantic key normally has one active leader. Followers first join that
+    leader even when their absolute deadlines differ, maximizing coalescing for
+    the common success path. If the leader fails specifically because *its own*
+    query deadline was exhausted and a follower still has budget, that follower
+    re-enters SingleFlight with only its remaining budget. The first such retry
+    becomes the next leader and the other followers join it, avoiding both
+    deadline inheritance and a retry stampede.
 
-    A follower joins only a leader whose absolute deadline is at least as late
-    as its own. If no active leader can satisfy that budget, a second leader is
-    created for the same semantic key. Later compatible callers can join that
-    second flight, preserving coalescing without forcing a long-budget request
-    to inherit a short-budget timeout.
+    Successful followers receive defensive deep copies so independent callers do
+    not share mutable ``QueryResult``/list/model instances.
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._flights: dict[str, list[_Flight[Any]]] = {}
+        self._flights: dict[str, _Flight[Any]] = {}
         self.leaders = 0
         self.joins = 0
         self.deadline_bypasses = 0
@@ -130,36 +130,16 @@ class SingleFlight:
         return time.monotonic_ns() + max(0, int(timeout * 1_000_000_000))
 
     @staticmethod
-    def _leader_can_satisfy(
-        leader_deadline_ns: int | None,
-        follower_deadline_ns: int | None,
-    ) -> bool:
-        if leader_deadline_ns is None:
-            return True
-        if follower_deadline_ns is None:
-            return False
-        return leader_deadline_ns >= follower_deadline_ns
-
-    @classmethod
-    def _select_flight(
-        cls,
-        flights: list[_Flight[Any]],
-        caller_deadline_ns: int | None,
-    ) -> _Flight[Any] | None:
-        eligible = [
-            flight
-            for flight in flights
-            if cls._leader_can_satisfy(flight.deadline_ns, caller_deadline_ns)
-        ]
-        if not eligible:
+    def _remaining_seconds(deadline_ns: int | None) -> float | None:
+        if deadline_ns is None:
             return None
-        # Prefer the tightest leader that still satisfies the caller. This leaves
-        # a wider/unbounded flight available for callers that actually need it.
-        return min(
-            eligible,
-            key=lambda flight: float("inf")
-            if flight.deadline_ns is None
-            else flight.deadline_ns,
+        return max(0.0, (deadline_ns - time.monotonic_ns()) / 1_000_000_000)
+
+    @staticmethod
+    def _is_query_deadline(error: BaseException) -> bool:
+        return (
+            isinstance(error, ReadTimeout)
+            and error.context.get("deadline_scope") == "query"
         )
 
     def do(
@@ -178,24 +158,18 @@ class SingleFlight:
 
         caller_deadline_ns = self._absolute_deadline(timeout)
         with self._lock:
-            flights = self._flights.get(key)
-            flight = self._select_flight(flights, caller_deadline_ns) if flights else None
-            if flight is not None:
+            flight = self._flights.get(key)
+            if flight is None:
+                flight = _Flight[T]()
+                self._flights[key] = flight
+                self.leaders += 1
+                leader = True
+                _record_singleflight("leader")
+            else:
                 flight.waiters += 1
                 self.joins += 1
                 leader = False
                 _record_singleflight("join")
-            else:
-                flight = _Flight[T](deadline_ns=caller_deadline_ns)
-                if flights is None:
-                    self._flights[key] = [flight]
-                else:
-                    flights.append(flight)
-                    self.deadline_bypasses += 1
-                    _record_singleflight("deadline_bypass")
-                self.leaders += 1
-                leader = True
-                _record_singleflight("leader")
 
         if leader:
             try:
@@ -206,16 +180,14 @@ class SingleFlight:
                 flight.event.set()
                 with self._lock:
                     current = self._flights.get(key)
-                    if current is not None:
-                        with contextlib.suppress(ValueError):
-                            current.remove(flight)
-                        if not current:
-                            self._flights.pop(key, None)
+                    if current is flight:
+                        del self._flights[key]
             if flight.error is not None:
                 raise flight.error
             return cast(T, flight.result)
 
-        completed = flight.event.wait(timeout=timeout)
+        remaining = self._remaining_seconds(caller_deadline_ns)
+        completed = flight.event.wait(timeout=remaining)
         if not completed:
             _record_singleflight("timeout")
             raise ReadTimeout(
@@ -227,6 +199,14 @@ class SingleFlight:
                 },
             )
         if flight.error is not None:
+            remaining = self._remaining_seconds(caller_deadline_ns)
+            if self._is_query_deadline(flight.error) and (
+                remaining is None or remaining > 0
+            ):
+                with self._lock:
+                    self.deadline_bypasses += 1
+                _record_singleflight("deadline_bypass")
+                return self.do(key, fn, timeout=remaining)
             raise flight.error
         return copy.deepcopy(cast(T, flight.result))
 
