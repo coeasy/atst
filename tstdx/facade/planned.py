@@ -24,7 +24,9 @@ class UnifiedQuoteAPI(StrictUnifiedQuoteAPI):
                 hosts=self.hosts,
                 timeout=self.timeout,
             )
-        return self._provider_service  # type: ignore[return-value]
+        if not isinstance(self._provider_service, UnifiedMarketDataService):
+            raise RuntimeError("official facade provider service must be planned-v12")
+        return self._provider_service
 
     def query(self, spec: QuerySpec, *, with_meta: bool = True) -> Any:
         """Expose the canonical planned query contract without another router."""
