@@ -171,11 +171,7 @@ def to_error_envelope(
         request_id=request_id or uuid.uuid4().hex,
         query_id=query_id,
         retryable=False,
-        context={
-            "fallback": False,
-            "fallback_allowed": False,
-            "provider_switch_allowed": False,
-        },
+        context={},
         fallback_allowed=False,
         provider_switch_allowed=False,
     )
