@@ -1,12 +1,12 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Compatibility data router on top of the v12 Provider service.
+"""Compatibility data router on top of the v12 planned Provider service.
 
 This module no longer owns a second live-routing engine. All real online data is
-executed by :class:`tstdx.service.UnifiedMarketDataService`; this compatibility
-layer only translates old ``order=`` / ``source=`` arguments and retains
-explicit test/replay plus TDX vipdoc local-history paths.
+executed by :class:`tstdx.planned_service.UnifiedMarketDataService`; this
+compatibility layer only translates old ``order=`` / ``source=`` arguments and
+retains explicit test/replay plus TDX vipdoc local-history paths.
 
 Production invariants:
 
@@ -28,8 +28,8 @@ from typing import Any
 
 from ..config.schema import SourcesConfig
 from ..errors import SourceUnavailable, TdxError, ValidationError
+from ..planned_service import UnifiedMarketDataService
 from ..providers import PROVIDERS, normalize_provider_id, resolve_provider
-from ..service import UnifiedMarketDataService
 
 __all__ = ["DataSourceRouter", "SourceUnavailable", "build_router"]
 
@@ -134,7 +134,7 @@ def _golden_quote(golden_root: Path, code: str) -> dict[str, Any] | None:
 
 
 class DataSourceRouter:
-    """Legacy router surface delegating all live execution to one service."""
+    """Legacy router surface delegating all live execution to one planned service."""
 
     def __init__(
         self,
