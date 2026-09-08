@@ -5,8 +5,9 @@ import time
 
 import pytest
 
+from tstdx.batch import BatchResult
 from tstdx.domain.models import Quote
-from tstdx.errors import ReadTimeout, SourceUnavailable
+from tstdx.errors import IntegrityViolation, ReadTimeout, SourceUnavailable
 from tstdx.planned_service import UnifiedMarketDataService
 from tstdx.query import QuerySpec
 
@@ -44,15 +45,39 @@ class FakeManager:
 def test_duplicate_symbols_are_fetched_once_and_fanned_out() -> None:
     adapter = BlockingQuoteAdapter()
     service = UnifiedMarketDataService(manager=FakeManager(adapter))
-
     rows = service.quotes(
-        ["sh600519", "sh600519", "sz000001"],
-        provider="tencent",
+        ["sh600519", "sh600519", "sz000001"], provider="tencent"
     )
-
     assert adapter.calls == 1
     assert adapter.seen == [("sh600519", "sz000001")]
     assert [row.code for row in rows] == ["sh600519", "sh600519", "sz000001"]
+    service.close()
+
+
+def test_provider_row_order_is_realigned_by_symbol() -> None:
+    class ReorderedAdapter(BlockingQuoteAdapter):
+        def fetch(self, symbols: list[str]) -> list[Quote]:
+            self.calls += 1
+            return [
+                Quote(code=symbols[1], price=2.0),
+                Quote(code=symbols[0], price=1.0),
+            ]
+
+    service = UnifiedMarketDataService(manager=FakeManager(ReorderedAdapter()))
+    rows = service.quotes(["sh600519", "sz000001"], provider="tencent")
+    assert [row.code for row in rows] == ["sh600519", "sz000001"]
+    assert [row.price for row in rows] == [1.0, 2.0]
+    service.close()
+
+
+def test_unexpected_provider_row_is_integrity_violation() -> None:
+    class ExtraAdapter(BlockingQuoteAdapter):
+        def fetch(self, symbols: list[str]) -> list[Quote]:
+            return [Quote(code="sh601318", price=10.0)]
+
+    service = UnifiedMarketDataService(manager=FakeManager(ExtraAdapter()))
+    with pytest.raises(IntegrityViolation):
+        service.quotes(["sh600519"], provider="tencent")
     service.close()
 
 
@@ -91,7 +116,6 @@ def test_concurrent_identical_queries_join_singleflight() -> None:
 def test_different_provider_semantics_do_not_join_same_flight() -> None:
     adapter = BlockingQuoteAdapter()
     service = UnifiedMarketDataService(manager=FakeManager(adapter))
-
     left = service.compile(
         QuerySpec.build("quotes", symbols=["sh600519"], provider="tencent")
     )
@@ -102,7 +126,7 @@ def test_different_provider_semantics_do_not_join_same_flight() -> None:
     service.close()
 
 
-def test_partial_batch_is_rejected_by_default_and_annotated() -> None:
+def test_partial_batch_is_rejected_by_strict_quotes_and_annotated() -> None:
     class PartialAdapter(BlockingQuoteAdapter):
         def fetch(self, symbols: list[str]) -> list[Quote]:
             self.calls += 1
@@ -112,17 +136,53 @@ def test_partial_batch_is_rejected_by_default_and_annotated() -> None:
     adapter = PartialAdapter()
     service = UnifiedMarketDataService(manager=FakeManager(adapter))
     with pytest.raises(SourceUnavailable) as caught:
-        service.quotes(
-            ["sh600519", "sz000001"],
-            provider="tencent",
-            allow_partial=False,
-        )
+        service.quotes(["sh600519", "sz000001"], provider="tencent")
     context = caught.value.context
     assert context["provider"] == "tencent"
     assert context["channel"] == "quote"
     assert context["capability"] == "quotes"
     assert context["provider_switch_allowed"] is False
     assert context["terminal"] is True
+    service.close()
+
+
+def test_quotes_batch_preserves_successes_and_missing_symbol_error() -> None:
+    class PartialAdapter(BlockingQuoteAdapter):
+        def fetch(self, symbols: list[str]) -> list[Quote]:
+            return [Quote(code=symbols[0], price=10.0)]
+
+    service = UnifiedMarketDataService(manager=FakeManager(PartialAdapter()))
+    result = service.quotes_batch(
+        ["sh600519", "sz000001", "sh600519"], provider="tencent"
+    )
+    assert isinstance(result, BatchResult)
+    assert [item.code for item in result.items] == ["sh600519", "sh600519"]
+    assert result.requested == ("sh600519", "sz000001", "sh600519")
+    assert result.partial is True
+    assert set(result.errors) == {"sz000001"}
+    envelope = result.errors["sz000001"]
+    assert envelope.provider == "tencent"
+    assert envelope.channel == "quote"
+    assert envelope.capability == "quotes"
+    assert envelope.retryable is False
+    assert result.meta.fallback is False
+    service.close()
+
+
+def test_partial_batch_does_not_write_semantic_cache() -> None:
+    class PartialAdapter(BlockingQuoteAdapter):
+        def fetch(self, symbols: list[str]) -> list[Quote]:
+            return [Quote(code=symbols[0], price=10.0)]
+
+    service = UnifiedMarketDataService(manager=FakeManager(PartialAdapter()))
+    result = service.quotes(
+        ["sh600519", "sz000001"],
+        provider="tencent",
+        allow_partial=True,
+        max_age=10.0,
+    )
+    assert isinstance(result, BatchResult)
+    assert len(service.query_cache) == 0
     service.close()
 
 
