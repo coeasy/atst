@@ -3,11 +3,14 @@
 
 """Due-aware streaming scheduler over the planned Provider service.
 
-Unlike the legacy stream, one fast subscription does not force every slower
-subscription to poll at the fastest interval. Each subscription owns
-``next_due``; only due subscriptions are unioned/deduplicated for one upstream
-fetch. Callback dispatch runs on a separate thread behind bounded per-
-subscription queues, so a slow consumer does not block Provider polling.
+One fast subscription does not force slower subscriptions to poll at the fastest
+interval. Only due subscriptions are unioned/deduplicated for one upstream
+fetch. Callback dispatch runs behind bounded per-subscription queues.
+
+Polling Providers do not expose a trustworthy transport sequence, so this module
+does not invent one. Instead it tracks auditable per-symbol watermarks: last
+local observation, Provider timestamp when present, consecutive missing rounds,
+open-gap state and recovery count.
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from ..domain.models import Quote
@@ -30,11 +33,17 @@ from ..errors import (
     SubscriptionError,
     TdxError,
 )
+from ..observability.planned import record_stream_gap
 from ..planned_service import UnifiedMarketDataService
 from ..providers import PROVIDERS, resolve_provider
 from .engine import BackpressureQueue, DeltaMerger, ReconnectPolicy
 
-__all__ = ["PlannedQuoteStream", "StreamSubscription", "StreamStats"]
+__all__ = [
+    "PlannedQuoteStream",
+    "StreamSubscription",
+    "StreamStats",
+    "StreamWatermark",
+]
 
 _LOG = logging.getLogger(__name__)
 _MISSING_ALERT_AFTER = 3
@@ -48,7 +57,12 @@ QuoteCallback = Callable[[str, dict[str, Any]], None]
 ErrorCallback = Callable[[Exception], None]
 
 
-def _input_error(message: str, *, context: dict[str, Any], cause: Exception | None = None) -> SubscriptionError:
+def _input_error(
+    message: str,
+    *,
+    context: dict[str, Any],
+    cause: Exception | None = None,
+) -> SubscriptionError:
     return SubscriptionError(
         message,
         context=context,
@@ -95,6 +109,19 @@ class StreamStats:
     delivered_events: int = 0
     dropped_events: int = 0
     provider_errors: int = 0
+    gaps_detected: int = 0
+    gaps_recovered: int = 0
+
+
+@dataclass(slots=True)
+class StreamWatermark:
+    """Auditable polling watermark without fabricated sequence numbers."""
+
+    last_seen_monotonic: float | None = None
+    provider_timestamp: str | None = None
+    missing_rounds: int = 0
+    gap_open: bool = False
+    recoveries: int = 0
 
 
 @dataclass(slots=True)
@@ -110,6 +137,7 @@ class StreamSubscription:
     merger: DeltaMerger = field(default_factory=DeltaMerger, repr=False)
     queue: BackpressureQueue | None = field(default=None, repr=False)
     missing: dict[str, int] = field(default_factory=dict, repr=False)
+    watermarks: dict[str, StreamWatermark] = field(default_factory=dict, repr=False)
     dropped: int = 0
     reported_dropped: int = 0
 
@@ -197,6 +225,23 @@ class PlannedQuoteStream:
         with self._lock:
             removed = self._subs.pop(subscription_id, None)
         return removed is not None
+
+    def watermark(self, subscription_id: str, symbol: str) -> StreamWatermark:
+        """Return a snapshot of one subscription symbol watermark."""
+        normalized = _normalize_subscription_symbol(symbol)
+        key = _bare_code(normalized)
+        with self._lock:
+            sub = self._subs.get(subscription_id)
+            if sub is None:
+                raise _input_error(
+                    "未知 subscription_id",
+                    context={
+                        "subscription_id": subscription_id,
+                        "phase": "subscription_lookup",
+                    },
+                )
+            value = sub.watermarks.get(key, StreamWatermark())
+            return replace(value)
 
     def start(self) -> "PlannedQuoteStream":
         if self._poll_thread is not None and self._poll_thread.is_alive():
@@ -308,6 +353,40 @@ class PlannedQuoteStream:
                 self._deliver_subscription(sub, qmap)
                 self._advance_due(sub, now)
 
+    def _mark_missing(self, sub: StreamSubscription, key: str, symbol: str) -> None:
+        watermark = sub.watermarks.setdefault(key, StreamWatermark())
+        watermark.missing_rounds += 1
+        sub.missing[key] = watermark.missing_rounds
+        if watermark.missing_rounds == _MISSING_ALERT_AFTER:
+            watermark.gap_open = True
+            self.stats.gaps_detected += 1
+            record_stream_gap(provider=self.provider, kind="detected")
+            self._enqueue_error(
+                sub,
+                GapUnfilledError(
+                    f"订阅标的 {symbol} 连续 {_MISSING_ALERT_AFTER} 轮未返回",
+                    context={
+                        "provider": self.provider,
+                        "symbol": symbol,
+                        "missing_rounds": watermark.missing_rounds,
+                        "fallback": False,
+                    },
+                ),
+            )
+
+    def _mark_seen(self, sub: StreamSubscription, key: str, quote: Quote) -> None:
+        watermark = sub.watermarks.setdefault(key, StreamWatermark())
+        recovered = watermark.gap_open
+        watermark.last_seen_monotonic = time.monotonic()
+        watermark.provider_timestamp = str(quote.datetime) if quote.datetime else None
+        watermark.missing_rounds = 0
+        watermark.gap_open = False
+        sub.missing[key] = 0
+        if recovered:
+            watermark.recoveries += 1
+            self.stats.gaps_recovered += 1
+            record_stream_gap(provider=self.provider, kind="recovered")
+
     def _deliver_subscription(self, sub: StreamSubscription, qmap: dict[str, Quote]) -> None:
         for symbol in sub.symbols:
             try:
@@ -317,24 +396,10 @@ class PlannedQuoteStream:
                 continue
             quote = qmap.get(key)
             if quote is None:
-                missing = sub.missing.get(key, 0) + 1
-                sub.missing[key] = missing
-                if missing == _MISSING_ALERT_AFTER:
-                    self._enqueue_error(
-                        sub,
-                        GapUnfilledError(
-                            f"订阅标的 {symbol} 连续 {_MISSING_ALERT_AFTER} 轮未返回",
-                            context={
-                                "provider": self.provider,
-                                "symbol": symbol,
-                                "missing_rounds": missing,
-                                "fallback": False,
-                            },
-                        ),
-                    )
+                self._mark_missing(sub, key, symbol)
                 continue
 
-            sub.missing[key] = 0
+            self._mark_seen(sub, key, quote)
             payload = quote.to_dict()
             if sub.diff_only:
                 payload = dict(sub.merger.update(key, payload))
