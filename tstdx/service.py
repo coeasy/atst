@@ -167,10 +167,12 @@ class ProviderManager:
         return self.tdx_channel("quotation")
 
     def http_client(self, provider: str) -> Any:
-        """Return one persistent HTTP client per Provider.
+        """Return one persistent Provider-bound HTTP client per Provider.
 
         Adapters own Channel-specific headers/rate policies, while TCP keep-alive
-        and HTTP connection reuse are shared inside the same Provider.
+        and HTTP connection reuse are shared inside the same Provider. The cached
+        client is always wrapped by :class:`ProviderBoundHttpClient`, so every
+        production adapter request crosses the Provider host boundary guard.
         """
         pid = resolve_provider(provider=provider)
         if pid == "tdx":
@@ -181,9 +183,11 @@ class ProviderManager:
             existing = self._http_clients.get(pid)
             if existing is not None:
                 return existing
+            from .providers.http import ProviderBoundHttpClient
             from .web.base import build_client
 
-            client = build_client()
+            raw_client = build_client()
+            client = ProviderBoundHttpClient(pid, raw_client)
             self._http_clients[pid] = client
             return client
 
