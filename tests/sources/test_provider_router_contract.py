@@ -7,6 +7,7 @@ import pytest
 import tstdx.reader as reader_mod
 from tstdx import errors
 from tstdx.errors import ValidationError
+from tstdx.planned_service import UnifiedMarketDataService as PlannedService
 from tstdx.sources import DataSourceRouter, SourceUnavailable
 
 
@@ -15,24 +16,45 @@ def test_sources_reexports_canonical_source_unavailable() -> None:
     assert SourceUnavailable.code == "E7050"
 
 
+def test_default_router_uses_the_same_planned_service_as_public_runtime() -> None:
+    router = DataSourceRouter()
+    try:
+        assert isinstance(router._service, PlannedService)
+    finally:
+        router.close()
+
+
 def test_legacy_multi_order_is_rejected_instead_of_fallback() -> None:
     router = DataSourceRouter(order=["tdx", "web"])
-    with pytest.raises(ValidationError):
-        router._selection(provider=None, source=None, order=None)
+    try:
+        with pytest.raises(ValidationError):
+            router._selection(provider=None, source=None, order=None)
+    finally:
+        router.close()
 
 
 def test_default_selection_is_tdx() -> None:
     router = DataSourceRouter()
-    assert router._selection(provider=None, source=None, order=None) == ("tdx", None, None)
+    try:
+        assert router._selection(provider=None, source=None, order=None) == (
+            "tdx",
+            None,
+            None,
+        )
+    finally:
+        router.close()
 
 
 def test_legacy_web_selects_one_provider_only() -> None:
     router = DataSourceRouter(web_sources=["sina", "tencent"])
-    assert router._selection(provider=None, source=None, order=["web"]) == (
-        "sina",
-        None,
-        None,
-    )
+    try:
+        assert router._selection(provider=None, source=None, order=["web"]) == (
+            "sina",
+            None,
+            None,
+        )
+    finally:
+        router.close()
 
 
 def test_m5_vipdoc_uses_minute_reader(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -55,7 +77,9 @@ def test_m5_vipdoc_uses_minute_reader(monkeypatch: pytest.MonkeyPatch, tmp_path:
     monkeypatch.setattr(reader_mod, "resolve_vipdoc_path", lambda *args, **kwargs: fake_file)
 
     router = DataSourceRouter(vipdoc_root=tmp_path)
-    rows = router._reader_kline("sh600519", "5m", 1)
-
-    assert rows[0]["close"] == 1.0
-    assert calls == ["min"]
+    try:
+        rows = router._reader_kline("sh600519", "5m", 1)
+        assert rows[0]["close"] == 1.0
+        assert calls == ["min"]
+    finally:
+        router.close()
