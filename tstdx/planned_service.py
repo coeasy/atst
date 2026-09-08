@@ -256,7 +256,7 @@ class UnifiedMarketDataService(ProviderCoreService):
             healthy=True,
         )
 
-    def _health_failure(self, plan, exc: BaseException) -> None:
+    def _health_failure(self, plan: QueryPlan, exc: BaseException) -> None:
         state = self.health.record_failure(
             plan.provider,
             plan.channel,
@@ -367,7 +367,7 @@ class UnifiedMarketDataService(ProviderCoreService):
         except Exception as exc:
             self.cache_errors += 1
             record_cache_event(layer=layer, status="error")
-            _LOG.warning ("semantic cache write failed; ignoring optimization failure: %s", exc)
+            _LOG.warning("semantic cache write failed; ignoring optimization failure: %s", exc)
 
     @staticmethod
     def _quote_map(batch: BatchPlan, rows: Sequence[Quote]) -> dict[str, Quote]:
@@ -378,6 +378,375 @@ class UnifiedMarketDataService(ProviderCoreService):
                 symbol = normalize_symbol(str(quote.code))
             except Exception as exc:
                 raise IntegrityViolation(
-                   "ä¾›åº” ªê-xƒ–N7–êS–2–B¯š^ƒšÎW–öK’â–2[šZžj½‘”ˆ°(€€€€€€€€€€€€€€€€€€€½¹Ñ•áÐõì‰½‘”ˆèÍÑÈ¡ÅÕ½Ñ”¹½‘”¥ô°(€€€€€€€€€€€€€€€€€€€…ÕÍ”õ•áŒ°(€€€€€€€€€€€€€€€€¤™É½´•áŒ(€€€€€€€€€€€¥˜Íåµ‰½°¹½Ð¥¸•áÁ•Ñ•è(€€€€€€€€€€€€€€€É…¥Í”%¹Ñ•É¥ÑåY¥½±…Ñ¥½¸ (€€€€€€€€€€€€€€€€€€€€‹’úo–êP‚«¨µâY8Þ[©NXÈ^Y
-¾iÊ®h«îy¨B"À¢6öçFW‡C×²'7–Ö&öÂ#¢7–Ö&öÂÂ'&WVW7FVB#¢Æ—7B†&F6‚çVæ—VR—ÒÀ¢¢–b7–Ö&öÂ–â'•÷7–Ö&öÃ ¢&—6R–çFVw&—G•f–öÆF–öâ€¢.Ké¾[©RV÷FRY8Þ[©NXÈ^Y
-¾™(ÎZHÞj~y¨B"À¢6öçFW‡C×²'7–Ö&öÂ#¢7–Ö&öÇÒÀ¢¢'•÷7–Ö&öÅ·7–Ö&öÅÒÒV÷FP¢&WGW&â'•÷7–Ö&öÀ ¢6Æ76ÖWF†ö@¢FVböÆ–vå÷V÷FUö&F6‚†6Ç2Â&F6ƒ¢&F6…ÆâÂ&÷w3¢6WVVæ6UµV÷FUÒ’ÓâÆ—7EµV÷FUÓ ¢'•÷7–Ö&öÂÒ6Ç2å÷V÷FUöÖ†&F6‚Â&÷w2¢Ö—76–ærÒ·7–Ö&öÂf÷"7–Ö&öÂ–â&F6‚çVæ—VR–b7–Ö&öÂæ÷B–â'•÷7–Ö&öÅÐ¢–bÖ—76–æs ¢&—6R6÷W&6UVæf–Æ&ÆR€¢%&÷f–FW"h›ž˜xþŠÎh8^{Ë®[	Šû~k.j~y¨B"À¢6öçFW‡C×°¢&Ö—76–æu÷7–Ö&öÇ2#¢Ö—76–ærÀ¢'&WVW7FVE÷Væ—VR#¢ÆVâ†&F6‚çVæ—VR’À¢'&V6V—fVE÷Væ—VR#¢ÆVâ†'•÷7–Ö&öÂ’À¢''F–Â#¢&ööÂ†'•÷7–Ö&öÂ’À¢ÒÀ¢¢&WGW&â¶'•÷7–Ö&öÅ·7–Ö&öÅÒf÷"7–Ö&öÂ–â&F6‚æ÷&–v–æÅÐ ¢7FF–6ÖWF†ö@¢FVbö&F6…öÆ–Ö—B‡Æã¢VW'•Æâ’Óâ–çBÂæöæS ¢6†ææVÂÒ$õd”DU%2ævWB‡Æâç&÷f–FW"’æ6†ææVÂ‡Æâæ6†ææVÂ¢&WGW&â6†ææVÂæ&F6…öÆ–Ö—Eöf÷"‡Æâç7V2æ6&–Æ—G’ ¢FVb÷V÷FUö6‡Væ·2‡6VÆbÂÆã¢VW'•ÆâÂ&F6ƒ¢&F6…Æâ’ÓâGWÆU·GWÆU·7G"ÂââåÒÂââåÓ ¢6‡Væ·2Ò&F6…ÆææW"æ6‡Væ·2†&F6‚çVæ—VRÂ6VÆbåö&F6…öÆ–Ö—B‡Æâ’¢&V6÷&Eö&F6…ö6‡Væ·2€¢&÷f–FW#×Æâç&÷f–FW"À¢6†ææVÃ×Æâæ6†ææVÂÀ¢6&–Æ—G“Ò'V÷FW2"À¢6‡Væ·3ÖÆVâ†6‡Væ·2’À¢¢&WGW&â6‡Væ·0 ¢FVbV÷FW2€¢6VÆbÀ¢7–Ö&öÇ3¢7G"Â6WVVæ6U·7G%ÒÀ¢¢À¢&÷f–FW#¢7G"ÂæöæRÒæöæRÀ¢6÷W&6S¢7G"ÂæöæRÒæöæRÀ¢v—F…öÖWF¢&ööÂÒfÇ6RÀ¢ÆÆ÷u÷'F–Ã¢&ööÂÒfÇ6RÀ¢FVFÆ–æUö×3¢–çBÂæöæRÒæöæRÀ¢Ö…övS¢fÆöBÂæöæRÒæöæRÀ¢ÆÆ÷u÷7FÆS¢&ööÂÒfÇ6RÀ¢’ÓâÆ—7EµV÷FUÒÂVW'•&W7VÇE¶Æ—7EµV÷FUÕÒÂ&F6…&W7VÇEµV÷FUÓ ¢6WÒ‡7–Ö&öÇ2Â’–b—6–ç7Fæ6R‡7–Ö&öÇ2Â7G"’VÇ6RGWÆR‡7–Ö&öÇ2¢7V2ÒVW'•7V2æ'V–ÆB€¢'V÷FW2"À¢7–Ö&öÇ3×6WÀ¢&÷f–FW#×&÷f–FW"À¢6÷W&6S×6÷W&6RÀ¢ÆÆ÷u÷'F–ÃÖÆÆ÷u÷'F–ÂÀ¢FVFÆ–æUö×3×6VÆbæFVfVÇEöFVFÆ–æUö×2–bFVFÆ–æUö×2—2æöæRVÇ6RFVFÆ–æUö×2À¢Ö…övSÖÖ…övRÀ¢ÆÆ÷u÷7FÆSÖÆÆ÷u÷7FÆRÀ¢¢&WGW&â6VÆbçVW'’‡7V2Âv—F…öÖWF×v—F…öÖWF ¢FVbV÷FW5ö&F6‚€¢6VÆbÀ¢7–Ö&öÇ3¢7G"Â6WVVæ6U·7G%ÒÀ¢¢À¢&÷f–FW#¢7G"ÂæöæRÒæöæRÀ¢6÷W&6S¢7G"ÂæöæRÒæöæRÀ¢FVFÆ–æUö×3¢–çBÂæöæRÒæöæRÀ¢’Óâ&F6…&W7VÇEµV÷FUÓ ¢&W7VÇBÒ6VÆbçV÷FW2€¢7–Ö&öÇ2À¢&÷f–FW#×&÷f–FW"À¢6÷W&6S×6÷W&6RÀ¢ÆÆ÷u÷'F–ÃÕG'VRÀ¢FVFÆ–æUö×3ÖFVFÆ–æUö×2À¢¢–bæ÷B—6–ç7Fæ6R‡&W7VÇBÂ&F6…&W7VÇB“ ¢&—6R'VçF–ÖTW'&÷"‚'V÷FW5ö&F6‚6öçG&7Bf–öÆFVB"¢&WGW&â&W7VÇ@ ¢FVböW†V7WFU÷V÷FW5÷Æâ€¢6VÆbÀ¢Æã¢VW'•ÆâÀ¢¢À¢v—F…öÖWF¢&ööÂÀ¢’ÓâÆ—7EµV÷FUÒÂVW'•&W7VÇE¶Æ—7EµV÷FUÕÓ ¢66†VBÒ6VÆbåö66†UövWB‡Æâ¢–b66†VB—2æ÷BæöæS ¢Æâæ'VFvWBæVç7W&U÷&VÖ–æ–ær‚&66†U÷&VB"¢&WGW&â66†VB–bv—F…öÖWFVÇ6R66†VBæFF¢&F6‚Ò&F6…ÆææW"ç7–Ö&öÇ2†Æ—7B‡Æâç7V2ç7–Ö&öÇ2’¢6‡Væ·2Ò6VÆbå÷V÷FUö6‡Væ·2‡ÆâÂ&F6‚ ¢FVbfWF6‚‚’ÓâVW'•&W7VÇE¶Æ—7EµV÷FUÕÓ ¢Æâæ'VFvWBæ&Vv–åöGFV×B‚¢6VÆbåö†VÇF…ö&Vf÷&R‡Æâ¢&÷w3¢Æ—7EµV÷FUÒÒµÐ¢ÖWF¢&W7VÇDÖWFÂæöæRÒæöæP¢G'“ ¢f÷"–æFW‚Â6‡Væ²–âVçVÖW&FR†6‡Væ·2“ ¢Æâæ'VFvWBæVç7W&U÷&VÖ–æ–ær†b'&÷f–FW%ö6‡Væµ÷¶–æFW‡Ò"¢&W7VÇBÒ7WW"…Væ–f–VDÖ&¶WDFF6W'f–6RÂ6VÆb’çV÷FW2€¢Æ—7B†6‡Væ²’Â&÷f–FW#×Æâç&÷f–FW"Âv—F…öÖWFÕG'VP¢¢–bæ÷B—6–ç7Fæ6R‡&W7VÇBÂVW'•&W7VÇB“ ¢&—6R'VçF–ÖTW'&÷"€¢%&÷f–FW$6÷&U6W'f–6RçV÷FW2‡v—F…öÖWFÕG'VR’6öçG&7Bf–öÆFVB ¢¢&÷w2æW‡FVæB‡&W7VÇBæFF¢ÖWFÒ&W7VÇBæÖWF¢Æâæ'VFvWBæVç7W&U÷&VÖ–æ–ær†b'&÷f–FW%ö6‡Væµ÷¶–æFW‡Õ÷&W7öç6R"¢–bÖWF—2æöæS ¢&—6R'VçF–ÖTW'&÷"‚'V÷FW2W†V7WF–öâ&öGV6VBæò&÷f–FW"ÖWFFF"¢6ö÷&F–æFVBÒVW'•&W7VÇB€¢FF×6VÆbåöÆ–vå÷V÷FUö&F6‚†&F6‚Â&÷w2’À¢ÖWFÖÖWFÀ¢¢W†6WB&6TW†6WF–öâ2W†3 ¢6VÆbåö†VÇF…öf–ÇW&R‡ÆâÂW†2¢&—6P¢6VÆbåö†VÇF…÷7V66W72‡Æâ¢6VÆbåö66†U÷WB‡ÆâÂ6ö÷&F–æFVB¢&WGW&â6ö÷&F–æFV@ ¢&W7VÇBÒ6VÆbç6–ævÆVfÆ–v‡BæFò€¢Æâæf–ævW'&–çBçfÇVRÀ¢fWF6‚À¢F–ÖV÷WC×Æâæ'VFvWBç&VÖ–æ–æu÷2‚’À¢¢Æâæ'VFvWBæVç7W&U÷&VÖ–æ–ær‚'6W&–Æ—¦R"¢&WGW&â&W7VÇB–bv—F…öÖWFVÇ6R&W7VÇBæFF ¢FVböW†V7WFU÷V÷FUö&F6…÷Æâ‡6VÆbÂÆã¢VW'•Æâ’Óâ&F6…&W7VÇEµV÷FUÓ ¢""%&WGW&âVF—F&ÆRW"×7–Ö&öÂW'&÷'2æBæWfW"66†R'F–Â&W7VÇG2â"" ¢&F6‚Ò&F6…ÆææW"ç7–Ö&öÇ2†Æ—7B‡Æâç7V2ç7–Ö&öÇ2’¢6‡Væ·2Ò6VÆbå÷V÷FUö6‡Væ·2‡ÆâÂ&F6‚ ¢FVbfWF6‚‚’Óâ&F6…&W7VÇEµV÷FUÓ ¢Æâæ'VFvWBæ&Vv–åöGFV×B‚¢6VÆbåö†VÇF…ö&Vf÷&R‡Æâ¢'•÷7–Ö&öÃ¢F–7E·7G"ÂV÷FUÒÒ·Ð¢W'&÷'3¢F–7E·7G"ÂW'&÷$VçfVÆ÷UÒÒ·Ð¢ÖWF¢&W7VÇDÖWFÂæöæRÒæöæP¢†VÇF…÷&V6÷&FVEöf–ÇW&RÒfÇ6P ¢f÷"–æFW‚Â6‡Væ²–âVçVÖW&FR†6‡Væ·2“ ¢6‡Væµö&F6‚Ò&F6…ÆææW"ç7–Ö&öÇ2†Æ—7B†6‡Væ²’¢GFV×FVBÒfÇ6P¢G'“ ¢Æâæ'VFvWBæVç7W&U÷&VÖ–æ–ær†b'&÷f–FW%ö6‡Væµ÷¶–æFW‡Ò"¢GFV×FVBÒG'VP¢&W7VÇBÒ7WW"…Væ–f–VDÖ&¶WDFF6W'f–6RÂ6VÆb’çV÷FW2€¢Æ—7B†6‡Væ²’Â&÷f–FW#×Æâç&÷f–FW"Âv—F…öÖWFÕG'VP¢¢–bæ÷B—6–ç7Fæ6R‡&W7VÇBÂVW'•&W7VÇB“ ¢&—6R'VçF–ÖTW'&÷"€¢%&÷f–FW$6÷&U6W'f–6RçV÷FW2‡v—F…öÖWFÕG'VR’6öçG&7Bf–öÆFVB ¢¢ÖWFÒ&W7VÇBæÖWF¢Æâæ'VFvWBæVç7W&U÷&VÖ–æ–ær†b'&÷f–FW%ö6‡Væµ÷¶–æFW‡Õ÷&W7öç6R"¢6‡VæµöÖÒ6VÆbå÷V÷FUöÖ†6‡Væµö&F6‚ÂÆ—7B‡&W7VÇBæFF’¢W†6WBFG„W'&÷"2W†3 ¢6VÆbåö†VÇF…öf–ÇW&R‡ÆâÂW†2¢†VÇF…÷&V6÷&FVEöf–ÇW&RÒG'VP¢&ö÷BÒFõöW'&÷%öVçfVÆ÷R€¢W†2À¢&÷f–FW#×Æâç&÷f–FW"À¢6†ææVÃ×Æâæ6†ææVÂÀ¢6&–Æ—G“Ò'V÷FW2"À¢VW'•ö–C×Æâæf–ævW'&–çBçfÇVRÀ¢¢&ö÷E÷7VÖÖ'’Ò°¢&6öFR#¢&ö÷Bæ6öFRÀ¢'G—R#¢&ö÷BçG—RÀ¢&ÖW76vR#¢&ö÷BæÖW76vRÀ¢'†6R#¢&ö÷Bç†6RÀ¢&6‡Væµö–æFW‚#¢–æFW‚À¢Ð¢7W'&VçE÷7FGW2Ò&f–ÆVB"–bGFV×FVBVÇ6R&æ÷EöGFV×FVB ¢f÷"7–Ö&öÂ–â6‡Væ³ ¢6öçFW‡BÒF–7B‡&ö÷Bæ6öçFW‡B¢6öçFW‡BçWFFR€¢°¢'7–Ö&öÂ#¢7–Ö&öÂÀ¢&6‡Væµö–æFW‚#¢–æFW‚À¢&GFV×FVB#¢GFV×FVBÀ¢&&F6…÷7FGW2#¢7W'&VçE÷7FGW2À¢&÷&–v–æÅöW'&÷"#¢&ö÷E÷7VÖÖ'’À¢Ð¢¢W'&÷'5·7–Ö&öÅÒÒ&WÆ6R‡&ö÷BÂ'F–ÃÕG'VRÂ6öçFW‡CÖ6öçFW‡B ¢f÷"ÆFW%ö–æFW‚ÂÆFW%ö6‡Væ²–âVçVÖW&FR†6‡Væ·5¶–æFW‚²¥ÒÂ–æFW‚²“ ¢f÷"7–Ö&öÂ–âÆFW%ö6‡Væ³ ¢&Æö6¶VBÒ6÷W&6UVæf–Æ&ÆR€¢.X˜Þ[¨ò&÷f–FW"6‡Væ²ZK‹J^ûÈÎiÊÎj~y¨NiÊ®{º~{ºÞ‹ù¾ŠÎŠû~k""À¢6öçFW‡C×°¢'&÷f–FW"#¢Æâç&÷f–FW"À¢&6†ææVÂ#¢Æâæ6†ææVÂÀ¢&6&–Æ—G’#¢'V÷FW2"À¢'VW'•ö–B#¢Æâæf–ævW'&–çBçfÇVRÀ¢'†6R#¢&&F6‚"À¢'7–Ö&öÂ#¢7–Ö&öÂÀ¢&6‡Væµö–æFW‚#¢ÆFW%ö–æFW‚À¢&GFV×FVB#¢fÇ6RÀ¢&&F6…÷7FGW2#¢&æ÷EöGFV×FVB"À¢&&Æö6¶VEö'’#¢&ö÷E÷7VÖÖ'’À¢''F–Â#¢G'VRÀ¢&fÆÆ&6²#¢fÇ6RÀ¢'&WG'•÷6ÖU÷&÷f–FW"#¢fÇ6RÀ¢'FW&Ö–æÂ#¢G'VRÀ¢'&÷f–FW%÷7v—F6…öÆÆ÷vVB#¢fÇ6RÀ¢ÒÀ¢¢W'&÷'5·7–Ö&öÅÒÒFõöW'&÷%öVçfVÆ÷R€¢&Æö6¶VBÀ¢&÷f–FW#×Æâç&÷f–FW"À¢6†ææVÃ×Æâæ6†ææVÂÀ¢6&–Æ—G“Ò'V÷FW2"À¢VW'•ö–C×Æâæf–ævW'&–çBçfÇVRÀ¢¢'&V°¢W†6WB&6TW†6WF–öâ2W†3 ¢6VÆbåö†VÇF…öf–ÇW&R‡ÆâÂW†2¢&—6P ¢'•÷7–Ö&öÂçWFFR†6‡VæµöÖ¢Ö—76–ærÒ·7–Ö&öÂf÷"7–Ö&öÂ–â6‡Væ²–b7–Ö&öÂæ÷B–â6‡VæµöÖÐ¢f÷"7–Ö&öÂ–âÖ—76–æs ¢W†2Ò6÷W&6UVæf–Æ&ÆR€¢%&÷f–FW"h‹ž˜xþŠÎh8^{Ë®[	Šû~k.j~y¨B"À¢6öçFW‡C×°¢'&÷f–FW"#¢Æâç&÷f–FW"À¢&6†ææVÂ#¢Æâæ6†ææVÂÀ¢&6&–Æ—G’#¢'V÷FW2"À¢'VW'•ö–B#¢Æâæf–ævW'&–çBçfÇVRÀ¢'†6R#¢&æ÷&ÖÆ—¦R"À¢'7–Ö&öÂ#¢7–Ö&öÂÀ¢&6‡Væµö–æFW‚#¢–æFW‚À¢&GFV×FVB#¢G'VRÀ¢&&F6…÷7FGW2#¢&Ö—76–ær"À¢''F–Â#¢G'VRÀ¢&fÆÆ&6²#¢fÇ6RÀ¢'&WG'•÷6ÖU÷&÷f–FW"#¢fÇ6RÀ¢'FW&Ö–æÂ#¢G'VRÀ¢'&÷f–FW%÷7v—F6…öÆÆ÷vVB#¢fÇ6RÀ¢ÒÀ¢¢W'&÷'5·7–Ö&öÅÒÒFõöW'&÷%öVçfVÆ÷R€¢W†2À¢&÷f–FW#×Æâç&÷f–FW"À¢6†ææVÃ×Æâæ6†ææVÂÀ¢6&–Æ—G“Ò'V÷FW2"À¢VW'•ö–C×Æâæf–ævW'&–çBçfÇVRÀ¢ ¢–bW'&÷'2æBæ÷B†VÇF…÷&V6÷&FVEöf–ÇW&S ¢6VÆbåö†VÇF…öf–ÇW&R€¢ÆâÀ¢6÷W&6UVæf–Æ&ÆR€¢%&÷f–FW"h›ž˜xþŠÎh8^Y¹îY¹î˜:ŽXˆn{Ë®ZK"À¢6öçFW‡C×²&Ö—76–æu÷7–Ö&öÇ2#¢Æ—7B†W'&÷'2’Â''F–Â#¢G'VWÒÀ¢’À¢¢VÆ–bæ÷BW'&÷'3 ¢6VÆbåö†VÇF…÷7V66W72‡Æâ ¢—FV×2ÒGWÆR†'•÷7–Ö&öÅ·7–Ö&öÅÒf÷"7–Ö&öÂ–â&F6‚æ÷&–v–æÂ–b7–Ö&öÂ–â'•÷7–Ö&öÂ¢&WGW&â&F6…&W7VÇB€¢—FV×3Ö—FV×2À¢W'&÷'3ÖW'&÷'2À¢&WVW7FVCÖ&F6‚æ÷&–v–æÂÀ¢'F–ÃÖ&ööÂ†W'&÷'2’À¢ÖWFÖÖWFÀ¢ ¢&W7VÇBÒ6VÆbç6–ævÆVfÆ–v‡BæFò€¢Æâæf–ævW'&–çBçfÇVRÀ¢fWF6‚À¢F–ÖV÷WC×Æâæ'VFvWBç&VÖ–æu÷2‚’À¢¢Æâæ'VFvWBæVç7W&U÷&VÖ–æ–ær‚'6W&–Æ—¦R"¢&WGW&â&W7VÇ@ ¢FVb&'2€¢6VÆbÀ¢7–Ö&öÃ¢7G"À¢¢À¢W&–öC¢7G"Ò&F’"À¢6÷VçC¢–çBÒ3#À¢7F'C¢–çBÒÀ¢F§W7C¢7G"Ò""À¢&÷f–FW#¢7G"ÂæöæRÒæöæRÀ¢6÷W&6S¢7G"ÂæöæRÒæöæRÀ¢v—F…öÖWF¢&ööÂÒfÇ6RÀ¢FVFÆ–æUö×3¢–çBÂæöæRÒæöæRÀ¢Ö…övS¢fÆöBÂæöæRÒæöæRÀ¢ÆÆ÷u÷7FÆS¢&ööÂÒfÇ6RÀ¢’ÓâÆ—7E´&%ÒÂVW'•&W7VÇE¶Æ—7E´&%ÕÓ ¢7V2ÒVW'•7V2æ'V–ÆB€¢&&'2"À¢7–Ö&öÇ3Ò‡7–Ö&öÂÂ’À¢&÷f–FW#×&÷f–FW"À¢6÷W&6S×6÷W&6RÀ¢W&–öC×W&–öBÀ¢6÷VçCÖ6÷VçBÀ¢7F'C×7F'BÀ¢F§W7FÖVçCÖF§W7BÀ¢FVFÆ–æUö×3×6VÆbæFVfVÇEöFVFÆ–æUö×2–bFVFÆ–æUö×2—2æöæRVÇ6RFVFÆ–æUö×2À¢Ö…övSÖÖ…övRÀ¢ÆÆ÷u÷7FÆSÖÆÆ÷u÷7FÆRÀ¢¢&WGW&â6VÆbçVW'’‡7V2Âv—F…öÖWF×v—F…öÖWF ¢FVböW†V7WFUö&'5÷Æâ€¢6VÆbÀ¢Æã¢VW'•ÆâÀ¢¢À¢v—F…öÖWF¢&ööÂÀ¢’ÓâÆ—7E´&%ÒÂVW'•&W7VÇE¶Æ—7E´&%ÕÓ ¢66†VBÒ6VÆbåö66†UövWB‡Æâ¢–b66†VB—2æ÷BæöæS ¢Æâæ'VFvWBæVç7W&U÷&VÖ–æ–ær‚&66†U÷&VB"¢&WGW&â66†VB–bv—F…öÖWFVÇ6R66†VBæFF¢7–Ö&öÂÒÆâç7V2ç7–Ö&öÇ5³Ð ¢FVbfWF6‚‚’ÓâVW'•&W7VÇE¶Æ—7E´&%ÕÓ ¢Æâæ'VFvWBæ&Vv–åöGFV×B‚¢6VÆbåö†VÇF…ö&Vf÷&R‡Æâ¢G'“ ¢&W7VÇBÒ7WW"…Væ–f–VDÖ&¶WDFF6W'f–6RÂ6VÆb’æ&'2€¢7–Ö&öÂÀ¢W&–öC×Æâç7V2çW&–öB÷"&F’"À¢6÷VçC×Æâç7V2æ6÷VçBÀ¢7F'C×Æâç7V2ç7F'BÀ¢F§W7C×Æâç7V2æF§W7FÖVçBÀ¢&÷f–FW#×Æâç&÷f–FW"À¢v—F…öÖWFÕG'VRÀ¢¢–bæ÷B—6–ç7Fæ6R‡&W7VÇBÂVW'•&W7VÇB“ ¢&—6R'VçF–ÖTW'&÷"‚%&÷f–FW$6÷&U6W'f–6Ræ&'2‡v—F…öÖWFÕG'VR’6öçG&7Bf–öÆFVB"¢Æâæ'VFvWBæVç7W&U÷&VÖ–æ–ær‚'&÷f–FW%÷&W7öç6R"¢W†6WB&6TW†6WF–öâ2W†3 ¢6VÆbåö†VÇF…öf–ÇW&R‡ÆâÂW†2¢&—6P¢6VÆbåö†VÇF…÷7V66W72‡Æâ¢6VÆbåö66†U÷WB‡ÆâÂ&W7VÇB¢&WGW&â&W7VÇ@ ¢&W7VÇBÒ6VÆbç6–ævÆVfÆ–v‡BæFò€¢Æâæf–ævW'&–çBçfÇVRÀ¢fWF6‚À¢F–ÖV÷WC×Æâæ'VFvWBç&VÖ–æ–æu÷2‚’À¢¢Æâæ'VFvWBæVç7W&U÷&VÖ–æ–ær‚'6W&–Æ—¦R"¢&WGW&â&W7VÇB–bv—F…öÖWFVÇ6R&W7VÇBæFF  ¦FVbÖ&¶WEöFF‚¢¦·v&w3¢ç’’ÓâVæ–f–VDÖ&¶WDFF6W'f–6S ¢&WGW&âVæ–f–VDÖ&¶WDFF6W'f–6R‚¢¦·v&w2 
+                    "Provider quote å“åº”åŒ…å«æ— æ³•å½’ä¸€åŒ–çš„ code",
+                    context={"code": str(quote.code)},
+                    cause=exc,
+                ) from exc
+            if symbol not in expected:
+                raise IntegrityViolation(
+                    "Provider quote å“åº”åŒ…å«æœªè¯·æ±‚æ ‡çš„",
+                    context={"symbol": symbol, "requested": list(batch.unique)},
+                )
+            if symbol in by_symbol:
+                raise IntegrityViolation(
+                    "Provider quote å“åº”åŒ…å«é‡å¤æ ‡çš„",
+                    context={"symbol": symbol},
+                )
+            by_symbol[symbol] = quote
+        return by_symbol
+
+    @classmethod
+    def _align_quote_batch(cls, batch: BatchPlan, rows: Sequence[Quote]) -> list[Quote]:
+        by_symbol = cls._quote_map(batch, rows)
+        missing = [symbol for symbol in batch.unique if symbol not in by_symbol]
+        if missing:
+            raise SourceUnavailable(
+                "Provider æ‰¹é‡è¡Œæƒ…ç¼ºå°‘è¯·æ±‚æ ‡çš„",
+                context={
+                    "missing_symbols": missing,
+                    "requested_unique": len(batch.unique),
+                    "received_unique": len(by_symbol),
+                    "partial": bool(by_symbol),
+                },
+            )
+        return [by_symbol[symbol] for symbol in batch.original]
+
+    @staticmethod
+    def _batch_limit(plan: QueryPlan) -> int | None:
+        channel = PROVIDERS.get(plan.provider).channel(plan.channel)
+        return channel.batch_limit_for(plan.spec.capability)
+
+    def _quote_chunks(self, plan: QueryPlan, batch: BatchPlan) -> tuple[tuple[str, ...], ...]:
+        chunks = BatchPlanner.chunks(batch.unique, self._batch_limit(plan))
+        record_batch_chunks(
+            provider=plan.provider,
+            channel=plan.channel,
+            capability="quotes",
+            chunks=len(chunks),
+        )
+        return chunks
+
+    def quotes(
+        self,
+        symbols: str | Sequence[str],
+        *,
+        provider: str | None = None,
+        source: str | None = None,
+        with_meta: bool = False,
+        allow_partial: bool = False,
+        deadline_ms: int | None = None,
+        max_age: float | None = None,
+        allow_stale: bool = False,
+    ) -> list[Quote] | QueryResult[list[Quote]] | BatchResult[Quote]:
+        seq = (symbols,) if isinstance(symbols, str) else tuple(symbols)
+        spec = QuerySpec.build(
+            "quotes",
+            symbols=seq,
+            provider=provider,
+            source=source,
+            allow_partial=allow_partial,
+            deadline_ms=self.default_deadline_ms if deadline_ms is None else deadline_ms,
+            max_age=max_age,
+            allow_stale=allow_stale,
+        )
+        return self.query(spec, with_meta=with_meta)
+
+    def quotes_batch(
+        self,
+        symbols: str | Sequence[str],
+        *,
+        provider: str | None = None,
+        source: str | None = None,
+        deadline_ms: int | None = None,
+    ) -> BatchResult[Quote]:
+        result = self.quotes(
+            symbols,
+            provider=provider,
+            source=source,
+            allow_partial=True,
+            deadline_ms=deadline_ms,
+        )
+        if not isinstance(result, BatchResult):
+            raise RuntimeError("quotes_batch contract violated")
+        return result
+
+    def _execute_quotes_plan(
+        self,
+        plan: QueryPlan,
+        *,
+        with_meta: bool,
+    ) -> list[Quote] | QueryResult[list[Quote]]:
+        cached = self._cache_get(plan)
+        if cached is not None:
+            plan.budget.ensure_remaining("cache_read")
+            return cached if with_meta else cached.data
+        batch = BatchPlanner.symbols(list(plan.spec.symbols))
+        chunks = self._quote_chunks(plan, batch)
+
+        def fetch() -> QueryResult[list[Quote]]:
+            plan.budget.begin_attempt()
+            self._health_before(plan)
+            rows: list[Quote] = []
+            meta: ResultMeta | None = None
+            try:
+                for index, chunk in enumerate(chunks):
+                    plan.budget.ensure_remaining(f"provider_chunk_{index}")
+                    result = super(UnifiedMarketDataService, self).quotes(
+                        list(chunk), provider=plan.provider, with_meta=True
+                    )
+                    if not isinstance(result, QueryResult):
+                        raise RuntimeError(
+                            "ProviderCoreService.quotes(with_meta=True) contract violated"
+                        )
+                    rows.extend(result.data)
+                    meta = result.meta
+                    plan.budget.ensure_remaining(f"provider_chunk_{index}_response")
+                if meta is None:
+                    raise RuntimeError("quotes execution produced no Provider metadata")
+                coordinated = QueryResult(
+                    data=self._align_quote_batch(batch, rows),
+                    meta=meta,
+                )
+            except BaseException as exc:
+                self._health_failure(plan, exc)
+                raise
+            self._health_success(plan)
+            self._cache_put(plan, coordinated)
+            return coordinated
+
+        result = self.singleflight.do(
+            plan.fingerprint.value,
+            fetch,
+            timeout=plan.budget.remaining_s(),
+        )
+        plan.budget.ensure_remaining("serialize")
+        return result if with_meta else result.data
+
+    def _execute_quote_batch_plan(self, plan: QueryPlan) -> BatchResult[Quote]:
+        """Return auditable per-symbol errors and never cache partial results."""
+        batch = BatchPlanner.symbols(list(plan.spec.symbols))
+        chunks = self._quote_chunks(plan, batch)
+
+        def fetch() -> BatchResult[Quote]:
+            plan.budget.begin_attempt()
+            self._health_before(plan)
+            by_symbol: dict[str, Quote] = {}
+            errors: dict[str, ErrorEnvelope] = {}
+            meta: ResultMeta | None = None
+            health_recorded_failure = False
+
+            for index, chunk in enumerate(chunks):
+                chunk_batch = BatchPlanner.symbols(list(chunk))
+                attempted = False
+                try:
+                    plan.budget.ensure_remaining(f"provider_chunk_{index}")
+                    attempted = True
+                    result = super(UnifiedMarketDataService, self).quotes(
+                        list(chunk), provider=plan.provider, with_meta=True
+                    )
+                    if not isinstance(result, QueryResult):
+                        raise RuntimeError(
+                            "ProviderCoreService.quotes(with_meta=True) contract violated"
+                        )
+                    meta = result.meta
+                    plan.budget.ensure_remaining(f"provider_chunk_{index}_response")
+                    chunk_map = self._quote_map(chunk_batch, list(result.data))
+                except TdxError as exc:
+                    self._health_failure(plan, exc)
+                    health_recorded_failure = True
+                    root = to_error_envelope(
+                        exc,
+                        provider=plan.provider,
+                        channel=plan.channel,
+                        capability="quotes",
+                        query_id=plan.fingerprint.value,
+                    )
+                    root_summary = {
+                        "code": root.code,
+                        "type": root.type,
+                        "message": root.message,
+                        "phase": root.phase,
+                        "chunk_index": index,
+                    }
+                    current_status = "failed" if attempted else "not_attempted"
+                    for symbol in chunk:
+                        context = dict(root.context)
+                        context.update(
+                            {
+                                "symbol": symbol,
+                                "chunk_index": index,
+                                "attempted": attempted,
+                                "batch_status": current_status,
+                                "original_error": root_summary,
+                            }
+                        )
+                        errors[symbol] = replace(root, partial=True, context=context)
+
+                    for later_index, later_chunk in enumerate(chunks[index + 1 :], index + 1):
+                        for symbol in later_chunk:
+                            blocked = SourceUnavailable(
+                                "å‰åº Provider chunk å¤±è´¥ï¼Œæœ¬æ ‡çš„æœªç»§ç»­è¯·æ±‚",
+                                context={
+                                    "provider": plan.provider,
+                                    "channel": plan.channel,
+                                    "capability": "quotes",
+                                    "query_id": plan.fingerprint.value,
+                                    "phase": "batch",
+                                    "symbol": symbol,
+                                    "chunk_index": later_index,
+                                    "attempted": False,
+                                    "batch_status": "not_attempted",
+                                    "blocked_by": root_summary,
+                                    "partial": True,
+                                    "fallback": False,
+                                    "retry_same_provider": False,
+                                    "terminal": True,
+                                    "provider_switch_allowed": False,
+                                },
+                            )
+                            errors[symbol] = to_error_envelope(
+                                blocked,
+                                provider=plan.provider,
+                                channel=plan.channel,
+                                capability="quotes",
+                                query_id=plan.fingerprint.value,
+                            )
+                    break
+                except BaseException as exc:
+                    self._health_failure(plan, exc)
+                    raise
+
+                by_symbol.update(chunk_map)
+                missing = [symbol for symbol in chunk if symbol not in chunk_map]
+                for symbol in missing:
+                    exc = SourceUnavailable(
+                        "Provider æ‰¹é‡è¡Œæƒ…ç¼ºå°‘è¯·æ±‚æ ‡çš„",
+                        context={
+                            "provider": plan.provider,
+                            "channel": plan.channel,
+                            "capability": "quotes",
+                            "query_id": plan.fingerprint.value,
+                            "phase": "normalize",
+                            "symbol": symbol,
+                            "chunk_index": index,
+                            "attempted": True,
+                            "batch_status": "missing",
+                            "partial": True,
+                            "fallback": False,
+                            "retry_same_provider": False,
+                            "terminal": True,
+                            "provider_switch_allowed": False,
+                        },
+                    )
+                    errors[symbol] = to_error_envelope(
+                        exc,
+                        provider=plan.provider,
+                        channel=plan.channel,
+                        capability="quotes",
+                        query_id=plan.fingerprint.value,
+                    )
+
+            if errors and not health_recorded_failure:
+                self._health_failure(
+                    plan,
+                    SourceUnavailable(
+                        "Provider æ‰¹é‡è¡Œæƒ…è¿”å›žéƒ¨åˆ†ç¼ºå¤±",
+                        context={"missing_symbols": list(errors), "partial": True},
+                    ),
+                )
+            elif not errors:
+                self._health_success(plan)
+
+            items = tuple(by_symbol[symbol] for symbol in batch.original if symbol in by_symbol)
+            return BatchResult(
+                items=items,
+                errors=errors,
+                requested=batch.original,
+                partial=bool(errors),
+                meta=meta,
+            )
+
+        result = self.singleflight.do(
+            plan.fingerprint.value,
+            fetch,
+            timeout=plan.budget.remaining_s(),
+        )
+        plan.budget.ensure_remaining("serialize")
+        return result
+
+    def bars(
+        self,
+        symbol: str,
+        *,
+        period: str = "day",
+        count: int = 320,
+        start: int = 0,
+        adjust: str = "",
+        provider: str | None = None,
+        source: str | None = None,
+        with_meta: bool = False,
+        deadline_ms: int | None = None,
+        max_age: float | None = None,
+        allow_stale: bool = False,
+    ) -> list[Bar] | QueryResult[list[Bar]]:
+        spec = QuerySpec.build(
+            "bars",
+            symbols=(symbol,),
+            provider=provider,
+            source=source,
+            period=period,
+            count=count,
+            start=start,
+            adjustment=adjust,
+            deadline_ms=self.default_deadline_ms if deadline_ms is None else deadline_ms,
+            max_age=max_age,
+            allow_stale=allow_stale,
+        )
+        return self.query(spec, with_meta=with_meta)
+
+    def _execute_bars_plan(
+        self,
+        plan: QueryPlan,
+        *,
+        with_meta: bool,
+    ) -> list[Bar] | QueryResult[list[Bar]]:
+        cached = self._cache_get(plan)
+        if cached is not None:
+            plan.budget.ensure_remaining("cache_read")
+            return cached if with_meta else cached.data
+        symbol = plan.spec.symbols[0]
+
+        def fetch() -> QueryResult[list[Bar]]:
+            plan.budget.begin_attempt()
+            self._health_before(plan)
+            try:
+                result = super(UnifiedMarketDataService, self).bars(
+                    symbol,
+                    period=plan.spec.period or "day",
+                    count=plan.spec.count,
+                    start=plan.spec.start,
+                    adjust=plan.spec.adjustment,
+                    provider=plan.provider,
+                    with_meta=True,
+                )
+                if not isinstance(result, QueryResult):
+                    raise RuntimeError("ProviderCoreService.bars(with_meta=True) contract violated")
+                plan.budget.ensure_remaining("provider_response")
+            except BaseException as exc:
+                self._health_failure(plan, exc)
+                raise
+            self._health_success(plan)
+            self._cache_put(plan, result)
+            return result
+
+        result = self.singleflight.do(
+            plan.fingerprint.value,
+            fetch,
+            timeout=plan.budget.remaining_s(),
+        )
+        plan.budget.ensure_remaining("serialize")
+        return result if with_meta else result.data
+
+
+def market_data(**kwargs: Any) -> UnifiedMarketDataService:
+    return UnifiedMarketDataService(**kwargs)
