@@ -34,6 +34,10 @@ class FakeF10:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
 
+    @property
+    def raw(self) -> FakeF10:
+        return self
+
     def download(self, symbol: str, filename: str) -> bytes:
         self.calls.append(("download", (symbol, filename)))
         return b"f10"
