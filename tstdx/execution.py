@@ -53,7 +53,7 @@ def _default_negative_predicate(exc: BaseException) -> bool:
 
 
 def _clone_error(exc: BaseException) -> BaseException:
-    """Return an independent exception object for another caller."""
+    """Return an independent exception object for another logical caller."""
 
     try:
         return copy.deepcopy(exc)
@@ -76,6 +76,22 @@ def _clone_error(exc: BaseException) -> BaseException:
         "cached terminal provider error",
         context={"negative_cache": True, "fallback": False},
     )
+
+
+def _negative_cache_error(exc: BaseException) -> BaseException:
+    """Clone a cached terminal error and mark the optimization provenance.
+
+    The cache marker is attached only to the clone returned to the caller. The
+    stored snapshot remains immutable-by-convention, so one caller cannot
+    contaminate later negative-cache hits by mutating ``TdxError.context``.
+    """
+
+    cloned = _clone_error(exc)
+    if isinstance(cloned, TdxError):
+        cloned.context["negative_cache"] = True
+        cloned.context["fallback"] = False
+        cloned.context["provider_switch_allowed"] = False
+    return cloned
 
 
 @dataclass(slots=True)
@@ -159,12 +175,16 @@ class SingleFlight:
     deadline inheritance and a retry stampede.
 
     Successful followers receive defensive deep copies so independent callers do
-    not share mutable ``QueryResult``/list/model instances.
+    not share mutable ``QueryResult``/list/model instances. Failed followers also
+    receive independent exception objects; mutable ``TdxError.context`` therefore
+    cannot leak between concurrent logical callers.
 
     A very short negative cache coalesces only stable terminal failures. The key
     remains the full QueryFingerprint supplied by the planner, so cached errors
     cannot cross Provider, Channel, Capability or window semantics. Transient
-    transport/provider availability failures are deliberately excluded.
+    transport/provider availability failures are deliberately excluded. A
+    negative-cache hit is marked in its cloned error context while preserving the
+    fail-closed Provider boundary.
     """
 
     def __init__(
@@ -219,7 +239,7 @@ class SingleFlight:
             del self._negative[key]
             return None
         self.negative_hits += 1
-        return _clone_error(entry.error)
+        return _negative_cache_error(entry.error)
 
     def _negative_store(self, key: str, exc: BaseException) -> None:
         if self.negative_ttl <= 0 or not self._negative_predicate(exc):
@@ -315,7 +335,7 @@ class SingleFlight:
                     self.deadline_bypasses += 1
                 _record_singleflight("deadline_bypass")
                 return self.do(key, fn, timeout=remaining)
-            raise flight.error
+            raise _clone_error(flight.error)
         return copy.deepcopy(cast(T, flight.result))
 
 
