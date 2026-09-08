@@ -12,6 +12,7 @@ endpoints for canonical common capabilities.
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict, is_dataclass
@@ -33,6 +34,7 @@ __all__ = ["create_app", "PlannedProviderHttpClient", "PlannedTaskStore"]
 
 _LOG = logging.getLogger(__name__)
 _MAX_PROVIDER_SYMBOLS = 1000
+_ROUTE_INJECTION_LOCK = threading.Lock()
 
 
 class PlannedProviderHttpClient(ProviderHttpClient):
@@ -98,12 +100,17 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
     """Build the official REST app on the planned Provider runtime."""
     runtime_client = client if client is not None else PlannedProviderHttpClient()
 
-    legacy_task_store = _routes.TaskStore
-    _routes.TaskStore = PlannedTaskStore  # type: ignore[assignment]
-    try:
-        app = _routes.create_app(runtime_client)
-    finally:
-        _routes.TaskStore = legacy_task_store  # type: ignore[assignment]
+    # ``http_server`` is retained as a legacy route-definition module and reads
+    # its TaskStore from module globals. Keep the temporary compatibility swap
+    # serialized so concurrent app construction cannot restore another caller's
+    # TaskStore class and create an unbounded/orphan-task runtime.
+    with _ROUTE_INJECTION_LOCK:
+        legacy_task_store = _routes.TaskStore
+        _routes.TaskStore = PlannedTaskStore  # type: ignore[assignment]
+        try:
+            app = _routes.create_app(runtime_client)
+        finally:
+            _routes.TaskStore = legacy_task_store  # type: ignore[assignment]
 
     app.state.runtime = "planned-v12"
 
