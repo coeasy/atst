@@ -79,8 +79,10 @@ class AsyncUnifiedQuoteAPI:
     async def aclose(self) -> None:
         if self._closed:
             return
-        await asyncio.to_thread(self._sync.close)
-        self._closed = True
+        try:
+            await asyncio.to_thread(self._sync.close)
+        finally:
+            self._closed = True
 
     async def __aenter__(self) -> "AsyncUnifiedQuoteAPI":
         return self
