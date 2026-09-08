@@ -3,18 +3,15 @@
 
 """tstdx —— TDX-first, multi-provider market-data library.
 
-The v12 public architecture uses one canonical provider model:
+The v12 public architecture uses one canonical provider model and one planned
+execution path::
 
-``Provider -> Channel -> Capability -> Endpoint/Host``.
+    QuerySpec -> QueryPlan -> Provider -> Channel -> Capability -> Endpoint/Host
 
-TDX is the default provider. Other providers (Tencent/Sina/Eastmoney/...)
-are independent data channels, not automatic fallbacks. Provider-specific APIs
-preserve their unique data while common capabilities can be exposed by a
-unified service. Selecting a provider is fail-closed: provider failure is
-reported to the caller; only host/endpoint failover inside that provider is
-allowed automatically.
-
-Low-level protocol/reader APIs remain public and directly usable.
+TDX is the default Provider. Tencent/Sina/Eastmoney/... are independent
+Providers, never implicit fallbacks. Public high-level queries compile before
+I/O, bind one Provider/Channel, carry one total deadline and may coalesce only
+identical semantic fingerprints. Low-level protocol/reader APIs remain public.
 """
 
 from __future__ import annotations
@@ -38,8 +35,14 @@ __all__ = [
     "ProviderRegistry",
     "PROVIDERS",
     "resolve_provider",
+    "QuerySpec",
+    "QueryPlan",
+    "QueryPlanner",
+    "QueryFingerprint",
     "UnifiedMarketDataService",
     "market_data",
+    "AsyncMarketDataService",
+    "async_market_data",
     "configure",
     "get_config",
     "load_config",
@@ -68,11 +71,13 @@ def get_config() -> Any:
 
 
 if TYPE_CHECKING:  # pragma: no cover
+    from .async_service import AsyncMarketDataService
     from .client import AsyncTdxClient, TdxClient
     from .config import load_config
+    from .planned_service import UnifiedMarketDataService
     from .providers import ChannelSpec, ProviderRegistry, ProviderSpec
+    from .query import QueryFingerprint, QueryPlan, QueryPlanner, QuerySpec
     from .reader import BlockReader, DataProfile, DayBarReader, FinanceReader, MinBarReader
-    from .service import UnifiedMarketDataService
     from .web import WebQuoteClient
 
 
@@ -91,8 +96,14 @@ _LAZY: dict[str, tuple[str, str]] = {
     "ProviderRegistry": ("tstdx.providers", "ProviderRegistry"),
     "PROVIDERS": ("tstdx.providers", "PROVIDERS"),
     "resolve_provider": ("tstdx.providers", "resolve_provider"),
-    "UnifiedMarketDataService": ("tstdx.service", "UnifiedMarketDataService"),
-    "market_data": ("tstdx.service", "market_data"),
+    "QuerySpec": ("tstdx.query", "QuerySpec"),
+    "QueryPlan": ("tstdx.query", "QueryPlan"),
+    "QueryPlanner": ("tstdx.query", "QueryPlanner"),
+    "QueryFingerprint": ("tstdx.query", "QueryFingerprint"),
+    "UnifiedMarketDataService": ("tstdx.planned_service", "UnifiedMarketDataService"),
+    "market_data": ("tstdx.planned_service", "market_data"),
+    "AsyncMarketDataService": ("tstdx.async_service", "AsyncMarketDataService"),
+    "async_market_data": ("tstdx.async_service", "async_market_data"),
     "providers": ("tstdx.providers", ""),
     "facade": ("tstdx.facade", ""),
     "observability": ("tstdx.observability", ""),
