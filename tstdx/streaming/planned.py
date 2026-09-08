@@ -309,21 +309,24 @@ class PlannedQuoteStream:
         return self
 
     def stop(self, *, timeout: float = 3.0) -> None:
+        if timeout < 0:
+            raise ValueError("timeout must be >= 0")
+        current = threading.current_thread()
         with self._lock:
             self._closed = True
             self._stop.set()
             self._dispatch_wakeup.set()
             poll = self._poll_thread
             dispatch = self._dispatch_thread
-        if poll is not None:
+        if poll is not None and poll is not current:
             poll.join(timeout=timeout)
-        if dispatch is not None:
+        if dispatch is not None and dispatch is not current:
             dispatch.join(timeout=timeout)
         poll_alive = poll is not None and poll.is_alive()
         dispatch_alive = dispatch is not None and dispatch.is_alive()
-        if poll_alive:
+        if poll_alive and poll is not current:
             _LOG.warning("planned stream poll thread did not stop within timeout")
-        if dispatch_alive:
+        if dispatch_alive and dispatch is not current:
             _LOG.warning("planned stream dispatch thread did not stop within timeout")
 
         should_close_service = False
@@ -408,70 +411,88 @@ class PlannedQuoteStream:
             record_stream_reconnect(provider=self.provider, kind="resubscribed")
         return True
 
+    def _close_owned_service_after_poll(self) -> None:
+        should_close = False
+        with self._lock:
+            current = threading.current_thread()
+            if self._poll_thread is current:
+                self._poll_thread = None
+            if self._closed and self._owns_service and not self._service_closed:
+                self._service_closed = True
+                should_close = True
+        if should_close:
+            with contextlib.suppress(Exception):
+                self.service.close()
+
     def _poll_loop(self) -> None:
-        while not self._stop.is_set():
-            subs = self._subscriptions()
-            if not subs:
-                self._stop.wait(0.2)
-                continue
+        try:
+            while not self._stop.is_set():
+                subs = self._subscriptions()
+                if not subs:
+                    self._stop.wait(0.2)
+                    continue
 
-            now = time.monotonic()
-            due = [sub for sub in subs if sub.next_due <= now]
-            if not due:
-                next_due = min(sub.next_due for sub in subs)
-                self._stop.wait(min(max(next_due - now, 0.001), 0.5))
-                continue
+                now = time.monotonic()
+                due = [sub for sub in subs if sub.next_due <= now]
+                if not due:
+                    next_due = min(sub.next_due for sub in subs)
+                    self._stop.wait(min(max(next_due - now, 0.001), 0.5))
+                    continue
 
-            symbols = self._union_symbols(due)
-            try:
-                result = self.service.quotes(symbols, provider=self.provider)
-            except TdxError as exc:
-                self.stats.provider_errors += 1
-                self._mark_reconnect_pending()
+                symbols = self._union_symbols(due)
+                try:
+                    result = self.service.quotes(symbols, provider=self.provider)
+                except TdxError as exc:
+                    self.stats.provider_errors += 1
+                    self._mark_reconnect_pending()
+                    for sub in due:
+                        self._enqueue_error(sub, exc)
+                        self._advance_due(sub, now)
+                    self._stop.wait(self.reconnect.next_delay())
+                    continue
+                except Exception as exc:
+                    self.stats.provider_errors += 1
+                    self._mark_reconnect_pending()
+                    _LOG.exception("planned stream unexpected provider error")
+                    wrapped = SubscriptionError(
+                        "planned stream 上游调用失败",
+                        context={"provider": self.provider, "fallback": False},
+                        cause=exc,
+                    )
+                    for sub in due:
+                        self._enqueue_error(sub, wrapped)
+                        self._advance_due(sub, now)
+                    self._stop.wait(self.reconnect.next_delay())
+                    continue
+
+                if not isinstance(result, list) or not all(
+                    isinstance(row, Quote) for row in result
+                ):
+                    contract_error = SubscriptionError(
+                        "planned stream service 必须返回 list[Quote]",
+                        context={
+                            "provider": self.provider,
+                            "phase": "stream_contract",
+                            "fallback": False,
+                        },
+                    )
+                    for sub in due:
+                        self._enqueue_error(sub, contract_error)
+                        self._advance_due(sub, now)
+                    continue
+
+                rows = result
+                self._mark_reconnected()
+                self.reconnect.success()
+                self.stats.polls += 1
+                self.stats.requested_symbols += len(symbols)
+
+                qmap = {_quote_key(quote): quote for quote in rows}
                 for sub in due:
-                    self._enqueue_error(sub, exc)
+                    self._deliver_subscription(sub, qmap)
                     self._advance_due(sub, now)
-                self._stop.wait(self.reconnect.next_delay())
-                continue
-            except Exception as exc:
-                self.stats.provider_errors += 1
-                self._mark_reconnect_pending()
-                _LOG.exception("planned stream unexpected provider error")
-                wrapped = SubscriptionError(
-                    "planned stream 上游调用失败",
-                    context={"provider": self.provider, "fallback": False},
-                    cause=exc,
-                )
-                for sub in due:
-                    self._enqueue_error(sub, wrapped)
-                    self._advance_due(sub, now)
-                self._stop.wait(self.reconnect.next_delay())
-                continue
-
-            if not isinstance(result, list) or not all(isinstance(row, Quote) for row in result):
-                contract_error = SubscriptionError(
-                    "planned stream service 必须返回 list[Quote]",
-                    context={
-                        "provider": self.provider,
-                        "phase": "stream_contract",
-                        "fallback": False,
-                    },
-                )
-                for sub in due:
-                    self._enqueue_error(sub, contract_error)
-                    self._advance_due(sub, now)
-                continue
-
-            rows = result
-            self._mark_reconnected()
-            self.reconnect.success()
-            self.stats.polls += 1
-            self.stats.requested_symbols += len(symbols)
-
-            qmap = {_quote_key(quote): quote for quote in rows}
-            for sub in due:
-                self._deliver_subscription(sub, qmap)
-                self._advance_due(sub, now)
+        finally:
+            self._close_owned_service_after_poll()
 
     def _mark_missing(self, sub: StreamSubscription, key: str, symbol: str) -> None:
         emit_gap = False
@@ -577,25 +598,30 @@ class PlannedQuoteStream:
         return True
 
     def _dispatch_loop(self) -> None:
-        while not self._stop.is_set() or self._has_pending():
-            delivered = False
-            for sub in self._subscriptions():
-                queue = sub.queue
-                if queue is not None:
-                    for kind, symbol, payload in queue.drain():
-                        delivered = True
-                        if kind == "quote" and sub.on_quote is not None:
-                            try:
-                                sub.on_quote(symbol, payload)
-                                self.stats.delivered_events += 1
-                            except Exception:
-                                _LOG.exception("planned stream quote callback failed")
-                        elif kind == "error" and sub.on_error is not None:
-                            try:
-                                sub.on_error(payload)
-                            except Exception:
-                                _LOG.exception("planned stream error callback failed")
-                delivered = self._dispatch_overflow(sub) or delivered
-            if not delivered:
-                self._dispatch_wakeup.wait(self.callback_idle_wait)
-                self._dispatch_wakeup.clear()
+        try:
+            while not self._stop.is_set() or self._has_pending():
+                delivered = False
+                for sub in self._subscriptions():
+                    queue = sub.queue
+                    if queue is not None:
+                        for kind, symbol, payload in queue.drain():
+                            delivered = True
+                            if kind == "quote" and sub.on_quote is not None:
+                                try:
+                                    sub.on_quote(symbol, payload)
+                                    self.stats.delivered_events += 1
+                                except Exception:
+                                    _LOG.exception("planned stream quote callback failed")
+                            elif kind == "error" and sub.on_error is not None:
+                                try:
+                                    sub.on_error(payload)
+                                except Exception:
+                                    _LOG.exception("planned stream error callback failed")
+                    delivered = self._dispatch_overflow(sub) or delivered
+                if not delivered:
+                    self._dispatch_wakeup.wait(self.callback_idle_wait)
+                    self._dispatch_wakeup.clear()
+        finally:
+            with self._lock:
+                if self._dispatch_thread is threading.current_thread():
+                    self._dispatch_thread = None
