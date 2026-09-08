@@ -26,9 +26,10 @@ never invents a timestamp from unknown protocol fields.
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Mapping
+from typing import Any
 
 from .errors import FreshnessViolation
 
