@@ -124,21 +124,32 @@ def _h_server_speedtest(_client: TdxClient, _args: dict[str, Any]) -> list[dict[
 
 
 def _h_get_stock_changes(_client: TdxClient, args: dict[str, Any]) -> list[dict[str, Any]]:
-    """盘中异动池（Web 源，不需要 TDX 主站连接）。"""
-    from ...web.facade import WebQuoteSession
-
+    """盘中异动池；canonical client 优先复用 Eastmoney Provider runtime。"""
     types = tuple(int(t) for t in args.get("types") or () if str(t).strip())
     page = clamp_int(args.get("page", 1), 1, 1, MAX_PAGE)
     size = clamp_int(args.get("size", 50), 50, 1, MAX_STOCK_CHANGES_SIZE)
+    fn = getattr(_client, "stock_changes", None)
+    if callable(fn):
+        return fn(types, page=page, size=size)
+
+    # Legacy TdxClient compatibility: historical tool implementation created a
+    # Web session itself. The official MCP boundary injects a Provider runtime,
+    # so new applications never take this branch.
+    from ...web.facade import WebQuoteSession
+
     return WebQuoteSession.stock_changes(types, page=page, size=size)
 
 
 def _h_get_hot_rank(_client: TdxClient, args: dict[str, Any]) -> list[dict[str, Any]]:
-    """股吧人气榜（Web 源，不需要 TDX 主站连接）。"""
-    from ...web.facade import WebQuoteSession
-
+    """股吧人气榜；canonical client 优先复用 Eastmoney Provider runtime。"""
     page = clamp_int(args.get("page", 1), 1, 1, MAX_PAGE)
     size = clamp_int(args.get("size", 100), 100, 1, MAX_HOT_RANK_SIZE)
+    fn = getattr(_client, "hot_rank", None)
+    if callable(fn):
+        return fn(page=page, size=size)
+
+    from ...web.facade import WebQuoteSession
+
     return WebQuoteSession.hot_rank(page=page, size=size)
 
 
