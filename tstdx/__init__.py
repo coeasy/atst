@@ -43,6 +43,10 @@ __all__ = [
     "market_data",
     "AsyncMarketDataService",
     "async_market_data",
+    "FailureDisposition",
+    "FailurePolicy",
+    "ErrorEnvelope",
+    "PlannedQuoteStream",
     "configure",
     "get_config",
     "load_config",
@@ -74,10 +78,13 @@ if TYPE_CHECKING:  # pragma: no cover
     from .async_service import AsyncMarketDataService
     from .client import AsyncTdxClient, TdxClient
     from .config import load_config
+    from .error_envelope import ErrorEnvelope
+    from .failure import FailureDisposition, FailurePolicy
     from .planned_service import UnifiedMarketDataService
     from .providers import ChannelSpec, ProviderRegistry, ProviderSpec
     from .query import QueryFingerprint, QueryPlan, QueryPlanner, QuerySpec
     from .reader import BlockReader, DataProfile, DayBarReader, FinanceReader, MinBarReader
+    from .streaming.planned import PlannedQuoteStream
     from .web import WebQuoteClient
 
 
@@ -104,6 +111,10 @@ _LAZY: dict[str, tuple[str, str]] = {
     "market_data": ("tstdx.planned_service", "market_data"),
     "AsyncMarketDataService": ("tstdx.async_service", "AsyncMarketDataService"),
     "async_market_data": ("tstdx.async_service", "async_market_data"),
+    "FailureDisposition": ("tstdx.failure", "FailureDisposition"),
+    "FailurePolicy": ("tstdx.failure", "FailurePolicy"),
+    "ErrorEnvelope": ("tstdx.error_envelope", "ErrorEnvelope"),
+    "PlannedQuoteStream": ("tstdx.streaming.planned", "PlannedQuoteStream"),
     "providers": ("tstdx.providers", ""),
     "facade": ("tstdx.facade", ""),
     "observability": ("tstdx.observability", ""),
