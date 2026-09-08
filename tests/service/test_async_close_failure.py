@@ -83,6 +83,50 @@ async def test_async_close_drains_submitted_work_and_rejects_queued_work() -> No
 
 
 @pytest.mark.asyncio
+async def test_cancelled_call_keeps_concurrency_slot_until_worker_really_finishes() -> None:
+    first_started = threading.Event()
+    second_started = threading.Event()
+    release_first = threading.Event()
+    calls = 0
+
+    class BlockingService:
+        def quotes(self, *args: Any, **kwargs: Any) -> list[Any]:
+            nonlocal calls
+            calls += 1
+            current = calls
+            if current == 1:
+                first_started.set()
+                release_first.wait(1.0)
+            else:
+                second_started.set()
+            return []
+
+        def close(self) -> None:
+            return None
+
+    sync = BlockingService()
+    service = AsyncMarketDataService(
+        service=sync,  # type: ignore[arg-type]
+        max_workers=2,
+        max_concurrency=1,
+    )
+
+    first = asyncio.create_task(service.quotes(["sh600519"]))
+    assert await asyncio.to_thread(first_started.wait, 1.0)
+    first.cancel()
+    second = asyncio.create_task(service.quotes(["sz000001"]))
+    await asyncio.sleep(0.05)
+
+    assert second_started.is_set() is False
+    release_first.set()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    await second
+    assert second_started.is_set() is True
+    await service.aclose()
+
+
+@pytest.mark.asyncio
 async def test_strict_async_close_failure_still_marks_wrapper_closed() -> None:
     service = AsyncUnifiedQuoteAPI()
     service._sync = FailingCloseFacade()  # type: ignore[assignment]
