@@ -30,6 +30,7 @@ from ..config.schema import SourcesConfig
 from ..errors import SourceUnavailable, TdxError, ValidationError
 from ..planned_service import UnifiedMarketDataService
 from ..providers import PROVIDERS, normalize_provider_id, resolve_provider
+from ..query import QuerySpec
 
 __all__ = ["DataSourceRouter", "SourceUnavailable", "build_router"]
 
@@ -174,7 +175,6 @@ class DataSourceRouter:
             timeout=self.timeout,
         )
         self._owns_service = service is None
-        # Compatibility diagnostics only; reset at request start.
         self.last_errors: list[tuple[str, BaseException]] = []
         self.last_source: str | None = None
 
@@ -195,8 +195,6 @@ class DataSourceRouter:
                 if candidate in PROVIDERS.ids():
                     return candidate
         except (AttributeError, TypeError, ValueError):
-            # Missing optional Web settings use the documented one-provider
-            # compatibility default; there is still no fallback chain.
             return "tencent"
         return "tencent"
 
@@ -361,25 +359,28 @@ class DataSourceRouter:
                 data = self._reader_kline(symbol, period, count, start=start)
             else:
                 if selected_channel is not None:
-                    PROVIDERS.require(pid, "bars", channel=selected_channel)
-                    if pid == "tdx" and selected_channel != "quotation":
-                        raise ValidationError(
-                            "统一 kline 兼容入口仅执行 tdx/quotation；"
-                            "extended/goods 请使用 md.tdx.<channel>.bars()",
-                            context={
-                                "provider": pid,
-                                "channel": selected_channel,
-                                "capability": "bars",
-                            },
-                        )
-                result = self._service.bars(
-                    symbol,
-                    period=period,
-                    count=count,
-                    start=start,
-                    adjust=adjust,
-                    provider=pid,
-                )
+                    result = self._service.query(
+                        QuerySpec.build(
+                            "bars",
+                            symbols=(symbol,),
+                            provider=pid,
+                            channel=selected_channel,
+                            period=period,
+                            count=count,
+                            start=start,
+                            adjustment=adjust,
+                        ),
+                        with_meta=False,
+                    )
+                else:
+                    result = self._service.bars(
+                        symbol,
+                        period=period,
+                        count=count,
+                        start=start,
+                        adjust=adjust,
+                        provider=pid,
+                    )
                 if not isinstance(result, list):
                     raise RuntimeError("Provider service bars compatibility contract violated")
                 data = result
@@ -425,7 +426,6 @@ class DataSourceRouter:
                 f"TDX vipdoc 文件不存在 {path}",
                 context={"provider": "tdx", "channel": "vipdoc", "path": str(path)},
             )
-        # lc1/lc5 use the minute-record layout; both must use MinBarReader.
         reader = MinBarReader() if rperiod in (Period.M1, Period.M5) else DayBarReader()
         bars = reader.read(path, output="dict")
         if start:
