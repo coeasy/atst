@@ -43,7 +43,7 @@ def test_only_verified_capability_batch_limits_are_declared() -> None:
     assert quotation.batch_limits == (("quotes", 60),)
     assert quotation.batch_limit_for("quotes") == 60
     assert quotation.batch_limit_for("bars") is None
-    assert quotation.batch_limit == 60  # compatibility accessor for quotes executor
+    assert not hasattr(quotation, "batch_limit")
     assert PROVIDERS.get("tencent").channel("quote").batch_limits == ()
     assert PROVIDERS.get("sina").channel("quote").batch_limits == ()
     assert PROVIDERS.get("eastmoney").channel("quote").batch_limits == ()
