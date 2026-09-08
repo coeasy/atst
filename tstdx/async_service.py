@@ -12,6 +12,7 @@ without maintaining a second routing implementation.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -24,6 +25,29 @@ from .query import QuerySpec
 __all__ = ["AsyncMarketDataService", "AsyncProviderAPI", "async_market_data"]
 
 T = TypeVar("T")
+
+
+async def _await_worker(future: asyncio.Future[T]) -> T:
+    """Keep ownership of a submitted worker until the real thread finishes.
+
+    Cancelling the caller must not release an AsyncMarketDataService concurrency
+    slot while its synchronous Provider call is still running.  Shield the
+    worker, wait for its actual completion even after cancellation, consume any
+    late worker exception, then re-raise the caller cancellation.
+    """
+    try:
+        return await asyncio.shield(future)
+    except asyncio.CancelledError:
+        while not future.done():
+            try:
+                await asyncio.shield(future)
+            except asyncio.CancelledError:
+                continue
+            except BaseException:
+                break
+        with contextlib.suppress(BaseException):
+            future.result()
+        raise
 
 
 class AsyncProviderAPI:
@@ -93,7 +117,8 @@ class AsyncMarketDataService:
         async with self._semaphore:
             if self._closed:
                 raise RuntimeError("AsyncMarketDataService 已关闭")
-            return await loop.run_in_executor(self._executor, call)
+            worker = loop.run_in_executor(self._executor, call)
+            return await _await_worker(worker)
 
     async def query(self, spec: QuerySpec, *, with_meta: bool = True) -> Any:
         """Execute the same canonical QuerySpec path as the sync service."""
