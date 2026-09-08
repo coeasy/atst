@@ -10,10 +10,12 @@ from tstdx.batch import BatchResult
 from tstdx.failure import FailureDisposition
 from tstdx.facade import AsyncUnifiedQuoteAPI, UnifiedMarketDataService, UnifiedQuoteAPI
 from tstdx.health import SourceHealthRegistry
-from tstdx.integration import create_app
+from tstdx.integration import JsonRpcHandler, create_app, create_mcp_server, serve_ws
 from tstdx.integration.http_app import PlannedProviderHttpClient, PlannedTaskStore
 from tstdx.integration.http_runtime import ProviderHttpClient
+from tstdx.integration.mcp_app import MCPServer as CanonicalMCPServer
 from tstdx.integration.tasks import TaskStore as SafeTaskStore
+from tstdx.integration.ws_app import JsonRpcHandler as CanonicalWsHandler
 from tstdx.planned_service import UnifiedMarketDataService as PlannedService
 from tstdx.streaming.planned import PlannedQuoteStream, StreamWatermark
 
@@ -68,6 +70,30 @@ def test_package_http_factory_delegates_to_planned_http_app() -> None:
     finally:
         base_client.close()
         planned_client.close()
+
+
+def test_package_ws_and_mcp_factories_delegate_to_canonical_boundaries() -> None:
+    assert ".ws_app" in inspect.getsource(serve_ws)
+    assert ".mcp_app" in inspect.getsource(create_mcp_server)
+    assert JsonRpcHandler is CanonicalWsHandler
+
+    ws = CanonicalWsHandler()
+    try:
+        assert isinstance(ws._client_obj(), ProviderHttpClient)
+        assert ws._client_obj()._service_factory is PlannedService
+    finally:
+        client = ws._client
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
+
+    mcp = CanonicalMCPServer()
+    client = mcp._get_client()
+    try:
+        assert isinstance(client, ProviderHttpClient)
+        assert client._service_factory is PlannedService
+    finally:
+        client.close()
 
 
 def test_failure_disposition_cannot_be_constructed_with_provider_switch() -> None:
