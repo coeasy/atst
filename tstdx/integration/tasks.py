@@ -172,8 +172,10 @@ class TaskManager:
             thread_name_prefix=thread_name_prefix,
         )
         self._lock = threading.RLock()
+        self._shutdown_lock = threading.Lock()
         self._records: dict[str, _TaskRecord[Any]] = {}
         self._accepting = True
+        self._shutdown_started = False
         self._closed = False
 
     def _active_count_locked(self) -> int:
@@ -183,6 +185,11 @@ class TaskManager:
     def active_count(self) -> int:
         with self._lock:
             return self._active_count_locked()
+
+    @property
+    def draining(self) -> bool:
+        with self._lock:
+            return self._shutdown_started and not self._closed
 
     def _ensure_accepting_locked(self) -> None:
         if not self._accepting or self._closed:
@@ -366,14 +373,23 @@ class TaskManager:
             return len(ids)
 
     def shutdown(self, *, wait: bool = True) -> None:
-        """Drain existing work and reject new submissions."""
-        with self._lock:
-            if self._closed:
-                return
-            self._accepting = False
-        self._executor.shutdown(wait=wait, cancel_futures=False)
-        with self._lock:
-            self._closed = True
+        """Stop accepting new work; optionally wait for the drain to complete.
+
+        ``wait=False`` is a first shutdown phase, not a terminal lie. It starts
+        executor shutdown and leaves the manager in ``draining`` state so a later
+        ``shutdown(wait=True)``/``close()`` can still join all workers. Shutdown
+        calls are serialized without holding the task-record lock while joining.
+        """
+        with self._shutdown_lock:
+            with self._lock:
+                if self._closed:
+                    return
+                self._accepting = False
+                self._shutdown_started = True
+            self._executor.shutdown(wait=wait, cancel_futures=False)
+            if wait:
+                with self._lock:
+                    self._closed = True
 
     close = shutdown
 
