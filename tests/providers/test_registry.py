@@ -38,14 +38,18 @@ def test_market_and_channel_are_not_provider_ids() -> None:
         PROVIDERS.get("kline")
 
 
-def test_only_verified_batch_limits_are_declared() -> None:
-    assert PROVIDERS.get("tdx").channel("quotation").batch_limit == 60
-    assert PROVIDERS.get("tencent").channel("quote").batch_limit is None
-    assert PROVIDERS.get("sina").channel("quote").batch_limit is None
-    assert PROVIDERS.get("eastmoney").channel("quote").batch_limit is None
+def test_only_verified_capability_batch_limits_are_declared() -> None:
+    quotation = PROVIDERS.get("tdx").channel("quotation")
+    assert quotation.batch_limits == (("quotes", 60),)
+    assert quotation.batch_limit_for("quotes") == 60
+    assert quotation.batch_limit_for("bars") is None
+    assert quotation.batch_limit == 60  # compatibility accessor for quotes executor
+    assert PROVIDERS.get("tencent").channel("quote").batch_limits == ()
+    assert PROVIDERS.get("sina").channel("quote").batch_limits == ()
+    assert PROVIDERS.get("eastmoney").channel("quote").batch_limits == ()
 
 
-def test_channel_spec_new_batch_limit_does_not_move_historical_notes_position() -> None:
+def test_channel_spec_new_batch_limits_do_not_move_historical_notes_position() -> None:
     channel = ChannelSpec(
         "legacy",
         frozenset({"quotes"}),
@@ -55,4 +59,13 @@ def test_channel_spec_new_batch_limit_does_not_move_historical_notes_position() 
         "legacy positional notes",
     )
     assert channel.notes == "legacy positional notes"
-    assert channel.batch_limit is None
+    assert channel.batch_limits == ()
+
+
+def test_channel_spec_rejects_batch_limit_for_undeclared_capability() -> None:
+    with pytest.raises(ValueError, match="not declared"):
+        ChannelSpec.build(
+            "quote",
+            {"quotes"},
+            batch_limits={"bars": 60},
+        )
