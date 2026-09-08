@@ -178,6 +178,8 @@ class PlannedQuoteStream:
         self._dispatch_thread: threading.Thread | None = None
         self._reconnect_pending = False
         self._reconnect_epoch = 0
+        self._closed = False
+        self._service_closed = False
 
     def subscribe(
         self,
@@ -226,6 +228,11 @@ class PlannedQuoteStream:
 
         sub.queue = BackpressureQueue(max_queue, on_drop=on_drop)
         with self._lock:
+            if self._closed:
+                raise _input_error(
+                    "PlannedQuoteStream 已关闭，不能新增订阅",
+                    context={"provider": self.provider, "phase": "stream_lifecycle"},
+                )
             self._subs[sub_id] = sub
         self._dispatch_wakeup.set()
         return sub_id
@@ -262,41 +269,73 @@ class PlannedQuoteStream:
             return replace(value)
 
     def start(self) -> "PlannedQuoteStream":
-        if self._poll_thread is not None and self._poll_thread.is_alive():
-            return self
-        self._stop.clear()
         with self._lock:
+            if self._closed:
+                raise _input_error(
+                    "PlannedQuoteStream 已关闭，不能重新启动",
+                    context={"provider": self.provider, "phase": "stream_lifecycle"},
+                )
+            poll_alive = self._poll_thread is not None and self._poll_thread.is_alive()
+            dispatch_alive = (
+                self._dispatch_thread is not None and self._dispatch_thread.is_alive()
+            )
+            if poll_alive or dispatch_alive:
+                if poll_alive and dispatch_alive:
+                    return self
+                raise _input_error(
+                    "PlannedQuoteStream 线程状态不一致，拒绝启动第二组线程",
+                    context={
+                        "provider": self.provider,
+                        "phase": "stream_lifecycle",
+                        "poll_alive": poll_alive,
+                        "dispatch_alive": dispatch_alive,
+                    },
+                )
+            self._stop.clear()
             self._reconnect_pending = False
-        self.reconnect.success()
-        self._poll_thread = threading.Thread(
-            target=self._poll_loop,
-            name=f"tstdx-planned-poll-{self.provider}",
-            daemon=True,
-        )
-        self._dispatch_thread = threading.Thread(
-            target=self._dispatch_loop,
-            name=f"tstdx-planned-dispatch-{self.provider}",
-            daemon=True,
-        )
-        self._poll_thread.start()
-        self._dispatch_thread.start()
+            self.reconnect.success()
+            self._poll_thread = threading.Thread(
+                target=self._poll_loop,
+                name=f"tstdx-planned-poll-{self.provider}",
+                daemon=True,
+            )
+            self._dispatch_thread = threading.Thread(
+                target=self._dispatch_loop,
+                name=f"tstdx-planned-dispatch-{self.provider}",
+                daemon=True,
+            )
+            self._poll_thread.start()
+            self._dispatch_thread.start()
         return self
 
     def stop(self, *, timeout: float = 3.0) -> None:
-        self._stop.set()
-        self._dispatch_wakeup.set()
-        poll = self._poll_thread
-        dispatch = self._dispatch_thread
+        with self._lock:
+            self._closed = True
+            self._stop.set()
+            self._dispatch_wakeup.set()
+            poll = self._poll_thread
+            dispatch = self._dispatch_thread
         if poll is not None:
             poll.join(timeout=timeout)
         if dispatch is not None:
             dispatch.join(timeout=timeout)
-        if poll is not None and poll.is_alive():
+        poll_alive = poll is not None and poll.is_alive()
+        dispatch_alive = dispatch is not None and dispatch.is_alive()
+        if poll_alive:
             _LOG.warning("planned stream poll thread did not stop within timeout")
-            return
-        self._poll_thread = None
-        self._dispatch_thread = None if dispatch is None or not dispatch.is_alive() else dispatch
-        if self._owns_service:
+        if dispatch_alive:
+            _LOG.warning("planned stream dispatch thread did not stop within timeout")
+
+        should_close_service = False
+        with self._lock:
+            if self._poll_thread is poll and not poll_alive:
+                self._poll_thread = None
+            if self._dispatch_thread is dispatch and not dispatch_alive:
+                self._dispatch_thread = None
+            if self._owns_service and not self._service_closed and not poll_alive:
+                self._service_closed = True
+                should_close_service = True
+        if should_close_service:
             with contextlib.suppress(Exception):
                 self.service.close()
 
