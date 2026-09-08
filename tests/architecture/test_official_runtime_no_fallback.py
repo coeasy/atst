@@ -8,12 +8,16 @@ ROOT = Path(__file__).resolve().parents[2]
 
 OFFICIAL_RUNTIME = [
     ROOT / "tstdx" / "service.py",
+    ROOT / "tstdx" / "planned_service.py",
     ROOT / "tstdx" / "async_service.py",
     ROOT / "tstdx" / "provider_api.py",
     ROOT / "tstdx" / "providers" / "__init__.py",
     ROOT / "tstdx" / "providers" / "http.py",
+    ROOT / "tstdx" / "sources" / "__init__.py",
+    ROOT / "tstdx" / "facade" / "planned.py",
     ROOT / "tstdx" / "facade" / "strict.py",
     ROOT / "tstdx" / "facade" / "strict_async.py",
+    ROOT / "tstdx" / "integration" / "http_app.py",
     ROOT / "tstdx" / "integration" / "http_runtime.py",
     ROOT / "tstdx" / "integration" / "tasks.py",
 ]
