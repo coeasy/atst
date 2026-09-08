@@ -3,22 +3,19 @@
 
 """High-level public APIs.
 
-``tstdx.facade.UnifiedQuoteAPI`` is the v12 strict, Provider-bound compatibility
-facade. The exact pre-v12 class remains available as ``LegacyUnifiedQuoteAPI``
-and from :mod:`tstdx.facade.api` for callers intentionally preserving historical
-routing semantics during migration.
+The official compatibility facade is strict and QueryPlan-backed. The exact
+pre-v12 classes remain importable from :mod:`tstdx.facade.api` and
+:mod:`tstdx.facade.async_api` for callers intentionally preserving historical
+routing behavior during migration.
 
-New applications should prefer :class:`tstdx.service.UnifiedMarketDataService`
+New applications should prefer :class:`tstdx.planned_service.UnifiedMarketDataService`
 and Direct Provider namespaces (``md.tdx``, ``md.tencent``, ``md.sina``, ...).
-The existing binary/bridge/market convenience facades remain public for
-compatibility and are migrated independently.
 """
 
 from __future__ import annotations
 
-from ..service import UnifiedMarketDataService, market_data
+from ..planned_service import UnifiedMarketDataService, market_data
 from .api import UnifiedQuoteAPI as LegacyUnifiedQuoteAPI
-from .async_api import AsyncUnifiedQuoteAPI
 from .binary import TDX_CATEGORY_TO_PERIOD, BinaryClient, binary_client
 from .bridge import FREQUENCY_ALIASES, BridgeClient, bridge_client
 from .market import (
@@ -28,8 +25,9 @@ from .market import (
     OptionClient,
     market_client,
 )
+from .planned import UnifiedQuoteAPI, quote_api
 from .response import ApiResponse, err, ok, wrap
-from .strict import UnifiedQuoteAPI, quote_api
+from .strict_async import AsyncUnifiedQuoteAPI
 
 __all__ = [
     "UnifiedQuoteAPI",
