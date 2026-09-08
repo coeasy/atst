@@ -75,6 +75,13 @@ def _poisoned_quote() -> QueryResult[list[Quote]]:
     )
 
 
+def _quote_result(price: float) -> QueryResult[list[Quote]]:
+    return QueryResult(
+        data=[Quote(code="sh600519", price=price)],
+        meta=_meta("quotes", "quote"),
+    )
+
+
 def test_sqlite_quote_roundtrip_without_pickle(tmp_path: Path) -> None:
     path = tmp_path / "semantic.sqlite3"
     cache = SQLiteSemanticQueryCache(path)
@@ -109,10 +116,13 @@ def test_sqlite_bar_roundtrip(tmp_path: Path) -> None:
         )
         cache.put(key, original)
         restored = cache.get(key, max_age=10.0)
+        assert isinstance(restored, QueryResult)
         assert restored.data[0].datetime == "2026-09-08"
         assert restored.data[0].close == 123.4
         assert restored.data[0].extra["source_row"] == 7
-        assert restored.meta.freshness_status.mode is FreshnessMode.CURRENT_SERIES
+        status = restored.meta.freshness_status
+        assert status is not None
+        assert status.mode is FreshnessMode.CURRENT_SERIES
     finally:
         cache.close()
 
@@ -146,13 +156,7 @@ def test_expired_l2_entry_becomes_miss_and_is_deleted(tmp_path: Path) -> None:
     cache = SQLiteSemanticQueryCache(tmp_path / "expire.sqlite3")
     try:
         key = "q1:expire"
-        cache.put(
-            key,
-            QueryResult(
-                data=[Quote(code="sh600519", price=1.0)],
-                meta=_meta("quotes", "quote"),
-            ),
-        )
+        cache.put(key, _quote_result(1.0))
         time.sleep(0.02)
         assert cache.get(key, max_age=0.001) is None
         assert len(cache) == 0
@@ -165,13 +169,7 @@ def test_corrupt_l2_payload_is_evicted_after_one_failed_decode(tmp_path: Path) -
     cache = SQLiteSemanticQueryCache(path)
     key = "q1:corrupt"
     try:
-        cache.put(
-            key,
-            QueryResult(
-                data=[Quote(code="sh600519", price=1.0)],
-                meta=_meta("quotes", "quote"),
-            ),
-        )
+        cache.put(key, _quote_result(1.0))
         with sqlite3.connect(path) as raw:
             raw.execute(
                 "UPDATE semantic_cache SET payload=? WHERE fingerprint=?",
@@ -196,13 +194,7 @@ def test_decoded_l2_provenance_poison_is_evicted_not_promoted(tmp_path: Path) ->
     cache = SQLiteSemanticQueryCache(path)
     key = "q1:provenance-corrupt"
     try:
-        cache.put(
-            key,
-            QueryResult(
-                data=[Quote(code="sh600519", price=1.0)],
-                meta=_meta("quotes", "quote"),
-            ),
-        )
+        cache.put(key, _quote_result(1.0))
         with sqlite3.connect(path) as raw:
             row = raw.execute(
                 "SELECT payload FROM semantic_cache WHERE fingerprint=?", (key,)
@@ -224,18 +216,43 @@ def test_decoded_l2_provenance_poison_is_evicted_not_promoted(tmp_path: Path) ->
         cache.close()
 
 
+def test_valid_payload_copied_under_another_fingerprint_is_evicted(tmp_path: Path) -> None:
+    path = tmp_path / "fingerprint-swap.sqlite3"
+    cache = SQLiteSemanticQueryCache(path)
+    first = "q1:first"
+    second = "q1:second"
+    try:
+        cache.put(first, _quote_result(1.0))
+        cache.put(second, _quote_result(2.0))
+        with sqlite3.connect(path) as raw:
+            first_payload = raw.execute(
+                "SELECT payload FROM semantic_cache WHERE fingerprint=?", (first,)
+            ).fetchone()
+            assert first_payload is not None
+            raw.execute(
+                "UPDATE semantic_cache SET payload=? WHERE fingerprint=?",
+                (first_payload[0], second),
+            )
+            raw.commit()
+
+        before_errors = cache.errors
+        assert cache.get(second, max_age=10.0) is None
+        assert cache.errors == before_errors + 1
+        assert len(cache) == 1
+
+        still_valid = cache.get(first, max_age=10.0)
+        assert isinstance(still_valid, QueryResult)
+        assert still_valid.data[0].price == 1.0
+    finally:
+        cache.close()
+
+
 def test_future_dated_l2_storage_timestamp_is_evicted(tmp_path: Path) -> None:
     path = tmp_path / "future.sqlite3"
     cache = SQLiteSemanticQueryCache(path)
     key = "q1:future"
     try:
-        cache.put(
-            key,
-            QueryResult(
-                data=[Quote(code="sh600519", price=1.0)],
-                meta=_meta("quotes", "quote"),
-            ),
-        )
+        cache.put(key, _quote_result(1.0))
         with sqlite3.connect(path) as raw:
             raw.execute(
                 "UPDATE semantic_cache SET stored_wall_ns=? WHERE fingerprint=?",
@@ -254,10 +271,7 @@ def test_tiered_invalidate_removes_both_l1_and_l2(tmp_path: Path) -> None:
     l2 = SQLiteSemanticQueryCache(tmp_path / "tiered.sqlite3")
     cache = TieredSemanticQueryCache(l1, l2)
     key = "q1:tiered"
-    value = QueryResult(
-        data=[Quote(code="sh600519", price=1.0)],
-        meta=_meta("quotes", "quote"),
-    )
+    value = _quote_result(1.0)
     try:
         cache.put(key, value)
         assert len(l1) == 1
@@ -275,14 +289,12 @@ def test_l2_hit_promotes_back_to_l1(tmp_path: Path) -> None:
     l2 = SQLiteSemanticQueryCache(tmp_path / "promote.sqlite3")
     cache = TieredSemanticQueryCache(l1, l2)
     key = "q1:promote"
-    value = QueryResult(
-        data=[Quote(code="sh600519", price=2.0)],
-        meta=_meta("quotes", "quote"),
-    )
+    value = _quote_result(2.0)
     try:
         l2.put(key, value)
         assert len(l1) == 0
         restored = cache.get(key, max_age=10.0)
+        assert isinstance(restored, QueryResult)
         assert restored.data[0].price == 2.0
         assert len(l1) == 1
     finally:
@@ -297,13 +309,7 @@ def test_l2_initialization_failure_is_disabled_cache_not_service_failure(tmp_pat
     assert cache.enabled is False
     assert cache.errors >= 1
     assert cache.get("q1:disabled", max_age=10.0) is None
-    cache.put(
-        "q1:disabled",
-        QueryResult(
-            data=[Quote(code="sh600519", price=3.0)],
-            meta=_meta("quotes", "quote"),
-        ),
-    )
+    cache.put("q1:disabled", _quote_result(3.0))
     assert cache.invalidate("q1:disabled") is False
     cache.clear()
     cache.close()
