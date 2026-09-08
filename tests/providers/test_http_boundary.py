@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from tstdx.errors import ValidationError
-from tstdx.providers.http import ProviderBoundHttpClient
+from tstdx.providers.http import ProviderBoundHttpClient, host_allowed
 
 
 class FakeResponse:
@@ -105,3 +105,9 @@ def test_response_redirect_history_cannot_cross_provider_boundary() -> None:
     assert raw.calls == [("patch", "https://qt.gtimg.cn/q=sh600519")]
     assert caught.value.context["phase"] == "response"
     assert caught.value.context["provider"] == "tencent"
+
+
+def test_boc_policy_allows_the_real_bankofchina_endpoint_only_within_boc_provider() -> None:
+    assert host_allowed("boc", "srh.bankofchina.com") is True
+    assert host_allowed("boc", "www.boc.cn") is True
+    assert host_allowed("tencent", "srh.bankofchina.com") is False
