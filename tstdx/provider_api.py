@@ -15,7 +15,7 @@ import importlib
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from .errors import TdxError, ValidationError
+from .errors import InternalError, TdxError, ValidationError
 from .providers import PROVIDERS, ProviderSpec, resolve_provider
 
 if TYPE_CHECKING:
@@ -90,6 +90,17 @@ class ProviderAPI:
             exc.context.setdefault("channel", channel)
             exc.context.setdefault("fallback", False)
             raise
+        except Exception as exc:
+            raise InternalError(
+                "Direct Provider adapter 未处理异常",
+                context={
+                    "provider": self.provider,
+                    "channel": channel,
+                    "fallback": False,
+                    "cause_type": type(exc).__name__,
+                },
+                cause=exc,
+            ) from exc
 
     def channel(self, channel: str) -> Any:
         raise ValidationError(
