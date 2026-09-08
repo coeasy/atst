@@ -20,6 +20,13 @@ from .providers import PROVIDERS, resolve_provider
 __all__ = ["QuerySpec", "QueryFingerprint", "QueryPlan", "QueryPlanner"]
 
 _MINUTE_PERIODS = frozenset({"1min", "5min", "15min", "30min", "60min"})
+_QUOTE_CHANNELS = {
+    "tdx": "quotation",
+    "tencent": "quote",
+    "sina": "quote",
+    "eastmoney": "quote",
+    "baidu": "quote",
+}
 
 
 def _norm_text(value: str | None) -> str:
@@ -210,40 +217,62 @@ class QueryPlanner:
         PROVIDERS.require_period(provider, channel, period)
 
     @classmethod
+    def _canonical_unified_channel(cls, spec: QuerySpec) -> str | None:
+        """Return the Channel the current unified executor can actually execute.
+
+        Provider-specific/local Channels stay valid Registry facts and Direct API
+        targets, but they must never be accepted into a QueryPlan whose executor
+        would silently call a different Channel.
+        """
+        pid = str(spec.provider)
+        cap = spec.capability
+        if cap == "quotes":
+            return _QUOTE_CHANNELS.get(pid)
+        if cap == "bars":
+            if pid == "tdx":
+                return "quotation"
+            if pid == "tencent":
+                return "minute_kline" if spec.period in _MINUTE_PERIODS else "kline"
+            if pid == "sina":
+                return "history_kline"
+            if pid in {"eastmoney", "baidu"}:
+                return "kline"
+        return None
+
+    @classmethod
+    def _reject_channel_mismatch(cls, spec: QuerySpec, canonical: str | None) -> None:
+        if spec.channel is None or canonical is None or spec.channel == canonical:
+            return
+        raise ValidationError(
+            f"Unified {spec.capability} QueryPlan 不能执行 provider {spec.provider!r} "
+            f"channel {spec.channel!r}；当前 canonical channel 为 {canonical!r}。"
+            "Provider-specific/local Channel 请使用 Direct Provider/Reader API。",
+            context={
+                "provider": spec.provider,
+                "channel": spec.channel,
+                "canonical_channel": canonical,
+                "capability": spec.capability,
+                "channel_switch_allowed": False,
+                "provider_switch_allowed": False,
+            },
+        )
+
+    @classmethod
     def _default_channel(cls, spec: QuerySpec) -> str:
         pid = str(spec.provider)
         cap = spec.capability
+        canonical = cls._canonical_unified_channel(spec)
         if spec.channel:
             PROVIDERS.require(pid, cap, channel=spec.channel)
             if cap == "bars":
                 cls._require_bar_period(pid, spec.channel, spec.period)
+            cls._reject_channel_mismatch(spec, canonical)
             return spec.channel
-        if cap == "quotes":
-            preferred = {
-                "tdx": "quotation",
-                "tencent": "quote",
-                "sina": "quote",
-                "eastmoney": "quote",
-                "baidu": "quote",
-            }.get(pid)
-            if preferred is not None:
-                PROVIDERS.require(pid, cap, channel=preferred)
-                return preferred
-        if cap == "bars":
-            if pid == "tdx":
-                preferred = "quotation"
-            elif pid == "tencent":
-                preferred = "minute_kline" if spec.period in _MINUTE_PERIODS else "kline"
-            elif pid == "sina":
-                preferred = "history_kline"
-            elif pid in {"eastmoney", "baidu"}:
-                preferred = "kline"
-            else:
-                preferred = ""
-            if preferred:
-                PROVIDERS.require(pid, cap, channel=preferred)
-                cls._require_bar_period(pid, preferred, spec.period)
-                return preferred
+        if canonical is not None:
+            PROVIDERS.require(pid, cap, channel=canonical)
+            if cap == "bars":
+                cls._require_bar_period(pid, canonical, spec.period)
+            return canonical
         candidates = PROVIDERS.get(pid).channels_for(cap)
         if len(candidates) == 1:
             if cap == "bars":
