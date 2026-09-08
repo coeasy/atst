@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 
 import pytest
 
-from tstdx.errors import RateLimitedLocal, ValidationError
+from tstdx.errors import RateLimitedLocal, SourceUnavailable, ValidationError
 from tstdx.integration.tasks import TaskManager, TaskStatus
 
 
@@ -140,9 +141,84 @@ def test_finished_records_expire_and_purge() -> None:
         assert manager.expire_completed() == 1
         assert manager.get(task_id).status is TaskStatus.EXPIRED
         assert manager.get(task_id).result is None
+        assert manager.get(task_id).error is None
         assert manager.purge_expired() == 1
         with pytest.raises(KeyError):
             manager.get(task_id)
+    finally:
+        manager.shutdown(wait=True)
+
+
+def test_tdx_task_failure_uses_canonical_safe_error_envelope() -> None:
+    manager = TaskManager(max_workers=1, max_tasks=1)
+
+    def fail() -> None:
+        raise SourceUnavailable(
+            "selected provider unavailable",
+            context={
+                "provider": "tdx",
+                "channel": "quotation",
+                "capability": "quotes",
+                "authorization": "must-not-leak",
+                "fallback": True,
+            },
+        )
+
+    try:
+        task_id = manager.submit(fail)
+        _wait_status(manager, task_id, {TaskStatus.FAILED})
+        error = manager.get(task_id).error
+        assert error is not None
+        encoded = json.dumps(error, ensure_ascii=False)
+        assert error["code"] == "E7050"
+        assert error["phase"] == "task"
+        assert error["request_id"] == task_id
+        assert error["provider"] == "tdx"
+        assert error["fallback_allowed"] is False
+        assert error["provider_switch_allowed"] is False
+        assert error["context"]["fallback"] is False
+        assert "authorization" not in encoded.lower()
+        assert "must-not-leak" not in encoded
+    finally:
+        manager.shutdown(wait=True)
+
+
+def test_native_task_failure_is_e9000_without_native_detail() -> None:
+    manager = TaskManager(max_workers=1, max_tasks=1)
+
+    def fail() -> None:
+        raise RuntimeError("secret-native-task-detail")
+
+    try:
+        task_id = manager.submit(fail)
+        _wait_status(manager, task_id, {TaskStatus.FAILED})
+        error = manager.get(task_id).error
+        assert error is not None
+        encoded = json.dumps(error, ensure_ascii=False)
+        assert error["code"] == "E9000"
+        assert error["message"] == "internal error"
+        assert error["phase"] == "task"
+        assert error["request_id"] == task_id
+        assert error["context"] == {}
+        assert "secret-native-task-detail" not in encoded
+    finally:
+        manager.shutdown(wait=True)
+
+
+def test_failed_task_expiry_clears_retained_error_envelope() -> None:
+    manager = TaskManager(max_workers=1, max_tasks=1, retention_seconds=0.0)
+
+    def fail() -> None:
+        raise SourceUnavailable("temporary")
+
+    try:
+        task_id = manager.submit(fail)
+        _wait_status(manager, task_id, {TaskStatus.FAILED})
+        assert manager.get(task_id).error is not None
+        assert manager.expire_completed() == 1
+        snapshot = manager.get(task_id)
+        assert snapshot.status is TaskStatus.EXPIRED
+        assert snapshot.error is None
     finally:
         manager.shutdown(wait=True)
 
