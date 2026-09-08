@@ -26,7 +26,7 @@ from .error_envelope import ErrorEnvelope, to_error_envelope
 from .errors import IntegrityViolation, SourceUnavailable, TdxError, ValidationError
 from .execution import BatchPlan, BatchPlanner, SingleFlight
 from .failure import DEFAULT_FAILURE_POLICY, FailurePolicy
-from .freshness import FRESHNESS, validate_freshness
+from .freshness import FRESHNESS, bar_freshness_profile, validate_freshness
 from .health import SourceHealthRegistry
 from .observability.planned import (
     record_batch_chunks,
@@ -301,7 +301,12 @@ class UnifiedMarketDataService(ProviderCoreService):
         )
 
     @staticmethod
-    def _as_cache_hit(result: QueryResult[Any], *, max_age: float) -> QueryResult[Any]:
+    def _as_cache_hit(
+        plan: QueryPlan,
+        result: QueryResult[Any],
+        *,
+        max_age: float,
+    ) -> QueryResult[Any]:
         meta = result.meta
         original = meta.freshness
         freshness = FreshnessEvidence(
@@ -312,7 +317,16 @@ class UnifiedMarketDataService(ProviderCoreService):
             replay=False,
             synthetic=False,
         )
-        base_profile = FRESHNESS.get(meta.provider, meta.channel, meta.capability)
+        historical_bars = meta.capability == "bars" and bool(plan.spec.start)
+        if meta.capability == "bars":
+            base_profile = bar_freshness_profile(
+                meta.provider,
+                meta.channel,
+                plan.spec.period or "day",
+                historical=historical_bars,
+            )
+        else:
+            base_profile = FRESHNESS.get(meta.provider, meta.channel, meta.capability)
         cache_profile = replace(
             base_profile,
             require_direct=False,
@@ -326,7 +340,7 @@ class UnifiedMarketDataService(ProviderCoreService):
             capability=meta.capability,
             profile=cache_profile,
             now_ns=time.time_ns(),
-            require_live=True,
+            require_live=not historical_bars,
         )
         status = replace(status, basis=f"bounded_cache:{status.basis}")
         return QueryResult(
@@ -372,7 +386,7 @@ class UnifiedMarketDataService(ProviderCoreService):
                 )
                 return None
             try:
-                result = self._as_cache_hit(cached, max_age=max_age)
+                result = self._as_cache_hit(plan, cached, max_age=max_age)
             except TdxError:
                 self.query_cache.invalidate(plan.fingerprint.value)
                 record_cache_event(layer=layer, status="stale")
