@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from typing import Any, cast
 
 import pytest
@@ -52,6 +53,32 @@ def test_batch_result_defensively_copies_and_freezes_error_mapping() -> None:
 
     with pytest.raises(TypeError):
         cast(Any, result.errors)["sz000001"] = _error()
+
+
+def test_batch_result_deepcopy_preserves_immutable_independent_audit() -> None:
+    original = BatchResult(
+        items=("quote-a",),
+        errors={
+            "sz000001": _error(
+                status="missing",
+                context={"nested": {"attempt": 1}},
+            )
+        },
+        requested=("sh600519", "sz000001"),
+        partial=True,
+        meta={"provider": "tdx", "nested": {"epoch": 1}},
+    )
+
+    cloned = copy.deepcopy(original)
+
+    assert cloned is not original
+    assert cloned.errors is not original.errors
+    assert cloned.errors["sz000001"] is not original.errors["sz000001"]
+    assert cloned.to_dict() == original.to_dict()
+    cast(dict[str, Any], cloned.errors["sz000001"].context)["nested"]["attempt"] = 2
+    cast(dict[str, Any], cloned.meta)["nested"]["epoch"] = 2
+    assert original.errors["sz000001"].context["nested"]["attempt"] == 1
+    assert original.meta["nested"]["epoch"] == 1
 
 
 def test_batch_result_rejects_error_for_unrequested_symbol() -> None:
