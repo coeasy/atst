@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "tstdx"
 version = "1.4.0"
-description = "通达信（TDX）行情数据通用协议库 —— 覆盖 7709 标准 / 7727 扩展市场 / MAC 专属 / F10 资料 / 商品语义 五套协议族，含本地 vipdoc 二进制解析与 HTTP Web 行情源降级"
+description = "以 TDX 为主 Provider 的多源行情数据协议库 —— 覆盖 7709/7727/MAC/F10/商品协议、本地 vipdoc 与显式独立 Web Provider，禁止跨 Provider 静默降级"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
