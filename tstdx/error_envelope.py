@@ -52,6 +52,15 @@ def safe_context(context: Mapping[str, Any] | None) -> dict[str, Any]:
     return output
 
 
+def _force_fail_closed_context(context: dict[str, Any]) -> dict[str, Any]:
+    """Prevent legacy error metadata from contradicting the v12 boundary."""
+
+    context["fallback"] = False
+    context["fallback_allowed"] = False
+    context["provider_switch_allowed"] = False
+    return context
+
+
 @dataclass(frozen=True, slots=True)
 class ErrorEnvelope:
     code: str
@@ -108,7 +117,7 @@ def to_error_envelope(
     native exception text belongs in server logs, not public responses.
     """
     if isinstance(exc, TdxError):
-        context = safe_context(exc.context)
+        context = _force_fail_closed_context(safe_context(exc.context))
         advice = advice_for(exc)
         alternatives_raw = context.pop("alternatives", ())
         if isinstance(alternatives_raw, str):
@@ -162,7 +171,11 @@ def to_error_envelope(
         request_id=request_id or uuid.uuid4().hex,
         query_id=query_id,
         retryable=False,
-        context={},
+        context={
+            "fallback": False,
+            "fallback_allowed": False,
+            "provider_switch_allowed": False,
+        },
         fallback_allowed=False,
         provider_switch_allowed=False,
     )
