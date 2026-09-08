@@ -26,6 +26,7 @@ from ..domain.symbol import normalize_symbol, split_symbol
 from ..errors import (
     BackpressureOverflow,
     GapUnfilledError,
+    RetryAdvice,
     SubscriptionError,
     TdxError,
 )
@@ -33,27 +34,37 @@ from ..planned_service import UnifiedMarketDataService
 from ..providers import PROVIDERS, resolve_provider
 from .engine import BackpressureQueue, DeltaMerger, ReconnectPolicy
 
-__all__ = [
-    "PlannedQuoteStream",
-    "StreamSubscription",
-    "StreamStats",
-]
+__all__ = ["PlannedQuoteStream", "StreamSubscription", "StreamStats"]
 
 _LOG = logging.getLogger(__name__)
 _MISSING_ALERT_AFTER = 3
+_INPUT_ADVICE = RetryAdvice(
+    retryable=False,
+    switch_host=False,
+    note="订阅参数错误不可通过重试、重连或换 host 恢复",
+)
 
 QuoteCallback = Callable[[str, dict[str, Any]], None]
 ErrorCallback = Callable[[Exception], None]
 
 
+def _input_error(message: str, *, context: dict[str, Any], cause: Exception | None = None) -> SubscriptionError:
+    return SubscriptionError(
+        message,
+        context=context,
+        cause=cause,
+        advice=_INPUT_ADVICE,
+    )
+
+
 def _normalize_subscription_symbol(symbol: str) -> str:
-    """Normalize public stream symbols and keep all validation inside E6xxx."""
+    """Normalize public stream symbols and keep validation inside E6xxx."""
     try:
         return normalize_symbol(symbol)
     except Exception as exc:
-        raise SubscriptionError(
+        raise _input_error(
             f"无法解析订阅 symbol {symbol!r}",
-            context={"symbol": symbol},
+            context={"symbol": symbol, "phase": "subscription_validation"},
             cause=exc,
         ) from exc
 
@@ -62,9 +73,9 @@ def _bare_code(symbol: str) -> str:
     try:
         return split_symbol(symbol)[1]
     except Exception as exc:
-        raise SubscriptionError(
+        raise _input_error(
             f"无法解析订阅 symbol {symbol!r}",
-            context={"symbol": symbol},
+            context={"symbol": symbol, "phase": "subscription_validation"},
             cause=exc,
         ) from exc
 
@@ -104,12 +115,7 @@ class StreamSubscription:
 
 
 class PlannedQuoteStream:
-    """Single-Provider, due-aware realtime quote scheduler.
-
-    One stream instance binds one Provider for its entire lifetime. Provider
-    failures are surfaced and retried only through that Provider's own runtime;
-    this scheduler never selects another Provider.
-    """
+    """Single-Provider, due-aware realtime quote scheduler."""
 
     def __init__(
         self,
@@ -125,7 +131,7 @@ class PlannedQuoteStream:
         if callback_idle_wait <= 0:
             raise ValueError("callback_idle_wait must be > 0")
         self.provider = pid
-        self.service = service or UnifiedMarketDataService(**service_kwargs)
+        self.service = service if service is not None else UnifiedMarketDataService(**service_kwargs)
         self._owns_service = service is None
         self.callback_idle_wait = float(callback_idle_wait)
         self.reconnect = reconnect or ReconnectPolicy(base=0.5, cap=15.0)
@@ -149,18 +155,21 @@ class PlannedQuoteStream:
         on_error: ErrorCallback | None = None,
     ) -> str:
         if interval <= 0:
-            raise SubscriptionError(
+            raise _input_error(
                 "interval 必须大于 0",
-                context={"interval": interval},
+                context={"interval": interval, "phase": "subscription_validation"},
             )
         if max_queue <= 0:
-            raise SubscriptionError(
+            raise _input_error(
                 "PlannedQuoteStream.max_queue 必须大于 0；回调必须与 poll 解耦",
-                context={"max_queue": max_queue},
+                context={"max_queue": max_queue, "phase": "subscription_validation"},
             )
         raw = [symbols] if isinstance(symbols, str) else list(symbols)
         if not raw:
-            raise SubscriptionError("symbols 不能为空")
+            raise _input_error(
+                "symbols 不能为空",
+                context={"phase": "subscription_validation"},
+            )
         normalized = tuple(_normalize_subscription_symbol(symbol) for symbol in raw)
         sub_id = uuid.uuid4().hex[:12]
         sub = StreamSubscription(
@@ -299,11 +308,7 @@ class PlannedQuoteStream:
                 self._deliver_subscription(sub, qmap)
                 self._advance_due(sub, now)
 
-    def _deliver_subscription(
-        self,
-        sub: StreamSubscription,
-        qmap: dict[str, Quote],
-    ) -> None:
+    def _deliver_subscription(self, sub: StreamSubscription, qmap: dict[str, Quote]) -> None:
         for symbol in sub.symbols:
             try:
                 key = _bare_code(symbol)
