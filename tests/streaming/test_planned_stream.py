@@ -169,6 +169,59 @@ def test_watermark_detects_three_missing_rounds_and_recovers_without_fake_sequen
     assert stream.stats.gaps_recovered == 1
 
 
+def test_reconnect_epoch_resubscribes_all_current_subscriptions_without_closing_gap() -> None:
+    stream = PlannedQuoteStream(provider="tencent", service=FakeService())
+    fast_id = stream.subscribe("sh600519", interval=1.0)
+    slow_id = stream.subscribe("sz000001", interval=30.0)
+    subs = {item.id: item for item in stream._subscriptions()}
+    fast = subs[fast_id]
+    slow = subs[slow_id]
+
+    for _ in range(3):
+        stream._deliver_subscription(fast, {})
+    before = stream.watermark(fast_id, "sh600519")
+    assert before.gap_open is True
+
+    fast.next_due = 50.0
+    slow.next_due = 80.0
+    stream._mark_reconnect_pending()
+    stream._mark_reconnect_pending()
+    assert stream._mark_reconnected(now=20.0) is True
+    assert stream._mark_reconnected(now=21.0) is False
+
+    fast_mark = stream.watermark(fast_id, "sh600519")
+    slow_mark = stream.watermark(slow_id, "sz000001")
+    assert fast_mark.reconnect_epoch == 1
+    assert slow_mark.reconnect_epoch == 1
+    assert fast_mark.resubscriptions == 1
+    assert slow_mark.resubscriptions == 1
+    assert fast_mark.last_reconnect_monotonic == 20.0
+    assert slow_mark.last_reconnect_monotonic == 20.0
+    assert fast_mark.gap_open is True
+    assert fast_mark.recoveries == 0
+    assert fast.next_due == 20.0
+    assert slow.next_due == 20.0
+    assert stream.stats.reconnects == 1
+    assert stream.stats.resubscriptions == 2
+
+    stream._deliver_subscription(
+        fast,
+        {
+            "600519": Quote(
+                code="sh600519",
+                datetime="2026-09-08 10:02:00",
+                price=10.1,
+            )
+        },
+    )
+    recovered = stream.watermark(fast_id, "sh600519")
+    assert recovered.gap_open is False
+    assert recovered.recoveries == 1
+    assert recovered.reconnect_epoch == 1
+    assert recovered.resubscriptions == 1
+    assert recovered.provider_timestamp == "2026-09-08 10:02:00"
+
+
 def test_watermark_rejects_symbol_outside_subscription() -> None:
     stream = PlannedQuoteStream(provider="tencent", service=FakeService())
     sub_id = stream.subscribe("sh600519", interval=1.0)
