@@ -5,7 +5,7 @@
 
 The HTTP router historically defaulted to a lazy bare ``TdxClient`` and therefore
 bypassed the unified Provider lifecycle. ``ProviderHttpClient`` keeps the old
-method names expected by ``http_server.py`` but owns one
+method names expected by ``http_server.py`` but owns one planned
 :class:`UnifiedMarketDataService` underneath.
 
 All default market-data methods remain explicitly bound to Provider ``tdx``.
@@ -21,7 +21,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from ..errors import ValidationError
-from ..service import UnifiedMarketDataService
+from ..planned_service import UnifiedMarketDataService
 
 __all__ = ["ProviderHttpClient"]
 
@@ -92,7 +92,7 @@ def _normalize_block_type(value: int | str) -> int:
 
 
 class ProviderHttpClient:
-    """Lazy old-client-shaped facade over one Provider-aware service."""
+    """Lazy old-client-shaped facade over one planned Provider-aware service."""
 
     def __init__(
         self,
