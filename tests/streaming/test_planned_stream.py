@@ -134,3 +134,44 @@ def test_provider_errors_are_reported_without_provider_switch() -> None:
         assert all(provider == "tencent" for provider, _ in service.calls)
     finally:
         stream.stop(timeout=1.0)
+
+
+def test_watermark_detects_three_missing_rounds_and_recovers_without_fake_sequence() -> None:
+    stream = PlannedQuoteStream(provider="tencent", service=FakeService())
+    sub_id = stream.subscribe("sh600519", interval=1.0)
+    sub = {item.id: item for item in stream._subscriptions()}[sub_id]
+
+    for _ in range(3):
+        stream._deliver_subscription(sub, {})
+
+    missing = stream.watermark(sub_id, "sh600519")
+    assert missing.missing_rounds == 3
+    assert missing.gap_open is True
+    assert missing.recoveries == 0
+    assert stream.stats.gaps_detected == 1
+
+    stream._deliver_subscription(
+        sub,
+        {
+            "600519": Quote(
+                code="sh600519",
+                datetime="2026-09-08 10:01:00",
+                price=10.0,
+            )
+        },
+    )
+    recovered = stream.watermark(sub_id, "sh600519")
+    assert recovered.missing_rounds == 0
+    assert recovered.gap_open is False
+    assert recovered.recoveries == 1
+    assert recovered.last_seen_monotonic is not None
+    assert recovered.provider_timestamp == "2026-09-08 10:01:00"
+    assert stream.stats.gaps_recovered == 1
+
+
+def test_watermark_rejects_symbol_outside_subscription() -> None:
+    stream = PlannedQuoteStream(provider="tencent", service=FakeService())
+    sub_id = stream.subscribe("sh600519", interval=1.0)
+    with pytest.raises(SubscriptionError) as caught:
+        stream.watermark(sub_id, "sz000001")
+    assert caught.value.advice.retryable is False
