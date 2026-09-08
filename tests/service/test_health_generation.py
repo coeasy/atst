@@ -105,6 +105,91 @@ def test_stale_failure_cannot_undo_newer_successful_recovery() -> None:
     assert state.circuit_open is False
 
 
+def test_reset_invalidates_failure_started_in_another_thread() -> None:
+    health = SourceHealthRegistry(failure_threshold=1, cooldown_seconds=60)
+    started = threading.Event()
+    release = threading.Event()
+    errors: list[BaseException] = []
+
+    def old_failure() -> None:
+        try:
+            health.before_request("tencent", "quote", "quotes")
+            started.set()
+            release.wait(timeout=1.0)
+            health.record_failure(
+                "tencent",
+                "quote",
+                "quotes",
+                SourceUnavailable("pre-reset failure completed late"),
+            )
+        except BaseException as exc:
+            errors.append(exc)
+
+    worker = threading.Thread(target=old_failure)
+    worker.start()
+    assert started.wait(timeout=1.0)
+
+    health.reset("tencent")
+    reset_state = health.snapshot("tencent", "quote", "quotes")
+    assert reset_state.generation == 1
+    assert reset_state.consecutive_failures == 0
+    assert reset_state.circuit_open is False
+
+    release.set()
+    worker.join(timeout=2.0)
+
+    assert errors == []
+    state = health.snapshot("tencent", "quote", "quotes")
+    assert state.generation == 1
+    assert state.failures == 1
+    assert state.consecutive_failures == 0
+    assert state.last_error_code is None
+    assert state.circuit_open is False
+
+
+def test_reset_invalidates_success_started_in_another_thread() -> None:
+    health = SourceHealthRegistry(failure_threshold=2, cooldown_seconds=60)
+    started = threading.Event()
+    release = threading.Event()
+    errors: list[BaseException] = []
+
+    def old_success() -> None:
+        try:
+            health.before_request("tencent", "quote", "quotes")
+            started.set()
+            release.wait(timeout=1.0)
+            health.record_success("tencent", "quote", "quotes")
+        except BaseException as exc:
+            errors.append(exc)
+
+    worker = threading.Thread(target=old_success)
+    worker.start()
+    assert started.wait(timeout=1.0)
+
+    health.reset("tencent")
+    health.before_request("tencent", "quote", "quotes")
+    health.record_failure(
+        "tencent",
+        "quote",
+        "quotes",
+        SourceUnavailable("post-reset failure"),
+    )
+    before_old_completion = health.snapshot("tencent", "quote", "quotes")
+    assert before_old_completion.generation == 2
+    assert before_old_completion.consecutive_failures == 1
+
+    release.set()
+    worker.join(timeout=2.0)
+
+    assert errors == []
+    state = health.snapshot("tencent", "quote", "quotes")
+    assert state.generation == 2
+    assert state.successes == 1
+    assert state.failures == 1
+    assert state.consecutive_failures == 1
+    assert state.last_error_code == "E7050"
+
+
 def test_new_generation_success_still_recovers_provider() -> None:
     health = SourceHealthRegistry(failure_threshold=2, cooldown_seconds=60)
     health.before_request("tencent", "quote", "quotes")
