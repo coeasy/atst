@@ -8,9 +8,9 @@ The legacy :mod:`tstdx.integration.http_server` module still contains the stable
 v12 runtime dependencies before route construction and adds explicit Provider
 endpoints for canonical common capabilities.
 
-All REST failures, including FastAPI request validation and Starlette/FastAPI
-``HTTPException``, are normalized to the same safe ErrorEnvelope used by the
-other public integration boundaries.
+All REST failures, including FastAPI request validation, oversized request-body
+rejection and Starlette/FastAPI ``HTTPException``, are normalized to the same
+safe ErrorEnvelope used by the other public integration boundaries.
 """
 
 from __future__ import annotations
@@ -244,7 +244,42 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
 
     @app.middleware("http")
     async def _request_identity(request: Any, call_next: Any) -> Any:  # noqa: ANN401
+        # This middleware is registered after the legacy application is built and
+        # therefore sits outside the legacy body-size guard in FastAPI/Starlette.
+        # Re-check the same bound here so the official v12 entrypoint never emits
+        # the old ad-hoc 413 body before ErrorEnvelope normalization.
         request.state.request_id = uuid.uuid4().hex
+        content_length = request.headers.get("content-length", "")
+        transfer_encoding = request.headers.get("transfer-encoding", "").lower()
+        body_too_large = False
+        if content_length.isdigit():
+            body_too_large = int(content_length) > _routes.MAX_BODY_BYTES
+        elif "chunked" in transfer_encoding:
+            # The legacy API exposes only small JSON bodies and has no legitimate
+            # chunked upload endpoint. Reject unknown-size chunked bodies instead
+            # of allowing the inner legacy guard to emit a non-canonical error.
+            body_too_large = True
+
+        if body_too_large:
+            wrapped = ValidationError(
+                "HTTP request body too large",
+                context={
+                    "phase": "http_validation",
+                    "max_body_bytes": _routes.MAX_BODY_BYTES,
+                    "fallback": False,
+                    "provider_switch_allowed": False,
+                },
+            )
+            envelope = to_error_envelope(
+                wrapped,
+                request_id=request.state.request_id,
+            )
+            return JSONResponse(
+                status_code=413,
+                content={"error": envelope.to_dict()},
+                headers={"X-Request-ID": request.state.request_id},
+            )
+
         response = await call_next(request)
         response.headers["X-Request-ID"] = request.state.request_id
         return response
