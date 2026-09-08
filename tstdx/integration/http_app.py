@@ -5,25 +5,22 @@
 
 The legacy :mod:`tstdx.integration.http_server` module still contains the stable
 43-route declaration. This factory reuses those routes but injects the actual
-v12 runtime dependencies before route construction:
-
-* QueryPlan-backed :class:`UnifiedMarketDataService`;
-* Provider-bound compatibility client;
-* Future-based bounded TaskStore v2;
-* canonical safe ErrorEnvelope + request id handling.
-
-No request is allowed to fall back to another Provider implicitly.
+v12 runtime dependencies before route construction and adds explicit Provider
+endpoints for canonical common capabilities.
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import asdict, is_dataclass
+from enum import Enum
 from typing import Any, Callable
 
 from ..error_envelope import to_error_envelope
-from ..errors import TdxError, http_status_for
+from ..errors import TdxError, ValidationError, http_status_for
 from ..planned_service import UnifiedMarketDataService
+from ..providers import PROVIDERS
 from . import http_server as _routes
 from .http_runtime import ProviderHttpClient
 from .tasks import TaskStore as _SafeTaskStore
@@ -32,6 +29,7 @@ from .tasks import TaskStoreFull as _SafeTaskStoreFull
 __all__ = ["create_app", "PlannedProviderHttpClient", "PlannedTaskStore"]
 
 _LOG = logging.getLogger(__name__)
+_MAX_PROVIDER_SYMBOLS = 100
 
 
 class PlannedProviderHttpClient(ProviderHttpClient):
@@ -63,6 +61,43 @@ class PlannedTaskStore(_SafeTaskStore):
             raise _routes.TaskStoreFull(str(exc)) from exc
 
 
+def _jsonable(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Enum):
+        return value.value
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        return _jsonable(value.to_dict())
+    if is_dataclass(value):
+        return _jsonable(asdict(value))
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    return str(value)
+
+
+def _provider_payload(provider: str) -> dict[str, Any]:
+    spec = PROVIDERS.get(provider)
+    return {
+        "id": spec.id,
+        "display_name": spec.display_name,
+        "role": spec.role,
+        "default": spec.default,
+        "channels": [
+            {
+                "id": channel.id,
+                "capabilities": sorted(channel.capabilities),
+                "markets": sorted(channel.markets),
+                "live": channel.live,
+                "local": channel.local,
+                "notes": channel.notes,
+            }
+            for channel in spec.channels
+        ],
+    }
+
+
 def create_app(client: Any = None) -> Any:  # noqa: ANN401
     """Build the official REST app on the planned Provider runtime."""
     runtime_client = client if client is not None else PlannedProviderHttpClient()
@@ -77,11 +112,100 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
     app.state.runtime = "planned-v12"
 
     try:
-        from fastapi import Request
+        from fastapi import HTTPException, Request
         from fastapi.responses import JSONResponse
     except ImportError:  # pragma: no cover - legacy factory already reports this
+        HTTPException = RuntimeError  # type: ignore[misc,assignment]
         Request = Any  # type: ignore[misc,assignment]
         JSONResponse = Any  # type: ignore[misc,assignment]
+
+    def _service() -> UnifiedMarketDataService:
+        service = getattr(runtime_client, "service", None)
+        if not isinstance(service, UnifiedMarketDataService):
+            raise HTTPException(
+                status_code=501,
+                detail="explicit Provider endpoints require the planned runtime client",
+            )
+        return service
+
+    def _codes(raw: str) -> list[str]:
+        codes = [item.strip() for item in str(raw).split(",") if item.strip()]
+        if not codes:
+            raise ValidationError("codes 不能为空")
+        if len(codes) > _MAX_PROVIDER_SYMBOLS:
+            raise ValidationError(
+                "Provider quotes 单次 symbols 超限",
+                context={
+                    "symbols": len(codes),
+                    "max_symbols": _MAX_PROVIDER_SYMBOLS,
+                },
+            )
+        return codes
+
+    @app.get("/providers", tags=["providers"], summary="Provider registry")
+    def providers_registry() -> dict[str, Any]:
+        return {
+            "default_provider": PROVIDERS.default_provider,
+            "providers": [_provider_payload(pid) for pid in PROVIDERS.ids()],
+        }
+
+    @app.get("/providers/{provider}", tags=["providers"], summary="Provider capabilities")
+    def provider_registry(provider: str) -> dict[str, Any]:
+        return _provider_payload(provider)
+
+    @app.get(
+        "/providers/{provider}/quotes",
+        tags=["providers"],
+        summary="Explicit Provider quotes",
+    )
+    def provider_quotes(
+        provider: str,
+        codes: str,
+        deadline_ms: int = 5000,
+        max_age: float | None = None,
+    ) -> dict[str, Any]:
+        result = _service().quotes(
+            _codes(codes),
+            provider=provider,
+            deadline_ms=deadline_ms,
+            max_age=max_age,
+            with_meta=True,
+        )
+        return {
+            "data": _jsonable(result.data),
+            "meta": _jsonable(result.meta),
+        }
+
+    @app.get(
+        "/providers/{provider}/bars/{symbol}",
+        tags=["providers"],
+        summary="Explicit Provider bars",
+    )
+    def provider_bars(
+        provider: str,
+        symbol: str,
+        period: str = "day",
+        count: int = 320,
+        start: int = 0,
+        adjust: str = "",
+        deadline_ms: int = 5000,
+        max_age: float | None = None,
+    ) -> dict[str, Any]:
+        result = _service().bars(
+            symbol,
+            provider=provider,
+            period=period,
+            count=count,
+            start=start,
+            adjust=adjust,
+            deadline_ms=deadline_ms,
+            max_age=max_age,
+            with_meta=True,
+        )
+        return {
+            "data": _jsonable(result.data),
+            "meta": _jsonable(result.meta),
+        }
 
     @app.middleware("http")
     async def _request_identity(request: Request, call_next: Any) -> Any:  # noqa: ANN401
