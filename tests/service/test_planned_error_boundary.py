@@ -19,7 +19,8 @@ class RaisingService(UnifiedMarketDataService):
         plan: QueryPlan,
         *,
         with_meta: bool,
-    ) -> Any:  # noqa: ARG002
+    ) -> Any:
+        del plan, with_meta
         raise self.error
 
 
