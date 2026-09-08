@@ -118,6 +118,15 @@ def to_error_envelope(
             if isinstance(retry_after_value, (int, float))
             else None
         )
+        terminal = bool(context.get("terminal", False))
+        retry_same_provider = context.get("retry_same_provider")
+        retryable = (
+            bool(retry_same_provider)
+            if retry_same_provider is not None
+            else bool(advice.retryable)
+        )
+        if terminal:
+            retryable = False
         return ErrorEnvelope(
             code=exc.code,
             type=type(exc).__name__,
@@ -128,7 +137,7 @@ def to_error_envelope(
             channel=channel or _optional_str(context.get("channel")),
             request_id=request_id or uuid.uuid4().hex,
             query_id=query_id or _optional_str(context.get("query_id")),
-            retryable=advice.retryable,
+            retryable=retryable,
             retry_after=retry_after,
             partial=bool(context.get("partial", False)),
             alternatives=alternatives,
