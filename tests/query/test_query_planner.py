@@ -147,6 +147,25 @@ def test_zero_max_age_is_canonical_direct_policy() -> None:
     assert default.fingerprint.value == zero.fingerprint.value
 
 
+def test_max_age_changes_cache_policy_not_upstream_data_fingerprint() -> None:
+    planner = QueryPlanner()
+    short = planner.compile(
+        QuerySpec.build(
+            "quotes", symbols=["600519"], provider="tencent", max_age=0.5
+        )
+    )
+    long = planner.compile(
+        QuerySpec.build(
+            "quotes", symbols=["sh600519"], provider="tencent", max_age=30.0
+        )
+    )
+
+    assert short.spec.max_age == 0.5
+    assert long.spec.max_age == 30.0
+    assert short.fingerprint.value == long.fingerprint.value
+    assert '"max_age"' not in short.fingerprint.canonical
+
+
 def test_allow_stale_is_rejected_until_policy_is_implemented() -> None:
     with pytest.raises(ValidationError):
         QueryPlanner().compile(
