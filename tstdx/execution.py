@@ -12,6 +12,7 @@ cannot be introduced by an optimization primitive.
 from __future__ import annotations
 
 import contextlib
+import copy
 import threading
 import time
 from collections.abc import Callable
@@ -101,7 +102,12 @@ class _Flight(Generic[T]):
 
 
 class SingleFlight:
-    """Join concurrent calls with the exact same semantic fingerprint."""
+    """Join one upstream call without sharing mutable result ownership.
+
+    The leader receives the original result. Followers receive defensive deep
+    copies after the leader completes, so coalescing identical upstream work
+    never makes independent callers share a mutable ``QueryResult``/list/model.
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -164,7 +170,7 @@ class SingleFlight:
             )
         if flight.error is not None:
             raise flight.error
-        return cast(T, flight.result)
+        return copy.deepcopy(cast(T, flight.result))
 
 
 @dataclass(frozen=True, slots=True)
