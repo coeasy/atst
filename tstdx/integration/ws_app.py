@@ -15,15 +15,18 @@ from ..error_envelope import to_error_envelope
 from ..errors import TdxError, ValidationError
 from . import ws_server as legacy
 from .http_runtime import ProviderHttpClient
+from .ws_server import WsConfig as WsConfig
 
 __all__ = ["JsonRpcHandler", "WsConfig", "serve_ws"]
 
 _LOG = logging.getLogger(__name__)
-WsConfig = legacy.WsConfig
 
 
 class JsonRpcHandler(legacy.JsonRpcHandler):
     """Legacy method surface with planned execution and canonical errors."""
+
+    _client: Any
+    _facade: Any
 
     @staticmethod
     def _request_id(req_id: Any) -> str | None:
