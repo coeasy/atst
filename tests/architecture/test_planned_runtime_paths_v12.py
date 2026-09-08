@@ -12,6 +12,7 @@ from tstdx.facade import AsyncUnifiedQuoteAPI, UnifiedMarketDataService, Unified
 from tstdx.health import SourceHealthRegistry
 from tstdx.integration import create_app
 from tstdx.integration.http_app import PlannedProviderHttpClient, PlannedTaskStore
+from tstdx.integration.http_runtime import ProviderHttpClient
 from tstdx.integration.tasks import TaskStore as SafeTaskStore
 from tstdx.planned_service import UnifiedMarketDataService as PlannedService
 from tstdx.streaming.planned import PlannedQuoteStream, StreamWatermark
@@ -59,11 +60,14 @@ def test_package_http_factory_delegates_to_planned_http_app() -> None:
     assert "http_server" not in source
     assert issubclass(PlannedTaskStore, SafeTaskStore)
 
-    client = PlannedProviderHttpClient()
+    base_client = ProviderHttpClient()
+    planned_client = PlannedProviderHttpClient()
     try:
-        assert client._service_factory is PlannedService
+        assert base_client._service_factory is PlannedService
+        assert planned_client._service_factory is PlannedService
     finally:
-        client.close()
+        base_client.close()
+        planned_client.close()
 
 
 def test_failure_disposition_cannot_be_constructed_with_provider_switch() -> None:
