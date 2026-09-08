@@ -43,10 +43,13 @@ __all__ = [
     "market_data",
     "AsyncMarketDataService",
     "async_market_data",
+    "BatchResult",
     "FailureDisposition",
     "FailurePolicy",
+    "SourceHealthRegistry",
     "ErrorEnvelope",
     "PlannedQuoteStream",
+    "StreamWatermark",
     "configure",
     "get_config",
     "load_config",
@@ -76,15 +79,17 @@ def get_config() -> Any:
 
 if TYPE_CHECKING:  # pragma: no cover
     from .async_service import AsyncMarketDataService
+    from .batch import BatchResult
     from .client import AsyncTdxClient, TdxClient
     from .config import load_config
     from .error_envelope import ErrorEnvelope
     from .failure import FailureDisposition, FailurePolicy
+    from .health import SourceHealthRegistry
     from .planned_service import UnifiedMarketDataService
     from .providers import ChannelSpec, ProviderRegistry, ProviderSpec
     from .query import QueryFingerprint, QueryPlan, QueryPlanner, QuerySpec
     from .reader import BlockReader, DataProfile, DayBarReader, FinanceReader, MinBarReader
-    from .streaming.planned import PlannedQuoteStream
+    from .streaming.planned import PlannedQuoteStream, StreamWatermark
     from .web import WebQuoteClient
 
 
@@ -111,10 +116,13 @@ _LAZY: dict[str, tuple[str, str]] = {
     "market_data": ("tstdx.planned_service", "market_data"),
     "AsyncMarketDataService": ("tstdx.async_service", "AsyncMarketDataService"),
     "async_market_data": ("tstdx.async_service", "async_market_data"),
+    "BatchResult": ("tstdx.batch", "BatchResult"),
     "FailureDisposition": ("tstdx.failure", "FailureDisposition"),
     "FailurePolicy": ("tstdx.failure", "FailurePolicy"),
+    "SourceHealthRegistry": ("tstdx.health", "SourceHealthRegistry"),
     "ErrorEnvelope": ("tstdx.error_envelope", "ErrorEnvelope"),
     "PlannedQuoteStream": ("tstdx.streaming.planned", "PlannedQuoteStream"),
+    "StreamWatermark": ("tstdx.streaming.planned", "StreamWatermark"),
     "providers": ("tstdx.providers", ""),
     "facade": ("tstdx.facade", ""),
     "observability": ("tstdx.observability", ""),
