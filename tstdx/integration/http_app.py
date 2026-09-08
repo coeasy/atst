@@ -17,6 +17,7 @@ from dataclasses import asdict, is_dataclass
 from enum import Enum
 from typing import Any, Callable
 
+from ..batch import BatchResult
 from ..error_envelope import to_error_envelope
 from ..errors import TdxError, ValidationError, http_status_for
 from ..planned_service import UnifiedMarketDataService
@@ -29,7 +30,7 @@ from .tasks import TaskStoreFull as _SafeTaskStoreFull
 __all__ = ["create_app", "PlannedProviderHttpClient", "PlannedTaskStore"]
 
 _LOG = logging.getLogger(__name__)
-_MAX_PROVIDER_SYMBOLS = 100
+_MAX_PROVIDER_SYMBOLS = 1000
 
 
 class PlannedProviderHttpClient(ProviderHttpClient):
@@ -91,6 +92,7 @@ def _provider_payload(provider: str) -> dict[str, Any]:
                 "markets": sorted(channel.markets),
                 "live": channel.live,
                 "local": channel.local,
+                "batch_limit": channel.batch_limit,
                 "notes": channel.notes,
             }
             for channel in spec.channels
@@ -175,6 +177,25 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
             "data": _jsonable(result.data),
             "meta": _jsonable(result.meta),
         }
+
+    @app.get(
+        "/providers/{provider}/quotes/batch",
+        tags=["providers"],
+        summary="Explicit Provider partial quote batch",
+    )
+    def provider_quotes_batch(
+        provider: str,
+        codes: str,
+        deadline_ms: int = 5000,
+    ) -> dict[str, Any]:
+        result = _service().quotes_batch(
+            _codes(codes),
+            provider=provider,
+            deadline_ms=deadline_ms,
+        )
+        if not isinstance(result, BatchResult):
+            raise RuntimeError("quotes_batch REST contract violated")
+        return _jsonable(result.to_dict())
 
     @app.get(
         "/providers/{provider}/bars/{symbol}",
