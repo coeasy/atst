@@ -3,8 +3,10 @@ from __future__ import annotations
 import threading
 import time
 
+import pytest
+
 from tstdx.domain.models import Quote
-from tstdx.errors import SourceUnavailable
+from tstdx.errors import SourceUnavailable, SubscriptionError
 from tstdx.streaming.planned import PlannedQuoteStream
 
 
@@ -33,6 +35,30 @@ def test_due_subscriptions_union_symbols_without_duplicates() -> None:
     stream.subscribe(["sz000001", "sh601318"], interval=5.0)
     subs = stream._subscriptions()
     assert stream._union_symbols(subs) == ["sh600519", "sz000001", "sh601318"]
+
+
+def test_invalid_subscription_inputs_are_terminal_e6_errors() -> None:
+    service = FakeService()
+    stream = PlannedQuoteStream(provider="tencent", service=service)
+    for call in (
+        lambda: stream.subscribe([], interval=1.0),
+        lambda: stream.subscribe("sh600519", interval=0),
+        lambda: stream.subscribe("sh600519", max_queue=0),
+        lambda: stream.subscribe("not-a-symbol", interval=1.0),
+    ):
+        with pytest.raises(SubscriptionError) as caught:
+            call()
+        assert caught.value.code == "E6010"
+        assert caught.value.advice.retryable is False
+        assert caught.value.advice.switch_host is False
+
+
+def test_injected_service_identity_is_preserved() -> None:
+    service = FakeService()
+    stream = PlannedQuoteStream(provider="tencent", service=service)
+    assert stream.service is service
+    stream.stop()
+    assert service.closed is False
 
 
 def test_advance_due_skips_missed_intervals_without_catchup_loop() -> None:
@@ -65,8 +91,6 @@ def test_slow_callback_does_not_block_provider_polling() -> None:
     try:
         assert entered.wait(timeout=0.5)
         time.sleep(0.08)
-        # Callback is still blocked, but the independent poll thread must keep
-        # hitting the same Provider according to its own schedule.
         assert len(service.calls) >= 2
         assert {provider for provider, _ in service.calls} == {"tencent"}
     finally:
