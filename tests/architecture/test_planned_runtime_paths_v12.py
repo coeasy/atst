@@ -6,13 +6,15 @@ import pytest
 
 import tstdx
 from tstdx.async_service import UnifiedMarketDataService as AsyncSyncService
+from tstdx.batch import BatchResult
 from tstdx.failure import FailureDisposition
 from tstdx.facade import AsyncUnifiedQuoteAPI, UnifiedMarketDataService, UnifiedQuoteAPI
+from tstdx.health import SourceHealthRegistry
 from tstdx.integration import create_app
 from tstdx.integration.http_app import PlannedProviderHttpClient, PlannedTaskStore
 from tstdx.integration.tasks import TaskStore as SafeTaskStore
 from tstdx.planned_service import UnifiedMarketDataService as PlannedService
-from tstdx.streaming.planned import PlannedQuoteStream
+from tstdx.streaming.planned import PlannedQuoteStream, StreamWatermark
 
 
 def test_top_level_service_and_query_contracts_point_to_planned_modules() -> None:
@@ -21,12 +23,24 @@ def test_top_level_service_and_query_contracts_point_to_planned_modules() -> Non
         "UnifiedMarketDataService",
     )
     assert tstdx._LAZY["market_data"] == ("tstdx.planned_service", "market_data")
+    assert tstdx._LAZY["BatchResult"] == ("tstdx.batch", "BatchResult")
+    assert tstdx._LAZY["SourceHealthRegistry"] == (
+        "tstdx.health",
+        "SourceHealthRegistry",
+    )
     assert tstdx._LAZY["PlannedQuoteStream"] == (
         "tstdx.streaming.planned",
         "PlannedQuoteStream",
     )
+    assert tstdx._LAZY["StreamWatermark"] == (
+        "tstdx.streaming.planned",
+        "StreamWatermark",
+    )
     assert tstdx.UnifiedMarketDataService is PlannedService
+    assert tstdx.BatchResult is BatchResult
+    assert tstdx.SourceHealthRegistry is SourceHealthRegistry
     assert tstdx.PlannedQuoteStream is PlannedQuoteStream
+    assert tstdx.StreamWatermark is StreamWatermark
 
 
 def test_official_facades_do_not_export_legacy_routing_classes() -> None:
