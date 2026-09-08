@@ -7,8 +7,9 @@ on:
   workflow_dispatch:
 
 # 独立于 wheels.yml 的 Rust 内核构建与对拍自检。
-# `continue-on-error: true`：编译失败或对拍不一致时**不阻塞**纯 Python 发版
-# （与 tstdx_native/README.md 的降级策略一致），但会把问题显式暴露在日志。
+# 运行时仍保留 tstdx_native -> pure Python 的安全降级；但 CI 必须阻塞：
+# PR 的合并门禁明确要求 Native build/parity 与其它 gate 在同一 SHA 绿色，
+# 因此这里不能用 continue-on-error 把未执行/编译失败伪装成 workflow success。
 permissions:
   contents: read
 
@@ -16,7 +17,6 @@ jobs:
   build-native:
     name: Build & parity-check tstdx_native
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -46,5 +46,5 @@ jobs:
           result = selftest()
           print(json.dumps(result, ensure_ascii=False, indent=2))
           if not result["importable"] or not result["native_available"]:
-              print("::warning::tstdx_native 与 Python 参考实现不一致，已回退纯 Python")
+              raise SystemExit("tstdx_native build/parity gate failed")
           PY
