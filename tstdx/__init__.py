@@ -1,46 +1,20 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""tstdx —— 通达信（TDX）行情数据通用协议库。
+"""tstdx —— TDX-first, multi-provider market-data library.
 
-设计目标
---------
-* **协议全覆盖**：7709 标准 / 7727 扩展市场 / MAC 专属 / F10 资料 / 商品语义，
-  未知命令走 L2 启发式 + L3 原始透传，**永不丢包**。
-* **数据全兼容**：市场 × 品种 × 周期 × 口径差异全部参数化为 ``DataProfile``。
-* **实时为一等公民**：PushChannel + 增量合并 + 断线补数 + 背压 + 重连。
-* **原创实现**：洁净室流程，协议事实源于自有抓包与本地文件分析。
+The v12 public architecture uses one canonical provider model:
 
-分层（自底向上）::
+``Provider -> Channel -> Capability -> Endpoint/Host``.
 
-    codec       报文帧 / 变长数值 / 字符集
-    protocol    命令登记 + 三级解析（L1/L2/L3）
-    transport   TCP 连接 / 连接池 Slot / 心跳 / 限流 / 主站测速
-    client      同步 + 异步客户端（Standard / Extended / MAC / Goods）
-    reader      本地 vipdoc 二进制（.day/.lc1/.lc5/.dat/gpcw）
-    domain      数据模型 / 复权 / 日历 / 时区
-    streaming   流式订阅
-    web         HTTP Web 行情源（新浪/腾讯/东财/集思录/港股/中行）
-    sinks       DataFrame / Parquet / DuckDB
-    sources     DataSourceRouter（6 级降级）
-    facade      TDX 二进制协议与行情高层门面（原生命名）
-    observability  Prometheus 风格指标 / 埋点（零硬依赖）
+TDX is the default provider.  Other providers (Tencent/Sina/Eastmoney/...)
+are independent data channels, not automatic fallbacks.  Provider-specific
+APIs preserve their unique data while common capabilities can be exposed by a
+unified service/facade.  Selecting a provider is fail-closed: provider failure
+is reported to the caller; only host/endpoint failover inside that provider is
+allowed automatically.
 
-Quick start（离线，读取本地通达信数据）::
-
-    from tstdx.reader import DayBarReader
-    bars = DayBarReader().read(r"D:/tdx/vipdoc/sh/lday/sh600519.day")
-
-Quick start（在线，TDX 协议）::
-
-    from tstdx import TdxClient
-    with TdxClient() as c:
-        bars = c.bars("sh600519", period="day", count=30)
-
-Quick start（HTTP Web 源，无需 TDX 主站）::
-
-    from tstdx.web import get_quotes
-    quotes = get_quotes(["sh600519", "sz000001"], source="tencent")
+Low-level protocol/reader APIs remain public and directly usable.
 """
 
 from __future__ import annotations
@@ -59,29 +33,34 @@ __all__ = [
     "BlockReader",
     "FinanceReader",
     "DataProfile",
+    "ChannelSpec",
+    "ProviderSpec",
+    "ProviderRegistry",
+    "PROVIDERS",
+    "resolve_provider",
     "configure",
     "get_config",
     "load_config",
+    "providers",
     "facade",
     "observability",
     "streaming",
 ]
 
-# --- 始终可用：错误体系 / 编解码 / 协议层 --------------------------------- #
+# --- Always available: error / codec / protocol ---------------------------- #
 from . import codec, errors, protocol  # noqa: E402,F401
 from .errors import TdxError  # noqa: E402,F401
 
 
-# --- 配置中心（惰性，避免循环导入） ---------------------------------------- #
 def configure(**kwargs: Any) -> Any:
-    """以关键字参数覆盖全局配置（等价于 :func:`load_config` 的高优先级源）。"""
+    """Override global configuration with keyword arguments."""
     from .config import load_config
 
     return load_config(overrides=kwargs)
 
 
 def get_config() -> Any:
-    """获取当前生效的全局配置对象。"""
+    """Return the effective global configuration."""
     from .config import get_config as _get
 
     return _get()
@@ -90,11 +69,11 @@ def get_config() -> Any:
 if TYPE_CHECKING:  # pragma: no cover
     from .client import AsyncTdxClient, TdxClient
     from .config import load_config
+    from .providers import ChannelSpec, ProviderRegistry, ProviderSpec
     from .reader import BlockReader, DataProfile, DayBarReader, FinanceReader, MinBarReader
     from .web import WebQuoteClient
 
 
-# --- 惰性属性：按需导入可选子系统 ------------------------------------------ #
 _LAZY: dict[str, tuple[str, str]] = {
     "TdxClient": ("tstdx.client", "TdxClient"),
     "AsyncTdxClient": ("tstdx.client", "AsyncTdxClient"),
@@ -105,7 +84,12 @@ _LAZY: dict[str, tuple[str, str]] = {
     "FinanceReader": ("tstdx.reader", "FinanceReader"),
     "DataProfile": ("tstdx.reader", "DataProfile"),
     "load_config": ("tstdx.config", "load_config"),
-    # __all__ 声明的三个子包：attr 置空串表示返回子包模块本身（W2）
+    "ChannelSpec": ("tstdx.providers", "ChannelSpec"),
+    "ProviderSpec": ("tstdx.providers", "ProviderSpec"),
+    "ProviderRegistry": ("tstdx.providers", "ProviderRegistry"),
+    "PROVIDERS": ("tstdx.providers", "PROVIDERS"),
+    "resolve_provider": ("tstdx.providers", "resolve_provider"),
+    "providers": ("tstdx.providers", ""),
     "facade": ("tstdx.facade", ""),
     "observability": ("tstdx.observability", ""),
     "streaming": ("tstdx.streaming", ""),
@@ -125,9 +109,6 @@ def __getattr__(name: str) -> Any:
         import importlib
 
         mod = importlib.import_module(mod_path)
-        # attr 为空串表示「子包整体」：直接返回导入的模块对象
-        # （__all__ 里的 facade/observability/streaming 三个子包走此路径，
-        #  否则 `import tstdx; tstdx.facade` 会 AttributeError —— W2）。
         value = mod if not attr else getattr(mod, attr)
         globals()[name] = value
         return value
