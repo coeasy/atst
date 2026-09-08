@@ -5,8 +5,8 @@
 
 Provider adapters are predominantly synchronous. ``AsyncMarketDataService``
 executes the same QueryPlan-backed sync service through a bounded worker pool,
-so Provider/freshness/deadline/singleflight semantics remain identical without
-maintaining a second routing implementation.
+so Provider/freshness/deadline/singleflight/batch semantics remain identical
+without maintaining a second routing implementation.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from typing import Any, Callable, TypeVar
 
 from .planned_service import UnifiedMarketDataService
 from .providers import resolve_provider
+from .query import QuerySpec
 
 __all__ = ["AsyncMarketDataService", "AsyncProviderAPI", "async_market_data"]
 
@@ -72,7 +73,7 @@ class AsyncMarketDataService:
         concurrency = max_concurrency if max_concurrency is not None else max_workers
         if concurrency <= 0:
             raise ValueError("max_concurrency must be > 0")
-        self.sync = service or UnifiedMarketDataService(**service_kwargs)
+        self.sync = service if service is not None else UnifiedMarketDataService(**service_kwargs)
         self._owns_service = service is None
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers,
@@ -89,6 +90,19 @@ class AsyncMarketDataService:
         call = partial(fn, *args, **kwargs)
         async with self._semaphore:
             return await loop.run_in_executor(self._executor, call)
+
+    async def query(self, spec: QuerySpec, *, with_meta: bool = True) -> Any:
+        """Execute the same canonical QuerySpec path as the sync service."""
+        return await self._run(self.sync.query, spec, with_meta=with_meta)
+
+    async def query_many(
+        self,
+        specs: list[QuerySpec] | tuple[QuerySpec, ...],
+        *,
+        with_meta: bool = True,
+    ) -> list[Any]:
+        """Execute canonical multi-query planning through the sync planned core."""
+        return await self._run(self.sync.query_many, specs, with_meta=with_meta)
 
     async def quotes(self, *args: Any, **kwargs: Any) -> Any:
         return await self._run(self.sync.quotes, *args, **kwargs)
