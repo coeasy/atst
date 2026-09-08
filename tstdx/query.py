@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
+from .domain.period import normalize_bar_period
 from .domain.symbol import normalize_symbol
 from .errors import ValidationError
 from .execution import ExecutionBudget
@@ -18,12 +19,7 @@ from .providers import PROVIDERS, resolve_provider
 
 __all__ = ["QuerySpec", "QueryFingerprint", "QueryPlan", "QueryPlanner"]
 
-_MINUTE_PERIODS = frozenset(
-    {
-        "1m", "1min", "min", "5m", "5min", "15m", "15min",
-        "30m", "30min", "60m", "60min",
-    }
-)
+_MINUTE_PERIODS = frozenset({"1min", "5min", "15min", "30min", "60min"})
 
 
 def _norm_text(value: str | None) -> str:
@@ -131,9 +127,7 @@ class QuerySpec:
         )
         PROVIDERS.require(pid, cap, channel=self.channel)
 
-        period = _norm_text(self.period)
-        if cap == "bars" and not period:
-            period = "day"
+        period = normalize_bar_period(self.period) if cap == "bars" else _norm_text(self.period)
         max_age = None if self.max_age in (None, 0, 0.0) else float(self.max_age)
         return replace(
             self,
@@ -220,8 +214,11 @@ class QueryPlanner:
             return spec.channel
         if cap == "quotes":
             preferred = {
-                "tdx": "quotation", "tencent": "quote", "sina": "quote",
-                "eastmoney": "quote", "baidu": "quote",
+                "tdx": "quotation",
+                "tencent": "quote",
+                "sina": "quote",
+                "eastmoney": "quote",
+                "baidu": "quote",
             }.get(pid)
             if preferred is not None:
                 PROVIDERS.require(pid, cap, channel=preferred)
