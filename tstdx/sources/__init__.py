@@ -195,9 +195,9 @@ class DataSourceRouter:
                 if candidate in PROVIDERS.ids():
                     return candidate
         except (AttributeError, TypeError, ValueError):
-            # Missing optional Web settings may use the documented compatibility
-            # default; invalid top-level config is handled by build_router().
-            pass
+            # Missing optional Web settings use the documented one-provider
+            # compatibility default; there is still no fallback chain.
+            return "tencent"
         return "tencent"
 
     def _selection(
