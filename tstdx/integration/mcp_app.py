@@ -10,6 +10,7 @@ from typing import Any
 
 from ..error_envelope import to_error_envelope
 from ..errors import InternalError, TdxError, ValidationError
+from .http_runtime import ProviderHttpClient
 from .mcp._common import (
     ERR_INTERNAL,
     ERR_INVALID_PARAMS,
@@ -25,8 +26,20 @@ __all__ = ["MCPServer", "create_mcp_server"]
 _LOG = logging.getLogger(__name__)
 
 
+class _MCPProviderClient(ProviderHttpClient):
+    """Legacy-tool-shaped client whose market-data core is PlannedService."""
+
+    def catalog(self, symbol: str) -> Any:
+        return self.f10_catalog(symbol)
+
+
 class MCPServer(LegacyMCPServer):
-    """MCP server whose public failures use the canonical ErrorEnvelope."""
+    """MCP server whose data path and public failures use canonical v12 contracts."""
+
+    def _get_client(self) -> Any:  # noqa: ANN401
+        if self._client is None:
+            self._client = _MCPProviderClient()
+        return self._client
 
     def _facade_obj(self) -> Any:  # noqa: ANN401
         if self._facade is None:
