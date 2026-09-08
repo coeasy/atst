@@ -4,12 +4,19 @@ from typing import Any
 
 import pytest
 
+from tstdx.errors import ValidationError
+from tstdx.providers.http import ProviderBoundHttpClient
 from tstdx.service import ProviderManager
 
 
 class FakeHttpClient:
     def __init__(self) -> None:
         self.close_calls = 0
+        self.calls: list[str] = []
+
+    def get(self, url: str, *args: Any, **kwargs: Any) -> Any:
+        self.calls.append(url)
+        raise AssertionError("allowed raw HTTP execution is not needed in this test")
 
     def close(self) -> None:
         self.close_calls += 1
@@ -45,7 +52,7 @@ def fake_http(monkeypatch: pytest.MonkeyPatch) -> tuple[list[FakeHttpClient], ty
     return created, FakeAdapter
 
 
-def test_same_provider_reuses_one_http_client_across_channels(fake_http) -> None:  # noqa: ANN001
+def test_same_provider_reuses_one_bound_http_client_across_channels(fake_http) -> None:  # noqa: ANN001
     created, adapter_cls = fake_http
     manager = ProviderManager(timeout=7.5)
 
@@ -54,7 +61,10 @@ def test_same_provider_reuses_one_http_client_across_channels(fake_http) -> None
 
     assert len(created) == 1
     assert quote is not bars
-    assert quote.client is bars.client is created[0]
+    assert isinstance(quote.client, ProviderBoundHttpClient)
+    assert quote.client is bars.client
+    assert quote.client is manager.http_client("tencent")
+    assert quote.client is not created[0]
     assert quote.timeout == bars.timeout == 7.5
 
     manager.close()
@@ -71,9 +81,31 @@ def test_different_providers_do_not_share_http_client(fake_http) -> None:  # noq
     sina = manager.web_adapter("sina", "quote", adapter_cls)
 
     assert len(created) == 2
+    assert isinstance(tencent.client, ProviderBoundHttpClient)
+    assert isinstance(sina.client, ProviderBoundHttpClient)
     assert tencent.client is not sina.client
+    assert tencent.client is not created[0]
+    assert sina.client is not created[1]
 
     manager.close()
+    assert created[0].close_calls == 1
+    assert created[1].close_calls == 1
+
+
+def test_manager_bound_client_rejects_cross_provider_url_before_raw_call(fake_http) -> None:  # noqa: ANN001
+    created, _ = fake_http
+    manager = ProviderManager()
+    try:
+        client = manager.http_client("tencent")
+        assert isinstance(client, ProviderBoundHttpClient)
+        assert len(created) == 1
+
+        with pytest.raises(ValidationError):
+            client.get("https://push2.eastmoney.com/api")
+
+        assert created[0].calls == []
+    finally:
+        manager.close()
 
 
 def test_runtime_resource_key_does_not_create_fake_registry_channel(fake_http) -> None:  # noqa: ANN001
@@ -101,12 +133,12 @@ def test_runtime_resource_key_does_not_create_fake_registry_channel(fake_http) -
 
     assert profile is profile_again
     assert profile is not notices
+    assert profile.client is notices.client
+    assert isinstance(profile.client, ProviderBoundHttpClient)
     manager.close()
 
 
 def test_unknown_channel_is_rejected_before_adapter_creation(fake_http) -> None:  # noqa: ANN001
-    from tstdx.errors import ValidationError
-
     _, adapter_cls = fake_http
     manager = ProviderManager()
 
