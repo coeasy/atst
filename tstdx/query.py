@@ -1,16 +1,7 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Canonical query contracts and deterministic planning for v12.
-
-The public execution model is::
-
-    QuerySpec -> QueryPlanner -> QueryPlan -> Provider execution
-
-A plan binds exactly one Provider and one Provider-internal Channel. Provider
-selection is completed before I/O starts; runtime failures never cause the
-planner to compile or execute another Provider.
-"""
+"""Canonical query contracts and deterministic planning for v12."""
 
 from __future__ import annotations
 
@@ -25,26 +16,12 @@ from .errors import ValidationError
 from .execution import ExecutionBudget
 from .providers import PROVIDERS, resolve_provider
 
-__all__ = [
-    "QuerySpec",
-    "QueryFingerprint",
-    "QueryPlan",
-    "QueryPlanner",
-]
+__all__ = ["QuerySpec", "QueryFingerprint", "QueryPlan", "QueryPlanner"]
 
 _MINUTE_PERIODS = frozenset(
     {
-        "1m",
-        "1min",
-        "min",
-        "5m",
-        "5min",
-        "15m",
-        "15min",
-        "30m",
-        "30min",
-        "60m",
-        "60min",
+        "1m", "1min", "min", "5m", "5min", "15m", "15min",
+        "30m", "30min", "60m", "60min",
     }
 )
 
@@ -55,16 +32,6 @@ def _norm_text(value: str | None) -> str:
 
 @dataclass(frozen=True, slots=True)
 class QuerySpec:
-    """User-visible semantic query contract.
-
-    ``provider`` is the formal selector. ``source`` remains a compatibility
-    alias and is resolved into the same Provider id during planning.
-
-    ``max_age`` is explicit opt-in cache freshness. ``allow_partial`` is valid
-    only for quote BatchResult execution. ``allow_stale`` is still rejected
-    until stale-on-error provenance is fully implemented.
-    """
-
     capability: str
     symbols: tuple[str, ...] = ()
     provider: str | None = None
@@ -117,22 +84,15 @@ class QuerySpec:
             schema_version=schema_version,
         )
 
-    def normalized(self) -> "QuerySpec":
+    def normalized(self, *, default_provider: str | None = None) -> "QuerySpec":
         cap = _norm_text(self.capability)
         if not cap:
             raise ValidationError("capability 不能为空")
-
         symbols = tuple(normalize_symbol(item) for item in self.symbols)
         if cap in {"quotes", "bars"} and not symbols:
-            raise ValidationError(
-                f"{cap} 至少需要一个 symbol",
-                context={"capability": cap},
-            )
+            raise ValidationError(f"{cap} 至少需要一个 symbol", context={"capability": cap})
         if cap == "bars" and len(symbols) != 1:
-            raise ValidationError(
-                "bars 当前统一契约一次只接受一个 symbol",
-                context={"symbols": list(symbols)},
-            )
+            raise ValidationError("bars 当前统一契约一次只接受一个 symbol")
         if self.allow_partial and cap != "quotes":
             raise ValidationError(
                 "allow_partial 当前仅支持 quotes BatchResult",
@@ -145,30 +105,24 @@ class QuerySpec:
         if self.start < 0:
             raise ValidationError("start 不能为负数", context={"start": self.start})
         if self.deadline_ms <= 0:
-            raise ValidationError(
-                "deadline_ms 必须大于 0",
-                context={"deadline_ms": self.deadline_ms},
-            )
+            raise ValidationError("deadline_ms 必须大于 0", context={"deadline_ms": self.deadline_ms})
         if self.schema_version <= 0:
-            raise ValidationError(
-                "schema_version 必须大于 0",
-                context={"schema_version": self.schema_version},
-            )
+            raise ValidationError("schema_version 必须大于 0")
         if self.max_age is not None and self.max_age < 0:
-            raise ValidationError(
-                "max_age 不能为负数",
-                context={"max_age": self.max_age},
-            )
+            raise ValidationError("max_age 不能为负数", context={"max_age": self.max_age})
         if self.allow_stale:
             raise ValidationError(
                 "allow_stale 尚未启用：v12 当前不会在 Provider 失败后返回过期缓存",
                 context={"allow_stale": True, "fallback": False},
             )
 
+        resolved_default = resolve_provider(
+            provider=default_provider or PROVIDERS.default_provider
+        )
         pid = resolve_provider(
             provider=self.provider,
             source=self.source,
-            default=PROVIDERS.default_provider,
+            default=resolved_default,
         )
         PROVIDERS.require(pid, cap, channel=self.channel)
 
@@ -176,7 +130,6 @@ class QuerySpec:
         if cap == "bars" and not period:
             period = "day"
         max_age = None if self.max_age in (None, 0, 0.0) else float(self.max_age)
-
         return replace(
             self,
             capability=cap,
@@ -194,8 +147,6 @@ class QuerySpec:
 
 @dataclass(frozen=True, slots=True)
 class QueryFingerprint:
-    """Stable semantic identity for cache/singleflight/trace correlation."""
-
     value: str
     canonical: str
 
@@ -217,15 +168,9 @@ class QueryFingerprint:
         }
 
     @classmethod
-    def from_normalized_spec(
-        cls,
-        spec: QuerySpec,
-        *,
-        channel: str,
-    ) -> "QueryFingerprint":
-        payload = cls._payload(spec, channel=channel)
+    def from_normalized_spec(cls, spec: QuerySpec, *, channel: str) -> "QueryFingerprint":
         canonical = json.dumps(
-            payload,
+            cls._payload(spec, channel=channel),
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
@@ -234,14 +179,20 @@ class QueryFingerprint:
         return cls(value=f"q{spec.schema_version}:{digest}", canonical=canonical)
 
     @classmethod
-    def from_spec(cls, spec: QuerySpec, *, channel: str) -> "QueryFingerprint":
-        return cls.from_normalized_spec(spec.normalized(), channel=channel)
+    def from_spec(
+        cls,
+        spec: QuerySpec,
+        *,
+        channel: str,
+        default_provider: str | None = None,
+    ) -> "QueryFingerprint":
+        return cls.from_normalized_spec(
+            spec.normalized(default_provider=default_provider), channel=channel
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class QueryPlan:
-    """Compiled one-Provider execution plan."""
-
     spec: QuerySpec
     provider: str
     channel: str
@@ -250,7 +201,12 @@ class QueryPlan:
 
 
 class QueryPlanner:
-    """Compile semantic queries into deterministic Provider-bound plans."""
+    """Compile semantic queries into deterministic single-Provider plans."""
+
+    def __init__(self, *, default_provider: str | None = None) -> None:
+        self.default_provider = resolve_provider(
+            provider=default_provider or PROVIDERS.default_provider
+        )
 
     @staticmethod
     def _default_channel(spec: QuerySpec) -> str:
@@ -259,19 +215,14 @@ class QueryPlanner:
         if spec.channel:
             PROVIDERS.require(pid, cap, channel=spec.channel)
             return spec.channel
-
         if cap == "quotes":
             preferred = {
-                "tdx": "quotation",
-                "tencent": "quote",
-                "sina": "quote",
-                "eastmoney": "quote",
-                "baidu": "quote",
+                "tdx": "quotation", "tencent": "quote", "sina": "quote",
+                "eastmoney": "quote", "baidu": "quote",
             }.get(pid)
             if preferred is not None:
                 PROVIDERS.require(pid, cap, channel=preferred)
                 return preferred
-
         if cap == "bars":
             if pid == "tdx":
                 preferred = "quotation"
@@ -286,7 +237,6 @@ class QueryPlanner:
             if preferred:
                 PROVIDERS.require(pid, cap, channel=preferred)
                 return preferred
-
         candidates = PROVIDERS.get(pid).channels_for(cap)
         if len(candidates) == 1:
             return candidates[0].id
@@ -297,22 +247,16 @@ class QueryPlanner:
             )
         raise ValidationError(
             f"provider {pid!r} 的 capability {cap!r} 存在多个 channel，必须显式指定",
-            context={
-                "provider": pid,
-                "capability": cap,
-                "channels": [item.id for item in candidates],
-            },
+            context={"provider": pid, "capability": cap, "channels": [c.id for c in candidates]},
         )
 
     def compile(self, spec: QuerySpec) -> QueryPlan:
-        normalized = spec.normalized()
+        normalized = spec.normalized(default_provider=self.default_provider)
         channel = self._default_channel(normalized)
-        fingerprint = QueryFingerprint.from_normalized_spec(normalized, channel=channel)
-        budget = ExecutionBudget.from_deadline_ms(normalized.deadline_ms)
         return QueryPlan(
             spec=normalized,
             provider=str(normalized.provider),
             channel=channel,
-            fingerprint=fingerprint,
-            budget=budget,
+            fingerprint=QueryFingerprint.from_normalized_spec(normalized, channel=channel),
+            budget=ExecutionBudget.from_deadline_ms(normalized.deadline_ms),
         )
