@@ -3,10 +3,10 @@
 
 """Execution primitives shared by sync/async market-data entrypoints.
 
-This module deliberately contains no Provider routing.  It only coordinates one
-already-compiled QueryPlan: total deadline accounting, duplicate-call joining
-and symbol de-duplication.  Provider switching therefore cannot be introduced by
-an optimization primitive.
+This module deliberately contains no Provider routing. It only coordinates one
+already-compiled QueryPlan: total deadline accounting, duplicate-call joining,
+symbol de-duplication and deterministic chunking. Provider switching therefore
+cannot be introduced by an optimization primitive.
 """
 
 from __future__ import annotations
@@ -92,12 +92,7 @@ class _Flight(Generic[T]):
 
 
 class SingleFlight:
-    """Join concurrent calls with the exact same semantic fingerprint.
-
-    The first caller performs I/O.  Followers wait for that exact result only;
-    keys from different Provider/freshness/adjustment/window semantics never
-    share a flight.
-    """
+    """Join concurrent calls with the exact same semantic fingerprint."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -127,7 +122,7 @@ class SingleFlight:
         if leader:
             try:
                 flight.result = fn()
-            except BaseException as exc:  # signal followers before propagating
+            except BaseException as exc:
                 flight.error = exc
             finally:
                 flight.event.set()
@@ -183,7 +178,7 @@ class BatchPlan:
 
 
 class BatchPlanner:
-    """Normalize duplicate symbols once and preserve original fan-out order."""
+    """De-duplicate once, chunk by declared Provider limit, preserve fan-out."""
 
     @staticmethod
     def symbols(symbols: tuple[str, ...] | list[str]) -> BatchPlan:
@@ -203,3 +198,17 @@ class BatchPlanner:
             unique=tuple(unique),
             positions=tuple(positions),
         )
+
+    @staticmethod
+    def chunks(items: tuple[T, ...] | list[T], limit: int | None) -> tuple[tuple[T, ...], ...]:
+        values = tuple(items)
+        if not values:
+            return ()
+        if limit is None:
+            return (values,)
+        if limit <= 0:
+            raise ValidationError(
+                "batch limit 必须大于 0",
+                context={"batch_limit": limit},
+            )
+        return tuple(values[index : index + limit] for index in range(0, len(values), limit))
