@@ -49,10 +49,11 @@ class SourceHealthRegistry:
     """Thread-safe dynamic health registry with a single-probe circuit breaker.
 
     Every allowed request captures the current health ``generation`` in the
-    calling thread. Penalizing failures advance the generation. A completion
-    from an older generation is retained for aggregate diagnostics, but it may
-    not overwrite the newer circuit/consecutive-failure state. This applies to
-    both stale successes and stale failures.
+    calling thread. Penalizing failures and explicit resets advance a registry-
+    wide monotonic epoch for the exact health key. A completion from an older
+    epoch is retained for aggregate diagnostics, but it may not overwrite newer
+    circuit/consecutive-failure state. The separate epoch table also makes reset
+    invalidate requests that are still running in other threads.
     """
 
     def __init__(self, *, failure_threshold: int = 3, cooldown_seconds: float = 30.0) -> None:
@@ -64,6 +65,7 @@ class SourceHealthRegistry:
         self.cooldown_ns = int(cooldown_seconds * 1_000_000_000)
         self._lock = threading.RLock()
         self._states: dict[HealthKey, HealthState] = {}
+        self._epochs: dict[HealthKey, int] = {}
         self._request_local = threading.local()
 
     @staticmethod
@@ -87,16 +89,21 @@ class SourceHealthRegistry:
     def _take_request_generation(self, key: HealthKey) -> int | None:
         return self._request_generations().pop(key, None)
 
+    def _current_state(self, key: HealthKey) -> HealthState:
+        epoch = self._epochs.get(key, 0)
+        return self._states.get(key, HealthState(generation=epoch))
+
     def snapshot(self, provider: str, channel: str, capability: str) -> HealthState:
         key = self.key(provider, channel, capability)
         with self._lock:
-            return self._states.get(key, HealthState())
+            return self._current_state(key)
 
     def before_request(self, provider: str, channel: str, capability: str) -> None:
         key = self.key(provider, channel, capability)
         now = time.monotonic_ns()
         with self._lock:
-            state = self._states.get(key, HealthState())
+            generation = self._epochs.setdefault(key, 0)
+            state = self._states.get(key, HealthState(generation=generation))
             if state.half_open_probe:
                 remaining = 0.0
                 reason = "half_open_probe_in_flight"
@@ -108,12 +115,13 @@ class SourceHealthRegistry:
                     state,
                     cooldown_until_ns=0,
                     half_open_probe=True,
+                    generation=generation,
                 )
                 self._states[key] = state
-                self._mark_request_started(key, state.generation)
+                self._mark_request_started(key, generation)
                 return
             else:
-                self._mark_request_started(key, state.generation)
+                self._mark_request_started(key, generation)
                 return
         raise SourceUnavailable(
             "所选 Provider capability 处于健康门禁状态",
@@ -138,16 +146,15 @@ class SourceHealthRegistry:
         now = time.monotonic_ns()
         started_generation = self._take_request_generation(key)
         with self._lock:
-            current = self._states.get(key, HealthState())
-            stale = (
-                started_generation is not None
-                and started_generation < current.generation
-            )
+            epoch = self._epochs.setdefault(key, 0)
+            current = self._states.get(key, HealthState(generation=epoch))
+            stale = started_generation is not None and started_generation < epoch
             if stale:
                 updated = replace(
                     current,
                     successes=current.successes + 1,
                     last_success_ns=now,
+                    generation=epoch,
                 )
             else:
                 updated = replace(
@@ -158,6 +165,7 @@ class SourceHealthRegistry:
                     last_error_code=None,
                     cooldown_until_ns=0,
                     half_open_probe=False,
+                    generation=epoch,
                 )
             self._states[key] = updated
             return updated
@@ -176,16 +184,15 @@ class SourceHealthRegistry:
         now = time.monotonic_ns()
         error_code = exc.code if isinstance(exc, TdxError) else "E9000"
         with self._lock:
-            current = self._states.get(key, HealthState())
-            stale = (
-                started_generation is not None
-                and started_generation < current.generation
-            )
+            epoch = self._epochs.setdefault(key, 0)
+            current = self._states.get(key, HealthState(generation=epoch))
+            stale = started_generation is not None and started_generation < epoch
             if stale:
                 updated = replace(
                     current,
                     failures=current.failures + 1,
                     last_failure_ns=now,
+                    generation=epoch,
                 )
             else:
                 consecutive = (
@@ -194,6 +201,10 @@ class SourceHealthRegistry:
                     else current.consecutive_failures
                 )
                 cooldown_until = current.cooldown_until_ns
+                new_generation = epoch
+                if penalize:
+                    new_generation = epoch + 1
+                    self._epochs[key] = new_generation
                 if penalize and consecutive >= self.failure_threshold:
                     cooldown_until = now + self.cooldown_ns
                 updated = replace(
@@ -204,7 +215,7 @@ class SourceHealthRegistry:
                     last_error_code=error_code,
                     cooldown_until_ns=cooldown_until,
                     half_open_probe=False,
-                    generation=current.generation + (1 if penalize else 0),
+                    generation=new_generation,
                 )
             self._states[key] = updated
             return updated
@@ -221,17 +232,24 @@ class SourceHealthRegistry:
         return True
 
     def reset(self, provider: str | None = None) -> None:
+        """Clear visible health while invalidating all pre-reset in-flight requests."""
         with self._lock:
             if provider is None:
-                self._states.clear()
-                self._request_generations().clear()
-                return
-            pid = resolve_provider(provider=provider)
-            for key in [key for key in self._states if key.provider == pid]:
+                keys = set(self._epochs) | set(self._states)
+            else:
+                pid = resolve_provider(provider=provider)
+                keys = {
+                    key
+                    for key in set(self._epochs) | set(self._states)
+                    if key.provider == pid
+                }
+            for key in keys:
+                current = max(
+                    self._epochs.get(key, 0),
+                    self._states.get(key, HealthState()).generation,
+                )
+                self._epochs[key] = current + 1
                 self._states.pop(key, None)
-            local = self._request_generations()
-            for key in [key for key in local if key.provider == pid]:
-                local.pop(key, None)
 
     def all_states(self) -> dict[HealthKey, HealthState]:
         with self._lock:
