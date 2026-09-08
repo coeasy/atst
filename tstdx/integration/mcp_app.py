@@ -10,7 +10,12 @@ from typing import Any
 
 from ..error_envelope import to_error_envelope
 from ..errors import InternalError, TdxError, ValidationError
-from .mcp._common import ERR_INTERNAL, ERR_INVALID_PARAMS, ERR_METHOD_NOT_FOUND
+from .mcp._common import (
+    ERR_INTERNAL,
+    ERR_INVALID_PARAMS,
+    ERR_INVALID_REQUEST,
+    ERR_METHOD_NOT_FOUND,
+)
 from .mcp._server import MCPServer as LegacyMCPServer
 from .mcp._server import _serialize_to_text
 from .mcp._tools_spec import _TOOLS_BY_NAME, TOOLS
@@ -62,7 +67,7 @@ class MCPServer(LegacyMCPServer):
             envelope = to_error_envelope(exc, phase="mcp_protocol")
             return self._error(
                 None,
-                ERR_INVALID_PARAMS,
+                ERR_INVALID_REQUEST,
                 envelope.message,
                 data=envelope.to_dict(),
             )
