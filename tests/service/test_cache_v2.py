@@ -67,14 +67,14 @@ def test_sqlite_bar_roundtrip(tmp_path: Path) -> None:
     try:
         key = "q1:bars"
         original = QueryResult(
-            data=[Bar(code="sh600519", datetime="2026-09-08", close=123.4)],
+            data=[Bar(datetime="2026-09-08", close=123.4, extra={"source_row": 7})],
             meta=_meta("bars", "kline"),
         )
         cache.put(key, original)
         restored = cache.get(key, max_age=10.0)
-        assert restored.data[0].code == "sh600519"
         assert restored.data[0].datetime == "2026-09-08"
         assert restored.data[0].close == 123.4
+        assert restored.data[0].extra["source_row"] == 7
     finally:
         cache.close()
 
@@ -135,3 +135,24 @@ def test_l2_hit_promotes_back_to_l1(tmp_path: Path) -> None:
         assert len(l1) == 1
     finally:
         cache.close()
+
+
+def test_l2_initialization_failure_is_disabled_cache_not_service_failure(tmp_path: Path) -> None:
+    blocked_parent = tmp_path / "not-a-directory"
+    blocked_parent.write_text("occupied", encoding="utf-8")
+
+    cache = SQLiteSemanticQueryCache(blocked_parent / "semantic.sqlite3")
+    assert cache.enabled is False
+    assert cache.errors >= 1
+    assert cache.get("q1:disabled", max_age=10.0) is None
+    cache.put(
+        "q1:disabled",
+        QueryResult(
+            data=[Quote(code="sh600519", price=3.0)],
+            meta=_meta("quotes", "quote"),
+        ),
+    )
+    assert cache.invalidate("q1:disabled") is False
+    cache.clear()
+    cache.close()
+    cache.close()
