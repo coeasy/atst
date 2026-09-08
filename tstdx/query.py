@@ -7,15 +7,16 @@ The public execution model is::
 
     QuerySpec -> QueryPlanner -> QueryPlan -> Provider execution
 
-A plan binds exactly one Provider and one Provider-internal Channel.  Provider
-selection is therefore completed before I/O starts; runtime failures never
-cause the planner to compile or execute another Provider.
+A plan binds exactly one Provider and one Provider-internal Channel. Provider
+selection is completed before I/O starts; runtime failures never cause the
+planner to compile or execute another Provider.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -59,10 +60,9 @@ class QuerySpec:
     ``provider`` is the formal selector. ``source`` remains a compatibility
     alias and is resolved into the same Provider id during planning.
 
-    ``max_age`` and ``allow_stale`` are part of the semantic fingerprint even
-    though the first v12 execution stage keeps live cache disabled by default.
-    This prevents future cache integration from accidentally sharing results
-    between freshness policies.
+    ``max_age`` is explicit opt-in cache freshness. ``allow_stale`` is reserved
+    for a future stale-on-error policy and is rejected until that policy has a
+    fully specified provenance/error contract; it is never silently ignored.
     """
 
     capability: str
@@ -85,7 +85,7 @@ class QuerySpec:
         cls,
         capability: str,
         *,
-        symbols: str | tuple[str, ...] | list[str] = (),
+        symbols: str | Sequence[str] = (),
         provider: str | None = None,
         source: str | None = None,
         channel: str | None = None,
@@ -99,10 +99,7 @@ class QuerySpec:
         deadline_ms: int = 5000,
         schema_version: int = 1,
     ) -> "QuerySpec":
-        if isinstance(symbols, str):
-            symbol_tuple = (symbols,)
-        else:
-            symbol_tuple = tuple(symbols)
+        symbol_tuple = (symbols,) if isinstance(symbols, str) else tuple(symbols)
         return cls(
             capability=capability,
             symbols=symbol_tuple,
@@ -157,6 +154,11 @@ class QuerySpec:
                 "max_age 不能为负数",
                 context={"max_age": self.max_age},
             )
+        if self.allow_stale:
+            raise ValidationError(
+                "allow_stale 尚未启用：v12 当前不会在 Provider 失败后返回过期缓存",
+                context={"allow_stale": True, "fallback": False},
+            )
 
         pid = resolve_provider(
             provider=self.provider,
@@ -165,6 +167,11 @@ class QuerySpec:
         )
         PROVIDERS.require(pid, cap, channel=self.channel)
 
+        period = _norm_text(self.period)
+        if cap == "bars" and not period:
+            period = "day"
+        max_age = None if self.max_age in (None, 0, 0.0) else float(self.max_age)
+
         return replace(
             self,
             capability=cap,
@@ -172,8 +179,10 @@ class QuerySpec:
             provider=pid,
             source=None,
             channel=_norm_text(self.channel) or None,
-            period=_norm_text(self.period),
+            period=period,
             adjustment=_norm_text(self.adjustment),
+            max_age=max_age,
+            allow_stale=False,
         )
 
 
@@ -184,23 +193,31 @@ class QueryFingerprint:
     value: str
     canonical: str
 
-    @classmethod
-    def from_spec(cls, spec: QuerySpec, *, channel: str) -> "QueryFingerprint":
-        normalized = spec.normalized()
-        payload: dict[str, Any] = {
-            "schema_version": normalized.schema_version,
-            "capability": normalized.capability,
-            "provider": normalized.provider,
+    @staticmethod
+    def _payload(spec: QuerySpec, *, channel: str) -> dict[str, Any]:
+        return {
+            "schema_version": spec.schema_version,
+            "capability": spec.capability,
+            "provider": spec.provider,
             "channel": str(channel).strip().lower(),
-            "symbols": list(normalized.symbols),
-            "period": normalized.period,
-            "count": normalized.count,
-            "start": normalized.start,
-            "adjustment": normalized.adjustment,
-            "allow_partial": normalized.allow_partial,
-            "max_age": normalized.max_age,
-            "allow_stale": normalized.allow_stale,
+            "symbols": list(spec.symbols),
+            "period": spec.period,
+            "count": spec.count,
+            "start": spec.start,
+            "adjustment": spec.adjustment,
+            "allow_partial": spec.allow_partial,
+            "max_age": spec.max_age,
+            "allow_stale": spec.allow_stale,
         }
+
+    @classmethod
+    def from_normalized_spec(
+        cls,
+        spec: QuerySpec,
+        *,
+        channel: str,
+    ) -> "QueryFingerprint":
+        payload = cls._payload(spec, channel=channel)
         canonical = json.dumps(
             payload,
             ensure_ascii=False,
@@ -208,7 +225,11 @@ class QueryFingerprint:
             separators=(",", ":"),
         )
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-        return cls(value=f"q{normalized.schema_version}:{digest}", canonical=canonical)
+        return cls(value=f"q{spec.schema_version}:{digest}", canonical=canonical)
+
+    @classmethod
+    def from_spec(cls, spec: QuerySpec, *, channel: str) -> "QueryFingerprint":
+        return cls.from_normalized_spec(spec.normalized(), channel=channel)
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,13 +268,18 @@ class QueryPlanner:
 
         if cap == "bars":
             if pid == "tdx":
-                return "quotation"
-            if pid == "tencent":
-                return "minute_kline" if spec.period in _MINUTE_PERIODS else "kline"
-            if pid == "sina":
-                return "history_kline"
-            if pid in {"eastmoney", "baidu"}:
-                return "kline"
+                preferred = "quotation"
+            elif pid == "tencent":
+                preferred = "minute_kline" if spec.period in _MINUTE_PERIODS else "kline"
+            elif pid == "sina":
+                preferred = "history_kline"
+            elif pid in {"eastmoney", "baidu"}:
+                preferred = "kline"
+            else:
+                preferred = ""
+            if preferred:
+                PROVIDERS.require(pid, cap, channel=preferred)
+                return preferred
 
         candidates = PROVIDERS.get(pid).channels_for(cap)
         if len(candidates) == 1:
@@ -275,7 +301,7 @@ class QueryPlanner:
     def compile(self, spec: QuerySpec) -> QueryPlan:
         normalized = spec.normalized()
         channel = self._default_channel(normalized)
-        fingerprint = QueryFingerprint.from_spec(normalized, channel=channel)
+        fingerprint = QueryFingerprint.from_normalized_spec(normalized, channel=channel)
         budget = ExecutionBudget.from_deadline_ms(normalized.deadline_ms)
         return QueryPlan(
             spec=normalized,
