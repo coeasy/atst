@@ -12,11 +12,11 @@ kinds of evidence:
   + integrity checks are the freshness proof.
 * ``CURRENT_SERIES`` — a direct query for the Provider's current series. The
   returned tail must expose a parseable timestamp/date so callers can audit what
-  the Provider considered latest. A profile may also cap calendar age without
-  pretending an estimated exchange calendar is authoritative.
+  the Provider considered latest. A broad calendar-age sanity guard may reject
+  grossly stale tails, but it is not treated as a trading calendar.
 * ``HISTORICAL_CLOSED`` — an explicitly requested historical Provider window.
-  Its tail timestamp must be auditable, but it is not compared with wall-clock
-  currentness and can never satisfy a live-only request.
+  Its tail timestamp must be parseable and auditable, but it is not compared with
+  wall-clock currentness and can never satisfy a live-only request.
 * ``BUSINESS_DATE`` — reports/rankings/fundamental information with its own
   business-date/update-time semantics. It must not be forced into quote TTLs.
 * ``LOCAL_HISTORICAL`` — explicitly historical/local and therefore never a live
@@ -153,7 +153,7 @@ FRESHNESS.register_capability(
         mode=FreshnessMode.CURRENT_SERIES,
         require_provider_timestamp=True,
         max_observation_age_seconds=5.0,
-        max_provider_calendar_age_days=1,
+        max_provider_calendar_age_days=14,
     ),
 )
 FRESHNESS.register_capability(
@@ -162,7 +162,7 @@ FRESHNESS.register_capability(
         mode=FreshnessMode.CURRENT_SERIES,
         require_provider_timestamp=True,
         max_observation_age_seconds=5.0,
-        max_provider_calendar_age_days=1,
+        max_provider_calendar_age_days=14,
     ),
 )
 
@@ -194,12 +194,15 @@ FRESHNESS.register(
     ),
 )
 
+# These values are deliberately broad sanity guards, not exchange-session rules.
+# Direct Provider execution remains the primary latestness evidence; the guard
+# only rejects clearly stale series while avoiding weekend/holiday false alarms.
 _BAR_CURRENTNESS_DAYS = {
-    "1min": 2,
-    "5min": 2,
-    "15min": 2,
-    "30min": 2,
-    "60min": 2,
+    "1min": 14,
+    "5min": 14,
+    "15min": 14,
+    "30min": 14,
+    "60min": 14,
     "day": 14,
     "week": 21,
     "month": 62,
@@ -355,19 +358,24 @@ def validate_freshness(
         )
 
     parsed_provider_time: datetime | None = None
-    if selected.mode is FreshnessMode.CURRENT_SERIES:
+    if selected.mode in {
+        FreshnessMode.CURRENT_SERIES,
+        FreshnessMode.HISTORICAL_CLOSED,
+    }:
         parsed_provider_time = _parse_provider_date(provider_timestamp)
         if parsed_provider_time is None:
             raise FreshnessViolation(
-                "current-series Provider tail timestamp 无法解析",
+                "Provider tail timestamp 无法解析",
                 context={
                     **context,
                     "reason": "provider_timestamp_unparseable",
                     "provider_timestamp": str(provider_timestamp),
                 },
             )
+
+    if selected.mode is FreshnessMode.CURRENT_SERIES:
         max_days = selected.max_provider_calendar_age_days
-        if max_days is not None:
+        if max_days is not None and parsed_provider_time is not None:
             now_date = datetime.fromtimestamp(now / 1_000_000_000, tz=timezone.utc).date()
             provider_date = parsed_provider_time.date()
             age_days = (now_date - provider_date).days
