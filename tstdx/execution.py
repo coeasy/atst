@@ -16,7 +16,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 
 from .errors import ReadTimeout, SourceUnavailable, ValidationError
 
@@ -143,7 +143,7 @@ class SingleFlight:
                         del self._flights[key]
             if flight.error is not None:
                 raise flight.error
-            return flight.result  # type: ignore[return-value]
+            return cast(T, flight.result)
 
         if timeout is not None and timeout <= 0:
             _record_singleflight("timeout")
@@ -164,7 +164,7 @@ class SingleFlight:
             )
         if flight.error is not None:
             raise flight.error
-        return flight.result  # type: ignore[return-value]
+        return cast(T, flight.result)
 
 
 @dataclass(frozen=True, slots=True)
