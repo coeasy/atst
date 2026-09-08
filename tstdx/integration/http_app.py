@@ -92,7 +92,7 @@ def _provider_payload(provider: str) -> dict[str, Any]:
                 "markets": sorted(channel.markets),
                 "live": channel.live,
                 "local": channel.local,
-                "batch_limit": channel.batch_limit,
+                "batch_limits": dict(channel.batch_limits),
                 "notes": channel.notes,
             }
             for channel in spec.channels
