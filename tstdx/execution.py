@@ -147,6 +147,13 @@ class SingleFlight:
         *,
         timeout: float | None = None,
     ) -> T:
+        if timeout is not None and timeout <= 0:
+            _record_singleflight("timeout")
+            raise ReadTimeout(
+                "同指纹请求进入 SingleFlight 前 query deadline 已耗尽",
+                context={"phase": "singleflight_enter", "deadline_scope": "query"},
+            )
+
         caller_deadline_ns = self._absolute_deadline(timeout)
         bypass = False
         with self._lock:
@@ -186,12 +193,6 @@ class SingleFlight:
                 raise flight.error
             return cast(T, flight.result)
 
-        if timeout is not None and timeout <= 0:
-            _record_singleflight("timeout")
-            raise ReadTimeout(
-                "等待同指纹请求时 query deadline 已耗尽",
-                context={"phase": "singleflight_wait", "deadline_scope": "query"},
-            )
         completed = flight.event.wait(timeout=timeout)
         if not completed:
             _record_singleflight("timeout")
