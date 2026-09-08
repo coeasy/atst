@@ -89,6 +89,63 @@ def test_long_deadline_request_bypasses_short_deadline_leader() -> None:
     assert isinstance(leader_errors[0], ReadTimeout)
 
 
+def test_later_long_callers_join_deadline_compatible_second_flight() -> None:
+    singleflight = SingleFlight()
+    short_started = threading.Event()
+    long_started = threading.Event()
+    release_short = threading.Event()
+    release_long = threading.Event()
+    calls: list[str] = []
+    long_results: list[str] = []
+
+    def short_fetch() -> str:
+        calls.append("short")
+        short_started.set()
+        release_short.wait(1.0)
+        return "short"
+
+    def long_fetch() -> str:
+        calls.append("long")
+        long_started.set()
+        release_long.wait(1.0)
+        return "long"
+
+    short = threading.Thread(
+        target=lambda: singleflight.do("same-query", short_fetch, timeout=0.05)
+    )
+    long_leader = threading.Thread(
+        target=lambda: long_results.append(
+            singleflight.do("same-query", long_fetch, timeout=1.0)
+        )
+    )
+    long_follower = threading.Thread(
+        target=lambda: long_results.append(
+            singleflight.do("same-query", long_fetch, timeout=0.5)
+        )
+    )
+
+    short.start()
+    assert short_started.wait(1.0)
+    long_leader.start()
+    assert long_started.wait(1.0)
+    long_follower.start()
+    time.sleep(0.02)
+
+    assert calls == ["short", "long"]
+    assert singleflight.leaders == 2
+    assert singleflight.deadline_bypasses == 1
+    assert singleflight.joins == 1
+
+    release_long.set()
+    long_leader.join(1.0)
+    long_follower.join(1.0)
+    release_short.set()
+    short.join(1.0)
+
+    assert sorted(long_results) == ["long", "long"]
+    assert calls.count("long") == 1
+
+
 def test_short_deadline_follower_can_join_long_deadline_leader() -> None:
     singleflight = SingleFlight()
     started = threading.Event()
