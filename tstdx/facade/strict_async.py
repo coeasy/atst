@@ -6,9 +6,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import partial
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 from ..query import QuerySpec
 from .planned import UnifiedQuoteAPI
@@ -91,6 +91,7 @@ class AsyncUnifiedQuoteAPI:
     def __getattr__(self, name: str) -> Any:
         attr = getattr(self._sync, name)
         if callable(attr):
+
             async def wrapper(*args: Any, **kwargs: Any) -> Any:
                 return await self._call(attr, *args, **kwargs)
 
