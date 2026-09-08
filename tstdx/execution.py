@@ -11,6 +11,7 @@ cannot be introduced by an optimization primitive.
 
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 from dataclasses import dataclass, field
@@ -29,12 +30,10 @@ T = TypeVar("T")
 
 
 def _record_singleflight(event: str) -> None:
-    try:
+    with contextlib.suppress(Exception):
         from .observability.planned import record_singleflight
 
         record_singleflight(event)
-    except Exception:
-        pass
 
 
 @dataclass(slots=True)
@@ -149,14 +148,18 @@ class SingleFlight:
             _record_singleflight("timeout")
             raise ReadTimeout(
                 "等待同指纹请求时 query deadline 已耗尽",
-                context={"phase": "singleflight_wait"},
+                context={"phase": "singleflight_wait", "deadline_scope": "query"},
             )
         completed = flight.event.wait(timeout=timeout)
         if not completed:
             _record_singleflight("timeout")
             raise ReadTimeout(
                 "等待同指纹上游请求超过 query deadline",
-                context={"phase": "singleflight_wait", "singleflight": True},
+                context={
+                    "phase": "singleflight_wait",
+                    "singleflight": True,
+                    "deadline_scope": "query",
+                },
             )
         if flight.error is not None:
             raise flight.error
