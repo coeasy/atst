@@ -21,6 +21,7 @@ __all__ = [
     "record_batch_chunks",
     "record_provider_health",
     "record_stream_gap",
+    "record_stream_reconnect",
 ]
 
 _QUERY_TOTAL = metrics.registry.register(
@@ -70,6 +71,13 @@ _STREAM_GAPS = metrics.registry.register(
     Counter(
         "tstdx_stream_gap_total",
         "Detected stream gaps",
+        labelnames=("provider", "kind"),
+    )
+)
+_STREAM_RECONNECTS = metrics.registry.register(
+    Counter(
+        "tstdx_stream_reconnect_total",
+        "Planned stream reconnect and local resubscribe lifecycle events",
         labelnames=("provider", "kind"),
     )
 )
@@ -145,3 +153,10 @@ def record_provider_health(
 def record_stream_gap(*, provider: str, kind: str) -> None:
     with contextlib.suppress(Exception):
         _STREAM_GAPS.inc(labels={"provider": provider, "kind": kind})
+
+
+def record_stream_reconnect(*, provider: str, kind: str) -> None:
+    if kind not in {"detected", "recovered", "resubscribed"}:
+        return
+    with contextlib.suppress(Exception):
+        _STREAM_RECONNECTS.inc(labels={"provider": provider, "kind": kind})
