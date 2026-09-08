@@ -45,14 +45,6 @@ class PlannedProviderHttpClient(ProviderHttpClient):
     ) -> None:
         super().__init__(service_factory=service_factory or UnifiedMarketDataService)
 
-    def file_download(self, symbol: str, filename: str) -> bytes:
-        """Route F10 file download to the TDX F10 Channel, not quotation."""
-        return self._tdx.f10.download(symbol, filename)
-
-    def parse_text(self, *args: Any, **kwargs: Any) -> Any:
-        """Route F10 text parsing to the same TDX F10 Channel."""
-        return self._tdx.f10.parse_text(*args, **kwargs)
-
 
 class PlannedTaskStore(_SafeTaskStore):
     """TaskStore v2 adapted to the legacy route module's saturation exception."""
@@ -115,13 +107,8 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
 
     app.state.runtime = "planned-v12"
 
-    try:
-        from fastapi import HTTPException, Request
-        from fastapi.responses import JSONResponse
-    except ImportError:  # pragma: no cover - legacy factory already reports this
-        HTTPException = RuntimeError  # type: ignore[misc,assignment]
-        Request = Any  # type: ignore[misc,assignment]
-        JSONResponse = Any  # type: ignore[misc,assignment]
+    from fastapi import HTTPException, Request
+    from fastapi.responses import JSONResponse
 
     def _service() -> UnifiedMarketDataService:
         service = getattr(runtime_client, "service", None)
