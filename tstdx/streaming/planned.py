@@ -10,7 +10,7 @@ fetch. Callback dispatch runs behind bounded per-subscription queues.
 Polling Providers do not expose a trustworthy transport sequence, so this module
 does not invent one. Instead it tracks auditable per-symbol watermarks: last
 local observation, Provider timestamp when present, consecutive missing rounds,
-open-gap state and recovery count.
+open-gap state, recovery count, and reconnect/resubscribe epochs.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from ..errors import (
     SubscriptionError,
     TdxError,
 )
-from ..observability.planned import record_stream_gap
+from ..observability.planned import record_stream_gap, record_stream_reconnect
 from ..planned_service import UnifiedMarketDataService
 from ..providers import PROVIDERS, resolve_provider
 from .engine import BackpressureQueue, DeltaMerger, ReconnectPolicy
@@ -110,6 +110,8 @@ class StreamStats:
     provider_errors: int = 0
     gaps_detected: int = 0
     gaps_recovered: int = 0
+    reconnects: int = 0
+    resubscriptions: int = 0
 
 
 @dataclass(slots=True)
@@ -121,6 +123,9 @@ class StreamWatermark:
     missing_rounds: int = 0
     gap_open: bool = False
     recoveries: int = 0
+    reconnect_epoch: int = 0
+    resubscriptions: int = 0
+    last_reconnect_monotonic: float | None = None
 
 
 @dataclass(slots=True)
@@ -137,6 +142,7 @@ class StreamSubscription:
     queue: BackpressureQueue | None = field(default=None, repr=False)
     missing: dict[str, int] = field(default_factory=dict, repr=False)
     watermarks: dict[str, StreamWatermark] = field(default_factory=dict, repr=False)
+    resubscribe_epoch: int = 0
     dropped: int = 0
     reported_dropped: int = 0
 
@@ -170,6 +176,8 @@ class PlannedQuoteStream:
         self._dispatch_wakeup = threading.Event()
         self._poll_thread: threading.Thread | None = None
         self._dispatch_thread: threading.Thread | None = None
+        self._reconnect_pending = False
+        self._reconnect_epoch = 0
 
     def subscribe(
         self,
@@ -198,6 +206,7 @@ class PlannedQuoteStream:
                 context={"phase": "subscription_validation"},
             )
         normalized = tuple(_normalize_subscription_symbol(symbol) for symbol in raw)
+        watermarks = {_bare_code(symbol): StreamWatermark() for symbol in normalized}
         sub_id = uuid.uuid4().hex[:12]
         sub = StreamSubscription(
             id=sub_id,
@@ -208,6 +217,7 @@ class PlannedQuoteStream:
             max_queue=int(max_queue),
             on_quote=on_quote,
             on_error=on_error,
+            watermarks=watermarks,
         )
 
         def on_drop(_item: Any, current: StreamSubscription = sub) -> None:
@@ -248,13 +258,16 @@ class PlannedQuoteStream:
                         "phase": "subscription_lookup",
                     },
                 )
-            value = sub.watermarks.get(key, StreamWatermark())
+            value = sub.watermarks[key]
             return replace(value)
 
     def start(self) -> "PlannedQuoteStream":
         if self._poll_thread is not None and self._poll_thread.is_alive():
             return self
         self._stop.clear()
+        with self._lock:
+            self._reconnect_pending = False
+        self.reconnect.success()
         self._poll_thread = threading.Thread(
             target=self._poll_loop,
             name=f"tstdx-planned-poll-{self.provider}",
@@ -315,6 +328,47 @@ class PlannedQuoteStream:
                     ordered.append(symbol)
         return ordered
 
+    def _mark_reconnect_pending(self) -> None:
+        detected = False
+        with self._lock:
+            if not self._reconnect_pending:
+                self._reconnect_pending = True
+                detected = True
+        if detected:
+            record_stream_reconnect(provider=self.provider, kind="detected")
+
+    def _mark_reconnected(self, now: float | None = None) -> bool:
+        """Advance one reconnect epoch after the first successful post-failure poll.
+
+        Polling has no remote subscribe frame. "resubscribe" therefore means the
+        active local subscriptions are moved to the new continuity epoch and are
+        scheduled for a prompt refresh. Gap state is preserved until each symbol
+        is actually observed again.
+        """
+        recovered_at = time.monotonic() if now is None else float(now)
+        with self._lock:
+            if not self._reconnect_pending:
+                return False
+            self._reconnect_pending = False
+            self._reconnect_epoch += 1
+            epoch = self._reconnect_epoch
+            self.stats.reconnects += 1
+            subscriptions = list(self._subs.values())
+            for sub in subscriptions:
+                sub.resubscribe_epoch = epoch
+                self.stats.resubscriptions += 1
+                if sub.next_due > recovered_at:
+                    sub.next_due = recovered_at
+                for watermark in sub.watermarks.values():
+                    watermark.reconnect_epoch = epoch
+                    watermark.resubscriptions += 1
+                    watermark.last_reconnect_monotonic = recovered_at
+
+        record_stream_reconnect(provider=self.provider, kind="recovered")
+        if subscriptions:
+            record_stream_reconnect(provider=self.provider, kind="resubscribed")
+        return True
+
     def _poll_loop(self) -> None:
         while not self._stop.is_set():
             subs = self._subscriptions()
@@ -332,11 +386,13 @@ class PlannedQuoteStream:
             symbols = self._union_symbols(due)
             try:
                 rows = self.service.quotes(symbols, provider=self.provider)
+                self._mark_reconnected()
                 self.reconnect.success()
                 self.stats.polls += 1
                 self.stats.requested_symbols += len(symbols)
             except TdxError as exc:
                 self.stats.provider_errors += 1
+                self._mark_reconnect_pending()
                 for sub in due:
                     self._enqueue_error(sub, exc)
                     self._advance_due(sub, now)
@@ -344,6 +400,7 @@ class PlannedQuoteStream:
                 continue
             except Exception as exc:
                 self.stats.provider_errors += 1
+                self._mark_reconnect_pending()
                 _LOG.exception("planned stream unexpected provider error")
                 wrapped = SubscriptionError(
                     "planned stream 上游调用失败",
