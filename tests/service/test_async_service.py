@@ -12,12 +12,29 @@ from tstdx.facade import (
     LegacyAsyncUnifiedQuoteAPI,
 )
 from tstdx.facade.strict_async import AsyncUnifiedQuoteAPI as StrictAsyncFacade
+from tstdx.query import QuerySpec
 
 
 class FakeSyncService:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
         self.closed = False
+
+    def query(self, spec: QuerySpec, *, with_meta: bool = True):  # noqa: ANN201
+        pid = spec.provider or spec.source or "tdx"
+        self.calls.append(("query", pid))
+        return {"provider": pid, "capability": spec.capability, "with_meta": with_meta}
+
+    def query_many(self, specs, *, with_meta: bool = True):  # noqa: ANN001,ANN201
+        self.calls.append(("query_many", str(len(specs))))
+        return [
+            {
+                "provider": spec.provider or spec.source or "tdx",
+                "capability": spec.capability,
+                "with_meta": with_meta,
+            }
+            for spec in specs
+        ]
 
     def quotes(self, symbols, *, provider=None, source=None, **kwargs):  # noqa: ANN001
         pid = provider or source or "tdx"
@@ -68,8 +85,30 @@ async def test_async_service_preserves_explicit_provider() -> None:
         assert sync.calls == [("quotes", "tencent"), ("bars", "tdx")]
     finally:
         await service.aclose()
-    # External service lifecycle is not owned by async wrapper.
     assert sync.closed is False
+
+
+@pytest.mark.asyncio
+async def test_async_query_and_query_many_delegate_to_same_sync_planned_core() -> None:
+    sync = FakeSyncService()
+    service = AsyncMarketDataService(service=sync, max_workers=2)  # type: ignore[arg-type]
+    quote_spec = QuerySpec.build("quotes", symbols=["sh600519"], provider="tencent")
+    bar_spec = QuerySpec.build(
+        "bars", symbols=["sh600519"], provider="tdx", count=10
+    )
+    try:
+        one = await service.query(quote_spec, with_meta=False)
+        many = await service.query_many([quote_spec, bar_spec], with_meta=True)
+        assert one == {
+            "provider": "tencent",
+            "capability": "quotes",
+            "with_meta": False,
+        }
+        assert [item["provider"] for item in many] == ["tencent", "tdx"]
+        assert [item["capability"] for item in many] == ["quotes", "bars"]
+        assert sync.calls == [("query", "tencent"), ("query_many", "2")]
+    finally:
+        await service.aclose()
 
 
 @pytest.mark.asyncio
