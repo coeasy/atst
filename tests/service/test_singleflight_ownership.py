@@ -10,6 +10,15 @@ from tstdx.errors import ReadTimeout
 from tstdx.execution import SingleFlight
 
 
+def _wait_counter(read, expected: int, *, timeout: float = 1.0) -> None:  # noqa: ANN001
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if read() >= expected:
+            return
+        time.sleep(0.002)
+    raise AssertionError(f"counter did not reach {expected}; current={read()}")
+
+
 def test_singleflight_follower_gets_independent_mutable_result() -> None:
     singleflight = SingleFlight()
     started = threading.Event()
@@ -47,17 +56,18 @@ def test_singleflight_follower_gets_independent_mutable_result() -> None:
     assert results[1][0]["extra"]["rank"] == 1
 
 
-def test_long_deadline_request_bypasses_short_deadline_leader() -> None:
+def test_long_deadline_follower_retries_only_after_short_leader_deadline_failure() -> None:
     singleflight = SingleFlight()
-    leader_started = threading.Event()
-    release_leader = threading.Event()
-    leader_errors: list[BaseException] = []
+    short_started = threading.Event()
+    release_short = threading.Event()
+    long_results: list[str] = []
+    short_errors: list[BaseException] = []
     calls: list[str] = []
 
     def short_fetch() -> str:
         calls.append("short")
-        leader_started.set()
-        release_leader.wait(1.0)
+        short_started.set()
+        release_short.wait(1.0)
         raise ReadTimeout(
             "short leader exhausted its own query budget",
             context={"deadline_scope": "query"},
@@ -65,31 +75,40 @@ def test_long_deadline_request_bypasses_short_deadline_leader() -> None:
 
     def run_short() -> None:
         try:
-            singleflight.do("same-query", short_fetch, timeout=0.05)
+            singleflight.do("same-query", short_fetch, timeout=0.2)
         except BaseException as exc:
-            leader_errors.append(exc)
-
-    leader = threading.Thread(target=run_short)
-    leader.start()
-    assert leader_started.wait(1.0)
+            short_errors.append(exc)
 
     def long_fetch() -> str:
         calls.append("long")
         return "ok"
 
-    result = singleflight.do("same-query", long_fetch, timeout=1.0)
-    assert result == "ok"
+    short = threading.Thread(target=run_short)
+    long = threading.Thread(
+        target=lambda: long_results.append(
+            singleflight.do("same-query", long_fetch, timeout=1.0)
+        )
+    )
+    short.start()
+    assert short_started.wait(1.0)
+    long.start()
+    _wait_counter(lambda: singleflight.joins, 1)
+
+    assert calls == ["short"]
+    release_short.set()
+    short.join(1.0)
+    long.join(1.0)
+
+    assert len(short_errors) == 1
+    assert isinstance(short_errors[0], ReadTimeout)
+    assert long_results == ["ok"]
     assert calls == ["short", "long"]
+    assert singleflight.leaders == 2
+    assert singleflight.joins == 1
     assert singleflight.deadline_bypasses == 1
-    assert singleflight.joins == 0
-
-    release_leader.set()
-    leader.join(1.0)
-    assert len(leader_errors) == 1
-    assert isinstance(leader_errors[0], ReadTimeout)
 
 
-def test_later_long_callers_join_deadline_compatible_second_flight() -> None:
+def test_multiple_long_followers_coalesce_onto_single_deadline_retry() -> None:
     singleflight = SingleFlight()
     short_started = threading.Event()
     long_started = threading.Event()
@@ -97,12 +116,16 @@ def test_later_long_callers_join_deadline_compatible_second_flight() -> None:
     release_long = threading.Event()
     calls: list[str] = []
     long_results: list[str] = []
+    short_errors: list[BaseException] = []
 
     def short_fetch() -> str:
         calls.append("short")
         short_started.set()
         release_short.wait(1.0)
-        return "short"
+        raise ReadTimeout(
+            "short leader deadline",
+            context={"deadline_scope": "query"},
+        )
 
     def long_fetch() -> str:
         calls.append("long")
@@ -110,40 +133,47 @@ def test_later_long_callers_join_deadline_compatible_second_flight() -> None:
         release_long.wait(1.0)
         return "long"
 
-    short = threading.Thread(
-        target=lambda: singleflight.do("same-query", short_fetch, timeout=0.05)
-    )
-    long_leader = threading.Thread(
+    def run_short() -> None:
+        try:
+            singleflight.do("same-query", short_fetch, timeout=0.2)
+        except BaseException as exc:
+            short_errors.append(exc)
+
+    short = threading.Thread(target=run_short)
+    first_long = threading.Thread(
         target=lambda: long_results.append(
             singleflight.do("same-query", long_fetch, timeout=1.0)
         )
     )
-    long_follower = threading.Thread(
+    second_long = threading.Thread(
         target=lambda: long_results.append(
-            singleflight.do("same-query", long_fetch, timeout=0.5)
+            singleflight.do("same-query", long_fetch, timeout=1.0)
         )
     )
 
     short.start()
     assert short_started.wait(1.0)
-    long_leader.start()
-    assert long_started.wait(1.0)
-    long_follower.start()
-    time.sleep(0.02)
+    first_long.start()
+    second_long.start()
+    _wait_counter(lambda: singleflight.joins, 2)
+    assert calls == ["short"]
 
+    release_short.set()
+    assert long_started.wait(1.0)
+    _wait_counter(lambda: singleflight.joins, 3)
     assert calls == ["short", "long"]
-    assert singleflight.leaders == 2
-    assert singleflight.deadline_bypasses == 1
-    assert singleflight.joins == 1
 
     release_long.set()
-    long_leader.join(1.0)
-    long_follower.join(1.0)
-    release_short.set()
     short.join(1.0)
+    first_long.join(1.0)
+    second_long.join(1.0)
 
+    assert len(short_errors) == 1
     assert sorted(long_results) == ["long", "long"]
     assert calls.count("long") == 1
+    assert singleflight.leaders == 2
+    assert singleflight.deadline_bypasses == 2
+    assert singleflight.joins == 3
 
 
 def test_short_deadline_follower_can_join_long_deadline_leader() -> None:
