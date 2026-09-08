@@ -13,6 +13,27 @@ def test_default_provider_is_tdx_and_quotes_bind_quotation() -> None:
     assert plan.spec.symbols == ("sh600519",)
 
 
+def test_configured_planner_default_provider_is_used_when_query_is_unspecified() -> None:
+    plan = QueryPlanner(default_provider="tencent").compile(
+        QuerySpec.build("quotes", symbols=["600519"])
+    )
+    assert plan.provider == "tencent"
+    assert plan.channel == "quote"
+
+
+def test_explicit_query_provider_overrides_planner_default() -> None:
+    plan = QueryPlanner(default_provider="tencent").compile(
+        QuerySpec.build("quotes", symbols=["600519"], provider="sina")
+    )
+    assert plan.provider == "sina"
+    assert plan.channel == "quote"
+
+
+def test_empty_default_provider_is_rejected_not_silently_replaced() -> None:
+    with pytest.raises(ValidationError, match="default_provider"):
+        QueryPlanner(default_provider="")
+
+
 def test_tencent_minute_bars_bind_minute_kline_channel() -> None:
     plan = QueryPlanner().compile(
         QuerySpec.build(
@@ -134,6 +155,19 @@ def test_allow_stale_is_rejected_until_policy_is_implemented() -> None:
                 symbols=["600519"],
                 provider="tencent",
                 allow_stale=True,
+            )
+        )
+
+
+def test_allow_partial_is_limited_to_quotes() -> None:
+    with pytest.raises(ValidationError, match="quotes BatchResult"):
+        QueryPlanner().compile(
+            QuerySpec.build(
+                "bars",
+                symbols=["600519"],
+                provider="tdx",
+                count=10,
+                allow_partial=True,
             )
         )
 
