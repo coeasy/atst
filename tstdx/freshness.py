@@ -11,8 +11,12 @@ kinds of evidence:
   available (for example TDX 0x0530), so direct execution + protocol semantics
   + integrity checks are the freshness proof.
 * ``CURRENT_SERIES`` — a direct query for the Provider's current series. The
-  returned tail must expose a timestamp/date so callers can audit what the
-  Provider considered latest.
+  returned tail must expose a parseable timestamp/date so callers can audit what
+  the Provider considered latest. A profile may also cap calendar age without
+  pretending an estimated exchange calendar is authoritative.
+* ``HISTORICAL_CLOSED`` — an explicitly requested historical Provider window.
+  Its tail timestamp must be auditable, but it is not compared with wall-clock
+  currentness and can never satisfy a live-only request.
 * ``BUSINESS_DATE`` — reports/rankings/fundamental information with its own
   business-date/update-time semantics. It must not be forced into quote TTLs.
 * ``LOCAL_HISTORICAL`` — explicitly historical/local and therefore never a live
@@ -28,6 +32,7 @@ from __future__ import annotations
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -46,6 +51,7 @@ __all__ = [
 class FreshnessMode(str, Enum):
     DIRECT_SNAPSHOT = "direct_snapshot"
     CURRENT_SERIES = "current_series"
+    HISTORICAL_CLOSED = "historical_closed"
     BUSINESS_DATE = "business_date"
     LOCAL_HISTORICAL = "local_historical"
 
@@ -59,6 +65,7 @@ class FreshnessProfile:
     allow_replay: bool = False
     allow_synthetic: bool = False
     max_observation_age_seconds: float | None = None
+    max_provider_calendar_age_days: int | None = None
     description: str = ""
 
 
@@ -145,6 +152,7 @@ FRESHNESS.register_capability(
         mode=FreshnessMode.CURRENT_SERIES,
         require_provider_timestamp=True,
         max_observation_age_seconds=5.0,
+        max_provider_calendar_age_days=1,
     ),
 )
 FRESHNESS.register_capability(
@@ -153,6 +161,7 @@ FRESHNESS.register_capability(
         mode=FreshnessMode.CURRENT_SERIES,
         require_provider_timestamp=True,
         max_observation_age_seconds=5.0,
+        max_provider_calendar_age_days=1,
     ),
 )
 
@@ -191,6 +200,32 @@ def _field(evidence: Any, name: str, default: Any = None) -> Any:
     return getattr(evidence, name, default)
 
 
+def _parse_provider_date(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    normalized = text.replace("/", "-")
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        pass
+    for fmt in (
+        "%Y%m%d",
+        "%Y%m%d %H%M%S",
+        "%Y%m%d%H%M%S",
+        "%Y-%m-%d %H%M%S",
+    ):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def validate_freshness(
     evidence: Any,
     *,
@@ -224,10 +259,13 @@ def validate_freshness(
         "mode": selected.mode.value,
     }
 
-    if require_live and selected.mode is FreshnessMode.LOCAL_HISTORICAL:
+    if require_live and selected.mode in {
+        FreshnessMode.HISTORICAL_CLOSED,
+        FreshnessMode.LOCAL_HISTORICAL,
+    }:
         raise FreshnessViolation(
-            "请求要求最新实时数据，但结果来自 local_historical Channel",
-            context={**context, "reason": "local_historical"},
+            "请求要求最新实时数据，但结果来自 historical Channel/window",
+            context={**context, "reason": selected.mode.value},
         )
     if selected.require_direct and origin != "direct":
         raise FreshnessViolation(
@@ -276,12 +314,54 @@ def validate_freshness(
             },
         )
 
+    parsed_provider_time: datetime | None = None
+    if selected.mode is FreshnessMode.CURRENT_SERIES:
+        parsed_provider_time = _parse_provider_date(provider_timestamp)
+        if parsed_provider_time is None:
+            raise FreshnessViolation(
+                "current-series Provider tail timestamp 无法解析",
+                context={
+                    **context,
+                    "reason": "provider_timestamp_unparseable",
+                    "provider_timestamp": str(provider_timestamp),
+                },
+            )
+        max_days = selected.max_provider_calendar_age_days
+        if max_days is not None:
+            now_date = datetime.fromtimestamp(now / 1_000_000_000, tz=timezone.utc).date()
+            provider_date = parsed_provider_time.date()
+            age_days = (now_date - provider_date).days
+            if age_days < -1:
+                raise FreshnessViolation(
+                    "Provider tail timestamp 明显晚于当前日期",
+                    context={
+                        **context,
+                        "reason": "provider_timestamp_in_future",
+                        "provider_timestamp": str(provider_timestamp),
+                        "age_days": age_days,
+                    },
+                )
+            if age_days > max_days:
+                raise FreshnessViolation(
+                    "Provider current-series tail 已超过允许的 calendar age",
+                    context={
+                        **context,
+                        "reason": "provider_timestamp_too_old",
+                        "provider_timestamp": str(provider_timestamp),
+                        "age_days": age_days,
+                        "max_age_days": max_days,
+                    },
+                )
+
     if selected.mode is FreshnessMode.DIRECT_SNAPSHOT:
         basis = "direct_current_snapshot"
         currentness_verified = True
     elif selected.mode is FreshnessMode.CURRENT_SERIES:
         basis = "direct_current_series+provider_tail_timestamp"
-        currentness_verified = bool(provider_timestamp)
+        currentness_verified = parsed_provider_time is not None
+    elif selected.mode is FreshnessMode.HISTORICAL_CLOSED:
+        basis = "direct_historical_closed_series"
+        currentness_verified = False
     elif selected.mode is FreshnessMode.BUSINESS_DATE:
         basis = "provider_business_date"
         currentness_verified = bool(provider_timestamp)
