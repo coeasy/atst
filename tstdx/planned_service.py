@@ -11,6 +11,7 @@ and semantic cache V2 without reimplementing Provider adapters or fallback.
 
 from __future__ import annotations
 
+import copy
 import logging
 import time
 from collections.abc import Sequence
@@ -32,7 +33,12 @@ from .errors import (
 )
 from .execution import BatchPlan, BatchPlanner, SingleFlight
 from .failure import DEFAULT_FAILURE_POLICY, FailurePolicy
-from .freshness import FRESHNESS, bar_freshness_profile, validate_freshness
+from .freshness import (
+    FRESHNESS,
+    FreshnessMode,
+    bar_freshness_profile,
+    validate_freshness,
+)
 from .health import SourceHealthRegistry
 from .observability.planned import (
     record_batch_chunks,
@@ -150,15 +156,21 @@ class UnifiedMarketDataService(ProviderCoreService):
     ) -> list[Any]:
         """Execute multiple canonical queries without inventing provider fallback.
 
-        Exact duplicate semantic queries with the same deadline are executed once
-        within this call. Result containers are copied on fan-out so callers do
-        not share the same list/dict container by accident.
+        Exact duplicate semantic queries with the same deadline and cache-age
+        policy are executed once within this call. Fan-out uses defensive deep
+        copies so mutable Quote/Bar models and nested ``extra``/book objects are
+        never shared between logically independent results.
         """
         results: list[Any] = []
-        memo: dict[tuple[str, int, bool], Any] = {}
+        memo: dict[tuple[str, int, bool, float | None], Any] = {}
         for spec in specs:
             plan = self.compile(spec)
-            key = (plan.fingerprint.value, plan.spec.deadline_ms, with_meta)
+            key = (
+                plan.fingerprint.value,
+                plan.spec.deadline_ms,
+                with_meta,
+                plan.spec.max_age,
+            )
             if key in memo:
                 results.append(self._clone_output(memo[key]))
                 continue
@@ -169,20 +181,7 @@ class UnifiedMarketDataService(ProviderCoreService):
 
     @staticmethod
     def _clone_output(value: Any) -> Any:
-        if isinstance(value, QueryResult):
-            data = list(value.data) if isinstance(value.data, list) else value.data
-            return QueryResult(data=data, meta=value.meta)
-        if isinstance(value, BatchResult):
-            return BatchResult(
-                items=tuple(value.items),
-                errors=dict(value.errors),
-                requested=tuple(value.requested),
-                partial=value.partial,
-                meta=value.meta,
-            )
-        if isinstance(value, list):
-            return list(value)
-        return value
+        return copy.deepcopy(value)
 
     def _execute_plan(self, plan: QueryPlan, *, with_meta: bool) -> Any:
         started = time.perf_counter()
@@ -314,9 +313,24 @@ class UnifiedMarketDataService(ProviderCoreService):
         return "custom"
 
     @staticmethod
-    def _cache_provenance_matches(plan: QueryPlan, result: QueryResult[Any]) -> bool:
+    def _expected_freshness_mode(plan: QueryPlan) -> FreshnessMode | None:
+        if plan.spec.capability == "quotes":
+            return FreshnessMode.DIRECT_SNAPSHOT
+        if plan.spec.capability == "bars":
+            return (
+                FreshnessMode.HISTORICAL_CLOSED
+                if plan.spec.start
+                else FreshnessMode.CURRENT_SERIES
+            )
+        return None
+
+    @classmethod
+    def _direct_provenance_matches(cls, plan: QueryPlan, result: QueryResult[Any]) -> bool:
         meta = result.meta
         freshness = meta.freshness
+        status = meta.freshness_status
+        expected_mode = cls._expected_freshness_mode(plan)
+        expected_currentness = expected_mode is not FreshnessMode.HISTORICAL_CLOSED
         return (
             meta.provider == plan.provider
             and meta.channel == plan.channel
@@ -324,8 +338,49 @@ class UnifiedMarketDataService(ProviderCoreService):
             and meta.real
             and not meta.fallback
             and freshness.real
+            and freshness.origin == "direct"
             and not freshness.cache_hit
+            and not freshness.replay
+            and not freshness.synthetic
+            and meta.observed_at_ns == freshness.observed_at_ns
+            and status is not None
+            and status.verified
+            and status.mode is expected_mode
+            and status.currentness_verified is expected_currentness
+            and status.provider_timestamp == freshness.provider_timestamp
         )
+
+    @classmethod
+    def _validate_direct_result(cls, plan: QueryPlan, result: QueryResult[Any]) -> None:
+        if cls._direct_provenance_matches(plan, result):
+            return
+        meta = result.meta
+        status = meta.freshness_status
+        expected_mode = cls._expected_freshness_mode(plan)
+        raise IntegrityViolation(
+            "Provider direct result provenance 与 QueryPlan 不一致",
+            context={
+                "provider": plan.provider,
+                "channel": plan.channel,
+                "capability": plan.spec.capability,
+                "phase": "provider_result_contract",
+                "expected_freshness_mode": expected_mode.value if expected_mode else None,
+                "actual_provider": meta.provider,
+                "actual_channel": meta.channel,
+                "actual_capability": meta.capability,
+                "actual_freshness_mode": status.mode.value if status is not None else None,
+                "actual_origin": meta.freshness.origin,
+                "actual_cache_hit": meta.freshness.cache_hit,
+                "actual_real": meta.real,
+                "actual_fallback": meta.fallback,
+                "fallback": False,
+                "provider_switch_allowed": False,
+            },
+        )
+
+    @classmethod
+    def _cache_provenance_matches(cls, plan: QueryPlan, result: QueryResult[Any]) -> bool:
+        return cls._direct_provenance_matches(plan, result)
 
     @staticmethod
     def _as_cache_hit(
@@ -567,6 +622,7 @@ class UnifiedMarketDataService(ProviderCoreService):
                         raise RuntimeError(
                             "ProviderCoreService.quotes(with_meta=True) contract violated"
                         )
+                    self._validate_direct_result(plan, result)
                     rows.extend(result.data)
                     meta = result.meta
                     plan.budget.ensure_remaining(f"provider_chunk_{index}_response")
@@ -617,6 +673,7 @@ class UnifiedMarketDataService(ProviderCoreService):
                         raise RuntimeError(
                             "ProviderCoreService.quotes(with_meta=True) contract violated"
                         )
+                    self._validate_direct_result(plan, result)
                     meta = result.meta
                     plan.budget.ensure_remaining(f"provider_chunk_{index}_response")
                     chunk_map = self._quote_map(chunk_batch, list(result.data))
@@ -800,6 +857,7 @@ class UnifiedMarketDataService(ProviderCoreService):
                 )
                 if not isinstance(result, QueryResult):
                     raise RuntimeError("ProviderCoreService.bars(with_meta=True) contract violated")
+                self._validate_direct_result(plan, result)
                 plan.budget.ensure_remaining("provider_response")
             except BaseException as exc:
                 self._health_failure(plan, exc)
