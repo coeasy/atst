@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any
 
 import pytest
 
 from tstdx.domain.models import Quote
 from tstdx.errors import ReadTimeout, SourceUnavailable
 from tstdx.planned_service import UnifiedMarketDataService
+from tstdx.query import QuerySpec
 
 
 class BlockingQuoteAdapter:
@@ -67,7 +67,7 @@ def test_concurrent_identical_queries_join_singleflight() -> None:
         try:
             rows = service.quotes(["sh600519"], provider="tencent", deadline_ms=1000)
             results.append(rows)
-        except BaseException as exc:  # test captures follower failures explicitly
+        except BaseException as exc:
             errors.append(exc)
 
     first = threading.Thread(target=run)
@@ -93,20 +93,16 @@ def test_different_provider_semantics_do_not_join_same_flight() -> None:
     service = UnifiedMarketDataService(manager=FakeManager(adapter))
 
     left = service.compile(
-        __import__("tstdx.query", fromlist=["QuerySpec"]).QuerySpec.build(
-            "quotes", symbols=["sh600519"], provider="tencent"
-        )
+        QuerySpec.build("quotes", symbols=["sh600519"], provider="tencent")
     )
     right = service.compile(
-        __import__("tstdx.query", fromlist=["QuerySpec"]).QuerySpec.build(
-            "quotes", symbols=["sh600519"], provider="sina"
-        )
+        QuerySpec.build("quotes", symbols=["sh600519"], provider="sina")
     )
     assert left.fingerprint.value != right.fingerprint.value
     service.close()
 
 
-def test_partial_batch_is_rejected_by_default() -> None:
+def test_partial_batch_is_rejected_by_default_and_annotated() -> None:
     class PartialAdapter(BlockingQuoteAdapter):
         def fetch(self, symbols: list[str]) -> list[Quote]:
             self.calls += 1
@@ -115,12 +111,18 @@ def test_partial_batch_is_rejected_by_default() -> None:
 
     adapter = PartialAdapter()
     service = UnifiedMarketDataService(manager=FakeManager(adapter))
-    with pytest.raises(SourceUnavailable):
+    with pytest.raises(SourceUnavailable) as caught:
         service.quotes(
             ["sh600519", "sz000001"],
             provider="tencent",
             allow_partial=False,
         )
+    context = caught.value.context
+    assert context["provider"] == "tencent"
+    assert context["channel"] == "quote"
+    assert context["capability"] == "quotes"
+    assert context["provider_switch_allowed"] is False
+    assert context["terminal"] is True
     service.close()
 
 
@@ -131,6 +133,9 @@ def test_total_deadline_is_checked_after_provider_returns() -> None:
             return [Quote(code=symbol, price=10.0) for symbol in symbols]
 
     service = UnifiedMarketDataService(manager=FakeManager(SlowAdapter()))
-    with pytest.raises(ReadTimeout):
+    with pytest.raises(ReadTimeout) as caught:
         service.quotes(["sh600519"], provider="tencent", deadline_ms=1)
+    assert caught.value.context["terminal"] is True
+    assert caught.value.context["retry_same_provider"] is False
+    assert caught.value.context["failure_reason"] == "query_deadline_exhausted"
     service.close()
