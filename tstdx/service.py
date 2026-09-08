@@ -19,14 +19,20 @@ import contextlib
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar
 
 from .domain.models import Bar, Quote
 from .domain.period import normalize_bar_period
 from .domain.symbol import normalize_symbol
 from .errors import AllHostsUnreachable, SourceUnavailable, TdxError, ValidationError
-from .freshness import FreshnessStatus, validate_freshness
+from .freshness import (
+    FRESHNESS,
+    FreshnessMode,
+    FreshnessProfile,
+    FreshnessStatus,
+    validate_freshness,
+)
 from .providers import PROVIDERS, resolve_provider
 
 if TYPE_CHECKING:
@@ -43,6 +49,24 @@ __all__ = [
 
 T = TypeVar("T")
 _MINUTE_BAR_PERIODS = frozenset({"1min", "5min", "15min", "30min", "60min"})
+_BAR_CURRENTNESS_DAYS = {
+    "1min": 2,
+    "5min": 2,
+    "15min": 2,
+    "30min": 2,
+    "60min": 2,
+    "day": 14,
+    "week": 21,
+    "month": 62,
+    "season": 140,
+    "year": 400,
+}
+_HISTORICAL_BAR_PROFILE = FreshnessProfile(
+    mode=FreshnessMode.HISTORICAL_CLOSED,
+    require_provider_timestamp=True,
+    max_observation_age_seconds=30.0,
+    description="explicit historical Provider bar window; auditable but not live-current",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -383,6 +407,9 @@ class UnifiedMarketDataService:
         channel: str,
         capability: str,
         data: Sequence[Any],
+        *,
+        profile: FreshnessProfile | None = None,
+        require_live: bool = True,
     ) -> ResultMeta:
         """Build provenance and enforce freshness before any result is returned."""
         observed = time.time_ns()
@@ -396,8 +423,9 @@ class UnifiedMarketDataService:
             provider=provider,
             channel=channel,
             capability=capability,
+            profile=profile,
             now_ns=observed,
-            require_live=True,
+            require_live=require_live,
         )
         return ResultMeta(
             provider=provider,
@@ -629,7 +657,26 @@ class UnifiedMarketDataService:
                 },
             )
 
-        meta = self._meta(pid, channel, "bars", data)
+        if start:
+            freshness_profile = _HISTORICAL_BAR_PROFILE
+            require_live = False
+        else:
+            freshness_profile = replace(
+                FRESHNESS.get(pid, channel, "bars"),
+                max_provider_calendar_age_days=_BAR_CURRENTNESS_DAYS.get(
+                    normalized_period,
+                    14,
+                ),
+            )
+            require_live = True
+        meta = self._meta(
+            pid,
+            channel,
+            "bars",
+            data,
+            profile=freshness_profile,
+            require_live=require_live,
+        )
         if with_meta:
             return QueryResult(data=data, meta=meta)
         return data
