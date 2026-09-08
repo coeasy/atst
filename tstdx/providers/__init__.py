@@ -4,11 +4,11 @@
 """Provider / Channel / Capability canonical registry.
 
 The v12 architecture has exactly one domain entity for "who provides data":
-:class:`ProviderSpec`.  Public ``source=`` remains a compatibility selector only;
+:class:`ProviderSpec`. Public ``source=`` remains a compatibility selector only;
 it is normalized to the same provider id and is never stored as a second object.
 
 Provider boundaries are also failure boundaries: selecting ``tdx`` must never
-silently execute ``sina`` / ``tencent`` / ``eastmoney``.  Host/endpoint failover
+silently execute ``sina`` / ``tencent`` / ``eastmoney``. Host/endpoint failover
 is allowed only inside the selected provider and channel.
 """
 
@@ -32,17 +32,14 @@ __all__ = [
 
 @dataclass(frozen=True, slots=True)
 class ChannelSpec:
-    """One provider-internal data channel.
-
-    ``capabilities`` are business semantics (quotes/bars/fund_flow/...), while
-    ``markets`` are independent data dimensions (cn_a/hk/us/...).
-    """
+    """One provider-internal data channel with static execution facts."""
 
     id: str
     capabilities: frozenset[str]
     markets: frozenset[str] = frozenset()
     live: bool = False
     local: bool = False
+    batch_limit: int | None = None
     notes: str = ""
 
     @classmethod
@@ -54,14 +51,18 @@ class ChannelSpec:
         markets: Iterable[str] = (),
         live: bool = False,
         local: bool = False,
+        batch_limit: int | None = None,
         notes: str = "",
     ) -> "ChannelSpec":
+        if batch_limit is not None and batch_limit <= 0:
+            raise ValueError("batch_limit must be > 0 when declared")
         return cls(
             id=str(id).strip().lower(),
             capabilities=frozenset(str(x).strip().lower() for x in capabilities),
             markets=frozenset(str(x).strip().lower() for x in markets),
             live=bool(live),
             local=bool(local),
+            batch_limit=batch_limit,
             notes=notes,
         )
 
@@ -166,7 +167,6 @@ _PROVIDER_ALIASES = {
 
 def normalize_provider_id(value: str) -> str:
     """Normalize a public provider/source selector to one canonical ProviderId."""
-
     raw = str(value).strip().lower().replace("-", "_")
     return _PROVIDER_ALIASES.get(raw, raw)
 
@@ -177,16 +177,7 @@ def resolve_provider(
     source: str | None = None,
     default: str | None = None,
 ) -> str:
-    """Resolve ``provider=`` and compatibility ``source=`` into one provider id.
-
-    Rules are intentionally strict:
-
-    * one selector -> normalize and return it;
-    * both, same canonical value -> accept for the compatibility window;
-    * both, different -> :class:`ValidationError`;
-    * neither -> deterministic default (TDX for the global registry).
-    """
-
+    """Resolve public selectors into exactly one Provider id."""
     p = normalize_provider_id(provider) if provider is not None else None
     s = normalize_provider_id(source) if source is not None else None
     if p is not None and s is not None and p != s:
@@ -194,8 +185,7 @@ def resolve_provider(
             f"provider={provider!r} 与 source={source!r} 指向不同 Provider",
             context={"provider": provider, "source": source},
         )
-    chosen = p or s or normalize_provider_id(default or "tdx")
-    return chosen
+    return p or s or normalize_provider_id(default or "tdx")
 
 
 def _c(
@@ -204,6 +194,7 @@ def _c(
     markets: Iterable[str] = (),
     live: bool = False,
     local: bool = False,
+    batch_limit: int | None = None,
     notes: str = "",
 ) -> ChannelSpec:
     return ChannelSpec.build(
@@ -212,6 +203,7 @@ def _c(
         markets=markets,
         live=live,
         local=local,
+        batch_limit=batch_limit,
         notes=notes,
     )
 
@@ -237,6 +229,8 @@ PROVIDERS = ProviderRegistry(
                     "snapshot",
                     markets=("cn_a", "cn_bse"),
                     live=True,
+                    batch_limit=60,
+                    notes="0x0530 realtime quote batch limit is 60 symbols",
                 ),
                 _c("extended", "markets", "instruments", "quotes", "bars", live=True),
                 _c("goods", "quotes", "bars", markets=("future", "commodity"), live=True),
