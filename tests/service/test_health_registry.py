@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from tstdx.domain.models import Quote
-from tstdx.errors import SourceUnavailable, ValidationError
+from tstdx.errors import ReadTimeout, SourceUnavailable, ValidationError
 from tstdx.health import SourceHealthRegistry
 from tstdx.planned_service import UnifiedMarketDataService
 
@@ -59,6 +59,40 @@ def test_validation_errors_do_not_penalize_provider_health() -> None:
     assert state.failures == 1
     assert state.consecutive_failures == 0
     assert state.circuit_open is False
+
+
+def test_query_deadline_does_not_penalize_provider_health() -> None:
+    health = SourceHealthRegistry(failure_threshold=1, cooldown_seconds=60)
+    exc = ReadTimeout(
+        "query deadline exhausted",
+        context={"phase": "provider_chunk_0", "deadline_scope": "query"},
+    )
+    health.record_failure(
+        "tencent",
+        "quote",
+        "quotes",
+        exc,
+        penalize=health.should_penalize(exc),
+    )
+    state = health.snapshot("tencent", "quote", "quotes")
+    assert state.failures == 1
+    assert state.consecutive_failures == 0
+    assert state.circuit_open is False
+
+
+def test_provider_timeout_still_penalizes_provider_health() -> None:
+    health = SourceHealthRegistry(failure_threshold=1, cooldown_seconds=60)
+    exc = ReadTimeout("provider read timeout", context={"phase": "receive"})
+    health.record_failure(
+        "tencent",
+        "quote",
+        "quotes",
+        exc,
+        penalize=health.should_penalize(exc),
+    )
+    state = health.snapshot("tencent", "quote", "quotes")
+    assert state.consecutive_failures == 1
+    assert state.circuit_open is True
 
 
 def test_planned_service_health_gate_stops_repeated_upstream_calls() -> None:
