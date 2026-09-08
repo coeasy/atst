@@ -4,14 +4,14 @@
 """HTTP transport guard for Provider identity.
 
 Legacy Web adapters predate the v12 Provider model and some of them historically
-contained cross-site fallback logic.  A Provider-aware service must not trust
-adapter control flow alone.  This module enforces the Provider boundary at the
+contained cross-site fallback logic. A Provider-aware service must not trust
+adapter control flow alone. This module enforces the Provider boundary at the
 HTTP client itself: a client created for ``tencent`` cannot request an Eastmoney
 or Sina host, even if a legacy adapter attempts to do so.
 
 Host policy is intentionally expressed as suffixes because one Provider may own
 multiple equivalent endpoints/CDNs (for example ``qt.gtimg.cn`` and
-``web.ifzq.gtimg.cn``).  The guard validates both the requested URL and the final
+``web.ifzq.gtimg.cn``). The guard validates both the requested URL and the final
 response/history URLs so redirects cannot silently change provenance.
 """
 
@@ -172,11 +172,6 @@ class ProviderBoundHttpClient:
     def close(self) -> None:
         self._client.close()
 
-    @property
-    def raw_client(self) -> Any:
-        """Diagnostic/testing access; production adapters must never use it."""
-        return self._client
-
     def __enter__(self) -> ProviderBoundHttpClient:
         enter = getattr(self._client, "__enter__", None)
         if callable(enter):
@@ -191,6 +186,12 @@ class ProviderBoundHttpClient:
         return None
 
     def __getattr__(self, name: str) -> Any:
+        # Never expose raw/private transport internals through the guard. Public
+        # non-callable state such as ``headers``/``cookies`` remains available to
+        # legacy adapters, while every callable transport path must be explicitly
+        # wrapped above so URL provenance is checked.
+        if name.startswith("_") or name == "raw_client":
+            raise AttributeError(name)
         attr = getattr(self._client, name)
         if callable(attr):
             raise AttributeError(
