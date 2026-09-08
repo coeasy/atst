@@ -20,6 +20,7 @@ class FakeClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
         self.headers = {"User-Agent": "test"}
+        self._transport = object()
 
     def patch(self, url: str, *args: Any, **kwargs: Any) -> FakeResponse:
         self.calls.append(("patch", url))
@@ -83,6 +84,17 @@ def test_unknown_callable_is_not_exposed_through_getattr() -> None:
         client.unchecked_request("https://push2.eastmoney.com/api")
 
     assert raw.calls == []
+    assert client.headers == {"User-Agent": "test"}
+
+
+def test_public_guard_does_not_expose_raw_or_private_transport_escape_hatches() -> None:
+    client = ProviderBoundHttpClient("tencent", FakeClient())
+
+    with pytest.raises(AttributeError):
+        _ = client.raw_client
+    with pytest.raises(AttributeError):
+        _ = client._transport
+
     assert client.headers == {"User-Agent": "test"}
 
 
