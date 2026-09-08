@@ -5,8 +5,9 @@
 
 This module deliberately contains no Provider routing. It only coordinates one
 already-compiled QueryPlan: total deadline accounting, duplicate-call joining,
-symbol de-duplication and deterministic chunking. Provider switching therefore
-cannot be introduced by an optimization primitive.
+short terminal-error coalescing, symbol de-duplication and deterministic
+chunking. Provider switching therefore cannot be introduced by an optimization
+primitive.
 """
 
 from __future__ import annotations
@@ -19,7 +20,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar, cast
 
-from .errors import ReadTimeout, SourceUnavailable, ValidationError
+from .errors import (
+    CommandOffline,
+    ReadTimeout,
+    SourceDeprecated,
+    SourceUnavailable,
+    TdxError,
+    ValidationError,
+)
 
 __all__ = [
     "ExecutionBudget",
@@ -36,6 +44,32 @@ def _record_singleflight(event: str) -> None:
         from .observability.planned import record_singleflight
 
         record_singleflight(event)
+
+
+def _default_negative_predicate(exc: BaseException) -> bool:
+    """Return whether an error is stable enough for very short coalescing."""
+
+    return isinstance(exc, (CommandOffline, SourceDeprecated))
+
+
+def _clone_error(exc: BaseException) -> BaseException:
+    """Return an independent exception object for another caller."""
+
+    try:
+        return copy.deepcopy(exc)
+    except Exception:
+        if isinstance(exc, TdxError):
+            return type(exc)(
+                exc.message,
+                code=exc.code,
+                advice=exc.advice,
+                context=dict(exc.context),
+                cause=exc.cause,
+            )
+        return SourceUnavailable(
+            "cached terminal provider error",
+            context={"negative_cache": True, "fallback": False},
+        )
 
 
 @dataclass(slots=True)
@@ -101,6 +135,12 @@ class _Flight(Generic[T]):
     waiters: int = 0
 
 
+@dataclass(slots=True)
+class _NegativeEntry:
+    expires_at: float
+    error: BaseException
+
+
 class SingleFlight:
     """Coalesce identical work without inheriting another caller's deadline.
 
@@ -114,14 +154,31 @@ class SingleFlight:
 
     Successful followers receive defensive deep copies so independent callers do
     not share mutable ``QueryResult``/list/model instances.
+
+    A very short negative cache coalesces only stable terminal failures. The key
+    remains the full QueryFingerprint supplied by the planner, so cached errors
+    cannot cross Provider, Channel, Capability or window semantics. Transient
+    transport/provider availability failures are deliberately excluded.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        negative_ttl: float = 1.0,
+        negative_predicate: Callable[[BaseException], bool] | None = None,
+    ) -> None:
+        if negative_ttl < 0:
+            raise ValueError("negative_ttl must be >= 0")
         self._lock = threading.Lock()
         self._flights: dict[str, _Flight[Any]] = {}
+        self._negative: dict[str, _NegativeEntry] = {}
+        self.negative_ttl = float(negative_ttl)
+        self._negative_predicate = negative_predicate or _default_negative_predicate
         self.leaders = 0
         self.joins = 0
         self.deadline_bypasses = 0
+        self.negative_hits = 0
+        self.negative_stores = 0
 
     @staticmethod
     def _absolute_deadline(timeout: float | None) -> int | None:
@@ -137,10 +194,38 @@ class SingleFlight:
 
     @staticmethod
     def _is_query_deadline(error: BaseException) -> bool:
-        return (
-            isinstance(error, ReadTimeout)
-            and error.context.get("deadline_scope") == "query"
-        )
+        return isinstance(error, ReadTimeout) and error.context.get("deadline_scope") == "query"
+
+    def clear_negative(self, key: str | None = None) -> None:
+        """Clear one or all terminal-error entries without touching active flights."""
+
+        with self._lock:
+            if key is None:
+                self._negative.clear()
+            else:
+                self._negative.pop(key, None)
+
+    def _negative_lookup_locked(self, key: str, now: float) -> BaseException | None:
+        entry = self._negative.get(key)
+        if entry is None:
+            return None
+        if entry.expires_at <= now:
+            del self._negative[key]
+            return None
+        self.negative_hits += 1
+        return _clone_error(entry.error)
+
+    def _negative_store(self, key: str, exc: BaseException) -> None:
+        if self.negative_ttl <= 0 or not self._negative_predicate(exc):
+            return
+        snapshot = _clone_error(exc)
+        with self._lock:
+            self._negative[key] = _NegativeEntry(
+                expires_at=time.monotonic() + self.negative_ttl,
+                error=snapshot,
+            )
+            self.negative_stores += 1
+        _record_singleflight("negative_store")
 
     def do(
         self,
@@ -157,25 +242,41 @@ class SingleFlight:
             )
 
         caller_deadline_ns = self._absolute_deadline(timeout)
+        cached_error: BaseException | None = None
         with self._lock:
-            flight = self._flights.get(key)
-            if flight is None:
-                flight = _Flight[T]()
-                self._flights[key] = flight
-                self.leaders += 1
-                leader = True
-                _record_singleflight("leader")
-            else:
-                flight.waiters += 1
-                self.joins += 1
+            cached_error = self._negative_lookup_locked(key, time.monotonic())
+            if cached_error is not None:
+                flight = None
                 leader = False
-                _record_singleflight("join")
+            else:
+                flight = self._flights.get(key)
+                if flight is None:
+                    flight = _Flight[T]()
+                    self._flights[key] = flight
+                    self.leaders += 1
+                    leader = True
+                    _record_singleflight("leader")
+                else:
+                    flight.waiters += 1
+                    self.joins += 1
+                    leader = False
+                    _record_singleflight("join")
+
+        if cached_error is not None:
+            _record_singleflight("negative_hit")
+            raise cached_error
+        if flight is None:  # defensive: only possible when cached_error is set
+            raise RuntimeError("SingleFlight internal state error")
 
         if leader:
             try:
                 flight.result = fn()
             except BaseException as exc:
                 flight.error = exc
+                self._negative_store(key, exc)
+            else:
+                with self._lock:
+                    self._negative.pop(key, None)
             finally:
                 # Remove the completed flight before waking followers. A follower
                 # that must retry after the leader's query deadline can then create
@@ -203,9 +304,7 @@ class SingleFlight:
             )
         if flight.error is not None:
             remaining = self._remaining_seconds(caller_deadline_ns)
-            if self._is_query_deadline(flight.error) and (
-                remaining is None or remaining > 0
-            ):
+            if self._is_query_deadline(flight.error) and (remaining is None or remaining > 0):
                 with self._lock:
                     self.deadline_bypasses += 1
                 _record_singleflight("deadline_bypass")
