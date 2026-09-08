@@ -1,15 +1,12 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Async facade over the canonical Provider-bound service.
+"""Async facade over the canonical planned Provider-bound service.
 
-The current Provider adapters are predominantly synchronous.  Instead of
-maintaining a second routing implementation, ``AsyncMarketDataService`` executes
-the same :class:`UnifiedMarketDataService` through a bounded worker pool.  This
-preserves Provider/freshness/error semantics and prevents one thread per call.
-
-Native async Provider adapters can later replace individual calls without
-changing Query/Provider semantics.
+Provider adapters are predominantly synchronous. ``AsyncMarketDataService``
+executes the same QueryPlan-backed sync service through a bounded worker pool,
+so Provider/freshness/deadline/singleflight semantics remain identical without
+maintaining a second routing implementation.
 """
 
 from __future__ import annotations
@@ -19,8 +16,8 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Any, Callable, TypeVar
 
+from .planned_service import UnifiedMarketDataService
 from .providers import resolve_provider
-from .service import UnifiedMarketDataService
 
 __all__ = ["AsyncMarketDataService", "AsyncProviderAPI", "async_market_data"]
 
@@ -30,7 +27,7 @@ T = TypeVar("T")
 class AsyncProviderAPI:
     """Async Direct Provider namespace backed by the same sync ProviderAPI."""
 
-    def __init__(self, owner: AsyncMarketDataService, provider: str) -> None:
+    def __init__(self, owner: "AsyncMarketDataService", provider: str) -> None:
         self._owner = owner
         self.provider = resolve_provider(provider=provider)
 
@@ -53,11 +50,6 @@ class AsyncProviderAPI:
         )
 
     async def call(self, method: str, *args: Any, **kwargs: Any) -> Any:
-        """Call one explicit method on this Provider namespace.
-
-        This is not arbitrary global dispatch: lookup is scoped to the already
-        selected Provider object. A missing method fails before any I/O.
-        """
         target = getattr(self._owner.sync.provider(self.provider), method)
         if not callable(target):
             raise AttributeError(method)
@@ -65,7 +57,7 @@ class AsyncProviderAPI:
 
 
 class AsyncMarketDataService:
-    """Bounded async execution of one canonical market-data service."""
+    """Bounded async execution of one canonical planned market-data service."""
 
     def __init__(
         self,
@@ -108,7 +100,6 @@ class AsyncMarketDataService:
         pid = resolve_provider(provider=provider)
         namespace = self._providers.get(pid)
         if namespace is None:
-            # Validate against the canonical sync registry/API without I/O.
             self.sync.provider(pid)
             namespace = AsyncProviderAPI(self, pid)
             self._providers[pid] = namespace
@@ -152,12 +143,9 @@ class AsyncMarketDataService:
         if self._owns_service:
             await self._run(self.sync.close)
         self._closed = True
-        # At this point the semaphore-protected close has completed and callers
-        # should no longer enqueue work. Executor shutdown therefore only joins
-        # already-finished/returning workers.
         self._executor.shutdown(wait=True, cancel_futures=False)
 
-    async def __aenter__(self) -> AsyncMarketDataService:
+    async def __aenter__(self) -> "AsyncMarketDataService":
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
