@@ -34,8 +34,9 @@ __all__ = [
 class ChannelSpec:
     """One provider-internal data channel with static execution facts.
 
-    ``batch_limit`` is appended after the historical fields so direct positional
-    construction keeps the pre-v12 ``notes`` argument position unchanged.
+    ``batch_limits`` is capability-specific because one channel can expose
+    operations with different request shapes. The field is appended after the
+    historical ``notes`` field so old positional construction remains valid.
     """
 
     id: str
@@ -44,7 +45,7 @@ class ChannelSpec:
     live: bool = False
     local: bool = False
     notes: str = ""
-    batch_limit: int | None = None
+    batch_limits: tuple[tuple[str, int], ...] = ()
 
     @classmethod
     def build(
@@ -56,19 +57,38 @@ class ChannelSpec:
         live: bool = False,
         local: bool = False,
         notes: str = "",
-        batch_limit: int | None = None,
+        batch_limits: Mapping[str, int] | None = None,
     ) -> "ChannelSpec":
-        if batch_limit is not None and batch_limit <= 0:
-            raise ValueError("batch_limit must be > 0 when declared")
+        normalized_caps = frozenset(str(x).strip().lower() for x in capabilities)
+        limits: list[tuple[str, int]] = []
+        for capability, limit in dict(batch_limits or {}).items():
+            cap = str(capability).strip().lower()
+            if cap not in normalized_caps:
+                raise ValueError(
+                    f"batch limit capability {cap!r} is not declared on channel {id!r}"
+                )
+            if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
+                raise ValueError(
+                    f"batch limit for capability {cap!r} must be a positive int"
+                )
+            limits.append((cap, limit))
+        limits.sort()
         return cls(
             id=str(id).strip().lower(),
-            capabilities=frozenset(str(x).strip().lower() for x in capabilities),
+            capabilities=normalized_caps,
             markets=frozenset(str(x).strip().lower() for x in markets),
             live=bool(live),
             local=bool(local),
             notes=notes,
-            batch_limit=batch_limit,
+            batch_limits=tuple(limits),
         )
+
+    def batch_limit_for(self, capability: str) -> int | None:
+        cap = str(capability).strip().lower()
+        for name, limit in self.batch_limits:
+            if name == cap:
+                return limit
+        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,7 +219,7 @@ def _c(
     live: bool = False,
     local: bool = False,
     notes: str = "",
-    batch_limit: int | None = None,
+    batch_limits: Mapping[str, int] | None = None,
 ) -> ChannelSpec:
     return ChannelSpec.build(
         id,
@@ -208,7 +228,7 @@ def _c(
         live=live,
         local=local,
         notes=notes,
-        batch_limit=batch_limit,
+        batch_limits=batch_limits,
     )
 
 
@@ -234,7 +254,7 @@ PROVIDERS = ProviderRegistry(
                     markets=("cn_a", "cn_bse"),
                     live=True,
                     notes="0x0530 realtime quote batch limit is 60 symbols",
-                    batch_limit=60,
+                    batch_limits={"quotes": 60},
                 ),
                 _c("extended", "markets", "instruments", "quotes", "bars", live=True),
                 _c("goods", "quotes", "bars", markets=("future", "commodity"), live=True),
