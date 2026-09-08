@@ -3,7 +3,7 @@
 
 """Freshness contracts for real market-data results.
 
-Freshness is not a generic cache TTL.  Different capabilities provide different
+Freshness is not a generic cache TTL. Different capabilities provide different
 kinds of evidence:
 
 * ``DIRECT_SNAPSHOT`` — the Provider endpoint/TDX command itself is a current
@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
@@ -44,6 +44,7 @@ __all__ = [
     "FreshnessStatus",
     "FreshnessRegistry",
     "FRESHNESS",
+    "bar_freshness_profile",
     "validate_freshness",
 ]
 
@@ -82,7 +83,7 @@ class FreshnessStatus:
 class FreshnessRegistry:
     """Provider/Channel/Capability freshness profiles.
 
-    Exact registrations override capability defaults.  The registry is static;
+    Exact registrations override capability defaults. The registry is static;
     dynamic Provider health belongs to the runtime health registry, not here.
     """
 
@@ -126,7 +127,7 @@ class FreshnessRegistry:
 
 FRESHNESS = FreshnessRegistry()
 
-# Common live contracts.  The observed-age guard protects against accidentally
+# Common live contracts. The observed-age guard protects against accidentally
 # reusing an already-produced result object as if it were a fresh request; it is
 # not an upstream quote TTL and does not authorize cache use.
 FRESHNESS.register_capability(
@@ -166,7 +167,7 @@ FRESHNESS.register_capability(
 )
 
 # TDX 0x0530 is a verified current-snapshot command but its parsed payload does
-# not expose a verified wall-clock field.  Explicit exact registration documents
+# not expose a verified wall-clock field. Explicit exact registration documents
 # that the timestamp is not required rather than silently pretending _u4 is time.
 FRESHNESS.register(
     "tdx",
@@ -192,6 +193,45 @@ FRESHNESS.register(
         description="local TDX historical file; never substitutes live Provider data",
     ),
 )
+
+_BAR_CURRENTNESS_DAYS = {
+    "1min": 2,
+    "5min": 2,
+    "15min": 2,
+    "30min": 2,
+    "60min": 2,
+    "day": 14,
+    "week": 21,
+    "month": 62,
+    "season": 140,
+    "year": 400,
+}
+_HISTORICAL_BAR_PROFILE = FreshnessProfile(
+    mode=FreshnessMode.HISTORICAL_CLOSED,
+    require_provider_timestamp=True,
+    max_observation_age_seconds=30.0,
+    description="explicit historical Provider bar window; auditable but not live-current",
+)
+
+
+def bar_freshness_profile(
+    provider: str,
+    channel: str,
+    period: str,
+    *,
+    historical: bool = False,
+) -> FreshnessProfile:
+    """Return the canonical bars profile for both fetch and cache paths."""
+    if historical:
+        return _HISTORICAL_BAR_PROFILE
+    base = FRESHNESS.get(provider, channel, "bars")
+    return replace(
+        base,
+        max_provider_calendar_age_days=_BAR_CURRENTNESS_DAYS.get(
+            str(period).strip().lower(),
+            14,
+        ),
+    )
 
 
 def _field(evidence: Any, name: str, default: Any = None) -> Any:
