@@ -5,6 +5,9 @@
 
 核心库零硬依赖：本模块用标准库 dataclass 实现 strict 校验（拼写错误立即报错）。
 若环境装有 **pydantic v2**，:func:`build_config` 会自动改用 pydantic 做更强的类型校验。
+
+v12 配置原则：Provider 选择与 host/endpoint 恢复分层。历史 fallback 字段
+只为迁移兼容保留；有效配置不得开启跨 Provider 自动降级。
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ __all__ = [
     "OutputConfig",
     "ProfileConfig",
     "WebConfig",
+    "SourcesConfig",
     "ObservabilityConfig",
     "SecurityConfig",
     "CompatibilityConfig",
@@ -52,9 +56,10 @@ def _check_range(name: str, value: Any, lo: float | None, hi: float | None) -> N
 class CoreConfig:
     timeout: float = 3.0
     heartbeat_interval: int = 30
+    #: 当前 Provider 内 host/endpoint 的重试预算；不是 Provider 切换次数。
     max_retries: int = 3
-    #: 主站全不可达时自动降级（离线 → HTTP Web 源）
-    auto_fallback: bool = True
+    #: v12 迁移兼容字段。有效配置必须为 False。
+    auto_fallback: bool = False
     #: 批量行情单次上限（服务端限制 60）
     batch_quotes_limit: int = 60
     #: K 线单次请求上限
@@ -66,6 +71,14 @@ class CoreConfig:
         _check_range("core.max_retries", self.max_retries, 0, 20)
         _check_range("core.batch_quotes_limit", self.batch_quotes_limit, 1, 60)
         _check_range("core.bars_page_size", self.bars_page_size, 1, 800)
+        if not isinstance(self.auto_fallback, bool):
+            raise ValidationError("core.auto_fallback 必须是 bool")
+        if self.auto_fallback:
+            raise ValidationError(
+                "core.auto_fallback 已停用：v12 禁止跨 Provider 自动 fallback；"
+                "请显式选择 provider，TDX 内部 host failover 仍由传输层处理",
+                context={"field": "core.auto_fallback", "provider_switch_allowed": False},
+            )
 
 
 @dataclass
@@ -98,9 +111,9 @@ class HostsConfig:
 class RateLimitConfig:
     """本地请求限流（req/s），按交易状态分档。"""
 
-    in_session: int = 15  # 盘中
-    pre_post: int = 30  # 盘前盘后
-    closed: int = 60  # 休市
+    in_session: int = 15
+    pre_post: int = 30
+    closed: int = 60
 
     def validate(self) -> None:
         for k in ("in_session", "pre_post", "closed"):
@@ -110,7 +123,7 @@ class RateLimitConfig:
 @dataclass
 class CacheConfig:
     enabled: bool = True
-    #: memory | disk
+    #: legacy memory | disk backend；planned query cache 另由完整 QueryFingerprint 管理。
     backend: str = "memory"
     ttl: int = 3
     max_entries: int = 4096
@@ -126,11 +139,8 @@ class CacheConfig:
 @dataclass
 class OutputConfig:
     #: dict | tuple | dataframe
-    #: （"model" 已从枚举移除：全库无任何消费者——reader 的 ``output="model"``
-    #:  是函数参数而非配置项，审计 §3-3。需要 Bar 对象时请在调用点显式传参。）
     default_format: str = "dict"
     timezone: str = "Asia/Shanghai"
-    #: DataFrame 输出时是否设置 datetime 索引
     df_datetime_index: bool = True
 
     def validate(self) -> None:
@@ -144,7 +154,6 @@ class OutputConfig:
 class ProfileConfig:
     default: str = "a_share_day"
     auto_detect: bool = True
-    #: 自动探测置信度下限，低于则报错而非静默猜测
     min_confidence: float = 0.5
 
     def validate(self) -> None:
@@ -164,20 +173,17 @@ def _BUILTIN_PROFILE_NAMES() -> set[str]:
 
 @dataclass
 class WebConfig:
-    """HTTP Web 行情源（§33）。
+    """Legacy WebQuoteClient 兼容配置。
 
-    ``enabled`` 是 web 子系统的**总闸**（默认 False）：
-    :func:`tstdx.sources.build_router` 以它为准门控路由里的 ``web`` 源——
-    即便 ``SourcesConfig.enabled["web"]=True``，总闸关闭时 web 也不参与
-    降级（以 WebConfig 为准，消除两个默认值互相矛盾的口径，审计 §3-3）。
+    ``enabled_sources`` 是显式 legacy Web 客户端允许使用的 Provider 列表，
+    **不是** TDX 失败后的 fallback 顺序。planned runtime 通过 ProviderRegistry
+    直接选择 ``tencent/sina/eastmoney/...``。
     """
 
     enabled: bool = False
-    #: 降级顺序，配置驱动（非硬编码）
     enabled_sources: list[str] = field(default_factory=lambda: ["tencent", "sina", "eastmoney"])
     timeout: float = 5.0
     max_retries: int = 2
-    #: 反爬必需的请求头
     headers: dict[str, str] = field(
         default_factory=lambda: {
             "User-Agent": (
@@ -187,9 +193,7 @@ class WebConfig:
             "Referer": "https://finance.sina.com.cn",
         }
     )
-    #: 按源的限流（req/s）
     rate_limit: dict[str, int] = field(default_factory=lambda: {"_default": 5})
-    #: 归一化契约
     normalize: dict[str, Any] = field(
         default_factory=lambda: {"volume": "share", "amount": "yuan", "strict": True}
     )
@@ -217,25 +221,16 @@ class WebConfig:
 
 @dataclass
 class SourcesConfig:
-    """数据源路由（§34）：多级降级顺序，配置驱动（非硬编码）。
+    """Provider 选择 + legacy Router 兼容字段。
 
-    降级层级
-    --------
-    1. ``tdx``     —— TDX 二进制主站（在线，低延迟，首选）
-    2. ``web``     —— HTTP Web 行情源（腾讯/新浪/东财，无需主站）
-    3. ``reader``  —— 本地 vipdoc 离线文件
-    4. ``cache``   —— golden 缓存样本（调试/离线回放）
-    5. ``synthetic`` —— 离线合成（仅结构占位，明确标注非真实数据）
-
-    .. note::
-       ``enabled["web"]`` 只控制路由层开关；``web`` 子系统总闸在
-       :attr:`WebConfig.enabled`（默认 False，以 WebConfig 为准，
-       :func:`tstdx.sources.build_router` 消费）。
+    正式运行语义由 ``default_provider`` 决定。``order`` 仅供 legacy
+    ``DataSourceRouter`` 单入口兼容，最多允许一项；``continue_on_error``
+    必须为 False。多级 ``tdx -> web -> reader -> cache`` 已被 v12 禁止。
     """
 
-    #: 降级顺序；空列表 = 不自动降级（仅用显式指定源）
-    order: list[str] = field(default_factory=lambda: ["tdx", "web", "reader", "cache"])
-    #: 各源的启用开关（与 order 取交集后生效）
+    default_provider: str = "tdx"
+    #: legacy Router 单选择器；不能包含多项 fallback chain。
+    order: list[str] = field(default_factory=lambda: ["tdx"])
     enabled: dict[str, bool] = field(
         default_factory=lambda: {
             "tdx": True,
@@ -245,20 +240,31 @@ class SourcesConfig:
             "synthetic": False,
         }
     )
-    #: 本地 vipdoc 根目录（reader 源使用）；None 时跳过 reader
     vipdoc_root: str | None = None
-    #: 单源失败是否继续尝试下一源（False = 任一失败即抛错）
-    continue_on_error: bool = True
-    #: SQLite K 线缓存库路径（U4：一键开启本地缓存）。None = 禁用缓存。
-    #: 设置后 :func:`tstdx.sources.build_router` 自动装配
-    #: :class:`~tstdx.cache.KlineCache`，重复拉同一标的 K 线直接命中。
+    #: legacy 字段；有效 v12 配置必须 False。
+    continue_on_error: bool = False
     kline_cache_db: str | None = None
 
     def validate(self) -> None:
+        from ..providers import PROVIDERS
+
+        PROVIDERS.get(self.default_provider)
         known = {"tdx", "web", "reader", "cache", "synthetic"}
         for s in self.order:
             if s not in known:
                 raise ValidationError(f"sources.order 含未知源 {s!r}；可选: {sorted(known)}")
+        if len(self.order) > 1:
+            raise ValidationError(
+                "sources.order 多级 fallback 已停用；最多保留一个 legacy selector",
+                context={"order": list(self.order), "provider_switch_allowed": False},
+            )
+        if not isinstance(self.continue_on_error, bool):
+            raise ValidationError("sources.continue_on_error 必须是 bool")
+        if self.continue_on_error:
+            raise ValidationError(
+                "sources.continue_on_error 已停用：Provider 失败必须向调用方暴露",
+                context={"provider_switch_allowed": False},
+            )
         if self.vipdoc_root is not None and not isinstance(self.vipdoc_root, str):
             raise ValidationError("sources.vipdoc_root 必须是 str 或 None")
         if self.kline_cache_db is not None and not isinstance(self.kline_cache_db, str):
@@ -285,7 +291,6 @@ class ObservabilityConfig:
 @dataclass
 class SecurityConfig:
     use_tls: bool = False
-    #: keyring | env | file:路径
     credential_backend: str = "keyring"
     user_agent: str = "tstdx/0.x"
 
@@ -315,7 +320,6 @@ class FeedbackConfig:
     telemetry: bool = False
     report_protocol_diff: bool = True
     report_source_failure: bool = False
-    #: 上报前的脱敏等级：strict | normal | off
     sanitize: str = "strict"
 
     def validate(self) -> None:
@@ -329,13 +333,7 @@ class FeedbackConfig:
 # 根配置
 # --------------------------------------------------------------------------- #
 def _deep_merge(base: Any, override: Any) -> Any:
-    """dict 深合并（一递归）：override 键胜出，base 未覆盖键保留。
-
-    用于 ``with_overrides`` 中「字段本身是 dict」的场景
-    （如 ``web.headers`` / ``web.rate_limit`` / ``web.normalize`` /
-    ``sources.enabled``）——旧实现整字段替换，只改一个键会把同字段
-    其余默认键全部抹掉。
-    """
+    """dict 深合并（一递归）：override 键胜出，base 未覆盖键保留。"""
     if isinstance(base, Mapping) and isinstance(override, Mapping):
         merged = dict(base)
         for k, v in override.items():
@@ -397,8 +395,6 @@ class Config:
                     f"配置段 {k!r} 含未知字段: {sorted(unknown)}；"
                     f"可选: {sorted(f.name for f in fields(sub))}"
                 )
-            # dict 值深合并：base 与 override 同为 Mapping 才合并，
-            # 否则按字段类型原样替换（标量/None/list 语义不变）
             merged_values = {
                 f: _deep_merge(getattr(sub, f), v[f])
                 if isinstance(getattr(sub, f), Mapping) and isinstance(v[f], Mapping)
@@ -408,7 +404,7 @@ class Config:
             updates[k] = replace(sub, **merged_values)
         return replace(self, **updates)
 
-    def __iter__(self) -> Iterator[tuple[str, Any]]:  # 便于 dict(cfg)
+    def __iter__(self) -> Iterator[tuple[str, Any]]:
         for name in self._SUBCONFIGS:
             yield name, getattr(self, name)
 
@@ -430,22 +426,13 @@ def validate_keys(data: Mapping[str, Any], *, where: str = "config") -> None:
 
 
 def config_from_dict(data: Mapping[str, Any], *, where: str = "config") -> Config:
-    """从字典构建子配置（增量覆盖，未给出的段保持默认）。
-
-    返回前执行 :meth:`Config.validate`——非法值（越界区间 / 非法枚举）
-    在构建时立即报错，而不是等到第一个消费方才炸（审计 §3-3）。
-    """
+    """从字典构建子配置（增量覆盖，未给出的段保持默认），并立即校验。"""
     validate_keys(data, where=where)
     return DEFAULT_CONFIG.with_overrides(**dict(data)).validate()
 
 
 def merge_config(*layers: Mapping[str, Any] | None) -> Config:
-    """按优先级从低到高合并多层配置（§21.3，参数从低到高排列，后者覆盖前者）。
-
-    每层内部按配置段做合并：同名字段后层覆盖先层；字段本身是 dict 时
-    深合并（与 :meth:`Config.with_overrides` 同语义——深审 M23：旧实现
-    整字段替换，多层层叠时只改一个键会抹掉先层同字段其余键）。
-    """
+    """按优先级从低到高合并多层配置；后层覆盖前层。"""
     merged: dict[str, dict[str, Any]] = {}
     for layer in layers:
         if not layer:
