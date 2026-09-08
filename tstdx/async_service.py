@@ -81,6 +81,7 @@ class AsyncMarketDataService:
             thread_name_prefix="tstdx-async-provider",
         )
         self._semaphore = asyncio.Semaphore(concurrency)
+        self._close_lock = asyncio.Lock()
         self._closed = False
         self._providers: dict[str, AsyncProviderAPI] = {}
 
@@ -90,6 +91,8 @@ class AsyncMarketDataService:
         loop = asyncio.get_running_loop()
         call = partial(fn, *args, **kwargs)
         async with self._semaphore:
+            if self._closed:
+                raise RuntimeError("AsyncMarketDataService 已关闭")
             return await loop.run_in_executor(self._executor, call)
 
     async def query(self, spec: QuerySpec, *, with_meta: bool = True) -> Any:
@@ -153,14 +156,19 @@ class AsyncMarketDataService:
         return self.provider("iwencai")
 
     async def aclose(self) -> None:
-        if self._closed:
-            return
-        try:
-            if self._owns_service:
-                await self._run(self.sync.close)
-        finally:
+        async with self._close_lock:
+            if self._closed:
+                return
             self._closed = True
-            self._executor.shutdown(wait=True, cancel_futures=False)
+            try:
+                await asyncio.to_thread(
+                    self._executor.shutdown,
+                    wait=True,
+                    cancel_futures=False,
+                )
+            finally:
+                if self._owns_service:
+                    await asyncio.to_thread(self.sync.close)
 
     async def __aenter__(self) -> "AsyncMarketDataService":
         return self
