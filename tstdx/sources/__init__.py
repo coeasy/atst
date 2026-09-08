@@ -162,8 +162,6 @@ class DataSourceRouter:
         )
         self.golden_root = Path(golden_root) if golden_root else None
         self.tdx_hosts = list(tdx_hosts) if tdx_hosts is not None else None
-        # Kept only for constructor compatibility. Live v12 queries intentionally
-        # do not use these caches before an upstream request.
         self.kline_cache = kline_cache
         self.quote_cache = quote_cache
         self.web_sources = [normalize_provider_id(x) for x in (web_sources or ())]
@@ -324,9 +322,6 @@ class DataSourceRouter:
         channel: str | None = None,
     ) -> list[Any]:
         """Fetch bars from one Provider; unsupported semantics fail explicitly."""
-        from ..client import period_to_category
-        from ..domain.symbol import split_symbol
-
         self._reset_diagnostics()
         pid, legacy_channel, special = self._selection(
             provider=provider,
@@ -334,11 +329,13 @@ class DataSourceRouter:
             order=order,
         )
         selected_channel = channel or legacy_channel
-        _, code = split_symbol(symbol)
-        category = period_to_category(period)
 
         try:
             if special == "replay":
+                from ..client import period_to_category
+
+                _, code = _split_for_replay(symbol)
+                category = period_to_category(period)
                 if start:
                     raise ValidationError("replay K 线不支持 start 偏移")
                 if adjust:
