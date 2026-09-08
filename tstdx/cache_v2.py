@@ -29,6 +29,7 @@ __all__ = ["SQLiteSemanticQueryCache", "TieredSemanticQueryCache"]
 
 _LOG = logging.getLogger(__name__)
 _FORMAT_VERSION = 1
+_MAX_FUTURE_SKEW_NS = 5_000_000_000
 
 
 def _quote_from_dict(row: dict[str, Any]) -> Quote:
@@ -183,7 +184,8 @@ class SQLiteSemanticQueryCache:
 
     @property
     def enabled(self) -> bool:
-        return self._conn is not None
+        with self._lock:
+            return self._conn is not None
 
     @staticmethod
     def _schema_version(key: str) -> int:
@@ -193,48 +195,76 @@ class SQLiteSemanticQueryCache:
         except Exception:
             return 0
 
-    def get(self, key: str, *, max_age: float) -> Any | None:
-        conn = self._conn
-        if max_age <= 0 or conn is None:
+    def _record_miss(self) -> None:
+        with self._lock:
             self.misses += 1
+
+    def _record_error_miss(self) -> None:
+        with self._lock:
+            self.errors += 1
+            self.misses += 1
+
+    def get(self, key: str, *, max_age: float) -> Any | None:
+        if max_age <= 0:
+            self._record_miss()
             return None
         try:
             with self._lock:
+                conn = self._conn
+                if conn is None:
+                    self.misses += 1
+                    return None
                 row = conn.execute(
                     "SELECT schema_version, stored_wall_ns, payload FROM semantic_cache WHERE fingerprint=?",
                     (key,),
                 ).fetchone()
             if row is None:
-                self.misses += 1
+                self._record_miss()
                 return None
             schema_version, stored_wall_ns, payload = row
             if int(schema_version) != self._schema_version(key):
                 self.invalidate(key)
-                self.misses += 1
+                self._record_miss()
                 return None
-            age = (time.time_ns() - int(stored_wall_ns)) / 1_000_000_000
+
+            now_ns = time.time_ns()
+            stored_ns = int(stored_wall_ns)
+            if stored_ns > now_ns + _MAX_FUTURE_SKEW_NS:
+                self.invalidate(key)
+                self._record_miss()
+                _LOG.warning("semantic L2 cache timestamp is in the future; evicting key")
+                return None
+            age = max(0.0, (now_ns - stored_ns) / 1_000_000_000)
             if age > max_age:
                 self.invalidate(key)
-                self.misses += 1
+                self._record_miss()
                 return None
-            value = _decode_result(str(payload))
-            self.hits += 1
+
+            try:
+                value = _decode_result(str(payload))
+            except Exception as exc:
+                self.invalidate(key)
+                self._record_error_miss()
+                _LOG.warning("semantic L2 cache payload corrupt; evicting key: %s", exc)
+                return None
+            with self._lock:
+                self.hits += 1
             return value
         except Exception as exc:
-            self.errors += 1
-            self.misses += 1
+            self._record_error_miss()
             _LOG.warning("semantic L2 cache read failed; treating as miss: %s", exc)
             return None
 
     def put(self, key: str, value: Any) -> None:
-        conn = self._conn
-        if conn is None:
-            return
         try:
             payload = _encode_result(value)
             if payload is None:
                 return
+            stored_ns = time.time_ns()
             with self._lock:
+                conn = self._conn
+                if conn is None:
+                    return
                 conn.execute(
                     """
                     INSERT INTO semantic_cache(fingerprint, schema_version, stored_wall_ns, payload)
@@ -244,61 +274,64 @@ class SQLiteSemanticQueryCache:
                       stored_wall_ns=excluded.stored_wall_ns,
                       payload=excluded.payload
                     """,
-                    (key, self._schema_version(key), time.time_ns(), payload),
+                    (key, self._schema_version(key), stored_ns, payload),
                 )
                 conn.commit()
-            self.writes += 1
+                self.writes += 1
         except Exception as exc:
-            self.errors += 1
+            with self._lock:
+                self.errors += 1
             _LOG.warning("semantic L2 cache write failed; ignoring optimization failure: %s", exc)
 
     def invalidate(self, key: str) -> bool:
-        conn = self._conn
-        if conn is None:
-            return False
         try:
             with self._lock:
+                conn = self._conn
+                if conn is None:
+                    return False
                 cur = conn.execute(
                     "DELETE FROM semantic_cache WHERE fingerprint=?", (key,)
                 )
                 conn.commit()
-            return bool(cur.rowcount)
+                return bool(cur.rowcount)
         except Exception as exc:
-            self.errors += 1
+            with self._lock:
+                self.errors += 1
             _LOG.warning("semantic L2 cache invalidate failed: %s", exc)
             return False
 
     def clear(self) -> None:
-        conn = self._conn
-        if conn is None:
-            return
         try:
             with self._lock:
+                conn = self._conn
+                if conn is None:
+                    return
                 conn.execute("DELETE FROM semantic_cache")
                 conn.commit()
         except Exception as exc:
-            self.errors += 1
+            with self._lock:
+                self.errors += 1
             _LOG.warning("semantic L2 cache clear failed: %s", exc)
 
     def close(self) -> None:
         with self._lock:
             conn = self._conn
             self._conn = None
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception as exc:
-                self.errors += 1
-                _LOG.warning("semantic L2 cache close failed: %s", exc)
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception as exc:
+                    self.errors += 1
+                    _LOG.warning("semantic L2 cache close failed: %s", exc)
 
     def __len__(self) -> int:
-        conn = self._conn
-        if conn is None:
-            return 0
         try:
             with self._lock:
+                conn = self._conn
+                if conn is None:
+                    return 0
                 row = conn.execute("SELECT COUNT(*) FROM semantic_cache").fetchone()
-            return int(row[0]) if row else 0
+                return int(row[0]) if row else 0
         except Exception:
             return 0
 
