@@ -187,6 +187,9 @@ def test_quotes_batch_preserves_successes_and_missing_symbol_error() -> None:
     assert envelope.channel == "quote"
     assert envelope.capability == "quotes"
     assert envelope.retryable is False
+    assert envelope.context["attempted"] is True
+    assert envelope.context["batch_status"] == "missing"
+    assert envelope.context["chunk_index"] == 0
     assert result.meta.fallback is False
     service.close()
 
@@ -252,6 +255,22 @@ def test_partial_tdx_chunk_failure_preserves_prior_successes_and_marks_remaining
     assert set(result.errors) == set(symbols[60:])
     assert all(envelope.provider == "tdx" for envelope in result.errors.values())
     assert all(envelope.channel == "quotation" for envelope in result.errors.values())
+
+    failed = result.errors[symbols[60]]
+    assert failed.code == "E7050"
+    assert failed.context["attempted"] is True
+    assert failed.context["batch_status"] == "failed"
+    assert failed.context["chunk_index"] == 1
+    assert failed.context["original_error"]["code"] == "E7050"
+    assert failed.context["original_error"]["type"] == "SourceUnavailable"
+
+    skipped = result.errors[symbols[120]]
+    assert skipped.code == "E7050"
+    assert skipped.context["attempted"] is False
+    assert skipped.context["batch_status"] == "not_attempted"
+    assert skipped.context["chunk_index"] == 2
+    assert skipped.context["blocked_by"]["code"] == "E7050"
+    assert skipped.context["blocked_by"]["chunk_index"] == 1
     service.close()
 
 
