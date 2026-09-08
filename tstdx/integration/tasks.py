@@ -16,6 +16,10 @@ A ``cancel_requested`` task remains active until the Future is cancelled before
 start or the worker actually exits. Running/cancel-requested records cannot be
 deleted. ``max_tasks`` bounds running + queued work, so ThreadPoolExecutor's
 internal queue is not exposed unboundedly through this API.
+
+Failed tasks store the same safe :class:`ErrorEnvelope` dictionary used by the
+REST/WS/MCP/CLI boundaries. Native exception details stay in logs and never leak
+through task polling responses.
 """
 
 from __future__ import annotations
@@ -24,12 +28,13 @@ import logging
 import threading
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Generic, TypeVar
 
+from ..error_envelope import to_error_envelope
 from ..errors import RateLimitedLocal, TdxError, ValidationError
 
 __all__ = [
@@ -102,7 +107,7 @@ class TaskSnapshot(Generic[T]):
     finished_at: float | None
     cancel_requested_at: float | None
     result: T | None
-    error: str | None
+    error: Mapping[str, Any] | None
 
     @property
     def active(self) -> bool:
@@ -123,7 +128,7 @@ class _TaskRecord(Generic[T]):
     finished_at: float | None = None
     cancel_requested_at: float | None = None
     result: T | None = None
-    error: str | None = None
+    error: dict[str, Any] | None = None
     future: Future[Any] | None = field(default=None, repr=False)
 
     def snapshot(self) -> TaskSnapshot[T]:
@@ -135,16 +140,20 @@ class _TaskRecord(Generic[T]):
             finished_at=self.finished_at,
             cancel_requested_at=self.cancel_requested_at,
             result=self.result,
-            error=self.error,
+            error=None if self.error is None else dict(self.error),
         )
 
 
-def _public_error(exc: BaseException) -> str:
-    """Return a safe task error; raw native exception details stay in logs."""
-    if isinstance(exc, TdxError):
-        return f"[{exc.code}] {exc.message or type(exc).__name__}"
-    _LOG.exception("background task failed", exc_info=exc)
-    return "internal error"
+def _public_error(exc: BaseException, *, task_id: str) -> dict[str, Any]:
+    """Return the canonical safe task error envelope."""
+
+    if not isinstance(exc, TdxError):
+        _LOG.exception("background task failed task_id=%s", task_id, exc_info=exc)
+    return to_error_envelope(
+        exc,
+        phase="task",
+        request_id=task_id,
+    ).to_dict()
 
 
 class TaskManager:
@@ -278,13 +287,14 @@ class TaskManager:
                 record.result = None
                 record.error = None
         except BaseException as exc:
-            public_error = _public_error(exc)
+            public_error = _public_error(exc, task_id=record.id)
             with self._lock:
                 if record.token.cancelled:
                     record.status = TaskStatus.CANCELLED
+                    record.error = None
                 else:
                     record.status = TaskStatus.FAILED
-                record.error = public_error
+                    record.error = public_error
                 record.finished_at = time.time()
         else:
             with self._lock:
@@ -358,6 +368,7 @@ class TaskManager:
                 if current - finished >= self.retention_seconds:
                     record.status = TaskStatus.EXPIRED
                     record.result = None
+                    record.error = None
                     changed += 1
         return changed
 
