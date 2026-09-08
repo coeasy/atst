@@ -221,8 +221,9 @@ class ProviderHttpClient:
         # Existing public alias, same TDX quotation capability/provenance.
         return self.capital_changes(symbol)
 
-    def file_download(self, symbol: str, filename: str) -> Any:
-        return self._quotation.file_download(symbol, filename)
+    def file_download(self, symbol: str, filename: str) -> bytes:
+        """Route F10 file download to the TDX F10 Channel."""
+        return self._tdx.f10.download(symbol, filename)
 
     def f10_catalog(self, symbol: str) -> Any:
         return self._tdx.f10.catalog(symbol)
@@ -286,12 +287,8 @@ class ProviderHttpClient:
         )
 
     def parse_text(self, *args: Any, **kwargs: Any) -> Any:
-        # Compatibility for the existing read-only /query allowlist. This remains
-        # a TDX quotation/client capability and does not select another Provider.
-        fn = getattr(self._quotation, "parse_text", None)
-        if fn is None or not callable(fn):
-            raise ValidationError("当前 TDX client 未暴露 parse_text")
-        return fn(*args, **kwargs)
+        """Parse F10 text through the same TDX F10 Channel."""
+        return self._tdx.f10.parse_text(*args, **kwargs)
 
     def close(self) -> None:
         with self._lock:
