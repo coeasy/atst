@@ -28,6 +28,15 @@ __all__ = [
 T = TypeVar("T")
 
 
+def _record_singleflight(event: str) -> None:
+    try:
+        from .observability.planned import record_singleflight
+
+        record_singleflight(event)
+    except Exception:
+        pass
+
+
 @dataclass(slots=True)
 class ExecutionBudget:
     """One total monotonic deadline shared by the whole logical query."""
@@ -114,10 +123,12 @@ class SingleFlight:
                 self._flights[key] = flight
                 self.leaders += 1
                 leader = True
+                _record_singleflight("leader")
             else:
                 flight.waiters += 1
                 self.joins += 1
                 leader = False
+                _record_singleflight("join")
 
         if leader:
             try:
@@ -135,12 +146,14 @@ class SingleFlight:
             return flight.result  # type: ignore[return-value]
 
         if timeout is not None and timeout <= 0:
+            _record_singleflight("timeout")
             raise ReadTimeout(
                 "等待同指纹请求时 query deadline 已耗尽",
                 context={"phase": "singleflight_wait"},
             )
         completed = flight.event.wait(timeout=timeout)
         if not completed:
+            _record_singleflight("timeout")
             raise ReadTimeout(
                 "等待同指纹上游请求超过 query deadline",
                 context={"phase": "singleflight_wait", "singleflight": True},
