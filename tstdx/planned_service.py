@@ -23,7 +23,7 @@ from .cache_v2 import SQLiteSemanticQueryCache, TieredSemanticQueryCache
 from .domain.models import Bar, Quote
 from .domain.symbol import normalize_symbol
 from .error_envelope import ErrorEnvelope, to_error_envelope
-from .errors import IntegrityViolation, SourceUnavailable, TdxError, ValidationError
+from .errors import InternalError, IntegrityViolation, SourceUnavailable, TdxError, ValidationError
 from .execution import BatchPlan, BatchPlanner, SingleFlight
 from .failure import DEFAULT_FAILURE_POLICY, FailurePolicy
 from .freshness import FRESHNESS, bar_freshness_profile, validate_freshness
@@ -215,6 +215,27 @@ class UnifiedMarketDataService(ProviderCoreService):
                 duration=time.perf_counter() - started,
             )
             raise
+        except Exception as exc:
+            record_planned_query(
+                provider=plan.provider,
+                channel=plan.channel,
+                capability=plan.spec.capability,
+                status="internal_error",
+                duration=time.perf_counter() - started,
+            )
+            raise InternalError(
+                "planned query 未处理异常",
+                context={
+                    "provider": plan.provider,
+                    "channel": plan.channel,
+                    "capability": plan.spec.capability,
+                    "query_id": plan.fingerprint.value,
+                    "phase": "execution",
+                    "fallback": False,
+                    "cause_type": type(exc).__name__,
+                },
+                cause=exc,
+            ) from exc
         except BaseException:
             record_planned_query(
                 provider=plan.provider,
