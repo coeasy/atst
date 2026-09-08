@@ -8,6 +8,7 @@ from tstdx.observability.planned import (
     record_provider_health,
     record_singleflight,
     record_stream_gap,
+    record_stream_reconnect,
 )
 
 
@@ -26,6 +27,7 @@ def test_planned_metrics_use_only_low_cardinality_labels() -> None:
         "tstdx_provider_batch_chunks": ("provider", "channel", "capability"),
         "tstdx_provider_health": ("provider", "channel", "capability"),
         "tstdx_stream_gap_total": ("provider", "kind"),
+        "tstdx_stream_reconnect_total": ("provider", "kind"),
     }
     forbidden = {"symbol", "query_id", "request_id", "url", "host", "error", "message"}
     for name, labels in expected.items():
@@ -40,11 +42,13 @@ def test_planned_counter_and_gauge_helpers_increment_without_business_side_effec
     singleflight = _metric("tstdx_singleflight_total")
     health = _metric("tstdx_provider_health")
     gaps = _metric("tstdx_stream_gap_total")
+    reconnects = _metric("tstdx_stream_reconnect_total")
     assert isinstance(query, Counter)
     assert isinstance(cache, Counter)
     assert isinstance(singleflight, Counter)
     assert isinstance(health, Gauge)
     assert isinstance(gaps, Counter)
+    assert isinstance(reconnects, Counter)
 
     query_labels = {
         "provider": "tdx",
@@ -60,11 +64,13 @@ def test_planned_counter_and_gauge_helpers_increment_without_business_side_effec
         "capability": "quotes",
     }
     gap_labels = {"provider": "tdx", "kind": "detected"}
+    reconnect_labels = {"provider": "tdx", "kind": "recovered"}
 
     before_query = query.value(query_labels)
     before_cache = cache.value(cache_labels)
     before_flight = singleflight.value(singleflight_labels)
     before_gap = gaps.value(gap_labels)
+    before_reconnect = reconnects.value(reconnect_labels)
 
     record_planned_query(
         provider="tdx",
@@ -82,12 +88,14 @@ def test_planned_counter_and_gauge_helpers_increment_without_business_side_effec
         healthy=False,
     )
     record_stream_gap(provider="tdx", kind="detected")
+    record_stream_reconnect(provider="tdx", kind="recovered")
 
     assert query.value(query_labels) == before_query + 1
     assert cache.value(cache_labels) == before_cache + 1
     assert singleflight.value(singleflight_labels) == before_flight + 1
     assert health.value(health_labels) == 0.0
     assert gaps.value(gap_labels) == before_gap + 1
+    assert reconnects.value(reconnect_labels) == before_reconnect + 1
 
 
 def test_batch_chunk_histogram_records_one_observation() -> None:
