@@ -31,7 +31,7 @@ async def _await_worker(future: asyncio.Future[T]) -> T:
     """Keep ownership of a submitted worker until the real thread finishes.
 
     Cancelling the caller must not release an AsyncMarketDataService concurrency
-    slot while its synchronous Provider call is still running.  Shield the
+    slot while its synchronous Provider call is still running. Shield the
     worker, wait for its actual completion even after cancellation, consume any
     late worker exception, then re-raise the caller cancellation.
     """
@@ -47,6 +47,25 @@ async def _await_worker(future: asyncio.Future[T]) -> T:
                 break
         with contextlib.suppress(BaseException):
             future.result()
+        raise
+
+
+async def _await_cleanup(task: asyncio.Task[None]) -> None:
+    """Do not let caller cancellation interrupt provider shutdown ordering."""
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError as cancellation:
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+            except BaseException:
+                break
+        try:
+            task.result()
+        except BaseException as cleanup_error:
+            raise cleanup_error from cancellation
         raise
 
 
@@ -106,6 +125,7 @@ class AsyncMarketDataService:
         )
         self._semaphore = asyncio.Semaphore(concurrency)
         self._close_lock = asyncio.Lock()
+        self._close_task: asyncio.Task[None] | None = None
         self._closed = False
         self._providers: dict[str, AsyncProviderAPI] = {}
 
@@ -180,20 +200,22 @@ class AsyncMarketDataService:
     def iwencai(self) -> AsyncProviderAPI:
         return self.provider("iwencai")
 
+    async def _close_resources(self) -> None:
+        await asyncio.to_thread(
+            self._executor.shutdown,
+            wait=True,
+            cancel_futures=False,
+        )
+        if self._owns_service:
+            await asyncio.to_thread(self.sync.close)
+
     async def aclose(self) -> None:
         async with self._close_lock:
-            if self._closed:
-                return
-            self._closed = True
-            try:
-                await asyncio.to_thread(
-                    self._executor.shutdown,
-                    wait=True,
-                    cancel_futures=False,
-                )
-            finally:
-                if self._owns_service:
-                    await asyncio.to_thread(self.sync.close)
+            if self._close_task is None:
+                self._closed = True
+                self._close_task = asyncio.create_task(self._close_resources())
+            close_task = self._close_task
+        await _await_cleanup(close_task)
 
     async def __aenter__(self) -> "AsyncMarketDataService":
         return self
