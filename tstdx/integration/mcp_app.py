@@ -190,10 +190,20 @@ class MCPServer(LegacyMCPServer):
                 result = {}
                 self.stop()
             else:
-                return self._error(
+                validation = ValidationError(
+                    "Method not found",
+                    context={
+                        "phase": "mcp_protocol",
+                        "method": method,
+                        "fallback": False,
+                        "provider_switch_allowed": False,
+                    },
+                )
+                return self._domain_error(
                     rid,
-                    ERR_METHOD_NOT_FOUND,
-                    f"Method not found: {method!r}",
+                    validation,
+                    phase="mcp_protocol",
+                    rpc_code=ERR_METHOD_NOT_FOUND,
                 )
         except TdxError as exc:
             return self._domain_error(rid, exc, phase="mcp")
