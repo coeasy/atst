@@ -30,6 +30,13 @@ def _norm_text(value: str | None) -> str:
     return "" if value is None else str(value).strip().lower()
 
 
+def _resolve_default_provider(value: str | None) -> str:
+    chosen = PROVIDERS.default_provider if value is None else value
+    if not str(chosen).strip():
+        raise ValidationError("default_provider 不能为空")
+    return resolve_provider(provider=chosen)
+
+
 @dataclass(frozen=True, slots=True)
 class QuerySpec:
     capability: str
@@ -116,9 +123,7 @@ class QuerySpec:
                 context={"allow_stale": True, "fallback": False},
             )
 
-        resolved_default = resolve_provider(
-            provider=default_provider or PROVIDERS.default_provider
-        )
+        resolved_default = _resolve_default_provider(default_provider)
         pid = resolve_provider(
             provider=self.provider,
             source=self.source,
@@ -204,9 +209,7 @@ class QueryPlanner:
     """Compile semantic queries into deterministic single-Provider plans."""
 
     def __init__(self, *, default_provider: str | None = None) -> None:
-        self.default_provider = resolve_provider(
-            provider=default_provider or PROVIDERS.default_provider
-        )
+        self.default_provider = _resolve_default_provider(default_provider)
 
     @staticmethod
     def _default_channel(spec: QuerySpec) -> str:
