@@ -42,6 +42,28 @@ class FakeManager:
         self.closed = True
 
 
+class FakeTdx:
+    def __init__(self, *, fail_call: int | None = None) -> None:
+        self.seen: list[tuple[str, ...]] = []
+        self.fail_call = fail_call
+
+    def quotes(self, symbols: list[str], *, as_format: str):
+        assert as_format == "dict"
+        self.seen.append(tuple(symbols))
+        if self.fail_call is not None and len(self.seen) == self.fail_call:
+            raise SourceUnavailable("tdx chunk unavailable")
+        return [{"code": symbol, "price": 10.0} for symbol in symbols]
+
+
+class FakeTdxManager:
+    def __init__(self, tdx: FakeTdx) -> None:
+        self.tdx = tdx
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
 def test_duplicate_symbols_are_fetched_once_and_fanned_out() -> None:
     adapter = BlockingQuoteAdapter()
     service = UnifiedMarketDataService(manager=FakeManager(adapter))
@@ -198,4 +220,50 @@ def test_total_deadline_is_checked_after_provider_returns() -> None:
     assert caught.value.context["terminal"] is True
     assert caught.value.context["retry_same_provider"] is False
     assert caught.value.context["failure_reason"] == "query_deadline_exhausted"
+    service.close()
+
+
+def test_tdx_quotes_are_chunked_by_verified_60_symbol_limit() -> None:
+    tdx = FakeTdx()
+    service = UnifiedMarketDataService(manager=FakeTdxManager(tdx))
+    symbols = [f"sh{600000 + index:06d}" for index in range(130)]
+
+    rows = service.quotes(symbols, provider="tdx", deadline_ms=5000)
+
+    assert [len(chunk) for chunk in tdx.seen] == [60, 60, 10]
+    assert [row.code for row in rows] == symbols
+    assert service.compile(
+        QuerySpec.build("quotes", symbols=symbols, provider="tdx")
+    ).budget.max_attempts == 1
+    service.close()
+
+
+def test_partial_tdx_chunk_failure_preserves_prior_successes_and_marks_remaining() -> None:
+    tdx = FakeTdx(fail_call=2)
+    service = UnifiedMarketDataService(manager=FakeTdxManager(tdx))
+    symbols = [f"sh{600000 + index:06d}" for index in range(130)]
+
+    result = service.quotes_batch(symbols, provider="tdx", deadline_ms=5000)
+
+    assert [len(chunk) for chunk in tdx.seen] == [60, 60]
+    assert len(result.items) == 60
+    assert [item.code for item in result.items] == symbols[:60]
+    assert result.partial is True
+    assert set(result.errors) == set(symbols[60:])
+    assert all(envelope.provider == "tdx" for envelope in result.errors.values())
+    assert all(envelope.channel == "quotation" for envelope in result.errors.values())
+    service.close()
+
+
+def test_query_many_reuses_exact_duplicate_plan_with_distinct_result_containers() -> None:
+    adapter = BlockingQuoteAdapter()
+    service = UnifiedMarketDataService(manager=FakeManager(adapter))
+    spec = QuerySpec.build("quotes", symbols=["sh600519"], provider="tencent")
+
+    results = service.query_many([spec, spec], with_meta=False)
+
+    assert adapter.calls == 1
+    assert len(results) == 2
+    assert results[0] == results[1]
+    assert results[0] is not results[1]
     service.close()
