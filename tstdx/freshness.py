@@ -307,7 +307,7 @@ def validate_freshness(
         FreshnessMode.LOCAL_HISTORICAL,
     }:
         raise FreshnessViolation(
-            "请求要求最新实时数据，但结果来自 historical Channel/window",
+            f"请求要求最新实时数据，但结果来自 {selected.mode.value}",
             context={**context, "reason": selected.mode.value},
         )
     if selected.require_direct and origin != "direct":
