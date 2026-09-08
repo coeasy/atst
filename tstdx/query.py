@@ -60,9 +60,9 @@ class QuerySpec:
     ``provider`` is the formal selector. ``source`` remains a compatibility
     alias and is resolved into the same Provider id during planning.
 
-    ``max_age`` is explicit opt-in cache freshness. ``allow_stale`` and
-    ``allow_partial`` are reserved until their dedicated audited result contracts
-    are used; the normal list-returning path never silently changes semantics.
+    ``max_age`` is explicit opt-in cache freshness. ``allow_partial`` is valid
+    only for quote BatchResult execution. ``allow_stale`` is still rejected
+    until stale-on-error provenance is fully implemented.
     """
 
     capability: str
@@ -130,12 +130,12 @@ class QuerySpec:
             )
         if cap == "bars" and len(symbols) != 1:
             raise ValidationError(
-                "bars 当前统一契约一次只接受一个 symbol；批量请使用专用 BatchResult API",
+                "bars 当前统一契约一次只接受一个 symbol",
                 context={"symbols": list(symbols)},
             )
-        if self.allow_partial:
+        if self.allow_partial and cap != "quotes":
             raise ValidationError(
-                "allow_partial 尚未接入普通 list 返回契约；请使用专用 BatchResult API",
+                "allow_partial 当前仅支持 quotes BatchResult",
                 context={"allow_partial": True, "capability": cap},
             )
         if self.count < 0:
@@ -187,7 +187,7 @@ class QuerySpec:
             period=period,
             adjustment=_norm_text(self.adjustment),
             max_age=max_age,
-            allow_partial=False,
+            allow_partial=bool(self.allow_partial),
             allow_stale=False,
         )
 
