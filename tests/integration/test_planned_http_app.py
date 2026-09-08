@@ -244,18 +244,18 @@ def test_fastapi_request_validation_uses_canonical_error_envelope(monkeypatch) -
         app.state.tasks.close()
 
 
-def test_fastapi_http_exception_is_enveloped_without_detail_leak(monkeypatch) -> None:  # noqa: ANN001
-    from fastapi import HTTPException
+def test_starlette_http_exception_is_enveloped_without_detail_leak(monkeypatch) -> None:  # noqa: ANN001
+    from starlette.exceptions import HTTPException as StarletteHTTPException
 
     _install_fake_legacy_app(monkeypatch)
     client = SimpleNamespace(service=object(), close=lambda: None)
     app = http_app.create_app(client)
     try:
-        handler = app.exception_handlers[HTTPException]
+        handler = app.exception_handlers[StarletteHTTPException]
         response = asyncio.run(
             handler(
                 _fake_request("http-404"),
-                HTTPException(status_code=404, detail="private-route-detail"),
+                StarletteHTTPException(status_code=404, detail="private-route-detail"),
             )
         )
         payload = _response_payload(response)["error"]
@@ -264,23 +264,24 @@ def test_fastapi_http_exception_is_enveloped_without_detail_leak(monkeypatch) ->
         assert payload["request_id"] == "http-404"
         assert payload["context"]["http_status"] == 404
         assert payload["fallback_allowed"] is False
+        assert payload["provider_switch_allowed"] is False
         assert "private-route-detail" not in encoded
     finally:
         app.state.tasks.close()
 
 
-def test_fastapi_server_http_exception_collapses_to_e9000(monkeypatch) -> None:  # noqa: ANN001
-    from fastapi import HTTPException
+def test_starlette_server_http_exception_collapses_to_e9000(monkeypatch) -> None:  # noqa: ANN001
+    from starlette.exceptions import HTTPException as StarletteHTTPException
 
     _install_fake_legacy_app(monkeypatch)
     client = SimpleNamespace(service=object(), close=lambda: None)
     app = http_app.create_app(client)
     try:
-        handler = app.exception_handlers[HTTPException]
+        handler = app.exception_handlers[StarletteHTTPException]
         response = asyncio.run(
             handler(
                 _fake_request("http-503"),
-                HTTPException(status_code=503, detail="secret-upstream-detail"),
+                StarletteHTTPException(status_code=503, detail="secret-upstream-detail"),
             )
         )
         payload = _response_payload(response)["error"]
