@@ -34,9 +34,9 @@ __all__ = [
 class ChannelSpec:
     """One provider-internal data channel with static execution facts.
 
-    ``batch_limits`` is capability-specific because one channel can expose
-    operations with different request shapes. The field is appended after the
-    historical ``notes`` field so old positional construction remains valid.
+    ``batch_limits`` and ``periods`` are capability-specific execution facts.
+    New fields are appended after historical fields so positional construction
+    remains source-compatible with older callers.
     """
 
     id: str
@@ -46,6 +46,7 @@ class ChannelSpec:
     local: bool = False
     notes: str = ""
     batch_limits: tuple[tuple[str, int], ...] = ()
+    periods: frozenset[str] = frozenset()
 
     @classmethod
     def build(
@@ -58,6 +59,7 @@ class ChannelSpec:
         local: bool = False,
         notes: str = "",
         batch_limits: Mapping[str, int] | None = None,
+        periods: Iterable[str] = (),
     ) -> "ChannelSpec":
         normalized_caps = frozenset(str(x).strip().lower() for x in capabilities)
         limits: list[tuple[str, int]] = []
@@ -73,6 +75,9 @@ class ChannelSpec:
                 )
             limits.append((cap, limit))
         limits.sort()
+        normalized_periods = frozenset(str(x).strip().lower() for x in periods if str(x).strip())
+        if normalized_periods and "bars" not in normalized_caps:
+            raise ValueError(f"periods declared on non-bars channel {id!r}")
         return cls(
             id=str(id).strip().lower(),
             capabilities=normalized_caps,
@@ -81,6 +86,7 @@ class ChannelSpec:
             local=bool(local),
             notes=notes,
             batch_limits=tuple(limits),
+            periods=normalized_periods,
         )
 
     def batch_limit_for(self, capability: str) -> int | None:
@@ -89,6 +95,14 @@ class ChannelSpec:
             if name == cap:
                 return limit
         return None
+
+    def supports_period(self, period: str) -> bool:
+        """Return whether a bars period is explicitly supported.
+
+        Empty ``periods`` means this channel has no period contract because it is
+        not a unified bars channel or its low-level surface remains provider-specific.
+        """
+        return not self.periods or str(period).strip().lower() in self.periods
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +193,27 @@ class ProviderRegistry:
             )
         return spec
 
+    def require_period(self, provider: str, channel: str, period: str) -> ChannelSpec:
+        spec = self.get(provider).channel(channel)
+        if "bars" not in spec.capabilities:
+            raise ValidationError(
+                f"provider {provider!r} channel {channel!r} 不支持 bars",
+                context={"provider": provider, "channel": channel, "capability": "bars"},
+            )
+        normalized = str(period).strip().lower()
+        if not spec.supports_period(normalized):
+            raise ValidationError(
+                f"provider {provider!r} channel {channel!r} 不支持 period {period!r}",
+                context={
+                    "provider": normalize_provider_id(provider),
+                    "channel": str(channel).strip().lower(),
+                    "capability": "bars",
+                    "period": normalized,
+                    "supported_periods": sorted(spec.periods),
+                },
+            )
+        return spec
+
 
 _PROVIDER_ALIASES = {
     "qq": "tencent",
@@ -220,6 +255,7 @@ def _c(
     local: bool = False,
     notes: str = "",
     batch_limits: Mapping[str, int] | None = None,
+    periods: Iterable[str] = (),
 ) -> ChannelSpec:
     return ChannelSpec.build(
         id,
@@ -229,6 +265,7 @@ def _c(
         local=local,
         notes=notes,
         batch_limits=batch_limits,
+        periods=periods,
     )
 
 
@@ -255,6 +292,18 @@ PROVIDERS = ProviderRegistry(
                     live=True,
                     notes="0x0530 realtime quote batch limit is 60 symbols",
                     batch_limits={"quotes": 60},
+                    periods=(
+                        "1min",
+                        "5min",
+                        "15min",
+                        "30min",
+                        "60min",
+                        "day",
+                        "week",
+                        "month",
+                        "season",
+                        "year",
+                    ),
                 ),
                 _c("extended", "markets", "instruments", "quotes", "bars", live=True),
                 _c("goods", "quotes", "bars", markets=("future", "commodity"), live=True),
@@ -266,6 +315,7 @@ PROVIDERS = ProviderRegistry(
                     markets=("cn_a", "future"),
                     local=True,
                     notes="local historical only; never substitutes live TDX data",
+                    periods=("1min", "5min", "day"),
                 ),
             ),
         ),
@@ -275,8 +325,18 @@ PROVIDERS = ProviderRegistry(
             role="auxiliary_live",
             channels=(
                 _c("quote", "quotes", markets=("cn_a", "hk", "us"), live=True),
-                _c("kline", "bars", markets=("cn_a", "hk", "us")),
-                _c("minute_kline", "bars", markets=("cn_a",)),
+                _c(
+                    "kline",
+                    "bars",
+                    markets=("cn_a", "hk", "us"),
+                    periods=("day", "week", "month"),
+                ),
+                _c(
+                    "minute_kline",
+                    "bars",
+                    markets=("cn_a",),
+                    periods=("1min", "5min", "15min", "30min", "60min"),
+                ),
                 _c("minute", "minute", markets=("cn_a",), live=True),
                 _c("ticks", "trades", markets=("cn_a",), live=True),
                 _c("global", "global_quotes", live=True),
@@ -290,7 +350,12 @@ PROVIDERS = ProviderRegistry(
             role="auxiliary_live_info",
             channels=(
                 _c("quote", "quotes", markets=("cn_a", "hk"), live=True),
-                _c("history_kline", "bars", markets=("cn_a",)),
+                _c(
+                    "history_kline",
+                    "bars",
+                    markets=("cn_a",),
+                    periods=("5min", "15min", "30min", "60min", "120min", "day", "1200min"),
+                ),
                 _c("suggest", "suggest"),
                 _c("industry_board", "industry_board"),
                 _c("board_list", "board_list"),
@@ -305,7 +370,12 @@ PROVIDERS = ProviderRegistry(
             role="auxiliary_live_info",
             channels=(
                 _c("quote", "quotes", markets=("cn_a",), live=True),
-                _c("kline", "bars", markets=("cn_a", "hk", "us")),
+                _c(
+                    "kline",
+                    "bars",
+                    markets=("cn_a", "hk", "us"),
+                    periods=("1min", "5min", "15min", "30min", "60min", "day"),
+                ),
                 _c("trends", "minute", markets=("cn_a",), live=True),
                 _c("rank", "rank"),
                 _c("fund_flow", "fund_flow"),
@@ -326,7 +396,12 @@ PROVIDERS = ProviderRegistry(
             role="auxiliary_live",
             channels=(
                 _c("quote", "quotes", markets=("cn_a",), live=True),
-                _c("kline", "bars", markets=("cn_a",)),
+                _c(
+                    "kline",
+                    "bars",
+                    markets=("cn_a",),
+                    periods=("day", "week", "month"),
+                ),
                 _c("minute", "minute", markets=("cn_a",), live=True),
                 _c("ticks", "trades", markets=("cn_a",), live=True),
             ),
