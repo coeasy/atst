@@ -78,6 +78,39 @@ def test_stop_before_start_moves_created_directly_to_closed() -> None:
     assert stream._dispatch_thread is None
 
 
+def test_partial_worker_start_failure_fails_closed_and_stop_skips_unstarted_join(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    original_start = threading.Thread.start
+    starts = 0
+
+    def flaky_start(thread: threading.Thread) -> None:
+        nonlocal starts
+        starts += 1
+        if starts == 2:
+            raise RuntimeError("dispatch-start-failed")
+        original_start(thread)
+
+    monkeypatch.setattr(threading.Thread, "start", flaky_start)
+    stream = PlannedQuoteStream(provider="tencent", service=FakeService())
+    stream.subscribe("sh600519", interval=0.01)
+
+    with pytest.raises(SubscriptionError) as caught:
+        stream.start()
+
+    assert stream.state is StreamState.FAILED
+    assert caught.value.context["phase"] == "stream_lifecycle"
+    assert caught.value.context["state"] == "failed"
+    assert caught.value.context["poll_started"] is True
+    assert caught.value.context["dispatch_started"] is False
+    assert caught.value.context["cause_type"] == "RuntimeError"
+
+    stream.stop(timeout=1.0)
+    assert stream.state is StreamState.CLOSED
+    assert stream._poll_thread is None
+    assert stream._dispatch_thread is None
+
+
 def test_slow_callback_exposes_stopping_and_cannot_create_second_dispatcher() -> None:
     entered = threading.Event()
     release = threading.Event()
