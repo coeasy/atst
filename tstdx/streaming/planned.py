@@ -1,0 +1,382 @@
+# Copyright (c) 2026 tstdx contributors
+# Licensed under the MIT License
+
+"""Due-aware streaming scheduler over the planned Provider service.
+
+Unlike the legacy stream, one fast subscription does not force every slower
+subscription to poll at the fastest interval.  Each subscription owns
+``next_due``; only due subscriptions are unioned/deduplicated for one upstream
+fetch. Callback dispatch runs on a separate thread behind bounded per-
+subscription queues, so a slow consumer does not block Provider polling.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import logging
+import threading
+import time
+import uuid
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
+from typing import Any
+
+from ..domain.models import Quote
+from ..domain.symbol import normalize_symbol, split_symbol
+from ..errors import (
+    BackpressureOverflow,
+    GapUnfilledError,
+    SubscriptionError,
+    TdxError,
+)
+from ..planned_service import UnifiedMarketDataService
+from ..providers import PROVIDERS, resolve_provider
+from .engine import BackpressureQueue, DeltaMerger, ReconnectPolicy
+
+__all__ = [
+    "PlannedQuoteStream",
+    "StreamSubscription",
+    "StreamStats",
+]
+
+_LOG = logging.getLogger(__name__)
+_MISSING_ALERT_AFTER = 3
+
+QuoteCallback = Callable[[str, dict[str, Any]], None]
+ErrorCallback = Callable[[Exception], None]
+
+
+def _bare_code(symbol: str) -> str:
+    try:
+        return split_symbol(symbol)[1]
+    except Exception as exc:
+        raise SubscriptionError(
+            f"无法解析订阅 symbol {symbol!r}",
+            context={"symbol": symbol},
+            cause=exc,
+        ) from exc
+
+
+def _quote_key(quote: Quote) -> str:
+    code = str(quote.code or "")
+    try:
+        return split_symbol(code)[1]
+    except Exception:
+        return code[-6:]
+
+
+@dataclass(slots=True)
+class StreamStats:
+    polls: int = 0
+    requested_symbols: int = 0
+    delivered_events: int = 0
+    dropped_events: int = 0
+    provider_errors: int = 0
+
+
+@dataclass(slots=True)
+class StreamSubscription:
+    id: str
+    symbols: tuple[str, ...]
+    interval: float
+    next_due: float
+    diff_only: bool
+    max_queue: int
+    on_quote: QuoteCallback | None
+    on_error: ErrorCallback | None
+    merger: DeltaMerger = field(default_factory=DeltaMerger, repr=False)
+    queue: BackpressureQueue | None = field(default=None, repr=False)
+    missing: dict[str, int] = field(default_factory=dict, repr=False)
+    dropped: int = 0
+
+
+class PlannedQuoteStream:
+    """Single-Provider, due-aware realtime quote scheduler.
+
+    One stream instance binds one Provider for its entire lifetime. Provider
+    failures are surfaced and retried only through that Provider's own runtime;
+    this scheduler never selects another Provider.
+    """
+
+    def __init__(
+        self,
+        *,
+        provider: str = "tdx",
+        service: UnifiedMarketDataService | None = None,
+        callback_idle_wait: float = 0.05,
+        reconnect: ReconnectPolicy | None = None,
+        **service_kwargs: Any,
+    ) -> None:
+        pid = resolve_provider(provider=provider)
+        PROVIDERS.require(pid, "quotes")
+        if callback_idle_wait <= 0:
+            raise ValueError("callback_idle_wait must be > 0")
+        self.provider = pid
+        self.service = service or UnifiedMarketDataService(**service_kwargs)
+        self._owns_service = service is None
+        self.callback_idle_wait = float(callback_idle_wait)
+        self.reconnect = reconnect or ReconnectPolicy(base=0.5, cap=15.0)
+        self.stats = StreamStats()
+
+        self._subs: dict[str, StreamSubscription] = {}
+        self._lock = threading.RLock()
+        self._stop = threading.Event()
+        self._dispatch_wakeup = threading.Event()
+        self._poll_thread: threading.Thread | None = None
+        self._dispatch_thread: threading.Thread | None = None
+
+    def subscribe(
+        self,
+        symbols: str | Sequence[str],
+        *,
+        interval: float = 1.0,
+        diff_only: bool = False,
+        max_queue: int = 1024,
+        on_quote: QuoteCallback | None = None,
+        on_error: ErrorCallback | None = None,
+    ) -> str:
+        if interval <= 0:
+            raise SubscriptionError(
+                "interval 必须大于 0",
+                context={"interval": interval},
+            )
+        if max_queue <= 0:
+            raise SubscriptionError(
+                "PlannedQuoteStream.max_queue 必须大于 0；回调必须与 poll 解耦",
+                context={"max_queue": max_queue},
+            )
+        raw = [symbols] if isinstance(symbols, str) else list(symbols)
+        if not raw:
+            raise SubscriptionError("symbols 不能为空")
+        normalized = tuple(normalize_symbol(symbol) for symbol in raw)
+        sub_id = uuid.uuid4().hex[:12]
+        sub = StreamSubscription(
+            id=sub_id,
+            symbols=normalized,
+            interval=float(interval),
+            next_due=time.monotonic(),
+            diff_only=bool(diff_only),
+            max_queue=int(max_queue),
+            on_quote=on_quote,
+            on_error=on_error,
+        )
+
+        def on_drop(_item: Any, current: StreamSubscription = sub) -> None:
+            current.dropped += 1
+            self.stats.dropped_events += 1
+
+        sub.queue = BackpressureQueue(max_queue, on_drop=on_drop)
+        with self._lock:
+            self._subs[sub_id] = sub
+        self._dispatch_wakeup.set()
+        return sub_id
+
+    def unsubscribe(self, subscription_id: str) -> bool:
+        with self._lock:
+            removed = self._subs.pop(subscription_id, None)
+        return removed is not None
+
+    def start(self) -> "PlannedQuoteStream":
+        if self._poll_thread is not None and self._poll_thread.is_alive():
+            return self
+        self._stop.clear()
+        self._poll_thread = threading.Thread(
+            target=self._poll_loop,
+            name=f"tstdx-planned-poll-{self.provider}",
+            daemon=True,
+        )
+        self._dispatch_thread = threading.Thread(
+            target=self._dispatch_loop,
+            name=f"tstdx-planned-dispatch-{self.provider}",
+            daemon=True,
+        )
+        self._poll_thread.start()
+        self._dispatch_thread.start()
+        return self
+
+    def stop(self, *, timeout: float = 3.0) -> None:
+        self._stop.set()
+        self._dispatch_wakeup.set()
+        poll = self._poll_thread
+        dispatch = self._dispatch_thread
+        if poll is not None:
+            poll.join(timeout=timeout)
+        if dispatch is not None:
+            dispatch.join(timeout=timeout)
+        if poll is not None and poll.is_alive():
+            _LOG.warning("planned stream poll thread did not stop within timeout")
+            return
+        self._poll_thread = None
+        self._dispatch_thread = None if dispatch is None or not dispatch.is_alive() else dispatch
+        if self._owns_service:
+            with contextlib.suppress(Exception):
+                self.service.close()
+
+    close = stop
+
+    def __enter__(self) -> "PlannedQuoteStream":
+        return self.start()
+
+    def __exit__(self, *exc: Any) -> None:
+        self.stop()
+
+    def _subscriptions(self) -> list[StreamSubscription]:
+        with self._lock:
+            return list(self._subs.values())
+
+    @staticmethod
+    def _advance_due(sub: StreamSubscription, now: float) -> None:
+        # Preserve cadence but skip missed slots instead of immediate catch-up.
+        while sub.next_due <= now:
+            sub.next_due += sub.interval
+
+    @staticmethod
+    def _union_symbols(subs: list[StreamSubscription]) -> list[str]:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for sub in subs:
+            for symbol in sub.symbols:
+                if symbol not in seen:
+                    seen.add(symbol)
+                    ordered.append(symbol)
+        return ordered
+
+    def _poll_loop(self) -> None:
+        while not self._stop.is_set():
+            subs = self._subscriptions()
+            if not subs:
+                self._stop.wait(0.2)
+                continue
+
+            now = time.monotonic()
+            due = [sub for sub in subs if sub.next_due <= now]
+            if not due:
+                next_due = min(sub.next_due for sub in subs)
+                self._stop.wait(min(max(next_due - now, 0.001), 0.5))
+                continue
+
+            symbols = self._union_symbols(due)
+            try:
+                rows = self.service.quotes(symbols, provider=self.provider)
+                self.reconnect.success()
+                self.stats.polls += 1
+                self.stats.requested_symbols += len(symbols)
+            except TdxError as exc:
+                self.stats.provider_errors += 1
+                for sub in due:
+                    self._enqueue_error(sub, exc)
+                    self._advance_due(sub, now)
+                self._stop.wait(self.reconnect.next_delay())
+                continue
+            except Exception as exc:  # keep scheduler alive; never switch Provider
+                self.stats.provider_errors += 1
+                _LOG.exception("planned stream unexpected provider error")
+                wrapped = SubscriptionError(
+                    "planned stream 上游调用失败",
+                    context={"provider": self.provider, "fallback": False},
+                    cause=exc,
+                )
+                for sub in due:
+                    self._enqueue_error(sub, wrapped)
+                    self._advance_due(sub, now)
+                self._stop.wait(self.reconnect.next_delay())
+                continue
+
+            qmap = {_quote_key(quote): quote for quote in rows}
+            for sub in due:
+                self._deliver_subscription(sub, qmap)
+                self._advance_due(sub, now)
+
+    def _deliver_subscription(
+        self,
+        sub: StreamSubscription,
+        qmap: dict[str, Quote],
+    ) -> None:
+        for symbol in sub.symbols:
+            try:
+                key = _bare_code(symbol)
+            except SubscriptionError as exc:
+                self._enqueue_error(sub, exc)
+                continue
+            quote = qmap.get(key)
+            if quote is None:
+                missing = sub.missing.get(key, 0) + 1
+                sub.missing[key] = missing
+                if missing == _MISSING_ALERT_AFTER:
+                    self._enqueue_error(
+                        sub,
+                        GapUnfilledError(
+                            f"订阅标的 {symbol} 连续 {_MISSING_ALERT_AFTER} 轮未返回",
+                            context={
+                                "provider": self.provider,
+                                "symbol": symbol,
+                                "missing_rounds": missing,
+                                "fallback": False,
+                            },
+                        ),
+                    )
+                continue
+
+            sub.missing[key] = 0
+            payload = quote.to_dict()
+            if sub.diff_only:
+                payload = dict(sub.merger.update(key, payload))
+                if set(payload) <= {"code"}:
+                    continue
+            self._enqueue(sub, ("quote", symbol, payload))
+
+    def _enqueue_error(self, sub: StreamSubscription, exc: Exception) -> None:
+        self._enqueue(sub, ("error", "", exc))
+
+    def _enqueue(self, sub: StreamSubscription, item: tuple[str, str, Any]) -> None:
+        queue = sub.queue
+        if queue is None:
+            return
+        dropped_before = sub.dropped
+        queue.put(item)
+        if sub.dropped > dropped_before:
+            queue.put(
+                (
+                    "error",
+                    "",
+                    BackpressureOverflow(
+                        "订阅回调队列溢出，已丢弃最旧事件",
+                        context={
+                            "subscription_id": sub.id,
+                            "dropped_total": sub.dropped,
+                            "max_queue": sub.max_queue,
+                        },
+                    ),
+                )
+            )
+        self._dispatch_wakeup.set()
+
+    def _has_pending(self) -> bool:
+        return any(
+            sub.queue is not None and sub.queue.qsize() > 0
+            for sub in self._subscriptions()
+        )
+
+    def _dispatch_loop(self) -> None:
+        while not self._stop.is_set() or self._has_pending():
+            delivered = False
+            for sub in self._subscriptions():
+                queue = sub.queue
+                if queue is None:
+                    continue
+                for kind, symbol, payload in queue.drain():
+                    delivered = True
+                    if kind == "quote" and sub.on_quote is not None:
+                        try:
+                            sub.on_quote(symbol, payload)
+                            self.stats.delivered_events += 1
+                        except Exception:
+                            _LOG.exception("planned stream quote callback failed")
+                    elif kind == "error" and sub.on_error is not None:
+                        try:
+                            sub.on_error(payload)
+                        except Exception:
+                            _LOG.exception("planned stream error callback failed")
+            if not delivered:
+                self._dispatch_wakeup.wait(self.callback_idle_wait)
+                self._dispatch_wakeup.clear()
