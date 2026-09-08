@@ -27,11 +27,6 @@ WEB_PROVIDER_APIS = {
     "iwencai": IwencaiProviderAPI,
 }
 
-# Full cleanup requires replacing the large provider_api.py file. The stale map
-# is deliberately tracked here and is unreachable because WebProviderAPI.channel
-# validates the authoritative Provider Registry before consulting CHANNELS.
-LEGACY_UNREACHABLE_MAPPINGS = {("jsl", "etf")}
-
 
 def _registry_channels(provider: str) -> set[str]:
     return {channel.id for channel in PROVIDERS.get(provider).channels}
@@ -48,14 +43,7 @@ def test_all_registry_web_channels_have_direct_api_mapping(provider: str, api_cl
     mapped = set(api_cls.CHANNELS)
     if provider == "eastmoney":
         mapped.add("corporate")  # composite provider-specific namespace
-    registered = _registry_channels(provider)
-    expected_unreachable = {
-        channel
-        for mapped_provider, channel in LEGACY_UNREACHABLE_MAPPINGS
-        if mapped_provider == provider
-    }
-    assert registered.issubset(mapped)
-    assert mapped - registered == expected_unreachable
+    assert mapped == _registry_channels(provider)
 
 
 @pytest.mark.parametrize("provider,api_cls", WEB_PROVIDER_APIS.items())
@@ -66,7 +54,8 @@ def test_direct_adapter_refs_import_without_instantiation(provider: str, api_cls
         assert isinstance(adapter_cls, type), (provider, channel, module_name, class_name)
 
 
-def test_jsl_etf_legacy_mapping_is_rejected_before_adapter_resolution() -> None:
+def test_jsl_etf_is_not_a_registry_or_direct_channel() -> None:
+    assert "etf" not in JslProviderAPI.CHANNELS
     api = JslProviderAPI(object())  # type: ignore[arg-type]
     with pytest.raises(ValidationError) as caught:
         api.channel("etf")
