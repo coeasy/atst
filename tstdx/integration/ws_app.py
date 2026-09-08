@@ -153,6 +153,20 @@ class JsonRpcHandler(legacy.JsonRpcHandler):
             self._facade = UnifiedQuoteAPI()
         return self._facade
 
+    def _m_stock_changes(self, params: dict) -> Any:  # noqa: ANN401
+        """Route Eastmoney stock changes through the canonical Provider runtime."""
+        raw = params.get("types") or []
+        if not isinstance(raw, (list, tuple)) or not all(isinstance(item, int) for item in raw):
+            raise legacy._InvalidParams(
+                "types must be a list of integers (e.g. [8201, 8193])"
+            )
+        client = self._client_obj()
+        return client.service.eastmoney.stock_changes(
+            tuple(raw),
+            page=int(params.get("page", 1)),
+            size=int(params.get("size", 50)),
+        )
+
 
 def serve_ws(
     handler: JsonRpcHandler | None = None,
