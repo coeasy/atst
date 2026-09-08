@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .domain.models import BAR_FIELDS, QUOTE_FIELDS, Bar, Level, Quote
+from .domain.models import QUOTE_FIELDS, Bar, Level, Quote
 from .freshness import FreshnessMode, FreshnessStatus
 from .semantic_cache import SemanticQueryCache
 from .service import FreshnessEvidence, QueryResult, ResultMeta
@@ -141,12 +141,7 @@ def _decode_result(payload: str) -> QueryResult[Any]:
 
 
 class SQLiteSemanticQueryCache:
-    """Persistent exact-fingerprint semantic cache.
-
-    Age uses wall clock because monotonic timestamps are not portable across
-    process restarts. The decoded result still carries its original observation
-    timestamp and is revalidated by the planned service before delivery.
-    """
+    """Persistent exact-fingerprint semantic cache."""
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(Path(path).expanduser())
@@ -272,11 +267,7 @@ class SQLiteSemanticQueryCache:
 class TieredSemanticQueryCache:
     """L1 memory + L2 SQLite with promotion on L2 hit."""
 
-    def __init__(
-        self,
-        l1: SemanticQueryCache,
-        l2: SQLiteSemanticQueryCache,
-    ) -> None:
+    def __init__(self, l1: SemanticQueryCache, l2: SQLiteSemanticQueryCache) -> None:
         self.l1 = l1
         self.l2 = l2
 
@@ -294,7 +285,9 @@ class TieredSemanticQueryCache:
         self.l2.put(key, value)
 
     def invalidate(self, key: str) -> bool:
-        return self.l1.invalidate(key) or self.l2.invalidate(key)
+        removed_l1 = self.l1.invalidate(key)
+        removed_l2 = self.l2.invalidate(key)
+        return removed_l1 or removed_l2
 
     def clear(self) -> None:
         self.l1.clear()
