@@ -15,12 +15,9 @@
     E8xxx  门面层          facade / bridge shim
     E9xxx  内部与依赖      internal / missing-dependency
 
-每个异常都携带 :class:`RetryAdvice`。v12 的硬边界是：RetryAdvice 只能
-描述**同一 Provider 内部**的重试/退避/host 或 endpoint 恢复；它不能授权
-TDX -> Sina/Tencent/Eastmoney 之类的 Provider switch。历史
-``fallback_to_web`` 字段仅为序列化兼容保留，新执行内核不消费它。
-
-使用侧文档见 ``docs/errors.md``。
+v12 保留已有错误码、继承关系与公共诊断信息。唯一收敛的执行语义是：
+RetryAdvice 中的 host/endpoint 恢复永远限制在**当前 Provider**；历史
+``fallback_to_web`` 字段仅为序列化兼容保留，新 Provider-aware 内核不消费它。
 """
 
 from __future__ import annotations
@@ -85,9 +82,9 @@ __all__ = [
 class RetryAdvice:
     """异常的可重试性建议（§24.2）。
 
-    ``switch_host`` 仅表示**当前 Provider 内部**的等价 host/endpoint 恢复。
-    它绝不表示切换 Provider。``fallback_to_web`` 为历史 wire/API 兼容字段，
-    v12 Provider-aware planner 始终忽略它。
+    ``switch_host`` 仅表示当前 Provider 内的等价 host/endpoint 恢复。
+    ``fallback_to_offline`` / ``fallback_to_web`` 为历史兼容字段；v12 正式
+    Planner 不使用它们决定跨 Provider 执行。
     """
 
     retryable: bool = False
@@ -100,7 +97,6 @@ class RetryAdvice:
 
 
 _DEFAULT = RetryAdvice()
-
 RETRY_ADVICE: dict[type, RetryAdvice] = {}
 
 
@@ -186,13 +182,21 @@ class ValidationError(ConfigError):
 
 class DependencyMissingError(ConfigError):
     code = "E1020"
-    http_status = 424
+    http_status = 503
+    default_advice = RetryAdvice(note="缺少可选依赖，请安装对应 extra")
 
 
-# --- E2xxx 传输 ----------------------------------------------------------- #
+# --- E2xxx 传输层 --------------------------------------------------------- #
 class TransportError(TdxError):
     code = "E2000"
     http_status = 502
+    default_advice = RetryAdvice(
+        retryable=True,
+        backoff=0.5,
+        max_retries=3,
+        switch_host=True,
+        note="传输失败：只允许当前 Provider 内部重试/切换等价 host 或 endpoint",
+    )
 
 
 class ConnectionFailed(TransportError):
@@ -200,7 +204,7 @@ class ConnectionFailed(TransportError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=0.5,
-        max_retries=3,
+        max_retries=2,
         switch_host=True,
         note="当前 Provider 内连接失败：可重试或切换同 Provider 等价 host/endpoint",
     )
@@ -210,7 +214,7 @@ class ConnectionClosed(TransportError):
     code = "E2020"
     default_advice = RetryAdvice(
         retryable=True,
-        backoff=0.2,
+        backoff=0.5,
         max_retries=3,
         switch_host=True,
         note="连接已关闭：在当前 Provider 内重连",
@@ -222,46 +226,61 @@ class ReadTimeout(TransportError):
     http_status = 504
     default_advice = RetryAdvice(
         retryable=True,
-        backoff=0.5,
+        backoff=1.0,
         max_retries=2,
         switch_host=True,
         note="读取超时：只允许当前 Provider 内部恢复",
     )
 
 
-class WriteTimeout(TransportError):
+class WriteTimeout(ReadTimeout):
     code = "E2031"
-    http_status = 504
-    default_advice = RetryAdvice(
-        retryable=True,
-        backoff=0.5,
-        max_retries=2,
-        switch_host=True,
-        note="写入超时：只允许当前 Provider 内部恢复",
-    )
 
 
 class AllHostsUnreachable(TransportError):
+    """当前 Provider/Channel 的 host pool 全部不可达。"""
+
     code = "E2040"
     http_status = 503
     default_advice = RetryAdvice(
         retryable=True,
-        backoff=1.0,
+        backoff=5.0,
         max_retries=1,
         switch_host=False,
-        note="当前 Provider/Channel 的 host pool 已耗尽；不得跨 Provider 兜底",
+        note="当前 Provider/Channel 主站池已耗尽；显式报错，不跨 Provider 兜底",
     )
+
+
+# 保留 v1.4.0 的公共诊断常量；仅删除其中“跨 Provider 自动降级”的语义。
+ALL_HOSTS_UNREACHABLE_NEXT_STEPS = (
+    "下一步：\n"
+    "  1. 运行 `tstdx hosts scan` 对内置候选池并发测速，自动把可达主站写入"
+    " ~/.tstdx/server_ranking.json（后续启动按真实 RTT 排序）；\n"
+    "  2. 或在配置文件中显式指定主站（hosts.servers），例如：\n"
+    "       [hosts]\n"
+    '       servers = [["180.153.18.170", 7709], ["60.191.117.167", 7709]]\n'
+    "  3. 或查看当前主站池：`tstdx hosts list`。\n"
+    "  4. 如需查询其它 Provider，请由调用方显式指定 provider=。"
+)
 
 
 class RateLimitedLocal(TransportError):
     code = "E2050"
     http_status = 429
-    default_advice = RetryAdvice(retryable=True, backoff=1.0, max_retries=3)
+    default_advice = RetryAdvice(retryable=True, backoff=0.2, max_retries=5)
 
 
-# --- E3xxx 协议 ----------------------------------------------------------- #
+# --- E3xxx 协议层 --------------------------------------------------------- #
 class ProtocolError(TdxError):
     code = "E3000"
+    http_status = 502
+    default_advice = RetryAdvice(
+        retryable=True,
+        backoff=0.5,
+        max_retries=1,
+        switch_host=True,
+        note="协议错误：只允许当前 Provider 内部恢复",
+    )
 
 
 class FramingError(ProtocolError):
@@ -270,11 +289,18 @@ class FramingError(ProtocolError):
 
 class DecompressError(ProtocolError):
     code = "E3020"
+    default_advice = RetryAdvice(
+        retryable=True,
+        backoff=0.5,
+        max_retries=1,
+        switch_host=True,
+    )
 
 
 class UnknownCommand(ProtocolError):
     code = "E3030"
     http_status = 501
+    default_advice = RetryAdvice(note="未知命令：由同 Provider 的解析/协议诊断处理")
 
 
 class CommandOffline(ProtocolError):
@@ -358,11 +384,7 @@ class TruncatedDataError(DataError):
 
 
 class FreshnessViolation(DataError):
-    """结果无法满足调用方要求的最新真实数据契约。
-
-    典型原因：结果来自 cache/replay/synthetic、时间序列没有可验证尾时间、
-    或结果在返回前已超过允许的观测年龄。该异常**不授权 Provider switch**。
-    """
+    """结果无法满足“最新、真实、可追溯”的数据契约。"""
 
     code = "E4060"
     http_status = 503
@@ -444,7 +466,7 @@ class AntiSpiderBlocked(WebSourceError):
         backoff=5.0,
         max_retries=1,
         switch_host=True,
-        note="疑似被反爬拦截：检查当前 Provider 的 Referer/UA/限速；不得换 Provider 伪装成功",
+        note="检查当前 Provider Referer/UA/限速；不得切换 Provider 伪装成功",
     )
 
 
@@ -473,12 +495,9 @@ class SourceUnavailable(TdxError):
     """选定 Provider/Channel 当前无法满足请求。
 
     名称 ``SourceUnavailable`` 为兼容保留；v12 的正式领域实体是 Provider。
-    该异常意味着**本次选定 Provider**不可用、该 Channel/Capability 不可达或
-    当前环境无法满足请求。它不是“所有 Provider 都试完”的聚合异常，也绝不
-    表示执行内核应该继续尝试新浪/腾讯/东财等其它 Provider。
-
-    传输层 host pool 耗尽仍使用 :class:`AllHostsUnreachable`；上层可将其包装
-    成本异常并记录 ``provider/channel/capability``，但到此结束。
+    该异常不是“所有 Provider 都试完”的聚合异常，也不授权继续调用另一个
+    Provider。传输层 host pool 耗尽仍由 :class:`AllHostsUnreachable` 表达，
+    上层可包装成本异常并记录 provider/channel/capability 后结束本次 Query。
     """
 
     code = "E7050"
@@ -490,7 +509,7 @@ class SourceUnavailable(TdxError):
 
 
 class AllSourcesExhausted(TdxError):
-    """旧 Web 聚合客户端兼容异常；Provider-aware 内核不应主动产生。"""
+    """旧聚合 WebClient 的兼容异常；Provider-aware 内核不主动产生。"""
 
     code = "E7040"
     http_status = 503
