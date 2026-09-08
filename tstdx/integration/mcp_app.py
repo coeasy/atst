@@ -53,6 +53,11 @@ class _MCPProviderClient(ProviderHttpClient):
 class MCPServer(LegacyMCPServer):
     """MCP server whose data path and public failures use canonical v12 contracts."""
 
+    def __init__(self, client: Any | None = None, facade: Any | None = None) -> None:
+        super().__init__(client=client, facade=facade)
+        self._owns_client = client is None
+        self._owns_facade = facade is None
+
     def _get_client(self) -> Any:  # noqa: ANN401
         if self._client is None:
             self._client = _MCPProviderClient()
@@ -90,7 +95,13 @@ class MCPServer(LegacyMCPServer):
         )
 
     def _close_runtime(self) -> None:
-        for obj in (self._client, self._facade):
+        resources = (
+            (self._client, self._owns_client),
+            (self._facade, self._owns_facade),
+        )
+        for obj, owned in resources:
+            if not owned:
+                continue
             close = getattr(obj, "close", None)
             if callable(close):
                 with contextlib.suppress(Exception):
