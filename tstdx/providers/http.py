@@ -48,7 +48,10 @@ PROVIDER_HTTP_HOST_SUFFIXES: dict[str, tuple[str, ...]] = {
     ),
     "baidu": ("baidu.com",),
     "jsl": ("jisilu.cn",),
-    "boc": ("boc.cn",),
+    "boc": (
+        "boc.cn",
+        "bankofchina.com",
+    ),
     "iwencai": ("iwencai.com",),
 }
 
