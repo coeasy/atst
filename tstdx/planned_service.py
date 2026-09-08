@@ -21,8 +21,9 @@ from dataclasses import replace
 from typing import Any
 
 from .domain.models import Bar, Quote
-from .errors import TdxError, ValidationError
-from .execution import BatchPlanner, SingleFlight
+from .domain.symbol import normalize_symbol
+from .errors import IntegrityViolation, SourceUnavailable, TdxError, ValidationError
+from .execution import BatchPlan, BatchPlanner, SingleFlight
 from .failure import DEFAULT_FAILURE_POLICY, FailurePolicy
 from .freshness import FRESHNESS, validate_freshness
 from .query import QueryPlan, QueryPlanner, QuerySpec
@@ -162,6 +163,45 @@ class UnifiedMarketDataService(ProviderCoreService):
         if self._cache_enabled(plan):
             self.query_cache.put(plan.fingerprint.value, result)
 
+    @staticmethod
+    def _align_quote_batch(batch: BatchPlan, rows: Sequence[Quote]) -> list[Quote]:
+        """Align Provider rows by canonical symbol, never by incidental row order."""
+        expected = set(batch.unique)
+        by_symbol: dict[str, Quote] = {}
+        for quote in rows:
+            try:
+                symbol = normalize_symbol(str(quote.code))
+            except Exception as exc:
+                raise IntegrityViolation(
+                    "Provider quote 响应包含无法归一化的 code",
+                    context={"code": str(quote.code)},
+                    cause=exc,
+                ) from exc
+            if symbol not in expected:
+                raise IntegrityViolation(
+                    "Provider quote 响应包含未请求标的",
+                    context={"symbol": symbol, "requested": list(batch.unique)},
+                )
+            if symbol in by_symbol:
+                raise IntegrityViolation(
+                    "Provider quote 响应包含重复标的",
+                    context={"symbol": symbol},
+                )
+            by_symbol[symbol] = quote
+
+        missing = [symbol for symbol in batch.unique if symbol not in by_symbol]
+        if missing:
+            raise SourceUnavailable(
+                "Provider 批量行情缺少请求标的",
+                context={
+                    "missing_symbols": missing,
+                    "requested_unique": len(batch.unique),
+                    "received_unique": len(by_symbol),
+                    "partial": bool(by_symbol),
+                },
+            )
+        return [by_symbol[symbol] for symbol in batch.original]
+
     def quotes(
         self,
         symbols: str | Sequence[str],
@@ -210,10 +250,7 @@ class UnifiedMarketDataService(ProviderCoreService):
             if not isinstance(result, QueryResult):
                 raise RuntimeError("ProviderCoreService.quotes(with_meta=True) contract violated")
             plan.budget.ensure_remaining("provider_response")
-            data = batch.fanout(
-                list(result.data),
-                allow_partial=plan.spec.allow_partial,
-            )
+            data = self._align_quote_batch(batch, list(result.data))
             coordinated = QueryResult(data=data, meta=result.meta)
             self._cache_put(plan, coordinated)
             return coordinated
