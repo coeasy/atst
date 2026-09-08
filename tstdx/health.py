@@ -37,14 +37,15 @@ class HealthState:
     last_failure_ns: int | None = None
     last_error_code: str | None = None
     cooldown_until_ns: int = 0
+    half_open_probe: bool = False
 
     @property
     def circuit_open(self) -> bool:
-        return self.cooldown_until_ns > time.monotonic_ns()
+        return self.half_open_probe or self.cooldown_until_ns > time.monotonic_ns()
 
 
 class SourceHealthRegistry:
-    """Thread-safe dynamic health registry with a small circuit breaker."""
+    """Thread-safe dynamic health registry with a single-probe circuit breaker."""
 
     def __init__(self, *, failure_threshold: int = 3, cooldown_seconds: float = 30.0) -> None:
         if failure_threshold <= 0:
@@ -76,21 +77,33 @@ class SourceHealthRegistry:
             state = self._states.get(key)
             if state is None:
                 return
-            if state.cooldown_until_ns <= now:
-                if state.cooldown_until_ns:
-                    # Half-open: keep counters for diagnostics but allow exactly
-                    # normal traffic again; the next success/failure decides.
-                    self._states[key] = replace(state, cooldown_until_ns=0)
+            if state.half_open_probe:
+                remaining = 0.0
+                reason = "half_open_probe_in_flight"
+            elif state.cooldown_until_ns > now:
+                remaining = (state.cooldown_until_ns - now) / 1_000_000_000
+                reason = "cooldown"
+            elif state.cooldown_until_ns:
+                # Exactly one request becomes the half-open probe. Other callers
+                # fail fast until this probe records success/failure.
+                self._states[key] = replace(
+                    state,
+                    cooldown_until_ns=0,
+                    half_open_probe=True,
+                )
                 return
-            remaining = (state.cooldown_until_ns - now) / 1_000_000_000
+            else:
+                return
         raise SourceUnavailable(
-            "所选 Provider capability 处于健康冷却期",
+            "所选 Provider capability 处于健康门禁状态",
             context={
                 "provider": key.provider,
                 "channel": key.channel,
                 "capability": key.capability,
                 "phase": "health_gate",
                 "circuit_open": True,
+                "health_gate_reason": reason,
+                "half_open_probe": state.half_open_probe,
                 "cooldown_remaining": remaining,
                 "consecutive_failures": state.consecutive_failures,
                 "last_error_code": state.last_error_code,
@@ -111,6 +124,7 @@ class SourceHealthRegistry:
                 last_success_ns=now,
                 last_error_code=None,
                 cooldown_until_ns=0,
+                half_open_probe=False,
             )
             self._states[key] = updated
             return updated
@@ -140,6 +154,7 @@ class SourceHealthRegistry:
                 last_failure_ns=now,
                 last_error_code=error_code,
                 cooldown_until_ns=cooldown_until,
+                half_open_probe=False,
             )
             self._states[key] = updated
             return updated
