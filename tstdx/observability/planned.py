@@ -48,7 +48,7 @@ _CACHE_TOTAL = metrics.registry.register(
 _SINGLEFLIGHT_TOTAL = metrics.registry.register(
     Counter(
         "tstdx_singleflight_total",
-        "SingleFlight leader/join events",
+        "SingleFlight leader/join/timeout/deadline-bypass events",
         labelnames=("event",),
     )
 )
@@ -116,7 +116,7 @@ def record_cache_event(*, layer: str, status: str) -> None:
 
 
 def record_singleflight(event: str) -> None:
-    if event not in {"leader", "join", "timeout"}:
+    if event not in {"leader", "join", "timeout", "deadline_bypass"}:
         return
     with contextlib.suppress(Exception):
         _SINGLEFLIGHT_TOTAL.inc(labels={"event": event})
