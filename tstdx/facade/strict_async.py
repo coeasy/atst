@@ -47,6 +47,7 @@ class AsyncUnifiedQuoteAPI:
         self._sync = UnifiedQuoteAPI(*args, **kwargs)
         self._state_lock = asyncio.Lock()
         self._close_lock = asyncio.Lock()
+        self._close_task: asyncio.Task[None] | None = None
         self._drained = asyncio.Event()
         self._drained.set()
         self._active_calls = 0
@@ -110,16 +111,18 @@ class AsyncUnifiedQuoteAPI:
             raise AttributeError(method)
         return await self._call(target, *args, **kwargs)
 
+    async def _finish_close(self) -> None:
+        await self._drained.wait()
+        await asyncio.to_thread(self._sync.close)
+
     async def aclose(self) -> None:
         async with self._close_lock:
-            async with self._state_lock:
-                if self._closed:
-                    return
-                self._closed = True
-                active = self._active_calls
-            if active:
-                await self._drained.wait()
-            await asyncio.to_thread(self._sync.close)
+            if self._close_task is None:
+                async with self._state_lock:
+                    self._closed = True
+                self._close_task = asyncio.create_task(self._finish_close())
+            close_task = self._close_task
+        await _await_thread_call(close_task)
 
     async def __aenter__(self) -> "AsyncUnifiedQuoteAPI":
         return self
