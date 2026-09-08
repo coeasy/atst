@@ -4,20 +4,25 @@
 """Official FastAPI application factory for the v12 planned runtime.
 
 The legacy :mod:`tstdx.integration.http_server` module still contains the stable
-43-route declaration.  This factory reuses those route declarations but injects
-the actual v12 runtime dependencies before route construction:
+43-route declaration. This factory reuses those routes but injects the actual
+v12 runtime dependencies before route construction:
 
 * QueryPlan-backed :class:`UnifiedMarketDataService`;
 * Provider-bound compatibility client;
-* Future-based bounded TaskStore v2.
+* Future-based bounded TaskStore v2;
+* canonical safe ErrorEnvelope + request id handling.
 
 No request is allowed to fall back to another Provider implicitly.
 """
 
 from __future__ import annotations
 
+import logging
+import uuid
 from typing import Any, Callable
 
+from ..error_envelope import to_error_envelope
+from ..errors import TdxError, http_status_for
 from ..planned_service import UnifiedMarketDataService
 from . import http_server as _routes
 from .http_runtime import ProviderHttpClient
@@ -25,6 +30,8 @@ from .tasks import TaskStore as _SafeTaskStore
 from .tasks import TaskStoreFull as _SafeTaskStoreFull
 
 __all__ = ["create_app", "PlannedProviderHttpClient", "PlannedTaskStore"]
+
+_LOG = logging.getLogger(__name__)
 
 
 class PlannedProviderHttpClient(ProviderHttpClient):
@@ -53,25 +60,13 @@ class PlannedTaskStore(_SafeTaskStore):
         try:
             return super().submit(fn, *args, **kwargs)
         except _SafeTaskStoreFull as exc:
-            # Route handlers catch http_server.TaskStoreFull.  Re-raise that exact
-            # public compatibility type while retaining the bounded v2 manager.
             raise _routes.TaskStoreFull(str(exc)) from exc
 
 
 def create_app(client: Any = None) -> Any:  # noqa: ANN401
-    """Build the official REST app on the planned Provider runtime.
-
-    ``client`` injection is preserved for tests/advanced callers.  When omitted,
-    the default is no longer ``_LazyClient -> TdxClient``; it is one
-    :class:`PlannedProviderHttpClient` owning one planned service.
-    """
+    """Build the official REST app on the planned Provider runtime."""
     runtime_client = client if client is not None else PlannedProviderHttpClient()
 
-    # ``http_server.create_app`` resolves TaskStore while constructing the app;
-    # the created instance is then closed over by all task routes.  Temporarily
-    # replacing the class is therefore sufficient and avoids duplicating 43
-    # route declarations.  Restore immediately after construction so module
-    # globals remain compatible for direct legacy imports.
     legacy_task_store = _routes.TaskStore
     _routes.TaskStore = PlannedTaskStore  # type: ignore[assignment]
     try:
@@ -81,9 +76,46 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
 
     app.state.runtime = "planned-v12"
 
-    # Add deterministic resource shutdown.  The legacy route module did not own
-    # the injected Provider service, so this factory explicitly closes both
-    # runtime client and bounded task pool.
+    try:
+        from fastapi import Request
+        from fastapi.responses import JSONResponse
+    except ImportError:  # pragma: no cover - legacy factory already reports this
+        Request = Any  # type: ignore[misc,assignment]
+        JSONResponse = Any  # type: ignore[misc,assignment]
+
+    @app.middleware("http")
+    async def _request_identity(request: Request, call_next: Any) -> Any:  # noqa: ANN401
+        request.state.request_id = uuid.uuid4().hex
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request.state.request_id
+        return response
+
+    @app.exception_handler(TdxError)
+    async def _planned_tdx_error(request: Request, exc: TdxError) -> JSONResponse:
+        envelope = to_error_envelope(
+            exc,
+            request_id=getattr(request.state, "request_id", None),
+        )
+        return JSONResponse(
+            status_code=http_status_for(exc),
+            content={"error": envelope.to_dict()},
+        )
+
+    @app.exception_handler(Exception)
+    async def _planned_internal_error(request: Request, exc: Exception) -> JSONResponse:
+        _LOG.error(
+            "unhandled REST error request_id=%s path=%s",
+            getattr(request.state, "request_id", None),
+            request.url.path,
+            exc_info=exc,
+        )
+        envelope = to_error_envelope(
+            exc,
+            phase="http",
+            request_id=getattr(request.state, "request_id", None),
+        )
+        return JSONResponse(status_code=500, content={"error": envelope.to_dict()})
+
     @app.on_event("shutdown")
     def _shutdown_planned_runtime() -> None:
         tasks = getattr(app.state, "tasks", None)
