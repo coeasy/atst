@@ -3,8 +3,8 @@
 
 """Semantic L1 cache keyed by canonical QueryFingerprint.
 
-This cache is intentionally opt-in at the planned service layer.  A query with
-``max_age=None`` never consults it.  Entries are isolated by the full semantic
+This cache is intentionally opt-in at the planned service layer. A query with
+``max_age=None`` never consults it. Entries are isolated by the full semantic
 fingerprint, which includes Provider, Channel, symbols/window, adjustment,
 freshness policy and schema version.
 """
@@ -46,7 +46,8 @@ class SemanticQueryCache:
     def get(self, key: str, *, max_age: float) -> Any | None:
         """Return a defensive copy only when the entry age is within max_age."""
         if max_age <= 0:
-            self.misses += 1
+            with self._lock:
+                self.misses += 1
             return None
         now = time.monotonic_ns()
         with self._lock:
@@ -61,14 +62,17 @@ class SemanticQueryCache:
                 return None
             self._data.move_to_end(key)
             self.hits += 1
-            return copy.deepcopy(entry.value)
+            value = entry.value
+        return copy.deepcopy(value)
 
     def put(self, key: str, value: Any) -> None:
+        copied = copy.deepcopy(value)
+        stored = CacheEntry(
+            value=copied,
+            stored_monotonic_ns=time.monotonic_ns(),
+        )
         with self._lock:
-            self._data[key] = CacheEntry(
-                value=copy.deepcopy(value),
-                stored_monotonic_ns=time.monotonic_ns(),
-            )
+            self._data[key] = stored
             self._data.move_to_end(key)
             self.writes += 1
             while len(self._data) > self.max_entries:
