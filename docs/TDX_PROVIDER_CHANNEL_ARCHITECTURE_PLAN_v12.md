@@ -391,10 +391,13 @@ ticks
 
 ## JSL
 
+当前 production Registry 只暴露已验证的可转债 Channel：
+
 ```text
 bond
-etf
 ```
+
+`etf` 当前不属于 production Registry。历史实现曾把 `bond` 与 `etf` 都映射到同一个 `JslSource`，但该 adapter 实际请求可转债 endpoint 并解析 `bond_id` / `bond_nm`；因此 v12 按 fail-closed 原则移除 ETF 声明。只有真实 ETF endpoint、独立 schema、adapter 与真实样本门禁全部落地后才允许重新注册。
 
 ## BOC
 
@@ -507,37 +510,65 @@ len(plan.providers) == 1
 不同 Capability 使用不同 FreshnessProfile：
 
 ```text
-live_quote
-current_minute
-current_ticks
-current_bar_tail
-provider_intraday_rank
-business_day_event
-daily_nav
-historical_closed_bar
+direct_snapshot
+current_series
+historical_closed
+business_date
+local_historical
 ```
+
+实时/决策查询的 freshness 不等于“字段非空”，而是：
+
+```text
+selected Provider direct fetch
++ real provenance
++ Provider/Channel/Capability identity
++ parseable Provider tail timestamp（时间序列能力）
++ gross-stale sanity guard
++ integrity/schema check
+```
+
+其中 `gross-stale sanity guard` 只用于拒绝明显陈旧的 current series，不宣称自己是交易所交易日历。当前实现不使用估算交易日历来判定 currentness，避免周末、春节、国庆等休市窗口的最新真实数据被误判为 stale。
+
+`current_series`：
+
+- Provider tail timestamp 必须存在且可解析；
+- direct fetch 是主要 latestness 证据；
+- gross-stale guard 只作为明显陈旧数据的安全阈值；
+- 通过后 `currentness_verified=true`。
+
+显式历史窗口使用：
+
+```text
+mode=historical_closed
+verified=true
+currentness_verified=false
+```
+
+历史数据可以真实、可审计、可缓存，但不能满足 `require_live=true`，也不能把 `verified=true` 解读成 `verified_fresh=true`。
+
+`vipdoc` 使用 `local_historical`，同样不能冒充 live/current 数据。
 
 结果至少记录：
 
 ```text
 provider
 channel
-source_timestamp
-received_at
+provider/source timestamp
 observed_at
-age
-trading_day
-freshness
+freshness mode
+freshness basis
 real
+currentness_verified
 ```
 
 实时数据无法证明 fresh 时：
 
 ```text
-FreshnessViolation
+FreshnessViolation(E4060)
 ```
 
-不能使用其它 Provider 或旧 cache 掩盖。
+不能使用其它 Provider、旧 cache、Replay 或 Synthetic 掩盖。
 
 ---
 
@@ -561,15 +592,27 @@ current unfinished bar
 - request-local memo；
 - very-short coalescing；
 - SingleFlight；
-- 在 freshness contract 内明确允许的极短 TTL memory cache。
+- 在 freshness contract 内由调用方显式 `max_age` 允许的 bounded cache。
 
-但 metadata 必须保留原 Provider 和 source timestamp。
+Cache 命中前必须验证 payload provenance 与当前 QueryPlan 完全一致：
+
+```text
+provider
+channel
+capability
+real=true
+fallback=false
+replay=false
+synthetic=false
+```
+
+任何跨 Provider、跨 Channel、跨 Capability 或 replay/synthetic/fallback 污染条目都必须 invalidate，并回源当前选定 Provider；绝不能改变 Provider 选择。
 
 ## 9.2 历史数据
 
 已闭合历史 K 线允许 canonical cache。
 
-Cache key 至少：
+Cache key/fingerprint 至少绑定：
 
 ```text
 provider
@@ -582,6 +625,15 @@ window semantics
 ```
 
 不能把 TDX K 线缓存拿去满足 `provider=sina` 请求。
+
+Cache hit 必须保留原始 freshness mode：
+
+```text
+historical_closed -> bounded cache -> historical_closed
+current_series    -> bounded cache -> current_series
+```
+
+历史窗口命中 cache 后仍然 `currentness_verified=false`；current-series cache 命中仍需重新验证 Provider tail currentness，不能因为 cache age 尚未过期就把明显陈旧的上游 tail 标成最新。
 
 ## 9.3 Replay/Synthetic
 
@@ -637,6 +689,8 @@ DataIntegrityError
 CommandOffline
 ```
 
+Direct Provider API 中已有 `TdxError` 必须保留原对象并补齐 provider/channel context；adapter 的意外原生异常统一进入 `InternalError(E9000)`，不能泄漏为不稳定公共错误，也不能成为跨 Provider fallback 条件。
+
 ---
 
 # 11. ResultMeta / Provenance
@@ -646,14 +700,11 @@ ResultMeta(
     provider="tdx",
     channel="quotation",
     capability="quotes",
-    market="cn_a",
-    source_timestamp=...,
-    received_at=...,
-    observed_at=...,
-    freshness="fresh",
+    observed_at_ns=...,
+    freshness=FreshnessEvidence(...),
+    freshness_status=FreshnessStatus(...),
     real=True,
-    cache_status="miss",
-    attempts=(...),
+    fallback=False,
 )
 ```
 
@@ -666,6 +717,15 @@ ResultMeta(
 ```
 
 但 source 只是 alias。
+
+`verified_fresh` 必须同时满足：
+
+```text
+freshness_status.verified == true
+freshness_status.currentness_verified == true
+```
+
+因此 historical closed 可以 `verified=true`，但 `verified_fresh=false`。
 
 ---
 
@@ -743,6 +803,14 @@ TDX stream failure -> Tencent polling
 ```
 
 每 Provider 使用统一 StreamBackend contract，但不跨 Provider 接管订阅。
+
+Streaming lifecycle 约束：
+
+- `start()` 幂等；
+- `stop()/close()` 为终态，关闭后禁止 restart / 新增订阅；
+- poll 与 dispatch 线程必须成对启动，任何单线程残留状态都拒绝启动第二组线程；
+- 慢 callback 导致 dispatch 线程延迟退出时，也绝不能创建第二个 dispatcher；
+- 自有 Provider service 只能在 poll worker 已停止后关闭。
 
 ---
 
@@ -843,7 +911,7 @@ registry entry
 ```text
 sina/tencent/eastmoney       # Provider
 hk/us                         # Market
-a kline/minute/ticks          # Channel/Capability
+kline/minute/ticks            # Channel/Capability
 fund_flow/news/rank           # Channel/Capability
 ```
 
@@ -992,8 +1060,12 @@ hk/us not Provider IDs
 kline/minute/ticks not Provider IDs
 vipdoc only tdx/vipdoc
 cache key includes provider
+cache hit provenance matches Provider/Channel/Capability
+cache hit preserves freshness mode
+historical_closed -> currentness_verified=false
 SingleFlight key includes provider
 integration cannot direct-new provider clients
+stream stop/close is terminal
 ```
 
 ---
@@ -1013,8 +1085,11 @@ integration cannot direct-new provider clients
 - [ ] TDX K 线失败不去新浪/腾讯/东财；
 - [ ] 每 Provider 失败独立报错；
 - [ ] 实时数据通过 freshness；
+- [ ] current series tail timestamp 可解析且 gross-stale 时 fail-closed；
+- [ ] historical closed 真实可审计但 `verified_fresh=false`；
 - [ ] stale/replay/synthetic 不冒充实时；
-- [ ] cache 不跨 Provider；
+- [ ] cache 不跨 Provider/Channel/Capability；
+- [ ] cache hit 不改变原始 freshness mode；
 - [ ] Provider-specific schema 不丢字段。
 
 ## TDX
