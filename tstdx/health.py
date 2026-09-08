@@ -15,7 +15,7 @@ import threading
 import time
 from dataclasses import dataclass, replace
 
-from .errors import SourceUnavailable, TdxError, ValidationError
+from .errors import ReadTimeout, SourceUnavailable, TdxError, ValidationError
 from .providers import PROVIDERS, resolve_provider
 
 __all__ = ["HealthKey", "HealthState", "SourceHealthRegistry"]
@@ -146,8 +146,12 @@ class SourceHealthRegistry:
 
     @staticmethod
     def should_penalize(exc: BaseException) -> bool:
-        """Caller/input errors do not make a Provider unhealthy."""
-        return not isinstance(exc, ValidationError)
+        """Only failures attributable to the selected Provider affect its circuit."""
+        if isinstance(exc, ValidationError):
+            return False
+        if isinstance(exc, ReadTimeout) and exc.context.get("deadline_scope") == "query":
+            return False
+        return True
 
     def reset(self, provider: str | None = None) -> None:
         with self._lock:
