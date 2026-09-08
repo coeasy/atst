@@ -30,6 +30,28 @@ class FakeQuotation:
         return {"block_type": block_type, "start": start}
 
 
+class FakeF10:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[Any, ...]]] = []
+
+    def download(self, symbol: str, filename: str) -> bytes:
+        self.calls.append(("download", (symbol, filename)))
+        return b"f10"
+
+    def parse_text(self, payload: bytes) -> str:
+        self.calls.append(("parse_text", (payload,)))
+        return "parsed"
+
+    def catalog(self, symbol: str) -> list[str]:
+        self.calls.append(("catalog", (symbol,)))
+        return ["profile.txt"]
+
+
+class FakeTdx:
+    def __init__(self) -> None:
+        self.f10 = FakeF10()
+
+
 class FakeManager:
     def __init__(self) -> None:
         self.quotation = FakeQuotation()
@@ -42,7 +64,7 @@ class FakeManager:
 class FakeService:
     def __init__(self) -> None:
         self.manager = FakeManager()
-        self.tdx = object()
+        self.tdx = FakeTdx()
         self.closed = False
 
     def close(self) -> None:
@@ -124,6 +146,22 @@ def test_invalid_history_date_fails_before_protocol_call() -> None:
         client.minute_history("sh600519", "09/08/26")
 
     assert service.manager.quotation.calls == []
+
+
+def test_f10_compatibility_methods_use_f10_channel_only() -> None:
+    service = FakeService()
+    client = ProviderHttpClient(service_factory=lambda: service)  # type: ignore[arg-type]
+
+    assert client.file_download("sh600519", "profile.txt") == b"f10"
+    assert client.parse_text(b"raw") == "parsed"
+    assert client.f10_catalog("sh600519") == ["profile.txt"]
+
+    assert service.manager.quotation.calls == []
+    assert service.tdx.f10.calls == [
+        ("download", ("sh600519", "profile.txt")),
+        ("parse_text", (b"raw",)),
+        ("catalog", ("sh600519",)),
+    ]
 
 
 def test_close_closes_single_underlying_service() -> None:
