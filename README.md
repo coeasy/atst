@@ -1,242 +1,449 @@
 # tstdx
 
-> 通达信（TDX）行情数据通用协议库 —— 覆盖 5 套协议族，零硬依赖，跨平台。
-> **当前版本**：1.4.0（P13/P14/P15 优化批次全量落地，见 [CHANGELOG](CHANGELOG.md)）
+`tstdx` 是面向量化研究与交易决策的多 Provider 行情数据协议库。
 
-## 特性
+**核心定位：以 TDX 为默认主 Provider；腾讯、新浪、东财、百度、集思录、中行、iWencai 等作为显式独立 Provider。选定 Provider 不可用时直接报错，不允许跨 Provider 静默替代。**
 
-- **5 套协议族**：7709 标准 / 7727 扩展市场 / MAC 专属 / F10 资料 / 商品语义
-- **85 命令账本 · 61 L1 精确解析器**：L1 精确 → L2 通用启发 → L3 原始透传 三级分派，解析器逃逸原生异常统一收口为 `ParseError`
-- **同步/异步双 API**：`TdxClient` + `AsyncTdxClient`（签名镜像、奇偶门禁）
-- **多协议族客户端**：GoodsClient / ExMarketClient / MacClient / F10Client
-- **HTTP Web 45 源类（17 模块）**：东财/新浪/腾讯/集思录/港股/中行等，`httpx`/`urllib` 双栈
-- **5 级降级路由**：tdx→web→reader→cache→synthetic
-- **门面统一 API**：`UnifiedQuoteAPI`（46 公开方法，auto/tdx/web/local 四路由 + 熔断 + `adjust` 口径守卫）+ 统一响应形态 `ApiResponse{success,error,data,extra}` + 惰性 `.df`
-- **异步门面 `AsyncUnifiedQuoteAPI`**：`asyncio.to_thread` 桥接同步门面实例，SourceUnavailable 转换（E7050/503）**自动继承**，无需异步层重复实现
-- **主站池治理**：`DEFAULT_HOST_POOL` / `POOL_BY_FAMILY` / `RankingStore`（`~/.tstdx/server_ranking.json`）+ 三级路由降级 + `SourceUnavailable` 错误类；`scripts/audit_hosts.py` 巡检脚本支持 5 协议族并发探测与外部候选注入（`--hosts-file`）
-- **流式订阅**：QuoteStream + AsyncQuoteStream（engine 内核：`ReconnectPolicy` + `BackpressureQueue` + `DeltaMerger` + `GapFiller` + `StreamEngine`；轮询 + diff，裸码归一、线程兜底）；push 推送通道为可选高级 API（见 ADR-011）
-- **3 Sink 策略**：DataFrame / Parquet / DuckDB（原子写）
-- **服务面**：HTTP REST 网关（42 端点，方法白名单 + TaskStore 钳制）/ WebSocket JSON-RPC / MCP stdio 12 工具
-- **可观测性**：zero-dep 指标注册表 + Prometheus/StatsD/OTLP 三导出器 + `start_exporter` 装配工厂
-- **40+ 异常类**：分类错误树（E1–E9）+ `RetryAdvice`；`SourceUnavailable` 归 E7 域（外部源不可用）
-- **零硬依赖**：所有第三方库均为可选 extra；`[project.optional-dependencies].dev` 提供与 CI 一致的本地体验
-- **弃用时间线明确**：`tstdx.native` v1.5.0 强告警（`UserWarning` + `logging.warning` 双通道）→ v1.6.0 正式删除
+当前版本：`1.4.0`
+
+## 核心原则
+
+- **TDX 是默认主 Provider**：统一行情接口在未指定 Provider 时默认选择 TDX。
+- **一个请求只执行一个 Provider**：`provider=` / 兼容 `source=` 在规划阶段解析为唯一 Provider。
+- **禁止跨 Provider fallback**：TDX 失败不会自动改用腾讯、新浪或东财；其它 Provider 同理。
+- **TDX 内部允许 host failover**：主站切换只发生在 TDX Provider 内，不改变数据来源身份。
+- **实时数据必须可证明为真实且新鲜**：实时链路执行 freshness / integrity / provenance 检查。
+- **stale cache / replay / synthetic 不冒充当前行情**：这些能力只能在明确允许的历史、测试或回放场景使用。
+- **Provider-specific 能力保持独立**：不强行把东财资金流、iWencai 选股、F10 等压成错误的统一语义。
+
+架构执行基线见：
+
+- [TDX 主 Provider + 多 Provider 独立数据通道架构 v12](docs/TDX_PROVIDER_CHANNEL_ARCHITECTURE_PLAN_v12.md)
+- [ADR-013：Provider / source / Channel 术语统一](docs/adr/ADR-013-provider-source-terminology.md)
+- [Provider 接口目录](docs/providers/README.md)
+
+## 主要能力
+
+### TDX
+
+- 7709 标准行情协议
+- 7727 扩展市场
+- GOODS 商品协议族
+- MAC 协议族
+- F10 资料协议族
+- K 线、实时行情、证券列表、财务、资本变动等已验证命令
+- vipdoc 本地历史数据读取
+- TDX 主站池、连接复用、同 Provider host failover
+
+### 独立 Web Provider
+
+当前 Provider Registry 包括：
+
+- `tencent`
+- `sina`
+- `eastmoney`
+- `baidu`
+- `jsl`
+- `boc`
+- `iwencai`
+
+各 Provider 的真实能力、Channel 和限制以 [docs/providers/](docs/providers/README.md) 为准。
+
+> Registry/Direct API 只应暴露已经有真实 adapter 的能力。未验证或尚未实现的数据能力不应通过其它数据冒充。
 
 ## 安装
 
+基础安装保持零硬依赖：
+
 ```bash
-pip install tstdx                    # 零依赖基础安装
-pip install "tstdx[all]"             # 完整功能
-pip install "tstdx[dataframe,parquet,duckdb,web,metrics,server,mcp]"
-pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-asyncio/hatchling）
+pip install tstdx
 ```
 
-> **P14-D2 起**：`[project.optional-dependencies].dev` 已声明，本地与 CI 使用同一
-> 门禁口径（`fail_under=77` / `--cov-fail-under=77`），不再有「装了依赖却跑不出
-> `--cov`」的漂移。
+常用可选依赖：
 
-### Optional Extras
+```bash
+pip install "tstdx[web]"        # HTTP Provider
+pip install "tstdx[dataframe]"  # pandas 输出
+pip install "tstdx[server]"     # FastAPI / WebSocket 服务
+pip install "tstdx[mcp]"        # MCP 服务
+pip install "tstdx[all]"        # 完整可选能力
+```
 
-| Extra       | 依赖                        | 功能               |
-|-------------|---------------------------|--------------------|
-| `config`    | pydantic                  | 严格配置校验       |
-| `dataframe` | pandas                    | DataFrame 输出     |
-| `parquet`   | pyarrow                   | ParquetSink        |
-| `duckdb`    | duckdb                    | DuckDBSink         |
-| `web`       | httpx                     | HTTP Web 行情源    |
-| `metrics`   | prometheus-client         | Prometheus 导出    |
-| `server`    | fastapi, uvicorn, websockets | HTTP REST 网关 + WebSocket RPC |
-| `mcp`       | mcp                       | MCP 工具服务       |
-| `tools`     | tzdata (win32 only)       | capture 时区工具链 |
-| `dev`       | pytest/pytest-cov/pytest-asyncio/ruff/mypy/hatchling | 开发体验 |
-| `all`       | 以上全部                   | 完整功能           |
+开发环境：
 
-## 快速开始
+```bash
+pip install -e ".[dev]"
+```
 
-### 基础用法
+## 推荐用法：统一 MarketDataService
+
+### 1. 默认 Provider：TDX
+
+```python
+from tstdx import market_data
+
+with market_data() as md:
+    quotes = md.quotes(["sh600519", "sz000001"])
+    bars = md.bars("sh600519", period="day", count=100)
+```
+
+没有指定 `provider` 时，支持的统一行情能力默认使用 TDX。
+
+### 2. 显式选择 Provider
+
+```python
+from tstdx import market_data
+
+with market_data() as md:
+    tdx_quotes = md.quotes(["sh600519"], provider="tdx")
+    tencent_quotes = md.quotes(["sh600519"], provider="tencent")
+    sina_bars = md.bars(
+        "sh600519",
+        provider="sina",
+        period="day",
+        count=100,
+    )
+```
+
+显式选择后是 **fail-closed** 语义：
+
+```text
+provider="tdx" 失败      -> 返回 TDX 错误
+provider="tencent" 失败  -> 返回 Tencent 错误
+provider="sina" 失败     -> 返回 Sina 错误
+```
+
+不会发生：
+
+```text
+TDX failed -> Tencent -> Sina -> Eastmoney
+```
+
+### 3. `source=` 兼容参数
+
+`source=` 仅作为旧调用方式的 Provider selector 兼容别名：
+
+```python
+with market_data() as md:
+    rows = md.quotes(["sh600519"], source="tencent")
+```
+
+如果同时提供 `provider=` 和 `source=`，两者必须指向同一个 Provider，否则直接报 `ValidationError`。
+
+### 4. 获取 provenance / freshness 元数据
+
+```python
+with market_data() as md:
+    result = md.quotes(
+        ["sh600519"],
+        provider="tdx",
+        with_meta=True,
+    )
+
+    print(result.meta.provider)
+    print(result.meta.channel)
+    print(result.meta.freshness_status)
+```
+
+元数据用于审计：
+
+- 实际 Provider
+- 实际 Channel
+- freshness 证据
+- Provider timestamp（上游能够可靠提供时）
+- 是否为真实数据
+- 是否发生 cache/replay/synthetic
+
+## Direct Provider API
+
+统一 API 只处理真正同语义的公共能力。Provider 特有数据使用 Direct API。
+
+### TDX F10
+
+```python
+with market_data() as md:
+    catalog = md.tdx.f10.catalog("sh600519")
+```
+
+### 新浪新闻
+
+```python
+with market_data() as md:
+    news = md.sina.news("sh600519", num=20)
+```
+
+### 东财热度排行
+
+```python
+with market_data() as md:
+    rows = md.eastmoney.hot_rank(page=1, size=100)
+```
+
+### 中行外汇
+
+```python
+with market_data() as md:
+    rates = md.boc.fx_rates()
+```
+
+### iWencai
+
+```python
+with market_data() as md:
+    rows = md.iwencai.screen("市盈率小于20且ROE大于15%")
+```
+
+### 集思录
+
+当前已落地的 Direct API 以可转债数据为主：
+
+```python
+with market_data() as md:
+    bonds = md.jsl.bonds()
+```
+
+不要将未验证的数据接口当作已支持能力；具体状态以 [JSL Provider 文档](docs/providers/jsl.md) 与代码 Registry 为准。
+
+## Low-level TDX API
+
+需要直接操作 TDX 协议时可以使用低层客户端：
 
 ```python
 from tstdx import TdxClient
 
 client = TdxClient()
-
-bars = client.bars("sh600519", period="day", count=80)  # K 线
-quotes = client.quotes(["sh600519", "sz000001"])  # 实时行情
-count = client.security_count(market=1)  # 1=上海, 0=深圳
+try:
+    quotes = client.quotes(["sh600519"])
+    bars = client.bars("sh600519", period="day", count=100)
+finally:
+    client.close()
 ```
 
-### 异步用法
+低层 API 不负责跨 Provider 选择；它始终属于 TDX Provider。
+
+## Async API
 
 ```python
 import asyncio
-from tstdx import AsyncTdxClient
+
+from tstdx.async_service import async_market_data
 
 
-async def main():
-    client = AsyncTdxClient()
-    bars, quotes = await asyncio.gather(
-        client.bars("sh600519", period="day", count=80),
-        client.quotes(["sh600519", "sz000001"]),
-    )
-    print(len(bars), len(quotes))
+async def main() -> None:
+    async with async_market_data(max_workers=4) as md:
+        tdx_rows = await md.quotes(["sh600519"], provider="tdx")
+        tencent_rows = await md.quotes(["sh600519"], provider="tencent")
+        print(len(tdx_rows), len(tencent_rows))
 
 
 asyncio.run(main())
 ```
 
-### 门面统一响应（永不抛异常边界）
+Async 层复用同一个 planned sync core，不维护第二套路由实现。取消 async 调用不会假装底层同步线程已经停止；关闭时会先 drain 已提交工作，再关闭自有 Provider runtime。
+
+## 批量行情与部分结果
+
+严格模式下，批量请求缺少标的会失败：
 
 ```python
-from tstdx.facade import quote_api
-
-api = quote_api()
-resp = api.query("quotes", ["sh600519", "sz000001"])
-if resp:
-    print(len(resp.data), "条, 源=", resp.extra.get("source"))
-    df = resp.df  # pandas DataFrame（可选）
-else:
-    print(f"失败: {resp.error} (code={resp.code})")
+with market_data() as md:
+    rows = md.quotes(["sh600519", "sz000001"], provider="tdx")
 ```
 
-### CLI（19+ 子命令）
+需要审计部分失败时：
 
-```bash
-tstdx bars sh600519 --period day --count 80     # K 线
-tstdx quotes sh600519 sz000001                  # 实时行情
-tstdx server-test                               # 主站测速
-tstdx serve --host 0.0.0.0 --port 8000          # HTTP 服务
-tstdx probe 0x052D                              # 协议探测
-tstdx feedback stats                            # 使用统计
+```python
+with market_data() as md:
+    result = md.quotes_batch(
+        ["sh600519", "sz000001"],
+        provider="tdx",
+    )
 
-# 主站池巡检（P14-A2/A3）：单族 / 全族 / 外部候选注入
-tstdx hosts audit --family quotation            # 仅 7709 标准族
-tstdx hosts audit                               # 全 5 族并发巡检
-tstdx hosts audit --hosts-file extra_hosts.json # 注入社区贡献主站候选
-tstdx hosts audit --report /tmp/audit.json --markdown /tmp/audit.md
+    print(result.items)
+    print(result.errors)
 ```
 
-## 核心代码文件地图
+`BatchResult.errors` 会区分：
 
+- 已实际请求并失败
+- Provider 返回缺失
+- 因前序 chunk 失败而未继续请求
+
+不会把“未请求”伪装成“上游请求失败”。
+
+## Streaming
+
+v12 提供 Provider-bound 的 planned quote stream：
+
+```python
+from tstdx import PlannedQuoteStream
+
+
+def on_quote(symbol: str, row: dict) -> None:
+    print(symbol, row)
+
+
+stream = PlannedQuoteStream(provider="tdx")
+stream.subscribe(
+    ["sh600519", "sz000001"],
+    interval=1.0,
+    on_quote=on_quote,
+)
+stream.start()
 ```
+
+Streaming 规则：
+
+- 一个 stream 实例绑定一个 Provider
+- due-aware 调度，不让快订阅强制慢订阅同频轮询
+- bounded callback queue
+- per-symbol watermark / gap 状态
+- reconnect / resubscribe epoch
+- Provider 故障不会自动切换到其它 Provider
+
+使用完成后：
+
+```python
+stream.stop()
+```
+
+## HTTP / 服务集成
+
+官方 FastAPI factory 使用同一 planned runtime：
+
+```python
+from tstdx.integration import create_app
+
+app = create_app()
+```
+
+显式 Provider REST 路径会保持 Provider identity；HTTP Provider client 还会校验请求 host、redirect history 与最终 response host，阻止 legacy adapter 绕过 Provider 边界。
+
+## 本地历史数据与缓存
+
+### vipdoc
+
+vipdoc 是 **TDX local historical Channel**，不是实时失败时的兜底来源。
+
+实时请求：
+
+```text
+TDX live failed -> error
+```
+
+不会变成：
+
+```text
+TDX live failed -> vipdoc historical
+```
+
+### Cache
+
+Cache 只允许作为不改变 Provider、时间窗口和 freshness 契约的优化。
+
+实时行情默认不会读取 stale persistent cache 来替代当前 Provider 请求。历史缓存 key 必须包含 Provider 和完整语义窗口，避免不同 Provider 的数据互相命中。
+
+### Replay / Synthetic
+
+Golden replay 与 synthetic 属于测试/回归工具，不是生产实时 Provider。
+
+```text
+production latest query != replay
+production latest query != synthetic
+```
+
+## 错误语义
+
+稳定错误树位于 `tstdx.errors`。
+
+常见原则：
+
+- `ValidationError`：请求语义不合法
+- `SourceUnavailable`：已经选择的 Provider 当前不可用
+- `FreshnessViolation`：结果无法满足 freshness 契约
+- `IntegrityViolation`：响应与请求语义不一致
+- `ReadTimeout`：请求/总 deadline 耗尽
+
+错误不会授权跨 Provider 自动切换。
+
+```python
+from tstdx import market_data
+from tstdx.errors import FreshnessViolation, SourceUnavailable
+
+try:
+    with market_data() as md:
+        rows = md.quotes(["sh600519"], provider="tdx")
+except (SourceUnavailable, FreshnessViolation) as exc:
+    print(exc)
+```
+
+如果业务需要比较多个 Provider，请显式发起多个独立查询，并分别保留其 provenance/error；不要把其中一个结果静默替代另一个。
+
+## Provider 文档
+
+- [TDX](docs/providers/tdx.md)
+- [Tencent](docs/providers/tencent.md)
+- [Sina](docs/providers/sina.md)
+- [Eastmoney](docs/providers/eastmoney.md)
+- [Baidu](docs/providers/baidu.md)
+- [JSL](docs/providers/jsl.md)
+- [BOC](docs/providers/boc.md)
+- [iWencai](docs/providers/iwencai.md)
+
+## 协议与工程结构
+
+主要目录：
+
+```text
 tstdx/
-├── protocol/       # 协议核心：commands(85 账本)/registry(三级分派+异常收口)
-│   └── parsers/    #   6 族 61 解析器（std7709/std7709_extra/std7727/mac/goods/f10）
-├── codec/          # 编解码：framing(帧)/primitive(原语+count_guard+zlib strict)
-├── transport/      # 传输：base(RLock 租约)/async_/pool(4 槽)/ratelimit/speedtest/hosts/sniff
-├── client/         # TdxClient/AsyncTdxClient + 5 族客户端（_mixin 共享骨架 + sync/async_/factory）
-├── facade/         # 门面：UnifiedQuoteAPI(四路由+熔断，取数委托 DataSourceRouter)/response/async_api/三兼容门面
-├── web/            # 50 Source 类（惰性导入）+ 域 Mixin 会话 + _paginate 共享分页器
-├── sources/        # 5 级降级路由 DataSourceRouter + golden 回放
-├── domain/         # symbol(单一事实源)/models/adjust/calendar
-├── streaming/      # QuoteStream/AsyncQuoteStream（轮询+diff）/push
-├── reader/         # vipdoc 本地文件解析（day/min/板块/财务）
-├── output/         # DataFrame/Parquet/CSV/DuckDB 原子写（v9 自 sinks/ 更名，旧名 shim 兼容）
-├── sink/           # LocalDaySink：写回 vipdoc .day 二进制（与 sinks/ 职责不同）
-├── charset/        # 字符集自动探测（GBK/GB18030/Big5/UTF-8；原 i18n，v8 更名定名）
-├── profile/        # 数据规格探测（帧/文件双探测器 + presets）
-├── config/         # 6 源合并 + 严格校验 + env 归一
-├── errors.py       # 错误分类树（E1-E8，40+ 类）+ RetryAdvice
-├── integration/    # http_server(42 端点白名单)/ws_server/mcp_server
-├── observability/  # 指标注册表 + Prometheus/StatsD/OTLP 导出器 + start_exporter
-├── feedback/       # 错误/用量上报 + 遥测 + 使用统计
-├── security/       # 凭据三级存储（keyring/env/file 互斥写 + 损坏隔离）
-├── tools/          # capture/spec_audit/codegen/golden_audit/golden_expand/check_originality
-├── trade/          # 交易协议模拟器（独立可选：SimTransport 纯内存模拟，不连真实券商）
-├── cli/            # CLI 入口（19 子命令；_common/cmds_market/cmds_web/cmds_hosts/parser）
+├── protocol/       # TDX 命令与 parser registry
+├── codec/          # 二进制 framing / primitive
+├── transport/      # 连接、主站池、限流与同 Provider failover
+├── client/         # TDX 低层同步/异步客户端
+├── providers/      # Provider/Channel registry 与 HTTP 边界
+├── provider_api.py # Direct Provider API
+├── service.py      # Provider execution core
+├── query.py        # QuerySpec / QueryPlan
+├── planned_service.py
+├── facade/         # planned compatibility facade
+├── sources/        # legacy-shaped compatibility surface（单 Provider 语义）
+├── streaming/      # streaming engine / planned stream
+├── reader/         # vipdoc 本地历史数据
+├── integration/    # HTTP / WS / MCP 等边界
+└── observability/  # metrics
 ```
 
-## 系统文档导航
+协议规范：
 
-| 文档 | 内容 |
-|---|---|
-| [docs/FEATURE_MAP_AND_ROADMAP.md](docs/FEATURE_MAP_AND_ROADMAP.md) | 主体功能地图 + v1.2.0 后路线（I/J 批次）|
-| [docs/POTENTIAL_ISSUES_AND_PLAN.md](docs/POTENTIAL_ISSUES_AND_PLAN.md) | **当前批次**：P13/P14/P15 状态表（🔧/⏳/✅）与后续规划 |
-| [DESIGN.md](DESIGN.md) | 完整设计方案 v2.0（架构/协议/工程规范，历史版本见 docs/archive/）|
-| [docs/api/README.md](docs/api/README.md) | API 索引（客户端/门面/服务面/工具）|
-| [docs/quickstart.md](docs/quickstart.md) | 快速入门 |
-| [docs/cookbook/](docs/cookbook/README.md) | 场景示例（批量 K 线/离线 vipdoc/流式/Sinks/自定义命令）|
-| [docs/FAQ.md](docs/FAQ.md) · [docs/troubleshooting.md](docs/troubleshooting.md) | 常见问题与排障 |
-| [docs/errors.md](docs/errors.md) | 错误体系与 RetryAdvice 使用指南（错误树速查/易混对照/扩展规则）|
-| [docs/migration/](docs/migration/README.md) | 从 mootdx/easy_tdx/easyquotation 迁移 |
-| [docs/adr/](docs/adr/README.md) | 架构决策记录（含 ADR-011 流式内核取舍）|
-| [PROTOCOL_SPEC/](PROTOCOL_SPEC/README.md) | 协议命令 YAML 规范 + codegen/spec_audit 闭环 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录（含 native 弃用时间线 v1.5.0/v1.6.0）|
-| [docs/archive/](docs/archive/) | 历史计划与设计归档（v1 优化计划/开发计划/差距分析等）|
+- [PROTOCOL_SPEC](PROTOCOL_SPEC/README.md)
 
-## 协议规范
+版本变更：
 
-协议命令以 YAML 描述，位于 `PROTOCOL_SPEC/`（当前 7709 族 8 条 + UNKNOWN 归档）：
+- [CHANGELOG](CHANGELOG.md)
 
-```
-PROTOCOL_SPEC/
-├── README.md / SCHEMA.md
-├── 7709/     # 标准 7709 协议族（8 条 YAML）
-└── UNKNOWN/  # 自动发现未知命令（.gitkeep 占位）
-```
+## 开发与门禁
 
-工具链闭环：`capture(合规采集) → PROTOCOL_SPEC YAML → codegen 骨架 →
-@register_parser → golden_audit 三旗标 → spec_audit 双向漂移检查`。
-
-## 数据源降级
-
-```
-TDX 主站 → HTTP Web 源(45) → 本地 vipdoc → golden 缓存 → 合成数据
-```
-
-## 主站池治理与巡检
-
-主站池由 `DEFAULT_HOST_POOL` / `POOL_BY_FAMILY` 定义，运行时通过 `RankingStore`
-（`~/.tstdx/server_ranking.json`）落盘延迟样本并驱动三级路由降级。巡检工具：
+本地推荐：
 
 ```bash
-# 通过 CLI（推荐）
-tstdx hosts audit --family quotation --timeout 3 --workers 20 --samples 3
-
-# 或调用脚本（支持 --report / --markdown / --strict / --no-save-ranking）
-python scripts/audit_hosts.py --family all --report audit.json
-
-# 外部候选注入（社区贡献主站入口）
-cat > extra_hosts.json <<'JSON'
-{
-  "quotation": [
-    {"host": "218.75.126.9", "port": 7709, "name": "custom-1"}
-  ],
-  "ex_quotation": [
-    {"host": "180.153.180.86", "port": 7727, "name": "custom-2"}
-  ]
-}
-JSON
-tstdx hosts audit --hosts-file extra_hosts.json
+pip install -e ".[dev]"
+ruff check tstdx tests
+ruff format --check tstdx tests
+mypy tstdx
+pytest
 ```
 
-输出：每族 healthy/degraded/offline 三态 + JSON/Markdown 报告；候选延迟样本写
-`~/.tstdx/server_ranking.json`（可 `--no-save-ranking` 关闭）。CI 中已配置
-周三 09:00 UTC 定期巡检（`host-audit` job，非硬门禁）。
+PR 合并条件：
 
-## 质量与门禁
+- Ruff 通过
+- mypy 通过
+- Python / Windows / Linux 测试矩阵通过
+- protocol/spec/golden/reachability 等架构门禁通过
+- Native 内部真实 job 通过
+- 所有必须门禁在同一个 head SHA 上绿色
 
-```bash
-pytest tests/                                   # 全量测试
-make gates                                      # 六步门禁：lint→format→全量→对抗矩阵→golden 三旗标→可达性
-python -m tstdx.tools.golden_audit --gate       # Golden L1 真实样本门禁（530 payload）
-python -m pytest tests/adversarial -q           # 对抗矩阵（9 payload × 85 命令，逃逸=0）
-python scripts/audit_reachability.py --strict   # 可达性门禁（孤儿=0）
-python -m pytest --cov=tstdx --cov-fail-under=77  # 覆盖率门禁（CI 与本地一致）
-```
+不通过删除测试、降低阈值、恢复跨 Provider fallback 或允许 stale/synthetic 替代来换取绿色。
 
-- CI：9 jobs；Windows 矩阵 3.11 + 3.12；周三 09:00 UTC 定期 `host-audit`
-- 覆盖率门禁：**≥ 77%**（P14-D2 与 CI 对齐）
-- Pre-commit hooks：`ruff check --fix` + `ruff format --check`
+## License
 
-## 贡献
-
-请阅读：
-
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-- [GOVERNANCE.md](GOVERNANCE.md)
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- [SECURITY.md](SECURITY.md)
-
-## 许可证
-
-MIT License - 详见 [LICENSE](LICENSE)
+MIT
