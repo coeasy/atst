@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import time
 from pathlib import Path
 
@@ -92,6 +93,62 @@ def test_expired_l2_entry_becomes_miss_and_is_deleted(tmp_path: Path) -> None:
         )
         time.sleep(0.02)
         assert cache.get(key, max_age=0.001) is None
+        assert len(cache) == 0
+    finally:
+        cache.close()
+
+
+def test_corrupt_l2_payload_is_evicted_after_one_failed_decode(tmp_path: Path) -> None:
+    path = tmp_path / "corrupt.sqlite3"
+    cache = SQLiteSemanticQueryCache(path)
+    key = "q1:corrupt"
+    try:
+        cache.put(
+            key,
+            QueryResult(
+                data=[Quote(code="sh600519", price=1.0)],
+                meta=_meta("quotes", "quote"),
+            ),
+        )
+        with sqlite3.connect(path) as raw:
+            raw.execute(
+                "UPDATE semantic_cache SET payload=? WHERE fingerprint=?",
+                ("{not-json", key),
+            )
+            raw.commit()
+
+        before_errors = cache.errors
+        assert cache.get(key, max_age=10.0) is None
+        assert cache.errors == before_errors + 1
+        assert len(cache) == 0
+
+        before_errors = cache.errors
+        assert cache.get(key, max_age=10.0) is None
+        assert cache.errors == before_errors
+    finally:
+        cache.close()
+
+
+def test_future_dated_l2_storage_timestamp_is_evicted(tmp_path: Path) -> None:
+    path = tmp_path / "future.sqlite3"
+    cache = SQLiteSemanticQueryCache(path)
+    key = "q1:future"
+    try:
+        cache.put(
+            key,
+            QueryResult(
+                data=[Quote(code="sh600519", price=1.0)],
+                meta=_meta("quotes", "quote"),
+            ),
+        )
+        with sqlite3.connect(path) as raw:
+            raw.execute(
+                "UPDATE semantic_cache SET stored_wall_ns=? WHERE fingerprint=?",
+                (time.time_ns() + 60_000_000_000, key),
+            )
+            raw.commit()
+
+        assert cache.get(key, max_age=120.0) is None
         assert len(cache) == 0
     finally:
         cache.close()
