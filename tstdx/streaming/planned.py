@@ -72,7 +72,6 @@ def _input_error(
 
 
 def _normalize_subscription_symbol(symbol: str) -> str:
-    """Normalize public stream symbols and keep validation inside E6xxx."""
     try:
         return normalize_symbol(symbol)
     except Exception as exc:
@@ -227,7 +226,7 @@ class PlannedQuoteStream:
         return removed is not None
 
     def watermark(self, subscription_id: str, symbol: str) -> StreamWatermark:
-        """Return a snapshot of one subscription symbol watermark."""
+        """Return a consistent snapshot for one actually subscribed symbol."""
         normalized = _normalize_subscription_symbol(symbol)
         key = _bare_code(normalized)
         with self._lock:
@@ -237,6 +236,15 @@ class PlannedQuoteStream:
                     "未知 subscription_id",
                     context={
                         "subscription_id": subscription_id,
+                        "phase": "subscription_lookup",
+                    },
+                )
+            if normalized not in sub.symbols:
+                raise _input_error(
+                    "symbol 不属于该 subscription",
+                    context={
+                        "subscription_id": subscription_id,
+                        "symbol": normalized,
                         "phase": "subscription_lookup",
                     },
                 )
@@ -354,12 +362,18 @@ class PlannedQuoteStream:
                 self._advance_due(sub, now)
 
     def _mark_missing(self, sub: StreamSubscription, key: str, symbol: str) -> None:
-        watermark = sub.watermarks.setdefault(key, StreamWatermark())
-        watermark.missing_rounds += 1
-        sub.missing[key] = watermark.missing_rounds
-        if watermark.missing_rounds == _MISSING_ALERT_AFTER:
-            watermark.gap_open = True
-            self.stats.gaps_detected += 1
+        emit_gap = False
+        missing_rounds = 0
+        with self._lock:
+            watermark = sub.watermarks.setdefault(key, StreamWatermark())
+            watermark.missing_rounds += 1
+            missing_rounds = watermark.missing_rounds
+            sub.missing[key] = missing_rounds
+            if missing_rounds == _MISSING_ALERT_AFTER:
+                watermark.gap_open = True
+                self.stats.gaps_detected += 1
+                emit_gap = True
+        if emit_gap:
             record_stream_gap(provider=self.provider, kind="detected")
             self._enqueue_error(
                 sub,
@@ -368,23 +382,26 @@ class PlannedQuoteStream:
                     context={
                         "provider": self.provider,
                         "symbol": symbol,
-                        "missing_rounds": watermark.missing_rounds,
+                        "missing_rounds": missing_rounds,
                         "fallback": False,
                     },
                 ),
             )
 
     def _mark_seen(self, sub: StreamSubscription, key: str, quote: Quote) -> None:
-        watermark = sub.watermarks.setdefault(key, StreamWatermark())
-        recovered = watermark.gap_open
-        watermark.last_seen_monotonic = time.monotonic()
-        watermark.provider_timestamp = str(quote.datetime) if quote.datetime else None
-        watermark.missing_rounds = 0
-        watermark.gap_open = False
-        sub.missing[key] = 0
+        recovered = False
+        with self._lock:
+            watermark = sub.watermarks.setdefault(key, StreamWatermark())
+            recovered = watermark.gap_open
+            watermark.last_seen_monotonic = time.monotonic()
+            watermark.provider_timestamp = str(quote.datetime) if quote.datetime else None
+            watermark.missing_rounds = 0
+            watermark.gap_open = False
+            sub.missing[key] = 0
+            if recovered:
+                watermark.recoveries += 1
+                self.stats.gaps_recovered += 1
         if recovered:
-            watermark.recoveries += 1
-            self.stats.gaps_recovered += 1
             record_stream_gap(provider=self.provider, kind="recovered")
 
     def _deliver_subscription(self, sub: StreamSubscription, qmap: dict[str, Quote]) -> None:
