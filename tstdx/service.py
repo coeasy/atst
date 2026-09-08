@@ -9,8 +9,8 @@ The service is the executable v12 boundary::
 
 One production query binds to exactly one Provider. TDX host failover remains
 inside TDX transport pools; no error in this module triggers a request to a
-different Provider. Live quote paths are direct upstream fetches only: stale
-cache, replay and synthetic data are not consulted by this service.
+different Provider. Live paths are direct upstream fetches only: stale cache,
+replay and synthetic data are not consulted by this service.
 """
 
 from __future__ import annotations
@@ -18,14 +18,15 @@ from __future__ import annotations
 import contextlib
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar
 
 from .domain.models import Bar, Quote
 from .domain.symbol import normalize_symbol
 from .errors import AllHostsUnreachable, SourceUnavailable, TdxError, ValidationError
-from .providers import PROVIDERS, ProviderSpec, resolve_provider
+from .freshness import FreshnessStatus, validate_freshness
+from .providers import PROVIDERS, resolve_provider
 
 if TYPE_CHECKING:
     from .provider_api import ProviderAPI
@@ -46,7 +47,7 @@ T = TypeVar("T")
 class FreshnessEvidence:
     """Evidence for how a result was obtained.
 
-    ``origin='direct'`` is mandatory for live unified queries. Provider timestamps
+    ``origin='direct'`` is mandatory for unified live queries. Provider timestamps
     are preserved when the upstream exposes a verified timestamp. TDX 0x0530
     currently has no verified wall-clock timestamp, so ``provider_timestamp`` may
     legitimately be ``None``; the service never guesses one from opaque fields.
@@ -71,6 +72,7 @@ class ResultMeta:
     capability: str
     observed_at_ns: int
     freshness: FreshnessEvidence
+    freshness_status: FreshnessStatus | None = None
     real: bool = True
     fallback: bool = False
 
@@ -78,6 +80,10 @@ class ResultMeta:
     def source(self) -> str:
         """Compatibility provenance alias; formal entity remains Provider."""
         return self.provider
+
+    @property
+    def verified_fresh(self) -> bool:
+        return bool(self.freshness_status and self.freshness_status.verified)
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,8 +158,8 @@ class ProviderManager:
     def http_client(self, provider: str) -> Any:
         """Return one persistent HTTP client per Provider.
 
-        Adapters still own their Channel-specific headers/rate policies, but TCP
-        keep-alive/HTTP2 connection reuse is shared across the same Provider.
+        Adapters own Channel-specific headers/rate policies, while TCP keep-alive
+        and HTTP connection reuse are shared inside the same Provider.
         """
         pid = resolve_provider(provider=provider)
         if pid == "tdx":
@@ -178,12 +184,7 @@ class ProviderManager:
         *,
         resource_key: str | None = None,
     ) -> Any:
-        """Cache one runtime adapter without inventing fake Registry Channels.
-
-        ``channel`` is always a real ChannelRegistry id. ``resource_key`` may be
-        more specific (for example ``corporate:profile``) and is used only for
-        runtime object caching.
-        """
+        """Cache a runtime adapter without inventing fake Registry Channels."""
         pid = resolve_provider(provider=provider)
         cid = str(channel).strip().lower()
         PROVIDERS.get(pid).channel(cid)
@@ -295,8 +296,6 @@ class ProviderManager:
         with self._lock:
             if self._closed:
                 return
-            # Adapters do not own injected Provider HTTP clients, so close them
-            # first and release the shared clients exactly once afterwards.
             objects = [*self._tdx_clients.values(), *self._adapters.values()]
             seen: set[int] = set()
             for obj in objects:
@@ -330,7 +329,13 @@ class UnifiedMarketDataService:
         self.manager = manager or ProviderManager(hosts=hosts, timeout=timeout)
         self._namespaces: dict[str, ProviderAPI] = {}
 
-    def _provider(self, *, provider: str | None, source: str | None, capability: str) -> str:
+    def _provider(
+        self,
+        *,
+        provider: str | None,
+        source: str | None,
+        capability: str,
+    ) -> str:
         pid = resolve_provider(
             provider=provider,
             source=source,
@@ -341,18 +346,43 @@ class UnifiedMarketDataService:
 
     @staticmethod
     def _provider_timestamp(items: Sequence[Any]) -> str | None:
+        """Extract only documented/auditable time fields; never guess opaque fields."""
         if not items:
             return None
         item = items[-1]
+        if isinstance(item, Mapping):
+            dt = item.get("datetime") or item.get("date_time")
+            if dt:
+                return str(dt)
+            date = item.get("date") or item.get("trade_date")
+            stamp = item.get("time") or item.get("trade_time")
+            if date and stamp:
+                return f"{date} {stamp}"
+            if date:
+                return str(date)
+            if stamp:
+                return str(stamp)
+            return None
+
         dt = getattr(item, "datetime", None)
         if dt:
             return str(dt)
+        date = getattr(item, "date", None)
+        stamp = getattr(item, "time", None)
+        if date and stamp:
+            return f"{date} {stamp}"
+        if date:
+            return str(date)
+        if stamp:
+            return str(stamp)
         extra = getattr(item, "extra", None)
-        if isinstance(extra, dict):
+        if isinstance(extra, Mapping):
             date = extra.get("date")
             stamp = extra.get("time") or extra.get("datetime")
             if date and stamp:
                 return f"{date} {stamp}"
+            if date:
+                return str(date)
             if stamp:
                 return str(stamp)
         return None
@@ -365,21 +395,29 @@ class UnifiedMarketDataService:
         capability: str,
         data: Sequence[Any],
     ) -> ResultMeta:
+        """Build provenance and enforce freshness before any result is returned."""
         observed = time.time_ns()
         freshness = FreshnessEvidence(
             origin="direct",
             observed_at_ns=observed,
             provider_timestamp=cls._provider_timestamp(data),
         )
-        if not freshness.real:
-            raise AssertionError("production market-data service returned non-real origin")
+        status = validate_freshness(
+            freshness,
+            provider=provider,
+            channel=channel,
+            capability=capability,
+            now_ns=observed,
+            require_live=True,
+        )
         return ResultMeta(
             provider=provider,
             channel=channel,
             capability=capability,
             observed_at_ns=observed,
             freshness=freshness,
-            real=True,
+            freshness_status=status,
+            real=freshness.real,
             fallback=False,
         )
 
@@ -461,8 +499,10 @@ class UnifiedMarketDataService:
                     "fallback": False,
                 },
             )
+
+        meta = self._meta(pid, channel, "quotes", data)
         if with_meta:
-            return QueryResult(data=data, meta=self._meta(pid, channel, "quotes", data))
+            return QueryResult(data=data, meta=meta)
         return data
 
     def bars(
@@ -524,16 +564,32 @@ class UnifiedMarketDataService:
                             )
                         )
                 elif pid == "sina":
-                    data = list(adapter.fetch_bars(sym, period=period, count=count, adjust=""))
+                    data = list(
+                        adapter.fetch_bars(
+                            sym,
+                            period=period,
+                            count=count,
+                            adjust="",
+                        )
+                    )
                 elif pid == "eastmoney":
                     data = list(
-                        adapter.fetch_bars(sym, period=period, count=count, adjust=adjust)
+                        adapter.fetch_bars(
+                            sym,
+                            period=period,
+                            count=count,
+                            adjust=adjust,
+                        )
                     )
                 elif pid == "baidu":
                     if adjust:
                         raise ValidationError(
                             "Baidu K 线不接受统一复权参数；不会切换其它 Provider",
-                            context={"provider": pid, "capability": "bars", "adjust": adjust},
+                            context={
+                                "provider": pid,
+                                "capability": "bars",
+                                "adjust": adjust,
+                            },
                         )
                     data = list(adapter.fetch_kline(sym, period=period, count=count))
                 else:
@@ -559,8 +615,10 @@ class UnifiedMarketDataService:
                     "fallback": False,
                 },
             )
+
+        meta = self._meta(pid, channel, "bars", data)
         if with_meta:
-            return QueryResult(data=data, meta=self._meta(pid, channel, "bars", data))
+            return QueryResult(data=data, meta=meta)
         return data
 
     def provider(self, provider: str) -> ProviderAPI:
