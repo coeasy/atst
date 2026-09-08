@@ -7,11 +7,11 @@ The v12 public architecture uses one canonical provider model:
 
 ``Provider -> Channel -> Capability -> Endpoint/Host``.
 
-TDX is the default provider.  Other providers (Tencent/Sina/Eastmoney/...)
-are independent data channels, not automatic fallbacks.  Provider-specific
-APIs preserve their unique data while common capabilities can be exposed by a
-unified service/facade.  Selecting a provider is fail-closed: provider failure
-is reported to the caller; only host/endpoint failover inside that provider is
+TDX is the default provider. Other providers (Tencent/Sina/Eastmoney/...)
+are independent data channels, not automatic fallbacks. Provider-specific APIs
+preserve their unique data while common capabilities can be exposed by a
+unified service. Selecting a provider is fail-closed: provider failure is
+reported to the caller; only host/endpoint failover inside that provider is
 allowed automatically.
 
 Low-level protocol/reader APIs remain public and directly usable.
@@ -38,6 +38,8 @@ __all__ = [
     "ProviderRegistry",
     "PROVIDERS",
     "resolve_provider",
+    "UnifiedMarketDataService",
+    "market_data",
     "configure",
     "get_config",
     "load_config",
@@ -47,7 +49,6 @@ __all__ = [
     "streaming",
 ]
 
-# --- Always available: error / codec / protocol ---------------------------- #
 from . import codec, errors, protocol  # noqa: E402,F401
 from .errors import TdxError  # noqa: E402,F401
 
@@ -71,6 +72,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from .config import load_config
     from .providers import ChannelSpec, ProviderRegistry, ProviderSpec
     from .reader import BlockReader, DataProfile, DayBarReader, FinanceReader, MinBarReader
+    from .service import UnifiedMarketDataService
     from .web import WebQuoteClient
 
 
@@ -89,6 +91,8 @@ _LAZY: dict[str, tuple[str, str]] = {
     "ProviderRegistry": ("tstdx.providers", "ProviderRegistry"),
     "PROVIDERS": ("tstdx.providers", "PROVIDERS"),
     "resolve_provider": ("tstdx.providers", "resolve_provider"),
+    "UnifiedMarketDataService": ("tstdx.service", "UnifiedMarketDataService"),
+    "market_data": ("tstdx.service", "market_data"),
     "providers": ("tstdx.providers", ""),
     "facade": ("tstdx.facade", ""),
     "observability": ("tstdx.observability", ""),
