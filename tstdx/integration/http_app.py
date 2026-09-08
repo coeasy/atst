@@ -8,9 +8,9 @@ The legacy :mod:`tstdx.integration.http_server` module still contains the stable
 v12 runtime dependencies before route construction and adds explicit Provider
 endpoints for canonical common capabilities.
 
-All REST failures, including FastAPI request validation and ``HTTPException``,
-are normalized to the same safe ErrorEnvelope used by the other public
-integration boundaries.
+All REST failures, including FastAPI request validation and Starlette/FastAPI
+``HTTPException``, are normalized to the same safe ErrorEnvelope used by the
+other public integration boundaries.
 """
 
 from __future__ import annotations
@@ -118,14 +118,15 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
 
     app.state.runtime = "planned-v12"
 
-    from fastapi import HTTPException
+    from fastapi import HTTPException as FastAPIHTTPException
     from fastapi.exceptions import RequestValidationError
     from fastapi.responses import JSONResponse
+    from starlette.exceptions import HTTPException as StarletteHTTPException
 
     def _service() -> UnifiedMarketDataService:
         service = getattr(runtime_client, "service", None)
         if not isinstance(service, UnifiedMarketDataService):
-            raise HTTPException(
+            raise FastAPIHTTPException(
                 status_code=501,
                 detail="explicit Provider endpoints require the planned runtime client",
             )
@@ -257,8 +258,11 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
         )
         return JSONResponse(status_code=422, content={"error": envelope.to_dict()})
 
-    @app.exception_handler(HTTPException)
-    async def _planned_http_exception(request: Any, exc: HTTPException) -> Any:
+    @app.exception_handler(StarletteHTTPException)
+    async def _planned_http_exception(
+        request: Any,
+        exc: StarletteHTTPException,
+    ) -> Any:
         request_id = getattr(request.state, "request_id", None)
         if 400 <= exc.status_code < 500:
             wrapped = ValidationError(
