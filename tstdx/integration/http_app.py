@@ -107,7 +107,7 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
 
     app.state.runtime = "planned-v12"
 
-    from fastapi import HTTPException, Request
+    from fastapi import HTTPException
     from fastapi.responses import JSONResponse
 
     def _service() -> UnifiedMarketDataService:
@@ -222,14 +222,14 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
         }
 
     @app.middleware("http")
-    async def _request_identity(request: Request, call_next: Any) -> Any:  # noqa: ANN401
+    async def _request_identity(request: Any, call_next: Any) -> Any:  # noqa: ANN401
         request.state.request_id = uuid.uuid4().hex
         response = await call_next(request)
         response.headers["X-Request-ID"] = request.state.request_id
         return response
 
     @app.exception_handler(TdxError)
-    async def _planned_tdx_error(request: Request, exc: TdxError) -> JSONResponse:
+    async def _planned_tdx_error(request: Any, exc: TdxError) -> Any:
         envelope = to_error_envelope(
             exc,
             request_id=getattr(request.state, "request_id", None),
@@ -240,7 +240,7 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
         )
 
     @app.exception_handler(Exception)
-    async def _planned_internal_error(request: Request, exc: Exception) -> JSONResponse:
+    async def _planned_internal_error(request: Any, exc: Exception) -> Any:
         _LOG.error(
             "unhandled REST error request_id=%s path=%s",
             getattr(request.state, "request_id", None),
