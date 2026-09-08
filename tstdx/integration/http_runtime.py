@@ -287,8 +287,8 @@ class ProviderHttpClient:
         )
 
     def parse_text(self, *args: Any, **kwargs: Any) -> Any:
-        """Parse F10 text through the same TDX F10 Channel."""
-        return self._tdx.f10.parse_text(*args, **kwargs)
+        """Parse F10 text through the raw client owned by the F10 Channel."""
+        return self._tdx.f10.raw.parse_text(*args, **kwargs)
 
     def close(self) -> None:
         with self._lock:
