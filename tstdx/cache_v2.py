@@ -5,7 +5,8 @@
 
 Only canonical ``QueryResult[list[Quote|Bar]]`` values are persisted. SQLite
 storage failures are optimization failures: they log and degrade to cache miss,
-never changing the upstream query result.
+never changing the upstream query result. This includes initialization failure:
+an unwritable cache directory must never prevent market-data service startup.
 """
 
 from __future__ import annotations
@@ -141,30 +142,49 @@ def _decode_result(payload: str) -> QueryResult[Any]:
 
 
 class SQLiteSemanticQueryCache:
-    """Persistent exact-fingerprint semantic cache."""
+    """Persistent exact-fingerprint semantic cache with fail-open startup."""
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(Path(path).expanduser())
-        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
-        self._conn = sqlite3.connect(self.path, check_same_thread=False)
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=NORMAL")
-        self._conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS semantic_cache (
-                fingerprint TEXT PRIMARY KEY,
-                schema_version INTEGER NOT NULL,
-                stored_wall_ns INTEGER NOT NULL,
-                payload TEXT NOT NULL
-            )
-            """
-        )
-        self._conn.commit()
+        self._conn: sqlite3.Connection | None = None
         self.hits = 0
         self.misses = 0
         self.writes = 0
         self.errors = 0
+        try:
+            Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(self.path, check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS semantic_cache (
+                    fingerprint TEXT PRIMARY KEY,
+                    schema_version INTEGER NOT NULL,
+                    stored_wall_ns INTEGER NOT NULL,
+                    payload TEXT NOT NULL
+                )
+                """
+            )
+            conn.commit()
+            self._conn = conn
+        except Exception as exc:
+            self.errors += 1
+            _LOG.warning(
+                "semantic L2 cache initialization failed; disabling L2 optimization: %s",
+                exc,
+            )
+            conn = locals().get("conn")
+            if isinstance(conn, sqlite3.Connection):
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    @property
+    def enabled(self) -> bool:
+        return self._conn is not None
 
     @staticmethod
     def _schema_version(key: str) -> int:
@@ -175,12 +195,13 @@ class SQLiteSemanticQueryCache:
             return 0
 
     def get(self, key: str, *, max_age: float) -> Any | None:
-        if max_age <= 0:
+        conn = self._conn
+        if max_age <= 0 or conn is None:
             self.misses += 1
             return None
         try:
             with self._lock:
-                row = self._conn.execute(
+                row = conn.execute(
                     "SELECT schema_version, stored_wall_ns, payload FROM semantic_cache WHERE fingerprint=?",
                     (key,),
                 ).fetchone()
@@ -207,12 +228,15 @@ class SQLiteSemanticQueryCache:
             return None
 
     def put(self, key: str, value: Any) -> None:
+        conn = self._conn
+        if conn is None:
+            return
         try:
             payload = _encode_result(value)
             if payload is None:
                 return
             with self._lock:
-                self._conn.execute(
+                conn.execute(
                     """
                     INSERT INTO semantic_cache(fingerprint, schema_version, stored_wall_ns, payload)
                     VALUES(?,?,?,?)
@@ -223,19 +247,22 @@ class SQLiteSemanticQueryCache:
                     """,
                     (key, self._schema_version(key), time.time_ns(), payload),
                 )
-                self._conn.commit()
+                conn.commit()
             self.writes += 1
         except Exception as exc:
             self.errors += 1
             _LOG.warning("semantic L2 cache write failed; ignoring optimization failure: %s", exc)
 
     def invalidate(self, key: str) -> bool:
+        conn = self._conn
+        if conn is None:
+            return False
         try:
             with self._lock:
-                cur = self._conn.execute(
+                cur = conn.execute(
                     "DELETE FROM semantic_cache WHERE fingerprint=?", (key,)
                 )
-                self._conn.commit()
+                conn.commit()
             return bool(cur.rowcount)
         except Exception as exc:
             self.errors += 1
@@ -243,29 +270,42 @@ class SQLiteSemanticQueryCache:
             return False
 
     def clear(self) -> None:
+        conn = self._conn
+        if conn is None:
+            return
         try:
             with self._lock:
-                self._conn.execute("DELETE FROM semantic_cache")
-                self._conn.commit()
+                conn.execute("DELETE FROM semantic_cache")
+                conn.commit()
         except Exception as exc:
             self.errors += 1
             _LOG.warning("semantic L2 cache clear failed: %s", exc)
 
     def close(self) -> None:
         with self._lock:
-            self._conn.close()
+            conn = self._conn
+            self._conn = None
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception as exc:
+                self.errors += 1
+                _LOG.warning("semantic L2 cache close failed: %s", exc)
 
     def __len__(self) -> int:
+        conn = self._conn
+        if conn is None:
+            return 0
         try:
             with self._lock:
-                row = self._conn.execute("SELECT COUNT(*) FROM semantic_cache").fetchone()
+                row = conn.execute("SELECT COUNT(*) FROM semantic_cache").fetchone()
             return int(row[0]) if row else 0
         except Exception:
             return 0
 
 
 class TieredSemanticQueryCache:
-    """L1 memory + L2 SQLite with promotion on L2 hit."""
+    """L1 memory + optional L2 SQLite with promotion on L2 hit."""
 
     def __init__(self, l1: SemanticQueryCache, l2: SQLiteSemanticQueryCache) -> None:
         self.l1 = l1
