@@ -17,9 +17,13 @@ OFFICIAL_RUNTIME = [
     ROOT / "tstdx" / "facade" / "planned.py",
     ROOT / "tstdx" / "facade" / "strict.py",
     ROOT / "tstdx" / "facade" / "strict_async.py",
+    ROOT / "tstdx" / "integration" / "__init__.py",
     ROOT / "tstdx" / "integration" / "http_app.py",
     ROOT / "tstdx" / "integration" / "http_runtime.py",
+    ROOT / "tstdx" / "integration" / "mcp_app.py",
+    ROOT / "tstdx" / "integration" / "ws_app.py",
     ROOT / "tstdx" / "integration" / "tasks.py",
+    ROOT / "tstdx" / "cli" / "__init__.py",
 ]
 
 FORBIDDEN_NAMES = {
