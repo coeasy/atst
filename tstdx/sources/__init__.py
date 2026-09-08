@@ -287,7 +287,10 @@ class DataSourceRouter:
                     context={"provider": "tdx", "channel": "vipdoc"},
                 )
             else:
-                data = list(self._service.quotes(symbols, provider=pid))
+                result = self._service.quotes(symbols, provider=pid)
+                if not isinstance(result, list):
+                    raise RuntimeError("Provider service quotes compatibility contract violated")
+                data = result
         except TdxError as exc:
             self._record_error(pid, exc)
             if default_empty_ok and "返回空" in str(exc):
@@ -369,16 +372,17 @@ class DataSourceRouter:
                                 "capability": "bars",
                             },
                         )
-                data = list(
-                    self._service.bars(
-                        symbol,
-                        period=period,
-                        count=count,
-                        start=start,
-                        adjust=adjust,
-                        provider=pid,
-                    )
+                result = self._service.bars(
+                    symbol,
+                    period=period,
+                    count=count,
+                    start=start,
+                    adjust=adjust,
+                    provider=pid,
                 )
+                if not isinstance(result, list):
+                    raise RuntimeError("Provider service bars compatibility contract violated")
+                data = result
         except TdxError as exc:
             self._record_error(pid, exc)
             if default_empty_ok and "返回空" in str(exc):
