@@ -53,29 +53,60 @@ def _default_negative_predicate(exc: BaseException) -> bool:
 
 
 def _clone_error(exc: BaseException) -> BaseException:
-    """Return an independent exception object for another logical caller."""
+    """Return an independent same-semantics exception for another caller.
+
+    Deep-copy is preferred. If an exception carries an uncopyable native object
+    (lock/socket/etc.), preserve its concrete exception type instead of silently
+    converting it into ``SourceUnavailable``. ``TdxError.context`` receives an
+    independent mapping even on that fallback path. ``KeyboardInterrupt`` and
+    ``SystemExit`` therefore remain BaseException control-flow signals rather
+    than being swallowed or recategorized.
+    """
 
     try:
         return copy.deepcopy(exc)
     except Exception:
-        if isinstance(exc, TdxError):
-            try:
-                cloned = copy.copy(exc)
-                cloned.context = dict(exc.context)
-                return cloned
-            except Exception:
-                return TdxError(
-                    exc.message,
-                    code=exc.code,
-                    advice=exc.advice,
-                    context=dict(exc.context),
-                    cause=exc.cause,
-                )
+        pass
 
-    return SourceUnavailable(
-        "cached terminal provider error",
-        context={"negative_cache": True, "fallback": False},
-    )
+    if isinstance(exc, TdxError):
+        try:
+            cloned = copy.copy(exc)
+            try:
+                cloned.context = copy.deepcopy(exc.context)
+            except Exception:
+                cloned.context = dict(exc.context)
+            return cloned
+        except Exception:
+            return TdxError(
+                exc.message,
+                code=exc.code,
+                advice=exc.advice,
+                context=dict(exc.context),
+                cause=exc.cause,
+            )
+
+    try:
+        cloned = copy.copy(exc)
+    except Exception:
+        try:
+            return type(exc)(*exc.args)
+        except Exception:
+            # Last resort: retain the original control-flow semantics. This path
+            # is only reachable for exotic uncopyable exception constructors.
+            return exc
+
+    source_attrs = getattr(exc, "__dict__", None)
+    cloned_attrs = getattr(cloned, "__dict__", None)
+    if isinstance(source_attrs, dict) and isinstance(cloned_attrs, dict):
+        for key, value in source_attrs.items():
+            try:
+                cloned_attrs[key] = copy.deepcopy(value)
+            except Exception:
+                # Keep the shallow-copied attribute rather than changing the
+                # exception category merely because one diagnostic field is
+                # backed by an uncopyable native object.
+                pass
+    return cloned
 
 
 def _negative_cache_error(exc: BaseException) -> BaseException:
