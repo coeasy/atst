@@ -22,6 +22,7 @@ import time
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
+from enum import Enum
 from typing import Any
 
 from ..domain.models import Quote
@@ -40,6 +41,7 @@ from .engine import BackpressureQueue, DeltaMerger, ReconnectPolicy
 
 __all__ = [
     "PlannedQuoteStream",
+    "StreamState",
     "StreamSubscription",
     "StreamStats",
     "StreamWatermark",
@@ -55,6 +57,22 @@ _INPUT_ADVICE = RetryAdvice(
 
 QuoteCallback = Callable[[str, dict[str, Any]], None]
 ErrorCallback = Callable[[Exception], None]
+
+
+class StreamState(str, Enum):
+    """Lifecycle states for a planned stream.
+
+    ``stop()/close()`` is terminal. ``FAILED`` is also terminal until an explicit
+    ``stop()`` drains the surviving worker and closes the instance. This prevents
+    a half-dead worker pair from accepting new subscriptions or spawning a second
+    dispatcher.
+    """
+
+    CREATED = "created"
+    RUNNING = "running"
+    STOPPING = "stopping"
+    CLOSED = "closed"
+    FAILED = "failed"
 
 
 def _input_error(
@@ -178,8 +196,17 @@ class PlannedQuoteStream:
         self._dispatch_thread: threading.Thread | None = None
         self._reconnect_pending = False
         self._reconnect_epoch = 0
+        self._state = StreamState.CREATED
+        # Keep the legacy private flag coherent for downstream code that used it
+        # before the lifecycle became an explicit state machine.
         self._closed = False
         self._service_closed = False
+
+    @property
+    def state(self) -> StreamState:
+        """Return a lock-consistent lifecycle snapshot."""
+        with self._lock:
+            return self._state
 
     def subscribe(
         self,
@@ -228,10 +255,14 @@ class PlannedQuoteStream:
 
         sub.queue = BackpressureQueue(max_queue, on_drop=on_drop)
         with self._lock:
-            if self._closed:
+            if self._state not in {StreamState.CREATED, StreamState.RUNNING}:
                 raise _input_error(
-                    "PlannedQuoteStream 已关闭，不能新增订阅",
-                    context={"provider": self.provider, "phase": "stream_lifecycle"},
+                    "PlannedQuoteStream 已进入终止流程，不能新增订阅",
+                    context={
+                        "provider": self.provider,
+                        "phase": "stream_lifecycle",
+                        "state": self._state.value,
+                    },
                 )
             self._subs[sub_id] = sub
         self._dispatch_wakeup.set()
@@ -270,25 +301,34 @@ class PlannedQuoteStream:
 
     def start(self) -> "PlannedQuoteStream":
         with self._lock:
-            if self._closed:
-                raise _input_error(
-                    "PlannedQuoteStream 已关闭，不能重新启动",
-                    context={"provider": self.provider, "phase": "stream_lifecycle"},
+            if self._state is StreamState.RUNNING:
+                poll_alive = self._poll_thread is not None and self._poll_thread.is_alive()
+                dispatch_alive = (
+                    self._dispatch_thread is not None and self._dispatch_thread.is_alive()
                 )
-            poll_alive = self._poll_thread is not None and self._poll_thread.is_alive()
-            dispatch_alive = (
-                self._dispatch_thread is not None and self._dispatch_thread.is_alive()
-            )
-            if poll_alive or dispatch_alive:
                 if poll_alive and dispatch_alive:
                     return self
+                self._state = StreamState.FAILED
+                self._closed = True
+                self._stop.set()
+                self._dispatch_wakeup.set()
                 raise _input_error(
-                    "PlannedQuoteStream 线程状态不一致，拒绝启动第二组线程",
+                    "PlannedQuoteStream worker 状态不一致，实例已 fail-closed",
                     context={
                         "provider": self.provider,
                         "phase": "stream_lifecycle",
+                        "state": self._state.value,
                         "poll_alive": poll_alive,
                         "dispatch_alive": dispatch_alive,
+                    },
+                )
+            if self._state is not StreamState.CREATED:
+                raise _input_error(
+                    "PlannedQuoteStream 已进入终止状态，不能重新启动",
+                    context={
+                        "provider": self.provider,
+                        "phase": "stream_lifecycle",
+                        "state": self._state.value,
                     },
                 )
             self._stop.clear()
@@ -304,6 +344,7 @@ class PlannedQuoteStream:
                 name=f"tstdx-planned-dispatch-{self.provider}",
                 daemon=True,
             )
+            self._state = StreamState.RUNNING
             self._poll_thread.start()
             self._dispatch_thread.start()
         return self
@@ -313,6 +354,9 @@ class PlannedQuoteStream:
             raise ValueError("timeout must be >= 0")
         current = threading.current_thread()
         with self._lock:
+            if self._state is StreamState.CLOSED:
+                return
+            self._state = StreamState.STOPPING
             self._closed = True
             self._stop.set()
             self._dispatch_wakeup.set()
@@ -335,6 +379,8 @@ class PlannedQuoteStream:
                 self._poll_thread = None
             if self._dispatch_thread is dispatch and not dispatch_alive:
                 self._dispatch_thread = None
+            if not poll_alive and not dispatch_alive:
+                self._state = StreamState.CLOSED
             if self._owns_service and not self._service_closed and not poll_alive:
                 self._service_closed = True
                 should_close_service = True
@@ -411,12 +457,32 @@ class PlannedQuoteStream:
             record_stream_reconnect(provider=self.provider, kind="resubscribed")
         return True
 
-    def _close_owned_service_after_poll(self) -> None:
-        should_close = False
+    def _worker_finished(self, worker: str) -> None:
+        """Finalize one worker and fail closed on an unexpected half-dead pair."""
         with self._lock:
             current = threading.current_thread()
-            if self._poll_thread is current:
+            if worker == "poll" and self._poll_thread is current:
                 self._poll_thread = None
+            elif worker == "dispatch" and self._dispatch_thread is current:
+                self._dispatch_thread = None
+
+            if self._state is StreamState.RUNNING:
+                self._state = StreamState.FAILED
+                self._closed = True
+                self._stop.set()
+                self._dispatch_wakeup.set()
+                _LOG.error("planned stream %s worker exited unexpectedly; failing closed", worker)
+            elif (
+                self._state is StreamState.STOPPING
+                and self._poll_thread is None
+                and self._dispatch_thread is None
+            ):
+                self._state = StreamState.CLOSED
+
+    def _close_owned_service_after_poll(self) -> None:
+        self._worker_finished("poll")
+        should_close = False
+        with self._lock:
             if self._closed and self._owns_service and not self._service_closed:
                 self._service_closed = True
                 should_close = True
@@ -640,6 +706,4 @@ class PlannedQuoteStream:
                     self._dispatch_wakeup.wait(self.callback_idle_wait)
                     self._dispatch_wakeup.clear()
         finally:
-            with self._lock:
-                if self._dispatch_thread is threading.current_thread():
-                    self._dispatch_thread = None
+            self._worker_finished("dispatch")
