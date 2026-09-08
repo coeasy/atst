@@ -93,3 +93,38 @@ async def test_strict_async_close_failure_still_marks_wrapper_closed() -> None:
     assert service._closed is True
     with pytest.raises(RuntimeError, match="已关闭"):
         await service.quotes(["sh600519"])
+
+
+@pytest.mark.asyncio
+async def test_strict_async_close_waits_for_active_call_before_sync_close() -> None:
+    started = threading.Event()
+    release = threading.Event()
+    order: list[str] = []
+
+    class BlockingFacade:
+        def quotes(self, *args: Any, **kwargs: Any) -> list[Any]:
+            order.append("quote_start")
+            started.set()
+            release.wait(1.0)
+            order.append("quote_end")
+            return []
+
+        def close(self) -> None:
+            order.append("close")
+
+    service = AsyncUnifiedQuoteAPI()
+    service._sync = BlockingFacade()  # type: ignore[assignment]
+
+    active = asyncio.create_task(service.quotes(["sh600519"]))
+    assert await asyncio.to_thread(started.wait, 1.0)
+    closing = asyncio.create_task(service.aclose())
+    await asyncio.sleep(0.02)
+
+    assert "close" not in order
+    release.set()
+    await active
+    await closing
+
+    assert order == ["quote_start", "quote_end", "close"]
+    with pytest.raises(RuntimeError, match="已关闭"):
+        await service.quotes(["sz000001"])
