@@ -53,11 +53,19 @@ class PlannedProviderHttpClient(ProviderHttpClient):
 
 
 class PlannedTaskStore(_SafeTaskStore):
-    """TaskStore v2 adapted to the legacy route module's saturation exception."""
+    """Bounded TaskStore adapted to the legacy route contract.
+
+    The safer Future-based manager owns lifecycle/cancellation. The legacy result
+    clamp is deliberately retained *before* storage so a completed background
+    task cannot keep an unbounded list/blob alive in memory.
+    """
 
     def submit(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> str:
+        def bounded_call() -> Any:
+            return _routes._clamp_result(fn(*args, **kwargs))
+
         try:
-            return super().submit(fn, *args, **kwargs)
+            return super().submit(bounded_call)
         except _SafeTaskStoreFull as exc:
             raise _routes.TaskStoreFull(str(exc)) from exc
 
