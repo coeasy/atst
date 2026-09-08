@@ -152,3 +152,42 @@ def test_shutdown_rejects_new_work() -> None:
     manager.shutdown(wait=True)
     with pytest.raises(RuntimeError, match="draining/closed"):
         manager.submit(lambda: None)
+
+
+def test_nonblocking_shutdown_can_be_followed_by_real_drain() -> None:
+    gate = threading.Event()
+    started = threading.Event()
+    drained = threading.Event()
+    manager = TaskManager(max_workers=1, max_tasks=1)
+
+    def work() -> str:
+        started.set()
+        gate.wait(2.0)
+        return "done"
+
+    task_id = manager.submit(work)
+    assert started.wait(1.0)
+    manager.shutdown(wait=False)
+
+    assert manager.draining is True
+    assert manager.get(task_id).status is TaskStatus.RUNNING
+    with pytest.raises(RuntimeError, match="draining/closed"):
+        manager.submit(lambda: None)
+
+    def finish_shutdown() -> None:
+        manager.shutdown(wait=True)
+        drained.set()
+
+    waiter = threading.Thread(target=finish_shutdown)
+    waiter.start()
+    time.sleep(0.05)
+    assert drained.is_set() is False
+    assert manager.draining is True
+
+    gate.set()
+    assert drained.wait(1.0)
+    waiter.join(1.0)
+
+    assert manager.draining is False
+    assert manager.get(task_id).status is TaskStatus.DONE
+    manager.shutdown(wait=True)
