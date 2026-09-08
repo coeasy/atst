@@ -3,17 +3,17 @@
 
 """Direct Provider/Channel APIs.
 
-Unified APIs cover only genuinely common semantics. Provider-specific data stays
-under ``md.<provider>`` and every adapter is bound to exactly one Provider. All
-Web Channels of the same Provider reuse that Provider's HTTP client; failures
-are annotated with Provider/Channel provenance and never trigger another
-Provider.
+Unified APIs cover only common semantics. Provider-specific data stays under
+``md.<provider>``. Web Provider namespaces are table-driven: one canonical
+ProviderId owns a documented set of Channel -> Adapter bindings, all sharing the
+ProviderManager lifecycle. No path in this module performs Provider fallback.
 """
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from .errors import TdxError, ValidationError
 from .providers import PROVIDERS, ProviderSpec, resolve_provider
@@ -34,13 +34,24 @@ __all__ = [
     "build_provider_api",
 ]
 
+AdapterRef = tuple[str, str]
+
 
 class ProviderAPI:
-    """Base namespace bound to one canonical ProviderId."""
+    """Base namespace bound to exactly one canonical ProviderId."""
 
-    def __init__(self, service: UnifiedMarketDataService, provider: str) -> None:
+    provider_id: ClassVar[str | None] = None
+
+    def __init__(
+        self,
+        service: UnifiedMarketDataService,
+        provider: str | None = None,
+    ) -> None:
+        selected = provider or self.provider_id
+        if selected is None:
+            raise TypeError("ProviderAPI requires provider or provider_id")
         self._service = service
-        self.provider = resolve_provider(provider=provider)
+        self.provider = resolve_provider(provider=selected)
         self._spec = PROVIDERS.get(self.provider)
 
     @property
@@ -88,7 +99,7 @@ class ProviderAPI:
 
 
 class _TdxChannel:
-    channel_id = ""
+    channel_id: ClassVar[str] = ""
 
     def __init__(self, owner: TdxProviderAPI) -> None:
         self._owner = owner
@@ -234,8 +245,10 @@ class TdxMacAPI(_TdxChannel):
 
 
 class TdxProviderAPI(ProviderAPI):
+    provider_id = "tdx"
+
     def __init__(self, service: UnifiedMarketDataService) -> None:
-        super().__init__(service, "tdx")
+        super().__init__(service)
         self.quotation = TdxQuotationAPI(self)
         self.extended = TdxExtendedAPI(self)
         self.goods = TdxGoodsAPI(self)
@@ -257,59 +270,45 @@ class TdxProviderAPI(ProviderAPI):
 
 
 class WebProviderAPI(ProviderAPI):
-    """Base for exact Web Provider namespaces."""
+    """Table-driven Web Provider namespace."""
 
-    def _web(
-        self,
-        channel: str,
-        adapter_cls: type[Any],
-        *,
-        resource_key: str | None = None,
-    ) -> Any:
+    CHANNELS: ClassVar[dict[str, AdapterRef]] = {}
+
+    @staticmethod
+    def _load_adapter(ref: AdapterRef) -> type[Any]:
+        module_name, class_name = ref
+        module = importlib.import_module(module_name)
+        return getattr(module, class_name)
+
+    def channel(self, channel: str) -> Any:
+        cid = str(channel).strip().lower()
+        self.spec.channel(cid)
+        try:
+            ref = self.CHANNELS[cid]
+        except KeyError as exc:
+            raise ValidationError(
+                f"Provider {self.provider!r} 的 channel {cid!r} 尚无 Direct Adapter",
+                context={"provider": self.provider, "channel": cid},
+            ) from exc
         return self._service.manager.web_adapter(
             self.provider,
-            channel,
-            adapter_cls,
-            resource_key=resource_key,
+            cid,
+            self._load_adapter(ref),
         )
 
 
 class TencentProviderAPI(WebProviderAPI):
-    def channel(self, channel: str) -> Any:
-        cid = str(channel).strip().lower()
-        if cid == "quote":
-            from .web.adapters import TencentSource
-
-            return self._web(cid, TencentSource)
-        if cid == "kline":
-            from .web.adapters import KlineSource
-
-            return self._web(cid, KlineSource)
-        if cid == "minute_kline":
-            from .web.adapters_ext import MinuteKlineSource
-
-            return self._web(cid, MinuteKlineSource)
-        if cid == "minute":
-            from .web.adapters_ext import MinuteSource
-
-            return self._web(cid, MinuteSource)
-        if cid == "ticks":
-            from .web.ticks import TencentTickSource
-
-            return self._web(cid, TencentTickSource)
-        if cid == "global":
-            from .web.global_market import TencentGlobalSource
-
-            return self._web(cid, TencentGlobalSource)
-        if cid == "market_stat":
-            from .web.global_market import TencentMarketStatSource
-
-            return self._web(cid, TencentMarketStatSource)
-        if cid == "board_rank":
-            from .web.boards import TencentBoardRankSource
-
-            return self._web(cid, TencentBoardRankSource)
-        return super().channel(cid)
+    provider_id = "tencent"
+    CHANNELS = {
+        "quote": ("tstdx.web.adapters", "TencentSource"),
+        "kline": ("tstdx.web.adapters", "KlineSource"),
+        "minute_kline": ("tstdx.web.adapters_ext", "MinuteKlineSource"),
+        "minute": ("tstdx.web.adapters_ext", "MinuteSource"),
+        "ticks": ("tstdx.web.ticks", "TencentTickSource"),
+        "global": ("tstdx.web.global_market", "TencentGlobalSource"),
+        "market_stat": ("tstdx.web.global_market", "TencentMarketStatSource"),
+        "board_rank": ("tstdx.web.boards", "TencentBoardRankSource"),
+    }
 
     def minute(self, symbol: str) -> Any:
         return self._invoke("minute", lambda: self.channel("minute").fetch_minute(symbol))
@@ -343,41 +342,17 @@ class TencentProviderAPI(WebProviderAPI):
 
 
 class SinaProviderAPI(WebProviderAPI):
-    def channel(self, channel: str) -> Any:
-        cid = str(channel).strip().lower()
-        if cid == "quote":
-            from .web.adapters import SinaSource
-
-            return self._web(cid, SinaSource)
-        if cid == "history_kline":
-            from .web.history import SinaHistoryKlineSource
-
-            return self._web(cid, SinaHistoryKlineSource)
-        if cid == "suggest":
-            from .web.adapters_ext import SuggestSource
-
-            return self._web(cid, SuggestSource)
-        if cid == "industry_board":
-            from .web.boards import SinaIndustryBoardSource
-
-            return self._web(cid, SinaIndustryBoardSource)
-        if cid == "board_list":
-            from .web.boards import SinaBoardListSource
-
-            return self._web(cid, SinaBoardListSource)
-        if cid == "board_member":
-            from .web.boards import SinaBoardMemberSource
-
-            return self._web(cid, SinaBoardMemberSource)
-        if cid == "fund_flow":
-            from .web.fundflow import SinaFundFlowSource
-
-            return self._web(cid, SinaFundFlowSource)
-        if cid == "news":
-            from .web.news import SinaNewsSource
-
-            return self._web(cid, SinaNewsSource)
-        return super().channel(cid)
+    provider_id = "sina"
+    CHANNELS = {
+        "quote": ("tstdx.web.adapters", "SinaSource"),
+        "history_kline": ("tstdx.web.history", "SinaHistoryKlineSource"),
+        "suggest": ("tstdx.web.adapters_ext", "SuggestSource"),
+        "industry_board": ("tstdx.web.boards", "SinaIndustryBoardSource"),
+        "board_list": ("tstdx.web.boards", "SinaBoardListSource"),
+        "board_member": ("tstdx.web.boards", "SinaBoardMemberSource"),
+        "fund_flow": ("tstdx.web.fundflow", "SinaFundFlowSource"),
+        "news": ("tstdx.web.news", "SinaNewsSource"),
+    }
 
     def suggest(self, key: str, *, limit: int = 10) -> Any:
         return self._invoke(
@@ -432,61 +407,64 @@ class SinaProviderAPI(WebProviderAPI):
 
 
 class EastmoneyCorporateAPI:
-    """Provider-specific corporate APIs sharing the Eastmoney HTTP client."""
+    """Corporate sub-resources sharing one Eastmoney Provider HTTP client."""
+
+    ADAPTERS: ClassVar[dict[str, AdapterRef]] = {
+        "profile": ("tstdx.web.corporate", "EastmoneyProfileSource"),
+        "notices": ("tstdx.web.corporate", "EastmoneyNoticeSource"),
+        "research": ("tstdx.web.corporate", "EastmoneyResearchSource"),
+        "shareholders": ("tstdx.web.corporate", "EastmoneyShareholderSource"),
+        "block_trades": ("tstdx.web.corporate", "EastmoneyBlockTradeSource"),
+        "unlocks": ("tstdx.web.corporate", "EastmoneyUnlockSource"),
+        "performance": ("tstdx.web.corporate", "EastmoneyPerformanceSource"),
+    }
 
     def __init__(self, owner: EastmoneyProviderAPI) -> None:
         self._owner = owner
 
-    def _web(self, key: str, adapter_cls: type[Any]) -> Any:
+    def _adapter(self, key: str) -> Any:
+        try:
+            ref = self.ADAPTERS[key]
+        except KeyError as exc:
+            raise ValidationError(f"未知 Eastmoney corporate resource {key!r}") from exc
+        cls = WebProviderAPI._load_adapter(ref)
         return self._owner._service.manager.web_adapter(
             "eastmoney",
             "corporate",
-            adapter_cls,
+            cls,
             resource_key=f"corporate:{key}",
         )
 
     def profile(self, symbol: str) -> Any:
-        from .web.corporate import EastmoneyProfileSource
-
-        src = self._web("profile", EastmoneyProfileSource)
+        src = self._adapter("profile")
         return self._owner._invoke("corporate", lambda: src.fetch_profile(symbol))
 
     def notices(self, symbols: Sequence[str], *, page: int = 1, size: int = 20) -> Any:
-        from .web.corporate import EastmoneyNoticeSource
-
-        src = self._web("notices", EastmoneyNoticeSource)
+        src = self._adapter("notices")
         return self._owner._invoke(
             "corporate", lambda: src.fetch_notices(list(symbols), page=page, size=size)
         )
 
     def reports(self, symbol: str = "", *, page: int = 1, size: int = 20) -> Any:
-        from .web.corporate import EastmoneyResearchSource
-
-        src = self._web("research", EastmoneyResearchSource)
+        src = self._adapter("research")
         return self._owner._invoke(
             "corporate", lambda: src.fetch_reports(symbol, page=page, size=size)
         )
 
-    def shareholders(self, symbol: str, *, size: int = 10) -> Any:
-        from .web.corporate import EastmoneyShareholderSource
-
-        src = self._web("shareholders", EastmoneyShareholderSource)
+    def shareholders(self, symbol: str, *, size: int = 20) -> Any:
+        src = self._adapter("shareholders")
         return self._owner._invoke(
             "corporate", lambda: src.fetch_free_holders(symbol, size=size)
         )
 
-    def holder_num(self, symbol: str, *, size: int = 10) -> Any:
-        from .web.corporate import EastmoneyShareholderSource
-
-        src = self._web("shareholders", EastmoneyShareholderSource)
+    def holder_num(self, symbol: str, *, size: int = 20) -> Any:
+        src = self._adapter("shareholders")
         return self._owner._invoke(
             "corporate", lambda: src.fetch_holder_num(symbol, size=size)
         )
 
     def block_trades(self, symbol: str = "", *, date: str = "", size: int = 20) -> Any:
-        from .web.corporate import EastmoneyBlockTradeSource
-
-        src = self._web("block_trades", EastmoneyBlockTradeSource)
+        src = self._adapter("block_trades")
         return self._owner._invoke(
             "corporate",
             lambda: src.fetch_block_trades(symbol=symbol, date=date, size=size),
@@ -500,9 +478,7 @@ class EastmoneyCorporateAPI:
         end: str = "",
         size: int = 20,
     ) -> Any:
-        from .web.corporate import EastmoneyUnlockSource
-
-        src = self._web("unlocks", EastmoneyUnlockSource)
+        src = self._adapter("unlocks")
         return self._owner._invoke(
             "corporate",
             lambda: src.fetch_unlocks(symbol=symbol, begin=begin, end=end, size=size),
@@ -515,9 +491,7 @@ class EastmoneyCorporateAPI:
         report_date: str = "",
         size: int = 20,
     ) -> Any:
-        from .web.corporate import EastmoneyPerformanceSource
-
-        src = self._web("performance", EastmoneyPerformanceSource)
+        src = self._adapter("performance")
         return self._owner._invoke(
             "corporate",
             lambda: src.fetch_performance(
@@ -529,65 +503,34 @@ class EastmoneyCorporateAPI:
 
 
 class EastmoneyProviderAPI(WebProviderAPI):
+    provider_id = "eastmoney"
+    CHANNELS = {
+        "quote": ("tstdx.web.adapters", "EastmoneySource"),
+        "kline": ("tstdx.web.history", "EastmoneyHistoryKlineSource"),
+        "trends": ("tstdx.web.ticks", "EastmoneyTrendsSource"),
+        "rank": ("tstdx.web.fundflow", "EastmoneyRankSource"),
+        "fund_flow": ("tstdx.web.fundflow", "EastmoneyFundFlowSource"),
+        "limit_pool": ("tstdx.web.fundflow", "EastmoneyLimitPoolSource"),
+        "stock_changes": ("tstdx.web.fundflow", "EastmoneyStockChangesSource"),
+        "northbound": ("tstdx.web.fundflow", "EastmoneyNorthboundSource"),
+        "hot_rank": ("tstdx.web.hot_rank", "EastmoneyHotRankSource"),
+        "longhu": ("tstdx.web.longhu", "EastmoneyTopListSource"),
+        "margin": ("tstdx.web.adapters_margin", "EastmoneyMarginSource"),
+        "index_constituents": (
+            "tstdx.web.adapters_index",
+            "EastmoneyIndexConstituentsSource",
+        ),
+        "fund": ("tstdx.web.adapters_fund", "FundSource"),
+    }
+
     def __init__(self, service: UnifiedMarketDataService) -> None:
-        super().__init__(service, "eastmoney")
+        super().__init__(service)
         self.corporate = EastmoneyCorporateAPI(self)
 
     def channel(self, channel: str) -> Any:
         cid = str(channel).strip().lower()
-        if cid == "quote":
-            from .web.adapters import EastmoneySource
-
-            return self._web(cid, EastmoneySource)
-        if cid == "kline":
-            from .web.history import EastmoneyHistoryKlineSource
-
-            return self._web(cid, EastmoneyHistoryKlineSource)
-        if cid == "trends":
-            from .web.ticks import EastmoneyTrendsSource
-
-            return self._web(cid, EastmoneyTrendsSource)
-        if cid == "rank":
-            from .web.fundflow import EastmoneyRankSource
-
-            return self._web(cid, EastmoneyRankSource)
-        if cid == "fund_flow":
-            from .web.fundflow import EastmoneyFundFlowSource
-
-            return self._web(cid, EastmoneyFundFlowSource)
-        if cid == "limit_pool":
-            from .web.fundflow import EastmoneyLimitPoolSource
-
-            return self._web(cid, EastmoneyLimitPoolSource)
-        if cid == "stock_changes":
-            from .web.fundflow import EastmoneyStockChangesSource
-
-            return self._web(cid, EastmoneyStockChangesSource)
-        if cid == "northbound":
-            from .web.fundflow import EastmoneyNorthboundSource
-
-            return self._web(cid, EastmoneyNorthboundSource)
-        if cid == "hot_rank":
-            from .web.hot_rank import EastmoneyHotRankSource
-
-            return self._web(cid, EastmoneyHotRankSource)
-        if cid == "longhu":
-            from .web.longhu import EastmoneyTopListSource
-
-            return self._web(cid, EastmoneyTopListSource)
-        if cid == "margin":
-            from .web.adapters_margin import EastmoneyMarginSource
-
-            return self._web(cid, EastmoneyMarginSource)
-        if cid == "index_constituents":
-            from .web.adapters_index import EastmoneyIndexConstituentsSource
-
-            return self._web(cid, EastmoneyIndexConstituentsSource)
-        if cid == "fund":
-            from .web.adapters_fund import FundSource
-
-            return self._web(cid, FundSource)
         if cid == "corporate":
+            self.spec.channel(cid)
             return self.corporate
         return super().channel(cid)
 
@@ -683,13 +626,13 @@ class EastmoneyProviderAPI(WebProviderAPI):
 
 
 class BaiduProviderAPI(WebProviderAPI):
-    def channel(self, channel: str) -> Any:
-        cid = str(channel).strip().lower()
-        if cid not in {"quote", "kline", "minute", "ticks"}:
-            return super().channel(cid)
-        from .web.adapters_baidu import BaiduSource
-
-        return self._web(cid, BaiduSource)
+    provider_id = "baidu"
+    CHANNELS = {
+        "quote": ("tstdx.web.adapters_baidu", "BaiduSource"),
+        "kline": ("tstdx.web.adapters_baidu", "BaiduSource"),
+        "minute": ("tstdx.web.adapters_baidu", "BaiduSource"),
+        "ticks": ("tstdx.web.adapters_baidu", "BaiduSource"),
+    }
 
     def minute(self, symbol: str) -> Any:
         return self._invoke("minute", lambda: self.channel("minute").fetch_minute(symbol))
@@ -701,39 +644,27 @@ class BaiduProviderAPI(WebProviderAPI):
 
 
 class JslProviderAPI(WebProviderAPI):
-    def channel(self, channel: str) -> Any:
-        cid = str(channel).strip().lower()
-        if cid not in {"bond", "etf"}:
-            return super().channel(cid)
-        from .web.adapters import JslSource
-
-        return self._web(cid, JslSource)
+    provider_id = "jsl"
+    CHANNELS = {
+        "bond": ("tstdx.web.adapters", "JslSource"),
+        "etf": ("tstdx.web.adapters", "JslSource"),
+    }
 
     def bonds(self) -> Any:
         return self._invoke("bond", lambda: self.channel("bond").fetch([]))
 
 
 class BocProviderAPI(WebProviderAPI):
-    def channel(self, channel: str) -> Any:
-        cid = str(channel).strip().lower()
-        if cid != "fx":
-            return super().channel(cid)
-        from .web.adapters import BocSource
-
-        return self._web(cid, BocSource)
+    provider_id = "boc"
+    CHANNELS = {"fx": ("tstdx.web.adapters", "BocSource")}
 
     def fx_rates(self) -> Any:
         return self._invoke("fx", lambda: self.channel("fx").fetch_rates())
 
 
 class IwencaiProviderAPI(WebProviderAPI):
-    def channel(self, channel: str) -> Any:
-        cid = str(channel).strip().lower()
-        if cid != "screening":
-            return super().channel(cid)
-        from .web.wencai import WencaiSource
-
-        return self._web(cid, WencaiSource)
+    provider_id = "iwencai"
+    CHANNELS = {"screening": ("tstdx.web.wencai", "WencaiSource")}
 
     def screen(self, query: str, *, page: int = 1, limit: int = 50) -> Any:
         return self._invoke(
@@ -748,20 +679,22 @@ class IwencaiProviderAPI(WebProviderAPI):
     query = screen
 
 
+_PROVIDER_API_TYPES: dict[str, type[ProviderAPI]] = {
+    "tdx": TdxProviderAPI,
+    "tencent": TencentProviderAPI,
+    "sina": SinaProviderAPI,
+    "eastmoney": EastmoneyProviderAPI,
+    "baidu": BaiduProviderAPI,
+    "jsl": JslProviderAPI,
+    "boc": BocProviderAPI,
+    "iwencai": IwencaiProviderAPI,
+}
+
+
 def build_provider_api(service: UnifiedMarketDataService, provider: str) -> ProviderAPI:
     pid = resolve_provider(provider=provider)
-    factories: dict[str, type[ProviderAPI]] = {
-        "tdx": TdxProviderAPI,
-        "tencent": TencentProviderAPI,
-        "sina": SinaProviderAPI,
-        "eastmoney": EastmoneyProviderAPI,
-        "baidu": BaiduProviderAPI,
-        "jsl": JslProviderAPI,
-        "boc": BocProviderAPI,
-        "iwencai": IwencaiProviderAPI,
-    }
     try:
-        cls = factories[pid]
+        cls = _PROVIDER_API_TYPES[pid]
     except KeyError as exc:
         raise ValidationError(
             f"Provider {pid!r} 尚无 Direct API",
