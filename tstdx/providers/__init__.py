@@ -411,8 +411,12 @@ PROVIDERS = ProviderRegistry(
             display_name="Jisilu",
             role="auxiliary_info",
             channels=(
-                _c("bond", "bond", markets=("bond",)),
-                _c("etf", "etf", markets=("fund",)),
+                _c(
+                    "bond",
+                    "bond",
+                    markets=("bond",),
+                    notes="verified cbnew convertible-bond endpoint; ETF is not registered",
+                ),
             ),
         ),
         ProviderSpec(
