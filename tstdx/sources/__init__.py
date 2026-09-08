@@ -1,47 +1,37 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Compatibility data router backed by the v12 Provider model.
+"""Compatibility data router on top of the v12 Provider service.
 
-The old router treated ``tdx -> web -> reader -> cache -> synthetic`` as an
-availability fallback chain.  That is unsafe for quantitative decision data:
-a request can silently change provenance, freshness and even field semantics.
+This module no longer owns a second live-routing engine. All real online data is
+executed by :class:`tstdx.service.UnifiedMarketDataService`; this compatibility
+layer only translates old ``order=`` / ``source=`` arguments and retains
+explicit test/replay plus TDX vipdoc local-history paths.
 
-v12 rules implemented here:
+Production invariants:
 
-* TDX is the deterministic default provider.
-* One production query binds to exactly one Provider.
-* TDX may fail over between TDX hosts inside ``TdxClient``; this module never
-  switches TDX to Sina/Tencent/Eastmoney after an error.
-* ``source=`` is a compatibility selector for the same ProviderId as
-  ``provider=``; there is no second Source domain object.
-* live quotes never read a stale TTL/golden/synthetic cache before the provider.
-* replay/synthetic paths require explicit opt-in and cannot masquerade as live.
-* legacy ``order=[...]`` is accepted only when it selects one path.  A multi-item
-  order is rejected because it encodes the removed cross-provider fallback.
+* TDX is the deterministic default Provider.
+* One query binds to exactly one Provider.
+* TDX host failover happens inside TDX transport only.
+* TDX failure never triggers Sina/Tencent/Eastmoney.
+* ``source=`` is a compatibility selector for ProviderId, not a second entity.
+* live quote/bar paths never consult replay/synthetic/stale cache first.
+* multi-item legacy ``order`` is rejected because it encodes cross-Provider
+  fallback semantics removed by v12.
 """
 
 from __future__ import annotations
 
-import contextlib
-import logging
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from ..config.schema import SourcesConfig
-from ..errors import (
-    AllHostsUnreachable,
-    AllSourcesExhausted,
-    SourceUnavailable,
-    TdxError,
-    ValidationError,
-)
+from ..errors import SourceUnavailable, TdxError, ValidationError
 from ..providers import PROVIDERS, normalize_provider_id, resolve_provider
+from ..service import UnifiedMarketDataService
 
 __all__ = ["DataSourceRouter", "SourceUnavailable", "build_router"]
-
-logger = logging.getLogger(__name__)
 
 
 def _period_to_reader_period(period: str) -> str:
@@ -60,7 +50,7 @@ def _period_to_reader_period(period: str) -> str:
     )
 
 
-def _split_for_cache(symbol: str) -> tuple[int, str]:
+def _split_for_replay(symbol: str) -> tuple[int, str]:
     from ..domain.symbol import parse_symbol
 
     sym = parse_symbol(symbol)
@@ -68,9 +58,14 @@ def _split_for_cache(symbol: str) -> tuple[int, str]:
 
 
 def _golden_kline(
-    golden_root: Path, code: str, category: int, count: int
+    golden_root: Path,
+    code: str,
+    category: int,
+    count: int,
 ) -> list[dict[str, Any]] | None:
-    """Replay a captured TDX payload. Test/replay only, never a live substitute."""
+    """Replay a captured TDX payload. Test/replay only, never live fallback."""
+    import json
+
     from ..codec.framing import ResponseFrame
     from ..protocol.registry import dispatch
 
@@ -82,8 +77,6 @@ def _golden_kline(
     payload_path = candidates[0] / "payload.bin"
     if not (meta_path.exists() and payload_path.exists()):
         return None
-    import json
-
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     payload = payload_path.read_bytes()
     resp = meta["response"]
@@ -102,12 +95,15 @@ def _golden_kline(
 
 
 def _golden_quote(golden_root: Path, code: str) -> dict[str, Any] | None:
-    """Replay a captured 0x0530 response. Test/replay only."""
+    """Replay a captured 0x0530 payload. Test/replay only."""
+    import json
+
     from ..codec.framing import ResponseFrame
     from ..protocol.registry import dispatch
 
     candidates = sorted(
-        golden_root.glob(f"quotation/0x0530_realtime_quote_{code}/20*"), reverse=True
+        golden_root.glob(f"quotation/0x0530_realtime_quote_{code}/20*"),
+        reverse=True,
     )
     if not candidates:
         return None
@@ -115,8 +111,6 @@ def _golden_quote(golden_root: Path, code: str) -> dict[str, Any] | None:
     payload_path = candidates[0] / "payload.bin"
     if not (meta_path.exists() and payload_path.exists()):
         return None
-    import json
-
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     payload = payload_path.read_bytes()
     resp = meta["response"]
@@ -140,12 +134,7 @@ def _golden_quote(golden_root: Path, code: str) -> dict[str, Any] | None:
 
 
 class DataSourceRouter:
-    """Legacy router API with a single-provider execution contract.
-
-    ``order`` is compatibility-only. New code should pass ``provider=`` (or
-    compatibility ``source=``) to :meth:`quotes` / :meth:`kline` and use direct
-    provider APIs for provider-specific capabilities.
-    """
+    """Legacy router surface delegating all live execution to one service."""
 
     def __init__(
         self,
@@ -161,6 +150,7 @@ class DataSourceRouter:
         timeout: float | None = None,
         allow_replay: bool = False,
         allow_synthetic: bool = False,
+        service: UnifiedMarketDataService | None = None,
     ) -> None:
         self.config = config or SourcesConfig()
         self.order = list(order) if order else None
@@ -170,15 +160,21 @@ class DataSourceRouter:
             else (Path(self.config.vipdoc_root) if self.config.vipdoc_root else None)
         )
         self.golden_root = Path(golden_root) if golden_root else None
-        self.tdx_hosts = tdx_hosts
+        self.tdx_hosts = list(tdx_hosts) if tdx_hosts is not None else None
+        # Kept only for constructor compatibility. Live v12 queries intentionally
+        # do not use these caches before an upstream request.
         self.kline_cache = kline_cache
         self.quote_cache = quote_cache
         self.web_sources = [normalize_provider_id(x) for x in (web_sources or ())]
-        self.timeout = timeout
+        self.timeout = float(timeout if timeout is not None else 5.0)
         self.allow_replay = bool(allow_replay)
         self.allow_synthetic = bool(allow_synthetic)
-        # Compatibility diagnostics. Reset per request to avoid request-to-request
-        # contamination; new code should consume ResultMeta instead.
+        self._service = service or UnifiedMarketDataService(
+            hosts=self.tdx_hosts,
+            timeout=self.timeout,
+        )
+        self._owns_service = service is None
+        # Compatibility diagnostics only; reset at request start.
         self.last_errors: list[tuple[str, BaseException]] = []
         self.last_source: str | None = None
 
@@ -187,7 +183,7 @@ class DataSourceRouter:
         self.last_source = None
 
     def _legacy_web_provider(self) -> str:
-        """Map legacy ``web`` to one deterministic provider, never an ordered fallback."""
+        """Map legacy ``web`` to one deterministic Provider, never a chain."""
         if self.web_sources:
             return self.web_sources[0]
         try:
@@ -195,8 +191,12 @@ class DataSourceRouter:
 
             configured = list(get_config().web.enabled_sources)
             if configured:
-                return normalize_provider_id(configured[0])
-        except Exception:  # configuration is optional here; invalid config is handled by build_router
+                candidate = normalize_provider_id(configured[0])
+                if candidate in PROVIDERS.ids():
+                    return candidate
+        except (AttributeError, TypeError, ValueError):
+            # Missing optional Web settings may use the documented compatibility
+            # default; invalid top-level config is handled by build_router().
             pass
         return "tencent"
 
@@ -207,11 +207,7 @@ class DataSourceRouter:
         source: str | None,
         order: Sequence[str] | None,
     ) -> tuple[str, str | None, str | None]:
-        """Return ``(provider, channel, special_mode)``.
-
-        ``special_mode`` is ``replay``/``synthetic`` and is never selected by
-        production defaults.
-        """
+        """Return ``(provider, channel, special_mode)``."""
         if provider is not None or source is not None:
             pid = resolve_provider(provider=provider, source=source, default="tdx")
             PROVIDERS.get(pid)
@@ -225,6 +221,7 @@ class DataSourceRouter:
                 "v12 已禁止多 Provider 自动 fallback；order 必须只选择一个执行路径",
                 context={"order": legacy, "fallback": False},
             )
+
         item = normalize_provider_id(legacy[0])
         if item == "tdx":
             return "tdx", None, None
@@ -249,35 +246,8 @@ class DataSourceRouter:
         PROVIDERS.get(item)
         return item, None, None
 
-    @staticmethod
-    def _provider_unavailable(
-        provider: str,
-        capability: str,
-        exc: BaseException,
-        *,
-        channel: str | None = None,
-    ) -> SourceUnavailable:
-        return SourceUnavailable(
-            f"Provider {provider!r} 当前不可用，未切换其它 Provider",
-            context={
-                "provider": provider,
-                "channel": channel,
-                "capability": capability,
-                "cause": type(exc).__name__,
-                "fallback": False,
-            },
-            cause=exc,
-        )
-
-    def _tdx_client(self):
-        from ..client import TdxClient
-
-        kw: dict[str, Any] = {}
-        if self.tdx_hosts is not None:
-            kw["hosts"] = self.tdx_hosts
-        if self.timeout is not None:
-            kw["timeout"] = self.timeout
-        return TdxClient(**kw)
+    def _record_error(self, provider: str, exc: BaseException) -> None:
+        self.last_errors.append((provider, exc))
 
     def quotes(
         self,
@@ -289,53 +259,47 @@ class DataSourceRouter:
         provider: str | None = None,
         source: str | None = None,
     ) -> list[Any]:
-        """Fetch latest real quotes from exactly one Provider."""
+        """Fetch current quotes from exactly one Provider."""
         from ..client import _emit
 
         self._reset_diagnostics()
         symbols = list(symbols)
-        pid, channel, special = self._selection(provider=provider, source=source, order=order)
-
-        if special == "replay":
-            if not self.golden_root:
-                raise SourceUnavailable("replay: 未配置 golden_root", context={"real": False})
-            data = [
-                q
-                for sym in symbols
-                for q in (_golden_quote(self.golden_root, _split_for_cache(sym)[1]),)
-                if q
-            ]
-        elif special == "synthetic":
-            raise SourceUnavailable("synthetic 不提供实时 quotes", context={"real": False})
-        else:
-            PROVIDERS.require(pid, "quotes", channel=channel)
-            try:
-                if pid == "tdx":
-                    with self._tdx_client() as client:
-                        data = client.quotes(symbols, as_format="dict")
-                else:
-                    from ..web import create_source
-
-                    client = create_source(pid)
-                    try:
-                        data = client.fetch(symbols)
-                    finally:
-                        client.close()
-            except AllHostsUnreachable as exc:
-                err = self._provider_unavailable(pid, "quotes", exc, channel=channel)
-                self.last_errors.append((pid, err))
-                raise err from exc
-            except AllSourcesExhausted as exc:
-                err = self._provider_unavailable(pid, "quotes", exc, channel=channel)
-                self.last_errors.append((pid, err))
-                raise err from exc
+        pid, channel, special = self._selection(
+            provider=provider,
+            source=source,
+            order=order,
+        )
+        try:
+            if special == "replay":
+                if not self.golden_root:
+                    raise SourceUnavailable("replay: 未配置 golden_root", context={"real": False})
+                data: list[Any] = [
+                    q
+                    for sym in symbols
+                    for q in (_golden_quote(self.golden_root, _split_for_replay(sym)[1]),)
+                    if q
+                ]
+            elif special == "synthetic":
+                raise SourceUnavailable("synthetic 不提供实时 quotes", context={"real": False})
+            elif channel == "vipdoc":
+                raise SourceUnavailable(
+                    "TDX vipdoc 是 local_historical Channel，不提供实时 quotes",
+                    context={"provider": "tdx", "channel": "vipdoc"},
+                )
+            else:
+                data = list(self._service.quotes(symbols, provider=pid))
+        except TdxError as exc:
+            self._record_error(pid, exc)
+            if default_empty_ok and "返回空" in str(exc):
+                return []
+            raise
 
         if not data and not default_empty_ok:
             err = SourceUnavailable(
                 f"Provider {pid!r} 返回空行情数据",
                 context={"provider": pid, "capability": "quotes", "fallback": False},
             )
-            self.last_errors.append((pid, err))
+            self._record_error(pid, err)
             raise err
 
         self.last_source = pid
@@ -372,110 +336,67 @@ class DataSourceRouter:
         _, code = split_symbol(symbol)
         category = period_to_category(period)
 
-        if special == "replay":
-            if start:
-                raise ValidationError("replay K 线不支持 start 偏移")
-            if adjust:
-                raise ValidationError("replay K 线不支持复权口径")
-            if not self.golden_root:
-                raise SourceUnavailable("replay: 未配置 golden_root", context={"real": False})
-            data = _golden_kline(self.golden_root, code, category, count) or []
-        elif special == "synthetic":
-            data = self._synthetic_kline(symbol, count)
-        elif pid == "tdx" and selected_channel == "vipdoc":
-            if adjust:
-                raise ValidationError("TDX vipdoc 仅提供原始价，不支持 adjust")
-            data = self._reader_kline(symbol, period, count, start=start)
-        elif pid == "tdx":
-            if adjust:
-                raise ValidationError("TDX quotation 仅提供原始价；请勿隐式切换 Web Provider 复权")
-            PROVIDERS.require("tdx", "bars", channel=selected_channel)
-            try:
-                with self._tdx_client() as client:
-                    data = client.bars(
+        try:
+            if special == "replay":
+                if start:
+                    raise ValidationError("replay K 线不支持 start 偏移")
+                if adjust:
+                    raise ValidationError("replay K 线不支持复权口径")
+                if not self.golden_root:
+                    raise SourceUnavailable("replay: 未配置 golden_root", context={"real": False})
+                data: list[Any] = _golden_kline(
+                    self.golden_root,
+                    code,
+                    category,
+                    count,
+                ) or []
+            elif special == "synthetic":
+                data = self._synthetic_kline(symbol, count)
+            elif pid == "tdx" and selected_channel == "vipdoc":
+                if adjust:
+                    raise ValidationError("TDX vipdoc 仅提供原始价，不支持 adjust")
+                data = self._reader_kline(symbol, period, count, start=start)
+            else:
+                if selected_channel is not None:
+                    PROVIDERS.require(pid, "bars", channel=selected_channel)
+                    if pid == "tdx" and selected_channel != "quotation":
+                        raise ValidationError(
+                            "统一 kline 兼容入口仅执行 tdx/quotation；"
+                            "extended/goods 请使用 md.tdx.<channel>.bars()",
+                            context={
+                                "provider": pid,
+                                "channel": selected_channel,
+                                "capability": "bars",
+                            },
+                        )
+                data = list(
+                    self._service.bars(
                         symbol,
                         period=period,
                         count=count,
                         start=start,
-                        as_format="dict",
+                        adjust=adjust,
+                        provider=pid,
                     )
-            except AllHostsUnreachable as exc:
-                err = self._provider_unavailable("tdx", "bars", exc, channel=selected_channel)
-                self.last_errors.append(("tdx", err))
-                raise err from exc
-        else:
-            if start:
-                raise ValidationError(
-                    f"Provider {pid!r} bars 当前不支持 start={start!r}；拒绝静默改变窗口",
-                    context={"provider": pid, "capability": "bars", "start": start},
                 )
-            PROVIDERS.require(pid, "bars", channel=selected_channel)
-            data = self._provider_bars(pid, symbol, period=period, count=count, adjust=adjust)
+        except TdxError as exc:
+            self._record_error(pid, exc)
+            if default_empty_ok and "返回空" in str(exc):
+                return []
+            raise
 
         if not data and not default_empty_ok:
             err = SourceUnavailable(
                 f"Provider {pid!r} 返回空 K 线数据",
                 context={"provider": pid, "capability": "bars", "fallback": False},
             )
-            self.last_errors.append((pid, err))
+            self._record_error(pid, err)
             raise err
 
         self.last_source = pid
         if as_format == "dict":
             return [_as_dict(x) for x in data]
         return list(data)
-
-    @staticmethod
-    def _provider_bars(
-        provider: str,
-        symbol: str,
-        *,
-        period: str,
-        count: int,
-        adjust: str,
-    ) -> list[Any]:
-        """Use a provider-specific adapter; never let a generic Web facade switch provider."""
-        if provider == "tencent":
-            from ..web.adapters import KlineSource
-
-            src = KlineSource()
-            try:
-                return src.fetch_bars(symbol, period=period, count=count, adjust=adjust)
-            finally:
-                src.close()
-        if provider == "sina":
-            if adjust not in ("", None):
-                raise ValidationError("Sina history_kline 仅提供原始价；不会自动切换 Eastmoney")
-            from ..web.history import SinaHistoryKlineSource
-
-            src = SinaHistoryKlineSource()
-            try:
-                return src.fetch_bars(symbol, period=period, count=count, adjust="")
-            finally:
-                src.close()
-        if provider == "eastmoney":
-            from ..web.history import EastmoneyHistoryKlineSource
-
-            src = EastmoneyHistoryKlineSource()
-            try:
-                return src.fetch_bars(symbol, period=period, count=count, adjust=adjust)
-            finally:
-                src.close()
-        if provider == "baidu":
-            from ..web.adapters_baidu import BaiduSource
-
-            src = BaiduSource()
-            try:
-                fetch = getattr(src, "fetch_bars", None)
-                if fetch is None:
-                    raise ValidationError("Baidu adapter 当前未暴露 provider-bound bars API")
-                return fetch(symbol, period=period, count=count)
-            finally:
-                src.close()
-        raise ValidationError(
-            f"Provider {provider!r} 尚无 provider-bound bars adapter",
-            context={"provider": provider, "capability": "bars"},
-        )
 
     def _reader_kline(
         self,
@@ -500,8 +421,7 @@ class DataSourceRouter:
                 f"TDX vipdoc 文件不存在 {path}",
                 context={"provider": "tdx", "channel": "vipdoc", "path": str(path)},
             )
-        # lc1 and lc5 are both minute-bar files. The old M1-only check routed
-        # M5 into DayBarReader and could parse a valid file with the wrong layout.
+        # lc1/lc5 use the minute-record layout; both must use MinBarReader.
         reader = MinBarReader() if rperiod in (Period.M1, Period.M5) else DayBarReader()
         bars = reader.read(path, output="dict")
         if start:
@@ -527,6 +447,16 @@ class DataSourceRouter:
             ).to_dict()
             for i in range(max(1, count))
         ]
+
+    def close(self) -> None:
+        if self._owns_service:
+            self._service.close()
+
+    def __enter__(self) -> DataSourceRouter:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
 
 
 def _to_quote(x: Any):
@@ -557,20 +487,11 @@ def _as_dict(x: Any) -> dict[str, Any]:
 
 
 def build_router(**kw: Any) -> DataSourceRouter:
-    """Build a router from effective config; invalid config fails fast.
-
-    v12 deliberately removes the old broad ``except Exception -> default router``
-    behavior because an invalid user configuration must not silently become a
-    different runtime configuration.
-    """
+    """Build compatibility router from effective config; invalid config fails fast."""
     from ..config import get_config
 
     cfg = get_config()
     sources_cfg = cfg.sources
-    if kw.get("kline_cache") is None and sources_cfg.kline_cache_db:
-        from ..cache import KlineCache
-
-        kw["kline_cache"] = KlineCache(sources_cfg.kline_cache_db)
     kw.setdefault("web_sources", list(getattr(cfg.web, "enabled_sources", ()) or ()))
     kw.setdefault("timeout", float(getattr(cfg.core, "timeout", 3.0)))
     return DataSourceRouter(config=sources_cfg, **kw)
