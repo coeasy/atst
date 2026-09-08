@@ -129,6 +129,8 @@ class ProviderHttpClient:
         **_: Any,
     ) -> Any:
         rows = self.service.quotes(symbols, provider="tdx")
+        if not isinstance(rows, list):
+            raise RuntimeError("Provider service quotes compatibility contract violated")
         return _format_rows(rows, as_format)
 
     def quotes_concurrent(
@@ -170,6 +172,8 @@ class ProviderHttpClient:
             adjust=adjust,
             provider="tdx",
         )
+        if not isinstance(rows, list):
+            raise RuntimeError("Provider service bars compatibility contract violated")
         return _format_rows(rows, as_format)
 
     @staticmethod
