@@ -33,6 +33,8 @@ def test_tdx_error_envelope_preserves_contract_and_redacts_sensitive_context() -
     assert data["capability"] == "quotes"
     assert data["query_id"] == "q1:abc"
     assert data["request_id"] == "req-1"
+    assert data["fallback_allowed"] is False
+    assert data["provider_switch_allowed"] is False
     assert data["context"]["safe_detail"] == "visible"
     assert "token" not in data["context"]
     assert "cookie" not in data["context"]
@@ -46,6 +48,8 @@ def test_native_exception_is_generic_public_internal_error() -> None:
     assert data["type"] == "InternalError"
     assert data["message"] == "internal error"
     assert data["context"] == {}
+    assert data["fallback_allowed"] is False
+    assert data["provider_switch_allowed"] is False
 
 
 def test_planned_service_annotates_execution_error_with_query_identity() -> None:
