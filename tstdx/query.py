@@ -158,6 +158,7 @@ class QueryFingerprint:
 
     @staticmethod
     def _payload(spec: QuerySpec, *, channel: str) -> dict[str, Any]:
+        """Return upstream data identity, excluding per-call cache age policy."""
         return {
             "schema_version": spec.schema_version,
             "capability": spec.capability,
@@ -169,7 +170,6 @@ class QueryFingerprint:
             "start": spec.start,
             "adjustment": spec.adjustment,
             "allow_partial": spec.allow_partial,
-            "max_age": spec.max_age,
             "allow_stale": spec.allow_stale,
         }
 
