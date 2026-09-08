@@ -145,7 +145,7 @@ def test_planned_taskstore_cancelled_running_work_remains_active() -> None:
     store.close()
 
 
-def test_provider_registry_exposes_verified_batch_limit(monkeypatch) -> None:  # noqa: ANN001
+def test_provider_registry_exposes_capability_specific_batch_limits(monkeypatch) -> None:  # noqa: ANN001
     _install_fake_legacy_app(monkeypatch)
 
     class FakeService:
@@ -157,8 +157,11 @@ def test_provider_registry_exposes_verified_batch_limit(monkeypatch) -> None:  #
     app = http_app.create_app(client)
     try:
         payload = app.routes[("GET", "/providers/{provider}")]("tdx")
-        quotation = next(channel for channel in payload["channels"] if channel["id"] == "quotation")
-        assert quotation["batch_limit"] == 60
+        quotation = next(
+            channel for channel in payload["channels"] if channel["id"] == "quotation"
+        )
+        assert quotation["batch_limits"] == {"quotes": 60}
+        assert "batch_limit" not in quotation
     finally:
         app.state.tasks.close()
 
