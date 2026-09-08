@@ -5,18 +5,21 @@
 
 ``tstdx.service.UnifiedMarketDataService`` remains the Provider execution core.
 This module layers deterministic QuerySpec/QueryPlan compilation, one total
-execution deadline, batch de-duplication, SingleFlight, dynamic health and an
-opt-in semantic cache without reimplementing Provider adapters or fallback.
+execution deadline, batch de-duplication, SingleFlight, dynamic health and
+semantic cache V2 without reimplementing Provider adapters or fallback logic.
 """
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Sequence
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 from .batch import BatchResult
+from .cache_v2 import SQLiteSemanticQueryCache, TieredSemanticQueryCache
 from .domain.models import Bar, Quote
 from .domain.symbol import normalize_symbol
 from .error_envelope import to_error_envelope
@@ -30,12 +33,9 @@ from .semantic_cache import SemanticQueryCache
 from .service import FreshnessEvidence, QueryResult, ResultMeta
 from .service import UnifiedMarketDataService as ProviderCoreService
 
-__all__ = [
-    "UnifiedMarketDataService",
-    "ProviderCoreService",
-    "BatchResult",
-    "market_data",
-]
+__all__ = ["UnifiedMarketDataService", "ProviderCoreService", "BatchResult", "market_data"]
+
+_LOG = logging.getLogger(__name__)
 
 
 class UnifiedMarketDataService(ProviderCoreService):
@@ -47,7 +47,9 @@ class UnifiedMarketDataService(ProviderCoreService):
         planner: QueryPlanner | None = None,
         default_provider: str | None = None,
         singleflight: SingleFlight | None = None,
-        query_cache: SemanticQueryCache | None = None,
+        query_cache: Any | None = None,
+        disk_cache_path: str | None = None,
+        cache_enabled: bool | None = None,
         failure_policy: FailurePolicy | None = None,
         health: SourceHealthRegistry | None = None,
         default_deadline_ms: int = 5000,
@@ -57,22 +59,67 @@ class UnifiedMarketDataService(ProviderCoreService):
             raise ValueError("default_deadline_ms must be > 0")
         if planner is not None and default_provider is not None:
             raise ValueError("planner 与 default_provider 不能同时提供：默认 Provider 必须只有一个真相源")
+        if query_cache is not None and disk_cache_path is not None:
+            raise ValueError("query_cache 与 disk_cache_path 不能同时提供：缓存所有权必须唯一")
+
+        from .config import get_config
+
+        self.config_snapshot = get_config()
         super().__init__(*args, **kwargs)
+
         if planner is not None:
             self.planner = planner
         else:
-            if default_provider is None:
-                from .config import get_config
-
-                configured_provider = get_config().sources.default_provider
-            else:
-                configured_provider = default_provider
+            configured_provider = (
+                self.config_snapshot.sources.default_provider
+                if default_provider is None
+                else default_provider
+            )
             self.planner = QueryPlanner(default_provider=configured_provider)
+
         self.singleflight = singleflight if singleflight is not None else SingleFlight()
-        self.query_cache = query_cache if query_cache is not None else SemanticQueryCache()
         self.failure_policy = failure_policy if failure_policy is not None else DEFAULT_FAILURE_POLICY
         self.health = health if health is not None else SourceHealthRegistry()
         self.default_deadline_ms = int(default_deadline_ms)
+        self.cache_errors = 0
+
+        self._owns_query_cache = query_cache is None
+        if query_cache is not None:
+            self.query_cache = query_cache
+            self.cache_enabled = True if cache_enabled is None else bool(cache_enabled)
+        else:
+            self.cache_enabled = (
+                bool(self.config_snapshot.cache.enabled)
+                if cache_enabled is None
+                else bool(cache_enabled)
+            )
+            l1 = SemanticQueryCache(max_entries=self.config_snapshot.cache.max_entries)
+            use_disk = disk_cache_path is not None or self.config_snapshot.cache.backend == "disk"
+            if self.cache_enabled and use_disk:
+                path = disk_cache_path
+                if path is None:
+                    path = str(
+                        Path(self.config_snapshot.cache.directory).expanduser()
+                        / "semantic-v1.sqlite3"
+                    )
+                self.query_cache = TieredSemanticQueryCache(
+                    l1,
+                    SQLiteSemanticQueryCache(path),
+                )
+            else:
+                self.query_cache = l1
+
+    def close(self) -> None:
+        try:
+            super().close()
+        finally:
+            if self._owns_query_cache:
+                close = getattr(self.query_cache, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        _LOG.exception("semantic cache close failed")
 
     def compile(self, spec: QuerySpec) -> QueryPlan:
         return self.planner.compile(spec)
@@ -121,10 +168,10 @@ class UnifiedMarketDataService(ProviderCoreService):
             penalize=self.health.should_penalize(exc),
         )
 
-    @staticmethod
-    def _cache_enabled(plan: QueryPlan) -> bool:
+    def _cache_enabled(self, plan: QueryPlan) -> bool:
         return (
-            not plan.spec.allow_partial
+            self.cache_enabled
+            and not plan.spec.allow_partial
             and plan.spec.max_age is not None
             and plan.spec.max_age > 0
         )
@@ -176,17 +223,33 @@ class UnifiedMarketDataService(ProviderCoreService):
         if not self._cache_enabled(plan):
             return None
         max_age = float(plan.spec.max_age if plan.spec.max_age is not None else 0.0)
-        cached = self.query_cache.get(plan.fingerprint.value, max_age=max_age)
-        if cached is None:
+        try:
+            cached = self.query_cache.get(plan.fingerprint.value, max_age=max_age)
+            if cached is None:
+                return None
+            if not isinstance(cached, QueryResult):
+                self.query_cache.invalidate(plan.fingerprint.value)
+                return None
+            try:
+                return self._as_cache_hit(cached, max_age=max_age)
+            except TdxError:
+                # Stale/invalid cached provenance is never a business failure;
+                # remove it and continue to direct Provider I/O.
+                self.query_cache.invalidate(plan.fingerprint.value)
+                return None
+        except Exception as exc:
+            self.cache_errors += 1
+            _LOG.warning("semantic cache read failed; treating as miss: %s", exc)
             return None
-        if not isinstance(cached, QueryResult):
-            self.query_cache.invalidate(plan.fingerprint.value)
-            return None
-        return self._as_cache_hit(cached, max_age=max_age)
 
     def _cache_put(self, plan: QueryPlan, result: QueryResult[Any]) -> None:
-        if self._cache_enabled(plan):
+        if not self._cache_enabled(plan):
+            return
+        try:
             self.query_cache.put(plan.fingerprint.value, result)
+        except Exception as exc:
+            self.cache_errors += 1
+            _LOG.warning("semantic cache write failed; ignoring optimization failure: %s", exc)
 
     @staticmethod
     def _quote_map(batch: BatchPlan, rows: Sequence[Quote]) -> dict[str, Quote]:
