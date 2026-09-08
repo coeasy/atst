@@ -7,13 +7,50 @@ import pytest
 import tstdx.facade as facade_pkg
 from tstdx.errors import CommandOffline, ValidationError
 from tstdx.facade.api import UnifiedQuoteAPI as LegacyUnifiedQuoteAPI
+from tstdx.facade.planned import UnifiedQuoteAPI as PlannedUnifiedQuoteAPI
 from tstdx.facade.strict import UnifiedQuoteAPI as StrictUnifiedQuoteAPI
+from tstdx.query import QuerySpec
 
 
-def test_official_facade_export_is_strict_and_legacy_remains_available() -> None:
-    assert facade_pkg.UnifiedQuoteAPI is StrictUnifiedQuoteAPI
+def test_official_facade_export_is_planned_and_compatibility_layers_remain_available() -> None:
+    assert facade_pkg.UnifiedQuoteAPI is PlannedUnifiedQuoteAPI
     assert facade_pkg.LegacyUnifiedQuoteAPI is LegacyUnifiedQuoteAPI
-    assert StrictUnifiedQuoteAPI is not LegacyUnifiedQuoteAPI
+    assert PlannedUnifiedQuoteAPI is not LegacyUnifiedQuoteAPI
+    assert issubclass(PlannedUnifiedQuoteAPI, StrictUnifiedQuoteAPI)
+
+
+def test_official_facade_query_and_query_many_delegate_to_one_planned_service() -> None:
+    calls: list[tuple[str, Any]] = []
+
+    class FakePlannedService:
+        def query(self, spec: QuerySpec, *, with_meta: bool = True):  # noqa: ANN201
+            calls.append(("query", (spec, with_meta)))
+            return {"capability": spec.capability, "with_meta": with_meta}
+
+        def query_many(self, specs, *, with_meta: bool = True):  # noqa: ANN001,ANN201
+            specs = tuple(specs)
+            calls.append(("query_many", (specs, with_meta)))
+            return [spec.capability for spec in specs]
+
+        def close(self) -> None:
+            calls.append(("close", None))
+
+    api = PlannedUnifiedQuoteAPI()
+    api._provider_service = FakePlannedService()  # type: ignore[assignment]
+    quote_spec = QuerySpec.build("quotes", symbols=["sh600519"], provider="tencent")
+    bar_spec = QuerySpec.build("bars", symbols=["sh600519"], provider="tdx", count=10)
+    try:
+        assert api.query(quote_spec, with_meta=False) == {
+            "capability": "quotes",
+            "with_meta": False,
+        }
+        assert api.query_many([quote_spec, bar_spec]) == ["quotes", "bars"]
+    finally:
+        api.close()
+
+    assert calls[0][0] == "query"
+    assert calls[1][0] == "query_many"
+    assert calls[-1] == ("close", None)
 
 
 def test_auto_adjust_does_not_silently_select_web_provider() -> None:
