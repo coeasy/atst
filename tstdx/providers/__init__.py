@@ -90,16 +90,6 @@ class ChannelSpec:
                 return limit
         return None
 
-    @property
-    def batch_limit(self) -> int | None:
-        """Compatibility accessor for the currently migrated quotes executor.
-
-        Formal registry consumers must use :meth:`batch_limit_for` or
-        ``batch_limits`` because other capabilities on the same channel may have
-        different limits.
-        """
-        return self.batch_limit_for("quotes")
-
 
 @dataclass(frozen=True, slots=True)
 class ProviderSpec:
