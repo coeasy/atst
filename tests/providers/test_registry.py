@@ -36,3 +36,10 @@ def test_market_and_channel_are_not_provider_ids() -> None:
         PROVIDERS.get("hk")
     with pytest.raises(ValidationError):
         PROVIDERS.get("kline")
+
+
+def test_only_verified_batch_limits_are_declared() -> None:
+    assert PROVIDERS.get("tdx").channel("quotation").batch_limit == 60
+    assert PROVIDERS.get("tencent").channel("quote").batch_limit is None
+    assert PROVIDERS.get("sina").channel("quote").batch_limit is None
+    assert PROVIDERS.get("eastmoney").channel("quote").batch_limit is None
