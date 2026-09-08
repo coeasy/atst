@@ -4,22 +4,23 @@
 """Bounded background task lifecycle for integration adapters.
 
 The historical HTTP ``TaskStore`` started one daemon thread per task and marked a
-running task ``cancelled`` immediately.  That removed it from the active count
+running task ``cancelled`` immediately. That removed it from the active count
 while the thread kept running, allowing ``max_tasks`` bypass and orphan work.
 
-``TaskManager`` makes task state reflect actual execution:
+``TaskManager`` makes task state reflect actual execution::
 
-``pending -> running -> done/failed``
-``pending/running -> cancel_requested -> cancelled``
+    pending -> running -> done/failed
+    pending/running -> cancel_requested -> cancelled
 
 A ``cancel_requested`` task remains active until the Future is cancelled before
 start or the worker actually exits. Running/cancel-requested records cannot be
-deleted.  ``max_tasks`` bounds running + queued work, so ThreadPoolExecutor's
-internal unbounded queue is never exposed unboundedly through this API.
+deleted. ``max_tasks`` bounds running + queued work, so ThreadPoolExecutor's
+internal queue is not exposed unboundedly through this API.
 """
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
@@ -28,15 +29,18 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Generic, TypeVar
 
-from ..errors import RateLimitedLocal, ValidationError
+from ..errors import RateLimitedLocal, TdxError, ValidationError
 
 __all__ = [
     "CancellationToken",
     "TaskStatus",
     "TaskSnapshot",
     "TaskManager",
+    "TaskStoreFull",
+    "TaskStore",
 ]
 
+_LOG = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
@@ -134,19 +138,16 @@ class _TaskRecord(Generic[T]):
         )
 
 
-class TaskManager:
-    """Bounded Future-based task manager.
+def _public_error(exc: BaseException) -> str:
+    """Return a safe task error; raw native exception details stay in logs."""
+    if isinstance(exc, TdxError):
+        return f"[{exc.code}] {exc.message or type(exc).__name__}"
+    _LOG.exception("background task failed", exc_info=exc)
+    return "internal error"
 
-    Parameters
-    ----------
-    max_workers:
-        Maximum simultaneously executing worker threads.
-    max_tasks:
-        Maximum active tasks (pending + running + cancel_requested). This is also
-        the effective queue bound.
-    retention_seconds:
-        Finished records older than this can be marked expired/purged.
-    """
+
+class TaskManager:
+    """Bounded Future-based task manager."""
 
     def __init__(
         self,
@@ -269,13 +270,13 @@ class TaskManager:
                 record.result = None
                 record.error = None
         except BaseException as exc:
+            public_error = _public_error(exc)
             with self._lock:
                 if record.token.cancelled:
                     record.status = TaskStatus.CANCELLED
-                    record.error = f"{type(exc).__name__}: {exc}"
                 else:
                     record.status = TaskStatus.FAILED
-                    record.error = f"{type(exc).__name__}: {exc}"
+                record.error = public_error
                 record.finished_at = time.time()
         else:
             with self._lock:
@@ -313,8 +314,6 @@ class TaskManager:
                 record.token.cancel()
             future = record.future
             if future is not None and future.cancel():
-                # Pending Future will never enter _run, so cancellation is now
-                # terminal and may release its active slot immediately.
                 record.status = TaskStatus.CANCELLED
                 record.finished_at = time.time()
             return record.snapshot()
@@ -382,3 +381,86 @@ class TaskManager:
 
     def __exit__(self, *exc: Any) -> None:
         self.shutdown(wait=True)
+
+
+class TaskStoreFull(RuntimeError):
+    """Legacy HTTP adapter signal for bounded task saturation."""
+
+
+class TaskStore:
+    """Legacy ``http_server.TaskStore`` API backed by :class:`TaskManager`.
+
+    The adapter keeps old dict-shaped responses while inheriting v12 lifecycle
+    safety. It intentionally raises :class:`ValidationError` when a caller tries
+    to delete live work instead of creating an orphan thread.
+    """
+
+    def __init__(
+        self,
+        max_tasks: int = 200,
+        *,
+        max_workers: int | None = None,
+        retention_seconds: float = 3600.0,
+    ) -> None:
+        workers = max_workers if max_workers is not None else min(8, max_tasks)
+        workers = max(1, workers)
+        self._manager = TaskManager(
+            max_workers=workers,
+            max_tasks=max_tasks,
+            retention_seconds=retention_seconds,
+            thread_name_prefix="tstdx-http-task",
+        )
+
+    @staticmethod
+    def _payload(snapshot: TaskSnapshot[Any], *, include_result: bool = True) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "task_id": snapshot.id,
+            "status": snapshot.status.value,
+            "submitted_at": snapshot.created_at,
+            "started_at": snapshot.started_at,
+            "finished_at": snapshot.finished_at,
+            "cancel_requested_at": snapshot.cancel_requested_at,
+        }
+        if include_result:
+            payload["result"] = snapshot.result
+            payload["error"] = snapshot.error
+        return payload
+
+    def submit(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> str:
+        try:
+            return self._manager.submit(fn, *args, **kwargs)
+        except RateLimitedLocal as exc:
+            raise TaskStoreFull("too many active background tasks") from exc
+
+    def get(self, task_id: str) -> dict[str, Any] | None:
+        try:
+            return self._payload(self._manager.get(task_id))
+        except KeyError:
+            return None
+
+    def list(self) -> list[dict[str, Any]]:
+        return [self._payload(item, include_result=False) for item in self._manager.list()]
+
+    def cancel(self, task_id: str) -> bool:
+        try:
+            before = self._manager.get(task_id)
+        except KeyError:
+            return False
+        if before.finished:
+            return False
+        self._manager.cancel(task_id)
+        return True
+
+    def delete(self, task_id: str) -> bool:
+        try:
+            self._manager.delete(task_id)
+        except KeyError:
+            return False
+        return True
+
+    def close(self) -> None:
+        self._manager.shutdown(wait=True)
+
+    @property
+    def active_count(self) -> int:
+        return self._manager.active_count
