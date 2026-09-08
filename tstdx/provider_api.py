@@ -647,7 +647,6 @@ class JslProviderAPI(WebProviderAPI):
     provider_id = "jsl"
     CHANNELS = {
         "bond": ("tstdx.web.adapters", "JslSource"),
-        "etf": ("tstdx.web.adapters", "JslSource"),
     }
 
     def bonds(self) -> Any:
