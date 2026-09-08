@@ -49,6 +49,7 @@ __all__ = [
     "SourceHealthRegistry",
     "ErrorEnvelope",
     "PlannedQuoteStream",
+    "StreamState",
     "StreamWatermark",
     "configure",
     "get_config",
@@ -89,7 +90,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from .providers import ChannelSpec, ProviderRegistry, ProviderSpec
     from .query import QueryFingerprint, QueryPlan, QueryPlanner, QuerySpec
     from .reader import BlockReader, DataProfile, DayBarReader, FinanceReader, MinBarReader
-    from .streaming.planned import PlannedQuoteStream, StreamWatermark
+    from .streaming.planned import PlannedQuoteStream, StreamState, StreamWatermark
     from .web import WebQuoteClient
 
 
@@ -122,6 +123,7 @@ _LAZY: dict[str, tuple[str, str]] = {
     "SourceHealthRegistry": ("tstdx.health", "SourceHealthRegistry"),
     "ErrorEnvelope": ("tstdx.error_envelope", "ErrorEnvelope"),
     "PlannedQuoteStream": ("tstdx.streaming.planned", "PlannedQuoteStream"),
+    "StreamState": ("tstdx.streaming.planned", "StreamState"),
     "StreamWatermark": ("tstdx.streaming.planned", "StreamWatermark"),
     "providers": ("tstdx.providers", ""),
     "facade": ("tstdx.facade", ""),
