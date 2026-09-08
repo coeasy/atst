@@ -53,6 +53,9 @@ class _MCPProviderClient(ProviderHttpClient):
 class MCPServer(LegacyMCPServer):
     """MCP server whose data path and public failures use canonical v12 contracts."""
 
+    _client: Any
+    _facade: Any
+
     def __init__(self, client: Any | None = None, facade: Any | None = None) -> None:
         super().__init__(client=client, facade=facade)
         self._owns_client = client is None
