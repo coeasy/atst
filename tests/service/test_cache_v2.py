@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from pathlib import Path
+
+import pytest
 
 from tstdx.cache_v2 import SQLiteSemanticQueryCache, TieredSemanticQueryCache
 from tstdx.domain.models import Bar, Quote
@@ -13,6 +16,11 @@ from tstdx.service import FreshnessEvidence, QueryResult, ResultMeta
 
 def _meta(capability: str, channel: str) -> ResultMeta:
     observed = time.time_ns()
+    mode = (
+        FreshnessMode.DIRECT_SNAPSHOT
+        if capability == "quotes"
+        else FreshnessMode.CURRENT_SERIES
+    )
     return ResultMeta(
         provider="tencent",
         channel=channel,
@@ -28,7 +36,7 @@ def _meta(capability: str, channel: str) -> ResultMeta:
         ),
         freshness_status=FreshnessStatus(
             verified=True,
-            mode=FreshnessMode.DIRECT_SNAPSHOT,
+            mode=mode,
             basis="test",
             provider_timestamp=None,
             observed_age_seconds=0.0,
@@ -36,6 +44,34 @@ def _meta(capability: str, channel: str) -> ResultMeta:
         ),
         real=True,
         fallback=False,
+    )
+
+
+def _poisoned_quote() -> QueryResult[list[Quote]]:
+    observed = time.time_ns()
+    return QueryResult(
+        data=[Quote(code="sh600519", price=99.0)],
+        meta=ResultMeta(
+            provider="tencent",
+            channel="quote",
+            capability="quotes",
+            observed_at_ns=observed,
+            freshness=FreshnessEvidence(
+                origin="cache",
+                observed_at_ns=observed,
+                cache_hit=True,
+            ),
+            freshness_status=FreshnessStatus(
+                verified=True,
+                mode=FreshnessMode.DIRECT_SNAPSHOT,
+                basis="poisoned",
+                provider_timestamp=None,
+                observed_age_seconds=0.0,
+                currentness_verified=True,
+            ),
+            real=True,
+            fallback=False,
+        ),
     )
 
 
@@ -76,6 +112,32 @@ def test_sqlite_bar_roundtrip(tmp_path: Path) -> None:
         assert restored.data[0].datetime == "2026-09-08"
         assert restored.data[0].close == 123.4
         assert restored.data[0].extra["source_row"] == 7
+        assert restored.meta.freshness_status.mode is FreshnessMode.CURRENT_SERIES
+    finally:
+        cache.close()
+
+
+def test_sqlite_rejects_poisoned_provenance_before_write(tmp_path: Path) -> None:
+    cache = SQLiteSemanticQueryCache(tmp_path / "poison-write.sqlite3")
+    try:
+        before_errors = cache.errors
+        cache.put("q1:poison", _poisoned_quote())
+        assert len(cache) == 0
+        assert cache.writes == 0
+        assert cache.errors == before_errors + 1
+    finally:
+        cache.close()
+
+
+def test_tiered_rejects_poison_before_touching_l1_or_l2(tmp_path: Path) -> None:
+    l1 = SemanticQueryCache()
+    l2 = SQLiteSemanticQueryCache(tmp_path / "poison-tiered.sqlite3")
+    cache = TieredSemanticQueryCache(l1, l2)
+    try:
+        with pytest.raises(ValueError, match="direct upstream provenance"):
+            cache.put("q1:poison", _poisoned_quote())
+        assert len(l1) == 0
+        assert len(l2) == 0
     finally:
         cache.close()
 
@@ -125,6 +187,39 @@ def test_corrupt_l2_payload_is_evicted_after_one_failed_decode(tmp_path: Path) -
         before_errors = cache.errors
         assert cache.get(key, max_age=10.0) is None
         assert cache.errors == before_errors
+    finally:
+        cache.close()
+
+
+def test_decoded_l2_provenance_poison_is_evicted_not_promoted(tmp_path: Path) -> None:
+    path = tmp_path / "provenance-corrupt.sqlite3"
+    cache = SQLiteSemanticQueryCache(path)
+    key = "q1:provenance-corrupt"
+    try:
+        cache.put(
+            key,
+            QueryResult(
+                data=[Quote(code="sh600519", price=1.0)],
+                meta=_meta("quotes", "quote"),
+            ),
+        )
+        with sqlite3.connect(path) as raw:
+            row = raw.execute(
+                "SELECT payload FROM semantic_cache WHERE fingerprint=?", (key,)
+            ).fetchone()
+            assert row is not None
+            payload = json.loads(str(row[0]))
+            payload["meta"]["fallback"] = True
+            raw.execute(
+                "UPDATE semantic_cache SET payload=? WHERE fingerprint=?",
+                (json.dumps(payload, ensure_ascii=False), key),
+            )
+            raw.commit()
+
+        before_errors = cache.errors
+        assert cache.get(key, max_age=10.0) is None
+        assert cache.errors == before_errors + 1
+        assert len(cache) == 0
     finally:
         cache.close()
 
