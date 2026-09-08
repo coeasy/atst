@@ -57,6 +57,8 @@ class BatchResult(Generic[T]):
     partial, and a partial batch must expose at least one auditable error. Error
     envelopes are defensively copied and the mapping is made read-only so later
     producer/caller mutation cannot rewrite an already-returned batch audit.
+    ``__deepcopy__`` reconstructs the immutable mapping explicitly so
+    SingleFlight/query-many followers still receive independent results.
     """
 
     items: tuple[T, ...]
@@ -78,9 +80,7 @@ class BatchResult(Generic[T]):
             requested_set = set(requested)
             unknown = sorted(set(raw_errors) - requested_set)
             if unknown:
-                raise ValueError(
-                    f"BatchResult.errors 包含未请求标的: {unknown!r}"
-                )
+                raise ValueError(f"BatchResult.errors 包含未请求标的: {unknown!r}")
             if len(items) > len(requested):
                 raise ValueError("BatchResult.items 数量不能超过 requested")
 
@@ -91,6 +91,25 @@ class BatchResult(Generic[T]):
         object.__setattr__(self, "requested", requested)
         object.__setattr__(self, "errors", MappingProxyType(copied_errors))
         object.__setattr__(self, "meta", copy.deepcopy(self.meta))
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> BatchResult[T]:
+        """Deep-copy through the constructor instead of copying mappingproxy."""
+
+        existing = memo.get(id(self))
+        if existing is not None:
+            return existing
+        copied = type(self)(
+            items=copy.deepcopy(self.items, memo),
+            errors={
+                symbol: copy.deepcopy(error, memo)
+                for symbol, error in self.errors.items()
+            },
+            requested=tuple(self.requested),
+            partial=self.partial,
+            meta=copy.deepcopy(self.meta, memo),
+        )
+        memo[id(self)] = copied
+        return copied
 
     @property
     def success(self) -> bool:
