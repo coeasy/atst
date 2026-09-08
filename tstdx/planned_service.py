@@ -5,8 +5,8 @@
 
 ``tstdx.service.UnifiedMarketDataService`` remains the Provider execution core.
 This module layers deterministic QuerySpec/QueryPlan compilation, one total
-execution deadline, batch de-duplication, SingleFlight and an opt-in semantic L1
-cache on top without reimplementing any Provider adapter or fallback logic.
+execution deadline, batch de-duplication, SingleFlight, dynamic health and an
+opt-in semantic cache without reimplementing Provider adapters or fallback.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from .errors import IntegrityViolation, SourceUnavailable, TdxError, ValidationE
 from .execution import BatchPlan, BatchPlanner, SingleFlight
 from .failure import DEFAULT_FAILURE_POLICY, FailurePolicy
 from .freshness import FRESHNESS, validate_freshness
+from .health import SourceHealthRegistry
 from .query import QueryPlan, QueryPlanner, QuerySpec
 from .semantic_cache import SemanticQueryCache
 from .service import FreshnessEvidence, QueryResult, ResultMeta
@@ -38,7 +39,7 @@ __all__ = [
 
 
 class UnifiedMarketDataService(ProviderCoreService):
-    """Provider-bound service with canonical query planning and coordination."""
+    """Provider-bound service with canonical planning and coordination."""
 
     def __init__(
         self,
@@ -48,6 +49,7 @@ class UnifiedMarketDataService(ProviderCoreService):
         singleflight: SingleFlight | None = None,
         query_cache: SemanticQueryCache | None = None,
         failure_policy: FailurePolicy | None = None,
+        health: SourceHealthRegistry | None = None,
         default_deadline_ms: int = 5000,
         **kwargs: Any,
     ) -> None:
@@ -69,6 +71,7 @@ class UnifiedMarketDataService(ProviderCoreService):
         self.singleflight = singleflight if singleflight is not None else SingleFlight()
         self.query_cache = query_cache if query_cache is not None else SemanticQueryCache()
         self.failure_policy = failure_policy if failure_policy is not None else DEFAULT_FAILURE_POLICY
+        self.health = health if health is not None else SourceHealthRegistry()
         self.default_deadline_ms = int(default_deadline_ms)
 
     def compile(self, spec: QuerySpec) -> QueryPlan:
@@ -102,6 +105,21 @@ class UnifiedMarketDataService(ProviderCoreService):
             for key, value in disposition.to_context().items():
                 exc.context.setdefault(key, value)
             raise
+
+    def _health_before(self, plan: QueryPlan) -> None:
+        self.health.before_request(plan.provider, plan.channel, plan.spec.capability)
+
+    def _health_success(self, plan: QueryPlan) -> None:
+        self.health.record_success(plan.provider, plan.channel, plan.spec.capability)
+
+    def _health_failure(self, plan: QueryPlan, exc: BaseException) -> None:
+        self.health.record_failure(
+            plan.provider,
+            plan.channel,
+            plan.spec.capability,
+            exc,
+            penalize=self.health.should_penalize(exc),
+        )
 
     @staticmethod
     def _cache_enabled(plan: QueryPlan) -> bool:
@@ -270,16 +288,22 @@ class UnifiedMarketDataService(ProviderCoreService):
 
         def fetch() -> QueryResult[list[Quote]]:
             plan.budget.begin_attempt()
-            result = super(UnifiedMarketDataService, self).quotes(
-                list(batch.unique), provider=plan.provider, with_meta=True
-            )
-            if not isinstance(result, QueryResult):
-                raise RuntimeError("ProviderCoreService.quotes(with_meta=True) contract violated")
-            plan.budget.ensure_remaining("provider_response")
-            coordinated = QueryResult(
-                data=self._align_quote_batch(batch, list(result.data)),
-                meta=result.meta,
-            )
+            self._health_before(plan)
+            try:
+                result = super(UnifiedMarketDataService, self).quotes(
+                    list(batch.unique), provider=plan.provider, with_meta=True
+                )
+                if not isinstance(result, QueryResult):
+                    raise RuntimeError("ProviderCoreService.quotes(with_meta=True) contract violated")
+                plan.budget.ensure_remaining("provider_response")
+                coordinated = QueryResult(
+                    data=self._align_quote_batch(batch, list(result.data)),
+                    meta=result.meta,
+                )
+            except BaseException as exc:
+                self._health_failure(plan, exc)
+                raise
+            self._health_success(plan)
             self._cache_put(plan, coordinated)
             return coordinated
 
@@ -297,15 +321,30 @@ class UnifiedMarketDataService(ProviderCoreService):
 
         def fetch() -> BatchResult[Quote]:
             plan.budget.begin_attempt()
-            result = super(UnifiedMarketDataService, self).quotes(
-                list(batch.unique), provider=plan.provider, with_meta=True
-            )
-            if not isinstance(result, QueryResult):
-                raise RuntimeError("ProviderCoreService.quotes(with_meta=True) contract violated")
-            plan.budget.ensure_remaining("provider_response")
-            by_symbol = self._quote_map(batch, list(result.data))
+            self._health_before(plan)
+            try:
+                result = super(UnifiedMarketDataService, self).quotes(
+                    list(batch.unique), provider=plan.provider, with_meta=True
+                )
+                if not isinstance(result, QueryResult):
+                    raise RuntimeError("ProviderCoreService.quotes(with_meta=True) contract violated")
+                plan.budget.ensure_remaining("provider_response")
+                by_symbol = self._quote_map(batch, list(result.data))
+            except BaseException as exc:
+                self._health_failure(plan, exc)
+                raise
+
             missing = [symbol for symbol in batch.unique if symbol not in by_symbol]
             errors = {}
+            if missing:
+                health_exc = SourceUnavailable(
+                    "Provider 批量行情返回部分缺失",
+                    context={"missing_symbols": missing, "partial": True},
+                )
+                self._health_failure(plan, health_exc)
+            else:
+                self._health_success(plan)
+
             for symbol in missing:
                 exc = SourceUnavailable(
                     "Provider 批量行情缺少请求标的",
@@ -391,18 +430,24 @@ class UnifiedMarketDataService(ProviderCoreService):
 
         def fetch() -> QueryResult[list[Bar]]:
             plan.budget.begin_attempt()
-            result = super(UnifiedMarketDataService, self).bars(
-                symbol,
-                period=plan.spec.period or "day",
-                count=plan.spec.count,
-                start=plan.spec.start,
-                adjust=plan.spec.adjustment,
-                provider=plan.provider,
-                with_meta=True,
-            )
-            if not isinstance(result, QueryResult):
-                raise RuntimeError("ProviderCoreService.bars(with_meta=True) contract violated")
-            plan.budget.ensure_remaining("provider_response")
+            self._health_before(plan)
+            try:
+                result = super(UnifiedMarketDataService, self).bars(
+                    symbol,
+                    period=plan.spec.period or "day",
+                    count=plan.spec.count,
+                    start=plan.spec.start,
+                    adjust=plan.spec.adjustment,
+                    provider=plan.provider,
+                    with_meta=True,
+                )
+                if not isinstance(result, QueryResult):
+                    raise RuntimeError("ProviderCoreService.bars(with_meta=True) contract violated")
+                plan.budget.ensure_remaining("provider_response")
+            except BaseException as exc:
+                self._health_failure(plan, exc)
+                raise
+            self._health_success(plan)
             self._cache_put(plan, result)
             return result
 
