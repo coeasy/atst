@@ -206,11 +206,17 @@ class QueryPlanner:
         self.default_provider = _resolve_default_provider(default_provider)
 
     @staticmethod
-    def _default_channel(spec: QuerySpec) -> str:
+    def _require_bar_period(provider: str, channel: str, period: str) -> None:
+        PROVIDERS.require_period(provider, channel, period)
+
+    @classmethod
+    def _default_channel(cls, spec: QuerySpec) -> str:
         pid = str(spec.provider)
         cap = spec.capability
         if spec.channel:
             PROVIDERS.require(pid, cap, channel=spec.channel)
+            if cap == "bars":
+                cls._require_bar_period(pid, spec.channel, spec.period)
             return spec.channel
         if cap == "quotes":
             preferred = {
@@ -236,9 +242,12 @@ class QueryPlanner:
                 preferred = ""
             if preferred:
                 PROVIDERS.require(pid, cap, channel=preferred)
+                cls._require_bar_period(pid, preferred, spec.period)
                 return preferred
         candidates = PROVIDERS.get(pid).channels_for(cap)
         if len(candidates) == 1:
+            if cap == "bars":
+                cls._require_bar_period(pid, candidates[0].id, spec.period)
             return candidates[0].id
         if not candidates:
             raise ValidationError(
