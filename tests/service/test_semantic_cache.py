@@ -71,15 +71,36 @@ def test_positive_max_age_enables_exact_fingerprint_cache() -> None:
     service.close()
 
 
-def test_different_max_age_policy_has_different_cache_identity() -> None:
+def test_different_max_age_policies_share_one_data_identity() -> None:
+    adapter = QuoteAdapter()
+    service = UnifiedMarketDataService(manager=Manager(adapter))
+
+    first = service.quotes(
+        ["sh600519"], provider="tencent", max_age=2.0, with_meta=True
+    )
+    second = service.quotes(
+        ["sh600519"], provider="tencent", max_age=1.0, with_meta=True
+    )
+
+    assert isinstance(first, QueryResult)
+    assert isinstance(second, QueryResult)
+    assert adapter.calls == 1
+    assert len(service.query_cache) == 1
+    assert second.meta.freshness.cache_hit is True
+    service.close()
+
+
+def test_stricter_max_age_still_refetches_shared_identity_when_too_old() -> None:
     adapter = QuoteAdapter()
     service = UnifiedMarketDataService(manager=Manager(adapter))
 
     service.quotes(["sh600519"], provider="tencent", max_age=1.0)
-    service.quotes(["sh600519"], provider="tencent", max_age=2.0)
+    time.sleep(0.02)
+    rows = service.quotes(["sh600519"], provider="tencent", max_age=0.001)
 
     assert adapter.calls == 2
-    assert len(service.query_cache) == 2
+    assert rows[0].price == 2.0
+    assert len(service.query_cache) == 1
     service.close()
 
 
