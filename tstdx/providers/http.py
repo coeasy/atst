@@ -18,7 +18,7 @@ response/history URLs so redirects cannot silently change provenance.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from typing import Any
 from urllib.parse import urlparse
 
