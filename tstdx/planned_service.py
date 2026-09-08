@@ -51,9 +51,9 @@ class UnifiedMarketDataService(ProviderCoreService):
         if default_deadline_ms <= 0:
             raise ValueError("default_deadline_ms must be > 0")
         super().__init__(*args, **kwargs)
-        self.planner = planner or QueryPlanner()
-        self.singleflight = singleflight or SingleFlight()
-        self.query_cache = query_cache or SemanticQueryCache()
+        self.planner = planner if planner is not None else QueryPlanner()
+        self.singleflight = singleflight if singleflight is not None else SingleFlight()
+        self.query_cache = query_cache if query_cache is not None else SemanticQueryCache()
         self.default_deadline_ms = int(default_deadline_ms)
 
     def compile(self, spec: QuerySpec) -> QueryPlan:
@@ -134,7 +134,7 @@ class UnifiedMarketDataService(ProviderCoreService):
     def _cache_get(self, plan: QueryPlan) -> QueryResult[Any] | None:
         if not self._cache_enabled(plan):
             return None
-        max_age = float(plan.spec.max_age or 0.0)
+        max_age = float(plan.spec.max_age if plan.spec.max_age is not None else 0.0)
         cached = self.query_cache.get(plan.fingerprint.value, max_age=max_age)
         if cached is None:
             return None
@@ -166,7 +166,7 @@ class UnifiedMarketDataService(ProviderCoreService):
             provider=provider,
             source=source,
             allow_partial=allow_partial,
-            deadline_ms=deadline_ms or self.default_deadline_ms,
+            deadline_ms=self.default_deadline_ms if deadline_ms is None else deadline_ms,
             max_age=max_age,
             allow_stale=allow_stale,
         )
@@ -235,7 +235,7 @@ class UnifiedMarketDataService(ProviderCoreService):
             count=count,
             start=start,
             adjustment=adjust,
-            deadline_ms=deadline_ms or self.default_deadline_ms,
+            deadline_ms=self.default_deadline_ms if deadline_ms is None else deadline_ms,
             max_age=max_age,
             allow_stale=allow_stale,
         )
