@@ -21,7 +21,7 @@ from dataclasses import replace
 from typing import Any
 
 from .domain.models import Bar, Quote
-from .errors import ValidationError
+from .errors import TdxError, ValidationError
 from .execution import BatchPlanner, SingleFlight
 from .freshness import FRESHNESS, validate_freshness
 from .query import QueryPlan, QueryPlanner, QuerySpec
@@ -68,18 +68,27 @@ class UnifiedMarketDataService(ProviderCoreService):
     ) -> Any:
         """Execute one canonical QuerySpec through the typed service methods."""
         plan = self.compile(spec)
-        if plan.spec.capability == "quotes":
-            return self._execute_quotes_plan(plan, with_meta=with_meta)
-        if plan.spec.capability == "bars":
-            return self._execute_bars_plan(plan, with_meta=with_meta)
-        raise ValidationError(
-            f"统一 query() 尚未接入 capability {plan.spec.capability!r}",
-            context={
-                "provider": plan.provider,
-                "channel": plan.channel,
-                "capability": plan.spec.capability,
-            },
-        )
+        try:
+            if plan.spec.capability == "quotes":
+                return self._execute_quotes_plan(plan, with_meta=with_meta)
+            if plan.spec.capability == "bars":
+                return self._execute_bars_plan(plan, with_meta=with_meta)
+            raise ValidationError(
+                f"统一 query() 尚未接入 capability {plan.spec.capability!r}",
+                context={
+                    "provider": plan.provider,
+                    "channel": plan.channel,
+                    "capability": plan.spec.capability,
+                },
+            )
+        except TdxError as exc:
+            exc.context.setdefault("provider", plan.provider)
+            exc.context.setdefault("channel", plan.channel)
+            exc.context.setdefault("capability", plan.spec.capability)
+            exc.context.setdefault("query_id", plan.fingerprint.value)
+            exc.context.setdefault("phase", "execution")
+            exc.context.setdefault("fallback", False)
+            raise
 
     @staticmethod
     def _cache_enabled(plan: QueryPlan) -> bool:
