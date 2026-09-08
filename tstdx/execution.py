@@ -99,14 +99,21 @@ class _Flight(Generic[T]):
     result: T | None = None
     error: BaseException | None = None
     waiters: int = 0
+    deadline_ns: int | None = None
 
 
 class SingleFlight:
-    """Join one upstream call without sharing mutable result ownership.
+    """Join one upstream call without changing deadline or ownership semantics.
 
     The leader receives the original result. Followers receive defensive deep
     copies after the leader completes, so coalescing identical upstream work
     never makes independent callers share a mutable ``QueryResult``/list/model.
+
+    A follower may join only when the active leader has an absolute deadline at
+    least as late as the follower's own deadline. Otherwise joining could make a
+    long-budget request inherit a short-budget leader failure. In that case the
+    follower executes independently rather than letting an optimization change
+    whether the logical request can succeed.
     """
 
     def __init__(self) -> None:
@@ -114,6 +121,24 @@ class SingleFlight:
         self._flights: dict[str, _Flight[Any]] = {}
         self.leaders = 0
         self.joins = 0
+        self.deadline_bypasses = 0
+
+    @staticmethod
+    def _absolute_deadline(timeout: float | None) -> int | None:
+        if timeout is None:
+            return None
+        return time.monotonic_ns() + max(0, int(timeout * 1_000_000_000))
+
+    @staticmethod
+    def _leader_can_satisfy(
+        leader_deadline_ns: int | None,
+        follower_deadline_ns: int | None,
+    ) -> bool:
+        if leader_deadline_ns is None:
+            return True
+        if follower_deadline_ns is None:
+            return False
+        return leader_deadline_ns >= follower_deadline_ns
 
     def do(
         self,
@@ -122,19 +147,29 @@ class SingleFlight:
         *,
         timeout: float | None = None,
     ) -> T:
+        caller_deadline_ns = self._absolute_deadline(timeout)
+        bypass = False
         with self._lock:
             flight = self._flights.get(key)
             if flight is None:
-                flight = _Flight[T]()
+                flight = _Flight[T](deadline_ns=caller_deadline_ns)
                 self._flights[key] = flight
                 self.leaders += 1
                 leader = True
                 _record_singleflight("leader")
-            else:
+            elif self._leader_can_satisfy(flight.deadline_ns, caller_deadline_ns):
                 flight.waiters += 1
                 self.joins += 1
                 leader = False
                 _record_singleflight("join")
+            else:
+                self.deadline_bypasses += 1
+                leader = False
+                bypass = True
+                _record_singleflight("deadline_bypass")
+
+        if bypass:
+            return fn()
 
         if leader:
             try:
