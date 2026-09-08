@@ -19,8 +19,8 @@
 * ``goods SYMBOL``        —— 商品行情（期货/期权/外汇，7727）
 * ``f10 SYMBOL``          —— F10 资料（默认列栏目目录；--file 下载并解析正文）
 * ``stream SYM…``         —— 实时行情流（轮询+增量+重连）
-* ``changes``             —— 盘中异动池（16 类异动，东财 Web 源）
-* ``hot``                 —— 股吧个股人气榜（东财 Web 源）
+* ``changes``             —— 盘中异动池（16 类异动，东财 Web Provider）
+* ``hot``                 —— 股吧个股人气榜（东财 Web Provider）
 * ``feedback submit/stats`` —— 反馈上报（脱敏）/ 本地使用统计
 * ``probe CMD``           —— 未知命令主动探测（非交易时段门禁 + 归档 DRAFT）
 
@@ -29,16 +29,19 @@
 本 ``__init__`` 保持 ``tstdx.cli:main`` 控制台脚本入口与
 ``from tstdx.cli import build_parser, main`` 的历史导入路径不变。
 
-全部命令走 :class:`~tstdx.client.TdxClient`（在线）。离线调试可用
-``tstdx bars 600000 --source cache`` 走 golden 缓存回放（需 ``--golden`` 指向
-``tests/golden``）。
+命令失败统一通过 :class:`tstdx.error_envelope.ErrorEnvelope` 输出到 stderr；
+Provider 错误保留稳定错误码，原生异常只公开 ``E9000/internal error``，并显式
+声明 ``fallback_allowed=false`` / ``provider_switch_allowed=false``。
 """
 
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Sequence
 
+from ..error_envelope import to_error_envelope
+from ..errors import TdxError
 from ._common import _fmt, _pct, _print_bars_table, _print_rows, _print_table, _resolve_hosts
 from .cmds_hosts import _cmd_feedback, _cmd_probe, _cmd_serve, _cmd_server_test
 from .cmds_market import (
@@ -72,6 +75,11 @@ __all__ = ["build_parser", "main"]
 # 上一节显式 import 的 _cmd_* 与 helpers 即兼容导出面（测试/下游引用保持不变）。
 
 
+def _emit_error(exc: BaseException) -> None:
+    envelope = to_error_envelope(exc, phase="cli")
+    print(json.dumps({"error": envelope.to_dict()}, ensure_ascii=False), file=sys.stderr)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -80,6 +88,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:  # pragma: no cover
         print("已中断", file=sys.stderr)
         return 130
+    except TdxError as exc:
+        _emit_error(exc)
+        return 2
+    except Exception as exc:  # native details must not escape the CLI boundary
+        _emit_error(exc)
+        return 1
 
 
 if __name__ == "__main__":  # pragma: no cover
