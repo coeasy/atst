@@ -32,15 +32,19 @@ __all__ = [
 
 @dataclass(frozen=True, slots=True)
 class ChannelSpec:
-    """One provider-internal data channel with static execution facts."""
+    """One provider-internal data channel with static execution facts.
+
+    ``batch_limit`` is appended after the historical fields so direct positional
+    construction keeps the pre-v12 ``notes`` argument position unchanged.
+    """
 
     id: str
     capabilities: frozenset[str]
     markets: frozenset[str] = frozenset()
     live: bool = False
     local: bool = False
-    batch_limit: int | None = None
     notes: str = ""
+    batch_limit: int | None = None
 
     @classmethod
     def build(
@@ -51,8 +55,8 @@ class ChannelSpec:
         markets: Iterable[str] = (),
         live: bool = False,
         local: bool = False,
-        batch_limit: int | None = None,
         notes: str = "",
+        batch_limit: int | None = None,
     ) -> "ChannelSpec":
         if batch_limit is not None and batch_limit <= 0:
             raise ValueError("batch_limit must be > 0 when declared")
@@ -62,8 +66,8 @@ class ChannelSpec:
             markets=frozenset(str(x).strip().lower() for x in markets),
             live=bool(live),
             local=bool(local),
-            batch_limit=batch_limit,
             notes=notes,
+            batch_limit=batch_limit,
         )
 
 
@@ -194,8 +198,8 @@ def _c(
     markets: Iterable[str] = (),
     live: bool = False,
     local: bool = False,
-    batch_limit: int | None = None,
     notes: str = "",
+    batch_limit: int | None = None,
 ) -> ChannelSpec:
     return ChannelSpec.build(
         id,
@@ -203,8 +207,8 @@ def _c(
         markets=markets,
         live=live,
         local=local,
-        batch_limit=batch_limit,
         notes=notes,
+        batch_limit=batch_limit,
     )
 
 
@@ -229,8 +233,8 @@ PROVIDERS = ProviderRegistry(
                     "snapshot",
                     markets=("cn_a", "cn_bse"),
                     live=True,
-                    batch_limit=60,
                     notes="0x0530 realtime quote batch limit is 60 symbols",
+                    batch_limit=60,
                 ),
                 _c("extended", "markets", "instruments", "quotes", "bars", live=True),
                 _c("goods", "quotes", "bars", markets=("future", "commodity"), live=True),
