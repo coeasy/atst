@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -55,6 +56,60 @@ def test_legacy_web_selects_one_provider_only() -> None:
         )
     finally:
         router.close()
+
+
+class FakeSinaService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def bars(
+        self,
+        symbol: str,
+        *,
+        period: str,
+        count: int,
+        start: int,
+        adjust: str,
+        provider: str,
+    ) -> list[dict[str, Any]]:
+        self.calls.append(
+            {
+                "symbol": symbol,
+                "period": period,
+                "count": count,
+                "start": start,
+                "adjust": adjust,
+                "provider": provider,
+            }
+        )
+        return [{"datetime": "2026-09-08 10:00", "close": 1.0}]
+
+    def close(self) -> None:
+        return None
+
+
+def test_sina_specific_period_does_not_pass_through_tdx_category_mapping() -> None:
+    service = FakeSinaService()
+    router = DataSourceRouter(service=service)  # type: ignore[arg-type]
+
+    rows = router.kline(
+        "sh600519",
+        provider="sina",
+        period="120min",
+        count=1,
+    )
+
+    assert rows == [{"datetime": "2026-09-08 10:00", "close": 1.0}]
+    assert service.calls == [
+        {
+            "symbol": "sh600519",
+            "period": "120min",
+            "count": 1,
+            "start": 0,
+            "adjust": "",
+            "provider": "sina",
+        }
+    ]
 
 
 def test_m5_vipdoc_uses_minute_reader(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
