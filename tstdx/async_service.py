@@ -155,10 +155,12 @@ class AsyncMarketDataService:
     async def aclose(self) -> None:
         if self._closed:
             return
-        if self._owns_service:
-            await self._run(self.sync.close)
-        self._closed = True
-        self._executor.shutdown(wait=True, cancel_futures=False)
+        try:
+            if self._owns_service:
+                await self._run(self.sync.close)
+        finally:
+            self._closed = True
+            self._executor.shutdown(wait=True, cancel_futures=False)
 
     async def __aenter__(self) -> "AsyncMarketDataService":
         return self
