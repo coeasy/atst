@@ -4,7 +4,7 @@
 """Due-aware streaming scheduler over the planned Provider service.
 
 Unlike the legacy stream, one fast subscription does not force every slower
-subscription to poll at the fastest interval.  Each subscription owns
+subscription to poll at the fastest interval. Each subscription owns
 ``next_due``; only due subscriptions are unioned/deduplicated for one upstream
 fetch. Callback dispatch runs on a separate thread behind bounded per-
 subscription queues, so a slow consumer does not block Provider polling.
@@ -44,6 +44,18 @@ _MISSING_ALERT_AFTER = 3
 
 QuoteCallback = Callable[[str, dict[str, Any]], None]
 ErrorCallback = Callable[[Exception], None]
+
+
+def _normalize_subscription_symbol(symbol: str) -> str:
+    """Normalize public stream symbols and keep all validation inside E6xxx."""
+    try:
+        return normalize_symbol(symbol)
+    except Exception as exc:
+        raise SubscriptionError(
+            f"无法解析订阅 symbol {symbol!r}",
+            context={"symbol": symbol},
+            cause=exc,
+        ) from exc
 
 
 def _bare_code(symbol: str) -> str:
@@ -88,6 +100,7 @@ class StreamSubscription:
     queue: BackpressureQueue | None = field(default=None, repr=False)
     missing: dict[str, int] = field(default_factory=dict, repr=False)
     dropped: int = 0
+    reported_dropped: int = 0
 
 
 class PlannedQuoteStream:
@@ -148,7 +161,7 @@ class PlannedQuoteStream:
         raw = [symbols] if isinstance(symbols, str) else list(symbols)
         if not raw:
             raise SubscriptionError("symbols 不能为空")
-        normalized = tuple(normalize_symbol(symbol) for symbol in raw)
+        normalized = tuple(_normalize_subscription_symbol(symbol) for symbol in raw)
         sub_id = uuid.uuid4().hex[:12]
         sub = StreamSubscription(
             id=sub_id,
@@ -226,7 +239,6 @@ class PlannedQuoteStream:
 
     @staticmethod
     def _advance_due(sub: StreamSubscription, now: float) -> None:
-        # Preserve cadence but skip missed slots instead of immediate catch-up.
         while sub.next_due <= now:
             sub.next_due += sub.interval
 
@@ -268,7 +280,7 @@ class PlannedQuoteStream:
                     self._advance_due(sub, now)
                 self._stop.wait(self.reconnect.next_delay())
                 continue
-            except Exception as exc:  # keep scheduler alive; never switch Provider
+            except Exception as exc:
                 self.stats.provider_errors += 1
                 _LOG.exception("planned stream unexpected provider error")
                 wrapped = SubscriptionError(
@@ -332,51 +344,59 @@ class PlannedQuoteStream:
         queue = sub.queue
         if queue is None:
             return
-        dropped_before = sub.dropped
         queue.put(item)
-        if sub.dropped > dropped_before:
-            queue.put(
-                (
-                    "error",
-                    "",
-                    BackpressureOverflow(
-                        "订阅回调队列溢出，已丢弃最旧事件",
-                        context={
-                            "subscription_id": sub.id,
-                            "dropped_total": sub.dropped,
-                            "max_queue": sub.max_queue,
-                        },
-                    ),
-                )
-            )
         self._dispatch_wakeup.set()
 
     def _has_pending(self) -> bool:
         return any(
-            sub.queue is not None and sub.queue.qsize() > 0
+            (sub.queue is not None and sub.queue.qsize() > 0)
+            or sub.dropped > sub.reported_dropped
             for sub in self._subscriptions()
         )
+
+    def _dispatch_overflow(self, sub: StreamSubscription) -> bool:
+        if sub.dropped <= sub.reported_dropped:
+            return False
+        dropped_since_last = sub.dropped - sub.reported_dropped
+        sub.reported_dropped = sub.dropped
+        if sub.on_error is None:
+            return False
+        try:
+            sub.on_error(
+                BackpressureOverflow(
+                    f"订阅回调队列溢出，新增丢弃 {dropped_since_last} 个最旧事件",
+                    context={
+                        "subscription_id": sub.id,
+                        "dropped": dropped_since_last,
+                        "dropped_total": sub.dropped,
+                        "max_queue": sub.max_queue,
+                    },
+                )
+            )
+        except Exception:
+            _LOG.exception("planned stream overflow callback failed")
+        return True
 
     def _dispatch_loop(self) -> None:
         while not self._stop.is_set() or self._has_pending():
             delivered = False
             for sub in self._subscriptions():
                 queue = sub.queue
-                if queue is None:
-                    continue
-                for kind, symbol, payload in queue.drain():
-                    delivered = True
-                    if kind == "quote" and sub.on_quote is not None:
-                        try:
-                            sub.on_quote(symbol, payload)
-                            self.stats.delivered_events += 1
-                        except Exception:
-                            _LOG.exception("planned stream quote callback failed")
-                    elif kind == "error" and sub.on_error is not None:
-                        try:
-                            sub.on_error(payload)
-                        except Exception:
-                            _LOG.exception("planned stream error callback failed")
+                if queue is not None:
+                    for kind, symbol, payload in queue.drain():
+                        delivered = True
+                        if kind == "quote" and sub.on_quote is not None:
+                            try:
+                                sub.on_quote(symbol, payload)
+                                self.stats.delivered_events += 1
+                            except Exception:
+                                _LOG.exception("planned stream quote callback failed")
+                        elif kind == "error" and sub.on_error is not None:
+                            try:
+                                sub.on_error(payload)
+                            except Exception:
+                                _LOG.exception("planned stream error callback failed")
+                delivered = self._dispatch_overflow(sub) or delivered
             if not delivered:
                 self._dispatch_wakeup.wait(self.callback_idle_wait)
                 self._dispatch_wakeup.clear()
