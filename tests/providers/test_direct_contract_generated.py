@@ -29,6 +29,32 @@ class FakeManager:
 class FakeService:
     def __init__(self) -> None:
         self.manager = FakeManager()
+        self.calls: list[tuple[str, str]] = []
+
+    def quotes(
+        self,
+        symbols: Any,
+        *,
+        provider: str,
+        with_meta: bool = False,
+    ) -> tuple[str, str, Any, bool]:
+        self.calls.append(("quotes", provider))
+        return "quotes", provider, symbols, with_meta
+
+    def bars(
+        self,
+        symbol: str,
+        *,
+        period: str,
+        count: int,
+        start: int,
+        adjust: str,
+        provider: str,
+        with_meta: bool = False,
+    ) -> tuple[str, str, str, bool]:
+        del period, count, start, adjust
+        self.calls.append(("bars", provider))
+        return "bars", provider, symbol, with_meta
 
 
 def _api_type(provider: str) -> type[provider_api.ProviderAPI]:
@@ -46,10 +72,10 @@ def test_every_registered_provider_has_exactly_one_direct_api_type(provider: str
 @pytest.mark.parametrize("provider", tuple(pid for pid in PROVIDERS.ids() if pid != "tdx"))
 def test_web_direct_channel_mapping_is_generated_from_registry(provider: str) -> None:
     api_type = _api_type(provider)
-    registered = {channel.id for channel in PROVIDERS.get(provider).channels}
-    mapped = set(api_type.CHANNELS)
-    if provider == "eastmoney":
-        mapped.add("corporate")
+    registered = {
+        channel.id for channel in PROVIDERS.get(provider).channels if not channel.local
+    }
+    mapped = set(api_type.CHANNELS) | set(api_type.EXPLICIT_CHANNELS)
     assert mapped == registered
 
     for channel, (module_name, class_name) in api_type.CHANNELS.items():
@@ -62,20 +88,63 @@ def test_every_registered_web_channel_resolves_without_network(provider: str) ->
     service = FakeService()
     api = provider_api.build_provider_api(service, provider)
     for channel in PROVIDERS.get(provider).channels:
+        if channel.local:
+            continue
         resolved = api.channel(channel.id)
         assert resolved is not None
+
+
+@pytest.mark.parametrize("provider", PROVIDERS.ids())
+@pytest.mark.parametrize("capability", ("quotes", "bars"))
+def test_unified_direct_methods_are_registry_guarded_before_service_io(
+    provider: str,
+    capability: str,
+) -> None:
+    service = FakeService()
+    api = provider_api.build_provider_api(service, provider)
+    supported = PROVIDERS.get(provider).supports(capability)
+
+    if supported:
+        if capability == "quotes":
+            result = api.quotes("sh600519")
+        else:
+            result = api.bars("sh600519")
+        assert result[0] == capability
+        assert service.calls == [(capability, provider)]
+        return
+
+    with pytest.raises(ValidationError) as caught:
+        if capability == "quotes":
+            api.quotes("sh600519")
+        else:
+            api.bars("sh600519")
+    assert service.calls == []
+    assert caught.value.context["provider"] == provider
+    assert caught.value.context["capability"] == capability
+    assert caught.value.context["phase"] == "direct_contract"
+    assert caught.value.context["fallback"] is False
+    assert caught.value.context["provider_switch_allowed"] is False
 
 
 def test_tdx_registered_online_channels_resolve_and_vipdoc_is_explicitly_local_only() -> None:
     service = FakeService()
     api = provider_api.build_provider_api(service, "tdx")
-    registered = {channel.id for channel in PROVIDERS.get("tdx").channels}
-    assert registered == {"quotation", "extended", "goods", "f10", "mac", "vipdoc"}
+    spec = PROVIDERS.get("tdx")
+    online = {channel.id for channel in spec.channels if not channel.local}
+    local = {channel.id for channel in spec.channels if channel.local}
 
-    for channel in sorted(registered - {"vipdoc"}):
+    assert set(provider_api.TdxProviderAPI.DIRECT_CHANNELS) == online
+    assert local == {"vipdoc"}
+    for channel in sorted(online):
         assert api.channel(channel) == ("tdx", channel)
 
     with pytest.raises(ValidationError) as caught:
         api.channel("vipdoc")
     assert caught.value.context["provider"] == "tdx"
     assert caught.value.context["channel"] == "vipdoc"
+    assert caught.value.context["phase"] == "direct_contract"
+
+
+def test_contract_builder_rejects_incomplete_provider_type_set() -> None:
+    with pytest.raises(RuntimeError, match="registry mismatch"):
+        provider_api._build_provider_api_types((provider_api.TdxProviderAPI,))
