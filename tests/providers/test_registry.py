@@ -20,6 +20,15 @@ def test_vipdoc_is_tdx_channel_not_provider() -> None:
     assert PROVIDERS.supports("tdx", "bars", channel="vipdoc") is True
 
 
+def test_jsl_registry_exposes_only_verified_convertible_bond_channel() -> None:
+    jsl = PROVIDERS.get("jsl")
+    assert {channel.id for channel in jsl.channels} == {"bond"}
+    assert jsl.channel("bond").capabilities == frozenset({"bond"})
+    with pytest.raises(ValidationError):
+        jsl.channel("etf")
+    assert PROVIDERS.supports("jsl", "etf") is False
+
+
 def test_source_is_only_provider_selector_alias() -> None:
     assert resolve_provider(provider="tdx") == "tdx"
     assert resolve_provider(source="tdx") == "tdx"
