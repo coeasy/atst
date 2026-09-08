@@ -3,10 +3,13 @@
 
 """Semantic Cache V2: exact fingerprint L1/L2 caching without pickle.
 
-Only canonical ``QueryResult[list[Quote|Bar]]`` values are persisted. SQLite
-storage failures are optimization failures: they log and degrade to cache miss,
-never changing the upstream query result. This includes initialization failure:
-an unwritable cache directory must never prevent market-data service startup.
+Only canonical ``QueryResult[list[Quote|Bar]]`` values are persisted. Persistent
+entries must carry direct, verified, fail-closed Provider provenance; poisoned
+cache/replay/synthetic/fallback metadata is rejected both before write and after
+decode. SQLite storage failures are optimization failures: they log and degrade
+to cache miss, never changing the upstream query result. This includes
+initialization failure: an unwritable cache directory must never prevent
+market-data service startup.
 """
 
 from __future__ import annotations
@@ -39,6 +42,66 @@ def _quote_from_dict(row: dict[str, Any]) -> Quote:
     extra = {key: value for key, value in row.items() if key not in QUOTE_FIELDS}
     core["extra"] = extra
     return Quote(**core)
+
+
+def _validate_persistable_meta(meta: ResultMeta, *, kind: str) -> None:
+    """Reject cache entries that could impersonate another execution origin."""
+
+    if kind not in {"quotes", "bars"} or meta.capability != kind:
+        raise ValueError("semantic cache capability/kind mismatch")
+    if not meta.provider or not meta.channel:
+        raise ValueError("semantic cache provider/channel must be present")
+    if not meta.real or meta.fallback:
+        raise ValueError("semantic cache stores only real fail-closed results")
+
+    freshness = meta.freshness
+    if (
+        freshness.origin != "direct"
+        or freshness.cache_hit
+        or freshness.replay
+        or freshness.synthetic
+        or not freshness.real
+    ):
+        raise ValueError("semantic cache stores only direct upstream provenance")
+    if meta.observed_at_ns != freshness.observed_at_ns:
+        raise ValueError("semantic cache observed_at provenance mismatch")
+
+    status = meta.freshness_status
+    if status is None or not status.verified:
+        raise ValueError("semantic cache requires verified freshness status")
+    if status.provider_timestamp != freshness.provider_timestamp:
+        raise ValueError("semantic cache provider timestamp provenance mismatch")
+
+    if kind == "quotes":
+        if status.mode is not FreshnessMode.DIRECT_SNAPSHOT:
+            raise ValueError("quote cache requires direct_snapshot freshness mode")
+        if not status.currentness_verified:
+            raise ValueError("quote cache requires verified currentness")
+        return
+
+    if status.mode is FreshnessMode.CURRENT_SERIES:
+        if not status.currentness_verified:
+            raise ValueError("current-series bar cache requires verified currentness")
+    elif status.mode is FreshnessMode.HISTORICAL_CLOSED:
+        if status.currentness_verified:
+            raise ValueError("historical-closed bar cache must remain non-current")
+    else:
+        raise ValueError("bar cache freshness mode is not persistable")
+
+
+def _validate_persistable_result(value: Any) -> QueryResult[Any]:
+    if not isinstance(value, QueryResult) or not isinstance(value.data, list):
+        raise ValueError("semantic cache stores only QueryResult[list]")
+    _validate_persistable_meta(value.meta, kind=value.meta.capability)
+    if value.meta.capability == "quotes":
+        if not all(isinstance(item, Quote) for item in value.data):
+            raise ValueError("quote cache contains non-Quote item")
+    elif value.meta.capability == "bars":
+        if not all(isinstance(item, Bar) for item in value.data):
+            raise ValueError("bar cache contains non-Bar item")
+    else:
+        raise ValueError("unsupported semantic cache capability")
+    return value
 
 
 def _encode_meta(meta: ResultMeta) -> dict[str, Any]:
@@ -106,22 +169,17 @@ def _decode_meta(data: dict[str, Any]) -> ResultMeta:
 def _encode_result(value: Any) -> str | None:
     if not isinstance(value, QueryResult):
         return None
-    capability = value.meta.capability
-    if capability not in {"quotes", "bars"} or not isinstance(value.data, list):
-        return None
+    checked = _validate_persistable_result(value)
+    capability = checked.meta.capability
     if capability == "quotes":
-        if not all(isinstance(item, Quote) for item in value.data):
-            return None
-        rows = [item.to_dict() for item in value.data]
+        rows = [item.to_dict() for item in checked.data]
     else:
-        if not all(isinstance(item, Bar) for item in value.data):
-            return None
-        rows = [item.to_dict() for item in value.data]
+        rows = [item.to_dict() for item in checked.data]
     payload = {
         "format_version": _FORMAT_VERSION,
         "kind": capability,
         "data": rows,
-        "meta": _encode_meta(value.meta),
+        "meta": _encode_meta(checked.meta),
     }
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
@@ -140,7 +198,9 @@ def _decode_result(payload: str) -> QueryResult[Any]:
         items = [Bar.from_dict(dict(row)) for row in rows]
     else:
         raise ValueError("unsupported semantic cache kind")
-    return QueryResult(data=items, meta=_decode_meta(dict(data["meta"])))
+    result = QueryResult(data=items, meta=_decode_meta(dict(data["meta"])))
+    _validate_persistable_meta(result.meta, kind=str(kind))
+    return result
 
 
 class SQLiteSemanticQueryCache:
@@ -281,7 +341,7 @@ class SQLiteSemanticQueryCache:
         except Exception as exc:
             with self._lock:
                 self.errors += 1
-            _LOG.warning("semantic L2 cache write failed; ignoring optimization failure: %s", exc)
+            _LOG.warning("semantic L2 cache write rejected/failed; ignoring optimization: %s", exc)
 
     def invalidate(self, key: str) -> bool:
         try:
@@ -337,7 +397,7 @@ class SQLiteSemanticQueryCache:
 
 
 class TieredSemanticQueryCache:
-    """L1 memory + optional L2 SQLite with promotion on L2 hit."""
+    """L1 memory + provenance-checked L2 SQLite with promotion on L2 hit."""
 
     def __init__(self, l1: SemanticQueryCache, l2: SQLiteSemanticQueryCache) -> None:
         self.l1 = l1
@@ -349,10 +409,14 @@ class TieredSemanticQueryCache:
             return value
         value = self.l2.get(key, max_age=max_age)
         if value is not None:
+            _validate_persistable_result(value)
             self.l1.put(key, value)
         return value
 
     def put(self, key: str, value: Any) -> None:
+        # Validate before touching either tier: a rejected L2 write must not leave
+        # a poisoned L1 entry behind.
+        _validate_persistable_result(value)
         self.l1.put(key, value)
         self.l2.put(key, value)
 
