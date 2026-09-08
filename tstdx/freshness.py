@@ -65,8 +65,8 @@ class FreshnessProfile:
     allow_replay: bool = False
     allow_synthetic: bool = False
     max_observation_age_seconds: float | None = None
-    max_provider_calendar_age_days: int | None = None
     description: str = ""
+    max_provider_calendar_age_days: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
