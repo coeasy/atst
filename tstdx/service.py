@@ -3,9 +3,9 @@
 
 """Provider-bound high-level market-data service.
 
-The service is the executable v12 boundary:
+The service is the executable v12 boundary::
 
-``Provider -> Channel -> Capability -> Endpoint/Host``.
+    Provider -> Channel -> Capability -> Endpoint/Host
 
 One production query binds to exactly one Provider. TDX host failover remains
 inside TDX transport pools; no error in this module triggers a request to a
@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar
 
 from .domain.models import Bar, Quote
 from .domain.symbol import normalize_symbol
-from .errors import AllHostsUnreachable, SourceUnavailable, ValidationError
+from .errors import AllHostsUnreachable, SourceUnavailable, TdxError, ValidationError
 from .providers import PROVIDERS, ProviderSpec, resolve_provider
 
 if TYPE_CHECKING:
@@ -44,12 +44,12 @@ T = TypeVar("T")
 
 @dataclass(frozen=True, slots=True)
 class FreshnessEvidence:
-    """Evidence that describes how the returned data was obtained.
+    """Evidence for how a result was obtained.
 
     ``origin='direct'`` is mandatory for live unified queries. Provider timestamps
-    are preserved when the upstream exposes one; TDX 0x0530 currently has no
-    verified wall-clock timestamp, so ``provider_timestamp`` may legitimately be
-    ``None`` while the direct-fetch evidence remains explicit.
+    are preserved when the upstream exposes a verified timestamp. TDX 0x0530
+    currently has no verified wall-clock timestamp, so ``provider_timestamp`` may
+    legitimately be ``None``; the service never guesses one from opaque fields.
     """
 
     origin: str
@@ -87,7 +87,7 @@ class QueryResult(Generic[T]):
 
 
 class ProviderManager:
-    """Own and reuse all Provider/Channel client lifecycles."""
+    """Own Provider lifecycles and reuse connections across Channel adapters."""
 
     def __init__(
         self,
@@ -99,6 +99,7 @@ class ProviderManager:
         self.timeout = float(timeout)
         self._lock = threading.RLock()
         self._tdx_clients: dict[str, Any] = {}
+        self._http_clients: dict[str, Any] = {}
         self._adapters: dict[tuple[str, str], Any] = {}
         self._closed = False
 
@@ -107,11 +108,11 @@ class ProviderManager:
             raise RuntimeError("ProviderManager 已关闭")
 
     def tdx_channel(self, channel: str) -> Any:
-        """Return one persistent TDX channel client.
+        """Return one persistent TDX Channel client.
 
-        Each protocol family owns its own pool; only ``quotation`` consumes the
-        user-supplied 7709 host list. Other channels resolve their own family
-        hosts, so a 7709 override cannot accidentally leak into GOODS/F10/7727.
+        Only quotation consumes the user-supplied 7709 host list. Other TDX
+        protocol families resolve their own host groups, preventing a 7709 host
+        override from leaking into GOODS/F10/7727/MAC.
         """
         cid = str(channel).strip().lower()
         PROVIDERS.get("tdx").channel(cid)
@@ -148,15 +149,45 @@ class ProviderManager:
     def tdx(self) -> Any:
         return self.tdx_channel("quotation")
 
+    def http_client(self, provider: str) -> Any:
+        """Return one persistent HTTP client per Provider.
+
+        Adapters still own their Channel-specific headers/rate policies, but TCP
+        keep-alive/HTTP2 connection reuse is shared across the same Provider.
+        """
+        pid = resolve_provider(provider=provider)
+        if pid == "tdx":
+            raise ValidationError("TDX 使用协议连接池，不属于 HTTP Provider")
+        PROVIDERS.get(pid)
+        with self._lock:
+            self._ensure_open()
+            existing = self._http_clients.get(pid)
+            if existing is not None:
+                return existing
+            from .web.base import build_client
+
+            client = build_client()
+            self._http_clients[pid] = client
+            return client
+
     def adapter(
         self,
         provider: str,
         channel: str,
         factory: Callable[[], Any],
+        *,
+        resource_key: str | None = None,
     ) -> Any:
+        """Cache one runtime adapter without inventing fake Registry Channels.
+
+        ``channel`` is always a real ChannelRegistry id. ``resource_key`` may be
+        more specific (for example ``corporate:profile``) and is used only for
+        runtime object caching.
+        """
         pid = resolve_provider(provider=provider)
-        PROVIDERS.get(pid).channel(channel)
-        key = (pid, channel)
+        cid = str(channel).strip().lower()
+        PROVIDERS.get(pid).channel(cid)
+        key = (pid, resource_key or cid)
         with self._lock:
             self._ensure_open()
             existing = self._adapters.get(key)
@@ -166,24 +197,46 @@ class ProviderManager:
             self._adapters[key] = obj
             return obj
 
+    def web_adapter(
+        self,
+        provider: str,
+        channel: str,
+        adapter_cls: type[Any],
+        *,
+        resource_key: str | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Construct a Channel adapter on the Provider-shared HTTP client."""
+        pid = resolve_provider(provider=provider)
+        return self.adapter(
+            pid,
+            channel,
+            lambda: adapter_cls(
+                client=self.http_client(pid),
+                timeout=self.timeout,
+                **kwargs,
+            ),
+            resource_key=resource_key,
+        )
+
     def quote_adapter(self, provider: str) -> Any:
         pid = resolve_provider(provider=provider)
         if pid == "tencent":
             from .web.adapters import TencentSource
 
-            return self.adapter(pid, "quote", lambda: TencentSource(timeout=self.timeout))
+            return self.web_adapter(pid, "quote", TencentSource)
         if pid == "sina":
             from .web.adapters import SinaSource
 
-            return self.adapter(pid, "quote", lambda: SinaSource(timeout=self.timeout))
+            return self.web_adapter(pid, "quote", SinaSource)
         if pid == "eastmoney":
             from .web.adapters import EastmoneySource
 
-            return self.adapter(pid, "quote", lambda: EastmoneySource(timeout=self.timeout))
+            return self.web_adapter(pid, "quote", EastmoneySource)
         if pid == "baidu":
             from .web.adapters_baidu import BaiduSource
 
-            return self.adapter(pid, "quote", lambda: BaiduSource(timeout=self.timeout))
+            return self.web_adapter(pid, "quote", BaiduSource)
         raise ValidationError(
             f"Provider {pid!r} 尚无统一 quotes adapter",
             context={"provider": pid, "capability": "quotes"},
@@ -192,40 +245,47 @@ class ProviderManager:
     def bar_adapter(self, provider: str, *, period: str = "day") -> tuple[str, Any]:
         pid = resolve_provider(provider=provider)
         p = (period or "day").strip().lower()
-        minute_periods = {"1min", "1m", "min", "5min", "5m", "15min", "15m", "30min", "30m", "60min", "60m"}
+        minute_periods = {
+            "1min",
+            "1m",
+            "min",
+            "5min",
+            "5m",
+            "15min",
+            "15m",
+            "30min",
+            "30m",
+            "60min",
+            "60m",
+        }
         if pid == "tencent":
+            if p in minute_periods:
+                from .web.adapters_ext import MinuteKlineSource
+
+                return "minute_kline", self.web_adapter(
+                    pid,
+                    "minute_kline",
+                    MinuteKlineSource,
+                )
             from .web.adapters import KlineSource
 
-            channel = "minute_kline" if p in minute_periods else "kline"
-            return channel, self.adapter(
-                pid,
-                channel,
-                lambda: KlineSource(timeout=self.timeout),
-            )
+            return "kline", self.web_adapter(pid, "kline", KlineSource)
         if pid == "sina":
             from .web.history import SinaHistoryKlineSource
 
-            return "history_kline", self.adapter(
+            return "history_kline", self.web_adapter(
                 pid,
                 "history_kline",
-                lambda: SinaHistoryKlineSource(timeout=self.timeout),
+                SinaHistoryKlineSource,
             )
         if pid == "eastmoney":
             from .web.history import EastmoneyHistoryKlineSource
 
-            return "kline", self.adapter(
-                pid,
-                "kline",
-                lambda: EastmoneyHistoryKlineSource(timeout=self.timeout),
-            )
+            return "kline", self.web_adapter(pid, "kline", EastmoneyHistoryKlineSource)
         if pid == "baidu":
             from .web.adapters_baidu import BaiduSource
 
-            return "kline", self.adapter(
-                pid,
-                "kline",
-                lambda: BaiduSource(timeout=self.timeout),
-            )
+            return "kline", self.web_adapter(pid, "kline", BaiduSource)
         raise ValidationError(
             f"Provider {pid!r} 尚无统一 bars adapter",
             context={"provider": pid, "capability": "bars"},
@@ -235,6 +295,8 @@ class ProviderManager:
         with self._lock:
             if self._closed:
                 return
+            # Adapters do not own injected Provider HTTP clients, so close them
+            # first and release the shared clients exactly once afterwards.
             objects = [*self._tdx_clients.values(), *self._adapters.values()]
             seen: set[int] = set()
             for obj in objects:
@@ -243,8 +305,15 @@ class ProviderManager:
                 seen.add(id(obj))
                 with contextlib.suppress(Exception):
                     obj.close()
+            for client in self._http_clients.values():
+                if id(client) in seen:
+                    continue
+                seen.add(id(client))
+                with contextlib.suppress(Exception):
+                    client.close()
             self._tdx_clients.clear()
             self._adapters.clear()
+            self._http_clients.clear()
             self._closed = True
 
 
@@ -315,6 +384,19 @@ class UnifiedMarketDataService:
         )
 
     @staticmethod
+    def _annotate_error(
+        exc: TdxError,
+        *,
+        provider: str,
+        channel: str,
+        capability: str,
+    ) -> None:
+        exc.context.setdefault("provider", provider)
+        exc.context.setdefault("channel", channel)
+        exc.context.setdefault("capability", capability)
+        exc.context.setdefault("fallback", False)
+
+    @staticmethod
     def _raise_provider_unavailable(
         provider: str,
         capability: str,
@@ -360,6 +442,14 @@ class UnifiedMarketDataService:
                 data = list(self.manager.quote_adapter(pid).fetch(syms))
         except AllHostsUnreachable as exc:
             self._raise_provider_unavailable(pid, "quotes", exc, channel=channel)
+        except TdxError as exc:
+            self._annotate_error(
+                exc,
+                provider=pid,
+                channel=channel,
+                capability="quotes",
+            )
+            raise
 
         if syms and not data:
             raise SourceUnavailable(
@@ -422,9 +512,17 @@ class UnifiedMarketDataService:
             else:
                 channel, adapter = self.manager.bar_adapter(pid, period=period)
                 if pid == "tencent":
-                    data = list(
-                        adapter.fetch_bars(sym, period=period, count=count, adjust=adjust)
-                    )
+                    if channel == "minute_kline":
+                        data = list(adapter.fetch_bars(sym, period=period, count=count))
+                    else:
+                        data = list(
+                            adapter.fetch_bars(
+                                sym,
+                                period=period,
+                                count=count,
+                                adjust=adjust,
+                            )
+                        )
                 elif pid == "sina":
                     data = list(adapter.fetch_bars(sym, period=period, count=count, adjust=""))
                 elif pid == "eastmoney":
@@ -442,6 +540,14 @@ class UnifiedMarketDataService:
                     raise ValidationError(f"Provider {pid!r} 尚无 bars adapter")
         except AllHostsUnreachable as exc:
             self._raise_provider_unavailable(pid, "bars", exc, channel=channel)
+        except TdxError as exc:
+            self._annotate_error(
+                exc,
+                provider=pid,
+                channel=channel,
+                capability="bars",
+            )
+            raise
 
         if not data:
             raise SourceUnavailable(
@@ -503,7 +609,7 @@ class UnifiedMarketDataService:
     def close(self) -> None:
         self.manager.close()
 
-    def __enter__(self) -> "UnifiedMarketDataService":
+    def __enter__(self) -> UnifiedMarketDataService:
         return self
 
     def __exit__(self, *exc: Any) -> None:
