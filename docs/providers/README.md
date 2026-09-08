@@ -42,7 +42,7 @@ provider_id = tdx
 | `sina` | auxiliary live/info | quote / history_kline / suggest / boards / fund_flow / news | 联想、板块、新闻、资金流 | 禁止 |
 | `eastmoney` | auxiliary live/info | quote / kline / trends / rank / fund_flow / limit_pool / stock_changes / northbound / corporate / longhu / hot_rank / margin / index_constituents / fund | 资金流、涨跌停池、异动、人气、两融、龙虎榜、公司资料 | 禁止 |
 | `baidu` | auxiliary live | quote / kline / minute / ticks | 百度财经行情 | 禁止 |
-| `jsl` | auxiliary info | bond / etf | 可转债、ETF 等特色数据 | 禁止 |
+| `jsl` | auxiliary info | bond | 已验证的可转债数据；ETF 尚未注册为生产能力 | 禁止 |
 | `boc` | auxiliary info | fx | 外汇牌价 | 禁止 |
 | `iwencai` | auxiliary info | screening | 自然语言选股 | 禁止 |
 
@@ -55,6 +55,8 @@ mode=local_historical
 ```
 
 Golden Replay / Synthetic 只属于测试运行时。
+
+JSL 的 ETF 能力只有在存在独立真实 endpoint、adapter、schema 与真实样本门禁后才可重新注册；不得复用可转债 endpoint 冒充 ETF。
 
 ## 3. Provider → Channel → Capability
 
@@ -230,13 +232,53 @@ freshness profile
 ## 10. Health 与 Registry 分离
 
 ```text
-ProviderRegistry      = 静态事实
+ProviderRegistry       = 静态事实
 ProviderHealthRegistry = 动态健康状态
 ```
 
 TDX 某个 host 不健康只更新 Endpoint/Host health；不能把 `provider=tdx` 静态能力删掉。
 
-## 11. Error
+## 11. Freshness 与历史窗口
+
+Freshness 必须和查询语义绑定，不能只检查“字段非空”。
+
+### 当前行情 / current series
+
+统一实时查询遵守：
+
+```text
+direct selected Provider fetch
++ real provenance
++ parseable Provider tail timestamp（时间序列能力）
++ gross-stale sanity guard
++ integrity/schema check
+```
+
+`gross-stale sanity guard` 只是防止明显陈旧数据，不宣称自己是交易所日历。当前实现不会用估算交易日历把周末、春节、国庆等休市期的最新真实数据误判为 stale。
+
+### historical closed window
+
+显式历史窗口必须标记为：
+
+```text
+mode=historical_closed
+verified=true
+currentness_verified=false
+```
+
+历史数据可以是真实、可审计、可缓存的数据，但不能满足要求“当前/最新”的 live contract，也不能把 `verified` 等同于 `verified_fresh`。
+
+### bounded cache
+
+显式允许 `max_age` 时，cache 只是优化层：
+
+- cache key/fingerprint 必须绑定 Provider/Channel/Capability 与查询窗口；
+- cache payload provenance 必须与当前 QueryPlan 完全一致；
+- replay/synthetic/fallback 或跨 Provider payload 直接作废并回源当前 Provider；
+- cache hit 必须保留原始 freshness mode；历史窗口从 cache 返回后仍是 `historical_closed`，不能被重标为 `current_series`；
+- current-series cache hit 仍需重新校验 Provider tail currentness。
+
+## 12. Error
 
 现有 `SourceUnavailable` 保持 E7050，不创建第二棵错误树。
 
@@ -256,7 +298,9 @@ context 应统一使用：
 }
 ```
 
-## 12. CI 文档门禁
+Provider-specific Direct API 已有 `TdxError` 必须原样保留并补齐 Provider/Channel context；adapter 意外抛出的原生异常统一进入 `InternalError(E9000)`，不得伪装成跨 Provider fallback 条件。
+
+## 13. CI 文档门禁
 
 ```text
 ProviderRegistry -> docs/providers/<provider>.md exists
@@ -267,8 +311,10 @@ Direct API -> documented + callable
 provider/source alias -> same ProviderId
 no hk/us/kline/minute/ticks as Provider IDs
 vipdoc -> tdx/vipdoc only
+cache hit -> same Provider/Channel/Capability + same freshness mode
+historical closed -> currentness_verified=false
 ```
 
-## 13. 最终术语
+## 14. 最终术语
 
 > **Provider 是正式实体；source 是用户语言/API 兼容名，指向同一个 Provider ID。Provider 下有 Channel，Channel 暴露 Capability，Endpoint/Host 只在 Provider + Channel 内部。**
