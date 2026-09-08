@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pytest
 
@@ -104,6 +104,27 @@ def test_historical_closed_series_is_auditable_but_not_current() -> None:
     assert status.verified is True
     assert status.currentness_verified is False
     assert status.basis == "direct_historical_closed_series"
+
+
+def test_historical_closed_series_rejects_unparseable_tail_timestamp() -> None:
+    now = _now_ns()
+    profile = FreshnessProfile(
+        mode=FreshnessMode.HISTORICAL_CLOSED,
+        require_provider_timestamp=True,
+    )
+
+    with pytest.raises(FreshnessViolation) as caught:
+        validate_freshness(
+            _evidence("unknown", now_ns=now),
+            provider="tdx",
+            channel="quotation",
+            capability="bars",
+            profile=profile,
+            now_ns=now,
+            require_live=False,
+        )
+
+    assert caught.value.context["reason"] == "provider_timestamp_unparseable"
 
 
 def test_historical_closed_series_cannot_satisfy_live_requirement() -> None:
