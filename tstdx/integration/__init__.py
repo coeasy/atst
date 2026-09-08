@@ -1,21 +1,20 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Integration adapters — bridge tstdx to third-party protocols.
+"""Integration adapters — protocol edges over the canonical v12 runtime.
 
-This package hosts standalone adapters that expose tstdx capabilities to
-external systems.  The current member is :mod:`.mcp_server`, a zero-
-dependency stdio JSON-RPC 2.0 server implementing the MCP (Model Context
-Protocol) with 10 tstdx tools.
-
-Design principle
-----------------
-Every adapter in this package is **zero-dependency**: it must work without
-the optional ``mcp`` / ``fastapi`` / … extras installed.  Optional
-dependencies may be detected at runtime for enhanced features, but the
-default code path never imports them.
+The package-level ``create_app`` is the official FastAPI factory. It uses the
+QueryPlan-backed Provider service and bounded TaskManager v2 while preserving
+the established REST route surface. ``tstdx.integration.http_server`` remains a
+legacy route-definition module for compatibility and test injection.
 """
 
 from __future__ import annotations
 
-__all__ = []
+__all__ = ["create_app"]
+
+
+def create_app(*args, **kwargs):  # noqa: ANN002,ANN003,ANN201
+    from .http_app import create_app as _create_app
+
+    return _create_app(*args, **kwargs)
