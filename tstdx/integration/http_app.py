@@ -22,6 +22,7 @@ from ..error_envelope import to_error_envelope
 from ..errors import TdxError, ValidationError, http_status_for
 from ..planned_service import UnifiedMarketDataService
 from ..providers import PROVIDERS
+from ..service import QueryResult
 from . import http_server as _routes
 from .http_runtime import ProviderHttpClient
 from .tasks import TaskStore as _SafeTaskStore
@@ -173,6 +174,8 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
             max_age=max_age,
             with_meta=True,
         )
+        if not isinstance(result, QueryResult):
+            raise RuntimeError("planned quotes REST contract violated")
         return {
             "data": _jsonable(result.data),
             "meta": _jsonable(result.meta),
@@ -223,6 +226,8 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
             max_age=max_age,
             with_meta=True,
         )
+        if not isinstance(result, QueryResult):
+            raise RuntimeError("planned bars REST contract violated")
         return {
             "data": _jsonable(result.data),
             "meta": _jsonable(result.meta),
