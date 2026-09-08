@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any, TypeVar
@@ -16,6 +17,23 @@ from .planned import UnifiedQuoteAPI
 __all__ = ["AsyncUnifiedQuoteAPI"]
 
 T = TypeVar("T")
+
+
+async def _await_thread_call(worker: asyncio.Task[T]) -> T:
+    """Wait for the real sync call to finish before releasing active-call state."""
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                continue
+            except BaseException:
+                break
+        with contextlib.suppress(BaseException):
+            worker.result()
+        raise
 
 
 class AsyncUnifiedQuoteAPI:
@@ -45,8 +63,9 @@ class AsyncUnifiedQuoteAPI:
             self._active_calls += 1
             if self._active_calls == 1:
                 self._drained.clear()
+        worker = asyncio.create_task(asyncio.to_thread(partial(fn, *args, **kwargs)))
         try:
-            return await asyncio.to_thread(partial(fn, *args, **kwargs))
+            return await _await_thread_call(worker)
         finally:
             async with self._state_lock:
                 self._active_calls -= 1
