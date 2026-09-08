@@ -49,9 +49,10 @@ class SourceHealthRegistry:
     """Thread-safe dynamic health registry with a single-probe circuit breaker.
 
     Every allowed request captures the current health ``generation`` in the
-    calling thread. Penalizing failures advance the generation. A success from a
-    request that started in an older generation is counted for diagnostics but
-    cannot erase a newer concurrent failure/cooldown.
+    calling thread. Penalizing failures advance the generation. A completion
+    from an older generation is retained for aggregate diagnostics, but it may
+    not overwrite the newer circuit/consecutive-failure state. This applies to
+    both stale successes and stale failures.
     """
 
     def __init__(self, *, failure_threshold: int = 3, cooldown_seconds: float = 30.0) -> None:
@@ -171,25 +172,40 @@ class SourceHealthRegistry:
         penalize: bool = True,
     ) -> HealthState:
         key = self.key(provider, channel, capability)
-        self._take_request_generation(key)
+        started_generation = self._take_request_generation(key)
         now = time.monotonic_ns()
         error_code = exc.code if isinstance(exc, TdxError) else "E9000"
         with self._lock:
             current = self._states.get(key, HealthState())
-            consecutive = current.consecutive_failures + 1 if penalize else current.consecutive_failures
-            cooldown_until = current.cooldown_until_ns
-            if penalize and consecutive >= self.failure_threshold:
-                cooldown_until = now + self.cooldown_ns
-            updated = replace(
-                current,
-                failures=current.failures + 1,
-                consecutive_failures=consecutive,
-                last_failure_ns=now,
-                last_error_code=error_code,
-                cooldown_until_ns=cooldown_until,
-                half_open_probe=False,
-                generation=current.generation + (1 if penalize else 0),
+            stale = (
+                started_generation is not None
+                and started_generation < current.generation
             )
+            if stale:
+                updated = replace(
+                    current,
+                    failures=current.failures + 1,
+                    last_failure_ns=now,
+                )
+            else:
+                consecutive = (
+                    current.consecutive_failures + 1
+                    if penalize
+                    else current.consecutive_failures
+                )
+                cooldown_until = current.cooldown_until_ns
+                if penalize and consecutive >= self.failure_threshold:
+                    cooldown_until = now + self.cooldown_ns
+                updated = replace(
+                    current,
+                    failures=current.failures + 1,
+                    consecutive_failures=consecutive,
+                    last_failure_ns=now,
+                    last_error_code=error_code,
+                    cooldown_until_ns=cooldown_until,
+                    half_open_probe=False,
+                    generation=current.generation + (1 if penalize else 0),
+                )
             self._states[key] = updated
             return updated
 
