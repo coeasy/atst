@@ -43,6 +43,11 @@ class BatchResult(Generic[T]):
     requested symbols are fanned out in the same way as the strict API.
     ``errors`` is keyed by canonical symbol and therefore remains compact when a
     missing symbol was requested more than once.
+
+    ``partial`` is a derived truth: any per-symbol error means the batch is
+    partial, and a partial batch must expose at least one auditable error. The
+    input mapping is defensively copied so later caller mutation cannot rewrite a
+    result that has already been returned or serialized.
     """
 
     items: tuple[T, ...]
@@ -50,6 +55,12 @@ class BatchResult(Generic[T]):
     requested: tuple[str, ...] = ()
     partial: bool = False
     meta: Any | None = None
+
+    def __post_init__(self) -> None:
+        errors = dict(self.errors)
+        if bool(errors) != bool(self.partial):
+            raise ValueError("BatchResult.partial 必须与逐标的 errors 是否存在完全一致")
+        object.__setattr__(self, "errors", errors)
 
     @property
     def success(self) -> bool:
