@@ -327,9 +327,26 @@ class UnifiedMarketDataService:
         hosts: Sequence[Any] | None = None,
         timeout: float = 5.0,
         manager: ProviderManager | None = None,
+        close_manager: bool | None = None,
     ) -> None:
-        self.manager = manager or ProviderManager(hosts=hosts, timeout=timeout)
+        if manager is None:
+            if close_manager is False:
+                raise ValueError(
+                    "内部创建的 ProviderManager 必须由 Service 负责关闭；"
+                    "close_manager=False 仅适用于外部注入 manager"
+                )
+            self.manager = ProviderManager(hosts=hosts, timeout=timeout)
+            self._owns_manager = True
+        else:
+            self.manager = manager
+            self._owns_manager = bool(close_manager) if close_manager is not None else False
         self._namespaces: dict[str, ProviderAPI] = {}
+        self._closed = False
+        self._close_lock = threading.Lock()
+
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise RuntimeError("UnifiedMarketDataService 已关闭")
 
     def _provider(
         self,
@@ -338,6 +355,7 @@ class UnifiedMarketDataService:
         source: str | None,
         capability: str,
     ) -> str:
+        self._ensure_open()
         pid = resolve_provider(
             provider=provider,
             source=source,
@@ -666,6 +684,7 @@ class UnifiedMarketDataService:
         return data
 
     def provider(self, provider: str) -> ProviderAPI:
+        self._ensure_open()
         pid = resolve_provider(provider=provider)
         PROVIDERS.get(pid)
         namespace = self._namespaces.get(pid)
@@ -709,9 +728,16 @@ class UnifiedMarketDataService:
         return self.provider("iwencai")
 
     def close(self) -> None:
-        self.manager.close()
+        with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._namespaces.clear()
+            if self._owns_manager:
+                self.manager.close()
 
     def __enter__(self) -> UnifiedMarketDataService:
+        self._ensure_open()
         return self
 
     def __exit__(self, *exc: Any) -> None:
