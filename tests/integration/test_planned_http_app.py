@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -56,6 +58,17 @@ def _install_fake_legacy_app(monkeypatch):  # noqa: ANN001,ANN202
         return app
 
     monkeypatch.setattr(http_app._routes, "create_app", fake_create_app)
+
+
+def _response_payload(response: Any) -> dict[str, Any]:
+    return json.loads(response.body.decode("utf-8"))
+
+
+def _fake_request(request_id: str = "req-1") -> Any:
+    return SimpleNamespace(
+        state=SimpleNamespace(request_id=request_id),
+        url=SimpleNamespace(path="/test"),
+    )
 
 
 def test_official_factory_injects_planned_client_and_taskstore(monkeypatch) -> None:  # noqa: ANN001
@@ -207,5 +220,75 @@ def test_partial_provider_quotes_endpoint_returns_batch_result_json(monkeypatch)
         assert payload["items"][0]["code"] == "sh600519"
         assert payload["errors"]["sz000001"]["code"] == "E7050"
         assert payload["meta"]["provider"] == "tdx"
+    finally:
+        app.state.tasks.close()
+
+
+def test_fastapi_request_validation_uses_canonical_error_envelope(monkeypatch) -> None:  # noqa: ANN001
+    from fastapi.exceptions import RequestValidationError
+
+    _install_fake_legacy_app(monkeypatch)
+    client = SimpleNamespace(service=object(), close=lambda: None)
+    app = http_app.create_app(client)
+    try:
+        handler = app.exception_handlers[RequestValidationError]
+        response = asyncio.run(handler(_fake_request("validation-1"), RequestValidationError([])))
+        payload = _response_payload(response)["error"]
+        assert response.status_code == 422
+        assert payload["request_id"] == "validation-1"
+        assert payload["phase"] == "http_validation"
+        assert payload["fallback_allowed"] is False
+        assert payload["provider_switch_allowed"] is False
+        assert "detail" not in payload
+    finally:
+        app.state.tasks.close()
+
+
+def test_fastapi_http_exception_is_enveloped_without_detail_leak(monkeypatch) -> None:  # noqa: ANN001
+    from fastapi import HTTPException
+
+    _install_fake_legacy_app(monkeypatch)
+    client = SimpleNamespace(service=object(), close=lambda: None)
+    app = http_app.create_app(client)
+    try:
+        handler = app.exception_handlers[HTTPException]
+        response = asyncio.run(
+            handler(
+                _fake_request("http-404"),
+                HTTPException(status_code=404, detail="private-route-detail"),
+            )
+        )
+        payload = _response_payload(response)["error"]
+        encoded = json.dumps(payload, ensure_ascii=False)
+        assert response.status_code == 404
+        assert payload["request_id"] == "http-404"
+        assert payload["context"]["http_status"] == 404
+        assert payload["fallback_allowed"] is False
+        assert "private-route-detail" not in encoded
+    finally:
+        app.state.tasks.close()
+
+
+def test_fastapi_server_http_exception_collapses_to_e9000(monkeypatch) -> None:  # noqa: ANN001
+    from fastapi import HTTPException
+
+    _install_fake_legacy_app(monkeypatch)
+    client = SimpleNamespace(service=object(), close=lambda: None)
+    app = http_app.create_app(client)
+    try:
+        handler = app.exception_handlers[HTTPException]
+        response = asyncio.run(
+            handler(
+                _fake_request("http-503"),
+                HTTPException(status_code=503, detail="secret-upstream-detail"),
+            )
+        )
+        payload = _response_payload(response)["error"]
+        encoded = json.dumps(payload, ensure_ascii=False)
+        assert response.status_code == 503
+        assert payload["code"] == "E9000"
+        assert payload["message"] == "internal error"
+        assert payload["request_id"] == "http-503"
+        assert "secret-upstream-detail" not in encoded
     finally:
         app.state.tasks.close()
