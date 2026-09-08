@@ -58,18 +58,26 @@ def _clone_error(exc: BaseException) -> BaseException:
     try:
         return copy.deepcopy(exc)
     except Exception:
-        if isinstance(exc, TdxError):
-            return type(exc)(
+        pass
+
+    if isinstance(exc, TdxError):
+        try:
+            cloned = copy.copy(exc)
+            cloned.context = dict(exc.context)
+            return cloned
+        except Exception:
+            return TdxError(
                 exc.message,
                 code=exc.code,
                 advice=exc.advice,
                 context=dict(exc.context),
                 cause=exc.cause,
             )
-        return SourceUnavailable(
-            "cached terminal provider error",
-            context={"negative_cache": True, "fallback": False},
-        )
+
+    return SourceUnavailable(
+        "cached terminal provider error",
+        context={"negative_cache": True, "fallback": False},
+    )
 
 
 @dataclass(slots=True)
