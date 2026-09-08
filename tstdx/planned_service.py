@@ -5,8 +5,8 @@
 
 ``tstdx.service.UnifiedMarketDataService`` remains the Provider execution core.
 This module layers deterministic QuerySpec/QueryPlan compilation, one total
-execution deadline, batch de-duplication, SingleFlight, dynamic health and
-semantic cache V2 without reimplementing Provider adapters or fallback logic.
+execution deadline, batch de-duplication/chunking, SingleFlight, dynamic health
+and semantic cache V2 without reimplementing Provider adapters or fallback.
 """
 
 from __future__ import annotations
@@ -28,6 +28,13 @@ from .execution import BatchPlan, BatchPlanner, SingleFlight
 from .failure import DEFAULT_FAILURE_POLICY, FailurePolicy
 from .freshness import FRESHNESS, validate_freshness
 from .health import SourceHealthRegistry
+from .observability.planned import (
+    record_batch_chunks,
+    record_cache_event,
+    record_planned_query,
+    record_provider_health,
+)
+from .providers import PROVIDERS
 from .query import QueryPlan, QueryPlanner, QuerySpec
 from .semantic_cache import SemanticQueryCache
 from .service import FreshnessEvidence, QueryResult, ResultMeta
@@ -102,10 +109,12 @@ class UnifiedMarketDataService(ProviderCoreService):
                         Path(self.config_snapshot.cache.directory).expanduser()
                         / "semantic-v1.sqlite3"
                     )
-                self.query_cache = TieredSemanticQueryCache(
-                    l1,
-                    SQLiteSemanticQueryCache(path),
-                )
+                l2 = SQLiteSemanticQueryCache(path)
+                if l2.enabled:
+                    self.query_cache = TieredSemanticQueryCache(l1, l2)
+                else:
+                    self.cache_errors += l2.errors
+                    self.query_cache = l1
             else:
                 self.query_cache = l1
 
@@ -125,22 +134,69 @@ class UnifiedMarketDataService(ProviderCoreService):
         return self.planner.compile(spec)
 
     def query(self, spec: QuerySpec, *, with_meta: bool = True) -> Any:
-        plan = self.compile(spec)
+        return self._execute_plan(self.compile(spec), with_meta=with_meta)
+
+    def query_many(
+        self,
+        specs: Sequence[QuerySpec],
+        *,
+        with_meta: bool = True,
+    ) -> list[Any]:
+        """Execute multiple canonical queries without inventing provider fallback.
+
+        Exact duplicate semantic queries with the same deadline are executed once
+        within this call. Result containers are copied on fan-out so callers do
+        not share the same list/dict container by accident.
+        """
+        results: list[Any] = []
+        memo: dict[tuple[str, int, bool], Any] = {}
+        for spec in specs:
+            plan = self.compile(spec)
+            key = (plan.fingerprint.value, plan.spec.deadline_ms, with_meta)
+            if key in memo:
+                results.append(self._clone_output(memo[key]))
+                continue
+            value = self._execute_plan(plan, with_meta=with_meta)
+            memo[key] = value
+            results.append(value)
+        return results
+
+    @staticmethod
+    def _clone_output(value: Any) -> Any:
+        if isinstance(value, QueryResult):
+            data = list(value.data) if isinstance(value.data, list) else value.data
+            return QueryResult(data=data, meta=value.meta)
+        if isinstance(value, BatchResult):
+            return BatchResult(
+                items=tuple(value.items),
+                errors=dict(value.errors),
+                requested=tuple(value.requested),
+                partial=value.partial,
+                meta=value.meta,
+            )
+        if isinstance(value, list):
+            return list(value)
+        return value
+
+    def _execute_plan(self, plan: QueryPlan, *, with_meta: bool) -> Any:
+        started = time.perf_counter()
         try:
             if plan.spec.capability == "quotes":
                 if plan.spec.allow_partial:
-                    return self._execute_quote_batch_plan(plan)
-                return self._execute_quotes_plan(plan, with_meta=with_meta)
-            if plan.spec.capability == "bars":
-                return self._execute_bars_plan(plan, with_meta=with_meta)
-            raise ValidationError(
-                f"统一 query() 尚未接入 capability {plan.spec.capability!r}",
-                context={
-                    "provider": plan.provider,
-                    "channel": plan.channel,
-                    "capability": plan.spec.capability,
-                },
-            )
+                    result = self._execute_quote_batch_plan(plan)
+                else:
+                    result = self._execute_quotes_plan(plan, with_meta=with_meta)
+            elif plan.spec.capability == "bars":
+                result = self._execute_bars_plan(plan, with_meta=with_meta)
+            else:
+                raise ValidationError(
+                    f"统一 query() 尚未接入 capability {plan.spec.capability!r}",
+                    context={
+                        "provider": plan.provider,
+                        "channel": plan.channel,
+                        "capability": plan.spec.capability,
+                    },
+                )
         except TdxError as exc:
             disposition = self.failure_policy.decide(exc, budget=plan.budget)
             exc.context.setdefault("provider", plan.provider)
@@ -151,21 +207,68 @@ class UnifiedMarketDataService(ProviderCoreService):
             exc.context.setdefault("fallback", False)
             for key, value in disposition.to_context().items():
                 exc.context.setdefault(key, value)
+            record_planned_query(
+                provider=plan.provider,
+                channel=plan.channel,
+                capability=plan.spec.capability,
+                status="error",
+                duration=time.perf_counter() - started,
+            )
+            raise
+        except BaseException:
+            record_planned_query(
+                provider=plan.provider,
+                channel=plan.channel,
+                capability=plan.spec.capability,
+                status="internal_error",
+                duration=time.perf_counter() - started,
+            )
             raise
 
+        status = "partial" if isinstance(result, BatchResult) and result.partial else "ok"
+        record_planned_query(
+            provider=plan.provider,
+            channel=plan.channel,
+            capability=plan.spec.capability,
+            status=status,
+            duration=time.perf_counter() - started,
+        )
+        return result
+
     def _health_before(self, plan: QueryPlan) -> None:
-        self.health.before_request(plan.provider, plan.channel, plan.spec.capability)
+        try:
+            self.health.before_request(plan.provider, plan.channel, plan.spec.capability)
+        except BaseException:
+            record_provider_health(
+                provider=plan.provider,
+                channel=plan.channel,
+                capability=plan.spec.capability,
+                healthy=False,
+            )
+            raise
 
     def _health_success(self, plan: QueryPlan) -> None:
         self.health.record_success(plan.provider, plan.channel, plan.spec.capability)
+        record_provider_health(
+            provider=plan.provider,
+            channel=plan.channel,
+            capability=plan.spec.capability,
+            healthy=True,
+        )
 
     def _health_failure(self, plan: QueryPlan, exc: BaseException) -> None:
-        self.health.record_failure(
+        state = self.health.record_failure(
             plan.provider,
             plan.channel,
             plan.spec.capability,
             exc,
             penalize=self.health.should_penalize(exc),
+        )
+        record_provider_health(
+            provider=plan.provider,
+            channel=plan.channel,
+            capability=plan.spec.capability,
+            healthy=not state.circuit_open,
         )
 
     def _cache_enabled(self, plan: QueryPlan) -> bool:
@@ -175,6 +278,13 @@ class UnifiedMarketDataService(ProviderCoreService):
             and plan.spec.max_age is not None
             and plan.spec.max_age > 0
         )
+
+    def _cache_layer(self) -> str:
+        if isinstance(self.query_cache, TieredSemanticQueryCache):
+            return "tiered"
+        if isinstance(self.query_cache, SemanticQueryCache):
+            return "memory"
+        return "custom"
 
     @staticmethod
     def _as_cache_hit(result: QueryResult[Any], *, max_age: float) -> QueryResult[Any]:
@@ -222,33 +332,41 @@ class UnifiedMarketDataService(ProviderCoreService):
     def _cache_get(self, plan: QueryPlan) -> QueryResult[Any] | None:
         if not self._cache_enabled(plan):
             return None
+        layer = self._cache_layer()
         max_age = float(plan.spec.max_age if plan.spec.max_age is not None else 0.0)
         try:
             cached = self.query_cache.get(plan.fingerprint.value, max_age=max_age)
             if cached is None:
+                record_cache_event(layer=layer, status="miss")
                 return None
             if not isinstance(cached, QueryResult):
                 self.query_cache.invalidate(plan.fingerprint.value)
+                record_cache_event(layer=layer, status="invalid")
                 return None
             try:
-                return self._as_cache_hit(cached, max_age=max_age)
+                result = self._as_cache_hit(cached, max_age=max_age)
             except TdxError:
-                # Stale/invalid cached provenance is never a business failure;
-                # remove it and continue to direct Provider I/O.
                 self.query_cache.invalidate(plan.fingerprint.value)
+                record_cache_event(layer=layer, status="stale")
                 return None
+            record_cache_event(layer=layer, status="hit")
+            return result
         except Exception as exc:
             self.cache_errors += 1
+            record_cache_event(layer=layer, status="error")
             _LOG.warning("semantic cache read failed; treating as miss: %s", exc)
             return None
 
     def _cache_put(self, plan: QueryPlan, result: QueryResult[Any]) -> None:
         if not self._cache_enabled(plan):
             return
+        layer = self._cache_layer()
         try:
             self.query_cache.put(plan.fingerprint.value, result)
+            record_cache_event(layer=layer, status="write")
         except Exception as exc:
             self.cache_errors += 1
+            record_cache_event(layer=layer, status="error")
             _LOG.warning("semantic cache write failed; ignoring optimization failure: %s", exc)
 
     @staticmethod
@@ -292,6 +410,20 @@ class UnifiedMarketDataService(ProviderCoreService):
                 },
             )
         return [by_symbol[symbol] for symbol in batch.original]
+
+    @staticmethod
+    def _batch_limit(plan: QueryPlan) -> int | None:
+        return PROVIDERS.get(plan.provider).channel(plan.channel).batch_limit
+
+    def _quote_chunks(self, plan: QueryPlan, batch: BatchPlan) -> tuple[tuple[str, ...], ...]:
+        chunks = BatchPlanner.chunks(batch.unique, self._batch_limit(plan))
+        record_batch_chunks(
+            provider=plan.provider,
+            channel=plan.channel,
+            capability="quotes",
+            chunks=len(chunks),
+        )
+        return chunks
 
     def quotes(
         self,
@@ -348,20 +480,31 @@ class UnifiedMarketDataService(ProviderCoreService):
             plan.budget.ensure_remaining("cache_read")
             return cached if with_meta else cached.data
         batch = BatchPlanner.symbols(list(plan.spec.symbols))
+        chunks = self._quote_chunks(plan, batch)
 
         def fetch() -> QueryResult[list[Quote]]:
             plan.budget.begin_attempt()
             self._health_before(plan)
+            rows: list[Quote] = []
+            meta: ResultMeta | None = None
             try:
-                result = super(UnifiedMarketDataService, self).quotes(
-                    list(batch.unique), provider=plan.provider, with_meta=True
-                )
-                if not isinstance(result, QueryResult):
-                    raise RuntimeError("ProviderCoreService.quotes(with_meta=True) contract violated")
-                plan.budget.ensure_remaining("provider_response")
+                for index, chunk in enumerate(chunks):
+                    plan.budget.ensure_remaining(f"provider_chunk_{index}")
+                    result = super(UnifiedMarketDataService, self).quotes(
+                        list(chunk), provider=plan.provider, with_meta=True
+                    )
+                    if not isinstance(result, QueryResult):
+                        raise RuntimeError(
+                            "ProviderCoreService.quotes(with_meta=True) contract violated"
+                        )
+                    rows.extend(result.data)
+                    meta = result.meta
+                    plan.budget.ensure_remaining(f"provider_chunk_{index}_response")
+                if meta is None:
+                    raise RuntimeError("quotes execution produced no Provider metadata")
                 coordinated = QueryResult(
-                    data=self._align_quote_batch(batch, list(result.data)),
-                    meta=result.meta,
+                    data=self._align_quote_batch(batch, rows),
+                    meta=meta,
                 )
             except BaseException as exc:
                 self._health_failure(plan, exc)
@@ -381,64 +524,96 @@ class UnifiedMarketDataService(ProviderCoreService):
     def _execute_quote_batch_plan(self, plan: QueryPlan) -> BatchResult[Quote]:
         """Return auditable successes/errors; partial batches are never cached."""
         batch = BatchPlanner.symbols(list(plan.spec.symbols))
+        chunks = self._quote_chunks(plan, batch)
 
         def fetch() -> BatchResult[Quote]:
             plan.budget.begin_attempt()
             self._health_before(plan)
-            try:
-                result = super(UnifiedMarketDataService, self).quotes(
-                    list(batch.unique), provider=plan.provider, with_meta=True
-                )
-                if not isinstance(result, QueryResult):
-                    raise RuntimeError("ProviderCoreService.quotes(with_meta=True) contract violated")
-                plan.budget.ensure_remaining("provider_response")
-                by_symbol = self._quote_map(batch, list(result.data))
-            except BaseException as exc:
-                self._health_failure(plan, exc)
-                raise
+            by_symbol: dict[str, Quote] = {}
+            errors: dict[str, Any] = {}
+            meta: ResultMeta | None = None
+            health_recorded_failure = False
 
-            missing = [symbol for symbol in batch.unique if symbol not in by_symbol]
-            errors = {}
-            if missing:
-                health_exc = SourceUnavailable(
-                    "Provider 批量行情返回部分缺失",
-                    context={"missing_symbols": missing, "partial": True},
+            for index, chunk in enumerate(chunks):
+                plan.budget.ensure_remaining(f"provider_chunk_{index}")
+                chunk_batch = BatchPlanner.symbols(list(chunk))
+                try:
+                    result = super(UnifiedMarketDataService, self).quotes(
+                        list(chunk), provider=plan.provider, with_meta=True
+                    )
+                    if not isinstance(result, QueryResult):
+                        raise RuntimeError(
+                            "ProviderCoreService.quotes(with_meta=True) contract violated"
+                        )
+                    meta = result.meta
+                    plan.budget.ensure_remaining(f"provider_chunk_{index}_response")
+                    chunk_map = self._quote_map(chunk_batch, list(result.data))
+                except TdxError as exc:
+                    self._health_failure(plan, exc)
+                    health_recorded_failure = True
+                    remaining_symbols = [
+                        symbol
+                        for remaining_chunk in chunks[index:]
+                        for symbol in remaining_chunk
+                    ]
+                    for symbol in remaining_symbols:
+                        errors[symbol] = to_error_envelope(
+                            exc,
+                            provider=plan.provider,
+                            channel=plan.channel,
+                            capability="quotes",
+                            query_id=plan.fingerprint.value,
+                        )
+                    break
+                except BaseException as exc:
+                    self._health_failure(plan, exc)
+                    raise
+
+                by_symbol.update(chunk_map)
+                missing = [symbol for symbol in chunk if symbol not in chunk_map]
+                for symbol in missing:
+                    exc = SourceUnavailable(
+                        "Provider 批量行情缺少请求标的",
+                        context={
+                            "provider": plan.provider,
+                            "channel": plan.channel,
+                            "capability": "quotes",
+                            "query_id": plan.fingerprint.value,
+                            "phase": "normalize",
+                            "symbol": symbol,
+                            "partial": True,
+                            "fallback": False,
+                            "retry_same_provider": False,
+                            "terminal": True,
+                            "provider_switch_allowed": False,
+                        },
+                    )
+                    errors[symbol] = to_error_envelope(
+                        exc,
+                        provider=plan.provider,
+                        channel=plan.channel,
+                        capability="quotes",
+                        query_id=plan.fingerprint.value,
+                    )
+
+            if errors and not health_recorded_failure:
+                self._health_failure(
+                    plan,
+                    SourceUnavailable(
+                        "Provider 批量行情返回部分缺失",
+                        context={"missing_symbols": list(errors), "partial": True},
+                    ),
                 )
-                self._health_failure(plan, health_exc)
-            else:
+            elif not errors:
                 self._health_success(plan)
 
-            for symbol in missing:
-                exc = SourceUnavailable(
-                    "Provider 批量行情缺少请求标的",
-                    context={
-                        "provider": plan.provider,
-                        "channel": plan.channel,
-                        "capability": "quotes",
-                        "query_id": plan.fingerprint.value,
-                        "phase": "normalize",
-                        "symbol": symbol,
-                        "partial": True,
-                        "fallback": False,
-                        "retry_same_provider": False,
-                        "terminal": True,
-                        "provider_switch_allowed": False,
-                    },
-                )
-                errors[symbol] = to_error_envelope(
-                    exc,
-                    provider=plan.provider,
-                    channel=plan.channel,
-                    capability="quotes",
-                    query_id=plan.fingerprint.value,
-                )
             items = tuple(by_symbol[symbol] for symbol in batch.original if symbol in by_symbol)
             return BatchResult(
                 items=items,
                 errors=errors,
                 requested=batch.original,
                 partial=bool(errors),
-                meta=result.meta,
+                meta=meta,
             )
 
         result = self.singleflight.do(
