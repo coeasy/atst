@@ -11,6 +11,7 @@ an unwritable cache directory must never prevent market-data service startup.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import sqlite3
@@ -177,10 +178,8 @@ class SQLiteSemanticQueryCache:
             )
             conn = locals().get("conn")
             if isinstance(conn, sqlite3.Connection):
-                try:
+                with contextlib.suppress(Exception):
                     conn.close()
-                except Exception:
-                    pass
 
     @property
     def enabled(self) -> bool:
