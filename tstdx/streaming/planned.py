@@ -334,19 +334,41 @@ class PlannedQuoteStream:
             self._stop.clear()
             self._reconnect_pending = False
             self.reconnect.success()
-            self._poll_thread = threading.Thread(
+            poll = threading.Thread(
                 target=self._poll_loop,
                 name=f"tstdx-planned-poll-{self.provider}",
                 daemon=True,
             )
-            self._dispatch_thread = threading.Thread(
+            dispatch = threading.Thread(
                 target=self._dispatch_loop,
                 name=f"tstdx-planned-dispatch-{self.provider}",
                 daemon=True,
             )
+            self._poll_thread = poll
+            self._dispatch_thread = dispatch
             self._state = StreamState.RUNNING
-            self._poll_thread.start()
-            self._dispatch_thread.start()
+            try:
+                poll.start()
+                dispatch.start()
+            except BaseException as exc:
+                self._state = StreamState.FAILED
+                self._closed = True
+                self._stop.set()
+                self._dispatch_wakeup.set()
+                if isinstance(exc, Exception):
+                    raise _input_error(
+                        "PlannedQuoteStream worker 启动失败，实例已 fail-closed",
+                        context={
+                            "provider": self.provider,
+                            "phase": "stream_lifecycle",
+                            "state": self._state.value,
+                            "poll_started": poll.ident is not None,
+                            "dispatch_started": dispatch.ident is not None,
+                            "cause_type": type(exc).__name__,
+                        },
+                        cause=exc,
+                    ) from exc
+                raise
         return self
 
     def stop(self, *, timeout: float = 3.0) -> None:
@@ -362,9 +384,9 @@ class PlannedQuoteStream:
             self._dispatch_wakeup.set()
             poll = self._poll_thread
             dispatch = self._dispatch_thread
-        if poll is not None and poll is not current:
+        if poll is not None and poll is not current and poll.ident is not None:
             poll.join(timeout=timeout)
-        if dispatch is not None and dispatch is not current:
+        if dispatch is not None and dispatch is not current and dispatch.ident is not None:
             dispatch.join(timeout=timeout)
         poll_alive = poll is not None and poll.is_alive()
         dispatch_alive = dispatch is not None and dispatch.is_alive()
