@@ -4,6 +4,8 @@ import threading
 import time
 from typing import Any
 
+import pytest
+
 from tstdx.errors import ReadTimeout
 from tstdx.execution import SingleFlight
 
@@ -121,3 +123,21 @@ def test_short_deadline_follower_can_join_long_deadline_leader() -> None:
     assert sorted(results) == ["ok", "ok"]
     assert singleflight.joins == 1
     assert singleflight.deadline_bypasses == 0
+
+
+def test_expired_request_never_becomes_singleflight_leader() -> None:
+    singleflight = SingleFlight()
+    called = False
+
+    def fetch() -> str:
+        nonlocal called
+        called = True
+        return "unexpected"
+
+    with pytest.raises(ReadTimeout) as caught:
+        singleflight.do("expired", fetch, timeout=0.0)
+
+    assert called is False
+    assert singleflight.leaders == 0
+    assert caught.value.context["phase"] == "singleflight_enter"
+    assert caught.value.context["deadline_scope"] == "query"
