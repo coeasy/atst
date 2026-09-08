@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar
 
 from .domain.models import Bar, Quote
+from .domain.period import normalize_bar_period
 from .domain.symbol import normalize_symbol
 from .errors import AllHostsUnreachable, SourceUnavailable, TdxError, ValidationError
 from .freshness import FreshnessStatus, validate_freshness
@@ -41,6 +42,7 @@ __all__ = [
 ]
 
 T = TypeVar("T")
+_MINUTE_BAR_PERIODS = frozenset({"1min", "5min", "15min", "30min", "60min"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,22 +247,9 @@ class ProviderManager:
 
     def bar_adapter(self, provider: str, *, period: str = "day") -> tuple[str, Any]:
         pid = resolve_provider(provider=provider)
-        p = (period or "day").strip().lower()
-        minute_periods = {
-            "1min",
-            "1m",
-            "min",
-            "5min",
-            "5m",
-            "15min",
-            "15m",
-            "30min",
-            "30m",
-            "60min",
-            "60m",
-        }
+        p = normalize_bar_period(period)
         if pid == "tencent":
-            if p in minute_periods:
+            if p in _MINUTE_BAR_PERIODS:
                 from .web.adapters_ext import MinuteKlineSource
 
                 return "minute_kline", self.web_adapter(
@@ -520,6 +509,7 @@ class UnifiedMarketDataService:
         """Fetch bars from one Provider without semantic/provider switching."""
         pid = self._provider(provider=provider, source=source, capability="bars")
         sym = normalize_symbol(symbol)
+        normalized_period = normalize_bar_period(period)
         if pid != "tdx" and start:
             raise ValidationError(
                 f"Provider {pid!r} bars 当前不支持 start={start!r}；拒绝静默改变窗口",
@@ -541,7 +531,7 @@ class UnifiedMarketDataService:
             if pid == "tdx":
                 rows = self.manager.tdx.bars(
                     sym,
-                    period=period,
+                    period=normalized_period,
                     count=count,
                     start=start,
                     as_format="dict",
@@ -550,15 +540,32 @@ class UnifiedMarketDataService:
 
                 data = [_row_to_bar(row) for row in rows]
             else:
-                channel, adapter = self.manager.bar_adapter(pid, period=period)
+                channel, adapter = self.manager.bar_adapter(pid, period=normalized_period)
                 if pid == "tencent":
                     if channel == "minute_kline":
-                        data = list(adapter.fetch_bars(sym, period=period, count=count))
+                        if adjust:
+                            raise ValidationError(
+                                "Tencent minute_kline 不支持复权；拒绝静默忽略 adjust",
+                                context={
+                                    "provider": pid,
+                                    "channel": channel,
+                                    "capability": "bars",
+                                    "period": normalized_period,
+                                    "adjust": adjust,
+                                },
+                            )
+                        data = list(
+                            adapter.fetch_bars(
+                                sym,
+                                period=normalized_period,
+                                count=count,
+                            )
+                        )
                     else:
                         data = list(
                             adapter.fetch_bars(
                                 sym,
-                                period=period,
+                                period=normalized_period,
                                 count=count,
                                 adjust=adjust,
                             )
@@ -567,7 +574,7 @@ class UnifiedMarketDataService:
                     data = list(
                         adapter.fetch_bars(
                             sym,
-                            period=period,
+                            period=normalized_period,
                             count=count,
                             adjust="",
                         )
@@ -576,7 +583,7 @@ class UnifiedMarketDataService:
                     data = list(
                         adapter.fetch_bars(
                             sym,
-                            period=period,
+                            period=normalized_period,
                             count=count,
                             adjust=adjust,
                         )
@@ -591,7 +598,13 @@ class UnifiedMarketDataService:
                                 "adjust": adjust,
                             },
                         )
-                    data = list(adapter.fetch_kline(sym, period=period, count=count))
+                    data = list(
+                        adapter.fetch_kline(
+                            sym,
+                            period=normalized_period,
+                            count=count,
+                        )
+                    )
                 else:
                     raise ValidationError(f"Provider {pid!r} 尚无 bars adapter")
         except AllHostsUnreachable as exc:
