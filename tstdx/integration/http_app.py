@@ -7,6 +7,10 @@ The legacy :mod:`tstdx.integration.http_server` module still contains the stable
 43-route declaration. This factory reuses those routes but injects the actual
 v12 runtime dependencies before route construction and adds explicit Provider
 endpoints for canonical common capabilities.
+
+All REST failures, including FastAPI request validation and ``HTTPException``,
+are normalized to the same safe ErrorEnvelope used by the other public
+integration boundaries.
 """
 
 from __future__ import annotations
@@ -115,6 +119,7 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
     app.state.runtime = "planned-v12"
 
     from fastapi import HTTPException
+    from fastapi.exceptions import RequestValidationError
     from fastapi.responses import JSONResponse
 
     def _service() -> UnifiedMarketDataService:
@@ -234,6 +239,54 @@ def create_app(client: Any = None) -> Any:  # noqa: ANN401
         response = await call_next(request)
         response.headers["X-Request-ID"] = request.state.request_id
         return response
+
+    @app.exception_handler(RequestValidationError)
+    async def _planned_request_validation(request: Any, exc: RequestValidationError) -> Any:
+        wrapped = ValidationError(
+            "HTTP request validation failed",
+            context={
+                "phase": "http_validation",
+                "issue_count": len(exc.errors()),
+                "fallback": False,
+                "provider_switch_allowed": False,
+            },
+        )
+        envelope = to_error_envelope(
+            wrapped,
+            request_id=getattr(request.state, "request_id", None),
+        )
+        return JSONResponse(status_code=422, content={"error": envelope.to_dict()})
+
+    @app.exception_handler(HTTPException)
+    async def _planned_http_exception(request: Any, exc: HTTPException) -> Any:
+        request_id = getattr(request.state, "request_id", None)
+        if 400 <= exc.status_code < 500:
+            wrapped = ValidationError(
+                "HTTP request rejected",
+                context={
+                    "phase": "http",
+                    "http_status": exc.status_code,
+                    "fallback": False,
+                    "provider_switch_allowed": False,
+                },
+            )
+            envelope = to_error_envelope(wrapped, request_id=request_id)
+        else:
+            _LOG.error(
+                "HTTPException request_id=%s status=%s path=%s",
+                request_id,
+                exc.status_code,
+                request.url.path,
+            )
+            envelope = to_error_envelope(
+                RuntimeError("HTTP boundary failure"),
+                phase="http",
+                request_id=request_id,
+            )
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": envelope.to_dict()},
+        )
 
     @app.exception_handler(TdxError)
     async def _planned_tdx_error(request: Any, exc: TdxError) -> Any:
