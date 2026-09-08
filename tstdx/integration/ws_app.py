@@ -100,8 +100,16 @@ class JsonRpcHandler(legacy.JsonRpcHandler):
         params = msg.get("params") or {}
 
         if req_id is None:
-            with contextlib.suppress(TdxError, ValueError, KeyError, TypeError):
+            # JSON-RPC notifications never receive responses. Domain/native
+            # request failures must therefore be logged and contained locally
+            # instead of escaping and tearing down the WebSocket connection.
+            # BaseException control-flow signals are intentionally not caught.
+            try:
                 self._dispatch(method, params)
+            except (TdxError, ValueError, KeyError, TypeError) as exc:
+                _LOG.debug("websocket notification rejected (method=%s): %s", method, exc)
+            except Exception:
+                _LOG.exception("websocket notification failed (method=%s)", method)
             return None
 
         try:
