@@ -443,6 +443,8 @@ class PlannedQuoteStream:
                 try:
                     result = self.service.quotes(symbols, provider=self.provider)
                 except TdxError as exc:
+                    if self._stop.is_set():
+                        break
                     self.stats.provider_errors += 1
                     self._mark_reconnect_pending()
                     for sub in due:
@@ -451,6 +453,8 @@ class PlannedQuoteStream:
                     self._stop.wait(self.reconnect.next_delay())
                     continue
                 except Exception as exc:
+                    if self._stop.is_set():
+                        break
                     self.stats.provider_errors += 1
                     self._mark_reconnect_pending()
                     _LOG.exception("planned stream unexpected provider error")
@@ -465,6 +469,8 @@ class PlannedQuoteStream:
                     self._stop.wait(self.reconnect.next_delay())
                     continue
 
+                if self._stop.is_set():
+                    break
                 if not isinstance(result, list) or not all(
                     isinstance(row, Quote) for row in result
                 ):
@@ -489,6 +495,8 @@ class PlannedQuoteStream:
 
                 qmap = {_quote_key(quote): quote for quote in rows}
                 for sub in due:
+                    if self._stop.is_set():
+                        break
                     self._deliver_subscription(sub, qmap)
                     self._advance_due(sub, now)
         finally:
@@ -539,6 +547,8 @@ class PlannedQuoteStream:
 
     def _deliver_subscription(self, sub: StreamSubscription, qmap: dict[str, Quote]) -> None:
         for symbol in sub.symbols:
+            if self._stop.is_set():
+                break
             try:
                 key = _bare_code(symbol)
             except SubscriptionError as exc:
@@ -561,6 +571,8 @@ class PlannedQuoteStream:
         self._enqueue(sub, ("error", "", exc))
 
     def _enqueue(self, sub: StreamSubscription, item: tuple[str, str, Any]) -> None:
+        if self._stop.is_set():
+            return
         queue = sub.queue
         if queue is None:
             return
@@ -605,6 +617,8 @@ class PlannedQuoteStream:
                     queue = sub.queue
                     if queue is not None:
                         for kind, symbol, payload in queue.drain():
+                            if self._stop.is_set():
+                                break
                             delivered = True
                             if kind == "quote" and sub.on_quote is not None:
                                 try:
@@ -617,7 +631,11 @@ class PlannedQuoteStream:
                                     sub.on_error(payload)
                                 except Exception:
                                     _LOG.exception("planned stream error callback failed")
+                    if self._stop.is_set():
+                        break
                     delivered = self._dispatch_overflow(sub) or delivered
+                if self._stop.is_set():
+                    break
                 if not delivered:
                     self._dispatch_wakeup.wait(self.callback_idle_wait)
                     self._dispatch_wakeup.clear()
