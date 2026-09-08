@@ -27,6 +27,11 @@ class AsyncUnifiedQuoteAPI:
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._sync = UnifiedQuoteAPI(*args, **kwargs)
+        self._state_lock = asyncio.Lock()
+        self._close_lock = asyncio.Lock()
+        self._drained = asyncio.Event()
+        self._drained.set()
+        self._active_calls = 0
         self._closed = False
 
     @property
@@ -34,9 +39,19 @@ class AsyncUnifiedQuoteAPI:
         return self._sync
 
     async def _call(self, fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
-        if self._closed:
-            raise RuntimeError("AsyncUnifiedQuoteAPI 已关闭")
-        return await asyncio.to_thread(partial(fn, *args, **kwargs))
+        async with self._state_lock:
+            if self._closed:
+                raise RuntimeError("AsyncUnifiedQuoteAPI 已关闭")
+            self._active_calls += 1
+            if self._active_calls == 1:
+                self._drained.clear()
+        try:
+            return await asyncio.to_thread(partial(fn, *args, **kwargs))
+        finally:
+            async with self._state_lock:
+                self._active_calls -= 1
+                if self._active_calls == 0:
+                    self._drained.set()
 
     async def query(self, spec: QuerySpec, *, with_meta: bool = True) -> Any:
         return await self._call(self._sync.query, spec, with_meta=with_meta)
@@ -77,12 +92,15 @@ class AsyncUnifiedQuoteAPI:
         return await self._call(target, *args, **kwargs)
 
     async def aclose(self) -> None:
-        if self._closed:
-            return
-        try:
+        async with self._close_lock:
+            async with self._state_lock:
+                if self._closed:
+                    return
+                self._closed = True
+                active = self._active_calls
+            if active:
+                await self._drained.wait()
             await asyncio.to_thread(self._sync.close)
-        finally:
-            self._closed = True
 
     async def __aenter__(self) -> "AsyncUnifiedQuoteAPI":
         return self
