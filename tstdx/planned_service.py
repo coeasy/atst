@@ -44,6 +44,7 @@ class UnifiedMarketDataService(ProviderCoreService):
         self,
         *args: Any,
         planner: QueryPlanner | None = None,
+        default_provider: str | None = None,
         singleflight: SingleFlight | None = None,
         query_cache: SemanticQueryCache | None = None,
         failure_policy: FailurePolicy | None = None,
@@ -52,8 +53,19 @@ class UnifiedMarketDataService(ProviderCoreService):
     ) -> None:
         if default_deadline_ms <= 0:
             raise ValueError("default_deadline_ms must be > 0")
+        if planner is not None and default_provider is not None:
+            raise ValueError("planner 与 default_provider 不能同时提供：默认 Provider 必须只有一个真相源")
         super().__init__(*args, **kwargs)
-        self.planner = planner if planner is not None else QueryPlanner()
+        if planner is not None:
+            self.planner = planner
+        else:
+            if default_provider is None:
+                from .config import get_config
+
+                configured_provider = get_config().sources.default_provider
+            else:
+                configured_provider = default_provider
+            self.planner = QueryPlanner(default_provider=configured_provider)
         self.singleflight = singleflight if singleflight is not None else SingleFlight()
         self.query_cache = query_cache if query_cache is not None else SemanticQueryCache()
         self.failure_policy = failure_policy if failure_policy is not None else DEFAULT_FAILURE_POLICY
