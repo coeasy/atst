@@ -287,6 +287,20 @@ class UnifiedMarketDataService(ProviderCoreService):
         return "custom"
 
     @staticmethod
+    def _cache_provenance_matches(plan: QueryPlan, result: QueryResult[Any]) -> bool:
+        meta = result.meta
+        freshness = meta.freshness
+        return (
+            meta.provider == plan.provider
+            and meta.channel == plan.channel
+            and meta.capability == plan.spec.capability
+            and meta.real
+            and not meta.fallback
+            and freshness.real
+            and not freshness.cache_hit
+        )
+
+    @staticmethod
     def _as_cache_hit(result: QueryResult[Any], *, max_age: float) -> QueryResult[Any]:
         meta = result.meta
         original = meta.freshness
@@ -342,6 +356,20 @@ class UnifiedMarketDataService(ProviderCoreService):
             if not isinstance(cached, QueryResult):
                 self.query_cache.invalidate(plan.fingerprint.value)
                 record_cache_event(layer=layer, status="invalid")
+                return None
+            if not self._cache_provenance_matches(plan, cached):
+                self.query_cache.invalidate(plan.fingerprint.value)
+                record_cache_event(layer=layer, status="invalid")
+                _LOG.warning(
+                    "semantic cache provenance mismatch; treating as miss: "
+                    "expected=%s/%s/%s got=%s/%s/%s",
+                    plan.provider,
+                    plan.channel,
+                    plan.spec.capability,
+                    cached.meta.provider,
+                    cached.meta.channel,
+                    cached.meta.capability,
+                )
                 return None
             try:
                 result = self._as_cache_hit(cached, max_age=max_age)
