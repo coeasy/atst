@@ -177,11 +177,14 @@ class SingleFlight:
             except BaseException as exc:
                 flight.error = exc
             finally:
-                flight.event.set()
+                # Remove the completed flight before waking followers. A follower
+                # that must retry after the leader's query deadline can then create
+                # or join the next flight instead of rejoining this failed object.
                 with self._lock:
                     current = self._flights.get(key)
                     if current is flight:
                         del self._flights[key]
+                flight.event.set()
             if flight.error is not None:
                 raise flight.error
             return cast(T, flight.result)
