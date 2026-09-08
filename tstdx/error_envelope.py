@@ -1,7 +1,7 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Canonical safe error envelope for Python/REST/WS/MCP boundaries."""
+"""Canonical safe error envelope for Python/REST/WS/MCP/CLI boundaries."""
 
 from __future__ import annotations
 
@@ -68,6 +68,8 @@ class ErrorEnvelope:
     partial: bool = False
     alternatives: tuple[str, ...] = ()
     context: Mapping[str, Any] = field(default_factory=dict)
+    fallback_allowed: bool = False
+    provider_switch_allowed: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -85,6 +87,8 @@ class ErrorEnvelope:
             "partial": self.partial,
             "alternatives": list(self.alternatives),
             "context": dict(self.context),
+            "fallback_allowed": self.fallback_allowed,
+            "provider_switch_allowed": self.provider_switch_allowed,
         }
 
 
@@ -143,6 +147,8 @@ def to_error_envelope(
             partial=bool(context.get("partial", False)),
             alternatives=alternatives,
             context=context,
+            fallback_allowed=False,
+            provider_switch_allowed=False,
         )
 
     return ErrorEnvelope(
@@ -157,6 +163,8 @@ def to_error_envelope(
         query_id=query_id,
         retryable=False,
         context={},
+        fallback_allowed=False,
+        provider_switch_allowed=False,
     )
 
 
