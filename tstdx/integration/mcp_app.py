@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 from ..error_envelope import to_error_envelope
@@ -31,6 +32,18 @@ class _MCPProviderClient(ProviderHttpClient):
 
     def catalog(self, symbol: str) -> Any:
         return self.f10_catalog(symbol)
+
+    def stock_changes(
+        self,
+        types: Sequence[int] = (),
+        *,
+        page: int = 1,
+        size: int = 50,
+    ) -> Any:
+        return self.service.eastmoney.stock_changes(types, page=page, size=size)
+
+    def hot_rank(self, *, page: int = 1, size: int = 100) -> Any:
+        return self.service.eastmoney.hot_rank(page=page, size=size)
 
 
 class MCPServer(LegacyMCPServer):
