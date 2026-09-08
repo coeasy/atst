@@ -12,9 +12,10 @@ without maintaining a second routing implementation.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 from .planned_service import UnifiedMarketDataService
 from .providers import resolve_provider
@@ -97,7 +98,7 @@ class AsyncMarketDataService:
 
     async def query_many(
         self,
-        specs: list[QuerySpec] | tuple[QuerySpec, ...],
+        specs: Sequence[QuerySpec],
         *,
         with_meta: bool = True,
     ) -> list[Any]:
