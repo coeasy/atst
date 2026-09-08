@@ -14,7 +14,12 @@ class RaisingService(UnifiedMarketDataService):
         super().__init__(cache_enabled=False)
         self.error = error
 
-    def _execute_quotes_plan(self, plan: QueryPlan, *, with_meta: bool) -> Any:  # noqa: ARG002
+    def _execute_quotes_plan(
+        self,
+        plan: QueryPlan,
+        *,
+        with_meta: bool,
+    ) -> Any:  # noqa: ARG002
         raise self.error
 
 
