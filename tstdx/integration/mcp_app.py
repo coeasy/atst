@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
+import contextlib
+import json
 import logging
+import sys
 from collections.abc import Sequence
 from typing import Any
 
@@ -17,6 +20,7 @@ from .mcp._common import (
     ERR_INVALID_PARAMS,
     ERR_INVALID_REQUEST,
     ERR_METHOD_NOT_FOUND,
+    ERR_PARSE,
 )
 from .mcp._server import MCPServer as LegacyMCPServer
 from .mcp._server import _serialize_to_text
@@ -71,6 +75,7 @@ class MCPServer(LegacyMCPServer):
         exc: BaseException,
         *,
         phase: str,
+        rpc_code: int = ERR_INTERNAL,
     ) -> dict[str, Any]:
         envelope = to_error_envelope(
             exc,
@@ -79,10 +84,66 @@ class MCPServer(LegacyMCPServer):
         )
         return self._error(
             rid,
-            ERR_INTERNAL,
+            rpc_code,
             envelope.message,
             data=envelope.to_dict(),
         )
+
+    def _close_runtime(self) -> None:
+        for obj in (self._client, self._facade):
+            close = getattr(obj, "close", None)
+            if callable(close):
+                with contextlib.suppress(Exception):
+                    close()
+        self._client = None
+        self._facade = None
+
+    def serve(self) -> None:
+        """Run the stdio loop with canonical parse/internal error envelopes."""
+
+        stdin = sys.stdin
+        stdout = sys.stdout
+        try:
+            while not self._stopped.is_set():
+                try:
+                    line = stdin.readline()
+                except (OSError, ValueError):
+                    _LOG.error("MCP stdin read failed; exiting")
+                    break
+                if not line:
+                    break
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    request = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    validation = ValidationError(
+                        "parse error",
+                        context={"phase": "mcp_protocol"},
+                        cause=exc,
+                    )
+                    self._write(
+                        self._domain_error(
+                            None,
+                            validation,
+                            phase="mcp_protocol",
+                            rpc_code=ERR_PARSE,
+                        )
+                    )
+                    continue
+                response = self.handle_request(request)
+                if response is not None:
+                    self._write(response)
+        except KeyboardInterrupt:  # pragma: no cover - terminal dependent
+            pass
+        except Exception as exc:
+            _LOG.exception("MCP stdio loop failed")
+            self._write(self._domain_error(None, exc, phase="mcp_stdio"))
+        finally:
+            self._close_runtime()
+            with contextlib.suppress(OSError, ValueError):
+                stdout.flush()
 
     def handle_request(self, request: dict[str, Any]) -> dict[str, Any] | None:
         if not isinstance(request, dict):
@@ -90,12 +151,11 @@ class MCPServer(LegacyMCPServer):
                 "Request must be a JSON object",
                 context={"phase": "mcp_protocol"},
             )
-            envelope = to_error_envelope(exc, phase="mcp_protocol")
-            return self._error(
+            return self._domain_error(
                 None,
-                ERR_INVALID_REQUEST,
-                envelope.message,
-                data=envelope.to_dict(),
+                exc,
+                phase="mcp_protocol",
+                rpc_code=ERR_INVALID_REQUEST,
             )
 
         method = request.get("method")
@@ -129,16 +189,11 @@ class MCPServer(LegacyMCPServer):
                 context={"phase": "mcp", "method": method},
                 cause=exc,
             )
-            envelope = to_error_envelope(
+            return self._domain_error(
+                rid,
                 validation,
                 phase="mcp",
-                request_id=self._request_id(rid),
-            )
-            return self._error(
-                rid,
-                ERR_INVALID_PARAMS,
-                envelope.message,
-                data=envelope.to_dict(),
+                rpc_code=ERR_INVALID_PARAMS,
             )
         except Exception as exc:
             _LOG.exception("MCP request failed (method=%s)", method)
