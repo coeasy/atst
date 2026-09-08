@@ -23,6 +23,7 @@ from typing import Any
 from .domain.models import Bar, Quote
 from .errors import TdxError, ValidationError
 from .execution import BatchPlanner, SingleFlight
+from .failure import DEFAULT_FAILURE_POLICY, FailurePolicy
 from .freshness import FRESHNESS, validate_freshness
 from .query import QueryPlan, QueryPlanner, QuerySpec
 from .semantic_cache import SemanticQueryCache
@@ -45,6 +46,7 @@ class UnifiedMarketDataService(ProviderCoreService):
         planner: QueryPlanner | None = None,
         singleflight: SingleFlight | None = None,
         query_cache: SemanticQueryCache | None = None,
+        failure_policy: FailurePolicy | None = None,
         default_deadline_ms: int = 5000,
         **kwargs: Any,
     ) -> None:
@@ -54,6 +56,7 @@ class UnifiedMarketDataService(ProviderCoreService):
         self.planner = planner if planner is not None else QueryPlanner()
         self.singleflight = singleflight if singleflight is not None else SingleFlight()
         self.query_cache = query_cache if query_cache is not None else SemanticQueryCache()
+        self.failure_policy = failure_policy if failure_policy is not None else DEFAULT_FAILURE_POLICY
         self.default_deadline_ms = int(default_deadline_ms)
 
     def compile(self, spec: QuerySpec) -> QueryPlan:
@@ -82,12 +85,15 @@ class UnifiedMarketDataService(ProviderCoreService):
                 },
             )
         except TdxError as exc:
+            disposition = self.failure_policy.decide(exc, budget=plan.budget)
             exc.context.setdefault("provider", plan.provider)
             exc.context.setdefault("channel", plan.channel)
             exc.context.setdefault("capability", plan.spec.capability)
             exc.context.setdefault("query_id", plan.fingerprint.value)
             exc.context.setdefault("phase", "execution")
             exc.context.setdefault("fallback", False)
+            for key, value in disposition.to_context().items():
+                exc.context.setdefault(key, value)
             raise
 
     @staticmethod
