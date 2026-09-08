@@ -14,6 +14,7 @@ from typing import Any
 from ..error_envelope import to_error_envelope
 from ..errors import TdxError, ValidationError
 from . import ws_server as legacy
+from .http_runtime import ProviderHttpClient
 
 __all__ = ["JsonRpcHandler", "WsConfig", "serve_ws"]
 
@@ -22,7 +23,7 @@ WsConfig = legacy.WsConfig
 
 
 class JsonRpcHandler(legacy.JsonRpcHandler):
-    """Legacy method surface with the canonical v12 public error contract."""
+    """Legacy method surface with planned execution and canonical errors."""
 
     @staticmethod
     def _request_id(req_id: Any) -> str | None:
@@ -137,6 +138,11 @@ class JsonRpcHandler(legacy.JsonRpcHandler):
             "result": result,
         }
 
+    def _client_obj(self) -> Any:  # noqa: ANN401
+        if self._client is None:
+            self._client = ProviderHttpClient()
+        return self._client
+
     def _facade_obj(self) -> Any:  # noqa: ANN401
         if self._facade is None:
             from ..facade import UnifiedQuoteAPI
@@ -167,9 +173,7 @@ def serve_ws(
         )
 
     if template._client is None:
-        from ..client import TdxClient
-
-        template._client = TdxClient()
+        template._client = ProviderHttpClient()
     if template._facade is None:
         from ..facade import UnifiedQuoteAPI
 
@@ -178,7 +182,7 @@ def serve_ws(
     cfg = config or WsConfig()
     connections: dict[Any, JsonRpcHandler] = {}
 
-    def _modern_process_request(ws: Any, request: Any) -> Any:
+    def _modern_process_request(ws: Any, request: Any) -> Any:  # noqa: ARG001
         from websockets.datastructures import Headers
         from websockets.http11 import Response
 
