@@ -19,7 +19,7 @@ import contextlib
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar
 
 from .domain.models import Bar, Quote
@@ -27,10 +27,9 @@ from .domain.period import normalize_bar_period
 from .domain.symbol import normalize_symbol
 from .errors import AllHostsUnreachable, SourceUnavailable, TdxError, ValidationError
 from .freshness import (
-    FRESHNESS,
-    FreshnessMode,
     FreshnessProfile,
     FreshnessStatus,
+    bar_freshness_profile,
     validate_freshness,
 )
 from .providers import PROVIDERS, resolve_provider
@@ -49,24 +48,6 @@ __all__ = [
 
 T = TypeVar("T")
 _MINUTE_BAR_PERIODS = frozenset({"1min", "5min", "15min", "30min", "60min"})
-_BAR_CURRENTNESS_DAYS = {
-    "1min": 2,
-    "5min": 2,
-    "15min": 2,
-    "30min": 2,
-    "60min": 2,
-    "day": 14,
-    "week": 21,
-    "month": 62,
-    "season": 140,
-    "year": 400,
-}
-_HISTORICAL_BAR_PROFILE = FreshnessProfile(
-    mode=FreshnessMode.HISTORICAL_CLOSED,
-    require_provider_timestamp=True,
-    max_observation_age_seconds=30.0,
-    description="explicit historical Provider bar window; auditable but not live-current",
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,7 +90,11 @@ class ResultMeta:
 
     @property
     def verified_fresh(self) -> bool:
-        return bool(self.freshness_status and self.freshness_status.verified)
+        return bool(
+            self.freshness_status
+            and self.freshness_status.verified
+            and self.freshness_status.currentness_verified
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -657,25 +642,20 @@ class UnifiedMarketDataService:
                 },
             )
 
-        if start:
-            freshness_profile = _HISTORICAL_BAR_PROFILE
-            require_live = False
-        else:
-            freshness_profile = replace(
-                FRESHNESS.get(pid, channel, "bars"),
-                max_provider_calendar_age_days=_BAR_CURRENTNESS_DAYS.get(
-                    normalized_period,
-                    14,
-                ),
-            )
-            require_live = True
+        historical = bool(start)
+        freshness_profile = bar_freshness_profile(
+            pid,
+            channel,
+            normalized_period,
+            historical=historical,
+        )
         meta = self._meta(
             pid,
             channel,
             "bars",
             data,
             profile=freshness_profile,
-            require_live=require_live,
+            require_live=not historical,
         )
         if with_meta:
             return QueryResult(data=data, meta=meta)
