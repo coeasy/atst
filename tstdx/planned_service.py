@@ -7,10 +7,6 @@
 This module layers deterministic QuerySpec/QueryPlan compilation, one total
 execution deadline, batch de-duplication, SingleFlight and an opt-in semantic L1
 cache on top without reimplementing any Provider adapter or fallback logic.
-
-Cache policy is intentionally strict: ``max_age=None`` (the default) never reads
-or writes query cache, so default high-level calls remain direct Provider
-fetches. A positive ``max_age`` is an explicit caller freshness policy.
 """
 
 from __future__ import annotations
@@ -20,8 +16,10 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any
 
+from .batch import BatchResult
 from .domain.models import Bar, Quote
 from .domain.symbol import normalize_symbol
+from .error_envelope import to_error_envelope
 from .errors import IntegrityViolation, SourceUnavailable, TdxError, ValidationError
 from .execution import BatchPlan, BatchPlanner, SingleFlight
 from .failure import DEFAULT_FAILURE_POLICY, FailurePolicy
@@ -34,6 +32,7 @@ from .service import UnifiedMarketDataService as ProviderCoreService
 __all__ = [
     "UnifiedMarketDataService",
     "ProviderCoreService",
+    "BatchResult",
     "market_data",
 ]
 
@@ -61,19 +60,14 @@ class UnifiedMarketDataService(ProviderCoreService):
         self.default_deadline_ms = int(default_deadline_ms)
 
     def compile(self, spec: QuerySpec) -> QueryPlan:
-        """Compile without I/O; useful for diagnostics, tests and integrations."""
         return self.planner.compile(spec)
 
-    def query(
-        self,
-        spec: QuerySpec,
-        *,
-        with_meta: bool = True,
-    ) -> Any:
-        """Execute one canonical QuerySpec through the typed service methods."""
+    def query(self, spec: QuerySpec, *, with_meta: bool = True) -> Any:
         plan = self.compile(spec)
         try:
             if plan.spec.capability == "quotes":
+                if plan.spec.allow_partial:
+                    return self._execute_quote_batch_plan(plan)
                 return self._execute_quotes_plan(plan, with_meta=with_meta)
             if plan.spec.capability == "bars":
                 return self._execute_bars_plan(plan, with_meta=with_meta)
@@ -99,15 +93,14 @@ class UnifiedMarketDataService(ProviderCoreService):
 
     @staticmethod
     def _cache_enabled(plan: QueryPlan) -> bool:
-        return plan.spec.max_age is not None and plan.spec.max_age > 0
+        return (
+            not plan.spec.allow_partial
+            and plan.spec.max_age is not None
+            and plan.spec.max_age > 0
+        )
 
     @staticmethod
-    def _as_cache_hit(
-        result: QueryResult[Any],
-        *,
-        max_age: float,
-    ) -> QueryResult[Any]:
-        """Re-validate cached provenance; never pretend a hit is direct I/O."""
+    def _as_cache_hit(result: QueryResult[Any], *, max_age: float) -> QueryResult[Any]:
         meta = result.meta
         original = meta.freshness
         freshness = FreshnessEvidence(
@@ -135,17 +128,19 @@ class UnifiedMarketDataService(ProviderCoreService):
             require_live=True,
         )
         status = replace(status, basis=f"bounded_cache:{status.basis}")
-        cached_meta = ResultMeta(
-            provider=meta.provider,
-            channel=meta.channel,
-            capability=meta.capability,
-            observed_at_ns=meta.observed_at_ns,
-            freshness=freshness,
-            freshness_status=status,
-            real=meta.real,
-            fallback=False,
+        return QueryResult(
+            data=result.data,
+            meta=ResultMeta(
+                provider=meta.provider,
+                channel=meta.channel,
+                capability=meta.capability,
+                observed_at_ns=meta.observed_at_ns,
+                freshness=freshness,
+                freshness_status=status,
+                real=meta.real,
+                fallback=False,
+            ),
         )
-        return QueryResult(data=result.data, meta=cached_meta)
 
     def _cache_get(self, plan: QueryPlan) -> QueryResult[Any] | None:
         if not self._cache_enabled(plan):
@@ -164,8 +159,7 @@ class UnifiedMarketDataService(ProviderCoreService):
             self.query_cache.put(plan.fingerprint.value, result)
 
     @staticmethod
-    def _align_quote_batch(batch: BatchPlan, rows: Sequence[Quote]) -> list[Quote]:
-        """Align Provider rows by canonical symbol, never by incidental row order."""
+    def _quote_map(batch: BatchPlan, rows: Sequence[Quote]) -> dict[str, Quote]:
         expected = set(batch.unique)
         by_symbol: dict[str, Quote] = {}
         for quote in rows:
@@ -188,7 +182,11 @@ class UnifiedMarketDataService(ProviderCoreService):
                     context={"symbol": symbol},
                 )
             by_symbol[symbol] = quote
+        return by_symbol
 
+    @classmethod
+    def _align_quote_batch(cls, batch: BatchPlan, rows: Sequence[Quote]) -> list[Quote]:
+        by_symbol = cls._quote_map(batch, rows)
         missing = [symbol for symbol in batch.unique if symbol not in by_symbol]
         if missing:
             raise SourceUnavailable(
@@ -213,7 +211,7 @@ class UnifiedMarketDataService(ProviderCoreService):
         deadline_ms: int | None = None,
         max_age: float | None = None,
         allow_stale: bool = False,
-    ) -> list[Quote] | QueryResult[list[Quote]]:
+    ) -> list[Quote] | QueryResult[list[Quote]] | BatchResult[Quote]:
         seq = (symbols,) if isinstance(symbols, str) else tuple(symbols)
         spec = QuerySpec.build(
             "quotes",
@@ -227,6 +225,25 @@ class UnifiedMarketDataService(ProviderCoreService):
         )
         return self.query(spec, with_meta=with_meta)
 
+    def quotes_batch(
+        self,
+        symbols: str | Sequence[str],
+        *,
+        provider: str | None = None,
+        source: str | None = None,
+        deadline_ms: int | None = None,
+    ) -> BatchResult[Quote]:
+        result = self.quotes(
+            symbols,
+            provider=provider,
+            source=source,
+            allow_partial=True,
+            deadline_ms=deadline_ms,
+        )
+        if not isinstance(result, BatchResult):
+            raise RuntimeError("quotes_batch contract violated")
+        return result
+
     def _execute_quotes_plan(
         self,
         plan: QueryPlan,
@@ -237,21 +254,20 @@ class UnifiedMarketDataService(ProviderCoreService):
         if cached is not None:
             plan.budget.ensure_remaining("cache_read")
             return cached if with_meta else cached.data
-
         batch = BatchPlanner.symbols(list(plan.spec.symbols))
 
         def fetch() -> QueryResult[list[Quote]]:
             plan.budget.begin_attempt()
             result = super(UnifiedMarketDataService, self).quotes(
-                list(batch.unique),
-                provider=plan.provider,
-                with_meta=True,
+                list(batch.unique), provider=plan.provider, with_meta=True
             )
             if not isinstance(result, QueryResult):
                 raise RuntimeError("ProviderCoreService.quotes(with_meta=True) contract violated")
             plan.budget.ensure_remaining("provider_response")
-            data = self._align_quote_batch(batch, list(result.data))
-            coordinated = QueryResult(data=data, meta=result.meta)
+            coordinated = QueryResult(
+                data=self._align_quote_batch(batch, list(result.data)),
+                meta=result.meta,
+            )
             self._cache_put(plan, coordinated)
             return coordinated
 
@@ -262,6 +278,62 @@ class UnifiedMarketDataService(ProviderCoreService):
         )
         plan.budget.ensure_remaining("serialize")
         return result if with_meta else result.data
+
+    def _execute_quote_batch_plan(self, plan: QueryPlan) -> BatchResult[Quote]:
+        """Return auditable successes/errors; partial batches are never cached."""
+        batch = BatchPlanner.symbols(list(plan.spec.symbols))
+
+        def fetch() -> BatchResult[Quote]:
+            plan.budget.begin_attempt()
+            result = super(UnifiedMarketDataService, self).quotes(
+                list(batch.unique), provider=plan.provider, with_meta=True
+            )
+            if not isinstance(result, QueryResult):
+                raise RuntimeError("ProviderCoreService.quotes(with_meta=True) contract violated")
+            plan.budget.ensure_remaining("provider_response")
+            by_symbol = self._quote_map(batch, list(result.data))
+            missing = [symbol for symbol in batch.unique if symbol not in by_symbol]
+            errors = {}
+            for symbol in missing:
+                exc = SourceUnavailable(
+                    "Provider 批量行情缺少请求标的",
+                    context={
+                        "provider": plan.provider,
+                        "channel": plan.channel,
+                        "capability": "quotes",
+                        "query_id": plan.fingerprint.value,
+                        "phase": "normalize",
+                        "symbol": symbol,
+                        "partial": True,
+                        "fallback": False,
+                        "retry_same_provider": False,
+                        "terminal": True,
+                        "provider_switch_allowed": False,
+                    },
+                )
+                errors[symbol] = to_error_envelope(
+                    exc,
+                    provider=plan.provider,
+                    channel=plan.channel,
+                    capability="quotes",
+                    query_id=plan.fingerprint.value,
+                )
+            items = tuple(by_symbol[symbol] for symbol in batch.original if symbol in by_symbol)
+            return BatchResult(
+                items=items,
+                errors=errors,
+                requested=batch.original,
+                partial=bool(errors),
+                meta=result.meta,
+            )
+
+        result = self.singleflight.do(
+            plan.fingerprint.value,
+            fetch,
+            timeout=plan.budget.remaining_s(),
+        )
+        plan.budget.ensure_remaining("serialize")
+        return result
 
     def bars(
         self,
@@ -303,7 +375,6 @@ class UnifiedMarketDataService(ProviderCoreService):
         if cached is not None:
             plan.budget.ensure_remaining("cache_read")
             return cached if with_meta else cached.data
-
         symbol = plan.spec.symbols[0]
 
         def fetch() -> QueryResult[list[Bar]]:
