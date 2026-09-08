@@ -17,7 +17,8 @@ response/history URLs so redirects cannot silently change provenance.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import contextlib
+from collections.abc import Iterable, Iterator
 from typing import Any
 from urllib.parse import urlparse
 
@@ -45,18 +46,10 @@ PROVIDER_HTTP_HOST_SUFFIXES: dict[str, tuple[str, ...]] = {
         "eastmoney.com",
         "eastmoney.com.cn",
     ),
-    "baidu": (
-        "baidu.com",
-    ),
-    "jsl": (
-        "jisilu.cn",
-    ),
-    "boc": (
-        "boc.cn",
-    ),
-    "iwencai": (
-        "iwencai.com",
-    ),
+    "baidu": ("baidu.com",),
+    "jsl": ("jisilu.cn",),
+    "boc": ("boc.cn",),
+    "iwencai": ("iwencai.com",),
 }
 
 
@@ -136,6 +129,11 @@ class ProviderBoundHttpClient:
         response = self._client.put(url, *args, **kwargs)
         return self._check_response(response)
 
+    def patch(self, url: Any, *args: Any, **kwargs: Any) -> Any:
+        self._check_url(url, phase="request")
+        response = self._client.patch(url, *args, **kwargs)
+        return self._check_response(response)
+
     def delete(self, url: Any, *args: Any, **kwargs: Any) -> Any:
         self._check_url(url, phase="request")
         response = self._client.delete(url, *args, **kwargs)
@@ -151,12 +149,29 @@ class ProviderBoundHttpClient:
         response = self._client.options(url, *args, **kwargs)
         return self._check_response(response)
 
+    def send(self, request: Any, *args: Any, **kwargs: Any) -> Any:
+        self._check_url(getattr(request, "url", None), phase="request")
+        response = self._client.send(request, *args, **kwargs)
+        return self._check_response(response)
+
+    @contextlib.contextmanager
+    def stream(
+        self,
+        method: str,
+        url: Any,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Iterator[Any]:
+        self._check_url(url, phase="request")
+        with self._client.stream(method, url, *args, **kwargs) as response:
+            yield self._check_response(response)
+
     def close(self) -> None:
         self._client.close()
 
     @property
     def raw_client(self) -> Any:
-        """Diagnostic/testing access; adapters should use the guarded proxy."""
+        """Diagnostic/testing access; production adapters must never use it."""
         return self._client
 
     def __enter__(self) -> ProviderBoundHttpClient:
@@ -173,7 +188,9 @@ class ProviderBoundHttpClient:
         return None
 
     def __getattr__(self, name: str) -> Any:
-        # Non-request attributes such as headers/cookies/timeout remain available.
-        # Methods not explicitly wrapped above are intentionally not considered a
-        # safe request path; callers needing another verb should add it here.
-        return getattr(self._client, name)
+        attr = getattr(self._client, name)
+        if callable(attr):
+            raise AttributeError(
+                f"ProviderBoundHttpClient does not expose unchecked callable {name!r}"
+            )
+        return attr
