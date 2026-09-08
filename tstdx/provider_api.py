@@ -7,6 +7,11 @@ Unified APIs cover only common semantics. Provider-specific data stays under
 ``md.<provider>``. Web Provider namespaces are table-driven: one canonical
 ProviderId owns a documented set of Channel -> Adapter bindings, all sharing the
 ProviderManager lifecycle. No path in this module performs Provider fallback.
+
+The Direct API contract is validated from the canonical Provider Registry at
+module import: every registered Provider has exactly one API type, every
+non-local registered Channel has an explicit Direct mapping, and unsupported
+unified capabilities fail before the service performs I/O.
 """
 
 from __future__ import annotations
@@ -58,7 +63,24 @@ class ProviderAPI:
     def spec(self) -> ProviderSpec:
         return self._spec
 
+    def _require_capability(self, capability: str) -> None:
+        """Fail before I/O when a Provider does not own a unified capability."""
+
+        if self._spec.supports(capability):
+            return
+        raise ValidationError(
+            f"Provider {self.provider!r} 不支持 Direct capability {capability!r}",
+            context={
+                "provider": self.provider,
+                "capability": capability,
+                "phase": "direct_contract",
+                "fallback": False,
+                "provider_switch_allowed": False,
+            },
+        )
+
     def quotes(self, symbols: str | Sequence[str], *, with_meta: bool = False) -> Any:
+        self._require_capability("quotes")
         return self._service.quotes(symbols, provider=self.provider, with_meta=with_meta)
 
     def bars(
@@ -71,6 +93,7 @@ class ProviderAPI:
         adjust: str = "",
         with_meta: bool = False,
     ) -> Any:
+        self._require_capability("bars")
         return self._service.bars(
             symbol,
             period=period,
@@ -89,6 +112,7 @@ class ProviderAPI:
             exc.context.setdefault("provider", self.provider)
             exc.context.setdefault("channel", channel)
             exc.context.setdefault("fallback", False)
+            exc.context.setdefault("provider_switch_allowed", False)
             raise
         except Exception as exc:
             raise InternalError(
@@ -97,6 +121,7 @@ class ProviderAPI:
                     "provider": self.provider,
                     "channel": channel,
                     "fallback": False,
+                    "provider_switch_allowed": False,
                     "cause_type": type(exc).__name__,
                 },
                 cause=exc,
@@ -105,7 +130,13 @@ class ProviderAPI:
     def channel(self, channel: str) -> Any:
         raise ValidationError(
             f"Provider {self.provider!r} 尚未暴露 channel {channel!r} Direct API",
-            context={"provider": self.provider, "channel": channel},
+            context={
+                "provider": self.provider,
+                "channel": channel,
+                "phase": "direct_contract",
+                "fallback": False,
+                "provider_switch_allowed": False,
+            },
         )
 
 
@@ -257,6 +288,9 @@ class TdxMacAPI(_TdxChannel):
 
 class TdxProviderAPI(ProviderAPI):
     provider_id = "tdx"
+    DIRECT_CHANNELS: ClassVar[frozenset[str]] = frozenset(
+        {"quotation", "extended", "goods", "f10", "mac"}
+    )
 
     def __init__(self, service: UnifiedMarketDataService) -> None:
         super().__init__(service)
@@ -275,7 +309,13 @@ class TdxProviderAPI(ProviderAPI):
         if cid == "vipdoc":
             raise ValidationError(
                 "TDX vipdoc 是 local_historical Channel；不能替代在线 TDX 行情",
-                context={"provider": "tdx", "channel": "vipdoc"},
+                context={
+                    "provider": "tdx",
+                    "channel": "vipdoc",
+                    "phase": "direct_contract",
+                    "fallback": False,
+                    "provider_switch_allowed": False,
+                },
             )
         return self._service.manager.tdx_channel(cid)
 
@@ -284,6 +324,7 @@ class WebProviderAPI(ProviderAPI):
     """Table-driven Web Provider namespace."""
 
     CHANNELS: ClassVar[dict[str, AdapterRef]] = {}
+    EXPLICIT_CHANNELS: ClassVar[frozenset[str]] = frozenset()
 
     @staticmethod
     def _load_adapter(ref: AdapterRef) -> type[Any]:
@@ -299,7 +340,13 @@ class WebProviderAPI(ProviderAPI):
         except KeyError as exc:
             raise ValidationError(
                 f"Provider {self.provider!r} 的 channel {cid!r} 尚无 Direct Adapter",
-                context={"provider": self.provider, "channel": cid},
+                context={
+                    "provider": self.provider,
+                    "channel": cid,
+                    "phase": "direct_contract",
+                    "fallback": False,
+                    "provider_switch_allowed": False,
+                },
             ) from exc
         return self._service.manager.web_adapter(
             self.provider,
@@ -515,6 +562,7 @@ class EastmoneyCorporateAPI:
 
 class EastmoneyProviderAPI(WebProviderAPI):
     provider_id = "eastmoney"
+    EXPLICIT_CHANNELS = frozenset({"corporate"})
     CHANNELS = {
         "quote": ("tstdx.web.adapters", "EastmoneySource"),
         "kline": ("tstdx.web.history", "EastmoneyHistoryKlineSource"),
@@ -689,16 +737,57 @@ class IwencaiProviderAPI(WebProviderAPI):
     query = screen
 
 
-_PROVIDER_API_TYPES: dict[str, type[ProviderAPI]] = {
-    "tdx": TdxProviderAPI,
-    "tencent": TencentProviderAPI,
-    "sina": SinaProviderAPI,
-    "eastmoney": EastmoneyProviderAPI,
-    "baidu": BaiduProviderAPI,
-    "jsl": JslProviderAPI,
-    "boc": BocProviderAPI,
-    "iwencai": IwencaiProviderAPI,
-}
+def _build_provider_api_types(
+    api_types: Sequence[type[ProviderAPI]],
+) -> dict[str, type[ProviderAPI]]:
+    """Build and validate the Direct API type/channel contract from Registry."""
+
+    mapping: dict[str, type[ProviderAPI]] = {}
+    for api_type in api_types:
+        provider_id = api_type.provider_id
+        if provider_id is None:
+            raise RuntimeError(f"Direct API type {api_type.__name__} has no provider_id")
+        pid = resolve_provider(provider=provider_id)
+        if pid in mapping:
+            raise RuntimeError(f"duplicate Direct API type for Provider {pid!r}")
+        mapping[pid] = api_type
+
+    registered_ids = set(PROVIDERS.ids())
+    if set(mapping) != registered_ids:
+        raise RuntimeError(
+            "Direct Provider API registry mismatch: "
+            f"registered={sorted(registered_ids)} mapped={sorted(mapping)}"
+        )
+
+    for pid, api_type in mapping.items():
+        spec = PROVIDERS.get(pid)
+        expected_channels = {channel.id for channel in spec.channels if not channel.local}
+        if issubclass(api_type, WebProviderAPI):
+            mapped_channels = set(api_type.CHANNELS) | set(api_type.EXPLICIT_CHANNELS)
+        elif api_type is TdxProviderAPI:
+            mapped_channels = set(TdxProviderAPI.DIRECT_CHANNELS)
+        else:
+            mapped_channels = set()
+        if mapped_channels != expected_channels:
+            raise RuntimeError(
+                f"Direct channel contract mismatch for {pid!r}: "
+                f"registered={sorted(expected_channels)} mapped={sorted(mapped_channels)}"
+            )
+    return mapping
+
+
+_PROVIDER_API_TYPES: dict[str, type[ProviderAPI]] = _build_provider_api_types(
+    (
+        TdxProviderAPI,
+        TencentProviderAPI,
+        SinaProviderAPI,
+        EastmoneyProviderAPI,
+        BaiduProviderAPI,
+        JslProviderAPI,
+        BocProviderAPI,
+        IwencaiProviderAPI,
+    )
+)
 
 
 def build_provider_api(service: UnifiedMarketDataService, provider: str) -> ProviderAPI:
@@ -708,6 +797,11 @@ def build_provider_api(service: UnifiedMarketDataService, provider: str) -> Prov
     except KeyError as exc:
         raise ValidationError(
             f"Provider {pid!r} 尚无 Direct API",
-            context={"provider": pid},
+            context={
+                "provider": pid,
+                "phase": "direct_contract",
+                "fallback": False,
+                "provider_switch_allowed": False,
+            },
         ) from exc
     return cls(service)
