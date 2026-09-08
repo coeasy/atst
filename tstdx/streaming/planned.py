@@ -385,11 +385,7 @@ class PlannedQuoteStream:
 
             symbols = self._union_symbols(due)
             try:
-                rows = self.service.quotes(symbols, provider=self.provider)
-                self._mark_reconnected()
-                self.reconnect.success()
-                self.stats.polls += 1
-                self.stats.requested_symbols += len(symbols)
+                result = self.service.quotes(symbols, provider=self.provider)
             except TdxError as exc:
                 self.stats.provider_errors += 1
                 self._mark_reconnect_pending()
@@ -412,6 +408,26 @@ class PlannedQuoteStream:
                     self._advance_due(sub, now)
                 self._stop.wait(self.reconnect.next_delay())
                 continue
+
+            if not isinstance(result, list) or not all(isinstance(row, Quote) for row in result):
+                contract_error = SubscriptionError(
+                    "planned stream service 必须返回 list[Quote]",
+                    context={
+                        "provider": self.provider,
+                        "phase": "stream_contract",
+                        "fallback": False,
+                    },
+                )
+                for sub in due:
+                    self._enqueue_error(sub, contract_error)
+                    self._advance_due(sub, now)
+                continue
+
+            rows = result
+            self._mark_reconnected()
+            self.reconnect.success()
+            self.stats.polls += 1
+            self.stats.requested_symbols += len(symbols)
 
             qmap = {_quote_key(quote): quote for quote in rows}
             for sub in due:
