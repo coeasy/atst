@@ -14,9 +14,9 @@ is allowed only inside the selected provider and channel.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Iterable, Mapping
 
 from ..errors import ValidationError
 
