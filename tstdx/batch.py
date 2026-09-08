@@ -5,9 +5,11 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from enum import Enum
+from types import MappingProxyType
 from typing import Any, Generic, TypeVar
 
 from .error_envelope import ErrorEnvelope
@@ -15,6 +17,7 @@ from .error_envelope import ErrorEnvelope
 __all__ = ["BatchResult"]
 
 T = TypeVar("T")
+_BATCH_ERROR_STATUSES = frozenset({"failed", "missing", "not_attempted"})
 
 
 def _plain(value: Any) -> Any:
@@ -35,6 +38,12 @@ def _plain(value: Any) -> Any:
     return str(value)
 
 
+def _copy_error(error: ErrorEnvelope) -> ErrorEnvelope:
+    """Detach mutable envelope context from the producer/caller."""
+
+    return replace(error, context=copy.deepcopy(dict(error.context)))
+
+
 @dataclass(frozen=True, slots=True)
 class BatchResult(Generic[T]):
     """Batch successes plus per-symbol errors without losing provenance.
@@ -45,9 +54,9 @@ class BatchResult(Generic[T]):
     missing symbol was requested more than once.
 
     ``partial`` is a derived truth: any per-symbol error means the batch is
-    partial, and a partial batch must expose at least one auditable error. The
-    input mapping is defensively copied so later caller mutation cannot rewrite a
-    result that has already been returned or serialized.
+    partial, and a partial batch must expose at least one auditable error. Error
+    envelopes are defensively copied and the mapping is made read-only so later
+    producer/caller mutation cannot rewrite an already-returned batch audit.
     """
 
     items: tuple[T, ...]
@@ -57,14 +66,57 @@ class BatchResult(Generic[T]):
     meta: Any | None = None
 
     def __post_init__(self) -> None:
-        errors = dict(self.errors)
-        if bool(errors) != bool(self.partial):
+        items = tuple(self.items)
+        requested = tuple(self.requested)
+        raw_errors = dict(self.errors)
+        for symbol, error in raw_errors.items():
+            if not isinstance(error, ErrorEnvelope):
+                raise TypeError(f"BatchResult error for {symbol!r} must be ErrorEnvelope")
+        if bool(raw_errors) != bool(self.partial):
             raise ValueError("BatchResult.partial 必须与逐标的 errors 是否存在完全一致")
-        object.__setattr__(self, "errors", errors)
+        if requested:
+            requested_set = set(requested)
+            unknown = sorted(set(raw_errors) - requested_set)
+            if unknown:
+                raise ValueError(
+                    f"BatchResult.errors 包含未请求标的: {unknown!r}"
+                )
+            if len(items) > len(requested):
+                raise ValueError("BatchResult.items 数量不能超过 requested")
+
+        copied_errors = {
+            str(symbol): _copy_error(error) for symbol, error in raw_errors.items()
+        }
+        object.__setattr__(self, "items", items)
+        object.__setattr__(self, "requested", requested)
+        object.__setattr__(self, "errors", MappingProxyType(copied_errors))
+        object.__setattr__(self, "meta", copy.deepcopy(self.meta))
 
     @property
     def success(self) -> bool:
         return not self.errors
+
+    def status_for(self, symbol: str) -> str:
+        """Return ``ok/failed/missing/not_attempted`` for one requested symbol."""
+
+        key = str(symbol)
+        if self.requested and key not in self.requested:
+            raise KeyError(key)
+        error = self.errors.get(key)
+        if error is None:
+            return "ok"
+        status = error.context.get("batch_status")
+        if isinstance(status, str) and status in _BATCH_ERROR_STATUSES:
+            return status
+        return "failed"
+
+    @property
+    def status_counts(self) -> Mapping[str, int]:
+        counts = {"ok": 0, "failed": 0, "missing": 0, "not_attempted": 0}
+        symbols = tuple(dict.fromkeys(self.requested or tuple(self.errors)))
+        for symbol in symbols:
+            counts[self.status_for(symbol)] += 1
+        return MappingProxyType(counts)
 
     def to_dict(self) -> dict[str, Any]:
         return {
