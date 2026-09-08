@@ -6,10 +6,12 @@
 Only canonical ``QueryResult[list[Quote|Bar]]`` values are persisted. Persistent
 entries must carry direct, verified, fail-closed Provider provenance; poisoned
 cache/replay/synthetic/fallback metadata is rejected both before write and after
-decode. SQLite storage failures are optimization failures: they log and degrade
-to cache miss, never changing the upstream query result. This includes
-initialization failure: an unwritable cache directory must never prevent
-market-data service startup.
+decode. The semantic fingerprint is embedded in each payload and checked against
+the SQLite row key, preventing a valid payload copied under another query key
+from being promoted as if it belonged to that query. SQLite storage failures are
+optimization failures: they log and degrade to cache miss, never changing the
+upstream query result. This includes initialization failure: an unwritable cache
+directory must never prevent market-data service startup.
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ from .service import FreshnessEvidence, QueryResult, ResultMeta
 __all__ = ["SQLiteSemanticQueryCache", "TieredSemanticQueryCache"]
 
 _LOG = logging.getLogger(__name__)
-_FORMAT_VERSION = 1
+_FORMAT_VERSION = 2
 _MAX_FUTURE_SKEW_NS = 5_000_000_000
 
 
@@ -166,17 +168,17 @@ def _decode_meta(data: dict[str, Any]) -> ResultMeta:
     )
 
 
-def _encode_result(value: Any) -> str | None:
+def _encode_result(value: Any, *, fingerprint: str) -> str | None:
     if not isinstance(value, QueryResult):
         return None
+    if not fingerprint:
+        raise ValueError("semantic cache fingerprint must be non-empty")
     checked = _validate_persistable_result(value)
     capability = checked.meta.capability
-    if capability == "quotes":
-        rows = [item.to_dict() for item in checked.data]
-    else:
-        rows = [item.to_dict() for item in checked.data]
+    rows = [item.to_dict() for item in checked.data]
     payload = {
         "format_version": _FORMAT_VERSION,
+        "fingerprint": fingerprint,
         "kind": capability,
         "data": rows,
         "meta": _encode_meta(checked.meta),
@@ -184,10 +186,12 @@ def _encode_result(value: Any) -> str | None:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
-def _decode_result(payload: str) -> QueryResult[Any]:
+def _decode_result(payload: str, *, expected_fingerprint: str) -> QueryResult[Any]:
     data = json.loads(payload)
     if int(data.get("format_version", -1)) != _FORMAT_VERSION:
         raise ValueError("unsupported semantic cache format")
+    if str(data.get("fingerprint", "")) != expected_fingerprint:
+        raise ValueError("semantic cache fingerprint/payload mismatch")
     kind = data.get("kind")
     rows = data.get("data")
     if not isinstance(rows, list):
@@ -301,7 +305,7 @@ class SQLiteSemanticQueryCache:
                 return None
 
             try:
-                value = _decode_result(str(payload))
+                value = _decode_result(str(payload), expected_fingerprint=key)
             except Exception as exc:
                 self.invalidate(key)
                 self._record_error_miss()
@@ -317,7 +321,7 @@ class SQLiteSemanticQueryCache:
 
     def put(self, key: str, value: Any) -> None:
         try:
-            payload = _encode_result(value)
+            payload = _encode_result(value, fingerprint=key)
             if payload is None:
                 return
             stored_ns = time.time_ns()
