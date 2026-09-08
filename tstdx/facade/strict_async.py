@@ -1,7 +1,7 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Async compatibility wrapper for the strict Provider-bound facade."""
+"""Async compatibility wrapper for the planned strict Provider-bound facade."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import asyncio
 from functools import partial
 from typing import Any, Callable, TypeVar
 
-from .strict import UnifiedQuoteAPI
+from .planned import UnifiedQuoteAPI
 
 __all__ = ["AsyncUnifiedQuoteAPI"]
 
@@ -17,10 +17,10 @@ T = TypeVar("T")
 
 
 class AsyncUnifiedQuoteAPI:
-    """Run the strict sync facade without reintroducing legacy routing logic.
+    """Run the planned strict sync facade without duplicating routing logic.
 
-    This class is intentionally a compatibility layer. New async applications
-    should use :class:`tstdx.async_service.AsyncMarketDataService`.
+    This class remains a compatibility layer. New async applications should use
+    :class:`tstdx.async_service.AsyncMarketDataService`.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -69,14 +69,13 @@ class AsyncUnifiedQuoteAPI:
         await asyncio.to_thread(self._sync.close)
         self._closed = True
 
-    async def __aenter__(self) -> AsyncUnifiedQuoteAPI:
+    async def __aenter__(self) -> "AsyncUnifiedQuoteAPI":
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
         await self.aclose()
 
     def __getattr__(self, name: str) -> Any:
-        # Non-callable configuration/diagnostic attributes remain inspectable.
         attr = getattr(self._sync, name)
         if callable(attr):
             async def wrapper(*args: Any, **kwargs: Any) -> Any:
