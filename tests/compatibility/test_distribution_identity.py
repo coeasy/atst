@@ -23,3 +23,11 @@ def test_supported_python_floor_remains_explicit() -> None:
     assert 'requires-python = ">=3.10"' in pyproject
     for minor in ("3.10", "3.11", "3.12", "3.13"):
         assert f'"Programming Language :: Python :: {minor}"' in pyproject
+
+
+def test_typed_classifier_has_pep561_marker_in_package_tree() -> None:
+    pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert '"Typing :: Typed"' in pyproject
+    marker = _ROOT / "tstdx" / "py.typed"
+    assert marker.is_file()
