@@ -7,6 +7,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Only the newest run for the same event/ref can be merge evidence. Cancel stale
+# PR/push runs so retired-native compatibility checks do not queue for old SHAs.
+concurrency:
+  group: native-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 # tstdx_native source was retired before v1.4.0 and has never existed in this
 # repository history. Keep this as a blocking compatibility/provenance gate:
 # the deprecated tstdx.native facade must remain pure-Python, must not activate
@@ -19,6 +25,7 @@ jobs:
   native-compat:
     name: Native compatibility & fallback parity
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
