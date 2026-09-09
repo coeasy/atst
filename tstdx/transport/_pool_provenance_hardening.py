@@ -17,6 +17,8 @@ probe latency. This layer joins those contracts:
 * async host publication is cancellation-atomic: no generation/slot mutation is
   performed until all current slot locks are acquired and the replacement plan
   is fully constructed;
+* once an async generation commits, cancellation is propagated only after every
+  immediately-retirable old connection has been drained;
 * a background speed test may update/persist results only if the generation it
   started from is still current when probing finishes.
 """
@@ -24,7 +26,6 @@ probe latency. This layer joins those contracts:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import threading
 import time
@@ -35,6 +36,7 @@ from ..errors import ConfigError
 from ..protocol.commands import Family
 from . import async_ as _async_impl
 from . import pool as _sync_impl
+from ._async_close_hardening import _await_cleanup_before_cancellation
 from .hosts import HostEntry, RankingStore, parse_server
 
 _LOG = logging.getLogger("tstdx.transport")
@@ -173,6 +175,14 @@ def _sync_update_hosts(
     return published_hosts
 
 
+async def _drain_retired_slots(
+    pool: _async_impl.AsyncConnectionPool,
+    slots: list[_async_impl.AsyncSlot],
+) -> None:
+    for slot in slots:
+        await pool._drop(slot)
+
+
 async def _async_update_hosts(
     self: _async_impl.AsyncConnectionPool,
     hosts: Sequence[HostEntry],
@@ -263,14 +273,12 @@ async def _async_update_hosts(
             for old in reversed(locked):
                 old.lock.release()
 
-    for index, slot in enumerate(to_close):
-        try:
-            await self._drop(slot)
-        except asyncio.CancelledError:
-            for remaining in to_close[index:]:
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await self._drop(remaining)
-            raise
+    if to_close:
+        cleanup_task = asyncio.create_task(
+            _drain_retired_slots(self, to_close),
+            name="tstdx-pool-update-cleanup",
+        )
+        await _await_cleanup_before_cancellation(cleanup_task)
     return published_hosts
 
 
