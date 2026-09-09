@@ -161,6 +161,20 @@ def _require_limits(*, timeout: Any, samples: Any, max_workers: Any) -> tuple[fl
     )
 
 
+def _require_unique_keys(items: Iterable[Any], *, source: str) -> None:
+    """Reject duplicate canonical endpoints before network or persistence work."""
+
+    seen: set[str] = set()
+    for index, item in enumerate(items):
+        key = item.key
+        if key in seen:
+            raise ConfigError(
+                f"{source} 存在重复 canonical endpoint: {key}",
+                context={"source": source, "host": key, "index": index},
+            )
+        seen.add(key)
+
+
 def _apply_probe_observations(
     hosts: Sequence[HostEntry],
     results: Sequence[ProbeResult],
@@ -174,6 +188,11 @@ def _apply_probe_observations(
     for result in results:
         validated = _validate_probe_result(result, family=family)
         if validated.ok:
+            if validated.key in by_key:
+                raise ConfigError(
+                    f"测速回灌存在重复 canonical endpoint: {validated.key}",
+                    context={"family": family, "host": validated.key},
+                )
             by_key[validated.key] = validated
 
     for host in hosts:
@@ -280,6 +299,7 @@ def speedtest(
                 f"entry={validated.key} family={validated.family!r}"
             )
         validated_entries.append(validated)
+    _require_unique_keys(validated_entries, source="speedtest hosts")
     if not validated_entries:
         return []
 
@@ -324,13 +344,14 @@ def speedtest(
 
 
 def rank_hosts(results: Iterable[ProbeResult]) -> list[HostEntry]:
-    """把同 family、已验证的测速结果转成可热更新条目。"""
+    """把同 family、已验证且 endpoint 唯一的测速结果转成可热更新条目。"""
 
     items = list(results)
     validated = [_validate_probe_result(result) for result in items]
     families = {result.family for result in validated}
     if len(families) > 1:
         raise ConfigError(f"rank_hosts 不接受跨 family 结果: {sorted(families)!r}")
+    _require_unique_keys(validated, source="rank_hosts results")
     entries = [result.to_entry() for result in validated]
     entries.sort(key=lambda entry: entry.score)
     return entries
