@@ -121,7 +121,7 @@ docker-run:
 clean:
 	rm -rf __pycache__/ tstdx/__pycache__/ tstdx/*/__pycache__/
 	rm -rf .pytest_cache/ .mypy_cache/ .ruff_cache/
-	rm -rf build/ dist/ *.egg-info/
+	rm -rf build/ dist/ release-dist/ *.egg-info/
 	rm -rf .coverage htmlcov/ reports/
-	rm -f coverage.xml audit_report.json audit_summary.md
+	rm -f coverage.xml audit_report.json audit_summary.md host_audit_report.json
 	rm -f benches/results/ci_smoke.json benches/results/ci_time_smoke.json
