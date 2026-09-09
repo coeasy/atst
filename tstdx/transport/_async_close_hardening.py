@@ -12,7 +12,8 @@ Shutdown now has three explicit phases:
 
 1. acquire every current/retired slot lock while the old pool state is untouched;
 2. publish the closed generation atomically with no await between mutations;
-3. cancel heartbeat and drain every connection before propagating cancellation.
+3. cancel heartbeat and drain every connection before propagating cancellation
+   or any cleanup failure.
 
 Repeated ``close()`` calls still perform cleanup, so an already-closed pool is a
 resource state, not a reason to skip idempotent draining.
@@ -21,7 +22,6 @@ resource state, not a reason to skip idempotent draining.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 
 from . import async_ as _impl
 
@@ -44,14 +44,28 @@ async def _cleanup_committed_close(
     heartbeat: asyncio.Task | None,
     slots: list[_impl.AsyncSlot],
 ) -> None:
+    """Drain every shutdown resource, then surface the first cleanup failure."""
+
+    first_error: BaseException | None = None
     current = asyncio.current_task()
     if heartbeat is not None and heartbeat is not current:
         heartbeat.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
+        try:
             await heartbeat
+        except asyncio.CancelledError:
+            pass
+        except BaseException as exc:
+            first_error = exc
 
     for slot in slots:
-        await pool._drop(slot)
+        try:
+            await pool._drop(slot)
+        except BaseException as exc:
+            if first_error is None:
+                first_error = exc
+
+    if first_error is not None:
+        raise first_error
 
 
 async def _await_cleanup_before_cancellation(
