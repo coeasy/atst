@@ -1,7 +1,7 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Isolate resolved host state from selector prototypes and caller-owned objects.
+"""Isolate and de-duplicate resolved host state at the selector boundary.
 
 ``POOL_BY_FAMILY`` and ``DEFAULT_HOST_POOL`` are repository-owned prototypes.
 Connection pools mutate HostEntry live-health and circuit fields, so returning a
@@ -9,8 +9,9 @@ shallow list of those prototypes leaks one client's runtime health into later
 clients in the same process. Explicit selector objects have the same ownership
 problem if handed directly to the pool.
 
-The canonical resolver therefore returns a fresh HostEntry snapshot for every
-entry, after all selector/ranking policy has been applied. Endpoint identity,
+The canonical resolver therefore resolves the full supported candidate window,
+rejects duplicate canonical endpoints before user ``max_hosts`` truncation, and
+returns a fresh HostEntry snapshot for every retained entry. Endpoint identity,
 static verification and observations are preserved, while mutable object
 ownership is request/client-local.
 """
@@ -21,6 +22,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any
 
+from ..errors import ConfigError
 from ..protocol.commands import Family
 from . import hosts as _impl
 
@@ -36,15 +38,32 @@ def _resolve_hosts_isolated(
     use_ranking: bool = True,
     max_hosts: int = 8,
 ) -> list[_impl.HostEntry]:
+    limit = _impl._require_max_hosts(max_hosts)
     resolved = _BASE_RESOLVE_HOSTS(
         servers,
         family=family,
         ranking=ranking,
         ranking_file=ranking_file,
         use_ranking=use_ranking,
-        max_hosts=max_hosts,
+        # Duplicate detection must happen before the caller-requested slice;
+        # otherwise an invalid duplicate selector can be hidden by max_hosts=1.
+        max_hosts=_impl._MAX_RESOLVED_HOSTS,
     )
-    return [replace(entry) for entry in resolved]
+
+    seen: set[str] = set()
+    for index, entry in enumerate(resolved):
+        if entry.key in seen:
+            raise ConfigError(
+                f"resolve_hosts 存在重复 canonical endpoint: {entry.key}",
+                context={
+                    "family": family,
+                    "host": entry.key,
+                    "index": index,
+                },
+            )
+        seen.add(entry.key)
+
+    return [replace(entry) for entry in resolved[:limit]]
 
 
 setattr(_impl, "resolve_hosts", _resolve_hosts_isolated)
