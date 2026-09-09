@@ -22,11 +22,15 @@ from __future__ import annotations
 from . import _async_pool_hardening, _pool_hardening
 from .base import DEFAULT_HEARTBEAT_CMD, ConnectionStats, TcpConnection
 from .hosts import DEFAULT_HOST_POOL, POOL_BY_FAMILY, HostEntry, RankingStore, resolve_hosts
+# Ranking hardening is deliberately loaded after hosts.py exists and before
+# speedtest imports RankingStore. Disk ranking must remain probe-only across
+# process restarts while the public hosts import path stays unchanged.
+from . import _ranking_hardening
 from .pool import ConnectionPool, PoolStats, Slot
 from .ratelimit import SessionRateLimiter, SessionState, TokenBucket, session_state
 from .speedtest import ProbeResult, probe, rank_hosts, speedtest, speedtest_and_save
 
-del _async_pool_hardening, _pool_hardening
+del _async_pool_hardening, _pool_hardening, _ranking_hardening
 
 __all__ = [
     "TcpConnection",
