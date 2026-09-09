@@ -26,6 +26,8 @@ def test_release_matrix_smokes_client_behavior_and_pool_binding_hardening() -> N
     assert "from tstdx.client import AsyncTdxClient, TdxClient" in smoke
     assert "TdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'" in smoke
     assert "AsyncTdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'" in smoke
+    assert "TdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'" in smoke
+    assert "AsyncTdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'" in smoke
     assert (
         "AsyncTdxClient.quotes_concurrent.__module__ == "
         "'tstdx.client._async_concurrency_hardening'"
