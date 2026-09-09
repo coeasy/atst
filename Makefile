@@ -1,4 +1,4 @@
-.PHONY: help install test test-live test-unit test-integration test-bridges test-golden test-slow lint lint-fix type-check clean gates audit-originality audit-golden audit-spec audit-reachability audit-adversarial audit-docs benchmark-smoke native-compat host-audit build publish docker-build docker-run
+.PHONY: help install pre-commit test test-live test-unit test-integration test-bridges test-golden test-slow lint lint-fix type-check clean gates audit-originality audit-golden audit-spec audit-reachability audit-adversarial audit-docs benchmark-smoke native-compat host-audit build publish docker-build docker-run
 
 PYTHON ?= python
 PIP = $(PYTHON) -m pip
@@ -11,6 +11,7 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make install         Install the CI-equivalent dev/test environment"
+	@echo "  make pre-commit      Run the aligned fast pre-commit gate subset"
 	@echo "  make lint            Ruff lint + format check"
 	@echo "  make type-check      mypy with the same CI flags"
 	@echo "  make test            Offline test suite with coverage >= 77"
@@ -26,7 +27,10 @@ help:
 	@echo "  make publish         Disabled locally; publish via GitHub Release/OIDC"
 
 install:
-	$(PIP) install -e ".[all,dev]" build twine
+	$(PIP) install -e ".[all,dev]" build twine "pre-commit==4.6.2"
+
+pre-commit:
+	$(PYTHON) -m pre_commit run --all-files
 
 test:
 	$(PYTEST) tests/ -v --tb=short -m "not network" \
