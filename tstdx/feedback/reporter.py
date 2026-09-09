@@ -282,7 +282,15 @@ class FeedbackReporter:
             with urllib.request.urlopen(request, timeout=self._timeout) as response:
                 return 200 <= response.status < 300
         except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
-            print(f"[tstdx-feedback] HTTP 发送失败: {exc}", file=sys.stderr)
+            endpoint = _safe_endpoint_display(self._endpoint)
+            if isinstance(exc, urllib.error.HTTPError):
+                detail = f"HTTPError status={exc.code}"
+            else:
+                detail = type(exc).__name__
+            print(
+                f"[tstdx-feedback] HTTP 发送失败: endpoint={endpoint!r} error={detail}",
+                file=sys.stderr,
+            )
             return False
 
     def _send_file(self, json_str: str) -> bool:
