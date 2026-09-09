@@ -36,6 +36,13 @@ from typing import Any
 
 from ..errors import CompatibilityError
 from ._facade_mixin_baidu import BaiduSessionMixin
+from ._facade_mixin_astock import AstockToolkitMixin
+from ._facade_mixin_efinance import (
+    DerivativeSessionMixin,
+    FundMobSessionMixin,
+    StockEfinanceMixin,
+)
+from ._facade_mixin_news import NewsSessionMixin
 from ._facade_mixin_info import CorporateSessionMixin, FundFlowSessionMixin
 from ._facade_mixin_market import (
     INDEX_SYMBOLS,
@@ -130,6 +137,11 @@ class WebQuoteSession(
     FundFlowSessionMixin,
     CorporateSessionMixin,
     BaiduSessionMixin,
+    StockEfinanceMixin,
+    FundMobSessionMixin,
+    DerivativeSessionMixin,
+    AstockToolkitMixin,
+    NewsSessionMixin,
 ):
     """HTTP Web 行情高层会话。
 

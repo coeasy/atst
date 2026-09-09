@@ -68,7 +68,7 @@ import json
 import warnings
 from collections.abc import Mapping, Sequence
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from ..errors import SourceDeprecated, WebSourceError
 from .base import (
@@ -118,6 +118,16 @@ _HOSTS = (
 
 def _s(value: Any) -> str:
     return "" if value is None else str(value)
+
+
+def _base_path(base: str) -> str:
+    """取 :attr:`BASE` 的路径部分。
+
+    :meth:`_EastmoneyJson._get_json` 只补**主机**，不补 ``BASE``；直接传完整
+    ``BASE`` 会拼出「主机+主机」的非法 URL。独立主机源（公告 / 研报）的
+    ``fetch_*`` 需自行拼上路径段。
+    """
+    return urlsplit(base).path or "/"
 
 
 # --------------------------------------------------------------------------- #
@@ -479,7 +489,10 @@ class EastmoneyNoticeSource(_EastmoneyJson):
         symbols = [str(s) for s in symbols]
         if not symbols:
             return []
-        url = self._path(symbols, page=page, size=size, ann_type=ann_type)
+        # 必须拼上 BASE 的路径段（/api/security/ann）：``_get_json`` 仅补主机
+        url = _base_path(self.BASE) + self._path(
+            symbols, page=page, size=size, ann_type=ann_type
+        )
         return self._parse_notices_payload(self._get_json(url))
 
     def parse_notices(self, text: str) -> list[dict[str, Any]]:
@@ -565,7 +578,10 @@ class EastmoneyResearchSource(_EastmoneyJson):
         end: str = "",
     ) -> list[dict[str, Any]]:
         """拉取研报列表；``symbol`` 为空表示全市场最新研报。"""
-        url = self._path(symbol, page=page, size=size, begin=begin, end=end)
+        # 必须拼上 BASE 的路径段（/report/list）：``_get_json`` 仅补主机
+        url = _base_path(self.BASE) + self._path(
+            symbol, page=page, size=size, begin=begin, end=end
+        )
         return self._parse_reports_payload(self._get_json(url))
 
     def parse_reports(self, text: str) -> list[dict[str, Any]]:

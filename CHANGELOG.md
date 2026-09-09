@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Web 源对标 `Micro-sheep/efinance` 全量补齐：新增 `tstdx/web/efinance_fund.py`
+  （天天基金移动端 7 类基金扩展数据）、`tstdx/web/efinance_deriv.py`
+  （东财 push2 期货/债券实时、快照、K 线、逐笔），并在 `UnifiedQuoteAPI` 暴露
+  `stock_base_info` / `stock_all_performance` / `stock_report_dates` / `ipo_review` /
+  `fund_base_info` / `fund_manager` / `fund_holdings` / `fund_period_change` /
+  `fund_asset_allocation` / `fund_industry_distribution` / `fund_public_dates` /
+  `futures_base_info` / `futures_realtime` / `futures_kline` / `futures_trades` /
+  `bond_realtime` / `bond_base_info` / `bond_kline` / `bond_history_bill` /
+  `bond_today_bill` / `bond_trades` 共 21 个方法。
+- 对标 `tiantianlaolao/astock-data-toolkit` 新增基本面衍生域：`tstdx/web/astock_toolkit.py`
+  （东财 `RPT_SHAREBONUS_DET` / `RPT_VALUEASSESS_DET` / `RPT_CAPITAL_PARTICIPATION_DET` /
+  `RPT_F10_FINANCE_MAIN`），暴露 `dividend_history` / `stock_valuation` /
+  `holder_changes` / `financial_abstract` / `announcements`。
+- 新增 `tstdx/web/news.py` 机构调研纪要源（东财数据中心 `RPT_ORG_SURVEY`），
+  暴露 `research_visits`；补齐 niuniu 审计发现的资讯类硬缺口。
+- 补齐 efinance 批量能力：`fund_base_info_multi`（`fund_base_info` 批量别名）与
+  `bond_all_base_info`（`bond_base_info` 全市场别名）；并把 `_facade_mixin_info.py`
+  已存在但未暴露的 `free_holders` / `holder_num` 提升到 `UnifiedQuoteAPI`。
+- 新增测试：`tests/web/test_efinance_fund.py`（7）、`tests/web/test_efinance_deriv.py`（9）、
+  `tests/web/test_efinance_facade.py`（13）、`tests/web/test_astock_toolkit.py`（6）、
+  `tests/web/test_news.py`（10），共 45 例全离线测试。
+- 新增文档：`docs/efinance_parity_gap_analysis.md`、`docs/astock_toolkit_parity.md`、
+  `docs/niuniu_coverage_audit.md`。
+
+### Fixed
+
+- 修复 `EastmoneyNoticeSource` / `EastmoneyResearchSource` 的 BASE 路径段丢失问题：
+  `_get_json` 只拼接主机，`fetch_notices` / `fetch_reports` 此前把裸相对路径直接传给
+  基类，导致真实请求打到 `https://reportapi.eastmoney.com?pageSize=...` 而 404。
+  现改为传入 BASE 的路径段部分，主机只拼接一次。
+
 ## [1.0.0] - 2026-09-09
 
 这是 tstdx 的首个正式稳定版，发布包同时提供 wheel 与源码包，支持 Python 3.10–3.13。

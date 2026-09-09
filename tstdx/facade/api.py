@@ -1302,6 +1302,350 @@ class UnifiedQuoteAPI(RouteSelector):
         """
         return self.capital_changes(symbol, route=route)
 
+    # ------------------------------------------------------------------ #
+    # efinance 对标扩展（基金 / 期货 / 债券 / 股票扩展，仅 web 路由）
+    # ------------------------------------------------------------------ #
+    # -- 股票扩展 ------------------------------------------------------------- #
+    def stock_base_info(self, codes: Sequence[str]) -> list[dict[str, Any]]:
+        """批量股票基础资料（市盈率 / 市净率 / 行业 / 总市值 / 流通市值）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.stock_base_info(list(codes)))
+
+    def stock_all_performance(self, report_date: str = "") -> list[dict[str, Any]]:
+        """全市场定期报告业绩（对标 efinance ``stock.get_all_company_performance``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.stock_all_performance(report_date=report_date)
+        )
+
+    def stock_report_dates(self, limit: int = 100) -> list[str]:
+        """全市场财报报告期列表（去重，降序）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.stock_report_dates(limit=limit))
+
+    def ipo_review(self, *, page: int = 1, size: int = 20) -> list[dict[str, Any]]:
+        """IPO 审核状态（对标 efinance ``stock.get_latest_ipo_info``）。
+
+        与 :meth:`ipo_calendar`（申购日历）不同，本方法聚焦审核进度。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.ipo_review(page=page, size=size))
+
+    # -- 基金扩展（天天基金移动端） ------------------------------------------- #
+    def fund_base_info(self, code: str) -> dict[str, Any]:
+        """基金基础信息（对标 efinance ``fund.get_base_info`` 单数）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.fund_base_info(code))
+
+    def fund_manager(self, code: str) -> dict[str, Any] | None:
+        """基金经理（对标 efinance ``fund.get_fund_manager``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.fund_manager(code))
+
+    def fund_holdings(
+        self, code: str, dates: Sequence[str] | str | None = None
+    ) -> list[dict[str, Any]]:
+        """基金持仓（对标 efinance ``fund.get_invest_position``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.fund_holdings(code, dates=dates))
+
+    def fund_period_change(self, code: str) -> list[dict[str, Any]]:
+        """基金阶段涨幅（对标 efinance ``fund.get_period_change``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.fund_period_change(code))
+
+    def fund_asset_allocation(
+        self, code: str, dates: Sequence[str] | str | None = None
+    ) -> list[dict[str, Any]]:
+        """基金资产配置（股票/债券/现金占比，对标 efinance ``fund.get_types_percentage``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.fund_asset_allocation(code, dates=dates)
+        )
+
+    def fund_industry_distribution(
+        self, code: str, dates: Sequence[str] | str | None = None
+    ) -> list[dict[str, Any]]:
+        """基金行业分布（对标 efinance ``fund.get_industry_distribution``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.fund_industry_distribution(code, dates=dates)
+        )
+
+    def fund_public_dates(self, code: str) -> list[str]:
+        """基金公开持仓日期列表（对标 efinance ``fund.get_public_dates``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.fund_public_dates(code))
+
+    # -- 期货（东财 push2 降级） ---------------------------------------------- #
+    def futures_base_info(self) -> list[dict[str, Any]]:
+        """全市场期货基础信息（对标 efinance ``futures.get_futures_base_info``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.futures_base_info())
+
+    def futures_realtime(self, quote_id: str) -> dict[str, Any]:
+        """期货实时快照（对标 efinance ``futures.get_realtime_quotes`` 单只）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.futures_realtime(quote_id))
+
+    def futures_kline(
+        self,
+        quote_id: str,
+        *,
+        period: str = "day",
+        count: int = 320,
+        adjust: str = "",
+    ) -> list[Any]:
+        """期货历史 K 线（对标 efinance ``futures.get_quote_history``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.futures_kline(quote_id, period=period, count=count, adjust=adjust),
+        )
+
+    def futures_trades(self, quote_id: str, *, max_count: int = 1000) -> list[dict[str, Any]]:
+        """期货当日成交明细（对标 efinance ``futures.get_deal_detail``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.futures_trades(quote_id, max_count=max_count)
+        )
+
+    # -- 债券（东财 push2 降级） ---------------------------------------------- #
+    def bond_realtime(self, codes: Sequence[str]) -> list[dict[str, Any]]:
+        """债券实时行情（对标 efinance ``bond.get_realtime_quotes``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.bond_realtime(list(codes)))
+
+    def bond_base_info(self, codes: Sequence[str]) -> list[dict[str, Any]]:
+        """债券基础信息（对标 efinance ``bond.get_base_info``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.bond_base_info(list(codes)))
+
+    def bond_kline(
+        self,
+        code: str,
+        *,
+        period: str = "day",
+        count: int = 320,
+        adjust: str = "",
+    ) -> list[Any]:
+        """债券历史 K 线（对标 efinance ``bond.get_quote_history``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.bond_kline(code, period=period, count=count, adjust=adjust),
+        )
+
+    def bond_history_bill(self, code: str, *, count: int = 10) -> list[dict[str, Any]]:
+        """债券历史资金流（对标 efinance ``bond.get_history_bill``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.bond_history_bill(code, count=count))
+
+    def bond_today_bill(self, code: str) -> dict[str, Any] | None:
+        """债券当日资金流（对标 efinance ``bond.get_today_bill``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.bond_today_bill(code))
+
+    def bond_trades(self, code: str, *, max_count: int = 1000) -> list[dict[str, Any]]:
+        """债券当日成交明细（对标 efinance ``bond.get_deal_detail``）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.bond_trades(code, max_count=max_count)
+        )
+
+    # -- astock-data-toolkit 对标（基本面衍生） -------------------------------- #
+    def dividend_history(
+        self, symbol: str, *, page: int = 1, size: int = 20
+    ) -> list[dict[str, Any]]:
+        """分红送转历史（对标 astock-data-toolkit ``dividend_history``）。
+
+        东财 ``RPT_SHAREBONUS_DET``（已验证可用）。比例字段为「每 10 股」口径：
+        ``bonus_shares_per_10``（送股）/ ``transfer_shares_per_10``（转增）/
+        ``cash_dividend_per_10``（派息，元）。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.dividend_history(symbol, page=page, size=size),
+        )
+
+    def stock_valuation(self, symbol: str) -> list[dict[str, Any]]:
+        """个股估值快照（对标 astock-data-toolkit ``valuation_daily``，东财聚合版）。
+
+        返回按报告期降序的 ``pe_ttm / pb / ps_ttm / pcf_ttm / total_share /
+        total_mv``；取首项即「最新估值」。报表名 ``RPT_VALUEASSESS_DET`` 为
+        best-effort（若返回 code=9501 需重新抓包校准）。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.stock_valuation(symbol)
+        )
+
+    def holder_changes(
+        self, symbol: str, *, page: int = 1, size: int = 20
+    ) -> list[dict[str, Any]]:
+        """股东 / 董监高增减持（对标 astock-data-toolkit ``holder_changes``）。
+
+        东财聚合接口 ``RPT_CAPITAL_PARTICIPATION_DET``；``change_shares`` 正=增持、
+        负=减持。报表名 best-effort（若返回 code=9501 需重新抓包校准）。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.holder_changes(symbol, page=page, size=size),
+        )
+
+    def financial_abstract(self, symbol: str) -> list[dict[str, Any]]:
+        """财务主要指标摘要（对标 astock-data-toolkit「财务摘要 28 指标」）。
+
+        返回 ``eps / roe / bps / revenue / net_profit / 同比 / 毛利率 /
+        资产负债率``，按报告期降序。报表名 ``RPT_F10_FINANCE_MAIN`` 为
+        best-effort（若返回 code=9501 需重新抓包校准）。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.financial_abstract(symbol)
+        )
+
+    def announcements(
+        self, symbols: Sequence[str], *, page: int = 1, size: int = 20
+    ) -> list[dict[str, Any]]:
+        """上市公司公告列表（对标 astock-data-toolkit 公告信息库）。
+
+        复用东财 ``np-anotice-stock``；``symbols`` 可传多只。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.announcements(list(symbols), page=page, size=size),
+        )
+
+    # -- 资讯 / 研报 / 调研（niuniu 审计缺口补全） ----------------------------- #
+    def news_financial(self, *, page: int = 1, size: int = 30) -> list[dict[str, Any]]:
+        """财经快讯头条（对标 niuniu ``/api/news/financial`` 新浪财经头条）。
+
+        返回 ``[{"id","title","content","summary","time","url","labels"}, ...]``，
+        按时间倒序。后端为东财 ``newsapi.eastmoney.com`` 快讯接口。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.news_financial(page=page, size=size),
+        )
+
+    def research_reports(
+        self,
+        symbol: str = "",
+        *,
+        page: int = 1,
+        size: int = 20,
+        begin: str = "",
+        end: str = "",
+    ) -> list[dict[str, Any]]:
+        """个股研报（对标 niuniu ``/api/news/research/{code}`` 同花顺研报）。
+
+        ``symbol`` 为空取全市场最新研报。返回评级 / 机构 / 分析师 /
+        本年末与下一年末 EPS·PE 预测。后端为东财 ``reportapi.eastmoney.com``。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.research_reports(
+                symbol, page=page, size=size, begin=begin, end=end
+            ),
+        )
+
+    def research_visits(
+        self, symbol: str, *, page: int = 1, size: int = 20
+    ) -> list[dict[str, Any]]:
+        """机构调研记录（对标 niuniu ``/api/news/research-visits/{code}`` 巨潮调研）。
+
+        返回 ``[{"code","name","date","org","type","summary","content"}, ...]``，
+        按调研日期倒序。报表名 ``RPT_ORG_SURVEY_DET`` 为 best-effort。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.research_visits(symbol, page=page, size=size),
+        )
+
+    # -- 股东户数 / 十大流通股东（接线提升） ---------------------------------- #
+    def free_holders(self, symbol: str, *, size: int = 10) -> list[dict[str, Any]]:
+        """十大流通股东（``shareholders`` 会话方法的门面提升）。
+
+        返回 ``[{"holder_name","holder_rank","hold_num","hold_ratio","change",
+        "holder_type","shares_type","report_date"}, ...]``。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.shareholders(symbol, size=size),
+        )
+
+    def holder_num(self, symbol: str, *, size: int = 10) -> list[dict[str, Any]]:
+        """股东户数变动历史。
+
+        返回 ``[{"holder_num","prev_holder_num","change","change_ratio",
+        "end_date","avg_market_cap","avg_hold_num","notice_date"}, ...]``。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.holder_num(symbol, size=size)
+        )
+
+    # -- efinance 剩余项：批量 / 全量枚举 ------------------------------------ #
+    def fund_base_info_multi(self, codes: Sequence[str]) -> list[dict[str, Any]]:
+        """批量基金基础信息（对标 efinance ``get_base_info_muliti``）。
+
+        逐只取基础信息，单只失败不阻断批量。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.fund_base_info_multi(list(codes)),
+        )
+
+    def bond_all_base_info(self) -> list[dict[str, Any]]:
+        """全市场债券基础信息（对标 efinance ``bond.get_all_base_info``）。
+
+        通过 push2 全量列表枚举可转债（沪 128 / 深 80）。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.bond_all_base_info())
+
     # -- 统一响应形态 --------------------------------------------------------- #
     def query(self, method: str, *args: Any, **kwargs: Any) -> ApiResponse:
         """以统一响应形态调用本门面的任意方法。
