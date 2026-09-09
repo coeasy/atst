@@ -6,14 +6,13 @@
 from __future__ import annotations
 
 import datetime as _dt
-import struct
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .domain.finance import to_capital_changes
 from .domain.models import Bar, CapitalChange, Quote
 from .domain.symbol import to_tdx_market
-from .errors import CommandOffline, ParseError
+from .errors import CommandOffline, NotImplementedFeature, ParseError
 from .protocol.commands import CMD, STATUS_OFFLINE, get_command
 from .protocol.parsers.std7709 import KlineCategory
 
@@ -306,40 +305,39 @@ def _guard_offline(cmd: int) -> None:
 
 
 def _bars_body(market: int, code: str, category: int, start: int, count: int) -> bytes:
-    market_id = _require_int("market", market, minimum=0, maximum=0xFFFF)
-    category_id = _require_int("category", category, minimum=0, maximum=0xFFFF)
-    offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
-    page_size = _require_int("count", count, minimum=0, maximum=0xFFFF)
-    return struct.pack(
-        "<H6sHHHHIIH",
-        market_id,
-        code.encode("ascii")[:6].ljust(6, b"\x00"),
-        category_id,
-        1,
-        offset,
-        page_size,
-        0,
-        0,
-        0,
+    """Fail closed for inferred EXTENDED/GOODS bars request layouts.
+
+    Standard 0x052D does not use this helper. The only callers are the declared
+    extended/goods high-level paths, whose repository specs currently say 12-byte
+    request bodies while the old implementation emitted the 26-byte 0x052D shape.
+    Until a request golden locks market-id/code semantics, emitting either shape
+    would be pretending an inferred protocol is verified.
+    """
+
+    del market, code, category, start, count
+    raise NotImplementedFeature(
+        "EXTENDED/GOODS bars request layout 尚未经过真机 golden 验证；已停止发送旧的标准 0x052D body",
+        context={
+            "commands": ["0x0104", "0x0202"],
+            "expected_inferred_length": 12,
+            "provider_switch_allowed": False,
+        },
     )
 
 
 def _quote_body(code: str, market: int) -> bytes:
-    """Build Goods/Extended/MAC quote body for a verified 0/1 market identity."""
+    """Fail closed for inferred EXTENDED/GOODS/MAC quote request layouts.
 
-    if isinstance(market, bool) or not isinstance(market, int):
-        raise ParseError(
-            f"quote market 必须是已验证整数 0|1，收到 {market!r}",
-            context={"market": market, "verified_markets": [0, 1]},
-        )
-    if market not in (0, 1):
-        raise ParseError(
-            "Goods/Extended/MAC quote 的 market 反转编码目前仅验证 0/1；"
-            f"拒绝未验证 market={market}",
-            context={
-                "market": market,
-                "verified_markets": [0, 1],
-                "provider_switch_allowed": False,
-            },
-        )
-    return bytes([0x01, 1 - market]) + code.encode("ascii")[:6].ljust(6, b"\x00")
+    The former helper emitted an 8-byte reversed-market body. EXTENDED/GOODS
+    specs describe a 9-byte ``uint16 market + code[6] + reserved`` request and
+    MAC 0x1301 has no request golden at all. None may be sent as verified traffic.
+    """
+
+    del code, market
+    raise NotImplementedFeature(
+        "EXTENDED/GOODS/MAC quote request layout 尚未经过真机 golden 验证；已停止发送推断 body",
+        context={
+            "commands": ["0x0105", "0x0203", "0x1301"],
+            "provider_switch_allowed": False,
+        },
+    )
