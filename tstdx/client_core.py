@@ -1,17 +1,11 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""客户端共享核心（B1 第一步）——同步 / 异步客户端共用的**纯协议构造**逻辑。
-
-本模块只承载与传输无关的代码（请求体拼装、行 → 领域模型转换、输出格式化、
-offline 命令守卫），**不含任何 I/O**；:class:`~tstdx.client.TdxClient` /
-:class:`~tstdx.client.AsyncTdxClient` 仅各自保留传输 seam（``_req``）与
-业务方法。后续步骤（B1 第二步）将把同名方法的重复方法体逐步合并到此处
-共享，直至同步 / 异步只剩传输差异。
-"""
+"""客户端共享核心：同步 / 异步客户端共用的纯协议构造与校验 SSOT。"""
 
 from __future__ import annotations
 
+import datetime as _dt
 import struct
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -28,9 +22,11 @@ __all__ = [
     "_PREFIX_MARKET",
     "_bars_body",
     "_emit",
+    "_encode_gbk_field",
     "_guard_offline",
     "_quote_body",
     "_require_int",
+    "_require_yyyymmdd",
     "_row_to_bar",
     "_row_to_capital",
     "_row_to_quote",
@@ -39,10 +35,7 @@ __all__ = [
     "split_symbol",
 ]
 
-OutputFormat = str  # "dict" | "tuple" | "dataframe"
-
-#: 市场前缀 → 标准市场编号（与 :mod:`tstdx.domain.symbol` 单一事实源一致：
-#: 0=深 1=沪 2=北交所）。
+OutputFormat = str
 _PREFIX_MARKET: dict[str, int] = {"sh": 1, "sz": 0, "bj": 2}
 
 
@@ -73,6 +66,51 @@ def _require_int(
     return value
 
 
+def _require_yyyymmdd(name: str, value: Any) -> int:
+    """Validate an actual Gregorian ``YYYYMMDD`` date, not just an integer range."""
+
+    day = _require_int(name, value, minimum=19000101, maximum=21001231)
+    text = f"{day:08d}"
+    try:
+        _dt.datetime.strptime(text, "%Y%m%d")
+    except ValueError as exc:
+        raise ParseError(
+            f"{name} 不是合法 YYYYMMDD 日期: {day}",
+            context={"field": name, "value": day},
+            cause=exc,
+        ) from exc
+    return day
+
+
+def _encode_gbk_field(name: str, value: Any, *, max_bytes: int) -> bytes:
+    """Encode one fixed-width GBK protocol field without replacement or truncation."""
+
+    if not isinstance(value, str) or not value:
+        raise ParseError(
+            f"{name} 必须是非空字符串，收到 {value!r}",
+            context={"field": name},
+        )
+    if "\x00" in value:
+        raise ParseError(
+            f"{name} 不允许包含 NUL",
+            context={"field": name},
+        )
+    try:
+        raw = value.encode("gbk", errors="strict")
+    except UnicodeEncodeError as exc:
+        raise ParseError(
+            f"{name} 无法无损编码为 GBK: {value!r}",
+            context={"field": name},
+            cause=exc,
+        ) from exc
+    if len(raw) > max_bytes:
+        raise ParseError(
+            f"{name} GBK 长度 {len(raw)} 超过协议上限 {max_bytes} 字节",
+            context={"field": name, "encoded_bytes": len(raw), "maximum": max_bytes},
+        )
+    return raw.ljust(max_bytes, b"\x00")
+
+
 def _standard_market_id(market: Any) -> int:
     """Parse exactly one standard TDX market identity: ``sz/sh/bj`` or ``0/1/2``."""
 
@@ -84,19 +122,11 @@ def _standard_market_id(market: Any) -> int:
                 context={"market": market},
             )
         return _PREFIX_MARKET[key]
-    value = _require_int("market", market, minimum=0, maximum=2)
-    return value
+    return _require_int("market", market, minimum=0, maximum=2)
 
 
-# --------------------------------------------------------------------------- #
-# 符号解析（委托统一引擎 tstdx.domain.symbol）
-# --------------------------------------------------------------------------- #
 def split_symbol(symbol: str) -> tuple[int, str]:
-    """把任意书写变种的证券代码拆成 ``(market, code)``。
-
-    ``market`` 为**标准市场编号**（0=深 1=沪 2=北交所）。调用方必须再按
-    具体命令族的已验证市场编码能力处理，不能把 2 静默钳制成 0/1。
-    """
+    """把证券代码拆成 TDX ``(market, code)``；HK/US 在 domain 层 fail closed。"""
 
     return to_tdx_market(symbol)
 
@@ -118,7 +148,6 @@ _PERIOD_TO_CATEGORY: dict[str, int] = {
     "season": KlineCategory.SEASON,
     "quarter": KlineCategory.SEASON,
     "year": KlineCategory.YEAR,
-    # 兼容别名
     "d": KlineCategory.DAY,
     "w": KlineCategory.WEEK,
     "m": KlineCategory.MONTH,
@@ -155,9 +184,6 @@ def period_to_category(period: str) -> int:
     return _PERIOD_TO_CATEGORY[key]
 
 
-# --------------------------------------------------------------------------- #
-# 行 → 领域模型
-# --------------------------------------------------------------------------- #
 def _row_to_bar(row: Mapping[str, Any]) -> Bar:
     return Bar(
         datetime=row.get("datetime", ""),
@@ -168,9 +194,9 @@ def _row_to_bar(row: Mapping[str, Any]) -> Bar:
         volume=int(row.get("volume", 0) or 0),
         amount=row.get("amount", 0.0),
         extra={
-            k: v
-            for k, v in row.items()
-            if k not in ("datetime", "open", "high", "low", "close", "volume", "amount")
+            key: value
+            for key, value in row.items()
+            if key not in ("datetime", "open", "high", "low", "close", "volume", "amount")
         },
     )
 
@@ -192,8 +218,6 @@ def _row_to_quote(row: Mapping[str, Any]) -> Quote:
 
 
 def _row_to_capital(row: Mapping[str, Any]) -> CapitalChange:
-    """除权除息解析行 → :class:`CapitalChange`（统一走 finance SSOT）。"""
-
     return to_capital_changes([row])[0]
 
 
@@ -211,15 +235,10 @@ def _emit(items: Sequence[Any], as_format: OutputFormat):
     return to_dicts(items)
 
 
-# --------------------------------------------------------------------------- #
-# B5：offline 命令守卫
-# --------------------------------------------------------------------------- #
 _OFFLINE_FALLBACK_OK: frozenset[int] = frozenset({CMD["quotes_snapshot"]})
 
 
 def _guard_offline(cmd: int) -> None:
-    """账本标记 offline 且无内部兼容路径的命令直接 fail-fast。"""
-
     c = get_command(cmd)
     if c is not None and c.status == STATUS_OFFLINE and cmd not in _OFFLINE_FALLBACK_OK:
         raise CommandOffline(
@@ -229,9 +248,6 @@ def _guard_offline(cmd: int) -> None:
         )
 
 
-# --------------------------------------------------------------------------- #
-# 请求体拼装（多协议族共用布局）
-# --------------------------------------------------------------------------- #
 def _bars_body(market: int, code: str, category: int, start: int, count: int) -> bytes:
     market_id = _require_int("market", market, minimum=0, maximum=0xFFFF)
     category_id = _require_int("category", category, minimum=0, maximum=0xFFFF)
@@ -252,12 +268,7 @@ def _bars_body(market: int, code: str, category: int, start: int, count: int) ->
 
 
 def _quote_body(code: str, market: int) -> bytes:
-    """Build Goods/Extended/MAC quote body for a verified market identity.
-
-    ``0x0530`` 的 0/1 market 字节反转语义已有实测证据。Goods ``0x0203``、
-    Extended ``0x0105``、MAC ``0x1301`` 目前只沿用这两种已验证身份；北交所
-    ``market=2`` 在这些命令族尚无 golden/真机编码证据，因此必须 fail closed。
-    """
+    """Build Goods/Extended/MAC quote body for a verified 0/1 market identity."""
 
     if isinstance(market, bool) or not isinstance(market, int):
         raise ParseError(
