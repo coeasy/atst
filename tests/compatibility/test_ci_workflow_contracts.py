@@ -125,11 +125,11 @@ def test_release_publishes_once_only_after_artifact_matrix_passes() -> None:
     assert "id-token: write" in workflow
 
 
-def test_release_docker_reuses_the_same_canonical_python_artifact() -> None:
+def test_release_docker_reuses_artifact_only_after_pypi_succeeds() -> None:
     workflow = _workflow("wheels.yml")
     docker = workflow.split("  publish-docker:", 1)[1]
 
-    assert "needs: [build-dist, smoke-install]" in docker
+    assert "needs: [build-dist, smoke-install, publish-pypi]" in docker
     assert "name: python-dist" in docker
     assert "path: release-dist" in docker
     assert "file: Dockerfile.release" in docker
