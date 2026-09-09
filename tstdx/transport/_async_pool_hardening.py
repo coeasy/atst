@@ -15,11 +15,13 @@ import asyncio
 import logging
 import random
 import time
+from collections.abc import AsyncIterator
 from typing import Any
 
 from ..errors import (
     ALL_HOSTS_UNREACHABLE_NEXT_STEPS,
     AllHostsUnreachable,
+    ConnectionClosed,
     ConnectionFailed,
     TdxError,
 )
@@ -54,6 +56,25 @@ async def _circuit_allows(self: _impl.AsyncConnectionPool, host: Any) -> bool:
             host.circuit_probe_inflight = True
             return True
         return True
+
+
+async def _select_allowed_slot(
+    self: _impl.AsyncConnectionPool,
+    *,
+    exclude_hosts: set[str] | None = None,
+) -> _impl.AsyncSlot | None:
+    """Pick the first ordered slot admitted by the circuit state machine."""
+
+    slots = self._ordered()
+    if exclude_hosts:
+        preferred = [slot for slot in slots if slot.host.key not in exclude_hosts]
+        candidates = preferred or slots
+    else:
+        candidates = slots
+    for candidate in candidates:
+        if await _circuit_allows(self, candidate.host):
+            return candidate
+    return None
 
 
 async def _release_probe_token(
@@ -129,6 +150,15 @@ async def _mark_success(
         host.circuit_opened_at = 0.0
 
 
+def _circuit_unreachable(method: int, *, attempts: int = 0) -> AllHostsUnreachable:
+    cause = ConnectionFailed("所有候选主站均处于熔断门禁")
+    return AllHostsUnreachable(
+        f"所有主站均处于熔断门禁。\n{ALL_HOSTS_UNREACHABLE_NEXT_STEPS}",
+        context={"hosts": [], "method": hex(method), "attempts": attempts},
+        cause=cause,
+    )
+
+
 async def _request(
     self: _impl.AsyncConnectionPool,
     method: int,
@@ -149,15 +179,7 @@ async def _request(
     for attempt in range(max_attempts):
         self._ensure_open()
         await self._acquire_rate()
-        slots = self._ordered()
-        if not slots:
-            break
-        candidates = [slot for slot in slots if slot.host.key not in tried] or slots
-        slot: _impl.AsyncSlot | None = None
-        for candidate in candidates:
-            if await _circuit_allows(self, candidate.host):
-                slot = candidate
-                break
+        slot = await _select_allowed_slot(self, exclude_hosts=set(tried))
         if slot is None:
             last_exc = ConnectionFailed("所有候选主站均处于熔断门禁")
             break
@@ -196,8 +218,6 @@ async def _request(
             await asyncio.sleep(0.05 * (attempt + 1))
             continue
         except BaseException:
-            # KeyboardInterrupt/SystemExit are process-control signals. Release
-            # only the HALF_OPEN admission token; never recategorize them.
             await _release_probe_token(self, slot, generation)
             raise
 
@@ -223,6 +243,195 @@ async def _request(
         },
         cause=last_exc,
     )
+
+
+async def _request_multi(
+    self: _impl.AsyncConnectionPool,
+    method: int,
+    body: bytes = b"",
+    *,
+    record_size: int | None = None,
+    expect_count: bool = True,
+    max_frames: int = 512,
+    timeout: float | None = None,
+) -> _impl.ResponseFrame:
+    """Multi-frame request with circuit admission and generation-safe health."""
+
+    self._ensure_open()
+    await self._acquire_rate()
+    slot = await _select_allowed_slot(self)
+    if slot is None:
+        raise _circuit_unreachable(method)
+
+    conn: _impl.AsyncTcpConnection | None = None
+    generation: int | None = None
+    started = time.perf_counter()
+    first_exc: TdxError | None = None
+    cont_exc: TdxError | None = None
+    result: _impl.ResponseFrame | None = None
+
+    try:
+        conn, generation = await self._acquire_lease(slot)
+        try:
+            async with conn._lock:
+                try:
+                    first = await conn._request_locked(method, body, timeout=timeout)
+                except TdxError as exc:
+                    first_exc = exc
+                else:
+                    payload = first.payload
+                    if not expect_count or len(payload) < 2:
+                        result = first
+                    else:
+                        count = int.from_bytes(payload[:2], "little")
+                        chunks = [payload[2:]]
+                        got = len(chunks[0])
+                        if count > 0 and record_size is None and got > 0:
+                            record_size = max(1, got // count)
+                        need = count * (record_size or 1) if record_size else None
+                        read = 1
+                        while need is not None and got < need and read < max_frames:
+                            try:
+                                nxt = await conn._read_frame_locked()
+                            except TdxError as exc:
+                                cont_exc = exc
+                                _LOG.warning(
+                                    "异步 request_multi 续帧中断（%s: %s），"
+                                    "降级返回已合并的 %d 块",
+                                    type(exc).__name__,
+                                    exc,
+                                    len(chunks),
+                                )
+                                break
+                            read += 1
+                            if not nxt.payload:
+                                break
+                            chunks.append(nxt.payload)
+                            got += len(nxt.payload)
+                        result = _impl.ResponseFrame(
+                            magic=first.magic,
+                            zip_flag=first.zip_flag,
+                            seq=first.seq,
+                            method=first.method,
+                            zip_size=sum(len(chunk) for chunk in chunks),
+                            unzip_size=sum(len(chunk) for chunk in chunks),
+                            body=b"",
+                            payload=b"".join(chunks),
+                            header_raw=first.header_raw,
+                        )
+        finally:
+            await self._release_lease(slot, conn)
+    except asyncio.CancelledError:
+        await _release_probe_token(self, slot, generation)
+        await self._drop(slot, expected=conn)
+        raise
+    except BaseException:
+        await _release_probe_token(self, slot, generation)
+        await self._drop(slot, expected=conn)
+        raise
+
+    if first_exc is not None:
+        await _mark_failure(self, slot, first_exc, generation=generation, conn=conn)
+        raise first_exc
+    if cont_exc is not None:
+        await _mark_failure(self, slot, cont_exc, generation=generation, conn=conn)
+        metrics.record_request(
+            command=f"0x{method:04x}",
+            ok=False,
+            duration=time.perf_counter() - started,
+        )
+        assert result is not None
+        return result
+
+    await _mark_success(
+        self,
+        slot,
+        generation=generation,
+        rtt_ms=(time.perf_counter() - started) * 1000.0,
+    )
+    metrics.record_request(
+        command=f"0x{method:04x}", ok=True, duration=time.perf_counter() - started
+    )
+    assert result is not None
+    return result
+
+
+async def _iter_frames(
+    self: _impl.AsyncConnectionPool,
+    method: int,
+    body: bytes = b"",
+    *,
+    max_frames: int = 512,
+) -> AsyncIterator[_impl.ResponseFrame]:
+    """Frame iterator that cannot bypass circuit admission or leak dirty sockets."""
+
+    self._ensure_open()
+    await self._acquire_rate()
+    slot = await _select_allowed_slot(self)
+    if slot is None:
+        raise _circuit_unreachable(method)
+
+    conn: _impl.AsyncTcpConnection | None = None
+    generation: int | None = None
+    failed: TdxError | None = None
+    normal_end = False
+    try:
+        conn, generation = await self._acquire_lease(slot)
+        try:
+            async with conn._lock:
+                frame_bytes, _ = _impl.build_request(
+                    method,
+                    body,
+                    seq=conn.next_seq(),
+                    spec=conn.spec,
+                )
+                writer = conn._writer
+                if writer is None:
+                    raise ConnectionClosed(
+                        f"连接已关闭: {conn.host}:{conn.port}",
+                        context={"host": conn.host, "port": conn.port},
+                    )
+                try:
+                    writer.write(frame_bytes)
+                    await asyncio.wait_for(writer.drain(), timeout=conn.timeout)
+                    conn.stats.bytes_sent += len(frame_bytes)
+                except TdxError as exc:
+                    failed = exc
+                except OSError as exc:
+                    failed = ConnectionClosed(
+                        f"发送失败: {exc}",
+                        context={"host": conn.host, "port": conn.port},
+                        cause=exc,
+                    )
+                if failed is None:
+                    for _ in range(max_frames):
+                        try:
+                            frame = await conn._read_frame_locked()
+                        except TdxError as exc:
+                            failed = exc
+                            break
+                        conn.stats.last_used = time.time()
+                        yield frame
+                    normal_end = failed is None
+        finally:
+            await self._release_lease(slot, conn)
+    except asyncio.CancelledError:
+        await _release_probe_token(self, slot, generation)
+        await self._drop(slot, expected=conn)
+        raise
+    except BaseException:
+        await _release_probe_token(self, slot, generation)
+        await self._drop(slot, expected=conn)
+        raise
+
+    if failed is not None:
+        _LOG.warning("异步 iter_frames 中断（%s: %s），弃连", type(failed).__name__, failed)
+        await _mark_failure(self, slot, failed, generation=generation, conn=conn)
+        return
+    if normal_end:
+        await _mark_success(self, slot, generation=generation)
+    if self._closed:
+        await self._drop(slot, expected=conn)
 
 
 async def _heartbeat_loop(self: _impl.AsyncConnectionPool) -> None:
@@ -265,8 +474,11 @@ async def _heartbeat_loop(self: _impl.AsyncConnectionPool) -> None:
 # ``setattr`` keeps this compatibility bridge independent of mypy's method-assign
 # diagnostic code names, so --warn-unused-ignores remains meaningful.
 setattr(_impl.AsyncConnectionPool, "_circuit_allows", _circuit_allows)
+setattr(_impl.AsyncConnectionPool, "_select_allowed_slot", _select_allowed_slot)
 setattr(_impl.AsyncConnectionPool, "_release_probe_token", _release_probe_token)
 setattr(_impl.AsyncConnectionPool, "_mark_failure", _mark_failure)
 setattr(_impl.AsyncConnectionPool, "_mark_success", _mark_success)
 setattr(_impl.AsyncConnectionPool, "request", _request)
+setattr(_impl.AsyncConnectionPool, "request_multi", _request_multi)
+setattr(_impl.AsyncConnectionPool, "iter_frames", _iter_frames)
 setattr(_impl.AsyncConnectionPool, "_heartbeat_loop", _heartbeat_loop)
