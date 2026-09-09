@@ -17,6 +17,8 @@ def test_native_gate_has_no_nonexistent_manifest_or_soft_failure() -> None:
     assert "continue-on-error" not in workflow
     assert "maturin build" not in workflow
     assert "tstdx_native/Cargo.toml" not in workflow
+    assert 'python -m pip install -e ".[dev]"' in workflow
+    assert "pip install pytest" not in workflow
     assert "tests/compatibility/test_native_fallback_contract.py" in workflow
     assert 'assert result["fallback_parity"] is True' in workflow
 
@@ -88,15 +90,15 @@ def test_host_audit_is_separate_strict_operational_workflow() -> None:
     assert "audit_summary.md" in workflow
 
 
-def test_release_builds_once_then_smoke_tests_the_same_universal_wheel() -> None:
+def test_release_builds_once_then_uses_shared_verifier_and_same_wheel_matrix() -> None:
     workflow = _workflow("wheels.yml")
 
     assert "cibuildwheel" not in workflow
     assert "ubuntu-24.04-arm" not in workflow
     assert "python -m build" in workflow
-    assert "python -m twine check dist/*" in workflow
-    assert "-py3-none-any.whl" in workflow
-    assert '"tstdx/py.typed" in archive.namelist()' in workflow
+    assert "python scripts/build_package.py --verify-only --dist-out dist" in workflow
+    assert "python -m twine check dist/*" not in workflow
+    assert "import zipfile" not in workflow
     assert "os: [ubuntu-latest, macos-latest, windows-latest]" in workflow
     assert "python-version: ['3.10', '3.11', '3.12', '3.13']" in workflow
     assert "--only-binary=:all: tstdx" in workflow
@@ -137,12 +139,11 @@ def test_release_docker_reuses_the_same_canonical_python_artifact() -> None:
 def test_release_identity_is_fail_closed_before_build_or_publish() -> None:
     workflow = _workflow("wheels.yml")
 
-    assert "Verify source version matches package metadata" in workflow
-    assert "assert tstdx.__version__ == version" in workflow
     assert "Verify release tag matches package version" in workflow
     assert "RELEASE_TAG: ${{ github.event.release.tag_name }}" in workflow
-    assert 'expected = f"v{version}"' in workflow
+    assert 'expected = f"v{match.group(1)}"' in workflow
     assert "assert actual == expected" in workflow
+    assert "python scripts/build_package.py --verify-only --dist-out dist" in workflow
     assert "github.event.release.prerelease == false" in workflow
 
 
