@@ -48,12 +48,58 @@ def test_speedtest_rejects_non_hostentry_items_before_network() -> None:
         speedtest(["127.0.0.1:7709"], family=Family.STANDARD)  # type: ignore[list-item]
 
 
+def test_speedtest_rejects_duplicate_canonical_endpoint_before_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def unexpected_probe(*args: object, **kwargs: object) -> ProbeResult:
+        del args, kwargs
+        calls.append("probe")
+        raise AssertionError("duplicate identity must fail before network")
+
+    monkeypatch.setattr(speedtest_module, "probe", unexpected_probe)
+
+    with pytest.raises(ConfigError, match="重复 canonical endpoint"):
+        speedtest(
+            [
+                HostEntry(host="127.0.0.1", port=7709, family=Family.STANDARD),
+                HostEntry(host=" 127.0.0.1 ", port=7709, family=Family.STANDARD),
+            ],
+            family=Family.STANDARD,
+        )
+
+    assert calls == []
+
+
 def test_rank_hosts_rejects_cross_family_results() -> None:
     with pytest.raises(ConfigError, match="跨 family"):
         rank_hosts(
             [
                 ProbeResult(host="1.1.1.1", port=7709, family=Family.STANDARD),
                 ProbeResult(host="2.2.2.2", port=7709, family=Family.F10),
+            ]
+        )
+
+
+def test_rank_hosts_rejects_duplicate_canonical_results() -> None:
+    with pytest.raises(ConfigError, match="重复 canonical endpoint"):
+        rank_hosts(
+            [
+                ProbeResult(
+                    host="1.1.1.1",
+                    port=7709,
+                    family=Family.STANDARD,
+                    ok=True,
+                    rtt_ms=1.0,
+                ),
+                ProbeResult(
+                    host=" 1.1.1.1 ",
+                    port=7709,
+                    family=Family.STANDARD,
+                    ok=True,
+                    rtt_ms=2.0,
+                ),
             ]
         )
 
@@ -104,6 +150,35 @@ def test_ipv6_probe_key_matches_hostentry_and_updates_current_observation() -> N
 
     assert host.connect_ms == 1.0
     assert host.rtt_ms == 2.0
+
+
+def test_probe_observation_overlay_rejects_duplicate_results() -> None:
+    host = HostEntry(host="1.1.1.1", port=7709, family=Family.STANDARD)
+    results = [
+        ProbeResult(
+            host="1.1.1.1",
+            port=7709,
+            family=Family.STANDARD,
+            ok=True,
+            rtt_ms=1.0,
+        ),
+        ProbeResult(
+            host=" 1.1.1.1 ",
+            port=7709,
+            family=Family.STANDARD,
+            ok=True,
+            rtt_ms=2.0,
+        ),
+    ]
+
+    with pytest.raises(ConfigError, match="重复 canonical endpoint"):
+        speedtest_module._apply_probe_observations(
+            [host],
+            results,
+            family=Family.STANDARD,
+        )
+
+    assert host.rtt_ms is None
 
 
 def test_nonstandard_speedtest_and_save_never_constructs_standard_ranking_store(
