@@ -144,6 +144,24 @@ def test_release_publishes_once_only_after_artifact_matrix_passes() -> None:
     assert "id-token: write" in workflow
 
 
+def test_release_assets_reuse_same_canonical_distribution_after_pypi() -> None:
+    workflow = _workflow("wheels.yml")
+    release_assets = workflow.split("  publish-release-assets:", 1)[1].split(
+        "  publish-docker:", 1
+    )[0]
+
+    assert "needs: [build-dist, smoke-install, publish-pypi]" in release_assets
+    assert "name: python-dist" in release_assets
+    assert "contents: write" in release_assets
+    assert "wheel_count=" in release_assets
+    assert "sdist_count=" in release_assets
+    assert 'test "$wheel_count" = 1' in release_assets
+    assert 'test "$sdist_count" = 1' in release_assets
+    assert "gh release upload" in release_assets
+    assert "--clobber" in release_assets
+    assert "python -m build" not in release_assets
+
+
 def test_release_is_serialized_and_all_external_jobs_are_time_bounded() -> None:
     workflow = _workflow("wheels.yml")
 
@@ -155,11 +173,11 @@ def test_release_is_serialized_and_all_external_jobs_are_time_bounded() -> None:
     assert "retention-days: 14" in workflow
 
 
-def test_release_docker_reuses_artifact_only_after_pypi_succeeds() -> None:
+def test_release_docker_reuses_artifact_only_after_publication_surfaces_succeed() -> None:
     workflow = _workflow("wheels.yml")
     docker = workflow.split("  publish-docker:", 1)[1]
 
-    assert "needs: [build-dist, smoke-install, publish-pypi]" in docker
+    assert "needs: [build-dist, smoke-install, publish-pypi, publish-release-assets]" in docker
     assert "name: python-dist" in docker
     assert "path: release-dist" in docker
     assert "file: Dockerfile.release" in docker
