@@ -4,9 +4,9 @@
 """主站候选池与速度排名持久化（§12）。
 
 核心契约：候选 endpoint 可以被多个协议族复用，但 ``HostEntry.family``
-必须始终代表当前请求的 canonical family。排名文件只是同 family 内的排序
-优化，不能扩大显式 ``servers=`` / ``TSTDX_HOSTS`` 的候选集合，也不能把
-其它 family 的历史条目注入当前请求。
+必须始终代表当前请求的 canonical family。排名文件只是同 family 内的运行观测
+与排序优化，不能扩大显式 ``servers=`` / ``TSTDX_HOSTS`` 的候选集合，也不能
+覆盖当前 selector 的静态身份或把其它 family 的历史条目注入当前请求。
 """
 
 from __future__ import annotations
@@ -96,6 +96,28 @@ def _as_family(entries: Iterable[HostEntry], family: str) -> tuple[HostEntry, ..
     """Reuse endpoints while resetting family-specific verification provenance."""
 
     return tuple(replace(entry, family=family, verified=False) for entry in entries)
+
+
+def _apply_ranked_observation(base: HostEntry, ranked: HostEntry) -> HostEntry:
+    """Overlay runtime observations while preserving selector-owned identity fields."""
+
+    if ranked.family != base.family or ranked.key != base.key:
+        raise ConfigError(
+            "ranking observation identity mismatch: "
+            f"base={base.key}/{base.family!r}, ranked={ranked.key}/{ranked.family!r}"
+        )
+    return replace(
+        base,
+        connect_ms=ranked.connect_ms,
+        rtt_ms=ranked.rtt_ms,
+        failures=ranked.failures,
+        biz_failures=ranked.biz_failures,
+        last_ok=ranked.last_ok,
+        last_error=ranked.last_error,
+        circuit=ranked.circuit,
+        consec_weighted=ranked.consec_weighted,
+        circuit_opened_at=ranked.circuit_opened_at,
+    )
 
 
 DEFAULT_HOST_POOL: tuple[HostEntry, ...] = (
@@ -228,7 +250,12 @@ def resolve_hosts(
                 for key, entry in store.load().items()
                 if entry.family == family
             }
-            merged = [known.get(entry.key, entry) for entry in entries]
+            merged = [
+                _apply_ranked_observation(entry, known[entry.key])
+                if entry.key in known
+                else entry
+                for entry in entries
+            ]
             if allow_ranked_extras:
                 in_pool = {entry.key for entry in entries}
                 merged.extend(entry for key, entry in known.items() if key not in in_pool)
