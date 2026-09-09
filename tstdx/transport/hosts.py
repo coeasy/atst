@@ -93,9 +93,9 @@ def _h(host: str, port: int, family: str, name: str = "", verified: bool = False
 
 
 def _as_family(entries: Iterable[HostEntry], family: str) -> tuple[HostEntry, ...]:
-    """Reuse endpoint evidence while rebinding every entry to the target family."""
+    """Reuse endpoints while resetting family-specific verification provenance."""
 
-    return tuple(replace(entry, family=family) for entry in entries)
+    return tuple(replace(entry, family=family, verified=False) for entry in entries)
 
 
 DEFAULT_HOST_POOL: tuple[HostEntry, ...] = (
@@ -131,9 +131,9 @@ POOL_BY_FAMILY: dict[str, tuple[HostEntry, ...]] = {
     family: tuple(entry for entry in DEFAULT_HOST_POOL if entry.family == family)
     for family in _VALID_FAMILIES
 }
-# GOODS 与 EXTENDED 共享 7727 endpoints，但 identity 必须保持 GOODS。
+# GOODS 与 EXTENDED 共享 7727 endpoints，但 identity/verified 证据不能继承。
 POOL_BY_FAMILY[Family.GOODS] = _as_family(POOL_BY_FAMILY[Family.EXTENDED], Family.GOODS)
-# F10 文件下载复用标准 7709 endpoints，但不能伪装成 STANDARD family。
+# F10 文件下载复用标准 7709 endpoints，但 STANDARD 验证证据不能冒充 F10。
 POOL_BY_FAMILY[Family.F10] = _as_family(POOL_BY_FAMILY[Family.STANDARD], Family.F10)
 
 
