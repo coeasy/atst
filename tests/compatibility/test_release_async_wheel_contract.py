@@ -17,6 +17,10 @@ def test_release_matrix_smokes_async_circuit_hardening_from_installed_wheel() ->
     assert "from tstdx.transport.async_ import AsyncConnectionPool" in smoke
     assert "_circuit_allows" in smoke
     assert "_release_probe_token" in smoke
+    assert (
+        "AsyncConnectionPool.close.__module__ == "
+        "'tstdx.transport._async_close_hardening'"
+    ) in smoke
     assert "actions/checkout" not in smoke
 
 
