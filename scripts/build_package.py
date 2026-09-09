@@ -14,9 +14,9 @@ Usage::
     python scripts/build_package.py --verify-only --dist-out dist
 
 The normal build path mirrors the release workflow: PEP 517 isolation is on,
-one universal wheel plus one sdist are required, package/source/artifact versions
-must agree, the wheel must contain the PEP 561 marker, Twine metadata validation
-is mandatory, and no command silently publishes anything.
+one universal wheel plus one sdist are required, source/artifact metadata must
+agree, both archives must retain the typed package identity, Twine metadata
+validation is mandatory, and no command silently publishes anything.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import venv
 import zipfile
@@ -61,8 +62,13 @@ _PROTECTED_OUTPUT_ROOTS = {
     "tests",
     "tstdx",
 }
+_PROJECT_SECTION_RE = re.compile(
+    r"^\[project\]\s*$\n(?P<body>.*?)(?=^\[|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
 _VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
 _SOURCE_VERSION_RE = re.compile(r'^__version__\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
+_HATCHLING_FLOOR_RE = re.compile(r'"hatchling>=(\d+(?:\.\d+)*)"')
 
 
 def _display_path(path: pathlib.Path) -> str:
@@ -143,8 +149,26 @@ def _require_packaging_tools(*, need_build: bool) -> None:
     print(f"[环境] twine {twine_version} ✓")
 
 
+def _stable_version_tuple(raw: str, *, label: str) -> tuple[int, ...]:
+    """Parse a stable dotted numeric version used by build-tool floor checks."""
+
+    if re.fullmatch(r"\d+(?:\.\d+)*", raw) is None:
+        raise SystemExit(f"[环境] {label} 版本无法进行稳定下限比较: {raw!r}")
+    return tuple(int(part) for part in raw.split("."))
+
+
+def _hatchling_floor() -> str:
+    """Read the Hatchling lower bound from the repository build-system contract."""
+
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    match = _HATCHLING_FLOOR_RE.search(text)
+    if match is None:
+        raise SystemExit("[环境] pyproject.toml 缺少 hatchling build-system 下限")
+    return match.group(1)
+
+
 def _require_local_backend_for_no_isolation() -> None:
-    """Require Hatchling only for the explicit non-isolated compatibility path."""
+    """Require a compliant Hatchling for the explicit non-isolated build path."""
 
     try:
         import hatchling  # noqa: F401
@@ -154,9 +178,19 @@ def _require_local_backend_for_no_isolation() -> None:
         ) from exc
     try:
         version = _pkg_version("hatchling")
-    except PackageNotFoundError:
-        version = "?"
-    print(f"[环境] hatchling {version} ✓ (--no-isolation)")
+    except PackageNotFoundError as exc:
+        raise SystemExit("[环境] 无法确定本地 hatchling 版本") from exc
+
+    floor = _hatchling_floor()
+    if _stable_version_tuple(version, label="hatchling") < _stable_version_tuple(
+        floor,
+        label="hatchling build-system floor",
+    ):
+        raise SystemExit(
+            f"[环境] hatchling {version} 低于项目 build-system 要求 {floor}; "
+            "请运行 `make install` 更新本地构建后端"
+        )
+    print(f"[环境] hatchling {version} ✓ (--no-isolation, floor={floor})")
 
 
 def _remove_tree(path: pathlib.Path, *, label: str) -> None:
@@ -214,18 +248,32 @@ def _build(dist_out: pathlib.Path, *, isolated: bool) -> None:
     _run(cmd)
 
 
+def _project_version_from_text(text: str) -> str:
+    """Read only ``[project].version`` rather than matching unrelated TOML keys."""
+
+    project_match = _PROJECT_SECTION_RE.search(text)
+    if project_match is None:
+        raise SystemExit("[校验失败] pyproject.toml 缺少 [project] section")
+    version_match = _VERSION_RE.search(project_match.group("body"))
+    if version_match is None:
+        raise SystemExit("[校验失败] pyproject.toml 缺少 [project] version")
+    return version_match.group(1)
+
+
 def _declared_versions() -> tuple[str, str]:
     """Return ``(project_metadata_version, source_version)`` without importing tstdx."""
 
     project_text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     source_text = (ROOT / "tstdx" / "__init__.py").read_text(encoding="utf-8")
-    project_match = _VERSION_RE.search(project_text)
+    project_version = _project_version_from_text(project_text)
     source_match = _SOURCE_VERSION_RE.search(source_text)
-    if project_match is None:
-        raise SystemExit("[校验失败] pyproject.toml 缺少 [project] version")
     if source_match is None:
         raise SystemExit("[校验失败] tstdx.__version__ 声明缺失")
-    return project_match.group(1), source_match.group(1)
+    return project_version, source_match.group(1)
+
+
+def _normalized_distribution_name(raw: str) -> str:
+    return re.sub(r"[-_.]+", "-", raw.strip().lower())
 
 
 def _wheel_metadata(wheel: pathlib.Path) -> tuple[str, str, set[str]]:
@@ -235,18 +283,53 @@ def _wheel_metadata(wheel: pathlib.Path) -> tuple[str, str, set[str]]:
         names = set(archive.namelist())
         metadata_files = [name for name in names if name.endswith(".dist-info/METADATA")]
         if len(metadata_files) != 1:
-            raise SystemExit(
-                f"[校验失败] wheel METADATA 数量异常: {len(metadata_files)}"
-            )
+            raise SystemExit(f"[校验失败] wheel METADATA 数量异常: {len(metadata_files)}")
         message = email.message_from_bytes(archive.read(metadata_files[0]))
 
-    name = str(message.get("Name", "")).strip().lower().replace("_", "-")
+    name = _normalized_distribution_name(str(message.get("Name", "")))
     version = str(message.get("Version", "")).strip()
     return name, version, names
 
 
+def _sdist_metadata(sdist: pathlib.Path, *, version: str) -> tuple[str, str, set[str]]:
+    """Verify sdist archive boundaries and return normalized PKG-INFO identity."""
+
+    root = f"{PROJECT_NAME}-{version}"
+    with tarfile.open(sdist, mode="r:gz") as archive:
+        members = archive.getmembers()
+        if not members:
+            raise SystemExit("[校验失败] sdist 为空")
+
+        names: set[str] = set()
+        for member in members:
+            path = pathlib.PurePosixPath(member.name)
+            if path.is_absolute() or ".." in path.parts:
+                raise SystemExit(f"[校验失败] sdist 存在越界路径: {member.name}")
+            if not path.parts or path.parts[0] != root:
+                raise SystemExit(
+                    f"[校验失败] sdist 成员不在 canonical 根目录 {root}/: {member.name}"
+                )
+            if member.issym() or member.islnk():
+                raise SystemExit(f"[校验失败] sdist 不允许符号/硬链接成员: {member.name}")
+            names.add(member.name.rstrip("/"))
+
+        pkg_info_name = f"{root}/PKG-INFO"
+        try:
+            pkg_info_member = archive.getmember(pkg_info_name)
+        except KeyError as exc:
+            raise SystemExit("[校验失败] sdist 缺少 PKG-INFO") from exc
+        stream = archive.extractfile(pkg_info_member)
+        if stream is None:
+            raise SystemExit("[校验失败] sdist PKG-INFO 不是普通文件")
+        message = email.message_from_bytes(stream.read())
+
+    name = _normalized_distribution_name(str(message.get("Name", "")))
+    metadata_version = str(message.get("Version", "")).strip()
+    return name, metadata_version, names
+
+
 def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
-    """Verify source, filenames, wheel metadata, PEP 561 marker and artifact count."""
+    """Verify source, wheel/sdist identity, typed package files and artifact count."""
 
     wheels = sorted(dist_out.glob("*.whl"))
     sdists = sorted(dist_out.glob("*.tar.gz"))
@@ -276,11 +359,11 @@ def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
             f"[校验失败] 预期 canonical sdist {expected_sdist}，实际 {sdist.name}"
         )
 
-    metadata_name, metadata_version, names = _wheel_metadata(wheel)
-    if metadata_name != PROJECT_NAME or metadata_version != project_version:
+    wheel_name, wheel_version, wheel_members = _wheel_metadata(wheel)
+    if wheel_name != PROJECT_NAME or wheel_version != project_version:
         raise SystemExit(
             "[校验失败] wheel metadata identity mismatch: "
-            f"name={metadata_name!r} version={metadata_version!r}"
+            f"name={wheel_name!r} version={wheel_version!r}"
         )
 
     for required in (
@@ -289,8 +372,30 @@ def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
         f"{PROJECT_NAME}/client.py",
         f"{PROJECT_NAME}/py.typed",
     ):
-        if required not in names:
+        if required not in wheel_members:
             raise SystemExit(f"[校验失败] wheel 缺少文件 {required}")
+
+    sdist_name, sdist_version, sdist_members = _sdist_metadata(
+        sdist,
+        version=project_version,
+    )
+    if sdist_name != PROJECT_NAME or sdist_version != project_version:
+        raise SystemExit(
+            "[校验失败] sdist metadata identity mismatch: "
+            f"name={sdist_name!r} version={sdist_version!r}"
+        )
+
+    sdist_root = f"{PROJECT_NAME}-{project_version}"
+    for required in (
+        f"{sdist_root}/pyproject.toml",
+        f"{sdist_root}/{PROJECT_NAME}/__init__.py",
+        f"{sdist_root}/{PROJECT_NAME}/py.typed",
+        f"{sdist_root}/README.md",
+        f"{sdist_root}/CHANGELOG.md",
+        f"{sdist_root}/LICENSE",
+    ):
+        if required not in sdist_members:
+            raise SystemExit(f"[校验失败] sdist 缺少文件 {required}")
 
     print(
         f"[校验] canonical typed distribution ✓ "
@@ -369,7 +474,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--verify-only",
         action="store_true",
-        help="不构建，只校验 dist artifact + Twine metadata（Release workflow 使用）",
+        help="不构建，只校验 wheel/sdist provenance + Twine metadata",
     )
     isolation = parser.add_mutually_exclusive_group()
     isolation.add_argument(
