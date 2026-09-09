@@ -9,6 +9,8 @@ probe latency. This layer joins those contracts:
 
 * ``update_hosts`` never replaces selector identity/live health with speed-test
   failure state;
+* successful probes refresh probe latency while failed probes invalidate stale
+  probe latency without erasing real-request live health;
 * every retained endpoint gets a fresh generation HostEntry, so old references
   cannot share mutable health with the newly published generation;
 * idle connections are still reusable, leased slots retire normally;
@@ -68,13 +70,21 @@ def _new_endpoint(entry: HostEntry, *, family: str) -> HostEntry:
 
 
 def _next_generation_host(old: HostEntry, observed: HostEntry) -> HostEntry:
-    """Copy old identity/live health and overlay only successful probe latency."""
+    """Copy identity/live health and apply only probe-layer evidence."""
 
     fresh = replace(old)
-    if observed.connect_ms is not None:
-        fresh.connect_ms = observed.connect_ms
     if observed.rtt_ms is not None:
         fresh.rtt_ms = observed.rtt_ms
+        fresh.connect_ms = observed.connect_ms
+    elif observed.failures > 0 or bool(observed.last_error):
+        # A new failed probe invalidates the previous probe measurement. Real
+        # request evidence lives in live_rtt_ms/live_ok_at and remains intact.
+        fresh.rtt_ms = None
+        fresh.connect_ms = None
+    elif observed.connect_ms is not None:
+        # A caller may supply connect-only neutral metadata without asserting a
+        # failed RTT probe. Keep the existing RTT but refresh connect latency.
+        fresh.connect_ms = observed.connect_ms
 
     # A half-open token belongs to the retiring generation. Carrying the token
     # would strand the new generation with no task able to release it.
