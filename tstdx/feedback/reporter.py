@@ -96,6 +96,19 @@ def _validated_endpoint(value: str | None) -> str | None:
     return endpoint
 
 
+def _safe_endpoint_display(value: str | None) -> str | None:
+    """Return only endpoint origin; never expose path/query/fragment in repr/logs."""
+
+    if value is None:
+        return None
+    parsed = urllib.parse.urlsplit(value)
+    host = parsed.hostname or ""
+    if ":" in host:
+        host = f"[{host}]"
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    return f"{parsed.scheme}://{host}{port}"
+
+
 def _validated_store_dir(value: str | Path | None) -> Path:
     raw = value if value is not None else os.environ.get(_ENV_STORE_DIR, "~/.tstdx/feedback")
     if isinstance(raw, Path):
@@ -288,5 +301,6 @@ class FeedbackReporter:
 
     def __repr__(self) -> str:
         state = "dry-run" if self.dry_run else ("enabled" if self.enabled else "disabled")
-        endpoint_info = f" endpoint={self._endpoint!r}" if self._endpoint else ""
+        display_endpoint = _safe_endpoint_display(self._endpoint)
+        endpoint_info = f" endpoint={display_endpoint!r}" if display_endpoint else ""
         return f"FeedbackReporter({state}{endpoint_info})"
