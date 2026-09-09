@@ -14,12 +14,17 @@ probe latency. This layer joins those contracts:
 * every retained endpoint gets a fresh generation HostEntry, so old references
   cannot share mutable health with the newly published generation;
 * idle connections are still reusable, leased slots retire normally;
+* async host publication is cancellation-atomic: no generation/slot mutation is
+  performed until all current slot locks are acquired and the replacement plan
+  is fully constructed;
 * a background speed test may update/persist results only if the generation it
   started from is still current when probing finishes.
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import threading
 import time
@@ -183,46 +188,58 @@ async def _async_update_hosts(
     self: _async_impl.AsyncConnectionPool,
     hosts: Sequence[HostEntry],
 ) -> list[HostEntry]:
+    """Publish one host generation transactionally with respect to cancellation."""
+
     if not hosts:
         return list(self.hosts)
     observed = _validated_updates(hosts, family=self.family)
     to_close: list[_async_impl.AsyncSlot] = []
 
     async with self._lock:
-        self._generation += 1
-        generation = self._generation
         old_slots = list(self._slots)
-        old_by_slot_key = {slot.key: slot for slot in old_slots}
-        old_host_by_key = {slot.host.key: slot.host for slot in old_slots}
+        locked: list[_async_impl.AsyncSlot] = []
+        try:
+            # Preparation phase: acquire every current slot lock before mutating
+            # generation/slot state. Cancellation while waiting releases already
+            # acquired locks and leaves the old generation byte-for-byte active.
+            for old in old_slots:
+                await old.lock.acquire()
+                locked.append(old)
 
-        published_hosts: list[HostEntry] = []
-        for item in observed:
-            old_host = old_host_by_key.get(item.key)
-            published_hosts.append(
-                _next_generation_host(old_host, item)
-                if old_host is not None
-                else _new_endpoint(item, family=self.family)
-            )
+            old_by_slot_key = {slot.key: slot for slot in old_slots}
+            old_host_by_key = {slot.host.key: slot.host for slot in old_slots}
+            generation = self._generation + 1
 
-        new_slots: list[_async_impl.AsyncSlot] = []
-        for host in published_hosts:
-            for index in range(self.slots_per_host):
-                key = f"{host.key}#{index}"
-                old = old_by_slot_key.get(key)
-                if old is None:
-                    new_slots.append(
-                        _async_impl.AsyncSlot(host=host, index=index, generation=generation)
-                    )
-                    continue
-                async with old.lock:
+            published_hosts: list[HostEntry] = []
+            for item in observed:
+                old_host = old_host_by_key.get(item.key)
+                published_hosts.append(
+                    _next_generation_host(old_host, item)
+                    if old_host is not None
+                    else _new_endpoint(item, family=self.family)
+                )
+
+            new_slots: list[_async_impl.AsyncSlot] = []
+            reuse: list[tuple[_async_impl.AsyncSlot, HostEntry]] = []
+            retire: list[_async_impl.AsyncSlot] = []
+            for host in published_hosts:
+                for index in range(self.slots_per_host):
+                    key = f"{host.key}#{index}"
+                    old = old_by_slot_key.get(key)
+                    if old is None:
+                        new_slots.append(
+                            _async_impl.AsyncSlot(
+                                host=host,
+                                index=index,
+                                generation=generation,
+                            )
+                        )
+                        continue
                     if old.leases == 0 and not old.retired:
-                        old.host = host
-                        old.generation = generation
+                        reuse.append((old, host))
                         new_slots.append(old)
                     else:
-                        old.retired = True
-                        if old not in self._retired_slots:
-                            self._retired_slots.append(old)
+                        retire.append(old)
                         new_slots.append(
                             _async_impl.AsyncSlot(
                                 host=host,
@@ -231,23 +248,43 @@ async def _async_update_hosts(
                             )
                         )
 
-        new_keys = {slot.key for slot in new_slots}
-        for old in old_slots:
-            if old.key in new_keys:
-                continue
-            async with old.lock:
-                old.retired = True
-                if old not in self._retired_slots:
-                    self._retired_slots.append(old)
+            new_keys = {slot.key for slot in new_slots}
+            for old in old_slots:
+                if old.key in new_keys:
+                    continue
+                retire.append(old)
                 if old.leases == 0:
                     to_close.append(old)
 
-        self.hosts = published_hosts
-        self._slots = new_slots
-        self._rr = 0
+            # Commit phase: all allocations and awaitable lock acquisitions have
+            # completed. No await occurs until the entire new generation is
+            # published, so task cancellation cannot expose a half generation.
+            self._generation = generation
+            for old, host in reuse:
+                old.host = host
+                old.generation = generation
+            for old in retire:
+                old.retired = True
+                if not any(item is old for item in self._retired_slots):
+                    self._retired_slots.append(old)
+            self.hosts = published_hosts
+            self._slots = new_slots
+            self._rr = 0
+        finally:
+            for old in reversed(locked):
+                old.lock.release()
 
-    for slot in to_close:
-        await self._drop(slot)
+    # The generation is already atomically published. If cancellation arrives
+    # during retired-socket cleanup, finish best-effort cleanup before propagating
+    # the original CancelledError so an unleased retired connection is not leaked.
+    for index, slot in enumerate(to_close):
+        try:
+            await self._drop(slot)
+        except asyncio.CancelledError:
+            for remaining in to_close[index:]:
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await self._drop(remaining)
+            raise
     return published_hosts
 
 
