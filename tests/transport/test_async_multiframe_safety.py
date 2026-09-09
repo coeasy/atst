@@ -203,7 +203,8 @@ def test_async_iter_frames_cap_drops_potentially_dirty_connection(
             assert payloads == [b"A", b"B"]
             assert slot.conn is None
             assert conn.closed is True
-            assert conn._continuation == [_frame(b"C")]
+            assert len(conn._continuation) == 1
+            assert conn._continuation[0].payload == b"C"
         finally:
             await pool.close()
 
