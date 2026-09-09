@@ -27,14 +27,16 @@ def _write_minimal_wheel(
     *,
     version: str = "1.4.0",
     include_typed: bool = True,
+    extra_members: tuple[str, ...] = (),
 ) -> None:
     import zipfile
 
     with zipfile.ZipFile(path, "w") as archive:
-        for name in ("tstdx/__init__.py", "tstdx/cli.py", "tstdx/client.py"):
-            archive.writestr(name, "")
+        archive.writestr("tstdx/__init__.py", "")
         if include_typed:
             archive.writestr("tstdx/py.typed", "")
+        for name in extra_members:
+            archive.writestr(name, "")
         archive.writestr(
             f"tstdx-{version}.dist-info/METADATA",
             f"Metadata-Version: 2.1\nName: tstdx\nVersion: {version}\n\n",
@@ -47,6 +49,7 @@ def _write_minimal_sdist(
     version: str = "1.4.0",
     include_typed: bool = True,
     extra_member: str | None = None,
+    extra_runtime_members: tuple[str, ...] = (),
 ) -> None:
     root = f"tstdx-{version}"
     files = {
@@ -59,6 +62,8 @@ def _write_minimal_sdist(
     }
     if include_typed:
         files[f"{root}/tstdx/py.typed"] = ""
+    for member in extra_runtime_members:
+        files[f"{root}/{member}"] = ""
     if extra_member is not None:
         files[extra_member] = "escape\n"
 
@@ -87,6 +92,7 @@ def _write_fake_project(
         f'__version__ = "{source_version}"\n',
         encoding="utf-8",
     )
+    (package / "py.typed").write_text("", encoding="utf-8")
 
 
 def test_build_script_rejects_repository_root_and_ancestor_outputs() -> None:
@@ -220,7 +226,7 @@ def test_wheel_verifier_requires_universal_pep561_artifact(
     _write_minimal_sdist(dist / "tstdx-1.4.0.tar.gz")
     monkeypatch.setattr(build, "ROOT", fake_root)
 
-    with pytest.raises(SystemExit, match="wheel 缺少文件 tstdx/py.typed"):
+    with pytest.raises(SystemExit, match="wheel 缺少 .*tstdx/py.typed"):
         build._verify(dist)
 
 
@@ -237,8 +243,83 @@ def test_sdist_verifier_requires_typed_source_and_metadata(
     _write_minimal_sdist(dist / "tstdx-1.4.0.tar.gz", include_typed=False)
     monkeypatch.setattr(build, "ROOT", fake_root)
 
-    with pytest.raises(SystemExit, match="sdist 缺少文件 .*py.typed"):
+    with pytest.raises(SystemExit, match="sdist 缺少 .*tstdx/py.typed"):
         build._verify(dist)
+
+
+def test_wheel_verifier_requires_every_source_runtime_module(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    build = _load_build_script()
+    fake_root = tmp_path / "repo"
+    dist = fake_root / "dist"
+    _write_fake_project(fake_root)
+    (fake_root / "tstdx" / "_runtime_hardening.py").write_text("VALUE = 1\n", encoding="utf-8")
+    dist.mkdir()
+    _write_minimal_wheel(dist / "tstdx-1.4.0-py3-none-any.whl")
+    _write_minimal_sdist(
+        dist / "tstdx-1.4.0.tar.gz",
+        extra_runtime_members=("tstdx/_runtime_hardening.py",),
+    )
+    monkeypatch.setattr(build, "ROOT", fake_root)
+
+    with pytest.raises(SystemExit, match="wheel 缺少 .*_runtime_hardening.py"):
+        build._verify(dist)
+
+
+def test_sdist_verifier_requires_every_source_runtime_module(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    build = _load_build_script()
+    fake_root = tmp_path / "repo"
+    dist = fake_root / "dist"
+    _write_fake_project(fake_root)
+    nested = fake_root / "tstdx" / "client"
+    nested.mkdir()
+    (nested / "_runtime_hardening.py").write_text("VALUE = 1\n", encoding="utf-8")
+    dist.mkdir()
+    _write_minimal_wheel(
+        dist / "tstdx-1.4.0-py3-none-any.whl",
+        extra_members=("tstdx/client/_runtime_hardening.py",),
+    )
+    _write_minimal_sdist(dist / "tstdx-1.4.0.tar.gz")
+    monkeypatch.setattr(build, "ROOT", fake_root)
+
+    with pytest.raises(SystemExit, match="sdist 缺少 .*_runtime_hardening.py"):
+        build._verify(dist)
+
+
+def test_distribution_verifier_accepts_complete_nested_runtime_closure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    build = _load_build_script()
+    fake_root = tmp_path / "repo"
+    dist = fake_root / "dist"
+    _write_fake_project(fake_root)
+    nested = fake_root / "tstdx" / "client"
+    nested.mkdir()
+    (nested / "_runtime_hardening.py").write_text("VALUE = 1\n", encoding="utf-8")
+    dist.mkdir()
+    runtime_member = "tstdx/client/_runtime_hardening.py"
+    _write_minimal_wheel(
+        dist / "tstdx-1.4.0-py3-none-any.whl",
+        extra_members=(runtime_member,),
+    )
+    _write_minimal_sdist(
+        dist / "tstdx-1.4.0.tar.gz",
+        extra_runtime_members=(runtime_member,),
+    )
+    monkeypatch.setattr(build, "ROOT", fake_root)
+
+    artifacts = build._verify(dist)
+
+    assert [path.name for path in artifacts] == [
+        "tstdx-1.4.0.tar.gz",
+        "tstdx-1.4.0-py3-none-any.whl",
+    ]
 
 
 def test_sdist_verifier_rejects_repository_escape_member(
