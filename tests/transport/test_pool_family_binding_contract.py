@@ -166,14 +166,50 @@ def test_valid_same_family_pool_still_constructs() -> None:
         asyncio.run(async_.close())
 
 
-def test_sync_pool_owns_fresh_canonical_host_snapshot() -> None:
-    source = HostEntry(
+def _runtime_state_source() -> HostEntry:
+    return HostEntry(
         host=" 127.0.0.1 ",
         port=7709,
         family=Family.STANDARD,
-        failures=2,
+        name="primary",
+        verified=True,
+        connect_ms=2.0,
+        rtt_ms=3.0,
         live_rtt_ms=5.0,
+        live_ok_at=10.0,
+        failures=2,
+        biz_failures=1,
+        last_ok=9.0,
+        last_error="old failure",
+        circuit="half_open",
+        consec_weighted=4.0,
+        circuit_opened_at=8.0,
+        circuit_probe_inflight=True,
     )
+
+
+def _assert_fresh_pool_host(owned: HostEntry, source: HostEntry) -> None:
+    assert owned is not source
+    assert owned.host == "127.0.0.1"
+    assert owned.name == "primary"
+    assert owned.verified is True
+    assert owned.connect_ms == 2.0
+    assert owned.rtt_ms == 3.0
+
+    assert owned.live_rtt_ms is None
+    assert owned.live_ok_at is None
+    assert owned.failures == 0
+    assert owned.biz_failures == 0
+    assert owned.last_ok is None
+    assert owned.last_error == ""
+    assert owned.circuit == "healthy"
+    assert owned.consec_weighted == 0.0
+    assert owned.circuit_opened_at == 0.0
+    assert owned.circuit_probe_inflight is False
+
+
+def test_sync_pool_starts_fresh_runtime_health_lifecycle() -> None:
+    source = _runtime_state_source()
     pool = ConnectionPool(
         [source],
         family=Family.STANDARD,
@@ -182,28 +218,21 @@ def test_sync_pool_owns_fresh_canonical_host_snapshot() -> None:
     )
     try:
         owned = pool.hosts[0]
-        assert owned is not source
-        assert owned.host == "127.0.0.1"
-        assert owned.failures == 2
-        assert owned.live_rtt_ms == 5.0
+        _assert_fresh_pool_host(owned, source)
 
+        source.rtt_ms = 999.0
         source.failures = 99
         source.live_rtt_ms = 999.0
-        assert owned.failures == 2
-        assert owned.live_rtt_ms == 5.0
+        assert owned.rtt_ms == 3.0
+        assert owned.failures == 0
+        assert owned.live_rtt_ms is None
         assert pool._slots[0].host is owned
     finally:
         pool.close()
 
 
-def test_async_pool_owns_fresh_canonical_host_snapshot() -> None:
-    source = HostEntry(
-        host=" 127.0.0.1 ",
-        port=7709,
-        family=Family.STANDARD,
-        failures=2,
-        live_rtt_ms=5.0,
-    )
+def test_async_pool_starts_fresh_runtime_health_lifecycle() -> None:
+    source = _runtime_state_source()
     pool = AsyncConnectionPool(
         [source],
         family=Family.STANDARD,
@@ -212,15 +241,14 @@ def test_async_pool_owns_fresh_canonical_host_snapshot() -> None:
     )
     try:
         owned = pool.hosts[0]
-        assert owned is not source
-        assert owned.host == "127.0.0.1"
-        assert owned.failures == 2
-        assert owned.live_rtt_ms == 5.0
+        _assert_fresh_pool_host(owned, source)
 
+        source.rtt_ms = 999.0
         source.failures = 99
         source.live_rtt_ms = 999.0
-        assert owned.failures == 2
-        assert owned.live_rtt_ms == 5.0
+        assert owned.rtt_ms == 3.0
+        assert owned.failures == 0
+        assert owned.live_rtt_ms is None
         assert pool._slots[0].host is owned
     finally:
         asyncio.run(pool.close())
