@@ -109,5 +109,5 @@ logging.basicConfig(level=logging.DEBUG)
 ## 6. 仍未解决？
 
 1. 收集信息：`tstdx version` + 错误码 + 复现脚本
-2. 搜索 [Issues](https://github.com/tstdx/tstdx/issues)
+2. 搜索 [Issues](https://github.com/coeasy/tstdx/issues)
 3. 提交 Bug Report（附最小复现代码，**脱敏**后）

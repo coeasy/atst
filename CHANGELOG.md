@@ -5,7 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## \[Unreleased]
+## [Unreleased]
+
+## [1.0.0] - 2026-09-09
+
+这是 tstdx 的首个正式稳定版，发布包同时提供 wheel 与源码包，支持 Python 3.10–3.13。
+
+### Changed
+
+- 明确 `ConnectionPool` / `AsyncConnectionPool` 的主站生命周期契约：后台测速只更新
+  排名，真实请求健康只更新 live health；generation/lease 保护在飞请求，旧代完成结果
+  不再污染新代主站状态。
+- 统一同步/异步 half-open circuit 的单探测门禁、连接复用、空闲回收、心跳与
+  `update_hosts` 热更新语义。
+
+### Fixed
+
+- 修复 `ConnectionPool` 主站生命周期竞态：后台测速、真实请求健康、half-open
+  circuit、generation/lease、心跳、空闲回收与 `update_hosts` 连接复用现在互不
+  覆盖；活动请求完成后，旧 generation 的结果不会污染新主站状态。
+- 同步/异步连接池统一单探测 half-open 门禁，并区分测速 RTT 与 real-request
+  health RTT；新增交错时序和并发回归测试。
+- 修复 F10 客户端 0x06B9 文件分块响应解析：F10 facade 现在复用规范的文件下载解析器，
+  空响应明确抛出 `DataError`。
+
+### Release verification
+
+- 全量 `pytest -q` 通过。
+- `ruff check tstdx tests` 与 `python -m compileall -q tstdx tests` 通过。
+- 发布脚本完成 wheel/sdist 构建、临时虚拟环境安装与 import 冒烟。
+- 产物名称：`tstdx-1.0.0-py3-none-any.whl`、`tstdx-1.0.0.tar.gz`。
 
 ### Deprecation Timeline（P13-F：把 v1.4.0 Deprecated 章节的窗口期落到版本号）
 

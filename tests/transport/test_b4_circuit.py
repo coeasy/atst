@@ -4,7 +4,7 @@
 * 状态推进：healthy → degraded（连续失败加权 ≥3）→ open（≥8）；
 * 权重：连接失败 1.0 / 业务失败 0.5；
 * 成功复位：open → healthy；
-* _circuit_allows：OPEN 拦截 / 冷却到期转 HALF_OPEN 放行；
+* _circuit_allows：OPEN 拦截 / 冷却到期转 HALF_OPEN，仅放行单次探测；
 * 选主站：OPEN 主站被跳过，优先健康主站（不再吃超时）。
 """
 
@@ -101,8 +101,8 @@ class TestCircuitAllows:
         s.host.circuit_opened_at = time.time() - pool_mod.CIRCUIT_COOLDOWN_SECONDS - 1
         assert p._circuit_allows(s.host) is True
         assert s.host.circuit == "half_open"
-        # half_open 再次放行（探测中），失败由 _mark_failure 重开
-        assert p._circuit_allows(s.host) is True
+        # half_open 已持有探测令牌，并发请求必须被门禁拦住
+        assert p._circuit_allows(s.host) is False
 
     def test_half_open_probe_failure_reopens(self) -> None:
         s = _slot()

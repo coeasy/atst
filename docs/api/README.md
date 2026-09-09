@@ -1,6 +1,7 @@
-# API 参考
+# API 参考（v1.0.0）
 
-> 完整 docstring 驱动文档由 `pdoc`/`mkdocstrings` 生成（v0.7.0 接入 CI）。此处为模块索引。
+> 本页对应 v1.0.0 稳定发布版。完整 docstring 驱动文档由 `pdoc`/`mkdocstrings`
+> 生成；此处提供稳定入口和模块索引。
 
 ## 核心入口
 
@@ -29,9 +30,14 @@
 | 模块 | 说明 |
 |---|---|
 | `tstdx.transport.pool` | ConnectionPool 连接池 |
+| `tstdx.transport.async_` | AsyncConnectionPool 异步连接池 |
 | `tstdx.transport.ratelimit` | 令牌桶限流 |
 | `tstdx.transport.speedtest` | 主站测速（持久化 TTL）|
 | `tstdx.transport.sniff` | 被动嗅探 + spec 草稿导出 |
+
+连接池在 v1.0.0 中提供 generation/lease 生命周期保护、half-open 单探测门禁，
+并将后台测速 RTT 与真实请求 health RTT 分开维护；热更新主站时，仍在执行的旧代请求
+不会回写新代主站状态。
 
 ## 数据与落地
 

@@ -1,25 +1,28 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""主站候选池与 STANDARD 速度排名持久化（§12）。
+"""主站候选池与速度排名持久化（§12）。
 
-候选 endpoint 可以被多个协议族复用，但 ``HostEntry.family`` 必须始终代表
-当前请求的 canonical family。历史 V1 ranking 以 ``host:port`` 为 key，因此
-只允许持久化 STANDARD；它只能提供运行观测/排序，不能扩大显式
-``servers=`` / ``TSTDX_HOSTS`` 候选集合，也不能覆盖 selector 静态身份。
+设计要点
+--------
+1. **候选池只是候选**。内置列表来自公开文档整理，未逐条实测，
+   因此 ``HostEntry.verified`` 默认 ``False``，真实可用性由
+   :func:`~tstdx.transport.speedtest.speedtest` 现场测定。
+2. **用户配置优先**。``hosts.servers`` 一旦非空即完全接管候选池。
+3. **排名可持久化**。测速结果写入 ``hosts.ranking_file``（默认
+   ``~/.tstdx/server_ranking.json``），下次启动自动按分数排序复用。
+4. **失败惩罚**。连续失败的条目分数衰减，落到池尾，但**不删除**
+   （网络是波动的，删了就永久失去一个候选）。
 """
 
 from __future__ import annotations
 
 import contextlib
-import ipaddress
 import json
-import math
 import os
-import tempfile
 import time
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -36,11 +39,11 @@ __all__ = [
 ]
 
 _RANKING_VERSION = 1
-_VALID_FAMILIES = (Family.STANDARD, Family.EXTENDED, Family.MAC, Family.GOODS, Family.F10)
-_VALID_CIRCUITS = {"healthy", "degraded", "open", "half_open"}
-_MAX_RESOLVED_HOSTS = 64
 
 
+# --------------------------------------------------------------------------- #
+# 主站条目
+# --------------------------------------------------------------------------- #
 @dataclass
 class HostEntry:
     """一个主站候选。"""
@@ -49,21 +52,35 @@ class HostEntry:
     port: int = 7709
     family: str = Family.STANDARD
     name: str = ""
+    #: 是否经过自采集 golden 验证
     verified: bool = False
+    #: 测速指标（未测速时为 None）
     connect_ms: float | None = None
     rtt_ms: float | None = None
+    #: 真实请求/心跳测得的 RTT。与后台测速的 ``rtt_ms`` 分离，避免
+    #: 一次过期的探测结果覆盖当前连接的健康排序，反之亦然。
+    live_rtt_ms: float | None = None
+    live_ok_at: float | None = None
+    #: 连续失败次数（连接失败 + 业务失败共用一个计数，驱动指数惩罚）
     failures: int = 0
+    #: 业务帧失败次数（R2：连接成功但请求/响应交换失败的次数，
+    #: 单独记数并给轻微 score 惩罚——连接失败用指数惩罚更激进）
     biz_failures: int = 0
     last_ok: float | None = None
     last_error: str = ""
+    #: B4 熔断状态机：healthy → degraded（连续失败加权 ≥3）→
+    #: open（≥8，请求直接跳过）→ half_open（冷却 30s 后单次探测）
     circuit: str = "healthy"
+    #: 连续失败加权值：连接失败 1.0 / 业务失败 0.5（成功即清零）
     consec_weighted: float = 0.0
+    #: open 进入时间戳（驱动冷却）
     circuit_opened_at: float = 0.0
+    #: HALF_OPEN 的唯一探测令牌。仅存于运行时，不参与排名持久化。
+    circuit_probe_inflight: bool = False
 
     @property
     def key(self) -> str:
-        rendered_host = f"[{self.host}]" if ":" in self.host else self.host
-        return f"{rendered_host}:{self.port}"
+        return f"{self.host}:{self.port}"
 
     @property
     def addr(self) -> tuple[str, int]:
@@ -71,22 +88,31 @@ class HostEntry:
 
     @property
     def score(self) -> float:
-        """越小越好；未测速条目排在已测速条目之后、持续失败条目之前。"""
-
-        base = 1000000.0 if self.rtt_ms is None else float(self.rtt_ms)
+        """越小越好。未测速条目给中性分 1e6（排在已测速之后、失败条目之前）。"""
+        # 真实请求健康优先于后台测速；两者不是同一种信号，不能互相覆盖。
+        measured = self.live_rtt_ms if self.live_rtt_ms is not None else self.rtt_ms
+        base = 1000000.0 if measured is None else float(measured)
+        # 连续失败 → 指数惩罚，但封顶 1e9，保证仍排在"未测速"之后
         penalty = min(1e9, base * (4 ** min(self.failures, 8)))
+        # R2 业务失败率降权：连接正常但业务帧失败的主机轻微降权
         if self.biz_failures:
             penalty *= 1.0 + 0.25 * self.biz_failures
         return penalty
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        # live health belongs to the current process/generation.  Ranking files
+        # must contain probe observations only, otherwise a stale process can
+        # resurrect old circuit/live state on the next startup.
+        data.pop("live_rtt_ms", None)
+        data.pop("live_ok_at", None)
+        data.pop("circuit_probe_inflight", None)
+        return data
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> HostEntry:
-        known = set(cls.__dataclass_fields__)
-        entry = cls(**{key: value for key, value in data.items() if key in known})
-        return _validated_entry(entry, source="ranking entry")
+        known = {f for f in cls.__dataclass_fields__}
+        return cls(**{k: v for k, v in data.items() if k in known})
 
     def __repr__(self) -> str:  # pragma: no cover - 调试便利
         return (
@@ -95,192 +121,19 @@ class HostEntry:
         )
 
 
-def _require_family_value(family: str, *, source: str) -> str:
-    if family not in _VALID_FAMILIES:
-        raise ConfigError(
-            f"{source} family 非法: {family!r}",
-            context={"family": family, "source": source},
-        )
-    return family
-
-
-def _parse_port(value: Any, *, source: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, (int, str)):
-        raise ConfigError(
-            f"{source} port 必须是整数 1..65535，收到 {value!r}",
-            context={"source": source},
-        )
-    try:
-        port = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ConfigError(
-            f"{source} port 无效: {value!r}",
-            context={"source": source},
-            cause=exc,
-        ) from exc
-    if not 1 <= port <= 65535:
-        raise ConfigError(
-            f"{source} port 超出范围 1..65535: {port}",
-            context={"source": source, "port": port},
-        )
-    return port
-
-
-def _clean_host(value: Any, *, source: str) -> str:
-    if not isinstance(value, str):
-        raise ConfigError(
-            f"{source} host 必须是字符串，收到 {type(value).__name__}",
-            context={"source": source},
-        )
-    host = value.strip()
-    if host.startswith("[") and host.endswith("]"):
-        host = host[1:-1].strip()
-    if not host:
-        raise ConfigError(f"{source} host 为空", context={"source": source})
-    if any(ch.isspace() for ch in host):
-        raise ConfigError(
-            f"{source} host 含空白字符: {host!r}",
-            context={"source": source},
-        )
-    if any(ch in host for ch in "/?#@[]\x00"):
-        raise ConfigError(
-            f"{source} host 含非法字符: {host!r}",
-            context={"source": source},
-        )
-    if ":" in host:
-        address = host.split("%", 1)[0]
-        try:
-            parsed = ipaddress.ip_address(address)
-        except ValueError as exc:
-            raise ConfigError(
-                f"{source} IPv6 host 无效: {host!r}",
-                context={"source": source},
-                cause=exc,
-            ) from exc
-        if parsed.version != 6:
-            raise ConfigError(f"{source} host 无效: {host!r}", context={"source": source})
-    return host
-
-
-def _require_non_negative_number(
-    value: Any,
-    *,
-    field: str,
-    source: str,
-    allow_none: bool = True,
-) -> float | None:
-    if value is None:
-        if allow_none:
-            return None
-        raise ConfigError(
-            f"{source} {field} 不能为 None",
-            context={"source": source, "field": field},
-        )
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ConfigError(
-            f"{source} {field} 必须是非负有限数值，收到 {value!r}",
-            context={"source": source, "field": field},
-        )
-    normalized = float(value)
-    if not math.isfinite(normalized) or normalized < 0:
-        raise ConfigError(
-            f"{source} {field} 必须是非负有限数值，收到 {value!r}",
-            context={"source": source, "field": field},
-        )
-    return normalized
-
-
-def _require_non_negative_int(value: Any, *, field: str, source: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ConfigError(
-            f"{source} {field} 必须是非负整数，收到 {value!r}",
-            context={"source": source, "field": field},
-        )
-    return value
-
-
-def _validated_entry(entry: HostEntry, *, source: str) -> HostEntry:
-    family = _require_family_value(entry.family, source=source)
-    host = _clean_host(entry.host, source=source)
-    port = _parse_port(entry.port, source=source)
-    if not isinstance(entry.name, str):
-        raise ConfigError(f"{source} name 必须是字符串", context={"source": source})
-    if not isinstance(entry.verified, bool):
-        raise ConfigError(f"{source} verified 必须是 bool", context={"source": source})
-    if not isinstance(entry.last_error, str):
-        raise ConfigError(f"{source} last_error 必须是字符串", context={"source": source})
-    if entry.circuit not in _VALID_CIRCUITS:
-        raise ConfigError(
-            f"{source} circuit 非法: {entry.circuit!r}",
-            context={"source": source, "circuit": entry.circuit},
-        )
-
-    connect_ms = _require_non_negative_number(entry.connect_ms, field="connect_ms", source=source)
-    rtt_ms = _require_non_negative_number(entry.rtt_ms, field="rtt_ms", source=source)
-    last_ok = _require_non_negative_number(entry.last_ok, field="last_ok", source=source)
-    consec_weighted = _require_non_negative_number(
-        entry.consec_weighted,
-        field="consec_weighted",
-        source=source,
-        allow_none=False,
-    )
-    circuit_opened_at = _require_non_negative_number(
-        entry.circuit_opened_at,
-        field="circuit_opened_at",
-        source=source,
-        allow_none=False,
-    )
-    failures = _require_non_negative_int(entry.failures, field="failures", source=source)
-    biz_failures = _require_non_negative_int(entry.biz_failures, field="biz_failures", source=source)
-
-    return replace(
-        entry,
-        host=host,
-        port=port,
-        family=family,
-        connect_ms=connect_ms,
-        rtt_ms=rtt_ms,
-        failures=failures,
-        biz_failures=biz_failures,
-        last_ok=last_ok,
-        consec_weighted=consec_weighted or 0.0,
-        circuit_opened_at=circuit_opened_at or 0.0,
-    )
-
-
 def _h(host: str, port: int, family: str, name: str = "", verified: bool = False) -> HostEntry:
     return HostEntry(host=host, port=port, family=family, name=name, verified=verified)
 
 
-def _as_family(entries: Iterable[HostEntry], family: str) -> tuple[HostEntry, ...]:
-    """Reuse endpoints while resetting family-specific verification provenance."""
-
-    return tuple(replace(entry, family=family, verified=False) for entry in entries)
-
-
-def _apply_ranked_observation(base: HostEntry, ranked: HostEntry) -> HostEntry:
-    """Overlay runtime observations while preserving selector-owned identity fields."""
-
-    if ranked.family != base.family or ranked.key != base.key:
-        raise ConfigError(
-            "ranking observation identity mismatch: "
-            f"base={base.key}/{base.family!r}, ranked={ranked.key}/{ranked.family!r}"
-        )
-    return replace(
-        base,
-        connect_ms=ranked.connect_ms,
-        rtt_ms=ranked.rtt_ms,
-        failures=ranked.failures,
-        biz_failures=ranked.biz_failures,
-        last_ok=ranked.last_ok,
-        last_error=ranked.last_error,
-        circuit=ranked.circuit,
-        consec_weighted=ranked.consec_weighted,
-        circuit_opened_at=ranked.circuit_opened_at,
-    )
-
-
+# --------------------------------------------------------------------------- #
+# 内置候选池
+# --------------------------------------------------------------------------- #
+# .. note::
+#    下列条目排序已按 2026-08-31 实测连通性调整：可达的 7 台主站前置并
+#    标记 ``verified=True``，不可达的保留在后（网络是波动的，不删除）。
+#    真实可用性仍建议用 ``tstdx hosts scan`` 自测并生成排名文件。
 DEFAULT_HOST_POOL: tuple[HostEntry, ...] = (
+    # --- 7709 标准行情（实测可达，2026-08-31 验证）---
     _h("180.153.18.170", 7709, Family.STANDARD, "上海双线-3", verified=True),
     _h("60.191.117.167", 7709, Family.STANDARD, "杭州-1", verified=True),
     _h("115.238.90.165", 7709, Family.STANDARD, "杭州-2", verified=True),
@@ -288,6 +141,7 @@ DEFAULT_HOST_POOL: tuple[HostEntry, ...] = (
     _h("218.75.126.9", 7709, Family.STANDARD, "长沙-1", verified=True),
     _h("218.6.170.47", 7709, Family.STANDARD, "四川-1", verified=True),
     _h("123.125.108.14", 7709, Family.STANDARD, "北京-2", verified=True),
+    # --- 以下为公开文档整理，实测暂不可达（保留为候选）---
     _h("119.147.212.81", 7709, Family.STANDARD, "深圳双线-1"),
     _h("218.108.98.244", 7709, Family.STANDARD, "深圳双线-2"),
     _h("218.108.47.69", 7709, Family.STANDARD, "深圳双线-3"),
@@ -301,133 +155,81 @@ DEFAULT_HOST_POOL: tuple[HostEntry, ...] = (
     _h("101.227.73.20", 7709, Family.STANDARD, "扬州-1"),
     _h("14.215.128.18", 7709, Family.STANDARD, "广州-1"),
     _h("59.173.18.140", 7709, Family.STANDARD, "西安-1"),
+    # --- 7727 扩展行情（期货 / 期权 / 外汇 / 港股通等）---
+    # ⚠️ 2026-09-06 实测：4 台候选全部连接超时，且 13 台 7709 存活主机均未
+    # 双开 7727 端口——扩展行情服务疑似整体迁移/下线。候选保留供后续
+    # 更新主站池时复测；GOODS（商品语义）与 EXTENDED 共池，同样受影响。
     _h("119.147.212.81", 7727, Family.EXTENDED, "扩展-深圳"),
     _h("218.108.98.244", 7727, Family.EXTENDED, "扩展-深圳2"),
     _h("114.80.63.12", 7727, Family.EXTENDED, "扩展-上海"),
     _h("124.71.187.122", 7727, Family.EXTENDED, "扩展-通用"),
+    # --- 7709 MAC 专用（mac_quotation，命令号 0x120F+）---
+    # ⚠️ 2026-09-06 实测：两台均连接超时，MAC 命令发往标准 7709 主站无响应。
     _h("120.53.120.235", 7709, Family.MAC, "MAC-1"),
     _h("119.147.212.81", 7709, Family.MAC, "MAC-2"),
 )
 
 POOL_BY_FAMILY: dict[str, tuple[HostEntry, ...]] = {
-    family: tuple(entry for entry in DEFAULT_HOST_POOL if entry.family == family)
-    for family in _VALID_FAMILIES
+    fam: tuple(e for e in DEFAULT_HOST_POOL if e.family == fam)
+    for fam in (Family.STANDARD, Family.EXTENDED, Family.MAC, Family.GOODS, Family.F10)
 }
-# GOODS 与 EXTENDED 共享 7727 endpoints，但 identity/verified 证据不能继承。
-POOL_BY_FAMILY[Family.GOODS] = _as_family(POOL_BY_FAMILY[Family.EXTENDED], Family.GOODS)
-# F10 文件下载复用标准 7709 endpoints，但 STANDARD 验证证据不能冒充 F10。
-POOL_BY_FAMILY[Family.F10] = _as_family(POOL_BY_FAMILY[Family.STANDARD], Family.F10)
+# GOODS 与 EXTENDED 共用 7727 端口
+POOL_BY_FAMILY[Family.GOODS] = POOL_BY_FAMILY[Family.EXTENDED]
+# F10 资料网关（2026-09-06 实测）：常见 7615 端口主机不可达，但 F10 文件下载
+# 命令（0x1004 download）在标准 7709 主站真实可用（catalog 0x0001 除外——
+# 该命令已无响应）。F10 池指向 STANDARD 存活池。
+POOL_BY_FAMILY[Family.F10] = POOL_BY_FAMILY[Family.STANDARD]
 
 
-def _parse_string_server(item: str, *, family: str) -> HostEntry:
-    raw = item.strip()
-    if not raw:
-        raise ConfigError("主站条目为空", context={"source": "server string"})
-
-    port: Any = 7709
-    host: Any = raw
-    if raw.startswith("["):
-        closing = raw.find("]")
-        if closing < 0:
-            raise ConfigError(f"IPv6 主站缺少 ]: {item!r}")
-        host = raw[1:closing]
-        suffix = raw[closing + 1 :]
-        if suffix:
-            if not suffix.startswith(":"):
-                raise ConfigError(f"IPv6 主站格式无效: {item!r}")
-            port = suffix[1:]
-            if not port:
-                raise ConfigError(f"IPv6 主站 port 为空: {item!r}")
-    elif raw.count(":") == 1:
-        host, port = raw.rsplit(":", 1)
-    elif ":" in raw:
-        # Bare IPv6 uses the default port. To specify an IPv6 port, require
-        # bracket notation so address bytes are never confused with a TCP port.
-        host = raw
-
-    return _validated_entry(
-        HostEntry(
-            host=_clean_host(host, source="server string"),
-            port=_parse_port(port, source="server string"),
-            family=family,
-        ),
-        source="server string",
-    )
-
-
+# --------------------------------------------------------------------------- #
+# 解析用户配置
+# --------------------------------------------------------------------------- #
 def parse_server(item: Any, *, family: str = Family.STANDARD) -> HostEntry:
-    """把配置条目解析为 canonical :class:`HostEntry`，所有错误统一为 ConfigError。"""
+    """把配置里的 ``[host, port]`` 解析为 :class:`HostEntry`。
 
-    _require_family_value(family, source="parse_server")
+    支持 ``["1.2.3.4", 7709]`` / ``("1.2.3.4", 7709)`` / ``"1.2.3.4:7709"``。
+    """
     if isinstance(item, str):
-        return _parse_string_server(item, family=family)
+        if ":" in item:
+            host, _, port_s = item.rpartition(":")
+            return HostEntry(host=host, port=int(port_s), family=family)
+        return HostEntry(host=item, port=7709, family=family)
     if isinstance(item, HostEntry):
-        return _validated_entry(item, source="HostEntry")
+        return item
     if isinstance(item, Mapping):
-        if "host" not in item:
-            raise ConfigError("mapping 主站条目缺少 host", context={"source": "mapping"})
-        mapped_family = item.get("family", family)
-        return _validated_entry(
-            HostEntry(
-                host=_clean_host(item["host"], source="mapping"),
-                port=_parse_port(item.get("port", 7709), source="mapping"),
-                family=mapped_family,
-                name=item.get("name", ""),
-                verified=item.get("verified", False),
-            ),
-            source="mapping",
+        return HostEntry(
+            host=str(item["host"]),
+            port=int(item.get("port", 7709)),
+            family=item.get("family", family),
+            name=item.get("name", ""),
+            verified=bool(item.get("verified", False)),
         )
     if isinstance(item, (list, tuple)) and len(item) == 2:
         host, port = item
-        return _validated_entry(
-            HostEntry(
-                host=_clean_host(host, source="sequence"),
-                port=_parse_port(port, source="sequence"),
-                family=family,
-            ),
-            source="sequence",
-        )
+        return HostEntry(host=str(host), port=int(port), family=family)
     raise ConfigError(f"无法解析主站条目: {item!r}")
 
 
 def _env_hosts(family: str = Family.STANDARD) -> list[HostEntry] | None:
-    raw_value = os.environ.get("TSTDX_HOSTS")
-    if raw_value is None or not raw_value.strip():
+    """U3：环境变量 ``TSTDX_HOSTS`` 快速注入主站列表。
+
+    格式：逗号或空格分隔的 ``host:port``（缺省端口 7709），例如
+    ``TSTDX_HOSTS="180.153.18.170:7709,60.191.117.167"``。
+    未设置或解析为空时返回 ``None``（走内置候选池）。
+    """
+    raw = os.environ.get("TSTDX_HOSTS", "").strip()
+    if not raw:
         return None
-
-    tokens = raw_value.replace(",", " ").split()
-    if not tokens:
-        raise ConfigError("TSTDX_HOSTS 不能为空")
-
     entries: list[HostEntry] = []
-    for token in tokens:
+    for part in raw.replace(",", " ").split():
+        part = part.strip()
+        if not part:
+            continue
         try:
-            entries.append(parse_server(token, family=family))
-        except ConfigError as exc:
-            raise ConfigError(
-                f"TSTDX_HOSTS 条目无效 {token!r}: {exc.message}",
-                context={"source": "TSTDX_HOSTS", "token": token},
-                cause=exc,
-            ) from exc
-    return entries
-
-
-def _require_family(entries: Iterable[HostEntry], family: str, *, source: str) -> None:
-    mismatched = [entry for entry in entries if entry.family != family]
-    if mismatched:
-        sample = mismatched[0]
-        raise ConfigError(
-            f"{source} 主站 family 不匹配: requested={family!r}, "
-            f"entry={sample.key} family={sample.family!r}"
-        )
-
-
-def _require_max_hosts(max_hosts: Any) -> int:
-    if isinstance(max_hosts, bool) or not isinstance(max_hosts, int):
-        raise ConfigError(f"max_hosts 必须是整数 1..{_MAX_RESOLVED_HOSTS}，收到 {max_hosts!r}")
-    if not 1 <= max_hosts <= _MAX_RESOLVED_HOSTS:
-        raise ConfigError(f"max_hosts 必须在 1..{_MAX_RESOLVED_HOSTS}，收到 {max_hosts}")
-    return max_hosts
+            entries.append(parse_server(part, family=family))
+        except (ConfigError, ValueError):
+            continue
+    return entries or None
 
 
 def resolve_hosts(
@@ -439,79 +241,50 @@ def resolve_hosts(
     use_ranking: bool = True,
     max_hosts: int = 8,
 ) -> list[HostEntry]:
-    """Resolve one family without allowing ranking provenance to widen selectors.
+    """按优先级解析主站列表：用户配置 > 环境变量 TSTDX_HOSTS > 排名文件 > 内置候选池。
 
-    Priority is explicit ``servers`` > ``TSTDX_HOSTS`` > same-family ranking >
-    built-in pool. Explicit/environment selectors own the candidate set; default
-    persistent ranking is consumed only for the implicit STANDARD built-in path.
-    ``HostsConfig.servers=[]`` is represented internally together with its
-    ``ranking_file`` and remains equivalent to no explicit selector. A direct
-    empty selector without that config context fails closed.
+    ``max_hosts`` 默认 8：内置候选池来自公开文档、未逐条实测，网络波动下
+    只有少数主站可达；候选太少会导致「池里明明还有可用主站却提前放弃」。
+    故障转移会按序尝试池内全部候选，因此多带几个候选能显著提高一次调用成功率。
+
+    Returns
+    -------
+    按 :attr:`HostEntry.score` 升序排列的条目列表（长度 ≤ ``max_hosts``）。
     """
-
-    _require_family_value(family, source="resolve_hosts")
-    limit = _require_max_hosts(max_hosts)
-    if ranking is not None and ranking_file is not None:
-        raise ConfigError("ranking 与 ranking_file 不能同时指定")
-
-    # HostsConfig uses [] to mean "no manual override" and always carries a
-    # ranking_file. Preserve that public config contract while making a direct
-    # resolve_hosts([]) call fail closed instead of silently restoring defaults.
-    if servers is not None and len(servers) == 0:
-        if ranking_file is None:
-            raise ConfigError("explicit servers 不能为空；使用 None 表示采用默认主站池")
-        servers = None
-
-    allow_ranked_extras = False
-    if servers is not None:
-        entries = [parse_server(server, family=family) for server in servers]
-        _require_family(entries, family, source="explicit servers")
+    if servers:
+        entries = [parse_server(s, family=family) for s in servers]
     else:
         env_entries = _env_hosts(family)
         if env_entries is not None:
             entries = env_entries
-            _require_family(entries, family, source="TSTDX_HOSTS")
         else:
-            entries = list(POOL_BY_FAMILY[family])
-            allow_ranked_extras = True
+            entries = list(POOL_BY_FAMILY.get(family, DEFAULT_HOST_POOL))
 
     if use_ranking:
-        store = ranking
-        if store is None and ranking_file is not None:
-            store = RankingStore(ranking_file)
-        elif store is None and allow_ranked_extras and family == Family.STANDARD:
-            # This closes the persistence loop: `hosts scan` / bestip STANDARD
-            # results become the next default cold-start ordering automatically.
-            store = RankingStore()
-
+        # ranking 参数优先；无注入实例且配置了文件路径时才落盘加载
+        store = ranking or (RankingStore(ranking_file) if ranking_file else None)
         if store is not None:
-            known = {
-                key: entry
-                for key, entry in store.load().items()
-                if entry.family == family
-            }
-            merged = [
-                _apply_ranked_observation(entry, known[entry.key])
-                if entry.key in known
-                else entry
-                for entry in entries
-            ]
-            if allow_ranked_extras:
-                in_pool = {entry.key for entry in entries}
-                merged.extend(entry for key, entry in known.items() if key not in in_pool)
+            known = store.load()
+            merged: list[HostEntry] = []
+            for e in entries:
+                prev = known.get(e.key)
+                merged.append(prev if prev is not None else e)
+            # 排名文件里出现过、但内置池已移除的条目也保留下来（用户自采集过的）
+            in_pool = {e.key for e in entries}
+            merged.extend(v for k, v in known.items() if k not in in_pool)
             entries = merged
 
-    entries.sort(key=lambda entry: entry.score)
-    return entries[:limit]
+    entries.sort(key=lambda e: e.score)
+    return entries[: max(1, max_hosts)]
 
 
+# --------------------------------------------------------------------------- #
+# 排名持久化
+# --------------------------------------------------------------------------- #
 class RankingStore:
-    """STANDARD-only ``~/.tstdx/server_ranking.json`` V1 storage.
+    """``~/.tstdx/server_ranking.json`` 的读写封装。
 
-    V1 uses ``host:port`` keys and therefore cannot safely represent the same
-    endpoint in multiple families. Legacy non-STANDARD rows may still be read and
-    ignored by family-safe resolvers, but all new writes fail closed unless the
-    incoming family is STANDARD.
+    文件损坏时**静默降级**为空排名（不阻塞启动），因为排名只是优化项。
     """
 
     VERSION = _RANKING_VERSION
@@ -519,6 +292,7 @@ class RankingStore:
     def __init__(self, path: str | os.PathLike[str] = "~/.tstdx/server_ranking.json") -> None:
         self.path = Path(os.path.expanduser(str(path)))
 
+    # -- IO ---------------------------------------------------------------- #
     def load(self) -> dict[str, HostEntry]:
         if not self.path.exists():
             return {}
@@ -526,121 +300,59 @@ class RankingStore:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except Exception:
             return {}
-        if not isinstance(raw, Mapping):
+        if not isinstance(raw, Mapping) or int(raw.get("version", 0)) != self.VERSION:
             return {}
-        version = raw.get("version")
-        if isinstance(version, bool) or not isinstance(version, int) or version != self.VERSION:
-            return {}
-        raw_entries = raw.get("entries")
-        if not isinstance(raw_entries, Mapping):
-            return {}
-
         out: dict[str, HostEntry] = {}
-        seen_embedded: set[str] = set()
-        for persisted_key, item in raw_entries.items():
-            if not isinstance(persisted_key, str) or not isinstance(item, Mapping):
+        for _key, item in (raw.get("entries") or {}).items():
+            if not isinstance(item, Mapping):
                 continue
             try:
                 entry = HostEntry.from_dict(item)
-            except ConfigError:
+            except Exception:
                 continue
-            # The persisted map key is provenance, not decoration. A valid row copied
-            # under another key (or an old ambiguous IPv6 key) must not be promoted.
-            if persisted_key != entry.key or entry.key in seen_embedded:
-                return {}
-            seen_embedded.add(entry.key)
             out[entry.key] = entry
         return out
 
-    @staticmethod
-    def _require_standard(entries: Iterable[HostEntry]) -> list[HostEntry]:
-        items = [_validated_entry(entry, source="RankingStore") for entry in entries]
-        invalid = [entry for entry in items if entry.family != Family.STANDARD]
-        if invalid:
-            sample = invalid[0]
-            raise ConfigError(
-                "RankingStore V1 仅支持 STANDARD: "
-                f"entry={sample.key} family={sample.family!r}"
-            )
-        seen: set[str] = set()
-        for entry in items:
-            if entry.key in seen:
-                raise ConfigError(f"RankingStore 存在重复 endpoint: {entry.key}")
-            seen.add(entry.key)
-        return items
-
     def save(self, entries: Iterable[HostEntry]) -> None:
-        items = self._require_standard(entries)
         data = {
             "version": self.VERSION,
             "updated": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "entries": {entry.key: entry.to_dict() for entry in items},
+            "entries": {e.key: e.to_dict() for e in entries},
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path: Path | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=self.path.parent,
-                prefix=f"{self.path.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as stream:
-                json.dump(data, stream, ensure_ascii=False, indent=2)
-                stream.flush()
-                os.fsync(stream.fileno())
-                temp_path = Path(stream.name)
-            temp_path.replace(self.path)
-        finally:
-            if temp_path is not None:
-                with contextlib.suppress(FileNotFoundError):
-                    temp_path.unlink()
+        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(self.path)
 
     def merge(self, entries: Iterable[HostEntry]) -> dict[str, HostEntry]:
-        """Merge STANDARD runtime observations while preserving stored identity."""
-
-        items = self._require_standard(entries)
+        """把一批新结果并入既有排名（同 key 覆盖指标、累加失败计数）。"""
         known = self.load()
-        # A legacy non-STANDARD row at the same host:port cannot be safely merged
-        # into STANDARD. Replace it with the incoming canonical STANDARD identity.
-        for entry in items:
-            previous = known.get(entry.key)
-            if previous is None or previous.family != Family.STANDARD:
-                known[entry.key] = entry
+        for e in entries:
+            prev = known.get(e.key)
+            if prev is None:
+                known[e.key] = e
                 continue
-            if entry.rtt_ms is not None:
-                previous.rtt_ms = entry.rtt_ms
-            if entry.connect_ms is not None:
-                previous.connect_ms = entry.connect_ms
-            previous.biz_failures = entry.biz_failures
-            previous.circuit = entry.circuit
-            previous.consec_weighted = entry.consec_weighted
-            previous.circuit_opened_at = entry.circuit_opened_at
-            if entry.last_ok:
-                previous.last_ok = entry.last_ok
-                previous.failures = 0
-                previous.last_error = ""
+            if e.rtt_ms is not None:
+                prev.rtt_ms = e.rtt_ms
+            if e.connect_ms is not None:
+                prev.connect_ms = e.connect_ms
+            if e.last_ok:
+                prev.last_ok = e.last_ok
+                prev.failures = 0
+                prev.last_error = ""
             else:
-                previous.failures += max(1, entry.failures)
-                previous.last_error = entry.last_error or previous.last_error
+                prev.failures = prev.failures + max(1, e.failures)
+                prev.last_error = e.last_error or prev.last_error
         return known
 
     def update(self, entries: Iterable[HostEntry]) -> None:
-        merged = self.merge(entries)
-        # Drop legacy non-STANDARD rows during the next successful STANDARD write;
-        # otherwise `save()` would correctly reject them and persistence could not heal.
-        self.save(entry for entry in merged.values() if entry.family == Family.STANDARD)
+        self.save(self.merge(entries).values())
 
     def clear(self) -> None:
         with contextlib.suppress(FileNotFoundError):
             self.path.unlink()
 
     def top(self, n: int = 5, family: str | None = None) -> list[HostEntry]:
-        if isinstance(n, bool) or not isinstance(n, int) or n < 1:
-            raise ConfigError(f"RankingStore.top n 必须是正整数，收到 {n!r}")
-        if family is not None:
-            _require_family_value(family, source="RankingStore.top")
-        items = [entry for entry in self.load().values() if family is None or entry.family == family]
-        items.sort(key=lambda entry: entry.score)
+        items = [e for e in self.load().values() if family is None or e.family == family]
+        items.sort(key=lambda e: e.score)
         return items[:n]

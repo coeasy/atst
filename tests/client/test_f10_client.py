@@ -16,6 +16,7 @@ import pytest
 
 from tstdx.client import AsyncF10Client, F10Client, TdxClient, get_client
 from tstdx.codec.framing import ResponseFrame
+from tstdx.errors import DataError
 
 
 def _catalog_payload() -> bytes:
@@ -120,10 +121,17 @@ class TestF10Catalog:
 
     def test_download_delegates_to_file_download(self) -> None:
         """F10Client.download 委托 file_download（0x06B9）。"""
-        pool = _FakePool(b"\x00\x00")
+        body = b"f10-body"
+        pool = _FakePool(struct.pack("<I", len(body)) + body)
         client = F10Client(pool=pool)  # type: ignore[arg-type]
-        client.download("600000", "gsgk.dat")
+        assert client.download("600000", "gsgk.dat") == body
         assert pool.last_cmd == 0x06B9
+
+    def test_download_rejects_empty_remote_response(self) -> None:
+        """远端返回空文件时明确抛 DataError，而不是静默成功。"""
+        client = F10Client(pool=_FakePool(struct.pack("<I", 0)))  # type: ignore[arg-type]
+        with pytest.raises(DataError, match="下载结果为空"):
+            client.download("600000", "gsgk.dat")
 
     def test_async_catalog_parity(self) -> None:
         """AsyncF10Client.catalog 异步镜像返回同形状数据。"""

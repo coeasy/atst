@@ -74,11 +74,16 @@ ADR-XXX: 决策标题
 
 ### 4.3 发布流程
 
-1. 确认 CHANGELOG.md 已更新
-2. 运行完整测试套件
-3. 构建 wheel（cibuildwheel）
-4. 发布到 PyPI
-5. 创建 GitHub Release
+1. 确认 `pyproject.toml`、`tstdx.__version__`、README 和 CHANGELOG 版本一致；
+2. 更新 `docs/releases/vX.Y.Z.md`，记录变更、兼容性和验证结果；
+3. 运行 `python scripts/build_package.py --smoke` 和完整测试套件；
+4. 创建发布提交并打 `vX.Y.Z` 标签；
+5. 创建 GitHub Release，发布说明引用对应的 CHANGELOG/发布文档；`wheels.yml` 会自动将
+   wheel/sdist 附加到 Release 资产栏；
+6. 由 `wheels.yml` 的 Trusted Publishing 工作流发布 wheel 和 sdist 到 PyPI；
+7. 发布后检查 PyPI 安装、`import tstdx` 版本和 GitHub Release 资产。
+
+v1.0.0 的具体发布记录见 [v1.0.0 发布说明](docs/releases/v1.0.0.md)。
 
 ## 5. 代码审查
 
@@ -132,4 +137,4 @@ ADR-XXX: 决策标题
 ---
 
 **修订历史**：
-- v1.0.0 (2026-08-31)：初始版本
+- v1.0.0 (2026-09-09)：正式稳定版发布流程与治理信息对齐
