@@ -16,7 +16,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass, field, fields, replace
 from typing import Any
 
-from ..errors import ValidationError
+from ..errors import ConfigError, ValidationError
 
 __all__ = [
     "CoreConfig",
@@ -49,6 +49,15 @@ def _check_range(name: str, value: Any, lo: float | None, hi: float | None) -> N
         raise ValidationError(f"{name} = {value} 超过上限 {hi}")
 
 
+def _check_int_range(name: str, value: Any, lo: int | None, hi: int | None) -> None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValidationError(f"{name} 必须是整数，收到 {type(value).__name__}: {value!r}")
+    if lo is not None and value < lo:
+        raise ValidationError(f"{name} = {value} 小于下限 {lo}")
+    if hi is not None and value > hi:
+        raise ValidationError(f"{name} = {value} 超过上限 {hi}")
+
+
 # --------------------------------------------------------------------------- #
 # 子配置
 # --------------------------------------------------------------------------- #
@@ -67,10 +76,10 @@ class CoreConfig:
 
     def validate(self) -> None:
         _check_range("core.timeout", self.timeout, 0.1, 300)
-        _check_range("core.heartbeat_interval", self.heartbeat_interval, 1, 3600)
-        _check_range("core.max_retries", self.max_retries, 0, 20)
-        _check_range("core.batch_quotes_limit", self.batch_quotes_limit, 1, 60)
-        _check_range("core.bars_page_size", self.bars_page_size, 1, 800)
+        _check_int_range("core.heartbeat_interval", self.heartbeat_interval, 1, 3600)
+        _check_int_range("core.max_retries", self.max_retries, 0, 20)
+        _check_int_range("core.batch_quotes_limit", self.batch_quotes_limit, 1, 60)
+        _check_int_range("core.bars_page_size", self.bars_page_size, 1, 800)
         if not isinstance(self.auto_fallback, bool):
             raise ValidationError("core.auto_fallback 必须是 bool")
         if self.auto_fallback:
@@ -94,17 +103,30 @@ class HostsConfig:
     speedtest_timeout: float = 1.0
 
     def validate(self) -> None:
-        _check_range("hosts.slots_per_host", self.slots_per_host, 1, 64)
-        _check_range("hosts.max_hosts", self.max_hosts, 1, 64)
+        from ..transport.hosts import parse_server
+
+        if not isinstance(self.servers, list):
+            raise ValidationError(
+                f"hosts.servers 必须是 list，收到 {type(self.servers).__name__}"
+            )
+        if not isinstance(self.auto_speedtest, bool):
+            raise ValidationError("hosts.auto_speedtest 必须是 bool")
+        if not isinstance(self.ranking_file, str) or not self.ranking_file.strip():
+            raise ValidationError("hosts.ranking_file 必须是非空字符串")
+        _check_int_range("hosts.slots_per_host", self.slots_per_host, 1, 64)
+        _check_int_range("hosts.max_hosts", self.max_hosts, 1, 64)
         _check_range("hosts.speedtest_timeout", self.speedtest_timeout, 0.1, 30)
         for item in self.servers:
             if not isinstance(item, (list, tuple)) or len(item) != 2:
                 raise ValidationError(f"hosts.servers 每项必须是 [host, port]，收到 {item!r}")
-            host, port = item
-            if not isinstance(host, str) or not isinstance(port, int):
+            try:
+                parse_server(item)
+            except ConfigError as exc:
                 raise ValidationError(
-                    f"hosts.servers 项类型错误: host 应为 str、port 应为 int，收到 {item!r}"
-                )
+                    f"hosts.servers 主站无效: {item!r} —— {exc.message}",
+                    context={"field": "hosts.servers"},
+                    cause=exc,
+                ) from exc
 
 
 @dataclass
@@ -117,7 +139,7 @@ class RateLimitConfig:
 
     def validate(self) -> None:
         for k in ("in_session", "pre_post", "closed"):
-            _check_range(f"rate_limit.{k}", getattr(self, k), 1, 1000)
+            _check_int_range(f"rate_limit.{k}", getattr(self, k), 1, 1000)
 
 
 @dataclass
@@ -132,8 +154,8 @@ class CacheConfig:
     def validate(self) -> None:
         if self.backend not in ("memory", "disk"):
             raise ValidationError(f"cache.backend 必须是 memory|disk，收到 {self.backend!r}")
-        _check_range("cache.ttl", self.ttl, 0, 86400)
-        _check_range("cache.max_entries", self.max_entries, 1, 1_000_000)
+        _check_int_range("cache.ttl", self.ttl, 0, 86400)
+        _check_int_range("cache.max_entries", self.max_entries, 1, 1_000_000)
 
 
 @dataclass
@@ -207,7 +229,7 @@ class WebConfig:
                     f"web.enabled_sources 含未知源 {s!r}；已知: {sorted(KNOWN_SOURCES)}"
                 )
         _check_range("web.timeout", self.timeout, 0.5, 120)
-        _check_range("web.max_retries", self.max_retries, 0, 10)
+        _check_int_range("web.max_retries", self.max_retries, 0, 10)
         if self.normalize.get("volume") not in ("share", "lot", "contract"):
             raise ValidationError(
                 f"web.normalize.volume 必须是 share|lot|contract，"
