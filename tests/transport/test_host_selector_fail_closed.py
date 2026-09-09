@@ -164,13 +164,13 @@ def test_ranking_load_drops_invalid_rows_without_promoting_them(tmp_path: Path) 
             {
                 "version": RankingStore.VERSION,
                 "entries": {
-                    "bad": {
+                    "1.2.3.4:7709": {
                         "host": "1.2.3.4",
                         "port": 7709,
                         "family": Family.STANDARD,
                         "rtt_ms": -5.0,
                     },
-                    "good": {
+                    "5.6.7.8:7709": {
                         "host": "5.6.7.8",
                         "port": 7709,
                         "family": Family.STANDARD,
