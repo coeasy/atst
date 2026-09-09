@@ -385,14 +385,16 @@ class _ClientMixin:
             if not data:
                 break
             chunks.extend(data)
-            if total_len is not None and len(chunks) >= total_len:
+            if total_len is not None and start_offset + len(chunks) >= total_len:
                 break
 
         data = bytes(chunks)
-        if total_len is not None and len(data) < total_len:
+        end_offset = start_offset + len(data)
+        if total_len is not None and end_offset < total_len:
             msg = (
-                f"file_download({symbol!r}, {filename!r}) 累计 {len(data)} 字节"
-                f" < 服务端报告 total_len={total_len}，结果可能截断"
+                f"file_download({symbol!r}, {filename!r}) 从 offset={start_offset} 累计"
+                f" {len(data)} 字节，到达 {end_offset} < 服务端报告 total_len={total_len}，"
+                "结果可能截断"
             )
             if strict_mode:
                 raise TruncatedDataError(
@@ -400,7 +402,9 @@ class _ClientMixin:
                     context={
                         "symbol": symbol,
                         "filename": filename,
+                        "offset": start_offset,
                         "returned": len(data),
+                        "end_offset": end_offset,
                         "total_len": total_len,
                     },
                 )
