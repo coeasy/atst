@@ -6,8 +6,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '0 8 * * 1'  # Monday 08:00 UTC — full test/lint/spec/golden/bench suite
-    - cron: '0 9 * * 3'  # Wednesday 09:00 UTC — P13-E host-audit (主站池 5 族巡检)
+    - cron: '0 8 * * 1'  # Monday 08:00 UTC — full deterministic gate suite
 
 permissions:
   contents: read
@@ -41,7 +40,6 @@ jobs:
       - name: Install canonical dev toolchain
         run: python -m pip install -e ".[dev]"
       - name: Run mypy
-        # L4 递减门禁：--warn-unused-ignores 防止失效 ignore 堆积，只减不增
         run: python -m mypy tstdx/ --ignore-missing-imports --no-error-summary --warn-unused-ignores
 
   test:
@@ -53,10 +51,6 @@ jobs:
         os: [ubuntu-latest]
         python-version: ['3.10', '3.11', '3.12', '3.13']
         include:
-          # Windows 冒烟矩阵：项目声明 OS Independent（pyproject classifiers），
-          # 编码/路径类回归（GBK 控制台、路径分隔符）只在 Windows 上现形。
-          # P13-E：3.12 单版本 → 3.11+3.12 双版本，与 pyproject requires-python
-          # 边界（>=3.10）+ 最低 LTS（3.11）对齐，覆盖「最新 LTS + 当前 stable」。
           - os: windows-latest
             python-version: '3.11'
           - os: windows-latest
@@ -70,10 +64,6 @@ jobs:
       - name: Install package and canonical test dependencies
         run: python -m pip install -e ".[all,dev]"
       - name: Run tests
-        # G1：覆盖率阈值继续固定为 77，不因基础设施问题回退。
-        # 同时显式生成 coverage.xml；artifact 声明必须对应真实产物，避免
-        # “测试绿色但覆盖率 artifact 永远不存在”的 CI 契约漂移。
-        # G2：默认剔除 network 标记测试，保证主干 CI 幂等；联网冒烟走 live-smoke job。
         run: |
           python -m pytest tests/ -v --tb=short -m "not network" \
             --cov=tstdx \
@@ -107,7 +97,6 @@ jobs:
         with:
           python-version: '3.11'
       - name: Run spec audit
-        # G3：--strict 使规格与实现的覆盖下降直接失败（此前仅打印，漂移可过 CI）。
         run: python -m tstdx.tools.spec_audit --json --strict
 
   bridges:
@@ -133,7 +122,9 @@ jobs:
         with:
           python-version: '3.11'
       - name: Golden origin audit + L1 real-sample gate
-        run: python -m tstdx.tools.golden_audit --gate --require-markets --require-kline-categories 0,4,9 --require-payloads
+        run: >-
+          python -m tstdx.tools.golden_audit --gate --require-markets
+          --require-kline-categories 0,4,9 --require-payloads
 
   adversarial-matrix:
     name: Adversarial Payload Matrix (native escape = 0)
@@ -161,7 +152,7 @@ jobs:
         run: python scripts/audit_reachability.py --strict
 
   benchmark-smoke:
-    name: Benchmark Smoke (Q2, synthetic)
+    name: Benchmark Smoke (synthetic)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -170,99 +161,16 @@ jobs:
           python-version: '3.11'
       - name: Install package
         run: python -m pip install -e .
-      - name: Run memory benchmark (Q4 synthetic, offline)
-        run: |
-          python benches/bench_memory.py --all --json benches/results/ci_smoke.json
-          python - <<'EOF'
-          import json
-          from pathlib import Path
-          data = json.loads(Path("benches/results/ci_smoke.json").read_text(encoding="utf-8"))
-          assert data["mode"] == "synthetic", "benchmark must run in synthetic mode"
-          for name, r in data["results"].items():
-              assert r["rows"] > 0, f"scenario {name}: empty rows"
-              assert r["peak_kib"] > 0, f"scenario {name}: zero peak memory"
-          print("benchmark smoke OK:", ", ".join(data["results"]))
-          EOF
-      - name: Run time benchmark (P6 synthetic, offline)
-        run: |
-          python benches/bench_time.py --all --json benches/results/ci_time_smoke.json
-          python - <<'EOF'
-          import json
-          from pathlib import Path
-          data = json.loads(Path("benches/results/ci_time_smoke.json").read_text(encoding="utf-8"))
-          assert data["mode"] == "synthetic", "benchmark must run in synthetic mode"
-          for name, r in data["results"].items():
-              assert r["rows"] > 0, f"scenario {name}: empty rows"
-              assert r["rows_per_s"] > 0, f"scenario {name}: zero throughput"
-          print("time benchmark smoke OK:", ", ".join(data["results"]))
-          EOF
+      - name: Run deterministic benchmark smoke
+        run: python scripts/run_benchmark_smoke.py
 
-  # B13（REFACTOR_PLAN_v7 §2.9）：文档健康检查——docs 内 markdown 相对链接
-  # 指向的文件必须存在；断链即 CI 红。项目无 mkdocs 配置，先做链接完整性，
-  # 引入 mkdocs 后在此追加 `mkdocs build --strict`。
   docs-links:
     name: Docs link integrity
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check relative links in docs/
-        run: |
-          python - <<'PYEOF'
-          import re
-          import sys
-          from pathlib import Path
-
-          root = Path("docs")
-          bad: list[str] = []
-          link_re = re.compile(r"\[[^\]]*\]\(([^)#\s]+)")
-          for md in root.rglob("*.md"):
-              for m in link_re.finditer(md.read_text(encoding="utf-8")):
-                  target = m.group(1)
-                  if target.startswith(("http://", "https://", "mailto:")):
-                      continue
-                  resolved = (md.parent / target).resolve()
-                  if not resolved.exists():
-                      bad.append(f"{md}: {target}")
-          if bad:
-              print("broken links:")
-              print("\n".join(bad))
-              sys.exit(1)
-          print(f"docs link check OK ({sum(1 for _ in root.rglob('*.md'))} files)")
-          PYEOF
-
-  # P13-E：主站池巡检（P13-B audit_hosts.py 的 CI 接入）。
-  # 设计取舍：
-  # * 触发条件仅为 schedule（每周三 09:00 UTC ≈ 17:00 北京）与 workflow_dispatch，
-  #   不参与 push/PR 门禁——网络波动会引入假阳性，硬门禁得不偿失。
-  # * 使用 artifact 上传；运维人员从 artifact 判断当前主站池健康。
-  # * 若 STANDARD 族连续两次全 offline，说明内置候选池过期，触发新主站发现工单。
-  host-audit:
-    name: Host Pool Audit (weekly)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install package
-        run: python -m pip install -e .
-      - name: Audit 5 protocol families
-        run: |
-          python scripts/audit_hosts.py \
-            --timeout 2 \
-            --workers 24 \
-            --report audit_report.json \
-            --markdown audit_summary.md \
-            --ranking-file /tmp/tstdx_ranking_ci.json
-      - name: Upload audit artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: host-audit-${{ github.run_number }}
-          path: |
-            audit_report.json
-            audit_summary.md
-          if-no-files-found: warn
+      - name: Check repository-bounded relative links in docs
+        run: python scripts/check_docs_links.py
