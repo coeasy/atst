@@ -5,7 +5,7 @@
 
 The v1.0 generation/lease model protects in-flight connections, while the v12
 provider work separates selector identity, live request health and background
-probe latency.  This layer joins those contracts:
+probe latency. This layer joins those contracts:
 
 * ``update_hosts`` never replaces selector identity/live health with speed-test
   failure state;
@@ -76,7 +76,7 @@ def _next_generation_host(old: HostEntry, observed: HostEntry) -> HostEntry:
     if observed.rtt_ms is not None:
         fresh.rtt_ms = observed.rtt_ms
 
-    # A half-open token belongs to the retiring generation.  Carrying the token
+    # A half-open token belongs to the retiring generation. Carrying the token
     # would strand the new generation with no task able to release it.
     if old.circuit_probe_inflight:
         fresh.circuit = "open"
@@ -97,6 +97,10 @@ def _sync_update_hosts(
     with self._lock:
         self._generation += 1
         generation = self._generation
+        # A probe worker belongs to exactly one generation. Moving to a new
+        # generation reopens admission for a future worker; any old worker is
+        # still harmless because it checks its captured generation before commit.
+        self._speedtest_triggered = False
         old_slots = list(self._slots)
         old_by_slot_key = {slot.key: slot for slot in old_slots}
         old_host_by_key = {slot.host.key: slot.host for slot in old_slots}
