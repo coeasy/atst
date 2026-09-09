@@ -170,7 +170,7 @@ def test_family_specific_clients_reject_conflicting_explicit_family(
     expected_family: str,
     conflicting_family: str,
 ) -> None:
-    with pytest.raises(ConfigError, match="family 固定为"):
+    with pytest.raises(ConfigError, match="固定协议族客户端"):
         client_cls(pool=_OpaquePool(), family=conflicting_family)
 
     client = client_cls(pool=_OpaquePool(), family=expected_family)
