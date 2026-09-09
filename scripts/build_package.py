@@ -2,7 +2,7 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Safe local package build: clean -> isolated build -> verify -> optional smoke.
+"""Safe local/release distribution verifier and package builder.
 
 Usage::
 
@@ -10,25 +10,30 @@ Usage::
     python scripts/build_package.py --smoke
     python scripts/build_package.py --no-clean
     python scripts/build_package.py --dist-out build_out
-    python scripts/build_package.py --no-isolation  # explicit compatibility escape hatch
+    python scripts/build_package.py --no-isolation
+    python scripts/build_package.py --verify-only --dist-out dist
 
-The default path intentionally mirrors the release workflow: PEP 517 isolation is
-ON, one universal wheel plus one sdist are required, the wheel must contain the
-PEP 561 marker, and no command silently publishes anything.
+The normal build path mirrors the release workflow: PEP 517 isolation is on,
+one universal wheel plus one sdist are required, package/source/artifact versions
+must agree, the wheel must contain the PEP 561 marker, Twine metadata validation
+is mandatory, and no command silently publishes anything.
 """
 
 from __future__ import annotations
 
 import argparse
 import contextlib
+import email
 import hashlib
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import venv
+import zipfile
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
@@ -56,6 +61,8 @@ _PROTECTED_OUTPUT_ROOTS = {
     "tests",
     "tstdx",
 }
+_VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
+_SOURCE_VERSION_RE = re.compile(r'^__version__\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
 
 
 def _display_path(path: pathlib.Path) -> str:
@@ -68,12 +75,7 @@ def _display_path(path: pathlib.Path) -> str:
 
 
 def _validate_dist_out(path: pathlib.Path) -> pathlib.Path:
-    """Return a safe resolved output directory for destructive artifact cleanup.
-
-    The output itself may be a top-level build directory inside the repository or
-    a directory outside it. It may never be the repository root/ancestor, a
-    symlink, or a descendant of source/test/docs/config trees.
-    """
+    """Return a safe resolved output directory for artifact cleanup/build output."""
 
     expanded = path.expanduser()
     if expanded.is_symlink():
@@ -114,22 +116,36 @@ def _check_python() -> None:
     )
 
 
-def _require_build_tools(*, isolated: bool) -> None:
-    """Require explicit packaging tools instead of mutating the environment."""
+def _require_packaging_tools(*, need_build: bool) -> None:
+    """Require build/Twine explicitly instead of mutating the environment."""
+
+    if need_build:
+        try:
+            import build
+        except ImportError as exc:
+            raise SystemExit(
+                "[环境] 缺少 build；请先运行 `python -m pip install build` "
+                "或 `make install`"
+            ) from exc
+        print(f"[环境] build {build.__version__} ✓")
 
     try:
-        import build
+        import twine  # noqa: F401
     except ImportError as exc:
         raise SystemExit(
-            "[环境] 缺少 build；请先运行 `python -m pip install build` "
+            "[环境] 缺少 twine；请先运行 `python -m pip install twine` "
             "或 `make install`"
         ) from exc
-    print(f"[环境] build {build.__version__} ✓")
+    try:
+        twine_version = _pkg_version("twine")
+    except PackageNotFoundError:
+        twine_version = "?"
+    print(f"[环境] twine {twine_version} ✓")
 
-    # PEP 517 isolation installs the backend declared by pyproject itself. Only
-    # the explicit --no-isolation escape hatch requires hatchling locally.
-    if isolated:
-        return
+
+def _require_local_backend_for_no_isolation() -> None:
+    """Require Hatchling only for the explicit non-isolated compatibility path."""
+
     try:
         import hatchling  # noqa: F401
     except ImportError as exc:
@@ -162,12 +178,7 @@ def _remove_tree(path: pathlib.Path, *, label: str) -> None:
 
 
 def _clean(dist_out: pathlib.Path) -> None:
-    """Remove only known artifacts plus repository-owned build metadata.
-
-    The custom output directory itself is retained. This prevents an accidental
-    custom path from recursively deleting unrelated user files while still
-    making stale tstdx wheel/sdist artifacts impossible to pass verification.
-    """
+    """Remove only known artifacts plus repository-owned build metadata."""
 
     dist_out = _validate_dist_out(dist_out)
     dist_out.mkdir(parents=True, exist_ok=True)
@@ -203,16 +214,39 @@ def _build(dist_out: pathlib.Path, *, isolated: bool) -> None:
     _run(cmd)
 
 
-def _sha256(path: pathlib.Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def _declared_versions() -> tuple[str, str]:
+    """Return ``(project_metadata_version, source_version)`` without importing tstdx."""
+
+    project_text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    source_text = (ROOT / "tstdx" / "__init__.py").read_text(encoding="utf-8")
+    project_match = _VERSION_RE.search(project_text)
+    source_match = _SOURCE_VERSION_RE.search(source_text)
+    if project_match is None:
+        raise SystemExit("[校验失败] pyproject.toml 缺少 [project] version")
+    if source_match is None:
+        raise SystemExit("[校验失败] tstdx.__version__ 声明缺失")
+    return project_match.group(1), source_match.group(1)
+
+
+def _wheel_metadata(wheel: pathlib.Path) -> tuple[str, str, set[str]]:
+    """Return normalized wheel name/version plus archive member names."""
+
+    with zipfile.ZipFile(wheel) as archive:
+        names = set(archive.namelist())
+        metadata_files = [name for name in names if name.endswith(".dist-info/METADATA")]
+        if len(metadata_files) != 1:
+            raise SystemExit(
+                f"[校验失败] wheel METADATA 数量异常: {len(metadata_files)}"
+            )
+        message = email.message_from_bytes(archive.read(metadata_files[0]))
+
+    name = str(message.get("Name", "")).strip().lower().replace("_", "-")
+    version = str(message.get("Version", "")).strip()
+    return name, version, names
 
 
 def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
-    """Verify artifact count, universal-wheel identity and required package files."""
+    """Verify source, filenames, wheel metadata, PEP 561 marker and artifact count."""
 
     wheels = sorted(dist_out.glob("*.whl"))
     sdists = sorted(dist_out.glob("*.tar.gz"))
@@ -222,25 +256,61 @@ def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
             f"wheel={len(wheels)} sdist={len(sdists)}"
         )
 
+    project_version, source_version = _declared_versions()
+    if source_version != project_version:
+        raise SystemExit(
+            f"[校验失败] source version {source_version!r} != "
+            f"project version {project_version!r}"
+        )
+
     wheel = wheels[0]
-    if not wheel.name.endswith("-py3-none-any.whl"):
-        raise SystemExit(f"[校验失败] 预期 universal wheel，实际 {wheel.name}")
+    sdist = sdists[0]
+    expected_wheel = f"{PROJECT_NAME}-{project_version}-py3-none-any.whl"
+    expected_sdist = f"{PROJECT_NAME}-{project_version}.tar.gz"
+    if wheel.name != expected_wheel:
+        raise SystemExit(
+            f"[校验失败] 预期 canonical wheel {expected_wheel}，实际 {wheel.name}"
+        )
+    if sdist.name != expected_sdist:
+        raise SystemExit(
+            f"[校验失败] 预期 canonical sdist {expected_sdist}，实际 {sdist.name}"
+        )
 
-    import zipfile
+    metadata_name, metadata_version, names = _wheel_metadata(wheel)
+    if metadata_name != PROJECT_NAME or metadata_version != project_version:
+        raise SystemExit(
+            "[校验失败] wheel metadata identity mismatch: "
+            f"name={metadata_name!r} version={metadata_version!r}"
+        )
 
-    with zipfile.ZipFile(wheel) as archive:
-        names = set(archive.namelist())
-        for required in (
-            f"{PROJECT_NAME}/__init__.py",
-            f"{PROJECT_NAME}/cli.py",
-            f"{PROJECT_NAME}/client.py",
-            f"{PROJECT_NAME}/py.typed",
-        ):
-            if required not in names:
-                raise SystemExit(f"[校验失败] wheel 缺少文件 {required}")
+    for required in (
+        f"{PROJECT_NAME}/__init__.py",
+        f"{PROJECT_NAME}/cli.py",
+        f"{PROJECT_NAME}/client.py",
+        f"{PROJECT_NAME}/py.typed",
+    ):
+        if required not in names:
+            raise SystemExit(f"[校验失败] wheel 缺少文件 {required}")
 
-    print(f"[校验] universal typed wheel 结构完整 ✓ ({wheel.name})")
-    return [*sdists, *wheels]
+    print(
+        f"[校验] canonical typed distribution ✓ "
+        f"({wheel.name}, {sdist.name}, version={project_version})"
+    )
+    return [sdist, wheel]
+
+
+def _twine_check(artifacts: list[pathlib.Path]) -> None:
+    """Run Twine metadata/rendering validation on the exact verified artifacts."""
+
+    _run([sys.executable, "-m", "twine", "check", *map(str, artifacts)])
+
+
+def _sha256(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _smoke(wheel: pathlib.Path) -> None:
@@ -285,7 +355,7 @@ def _smoke(wheel: pathlib.Path) -> None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="tstdx 安全一键构建脚本")
+    parser = argparse.ArgumentParser(description="tstdx 安全构建/分发校验脚本")
     parser.add_argument(
         "--no-clean",
         action="store_true",
@@ -294,7 +364,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--smoke",
         action="store_true",
-        help="构建后在临时 venv 安装 canonical wheel 并验证",
+        help="在临时 venv 安装 canonical wheel 并验证",
+    )
+    parser.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="不构建，只校验 dist artifact + Twine metadata（Release workflow 使用）",
     )
     isolation = parser.add_mutually_exclusive_group()
     isolation.add_argument(
@@ -322,28 +397,40 @@ def main() -> int:
     args = _parser().parse_args()
     dist_out = _validate_dist_out(pathlib.Path(args.dist_out))
 
+    if args.verify_only and not args.isolated:
+        raise SystemExit("[参数] --verify-only 与 --no-isolation 无关，请移除后者")
+    if args.verify_only and args.no_clean:
+        raise SystemExit("[参数] --verify-only 不接受 --no-clean")
+
     print("=" * 60)
-    print(f"{PROJECT_NAME} 安全一键构建")
+    print(f"{PROJECT_NAME} {'分发校验' if args.verify_only else '安全一键构建'}")
     print(f"  仓库根: {ROOT}")
     print(f"  产物目录: {_display_path(dist_out)}")
-    print(f"  隔离构建: {'yes' if args.isolated else 'NO (explicit escape hatch)'}")
+    if not args.verify_only:
+        print(f"  隔离构建: {'yes' if args.isolated else 'NO (explicit escape hatch)'}")
     print("=" * 60)
 
     _check_python()
-    _require_build_tools(isolated=args.isolated)
-    if not args.no_clean:
-        _clean(dist_out)
-    else:
-        dist_out.mkdir(parents=True, exist_ok=True)
-    _build(dist_out, isolated=args.isolated)
+    _require_packaging_tools(need_build=not args.verify_only)
+
+    if not args.verify_only:
+        if not args.isolated:
+            _require_local_backend_for_no_isolation()
+        if not args.no_clean:
+            _clean(dist_out)
+        else:
+            dist_out.mkdir(parents=True, exist_ok=True)
+        _build(dist_out, isolated=args.isolated)
+
     artifacts = _verify(dist_out)
+    _twine_check(artifacts)
 
     if args.smoke:
         wheel = next(path for path in artifacts if path.suffix == ".whl")
         _smoke(wheel)
 
     print("=" * 60)
-    print("构建完成，产物：")
+    print("校验完成，产物：")
     for path in artifacts:
         print(f"  {_display_path(path)}  ({path.stat().st_size / 1024:.1f} KB)")
         print(f"    sha256: {_sha256(path)}")
