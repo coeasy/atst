@@ -12,6 +12,7 @@ v12 配置原则：Provider 选择与 host/endpoint 恢复分层。历史 fallba
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass, field, fields, replace
 from typing import Any
@@ -43,9 +44,12 @@ __all__ = [
 def _check_range(name: str, value: Any, lo: float | None, hi: float | None) -> None:
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ValidationError(f"{name} 必须是数值，收到 {type(value).__name__}: {value!r}")
-    if lo is not None and value < lo:
+    normalized = float(value)
+    if not math.isfinite(normalized):
+        raise ValidationError(f"{name} 必须是有限数值，收到 {value!r}")
+    if lo is not None and normalized < lo:
         raise ValidationError(f"{name} = {value} 小于下限 {lo}")
-    if hi is not None and value > hi:
+    if hi is not None and normalized > hi:
         raise ValidationError(f"{name} = {value} 超过上限 {hi}")
 
 
@@ -56,6 +60,23 @@ def _check_int_range(name: str, value: Any, lo: int | None, hi: int | None) -> N
         raise ValidationError(f"{name} = {value} 小于下限 {lo}")
     if hi is not None and value > hi:
         raise ValidationError(f"{name} = {value} 超过上限 {hi}")
+
+
+def _check_bool(name: str, value: Any) -> None:
+    if not isinstance(value, bool):
+        raise ValidationError(f"{name} 必须是 bool，收到 {type(value).__name__}: {value!r}")
+
+
+def _check_non_empty_str(name: str, value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError(f"{name} 必须是非空字符串，收到 {value!r}")
+    return value
+
+
+def _check_mapping(name: str, value: Any) -> Mapping[Any, Any]:
+    if not isinstance(value, Mapping):
+        raise ValidationError(f"{name} 必须是 mapping，收到 {type(value).__name__}")
+    return value
 
 
 # --------------------------------------------------------------------------- #
@@ -80,8 +101,7 @@ class CoreConfig:
         _check_int_range("core.max_retries", self.max_retries, 0, 20)
         _check_int_range("core.batch_quotes_limit", self.batch_quotes_limit, 1, 60)
         _check_int_range("core.bars_page_size", self.bars_page_size, 1, 800)
-        if not isinstance(self.auto_fallback, bool):
-            raise ValidationError("core.auto_fallback 必须是 bool")
+        _check_bool("core.auto_fallback", self.auto_fallback)
         if self.auto_fallback:
             raise ValidationError(
                 "core.auto_fallback 已停用：v12 禁止跨 Provider 自动 fallback；"
@@ -109,10 +129,8 @@ class HostsConfig:
             raise ValidationError(
                 f"hosts.servers 必须是 list，收到 {type(self.servers).__name__}"
             )
-        if not isinstance(self.auto_speedtest, bool):
-            raise ValidationError("hosts.auto_speedtest 必须是 bool")
-        if not isinstance(self.ranking_file, str) or not self.ranking_file.strip():
-            raise ValidationError("hosts.ranking_file 必须是非空字符串")
+        _check_bool("hosts.auto_speedtest", self.auto_speedtest)
+        _check_non_empty_str("hosts.ranking_file", self.ranking_file)
         _check_int_range("hosts.slots_per_host", self.slots_per_host, 1, 64)
         _check_int_range("hosts.max_hosts", self.max_hosts, 1, 64)
         _check_range("hosts.speedtest_timeout", self.speedtest_timeout, 0.1, 30)
@@ -138,8 +156,8 @@ class RateLimitConfig:
     closed: int = 60
 
     def validate(self) -> None:
-        for k in ("in_session", "pre_post", "closed"):
-            _check_int_range(f"rate_limit.{k}", getattr(self, k), 1, 1000)
+        for key in ("in_session", "pre_post", "closed"):
+            _check_int_range(f"rate_limit.{key}", getattr(self, key), 1, 1000)
 
 
 @dataclass
@@ -152,10 +170,12 @@ class CacheConfig:
     directory: str = "~/.tstdx/cache"
 
     def validate(self) -> None:
+        _check_bool("cache.enabled", self.enabled)
         if self.backend not in ("memory", "disk"):
             raise ValidationError(f"cache.backend 必须是 memory|disk，收到 {self.backend!r}")
         _check_int_range("cache.ttl", self.ttl, 0, 86400)
         _check_int_range("cache.max_entries", self.max_entries, 1, 1_000_000)
+        _check_non_empty_str("cache.directory", self.directory)
 
 
 @dataclass
@@ -170,6 +190,8 @@ class OutputConfig:
             raise ValidationError(
                 f"output.default_format 非法: {self.default_format!r}（可选 dict/tuple/dataframe）"
             )
+        _check_non_empty_str("output.timezone", self.timezone)
+        _check_bool("output.df_datetime_index", self.df_datetime_index)
 
 
 @dataclass
@@ -179,10 +201,12 @@ class ProfileConfig:
     min_confidence: float = 0.5
 
     def validate(self) -> None:
+        default = _check_non_empty_str("profile.default", self.default)
+        _check_bool("profile.auto_detect", self.auto_detect)
         _check_range("profile.min_confidence", self.min_confidence, 0.0, 1.0)
-        if self.default not in _BUILTIN_PROFILE_NAMES():
+        if default not in _BUILTIN_PROFILE_NAMES():
             raise ValidationError(
-                f"profile.default = {self.default!r} 不是内置档案；"
+                f"profile.default = {default!r} 不是内置档案；"
                 f"可选: {sorted(_BUILTIN_PROFILE_NAMES())}"
             )
 
@@ -223,22 +247,51 @@ class WebConfig:
     def validate(self) -> None:
         from ..web.sources import KNOWN_SOURCES
 
-        for s in self.enabled_sources:
-            if s not in KNOWN_SOURCES:
+        _check_bool("web.enabled", self.enabled)
+        if not isinstance(self.enabled_sources, list):
+            raise ValidationError(
+                f"web.enabled_sources 必须是 list，收到 {type(self.enabled_sources).__name__}"
+            )
+        for source in self.enabled_sources:
+            if not isinstance(source, str) or source not in KNOWN_SOURCES:
                 raise ValidationError(
-                    f"web.enabled_sources 含未知源 {s!r}；已知: {sorted(KNOWN_SOURCES)}"
+                    f"web.enabled_sources 含未知源 {source!r}；已知: {sorted(KNOWN_SOURCES)}"
                 )
         _check_range("web.timeout", self.timeout, 0.5, 120)
         _check_int_range("web.max_retries", self.max_retries, 0, 10)
-        if self.normalize.get("volume") not in ("share", "lot", "contract"):
+
+        headers = _check_mapping("web.headers", self.headers)
+        for key, value in headers.items():
+            _check_non_empty_str("web.headers key", key)
+            if not isinstance(value, str):
+                raise ValidationError(
+                    f"web.headers[{key!r}] 必须是字符串，收到 {type(value).__name__}"
+                )
+
+        rate_limit = _check_mapping("web.rate_limit", self.rate_limit)
+        for key, value in rate_limit.items():
+            _check_non_empty_str("web.rate_limit key", key)
+            _check_int_range(f"web.rate_limit[{key!r}]", value, 1, 1000)
+
+        normalize = _check_mapping("web.normalize", self.normalize)
+        allowed_normalize = {"volume", "amount", "strict"}
+        unknown_normalize = set(normalize) - allowed_normalize
+        if unknown_normalize:
+            raise ValidationError(
+                f"web.normalize 含未知字段: {sorted(unknown_normalize)}；"
+                f"可选: {sorted(allowed_normalize)}"
+            )
+        if normalize.get("volume") not in ("share", "lot", "contract"):
             raise ValidationError(
                 f"web.normalize.volume 必须是 share|lot|contract，"
-                f"收到 {self.normalize.get('volume')!r}"
+                f"收到 {normalize.get('volume')!r}"
             )
-        if self.normalize.get("amount") not in ("yuan", "wan", "yi"):
+        if normalize.get("amount") not in ("yuan", "wan", "yi"):
             raise ValidationError(
-                f"web.normalize.amount 必须是 yuan|wan|yi，收到 {self.normalize.get('amount')!r}"
+                f"web.normalize.amount 必须是 yuan|wan|yi，"
+                f"收到 {normalize.get('amount')!r}"
             )
+        _check_bool("web.normalize.strict", normalize.get("strict"))
 
 
 @dataclass
@@ -270,27 +323,44 @@ class SourcesConfig:
     def validate(self) -> None:
         from ..providers import PROVIDERS
 
-        PROVIDERS.get(self.default_provider)
+        default_provider = _check_non_empty_str(
+            "sources.default_provider",
+            self.default_provider,
+        )
+        PROVIDERS.get(default_provider)
         known = {"tdx", "web", "reader", "cache", "synthetic"}
-        for s in self.order:
-            if s not in known:
-                raise ValidationError(f"sources.order 含未知源 {s!r}；可选: {sorted(known)}")
+        if not isinstance(self.order, list):
+            raise ValidationError(f"sources.order 必须是 list，收到 {type(self.order).__name__}")
+        for source in self.order:
+            if not isinstance(source, str) or source not in known:
+                raise ValidationError(
+                    f"sources.order 含未知源 {source!r}；可选: {sorted(known)}"
+                )
         if len(self.order) > 1:
             raise ValidationError(
                 "sources.order 多级 fallback 已停用；最多保留一个 legacy selector",
                 context={"order": list(self.order), "provider_switch_allowed": False},
             )
-        if not isinstance(self.continue_on_error, bool):
-            raise ValidationError("sources.continue_on_error 必须是 bool")
+
+        enabled = _check_mapping("sources.enabled", self.enabled)
+        unknown_enabled = set(enabled) - known
+        if unknown_enabled:
+            raise ValidationError(
+                f"sources.enabled 含未知源 {sorted(unknown_enabled)}；可选: {sorted(known)}"
+            )
+        for source, value in enabled.items():
+            _check_bool(f"sources.enabled[{source!r}]", value)
+
+        _check_bool("sources.continue_on_error", self.continue_on_error)
         if self.continue_on_error:
             raise ValidationError(
                 "sources.continue_on_error 已停用：Provider 失败必须向调用方暴露",
                 context={"provider_switch_allowed": False},
             )
-        if self.vipdoc_root is not None and not isinstance(self.vipdoc_root, str):
-            raise ValidationError("sources.vipdoc_root 必须是 str 或 None")
-        if self.kline_cache_db is not None and not isinstance(self.kline_cache_db, str):
-            raise ValidationError("sources.kline_cache_db 必须是 str 或 None")
+        if self.vipdoc_root is not None:
+            _check_non_empty_str("sources.vipdoc_root", self.vipdoc_root)
+        if self.kline_cache_db is not None:
+            _check_non_empty_str("sources.kline_cache_db", self.kline_cache_db)
 
 
 @dataclass
@@ -300,14 +370,24 @@ class ObservabilityConfig:
     tracing: dict[str, Any] = field(default_factory=lambda: {"enabled": False, "exporter": "otel"})
 
     def validate(self) -> None:
-        if self.metrics.get("exporter") not in ("prom", "statsd", "otel"):
+        metrics = _check_mapping("observability.metrics", self.metrics)
+        logging_cfg = _check_mapping("observability.logging", self.logging)
+        tracing = _check_mapping("observability.tracing", self.tracing)
+
+        _check_bool("observability.metrics.enabled", metrics.get("enabled"))
+        if metrics.get("exporter") not in ("prom", "statsd", "otel"):
             raise ValidationError(
                 f"observability.metrics.exporter 必须是 prom|statsd|otel，"
-                f"收到 {self.metrics.get('exporter')!r}"
+                f"收到 {metrics.get('exporter')!r}"
             )
-        level = self.logging.get("level")
+
+        level = logging_cfg.get("level")
         if level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
             raise ValidationError(f"observability.logging.level 非法: {level!r}")
+        _check_bool("observability.logging.json", logging_cfg.get("json"))
+
+        _check_bool("observability.tracing.enabled", tracing.get("enabled"))
+        _check_non_empty_str("observability.tracing.exporter", tracing.get("exporter"))
 
 
 @dataclass
@@ -317,13 +397,15 @@ class SecurityConfig:
     user_agent: str = "tstdx/0.x"
 
     def validate(self) -> None:
-        if self.credential_backend not in ("keyring", "env") and not (
-            self.credential_backend.startswith("file:")
-        ):
+        _check_bool("security.use_tls", self.use_tls)
+        backend = _check_non_empty_str("security.credential_backend", self.credential_backend)
+        if backend not in ("keyring", "env") and not backend.startswith("file:"):
             raise ValidationError(
-                f"security.credential_backend 必须是 keyring|env|file:路径，"
-                f"收到 {self.credential_backend!r}"
+                f"security.credential_backend 必须是 keyring|env|file:路径，收到 {backend!r}"
             )
+        if backend.startswith("file:") and not backend.removeprefix("file:").strip():
+            raise ValidationError("security.credential_backend 的 file: 路径不能为空")
+        _check_non_empty_str("security.user_agent", self.user_agent)
 
 
 @dataclass
@@ -332,7 +414,8 @@ class CompatibilityConfig:
     market_facade: bool = False
 
     def validate(self) -> None:
-        pass
+        _check_bool("compatibility.web_facade", self.web_facade)
+        _check_bool("compatibility.market_facade", self.market_facade)
 
 
 @dataclass
@@ -345,6 +428,9 @@ class FeedbackConfig:
     sanitize: str = "strict"
 
     def validate(self) -> None:
+        _check_bool("feedback.telemetry", self.telemetry)
+        _check_bool("feedback.report_protocol_diff", self.report_protocol_diff)
+        _check_bool("feedback.report_source_failure", self.report_source_failure)
         if self.sanitize not in ("strict", "normal", "off"):
             raise ValidationError(
                 f"feedback.sanitize 必须是 strict|normal|off，收到 {self.sanitize!r}"
@@ -358,8 +444,8 @@ def _deep_merge(base: Any, override: Any) -> Any:
     """dict 深合并（一递归）：override 键胜出，base 未覆盖键保留。"""
     if isinstance(base, Mapping) and isinstance(override, Mapping):
         merged = dict(base)
-        for k, v in override.items():
-            merged[k] = _deep_merge(merged[k], v) if k in merged else v
+        for key, value in override.items():
+            merged[key] = _deep_merge(merged[key], value) if key in merged else value
         return merged
     return override
 
@@ -395,8 +481,29 @@ class Config:
     )
 
     def validate(self) -> Config:
+        expected_types = {
+            "core": CoreConfig,
+            "hosts": HostsConfig,
+            "rate_limit": RateLimitConfig,
+            "cache": CacheConfig,
+            "output": OutputConfig,
+            "profile": ProfileConfig,
+            "web": WebConfig,
+            "sources": SourcesConfig,
+            "observability": ObservabilityConfig,
+            "security": SecurityConfig,
+            "compatibility": CompatibilityConfig,
+            "feedback": FeedbackConfig,
+        }
         for name in self._SUBCONFIGS:
-            getattr(self, name).validate()
+            value = getattr(self, name)
+            expected = expected_types[name]
+            if not isinstance(value, expected):
+                raise ValidationError(
+                    f"配置段 {name!r} 必须是 {expected.__name__}，"
+                    f"收到 {type(value).__name__}"
+                )
+            value.validate()
         return self
 
     def to_dict(self) -> dict[str, Any]:
@@ -405,25 +512,28 @@ class Config:
     def with_overrides(self, **kw: Any) -> Config:
         """按子配置名覆盖（嵌套 dict 字段深合并，标量字段替换）。"""
         updates: dict[str, Any] = {}
-        for k, v in kw.items():
-            if k not in self._SUBCONFIGS:
-                raise ValidationError(f"未知配置段 {k!r}；可选: {list(self._SUBCONFIGS)}")
-            sub = getattr(self, k)
-            if not isinstance(v, Mapping):
-                raise ValidationError(f"配置段 {k!r} 必须是 dict，收到 {type(v).__name__}")
-            unknown = set(v) - {f.name for f in fields(sub)}
+        for key, value in kw.items():
+            if key not in self._SUBCONFIGS:
+                raise ValidationError(f"未知配置段 {key!r}；可选: {list(self._SUBCONFIGS)}")
+            subconfig = getattr(self, key)
+            if not isinstance(value, Mapping):
+                raise ValidationError(
+                    f"配置段 {key!r} 必须是 dict，收到 {type(value).__name__}"
+                )
+            unknown = set(value) - {item.name for item in fields(subconfig)}
             if unknown:
                 raise ValidationError(
-                    f"配置段 {k!r} 含未知字段: {sorted(unknown)}；"
-                    f"可选: {sorted(f.name for f in fields(sub))}"
+                    f"配置段 {key!r} 含未知字段: {sorted(unknown)}；"
+                    f"可选: {sorted(item.name for item in fields(subconfig))}"
                 )
             merged_values = {
-                f: _deep_merge(getattr(sub, f), v[f])
-                if isinstance(getattr(sub, f), Mapping) and isinstance(v[f], Mapping)
-                else v[f]
-                for f in v
+                field_name: _deep_merge(getattr(subconfig, field_name), value[field_name])
+                if isinstance(getattr(subconfig, field_name), Mapping)
+                and isinstance(value[field_name], Mapping)
+                else value[field_name]
+                for field_name in value
             }
-            updates[k] = replace(sub, **merged_values)
+            updates[key] = replace(subconfig, **merged_values)
         return replace(self, **updates)
 
     def __iter__(self) -> Iterator[tuple[str, Any]]:
@@ -439,6 +549,8 @@ DEFAULT_CONFIG = Config()
 # --------------------------------------------------------------------------- #
 def validate_keys(data: Mapping[str, Any], *, where: str = "config") -> None:
     """strict 校验：未知配置段立即报错（防拼写错误被静默忽略）。"""
+    if not isinstance(data, Mapping):
+        raise ValidationError(f"{where} 必须是 mapping，收到 {type(data).__name__}")
     unknown = set(data) - set(Config._SUBCONFIGS)
     if unknown:
         raise ValidationError(
@@ -457,6 +569,10 @@ def merge_config(*layers: Mapping[str, Any] | None) -> Config:
     """按优先级从低到高合并多层配置；后层覆盖前层。"""
     merged: dict[str, dict[str, Any]] = {}
     for layer in layers:
+        if layer is None:
+            continue
+        if not isinstance(layer, Mapping):
+            raise ValidationError(f"配置层必须是 mapping，收到 {type(layer).__name__}")
         if not layer:
             continue
         validate_keys(layer)
@@ -475,7 +591,7 @@ def config_diff(a: Config, b: Config) -> dict[str, dict[str, tuple[Any, Any]]]:
     out: dict[str, dict[str, tuple[Any, Any]]] = {}
     for section in Config._SUBCONFIGS:
         sa, sb = da.get(section, {}), db.get(section, {})
-        for k in set(sa) | set(sb):
-            if sa.get(k) != sb.get(k):
-                out.setdefault(section, {})[k] = (sa.get(k), sb.get(k))
+        for key in set(sa) | set(sb):
+            if sa.get(key) != sb.get(key):
+                out.setdefault(section, {})[key] = (sa.get(key), sb.get(key))
     return out
