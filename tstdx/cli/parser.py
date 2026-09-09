@@ -50,10 +50,25 @@ __all__ = ["build_parser"]
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="tstdx", description="通达信行情通用包命令行工具")
-    # 公共参数注入每个子命令（支持 ``tstdx bars --timeout 5 ...`` 写法）
+
+    # 真正发起 market/provider 请求的命令可显式覆盖 endpoint。
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--timeout", type=float, default=5.0, help="单请求超时（秒）")
     common.add_argument("--host", action="append", help="主站 host:port（可多次指定）")
+
+    # host-management 命令不接受单个 --host selector；scan/list/audit 都操作
+    # 候选池/排名整体。保留 timeout 的前置/后置兼容写法，同时避免子 parser
+    # 的默认值覆盖 `tstdx hosts --timeout 2 audit` 已解析的父级值。
+    timeout_common = argparse.ArgumentParser(add_help=False)
+    timeout_common.add_argument("--timeout", type=float, default=5.0, help="单请求超时（秒）")
+    timeout_override = argparse.ArgumentParser(add_help=False)
+    timeout_override.add_argument(
+        "--timeout",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="单请求超时（秒）",
+    )
+
     sub = p.add_subparsers(dest="command", required=True)
 
     sub.add_parser("version", parents=[common], help="打印版本号").set_defaults(func=_cmd_version)
@@ -93,21 +108,24 @@ def build_parser() -> argparse.ArgumentParser:
     i.add_argument("--json", action="store_true")
     i.set_defaults(func=_cmd_info)
 
-    s = sub.add_parser("server-test", parents=[common], help="主站测速排名")
+    s = sub.add_parser("server-test", parents=[timeout_common], help="主站测速排名")
     s.set_defaults(func=_cmd_server_test)
 
-    hosts = sub.add_parser("hosts", parents=[common], help="主站管理")
+    hosts = sub.add_parser("hosts", parents=[timeout_common], help="主站管理")
     hs = hosts.add_subparsers(dest="hosts_command", required=True)
-    hs.add_parser("scan", parents=[common], help="并发测速候选池并写排名文件").set_defaults(
-        func=_cmd_hosts_scan
-    )
-    hs.add_parser("list", parents=[common], help="查看当前生效的主站池").set_defaults(
-        func=_cmd_hosts_list
-    )
-    # 5 族巡检核心位于 installable tstdx.tools.host_audit；CLI 与脚本共用同一实现。
+    hs.add_parser(
+        "scan",
+        parents=[timeout_override],
+        help="并发测速候选池并写 STANDARD 排名文件",
+    ).set_defaults(func=_cmd_hosts_scan)
+    hs.add_parser(
+        "list",
+        parents=[timeout_override],
+        help="查看当前生效的 STANDARD 主站池",
+    ).set_defaults(func=_cmd_hosts_list)
     audit_p = hs.add_parser(
         "audit",
-        parents=[common],
+        parents=[timeout_override],
         help="5 族候选主站巡检（STANDARD/EXTENDED/MAC/GOODS/F10）",
     )
     audit_p.add_argument(
@@ -280,7 +298,6 @@ def build_parser() -> argparse.ArgumentParser:
     hot.add_argument("--json", action="store_true")
     hot.set_defaults(func=_cmd_hot)
 
-    # -- feedback 子命令组（接线 tstdx.feedback，孤儿闭环） ------------------- #
     fb = sub.add_parser("feedback", parents=[common], help="反馈上报（7 步脱敏，默认不发）")
     fb_sub = fb.add_subparsers(dest="feedback_command", required=True)
 
@@ -294,7 +311,6 @@ def build_parser() -> argparse.ArgumentParser:
     fstat.add_argument("--json", action="store_true")
     fstat.set_defaults(func=_cmd_feedback)
 
-    # -- probe 子命令（接线 tstdx.protocol.prober，孤儿闭环） ---------------- #
     pb = sub.add_parser("probe", parents=[common], help="未知命令主动探测（默认拒绝盘中）")
     pb.add_argument("cmd", help="命令号（如 0x053e 或十进制 1342）")
     pb.add_argument("--market", type=int, default=0, help="请求市场编号（0=深 1=沪）")
