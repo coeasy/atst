@@ -21,29 +21,29 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-      - name: Verify release tag matches package version
+      - name: Verify release tag matches canonical source identity
         if: github.event_name == 'release'
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           python - <<'PY'
           import os
-          import re
-          from pathlib import Path
+          from scripts.build_package import _declared_versions
 
-          text = Path("pyproject.toml").read_text(encoding="utf-8")
-          match = re.search(r'^version\s*=\s*"([^"]+)"\s*$', text, flags=re.MULTILINE)
-          assert match is not None, "pyproject.toml project version missing"
-          expected = f"v{match.group(1)}"
+          project_version, source_version = _declared_versions()
+          assert source_version == project_version, (
+              f"source version {source_version!r} != project version {project_version!r}"
+          )
+          expected = f"v{project_version}"
           actual = os.environ["RELEASE_TAG"]
           assert actual == expected, f"release tag {actual!r} != package {expected!r}"
-          print("release tag identity OK:", actual)
+          print("release source/tag identity OK:", actual)
           PY
       - name: Install packaging validators
         run: python -m pip install build twine
       - name: Build canonical distributions
         run: python -m build
-      - name: Verify source, artifact, PEP 561 and Twine metadata
+      - name: Verify source, wheel, sdist, PEP 561 and Twine metadata
         run: python scripts/build_package.py --verify-only --dist-out dist
       - name: Upload canonical distributions
         uses: actions/upload-artifact@v4
