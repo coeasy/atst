@@ -7,6 +7,7 @@ import pytest
 
 import tstdx.transport._pool_provenance_hardening as hardening
 import tstdx.transport.speedtest as speedtest_module
+from tstdx.errors import ConfigError
 from tstdx.protocol.commands import Family
 from tstdx.transport.async_ import AsyncConnectionPool
 from tstdx.transport.hosts import HostEntry
@@ -71,11 +72,11 @@ async def test_async_update_hosts_rejects_cross_family_and_duplicates() -> None:
         heartbeat_interval=0,
     )
 
-    with pytest.raises(Exception, match="family 不匹配"):
+    with pytest.raises(ConfigError, match="family 不匹配"):
         await pool.update_hosts([HostEntry(host="1.2.3.4", family=Family.F10)])
 
     duplicate = HostEntry(host="1.2.3.4", family=Family.STANDARD)
-    with pytest.raises(Exception, match="重复 endpoint"):
+    with pytest.raises(ConfigError, match="重复 endpoint"):
         await pool.update_hosts([duplicate, duplicate])
 
 
