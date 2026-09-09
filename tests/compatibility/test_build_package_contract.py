@@ -187,7 +187,10 @@ def test_twine_check_runs_on_the_exact_verified_artifacts(
 ) -> None:
     build = _load_build_script()
     commands: list[list[str]] = []
-    artifacts = [tmp_path / "tstdx-1.4.0.tar.gz", tmp_path / "tstdx-1.4.0-py3-none-any.whl"]
+    artifacts = [
+        tmp_path / "tstdx-1.4.0.tar.gz",
+        tmp_path / "tstdx-1.4.0-py3-none-any.whl",
+    ]
 
     def capture(cmd: list[str], *, cwd: Path | None = None) -> None:
         del cwd
