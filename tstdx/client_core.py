@@ -179,9 +179,27 @@ def _standard_market_id(market: Any) -> int:
 
 
 def split_symbol(symbol: str) -> tuple[int, str]:
-    """把证券代码拆成 TDX ``(market, code)``；HK/US 在 domain 层 fail closed。"""
+    """Return a verified symbol-based 7709 market identity.
 
-    return to_tdx_market(symbol)
+    The domain SSOT knows BJ as canonical market id 2, and explicit commands such
+    as 0x044E security-count have BJ evidence. Current symbol-based request goldens
+    (0x052D/0x0530 and related public paths), however, only prove SZ/SH market
+    encoding. Until a command-specific BJ request golden exists, do not extrapolate
+    ``market=2`` from security-count to every binary body.
+    """
+
+    market, code = to_tdx_market(symbol)
+    if market not in (0, 1):
+        raise ParseError(
+            f"symbol-based 7709 request 尚未验证 market={market}；当前只允许 SZ/SH",
+            context={
+                "symbol": symbol,
+                "market": market,
+                "verified_markets": [0, 1],
+                "provider_switch_allowed": False,
+            },
+        )
+    return market, code
 
 
 _PERIOD_TO_CATEGORY: dict[str, int] = {
