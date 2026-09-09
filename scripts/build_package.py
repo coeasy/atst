@@ -15,8 +15,8 @@ Usage::
 
 The normal build path mirrors the release workflow: PEP 517 isolation is on,
 one universal wheel plus one sdist are required, source/artifact metadata must
-agree, both archives must retain the typed package identity, Twine metadata
-validation is mandatory, and no command silently publishes anything.
+agree, both archives must retain the typed package/public CLI identity, Twine
+metadata validation is mandatory, and no command silently publishes anything.
 """
 
 from __future__ import annotations
@@ -38,9 +38,6 @@ import zipfile
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
-# Windows consoles may default to GBK. Printing diagnostics must never decide
-# whether a build succeeds, so keep this best-effort and propagate UTF-8 to all
-# subprocesses as well.
 with contextlib.suppress(Exception):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
@@ -371,6 +368,7 @@ def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
         f"{PROJECT_NAME}/cli.py",
         f"{PROJECT_NAME}/client.py",
         f"{PROJECT_NAME}/py.typed",
+        f"{PROJECT_NAME}/tools/host_audit.py",
     ):
         if required not in wheel_members:
             raise SystemExit(f"[校验失败] wheel 缺少文件 {required}")
@@ -390,6 +388,7 @@ def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
         f"{sdist_root}/pyproject.toml",
         f"{sdist_root}/{PROJECT_NAME}/__init__.py",
         f"{sdist_root}/{PROJECT_NAME}/py.typed",
+        f"{sdist_root}/{PROJECT_NAME}/tools/host_audit.py",
         f"{sdist_root}/README.md",
         f"{sdist_root}/CHANGELOG.md",
         f"{sdist_root}/LICENSE",
@@ -449,12 +448,15 @@ def _smoke(wheel: pathlib.Path) -> None:
             "import tstdx; "
             "from tstdx.client import TdxClient; "
             "from tstdx.facade import UnifiedQuoteAPI; "
+            "from tstdx.tools.host_audit import audit_all; "
             "assert tstdx.__version__ == m.version('tstdx'); "
             "assert files('tstdx').joinpath('py.typed').is_file(); "
+            "assert callable(audit_all); "
             "print('tstdx', tstdx.__version__, 'wheel smoke OK')"
         )
         _run([str(python), "-c", probe])
         _run([str(cli), "--help"])
+        _run([str(cli), "hosts", "audit", "--help"])
         _run([str(python), "-m", "pip", "check"])
     print("[冒烟] 通过 ✓")
 
