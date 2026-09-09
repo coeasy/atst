@@ -10,7 +10,7 @@ or silently ignored TLS/handshake configuration to bypass the pool boundary.
 
 This layer gives direct connections the same canonical endpoint, finite timeout,
 strict boolean and non-ignored option semantics without changing socket/protocol
-implementation internals.
+implementation internals or degrading the public type signatures.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ import math
 import ssl
 from typing import Any
 
+from ..codec.framing import DEFAULT_7709_SPEC, FrameSpec, ResponseFrame
 from ..errors import ConfigError
 from ..protocol.commands import Family
 from . import async_ as _async_impl
@@ -119,7 +120,7 @@ def _sync_init(
     *,
     timeout: float = 3.0,
     connect_timeout: float | None = None,
-    spec: Any = _sync_impl.DEFAULT_7709_SPEC,
+    spec: FrameSpec = DEFAULT_7709_SPEC,
     use_tls: bool = False,
     tls_context: ssl.SSLContext | None = None,
     keepalive: bool = True,
@@ -179,7 +180,7 @@ def _async_init(
     *,
     timeout: float = 3.0,
     connect_timeout: float | None = None,
-    spec: Any = _async_impl.DEFAULT_7709_SPEC,
+    spec: FrameSpec = DEFAULT_7709_SPEC,
     use_tls: bool = False,
     tls_context: ssl.SSLContext | None = None,
     slot_id: int = 0,
@@ -237,7 +238,7 @@ def _sync_request(
     check_seq: bool = True,
     compress: bool = False,
     timeout: float | None = None,
-) -> Any:
+) -> ResponseFrame:
     check = _require_bool("check_seq", check_seq)
     compressed = _require_bool("compress", compress)
     request_timeout = _require_timeout("timeout", timeout, allow_none=True)
@@ -259,7 +260,7 @@ async def _async_request(
     check_seq: bool = True,
     compress: bool = False,
     timeout: float | None = None,
-) -> Any:
+) -> ResponseFrame:
     check = _require_bool("check_seq", check_seq)
     compressed = _require_bool("compress", compress)
     request_timeout = _require_timeout("timeout", timeout, allow_none=True)
