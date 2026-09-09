@@ -76,7 +76,7 @@ def test_release_builds_once_then_smoke_tests_the_same_universal_wheel() -> None
     assert '"tstdx/py.typed" in archive.namelist()' in workflow
     assert "os: [ubuntu-latest, macos-latest, windows-latest]" in workflow
     assert "python-version: ['3.10', '3.11', '3.12', '3.13']" in workflow
-    assert "python -m pip install --no-index --find-links dist tstdx" in workflow
+    assert "--only-binary=:all: tstdx" in workflow
     assert "joinpath('py.typed').is_file()" in workflow
 
 
@@ -114,6 +114,8 @@ def test_release_docker_reuses_the_same_canonical_python_artifact() -> None:
 def test_release_identity_is_fail_closed_before_build_or_publish() -> None:
     workflow = _workflow("wheels.yml")
 
+    assert "Verify source version matches package metadata" in workflow
+    assert "assert tstdx.__version__ == version" in workflow
     assert "Verify release tag matches package version" in workflow
     assert "RELEASE_TAG: ${{ github.event.release.tag_name }}" in workflow
     assert 'expected = f"v{version}"' in workflow
