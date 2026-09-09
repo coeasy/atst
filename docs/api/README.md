@@ -1,95 +1,150 @@
-# API 参考（v1.0.0）
+# API 参考
 
-> 本页对应 v1.0.0 稳定发布版。完整 docstring 驱动文档由 `pdoc`/`mkdocstrings`
-> 生成；此处提供稳定入口和模块索引。
+> 本页描述当前 `1.4.0` Draft 开发线。最新已发布稳定版是 `v1.0.0`；稳定版历史接口与
+> 验证结果见 [v1.0.0 发布说明](../releases/v1.0.0.md)。
 
-## 核心入口
+当前 canonical runtime 是 **Provider-first + fail-closed**。兼容门面仍保留，但不得把
+legacy router 的历史降级行为理解为新 Query runtime 的默认语义。
+
+## Provider-first 核心入口
 
 | 模块 | 说明 |
 |---|---|
-| `tstdx.client.TdxClient` | 同步客户端主入口 |
-| `tstdx.client.AsyncTdxClient` | 异步镜像客户端 |
-| `tstdx.client.get_client(kind)` | 工厂：std/goods/ex/mac/f10 |
-| `tstdx.facade.api.UnifiedQuoteAPI` | 统一门面 ~40 方法（自动路由 + ApiResponse）|
-| `tstdx.facade.async_api.AsyncUnifiedQuoteAPI` | 异步门面（紧凑设计：核心 10 方法桥接 + `arun()` 泛化任意方法；有意不逐方法镜像）|
-| `tstdx.facade.response.ApiResponse` | 统一响应形态（ok/err/wrap + 惰性 .df）|
-| `tstdx.web.facade.WebQuoteSession` | Web 源原生命名会话（异动/人气榜/问财/IPO…）|
+| `tstdx.query` | `QuerySpec` / `QueryPlan` / fingerprint 与查询语义 |
+| `tstdx.service` | Provider-first service 执行入口 |
+| `tstdx.async_service` | 异步 service 生命周期与 cancellation 边界 |
+| `tstdx.providers` | canonical Provider / Channel / Capability registry |
+| `tstdx.provider_api` | Direct Provider API；registry 驱动映射 |
+| `tstdx.planned_service` | QueryPlan 到 exactly-one Provider/Channel 的执行层 |
+| `tstdx.freshness` | current/historical freshness 契约 |
+| `tstdx.semantic_cache` / `tstdx.cache_v2` | Provider/Channel/fingerprint 绑定缓存 |
+| `tstdx.failure` | fail-closed failure policy |
+| `tstdx.error_envelope` | 外部边界 canonical ErrorEnvelope |
+
+核心约束：
+
+```text
+QuerySpec -> QueryPlan -> Provider -> Channel -> Capability -> Endpoint/Host
+```
+
+- 一个 QueryPlan 只执行一个 Provider。
+- TDX 是默认 Provider；其它 Provider 必须显式选择。
+- 禁止跨 Provider silent fallback。
+- TDX host failover 只允许发生在 TDX Provider 内部。
+- cache/replay/synthetic provenance 不得冒充 direct current data。
+
+## TDX 兼容客户端
+
+| 模块 | 说明 |
+|---|---|
+| `tstdx.client.TdxClient` | 同步 TDX 协议兼容入口 |
+| `tstdx.client.AsyncTdxClient` | 异步 TDX 协议镜像入口 |
+| `tstdx.client.get_client(kind)` | TDX family 工厂：std/goods/ex/mac/f10 |
+
+这些入口仍支持既有协议 API；新跨 Provider 编排优先使用 Query/Direct Provider API。
+
+## 兼容门面
+
+| 模块 | 说明 |
+|---|---|
+| `tstdx.facade.api.UnifiedQuoteAPI` | 历史统一门面；Provider-first 新路径不依赖跨源自动降级 |
+| `tstdx.facade.async_api.AsyncUnifiedQuoteAPI` | 历史异步门面 |
+| `tstdx.facade.response.ApiResponse` | 兼容响应形态 |
+| `tstdx.sources.router.DataSourceRouter` | legacy compatibility router；不是新 Query runtime 的 Provider fallback 机制 |
+| `tstdx.web.facade.WebQuoteSession` | Web Provider/adapter 的兼容会话入口 |
 
 ## 协议层
 
 | 模块 | 说明 |
 |---|---|
-| `tstdx.protocol.commands` | 85 命令账本（5 协议族）|
-| `tstdx.protocol.registry` | BaseParser + dispatch（L1/L2/L3）|
-| `tstdx.protocol.generic` | L2 启发式 + ProtocolSniffer |
-| `tstdx.protocol.prober` | 未知命令探测（限速 + 非交易时段）|
+| `tstdx.protocol.commands` | 5 个 TDX 协议族命令账本 |
+| `tstdx.protocol.registry` | BaseParser + canonical dispatch |
+| `tstdx.protocol.generic` | 启发式解析 + ProtocolSniffer |
+| `tstdx.protocol.prober` | 未知命令受控探测 |
 | `tstdx.protocol.parsers.*` | std7709/std7727/mac/f10/goods 解析器 |
 
 ## 传输层
 
 | 模块 | 说明 |
 |---|---|
-| `tstdx.transport.pool` | ConnectionPool 连接池 |
-| `tstdx.transport.async_` | AsyncConnectionPool 异步连接池 |
-| `tstdx.transport.ratelimit` | 令牌桶限流 |
-| `tstdx.transport.speedtest` | 主站测速（持久化 TTL）|
+| `tstdx.transport.hosts` | family-safe selector + STANDARD ranking provenance |
+| `tstdx.transport.pool` | ConnectionPool generation/lease/circuit/host failover |
+| `tstdx.transport.async_` | AsyncConnectionPool，同步 lifecycle/circuit 语义镜像 |
+| `tstdx.transport.ratelimit` | 本地限流 |
+| `tstdx.transport.speedtest` | probe RTT；与 live request health 分离 |
 | `tstdx.transport.sniff` | 被动嗅探 + spec 草稿导出 |
 
-连接池在 v1.0.0 中提供 generation/lease 生命周期保护、half-open 单探测门禁，
-并将后台测速 RTT 与真实请求 health RTT 分开维护；热更新主站时，仍在执行的旧代请求
-不会回写新代主站状态。
+连接池继承 v1.0.0 已发布的 generation/lease 生命周期修复，并在当前开发线继续强化：
+
+- 在飞请求持有旧 generation lease，热更新不能切断它。
+- 旧 generation 的迟到 success/failure 不能改写新 generation。
+- HALF_OPEN 同一主站同时只允许一个 probe。
+- `live_rtt_ms` 优先于 background `rtt_ms` 做当前进程排序。
+- ranking 文件不能恢复 live-health 或 half-open token。
+- F10/GOODS 可以复用物理 endpoint，但不能继承其它 family 的 verified provenance。
 
 ## 数据与落地
 
 | 模块 | 说明 |
 |---|---|
-| `tstdx.domain.models` | Bar/Quote/Level + to_dataframe |
+| `tstdx.domain.models` | Bar/Quote/Level 等 domain model |
+| `tstdx.domain.symbol` | canonical symbol/market identity |
+| `tstdx.domain.period` | canonical period normalization |
 | `tstdx.domain.adjust` | 复权计算 |
-| `tstdx.domain.calendar` | A 股交易日历 2024-2026 |
-| `tstdx.output` | write() → DataFrame/Parquet/DuckDB |
+| `tstdx.domain.calendar` | 交易日历 |
+| `tstdx.output` | DataFrame/Parquet/DuckDB 输出 |
 | `tstdx.reader.formats` | vipdoc .day/.lc1/.lc5/.dat/.gpcw |
-| `tstdx.profile.detect` | 6 步数据规格探测 |
-| `tstdx.profile.presets` | 9 市场预设 |
 
-## 源与流
+## Web Provider / adapter
 
-| 模块 | 说明 |
-|---|---|
-| `tstdx.sources.router` | DataSourceRouter 五级降级 |
-| `tstdx.web.adapters` | HTTP Web 源（新浪/腾讯/东财/集思录/港股/中行）|
-| `tstdx.web.adapters_ext` | 扩展 Web 源（分时/逐笔/联想/全球）|
-| `tstdx.web.fundflow` | 资金流 + 涨停池 + **盘中异动**（16 类实时池）+ 沪深港通 |
-| `tstdx.web.hot_rank` | **股吧个股人气榜**（emappdata POST JSON）|
-| `tstdx.web.wencai` | **i问财自然语言选股**（cookie 调用方持有）|
-| `tstdx.web.boards` | 个股所属板块 / 板块行情 |
-| `tstdx.web.corporate` | F10/业绩/IPO 申购日历（datacenter 报表族）|
-| `tstdx.web.adapters_margin` | **融资融券个股明细**（datacenter RPTA_WEB_RZRQ_GGMX；`api.margin()` / `tstdx margin`）|
-| `tstdx.web.normalize` | volume/amount 集中归一化 |
-| `tstdx.streaming.engine` | StreamEngine（重连/补数/背压）|
-| `tstdx.streaming.push` | PushChannel 0x0547 原始推送 |
+Web 能力通过 Provider Registry / Direct API 明确归属来源；adapter 原生入口仍可用于
+Provider-specific 数据，不会被自动转换成另一 Provider 的响应。
 
-## 基础设施
+当前 registry 包括 TDX 以及 Tencent/Sina/Eastmoney/Baidu/JSL/BOC/iWencai 等已接线 Provider。
+具体能力见 [Provider 文档](../providers/README.md)。
+
+## Streaming
 
 | 模块 | 说明 |
 |---|---|
-| `tstdx.errors` | 40+ 异常树 + RetryAdvice |
-| `tstdx.config.loader` | 6 源合并配置 |
-| `tstdx.charset.encoding` | UTF-8/GBK/GB18030/Big5 自动探测 |
-| `tstdx.feedback` | 反馈上报（opt-in + 7 步脱敏）|
-| `tstdx.observability` | Prometheus/Statsd/OTLP 导出 |
-| `tstdx.deprecation` | DeprecationPolicy + @deprecated |
+| `tstdx.streaming.planned` | Provider-first planned stream + `StreamState` |
+| `tstdx.streaming.engine` | legacy/底层 streaming engine |
+| `tstdx.streaming.push` | TDX PushChannel 原始推送 |
 
-## 集成服务
+`PlannedQuoteStream` 生命周期为：
+
+```text
+CREATED -> RUNNING -> STOPPING -> CLOSED
+                    \-> FAILED
+```
+
+terminal 状态不能重新 start/subscribe；部分 worker 启动失败和意外 worker 退出均 fail closed。
+
+## 错误与外部集成
 
 | 模块 | 说明 |
 |---|---|
-| `tstdx.integration.http_server` | FastAPI 网关（~40 接口，含 /stock_changes /hot_rank /wencai /ipo /search /query）|
-| `tstdx.integration.ws_server` | WebSocket JSON-RPC（bars/quotes/minute/trades/finance/security_count/stock_changes + subscribe）|
-| `tstdx.integration.mcp_server` | MCP stdio 12 工具（含 get_stock_changes / get_hot_rank）|
-| `tstdx.cli` | CLI 子命令（bars/quotes/…/changes/hot）|
+| `tstdx.errors` | domain error tree + RetryAdvice |
+| `tstdx.error_envelope` | canonical safe envelope |
+| `tstdx.integration.http_app` | 当前 REST Provider-first 入口 |
+| `tstdx.integration.ws_app` | 当前 WebSocket JSON-RPC 入口 |
+| `tstdx.integration.mcp_app` | 当前 MCP JSON-RPC/stdio 入口 |
+| `tstdx.integration.tasks` | background task safe result/error lifecycle |
+| `tstdx.integration.http_server` | legacy compatibility HTTP surface |
+| `tstdx.integration.mcp_server` | legacy compatibility MCP facade |
 
-## 迁移指南
+REST / WS / MCP / background task 的 native/internal exception 对外折叠为安全 ErrorEnvelope；
+`KeyboardInterrupt` / `SystemExit` / async cancellation 保持控制流语义。
 
-从 mootdx / easy_tdx / eltdx / easyquotation 迁移见 [docs/migration/](../migration/README.md)。
-（v1.0 时代的 `tstdx.compat.*` / `tstdx.web.easyquotation` 兼容垫片已随 v1.2.0 清理移除，
-迁移请使用原生 `TdxClient` / `tstdx.web` / 门面 API。）
+## 打包与类型
+
+- wheel 是 canonical `py3-none-any`。
+- 包声明 `Typing :: Typed`，并实际包含 `tstdx/py.typed`。
+- `scripts/build_package.py` 校验 source/project/artifact/METADATA identity、wheel/sdist 内容与 Twine。
+- GitHub Release 使用同一个 canonical artifact 做 12-cell 安装冒烟、PyPI、Release asset、Docker。
+
+## 迁移
+
+从 mootdx / easy_tdx / eltdx / easyquotation 等历史入口迁移见
+[迁移文档](../migration/README.md)。新代码建议直接迁到 Provider-first Query/Direct API；
+兼容入口只承担迁移期行为，不扩展新的跨 Provider fallback 语义。
