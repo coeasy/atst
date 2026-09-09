@@ -374,6 +374,18 @@ class ObservabilityConfig:
         logging_cfg = _check_mapping("observability.logging", self.logging)
         tracing = _check_mapping("observability.tracing", self.tracing)
 
+        allowed = {
+            "observability.metrics": (metrics, {"enabled", "exporter"}),
+            "observability.logging": (logging_cfg, {"level", "json"}),
+            "observability.tracing": (tracing, {"enabled", "exporter"}),
+        }
+        for name, (mapping, known_keys) in allowed.items():
+            unknown = set(mapping) - known_keys
+            if unknown:
+                raise ValidationError(
+                    f"{name} 含未知字段: {sorted(unknown)}；可选: {sorted(known_keys)}"
+                )
+
         _check_bool("observability.metrics.enabled", metrics.get("enabled"))
         if metrics.get("exporter") not in ("prom", "statsd", "otel"):
             raise ValidationError(
