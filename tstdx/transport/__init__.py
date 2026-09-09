@@ -21,11 +21,14 @@ from __future__ import annotations
 # the canonical pool classes before callers can receive either public class.
 from . import _async_pool_hardening, _pool_hardening
 from .base import DEFAULT_HEARTBEAT_CMD, ConnectionStats, TcpConnection
+
+# Host hardening order matters. First load the canonical hosts module, then make
+# disk ranking probe-only, then wrap resolve_hosts so each caller owns fresh
+# mutable HostEntry objects. Only after those patches do we bind public exports.
+from . import hosts as _hosts_impl
+from . import _host_selector_hardening, _ranking_hardening
 from .hosts import DEFAULT_HOST_POOL, POOL_BY_FAMILY, HostEntry, RankingStore, resolve_hosts
-# Ranking hardening is deliberately loaded after hosts.py exists and before
-# speedtest imports RankingStore. Disk ranking must remain probe-only across
-# process restarts while the public hosts import path stays unchanged.
-from . import _ranking_hardening
+
 # Join generation/lease safety with v12 selector/live-health/probe provenance.
 # This layer patches sync+async update_hosts and the sync background speedtest
 # after the canonical classes and probe-only RankingStore are available.
@@ -37,6 +40,8 @@ from .speedtest import ProbeResult, probe, rank_hosts, speedtest, speedtest_and_
 del (
     _async_pool_hardening,
     _pool_hardening,
+    _hosts_impl,
+    _host_selector_hardening,
     _ranking_hardening,
     _pool_provenance_hardening,
 )
