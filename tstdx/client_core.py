@@ -37,6 +37,7 @@ __all__ = [
 
 OutputFormat = str
 _PREFIX_MARKET: dict[str, int] = {"sh": 1, "sz": 0, "bj": 2}
+_OUTPUT_FORMATS = frozenset({"dict", "tuple", "dataframe"})
 
 
 def _require_int(
@@ -222,6 +223,8 @@ def _row_to_capital(row: Mapping[str, Any]) -> CapitalChange:
 
 
 def _emit(items: Sequence[Any], as_format: OutputFormat):
+    """Emit exactly one declared public output format; never silently coerce typos."""
+
     if as_format == "dataframe":
         from .domain.models import to_dataframe
 
@@ -230,9 +233,14 @@ def _emit(items: Sequence[Any], as_format: OutputFormat):
         from .domain.models import to_tuples
 
         return to_tuples(items)
-    from .domain.models import to_dicts
+    if as_format == "dict":
+        from .domain.models import to_dicts
 
-    return to_dicts(items)
+        return to_dicts(items)
+    raise ParseError(
+        f"未知输出格式 {as_format!r}；可选 {sorted(_OUTPUT_FORMATS)}",
+        context={"as_format": as_format, "allowed_formats": sorted(_OUTPUT_FORMATS)},
+    )
 
 
 _OFFLINE_FALLBACK_OK: frozenset[int] = frozenset({CMD["quotes_snapshot"]})
