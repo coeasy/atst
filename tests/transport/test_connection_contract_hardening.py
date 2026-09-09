@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
+import inspect
 import ssl
 from typing import Any
 
@@ -10,6 +12,8 @@ from tstdx.errors import ConfigError
 from tstdx.protocol.commands import Family
 from tstdx.transport.async_ import AsyncTcpConnection
 from tstdx.transport.base import TcpConnection
+
+hardening = importlib.import_module("tstdx.transport._connection_contract_hardening")
 
 
 @pytest.mark.parametrize("connection_cls", [TcpConnection, AsyncTcpConnection])
@@ -108,6 +112,13 @@ def test_async_direct_request_rejects_invalid_options_before_connect() -> None:
         assert conn.connected is False
 
     asyncio.run(run())
+
+
+def test_direct_connection_public_signatures_are_preserved() -> None:
+    assert inspect.signature(TcpConnection.__init__) == inspect.signature(hardening._SYNC_INIT)
+    assert inspect.signature(AsyncTcpConnection.__init__) == inspect.signature(hardening._ASYNC_INIT)
+    assert inspect.signature(TcpConnection.request) == inspect.signature(hardening._SYNC_REQUEST)
+    assert inspect.signature(AsyncTcpConnection.request) == inspect.signature(hardening._ASYNC_REQUEST)
 
 
 def test_direct_connection_public_wiring_uses_contract_hardening() -> None:
