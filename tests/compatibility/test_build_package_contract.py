@@ -51,8 +51,15 @@ def test_build_script_rejects_symlink_output(tmp_path: Path) -> None:
         build._validate_dist_out(link)
 
 
-def test_build_cleanup_removes_only_tstdx_artifacts_from_custom_output(tmp_path: Path) -> None:
+def test_build_cleanup_removes_only_tstdx_artifacts_from_custom_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     build = _load_build_script()
+    fake_root = tmp_path / "repo"
+    fake_root.mkdir()
+    monkeypatch.setattr(build, "ROOT", fake_root)
+
     output = tmp_path / "output"
     output.mkdir()
     wheel = output / "tstdx-1.4.0-py3-none-any.whl"
