@@ -46,3 +46,26 @@ def test_coverage_artifact_is_generated_and_required() -> None:
     assert "--cov-report=xml:coverage.xml" in workflow
     assert "path: coverage.xml" in workflow
     assert "if-no-files-found: error" in workflow
+
+
+def test_release_builds_once_then_smoke_tests_the_same_universal_wheel() -> None:
+    workflow = _workflow("wheels.yml")
+
+    assert "cibuildwheel" not in workflow
+    assert "ubuntu-24.04-arm" not in workflow
+    assert "python -m build" in workflow
+    assert "python -m twine check dist/*" in workflow
+    assert "-py3-none-any.whl" in workflow
+    assert "os: [ubuntu-latest, macos-latest, windows-latest]" in workflow
+    assert "python-version: ['3.10', '3.11', '3.12', '3.13']" in workflow
+    assert "python -m pip install --no-index --find-links dist tstdx" in workflow
+
+
+def test_release_publishes_once_only_after_artifact_matrix_passes() -> None:
+    workflow = _workflow("wheels.yml")
+
+    assert workflow.count("pypa/gh-action-pypi-publish@release/v1") == 1
+    assert "needs: [build-dist, smoke-install]" in workflow
+    assert "if: github.event_name == 'release' && github.event.action == 'published'" in workflow
+    assert "environment: pypi" in workflow
+    assert "id-token: write" in workflow
