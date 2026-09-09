@@ -51,16 +51,16 @@ metrics   = ["prometheus-client>=0.19"]
 server    = ["fastapi>=0.110", "uvicorn>=0.27", "websockets>=12.0"]
 # MCP 工具服务
 mcp       = ["mcp>=1.0"]
-# 开发/测试工具链（pytest + ruff + mypy + pytest-cov）——本地 CI 一致体验
-# P14-D2：此前 dev/test 依赖散落在 README/CONTRIBUTING，导致 `pip install -e .[all]`
-# 无法本地跑 --cov；本 extra 补上，与 CI workflow 对齐。
+# 开发/测试工具链（pytest + ruff + mypy + pytest-cov）——本地 CI 一致体验。
+# hatchling 下限必须与 [build-system].requires 同步，否则显式 --no-isolation
+# 本地构建可能使用比项目声明更旧的 backend。
 dev       = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
     "mypy>=1.10",
-    "hatchling>=1.24",
+    "hatchling>=1.25",
 ]
 # 完整安装
 all       = [
@@ -163,11 +163,8 @@ source = ["tstdx"]
 branch = true
 
 [tool.coverage.report]
-# G1（ARCHITECTURE_AND_OPTIMIZATION_PLAN_v6 §4）：覆盖率门禁。
-# P13-E（2026-09-06）：CI --cov-fail-under 75→77；P14-D2（2026-09-07）：
-# pyproject 与本行同步，消除「门禁口径漂移」——本地与 CI 用同一阈值。
-# 当前实测 76.21%（2026-09-05 基线 + P13-A/P14 增量测试）；
-# 后续补 integration/facade 端点级单测后再上调至 80（P15-D）。
+# 覆盖率门禁是本地/CI 共用 SSOT；阈值只能在真实覆盖率提升后上调，不能因
+# runner/基础设施故障下调。历史实测数字不写在配置里，避免变成陈旧误导。
 fail_under = 77
 skip_covered = true
 exclude_lines = [
