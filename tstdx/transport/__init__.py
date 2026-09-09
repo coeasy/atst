@@ -26,7 +26,7 @@ from .base import DEFAULT_HEARTBEAT_CMD, ConnectionStats, TcpConnection
 # disk ranking probe-only, then wrap resolve_hosts so each caller owns fresh
 # mutable HostEntry objects. Only after those patches do we bind public exports.
 from . import hosts as _hosts_impl
-from . import _host_selector_hardening, _ranking_hardening
+from . import _ranking_hardening, _host_selector_hardening
 from .hosts import DEFAULT_HOST_POOL, POOL_BY_FAMILY, HostEntry, RankingStore, resolve_hosts
 
 # Join generation/lease safety with v12 selector/live-health/probe provenance.
@@ -41,8 +41,8 @@ del (
     _async_pool_hardening,
     _pool_hardening,
     _hosts_impl,
-    _host_selector_hardening,
     _ranking_hardening,
+    _host_selector_hardening,
     _pool_provenance_hardening,
 )
 
