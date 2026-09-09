@@ -8,9 +8,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /build
 
-# Package inputs plus container/release contract files consumed by the offline
-# compatibility tests that run inside this builder.
-COPY pyproject.toml README.md CHANGELOG.md LICENSE Dockerfile Dockerfile.release .dockerignore ./
+# Package inputs plus local/container/release contract files consumed by the
+# offline compatibility tests that run inside this builder.
+COPY pyproject.toml README.md CHANGELOG.md LICENSE Makefile Dockerfile Dockerfile.release .dockerignore ./
 COPY tstdx/ tstdx/
 
 # Offline test/audit inputs used by the normal non-network suite. Keep these out
