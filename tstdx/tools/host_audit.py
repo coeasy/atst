@@ -1,13 +1,12 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""TDX host-pool audit shared by installed CLI, source script and CI.
+"""Installable TDX host-pool audit shared by CLI, source wrapper and CI.
 
-Unlike ``tstdx hosts scan`` (which refreshes the STANDARD runtime ranking), this
-module audits all protocol families and emits an auditable JSON/Markdown report.
-It intentionally lives inside :mod:`tstdx` so the public ``tstdx hosts audit``
-command works from a normal wheel installation and never depends on repository
-``scripts/`` files being present.
+All protocol families are audited and reported, but the historical runtime
+``RankingStore`` is a V1 ``host:port`` keyed cache. Therefore only STANDARD
+results may be persisted there; F10/GOODS/etc. remain report evidence and can
+never overwrite STANDARD ranking identity.
 """
 
 from __future__ import annotations
@@ -63,8 +62,6 @@ _FAMILY_ALIASES: dict[str, str] = {
 
 @dataclass
 class FamilyAudit:
-    """Audit summary for one canonical protocol family."""
-
     family: str
     total: int = 0
     healthy: int = 0
@@ -93,8 +90,6 @@ class FamilyAudit:
 
 @dataclass
 class AuditReport:
-    """Cross-family audit snapshot."""
-
     generated_at: str
     families: dict[str, FamilyAudit] = field(default_factory=dict)
     ranking_file: str = "~/.tstdx/server_ranking.json"
@@ -108,17 +103,17 @@ class AuditReport:
             "ranking_saved": self.ranking_saved,
             "families": {
                 name: {
-                    "status": family.status,
-                    "total": family.total,
-                    "healthy": family.healthy,
-                    "degraded": family.degraded,
-                    "offline": family.offline,
-                    "best_rtt_ms": family.best_rtt_ms,
-                    "worst_ok_rtt_ms": family.worst_ok_rtt_ms,
-                    "results": family.results,
-                    "notes": list(family.notes),
+                    "status": audit.status,
+                    "total": audit.total,
+                    "healthy": audit.healthy,
+                    "degraded": audit.degraded,
+                    "offline": audit.offline,
+                    "best_rtt_ms": audit.best_rtt_ms,
+                    "worst_ok_rtt_ms": audit.worst_ok_rtt_ms,
+                    "results": audit.results,
+                    "notes": list(audit.notes),
                 }
-                for name, family in self.families.items()
+                for name, audit in self.families.items()
             },
             "notes": list(self.notes),
         }
@@ -192,21 +187,20 @@ def _host_entry(item: dict[str, Any], *, default_family: str) -> HostEntry:
 
 
 def load_external_hosts(path: str | Path) -> dict[str, list[HostEntry]]:
-    """Load text/JSON community host candidates and bucket by canonical family."""
+    """Load text/JSON candidates and bucket every entry by its canonical family."""
 
     source = Path(path).expanduser()
     if not source.is_file():
         raise FileNotFoundError(f"hosts 文件不存在: {source}")
-
     raw = source.read_text(encoding="utf-8")
     stripped = raw.strip()
     if not stripped:
         return {}
 
-    obj: object | None = None
+    parsed: object | None = None
     if stripped.startswith(("[", "{")):
         try:
-            obj = json.loads(stripped)
+            parsed = json.loads(stripped)
         except json.JSONDecodeError as exc:
             raise ValueError(f"JSON 解析失败: {exc}") from exc
 
@@ -217,13 +211,13 @@ def load_external_hosts(path: str | Path) -> dict[str, list[HostEntry]]:
         entry.family = family
         out[family].append(entry)
 
-    if isinstance(obj, list):
-        for item in obj:
+    if isinstance(parsed, list):
+        for item in parsed:
             if not isinstance(item, dict):
                 raise ValueError(f"JSON list 元素必须为 object: {item!r}")
             push(_host_entry(item, default_family=Family.STANDARD))
-    elif isinstance(obj, dict):
-        for raw_family, items in obj.items():
+    elif isinstance(parsed, dict):
+        for raw_family, items in parsed.items():
             family = _norm_family(str(raw_family))
             if not isinstance(items, list):
                 raise ValueError(f"family {raw_family!r} 对应值必须为 list")
@@ -237,17 +231,14 @@ def load_external_hosts(path: str | Path) -> dict[str, list[HostEntry]]:
                             host=host.strip(),
                             port=_parse_port(port_raw),
                             family=family,
-                            verified=False,
                         )
                     )
                 elif isinstance(item, dict):
-                    # An explicit item family wins over the outer bucket and is
-                    # re-bucketed by push(). This preserves provider/family identity.
                     push(_host_entry(item, default_family=family))
                 else:
                     raise ValueError(f"不支持的 host 元素: {type(item).__name__}: {item!r}")
-    elif obj is not None:
-        raise ValueError(f"JSON 顶层必须为 list 或 object: {type(obj).__name__}")
+    elif parsed is not None:
+        raise ValueError(f"JSON 顶层必须为 list 或 object: {type(parsed).__name__}")
     else:
         for lineno, raw_line in enumerate(raw.splitlines(), 1):
             line = raw_line.split("#", 1)[0].strip()
@@ -266,15 +257,7 @@ def load_external_hosts(path: str | Path) -> dict[str, list[HostEntry]]:
                 host, port = host_port, 7709
             if not host.strip():
                 raise ValueError(f"第 {lineno} 行 host 为空")
-            push(
-                HostEntry(
-                    host=host.strip(),
-                    port=port,
-                    family=family,
-                    name=name,
-                    verified=False,
-                )
-            )
+            push(HostEntry(host=host.strip(), port=port, family=family, name=name))
 
     return {family: entries for family, entries in out.items() if entries}
 
@@ -301,11 +284,10 @@ def audit_family(
     progress: bool = True,
     additional_hosts: list[HostEntry] | None = None,
 ) -> FamilyAudit:
-    """Probe every unique host for exactly one canonical protocol family."""
+    """Probe every unique endpoint for exactly one protocol family."""
 
     family = _norm_family(family)
     _require_positive(timeout=timeout, samples=samples, max_workers=max_workers)
-
     candidates = list(POOL_BY_FAMILY.get(family, ()))
     if additional_hosts:
         for entry in additional_hosts:
@@ -321,10 +303,9 @@ def audit_family(
     seen_keys: set[str] = set()
     unique: list[HostEntry] = []
     for entry in candidates:
-        if entry.key in seen_keys:
-            continue
-        seen_keys.add(entry.key)
-        unique.append(entry)
+        if entry.key not in seen_keys:
+            seen_keys.add(entry.key)
+            unique.append(entry)
 
     audit = FamilyAudit(family=family, total=len(unique))
     if not unique:
@@ -341,14 +322,13 @@ def audit_family(
             samples=samples,
         )
 
-    workers = min(max_workers, len(unique))
-    with _fut.ThreadPoolExecutor(max_workers=workers) as executor:
+    with _fut.ThreadPoolExecutor(max_workers=min(max_workers, len(unique))) as executor:
         futures = {executor.submit(run, entry): entry for entry in unique}
         for index, future in enumerate(_fut.as_completed(futures), 1):
             entry = futures[future]
             try:
                 result = future.result()
-            except Exception as exc:  # pragma: no cover - executor/provider defense
+            except Exception as exc:  # pragma: no cover - provider/executor defense
                 result = ProbeResult(
                     host=entry.host,
                     port=entry.port,
@@ -368,8 +348,6 @@ def audit_family(
             continue
         rtt_raw = row["rtt_ms"]
         if rtt_raw is None:
-            # Reachable without RTT is useful evidence but cannot satisfy the
-            # healthy latency contract. Never invent 500ms provenance.
             audit.degraded += 1
             audit.notes.append(f"{row['host']}:{row['port']} reachable without RTT evidence")
             continue
@@ -420,13 +398,12 @@ def audit_all(
     hosts_file: str | Path | None = None,
     save_ranking: bool = True,
 ) -> AuditReport:
-    """Audit selected families and optionally persist observed ranking evidence."""
+    """Audit selected families; persist only STANDARD ranking evidence."""
 
     _require_positive(timeout=timeout, samples=samples, max_workers=max_workers)
     target = [_norm_family(family) for family in families] if families else list(_FAMILIES)
     target = list(dict.fromkeys(target))
     external = load_external_hosts(hosts_file) if hosts_file else {}
-
     report = AuditReport(
         generated_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         ranking_file=ranking_file,
@@ -437,7 +414,7 @@ def audit_all(
             + ", ".join(f"{family}={len(entries)}" for family, entries in external.items())
         )
 
-    all_rows: list[dict[str, Any]] = []
+    standard_rows: list[dict[str, Any]] = []
     for family in target:
         if progress:
             print(f"== family={family} ==")
@@ -450,16 +427,20 @@ def audit_all(
             additional_hosts=list(external.get(family, ())) or None,
         )
         report.families[family] = family_audit
-        all_rows.extend(family_audit.results)
+        if family == Family.STANDARD:
+            standard_rows.extend(family_audit.results)
 
-    if save_ranking:
-        if all_rows:
-            store = RankingStore(ranking_file)
-            store.update(_rows_to_entries(all_rows))
-            report.ranking_saved = True
-            report.notes.append(f"ranking_file 已更新: {len(all_rows)} entries -> {store.path}")
-    else:
+    if not save_ranking:
         report.notes.append("dry-run: ranking_file 未写入")
+    elif standard_rows:
+        store = RankingStore(ranking_file)
+        store.update(_rows_to_entries(standard_rows))
+        report.ranking_saved = True
+        report.notes.append(
+            f"ranking_file 仅更新 STANDARD: {len(standard_rows)} entries -> {store.path}"
+        )
+    else:
+        report.notes.append("ranking_file 未更新: 本次巡检没有 STANDARD 结果")
 
     return report
 
@@ -490,7 +471,8 @@ def write_markdown_summary(report: AuditReport, path: str | Path) -> Path:
     for family, audit in report.families.items():
         notes.extend(f"{family}: {note}" for note in audit.notes)
     if notes:
-        lines.extend(["", "## 备注", *(f"- {note}" for note in notes)])
+        lines.extend(["", "## 备注"])
+        lines.extend(f"- {note}" for note in notes)
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return target
 
@@ -509,7 +491,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--ranking-file",
         default="~/.tstdx/server_ranking.json",
-        help="排名文件路径",
+        help="STANDARD 排名文件路径",
     )
     parser.add_argument(
         "--report",
@@ -519,7 +501,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--markdown", default="", help="可选 Markdown 摘要路径")
     parser.add_argument("--strict", action="store_true", help="STANDARD 无 healthy 时退出 1")
     parser.add_argument("--quiet", action="store_true", help="关闭逐主机进度输出")
-    parser.add_argument("--no-save-ranking", action="store_true", help="不写排名文件")
+    parser.add_argument("--no-save-ranking", action="store_true", help="不写 STANDARD 排名文件")
     parser.add_argument("--hosts-file", default=None, help="外部候选文件（文本/JSON）")
     return parser
 
@@ -543,7 +525,6 @@ def main(argv: list[str] | None = None) -> int:
 
     out_path = write_report(report, args.report)
     markdown_path = write_markdown_summary(report, args.markdown) if args.markdown else None
-
     print("\n=== 汇总 ===")
     for audit in report.families.values():
         print(f"  {audit.summary_line()}")
