@@ -526,20 +526,29 @@ class RankingStore:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except Exception:
             return {}
-        if not isinstance(raw, Mapping) or raw.get("version") != self.VERSION:
+        if not isinstance(raw, Mapping):
+            return {}
+        version = raw.get("version")
+        if isinstance(version, bool) or not isinstance(version, int) or version != self.VERSION:
             return {}
         raw_entries = raw.get("entries")
         if not isinstance(raw_entries, Mapping):
             return {}
 
         out: dict[str, HostEntry] = {}
-        for item in raw_entries.values():
-            if not isinstance(item, Mapping):
+        seen_embedded: set[str] = set()
+        for persisted_key, item in raw_entries.items():
+            if not isinstance(persisted_key, str) or not isinstance(item, Mapping):
                 continue
             try:
                 entry = HostEntry.from_dict(item)
             except ConfigError:
                 continue
+            # The persisted map key is provenance, not decoration. A valid row copied
+            # under another key (or an old ambiguous IPv6 key) must not be promoted.
+            if persisted_key != entry.key or entry.key in seen_embedded:
+                return {}
+            seen_embedded.add(entry.key)
             out[entry.key] = entry
         return out
 
