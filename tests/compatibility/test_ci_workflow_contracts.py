@@ -38,6 +38,13 @@ def test_any_workflow_manifest_path_points_to_a_repository_file() -> None:
     assert missing == []
 
 
+def test_main_test_matrix_uses_declared_dev_dependency_ssot() -> None:
+    workflow = _workflow("ci.yml")
+
+    assert 'python -m pip install -e ".[all,dev]"' in workflow
+    assert "pip install pytest pytest-cov" not in workflow
+
+
 def test_coverage_artifact_is_generated_and_required() -> None:
     workflow = _workflow("ci.yml")
 
@@ -86,6 +93,7 @@ def test_scheduled_live_smoke_reports_real_failure_and_always_emits_junit() -> N
 
     assert "pull_request:" not in workflow
     assert "continue-on-error" not in workflow
+    assert 'python -m pip install -e ".[all,dev]"' in workflow
     assert '-m "network"' in workflow
     assert "--junitxml=reports/live-smoke.xml" in workflow
     assert "if: always()" in workflow
