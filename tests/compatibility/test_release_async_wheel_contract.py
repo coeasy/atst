@@ -6,11 +6,34 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_release_matrix_smokes_async_circuit_hardening_from_installed_wheel() -> None:
+def _smoke_job() -> str:
     workflow = (_ROOT / ".github" / "workflows" / "wheels.yml").read_text(encoding="utf-8")
-    smoke = workflow.split("  smoke-install:", 1)[1].split("  publish-pypi:", 1)[0]
+    return workflow.split("  smoke-install:", 1)[1].split("  publish-pypi:", 1)[0]
+
+
+def test_release_matrix_smokes_async_circuit_hardening_from_installed_wheel() -> None:
+    smoke = _smoke_job()
 
     assert "from tstdx.transport.async_ import AsyncConnectionPool" in smoke
     assert "_circuit_allows" in smoke
     assert "_release_probe_token" in smoke
     assert "actions/checkout" not in smoke
+
+
+def test_release_matrix_smokes_client_behavior_and_pool_binding_hardening() -> None:
+    smoke = _smoke_job()
+
+    assert "from tstdx.client import AsyncTdxClient, TdxClient" in smoke
+    assert "TdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'" in smoke
+    assert "AsyncTdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'" in smoke
+    assert (
+        "AsyncTdxClient.quotes_concurrent.__module__ == "
+        "'tstdx.client._async_concurrency_hardening'"
+    ) in smoke
+
+
+def test_release_matrix_smokes_selector_hardening_from_installed_wheel() -> None:
+    smoke = _smoke_job()
+
+    assert "from tstdx.transport import RankingStore, resolve_hosts" in smoke
+    assert "resolve_hosts.__module__ == 'tstdx.transport._host_selector_hardening'" in smoke
