@@ -232,6 +232,35 @@ def test_json_family_override_is_rebucketed_to_explicit_family(tmp_path: Path) -
     assert [entry.host for entry in loaded[Family.F10]] == ["1.2.3.4"]
 
 
+def test_standard_defensive_fallback_filters_mixed_default_pool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    standard = HostEntry(host="1.1.1.1", port=7709, family=Family.STANDARD)
+    extended = HostEntry(host="2.2.2.2", port=7727, family=Family.EXTENDED)
+    seen: list[tuple[str, str]] = []
+
+    monkeypatch.setitem(host_audit.POOL_BY_FAMILY, Family.STANDARD, ())
+    monkeypatch.setattr(host_audit, "DEFAULT_HOST_POOL", (standard, extended))
+
+    def fake_probe(host: str, _port: int, *, family: str, **_: object) -> ProbeResult:
+        seen.append((host, family))
+        return ProbeResult(
+            host=host,
+            port=7709,
+            family=family,
+            ok=True,
+            rtt_ms=1.0,
+        )
+
+    monkeypatch.setattr(host_audit, "probe", fake_probe)
+
+    audit = host_audit.audit_family(Family.STANDARD, progress=False, max_workers=1)
+
+    assert audit.total == 1
+    assert seen == [(standard.host, Family.STANDARD)]
+    assert [row["host"] for row in audit.results] == [standard.host]
+
+
 def test_reachable_without_rtt_is_degraded_without_invented_latency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
