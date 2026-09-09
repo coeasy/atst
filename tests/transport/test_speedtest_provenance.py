@@ -43,6 +43,11 @@ def test_speedtest_rejects_mismatched_host_family_before_network() -> None:
         )
 
 
+def test_speedtest_rejects_non_hostentry_items_before_network() -> None:
+    with pytest.raises(ConfigError, match="HostEntry"):
+        speedtest(["127.0.0.1:7709"], family=Family.STANDARD)  # type: ignore[list-item]
+
+
 def test_rank_hosts_rejects_cross_family_results() -> None:
     with pytest.raises(ConfigError, match="跨 family"):
         rank_hosts(
@@ -51,6 +56,54 @@ def test_rank_hosts_rejects_cross_family_results() -> None:
                 ProbeResult(host="2.2.2.2", port=7709, family=Family.F10),
             ]
         )
+
+
+def test_rank_hosts_rejects_invalid_latency_evidence() -> None:
+    with pytest.raises(ConfigError, match="rtt_ms"):
+        rank_hosts(
+            [
+                ProbeResult(
+                    host="1.1.1.1",
+                    port=7709,
+                    family=Family.STANDARD,
+                    ok=True,
+                    rtt_ms=-1.0,
+                )
+            ]
+        )
+
+
+def test_successful_probe_requires_rtt_evidence() -> None:
+    with pytest.raises(ConfigError, match="缺少 rtt_ms"):
+        rank_hosts(
+            [
+                ProbeResult(
+                    host="1.1.1.1",
+                    port=7709,
+                    family=Family.STANDARD,
+                    ok=True,
+                    rtt_ms=None,
+                )
+            ]
+        )
+
+
+def test_ipv6_probe_key_matches_hostentry_and_updates_current_observation() -> None:
+    host = HostEntry(host="::1", port=7709, family=Family.STANDARD, rtt_ms=99.0)
+    result = ProbeResult(
+        host="::1",
+        port=7709,
+        family=Family.STANDARD,
+        ok=True,
+        connect_ms=1.0,
+        rtt_ms=2.0,
+    )
+
+    assert result.key == host.key == "[::1]:7709"
+    speedtest_module._apply_probe_observations([host], [result], family=Family.STANDARD)
+
+    assert host.connect_ms == 1.0
+    assert host.rtt_ms == 2.0
 
 
 def test_nonstandard_speedtest_and_save_never_constructs_standard_ranking_store(
@@ -117,13 +170,26 @@ def test_standard_speedtest_and_save_persists_ranked_results(
     ("kwargs", "message"),
     [
         ({"timeout": 0.0}, "timeout"),
+        ({"timeout": float("nan")}, "timeout"),
+        ({"timeout": True}, "timeout"),
         ({"samples": 0}, "samples"),
+        ({"samples": 1.5}, "samples"),
+        ({"samples": True}, "samples"),
         ({"max_workers": 0}, "max_workers"),
+        ({"max_workers": 1.5}, "max_workers"),
+        ({"max_workers": True}, "max_workers"),
+        ({"max_workers": 65}, "max_workers"),
+        ({"progress": 1}, "progress"),
     ],
 )
-def test_speedtest_rejects_non_positive_limits(
+def test_speedtest_rejects_invalid_limits_before_network(
     kwargs: dict[str, object],
     message: str,
 ) -> None:
     with pytest.raises(ValueError, match=message):
         speedtest([], family=Family.STANDARD, **kwargs)
+
+
+def test_speedtest_and_save_rejects_non_boolean_failure_policy_before_network() -> None:
+    with pytest.raises(ValueError, match="keep_failures"):
+        speedtest_and_save([], keep_failures=1)  # type: ignore[arg-type]
