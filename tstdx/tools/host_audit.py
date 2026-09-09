@@ -298,7 +298,7 @@ def audit_family(
                 )
             candidates.append(entry)
     if not candidates and family == Family.STANDARD:
-        candidates = list(DEFAULT_HOST_POOL)
+        candidates = [entry for entry in DEFAULT_HOST_POOL if entry.family == Family.STANDARD]
 
     seen_keys: set[str] = set()
     unique: list[HostEntry] = []
