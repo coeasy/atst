@@ -10,7 +10,7 @@ WORKDIR /build
 
 # Package inputs plus local/container/release contract files consumed by the
 # offline compatibility tests that run inside this builder.
-COPY pyproject.toml README.md CHANGELOG.md LICENSE Makefile Dockerfile Dockerfile.release .dockerignore ./
+COPY pyproject.toml README.md CHANGELOG.md LICENSE Makefile Dockerfile Dockerfile.release .dockerignore .pre-commit-config.yaml ./
 COPY tstdx/ tstdx/
 
 # Offline test/audit inputs used by the normal non-network suite. Keep these out
