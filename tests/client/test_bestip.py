@@ -19,6 +19,7 @@ import pytest
 # `import tstdx.transport.speedtest as X` 会绑到函数而非子模块，
 # 必须用 importlib.import_module 取真实模块对象再 monkeypatch。
 speedtest_mod = importlib.import_module("tstdx.transport.speedtest")
+hosts_mod = importlib.import_module("tstdx.transport.hosts")
 from tstdx.client import AsyncTdxClient, TdxClient  # noqa: E402
 from tstdx.transport.hosts import HostEntry  # noqa: E402
 from tstdx.transport.pool import ConnectionPool  # noqa: E402
@@ -151,18 +152,53 @@ class TestBestip:
         assert [h.host for h in client._pool.hosts] == ["1.1.1.1"]
         client._pool.close()
 
-    def test_save_ranking_writes_file(self, monkeypatch):
+    def test_save_ranking_commits_after_pool_publication(self, monkeypatch):
         results = [ProbeResult(host="1.1.1.1", port=7709, ok=True, rtt_ms=20.0)]
-        calls: list = []
+        events: list[str] = []
 
-        def _fake_and_save(*a, **k):
-            calls.append((a, k))
-            return results
+        monkeypatch.setattr(speedtest_mod, "speedtest", lambda *a, **k: results)
 
-        monkeypatch.setattr(speedtest_mod, "speedtest_and_save", _fake_and_save)
+        class FakeStore:
+            def update(self, entries):
+                assert [entry.host for entry in entries] == ["1.1.1.1"]
+                events.append("ranking")
+
+        monkeypatch.setattr(hosts_mod, "RankingStore", FakeStore)
         client = TdxClient(pool=ConnectionPool([_h("1.1.1.1")], heartbeat_interval=None))
+        original_update = client._pool.update_hosts
+
+        def tracked_update(entries):
+            events.append("pool")
+            return original_update(entries)
+
+        monkeypatch.setattr(client._pool, "update_hosts", tracked_update)
         client.bestip(save_ranking=True)
-        assert calls, "save_ranking=True 应走 speedtest_and_save"
+
+        assert events == ["pool", "ranking"]
+        client._pool.close()
+
+    def test_pool_commit_failure_never_persists_ranking(self, monkeypatch):
+        results = [ProbeResult(host="1.1.1.1", port=7709, ok=True, rtt_ms=20.0)]
+        writes: list[list[HostEntry]] = []
+
+        monkeypatch.setattr(speedtest_mod, "speedtest", lambda *a, **k: results)
+
+        class FakeStore:
+            def update(self, entries):
+                writes.append(list(entries))
+
+        monkeypatch.setattr(hosts_mod, "RankingStore", FakeStore)
+        client = TdxClient(pool=ConnectionPool([_h("1.1.1.1")], heartbeat_interval=None))
+
+        def fail_update(entries):
+            del entries
+            raise RuntimeError("pool commit failed")
+
+        monkeypatch.setattr(client._pool, "update_hosts", fail_update)
+        with pytest.raises(RuntimeError, match="pool commit failed"):
+            client.bestip(save_ranking=True)
+
+        assert writes == []
         client._pool.close()
 
     def test_open_bestip_triggers(self, monkeypatch):
