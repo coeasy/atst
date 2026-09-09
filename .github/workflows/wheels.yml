@@ -86,11 +86,13 @@ jobs:
         run: >-
           python -m pip install --no-index --find-links dist
           --only-binary=:all: tstdx
-      - name: Verify import, metadata, typing marker and CLI entrypoint
+      - name: Verify installed public surface and CLI entrypoints
         run: |
           python -c "import importlib.metadata as m, tstdx; assert tstdx.__version__ == m.version('tstdx'); print(tstdx.__version__)"
           python -c "from importlib.resources import files; assert files('tstdx').joinpath('py.typed').is_file()"
+          python -c "from tstdx.tools.host_audit import AuditReport, audit_all; assert callable(audit_all); print(AuditReport.__name__)"
           tstdx --help
+          tstdx hosts audit --help
           python -m pip check
 
   publish-pypi:
