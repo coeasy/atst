@@ -14,7 +14,8 @@
 
 环境变量命名规则：``TSTDX_<SECTION>_<KEY>``，全大写；
 值按 JSON → bool → int/float → 逗号分隔列表 → 字符串 的顺序解析。
-专用 runtime 变量（例如 ``TSTDX_HOSTS``）不属于 schema 配置命名空间。
+专用 runtime 变量（主站、显式配置文件、反馈传输开关）不属于 schema
+配置命名空间，必须显式保留，不能被 strict schema 扫描误判成拼写错误。
 """
 
 from __future__ import annotations
@@ -45,7 +46,15 @@ __all__ = [
 ENV_PREFIX = "TSTDX_"
 CONFIG_FILENAMES = ("tstdx.toml", ".tstdx.toml")
 ENV_CONFIG_FILE = "TSTDX_CONFIG_FILE"
-_RUNTIME_ENV_KEYS = frozenset({ENV_CONFIG_FILE, "TSTDX_HOSTS"})
+_RUNTIME_ENV_KEYS = frozenset(
+    {
+        ENV_CONFIG_FILE,
+        "TSTDX_HOSTS",
+        "TSTDX_FEEDBACK",
+        "TSTDX_FEEDBACK_ENDPOINT",
+        "TSTDX_FEEDBACK_STORE_DIR",
+    }
+)
 
 _global_config: Config = DEFAULT_CONFIG
 
