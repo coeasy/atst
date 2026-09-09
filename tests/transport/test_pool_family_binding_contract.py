@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
+from typing import Any
 
 import pytest
 
@@ -16,19 +18,19 @@ def _host(family: str) -> HostEntry:
 
 
 @pytest.mark.parametrize("pool_cls", [ConnectionPool, AsyncConnectionPool])
-def test_pool_rejects_unknown_family(pool_cls: type[object]) -> None:
+def test_pool_rejects_unknown_family(pool_cls: type[Any]) -> None:
     with pytest.raises(ConfigError, match="family 非法"):
         pool_cls([_host(Family.STANDARD)], family="unknown", heartbeat_interval=0)
 
 
 @pytest.mark.parametrize("pool_cls", [ConnectionPool, AsyncConnectionPool])
-def test_pool_rejects_host_from_another_family(pool_cls: type[object]) -> None:
+def test_pool_rejects_host_from_another_family(pool_cls: type[Any]) -> None:
     with pytest.raises(ConfigError, match="host family 不匹配"):
         pool_cls([_host(Family.F10)], family=Family.STANDARD, heartbeat_interval=0)
 
 
 @pytest.mark.parametrize("pool_cls", [ConnectionPool, AsyncConnectionPool])
-def test_pool_rejects_non_hostentry_sequence(pool_cls: type[object]) -> None:
+def test_pool_rejects_non_hostentry_sequence(pool_cls: type[Any]) -> None:
     with pytest.raises(ConfigError, match="只接受 HostEntry"):
         pool_cls([object()], family=Family.STANDARD, heartbeat_interval=0)
 
@@ -63,3 +65,4 @@ def test_valid_same_family_pool_still_constructs() -> None:
         assert async_.family == Family.F10
     finally:
         sync.close()
+        asyncio.run(async_.close())
