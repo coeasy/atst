@@ -7,9 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.config.loader import config_from_env, load_config, parse_env_value
+from tstdx.config.loader import (
+    config_from_env,
+    find_config_files,
+    load_config,
+    parse_env_value,
+)
 from tstdx.config.schema import Config, config_from_dict, merge_config
-from tstdx.errors import ValidationError
+from tstdx.errors import ConfigError, ValidationError
 
 
 @pytest.fixture(autouse=True)
@@ -78,6 +83,59 @@ max_retries = 1
         monkeypatch.setenv("TSTDX_CONFIG_FILE", "")
         cfg3 = load_config(overrides=None, use_env=True, use_files=False)
         assert cfg3.core.timeout == 2.0
+
+    def test_explicit_missing_config_file_fails_closed(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        missing = tmp_path / "missing.toml"
+        monkeypatch.setenv("TSTDX_CONFIG_FILE", str(missing))
+
+        with pytest.raises(ConfigError, match="不存在"):
+            load_config(overrides=None, use_env=False, use_files=True)
+
+    def test_explicit_config_directory_fails_closed(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.setenv("TSTDX_CONFIG_FILE", str(tmp_path))
+
+        with pytest.raises(ConfigError, match="不是普通文件"):
+            find_config_files()
+
+    def test_explicit_config_is_not_duplicated_by_project_discovery(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        project = tmp_path / "tstdx.toml"
+        project.write_text("[core]\ntimeout = 4.0\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("TSTDX_CONFIG_FILE", str(project))
+
+        files = find_config_files()
+
+        assert sum(path.resolve() == project.resolve() for path in files) == 1
+
+    def test_runtime_environment_keys_do_not_enter_schema_namespace(self):
+        result = config_from_env(
+            {
+                "TSTDX_HOSTS": "1.2.3.4:7709",
+                "TSTDX_CONFIG_FILE": "/tmp/example.toml",
+            }
+        )
+
+        assert result == {}
+
+    def test_unknown_environment_section_fails_closed(self):
+        with pytest.raises(ConfigError, match="无法识别环境变量"):
+            config_from_env({"TSTDX_COER_TIMEOUT": "5"})
+
+    def test_unknown_environment_field_fails_closed(self):
+        with pytest.raises(ConfigError, match="字段无法识别"):
+            config_from_env({"TSTDX_CORE_TIMOUT": "5"})
 
     def test_unknown_key_tolerance(self):
         with pytest.raises(ValidationError):
