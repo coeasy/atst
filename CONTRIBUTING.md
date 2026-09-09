@@ -102,7 +102,8 @@ python -c "import tstdx; print(tstdx.__version__)"
 3. 更新 README 当前版本、兼容性和文档导航；
 4. 运行 `python scripts/build_package.py --smoke`，确认 wheel/sdist 与安装冒烟均通过；
 5. 运行全量测试、ruff 检查和文档链接检查；
-6. 创建 `vX.Y.Z` 标签，再由 GitHub Release 工作流发布到 PyPI。
+6. 创建 `vX.Y.Z` 标签并发布 GitHub Release；工作流会自动上传 PyPI，并将 wheel/sdist
+   附加到 Release 资产栏。
 
 历史版本引用（例如弃用时间线和归档路线图）应保留原版本号，并明确其历史语义，
 不得为追求字符串一致而批量改写。

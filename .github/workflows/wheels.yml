@@ -80,6 +80,7 @@ jobs:
   publish-pypi:
     name: Publish to PyPI (trusted publishing)
     runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'published'
     needs: [build-wheels, build-wheels-macos, build-wheels-windows]
     environment: pypi
     permissions:
@@ -108,8 +109,82 @@ jobs:
         run: pip install build
       - name: Build sdist
         run: python -m build --sdist
-      - name: Upload to PyPI
+      - name: Upload sdist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish-sdist:
+    name: Publish sdist to PyPI (trusted publishing)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'published'
+    needs: build-sdist
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download sdist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-release-assets:
+    name: Attach packages to GitHub Release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'published'
+    needs: [build-wheels, build-wheels-macos, build-wheels-windows, build-sdist]
+    permissions:
+      contents: write
+    steps:
+      # Keep artifact directories separate so identical pure-Python wheels from
+      # different runners can be deduplicated and compared before upload.
+      - name: Download wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          path: dist
+
+      - name: Download sdist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist/sdist
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          found=0
+          while IFS= read -r package; do
+            found=1
+            name="$(basename "$package")"
+            target="release-assets/$name"
+            if [[ -e "$target" ]]; then
+              cmp -s "$package" "$target" || {
+                echo "Conflicting packages have the same filename: $name" >&2
+                exit 1
+              }
+            else
+              cp "$package" "$target"
+            fi
+          done < <(find dist -type f \( -name '*.whl' -o -name '*.tar.gz' \) -print | sort)
+          if [[ "$found" -ne 1 ]]; then
+            echo "No wheel or sdist was collected" >&2
+            exit 1
+          fi
+          ls -l release-assets
+
+      - name: Upload packages to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG_NAME" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
 
   publish-docker:
     name: Publish Docker image to Docker Hub

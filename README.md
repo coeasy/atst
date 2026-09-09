@@ -31,6 +31,7 @@ v1.0.0 是首个稳定发布版本，重点收口连接池的主站生命周期�
 - 同步/异步 half-open circuit 均保证同一主站同一时刻最多一个探测请求；
 - F10 0x06B9 文件下载恢复规范分块解析，并对空响应给出明确错误；
 - wheel 与源码包均已构建并通过安装冒烟。
+- GitHub Release 发布后，Actions 自动将 wheel 与 sdist 附加到 Release 资产栏。
 
 详细内容见 [v1.0.0 发布说明](docs/releases/v1.0.0.md) 与 [CHANGELOG](CHANGELOG.md)。
 

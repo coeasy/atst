@@ -78,7 +78,8 @@ ADR-XXX: 决策标题
 2. 更新 `docs/releases/vX.Y.Z.md`，记录变更、兼容性和验证结果；
 3. 运行 `python scripts/build_package.py --smoke` 和完整测试套件；
 4. 创建发布提交并打 `vX.Y.Z` 标签；
-5. 创建 GitHub Release，发布说明引用对应的 CHANGELOG/发布文档；
+5. 创建 GitHub Release，发布说明引用对应的 CHANGELOG/发布文档；`wheels.yml` 会自动将
+   wheel/sdist 附加到 Release 资产栏；
 6. 由 `wheels.yml` 的 Trusted Publishing 工作流发布 wheel 和 sdist 到 PyPI；
 7. 发布后检查 PyPI 安装、`import tstdx` 版本和 GitHub Release 资产。
 
