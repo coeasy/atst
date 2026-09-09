@@ -1,6 +1,6 @@
 # Build and test one repository-owned wheel, then install that exact artifact in
-# the runtime image. The runtime stage contains no source tree, tests, docs or
-# build backend and therefore cannot silently rebuild a different package.
+# the runtime image. The builder receives the complete repository contract after
+# `.dockerignore` filtering; the runtime stage receives only the tested wheel.
 FROM python:3.11-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -8,23 +8,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /build
 
-# Package inputs plus local/container/release contract files consumed by the
-# offline compatibility tests that run inside this builder.
-COPY pyproject.toml README.md CHANGELOG.md LICENSE Makefile Dockerfile Dockerfile.release .dockerignore .pre-commit-config.yaml ./
-COPY tstdx/ tstdx/
-
-# Offline test/audit inputs used by the normal non-network suite. Keep these out
-# of the runtime stage; they exist only so Docker validates the same repository
-# contracts as CI instead of an incomplete synthetic checkout.
-COPY tests/ tests/
-COPY scripts/ scripts/
-COPY PROTOCOL_SPEC/ PROTOCOL_SPEC/
-COPY docs/ docs/
-COPY .github/workflows/ .github/workflows/
+# `.dockerignore` is the single build-context boundary. Copying the whole filtered
+# repository prevents new contract tests from silently failing because a newly
+# referenced Makefile/workflow/config/fixture was forgotten in a selective COPY.
+COPY . .
 
 # build/twine are packaging validators, not general test dependencies, so keep
 # them explicit here instead of inflating the dev extra used by every CI cell.
-# They must be installed before `python -m build` is invoked.
 RUN python -m pip install --no-cache-dir -e ".[all,dev]" build twine \
     && python -m pytest tests/ -m "not network" --tb=short -q -p no:warnings \
     && tstdx --help >/dev/null \
