@@ -104,7 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
     hs.add_parser("list", parents=[common], help="查看当前生效的主站池").set_defaults(
         func=_cmd_hosts_list
     )
-    # P14-A2：5 族候选主站巡检（薄壳接线 scripts/audit_hosts.py）
+    # 5 族巡检核心位于 installable tstdx.tools.host_audit；CLI 与脚本共用同一实现。
     audit_p = hs.add_parser(
         "audit",
         parents=[common],
@@ -116,23 +116,25 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         help="要巡检的协议族；可多次指定；默认全部 5 族",
     )
+    audit_p.add_argument("--samples", type=int, default=1, help="每主机采样次数（默认 1）")
     audit_p.add_argument("--workers", type=int, default=16, help="并发度（默认 16）")
     audit_p.add_argument(
         "--report",
         default="./host_audit_report.json",
         help="巡检 JSON 报告输出路径",
     )
+    audit_p.add_argument("--markdown", default="", help="可选 Markdown 摘要路径")
     audit_p.add_argument(
         "--ranking-file",
         default="~/.tstdx/server_ranking.json",
-        help="排名文件路径",
+        help="STANDARD 运行时排名文件路径",
     )
     audit_p.add_argument("--strict", action="store_true", help="STANDARD 无 healthy 时退出 1")
     audit_p.add_argument("--quiet", action="store_true", help="关闭逐主机进度输出")
     audit_p.add_argument(
         "--no-save-ranking",
         action="store_true",
-        help="不写入排名文件（干跑）",
+        help="不写入 STANDARD 排名文件（干跑）",
     )
     audit_p.add_argument(
         "--hosts-file",
