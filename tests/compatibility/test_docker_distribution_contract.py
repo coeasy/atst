@@ -25,6 +25,7 @@ def test_builder_has_full_offline_contract_inputs_and_dev_dependencies() -> None
     assert "Makefile" in builder
     assert "Dockerfile.release" in builder
     assert ".dockerignore" in builder
+    assert ".pre-commit-config.yaml" in builder
     assert "COPY tests/ tests/" in builder
     assert "COPY scripts/ scripts/" in builder
     assert "COPY PROTOCOL_SPEC/ PROTOCOL_SPEC/" in builder
