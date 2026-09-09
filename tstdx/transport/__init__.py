@@ -20,6 +20,11 @@ from __future__ import annotations
 # Side-effect imports install the v1.0 generation/lease + circuit hardening onto
 # the canonical pool classes before callers can receive either public class.
 from . import _async_pool_hardening, _pool_hardening
+
+# Async shutdown is a separate lifecycle transaction: install it immediately
+# after request/circuit hardening so every public AsyncConnectionPool receives a
+# cancellation-atomic, re-drainable close() implementation.
+from . import _async_close_hardening
 from .base import DEFAULT_HEARTBEAT_CMD, ConnectionStats, TcpConnection
 
 # Host hardening order matters. First load the canonical hosts module, then make
@@ -43,6 +48,7 @@ from .speedtest import ProbeResult, probe, rank_hosts, speedtest, speedtest_and_
 
 del (
     _async_pool_hardening,
+    _async_close_hardening,
     _pool_hardening,
     _hosts_impl,
     _ranking_hardening,
