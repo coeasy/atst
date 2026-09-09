@@ -72,6 +72,18 @@ def _require_number(
     return normalized
 
 
+def _validate_rate_limiter(value: Any, *, async_pool: bool) -> None:
+    if value is None:
+        return
+    if not callable(getattr(value, "acquire", None)):
+        raise ConfigError("ConnectionPool rate_limiter 缺少 callable acquire()")
+    if async_pool:
+        if not callable(getattr(value, "try_acquire", None)):
+            raise ConfigError("AsyncConnectionPool rate_limiter 缺少 callable try_acquire()")
+        if not isinstance(getattr(value, "strict", None), bool):
+            raise ConfigError("AsyncConnectionPool rate_limiter.strict 必须是 bool")
+
+
 def _validate_common_options(kwargs: dict[str, Any], *, async_pool: bool) -> None:
     _require_int("slots_per_host", kwargs.get("slots_per_host", 4), minimum=1)
     _require_number("timeout", kwargs.get("timeout", 3.0), positive=True)
@@ -98,7 +110,16 @@ def _validate_common_options(kwargs: dict[str, Any], *, async_pool: bool) -> Non
     handshake = kwargs.get("handshake", None)
     if handshake is not None:
         _require_bool("handshake", handshake)
-    _require_bool("handshake_strict", kwargs.get("handshake_strict", False))
+    handshake_strict = _require_bool(
+        "handshake_strict",
+        kwargs.get("handshake_strict", False),
+    )
+    if handshake is False and handshake_strict:
+        raise ConfigError(
+            "ConnectionPool handshake=False 时 handshake_strict=True 无效；"
+            "请启用握手或关闭 strict"
+        )
+    _validate_rate_limiter(kwargs.get("rate_limiter", None), async_pool=async_pool)
 
 
 def _validate_sync_only_options(kwargs: dict[str, Any]) -> None:
@@ -125,6 +146,8 @@ def _canonical_family_hosts(hosts: Any, *, family: Any) -> Any:
         raise ConfigError(
             f"ConnectionPool hosts 必须是 HostEntry Sequence，收到 {type(hosts).__name__}"
         )
+    if not hosts:
+        raise ConfigError("ConnectionPool hosts 不能为空")
 
     canonical: list[HostEntry] = []
     seen: set[str] = set()
