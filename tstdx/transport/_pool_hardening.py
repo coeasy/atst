@@ -13,6 +13,7 @@ same circuit gate, and caller truncation never returns a dirty socket to the poo
 from __future__ import annotations
 
 import logging
+import math
 import random
 import threading
 import time
@@ -72,6 +73,29 @@ def _require_positive_frame_limit(value: Any, *, field: str) -> int:
     return value
 
 
+def _require_bool_option(value: Any, *, field: str) -> bool:
+    if not isinstance(value, bool):
+        raise ConfigError(f"{field} 必须是 bool，收到 {value!r}")
+    return value
+
+
+def _require_optional_bool_option(value: Any, *, field: str) -> bool | None:
+    if value is not None and not isinstance(value, bool):
+        raise ConfigError(f"{field} 必须是 bool 或 None，收到 {value!r}")
+    return value
+
+
+def _require_request_timeout(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"timeout 必须是正有限数值或 None，收到 {value!r}")
+    timeout = float(value)
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ConfigError(f"timeout 必须是正有限数值或 None，收到 {value!r}")
+    return timeout
+
+
 def _request(
     self: _impl.ConnectionPool,
     method: int,
@@ -83,9 +107,14 @@ def _request(
 ) -> _impl.ResponseFrame:
     """Single-frame request with one-at-a-time HALF_OPEN admission."""
 
+    retry_enabled = _require_optional_bool_option(retry, field="retry")
+    compress_enabled = _require_bool_option(compress, field="compress")
+    request_timeout = _require_request_timeout(timeout)
     self._ensure_open()
-    max_attempts = (self.max_retries + 1) if (retry is None or retry) else 1
-    if retry is None or retry:
+    max_attempts = (
+        (self.max_retries + 1) if (retry_enabled is None or retry_enabled) else 1
+    )
+    if retry_enabled is None or retry_enabled:
         distinct_hosts = len({slot.host.key for slot in self._slots})
         max_attempts = max(max_attempts, distinct_hosts)
     last_exc: BaseException | None = None
@@ -110,7 +139,12 @@ def _request(
             with self._lease(slot) as (conn, generation):
                 leased_conn = conn
                 leased_generation = generation
-                frame = conn.request(method, body, timeout=timeout, compress=compress)
+                frame = conn.request(
+                    method,
+                    body,
+                    timeout=request_timeout,
+                    compress=compress_enabled,
+                )
         except TdxError as exc:
             last_exc = exc
             self.stats.failures += 1
@@ -183,6 +217,8 @@ def _request_multi(
     frame_limit = _require_positive_frame_limit(max_frames, field="max_frames")
     if record_size is not None:
         _require_positive_frame_limit(record_size, field="record_size")
+    expect_count_enabled = _require_bool_option(expect_count, field="expect_count")
+    request_timeout = _require_request_timeout(timeout)
     self._ensure_open()
     if self.rate_limiter is not None:
         self.rate_limiter.acquire()
@@ -213,13 +249,13 @@ def _request_multi(
     try:
         with conn._lock:
             try:
-                first = conn.request(method, body, timeout=timeout)
+                first = conn.request(method, body, timeout=request_timeout)
             except TdxError as exc:
                 first_exc = exc
             else:
                 self.stats.frames += 1
                 payload = first.payload
-                if not expect_count or len(payload) < 2:
+                if not expect_count_enabled or len(payload) < 2:
                     merged = first
                 else:
                     count = int.from_bytes(payload[:2], "little")
