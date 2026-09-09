@@ -68,6 +68,44 @@ def test_environment_hosts_cannot_be_expanded_by_ranking_file(
     assert [entry.key for entry in hosts] == ["1.2.3.4:7709"]
 
 
+def test_same_family_ranking_only_overlays_runtime_observations(tmp_path) -> None:
+    ranking_file = str(tmp_path / "ranking.json")
+    RankingStore(ranking_file).update(
+        [
+            HostEntry(
+                host="1.2.3.4",
+                port=7709,
+                family=Family.STANDARD,
+                name="ranking-name",
+                verified=True,
+                rtt_ms=3.0,
+                failures=2,
+                last_error="ranked failure",
+            )
+        ]
+    )
+    explicit = HostEntry(
+        host="1.2.3.4",
+        port=7709,
+        family=Family.STANDARD,
+        name="explicit-name",
+        verified=False,
+    )
+
+    hosts = resolve_hosts(
+        [explicit],
+        family=Family.STANDARD,
+        ranking_file=ranking_file,
+    )
+
+    assert len(hosts) == 1
+    assert hosts[0].name == "explicit-name"
+    assert hosts[0].verified is False
+    assert hosts[0].rtt_ms == 3.0
+    assert hosts[0].failures == 2
+    assert hosts[0].last_error == "ranked failure"
+
+
 def test_other_family_ranking_cannot_replace_matching_explicit_endpoint(tmp_path) -> None:
     ranking_file = str(tmp_path / "ranking.json")
     RankingStore(ranking_file).update(
