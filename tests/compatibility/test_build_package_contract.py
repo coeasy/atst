@@ -20,6 +20,29 @@ def _load_build_script() -> ModuleType:
     return module
 
 
+def _write_minimal_wheel(
+    path: Path,
+    *,
+    version: str = "1.4.0",
+    include_typed: bool = True,
+) -> None:
+    import zipfile
+
+    with zipfile.ZipFile(path, "w") as archive:
+        for name in (
+            "tstdx/__init__.py",
+            "tstdx/cli.py",
+            "tstdx/client.py",
+        ):
+            archive.writestr(name, "")
+        if include_typed:
+            archive.writestr("tstdx/py.typed", "")
+        archive.writestr(
+            f"tstdx-{version}.dist-info/METADATA",
+            f"Metadata-Version: 2.1\nName: tstdx\nVersion: {version}\n\n",
+        )
+
+
 def test_build_script_rejects_repository_root_and_ancestor_outputs() -> None:
     build = _load_build_script()
 
@@ -83,6 +106,7 @@ def test_build_script_defaults_to_pep517_isolation() -> None:
     args = build._parser().parse_args([])
 
     assert args.isolated is True
+    assert args.verify_only is False
 
 
 def test_build_script_passes_exact_custom_outdir_to_python_build(
@@ -123,21 +147,55 @@ def test_no_isolation_is_an_explicit_build_escape_hatch(
     assert "--no-isolation" in commands[0]
 
 
+def test_distribution_verifier_rejects_source_project_version_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    build = _load_build_script()
+    fake_root = tmp_path / "repo"
+    package = fake_root / "tstdx"
+    dist = fake_root / "dist"
+    package.mkdir(parents=True)
+    dist.mkdir()
+    (fake_root / "pyproject.toml").write_text(
+        '[project]\nname = "tstdx"\nversion = "1.4.0"\n',
+        encoding="utf-8",
+    )
+    (package / "__init__.py").write_text('__version__ = "1.4.1"\n', encoding="utf-8")
+    _write_minimal_wheel(dist / "tstdx-1.4.0-py3-none-any.whl")
+    (dist / "tstdx-1.4.0.tar.gz").write_bytes(b"sdist")
+    monkeypatch.setattr(build, "ROOT", fake_root)
+
+    with pytest.raises(SystemExit, match="source version"):
+        build._verify(dist)
+
+
 def test_wheel_verifier_requires_universal_pep561_artifact(tmp_path: Path) -> None:
     build = _load_build_script()
     wheel = tmp_path / "tstdx-1.4.0-py3-none-any.whl"
     sdist = tmp_path / "tstdx-1.4.0.tar.gz"
-
-    import zipfile
-
-    with zipfile.ZipFile(wheel, "w") as archive:
-        for name in (
-            "tstdx/__init__.py",
-            "tstdx/cli.py",
-            "tstdx/client.py",
-        ):
-            archive.writestr(name, "")
+    _write_minimal_wheel(wheel, include_typed=False)
     sdist.write_bytes(b"placeholder")
 
     with pytest.raises(SystemExit, match="py.typed"):
         build._verify(tmp_path)
+
+
+def test_twine_check_runs_on_the_exact_verified_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    build = _load_build_script()
+    commands: list[list[str]] = []
+    artifacts = [tmp_path / "tstdx-1.4.0.tar.gz", tmp_path / "tstdx-1.4.0-py3-none-any.whl"]
+
+    def capture(cmd: list[str], *, cwd: Path | None = None) -> None:
+        del cwd
+        commands.append(cmd)
+
+    monkeypatch.setattr(build, "_run", capture)
+    build._twine_check(artifacts)
+
+    assert len(commands) == 1
+    assert commands[0][1:4] == ["-m", "twine", "check"]
+    assert commands[0][4:] == [str(path) for path in artifacts]
