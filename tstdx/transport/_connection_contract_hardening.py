@@ -114,7 +114,7 @@ def _validate_common(
 
 
 def _sync_init(
-    self: _sync_impl.TcpConnection,
+    self,
     host: str,
     port: int = 7709,
     *,
@@ -174,7 +174,7 @@ def _sync_init(
 
 
 def _async_init(
-    self: _async_impl.AsyncTcpConnection,
+    self,
     host: str,
     port: int = 7709,
     *,
@@ -231,7 +231,7 @@ def _async_init(
 
 
 def _sync_request(
-    self: _sync_impl.TcpConnection,
+    self,
     method: int,
     body: bytes = b"",
     *,
@@ -253,7 +253,7 @@ def _sync_request(
 
 
 async def _async_request(
-    self: _async_impl.AsyncTcpConnection,
+    self,
     method: int,
     body: bytes = b"",
     *,
