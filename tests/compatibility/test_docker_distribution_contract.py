@@ -34,3 +34,19 @@ def test_runtime_installs_exact_tested_wheel_without_source_rebuild() -> None:
     assert "COPY tstdx/" not in runtime
     assert ".[all]" not in runtime
     assert "python -m pip check" in runtime
+
+
+def test_docker_context_excludes_repository_and_generated_noise() -> None:
+    patterns = {
+        line.strip()
+        for line in (_ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+    assert ".git" in patterns
+    assert ".pytest_cache" in patterns
+    assert ".mypy_cache" in patterns
+    assert ".ruff_cache" in patterns
+    assert "coverage.xml" in patterns
+    assert "dist" in patterns
+    assert "*.whl" in patterns
