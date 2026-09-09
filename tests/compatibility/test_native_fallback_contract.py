@@ -8,6 +8,9 @@ import pytest
 
 
 def _native_module():  # noqa: ANN202
+    cached = sys.modules.get("tstdx.native")
+    if cached is not None:
+        return cached
     with pytest.warns(UserWarning, match="tstdx.native"):
         return importlib.import_module("tstdx.native")
 
