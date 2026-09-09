@@ -1,0 +1,7 @@
+# Dockerfile-specific context for Dockerfile.release. The release image must not
+# even receive the source tree: only its Dockerfile and the already-built wheel
+# that passed the cross-platform install matrix are admissible inputs.
+**
+!Dockerfile.release
+!release-dist/
+!release-dist/*.whl
