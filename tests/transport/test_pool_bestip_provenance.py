@@ -72,11 +72,14 @@ def test_update_hosts_publishes_fresh_generation_with_old_identity_and_new_laten
     assert current.live_rtt_ms == 40.0
 
 
-def test_update_hosts_failed_probe_does_not_erase_existing_latency_or_health() -> None:
+def test_update_hosts_failed_probe_invalidates_probe_latency_but_preserves_live_health() -> None:
     current = HostEntry(
         host="1.2.3.4",
         family=Family.STANDARD,
+        connect_ms=4.0,
         rtt_ms=5.0,
+        live_rtt_ms=7.0,
+        live_ok_at=8.0,
         failures=3,
         circuit="degraded",
         last_error="request failed",
@@ -87,18 +90,50 @@ def test_update_hosts_failed_probe_does_not_erase_existing_latency_or_health() -
         family=Family.STANDARD,
         rtt_ms=None,
         failures=1,
+        last_error="probe failed",
         circuit="healthy",
     )
 
     published = pool.update_hosts([failed_probe])[0]
 
     assert published is not current
-    assert published.rtt_ms == 5.0
+    assert published.connect_ms is None
+    assert published.rtt_ms is None
+    assert published.live_rtt_ms == 7.0
+    assert published.live_ok_at == 8.0
+    assert published.score == 7.0 * (4**3)
     assert published.failures == 3
     assert published.circuit == "degraded"
     assert published.last_error == "request failed"
+    # The previous generation remains untouched for in-flight/external owners.
+    assert current.connect_ms == 4.0
     assert current.rtt_ms == 5.0
+    assert current.live_rtt_ms == 7.0
     assert current.failures == 3
+
+
+def test_update_hosts_failed_probe_without_live_health_demotes_stale_probe() -> None:
+    current = HostEntry(
+        host="1.2.3.4",
+        family=Family.STANDARD,
+        rtt_ms=1.0,
+    )
+    pool = ConnectionPool([current], slots_per_host=1, heartbeat_interval=0)
+
+    published = pool.update_hosts(
+        [
+            HostEntry(
+                host="1.2.3.4",
+                family=Family.STANDARD,
+                failures=1,
+                last_error="probe failed",
+            )
+        ]
+    )[0]
+
+    assert published.rtt_ms is None
+    assert published.live_rtt_ms is None
+    assert published.score == 1_000_000.0
 
 
 def test_update_hosts_half_open_token_is_not_carried_into_new_generation() -> None:
