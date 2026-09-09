@@ -38,6 +38,7 @@ from ..codec.framing import FrameSpec, ResponseFrame, build_request
 from ..errors import (
     ALL_HOSTS_UNREACHABLE_NEXT_STEPS,
     AllHostsUnreachable,
+    ConfigError,
     ConnectionClosed,
     ConnectionFailed,
     TdxError,
@@ -287,7 +288,7 @@ class ConnectionPool:
 
     def _mark_failure(self, slot: Slot, exc: BaseException) -> None:
         slot.host.failures += 1
-        # R2 业务级信号：连接成功但请求/响应交换失败 → 单独记数降权
+        # R2 业务级信号：连接成功但交换失败 → 单独记数降权
         if not isinstance(exc, ConnectionFailed):
             slot.host.biz_failures += 1
         # B4：推进熔断状态机（连接失败 1.0 / 业务失败 0.5 加权）
@@ -471,46 +472,74 @@ class ConnectionPool:
 
     # -- bestip 热更新 ------------------------------------------------------ #
     def update_hosts(self, hosts: Sequence[HostEntry]) -> list[HostEntry]:
-        """bestip 热更新：按新序重建主站池，复用现有连接（不重启、不中断）。
+        """按新测速顺序热更新主站池，同时保留 selector/request provenance。
 
-        保留旧池中仍在新列表里的槽位连接（按 ``host:port#index`` 匹配复用），
-        并刷新其 ``HostEntry`` 对象（把测速得到的新 RTT / 失败计数带进池内）；
-        丢弃不在新列表中的槽位（关闭连接）。适合 :meth:`~tstdx.client.TdxClient.bestip`
-        运行时测速后重新排序主站优先级。
-
-        Returns
-        -------
-        更新后的主站列表（即入参 ``hosts``）。
+        对仍存在的 endpoint，只允许吸收 ``connect_ms`` / ``rtt_ms`` 两个网络
+        观测字段；``family/name/verified`` 以及真实请求维护的 failures/circuit/
+        last_error/last_ok 等健康状态继续由当前池对象拥有。这样 ``bestip()`` 的
+        探针不会把 OPEN/DEGRADED 主站伪装成健康，也不会抹掉静态验证身份。
+        被移除 endpoint 的连接会关闭；新增 endpoint 使用调用方提供的 HostEntry。
         """
         if not hosts:
             return list(self.hosts)
+
+        incoming = list(hosts)
+        seen: set[str] = set()
+        for host in incoming:
+            if not isinstance(host, HostEntry):
+                raise ConfigError(
+                    f"update_hosts 仅接受 HostEntry，收到 {type(host).__name__}"
+                )
+            if host.family != self.family:
+                raise ConfigError(
+                    "update_hosts family 不匹配: "
+                    f"pool={self.family!r}, entry={host.key}/{host.family!r}"
+                )
+            if host.key in seen:
+                raise ConfigError(f"update_hosts 存在重复 endpoint: {host.key}")
+            seen.add(host.key)
+
         with self._lock:
-            new_hosts = [h for h in hosts if h is not None]
-            old_by_key = {s.key: s for s in self._slots}
+            current_by_key = {host.key: host for host in self.hosts}
+            canonical_hosts: list[HostEntry] = []
+            for observed in incoming:
+                current = current_by_key.get(observed.key)
+                if current is None:
+                    canonical_hosts.append(observed)
+                    continue
+                if observed.connect_ms is not None:
+                    current.connect_ms = observed.connect_ms
+                if observed.rtt_ms is not None:
+                    current.rtt_ms = observed.rtt_ms
+                canonical_hosts.append(current)
+
+            old_by_key = {slot.key: slot for slot in self._slots}
             new_slots: list[Slot] = []
-            for host in new_hosts:
-                for i in range(self.slots_per_host):
-                    key = f"{host.key}#{i}"
+            for host in canonical_hosts:
+                for index in range(self.slots_per_host):
+                    key = f"{host.key}#{index}"
                     old = old_by_key.get(key)
                     if old is not None:
-                        old.host = host  # 复用连接与锁，仅刷新测速指标
+                        # Same endpoint: keep the current HostEntry object so in-flight
+                        # users and slots observe the same request-health provenance.
+                        old.host = host
                         new_slots.append(old)
                     else:
-                        new_slots.append(Slot(host=host, index=i))
-            # 关闭被移除主站的连接（新序不再包含的 host:port）
-            new_keys = {s.key for s in new_slots}
-            for s in self._slots:
-                if s.key not in new_keys:
-                    self._drop(s)
-            self.hosts = new_hosts
+                        new_slots.append(Slot(host=host, index=index))
+
+            new_keys = {slot.key for slot in new_slots}
+            for slot in self._slots:
+                if slot.key not in new_keys:
+                    self._drop(slot)
+            self.hosts = canonical_hosts
             self._slots = new_slots
             self._rr = 0
             _LOG.info(
                 "bestip 热更新主站池：%d 台（复用 %d 槽）",
-                len(new_hosts),
-                len([s for s in new_slots if s.conn is not None]),
+                len(canonical_hosts),
+                len([slot for slot in new_slots if slot.conn is not None]),
             )
-        return new_hosts
+        return canonical_hosts
 
     # -- 多帧请求 ----------------------------------------------------------- #
     def request_multi(
