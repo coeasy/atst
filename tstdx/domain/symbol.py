@@ -242,18 +242,17 @@ def _parse_symbol_cached(raw: str, market: str | None) -> Symbol:
             )
         return Symbol(market=resolved_market, code=code)
 
-    compact = re.sub(r"[^0-9a-zA-Z]", "", s)
-    if compact != s:
-        return _parse_symbol_cached(compact, market)
-
     raise SymbolError(
         f"无法解析证券代码: {raw!r}",
-        context={"symbol": raw, "expected": "sh600000 / 600000.sh / 600000"},
+        context={
+            "symbol": raw,
+            "expected": "sh600000 / sh.600000 / sh-600000 / sh:600000 / sh 600000",
+        },
     )
 
 
 def parse_symbol(raw: str, *, market: str | None = None) -> Symbol:
-    """把任意书写变种解析为 :class:`Symbol`；类型错误统一为 SymbolError。"""
+    """把已声明书写变种解析为 :class:`Symbol`；类型/未知分隔符统一为 SymbolError。"""
 
     validated_raw, validated_market = _require_public_inputs(raw, market)
     return _parse_symbol_cached(validated_raw, validated_market)
