@@ -8,6 +8,10 @@ client-local HostEntry snapshots. ``ConnectionPool`` and ``AsyncConnectionPool``
 are public too, so direct construction enforces the same identity/ownership
 invariants and validates declared configuration instead of silently coercing or
 clamping invalid values.
+
+A newly constructed pool starts a new runtime-health lifecycle. It may inherit
+selector identity and background-probe latency, but never caller-owned request
+failures, circuit state, live RTT, errors, or HALF_OPEN probe tokens.
 """
 
 from __future__ import annotations
@@ -134,6 +138,20 @@ def _validate_sync_only_options(kwargs: dict[str, Any]) -> None:
         )
 
 
+def _pool_owned_host(entry: HostEntry) -> HostEntry:
+    """Start one pool generation with identity/probe evidence only."""
+
+    return HostEntry(
+        host=entry.host,
+        port=entry.port,
+        family=entry.family,
+        name=entry.name,
+        verified=entry.verified,
+        connect_ms=entry.connect_ms,
+        rtt_ms=entry.rtt_ms,
+    )
+
+
 def _canonical_family_hosts(hosts: Any, *, family: Any) -> Any:
     if family not in _VALID_FAMILIES:
         raise ConfigError(
@@ -176,7 +194,7 @@ def _canonical_family_hosts(hosts: Any, *, family: Any) -> Any:
                 context={"host": normalized.key, "index": index},
             )
         seen.add(normalized.key)
-        canonical.append(normalized)
+        canonical.append(_pool_owned_host(normalized))
     return canonical
 
 
