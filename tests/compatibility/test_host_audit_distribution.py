@@ -59,6 +59,14 @@ def test_public_cli_host_audit_delegates_to_installed_package_module(
     ]
 
 
+def test_public_cli_source_has_no_repository_script_dependency() -> None:
+    source = (_ROOT / "tstdx" / "cli" / "cmds_hosts.py").read_text(encoding="utf-8")
+
+    assert "from ..tools.host_audit import main as host_audit_main" in source
+    assert "scripts/audit_hosts.py" not in source
+    assert 'import_module("audit_hosts")' not in source
+
+
 def test_source_host_audit_script_is_only_a_package_wrapper() -> None:
     script = (_ROOT / "scripts" / "audit_hosts.py").read_text(encoding="utf-8")
 
@@ -66,6 +74,15 @@ def test_source_host_audit_script_is_only_a_package_wrapper() -> None:
     assert "RankingStore" not in script
     assert "ThreadPoolExecutor" not in script
     assert "def audit_family(" not in script
+
+
+def test_release_artifact_smoke_imports_host_audit_without_source_checkout() -> None:
+    workflow = (_ROOT / ".github" / "workflows" / "wheels.yml").read_text(encoding="utf-8")
+    smoke = workflow.split("  smoke-install:", 1)[1].split("  publish-pypi:", 1)[0]
+
+    assert "actions/checkout" not in smoke
+    assert "from tstdx.tools.host_audit import AuditReport, audit_all" in smoke
+    assert "tstdx hosts audit --help" in smoke
 
 
 def test_no_save_ranking_never_constructs_ranking_store(
