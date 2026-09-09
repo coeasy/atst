@@ -136,7 +136,7 @@ def _cmd_feedback(args: argparse.Namespace) -> int:
     """反馈上报组：``tstdx feedback submit`` / ``tstdx feedback stats``。
 
     薄壳接线 :mod:`tstdx.feedback` 公开 API（FeedbackReporter / UserStats），
-    不复述其脱敏逻辑。``submit`` 默认不发（需 ``TSTX_FEEDBACK=1`` 或
+    不复述其脱敏逻辑。``submit`` 默认不发（需 ``TSTDX_FEEDBACK=1`` 或
     ``TSTDX_FEEDBACK=dry-run``），禁用态提示并以退出码 1 结束。
     """
     from ..feedback import FeedbackReporter, UserStats
