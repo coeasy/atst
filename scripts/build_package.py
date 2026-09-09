@@ -460,11 +460,15 @@ def _sha256(path: pathlib.Path) -> str:
 
 
 def _smoke(wheel: pathlib.Path) -> None:
-    """Install the exact wheel into a clean venv and verify its public identity."""
+    """Install and verify the exact wheel without letting the source checkout shadow it."""
 
+    wheel = wheel.resolve()
     print("[冒烟] 创建临时 venv 并安装 canonical wheel ...")
     with tempfile.TemporaryDirectory(prefix="tstdx-smoke-") as tmp:
-        venv_dir = pathlib.Path(tmp) / "venv"
+        temp_root = pathlib.Path(tmp)
+        venv_dir = temp_root / "venv"
+        work_dir = temp_root / "work"
+        work_dir.mkdir()
         venv.create(venv_dir, with_pip=True)
         if sys.platform == "win32":
             python = venv_dir / "Scripts" / "python.exe"
@@ -482,10 +486,11 @@ def _smoke(wheel: pathlib.Path) -> None:
                 "--quiet",
                 "--no-deps",
                 str(wheel),
-            ]
+            ],
+            cwd=work_dir,
         )
         probe = (
-            "import importlib.metadata as m; "
+            "import importlib.metadata as m, pathlib, sys; "
             "from importlib.resources import files; "
             "import tstdx; "
             "from tstdx.client import AsyncTdxClient, TdxClient; "
@@ -493,11 +498,16 @@ def _smoke(wheel: pathlib.Path) -> None:
             "from tstdx.tools.host_audit import audit_all; "
             "from tstdx.transport import ConnectionPool, RankingStore, resolve_hosts; "
             "from tstdx.transport.async_ import AsyncConnectionPool; "
+            "package_file = pathlib.Path(tstdx.__file__).resolve(); "
+            "venv_root = pathlib.Path(sys.prefix).resolve(); "
+            "assert package_file.is_relative_to(venv_root), (package_file, venv_root); "
             "assert tstdx.__version__ == m.version('tstdx'); "
             "assert files('tstdx').joinpath('py.typed').is_file(); "
             "assert callable(audit_all); "
             "assert TdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'; "
             "assert AsyncTdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'; "
+            "assert TdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'; "
+            "assert AsyncTdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'; "
             "assert AsyncTdxClient.quotes_concurrent.__module__ == 'tstdx.client._async_concurrency_hardening'; "
             "assert ConnectionPool.request.__module__ == 'tstdx.transport._pool_hardening'; "
             "assert ConnectionPool.update_hosts.__module__ == 'tstdx.transport._pool_provenance_hardening'; "
@@ -505,12 +515,12 @@ def _smoke(wheel: pathlib.Path) -> None:
             "assert AsyncConnectionPool.update_hosts.__module__ == 'tstdx.transport._pool_provenance_hardening'; "
             "assert RankingStore.load.__module__ == 'tstdx.transport._ranking_hardening'; "
             "assert resolve_hosts.__module__ == 'tstdx.transport._host_selector_hardening'; "
-            "print('tstdx', tstdx.__version__, 'wheel smoke OK')"
+            "print('tstdx', tstdx.__version__, package_file, 'wheel smoke OK')"
         )
-        _run([str(python), "-c", probe])
-        _run([str(cli), "--help"])
-        _run([str(cli), "hosts", "audit", "--help"])
-        _run([str(python), "-m", "pip", "check"])
+        _run([str(python), "-I", "-c", probe], cwd=work_dir)
+        _run([str(cli), "--help"], cwd=work_dir)
+        _run([str(cli), "hosts", "audit", "--help"], cwd=work_dir)
+        _run([str(python), "-I", "-m", "pip", "check"], cwd=work_dir)
     print("[冒烟] 通过 ✓")
 
 
