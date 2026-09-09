@@ -17,6 +17,14 @@ def _release_dockerfile() -> str:
     return (_ROOT / "Dockerfile.release").read_text(encoding="utf-8")
 
 
+def _patterns(name: str) -> set[str]:
+    return {
+        line.strip()
+        for line in (_ROOT / name).read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+
 def test_builder_uses_complete_filtered_repository_contract() -> None:
     dockerfile = _dockerfile()
     builder = dockerfile.split("FROM python:3.11-slim AS runtime", 1)[0]
@@ -63,12 +71,8 @@ def test_release_image_has_no_build_stage_and_consumes_only_downloaded_wheel() -
     assert "python -m pip check" in dockerfile
 
 
-def test_docker_context_excludes_noise_but_keeps_contract_baselines() -> None:
-    patterns = {
-        line.strip()
-        for line in (_ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    }
+def test_source_docker_context_excludes_noise_and_release_artifacts() -> None:
+    patterns = _patterns(".dockerignore")
 
     assert ".git" in patterns
     assert ".pytest_cache/" in patterns
@@ -76,9 +80,20 @@ def test_docker_context_excludes_noise_but_keeps_contract_baselines() -> None:
     assert ".ruff_cache/" in patterns
     assert "coverage.xml" in patterns
     assert "dist/" in patterns
+    assert "release-dist/" in patterns
     assert "*.whl" in patterns
     assert "*.tar.gz" in patterns
-    assert "!release-dist/*.whl" in patterns
     assert "benches/results/ci_smoke.json" in patterns
     assert "benches/results/ci_time_smoke.json" in patterns
     assert "benches/results/" not in patterns
+
+
+def test_release_docker_context_contains_only_dockerfile_and_canonical_wheel() -> None:
+    patterns = _patterns("Dockerfile.release.dockerignore")
+
+    assert "**" in patterns
+    assert "!Dockerfile.release" in patterns
+    assert "!release-dist/" in patterns
+    assert "!release-dist/*.whl" in patterns
+    assert all("tstdx/" not in pattern for pattern in patterns)
+    assert all("tests/" not in pattern for pattern in patterns)
