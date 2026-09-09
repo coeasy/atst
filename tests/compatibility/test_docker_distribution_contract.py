@@ -17,20 +17,15 @@ def _release_dockerfile() -> str:
     return (_ROOT / "Dockerfile.release").read_text(encoding="utf-8")
 
 
-def test_builder_has_full_offline_contract_inputs_and_dev_dependencies() -> None:
+def test_builder_uses_complete_filtered_repository_contract() -> None:
     dockerfile = _dockerfile()
     builder = dockerfile.split("FROM python:3.11-slim AS runtime", 1)[0]
 
+    assert "COPY . ." in builder
+    assert "COPY tests/ tests/" not in builder
+    assert "COPY scripts/ scripts/" not in builder
+    assert "COPY .github/workflows/ .github/workflows/" not in builder
     assert _BUILD_TOOL_INSTALL in builder
-    assert "Makefile" in builder
-    assert "Dockerfile.release" in builder
-    assert ".dockerignore" in builder
-    assert ".pre-commit-config.yaml" in builder
-    assert "COPY tests/ tests/" in builder
-    assert "COPY scripts/ scripts/" in builder
-    assert "COPY PROTOCOL_SPEC/ PROTOCOL_SPEC/" in builder
-    assert "COPY docs/ docs/" in builder
-    assert "COPY .github/workflows/ .github/workflows/" in builder
     assert 'python -m pytest tests/ -m "not network"' in builder
 
 
@@ -68,7 +63,7 @@ def test_release_image_has_no_build_stage_and_consumes_only_downloaded_wheel() -
     assert "python -m pip check" in dockerfile
 
 
-def test_docker_context_excludes_noise_but_reincludes_release_wheel() -> None:
+def test_docker_context_excludes_noise_but_keeps_contract_baselines() -> None:
     patterns = {
         line.strip()
         for line in (_ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
@@ -76,11 +71,14 @@ def test_docker_context_excludes_noise_but_reincludes_release_wheel() -> None:
     }
 
     assert ".git" in patterns
-    assert ".pytest_cache" in patterns
-    assert ".mypy_cache" in patterns
-    assert ".ruff_cache" in patterns
+    assert ".pytest_cache/" in patterns
+    assert ".mypy_cache/" in patterns
+    assert ".ruff_cache/" in patterns
     assert "coverage.xml" in patterns
-    assert "dist" in patterns
+    assert "dist/" in patterns
     assert "*.whl" in patterns
     assert "*.tar.gz" in patterns
     assert "!release-dist/*.whl" in patterns
+    assert "benches/results/ci_smoke.json" in patterns
+    assert "benches/results/ci_time_smoke.json" in patterns
+    assert "benches/results/" not in patterns
