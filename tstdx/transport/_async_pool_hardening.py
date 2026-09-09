@@ -21,8 +21,10 @@ from typing import Any
 from ..errors import (
     ALL_HOSTS_UNREACHABLE_NEXT_STEPS,
     AllHostsUnreachable,
+    ConfigError,
     ConnectionClosed,
     ConnectionFailed,
+    FramingError,
     TdxError,
 )
 from ..observability import metrics
@@ -159,6 +161,12 @@ def _circuit_unreachable(method: int, *, attempts: int = 0) -> AllHostsUnreachab
     )
 
 
+def _require_positive_frame_limit(value: Any, *, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ConfigError(f"{field} 必须是正整数，收到 {value!r}")
+    return value
+
+
 async def _request(
     self: _impl.AsyncConnectionPool,
     method: int,
@@ -255,8 +263,11 @@ async def _request_multi(
     max_frames: int = 512,
     timeout: float | None = None,
 ) -> _impl.ResponseFrame:
-    """Multi-frame request with circuit admission and generation-safe health."""
+    """Multi-frame request with sync-equivalent truncation and circuit safety."""
 
+    frame_limit = _require_positive_frame_limit(max_frames, field="max_frames")
+    if record_size is not None:
+        _require_positive_frame_limit(record_size, field="record_size")
     self._ensure_open()
     await self._acquire_rate()
     slot = await _select_allowed_slot(self)
@@ -290,7 +301,7 @@ async def _request_multi(
                             record_size = max(1, got // count)
                         need = count * (record_size or 1) if record_size else None
                         read = 1
-                        while need is not None and got < need and read < max_frames:
+                        while need is not None and got < need and read < frame_limit:
                             try:
                                 nxt = await conn._read_frame_locked()
                             except TdxError as exc:
@@ -308,15 +319,27 @@ async def _request_multi(
                                 break
                             chunks.append(nxt.payload)
                             got += len(nxt.payload)
+                        if need is not None and got < need and cont_exc is None:
+                            cont_exc = FramingError(
+                                "request_multi 响应截断: "
+                                f"need={need} got={got} max_frames={frame_limit}",
+                                context={
+                                    "method": hex(method),
+                                    "need": need,
+                                    "got": got,
+                                    "max_frames": frame_limit,
+                                },
+                            )
+                        joined = b"".join(chunks)
                         result = _impl.ResponseFrame(
                             magic=first.magic,
                             zip_flag=first.zip_flag,
                             seq=first.seq,
                             method=first.method,
-                            zip_size=sum(len(chunk) for chunk in chunks),
-                            unzip_size=sum(len(chunk) for chunk in chunks),
+                            zip_size=len(joined),
+                            unzip_size=len(joined),
                             body=b"",
-                            payload=b"".join(chunks),
+                            payload=joined,
                             header_raw=first.header_raw,
                         )
         finally:
@@ -334,6 +357,7 @@ async def _request_multi(
         await _mark_failure(self, slot, first_exc, generation=generation, conn=conn)
         raise first_exc
     if cont_exc is not None:
+        _LOG.warning("异步 request_multi 数据不完整，返回已收到前缀并弃连: %s", cont_exc)
         await _mark_failure(self, slot, cont_exc, generation=generation, conn=conn)
         metrics.record_request(
             command=f"0x{method:04x}",
@@ -363,8 +387,9 @@ async def _iter_frames(
     *,
     max_frames: int = 512,
 ) -> AsyncIterator[_impl.ResponseFrame]:
-    """Frame iterator that cannot bypass circuit admission or leak dirty sockets."""
+    """Frame iterator with sync-equivalent cap validation and dirty-socket safety."""
 
+    frame_limit = _require_positive_frame_limit(max_frames, field="max_frames")
     self._ensure_open()
     await self._acquire_rate()
     slot = await _select_allowed_slot(self)
@@ -374,7 +399,7 @@ async def _iter_frames(
     conn: _impl.AsyncTcpConnection | None = None
     generation: int | None = None
     failed: TdxError | None = None
-    normal_end = False
+    frames_read = 0
     try:
         conn, generation = await self._acquire_lease(slot)
         try:
@@ -404,15 +429,15 @@ async def _iter_frames(
                         cause=exc,
                     )
                 if failed is None:
-                    for _ in range(max_frames):
+                    while frames_read < frame_limit:
                         try:
                             frame = await conn._read_frame_locked()
                         except TdxError as exc:
                             failed = exc
                             break
+                        frames_read += 1
                         conn.stats.last_used = time.time()
                         yield frame
-                    normal_end = failed is None
         finally:
             await self._release_lease(slot, conn)
     except asyncio.CancelledError:
@@ -428,9 +453,12 @@ async def _iter_frames(
         _LOG.warning("异步 iter_frames 中断（%s: %s），弃连", type(failed).__name__, failed)
         await _mark_failure(self, slot, failed, generation=generation, conn=conn)
         return
-    if normal_end:
-        await _mark_success(self, slot, generation=generation)
-    if self._closed:
+
+    await _mark_success(self, slot, generation=generation)
+    # Reaching the caller's cap does not prove the server stream ended. The
+    # connection may still contain unread frames from this request, so it must
+    # never be returned to the reusable pool in that state.
+    if frames_read >= frame_limit or self._closed:
         await self._drop(slot, expected=conn)
 
 
