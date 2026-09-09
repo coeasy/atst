@@ -61,10 +61,19 @@ def test_benchmark_validator_accepts_positive_synthetic_results() -> None:
 @pytest.mark.parametrize(
     ("data", "message"),
     [
-        ({"mode": "live", "results": {"x": {"rows": 1, "rows_per_s": 1}}}, "synthetic"),
+        (
+            {"mode": "live", "results": {"x": {"rows": 1, "rows_per_s": 1}}},
+            "synthetic",
+        ),
         ({"mode": "synthetic", "results": {}}, "empty"),
-        ({"mode": "synthetic", "results": {"x": {"rows": 0, "rows_per_s": 1}}}, "rows"),
-        ({"mode": "synthetic", "results": {"x": {"rows": 1, "rows_per_s": 0}}}, "rows_per_s"),
+        (
+            {"mode": "synthetic", "results": {"x": {"rows": 0, "rows_per_s": 1}}},
+            "rows",
+        ),
+        (
+            {"mode": "synthetic", "results": {"x": {"rows": 1, "rows_per_s": 0}}},
+            "rows_per_s",
+        ),
     ],
 )
 def test_benchmark_validator_fails_closed(data: dict, message: str) -> None:
