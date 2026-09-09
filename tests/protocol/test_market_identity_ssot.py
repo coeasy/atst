@@ -20,20 +20,23 @@ def test_protocol_market_inference_matches_domain_symbol_ssot_for_ambiguous_0000
     assert build_realtime_quote_body("000001")[:2] == bytes([0x01, 0x01])
 
 
-def test_protocol_market_inference_matches_domain_symbol_ssot_for_bj() -> None:
+def test_bj_symbol_identity_is_known_but_realtime_request_byte_is_not_guessed() -> None:
     domain_market, code = to_tdx_market("430047")
 
     assert code == "430047"
     assert domain_market == 2
     assert infer_market("430047") == domain_market
-    assert build_realtime_quote_body("430047")[:2] == bytes([0x01, 0x02])
+    with pytest.raises(ParseError, match="北交所.*golden") as exc_info:
+        build_realtime_quote_body("430047")
+    assert exc_info.value.context["market"] == 2
+    assert exc_info.value.context["verified_markets"] == [0, 1]
 
 
 def test_explicit_sh_market_remains_available_for_ambiguous_index_code() -> None:
     assert build_realtime_quote_body("000001", market=1)[:2] == bytes([0x01, 0x00])
 
 
-@pytest.mark.parametrize("market", [-1, 3, 99, True, 1.0, "1"])
+@pytest.mark.parametrize("market", [-1, 2, 3, 99, True, 1.0, "1"])
 def test_realtime_quote_market_rejects_unverified_or_coercible_identity(market) -> None:
     with pytest.raises(ParseError):
         quote_request_market(market)  # type: ignore[arg-type]
