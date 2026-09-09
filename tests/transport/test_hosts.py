@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from tstdx.errors import ConfigError
 from tstdx.protocol.commands import Family
 from tstdx.transport.hosts import (
     DEFAULT_HOST_POOL,
@@ -35,9 +36,10 @@ class TestResolveHosts:
         assert len(hosts) >= 1
         assert all(e.family == Family.STANDARD for e in hosts)
 
-    def test_resolve_max_hosts_min_one(self):
-        hosts = resolve_hosts(None, max_hosts=0)
-        assert len(hosts) == 1
+    @pytest.mark.parametrize("value", [0, -1, 65, True, 1.5])
+    def test_resolve_max_hosts_rejects_invalid_limits(self, value):
+        with pytest.raises(ConfigError, match="max_hosts"):
+            resolve_hosts(None, max_hosts=value)
 
     def test_resolve_servers_override_pool(self):
         hosts = resolve_hosts(["1.2.3.4:7709", "5.6.7.8:7709"], max_hosts=1)
@@ -93,13 +95,11 @@ class TestResolveHosts:
         assert len(hosts) >= 1
         assert all(e.family == Family.STANDARD for e in hosts)
 
-    def test_env_hosts_ignores_garbage(self, monkeypatch):
-        """非法条目跳过，合法条目保留；全非法则回退内置池。"""
+    def test_env_hosts_rejects_garbage_instead_of_falling_back(self, monkeypatch):
         monkeypatch.setenv("TSTDX_HOSTS", "not a host:port,,1.2.3.4:99999")
-        hosts = resolve_hosts(None, max_hosts=8)
-        # 1.2.3.4:99999 端口解析为 99999，非「无法解析」——仍会被解析。
-        # 至少验证不抛异常且返回非空。
-        assert len(hosts) >= 1
+
+        with pytest.raises(ConfigError, match="TSTDX_HOSTS 条目无效"):
+            resolve_hosts(None, max_hosts=8)
 
     def test_servers_still_beat_env(self, monkeypatch):
         """显式 servers 参数仍优先于环境变量。"""
