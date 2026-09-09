@@ -110,3 +110,44 @@ def test_factory_cannot_bypass_pool_family_binding() -> None:
             get_client("f10", pool=pool)
     finally:
         pool.close()
+
+
+def test_injected_pool_rejects_nonempty_hosts_for_sync_and_async() -> None:
+    class OpaquePool:
+        pass
+
+    with pytest.raises(ConfigError, match="不能同时传 hosts"):
+        TdxClient(hosts=["1.2.3.4:7709"], pool=OpaquePool())
+    with pytest.raises(ConfigError, match="不能同时传 hosts"):
+        AsyncTdxClient(hosts=["1.2.3.4:7709"], pool=OpaquePool())
+
+
+def test_injected_pool_rejects_nondefault_max_retries_for_sync_and_async() -> None:
+    class OpaquePool:
+        pass
+
+    with pytest.raises(ConfigError, match="不能覆盖 max_retries"):
+        TdxClient(pool=OpaquePool(), max_retries=4)
+    with pytest.raises(ConfigError, match="不能覆盖 max_retries"):
+        AsyncTdxClient(pool=OpaquePool(), max_retries=4)
+
+
+def test_injected_pool_rejects_pool_constructor_kwargs_for_sync_and_async() -> None:
+    class OpaquePool:
+        pass
+
+    with pytest.raises(ConfigError, match="slots_per_host"):
+        TdxClient(pool=OpaquePool(), slots_per_host=2)
+    with pytest.raises(ConfigError, match="slots_per_host"):
+        AsyncTdxClient(pool=OpaquePool(), slots_per_host=2)
+
+
+def test_injected_pool_keeps_client_request_timeout_semantics() -> None:
+    class OpaquePool:
+        pass
+
+    sync_client = TdxClient(pool=OpaquePool(), timeout=2.5)
+    async_client = AsyncTdxClient(pool=OpaquePool(), timeout=2.5)
+
+    assert sync_client.timeout == 2.5
+    assert async_client.timeout == 2.5
