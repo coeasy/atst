@@ -45,6 +45,16 @@ def test_main_test_matrix_uses_declared_dev_dependency_ssot() -> None:
     assert "pip install pytest pytest-cov" not in workflow
 
 
+def test_static_and_auxiliary_test_jobs_use_declared_dev_toolchain() -> None:
+    workflow = _workflow("ci.yml")
+
+    assert workflow.count('python -m pip install -e ".[dev]"') >= 4
+    assert "pip install ruff" not in workflow
+    assert "pip install mypy" not in workflow
+    assert "run: pytest tests/test_bridges.py" not in workflow
+    assert "run: python -m pytest tests/test_bridges.py" in workflow
+
+
 def test_coverage_artifact_is_generated_and_required() -> None:
     workflow = _workflow("ci.yml")
 
@@ -63,9 +73,11 @@ def test_release_builds_once_then_smoke_tests_the_same_universal_wheel() -> None
     assert "python -m build" in workflow
     assert "python -m twine check dist/*" in workflow
     assert "-py3-none-any.whl" in workflow
+    assert '"tstdx/py.typed" in archive.namelist()' in workflow
     assert "os: [ubuntu-latest, macos-latest, windows-latest]" in workflow
     assert "python-version: ['3.10', '3.11', '3.12', '3.13']" in workflow
     assert "python -m pip install --no-index --find-links dist tstdx" in workflow
+    assert "joinpath('py.typed').is_file()" in workflow
 
 
 def test_artifact_only_smoke_does_not_enable_setup_python_dependency_cache() -> None:
