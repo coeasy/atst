@@ -22,10 +22,8 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-      - name: Install package
-        run: |
-          python -m pip install -e ".[all]"
-          python -m pip install pytest
+      - name: Install package and canonical test dependencies
+        run: python -m pip install -e ".[all,dev]"
       - name: Run network tests
         run: |
           mkdir -p reports
