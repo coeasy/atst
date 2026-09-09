@@ -15,11 +15,16 @@ __pycache__
 coverage.xml
 htmlcov
 
-# Local packaging/build outputs; the builder creates fresh canonical artifacts.
+# Local packaging/build outputs. Normal Docker builds create a fresh wheel in the
+# builder. Release builds are the one exception: the workflow downloads the
+# already-validated canonical wheel into release-dist/ and Dockerfile.release
+# must receive that exact artifact.
 build
 dist
 *.egg-info
 *.whl
+*.tar.gz
+!release-dist/*.whl
 
 # Local editor/OS noise
 .DS_Store
