@@ -10,6 +10,10 @@ def _dockerfile() -> str:
     return (_ROOT / "Dockerfile").read_text(encoding="utf-8")
 
 
+def _release_dockerfile() -> str:
+    return (_ROOT / "Dockerfile.release").read_text(encoding="utf-8")
+
+
 def test_builder_has_full_offline_contract_inputs_and_dev_dependencies() -> None:
     dockerfile = _dockerfile()
     builder = dockerfile.split("FROM python:3.11-slim AS runtime", 1)[0]
@@ -36,7 +40,19 @@ def test_runtime_installs_exact_tested_wheel_without_source_rebuild() -> None:
     assert "python -m pip check" in runtime
 
 
-def test_docker_context_excludes_repository_and_generated_noise() -> None:
+def test_release_image_has_no_build_stage_and_consumes_only_downloaded_wheel() -> None:
+    dockerfile = _release_dockerfile()
+
+    assert dockerfile.count("FROM ") == 1
+    assert "COPY release-dist/*.whl /tmp/" in dockerfile
+    assert "python -m build" not in dockerfile
+    assert "COPY tstdx/" not in dockerfile
+    assert "python -m pip install --no-cache-dir --no-deps /tmp/*.whl" in dockerfile
+    assert "test \"$count\" -eq 1" in dockerfile
+    assert "python -m pip check" in dockerfile
+
+
+def test_docker_context_excludes_noise_but_reincludes_release_wheel() -> None:
     patterns = {
         line.strip()
         for line in (_ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
@@ -50,3 +66,5 @@ def test_docker_context_excludes_repository_and_generated_noise() -> None:
     assert "coverage.xml" in patterns
     assert "dist" in patterns
     assert "*.whl" in patterns
+    assert "*.tar.gz" in patterns
+    assert "!release-dist/*.whl" in patterns
