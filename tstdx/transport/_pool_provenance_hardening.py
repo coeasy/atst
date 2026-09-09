@@ -7,8 +7,8 @@ The v1.0 generation/lease model protects in-flight connections, while the v12
 provider work separates selector identity, live request health and background
 probe latency. This layer joins those contracts:
 
-* ``update_hosts`` never replaces selector identity/live health with speed-test
-  failure state;
+* ``update_hosts`` never mutates a closed pool and never replaces selector
+  identity/live health with speed-test failure state;
 * successful probes refresh probe latency while failed probes invalidate stale
   probe latency without erasing real-request live health;
 * every retained endpoint gets a fresh generation HostEntry, so old references
@@ -59,10 +59,6 @@ def _validated_updates(hosts: Sequence[HostEntry], *, family: str) -> list[HostE
         if validated.key in seen:
             raise ConfigError(f"update_hosts 存在重复 endpoint: {validated.key}")
         seen.add(validated.key)
-        # Downstream generation matching must use the canonical identity. Using
-        # the caller-owned object here lets harmless spelling differences (for
-        # example surrounding host whitespace) miss an existing endpoint and
-        # silently discard live health/connection reuse.
         items.append(validated)
     return items
 
@@ -88,17 +84,11 @@ def _next_generation_host(old: HostEntry, observed: HostEntry) -> HostEntry:
         fresh.rtt_ms = observed.rtt_ms
         fresh.connect_ms = observed.connect_ms
     elif observed.failures > 0 or bool(observed.last_error):
-        # A new failed probe invalidates the previous probe measurement. Real
-        # request evidence lives in live_rtt_ms/live_ok_at and remains intact.
         fresh.rtt_ms = None
         fresh.connect_ms = None
     elif observed.connect_ms is not None:
-        # A caller may supply connect-only neutral metadata without asserting a
-        # failed RTT probe. Keep the existing RTT but refresh connect latency.
         fresh.connect_ms = observed.connect_ms
 
-    # A half-open token belongs to the retiring generation. Carrying the token
-    # would strand the new generation with no task able to release it.
     if old.circuit_probe_inflight:
         fresh.circuit = "open"
         fresh.circuit_opened_at = time.time()
@@ -110,17 +100,16 @@ def _sync_update_hosts(
     self: _sync_impl.ConnectionPool,
     hosts: Sequence[HostEntry],
 ) -> list[HostEntry]:
+    self._ensure_open()
     if not hosts:
         return list(self.hosts)
     observed = _validated_updates(hosts, family=self.family)
     to_close: list[_sync_impl.Slot] = []
 
     with self._lock:
+        self._ensure_open()
         self._generation += 1
         generation = self._generation
-        # A probe worker belongs to exactly one generation. Moving to a new
-        # generation reopens admission for a future worker; any old worker is
-        # still harmless because it checks its captured generation before commit.
         self._speedtest_triggered = False
         old_slots = list(self._slots)
         old_by_slot_key = {slot.key: slot for slot in old_slots}
@@ -190,22 +179,25 @@ async def _async_update_hosts(
 ) -> list[HostEntry]:
     """Publish one host generation transactionally with respect to cancellation."""
 
+    self._ensure_open()
     if not hosts:
         return list(self.hosts)
     observed = _validated_updates(hosts, family=self.family)
     to_close: list[_async_impl.AsyncSlot] = []
 
     async with self._lock:
+        self._ensure_open()
         old_slots = list(self._slots)
         locked: list[_async_impl.AsyncSlot] = []
         try:
-            # Preparation phase: acquire every current slot lock before mutating
-            # generation/slot state. Cancellation while waiting releases already
-            # acquired locks and leaves the old generation byte-for-byte active.
             for old in old_slots:
                 await old.lock.acquire()
                 locked.append(old)
 
+            # close() cannot commit while this pool lock is held, but recheck
+            # after all awaitable preparation so no future refactor can move a
+            # close-visible state change before this transaction boundary.
+            self._ensure_open()
             old_by_slot_key = {slot.key: slot for slot in old_slots}
             old_host_by_key = {slot.host.key: slot.host for slot in old_slots}
             generation = self._generation + 1
@@ -256,9 +248,6 @@ async def _async_update_hosts(
                 if old.leases == 0:
                     to_close.append(old)
 
-            # Commit phase: all allocations and awaitable lock acquisitions have
-            # completed. No await occurs until the entire new generation is
-            # published, so task cancellation cannot expose a half generation.
             self._generation = generation
             for old, host in reuse:
                 old.host = host
@@ -274,9 +263,6 @@ async def _async_update_hosts(
             for old in reversed(locked):
                 old.lock.release()
 
-    # The generation is already atomically published. If cancellation arrives
-    # during retired-socket cleanup, finish best-effort cleanup before propagating
-    # the original CancelledError so an unleased retired connection is not leaked.
     for index, slot in enumerate(to_close):
         try:
             await self._drop(slot)
