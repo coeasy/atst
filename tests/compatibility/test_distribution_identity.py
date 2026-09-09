@@ -31,3 +31,10 @@ def test_typed_classifier_has_pep561_marker_in_package_tree() -> None:
     assert '"Typing :: Typed"' in pyproject
     marker = _ROOT / "tstdx" / "py.typed"
     assert marker.is_file()
+
+
+def test_dev_backend_floor_matches_declared_build_system_requirement() -> None:
+    pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    requirements = re.findall(r'"hatchling>=(\d+\.\d+)"', pyproject)
+
+    assert requirements == ["1.25", "1.25"]
