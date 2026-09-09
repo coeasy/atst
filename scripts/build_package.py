@@ -15,8 +15,9 @@ Usage::
 
 The normal build path mirrors the release workflow: PEP 517 isolation is on,
 one universal wheel plus one sdist are required, source/artifact metadata must
-agree, both archives must retain the typed package/public CLI identity, Twine
-metadata validation is mandatory, and no command silently publishes anything.
+agree, both archives must retain the complete Python runtime closure and PEP 561
+marker, Twine metadata validation is mandatory, and no command silently
+publishes anything.
 """
 
 from __future__ import annotations
@@ -325,8 +326,50 @@ def _sdist_metadata(sdist: pathlib.Path, *, version: str) -> tuple[str, str, set
     return name, metadata_version, names
 
 
+def _source_runtime_members() -> set[str]:
+    """Return every repository-owned Python runtime member that artifacts must ship."""
+
+    package_root = ROOT / PROJECT_NAME
+    if not package_root.is_dir() or package_root.is_symlink():
+        raise SystemExit(f"[校验失败] package source tree 无效: {package_root}")
+
+    members: set[str] = set()
+    for path in package_root.rglob("*.py"):
+        if path.is_symlink():
+            raise SystemExit(f"[校验失败] package runtime 不允许符号链接源码: {path}")
+        if path.is_file():
+            members.add(path.relative_to(ROOT).as_posix())
+
+    marker = package_root / "py.typed"
+    if marker.is_symlink() or not marker.is_file():
+        raise SystemExit("[校验失败] source package 缺少普通文件 tstdx/py.typed")
+    members.add(marker.relative_to(ROOT).as_posix())
+
+    init_member = f"{PROJECT_NAME}/__init__.py"
+    if init_member not in members:
+        raise SystemExit(f"[校验失败] source runtime 缺少 {init_member}")
+    return members
+
+
+def _require_archive_runtime_members(
+    *,
+    archive_label: str,
+    actual: set[str],
+    required: set[str],
+) -> None:
+    missing = sorted(required - actual)
+    if not missing:
+        return
+    preview = ", ".join(missing[:8])
+    suffix = " ..." if len(missing) > 8 else ""
+    raise SystemExit(
+        f"[校验失败] {archive_label} 缺少 {len(missing)} 个运行时源码文件: "
+        f"{preview}{suffix}"
+    )
+
+
 def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
-    """Verify source, wheel/sdist identity, typed package files and artifact count."""
+    """Verify source, artifacts, complete runtime closure and distribution identity."""
 
     wheels = sorted(dist_out.glob("*.whl"))
     sdists = sorted(dist_out.glob("*.tar.gz"))
@@ -356,22 +399,18 @@ def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
             f"[校验失败] 预期 canonical sdist {expected_sdist}，实际 {sdist.name}"
         )
 
+    source_runtime = _source_runtime_members()
     wheel_name, wheel_version, wheel_members = _wheel_metadata(wheel)
     if wheel_name != PROJECT_NAME or wheel_version != project_version:
         raise SystemExit(
             "[校验失败] wheel metadata identity mismatch: "
             f"name={wheel_name!r} version={wheel_version!r}"
         )
-
-    for required in (
-        f"{PROJECT_NAME}/__init__.py",
-        f"{PROJECT_NAME}/cli.py",
-        f"{PROJECT_NAME}/client.py",
-        f"{PROJECT_NAME}/py.typed",
-        f"{PROJECT_NAME}/tools/host_audit.py",
-    ):
-        if required not in wheel_members:
-            raise SystemExit(f"[校验失败] wheel 缺少文件 {required}")
+    _require_archive_runtime_members(
+        archive_label="wheel",
+        actual=wheel_members,
+        required=source_runtime,
+    )
 
     sdist_name, sdist_version, sdist_members = _sdist_metadata(
         sdist,
@@ -384,11 +423,13 @@ def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
         )
 
     sdist_root = f"{PROJECT_NAME}-{project_version}"
+    _require_archive_runtime_members(
+        archive_label="sdist",
+        actual=sdist_members,
+        required={f"{sdist_root}/{member}" for member in source_runtime},
+    )
     for required in (
         f"{sdist_root}/pyproject.toml",
-        f"{sdist_root}/{PROJECT_NAME}/__init__.py",
-        f"{sdist_root}/{PROJECT_NAME}/py.typed",
-        f"{sdist_root}/{PROJECT_NAME}/tools/host_audit.py",
         f"{sdist_root}/README.md",
         f"{sdist_root}/CHANGELOG.md",
         f"{sdist_root}/LICENSE",
@@ -398,7 +439,8 @@ def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
 
     print(
         f"[校验] canonical typed distribution ✓ "
-        f"({wheel.name}, {sdist.name}, version={project_version})"
+        f"({wheel.name}, {sdist.name}, version={project_version}, "
+        f"runtime_files={len(source_runtime)})"
     )
     return [sdist, wheel]
 
@@ -446,12 +488,23 @@ def _smoke(wheel: pathlib.Path) -> None:
             "import importlib.metadata as m; "
             "from importlib.resources import files; "
             "import tstdx; "
-            "from tstdx.client import TdxClient; "
+            "from tstdx.client import AsyncTdxClient, TdxClient; "
             "from tstdx.facade import UnifiedQuoteAPI; "
             "from tstdx.tools.host_audit import audit_all; "
+            "from tstdx.transport import ConnectionPool, RankingStore, resolve_hosts; "
+            "from tstdx.transport.async_ import AsyncConnectionPool; "
             "assert tstdx.__version__ == m.version('tstdx'); "
             "assert files('tstdx').joinpath('py.typed').is_file(); "
             "assert callable(audit_all); "
+            "assert TdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'; "
+            "assert AsyncTdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'; "
+            "assert AsyncTdxClient.quotes_concurrent.__module__ == 'tstdx.client._async_concurrency_hardening'; "
+            "assert ConnectionPool.request.__module__ == 'tstdx.transport._pool_hardening'; "
+            "assert ConnectionPool.update_hosts.__module__ == 'tstdx.transport._pool_provenance_hardening'; "
+            "assert AsyncConnectionPool.request.__module__ == 'tstdx.transport._async_pool_hardening'; "
+            "assert AsyncConnectionPool.update_hosts.__module__ == 'tstdx.transport._pool_provenance_hardening'; "
+            "assert RankingStore.load.__module__ == 'tstdx.transport._ranking_hardening'; "
+            "assert resolve_hosts.__module__ == 'tstdx.transport._host_selector_hardening'; "
             "print('tstdx', tstdx.__version__, 'wheel smoke OK')"
         )
         _run([str(python), "-c", probe])
