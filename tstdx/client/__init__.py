@@ -67,6 +67,10 @@ from .async_ import (
     AsyncMacClient,
     AsyncTdxClient,
 )
+
+# Keep async concurrent quote collection semantically identical to the
+# synchronous canonical-dict-then-convert contract.
+from . import _async_concurrency_hardening
 from .factory import _CLIENT_REGISTRY, get_client
 from .sync import (
     _QUOTES_SNAPSHOT_BATCH,
@@ -78,6 +82,8 @@ from .sync import (
     OutputFormat,
     TdxClient,
 )
+
+del _async_concurrency_hardening
 
 __all__ = [
     "TdxClient",
