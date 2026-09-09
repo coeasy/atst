@@ -23,9 +23,14 @@ def test_release_matrix_smokes_async_circuit_hardening_from_installed_wheel() ->
 def test_release_matrix_smokes_client_behavior_and_pool_binding_hardening() -> None:
     smoke = _smoke_job()
 
-    assert "from tstdx.client import AsyncTdxClient, TdxClient" in smoke
+    assert "from tstdx.client import AsyncF10Client, AsyncTdxClient, F10Client, TdxClient" in smoke
     assert "TdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'" in smoke
     assert "AsyncTdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'" in smoke
+    assert "F10Client.__init__.__module__ == 'tstdx.client._subclient_family_hardening'" in smoke
+    assert (
+        "AsyncF10Client.__init__.__module__ == "
+        "'tstdx.client._subclient_family_hardening'"
+    ) in smoke
     assert "TdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'" in smoke
     assert "AsyncTdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'" in smoke
     assert (
