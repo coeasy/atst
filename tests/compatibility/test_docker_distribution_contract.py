@@ -4,6 +4,9 @@ from pathlib import Path
 
 
 _ROOT = Path(__file__).resolve().parents[2]
+_BUILD_TOOL_INSTALL = (
+    'python -m pip install --no-cache-dir -e ".[all,dev]" build twine'
+)
 
 
 def _dockerfile() -> str:
@@ -18,7 +21,7 @@ def test_builder_has_full_offline_contract_inputs_and_dev_dependencies() -> None
     dockerfile = _dockerfile()
     builder = dockerfile.split("FROM python:3.11-slim AS runtime", 1)[0]
 
-    assert 'python -m pip install --no-cache-dir -e ".[all,dev]" build twine' in builder
+    assert _BUILD_TOOL_INSTALL in builder
     assert "Dockerfile.release" in builder
     assert ".dockerignore" in builder
     assert "COPY tests/ tests/" in builder
@@ -31,7 +34,7 @@ def test_builder_has_full_offline_contract_inputs_and_dev_dependencies() -> None
 
 def test_packaging_validators_are_installed_before_builder_invokes_build() -> None:
     dockerfile = _dockerfile()
-    install_at = dockerfile.index('python -m pip install --no-cache-dir -e ".[all,dev]" build twine')
+    install_at = dockerfile.index(_BUILD_TOOL_INSTALL)
     build_at = dockerfile.index("python -m build --wheel")
     twine_at = dockerfile.index("python -m twine check dist/*.whl")
 
