@@ -57,14 +57,29 @@ def test_static_and_auxiliary_test_jobs_use_declared_dev_toolchain() -> None:
     assert "run: python -m pytest tests/test_bridges.py" in workflow
 
 
-def test_coverage_artifact_is_generated_and_required() -> None:
-    workflow = _workflow("ci.yml")
+def test_blocking_workflows_cancel_only_obsolete_same_event_heads() -> None:
+    ci = _workflow("ci.yml")
+    native = _workflow("native.yml")
 
-    assert "--cov-fail-under=77" in workflow
-    assert "--cov-report=term-missing" in workflow
-    assert "--cov-report=xml:coverage.xml" in workflow
-    assert "path: coverage.xml" in workflow
-    assert "if-no-files-found: error" in workflow
+    assert "group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}" in ci
+    assert "group: native-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}" in native
+    assert "cancel-in-progress: true" in ci
+    assert "cancel-in-progress: true" in native
+    assert "timeout-minutes:" in ci
+    assert "timeout-minutes: 20" in native
+
+
+def test_coverage_artifact_is_generated_required_and_preserved_on_failure() -> None:
+    workflow = _workflow("ci.yml")
+    test_job = workflow.split("  test:", 1)[1].split("  originality:", 1)[0]
+
+    assert "--cov-fail-under=77" in test_job
+    assert "--cov-report=term-missing" in test_job
+    assert "--cov-report=xml:coverage.xml" in test_job
+    assert "path: coverage.xml" in test_job
+    assert "if-no-files-found: error" in test_job
+    assert "- name: Upload coverage\n        if: always()" in test_job
+    assert "retention-days: 14" in test_job
 
 
 def test_main_ci_uses_shared_deterministic_checks_and_only_monday_schedule() -> None:
@@ -77,17 +92,21 @@ def test_main_ci_uses_shared_deterministic_checks_and_only_monday_schedule() -> 
     assert "python scripts/check_docs_links.py" in workflow
 
 
-def test_host_audit_is_separate_strict_operational_workflow() -> None:
+def test_host_audit_is_separate_bounded_strict_operational_workflow() -> None:
     workflow = _workflow("host-audit.yml")
 
     assert "pull_request:" not in workflow
     assert "workflow_dispatch:" in workflow
     assert "cron: '0 9 * * 3'" in workflow
+    assert "group: host-audit" in workflow
+    assert "cancel-in-progress: true" in workflow
+    assert "timeout-minutes: 20" in workflow
     assert "--strict" in workflow
     assert "if: always()" in workflow
     assert "actions: write" not in workflow
     assert "audit_report.json" in workflow
     assert "audit_summary.md" in workflow
+    assert "retention-days: 14" in workflow
 
 
 def test_release_builds_once_then_uses_shared_verifier_and_same_wheel_matrix() -> None:
@@ -125,6 +144,17 @@ def test_release_publishes_once_only_after_artifact_matrix_passes() -> None:
     assert "id-token: write" in workflow
 
 
+def test_release_is_serialized_and_all_external_jobs_are_time_bounded() -> None:
+    workflow = _workflow("wheels.yml")
+
+    assert "group: wheels-${{ github.ref }}" in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "timeout-minutes: 20" in workflow
+    assert "timeout-minutes: 10" in workflow
+    assert "timeout-minutes: 45" in workflow
+    assert "retention-days: 14" in workflow
+
+
 def test_release_docker_reuses_artifact_only_after_pypi_succeeds() -> None:
     workflow = _workflow("wheels.yml")
     docker = workflow.split("  publish-docker:", 1)[1]
@@ -151,13 +181,18 @@ def test_release_identity_reuses_shared_source_parser_before_build() -> None:
     assert "github.event.release.prerelease == false" in workflow
 
 
-def test_scheduled_live_smoke_reports_real_failure_and_always_emits_junit() -> None:
+def test_scheduled_live_smoke_is_bounded_truthful_and_always_emits_junit() -> None:
     workflow = _workflow("live-smoke.yml")
 
     assert "pull_request:" not in workflow
     assert "continue-on-error" not in workflow
+    assert "cron: '0 1 * * *'" in workflow
+    assert "group: live-smoke" in workflow
+    assert "cancel-in-progress: true" in workflow
+    assert "timeout-minutes: 30" in workflow
     assert 'python -m pip install -e ".[all,dev]"' in workflow
     assert '-m "network"' in workflow
     assert "--junitxml=reports/live-smoke.xml" in workflow
     assert "if: always()" in workflow
     assert "path: reports/live-smoke.xml" in workflow
+    assert "retention-days: 14" in workflow
