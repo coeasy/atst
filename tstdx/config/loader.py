@@ -14,6 +14,7 @@
 
 环境变量命名规则：``TSTDX_<SECTION>_<KEY>``，全大写；
 值按 JSON → bool → int/float → 逗号分隔列表 → 字符串 的顺序解析。
+专用 runtime 变量（例如 ``TSTDX_HOSTS``）不属于 schema 配置命名空间。
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Mapping
+from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +45,7 @@ __all__ = [
 ENV_PREFIX = "TSTDX_"
 CONFIG_FILENAMES = ("tstdx.toml", ".tstdx.toml")
 ENV_CONFIG_FILE = "TSTDX_CONFIG_FILE"
+_RUNTIME_ENV_KEYS = frozenset({ENV_CONFIG_FILE, "TSTDX_HOSTS"})
 
 _global_config: Config = DEFAULT_CONFIG
 
@@ -68,50 +71,78 @@ def load_toml(path: str | Path) -> dict[str, Any]:
     p = Path(path).expanduser()
     if not p.exists():
         return {}
+    if not p.is_file():
+        raise ConfigError(f"配置路径不是普通文件: {p}", context={"path": str(p)})
     try:
         return _toml_loads(p.read_text(encoding="utf-8"))
+    except ConfigError:
+        raise
     except Exception as exc:
         raise ConfigError(f"配置文件解析失败: {p}", context={"path": str(p)}, cause=exc) from exc
 
 
+def _append_unique_config(found: list[Path], seen: set[Path], path: Path) -> None:
+    """Append one discovered file exactly once while preserving precedence order."""
+
+    identity = path.resolve()
+    if identity in seen:
+        return
+    seen.add(identity)
+    found.append(path)
+
+
 def find_config_files() -> list[Path]:
-    """按优先级返回存在的配置文件路径（项目 → 用户 → 系统）。"""
+    """按优先级返回存在的配置文件路径（显式 → 项目 → 用户 → 系统）。"""
+
     found: list[Path] = []
+    seen: set[Path] = set()
 
-    # 3) 环境变量指定的显式路径（优先级最高，仅次于入参/env）
+    # 环境变量指定的显式路径（文件源内最高优先级）。显式 selector 不得
+    # 因路径拼错而静默回退到项目/用户/系统配置。
     explicit = os.environ.get(ENV_CONFIG_FILE)
-    if explicit:
+    if explicit is not None and explicit.strip():
         p = Path(explicit).expanduser()
-        if p.exists():
-            found.append(p)
+        if not p.exists():
+            raise ConfigError(
+                f"{ENV_CONFIG_FILE} 指定的配置文件不存在: {p}",
+                context={"path": str(p), "source": ENV_CONFIG_FILE},
+            )
+        if not p.is_file():
+            raise ConfigError(
+                f"{ENV_CONFIG_FILE} 指定路径不是普通文件: {p}",
+                context={"path": str(p), "source": ENV_CONFIG_FILE},
+            )
+        _append_unique_config(found, seen, p)
 
-    # 3) 项目配置：从 CWD 向上查找，最多 5 层
+    # 项目配置：从 CWD 向上查找，最多 5 层，只取最近一层。
     cwd = Path.cwd()
     for parent in [cwd, *cwd.parents[:5]]:
+        project_found = False
         for name in CONFIG_FILENAMES:
             cand = parent / name
-            if cand.exists():
-                found.append(cand)
+            if cand.is_file():
+                _append_unique_config(found, seen, cand)
+                project_found = True
                 break
-        if found and found[-1].parent == parent:
+        if project_found:
             break
 
-    # 4) 用户配置
+    # 用户配置
     user_dir = Path(os.path.expanduser("~")) / ".tstdx"
     for name in ("config.toml", "tstdx.toml"):
         cand = user_dir / name
-        if cand.exists():
-            found.append(cand)
+        if cand.is_file():
+            _append_unique_config(found, seen, cand)
             break
 
-    # 5) 系统配置
+    # 系统配置
     if os.name == "nt":
         base = Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData"))
         sys_path = base / "tstdx" / "config.toml"
     else:
         sys_path = Path("/etc/tstdx/config.toml")
-    if sys_path.exists():
-        found.append(sys_path)
+    if sys_path.is_file():
+        _append_unique_config(found, seen, sys_path)
 
     return found
 
@@ -162,25 +193,38 @@ def _split_env_section(body: str) -> tuple[str, str] | None:
     return None
 
 
+def _require_env_field(section: str, field_name: str, *, key: str) -> None:
+    subconfig = getattr(DEFAULT_CONFIG, section)
+    allowed = {field.name for field in fields(subconfig)}
+    if field_name not in allowed:
+        raise ConfigError(
+            f"环境变量 {key} 字段无法识别: {section}.{field_name}; "
+            f"可选: {sorted(allowed)}",
+            context={"env": key, "section": section, "field": field_name},
+        )
+
+
 def config_from_env(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
-    """把 ``TSTDX_*`` 环境变量解析为嵌套配置字典。"""
+    """把 schema 形 ``TSTDX_*`` 环境变量解析为严格嵌套配置字典。
+
+    专用 runtime key 不进入 schema。其余 ``TSTDX_*`` 一旦段名或字段拼错
+    立即 fail closed，避免用户以为覆盖已生效、实际悄悄继续使用默认值。
+    """
+
     env = os.environ if environ is None else environ
     out: dict[str, Any] = {}
     for key, raw in env.items():
-        if not key.startswith(ENV_PREFIX) or key == ENV_CONFIG_FILE:
+        if not key.startswith(ENV_PREFIX) or key in _RUNTIME_ENV_KEYS:
             continue
         body = key[len(ENV_PREFIX) :].lower()
         split = _split_env_section(body)
         if split is None:
-            import warnings
-
-            warnings.warn(
-                f"忽略无法识别的环境变量 {key}（段名须属于 {list(Config._SUBCONFIGS)}）",
-                RuntimeWarning,
-                stacklevel=2,
+            raise ConfigError(
+                f"无法识别环境变量 {key}：段名须属于 {list(Config._SUBCONFIGS)}",
+                context={"env": key},
             )
-            continue
         section, field_name = split
+        _require_env_field(section, field_name, key=key)
         out.setdefault(section, {})[field_name] = parse_env_value(raw)
     return out
 
