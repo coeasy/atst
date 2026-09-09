@@ -69,9 +69,13 @@ from .async_ import (
 )
 
 # Install behavior/provenance patches before factory/public bindings are exposed.
-# Order is intentional: concurrent quote semantics first, then constructor pool
-# family binding. Both modules patch the canonical sync/async classes in place.
-from . import _async_concurrency_hardening, _pool_binding_hardening
+# Order is intentional: concurrent output semantics, pool identity binding, then
+# detached bestip snapshots. All patch the canonical sync/async classes in place.
+from . import (
+    _async_concurrency_hardening,
+    _bestip_hardening,
+    _pool_binding_hardening,
+)
 from .factory import _CLIENT_REGISTRY, get_client
 from .sync import (
     _QUOTES_SNAPSHOT_BATCH,
@@ -84,7 +88,7 @@ from .sync import (
     TdxClient,
 )
 
-del _async_concurrency_hardening, _pool_binding_hardening
+del _async_concurrency_hardening, _bestip_hardening, _pool_binding_hardening
 
 __all__ = [
     "TdxClient",
