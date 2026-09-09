@@ -64,6 +64,34 @@ _ZIP_FLAG = 0x0C
 _PACKET_TYPE = 0x01
 
 
+def _require_uint(name: str, value: Any, *, bits: int) -> int:
+    maximum = (1 << bits) - 1
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= maximum:
+        raise FramingError(
+            f"{name} 必须是 uint{bits} 整数，收到 {value!r}",
+            context={"field": name, "value": value, "minimum": 0, "maximum": maximum},
+        )
+    return value
+
+
+def _require_bytes(name: str, value: Any) -> bytes:
+    if not isinstance(value, bytes):
+        raise FramingError(
+            f"{name} 必须是 bytes，收到 {type(value).__name__}",
+            context={"field": name, "value_type": type(value).__name__},
+        )
+    return value
+
+
+def _require_bool(name: str, value: Any) -> bool:
+    if not isinstance(value, bool):
+        raise FramingError(
+            f"{name} 必须是 bool，收到 {value!r}",
+            context={"field": name, "value": value},
+        )
+    return value
+
+
 # --------------------------------------------------------------------------- #
 # Spec
 # --------------------------------------------------------------------------- #
@@ -114,25 +142,28 @@ class RequestFrame:
     seq: int = 0
 
     def encode(self, spec: FrameSpec = DEFAULT_7709_SPEC) -> bytes:
-        pkg_len = len(self.body) + spec.pkg_len_bias
+        method = _require_uint("method", self.method, bits=16)
+        seq = _require_uint("seq", self.seq, bits=32)
+        body = _require_bytes("body", self.body)
+        pkg_len = len(body) + spec.pkg_len_bias
         # pkg_len 字段为 uint16（req_header_fmt 的 ``H``）：超限时 struct.pack
         # 会抛**原生 struct.error**，调用方 ``except TdxError`` 接不住——
         # 统一转 FramingError（深审 M5）。
         if pkg_len > 0xFFFF:
             raise FramingError(
                 f"请求体过大: pkg_len {pkg_len} 超出 uint16 上限",
-                context={"body_len": len(self.body), "pkg_len": pkg_len},
+                context={"body_len": len(body), "pkg_len": pkg_len},
             )
         header = struct.pack(
             spec.req_header_fmt,
             spec.zip_flag,
-            self.seq & 0xFFFFFFFF,
+            seq,
             spec.packet_type,
             pkg_len,
             pkg_len,
-            self.method & 0xFFFF,
+            method,
         )
-        return header + self.body
+        return header + body
 
 
 @dataclass
@@ -223,8 +254,13 @@ def build_request(
     -------
     (frame_bytes, seq)
     """
+    method = _require_uint("method", method, bits=16)
+    body = _require_bytes("body", body)
+    compress = _require_bool("compress", compress)
     if seq is None:
         seq = _default_seq.next()
+    else:
+        seq = _require_uint("seq", seq, bits=32)
     payload = zlib_compress(body) if compress and body else body
     frame = RequestFrame(method=method, body=payload, seq=seq).encode(spec)
     if len(frame) > spec.max_frame_bytes:
