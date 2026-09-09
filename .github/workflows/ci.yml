@@ -70,16 +70,22 @@ jobs:
           pip install -e ".[all]"
           pip install pytest pytest-cov
       - name: Run tests
-        # G1：--cov-fail-under 强制执行覆盖率门禁。P13-E 从 75 → 77，匹配
-        # 实测 76.21% 的当前水位，为 P14 目标 78% 留一层缓冲；继续提升前
-        # 先补测试再动门禁（见 docs/POTENTIAL_ISSUES_AND_PLAN.md §3 P14-E）。
+        # G1：覆盖率阈值继续固定为 77，不因基础设施问题回退。
+        # 同时显式生成 coverage.xml；artifact 声明必须对应真实产物，避免
+        # “测试绿色但覆盖率 artifact 永远不存在”的 CI 契约漂移。
         # G2：默认剔除 network 标记测试，保证主干 CI 幂等；联网冒烟走 live-smoke job。
-        run: pytest tests/ -v --tb=short -m "not network" --cov=tstdx --cov-report=term-missing --cov-fail-under=77
+        run: |
+          pytest tests/ -v --tb=short -m "not network" \
+            --cov=tstdx \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=77
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ matrix.os }}-python-${{ matrix.python-version }}
           path: coverage.xml
+          if-no-files-found: error
 
   originality:
     name: Originality Check
@@ -224,7 +230,7 @@ jobs:
   # 设计取舍：
   # * 触发条件仅为 schedule（每周三 09:00 UTC ≈ 17:00 北京）与 workflow_dispatch，
   #   不参与 push/PR 门禁——网络波动会引入假阳性，硬门禁得不偿失。
-  # * 使用 --no-strict + artifact 上传；运维人员从 artifact 判断当前主站池健康。
+  # * 使用 artifact 上传；运维人员从 artifact 判断当前主站池健康。
   # * 若 STANDARD 族连续两次全 offline，说明内置候选池过期，触发新主站发现工单。
   host-audit:
     name: Host Pool Audit (weekly)
