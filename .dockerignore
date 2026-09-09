@@ -17,16 +17,15 @@ __pycache__/
 coverage.xml
 htmlcov/
 
-# Local packaging/build outputs. Normal Docker builds create a fresh wheel in the
-# builder. Release builds are the one exception: the workflow downloads the
-# already-validated canonical wheel into release-dist/ and Dockerfile.release
-# must receive that exact artifact.
+# Local packaging/build outputs. Source Docker builds always create a fresh wheel
+# in the builder and must not consume release artifacts. Dockerfile.release has a
+# dedicated Dockerfile.release.dockerignore that admits only its canonical wheel.
 build/
 dist/
+release-dist/
 *.egg-info/
 *.whl
 *.tar.gz
-!release-dist/*.whl
 
 # Local/editor/session state that is never part of repository behavior.
 .DS_Store
