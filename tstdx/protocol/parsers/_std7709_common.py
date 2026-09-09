@@ -152,33 +152,35 @@ def infer_market(code: str) -> int:
 def quote_request_market(std_market: int) -> int:
     """把标准市场编号换算为 **0x0530 请求体** market 字节。
 
-    ✅ 实测：深市 0 → 请求字节 1；沪市 1 → 请求字节 0。北交所标准编号
-    2 的 0x0530 请求字节尚未真机定标，当前保持 2 直传，并依赖
-    :class:`RealtimeQuoteParser` 的 code/market 回声校验阻断脏数据。
+    ✅ golden 实测仅覆盖深市 0 → 请求字节 1、沪市 1 → 请求字节 0。
+    北交所标准编号 2 的 0x0530 请求字节尚未真机定标，必须在请求前
+    fail closed；不能因为 response 有 echo 校验就发送推断 market byte。
     """
 
     if isinstance(std_market, bool) or not isinstance(std_market, int):
         raise ParseError(
-            f"0x0530 标准 market 必须是整数 0|1|2，收到 {std_market!r}",
-            context={"market": std_market},
+            f"0x0530 标准 market 必须是整数 0|1，收到 {std_market!r}",
+            context={"market": std_market, "verified_markets": [Market.SZ, Market.SH]},
         )
     if std_market in (Market.SZ, Market.SH):
         return 1 - std_market
     if std_market == Market.BJ:
-        return Market.BJ
+        raise ParseError(
+            "0x0530 北交所 request market byte 尚未经过真机 golden 定标；拒绝发送推断值",
+            context={
+                "market": std_market,
+                "verified_markets": [Market.SZ, Market.SH],
+                "provider_switch_allowed": False,
+            },
+        )
     raise ParseError(
-        f"0x0530 请求市场字节未定义 std_market={std_market}（可选 0=深 1=沪 2=北）",
-        context={"market": std_market},
+        f"0x0530 请求市场字节未定义 std_market={std_market}（已验证仅 0=深 1=沪）",
+        context={"market": std_market, "verified_markets": [Market.SZ, Market.SH]},
     )
 
 
 def build_realtime_quote_body(code: str, market: int | None = None) -> bytes:
-    """构造 0x0530 的 8 字节请求体。
-
-    ``code`` 必须是 6 位 ASCII 数字；省略 ``market`` 时只通过统一 symbol
-    SSOT 推断。显式 market 也必须是严格整数 0/1/2，不做字符串/浮点/bool
-    强制转换。
-    """
+    """构造 0x0530 的 8 字节请求体；当前仅 SZ/SH request identity 有 golden。"""
 
     normalized = _require_six_digit_code(code)
     std_market = infer_market(normalized) if market is None else market
