@@ -3,7 +3,13 @@ from __future__ import annotations
 import pytest
 
 from tstdx.client import TdxClient
-from tstdx.client_core import _require_int, _standard_market_id, period_to_category
+from tstdx.client_core import (
+    _encode_gbk_field,
+    _require_int,
+    _require_yyyymmdd,
+    _standard_market_id,
+    period_to_category,
+)
 from tstdx.errors import ParseError
 
 
@@ -40,6 +46,24 @@ def test_period_parser_keeps_declared_numeric_categories_only() -> None:
 def test_protocol_integer_parser_never_coerces_values(value) -> None:
     with pytest.raises(ParseError):
         _require_int("field", value, minimum=0)
+
+
+def test_yyyymmdd_parser_rejects_calendar_invalid_date() -> None:
+    with pytest.raises(ParseError, match="合法 YYYYMMDD"):
+        _require_yyyymmdd("date", 20240230)
+
+
+def test_yyyymmdd_parser_accepts_leap_day() -> None:
+    assert _require_yyyymmdd("date", 20240229) == 20240229
+
+
+def test_gbk_field_rejects_lossy_or_truncated_encoding() -> None:
+    with pytest.raises(ParseError, match="无法无损编码"):
+        _encode_gbk_field("filename", "😀.txt", max_bytes=80)
+    with pytest.raises(ParseError, match="超过协议上限"):
+        _encode_gbk_field("filename", "中" * 41, max_bytes=80)
+    with pytest.raises(ParseError, match="NUL"):
+        _encode_gbk_field("filename", "abc\x00.txt", max_bytes=80)
 
 
 def test_security_count_rejects_unknown_market_before_pool_io() -> None:
@@ -85,3 +109,30 @@ def test_bars_rejects_page_range_that_would_overflow_uint16_offset() -> None:
 
     with pytest.raises(ParseError, match="16-bit"):
         client.bars("600519", start=65530, count=10)
+
+
+def test_minute_history_rejects_invalid_calendar_date_before_pool_io() -> None:
+    client = _client_without_io()
+
+    with pytest.raises(ParseError, match="合法 YYYYMMDD"):
+        client.minute_history("600519", 20240230)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"filename": "😀.txt"},
+        {"filename": "中" * 41},
+        {"filename": "abc\x00.txt"},
+        {"filename": "test.txt", "offset": -1},
+        {"filename": "test.txt", "length": -1},
+        {"filename": "test.txt", "max_packets": 0},
+        {"filename": "test.txt", "max_packets": 1.5},
+        {"filename": "test.txt", "strict": 1},
+    ],
+)
+def test_file_download_rejects_lossy_or_coercible_parameters_before_pool_io(kwargs) -> None:
+    client = _client_without_io()
+
+    with pytest.raises(ParseError):
+        client.file_download("600519", **kwargs)  # type: ignore[arg-type]
