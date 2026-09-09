@@ -26,11 +26,20 @@ from .hosts import DEFAULT_HOST_POOL, POOL_BY_FAMILY, HostEntry, RankingStore, r
 # speedtest imports RankingStore. Disk ranking must remain probe-only across
 # process restarts while the public hosts import path stays unchanged.
 from . import _ranking_hardening
+# Join generation/lease safety with v12 selector/live-health/probe provenance.
+# This layer patches sync+async update_hosts and the sync background speedtest
+# after the canonical classes and probe-only RankingStore are available.
+from . import _pool_provenance_hardening
 from .pool import ConnectionPool, PoolStats, Slot
 from .ratelimit import SessionRateLimiter, SessionState, TokenBucket, session_state
 from .speedtest import ProbeResult, probe, rank_hosts, speedtest, speedtest_and_save
 
-del _async_pool_hardening, _pool_hardening, _ranking_hardening
+del (
+    _async_pool_hardening,
+    _pool_hardening,
+    _ranking_hardening,
+    _pool_provenance_hardening,
+)
 
 __all__ = [
     "TcpConnection",
