@@ -7,11 +7,13 @@ from tstdx.protocol.commands import Family
 from tstdx.transport.hosts import HostEntry, POOL_BY_FAMILY, RankingStore, resolve_hosts
 
 
-def test_shared_endpoint_pools_rebind_canonical_family_identity() -> None:
+def test_shared_endpoint_pools_rebind_family_and_reset_verification_provenance() -> None:
     assert POOL_BY_FAMILY[Family.F10]
     assert POOL_BY_FAMILY[Family.GOODS]
     assert all(entry.family == Family.F10 for entry in POOL_BY_FAMILY[Family.F10])
     assert all(entry.family == Family.GOODS for entry in POOL_BY_FAMILY[Family.GOODS])
+    assert all(entry.verified is False for entry in POOL_BY_FAMILY[Family.F10])
+    assert all(entry.verified is False for entry in POOL_BY_FAMILY[Family.GOODS])
 
 
 def test_explicit_servers_cannot_be_expanded_by_ranking_file(tmp_path) -> None:
@@ -128,7 +130,9 @@ def test_ranking_save_rejects_same_endpoint_cross_family_collision(tmp_path) -> 
         )
 
 
-def test_ranking_update_replaces_cross_family_identity_instead_of_mixing_metrics(tmp_path) -> None:
+def test_ranking_update_replaces_cross_family_identity_instead_of_mixing_metrics(
+    tmp_path,
+) -> None:
     store = RankingStore(str(tmp_path / "ranking.json"))
     store.update(
         [
