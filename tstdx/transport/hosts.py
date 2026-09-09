@@ -16,6 +16,7 @@ import ipaddress
 import json
 import math
 import os
+import tempfile
 import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
@@ -161,9 +162,20 @@ def _clean_host(value: Any, *, source: str) -> str:
     return host
 
 
-def _require_non_negative_number(value: Any, *, field: str, source: str) -> float | None:
+def _require_non_negative_number(
+    value: Any,
+    *,
+    field: str,
+    source: str,
+    allow_none: bool = True,
+) -> float | None:
     if value is None:
-        return None
+        if allow_none:
+            return None
+        raise ConfigError(
+            f"{source} {field} 不能为 None",
+            context={"source": source, "field": field},
+        )
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ConfigError(
             f"{source} {field} 必须是非负有限数值，收到 {value!r}",
@@ -195,6 +207,8 @@ def _validated_entry(entry: HostEntry, *, source: str) -> HostEntry:
         raise ConfigError(f"{source} name 必须是字符串", context={"source": source})
     if not isinstance(entry.verified, bool):
         raise ConfigError(f"{source} verified 必须是 bool", context={"source": source})
+    if not isinstance(entry.last_error, str):
+        raise ConfigError(f"{source} last_error 必须是字符串", context={"source": source})
     if entry.circuit not in _VALID_CIRCUITS:
         raise ConfigError(
             f"{source} circuit 非法: {entry.circuit!r}",
@@ -208,11 +222,13 @@ def _validated_entry(entry: HostEntry, *, source: str) -> HostEntry:
         entry.consec_weighted,
         field="consec_weighted",
         source=source,
+        allow_none=False,
     )
     circuit_opened_at = _require_non_negative_number(
         entry.circuit_opened_at,
         field="circuit_opened_at",
         source=source,
+        allow_none=False,
     )
     failures = _require_non_negative_int(entry.failures, field="failures", source=source)
     biz_failures = _require_non_negative_int(entry.biz_failures, field="biz_failures", source=source)
@@ -330,7 +346,11 @@ def _parse_string_server(item: str, *, family: str) -> HostEntry:
         host = raw
 
     return _validated_entry(
-        HostEntry(host=_clean_host(host, source="server string"), port=_parse_port(port, source="server string"), family=family),
+        HostEntry(
+            host=_clean_host(host, source="server string"),
+            port=_parse_port(port, source="server string"),
+            family=family,
+        ),
         source="server string",
     )
 
@@ -424,8 +444,9 @@ def resolve_hosts(
     Priority is explicit ``servers`` > ``TSTDX_HOSTS`` > same-family ranking >
     built-in pool. Explicit/environment selectors own the candidate set; default
     persistent ranking is consumed only for the implicit STANDARD built-in path.
-    Callers may explicitly pass ``ranking``/``ranking_file`` to overlay matching
-    observations on an explicit selector, but ranked extras are still forbidden.
+    ``HostsConfig.servers=[]`` is represented internally together with its
+    ``ranking_file`` and remains equivalent to no explicit selector. A direct
+    empty selector without that config context fails closed.
     """
 
     _require_family_value(family, source="resolve_hosts")
@@ -433,10 +454,16 @@ def resolve_hosts(
     if ranking is not None and ranking_file is not None:
         raise ConfigError("ranking 与 ranking_file 不能同时指定")
 
+    # HostsConfig uses [] to mean "no manual override" and always carries a
+    # ranking_file. Preserve that public config contract while making a direct
+    # resolve_hosts([]) call fail closed instead of silently restoring defaults.
+    if servers is not None and len(servers) == 0:
+        if ranking_file is None:
+            raise ConfigError("explicit servers 不能为空；使用 None 表示采用默认主站池")
+        servers = None
+
     allow_ranked_extras = False
     if servers is not None:
-        if len(servers) == 0:
-            raise ConfigError("explicit servers 不能为空；使用 None 表示采用默认主站池")
         entries = [parse_server(server, family=family) for server in servers]
         _require_family(entries, family, source="explicit servers")
     else:
@@ -526,24 +553,40 @@ class RankingStore:
                 "RankingStore V1 仅支持 STANDARD: "
                 f"entry={sample.key} family={sample.family!r}"
             )
+        seen: set[str] = set()
+        for entry in items:
+            if entry.key in seen:
+                raise ConfigError(f"RankingStore 存在重复 endpoint: {entry.key}")
+            seen.add(entry.key)
         return items
 
     def save(self, entries: Iterable[HostEntry]) -> None:
         items = self._require_standard(entries)
-        by_key: dict[str, HostEntry] = {}
-        for entry in items:
-            if entry.key in by_key:
-                raise ConfigError(f"RankingStore 存在重复 endpoint: {entry.key}")
-            by_key[entry.key] = entry
         data = {
             "version": self.VERSION,
             "updated": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "entries": {key: entry.to_dict() for key, entry in by_key.items()},
+            "entries": {entry.key: entry.to_dict() for entry in items},
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self.path.parent,
+                prefix=f"{self.path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as stream:
+                json.dump(data, stream, ensure_ascii=False, indent=2)
+                stream.flush()
+                os.fsync(stream.fileno())
+                temp_path = Path(stream.name)
+            temp_path.replace(self.path)
+        finally:
+            if temp_path is not None:
+                with contextlib.suppress(FileNotFoundError):
+                    temp_path.unlink()
 
     def merge(self, entries: Iterable[HostEntry]) -> dict[str, HostEntry]:
         """Merge STANDARD runtime observations while preserving stored identity."""
@@ -585,6 +628,10 @@ class RankingStore:
             self.path.unlink()
 
     def top(self, n: int = 5, family: str | None = None) -> list[HostEntry]:
+        if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+            raise ConfigError(f"RankingStore.top n 必须是正整数，收到 {n!r}")
+        if family is not None:
+            _require_family_value(family, source="RankingStore.top")
         items = [entry for entry in self.load().values() if family is None or entry.family == family]
         items.sort(key=lambda entry: entry.score)
         return items[:n]
