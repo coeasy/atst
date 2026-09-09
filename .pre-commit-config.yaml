@@ -1,25 +1,53 @@
-# pre-commit 钩子 —— 原创性门禁 + 基础卫生检查
-# 安装: pip install pre-commit && pre-commit install
-# 手动全量: pre-commit run --all-files
+# Fast commit-time subset of the blocking CI contract.
+# Install through `make install`, then enable with `pre-commit install`.
+# Full tests/coverage/Golden/benchmark/native gates remain in `make gates` and CI.
 repos:
   - repo: local
     hooks:
+      - id: tstdx-ruff-check
+        name: tstdx ruff check
+        entry: python -m ruff check tstdx/ tests/ scripts/
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: tstdx-ruff-format
+        name: tstdx ruff format check
+        entry: python -m ruff format --check tstdx/ tests/ scripts/
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: tstdx-mypy
+        name: tstdx mypy contract
+        entry: python -m mypy tstdx/ --ignore-missing-imports --no-error-summary --warn-unused-ignores
+        language: system
+        pass_filenames: false
+        types: [python]
+
       - id: tstdx-originality
-        name: tstdx 原创性门禁（AST 相似度 + 拷贝指纹 + license 白名单）
-        entry: python -m tstdx.tools.check_originality --strict tstdx
+        name: tstdx originality gate
+        entry: python -m tstdx.tools.check_originality --strict tstdx/
         language: system
         pass_filenames: false
         types: [python]
 
       - id: tstdx-spec-audit
-        name: tstdx spec↔实现反向校验（ledger/解析器覆盖率）
-        entry: python -m tstdx.tools.spec_audit
+        name: tstdx strict spec-to-implementation audit
+        entry: python -m tstdx.tools.spec_audit --json --strict
         language: system
         pass_filenames: false
         files: ^(tstdx/protocol|PROTOCOL_SPEC)/
 
+      - id: tstdx-doc-links
+        name: tstdx repository-bounded docs links
+        entry: python scripts/check_docs_links.py
+        language: system
+        pass_filenames: false
+        files: ^docs/.*\.md$
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v6.0.0
     hooks:
       - id: check-yaml
         args: [--allow-multiple-documents]
