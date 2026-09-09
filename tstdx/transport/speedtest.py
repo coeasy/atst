@@ -3,30 +3,24 @@
 
 """主站测速与 STANDARD 运行时排名（§12.5）。
 
-测速口径
---------
-一次探测包含两段耗时：
-
-* ``connect_ms`` —— TCP 三次握手耗时
-* ``rtt_ms``     —— 一个完整请求/响应往返耗时（含解析前读取）
-
-排序使用 **rtt_ms**。所有 family 都可测速并在调用方提供 ``HostEntry`` 时
-原位刷新当前进程的 RTT 排序证据；历史 V1 ``RankingStore`` 仅持久化
-STANDARD，因为它仍以 ``host:port`` 为 key，无法安全表达同一 endpoint 的
-多 family 身份。测速绝不覆盖真实请求维护的 failures/circuit/name/verified。
+测速只提供网络观测证据；它不得通过 Python 类型强制转换或异常测速结果覆盖
+selector identity / request-health。所有 family 可用于当前进程排序，V1 ranking
+只持久化 STANDARD。
 """
 
 from __future__ import annotations
 
 import concurrent.futures as _fut
+import math
 import time
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from ..errors import ConfigError
 from ..protocol.commands import Family
 from .base import DEFAULT_HEARTBEAT_CMD, TcpConnection
-from .hosts import POOL_BY_FAMILY, HostEntry, RankingStore
+from .hosts import POOL_BY_FAMILY, HostEntry, RankingStore, parse_server
 
 __all__ = [
     "ProbeResult",
@@ -37,6 +31,56 @@ __all__ = [
 ]
 
 _VALID_FAMILIES = (Family.STANDARD, Family.EXTENDED, Family.MAC, Family.GOODS, Family.F10)
+_MAX_SPEEDTEST_WORKERS = 64
+
+
+def _require_family(family: str) -> None:
+    if family not in _VALID_FAMILIES:
+        raise ConfigError(f"未知测速 family: {family!r}")
+
+
+def _require_bool(name: str, value: Any) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{name} 必须是 bool，实际 {value!r}")
+    return value
+
+
+def _require_timeout(timeout: Any) -> float:
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+        raise ValueError(f"timeout 必须是正有限数值，实际 {timeout!r}")
+    normalized = float(timeout)
+    if not math.isfinite(normalized) or normalized <= 0:
+        raise ValueError(f"timeout 必须是正有限数值，实际 {timeout!r}")
+    return normalized
+
+
+def _require_positive_int(name: str, value: Any, *, maximum: int | None = None) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} 必须是正整数，实际 {value!r}")
+    if value <= 0:
+        raise ValueError(f"{name} 必须是正整数，实际 {value}")
+    if maximum is not None and value > maximum:
+        raise ValueError(f"{name} 不能超过 {maximum}，实际 {value}")
+    return value
+
+
+def _require_probe_payload(cmd: Any, body: Any) -> tuple[int, bytes]:
+    if isinstance(cmd, bool) or not isinstance(cmd, int) or not 0 <= cmd <= 0xFFFF:
+        raise ValueError(f"cmd 必须是 uint16 整数，实际 {cmd!r}")
+    if not isinstance(body, bytes):
+        raise ValueError(f"body 必须是 bytes，实际 {type(body).__name__}")
+    return cmd, body
+
+
+def _require_nonnegative_observation(name: str, value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"测速结果 {name} 必须是非负有限数值或 None，收到 {value!r}")
+    normalized = float(value)
+    if not math.isfinite(normalized) or normalized < 0:
+        raise ConfigError(f"测速结果 {name} 必须是非负有限数值或 None，收到 {value!r}")
+    return normalized
 
 
 @dataclass
@@ -51,7 +95,8 @@ class ProbeResult:
 
     @property
     def key(self) -> str:
-        return f"{self.host}:{self.port}"
+        rendered_host = f"[{self.host}]" if ":" in self.host else self.host
+        return f"{rendered_host}:{self.port}"
 
     @property
     def score(self) -> float:
@@ -60,6 +105,7 @@ class ProbeResult:
         return self.rtt_ms
 
     def to_entry(self) -> HostEntry:
+        _validate_probe_result(self)
         return HostEntry(
             host=self.host,
             port=self.port,
@@ -72,6 +118,7 @@ class ProbeResult:
         )
 
     def to_dict(self) -> dict[str, object]:
+        _validate_probe_result(self)
         return {
             "host": self.host,
             "port": self.port,
@@ -83,18 +130,35 @@ class ProbeResult:
         }
 
 
-def _require_family(family: str) -> None:
-    if family not in _VALID_FAMILIES:
-        raise ConfigError(f"未知测速 family: {family!r}")
+def _validate_probe_result(result: ProbeResult, *, family: str | None = None) -> ProbeResult:
+    if not isinstance(result, ProbeResult):
+        raise ConfigError(f"测速结果必须是 ProbeResult，收到 {type(result).__name__}")
+    _require_family(result.family)
+    if family is not None and result.family != family:
+        raise ConfigError(
+            "测速结果 family 不匹配: "
+            f"requested={family!r}, result={result.key} family={result.family!r}"
+        )
+    identity = parse_server((result.host, result.port), family=result.family)
+    if not isinstance(result.ok, bool):
+        raise ConfigError(f"测速结果 ok 必须是 bool，收到 {result.ok!r}")
+    if not isinstance(result.error, str):
+        raise ConfigError(f"测速结果 error 必须是字符串，收到 {type(result.error).__name__}")
+    result.host = identity.host
+    result.port = identity.port
+    result.connect_ms = _require_nonnegative_observation("connect_ms", result.connect_ms)
+    result.rtt_ms = _require_nonnegative_observation("rtt_ms", result.rtt_ms)
+    if result.ok and result.rtt_ms is None:
+        raise ConfigError(f"测速结果 ok=True 但缺少 rtt_ms: {result.key}")
+    return result
 
 
-def _require_limits(*, timeout: float, samples: int, max_workers: int) -> None:
-    if timeout <= 0:
-        raise ValueError(f"timeout 必须 > 0，实际 {timeout}")
-    if samples <= 0:
-        raise ValueError(f"samples 必须 > 0，实际 {samples}")
-    if max_workers <= 0:
-        raise ValueError(f"max_workers 必须 > 0，实际 {max_workers}")
+def _require_limits(*, timeout: Any, samples: Any, max_workers: Any) -> tuple[float, int, int]:
+    return (
+        _require_timeout(timeout),
+        _require_positive_int("samples", samples),
+        _require_positive_int("max_workers", max_workers, maximum=_MAX_SPEEDTEST_WORKERS),
+    )
 
 
 def _apply_probe_observations(
@@ -103,32 +167,23 @@ def _apply_probe_observations(
     *,
     family: str,
 ) -> None:
-    """Refresh only latency observations on caller-owned host objects.
-
-    ConnectionPool slots retain references to these HostEntry objects, so a
-    successful background probe changes subsequent score-based ordering in the
-    current process. Failed/incomplete probes leave previous latency evidence
-    untouched, and request-health/static identity fields remain authoritative.
-    """
+    """Refresh only validated latency observations on caller-owned host objects."""
 
     _require_family(family)
     by_key: dict[str, ProbeResult] = {}
     for result in results:
-        if result.family != family:
-            raise ConfigError(
-                "测速结果 family 不匹配: "
-                f"requested={family!r}, result={result.key} family={result.family!r}"
-            )
-        if result.ok:
-            by_key[result.key] = result
+        validated = _validate_probe_result(result, family=family)
+        if validated.ok:
+            by_key[validated.key] = validated
 
     for host in hosts:
-        if host.family != family:
+        validated_host = parse_server(host, family=family)
+        if validated_host.family != family:
             raise ConfigError(
                 f"测速回灌 host family 不匹配: requested={family!r}, "
-                f"entry={host.key} family={host.family!r}"
+                f"entry={validated_host.key} family={validated_host.family!r}"
             )
-        result = by_key.get(host.key)
+        result = by_key.get(validated_host.key)
         if result is None:
             continue
         if result.connect_ms is not None:
@@ -147,25 +202,30 @@ def probe(
     body: bytes = b"",
     samples: int = 1,
 ) -> ProbeResult:
-    """探测单个主站。取 ``samples`` 次里最好的一次。"""
+    """探测单个主站。取 ``samples`` 次里 RTT 最好的一次。"""
 
     _require_family(family)
-    if timeout <= 0:
-        raise ValueError(f"timeout 必须 > 0，实际 {timeout}")
-    if samples <= 0:
-        raise ValueError(f"samples 必须 > 0，实际 {samples}")
+    probe_timeout = _require_timeout(timeout)
+    sample_count = _require_positive_int("samples", samples)
+    command, payload = _require_probe_payload(cmd, body)
+    entry = parse_server((host, port), family=family)
 
     best: ProbeResult | None = None
-    for _ in range(samples):
-        conn = TcpConnection(host, port, timeout=timeout, connect_timeout=timeout)
+    for _ in range(sample_count):
+        conn = TcpConnection(
+            entry.host,
+            entry.port,
+            timeout=probe_timeout,
+            connect_timeout=probe_timeout,
+        )
         started = time.perf_counter()
         try:
             conn.connect()
             connect_ms = (time.perf_counter() - started) * 1000.0
-            rtt = conn.ping(cmd, body)
+            rtt = conn.ping(command, payload)
             result = ProbeResult(
-                host=host,
-                port=port,
+                host=entry.host,
+                port=entry.port,
                 family=family,
                 ok=True,
                 connect_ms=connect_ms,
@@ -173,17 +233,19 @@ def probe(
             )
         except Exception as exc:
             result = ProbeResult(
-                host=host,
-                port=port,
+                host=entry.host,
+                port=entry.port,
                 family=family,
                 ok=False,
                 error=f"{type(exc).__name__}: {exc}",
             )
         finally:
             conn.close()
+        _validate_probe_result(result, family=family)
         if best is None or result.score < best.score:
             best = result
-    return best or ProbeResult(host=host, port=port, family=family, ok=False, error="no sample")
+    assert best is not None
+    return best
 
 
 def speedtest(
@@ -199,31 +261,41 @@ def speedtest(
     """并发测速 exactly-one family，失败项排在最后。"""
 
     _require_family(family)
-    _require_limits(timeout=timeout, samples=samples, max_workers=max_workers)
+    probe_timeout, sample_count, worker_count = _require_limits(
+        timeout=timeout,
+        samples=samples,
+        max_workers=max_workers,
+    )
+    command, payload = _require_probe_payload(cmd, b"")
+    show_progress = _require_bool("progress", progress)
     entries = list(hosts) if hosts is not None else list(POOL_BY_FAMILY[family])
-    mismatched = [entry for entry in entries if entry.family != family]
-    if mismatched:
-        sample = mismatched[0]
-        raise ConfigError(
-            f"测速 host family 不匹配: requested={family!r}, "
-            f"entry={sample.key} family={sample.family!r}"
-        )
-    if not entries:
+    validated_entries: list[HostEntry] = []
+    for entry in entries:
+        if not isinstance(entry, HostEntry):
+            raise ConfigError(f"测速 hosts 必须包含 HostEntry，收到 {type(entry).__name__}")
+        validated = parse_server(entry, family=family)
+        if validated.family != family:
+            raise ConfigError(
+                f"测速 host family 不匹配: requested={family!r}, "
+                f"entry={validated.key} family={validated.family!r}"
+            )
+        validated_entries.append(validated)
+    if not validated_entries:
         return []
 
     results: list[ProbeResult] = []
-    with _fut.ThreadPoolExecutor(max_workers=min(max_workers, len(entries))) as pool:
+    with _fut.ThreadPoolExecutor(max_workers=min(worker_count, len(validated_entries))) as pool:
         futures = {
             pool.submit(
                 probe,
                 entry.host,
                 entry.port,
                 family=family,
-                timeout=timeout,
-                cmd=cmd,
-                samples=samples,
+                timeout=probe_timeout,
+                cmd=command,
+                samples=sample_count,
             ): entry
-            for entry in entries
+            for entry in validated_entries
         }
         for index, future in enumerate(_fut.as_completed(futures), 1):
             try:
@@ -237,12 +309,13 @@ def speedtest(
                     ok=False,
                     error=f"{type(exc).__name__}: {exc}",
                 )
+            _validate_probe_result(result, family=family)
             results.append(result)
-            if progress:
+            if show_progress:
                 mark = "OK " if result.ok else "ERR"
                 rtt = f"{result.rtt_ms:.1f}ms" if result.rtt_ms is not None else "-"
                 print(
-                    f"[{index}/{len(entries)}] {mark} "
+                    f"[{index}/{len(validated_entries)}] {mark} "
                     f"{result.host}:{result.port} {rtt} {result.error}"
                 )
 
@@ -251,12 +324,14 @@ def speedtest(
 
 
 def rank_hosts(results: Iterable[ProbeResult]) -> list[HostEntry]:
-    """把同 family 测速结果转成可直接热更新连接池的条目。"""
+    """把同 family、已验证的测速结果转成可热更新条目。"""
 
-    entries = [result.to_entry() for result in results]
-    families = {entry.family for entry in entries}
+    items = list(results)
+    validated = [_validate_probe_result(result) for result in items]
+    families = {result.family for result in validated}
     if len(families) > 1:
         raise ConfigError(f"rank_hosts 不接受跨 family 结果: {sorted(families)!r}")
+    entries = [result.to_entry() for result in validated]
     entries.sort(key=lambda entry: entry.score)
     return entries
 
@@ -272,13 +347,9 @@ def speedtest_and_save(
     progress: bool = False,
     keep_failures: bool = True,
 ) -> list[ProbeResult]:
-    """测速、刷新当前调用方排序证据，并在安全时持久化 STANDARD 排名。
+    """测速、刷新当前调用方排序证据，并在安全时持久化 STANDARD 排名。"""
 
-    调用方显式传入 ``hosts`` 时，成功探测的 connect/rtt 会原位回灌到这些
-    HostEntry；其它字段不变。V1 RankingStore 只持久化 STANDARD，非 STANDARD
-    仍可让当前 ConnectionPool 立即受益而不会污染跨进程排名缓存。
-    """
-
+    keep_failed = _require_bool("keep_failures", keep_failures)
     results = speedtest(
         hosts,
         family=family,
@@ -290,6 +361,6 @@ def speedtest_and_save(
     if hosts is not None:
         _apply_probe_observations(hosts, results, family=family)
     if family == Family.STANDARD:
-        selected = results if keep_failures else [result for result in results if result.ok]
+        selected = results if keep_failed else [result for result in results if result.ok]
         RankingStore(ranking_file).update(rank_hosts(selected))
     return results
