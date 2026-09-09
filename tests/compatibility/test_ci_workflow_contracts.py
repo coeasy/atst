@@ -68,6 +68,16 @@ def test_release_builds_once_then_smoke_tests_the_same_universal_wheel() -> None
     assert "python -m pip install --no-index --find-links dist tstdx" in workflow
 
 
+def test_artifact_only_smoke_does_not_enable_setup_python_dependency_cache() -> None:
+    workflow = _workflow("wheels.yml")
+    smoke = workflow.split("  smoke-install:", 1)[1].split("  publish-pypi:", 1)[0]
+
+    assert "actions/checkout" not in smoke
+    assert "actions/download-artifact@v4" in smoke
+    assert "actions/setup-python@v5" in smoke
+    assert "cache: 'pip'" not in smoke
+
+
 def test_release_publishes_once_only_after_artifact_matrix_passes() -> None:
     workflow = _workflow("wheels.yml")
 
@@ -76,6 +86,17 @@ def test_release_publishes_once_only_after_artifact_matrix_passes() -> None:
     assert "if: github.event_name == 'release' && github.event.action == 'published'" in workflow
     assert "environment: pypi" in workflow
     assert "id-token: write" in workflow
+
+
+def test_release_docker_reuses_the_same_canonical_python_artifact() -> None:
+    workflow = _workflow("wheels.yml")
+    docker = workflow.split("  publish-docker:", 1)[1]
+
+    assert "needs: [build-dist, smoke-install]" in docker
+    assert "name: python-dist" in docker
+    assert "path: release-dist" in docker
+    assert "file: Dockerfile.release" in docker
+    assert "docker/build-push-action@v6" in docker
 
 
 def test_release_identity_is_fail_closed_before_build_or_publish() -> None:
