@@ -29,6 +29,10 @@ from . import hosts as _hosts_impl
 from . import _ranking_hardening, _host_selector_hardening
 from .hosts import DEFAULT_HOST_POOL, POOL_BY_FAMILY, HostEntry, RankingStore, resolve_hosts
 
+# Direct public pool construction must obey the same canonical family identity as
+# resolve_hosts/client construction. Install this before generation-safe updates.
+from . import _pool_family_hardening
+
 # Join generation/lease safety with v12 selector/live-health/probe provenance.
 # This layer patches sync+async update_hosts and the sync background speedtest
 # after the canonical classes and probe-only RankingStore are available.
@@ -43,6 +47,7 @@ del (
     _hosts_impl,
     _ranking_hardening,
     _host_selector_hardening,
+    _pool_family_hardening,
     _pool_provenance_hardening,
 )
 
