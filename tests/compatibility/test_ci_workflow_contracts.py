@@ -71,6 +71,16 @@ def test_release_publishes_once_only_after_artifact_matrix_passes() -> None:
     assert "id-token: write" in workflow
 
 
+def test_release_identity_is_fail_closed_before_build_or_publish() -> None:
+    workflow = _workflow("wheels.yml")
+
+    assert "Verify release tag matches package version" in workflow
+    assert "RELEASE_TAG: ${{ github.event.release.tag_name }}" in workflow
+    assert 'expected = f"v{version}"' in workflow
+    assert "assert actual == expected" in workflow
+    assert "github.event.release.prerelease == false" in workflow
+
+
 def test_scheduled_live_smoke_reports_real_failure_and_always_emits_junit() -> None:
     workflow = _workflow("live-smoke.yml")
 
