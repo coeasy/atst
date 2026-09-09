@@ -69,6 +69,30 @@ def test_blank_environment_value_remains_equivalent_to_unset(
     assert all(entry.family == Family.F10 for entry in resolved)
 
 
+def test_explicit_selector_rejects_duplicate_canonical_endpoint_before_truncation() -> None:
+    with pytest.raises(ConfigError, match="重复 canonical endpoint"):
+        resolve_hosts(
+            ["1.2.3.4:7709", " 1.2.3.4:7709 "],
+            family=Family.STANDARD,
+            use_ranking=False,
+            max_hosts=1,
+        )
+
+
+def test_environment_selector_rejects_duplicate_endpoint_before_truncation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TSTDX_HOSTS", "1.2.3.4:7709 1.2.3.4:7709")
+
+    with pytest.raises(ConfigError, match="重复 canonical endpoint"):
+        resolve_hosts(
+            None,
+            family=Family.STANDARD,
+            use_ranking=False,
+            max_hosts=1,
+        )
+
+
 @pytest.mark.parametrize(
     "endpoint",
     [
