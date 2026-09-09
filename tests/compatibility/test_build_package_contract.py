@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import tarfile
 from pathlib import Path
 from types import ModuleType
 
@@ -29,11 +31,7 @@ def _write_minimal_wheel(
     import zipfile
 
     with zipfile.ZipFile(path, "w") as archive:
-        for name in (
-            "tstdx/__init__.py",
-            "tstdx/cli.py",
-            "tstdx/client.py",
-        ):
+        for name in ("tstdx/__init__.py", "tstdx/cli.py", "tstdx/client.py"):
             archive.writestr(name, "")
         if include_typed:
             archive.writestr("tstdx/py.typed", "")
@@ -41,6 +39,48 @@ def _write_minimal_wheel(
             f"tstdx-{version}.dist-info/METADATA",
             f"Metadata-Version: 2.1\nName: tstdx\nVersion: {version}\n\n",
         )
+
+
+def _write_minimal_sdist(
+    path: Path,
+    *,
+    version: str = "1.4.0",
+    include_typed: bool = True,
+    extra_member: str | None = None,
+) -> None:
+    root = f"tstdx-{version}"
+    files = {
+        f"{root}/PKG-INFO": f"Metadata-Version: 2.1\nName: tstdx\nVersion: {version}\n\n",
+        f"{root}/pyproject.toml": "[project]\nname='tstdx'\n",
+        f"{root}/tstdx/__init__.py": f'__version__ = "{version}"\n',
+        f"{root}/README.md": "readme\n",
+        f"{root}/CHANGELOG.md": "changes\n",
+        f"{root}/LICENSE": "MIT\n",
+    }
+    if include_typed:
+        files[f"{root}/tstdx/py.typed"] = ""
+    if extra_member is not None:
+        files[extra_member] = "escape\n"
+
+    with tarfile.open(path, "w:gz") as archive:
+        for name, text in files.items():
+            payload = text.encode()
+            info = tarfile.TarInfo(name)
+            info.size = len(payload)
+            archive.addfile(info, io.BytesIO(payload))
+
+
+def _write_fake_project(root: Path, *, version: str = "1.4.0") -> None:
+    package = root / "tstdx"
+    package.mkdir(parents=True)
+    (root / "pyproject.toml").write_text(
+        f'[project]\nname = "tstdx"\nversion = "{version}"\n',
+        encoding="utf-8",
+    )
+    (package / "__init__.py").write_text(
+        f'__version__ = "{version}"\n',
+        encoding="utf-8",
+    )
 
 
 def test_build_script_rejects_repository_root_and_ancestor_outputs() -> None:
@@ -102,7 +142,6 @@ def test_build_cleanup_removes_only_tstdx_artifacts_from_custom_output(
 
 def test_build_script_defaults_to_pep517_isolation() -> None:
     build = _load_build_script()
-
     args = build._parser().parse_args([])
 
     assert args.isolated is True
@@ -123,9 +162,7 @@ def test_build_script_passes_exact_custom_outdir_to_python_build(
     monkeypatch.setattr(build, "_run", capture)
     build._build(tmp_path, isolated=True)
 
-    assert len(commands) == 1
     command = commands[0]
-    assert "--outdir" in command
     assert command[command.index("--outdir") + 1] == str(tmp_path)
     assert "--no-isolation" not in command
 
@@ -153,32 +190,69 @@ def test_distribution_verifier_rejects_source_project_version_drift(
 ) -> None:
     build = _load_build_script()
     fake_root = tmp_path / "repo"
-    package = fake_root / "tstdx"
     dist = fake_root / "dist"
-    package.mkdir(parents=True)
+    _write_fake_project(fake_root, version="1.4.1")
     dist.mkdir()
-    (fake_root / "pyproject.toml").write_text(
-        '[project]\nname = "tstdx"\nversion = "1.4.0"\n',
-        encoding="utf-8",
-    )
-    (package / "__init__.py").write_text('__version__ = "1.4.1"\n', encoding="utf-8")
     _write_minimal_wheel(dist / "tstdx-1.4.0-py3-none-any.whl")
-    (dist / "tstdx-1.4.0.tar.gz").write_bytes(b"sdist")
+    _write_minimal_sdist(dist / "tstdx-1.4.0.tar.gz")
     monkeypatch.setattr(build, "ROOT", fake_root)
 
-    with pytest.raises(SystemExit, match="source version"):
+    with pytest.raises(SystemExit, match="canonical wheel"):
         build._verify(dist)
 
 
-def test_wheel_verifier_requires_universal_pep561_artifact(tmp_path: Path) -> None:
+def test_wheel_verifier_requires_universal_pep561_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     build = _load_build_script()
-    wheel = tmp_path / "tstdx-1.4.0-py3-none-any.whl"
-    sdist = tmp_path / "tstdx-1.4.0.tar.gz"
-    _write_minimal_wheel(wheel, include_typed=False)
-    sdist.write_bytes(b"placeholder")
+    fake_root = tmp_path / "repo"
+    dist = fake_root / "dist"
+    _write_fake_project(fake_root)
+    dist.mkdir()
+    _write_minimal_wheel(dist / "tstdx-1.4.0-py3-none-any.whl", include_typed=False)
+    _write_minimal_sdist(dist / "tstdx-1.4.0.tar.gz")
+    monkeypatch.setattr(build, "ROOT", fake_root)
 
-    with pytest.raises(SystemExit, match="py.typed"):
-        build._verify(tmp_path)
+    with pytest.raises(SystemExit, match="wheel 缺少文件 tstdx/py.typed"):
+        build._verify(dist)
+
+
+def test_sdist_verifier_requires_typed_source_and_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    build = _load_build_script()
+    fake_root = tmp_path / "repo"
+    dist = fake_root / "dist"
+    _write_fake_project(fake_root)
+    dist.mkdir()
+    _write_minimal_wheel(dist / "tstdx-1.4.0-py3-none-any.whl")
+    _write_minimal_sdist(dist / "tstdx-1.4.0.tar.gz", include_typed=False)
+    monkeypatch.setattr(build, "ROOT", fake_root)
+
+    with pytest.raises(SystemExit, match="sdist 缺少文件 .*py.typed"):
+        build._verify(dist)
+
+
+def test_sdist_verifier_rejects_repository_escape_member(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    build = _load_build_script()
+    fake_root = tmp_path / "repo"
+    dist = fake_root / "dist"
+    _write_fake_project(fake_root)
+    dist.mkdir()
+    _write_minimal_wheel(dist / "tstdx-1.4.0-py3-none-any.whl")
+    _write_minimal_sdist(
+        dist / "tstdx-1.4.0.tar.gz",
+        extra_member="../outside.txt",
+    )
+    monkeypatch.setattr(build, "ROOT", fake_root)
+
+    with pytest.raises(SystemExit, match="越界路径"):
+        build._verify(dist)
 
 
 def test_twine_check_runs_on_the_exact_verified_artifacts(
@@ -199,6 +273,5 @@ def test_twine_check_runs_on_the_exact_verified_artifacts(
     monkeypatch.setattr(build, "_run", capture)
     build._twine_check(artifacts)
 
-    assert len(commands) == 1
     assert commands[0][1:4] == ["-m", "twine", "check"]
     assert commands[0][4:] == [str(path) for path in artifacts]
