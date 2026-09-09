@@ -34,6 +34,11 @@ from . import hosts as _hosts_impl
 from . import _ranking_hardening, _host_selector_hardening
 from .hosts import DEFAULT_HOST_POOL, POOL_BY_FAMILY, HostEntry, RankingStore, resolve_hosts
 
+# Direct TcpConnection/AsyncTcpConnection are public too. Once canonical host
+# parsing is available, install the same endpoint/timeout/boolean configuration
+# contract that pool construction already enforces.
+from . import _connection_contract_hardening
+
 # Direct public pool construction must obey the same canonical family identity as
 # resolve_hosts/client construction. Install this before generation-safe updates.
 from . import _pool_family_hardening
@@ -53,6 +58,7 @@ del (
     _hosts_impl,
     _ranking_hardening,
     _host_selector_hardening,
+    _connection_contract_hardening,
     _pool_family_hardening,
     _pool_provenance_hardening,
 )
