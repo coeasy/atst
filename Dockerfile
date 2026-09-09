@@ -21,11 +21,13 @@ COPY PROTOCOL_SPEC/ PROTOCOL_SPEC/
 COPY docs/ docs/
 COPY .github/workflows/ .github/workflows/
 
-RUN python -m pip install --no-cache-dir -e ".[all,dev]" \
+# build/twine are packaging validators, not general test dependencies, so keep
+# them explicit here instead of inflating the dev extra used by every CI cell.
+# They must be installed before `python -m build` is invoked.
+RUN python -m pip install --no-cache-dir -e ".[all,dev]" build twine \
     && python -m pytest tests/ -m "not network" --tb=short -q -p no:warnings \
     && tstdx --help >/dev/null \
     && python -m build --wheel \
-    && python -m pip install --no-cache-dir twine \
     && python -m twine check dist/*.whl
 
 
