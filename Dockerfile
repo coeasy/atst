@@ -1,6 +1,6 @@
-# B11（REFACTOR_PLAN_v7 §2.9）：多阶段构建
-#   builder 阶段：装 dev 依赖跑测试冒烟（测试失败 → 镜像构建失败）
-#   runtime 阶段：仅含 tstdx 运行代码，剔除 tests/ / PROTOCOL_SPEC/ / docs/
+# Build and test one repository-owned wheel, then install that exact artifact in
+# the runtime image. The runtime stage contains no source tree, tests, docs or
+# build backend and therefore cannot silently rebuild a different package.
 FROM python:3.11-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -8,13 +8,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /build
 
-COPY pyproject.toml README.md LICENSE ./
+# Package inputs.
+COPY pyproject.toml README.md CHANGELOG.md LICENSE Dockerfile ./
 COPY tstdx/ tstdx/
-COPY tests/ tests/
 
-RUN pip install --no-cache-dir ".[all]" pytest \
+# Offline test/audit inputs used by the normal non-network suite. Keep these out
+# of the runtime stage; they exist only so Docker validates the same repository
+# contracts as CI instead of an incomplete synthetic checkout.
+COPY tests/ tests/
+COPY scripts/ scripts/
+COPY PROTOCOL_SPEC/ PROTOCOL_SPEC/
+COPY docs/ docs/
+COPY .github/workflows/ .github/workflows/
+
+RUN python -m pip install --no-cache-dir -e ".[all,dev]" \
     && python -m pytest tests/ -m "not network" --tb=short -q -p no:warnings \
-    && tstdx --help >/dev/null
+    && tstdx --help >/dev/null \
+    && python -m build --wheel \
+    && python -m pip install --no-cache-dir twine \
+    && python -m twine check dist/*.whl
 
 
 FROM python:3.11-slim AS runtime
@@ -26,11 +38,14 @@ RUN addgroup --system tstdx && adduser --system --ingroup tstdx tstdx
 
 WORKDIR /app
 
-# 仅安装运行时代码（不 COPY tests/ PROTOCOL_SPEC/ docs/，体积与攻击面最小化）
-COPY --from=builder /build/pyproject.toml /build/README.md /build/LICENSE ./
-COPY --from=builder /build/tstdx/ tstdx/
-RUN pip install --no-cache-dir --no-deps ".[all]" \
-    && tstdx --help >/dev/null
+# Core tstdx has zero mandatory third-party runtime dependencies. Install the
+# exact wheel that passed the builder tests; optional extras remain opt-in for
+# downstream images instead of being ambiguously requested with --no-deps.
+COPY --from=builder /build/dist/*.whl /tmp/
+RUN python -m pip install --no-cache-dir --no-deps /tmp/*.whl \
+    && rm -f /tmp/*.whl \
+    && tstdx --help >/dev/null \
+    && python -m pip check
 
 USER tstdx
 
