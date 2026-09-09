@@ -78,6 +78,7 @@ def _validate_common(
 ) -> tuple[str, int, str, float, float | None, bool, int, bool, bool, bytes | None]:
     entry = parse_server((host, port), family=family)
     request_timeout = _require_timeout("timeout", timeout)
+    assert request_timeout is not None
     connect = _require_timeout("connect_timeout", connect_timeout, allow_none=True)
     tls_enabled = _require_bool("use_tls", use_tls)
     slot = _require_slot_id(slot_id)
