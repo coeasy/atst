@@ -72,7 +72,7 @@ def test_environment_hosts_cannot_be_expanded_by_requested_ranking_file(
     assert [entry.key for entry in resolved] == ["1.2.3.4:7709"]
 
 
-def test_same_family_ranking_only_overlays_runtime_observations(tmp_path: Path) -> None:
+def test_same_family_ranking_only_overlays_probe_observations(tmp_path: Path) -> None:
     ranking_file = str(tmp_path / "ranking.json")
     RankingStore(ranking_file).update(
         [
@@ -85,6 +85,9 @@ def test_same_family_ranking_only_overlays_runtime_observations(tmp_path: Path) 
                 rtt_ms=3.0,
                 failures=2,
                 last_error="ranked failure",
+                circuit="open",
+                consec_weighted=8.0,
+                circuit_opened_at=99.0,
             )
         ]
     )
@@ -94,6 +97,11 @@ def test_same_family_ranking_only_overlays_runtime_observations(tmp_path: Path) 
         family=Family.STANDARD,
         name="explicit-name",
         verified=False,
+        live_rtt_ms=12.0,
+        failures=1,
+        last_error="current failure",
+        circuit="degraded",
+        consec_weighted=3.0,
     )
 
     resolved = resolve_hosts(
@@ -106,8 +114,11 @@ def test_same_family_ranking_only_overlays_runtime_observations(tmp_path: Path) 
     assert resolved[0].name == "explicit-name"
     assert resolved[0].verified is False
     assert resolved[0].rtt_ms == 3.0
-    assert resolved[0].failures == 2
-    assert resolved[0].last_error == "ranked failure"
+    assert resolved[0].live_rtt_ms == 12.0
+    assert resolved[0].failures == 1
+    assert resolved[0].last_error == "current failure"
+    assert resolved[0].circuit == "degraded"
+    assert resolved[0].consec_weighted == 3.0
 
 
 def test_legacy_other_family_row_is_ignored_by_standard_resolver(tmp_path: Path) -> None:
@@ -255,36 +266,98 @@ def test_standard_update_heals_legacy_nonstandard_row(tmp_path: Path) -> None:
     assert loaded["1.2.3.4:7709"].rtt_ms == 9.0
 
 
-def test_standard_merge_keeps_all_runtime_observation_fields(tmp_path: Path) -> None:
-    store = RankingStore(str(tmp_path / "ranking.json"))
-    store.update([HostEntry(host="1.2.3.4", family=Family.STANDARD, last_ok=1.0)])
-
+def test_standard_merge_persists_probe_only_and_resets_runtime_state(tmp_path: Path) -> None:
+    path = tmp_path / "ranking.json"
+    store = RankingStore(str(path))
     store.update(
         [
             HostEntry(
                 host="1.2.3.4",
                 family=Family.STANDARD,
+                name="runtime-name",
+                verified=True,
                 rtt_ms=4.0,
                 connect_ms=2.0,
+                live_rtt_ms=1.0,
+                live_ok_at=20.0,
                 biz_failures=3,
                 circuit="open",
                 consec_weighted=4.5,
                 circuit_opened_at=10.0,
                 failures=2,
+                last_ok=9.0,
                 last_error="failure",
+                circuit_probe_inflight=True,
             )
         ]
     )
 
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    persisted = raw["entries"]["1.2.3.4:7709"]
+    assert set(persisted) == {"host", "port", "family", "connect_ms", "rtt_ms"}
+
     entry = store.load()["1.2.3.4:7709"]
     assert entry.rtt_ms == 4.0
     assert entry.connect_ms == 2.0
-    assert entry.biz_failures == 3
-    assert entry.circuit == "open"
-    assert entry.consec_weighted == 4.5
-    assert entry.circuit_opened_at == 10.0
-    assert entry.failures == 2
-    assert entry.last_error == "failure"
+    assert entry.name == ""
+    assert entry.verified is False
+    assert entry.live_rtt_ms is None
+    assert entry.live_ok_at is None
+    assert entry.biz_failures == 0
+    assert entry.circuit == "healthy"
+    assert entry.consec_weighted == 0.0
+    assert entry.circuit_opened_at == 0.0
+    assert entry.failures == 0
+    assert entry.last_ok is None
+    assert entry.last_error == ""
+    assert entry.circuit_probe_inflight is False
+
+
+def test_legacy_v1_runtime_health_is_sanitized_without_losing_probe_latency(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "ranking.json"
+    legacy = HostEntry(
+        host="1.2.3.4",
+        family=Family.STANDARD,
+        name="legacy-name",
+        verified=True,
+        connect_ms=2.0,
+        rtt_ms=4.0,
+        failures=5,
+        biz_failures=2,
+        last_ok=3.0,
+        last_error="legacy failure",
+        circuit="open",
+        consec_weighted=9.0,
+        circuit_opened_at=8.0,
+    ).to_dict()
+    path.write_text(
+        json.dumps(
+            {
+                "version": RankingStore.VERSION,
+                "entries": {"1.2.3.4:7709": legacy},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = RankingStore(path).load()["1.2.3.4:7709"]
+    assert loaded.connect_ms == 2.0
+    assert loaded.rtt_ms == 4.0
+    assert loaded.failures == 0
+    assert loaded.biz_failures == 0
+    assert loaded.last_ok is None
+    assert loaded.last_error == ""
+    assert loaded.circuit == "healthy"
+    assert loaded.consec_weighted == 0.0
+    assert loaded.circuit_opened_at == 0.0
+    assert loaded.name == ""
+    assert loaded.verified is False
+
+    RankingStore(path).update([loaded])
+    rewritten = json.loads(path.read_text(encoding="utf-8"))["entries"]["1.2.3.4:7709"]
+    assert set(rewritten) == {"host", "port", "family", "connect_ms", "rtt_ms"}
 
 
 def test_explicit_host_entry_with_wrong_family_fails_closed() -> None:
