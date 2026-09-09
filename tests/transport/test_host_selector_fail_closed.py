@@ -15,6 +15,22 @@ def test_explicit_empty_server_selector_does_not_restore_default_pool() -> None:
         resolve_hosts([], family=Family.STANDARD)
 
 
+def test_config_shaped_empty_servers_preserve_unset_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("TSTDX_HOSTS", "1.2.3.4:7709")
+
+    resolved = resolve_hosts(
+        [],
+        family=Family.STANDARD,
+        ranking_file=str(tmp_path / "ranking.json"),
+        use_ranking=False,
+    )
+
+    assert [entry.key for entry in resolved] == ["1.2.3.4:7709"]
+
+
 def test_invalid_environment_selector_does_not_fall_back_to_builtin_pool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -111,6 +127,7 @@ def test_resolve_hosts_rejects_ambiguous_ranking_sources(tmp_path: Path) -> None
         HostEntry(host="1.2.3.4", rtt_ms=-1.0),
         HostEntry(host="1.2.3.4", failures=-1),
         HostEntry(host="1.2.3.4", circuit="unknown"),
+        HostEntry(host="1.2.3.4", last_error=object()),
     ],
 )
 def test_ranking_store_rejects_invalid_runtime_observations(
@@ -119,6 +136,25 @@ def test_ranking_store_rejects_invalid_runtime_observations(
 ) -> None:
     with pytest.raises(ConfigError):
         RankingStore(tmp_path / "ranking.json").save([entry])
+
+
+def test_ranking_store_rejects_duplicate_endpoint_rows(tmp_path: Path) -> None:
+    store = RankingStore(tmp_path / "ranking.json")
+
+    with pytest.raises(ConfigError, match="重复 endpoint"):
+        store.update(
+            [
+                HostEntry(host="1.2.3.4", port=7709, rtt_ms=1.0),
+                HostEntry(host="1.2.3.4", port=7709, rtt_ms=2.0),
+            ]
+        )
+
+
+def test_ranking_store_top_rejects_non_positive_limit(tmp_path: Path) -> None:
+    store = RankingStore(tmp_path / "ranking.json")
+
+    with pytest.raises(ConfigError, match="正整数"):
+        store.top(0)
 
 
 def test_ranking_load_drops_invalid_rows_without_promoting_them(tmp_path: Path) -> None:
