@@ -10,9 +10,10 @@
 * ``connect_ms`` —— TCP 三次握手耗时
 * ``rtt_ms``     —— 一个完整请求/响应往返耗时（含解析前读取）
 
-排序使用 **rtt_ms**。所有 family 都可测速并用于当前客户端内存热更新；
-历史 V1 ``RankingStore`` 仅持久化 STANDARD，因为它仍以 ``host:port`` 为 key，
-无法安全表达同一 endpoint 的多 family 身份。
+排序使用 **rtt_ms**。所有 family 都可测速并在调用方提供 ``HostEntry`` 时
+原位刷新当前进程的 RTT 排序证据；历史 V1 ``RankingStore`` 仅持久化
+STANDARD，因为它仍以 ``host:port`` 为 key，无法安全表达同一 endpoint 的
+多 family 身份。测速绝不覆盖真实请求维护的 failures/circuit/name/verified。
 """
 
 from __future__ import annotations
@@ -94,6 +95,46 @@ def _require_limits(*, timeout: float, samples: int, max_workers: int) -> None:
         raise ValueError(f"samples 必须 > 0，实际 {samples}")
     if max_workers <= 0:
         raise ValueError(f"max_workers 必须 > 0，实际 {max_workers}")
+
+
+def _apply_probe_observations(
+    hosts: Sequence[HostEntry],
+    results: Sequence[ProbeResult],
+    *,
+    family: str,
+) -> None:
+    """Refresh only latency observations on caller-owned host objects.
+
+    ConnectionPool slots retain references to these HostEntry objects, so a
+    successful background probe changes subsequent score-based ordering in the
+    current process. Failed/incomplete probes leave previous latency evidence
+    untouched, and request-health/static identity fields remain authoritative.
+    """
+
+    _require_family(family)
+    by_key: dict[str, ProbeResult] = {}
+    for result in results:
+        if result.family != family:
+            raise ConfigError(
+                "测速结果 family 不匹配: "
+                f"requested={family!r}, result={result.key} family={result.family!r}"
+            )
+        if result.ok:
+            by_key[result.key] = result
+
+    for host in hosts:
+        if host.family != family:
+            raise ConfigError(
+                f"测速回灌 host family 不匹配: requested={family!r}, "
+                f"entry={host.key} family={host.family!r}"
+            )
+        result = by_key.get(host.key)
+        if result is None:
+            continue
+        if result.connect_ms is not None:
+            host.connect_ms = result.connect_ms
+        if result.rtt_ms is not None:
+            host.rtt_ms = result.rtt_ms
 
 
 def probe(
@@ -231,10 +272,11 @@ def speedtest_and_save(
     progress: bool = False,
     keep_failures: bool = True,
 ) -> list[ProbeResult]:
-    """测速并在安全时持久化排名。
+    """测速、刷新当前调用方排序证据，并在安全时持久化 STANDARD 排名。
 
-    V1 RankingStore 只持久化 STANDARD。其它 family 仍返回完整测速结果，供
-    当前连接池内存热更新，但不会污染 STANDARD 的跨进程排名缓存。
+    调用方显式传入 ``hosts`` 时，成功探测的 connect/rtt 会原位回灌到这些
+    HostEntry；其它字段不变。V1 RankingStore 只持久化 STANDARD，非 STANDARD
+    仍可让当前 ConnectionPool 立即受益而不会污染跨进程排名缓存。
     """
 
     results = speedtest(
@@ -245,6 +287,8 @@ def speedtest_and_save(
         max_workers=max_workers,
         progress=progress,
     )
+    if hosts is not None:
+        _apply_probe_observations(hosts, results, family=family)
     if family == Family.STANDARD:
         selected = results if keep_failures else [result for result in results if result.ok]
         RankingStore(ranking_file).update(rank_hosts(selected))
