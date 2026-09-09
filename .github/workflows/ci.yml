@@ -8,6 +8,13 @@ on:
   schedule:
     - cron: '0 8 * * 1'  # Monday 08:00 UTC — full deterministic gate suite
 
+# Only the newest run for the same event/ref can be merge evidence. Cancel stale
+# PR/push runs so obsolete SHAs do not consume runner capacity while preserving
+# scheduled runs as a separate concurrency class.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -15,6 +22,7 @@ jobs:
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,6 +39,7 @@ jobs:
   type-check:
     name: Type Check (mypy)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -45,6 +54,7 @@ jobs:
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -71,15 +81,18 @@ jobs:
             --cov-report=xml:coverage.xml \
             --cov-fail-under=77
       - name: Upload coverage
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ matrix.os }}-python-${{ matrix.python-version }}
           path: coverage.xml
           if-no-files-found: error
+          retention-days: 14
 
   originality:
     name: Originality Check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -91,6 +104,7 @@ jobs:
   spec-coverage:
     name: Spec Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -102,6 +116,7 @@ jobs:
   bridges:
     name: Bridge Audit (24 items)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -116,6 +131,7 @@ jobs:
   golden-gate:
     name: Golden Gate (L1 real-sample, 三旗标)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -129,6 +145,7 @@ jobs:
   adversarial-matrix:
     name: Adversarial Payload Matrix (native escape = 0)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -143,6 +160,7 @@ jobs:
   reachability:
     name: Module Reachability (orphans = 0 unregistered)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -154,6 +172,7 @@ jobs:
   benchmark-smoke:
     name: Benchmark Smoke (synthetic)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -167,6 +186,7 @@ jobs:
   docs-links:
     name: Docs link integrity
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
