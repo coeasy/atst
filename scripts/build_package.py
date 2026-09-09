@@ -46,6 +46,16 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_DIST = ROOT / "dist"
 PROJECT_NAME = "tstdx"
 REQUIRED_PYTHON = (3, 10)
+_PROTECTED_OUTPUT_ROOTS = {
+    ".github",
+    "ORIGINALITY",
+    "PROTOCOL_SPEC",
+    "benches",
+    "docs",
+    "scripts",
+    "tests",
+    "tstdx",
+}
 
 
 def _display_path(path: pathlib.Path) -> str:
@@ -58,18 +68,26 @@ def _display_path(path: pathlib.Path) -> str:
 
 
 def _validate_dist_out(path: pathlib.Path) -> pathlib.Path:
-    """Return a safe resolved output directory.
+    """Return a safe resolved output directory for destructive artifact cleanup.
 
-    Cleaning is destructive by design. Never allow the repository root or any
-    ancestor of it as the output directory, otherwise ``--dist-out .`` or a
-    parent path could recursively delete source code before the build starts.
+    The output itself may be a top-level build directory inside the repository or
+    a directory outside it. It may never be the repository root/ancestor, a
+    symlink, or a descendant of source/test/docs/config trees.
     """
 
-    resolved = path.expanduser().resolve()
+    expanded = path.expanduser()
+    if expanded.is_symlink():
+        raise SystemExit(f"[安全] --dist-out 不能是符号链接: {expanded}")
+
+    resolved = expanded.resolve()
     if resolved == ROOT or ROOT.is_relative_to(resolved):
-        raise SystemExit(
-            "[安全] --dist-out 不能是仓库根目录或其祖先目录: " f"{resolved}"
-        )
+        raise SystemExit(f"[安全] --dist-out 不能是仓库根目录或其祖先目录: {resolved}")
+
+    if resolved.is_relative_to(ROOT):
+        relative = resolved.relative_to(ROOT)
+        if relative.parts and relative.parts[0] in _PROTECTED_OUTPUT_ROOTS:
+            raise SystemExit(f"[安全] --dist-out 不能位于受保护源码树: {relative}")
+
     if resolved.exists() and not resolved.is_dir():
         raise SystemExit(f"[安全] --dist-out 必须是目录: {resolved}")
     return resolved
@@ -125,24 +143,44 @@ def _require_build_tools(*, isolated: bool) -> None:
     print(f"[环境] hatchling {version} ✓ (--no-isolation)")
 
 
+def _remove_tree(path: pathlib.Path, *, label: str) -> None:
+    """Remove one known repository build tree without following symlinks."""
+
+    if path.is_symlink():
+        raise SystemExit(f"[清理失败] {label} 不能是符号链接: {path}")
+    if not path.exists():
+        return
+
+    resolved = path.resolve()
+    if not resolved.is_relative_to(ROOT) or resolved == ROOT:
+        raise SystemExit(f"[清理失败] {label} 越过仓库边界: {resolved}")
+    if not resolved.is_dir():
+        raise SystemExit(f"[清理失败] {label} 期望目录但发现文件: {resolved}")
+
+    shutil.rmtree(resolved)
+    print(f"[清理] 删除 {_display_path(resolved)}")
+
+
 def _clean(dist_out: pathlib.Path) -> None:
-    """Remove known build outputs; never suppress deletion errors."""
+    """Remove only known artifacts plus repository-owned build metadata.
 
-    targets = [dist_out, ROOT / "build"]
-    targets.extend(p for p in ROOT.glob("*.egg-info") if p.is_dir())
+    The custom output directory itself is retained. This prevents an accidental
+    custom path from recursively deleting unrelated user files while still
+    making stale tstdx wheel/sdist artifacts impossible to pass verification.
+    """
 
-    seen: set[pathlib.Path] = set()
-    for target in targets:
-        target = target.resolve()
-        if target in seen or not target.exists():
-            continue
-        seen.add(target)
-        if not target.is_dir():
-            raise SystemExit(f"[清理失败] 期望目录但发现文件: {target}")
-        shutil.rmtree(target)
-        print(f"[清理] 删除 {_display_path(target)}")
-
+    dist_out = _validate_dist_out(dist_out)
     dist_out.mkdir(parents=True, exist_ok=True)
+    for pattern in (f"{PROJECT_NAME}-*.whl", f"{PROJECT_NAME}-*.tar.gz"):
+        for artifact in dist_out.glob(pattern):
+            if artifact.is_symlink() or not artifact.is_file():
+                raise SystemExit(f"[清理失败] 非普通构建产物: {artifact}")
+            artifact.unlink()
+            print(f"[清理] 删除 {_display_path(artifact)}")
+
+    _remove_tree(ROOT / "build", label="build")
+    for egg_info in ROOT.glob("*.egg-info"):
+        _remove_tree(egg_info, label="egg-info")
 
 
 def _build(dist_out: pathlib.Path, *, isolated: bool) -> None:
@@ -251,7 +289,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-clean",
         action="store_true",
-        help="跳过 dist/build/egg-info 清理（增量构建）",
+        help="跳过历史构建产物清理（增量构建）",
     )
     parser.add_argument(
         "--smoke",
@@ -275,7 +313,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dist-out",
         default=str(DEFAULT_DIST),
-        help="产物目录（默认 dist/；禁止仓库根目录及其祖先）",
+        help="产物目录（默认 dist/；禁止仓库根/祖先、受保护源码树和 symlink）",
     )
     return parser
 
