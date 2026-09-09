@@ -65,6 +65,29 @@ def test_coverage_artifact_is_generated_and_required() -> None:
     assert "if-no-files-found: error" in workflow
 
 
+def test_main_ci_uses_shared_deterministic_checks_and_only_monday_schedule() -> None:
+    workflow = _workflow("ci.yml")
+
+    assert "cron: '0 8 * * 1'" in workflow
+    assert "cron: '0 9 * * 3'" not in workflow
+    assert "host-audit:" not in workflow
+    assert "python scripts/run_benchmark_smoke.py" in workflow
+    assert "python scripts/check_docs_links.py" in workflow
+
+
+def test_host_audit_is_separate_strict_operational_workflow() -> None:
+    workflow = _workflow("host-audit.yml")
+
+    assert "pull_request:" not in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "cron: '0 9 * * 3'" in workflow
+    assert "--strict" in workflow
+    assert "if: always()" in workflow
+    assert "actions: write" not in workflow
+    assert "audit_report.json" in workflow
+    assert "audit_summary.md" in workflow
+
+
 def test_release_builds_once_then_smoke_tests_the_same_universal_wheel() -> None:
     workflow = _workflow("wheels.yml")
 
