@@ -9,10 +9,12 @@ refresh probe RTT in place, so probing those objects bypasses generation-safe
 ``update_hosts``. Async executor cancellation makes that leak worse because the
 worker can continue after the coroutine is gone.
 
-Both clients therefore probe detached HostEntry snapshots and commit observations
-only through the canonical pool ``update_hosts`` boundary. The async path keeps
-persistence out of the executor too: cancellation while probing cannot mutate the
-pool or write the persistent STANDARD ranking behind the caller's back.
+Both clients therefore use the same two-phase contract: probe detached HostEntry
+snapshots without persistent side effects, publish through canonical
+``update_hosts`` first, and only then persist STANDARD ranking when requested.
+The async executor performs observation only, so cancellation while probing
+cannot mutate the pool or write ranking behind the caller's back. The sync path
+also cannot leave a successful ranking write behind when pool publication fails.
 """
 
 from __future__ import annotations
@@ -30,6 +32,20 @@ def _probe_snapshot(pool: Any) -> list[Any]:
     return [replace(host) for host in pool.hosts]
 
 
+def _rank_entries(results: list[Any], *, keep_failures: bool) -> list[Any]:
+    from ..transport.speedtest import rank_hosts
+
+    selected = results if keep_failures else [result for result in results if result.ok]
+    return rank_hosts(selected)
+
+
+def _persist_standard(entries: list[Any], *, family: str, save_ranking: bool) -> None:
+    if save_ranking and family == Family.STANDARD:
+        from ..transport.hosts import RankingStore
+
+        RankingStore().update(entries)
+
+
 def _sync_bestip(
     self: _sync_impl.TdxClient,
     *,
@@ -39,30 +55,21 @@ def _sync_bestip(
     save_ranking: bool = True,
     keep_failures: bool = True,
 ) -> list[Any]:
-    from ..transport.speedtest import rank_hosts, speedtest, speedtest_and_save
+    from ..transport.speedtest import speedtest
 
     hosts = _probe_snapshot(self._pool)
     if not hosts:
         return []
-    if save_ranking:
-        results = speedtest_and_save(
-            hosts,
-            family=self.family,
-            timeout=timeout,
-            samples=samples,
-            max_workers=max_workers,
-            keep_failures=keep_failures,
-        )
-    else:
-        results = speedtest(
-            hosts,
-            family=self.family,
-            timeout=timeout,
-            samples=samples,
-            max_workers=max_workers,
-        )
-    selected = results if keep_failures else [result for result in results if result.ok]
-    self._pool.update_hosts(rank_hosts(selected))
+    results = speedtest(
+        hosts,
+        family=self.family,
+        timeout=timeout,
+        samples=samples,
+        max_workers=max_workers,
+    )
+    entries = _rank_entries(results, keep_failures=keep_failures)
+    self._pool.update_hosts(entries)
+    _persist_standard(entries, family=self.family, save_ranking=save_ranking)
     return results
 
 
@@ -75,7 +82,7 @@ async def _async_bestip(
     save_ranking: bool = True,
     keep_failures: bool = True,
 ) -> list[Any]:
-    from ..transport.speedtest import rank_hosts, speedtest
+    from ..transport.speedtest import speedtest
 
     hosts = _probe_snapshot(self._pool)
     if not hosts:
@@ -94,16 +101,12 @@ async def _async_bestip(
             max_workers=max_workers,
         ),
     )
-    selected = results if keep_failures else [result for result in results if result.ok]
-    entries = rank_hosts(selected)
+    entries = _rank_entries(results, keep_failures=keep_failures)
 
     # Generation-safe pool publication is the first commit boundary. Persistent
     # STANDARD ranking is written only after that await completes successfully.
     await self._pool.update_hosts(entries)
-    if save_ranking and self.family == Family.STANDARD:
-        from ..transport.hosts import RankingStore
-
-        RankingStore().update(entries)
+    _persist_standard(entries, family=self.family, save_ranking=save_ranking)
     return results
 
 
