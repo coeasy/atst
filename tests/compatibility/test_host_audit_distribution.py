@@ -16,6 +16,25 @@ from tstdx.transport.speedtest import ProbeResult
 _ROOT = Path(__file__).resolve().parents[2]
 
 
+def _audit_result(family: str) -> host_audit.FamilyAudit:
+    return host_audit.FamilyAudit(
+        family=family,
+        total=1,
+        healthy=1,
+        results=[
+            {
+                "host": "127.0.0.1",
+                "port": 7709,
+                "family": family,
+                "ok": True,
+                "connect_ms": 1.0,
+                "rtt_ms": 2.0,
+                "error": "",
+            }
+        ],
+    )
+
+
 def test_public_cli_host_audit_delegates_to_installed_package_module(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -88,29 +107,11 @@ def test_release_artifact_smoke_imports_host_audit_without_source_checkout() -> 
 def test_no_save_ranking_never_constructs_ranking_store(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_audit_family(family: str, **_: object) -> host_audit.FamilyAudit:
-        return host_audit.FamilyAudit(
-            family=family,
-            total=1,
-            healthy=1,
-            results=[
-                {
-                    "host": "127.0.0.1",
-                    "port": 7709,
-                    "family": family,
-                    "ok": True,
-                    "connect_ms": 1.0,
-                    "rtt_ms": 2.0,
-                    "error": "",
-                }
-            ],
-        )
-
     class ExplodingRankingStore:
         def __init__(self, *_: object, **__: object) -> None:
             raise AssertionError("dry-run must not construct RankingStore")
 
-    monkeypatch.setattr(host_audit, "audit_family", fake_audit_family)
+    monkeypatch.setattr(host_audit, "audit_family", lambda family, **_: _audit_result(family))
     monkeypatch.setattr(host_audit, "RankingStore", ExplodingRankingStore)
 
     report = host_audit.audit_all(
@@ -121,6 +122,56 @@ def test_no_save_ranking_never_constructs_ranking_store(
 
     assert report.ranking_saved is False
     assert "dry-run: ranking_file 未写入" in report.notes
+
+
+def test_multi_family_audit_persists_only_standard_ranking(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    saved: list[HostEntry] = []
+
+    class CapturingRankingStore:
+        def __init__(self, path: str) -> None:
+            self.path = Path(path)
+
+        def update(self, entries: list[HostEntry]) -> None:
+            saved.extend(entries)
+
+    monkeypatch.setattr(host_audit, "audit_family", lambda family, **_: _audit_result(family))
+    monkeypatch.setattr(host_audit, "RankingStore", CapturingRankingStore)
+
+    report = host_audit.audit_all(
+        families=[Family.STANDARD, Family.F10],
+        ranking_file=str(tmp_path / "ranking.json"),
+        progress=False,
+        save_ranking=True,
+    )
+
+    assert report.ranking_saved is True
+    assert list(report.families) == [Family.STANDARD, Family.F10]
+    assert len(saved) == 1
+    assert saved[0].family == Family.STANDARD
+    assert any("仅更新 STANDARD" in note for note in report.notes)
+
+
+def test_nonstandard_only_audit_does_not_touch_runtime_ranking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ExplodingRankingStore:
+        def __init__(self, *_: object, **__: object) -> None:
+            raise AssertionError("non-standard audit must not construct RankingStore")
+
+    monkeypatch.setattr(host_audit, "audit_family", lambda family, **_: _audit_result(family))
+    monkeypatch.setattr(host_audit, "RankingStore", ExplodingRankingStore)
+
+    report = host_audit.audit_all(
+        families=[Family.F10],
+        progress=False,
+        save_ranking=True,
+    )
+
+    assert report.ranking_saved is False
+    assert any("没有 STANDARD" in note for note in report.notes)
 
 
 def test_json_family_override_is_rebucketed_to_explicit_family(tmp_path: Path) -> None:
