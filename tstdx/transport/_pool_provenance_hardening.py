@@ -36,6 +36,8 @@ _LOG = logging.getLogger("tstdx.transport")
 
 
 def _validated_updates(hosts: Sequence[HostEntry], *, family: str) -> list[HostEntry]:
+    """Return canonical snapshots for generation matching and publication."""
+
     items: list[HostEntry] = []
     seen: set[str] = set()
     for entry in hosts:
@@ -52,7 +54,11 @@ def _validated_updates(hosts: Sequence[HostEntry], *, family: str) -> list[HostE
         if validated.key in seen:
             raise ConfigError(f"update_hosts 存在重复 endpoint: {validated.key}")
         seen.add(validated.key)
-        items.append(entry)
+        # Downstream generation matching must use the canonical identity. Using
+        # the caller-owned object here lets harmless spelling differences (for
+        # example surrounding host whitespace) miss an existing endpoint and
+        # silently discard live health/connection reuse.
+        items.append(validated)
     return items
 
 
