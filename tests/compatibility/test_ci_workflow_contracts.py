@@ -136,14 +136,18 @@ def test_release_docker_reuses_artifact_only_after_pypi_succeeds() -> None:
     assert "docker/build-push-action@v6" in docker
 
 
-def test_release_identity_is_fail_closed_before_build_or_publish() -> None:
+def test_release_identity_reuses_shared_source_parser_before_build() -> None:
     workflow = _workflow("wheels.yml")
+    build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
 
-    assert "Verify release tag matches package version" in workflow
-    assert "RELEASE_TAG: ${{ github.event.release.tag_name }}" in workflow
-    assert 'expected = f"v{match.group(1)}"' in workflow
-    assert "assert actual == expected" in workflow
-    assert "python scripts/build_package.py --verify-only --dist-out dist" in workflow
+    assert "Verify release tag matches canonical source identity" in build
+    assert "RELEASE_TAG: ${{ github.event.release.tag_name }}" in build
+    assert "from scripts.build_package import _declared_versions" in build
+    assert "project_version, source_version = _declared_versions()" in build
+    assert "assert source_version == project_version" in build
+    assert 'expected = f"v{project_version}"' in build
+    assert "import re" not in build
+    assert "python scripts/build_package.py --verify-only --dist-out dist" in build
     assert "github.event.release.prerelease == false" in workflow
 
 
