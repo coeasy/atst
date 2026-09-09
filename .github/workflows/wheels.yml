@@ -91,7 +91,8 @@ jobs:
           python -c "import importlib.metadata as m, tstdx; assert tstdx.__version__ == m.version('tstdx'); print(tstdx.__version__)"
           python -c "from importlib.resources import files; assert files('tstdx').joinpath('py.typed').is_file()"
           python -c "from tstdx.tools.host_audit import AuditReport, audit_all; assert callable(audit_all); print(AuditReport.__name__)"
-          python -c "from tstdx.transport.async_ import AsyncConnectionPool; assert callable(getattr(AsyncConnectionPool, '_circuit_allows', None)); assert callable(getattr(AsyncConnectionPool, '_release_probe_token', None))"
+          python -c "from tstdx.transport import ConnectionPool; assert ConnectionPool.request.__module__ == 'tstdx.transport._pool_hardening'; assert ConnectionPool.request_multi.__module__ == 'tstdx.transport._pool_hardening'"
+          python -c "from tstdx.transport.async_ import AsyncConnectionPool; assert AsyncConnectionPool.request.__module__ == 'tstdx.transport._async_pool_hardening'; assert callable(getattr(AsyncConnectionPool, '_circuit_allows', None)); assert callable(getattr(AsyncConnectionPool, '_release_probe_token', None))"
           tstdx --help
           tstdx hosts audit --help
           python -m pip check
