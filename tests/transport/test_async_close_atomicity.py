@@ -88,6 +88,37 @@ def test_cancel_after_close_commit_waits_for_resource_cleanup(
     asyncio.run(run())
 
 
+def test_close_drains_remaining_slots_before_reporting_cleanup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def run() -> None:
+        pool = AsyncConnectionPool(
+            [HostEntry("127.0.0.1", 7709), HostEntry("127.0.0.2", 7709)],
+            slots_per_host=1,
+            heartbeat_interval=0,
+            handshake=False,
+        )
+        first, second = pool._slots
+        dropped: list[Any] = []
+
+        async def fail_first_drop(slot: Any, *, expected: Any = None) -> None:
+            del expected
+            dropped.append(slot)
+            if slot is first:
+                raise RuntimeError("first cleanup failed")
+
+        monkeypatch.setattr(pool, "_drop", fail_first_drop)
+        with pytest.raises(RuntimeError, match="first cleanup failed"):
+            await pool.close()
+
+        assert dropped == [first, second]
+        assert pool._closed is True
+        assert first.retired is True
+        assert second.retired is True
+
+    asyncio.run(run())
+
+
 def test_repeated_close_redrains_already_closed_pool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
