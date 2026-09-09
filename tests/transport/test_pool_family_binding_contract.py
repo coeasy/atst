@@ -24,6 +24,12 @@ def test_pool_rejects_unknown_family(pool_cls: type[Any]) -> None:
 
 
 @pytest.mark.parametrize("pool_cls", [ConnectionPool, AsyncConnectionPool])
+def test_pool_rejects_empty_hosts_as_config_error(pool_cls: type[Any]) -> None:
+    with pytest.raises(ConfigError, match="hosts 不能为空"):
+        pool_cls([], family=Family.STANDARD, heartbeat_interval=0)
+
+
+@pytest.mark.parametrize("pool_cls", [ConnectionPool, AsyncConnectionPool])
 def test_pool_rejects_host_from_another_family(pool_cls: type[Any]) -> None:
     with pytest.raises(ConfigError, match="host family 不匹配"):
         pool_cls([_host(Family.F10)], family=Family.STANDARD, heartbeat_interval=0)
@@ -64,6 +70,8 @@ def test_pool_rejects_duplicate_canonical_endpoints(pool_cls: type[Any]) -> None
         ({"use_tls": 1}, "use_tls"),
         ({"handshake": "yes"}, "handshake"),
         ({"handshake_strict": 1}, "handshake_strict"),
+        ({"handshake": False, "handshake_strict": True}, "handshake_strict"),
+        ({"rate_limiter": object()}, "rate_limiter"),
     ],
 )
 def test_sync_async_pool_options_fail_closed_without_silent_coercion(
@@ -75,6 +83,21 @@ def test_sync_async_pool_options_fail_closed_without_silent_coercion(
     options.update(kwargs)
     with pytest.raises(ConfigError, match=message):
         pool_cls([_host(Family.STANDARD)], **options)
+
+
+def test_async_rate_limiter_requires_nonblocking_contract() -> None:
+    class BlockingOnlyLimiter:
+        strict = False
+
+        def acquire(self) -> None:
+            return None
+
+    with pytest.raises(ConfigError, match="try_acquire"):
+        AsyncConnectionPool(
+            [_host(Family.STANDARD)],
+            heartbeat_interval=0,
+            rate_limiter=BlockingOnlyLimiter(),
+        )
 
 
 @pytest.mark.parametrize(
