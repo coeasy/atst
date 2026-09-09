@@ -52,8 +52,8 @@ _PREFIX_MARKET: dict[str, int] = {"sh": 1, "sz": 0, "bj": 2}
 def split_symbol(symbol: str) -> tuple[int, str]:
     """把任意书写变种的证券代码拆成 ``(market, code)``。
 
-    ``market`` 为**标准市场编号**（0=深/北 1=沪），可直接用于 K 线等命令；
-    实时行情的 ``0x0530`` 请求体由 :func:`build_realtime_quote_body` 自动反转。
+    ``market`` 为**标准市场编号**（0=深 1=沪 2=北交所）。调用方必须再按
+    具体命令族的已验证市场编码能力处理，不能把 2 静默钳制成 0/1。
 
     支持全部书写变种（大小写不敏感）：``sh600519`` / ``sh.600519`` /
     ``600519.sh`` / ``600519SH`` / ``600519``，
@@ -220,12 +220,27 @@ def _bars_body(market: int, code: str, category: int, start: int, count: int) ->
 
 
 def _quote_body(code: str, market: int) -> bytes:
-    # 0x0530 的 market 字节语义**实测为反转**（深→1 沪→0，见
-    # quote_request_market / RealtimeQuoteParser 回声校验）。本 helper 服务于
-    # 0x0203（Goods）/ 0x0105（Ex）/ 0x1301（MAC）报价命令，沿用同一反转
-    # 写法——但这三个命令族的反转语义**未经真机验证**，仅与既有实现保持
-    # 一致，待 golden 样本裁决（与 P1d 同源）。
-    # 防护：market 仅允许 0/1，越界值 clamp 到边界——否则 1-market 对
-    # market>=2 会产出负数，bytes() 直接抛 ValueError。
-    m = max(0, min(1, int(market)))
-    return bytes([0x01, 1 - m]) + code.encode("ascii")[:6].ljust(6, b"\x00")
+    """Build Goods/Extended/MAC quote body for a verified market identity.
+
+    ``0x0530`` 的 0/1 market 字节反转语义已有实测证据。Goods ``0x0203``、
+    Extended ``0x0105``、MAC ``0x1301`` 目前只沿用这两种已验证身份；北交所
+    ``market=2`` 在这些命令族尚无 golden/真机编码证据，因此必须 fail closed，
+    绝不能把 2 clamp 成 1/0 后伪装为其它市场。
+    """
+
+    if isinstance(market, bool) or not isinstance(market, int):
+        raise ParseError(
+            f"quote market 必须是已验证整数 0|1，收到 {market!r}",
+            context={"market": market, "verified_markets": [0, 1]},
+        )
+    if market not in (0, 1):
+        raise ParseError(
+            "Goods/Extended/MAC quote 的 market 反转编码目前仅验证 0/1；"
+            f"拒绝未验证 market={market}",
+            context={
+                "market": market,
+                "verified_markets": [0, 1],
+                "provider_switch_allowed": False,
+            },
+        )
+    return bytes([0x01, 1 - market]) + code.encode("ascii")[:6].ljust(6, b"\x00")
