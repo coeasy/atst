@@ -4,8 +4,8 @@
 """Harden STANDARD V1 ranking persistence to probe-only provenance.
 
 Historical V1 files may contain process-local health/circuit fields because older
-writers serialized most of ``HostEntry``.  Those files remain readable, but the
-runtime fields are discarded on load and are never written again.  Persistent
+writers serialized most of ``HostEntry``. Those files remain readable, but the
+runtime fields are discarded on load and are never written again. Persistent
 ranking may influence only probe latency ordering; it may not resurrect a prior
 process' failures, circuit state, verification identity, or live health.
 """
@@ -19,8 +19,10 @@ import tempfile
 import time
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
+from ..errors import ConfigError
 from ..protocol.commands import Family
 from . import hosts as _impl
 
@@ -83,7 +85,7 @@ def _entry_from_legacy_payload(item: Mapping[str, Any]) -> _impl.HostEntry | Non
             rtt_ms=item.get("rtt_ms"),
         )
         entry = _impl._validated_entry(entry, source="ranking entry")
-    except (KeyError, TypeError, ValueError, _impl.ConfigError):
+    except (KeyError, TypeError, ValueError, ConfigError):
         return None
     if entry.family != Family.STANDARD:
         return None
@@ -129,7 +131,7 @@ def _save(self: _impl.RankingStore, entries: Iterable[_impl.HostEntry]) -> None:
         "entries": {entry.key: _probe_payload(entry) for entry in items},
     }
     self.path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = None
+    temp_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
             mode="w",
@@ -142,7 +144,7 @@ def _save(self: _impl.RankingStore, entries: Iterable[_impl.HostEntry]) -> None:
             json.dump(data, stream, ensure_ascii=False, indent=2)
             stream.flush()
             os.fsync(stream.fileno())
-            temp_path = self.path.__class__(stream.name)
+            temp_path = Path(stream.name)
         temp_path.replace(self.path)
     finally:
         if temp_path is not None:
@@ -160,7 +162,7 @@ def _merge(
     known = self.load()
     for entry in items:
         # A failed probe invalidates any stale positive latency for that endpoint
-        # when callers explicitly keep failed results.  The failure itself is not
+        # when callers explicitly keep failed results. The failure itself is not
         # persisted as circuit/live-health state.
         if entry.rtt_ms is None and (entry.failures > 0 or bool(entry.last_error)):
             known.pop(entry.key, None)
@@ -184,14 +186,14 @@ def _apply_ranked_observation(
     """Overlay only persistent probe latency onto selector-owned runtime state."""
 
     if ranked.family != base.family or ranked.key != base.key:
-        raise _impl.ConfigError(
+        raise ConfigError(
             "ranking observation identity mismatch: "
             f"base={base.key}/{base.family!r}, ranked={ranked.key}/{ranked.family!r}"
         )
     return replace(base, connect_ms=ranked.connect_ms, rtt_ms=ranked.rtt_ms)
 
 
-_impl.RankingStore.load = _load
-_impl.RankingStore.save = _save
-_impl.RankingStore.merge = _merge
-_impl._apply_ranked_observation = _apply_ranked_observation
+setattr(_impl.RankingStore, "load", _load)
+setattr(_impl.RankingStore, "save", _save)
+setattr(_impl.RankingStore, "merge", _merge)
+setattr(_impl, "_apply_ranked_observation", _apply_ranked_observation)
