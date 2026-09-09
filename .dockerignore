@@ -1,38 +1,55 @@
 .git
-.gitignore
 
 # Local Python environments and caches
-.venv
-venv
-__pycache__
-**/__pycache__
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+**/__pycache__/
 *.py[cod]
-.pytest_cache
-.mypy_cache
-.ruff_cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
 .coverage
 .coverage.*
 coverage.xml
-htmlcov
+htmlcov/
 
 # Local packaging/build outputs. Normal Docker builds create a fresh wheel in the
 # builder. Release builds are the one exception: the workflow downloads the
 # already-validated canonical wheel into release-dist/ and Dockerfile.release
 # must receive that exact artifact.
-build
-dist
-*.egg-info
+build/
+dist/
+*.egg-info/
 *.whl
 *.tar.gz
 !release-dist/*.whl
 
-# Local editor/OS noise
+# Local/editor/session state that is never part of repository behavior.
 .DS_Store
 Thumbs.db
-.idea
-.vscode
+.idea/
+.vscode/
+.workbuddy/
+.tstdx/
+logs/
+reports/
+*.log
 
-# Generated audit/benchmark outputs are not Docker build inputs.
+# Local data stores must not enter build context. Golden fixtures live under
+# tests/golden and are not matched by these project-root patterns.
+data/
+*.parquet
+*.duckdb
+*.db
+
+# Generated operational outputs.
 audit_report.json
 audit_summary.md
-benches/results
+host_audit_report.json
+ops/smoke_results.jsonl
+benches/results/ci_smoke.json
+benches/results/ci_time_smoke.json
