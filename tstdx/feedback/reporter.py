@@ -70,8 +70,6 @@ def _sanitize_value(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_sanitize_value(item) for item in value]
     if isinstance(value, set):
-        # A hashable tuple may sanitize to a list. Do not rebuild a set after
-        # transformation or that valid input becomes an unhashable TypeError.
         return sorted((_sanitize_value(item) for item in value), key=_set_sort_key)
     if isinstance(value, bool) or value is None:
         return value
@@ -118,6 +116,19 @@ def _validated_timeout(value: Any) -> float:
     return timeout
 
 
+def _validated_usage(feature: Any, duration_ms: Any, result: Any) -> tuple[str, float, str]:
+    if not isinstance(feature, str) or not feature.strip():
+        raise ConfigError(f"feedback feature 必须是非空字符串，收到 {feature!r}")
+    if isinstance(duration_ms, bool) or not isinstance(duration_ms, (int, float)):
+        raise ConfigError(f"feedback duration_ms 必须是非负有限数值，收到 {duration_ms!r}")
+    duration = float(duration_ms)
+    if not math.isfinite(duration) or duration < 0:
+        raise ConfigError(f"feedback duration_ms 必须是非负有限数值，收到 {duration_ms!r}")
+    if not isinstance(result, str) or not result.strip():
+        raise ConfigError(f"feedback result 必须是非空字符串，收到 {result!r}")
+    return feature, duration, result
+
+
 class FeedbackReporter:
     """反馈上报器；只有 ``TSTDX_FEEDBACK=1`` 或 ``dry-run`` 才执行。"""
 
@@ -153,7 +164,18 @@ class FeedbackReporter:
     def report_usage(self, feature: str, duration_ms: float, result: str) -> bool:
         if not self.enabled and not self.dry_run:
             return False
-        return self._send(self._build_usage_payload(feature, duration_ms, result))
+        validated_feature, validated_duration, validated_result = _validated_usage(
+            feature,
+            duration_ms,
+            result,
+        )
+        return self._send(
+            self._build_usage_payload(
+                validated_feature,
+                validated_duration,
+                validated_result,
+            )
+        )
 
     def report_profile(self, profile: dict[str, Any]) -> bool:
         if not self.enabled and not self.dry_run:
@@ -206,7 +228,7 @@ class FeedbackReporter:
 
     def _sanitize(self, data: dict[str, Any]) -> dict[str, Any]:
         sanitized = _sanitize_value(data)
-        if not isinstance(sanitized, dict):  # defensive: root contract is mapping
+        if not isinstance(sanitized, dict):
             raise TypeError("feedback root payload must sanitize to dict")
         sanitized["timestamp"] = time.time()
         sanitized["version"] = __version__
@@ -218,7 +240,16 @@ class FeedbackReporter:
         return sanitized
 
     def _send(self, payload: dict[str, Any]) -> bool:
-        json_str = json.dumps(payload, ensure_ascii=False, default=str)
+        try:
+            json_str = json.dumps(
+                payload,
+                ensure_ascii=False,
+                default=str,
+                allow_nan=False,
+            )
+        except (TypeError, ValueError) as exc:
+            print(f"[tstdx-feedback] payload JSON 序列化失败: {exc}", file=sys.stderr)
+            return False
         if self.dry_run:
             print(f"[tstdx-feedback-dry-run] {json_str}", file=sys.stderr)
             return True
