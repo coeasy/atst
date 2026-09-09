@@ -1,0 +1,33 @@
+.git
+.gitignore
+
+# Local Python environments and caches
+.venv
+venv
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+.coverage.*
+coverage.xml
+htmlcov
+
+# Local packaging/build outputs; the builder creates fresh canonical artifacts.
+build
+dist
+*.egg-info
+*.whl
+
+# Local editor/OS noise
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+
+# Generated audit/benchmark outputs are not Docker build inputs.
+audit_report.json
+audit_summary.md
+benches/results
