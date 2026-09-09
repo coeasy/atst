@@ -44,6 +44,76 @@ def test_pool_rejects_duplicate_canonical_endpoints(pool_cls: type[Any]) -> None
         pool_cls([first, equivalent], family=Family.STANDARD, heartbeat_interval=0)
 
 
+@pytest.mark.parametrize("pool_cls", [ConnectionPool, AsyncConnectionPool])
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"slots_per_host": 0}, "slots_per_host"),
+        ({"slots_per_host": True}, "slots_per_host"),
+        ({"timeout": 0.0}, "timeout"),
+        ({"timeout": float("nan")}, "timeout"),
+        ({"timeout": "3"}, "timeout"),
+        ({"connect_timeout": 0.0}, "connect_timeout"),
+        ({"connect_timeout": float("inf")}, "connect_timeout"),
+        ({"heartbeat_interval": -1}, "heartbeat_interval"),
+        ({"heartbeat_interval": 1.5}, "heartbeat_interval"),
+        ({"heartbeat_cmd": -1}, "heartbeat_cmd"),
+        ({"heartbeat_cmd": 65536}, "heartbeat_cmd"),
+        ({"max_retries": -1}, "max_retries"),
+        ({"max_retries": True}, "max_retries"),
+        ({"use_tls": 1}, "use_tls"),
+        ({"handshake": "yes"}, "handshake"),
+        ({"handshake_strict": 1}, "handshake_strict"),
+    ],
+)
+def test_sync_async_pool_options_fail_closed_without_silent_coercion(
+    pool_cls: type[Any],
+    kwargs: dict[str, Any],
+    message: str,
+) -> None:
+    with pytest.raises(ConfigError, match=message):
+        pool_cls(
+            [_host(Family.STANDARD)],
+            heartbeat_interval=0,
+            **kwargs,
+        )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"keepalive": 1}, "keepalive"),
+        ({"speedtest_threshold": 0}, "speedtest_threshold"),
+        ({"speedtest_threshold": True}, "speedtest_threshold"),
+        ({"idle_timeout": float("nan")}, "idle_timeout"),
+        ({"on_host_down": object()}, "on_host_down"),
+    ],
+)
+def test_sync_only_pool_options_fail_closed(
+    kwargs: dict[str, Any],
+    message: str,
+) -> None:
+    with pytest.raises(ConfigError, match=message):
+        ConnectionPool(
+            [_host(Family.STANDARD)],
+            heartbeat_interval=0,
+            **kwargs,
+        )
+
+
+def test_documented_nonpositive_idle_timeout_still_disables_idle_sweep() -> None:
+    pool = ConnectionPool(
+        [_host(Family.STANDARD)],
+        slots_per_host=1,
+        heartbeat_interval=0,
+        idle_timeout=-1.0,
+    )
+    try:
+        assert pool.idle_timeout == -1.0
+    finally:
+        pool.close()
+
+
 def test_sync_async_constructor_signatures_survive_hardening_wrapper() -> None:
     sync = inspect.signature(ConnectionPool.__init__)
     async_ = inspect.signature(AsyncConnectionPool.__init__)
