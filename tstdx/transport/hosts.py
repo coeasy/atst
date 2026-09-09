@@ -1,12 +1,12 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""主站候选池与速度排名持久化（§12）。
+"""主站候选池与 STANDARD 速度排名持久化（§12）。
 
-核心契约：候选 endpoint 可以被多个协议族复用，但 ``HostEntry.family``
-必须始终代表当前请求的 canonical family。排名文件只是同 family 内的运行观测
-与排序优化，不能扩大显式 ``servers=`` / ``TSTDX_HOSTS`` 的候选集合，也不能
-覆盖当前 selector 的静态身份或把其它 family 的历史条目注入当前请求。
+候选 endpoint 可以被多个协议族复用，但 ``HostEntry.family`` 必须始终代表
+当前请求的 canonical family。历史 V1 ranking 以 ``host:port`` 为 key，因此
+只允许持久化 STANDARD；它只能提供运行观测/排序，不能扩大显式
+``servers=`` / ``TSTDX_HOSTS`` 候选集合，也不能覆盖 selector 静态身份。
 """
 
 from __future__ import annotations
@@ -221,9 +221,10 @@ def resolve_hosts(
     """Resolve one family without allowing ranking provenance to widen selectors.
 
     Priority is explicit ``servers`` > ``TSTDX_HOSTS`` > same-family ranking >
-    built-in pool. Explicit/environment selectors own the candidate set; ranking
-    may only attach observations to matching endpoints. Only the built-in path may
-    retain same-family ranked endpoints that were removed from the current pool.
+    built-in pool. Explicit/environment selectors own the candidate set; default
+    persistent ranking is consumed only for the implicit STANDARD built-in path.
+    Callers may explicitly pass ``ranking``/``ranking_file`` to overlay matching
+    observations on an explicit selector, but ranked extras are still forbidden.
     """
 
     if family not in _VALID_FAMILIES:
@@ -243,7 +244,14 @@ def resolve_hosts(
             allow_ranked_extras = True
 
     if use_ranking:
-        store = ranking or (RankingStore(ranking_file) if ranking_file else None)
+        store = ranking
+        if store is None and ranking_file is not None:
+            store = RankingStore(ranking_file)
+        elif store is None and allow_ranked_extras and family == Family.STANDARD:
+            # This closes the persistence loop: `hosts scan` / bestip STANDARD
+            # results become the next default cold-start ordering automatically.
+            store = RankingStore()
+
         if store is not None:
             known = {
                 key: entry
@@ -266,10 +274,12 @@ def resolve_hosts(
 
 
 class RankingStore:
-    """``~/.tstdx/server_ranking.json`` 的读写封装。
+    """STANDARD-only ``~/.tstdx/server_ranking.json`` V1 storage.
 
-    VERSION 1 keeps the historical ``host:port`` storage key. Family isolation is
-    therefore enforced before persistence and at every resolve boundary.
+    V1 uses ``host:port`` keys and therefore cannot safely represent the same
+    endpoint in multiple families. Legacy non-STANDARD rows may still be read and
+    ignored by family-safe resolvers, but all new writes fail closed unless the
+    incoming family is STANDARD.
     """
 
     VERSION = _RANKING_VERSION
@@ -297,17 +307,21 @@ class RankingStore:
             out[entry.key] = entry
         return out
 
-    def save(self, entries: Iterable[HostEntry]) -> None:
-        by_key: dict[str, HostEntry] = {}
-        for entry in entries:
-            previous = by_key.get(entry.key)
-            if previous is not None and previous.family != entry.family:
-                raise ConfigError(
-                    f"ranking key family collision: {entry.key} "
-                    f"{previous.family!r} != {entry.family!r}"
-                )
-            by_key[entry.key] = entry
+    @staticmethod
+    def _require_standard(entries: Iterable[HostEntry]) -> list[HostEntry]:
+        items = list(entries)
+        invalid = [entry for entry in items if entry.family != Family.STANDARD]
+        if invalid:
+            sample = invalid[0]
+            raise ConfigError(
+                "RankingStore V1 仅支持 STANDARD: "
+                f"entry={sample.key} family={sample.family!r}"
+            )
+        return items
 
+    def save(self, entries: Iterable[HostEntry]) -> None:
+        items = self._require_standard(entries)
+        by_key = {entry.key: entry for entry in items}
         data = {
             "version": self.VERSION,
             "updated": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -319,18 +333,25 @@ class RankingStore:
         tmp.replace(self.path)
 
     def merge(self, entries: Iterable[HostEntry]) -> dict[str, HostEntry]:
-        """Merge observations without mixing metrics across family identities."""
+        """Merge STANDARD runtime observations while preserving stored identity."""
 
+        items = self._require_standard(entries)
         known = self.load()
-        for entry in entries:
+        # A legacy non-STANDARD row at the same host:port cannot be safely merged
+        # into STANDARD. Replace it with the incoming canonical STANDARD identity.
+        for entry in items:
             previous = known.get(entry.key)
-            if previous is None or previous.family != entry.family:
+            if previous is None or previous.family != Family.STANDARD:
                 known[entry.key] = entry
                 continue
             if entry.rtt_ms is not None:
                 previous.rtt_ms = entry.rtt_ms
             if entry.connect_ms is not None:
                 previous.connect_ms = entry.connect_ms
+            previous.biz_failures = entry.biz_failures
+            previous.circuit = entry.circuit
+            previous.consec_weighted = entry.consec_weighted
+            previous.circuit_opened_at = entry.circuit_opened_at
             if entry.last_ok:
                 previous.last_ok = entry.last_ok
                 previous.failures = 0
@@ -341,7 +362,10 @@ class RankingStore:
         return known
 
     def update(self, entries: Iterable[HostEntry]) -> None:
-        self.save(self.merge(entries).values())
+        merged = self.merge(entries)
+        # Drop legacy non-STANDARD rows during the next successful STANDARD write;
+        # otherwise `save()` would correctly reject them and persistence could not heal.
+        self.save(entry for entry in merged.values() if entry.family == Family.STANDARD)
 
     def clear(self) -> None:
         with contextlib.suppress(FileNotFoundError):
