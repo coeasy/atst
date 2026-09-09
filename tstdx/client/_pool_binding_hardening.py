@@ -1,7 +1,7 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Fail closed when client/pool protocol-family configuration is ambiguous.
+"""Fail closed when injected transport-pool configuration is ambiguous.
 
 Tests and advanced integrations may inject opaque pool doubles that predate the
 ``family`` attribute. Those remain a compatibility seam. Real tstdx connection
@@ -14,14 +14,12 @@ silently pretend to apply. A non-empty ``hosts`` selector, non-default
 canonical client constructors. Those combinations fail closed. ``timeout``
 remains valid because the client uses it for per-request deadlines.
 
-Family-specific clients bind exactly one protocol family. An explicit conflicting
-``family=`` argument must never be silently overwritten by their constructors;
-matching explicit values remain valid and omitted family uses the class binding.
+Fixed-family subclass argument validation intentionally lives in
+``_subclient_family_hardening`` so constructor wrappers have one owner each.
 """
 
 from __future__ import annotations
 
-import functools
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -168,44 +166,5 @@ def _async_init(
     )
 
 
-def _install_subclient_family_guard(client_cls: type[Any], expected_family: str) -> None:
-    original = client_cls.__init__
-
-    @functools.wraps(
-        original,
-        assigned=("__name__", "__qualname__", "__doc__", "__annotations__"),
-    )
-    def guarded(self: Any, *args: Any, **kwargs: Any) -> None:
-        explicit_family = kwargs.get("family", _MISSING)
-        if explicit_family is not _MISSING and explicit_family != expected_family:
-            raise ConfigError(
-                f"{client_cls.__name__} family 固定为 {expected_family!r}，"
-                f"不能覆盖为 {explicit_family!r}",
-                context={
-                    "client_class": client_cls.__name__,
-                    "client_family": expected_family,
-                    "requested_family": explicit_family,
-                    "provider_switch_allowed": False,
-                },
-            )
-        original(self, *args, **kwargs)
-
-    setattr(client_cls, "__init__", guarded)
-
-
 setattr(_sync_impl.TdxClient, "__init__", _sync_init)
 setattr(_async_impl.AsyncTdxClient, "__init__", _async_init)
-
-for _client_cls, _family in (
-    (_sync_impl.GoodsClient, Family.GOODS),
-    (_sync_impl.ExMarketClient, Family.EXTENDED),
-    (_sync_impl.MacClient, Family.MAC),
-    (_sync_impl.F10Client, Family.F10),
-    (_async_impl.AsyncGoodsClient, Family.GOODS),
-    (_async_impl.AsyncExMarketClient, Family.EXTENDED),
-    (_async_impl.AsyncMacClient, Family.MAC),
-    (_async_impl.AsyncF10Client, Family.F10),
-):
-    _install_subclient_family_guard(_client_cls, _family)
-
-del _client_cls, _family
