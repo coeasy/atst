@@ -43,6 +43,29 @@ def test_release_matrix_smokes_client_behavior_and_pool_binding_hardening() -> N
     ) in smoke
 
 
+def test_release_matrix_smokes_direct_connection_contract_hardening() -> None:
+    smoke = _smoke_job()
+
+    assert "from tstdx.transport import TcpConnection" in smoke
+    assert "from tstdx.transport.async_ import AsyncTcpConnection" in smoke
+    assert (
+        "TcpConnection.__init__.__module__ == "
+        "'tstdx.transport._connection_contract_hardening'"
+    ) in smoke
+    assert (
+        "AsyncTcpConnection.__init__.__module__ == "
+        "'tstdx.transport._connection_contract_hardening'"
+    ) in smoke
+    assert (
+        "TcpConnection.request.__module__ == "
+        "'tstdx.transport._connection_contract_hardening'"
+    ) in smoke
+    assert (
+        "AsyncTcpConnection.request.__module__ == "
+        "'tstdx.transport._connection_contract_hardening'"
+    ) in smoke
+
+
 def test_release_matrix_smokes_transport_family_binding_hardening() -> None:
     smoke = _smoke_job()
 
