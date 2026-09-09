@@ -1,10 +1,11 @@
 """P1-2 bestip 运行时测速热更新测试。
 
 覆盖：
-* ``ConnectionPool.update_hosts``：按新序重建槽位、复用连接、丢弃移除主站；
-* ``TdxClient.bestip()``：测速→排序→热更新（monkeypatch 探测，不真连网）；
+* ``ConnectionPool.update_hosts``：generation-safe 重排、复用与移除；
+* probe RTT 只更新 probe layer，不覆盖 request/heartbeat live health；
+* ``TdxClient.bestip()`` 使用 detached HostEntry 快照后再提交热更新；
 * ``TdxClient.open(bestip=True)``：触发一轮测速；
-* 异步镜像 ``AsyncTdxClient.bestip()``。
+* 异步镜像 ``AsyncTdxClient.bestip()`` 具有相同 snapshot 边界。
 """
 
 from __future__ import annotations
@@ -44,11 +45,9 @@ class TestUpdateHosts:
             "3.3.3.3",
             "3.3.3.3",
         ]
-        # 新序：c 最快在前
         updated = pool.update_hosts([_h("3.3.3.3"), _h("1.1.1.1"), _h("2.2.2.2")])
         assert [h.host for h in updated] == ["3.3.3.3", "1.1.1.1", "2.2.2.2"]
         assert [h.host for h in pool.hosts] == ["3.3.3.3", "1.1.1.1", "2.2.2.2"]
-        # 槽位数与顺序同步
         assert [s.host.host for s in pool._slots] == [
             "3.3.3.3",
             "3.3.3.3",
@@ -69,16 +68,27 @@ class TestUpdateHosts:
         assert pool._slots[0].host.host == "2.2.2.2"
         pool.close()
 
-    def test_refreshes_metrics_on_existing_host(self):
-        """复用槽位时刷新 HostEntry（带入新 RTT / 失败计数）。"""
-        pool = ConnectionPool([_h("1.1.1.1")], slots_per_host=1, heartbeat_interval=None)
+    def test_refreshes_probe_metrics_without_overwriting_live_health(self):
+        """Probe observations may refresh RTT but never import probe failure state."""
+        current = _h("1.1.1.1")
+        current.failures = 4
+        current.biz_failures = 2
+        current.last_error = "request timeout"
+        current.live_rtt_ms = 8.0
+        pool = ConnectionPool([current], slots_per_host=1, heartbeat_interval=None)
+
         new_entry = _h("1.1.1.1")
         new_entry.rtt_ms = 12.5
         new_entry.failures = 2
+        new_entry.last_error = "probe failure must not win"
         pool.update_hosts([new_entry])
+
         assert pool.hosts[0].rtt_ms == 12.5
-        assert pool.hosts[0].failures == 2
-        assert pool._slots[0].host.rtt_ms == 12.5
+        assert pool.hosts[0].failures == 4
+        assert pool.hosts[0].biz_failures == 2
+        assert pool.hosts[0].last_error == "request timeout"
+        assert pool.hosts[0].live_rtt_ms == 8.0
+        assert pool._slots[0].host is pool.hosts[0]
         pool.close()
 
 
@@ -93,7 +103,6 @@ class TestBestip:
         return TdxClient(pool=pool)
 
     def test_sorts_by_rtt_and_updates_pool(self, monkeypatch):
-        """按 RTT 升序热更新主站池。"""
         results = [
             ProbeResult(host="1.1.1.1", port=7709, ok=True, connect_ms=40.0, rtt_ms=80.0),
             ProbeResult(host="2.2.2.2", port=7709, ok=True, connect_ms=10.0, rtt_ms=15.0),
@@ -103,13 +112,35 @@ class TestBestip:
         client = self._client()
         out = client.bestip(save_ranking=False, keep_failures=True)
         assert out == results
-        # 热更新：RTT 升序（失败的排最后）
         assert [h.host for h in client._pool.hosts] == ["2.2.2.2", "1.1.1.1", "3.3.3.3"]
         assert client._pool.hosts[0].rtt_ms == 15.0
-        client.close()
+        client._pool.close()
+
+    def test_probe_uses_detached_host_snapshots(self, monkeypatch):
+        client = self._client()
+        original = client._pool.hosts[0]
+        original.rtt_ms = 55.0
+        original.live_rtt_ms = 7.0
+
+        def fake_speedtest(hosts, **kwargs):
+            del kwargs
+            assert hosts[0] is not original
+            hosts[0].rtt_ms = 1.0
+            hosts[0].live_rtt_ms = 999.0
+            assert original.rtt_ms == 55.0
+            assert original.live_rtt_ms == 7.0
+            return [ProbeResult(host=host.host, port=host.port, ok=True, rtt_ms=2.0) for host in hosts]
+
+        monkeypatch.setattr(speedtest_mod, "speedtest", fake_speedtest)
+        client.bestip(save_ranking=False)
+
+        assert original.rtt_ms == 55.0
+        assert original.live_rtt_ms == 7.0
+        assert all(host is not original for host in client._pool.hosts)
+        assert client._pool.hosts[0].live_rtt_ms == 7.0
+        client._pool.close()
 
     def test_drop_failures(self, monkeypatch):
-        """keep_failures=False 时失败主站从池中移除。"""
         results = [
             ProbeResult(host="1.1.1.1", port=7709, ok=True, rtt_ms=30.0),
             ProbeResult(host="2.2.2.2", port=7709, ok=False, error="refused"),
@@ -118,10 +149,9 @@ class TestBestip:
         client = self._client()
         client.bestip(save_ranking=False, keep_failures=False)
         assert [h.host for h in client._pool.hosts] == ["1.1.1.1"]
-        client.close()
+        client._pool.close()
 
-    def test_save_ranking_writes_file(self, monkeypatch, tmp_path):
-        """save_ranking=True 时调用 speedtest_and_save 并写排名文件。"""
+    def test_save_ranking_writes_file(self, monkeypatch):
         results = [ProbeResult(host="1.1.1.1", port=7709, ok=True, rtt_ms=20.0)]
         calls: list = []
 
@@ -130,11 +160,10 @@ class TestBestip:
             return results
 
         monkeypatch.setattr(speedtest_mod, "speedtest_and_save", _fake_and_save)
-        monkeypatch.setattr(speedtest_mod, "speedtest", lambda *a, **k: results)
         client = TdxClient(pool=ConnectionPool([_h("1.1.1.1")], heartbeat_interval=None))
         client.bestip(save_ranking=True)
         assert calls, "save_ranking=True 应走 speedtest_and_save"
-        client.close()
+        client._pool.close()
 
     def test_open_bestip_triggers(self, monkeypatch):
         results = [
@@ -145,14 +174,13 @@ class TestBestip:
         monkeypatch.setattr(speedtest_mod, "speedtest", lambda *a, **k: results)
         client = self._client()
         client.open(bestip=True, save_ranking=False)
-        # 已触发测速并热更新：最快主站前置
         assert [h.host for h in client._pool.hosts] == ["1.1.1.1", "2.2.2.2", "3.3.3.3"]
         assert client._pool.hosts[0].rtt_ms == 10.0
-        client.close()
+        client._pool.close()
 
-    def test_empty_pool_returns_empty(self):
+    def test_empty_update_is_noop(self):
         pool = ConnectionPool([_h("1.1.1.1")], heartbeat_interval=None)
-        pool.update_hosts([])  # 空 → 保持原池
+        pool.update_hosts([])
         assert len(pool.hosts) == 1
         pool.close()
 
@@ -182,6 +210,43 @@ class TestBestipAsync:
             out = await client.bestip(save_ranking=False, keep_failures=True)
             assert out == results
             assert [h.host for h in client._pool.hosts] == ["2.2.2.2", "1.1.1.1", "3.3.3.3"]
-            await client.close()
+            await pool.close()
+
+        asyncio.run(_run())
+
+    def test_async_probe_uses_detached_host_snapshots(self, monkeypatch):
+        async def _run():
+            from tstdx.transport.async_ import AsyncConnectionPool
+
+            pool = AsyncConnectionPool(
+                [_h("1.1.1.1"), _h("2.2.2.2")],
+                slots_per_host=1,
+                heartbeat_interval=None,
+            )
+            client = AsyncTdxClient(pool=pool)
+            original = pool.hosts[0]
+            original.rtt_ms = 44.0
+            original.live_rtt_ms = 6.0
+
+            def fake_speedtest(hosts, **kwargs):
+                del kwargs
+                assert hosts[0] is not original
+                hosts[0].rtt_ms = 1.0
+                hosts[0].live_rtt_ms = 999.0
+                assert original.rtt_ms == 44.0
+                assert original.live_rtt_ms == 6.0
+                return [
+                    ProbeResult(host=host.host, port=host.port, ok=True, rtt_ms=3.0)
+                    for host in hosts
+                ]
+
+            monkeypatch.setattr(speedtest_mod, "speedtest", fake_speedtest)
+            await client.bestip(save_ranking=False)
+
+            assert original.rtt_ms == 44.0
+            assert original.live_rtt_ms == 6.0
+            assert all(host is not original for host in pool.hosts)
+            assert pool.hosts[0].live_rtt_ms == 6.0
+            await pool.close()
 
         asyncio.run(_run())
