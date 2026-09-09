@@ -18,13 +18,24 @@ def test_builder_has_full_offline_contract_inputs_and_dev_dependencies() -> None
     dockerfile = _dockerfile()
     builder = dockerfile.split("FROM python:3.11-slim AS runtime", 1)[0]
 
-    assert 'python -m pip install --no-cache-dir -e ".[all,dev]"' in builder
+    assert 'python -m pip install --no-cache-dir -e ".[all,dev]" build twine' in builder
+    assert "Dockerfile.release" in builder
+    assert ".dockerignore" in builder
     assert "COPY tests/ tests/" in builder
     assert "COPY scripts/ scripts/" in builder
     assert "COPY PROTOCOL_SPEC/ PROTOCOL_SPEC/" in builder
     assert "COPY docs/ docs/" in builder
     assert "COPY .github/workflows/ .github/workflows/" in builder
     assert 'python -m pytest tests/ -m "not network"' in builder
+
+
+def test_packaging_validators_are_installed_before_builder_invokes_build() -> None:
+    dockerfile = _dockerfile()
+    install_at = dockerfile.index('python -m pip install --no-cache-dir -e ".[all,dev]" build twine')
+    build_at = dockerfile.index("python -m build --wheel")
+    twine_at = dockerfile.index("python -m twine check dist/*.whl")
+
+    assert install_at < build_at < twine_at
 
 
 def test_runtime_installs_exact_tested_wheel_without_source_rebuild() -> None:
