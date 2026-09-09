@@ -72,6 +72,9 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ['3.10', '3.11', '3.12', '3.13']
     steps:
+      # Artifact-only job: intentionally no source checkout. setup-python pip
+      # caching is also intentionally disabled because v5 requires a repository
+      # dependency file for the cache key and would fail before wheel install.
       - uses: actions/download-artifact@v4
         with:
           name: python-dist
@@ -79,7 +82,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip'
       - name: Install the exact built wheel
         run: python -m pip install --no-index --find-links dist tstdx
       - name: Verify import, metadata and CLI entrypoint
@@ -107,13 +109,20 @@ jobs:
 
   publish-docker:
     name: Publish Docker image to Docker Hub
-    needs: smoke-install
+    needs: [build-dist, smoke-install]
     runs-on: ubuntu-latest
     if: github.event_name == 'release' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      # Reuse the exact wheel that passed the 12-cell install matrix. The release
+      # image must not rebuild a second wheel from source and accidentally diverge
+      # from the artifact published to PyPI.
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: release-dist
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -132,10 +141,11 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ github.event.release.prerelease == false }}
-      - name: Build and push
+      - name: Build and push canonical-artifact image
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile.release
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
