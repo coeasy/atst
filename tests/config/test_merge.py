@@ -124,6 +124,9 @@ max_retries = 1
             {
                 "TSTDX_HOSTS": "1.2.3.4:7709",
                 "TSTDX_CONFIG_FILE": "/tmp/example.toml",
+                "TSTDX_FEEDBACK": "dry-run",
+                "TSTDX_FEEDBACK_ENDPOINT": "https://feedback.example.com/api",
+                "TSTDX_FEEDBACK_STORE_DIR": "/tmp/tstdx-feedback",
             }
         )
 
