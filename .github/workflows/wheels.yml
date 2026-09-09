@@ -102,7 +102,9 @@ jobs:
 
   publish-docker:
     name: Publish Docker image to Docker Hub
-    needs: [build-dist, smoke-install]
+    # Prevent a partial release where Docker succeeds while PyPI publication
+    # failed. The canonical artifact must be published to PyPI first.
+    needs: [build-dist, smoke-install, publish-pypi]
     runs-on: ubuntu-latest
     if: github.event_name == 'release' && startsWith(github.ref, 'refs/tags/v')
     permissions:
