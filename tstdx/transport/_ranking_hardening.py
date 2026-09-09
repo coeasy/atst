@@ -6,8 +6,9 @@
 Historical V1 files may contain process-local health/circuit fields because older
 writers serialized most of ``HostEntry``. Those files remain readable, but the
 runtime fields are discarded on load and are never written again. Persistent
-ranking may influence only probe latency ordering; it may not resurrect a prior
-process' failures, circuit state, verification identity, or live health.
+ranking may influence only successful probe latency ordering; it may not
+resurrect a prior process' failures, circuit state, verification identity, or
+live health.
 """
 
 from __future__ import annotations
@@ -87,7 +88,7 @@ def _entry_from_legacy_payload(item: Mapping[str, Any]) -> _impl.HostEntry | Non
         entry = _impl._validated_entry(entry, source="ranking entry")
     except (KeyError, TypeError, ValueError, ConfigError):
         return None
-    if entry.family != Family.STANDARD:
+    if entry.family != Family.STANDARD or entry.rtt_ms is None:
         return None
     return entry
 
@@ -124,7 +125,7 @@ def _load(self: _impl.RankingStore) -> dict[str, _impl.HostEntry]:
 
 
 def _save(self: _impl.RankingStore, entries: Iterable[_impl.HostEntry]) -> None:
-    items = self._require_standard(entries)
+    items = [entry for entry in self._require_standard(entries) if entry.rtt_ms is not None]
     data = {
         "version": self.VERSION,
         "updated": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -156,24 +157,23 @@ def _merge(
     self: _impl.RankingStore,
     entries: Iterable[_impl.HostEntry],
 ) -> dict[str, _impl.HostEntry]:
-    """Merge only probe latency evidence; process health never survives restart."""
+    """Merge only successful probe latency; process health never survives restart."""
 
     items = self._require_standard(entries)
     known = self.load()
     for entry in items:
-        # A failed probe invalidates any stale positive latency for that endpoint
-        # when callers explicitly keep failed results. The failure itself is not
-        # persisted as circuit/live-health state.
-        if entry.rtt_ms is None and (entry.failures > 0 or bool(entry.last_error)):
-            known.pop(entry.key, None)
+        if entry.rtt_ms is None:
+            # A failed probe invalidates stale positive latency when callers keep
+            # failures. The failure itself is not persisted as live/circuit state.
+            if entry.failures > 0 or bool(entry.last_error):
+                known.pop(entry.key, None)
             continue
 
         previous = known.get(entry.key)
         if previous is None:
             known[entry.key] = _probe_only_entry(entry)
             continue
-        if entry.rtt_ms is not None:
-            previous.rtt_ms = entry.rtt_ms
+        previous.rtt_ms = entry.rtt_ms
         if entry.connect_ms is not None:
             previous.connect_ms = entry.connect_ms
     return known
