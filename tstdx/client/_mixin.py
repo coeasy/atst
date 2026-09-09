@@ -1,16 +1,7 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""同步 / 异步客户端共享方法骨架（REFACTOR_PLAN_v9 Q2）。
-
-承载 ``TdxClient`` / ``AsyncTdxClient`` 及四个子客户端镜像方法对的**唯一**
-方法体：协议体构造（复用 :mod:`tstdx.client_core` 纯函数）+ ``dispatch`` 解析
-+ ``as_format`` 分派（``_emit``）+ ``last_errors`` 收尾。
-
-异步差异通过同步生成器模板 + sync/async trampoline 消除；公开方法壳仍位于
-``sync.py`` / ``async_.py``，协议参数校验必须在本共享模板或 client_core SSOT
-完成，不能由同步/异步入口各维护一套。
-"""
+"""同步 / 异步客户端共享方法骨架（模板 + trampoline SSOT）。"""
 
 from __future__ import annotations
 
@@ -24,8 +15,10 @@ import tstdx.client as _client_pkg
 from ..client_core import (
     _bars_body,
     _emit,
+    _encode_gbk_field,
     _quote_body,
     _require_int,
+    _require_yyyymmdd,
     _row_to_bar,
     _row_to_capital,
     _row_to_quote,
@@ -56,7 +49,7 @@ def _op_call(name: str, *args: Any, **kwargs: Any) -> tuple[str, str, tuple, dic
 
 
 class _ClientMixin:
-    """同步 / 异步客户端共享骨架（模板 + trampoline）。"""
+    """同步 / 异步客户端共享骨架。"""
 
     def _drive(self, gen: Any) -> Any:
         try:
@@ -297,7 +290,7 @@ class _ClientMixin:
 
     def _t_minute_history(self, symbol: str, date: int) -> Any:
         mkt, code = split_symbol(symbol)
-        day = _require_int("date", date, minimum=19000101, maximum=21001231)
+        day = _require_yyyymmdd("date", date)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<HI", mkt, day)
         frame = yield _op_req(CMD["minute_history"], body, timeout=self.timeout)
         return _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family).rows
@@ -334,20 +327,48 @@ class _ClientMixin:
         strict: bool,
     ) -> Any:
         mkt, code = split_symbol(symbol)
-        if length > 0:
-            rows = yield _op_call("_file_download_once", mkt, code, filename, offset, length)
-            return b"".join(row.get("data", b"") or b"" for row in rows)
+        start_offset = _require_int("offset", offset, minimum=0, maximum=0xFFFFFFFF)
+        requested_length = _require_int("length", length, minimum=0, maximum=0xFFFFFFFF)
+        packet_limit = _require_int("max_packets", max_packets, minimum=1)
+        if not isinstance(strict, bool):
+            raise ParseError(
+                f"strict 必须是 bool，收到 {type(strict).__name__}: {strict!r}",
+                context={"field": "strict"},
+            )
+        # Validate filename before entering any I/O path; _file_download_once repeats
+        # the check because it is also a directly callable private compatibility seam.
+        _encode_gbk_field("filename", filename, max_bytes=80)
+
+        if requested_length > 0:
+            rows = yield _op_call(
+                "_file_download_once",
+                mkt,
+                code,
+                filename,
+                start_offset,
+                requested_length,
+            )
+            return b"".join(self._file_row_data(row) for row in rows)
 
         chunks = bytearray()
         total_len: int | None = None
-        for _ in range(max(1, int(max_packets))):
+        for _ in range(packet_limit):
+            current_offset = start_offset + len(chunks)
+            _require_int("offset", current_offset, minimum=0, maximum=0xFFFFFFFF)
             rows = yield _op_call(
-                "_file_download_once", mkt, code, filename, offset + len(chunks), 0
+                "_file_download_once", mkt, code, filename, current_offset, 0
             )
             if not rows:
                 break
-            total_len = rows[0].get("total_len", total_len)
-            data = rows[0].get("data", b"") or b""
+            raw_total = rows[0].get("total_len", total_len)
+            if raw_total is not None:
+                total_len = _require_int(
+                    "total_len",
+                    raw_total,
+                    minimum=0,
+                    maximum=0xFFFFFFFF,
+                )
+            data = self._file_row_data(rows[0])
             if not data:
                 break
             chunks.extend(data)
@@ -373,15 +394,40 @@ class _ClientMixin:
             warnings.warn(msg, stacklevel=_TPL_WARN_STACKLEVEL)
         return data
 
+    @staticmethod
+    def _file_row_data(row: Any) -> bytes:
+        if not isinstance(row, dict):
+            raise ParseError(
+                f"file_download 响应行必须是 dict，收到 {type(row).__name__}",
+                context={"row_type": type(row).__name__},
+            )
+        data = row.get("data", b"")
+        if data is None:
+            return b""
+        if not isinstance(data, (bytes, bytearray, memoryview)):
+            raise ParseError(
+                f"file_download data 必须是 bytes-like，收到 {type(data).__name__}",
+                context={"data_type": type(data).__name__},
+            )
+        return bytes(data)
+
     def _t_file_download_once(
         self, mkt: int, code: str, filename: str, offset: int, length: int
     ) -> Any:
-        fn = filename.encode("gbk", errors="replace")[:80].ljust(80, b"\x00")
+        market_id = _standard_market_id(mkt)
+        if not isinstance(code, str) or len(code) != 6 or not code.isascii() or not code.isdigit():
+            raise ParseError(
+                f"file_download code 必须是 6 位 ASCII 数字: {code!r}",
+                context={"code": code},
+            )
+        fn = _encode_gbk_field("filename", filename, max_bytes=80)
+        start_offset = _require_int("offset", offset, minimum=0, maximum=0xFFFFFFFF)
+        requested_length = _require_int("length", length, minimum=0, maximum=0xFFFFFFFF)
         body = (
-            code.encode("ascii")[:6].ljust(6, b"\x00")
-            + struct.pack("<H", int(mkt))
+            code.encode("ascii")
+            + struct.pack("<H", market_id)
             + fn
-            + struct.pack("<II", int(offset), int(length))
+            + struct.pack("<II", start_offset, requested_length)
         )
         return (yield _op_call("request", CMD["file_download"], body))
 
