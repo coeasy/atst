@@ -69,3 +69,14 @@ def test_release_publishes_once_only_after_artifact_matrix_passes() -> None:
     assert "if: github.event_name == 'release' && github.event.action == 'published'" in workflow
     assert "environment: pypi" in workflow
     assert "id-token: write" in workflow
+
+
+def test_scheduled_live_smoke_reports_real_failure_and_always_emits_junit() -> None:
+    workflow = _workflow("live-smoke.yml")
+
+    assert "pull_request:" not in workflow
+    assert "continue-on-error" not in workflow
+    assert '-m "network"' in workflow
+    assert "--junitxml=reports/live-smoke.xml" in workflow
+    assert "if: always()" in workflow
+    assert "path: reports/live-smoke.xml" in workflow
