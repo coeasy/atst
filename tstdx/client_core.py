@@ -30,20 +30,62 @@ __all__ = [
     "_emit",
     "_guard_offline",
     "_quote_body",
+    "_require_int",
     "_row_to_bar",
     "_row_to_capital",
     "_row_to_quote",
+    "_standard_market_id",
     "period_to_category",
     "split_symbol",
 ]
 
 OutputFormat = str  # "dict" | "tuple" | "dataframe"
 
-#: 市场前缀 → 标准市场编号（与 :func:`split_code_market` 单一事实源一致：
-#: 0=深 1=沪 2=北交所）。供 ``market="sh"`` 风格参数的命令使用。
-#: v5 DC1：北交所从 0（与深市撞码）修正为独立市场编号 2（0x044E 实测：
-#: market=2 → 379，北交所合理规模）。
+#: 市场前缀 → 标准市场编号（与 :mod:`tstdx.domain.symbol` 单一事实源一致：
+#: 0=深 1=沪 2=北交所）。
 _PREFIX_MARKET: dict[str, int] = {"sh": 1, "sz": 0, "bj": 2}
+
+
+def _require_int(
+    name: str,
+    value: Any,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
+    """Validate a protocol integer without bool/float/string coercion."""
+
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ParseError(
+            f"{name} 必须是整数，收到 {type(value).__name__}: {value!r}",
+            context={"field": name, "value": value},
+        )
+    if minimum is not None and value < minimum:
+        raise ParseError(
+            f"{name}={value} 小于下限 {minimum}",
+            context={"field": name, "value": value, "minimum": minimum},
+        )
+    if maximum is not None and value > maximum:
+        raise ParseError(
+            f"{name}={value} 超过上限 {maximum}",
+            context={"field": name, "value": value, "maximum": maximum},
+        )
+    return value
+
+
+def _standard_market_id(market: Any) -> int:
+    """Parse exactly one standard TDX market identity: ``sz/sh/bj`` or ``0/1/2``."""
+
+    if isinstance(market, str):
+        key = market.strip().lower()
+        if key not in _PREFIX_MARKET:
+            raise ParseError(
+                f"未知标准市场 {market!r}；可选 sz/sh/bj 或 0/1/2",
+                context={"market": market},
+            )
+        return _PREFIX_MARKET[key]
+    value = _require_int("market", market, minimum=0, maximum=2)
+    return value
 
 
 # --------------------------------------------------------------------------- #
@@ -54,20 +96,8 @@ def split_symbol(symbol: str) -> tuple[int, str]:
 
     ``market`` 为**标准市场编号**（0=深 1=沪 2=北交所）。调用方必须再按
     具体命令族的已验证市场编码能力处理，不能把 2 静默钳制成 0/1。
-
-    支持全部书写变种（大小写不敏感）：``sh600519`` / ``sh.600519`` /
-    ``600519.sh`` / ``600519SH`` / ``600519``，
-    统一经由 :mod:`tstdx.domain.symbol` 单一事实源处理。
-
-    >>> split_symbol("sh600519")
-    (1, '600519')
-    >>> split_symbol("600519.SH")
-    (1, '600519')
-    >>> split_symbol("000001")   # 个股 000001 平安银行 → 深市
-    (0, '000001')
-    >>> split_symbol("sz000651")
-    (0, '000651')
     """
+
     return to_tdx_market(symbol)
 
 
@@ -101,16 +131,22 @@ _PERIOD_TO_CATEGORY: dict[str, int] = {
 
 
 def period_to_category(period: str) -> int:
-    """把人类可读的周期名映射到 K 线 ``category`` 整数。
+    """把人类可读周期映射到已声明的 K 线 category 0..11。"""
 
-    >>> period_to_category("day")
-    4
-    >>> period_to_category("15min")
-    1
-    """
-    key = (period or "day").strip().lower()
+    if not isinstance(period, str) or not period.strip():
+        raise ParseError(
+            f"period 必须是非空字符串，收到 {period!r}",
+            context={"period": period},
+        )
+    key = period.strip().lower()
     if key.isdigit():
-        return int(key)  # 允许直接传 category 数字
+        category = int(key)
+        if category not in KlineCategory.NAMES:
+            raise ParseError(
+                f"未知 K 线 category={category}；可选 {sorted(KlineCategory.NAMES)}",
+                context={"period": period, "category": category},
+            )
+        return category
     if key not in _PERIOD_TO_CATEGORY:
         raise ParseError(
             f"未知周期: {period!r}（可选 {sorted(_PERIOD_TO_CATEGORY)}）",
@@ -156,8 +192,8 @@ def _row_to_quote(row: Mapping[str, Any]) -> Quote:
 
 
 def _row_to_capital(row: Mapping[str, Any]) -> CapitalChange:
-    """除权除息解析行 → :class:`CapitalChange`（F1：统一走
-    :func:`tstdx.domain.finance.to_capital_changes` 单一事实源）。"""
+    """除权除息解析行 → :class:`CapitalChange`（统一走 finance SSOT）。"""
+
     return to_capital_changes([row])[0]
 
 
@@ -170,7 +206,6 @@ def _emit(items: Sequence[Any], as_format: OutputFormat):
         from .domain.models import to_tuples
 
         return to_tuples(items)
-    # dict（默认）：调用 to_dict 保留 extra
     from .domain.models import to_dicts
 
     return to_dicts(items)
@@ -179,19 +214,12 @@ def _emit(items: Sequence[Any], as_format: OutputFormat):
 # --------------------------------------------------------------------------- #
 # B5：offline 命令守卫
 # --------------------------------------------------------------------------- #
-#: 内部已有回退路径的 offline 命令豁免 fail-fast
-#: （0x054C 批量失败时方法内部回退逐只 0x0530，见 :meth:`TdxClient.quotes_snapshot`）
 _OFFLINE_FALLBACK_OK: frozenset[int] = frozenset({CMD["quotes_snapshot"]})
 
 
 def _guard_offline(cmd: int) -> None:
-    """B5：账本标记 offline 且无回退豁免的命令直接 fail-fast。
+    """账本标记 offline 且无内部兼容路径的命令直接 fail-fast。"""
 
-    7 条 ``STATUS_OFFLINE`` 命令多主站实测无响应；此前调用方仍要吃满
-    「N 主站 × 3s 超时」重试链。现在请求发出前查账本，立即抛
-    :class:`~tstdx.errors.CommandOffline`（含替代方案指引，<10ms）。
-    误伤修复路径 = 更新账本 status（单一事实源）。
-    """
     c = get_command(cmd)
     if c is not None and c.status == STATUS_OFFLINE and cmd not in _OFFLINE_FALLBACK_OK:
         raise CommandOffline(
@@ -205,14 +233,18 @@ def _guard_offline(cmd: int) -> None:
 # 请求体拼装（多协议族共用布局）
 # --------------------------------------------------------------------------- #
 def _bars_body(market: int, code: str, category: int, start: int, count: int) -> bytes:
+    market_id = _require_int("market", market, minimum=0, maximum=0xFFFF)
+    category_id = _require_int("category", category, minimum=0, maximum=0xFFFF)
+    offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
+    page_size = _require_int("count", count, minimum=0, maximum=0xFFFF)
     return struct.pack(
         "<H6sHHHHIIH",
-        market,
+        market_id,
         code.encode("ascii")[:6].ljust(6, b"\x00"),
-        category,
+        category_id,
         1,
-        start,
-        count,
+        offset,
+        page_size,
         0,
         0,
         0,
@@ -224,8 +256,7 @@ def _quote_body(code: str, market: int) -> bytes:
 
     ``0x0530`` 的 0/1 market 字节反转语义已有实测证据。Goods ``0x0203``、
     Extended ``0x0105``、MAC ``0x1301`` 目前只沿用这两种已验证身份；北交所
-    ``market=2`` 在这些命令族尚无 golden/真机编码证据，因此必须 fail closed，
-    绝不能把 2 clamp 成 1/0 后伪装为其它市场。
+    ``market=2`` 在这些命令族尚无 golden/真机编码证据，因此必须 fail closed。
     """
 
     if isinstance(market, bool) or not isinstance(market, int):
