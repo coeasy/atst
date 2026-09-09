@@ -342,6 +342,33 @@ def test_sdist_verifier_rejects_repository_escape_member(
         build._verify(dist)
 
 
+def test_local_smoke_never_imports_package_from_source_checkout(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    build = _load_build_script()
+    calls: list[tuple[list[str], Path | None]] = []
+    wheel = tmp_path / "tstdx-1.4.0-py3-none-any.whl"
+    wheel.touch()
+
+    monkeypatch.setattr(build.venv, "create", lambda *args, **kwargs: None)
+
+    def capture(cmd: list[str], *, cwd: Path | None = None) -> None:
+        calls.append((cmd, cwd))
+
+    monkeypatch.setattr(build, "_run", capture)
+    build._smoke(wheel)
+
+    assert calls
+    assert all(cwd is not None and cwd.name == "work" for _, cwd in calls)
+    probe_cmd = next(cmd for cmd, _ in calls if "-c" in cmd)
+    assert "-I" in probe_cmd
+    probe_text = probe_cmd[probe_cmd.index("-c") + 1]
+    assert "package_file.is_relative_to(venv_root)" in probe_text
+    assert "TdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'" in probe_text
+    assert "AsyncTdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'" in probe_text
+
+
 def test_twine_check_runs_on_the_exact_verified_artifacts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
