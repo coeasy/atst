@@ -2,23 +2,19 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""tstdx 一键构建脚本：清理 → 构建 sdist+wheel → 校验产物 →（可选）安装冒烟。
+"""Safe local package build: clean -> isolated build -> verify -> optional smoke.
 
-用法::
+Usage::
 
-    python scripts/build_package.py                # 构建（自动安装缺失的 build 模块）
-    python scripts/build_package.py --smoke        # 构建 + 临时 venv 安装冒烟
-    python scripts/build_package.py --no-clean     # 跳过清理（增量构建）
-    python scripts/build_package.py --dist-out build_out   # 自定义产物目录
+    python scripts/build_package.py
+    python scripts/build_package.py --smoke
+    python scripts/build_package.py --no-clean
+    python scripts/build_package.py --dist-out build_out
+    python scripts/build_package.py --no-isolation  # explicit compatibility escape hatch
 
-流程:
-    1. 环境自检（Python 版本 ≥ 3.10；build 模块缺失时自动 ``pip install build``）
-    2. 清理 ``dist/``、``build/``、``*.egg-info``（--no-clean 跳过）
-    3. ``python -m build`` 产出 sdist + wheel
-    4. 校验：产物存在性 / 关键模块在 wheel 内 / sha256 摘要
-    5. --smoke：临时 venv 安装 wheel（--no-deps）并 ``import tstdx`` 冒烟
-
-任何一步失败以非零码退出；全部成功打印产物清单与 SHA-256。
+The default path intentionally mirrors the release workflow: PEP 517 isolation is
+ON, one universal wheel plus one sdist are required, the wheel must contain the
+PEP 561 marker, and no command silently publishes anything.
 """
 
 from __future__ import annotations
@@ -28,6 +24,7 @@ import contextlib
 import hashlib
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -35,15 +32,13 @@ import venv
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
-# Windows 控制台默认 GBK，中文输出/✓ 等字符可能触发 UnicodeEncodeError——
-# 统一重配 stdout/stderr 为 UTF-8（replace 兜底），不让打印本身决定成败。
+# Windows consoles may default to GBK. Printing diagnostics must never decide
+# whether a build succeeds, so keep this best-effort and propagate UTF-8 to all
+# subprocesses as well.
 with contextlib.suppress(Exception):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
 
-# 关键：把 UTF-8 模式传播给全部子进程（pip / build / 冒烟 venv 的 python）。
-# 否则 Windows 上 build 隔离环境里 pip 输出 GBK 字节，build 按 UTF-8 解码
-# 直接 UnicodeDecodeError 崩溃（实测复现）。
 os.environ.setdefault("PYTHONUTF8", "1")
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
@@ -53,8 +48,36 @@ PROJECT_NAME = "tstdx"
 REQUIRED_PYTHON = (3, 10)
 
 
+def _display_path(path: pathlib.Path) -> str:
+    """Render paths without assuming a custom output directory is under ROOT."""
+
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _validate_dist_out(path: pathlib.Path) -> pathlib.Path:
+    """Return a safe resolved output directory.
+
+    Cleaning is destructive by design. Never allow the repository root or any
+    ancestor of it as the output directory, otherwise ``--dist-out .`` or a
+    parent path could recursively delete source code before the build starts.
+    """
+
+    resolved = path.expanduser().resolve()
+    if resolved == ROOT or ROOT.is_relative_to(resolved):
+        raise SystemExit(
+            "[安全] --dist-out 不能是仓库根目录或其祖先目录: " f"{resolved}"
+        )
+    if resolved.exists() and not resolved.is_dir():
+        raise SystemExit(f"[安全] --dist-out 必须是目录: {resolved}")
+    return resolved
+
+
 def _run(cmd: list[str], *, cwd: pathlib.Path | None = None) -> None:
-    """运行子进程；非零退出即抛异常终止脚本。"""
+    """Run one subprocess and fail closed on any non-zero exit."""
+
     print(f"  $ {' '.join(cmd)}")
     proc = subprocess.run(cmd, cwd=cwd or ROOT)
     if proc.returncode != 0:
@@ -68,143 +91,224 @@ def _check_python() -> None:
             f"当前 {sys.version_info.major}.{sys.version_info.minor}"
         )
     print(
-        f"[环境] Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} ✓"
+        f"[环境] Python {sys.version_info.major}.{sys.version_info.minor}."
+        f"{sys.version_info.micro} ✓"
     )
 
 
-def _ensure_build() -> None:
-    """确保 build 与构建后端 hatchling 可用；缺失时自动安装。"""
-    try:
-        import build  # noqa: F401
+def _require_build_tools(*, isolated: bool) -> None:
+    """Require explicit packaging tools instead of mutating the environment."""
 
-        print(f"[环境] build {build.__version__} ✓")
-    except ImportError:
-        print("[环境] 未安装 build —— 自动 pip install build")
-        _run([sys.executable, "-m", "pip", "install", "build"])
+    try:
+        import build
+    except ImportError as exc:
+        raise SystemExit(
+            "[环境] 缺少 build；请先运行 `python -m pip install build` "
+            "或 `make install`"
+        ) from exc
+    print(f"[环境] build {build.__version__} ✓")
+
+    # PEP 517 isolation installs the backend declared by pyproject itself. Only
+    # the explicit --no-isolation escape hatch requires hatchling locally.
+    if isolated:
+        return
     try:
         import hatchling  # noqa: F401
-
-        try:
-            ver = _pkg_version("hatchling")
-        except PackageNotFoundError:
-            ver = "?"
-        print(f"[环境] hatchling {ver} ✓")
-    except ImportError:
-        print("[环境] 未安装 hatchling —— 自动 pip install hatchling")
-        _run([sys.executable, "-m", "pip", "install", "hatchling"])
+    except ImportError as exc:
+        raise SystemExit(
+            "[环境] --no-isolation 需要本地 hatchling；请先运行 `make install`"
+        ) from exc
+    try:
+        version = _pkg_version("hatchling")
+    except PackageNotFoundError:
+        version = "?"
+    print(f"[环境] hatchling {version} ✓ (--no-isolation)")
 
 
 def _clean(dist_out: pathlib.Path) -> None:
-    import shutil
+    """Remove known build outputs; never suppress deletion errors."""
 
     targets = [dist_out, ROOT / "build"]
-    targets += [p for p in ROOT.glob("*.egg-info") if p.is_dir()]
-    for t in targets:
-        if t.exists():
-            shutil.rmtree(t, ignore_errors=True)
-            print(f"[清理] 删除 {t.relative_to(ROOT)}")
+    targets.extend(p for p in ROOT.glob("*.egg-info") if p.is_dir())
+
+    seen: set[pathlib.Path] = set()
+    for target in targets:
+        target = target.resolve()
+        if target in seen or not target.exists():
+            continue
+        seen.add(target)
+        if not target.is_dir():
+            raise SystemExit(f"[清理失败] 期望目录但发现文件: {target}")
+        shutil.rmtree(target)
+        print(f"[清理] 删除 {_display_path(target)}")
+
     dist_out.mkdir(parents=True, exist_ok=True)
 
 
-def _build(isolated: bool) -> None:
-    cmd = [sys.executable, "-m", "build", "--sdist", "--wheel"]
+def _build(dist_out: pathlib.Path, *, isolated: bool) -> None:
+    """Build one sdist and wheel into the exact requested output directory."""
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "build",
+        "--sdist",
+        "--wheel",
+        "--outdir",
+        str(dist_out),
+    ]
     if not isolated:
-        # conda 环境下 build 的隔离环境有兼容问题（pip --python 装依赖失败，
-        # 实测复现），而 hatchling 是唯一 build-system 依赖——非隔离模式
-        # 直接用当前环境的 hatchling 构建，稳定可靠。
         cmd.append("--no-isolation")
-        print("[构建] python -m build --no-isolation --sdist --wheel ...")
+        print("[构建] 显式使用 --no-isolation 兼容模式")
     else:
-        print("[构建] python -m build --sdist --wheel ...")
+        print("[构建] 使用 PEP 517 隔离模式（与 release workflow 一致）")
     _run(cmd)
 
 
 def _sha256(path: pathlib.Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
-    """校验产物：sdist + wheel 各一；wheel 内含核心模块。"""
+    """Verify artifact count, universal-wheel identity and required package files."""
+
     wheels = sorted(dist_out.glob("*.whl"))
     sdists = sorted(dist_out.glob("*.tar.gz"))
-    if not wheels or not sdists:
-        raise SystemExit("[校验失败] 产物缺失：需要 1 个 .whl + 1 个 .tar.gz")
     if len(wheels) != 1 or len(sdists) != 1:
-        raise SystemExit(f"[校验失败] 产物数量异常：wheel={len(wheels)} sdist={len(sdists)}")
+        raise SystemExit(
+            f"[校验失败] 需要恰好 1 wheel + 1 sdist："
+            f"wheel={len(wheels)} sdist={len(sdists)}"
+        )
+
+    wheel = wheels[0]
+    if not wheel.name.endswith("-py3-none-any.whl"):
+        raise SystemExit(f"[校验失败] 预期 universal wheel，实际 {wheel.name}")
 
     import zipfile
 
-    whl = wheels[0]
-    with zipfile.ZipFile(whl) as z:
-        names = set(z.namelist())
+    with zipfile.ZipFile(wheel) as archive:
+        names = set(archive.namelist())
         for required in (
             f"{PROJECT_NAME}/__init__.py",
             f"{PROJECT_NAME}/cli.py",
             f"{PROJECT_NAME}/client.py",
+            f"{PROJECT_NAME}/py.typed",
         ):
             if required not in names:
-                raise SystemExit(f"[校验失败] wheel 缺少核心模块 {required}")
-    print(f"[校验] wheel 核心模块齐全 ✓ ({whl.name})")
+                raise SystemExit(f"[校验失败] wheel 缺少文件 {required}")
+
+    print(f"[校验] universal typed wheel 结构完整 ✓ ({wheel.name})")
     return [*sdists, *wheels]
 
 
-def _smoke(whl: pathlib.Path) -> None:
-    """临时 venv 安装 wheel（--no-deps，核心零依赖可独立冒烟）并 import 验证。"""
-    print("[冒烟] 创建临时 venv 并安装产物 ...")
+def _smoke(wheel: pathlib.Path) -> None:
+    """Install the exact wheel into a clean venv and verify its public identity."""
+
+    print("[冒烟] 创建临时 venv 并安装 canonical wheel ...")
     with tempfile.TemporaryDirectory(prefix="tstdx-smoke-") as tmp:
         venv_dir = pathlib.Path(tmp) / "venv"
         venv.create(venv_dir, with_pip=True)
-        py = venv_dir / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
-        _run([str(py), "-m", "pip", "install", "--quiet", "--no-deps", str(whl)])
+        if sys.platform == "win32":
+            python = venv_dir / "Scripts" / "python.exe"
+            cli = venv_dir / "Scripts" / "tstdx.exe"
+        else:
+            python = venv_dir / "bin" / "python"
+            cli = venv_dir / "bin" / "tstdx"
+
+        _run(
+            [
+                str(python),
+                "-m",
+                "pip",
+                "install",
+                "--quiet",
+                "--no-deps",
+                str(wheel),
+            ]
+        )
         probe = (
+            "import importlib.metadata as m; "
+            "from importlib.resources import files; "
             "import tstdx; "
             "from tstdx.client import TdxClient; "
             "from tstdx.facade import UnifiedQuoteAPI; "
-            "print('tstdx', tstdx.__version__, '导入冒烟 OK')"
+            "assert tstdx.__version__ == m.version('tstdx'); "
+            "assert files('tstdx').joinpath('py.typed').is_file(); "
+            "print('tstdx', tstdx.__version__, 'wheel smoke OK')"
         )
-        _run([str(py), "-c", probe])
+        _run([str(python), "-c", probe])
+        _run([str(cli), "--help"])
+        _run([str(python), "-m", "pip", "check"])
     print("[冒烟] 通过 ✓")
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="tstdx 一键构建脚本")
-    ap.add_argument(
-        "--no-clean", action="store_true", help="跳过 dist/build/egg-info 清理（增量构建）"
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="tstdx 安全一键构建脚本")
+    parser.add_argument(
+        "--no-clean",
+        action="store_true",
+        help="跳过 dist/build/egg-info 清理（增量构建）",
     )
-    ap.add_argument("--smoke", action="store_true", help="构建后在临时 venv 安装并 import 冒烟")
-    ap.add_argument(
-        "--isolated", action="store_true", help="使用 build 隔离环境构建（默认非隔离，兼容 conda）"
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="构建后在临时 venv 安装 canonical wheel 并验证",
     )
-    ap.add_argument("--dist-out", default=str(DEFAULT_DIST), help="产物目录（默认 dist/）")
-    args = ap.parse_args()
+    isolation = parser.add_mutually_exclusive_group()
+    isolation.add_argument(
+        "--isolated",
+        dest="isolated",
+        action="store_true",
+        help="使用 PEP 517 隔离构建（默认，与 release 一致）",
+    )
+    isolation.add_argument(
+        "--no-isolation",
+        dest="isolated",
+        action="store_false",
+        help="显式使用当前环境 hatchling（仅兼容特殊本地环境）",
+    )
+    parser.set_defaults(isolated=True)
+    parser.add_argument(
+        "--dist-out",
+        default=str(DEFAULT_DIST),
+        help="产物目录（默认 dist/；禁止仓库根目录及其祖先）",
+    )
+    return parser
 
-    dist_out = pathlib.Path(args.dist_out).resolve()
+
+def main() -> int:
+    args = _parser().parse_args()
+    dist_out = _validate_dist_out(pathlib.Path(args.dist_out))
+
     print("=" * 60)
-    print(f"{PROJECT_NAME} 一键构建")
+    print(f"{PROJECT_NAME} 安全一键构建")
     print(f"  仓库根: {ROOT}")
-    print(f"  产物目录: {dist_out}")
+    print(f"  产物目录: {_display_path(dist_out)}")
+    print(f"  隔离构建: {'yes' if args.isolated else 'NO (explicit escape hatch)'}")
     print("=" * 60)
 
     _check_python()
-    _ensure_build()
+    _require_build_tools(isolated=args.isolated)
     if not args.no_clean:
         _clean(dist_out)
-    _build(isolated=args.isolated)
+    else:
+        dist_out.mkdir(parents=True, exist_ok=True)
+    _build(dist_out, isolated=args.isolated)
     artifacts = _verify(dist_out)
 
     if args.smoke:
-        wheel = next(p for p in artifacts if p.suffix == ".whl")
+        wheel = next(path for path in artifacts if path.suffix == ".whl")
         _smoke(wheel)
 
     print("=" * 60)
     print("构建完成，产物：")
-    for p in artifacts:
-        print(f"  {p.relative_to(ROOT)}  ({p.stat().st_size / 1024:.1f} KB)")
-        print(f"    sha256: {_sha256(p)}")
+    for path in artifacts:
+        print(f"  {_display_path(path)}  ({path.stat().st_size / 1024:.1f} KB)")
+        print(f"    sha256: {_sha256(path)}")
     print("=" * 60)
     return 0
 
