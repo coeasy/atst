@@ -3,9 +3,9 @@
 
 """AsyncConnectionPool lifecycle hardening installed onto the legacy module.
 
-``transport.async_`` is a long-lived public import path.  Keep that module and
+``transport.async_`` is a long-lived public import path. Keep that module and
 class identity while installing the missing async equivalents of the synchronous
-circuit/request-health state machine.  This module is imported once by
+circuit/request-health state machine. This module is imported once by
 ``tstdx.transport`` before callers can receive ``transport.async_.AsyncConnectionPool``.
 """
 
@@ -242,8 +242,10 @@ async def _heartbeat_loop(self: _impl.AsyncConnectionPool) -> None:
 
 
 # Install onto the canonical public class rather than publishing a second class.
-_impl.AsyncConnectionPool._circuit_allows = _circuit_allows  # type: ignore[attr-defined]
-_impl.AsyncConnectionPool._mark_failure = _mark_failure  # type: ignore[attr-defined]
-_impl.AsyncConnectionPool._mark_success = _mark_success  # type: ignore[attr-defined]
-_impl.AsyncConnectionPool.request = _request  # type: ignore[assignment]
-_impl.AsyncConnectionPool._heartbeat_loop = _heartbeat_loop  # type: ignore[assignment]
+# ``setattr`` keeps this compatibility bridge independent of mypy's method-assign
+# diagnostic code names, so --warn-unused-ignores remains meaningful.
+setattr(_impl.AsyncConnectionPool, "_circuit_allows", _circuit_allows)
+setattr(_impl.AsyncConnectionPool, "_mark_failure", _mark_failure)
+setattr(_impl.AsyncConnectionPool, "_mark_success", _mark_success)
+setattr(_impl.AsyncConnectionPool, "request", _request)
+setattr(_impl.AsyncConnectionPool, "_heartbeat_loop", _heartbeat_loop)
