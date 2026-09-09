@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import struct
 import warnings
+from collections.abc import Mapping
 from typing import Any
 
 import tstdx.client as _client_pkg
@@ -16,8 +17,11 @@ from ..client_core import (
     _bars_body,
     _emit,
     _encode_gbk_field,
+    _normalize_symbols,
     _quote_body,
+    _require_bool,
     _require_int,
+    _require_output_format,
     _require_yyyymmdd,
     _row_to_bar,
     _row_to_capital,
@@ -101,6 +105,9 @@ class _ClientMixin:
         as_format: OutputFormat,
         strict: bool,
     ) -> Any:
+        _require_output_format(as_format)
+        _require_bool("index", index)
+        strict_mode = _require_bool("strict", strict)
         category = period_to_category(period)
         mkt, code = split_symbol(symbol)
         if market is not None:
@@ -152,7 +159,7 @@ class _ClientMixin:
                 f"bars({symbol!r}, period={period!r}, count={count}) 分页因盘中"
                 f"锚点漂移提前终止：实取 {len(bars)} 根 < 请求 {count} 根"
             )
-            if strict:
+            if strict_mode:
                 raise TruncatedDataError(
                     msg, context={"symbol": symbol, "returned": len(bars), "requested": count}
                 )
@@ -166,11 +173,11 @@ class _ClientMixin:
         as_format: OutputFormat,
         _collect: list[tuple[str, BaseException]] | None,
     ) -> Any:
-        if isinstance(symbols, str):
-            symbols = [symbols]
+        _require_output_format(as_format)
+        normalized_symbols = _normalize_symbols(symbols)
         out: list[Quote] = []
         errors: list[tuple[str, BaseException]] = _collect if _collect is not None else []
-        for sym in symbols:
+        for sym in normalized_symbols:
             try:
                 mkt, code = split_symbol(sym)
                 body = build_realtime_quote_body(code, mkt)
@@ -242,12 +249,24 @@ class _ClientMixin:
         ctx: Any,
         as_format: OutputFormat,
     ) -> Any:
+        _require_output_format(as_format)
         result = yield _op_call("request_result", cmd, body, ctx=ctx)
         return _emit(result.rows, as_format)
 
     def _t_request_result(self, cmd: int, body: bytes, *, ctx: Any) -> Any:
-        frame = yield _op_req(cmd, body, timeout=self.timeout)
-        return _client_pkg.dispatch(frame, family=self.family, **(ctx or {}))
+        command = _require_int("cmd", cmd, minimum=0, maximum=0xFFFF)
+        if not isinstance(body, bytes):
+            raise ParseError(
+                f"body 必须是 bytes，收到 {type(body).__name__}",
+                context={"field": "body", "value_type": type(body).__name__},
+            )
+        if ctx is not None and not isinstance(ctx, Mapping):
+            raise ParseError(
+                f"ctx 必须是 Mapping 或 None，收到 {type(ctx).__name__}",
+                context={"field": "ctx", "value_type": type(ctx).__name__},
+            )
+        frame = yield _op_req(command, body, timeout=self.timeout)
+        return _client_pkg.dispatch(frame, family=self.family, **(dict(ctx) if ctx else {}))
 
     def _t_security_list(self, market: Any, start: int) -> Any:
         market_id = _standard_market_id(market)
@@ -330,13 +349,7 @@ class _ClientMixin:
         start_offset = _require_int("offset", offset, minimum=0, maximum=0xFFFFFFFF)
         requested_length = _require_int("length", length, minimum=0, maximum=0xFFFFFFFF)
         packet_limit = _require_int("max_packets", max_packets, minimum=1)
-        if not isinstance(strict, bool):
-            raise ParseError(
-                f"strict 必须是 bool，收到 {type(strict).__name__}: {strict!r}",
-                context={"field": "strict"},
-            )
-        # Validate filename before entering any I/O path; _file_download_once repeats
-        # the check because it is also a directly callable private compatibility seam.
+        strict_mode = _require_bool("strict", strict)
         _encode_gbk_field("filename", filename, max_bytes=80)
 
         if requested_length > 0:
@@ -381,7 +394,7 @@ class _ClientMixin:
                 f"file_download({symbol!r}, {filename!r}) 累计 {len(data)} 字节"
                 f" < 服务端报告 total_len={total_len}，结果可能截断"
             )
-            if strict:
+            if strict_mode:
                 raise TruncatedDataError(
                     msg,
                     context={
@@ -450,7 +463,7 @@ class _ClientMixin:
         )
 
     def _t_quotes_snapshot(self, symbols: Any) -> Any:
-        syms = [symbols] if isinstance(symbols, str) else list(symbols)
+        syms = _normalize_symbols(symbols)
         out: list[Any] = []
         errors: list[tuple[str, BaseException]] = []
         for index in range(0, len(syms), _QUOTES_SNAPSHOT_BATCH):
@@ -480,12 +493,18 @@ class _ClientMixin:
         return _emit(out, "dict")
 
     def _t_snapshot(self, symbol: str, *, as_format: OutputFormat) -> Any:
+        output_format = _require_output_format(as_format)
+        if output_format == "tuple":
+            raise ParseError(
+                "snapshot 不支持 tuple 输出；可选 dict|dataframe",
+                context={"as_format": as_format},
+            )
         quote = yield _op_call("quotes", [symbol], as_format="dict")
         q = quote[0] if quote else None
         day = yield _op_call("bars", symbol, period="day", count=1, as_format="dict")
         d = day[0] if day else None
         snap = {"code": symbol, "quote": q, "prev_close": d}
-        if as_format == "dataframe":
+        if output_format == "dataframe":
             from ..domain.models import to_dataframe
 
             return to_dataframe([snap])
@@ -494,6 +513,7 @@ class _ClientMixin:
     def _t_goods_bars(
         self, symbol: str, *, period: str, count: int, start: int, as_format: OutputFormat
     ) -> Any:
+        _require_output_format(as_format)
         category = period_to_category(period)
         mkt, code = split_symbol(symbol)
         frame = yield _op_req(
@@ -505,6 +525,7 @@ class _ClientMixin:
         return _emit([_row_to_bar(row) for row in result.rows], as_format)
 
     def _t_goods_quote(self, symbol: str, as_format: OutputFormat) -> Any:
+        _require_output_format(as_format)
         mkt, code = split_symbol(symbol)
         frame = yield _op_req(CMD["goods_quote"], _quote_body(code, mkt), timeout=self.timeout)
         result = _client_pkg.dispatch(
@@ -535,6 +556,7 @@ class _ClientMixin:
     def _t_ex_bars(
         self, symbol: str, *, period: str, count: int, start: int, as_format: OutputFormat
     ) -> Any:
+        _require_output_format(as_format)
         category = period_to_category(period)
         mkt, code = split_symbol(symbol)
         frame = yield _op_req(
@@ -546,6 +568,7 @@ class _ClientMixin:
         return _emit([_row_to_bar(row) for row in result.rows], as_format)
 
     def _t_ex_quote(self, symbol: str, as_format: OutputFormat) -> Any:
+        _require_output_format(as_format)
         mkt, code = split_symbol(symbol)
         frame = yield _op_req(
             CMD["ex_instrument_quote"], _quote_body(code, mkt), timeout=self.timeout
@@ -584,6 +607,7 @@ class _ClientMixin:
         )
 
     def _t_mac_quote(self, symbol: str, as_format: OutputFormat) -> Any:
+        _require_output_format(as_format)
         mkt, code = split_symbol(symbol)
         frame = yield _op_req(
             CMD["mac_unified_quote"], _quote_body(code, mkt), timeout=self.timeout
