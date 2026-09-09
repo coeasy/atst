@@ -24,8 +24,11 @@ __all__ = [
     "_emit",
     "_encode_gbk_field",
     "_guard_offline",
+    "_normalize_symbols",
     "_quote_body",
+    "_require_bool",
     "_require_int",
+    "_require_output_format",
     "_require_yyyymmdd",
     "_row_to_bar",
     "_row_to_capital",
@@ -38,6 +41,15 @@ __all__ = [
 OutputFormat = str
 _PREFIX_MARKET: dict[str, int] = {"sh": 1, "sz": 0, "bj": 2}
 _OUTPUT_FORMATS = frozenset({"dict", "tuple", "dataframe"})
+
+
+def _require_bool(name: str, value: Any) -> bool:
+    if not isinstance(value, bool):
+        raise ParseError(
+            f"{name} 必须是 bool，收到 {type(value).__name__}: {value!r}",
+            context={"field": name, "value": value},
+        )
+    return value
 
 
 def _require_int(
@@ -65,6 +77,47 @@ def _require_int(
             context={"field": name, "value": value, "maximum": maximum},
         )
     return value
+
+
+def _require_output_format(value: Any) -> str:
+    if not isinstance(value, str) or value not in _OUTPUT_FORMATS:
+        raise ParseError(
+            f"未知输出格式 {value!r}；可选 {sorted(_OUTPUT_FORMATS)}",
+            context={"as_format": value, "allowed_formats": sorted(_OUTPUT_FORMATS)},
+        )
+    return value
+
+
+def _normalize_symbols(symbols: Any, *, field: str = "symbols") -> list[str]:
+    """Normalize a public symbol batch without accepting arbitrary iterables/coercion.
+
+    A single string becomes a one-item batch. Lists/tuples and other ``Sequence``
+    implementations are copied. Generators, sets, mappings, bytes and non-string
+    members are rejected before I/O so sync/async/batch entrypoints share one
+    deterministic error boundary. Symbol *content* is still parsed per-item later,
+    preserving the existing bad-symbol isolation behavior of ``quotes``.
+    """
+
+    if isinstance(symbols, str):
+        return [symbols]
+    if isinstance(symbols, (bytes, bytearray, memoryview)) or isinstance(symbols, Mapping):
+        raise ParseError(
+            f"{field} 必须是字符串或字符串 Sequence，收到 {type(symbols).__name__}",
+            context={"field": field, "value_type": type(symbols).__name__},
+        )
+    if not isinstance(symbols, Sequence):
+        raise ParseError(
+            f"{field} 必须是字符串或字符串 Sequence，收到 {type(symbols).__name__}",
+            context={"field": field, "value_type": type(symbols).__name__},
+        )
+    items = list(symbols)
+    for index, symbol in enumerate(items):
+        if not isinstance(symbol, str):
+            raise ParseError(
+                f"{field}[{index}] 必须是字符串，收到 {type(symbol).__name__}",
+                context={"field": field, "index": index, "value_type": type(symbol).__name__},
+            )
+    return items
 
 
 def _require_yyyymmdd(name: str, value: Any) -> int:
@@ -225,22 +278,18 @@ def _row_to_capital(row: Mapping[str, Any]) -> CapitalChange:
 def _emit(items: Sequence[Any], as_format: OutputFormat):
     """Emit exactly one declared public output format; never silently coerce typos."""
 
-    if as_format == "dataframe":
+    output_format = _require_output_format(as_format)
+    if output_format == "dataframe":
         from .domain.models import to_dataframe
 
         return to_dataframe(items)
-    if as_format == "tuple":
+    if output_format == "tuple":
         from .domain.models import to_tuples
 
         return to_tuples(items)
-    if as_format == "dict":
-        from .domain.models import to_dicts
+    from .domain.models import to_dicts
 
-        return to_dicts(items)
-    raise ParseError(
-        f"未知输出格式 {as_format!r}；可选 {sorted(_OUTPUT_FORMATS)}",
-        context={"as_format": as_format, "allowed_formats": sorted(_OUTPUT_FORMATS)},
-    )
+    return to_dicts(items)
 
 
 _OFFLINE_FALLBACK_OK: frozenset[int] = frozenset({CMD["quotes_snapshot"]})
