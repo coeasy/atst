@@ -69,6 +69,28 @@ def test_public_cli_host_audit_exposes_full_package_parameter_surface() -> None:
     assert args.no_save_ranking is True
 
 
+def test_host_management_timeout_works_before_or_after_nested_command() -> None:
+    parser = build_parser()
+
+    before = parser.parse_args(["hosts", "--timeout", "2.5", "audit"])
+    after = parser.parse_args(["hosts", "audit", "--timeout", "3.5"])
+
+    assert before.timeout == 2.5
+    assert after.timeout == 3.5
+
+
+def test_host_management_rejects_ignored_single_host_selector_but_market_keeps_it() -> None:
+    parser = build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["hosts", "audit", "--host", "1.2.3.4:7709"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["server-test", "--host", "1.2.3.4:7709"])
+
+    market = parser.parse_args(["bars", "sh600000", "--host", "1.2.3.4:7709"])
+    assert market.host == ["1.2.3.4:7709"]
+
+
 def test_public_cli_host_audit_delegates_to_installed_package_module(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
