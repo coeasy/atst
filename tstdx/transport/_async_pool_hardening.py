@@ -56,6 +56,20 @@ async def _circuit_allows(self: _impl.AsyncConnectionPool, host: Any) -> bool:
         return True
 
 
+async def _release_probe_token(
+    self: _impl.AsyncConnectionPool,
+    slot: _impl.AsyncSlot,
+    generation: int | None,
+) -> None:
+    """Release a claimed HALF_OPEN token without fabricating host health."""
+
+    if generation is not None and not await self._slot_is_current(slot, generation):
+        return
+    async with self._lock:
+        if slot.host.circuit == "half_open":
+            slot.host.circuit_probe_inflight = False
+
+
 async def _mark_failure(
     self: _impl.AsyncConnectionPool,
     slot: _impl.AsyncSlot,
@@ -172,7 +186,7 @@ async def _request(
                 await asyncio.sleep(delay)
             continue
         except asyncio.CancelledError:
-            # Cancellation is caller/process control, never host health evidence.
+            await _release_probe_token(self, slot, generation)
             raise
         except Exception as exc:
             last_exc = exc
@@ -181,6 +195,11 @@ async def _request(
                 break
             await asyncio.sleep(0.05 * (attempt + 1))
             continue
+        except BaseException:
+            # KeyboardInterrupt/SystemExit are process-control signals. Release
+            # only the HALF_OPEN admission token; never recategorize them.
+            await _release_probe_token(self, slot, generation)
+            raise
 
         await _mark_success(
             self,
@@ -224,19 +243,20 @@ async def _heartbeat_loop(self: _impl.AsyncConnectionPool) -> None:
                 idle = time.time() - (conn.stats.last_used or conn.stats.created_at)
                 if idle < interval:
                     await self._release_lease(slot, conn)
-                    # A HALF_OPEN token must not be consumed by an idle check.
-                    if slot.host.circuit == "half_open":
-                        async with self._lock:
-                            slot.host.circuit_probe_inflight = False
+                    await _release_probe_token(self, slot, generation)
                     continue
                 try:
                     rtt = await conn.ping(self.heartbeat_cmd)
                 finally:
                     await self._release_lease(slot, conn)
             except asyncio.CancelledError:
+                await _release_probe_token(self, slot, generation)
                 raise
             except Exception as exc:
                 await _mark_failure(self, slot, exc, generation=generation, conn=conn)
+            except BaseException:
+                await _release_probe_token(self, slot, generation)
+                raise
             else:
                 await _mark_success(self, slot, generation=generation, rtt_ms=rtt)
 
@@ -245,6 +265,7 @@ async def _heartbeat_loop(self: _impl.AsyncConnectionPool) -> None:
 # ``setattr`` keeps this compatibility bridge independent of mypy's method-assign
 # diagnostic code names, so --warn-unused-ignores remains meaningful.
 setattr(_impl.AsyncConnectionPool, "_circuit_allows", _circuit_allows)
+setattr(_impl.AsyncConnectionPool, "_release_probe_token", _release_probe_token)
 setattr(_impl.AsyncConnectionPool, "_mark_failure", _mark_failure)
 setattr(_impl.AsyncConnectionPool, "_mark_success", _mark_success)
 setattr(_impl.AsyncConnectionPool, "request", _request)
