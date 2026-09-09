@@ -54,9 +54,12 @@ repos:
         exclude: ^PROTOCOL_SPEC/.*
       - id: check-json
         exclude: ^ops/grafana_dashboard\.json$
+      - id: check-toml
+      - id: detect-private-key
       - id: end-of-file-fixer
         exclude: ^(tests/golden|PROTOCOL_SPEC/UNKNOWN)/
       - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
         exclude: ^(tests/golden|PROTOCOL_SPEC/UNKNOWN)/
       - id: check-merge-conflict
       - id: check-case-conflict
