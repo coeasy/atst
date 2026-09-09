@@ -71,12 +71,10 @@ def test_sync_async_pool_options_fail_closed_without_silent_coercion(
     kwargs: dict[str, Any],
     message: str,
 ) -> None:
+    options: dict[str, Any] = {"heartbeat_interval": 0}
+    options.update(kwargs)
     with pytest.raises(ConfigError, match=message):
-        pool_cls(
-            [_host(Family.STANDARD)],
-            heartbeat_interval=0,
-            **kwargs,
-        )
+        pool_cls([_host(Family.STANDARD)], **options)
 
 
 @pytest.mark.parametrize(
@@ -93,12 +91,10 @@ def test_sync_only_pool_options_fail_closed(
     kwargs: dict[str, Any],
     message: str,
 ) -> None:
+    options: dict[str, Any] = {"heartbeat_interval": 0}
+    options.update(kwargs)
     with pytest.raises(ConfigError, match=message):
-        ConnectionPool(
-            [_host(Family.STANDARD)],
-            heartbeat_interval=0,
-            **kwargs,
-        )
+        ConnectionPool([_host(Family.STANDARD)], **options)
 
 
 def test_documented_nonpositive_idle_timeout_still_disables_idle_sweep() -> None:
