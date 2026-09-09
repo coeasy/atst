@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from tstdx.cli.cmds_hosts import _cmd_hosts_audit
+from tstdx.cli.parser import build_parser
 from tstdx.protocol.commands import Family
 from tstdx.tools import host_audit
 from tstdx.transport.hosts import HostEntry
@@ -33,6 +34,39 @@ def _audit_result(family: str) -> host_audit.FamilyAudit:
             }
         ],
     )
+
+
+def test_public_cli_host_audit_exposes_full_package_parameter_surface() -> None:
+    args = build_parser().parse_args(
+        [
+            "hosts",
+            "audit",
+            "--family",
+            Family.F10,
+            "--timeout",
+            "1.5",
+            "--samples",
+            "2",
+            "--workers",
+            "3",
+            "--report",
+            "audit.json",
+            "--markdown",
+            "audit.md",
+            "--ranking-file",
+            "ranking.json",
+            "--no-save-ranking",
+        ]
+    )
+
+    assert args.family == [Family.F10]
+    assert args.timeout == 1.5
+    assert args.samples == 2
+    assert args.workers == 3
+    assert args.report == "audit.json"
+    assert args.markdown == "audit.md"
+    assert args.ranking_file == "ranking.json"
+    assert args.no_save_ranking is True
 
 
 def test_public_cli_host_audit_delegates_to_installed_package_module(
