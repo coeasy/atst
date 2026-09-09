@@ -17,16 +17,16 @@
 
 from __future__ import annotations
 
-# Side-effect import: installs async circuit/lifecycle parity onto the canonical
-# transport.async_.AsyncConnectionPool class before callers can receive it.
-from . import _async_pool_hardening
+# Side-effect imports install the v1.0 generation/lease + circuit hardening onto
+# the canonical pool classes before callers can receive either public class.
+from . import _async_pool_hardening, _pool_hardening
 from .base import DEFAULT_HEARTBEAT_CMD, ConnectionStats, TcpConnection
 from .hosts import DEFAULT_HOST_POOL, POOL_BY_FAMILY, HostEntry, RankingStore, resolve_hosts
 from .pool import ConnectionPool, PoolStats, Slot
 from .ratelimit import SessionRateLimiter, SessionState, TokenBucket, session_state
 from .speedtest import ProbeResult, probe, rank_hosts, speedtest, speedtest_and_save
 
-del _async_pool_hardening
+del _async_pool_hardening, _pool_hardening
 
 __all__ = [
     "TcpConnection",
