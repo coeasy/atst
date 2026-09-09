@@ -34,6 +34,16 @@ def test_release_matrix_smokes_client_behavior_and_pool_binding_hardening() -> N
     ) in smoke
 
 
+def test_release_matrix_smokes_transport_family_binding_hardening() -> None:
+    smoke = _smoke_job()
+
+    assert "ConnectionPool.__init__.__module__ == 'tstdx.transport._pool_family_hardening'" in smoke
+    assert (
+        "AsyncConnectionPool.__init__.__module__ == "
+        "'tstdx.transport._pool_family_hardening'"
+    ) in smoke
+
+
 def test_release_matrix_smokes_selector_hardening_from_installed_wheel() -> None:
     smoke = _smoke_job()
 
