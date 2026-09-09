@@ -58,8 +58,6 @@ def _require_int(
     minimum: int | None = None,
     maximum: int | None = None,
 ) -> int:
-    """Validate a protocol integer without bool/float/string coercion."""
-
     if isinstance(value, bool) or not isinstance(value, int):
         raise ParseError(
             f"{name} 必须是整数，收到 {type(value).__name__}: {value!r}",
@@ -88,15 +86,6 @@ def _require_output_format(value: Any) -> str:
 
 
 def _normalize_symbols(symbols: Any, *, field: str = "symbols") -> list[str]:
-    """Normalize a public symbol batch without accepting arbitrary iterables/coercion.
-
-    A single string becomes a one-item batch. Lists/tuples and other ``Sequence``
-    implementations are copied. Generators, sets, mappings, bytes and non-string
-    members are rejected before I/O so sync/async/batch entrypoints share one
-    deterministic error boundary. Symbol *content* is still parsed per-item later,
-    preserving the existing bad-symbol isolation behavior of ``quotes``.
-    """
-
     if isinstance(symbols, str):
         return [symbols]
     if isinstance(symbols, (bytes, bytearray, memoryview)) or isinstance(symbols, Mapping):
@@ -120,8 +109,6 @@ def _normalize_symbols(symbols: Any, *, field: str = "symbols") -> list[str]:
 
 
 def _require_yyyymmdd(name: str, value: Any) -> int:
-    """Validate an actual Gregorian ``YYYYMMDD`` date, not just an integer range."""
-
     day = _require_int(name, value, minimum=19000101, maximum=21001231)
     text = f"{day:08d}"
     try:
@@ -136,18 +123,10 @@ def _require_yyyymmdd(name: str, value: Any) -> int:
 
 
 def _encode_gbk_field(name: str, value: Any, *, max_bytes: int) -> bytes:
-    """Encode one fixed-width GBK protocol field without replacement or truncation."""
-
     if not isinstance(value, str) or not value:
-        raise ParseError(
-            f"{name} 必须是非空字符串，收到 {value!r}",
-            context={"field": name},
-        )
+        raise ParseError(f"{name} 必须是非空字符串，收到 {value!r}", context={"field": name})
     if "\x00" in value:
-        raise ParseError(
-            f"{name} 不允许包含 NUL",
-            context={"field": name},
-        )
+        raise ParseError(f"{name} 不允许包含 NUL", context={"field": name})
     try:
         raw = value.encode("gbk", errors="strict")
     except UnicodeEncodeError as exc:
@@ -165,8 +144,6 @@ def _encode_gbk_field(name: str, value: Any, *, max_bytes: int) -> bytes:
 
 
 def _standard_market_id(market: Any) -> int:
-    """Parse exactly one standard TDX market identity: ``sz/sh/bj`` or ``0/1/2``."""
-
     if isinstance(market, str):
         key = market.strip().lower()
         if key not in _PREFIX_MARKET:
@@ -179,15 +156,6 @@ def _standard_market_id(market: Any) -> int:
 
 
 def split_symbol(symbol: str) -> tuple[int, str]:
-    """Return a verified symbol-based 7709 market identity.
-
-    The domain SSOT knows BJ as canonical market id 2, and explicit commands such
-    as 0x044E security-count have BJ evidence. Current symbol-based request goldens
-    (0x052D/0x0530 and related public paths), however, only prove SZ/SH market
-    encoding. Until a command-specific BJ request golden exists, do not extrapolate
-    ``market=2`` from security-count to every binary body.
-    """
-
     market, code = to_tdx_market(symbol)
     if market not in (0, 1):
         raise ParseError(
@@ -231,13 +199,8 @@ _PERIOD_TO_CATEGORY: dict[str, int] = {
 
 
 def period_to_category(period: str) -> int:
-    """把人类可读周期映射到已声明的 K 线 category 0..11。"""
-
     if not isinstance(period, str) or not period.strip():
-        raise ParseError(
-            f"period 必须是非空字符串，收到 {period!r}",
-            context={"period": period},
-        )
+        raise ParseError(f"period 必须是非空字符串，收到 {period!r}", context={"period": period})
     key = period.strip().lower()
     if key.isdigit():
         category = int(key)
@@ -293,8 +256,6 @@ def _row_to_capital(row: Mapping[str, Any]) -> CapitalChange:
 
 
 def _emit(items: Sequence[Any], as_format: OutputFormat):
-    """Emit exactly one declared public output format; never silently coerce typos."""
-
     output_format = _require_output_format(as_format)
     if output_format == "dataframe":
         from .domain.models import to_dataframe
@@ -310,28 +271,37 @@ def _emit(items: Sequence[Any], as_format: OutputFormat):
 
 
 _OFFLINE_FALLBACK_OK: frozenset[int] = frozenset({CMD["quotes_snapshot"]})
+_UNVERIFIED_STRUCTURED_BLOCK: frozenset[int] = frozenset(
+    {
+        CMD["minute_today"],
+        CMD["trade_today"],
+    }
+)
 
 
 def _guard_offline(cmd: int) -> None:
-    c = get_command(cmd)
-    if c is not None and c.status == STATUS_OFFLINE and cmd not in _OFFLINE_FALLBACK_OK:
+    command = get_command(cmd)
+    if cmd in _UNVERIFIED_STRUCTURED_BLOCK:
+        name = command.name if command is not None else f"0x{cmd:04X}"
+        raise NotImplementedFeature(
+            f"命令 0x{cmd:04X}（{name}）当前 parser/request 仍为 inferred，"
+            "在真机 golden 锁定前不通过结构化 TdxClient API 发包",
+            context={
+                "cmd": cmd,
+                "name": name,
+                "raw_transport_available": True,
+                "provider_switch_allowed": False,
+            },
+        )
+    if command is not None and command.status == STATUS_OFFLINE and cmd not in _OFFLINE_FALLBACK_OK:
         raise CommandOffline(
-            f"命令 0x{cmd:04X}（{c.name}）多主站实测无响应，已在客户端 fail-fast"
+            f"命令 0x{cmd:04X}（{command.name}）多主站实测无响应，已在客户端 fail-fast"
             "（不再走超时重试链）；请改用替代命令，或参考 PROTOCOL_SPEC 对应条目",
-            context={"cmd": cmd, "name": c.name, "family": c.family},
+            context={"cmd": cmd, "name": command.name, "family": command.family},
         )
 
 
 def _bars_body(market: int, code: str, category: int, start: int, count: int) -> bytes:
-    """Fail closed for inferred EXTENDED/GOODS bars request layouts.
-
-    Standard 0x052D does not use this helper. The only callers are the declared
-    extended/goods high-level paths, whose repository specs currently say 12-byte
-    request bodies while the old implementation emitted the 26-byte 0x052D shape.
-    Until a request golden locks market-id/code semantics, emitting either shape
-    would be pretending an inferred protocol is verified.
-    """
-
     del market, code, category, start, count
     raise NotImplementedFeature(
         "EXTENDED/GOODS bars request layout 尚未经过真机 golden 验证；已停止发送旧的标准 0x052D body",
@@ -344,13 +314,6 @@ def _bars_body(market: int, code: str, category: int, start: int, count: int) ->
 
 
 def _quote_body(code: str, market: int) -> bytes:
-    """Fail closed for inferred EXTENDED/GOODS/MAC quote request layouts.
-
-    The former helper emitted an 8-byte reversed-market body. EXTENDED/GOODS
-    specs describe a 9-byte ``uint16 market + code[6] + reserved`` request and
-    MAC 0x1301 has no request golden at all. None may be sent as verified traffic.
-    """
-
     del code, market
     raise NotImplementedFeature(
         "EXTENDED/GOODS/MAC quote request layout 尚未经过真机 golden 验证；已停止发送推断 body",
