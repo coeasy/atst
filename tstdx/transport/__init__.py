@@ -23,6 +23,12 @@ from .pool import ConnectionPool, PoolStats, Slot
 from .ratelimit import SessionRateLimiter, SessionState, TokenBucket, session_state
 from .speedtest import ProbeResult, probe, rank_hosts, speedtest, speedtest_and_save
 
+# Install async circuit/lifecycle parity onto the canonical transport.async_
+# class before any caller can receive it. Keep the public import path unchanged.
+from . import _async_pool_hardening
+
+del _async_pool_hardening
+
 __all__ = [
     "TcpConnection",
     "ConnectionStats",
@@ -47,7 +53,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):  # 延迟导入 asyncio 相关（避免无谓开销）
+def __getattr__(name: str):
     if name in ("AsyncTcpConnection", "AsyncConnectionPool", "AsyncSlot"):
         from . import async_ as _a
 
