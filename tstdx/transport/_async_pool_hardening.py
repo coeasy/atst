@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import random
 import time
 from collections.abc import AsyncIterator
@@ -167,6 +168,23 @@ def _require_positive_frame_limit(value: Any, *, field: str) -> int:
     return value
 
 
+def _require_bool_option(value: Any, *, field: str) -> bool:
+    if not isinstance(value, bool):
+        raise ConfigError(f"{field} 必须是 bool，收到 {value!r}")
+    return value
+
+
+def _require_request_timeout(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"timeout 必须是正有限数值或 None，收到 {value!r}")
+    timeout = float(value)
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ConfigError(f"timeout 必须是正有限数值或 None，收到 {value!r}")
+    return timeout
+
+
 async def _request(
     self: _impl.AsyncConnectionPool,
     method: int,
@@ -176,6 +194,7 @@ async def _request(
 ) -> _impl.ResponseFrame:
     """Async request path with sync-equivalent host coverage and circuit semantics."""
 
+    request_timeout = _require_request_timeout(timeout)
     self._ensure_open()
     max_attempts = self.max_retries + 1
     distinct_hosts = len({slot.host.key for slot in self._slots})
@@ -199,7 +218,7 @@ async def _request(
         try:
             conn, generation = await self._acquire_lease(slot)
             try:
-                frame = await conn.request(method, body, timeout=timeout)
+                frame = await conn.request(method, body, timeout=request_timeout)
             finally:
                 await self._release_lease(slot, conn)
         except TdxError as exc:
@@ -268,6 +287,8 @@ async def _request_multi(
     frame_limit = _require_positive_frame_limit(max_frames, field="max_frames")
     if record_size is not None:
         _require_positive_frame_limit(record_size, field="record_size")
+    expect_count_enabled = _require_bool_option(expect_count, field="expect_count")
+    request_timeout = _require_request_timeout(timeout)
     self._ensure_open()
     await self._acquire_rate()
     slot = await _select_allowed_slot(self)
@@ -286,12 +307,12 @@ async def _request_multi(
         try:
             async with conn._lock:
                 try:
-                    first = await conn._request_locked(method, body, timeout=timeout)
+                    first = await conn._request_locked(method, body, timeout=request_timeout)
                 except TdxError as exc:
                     first_exc = exc
                 else:
                     payload = first.payload
-                    if not expect_count or len(payload) < 2:
+                    if not expect_count_enabled or len(payload) < 2:
                         result = first
                     else:
                         count = int.from_bytes(payload[:2], "little")
