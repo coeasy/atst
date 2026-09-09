@@ -57,6 +57,10 @@ class HostEntry:
     #: 测速指标（未测速时为 None）
     connect_ms: float | None = None
     rtt_ms: float | None = None
+    #: 真实请求/心跳测得的 RTT。与后台测速的 ``rtt_ms`` 分离，避免
+    #: 一次过期的探测结果覆盖当前连接的健康排序，反之亦然。
+    live_rtt_ms: float | None = None
+    live_ok_at: float | None = None
     #: 连续失败次数（连接失败 + 业务失败共用一个计数，驱动指数惩罚）
     failures: int = 0
     #: 业务帧失败次数（R2：连接成功但请求/响应交换失败的次数，
@@ -71,6 +75,8 @@ class HostEntry:
     consec_weighted: float = 0.0
     #: open 进入时间戳（驱动冷却）
     circuit_opened_at: float = 0.0
+    #: HALF_OPEN 的唯一探测令牌。仅存于运行时，不参与排名持久化。
+    circuit_probe_inflight: bool = False
 
     @property
     def key(self) -> str:
@@ -83,7 +89,9 @@ class HostEntry:
     @property
     def score(self) -> float:
         """越小越好。未测速条目给中性分 1e6（排在已测速之后、失败条目之前）。"""
-        base = 1000000.0 if self.rtt_ms is None else float(self.rtt_ms)
+        # 真实请求健康优先于后台测速；两者不是同一种信号，不能互相覆盖。
+        measured = self.live_rtt_ms if self.live_rtt_ms is not None else self.rtt_ms
+        base = 1000000.0 if measured is None else float(measured)
         # 连续失败 → 指数惩罚，但封顶 1e9，保证仍排在"未测速"之后
         penalty = min(1e9, base * (4 ** min(self.failures, 8)))
         # R2 业务失败率降权：连接正常但业务帧失败的主机轻微降权
@@ -92,7 +100,14 @@ class HostEntry:
         return penalty
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        # live health belongs to the current process/generation.  Ranking files
+        # must contain probe observations only, otherwise a stale process can
+        # resurrect old circuit/live state on the next startup.
+        data.pop("live_rtt_ms", None)
+        data.pop("live_ok_at", None)
+        data.pop("circuit_probe_inflight", None)
+        return data
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> HostEntry:

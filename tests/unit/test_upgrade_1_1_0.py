@@ -306,4 +306,4 @@ class TestAsyncFacade:
 def test_version_bumped() -> None:
     import tstdx
 
-    assert tstdx.__version__ == "1.4.0"
+    assert tstdx.__version__ == "1.0.0"

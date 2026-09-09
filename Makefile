@@ -27,7 +27,7 @@ install:
 
 test:
 	# G1/G2（v6 §4）：覆盖率门禁 + 剔除联网测试（联网冒烟走 make test-live）
-	pytest tests/ -v --tb=short -m "not network" --cov=tstdx --cov-report=term-missing --cov-fail-under=75
+	pytest tests/ -v --tb=short -m "not network" --cov=tstdx --cov-report=term-missing --cov-fail-under=77
 
 test-live:
 	@echo "  联网冒烟（依赖外网，失败不阻断）"

@@ -51,7 +51,7 @@ from ..errors import (
     TdxError,
     TruncatedDataError,
 )
-from ..protocol.commands import CMD
+from ..protocol.commands import CMD, Family
 from ..protocol.parsers.std7709 import (
     SecurityBarsParser,
     build_realtime_quote_body,
@@ -445,7 +445,13 @@ class _ClientMixin:
             + fn
             + struct.pack("<II", int(offset), int(length))
         )
-        return (yield _op_call("request", CMD["file_download"], body))
+        # 0x06B9 is shared by the standard transport and the F10 facade.  The
+        # F10 family has no separate response parser for this command, so a
+        # generic F10 request would silently discard the file chunk.  Parse it
+        # through the canonical standard file-download parser for both clients.
+        frame = yield _op_req(CMD["file_download"], body, timeout=self.timeout)
+        result = _client_pkg.dispatch(frame, family=Family.STANDARD)
+        return result.rows
 
     def _t_auction_snapshot(self, symbol: str) -> Any:
         """集合竞价过程快照（命令 ``0x056A``）。"""

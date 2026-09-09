@@ -29,7 +29,7 @@ body = """
 footer = """
 ---
 
-Full changelog: [GitHub Releases](https://github.com/tstdx/tstdx/releases)
+Full changelog: [GitHub Releases](https://github.com/coeasy/tstdx/releases)
 """
 trim = true
 sort_commits = "oldest"

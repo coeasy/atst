@@ -26,7 +26,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/tstdx/tstdx.git
+git clone https://github.com/coeasy/tstdx.git
 cd tstdx
 
 # 创建虚拟环境
@@ -92,6 +92,20 @@ python -c "import tstdx; print(tstdx.__version__)"
 
 - 使用 GitHub Issue 的 Documentation 模板
 - 提供具体的修改建议
+
+## 发布检查清单
+
+发布新版本时，必须保持以下信息一致：
+
+1. 更新 `pyproject.toml` 的 `project.version` 与 `tstdx.__version__`；
+2. 在 `CHANGELOG.md` 写入带日期的版本章节，并更新对应发布说明；
+3. 更新 README 当前版本、兼容性和文档导航；
+4. 运行 `python scripts/build_package.py --smoke`，确认 wheel/sdist 与安装冒烟均通过；
+5. 运行全量测试、ruff 检查和文档链接检查；
+6. 创建 `vX.Y.Z` 标签，再由 GitHub Release 工作流发布到 PyPI。
+
+历史版本引用（例如弃用时间线和归档路线图）应保留原版本号，并明确其历史语义，
+不得为追求字符串一致而批量改写。
 
 ## 协议规范
 

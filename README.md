@@ -1,7 +1,7 @@
 # tstdx
 
 > 通达信（TDX）行情数据通用协议库 —— 覆盖 5 套协议族，零硬依赖，跨平台。
-> **当前版本**：1.4.0（P13/P14/P15 优化批次全量落地，见 [CHANGELOG](CHANGELOG.md)）
+> **当前版本**：v1.0.0（正式稳定版，2026-09-09 发布；见 [发布说明](docs/releases/v1.0.0.md)）
 
 ## 特性
 
@@ -21,6 +21,18 @@
 - **40+ 异常类**：分类错误树（E1–E9）+ `RetryAdvice`；`SourceUnavailable` 归 E7 域（外部源不可用）
 - **零硬依赖**：所有第三方库均为可选 extra；`[project.optional-dependencies].dev` 提供与 CI 一致的本地体验
 - **弃用时间线明确**：`tstdx.native` v1.5.0 强告警（`UserWarning` + `logging.warning` 双通道）→ v1.6.0 正式删除
+
+## v1.0.0 正式发布
+
+v1.0.0 是首个稳定发布版本，重点收口连接池的主站生命周期和并发状态治理：
+
+- 后台测速排序与真实请求健康状态分离，避免测速结果覆盖线上健康判断；
+- generation/lease 保护连接热更新、连接复用和在飞请求；
+- 同步/异步 half-open circuit 均保证同一主站同一时刻最多一个探测请求；
+- F10 0x06B9 文件下载恢复规范分块解析，并对空响应给出明确错误；
+- wheel 与源码包均已构建并通过安装冒烟。
+
+详细内容见 [v1.0.0 发布说明](docs/releases/v1.0.0.md) 与 [CHANGELOG](CHANGELOG.md)。
 
 ## 安装
 
@@ -161,6 +173,7 @@ tstdx/
 | [docs/adr/](docs/adr/README.md) | 架构决策记录（含 ADR-011 流式内核取舍）|
 | [PROTOCOL_SPEC/](PROTOCOL_SPEC/README.md) | 协议命令 YAML 规范 + codegen/spec_audit 闭环 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录（含 native 弃用时间线 v1.5.0/v1.6.0）|
+| [docs/releases/v1.0.0.md](docs/releases/v1.0.0.md) | v1.0.0 正式发布说明、兼容性与验证结果 |
 | [docs/archive/](docs/archive/) | 历史计划与设计归档（v1 优化计划/开发计划/差距分析等）|
 
 ## 协议规范

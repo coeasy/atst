@@ -1,5 +1,6 @@
 # tstdx 主体功能梳理与优化改进计划（v3 路线版）
 
+> **文档性质**：历史路线图快照；当前稳定发布基线为 [v1.0.0](releases/v1.0.0.md)。
 > **生成日期**：2026-09-02（v1.2.0 修复波进行中快照）
 > **数据来源**：本会话实测勘察（LOC/命令/端点/测试计数均为脚本实测，非文档转录）+ 六域修复代理回报
 > **文档谱系**：v1 `docs/archive/OPTIMIZATION_PLAN.md`（A-E 批次，已完成）→ v2 `docs/INDUSTRIAL_OPTIMIZATION_PLAN.md`（缺陷审计 F-H 批次，执行中，进度见其附录 D）→ **本文档**（功能地图 + v1.2.0 之后的前进路线 I/J 批次）→ v3 `docs/POTENTIAL_ISSUES_AND_PLAN.md`（修复波后的健康评估 + K/L/M 批次）

@@ -38,7 +38,7 @@
 | [protocol/parsers/std7709.py](../tstdx/protocol/parsers/std7709.py) | 核心命令解析     | `SecurityBarsParser`（0x052D）：datetime + 4×LEB128 差分价格 + tdx\_float 量/额，基准还原 + 单位归一 + 指数涨跌家数；注册表分发（61 处解析器，85 条命令账本）       |
 | [transport/pool.py](../tstdx/transport/pool.py)                     | 连接池/故障转移   | Slot = hosts × slots\_per\_host；健康分（rtt + 失败指数惩罚）+ 轮询选槽；`RetryAdvice` 驱动换槽/换主站；尝试次数至少覆盖池内每台主站（2026-09-01 修复）              |
 | [transport/hosts.py](../tstdx/transport/hosts.py)                   | 主站候选/排名    | 用户配置 > 排名文件（`~/.tstdx/server_ranking.json`）> 内置池（默认取 8 台）；失败衰减不删除                                                         |
-| [client.py](../tstdx/client.py)                                     | 同步/异步客户端   | 语义化方法（`bars/quotes/finance_info…`）封装「命令号+请求体+解析上下文」；三态输出 dict/tuple/dataframe；异步镜像签名一致                                    |
+| [client/](../tstdx/client/)                                         | 同步/异步客户端   | 语义化方法（`bars/quotes/finance_info…`）封装「命令号+请求体+解析上下文」；三态输出 dict/tuple/dataframe；异步镜像签名一致                                    |
 | [reader/formats.py](../tstdx/reader/formats.py)                     | 本地 vipdoc  | .day（32B/条：u32 日期 + 4×u32 价格×scale + f32 额 + u32 量）/ .lc1/.lc5（lc16 日期编码）；`DataProfile` + `ProfileDetector` 自动探测规格，不硬编码假设 |
 | [web/base.py](../tstdx/web/base.py)                                 | HTTP 源基础设施 | 零依赖 urllib / 可选 httpx；进程级共享令牌桶（跨实例共享防封配额）；传输/解析双失败桶（20/40 次）触发 `SourceDeprecated` 熔断；指数退避+抖动封顶 8s                         |
 | [web/adapters.py](../tstdx/web/adapters.py)                         | 7 源适配器     | 新浪（Referer 必须）、腾讯（手/万元→股/元归一）、东财（×100 整数价格、3 主机 failover）、集思录/港股/K线/中行外汇；`fetch_all` 分页拉全市场                               |

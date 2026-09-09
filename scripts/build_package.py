@@ -102,12 +102,17 @@ def _clean(dist_out: pathlib.Path) -> None:
     for t in targets:
         if t.exists():
             shutil.rmtree(t, ignore_errors=True)
-            print(f"[清理] 删除 {t.relative_to(ROOT)}")
+            try:
+                display = t.relative_to(ROOT)
+            except ValueError:
+                display = t
+            print(f"[清理] 删除 {display}")
     dist_out.mkdir(parents=True, exist_ok=True)
 
 
-def _build(isolated: bool) -> None:
+def _build(isolated: bool, dist_out: pathlib.Path) -> None:
     cmd = [sys.executable, "-m", "build", "--sdist", "--wheel"]
+    cmd.extend(["--outdir", str(dist_out)])
     if not isolated:
         # conda 环境下 build 的隔离环境有兼容问题（pip --python 装依赖失败，
         # 实测复现），而 hatchling 是唯一 build-system 依赖——非隔离模式
@@ -143,8 +148,8 @@ def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
         names = set(z.namelist())
         for required in (
             f"{PROJECT_NAME}/__init__.py",
-            f"{PROJECT_NAME}/cli.py",
-            f"{PROJECT_NAME}/client.py",
+            f"{PROJECT_NAME}/cli/__init__.py",
+            f"{PROJECT_NAME}/client/__init__.py",
         ):
             if required not in names:
                 raise SystemExit(f"[校验失败] wheel 缺少核心模块 {required}")
@@ -193,7 +198,7 @@ def main() -> int:
     _ensure_build()
     if not args.no_clean:
         _clean(dist_out)
-    _build(isolated=args.isolated)
+    _build(isolated=args.isolated, dist_out=dist_out)
     artifacts = _verify(dist_out)
 
     if args.smoke:
@@ -203,7 +208,11 @@ def main() -> int:
     print("=" * 60)
     print("构建完成，产物：")
     for p in artifacts:
-        print(f"  {p.relative_to(ROOT)}  ({p.stat().st_size / 1024:.1f} KB)")
+        try:
+            display = p.relative_to(ROOT)
+        except ValueError:
+            display = p
+        print(f"  {display}  ({p.stat().st_size / 1024:.1f} KB)")
         print(f"    sha256: {_sha256(p)}")
     print("=" * 60)
     return 0

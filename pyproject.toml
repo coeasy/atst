@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tstdx"
-version = "1.4.0"
+version = "1.0.0"
 description = "通达信（TDX）行情数据通用协议库 —— 覆盖 7709 标准 / 7727 扩展市场 / MAC 专属 / F10 资料 / 商品语义 五套协议族，含本地 vipdoc 二进制解析与 HTTP Web 行情源降级"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -82,6 +82,8 @@ all       = [
 Homepage      = "https://github.com/coeasy/tstdx"
 Documentation = "https://github.com/coeasy/tstdx/tree/main/docs"
 Issues        = "https://github.com/coeasy/tstdx/issues"
+Changelog     = "https://github.com/coeasy/tstdx/blob/main/CHANGELOG.md"
+Releases      = "https://github.com/coeasy/tstdx/releases"
 
 [project.scripts]
 tstdx = "tstdx.cli:main"
@@ -92,7 +94,15 @@ packages = ["tstdx"]
 [tool.hatch.build.targets.sdist]
 # P15 补充：CHANGELOG.md 也纳入 sdist——v1.5.0/v1.6.0 native 弃用时间线
 # 与 P13/P14/P15 优化批次记录对下游迁移至关重要，与 README/LICENSE 同级。
-include = ["tstdx", "PROTOCOL_SPEC", "tests", "README.md", "CHANGELOG.md", "LICENSE"]
+include = [
+    "tstdx",
+    "PROTOCOL_SPEC",
+    "tests",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "docs/releases/v1.0.0.md",
+]
 
 [tool.pytest.ini_options]
 minversion = "7.0"
