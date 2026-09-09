@@ -27,7 +27,8 @@
 
 设计要点
 --------
-* **单次编译正则 + LRU 缓存**：解析路径零重复编译，热点查询 O(1)。
+* **类型边界先于缓存**：公开入口先校验 raw/market，再进入只接收字符串的
+  LRU cache；list/dict 等不可哈希错误不会从 functools 提前泄漏。
 * **确定性**：同一输入永远得到同一 :class:`Symbol`；``000xxx`` 段的
   两市歧义（裸 ``000001`` = 深市平安银行 vs 沪市上证指数）按
   :data:`_SH_INDEX_BARE_CODES` 白名单裁决（默认归深市个股，
@@ -42,6 +43,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import Any
 
 __all__ = [
     "Market",
@@ -75,11 +77,6 @@ class Market:
 _SH_CODE_PREFIXES = ("60", "68", "50", "51", "52", "56", "58", "11", "9")
 _SZ_CODE_PREFIXES = ("00", "30", "12", "15", "16", "18", "159")
 _BJ_CODE_PREFIXES = ("43", "83", "87", "88", "92", "4", "8")
-
-#: ``000xxx`` 段中证 / 上证系列指数裸码白名单 → 沪市。
-#:
-#: 裸 ``000001`` 默认归深市平安银行；需要上证指数请显式书写
-#: ``sh000001``。白名单成员新增前必须核对深市同名冲突。
 _SH_INDEX_BARE_CODES: frozenset[str] = frozenset({"000300", "000852", "000905", "000903"})
 
 
@@ -123,11 +120,7 @@ class Symbol:
 
     @property
     def tdx_market(self) -> int:
-        """TDX 标准市场编号：SZ=0、SH=1、BJ=2；HK/US fail closed。
-
-        北交所 2 来自 0x044E 实测。HK/US 只能走对应 Web/独立 Provider，
-        绝不能因“其它市场默认 0”而被伪装成深市进入 7709 请求。
-        """
+        """TDX 标准市场编号：SZ=0、SH=1、BJ=2；HK/US fail closed。"""
 
         if self.market == Market.SZ:
             return 0
@@ -175,13 +168,27 @@ def _validate_market_token(token: str) -> str | None:
     return normalized if normalized in Market.ALL else None
 
 
-@lru_cache(maxsize=4096)
-def parse_symbol(raw: str, *, market: str | None = None) -> Symbol:
-    """把任意书写变种的证券符号解析为 :class:`Symbol`."""
-
+def _require_public_inputs(raw: Any, market: Any) -> tuple[str, str | None]:
     from ..errors import SymbolError
 
-    s = (raw or "").strip()
+    if not isinstance(raw, str):
+        raise SymbolError(
+            f"证券代码必须是字符串，收到 {type(raw).__name__}",
+            context={"symbol_type": type(raw).__name__},
+        )
+    if market is not None and not isinstance(market, str):
+        raise SymbolError(
+            f"market 必须是字符串或 None，收到 {type(market).__name__}",
+            context={"market_type": type(market).__name__},
+        )
+    return raw, market
+
+
+@lru_cache(maxsize=4096)
+def _parse_symbol_cached(raw: str, market: str | None) -> Symbol:
+    from ..errors import SymbolError
+
+    s = raw.strip()
     if not s:
         raise SymbolError("证券代码为空", context={"symbol": raw})
 
@@ -237,12 +244,19 @@ def parse_symbol(raw: str, *, market: str | None = None) -> Symbol:
 
     compact = re.sub(r"[^0-9a-zA-Z]", "", s)
     if compact != s:
-        return parse_symbol(compact, market=market)
+        return _parse_symbol_cached(compact, market)
 
     raise SymbolError(
         f"无法解析证券代码: {raw!r}",
         context={"symbol": raw, "expected": "sh600000 / 600000.sh / 600000"},
     )
+
+
+def parse_symbol(raw: str, *, market: str | None = None) -> Symbol:
+    """把任意书写变种解析为 :class:`Symbol`；类型错误统一为 SymbolError。"""
+
+    validated_raw, validated_market = _require_public_inputs(raw, market)
+    return _parse_symbol_cached(validated_raw, validated_market)
 
 
 def normalize_symbol(raw: str, *, market: str | None = None) -> str:
@@ -274,4 +288,4 @@ def to_tdx_market(raw: str, *, market: str | None = None) -> tuple[int, str]:
 
 
 def clear_symbol_cache() -> None:
-    parse_symbol.cache_clear()
+    _parse_symbol_cached.cache_clear()
