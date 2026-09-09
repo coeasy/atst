@@ -65,17 +65,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
-      - name: Install package
-        run: |
-          pip install -e ".[all]"
-          pip install pytest pytest-cov
+      - name: Install package and canonical test dependencies
+        run: python -m pip install -e ".[all,dev]"
       - name: Run tests
         # G1：覆盖率阈值继续固定为 77，不因基础设施问题回退。
         # 同时显式生成 coverage.xml；artifact 声明必须对应真实产物，避免
         # “测试绿色但覆盖率 artifact 永远不存在”的 CI 契约漂移。
         # G2：默认剔除 network 标记测试，保证主干 CI 幂等；联网冒烟走 live-smoke job。
         run: |
-          pytest tests/ -v --tb=short -m "not network" \
+          python -m pytest tests/ -v --tb=short -m "not network" \
             --cov=tstdx \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
