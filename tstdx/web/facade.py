@@ -43,6 +43,11 @@ from ._facade_mixin_efinance import (
     StockEfinanceMixin,
 )
 from ._facade_mixin_news import NewsSessionMixin
+from ._facade_mixin_fund_v2 import (
+    FundCompanySessionMixin,
+    FundManagerSessionMixin,
+    FundRankSessionMixin,
+)
 from ._facade_mixin_info import CorporateSessionMixin, FundFlowSessionMixin
 from ._facade_mixin_market import (
     INDEX_SYMBOLS,
@@ -142,6 +147,9 @@ class WebQuoteSession(
     DerivativeSessionMixin,
     AstockToolkitMixin,
     NewsSessionMixin,
+    FundRankSessionMixin,
+    FundManagerSessionMixin,
+    FundCompanySessionMixin,
 ):
     """HTTP Web 行情高层会话。
 

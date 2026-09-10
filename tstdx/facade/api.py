@@ -1546,6 +1546,253 @@ class UnifiedQuoteAPI(RouteSelector):
             lambda sess: sess.announcements(list(symbols), page=page, size=size),
         )
 
+    # -- 基金排行 / 快照 / 画像（天天基金移动端扩展） ------------------------- #
+    def fund_rank(
+        self,
+        *,
+        fund_type: int = 0,
+        sort_column: str = "SYL_1N",
+        sort: str = "desc",
+        page: int = 1,
+        size: int = 20,
+        company_id: str = "",
+        topic: str = "",
+        risk_level: str = "",
+        **extra: Any,
+    ) -> dict[str, Any]:
+        """基金排行榜。返回 ``{"total","page","size","rows"}``。
+
+        ``sort_column`` 取 ``SYL_1N`` 近1年 / ``SYL_M`` 近1月 / ``SYL_Q``
+        近3月 / ``SYL_Z`` 成立至今 / ``RDZF`` 日涨幅 / ``DWJZ`` 最新净值；
+        ``fund_type`` 取 ``0`` 全部 / ``25`` 股票 / ``27`` 混合 / ``35`` 货币。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.fund_rank(
+                fund_type=fund_type,
+                sort_column=sort_column,
+                sort=sort,
+                page=page,
+                size=size,
+                company_id=company_id,
+                topic=topic,
+                risk_level=risk_level,
+                **extra,
+            ),
+        )
+
+    def fund_snapshot(self, codes: Sequence[str] | str) -> list[dict[str, Any]]:
+        """批量基金实时快照（净值 + 盘中估值），一次请求多只。
+
+        ``fund_estimate`` 依赖的 ``fundgz`` 接口已下线，本方法是官方替代
+        路径；``est_nav`` / ``est_pct`` / ``est_time`` 即估算净值 /
+        估算涨跌% / 估算时间。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.fund_snapshot(list(codes))
+        )
+
+    def fund_nav_history_mob(
+        self, code: str, *, page: int = 1, size: int = 49
+    ) -> list[dict[str, Any]]:
+        """移动端历史净值（字段比 :meth:`fund_nav_history` 更全）。
+
+        额外提供 ``nav_type`` / ``rate`` / ``cum_return``（累计收益率）。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.fund_nav_history_mob(code, page=page, size=size),
+        )
+
+    def fund_detail(self, code: str) -> dict[str, Any]:
+        """基金详情（风险等级 / 业绩基准 / 投资策略 / 各类费用）。
+
+        选基尽调核心字段：``risk_level`` / ``benchmark`` /
+        ``invest_strategy`` / ``management_exp`` / ``trust_exp`` /
+        ``sales_exp``。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.fund_detail(code)
+        )
+
+    def fund_rating(
+        self, code: str, *, page: int = 1, size: int = 20
+    ) -> list[dict[str, Any]]:
+        """基金历史评级（天天基金 / 招商 / 上证 / 嘉实等机构）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.fund_rating(code, page=page, size=size),
+        )
+
+    def fund_yield_curve(
+        self, code: str, *, index_code: str = "000300"
+    ) -> list[dict[str, Any]]:
+        """累计收益走势（基金 vs 指数 vs 同类），超额收益分析基础。
+
+        ``index_code`` 可选 ``000300`` 沪深300 / ``000001`` 上证 /
+        ``399001`` 深成 / ``399006`` 创业板 / ``000905`` 中证500。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.fund_yield_curve(code, index_code=index_code),
+        )
+
+    def fund_rank_trend(self, code: str, *, range_: str = "n") -> list[dict[str, Any]]:
+        """同类排名走势（每日同类排名与总数）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.fund_rank_trend(code, range_=range_),
+        )
+
+    # -- 基金经理（移动端 JSON，替代 HTML 解析） ----------------------------- #
+    def fund_manager_list(self, code: str) -> list[dict[str, Any]]:
+        """基金经理列表（现任 + 离任）。
+
+        稳定 JSON 版，替代 :meth:`fund_manager`（``fundf10`` HTML
+        best-effort 正则解析，页面改版即静默失效）。用 ``is_in_office``
+        区分现任 / 离任。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.fund_manager_list(code)
+        )
+
+    def fund_manager_profile(self, mgrid: str) -> dict[str, Any]:
+        """基金经理档案（简历 / 投资理念 / 任职基金 / 获奖）。
+
+        ``mgrid`` 来自 :meth:`fund_manager_list` 的 ``mgrid`` 字段。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.fund_manager_profile(mgrid)
+        )
+
+    def fund_manager_yield(
+        self, mgrid: str, *, range_: str = "y"
+    ) -> list[dict[str, Any]]:
+        """基金经理业绩走势（任职收益 vs 同类 vs 指数）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.fund_manager_yield(mgrid, range_=range_),
+        )
+
+    def fund_manager_eval(self, mgrid: str) -> dict[str, Any]:
+        """基金经理业绩评价（夏普 / 最大回撤 / 胜率 / 波动率 / 超额）。
+
+        ``sharp_1y`` / ``max_ret_1y`` / ``win_pct_1y`` / ``stddev_1y``
+        可直接构成量化经理打分卡。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.fund_manager_eval(mgrid)
+        )
+
+    def fund_manager_style(self, mgrid: str) -> dict[str, Any]:
+        """基金经理持仓风格画像（重仓股 / 风格标签 / 子风格分布）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.fund_manager_style(mgrid)
+        )
+
+    # -- 基金公司 / 搜索 --------------------------------------------------- #
+    def fund_companies(self) -> list[dict[str, Any]]:
+        """全部基金公司列表（约 160 家，一次拉全）。
+
+        ``company_id`` 是 :meth:`fund_company_archives` /
+        :meth:`fund_company_funds` / :meth:`fund_rank` 的过滤入参。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.fund_companies()
+        )
+
+    def fund_company_archives(self, company_id: str) -> dict[str, Any]:
+        """基金公司概况（成立时间 / 资产总规模 / 注册地 / 官网 / 人数）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession, lambda sess: sess.fund_company_archives(company_id)
+        )
+
+    def fund_company_funds(
+        self,
+        company_id: str,
+        *,
+        fund_type: str = "all",
+        page: int = 1,
+        size: int = 50,
+        sort_field: str = "DWJZ",
+        sort_dir: str = "desc",
+    ) -> list[dict[str, Any]]:
+        """公司旗下基金列表（含各类区间收益，便于横向比较）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.fund_company_funds(
+                company_id,
+                fund_type=fund_type,
+                page=page,
+                size=size,
+                sort_field=sort_field,
+                sort_dir=sort_dir,
+            ),
+        )
+
+    def fund_company_scale(
+        self, company_id: str, *, page: int = 1, size: int = 20
+    ) -> list[dict[str, Any]]:
+        """公司旗下基金总规模变动（份额 / 净值资产，按报告期）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.fund_company_scale(company_id, page=page, size=size),
+        )
+
+    def fund_company_base_info(self, company_id: str) -> dict[str, Any]:
+        """公司画像（旗下基金分类统计 + 主题热度）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.fund_company_base_info(company_id),
+        )
+
+    def fund_search(
+        self, key: str, *, order_type: int = 2, page: int = 1, size: int = 10
+    ) -> dict[str, Any]:
+        """按名称 / 代码模糊搜索基金。返回 ``{"total","page","size","rows"}``。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.fund_search(
+                key, order_type=order_type, page=page, size=size
+            ),
+        )
+
     # -- 资讯 / 研报 / 调研（niuniu 审计缺口补全） ----------------------------- #
     def news_financial(self, *, page: int = 1, size: int = 30) -> list[dict[str, Any]]:
         """财经快讯头条（对标 niuniu ``/api/news/financial`` 新浪财经头条）。

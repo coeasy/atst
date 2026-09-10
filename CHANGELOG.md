@@ -27,9 +27,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 补齐 efinance 批量能力：`fund_base_info_multi`（`fund_base_info` 批量别名）与
   `bond_all_base_info`（`bond_base_info` 全市场别名）；并把 `_facade_mixin_info.py`
   已存在但未暴露的 `free_holders` / `holder_num` 提升到 `UnifiedQuoteAPI`。
+- 天天基金深度扩展（对标移动端全端点，补齐排行/快照/经理/公司/搜索 5 大子域）：
+  新增共享工具 `tstdx/web/_mob_fund.py`（设备指纹 + 公共参数 + 多 host 容错 +
+  `apply_fields` 字段归一化），新增三个源：`tstdx/web/fund_rank.py`
+  （排行/实时快照替代已下线的 `fundgz`/净值/详情/评级/走势 7 方法）、
+  `tstdx/web/fund_manager.py`（基金经理 JSON 版，含夏普/回撤/胜率/波动率打分卡，
+  替代脆弱的 `fundf10` HTML 解析）、`tstdx/web/fund_company.py`
+  （公司档案/旗下基金/规模变动/画像 + `fundts` 搜索），门面暴露
+  `fund_rank` / `fund_snapshot` / `fund_nav_history_mob` / `fund_detail` /
+  `fund_rating` / `fund_yield_curve` / `fund_rank_trend` / `fund_manager_list` /
+  `fund_manager_profile` / `fund_manager_yield` / `fund_manager_eval` /
+  `fund_manager_style` / `fund_companies` / `fund_company_archives` /
+  `fund_company_funds` / `fund_company_scale` / `fund_company_base_info` /
+  `fund_search` 共 18 个方法；新增 `docs/tiantian_fund_extensions.md`。
 - 新增测试：`tests/web/test_efinance_fund.py`（7）、`tests/web/test_efinance_deriv.py`（9）、
   `tests/web/test_efinance_facade.py`（13）、`tests/web/test_astock_toolkit.py`（6）、
-  `tests/web/test_news.py`（10），共 45 例全离线测试。
+  `tests/web/test_news.py`（10）、`tests/web/test_fund_v2.py`（50），共 95 例全离线测试。
 - 新增文档：`docs/efinance_parity_gap_analysis.md`、`docs/astock_toolkit_parity.md`、
   `docs/niuniu_coverage_audit.md`。
 
