@@ -43,6 +43,11 @@ from . import _connection_contract_hardening
 # resolve_hosts/client construction. Install this before generation-safe updates.
 from . import _pool_family_hardening
 
+# ``from_config`` is another selector boundary. Install its authoritative empty
+# selector guard after constructor hardening so factory output inherits the same
+# canonical pool validation rather than silently falling back to default hosts.
+from . import _pool_factory_hardening
+
 # Join generation/lease safety with v12 selector/live-health/probe provenance.
 # This layer patches sync+async update_hosts and the sync background speedtest
 # after the canonical classes and probe-only RankingStore are available.
@@ -60,6 +65,7 @@ del (
     _host_selector_hardening,
     _connection_contract_hardening,
     _pool_family_hardening,
+    _pool_factory_hardening,
     _pool_provenance_hardening,
 )
 
