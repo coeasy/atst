@@ -494,6 +494,10 @@ class CorporateSessionMixin:
         "block_trade": "SECURITY_CODE",
         "unlock": "SECURITY_CODE",
         "dividend": "SECURITY_CODE",
+        "executive_hold": "SECURITY_CODE",
+        "shareholder_change": "SECURITY_CODE",
+        "org_profile": "SECURITY_CODE",
+        "rating_forecast": "SECURITY_CODE",
         "ipo": "",
     }
 

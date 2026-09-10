@@ -219,6 +219,14 @@ _LAZY: dict[str, str] = {
     # facade.py
     "WebQuoteSession": "facade",
     "web_session": "facade",
+    # fin_report.py
+    "EastmoneyF10ReportSource": "fin_report",
+    "to_eastmoney_secucode": "fin_report",
+    # governance.py
+    "EastmoneyExecutiveHoldSource": "governance",
+    "EastmoneyShareholderChangeSource": "governance",
+    "EastmoneyOrgProfileSource": "governance",
+    "EastmoneyRatingForecastSource": "governance",
     # fundflow.py
     "EastmoneyRankSource": "fundflow",
     "EastmoneyFundFlowSource": "fundflow",

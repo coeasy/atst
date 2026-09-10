@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- P13 数据源补全：新增 `tstdx/web/fin_report.py`（三大财务报表：资产负债表 / 利润表 /
+  现金流量表，东财 datacenter-web `RPT_F10_FINANCE_GBALANCE/GINCOME/GCASHFLOW`，
+  SECUCODE 过滤），新增 `tstdx/web/governance.py`（治理四报表：董监高持股
+  `RPT_EXECUTIVE_HOLD_DETAILS` / 股东增减持 `RPT_SHARE_HOLDER_INCREASE` /
+  公司概况 `RPT_F10_BASIC_ORGINFO` / 券商评级 `RPT_WEB_RESPREDICT`），门面暴露
+  `balance_sheet` / `income_sheet` / `cash_flow` / `fin_report` /
+  `executive_holds` / `shareholder_changes` / `org_profile` / `org_profiles` /
+  `rating_forecast` / `rating_consensus` 共 10 个方法；新增
+  `tests/web/test_fundamental_sources.py`（37 例全离线测试）。
+
 - Web 源对标 `Micro-sheep/efinance` 全量补齐：新增 `tstdx/web/efinance_fund.py`
   （天天基金移动端 7 类基金扩展数据）、`tstdx/web/efinance_deriv.py`
   （东财 push2 期货/债券实时、快照、K 线、逐笔），并在 `UnifiedQuoteAPI` 暴露

@@ -108,6 +108,15 @@ VALID_REPORTS: dict[str, str] = {
     "ipo": "RPTA_APP_IPOAPPLY",
     # 分红送配（2026-09-06 实测可用；字段较稀疏，金额单位以东财报表页为准）
     "dividend": "RPT_SHAREBONUS_DET",
+    # ---- 治理 / 评级预测（2026-09-09 扩展，best-effort 映射）----
+    # 董监高持股明细（内部人减持 / 套现排查）
+    "executive_hold": "RPT_EXECUTIVE_HOLD_DETAILS",
+    # 股东增减持（大股东 / 机构持股比例变动）
+    "shareholder_change": "RPT_SHARE_HOLDER_INCREASE",
+    # 公司概况（法定代表人 / 董事长 / 主营 / 员工数）
+    "org_profile": "RPT_F10_BASIC_ORGINFO",
+    # 券商评级与目标价（一致预期 EPS / PE / 目标价 / 覆盖机构数）
+    "rating_forecast": "RPT_WEB_RESPREDICT",
 }
 
 _HOSTS = (

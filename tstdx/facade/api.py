@@ -1546,6 +1546,206 @@ class UnifiedQuoteAPI(RouteSelector):
             lambda sess: sess.announcements(list(symbols), page=page, size=size),
         )
 
+    # -- 三大财务报表（东财 F10 报表族） -------------------------------------- #
+    def balance_sheet(
+        self,
+        symbol: str,
+        *,
+        report_date: str = "",
+        size: int = 10,
+        all_pages: bool = False,
+        max_pages: int = 100,
+        raw: bool = False,
+    ) -> list[dict[str, Any]]:
+        """资产负债表明细（东财 F10 ``RPT_F10_FINANCE_GBALANCE``，按报告期降序）。
+
+        应收账款 / 长期应收款坏账风险、有息负债结构、商誉占净资产比等
+        排雷分析入口。与 :meth:`financial_abstract`（摘要口径）互补——
+        本方法给**报表级全字段明细**。
+
+        ``raw=True`` 时每条附原始行（键 ``raw``）；报表名 best-effort，
+        若返回 code=9501 需重新抓包校准。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.balance_sheet(
+                symbol,
+                report_date=report_date,
+                size=size,
+                all_pages=all_pages,
+                max_pages=max_pages,
+                raw=raw,
+            ),
+        )
+
+    def income_sheet(
+        self,
+        symbol: str,
+        *,
+        report_date: str = "",
+        size: int = 10,
+        all_pages: bool = False,
+        max_pages: int = 100,
+        raw: bool = False,
+    ) -> list[dict[str, Any]]:
+        """利润表明细（东财 F10 ``RPT_F10_FINANCE_GINCOME``，按报告期降序）。
+
+        研发费用占收入比、三费结构、净利率与少数股东损益占比等
+        盈利质量分析入口。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.income_sheet(
+                symbol,
+                report_date=report_date,
+                size=size,
+                all_pages=all_pages,
+                max_pages=max_pages,
+                raw=raw,
+            ),
+        )
+
+    def cash_flow(
+        self,
+        symbol: str,
+        *,
+        report_date: str = "",
+        size: int = 10,
+        all_pages: bool = False,
+        max_pages: int = 100,
+        raw: bool = False,
+    ) -> list[dict[str, Any]]:
+        """现金流量表明细（东财 F10 ``RPT_F10_FINANCE_GCASHFLOW``，按报告期降序）。
+
+        经营现金流与净利润匹配度、自由现金流、投融资净额分析入口。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.cash_flow(
+                symbol,
+                report_date=report_date,
+                size=size,
+                all_pages=all_pages,
+                max_pages=max_pages,
+                raw=raw,
+            ),
+        )
+
+    def fin_report(
+        self,
+        symbol: str,
+        report: str = "balance_sheet",
+        *,
+        report_date: str = "",
+        size: int = 10,
+        all_pages: bool = False,
+        max_pages: int = 100,
+    ) -> list[dict[str, Any]]:
+        """通用 F10 报表直查（字段**原样透传**，单位以东财报表页为准）。
+
+        ``report`` 可传别名（``balance_sheet`` / ``income_sheet`` / ``cash_flow``）
+        或原始报表名。与 :meth:`dc_query`（datacenter-web 报表族）区别：
+        本方法走东财 F10 独立后端，个股过滤键为 ``SECUCODE``（``600519.SH``）。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.fin_report(
+                symbol,
+                report,
+                report_date=report_date,
+                size=size,
+                all_pages=all_pages,
+                max_pages=max_pages,
+            ),
+        )
+
+    # -- 治理与卖方一致预期（东财 datacenter-web 报表族） --------------------- #
+    def executive_holds(self, symbol: str, *, page: int = 1, size: int = 20) -> list[dict[str, Any]]:
+        """董监高持股变动明细（按变动日期降序，内部人减持 / 套现排查）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.executive_holds(symbol, page=page, size=size),
+        )
+
+    def shareholder_changes(
+        self, symbol: str, *, page: int = 1, size: int = 20
+    ) -> list[dict[str, Any]]:
+        """股东增减持明细（大股东 / 机构股东；``change_shares`` 正=增持、负=减持）。
+
+        与 :meth:`holder_changes`（董监高增减持聚合口径）互补。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.shareholder_changes(symbol, page=page, size=size),
+        )
+
+    def org_profile(self, symbol: str) -> dict[str, Any] | None:
+        """公司概况快照（法定代表人 / 董事长 / 主营 / 办公地址 / 员工数）。
+
+        护城河与治理分析的结构化锚点。报表名 best-effort，
+        若返回 code=9501 需重新抓包校准。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.org_profile(symbol))
+
+    def org_profiles(
+        self, symbols: Sequence[str], *, size: int = 50
+    ) -> list[dict[str, Any]]:
+        """公司概况批量（按代码去重，保留服务端返回顺序）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.org_profiles(list(symbols), size=size),
+        )
+
+    def rating_forecast(
+        self,
+        symbol: str = "",
+        *,
+        page: int = 1,
+        size: int = 20,
+        sort_columns: str = "PUBLISH_DATE",
+    ) -> list[dict[str, Any]]:
+        """券商评级与目标价（默认按发布日期降序；``symbol`` 空 = 全市场最新）。
+
+        「估值合理性」与「市场情绪」两维度的量化入口：目标价、EPS/PE 预测、
+        覆盖机构数。``sort_columns`` 可用 ``RATING_ORG_NUM``（覆盖机构数最多）/
+        ``TARGET_PRICE``（目标价最高）。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.rating_forecast(
+                symbol, page=page, size=size, sort_columns=sort_columns
+            ),
+        )
+
+    def rating_consensus(
+        self, symbol: str, *, page: int = 1, size: int = 20
+    ) -> dict[str, Any] | None:
+        """一致预期聚合快照（目标价 / EPS / PE 均值 + 评级分布，本地计算）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.rating_consensus(symbol, page=page, size=size),
+        )
+
     # -- 基金排行 / 快照 / 画像（天天基金移动端扩展） ------------------------- #
     def fund_rank(
         self,

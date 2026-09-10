@@ -48,6 +48,7 @@ from ._facade_mixin_fund_v2 import (
     FundManagerSessionMixin,
     FundRankSessionMixin,
 )
+from ._facade_mixin_fundamental import FundamentalSessionMixin
 from ._facade_mixin_info import CorporateSessionMixin, FundFlowSessionMixin
 from ._facade_mixin_market import (
     INDEX_SYMBOLS,
@@ -141,6 +142,7 @@ class WebQuoteSession(
     BoardSessionMixin,
     FundFlowSessionMixin,
     CorporateSessionMixin,
+    FundamentalSessionMixin,
     BaiduSessionMixin,
     StockEfinanceMixin,
     FundMobSessionMixin,
