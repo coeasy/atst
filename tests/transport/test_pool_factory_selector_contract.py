@@ -12,6 +12,11 @@ def test_from_config_explicit_empty_hosts_fails_closed() -> None:
         ConnectionPool.from_config(None, hosts=[])
 
 
+def test_from_config_invalid_explicit_cfg_fails_closed() -> None:
+    with pytest.raises(ConfigError, match="cfg 必须是 Config 或 None"):
+        ConnectionPool.from_config({"hosts": ["1.2.3.4:7709"]})
+
+
 def test_from_config_none_uses_environment_selector_deterministically(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
