@@ -1808,6 +1808,85 @@ class UnifiedQuoteAPI(RouteSelector):
             ),
         )
 
+    # -- 行业指数 / 概念指数 / 宏观经济 / 可转债（P2 扩展） ----------------- #
+    def industry_index(
+        self,
+        *,
+        report_date: str = "",
+        board_code: str = "",
+        size: int = 20,
+        page: int = 1,
+        sort_columns: str = "CHANGE_RATE",
+    ) -> list[dict[str, Any]]:
+        """行业指数指标（板块/概念，含涨跌幅/多周期涨跌/排名）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.industry_index(
+                report_date=report_date,
+                board_code=board_code,
+                size=size,
+                page=page,
+                sort_columns=sort_columns,
+            ),
+        )
+
+    def concept_index(
+        self,
+        *,
+        index_code: str = "",
+        size: int = 50,
+        page: int = 1,
+    ) -> list[dict[str, Any]]:
+        """概念指数成分（股票代码 → 概念映射）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.concept_index(
+                index_code=index_code, size=size, page=page
+            ),
+        )
+
+    def macro_cpi(self, *, size: int = 50, page: int = 1) -> list[dict[str, Any]]:
+        """CPI 宏观数据（全国/城镇/农村，含同比/环比/累计）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.macro_cpi(size=size, page=page),
+        )
+
+    def macro_ppi(self, *, size: int = 50, page: int = 1) -> list[dict[str, Any]]:
+        """PPI 宏观数据（出厂价同比/环比/累计）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.macro_ppi(size=size, page=page),
+        )
+
+    def macro_gdp(self, *, size: int = 50, page: int = 1) -> list[dict[str, Any]]:
+        """GDP 宏观数据（GDP 总量 / 三产占比 / 同比增速）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.macro_gdp(size=size, page=page),
+        )
+
+    def convertible_bonds(
+        self, *, size: int = 50, page: int = 1
+    ) -> list[dict[str, Any]]:
+        """可转债列表（基本信息 / 到期日 / 转股价 / 评级）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.convertible_bonds(size=size, page=page),
+        )
+
     # -- 基金排行 / 快照 / 画像（天天基金移动端扩展） ------------------------- #
     def fund_rank(
         self,

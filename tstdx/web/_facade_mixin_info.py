@@ -498,7 +498,14 @@ class CorporateSessionMixin:
         "shareholder_change": "SECURITY_CODE",
         "org_profile": "SECURITY_CODE",
         "rating_forecast": "SECURITY_CODE",
-        "ipo": "",
+        "ipo": "",  # 无个股过滤键（全市场报表）
+        # ---- P2 扩展（2026-09-11）：行业/概念/宏观/可转债 均为市场级报表 ----
+        "industry_index": "",  # 行业指数（按 REPORT_DATE/BOARD_CODE 过滤）
+        "concept_index": "",  # 概念指数（按 INDEX_CODE 过滤）
+        "macro_cpi": "",  # 全国 CPI（按 REPORT_DATE 排序）
+        "macro_ppi": "",  # 全国 PPI（按 REPORT_DATE 排序）
+        "macro_gdp": "",  # 全国 GDP（按 REPORT_DATE 排序）
+        "convertible_bonds": "",  # 可转债清单（按 LISTING_DATE 排序）
     }
 
     @staticmethod

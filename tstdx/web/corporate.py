@@ -117,6 +117,20 @@ VALID_REPORTS: dict[str, str] = {
     "org_profile": "RPT_F10_BASIC_ORGINFO",
     # 券商评级与目标价（一致预期 EPS / PE / 目标价 / 覆盖机构数）
     "rating_forecast": "RPT_WEB_RESPREDICT",
+    # ---- 行业 / 概念指数（2026-09-11 扩展）----
+    # 行业指数（板块/概念指标，含涨跌幅/排名）
+    "industry_index": "RPT_INDUSTRY_INDEX",
+    # 概念指数成分（股票代码→概念映射）
+    "concept_index": "RPT_CONCEPT_INDEX",
+    # ---- 宏观经济（2026-09-11 扩展）----
+    # CPI（全国/城镇/农村，含同比/环比/累计）
+    "macro_cpi": "RPT_ECONOMY_CPI",
+    # PPI（出厂价同比/环比/累计）
+    "macro_ppi": "RPT_ECONOMY_PPI",
+    # GDP（GDP总量/三产占比/同比增速）
+    "macro_gdp": "RPT_ECONOMY_GDP",
+    # ---- 可转债（2026-09-11 扩展）----
+    "convertible_bonds": "RPT_BOND_CB_LIST",
 }
 
 _HOSTS = (
