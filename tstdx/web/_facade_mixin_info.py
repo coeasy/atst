@@ -506,6 +506,11 @@ class CorporateSessionMixin:
         "macro_ppi": "",  # 全国 PPI（按 REPORT_DATE 排序）
         "macro_gdp": "",  # 全国 GDP（按 REPORT_DATE 排序）
         "convertible_bonds": "",  # 可转债清单（按 LISTING_DATE 排序）
+        # ---- P3 扩展（2026-09-11）：北向持股/十大股东/解禁股票/业绩预告 ----
+        "northbound_hold": "SECURITY_CODE",  # 北向持股（按 SECURITY_CODE 过滤）
+        "top_holders": "SECUCODE",  # 十大股东（按 SECUCODE 过滤，与 free_holders 一致）
+        "unlock_stocks": "SECURITY_CODE",  # 解禁股票（按 SECURITY_CODE 过滤）
+        "earnings_preview": "SECURITY_CODE",  # 业绩预告旧版（按 SECURITY_CODE 过滤）
     }
 
     @staticmethod

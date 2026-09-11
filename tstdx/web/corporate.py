@@ -131,6 +131,19 @@ VALID_REPORTS: dict[str, str] = {
     "macro_gdp": "RPT_ECONOMY_GDP",
     # ---- 可转债（2026-09-11 扩展）----
     "convertible_bonds": "RPT_BOND_CB_LIST",
+    # ---- 北向持股（2026-09-11 P3 扩展）----
+    # 沪股通/深股通持仓明细（按个股/日期，含持股数/市值/持股比例）
+    "northbound_hold": "RPT_MUTUAL_HOLD",
+    # ---- 十大股东（2026-09-11 P3 扩展）----
+    # 全部十大股东（含非流通股，区别于 free_holders 仅流通股东）
+    "top_holders": "RPT_F10_EH_HOLDERS",
+    # ---- 解禁股票（2026-09-11 P3 扩展）----
+    # 按个股解禁明细（区别于 unlock=RPT_LIFT_STAGE 按批次解禁）
+    "unlock_stocks": "RPT_LIFT_STOCK",
+    # ---- 业绩预告旧版（2026-09-11 P3 扩展）----
+    # 含 FORECASTCONTENT 文本描述 + CHANGEREASONDSCRPT 原因
+    # （区别于 forecast=RPT_PUBLIC_OP_NEWPREDICT 新版结构化字段）
+    "earnings_preview": "RPT_PUBLIC_OP_PREDICT",
 }
 
 _HOSTS = (

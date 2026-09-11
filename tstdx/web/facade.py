@@ -52,6 +52,7 @@ from ._facade_mixin_fundamental import FundamentalSessionMixin
 from ._facade_mixin_info import CorporateSessionMixin, FundFlowSessionMixin
 from ._facade_mixin_p1 import P1SessionMixin
 from ._facade_mixin_p2 import P2SessionMixin
+from ._facade_mixin_p3 import P3SessionMixin
 from ._facade_mixin_market import (
     INDEX_SYMBOLS,
     KLINES_PERIOD_ALIASES,
@@ -147,6 +148,7 @@ class WebQuoteSession(
     FundamentalSessionMixin,
     P1SessionMixin,
     P2SessionMixin,
+    P3SessionMixin,
     BaiduSessionMixin,
     StockEfinanceMixin,
     FundMobSessionMixin,

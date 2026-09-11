@@ -1887,6 +1887,90 @@ class UnifiedQuoteAPI(RouteSelector):
             lambda sess: sess.convertible_bonds(size=size, page=page),
         )
 
+    # -- P3 扩展（2026-09-11）：北向持股 / 十大股东 / 解禁股票 / 业绩预告 ---- #
+    def northbound_hold(
+        self,
+        *,
+        symbol: str = "",
+        hold_date: str = "",
+        mutual_type: str = "",
+        size: int = 50,
+        page: int = 1,
+        sort_columns: str = "HOLD_DATE",
+    ) -> list[dict[str, Any]]:
+        """北向持股明细（沪股通/深股通持仓）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.northbound_hold(
+                symbol=symbol, hold_date=hold_date, mutual_type=mutual_type,
+                size=size, page=page, sort_columns=sort_columns,
+            ),
+        )
+
+    def top_holders(
+        self,
+        *,
+        symbol: str = "",
+        end_date: str = "",
+        size: int = 20,
+        page: int = 1,
+        sort_columns: str = "HOLDER_RANK",
+        sort_types: str = "1",
+    ) -> list[dict[str, Any]]:
+        """十大股东（全部股东，含非流通股）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.top_holders(
+                symbol=symbol, end_date=end_date, size=size, page=page,
+                sort_columns=sort_columns, sort_types=sort_types,
+            ),
+        )
+
+    def unlock_stocks(
+        self,
+        *,
+        symbol: str = "",
+        begin: str = "",
+        end: str = "",
+        size: int = 50,
+        page: int = 1,
+        sort_columns: str = "FREE_DATE",
+    ) -> list[dict[str, Any]]:
+        """解禁股票明细（按个股维度）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.unlock_stocks(
+                symbol=symbol, begin=begin, end=end, size=size, page=page,
+                sort_columns=sort_columns,
+            ),
+        )
+
+    def earnings_preview(
+        self,
+        *,
+        symbol: str = "",
+        report_date: str = "",
+        size: int = 50,
+        page: int = 1,
+        sort_columns: str = "NOTICE_DATE",
+    ) -> list[dict[str, Any]]:
+        """业绩预告（旧版，含 FORECASTCONTENT 文本描述）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.earnings_preview(
+                symbol=symbol, report_date=report_date, size=size, page=page,
+                sort_columns=sort_columns,
+            ),
+        )
+
     # -- 基金排行 / 快照 / 画像（天天基金移动端扩展） ------------------------- #
     def fund_rank(
         self,
