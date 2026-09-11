@@ -227,6 +227,13 @@ _LAZY: dict[str, str] = {
     "EastmoneyShareholderChangeSource": "governance",
     "EastmoneyOrgProfileSource": "governance",
     "EastmoneyRatingForecastSource": "governance",
+    # esg.py
+    "SinaEsgStockInfoSource": "esg",
+    "SinaEsgHistorySource": "esg",
+    "SinaEsgMsciSource": "esg",
+    "SinaEsgHzSource": "esg",
+    # chip.py
+    "EastmoneyChipDistributionSource": "chip",
     # fundflow.py
     "EastmoneyRankSource": "fundflow",
     "EastmoneyFundFlowSource": "fundflow",

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- P14 数据源补全（ESG 评级 / 筹码分布）：新增 `tstdx/web/esg.py`（新浪 ESG 评级，
+  覆盖 13 家机构聚合、季度历史、MSCI 全市场 5200+ 只、华证全市场 6300+ 只，
+  含 E/S/G 三维度分项评分），新增 `tstdx/web/chip.py`（东财筹码分布，基于
+  push2 资金流接口计算 accumulation_ratio 筹码集中度与 concentration_trend
+  吸筹/派发趋势），新增 `tstdx/web/_facade_mixin_p1.py` 与
+  `UnifiedQuoteAPI` 暴露 `esg_rating` / `esg_history` / `esg_ratings_all` /
+  `chip_distribution` / `chip_distributions` 共 5 个方法；新增
+  `tests/web/test_p1_sources.py`（30 例全离线测试）。
+
 - P13 数据源补全：新增 `tstdx/web/fin_report.py`（三大财务报表：资产负债表 / 利润表 /
   现金流量表，东财 datacenter-web `RPT_F10_FINANCE_GBALANCE/GINCOME/GCASHFLOW`，
   SECUCODE 过滤），新增 `tstdx/web/governance.py`（治理四报表：董监高持股

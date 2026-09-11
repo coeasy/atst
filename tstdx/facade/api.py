@@ -1746,6 +1746,68 @@ class UnifiedQuoteAPI(RouteSelector):
             lambda sess: sess.rating_consensus(symbol, page=page, size=size),
         )
 
+    # -- ESG 评级 / 筹码分布（P1 扩展） --------------------------------------- #
+    def esg_rating(self, symbol: str) -> dict[str, Any] | None:
+        """个股 ESG 评级详情（新浪 13 家机构聚合：MSCI / 标普 / 华证 / 商道融绿等）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.esg_rating(symbol))
+
+    def esg_history(self, symbol: str) -> dict[str, Any] | None:
+        """个股 ESG 评级历史（季度变动，按机构分组）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.esg_history(symbol))
+
+    def esg_ratings_all(
+        self,
+        source: str = "msci",
+        *,
+        market: str = "",
+        rating: str = "",
+        sort_column: str = "esg_rating",
+        sort_order: str = "desc",
+    ) -> dict[str, Any]:
+        """全市场 ESG 评级列表（支持 MSCI / 华证两种源）。
+
+        ``source="msci"`` 返回 MSCI 评级（5200+ 只，含港股）；
+        ``source="hz"`` 返回华证评级（6300+ 只，含 A 股）。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.esg_ratings_all(
+                source,
+                market=market,
+                rating=rating,
+                sort_column=sort_column,
+                sort_order=sort_order,
+            ),
+        )
+
+    def chip_distribution(self, symbol: str, *, days: int = 5) -> dict[str, Any] | None:
+        """个股筹码分布分析（资金流驱动，收集/发散判定）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.chip_distribution(symbol, days=days),
+        )
+
+    def chip_distributions(
+        self, symbols: Sequence[str], *, days: int = 5, max_count: int = 20
+    ) -> list[dict[str, Any]]:
+        """批量筹码分布分析（按 accumulation_ratio 降序排列）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.chip_distributions(
+                list(symbols), days=days, max_count=max_count
+            ),
+        )
+
     # -- 基金排行 / 快照 / 画像（天天基金移动端扩展） ------------------------- #
     def fund_rank(
         self,
