@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from typing import Any
+from collections.abc import Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 from ..cache_semantic import SemanticResultCache
 from ..execution.planner import ExecutionPlanner
@@ -12,6 +12,9 @@ from ..result import QueryResult
 from .context import ExecutionContext
 from .request import QueryRequest
 from .response import QueryResponse
+
+if TYPE_CHECKING:
+    from ..typed_query import CapabilityQuery
 
 
 class Runtime:
@@ -67,6 +70,17 @@ class Runtime:
 
     def register_provider(self, provider: Provider) -> None:
         self.router.register(provider)
+
+    def execute_typed(
+        self,
+        query: CapabilityQuery,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> QueryResponse:
+        """Execute one canonical-ready typed query through the same Runtime path."""
+        from .typed import request_from_typed
+
+        return self.execute(request_from_typed(query, metadata=metadata))
 
     @staticmethod
     def _execution_metadata(context: ExecutionContext) -> dict[str, Any]:
