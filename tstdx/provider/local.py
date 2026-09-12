@@ -17,8 +17,9 @@ class LocalProvider(Provider):
         if self.reader is None:
             raise RuntimeError("local reader is not configured")
         operation = getattr(request, "operation", None)
-        params = getattr(request, "params", {})
+        args = tuple(getattr(request, "args", ()))
+        params = dict(getattr(request, "params", {}))
         method = getattr(self.reader, operation, None)
         if method is None:
             raise AttributeError(f"unsupported local operation: {operation}")
-        return method(**params)
+        return method(*args, **params)
