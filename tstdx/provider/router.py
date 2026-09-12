@@ -17,6 +17,8 @@ class ProviderRouter:
     def register(self, provider: Provider) -> None:
         if not provider.name:
             raise ValueError("provider name must not be empty")
+        if provider.name in self._providers:
+            raise ValueError(f"provider is already registered: {provider.name}")
         self._providers[provider.name] = provider
 
     def get(self, name: str) -> Provider | None:
