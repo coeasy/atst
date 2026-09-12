@@ -17,8 +17,9 @@ class WebProvider(Provider):
         if self.source is None:
             raise RuntimeError("web source is not configured")
         operation = getattr(request, "operation", None)
-        params = getattr(request, "params", {})
+        args = tuple(getattr(request, "args", ()))
+        params = dict(getattr(request, "params", {}))
         method = getattr(self.source, operation, None)
         if method is None:
             raise AttributeError(f"unsupported web operation: {operation}")
-        return method(**params)
+        return method(*args, **params)
