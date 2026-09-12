@@ -6,10 +6,7 @@ from .base import Provider
 
 
 class TdxProvider(Provider):
-    """Adapter for existing TDX clients.
-
-    Keeps protocol/client implementations isolated from v14 runtime.
-    """
+    """Adapter for existing TDX clients."""
 
     name = "tdx"
 
@@ -20,8 +17,9 @@ class TdxProvider(Provider):
         if self.client is None:
             raise RuntimeError("tdx client is not configured")
         operation = getattr(request, "operation", None)
-        params = getattr(request, "params", {})
+        args = tuple(getattr(request, "args", ()))
+        params = dict(getattr(request, "params", {}))
         method = getattr(self.client, operation, None)
         if method is None:
             raise AttributeError(f"unsupported tdx operation: {operation}")
-        return method(**params)
+        return method(*args, **params)
