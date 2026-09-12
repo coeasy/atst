@@ -147,6 +147,32 @@ class SemanticExecutionAdapter:
             raise ValueError("cache_ttl must be >= 0")
         return ttl
 
+    @staticmethod
+    def _policy_candidates(
+        request: Any,
+        candidates: tuple[str, ...],
+        *,
+        requested_provider: str | None,
+    ) -> tuple[str, ...]:
+        """Drop statically impossible providers only for Runtime-owned policy.
+
+        Caller-specified provider order is never rewritten: an unsupported
+        explicit candidate remains visible in diagnostics and fallback
+        provenance. Internal default policy, however, should not waste work on a
+        Provider the canonical registry says can never serve the capability.
+        """
+        if requested_provider is not None:
+            return candidates
+        operation = str(getattr(request, "operation", "") or "").strip().lower()
+        supported: list[str] = []
+        for provider in candidates:
+            try:
+                if PROVIDERS.supports(provider, operation):
+                    supported.append(provider)
+            except ValidationError:
+                continue
+        return tuple(supported) or candidates
+
     def execute(
         self,
         *,
@@ -160,6 +186,11 @@ class SemanticExecutionAdapter:
         if not candidates:
             raise RuntimeError("no providers are available for semantic execution")
         requested = normalize_provider_id(requested_provider) if requested_provider else None
+        candidates = self._policy_candidates(
+            request,
+            candidates,
+            requested_provider=requested,
+        )
         single_provider = len(candidates) == 1
         failures: list[str] = []
 
