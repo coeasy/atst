@@ -127,6 +127,14 @@ def test_pending_typed_capability_cannot_bypass_provider_registry() -> None:
         request_from_typed(BalanceSheetQuery(provider="eastmoney", symbol="600519.SH"))
 
 
+def test_typed_provider_aliases_normalize_before_conflict_check() -> None:
+    query = FundHoldingsQuery(provider="eastmoney", symbol="600519.SH")
+
+    request = request_from_typed(query, metadata={"provider": "em"})
+
+    assert request.metadata["provider"] == "eastmoney"
+
+
 def test_typed_provider_conflict_is_rejected_before_execution() -> None:
     query = FundHoldingsQuery(provider="eastmoney", symbol="600519.SH")
 
