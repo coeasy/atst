@@ -11,6 +11,8 @@
 * **实时为一等公民**：PushChannel + 增量合并 + 断线补数 + 背压 + 重连。
 * **Provider-first 运行时**：公开查询先编译为单 Provider / 单 Channel 的
   ``QueryPlan``，跨 Provider fallback 只能由显式策略层触发。
+* **Fail-closed Streaming**：canonical stream 采用显式 ``StreamState``，
+  worker 半死、启动失败、stop 超时与终态重启都不能静默生成第二 worker。
 * **原创实现**：洁净室流程，协议事实源于自有抓包与本地文件分析。
 
 分层（自底向上）::
@@ -24,7 +26,7 @@
     providers   Provider / Channel / Capability 单一事实源
     query       QuerySpec / QueryPlan / QueryFingerprint
     result      QueryResult / Provenance
-    streaming   流式订阅
+    streaming   流式订阅 + 显式生命周期状态机
     web         HTTP Web 行情源（新浪/腾讯/东财/集思录/港股/中行）
     sinks       DataFrame / Parquet / DuckDB
     sources     兼容 DataSourceRouter（后续收敛为显式策略层）
@@ -75,6 +77,9 @@ __all__ = [
     "QueryResult",
     "ProviderRegistry",
     "PROVIDERS",
+    "StreamState",
+    "StatefulQuoteStream",
+    "AsyncStatefulQuoteStream",
     "configure",
     "get_config",
     "load_config",
@@ -110,6 +115,8 @@ if TYPE_CHECKING:  # pragma: no cover
     from .query import CurrentnessMode, QueryFingerprint, QueryPlan, QueryPlanner, QuerySpec
     from .reader import BlockReader, DataProfile, DayBarReader, FinanceReader, MinBarReader
     from .result import Provenance, ProvenanceKind, QueryResult, ResultMeta
+    from .streaming.state import StreamState
+    from .streaming.stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
     from .web import WebQuoteClient
 
 
@@ -134,6 +141,12 @@ _LAZY: dict[str, tuple[str, str]] = {
     "QueryResult": ("tstdx.result", "QueryResult"),
     "ProviderRegistry": ("tstdx.providers", "ProviderRegistry"),
     "PROVIDERS": ("tstdx.providers", "PROVIDERS"),
+    "StreamState": ("tstdx.streaming.state", "StreamState"),
+    "StatefulQuoteStream": ("tstdx.streaming.stateful", "StatefulQuoteStream"),
+    "AsyncStatefulQuoteStream": (
+        "tstdx.streaming.stateful",
+        "AsyncStatefulQuoteStream",
+    ),
     "load_config": ("tstdx.config", "load_config"),
     # __all__ 声明的三个子包：attr 置空串表示返回子包模块本身（W2）
     "facade": ("tstdx.facade", ""),
@@ -155,9 +168,6 @@ def __getattr__(name: str) -> Any:
         import importlib
 
         mod = importlib.import_module(mod_path)
-        # attr 为空串表示「子包整体」：直接返回导入的模块对象
-        # （__all__ 里的 facade/observability/streaming 三个子包走此路径，
-        #  否则 `import tstdx; tstdx.facade` 会 AttributeError —— W2）。
         value = mod if not attr else getattr(mod, attr)
         globals()[name] = value
         return value
