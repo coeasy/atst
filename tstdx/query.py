@@ -232,6 +232,7 @@ class QueryFingerprint:
             "adjustment": spec.adjustment,
             "allow_partial": spec.allow_partial,
             "currentness": spec.currentness,
+            "max_age": spec.max_age,
             "options": spec.options,
         }
 
