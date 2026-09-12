@@ -4,5 +4,12 @@ from .bootstrap import create_runtime
 from .request import QueryRequest
 from .response import QueryResponse
 from .runtime import Runtime
+from .typed import request_from_typed
 
-__all__ = ["Runtime", "QueryRequest", "QueryResponse", "create_runtime"]
+__all__ = [
+    "Runtime",
+    "QueryRequest",
+    "QueryResponse",
+    "create_runtime",
+    "request_from_typed",
+]
