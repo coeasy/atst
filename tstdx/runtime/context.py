@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 from uuid import uuid4
 
 
 @dataclass(slots=True)
 class ExecutionContext:
-    """Shared context passed through runtime execution stages."""
+    """Shared state passed through runtime execution stages."""
 
     request_id: str = field(default_factory=lambda: str(uuid4()))
+    trace_id: str = field(default_factory=lambda: str(uuid4()))
     timeout: float | None = None
-    metadata: dict[str, object] = field(default_factory=dict)
+    provider: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
