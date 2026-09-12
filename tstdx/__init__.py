@@ -9,6 +9,8 @@
   未知命令走 L2 启发式 + L3 原始透传，**永不丢包**。
 * **数据全兼容**：市场 × 品种 × 周期 × 口径差异全部参数化为 ``DataProfile``。
 * **实时为一等公民**：PushChannel + 增量合并 + 断线补数 + 背压 + 重连。
+* **Provider-first 运行时**：公开查询先编译为单 Provider / 单 Channel 的
+  ``QueryPlan``，跨 Provider fallback 只能由显式策略层触发。
 * **原创实现**：洁净室流程，协议事实源于自有抓包与本地文件分析。
 
 分层（自底向上）::
@@ -19,10 +21,13 @@
     client      同步 + 异步客户端（Standard / Extended / MAC / Goods）
     reader      本地 vipdoc 二进制（.day/.lc1/.lc5/.dat/gpcw）
     domain      数据模型 / 复权 / 日历 / 时区
+    providers   Provider / Channel / Capability 单一事实源
+    query       QuerySpec / QueryPlan / QueryFingerprint
+    result      QueryResult / Provenance
     streaming   流式订阅
     web         HTTP Web 行情源（新浪/腾讯/东财/集思录/港股/中行）
     sinks       DataFrame / Parquet / DuckDB
-    sources     DataSourceRouter（6 级降级）
+    sources     兼容 DataSourceRouter（后续收敛为显式策略层）
     facade      TDX 二进制协议与行情高层门面（原生命名）
     observability  Prometheus 风格指标 / 埋点（零硬依赖）
 
@@ -59,6 +64,17 @@ __all__ = [
     "BlockReader",
     "FinanceReader",
     "DataProfile",
+    "CurrentnessMode",
+    "QuerySpec",
+    "QueryFingerprint",
+    "QueryPlan",
+    "QueryPlanner",
+    "ProvenanceKind",
+    "Provenance",
+    "ResultMeta",
+    "QueryResult",
+    "ProviderRegistry",
+    "PROVIDERS",
     "configure",
     "get_config",
     "load_config",
@@ -90,7 +106,10 @@ def get_config() -> Any:
 if TYPE_CHECKING:  # pragma: no cover
     from .client import AsyncTdxClient, TdxClient
     from .config import load_config
+    from .providers import PROVIDERS, ProviderRegistry
+    from .query import CurrentnessMode, QueryFingerprint, QueryPlan, QueryPlanner, QuerySpec
     from .reader import BlockReader, DataProfile, DayBarReader, FinanceReader, MinBarReader
+    from .result import Provenance, ProvenanceKind, QueryResult, ResultMeta
     from .web import WebQuoteClient
 
 
@@ -104,6 +123,17 @@ _LAZY: dict[str, tuple[str, str]] = {
     "BlockReader": ("tstdx.reader", "BlockReader"),
     "FinanceReader": ("tstdx.reader", "FinanceReader"),
     "DataProfile": ("tstdx.reader", "DataProfile"),
+    "CurrentnessMode": ("tstdx.query", "CurrentnessMode"),
+    "QuerySpec": ("tstdx.query", "QuerySpec"),
+    "QueryFingerprint": ("tstdx.query", "QueryFingerprint"),
+    "QueryPlan": ("tstdx.query", "QueryPlan"),
+    "QueryPlanner": ("tstdx.query", "QueryPlanner"),
+    "ProvenanceKind": ("tstdx.result", "ProvenanceKind"),
+    "Provenance": ("tstdx.result", "Provenance"),
+    "ResultMeta": ("tstdx.result", "ResultMeta"),
+    "QueryResult": ("tstdx.result", "QueryResult"),
+    "ProviderRegistry": ("tstdx.providers", "ProviderRegistry"),
+    "PROVIDERS": ("tstdx.providers", "PROVIDERS"),
     "load_config": ("tstdx.config", "load_config"),
     # __all__ 声明的三个子包：attr 置空串表示返回子包模块本身（W2）
     "facade": ("tstdx.facade", ""),
