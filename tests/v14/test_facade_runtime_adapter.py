@@ -18,6 +18,17 @@ class _EchoProvider(Provider):
         }
 
 
+class _CodedError(RuntimeError):
+    code = "E1234"
+
+
+class _ErrorProvider(Provider):
+    name = "web"
+
+    def query(self, request):
+        raise _CodedError("provider failed")
+
+
 def test_facade_adapter_preserves_call_shape_and_route() -> None:
     runtime = Runtime()
     runtime.register_provider(_EchoProvider())
@@ -32,6 +43,21 @@ def test_facade_adapter_preserves_call_shape_and_route() -> None:
         "params": {"count": 10},
     }
     assert response.extra["provider"] == "tdx"
+    assert response.extra["operation"] == "bars"
+    assert response.extra["cache_key"]
+
+
+def test_facade_adapter_preserves_runtime_error_code() -> None:
+    runtime = Runtime()
+    runtime.register_provider(_ErrorProvider())
+    adapter = RuntimeFacadeAdapter(runtime)
+
+    response = adapter.query("quotes", ["sh600519"], route="web")
+
+    assert response.success is False
+    assert response.code == "E1234"
+    assert response.error == "provider failed"
+    assert response.extra["operation"] == "quotes"
 
 
 def test_facade_adapter_auto_route_does_not_force_provider() -> None:
