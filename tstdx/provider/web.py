@@ -13,6 +13,9 @@ class WebProvider(Provider):
     def __init__(self, source: Any | None = None) -> None:
         self.source = source
 
+    def supports(self, operation: str) -> bool:
+        return self.source is not None and callable(getattr(self.source, operation, None))
+
     def query(self, request: Any) -> Any:
         if self.source is None:
             raise RuntimeError("web source is not configured")
