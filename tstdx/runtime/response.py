@@ -11,12 +11,13 @@ class QueryResponse:
     success: bool
     data: Any = None
     error: str | None = None
+    code: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def ok(cls, data: Any, **metadata: Any) -> "QueryResponse":
-        return cls(True, data=data, metadata=metadata)
+    def ok(cls, data: Any, *, code: str = "", **metadata: Any) -> "QueryResponse":
+        return cls(True, data=data, code=code, metadata=metadata)
 
     @classmethod
-    def fail(cls, error: str, **metadata: Any) -> "QueryResponse":
-        return cls(False, error=error, metadata=metadata)
+    def fail(cls, error: str, *, code: str = "", **metadata: Any) -> "QueryResponse":
+        return cls(False, error=error, code=code, metadata=metadata)
