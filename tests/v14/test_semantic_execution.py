@@ -120,6 +120,32 @@ def test_core_bars_use_canonical_query_provenance_and_semantic_cache() -> None:
     ]
 
 
+def test_semantic_cache_can_serve_without_registered_provider_executor() -> None:
+    cache = SemanticResultCache(tier="l1")
+    request = QueryRequest("bars", {"period": "day", "count": 2}, args=("600519.SH",))
+
+    online = Runtime(
+        provider_order=("tdx",),
+        semantic_cache=cache,
+        default_cache_ttl=60.0,
+    )
+    online.register_provider(TdxProvider(CountingBarsClient()))
+    populated = online.execute(request)
+    assert populated.success is True
+
+    offline = Runtime(provider_order=("tdx",), semantic_cache=cache)
+    cached = offline.execute(request)
+
+    assert cached.success is True
+    assert cached.data == populated.data
+    assert cached.metadata["provider"] == "tdx"
+    assert cached.metadata["provenance"]["provider"] == "tdx"
+    assert cached.metadata["provenance"]["cache_tier"] == "l1"
+    assert cached.metadata["provider_attempts"] == [
+        {"provider": "tdx", "status": "cache_hit", "detail": "l1"}
+    ]
+
+
 def test_cross_provider_fallback_preserves_requested_provider_provenance() -> None:
     runtime = Runtime(provider_order=("tdx", "tencent"))
     runtime.register_provider(TdxProvider(BarsOnlyClient()))
