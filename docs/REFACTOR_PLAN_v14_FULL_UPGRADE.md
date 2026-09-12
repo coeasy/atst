@@ -7,56 +7,87 @@
 
 ## 1. Goal
 
-V14 is not a feature-only release. Its purpose is to move tstdx from a collection of protocol, source and facade capabilities to a single market-data execution runtime while preserving the v1 public API.
+V14 moves tstdx toward one orchestration runtime **without replacing the mature semantic contracts already present in the repository**.
 
-Target request path:
+The architecture source of truth is now:
 
 ```text
 Python API / CLI / REST / WS / MCP
               |
               v
-           Gateway
-              |
-              v
+        Runtime boundary
         QueryRequest
               |
               v
-        Runtime Kernel
+      ExecutionPlanner
+      (DAG/orchestration)
               |
               v
-           Planner
+   canonical QueryPlanner
+  QuerySpec -> QueryPlan
+  (single Provider identity)
+              |
+       +------+------+
+       |             |
+       v             v
+SemanticResultCache  dynamic Provider adapter
+(QueryFingerprint)   tdx / local_vipdoc /
+                     eastmoney / tencent / ...
+       |             |
+       +------+------+
+              v
+     canonical QueryResult
+        + Provenance
               |
               v
-       ExecutionPlan / DAG
-              |
-              v
-       Provider Router
-       /      |      \
-     TDX     Web    Local / Cache
-              |
-              v
-      Canonical Domain
-              |
-              v
-     Cache / Stream / Storage
+       Runtime Response
 ```
+
+Key distinction:
+
+- `tstdx.query.QueryPlanner` owns deterministic semantic planning for **one Provider + Channel**.
+- `tstdx.execution.ExecutionPlanner` owns cross-provider fallback and DAG orchestration.
+- `tstdx.result.Provenance` owns data origin.
+- `tstdx.cache_semantic.SemanticResultCache` owns semantic caching.
+- `tstdx.provider` contains dynamic execution adapters only; it is **not** a second provider registry.
+- `tstdx.providers` remains the canonical Provider/Channel/Capability registry.
 
 ## 2. Hard constraints
 
 1. Existing `TdxClient`, `AsyncTdxClient` and `UnifiedQuoteAPI` APIs remain compatible.
 2. Core installation remains zero hard dependencies.
 3. Protocol parser behaviour is not rewritten as part of Runtime Phase 1.
-4. New runtime paths must have explicit contract tests before they replace legacy routing.
-5. No merge until same-SHA CI executes real steps and is green.
-6. Cache misses must fall through; they must never masquerade as a successful `None` result.
-7. Provider fallback must preserve the actual selected provider in response provenance.
-8. Execution graphs must reject cycles, missing dependencies and duplicate nodes.
+4. New runtime paths require contract tests before replacing legacy routing.
+5. No merge until the final same SHA executes the required CI steps and is green.
+6. `tstdx.providers`, `tstdx.query`, `tstdx.result` and `tstdx.cache_semantic` remain semantic single sources of truth.
+7. `web` is not a Provider identity; concrete Providers such as `eastmoney`, `tencent`, `sina` are separate trust boundaries.
+8. Cache is not a Provider. A cache hit preserves original Provider provenance and only adds `cache_tier`.
+9. Execution graphs reject duplicate nodes, missing dependencies and cycles.
+10. Runtime fallback must expose the selected Provider and provider-attempt diagnostics without overwriting canonical data provenance.
 
-## 3. Current implementation status
+## 3. Architecture correction made during implementation
 
-### 3.1 Runtime Kernel — IMPLEMENTED (Phase 1)
+The first V14 skeleton accidentally introduced three parallel concepts:
 
-Implemented modules:
+- `Planner` alongside the existing `QueryPlanner`;
+- a runtime `cache_key` alongside canonical `QueryFingerprint`;
+- `CacheProvider` / generic `web` / generic `local` identities alongside `tstdx.providers` and canonical `Provenance`.
+
+The branch has been corrected:
+
+- V14 `Planner` is now `ExecutionPlanner`.
+- Runtime uses `request_key` only for tracing/single-flight style identity; semantic cache identity remains `QueryFingerprint`.
+- `CacheProvider` was deleted.
+- `WebProvider` requires a concrete canonical Provider id.
+- `LocalProvider` uses canonical id `local_vipdoc`.
+- TDX/Web/Local dynamic adapters consult the existing `PROVIDERS` registry for capability eligibility.
+- Core `quotes` / `bars` execution is bridged into existing `QuerySpec -> QueryPlan -> QueryResult -> Provenance` contracts.
+
+This correction is deliberate: V14 extends orchestration and does not create a shadow market-data architecture.
+
+## 4. Current implementation status
+
+### 4.1 Runtime boundary — IMPLEMENTED
 
 ```text
 tstdx/runtime/
@@ -71,16 +102,16 @@ tstdx/runtime/
 Implemented contracts:
 
 - `QueryRequest` preserves positional arguments, keyword arguments and runtime metadata.
-- semantic `cache_key` excludes volatile trace/routing metadata.
-- `ExecutionContext` carries `request_id`, `trace_id`, timeout and selected provider.
-- `QueryResponse` carries success/error/data/error-code plus provenance metadata.
-- `Runtime` preserves registered compatibility handlers.
-- unhandled operations execute through Planner -> ExecutionPlan -> ProviderRouter.
-- `create_runtime()` registers injected TDX/Web/Local/Cache backends without eager optional dependencies.
+- `request_key` is explicitly diagnostic, not a semantic cache key.
+- legacy `cache_key` remains only as a temporary branch compatibility alias to `request_key`.
+- `ExecutionContext` carries `request_id`, `trace_id`, timeout and selected Provider.
+- `QueryResponse` carries success/data/error/error-code plus runtime metadata.
+- compatibility handlers remain supported.
+- canonical `QueryResult` is unwrapped at the runtime boundary so v1-style callers still receive raw data.
+- response metadata carries canonical `query_fingerprint`, channel and serialized `Provenance` when semantic execution is used.
+- `create_runtime()` registers injected canonical execution backends without eager optional dependencies.
 
-### 3.2 Execution Graph — IMPLEMENTED (Phase 1)
-
-Implemented modules:
+### 4.2 Execution DAG — IMPLEMENTED
 
 ```text
 tstdx/execution/
@@ -89,20 +120,34 @@ tstdx/execution/
   graph.py
   plan.py
   planner.py
+  semantic.py
 ```
 
 Implemented guarantees:
 
-- duplicate execution nodes are rejected;
-- missing dependency nodes are rejected;
-- graph cycles are detected with a readable cycle path;
-- explicit output nodes are supported;
-- Planner creates provider-backed execution plans;
-- explicit provider metadata and ordered fallback are supported.
+- duplicate execution nodes rejected;
+- missing dependencies rejected;
+- cycle detection includes a readable cycle path;
+- explicit plan output node;
+- `ExecutionPlanner` is separate from canonical `QueryPlanner`;
+- core `quotes` / `bars` are compiled through canonical query semantics;
+- non-core operations may still use generic dynamic execution until typed/canonical adapters are added.
 
-### 3.3 Provider Runtime — IMPLEMENTED (Phase 1)
+### 4.3 Canonical semantic bridge — IMPLEMENTED FOR `quotes` / `bars`
 
-Implemented modules:
+`SemanticExecutionAdapter`:
+
+1. converts the runtime call shape to existing `QuerySpec`;
+2. compiles it through existing `QueryPlanner`;
+3. checks existing `SemanticResultCache` by canonical `QueryFingerprint` when configured;
+4. executes a concrete Provider adapter on miss;
+5. wraps raw data in existing `QueryResult` + `Provenance`;
+6. preserves requested Provider on cross-provider fallback;
+7. returns cached results with original origin unchanged and only `cache_tier` added.
+
+No new CacheEntry/Provenance model is introduced.
+
+### 4.4 Dynamic Provider execution — IMPLEMENTED (Phase 1)
 
 ```text
 tstdx/provider/
@@ -112,148 +157,136 @@ tstdx/provider/
   tdx.py
   web.py
   local.py
-  cache.py
 ```
 
-Implemented guarantees:
+Rules:
 
-- single Provider ABC (`base.py`);
-- duplicate orphan provider abstraction removed;
-- provider registration and lookup;
-- provider health gate;
-- ordered fallback;
-- aggregated provider failure diagnostics;
-- positional/keyword call-shape preservation;
-- cache miss raises a fallback signal instead of returning false-success `None`.
+- `tstdx.providers` is the static Provider/Channel/Capability source of truth.
+- `tstdx.provider` only holds runtime execution objects.
+- TDX adapter id is `tdx`.
+- local adapter id is `local_vipdoc`.
+- web adapters require explicit canonical ids such as `eastmoney`, `tencent`, `sina`.
+- `CacheProvider` no longer exists.
+- Router records `not_registered / unsupported / unhealthy / failed / selected`; semantic cache adds `cache_hit` diagnostics.
+- provider-attempt diagnostics are runtime diagnostics, not canonical data provenance.
 
-### 3.4 Facade Runtime Adapter — IMPLEMENTED, NOT DEFAULT
-
-Implemented:
+### 4.5 Facade Runtime Adapter — IMPLEMENTED, NOT DEFAULT
 
 ```text
 tstdx/facade/runtime_adapter.py
 ```
 
-The adapter:
+Rules:
 
-- translates facade-shaped method calls to `QueryRequest`;
-- maps `route=tdx/web/local/cache` to explicit provider selection;
-- leaves `route=auto` to provider fallback policy;
-- converts `QueryResponse` back to existing `ApiResponse`;
-- preserves runtime error code and provenance metadata.
+- `route='tdx'` -> Provider `tdx`.
+- `route='local'` -> Provider `local_vipdoc`.
+- `route='auto'` leaves selection to orchestration.
+- `route='web'` is intentionally rejected unless explicit concrete `providers=(...)` are supplied.
+- a concrete canonical Provider id may be used directly.
+- `RuntimeFacadeAdapter` converts `QueryResponse` back to existing `ApiResponse` and preserves runtime error code/metadata.
 
-`UnifiedQuoteAPI` itself still uses the legacy routing path. This is intentional until runtime contract tests and same-SHA CI are green.
+`UnifiedQuoteAPI` itself remains on the legacy path until parity and same-SHA CI gates are satisfied.
 
-## 4. Tests added
+## 5. Tests added
 
 ```text
 tests/v14/
   test_runtime_execution.py
   test_runtime_bootstrap.py
   test_facade_runtime_adapter.py
+  test_semantic_execution.py
 ```
 
-Covered behaviours include:
+Coverage includes:
 
-- fallback across failed/unhealthy providers;
-- explicit provider selection;
+- failed/unhealthy/selected fallback diagnostics;
+- explicit Provider selection;
 - compatibility handlers;
 - unsupported-operation envelope;
-- planner/router identity coherence;
-- cache-key stability;
-- cache miss fallthrough;
+- ExecutionPlanner/Router identity coherence;
+- runtime `request_key` stability without claiming semantic cache identity;
 - TDX positional/keyword argument preservation;
+- canonical Provider capability routing;
+- rejection of ambiguous `web` Provider identity;
+- canonical local identity `local_vipdoc`;
 - execution graph cycle/missing-dependency gates;
-- facade route mapping;
-- facade error-code and provenance preservation;
-- zero-dependency runtime bootstrap.
+- facade route mapping and ambiguous web-route rejection;
+- runtime error-code propagation;
+- canonical QueryFingerprint / QueryResult / Provenance integration;
+- semantic cache hit without Provider-origin corruption;
+- cross-provider fallback provenance (`requested_provider`, `fallback=True`).
 
-## 5. CI status
+## 6. CI status
 
-The PR is deliberately kept Draft.
+PR #7 remains Draft.
 
-Observed CI behaviour during implementation:
+Observed during implementation:
 
-- `Native` workflow has executed successfully on intermediate heads.
-- some `CI` runs failed before any job steps were created and produced no downloadable job logs; these are runner/scheduling failures, not source-level evidence.
-- latest heads are continuously re-triggering pull-request workflows.
+- `Native` has repeatedly executed successfully on branch heads.
+- several main `CI` runs have failed before runner assignment / before any steps existed; those runs provide no source-level failure evidence.
+- the current head continues to trigger pull-request workflows.
 
-Merge rule remains unchanged: do not treat `mergeable=true` as validation. Merge only when the final same SHA runs the required gates and they are green.
+Merge rule is unchanged: `mergeable=true` is not a release gate. Merge only when the final same SHA executes the required real steps and is green.
 
-## 6. Phase 2 — Runtime integration
+## 7. Phase 2 — Complete semantic migration
 
-### 6.1 UnifiedQuoteAPI opt-in runtime path
+### 7.1 Expand canonical request bridging
 
-Target design:
+After `quotes` / `bars`, migrate capabilities in groups using existing `QuerySpec`, `typed_query.py` and `PROVIDERS` capability contracts. Do not add generic kwargs-only semantics when a typed/canonical query already exists.
 
-```text
-UnifiedQuoteAPI.query()
-   |-- legacy path (default during migration)
-   `-- RuntimeFacadeAdapter (opt-in)
-```
+Priority:
 
-Required before default switch:
+1. F10 / finance statements;
+2. fund / bond / futures / options typed queries;
+3. news / research capabilities;
+4. local-reader capabilities that have canonical Provider contracts.
 
-- quotes parity;
-- bars parity;
-- route error parity;
-- `ApiResponse` code/extra parity;
-- `.df` compatibility;
-- no eager TDX/Web client construction.
+### 7.2 Cache policy
 
-### 6.2 Provider policy
+Reuse `SemanticResultCache` only.
 
-Next provider runtime work:
+Next work:
 
-- health history rather than one boolean probe;
+- policy-driven TTL by capability/currentness;
+- L1/L2 composition without changing Provenance origin;
+- invalidation hooks;
+- cache metrics;
+- single-flight around identical `QueryFingerprint` requests.
+
+Do **not** create a new `CacheEntry` hierarchy unless the existing semantic cache schema is formally migrated.
+
+## 8. Phase 3 — Provider runtime policy
+
+Next provider orchestration work:
+
+- operation-specific health history;
 - latency/success ranking;
 - circuit state;
-- retry advice integration;
-- per-operation provider capability checks;
-- failure attempt provenance.
+- retry advice integration with existing error taxonomy;
+- capability-aware fallback order;
+- failure attempt provenance/metrics;
+- deterministic policy tests.
 
-## 7. Phase 3 — Cache Provenance
+Static capability truth remains in `tstdx.providers`.
 
-Introduce a canonical cache record:
+## 9. Phase 4 — Canonical Domain
 
-```text
-CacheEntry
-  data
-  source
-  created_at
-  cache_key
-  quality
-  checksum
-  version
-```
+Extend existing `tstdx.domain`; do not create a parallel domain hierarchy.
 
-Rules:
-
-- cache metadata is separate from market payload;
-- routing/trace metadata does not change semantic cache keys;
-- stale/invalid cache records trigger provider fallthrough;
-- provenance survives Runtime -> Facade -> Gateway.
-
-## 8. Phase 4 — Canonical Domain
-
-Unify provider-specific results behind existing domain models instead of creating parallel shadow models.
-
-Priority order:
+Priority:
 
 1. Symbol / market identity;
 2. Quote;
 3. Bar;
 4. Tick/minute;
 5. corporate-action metadata;
-6. source/provenance envelope.
+6. normalization between existing provider payloads and domain models.
 
-The V14 rule is **extend the existing `tstdx.domain` single source of truth**, not create a second incompatible domain hierarchy.
+## 10. Phase 5 — Streaming Runtime
 
-## 9. Phase 5 — Streaming Runtime
+Integrate the existing StreamEngine rather than replacing it.
 
-Integrate the existing StreamEngine rather than replacing it blindly.
-
-Target additions:
+Potential orchestration additions:
 
 ```text
 MarketEvent
@@ -263,75 +296,77 @@ WindowProcessor
 Subscription
 ```
 
-Required invariants:
+Invariants:
 
-- existing QuoteStream / AsyncQuoteStream remain compatible;
-- reconnect/backpressure/gap-fill behaviour remains owned by current streaming engine;
-- event processing must be replayable;
-- stateful processors must have bounded memory policies.
+- QuoteStream / AsyncQuoteStream compatibility;
+- reconnect/backpressure/gap-fill remain owned by existing streaming engine;
+- replayability;
+- bounded state policies;
+- no second streaming state machine.
 
-## 10. Phase 6 — Gateway convergence
+## 11. Phase 6 — Gateway convergence
 
-REST, WebSocket, MCP and CLI should translate requests at the boundary and delegate market-data execution to Runtime.
+REST, WebSocket, MCP and CLI translate boundary requests and delegate execution to Runtime.
 
-Do not duplicate provider selection or fallback policy inside gateways.
+Gateways must not implement independent Provider selection, fallback, cache or provenance logic.
 
-## 11. Phase 7 — Optimizer
+## 12. Phase 7 — Optimizer
 
-Only after Runtime parity is stable:
+Only after semantic parity is stable:
 
-- execution-node common subexpression elimination;
+- DAG common-subexpression elimination;
 - parallel independent nodes;
-- cache-aware rewrite;
+- semantic-cache-aware rewrite;
 - incremental execution for streaming updates;
-- batch provider execution.
+- batch Provider execution.
 
-Optimizers must never change observable query semantics.
+The optimizer must not change `QuerySpec`, `QueryFingerprint`, Provider identity or observable result semantics.
 
-## 12. Phase 8 — release hardening
+## 13. Phase 8 — release hardening
 
-Required release gates:
+Required gates:
 
-- Ruff check and format;
+- Ruff check + format;
 - mypy;
 - full non-network pytest matrix;
-- coverage gate >= repository baseline;
-- AST module reachability: zero unregistered orphans;
+- coverage >= repository baseline;
+- AST module reachability with zero accidental orphans;
 - golden/spec/originality/adversarial gates;
-- wheel/source installation smoke;
-- same-SHA workflow evidence.
+- wheel/sdist install smoke;
+- final same-SHA workflow evidence.
 
-## 13. Explicit non-goals for Phase 1
+## 14. Explicit non-goals
 
-The following are intentionally deferred until the runtime migration is proven:
-
-- replacing all existing source classes;
+- replacing `tstdx.query.QueryPlanner` with the DAG planner;
+- replacing `tstdx.result.Provenance`;
+- replacing `tstdx.cache_semantic` with a new cache model;
+- treating cache as a Provider;
+- treating `web` as one Provider;
+- creating a second symbol/domain single source of truth;
 - rewriting protocol parsers;
-- adding a second factor/indicator framework inside tstdx;
-- introducing distributed execution;
-- changing v1 public method signatures;
-- deleting legacy routing before parity gates exist.
+- changing v1 public signatures before parity gates exist.
 
-## 14. Migration strategy
+## 15. Migration strategy
 
 ```text
-Stage A: build Runtime contract
-Stage B: adapter parity tests
-Stage C: opt-in facade runtime
-Stage D: gateway reuse
-Stage E: runtime becomes default
-Stage F: remove duplicated legacy routing only after deprecation window
+Stage A  Runtime boundary + DAG contract
+Stage B  Reconcile with existing Query/Result/Provider semantics   <-- current
+Stage C  Core semantic parity + SemanticResultCache
+Stage D  Opt-in UnifiedQuoteAPI runtime path
+Stage E  Gateway reuse
+Stage F  Runtime becomes default after same-SHA gates
+Stage G  Remove duplicated legacy orchestration after deprecation window
 ```
 
-## 15. Immediate next tasks
+## 16. Immediate next tasks
 
-1. Get final same-SHA CI to execute real steps.
-2. Fix source-level lint/type/test failures first.
-3. Add provider capability/provenance tracking.
-4. Add opt-in `UnifiedQuoteAPI.query()` runtime path in a safe patch environment.
-5. Add CacheEntry provenance contract.
-6. Extend parity tests for quotes/bars.
+1. Let the latest same-SHA CI obtain a real runner and execute steps.
+2. Fix actual Ruff/mypy/test failures before expanding scope.
+3. Add canonical semantic parity tests against direct `QueryPlanner` for `quotes` and `bars`.
+4. Extend semantic bridge to typed capabilities already represented by `typed_query.py`.
+5. Add operation-aware Provider policy/health without duplicating `PROVIDERS` capability truth.
+6. Wire `UnifiedQuoteAPI.query()` to Runtime behind an opt-in switch only after parity tests are green.
 
 ---
 
-This document is the implementation source of truth for V14. Status must be updated from actual committed code and CI evidence; planned modules must not be marked complete before they exist and are tested.
+This document is the V14 implementation source of truth. Planned modules must not be marked complete before code and tests exist, and runtime orchestration must reuse existing semantic single sources of truth rather than creating parallel contracts.
