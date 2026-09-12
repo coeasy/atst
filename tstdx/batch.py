@@ -15,12 +15,7 @@ from typing import Any, Callable, Generic, Mapping, TypeVar
 from .errors import SourceUnavailable, TdxError
 from .query import QueryPlan
 
-__all__ = [
-    "BatchItem",
-    "BatchResult",
-    "SingleFlight",
-    "NegativeCache",
-]
+__all__ = ["BatchItem", "BatchResult", "SingleFlight", "NegativeCache"]
 
 T = TypeVar("T")
 
@@ -87,8 +82,8 @@ class _Flight:
 class SingleFlight:
     """Coalesce concurrent work by full QueryFingerprint.
 
-    Followers receive deep-copied values or independent exception objects so
-    mutable result/error state never leaks between callers.
+    The internal result is never returned directly: leader and followers each
+    receive independent deep copies, eliminating mutation races between callers.
     """
 
     def __init__(self) -> None:
@@ -114,7 +109,7 @@ class SingleFlight:
                     self._flights.pop(key, None)
             if flight.error is not None:
                 raise _clone_exception(flight.error)
-            return flight.value
+            return copy.deepcopy(flight.value)
 
         flight.event.wait()
         if flight.error is not None:
