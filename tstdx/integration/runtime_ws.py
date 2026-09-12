@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from ..error_envelope import to_error_envelope
@@ -22,14 +24,23 @@ ERR_INVALID_PARAMS = -32602
 ERR_INTERNAL = -32603
 
 
-def _data(result: Any) -> Any:
-    value = result.data
+def _jsonable(value: Any) -> Any:
+    if is_dataclass(value) and not isinstance(value, type):
+        return asdict(value)
+    if hasattr(value, "to_dict"):
+        return value.to_dict()
     if isinstance(value, list):
-        value = [item.to_dict() if hasattr(item, "to_dict") else item for item in value]
-    elif hasattr(value, "to_dict"):
-        value = value.to_dict()
+        return [_jsonable(item) for item in value]
+    if isinstance(value, tuple):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _jsonable(item) for key, item in value.items()}
+    return value
+
+
+def _data(result: Any) -> Any:
     return {
-        "data": value,
+        "data": _jsonable(result.data),
         "meta": {
             "provider": result.meta.provider,
             "channel": result.meta.channel,
@@ -71,11 +82,8 @@ class RuntimeJsonRpcHandler:
 
         request_id = message.get("id")
         if request_id is None:
-            # Notifications never get responses, even when execution fails.
-            try:
+            with contextlib.suppress(Exception):
                 self._dispatch(str(message.get("method", "")), message.get("params") or {})
-            except Exception:
-                pass
             return None
 
         method = str(message.get("method", ""))
