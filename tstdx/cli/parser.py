@@ -9,7 +9,9 @@ import argparse
 
 from .runtime_commands import (
     cmd_bars,
+    cmd_capabilities,
     cmd_minute,
+    cmd_query,
     cmd_quotes,
     cmd_security_count,
     cmd_security_list,
@@ -25,22 +27,30 @@ __all__ = ["build_parser"]
 def _provider_args(parser: argparse.ArgumentParser, *, fallback: bool = False) -> None:
     parser.add_argument("--provider", default=None if fallback else "tdx")
     if fallback:
-        parser.add_argument(
-            "--fallback",
-            help="explicit comma-separated Provider order, e.g. tdx,tencent,sina",
-        )
+        parser.add_argument("--fallback", help="explicit comma-separated Provider order, e.g. tdx,tencent,sina")
     parser.add_argument("--no-cache", action="store_true")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="tstdx",
-        description="tstdx v13 Provider-first market-data client",
-    )
+    parser = argparse.ArgumentParser(prog="tstdx", description="tstdx v13 Provider-first market-data client")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("version", help="show package version")
     p.set_defaults(func=cmd_version)
+
+    p = sub.add_parser("capabilities", help="list migrated v13 business capabilities")
+    p.set_defaults(func=cmd_capabilities)
+
+    p = sub.add_parser("query", help="execute any migrated v13 capability")
+    p.add_argument("capability")
+    p.add_argument("--provider")
+    p.add_argument("--channel")
+    p.add_argument("--currentness", default="business", choices=("auto", "live", "historical", "business"))
+    p.add_argument("--max-age", type=float)
+    p.add_argument("--args", dest="args_json", default="[]", help="JSON array of positional arguments")
+    p.add_argument("--kwargs", dest="kwargs_json", default="{}", help="JSON object of keyword arguments")
+    p.add_argument("--no-cache", action="store_true")
+    p.set_defaults(func=cmd_query)
 
     p = sub.add_parser("quotes", help="query live quotes")
     p.add_argument("symbols", nargs="+")
