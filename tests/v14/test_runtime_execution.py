@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from tstdx.execution import ExecutionGraph, ExecutionNode, Planner
-from tstdx.provider import CacheProvider, Provider, ProviderRouter, TdxProvider
+from tstdx.provider import CacheProvider, Provider, ProviderRouter, TdxProvider, WebProvider
 from tstdx.runtime import QueryRequest, Runtime
 
 
@@ -132,6 +132,43 @@ def test_tdx_provider_preserves_positional_and_keyword_arguments() -> None:
 
     assert response.success is True
     assert response.data == ("sh600519", 5)
+
+
+def test_runtime_skips_provider_without_operation_capability() -> None:
+    class BarsOnlyClient:
+        def bars(self, symbol):
+            return [symbol]
+
+    class QuotesSource:
+        def quotes(self, symbols):
+            return list(symbols)
+
+    runtime = Runtime(provider_order=("tdx", "web"))
+    runtime.register_provider(TdxProvider(BarsOnlyClient()))
+    runtime.register_provider(WebProvider(QuotesSource()))
+
+    response = runtime.execute(QueryRequest("quotes", args=(["sh600519"],)))
+
+    assert response.success is True
+    assert response.data == ["sh600519"]
+    assert response.metadata["provider"] == "web"
+
+
+def test_explicit_provider_reports_unsupported_operation() -> None:
+    class BarsOnlyClient:
+        def bars(self, symbol):
+            return [symbol]
+
+    runtime = Runtime()
+    runtime.register_provider(TdxProvider(BarsOnlyClient()))
+
+    response = runtime.execute(
+        QueryRequest("quotes", args=(["sh600519"],), metadata={"provider": "tdx"})
+    )
+
+    assert response.success is False
+    assert response.metadata["error_type"] == "AttributeError"
+    assert "does not support operation" in (response.error or "")
 
 
 def test_execution_graph_rejects_cycles() -> None:
