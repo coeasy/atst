@@ -37,6 +37,19 @@ _SINGLE_SYMBOL_CAPABILITIES = frozenset({"bars", "snapshot", "minute", "trades"}
 _SYMBOL_CAPABILITIES = frozenset({"quotes", *_SINGLE_SYMBOL_CAPABILITIES})
 _MARKET_CAPABILITIES = frozenset({"security_count", "security_list"})
 _CORE_CAPABILITIES = _SYMBOL_CAPABILITIES | _MARKET_CAPABILITIES
+_SENSITIVE_OPTION_KEYS = frozenset(
+    {
+        "authorization",
+        "api_key",
+        "apikey",
+        "cookie",
+        "password",
+        "secret",
+        "token",
+        "access_token",
+        "refresh_token",
+    }
+)
 
 _CANONICAL_UNIFIED_CHANNELS: dict[tuple[str, str], str] = {
     ("tdx", "quotes"): "quotation",
@@ -86,6 +99,31 @@ def _canonical_options(options: Mapping[str, Any] | None) -> str:
         ) from exc
 
 
+def _secret_digest(value: Any) -> str:
+    raw = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _fingerprint_safe_value(value: Any, *, key: str = "") -> Any:
+    normalized_key = key.strip().lower().replace("-", "_")
+    if normalized_key in _SENSITIVE_OPTION_KEYS:
+        return {"__secret_sha256__": _secret_digest(value)}
+    if isinstance(value, dict):
+        return {
+            str(item_key): _fingerprint_safe_value(item, key=str(item_key))
+            for item_key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_fingerprint_safe_value(item) for item in value]
+    return value
+
+
 def _parse_currentness(value: str | CurrentnessMode) -> CurrentnessMode:
     if isinstance(value, CurrentnessMode):
         return value
@@ -95,7 +133,10 @@ def _parse_currentness(value: str | CurrentnessMode) -> CurrentnessMode:
     except ValueError as exc:
         raise ValidationError(
             f"未知 currentness {value!r}",
-            context={"currentness": value, "allowed": [item.value for item in CurrentnessMode]},
+            context={
+                "currentness": value,
+                "allowed": [item.value for item in CurrentnessMode],
+            },
         ) from exc
 
 
@@ -172,7 +213,10 @@ class QuerySpec:
 
         symbols = tuple(normalize_symbol(item) for item in self.symbols)
         if cap in _SYMBOL_CAPABILITIES and not symbols:
-            raise ValidationError(f"{cap} 至少需要一个 symbol", context={"capability": cap})
+            raise ValidationError(
+                f"{cap} 至少需要一个 symbol",
+                context={"capability": cap},
+            )
         if cap in _SINGLE_SYMBOL_CAPABILITIES and len(symbols) != 1:
             raise ValidationError(
                 f"{cap} QuerySpec 一次只接受一个 symbol",
@@ -186,21 +230,31 @@ class QuerySpec:
         if self.count < 0:
             raise ValidationError("count 不能为负数", context={"count": self.count})
         if cap == "bars" and self.count <= 0:
-            raise ValidationError("bars.count 必须大于 0", context={"count": self.count})
+            raise ValidationError(
+                "bars.count 必须大于 0",
+                context={"count": self.count},
+            )
         if self.start < 0:
             raise ValidationError("start 不能为负数", context={"start": self.start})
         if self.deadline_ms <= 0:
             raise ValidationError(
-                "deadline_ms 必须大于 0", context={"deadline_ms": self.deadline_ms}
+                "deadline_ms 必须大于 0",
+                context={"deadline_ms": self.deadline_ms},
             )
         if self.schema_version <= 0:
             raise ValidationError("schema_version 必须大于 0")
         if self.max_age is not None and self.max_age < 0:
-            raise ValidationError("max_age 不能为负数", context={"max_age": self.max_age})
+            raise ValidationError(
+                "max_age 不能为负数",
+                context={"max_age": self.max_age},
+            )
         if self.adjustment and cap != "bars":
             raise ValidationError(
                 "adjustment 仅属于 bars 语义",
-                context={"capability": cap, "adjustment": self.adjustment},
+                context={
+                    "capability": cap,
+                    "adjustment": self.adjustment,
+                },
             )
 
         currentness = _parse_currentness(self.currentness)
@@ -211,7 +265,11 @@ class QuerySpec:
         channel = _norm_text(self.channel) or None
         PROVIDERS.require(selected, cap, channel=channel)
 
-        period = normalize_bar_period(self.period) if cap == "bars" else _norm_text(self.period)
+        period = (
+            normalize_bar_period(self.period)
+            if cap == "bars"
+            else _norm_text(self.period)
+        )
         max_age = None if self.max_age in (None, 0, 0.0) else float(self.max_age)
         market: int | str | None = self.market
         if isinstance(market, str):
@@ -253,11 +311,16 @@ class QueryFingerprint:
             "adjustment": spec.adjustment,
             "currentness": spec.currentness,
             "max_age": spec.max_age,
-            "options": spec.options,
+            "options": _fingerprint_safe_value(spec.options),
         }
 
     @classmethod
-    def from_normalized_spec(cls, spec: QuerySpec, *, channel: str) -> "QueryFingerprint":
+    def from_normalized_spec(
+        cls,
+        spec: QuerySpec,
+        *,
+        channel: str,
+    ) -> "QueryFingerprint":
         canonical = json.dumps(
             cls._payload(spec, channel=channel),
             ensure_ascii=False,
@@ -266,7 +329,10 @@ class QueryFingerprint:
             allow_nan=False,
         )
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-        return cls(value=f"q{spec.schema_version}:{digest}", canonical=canonical)
+        return cls(
+            value=f"q{spec.schema_version}:{digest}",
+            canonical=canonical,
+        )
 
     @classmethod
     def from_spec(
@@ -277,7 +343,8 @@ class QueryFingerprint:
         default_provider: str | None = None,
     ) -> "QueryFingerprint":
         return cls.from_normalized_spec(
-            spec.normalized(default_provider=default_provider), channel=channel
+            spec.normalized(default_provider=default_provider),
+            channel=channel,
         )
 
 
@@ -312,7 +379,11 @@ class QueryPlanner:
         return _CANONICAL_UNIFIED_CHANNELS.get((pid, cap))
 
     @classmethod
-    def _reject_core_channel_mismatch(cls, spec: QuerySpec, canonical: str | None) -> None:
+    def _reject_core_channel_mismatch(
+        cls,
+        spec: QuerySpec,
+        canonical: str | None,
+    ) -> None:
         if spec.channel is None or canonical is None or spec.channel == canonical:
             return
         if spec.capability not in _CORE_CAPABILITIES:
@@ -365,9 +436,32 @@ class QueryPlanner:
             PROVIDERS.require_period(pid, selected.id, spec.period)
         return selected
 
+    @staticmethod
+    def _validate_migrated_call(spec: QuerySpec, channel: str) -> None:
+        from .capability_catalog import is_migrated_capability, validate_call
+
+        if not is_migrated_capability(spec.capability):
+            return
+        options = spec.options
+        args = options.get("args", [])
+        kwargs = options.get("kwargs", {})
+        if not isinstance(args, list) or not isinstance(kwargs, dict):
+            raise ValidationError(
+                "migrated capability options 必须包含 args:list / kwargs:object"
+            )
+        validate_call(
+            str(spec.provider),
+            channel,
+            spec.capability,
+            tuple(args),
+            dict(kwargs),
+        )
+
     def compile(self, spec: QuerySpec) -> QueryPlan:
         normalized = spec.normalized(default_provider=self.default_provider)
         selected = self._select_channel(normalized)
+        self._validate_migrated_call(normalized, selected.id)
+
         currentness = _parse_currentness(normalized.currentness)
         if currentness is CurrentnessMode.LIVE and not selected.live:
             raise ValidationError(
@@ -380,7 +474,11 @@ class QueryPlanner:
                     "local": selected.local,
                 },
             )
-        fingerprint = QueryFingerprint.from_normalized_spec(normalized, channel=selected.id)
+
+        fingerprint = QueryFingerprint.from_normalized_spec(
+            normalized,
+            channel=selected.id,
+        )
         return QueryPlan(
             spec=normalized,
             provider=str(normalized.provider),
