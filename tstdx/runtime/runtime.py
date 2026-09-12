@@ -54,6 +54,12 @@ class Runtime:
             timeout=float(timeout) if timeout is not None else None,
             metadata=dict(request.metadata),
         )
+        base_metadata: dict[str, Any] = {
+            "request_id": context.request_id,
+            "trace_id": context.trace_id,
+            "operation": request.operation,
+            "cache_key": request.cache_key,
+        }
 
         try:
             handler = self._handlers.get(request.operation)
@@ -61,8 +67,7 @@ class Runtime:
                 result = handler(request.params)
                 return QueryResponse.ok(
                     result,
-                    request_id=context.request_id,
-                    trace_id=context.trace_id,
+                    **base_metadata,
                     execution="compat-handler",
                 )
 
@@ -70,25 +75,22 @@ class Runtime:
             if not plan.graph.nodes:
                 return QueryResponse.fail(
                     f"unsupported operation: {request.operation}",
-                    request_id=context.request_id,
-                    trace_id=context.trace_id,
+                    **base_metadata,
                 )
 
             result = plan.execute(context)
-            metadata: dict[str, Any] = {
-                "request_id": context.request_id,
-                "trace_id": context.trace_id,
-                "execution": "execution-plan",
-            }
+            metadata = dict(base_metadata)
+            metadata["execution"] = "execution-plan"
             if context.provider is not None:
                 metadata["provider"] = context.provider
             return QueryResponse.ok(result, **metadata)
         except Exception as exc:
-            metadata = {
-                "request_id": context.request_id,
-                "trace_id": context.trace_id,
-                "error_type": type(exc).__name__,
-            }
+            metadata = dict(base_metadata)
+            metadata["error_type"] = type(exc).__name__
             if context.provider is not None:
                 metadata["provider"] = context.provider
-            return QueryResponse.fail(str(exc), **metadata)
+            return QueryResponse.fail(
+                str(exc),
+                code=str(getattr(exc, "code", "") or ""),
+                **metadata,
+            )
