@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 
 import pytest
 
@@ -24,6 +25,18 @@ def test_lifecycle_is_one_shot_and_fail_closed() -> None:
     with pytest.raises(SubscriptionError):
         life.require_subscribable()
 
+    # Cleanup is allowed after failure, but it must never erase the terminal
+    # failure state/reason.
+    assert life.begin_stop() is True
+    assert life.state is StreamState.FAILED
+    life.close()
+    assert life.state is StreamState.FAILED
+    assert life.failure_reason == "worker died"
+
+
+def test_clean_stop_reaches_closed() -> None:
+    life = StreamLifecycle()
+    life.begin_start()
     assert life.begin_stop() is True
     assert life.state is StreamState.STOPPING
     life.close()
@@ -80,6 +93,27 @@ def test_sync_stream_detects_dead_running_worker_without_spawning_second() -> No
     assert stream._thread is None
 
 
+def test_sync_start_preserves_process_control_baseexception(monkeypatch: pytest.MonkeyPatch) -> None:
+    stream = StatefulQuoteStream()
+
+    def interrupt(_thread: threading.Thread) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(threading.Thread, "start", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        stream.start()
+    assert stream.state is StreamState.FAILED
+    assert stream.failure_reason == "worker start failed"
+
+
+def test_sync_cleanup_does_not_hide_failure() -> None:
+    stream = StatefulQuoteStream()
+    stream._lifecycle.fail("boom")
+    stream.stop()
+    assert stream.state is StreamState.FAILED
+    assert stream.failure_reason == "boom"
+
+
 @pytest.mark.asyncio
 async def test_async_stream_is_terminal_after_stop_without_start() -> None:
     stream = AsyncStatefulQuoteStream()
@@ -105,3 +139,12 @@ async def test_async_running_done_task_fails_closed() -> None:
     with pytest.raises(SubscriptionError, match="fail-closed"):
         await stream.start()
     assert stream.state is StreamState.FAILED
+
+
+@pytest.mark.asyncio
+async def test_async_cleanup_does_not_hide_failure() -> None:
+    stream = AsyncStatefulQuoteStream()
+    stream._lifecycle.fail("boom")
+    await stream.stop()
+    assert stream.state is StreamState.FAILED
+    assert stream.failure_reason == "boom"
