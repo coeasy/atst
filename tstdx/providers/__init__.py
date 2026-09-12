@@ -3,10 +3,9 @@
 
 """Canonical v13 Provider / Channel / Capability registry.
 
-The registry is executable truth, not a catalog of historical helper methods.
-A capability appears here only after it has a canonical Query contract, an exact
-Direct binding and contract tests. Provider identity is a trust boundary: one
-Provider never silently executes another Provider.
+The registry is executable truth.  Core and migrated capabilities are declared
+only when an exact DirectBinding exists; Provider identity remains the trust
+boundary and no pseudo-provider named ``web`` exists.
 """
 
 from __future__ import annotations
@@ -15,6 +14,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
+from ..capability_catalog import MIGRATED_BINDINGS
 from ..errors import ValidationError
 
 __all__ = [
@@ -57,25 +57,17 @@ class ChannelSpec:
         caps = frozenset(str(x).strip().lower() for x in capabilities if str(x).strip())
         if not caps:
             raise ValueError(f"channel {channel_id!r} must declare at least one capability")
-
         limits: list[tuple[str, int]] = []
         for capability, limit in dict(batch_limits or {}).items():
             cap = str(capability).strip().lower()
             if cap not in caps:
-                raise ValueError(
-                    f"batch limit capability {cap!r} is not declared on channel {channel_id!r}"
-                )
+                raise ValueError(f"batch limit capability {cap!r} is not declared on channel {channel_id!r}")
             if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
                 raise ValueError(f"batch limit for {cap!r} must be a positive int")
             limits.append((cap, limit))
-        limits.sort()
-
-        normalized_periods = frozenset(
-            str(x).strip().lower() for x in periods if str(x).strip()
-        )
+        normalized_periods = frozenset(str(x).strip().lower() for x in periods if str(x).strip())
         if normalized_periods and "bars" not in caps:
             raise ValueError(f"periods declared on non-bars channel {channel_id!r}")
-
         return cls(
             id=channel_id,
             capabilities=caps,
@@ -83,16 +75,13 @@ class ChannelSpec:
             live=bool(live),
             local=bool(local),
             notes=str(notes),
-            batch_limits=tuple(limits),
+            batch_limits=tuple(sorted(limits)),
             periods=normalized_periods,
         )
 
     def batch_limit_for(self, capability: str) -> int | None:
         cap = str(capability).strip().lower()
-        for name, limit in self.batch_limits:
-            if name == cap:
-                return limit
-        return None
+        return next((limit for name, limit in self.batch_limits if name == cap), None)
 
     def supports_period(self, period: str) -> bool:
         return not self.periods or str(period).strip().lower() in self.periods
@@ -136,8 +125,6 @@ class ProviderSpec:
 
 
 class ProviderRegistry:
-    """Immutable SSOT for capabilities that are actually executable by v13."""
-
     def __init__(self, specs: Iterable[ProviderSpec]) -> None:
         values = tuple(specs)
         by_id: dict[str, ProviderSpec] = {}
@@ -146,9 +133,7 @@ class ProviderRegistry:
             if pid in by_id:
                 raise ValueError(f"duplicate provider id: {pid}")
             if pid != spec.id:
-                raise ValueError(
-                    f"provider id {spec.id!r} is not canonical; expected {pid!r}"
-                )
+                raise ValueError(f"provider id {spec.id!r} is not canonical; expected {pid!r}")
             by_id[pid] = spec
         defaults = [spec.id for spec in values if spec.default]
         if len(defaults) != 1:
@@ -176,23 +161,13 @@ class ProviderRegistry:
     def supports(self, provider: str, capability: str, *, channel: str | None = None) -> bool:
         return self.get(provider).supports(capability, channel=channel)
 
-    def require(
-        self,
-        provider: str,
-        capability: str,
-        *,
-        channel: str | None = None,
-    ) -> ProviderSpec:
+    def require(self, provider: str, capability: str, *, channel: str | None = None) -> ProviderSpec:
         spec = self.get(provider)
         if not spec.supports(capability, channel=channel):
             raise ValidationError(
                 f"provider {spec.id!r} 不支持 capability {capability!r}"
                 + (f" on channel {channel!r}" if channel else ""),
-                context={
-                    "provider": spec.id,
-                    "channel": channel,
-                    "capability": str(capability).strip().lower(),
-                },
+                context={"provider": spec.id, "channel": channel, "capability": str(capability).strip().lower()},
             )
         return spec
 
@@ -234,17 +209,12 @@ def normalize_provider_id(value: str) -> str:
 
 
 def resolve_provider(*, provider: str | None = None, default: str | None = None) -> str:
-    """Resolve one unambiguous Provider id.
-
-    v13 intentionally has no `source` selector and no pseudo-provider `web`.
-    """
-
     selected = normalize_provider_id(provider or default or "tdx")
     if not selected:
         raise ValidationError("provider 不能为空")
     if selected == "web":
         raise ValidationError(
-            "'web' 不是 Provider；请显式指定 eastmoney/tencent/sina/baidu",
+            "'web' 不是 Provider；请显式指定具体 Provider",
             context={"provider": selected, "ambiguous": True},
         )
     return selected
@@ -272,118 +242,100 @@ def _c(
     )
 
 
+def _migrated_channels(provider: str) -> tuple[ChannelSpec, ...]:
+    grouped: dict[str, set[str]] = {}
+    for item in MIGRATED_BINDINGS:
+        if item.provider == provider:
+            grouped.setdefault(item.channel, set()).add(item.capability)
+    return tuple(
+        _c(
+            channel,
+            *sorted(capabilities),
+            notes="v13 migrated capability channel; exact DirectBinding required",
+        )
+        for channel, capabilities in sorted(grouped.items())
+    )
+
+
+def _provider(
+    id: str,
+    display_name: str,
+    role: str,
+    core_channels: tuple[ChannelSpec, ...] = (),
+    *,
+    default: bool = False,
+) -> ProviderSpec:
+    return ProviderSpec(
+        id=id,
+        display_name=display_name,
+        role=role,
+        default=default,
+        channels=core_channels + _migrated_channels(id),
+    )
+
+
 PROVIDERS = ProviderRegistry(
     (
-        ProviderSpec(
-            id="tdx",
-            display_name="TDX",
-            role="primary_live",
-            default=True,
-            channels=(
+        _provider(
+            "tdx",
+            "TDX",
+            "primary_live",
+            (
                 _c(
                     "quotation",
-                    "quotes",
-                    "bars",
-                    "snapshot",
-                    "minute",
-                    "trades",
-                    "security_count",
-                    "security_list",
+                    "quotes", "bars", "snapshot", "minute", "trades", "security_count", "security_list",
                     markets=("cn_a", "cn_bse"),
                     live=True,
                     batch_limits={"quotes": 60},
-                    periods=(
-                        "1min",
-                        "5min",
-                        "15min",
-                        "30min",
-                        "60min",
-                        "day",
-                        "week",
-                        "month",
-                        "season",
-                        "year",
-                    ),
+                    periods=("1min", "5min", "15min", "30min", "60min", "day", "week", "month", "season", "year"),
                     notes="Canonical Tier-A Provider binding",
                 ),
             ),
+            default=True,
         ),
-        ProviderSpec(
-            id="local_vipdoc",
-            display_name="Local TDX vipdoc",
-            role="local_historical",
-            channels=(
+        _provider(
+            "local_vipdoc",
+            "Local TDX vipdoc",
+            "local_historical",
+            (
                 _c(
-                    "vipdoc",
-                    "bars",
-                    markets=("cn_a",),
-                    local=True,
+                    "vipdoc", "bars", markets=("cn_a",), local=True,
                     periods=("1min", "5min", "day"),
                     notes="Explicit local historical Provider; never substitutes live TDX",
                 ),
             ),
         ),
-        ProviderSpec(
-            id="tencent",
-            display_name="Tencent Finance",
-            role="auxiliary",
-            channels=(
+        _provider(
+            "tencent", "Tencent Finance", "auxiliary",
+            (
                 _c("quote", "quotes", markets=("cn_a", "hk", "us"), live=True),
-                _c(
-                    "kline",
-                    "bars",
-                    markets=("cn_a", "hk", "us"),
-                    periods=("day", "week", "month"),
-                ),
-                _c(
-                    "minute_kline",
-                    "bars",
-                    markets=("cn_a",),
-                    periods=("1min", "5min", "15min", "30min", "60min"),
-                ),
+                _c("kline", "bars", markets=("cn_a", "hk", "us"), periods=("day", "week", "month")),
+                _c("minute_kline", "bars", markets=("cn_a",), periods=("1min", "5min", "15min", "30min", "60min")),
             ),
         ),
-        ProviderSpec(
-            id="sina",
-            display_name="Sina Finance",
-            role="auxiliary",
-            channels=(
+        _provider(
+            "sina", "Sina Finance", "auxiliary",
+            (
                 _c("quote", "quotes", markets=("cn_a", "hk"), live=True),
-                _c(
-                    "history_kline",
-                    "bars",
-                    markets=("cn_a",),
-                    periods=("5min", "15min", "30min", "60min", "120min", "day", "1200min"),
-                ),
+                _c("history_kline", "bars", markets=("cn_a",), periods=("5min", "15min", "30min", "60min", "120min", "day", "1200min")),
             ),
         ),
-        ProviderSpec(
-            id="eastmoney",
-            display_name="Eastmoney",
-            role="auxiliary",
-            channels=(
+        _provider(
+            "eastmoney", "Eastmoney", "auxiliary",
+            (
                 _c("quote", "quotes", markets=("cn_a",), live=True),
-                _c(
-                    "kline",
-                    "bars",
-                    markets=("cn_a", "hk", "us"),
-                    periods=("1min", "5min", "15min", "30min", "60min", "day"),
-                ),
+                _c("kline", "bars", markets=("cn_a", "hk", "us"), periods=("1min", "5min", "15min", "30min", "60min", "day")),
             ),
         ),
-        ProviderSpec(
-            id="baidu",
-            display_name="Baidu Finance",
-            role="auxiliary",
-            channels=(
+        _provider(
+            "baidu", "Baidu Finance", "auxiliary",
+            (
                 _c("quote", "quotes", markets=("cn_a",), live=True),
-                _c(
-                    "kline",
-                    "bars",
-                    markets=("cn_a",),
-                    periods=("day", "week", "month"),
-                ),
+                _c("kline", "bars", markets=("cn_a",), periods=("day", "week", "month")),
             ),
         ),
+        _provider("boc", "Bank of China", "reference_data"),
+        _provider("iwencai", "iWencai", "screening"),
+        _provider("builtin", "Built-in static catalog", "local_static"),
     )
 )
