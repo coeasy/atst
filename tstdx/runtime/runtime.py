@@ -26,8 +26,19 @@ class Runtime:
         provider_order: Sequence[str] | None = None,
     ) -> None:
         self._handlers: dict[str, Callable[..., Any]] = {}
-        self.router = router or ProviderRouter()
-        self.planner = planner or Planner(self.router, provider_order=provider_order)
+
+        if planner is None:
+            self.router = router or ProviderRouter()
+            self.planner = Planner(self.router, provider_order=provider_order)
+        else:
+            if router is not None and planner.router is not None and planner.router is not router:
+                raise ValueError("planner and runtime must use the same provider router")
+            self.router = router or planner.router or ProviderRouter()
+            if planner.router is None:
+                planner.router = self.router
+            if provider_order is not None:
+                planner.provider_order = tuple(provider_order)
+            self.planner = planner
 
     def register(self, operation: str, handler: Callable[..., Any]) -> None:
         if not operation:
