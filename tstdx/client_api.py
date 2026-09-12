@@ -130,10 +130,22 @@ class Client:
             return self.execute_with_policy(spec, policy=policy, use_cache=use_cache)
         return self.execute(spec, use_cache=use_cache)
 
-    def snapshot(self, symbol: str, *, provider: str = "tdx", use_cache: bool = True) -> QueryResult[Any]:
+    def snapshot(
+        self,
+        symbol: str,
+        *,
+        provider: str = "tdx",
+        use_cache: bool = True,
+    ) -> QueryResult[Any]:
         return self.runtime.snapshot(symbol, provider=provider, use_cache=use_cache)
 
-    def minute(self, symbol: str, *, provider: str = "tdx", use_cache: bool = True) -> QueryResult[Any]:
+    def minute(
+        self,
+        symbol: str,
+        *,
+        provider: str = "tdx",
+        use_cache: bool = True,
+    ) -> QueryResult[Any]:
         return self.runtime.minute(symbol, provider=provider, use_cache=use_cache)
 
     def trades(
@@ -201,7 +213,7 @@ class Client:
                 max_queue=max_queue,
             )
         )
-        stream = StatefulQuoteStream()
+        stream = StatefulQuoteStream(runtime=self.runtime, provider=plan.provider)
         stream.subscribe(
             plan.symbols,
             interval=plan.interval,
@@ -299,7 +311,10 @@ class AsyncClient:
                 max_queue=max_queue,
             )
         )
-        stream = AsyncStatefulQuoteStream()
+        stream = AsyncStatefulQuoteStream(
+            runtime=self.client.runtime,
+            provider=plan.provider,
+        )
         stream.subscribe(
             plan.symbols,
             interval=plan.interval,
