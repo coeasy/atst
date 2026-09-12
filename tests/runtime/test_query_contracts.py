@@ -4,6 +4,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
+import tstdx
 from tstdx.errors import ValidationError
 from tstdx.providers import PROVIDERS
 from tstdx.query import QueryPlanner, QuerySpec
@@ -42,6 +43,13 @@ def test_latest_main_capabilities_are_retained_in_registry() -> None:
     assert expected <= PROVIDERS.get("eastmoney").capabilities()
 
 
+def test_public_runtime_contracts_are_lazy_exported() -> None:
+    assert tstdx.QuerySpec is QuerySpec
+    assert tstdx.QueryPlanner is QueryPlanner
+    assert tstdx.PROVIDERS is PROVIDERS
+    assert tstdx.QueryResult is QueryResult
+
+
 def test_default_quotes_plan_is_tdx_quotation() -> None:
     plan = QueryPlanner().compile(QuerySpec.build("quotes", symbols=["600519.SH"]))
     assert plan.provider == "tdx"
@@ -54,8 +62,12 @@ def test_default_quotes_plan_is_tdx_quotation() -> None:
 
 def test_equivalent_bar_period_aliases_share_fingerprint() -> None:
     planner = QueryPlanner()
-    first = planner.compile(QuerySpec.build("bars", symbols="sh600519", period="daily", count=20))
-    second = planner.compile(QuerySpec.build("bars", symbols="600519.SH", period="d", count=20))
+    first = planner.compile(
+        QuerySpec.build("bars", symbols="sh600519", period="daily", count=20)
+    )
+    second = planner.compile(
+        QuerySpec.build("bars", symbols="600519.SH", period="d", count=20)
+    )
     assert first.spec.period == second.spec.period == "day"
     assert first.fingerprint == second.fingerprint
 
@@ -104,9 +116,7 @@ def test_unsupported_capability_fails_before_io() -> None:
 
 
 def test_latest_eastmoney_option_capability_has_unique_channel() -> None:
-    plan = QueryPlanner().compile(
-        QuerySpec.build("options_list", provider="eastmoney")
-    )
+    plan = QueryPlanner().compile(QuerySpec.build("options_list", provider="eastmoney"))
     assert plan.provider == "eastmoney"
     assert plan.channel == "options"
     assert plan.live_channel is True
@@ -185,10 +195,25 @@ def test_query_spec_is_immutable() -> None:
         spec.provider = "tencent"  # type: ignore[misc]
 
 
+def test_cache_hit_preserves_direct_origin() -> None:
+    plan = QueryPlanner().compile(QuerySpec.build("quotes", symbols="sh600519"))
+    direct = Provenance.direct(plan, observed_at_ns=1)
+    cached = direct.cached("l1")
+    assert direct.direct_fetch is True
+    assert cached.direct_fetch is False
+    assert cached.cache_hit is True
+    assert cached.real is True
+    assert cached.kind is ProvenanceKind.DIRECT
+
+
 def test_query_result_rejects_provenance_identity_mismatch() -> None:
     plan = QueryPlanner().compile(QuerySpec.build("quotes", symbols="sh600519"))
     provenance = Provenance.direct(plan, observed_at_ns=1)
-    result = QueryResult.from_plan([{"code": "600519"}], plan=plan, provenance=provenance)
+    result = QueryResult.from_plan(
+        [{"code": "600519"}],
+        plan=plan,
+        provenance=provenance,
+    )
     assert result.meta.provider == "tdx"
     assert result.meta.provenance.kind is ProvenanceKind.DIRECT
 
