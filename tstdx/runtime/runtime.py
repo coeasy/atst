@@ -48,6 +48,16 @@ class Runtime:
     def register_provider(self, provider: Provider) -> None:
         self.router.register(provider)
 
+    @staticmethod
+    def _execution_metadata(context: ExecutionContext) -> dict[str, Any]:
+        metadata: dict[str, Any] = {}
+        if context.provider is not None:
+            metadata["provider"] = context.provider
+        attempts = context.metadata.get("provider_attempts")
+        if isinstance(attempts, list):
+            metadata["provider_attempts"] = [dict(item) for item in attempts]
+        return metadata
+
     def execute(self, request: QueryRequest) -> QueryResponse:
         timeout = request.metadata.get("timeout")
         context = ExecutionContext(
@@ -81,14 +91,12 @@ class Runtime:
             result = plan.execute(context)
             metadata = dict(base_metadata)
             metadata["execution"] = "execution-plan"
-            if context.provider is not None:
-                metadata["provider"] = context.provider
+            metadata.update(self._execution_metadata(context))
             return QueryResponse.ok(result, **metadata)
         except Exception as exc:
             metadata = dict(base_metadata)
             metadata["error_type"] = type(exc).__name__
-            if context.provider is not None:
-                metadata["provider"] = context.provider
+            metadata.update(self._execution_metadata(context))
             return QueryResponse.fail(
                 str(exc),
                 code=str(getattr(exc, "code", "") or ""),
