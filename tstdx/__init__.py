@@ -40,6 +40,7 @@ __all__ = [
     "ProviderAttempt",
     "OrchestratedResult",
     "ProviderOrchestrator",
+    "BatchSpec",
     "BatchItem",
     "BatchResult",
     "SingleFlight",
@@ -71,7 +72,7 @@ def get_config() -> Any:
 
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .batch import BatchItem, BatchResult, NegativeCache, SingleFlight
+    from .batch import BatchItem, BatchResult, BatchSpec, NegativeCache, SingleFlight
     from .cache_persistent import PersistentSemanticCache
     from .cache_semantic import SemanticResultCache
     from .client_api import AsyncClient, Client
@@ -116,6 +117,7 @@ _LAZY: dict[str, tuple[str, str]] = {
     "ProviderAttempt": ("tstdx.orchestration", "ProviderAttempt"),
     "OrchestratedResult": ("tstdx.orchestration", "OrchestratedResult"),
     "ProviderOrchestrator": ("tstdx.orchestration", "ProviderOrchestrator"),
+    "BatchSpec": ("tstdx.batch", "BatchSpec"),
     "BatchItem": ("tstdx.batch", "BatchItem"),
     "BatchResult": ("tstdx.batch", "BatchResult"),
     "SingleFlight": ("tstdx.batch", "SingleFlight"),
