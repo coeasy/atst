@@ -13,6 +13,8 @@
   ``QueryPlan``，跨 Provider fallback 只能由显式策略层触发。
 * **Fail-closed Streaming**：canonical stream 采用显式 ``StreamState``，
   worker 半死、启动失败、stop 超时与终态重启都不能静默生成第二 worker。
+* **语义缓存**：canonical cache 以完整 ``QueryFingerprint`` 隔离 Provider /
+  Channel / Capability，并保持原始 provenance，不把缓存命中伪装成真实直连。
 * **原创实现**：洁净室流程，协议事实源于自有抓包与本地文件分析。
 
 分层（自底向上）::
@@ -26,6 +28,7 @@
     providers   Provider / Channel / Capability 单一事实源
     query       QuerySpec / QueryPlan / QueryFingerprint
     result      QueryResult / Provenance
+    cache       legacy compatibility caches + v11 semantic result cache
     streaming   流式订阅 + 显式生命周期状态机
     web         HTTP Web 行情源（新浪/腾讯/东财/集思录/港股/中行）
     sinks       DataFrame / Parquet / DuckDB
@@ -77,6 +80,7 @@ __all__ = [
     "QueryResult",
     "ProviderRegistry",
     "PROVIDERS",
+    "SemanticResultCache",
     "StreamState",
     "StatefulQuoteStream",
     "AsyncStatefulQuoteStream",
@@ -88,12 +92,10 @@ __all__ = [
     "streaming",
 ]
 
-# --- 始终可用：错误体系 / 编解码 / 协议层 --------------------------------- #
 from . import codec, errors, protocol  # noqa: E402,F401
 from .errors import TdxError  # noqa: E402,F401
 
 
-# --- 配置中心（惰性，避免循环导入） ---------------------------------------- #
 def configure(**kwargs: Any) -> Any:
     """以关键字参数覆盖全局配置（等价于 :func:`load_config` 的高优先级源）。"""
     from .config import load_config
@@ -109,6 +111,7 @@ def get_config() -> Any:
 
 
 if TYPE_CHECKING:  # pragma: no cover
+    from .cache_semantic import SemanticResultCache
     from .client import AsyncTdxClient, TdxClient
     from .config import load_config
     from .providers import PROVIDERS, ProviderRegistry
@@ -120,7 +123,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from .web import WebQuoteClient
 
 
-# --- 惰性属性：按需导入可选子系统 ------------------------------------------ #
 _LAZY: dict[str, tuple[str, str]] = {
     "TdxClient": ("tstdx.client", "TdxClient"),
     "AsyncTdxClient": ("tstdx.client", "AsyncTdxClient"),
@@ -141,6 +143,7 @@ _LAZY: dict[str, tuple[str, str]] = {
     "QueryResult": ("tstdx.result", "QueryResult"),
     "ProviderRegistry": ("tstdx.providers", "ProviderRegistry"),
     "PROVIDERS": ("tstdx.providers", "PROVIDERS"),
+    "SemanticResultCache": ("tstdx.cache_semantic", "SemanticResultCache"),
     "StreamState": ("tstdx.streaming.state", "StreamState"),
     "StatefulQuoteStream": ("tstdx.streaming.stateful", "StatefulQuoteStream"),
     "AsyncStatefulQuoteStream": (
@@ -148,7 +151,6 @@ _LAZY: dict[str, tuple[str, str]] = {
         "AsyncStatefulQuoteStream",
     ),
     "load_config": ("tstdx.config", "load_config"),
-    # __all__ 声明的三个子包：attr 置空串表示返回子包模块本身（W2）
     "facade": ("tstdx.facade", ""),
     "observability": ("tstdx.observability", ""),
     "streaming": ("tstdx.streaming", ""),
