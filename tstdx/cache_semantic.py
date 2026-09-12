@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
 from .query import QueryPlan
-from .result import Provenance, QueryResult, ResultMeta
+from .result import Provenance, ProvenanceKind, QueryResult, ResultMeta
 
 __all__ = [
     "SEMANTIC_CACHE_SCHEMA_VERSION",
@@ -98,9 +98,22 @@ class SemanticCacheEntry(Generic[T]):
             self.capability,
         ):
             return False
-        if self.expires_at_ns is not None:
-            now = time.time_ns() if now_ns is None else int(now_ns)
-            if now >= self.expires_at_ns:
+
+        # A LIVE query must never be satisfied by replay/synthetic provenance.
+        # Cache retrieval may add a cache tier, but it cannot upgrade origin trust.
+        if plan.spec.currentness == "live" and self.provenance.kind is not ProvenanceKind.DIRECT:
+            return False
+
+        now = time.time_ns() if now_ns is None else int(now_ns)
+        if self.expires_at_ns is not None and now >= self.expires_at_ns:
+            return False
+
+        # Query-level freshness is independent from cache TTL.  A cache item may
+        # still be physically resident while being too old for a stricter caller.
+        if plan.spec.max_age is not None:
+            max_age_ns = int(float(plan.spec.max_age) * 1_000_000_000)
+            age_ns = max(0, now - self.provenance.observed_at_ns)
+            if age_ns > max_age_ns:
                 return False
         return True
 
