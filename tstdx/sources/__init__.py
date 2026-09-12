@@ -235,7 +235,8 @@ class DataSourceRouter:
         """获取实时行情，按 ``tdx`` → ``web`` 顺序降级。
 
         C5：注入 ``quote_cache`` 时先读 TTL 缓存（命中短路），未命中走
-        降级链并回写；默认 TTL 3s 对齐盘中刷新节奏。
+        降级链并回写；默认 TTL 3s 对齐盘中刷新节奏。旧缓存没有 Provider
+        provenance，因此显式 ``order`` 的单源调用会绕过其读写。
 
         ``default_empty_ok``（Q1-b 对齐 :meth:`kline`）：False（默认）时某源
         返回空列表视为不可用继续降级；True 时空列表也算该源成功，直接返回
@@ -248,8 +249,9 @@ class DataSourceRouter:
         from ..client import _emit
 
         symbols = list(symbols)
-        # C5：读穿命中短路
-        if self.quote_cache is not None:
+        legacy_cache_allowed = order is None
+        # C5：读穿命中短路；显式单源路由不得读取无 provenance 的旧缓存。
+        if legacy_cache_allowed and self.quote_cache is not None:
             cached = self.quote_cache.get(symbols)
             if cached is not None:
                 self.last_source = "quote_cache"
@@ -305,8 +307,8 @@ class DataSourceRouter:
                 continue
             if data or (default_empty_ok and data is not None):
                 self.last_source = source
-                # C5：回写 TTL 缓存（写穿透）
-                if self.quote_cache is not None and data:
+                # C5：回写 TTL 缓存；显式单源路由同样禁止写入无 provenance 缓存。
+                if legacy_cache_allowed and self.quote_cache is not None and data:
                     with contextlib.suppress(Exception):
                         self.quote_cache.put(symbols, [_as_dict(x) for x in data])
                 if as_format == "dict":
@@ -358,7 +360,7 @@ class DataSourceRouter:
         order:
             本次调用的降级顺序覆盖（Q1-b：facade 单源委托传 ``["tdx"]`` 等）；
             ``None`` 用实例配置。显式传参绕过 ``enabled`` 开关（调用方已
-            明确指定源）。
+            明确指定源），并绕过没有 Provider provenance 的 legacy K 线缓存。
         """
         from ..client import TdxClient, period_to_category
         from ..domain.symbol import split_symbol
@@ -367,9 +369,10 @@ class DataSourceRouter:
         _, code = split_symbol(symbol)
         category = period_to_category(period)
         data: list[Any] | None = None
+        legacy_cache_allowed = order is None
 
         # U4：本地 SQLite K 线缓存 —— 读命中短路（重复请求零网络）。
-        if self.kline_cache is not None:
+        if legacy_cache_allowed and self.kline_cache is not None:
             try:
                 cached = self.kline_cache.get(symbol, period, count)
                 if cached is not None and len(cached) >= max(1, count):
@@ -439,8 +442,8 @@ class DataSourceRouter:
 
             if data or (default_empty_ok and data is not None):
                 self.last_source = source
-                # U4：写穿透增量合并（按 datetime 去重，只落「末根之后」新数据）。
-                if self.kline_cache is not None and data:
+                # U4：写穿透增量合并；显式单源路由不得写入无 provenance 缓存。
+                if legacy_cache_allowed and self.kline_cache is not None and data:
                     with contextlib.suppress(Exception):  # 缓存写入失败不影响返回
                         self.kline_cache.merge(symbol, period, [_as_dict(x) for x in data])
                 if as_format == "dict":
