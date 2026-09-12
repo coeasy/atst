@@ -3,9 +3,12 @@
 
 """Typed query contracts for the v14 capability runtime.
 
-v14 migrates business capabilities away from generic kwargs into immutable
-request objects. Provider selection remains a Planner responsibility; query
-objects describe intent only.
+Typed queries describe business intent without bypassing the canonical
+Provider/Channel/Capability registry.  A typed capability is executable through
+V14 semantic orchestration only after the same capability is present in
+``tstdx.providers.PROVIDERS``; contracts for data-source methods that are not yet
+registered remain explicit pending contracts rather than silently falling back
+to a second capability namespace.
 """
 
 from __future__ import annotations
@@ -16,11 +19,41 @@ from typing import Any, Generic, TypeVar
 T = TypeVar("T")
 
 
+CANONICAL_TYPED_CAPABILITIES = frozenset(
+    {
+        "fund_holdings",
+        "bond_kline",
+        "futures_kline",
+        "options_snapshot",
+        "research_reports",
+        "f10",
+    }
+)
+
+# These source methods already exist, but the canonical Provider registry does
+# not yet advertise them.  Keep them visible as migration contracts while
+# preventing Runtime from executing them through a parallel capability truth.
+PENDING_TYPED_CAPABILITIES = frozenset(
+    {
+        "balance_sheet",
+        "income_sheet",
+        "cash_flow",
+        "fund_rank",
+        "news_financial",
+    }
+)
+
+
 @dataclass(frozen=True, slots=True)
 class CapabilityQuery:
     capability: str
     provider: str | None = None
     options: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def semantic_ready(self) -> bool:
+        """Whether this typed contract is backed by the canonical registry."""
+        return self.capability in CANONICAL_TYPED_CAPABILITIES
 
 
 @dataclass(frozen=True, slots=True)
