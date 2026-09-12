@@ -3,10 +3,10 @@
 
 """v13 migrated capability catalog.
 
-The retired UnifiedQuoteAPI is not restored.  Every migrated business ability
-is assigned to one explicit Provider/Channel and one low-level implementation.
-Composite/derived abilities use the explicit ``derived`` Provider so a
-QueryPlan never pretends that cross-source computation is a raw TDX request.
+The retired UnifiedQuoteAPI is not restored. Every migrated business ability is
+assigned to one explicit Provider/Channel and one low-level implementation.
+Historical helpers that internally select or aggregate upstream services are
+honestly represented by the explicit ``derived`` Provider.
 """
 
 from __future__ import annotations
@@ -16,12 +16,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 __all__ = [
-    "MigratedCapabilityBinding",
-    "MIGRATED_BINDINGS",
-    "MIGRATED_CAPABILITIES",
-    "binding_for",
-    "bindings_for_provider",
-    "default_provider_for",
+    "MigratedCapabilityBinding", "MIGRATED_BINDINGS", "MIGRATED_CAPABILITIES",
+    "binding_for", "bindings_for_provider", "default_provider_for",
     "is_migrated_capability",
 ]
 
@@ -41,32 +37,16 @@ class MigratedCapabilityBinding:
 
 
 _PROVIDER_OVERRIDES: dict[str, str] = {
-    "industry_boards": "sina",
-    "board_list": "sina",
-    "board_members": "sina",
-    "suggest": "sina",
-    "search_symbols": "sina",
-    "esg_rating": "sina",
-    "esg_history": "sina",
-    "esg_ratings_all": "sina",
-    "board_rank": "tencent",
-    "rates": "boc",
-    "wencai": "iwencai",
-    "index_list": "builtin",
-    "dc_reports": "builtin",
+    "industry_boards": "sina", "board_list": "sina", "board_members": "sina",
+    "suggest": "sina", "search_symbols": "sina", "esg_rating": "sina",
+    "esg_history": "sina", "esg_ratings_all": "sina", "board_rank": "tencent",
+    "rates": "boc", "wencai": "iwencai", "index_list": "builtin", "dc_reports": "builtin",
 }
-
-_SOURCE_FOR_PROVIDER: dict[str, str] = {
-    "eastmoney": "eastmoney",
-    "sina": "sina",
-    "tencent": "tencent",
-    "baidu": "sina",  # Baidu mixin owns its concrete Baidu adapter.
-    "boc": "boc",
-    "iwencai": "sina",  # static/provider-specific implementation ignores session source.
-    "builtin": "sina",  # offline/static helpers ignore session source.
+_SOURCE_FOR_PROVIDER = {
+    "derived": "sina", "sina": "sina", "tencent": "tencent", "baidu": "sina",
+    "boc": "boc", "iwencai": "sina", "builtin": "sina",
 }
-
-_SKIP_WEB_METHODS = {"close", "quotes"}
+_SKIP_WEB_METHODS = {"close", "quotes", "mro"}
 
 
 def _discover_web_bindings() -> list[MigratedCapabilityBinding]:
@@ -78,17 +58,11 @@ def _discover_web_bindings() -> list[MigratedCapabilityBinding]:
             continue
         provider = _PROVIDER_OVERRIDES.get(name)
         if provider is None:
-            provider = "baidu" if name.startswith("baidu_") else "eastmoney"
-        values.append(
-            MigratedCapabilityBinding(
-                capability=name,
-                provider=provider,
-                channel="catalog",
-                backend="web_session",
-                method=name,
-                source=_SOURCE_FOR_PROVIDER[provider],
-            )
-        )
+            provider = "baidu" if name.startswith("baidu_") else "derived"
+        values.append(MigratedCapabilityBinding(
+            capability=name, provider=provider, channel="catalog", backend="web_session",
+            method=name, source=_SOURCE_FOR_PROVIDER[provider],
+        ))
     return values
 
 
@@ -146,10 +120,9 @@ def bindings_for_provider(provider: str) -> tuple[MigratedCapabilityBinding, ...
 
 
 def default_provider_for(capability: str) -> str:
-    cap = str(capability).strip().lower()
-    values = _BINDINGS_BY_CAPABILITY.get(cap)
+    values = _BINDINGS_BY_CAPABILITY.get(str(capability).strip().lower())
     if not values:
-        raise KeyError(cap)
+        raise KeyError(capability)
     for preferred in ("derived", "tdx", "eastmoney", "sina", "tencent", "baidu", "boc", "iwencai", "builtin"):
         for item in values:
             if item.provider == preferred:
