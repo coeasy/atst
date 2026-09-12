@@ -13,6 +13,9 @@ class TdxProvider(Provider):
     def __init__(self, client: Any | None = None) -> None:
         self.client = client
 
+    def supports(self, operation: str) -> bool:
+        return self.client is not None and callable(getattr(self.client, operation, None))
+
     def query(self, request: Any) -> Any:
         if self.client is None:
             raise RuntimeError("tdx client is not configured")
