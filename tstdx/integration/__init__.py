@@ -1,21 +1,23 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Integration adapters — bridge tstdx to third-party protocols.
+"""External protocol adapters for tstdx.
 
-This package hosts standalone adapters that expose tstdx capabilities to
-external systems.  The current member is :mod:`.mcp_server`, a zero-
-dependency stdio JSON-RPC 2.0 server implementing the MCP (Model Context
-Protocol) with 10 tstdx tools.
-
-Design principle
-----------------
-Every adapter in this package is **zero-dependency**: it must work without
-the optional ``mcp`` / ``fastapi`` / … extras installed.  Optional
-dependencies may be detected at runtime for enhanced features, but the
-default code path never imports them.
+Legacy HTTP/WS/MCP surfaces remain available for compatibility. New canonical
+surfaces live in ``runtime_http`` / ``runtime_ws`` / ``runtime_tasks`` and use
+UnifiedRuntime + ErrorEnvelope without implicit cross-Provider fallback.
+Optional server dependencies are still imported only when their factories run.
 """
 
 from __future__ import annotations
 
-__all__ = []
+from .runtime_http import create_runtime_app
+from .runtime_tasks import RuntimeTaskStore, RuntimeTaskStoreFull
+from .runtime_ws import RuntimeJsonRpcHandler
+
+__all__ = [
+    "create_runtime_app",
+    "RuntimeJsonRpcHandler",
+    "RuntimeTaskStore",
+    "RuntimeTaskStoreFull",
+]
