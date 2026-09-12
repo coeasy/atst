@@ -3,15 +3,17 @@
 
 """Canonical query result and provenance contracts.
 
-Runtime layers must return data together with enough identity to prove where it
-came from. Cache/replay/synthetic values are therefore different provenance
-kinds rather than invisible implementation details.
+Data origin and cache retrieval are separate facts. A cached direct Provider
+result remains ``origin=DIRECT`` with ``cache_tier='l1'``/``'l2'``; replay or
+synthetic data can therefore never become "real" merely because it was cached.
+This distinction is the foundation for later cache-poisoning and freshness
+gates.
 """
 
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Generic, TypeVar
 
@@ -30,7 +32,6 @@ T = TypeVar("T")
 
 class ProvenanceKind(str, Enum):
     DIRECT = "direct"
-    CACHE = "cache"
     REPLAY = "replay"
     SYNTHETIC = "synthetic"
 
@@ -52,12 +53,12 @@ class Provenance:
             raise ValueError("provider/channel/capability must not be empty")
         if self.observed_at_ns <= 0:
             raise ValueError("observed_at_ns must be positive")
-        if self.kind is ProvenanceKind.CACHE and not self.cache_tier:
-            raise ValueError("cache provenance requires cache_tier")
-        if self.kind is not ProvenanceKind.CACHE and self.cache_tier is not None:
-            raise ValueError("cache_tier is only valid for cache provenance")
+        if self.cache_tier is not None and not str(self.cache_tier).strip():
+            raise ValueError("cache_tier must not be empty")
         if self.fallback and not self.requested_provider:
             raise ValueError("fallback provenance requires requested_provider")
+        if self.requested_provider is not None and not str(self.requested_provider).strip():
+            raise ValueError("requested_provider must not be empty")
 
     @classmethod
     def direct(
@@ -78,13 +79,24 @@ class Provenance:
             fallback=False,
         )
 
+    def cached(self, tier: str) -> "Provenance":
+        """Return a cache-hit clone while preserving the original data origin."""
+        normalized = str(tier).strip().lower()
+        if not normalized:
+            raise ValueError("cache tier must not be empty")
+        return replace(self, cache_tier=normalized)
+
+    @property
+    def cache_hit(self) -> bool:
+        return self.cache_tier is not None
+
     @property
     def direct_fetch(self) -> bool:
-        return self.kind is ProvenanceKind.DIRECT
+        return self.kind is ProvenanceKind.DIRECT and not self.cache_hit
 
     @property
     def real(self) -> bool:
-        return self.kind in {ProvenanceKind.DIRECT, ProvenanceKind.CACHE}
+        return self.kind is ProvenanceKind.DIRECT
 
     @property
     def replay(self) -> bool:
