@@ -8,9 +8,15 @@ This document tracks the single integration branch used for the remaining runtim
 
 - [x] Exact Direct Provider bindings for planner-visible `quotes` / `bars`
 - [x] Runtime audit: registered unified capabilities cannot lack a Direct binding
-- [x] UnifiedRuntime: `QuerySpec -> QueryPlan -> cache -> SingleFlight -> Direct Provider -> QueryResult`
+- [x] UnifiedRuntime: `QuerySpec -> QueryPlan -> L1/L2 cache -> SingleFlight -> Direct Provider -> QueryResult`
 - [x] Full-fingerprint SingleFlight with independent leader/follower results and errors
+- [x] Auditable `quotes_batch()` with explicit `ok` / `failed` / `missing` status; ambiguous `allow_partial=True` fails closed
 - [x] Short-lived terminal-only negative cache; transient `SourceUnavailable` excluded
+- [x] Safe persistent SQLite semantic L2 using JSON codecs only (no pickle / executable deserialization)
+- [x] Persistent L2 accepts only DIRECT non-fallback provenance
+- [x] Persistent payload embeds the exact QueryFingerprint; copied/tampered rows fail closed
+- [x] L2 reads re-run fingerprint / Provider / Channel / Capability / TTL / freshness checks before promotion
+- [x] L2 -> L1 promotion never extends beyond remaining L2 TTL and still preserves original DIRECT provenance
 - [x] Safe canonical ErrorEnvelope with context allow-list and generic E9000 native boundary
 - [x] Public top-level runtime exports
 - [x] `facade.runtime_api()` strict entrypoint while preserving legacy `UnifiedQuoteAPI`
@@ -22,16 +28,17 @@ This document tracks the single integration branch used for the remaining runtim
 - [x] WS notifications never emit failure responses and process-control BaseException is not normalized
 - [x] RuntimeTaskStore retains bounded results / safe envelopes and clears expired result/error payloads
 - [x] TDX/local/Tencent-minute/Baidu unsupported adjustment semantics fail closed instead of being ignored
+- [x] local_vipdoc day/1min/5min Direct execution bypasses the legacy facade and uses the correct DayBarReader/MinBarReader path
 - [x] Quote/Bar dataclasses serialize deterministically at strict HTTP/WS boundaries
-- [x] Offline behavior gates for provider isolation, envelope sanitization, batch audit, SingleFlight copy isolation, negative-cache policy, cache identity, MCP/WS/task boundaries and public API retention
+- [x] Offline behavior gates for provider isolation, envelope sanitization, batch audit, SingleFlight copy isolation, negative-cache policy, L2 poisoning, cache identity, MCP/WS/task boundaries and public API retention
 
-## Remaining cutover work
+## Remaining compatibility cutover work
 
 - [ ] legacy HTTP quotes/bars endpoints delegate to UnifiedRuntime without removing the existing endpoint set
 - [ ] legacy WS quotes/bars dispatch delegates to UnifiedRuntime without changing existing JSON-RPC method names
 - [ ] legacy explicit Provider requests in `UnifiedQuoteAPI` delegate to UnifiedRuntime
 - [ ] `route="auto"` is reduced to an explicit compatibility orchestration policy, not kernel semantics
-- [ ] add persistent semantic L2 promotion/verification before legacy cache retirement
+- [ ] retire the legacy `DataSourceRouter._reader_kline` path after compatibility cutover (strict local_vipdoc runtime already avoids its 5min reader mismatch)
 - [ ] promote provider-specific auxiliary capabilities to QuerySpec only after executable bindings and contract tests exist
 - [ ] run real Provider smoke/calibration for the new Direct bindings when network runners are healthy
 - [ ] exact-head CI/Native gates must actually execute steps and become green
