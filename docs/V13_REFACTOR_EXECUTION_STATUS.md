@@ -1,117 +1,113 @@
 # tstdx v13 Clean-Break Refactor Execution Status
 
-> This file records implementation state against `ARCHITECTURE_SEMANTIC_ALIGNMENT_v13.md`, `IMPLEMENTATION_ALIGNMENT_MATRIX_v13.md` and `REFACTOR_PLAN_v13_CLEAN_BREAK.md`.
->
-> Status claims are source-level only until exact-head CI receives real runners and executes blocking steps.
+> Source status only. Release verification still requires exact-head real CI execution.
 
-## Completed source-level convergence
+## Source-level convergence completed
 
-- [x] `QuerySpec` is Provider-only: legacy `source` removed.
-- [x] generic `allow_partial` removed from normal Query semantics.
-- [x] `BatchSpec` introduced for explicit partial/batch semantics.
-- [x] Query fingerprint schema v2 includes market and all current semantic identity fields.
-- [x] Provider Registry reduced to executable truth; historical unbound capabilities are no longer advertised.
-- [x] `web` pseudo-provider rejected.
-- [x] TDX Tier-A capabilities promoted: quotes, bars, snapshot, minute, trades, security_count, security_list.
-- [x] Tier-A TDX capabilities have exact Direct bindings.
-- [x] local_vipdoc remains a separate historical Provider with day/1min/5min exact reader bindings.
-- [x] Tencent/Sina/Eastmoney/Baidu canonical quotes/bars bindings retained explicitly.
-- [x] `UnifiedRuntime` exposes Tier-A execution through one Provider-only kernel.
-- [x] `ProviderOrchestrator.execute()` is capability-generic and remains the only cross-Provider fallback layer.
-- [x] `Client` / `AsyncClient` introduced as the sole supported high-level business API.
-- [x] `StreamSpec` / `StreamPlan` / `StreamPlanner` introduced; current stream binding is explicitly TDX quotation only.
-- [x] top-level package exports switched to Client-first v13 contracts; legacy business clients/facade removed from supported exports.
-- [x] HTTP rewritten as `/v13` Client adapter for Tier A.
-- [x] WS JSON-RPC rewritten as Client adapter for Tier A.
-- [x] CLI rewritten as Client adapter for Tier A + Stateful stream.
-- [x] MCP rewritten to use Client only; no facade/TdxClient dual target and no `use_facade` tools.
-- [x] MCP tool manifest reduced to canonical promoted capabilities only.
-- [x] shared transport result serializer preserves Provider/Channel/Fingerprint/Provenance.
-- [x] L1 semantic cache upgraded to bounded deterministic LRU with metrics.
-- [x] terminal negative cache upgraded to bounded deterministic LRU with metrics.
-- [x] persistent L2 moved to schema/table v2 with deterministic payload SHA-256 integrity and constant-time hash comparison.
-- [x] persistent L2 still accepts DIRECT non-fallback provenance only.
-- [x] `UnifiedQuoteAPI`, legacy async facade, legacy RouteSelector and facade runtime bridge/factory removed from source tree.
-- [x] obsolete v12 compatibility document removed.
-- [x] old tests requiring legacy facade/route retention removed or rewritten as v13 clean-break gates.
-- [x] architecture test added for public API, QuerySpec fields, Registry/Binding parity, Tier-A coverage, stream binding, MCP tool surface and retired facade.
+- [x] `QuerySpec` is Provider-only; no legacy `source`, `route` or generic `allow_partial`.
+- [x] `BatchSpec` owns explicit partial/batch semantics.
+- [x] Registry is executable truth and `web` pseudo-provider is rejected.
+- [x] Tier-A quotes/bars/snapshot/minute/trades/security_count/security_list use exact DirectBindings.
+- [x] local_vipdoc remains a separate Provider.
+- [x] `UnifiedRuntime` is the sole single-Provider kernel.
+- [x] `ProviderOrchestrator` is the sole explicit cross-Provider fallback layer.
+- [x] `Client` / `AsyncClient` are the sole high-level business APIs.
+- [x] Stateful streaming executes through UnifiedRuntime.
+- [x] legacy `UnifiedQuoteAPI`, async facade, RouteSelector, DataSourceRouter business kernel and old HTTP/WS business servers are removed.
+- [x] L1/L2/negative-cache/SingleFlight contracts remain canonical and bounded/verified.
 
-## Canonical end-to-end chain after this refactor
+## Complete historical business capability migration
 
-```text
-Python / Async / CLI / HTTP / WS / MCP
-                |
-                v
-         Client / AsyncClient
-                |
-        +-------+--------+
-        |                |
-        v                v
-    QuerySpec       FallbackPolicy
-        |                |
-        v                v
-   QueryPlanner   ProviderOrchestrator
-        |                |
-        +-------+--------+
-                v
-          UnifiedRuntime
-                |
-   L1 -> L2 -> NegativeCache -> SingleFlight
-                |
-                v
-      exact DirectProvider binding
-                |
-                v
-    Provider-native implementation
-                |
-                v
- QueryResult / ResultMeta / Provenance
-                |
-                v
-      shared transport serialization
-```
+The previous Tier-A-only limitation has been removed at source level.
 
-Streaming:
+- [x] `tstdx.capability_catalog` is the migration SSOT.
+- [x] all known historical business capability families are represented in `MIGRATED_CAPABILITIES`.
+- [x] migrated bindings declare explicit Provider + Channel + backend.
+- [x] known single-source abilities retain actual Provider identity.
+- [x] aggregate/composite historical helpers use explicit `derived` provenance instead of false upstream identity.
+- [x] TDX finance/F10/extended/goods/protocol supplemental abilities are promoted.
+- [x] fund/fund-manager/fund-company abilities are promoted.
+- [x] finance statements/valuation/governance/shareholder/ESG abilities are promoted.
+- [x] futures/bond/options/goods/extended-market abilities are promoted.
+- [x] blocks/sectors/indexes/rankings/search/iWencai/macro/IPO/northbound abilities are promoted.
+- [x] news/announcement/research abilities are promoted.
+- [x] rates and web supplemental history/minute abilities are promoted.
+- [x] adjusted-bars and local-day sync are explicit `derived` capabilities.
+- [x] Registry is generated from migrated bindings and `audit_direct_bindings()` enforces Registry/Binding parity.
+- [x] migration contract test locks historical ability coverage.
+
+## Public surface parity
+
+All migrated capabilities use the same chain:
 
 ```text
-Client.stream
-  -> StreamSpec
-  -> StreamPlanner
-  -> exact tdx/quotation stream binding
-  -> StatefulQuoteStream / AsyncStatefulQuoteStream
-  -> StreamState lifecycle
+Client.call / same-name Client method
+  -> QuerySpec
+  -> QueryPlanner
+  -> UnifiedRuntime
+  -> exact DirectBinding
+  -> Provider implementation
+  -> QueryResult / Provenance
 ```
 
-## Explicitly retired semantics
+And are reachable through:
 
-The following are no longer part of the supported v13 architecture:
+- Python: `Client.call(...)` plus same-name migrated methods;
+- Async: `AsyncClient.call(...)` plus same-name async methods;
+- HTTP: `POST /v13/query/{capability}`, discovery via `GET /v13/capabilities`;
+- WebSocket JSON-RPC: `query`, discovery via `runtime.capabilities`;
+- MCP: `query_capability` plus Tier-A tools;
+- CLI: `tstdx query`, discovery via `tstdx capabilities`.
 
-- `UnifiedQuoteAPI`
-- `AsyncUnifiedQuoteAPI`
-- `quote_api()` / `runtime_api()` facade factories
-- `RouteSelector`
-- `route=`
-- `route="auto"`
-- `source` as a QuerySpec Provider synonym
-- `web` as a Provider identity
-- generic normal-query `allow_partial=True`
-- facade-owned cross-source fallback
-- MCP `use_facade`
-- MCP direct TdxClient-vs-Facade business routing
-- v12 compatibility-cutover plan
+Tier-A keeps dedicated ergonomic methods/endpoints in addition to the generic capability path.
 
-## Not claimed complete yet
+## Provider identity
 
-The following must not be described as complete until verified/followed through:
+- `web` remains invalid.
+- `local_vipdoc` remains separate from `tdx`.
+- `derived` is an explicit composite Provider, not fallback or a pseudo-source.
+- cross-Provider fallback still exists only through `FallbackPolicy -> ProviderOrchestrator`.
+- one QueryPlan never silently selects a second Provider.
 
-- real Ruff/mypy/pytest/coverage execution on the exact latest head;
-- real network Provider smoke/calibration;
-- scan/removal of any now-orphan legacy CLI/facade/source files that are unreachable but still physically present;
-- migration or deliberate removal of non-Tier-A historical capability families (finance, corporate action, F10, blocks, funds, bonds, futures, options, rankings, news/events, etc.);
-- any source-level issue revealed by real deterministic gates.
+## Retired semantics remain retired
+
+The migration does **not** restore:
+
+- `UnifiedQuoteAPI` / `AsyncUnifiedQuoteAPI`;
+- `route=` / `route="auto"`;
+- `source` Provider aliases;
+- Facade-owned fallback/circuit state;
+- DataSourceRouter business execution;
+- MCP Facade/raw-client dual routing;
+- legacy QuoteStream business kernel.
+
+Low-level protocol/web/provider modules remain implementation assets behind DirectBindings where needed.
+
+## Deterministic migration gates
+
+`tests/runtime/test_legacy_capability_migration_v13.py` requires:
+
+1. the historical business ability contract is a subset of `MIGRATED_CAPABILITIES`;
+2. every migrated binding is declared in ProviderRegistry;
+3. every migrated binding has an exact DirectBinding;
+4. every migrated capability compiles through QueryPlanner;
+5. composite abilities use explicit `derived` provenance;
+6. retired Facade exports remain absent;
+7. representative finance/fund/futures/bond/options/news/F10/derived abilities remain available.
+
+## Verification still pending
+
+Do **not** claim release completion until the exact latest SHA has real executed evidence for:
+
+- Ruff;
+- mypy;
+- pytest / coverage;
+- architecture/spec/golden/adversarial/reachability/docs gates;
+- Native build/parity;
+- real Provider smoke/calibration where required.
+
+GitHub Actions jobs with no assigned runner, `steps=[]`, `steps=null`, `runner_id=0`, skipped/disabled/soft-failed jobs or workflow-level success without real blocking steps are not verification.
 
 ## Release / merge gate
 
-PR stays Draft. A workflow-level `success` does not count unless its blocking jobs received a runner and executed steps. `steps=[]`, `steps=null`, `runner_id=0`, skipped/disabled/soft-failed jobs are not valid green evidence.
-
-The branch may leave Draft only when the same exact head SHA executes all deterministic blocking gates and they are green. Real Provider smoke gates are recorded separately and may be availability-sensitive, but they cannot be replaced by mock-only claims.
+PR #6 remains Draft. It may leave Draft only after the same exact head SHA executes all deterministic blocking gates and they are green. Source inspection, migration breadth, or outer workflow status alone never satisfies the merge gate.
