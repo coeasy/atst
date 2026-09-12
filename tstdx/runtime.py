@@ -19,6 +19,8 @@ from .result import QueryResult
 
 __all__ = ["UnifiedRuntime"]
 
+_UNCACHEABLE_CAPABILITIES = frozenset({"adjusted_bars", "sync_daily"})
+
 
 class UnifiedRuntime:
     """Compile, cache, coalesce and execute one exact Provider plan."""
@@ -39,7 +41,9 @@ class UnifiedRuntime:
         singleflight: SingleFlight | None = None,
     ) -> None:
         if persistent_cache is not None and persistent_path is not None:
-            raise ValueError("persistent_cache and persistent_path are mutually exclusive")
+            raise ValueError(
+                "persistent_cache and persistent_path are mutually exclusive"
+            )
         self.planner = QueryPlanner(default_provider=default_provider)
         self.executor = DirectProviderExecutor(
             timeout=timeout,
@@ -48,11 +52,17 @@ class UnifiedRuntime:
         )
         self.cache = cache or SemanticResultCache(tier="l1")
         self.cache_ttl = cache_ttl
-        self._owns_persistent_cache = persistent_cache is None and persistent_path is not None
+        self._owns_persistent_cache = (
+            persistent_cache is None and persistent_path is not None
+        )
         self.persistent_cache = (
             persistent_cache
             if persistent_cache is not None
-            else (PersistentSemanticCache(persistent_path) if persistent_path is not None else None)
+            else (
+                PersistentSemanticCache(persistent_path)
+                if persistent_path is not None
+                else None
+            )
         )
         self.persistent_ttl = persistent_ttl
         self.negative_cache = negative_cache or NegativeCache(ttl=1.0)
@@ -86,8 +96,18 @@ class UnifiedRuntime:
         self.cache.put(plan, result, ttl=promotion_ttl)
         return result
 
-    def execute(self, spec: QuerySpec, *, use_cache: bool = True) -> QueryResult[Any]:
+    def execute(
+        self,
+        spec: QuerySpec,
+        *,
+        use_cache: bool = True,
+    ) -> QueryResult[Any]:
         plan = self.planner.compile(spec)
+        # These operations depend on mutable local state and/or perform writes.
+        # Their full freshness/side-effect identity is not representable by the
+        # current QueryFingerprint, so semantic/negative caches are forbidden.
+        use_cache = use_cache and plan.spec.capability not in _UNCACHEABLE_CAPABILITIES
+
         if use_cache:
             hit = self.cache.get(plan)
             if hit is not None:
@@ -120,7 +140,11 @@ class UnifiedRuntime:
                 self.cache.put(plan, result, ttl=self.cache_ttl)
                 if self.persistent_cache is not None:
                     with contextlib.suppress(Exception):
-                        self.persistent_cache.put(plan, result, ttl=self.persistent_ttl)
+                        self.persistent_cache.put(
+                            plan,
+                            result,
+                            ttl=self.persistent_ttl,
+                        )
                 self.negative_cache.invalidate(plan)
             return result
 
@@ -172,7 +196,11 @@ class UnifiedRuntime:
             except Exception as exc:
                 items[symbol] = BatchItem("failed", error=exc)
                 continue
-            items[symbol] = BatchItem("missing") if not result.data else BatchItem("ok", value=result)
+            items[symbol] = (
+                BatchItem("missing")
+                if not result.data
+                else BatchItem("ok", value=result)
+            )
         return BatchResult.build(items)
 
     def bars(
