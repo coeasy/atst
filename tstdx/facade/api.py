@@ -1474,6 +1474,52 @@ class UnifiedQuoteAPI(RouteSelector):
             WebQuoteSession, lambda sess: sess.bond_trades(code, max_count=max_count)
         )
 
+    # -- 期权（东财 push2，P4 扩展） --------------------------------------------- #
+    def options_list(
+        self,
+        *,
+        market: str = "",
+        size: int = 200,
+        page: int = 1,
+    ) -> list[dict[str, Any]]:
+        """期权合约列表（按市场段筛选）。
+
+        Parameters
+        ----------
+        market:
+            市场段（``"10"`` 上证50ETF / ``"11"`` 沪深300股指 /
+            ``"12"`` 深证100ETF）；空串=全部三个市场。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.options_list(market=market, size=size, page=page),
+        )
+
+    def options_snapshot(self, quote_id: str) -> dict[str, Any]:
+        """单只期权合约快照（含认购/认沽方向与扩展字段）。
+
+        Parameters
+        ----------
+        quote_id:
+            东财 secid（``"11.IO2609-C-3900"`` 或 ``"10.10010971"``）。
+        """
+        from ..web.facade import WebQuoteSession
+
+        return self._with(WebQuoteSession, lambda sess: sess.options_snapshot(quote_id))
+
+    def options_trends(
+        self, quote_id: str, *, ndays: int = 1
+    ) -> list[dict[str, Any]]:
+        """期权当日分时走势（部分市场段可用，不可用时返回空列表）。"""
+        from ..web.facade import WebQuoteSession
+
+        return self._with(
+            WebQuoteSession,
+            lambda sess: sess.options_trends(quote_id, ndays=ndays),
+        )
+
     # -- astock-data-toolkit 对标（基本面衍生） -------------------------------- #
     def dividend_history(
         self, symbol: str, *, page: int = 1, size: int = 20

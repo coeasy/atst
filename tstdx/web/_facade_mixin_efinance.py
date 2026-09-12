@@ -10,7 +10,7 @@
 --------
 * :class:`StockEfinanceMixin`：股票扩展（基础资料 / 全市场业绩 / 报告期 / IPO 审核）
 * :class:`FundMobSessionMixin`：基金扩展（基金经理 / 持仓 / 阶段涨幅 / 资产配置 / 行业分布 / 公开日期）
-* :class:`DerivativeSessionMixin`：期货 / 债券（实时 / K 线 / 基础信息 / 资金流 / 成交明细）
+* :class:`DerivativeSessionMixin`：期货 / 债券 / 期权（实时 / K 线 / 基础信息 / 资金流 / 成交明细）
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from .corporate import EastmoneyDataCenterSource, EastmoneyPerformanceSource, VA
 from .corporate import EastmoneyProfileSource
 from .efinance_deriv import EastmoneyBondSource, EastmoneyFuturesSource
 from .efinance_fund import FundMobSource
+from .efinance_options import EastmoneyOptionsSource
 
 __all__ = [
     "StockEfinanceMixin",
@@ -218,7 +219,7 @@ class FundMobSessionMixin:
 
 
 class DerivativeSessionMixin:
-    """期货 / 债券能力（efinance.futures / efinance.bond 对标，东财 push2 后端）。"""
+    """期货 / 债券 / 期权能力（efinance.futures / efinance.bond 对标，东财 push2 后端）。"""
 
     # -- 期货 ------------------------------------------------------------- #
     @staticmethod
@@ -256,6 +257,48 @@ class DerivativeSessionMixin:
         src = EastmoneyFuturesSource(client=_shared_http())
         try:
             return src.fetch_deal_detail(quote_id, max_count=max_count)
+        finally:
+            src.close()
+
+    # -- 期权 ------------------------------------------------------------- #
+    @staticmethod
+    def options_list(
+        *,
+        market: str = "",
+        size: int = 200,
+        page: int = 1,
+    ) -> list[dict[str, Any]]:
+        """期权合约列表（按市场段筛选）。
+
+        Parameters
+        ----------
+        market:
+            市场段（``"10"`` 上证50ETF / ``"11"`` 沪深300股指 /
+            ``"12"`` 深证100ETF）；空串=全部。
+        """
+        src = EastmoneyOptionsSource(client=_shared_http())
+        try:
+            return src.fetch_contract_list(market=market, size=size, page=page)
+        finally:
+            src.close()
+
+    @staticmethod
+    def options_snapshot(quote_id: str) -> dict[str, Any]:
+        """单只期权合约快照（含认购/认沽方向与扩展字段）。"""
+        src = EastmoneyOptionsSource(client=_shared_http())
+        try:
+            return src.fetch_snapshot(quote_id)
+        finally:
+            src.close()
+
+    @staticmethod
+    def options_trends(
+        quote_id: str, *, ndays: int = 1
+    ) -> list[dict[str, Any]]:
+        """期权当日分时走势（部分市场段可用，不可用时返回空列表）。"""
+        src = EastmoneyOptionsSource(client=_shared_http())
+        try:
+            return src.fetch_trends(quote_id, ndays=ndays)
         finally:
             src.close()
 
