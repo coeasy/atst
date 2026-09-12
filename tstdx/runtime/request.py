@@ -41,15 +41,6 @@ class QueryRequest:
         ).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()
 
-    @property
-    def cache_key(self) -> str:
-        """Compatibility alias for older V14 branch code.
-
-        Do not use this alias for :mod:`tstdx.cache_semantic`; that cache is
-        keyed by the canonical :class:`tstdx.query.QueryFingerprint`.
-        """
-        return self.request_key
-
     def with_metadata(self, **values: Any) -> "QueryRequest":
         metadata = dict(self.metadata)
         metadata.update(values)
