@@ -1,18 +1,19 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Strict Provider-first JSON-RPC handler for WebSocket v2."""
+"""Canonical v13 JSON-RPC handler."""
 
 from __future__ import annotations
 
 import contextlib
 import json
-from dataclasses import asdict, is_dataclass
 from typing import Any
 
+from ..client_api import Client
 from ..error_envelope import to_error_envelope
 from ..errors import ValidationError
-from ..runtime import UnifiedRuntime
+from ..orchestration import FallbackPolicy
+from .serialization import serialize_result
 
 __all__ = ["RuntimeJsonRpcHandler"]
 
@@ -24,39 +25,22 @@ ERR_INVALID_PARAMS = -32602
 ERR_INTERNAL = -32603
 
 
-def _jsonable(value: Any) -> Any:
-    if is_dataclass(value) and not isinstance(value, type):
-        return asdict(value)
-    if hasattr(value, "to_dict"):
-        return value.to_dict()
-    if isinstance(value, list):
-        return [_jsonable(item) for item in value]
-    if isinstance(value, tuple):
-        return [_jsonable(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _jsonable(item) for key, item in value.items()}
-    return value
-
-
-def _data(result: Any) -> Any:
-    return {
-        "data": _jsonable(result.data),
-        "meta": {
-            "provider": result.meta.provider,
-            "channel": result.meta.channel,
-            "capability": result.meta.capability,
-            "fingerprint": result.meta.fingerprint,
-            "provenance": result.meta.provenance.kind.value,
-            "cache_tier": result.meta.provenance.cache_tier,
-        },
-    }
-
-
 class RuntimeJsonRpcHandler:
-    METHODS = frozenset({"quotes", "bars", "runtime.health"})
+    METHODS = frozenset(
+        {
+            "quotes",
+            "bars",
+            "snapshot",
+            "minute",
+            "trades",
+            "security.count",
+            "security.list",
+            "runtime.health",
+        }
+    )
 
-    def __init__(self, runtime: UnifiedRuntime | None = None) -> None:
-        self.runtime = runtime or UnifiedRuntime()
+    def __init__(self, client: Client | None = None) -> None:
+        self.client = client or Client()
 
     def handle_message(self, raw: str | bytes) -> str | None:
         try:
@@ -81,13 +65,12 @@ class RuntimeJsonRpcHandler:
             )
 
         request_id = message.get("id")
-        if request_id is None:
-            with contextlib.suppress(Exception):
-                self._dispatch(str(message.get("method", "")), message.get("params") or {})
-            return None
-
         method = str(message.get("method", ""))
         params = message.get("params") or {}
+        if request_id is None:
+            with contextlib.suppress(Exception):
+                self._dispatch(method, params if isinstance(params, dict) else {})
+            return None
         if method not in self.METHODS:
             return json.dumps(
                 self._error(request_id, ERR_METHOD_NOT_FOUND, "method not found"),
@@ -121,40 +104,104 @@ class RuntimeJsonRpcHandler:
             default=str,
         )
 
+    @staticmethod
+    def _policy(params: dict[str, Any]) -> FallbackPolicy | None:
+        raw = params.get("fallback")
+        if raw in (None, "", []):
+            return None
+        if isinstance(raw, str):
+            values = [item.strip() for item in raw.split(",") if item.strip()]
+        elif isinstance(raw, (list, tuple)):
+            values = [str(item).strip() for item in raw if str(item).strip()]
+        else:
+            raise ValidationError("fallback must be a provider list")
+        return FallbackPolicy.build(*values)
+
     def _dispatch(self, method: str, params: dict[str, Any]) -> Any:
         if method == "runtime.health":
             return {
                 "status": "ok",
-                "default_provider": self.runtime.planner.default_provider,
+                "api": "v13",
+                "default_provider": self.client.runtime.planner.default_provider,
             }
+
+        use_cache = bool(params.get("use_cache", True))
+        provider = params.get("provider")
+
         if method == "quotes":
             symbols = params.get("symbols")
             if not isinstance(symbols, (str, list, tuple)) or not symbols:
                 raise ValidationError("symbols is required")
-            return _data(
-                self.runtime.quotes(
+            return serialize_result(
+                self.client.quotes(
                     symbols,
-                    provider=params.get("provider"),
+                    provider=provider,
+                    policy=self._policy(params),
                     currentness="live",
                     max_age=params.get("max_age"),
-                    use_cache=bool(params.get("use_cache", True)),
+                    use_cache=use_cache,
                 )
             )
+
         if method == "bars":
             symbol = params.get("symbol")
             if not isinstance(symbol, str) or not symbol:
                 raise ValidationError("symbol is required")
-            return _data(
-                self.runtime.bars(
+            return serialize_result(
+                self.client.bars(
                     symbol,
-                    provider=params.get("provider"),
+                    provider=provider,
+                    policy=self._policy(params),
                     period=str(params.get("period", "day")),
                     count=int(params.get("count", 320)),
                     start=int(params.get("start", 0)),
                     adjustment=str(params.get("adjustment", "")),
                     currentness="historical",
                     max_age=params.get("max_age"),
-                    use_cache=bool(params.get("use_cache", True)),
+                    use_cache=use_cache,
+                )
+            )
+
+        symbol = params.get("symbol")
+        if method in {"snapshot", "minute", "trades"}:
+            if not isinstance(symbol, str) or not symbol:
+                raise ValidationError("symbol is required")
+            chosen = str(provider or "tdx")
+            if method == "snapshot":
+                return serialize_result(
+                    self.client.snapshot(symbol, provider=chosen, use_cache=use_cache)
+                )
+            if method == "minute":
+                return serialize_result(
+                    self.client.minute(symbol, provider=chosen, use_cache=use_cache)
+                )
+            return serialize_result(
+                self.client.trades(
+                    symbol,
+                    provider=chosen,
+                    start=int(params.get("start", 0)),
+                    count=int(params.get("count", 0)),
+                    use_cache=use_cache,
+                )
+            )
+
+        chosen = str(provider or "tdx")
+        market = params.get("market", 0)
+        if method == "security.count":
+            return serialize_result(
+                self.client.security_count(
+                    market=market,
+                    provider=chosen,
+                    use_cache=use_cache,
+                )
+            )
+        if method == "security.list":
+            return serialize_result(
+                self.client.security_list(
+                    market=market,
+                    start=int(params.get("start", 0)),
+                    provider=chosen,
+                    use_cache=use_cache,
                 )
             )
         raise RuntimeError("unreachable")
