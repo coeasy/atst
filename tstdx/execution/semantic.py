@@ -156,6 +156,7 @@ class SemanticExecutionAdapter:
         if not candidates:
             raise RuntimeError("no providers are available for semantic execution")
         requested_provider = candidates[0]
+        single_provider = len(candidates) == 1
         failures: list[str] = []
 
         for provider in candidates:
@@ -169,6 +170,8 @@ class SemanticExecutionAdapter:
                         "detail": f"{type(exc).__name__}: {exc}",
                     }
                 )
+                if single_provider:
+                    raise
                 failures.append(f"{provider}=plan:{type(exc).__name__}: {exc}")
                 continue
 
@@ -188,6 +191,8 @@ class SemanticExecutionAdapter:
             try:
                 raw = router.query(provider, request, attempts=attempts)
             except Exception as exc:
+                if single_provider:
+                    raise
                 failures.append(f"{provider}={type(exc).__name__}: {exc}")
                 continue
             if len(attempts) == before:
