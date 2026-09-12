@@ -32,9 +32,10 @@ class StreamLifecycleSnapshot:
 class StreamLifecycle:
     """Thread-safe one-shot stream state machine.
 
-    Streams are intentionally not restartable after ``CLOSED`` or ``FAILED``.
-    This prevents a timed-out or half-dead worker from being replaced by a
-    second worker that shares client/subscription state with the first one.
+    ``CLOSED`` and ``FAILED`` are terminal.  Cleanup is still allowed after a
+    failure, but cleanup must never erase the failure state or reason.  This is
+    important for observability and, more critically, prevents a failed worker
+    from looking like a cleanly closed/restartable stream.
     """
 
     def __init__(self) -> None:
@@ -88,21 +89,29 @@ class StreamLifecycle:
             return True
 
     def begin_stop(self) -> bool:
-        """Transition any non-closed state into STOPPING."""
+        """Begin cleanup without erasing a terminal failure.
+
+        ``FAILED`` returns ``True`` so callers may still release sockets/tasks,
+        but the lifecycle stays FAILED. ``CLOSED`` is already fully cleaned.
+        """
         with self._lock:
             if self._state is StreamState.CLOSED:
                 return False
+            if self._state is StreamState.FAILED:
+                return True
             if self._state is not StreamState.STOPPING:
                 self._state = StreamState.STOPPING
             return True
 
     def close(self) -> None:
+        """Mark a successful cleanup closed, preserving FAILED forever."""
         with self._lock:
-            self._state = StreamState.CLOSED
+            if self._state is not StreamState.FAILED:
+                self._state = StreamState.CLOSED
 
     def fail(self, reason: str) -> None:
         with self._lock:
-            if self._state in {StreamState.CLOSED, StreamState.STOPPING}:
+            if self._state in {StreamState.CLOSED, StreamState.STOPPING, StreamState.FAILED}:
                 return
             self._failure_reason = str(reason) or "stream worker failed"
             self._state = StreamState.FAILED
