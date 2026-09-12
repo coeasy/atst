@@ -19,10 +19,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .cache_semantic import (
-    SEMANTIC_CACHE_SCHEMA_VERSION,
-    SemanticCacheEntry,
-)
+from .cache_semantic import SEMANTIC_CACHE_SCHEMA_VERSION, SemanticCacheEntry
 from .domain.models import Bar, Level, Quote
 from .query import QueryPlan
 from .result import Provenance, ProvenanceKind, QueryResult
@@ -46,7 +43,10 @@ def _encode(value: Any) -> Any:
     if isinstance(value, dict):
         if not all(isinstance(key, str) for key in value):
             raise TypeError("persistent semantic cache requires string dict keys")
-        return {key: _encode(item) for key, item in value.items()}
+        return {
+            "__tstdx_type__": "dict",
+            "value": {key: _encode(item) for key, item in value.items()},
+        }
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     raise TypeError(f"unsupported persistent cache value: {type(value).__name__}")
@@ -58,9 +58,11 @@ def _decode(value: Any) -> Any:
     if not isinstance(value, dict):
         return value
     type_name = value.get("__tstdx_type__")
-    if type_name is None:
-        return {key: _decode(item) for key, item in value.items()}
     payload = value.get("value")
+    if type_name == "dict":
+        if not isinstance(payload, dict):
+            raise ValueError("invalid dict payload")
+        return {key: _decode(item) for key, item in payload.items()}
     if type_name == "tuple":
         if not isinstance(payload, list):
             raise ValueError("invalid tuple payload")
@@ -84,6 +86,8 @@ class PersistentSemanticCache:
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
+        if self.path != ":memory:":
+            Path(self.path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._db = sqlite3.connect(self.path, check_same_thread=False)
         self._db.execute(
@@ -143,6 +147,7 @@ class PersistentSemanticCache:
         provenance = entry.provenance
         provenance_json = json.dumps(
             {
+                "fingerprint": entry.fingerprint,
                 "provider": provenance.provider,
                 "channel": provenance.channel,
                 "capability": provenance.capability,
@@ -222,6 +227,9 @@ class PersistentSemanticCache:
                 self.invalidate(plan)
                 return None
             prov_data = json.loads(provenance_json)
+            if prov_data.get("fingerprint") != key:
+                self.invalidate(plan)
+                return None
             provenance = Provenance(
                 provider=str(prov_data["provider"]),
                 channel=str(prov_data["channel"]),
