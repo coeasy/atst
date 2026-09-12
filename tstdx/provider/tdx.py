@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..providers import PROVIDERS
 from .base import Provider
 
 
 class TdxProvider(Provider):
-    """Adapter for existing TDX clients."""
+    """Dynamic executor for the canonical ``tdx`` Provider."""
 
     name = "tdx"
 
@@ -14,7 +15,11 @@ class TdxProvider(Provider):
         self.client = client
 
     def supports(self, operation: str) -> bool:
-        return self.client is not None and callable(getattr(self.client, operation, None))
+        return (
+            self.client is not None
+            and PROVIDERS.supports(self.name, operation)
+            and callable(getattr(self.client, operation, None))
+        )
 
     def query(self, request: Any) -> Any:
         if self.client is None:
