@@ -72,7 +72,7 @@ def test_l2_rejects_replay_and_synthetic_persistence(tmp_path) -> None:
         assert cache.get(plan, now_ns=now + 1) is None
 
 
-def test_l2_embedded_fingerprint_blocks_row_copy_poisoning(tmp_path) -> None:
+def test_l2_hash_blocks_row_copy_poisoning(tmp_path) -> None:
     first = _quote_plan(max_age=5.0)
     second = _quote_plan(max_age=1.0)
     now = 10_000_000_000
@@ -81,18 +81,18 @@ def test_l2_embedded_fingerprint_blocks_row_copy_poisoning(tmp_path) -> None:
         row = cache._db.execute(
             """
             SELECT schema_version, codec_version, provider, channel, capability,
-                   stored_at_ns, expires_at_ns, provenance_json, data_json
-            FROM semantic_cache_v1 WHERE fingerprint = ?
+                   stored_at_ns, expires_at_ns, provenance_json, data_json, payload_hash
+            FROM semantic_cache_v2 WHERE fingerprint = ?
             """,
             (first.fingerprint.value,),
         ).fetchone()
         assert row is not None
         cache._db.execute(
             """
-            INSERT OR REPLACE INTO semantic_cache_v1
+            INSERT OR REPLACE INTO semantic_cache_v2
             (fingerprint, schema_version, codec_version, provider, channel, capability,
-             stored_at_ns, expires_at_ns, provenance_json, data_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             stored_at_ns, expires_at_ns, provenance_json, data_json, payload_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (second.fingerprint.value, *row),
         )
@@ -100,19 +100,20 @@ def test_l2_embedded_fingerprint_blocks_row_copy_poisoning(tmp_path) -> None:
         assert cache.get(second, now_ns=now + 1) is None
 
 
-def test_l2_tampered_provenance_fails_closed(tmp_path) -> None:
+def test_l2_tampered_provenance_fails_hash_before_decode(tmp_path) -> None:
     plan = _quote_plan()
     now = 10_000_000_000
     with PersistentSemanticCache(tmp_path / "semantic.sqlite") as cache:
         assert cache.put(plan, _direct_result(plan, observed_at_ns=now), ttl=10.0, now_ns=now)
         row = cache._db.execute(
-            "SELECT provenance_json FROM semantic_cache_v1 WHERE fingerprint = ?",
+            "SELECT provenance_json FROM semantic_cache_v2 WHERE fingerprint = ?",
             (plan.fingerprint.value,),
         ).fetchone()
+        assert row is not None
         provenance = json.loads(row[0])
         provenance["provider"] = "eastmoney"
         cache._db.execute(
-            "UPDATE semantic_cache_v1 SET provenance_json = ? WHERE fingerprint = ?",
+            "UPDATE semantic_cache_v2 SET provenance_json = ? WHERE fingerprint = ?",
             (json.dumps(provenance), plan.fingerprint.value),
         )
         cache._db.commit()
