@@ -45,21 +45,23 @@ class ExecutionPlanner:
 
     def build(self, request: Any) -> ExecutionPlan:
         graph = ExecutionGraph()
-        if self.router is None or not self.router.names():
+        if self.router is None:
             return ExecutionPlan(operation=request.operation, graph=graph)
 
         explicit_provider = request.metadata.get("provider")
         requested_order = request.metadata.get("providers")
+        candidates = self._candidate_order(
+            explicit_provider=explicit_provider,
+            requested_order=requested_order,
+            provider_order=self.provider_order,
+            router=self.router,
+        )
+        if not candidates:
+            return ExecutionPlan(operation=request.operation, graph=graph)
 
         def execute_provider(context: Any, **_: Any) -> Any:
             attempts: ProviderAttempts = []
             context.metadata["provider_attempts"] = attempts
-            candidates = self._candidate_order(
-                explicit_provider=explicit_provider,
-                requested_order=requested_order,
-                provider_order=self.provider_order,
-                router=self.router,
-            )
 
             if self.semantic.can_execute(request, candidates):
                 name, result = self.semantic.execute(
