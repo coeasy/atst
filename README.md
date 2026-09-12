@@ -1,256 +1,418 @@
 # tstdx
 
-> 通达信（TDX）行情数据通用协议库 —— 覆盖 5 套协议族，零硬依赖，跨平台。
-> **当前版本**：v1.0.0（正式稳定版，2026-09-09 发布；见 [发布说明](docs/releases/v1.0.0.md)）
+> Provider-first market-data runtime and TDX protocol toolkit.
+>
+> Current package version: **v1.0.0**. The `refactor/runtime-integration-v12` branch is converging on the **v13 clean-break architecture** described in `docs/ARCHITECTURE_SEMANTIC_ALIGNMENT_v13.md`.
 
-## 特性
+## v13 architecture
 
-- **5 套协议族**：7709 标准 / 7727 扩展市场 / MAC 专属 / F10 资料 / 商品语义
-- **85 命令账本 · 61 L1 精确解析器**：L1 精确 → L2 通用启发 → L3 原始透传 三级分派，解析器逃逸原生异常统一收口为 `ParseError`
-- **同步/异步双 API**：`TdxClient` + `AsyncTdxClient`（签名镜像、奇偶门禁）
-- **多协议族客户端**：GoodsClient / ExMarketClient / MacClient / F10Client
-- **HTTP Web 45 源类（17 模块）**：东财/新浪/腾讯/集思录/港股/中行等，`httpx`/`urllib` 双栈
-- **5 级降级路由**：tdx→web→reader→cache→synthetic
-- **门面统一 API**：`UnifiedQuoteAPI`（46 公开方法，auto/tdx/web/local 四路由 + 熔断 + `adjust` 口径守卫）+ 统一响应形态 `ApiResponse{success,error,data,extra}` + 惰性 `.df`
-- **异步门面 `AsyncUnifiedQuoteAPI`**：`asyncio.to_thread` 桥接同步门面实例，SourceUnavailable 转换（E7050/503）**自动继承**，无需异步层重复实现
-- **主站池治理**：`DEFAULT_HOST_POOL` / `POOL_BY_FAMILY` / `RankingStore`（`~/.tstdx/server_ranking.json`）+ 三级路由降级 + `SourceUnavailable` 错误类；`scripts/audit_hosts.py` 巡检脚本支持 5 协议族并发探测与外部候选注入（`--hosts-file`）
-- **流式订阅**：QuoteStream + AsyncQuoteStream（engine 内核：`ReconnectPolicy` + `BackpressureQueue` + `DeltaMerger` + `GapFiller` + `StreamEngine`；轮询 + diff，裸码归一、线程兜底）；push 推送通道为可选高级 API（见 ADR-011）
-- **3 Sink 策略**：DataFrame / Parquet / DuckDB（原子写）
-- **服务面**：HTTP REST 网关（42 端点，方法白名单 + TaskStore 钳制）/ WebSocket JSON-RPC / MCP stdio 12 工具
-- **可观测性**：zero-dep 指标注册表 + Prometheus/StatsD/OTLP 三导出器 + `start_exporter` 装配工厂
-- **40+ 异常类**：分类错误树（E1–E9）+ `RetryAdvice`；`SourceUnavailable` 归 E7 域（外部源不可用）
-- **零硬依赖**：所有第三方库均为可选 extra；`[project.optional-dependencies].dev` 提供与 CI 一致的本地体验
-- **弃用时间线明确**：`tstdx.native` v1.5.0 强告警（`UserWarning` + `logging.warning` 双通道）→ v1.6.0 正式删除
+The supported business API is intentionally small and explicit:
 
-## v1.0.0 正式发布
+```text
+Python / Async / CLI / HTTP / WS / MCP
+                |
+                v
+         Client / AsyncClient
+                |
+        +-------+--------+
+        |                |
+        v                v
+     QuerySpec       FallbackPolicy
+        |                |
+        v                v
+   QueryPlanner   ProviderOrchestrator
+        |                |
+        +-------+--------+
+                v
+          UnifiedRuntime
+                |
+   L1 -> L2 -> NegativeCache -> SingleFlight
+                |
+                v
+        exact DirectBinding
+                |
+                v
+   Provider-native implementation
+                |
+                v
+ QueryResult / ResultMeta / Provenance
+```
 
-v1.0.0 是首个稳定发布版本，重点收口连接池的主站生命周期和并发状态治理：
+The kernel executes **one Provider + one Channel** per QueryPlan. Cross-Provider fallback is never implicit; it exists only through an explicit `FallbackPolicy` handled by `ProviderOrchestrator`.
 
-- 后台测速排序与真实请求健康状态分离，避免测速结果覆盖线上健康判断；
-- generation/lease 保护连接热更新、连接复用和在飞请求；
-- 同步/异步 half-open circuit 均保证同一主站同一时刻最多一个探测请求；
-- F10 0x06B9 文件下载恢复规范分块解析，并对空响应给出明确错误；
-- wheel 与源码包均已构建并通过安装冒烟。
-- GitHub Release 发布后，Actions 自动将 wheel 与 sdist 附加到 Release 资产栏。
+There is no public `route=`, no `route="auto"`, no pseudo-provider `web`, and no facade/router fallback kernel.
 
-详细内容见 [v1.0.0 发布说明](docs/releases/v1.0.0.md) 与 [CHANGELOG](CHANGELOG.md)。
+## Core semantics
 
-## 安装
+- **Provider**: canonical data authority such as `tdx`, `local_vipdoc`, `tencent`, `sina`, `eastmoney`, `baidu`.
+- **Channel**: Provider-native endpoint/transport family selected by the planner.
+- **Capability**: business operation such as `quotes`, `bars`, `snapshot`, `minute`, `trades`.
+- **QuerySpec**: immutable request SSOT.
+- **QueryPlan**: one executable Provider/Channel plan.
+- **QueryFingerprint**: full semantic identity for cache and SingleFlight.
+- **UnifiedRuntime**: sole single-Provider query kernel.
+- **ProviderOrchestrator**: sole cross-Provider fallback executor.
+- **QueryResult / ResultMeta / Provenance**: canonical success contract.
+- **ErrorEnvelope**: canonical safe external failure contract.
+- **StreamSpec / StreamPlan / StatefulQuoteStream**: canonical streaming contract and lifecycle.
+
+## Supported v13 Provider capabilities
+
+The Registry is executable truth: a capability is listed only after it has a canonical Query contract and an exact Direct binding.
+
+| Provider | Channel | Capabilities |
+|---|---|---|
+| `tdx` | `quotation` | `quotes`, `bars`, `snapshot`, `minute`, `trades`, `security_count`, `security_list` |
+| `local_vipdoc` | `vipdoc` | `bars` (`day`, `1min`, `5min`) |
+| `tencent` | `quote` | `quotes` |
+| `tencent` | `kline` | historical `bars` |
+| `tencent` | `minute_kline` | minute `bars` |
+| `sina` | `quote` | `quotes` |
+| `sina` | `history_kline` | `bars` |
+| `eastmoney` | `quote` | `quotes` |
+| `eastmoney` | `kline` | `bars` |
+| `baidu` | `quote` | `quotes` |
+| `baidu` | `kline` | `bars` |
+
+See `docs/PROVIDER_CAPABILITY_MATRIX_v13.md` for the executable support contract.
+
+Historical modules may still contain finance, F10, fund, futures, bonds, options, rankings, news or other provider-specific helpers. Those are **not** supported v13 business capabilities until they are promoted end to end through QuerySpec + Registry + DirectBinding + Result/Provenance + surface adapters + contract tests.
+
+## Installation
 
 ```bash
-pip install tstdx                    # 零依赖基础安装
-pip install "tstdx[all]"             # 完整功能
-pip install "tstdx[dataframe,parquet,duckdb,web,metrics,server,mcp]"
-pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-asyncio/hatchling）
+pip install tstdx
+pip install "tstdx[all]"
+pip install "tstdx[web,server,mcp]"
+pip install -e ".[dev]"
 ```
 
-> **P14-D2 起**：`[project.optional-dependencies].dev` 已声明，本地与 CI 使用同一
-> 门禁口径（`fail_under=77` / `--cov-fail-under=77`），不再有「装了依赖却跑不出
-> `--cov`」的漂移。
+Optional extras remain available for provider transports, DataFrame/Parquet/DuckDB output, metrics, HTTP/WebSocket server dependencies, MCP and development tooling.
 
-### Optional Extras
+## Python quick start
 
-| Extra       | 依赖                        | 功能               |
-|-------------|---------------------------|--------------------|
-| `config`    | pydantic                  | 严格配置校验       |
-| `dataframe` | pandas                    | DataFrame 输出     |
-| `parquet`   | pyarrow                   | ParquetSink        |
-| `duckdb`    | duckdb                    | DuckDBSink         |
-| `web`       | httpx                     | HTTP Web 行情源    |
-| `metrics`   | prometheus-client         | Prometheus 导出    |
-| `server`    | fastapi, uvicorn, websockets | HTTP REST 网关 + WebSocket RPC |
-| `mcp`       | mcp                       | MCP 工具服务       |
-| `tools`     | tzdata (win32 only)       | capture 时区工具链 |
-| `dev`       | pytest/pytest-cov/pytest-asyncio/ruff/mypy/hatchling | 开发体验 |
-| `all`       | 以上全部                   | 完整功能           |
-
-## 快速开始
-
-### 基础用法
+### Explicit single Provider
 
 ```python
-from tstdx import TdxClient
+from tstdx import Client
 
-client = TdxClient()
+with Client() as client:
+    quotes = client.quotes(
+        ["sh600519", "sz000001"],
+        provider="tdx",
+    )
 
-bars = client.bars("sh600519", period="day", count=80)  # K 线
-quotes = client.quotes(["sh600519", "sz000001"])  # 实时行情
-count = client.security_count(market=1)  # 1=上海, 0=深圳
+    bars = client.bars(
+        "sh600519",
+        provider="eastmoney",
+        period="day",
+        count=80,
+    )
+
+    snapshot = client.snapshot("sh600519", provider="tdx")
+    minute = client.minute("sh600519", provider="tdx")
+    trades = client.trades("sh600519", provider="tdx", count=100)
+    count = client.security_count(market=1, provider="tdx")
+    securities = client.security_list(market=1, start=0, provider="tdx")
 ```
 
-### 异步用法
+Every successful call returns a `QueryResult` whose `meta` records Provider, Channel, capability, fingerprint and provenance.
+
+### Explicit cross-Provider fallback
+
+```python
+from tstdx import Client, FallbackPolicy
+
+policy = FallbackPolicy.build("tdx", "tencent", "sina")
+
+with Client() as client:
+    result = client.quotes(
+        ["sh600519"],
+        policy=policy,
+    )
+```
+
+Fallback is auditable. The actual successful Provider stays in result metadata, while provenance records the requested Provider and whether fallback occurred.
+
+### Raw QuerySpec execution
+
+```python
+from tstdx import Client, QuerySpec
+
+spec = QuerySpec.build(
+    "bars",
+    symbols="sh600519",
+    provider="tdx",
+    period="day",
+    count=120,
+    currentness="historical",
+)
+
+with Client() as client:
+    result = client.execute(spec)
+```
+
+### Async
+
+`AsyncClient` uses the same semantic core instead of maintaining a second business architecture.
 
 ```python
 import asyncio
-from tstdx import AsyncTdxClient
+from tstdx import AsyncClient
 
 
 async def main():
-    client = AsyncTdxClient()
-    bars, quotes = await asyncio.gather(
-        client.bars("sh600519", period="day", count=80),
-        client.quotes(["sh600519", "sz000001"]),
-    )
-    print(len(bars), len(quotes))
+    async with AsyncClient() as client:
+        quotes, bars = await asyncio.gather(
+            client.quotes(["sh600519"], provider="tdx"),
+            client.bars("sh600519", provider="tdx", period="day", count=80),
+        )
+        print(quotes.meta.provider, bars.meta.provider)
 
 
 asyncio.run(main())
 ```
 
-### 门面统一响应（永不抛异常边界）
+## Batch
+
+Partial success belongs to the explicit batch contract; normal QuerySpec has no `allow_partial` field.
 
 ```python
-from tstdx.facade import quote_api
+from tstdx import Client
 
-api = quote_api()
-resp = api.query("quotes", ["sh600519", "sz000001"])
-if resp:
-    print(len(resp.data), "条, 源=", resp.extra.get("source"))
-    df = resp.df  # pandas DataFrame（可选）
-else:
-    print(f"失败: {resp.error} (code={resp.code})")
+with Client() as client:
+    result = client.quotes_batch(
+        ["sh600519", "sz000001"],
+        provider="tdx",
+    )
+
+    print(result.failed)
+    print(result.missing)
 ```
 
-### CLI（19+ 子命令）
+## Stateful streaming
+
+Streaming uses the same UnifiedRuntime quote execution path. It does not maintain a second TdxClient-based business kernel.
+
+```python
+import time
+from tstdx import Client
+
+
+def on_quote(symbol, quote):
+    print(symbol, quote.get("price"))
+
+
+with Client() as client:
+    stream = client.stream(
+        ["sh600519", "sz000001"],
+        provider="tdx",
+        interval=1.0,
+        diff_only=True,
+        on_quote=on_quote,
+    )
+    stream.start()
+    try:
+        time.sleep(10)
+    finally:
+        stream.stop()
+```
+
+Current canonical Direct stream binding is `tdx/quotation`. Unsupported stream Providers fail before worker startup.
+
+## CLI
+
+The v13 CLI is a thin Client adapter:
 
 ```bash
-tstdx bars sh600519 --period day --count 80     # K 线
-tstdx quotes sh600519 sz000001                  # 实时行情
-tstdx server-test                               # 主站测速
-tstdx serve --host 0.0.0.0 --port 8000          # HTTP 服务
-tstdx probe 0x052D                              # 协议探测
-tstdx feedback stats                            # 使用统计
+tstdx version
+tstdx quotes sh600519 sz000001 --provider tdx
+tstdx bars sh600519 --provider eastmoney --period day --count 80
+tstdx snapshot sh600519 --provider tdx
+tstdx minute sh600519 --provider tdx
+tstdx trades sh600519 --provider tdx --count 100
+tstdx security-count --provider tdx --market 1
+tstdx security-list --provider tdx --market 1 --start 0
 
-# 主站池巡检（P14-A2/A3）：单族 / 全族 / 外部候选注入
-tstdx hosts audit --family quotation            # 仅 7709 标准族
-tstdx hosts audit                               # 全 5 族并发巡检
-tstdx hosts audit --hosts-file extra_hosts.json # 注入社区贡献主站候选
-tstdx hosts audit --report /tmp/audit.json --markdown /tmp/audit.md
+# Explicit fallback, never implicit route="auto"
+tstdx quotes sh600519 --fallback tdx,tencent,sina
 ```
 
-## 核心代码文件地图
+Normal CLI failures are rendered with the same ErrorEnvelope used by the other external transports. KeyboardInterrupt remains process control and exits with code 130.
 
+## HTTP
+
+Install the server extra and create the canonical app:
+
+```python
+from tstdx.integration import create_runtime_app
+
+app = create_runtime_app()
 ```
+
+Canonical endpoints:
+
+- `GET /v13/quotes`
+- `GET /v13/bars/{symbol}`
+- `GET /v13/snapshot/{symbol}`
+- `GET /v13/minute/{symbol}`
+- `GET /v13/trades/{symbol}`
+- `GET /v13/security/count`
+- `GET /v13/security/list`
+- `GET /v13/runtime/health`
+
+HTTP owns framing only. Business execution goes through Client/UnifiedRuntime.
+
+## WebSocket JSON-RPC
+
+The canonical WebSocket path is `/v13/ws`.
+
+```python
+from tstdx.integration import RuntimeWsConfig, serve_runtime_ws
+
+server = await serve_runtime_ws(
+    config=RuntimeWsConfig(host="127.0.0.1", port=8765, path="/v13/ws")
+)
+```
+
+Supported JSON-RPC business methods mirror the promoted Tier-A runtime:
+
+- `quotes`
+- `bars`
+- `snapshot`
+- `minute`
+- `trades`
+- `security.count`
+- `security.list`
+- `runtime.health`
+
+## MCP
+
+The MCP stdio adapter uses the same Client and exposes only promoted canonical capabilities:
+
+- `get_bars`
+- `get_quote`
+- `get_quotes`
+- `get_snapshot`
+- `get_minute_today`
+- `get_trades`
+- `get_security_count`
+- `get_security_list`
+
+There is no `use_facade`, no dual TdxClient/Facade execution target, and no hidden Provider fallback.
+
+## Cache and concurrency model
+
+Canonical runtime order:
+
+```text
+QueryPlan
+  -> L1 semantic cache
+  -> L2 persistent semantic cache
+  -> terminal negative cache
+  -> SingleFlight
+  -> exact DirectBinding
+  -> QueryResult/Provenance
+```
+
+Key properties:
+
+- full QueryFingerprint identity;
+- L1 bounded LRU, never whole-map flush at capacity;
+- L2 safe SQLite + deterministic JSON; no pickle;
+- L2 payload identity/hash verification before decode;
+- DIRECT non-fallback persistence only;
+- L2->L1 promotion cannot extend original expiry;
+- transient/source-unavailable failures are never negative-cached;
+- SingleFlight leader/followers receive isolated values.
+
+## Low-level protocol toolkit
+
+`tstdx` still contains the underlying TDX protocol, parser, codec, transport, reader and provider adapter implementations. These are implementation/advanced-tooling layers rather than parallel business APIs.
+
+Examples include:
+
+```text
+tstdx/protocol/
+tstdx/codec/
+tstdx/transport/
+tstdx/client/       # low-level TDX transport client implementation
+tstdx/web/          # concrete HTTP Provider adapters
+tstdx/reader/       # local vipdoc Provider readers
+tstdx/domain/
+```
+
+Import low-level components from their explicit submodules only when implementing protocol/provider tooling. Application code should use `tstdx.Client` / `tstdx.AsyncClient`.
+
+## Source layout
+
+```text
 tstdx/
-├── protocol/       # 协议核心：commands(85 账本)/registry(三级分派+异常收口)
-│   └── parsers/    #   6 族 61 解析器（std7709/std7709_extra/std7727/mac/goods/f10）
-├── codec/          # 编解码：framing(帧)/primitive(原语+count_guard+zlib strict)
-├── transport/      # 传输：base(RLock 租约)/async_/pool(4 槽)/ratelimit/speedtest/hosts/sniff
-├── client/         # TdxClient/AsyncTdxClient + 5 族客户端（_mixin 共享骨架 + sync/async_/factory）
-├── facade/         # 门面：UnifiedQuoteAPI(四路由+熔断，取数委托 DataSourceRouter)/response/async_api/三兼容门面
-├── web/            # 50 Source 类（惰性导入）+ 域 Mixin 会话 + _paginate 共享分页器
-├── sources/        # 5 级降级路由 DataSourceRouter + golden 回放
-├── domain/         # symbol(单一事实源)/models/adjust/calendar
-├── streaming/      # QuoteStream/AsyncQuoteStream（轮询+diff）/push
-├── reader/         # vipdoc 本地文件解析（day/min/板块/财务）
-├── output/         # DataFrame/Parquet/CSV/DuckDB 原子写（v9 自 sinks/ 更名，旧名 shim 兼容）
-├── sink/           # LocalDaySink：写回 vipdoc .day 二进制（与 sinks/ 职责不同）
-├── charset/        # 字符集自动探测（GBK/GB18030/Big5/UTF-8；原 i18n，v8 更名定名）
-├── profile/        # 数据规格探测（帧/文件双探测器 + presets）
-├── config/         # 6 源合并 + 严格校验 + env 归一
-├── errors.py       # 错误分类树（E1-E8，40+ 类）+ RetryAdvice
-├── integration/    # http_server(42 端点白名单)/ws_server/mcp_server
-├── observability/  # 指标注册表 + Prometheus/StatsD/OTLP 导出器 + start_exporter
-├── feedback/       # 错误/用量上报 + 遥测 + 使用统计
-├── security/       # 凭据三级存储（keyring/env/file 互斥写 + 损坏隔离）
-├── tools/          # capture/spec_audit/codegen/golden_audit/golden_expand/check_originality
-├── trade/          # 交易协议模拟器（独立可选：SimTransport 纯内存模拟，不连真实券商）
-├── cli/            # CLI 入口（19 子命令；_common/cmds_market/cmds_web/cmds_hosts/parser）
+├── client_api.py            # Client / AsyncClient — supported business API
+├── query.py                 # QuerySpec / QueryPlan / QueryPlanner / fingerprint
+├── providers/               # executable Provider Registry SSOT
+├── direct_provider.py       # exact Provider/Channel/Capability bindings
+├── runtime.py               # single-Provider execution kernel
+├── orchestration.py         # explicit cross-Provider policy only
+├── result.py                # QueryResult / ResultMeta / Provenance
+├── batch.py                 # BatchSpec / BatchResult / SingleFlight / NegativeCache
+├── cache_semantic.py        # L1 semantic LRU
+├── cache_persistent.py      # safe persistent L2
+├── stream_contract.py       # StreamSpec / StreamPlan / StreamPlanner
+├── streaming/               # Stateful lifecycle + reusable stream components
+├── integration/             # canonical HTTP / WS / MCP / task adapters
+├── cli/                     # Client-backed CLI
+├── client/                  # low-level TDX Provider implementation
+├── web/                     # concrete HTTP Provider implementations
+├── reader/                  # local vipdoc Provider readers
+├── protocol/                # protocol command/parse SSOT
+├── codec/                   # frame/primitive codecs
+└── transport/               # network transport/pool/host management
 ```
 
-## 系统文档导航
+## Architecture documents
 
-| 文档 | 内容 |
-|---|---|
-| [docs/FEATURE_MAP_AND_ROADMAP.md](docs/FEATURE_MAP_AND_ROADMAP.md) | 主体功能地图 + v1.2.0 后路线（I/J 批次）|
-| [docs/POTENTIAL_ISSUES_AND_PLAN.md](docs/POTENTIAL_ISSUES_AND_PLAN.md) | **当前批次**：P13/P14/P15 状态表（🔧/⏳/✅）与后续规划 |
-| [DESIGN.md](DESIGN.md) | 完整设计方案 v2.0（架构/协议/工程规范，历史版本见 docs/archive/）|
-| [docs/api/README.md](docs/api/README.md) | API 索引（客户端/门面/服务面/工具）|
-| [docs/quickstart.md](docs/quickstart.md) | 快速入门 |
-| [docs/cookbook/](docs/cookbook/README.md) | 场景示例（批量 K 线/离线 vipdoc/流式/Sinks/自定义命令）|
-| [docs/FAQ.md](docs/FAQ.md) · [docs/troubleshooting.md](docs/troubleshooting.md) | 常见问题与排障 |
-| [docs/errors.md](docs/errors.md) | 错误体系与 RetryAdvice 使用指南（错误树速查/易混对照/扩展规则）|
-| [docs/migration/](docs/migration/README.md) | 从 mootdx/easy_tdx/easyquotation 迁移 |
-| [docs/adr/](docs/adr/README.md) | 架构决策记录（含 ADR-011 流式内核取舍）|
-| [PROTOCOL_SPEC/](PROTOCOL_SPEC/README.md) | 协议命令 YAML 规范 + codegen/spec_audit 闭环 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录（含 native 弃用时间线 v1.5.0/v1.6.0）|
-| [docs/releases/v1.0.0.md](docs/releases/v1.0.0.md) | v1.0.0 正式发布说明、兼容性与验证结果 |
-| [docs/archive/](docs/archive/) | 历史计划与设计归档（v1 优化计划/开发计划/差距分析等）|
+Read these in order:
 
-## 协议规范
+1. `docs/ARCHITECTURE_SEMANTIC_ALIGNMENT_v13.md` — authoritative semantic/core SSOT.
+2. `docs/REFACTOR_PLAN_v13_CLEAN_BREAK.md` — clean-break implementation roadmap.
+3. `docs/IMPLEMENTATION_ALIGNMENT_MATRIX_v13.md` — current source/evidence status.
+4. `docs/PROVIDER_CAPABILITY_MATRIX_v13.md` — executable Provider support matrix.
+5. `docs/V13_REFACTOR_EXECUTION_STATUS.md` — implementation progress and merge evidence rules.
+6. `docs/adr/` — irreversible architecture decisions.
+7. `PROTOCOL_SPEC/` — protocol command specifications and codegen/audit chain.
 
-协议命令以 YAML 描述，位于 `PROTOCOL_SPEC/`（当前 7709 族 8 条 + UNKNOWN 归档）：
+## Removed v13 business semantics
 
-```
-PROTOCOL_SPEC/
-├── README.md / SCHEMA.md
-├── 7709/     # 标准 7709 协议族（8 条 YAML）
-└── UNKNOWN/  # 自动发现未知命令（.gitkeep 占位）
-```
+The v13 architecture intentionally does not preserve these old interfaces:
 
-工具链闭环：`capture(合规采集) → PROTOCOL_SPEC YAML → codegen 骨架 →
-@register_parser → golden_audit 三旗标 → spec_audit 双向漂移检查`。
+- `UnifiedQuoteAPI` / `AsyncUnifiedQuoteAPI`;
+- `quote_api()` / facade runtime factories;
+- public `route=` / `route="auto"`;
+- pseudo-provider `web`;
+- `DataSourceRouter` as a business execution kernel;
+- generic normal-query `allow_partial=True`;
+- ResultMeta `.source` alias;
+- legacy HTTP/WS business servers;
+- MCP facade/TdxClient dual routing;
+- legacy QuoteStream/AsyncQuoteStream business APIs.
 
-## 数据源降级
+Do not add compatibility shims that recreate these semantics.
 
-```
-TDX 主站 → HTTP Web 源(45) → 本地 vipdoc → golden 缓存 → 合成数据
-```
+## Verification and release gate
 
-## 主站池治理与巡检
+The clean-break branch remains a Draft integration PR until the **same exact head SHA** receives real GitHub Actions runners, executes blocking steps, and passes them.
 
-主站池由 `DEFAULT_HOST_POOL` / `POOL_BY_FAMILY` 定义，运行时通过 `RankingStore`
-（`~/.tstdx/server_ranking.json`）落盘延迟样本并驱动三级路由降级。巡检工具：
+The following do **not** count as green evidence:
 
-```bash
-# 通过 CLI（推荐）
-tstdx hosts audit --family quotation --timeout 3 --workers 20 --samples 3
+- `steps=[]` / `steps=null`;
+- `runner_id=0`;
+- skipped or disabled gates;
+- soft-failed gates;
+- workflow-level success when blocking jobs never executed.
 
-# 或调用脚本（支持 --report / --markdown / --strict / --no-save-ranking）
-python scripts/audit_hosts.py --family all --report audit.json
+Source inspection and offline test code can establish source alignment, but they cannot establish release readiness without real executed CI evidence.
 
-# 外部候选注入（社区贡献主站入口）
-cat > extra_hosts.json <<'JSON'
-{
-  "quotation": [
-    {"host": "218.75.126.9", "port": 7709, "name": "custom-1"}
-  ],
-  "ex_quotation": [
-    {"host": "180.153.180.86", "port": 7727, "name": "custom-2"}
-  ]
-}
-JSON
-tstdx hosts audit --hosts-file extra_hosts.json
-```
+## License
 
-输出：每族 healthy/degraded/offline 三态 + JSON/Markdown 报告；候选延迟样本写
-`~/.tstdx/server_ranking.json`（可 `--no-save-ranking` 关闭）。CI 中已配置
-周三 09:00 UTC 定期巡检（`host-audit` job，非硬门禁）。
-
-## 质量与门禁
-
-```bash
-pytest tests/                                   # 全量测试
-make gates                                      # 六步门禁：lint→format→全量→对抗矩阵→golden 三旗标→可达性
-python -m tstdx.tools.golden_audit --gate       # Golden L1 真实样本门禁（530 payload）
-python -m pytest tests/adversarial -q           # 对抗矩阵（9 payload × 85 命令，逃逸=0）
-python scripts/audit_reachability.py --strict   # 可达性门禁（孤儿=0）
-python -m pytest --cov=tstdx --cov-fail-under=77  # 覆盖率门禁（CI 与本地一致）
-```
-
-- CI：9 jobs；Windows 矩阵 3.11 + 3.12；周三 09:00 UTC 定期 `host-audit`
-- 覆盖率门禁：**≥ 77%**（P14-D2 与 CI 对齐）
-- Pre-commit hooks：`ruff check --fix` + `ruff format --check`
-
-## 贡献
-
-请阅读：
-
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-- [GOVERNANCE.md](GOVERNANCE.md)
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- [SECURITY.md](SECURITY.md)
-
-## 许可证
-
-MIT License - 详见 [LICENSE](LICENSE)
+See `LICENSE`.
