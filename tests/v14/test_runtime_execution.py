@@ -48,6 +48,11 @@ def test_runtime_falls_back_to_next_healthy_provider() -> None:
     assert response.metadata["execution"] == "execution-plan"
     assert response.metadata["request_id"]
     assert response.metadata["trace_id"]
+    assert [item["status"] for item in response.metadata["provider_attempts"]] == [
+        "failed",
+        "unhealthy",
+        "selected",
+    ]
 
 
 def test_runtime_honors_explicit_provider() -> None:
@@ -60,6 +65,9 @@ def test_runtime_honors_explicit_provider() -> None:
 
     assert response.success is True
     assert response.metadata["provider"] == "good"
+    assert response.metadata["provider_attempts"] == [
+        {"provider": "good", "status": "selected"}
+    ]
 
 
 def test_runtime_preserves_compatibility_handlers() -> None:
@@ -118,6 +126,10 @@ def test_cache_miss_falls_through_to_next_provider() -> None:
 
     assert response.success is True
     assert response.metadata["provider"] == "good"
+    assert [item["status"] for item in response.metadata["provider_attempts"]] == [
+        "failed",
+        "selected",
+    ]
 
 
 def test_tdx_provider_preserves_positional_and_keyword_arguments() -> None:
@@ -152,6 +164,10 @@ def test_runtime_skips_provider_without_operation_capability() -> None:
     assert response.success is True
     assert response.data == ["sh600519"]
     assert response.metadata["provider"] == "web"
+    assert response.metadata["provider_attempts"] == [
+        {"provider": "tdx", "status": "unsupported", "detail": "quotes"},
+        {"provider": "web", "status": "selected"},
+    ]
 
 
 def test_explicit_provider_reports_unsupported_operation() -> None:
@@ -169,6 +185,9 @@ def test_explicit_provider_reports_unsupported_operation() -> None:
     assert response.success is False
     assert response.metadata["error_type"] == "AttributeError"
     assert "does not support operation" in (response.error or "")
+    assert response.metadata["provider_attempts"] == [
+        {"provider": "tdx", "status": "unsupported", "detail": "quotes"}
+    ]
 
 
 def test_execution_graph_rejects_cycles() -> None:
