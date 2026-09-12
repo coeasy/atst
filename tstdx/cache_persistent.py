@@ -1,17 +1,18 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Safe persistent semantic L2 cache for provider-first runtime.
+"""Safe persistent semantic L2 cache for the v13 runtime.
 
-The persistent format is JSON + SQLite; it never unpickles executable objects.
-Only DIRECT, non-fallback QueryResults with exact plan identity are persisted.
-Every read reconstructs a SemanticCacheEntry and re-runs the canonical
-fingerprint/identity/TTL/freshness checks before returning or promoting data.
+The persistent format is SQLite + deterministic JSON. It never uses executable
+deserialization. v13 writes a new table with an integrity hash covering identity,
+provenance and encoded data; reads verify the hash before decoding payloads.
+Only DIRECT non-fallback results with exact plan identity are persisted.
 """
 
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import sqlite3
 import threading
@@ -27,7 +28,8 @@ from .result import Provenance, ProvenanceKind, QueryResult
 
 __all__ = ["PersistentSemanticCache"]
 
-_CODEC_VERSION = 1
+_CODEC_VERSION = 2
+_TABLE = "semantic_cache_v2"
 
 
 def _encode(value: Any) -> Any:
@@ -82,8 +84,41 @@ def _decode(value: Any) -> Any:
     raise ValueError(f"unknown persistent cache type tag: {type_name!r}")
 
 
+def _payload_hash(
+    *,
+    fingerprint: str,
+    schema_version: int,
+    codec_version: int,
+    provider: str,
+    channel: str,
+    capability: str,
+    stored_at_ns: int,
+    expires_at_ns: int | None,
+    provenance_json: str,
+    data_json: str,
+) -> str:
+    payload = json.dumps(
+        {
+            "fingerprint": fingerprint,
+            "schema_version": schema_version,
+            "codec_version": codec_version,
+            "provider": provider,
+            "channel": channel,
+            "capability": capability,
+            "stored_at_ns": stored_at_ns,
+            "expires_at_ns": expires_at_ns,
+            "provenance_json": provenance_json,
+            "data_json": data_json,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 class PersistentSemanticCache:
-    """SQLite-backed L2 that accepts only verified DIRECT provenance."""
+    """SQLite-backed L2 accepting only verified DIRECT provenance."""
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
@@ -92,8 +127,8 @@ class PersistentSemanticCache:
         self._lock = threading.RLock()
         self._db = sqlite3.connect(self.path, check_same_thread=False)
         self._db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS semantic_cache_v1 (
+            f"""
+            CREATE TABLE IF NOT EXISTS {_TABLE} (
                 fingerprint TEXT PRIMARY KEY,
                 schema_version INTEGER NOT NULL,
                 codec_version INTEGER NOT NULL,
@@ -103,7 +138,8 @@ class PersistentSemanticCache:
                 stored_at_ns INTEGER NOT NULL,
                 expires_at_ns INTEGER,
                 provenance_json TEXT NOT NULL,
-                data_json TEXT NOT NULL
+                data_json TEXT NOT NULL,
+                payload_hash TEXT NOT NULL
             )
             """
         )
@@ -169,13 +205,26 @@ class PersistentSemanticCache:
             separators=(",", ":"),
             allow_nan=False,
         )
+        checksum = _payload_hash(
+            fingerprint=entry.fingerprint,
+            schema_version=entry.schema_version,
+            codec_version=_CODEC_VERSION,
+            provider=entry.provider,
+            channel=entry.channel,
+            capability=entry.capability,
+            stored_at_ns=entry.stored_at_ns,
+            expires_at_ns=entry.expires_at_ns,
+            provenance_json=provenance_json,
+            data_json=data_json,
+        )
         with self._lock:
             self._db.execute(
-                """
-                INSERT OR REPLACE INTO semantic_cache_v1
+                f"""
+                INSERT OR REPLACE INTO {_TABLE}
                 (fingerprint, schema_version, codec_version, provider, channel,
-                 capability, stored_at_ns, expires_at_ns, provenance_json, data_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 capability, stored_at_ns, expires_at_ns, provenance_json, data_json,
+                 payload_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     entry.fingerprint,
@@ -188,6 +237,7 @@ class PersistentSemanticCache:
                     entry.expires_at_ns,
                     provenance_json,
                     data_json,
+                    checksum,
                 ),
             )
             self._db.commit()
@@ -204,10 +254,10 @@ class PersistentSemanticCache:
         try:
             with self._lock:
                 row = self._db.execute(
-                    """
+                    f"""
                     SELECT schema_version, codec_version, provider, channel, capability,
-                           stored_at_ns, expires_at_ns, provenance_json, data_json
-                    FROM semantic_cache_v1 WHERE fingerprint = ?
+                           stored_at_ns, expires_at_ns, provenance_json, data_json, payload_hash
+                    FROM {_TABLE} WHERE fingerprint = ?
                     """,
                     (key,),
                 ).fetchone()
@@ -223,8 +273,24 @@ class PersistentSemanticCache:
                 expires_at_ns,
                 provenance_json,
                 data_json,
+                payload_hash,
             ) = row
             if codec_version != _CODEC_VERSION or schema_version != SEMANTIC_CACHE_SCHEMA_VERSION:
+                self.invalidate(plan)
+                return None
+            expected_hash = _payload_hash(
+                fingerprint=key,
+                schema_version=int(schema_version),
+                codec_version=int(codec_version),
+                provider=str(provider),
+                channel=str(channel),
+                capability=str(capability),
+                stored_at_ns=int(stored_at_ns),
+                expires_at_ns=None if expires_at_ns is None else int(expires_at_ns),
+                provenance_json=str(provenance_json),
+                data_json=str(data_json),
+            )
+            if not isinstance(payload_hash, str) or not hashlib.compare_digest(payload_hash, expected_hash):
                 self.invalidate(plan)
                 return None
             prov_data = json.loads(provenance_json)
@@ -274,7 +340,7 @@ class PersistentSemanticCache:
     def invalidate(self, plan: QueryPlan) -> bool:
         with self._lock:
             cursor = self._db.execute(
-                "DELETE FROM semantic_cache_v1 WHERE fingerprint = ?",
+                f"DELETE FROM {_TABLE} WHERE fingerprint = ?",
                 (plan.fingerprint.value,),
             )
             self._db.commit()
@@ -282,8 +348,8 @@ class PersistentSemanticCache:
 
     def clear(self) -> int:
         with self._lock:
-            row = self._db.execute("SELECT COUNT(*) FROM semantic_cache_v1").fetchone()
+            row = self._db.execute(f"SELECT COUNT(*) FROM {_TABLE}").fetchone()
             count = int(row[0]) if row else 0
-            self._db.execute("DELETE FROM semantic_cache_v1")
+            self._db.execute(f"DELETE FROM {_TABLE}")
             self._db.commit()
             return count
