@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from ..cache_semantic import SemanticResultCache
 from ..provider import LocalProvider, TdxProvider, WebProvider
 
 if TYPE_CHECKING:
@@ -15,17 +16,23 @@ def create_runtime(
     web: Mapping[str, Any] | None = None,
     local: Any | None = None,
     provider_order: Sequence[str] | None = None,
+    semantic_cache: SemanticResultCache | None = None,
+    default_cache_ttl: float | None = None,
 ) -> Runtime:
-    """Create a v14 runtime from explicitly injected execution backends.
+    """Create a V14 runtime from explicitly injected execution backends.
 
-    ``web`` must map canonical Provider ids (for example ``eastmoney`` or
-    ``tencent``) to their source objects. Cache is intentionally absent here:
-    cache tiers preserve the original Provider identity and are integrated via
-    the canonical semantic cache layer instead of masquerading as Providers.
+    ``web`` maps canonical Provider ids (for example ``eastmoney`` or
+    ``tencent``) to source objects. ``semantic_cache`` is the existing
+    provenance-preserving cache keyed by canonical ``QueryFingerprint``; it is
+    never registered as a Provider.
     """
     from .runtime import Runtime
 
-    runtime = Runtime(provider_order=provider_order)
+    runtime = Runtime(
+        provider_order=provider_order,
+        semantic_cache=semantic_cache,
+        default_cache_ttl=default_cache_ttl,
+    )
     if local is not None:
         runtime.register_provider(LocalProvider(local))
     if tdx is not None:
