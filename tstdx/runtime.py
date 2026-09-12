@@ -1,7 +1,7 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Canonical provider-first execution runtime."""
+"""Canonical provider-first execution runtime for v13."""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from .cache_persistent import PersistentSemanticCache
 from .cache_semantic import SemanticResultCache
 from .direct_provider import DirectProviderExecutor
 from .domain.symbol import normalize_symbol
-from .errors import ValidationError
 from .query import QueryPlan, QueryPlanner, QuerySpec
 from .result import QueryResult
 
@@ -22,7 +21,7 @@ __all__ = ["UnifiedRuntime"]
 
 
 class UnifiedRuntime:
-    """Compile, cache, single-flight and execute one exact Provider plan."""
+    """Compile, cache, coalesce and execute one exact Provider plan."""
 
     def __init__(
         self,
@@ -89,15 +88,6 @@ class UnifiedRuntime:
 
     def execute(self, spec: QuerySpec, *, use_cache: bool = True) -> QueryResult[Any]:
         plan = self.planner.compile(spec)
-        if plan.spec.allow_partial:
-            raise ValidationError(
-                "allow_partial 只能通过 UnifiedRuntime.quotes_batch() 使用",
-                context={
-                    "capability": plan.spec.capability,
-                    "allow_partial": True,
-                    "phase": "runtime_execution",
-                },
-            )
         if use_cache:
             hit = self.cache.get(plan)
             if hit is not None:
@@ -117,6 +107,9 @@ class UnifiedRuntime:
                 hit = self._promote_l2(plan)
                 if hit is not None:
                     return hit
+                cached_error = self.negative_cache.get(plan)
+                if cached_error is not None:
+                    raise cached_error
             try:
                 result = self.executor.execute(plan)
             except Exception as exc:
@@ -127,11 +120,7 @@ class UnifiedRuntime:
                 self.cache.put(plan, result, ttl=self.cache_ttl)
                 if self.persistent_cache is not None:
                     with contextlib.suppress(Exception):
-                        self.persistent_cache.put(
-                            plan,
-                            result,
-                            ttl=self.persistent_ttl,
-                        )
+                        self.persistent_cache.put(plan, result, ttl=self.persistent_ttl)
                 self.negative_cache.invalidate(plan)
             return result
 
@@ -139,28 +128,23 @@ class UnifiedRuntime:
 
     def quotes(
         self,
-        symbols: str | list[str] | tuple[str, ...],
+        symbols: str | Sequence[str],
         *,
         provider: str | None = None,
         currentness: str = "live",
         max_age: float | None = None,
-        allow_partial: bool = False,
         use_cache: bool = True,
     ) -> QueryResult[Any]:
-        if allow_partial:
-            raise ValidationError(
-                "quotes(allow_partial=True) 已由 quotes_batch() 的可审计 BatchResult 取代",
-                context={"capability": "quotes", "allow_partial": True},
-            )
-        spec = QuerySpec.build(
-            "quotes",
-            symbols=symbols,
-            provider=provider,
-            currentness=currentness,
-            max_age=max_age,
-            allow_partial=False,
+        return self.execute(
+            QuerySpec.build(
+                "quotes",
+                symbols=symbols,
+                provider=provider,
+                currentness=currentness,
+                max_age=max_age,
+            ),
+            use_cache=use_cache,
         )
-        return self.execute(spec, use_cache=use_cache)
 
     def quotes_batch(
         self,
@@ -188,10 +172,7 @@ class UnifiedRuntime:
             except Exception as exc:
                 items[symbol] = BatchItem("failed", error=exc)
                 continue
-            if not result.data:
-                items[symbol] = BatchItem("missing")
-            else:
-                items[symbol] = BatchItem("ok", value=result)
+            items[symbol] = BatchItem("missing") if not result.data else BatchItem("ok", value=result)
         return BatchResult.build(items)
 
     def bars(
@@ -207,15 +188,123 @@ class UnifiedRuntime:
         max_age: float | None = None,
         use_cache: bool = True,
     ) -> QueryResult[Any]:
-        spec = QuerySpec.build(
-            "bars",
-            symbols=symbol,
-            provider=provider,
-            period=period,
-            count=count,
-            start=start,
-            adjustment=adjustment,
-            currentness=currentness,
-            max_age=max_age,
+        return self.execute(
+            QuerySpec.build(
+                "bars",
+                symbols=symbol,
+                provider=provider,
+                period=period,
+                count=count,
+                start=start,
+                adjustment=adjustment,
+                currentness=currentness,
+                max_age=max_age,
+            ),
+            use_cache=use_cache,
         )
-        return self.execute(spec, use_cache=use_cache)
+
+    def snapshot(
+        self,
+        symbol: str,
+        *,
+        provider: str | None = None,
+        currentness: str = "live",
+        max_age: float | None = None,
+        use_cache: bool = True,
+    ) -> QueryResult[Any]:
+        return self.execute(
+            QuerySpec.build(
+                "snapshot",
+                symbols=symbol,
+                provider=provider,
+                currentness=currentness,
+                max_age=max_age,
+            ),
+            use_cache=use_cache,
+        )
+
+    def minute(
+        self,
+        symbol: str,
+        *,
+        provider: str | None = None,
+        currentness: str = "live",
+        max_age: float | None = None,
+        use_cache: bool = True,
+    ) -> QueryResult[Any]:
+        return self.execute(
+            QuerySpec.build(
+                "minute",
+                symbols=symbol,
+                provider=provider,
+                currentness=currentness,
+                max_age=max_age,
+            ),
+            use_cache=use_cache,
+        )
+
+    def trades(
+        self,
+        symbol: str,
+        *,
+        provider: str | None = None,
+        start: int = 0,
+        count: int = 0,
+        currentness: str = "live",
+        max_age: float | None = None,
+        use_cache: bool = True,
+    ) -> QueryResult[Any]:
+        return self.execute(
+            QuerySpec.build(
+                "trades",
+                symbols=symbol,
+                provider=provider,
+                start=start,
+                count=count,
+                currentness=currentness,
+                max_age=max_age,
+            ),
+            use_cache=use_cache,
+        )
+
+    def security_count(
+        self,
+        *,
+        market: int | str = 0,
+        provider: str | None = None,
+        currentness: str = "business",
+        max_age: float | None = None,
+        use_cache: bool = True,
+    ) -> QueryResult[Any]:
+        return self.execute(
+            QuerySpec.build(
+                "security_count",
+                provider=provider,
+                market=market,
+                currentness=currentness,
+                max_age=max_age,
+            ),
+            use_cache=use_cache,
+        )
+
+    def security_list(
+        self,
+        *,
+        market: int | str = 0,
+        start: int = 0,
+        provider: str | None = None,
+        currentness: str = "business",
+        max_age: float | None = None,
+        use_cache: bool = True,
+    ) -> QueryResult[Any]:
+        return self.execute(
+            QuerySpec.build(
+                "security_list",
+                provider=provider,
+                market=market,
+                start=start,
+                currentness=currentness,
+                max_age=max_age,
+            ),
+            use_cache=use_cache,
+        )
