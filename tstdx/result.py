@@ -5,9 +5,8 @@
 
 Data origin and cache retrieval are separate facts. A cached direct Provider
 result remains ``origin=DIRECT`` with ``cache_tier='l1'``/``'l2'``; replay or
-synthetic data can therefore never become "real" merely because it was cached.
-This distinction is the foundation for later cache-poisoning and freshness
-gates.
+synthetic data can therefore never become real merely because it was cached.
+Provider is the only source identity in v13.
 """
 
 from __future__ import annotations
@@ -80,7 +79,6 @@ class Provenance:
         )
 
     def cached(self, tier: str) -> "Provenance":
-        """Return a cache-hit clone while preserving the original data origin."""
         normalized = str(tier).strip().lower()
         if not normalized:
             raise ValueError("cache tier must not be empty")
@@ -138,11 +136,6 @@ class ResultMeta:
             fingerprint=plan.fingerprint.value,
             provenance=provenance,
         )
-
-    @property
-    def source(self) -> str:
-        """Compatibility alias; Provider remains the canonical identity."""
-        return self.provider
 
 
 @dataclass(frozen=True, slots=True)
