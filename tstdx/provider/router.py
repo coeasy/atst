@@ -23,10 +23,17 @@ class ProviderRouter:
     def names(self) -> tuple[str, ...]:
         return tuple(self._providers)
 
+    @staticmethod
+    def _operation(request: Any) -> str:
+        return str(getattr(request, "operation", "") or "")
+
     def query(self, name: str, request: Any) -> Any:
         provider = self.get(name)
         if provider is None:
             raise KeyError(f"unknown provider: {name}")
+        operation = self._operation(request)
+        if not provider.supports(operation):
+            raise AttributeError(f"provider {name!r} does not support operation: {operation}")
         if not provider.health():
             raise RuntimeError(f"provider is unhealthy: {name}")
         return provider.query(request)
@@ -36,11 +43,15 @@ class ProviderRouter:
         if not candidates:
             raise RuntimeError("no providers are registered")
 
+        operation = self._operation(request)
         errors: dict[str, str] = {}
         for name in candidates:
             provider = self.get(name)
             if provider is None:
                 errors[name] = "not registered"
+                continue
+            if not provider.supports(operation):
+                errors[name] = "unsupported"
                 continue
             try:
                 if not provider.health():
