@@ -10,17 +10,19 @@ from ..provider.router import ProviderAttempts, ProviderRouter
 from ..providers import PROVIDERS, normalize_provider_id
 from ..query import QueryPlan, QueryPlanner, QuerySpec
 from ..result import Provenance, QueryResult
+from ..typed_query import CANONICAL_TYPED_CAPABILITIES
 
-_CORE_CAPABILITIES = frozenset({"quotes", "bars"})
+_SEMANTIC_CAPABILITIES = frozenset({"quotes", "bars"}) | CANONICAL_TYPED_CAPABILITIES
 
 
 class SemanticExecutionAdapter:
     """Bridge V14 orchestration to tstdx's canonical query/result contracts.
 
     The adapter does not define a second query or provenance model. It compiles
-    core market-data calls through :class:`tstdx.query.QueryPlanner`, optionally
-    consults :class:`tstdx.cache_semantic.SemanticResultCache`, executes the
-    dynamic Provider adapter, and returns the canonical :class:`QueryResult`.
+    semantic market-data calls through :class:`tstdx.query.QueryPlanner`,
+    optionally consults :class:`tstdx.cache_semantic.SemanticResultCache`,
+    executes the dynamic Provider adapter, and returns the canonical
+    :class:`QueryResult`.
     """
 
     def __init__(
@@ -46,7 +48,7 @@ class SemanticExecutionAdapter:
 
     def can_execute(self, request: Any, providers: Sequence[str]) -> bool:
         operation = str(getattr(request, "operation", "") or "").strip().lower()
-        return operation in _CORE_CAPABILITIES and bool(providers) and all(
+        return operation in _SEMANTIC_CAPABILITIES and bool(providers) and all(
             self._known_provider(provider) for provider in providers
         )
 
