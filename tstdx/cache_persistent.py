@@ -11,6 +11,7 @@ fingerprint/identity/TTL/freshness checks before returning or promoting data.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import threading
@@ -262,7 +263,8 @@ class PersistentSemanticCache:
                 remaining = max(0.0, (entry.expires_at_ns - now) / 1_000_000_000)
             return entry.to_result(plan, cache_tier="l2"), remaining
         except Exception:
-            self.invalidate(plan)
+            with contextlib.suppress(Exception):
+                self.invalidate(plan)
             return None
 
     def get(self, plan: QueryPlan, *, now_ns: int | None = None) -> QueryResult[Any] | None:
