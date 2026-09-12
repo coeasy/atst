@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.execution import ExecutionGraph, ExecutionNode
-from tstdx.execution.planner import Planner
+from tstdx.execution import ExecutionGraph, ExecutionNode, Planner
 from tstdx.provider import CacheProvider, Provider, ProviderRouter, TdxProvider
 from tstdx.runtime import QueryRequest, Runtime
 
