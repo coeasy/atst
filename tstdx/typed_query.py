@@ -4,11 +4,11 @@
 """Typed query contracts for the v14 capability runtime.
 
 Typed queries describe business intent without bypassing the canonical
-Provider/Channel/Capability registry.  A typed capability is executable through
+Provider/Channel/Capability registry. A typed capability is executable through
 V14 semantic orchestration only after the same capability is present in
 ``tstdx.providers.PROVIDERS``; contracts for data-source methods that are not yet
-registered remain explicit pending contracts rather than silently falling back
-to a second capability namespace.
+registered therefore remain pending automatically instead of creating a second
+capability namespace.
 """
 
 from __future__ import annotations
@@ -16,32 +16,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
 
+from .errors import ValidationError
+from .providers import PROVIDERS
+
 T = TypeVar("T")
-
-
-CANONICAL_TYPED_CAPABILITIES = frozenset(
-    {
-        "fund_holdings",
-        "bond_kline",
-        "futures_kline",
-        "options_snapshot",
-        "research_reports",
-        "f10",
-    }
-)
-
-# These source methods already exist, but the canonical Provider registry does
-# not yet advertise them.  Keep them visible as migration contracts while
-# preventing Runtime from executing them through a parallel capability truth.
-PENDING_TYPED_CAPABILITIES = frozenset(
-    {
-        "balance_sheet",
-        "income_sheet",
-        "cash_flow",
-        "fund_rank",
-        "news_financial",
-    }
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,8 +30,13 @@ class CapabilityQuery:
 
     @property
     def semantic_ready(self) -> bool:
-        """Whether this typed contract is backed by the canonical registry."""
-        return self.capability in CANONICAL_TYPED_CAPABILITIES
+        """Whether the canonical Provider registry can satisfy this capability."""
+        try:
+            if self.provider:
+                return PROVIDERS.supports(self.provider, self.capability)
+            return any(PROVIDERS.supports(provider, self.capability) for provider in PROVIDERS.ids())
+        except ValidationError:
+            return False
 
 
 @dataclass(frozen=True, slots=True)
