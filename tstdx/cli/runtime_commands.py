@@ -11,8 +11,8 @@ from typing import Any
 
 from .. import __version__
 from ..client_api import Client
-from ..orchestration import FallbackPolicy
 from ..integration.serialization import jsonable, serialize_result
+from ..orchestration import FallbackPolicy
 
 
 def _print(value: Any) -> None:
@@ -69,13 +69,29 @@ def cmd_bars(args: Any) -> int:
 
 def cmd_snapshot(args: Any) -> int:
     with Client() as client:
-        _print(serialize_result(client.snapshot(args.symbol, provider=args.provider, use_cache=not args.no_cache)))
+        _print(
+            serialize_result(
+                client.snapshot(
+                    args.symbol,
+                    provider=args.provider,
+                    use_cache=not args.no_cache,
+                )
+            )
+        )
     return 0
 
 
 def cmd_minute(args: Any) -> int:
     with Client() as client:
-        _print(serialize_result(client.minute(args.symbol, provider=args.provider, use_cache=not args.no_cache)))
+        _print(
+            serialize_result(
+                client.minute(
+                    args.symbol,
+                    provider=args.provider,
+                    use_cache=not args.no_cache,
+                )
+            )
+        )
     return 0
 
 
@@ -131,22 +147,23 @@ def cmd_stream(args: Any) -> int:
     def _error(exc: Exception) -> None:
         _print({"stream_error": type(exc).__name__})
 
-    stream = Client().stream(
-        args.symbols,
-        provider=args.provider,
-        interval=args.interval,
-        diff_only=args.diff_only,
-        max_queue=args.max_queue,
-        on_quote=_quote,
-        on_error=_error,
-    )
-    stream.start()
-    try:
-        if args.seconds > 0:
-            time.sleep(args.seconds)
-        else:
-            while True:
-                time.sleep(3600)
-    finally:
-        stream.stop()
+    with Client() as client:
+        stream = client.stream(
+            args.symbols,
+            provider=args.provider,
+            interval=args.interval,
+            diff_only=args.diff_only,
+            max_queue=args.max_queue,
+            on_quote=_quote,
+            on_error=_error,
+        )
+        stream.start()
+        try:
+            if args.seconds > 0:
+                time.sleep(args.seconds)
+            else:
+                while True:
+                    time.sleep(3600)
+        finally:
+            stream.stop()
     return 0
