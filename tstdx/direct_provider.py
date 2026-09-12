@@ -11,7 +11,6 @@ allowed inside the selected Provider boundary.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,8 +26,6 @@ __all__ = [
     "audit_direct_bindings",
 ]
 
-ExecutorFn = Callable[[QueryPlan], Any]
-
 
 @dataclass(frozen=True, slots=True)
 class DirectBinding:
@@ -42,9 +39,6 @@ class DirectBinding:
         return (self.provider, self.channel, self.capability)
 
 
-# Canonical core bindings. Provider-specific auxiliary capabilities continue to
-# live behind their dedicated public APIs; quotes/bars are the first mandatory
-# unified execution surface because QueryPlanner currently canonicalizes them.
 DIRECT_BINDINGS: tuple[DirectBinding, ...] = (
     DirectBinding("tdx", "quotation", "quotes", "_tdx_quotes"),
     DirectBinding("tdx", "quotation", "bars", "_tdx_bars"),
@@ -62,7 +56,6 @@ DIRECT_BINDINGS: tuple[DirectBinding, ...] = (
 
 
 def audit_direct_bindings() -> tuple[DirectBinding, ...]:
-    """Validate planner-visible core capabilities against executable bindings."""
     seen: set[tuple[str, str, str]] = set()
     for binding in DIRECT_BINDINGS:
         if binding.key in seen:
@@ -75,16 +68,15 @@ def audit_direct_bindings() -> tuple[DirectBinding, ...]:
         spec = PROVIDERS.get(provider)
         for channel in spec.channels:
             for capability in channel.capabilities & {"quotes", "bars"}:
-                # Not every provider-internal TDX specialty channel is part of the
-                # unified QueryPlanner surface. The planner canonicalizes only the
-                # bindings below; extended/goods/mac remain provider-specific.
                 if provider == "tdx" and channel.id != "quotation":
                     continue
                 required.add((provider, channel.id, capability))
 
     missing = sorted(required - seen)
     if missing:
-        raise RuntimeError(f"registered unified Provider capability has no Direct binding: {missing!r}")
+        raise RuntimeError(
+            f"registered unified Provider capability has no Direct binding: {missing!r}"
+        )
     return DIRECT_BINDINGS
 
 
@@ -192,6 +184,21 @@ class DirectProviderExecutor:
         source_name = "minute_kline" if plan.channel == "minute_kline" else "kline"
         src = create_source(source_name, timeout=self.timeout)
         try:
+            if plan.channel == "minute_kline":
+                if plan.spec.adjustment:
+                    raise ValidationError(
+                        "Tencent minute_kline 不支持复权参数",
+                        context={
+                            "provider": "tencent",
+                            "channel": "minute_kline",
+                            "adjustment": plan.spec.adjustment,
+                        },
+                    )
+                return src.fetch_bars(
+                    plan.spec.symbols[0],
+                    period=plan.spec.period,
+                    count=plan.spec.count,
+                )
             return src.fetch_bars(
                 plan.spec.symbols[0],
                 period=plan.spec.period,
@@ -240,7 +247,9 @@ class DirectProviderExecutor:
         src = BaiduSource(timeout=self.timeout)
         try:
             return src.fetch_kline(
-                plan.spec.symbols[0], period=plan.spec.period, count=plan.spec.count
+                plan.spec.symbols[0],
+                period=plan.spec.period,
+                count=plan.spec.count,
             )
         finally:
             src.close()
