@@ -9,8 +9,13 @@ from .node import ExecutionNode
 from .plan import ExecutionPlan
 
 
-class Planner:
-    """Convert runtime requests into provider-backed execution plans."""
+class ExecutionPlanner:
+    """Compile runtime orchestration into an execution DAG.
+
+    This planner is intentionally distinct from :class:`tstdx.query.QueryPlanner`.
+    ``QueryPlanner`` owns deterministic single-Provider semantic planning;
+    ``ExecutionPlanner`` owns orchestration/fallback across execution adapters.
+    """
 
     def __init__(
         self,
