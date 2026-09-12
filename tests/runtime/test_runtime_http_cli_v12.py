@@ -31,7 +31,7 @@ def test_tdx_adjustment_fails_before_provider_io() -> None:
         executor._tdx_bars(_bars_plan("tdx"))
 
 
-def test_local_adjustment_fails_before_facade_io() -> None:
+def test_local_adjustment_fails_before_reader_io() -> None:
     executor = DirectProviderExecutor(vipdoc_root="/tmp/vipdoc")
     with pytest.raises(ValidationError):
         executor._local_bars(_bars_plan("local_vipdoc"))
@@ -72,7 +72,7 @@ def test_runtime_http_validation_and_native_failures_use_envelopes() -> None:
 
     from tstdx.integration.runtime_http import create_runtime_app
 
-    class FailingRuntime:
+    class Runtime:
         class Planner:
             default_provider = "tdx"
 
@@ -82,24 +82,27 @@ def test_runtime_http_validation_and_native_failures_use_envelopes() -> None:
         planner = Planner()
         executor = Executor()
 
+    class FailingClient:
+        runtime = Runtime()
+
         def quotes(self, *args, **kwargs):
             raise RuntimeError("secret filesystem detail")
 
         def bars(self, *args, **kwargs):
             raise ValidationError("bad bars", context={"provider": "tdx", "secret": "x"})
 
-    client = TestClient(create_runtime_app(FailingRuntime()))
+    client = TestClient(create_runtime_app(FailingClient()))
 
-    invalid = client.get("/v2/bars/sh600519?count=0")
+    invalid = client.get("/v13/bars/sh600519?count=0")
     assert invalid.status_code == 422
     assert invalid.json()["error"]["code"] == "E1010"
 
-    native = client.get("/v2/quotes?symbols=sh600519")
+    native = client.get("/v13/quotes?symbols=sh600519")
     assert native.status_code == 500
     assert native.json()["error"]["code"] == "E9000"
     assert "secret filesystem detail" not in native.text
 
-    domain = client.get("/v2/bars/sh600519")
+    domain = client.get("/v13/bars/sh600519")
     assert domain.status_code == 422
     assert domain.json()["error"]["code"] == "E1010"
     assert domain.json()["error"]["context"] == {"provider": "tdx"}
