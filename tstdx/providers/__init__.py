@@ -1,16 +1,12 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Canonical Provider / Channel / Capability registry for the v11 runtime.
+"""Canonical v13 Provider / Channel / Capability registry.
 
-The registry is deliberately static and immutable. It answers *who* can provide
-a capability and through *which* provider-internal channel. Runtime health,
-retries, caching and fallback policy live elsewhere.
-
-Provider identity is a trust boundary: selecting ``tdx`` must never silently
-execute Tencent/Eastmoney/Sina. Host failover remains legal inside the selected
-TDX Provider. Local vipdoc data is a separate Provider so historical files can
-never impersonate live TDX network data.
+The registry is executable truth, not a catalog of historical helper methods.
+A capability appears here only after it has a canonical Query contract, an exact
+Direct binding and contract tests. Provider identity is a trust boundary: one
+Provider never silently executes another Provider.
 """
 
 from __future__ import annotations
@@ -33,8 +29,6 @@ __all__ = [
 
 @dataclass(frozen=True, slots=True)
 class ChannelSpec:
-    """Static execution facts for one provider-internal channel."""
-
     id: str
     capabilities: frozenset[str]
     markets: frozenset[str] = frozenset()
@@ -106,8 +100,6 @@ class ChannelSpec:
 
 @dataclass(frozen=True, slots=True)
 class ProviderSpec:
-    """Static facts for one independent data Provider."""
-
     id: str
     display_name: str
     role: str
@@ -144,7 +136,7 @@ class ProviderSpec:
 
 
 class ProviderRegistry:
-    """Immutable single source of truth for Provider capabilities."""
+    """Immutable SSOT for capabilities that are actually executable by v13."""
 
     def __init__(self, specs: Iterable[ProviderSpec]) -> None:
         values = tuple(specs)
@@ -230,7 +222,6 @@ _PROVIDER_ALIASES = {
     "qq": "tencent",
     "em": "eastmoney",
     "east_money": "eastmoney",
-    "wencai": "iwencai",
     "local": "local_vipdoc",
     "reader": "local_vipdoc",
     "vipdoc": "local_vipdoc",
@@ -242,29 +233,18 @@ def normalize_provider_id(value: str) -> str:
     return _PROVIDER_ALIASES.get(raw, raw)
 
 
-def resolve_provider(
-    *,
-    provider: str | None = None,
-    source: str | None = None,
-    default: str | None = None,
-) -> str:
-    """Resolve compatibility selectors into exactly one Provider id.
+def resolve_provider(*, provider: str | None = None, default: str | None = None) -> str:
+    """Resolve one unambiguous Provider id.
 
-    ``source='web'`` is intentionally *not* an alias: it is ambiguous now that
-    Eastmoney/Tencent/Sina/JSL/BOC are independent Providers.
+    v13 intentionally has no `source` selector and no pseudo-provider `web`.
     """
 
-    p = normalize_provider_id(provider) if provider is not None else None
-    s = normalize_provider_id(source) if source is not None else None
-    if p is not None and s is not None and p != s:
-        raise ValidationError(
-            f"provider={provider!r} 与 source={source!r} 指向不同 Provider",
-            context={"provider": provider, "source": source},
-        )
-    selected = p or s or normalize_provider_id(default or "tdx")
+    selected = normalize_provider_id(provider or default or "tdx")
+    if not selected:
+        raise ValidationError("provider 不能为空")
     if selected == "web":
         raise ValidationError(
-            "source/provider='web' 已是歧义选择器；请显式指定 eastmoney/tencent/sina 等 Provider",
+            "'web' 不是 Provider；请显式指定 eastmoney/tencent/sina/baidu",
             context={"provider": selected, "ambiguous": True},
         )
     return selected
@@ -304,13 +284,11 @@ PROVIDERS = ProviderRegistry(
                     "quotation",
                     "quotes",
                     "bars",
+                    "snapshot",
                     "minute",
                     "trades",
                     "security_count",
                     "security_list",
-                    "finance",
-                    "capital_changes",
-                    "snapshot",
                     markets=("cn_a", "cn_bse"),
                     live=True,
                     batch_limits={"quotes": 60},
@@ -326,28 +304,8 @@ PROVIDERS = ProviderRegistry(
                         "season",
                         "year",
                     ),
+                    notes="Canonical Tier-A Provider binding",
                 ),
-                _c(
-                    "extended",
-                    "quotes",
-                    "bars",
-                    "ex_market_list",
-                    "ex_instruments",
-                    "ex_quotes",
-                    "ex_bars",
-                    live=True,
-                ),
-                _c(
-                    "goods",
-                    "quotes",
-                    "bars",
-                    "goods_quotes",
-                    "goods_bars",
-                    markets=("future", "commodity"),
-                    live=True,
-                ),
-                _c("f10", "f10_catalog", "f10"),
-                _c("mac", "quotes", "mac_quotes", live=True),
             ),
         ),
         ProviderSpec(
@@ -358,7 +316,7 @@ PROVIDERS = ProviderRegistry(
                 _c(
                     "vipdoc",
                     "bars",
-                    markets=("cn_a", "future"),
+                    markets=("cn_a",),
                     local=True,
                     periods=("1min", "5min", "day"),
                     notes="Explicit local historical Provider; never substitutes live TDX",
@@ -368,7 +326,7 @@ PROVIDERS = ProviderRegistry(
         ProviderSpec(
             id="tencent",
             display_name="Tencent Finance",
-            role="auxiliary_live",
+            role="auxiliary",
             channels=(
                 _c("quote", "quotes", markets=("cn_a", "hk", "us"), live=True),
                 _c(
@@ -383,17 +341,12 @@ PROVIDERS = ProviderRegistry(
                     markets=("cn_a",),
                     periods=("1min", "5min", "15min", "30min", "60min"),
                 ),
-                _c("minute", "minute", markets=("cn_a",), live=True),
-                _c("ticks", "trades", markets=("cn_a",), live=True),
-                _c("global", "global_quotes", live=True),
-                _c("market_stat", "market_stat", live=True),
-                _c("board_rank", "board_rank", markets=("cn_a",), live=True),
             ),
         ),
         ProviderSpec(
             id="sina",
             display_name="Sina Finance",
-            role="auxiliary_live_info",
+            role="auxiliary",
             channels=(
                 _c("quote", "quotes", markets=("cn_a", "hk"), live=True),
                 _c(
@@ -402,18 +355,12 @@ PROVIDERS = ProviderRegistry(
                     markets=("cn_a",),
                     periods=("5min", "15min", "30min", "60min", "120min", "day", "1200min"),
                 ),
-                _c("suggest", "suggest"),
-                _c("industry_board", "industry_board"),
-                _c("board_list", "board_list"),
-                _c("board_member", "board_member"),
-                _c("fund_flow", "fund_flow", markets=("cn_a",)),
-                _c("news", "news"),
             ),
         ),
         ProviderSpec(
             id="eastmoney",
             display_name="Eastmoney",
-            role="auxiliary_live_info",
+            role="auxiliary",
             channels=(
                 _c("quote", "quotes", markets=("cn_a",), live=True),
                 _c(
@@ -422,71 +369,12 @@ PROVIDERS = ProviderRegistry(
                     markets=("cn_a", "hk", "us"),
                     periods=("1min", "5min", "15min", "30min", "60min", "day"),
                 ),
-                _c("trends", "minute", markets=("cn_a",), live=True),
-                _c("rank", "rank"),
-                _c("fund_flow", "fund_flow"),
-                _c("limit_pool", "limit_pool", live=True),
-                _c("stock_changes", "stock_changes", live=True),
-                _c("northbound", "northbound", live=True),
-                _c("hot_rank", "hot_rank", live=True),
-                _c("corporate", "corporate_action"),
-                _c("longhu", "longhu"),
-                _c("margin", "margin"),
-                _c("index_constituents", "index_constituents"),
-                _c(
-                    "fund",
-                    "fund_base_info",
-                    "fund_base_info_multi",
-                    "fund_manager",
-                    "fund_holdings",
-                    "fund_period_change",
-                    "fund_asset_allocation",
-                    "fund_industry_distribution",
-                    "fund_public_dates",
-                ),
-                _c(
-                    "derivatives",
-                    "futures_base_info",
-                    "futures_realtime",
-                    "futures_kline",
-                    "futures_trades",
-                    "bond_realtime",
-                    "bond_base_info",
-                    "bond_all_base_info",
-                    "bond_kline",
-                    "bond_history_bill",
-                    "bond_today_bill",
-                    "bond_trades",
-                ),
-                _c(
-                    "datacenter",
-                    "stock_base_info",
-                    "stock_all_performance",
-                    "stock_report_dates",
-                    "ipo_review",
-                    "dividend_history",
-                    "stock_valuation",
-                    "holder_changes",
-                    "financial_abstract",
-                    "announcements",
-                    "free_holders",
-                    "holder_num",
-                ),
-                _c("research", "research_reports", "research_visits"),
-                _c(
-                    "options",
-                    "options_list",
-                    "options_snapshot",
-                    "options_trends",
-                    markets=("option",),
-                    live=True,
-                ),
             ),
         ),
         ProviderSpec(
             id="baidu",
             display_name="Baidu Finance",
-            role="auxiliary_live",
+            role="auxiliary",
             channels=(
                 _c("quote", "quotes", markets=("cn_a",), live=True),
                 _c(
@@ -495,27 +383,7 @@ PROVIDERS = ProviderRegistry(
                     markets=("cn_a",),
                     periods=("day", "week", "month"),
                 ),
-                _c("minute", "minute", markets=("cn_a",), live=True),
-                _c("ticks", "trades", markets=("cn_a",), live=True),
             ),
-        ),
-        ProviderSpec(
-            id="jsl",
-            display_name="Jisilu",
-            role="auxiliary_info",
-            channels=(_c("bond", "convertible_bond", markets=("bond",)),),
-        ),
-        ProviderSpec(
-            id="boc",
-            display_name="Bank of China",
-            role="auxiliary_info",
-            channels=(_c("fx", "fx_rates", markets=("fx",)),),
-        ),
-        ProviderSpec(
-            id="iwencai",
-            display_name="iWencai",
-            role="auxiliary_info",
-            channels=(_c("screening", "wencai", "screening", markets=("cn_a",)),),
         ),
     )
 )
