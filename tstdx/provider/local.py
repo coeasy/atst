@@ -13,6 +13,9 @@ class LocalProvider(Provider):
     def __init__(self, reader: Any | None = None) -> None:
         self.reader = reader
 
+    def supports(self, operation: str) -> bool:
+        return self.reader is not None and callable(getattr(self.reader, operation, None))
+
     def query(self, request: Any) -> Any:
         if self.reader is None:
             raise RuntimeError("local reader is not configured")
