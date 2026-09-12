@@ -25,19 +25,10 @@ def _bars_plan(provider: str, adjustment: str = "qfq"):
     )
 
 
-def test_tdx_adjustment_fails_before_provider_io(monkeypatch) -> None:
+def test_tdx_adjustment_fails_before_provider_io() -> None:
     executor = DirectProviderExecutor()
-    imported = False
-
-    def explode(*args, **kwargs):
-        nonlocal imported
-        imported = True
-        raise AssertionError("provider I/O should not happen")
-
-    monkeypatch.setattr(executor, "_tdx_bars", executor._tdx_bars)
     with pytest.raises(ValidationError):
         executor._tdx_bars(_bars_plan("tdx"))
-    assert imported is False
 
 
 def test_local_adjustment_fails_before_facade_io() -> None:
