@@ -259,12 +259,25 @@ def _validate_composed(
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
 ) -> None:
-    required = {"adjusted_bars": 1, "sync_daily": 1, "security_list_all": 0}[capability]
+    required = {
+        "adjusted_bars": 1,
+        "sync_daily": 1,
+        "security_list_all": 0,
+    }[capability]
     if len(args) < required:
-        raise TypeError(f"{capability} requires at least {required} positional argument(s)")
+        raise TypeError(
+            f"{capability} requires at least {required} positional argument(s)"
+        )
     allowed = {
-        "adjusted_bars": {"method", "period", "count", "start", "events", "anchor_date"},
-        "sync_daily": {"root", "profile"},
+        "adjusted_bars": {
+            "method",
+            "period",
+            "count",
+            "start",
+            "events",
+            "anchor_date",
+        },
+        "sync_daily": {"root", "profile", "chunk", "max_windows"},
         "security_list_all": {"market"},
     }[capability]
     unknown = sorted(set(kwargs) - allowed)
@@ -298,9 +311,9 @@ def validate_call(
 ) -> None:
     """Validate migrated arguments before any Provider I/O.
 
-    The catalog is still generic at the transport boundary, but caller arguments
-    are bound against the real implementation signature (or an explicit manual
-    contract for composed adapters) before QuerySpec is compiled.
+    The catalog is generic at the transport boundary, but caller arguments are
+    bound against the real implementation signature (or an explicit manual
+    contract for composed adapters) before execution.
     """
     try:
         meta = binding_for(provider, channel, capability)
@@ -321,9 +334,8 @@ def validate_call(
             if capability == "f10":
                 if len(args) != 2 or kwargs:
                     raise TypeError("f10 requires symbol and filename")
-            else:
-                if len(args) != 1 or kwargs:
-                    raise TypeError("f10_catalog requires exactly one symbol")
+            elif len(args) != 1 or kwargs:
+                raise TypeError("f10_catalog requires exactly one symbol")
             return
         if meta.backend in {"ex_client", "goods_client"}:
             from .client import ExMarketClient, GoodsClient
