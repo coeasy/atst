@@ -5,6 +5,8 @@ from typing import Any
 
 from .base import Provider
 
+ProviderAttempts = list[dict[str, str]]
+
 
 class ProviderRouter:
     """Registry and fallback selector for runtime providers."""
@@ -27,18 +29,61 @@ class ProviderRouter:
     def _operation(request: Any) -> str:
         return str(getattr(request, "operation", "") or "")
 
-    def query(self, name: str, request: Any) -> Any:
+    @staticmethod
+    def _record(
+        attempts: ProviderAttempts | None,
+        name: str,
+        status: str,
+        *,
+        detail: str = "",
+    ) -> None:
+        if attempts is None:
+            return
+        item = {"provider": name, "status": status}
+        if detail:
+            item["detail"] = detail
+        attempts.append(item)
+
+    def query(
+        self,
+        name: str,
+        request: Any,
+        *,
+        attempts: ProviderAttempts | None = None,
+    ) -> Any:
         provider = self.get(name)
         if provider is None:
+            self._record(attempts, name, "not_registered")
             raise KeyError(f"unknown provider: {name}")
+
         operation = self._operation(request)
         if not provider.supports(operation):
+            self._record(attempts, name, "unsupported", detail=operation)
             raise AttributeError(f"provider {name!r} does not support operation: {operation}")
         if not provider.health():
+            self._record(attempts, name, "unhealthy")
             raise RuntimeError(f"provider is unhealthy: {name}")
-        return provider.query(request)
 
-    def query_first(self, request: Any, names: Iterable[str] | None = None) -> tuple[str, Any]:
+        try:
+            result = provider.query(request)
+        except Exception as exc:
+            self._record(
+                attempts,
+                name,
+                "failed",
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+            raise
+        self._record(attempts, name, "selected")
+        return result
+
+    def query_first(
+        self,
+        request: Any,
+        names: Iterable[str] | None = None,
+        *,
+        attempts: ProviderAttempts | None = None,
+    ) -> tuple[str, Any]:
         candidates = tuple(names) if names is not None else self.names()
         if not candidates:
             raise RuntimeError("no providers are registered")
@@ -49,17 +94,25 @@ class ProviderRouter:
             provider = self.get(name)
             if provider is None:
                 errors[name] = "not registered"
+                self._record(attempts, name, "not_registered")
                 continue
             if not provider.supports(operation):
                 errors[name] = "unsupported"
+                self._record(attempts, name, "unsupported", detail=operation)
                 continue
             try:
                 if not provider.health():
                     errors[name] = "unhealthy"
+                    self._record(attempts, name, "unhealthy")
                     continue
-                return name, provider.query(request)
+                result = provider.query(request)
             except Exception as exc:  # provider boundary: aggregate and continue
-                errors[name] = f"{type(exc).__name__}: {exc}"
+                detail = f"{type(exc).__name__}: {exc}"
+                errors[name] = detail
+                self._record(attempts, name, "failed", detail=detail)
+                continue
+            self._record(attempts, name, "selected")
+            return name, result
 
         detail = "; ".join(f"{name}={error}" for name, error in errors.items())
         raise RuntimeError(f"all providers failed: {detail}")
