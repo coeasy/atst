@@ -14,7 +14,7 @@ from typing import Any
 
 from .error_envelope import to_error_envelope
 from .errors import AllSourcesExhausted
-from .providers import resolve_provider
+from .providers import PROVIDERS, resolve_provider
 from .result import QueryResult
 from .runtime import UnifiedRuntime
 
@@ -37,6 +37,8 @@ class FallbackPolicy:
             raise ValueError("fallback policy requires at least one Provider")
         if len(normalized) != len(set(normalized)):
             raise ValueError("fallback policy cannot contain duplicate Providers")
+        for provider in normalized:
+            PROVIDERS.get(provider)
         return cls(normalized)
 
 
