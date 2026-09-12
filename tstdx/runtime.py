@@ -6,12 +6,15 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Sequence
 from typing import Any
 
-from .batch import NegativeCache, SingleFlight
+from .batch import BatchItem, BatchResult, NegativeCache, SingleFlight
 from .cache_persistent import PersistentSemanticCache
 from .cache_semantic import SemanticResultCache
 from .direct_provider import DirectProviderExecutor
+from .domain.symbol import normalize_symbol
+from .errors import ValidationError
 from .query import QueryPlan, QueryPlanner, QuerySpec
 from .result import QueryResult
 
@@ -86,6 +89,15 @@ class UnifiedRuntime:
 
     def execute(self, spec: QuerySpec, *, use_cache: bool = True) -> QueryResult[Any]:
         plan = self.planner.compile(spec)
+        if plan.spec.allow_partial:
+            raise ValidationError(
+                "allow_partial 只能通过 UnifiedRuntime.quotes_batch() 使用",
+                context={
+                    "capability": plan.spec.capability,
+                    "allow_partial": True,
+                    "phase": "runtime_execution",
+                },
+            )
         if use_cache:
             hit = self.cache.get(plan)
             if hit is not None:
@@ -135,15 +147,52 @@ class UnifiedRuntime:
         allow_partial: bool = False,
         use_cache: bool = True,
     ) -> QueryResult[Any]:
+        if allow_partial:
+            raise ValidationError(
+                "quotes(allow_partial=True) 已由 quotes_batch() 的可审计 BatchResult 取代",
+                context={"capability": "quotes", "allow_partial": True},
+            )
         spec = QuerySpec.build(
             "quotes",
             symbols=symbols,
             provider=provider,
             currentness=currentness,
             max_age=max_age,
-            allow_partial=allow_partial,
+            allow_partial=False,
         )
         return self.execute(spec, use_cache=use_cache)
+
+    def quotes_batch(
+        self,
+        symbols: Sequence[str],
+        *,
+        provider: str | None = None,
+        currentness: str = "live",
+        max_age: float | None = None,
+        use_cache: bool = True,
+    ) -> BatchResult[QueryResult[Any]]:
+        """Execute independently auditable quote requests without hidden fallback."""
+        items: dict[str, BatchItem[QueryResult[Any]]] = {}
+        for raw_symbol in symbols:
+            symbol = normalize_symbol(raw_symbol)
+            if symbol in items:
+                continue
+            try:
+                result = self.quotes(
+                    symbol,
+                    provider=provider,
+                    currentness=currentness,
+                    max_age=max_age,
+                    use_cache=use_cache,
+                )
+            except Exception as exc:
+                items[symbol] = BatchItem("failed", error=exc)
+                continue
+            if not result.data:
+                items[symbol] = BatchItem("missing")
+            else:
+                items[symbol] = BatchItem("ok", value=result)
+        return BatchResult.build(items)
 
     def bars(
         self,
