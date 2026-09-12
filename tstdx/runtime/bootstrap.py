@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..provider import CacheProvider, LocalProvider, TdxProvider, WebProvider
-from .runtime import Runtime
+
+if TYPE_CHECKING:
+    from .runtime import Runtime
 
 
 def create_runtime(
@@ -20,6 +22,8 @@ def create_runtime(
     Backends are injected explicitly. This keeps the core package zero-dependency
     and lets existing clients/readers migrate behind the runtime incrementally.
     """
+    from .runtime import Runtime
+
     runtime = Runtime(provider_order=provider_order)
     if cache is not None:
         runtime.register_provider(CacheProvider(cache))
