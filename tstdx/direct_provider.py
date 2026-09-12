@@ -12,6 +12,7 @@ allowed inside the selected Provider boundary.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from .errors import InternalError, TdxError, ValidationError
@@ -177,19 +178,42 @@ class DirectProviderExecutor:
                     "adjustment": plan.spec.adjustment,
                 },
             )
-        from .facade.api import UnifiedQuoteAPI
 
-        api = UnifiedQuoteAPI(route="local", vipdoc_root=self.vipdoc_root, timeout=self.timeout)
-        try:
-            return api.bars(
-                plan.spec.symbols[0],
-                period=plan.spec.period,
-                count=plan.spec.count,
-                start=plan.spec.start,
-                route="local",
+        from .domain.symbol import split_symbol
+        from .reader import DayBarReader, MinBarReader
+
+        market, code = split_symbol(plan.spec.symbols[0])
+        if market not in {"sh", "sz", "bj"}:
+            raise ValidationError(
+                "local_vipdoc Direct bars 仅支持沪深北本地目录",
+                context={"provider": "local_vipdoc", "symbol": plan.spec.symbols[0]},
             )
-        finally:
-            api.close()
+
+        root = Path(self.vipdoc_root)
+        canonical = f"{market}{code}"
+        if plan.spec.period == "day":
+            path = root / market / "lday" / f"{canonical}.day"
+            rows = DayBarReader().read(path, output="model")
+        elif plan.spec.period == "1min":
+            path = root / market / "minline" / f"{canonical}.lc1"
+            rows = MinBarReader(profile="a_share_min", interval=1).read(path, output="model")
+        elif plan.spec.period == "5min":
+            path = root / market / "fzline" / f"{canonical}.lc5"
+            rows = MinBarReader(profile="a_share_min", interval=5).read(path, output="model")
+        else:
+            raise ValidationError(
+                "local_vipdoc Direct bars 仅支持 day/1min/5min",
+                context={
+                    "provider": "local_vipdoc",
+                    "period": plan.spec.period,
+                },
+            )
+
+        if plan.spec.start:
+            end = max(0, len(rows) - plan.spec.start)
+            begin = max(0, end - plan.spec.count) if plan.spec.count else 0
+            return rows[begin:end]
+        return rows[-plan.spec.count :] if plan.spec.count else rows
 
     def _web_quotes(self, plan: QueryPlan) -> Any:
         from .web import get_quotes
