@@ -13,7 +13,8 @@
   ``QueryPlan``，跨 Provider fallback 只能由显式策略层触发。
 * **Fail-closed Streaming**：canonical stream 采用显式 ``StreamState``。
 * **语义缓存**：canonical cache 以完整 ``QueryFingerprint`` 隔离 Provider /
-  Channel / Capability，并保持原始 provenance。
+  Channel / Capability，并保持原始 provenance；可选安全 SQLite L2 仅持久化
+  可验证 DIRECT 结果，promotion 前重新校验 fingerprint/freshness。
 * **统一执行**：``UnifiedRuntime`` 把 Planner / Direct Provider / Cache /
   SingleFlight / negative cache 收口到同一主体链路。
 * **原创实现**：洁净室流程，协议事实源于自有抓包与本地文件分析。
@@ -47,6 +48,7 @@ __all__ = [
     "ProviderRegistry",
     "PROVIDERS",
     "SemanticResultCache",
+    "PersistentSemanticCache",
     "DirectBinding",
     "DirectProviderExecutor",
     "DIRECT_BINDINGS",
@@ -87,6 +89,7 @@ def get_config() -> Any:
 
 if TYPE_CHECKING:  # pragma: no cover
     from .batch import BatchItem, BatchResult, NegativeCache, SingleFlight
+    from .cache_persistent import PersistentSemanticCache
     from .cache_semantic import SemanticResultCache
     from .client import AsyncTdxClient, TdxClient
     from .config import load_config
@@ -128,6 +131,7 @@ _LAZY: dict[str, tuple[str, str]] = {
     "ProviderRegistry": ("tstdx.providers", "ProviderRegistry"),
     "PROVIDERS": ("tstdx.providers", "PROVIDERS"),
     "SemanticResultCache": ("tstdx.cache_semantic", "SemanticResultCache"),
+    "PersistentSemanticCache": ("tstdx.cache_persistent", "PersistentSemanticCache"),
     "DirectBinding": ("tstdx.direct_provider", "DirectBinding"),
     "DirectProviderExecutor": ("tstdx.direct_provider", "DirectProviderExecutor"),
     "DIRECT_BINDINGS": ("tstdx.direct_provider", "DIRECT_BINDINGS"),
