@@ -143,6 +143,15 @@ class DirectProviderExecutor:
             return client.quotes(list(plan.spec.symbols))
 
     def _tdx_bars(self, plan: QueryPlan) -> Any:
+        if plan.spec.adjustment:
+            raise ValidationError(
+                "TDX Direct bars 不支持在原始 bars 调用中静默复权",
+                context={
+                    "provider": "tdx",
+                    "channel": "quotation",
+                    "adjustment": plan.spec.adjustment,
+                },
+            )
         from .client import TdxClient
 
         with TdxClient(hosts=self.hosts, timeout=self.timeout) as client:
@@ -158,6 +167,15 @@ class DirectProviderExecutor:
             raise ValidationError(
                 "local_vipdoc Provider 需要显式 vipdoc_root",
                 context={"provider": "local_vipdoc", "channel": "vipdoc"},
+            )
+        if plan.spec.adjustment:
+            raise ValidationError(
+                "local_vipdoc Direct bars 不支持静默复权",
+                context={
+                    "provider": "local_vipdoc",
+                    "channel": "vipdoc",
+                    "adjustment": plan.spec.adjustment,
+                },
             )
         from .facade.api import UnifiedQuoteAPI
 
