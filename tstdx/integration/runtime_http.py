@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from ..error_envelope import to_error_envelope
@@ -14,16 +15,25 @@ from ..runtime import UnifiedRuntime
 __all__ = ["create_runtime_app"]
 
 
+def _jsonable(value: Any) -> Any:
+    if is_dataclass(value) and not isinstance(value, type):
+        return asdict(value)
+    if hasattr(value, "to_dict"):
+        return value.to_dict()
+    if isinstance(value, list):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, tuple):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _jsonable(item) for key, item in value.items()}
+    return value
+
+
 def _serialize_result(result: Any) -> dict[str, Any]:
-    data = result.data
-    if isinstance(data, list):
-        data = [item.to_dict() if hasattr(item, "to_dict") else item for item in data]
-    elif hasattr(data, "to_dict"):
-        data = data.to_dict()
     meta = result.meta
     provenance = meta.provenance
     return {
-        "data": data,
+        "data": _jsonable(result.data),
         "meta": {
             "provider": meta.provider,
             "channel": meta.channel,
@@ -71,7 +81,6 @@ def create_runtime_app(runtime: UnifiedRuntime | None = None) -> Any:
     @app.exception_handler(HTTPException)
     async def _http_error(request: Request, exc: HTTPException) -> JSONResponse:
         del request
-        # Framework-generated HTTP exceptions still use the canonical safe body.
         error = ValidationError(
             "http request rejected",
             context={"phase": "http_framework"},
