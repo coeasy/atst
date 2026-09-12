@@ -178,9 +178,6 @@ class DirectProviderExecutor:
     def _migrated_capability(self, plan: QueryPlan) -> Any:
         meta = binding_for(plan.provider, plan.channel, plan.spec.capability)
         args, kwargs = self._call_payload(plan)
-
-        # Signature/contract validation is intentionally performed here before
-        # opening a socket, HTTP session or local data file.
         validate_call(
             plan.provider,
             plan.channel,
@@ -347,18 +344,13 @@ class DirectProviderExecutor:
                 )
 
             market, code = split_symbol(symbol)
-            path = (
-                Path(self.vipdoc_root)
-                / market
-                / "lday"
-                / f"{market}{code}.day"
-            )
+            path = Path(self.vipdoc_root) / market / "lday" / f"{market}{code}.day"
             bars = DayBarReader().read(path, output="model")
             end = max(0, len(bars) - start)
             begin = max(0, end - count)
             bars = bars[begin:end]
 
-            if events is None:
+            if not events:
                 with self._tdx_client() as client:
                     events = list(client.capital_changes(symbol))
             event_list = list(events)
@@ -377,16 +369,20 @@ class DirectProviderExecutor:
             symbols = args[0]
             root = kwargs.pop("root", None) or self.vipdoc_root
             profile = kwargs.pop("profile", "a_share_day")
+            chunk = int(kwargs.pop("chunk", 800))
+            max_windows = int(kwargs.pop("max_windows", 64))
             if not root:
                 raise ValidationError("sync_daily requires root or vipdoc_root")
             sink = LocalDaySink(root, profile=profile)
             out: dict[str, Any] = {}
             with self._tdx_client() as client:
                 for symbol in symbols:
+                    normalized = str(symbol)
+
                     def fetch(
                         offset: int,
                         count: int,
-                        _symbol: str = str(symbol),
+                        _symbol: str = normalized,
                     ) -> list[Any]:
                         return client.bars(
                             _symbol,
@@ -396,7 +392,18 @@ class DirectProviderExecutor:
                             as_format="dict",
                         )
 
-                    out[str(symbol)] = sink.sync(str(symbol), fetch)
+                    result = sink.sync(
+                        normalized,
+                        fetch,
+                        chunk=chunk,
+                        max_windows=max_windows,
+                    )
+                    out[normalized] = {
+                        "added": result.added,
+                        "existed": result.existed,
+                        "path": result.path,
+                        "last_date": sink.last_date(normalized),
+                    }
             return out
 
         raise ValidationError(
@@ -473,9 +480,7 @@ class DirectProviderExecutor:
 
         market, code = split_symbol(plan.spec.symbols[0])
         if market not in {"sh", "sz", "bj"}:
-            raise ValidationError(
-                "local_vipdoc Direct bars 仅支持沪深北本地目录"
-            )
+            raise ValidationError("local_vipdoc Direct bars 仅支持沪深北本地目录")
 
         root = Path(self.vipdoc_root)
         canonical = f"{market}{code}"
@@ -485,25 +490,17 @@ class DirectProviderExecutor:
                 output="model",
             )
         elif plan.spec.period == "1min":
-            rows = MinBarReader(
-                profile="a_share_min",
-                interval=1,
-            ).read(
+            rows = MinBarReader(profile="a_share_min", interval=1).read(
                 root / market / "minline" / f"{canonical}.lc1",
                 output="model",
             )
         elif plan.spec.period == "5min":
-            rows = MinBarReader(
-                profile="a_share_min",
-                interval=5,
-            ).read(
+            rows = MinBarReader(profile="a_share_min", interval=5).read(
                 root / market / "fzline" / f"{canonical}.lc5",
                 output="model",
             )
         else:
-            raise ValidationError(
-                "local_vipdoc Direct bars 仅支持 day/1min/5min"
-            )
+            raise ValidationError("local_vipdoc Direct bars 仅支持 day/1min/5min")
 
         if plan.spec.start:
             end = max(0, len(rows) - plan.spec.start)
@@ -523,16 +520,12 @@ class DirectProviderExecutor:
     def _tencent_bars(self, plan: QueryPlan) -> Any:
         from .web import create_source
 
-        source_name = (
-            "minute_kline" if plan.channel == "minute_kline" else "kline"
-        )
+        source_name = "minute_kline" if plan.channel == "minute_kline" else "kline"
         src = create_source(source_name, timeout=self.timeout)
         try:
             if plan.channel == "minute_kline":
                 if plan.spec.adjustment:
-                    raise ValidationError(
-                        "Tencent minute_kline 不支持复权参数"
-                    )
+                    raise ValidationError("Tencent minute_kline 不支持复权参数")
                 return src.fetch_bars(
                     plan.spec.symbols[0],
                     period=plan.spec.period,
