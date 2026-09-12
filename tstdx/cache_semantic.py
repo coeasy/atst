@@ -1,12 +1,11 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Provider-first semantic cache with provenance-preserving retrieval.
+"""Canonical Provider-first semantic L1 cache.
 
-This cache intentionally sits beside the legacy ``KlineCache`` / ``QuoteCache``.
-Legacy caches remain compatibility helpers; this module is the v11 runtime path.
-A cache entry is valid only for the exact ``QueryFingerprint`` and the exact
-Provider/Channel/Capability identity carried by its ``QueryPlan``.
+Entries are keyed by full QueryFingerprint and preserve original provenance.
+Capacity is enforced with deterministic LRU eviction; the cache never performs
+a whole-map flush simply because one new key arrives.
 """
 
 from __future__ import annotations
@@ -14,6 +13,7 @@ from __future__ import annotations
 import copy
 import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
@@ -27,13 +27,11 @@ __all__ = [
 ]
 
 T = TypeVar("T")
-SEMANTIC_CACHE_SCHEMA_VERSION = 1
+SEMANTIC_CACHE_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
 class SemanticCacheEntry(Generic[T]):
-    """Immutable semantic cache record."""
-
     schema_version: int
     fingerprint: str
     provider: str
@@ -98,18 +96,12 @@ class SemanticCacheEntry(Generic[T]):
             self.capability,
         ):
             return False
-
-        # A LIVE query must never be satisfied by replay/synthetic provenance.
-        # Cache retrieval may add a cache tier, but it cannot upgrade origin trust.
         if plan.spec.currentness == "live" and self.provenance.kind is not ProvenanceKind.DIRECT:
             return False
 
         now = time.time_ns() if now_ns is None else int(now_ns)
         if self.expires_at_ns is not None and now >= self.expires_at_ns:
             return False
-
-        # Query-level freshness is independent from cache TTL.  A cache item may
-        # still be physically resident while being too old for a stricter caller.
         if plan.spec.max_age is not None:
             max_age_ns = int(float(plan.spec.max_age) * 1_000_000_000)
             age_ns = max(0, now - self.provenance.observed_at_ns)
@@ -118,15 +110,14 @@ class SemanticCacheEntry(Generic[T]):
         return True
 
     def to_result(self, plan: QueryPlan, *, cache_tier: str) -> QueryResult[T]:
-        provenance = self.provenance.cached(cache_tier)
         return QueryResult(
             data=copy.deepcopy(self.data),
-            meta=ResultMeta.from_plan(plan, provenance),
+            meta=ResultMeta.from_plan(plan, self.provenance.cached(cache_tier)),
         )
 
 
 class SemanticResultCache:
-    """Thread-safe semantic cache keyed by canonical query fingerprint."""
+    """Thread-safe bounded LRU semantic cache."""
 
     def __init__(self, *, tier: str = "l1", maxsize: int = 4096) -> None:
         normalized_tier = str(tier).strip().lower()
@@ -136,11 +127,12 @@ class SemanticResultCache:
             raise ValueError("maxsize must be positive")
         self.tier = normalized_tier
         self.maxsize = int(maxsize)
-        self._data: dict[str, SemanticCacheEntry[Any]] = {}
+        self._data: OrderedDict[str, SemanticCacheEntry[Any]] = OrderedDict()
         self._lock = threading.RLock()
         self.hits = 0
         self.misses = 0
         self.evictions = 0
+        self.rejects = 0
 
     def get(self, plan: QueryPlan, *, now_ns: int | None = None) -> QueryResult[Any] | None:
         key = plan.fingerprint.value
@@ -150,14 +142,17 @@ class SemanticResultCache:
                 if not isinstance(entry, SemanticCacheEntry) or not entry.matches(plan, now_ns=now_ns):
                     if key in self._data:
                         self._data.pop(key, None)
+                        self.rejects += 1
                     self.misses += 1
                     return None
+                self._data.move_to_end(key, last=True)
                 result = entry.to_result(plan, cache_tier=self.tier)
                 self.hits += 1
                 return result
         except Exception:
             with self._lock:
-                self._data.pop(key, None)
+                if self._data.pop(key, None) is not None:
+                    self.rejects += 1
                 self.misses += 1
             return None
 
@@ -179,11 +174,14 @@ class SemanticResultCache:
         if actual != expected:
             raise ValueError("cache result identity does not match QueryPlan")
         entry = SemanticCacheEntry.from_result(result, ttl=ttl, now_ns=now_ns)
+        key = plan.fingerprint.value
         with self._lock:
-            if len(self._data) >= self.maxsize and plan.fingerprint.value not in self._data:
-                self._data.clear()
+            if key in self._data:
+                self._data.pop(key, None)
+            while len(self._data) >= self.maxsize:
+                self._data.popitem(last=False)
                 self.evictions += 1
-            self._data[plan.fingerprint.value] = entry
+            self._data[key] = entry
 
     def invalidate(self, plan: QueryPlan) -> bool:
         with self._lock:
@@ -194,3 +192,14 @@ class SemanticResultCache:
             size = len(self._data)
             self._data.clear()
             return size
+
+    def metrics(self) -> dict[str, int]:
+        with self._lock:
+            return {
+                "size": len(self._data),
+                "maxsize": self.maxsize,
+                "hits": self.hits,
+                "misses": self.misses,
+                "evictions": self.evictions,
+                "rejects": self.rejects,
+            }
