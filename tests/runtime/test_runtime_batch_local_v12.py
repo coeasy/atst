@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from pathlib import Path
 
-import pytest
-
+from tstdx.batch import BatchSpec
 from tstdx.direct_provider import DirectProviderExecutor
 from tstdx.domain.models import Bar, Quote
 from tstdx.errors import ValidationError
@@ -25,10 +25,11 @@ def _local_plan(period: str):
     )
 
 
-def test_quotes_partial_requires_auditable_batch_api() -> None:
-    runtime = UnifiedRuntime()
-    with pytest.raises(ValidationError):
-        runtime.quotes("sh600519", allow_partial=True)
+def test_partial_success_exists_only_on_batch_contract() -> None:
+    assert "allow_partial" not in {item.name for item in fields(QuerySpec)}
+    spec = BatchSpec.quotes(["sh600519", "sh600519", "sz000001"])
+    assert spec.symbols == ("sh600519", "sz000001")
+    assert spec.provider == "tdx"
 
 
 def test_quotes_batch_reports_ok_missing_and_failed(monkeypatch) -> None:
