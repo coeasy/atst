@@ -1,12 +1,7 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Exact Provider/Channel execution bindings for the canonical v13 runtime.
-
-A QueryPlan resolves to one Provider and one canonical Channel; execution never
-falls through to another Provider. TDX host failover is provider-internal and
-therefore remains legal inside the selected TDX boundary.
-"""
+"""Exact Provider/Channel execution bindings for the canonical v13 runtime."""
 
 from __future__ import annotations
 
@@ -14,29 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .capability_catalog import MIGRATED_BINDINGS, binding_for
 from .errors import InternalError, TdxError, ValidationError
 from .providers import PROVIDERS
 from .query import QueryPlan
 from .result import Provenance, QueryResult
 
-__all__ = [
-    "DirectBinding",
-    "DirectProviderExecutor",
-    "DIRECT_BINDINGS",
-    "audit_direct_bindings",
-]
-
-_TIER_A = frozenset(
-    {
-        "quotes",
-        "bars",
-        "snapshot",
-        "minute",
-        "trades",
-        "security_count",
-        "security_list",
-    }
-)
+__all__ = ["DirectBinding", "DirectProviderExecutor", "DIRECT_BINDINGS", "audit_direct_bindings"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +30,7 @@ class DirectBinding:
         return (self.provider, self.channel, self.capability)
 
 
-DIRECT_BINDINGS: tuple[DirectBinding, ...] = (
+_CORE_BINDINGS: tuple[DirectBinding, ...] = (
     DirectBinding("tdx", "quotation", "quotes", "_tdx_quotes"),
     DirectBinding("tdx", "quotation", "bars", "_tdx_bars"),
     DirectBinding("tdx", "quotation", "snapshot", "_tdx_snapshot"),
@@ -71,52 +50,34 @@ DIRECT_BINDINGS: tuple[DirectBinding, ...] = (
     DirectBinding("baidu", "kline", "bars", "_baidu_bars"),
 )
 
+DIRECT_BINDINGS = _CORE_BINDINGS + tuple(
+    DirectBinding(item.provider, item.channel, item.capability, "_migrated_capability")
+    for item in MIGRATED_BINDINGS
+    if (item.provider, item.channel, item.capability) not in {x.key for x in _CORE_BINDINGS}
+)
+
 
 def audit_direct_bindings() -> tuple[DirectBinding, ...]:
-    """Verify every canonical runtime binding is unique and registry-valid.
-
-    Tier-A registry declarations on the canonical TDX quotation channel are
-    mandatory. quotes/bars bindings remain mandatory for every provider/channel
-    already promoted into the unified runtime.
-    """
-
     seen: set[tuple[str, str, str]] = set()
     for binding in DIRECT_BINDINGS:
         if binding.key in seen:
             raise RuntimeError(f"duplicate Direct binding: {binding.key!r}")
         seen.add(binding.key)
         PROVIDERS.require(binding.provider, binding.capability, channel=binding.channel)
-
-    required: set[tuple[str, str, str]] = set()
-    for provider in PROVIDERS.ids():
-        spec = PROVIDERS.get(provider)
-        for channel in spec.channels:
-            promoted = channel.capabilities & {"quotes", "bars"}
-            if provider == "tdx" and channel.id == "quotation":
-                promoted |= channel.capabilities & _TIER_A
-            for capability in promoted:
-                if provider == "tdx" and capability in {"quotes", "bars"} and channel.id != "quotation":
-                    continue
-                required.add((provider, channel.id, capability))
-
+    required = {
+        (provider, channel.id, capability)
+        for provider in PROVIDERS.ids()
+        for channel in PROVIDERS.get(provider).channels
+        for capability in channel.capabilities
+    }
     missing = sorted(required - seen)
     if missing:
-        raise RuntimeError(
-            f"registered canonical Provider capability has no Direct binding: {missing!r}"
-        )
+        raise RuntimeError(f"registered Provider capability has no Direct binding: {missing!r}")
     return DIRECT_BINDINGS
 
 
 class DirectProviderExecutor:
-    """Execute one QueryPlan without any cross-Provider fallback."""
-
-    def __init__(
-        self,
-        *,
-        timeout: float = 5.0,
-        hosts: list[str] | None = None,
-        vipdoc_root: str | None = None,
-    ) -> None:
+    def __init__(self, *, timeout: float = 5.0, hosts: list[str] | None = None, vipdoc_root: str | None = None) -> None:
         self.timeout = float(timeout)
         self.hosts = hosts
         self.vipdoc_root = vipdoc_root
@@ -130,13 +91,7 @@ class DirectProviderExecutor:
         except KeyError as exc:
             raise ValidationError(
                 "QueryPlan 没有可执行 Direct Provider binding",
-                context={
-                    "provider": plan.provider,
-                    "channel": plan.channel,
-                    "capability": plan.spec.capability,
-                    "fallback": False,
-                    "provider_switch_allowed": False,
-                },
+                context={"provider": plan.provider, "channel": plan.channel, "capability": plan.spec.capability, "fallback": False, "provider_switch_allowed": False},
             ) from exc
         fn = getattr(self, binding.executor_name)
         try:
@@ -151,22 +106,165 @@ class DirectProviderExecutor:
         except Exception as exc:
             raise InternalError(
                 "Direct Provider executor 未处理异常",
-                context={
-                    "provider": plan.provider,
-                    "channel": plan.channel,
-                    "capability": plan.spec.capability,
-                    "fallback": False,
-                    "provider_switch_allowed": False,
-                    "cause_type": type(exc).__name__,
-                },
+                context={"provider": plan.provider, "channel": plan.channel, "capability": plan.spec.capability, "fallback": False, "provider_switch_allowed": False, "cause_type": type(exc).__name__},
                 cause=exc,
             ) from exc
         return QueryResult.from_plan(data, plan=plan, provenance=Provenance.direct(plan))
 
     def _tdx_client(self) -> Any:
         from .client import TdxClient
-
         return TdxClient(hosts=self.hosts, timeout=self.timeout)
+
+    @staticmethod
+    def _call_payload(plan: QueryPlan) -> tuple[list[Any], dict[str, Any]]:
+        options = plan.spec.options
+        args = options.get("args", [])
+        kwargs = options.get("kwargs", {})
+        if not isinstance(args, list) or not isinstance(kwargs, dict):
+            raise ValidationError("migrated capability options 必须包含 args:list / kwargs:object")
+        return args, dict(kwargs)
+
+    def _migrated_capability(self, plan: QueryPlan) -> Any:
+        meta = binding_for(plan.provider, plan.channel, plan.spec.capability)
+        args, kwargs = self._call_payload(plan)
+        if meta.backend == "web_session":
+            from .web.facade import WebQuoteSession
+            session = WebQuoteSession(meta.source or "eastmoney", timeout=self.timeout)
+            try:
+                return getattr(session, meta.method)(*args, **kwargs)
+            finally:
+                session.close()
+        if meta.backend == "tdx_client":
+            with self._tdx_client() as client:
+                if meta.capability == "quotes_concurrent":
+                    kwargs.setdefault("as_format", "obj")
+                return getattr(client, meta.method)(*args, **kwargs)
+        if meta.backend == "f10_client":
+            from .client import F10Client
+            if not args:
+                raise ValidationError(f"{meta.capability} requires symbol")
+            client = F10Client(timeout=self.timeout)
+            try:
+                if meta.capability == "f10":
+                    if len(args) < 2:
+                        raise ValidationError("f10 requires symbol and filename")
+                    return client.parse_text(client.download(args[0], args[1]))
+                return list(client.catalog(args[0]))
+            finally:
+                client.close()
+        if meta.backend in {"ex_client", "goods_client"}:
+            from .client import ExMarketClient, GoodsClient
+            client = ExMarketClient(timeout=self.timeout) if meta.backend == "ex_client" else GoodsClient(timeout=self.timeout)
+            try:
+                if meta.capability in {"ex_bars", "ex_quotes", "goods_bars", "goods_quotes"}:
+                    kwargs.setdefault("as_format", "dict")
+                return getattr(client, meta.method)(*args, **kwargs)
+            finally:
+                client.close()
+        if meta.backend == "web_adapter":
+            return self._web_adapter_call(meta.capability, plan.provider, args, kwargs)
+        if meta.backend == "composed":
+            return self._composed_call(meta.capability, args, kwargs)
+        raise ValidationError("unknown migrated backend", context={"backend": meta.backend})
+
+    def _web_adapter_call(self, capability: str, provider: str, args: list[Any], kwargs: dict[str, Any]) -> Any:
+        if not args:
+            raise ValidationError(f"{capability} requires symbol")
+        symbol = args[0]
+        if capability == "minute_web":
+            from .web.adapters_ext import MinuteSource
+            src = MinuteSource(timeout=self.timeout)
+            try:
+                return src.fetch_minute(symbol)
+            finally:
+                src.close()
+        if capability == "minute_klines":
+            if provider == "eastmoney":
+                from .web.history import EastmoneyHistoryKlineSource
+                src = EastmoneyHistoryKlineSource(timeout=self.timeout)
+            else:
+                from .web.adapters_ext import MinuteKlineSource
+                src = MinuteKlineSource(timeout=self.timeout)
+            try:
+                return src.fetch_bars(symbol, **kwargs)
+            finally:
+                src.close()
+        if capability == "history":
+            if provider == "eastmoney":
+                from .web.history import EastmoneyHistoryKlineSource as Source
+            else:
+                from .web.history import SinaHistoryKlineSource as Source
+            src = Source(timeout=self.timeout)
+            try:
+                return src.fetch_bars(symbol, **kwargs)
+            finally:
+                src.close()
+        raise ValidationError("unknown web adapter capability", context={"capability": capability})
+
+    def _composed_call(self, capability: str, args: list[Any], kwargs: dict[str, Any]) -> Any:
+        if capability == "security_list_all":
+            market = args[0] if args else kwargs.pop("market", 0)
+            rows: list[Any] = []
+            start = 0
+            with self._tdx_client() as client:
+                while True:
+                    page = list(client.security_list(market, start))
+                    if not page:
+                        break
+                    rows.extend(page)
+                    start += len(page)
+            return rows
+        if capability == "adjusted_bars":
+            if not args:
+                raise ValidationError("adjusted_bars requires symbol")
+            from .domain.adjust import AdjustEngine
+            from .domain.finance import to_capital_changes
+            from .domain.models import CapitalChange
+            symbol = args[0]
+            method = kwargs.pop("method", "qfq")
+            period = kwargs.pop("period", "day")
+            count = int(kwargs.pop("count", 320))
+            start = int(kwargs.pop("start", 0))
+            events = kwargs.pop("events", None)
+            anchor_date = kwargs.pop("anchor_date", None)
+            if kwargs:
+                raise ValidationError("adjusted_bars received unknown options", context={"options": sorted(kwargs)})
+            if not self.vipdoc_root:
+                raise ValidationError("adjusted_bars requires vipdoc_root for canonical raw bars")
+            # Reuse the canonical local reader semantics without crossing Providers in one plan.
+            from .domain.symbol import split_symbol
+            from .reader import DayBarReader
+            market, code = split_symbol(symbol)
+            path = Path(self.vipdoc_root) / market / "lday" / f"{market}{code}.day"
+            bars = DayBarReader().read(path, output="model")
+            end = max(0, len(bars) - start)
+            begin = max(0, end - count)
+            bars = bars[begin:end]
+            if events is None:
+                with self._tdx_client() as client:
+                    events = list(client.capital_changes(symbol))
+            ev_list = list(events)
+            if ev_list and not isinstance(ev_list[0], CapitalChange):
+                ev_list = to_capital_changes(ev_list)
+            return AdjustEngine().apply(list(bars), ev_list, method, anchor_date=anchor_date)
+        if capability == "sync_daily":
+            if not args:
+                raise ValidationError("sync_daily requires symbols")
+            from .sink import LocalDaySink
+            symbols = args[0]
+            root = kwargs.pop("root", None) or self.vipdoc_root
+            profile = kwargs.pop("profile", "a_share_day")
+            if not root:
+                raise ValidationError("sync_daily requires root or vipdoc_root")
+            sink = LocalDaySink(root, profile=profile)
+            out: dict[str, Any] = {}
+            with self._tdx_client() as client:
+                for symbol in symbols:
+                    def fetch(offset: int, count: int, _symbol: str = symbol) -> list[Any]:
+                        return client.bars(_symbol, period="day", count=count, start=offset, as_format="dict")
+                    out[str(symbol)] = sink.sync(str(symbol), fetch)
+            return out
+        raise ValidationError("unknown composed capability", context={"capability": capability})
 
     def _tdx_quotes(self, plan: QueryPlan) -> Any:
         with self._tdx_client() as client:
@@ -174,21 +272,9 @@ class DirectProviderExecutor:
 
     def _tdx_bars(self, plan: QueryPlan) -> Any:
         if plan.spec.adjustment:
-            raise ValidationError(
-                "TDX Direct bars 不支持在原始 bars 调用中静默复权",
-                context={
-                    "provider": "tdx",
-                    "channel": "quotation",
-                    "adjustment": plan.spec.adjustment,
-                },
-            )
+            raise ValidationError("TDX Direct bars 不支持在原始 bars 调用中静默复权", context={"provider": "tdx", "channel": "quotation", "adjustment": plan.spec.adjustment})
         with self._tdx_client() as client:
-            return client.bars(
-                plan.spec.symbols[0],
-                period=plan.spec.period,
-                count=plan.spec.count,
-                start=plan.spec.start,
-            )
+            return client.bars(plan.spec.symbols[0], period=plan.spec.period, count=plan.spec.count, start=plan.spec.start)
 
     def _tdx_snapshot(self, plan: QueryPlan) -> Any:
         with self._tdx_client() as client:
@@ -200,148 +286,81 @@ class DirectProviderExecutor:
 
     def _tdx_trades(self, plan: QueryPlan) -> Any:
         with self._tdx_client() as client:
-            return client.trade_today(
-                plan.spec.symbols[0],
-                start=plan.spec.start,
-                count=plan.spec.count,
-            )
+            return client.trade_today(plan.spec.symbols[0], start=plan.spec.start, count=plan.spec.count)
 
     def _tdx_security_count(self, plan: QueryPlan) -> Any:
-        market = 0 if plan.spec.market is None else plan.spec.market
         with self._tdx_client() as client:
-            return client.security_count(market)
+            return client.security_count(0 if plan.spec.market is None else plan.spec.market)
 
     def _tdx_security_list(self, plan: QueryPlan) -> Any:
-        market = 0 if plan.spec.market is None else plan.spec.market
         with self._tdx_client() as client:
-            return client.security_list(market, plan.spec.start)
+            return client.security_list(0 if plan.spec.market is None else plan.spec.market, plan.spec.start)
 
     def _local_bars(self, plan: QueryPlan) -> Any:
         if not self.vipdoc_root:
-            raise ValidationError(
-                "local_vipdoc Provider 需要显式 vipdoc_root",
-                context={"provider": "local_vipdoc", "channel": "vipdoc"},
-            )
+            raise ValidationError("local_vipdoc Provider 需要显式 vipdoc_root", context={"provider": "local_vipdoc", "channel": "vipdoc"})
         if plan.spec.adjustment:
-            raise ValidationError(
-                "local_vipdoc Direct bars 不支持静默复权",
-                context={
-                    "provider": "local_vipdoc",
-                    "channel": "vipdoc",
-                    "adjustment": plan.spec.adjustment,
-                },
-            )
-
+            raise ValidationError("local_vipdoc Direct bars 不支持静默复权", context={"provider": "local_vipdoc", "channel": "vipdoc", "adjustment": plan.spec.adjustment})
         from .domain.symbol import split_symbol
         from .reader import DayBarReader, MinBarReader
-
         market, code = split_symbol(plan.spec.symbols[0])
         if market not in {"sh", "sz", "bj"}:
-            raise ValidationError(
-                "local_vipdoc Direct bars 仅支持沪深北本地目录",
-                context={"provider": "local_vipdoc", "symbol": plan.spec.symbols[0]},
-            )
-
+            raise ValidationError("local_vipdoc Direct bars 仅支持沪深北本地目录")
         root = Path(self.vipdoc_root)
         canonical = f"{market}{code}"
         if plan.spec.period == "day":
-            path = root / market / "lday" / f"{canonical}.day"
-            rows = DayBarReader().read(path, output="model")
+            rows = DayBarReader().read(root / market / "lday" / f"{canonical}.day", output="model")
         elif plan.spec.period == "1min":
-            path = root / market / "minline" / f"{canonical}.lc1"
-            rows = MinBarReader(profile="a_share_min", interval=1).read(path, output="model")
+            rows = MinBarReader(profile="a_share_min", interval=1).read(root / market / "minline" / f"{canonical}.lc1", output="model")
         elif plan.spec.period == "5min":
-            path = root / market / "fzline" / f"{canonical}.lc5"
-            rows = MinBarReader(profile="a_share_min", interval=5).read(path, output="model")
+            rows = MinBarReader(profile="a_share_min", interval=5).read(root / market / "fzline" / f"{canonical}.lc5", output="model")
         else:
-            raise ValidationError(
-                "local_vipdoc Direct bars 仅支持 day/1min/5min",
-                context={"provider": "local_vipdoc", "period": plan.spec.period},
-            )
-
+            raise ValidationError("local_vipdoc Direct bars 仅支持 day/1min/5min")
         if plan.spec.start:
             end = max(0, len(rows) - plan.spec.start)
             begin = max(0, end - plan.spec.count) if plan.spec.count else 0
             return rows[begin:end]
-        return rows[-plan.spec.count :] if plan.spec.count else rows
+        return rows[-plan.spec.count:] if plan.spec.count else rows
 
     def _web_quotes(self, plan: QueryPlan) -> Any:
         from .web import get_quotes
-
         return get_quotes(list(plan.spec.symbols), source=plan.provider, timeout=self.timeout)
 
     def _tencent_bars(self, plan: QueryPlan) -> Any:
         from .web import create_source
-
         source_name = "minute_kline" if plan.channel == "minute_kline" else "kline"
         src = create_source(source_name, timeout=self.timeout)
         try:
             if plan.channel == "minute_kline":
                 if plan.spec.adjustment:
-                    raise ValidationError(
-                        "Tencent minute_kline 不支持复权参数",
-                        context={
-                            "provider": "tencent",
-                            "channel": "minute_kline",
-                            "adjustment": plan.spec.adjustment,
-                        },
-                    )
-                return src.fetch_bars(
-                    plan.spec.symbols[0],
-                    period=plan.spec.period,
-                    count=plan.spec.count,
-                )
-            return src.fetch_bars(
-                plan.spec.symbols[0],
-                period=plan.spec.period,
-                count=plan.spec.count,
-                adjust=plan.spec.adjustment,
-            )
+                    raise ValidationError("Tencent minute_kline 不支持复权参数")
+                return src.fetch_bars(plan.spec.symbols[0], period=plan.spec.period, count=plan.spec.count)
+            return src.fetch_bars(plan.spec.symbols[0], period=plan.spec.period, count=plan.spec.count, adjust=plan.spec.adjustment)
         finally:
             src.close()
 
     def _sina_bars(self, plan: QueryPlan) -> Any:
         from .web.history import SinaHistoryKlineSource
-
         src = SinaHistoryKlineSource(timeout=self.timeout)
         try:
-            return src.fetch_bars(
-                plan.spec.symbols[0],
-                period=plan.spec.period,
-                count=plan.spec.count,
-                adjust=plan.spec.adjustment,
-            )
+            return src.fetch_bars(plan.spec.symbols[0], period=plan.spec.period, count=plan.spec.count, adjust=plan.spec.adjustment)
         finally:
             src.close()
 
     def _eastmoney_bars(self, plan: QueryPlan) -> Any:
         from .web.history import EastmoneyHistoryKlineSource
-
         src = EastmoneyHistoryKlineSource(timeout=self.timeout)
         try:
-            return src.fetch_bars(
-                plan.spec.symbols[0],
-                period=plan.spec.period,
-                count=plan.spec.count,
-                adjust=plan.spec.adjustment,
-            )
+            return src.fetch_bars(plan.spec.symbols[0], period=plan.spec.period, count=plan.spec.count, adjust=plan.spec.adjustment)
         finally:
             src.close()
 
     def _baidu_bars(self, plan: QueryPlan) -> Any:
         from .web.adapters_baidu import BaiduSource
-
         if plan.spec.adjustment:
-            raise ValidationError(
-                "Baidu Direct bars 不支持复权参数",
-                context={"provider": "baidu", "adjustment": plan.spec.adjustment},
-            )
+            raise ValidationError("Baidu Direct bars 不支持复权参数")
         src = BaiduSource(timeout=self.timeout)
         try:
-            return src.fetch_kline(
-                plan.spec.symbols[0],
-                period=plan.spec.period,
-                count=plan.spec.count,
-            )
+            return src.fetch_kline(plan.spec.symbols[0], period=plan.spec.period, count=plan.spec.count)
         finally:
             src.close()
