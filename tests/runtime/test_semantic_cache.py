@@ -10,7 +10,7 @@ from tstdx.result import Provenance, ProvenanceKind, QueryResult
 
 
 def _plan(*, provider: str = "tdx", period: str = "day"):
-    return QueryPlanner().plan(
+    return QueryPlanner().compile(
         QuerySpec.build(
             "bars",
             symbols=["sh600519"],
@@ -97,6 +97,15 @@ def test_tampered_channel_identity_fails_closed() -> None:
     key = plan.fingerprint.value
     entry = cache._data[key]
     cache._data[key] = replace(entry, channel="wrong")
+    assert cache.get(plan, now_ns=200) is None
+
+
+def test_tampered_fingerprint_fails_closed() -> None:
+    plan = _plan()
+    cache = SemanticResultCache()
+    cache.put(plan, _result(plan), ttl=None, now_ns=100)
+    key = plan.fingerprint.value
+    cache._data[key] = replace(cache._data[key], fingerprint="q1:wrong")
     assert cache.get(plan, now_ns=200) is None
 
 
