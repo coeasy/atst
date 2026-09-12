@@ -75,6 +75,23 @@ def test_execute_typed_fund_holdings_uses_canonical_semantics() -> None:
     assert response.metadata["query_fingerprint"].startswith("q1:")
 
 
+def test_runtime_policy_prefilters_statically_unsupported_typed_providers() -> None:
+    source = EastmoneySource()
+    runtime = Runtime(provider_order=("tdx", "eastmoney"))
+    runtime.register_provider(TdxProvider(TdxSource()))
+    runtime.register_provider(WebProvider("eastmoney", source))
+
+    response = runtime.execute_typed(FundHoldingsQuery(symbol="600519.SH"))
+
+    assert response.success is True
+    assert response.metadata["provider"] == "eastmoney"
+    assert response.metadata["provider_attempts"] == [
+        {"provider": "eastmoney", "status": "selected"}
+    ]
+    assert response.metadata["provenance"]["requested_provider"] == "eastmoney"
+    assert response.metadata["provenance"]["fallback"] is False
+
+
 def test_typed_options_participate_in_fingerprint_and_cache_identity() -> None:
     source = EastmoneySource()
     runtime = Runtime(
