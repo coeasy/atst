@@ -1,7 +1,7 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""JSON-RPC 2.0 stdio framework for the tstdx MCP server."""
+"""JSON-RPC 2.0 stdio framework for the canonical v13 MCP adapter."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import sys
 import threading
 from typing import Any
 
-from ...client import TdxClient
+from ...client_api import Client
 from ...error_envelope import to_error_envelope
 from ...errors import InternalError, TdxError, ValidationError
 from ._common import (
@@ -50,27 +50,18 @@ def _serialize_to_text(data: Any) -> str:
 
 
 class MCPServer:
-    """Standalone stdio JSON-RPC 2.0 MCP server for tstdx."""
+    """Standalone MCP server backed by the same v13 Client as every surface."""
 
-    def __init__(self, client: TdxClient | None = None, facade: Any | None = None) -> None:
-        self._client = client
-        self._facade = facade
+    def __init__(self, client: Client | None = None) -> None:
+        self._client = client or Client()
+        self._owns_client = client is None
         self._stopped = threading.Event()
-
-    def _get_client(self) -> TdxClient:
-        if self._client is None:
-            self._client = TdxClient()
-        return self._client
-
-    def _facade_obj(self) -> Any:
-        if self._facade is None:
-            from ...facade.api import UnifiedQuoteAPI
-
-            self._facade = UnifiedQuoteAPI()
-        return self._facade
 
     def stop(self) -> None:
         self._stopped.set()
+        if self._owns_client:
+            with contextlib.suppress(Exception):
+                self._client.close()
 
     def serve(self) -> None:
         stdin = sys.stdin
@@ -80,7 +71,7 @@ class MCPServer:
                 try:
                     line = stdin.readline()
                 except (OSError, ValueError):
-                    logger.error("mcp_server: stdin read failed, exiting loop.")
+                    logger.error("mcp_server: stdin read failed, exiting loop")
                     break
                 if not line:
                     break
@@ -89,8 +80,8 @@ class MCPServer:
                     continue
                 try:
                     request = json.loads(stripped)
-                except json.JSONDecodeError as exc:
-                    logger.debug("mcp_server: parse error from stdin: %s", exc)
+                except json.JSONDecodeError:
+                    envelope = to_error_envelope(ValidationError("invalid JSON"))
                     self._write(
                         {
                             "jsonrpc": "2.0",
@@ -98,14 +89,7 @@ class MCPServer:
                             "error": {
                                 "code": ERR_PARSE,
                                 "message": "Parse error",
-                                "data": {
-                                    "code": "E1010",
-                                    "error": "ValidationError",
-                                    "message": "invalid JSON",
-                                    "http_status": 422,
-                                    "retryable": False,
-                                    "context": {},
-                                },
+                                "data": envelope.to_dict(),
                             },
                         }
                     )
@@ -115,9 +99,12 @@ class MCPServer:
                     self._write(response)
         except KeyboardInterrupt:  # pragma: no cover
             pass
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # pragma: no cover
             logger.error("mcp_server: stdio loop crashed: %s", exc, exc_info=exc)
         finally:
+            if self._owns_client:
+                with contextlib.suppress(Exception):
+                    self._client.close()
             with contextlib.suppress(OSError, ValueError):
                 stdout.flush()
 
@@ -146,40 +133,31 @@ class MCPServer:
         rid = request.get("id")
         if rid is None:
             return None
-
         try:
             if method == "initialize":
-                result = self._handle_initialize(request.get("params") or {})
+                result = self._handle_initialize()
             elif method == "ping":
                 result = {}
             elif method == "tools/list":
-                result = {"tools": [t.to_dict() for t in TOOLS]}
+                result = {"tools": [tool.to_dict() for tool in TOOLS]}
             elif method == "tools/call":
                 result = self._handle_tools_call(request.get("params") or {})
             elif method == "shutdown":
                 result = {}
                 self.stop()
             else:
-                return self._error(
-                    rid,
-                    ERR_METHOD_NOT_FOUND,
-                    f"Method not found: {method!r}",
-                )
+                return self._error(rid, ERR_METHOD_NOT_FOUND, f"Method not found: {method!r}")
         except TdxError as exc:
             envelope = to_error_envelope(exc)
-            return self._error(
-                rid,
-                ERR_INTERNAL,
-                envelope.message,
-                data=envelope.to_dict(),
-            )
+            return self._error(rid, ERR_INTERNAL, envelope.message, data=envelope.to_dict())
         except KeyError as exc:
-            domain = ValidationError(
-                "missing required parameter",
-                context={"phase": "mcp", "request_id": str(rid)},
-                cause=exc,
+            envelope = to_error_envelope(
+                ValidationError(
+                    "missing required parameter",
+                    context={"phase": "mcp", "request_id": str(rid)},
+                    cause=exc,
+                )
             )
-            envelope = to_error_envelope(domain)
             return self._error(
                 rid,
                 ERR_INVALID_PARAMS,
@@ -189,17 +167,11 @@ class MCPServer:
         except Exception as exc:
             logger.error("mcp_server request failed (method=%s): %s", method, exc, exc_info=exc)
             envelope = to_error_envelope(exc)
-            return self._error(
-                rid,
-                ERR_INTERNAL,
-                envelope.message,
-                data=envelope.to_dict(),
-            )
-
+            return self._error(rid, ERR_INTERNAL, envelope.message, data=envelope.to_dict())
         return {"jsonrpc": "2.0", "id": rid, "result": result}
 
     @staticmethod
-    def _handle_initialize(params: dict[str, Any]) -> dict[str, Any]:
+    def _handle_initialize() -> dict[str, Any]:
         return {
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {"tools": {}},
@@ -213,20 +185,17 @@ class MCPServer:
                 "content": [{"type": "text", "text": f"Unknown tool: {name!r}"}],
                 "isError": True,
             }
-        spec = _TOOLS_BY_NAME[name]
         args = params.get("arguments") or {}
         if not isinstance(args, dict):
             return {
                 "content": [{"type": "text", "text": "arguments must be an object"}],
                 "isError": True,
             }
-        target: Any = self._facade_obj() if spec.use_facade else self._get_client()
         try:
-            data = spec.handler(target, args)
+            data = _TOOLS_BY_NAME[name].handler(self._client, args)
         except TdxError:
             raise
         except Exception as exc:
-            logger.error("tool %s failed: %s", name, exc, exc_info=exc)
             raise InternalError(
                 "internal error",
                 context={"phase": "mcp", "capability": name},
@@ -251,8 +220,8 @@ class MCPServer:
         return {"jsonrpc": "2.0", "id": rid, "error": err}
 
 
-def create_mcp_server(client: TdxClient | None = None, facade: Any | None = None) -> MCPServer:
-    return MCPServer(client=client, facade=facade)
+def create_mcp_server(client: Client | None = None) -> MCPServer:
+    return MCPServer(client=client)
 
 
 if __name__ == "__main__":  # pragma: no cover
