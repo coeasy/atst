@@ -17,6 +17,8 @@ This document tracks the single integration branch used for the remaining runtim
 - [x] Persistent payload embeds the exact QueryFingerprint; copied/tampered rows fail closed
 - [x] L2 reads re-run fingerprint / Provider / Channel / Capability / TTL / freshness checks before promotion
 - [x] L2 -> L1 promotion never extends beyond remaining L2 TTL and still preserves original DIRECT provenance
+- [x] Explicit `FallbackPolicy` + `ProviderOrchestrator` keeps cross-Provider fallback above the strict kernel and records every Provider attempt
+- [x] Fallback results preserve the actual Provider while recording `requested_provider` + `fallback=True`; they are not persisted into semantic L2
 - [x] Safe canonical ErrorEnvelope with context allow-list and generic E9000 native boundary
 - [x] Public top-level runtime exports
 - [x] `facade.runtime_api()` strict entrypoint while preserving legacy `UnifiedQuoteAPI`
@@ -30,14 +32,14 @@ This document tracks the single integration branch used for the remaining runtim
 - [x] TDX/local/Tencent-minute/Baidu unsupported adjustment semantics fail closed instead of being ignored
 - [x] local_vipdoc day/1min/5min Direct execution bypasses the legacy facade and uses the correct DayBarReader/MinBarReader path
 - [x] Quote/Bar dataclasses serialize deterministically at strict HTTP/WS boundaries
-- [x] Offline behavior gates for provider isolation, envelope sanitization, batch audit, SingleFlight copy isolation, negative-cache policy, L2 poisoning, cache identity, MCP/WS/task boundaries and public API retention
+- [x] Offline behavior gates for provider isolation, envelope sanitization, batch audit, SingleFlight copy isolation, negative-cache policy, L2 poisoning, explicit orchestration, cache identity, MCP/WS/task boundaries and public API retention
 
 ## Remaining compatibility cutover work
 
 - [ ] legacy HTTP quotes/bars endpoints delegate to UnifiedRuntime without removing the existing endpoint set
 - [ ] legacy WS quotes/bars dispatch delegates to UnifiedRuntime without changing existing JSON-RPC method names
 - [ ] legacy explicit Provider requests in `UnifiedQuoteAPI` delegate to UnifiedRuntime
-- [ ] `route="auto"` is reduced to an explicit compatibility orchestration policy, not kernel semantics
+- [ ] legacy `route="auto"` delegates to the explicit `FallbackPolicy` / `ProviderOrchestrator` compatibility layer instead of owning kernel fallback semantics
 - [ ] retire the legacy `DataSourceRouter._reader_kline` path after compatibility cutover (strict local_vipdoc runtime already avoids its 5min reader mismatch)
 - [ ] promote provider-specific auxiliary capabilities to QuerySpec only after executable bindings and contract tests exist
 - [ ] run real Provider smoke/calibration for the new Direct bindings when network runners are healthy
