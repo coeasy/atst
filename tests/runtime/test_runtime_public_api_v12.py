@@ -6,6 +6,8 @@ def test_top_level_runtime_exports_are_available() -> None:
 
     assert tstdx.UnifiedRuntime.__name__ == "UnifiedRuntime"
     assert tstdx.DirectProviderExecutor.__name__ == "DirectProviderExecutor"
+    assert tstdx.SemanticResultCache.__name__ == "SemanticResultCache"
+    assert tstdx.PersistentSemanticCache.__name__ == "PersistentSemanticCache"
     assert tstdx.SingleFlight.__name__ == "SingleFlight"
     assert tstdx.NegativeCache.__name__ == "NegativeCache"
     assert tstdx.ErrorEnvelope.__name__ == "ErrorEnvelope"
