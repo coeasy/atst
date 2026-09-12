@@ -1,7 +1,11 @@
-"""V14 provider runtime abstraction layer."""
+"""V14 dynamic provider execution adapters.
+
+Static provider/channel/capability truth lives in :mod:`tstdx.providers`.
+Caching is not a Provider identity; semantic cache integration lives above this
+execution-adapter layer.
+"""
 
 from .base import Provider
-from .cache import CacheProvider
 from .local import LocalProvider
 from .router import ProviderRouter
 from .tdx import TdxProvider
@@ -13,5 +17,4 @@ __all__ = [
     "TdxProvider",
     "WebProvider",
     "LocalProvider",
-    "CacheProvider",
 ]
