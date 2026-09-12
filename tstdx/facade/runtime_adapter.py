@@ -51,9 +51,9 @@ class RuntimeFacadeAdapter:
     def query(self, method: str, *args: Any, **kwargs: Any) -> ApiResponse:
         response = self.execute(method, *args, **kwargs)
         if response.success:
-            return ok(response.data, extra=response.metadata)
+            return ok(response.data, code=response.code, extra=response.metadata)
         return err(
             response.error or "runtime request failed",
-            code="E9999",
+            code=response.code or "E9999",
             extra=response.metadata,
         )
