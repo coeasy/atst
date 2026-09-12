@@ -67,6 +67,7 @@ def _canonical_options(options: Mapping[str, Any] | None) -> str:
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
+            allow_nan=False,
         )
     except (TypeError, ValueError) as exc:
         raise ValidationError(
@@ -189,10 +190,10 @@ class QuerySpec:
             source=self.source,
             default=default_provider or PROVIDERS.default_provider,
         )
-        PROVIDERS.require(selected, cap, channel=self.channel)
+        channel = _norm_text(self.channel) or None
+        PROVIDERS.require(selected, cap, channel=channel)
 
         period = normalize_bar_period(self.period) if cap == "bars" else _norm_text(self.period)
-        channel = _norm_text(self.channel) or None
         max_age = None if self.max_age in (None, 0, 0.0) else float(self.max_age)
         return replace(
             self,
@@ -241,6 +242,7 @@ class QueryFingerprint:
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
+            allow_nan=False,
         )
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         return cls(value=f"q{spec.schema_version}:{digest}", canonical=canonical)
