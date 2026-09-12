@@ -1,12 +1,11 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Exact Provider/Channel execution bindings for the canonical runtime.
+"""Exact Provider/Channel execution bindings for the canonical v13 runtime.
 
-This module is deliberately fail-closed. A :class:`QueryPlan` resolves to one
-Provider and one canonical Channel; execution never falls through to another
-Provider. TDX host failover remains internal to ``TdxClient`` and is therefore
-allowed inside the selected Provider boundary.
+A QueryPlan resolves to one Provider and one canonical Channel; execution never
+falls through to another Provider. TDX host failover is provider-internal and
+therefore remains legal inside the selected TDX boundary.
 """
 
 from __future__ import annotations
@@ -27,6 +26,18 @@ __all__ = [
     "audit_direct_bindings",
 ]
 
+_TIER_A = frozenset(
+    {
+        "quotes",
+        "bars",
+        "snapshot",
+        "minute",
+        "trades",
+        "security_count",
+        "security_list",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class DirectBinding:
@@ -43,6 +54,11 @@ class DirectBinding:
 DIRECT_BINDINGS: tuple[DirectBinding, ...] = (
     DirectBinding("tdx", "quotation", "quotes", "_tdx_quotes"),
     DirectBinding("tdx", "quotation", "bars", "_tdx_bars"),
+    DirectBinding("tdx", "quotation", "snapshot", "_tdx_snapshot"),
+    DirectBinding("tdx", "quotation", "minute", "_tdx_minute"),
+    DirectBinding("tdx", "quotation", "trades", "_tdx_trades"),
+    DirectBinding("tdx", "quotation", "security_count", "_tdx_security_count"),
+    DirectBinding("tdx", "quotation", "security_list", "_tdx_security_list"),
     DirectBinding("local_vipdoc", "vipdoc", "bars", "_local_bars"),
     DirectBinding("tencent", "quote", "quotes", "_web_quotes"),
     DirectBinding("tencent", "kline", "bars", "_tencent_bars"),
@@ -57,6 +73,13 @@ DIRECT_BINDINGS: tuple[DirectBinding, ...] = (
 
 
 def audit_direct_bindings() -> tuple[DirectBinding, ...]:
+    """Verify every canonical runtime binding is unique and registry-valid.
+
+    Tier-A registry declarations on the canonical TDX quotation channel are
+    mandatory. quotes/bars bindings remain mandatory for every provider/channel
+    already promoted into the unified runtime.
+    """
+
     seen: set[tuple[str, str, str]] = set()
     for binding in DIRECT_BINDINGS:
         if binding.key in seen:
@@ -68,15 +91,18 @@ def audit_direct_bindings() -> tuple[DirectBinding, ...]:
     for provider in PROVIDERS.ids():
         spec = PROVIDERS.get(provider)
         for channel in spec.channels:
-            for capability in channel.capabilities & {"quotes", "bars"}:
-                if provider == "tdx" and channel.id != "quotation":
+            promoted = channel.capabilities & {"quotes", "bars"}
+            if provider == "tdx" and channel.id == "quotation":
+                promoted |= channel.capabilities & _TIER_A
+            for capability in promoted:
+                if provider == "tdx" and capability in {"quotes", "bars"} and channel.id != "quotation":
                     continue
                 required.add((provider, channel.id, capability))
 
     missing = sorted(required - seen)
     if missing:
         raise RuntimeError(
-            f"registered unified Provider capability has no Direct binding: {missing!r}"
+            f"registered canonical Provider capability has no Direct binding: {missing!r}"
         )
     return DIRECT_BINDINGS
 
@@ -137,10 +163,13 @@ class DirectProviderExecutor:
             ) from exc
         return QueryResult.from_plan(data, plan=plan, provenance=Provenance.direct(plan))
 
-    def _tdx_quotes(self, plan: QueryPlan) -> Any:
+    def _tdx_client(self) -> Any:
         from .client import TdxClient
 
-        with TdxClient(hosts=self.hosts, timeout=self.timeout) as client:
+        return TdxClient(hosts=self.hosts, timeout=self.timeout)
+
+    def _tdx_quotes(self, plan: QueryPlan) -> Any:
+        with self._tdx_client() as client:
             return client.quotes(list(plan.spec.symbols))
 
     def _tdx_bars(self, plan: QueryPlan) -> Any:
@@ -153,15 +182,39 @@ class DirectProviderExecutor:
                     "adjustment": plan.spec.adjustment,
                 },
             )
-        from .client import TdxClient
-
-        with TdxClient(hosts=self.hosts, timeout=self.timeout) as client:
+        with self._tdx_client() as client:
             return client.bars(
                 plan.spec.symbols[0],
                 period=plan.spec.period,
                 count=plan.spec.count,
                 start=plan.spec.start,
             )
+
+    def _tdx_snapshot(self, plan: QueryPlan) -> Any:
+        with self._tdx_client() as client:
+            return client.snapshot(plan.spec.symbols[0], as_format="dict")
+
+    def _tdx_minute(self, plan: QueryPlan) -> Any:
+        with self._tdx_client() as client:
+            return client.minute_today(plan.spec.symbols[0])
+
+    def _tdx_trades(self, plan: QueryPlan) -> Any:
+        with self._tdx_client() as client:
+            return client.trade_today(
+                plan.spec.symbols[0],
+                start=plan.spec.start,
+                count=plan.spec.count,
+            )
+
+    def _tdx_security_count(self, plan: QueryPlan) -> Any:
+        market = 0 if plan.spec.market is None else plan.spec.market
+        with self._tdx_client() as client:
+            return client.security_count(market)
+
+    def _tdx_security_list(self, plan: QueryPlan) -> Any:
+        market = 0 if plan.spec.market is None else plan.spec.market
+        with self._tdx_client() as client:
+            return client.security_list(market, plan.spec.start)
 
     def _local_bars(self, plan: QueryPlan) -> Any:
         if not self.vipdoc_root:
@@ -203,10 +256,7 @@ class DirectProviderExecutor:
         else:
             raise ValidationError(
                 "local_vipdoc Direct bars 仅支持 day/1min/5min",
-                context={
-                    "provider": "local_vipdoc",
-                    "period": plan.spec.period,
-                },
+                context={"provider": "local_vipdoc", "period": plan.spec.period},
             )
 
         if plan.spec.start:
