@@ -11,46 +11,12 @@
 * **实时为一等公民**：PushChannel + 增量合并 + 断线补数 + 背压 + 重连。
 * **Provider-first 运行时**：公开查询先编译为单 Provider / 单 Channel 的
   ``QueryPlan``，跨 Provider fallback 只能由显式策略层触发。
-* **Fail-closed Streaming**：canonical stream 采用显式 ``StreamState``，
-  worker 半死、启动失败、stop 超时与终态重启都不能静默生成第二 worker。
+* **Fail-closed Streaming**：canonical stream 采用显式 ``StreamState``。
 * **语义缓存**：canonical cache 以完整 ``QueryFingerprint`` 隔离 Provider /
-  Channel / Capability，并保持原始 provenance，不把缓存命中伪装成真实直连。
+  Channel / Capability，并保持原始 provenance。
+* **统一执行**：``UnifiedRuntime`` 把 Planner / Direct Provider / Cache /
+  SingleFlight / negative cache 收口到同一主体链路。
 * **原创实现**：洁净室流程，协议事实源于自有抓包与本地文件分析。
-
-分层（自底向上）::
-
-    codec       报文帧 / 变长数值 / 字符集
-    protocol    命令登记 + 三级解析（L1/L2/L3）
-    transport   TCP 连接 / 连接池 Slot / 心跳 / 限流 / 主站测速
-    client      同步 + 异步客户端（Standard / Extended / MAC / Goods）
-    reader      本地 vipdoc 二进制（.day/.lc1/.lc5/.dat/gpcw）
-    domain      数据模型 / 复权 / 日历 / 时区
-    providers   Provider / Channel / Capability 单一事实源
-    query       QuerySpec / QueryPlan / QueryFingerprint
-    result      QueryResult / Provenance
-    cache       legacy compatibility caches + v11 semantic result cache
-    streaming   流式订阅 + 显式生命周期状态机
-    web         HTTP Web 行情源（新浪/腾讯/东财/集思录/港股/中行）
-    sinks       DataFrame / Parquet / DuckDB
-    sources     兼容 DataSourceRouter（后续收敛为显式策略层）
-    facade      TDX 二进制协议与行情高层门面（原生命名）
-    observability  Prometheus 风格指标 / 埋点（零硬依赖）
-
-Quick start（离线，读取本地通达信数据）::
-
-    from tstdx.reader import DayBarReader
-    bars = DayBarReader().read(r"D:/tdx/vipdoc/sh/lday/sh600519.day")
-
-Quick start（在线，TDX 协议）::
-
-    from tstdx import TdxClient
-    with TdxClient() as c:
-        bars = c.bars("sh600519", period="day", count=30)
-
-Quick start（HTTP Web 源，无需 TDX 主站）::
-
-    from tstdx.web import get_quotes
-    quotes = get_quotes(["sh600519", "sz000001"], source="tencent")
 """
 
 from __future__ import annotations
@@ -81,6 +47,17 @@ __all__ = [
     "ProviderRegistry",
     "PROVIDERS",
     "SemanticResultCache",
+    "DirectBinding",
+    "DirectProviderExecutor",
+    "DIRECT_BINDINGS",
+    "audit_direct_bindings",
+    "UnifiedRuntime",
+    "BatchItem",
+    "BatchResult",
+    "SingleFlight",
+    "NegativeCache",
+    "ErrorEnvelope",
+    "to_error_envelope",
     "StreamState",
     "StatefulQuoteStream",
     "AsyncStatefulQuoteStream",
@@ -97,27 +74,34 @@ from .errors import TdxError  # noqa: E402,F401
 
 
 def configure(**kwargs: Any) -> Any:
-    """以关键字参数覆盖全局配置（等价于 :func:`load_config` 的高优先级源）。"""
     from .config import load_config
 
     return load_config(overrides=kwargs)
 
 
 def get_config() -> Any:
-    """获取当前生效的全局配置对象。"""
     from .config import get_config as _get
 
     return _get()
 
 
 if TYPE_CHECKING:  # pragma: no cover
+    from .batch import BatchItem, BatchResult, NegativeCache, SingleFlight
     from .cache_semantic import SemanticResultCache
     from .client import AsyncTdxClient, TdxClient
     from .config import load_config
+    from .direct_provider import (
+        DIRECT_BINDINGS,
+        DirectBinding,
+        DirectProviderExecutor,
+        audit_direct_bindings,
+    )
+    from .error_envelope import ErrorEnvelope, to_error_envelope
     from .providers import PROVIDERS, ProviderRegistry
     from .query import CurrentnessMode, QueryFingerprint, QueryPlan, QueryPlanner, QuerySpec
     from .reader import BlockReader, DataProfile, DayBarReader, FinanceReader, MinBarReader
     from .result import Provenance, ProvenanceKind, QueryResult, ResultMeta
+    from .runtime import UnifiedRuntime
     from .streaming.state import StreamState
     from .streaming.stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
     from .web import WebQuoteClient
@@ -144,6 +128,17 @@ _LAZY: dict[str, tuple[str, str]] = {
     "ProviderRegistry": ("tstdx.providers", "ProviderRegistry"),
     "PROVIDERS": ("tstdx.providers", "PROVIDERS"),
     "SemanticResultCache": ("tstdx.cache_semantic", "SemanticResultCache"),
+    "DirectBinding": ("tstdx.direct_provider", "DirectBinding"),
+    "DirectProviderExecutor": ("tstdx.direct_provider", "DirectProviderExecutor"),
+    "DIRECT_BINDINGS": ("tstdx.direct_provider", "DIRECT_BINDINGS"),
+    "audit_direct_bindings": ("tstdx.direct_provider", "audit_direct_bindings"),
+    "UnifiedRuntime": ("tstdx.runtime", "UnifiedRuntime"),
+    "BatchItem": ("tstdx.batch", "BatchItem"),
+    "BatchResult": ("tstdx.batch", "BatchResult"),
+    "SingleFlight": ("tstdx.batch", "SingleFlight"),
+    "NegativeCache": ("tstdx.batch", "NegativeCache"),
+    "ErrorEnvelope": ("tstdx.error_envelope", "ErrorEnvelope"),
+    "to_error_envelope": ("tstdx.error_envelope", "to_error_envelope"),
     "StreamState": ("tstdx.streaming.state", "StreamState"),
     "StatefulQuoteStream": ("tstdx.streaming.stateful", "StatefulQuoteStream"),
     "AsyncStatefulQuoteStream": (
