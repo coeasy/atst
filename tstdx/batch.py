@@ -8,9 +8,10 @@ from __future__ import annotations
 import copy
 import threading
 import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Callable, Generic, Mapping, TypeVar
+from typing import Any, Generic, TypeVar
 
 from .errors import SourceUnavailable, TdxError
 from .query import QueryPlan
