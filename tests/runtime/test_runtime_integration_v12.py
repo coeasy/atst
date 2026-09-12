@@ -24,7 +24,16 @@ def test_direct_binding_audit_covers_planner_visible_core_contracts() -> None:
     bindings = audit_direct_bindings()
     assert bindings == DIRECT_BINDINGS
     keys = {item.key for item in bindings}
-    assert ("tdx", "quotation", "quotes") in keys
+    for capability in (
+        "quotes",
+        "bars",
+        "snapshot",
+        "minute",
+        "trades",
+        "security_count",
+        "security_list",
+    ):
+        assert ("tdx", "quotation", capability) in keys
     assert ("local_vipdoc", "vipdoc", "bars") in keys
     assert ("eastmoney", "kline", "bars") in keys
     assert ("baidu", "quote", "quotes") in keys
@@ -70,7 +79,7 @@ def test_batch_result_is_read_only_and_auditable() -> None:
     assert result.missing == ("c",)
     assert result.not_attempted == ("d",)
     with pytest.raises(TypeError):
-        result.items["x"] = BatchItem("ok")  # type: ignore[index]
+        result.items["x"] = BatchItem("ok", value={"x": 2})  # type: ignore[index]
 
 
 def test_negative_cache_is_full_fingerprint_and_rejects_transient_failure() -> None:
