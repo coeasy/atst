@@ -1,7 +1,20 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""High-level facade APIs."""
+"""高层门面（原生命名）：在 tstdx 自有协议栈之上提供便捷客户端。
+
+当前提供：
+
+* :mod:`tstdx.facade.api`    —— 统一行情接口（:class:`UnifiedQuoteAPI`，
+  local/tdx/web 三通路自动路由）
+* :mod:`tstdx.facade.binary`  —— TDX 二进制协议门面（:class:`BinaryClient`）
+* :mod:`tstdx.facade.market`  —— 标准 / 扩展 / 期权市场门面
+  （:class:`HqClient` / :class:`ExHqClient` / :class:`OptionClient`）
+* :mod:`tstdx.facade.bridge`  —— 外部补充数据源桥接门面（:class:`BridgeClient`）
+
+所有门面均为 tstdx **自有实现**，方法名与字段名统一为 tstdx 原生命名，
+不沿用任何第三方客户端的 API 约定，亦不复制任何第三方源码。
+"""
 
 from .api import UnifiedQuoteAPI, quote_api
 from .async_api import AsyncUnifiedQuoteAPI
