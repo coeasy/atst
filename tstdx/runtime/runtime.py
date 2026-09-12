@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from ..execution.planner import Planner
+from ..execution.planner import ExecutionPlanner
 from ..provider.base import Provider
 from ..provider.router import ProviderRouter
 from .context import ExecutionContext
@@ -12,24 +12,25 @@ from .response import QueryResponse
 
 
 class Runtime:
-    """v14 runtime kernel entrypoint.
+    """V14 orchestration kernel entrypoint.
 
-    Registered compatibility handlers are preserved, while unhandled operations
-    are planned through the provider-backed execution graph.
+    ``QueryRequest`` is a boundary call envelope. Canonical market semantics are
+    owned by ``tstdx.query``; this runtime coordinates execution adapters and
+    higher-level DAG steps around those semantics.
     """
 
     def __init__(
         self,
         *,
         router: ProviderRouter | None = None,
-        planner: Planner | None = None,
+        planner: ExecutionPlanner | None = None,
         provider_order: Sequence[str] | None = None,
     ) -> None:
         self._handlers: dict[str, Callable[..., Any]] = {}
 
         if planner is None:
             self.router = router or ProviderRouter()
-            self.planner = Planner(self.router, provider_order=provider_order)
+            self.planner = ExecutionPlanner(self.router, provider_order=provider_order)
         else:
             if router is not None and planner.router is not None and planner.router is not router:
                 raise ValueError("planner and runtime must use the same provider router")
@@ -68,7 +69,7 @@ class Runtime:
             "request_id": context.request_id,
             "trace_id": context.trace_id,
             "operation": request.operation,
-            "cache_key": request.cache_key,
+            "request_key": request.request_key,
         }
 
         try:
