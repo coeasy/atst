@@ -1,13 +1,13 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Canonical query contracts and deterministic single-Provider planning.
+"""Canonical v13 query contracts and deterministic single-Provider planning.
 
-This module is intentionally side-effect free: planning validates capability,
-Provider, Channel, period and currentness *before* any service I/O. One
-:class:`QueryPlan` always binds to exactly one Provider and one canonical
-Channel. Cross-Provider fallback is an orchestration policy and must never occur
-inside the planner.
+`QuerySpec` is the sole synchronous query intent. Planning is side-effect free:
+all semantic normalization, Provider/Channel/capability validation and
+fingerprinting happen before Provider I/O. A QueryPlan always binds exactly one
+Provider and one canonical Channel. Cross-Provider behavior belongs only to the
+explicit orchestration layer.
 """
 
 from __future__ import annotations
@@ -33,9 +33,19 @@ __all__ = [
 ]
 
 _MINUTE_PERIODS = frozenset({"1min", "5min", "15min", "30min", "60min"})
+_SINGLE_SYMBOL_CAPABILITIES = frozenset({"bars", "snapshot", "minute", "trades"})
+_SYMBOL_CAPABILITIES = frozenset({"quotes", *_SINGLE_SYMBOL_CAPABILITIES})
+_MARKET_CAPABILITIES = frozenset({"security_count", "security_list"})
+_CORE_CAPABILITIES = _SYMBOL_CAPABILITIES | _MARKET_CAPABILITIES
+
 _CANONICAL_UNIFIED_CHANNELS: dict[tuple[str, str], str] = {
     ("tdx", "quotes"): "quotation",
     ("tdx", "bars"): "quotation",
+    ("tdx", "snapshot"): "quotation",
+    ("tdx", "minute"): "quotation",
+    ("tdx", "trades"): "quotation",
+    ("tdx", "security_count"): "quotation",
+    ("tdx", "security_list"): "quotation",
     ("tencent", "quotes"): "quote",
     ("sina", "quotes"): "quote",
     ("eastmoney", "quotes"): "quote",
@@ -91,22 +101,25 @@ def _parse_currentness(value: str | CurrentnessMode) -> CurrentnessMode:
 
 @dataclass(frozen=True, slots=True)
 class QuerySpec:
-    """Immutable semantic request before Provider execution."""
+    """Immutable v13 semantic request.
+
+    `source` and generic `allow_partial` were intentionally removed. Provider is
+    the only source identity; partial success belongs to explicit batch APIs.
+    """
 
     capability: str
     symbols: tuple[str, ...] = ()
     provider: str | None = None
-    source: str | None = None
     channel: str | None = None
+    market: int | str | None = None
     period: str = ""
     count: int = 0
     start: int = 0
     adjustment: str = ""
-    allow_partial: bool = False
     currentness: str = CurrentnessMode.AUTO.value
     max_age: float | None = None
     deadline_ms: int = 5000
-    schema_version: int = 1
+    schema_version: int = 2
     options_json: str = "{}"
 
     @classmethod
@@ -116,17 +129,16 @@ class QuerySpec:
         *,
         symbols: str | Sequence[str] = (),
         provider: str | None = None,
-        source: str | None = None,
         channel: str | None = None,
+        market: int | str | None = None,
         period: str = "",
         count: int = 0,
         start: int = 0,
         adjustment: str = "",
-        allow_partial: bool = False,
         currentness: str | CurrentnessMode = CurrentnessMode.AUTO,
         max_age: float | None = None,
         deadline_ms: int = 5000,
-        schema_version: int = 1,
+        schema_version: int = 2,
         options: Mapping[str, Any] | None = None,
     ) -> "QuerySpec":
         symbol_tuple = (symbols,) if isinstance(symbols, str) else tuple(symbols)
@@ -135,13 +147,12 @@ class QuerySpec:
             capability=capability,
             symbols=symbol_tuple,
             provider=provider,
-            source=source,
             channel=channel,
+            market=market,
             period=period,
             count=count,
             start=start,
             adjustment=adjustment,
-            allow_partial=allow_partial,
             currentness=current.value,
             max_age=max_age,
             deadline_ms=deadline_ms,
@@ -160,14 +171,17 @@ class QuerySpec:
             raise ValidationError("capability 不能为空")
 
         symbols = tuple(normalize_symbol(item) for item in self.symbols)
-        if cap in {"quotes", "bars"} and not symbols:
+        if cap in _SYMBOL_CAPABILITIES and not symbols:
             raise ValidationError(f"{cap} 至少需要一个 symbol", context={"capability": cap})
-        if cap == "bars" and len(symbols) != 1:
-            raise ValidationError("bars 统一 QuerySpec 一次只接受一个 symbol")
-        if self.allow_partial and cap != "quotes":
+        if cap in _SINGLE_SYMBOL_CAPABILITIES and len(symbols) != 1:
             raise ValidationError(
-                "allow_partial 当前仅允许 quotes 批量能力",
-                context={"capability": cap, "allow_partial": True},
+                f"{cap} QuerySpec 一次只接受一个 symbol",
+                context={"capability": cap, "symbol_count": len(symbols)},
+            )
+        if cap in _MARKET_CAPABILITIES and symbols:
+            raise ValidationError(
+                f"{cap} 使用 market 而不是 symbols",
+                context={"capability": cap},
             )
         if self.count < 0:
             raise ValidationError("count 不能为负数", context={"count": self.count})
@@ -183,11 +197,15 @@ class QuerySpec:
             raise ValidationError("schema_version 必须大于 0")
         if self.max_age is not None and self.max_age < 0:
             raise ValidationError("max_age 不能为负数", context={"max_age": self.max_age})
+        if self.adjustment and cap != "bars":
+            raise ValidationError(
+                "adjustment 仅属于 bars 语义",
+                context={"capability": cap, "adjustment": self.adjustment},
+            )
 
         currentness = _parse_currentness(self.currentness)
         selected = resolve_provider(
             provider=self.provider,
-            source=self.source,
             default=default_provider or PROVIDERS.default_provider,
         )
         channel = _norm_text(self.channel) or None
@@ -195,16 +213,18 @@ class QuerySpec:
 
         period = normalize_bar_period(self.period) if cap == "bars" else _norm_text(self.period)
         max_age = None if self.max_age in (None, 0, 0.0) else float(self.max_age)
+        market: int | str | None = self.market
+        if isinstance(market, str):
+            market = market.strip().lower()
         return replace(
             self,
             capability=cap,
             symbols=symbols,
             provider=selected,
-            source=None,
             channel=channel,
+            market=market,
             period=period,
             adjustment=_norm_text(self.adjustment),
-            allow_partial=bool(self.allow_partial),
             currentness=currentness.value,
             max_age=max_age,
             options_json=_canonical_options(self.options),
@@ -226,11 +246,11 @@ class QueryFingerprint:
             "provider": spec.provider,
             "channel": str(channel).strip().lower(),
             "symbols": list(spec.symbols),
+            "market": spec.market,
             "period": spec.period,
             "count": spec.count,
             "start": spec.start,
             "adjustment": spec.adjustment,
-            "allow_partial": spec.allow_partial,
             "currentness": spec.currentness,
             "max_age": spec.max_age,
             "options": spec.options,
@@ -295,7 +315,7 @@ class QueryPlanner:
     def _reject_core_channel_mismatch(cls, spec: QuerySpec, canonical: str | None) -> None:
         if spec.channel is None or canonical is None or spec.channel == canonical:
             return
-        if spec.capability not in {"quotes", "bars"}:
+        if spec.capability not in _CORE_CAPABILITIES:
             return
         raise ValidationError(
             f"统一 {spec.capability} QueryPlan 不能执行 provider {spec.provider!r} "
@@ -360,10 +380,7 @@ class QueryPlanner:
                     "local": selected.local,
                 },
             )
-        fingerprint = QueryFingerprint.from_normalized_spec(
-            normalized,
-            channel=selected.id,
-        )
+        fingerprint = QueryFingerprint.from_normalized_spec(normalized, channel=selected.id)
         return QueryPlan(
             spec=normalized,
             provider=str(normalized.provider),
