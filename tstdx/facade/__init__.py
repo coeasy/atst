@@ -5,15 +5,14 @@
 
 当前提供：
 
-* :mod:`tstdx.facade.api`    —— 统一行情接口（:class:`UnifiedQuoteAPI`，
-  local/tdx/web 三通路自动路由）
-* :mod:`tstdx.facade.binary`  —— TDX 二进制协议门面（:class:`BinaryClient`）
-* :mod:`tstdx.facade.market`  —— 标准 / 扩展 / 期权市场门面
-  （:class:`HqClient` / :class:`ExHqClient` / :class:`OptionClient`）
-* :mod:`tstdx.facade.bridge`  —— 外部补充数据源桥接门面（:class:`BridgeClient`）
+* :mod:`tstdx.facade.runtime` —— Provider-first strict runtime（新 canonical 入口）
+* :mod:`tstdx.facade.api`    —— 兼容统一行情接口（UnifiedQuoteAPI，保留旧 auto 路由）
+* :mod:`tstdx.facade.binary` —— TDX 二进制协议门面（BinaryClient）
+* :mod:`tstdx.facade.market` —— 标准 / 扩展 / 期权市场门面
+* :mod:`tstdx.facade.bridge` —— 外部补充数据源桥接门面
 
-所有门面均为 tstdx **自有实现**，方法名与字段名统一为 tstdx 原生命名，
-不沿用任何第三方客户端的 API 约定，亦不复制任何第三方源码。
+新代码应优先使用 ``runtime_api()``。旧 ``route='auto'`` 仅作为兼容
+orchestration 层保留，不再定义核心 Provider 执行语义。
 """
 
 from .api import UnifiedQuoteAPI, quote_api
@@ -28,8 +27,11 @@ from .market import (
     market_client,
 )
 from .response import ApiResponse, err, ok, wrap
+from .runtime import UnifiedRuntime, runtime_api
 
 __all__ = [
+    "UnifiedRuntime",
+    "runtime_api",
     "UnifiedQuoteAPI",
     "AsyncUnifiedQuoteAPI",
     "quote_api",
