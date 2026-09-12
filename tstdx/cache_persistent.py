@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import hmac
 import json
 import sqlite3
 import threading
@@ -290,7 +291,7 @@ class PersistentSemanticCache:
                 provenance_json=str(provenance_json),
                 data_json=str(data_json),
             )
-            if not isinstance(payload_hash, str) or not hashlib.compare_digest(payload_hash, expected_hash):
+            if not isinstance(payload_hash, str) or not hmac.compare_digest(payload_hash, expected_hash):
                 self.invalidate(plan)
                 return None
             prov_data = json.loads(provenance_json)
