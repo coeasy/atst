@@ -146,7 +146,7 @@ def test_semantic_cache_can_serve_without_registered_provider_executor() -> None
     ]
 
 
-def test_cross_provider_fallback_preserves_requested_provider_provenance() -> None:
+def test_runtime_policy_fallback_does_not_claim_caller_requested_provider() -> None:
     runtime = Runtime(provider_order=("tdx", "tencent"))
     runtime.register_provider(TdxProvider(BarsOnlyClient()))
     runtime.register_provider(WebProvider("tencent", QuotesSource()))
@@ -157,9 +157,28 @@ def test_cross_provider_fallback_preserves_requested_provider_provenance() -> No
     assert response.metadata["provider"] == "tencent"
     assert response.metadata["channel"] == "quote"
     assert response.metadata["provenance"]["provider"] == "tencent"
-    assert response.metadata["provenance"]["requested_provider"] == "tdx"
-    assert response.metadata["provenance"]["fallback"] is True
+    assert response.metadata["provenance"]["requested_provider"] == "tencent"
+    assert response.metadata["provenance"]["fallback"] is False
     assert response.metadata["provider_attempts"] == [
         {"provider": "tdx", "status": "unsupported", "detail": "quotes"},
         {"provider": "tencent", "status": "selected"},
     ]
+
+
+def test_caller_requested_provider_order_preserves_fallback_provenance() -> None:
+    runtime = Runtime()
+    runtime.register_provider(TdxProvider(BarsOnlyClient()))
+    runtime.register_provider(WebProvider("tencent", QuotesSource()))
+    request = QueryRequest(
+        "quotes",
+        args=(["sh600519"],),
+        metadata={"providers": ("tdx", "tencent")},
+    )
+
+    response = runtime.execute(request)
+
+    assert response.success is True
+    assert response.metadata["provider"] == "tencent"
+    assert response.metadata["provenance"]["provider"] == "tencent"
+    assert response.metadata["provenance"]["requested_provider"] == "tdx"
+    assert response.metadata["provenance"]["fallback"] is True
