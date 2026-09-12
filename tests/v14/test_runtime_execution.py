@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.execution import ExecutionGraph, ExecutionNode, Planner
-from tstdx.provider import CacheProvider, Provider, ProviderRouter, TdxProvider, WebProvider
+from tstdx.errors import ValidationError
+from tstdx.execution import ExecutionGraph, ExecutionNode, ExecutionPlanner
+from tstdx.provider import Provider, ProviderRouter, TdxProvider, WebProvider
 from tstdx.runtime import QueryRequest, Runtime
 
 
@@ -48,6 +49,7 @@ def test_runtime_falls_back_to_next_healthy_provider() -> None:
     assert response.metadata["execution"] == "execution-plan"
     assert response.metadata["request_id"]
     assert response.metadata["trace_id"]
+    assert response.metadata["request_key"]
     assert [item["status"] for item in response.metadata["provider_attempts"]] == [
         "failed",
         "unhealthy",
@@ -90,7 +92,7 @@ def test_runtime_reports_unsupported_operation_without_backends() -> None:
 
 def test_runtime_reuses_router_owned_by_injected_planner() -> None:
     router = ProviderRouter()
-    planner = Planner(router)
+    planner = ExecutionPlanner(router)
     runtime = Runtime(planner=planner)
     runtime.register_provider(_HealthyProvider())
 
@@ -102,34 +104,20 @@ def test_runtime_reuses_router_owned_by_injected_planner() -> None:
 
 
 def test_runtime_rejects_mismatched_injected_router_and_planner() -> None:
-    planner = Planner(ProviderRouter())
+    planner = ExecutionPlanner(ProviderRouter())
 
     with pytest.raises(ValueError, match="same provider router"):
         Runtime(router=ProviderRouter(), planner=planner)
 
 
-def test_query_request_cache_key_is_semantic_and_stable() -> None:
+def test_request_key_is_stable_but_is_not_semantic_cache_identity() -> None:
     first = QueryRequest("bars", {"count": 10}, {"trace": "a"}, ("sh600519",))
     second = QueryRequest("bars", {"count": 10}, {"trace": "b"}, ("sh600519",))
     different = QueryRequest("bars", {"count": 20}, {"trace": "a"}, ("sh600519",))
 
-    assert first.cache_key == second.cache_key
-    assert first.cache_key != different.cache_key
-
-
-def test_cache_miss_falls_through_to_next_provider() -> None:
-    runtime = Runtime(provider_order=("cache", "good"))
-    runtime.register_provider(CacheProvider({}))
-    runtime.register_provider(_HealthyProvider())
-
-    response = runtime.execute(QueryRequest("quotes", args=("sh600519",)))
-
-    assert response.success is True
-    assert response.metadata["provider"] == "good"
-    assert [item["status"] for item in response.metadata["provider_attempts"]] == [
-        "failed",
-        "selected",
-    ]
+    assert first.request_key == second.request_key
+    assert first.request_key != different.request_key
+    assert first.cache_key == first.request_key  # compatibility alias only
 
 
 def test_tdx_provider_preserves_positional_and_keyword_arguments() -> None:
@@ -155,19 +143,24 @@ def test_runtime_skips_provider_without_operation_capability() -> None:
         def quotes(self, symbols):
             return list(symbols)
 
-    runtime = Runtime(provider_order=("tdx", "web"))
+    runtime = Runtime(provider_order=("tdx", "tencent"))
     runtime.register_provider(TdxProvider(BarsOnlyClient()))
-    runtime.register_provider(WebProvider(QuotesSource()))
+    runtime.register_provider(WebProvider("tencent", QuotesSource()))
 
     response = runtime.execute(QueryRequest("quotes", args=(["sh600519"],)))
 
     assert response.success is True
     assert response.data == ["sh600519"]
-    assert response.metadata["provider"] == "web"
+    assert response.metadata["provider"] == "tencent"
     assert response.metadata["provider_attempts"] == [
         {"provider": "tdx", "status": "unsupported", "detail": "quotes"},
-        {"provider": "web", "status": "selected"},
+        {"provider": "tencent", "status": "selected"},
     ]
+
+
+def test_web_provider_rejects_ambiguous_web_identity() -> None:
+    with pytest.raises(ValidationError, match="未知 provider"):
+        WebProvider("web", object())
 
 
 def test_explicit_provider_reports_unsupported_operation() -> None:
