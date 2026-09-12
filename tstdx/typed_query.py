@@ -67,7 +67,7 @@ class CashFlowQuery(SymbolQuery):
 @dataclass(frozen=True, slots=True)
 class FundRankQuery(CapabilityQuery):
     capability: str = "fund_rank"
-    fund_type: str = "all"
+    fund_type: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +94,7 @@ class OptionSnapshotQuery(SymbolQuery):
 class NewsQuery(CapabilityQuery):
     capability: str = "news_financial"
     page: int = 1
-    size: int = 20
+    size: int = 30
 
 
 @dataclass(frozen=True, slots=True)
