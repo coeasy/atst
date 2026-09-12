@@ -10,7 +10,7 @@
 * **数据全兼容**：市场 × 品种 × 周期 × 口径差异全部参数化为 ``DataProfile``。
 * **实时为一等公民**：PushChannel + 增量合并 + 断线补数 + 背压 + 重连。
 * **Provider-first 运行时**：公开查询先编译为单 Provider / 单 Channel 的
-  ``QueryPlan``，跨 Provider fallback 只能由显式策略层触发。
+  ``QueryPlan``；跨 Provider fallback 只能由显式 ``FallbackPolicy`` 触发。
 * **Fail-closed Streaming**：canonical stream 采用显式 ``StreamState``。
 * **语义缓存**：canonical cache 以完整 ``QueryFingerprint`` 隔离 Provider /
   Channel / Capability，并保持原始 provenance；可选安全 SQLite L2 仅持久化
@@ -54,6 +54,10 @@ __all__ = [
     "DIRECT_BINDINGS",
     "audit_direct_bindings",
     "UnifiedRuntime",
+    "FallbackPolicy",
+    "ProviderAttempt",
+    "OrchestratedResult",
+    "ProviderOrchestrator",
     "BatchItem",
     "BatchResult",
     "SingleFlight",
@@ -100,6 +104,12 @@ if TYPE_CHECKING:  # pragma: no cover
         audit_direct_bindings,
     )
     from .error_envelope import ErrorEnvelope, to_error_envelope
+    from .orchestration import (
+        FallbackPolicy,
+        OrchestratedResult,
+        ProviderAttempt,
+        ProviderOrchestrator,
+    )
     from .providers import PROVIDERS, ProviderRegistry
     from .query import CurrentnessMode, QueryFingerprint, QueryPlan, QueryPlanner, QuerySpec
     from .reader import BlockReader, DataProfile, DayBarReader, FinanceReader, MinBarReader
@@ -137,6 +147,10 @@ _LAZY: dict[str, tuple[str, str]] = {
     "DIRECT_BINDINGS": ("tstdx.direct_provider", "DIRECT_BINDINGS"),
     "audit_direct_bindings": ("tstdx.direct_provider", "audit_direct_bindings"),
     "UnifiedRuntime": ("tstdx.runtime", "UnifiedRuntime"),
+    "FallbackPolicy": ("tstdx.orchestration", "FallbackPolicy"),
+    "ProviderAttempt": ("tstdx.orchestration", "ProviderAttempt"),
+    "OrchestratedResult": ("tstdx.orchestration", "OrchestratedResult"),
+    "ProviderOrchestrator": ("tstdx.orchestration", "ProviderOrchestrator"),
     "BatchItem": ("tstdx.batch", "BatchItem"),
     "BatchResult": ("tstdx.batch", "BatchResult"),
     "SingleFlight": ("tstdx.batch", "SingleFlight"),
