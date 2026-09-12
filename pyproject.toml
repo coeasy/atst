@@ -40,8 +40,9 @@ duckdb    = ["duckdb>=0.10"]
 web       = ["httpx>=0.26"]
 tools     = ["tzdata>=2024.1; sys_platform == 'win32'"]
 metrics   = ["prometheus-client>=0.19"]
-# Canonical /v13 HTTP + /v13/ws transports.
-server    = ["fastapi>=0.110", "uvicorn>=0.27", "websockets>=12.0"]
+# Canonical /v13 HTTP + /v13/ws transports. The asyncio.server API used by the
+# canonical WS transport is part of the modern websockets API.
+server    = ["fastapi>=0.110", "uvicorn>=0.27", "websockets>=13.0"]
 # MCP stdio packaging/integration extra.
 mcp       = ["mcp>=1.0"]
 dev       = [
@@ -61,7 +62,7 @@ all       = [
     "prometheus-client>=0.19",
     "fastapi>=0.110",
     "uvicorn>=0.27",
-    "websockets>=12.0",
+    "websockets>=13.0",
     "mcp>=1.0",
     "zstandard>=0.22",
     "tzdata>=2024.1; sys_platform == 'win32'",
