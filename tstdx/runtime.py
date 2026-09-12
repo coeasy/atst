@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .batch import NegativeCache, SingleFlight
 from .cache_semantic import SemanticResultCache
 from .direct_provider import DirectProviderExecutor
 from .query import QueryPlanner, QuerySpec
@@ -16,7 +17,7 @@ __all__ = ["UnifiedRuntime"]
 
 
 class UnifiedRuntime:
-    """Compile, cache and execute one Provider/Channel plan end-to-end."""
+    """Compile, cache, single-flight and execute one exact Provider plan."""
 
     def __init__(
         self,
@@ -27,6 +28,8 @@ class UnifiedRuntime:
         vipdoc_root: str | None = None,
         cache: SemanticResultCache | None = None,
         cache_ttl: float | None = 5.0,
+        negative_cache: NegativeCache | None = None,
+        singleflight: SingleFlight | None = None,
     ) -> None:
         self.planner = QueryPlanner(default_provider=default_provider)
         self.executor = DirectProviderExecutor(
@@ -36,6 +39,8 @@ class UnifiedRuntime:
         )
         self.cache = cache or SemanticResultCache(tier="l1")
         self.cache_ttl = cache_ttl
+        self.negative_cache = negative_cache or NegativeCache(ttl=1.0)
+        self.singleflight = singleflight or SingleFlight()
 
     def execute(self, spec: QuerySpec, *, use_cache: bool = True) -> QueryResult[Any]:
         plan = self.planner.compile(spec)
@@ -43,10 +48,27 @@ class UnifiedRuntime:
             hit = self.cache.get(plan)
             if hit is not None:
                 return hit
-        result = self.executor.execute(plan)
-        if use_cache:
-            self.cache.put(plan, result, ttl=self.cache_ttl)
-        return result
+            cached_error = self.negative_cache.get(plan)
+            if cached_error is not None:
+                raise cached_error
+
+        def _leader() -> QueryResult[Any]:
+            if use_cache:
+                hit = self.cache.get(plan)
+                if hit is not None:
+                    return hit
+            try:
+                result = self.executor.execute(plan)
+            except Exception as exc:
+                if use_cache:
+                    self.negative_cache.put(plan, exc)
+                raise
+            if use_cache:
+                self.cache.put(plan, result, ttl=self.cache_ttl)
+                self.negative_cache.invalidate(plan)
+            return result
+
+        return self.singleflight.do(plan, _leader)
 
     def quotes(
         self,
