@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from tstdx.cache_semantic import SemanticResultCache
 from tstdx.errors import ValidationError
 from tstdx.execution.semantic import SemanticExecutionAdapter
 from tstdx.provider import TdxProvider, WebProvider
@@ -14,7 +15,11 @@ from tstdx.typed_query import (
 
 
 class EastmoneySource:
+    def __init__(self) -> None:
+        self.calls = 0
+
     def fund_holdings(self, symbol: str, *, quarter: str = ""):
+        self.calls += 1
         return {"symbol": symbol, "quarter": quarter}
 
 
@@ -51,8 +56,9 @@ def test_canonical_typed_capabilities_compile_through_query_planner(
 
 
 def test_execute_typed_fund_holdings_uses_canonical_semantics() -> None:
+    source = EastmoneySource()
     runtime = Runtime(provider_order=("eastmoney",))
-    runtime.register_provider(WebProvider("eastmoney", EastmoneySource()))
+    runtime.register_provider(WebProvider("eastmoney", source))
     query = FundHoldingsQuery(
         provider="eastmoney",
         symbol="600519.SH",
@@ -67,6 +73,39 @@ def test_execute_typed_fund_holdings_uses_canonical_semantics() -> None:
     assert response.metadata["channel"] == "fund"
     assert response.metadata["provenance"]["capability"] == "fund_holdings"
     assert response.metadata["query_fingerprint"].startswith("q1:")
+
+
+def test_typed_options_participate_in_fingerprint_and_cache_identity() -> None:
+    source = EastmoneySource()
+    runtime = Runtime(
+        provider_order=("eastmoney",),
+        semantic_cache=SemanticResultCache(tier="l1"),
+        default_cache_ttl=60.0,
+    )
+    runtime.register_provider(WebProvider("eastmoney", source))
+    q1 = FundHoldingsQuery(
+        provider="eastmoney",
+        symbol="600519.SH",
+        options={"quarter": "2026Q1"},
+    )
+    q2 = FundHoldingsQuery(
+        provider="eastmoney",
+        symbol="600519.SH",
+        options={"quarter": "2026Q2"},
+    )
+
+    first = runtime.execute_typed(q1)
+    cached = runtime.execute_typed(q1)
+    different = runtime.execute_typed(q2)
+
+    assert first.success is True
+    assert cached.success is True
+    assert different.success is True
+    assert source.calls == 2
+    assert cached.metadata["query_fingerprint"] == first.metadata["query_fingerprint"]
+    assert cached.metadata["provenance"]["cache_tier"] == "l1"
+    assert different.metadata["query_fingerprint"] != first.metadata["query_fingerprint"]
+    assert different.metadata["provenance"]["cache_tier"] is None
 
 
 def test_execute_typed_f10_uses_tdx_channel() -> None:
