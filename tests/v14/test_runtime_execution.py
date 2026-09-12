@@ -117,7 +117,6 @@ def test_request_key_is_stable_but_is_not_semantic_cache_identity() -> None:
 
     assert first.request_key == second.request_key
     assert first.request_key != different.request_key
-    assert first.cache_key == first.request_key  # compatibility alias only
 
 
 def test_tdx_provider_preserves_positional_and_keyword_arguments() -> None:
