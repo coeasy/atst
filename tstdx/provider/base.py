@@ -18,4 +18,13 @@ class Provider(ABC):
         raise NotImplementedError
 
     def health(self) -> bool:
+        """Return whether the provider is currently eligible for execution."""
         return True
+
+    def supports(self, operation: str) -> bool:
+        """Return whether this provider can execute ``operation``.
+
+        Generic providers default to accepting all operations. Concrete adapters
+        should narrow this when they can inspect their wrapped backend cheaply.
+        """
+        return bool(operation)
