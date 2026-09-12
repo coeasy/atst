@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from tstdx.cache_semantic import SemanticResultCache
+from tstdx.execution.semantic import SemanticExecutionAdapter
 from tstdx.provider import TdxProvider, WebProvider
+from tstdx.query import QueryPlanner, QuerySpec
 from tstdx.runtime import QueryRequest, Runtime
 
 
@@ -22,6 +24,58 @@ class BarsOnlyClient:
 class QuotesSource:
     def quotes(self, symbols):
         return [{"symbol": item} for item in symbols]
+
+
+def test_semantic_bridge_bars_plan_matches_direct_query_planner() -> None:
+    request = QueryRequest(
+        "bars",
+        {"period": "day", "count": 20, "start": 3},
+        metadata={"currentness": "historical", "max_age": 60.0},
+        args=("600519.SH",),
+    )
+    adapter = SemanticExecutionAdapter()
+
+    actual = adapter.compile(request, "tdx")
+    expected = QueryPlanner().compile(
+        QuerySpec.build(
+            "bars",
+            symbols="600519.SH",
+            provider="tdx",
+            period="day",
+            count=20,
+            start=3,
+            currentness="historical",
+            max_age=60.0,
+        )
+    )
+
+    assert actual == expected
+    assert actual.fingerprint.value == expected.fingerprint.value
+
+
+def test_semantic_bridge_quotes_plan_matches_direct_query_planner() -> None:
+    request = QueryRequest(
+        "quotes",
+        {"allow_partial": True},
+        metadata={"currentness": "live", "deadline_ms": 800},
+        args=(["sh600519", "sz000001"],),
+    )
+    adapter = SemanticExecutionAdapter()
+
+    actual = adapter.compile(request, "tencent")
+    expected = QueryPlanner().compile(
+        QuerySpec.build(
+            "quotes",
+            symbols=["sh600519", "sz000001"],
+            provider="tencent",
+            allow_partial=True,
+            currentness="live",
+            deadline_ms=800,
+        )
+    )
+
+    assert actual == expected
+    assert actual.fingerprint.value == expected.fingerprint.value
 
 
 def test_core_bars_use_canonical_query_provenance_and_semantic_cache() -> None:
@@ -47,17 +101,16 @@ def test_core_bars_use_canonical_query_provenance_and_semantic_cache() -> None:
     assert client.calls == 1
     assert first.metadata["channel"] == "quotation"
     assert first.metadata["query_fingerprint"].startswith("q1:")
-    assert first.metadata["provenance"] == {
-        "provider": "tdx",
-        "channel": "quotation",
-        "capability": "bars",
-        "kind": "direct",
-        "observed_at_ns": first.metadata["provenance"]["observed_at_ns"],
-        "provider_timestamp": None,
-        "cache_tier": None,
-        "requested_provider": "tdx",
-        "fallback": False,
-    }
+    first_provenance = first.metadata["provenance"]
+    assert first_provenance["provider"] == "tdx"
+    assert first_provenance["channel"] == "quotation"
+    assert first_provenance["capability"] == "bars"
+    assert first_provenance["kind"] == "direct"
+    assert first_provenance["observed_at_ns"] > 0
+    assert first_provenance["provider_timestamp"] is None
+    assert first_provenance["cache_tier"] is None
+    assert first_provenance["requested_provider"] == "tdx"
+    assert first_provenance["fallback"] is False
     assert second.metadata["query_fingerprint"] == first.metadata["query_fingerprint"]
     assert second.metadata["provenance"]["provider"] == "tdx"
     assert second.metadata["provenance"]["kind"] == "direct"
