@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 
 from tstdx.execution import ExecutionGraph, ExecutionNode
-from tstdx.provider import CacheProvider, Provider, TdxProvider
+from tstdx.execution.planner import Planner
+from tstdx.provider import CacheProvider, Provider, ProviderRouter, TdxProvider
 from tstdx.runtime import QueryRequest, Runtime
 
 
@@ -78,6 +79,26 @@ def test_runtime_reports_unsupported_operation_without_backends() -> None:
 
     assert response.success is False
     assert response.error == "unsupported operation: missing"
+
+
+def test_runtime_reuses_router_owned_by_injected_planner() -> None:
+    router = ProviderRouter()
+    planner = Planner(router)
+    runtime = Runtime(planner=planner)
+    runtime.register_provider(_HealthyProvider())
+
+    response = runtime.execute(QueryRequest("quotes"))
+
+    assert response.success is True
+    assert runtime.router is router
+    assert response.metadata["provider"] == "good"
+
+
+def test_runtime_rejects_mismatched_injected_router_and_planner() -> None:
+    planner = Planner(ProviderRouter())
+
+    with pytest.raises(ValueError, match="same provider router"):
+        Runtime(router=ProviderRouter(), planner=planner)
 
 
 def test_query_request_cache_key_is_semantic_and_stable() -> None:
