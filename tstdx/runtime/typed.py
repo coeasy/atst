@@ -4,6 +4,7 @@ from dataclasses import fields
 from typing import Any, Mapping
 
 from ..errors import ValidationError
+from ..providers import normalize_provider_id
 from ..typed_query import CapabilityQuery
 from .request import QueryRequest
 
@@ -18,7 +19,7 @@ def request_from_typed(
     """Translate one immutable typed query into the Runtime boundary envelope.
 
     This adapter deliberately refuses typed contracts that have not yet been
-    admitted to the canonical Provider registry.  It therefore cannot become a
+    admitted to the canonical Provider registry. It therefore cannot become a
     second capability namespace beside :mod:`tstdx.providers`.
     """
     if not isinstance(query, CapabilityQuery):
@@ -40,16 +41,19 @@ def request_from_typed(
 
     runtime_metadata = dict(metadata or {})
     if query.provider:
+        query_provider = normalize_provider_id(query.provider)
         existing = runtime_metadata.get("provider")
-        if existing is not None and str(existing) != str(query.provider):
-            raise ValidationError(
-                "typed query provider conflicts with runtime metadata provider",
-                context={
-                    "query_provider": query.provider,
-                    "metadata_provider": existing,
-                },
-            )
-        runtime_metadata["provider"] = query.provider
+        if existing is not None:
+            metadata_provider = normalize_provider_id(str(existing))
+            if metadata_provider != query_provider:
+                raise ValidationError(
+                    "typed query provider conflicts with runtime metadata provider",
+                    context={
+                        "query_provider": query_provider,
+                        "metadata_provider": metadata_provider,
+                    },
+                )
+        runtime_metadata["provider"] = query_provider
 
     return QueryRequest(
         operation=query.capability,
