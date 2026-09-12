@@ -8,10 +8,11 @@ from typing import Any
 
 @dataclass(slots=True)
 class QueryRequest:
-    """Canonical runtime request object.
+    """Runtime boundary request preserving the caller's original call shape.
 
-    Positional and keyword arguments are preserved so facade/client method
-    signatures can migrate behind the runtime without semantic rewrites.
+    This is intentionally *not* the canonical market query model. Semantic
+    market identity remains owned by :class:`tstdx.query.QuerySpec` and
+    :class:`tstdx.query.QueryFingerprint`.
     """
 
     operation: str
@@ -20,11 +21,12 @@ class QueryRequest:
     args: tuple[Any, ...] = field(default_factory=tuple)
 
     @property
-    def cache_key(self) -> str:
-        """Stable key for the semantic request payload.
+    def request_key(self) -> str:
+        """Stable diagnostic identity for the runtime boundary request.
 
-        Metadata is intentionally excluded because tracing, timeout and routing
-        hints must not create distinct cached market-data values.
+        This key is suitable for tracing/single-flight bookkeeping only. It is
+        not a semantic market-data cache key because Provider/Channel identity
+        is deliberately absent. Semantic caches must use ``QueryFingerprint``.
         """
         payload = json.dumps(
             {
@@ -38,6 +40,15 @@ class QueryRequest:
             default=repr,
         ).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()
+
+    @property
+    def cache_key(self) -> str:
+        """Compatibility alias for older V14 branch code.
+
+        Do not use this alias for :mod:`tstdx.cache_semantic`; that cache is
+        keyed by the canonical :class:`tstdx.query.QueryFingerprint`.
+        """
+        return self.request_key
 
     def with_metadata(self, **values: Any) -> "QueryRequest":
         metadata = dict(self.metadata)
