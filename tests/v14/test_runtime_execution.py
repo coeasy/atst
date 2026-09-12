@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from tstdx.execution import ExecutionGraph, ExecutionNode
-from tstdx.provider import Provider
+from tstdx.provider import CacheProvider, Provider, TdxProvider
 from tstdx.runtime import QueryRequest, Runtime
 
 
@@ -78,6 +78,40 @@ def test_runtime_reports_unsupported_operation_without_backends() -> None:
 
     assert response.success is False
     assert response.error == "unsupported operation: missing"
+
+
+def test_query_request_cache_key_is_semantic_and_stable() -> None:
+    first = QueryRequest("bars", {"count": 10}, {"trace": "a"}, ("sh600519",))
+    second = QueryRequest("bars", {"count": 10}, {"trace": "b"}, ("sh600519",))
+    different = QueryRequest("bars", {"count": 20}, {"trace": "a"}, ("sh600519",))
+
+    assert first.cache_key == second.cache_key
+    assert first.cache_key != different.cache_key
+
+
+def test_cache_miss_falls_through_to_next_provider() -> None:
+    runtime = Runtime(provider_order=("cache", "good"))
+    runtime.register_provider(CacheProvider({}))
+    runtime.register_provider(_HealthyProvider())
+
+    response = runtime.execute(QueryRequest("quotes", args=("sh600519",)))
+
+    assert response.success is True
+    assert response.metadata["provider"] == "good"
+
+
+def test_tdx_provider_preserves_positional_and_keyword_arguments() -> None:
+    class Client:
+        def bars(self, symbol, *, count):
+            return symbol, count
+
+    runtime = Runtime(provider_order=("tdx",))
+    runtime.register_provider(TdxProvider(Client()))
+
+    response = runtime.execute(QueryRequest("bars", {"count": 5}, args=("sh600519",)))
+
+    assert response.success is True
+    assert response.data == ("sh600519", 5)
 
 
 def test_execution_graph_rejects_cycles() -> None:
