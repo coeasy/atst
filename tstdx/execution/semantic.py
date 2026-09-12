@@ -154,11 +154,12 @@ class SemanticExecutionAdapter:
         router: ProviderRouter,
         providers: Sequence[str],
         attempts: ProviderAttempts,
+        requested_provider: str | None = None,
     ) -> tuple[str, QueryResult[Any]]:
         candidates = tuple(normalize_provider_id(item) for item in providers)
         if not candidates:
             raise RuntimeError("no providers are available for semantic execution")
-        requested_provider = candidates[0]
+        requested = normalize_provider_id(requested_provider) if requested_provider else None
         single_provider = len(candidates) == 1
         failures: list[str] = []
 
@@ -203,7 +204,7 @@ class SemanticExecutionAdapter:
 
             provenance = self._fallback_provenance(
                 Provenance.direct(plan),
-                requested_provider=requested_provider,
+                requested_provider=requested,
                 selected_provider=provider,
             )
             result = QueryResult.from_plan(raw, plan=plan, provenance=provenance)
