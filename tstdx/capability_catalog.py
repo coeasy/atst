@@ -14,6 +14,9 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass
 from types import MappingProxyType
+from typing import Any
+
+from .errors import ValidationError
 
 __all__ = [
     "MigratedCapabilityBinding",
@@ -23,6 +26,7 @@ __all__ = [
     "bindings_for_provider",
     "default_provider_for",
     "is_migrated_capability",
+    "validate_call",
 ]
 
 
@@ -239,3 +243,109 @@ def default_provider_for(capability: str) -> str:
 
 def is_migrated_capability(capability: str) -> bool:
     return str(capability).strip().lower() in MIGRATED_CAPABILITIES
+
+
+def _bind_signature(target: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
+    signature = inspect.signature(target)
+    parameters = tuple(signature.parameters.values())
+    if parameters and parameters[0].name in {"self", "cls"}:
+        signature.bind(None, *args, **kwargs)
+    else:
+        signature.bind(*args, **kwargs)
+
+
+def _validate_composed(
+    capability: str,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> None:
+    required = {"adjusted_bars": 1, "sync_daily": 1, "security_list_all": 0}[capability]
+    if len(args) < required:
+        raise TypeError(f"{capability} requires at least {required} positional argument(s)")
+    allowed = {
+        "adjusted_bars": {"method", "period", "count", "start", "events", "anchor_date"},
+        "sync_daily": {"root", "profile"},
+        "security_list_all": {"market"},
+    }[capability]
+    unknown = sorted(set(kwargs) - allowed)
+    if unknown:
+        raise TypeError(f"unexpected keyword argument(s): {', '.join(unknown)}")
+
+
+def _validate_web_adapter(
+    capability: str,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> None:
+    if len(args) != 1:
+        raise TypeError(f"{capability} requires exactly one symbol argument")
+    allowed = {
+        "minute_web": set(),
+        "minute_klines": {"period", "count", "adjust"},
+        "history": {"period", "count", "adjust"},
+    }[capability]
+    unknown = sorted(set(kwargs) - allowed)
+    if unknown:
+        raise TypeError(f"unexpected keyword argument(s): {', '.join(unknown)}")
+
+
+def validate_call(
+    provider: str,
+    channel: str,
+    capability: str,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> None:
+    """Validate migrated arguments before any Provider I/O.
+
+    The catalog is still generic at the transport boundary, but caller arguments
+    are bound against the real implementation signature (or an explicit manual
+    contract for composed adapters) before QuerySpec is compiled.
+    """
+    try:
+        meta = binding_for(provider, channel, capability)
+        if meta.backend == "web_session":
+            from .web.facade import WebQuoteSession
+
+            call_kwargs = dict(kwargs)
+            if capability == "hk_quotes" and provider in {"sina", "tencent"}:
+                call_kwargs.setdefault("provider", provider)
+            _bind_signature(getattr(WebQuoteSession, meta.method), args, call_kwargs)
+            return
+        if meta.backend == "tdx_client":
+            from .client import TdxClient
+
+            _bind_signature(getattr(TdxClient, meta.method), args, kwargs)
+            return
+        if meta.backend == "f10_client":
+            if capability == "f10":
+                if len(args) != 2 or kwargs:
+                    raise TypeError("f10 requires symbol and filename")
+            else:
+                if len(args) != 1 or kwargs:
+                    raise TypeError("f10_catalog requires exactly one symbol")
+            return
+        if meta.backend in {"ex_client", "goods_client"}:
+            from .client import ExMarketClient, GoodsClient
+
+            cls = ExMarketClient if meta.backend == "ex_client" else GoodsClient
+            _bind_signature(getattr(cls, meta.method), args, kwargs)
+            return
+        if meta.backend == "web_adapter":
+            _validate_web_adapter(capability, args, kwargs)
+            return
+        if meta.backend == "composed":
+            _validate_composed(capability, args, kwargs)
+            return
+        raise TypeError(f"unknown migrated backend {meta.backend!r}")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValidationError(
+            f"capability {capability!r} 参数不符合 v13 contract",
+            context={
+                "provider": provider,
+                "channel": channel,
+                "capability": capability,
+                "phase": "query_validation",
+            },
+            cause=exc,
+        ) from exc
