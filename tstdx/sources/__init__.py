@@ -69,11 +69,17 @@ def _period_to_reader_period(period: str) -> str:
         return Period.M1
     if p in ("5min", "5m", "m5"):
         return Period.M5
+    # 其它周期本地文件无对应格式，reader 源直接不可用
     raise SourceUnavailable(f"本地 reader 不支持周期 {period!r}（仅 day/1min/5min）")
 
 
 def _split_for_cache(symbol: str) -> tuple[int, str]:
-    """从 symbol 提取 (tdx市场编号, 6位代码)，用于 golden 样本查找。"""
+    """从 symbol 提取 (tdx市场编号, 6位代码)，用于 golden 样本查找。
+
+    委托统一符号引擎 :func:`tstdx.domain.symbol.split_symbol`（单一事实源，
+    审计 §2-1：不再旁路实现市场推断）。tdx 编号口径（v5 DC1）：0=深，
+    1=沪，2=北交所——直接复用 ``Symbol.tdx_market``，不再旁路二值映射。
+    """
     from ..domain.symbol import parse_symbol
 
     sym = parse_symbol(symbol)
@@ -143,6 +149,9 @@ def _golden_quote(golden_root: Path, code: str) -> dict[str, Any] | None:
         payload=payload,
     )
     ctx = dict(meta.get("parse_ctx") or {})
+    # price_scale=100 为 golden 0x0530 样本的固定价格缩放口径（样本即契约：
+    # 采集计划 ctx 里 price_scale=100，见 tstdx.tools.capture PLANS —— 换口径
+    # 需同步采集器与此处，禁止单点硬改）。
     result = dispatch(frame, code=ctx.get("code", code), market=ctx.get("market"), price_scale=100)
     if not result.rows:
         return None
@@ -152,9 +161,16 @@ def _golden_quote(golden_root: Path, code: str) -> dict[str, Any] | None:
 class DataSourceRouter:
     """统一数据源路由（配置驱动的多级降级）。
 
-    Legacy Quote/Kline cache 没有 Provider provenance，因此只允许用于默认的
-    auto-route 兼容路径。调用方显式传 ``order=`` 时必须绕过这些旧缓存，
-    防止 Web/reader/cache 数据污染显式 TDX 或其它单源请求。
+    Parameters
+    ----------
+    order: 降级顺序覆盖（否则取 ``config.sources.order``）。
+    vipdoc_root: 本地 vipdoc 根目录（reader 源）。
+    golden_root: golden 缓存根目录（cache 源，离线回放自采集样本）。
+    tdx_hosts: TDX 主站列表（tdx 源）。
+    kline_cache: 本地 SQLite K 线缓存（U4）。注入后自动「读命中短路 +
+        写穿透增量合并」；``None`` 表示禁用。
+    quote_cache: 实时行情 TTL 缓存（C5，:class:`~tstdx.cache.QuoteCache`）。
+        注入后 ``quotes()`` 命中短路、未命中回写；``None`` 表示禁用。
     """
 
     def __init__(
@@ -182,6 +198,7 @@ class DataSourceRouter:
         self.last_errors: list[tuple[str, BaseException]] = []
         self.last_source: str | None = None
 
+    # -- 内部：按 order + enabled 过滤 -------------------------------------- #
     def _active_sources(self) -> list[str]:
         enabled = self.config.enabled
         out = []
@@ -199,12 +216,14 @@ class DataSourceRouter:
         except AllSourcesExhausted as exc:
             raise SourceUnavailable(f"{source}: {exc}") from exc
         except TdxError as exc:
+            # 连接/超时类错误视为本源不可用，继续降级
             raise SourceUnavailable(f"{source}: {type(exc).__name__}: {exc}") from exc
         except Exception as exc:  # noqa: BLE001
             if self.config.continue_on_error:
                 raise SourceUnavailable(f"{source}: {type(exc).__name__}: {exc}") from exc
             raise
 
+    # -- 公开：实时行情 ---------------------------------------------------- #
     def quotes(
         self,
         symbols: Sequence[str],
@@ -213,11 +232,25 @@ class DataSourceRouter:
         default_empty_ok: bool = False,
         order: Sequence[str] | None = None,
     ) -> list[Any]:
-        """获取实时行情；显式 ``order`` 时绕过无 provenance 的 legacy cache。"""
+        """获取实时行情，按 ``tdx`` → ``web`` 顺序降级。
+
+        C5：注入 ``quote_cache`` 时先读 TTL 缓存（命中短路），未命中走
+        降级链并回写；默认 TTL 3s 对齐盘中刷新节奏。旧缓存没有 Provider
+        provenance，因此显式 ``order`` 的单源调用会绕过其读写。
+
+        ``default_empty_ok``（Q1-b 对齐 :meth:`kline`）：False（默认）时某源
+        返回空列表视为不可用继续降级；True 时空列表也算该源成功，直接返回
+        空结果（facade 合并后的「空=成功」口径，见 ADR-012 D2）。
+
+        ``order``（Q1-b）：本次调用的降级顺序覆盖（如 facade 单源委托传
+        ``["tdx"]``）；``None`` 用实例配置。显式传参**绕过**
+        ``enabled`` 开关（调用方已明确指定源，如 facade 显式路由）。
+        """
         from ..client import _emit
 
         symbols = list(symbols)
         legacy_cache_allowed = order is None
+        # C5：读穿命中短路；显式单源路由不得读取无 provenance 的旧缓存。
         if legacy_cache_allowed and self.quote_cache is not None:
             cached = self.quote_cache.get(symbols)
             if cached is not None:
@@ -241,11 +274,15 @@ class DataSourceRouter:
 
                     client = WebQuoteClient()
                     try:
+                        # WebQuoteClient.quotes 已返回 list[Quote]；直接使用，
+                        # 勿再经 to_dict/重建 Quote（会把 bid/ask 退化为 dict，破坏 to_dict）
                         data = self._safe_run("web", lambda c=client: c.quotes(symbols))
                     finally:
                         client.close()
                 elif source == "cache":
                     if self.golden_root:
+                        # _safe_run 包裹：golden 样本损坏（payload 畸形 → struct.error
+                        # 等非 TdxError 异常）不再炸穿整条降级链（审计 §2-15）
                         rows = self._safe_run(
                             "cache",
                             lambda symbols=symbols: [
@@ -270,12 +307,15 @@ class DataSourceRouter:
                 continue
             if data or (default_empty_ok and data is not None):
                 self.last_source = source
+                # C5：回写 TTL 缓存；显式单源路由同样禁止写入无 provenance 缓存。
                 if legacy_cache_allowed and self.quote_cache is not None and data:
                     with contextlib.suppress(Exception):
                         self.quote_cache.put(symbols, [_as_dict(x) for x in data])
                 if as_format == "dict":
                     return [_as_dict(x) for x in data]
                 return _emit([_to_quote(x) for x in data], as_format)
+            # 空列表 = 本源全部失败（如 TDX 主站不可达但 client 吞掉异常返回 []），
+            # 视为不可用，继续降级到下一源（default_empty_ok=True 时上面已返回）
             self.last_errors.append((source, SourceUnavailable(f"{source}: 返回空行情数据")))
         raise AllSourcesExhausted(
             "全部行情源失败",
@@ -285,6 +325,7 @@ class DataSourceRouter:
             },
         )
 
+    # -- 公开：K 线 -------------------------------------------------------- #
     def kline(
         self,
         symbol: str,
@@ -297,15 +338,40 @@ class DataSourceRouter:
         default_empty_ok: bool = False,
         order: Sequence[str] | None = None,
     ) -> list[Any]:
-        """获取 K 线；显式 ``order`` 时绕过无 provenance 的 legacy cache。"""
+        """获取 K 线，按 ``tdx`` → ``web`` → ``reader`` → ``cache`` → ``synthetic`` 降级。
+
+        Parameters
+        ----------
+        start:
+            偏移语义（Q1-a 对齐 facade ：meth:`UnifiedQuoteAPI.bars`）：
+            从最新往回跳过 ``start`` 根再取 ``count`` 根（``end = len - start``，
+            ``begin = end - count``）。``start=0``（默认）行为与历史版本完全一致
+            （末尾 ``count`` 根）。仅 tdx / reader 源支持；web 源无该参数，
+            非零 ``start`` 传 web 时忽略（web 分支不透传）。
+        adjust:
+            web 源复权口径透传（Q1-b 对齐 facade ：meth:`UnifiedQuoteAPI.bars`）：
+            ``""``（默认，原始价）与历史行为完全一致；显式 ``"qfq"/"hfq"``
+            透传给 ``WebQuoteClient.klines``（facade web 路由合并后需要）。
+            仅 web 源消费该参数；tdx/reader 仅原始价，不受影响。
+        default_empty_ok:
+            「空但成功」显式开关（默认 False）。False 时某源返回空列表视为
+            不可用并继续降级（与 :meth:`quotes` 的 ``if data:`` 语义对齐，
+            审计 §2-15）；True 时空列表也算该源成功，直接返回空结果。
+        order:
+            本次调用的降级顺序覆盖（Q1-b：facade 单源委托传 ``["tdx"]`` 等）；
+            ``None`` 用实例配置。显式传参绕过 ``enabled`` 开关（调用方已
+            明确指定源），并绕过没有 Provider provenance 的 legacy K 线缓存。
+        """
         from ..client import TdxClient, period_to_category
         from ..domain.symbol import split_symbol
 
+        # 统一符号引擎归一化：兼容 sh600519 / 600519.SH / 600519（不再内联拆前缀）
         _, code = split_symbol(symbol)
         category = period_to_category(period)
         data: list[Any] | None = None
         legacy_cache_allowed = order is None
 
+        # U4：本地 SQLite K 线缓存 —— 读命中短路（重复请求零网络）。
         if legacy_cache_allowed and self.kline_cache is not None:
             try:
                 cached = self.kline_cache.get(symbol, period, count)
@@ -314,7 +380,7 @@ class DataSourceRouter:
                     if as_format == "dict":
                         return [_as_dict(x) for x in cached]
                     return cached
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 - 缓存异常不阻塞主链路
                 self.kline_cache = None
 
         active = list(order) if order else self._active_sources()
@@ -333,6 +399,11 @@ class DataSourceRouter:
 
                     client = WebQuoteClient(sources=[KLINE])
                     try:
+                        # adjust 默认 ""：降级链原始价，与 tdx 分支口径一致。
+                        # （深审 W#2：此前未传 adjust，落入 WebQuoteClient.klines
+                        # 默认 qfq —— tdx 抖动降级时同一次调用的价格口径从
+                        # 「不复权」静默切为「前复权」，除权日附近价差可达数十元。
+                        # Q1-b 起支持显式透传，供 facade web 路由合并使用）
                         data = self._safe_run(
                             "web",
                             lambda c=client: c.klines(
@@ -347,6 +418,8 @@ class DataSourceRouter:
                     )
                 elif source == "cache":
                     if self.golden_root:
+                        # _safe_run 包裹：golden 样本损坏（payload 畸形 → struct.error
+                        # 等非 TdxError 异常）不再炸穿整条降级链（审计 §2-15）
                         rows = self._safe_run(
                             "cache",
                             lambda code=code, category=category: _golden_kline(
@@ -369,12 +442,15 @@ class DataSourceRouter:
 
             if data or (default_empty_ok and data is not None):
                 self.last_source = source
+                # U4：写穿透增量合并；显式单源路由不得写入无 provenance 缓存。
                 if legacy_cache_allowed and self.kline_cache is not None and data:
-                    with contextlib.suppress(Exception):
+                    with contextlib.suppress(Exception):  # 缓存写入失败不影响返回
                         self.kline_cache.merge(symbol, period, [_as_dict(x) for x in data])
                 if as_format == "dict":
                     return [_as_dict(x) for x in data]
                 return data
+            # 空结果 = 本源无有效数据（如主站可达但代码无 K 线），视为不可用，
+            # 继续降级（与 :meth:`quotes` 的空列表语义对齐，审计 §2-15）
             self.last_errors.append((source, SourceUnavailable(f"{source}: 返回空 K 线数据")))
 
         raise AllSourcesExhausted(
@@ -385,6 +461,7 @@ class DataSourceRouter:
             },
         )
 
+    # -- 本地 reader 策略 -------------------------------------------------- #
     def _reader_kline(
         self, symbol: str, period: str, count: int, *, start: int = 0
     ) -> list[dict[str, Any]]:
@@ -399,14 +476,22 @@ class DataSourceRouter:
             raise SourceUnavailable(f"reader: 文件不存在 {path}")
         reader = MinBarReader() if rperiod == Period.M1 else DayBarReader()
         bars = reader.read(path, output="dict")
+        # start 偏移（Q1-a 对齐 facade：end=len-start, begin=end-count；
+        # start=0 时与旧「末尾 count 根」行为完全一致）
         if start:
             end = max(0, len(bars) - start)
             begin = max(0, end - count) if count else 0
             return bars[begin:end]
         return bars[-count:] if count else bars
 
+    # -- 离线合成（占位，明确标注非真实数据） ------------------------------ #
     def _synthetic_kline(self, symbol: str, count: int) -> list[dict[str, Any]]:
-        """离线合成占位 K 线（恒 1.0 元 / 零量，**非真实行情**）。"""
+        """离线合成占位 K 线（恒 1.0 元 / 零量，**非真实行情**）。
+
+        与 golden 回放口径（真实主站自采集样本，价格 ×100 缩放）完全不同：
+        合成数据只用于「全链路冒烟」，不参与任何数值口径断言（golden 口径
+        见 :func:`_golden_kline` 与 tests/golden）。
+        """
         from ..domain.models import Bar
 
         bars = []
@@ -426,6 +511,9 @@ class DataSourceRouter:
         return bars
 
 
+# --------------------------------------------------------------------------- #
+# 辅助：统一输出
+# --------------------------------------------------------------------------- #
 def _to_row(q: Any) -> dict[str, Any]:
     """WebQuoteClient 返回 Quote 或 dict，统一成 dict。"""
     if hasattr(q, "to_dict"):
@@ -461,7 +549,15 @@ def _as_dict(x: Any) -> dict[str, Any]:
 
 
 def build_router(**kw: Any) -> DataSourceRouter:
-    """从全局配置构建路由（供 CLI / 上层调用）。"""
+    """从全局配置构建路由（供 CLI / 上层调用）。
+
+    注意两点（审计 §2-15 / §3）：
+
+    * 读取全局配置失败不再静默吞异常 —— 记 warning 后回退默认路由；
+    * ``web`` 源受 ``WebConfig.enabled`` 总闸约束（以 WebConfig 为准，
+      消除「WebConfig.enabled=False vs SourcesConfig.web=True」的默认矛盾，
+      审计 §3-3）：总闸关闭时即使 ``sources.enabled["web"]=True`` 也不路由 web。
+    """
     try:
         from ..config import get_config
 
@@ -471,6 +567,7 @@ def build_router(**kw: Any) -> DataSourceRouter:
             enabled = dict(sources_cfg.enabled)
             enabled["web"] = False
             sources_cfg = replace(sources_cfg, enabled=enabled)
+        # U4：配置了 sources.kline_cache_db 即一键装配本地 K 线缓存。
         if kw.get("kline_cache") is None and sources_cfg.kline_cache_db:
             from ..cache import KlineCache
 
