@@ -23,7 +23,27 @@ class WebProvider(Provider):
         if spec.id in {"tdx", "local_vipdoc"}:
             raise ValueError(f"{spec.id!r} is not a web provider")
         self.name = spec.id
+        self.canonical_id = spec.id
         self.source = source
+
+    def capabilities(self) -> frozenset[str]:
+        """声明能力 = 注册表能力 ∩ source 实际实现的方法。"""
+        registry_caps = super().capabilities()
+        if self.source is None:
+            return frozenset()
+        return frozenset(
+            cap
+            for cap in registry_caps
+            if callable(getattr(self.source, cap, None))
+        )
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "provider": self.name,
+            "adapter": type(self).__name__,
+            "source": type(self.source).__name__ if self.source is not None else None,
+            "configured": self.source is not None,
+        }
 
     def supports(self, operation: str) -> bool:
         return (
@@ -44,3 +64,7 @@ class WebProvider(Provider):
         if method is None:
             raise AttributeError(f"provider {self.name!r} does not support operation: {operation}")
         return method(*args, **params)
+
+    def execute(self, request: Any) -> Any:
+        """统一执行入口（Phase 3 命名）——默认委托 request_from_typed 语义。"""
+        return self.query(request)

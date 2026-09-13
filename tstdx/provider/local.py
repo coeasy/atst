@@ -13,9 +13,29 @@ class LocalProvider(Provider):
     """Dynamic executor for the canonical ``local_vipdoc`` Provider."""
 
     name = "local_vipdoc"
+    canonical_id = "local_vipdoc"
 
     def __init__(self, reader: Any | None = None) -> None:
         self.reader = reader
+
+    def capabilities(self) -> frozenset[str]:
+        """声明能力 = 注册表能力 ∩ reader 实际实现的方法。"""
+        registry_caps = super().capabilities()
+        if self.reader is None:
+            return frozenset()
+        return frozenset(
+            cap
+            for cap in registry_caps
+            if callable(getattr(self.reader, cap, None))
+        )
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "provider": self.name,
+            "adapter": type(self).__name__,
+            "reader": type(self.reader).__name__ if self.reader is not None else None,
+            "configured": self.reader is not None,
+        }
 
     def supports(self, operation: str) -> bool:
         return (
@@ -36,3 +56,6 @@ class LocalProvider(Provider):
         if method is None:
             raise AttributeError(f"unsupported local_vipdoc operation: {operation}")
         return method(*args, **params)
+
+    def execute(self, request: Any) -> Any:
+        return self.query(request)
