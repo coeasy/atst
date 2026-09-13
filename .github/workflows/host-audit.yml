@@ -1,0 +1,49 @@
+name: Host Audit
+
+on:
+  schedule:
+    - cron: '0 9 * * 3'  # Wednesday 09:00 UTC
+  workflow_dispatch:
+
+# Operational network probe only. It is intentionally separate from the PR
+# merge gate so public-network health cannot make deterministic source CI flaky,
+# while the scheduled workflow itself remains truthful red/green under --strict.
+concurrency:
+  group: host-audit
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  host-audit:
+    name: Host Pool Audit (5 protocol families)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Audit host families
+        run: |
+          python scripts/audit_hosts.py \
+            --timeout 2 \
+            --workers 24 \
+            --strict \
+            --report audit_report.json \
+            --markdown audit_summary.md \
+            --ranking-file /tmp/tstdx_ranking_ci.json
+      - name: Upload audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-audit-${{ github.run_number }}
+          path: |
+            audit_report.json
+            audit_summary.md
+          if-no-files-found: warn
+          retention-days: 14
