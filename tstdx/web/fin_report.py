@@ -336,9 +336,13 @@ class EastmoneyF10ReportSource(EastmoneyDataCenterSource):
         （金额单位元、``float`` 或 ``None``）
         """
         return self._fetch_alias(
-            symbol, "balance_sheet",
-            report_date=report_date, size=size,
-            all_pages=all_pages, max_pages=max_pages, raw=raw,
+            symbol,
+            "balance_sheet",
+            report_date=report_date,
+            size=size,
+            all_pages=all_pages,
+            max_pages=max_pages,
+            raw=raw,
         )
 
     def fetch_income_sheet(
@@ -365,9 +369,13 @@ class EastmoneyF10ReportSource(EastmoneyDataCenterSource):
         （金额单位元、EPS 单位元/股、``float`` 或 ``None``）
         """
         return self._fetch_alias(
-            symbol, "income_sheet",
-            report_date=report_date, size=size,
-            all_pages=all_pages, max_pages=max_pages, raw=raw,
+            symbol,
+            "income_sheet",
+            report_date=report_date,
+            size=size,
+            all_pages=all_pages,
+            max_pages=max_pages,
+            raw=raw,
         )
 
     def fetch_cash_flow(
@@ -394,7 +402,11 @@ class EastmoneyF10ReportSource(EastmoneyDataCenterSource):
         （金额单位元、``float`` 或 ``None``）
         """
         return self._fetch_alias(
-            symbol, "cash_flow",
-            report_date=report_date, size=size,
-            all_pages=all_pages, max_pages=max_pages, raw=raw,
+            symbol,
+            "cash_flow",
+            report_date=report_date,
+            size=size,
+            all_pages=all_pages,
+            max_pages=max_pages,
+            raw=raw,
         )

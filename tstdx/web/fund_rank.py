@@ -327,9 +327,7 @@ class FundMobRankSource(BaseWebSource):
         }
 
     # -- 基金评级 ----------------------------------------------------------- #
-    def fetch_rating(
-        self, code: str, *, page: int = 1, size: int = 20
-    ) -> list[dict[str, Any]]:
+    def fetch_rating(self, code: str, *, page: int = 1, size: int = 20) -> list[dict[str, Any]]:
         """基金历史评级（天天基金 / 招商 / 上证 / 嘉实等机构评级）。
 
         Returns
@@ -341,9 +339,7 @@ class FundMobRankSource(BaseWebSource):
         return [_m.apply_fields(r, _RATING_FIELDS) for r in _m.mob_rows(payload)]
 
     # -- 累计收益走势 ------------------------------------------------------- #
-    def fetch_yield_curve(
-        self, code: str, *, index_code: str = "000300"
-    ) -> list[dict[str, Any]]:
+    def fetch_yield_curve(self, code: str, *, index_code: str = "000300") -> list[dict[str, Any]]:
         """累计收益走势（基金 vs 指数 vs 同类），回测与超额收益分析的基础。
 
         Parameters
@@ -362,9 +358,7 @@ class FundMobRankSource(BaseWebSource):
         return [_m.apply_fields(r, _YIELD_FIELDS) for r in _m.mob_rows(payload)]
 
     # -- 同类排名走势 ------------------------------------------------------- #
-    def fetch_rank_trend(
-        self, code: str, *, range_: str = "n"
-    ) -> list[dict[str, Any]]:
+    def fetch_rank_trend(self, code: str, *, range_: str = "n") -> list[dict[str, Any]]:
         """同类排名走势（每日同类排名与总数）。
 
         Parameters

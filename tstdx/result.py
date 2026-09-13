@@ -67,7 +67,7 @@ class Provenance:
         *,
         provider_timestamp: str | None = None,
         observed_at_ns: int | None = None,
-    ) -> "Provenance":
+    ) -> Provenance:
         return cls(
             provider=plan.provider,
             channel=plan.channel,
@@ -79,7 +79,7 @@ class Provenance:
             fallback=False,
         )
 
-    def cached(self, tier: str) -> "Provenance":
+    def cached(self, tier: str) -> Provenance:
         """Return a cache-hit clone while preserving the original data origin."""
         normalized = str(tier).strip().lower()
         if not normalized:
@@ -116,7 +116,7 @@ class ResultMeta:
     provenance: Provenance
 
     @classmethod
-    def from_plan(cls, plan: QueryPlan, provenance: Provenance) -> "ResultMeta":
+    def from_plan(cls, plan: QueryPlan, provenance: Provenance) -> ResultMeta:
         expected = (plan.provider, plan.channel, plan.spec.capability)
         actual = (provenance.provider, provenance.channel, provenance.capability)
         if actual != expected:
@@ -157,5 +157,5 @@ class QueryResult(Generic[T]):
         *,
         plan: QueryPlan,
         provenance: Provenance,
-    ) -> "QueryResult[T]":
+    ) -> QueryResult[T]:
         return cls(data=data, meta=ResultMeta.from_plan(plan, provenance))

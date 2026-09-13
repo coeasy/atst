@@ -6,12 +6,10 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
-from tstdx.web.base import HttpResponse
 from tstdx.web._facade_mixin_p3 import P3SessionMixin
+from tstdx.web.base import HttpResponse
 from tstdx.web.corporate import EastmoneyDataCenterSource
 from tstdx.web.facade import WebQuoteSession
 
@@ -160,6 +158,7 @@ EARNINGS_PREVIEW_JSON = """{
 # 工具：FakeHttpClient + 测试 fixture
 # --------------------------------------------------------------------------- #
 
+
 class FakeHttpClient:
     """按 URL 子串匹配返回预设 JSON 的假 HTTP 客户端。"""
 
@@ -174,9 +173,7 @@ class FakeHttpClient:
                 return HttpResponse(
                     status=200, body=value, headers={"Content-Type": "application/json"}
                 )
-        return HttpResponse(
-            status=404, body='{"error":"not found"}', headers={}
-        )
+        return HttpResponse(status=404, body='{"error":"not found"}', headers={})
 
     def close(self) -> None:
         pass
@@ -184,41 +181,48 @@ class FakeHttpClient:
 
 @pytest.fixture
 def fake_client_northbound():
-    return FakeHttpClient({
-        "RPT_MUTUAL_HOLD": NORTHBOUND_HOLD_JSON,
-    })
+    return FakeHttpClient(
+        {
+            "RPT_MUTUAL_HOLD": NORTHBOUND_HOLD_JSON,
+        }
+    )
 
 
 @pytest.fixture
 def fake_client_top_holders():
-    return FakeHttpClient({
-        "RPT_F10_EH_HOLDERS": TOP_HOLDERS_JSON,
-    })
+    return FakeHttpClient(
+        {
+            "RPT_F10_EH_HOLDERS": TOP_HOLDERS_JSON,
+        }
+    )
 
 
 @pytest.fixture
 def fake_client_unlock_stocks():
-    return FakeHttpClient({
-        "RPT_LIFT_STOCK": UNLOCK_STOCKS_JSON,
-    })
+    return FakeHttpClient(
+        {
+            "RPT_LIFT_STOCK": UNLOCK_STOCKS_JSON,
+        }
+    )
 
 
 @pytest.fixture
 def fake_client_earnings_preview():
-    return FakeHttpClient({
-        "RPT_PUBLIC_OP_PREDICT": EARNINGS_PREVIEW_JSON,
-    })
+    return FakeHttpClient(
+        {
+            "RPT_PUBLIC_OP_PREDICT": EARNINGS_PREVIEW_JSON,
+        }
+    )
 
 
 # --------------------------------------------------------------------------- #
 # 北向持股（RPT_MUTUAL_HOLD）
 # --------------------------------------------------------------------------- #
 
+
 class TestNorthboundHold:
     def test_count_and_fields(self, fake_client_northbound):
-        src = EastmoneyDataCenterSource(
-            report="northbound_hold", client=fake_client_northbound
-        )
+        src = EastmoneyDataCenterSource(report="northbound_hold", client=fake_client_northbound)
         src.rate_limiter = type("RL", (), {"acquire": staticmethod(lambda *a, **k: None)})()
         rows = src.fetch_rows(size=2, page=1)
         src.close()
@@ -233,9 +237,7 @@ class TestNorthboundHold:
         assert r["PARTICIPANT_NUM"] == 65
 
     def test_sort_columns_in_url(self, fake_client_northbound):
-        src = EastmoneyDataCenterSource(
-            report="northbound_hold", client=fake_client_northbound
-        )
+        src = EastmoneyDataCenterSource(report="northbound_hold", client=fake_client_northbound)
         src.rate_limiter = type("RL", (), {"acquire": staticmethod(lambda *a, **k: None)})()
         src.fetch_rows(sort_columns="HOLD_MARKET_CAP", size=5, page=1)
         src.close()
@@ -244,9 +246,7 @@ class TestNorthboundHold:
 
     def test_symbol_filter(self, fake_client_northbound):
         """按 SECURITY_CODE 过滤。"""
-        src = EastmoneyDataCenterSource(
-            report="northbound_hold", client=fake_client_northbound
-        )
+        src = EastmoneyDataCenterSource(report="northbound_hold", client=fake_client_northbound)
         src.rate_limiter = type("RL", (), {"acquire": staticmethod(lambda *a, **k: None)})()
         src.fetch_rows(filters=['SECURITY_CODE="600519"'], size=5, page=1)
         src.close()
@@ -259,6 +259,7 @@ class TestNorthboundHold:
         method = P3SessionMixin.northbound_hold
         # 检查关键字参数
         import inspect
+
         sig = inspect.signature(method)
         assert "symbol" in sig.parameters
         assert "hold_date" in sig.parameters
@@ -269,11 +270,10 @@ class TestNorthboundHold:
 # 十大股东（RPT_F10_EH_HOLDERS）
 # --------------------------------------------------------------------------- #
 
+
 class TestTopHolders:
     def test_count_and_fields(self, fake_client_top_holders):
-        src = EastmoneyDataCenterSource(
-            report="top_holders", client=fake_client_top_holders
-        )
+        src = EastmoneyDataCenterSource(report="top_holders", client=fake_client_top_holders)
         src.rate_limiter = type("RL", (), {"acquire": staticmethod(lambda *a, **k: None)})()
         rows = src.fetch_rows(size=2, page=1)
         src.close()
@@ -289,9 +289,7 @@ class TestTopHolders:
 
     def test_sort_columns(self, fake_client_top_holders):
         """默认排序 HOLDER_RANK 升序（1→10）。"""
-        src = EastmoneyDataCenterSource(
-            report="top_holders", client=fake_client_top_holders
-        )
+        src = EastmoneyDataCenterSource(report="top_holders", client=fake_client_top_holders)
         src.rate_limiter = type("RL", (), {"acquire": staticmethod(lambda *a, **k: None)})()
         src.fetch_rows(sort_columns="HOLDER_RANK", sort_types="1", size=2, page=1)
         src.close()
@@ -301,9 +299,7 @@ class TestTopHolders:
 
     def test_secucode_filter(self, fake_client_top_holders):
         """按 SECUCODE 过滤（含市场后缀）。"""
-        src = EastmoneyDataCenterSource(
-            report="top_holders", client=fake_client_top_holders
-        )
+        src = EastmoneyDataCenterSource(report="top_holders", client=fake_client_top_holders)
         src.rate_limiter = type("RL", (), {"acquire": staticmethod(lambda *a, **k: None)})()
         src.fetch_rows(filters=['SECUCODE="600519.SH"'], size=2, page=1)
         src.close()
@@ -313,6 +309,7 @@ class TestTopHolders:
     def test_mixin_interface(self, fake_client_top_holders):
         assert hasattr(P3SessionMixin, "top_holders")
         import inspect
+
         sig = inspect.signature(P3SessionMixin.top_holders)
         assert "symbol" in sig.parameters
         assert "end_date" in sig.parameters
@@ -322,11 +319,10 @@ class TestTopHolders:
 # 解禁股票（RPT_LIFT_STOCK）
 # --------------------------------------------------------------------------- #
 
+
 class TestUnlockStocks:
     def test_count_and_fields(self, fake_client_unlock_stocks):
-        src = EastmoneyDataCenterSource(
-            report="unlock_stocks", client=fake_client_unlock_stocks
-        )
+        src = EastmoneyDataCenterSource(report="unlock_stocks", client=fake_client_unlock_stocks)
         src.rate_limiter = type("RL", (), {"acquire": staticmethod(lambda *a, **k: None)})()
         rows = src.fetch_rows(size=2, page=1)
         src.close()
@@ -340,9 +336,7 @@ class TestUnlockStocks:
 
     def test_sort_columns(self, fake_client_unlock_stocks):
         """默认按 FREE_DATE 降序。"""
-        src = EastmoneyDataCenterSource(
-            report="unlock_stocks", client=fake_client_unlock_stocks
-        )
+        src = EastmoneyDataCenterSource(report="unlock_stocks", client=fake_client_unlock_stocks)
         src.rate_limiter = type("RL", (), {"acquire": staticmethod(lambda *a, **k: None)})()
         src.fetch_rows(sort_columns="FREE_DATE", sort_types="-1", size=2, page=1)
         src.close()
@@ -352,9 +346,7 @@ class TestUnlockStocks:
 
     def test_symbol_filter(self, fake_client_unlock_stocks):
         """按 SECURITY_CODE 过滤。"""
-        src = EastmoneyDataCenterSource(
-            report="unlock_stocks", client=fake_client_unlock_stocks
-        )
+        src = EastmoneyDataCenterSource(report="unlock_stocks", client=fake_client_unlock_stocks)
         src.rate_limiter = type("RL", (), {"acquire": staticmethod(lambda *a, **k: None)})()
         src.fetch_rows(filters=['SECURITY_CODE="600519"'], size=2, page=1)
         src.close()
@@ -364,6 +356,7 @@ class TestUnlockStocks:
     def test_mixin_interface(self, fake_client_unlock_stocks):
         assert hasattr(P3SessionMixin, "unlock_stocks")
         import inspect
+
         sig = inspect.signature(P3SessionMixin.unlock_stocks)
         assert "symbol" in sig.parameters
         assert "begin" in sig.parameters
@@ -373,6 +366,7 @@ class TestUnlockStocks:
 # --------------------------------------------------------------------------- #
 # 业绩预告旧版（RPT_PUBLIC_OP_PREDICT）
 # --------------------------------------------------------------------------- #
+
 
 class TestEarningsPreview:
     def test_count_and_fields(self, fake_client_earnings_preview):
@@ -400,9 +394,7 @@ class TestEarningsPreview:
             report="earnings_preview", client=fake_client_earnings_preview
         )
         src.rate_limiter = type("RL", (), {"acquire": staticmethod(lambda *a, **k: None)})()
-        src.fetch_rows(
-            filters=['REPORTDATE="2024-06-30 00:00:00"'], size=2, page=1
-        )
+        src.fetch_rows(filters=['REPORTDATE="2024-06-30 00:00:00"'], size=2, page=1)
         src.close()
         url = fake_client_earnings_preview.requests[-1]
         assert "REPORTDATE" in url
@@ -436,6 +428,7 @@ class TestEarningsPreview:
     def test_mixin_interface(self, fake_client_earnings_preview):
         assert hasattr(P3SessionMixin, "earnings_preview")
         import inspect
+
         sig = inspect.signature(P3SessionMixin.earnings_preview)
         assert "symbol" in sig.parameters
         assert "report_date" in sig.parameters
@@ -444,6 +437,7 @@ class TestEarningsPreview:
 # --------------------------------------------------------------------------- #
 # P3 门面集成测试
 # --------------------------------------------------------------------------- #
+
 
 class TestP3FacadeIntegration:
     """WebQuoteSession 门面 hasattr 检查（全 4 个 P3 方法）。"""

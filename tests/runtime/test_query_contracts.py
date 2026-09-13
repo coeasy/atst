@@ -62,12 +62,8 @@ def test_default_quotes_plan_is_tdx_quotation() -> None:
 
 def test_equivalent_bar_period_aliases_share_fingerprint() -> None:
     planner = QueryPlanner()
-    first = planner.compile(
-        QuerySpec.build("bars", symbols="sh600519", period="daily", count=20)
-    )
-    second = planner.compile(
-        QuerySpec.build("bars", symbols="600519.SH", period="d", count=20)
-    )
+    first = planner.compile(QuerySpec.build("bars", symbols="sh600519", period="daily", count=20))
+    second = planner.compile(QuerySpec.build("bars", symbols="600519.SH", period="d", count=20))
     assert first.spec.period == second.spec.period == "day"
     assert first.fingerprint == second.fingerprint
 
@@ -105,9 +101,7 @@ def test_provider_source_conflict_is_rejected_before_io() -> None:
 
 def test_ambiguous_web_selector_is_rejected_before_io() -> None:
     with pytest.raises(ValidationError, match="歧义"):
-        QueryPlanner().compile(
-            QuerySpec.build("quotes", symbols="sh600519", source="web")
-        )
+        QueryPlanner().compile(QuerySpec.build("quotes", symbols="sh600519", source="web"))
 
 
 def test_unsupported_capability_fails_before_io() -> None:

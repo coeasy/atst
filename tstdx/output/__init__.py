@@ -202,7 +202,10 @@ def to_duckdb(
     try:
         con.register("__src", df)
         con.execute(f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM __src")  # noqa: S608
-        return int(con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])  # noqa: S608
+        row = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()  # noqa: S608
+        if row is None:
+            raise RuntimeError("DuckDB COUNT 查询未返回结果")
+        return int(row[0])
     finally:
         con.close()
 

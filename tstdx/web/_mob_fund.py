@@ -22,7 +22,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from ..errors import SourceDeprecated
 from .base import num_f, num_i
@@ -46,8 +47,7 @@ MOB_BASE = "https://fundmobapi.eastmoney.com/FundMNewApi"
 DEVICE = "3EA024C2-7F22-408B-95E4-383D38160FB3"
 #: 公共参数串（直接拼在 query 尾部）。
 MOB_COMMON = (
-    f"&deviceid={DEVICE}&plat=Iphone&product=EFund"
-    "&appType=ttjj&serverVersion=6.3.8&version=6.3.8"
+    f"&deviceid={DEVICE}&plat=Iphone&product=EFund&appType=ttjj&serverVersion=6.3.8&version=6.3.8"
 )
 _UA = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 14_3 like Mac OS X) "

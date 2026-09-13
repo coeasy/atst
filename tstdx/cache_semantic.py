@@ -51,7 +51,7 @@ class SemanticCacheEntry(Generic[T]):
         *,
         ttl: float | None,
         now_ns: int | None = None,
-    ) -> "SemanticCacheEntry[T]":
+    ) -> SemanticCacheEntry[T]:
         now = time.time_ns() if now_ns is None else int(now_ns)
         if now <= 0:
             raise ValueError("now_ns must be positive")
@@ -147,7 +147,9 @@ class SemanticResultCache:
         try:
             with self._lock:
                 entry = self._data.get(key)
-                if not isinstance(entry, SemanticCacheEntry) or not entry.matches(plan, now_ns=now_ns):
+                if not isinstance(entry, SemanticCacheEntry) or not entry.matches(
+                    plan, now_ns=now_ns
+                ):
                     if key in self._data:
                         self._data.pop(key, None)
                     self.misses += 1

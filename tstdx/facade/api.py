@@ -658,7 +658,7 @@ class UnifiedQuoteAPI(RouteSelector):
                 m = fs_market.get(int(market), "all_a")
             else:
                 m = _split(f"{market}000001")[0]
-                m = {0: "sz_a", 1: "sh_a", 2: "bse"}.get(m, "all_a")
+                m = {"sz": "sz_a", "sh": "sh_a", "bj": "bse"}.get(m, "all_a")
         page = start // 100 + 1 if start else 1
         page_size = 100
         rows: list[dict[str, Any]] = []
@@ -1470,9 +1470,7 @@ class UnifiedQuoteAPI(RouteSelector):
         """债券当日成交明细（对标 efinance ``bond.get_deal_detail``）。"""
         from ..web.facade import WebQuoteSession
 
-        return self._with(
-            WebQuoteSession, lambda sess: sess.bond_trades(code, max_count=max_count)
-        )
+        return self._with(WebQuoteSession, lambda sess: sess.bond_trades(code, max_count=max_count))
 
     # -- 期权（东财 push2，P4 扩展） --------------------------------------------- #
     def options_list(
@@ -1509,9 +1507,7 @@ class UnifiedQuoteAPI(RouteSelector):
 
         return self._with(WebQuoteSession, lambda sess: sess.options_snapshot(quote_id))
 
-    def options_trends(
-        self, quote_id: str, *, ndays: int = 1
-    ) -> list[dict[str, Any]]:
+    def options_trends(self, quote_id: str, *, ndays: int = 1) -> list[dict[str, Any]]:
         """期权当日分时走势（部分市场段可用，不可用时返回空列表）。"""
         from ..web.facade import WebQuoteSession
 
@@ -1546,13 +1542,9 @@ class UnifiedQuoteAPI(RouteSelector):
         """
         from ..web.facade import WebQuoteSession
 
-        return self._with(
-            WebQuoteSession, lambda sess: sess.stock_valuation(symbol)
-        )
+        return self._with(WebQuoteSession, lambda sess: sess.stock_valuation(symbol))
 
-    def holder_changes(
-        self, symbol: str, *, page: int = 1, size: int = 20
-    ) -> list[dict[str, Any]]:
+    def holder_changes(self, symbol: str, *, page: int = 1, size: int = 20) -> list[dict[str, Any]]:
         """股东 / 董监高增减持（对标 astock-data-toolkit ``holder_changes``）。
 
         东财聚合接口 ``RPT_CAPITAL_PARTICIPATION_DET``；``change_shares`` 正=增持、
@@ -1574,9 +1566,7 @@ class UnifiedQuoteAPI(RouteSelector):
         """
         from ..web.facade import WebQuoteSession
 
-        return self._with(
-            WebQuoteSession, lambda sess: sess.financial_abstract(symbol)
-        )
+        return self._with(WebQuoteSession, lambda sess: sess.financial_abstract(symbol))
 
     def announcements(
         self, symbols: Sequence[str], *, page: int = 1, size: int = 20
@@ -1714,7 +1704,9 @@ class UnifiedQuoteAPI(RouteSelector):
         )
 
     # -- 治理与卖方一致预期（东财 datacenter-web 报表族） --------------------- #
-    def executive_holds(self, symbol: str, *, page: int = 1, size: int = 20) -> list[dict[str, Any]]:
+    def executive_holds(
+        self, symbol: str, *, page: int = 1, size: int = 20
+    ) -> list[dict[str, Any]]:
         """董监高持股变动明细（按变动日期降序，内部人减持 / 套现排查）。"""
         from ..web.facade import WebQuoteSession
 
@@ -1747,9 +1739,7 @@ class UnifiedQuoteAPI(RouteSelector):
 
         return self._with(WebQuoteSession, lambda sess: sess.org_profile(symbol))
 
-    def org_profiles(
-        self, symbols: Sequence[str], *, size: int = 50
-    ) -> list[dict[str, Any]]:
+    def org_profiles(self, symbols: Sequence[str], *, size: int = 50) -> list[dict[str, Any]]:
         """公司概况批量（按代码去重，保留服务端返回顺序）。"""
         from ..web.facade import WebQuoteSession
 
@@ -1849,9 +1839,7 @@ class UnifiedQuoteAPI(RouteSelector):
 
         return self._with(
             WebQuoteSession,
-            lambda sess: sess.chip_distributions(
-                list(symbols), days=days, max_count=max_count
-            ),
+            lambda sess: sess.chip_distributions(list(symbols), days=days, max_count=max_count),
         )
 
     # -- 行业指数 / 概念指数 / 宏观经济 / 可转债（P2 扩展） ----------------- #
@@ -1890,9 +1878,7 @@ class UnifiedQuoteAPI(RouteSelector):
 
         return self._with(
             WebQuoteSession,
-            lambda sess: sess.concept_index(
-                index_code=index_code, size=size, page=page
-            ),
+            lambda sess: sess.concept_index(index_code=index_code, size=size, page=page),
         )
 
     def macro_cpi(self, *, size: int = 50, page: int = 1) -> list[dict[str, Any]]:
@@ -1922,9 +1908,7 @@ class UnifiedQuoteAPI(RouteSelector):
             lambda sess: sess.macro_gdp(size=size, page=page),
         )
 
-    def convertible_bonds(
-        self, *, size: int = 50, page: int = 1
-    ) -> list[dict[str, Any]]:
+    def convertible_bonds(self, *, size: int = 50, page: int = 1) -> list[dict[str, Any]]:
         """可转债列表（基本信息 / 到期日 / 转股价 / 评级）。"""
         from ..web.facade import WebQuoteSession
 
@@ -1950,8 +1934,12 @@ class UnifiedQuoteAPI(RouteSelector):
         return self._with(
             WebQuoteSession,
             lambda sess: sess.northbound_hold(
-                symbol=symbol, hold_date=hold_date, mutual_type=mutual_type,
-                size=size, page=page, sort_columns=sort_columns,
+                symbol=symbol,
+                hold_date=hold_date,
+                mutual_type=mutual_type,
+                size=size,
+                page=page,
+                sort_columns=sort_columns,
             ),
         )
 
@@ -1971,8 +1959,12 @@ class UnifiedQuoteAPI(RouteSelector):
         return self._with(
             WebQuoteSession,
             lambda sess: sess.top_holders(
-                symbol=symbol, end_date=end_date, size=size, page=page,
-                sort_columns=sort_columns, sort_types=sort_types,
+                symbol=symbol,
+                end_date=end_date,
+                size=size,
+                page=page,
+                sort_columns=sort_columns,
+                sort_types=sort_types,
             ),
         )
 
@@ -1992,7 +1984,11 @@ class UnifiedQuoteAPI(RouteSelector):
         return self._with(
             WebQuoteSession,
             lambda sess: sess.unlock_stocks(
-                symbol=symbol, begin=begin, end=end, size=size, page=page,
+                symbol=symbol,
+                begin=begin,
+                end=end,
+                size=size,
+                page=page,
                 sort_columns=sort_columns,
             ),
         )
@@ -2012,7 +2008,10 @@ class UnifiedQuoteAPI(RouteSelector):
         return self._with(
             WebQuoteSession,
             lambda sess: sess.earnings_preview(
-                symbol=symbol, report_date=report_date, size=size, page=page,
+                symbol=symbol,
+                report_date=report_date,
+                size=size,
+                page=page,
                 sort_columns=sort_columns,
             ),
         )
@@ -2063,9 +2062,7 @@ class UnifiedQuoteAPI(RouteSelector):
         """
         from ..web.facade import WebQuoteSession
 
-        return self._with(
-            WebQuoteSession, lambda sess: sess.fund_snapshot(list(codes))
-        )
+        return self._with(WebQuoteSession, lambda sess: sess.fund_snapshot(list(codes)))
 
     def fund_nav_history_mob(
         self, code: str, *, page: int = 1, size: int = 49
@@ -2090,13 +2087,9 @@ class UnifiedQuoteAPI(RouteSelector):
         """
         from ..web.facade import WebQuoteSession
 
-        return self._with(
-            WebQuoteSession, lambda sess: sess.fund_detail(code)
-        )
+        return self._with(WebQuoteSession, lambda sess: sess.fund_detail(code))
 
-    def fund_rating(
-        self, code: str, *, page: int = 1, size: int = 20
-    ) -> list[dict[str, Any]]:
+    def fund_rating(self, code: str, *, page: int = 1, size: int = 20) -> list[dict[str, Any]]:
         """基金历史评级（天天基金 / 招商 / 上证 / 嘉实等机构）。"""
         from ..web.facade import WebQuoteSession
 
@@ -2105,9 +2098,7 @@ class UnifiedQuoteAPI(RouteSelector):
             lambda sess: sess.fund_rating(code, page=page, size=size),
         )
 
-    def fund_yield_curve(
-        self, code: str, *, index_code: str = "000300"
-    ) -> list[dict[str, Any]]:
+    def fund_yield_curve(self, code: str, *, index_code: str = "000300") -> list[dict[str, Any]]:
         """累计收益走势（基金 vs 指数 vs 同类），超额收益分析基础。
 
         ``index_code`` 可选 ``000300`` 沪深300 / ``000001`` 上证 /
@@ -2139,9 +2130,7 @@ class UnifiedQuoteAPI(RouteSelector):
         """
         from ..web.facade import WebQuoteSession
 
-        return self._with(
-            WebQuoteSession, lambda sess: sess.fund_manager_list(code)
-        )
+        return self._with(WebQuoteSession, lambda sess: sess.fund_manager_list(code))
 
     def fund_manager_profile(self, mgrid: str) -> dict[str, Any]:
         """基金经理档案（简历 / 投资理念 / 任职基金 / 获奖）。
@@ -2150,13 +2139,9 @@ class UnifiedQuoteAPI(RouteSelector):
         """
         from ..web.facade import WebQuoteSession
 
-        return self._with(
-            WebQuoteSession, lambda sess: sess.fund_manager_profile(mgrid)
-        )
+        return self._with(WebQuoteSession, lambda sess: sess.fund_manager_profile(mgrid))
 
-    def fund_manager_yield(
-        self, mgrid: str, *, range_: str = "y"
-    ) -> list[dict[str, Any]]:
+    def fund_manager_yield(self, mgrid: str, *, range_: str = "y") -> list[dict[str, Any]]:
         """基金经理业绩走势（任职收益 vs 同类 vs 指数）。"""
         from ..web.facade import WebQuoteSession
 
@@ -2173,17 +2158,13 @@ class UnifiedQuoteAPI(RouteSelector):
         """
         from ..web.facade import WebQuoteSession
 
-        return self._with(
-            WebQuoteSession, lambda sess: sess.fund_manager_eval(mgrid)
-        )
+        return self._with(WebQuoteSession, lambda sess: sess.fund_manager_eval(mgrid))
 
     def fund_manager_style(self, mgrid: str) -> dict[str, Any]:
         """基金经理持仓风格画像（重仓股 / 风格标签 / 子风格分布）。"""
         from ..web.facade import WebQuoteSession
 
-        return self._with(
-            WebQuoteSession, lambda sess: sess.fund_manager_style(mgrid)
-        )
+        return self._with(WebQuoteSession, lambda sess: sess.fund_manager_style(mgrid))
 
     # -- 基金公司 / 搜索 --------------------------------------------------- #
     def fund_companies(self) -> list[dict[str, Any]]:
@@ -2194,17 +2175,13 @@ class UnifiedQuoteAPI(RouteSelector):
         """
         from ..web.facade import WebQuoteSession
 
-        return self._with(
-            WebQuoteSession, lambda sess: sess.fund_companies()
-        )
+        return self._with(WebQuoteSession, lambda sess: sess.fund_companies())
 
     def fund_company_archives(self, company_id: str) -> dict[str, Any]:
         """基金公司概况（成立时间 / 资产总规模 / 注册地 / 官网 / 人数）。"""
         from ..web.facade import WebQuoteSession
 
-        return self._with(
-            WebQuoteSession, lambda sess: sess.fund_company_archives(company_id)
-        )
+        return self._with(WebQuoteSession, lambda sess: sess.fund_company_archives(company_id))
 
     def fund_company_funds(
         self,
@@ -2259,9 +2236,7 @@ class UnifiedQuoteAPI(RouteSelector):
 
         return self._with(
             WebQuoteSession,
-            lambda sess: sess.fund_search(
-                key, order_type=order_type, page=page, size=size
-            ),
+            lambda sess: sess.fund_search(key, order_type=order_type, page=page, size=size),
         )
 
     # -- 资讯 / 研报 / 调研（niuniu 审计缺口补全） ----------------------------- #
@@ -2296,9 +2271,7 @@ class UnifiedQuoteAPI(RouteSelector):
 
         return self._with(
             WebQuoteSession,
-            lambda sess: sess.research_reports(
-                symbol, page=page, size=size, begin=begin, end=end
-            ),
+            lambda sess: sess.research_reports(symbol, page=page, size=size, begin=begin, end=end),
         )
 
     def research_visits(
@@ -2338,9 +2311,7 @@ class UnifiedQuoteAPI(RouteSelector):
         """
         from ..web.facade import WebQuoteSession
 
-        return self._with(
-            WebQuoteSession, lambda sess: sess.holder_num(symbol, size=size)
-        )
+        return self._with(WebQuoteSession, lambda sess: sess.holder_num(symbol, size=size))
 
     # -- efinance 剩余项：批量 / 全量枚举 ------------------------------------ #
     def fund_base_info_multi(self, codes: Sequence[str]) -> list[dict[str, Any]]:

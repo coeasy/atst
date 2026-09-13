@@ -3,15 +3,21 @@
 
 """Typed query contracts for the v14 capability runtime.
 
-v14 migrates business capabilities away from generic kwargs into immutable
-request objects. Provider selection remains a Planner responsibility; query
-objects describe intent only.
+Typed queries describe business intent without bypassing the canonical
+Provider/Channel/Capability registry. A typed capability is executable through
+V14 semantic orchestration only after the same capability is present in
+``tstdx.providers.PROVIDERS``; contracts for data-source methods that are not yet
+registered therefore remain pending automatically instead of creating a second
+capability namespace.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
+
+from .errors import ValidationError
+from .providers import PROVIDERS
 
 T = TypeVar("T")
 
@@ -21,6 +27,18 @@ class CapabilityQuery:
     capability: str
     provider: str | None = None
     options: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def semantic_ready(self) -> bool:
+        """Whether the canonical Provider registry can satisfy this capability."""
+        try:
+            if self.provider:
+                return PROVIDERS.supports(self.provider, self.capability)
+            return any(
+                PROVIDERS.supports(provider, self.capability) for provider in PROVIDERS.ids()
+            )
+        except ValidationError:
+            return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +69,7 @@ class CashFlowQuery(SymbolQuery):
 @dataclass(frozen=True, slots=True)
 class FundRankQuery(CapabilityQuery):
     capability: str = "fund_rank"
-    fund_type: str = "all"
+    fund_type: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,7 +96,7 @@ class OptionSnapshotQuery(SymbolQuery):
 class NewsQuery(CapabilityQuery):
     capability: str = "news_financial"
     page: int = 1
-    size: int = 20
+    size: int = 30
 
 
 @dataclass(frozen=True, slots=True)

@@ -56,7 +56,7 @@ class ChannelSpec:
         notes: str = "",
         batch_limits: Mapping[str, int] | None = None,
         periods: Iterable[str] = (),
-    ) -> "ChannelSpec":
+    ) -> ChannelSpec:
         channel_id = str(id).strip().lower()
         if not channel_id:
             raise ValueError("channel id must not be empty")
@@ -76,9 +76,7 @@ class ChannelSpec:
             limits.append((cap, limit))
         limits.sort()
 
-        normalized_periods = frozenset(
-            str(x).strip().lower() for x in periods if str(x).strip()
-        )
+        normalized_periods = frozenset(str(x).strip().lower() for x in periods if str(x).strip())
         if normalized_periods and "bars" not in caps:
             raise ValueError(f"periods declared on non-bars channel {channel_id!r}")
 
@@ -154,9 +152,7 @@ class ProviderRegistry:
             if pid in by_id:
                 raise ValueError(f"duplicate provider id: {pid}")
             if pid != spec.id:
-                raise ValueError(
-                    f"provider id {spec.id!r} is not canonical; expected {pid!r}"
-                )
+                raise ValueError(f"provider id {spec.id!r} is not canonical; expected {pid!r}")
             by_id[pid] = spec
         defaults = [spec.id for spec in values if spec.default]
         if len(defaults) != 1:
@@ -439,6 +435,7 @@ PROVIDERS = ProviderRegistry(
                     "fund_base_info_multi",
                     "fund_manager",
                     "fund_holdings",
+                    "fund_rank",
                     "fund_period_change",
                     "fund_asset_allocation",
                     "fund_industry_distribution",
@@ -468,10 +465,14 @@ PROVIDERS = ProviderRegistry(
                     "stock_valuation",
                     "holder_changes",
                     "financial_abstract",
+                    "balance_sheet",
+                    "income_sheet",
+                    "cash_flow",
                     "announcements",
                     "free_holders",
                     "holder_num",
                 ),
+                _c("news", "news_financial"),
                 _c("research", "research_reports", "research_visits"),
                 _c(
                     "options",

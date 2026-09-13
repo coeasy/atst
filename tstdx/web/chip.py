@@ -48,32 +48,31 @@
 
 from __future__ import annotations
 
-import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import Any
 
-from ..errors import SourceDeprecated, WebSourceError
-from .base import _EastmoneyJson, num_f as _f
+from .base import _EastmoneyJson
+from .base import num_f as _f
 from .sources import EASTMONEY
 
 __all__ = ["EastmoneyChipDistributionSource"]
 
 #: push2 资金流 kline 字段顺序（2026-09-11 抓包验证）
 _FFlow_FIELDS = [
-    "date",           # f51
-    "main_net",       # f52  主力净流入
-    "small_net",      # f53  小单净流入
-    "large_net",      # f54  大单净流入
-    "super_large_net",# f55  超大单净流入
-    "medium_net",     # f56  中单净流入
-    "close",          # f57
-    "change_pct",     # f58
-    "main_ratio",     # f59  主力净占比
-    "small_ratio",    # f60  小单净占比
-    "large_ratio",    # f61  大单净占比
-    "super_large_ratio", # f62  超大单净占比
-    "medium_ratio",   # f63  中单净占比
-    "amount",         # f64  成交额
+    "date",  # f51
+    "main_net",  # f52  主力净流入
+    "small_net",  # f53  小单净流入
+    "large_net",  # f54  大单净流入
+    "super_large_net",  # f55  超大单净流入
+    "medium_net",  # f56  中单净流入
+    "close",  # f57
+    "change_pct",  # f58
+    "main_ratio",  # f59  主力净占比
+    "small_ratio",  # f60  小单净占比
+    "large_ratio",  # f61  大单净占比
+    "super_large_ratio",  # f62  超大单净占比
+    "medium_ratio",  # f63  中单净占比
+    "amount",  # f64  成交额
     "turnover_rate",  # f65  换手率
 ]
 
@@ -168,7 +167,6 @@ class EastmoneyChipDistributionSource(_EastmoneyJson):
     ) -> list[dict[str, Any]]:
         """批量获取筹码分布分析（逐只查询，带限流）。"""
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        from ..domain.symbol import split_symbol
 
         symbols = [s for s in symbols][:max_count]
         results: list[dict[str, Any]] = []
@@ -187,17 +185,13 @@ class EastmoneyChipDistributionSource(_EastmoneyJson):
                     results.append(r)
 
         # 按 accumulation_ratio 降序排列
-        results.sort(
-            key=lambda r: r.get("accumulation_ratio") or 0, reverse=True
-        )
+        results.sort(key=lambda r: r.get("accumulation_ratio") or 0, reverse=True)
         return results
 
     def parse(self, text: str, symbols: Sequence[str], **kwargs: Any) -> list[Any]:
         return []
 
-    def _parse_chip_distribution(
-        self, payload: Any, *, symbol: str
-    ) -> dict[str, Any] | None:
+    def _parse_chip_distribution(self, payload: Any, *, symbol: str) -> dict[str, Any] | None:
         """解析 push2 资金流 kline 响应，计算筹码集中度指标。"""
         if payload.get("rc") != 0:
             return None
@@ -234,20 +228,22 @@ class EastmoneyChipDistributionSource(_EastmoneyJson):
             if amount > 0:
                 accum_ratio = round((main_net + large_net) / amount * 100, 4)
 
-            daily.append({
-                "date": date,
-                "main_net": main_net,
-                "large_net": large_net,
-                "super_large_net": super_large_net,
-                "medium_net": row.get("medium_net") or 0.0,
-                "small_net": row.get("small_net") or 0.0,
-                "close": row.get("close") or 0.0,
-                "change_pct": row.get("change_pct") or 0.0,
-                "amount": amount,
-                "turnover_rate": row.get("turnover_rate") or 0.0,
-                "main_ratio": row.get("main_ratio") or 0.0,
-                "accumulation_ratio": accum_ratio,
-            })
+            daily.append(
+                {
+                    "date": date,
+                    "main_net": main_net,
+                    "large_net": large_net,
+                    "super_large_net": super_large_net,
+                    "medium_net": row.get("medium_net") or 0.0,
+                    "small_net": row.get("small_net") or 0.0,
+                    "close": row.get("close") or 0.0,
+                    "change_pct": row.get("change_pct") or 0.0,
+                    "amount": amount,
+                    "turnover_rate": row.get("turnover_rate") or 0.0,
+                    "main_ratio": row.get("main_ratio") or 0.0,
+                    "accumulation_ratio": accum_ratio,
+                }
+            )
 
             total_amount += amount
             total_main_net += main_net
@@ -257,28 +253,21 @@ class EastmoneyChipDistributionSource(_EastmoneyJson):
         # 汇总指标
         total_accum_ratio = None
         if total_amount > 0:
-            total_accum_ratio = round(
-                (total_main_net + total_large_net) / total_amount * 100, 4
-            )
+            total_accum_ratio = round((total_main_net + total_large_net) / total_amount * 100, 4)
         total_main_ratio = (
             round(total_main_net / total_amount * 100, 4) if total_amount > 0 else None
         )
         total_super_large_ratio = (
-            round(total_super_large_net / total_amount * 100, 4)
-            if total_amount > 0 else None
+            round(total_super_large_net / total_amount * 100, 4) if total_amount > 0 else None
         )
 
         # 趋势判定：对比最近 1/3 与最早 1/3 的 accumulation_ratio
         trend = "neutral"
         if len(daily) >= 3:
-            recent = daily[-max(1, len(daily) // 3):]
-            early = daily[:max(1, len(daily) // 3)]
-            recent_ratio = (
-                sum(d.get("accumulation_ratio") or 0 for d in recent) / len(recent)
-            )
-            early_ratio = (
-                sum(d.get("accumulation_ratio") or 0 for d in early) / len(early)
-            )
+            recent = daily[-max(1, len(daily) // 3) :]
+            early = daily[: max(1, len(daily) // 3)]
+            recent_ratio = sum(d.get("accumulation_ratio") or 0 for d in recent) / len(recent)
+            early_ratio = sum(d.get("accumulation_ratio") or 0 for d in early) / len(early)
             diff = recent_ratio - early_ratio
             if diff > 2.0:
                 trend = "accumulating"
@@ -287,9 +276,7 @@ class EastmoneyChipDistributionSource(_EastmoneyJson):
 
         # 确定分析期间
         dates = [d["date"] for d in daily if d.get("date")]
-        period = (
-            f"{dates[0]}~{dates[-1]}" if len(dates) >= 2 else (dates[0] if dates else "")
-        )
+        period = f"{dates[0]}~{dates[-1]}" if len(dates) >= 2 else (dates[0] if dates else "")
 
         return {
             "symbol": code,

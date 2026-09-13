@@ -21,7 +21,6 @@ from .astock_toolkit import (
     EastmoneyHolderChangeSource,
     EastmoneyValuationSource,
 )
-from .corporate import EastmoneyNoticeSource
 
 __all__ = ["AstockToolkitMixin"]
 
@@ -65,9 +64,7 @@ class AstockToolkitMixin:
 
     # -- 股东增减持 ------------------------------------------------------ #
     @staticmethod
-    def holder_changes(
-        symbol: str, *, page: int = 1, size: int = 20
-    ) -> list[dict[str, Any]]:
+    def holder_changes(symbol: str, *, page: int = 1, size: int = 20) -> list[dict[str, Any]]:
         """股东 / 董监高增减持（对标工具箱 ``holder_changes`` 三所披露源）。
 
         东财聚合接口 ``RPT_CAPITAL_PARTICIPATION_DET``（单入口、免反爬）。

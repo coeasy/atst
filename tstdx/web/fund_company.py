@@ -158,9 +158,7 @@ class FundCompanySource(BaseWebSource):
         -------
         ``list[dict]``，字段见 :data:`_COMPANY_FIELDS`。
         """
-        payload = self._json(
-            "FundCompanyBaseList.ashx", base=_FUND_COMPANY_API
-        )
+        payload = self._json("FundCompanyBaseList.ashx", base=_FUND_COMPANY_API)
         rows = _m.mob_rows_any(payload, "Datas", "data", "Data", "Result")
         return [_m.apply_fields(r, _COMPANY_FIELDS) for r in rows]
 
@@ -271,11 +269,12 @@ class FundCompanySource(BaseWebSource):
             types.append(
                 {
                     "type_name": _m.s(t.get("TypeName")),
-                    "type_count": _m.apply_fields(t, {"type_count": ("TypeCount", "i")})["type_count"],
+                    "type_count": _m.apply_fields(t, {"type_count": ("TypeCount", "i")})[
+                        "type_count"
+                    ],
                     "fields": _m.s(t.get("Filds")),
                     "fund_list": [
-                        _m.apply_fields(r, _FUND_FIELDS)
-                        for r in _m.mob_rows(t, "fundlist")
+                        _m.apply_fields(r, _FUND_FIELDS) for r in _m.mob_rows(t, "fundlist")
                     ],
                 }
             )
@@ -284,22 +283,29 @@ class FundCompanySource(BaseWebSource):
         if isinstance(ct, dict):
             for t in ct.get("List") or []:
                 if isinstance(t, dict):
-                    topics.append(_m.apply_fields(t, {
-                        "topic_id": ("JJGSID", "s"),
-                        "type": ("TTYPE", "s"),
-                        "type_name": ("TTYPENAME", "s"),
-                        "date": ("PDATE", "s"),
-                        "ratio_1w": ("W", "f"),
-                        "ratio_1m": ("M", "f"),
-                        "ratio_3m": ("Q", "f"),
-                        "ratio_1y": ("Y", "f"),
-                    }))
+                    topics.append(
+                        _m.apply_fields(
+                            t,
+                            {
+                                "topic_id": ("JJGSID", "s"),
+                                "type": ("TTYPE", "s"),
+                                "type_name": ("TTYPENAME", "s"),
+                                "date": ("PDATE", "s"),
+                                "ratio_1w": ("W", "f"),
+                                "ratio_1m": ("M", "f"),
+                                "ratio_3m": ("Q", "f"),
+                                "ratio_1y": ("Y", "f"),
+                            },
+                        )
+                    )
         return {
             "company_id": company_id,
             "name": _m.s(d.get("FDMC")),
             "name_abbrev": _m.s(d.get("GSJJBName")),
             "fund_count": _m.apply_fields(d, {"fund_count": ("Count", "i")})["fund_count"],
-            "manager_count": _m.apply_fields(d, {"manager_count": ("ManagerCount", "i")})["manager_count"],
+            "manager_count": _m.apply_fields(d, {"manager_count": ("ManagerCount", "i")})[
+                "manager_count"
+            ],
             "max_yield": _m.apply_fields(d, {"max_yield": ("fundmaxsyl", "f")})["max_yield"],
             "fund_types": types,
             "topics": topics,
@@ -328,10 +334,7 @@ class FundCompanySource(BaseWebSource):
         ``{"total": int, "page": int, "size": int, "rows": list[dict]}``；
         ``rows`` 字段见 :data:`_SEARCH_FIELDS`。
         """
-        q = (
-            f"?orderType={order_type}&key={key}"
-            f"&pageindex={page}&pagesize={size}"
-        )
+        q = f"?orderType={order_type}&key={key}&pageindex={page}&pagesize={size}"
         payload = self._json(f"fundinfobynohigh{q}", base=_SEARCH)
         rows = _m.mob_rows_any(payload, "data", "Data", "Datas")
         return {

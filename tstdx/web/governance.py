@@ -80,9 +80,7 @@ class EastmoneyExecutiveHoldSource(EastmoneyDataCenterSource):
         "relationship": ("RELATIONSHIP", "RELATIVE", "RELATED_TYPE"),
         "market": ("SECURITY_MARKET_CODE", "MARKET", "TRADE_MARKET"),
     }
-    _STR_FIELDS = frozenset(
-        {"executive", "position", "change_date", "relationship", "market"}
-    )
+    _STR_FIELDS = frozenset({"executive", "position", "change_date", "relationship", "market"})
 
     def fetch_executive_holds(
         self, symbol: str, *, page: int = 1, size: int = 20
@@ -150,8 +148,7 @@ class EastmoneyShareholderChangeSource(EastmoneyDataCenterSource):
         "start_date": ("START_DATE", "BEGIN_DATE"),
     }
     _STR_FIELDS = frozenset(
-        {"holder", "holder_type", "change_date", "end_date",
-         "direction", "market", "start_date"}
+        {"holder", "holder_type", "change_date", "end_date", "direction", "market", "start_date"}
     )
 
     def fetch_shareholder_changes(
@@ -217,7 +214,10 @@ class EastmoneyOrgProfileSource(EastmoneyDataCenterSource):
         "address": ("ADDRESS", "REG_ADDRESS"),
         "postcode": ("ADDRESS_POSTCODE", "POSTCODE", "ZIP_CODE", "POSTAL_CODE"),
         "tel": ("ORG_TEL", "TEL", "TELEPHONE", "PHONE"),
-        "fax": ("ORG_FAX", "FAX",),
+        "fax": (
+            "ORG_FAX",
+            "FAX",
+        ),
         "official_site": ("ORG_WEB", "OFFICIAL_SITE", "WEB_SITE", "WEBSITE"),
         "email": ("ORG_EMAIL", "EMAIL", "E_MAIL"),
         "main_business": ("MAIN_BUSINESS", "MAIN_PRODUCT", "BUSINESS_SUMMARY"),
@@ -263,9 +263,7 @@ class EastmoneyOrgProfileSource(EastmoneyDataCenterSource):
             return None
         return self._normalize(rows[0])
 
-    def fetch_org_profiles(
-        self, symbols: Sequence[str], *, size: int = 50
-    ) -> list[dict[str, Any]]:
+    def fetch_org_profiles(self, symbols: Sequence[str], *, size: int = 50) -> list[dict[str, Any]]:
         """公司概况批量（按代码去重，保留服务端返回顺序）。"""
         from ..domain.symbol import split_symbol
 
@@ -340,8 +338,15 @@ class EastmoneyRatingForecastSource(EastmoneyDataCenterSource):
         "region_board": ("REGION_BOARD",),
     }
     _STR_FIELDS = frozenset(
-        {"year_mark1", "year_mark2", "year_mark3", "year_mark4",
-         "industry_board", "concept_boards", "region_board"}
+        {
+            "year_mark1",
+            "year_mark2",
+            "year_mark3",
+            "year_mark4",
+            "industry_board",
+            "concept_boards",
+            "region_board",
+        }
     )
 
     def fetch_rating_forecast(
@@ -411,11 +416,9 @@ class EastmoneyRatingForecastSource(EastmoneyDataCenterSource):
             return None
         r = rows[0]
         # EPS 均值（仅统计非 None 年份）
-        eps_values = [r[k] for k in ("eps1", "eps2", "eps3", "eps4")
-                      if r.get(k) is not None]
+        eps_values = [r[k] for k in ("eps1", "eps2", "eps3", "eps4") if r.get(k) is not None]
         # 目标价均值（取区间上下限均值）
-        prices = [r[k] for k in ("target_price_min", "target_price_max")
-                  if r.get(k) is not None]
+        prices = [r[k] for k in ("target_price_min", "target_price_max") if r.get(k) is not None]
         # 评级分布（中文标签）
         dist: dict[str, int] = {}
         for key, label in (
@@ -436,8 +439,7 @@ class EastmoneyRatingForecastSource(EastmoneyDataCenterSource):
             "target_price_min": r.get("target_price_min"),
             "target_price_max": r.get("target_price_max"),
             "target_price_mean": round(sum(prices) / len(prices), 2) if prices else None,
-            "predict_eps_mean": round(sum(eps_values) / len(eps_values), 2)
-            if eps_values else None,
+            "predict_eps_mean": round(sum(eps_values) / len(eps_values), 2) if eps_values else None,
             "rating_org_num": r.get("rating_org_num"),
             "rating_dist": dist,
         }

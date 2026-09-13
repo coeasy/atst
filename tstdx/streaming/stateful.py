@@ -62,6 +62,7 @@ def _build_subscription(
         _queue=queue,
     )
     if queue is not None:
+
         def _on_drop(_item: Any, _sub: Subscription = sub) -> None:
             _sub._dropped += 1
 
@@ -112,7 +113,7 @@ class StatefulQuoteStream(QuoteStream):
             self._subs[key] = sub
         return key
 
-    def start(self) -> "StatefulQuoteStream":
+    def start(self) -> StatefulQuoteStream:
         if self.state is StreamState.RUNNING:
             thread = self._thread
             self._lifecycle.assert_running_worker(
@@ -199,12 +200,10 @@ class AsyncStatefulQuoteStream(AsyncQuoteStream):
         self._subs[key] = sub
         return key
 
-    async def start(self) -> "AsyncStatefulQuoteStream":
+    async def start(self) -> AsyncStatefulQuoteStream:
         if self.state is StreamState.RUNNING:
             task = self._task
-            self._lifecycle.assert_running_worker(
-                worker_alive=task is not None and not task.done()
-            )
+            self._lifecycle.assert_running_worker(worker_alive=task is not None and not task.done())
             return self
         self._lifecycle.begin_start()
         try:
@@ -244,5 +243,9 @@ class AsyncStatefulQuoteStream(AsyncQuoteStream):
                 self._lifecycle.fail(reason)
                 self._stop.set()
             with contextlib.suppress(Exception):
-                if self._task is not None and self._task.done() and self.state is StreamState.STOPPING:
+                if (
+                    self._task is not None
+                    and self._task.done()
+                    and self.state is StreamState.STOPPING
+                ):
                     self._lifecycle.close()

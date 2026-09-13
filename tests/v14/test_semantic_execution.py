@@ -1,0 +1,184 @@
+from __future__ import annotations
+
+from tstdx.cache_semantic import SemanticResultCache
+from tstdx.execution.semantic import SemanticExecutionAdapter
+from tstdx.provider import TdxProvider, WebProvider
+from tstdx.query import QueryPlanner, QuerySpec
+from tstdx.runtime import QueryRequest, Runtime
+
+
+class CountingBarsClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def bars(self, symbol, *, period="day", count=320):
+        self.calls += 1
+        return [{"symbol": symbol, "period": period, "count": count}]
+
+
+class BarsOnlyClient:
+    def bars(self, symbol, *, period="day", count=320):
+        return [{"symbol": symbol, "period": period, "count": count}]
+
+
+class QuotesSource:
+    def quotes(self, symbols):
+        return [{"symbol": item} for item in symbols]
+
+
+def test_semantic_bridge_bars_plan_matches_direct_query_planner() -> None:
+    request = QueryRequest(
+        "bars",
+        {"period": "day", "count": 20, "start": 3},
+        metadata={"currentness": "historical", "max_age": 60.0},
+        args=("600519.SH",),
+    )
+    adapter = SemanticExecutionAdapter()
+
+    actual = adapter.compile(request, "tdx")
+    expected = QueryPlanner().compile(
+        QuerySpec.build(
+            "bars",
+            symbols="600519.SH",
+            provider="tdx",
+            period="day",
+            count=20,
+            start=3,
+            currentness="historical",
+            max_age=60.0,
+        )
+    )
+
+    assert actual == expected
+    assert actual.fingerprint.value == expected.fingerprint.value
+
+
+def test_semantic_bridge_quotes_plan_matches_direct_query_planner() -> None:
+    request = QueryRequest(
+        "quotes",
+        {"allow_partial": True},
+        metadata={"currentness": "live", "deadline_ms": 800},
+        args=(["sh600519", "sz000001"],),
+    )
+    adapter = SemanticExecutionAdapter()
+
+    actual = adapter.compile(request, "tencent")
+    expected = QueryPlanner().compile(
+        QuerySpec.build(
+            "quotes",
+            symbols=["sh600519", "sz000001"],
+            provider="tencent",
+            allow_partial=True,
+            currentness="live",
+            deadline_ms=800,
+        )
+    )
+
+    assert actual == expected
+    assert actual.fingerprint.value == expected.fingerprint.value
+
+
+def test_core_bars_use_canonical_query_provenance_and_semantic_cache() -> None:
+    client = CountingBarsClient()
+    cache = SemanticResultCache(tier="l1")
+    runtime = Runtime(
+        provider_order=("tdx",),
+        semantic_cache=cache,
+        default_cache_ttl=60.0,
+    )
+    runtime.register_provider(TdxProvider(client))
+    request = QueryRequest(
+        "bars",
+        {"period": "day", "count": 2},
+        args=("600519.SH",),
+    )
+
+    first = runtime.execute(request)
+    second = runtime.execute(request)
+
+    assert first.success is True
+    assert second.success is True
+    assert client.calls == 1
+    assert first.metadata["channel"] == "quotation"
+    assert first.metadata["query_fingerprint"].startswith("q1:")
+    first_provenance = first.metadata["provenance"]
+    assert first_provenance["provider"] == "tdx"
+    assert first_provenance["channel"] == "quotation"
+    assert first_provenance["capability"] == "bars"
+    assert first_provenance["kind"] == "direct"
+    assert first_provenance["observed_at_ns"] > 0
+    assert first_provenance["provider_timestamp"] is None
+    assert first_provenance["cache_tier"] is None
+    assert first_provenance["requested_provider"] == "tdx"
+    assert first_provenance["fallback"] is False
+    assert second.metadata["query_fingerprint"] == first.metadata["query_fingerprint"]
+    assert second.metadata["provenance"]["provider"] == "tdx"
+    assert second.metadata["provenance"]["kind"] == "direct"
+    assert second.metadata["provenance"]["cache_tier"] == "l1"
+    assert second.metadata["provider_attempts"] == [
+        {"provider": "tdx", "status": "cache_hit", "detail": "l1"}
+    ]
+
+
+def test_semantic_cache_can_serve_without_registered_provider_executor() -> None:
+    cache = SemanticResultCache(tier="l1")
+    request = QueryRequest("bars", {"period": "day", "count": 2}, args=("600519.SH",))
+
+    online = Runtime(
+        provider_order=("tdx",),
+        semantic_cache=cache,
+        default_cache_ttl=60.0,
+    )
+    online.register_provider(TdxProvider(CountingBarsClient()))
+    populated = online.execute(request)
+    assert populated.success is True
+
+    offline = Runtime(provider_order=("tdx",), semantic_cache=cache)
+    cached = offline.execute(request)
+
+    assert cached.success is True
+    assert cached.data == populated.data
+    assert cached.metadata["provider"] == "tdx"
+    assert cached.metadata["provenance"]["provider"] == "tdx"
+    assert cached.metadata["provenance"]["cache_tier"] == "l1"
+    assert cached.metadata["provider_attempts"] == [
+        {"provider": "tdx", "status": "cache_hit", "detail": "l1"}
+    ]
+
+
+def test_runtime_policy_fallback_does_not_claim_caller_requested_provider() -> None:
+    runtime = Runtime(provider_order=("tdx", "tencent"))
+    runtime.register_provider(TdxProvider(BarsOnlyClient()))
+    runtime.register_provider(WebProvider("tencent", QuotesSource()))
+
+    response = runtime.execute(QueryRequest("quotes", args=(["sh600519"],)))
+
+    assert response.success is True
+    assert response.metadata["provider"] == "tencent"
+    assert response.metadata["channel"] == "quote"
+    assert response.metadata["provenance"]["provider"] == "tencent"
+    assert response.metadata["provenance"]["requested_provider"] == "tencent"
+    assert response.metadata["provenance"]["fallback"] is False
+    assert response.metadata["provider_attempts"] == [
+        {"provider": "tdx", "status": "unsupported", "detail": "quotes"},
+        {"provider": "tencent", "status": "selected"},
+    ]
+
+
+def test_caller_requested_provider_order_preserves_fallback_provenance() -> None:
+    runtime = Runtime()
+    runtime.register_provider(TdxProvider(BarsOnlyClient()))
+    runtime.register_provider(WebProvider("tencent", QuotesSource()))
+    request = QueryRequest(
+        "quotes",
+        args=(["sh600519"],),
+        metadata={"providers": ("tdx", "tencent")},
+    )
+
+    response = runtime.execute(request)
+
+    assert response.success is True
+    assert response.metadata["provider"] == "tencent"
+    assert response.metadata["provenance"]["provider"] == "tencent"
+    assert response.metadata["provenance"]["requested_provider"] == "tdx"
+    assert response.metadata["provenance"]["fallback"] is True

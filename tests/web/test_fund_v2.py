@@ -66,23 +66,25 @@ class TestMobFundUtils:
         assert mob_rows({"Datas": "scalar"}) == []
 
     def test_mob_rows_any_prefers_first_nonempty(self) -> None:
-        assert mob_rows_any(
-            {"Datas": [], "data": [{"x": 1}]}, "Datas", "data"
-        )[0]["x"] == 1
-        assert mob_rows_any(
-            {"Datas": [{"x": 1}], "data": [{"y": 2}]}, "Datas", "data"
-        )[0]["x"] == 1
+        assert mob_rows_any({"Datas": [], "data": [{"x": 1}]}, "Datas", "data")[0]["x"] == 1
+        assert mob_rows_any({"Datas": [{"x": 1}], "data": [{"y": 2}]}, "Datas", "data")[0]["x"] == 1
         assert mob_rows_any({}, "Datas", "data") == []
 
     def test_mob_get_json_raises_on_bad_payload(self) -> None:
         fc = FakeHttpClient(**{"X?": b"not json"})
-        rt = lambda url, **kw: fc.get(url).text(kw.get("encoding", "utf-8"))
+
+        def rt(url, **kw):
+            return fc.get(url).text(kw.get("encoding", "utf-8"))
+
         with pytest.raises(SourceDeprecated, match="非 JSON"):
             mob_get_json(rt, "X?a=1")
 
     def test_mob_get_json_rejects_non_dict(self) -> None:
         fc = FakeHttpClient(**{"X?": _j([1, 2])})
-        rt = lambda url, **kw: fc.get(url).text(kw.get("encoding", "utf-8"))
+
+        def rt(url, **kw):
+            return fc.get(url).text(kw.get("encoding", "utf-8"))
+
         with pytest.raises(SourceDeprecated, match="非 JSON 对象"):
             mob_get_json(rt, "X?a=1")
 
@@ -141,10 +143,24 @@ SNAP = _j(
 NAV = _j(
     {
         "Datas": [
-            {"FSRQ": "2026-07-30", "DWJZ": "1.1959", "JZZZL": "-6.03", "LJJZ": "1.1959",
-             "NAVTYPE": "1", "RATE": "0.15", "SYI": "18.59"},
-            {"FSRQ": "2026-07-29", "DWJZ": "1.2707", "JZZZL": "0.32", "LJJZ": "1.2707",
-             "NAVTYPE": "1", "RATE": "0.15", "SYI": "25.11"},
+            {
+                "FSRQ": "2026-07-30",
+                "DWJZ": "1.1959",
+                "JZZZL": "-6.03",
+                "LJJZ": "1.1959",
+                "NAVTYPE": "1",
+                "RATE": "0.15",
+                "SYI": "18.59",
+            },
+            {
+                "FSRQ": "2026-07-29",
+                "DWJZ": "1.2707",
+                "JZZZL": "0.32",
+                "LJJZ": "1.2707",
+                "NAVTYPE": "1",
+                "RATE": "0.15",
+                "SYI": "25.11",
+            },
         ]
     }
 )
@@ -191,10 +207,20 @@ RATING = _j(
 YIELD_CURVE = _j(
     {
         "Datas": [
-            {"PDATE": "2026-07-30", "YIELD": "18.59", "INDEXYIELD": "15.02",
-             "FUNDTYPEYIELD": "10.33", "BENCHQUOTE": "1.1859"},
-            {"PDATE": "2026-07-29", "YIELD": "25.11", "INDEXYIELD": "20.10",
-             "FUNDTYPEYIELD": "12.00", "BENCHQUOTE": "1.1200"},
+            {
+                "PDATE": "2026-07-30",
+                "YIELD": "18.59",
+                "INDEXYIELD": "15.02",
+                "FUNDTYPEYIELD": "10.33",
+                "BENCHQUOTE": "1.1859",
+            },
+            {
+                "PDATE": "2026-07-29",
+                "YIELD": "25.11",
+                "INDEXYIELD": "20.10",
+                "FUNDTYPEYIELD": "12.00",
+                "BENCHQUOTE": "1.1200",
+            },
         ]
     }
 )
@@ -233,15 +259,31 @@ class TestFundMobRankSource:
     def test_fetch_rank_query_carries_filters(self) -> None:
         src = _src(FundMobRankSource, {"FundMNRank?": RANK})
         src.fetch_rank(
-            fund_type=25, sort_column="SYL_Q", sort="asc", page=1, size=10,
-            company_id="80084302", topic="12", risk_level="4", BUY="1",
+            fund_type=25,
+            sort_column="SYL_Q",
+            sort="asc",
+            page=1,
+            size=10,
+            company_id="80084302",
+            topic="12",
+            risk_level="4",
+            BUY="1",
         )
         url = src.client.calls[-1]
         for frag in [
-            "FundMNRank?FundType=25", "SortColumn=SYL_Q", "Sort=asc",
-            "pageIndex=1", "pageSize=10", "CompanyId=80084302",
-            "TOPICAL=12", "RISKLEVEL=4", "DataConstraintType=0", "LevelTwo=",
-            "BUY=1", "deviceid=3EA024C2", "plat=Iphone",
+            "FundMNRank?FundType=25",
+            "SortColumn=SYL_Q",
+            "Sort=asc",
+            "pageIndex=1",
+            "pageSize=10",
+            "CompanyId=80084302",
+            "TOPICAL=12",
+            "RISKLEVEL=4",
+            "DataConstraintType=0",
+            "LevelTwo=",
+            "BUY=1",
+            "deviceid=3EA024C2",
+            "plat=Iphone",
         ]:
             assert frag in url, frag
 
@@ -334,12 +376,26 @@ class TestFundMobRankSource:
 MGR_LIST = _j(
     {
         "Datas": [
-            {"MGRID": "30634044", "MGRNAME": "王平", "FCODE": "161725", "DAYS": 4000,
-             "FEMPDATE": "2015-05-27", "LEMPDATE": "", "PENAVGROWTH": "18.59",
-             "ISINOFFICE": "1"},
-            {"MGRID": "30000001", "MGRNAME": "李前", "FCODE": "161725", "DAYS": 900,
-             "FEMPDATE": "2011-01-01", "LEMPDATE": "2015-05-26", "PENAVGROWTH": "32.10",
-             "ISINOFFICE": "0"},
+            {
+                "MGRID": "30634044",
+                "MGRNAME": "王平",
+                "FCODE": "161725",
+                "DAYS": 4000,
+                "FEMPDATE": "2015-05-27",
+                "LEMPDATE": "",
+                "PENAVGROWTH": "18.59",
+                "ISINOFFICE": "1",
+            },
+            {
+                "MGRID": "30000001",
+                "MGRNAME": "李前",
+                "FCODE": "161725",
+                "DAYS": 900,
+                "FEMPDATE": "2011-01-01",
+                "LEMPDATE": "2015-05-26",
+                "PENAVGROWTH": "32.10",
+                "ISINOFFICE": "0",
+            },
         ]
     }
 )
@@ -347,40 +403,64 @@ MGR_LIST = _j(
 MGR_PROFILE = _j(
     {
         "Datas": {
-            "MGRID": "30634044", "MGRNAME": "王平", "JJGS": "招商基金",
-            "JJGSID": "80084302", "SEX": "1",
+            "MGRID": "30634044",
+            "MGRNAME": "王平",
+            "JJGS": "招商基金",
+            "JJGSID": "80084302",
+            "SEX": "1",
             "RESUME": "2010 年加入招商基金",
             "INVESTMENTMETHOD": "指数化投资",
             "INVESTMENTIDEAR": "追求长期回报",
-            "TOTALDAYS": 7300, "NETNAV": "189.5", "FCOUNT": 3, "TCOUNT": 8,
-            "PRECODE": "217002", "PRENAME": "招商中证2000",
-            "AWARDNUM": 5, "AWARDNUM_JN": 3, "AWARDNUM_MX": 2, "AWARDFNUM": 4,
-            "MAXPENAVGROWTH": "45.6", "MFTYPE": "股票型",
-            "FCODE": "161725", "SHORTNAME": "招商中证白酒指数A",
-            "MAXRETRA1": "-22.1", "MAXEARN1": "60.0", "SDAY": "2010-06-01",
+            "TOTALDAYS": 7300,
+            "NETNAV": "189.5",
+            "FCOUNT": 3,
+            "TCOUNT": 8,
+            "PRECODE": "217002",
+            "PRENAME": "招商中证2000",
+            "AWARDNUM": 5,
+            "AWARDNUM_JN": 3,
+            "AWARDNUM_MX": 2,
+            "AWARDFNUM": 4,
+            "MAXPENAVGROWTH": "45.6",
+            "MFTYPE": "股票型",
+            "FCODE": "161725",
+            "SHORTNAME": "招商中证白酒指数A",
+            "MAXRETRA1": "-22.1",
+            "MAXEARN1": "60.0",
+            "SDAY": "2010-06-01",
             "NEWPHOTOURL": "https://x/1.jpg",
         }
     }
 )
 
 MGR_YIELD = _j(
-    {"Datas": [
-        {"PDATE": "2026-07-30", "SYI": "45.6", "AVGSYI": "12.0", "INDEXSYI": "15.02"},
-        {"PDATE": "2026-07-29", "SYI": "48.1", "AVGSYI": "11.8", "INDEXSYI": "14.90"},
-    ]}
+    {
+        "Datas": [
+            {"PDATE": "2026-07-30", "SYI": "45.6", "AVGSYI": "12.0", "INDEXSYI": "15.02"},
+            {"PDATE": "2026-07-29", "SYI": "48.1", "AVGSYI": "11.8", "INDEXSYI": "14.90"},
+        ]
+    }
 )
 
 MGR_EVAL = _j(
     {
         "Datas": {
-            "MAXRETRA_1": "-22.1", "MAXRETRA_3": "-30.5",
-            "HCPCT_1": "68.0", "HCPCT_3": "55.2",
-            "SHARP_1": "1.25", "SHARP_3": "0.87",
-            "XPPCT_1": "90.1", "XPPCT_3": "88.0",
-            "STDDEV_1": "22.3", "STDDEV_3": "21.0",
-            "BDPCT_1": "30.0", "BDPCT_3": "40.0",
-            "WIN_1": "110", "WIN_3": "320",
-            "WINPCT_1": "65.5", "WINPCT_3": "61.2",
+            "MAXRETRA_1": "-22.1",
+            "MAXRETRA_3": "-30.5",
+            "HCPCT_1": "68.0",
+            "HCPCT_3": "55.2",
+            "SHARP_1": "1.25",
+            "SHARP_3": "0.87",
+            "XPPCT_1": "90.1",
+            "XPPCT_3": "88.0",
+            "STDDEV_1": "22.3",
+            "STDDEV_3": "21.0",
+            "BDPCT_1": "30.0",
+            "BDPCT_3": "40.0",
+            "WIN_1": "110",
+            "WIN_3": "320",
+            "WINPCT_1": "65.5",
+            "WINPCT_3": "61.2",
         }
     }
 )
@@ -390,13 +470,26 @@ MGR_STYLE = _j(
         "Datas": {
             "PosDate": "2026-03-31",
             "Pos": [
-                {"GPDM": "600519", "GPJC": "贵州茅台", "NEWTEXCH": "1", "JZBL": "10.20",
-                 "INDEXNAME": "中证白酒", "INDEXCODE": "399997", "PCTNVCHG": "增持"},
-                {"GPDM": "600809", "GPJC": "山西汾酒", "NEWTEXCH": "1", "JZBL": "9.50",
-                 "INDEXNAME": "中证白酒", "INDEXCODE": "399997", "PCTNVCHG": "新进"},
+                {
+                    "GPDM": "600519",
+                    "GPJC": "贵州茅台",
+                    "NEWTEXCH": "1",
+                    "JZBL": "10.20",
+                    "INDEXNAME": "中证白酒",
+                    "INDEXCODE": "399997",
+                    "PCTNVCHG": "增持",
+                },
+                {
+                    "GPDM": "600809",
+                    "GPJC": "山西汾酒",
+                    "NEWTEXCH": "1",
+                    "JZBL": "9.50",
+                    "INDEXNAME": "中证白酒",
+                    "INDEXCODE": "399997",
+                    "PCTNVCHG": "新进",
+                },
             ],
-            "Style": {"FSCALE": "800.0", "FSTYLE": "大盘成长", "GZQK": "高估值",
-                      "YLQK": "高收益"},
+            "Style": {"FSCALE": "800.0", "FSTYLE": "大盘成长", "GZQK": "高估值", "YLQK": "高收益"},
             "SubStyle": [
                 {"DLMC": "食品饮料", "CCBL": "45.0", "AVRBL": "30.0"},
                 {"DLMC": "医药生物", "CCBL": "12.0", "AVRBL": "18.0"},
@@ -494,10 +587,15 @@ class TestFundManagerSource:
 COMPANIES = _j(
     {
         "Datas": [
-            {"JJGSID": "80084302", "JJGS": "招商基金", "GSJJBName": "招商",
-             "JJGSJP": "ZSJJ", "GSJJBID": "ZS", "QXJJ": "210"},
-            {"JJGSID": "80000236", "JJGS": "易方达基金", "GSJJBName": "易方达",
-             "JJGSJP": "YFDJJ"},
+            {
+                "JJGSID": "80084302",
+                "JJGS": "招商基金",
+                "GSJJBName": "招商",
+                "JJGSJP": "ZSJJ",
+                "GSJJBID": "ZS",
+                "QXJJ": "210",
+            },
+            {"JJGSID": "80000236", "JJGS": "易方达基金", "GSJJBName": "易方达", "JJGSJP": "YFDJJ"},
         ]
     }
 )
@@ -526,43 +624,74 @@ COMPANY_FUNDS = _j(
         "code": 0,
         "data": [
             {
-                "FCODE": "161725", "FEATURE": "LOF", "FUNDTYPE": "股票型",
-                "FULLNAME": "招商中证白酒指数A", "SHORTNAME": "招商中证白酒A",
-                "JJGSID": "80084302", "DWJZ": "1.1959", "LJJZ": "1.1959",
-                "SYL_D": "-6.03", "SYL_Z": "18.59", "SYL_Y": "12.34",
-                "SYL_2N": "22.0", "SYL_3N": "45.67", "SYL_6Y": "8.10",
+                "FCODE": "161725",
+                "FEATURE": "LOF",
+                "FUNDTYPE": "股票型",
+                "FULLNAME": "招商中证白酒指数A",
+                "SHORTNAME": "招商中证白酒A",
+                "JJGSID": "80084302",
+                "DWJZ": "1.1959",
+                "LJJZ": "1.1959",
+                "SYL_D": "-6.03",
+                "SYL_Z": "18.59",
+                "SYL_Y": "12.34",
+                "SYL_2N": "22.0",
+                "SYL_3N": "45.67",
+                "SYL_6Y": "8.10",
             },
         ],
     }
 )
 
 SCALE = _j(
-    {"code": 0, "data": {"Datas": [
-        {"FSRQ": "2026-03-31", "QMZFE": "1800.0", "QMJZC": "2150.5"},
-        {"FSRQ": "2025-12-31", "QMZFE": "1600.0", "QMJZC": "1900.0"},
-    ]}}
+    {
+        "code": 0,
+        "data": {
+            "Datas": [
+                {"FSRQ": "2026-03-31", "QMZFE": "1800.0", "QMJZC": "2150.5"},
+                {"FSRQ": "2025-12-31", "QMZFE": "1600.0", "QMJZC": "1900.0"},
+            ]
+        },
+    }
 )
 
 COMPANY_BASE = _j(
     {
         "code": 0,
         "data": {
-            "FDMC": "招商基金", "GSJJBName": "招商", "Count": 210,
-            "ManagerCount": 45, "fundmaxsyl": "68.9",
+            "FDMC": "招商基金",
+            "GSJJBName": "招商",
+            "Count": 210,
+            "ManagerCount": 45,
+            "fundmaxsyl": "68.9",
             "NewFundList": [
                 {
-                    "TypeName": "股票型", "TypeCount": 40, "Filds": "FCODE,SHORTNAME",
+                    "TypeName": "股票型",
+                    "TypeCount": 40,
+                    "Filds": "FCODE,SHORTNAME",
                     "fundlist": [
-                        {"FCODE": "161725", "SHORTNAME": "招商中证白酒A",
-                         "DWJZ": "1.1959", "SYL_Y": "12.34"},
+                        {
+                            "FCODE": "161725",
+                            "SHORTNAME": "招商中证白酒A",
+                            "DWJZ": "1.1959",
+                            "SYL_Y": "12.34",
+                        },
                     ],
                 },
                 {"TypeName": "债券型", "TypeCount": 60, "Filds": "FCODE", "fundlist": []},
             ],
             "CompanyTopic": {
                 "List": [
-                    {"JJGSID": "12", "TTYPE": "0", "TTYPENAME": "白酒",
-                     "PDATE": "2026-07-31", "W": "3.2", "M": "5.1", "Q": "8.0", "Y": "12.3"},
+                    {
+                        "JJGSID": "12",
+                        "TTYPE": "0",
+                        "TTYPENAME": "白酒",
+                        "PDATE": "2026-07-31",
+                        "W": "3.2",
+                        "M": "5.1",
+                        "Q": "8.0",
+                        "Y": "12.3",
+                    },
                 ]
             },
         },
@@ -573,12 +702,25 @@ SEARCH = _j(
     {
         "totalCount": 2,
         "data": [
-            {"fcode": "161725", "showfcode": "161725", "ftype": "股票型",
-             "shortname": "招商中证白酒指数A", "hightlight": "招商",
-             "fcodetype": "1", "secondfcodetype": "2", "abbname": "ZSZZBJZSA",
-             "abbtname": "ZSZZBJZ", "foreshortname": "招商基金", "newtexch": "1"},
-            {"fcode": "161726", "showfcode": "161726", "ftype": "股票型",
-             "shortname": "招商中证白酒指数C"},
+            {
+                "fcode": "161725",
+                "showfcode": "161725",
+                "ftype": "股票型",
+                "shortname": "招商中证白酒指数A",
+                "hightlight": "招商",
+                "fcodetype": "1",
+                "secondfcodetype": "2",
+                "abbname": "ZSZZBJZSA",
+                "abbtname": "ZSZZBJZ",
+                "foreshortname": "招商基金",
+                "newtexch": "1",
+            },
+            {
+                "fcode": "161726",
+                "showfcode": "161726",
+                "ftype": "股票型",
+                "shortname": "招商中证白酒指数C",
+            },
         ],
     }
 )
@@ -621,8 +763,9 @@ class TestFundCompanySource:
 
     def test_fetch_funds(self) -> None:
         src = _src(FundCompanySource, {"action=fundlist": COMPANY_FUNDS})
-        rows = src.fetch_funds("80084302", fund_type="1", page=2, size=10,
-                               sort_field="SYL_Y", sort_dir="asc")
+        rows = src.fetch_funds(
+            "80084302", fund_type="1", page=2, size=10, sort_field="SYL_Y", sort_dir="asc"
+        )
         assert len(rows) == 1
         r = rows[0]
         assert r["code"] == "161725"
@@ -633,8 +776,7 @@ class TestFundCompanySource:
         assert r["return_total"] == pytest.approx(18.59)
         assert r["company_id"] == "80084302"
         url = src.client.calls[-1]
-        for frag in ["cc=80084302", "fundtype=1", "pi=2", "ps=10",
-                     "sd=asc", "sf=SYL_Y"]:
+        for frag in ["cc=80084302", "fundtype=1", "pi=2", "ps=10", "sd=asc", "sf=SYL_Y"]:
             assert frag in url, frag
 
     def test_fetch_scale_change(self) -> None:
@@ -833,12 +975,24 @@ class TestFundFacadeChain:
     def test_all_18_methods_present(self, api) -> None:
         obj, _ = api
         methods = [
-            "fund_rank", "fund_snapshot", "fund_nav_history_mob", "fund_detail",
-            "fund_rating", "fund_yield_curve", "fund_rank_trend",
-            "fund_manager_list", "fund_manager_profile", "fund_manager_yield",
-            "fund_manager_eval", "fund_manager_style",
-            "fund_companies", "fund_company_archives", "fund_company_funds",
-            "fund_company_scale", "fund_company_base_info", "fund_search",
+            "fund_rank",
+            "fund_snapshot",
+            "fund_nav_history_mob",
+            "fund_detail",
+            "fund_rating",
+            "fund_yield_curve",
+            "fund_rank_trend",
+            "fund_manager_list",
+            "fund_manager_profile",
+            "fund_manager_yield",
+            "fund_manager_eval",
+            "fund_manager_style",
+            "fund_companies",
+            "fund_company_archives",
+            "fund_company_funds",
+            "fund_company_scale",
+            "fund_company_base_info",
+            "fund_search",
         ]
         missing = [m for m in methods if not callable(getattr(obj, m, None))]
         assert not missing, missing

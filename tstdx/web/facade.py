@@ -35,14 +35,13 @@ from __future__ import annotations
 from typing import Any
 
 from ..errors import CompatibilityError
-from ._facade_mixin_baidu import BaiduSessionMixin
 from ._facade_mixin_astock import AstockToolkitMixin
+from ._facade_mixin_baidu import BaiduSessionMixin
 from ._facade_mixin_efinance import (
     DerivativeSessionMixin,
     FundMobSessionMixin,
     StockEfinanceMixin,
 )
-from ._facade_mixin_news import NewsSessionMixin
 from ._facade_mixin_fund_v2 import (
     FundCompanySessionMixin,
     FundManagerSessionMixin,
@@ -50,9 +49,6 @@ from ._facade_mixin_fund_v2 import (
 )
 from ._facade_mixin_fundamental import FundamentalSessionMixin
 from ._facade_mixin_info import CorporateSessionMixin, FundFlowSessionMixin
-from ._facade_mixin_p1 import P1SessionMixin
-from ._facade_mixin_p2 import P2SessionMixin
-from ._facade_mixin_p3 import P3SessionMixin
 from ._facade_mixin_market import (
     INDEX_SYMBOLS,
     KLINES_PERIOD_ALIASES,
@@ -60,6 +56,10 @@ from ._facade_mixin_market import (
     KlineSessionMixin,
     QuoteSessionMixin,
 )
+from ._facade_mixin_news import NewsSessionMixin
+from ._facade_mixin_p1 import P1SessionMixin
+from ._facade_mixin_p2 import P2SessionMixin
+from ._facade_mixin_p3 import P3SessionMixin
 from .sources import BOC, EASTMONEY, HK, JSL, KLINE, SINA, TENCENT
 
 __all__ = [

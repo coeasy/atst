@@ -14,7 +14,6 @@ from typing import Any
 import pytest
 
 from tstdx.web.base import HttpResponse
-from tstdx.web._facade_mixin_p2 import P2SessionMixin
 from tstdx.web.corporate import EastmoneyDataCenterSource
 
 
@@ -36,9 +35,7 @@ class FakeHttpClient:
                 return HttpResponse(
                     status=200, body=body, headers={"Content-Type": "application/json"}
                 )
-        return HttpResponse(
-            status=404, body='{"error":"not found"}', headers={}
-        )
+        return HttpResponse(status=404, body='{"error":"not found"}', headers={})
 
     def close(self) -> None:
         pass
@@ -454,6 +451,7 @@ class TestP2FacadeIntegration:
     @pytest.fixture()
     def session(self) -> Any:
         from tstdx.web.facade import WebQuoteSession
+
         return WebQuoteSession("eastmoney")
 
     def test_industry_index_exists(self, session: Any) -> None:

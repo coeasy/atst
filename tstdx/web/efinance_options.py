@@ -115,10 +115,7 @@ class EastmoneyOptionsSource(_EastmoneyJson):
         fs = f"m:{market}" if market else _OPTIONS_FS
         size = max(1, min(int(size), 500))
         page = max(1, int(page))
-        path = (
-            f"/api/qt/clist/get?pn={page}&pz={size}&fs={fs}"
-            f"&fields={_CLIST_FIELDS}"
-        )
+        path = f"/api/qt/clist/get?pn={page}&pz={size}&fs={fs}&fields={_CLIST_FIELDS}"
         payload = self._get_json(path)
         data = payload.get("data") or {}
         rows = data.get("diff") or []

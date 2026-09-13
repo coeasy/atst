@@ -28,6 +28,7 @@ from .market import (
     market_client,
 )
 from .response import ApiResponse, err, ok, wrap
+from .runtime_adapter import RuntimeFacadeAdapter
 
 __all__ = [
     "UnifiedQuoteAPI",
@@ -48,4 +49,5 @@ __all__ = [
     "ok",
     "err",
     "wrap",
+    "RuntimeFacadeAdapter",
 ]

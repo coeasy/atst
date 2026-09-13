@@ -296,6 +296,17 @@ class CorporateSessionMixin:
             src.close()
 
     @staticmethod
+    def free_holders(symbol: str, *, size: int = 10) -> list[dict[str, Any]]:
+        """十大流通股东（主线兼容命名）。
+
+        ``shareholders`` is the native facade name, while ``free_holders`` is
+        the established public capability used by the unified API and provider
+        registry.  Keep both names on the same implementation so the runtime
+        cannot advertise a capability that the web session cannot execute.
+        """
+        return CorporateSessionMixin.shareholders(symbol, size=size)
+
+    @staticmethod
     def holder_num(symbol: str, *, size: int = 10) -> list[dict[str, Any]]:
         """股东户数变动历史。"""
         from .corporate import EastmoneyShareholderSource

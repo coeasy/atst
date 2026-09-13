@@ -69,7 +69,9 @@ class TestLedgerCalibration:
         assert st["all.status_offline"] == 9
         assert st["all.status_degraded"] == 2
         assert st["all.status_online"] == st["all.total"] - 11
-        assert st["quotation.verified"] == 11  # 8 原有 + 0x0010/0x0537/0x0FC5（0x044D verified 保留为历史实测标记）
+        assert (
+            st["quotation.verified"] == 11
+        )  # 8 原有 + 0x0010/0x0537/0x0FC5（0x044D verified 保留为历史实测标记）
 
     def test_facade_docstring_matches_client_commands(self) -> None:
         """防回归：facade 注释命令号必须与 client 实际请求一致（批次 A1）。"""

@@ -53,8 +53,7 @@ _F10 = "https://fundf10.eastmoney.com"
 #: efinance 使用的固定设备指纹（移动端接口需要，非隐私字段）。
 _DEVICE = "3EA024C2-7F22-408B-95E4-383D38160FB3"
 _COMMON = (
-    f"&deviceid={_DEVICE}&plat=Iphone&product=EFund"
-    "&appType=ttjj&serverVersion=6.3.8&version=6.3.8"
+    f"&deviceid={_DEVICE}&plat=Iphone&product=EFund&appType=ttjj&serverVersion=6.3.8&version=6.3.8"
 )
 
 
@@ -167,10 +166,13 @@ class FundMobSource(BaseWebSource):
         """
         url = f"{_F10}/jjjl_{code}.html"
         text = self._request_text(url, encoding="utf-8")
-        if "<!doctype html>" not in text[:120].lower() and "html" not in text[:200].lower():
-            # 容错：万一返回非 HTML（如 404 页）直接给空
-            if "页面未找到" in text[:600] or "404" in text[:200]:
-                return None
+        # 容错：万一返回非 HTML（如 404 页）直接给空。
+        if (
+            "<!doctype html>" not in text[:120].lower()
+            and "html" not in text[:200].lower()
+            and ("页面未找到" in text[:600] or "404" in text[:200])
+        ):
+            return None
         # 任职日期（YYYY-MM-DD）
         appoint = ""
         m = re.search(r"(\d{4}-\d{2}-\d{2})", text)
@@ -219,7 +221,8 @@ class FundMobSource(BaseWebSource):
             date_list = list(dates)
 
         out: list[dict[str, Any]] = []
-        for dt in date_list or [None]:  # noqa: PLC2801
+        date_values: Sequence[str | None] = date_list if date_list else (None,)
+        for dt in date_values:
             url = f"{_BASE}/FundMNInverstPosition?FCODE={code}{_COMMON}"
             if dt:
                 url += f"&DATE={dt}"
@@ -291,7 +294,8 @@ class FundMobSource(BaseWebSource):
             date_list = list(dates)
 
         out: list[dict[str, Any]] = []
-        for dt in date_list or [None]:
+        date_values: Sequence[str | None] = date_list if date_list else (None,)
+        for dt in date_values:
             url = f"{_BASE}/FundMNAssetAllocationNew?FCODE={code}{_COMMON}"
             if dt:
                 url += f"&DATE={dt}"
@@ -336,7 +340,8 @@ class FundMobSource(BaseWebSource):
             date_list = list(dates)
 
         out: list[dict[str, Any]] = []
-        for dt in date_list or [None]:
+        date_values: Sequence[str | None] = date_list if date_list else (None,)
+        for dt in date_values:
             url = f"{_BASE}/FundMNSectorAllocation?FCODE={code}{_COMMON}"
             if dt:
                 url += f"&DATE={dt}"

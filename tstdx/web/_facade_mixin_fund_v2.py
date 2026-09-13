@@ -92,9 +92,7 @@ class FundRankSessionMixin:
 
     # -- 移动端历史净值 --------------------------------------------------- #
     @staticmethod
-    def fund_nav_history_mob(
-        code: str, *, page: int = 1, size: int = 49
-    ) -> list[dict[str, Any]]:
+    def fund_nav_history_mob(code: str, *, page: int = 1, size: int = 49) -> list[dict[str, Any]]:
         """移动端历史净值（字段比 :meth:`fund_nav_history` 更全）。
 
         额外提供 ``nav_type``（净值类型）/ ``rate`` / ``cum_return``
@@ -133,9 +131,7 @@ class FundRankSessionMixin:
 
     # -- 累计收益走势 ----------------------------------------------------- #
     @staticmethod
-    def fund_yield_curve(
-        code: str, *, index_code: str = "000300"
-    ) -> list[dict[str, Any]]:
+    def fund_yield_curve(code: str, *, index_code: str = "000300") -> list[dict[str, Any]]:
         """累计收益走势（基金 vs 指数 vs 同类），超额收益分析基础。
 
         ``index_code`` 可选 ``000300`` 沪深300 / ``000001`` 上证 /
@@ -294,8 +290,6 @@ class FundCompanySessionMixin:
         """按名称 / 代码模糊搜索基金。返回 ``{"total","page","size","rows"}``。"""
         src = FundCompanySource(client=_shared_http())
         try:
-            return src.search_funds(
-                key, order_type=order_type, page=page, size=size
-            )
+            return src.search_funds(key, order_type=order_type, page=page, size=size)
         finally:
             src.close()

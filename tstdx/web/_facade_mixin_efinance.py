@@ -19,8 +19,12 @@ from collections.abc import Sequence
 from typing import Any
 
 from ._facade_mixin_market import _shared_http  # 共享连接池助手
-from .corporate import EastmoneyDataCenterSource, EastmoneyPerformanceSource, VALID_REPORTS
-from .corporate import EastmoneyProfileSource
+from .corporate import (
+    VALID_REPORTS,
+    EastmoneyDataCenterSource,
+    EastmoneyPerformanceSource,
+    EastmoneyProfileSource,
+)
 from .efinance_deriv import EastmoneyBondSource, EastmoneyFuturesSource
 from .efinance_fund import FundMobSource
 from .efinance_options import EastmoneyOptionsSource
@@ -88,7 +92,7 @@ class StockEfinanceMixin:
             )
         finally:
             src.close()
-        dates = sorted({r.get("REPORTDATE") for r in rows if r.get("REPORTDATE")}, reverse=True)
+        dates = sorted({str(r["REPORTDATE"]) for r in rows if r.get("REPORTDATE")}, reverse=True)
         return dates
 
     # -- IPO 审核状态 ---------------------------------------------------- #
@@ -167,9 +171,7 @@ class FundMobSessionMixin:
             src.close()
 
     @staticmethod
-    def fund_holdings(
-        code: str, dates: Sequence[str] | str | None = None
-    ) -> list[dict[str, Any]]:
+    def fund_holdings(code: str, dates: Sequence[str] | str | None = None) -> list[dict[str, Any]]:
         """基金持仓（对标 efinance ``get_invest_position``）。"""
         src = FundMobSource(client=_shared_http())
         try:
@@ -292,9 +294,7 @@ class DerivativeSessionMixin:
             src.close()
 
     @staticmethod
-    def options_trends(
-        quote_id: str, *, ndays: int = 1
-    ) -> list[dict[str, Any]]:
+    def options_trends(quote_id: str, *, ndays: int = 1) -> list[dict[str, Any]]:
         """期权当日分时走势（部分市场段可用，不可用时返回空列表）。"""
         src = EastmoneyOptionsSource(client=_shared_http())
         try:
