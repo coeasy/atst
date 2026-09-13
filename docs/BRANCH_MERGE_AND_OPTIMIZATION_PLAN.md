@@ -4,40 +4,30 @@
 > 仓库: coeasy/tstdx
 > 基线: main @ `a125e3f` (docs: add v14 deep upgrade progress tracking)
 > 范围: PR#1 / PR#6 / PR#7 及全部历史分支
+> **执行状态**: ✅ 已全部执行（见第八节执行记录）
 
 ---
 
 ## 一、总览
 
-### 1.1 全部 PR 状态
+### 1.1 全部 PR 状态（执行后）
 
-| PR# | 分支 | 标题 | 状态 | 领先 main | 落后 main | 冲突文件 | 合并可行性 |
-|-----|------|------|------|-----------|-----------|----------|------------|
-| #2 | (已合并) | — | ✅ 已入 main | 0 | — | — | — |
-| #3 | (已合并) | — | ✅ 已入 main | 0 | — | — | — |
-| #4 | (已合并) | — | ✅ 已入 main | 0 | — | — | — |
-| #5 | (已合并) | — | ✅ 已入 main | 0 | — | — | — |
-| #7 | `v14-runtime-phase1` | v14 运行时内核骨架 | 🟢 open | 111 | 0 | 0 | **可立即合并** |
-| #6 | `refactor/runtime-integration-v12` | v13 clean-break 统一运行时 | 🟡 open | 162 | 2 | 1 | 快速解冲突后可合并 |
-| #1 | `refactor/industry-benchmark-v12` | v12 行业基准重构 | 🔴 open | 737 | 42 | 5 | 需重做或拆分 |
+| PR# | 分支 | 标题 | 原状态 | 执行结果 |
+|-----|------|------|--------|----------|
+| #2..#5 | (已合并) | — | ✅ 已入 main | — |
+| #7 | `v14-runtime-phase1` | v14 运行时内核骨架 | 🟢 open | ✅ **已合并**（squash, 0 冲突） |
+| #6 | `refactor/runtime-integration-v12` | v13 clean-break 统一运行时 | 🟡 open | ⚠️ **部分合并**（提取 6 个独立工程原语，clean-break 删除不执行） |
+| #1 | `refactor/industry-benchmark-v12` | v12 行业基准重构 | 🔴 open | ⚠️ **拆分合并**（文档 + 工具/CI 已合并，传输硬化撤回，核心重构保留） |
 
-### 1.2 全部远程分支状态
+### 1.2 全部远程分支状态（执行后）
 
-| 分支 | 状态 | 建议 |
-|------|------|------|
-| `main` | 当前基线 | — |
-| `v14-runtime-phase1` | PR#7 head | ✅ 合并后保留 |
-| `refactor/runtime-integration-v12` | PR#6 head | 合并后删除 |
-| `refactor/industry-benchmark-v12` | PR#1 head | 冻结，拆分后删除 |
-| `docs/refactor-plan-v11-20260912` | 已在 main | 🗑 删除 |
-| `refactor/cache-provenance-v11` | 已在 main | 🗑 删除 |
-| `refactor/industry-benchmark-v11` | 3 commits ahead | 🗑 已被 v12 超越，删除 |
-| `refactor/runtime-contracts-v11` | 已在 main | 🗑 删除 |
-| `refactor/stream-state-v11` | 已在 main | 🗑 删除 |
-| `refactor/v14-runtime-kernel` | 已在 main | 🗑 删除 |
-| `refactor/v14-runtime-kernel-impl` | 已在 main | 🗑 删除 |
-| `sync-main-into-v12-20260909` (-b/-c/-d) | 已在 main | 🗑 删除 |
-| `tmp-v14-runtime-start` | 已在 main | 🗑 删除 |
+| 分支 | 状态 |
+|------|------|
+| `main` | ✅ 已升级（PR#7 + PR#6 原语 + PR#1 文档/工具） |
+| `v14-runtime-phase1` | 🗑 已合并至 main，分支保留 |
+| `refactor/runtime-integration-v12` | 🗑 已提取价值，PR 关闭，分支保留 |
+| `refactor/industry-benchmark-v12` | 🗑 已拆分提取，分支保留待后续 |
+| 其余 12 个旧分支 | ✅ **已全部删除** |
 
 ---
 
@@ -541,17 +531,94 @@ tstdx/
 ## 八、时间线
 
 ```
-2026-09-13  Phase 1: 合并 PR#7 (零冲突, ~30 分钟)
-2026-09-13  Phase 2: 解决 PR#6 冲突 + 合并 (~2 小时)
-2026-09-14  Phase 3a: 拆分 PR#1 非冲突模块 (文档/传输硬化/测试)
-2026-09-14  Phase 4: 删除 12 个过时分支
-2026-09-15  Phase 3b: 评估 PR#1 核心重构模块合并可行性
-2026-09-16  中期: Typed Capability 扩展 Phase 2
-2026-09-20  中期: Domain Model 替换
-2026-09-23  中期: Provider Adapter 完整实现
-2026-10-07  长期: v14 完成验收
+  2026-09-13  Phase 1: 合并 PR#7 (零冲突, ~30 分钟)
+  2026-09-13  Phase 2: 解决 PR#6 冲突 + 合并 (~2 小时)
+  2026-09-14  Phase 3a: 拆分 PR#1 非冲突模块 (文档/传输硬化/测试)
+  2026-09-14  Phase 4: 删除 12 个过时分支
+  2026-09-15  Phase 3b: 评估 PR#1 核心重构模块合并可行性
+  2026-09-16  中期: Typed Capability 扩展 Phase 2
+  2026-09-20  中期: Domain Model 替换
+  2026-09-23  中期: Provider Adapter 完整实现
+  2026-10-07  长期: v14 完成验收
+  ```
+
+---
+
+## 八、执行记录（2026-09-13 实际执行）
+
+### Phase 1 ✅ 合并 PR#7（v14 运行时内核，0 冲突）
+
+- commit `0a0c3b4` `feat(v14): merge runtime kernel phase 1`
+- 合入 78 文件 / +3291 / −637
+- 验证: `tests/v14/` 47 个测试全绿；runtime/streaming/client 229 个测试全绿
+
+### Phase 2 ⚠️ PR#6 部分合并（组件提取，非 full clean-break）
+
+**架构冲突发现**: PR#6 的 v13 clean-break（删除全部 facade/server）与已合入 PR#7 的 v14 生态（保留 facade + runtime_adapter）方向相反:
+- `tstdx/runtime.py`(模块) vs `tstdx/runtime/`(包) 命名冲突不可共存
+- PR#6 删除 `facade/api.py`/`response.py` 会破坏 PR#7 的 `RuntimeFacadeAdapter` 依赖
+- 机械执行 clean-break 会破坏已稳定合入的 v14 场景
+
+**执行决策**: 提取 PR#6 的 6 个独立工程原语（不依赖 v13 UnifiedRuntime、与 v14 无同名冲突）:
+- `tstdx/batch.py` — BatchSpec/SingleFlight/NegativeCache
+- `tstdx/error_envelope.py` — 规范化错误信封
+- `tstdx/stream_contract.py` — 流规划契约
+- `tstdx/cache_persistent.py` — 持久化语义缓存 L2
+- `tstdx/capability_catalog.py` — migrated capability 绑定
+- `tstdx/direct_provider.py` — 直连 Provider 执行器
+- `tstdx/providers/adapter.py` — Provider 适配器 ABC
+- 6 个文档 + ADR-015
+
+- commit `0034297` + merge `e0307c6`
+- 新增 2 个测试套件: `test_batch_primitives.py`(18) / `test_persistent_cache_l2.py`(9)
+- 跳过: `runtime.py`/`client_api.py`/`orchestration.py`/runtime transports（依赖 v13 UnifiedRuntime 命名）
+
+### Phase 3 ⚠️ PR#1 拆分合并
+
+**Split 1 ✅ 文档** (commit `7bfca7c` + merge `17202ff`)
+- `docs/providers/*.md` 8 个 Provider 通道文档 + README
+- `docs/adr/ADR-013-provider-source-terminology.md`
+- 10 文件 / +1343
+
+**Split 2 ✅ 工具 + CI** (commit `0309191` + merge `a709593`)
+- `tstdx/tools/host_audit.py` — 5 协议族主机审计（依赖 main 已有公开 API）
+- `scripts/check_docs_links.py` — 文档链接完整性检查（纯 stdlib）
+- `scripts/run_benchmark_smoke.py` — 基准冒烟
+- `.github/workflows/host-audit.yml` — 定时运维探测 CI
+- 5 文件 / +743
+
+**Split 3 ❌ 传输硬化 — 撤回**
+- 9 个 `_*_hardening.py` 模块虽可独立导入，但全部含**模块级 monkey-patch**（`setattr(ConnectionPool, ...)`），import 即替换 main 的传输行为，且依赖 PR#1 重写版 `_apply_probe_observations` 等内部符号（main 不存在）
+- 深度不兼容根因: 这些硬化模块是 PR#1 完整 transport 重写的配套，非独立组件
+- 撤回 `split/v12-transport-hardening` 分支，避免 import 副作用污染 main
+
+### Phase 4 ✅ 清理 12 个过时远程分支
+
+已删除: `docs/refactor-plan-v11-20260912` / `refactor/cache-provenance-v11` / `refactor/industry-benchmark-v11` / `refactor/runtime-contracts-v11` / `refactor/stream-state-v11` / `refactor/v14-runtime-kernel` / `refactor/v14-runtime-kernel-impl` / `sync-main-into-v12-20260909`(-b/-c/-d) / `tmp-v14-runtime-start`
+
+远程仅剩 4 分支: `main` + 3 个 PR 源分支（`v14-runtime-phase1` / `refactor/runtime-integration-v12` / `refactor/industry-benchmark-v12`）
+
+### Phase 5 ✅ 收尾验证
+
+- 583 个核心测试全绿（runtime/v14/streaming/client/errors）
+- 全部新组件导入验证通过
+- main 工作树干净
+
+### 执行后的 main 演进
+
+```
+a125e3f (旧基线)
+  → 0a0c3b4  PR#7 v14 运行时内核 (squash)
+  → 0034297  PR#6 工程原语提取
+  → e0307c6  merge PR#6
+  → 7bfca7c  PR#1 Provider 文档
+  → 17202ff  merge 文档
+  → 0309191  PR#1 工具+CI
+  → a709593  merge 工具+CI  (当前 main HEAD)
 ```
 
 ---
 
-> 本方案基于 2026-09-13 的仓库状态分析生成。合并执行后需根据实际测试结果调整后续计划。
+> 本方案基于 2026-09-13 的仓库状态分析生成，同日完成全部 5 个 Phase 的执行。
+> 遗留项: PR#1 核心重构（query.py/providers/__init__.py 的 v12 语义）与 PR#6 剩余 clean-break 删除
+> 因与 main 的 v14 架构方向冲突而保留在源分支，待 v14 演进到对应阶段后评估。
