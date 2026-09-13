@@ -14,12 +14,136 @@ capability namespace.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Any, ClassVar, Generic, TypeVar
 
 from .errors import ValidationError
 from .providers import PROVIDERS
 
 T = TypeVar("T")
+
+
+def _domain_record_cls() -> dict[str, type]:
+    """Lazy-load Domain Record 注册表（延迟避免 import 环）。"""
+    from .domain.records import (
+        BondRecord,
+        FinancialRecord,
+        FundRecord,
+        MacroRecord,
+        MarketDataRecord,
+        NewsRecord,
+        OptionRecord,
+        ResearchRecord,
+        SearchRecord,
+    )
+
+    return {
+        # Financial（含 v13 原始三表）
+        "balance_sheet": FinancialRecord,
+        "income_sheet": FinancialRecord,
+        "cash_flow": FinancialRecord,
+        "financial_abstract": FinancialRecord,
+        "dividend_history": FinancialRecord,
+        "stock_valuation": FinancialRecord,
+        "holder_changes": FinancialRecord,
+        "holder_num": FinancialRecord,
+        "free_holders": FinancialRecord,
+        "capital_changes": FinancialRecord,
+        "corporate_action": FinancialRecord,
+        "announcements": FinancialRecord,
+        "ipo_review": FinancialRecord,
+        # Fund
+        "fund_rank": FundRecord,
+        "fund_holdings": FundRecord,
+        "fund_base_info": FundRecord,
+        "fund_base_info_multi": FundRecord,
+        "fund_manager": FundRecord,
+        "fund_asset_allocation": FundRecord,
+        "fund_period_change": FundRecord,
+        "fund_industry_distribution": FundRecord,
+        "fund_public_dates": FundRecord,
+        # Bond
+        "bond_kline": BondRecord,
+        "bond_base_info": BondRecord,
+        "bond_all_base_info": BondRecord,
+        "bond_realtime": BondRecord,
+        "bond_trades": BondRecord,
+        "bond_today_bill": BondRecord,
+        "bond_history_bill": BondRecord,
+        "convertible_bond": BondRecord,
+        # Futures
+        "futures_kline": BondRecord,
+        "futures_base_info": BondRecord,
+        "futures_realtime": BondRecord,
+        "futures_trades": BondRecord,
+        # Options
+        "options_snapshot": OptionRecord,
+        "options_list": OptionRecord,
+        "options_trends": OptionRecord,
+        # News / Research
+        "news_financial": NewsRecord,
+        "news": NewsRecord,
+        "research_reports": ResearchRecord,
+        "research_visits": ResearchRecord,
+        # Market data
+        "hot_rank": MarketDataRecord,
+        "limit_pool": MarketDataRecord,
+        "northbound": MarketDataRecord,
+        "margin": MarketDataRecord,
+        "longhu": MarketDataRecord,
+        "market_stat": MarketDataRecord,
+        "board_rank": MarketDataRecord,
+        "fund_flow": MarketDataRecord,
+        "stock_changes": MarketDataRecord,
+        "rank": MarketDataRecord,
+        # Search
+        "wencai": SearchRecord,
+        "screening": SearchRecord,
+        "suggest": SearchRecord,
+        "index_constituents": SearchRecord,
+        "industry_board": MarketDataRecord,
+        "board_list": MarketDataRecord,
+        "board_member": MarketDataRecord,
+        # Macro
+        "fx_rates": MacroRecord,
+        "global_quotes": MacroRecord,
+    }
+
+
+_DOMAIN_RECORD_CACHE: dict[str, type] | None = None
+
+
+def record_type_for(capability: str) -> type | None:
+    """返回 capability 对应的 Domain Record 类型（未注册返回 None）。"""
+    global _DOMAIN_RECORD_CACHE
+    if _DOMAIN_RECORD_CACHE is None:
+        _DOMAIN_RECORD_CACHE = _domain_record_cls()
+    return _DOMAIN_RECORD_CACHE.get(str(capability).strip().lower())
+
+
+def records_from_data(capability: str, data: Any) -> list[Any]:
+    """把 Typed Query 执行结果归一化为 Domain Record 列表。
+
+    - dict / list[dict] 业务结果 -> Record 列表
+    - 已是 Record -> 原样
+    - capability 未注册 Domain Record -> 返回原始数据（list 包装）
+    """
+    record_cls = record_type_for(capability)
+    if record_cls is None:
+        return [data] if not isinstance(data, list) else list(data)
+    from .domain.records import normalize_to_records
+
+    return normalize_to_records(data, record_cls)
+
+
+def records_from_response(query: CapabilityQuery, response: Any) -> list[Any]:
+    """从一次 Typed Query 的 Runtime 响应提取类型化 Domain Record 列表。
+
+    ``response`` 需具备 ``success`` 与 ``data`` 属性（如
+    :class:`tstdx.runtime.QueryResponse`）。失败响应返回空列表。
+    """
+    if response is None or not getattr(response, "success", False):
+        return []
+    return records_from_data(query.capability, getattr(response, "data", None))
 
 
 @dataclass(frozen=True, slots=True)
