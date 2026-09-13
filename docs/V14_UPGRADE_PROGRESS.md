@@ -1,7 +1,7 @@
 # tstdx v14 深度升级进度
 
-> 更新: 2026-09-13
-> 说明: 已合并 PR #7 (v14-runtime-phase1) 与 PR #6 的独立工程原语提取。
+> 更新: 2026-09-14
+> 说明: 已合并 PR #7 (v14-runtime-phase1)、PR #6 的独立工程原语提取；已完成 Typed Capability 扩展与 Domain Model Phase 2。
 
 ## 目标
 
@@ -62,6 +62,39 @@ Typed Query
 - FuturesKlineQuery / NewsQuery / ResearchReportQuery / F10Query
 
 （扩展类在 main 的 `tstdx/typed_query.py`，共 15 个类）
+
+### Typed Capability 扩展（2026-09-14 完成）
+
+按 9 大领域补齐 **49 个** Typed Query 契约，总数 11 → 60：
+
+- **Financial (10)**: financial_abstract / dividend_history / stock_valuation /
+  holder_changes / holder_num / free_holders / capital_changes /
+  corporate_action / announcements / ipo_review
+- **Fund (7+2)**: fund_base_info(_multi) / fund_manager / fund_asset_allocation /
+  fund_period_change / fund_industry_distribution / fund_public_dates
+- **Bond (7+1)**: bond_base_info / all_base_info / realtime / trades /
+  today_bill / history_bill / convertible_bond
+- **Futures (3+1)**: futures_base_info / realtime / trades
+- **Options (2+1)**: options_list / trends
+- **Research (1+1)**: research_visits
+- **MarketData (10)**: hot_rank / limit_pool / northbound / margin / longhu /
+  market_stat / board_rank / fund_flow / stock_changes / rank
+- **Search (7)**: wencai / screening / suggest / index_constituents /
+  industry_board / board_list / board_member
+- **Macro (2)**: fx_rates / global_quotes
+
+要求：每个能力必须通过 QueryPlanner 编译 + request_from_typed 适配 +
+Runtime 语义执行（含语义缓存身份区分）。必填业务字段 fail-closed 校验。
+
+### Domain Model（2026-09-14 完成）
+
+`tstdx/domain/records.py` 提供 9 个类型化 Domain Record 族：
+
+- FinancialRecord / FundRecord / BondRecord / NewsRecord / ResearchRecord /
+  OptionRecord / MarketDataRecord / SearchRecord / MacroRecord
+- `to_dict` / `from_dict` 无损往返；None 字段剥离（list[dict] 兼容）
+- `typed_query.records_from_response(query, response)` 把执行结果归一化为
+  Domain Record
 
 ## 当前优化方向
 
