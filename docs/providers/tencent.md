@@ -1,0 +1,112 @@
+# Tencent Provider 接口与 Channel 契约
+
+> Provider ID: `tencent`  
+> API compatibility selector: `source="tencent"`  
+> Role: `auxiliary_live`
+
+## 1. 定位
+
+腾讯是独立辅助 Provider，不是 TDX fallback。用户选择腾讯时，仅允许腾讯内部 endpoint/session 容错；腾讯失败直接返回 Provider 不可用语义，不得切新浪、东财或 TDX。
+
+## 2. Channel
+
+### quote
+
+Markets：`cn_a / hk / us`（以 adapter conformance 为准）。
+
+```python
+md.tencent.quotes(symbols, market="cn_a")
+md.tencent.quotes(symbols, market="hk")
+md.tencent.quotes(symbols, market="us")
+```
+
+### kline
+
+```python
+md.tencent.kline(symbol, period="day", count=320)
+```
+
+### minute_kline
+
+```python
+md.tencent.minute_kline(symbol, period="1m|5m|15m|30m|60m")
+```
+
+不支持的 Market 必须 `CapabilityUnsupported`，不得改去其它 Provider。
+
+### minute
+
+```python
+md.tencent.minute(symbol)
+```
+
+### ticks
+
+```python
+md.tencent.ticks(symbol)
+```
+
+### global
+
+```python
+md.tencent.global_quotes(...)
+```
+
+### market_stat
+
+```python
+md.tencent.market_stat(...)
+```
+
+### board_rank
+
+```python
+md.tencent.board_rank(...)
+```
+
+## 3. Unified API
+
+```python
+md.quotes(symbols, provider="tencent")
+md.bars(symbol, provider="tencent")
+```
+
+兼容：`source="tencent"`。
+
+## 4. 单位契约
+
+Adapter 必须在 canonical model 前完成：
+
+```text
+price  -> 元
+volume -> 股
+amount -> 元
+```
+
+Provider-specific raw model 可保留腾讯原始手/万元等字段，但必须显式标 raw。
+
+## 5. Freshness
+
+每个 live Channel 必须独立定义 freshness evidence。无法证明 fresh 时返回 FreshnessViolation/FreshnessUnverified，不得返回旧缓存顶替。
+
+## 6. Endpoint 容错
+
+只允许腾讯同一 Channel 内的等价 endpoint/CDN failover。
+
+## 7. Errors
+
+现有 `SourceUnavailable(E7050)` 继续使用，context 写：
+
+```json
+{"provider":"tencent","channel":"quote","capability":"quotes"}
+```
+
+其它：CapabilityUnsupported / FreshnessViolation / DataIntegrityError / RateLimited / ProviderRejected。
+
+## 8. Provider-specific 数据
+
+`global / market_stat / board_rank` 等保留 Tencent-specific schema，不强制塞入 Quote.extra。
+
+## 9. Conformance
+
+验证 Provider identity、Market scope、单位、freshness、rate/batch limit、session reuse、no cross-provider attempts。
