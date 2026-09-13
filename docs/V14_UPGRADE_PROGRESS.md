@@ -1,5 +1,8 @@
 # tstdx v14 深度升级进度
 
+> 更新: 2026-09-13
+> 说明: 已合并 PR #7 (v14-runtime-phase1) 与 PR #6 的独立工程原语提取。
+
 ## 目标
 
 按照 `REFACTOR_PLAN_v14_FULL_UPGRADE.md`，继续把 v13 Provider-first Runtime 升级为完整领域化 Runtime。
@@ -26,10 +29,23 @@ Typed Query
 - DirectBinding
 - Capability Catalog
 - Provenance
-- ErrorEnvelope
-- Semantic Cache
-- SingleFlight
-- Negative Cache
+- ErrorEnvelope（`tstdx.error_envelope`，自 PR #6 提取）
+- Semantic Cache（L1: `tstdx.cache_semantic`）
+- SingleFlight（`tstdx.batch.SingleFlight`，自 PR #6 提取）
+- Negative Cache（`tstdx.batch.NegativeCache`，自 PR #6 提取）
+- BatchSpec / BatchItem / BatchResult（自 PR #6 提取）
+- PersistentSemanticCache L2（`tstdx.cache_persistent`，自 PR #6 提取）
+- StreamSpec / StreamPlanner（`tstdx.stream_contract`，自 PR #6 提取）
+
+### v14 Runtime 内核（PR #7 已合并）
+
+已建立：
+
+- `tstdx.runtime/` 包：`Runtime` / `QueryRequest` / `QueryResponse` / `create_runtime` / `request_from_typed`
+- `tstdx.execution/` 包：`ExecutionPlanner` / `ExecutionGraph` / `ExecutionNode` / `ExecutionPlan` / `SemanticExecutionAdapter`
+- `tstdx.provider/` 包：Provider 基础契约 / `ProviderRouter` / TDX / Local / Web 适配器
+- `tstdx.facade.runtime_adapter`：Facade → Runtime 兼容适配器
+- `tests/v14/`：5 个契约测试套件（bootstrap / execution / semantic / typed_query / facade adapter）
 
 ### Typed Query 第一阶段
 
@@ -42,6 +58,10 @@ Typed Query
 - FundRankQuery
 - OptionSnapshotQuery
 - TypedQueryResult
+- IncomeStatementQuery / CashFlowQuery / FundHoldingsQuery / BondKlineQuery
+- FuturesKlineQuery / NewsQuery / ResearchReportQuery / F10Query
+
+（扩展类在 main 的 `tstdx/typed_query.py`，共 15 个类）
 
 ## 当前优化方向
 
