@@ -244,6 +244,86 @@ class TestDomainQueryExecution:
         assert response.metadata["provider"] == "tencent"
         assert response.data == {"kind": "global_quotes"}
 
+    def test_execute_typed_convertible_bond_routes_to_jsl(self) -> None:
+        runtime = Runtime(provider_order=("jsl",))
+        runtime.register_provider(_new_web_provider("jsl", _JslSource()))
+
+        response = runtime.execute_typed(ConvertibleBondQuery(symbol="sh113001"))
+
+        assert response.success is True
+        assert response.metadata["provider"] == "jsl"
+        assert response.metadata["channel"] == "bond"
+        assert response.data == {"kind": "convertible_bond", "symbol": "sh113001"}
+
+    def test_execute_typed_financial_queries_route_by_registry(self) -> None:
+        """财务类查询按注册表路由到各自的实际通道。"""
+        from tstdx.provider import TdxProvider
+
+        runtime = Runtime(provider_order=("eastmoney", "tdx"))
+        runtime.register_provider(_new_web_provider("eastmoney", _EaseSource()))
+        runtime.register_provider(TdxProvider(_TdxFinanceSource()))
+
+        responses = [
+            runtime.execute_typed(FinancialAbstractQuery(symbol="600519.SH")),
+            runtime.execute_typed(DividendHistoryQuery(symbol="600519.SH")),
+            runtime.execute_typed(StockValuationQuery(symbol="600519.SH")),
+            runtime.execute_typed(HolderChangesQuery(symbol="600519.SH")),
+            runtime.execute_typed(CapitalChangesQuery(symbol="600519.SH")),
+            runtime.execute_typed(CorporateActionQuery(symbol="600519.SH")),
+        ]
+
+        assert all(response.success for response in responses)
+        channel_map = {
+            response.metadata["provenance"]["capability"]: response.metadata["channel"]
+            for response in responses
+        }
+        # datacenter 族（eastmoney）
+        assert channel_map["financial_abstract"] == "datacenter"
+        assert channel_map["dividend_history"] == "datacenter"
+        assert channel_map["stock_valuation"] == "datacenter"
+        assert channel_map["holder_changes"] == "datacenter"
+        # 非 datacenter 族按注册表真实通道
+        assert channel_map["capital_changes"] == "quotation"  # tdx
+        assert channel_map["corporate_action"] == "corporate"  # eastmoney
+
+    def test_fund_domain_cache_identity_distinguishes_codes(self) -> None:
+        from tstdx.cache_semantic import SemanticResultCache
+
+        source = _EaseSource()
+        runtime = Runtime(
+            provider_order=("eastmoney",),
+            semantic_cache=SemanticResultCache(tier="l1"),
+            default_cache_ttl=60.0,
+        )
+        runtime.register_provider(_new_web_provider("eastmoney", source))
+
+        first = runtime.execute_typed(FundManagerQuery(code="000001"))
+        cached = runtime.execute_typed(FundManagerQuery(code="000001"))
+        other = runtime.execute_typed(FundManagerQuery(code="000002"))
+
+        assert source.calls == 2  # 第二个命中缓存
+        assert first.success is True and cached.success is True
+        assert cached.metadata["provenance"]["cache_tier"] == "l1"
+        assert cached.metadata["query_fingerprint"] == first.metadata["query_fingerprint"]
+        assert other.metadata["query_fingerprint"] != first.metadata["query_fingerprint"]
+
+    def test_execute_typed_market_data_routes_correct_channel(self) -> None:
+        runtime = Runtime(provider_order=("eastmoney", "tencent"))
+        runtime.register_provider(_new_web_provider("eastmoney", _EaseSource()))
+        runtime.register_provider(
+            _new_web_provider("tencent", _TencentMarketSource())
+        )
+
+        hot = runtime.execute_typed(HotRankQuery())
+        board = runtime.execute_typed(BoardRankQuery())
+
+        assert hot.success is True
+        assert hot.metadata["provider"] == "eastmoney"
+        assert hot.metadata["channel"] == "hot_rank"
+        assert board.success is True
+        assert board.metadata["provider"] == "tencent"
+        assert board.metadata["channel"] == "board_rank"
+
 
 def _minimal_instance(cls: type) -> object:
     """为带必填字段的领域查询构造最小合法实例。"""
@@ -291,7 +371,14 @@ class _FxSource:
 
 
 class _EaseSource:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def _count(self) -> None:
+        self.calls += 1
+
     def fund_manager(self, code: str = "", **kwargs):
+        self._count()
         return {"kind": "fund_manager", "code": code, **kwargs}
 
     def fund_base_info(self, code: str = "", **kwargs):
@@ -335,6 +422,12 @@ class _EaseSource:
 
     def ipo_review(self, symbol: str = "", **kwargs):
         return {"kind": "ipo_review", "symbol": symbol, **kwargs}
+
+    def capital_changes(self, symbol: str = "", **kwargs):
+        return {"kind": "capital_changes", "symbol": symbol, **kwargs}
+
+    def corporate_action(self, symbol: str = "", **kwargs):
+        return {"kind": "corporate_action", "symbol": symbol, **kwargs}
 
     def bond_base_info(self, symbol: str = "", **kwargs):
         return {"kind": "bond_base_info", "symbol": symbol, **kwargs}
@@ -398,6 +491,39 @@ class _EaseSource:
 
     def index_constituents(self, index_code: str = "", **kwargs):
         return {"kind": "index_constituents", "index_code": index_code, **kwargs}
+
+
+class _SinaMarketSource:
+    def board_rank(self, **kwargs):
+        return {"kind": "board_rank", **kwargs}
+
+    def board_list(self, **kwargs):
+        return {"kind": "board_list", **kwargs}
+
+    def industry_board(self, **kwargs):
+        return {"kind": "industry_board", **kwargs}
+
+    def suggest(self, keyword: str = "", **kwargs):
+        return {"kind": "suggest", "keyword": keyword, **kwargs}
+
+    def fund_flow(self, symbol: str = "", **kwargs):
+        return {"kind": "fund_flow", "symbol": symbol, **kwargs}
+
+
+class _TdxFinanceSource:
+    def capital_changes(self, symbol: str = "", **kwargs):
+        return {"kind": "capital_changes", "symbol": symbol, **kwargs}
+
+
+class _TencentMarketSource:
+    def board_rank(self, **kwargs):
+        return {"kind": "board_rank", **kwargs}
+
+    def global_quotes(self, **kwargs):
+        return {"kind": "global_quotes", **kwargs}
+
+    def market_stat(self, **kwargs):
+        return {"kind": "market_stat", **kwargs}
 
 
 class _TencentSource:
