@@ -51,6 +51,9 @@ def _domain_record_cls() -> dict[str, type]:
         "corporate_action": FinancialRecord,
         "announcements": FinancialRecord,
         "ipo_review": FinancialRecord,
+        "stock_base_info": FinancialRecord,
+        "stock_all_performance": FinancialRecord,
+        "stock_report_dates": FinancialRecord,
         # Fund
         "fund_rank": FundRecord,
         "fund_holdings": FundRecord,
@@ -106,6 +109,8 @@ def _domain_record_cls() -> dict[str, type]:
         # Macro
         "fx_rates": MacroRecord,
         "global_quotes": MacroRecord,
+        # F10 公司档案（含基本信息/股东/主营等 metrics）
+        "f10": FinancialRecord,
     }
 
 
@@ -302,6 +307,21 @@ class AnnouncementsQuery(FinancialQuery):
 @dataclass(frozen=True, slots=True)
 class IpoReviewQuery(FinancialQuery):
     capability: str = "ipo_review"
+
+
+@dataclass(frozen=True, slots=True)
+class StockBaseInfoQuery(FinancialQuery):
+    capability: str = "stock_base_info"
+
+
+@dataclass(frozen=True, slots=True)
+class StockAllPerformanceQuery(FinancialQuery):
+    capability: str = "stock_all_performance"
+
+
+@dataclass(frozen=True, slots=True)
+class StockReportDatesQuery(FinancialQuery):
+    capability: str = "stock_report_dates"
 
 
 @dataclass(frozen=True, slots=True)
