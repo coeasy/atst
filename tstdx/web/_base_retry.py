@@ -64,6 +64,14 @@ class _BaseRetryMixin:
     #: 给 2 倍容忍度，避免一次前端改版立即熔断）
     DEPRECATE_AFTER_PARSE_FAILURES = 40
 
+    # The mixin is composed into ``BaseWebSource``.  Declare the host-owned
+    # identity here so standalone mypy analysis does not mistake the valid
+    # composition contract for a missing attribute.
+    @property
+    def source_name(self) -> str:
+        """Identity supplied by the concrete ``BaseWebSource`` composition."""
+        raise NotImplementedError
+
     # -- 失败计数（分桶） --------------------------------------------------- #
     def _record_failure(self, *, parse: bool = False) -> None:
         """记录一次失败：传输桶（默认）或解析桶。"""

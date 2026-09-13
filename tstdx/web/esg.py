@@ -76,6 +76,7 @@ __all__ = [
     "SinaEsgHzSource",
 ]
 
+
 # --------------------------------------------------------------------------- #
 # 辅助
 # --------------------------------------------------------------------------- #
@@ -112,7 +113,9 @@ class _SinaJson(BaseWebSource):
     def _get_json(self, path_query: str, *, host: str | None = None) -> dict[str, Any]:
         """单主机 GET + JSON 解析（计入失败桶 / 下线检测）。"""
         self._check_deprecated()
-        hosts: Sequence[str] = self.HOSTS or (self.BASE,)
+        hosts: Sequence[str] = self.HOSTS
+        if not hosts:
+            raise WebSourceError(f"{self.JSON_LABEL} 未配置主机")
         target = host or hosts[0]
         url = f"{target}{path_query}"
         try:
@@ -167,10 +170,7 @@ class SinaEsgStockInfoSource(_SinaJson):
 
     def build_url(self, symbols: Sequence[str], **kwargs: Any) -> str:
         symbol = self._to_sina_symbol(symbols[0] if symbols else "")
-        return (
-            f"/api/openapi.php/EsgService.getEsgStockInfo"
-            f"?symbol={quote(symbol)}"
-        )
+        return f"/api/openapi.php/EsgService.getEsgStockInfo?symbol={quote(symbol)}"
 
     @staticmethod
     def _to_sina_symbol(symbol: str) -> str:
@@ -222,15 +222,17 @@ class SinaEsgStockInfoSource(_SinaJson):
                     s_score = score
                 elif "治理" in name:
                     g_score = score
-            agencies.append({
-                "agency_name": _s(item.get("agency_name")),
-                "esg_score": _s(item.get("esg_score") or item.get("esg_level")),
-                "esg_level": _s(item.get("esg_level")),
-                "esg_dt": _s(item.get("esg_dt")),
-                "e_score": e_score,
-                "s_score": s_score,
-                "g_score": g_score,
-            })
+            agencies.append(
+                {
+                    "agency_name": _s(item.get("agency_name")),
+                    "esg_score": _s(item.get("esg_score") or item.get("esg_level")),
+                    "esg_level": _s(item.get("esg_level")),
+                    "esg_dt": _s(item.get("esg_dt")),
+                    "e_score": e_score,
+                    "s_score": s_score,
+                    "g_score": g_score,
+                }
+            )
         return {"agencies": agencies}
 
 
@@ -250,10 +252,7 @@ class SinaEsgHistorySource(_SinaJson):
 
     def build_url(self, symbols: Sequence[str], **kwargs: Any) -> str:
         symbol = self._to_sina_symbol(symbols[0] if symbols else "")
-        return (
-            f"/cn/api/openapi.php/EsgService.getEsgStockHistory"
-            f"?symbol={quote(symbol)}"
-        )
+        return f"/cn/api/openapi.php/EsgService.getEsgStockHistory?symbol={quote(symbol)}"
 
     @staticmethod
     def _to_sina_symbol(symbol: str) -> str:
@@ -288,11 +287,13 @@ class SinaEsgHistorySource(_SinaJson):
         for item in data:
             if not isinstance(item, Mapping):
                 continue
-            agencies.append({
-                "agency_name": _s(item.get("agency_name")),
-                "type": _s(item.get("type")),
-                "history": dict(item.get("history") or {}),
-            })
+            agencies.append(
+                {
+                    "agency_name": _s(item.get("agency_name")),
+                    "type": _s(item.get("type")),
+                    "history": dict(item.get("history") or {}),
+                }
+            )
         return {"agencies": agencies}
 
 
@@ -343,15 +344,21 @@ class SinaEsgMsciSource(_SinaJson):
         self.rate_limiter.acquire(self.source_name)
         url = self.build_url([])
         payload = self._get_json(url)
-        return self._parse_ratings(payload, market=market, rating=rating,
-                                   sort_column=sort_column, sort_order=sort_order)
+        return self._parse_ratings(
+            payload, market=market, rating=rating, sort_column=sort_column, sort_order=sort_order
+        )
 
     def parse(self, text: str, symbols: Sequence[str], **kwargs: Any) -> list[Any]:
         return []
 
     def _parse_ratings(
-        self, payload: Any, *, market: str = "", rating: str = "",
-        sort_column: str = "esg_rating", sort_order: str = "desc",
+        self,
+        payload: Any,
+        *,
+        market: str = "",
+        rating: str = "",
+        sort_column: str = "esg_rating",
+        sort_order: str = "desc",
     ) -> dict[str, Any]:
         result = payload.get("result") or {}
         data = result.get("data") or {}
@@ -378,11 +385,13 @@ class SinaEsgMsciSource(_SinaJson):
             ratings.append(row)
         # 排序
         reverse = sort_order == "desc"
+
         def _sort_key(r: dict[str, Any]) -> Any:
             val = r.get(sort_column)
             if val is None:
                 return (1, "") if isinstance(r.get(sort_column), str) else (1, 0)
             return (0, val)
+
         ratings.sort(key=_sort_key, reverse=reverse)
         return {"total": total, "ratings": ratings}
 
@@ -435,15 +444,21 @@ class SinaEsgHzSource(_SinaJson):
         self.rate_limiter.acquire(self.source_name)
         url = self.build_url([])
         payload = self._get_json(url)
-        return self._parse_ratings(payload, market=market, grade=grade,
-                                   sort_column=sort_column, sort_order=sort_order)
+        return self._parse_ratings(
+            payload, market=market, grade=grade, sort_column=sort_column, sort_order=sort_order
+        )
 
     def parse(self, text: str, symbols: Sequence[str], **kwargs: Any) -> list[Any]:
         return []
 
     def _parse_ratings(
-        self, payload: Any, *, market: str = "", grade: str = "",
-        sort_column: str = "esg_score", sort_order: str = "desc",
+        self,
+        payload: Any,
+        *,
+        market: str = "",
+        grade: str = "",
+        sort_column: str = "esg_score",
+        sort_order: str = "desc",
     ) -> dict[str, Any]:
         result = payload.get("result") or {}
         data = result.get("data") or {}
@@ -473,10 +488,12 @@ class SinaEsgHzSource(_SinaJson):
                 continue
             ratings.append(row)
         reverse = sort_order == "desc"
+
         def _sort_key(r: dict[str, Any]) -> Any:
             val = r.get(sort_column)
             if val is None:
                 return (1, 0)
             return (0, val)
+
         ratings.sort(key=_sort_key, reverse=reverse)
         return {"total": total, "ratings": ratings}

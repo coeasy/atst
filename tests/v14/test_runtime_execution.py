@@ -67,9 +67,7 @@ def test_runtime_honors_explicit_provider() -> None:
 
     assert response.success is True
     assert response.metadata["provider"] == "good"
-    assert response.metadata["provider_attempts"] == [
-        {"provider": "good", "status": "selected"}
-    ]
+    assert response.metadata["provider_attempts"] == [{"provider": "good", "status": "selected"}]
 
 
 def test_runtime_preserves_compatibility_handlers() -> None:

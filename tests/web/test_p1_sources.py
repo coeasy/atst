@@ -14,13 +14,13 @@ from typing import Any
 import pytest
 
 from tstdx.web.base import HttpResponse
+from tstdx.web.chip import EastmoneyChipDistributionSource
 from tstdx.web.esg import (
+    SinaEsgHistorySource,
     SinaEsgHzSource,
     SinaEsgMsciSource,
-    SinaEsgHistorySource,
     SinaEsgStockInfoSource,
 )
-from tstdx.web.chip import EastmoneyChipDistributionSource
 
 
 # --------------------------------------------------------------------------- #
@@ -41,9 +41,7 @@ class FakeHttpClient:
                 return HttpResponse(
                     status=200, body=body, headers={"Content-Type": "application/json"}
                 )
-        return HttpResponse(
-            status=404, body='{"error":"not found"}', headers={}
-        )
+        return HttpResponse(status=404, body='{"error":"not found"}', headers={})
 
     def close(self) -> None:
         pass
@@ -67,7 +65,12 @@ ESG_STOCK_INFO = {
                     "esg_dt": "2026-06-22",
                     "detail": [
                         {"name": "环境总评", "date": "2026-06-22", "score": "7.48", "detail": []},
-                        {"name": "社会责任总评", "date": "2026-06-22", "score": "6.01", "detail": []},
+                        {
+                            "name": "社会责任总评",
+                            "date": "2026-06-22",
+                            "score": "6.01",
+                            "detail": [],
+                        },
                         {"name": "治理总评", "date": "2026-06-22", "score": "4.4", "detail": []},
                     ],
                 },
@@ -119,7 +122,12 @@ ESG_HISTORY = {
             {
                 "agency": "agency10",
                 "agency_name": "秩鼎",
-                "history": {"2025Q4": "86.25", "2026Q1": "86.97", "2026Q2": "88.4", "2026Q3": "84.51"},
+                "history": {
+                    "2025Q4": "86.25",
+                    "2026Q1": "86.97",
+                    "2026Q2": "88.4",
+                    "2026Q3": "84.51",
+                },
                 "keyList": ["AAA", "AA", "A", "BBB", "BB", "B", "CCC", "CC", "C"],
                 "type": "num",
             },
@@ -133,16 +141,51 @@ ESG_MSCI = {
         "data": {
             "total": "5216",
             "data": [
-                {"symbol": "000001.SZ", "quarter_date": "2026-07-08", "market": "CN",
-                 "esg_rating": "AAA", "env_score": "6.3", "social_score": "6.0", "governance_score": "5.4"},
-                {"symbol": "000513.SZ", "quarter_date": "2025-04-08", "market": "CN",
-                 "esg_rating": "AAA", "env_score": "7.0", "social_score": "6.4", "governance_score": "6.3"},
-                {"symbol": "00066.HK", "quarter_date": "2026-07-01", "market": "HK",
-                 "esg_rating": "AAA", "env_score": "7.4", "social_score": "5.4", "governance_score": "6.1"},
-                {"symbol": "600519.SH", "quarter_date": "2026-06-22", "market": "CN",
-                 "esg_rating": "A", "env_score": "7.48", "social_score": "6.01", "governance_score": "4.4"},
-                {"symbol": "601318.SH", "quarter_date": "2026-06-22", "market": "CN",
-                 "esg_rating": "BBB", "env_score": "4.2", "social_score": "5.8", "governance_score": "5.0"},
+                {
+                    "symbol": "000001.SZ",
+                    "quarter_date": "2026-07-08",
+                    "market": "CN",
+                    "esg_rating": "AAA",
+                    "env_score": "6.3",
+                    "social_score": "6.0",
+                    "governance_score": "5.4",
+                },
+                {
+                    "symbol": "000513.SZ",
+                    "quarter_date": "2025-04-08",
+                    "market": "CN",
+                    "esg_rating": "AAA",
+                    "env_score": "7.0",
+                    "social_score": "6.4",
+                    "governance_score": "6.3",
+                },
+                {
+                    "symbol": "00066.HK",
+                    "quarter_date": "2026-07-01",
+                    "market": "HK",
+                    "esg_rating": "AAA",
+                    "env_score": "7.4",
+                    "social_score": "5.4",
+                    "governance_score": "6.1",
+                },
+                {
+                    "symbol": "600519.SH",
+                    "quarter_date": "2026-06-22",
+                    "market": "CN",
+                    "esg_rating": "A",
+                    "env_score": "7.48",
+                    "social_score": "6.01",
+                    "governance_score": "4.4",
+                },
+                {
+                    "symbol": "601318.SH",
+                    "quarter_date": "2026-06-22",
+                    "market": "CN",
+                    "esg_rating": "BBB",
+                    "env_score": "4.2",
+                    "social_score": "5.8",
+                    "governance_score": "5.0",
+                },
             ],
         },
     }
@@ -154,26 +197,62 @@ ESG_HZ = {
         "data": {
             "total": "6355",
             "data": [
-                {"date": "2026-04-30", "symbol": "603605.SH", "market": "cn", "name": "珠利雅",
-                 "esg_score": "100", "esg_score_grade": "AAA",
-                 "e_score": "89.46", "e_score_grade": "A",
-                 "s_score": "88.5", "s_score_grade": "A",
-                 "g_score": "92.17", "g_score_grade": "AA"},
-                {"date": "2026-04-30", "symbol": "600522.SH", "market": "cn", "name": "中天科技",
-                 "esg_score": "100", "esg_score_grade": "AAA",
-                 "e_score": "86.25", "e_score_grade": "A",
-                 "s_score": "93.03", "s_score_grade": "AA",
-                 "g_score": "92.78", "g_score_grade": "AA"},
-                {"date": "2026-04-30", "symbol": "300059.SZ", "market": "cn", "name": "东方财富",
-                 "esg_score": "100", "esg_score_grade": "AAA",
-                 "e_score": "80.5", "e_score_grade": "BBB",
-                 "s_score": "94.36", "s_score_grade": "AA",
-                 "g_score": "89.78", "g_score_grade": "A"},
-                {"date": "2026-04-30", "symbol": "002709.SZ", "market": "cn", "name": "天赐材料",
-                 "esg_score": "85", "esg_score_grade": "AA",
-                 "e_score": "75.2", "e_score_grade": "B",
-                 "s_score": "88.1", "s_score_grade": "AA",
-                 "g_score": "89.0", "g_score_grade": "A"},
+                {
+                    "date": "2026-04-30",
+                    "symbol": "603605.SH",
+                    "market": "cn",
+                    "name": "珠利雅",
+                    "esg_score": "100",
+                    "esg_score_grade": "AAA",
+                    "e_score": "89.46",
+                    "e_score_grade": "A",
+                    "s_score": "88.5",
+                    "s_score_grade": "A",
+                    "g_score": "92.17",
+                    "g_score_grade": "AA",
+                },
+                {
+                    "date": "2026-04-30",
+                    "symbol": "600522.SH",
+                    "market": "cn",
+                    "name": "中天科技",
+                    "esg_score": "100",
+                    "esg_score_grade": "AAA",
+                    "e_score": "86.25",
+                    "e_score_grade": "A",
+                    "s_score": "93.03",
+                    "s_score_grade": "AA",
+                    "g_score": "92.78",
+                    "g_score_grade": "AA",
+                },
+                {
+                    "date": "2026-04-30",
+                    "symbol": "300059.SZ",
+                    "market": "cn",
+                    "name": "东方财富",
+                    "esg_score": "100",
+                    "esg_score_grade": "AAA",
+                    "e_score": "80.5",
+                    "e_score_grade": "BBB",
+                    "s_score": "94.36",
+                    "s_score_grade": "AA",
+                    "g_score": "89.78",
+                    "g_score_grade": "A",
+                },
+                {
+                    "date": "2026-04-30",
+                    "symbol": "002709.SZ",
+                    "market": "cn",
+                    "name": "天赐材料",
+                    "esg_score": "85",
+                    "esg_score_grade": "AA",
+                    "e_score": "75.2",
+                    "e_score_grade": "B",
+                    "s_score": "88.1",
+                    "s_score_grade": "AA",
+                    "g_score": "89.0",
+                    "g_score_grade": "A",
+                },
             ],
         },
     }
@@ -246,7 +325,9 @@ class TestEsgStockInfo:
         assert sp["e_score"] is None  # empty detail
 
     def test_none_payload(self) -> None:
-        client = FakeHttpClient({"EsgService.getEsgStockInfo": {"result": {"status": {"code": 0}, "data": {}}}})
+        client = FakeHttpClient(
+            {"EsgService.getEsgStockInfo": {"result": {"status": {"code": 0}, "data": {}}}}
+        )
         s = SinaEsgStockInfoSource(client=client)
         s.rate_limiter = type("RL", (), {"acquire": staticmethod(lambda *a, **k: None)})()
         assert s.fetch_stock_info("600519") is None

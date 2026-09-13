@@ -47,7 +47,11 @@ class SemanticExecutionAdapter:
 
     def can_execute(self, request: Any, providers: Sequence[str]) -> bool:
         operation = str(getattr(request, "operation", "") or "").strip().lower()
-        if not operation or not providers or not all(self._known_provider(item) for item in providers):
+        if (
+            not operation
+            or not providers
+            or not all(self._known_provider(item) for item in providers)
+        ):
             return False
         if operation in _CORE_CAPABILITIES:
             return True

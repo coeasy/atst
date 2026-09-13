@@ -210,9 +210,7 @@ class FundManagerSource(BaseWebSource):
         return out
 
     # -- 经理业绩走势 ------------------------------------------------------- #
-    def fetch_yield(
-        self, mgrid: str, *, range_: str = "y"
-    ) -> list[dict[str, Any]]:
+    def fetch_yield(self, mgrid: str, *, range_: str = "y") -> list[dict[str, Any]]:
         """基金经理业绩走势（任职以来累计收益 vs 同类 vs 指数）。
 
         Parameters
@@ -269,12 +267,19 @@ class FundManagerSource(BaseWebSource):
         pos = _m.mob_rows(d, "Pos")
         subs = _m.mob_rows(d, "SubStyle")
         style_raw = d.get("Style")
-        style = _m.apply_fields(style_raw, {
-            "fund_scale": ("FSCALE", "f"),
-            "fund_style": ("FSTYLE", "s"),
-            "stock_status": ("GZQK", "s"),
-            "yield_status": ("YLQK", "s"),
-        }) if isinstance(style_raw, dict) else {}
+        style = (
+            _m.apply_fields(
+                style_raw,
+                {
+                    "fund_scale": ("FSCALE", "f"),
+                    "fund_style": ("FSTYLE", "s"),
+                    "stock_status": ("GZQK", "s"),
+                    "yield_status": ("YLQK", "s"),
+                },
+            )
+            if isinstance(style_raw, dict)
+            else {}
+        )
         return {
             "mgrid": mgrid,
             "pos_date": _m.s(d.get("PosDate")),

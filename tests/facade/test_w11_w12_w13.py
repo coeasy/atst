@@ -413,7 +413,11 @@ class TestW13BarsSemantics:
 
     def test_web_skip_warning_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         api = UnifiedQuoteAPI()
-        with caplog.at_level(logging.WARNING, logger="tstdx.facade"):
+        # This contract only verifies that ``start`` removes the web route.
+        # Capture the route map instead of opening a real TDX connection; the
+        # test suite must remain deterministic in offline CI.
+        _capture_try_routes(api)
+        with pytest.raises(_Sentinel), caplog.at_level(logging.WARNING, logger="tstdx.facade"):
             api.bars("sh600519", start=5)
         assert any("web" in r.getMessage() and "start" in r.getMessage() for r in caplog.records)
 

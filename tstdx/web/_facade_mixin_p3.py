@@ -49,7 +49,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Any
 
 from ._facade_mixin_market import _shared_http

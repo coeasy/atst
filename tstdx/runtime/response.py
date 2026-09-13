@@ -15,9 +15,9 @@ class QueryResponse:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def ok(cls, data: Any, *, code: str = "", **metadata: Any) -> "QueryResponse":
+    def ok(cls, data: Any, *, code: str = "", **metadata: Any) -> QueryResponse:
         return cls(True, data=data, code=code, metadata=metadata)
 
     @classmethod
-    def fail(cls, error: str, *, code: str = "", **metadata: Any) -> "QueryResponse":
+    def fail(cls, error: str, *, code: str = "", **metadata: Any) -> QueryResponse:
         return cls(False, error=error, code=code, metadata=metadata)

@@ -95,6 +95,15 @@ class _ClientMixin:
     :meth:`_set_last_errors` 钩子（sync 加锁、async 直赋——镜像既有差异）。
     """
 
+    # The sync/async concrete clients provide these members.  They are
+    # declared on the shared template so mypy can validate the trampoline
+    # without weakening the concrete client contracts.
+    timeout: float
+    family: str
+    _errors_lock: Any
+    last_errors: list[tuple[str, BaseException]]
+    _req: Any
+
     # ------------------------------------------------------------------ #
     # trampoline 驱动器
     # ------------------------------------------------------------------ #
@@ -105,7 +114,7 @@ class _ClientMixin:
             while True:
                 try:
                     if op[0] == "req":
-                        out = self._req(op[1], op[2], **op[3])  # type: ignore[attr-defined]
+                        out = self._req(op[1], op[2], **op[3])
                     else:
                         _, name, args, kwargs = op
                         out = getattr(self, name)(*args, **kwargs)
@@ -123,7 +132,7 @@ class _ClientMixin:
             while True:
                 try:
                     if op[0] == "req":
-                        out = await self._req(op[1], op[2], **op[3])  # type: ignore[attr-defined]
+                        out = await self._req(op[1], op[2], **op[3])
                     else:
                         _, name, args, kwargs = op
                         out = await getattr(self, name)(*args, **kwargs)
@@ -136,8 +145,8 @@ class _ClientMixin:
 
     def _set_last_errors(self, errors: list[tuple[str, BaseException]]) -> None:
         """``last_errors`` 收尾钩子（sync：与并发路径互斥加锁，C3）。"""
-        with self._errors_lock:  # type: ignore[attr-defined]
-            self.last_errors = errors  # type: ignore[attr-defined]
+        with self._errors_lock:
+            self.last_errors = errors
 
     # ------------------------------------------------------------------ #
     # K 线 / 分钟线
@@ -255,7 +264,7 @@ class _ClientMixin:
     # ------------------------------------------------------------------ #
     # 元数据类
     # ------------------------------------------------------------------ #
-    def _t_security_count(self, market: Any) -> int:
+    def _t_security_count(self, market: Any) -> int:  # type: ignore[misc]
         """某市场的证券总数（命令 ``0x044E``）。"""
         if isinstance(market, str):
             market = _PREFIX_MARKET.get(market.lower(), 0)
@@ -266,7 +275,7 @@ class _ClientMixin:
             raise ParseError("0x044E 无解析结果", context={"market": market})
         return int(result.rows[0].get("count", 0))
 
-    def _t_capital_changes(self, symbol: str) -> list[CapitalChange]:
+    def _t_capital_changes(self, symbol: str) -> list[CapitalChange]:  # type: ignore[misc]
         """除权除息 / 股本变迁（命令 ``0x000F``）。"""
         mkt, code = split_symbol(symbol)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt)
@@ -274,7 +283,7 @@ class _ClientMixin:
         result = _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family)
         return [_row_to_capital(r) for r in result.rows]
 
-    def _t_finance_info(self, symbol: str) -> dict[str, Any]:
+    def _t_finance_info(self, symbol: str) -> dict[str, Any]:  # type: ignore[misc]
         """财务基础信息（命令 ``0x0010``，F1 语义化字段）。"""
         mkt, code = split_symbol(symbol)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt)
@@ -289,7 +298,7 @@ class _ClientMixin:
         out["values"] = values
         return out
 
-    def _t_minute_today(self, symbol: str) -> list[Any]:
+    def _t_minute_today(self, symbol: str) -> list[Any]:  # type: ignore[misc]
         """当日分时数据（命令 ``0x0537``）。"""
         mkt, code = split_symbol(symbol)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt) + b"\x00" * 4

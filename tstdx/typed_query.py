@@ -34,7 +34,9 @@ class CapabilityQuery:
         try:
             if self.provider:
                 return PROVIDERS.supports(self.provider, self.capability)
-            return any(PROVIDERS.supports(provider, self.capability) for provider in PROVIDERS.ids())
+            return any(
+                PROVIDERS.supports(provider, self.capability) for provider in PROVIDERS.ids()
+            )
         except ValidationError:
             return False
 

@@ -515,9 +515,7 @@ class AsyncConnectionPool:
         if should_drop:
             await self._drop(slot, expected=conn)
 
-    async def _drop(
-        self, slot: AsyncSlot, *, expected: AsyncTcpConnection | None = None
-    ) -> None:
+    async def _drop(self, slot: AsyncSlot, *, expected: AsyncTcpConnection | None = None) -> None:
         async with slot.lock:
             conn = slot.conn
             if conn is None or (expected is not None and conn is not expected):
@@ -688,9 +686,7 @@ class AsyncConnectionPool:
                         else:
                             old.retired = True
                             self._retired_slots.append(old)
-                            new_slots.append(
-                                AsyncSlot(host=host, index=i, generation=generation)
-                            )
+                            new_slots.append(AsyncSlot(host=host, index=i, generation=generation))
             new_keys = {s.key for s in new_slots}
             for old in self._slots:
                 if old.key in new_keys:

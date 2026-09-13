@@ -128,7 +128,7 @@ class QuerySpec:
         deadline_ms: int = 5000,
         schema_version: int = 1,
         options: Mapping[str, Any] | None = None,
-    ) -> "QuerySpec":
+    ) -> QuerySpec:
         symbol_tuple = (symbols,) if isinstance(symbols, str) else tuple(symbols)
         current = _parse_currentness(currentness)
         return cls(
@@ -154,12 +154,33 @@ class QuerySpec:
         value = json.loads(self.options_json or "{}")
         return dict(value) if isinstance(value, dict) else {}
 
-    def normalized(self, *, default_provider: str | None = None) -> "QuerySpec":
+    def normalized(self, *, default_provider: str | None = None) -> QuerySpec:
         cap = _norm_text(self.capability)
         if not cap:
             raise ValidationError("capability 不能为空")
 
-        symbols = tuple(normalize_symbol(item) for item in self.symbols)
+        # A-share/quote/bar capabilities use the canonical security-symbol
+        # engine.  Derivative identifiers are provider-native contracts (for
+        # example ``IF2509`` and Eastmoney option quote ids) and must remain
+        # opaque; forcing them through the A-share parser rejects valid
+        # canonical capabilities before Provider execution.
+        opaque_symbol_capabilities = frozenset(
+            {
+                "bond_kline",
+                "futures_kline",
+                "options_snapshot",
+                "options_kline",
+            }
+        )
+        if cap in opaque_symbol_capabilities:
+            symbols = tuple(str(item).strip() for item in self.symbols)
+            if any(not item for item in symbols):
+                raise ValidationError(
+                    f"{cap} 的 symbol 不能为空",
+                    context={"capability": cap},
+                )
+        else:
+            symbols = tuple(normalize_symbol(item) for item in self.symbols)
         if cap in {"quotes", "bars"} and not symbols:
             raise ValidationError(f"{cap} 至少需要一个 symbol", context={"capability": cap})
         if cap == "bars" and len(symbols) != 1:
@@ -237,7 +258,7 @@ class QueryFingerprint:
         }
 
     @classmethod
-    def from_normalized_spec(cls, spec: QuerySpec, *, channel: str) -> "QueryFingerprint":
+    def from_normalized_spec(cls, spec: QuerySpec, *, channel: str) -> QueryFingerprint:
         canonical = json.dumps(
             cls._payload(spec, channel=channel),
             ensure_ascii=False,
@@ -255,7 +276,7 @@ class QueryFingerprint:
         *,
         channel: str,
         default_provider: str | None = None,
-    ) -> "QueryFingerprint":
+    ) -> QueryFingerprint:
         return cls.from_normalized_spec(
             spec.normalized(default_provider=default_provider), channel=channel
         )

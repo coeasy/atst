@@ -526,9 +526,7 @@ class EastmoneyNoticeSource(_EastmoneyJson):
         if not symbols:
             return []
         # 必须拼上 BASE 的路径段（/api/security/ann）：``_get_json`` 仅补主机
-        url = _base_path(self.BASE) + self._path(
-            symbols, page=page, size=size, ann_type=ann_type
-        )
+        url = _base_path(self.BASE) + self._path(symbols, page=page, size=size, ann_type=ann_type)
         return self._parse_notices_payload(self._get_json(url))
 
     def parse_notices(self, text: str) -> list[dict[str, Any]]:
@@ -615,9 +613,7 @@ class EastmoneyResearchSource(_EastmoneyJson):
     ) -> list[dict[str, Any]]:
         """拉取研报列表；``symbol`` 为空表示全市场最新研报。"""
         # 必须拼上 BASE 的路径段（/report/list）：``_get_json`` 仅补主机
-        url = _base_path(self.BASE) + self._path(
-            symbol, page=page, size=size, begin=begin, end=end
-        )
+        url = _base_path(self.BASE) + self._path(symbol, page=page, size=size, begin=begin, end=end)
         return self._parse_reports_payload(self._get_json(url))
 
     def parse_reports(self, text: str) -> list[dict[str, Any]]:

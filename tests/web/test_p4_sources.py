@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from tstdx.web.base import HttpResponse
-from tstdx.web.efinance_options import EastmoneyOptionsSource, OPTIONS_MARKETS
+from tstdx.web.efinance_options import OPTIONS_MARKETS, EastmoneyOptionsSource
 
 pytestmark = [pytest.mark.unit]
 
@@ -214,9 +214,7 @@ OPTIONS_TRENDS_EMPTY = _j({"data": {"trends": []}})
 class TestOptionsContractList:
     def test_list_m11(self) -> None:
         """按市场段 m:11 筛选沪深300股指期权。"""
-        src = EastmoneyOptionsSource(
-            client=FakeHttpClient({"clist/get": OPTIONS_CLIST_M11})
-        )
+        src = EastmoneyOptionsSource(client=FakeHttpClient({"clist/get": OPTIONS_CLIST_M11}))
         rows = src.fetch_contract_list(market="11")
         assert len(rows) == 2
         assert rows[0]["quote_id"] == "11.IO2609-C-3900"
@@ -226,9 +224,7 @@ class TestOptionsContractList:
 
     def test_list_m10(self) -> None:
         """按市场段 m:10 筛选上证50ETF期权。"""
-        src = EastmoneyOptionsSource(
-            client=FakeHttpClient({"clist/get": OPTIONS_CLIST_M10})
-        )
+        src = EastmoneyOptionsSource(client=FakeHttpClient({"clist/get": OPTIONS_CLIST_M10}))
         rows = src.fetch_contract_list(market="10")
         assert len(rows) == 1
         assert rows[0]["quote_id"] == "10.10010971"
@@ -236,9 +232,7 @@ class TestOptionsContractList:
 
     def test_list_m12(self) -> None:
         """按市场段 m:12 筛选深证100ETF期权。"""
-        src = EastmoneyOptionsSource(
-            client=FakeHttpClient({"clist/get": OPTIONS_CLIST_M12})
-        )
+        src = EastmoneyOptionsSource(client=FakeHttpClient({"clist/get": OPTIONS_CLIST_M12}))
         rows = src.fetch_contract_list(market="12")
         assert len(rows) == 1
         assert rows[0]["quote_id"] == "12.90007051"
@@ -271,17 +265,13 @@ class TestOptionsContractList:
 
     def test_list_change_pct(self) -> None:
         """涨跌幅字段除以 100 后正确。"""
-        src = EastmoneyOptionsSource(
-            client=FakeHttpClient({"clist/get": OPTIONS_CLIST_M11})
-        )
+        src = EastmoneyOptionsSource(client=FakeHttpClient({"clist/get": OPTIONS_CLIST_M11}))
         rows = src.fetch_contract_list(market="11")
         assert rows[0]["change_pct"] == pytest.approx(0.0)
 
     def test_list_volume(self) -> None:
         """成交量字段为整数。"""
-        src = EastmoneyOptionsSource(
-            client=FakeHttpClient({"clist/get": OPTIONS_CLIST_M11})
-        )
+        src = EastmoneyOptionsSource(client=FakeHttpClient({"clist/get": OPTIONS_CLIST_M11}))
         rows = src.fetch_contract_list(market="11")
         assert isinstance(rows[0]["volume"], int)
         assert rows[0]["volume"] == 114
@@ -293,9 +283,7 @@ class TestOptionsContractList:
 class TestOptionsSnapshot:
     def test_snapshot_call(self) -> None:
         """认购期权快照（f303=1）。"""
-        src = EastmoneyOptionsSource(
-            client=FakeHttpClient({"stock/get": OPTIONS_SNAPSHOT_CALL})
-        )
+        src = EastmoneyOptionsSource(client=FakeHttpClient({"stock/get": OPTIONS_SNAPSHOT_CALL}))
         snap = src.fetch_snapshot("11.IO2609-C-3900")
         assert snap["quote_id"] == "11.IO2609-C-3900"
         assert snap["name"] == "沪深300购26年9月3900"
@@ -306,9 +294,7 @@ class TestOptionsSnapshot:
 
     def test_snapshot_put(self) -> None:
         """认沽期权快照（f303=2）。"""
-        src = EastmoneyOptionsSource(
-            client=FakeHttpClient({"stock/get": OPTIONS_SNAPSHOT_PUT})
-        )
+        src = EastmoneyOptionsSource(client=FakeHttpClient({"stock/get": OPTIONS_SNAPSHOT_PUT}))
         snap = src.fetch_snapshot("10.10010971")
         assert snap["option_type"] == 2
         assert snap["option_type_label"] == "认沽"
@@ -322,9 +308,7 @@ class TestOptionsSnapshot:
 
     def test_snapshot_fields(self) -> None:
         """快照包含扩展字段 f303-f310。"""
-        src = EastmoneyOptionsSource(
-            client=FakeHttpClient({"stock/get": OPTIONS_SNAPSHOT_CALL})
-        )
+        src = EastmoneyOptionsSource(client=FakeHttpClient({"stock/get": OPTIONS_SNAPSHOT_CALL}))
         snap = src.fetch_snapshot("11.IO2609-C-3900")
         assert "f303" in snap
         assert "f304" in snap
@@ -335,9 +319,7 @@ class TestOptionsSnapshot:
         """空快照抛出 SourceDeprecated。"""
         from tstdx.errors import SourceDeprecated
 
-        src = EastmoneyOptionsSource(
-            client=FakeHttpClient({"stock/get": _j({"data": {}})})
-        )
+        src = EastmoneyOptionsSource(client=FakeHttpClient({"stock/get": _j({"data": {}})}))
         with pytest.raises(SourceDeprecated):
             src.fetch_snapshot("11.IO2609-C-3900")
 
@@ -348,9 +330,7 @@ class TestOptionsSnapshot:
 class TestOptionsTrends:
     def test_trends_success(self) -> None:
         """分时数据正常返回。"""
-        src = EastmoneyOptionsSource(
-            client=FakeHttpClient({"trends2/get": OPTIONS_TRENDS_OK})
-        )
+        src = EastmoneyOptionsSource(client=FakeHttpClient({"trends2/get": OPTIONS_TRENDS_OK}))
         rows = src.fetch_trends("11.IO2609-C-3900")
         assert len(rows) == 2
         assert rows[0]["datetime"] == "2026-09-11 09:30"
@@ -360,9 +340,7 @@ class TestOptionsTrends:
 
     def test_trends_empty(self) -> None:
         """分时返回空列表。"""
-        src = EastmoneyOptionsSource(
-            client=FakeHttpClient({"trends2/get": OPTIONS_TRENDS_EMPTY})
-        )
+        src = EastmoneyOptionsSource(client=FakeHttpClient({"trends2/get": OPTIONS_TRENDS_EMPTY}))
         rows = src.fetch_trends("10.10010971")
         assert rows == []
 
@@ -382,9 +360,7 @@ class TestOptionsTrends:
 
     def test_trends_volume_int(self) -> None:
         """分时成交量为整数。"""
-        src = EastmoneyOptionsSource(
-            client=FakeHttpClient({"trends2/get": OPTIONS_TRENDS_OK})
-        )
+        src = EastmoneyOptionsSource(client=FakeHttpClient({"trends2/get": OPTIONS_TRENDS_OK}))
         rows = src.fetch_trends("11.IO2609-C-3900")
         assert isinstance(rows[0]["volume"], int)
 

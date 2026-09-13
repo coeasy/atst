@@ -47,6 +47,7 @@ class ExecutionPlanner:
         graph = ExecutionGraph()
         if self.router is None:
             return ExecutionPlan(operation=request.operation, graph=graph)
+        router = self.router
 
         explicit_provider = request.metadata.get("provider")
         requested_order = request.metadata.get("providers")
@@ -54,7 +55,7 @@ class ExecutionPlanner:
             explicit_provider=explicit_provider,
             requested_order=requested_order,
             provider_order=self.provider_order,
-            router=self.router,
+            router=router,
         )
         if not candidates:
             return ExecutionPlan(operation=request.operation, graph=graph)
@@ -69,16 +70,16 @@ class ExecutionPlanner:
             if self.semantic.can_execute(request, candidates):
                 name, result = self.semantic.execute(
                     request=request,
-                    router=self.router,
+                    router=router,
                     providers=candidates,
                     attempts=attempts,
                     requested_provider=caller_requested_provider,
                 )
             elif explicit_provider:
                 name = candidates[0]
-                result = self.router.query(name, request, attempts=attempts)
+                result = router.query(name, request, attempts=attempts)
             else:
-                name, result = self.router.query_first(request, candidates, attempts=attempts)
+                name, result = router.query_first(request, candidates, attempts=attempts)
 
             context.provider = name
             return result

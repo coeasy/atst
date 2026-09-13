@@ -18,12 +18,11 @@ from typing import Any
 import pytest
 
 from tstdx.errors import SourceDeprecated, WebSourceError
-from tstdx.web._facade_mixin_fundamental import FundamentalSessionMixin
 from tstdx.web.base import HttpResponse
 from tstdx.web.corporate import VALID_REPORTS
 from tstdx.web.fin_report import (
-    EastmoneyF10ReportSource,
     F10_REPORTS,
+    EastmoneyF10ReportSource,
     to_eastmoney_secucode,
 )
 from tstdx.web.governance import (
@@ -510,9 +509,7 @@ class TestBalanceSheet:
         assert rows[0]["minority_equity"] == pytest.approx(1.084275775486e10)
 
     def test_raw_passthrough(self) -> None:
-        rows = _f10(
-            RPT_F10_FINANCE_GBALANCE=BALANCE
-        ).fetch_balance_sheet("600519", raw=True)
+        rows = _f10(RPT_F10_FINANCE_GBALANCE=BALANCE).fetch_balance_sheet("600519", raw=True)
         assert rows[0]["raw"]["UNKNOWN_COL"] == "保留列"
         assert rows[0]["raw"]["TOTAL_ASSETS"] == pytest.approx(3.0905078456931e11)
 
@@ -572,9 +569,7 @@ class TestF10Errors:
 
     def test_non_json_raises_deprecated(self) -> None:
         """响应非 JSON（反爬页 / 结构变更）→ SourceDeprecated，触发库内下线检测。"""
-        src = EastmoneyF10ReportSource(
-            client=FakeHttpClient(GBALANCE=b"<html>anti-spider</html>")
-        )
+        src = EastmoneyF10ReportSource(client=FakeHttpClient(GBALANCE=b"<html>anti-spider</html>"))
         with pytest.raises(SourceDeprecated):
             src.fetch_balance_sheet("600519")
 
@@ -598,7 +593,9 @@ class TestF10Errors:
 # --------------------------------------------------------------------------- #
 class TestExecutiveHolds:
     def test_normalize(self) -> None:
-        src = EastmoneyExecutiveHoldSource(client=FakeHttpClient(RPT_EXECUTIVE_HOLD_DETAILS=EXEC_HOLD))
+        src = EastmoneyExecutiveHoldSource(
+            client=FakeHttpClient(RPT_EXECUTIVE_HOLD_DETAILS=EXEC_HOLD)
+        )
         rows = src.fetch_executive_holds("300750")
         assert len(rows) == 2
         r = rows[0]
@@ -646,9 +643,7 @@ class TestShareholderChanges:
 
 class TestOrgProfile:
     def test_single(self) -> None:
-        src = EastmoneyOrgProfileSource(
-            client=FakeHttpClient(RPT_F10_BASIC_ORGINFO=ORG_PROFILE)
-        )
+        src = EastmoneyOrgProfileSource(client=FakeHttpClient(RPT_F10_BASIC_ORGINFO=ORG_PROFILE))
         rec = src.fetch_org_profile("600519")
         assert rec is not None
         assert rec["code"] == "600519"
@@ -678,9 +673,7 @@ class TestOrgProfile:
                 "code": 0,
             }
         )
-        src = EastmoneyOrgProfileSource(
-            client=FakeHttpClient(RPT_F10_BASIC_ORGINFO=empty)
-        )
+        src = EastmoneyOrgProfileSource(client=FakeHttpClient(RPT_F10_BASIC_ORGINFO=empty))
         assert src.fetch_org_profile("600519") is None
 
     def test_batch(self) -> None:
@@ -702,9 +695,7 @@ class TestOrgProfile:
 # --------------------------------------------------------------------------- #
 class TestRatingForecast:
     def _src(self) -> EastmoneyRatingForecastSource:
-        return EastmoneyRatingForecastSource(
-            client=FakeHttpClient(RPT_WEB_RESPREDICT=RATING)
-        )
+        return EastmoneyRatingForecastSource(client=FakeHttpClient(RPT_WEB_RESPREDICT=RATING))
 
     def test_normalize(self) -> None:
         rows = self._src().fetch_rating_forecast("600519")
@@ -727,7 +718,7 @@ class TestRatingForecast:
         assert r["year_mark1"] == "A"
         assert r["year_mark2"] == "E"
         # URL 排序列应为 RATING_ORG_NUM（非 PUBLISH_DATE）
-        url = self._src().client.calls[0] if self._src().client.calls else ""
+        self._src().client.calls[0] if self._src().client.calls else ""
         # 重新调用以捕获 URL
         src = self._src()
         src.fetch_rating_forecast("600519")
@@ -774,9 +765,7 @@ class TestRatingForecast:
                 "code": 0,
             }
         )
-        src = EastmoneyRatingForecastSource(
-            client=FakeHttpClient(RPT_WEB_RESPREDICT=empty)
-        )
+        src = EastmoneyRatingForecastSource(client=FakeHttpClient(RPT_WEB_RESPREDICT=empty))
         assert src.fetch_rating_consensus("600519") is None
 
 

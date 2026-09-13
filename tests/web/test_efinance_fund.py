@@ -74,7 +74,14 @@ PERIOD_CHANGE = _j(
 ASSET_ALLOC = _j(
     {
         "Datas": [
-            {"FSRQ": "2022-03-31", "GP": "85.3", "ZQ": "3.2", "HB": "5.1", "QT": "6.4", "JZC": "620.5"}
+            {
+                "FSRQ": "2022-03-31",
+                "GP": "85.3",
+                "ZQ": "3.2",
+                "HB": "5.1",
+                "QT": "6.4",
+                "JZC": "620.5",
+            }
         ]
     }
 )
@@ -98,7 +105,7 @@ MANAGER_HTML = (
     "</div>"
     "<span>2022-03-31</span>"
     "</body></html>"
-).encode("utf-8")
+).encode()
 
 
 def _src(bodies: dict[str, bytes]) -> FundMobSource:

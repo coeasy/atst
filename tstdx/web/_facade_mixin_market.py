@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..domain.models import Bar, MinutePoint, Quote
 from ..errors import CompatibilityError
@@ -87,6 +87,14 @@ _shared_http = shared_http
 
 class QuoteSessionMixin:
     """实时行情 / 港美股 / 全市场快照 / 大盘统计 / 指数 / 汇率。"""
+
+    # These members are provided by ``facade._SessionBase`` at runtime.  Keep
+    # the composition contract explicit for type checkers without introducing
+    # a second runtime inheritance hierarchy between mixins.
+    if TYPE_CHECKING:
+        source_name: str
+        _kwargs: dict[str, Any]
+        _c: Any
 
     # -- 实时行情 ----------------------------------------------------------- #
     def quotes(self, codes: Sequence[str], *, prefix: bool = True) -> list[Quote]:

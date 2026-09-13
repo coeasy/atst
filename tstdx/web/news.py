@@ -289,9 +289,7 @@ class EastmoneyResearchVisitSource(EastmoneyDataCenterSource):
         # 报表名经参数传递（避免运行时替换实例属性——线程不安全）
         super().__init__("RPT_ORG_SURVEY_DET", **kwargs)
 
-    def fetch_visits(
-        self, symbol: str, *, page: int = 1, size: int = 20
-    ) -> list[dict[str, Any]]:
+    def fetch_visits(self, symbol: str, *, page: int = 1, size: int = 20) -> list[dict[str, Any]]:
         """拉取个股机构调研记录（按调研日期倒序）。
 
         Returns

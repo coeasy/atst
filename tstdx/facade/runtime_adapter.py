@@ -47,7 +47,9 @@ class RuntimeFacadeAdapter:
     ) -> QueryRequest:
         runtime_metadata = dict(metadata or {})
         normalized_route = str(route or "auto").strip().lower()
-        canonical_providers = self._canonical_providers(providers) if providers is not None else None
+        canonical_providers = (
+            self._canonical_providers(providers) if providers is not None else None
+        )
 
         if normalized_route in _LEGACY_ROUTE_PROVIDER:
             runtime_metadata["provider"] = _LEGACY_ROUTE_PROVIDER[normalized_route]

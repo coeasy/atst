@@ -217,9 +217,7 @@ class FundamentalSessionMixin:
             src.close()
 
     @staticmethod
-    def shareholder_changes(
-        symbol: str, *, page: int = 1, size: int = 20
-    ) -> list[dict[str, Any]]:
+    def shareholder_changes(symbol: str, *, page: int = 1, size: int = 20) -> list[dict[str, Any]]:
         """股东增减持明细（大股东 / 机构股东，按公告日期降序）。
 
         ``change_shares`` 正=增持、负=减持。与 :meth:`holder_changes`
@@ -263,9 +261,7 @@ class FundamentalSessionMixin:
             src.close()
 
     @staticmethod
-    def org_profiles(
-        symbols: Sequence[str], *, size: int = 50
-    ) -> list[dict[str, Any]]:
+    def org_profiles(symbols: Sequence[str], *, size: int = 50) -> list[dict[str, Any]]:
         """公司概况批量（按代码去重，保留服务端返回顺序）。"""
         from .governance import EastmoneyOrgProfileSource
 

@@ -25,6 +25,8 @@ class LocalProvider(Provider):
         if self.reader is None:
             raise RuntimeError("local vipdoc reader is not configured")
         operation = getattr(request, "operation", None)
+        if not isinstance(operation, str) or not operation:
+            raise ValueError("runtime request operation must be a non-empty string")
         args = tuple(getattr(request, "args", ()))
         params = dict(getattr(request, "params", {}))
         method = getattr(self.reader, operation, None)

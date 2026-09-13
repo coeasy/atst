@@ -9,7 +9,6 @@ import json
 
 import pytest
 
-from tstdx.web.base import HttpResponse
 from tstdx.web.astock_toolkit import (
     EastmoneyAnnouncementSource,
     EastmoneyDividendSource,
@@ -17,6 +16,7 @@ from tstdx.web.astock_toolkit import (
     EastmoneyHolderChangeSource,
     EastmoneyValuationSource,
 )
+from tstdx.web.base import HttpResponse
 
 _J = "https://datacenter-web.eastmoney.com"
 
@@ -170,9 +170,7 @@ def _hc() -> EastmoneyHolderChangeSource:
 
 
 def _fin() -> EastmoneyFinanceMainSource:
-    return EastmoneyFinanceMainSource(
-        client=FakeHttpClient(RPT_F10_FINANCE_MAIN=FINANCE_MAIN)
-    )
+    return EastmoneyFinanceMainSource(client=FakeHttpClient(RPT_F10_FINANCE_MAIN=FINANCE_MAIN))
 
 
 def _ann() -> EastmoneyAnnouncementSource:

@@ -93,7 +93,9 @@ def test_sync_stream_detects_dead_running_worker_without_spawning_second() -> No
     assert stream._thread is None
 
 
-def test_sync_start_preserves_process_control_baseexception(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sync_start_preserves_process_control_baseexception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     stream = StatefulQuoteStream()
 
     def interrupt(_thread: threading.Thread) -> None:

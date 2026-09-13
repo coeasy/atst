@@ -25,6 +25,8 @@ class TdxProvider(Provider):
         if self.client is None:
             raise RuntimeError("tdx client is not configured")
         operation = getattr(request, "operation", None)
+        if not isinstance(operation, str) or not operation:
+            raise ValueError("runtime request operation must be a non-empty string")
         args = tuple(getattr(request, "args", ()))
         params = dict(getattr(request, "params", {}))
         method = getattr(self.client, operation, None)

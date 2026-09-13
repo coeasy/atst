@@ -326,10 +326,7 @@ class EastmoneyBondSource(_Push2Base):
         通过 push2 全量列表枚举可转债（沪 / 深），返回与 :meth:`fetch_base_info`
         同构的 ``[{"code","name","market","change_pct","pre_close","price"}, ...]``。
         """
-        path = (
-            f"/api/qt/clist/get?pn=1&pz=5000&fs={self._BOND_FS}"
-            f"&fields={_CLIST_FIELDS}"
-        )
+        path = f"/api/qt/clist/get?pn=1&pz=5000&fs={self._BOND_FS}&fields={_CLIST_FIELDS}"
         payload = self._json(path)
         diff = ((payload.get("data") or {}).get("diff")) or []
         out: list[dict[str, Any]] = []

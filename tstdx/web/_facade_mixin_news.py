@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Any
 
 from ._facade_mixin_market import _shared_http  # 共享连接池助手
@@ -64,9 +63,7 @@ class NewsSessionMixin:
 
     # -- 机构调研（调研纪要） ---------------------------------------------- #
     @staticmethod
-    def research_visits(
-        symbol: str, *, page: int = 1, size: int = 20
-    ) -> list[dict[str, Any]]:
+    def research_visits(symbol: str, *, page: int = 1, size: int = 20) -> list[dict[str, Any]]:
         """机构调研记录（对标 niuniu ``/api/news/research-visits/{code}`` 巨潮调研）。
 
         返回 ``[{"code","name","date","org","type","summary","content"}, ...]``。

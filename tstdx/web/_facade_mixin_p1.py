@@ -87,25 +87,29 @@ class P1SessionMixin:
         if source == "hz":
             from .esg import SinaEsgHzSource
 
-            src = SinaEsgHzSource(client=_shared_http())
+            hz_source = SinaEsgHzSource(client=_shared_http())
             try:
-                return src.fetch_ratings(
-                    market=market, grade=rating,
-                    sort_column=sort_column, sort_order=sort_order,
+                return hz_source.fetch_ratings(
+                    market=market,
+                    grade=rating,
+                    sort_column=sort_column,
+                    sort_order=sort_order,
                 )
             finally:
-                src.close()
+                hz_source.close()
         else:
             from .esg import SinaEsgMsciSource
 
-            src = SinaEsgMsciSource(client=_shared_http())
+            msci_source = SinaEsgMsciSource(client=_shared_http())
             try:
-                return src.fetch_ratings(
-                    market=market, rating=rating,
-                    sort_column=sort_column, sort_order=sort_order,
+                return msci_source.fetch_ratings(
+                    market=market,
+                    rating=rating,
+                    sort_column=sort_column,
+                    sort_order=sort_order,
                 )
             finally:
-                src.close()
+                msci_source.close()
 
     # -- 筹码分布 ----------------------------------------------------------- #
     @staticmethod

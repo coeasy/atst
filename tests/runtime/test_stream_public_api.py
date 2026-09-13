@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import tstdx
-
 from tstdx.streaming.state import StreamState
 from tstdx.streaming.stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
 

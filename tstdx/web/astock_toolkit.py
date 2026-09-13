@@ -21,15 +21,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any
 
-from ..errors import SourceDeprecated, WebSourceError
 from .corporate import (
-    CORPORATE,
+    VALID_REPORTS,
     EastmoneyDataCenterSource,
     EastmoneyNoticeSource,
-    VALID_REPORTS,
 )
 
 __all__ = [
@@ -103,9 +101,7 @@ class EastmoneyDividendSource(EastmoneyDataCenterSource):
         {"bonus_shares_per_10", "transfer_shares_per_10", "cash_dividend_per_10"}
     )
 
-    def fetch_dividend(
-        self, symbol: str, *, page: int = 1, size: int = 20
-    ) -> list[dict[str, Any]]:
+    def fetch_dividend(self, symbol: str, *, page: int = 1, size: int = 20) -> list[dict[str, Any]]:
         """分红送转历史（按除权除息日降序）。
 
         Returns
@@ -128,7 +124,10 @@ class EastmoneyDividendSource(EastmoneyDataCenterSource):
         for r in rows:
             if not isinstance(r, dict):
                 continue
-            rec: dict[str, Any] = {"code": _s(r.get("SECURITY_CODE")), "name": _s(r.get("SECURITY_NAME_ABBR") or r.get("SECURITY_NAME"))}
+            rec: dict[str, Any] = {
+                "code": _s(r.get("SECURITY_CODE")),
+                "name": _s(r.get("SECURITY_NAME_ABBR") or r.get("SECURITY_NAME")),
+            }
             for key, names in self.FIELD_MAP.items():
                 val = _pick(r, *names)
                 rec[key] = _num(val) if key in self._NUM_FIELDS else _s(val)
@@ -248,7 +247,20 @@ class EastmoneyHolderChangeSource(EastmoneyDataCenterSource):
             }
             for key, names in self.FIELD_MAP.items():
                 val = _pick(r, *names)
-                rec[key] = _num(val) if key not in ("person", "position", "actor", "relation", "reason", "change_date", "disclosure_date") else _s(val)
+                rec[key] = (
+                    _num(val)
+                    if key
+                    not in (
+                        "person",
+                        "position",
+                        "actor",
+                        "relation",
+                        "reason",
+                        "change_date",
+                        "disclosure_date",
+                    )
+                    else _s(val)
+                )
             out.append(rec)
         return out
 

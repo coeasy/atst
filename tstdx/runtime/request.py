@@ -41,7 +41,7 @@ class QueryRequest:
         ).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()
 
-    def with_metadata(self, **values: Any) -> "QueryRequest":
+    def with_metadata(self, **values: Any) -> QueryRequest:
         metadata = dict(self.metadata)
         metadata.update(values)
         return QueryRequest(

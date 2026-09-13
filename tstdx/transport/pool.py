@@ -539,9 +539,7 @@ class ConnectionPool:
             except TdxError as exc:
                 last_exc = exc
                 self.stats.failures += 1
-                self._mark_failure(
-                    slot, exc, generation=leased_generation, conn=leased_conn
-                )
+                self._mark_failure(slot, exc, generation=leased_generation, conn=leased_conn)
                 advice = exc.advice
                 if attempt + 1 >= max_attempts or not advice.retryable:
                     break
@@ -557,9 +555,7 @@ class ConnectionPool:
                 continue
             except Exception as exc:  # pragma: no cover - 兜底
                 last_exc = exc
-                self._mark_failure(
-                    slot, exc, generation=leased_generation, conn=leased_conn
-                )
+                self._mark_failure(slot, exc, generation=leased_generation, conn=leased_conn)
                 if attempt + 1 >= max_attempts:
                     break
                 self.stats.retries += 1
@@ -666,9 +662,7 @@ class ConnectionPool:
                                 # retire the old one after its lease returns.
                                 old.retired = True
                                 self._retired_slots.append(old)
-                                new_slots.append(
-                                    Slot(host=host, index=i, generation=generation)
-                                )
+                                new_slots.append(Slot(host=host, index=i, generation=generation))
                     else:
                         new_slots.append(Slot(host=host, index=i, generation=generation))
             # Retire removed hosts.  An active request owns its connection
@@ -944,12 +938,7 @@ class ConnectionPool:
         for slot in list(self._slots):
             with slot.lock:
                 conn = slot.conn
-                if (
-                    conn is None
-                    or not conn.connected
-                    or slot.leases
-                    or slot.retired
-                ):
+                if conn is None or not conn.connected or slot.leases or slot.retired:
                     continue
                 last = conn.stats.last_used or conn.stats.created_at
                 if last and last < cutoff:
