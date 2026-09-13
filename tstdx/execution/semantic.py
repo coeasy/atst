@@ -1,3 +1,6 @@
+# Copyright (c) 2026 tstdx contributors
+# Licensed under the MIT License
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -18,7 +21,7 @@ class SemanticExecutionAdapter:
     """Bridge V14 orchestration to tstdx's canonical query/result contracts.
 
     The adapter does not define a second query, capability, cache or provenance
-    model. Semantic eligibility is derived from the canonical Provider registry;
+    model. Semantic eligibility comes from the canonical Provider registry;
     requests are compiled through :class:`tstdx.query.QueryPlanner`, optionally
     served by :class:`tstdx.cache_semantic.SemanticResultCache`, executed by a
     dynamic Provider adapter, and returned as canonical :class:`QueryResult`.

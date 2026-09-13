@@ -1,3 +1,6 @@
+# Copyright (c) 2026 tstdx contributors
+# Licensed under the MIT License
+
 """V14 dynamic provider execution adapters.
 
 Static provider/channel/capability truth lives in :mod:`tstdx.providers`.

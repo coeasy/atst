@@ -1,3 +1,6 @@
+# Copyright (c) 2026 tstdx contributors
+# Licensed under the MIT License
+
 """v14 runtime kernel."""
 
 from .bootstrap import create_runtime

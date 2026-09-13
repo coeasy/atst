@@ -1,3 +1,6 @@
+# Copyright (c) 2026 tstdx contributors
+# Licensed under the MIT License
+
 """V14 orchestration DAG runtime."""
 
 from .graph import ExecutionGraph
