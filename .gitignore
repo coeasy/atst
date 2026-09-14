@@ -19,6 +19,11 @@ venv/
 env/
 ENV/
 
+# Temporary files
+__tmp_*.txt
+__pycache__/
+*.py[cod]
+
 # Tests, type/lint caches and coverage
 .pytest_cache/
 .mypy_cache/

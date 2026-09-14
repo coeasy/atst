@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..cache_semantic import SemanticResultCache
 from ..errors import ValidationError
@@ -13,6 +13,9 @@ from ..provider.router import ProviderAttempts, ProviderRouter
 from ..providers import PROVIDERS, normalize_provider_id
 from ..query import QueryPlan, QueryPlanner, QuerySpec
 from ..result import Provenance, QueryResult
+
+if TYPE_CHECKING:
+    from ..runtime.legacy_bridge import LegacyRuntimeBridge
 
 _CORE_CAPABILITIES = frozenset({"quotes", "bars"})
 
@@ -25,6 +28,10 @@ class SemanticExecutionAdapter:
     requests are compiled through :class:`tstdx.query.QueryPlanner`, optionally
     served by :class:`tstdx.cache_semantic.SemanticResultCache`, executed by a
     dynamic Provider adapter, and returned as canonical :class:`QueryResult`.
+
+    When a :class:`LegacyRuntimeBridge` is injected, execution is delegated to
+    the v13 UnifiedRuntime engine, gaining L2 persistent cache, negative cache,
+    and SingleFlight deduplication for free.
     """
 
     def __init__(
@@ -33,12 +40,14 @@ class SemanticExecutionAdapter:
         query_planner: QueryPlanner | None = None,
         cache: SemanticResultCache | None = None,
         default_cache_ttl: float | None = None,
+        bridge: LegacyRuntimeBridge | None = None,
     ) -> None:
         if default_cache_ttl is not None and default_cache_ttl < 0:
             raise ValueError("default_cache_ttl must be >= 0 or None")
         self.query_planner = query_planner or QueryPlanner()
         self.cache = cache
         self.default_cache_ttl = default_cache_ttl
+        self._bridge = bridge
 
     @staticmethod
     def _known_provider(provider: str) -> bool:
@@ -229,6 +238,27 @@ class SemanticExecutionAdapter:
                     )
                     return provider, cached
 
+            # -- Bridge path: delegate to v13 UnifiedRuntime engine -------- #
+            if self._bridge is not None:
+                try:
+                    result = self._bridge.execute_spec(plan.spec, use_cache=True)
+                except Exception as exc:
+                    if single_provider:
+                        raise
+                    failures.append(f"{provider}={type(exc).__name__}: {exc}")
+                    continue
+                # Stamp v14 caller intent into provenance
+                if requested and requested != provider:
+                    provenance = replace(
+                        result.meta.provenance,
+                        requested_provider=requested,
+                        fallback=True,
+                    )
+                    result = QueryResult(data=result.data, meta=replace(result.meta, provenance=provenance))
+                attempts.append({"provider": provider, "status": "bridge-executed"})
+                return provider, result
+
+            # -- Legacy path: direct router query -------------------------- #
             before = len(attempts)
             try:
                 raw = router.query(provider, request, attempts=attempts)

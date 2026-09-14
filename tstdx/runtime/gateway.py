@@ -25,10 +25,17 @@ Design principles:
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from ..orchestration import ProviderOrchestrator
+
 if TYPE_CHECKING:
+    from ..orchestration import FallbackPolicy, OrchestratedResult
+    from ..query import QuerySpec
+    from ..result import QueryResult
+    from .legacy_bridge import LegacyRuntimeBridge
     from .request import QueryRequest
     from .response import QueryResponse
     from .runtime import Runtime
@@ -43,12 +50,22 @@ class RuntimeGateway:
     ``channel``, ``query_fingerprint``, and ``provenance``.
     """
 
-    def __init__(self, runtime: Runtime | None = None) -> None:
+    def __init__(
+        self,
+        runtime: Runtime | None = None,
+        bridge: LegacyRuntimeBridge | None = None,
+    ) -> None:
         from ..facade.runtime_adapter import RuntimeFacadeAdapter
         from .runtime import Runtime
 
-        self.runtime = runtime or Runtime()
+        if runtime is None:
+            runtime = Runtime()
+        self.runtime = runtime
         self._adapter = RuntimeFacadeAdapter(self.runtime)
+        self._bridge: LegacyRuntimeBridge | None = bridge or getattr(runtime, "_bridge", None)
+        self._orchestrator: ProviderOrchestrator | None = (
+            ProviderOrchestrator(self._bridge.runtime) if self._bridge is not None else None
+        )
 
     # -- K 线 / 行情 ------------------------------------------------------ #
 
@@ -180,3 +197,167 @@ class RuntimeGateway:
     def subscriptions(self) -> Mapping[str, Any]:
         """Return active stream subscriptions."""
         return self.runtime.subscriptions()
+
+    # -- Policy / capability dispatch -------------------------------------- #
+
+    def call(
+        self,
+        capability: str,
+        *args: Any,
+        provider: str | None = None,
+        currentness: str = "business",
+        max_age: float | None = None,
+        use_cache: bool = True,
+        **kwargs: Any,
+    ) -> QueryResult[Any]:
+        """Dispatch a capability through the v13 UnifiedRuntime bridge."""
+        if self._bridge is None:
+            from ..runtime_v13 import UnifiedRuntime
+
+            self._bridge = LegacyRuntimeBridge(UnifiedRuntime())
+        return self._bridge.call(
+            capability,
+            *args,
+            provider=provider,
+            currentness=currentness,
+            max_age=max_age,
+            use_cache=use_cache,
+            **kwargs,
+        )
+
+    def execute_with_policy(
+        self,
+        spec: QuerySpec,
+        *,
+        policy: FallbackPolicy,
+        use_cache: bool = True,
+    ) -> OrchestratedResult:
+        """Execute with explicit cross-Provider fallback policy."""
+        if self._orchestrator is None:
+            if self._bridge is None:
+                from ..runtime_v13 import UnifiedRuntime
+
+                self._bridge = LegacyRuntimeBridge(UnifiedRuntime())
+            self._orchestrator = ProviderOrchestrator(self._bridge.runtime)
+        return self._orchestrator.execute(spec, policy=policy, use_cache=use_cache)
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        from ..capability_catalog import is_migrated_capability
+
+        if is_migrated_capability(name):
+            def migrated(*args: Any, **kwargs: Any) -> QueryResult[Any]:
+                provider = kwargs.pop("provider", None)
+                kwargs.pop("channel", None)
+                currentness = kwargs.pop("currentness", "business")
+                max_age = kwargs.pop("max_age", None)
+                use_cache = bool(kwargs.pop("use_cache", True))
+                if self._bridge is None:
+                    from ..runtime_v13 import UnifiedRuntime
+
+                    self._bridge = LegacyRuntimeBridge(UnifiedRuntime())
+                return self._bridge.call(
+                    name,
+                    *args,
+                    provider=provider,
+                    currentness=currentness,
+                    max_age=max_age,
+                    use_cache=use_cache,
+                    **kwargs,
+                )
+
+            migrated.__name__ = name
+            migrated.__qualname__ = f"RuntimeGateway.{name}"
+            return migrated
+        raise AttributeError(name)
+
+
+class RuntimeAsyncClient:
+    """Async facade over RuntimeGateway — delegates via asyncio.to_thread."""
+
+    def __init__(self, gateway: RuntimeGateway | None = None) -> None:
+        self.gateway = gateway or RuntimeGateway()
+
+    async def close(self) -> None:
+        bridge = self.gateway._bridge
+        if bridge is not None:
+            await asyncio.to_thread(bridge.close)
+
+    async def __aenter__(self) -> RuntimeAsyncClient:
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        await self.close()
+
+    async def execute(self, request: QueryRequest) -> QueryResponse:
+        return await asyncio.to_thread(self.gateway.execute, request)
+
+    async def execute_typed(self, query: Any, **kwargs: Any) -> QueryResponse:
+        return await asyncio.to_thread(self.gateway.execute_typed, query, **kwargs)
+
+    async def execute_batch(
+        self,
+        requests: Sequence[QueryRequest],
+        *,
+        max_concurrent: int = 8,
+    ) -> list[QueryResponse]:
+        return await asyncio.to_thread(
+            self.gateway.execute_batch,
+            requests,
+            max_concurrent=max_concurrent,
+        )
+
+    async def call(
+        self,
+        capability: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> QueryResult[Any]:
+        return await asyncio.to_thread(
+            self.gateway.call,
+            capability,
+            *args,
+            **kwargs,
+        )
+
+    async def execute_with_policy(
+        self,
+        spec: QuerySpec,
+        *,
+        policy: FallbackPolicy,
+        use_cache: bool = True,
+    ) -> OrchestratedResult:
+        return await asyncio.to_thread(
+            self.gateway.execute_with_policy,
+            spec,
+            policy=policy,
+            use_cache=use_cache,
+        )
+
+    async def bars(self, symbol: str, **kwargs: Any) -> QueryResponse:
+        return await asyncio.to_thread(self.gateway.bars, symbol, **kwargs)
+
+    async def quotes(self, symbols: str | Sequence[str], **kwargs: Any) -> QueryResponse:
+        return await asyncio.to_thread(self.gateway.quotes, symbols, **kwargs)
+
+    async def snapshot(self, symbol: str, **kwargs: Any) -> Any:
+        return await asyncio.to_thread(self.gateway._bridge.snapshot, symbol, **kwargs)
+
+    async def minute(self, symbol: str, **kwargs: Any) -> Any:
+        return await asyncio.to_thread(self.gateway._bridge.minute, symbol, **kwargs)
+
+    async def trades(self, symbol: str, **kwargs: Any) -> Any:
+        return await asyncio.to_thread(self.gateway._bridge.trades, symbol, **kwargs)
+
+    async def security_count(self, **kwargs: Any) -> QueryResponse:
+        return await asyncio.to_thread(self.gateway.security_count, **kwargs)
+
+    async def security_list(self, **kwargs: Any) -> QueryResponse:
+        return await asyncio.to_thread(self.gateway.security_list, **kwargs)
+
+    async def minute_today(self, symbol: str, **kwargs: Any) -> QueryResponse:
+        return await asyncio.to_thread(self.gateway.minute_today, symbol, **kwargs)
+
+    async def finance_info(self, symbol: str, **kwargs: Any) -> QueryResponse:
+        return await asyncio.to_thread(self.gateway.finance_info, symbol, **kwargs)

@@ -18,6 +18,7 @@ from .response import QueryResponse
 
 if TYPE_CHECKING:
     from ..typed_query import CapabilityQuery
+    from .legacy_bridge import LegacyRuntimeBridge
     from .stream import StreamHandle
 
 
@@ -37,10 +38,12 @@ class Runtime:
         provider_order: Sequence[str] | None = None,
         semantic_cache: SemanticResultCache | None = None,
         default_cache_ttl: float | None = None,
+        bridge: LegacyRuntimeBridge | None = None,
     ) -> None:
         self._handlers: dict[str, Callable[..., Any]] = {}
         self._subscriptions: dict[str, StreamHandle] = {}
         self._subscription_seq: int = 0
+        self._bridge = bridge
         if default_cache_ttl is not None and default_cache_ttl < 0:
             raise ValueError("default_cache_ttl must be >= 0 or None")
 
@@ -49,6 +52,7 @@ class Runtime:
             semantic = SemanticExecutionAdapter(
                 cache=semantic_cache,
                 default_cache_ttl=default_cache_ttl,
+                bridge=bridge,
             )
             self.planner = ExecutionPlanner(
                 self.router,
@@ -67,6 +71,8 @@ class Runtime:
                 planner.semantic.cache = semantic_cache
             if default_cache_ttl is not None:
                 planner.semantic.default_cache_ttl = default_cache_ttl
+            if bridge is not None:
+                planner.semantic._bridge = bridge
             self.planner = planner
 
     def register(self, operation: str, handler: Callable[..., Any]) -> None:

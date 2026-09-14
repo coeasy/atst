@@ -4,7 +4,8 @@
 """v14 runtime kernel."""
 
 from .bootstrap import create_runtime
-from .gateway import RuntimeGateway
+from .gateway import RuntimeAsyncClient, RuntimeGateway
+from .legacy_bridge import LegacyRuntimeBridge
 from .request import QueryRequest
 from .response import QueryResponse
 from .runtime import Runtime
@@ -14,6 +15,8 @@ from .typed import request_from_typed
 __all__ = [
     "Runtime",
     "RuntimeGateway",
+    "RuntimeAsyncClient",
+    "LegacyRuntimeBridge",
     "QueryRequest",
     "QueryResponse",
     "StreamHandle",
