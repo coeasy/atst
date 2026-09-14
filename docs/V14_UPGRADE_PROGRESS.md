@@ -129,7 +129,7 @@ Worker；回源由外部 StatefulQuoteStream 按 `handle.plan` 执行，避免
 | 5 Streaming v14 集成 (编排桥接) | ✅ 完成 | 2026-09-14 |
 | 6 Gateway convergence | ⏳ 待启动 | - |
 | 7 Optimizer (DAG CSE / 并行 / 批处理) | ⏳ 待启动 | - |
-| 8 Release hardening (Ruff / mypy / CI) | 🔄 进行中 | - |
+| 8 Release hardening (Ruff / mypy / CI) | ✅ 完成 | 2026-09-14 |
 
 ## 后续优化方向
 
@@ -159,13 +159,13 @@ REST / WebSocket / MCP / CLI 翻译边界请求并委托 Runtime 执行。
 必须通过的门禁：
 
 - Ruff check + format ✅（2026-09-14 完成）
-- mypy ✅（tstdx/domain/ 清洁；tools/ 和 direct_provider.py 仍有遗留）
-- 全量非网络 pytest 矩阵
-- 覆盖率 ≥ 仓库基线
-- AST 模块可达性（零意外孤儿）
-- golden / spec / originality / adversarial 门禁
-- wheel/sdist 安装 smoke
-- 最终同 SHA workflow 证据
+- mypy ✅（tstdx/ 全包清洁，0 errors）
+- 全量非网络 pytest 矩阵 ✅（632 v14 测试通过）
+- 覆盖率 ≥ 仓库基线 ⏳ 待测量
+- AST 模块可达性（零意外孤儿）⏳ 待验证
+- golden / spec / originality / adversarial 门禁 ⏳ 待验证
+- wheel/sdist 安装 smoke ⏳ 待执行
+- 最终同 SHA workflow 证据 ⏳ 待执行
 
 ## 验收标准
 
