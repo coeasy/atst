@@ -9,7 +9,7 @@ from tstdx.domain.models import Bar, Quote
 from tstdx.errors import ValidationError
 from tstdx.query import QueryPlanner, QuerySpec
 from tstdx.result import Provenance, QueryResult
-from tstdx.runtime import UnifiedRuntime
+from tstdx.runtime_v13 import UnifiedRuntime
 
 
 def _local_plan(period: str):

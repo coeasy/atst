@@ -7,5 +7,17 @@ from .graph import ExecutionGraph
 from .node import ExecutionNode
 from .plan import ExecutionPlan
 from .planner import ExecutionPlanner
+from .primitives import BatchPlan, BatchPlanner, ExecutionBudget, SingleFlight
+from .semantic import SemanticExecutionAdapter
 
-__all__ = ["ExecutionNode", "ExecutionGraph", "ExecutionPlan", "ExecutionPlanner"]
+__all__ = [
+    "ExecutionNode",
+    "ExecutionGraph",
+    "ExecutionPlan",
+    "ExecutionPlanner",
+    "SemanticExecutionAdapter",
+    "ExecutionBudget",
+    "SingleFlight",
+    "BatchPlan",
+    "BatchPlanner",
+]

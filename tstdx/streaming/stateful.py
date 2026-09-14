@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from ..errors import SubscriptionError
-from . import AsyncQuoteStream, QuoteStream, Subscription, on_error_t, on_quote_t
+from .base import AsyncQuoteStream, QuoteStream, Subscription, on_error_t, on_quote_t
 from .engine import BackpressureQueue
 from .state import StreamLifecycle, StreamState
 

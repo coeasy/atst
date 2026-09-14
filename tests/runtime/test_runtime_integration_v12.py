@@ -11,7 +11,7 @@ from tstdx.error_envelope import to_error_envelope
 from tstdx.errors import SourceUnavailable, ValidationError
 from tstdx.query import QueryPlanner, QuerySpec
 from tstdx.result import Provenance, QueryResult
-from tstdx.runtime import UnifiedRuntime
+from tstdx.runtime_v13 import UnifiedRuntime
 
 
 def _plan(provider: str = "tdx"):

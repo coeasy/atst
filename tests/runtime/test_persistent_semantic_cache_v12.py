@@ -7,7 +7,7 @@ from tstdx.cache_persistent import PersistentSemanticCache
 from tstdx.domain.models import Bar, Level, Quote
 from tstdx.query import QueryPlanner, QuerySpec
 from tstdx.result import Provenance, ProvenanceKind, QueryResult, ResultMeta
-from tstdx.runtime import UnifiedRuntime
+from tstdx.runtime_v13 import UnifiedRuntime
 
 
 def _quote_plan(*, max_age: float | None = 5.0):
