@@ -127,8 +127,8 @@ Worker；回源由外部 StatefulQuoteStream 按 `handle.plan` 执行，避免
 | 3 Provider Adapter (统一接口) | ✅ 完成 | 2026-09-14 |
 | 4 Contract Automation (审计脚本) | ✅ 完成 | 2026-09-14 |
 | 5 Streaming v14 集成 (编排桥接) | ✅ 完成 | 2026-09-14 |
-| 6 Gateway convergence | ⏳ 待启动 | - |
-| 7 Optimizer (DAG CSE / 并行 / 批处理) | ⏳ 待启动 | - |
+| 6 Gateway convergence | 🔄 进行中 | RuntimeGateway 已实现 |
+| 7 Optimizer (DAG CSE / 并行 / 批处理) | 🔄 进行中 | execute_batch() 已实现 |
 | 8 Release hardening (Ruff / mypy / CI) | ✅ 完成 | 2026-09-14 |
 
 ## 后续优化方向
@@ -140,17 +140,21 @@ REST / WebSocket / MCP / CLI 翻译边界请求并委托 Runtime 执行。
 网关禁止实现独立的 Provider 选择、回退、缓存或 provenance 逻辑。
 
 当前状态：CLI 和 Client 仍走 legacy dispatch 路径；RuntimeFacadeAdapter
-已存在但非默认。下一步：评估桥接成本并制定迁移方案。
+已存在但非默认。**2026-09-14 新增** `RuntimeGateway`（`tstdx/runtime/gateway.py`）
+作为 CLI/HTTP/WS 的统一适配层，通过 RuntimeFacadeAdapter 桥接到 Runtime
+执行，禁止实现独立 Provider 选择/回退/缓存/provenance 逻辑。
+下一步：评估 CLI 从 TdxClient 迁移到 RuntimeGateway 的成本并制定迁移方案。
 
 ### Phase 7 Optimizer
 
 语义对等稳定后才启动：
 
-- DAG common-subexpression elimination
-- 独立节点并行执行
-- semantic-cache-aware rewrite
-- streaming 增量执行
-- Provider 批量执行
+- DAG common-subexpression elimination ⏳ 待启动
+- 独立节点并行执行 ⏳ 待启动
+- semantic-cache-aware rewrite ⏳ 待启动
+- streaming 增量执行 ⏳ 待启动
+- Provider 批量执行 ✅ **2026-09-14 完成**：`Runtime.execute_batch()`
+  支持语义缓存去重 + 并发执行（`max_concurrent` 参数），返回保序结果。
 
 优化器禁止改变 QuerySpec / QueryFingerprint / Provider 身份或可观察结果语义。
 

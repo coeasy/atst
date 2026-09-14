@@ -145,6 +145,85 @@ class Runtime:
 
         return self.execute(request_from_typed(query, metadata=metadata))
 
+    def execute_batch(
+        self,
+        requests: Sequence[QueryRequest],
+        *,
+        max_concurrent: int = 8,
+    ) -> list[QueryResponse]:
+        """Execute multiple requests with semantic-cache deduplication.
+
+        Requests whose QuerySpec matches a cached result are served instantly;
+        remaining requests are dispatched concurrently (up to ``max_concurrent``
+        workers). Results are returned in the original order.
+
+        This is the Phase 7 batch-execution entry point: callers submit many
+        independent queries (e.g. ``bars`` for N symbols) and the runtime
+        collapses duplicate work via the semantic cache and parallelises the
+        rest through the Provider router.
+        """
+        if not requests:
+            return []
+        if len(requests) == 1:
+            return [self.execute(requests[0])]
+
+        results: list[QueryResponse | None] = [None] * len(requests)
+        to_execute: list[tuple[int, QueryRequest]] = []
+
+        # Pass 1: semantic-cache lookup (independent of execution).
+        if self.planner.semantic.cache is not None:
+            cache = self.planner.semantic.cache
+            for i, req in enumerate(requests):
+                hit = self._cache_lookup(req, cache)
+                if hit is not None:
+                    results[i] = QueryResponse.ok(
+                        hit.data,
+                        request_id=str(i),
+                        operation=req.operation,
+                        execution="semantic-cache",
+                        cache_tier=cache.tier,
+                    )
+                else:
+                    to_execute.append((i, req))
+        else:
+            to_execute = list(enumerate(requests))
+
+        # Pass 2: execute uncached requests (serial or concurrent).
+        if max_concurrent <= 1 or len(to_execute) <= 1:
+            for i, req in to_execute:
+                results[i] = self.execute(req)
+        else:
+            from concurrent.futures import ThreadPoolExecutor
+
+            def _run(pair: tuple[int, QueryRequest]) -> tuple[int, QueryResponse]:
+                return pair[0], self.execute(pair[1])
+
+            with ThreadPoolExecutor(max_workers=min(max_concurrent, len(to_execute))) as ex:
+                for idx, resp in ex.map(_run, to_execute):
+                    results[idx] = resp
+
+        return [r for r in results if r is not None]
+
+    def _cache_lookup(self, request: QueryRequest, cache: Any) -> Any | None:
+        """Try to compile + cache-lookup a single request; return QueryResult or None."""
+        try:
+            spec = self.planner.semantic._build_spec(request, "auto")
+            plan = self.planner.semantic.query_planner.compile(spec)
+            return cache.get(plan)
+        except Exception:
+            return None
+
+    def semantic_cache_stats(self) -> dict[str, Any]:
+        """Return semantic-cache statistics (hit/miss/tier/size)."""
+        cache = self.planner.semantic.cache
+        if cache is None:
+            return {"enabled": False}
+        return {
+            "enabled": True,
+            "tier": cache.tier,
+            "size": len(cache) if hasattr(cache, "__len__") else None,
+        }
+
     @staticmethod
     def _execution_metadata(context: ExecutionContext) -> dict[str, Any]:
         metadata: dict[str, Any] = {}
