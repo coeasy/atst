@@ -118,86 +118,56 @@ CLOSED/FAILED）桥接到 v14 Runtime 编排层：
 Worker；回源由外部 StatefulQuoteStream 按 `handle.plan` 执行，避免
 把 TDX 传输细节泄漏到 Runtime 内核。
 
-## 当前优化方向
+## 优化进度总览
 
-### Phase 1 Typed Capability Expansion
+| Phase | 状态 | 完成日期 |
+|-------|------|----------|
+| 1 Typed Capability Expansion (60 契约) | ✅ 完成 | 2026-09-14 |
+| 2 Domain Model (9 Record 族) | ✅ 完成 | 2026-09-14 |
+| 3 Provider Adapter (统一接口) | ✅ 完成 | 2026-09-14 |
+| 4 Contract Automation (审计脚本) | ✅ 完成 | 2026-09-14 |
+| 5 Streaming v14 集成 (编排桥接) | ✅ 完成 | 2026-09-14 |
+| 6 Gateway convergence | ⏳ 待启动 | - |
+| 7 Optimizer (DAG CSE / 并行 / 批处理) | ⏳ 待启动 | - |
+| 8 Release hardening (Ruff / mypy / CI) | 🔄 进行中 | - |
 
-继续覆盖：
+## 后续优化方向
 
-- FinancialQuery
-- FundQuery
-- BondQuery
-- FuturesQuery
-- OptionsQuery
-- NewsQuery
-- ResearchQuery
-- F10Query
-- MacroQuery
-- SearchQuery
+### Phase 6 Gateway convergence
 
-要求：
+REST / WebSocket / MCP / CLI 翻译边界请求并委托 Runtime 执行。
 
-每个能力必须拥有：
+网关禁止实现独立的 Provider 选择、回退、缓存或 provenance 逻辑。
 
-```
-Typed Query
-Registry
-Direct Binding
-Runtime Execution
-Domain Result
-Surface Adapter
-Contract Test
-```
+当前状态：CLI 和 Client 仍走 legacy dispatch 路径；RuntimeFacadeAdapter
+已存在但非默认。下一步：评估桥接成本并制定迁移方案。
 
-## Phase 2 Domain Model
+### Phase 7 Optimizer
 
-逐步替换：
+语义对等稳定后才启动：
 
-```
-list[dict]
-```
+- DAG common-subexpression elimination
+- 独立节点并行执行
+- semantic-cache-aware rewrite
+- streaming 增量执行
+- Provider 批量执行
 
-为：
+优化器禁止改变 QuerySpec / QueryFingerprint / Provider 身份或可观察结果语义。
 
-```
-Domain Record
-    -> QueryResult[T]
-```
+### Phase 8 Release hardening
 
-包括：
+必须通过的门禁：
 
-- FinancialRecord
-- FundRecord
-- BondRecord
-- OptionRecord
-- NewsRecord
-- ResearchRecord
+- Ruff check + format ✅（2026-09-14 完成）
+- mypy ✅（tstdx/domain/ 清洁；tools/ 和 direct_provider.py 仍有遗留）
+- 全量非网络 pytest 矩阵
+- 覆盖率 ≥ 仓库基线
+- AST 模块可达性（零意外孤儿）
+- golden / spec / originality / adversarial 门禁
+- wheel/sdist 安装 smoke
+- 最终同 SHA workflow 证据
 
-## Phase 3 Provider Adapter
-
-目标：
-
-```
-providers/
-    tdx/
-    eastmoney/
-    sina/
-    tencent/
-    boc/
-    iwencai/
-    derived/
-```
-
-统一接口：
-
-- capabilities()
-- execute()
-- health()
-- metadata()
-
-## Phase 4 Contract Automation
-
-自动验证：
+## 验收标准
 
 ```
 Typed Query
