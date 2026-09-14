@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from ..cache_semantic import SemanticResultCache
@@ -18,6 +18,8 @@ from .response import QueryResponse
 
 if TYPE_CHECKING:
     from ..typed_query import CapabilityQuery
+
+    from .stream import StreamHandle
 
 
 class Runtime:
@@ -38,6 +40,8 @@ class Runtime:
         default_cache_ttl: float | None = None,
     ) -> None:
         self._handlers: dict[str, Callable[..., Any]] = {}
+        self._subscriptions: dict[str, "StreamHandle"] = {}
+        self._subscription_seq: int = 0
         if default_cache_ttl is not None and default_cache_ttl < 0:
             raise ValueError("default_cache_ttl must be >= 0 or None")
 
@@ -73,6 +77,63 @@ class Runtime:
 
     def register_provider(self, provider: Provider) -> None:
         self.router.register(provider)
+
+    def subscribe(
+        self,
+        capability: str,
+        symbols: str | tuple[str, ...],
+        *,
+        provider: str = "tdx",
+        interval: float = 1.0,
+        diff_only: bool = False,
+        max_queue: int = 1024,
+        subscription_id: str | None = None,
+    ) -> "StreamHandle":
+        """Compile a StreamPlan, bind a fail-closed lifecycle, register it.
+
+        The returned handle owns the compiled plan and lifecycle state machine;
+        the actual data pull is driven by an external worker using ``plan``.
+        ``capability`` is preserved for call-site clarity (currently only
+        ``quotes`` is supported by StreamPlanner).
+        """
+        del capability  # reserved for future non-quotes capabilities
+        from .stream import StreamHandle, runtime_subscribe
+
+        handle = runtime_subscribe(
+            self,
+            symbols,
+            provider=provider,
+            interval=interval,
+            diff_only=diff_only,
+            max_queue=max_queue,
+        )
+        sid = subscription_id or f"stream-{self._subscription_seq + 1}"
+        if sid in self._subscriptions:
+            raise ValueError(f"subscription id already in use: {sid}")
+        self._subscription_seq += 1
+        bound_handle = StreamHandle(
+            plan=handle.plan,
+            lifecycle=handle.lifecycle,
+            id=sid,
+        )
+        self._subscriptions[sid] = bound_handle
+        return bound_handle
+
+    def unsubscribe(self, subscription_id: str) -> "StreamHandle | None":
+        """Idempotently stop a subscription. Returns the removed handle, else None."""
+        handle = self._subscriptions.pop(subscription_id, None)
+        if handle is None:
+            return None
+        handle.begin_stop()
+        handle.close()
+        return handle
+
+    def get_subscription(self, subscription_id: str) -> "StreamHandle | None":
+        return self._subscriptions.get(subscription_id)
+
+    def subscriptions(self) -> Mapping[str, "StreamHandle"]:
+        """Return a snapshot of active subscriptions keyed by id."""
+        return dict(self._subscriptions)
 
     def execute_typed(
         self,

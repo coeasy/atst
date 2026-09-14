@@ -96,6 +96,28 @@ Runtime 语义执行（含语义缓存身份区分）。必填业务字段 fail-
 - `typed_query.records_from_response(query, response)` 把执行结果归一化为
   Domain Record
 
+### Streaming v14 集成（2026-09-14 完成）
+
+把 canonical `StreamPlanner`（`tstdx.stream_contract`，fail-closed 编译
+Provider 专属流计划）与 fail-closed 生命周期状态机
+`StreamLifecycle`（`tstdx.streaming.state`，CREATED/RUNNING/STOPPING/
+CLOSED/FAILED）桥接到 v14 Runtime 编排层：
+
+- `tstdx/runtime/stream.py`：`StreamHandle`（plan + lifecycle + id）+
+  `runtime_subscribe()` + `runtime_has_provider()`。
+- `Runtime.subscribe()` / `unsubscribe()` / `get_subscription()` /
+  `subscriptions()`：句柄集合管理与幂等清理。
+- `StreamHandle.begin_start()` / `begin_stop()` / `close()` / `fail()` /
+  `require_subscribable()` 完整生命周期面；FAILED 语义永不被擦除。
+- 契约测试 `tests/v14/test_stream_integration.py`（24 测试）覆盖：
+  Planner 校验传播、Provider 预检、状态迁移、幂等、快照独立性、
+  多订阅隔离。
+- `tstdx.runtime` 公共 API 导出 `StreamHandle` 与 `runtime_subscribe`。
+
+约束：Runtime 层只做编排（编译 + 注册 + 生命周期管理），不驱动回源
+Worker；回源由外部 StatefulQuoteStream 按 `handle.plan` 执行，避免
+把 TDX 传输细节泄漏到 Runtime 内核。
+
 ## 当前优化方向
 
 ### Phase 1 Typed Capability Expansion
