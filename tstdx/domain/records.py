@@ -18,7 +18,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol, TypeVar
+
+_T = TypeVar("_T")
+
+
+class _RecordFactory(Protocol):
+    """最小协议：拥有 from_dict 类方法的 Record 类型。"""
+
+    @classmethod
+    def from_dict(cls: type[_T], d: dict[str, Any]) -> _T: ...
 
 __all__ = [
     "FinancialRecord",
@@ -377,7 +386,7 @@ class MacroRecord:
         )
 
 
-def as_record_list(items: list[dict[str, Any]], record_cls: type) -> list[Any]:
+def as_record_list(items: list[dict[str, Any]], record_cls: type[_RecordFactory]) -> list[Any]:
     """批量把 list[dict] 业务结果转换为 Domain Record 列表。"""
     return [record_cls.from_dict(d) for d in items]
 
@@ -387,7 +396,7 @@ def record_to_dicts(records: list[Any]) -> list[dict[str, Any]]:
     return [r.to_dict() for r in records]
 
 
-def normalize_to_records(data: Any, record_cls: type) -> list[Any]:
+def normalize_to_records(data: Any, record_cls: type[_RecordFactory]) -> list[Any]:
     """统一把 dict / list[dict] / Record 归一化为 Record 列表。"""
     if isinstance(data, record_cls):
         return [data]
