@@ -80,7 +80,44 @@ tstdx server-test          # 主站测速
 tstdx stream sh600519      # 流式订阅
 ```
 
-### 6. 主站池与热更新
+### 6. v14 Runtime（编排内核 + 批量执行）
+
+v14 Runtime 是统一编排入口，支持单次查询、批量执行（语义缓存去重 + 并发）
+和流式订阅。所有网关（CLI/REST/WS/MCP）均委托 Runtime 执行。
+
+```python
+from tstdx.runtime import RuntimeGateway, create_runtime, QueryRequest
+from tstdx.cache_semantic import SemanticResultCache
+
+# 创建带语义缓存的 Runtime
+gateway = RuntimeGateway(
+    create_runtime(
+        semantic_cache=SemanticResultCache(),
+        default_cache_ttl=60.0,
+    )
+)
+
+# 单次查询
+resp = gateway.bars("sh600519", period="day", count=30)
+if resp.success:
+    print(resp.data[0]["close"])
+
+# 批量执行（3 只股票，语义缓存自动去重）
+reqs = [
+    QueryRequest(operation="bars", args=("sh600000",), params={"count": 30}),
+    QueryRequest(operation="bars", args=("sh600519",), params={"count": 30}),
+    QueryRequest(operation="bars", args=("sh000001",), params={"count": 30}),
+]
+results = gateway.execute_batch(reqs, max_concurrent=4)
+for r in results:
+    print(r.data[0]["symbol"] if r.success else r.error)
+
+# 缓存诊断
+print(gateway.semantic_cache_stats())
+# {'enabled': True, 'tier': 'l1', 'size': 3}
+```
+
+### 7. 主站池与热更新
 
 连接池默认惰性建连，并在请求失败时按主站健康状态切换。需要主动刷新主站排序时，
 可使用 `bestip()` 或 CLI 的 `hosts audit`；后台测速只更新排序，不会覆盖真实请求健康
@@ -120,6 +157,7 @@ except TdxError as e:
 
 ## 下一步
 
+- [v14 Runtime API 参考](api/v14-runtime.md) — 编排内核完整 API
 - [Cookbook 食谱集](cookbook/README.md) — 20+ 实战场景
 - [FAQ](FAQ.md) — 常见问题
 - [故障排查](troubleshooting.md) — 问题诊断

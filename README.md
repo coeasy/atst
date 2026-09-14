@@ -20,6 +20,7 @@
 - **可观测性**：zero-dep 指标注册表 + Prometheus/StatsD/OTLP 三导出器 + `start_exporter` 装配工厂
 - **40+ 异常类**：分类错误树（E1–E9）+ `RetryAdvice`；`SourceUnavailable` 归 E7 域（外部源不可用）
 - **零硬依赖**：所有第三方库均为可选 extra；`[project.optional-dependencies].dev` 提供与 CI 一致的本地体验
+- **v14 Runtime 编排内核**：统一 Runtime 入口（`Runtime.execute()` / `execute_batch()` / `subscribe()`）+ RuntimeGateway 网关适配 + 60+ 类型化查询契约 + 9 Domain Record 族 + 语义缓存去重（L1/L2）+ ExecutionPlanner DAG 编排 + 流式订阅生命周期管理
 - **弃用时间线明确**：`tstdx.native` v1.5.0 强告警（`UserWarning` + `logging.warning` 双通道）→ v1.6.0 正式删除
 
 ## v1.0.0 正式发布
@@ -111,6 +112,33 @@ else:
     print(f"失败: {resp.error} (code={resp.code})")
 ```
 
+### v14 Runtime（编排内核 + 批量执行）
+
+```python
+from tstdx.runtime import RuntimeGateway, create_runtime
+from tstdx.cache_semantic import SemanticResultCache
+from tstdx.runtime import QueryRequest
+
+# 创建带语义缓存的 Runtime
+gateway = RuntimeGateway(create_runtime(semantic_cache=SemanticResultCache()))
+
+# 单次查询
+resp = gateway.bars("sh600519", count=30)
+if resp.success:
+    print(resp.data)
+
+# 批量执行（语义缓存去重 + 并发）
+reqs = [
+    QueryRequest(operation="bars", args=("sh600000",), params={"count": 30}),
+    QueryRequest(operation="bars", args=("sh600519",), params={"count": 30}),
+    QueryRequest(operation="bars", args=("sh000001",), params={"count": 30}),
+]
+results = gateway.execute_batch(reqs, max_concurrent=4)
+
+# 缓存诊断
+print(gateway.semantic_cache_stats())  # {'enabled': True, 'tier': 'l1', 'size': 3}
+```
+
 ### CLI（19+ 子命令）
 
 ```bash
@@ -165,7 +193,9 @@ tstdx/
 | [docs/FEATURE_MAP_AND_ROADMAP.md](docs/FEATURE_MAP_AND_ROADMAP.md) | 主体功能地图 + v1.2.0 后路线（I/J 批次）|
 | [docs/POTENTIAL_ISSUES_AND_PLAN.md](docs/POTENTIAL_ISSUES_AND_PLAN.md) | **当前批次**：P13/P14/P15 状态表（🔧/⏳/✅）与后续规划 |
 | [DESIGN.md](DESIGN.md) | 完整设计方案 v2.0（架构/协议/工程规范，历史版本见 docs/archive/）|
-| [docs/api/README.md](docs/api/README.md) | API 索引（客户端/门面/服务面/工具）|
+| [docs/api/README.md](docs/api/README.md) | API 索引（客户端/门面/Runtime/服务面/工具）|
+| [docs/api/v14-runtime.md](docs/api/v14-runtime.md) | **v14 Runtime 编排内核**完整 API 参考 |
+| [docs/api/interfaces.md](docs/api/interfaces.md) | **项目接口文档**（全部公开接口面汇总）|
 | [docs/quickstart.md](docs/quickstart.md) | 快速入门 |
 | [docs/cookbook/](docs/cookbook/README.md) | 场景示例（批量 K 线/离线 vipdoc/流式/Sinks/自定义命令）|
 | [docs/FAQ.md](docs/FAQ.md) · [docs/troubleshooting.md](docs/troubleshooting.md) | 常见问题与排障 |

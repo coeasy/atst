@@ -1,7 +1,26 @@
-# API 参考（v1.0.0）
+# API 参考
 
-> 本页对应 v1.0.0 稳定发布版。完整 docstring 驱动文档由 `pdoc`/`mkdocstrings`
-> 生成；此处提供稳定入口和模块索引。
+> 本页对应 v1.0.0 稳定发布版 + v14 Runtime 编排内核。完整 docstring 驱动文档
+> 由 `pdoc`/`mkdocstrings` 生成；此处提供稳定入口和模块索引。
+
+## v14 Runtime（编排内核）
+
+| 模块 | 说明 |
+|------|------|
+| `tstdx.runtime.Runtime` | 编排内核入口（execute/execute_batch/subscribe/semantic_cache_stats） |
+| `tstdx.runtime.RuntimeGateway` | CLI/HTTP/WS 统一网关适配器（bars/quotes/security_count/...） |
+| `tstdx.runtime.QueryRequest` | 边界调用信封（operation/args/params/metadata） |
+| `tstdx.runtime.QueryResponse` | 结果信封（success/data/error/code/metadata） |
+| `tstdx.runtime.create_runtime()` | 工厂（router/planner/provider_order/semantic_cache/default_cache_ttl） |
+| `tstdx.runtime.StreamHandle` | 流式订阅句柄（plan/lifecycle/snapshot/begin_start/close） |
+| `tstdx.execution.ExecutionPlanner` | DAG 编排编译器（fallback/多 Provider） |
+| `tstdx.execution.SemanticExecutionAdapter` | 语义执行桥接（QuerySpec→QueryPlan→QueryResult） |
+| `tstdx.execution.ExecutionGraph` | DAG 图（拓扑排序 + 串行执行） |
+| `tstdx.cache_semantic.SemanticResultCache` | 语义缓存（L1 内存 / L2 持久化，QueryFingerprint 键） |
+| `tstdx.typed_query.CapabilityQuery` | 类型化查询契约（60+ 契约，9 领域） |
+| `tstdx.domain.records` | Domain Record 族（Bar/Quote/Level/CapitalChange/FinanceInfo/...） |
+
+详见 [v14 Runtime API 完整参考](v14-runtime.md) 与 [项目接口文档](interfaces.md)。
 
 ## 核心入口
 

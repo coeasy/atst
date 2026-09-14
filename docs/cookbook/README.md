@@ -13,6 +13,12 @@
 | 05 | [数据落地三件套](05_sinks.md) | DataFrame/Parquet/DuckDB |
 | 06 | [自定义协议命令](06_custom_command.md) | 扩展未知命令 |
 
+## v14 Runtime 食谱
+
+| # | 食谱 | 场景 |
+|---|---|---|
+| 07 | [v14 Runtime 实战](07_v14_runtime.md) | 批量执行 / 语义缓存 / 流式订阅 / Typed Query / Domain Record |
+
 ## 规划中（v0.7.0）
 
 - 复权因子与前/后复权
