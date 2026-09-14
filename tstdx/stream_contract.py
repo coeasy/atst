@@ -35,7 +35,7 @@ class StreamSpec:
         interval: float = 1.0,
         diff_only: bool = False,
         max_queue: int = 1024,
-    ) -> "StreamSpec":
+    ) -> StreamSpec:
         values = (symbols,) if isinstance(symbols, str) else tuple(symbols)
         return cls(
             capability="quotes",

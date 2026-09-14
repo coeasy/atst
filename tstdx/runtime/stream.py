@@ -33,7 +33,6 @@ Provider 专属流计划）与 fail-closed 的
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from ..stream_contract import StreamPlan, StreamPlanner, StreamSpec
 from ..streaming.state import StreamLifecycle, StreamLifecycleSnapshot, StreamState

@@ -14,7 +14,7 @@ capability namespace.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from .errors import ValidationError
 from .providers import PROVIDERS

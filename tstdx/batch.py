@@ -17,8 +17,7 @@ from typing import Any, Generic, TypeVar
 from .domain.symbol import normalize_symbol
 from .errors import SourceUnavailable, TdxError, ValidationError
 from .providers import resolve_provider
-from .query import CurrentnessMode
-from .query import QueryPlan
+from .query import CurrentnessMode, QueryPlan
 
 __all__ = ["BatchSpec", "BatchItem", "BatchResult", "SingleFlight", "NegativeCache"]
 
@@ -43,7 +42,7 @@ class BatchSpec:
         provider: str = "tdx",
         currentness: str = CurrentnessMode.LIVE.value,
         max_age: float | None = None,
-    ) -> "BatchSpec":
+    ) -> BatchSpec:
         values = tuple(dict.fromkeys(normalize_symbol(item) for item in symbols))
         if not values:
             raise ValidationError("batch quotes 至少需要一个 symbol")
@@ -80,7 +79,7 @@ class BatchResult(Generic[T]):
     items: Mapping[str, BatchItem[T]]
 
     @classmethod
-    def build(cls, items: Mapping[str, BatchItem[T]]) -> "BatchResult[T]":
+    def build(cls, items: Mapping[str, BatchItem[T]]) -> BatchResult[T]:
         return cls(MappingProxyType(copy.deepcopy(dict(items))))
 
     @property
@@ -95,7 +94,7 @@ class BatchResult(Generic[T]):
     def not_attempted(self) -> tuple[str, ...]:
         return tuple(key for key, item in self.items.items() if item.status == "not_attempted")
 
-    def __deepcopy__(self, memo: dict[int, Any]) -> "BatchResult[T]":
+    def __deepcopy__(self, memo: dict[int, Any]) -> BatchResult[T]:
         return BatchResult.build(copy.deepcopy(dict(self.items), memo))
 
 

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from ..cache_semantic import SemanticResultCache
@@ -18,7 +18,6 @@ from .response import QueryResponse
 
 if TYPE_CHECKING:
     from ..typed_query import CapabilityQuery
-
     from .stream import StreamHandle
 
 
@@ -40,7 +39,7 @@ class Runtime:
         default_cache_ttl: float | None = None,
     ) -> None:
         self._handlers: dict[str, Callable[..., Any]] = {}
-        self._subscriptions: dict[str, "StreamHandle"] = {}
+        self._subscriptions: dict[str, StreamHandle] = {}
         self._subscription_seq: int = 0
         if default_cache_ttl is not None and default_cache_ttl < 0:
             raise ValueError("default_cache_ttl must be >= 0 or None")
@@ -88,7 +87,7 @@ class Runtime:
         diff_only: bool = False,
         max_queue: int = 1024,
         subscription_id: str | None = None,
-    ) -> "StreamHandle":
+    ) -> StreamHandle:
         """Compile a StreamPlan, bind a fail-closed lifecycle, register it.
 
         The returned handle owns the compiled plan and lifecycle state machine;
@@ -119,7 +118,7 @@ class Runtime:
         self._subscriptions[sid] = bound_handle
         return bound_handle
 
-    def unsubscribe(self, subscription_id: str) -> "StreamHandle | None":
+    def unsubscribe(self, subscription_id: str) -> StreamHandle | None:
         """Idempotently stop a subscription. Returns the removed handle, else None."""
         handle = self._subscriptions.pop(subscription_id, None)
         if handle is None:
@@ -128,10 +127,10 @@ class Runtime:
         handle.close()
         return handle
 
-    def get_subscription(self, subscription_id: str) -> "StreamHandle | None":
+    def get_subscription(self, subscription_id: str) -> StreamHandle | None:
         return self._subscriptions.get(subscription_id)
 
-    def subscriptions(self) -> Mapping[str, "StreamHandle"]:
+    def subscriptions(self) -> Mapping[str, StreamHandle]:
         """Return a snapshot of active subscriptions keyed by id."""
         return dict(self._subscriptions)
 

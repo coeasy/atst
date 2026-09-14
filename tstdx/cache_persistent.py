@@ -150,7 +150,7 @@ class PersistentSemanticCache:
         with self._lock:
             self._db.close()
 
-    def __enter__(self) -> "PersistentSemanticCache":
+    def __enter__(self) -> PersistentSemanticCache:
         return self
 
     def __exit__(self, *exc: Any) -> None:
