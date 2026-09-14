@@ -111,17 +111,17 @@ def _cmd_hosts_audit(args: argparse.Namespace) -> int:
 def _cmd_serve(args: argparse.Namespace) -> int:
     """启动 HTTP 行情网关（40+ 端点 + WebSocket，准确数量以启动日志为准）。
 
-    复用 :func:`tstdx.integration.http_server.main` 的 uvicorn 启动逻辑；
+    复用 :func:`tstdx.integration.runtime_http.create_runtime_app` 的 uvicorn 启动逻辑；
     ``--host/--port`` 可由命令行覆盖（缺省 127.0.0.1:8000）。
     """
-    from ..integration.http_server import create_app
+    from ..integration.runtime_http import create_runtime_app
 
     try:
         import uvicorn
     except ImportError:  # pragma: no cover —— 依赖检查
         print("uvicorn 未安装: pip install tstdx[server]", file=sys.stderr)
         return 2
-    app = create_app()
+    app = create_runtime_app()
     # --port 0 是合法值（OS 分配随机空闲端口），不得被 `or 8000` 短路（审计 §3-3）
     port = getattr(args, "port", None)
     uvicorn.run(

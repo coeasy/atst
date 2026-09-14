@@ -69,3 +69,12 @@ benches/results/ci_time_smoke.json
 
 # Golden replay scratch
 tests/golden/**/tmp_*/
+
+# Legacy v12 integration surfaces (deleted in v15 Phase 2)
+tstdx/integration/http_server.py
+tstdx/integration/http_app.py
+tstdx/integration/http_runtime.py
+tstdx/integration/ws_server.py
+tstdx/integration/ws_app.py
+tstdx/integration/tasks.py
+tstdx/integration/mcp_app.py
