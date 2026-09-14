@@ -67,6 +67,16 @@ from .async_ import (
     AsyncMacClient,
     AsyncTdxClient,
 )
+
+# Install behavior/provenance patches before factory/public bindings are exposed.
+# Order is intentional: concurrent output semantics, base pool identity binding,
+# detached bestip snapshots, then fixed-family subclass argument validation.
+from . import (
+    _async_concurrency_hardening,
+    _bestip_hardening,
+    _pool_binding_hardening,
+    _subclient_family_hardening,
+)
 from .factory import _CLIENT_REGISTRY, get_client
 from .sync import (
     _QUOTES_SNAPSHOT_BATCH,
@@ -77,6 +87,13 @@ from .sync import (
     MacClient,
     OutputFormat,
     TdxClient,
+)
+
+del (
+    _async_concurrency_hardening,
+    _bestip_hardening,
+    _pool_binding_hardening,
+    _subclient_family_hardening,
 )
 
 __all__ = [

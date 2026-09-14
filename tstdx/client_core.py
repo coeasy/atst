@@ -1,25 +1,18 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""客户端共享核心（B1 第一步）——同步 / 异步客户端共用的**纯协议构造**逻辑。
-
-本模块只承载与传输无关的代码（请求体拼装、行 → 领域模型转换、输出格式化、
-offline 命令守卫），**不含任何 I/O**；:class:`~tstdx.client.TdxClient` /
-:class:`~tstdx.client.AsyncTdxClient` 仅各自保留传输 seam（``_req``）与
-业务方法。后续步骤（B1 第二步）将把同名方法的重复方法体逐步合并到此处
-共享，直至同步 / 异步只剩传输差异。
-"""
+"""客户端共享核心：同步 / 异步客户端共用的纯协议构造与校验 SSOT。"""
 
 from __future__ import annotations
 
-import struct
+import datetime as _dt
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .domain.finance import to_capital_changes
 from .domain.models import Bar, CapitalChange, Quote
 from .domain.symbol import to_tdx_market
-from .errors import CommandOffline, ParseError
+from .errors import CommandOffline, NotImplementedFeature, ParseError
 from .protocol.commands import CMD, STATUS_OFFLINE, get_command
 from .protocol.parsers.std7709 import KlineCategory
 
@@ -28,47 +21,153 @@ __all__ = [
     "_PREFIX_MARKET",
     "_bars_body",
     "_emit",
+    "_encode_gbk_field",
     "_guard_offline",
+    "_normalize_symbols",
     "_quote_body",
+    "_require_bool",
+    "_require_int",
+    "_require_output_format",
+    "_require_yyyymmdd",
     "_row_to_bar",
     "_row_to_capital",
     "_row_to_quote",
+    "_standard_market_id",
     "period_to_category",
     "split_symbol",
 ]
 
-OutputFormat = str  # "dict" | "tuple" | "dataframe"
-
-#: 市场前缀 → 标准市场编号（与 :func:`split_code_market` 单一事实源一致：
-#: 0=深 1=沪 2=北交所）。供 ``market="sh"`` 风格参数的命令使用。
-#: v5 DC1：北交所从 0（与深市撞码）修正为独立市场编号 2（0x044E 实测：
-#: market=2 → 379，北交所合理规模）。
+OutputFormat = str
 _PREFIX_MARKET: dict[str, int] = {"sh": 1, "sz": 0, "bj": 2}
+_OUTPUT_FORMATS = frozenset({"dict", "tuple", "dataframe"})
 
 
-# --------------------------------------------------------------------------- #
-# 符号解析（委托统一引擎 tstdx.domain.symbol）
-# --------------------------------------------------------------------------- #
+def _require_bool(name: str, value: Any) -> bool:
+    if not isinstance(value, bool):
+        raise ParseError(
+            f"{name} 必须是 bool，收到 {type(value).__name__}: {value!r}",
+            context={"field": name, "value": value},
+        )
+    return value
+
+
+def _require_int(
+    name: str,
+    value: Any,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ParseError(
+            f"{name} 必须是整数，收到 {type(value).__name__}: {value!r}",
+            context={"field": name, "value": value},
+        )
+    if minimum is not None and value < minimum:
+        raise ParseError(
+            f"{name}={value} 小于下限 {minimum}",
+            context={"field": name, "value": value, "minimum": minimum},
+        )
+    if maximum is not None and value > maximum:
+        raise ParseError(
+            f"{name}={value} 超过上限 {maximum}",
+            context={"field": name, "value": value, "maximum": maximum},
+        )
+    return value
+
+
+def _require_output_format(value: Any) -> str:
+    if not isinstance(value, str) or value not in _OUTPUT_FORMATS:
+        raise ParseError(
+            f"未知输出格式 {value!r}；可选 {sorted(_OUTPUT_FORMATS)}",
+            context={"as_format": value, "allowed_formats": sorted(_OUTPUT_FORMATS)},
+        )
+    return value
+
+
+def _normalize_symbols(symbols: Any, *, field: str = "symbols") -> list[str]:
+    if isinstance(symbols, str):
+        return [symbols]
+    if isinstance(symbols, (bytes, bytearray, memoryview)) or isinstance(symbols, Mapping):
+        raise ParseError(
+            f"{field} 必须是字符串或字符串 Sequence，收到 {type(symbols).__name__}",
+            context={"field": field, "value_type": type(symbols).__name__},
+        )
+    if not isinstance(symbols, Sequence):
+        raise ParseError(
+            f"{field} 必须是字符串或字符串 Sequence，收到 {type(symbols).__name__}",
+            context={"field": field, "value_type": type(symbols).__name__},
+        )
+    items = list(symbols)
+    for index, symbol in enumerate(items):
+        if not isinstance(symbol, str):
+            raise ParseError(
+                f"{field}[{index}] 必须是字符串，收到 {type(symbol).__name__}",
+                context={"field": field, "index": index, "value_type": type(symbol).__name__},
+            )
+    return items
+
+
+def _require_yyyymmdd(name: str, value: Any) -> int:
+    day = _require_int(name, value, minimum=19000101, maximum=21001231)
+    text = f"{day:08d}"
+    try:
+        _dt.datetime.strptime(text, "%Y%m%d")
+    except ValueError as exc:
+        raise ParseError(
+            f"{name} 不是合法 YYYYMMDD 日期: {day}",
+            context={"field": name, "value": day},
+            cause=exc,
+        ) from exc
+    return day
+
+
+def _encode_gbk_field(name: str, value: Any, *, max_bytes: int) -> bytes:
+    if not isinstance(value, str) or not value:
+        raise ParseError(f"{name} 必须是非空字符串，收到 {value!r}", context={"field": name})
+    if "\x00" in value:
+        raise ParseError(f"{name} 不允许包含 NUL", context={"field": name})
+    try:
+        raw = value.encode("gbk", errors="strict")
+    except UnicodeEncodeError as exc:
+        raise ParseError(
+            f"{name} 无法无损编码为 GBK: {value!r}",
+            context={"field": name},
+            cause=exc,
+        ) from exc
+    if len(raw) > max_bytes:
+        raise ParseError(
+            f"{name} GBK 长度 {len(raw)} 超过协议上限 {max_bytes} 字节",
+            context={"field": name, "encoded_bytes": len(raw), "maximum": max_bytes},
+        )
+    return raw.ljust(max_bytes, b"\x00")
+
+
+def _standard_market_id(market: Any) -> int:
+    if isinstance(market, str):
+        key = market.strip().lower()
+        if key not in _PREFIX_MARKET:
+            raise ParseError(
+                f"未知标准市场 {market!r}；可选 sz/sh/bj 或 0/1/2",
+                context={"market": market},
+            )
+        return _PREFIX_MARKET[key]
+    return _require_int("market", market, minimum=0, maximum=2)
+
+
 def split_symbol(symbol: str) -> tuple[int, str]:
-    """把任意书写变种的证券代码拆成 ``(market, code)``。
-
-    ``market`` 为**标准市场编号**（0=深/北 1=沪），可直接用于 K 线等命令；
-    实时行情的 ``0x0530`` 请求体由 :func:`build_realtime_quote_body` 自动反转。
-
-    支持全部书写变种（大小写不敏感）：``sh600519`` / ``sh.600519`` /
-    ``600519.sh`` / ``600519SH`` / ``600519``，
-    统一经由 :mod:`tstdx.domain.symbol` 单一事实源处理。
-
-    >>> split_symbol("sh600519")
-    (1, '600519')
-    >>> split_symbol("600519.SH")
-    (1, '600519')
-    >>> split_symbol("000001")   # 个股 000001 平安银行 → 深市
-    (0, '000001')
-    >>> split_symbol("sz000651")
-    (0, '000651')
-    """
-    return to_tdx_market(symbol)
+    market, code = to_tdx_market(symbol)
+    if market not in (0, 1):
+        raise ParseError(
+            f"symbol-based 7709 request 尚未验证 market={market}；当前只允许 SZ/SH",
+            context={
+                "symbol": symbol,
+                "market": market,
+                "verified_markets": [0, 1],
+                "provider_switch_allowed": False,
+            },
+        )
+    return market, code
 
 
 _PERIOD_TO_CATEGORY: dict[str, int] = {
@@ -88,7 +187,6 @@ _PERIOD_TO_CATEGORY: dict[str, int] = {
     "season": KlineCategory.SEASON,
     "quarter": KlineCategory.SEASON,
     "year": KlineCategory.YEAR,
-    # 兼容别名
     "d": KlineCategory.DAY,
     "w": KlineCategory.WEEK,
     "m": KlineCategory.MONTH,
@@ -101,16 +199,17 @@ _PERIOD_TO_CATEGORY: dict[str, int] = {
 
 
 def period_to_category(period: str) -> int:
-    """把人类可读的周期名映射到 K 线 ``category`` 整数。
-
-    >>> period_to_category("day")
-    4
-    >>> period_to_category("15min")
-    1
-    """
-    key = (period or "day").strip().lower()
+    if not isinstance(period, str) or not period.strip():
+        raise ParseError(f"period 必须是非空字符串，收到 {period!r}", context={"period": period})
+    key = period.strip().lower()
     if key.isdigit():
-        return int(key)  # 允许直接传 category 数字
+        category = int(key)
+        if category not in KlineCategory.NAMES:
+            raise ParseError(
+                f"未知 K 线 category={category}；可选 {sorted(KlineCategory.NAMES)}",
+                context={"period": period, "category": category},
+            )
+        return category
     if key not in _PERIOD_TO_CATEGORY:
         raise ParseError(
             f"未知周期: {period!r}（可选 {sorted(_PERIOD_TO_CATEGORY)}）",
@@ -119,9 +218,6 @@ def period_to_category(period: str) -> int:
     return _PERIOD_TO_CATEGORY[key]
 
 
-# --------------------------------------------------------------------------- #
-# 行 → 领域模型
-# --------------------------------------------------------------------------- #
 def _row_to_bar(row: Mapping[str, Any]) -> Bar:
     return Bar(
         datetime=row.get("datetime", ""),
@@ -132,9 +228,9 @@ def _row_to_bar(row: Mapping[str, Any]) -> Bar:
         volume=int(row.get("volume", 0) or 0),
         amount=row.get("amount", 0.0),
         extra={
-            k: v
-            for k, v in row.items()
-            if k not in ("datetime", "open", "high", "low", "close", "volume", "amount")
+            key: value
+            for key, value in row.items()
+            if key not in ("datetime", "open", "high", "low", "close", "volume", "amount")
         },
     )
 
@@ -156,76 +252,73 @@ def _row_to_quote(row: Mapping[str, Any]) -> Quote:
 
 
 def _row_to_capital(row: Mapping[str, Any]) -> CapitalChange:
-    """除权除息解析行 → :class:`CapitalChange`（F1：统一走
-    :func:`tstdx.domain.finance.to_capital_changes` 单一事实源）。"""
     return to_capital_changes([row])[0]
 
 
 def _emit(items: Sequence[Any], as_format: OutputFormat):
-    if as_format == "dataframe":
+    output_format = _require_output_format(as_format)
+    if output_format == "dataframe":
         from .domain.models import to_dataframe
 
         return to_dataframe(items)
-    if as_format == "tuple":
+    if output_format == "tuple":
         from .domain.models import to_tuples
 
         return to_tuples(items)
-    # dict（默认）：调用 to_dict 保留 extra
     from .domain.models import to_dicts
 
     return to_dicts(items)
 
 
-# --------------------------------------------------------------------------- #
-# B5：offline 命令守卫
-# --------------------------------------------------------------------------- #
-#: 内部已有回退路径的 offline 命令豁免 fail-fast
-#: （0x054C 批量失败时方法内部回退逐只 0x0530，见 :meth:`TdxClient.quotes_snapshot`）
 _OFFLINE_FALLBACK_OK: frozenset[int] = frozenset({CMD["quotes_snapshot"]})
+_UNVERIFIED_STRUCTURED_BLOCK: frozenset[int] = frozenset(
+    {
+        CMD["minute_today"],
+        CMD["trade_today"],
+    }
+)
 
 
 def _guard_offline(cmd: int) -> None:
-    """B5：账本标记 offline 且无回退豁免的命令直接 fail-fast。
-
-    7 条 ``STATUS_OFFLINE`` 命令多主站实测无响应；此前调用方仍要吃满
-    「N 主站 × 3s 超时」重试链。现在请求发出前查账本，立即抛
-    :class:`~tstdx.errors.CommandOffline`（含替代方案指引，<10ms）。
-    误伤修复路径 = 更新账本 status（单一事实源）。
-    """
-    c = get_command(cmd)
-    if c is not None and c.status == STATUS_OFFLINE and cmd not in _OFFLINE_FALLBACK_OK:
+    command = get_command(cmd)
+    if cmd in _UNVERIFIED_STRUCTURED_BLOCK:
+        name = command.name if command is not None else f"0x{cmd:04X}"
+        raise NotImplementedFeature(
+            f"命令 0x{cmd:04X}（{name}）当前 parser/request 仍为 inferred，"
+            "在真机 golden 锁定前不通过结构化 TdxClient API 发包",
+            context={
+                "cmd": cmd,
+                "name": name,
+                "raw_transport_available": True,
+                "provider_switch_allowed": False,
+            },
+        )
+    if command is not None and command.status == STATUS_OFFLINE and cmd not in _OFFLINE_FALLBACK_OK:
         raise CommandOffline(
-            f"命令 0x{cmd:04X}（{c.name}）多主站实测无响应，已在客户端 fail-fast"
+            f"命令 0x{cmd:04X}（{command.name}）多主站实测无响应，已在客户端 fail-fast"
             "（不再走超时重试链）；请改用替代命令，或参考 PROTOCOL_SPEC 对应条目",
-            context={"cmd": cmd, "name": c.name, "family": c.family},
+            context={"cmd": cmd, "name": command.name, "family": command.family},
         )
 
 
-# --------------------------------------------------------------------------- #
-# 请求体拼装（多协议族共用布局）
-# --------------------------------------------------------------------------- #
 def _bars_body(market: int, code: str, category: int, start: int, count: int) -> bytes:
-    return struct.pack(
-        "<H6sHHHHIIH",
-        market,
-        code.encode("ascii")[:6].ljust(6, b"\x00"),
-        category,
-        1,
-        start,
-        count,
-        0,
-        0,
-        0,
+    del market, code, category, start, count
+    raise NotImplementedFeature(
+        "EXTENDED/GOODS bars request layout 尚未经过真机 golden 验证；已停止发送旧的标准 0x052D body",
+        context={
+            "commands": ["0x0104", "0x0202"],
+            "expected_inferred_length": 12,
+            "provider_switch_allowed": False,
+        },
     )
 
 
 def _quote_body(code: str, market: int) -> bytes:
-    # 0x0530 的 market 字节语义**实测为反转**（深→1 沪→0，见
-    # quote_request_market / RealtimeQuoteParser 回声校验）。本 helper 服务于
-    # 0x0203（Goods）/ 0x0105（Ex）/ 0x1301（MAC）报价命令，沿用同一反转
-    # 写法——但这三个命令族的反转语义**未经真机验证**，仅与既有实现保持
-    # 一致，待 golden 样本裁决（与 P1d 同源）。
-    # 防护：market 仅允许 0/1，越界值 clamp 到边界——否则 1-market 对
-    # market>=2 会产出负数，bytes() 直接抛 ValueError。
-    m = max(0, min(1, int(market)))
-    return bytes([0x01, 1 - m]) + code.encode("ascii")[:6].ljust(6, b"\x00")
+    del code, market
+    raise NotImplementedFeature(
+        "EXTENDED/GOODS/MAC quote request layout 尚未经过真机 golden 验证；已停止发送推断 body",
+        context={
+            "commands": ["0x0105", "0x0203", "0x1301"],
+            "provider_switch_allowed": False,
+        },
+    )

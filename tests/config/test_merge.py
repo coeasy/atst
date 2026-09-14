@@ -1,9 +1,4 @@
-"""配置合并测试（§21）：12 个用例覆盖 6 源优先级合并、校验与类型归一化。
-
-覆盖场景：default-only / env override / file override / cli override /
-precedence order / unknown-key / invalid type / empty dict / nested section /
-list extension / boolean coercion / float coercion。
-"""
+"""配置合并测试：strict Provider-bound defaults + 类型归一化。"""
 
 from __future__ import annotations
 
@@ -14,56 +9,40 @@ import pytest
 
 from tstdx.config.loader import (
     config_from_env,
+    find_config_files,
     load_config,
     parse_env_value,
 )
-from tstdx.config.schema import (
-    Config,
-    config_from_dict,
-    merge_config,
-)
-from tstdx.errors import ValidationError
+from tstdx.config.schema import Config, config_from_dict, merge_config
+from tstdx.errors import ConfigError, ValidationError
 
 
 @pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch: pytest.MonkeyPatch):
-    """每个测试自动隔离环境变量。
-
-    用 ``monkeypatch.delenv`` 而非「删后再恢复」：后者在测试内新增的
-    ``TSTDX_*`` 键不会被 ``os.environ.update`` 清掉（update 只覆盖已存在
-    键），会把最后一个测试的残留（如 ``TSTDX_CONFIG_FILE``）泄漏给后续
-    测试文件——security 的 ``list_keys()`` 通配扫描会把它当成凭据键
-    （实测全量回归 ``config_file`` 串扰）。
-    """
     for k in list(os.environ):
         if k.startswith("TSTDX_"):
             monkeypatch.delenv(k, raising=False)
 
 
-# --------------------------------------------------------------------------- #
-# 12 个用例
-# --------------------------------------------------------------------------- #
 @pytest.mark.unit
 class TestConfigMerge:
-    """12 个配置合并用例。"""
-
     def test_default_only(self):
-        """#1 纯默认配置：use_env=False, use_files=False, overrides=None。"""
         cfg = load_config(overrides=None, use_env=False, use_files=False)
         assert isinstance(cfg, Config)
         assert cfg.core.timeout == 3.0
         assert cfg.core.max_retries == 3
+        assert cfg.core.auto_fallback is False
         assert cfg.web.enabled is False
-        assert cfg.sources.order == ["tdx", "web", "reader", "cache"]
+        assert cfg.sources.default_provider == "tdx"
+        assert cfg.sources.order == ["tdx"]
+        assert cfg.sources.continue_on_error is False
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch):
-        """#2 环境变量覆盖：TSTDX_CORE_TIMEOUT=5。"""
         monkeypatch.setenv("TSTDX_CORE_TIMEOUT", "5")
         cfg = load_config(overrides=None, use_env=True, use_files=False)
         assert cfg.core.timeout == 5.0
 
     def test_file_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """#3 文件覆盖：TSTDX_CONFIG_FILE 指向临时 TOML。"""
         toml_content = b"""
 [core]
 timeout = 7.0
@@ -77,7 +56,6 @@ max_retries = 1
         assert cfg.core.max_retries == 1
 
     def test_cli_override(self):
-        """#4 函数入参覆盖（最高优先级）。"""
         cfg = load_config(
             overrides={"core": {"timeout": 99.0}},
             use_env=False,
@@ -86,14 +64,12 @@ max_retries = 1
         assert cfg.core.timeout == 99.0
 
     def test_precedence_order(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """#5 优先级 file < env < cli（cli 入参最高）。"""
         toml_content = b"[core]\ntimeout = 1.0\n"
         p = tmp_path / "tstdx.toml"
         p.write_bytes(toml_content)
         monkeypatch.setenv("TSTDX_CONFIG_FILE", str(p))
         monkeypatch.setenv("TSTDX_CORE_TIMEOUT", "2.0")
 
-        # cli (overrides) 最高 → 应为 3.0
         cfg = load_config(
             overrides={"core": {"timeout": 3.0}},
             use_env=True,
@@ -101,53 +77,96 @@ max_retries = 1
         )
         assert cfg.core.timeout == 3.0
 
-        # 无 cli → env 应胜出（环境变量优先级高于文件，见 loader 优先级清单）
         cfg2 = load_config(overrides=None, use_env=True, use_files=True)
-        # 优先级：env(2.0) > file(1.0)
-        assert cfg2.core.timeout == 2.0  # env 覆盖 file
+        assert cfg2.core.timeout == 2.0
 
-        # 仅 env
         monkeypatch.setenv("TSTDX_CONFIG_FILE", "")
         cfg3 = load_config(overrides=None, use_env=True, use_files=False)
         assert cfg3.core.timeout == 2.0
 
+    def test_explicit_missing_config_file_fails_closed(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        missing = tmp_path / "missing.toml"
+        monkeypatch.setenv("TSTDX_CONFIG_FILE", str(missing))
+
+        with pytest.raises(ConfigError, match="不存在"):
+            load_config(overrides=None, use_env=False, use_files=True)
+
+    def test_explicit_config_directory_fails_closed(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.setenv("TSTDX_CONFIG_FILE", str(tmp_path))
+
+        with pytest.raises(ConfigError, match="不是普通文件"):
+            find_config_files()
+
+    def test_explicit_config_is_not_duplicated_by_project_discovery(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        project = tmp_path / "tstdx.toml"
+        project.write_text("[core]\ntimeout = 4.0\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("TSTDX_CONFIG_FILE", str(project))
+
+        files = find_config_files()
+
+        assert sum(path.resolve() == project.resolve() for path in files) == 1
+
+    def test_runtime_environment_keys_do_not_enter_schema_namespace(self):
+        result = config_from_env(
+            {
+                "TSTDX_HOSTS": "1.2.3.4:7709",
+                "TSTDX_CONFIG_FILE": "/tmp/example.toml",
+                "TSTDX_FEEDBACK": "dry-run",
+                "TSTDX_FEEDBACK_ENDPOINT": "https://feedback.example.com/api",
+                "TSTDX_FEEDBACK_STORE_DIR": "/tmp/tstdx-feedback",
+            }
+        )
+
+        assert result == {}
+
+    def test_unknown_environment_section_fails_closed(self):
+        with pytest.raises(ConfigError, match="无法识别环境变量"):
+            config_from_env({"TSTDX_COER_TIMEOUT": "5"})
+
+    def test_unknown_environment_field_fails_closed(self):
+        with pytest.raises(ConfigError, match="字段无法识别"):
+            config_from_env({"TSTDX_CORE_TIMOUT": "5"})
+
     def test_unknown_key_tolerance(self):
-        """#6 未知配置段 → ValidationError。"""
         with pytest.raises(ValidationError):
             config_from_dict({"bogus_section": {"foo": 1}})
 
     def test_invalid_type_rejection(self):
-        """#7 非法类型 → ValidationError（如 timeout 传入字符串）。"""
         with pytest.raises(ValidationError):
             merge_config({"core": {"timeout": "not_a_number"}})
 
     def test_empty_dict_merge(self):
-        """#8 空字典合并 → 等价于默认配置。"""
         cfg = merge_config({}, None, {})
         assert isinstance(cfg, Config)
         assert cfg.core.timeout == 3.0
 
     def test_nested_section_merge(self):
-        """#9 嵌套 section 合并（多源字段覆盖）。"""
         low = {"core": {"timeout": 1.0, "max_retries": 5}}
         high = {"core": {"timeout": 2.0}}
         cfg = merge_config(low, high)
-        assert cfg.core.timeout == 2.0  # high 覆盖
-        assert cfg.core.max_retries == 5  # low 保留（high 未提及）
+        assert cfg.core.timeout == 2.0
+        assert cfg.core.max_retries == 5
 
     def test_list_extension(self, monkeypatch: pytest.MonkeyPatch):
-        """#10 逗号分隔列表解析（环境变量）。"""
         monkeypatch.setenv("TSTDX_WEB_ENABLED_SOURCES", "tencent,sina,eastmoney")
         cfg = load_config(overrides=None, use_env=True, use_files=False)
         assert isinstance(cfg.web.enabled_sources, list)
         assert "tencent" in cfg.web.enabled_sources
 
     def test_boolean_coercion(self):
-        """#11 布尔类型归一化（F0-3 契约：纯数字按数值解析，不伪装 bool）。
-
-        旧契约把 "1"/"0" 解析为 True/False，导致 ``TSTDX_CORE_MAX_RETRIES=1``
-        这类数值字段触发 "必须是数值，收到 bool" 校验崩溃（实测 P0）。
-        """
         assert parse_env_value("true") is True
         assert parse_env_value("True") is True
         assert parse_env_value("1") == 1 and parse_env_value("1") is not True
@@ -156,21 +175,31 @@ max_retries = 1
         assert parse_env_value("0") == 0 and parse_env_value("0") is not False
         assert parse_env_value("off") is False
 
-        # 通过 config_from_env 验证
+        # Parsing remains backward compatible. Validation is the boundary that
+        # rejects the old runtime semantic.
         env = {"TSTDX_CORE_AUTO_FALLBACK": "true", "TSTDX_CACHE_ENABLED": "false"}
         result = config_from_env(env)
         assert result["core"]["auto_fallback"] is True
         assert result["cache"]["enabled"] is False
 
     def test_float_coercion(self):
-        """#12 浮点类型归一化。"""
         assert parse_env_value("3.14") == 3.14
         assert parse_env_value("0.001") == 0.001
         assert parse_env_value("100.5") == 100.5
-
-        # 整数
         assert parse_env_value("42") == 42
         assert isinstance(parse_env_value("42"), int)
-
-        # JSON 列表
         assert parse_env_value("[1,2,3]") == [1, 2, 3]
+
+    def test_runtime_rejects_cross_provider_fallback_flags(self):
+        with pytest.raises(ValidationError, match="auto_fallback"):
+            config_from_dict({"core": {"auto_fallback": True}})
+        with pytest.raises(ValidationError, match="continue_on_error"):
+            config_from_dict({"sources": {"continue_on_error": True}})
+        with pytest.raises(ValidationError, match="多级 fallback"):
+            config_from_dict({"sources": {"order": ["tdx", "web"]}})
+
+    def test_default_provider_is_registry_validated(self):
+        cfg = config_from_dict({"sources": {"default_provider": "tencent"}})
+        assert cfg.sources.default_provider == "tencent"
+        with pytest.raises(ValidationError, match="未知 provider"):
+            config_from_dict({"sources": {"default_provider": "not-a-provider"}})

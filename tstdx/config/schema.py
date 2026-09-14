@@ -5,15 +5,19 @@
 
 核心库零硬依赖：本模块用标准库 dataclass 实现 strict 校验（拼写错误立即报错）。
 若环境装有 **pydantic v2**，:func:`build_config` 会自动改用 pydantic 做更强的类型校验。
+
+v12 配置原则：Provider 选择与 host/endpoint 恢复分层。历史 fallback 字段
+只为迁移兼容保留；有效配置不得开启跨 Provider 自动降级。
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass, field, fields, replace
 from typing import Any
 
-from ..errors import ValidationError
+from ..errors import ConfigError, ValidationError
 
 __all__ = [
     "CoreConfig",
@@ -23,6 +27,7 @@ __all__ = [
     "OutputConfig",
     "ProfileConfig",
     "WebConfig",
+    "SourcesConfig",
     "ObservabilityConfig",
     "SecurityConfig",
     "CompatibilityConfig",
@@ -39,10 +44,39 @@ __all__ = [
 def _check_range(name: str, value: Any, lo: float | None, hi: float | None) -> None:
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ValidationError(f"{name} 必须是数值，收到 {type(value).__name__}: {value!r}")
+    normalized = float(value)
+    if not math.isfinite(normalized):
+        raise ValidationError(f"{name} 必须是有限数值，收到 {value!r}")
+    if lo is not None and normalized < lo:
+        raise ValidationError(f"{name} = {value} 小于下限 {lo}")
+    if hi is not None and normalized > hi:
+        raise ValidationError(f"{name} = {value} 超过上限 {hi}")
+
+
+def _check_int_range(name: str, value: Any, lo: int | None, hi: int | None) -> None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValidationError(f"{name} 必须是整数，收到 {type(value).__name__}: {value!r}")
     if lo is not None and value < lo:
         raise ValidationError(f"{name} = {value} 小于下限 {lo}")
     if hi is not None and value > hi:
         raise ValidationError(f"{name} = {value} 超过上限 {hi}")
+
+
+def _check_bool(name: str, value: Any) -> None:
+    if not isinstance(value, bool):
+        raise ValidationError(f"{name} 必须是 bool，收到 {type(value).__name__}: {value!r}")
+
+
+def _check_non_empty_str(name: str, value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError(f"{name} 必须是非空字符串，收到 {value!r}")
+    return value
+
+
+def _check_mapping(name: str, value: Any) -> Mapping[Any, Any]:
+    if not isinstance(value, Mapping):
+        raise ValidationError(f"{name} 必须是 mapping，收到 {type(value).__name__}")
+    return value
 
 
 # --------------------------------------------------------------------------- #
@@ -52,9 +86,10 @@ def _check_range(name: str, value: Any, lo: float | None, hi: float | None) -> N
 class CoreConfig:
     timeout: float = 3.0
     heartbeat_interval: int = 30
+    #: 当前 Provider 内 host/endpoint 的重试预算；不是 Provider 切换次数。
     max_retries: int = 3
-    #: 主站全不可达时自动降级（离线 → HTTP Web 源）
-    auto_fallback: bool = True
+    #: v12 迁移兼容字段。有效配置必须为 False。
+    auto_fallback: bool = False
     #: 批量行情单次上限（服务端限制 60）
     batch_quotes_limit: int = 60
     #: K 线单次请求上限
@@ -62,10 +97,17 @@ class CoreConfig:
 
     def validate(self) -> None:
         _check_range("core.timeout", self.timeout, 0.1, 300)
-        _check_range("core.heartbeat_interval", self.heartbeat_interval, 1, 3600)
-        _check_range("core.max_retries", self.max_retries, 0, 20)
-        _check_range("core.batch_quotes_limit", self.batch_quotes_limit, 1, 60)
-        _check_range("core.bars_page_size", self.bars_page_size, 1, 800)
+        _check_int_range("core.heartbeat_interval", self.heartbeat_interval, 1, 3600)
+        _check_int_range("core.max_retries", self.max_retries, 0, 20)
+        _check_int_range("core.batch_quotes_limit", self.batch_quotes_limit, 1, 60)
+        _check_int_range("core.bars_page_size", self.bars_page_size, 1, 800)
+        _check_bool("core.auto_fallback", self.auto_fallback)
+        if self.auto_fallback:
+            raise ValidationError(
+                "core.auto_fallback 已停用：v12 禁止跨 Provider 自动 fallback；"
+                "请显式选择 provider，TDX 内部 host failover 仍由传输层处理",
+                context={"field": "core.auto_fallback", "provider_switch_allowed": False},
+            )
 
 
 @dataclass
@@ -81,56 +123,66 @@ class HostsConfig:
     speedtest_timeout: float = 1.0
 
     def validate(self) -> None:
-        _check_range("hosts.slots_per_host", self.slots_per_host, 1, 64)
-        _check_range("hosts.max_hosts", self.max_hosts, 1, 64)
+        from ..transport.hosts import parse_server
+
+        if not isinstance(self.servers, list):
+            raise ValidationError(
+                f"hosts.servers 必须是 list，收到 {type(self.servers).__name__}"
+            )
+        _check_bool("hosts.auto_speedtest", self.auto_speedtest)
+        _check_non_empty_str("hosts.ranking_file", self.ranking_file)
+        _check_int_range("hosts.slots_per_host", self.slots_per_host, 1, 64)
+        _check_int_range("hosts.max_hosts", self.max_hosts, 1, 64)
         _check_range("hosts.speedtest_timeout", self.speedtest_timeout, 0.1, 30)
         for item in self.servers:
             if not isinstance(item, (list, tuple)) or len(item) != 2:
                 raise ValidationError(f"hosts.servers 每项必须是 [host, port]，收到 {item!r}")
-            host, port = item
-            if not isinstance(host, str) or not isinstance(port, int):
+            try:
+                parse_server(item)
+            except ConfigError as exc:
                 raise ValidationError(
-                    f"hosts.servers 项类型错误: host 应为 str、port 应为 int，收到 {item!r}"
-                )
+                    f"hosts.servers 主站无效: {item!r} —— {exc.message}",
+                    context={"field": "hosts.servers"},
+                    cause=exc,
+                ) from exc
 
 
 @dataclass
 class RateLimitConfig:
     """本地请求限流（req/s），按交易状态分档。"""
 
-    in_session: int = 15  # 盘中
-    pre_post: int = 30  # 盘前盘后
-    closed: int = 60  # 休市
+    in_session: int = 15
+    pre_post: int = 30
+    closed: int = 60
 
     def validate(self) -> None:
-        for k in ("in_session", "pre_post", "closed"):
-            _check_range(f"rate_limit.{k}", getattr(self, k), 1, 1000)
+        for key in ("in_session", "pre_post", "closed"):
+            _check_int_range(f"rate_limit.{key}", getattr(self, key), 1, 1000)
 
 
 @dataclass
 class CacheConfig:
     enabled: bool = True
-    #: memory | disk
+    #: legacy memory | disk backend；planned query cache 另由完整 QueryFingerprint 管理。
     backend: str = "memory"
     ttl: int = 3
     max_entries: int = 4096
     directory: str = "~/.tstdx/cache"
 
     def validate(self) -> None:
+        _check_bool("cache.enabled", self.enabled)
         if self.backend not in ("memory", "disk"):
             raise ValidationError(f"cache.backend 必须是 memory|disk，收到 {self.backend!r}")
-        _check_range("cache.ttl", self.ttl, 0, 86400)
-        _check_range("cache.max_entries", self.max_entries, 1, 1_000_000)
+        _check_int_range("cache.ttl", self.ttl, 0, 86400)
+        _check_int_range("cache.max_entries", self.max_entries, 1, 1_000_000)
+        _check_non_empty_str("cache.directory", self.directory)
 
 
 @dataclass
 class OutputConfig:
     #: dict | tuple | dataframe
-    #: （"model" 已从枚举移除：全库无任何消费者——reader 的 ``output="model"``
-    #:  是函数参数而非配置项，审计 §3-3。需要 Bar 对象时请在调用点显式传参。）
     default_format: str = "dict"
     timezone: str = "Asia/Shanghai"
-    #: DataFrame 输出时是否设置 datetime 索引
     df_datetime_index: bool = True
 
     def validate(self) -> None:
@@ -138,20 +190,23 @@ class OutputConfig:
             raise ValidationError(
                 f"output.default_format 非法: {self.default_format!r}（可选 dict/tuple/dataframe）"
             )
+        _check_non_empty_str("output.timezone", self.timezone)
+        _check_bool("output.df_datetime_index", self.df_datetime_index)
 
 
 @dataclass
 class ProfileConfig:
     default: str = "a_share_day"
     auto_detect: bool = True
-    #: 自动探测置信度下限，低于则报错而非静默猜测
     min_confidence: float = 0.5
 
     def validate(self) -> None:
+        default = _check_non_empty_str("profile.default", self.default)
+        _check_bool("profile.auto_detect", self.auto_detect)
         _check_range("profile.min_confidence", self.min_confidence, 0.0, 1.0)
-        if self.default not in _BUILTIN_PROFILE_NAMES():
+        if default not in _BUILTIN_PROFILE_NAMES():
             raise ValidationError(
-                f"profile.default = {self.default!r} 不是内置档案；"
+                f"profile.default = {default!r} 不是内置档案；"
                 f"可选: {sorted(_BUILTIN_PROFILE_NAMES())}"
             )
 
@@ -164,20 +219,17 @@ def _BUILTIN_PROFILE_NAMES() -> set[str]:
 
 @dataclass
 class WebConfig:
-    """HTTP Web 行情源（§33）。
+    """Legacy WebQuoteClient 兼容配置。
 
-    ``enabled`` 是 web 子系统的**总闸**（默认 False）：
-    :func:`tstdx.sources.build_router` 以它为准门控路由里的 ``web`` 源——
-    即便 ``SourcesConfig.enabled["web"]=True``，总闸关闭时 web 也不参与
-    降级（以 WebConfig 为准，消除两个默认值互相矛盾的口径，审计 §3-3）。
+    ``enabled_sources`` 是显式 legacy Web 客户端允许使用的 Provider 列表，
+    **不是** TDX 失败后的 fallback 顺序。planned runtime 通过 ProviderRegistry
+    直接选择 ``tencent/sina/eastmoney/...``。
     """
 
     enabled: bool = False
-    #: 降级顺序，配置驱动（非硬编码）
     enabled_sources: list[str] = field(default_factory=lambda: ["tencent", "sina", "eastmoney"])
     timeout: float = 5.0
     max_retries: int = 2
-    #: 反爬必需的请求头
     headers: dict[str, str] = field(
         default_factory=lambda: {
             "User-Agent": (
@@ -187,9 +239,7 @@ class WebConfig:
             "Referer": "https://finance.sina.com.cn",
         }
     )
-    #: 按源的限流（req/s）
     rate_limit: dict[str, int] = field(default_factory=lambda: {"_default": 5})
-    #: 归一化契约
     normalize: dict[str, Any] = field(
         default_factory=lambda: {"volume": "share", "amount": "yuan", "strict": True}
     )
@@ -197,45 +247,65 @@ class WebConfig:
     def validate(self) -> None:
         from ..web.sources import KNOWN_SOURCES
 
-        for s in self.enabled_sources:
-            if s not in KNOWN_SOURCES:
+        _check_bool("web.enabled", self.enabled)
+        if not isinstance(self.enabled_sources, list):
+            raise ValidationError(
+                f"web.enabled_sources 必须是 list，收到 {type(self.enabled_sources).__name__}"
+            )
+        for source in self.enabled_sources:
+            if not isinstance(source, str) or source not in KNOWN_SOURCES:
                 raise ValidationError(
-                    f"web.enabled_sources 含未知源 {s!r}；已知: {sorted(KNOWN_SOURCES)}"
+                    f"web.enabled_sources 含未知源 {source!r}；已知: {sorted(KNOWN_SOURCES)}"
                 )
         _check_range("web.timeout", self.timeout, 0.5, 120)
-        _check_range("web.max_retries", self.max_retries, 0, 10)
-        if self.normalize.get("volume") not in ("share", "lot", "contract"):
+        _check_int_range("web.max_retries", self.max_retries, 0, 10)
+
+        headers = _check_mapping("web.headers", self.headers)
+        for key, value in headers.items():
+            _check_non_empty_str("web.headers key", key)
+            if not isinstance(value, str):
+                raise ValidationError(
+                    f"web.headers[{key!r}] 必须是字符串，收到 {type(value).__name__}"
+                )
+
+        rate_limit = _check_mapping("web.rate_limit", self.rate_limit)
+        for key, value in rate_limit.items():
+            _check_non_empty_str("web.rate_limit key", key)
+            _check_int_range(f"web.rate_limit[{key!r}]", value, 1, 1000)
+
+        normalize = _check_mapping("web.normalize", self.normalize)
+        allowed_normalize = {"volume", "amount", "strict"}
+        unknown_normalize = set(normalize) - allowed_normalize
+        if unknown_normalize:
+            raise ValidationError(
+                f"web.normalize 含未知字段: {sorted(unknown_normalize)}；"
+                f"可选: {sorted(allowed_normalize)}"
+            )
+        if normalize.get("volume") not in ("share", "lot", "contract"):
             raise ValidationError(
                 f"web.normalize.volume 必须是 share|lot|contract，"
-                f"收到 {self.normalize.get('volume')!r}"
+                f"收到 {normalize.get('volume')!r}"
             )
-        if self.normalize.get("amount") not in ("yuan", "wan", "yi"):
+        if normalize.get("amount") not in ("yuan", "wan", "yi"):
             raise ValidationError(
-                f"web.normalize.amount 必须是 yuan|wan|yi，收到 {self.normalize.get('amount')!r}"
+                f"web.normalize.amount 必须是 yuan|wan|yi，"
+                f"收到 {normalize.get('amount')!r}"
             )
+        _check_bool("web.normalize.strict", normalize.get("strict"))
 
 
 @dataclass
 class SourcesConfig:
-    """数据源路由（§34）：多级降级顺序，配置驱动（非硬编码）。
+    """Provider 选择 + legacy Router 兼容字段。
 
-    降级层级
-    --------
-    1. ``tdx``     —— TDX 二进制主站（在线，低延迟，首选）
-    2. ``web``     —— HTTP Web 行情源（腾讯/新浪/东财，无需主站）
-    3. ``reader``  —— 本地 vipdoc 离线文件
-    4. ``cache``   —— golden 缓存样本（调试/离线回放）
-    5. ``synthetic`` —— 离线合成（仅结构占位，明确标注非真实数据）
-
-    .. note::
-       ``enabled["web"]`` 只控制路由层开关；``web`` 子系统总闸在
-       :attr:`WebConfig.enabled`（默认 False，以 WebConfig 为准，
-       :func:`tstdx.sources.build_router` 消费）。
+    正式运行语义由 ``default_provider`` 决定。``order`` 仅供 legacy
+    ``DataSourceRouter`` 单入口兼容，最多允许一项；``continue_on_error``
+    必须为 False。多级 ``tdx -> web -> reader -> cache`` 已被 v12 禁止。
     """
 
-    #: 降级顺序；空列表 = 不自动降级（仅用显式指定源）
-    order: list[str] = field(default_factory=lambda: ["tdx", "web", "reader", "cache"])
-    #: 各源的启用开关（与 order 取交集后生效）
+    default_provider: str = "tdx"
+    #: legacy Router 单选择器；不能包含多项 fallback chain。
+    order: list[str] = field(default_factory=lambda: ["tdx"])
     enabled: dict[str, bool] = field(
         default_factory=lambda: {
             "tdx": True,
@@ -245,24 +315,52 @@ class SourcesConfig:
             "synthetic": False,
         }
     )
-    #: 本地 vipdoc 根目录（reader 源使用）；None 时跳过 reader
     vipdoc_root: str | None = None
-    #: 单源失败是否继续尝试下一源（False = 任一失败即抛错）
-    continue_on_error: bool = True
-    #: SQLite K 线缓存库路径（U4：一键开启本地缓存）。None = 禁用缓存。
-    #: 设置后 :func:`tstdx.sources.build_router` 自动装配
-    #: :class:`~tstdx.cache.KlineCache`，重复拉同一标的 K 线直接命中。
+    #: legacy 字段；有效 v12 配置必须 False。
+    continue_on_error: bool = False
     kline_cache_db: str | None = None
 
     def validate(self) -> None:
+        from ..providers import PROVIDERS
+
+        default_provider = _check_non_empty_str(
+            "sources.default_provider",
+            self.default_provider,
+        )
+        PROVIDERS.get(default_provider)
         known = {"tdx", "web", "reader", "cache", "synthetic"}
-        for s in self.order:
-            if s not in known:
-                raise ValidationError(f"sources.order 含未知源 {s!r}；可选: {sorted(known)}")
-        if self.vipdoc_root is not None and not isinstance(self.vipdoc_root, str):
-            raise ValidationError("sources.vipdoc_root 必须是 str 或 None")
-        if self.kline_cache_db is not None and not isinstance(self.kline_cache_db, str):
-            raise ValidationError("sources.kline_cache_db 必须是 str 或 None")
+        if not isinstance(self.order, list):
+            raise ValidationError(f"sources.order 必须是 list，收到 {type(self.order).__name__}")
+        for source in self.order:
+            if not isinstance(source, str) or source not in known:
+                raise ValidationError(
+                    f"sources.order 含未知源 {source!r}；可选: {sorted(known)}"
+                )
+        if len(self.order) > 1:
+            raise ValidationError(
+                "sources.order 多级 fallback 已停用；最多保留一个 legacy selector",
+                context={"order": list(self.order), "provider_switch_allowed": False},
+            )
+
+        enabled = _check_mapping("sources.enabled", self.enabled)
+        unknown_enabled = set(enabled) - known
+        if unknown_enabled:
+            raise ValidationError(
+                f"sources.enabled 含未知源 {sorted(unknown_enabled)}；可选: {sorted(known)}"
+            )
+        for source, value in enabled.items():
+            _check_bool(f"sources.enabled[{source!r}]", value)
+
+        _check_bool("sources.continue_on_error", self.continue_on_error)
+        if self.continue_on_error:
+            raise ValidationError(
+                "sources.continue_on_error 已停用：Provider 失败必须向调用方暴露",
+                context={"provider_switch_allowed": False},
+            )
+        if self.vipdoc_root is not None:
+            _check_non_empty_str("sources.vipdoc_root", self.vipdoc_root)
+        if self.kline_cache_db is not None:
+            _check_non_empty_str("sources.kline_cache_db", self.kline_cache_db)
 
 
 @dataclass
@@ -272,31 +370,54 @@ class ObservabilityConfig:
     tracing: dict[str, Any] = field(default_factory=lambda: {"enabled": False, "exporter": "otel"})
 
     def validate(self) -> None:
-        if self.metrics.get("exporter") not in ("prom", "statsd", "otel"):
+        metrics = _check_mapping("observability.metrics", self.metrics)
+        logging_cfg = _check_mapping("observability.logging", self.logging)
+        tracing = _check_mapping("observability.tracing", self.tracing)
+
+        allowed = {
+            "observability.metrics": (metrics, {"enabled", "exporter"}),
+            "observability.logging": (logging_cfg, {"level", "json"}),
+            "observability.tracing": (tracing, {"enabled", "exporter"}),
+        }
+        for name, (mapping, known_keys) in allowed.items():
+            unknown = set(mapping) - known_keys
+            if unknown:
+                raise ValidationError(
+                    f"{name} 含未知字段: {sorted(unknown)}；可选: {sorted(known_keys)}"
+                )
+
+        _check_bool("observability.metrics.enabled", metrics.get("enabled"))
+        if metrics.get("exporter") not in ("prom", "statsd", "otel"):
             raise ValidationError(
                 f"observability.metrics.exporter 必须是 prom|statsd|otel，"
-                f"收到 {self.metrics.get('exporter')!r}"
+                f"收到 {metrics.get('exporter')!r}"
             )
-        level = self.logging.get("level")
+
+        level = logging_cfg.get("level")
         if level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
             raise ValidationError(f"observability.logging.level 非法: {level!r}")
+        _check_bool("observability.logging.json", logging_cfg.get("json"))
+
+        _check_bool("observability.tracing.enabled", tracing.get("enabled"))
+        _check_non_empty_str("observability.tracing.exporter", tracing.get("exporter"))
 
 
 @dataclass
 class SecurityConfig:
     use_tls: bool = False
-    #: keyring | env | file:路径
     credential_backend: str = "keyring"
     user_agent: str = "tstdx/0.x"
 
     def validate(self) -> None:
-        if self.credential_backend not in ("keyring", "env") and not (
-            self.credential_backend.startswith("file:")
-        ):
+        _check_bool("security.use_tls", self.use_tls)
+        backend = _check_non_empty_str("security.credential_backend", self.credential_backend)
+        if backend not in ("keyring", "env") and not backend.startswith("file:"):
             raise ValidationError(
-                f"security.credential_backend 必须是 keyring|env|file:路径，"
-                f"收到 {self.credential_backend!r}"
+                f"security.credential_backend 必须是 keyring|env|file:路径，收到 {backend!r}"
             )
+        if backend.startswith("file:") and not backend.removeprefix("file:").strip():
+            raise ValidationError("security.credential_backend 的 file: 路径不能为空")
+        _check_non_empty_str("security.user_agent", self.user_agent)
 
 
 @dataclass
@@ -305,7 +426,8 @@ class CompatibilityConfig:
     market_facade: bool = False
 
     def validate(self) -> None:
-        pass
+        _check_bool("compatibility.web_facade", self.web_facade)
+        _check_bool("compatibility.market_facade", self.market_facade)
 
 
 @dataclass
@@ -315,10 +437,12 @@ class FeedbackConfig:
     telemetry: bool = False
     report_protocol_diff: bool = True
     report_source_failure: bool = False
-    #: 上报前的脱敏等级：strict | normal | off
     sanitize: str = "strict"
 
     def validate(self) -> None:
+        _check_bool("feedback.telemetry", self.telemetry)
+        _check_bool("feedback.report_protocol_diff", self.report_protocol_diff)
+        _check_bool("feedback.report_source_failure", self.report_source_failure)
         if self.sanitize not in ("strict", "normal", "off"):
             raise ValidationError(
                 f"feedback.sanitize 必须是 strict|normal|off，收到 {self.sanitize!r}"
@@ -329,17 +453,11 @@ class FeedbackConfig:
 # 根配置
 # --------------------------------------------------------------------------- #
 def _deep_merge(base: Any, override: Any) -> Any:
-    """dict 深合并（一递归）：override 键胜出，base 未覆盖键保留。
-
-    用于 ``with_overrides`` 中「字段本身是 dict」的场景
-    （如 ``web.headers`` / ``web.rate_limit`` / ``web.normalize`` /
-    ``sources.enabled``）——旧实现整字段替换，只改一个键会把同字段
-    其余默认键全部抹掉。
-    """
+    """dict 深合并（一递归）：override 键胜出，base 未覆盖键保留。"""
     if isinstance(base, Mapping) and isinstance(override, Mapping):
         merged = dict(base)
-        for k, v in override.items():
-            merged[k] = _deep_merge(merged[k], v) if k in merged else v
+        for key, value in override.items():
+            merged[key] = _deep_merge(merged[key], value) if key in merged else value
         return merged
     return override
 
@@ -375,8 +493,29 @@ class Config:
     )
 
     def validate(self) -> Config:
+        expected_types = {
+            "core": CoreConfig,
+            "hosts": HostsConfig,
+            "rate_limit": RateLimitConfig,
+            "cache": CacheConfig,
+            "output": OutputConfig,
+            "profile": ProfileConfig,
+            "web": WebConfig,
+            "sources": SourcesConfig,
+            "observability": ObservabilityConfig,
+            "security": SecurityConfig,
+            "compatibility": CompatibilityConfig,
+            "feedback": FeedbackConfig,
+        }
         for name in self._SUBCONFIGS:
-            getattr(self, name).validate()
+            value = getattr(self, name)
+            expected = expected_types[name]
+            if not isinstance(value, expected):
+                raise ValidationError(
+                    f"配置段 {name!r} 必须是 {expected.__name__}，"
+                    f"收到 {type(value).__name__}"
+                )
+            value.validate()
         return self
 
     def to_dict(self) -> dict[str, Any]:
@@ -385,30 +524,31 @@ class Config:
     def with_overrides(self, **kw: Any) -> Config:
         """按子配置名覆盖（嵌套 dict 字段深合并，标量字段替换）。"""
         updates: dict[str, Any] = {}
-        for k, v in kw.items():
-            if k not in self._SUBCONFIGS:
-                raise ValidationError(f"未知配置段 {k!r}；可选: {list(self._SUBCONFIGS)}")
-            sub = getattr(self, k)
-            if not isinstance(v, Mapping):
-                raise ValidationError(f"配置段 {k!r} 必须是 dict，收到 {type(v).__name__}")
-            unknown = set(v) - {f.name for f in fields(sub)}
+        for key, value in kw.items():
+            if key not in self._SUBCONFIGS:
+                raise ValidationError(f"未知配置段 {key!r}；可选: {list(self._SUBCONFIGS)}")
+            subconfig = getattr(self, key)
+            if not isinstance(value, Mapping):
+                raise ValidationError(
+                    f"配置段 {key!r} 必须是 dict，收到 {type(value).__name__}"
+                )
+            unknown = set(value) - {item.name for item in fields(subconfig)}
             if unknown:
                 raise ValidationError(
-                    f"配置段 {k!r} 含未知字段: {sorted(unknown)}；"
-                    f"可选: {sorted(f.name for f in fields(sub))}"
+                    f"配置段 {key!r} 含未知字段: {sorted(unknown)}；"
+                    f"可选: {sorted(item.name for item in fields(subconfig))}"
                 )
-            # dict 值深合并：base 与 override 同为 Mapping 才合并，
-            # 否则按字段类型原样替换（标量/None/list 语义不变）
             merged_values = {
-                f: _deep_merge(getattr(sub, f), v[f])
-                if isinstance(getattr(sub, f), Mapping) and isinstance(v[f], Mapping)
-                else v[f]
-                for f in v
+                field_name: _deep_merge(getattr(subconfig, field_name), value[field_name])
+                if isinstance(getattr(subconfig, field_name), Mapping)
+                and isinstance(value[field_name], Mapping)
+                else value[field_name]
+                for field_name in value
             }
-            updates[k] = replace(sub, **merged_values)
+            updates[key] = replace(subconfig, **merged_values)
         return replace(self, **updates)
 
-    def __iter__(self) -> Iterator[tuple[str, Any]]:  # 便于 dict(cfg)
+    def __iter__(self) -> Iterator[tuple[str, Any]]:
         for name in self._SUBCONFIGS:
             yield name, getattr(self, name)
 
@@ -421,6 +561,8 @@ DEFAULT_CONFIG = Config()
 # --------------------------------------------------------------------------- #
 def validate_keys(data: Mapping[str, Any], *, where: str = "config") -> None:
     """strict 校验：未知配置段立即报错（防拼写错误被静默忽略）。"""
+    if not isinstance(data, Mapping):
+        raise ValidationError(f"{where} 必须是 mapping，收到 {type(data).__name__}")
     unknown = set(data) - set(Config._SUBCONFIGS)
     if unknown:
         raise ValidationError(
@@ -430,24 +572,19 @@ def validate_keys(data: Mapping[str, Any], *, where: str = "config") -> None:
 
 
 def config_from_dict(data: Mapping[str, Any], *, where: str = "config") -> Config:
-    """从字典构建子配置（增量覆盖，未给出的段保持默认）。
-
-    返回前执行 :meth:`Config.validate`——非法值（越界区间 / 非法枚举）
-    在构建时立即报错，而不是等到第一个消费方才炸（审计 §3-3）。
-    """
+    """从字典构建子配置（增量覆盖，未给出的段保持默认），并立即校验。"""
     validate_keys(data, where=where)
     return DEFAULT_CONFIG.with_overrides(**dict(data)).validate()
 
 
 def merge_config(*layers: Mapping[str, Any] | None) -> Config:
-    """按优先级从低到高合并多层配置（§21.3，参数从低到高排列，后者覆盖前者）。
-
-    每层内部按配置段做合并：同名字段后层覆盖先层；字段本身是 dict 时
-    深合并（与 :meth:`Config.with_overrides` 同语义——深审 M23：旧实现
-    整字段替换，多层层叠时只改一个键会抹掉先层同字段其余键）。
-    """
+    """按优先级从低到高合并多层配置；后层覆盖前层。"""
     merged: dict[str, dict[str, Any]] = {}
     for layer in layers:
+        if layer is None:
+            continue
+        if not isinstance(layer, Mapping):
+            raise ValidationError(f"配置层必须是 mapping，收到 {type(layer).__name__}")
         if not layer:
             continue
         validate_keys(layer)
@@ -466,7 +603,7 @@ def config_diff(a: Config, b: Config) -> dict[str, dict[str, tuple[Any, Any]]]:
     out: dict[str, dict[str, tuple[Any, Any]]] = {}
     for section in Config._SUBCONFIGS:
         sa, sb = da.get(section, {}), db.get(section, {})
-        for k in set(sa) | set(sb):
-            if sa.get(k) != sb.get(k):
-                out.setdefault(section, {})[k] = (sa.get(k), sb.get(k))
+        for key in set(sa) | set(sb):
+            if sa.get(key) != sb.get(key):
+                out.setdefault(section, {})[key] = (sa.get(key), sb.get(key))
     return out

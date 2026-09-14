@@ -8,18 +8,16 @@
     E1xxx  配置与入参      config / validation
     E2xxx  传输层          connection / timeout / host
     E3xxx  协议层          framing / codec / parser
-    E4xxx  数据与领域      profile / adjust / calendar
+    E4xxx  数据与领域      profile / adjust / calendar / freshness
     E5xxx  本地文件        vipdoc / block / finance
     E6xxx  流式订阅        subscription / gap / backpressure
-    E7xxx  HTTP Web 源     anti-spider / rate-limit / deprecated
+    E7xxx  HTTP Web Provider anti-spider / rate-limit / deprecated
     E8xxx  门面层          facade / bridge shim
     E9xxx  内部与依赖      internal / missing-dependency
 
-每个异常都携带一个 :class:`RetryAdvice`，供上层自动决策
-（重试 / 退避 / 换主站 / 降级离线 / 降级 HTTP Web 源）。
-
-使用侧文档（错误树速查表、易混对照、扩展规则、上层边界约定）见
-``docs/errors.md``。
+v12 保留已有错误码、继承关系与公共诊断信息。唯一收敛的执行语义是：
+RetryAdvice 中的 host/endpoint 恢复永远限制在**当前 Provider**；历史
+``fallback_to_web`` 字段仅为序列化兼容保留，新 Provider-aware 内核不消费它。
 """
 
 from __future__ import annotations
@@ -49,6 +47,7 @@ __all__ = [
     "UnknownCommand",
     "CommandOffline",
     "ParseError",
+    "IntegrityViolation",
     "LowConfidenceParse",
     "ChecksumMismatch",
     "DataError",
@@ -58,6 +57,7 @@ __all__ = [
     "CalendarError",
     "SymbolError",
     "TruncatedDataError",
+    "FreshnessViolation",
     "FileFormatError",
     "DataFileNotFound",
     "TruncatedRecordError",
@@ -80,7 +80,12 @@ __all__ = [
 
 @dataclass(frozen=True)
 class RetryAdvice:
-    """异常的可重试性建议（§24.2）。"""
+    """异常的可重试性建议（§24.2）。
+
+    ``switch_host`` 仅表示当前 Provider 内的等价 host/endpoint 恢复。
+    ``fallback_to_offline`` / ``fallback_to_web`` 为历史兼容字段；v12 正式
+    Planner 不使用它们决定跨 Provider 执行。
+    """
 
     retryable: bool = False
     backoff: float = 0.0
@@ -92,7 +97,6 @@ class RetryAdvice:
 
 
 _DEFAULT = RetryAdvice()
-
 RETRY_ADVICE: dict[type, RetryAdvice] = {}
 
 
@@ -191,8 +195,7 @@ class TransportError(TdxError):
         backoff=0.5,
         max_retries=3,
         switch_host=True,
-        fallback_to_offline=True,
-        fallback_to_web=True,
+        note="传输失败：只允许当前 Provider 内部重试/切换等价 host 或 endpoint",
     )
 
 
@@ -203,8 +206,7 @@ class ConnectionFailed(TransportError):
         backoff=0.5,
         max_retries=2,
         switch_host=True,
-        fallback_to_offline=True,
-        fallback_to_web=True,
+        note="当前 Provider 内连接失败：可重试或切换同 Provider 等价 host/endpoint",
     )
 
 
@@ -215,8 +217,7 @@ class ConnectionClosed(TransportError):
         backoff=0.5,
         max_retries=3,
         switch_host=True,
-        fallback_to_offline=True,
-        fallback_to_web=True,
+        note="连接已关闭：在当前 Provider 内重连",
     )
 
 
@@ -228,8 +229,7 @@ class ReadTimeout(TransportError):
         backoff=1.0,
         max_retries=2,
         switch_host=True,
-        fallback_to_offline=True,
-        fallback_to_web=True,
+        note="读取超时：只允许当前 Provider 内部恢复",
     )
 
 
@@ -238,7 +238,7 @@ class WriteTimeout(ReadTimeout):
 
 
 class AllHostsUnreachable(TransportError):
-    """所有 TDX 主站均不可达——触发 §33 的 HTTP Web 源降级。"""
+    """当前 Provider/Channel 的 host pool 全部不可达。"""
 
     code = "E2040"
     http_status = 503
@@ -246,14 +246,12 @@ class AllHostsUnreachable(TransportError):
         retryable=True,
         backoff=5.0,
         max_retries=1,
-        fallback_to_offline=True,
-        fallback_to_web=True,
-        note="全部主站不可达，应降级到本地 vipdoc 或 HTTP Web 源",
+        switch_host=False,
+        note="当前 Provider/Channel 主站池已耗尽；显式报错，不跨 Provider 兜底",
     )
 
 
-#: U2：``AllHostsUnreachable`` 的可操作「下一步」建议（附在错误消息尾部）。
-#: 提示用 ``tstdx hosts scan`` 自测生成排名文件，以及可复制的配置片段。
+# 保留 v1.4.0 的公共诊断常量；仅删除其中“跨 Provider 自动降级”的语义。
 ALL_HOSTS_UNREACHABLE_NEXT_STEPS = (
     "下一步：\n"
     "  1. 运行 `tstdx hosts scan` 对内置候选池并发测速，自动把可达主站写入"
@@ -261,7 +259,8 @@ ALL_HOSTS_UNREACHABLE_NEXT_STEPS = (
     "  2. 或在配置文件中显式指定主站（hosts.servers），例如：\n"
     "       [hosts]\n"
     '       servers = [["180.153.18.170", 7709], ["60.191.117.167", 7709]]\n'
-    "  3. 或查看当前主站池：`tstdx hosts list`。"
+    "  3. 或查看当前主站池：`tstdx hosts list`。\n"
+    "  4. 如需查询其它 Provider，请由调用方显式指定 provider=。"
 )
 
 
@@ -275,7 +274,13 @@ class RateLimitedLocal(TransportError):
 class ProtocolError(TdxError):
     code = "E3000"
     http_status = 502
-    default_advice = RetryAdvice(retryable=True, backoff=0.5, max_retries=1, switch_host=True)
+    default_advice = RetryAdvice(
+        retryable=True,
+        backoff=0.5,
+        max_retries=1,
+        switch_host=True,
+        note="协议错误：只允许当前 Provider 内部恢复",
+    )
 
 
 class FramingError(ProtocolError):
@@ -284,61 +289,48 @@ class FramingError(ProtocolError):
 
 class DecompressError(ProtocolError):
     code = "E3020"
-    default_advice = RetryAdvice(retryable=True, backoff=0.5, max_retries=1, switch_host=True)
+    default_advice = RetryAdvice(
+        retryable=True,
+        backoff=0.5,
+        max_retries=1,
+        switch_host=True,
+    )
 
 
 class UnknownCommand(ProtocolError):
     code = "E3030"
     http_status = 501
-    default_advice = RetryAdvice(note="未知命令：应由 L2/L3 兜底，并上报 ProtocolSniffer")
+    default_advice = RetryAdvice(note="未知命令：由同 Provider 的解析/协议诊断处理")
 
 
 class CommandOffline(ProtocolError):
-    """B5：命令在账本中标记为 ``STATUS_OFFLINE``（多主站实测无响应）。
+    """命令已被协议事实账本确认 offline。
 
-    client 层在发请求前 fail-fast，避免调用方吃满「N 主站 × 3s 超时」链。
-    ``message`` 应包含替代方案指引（如 0x054C → 逐只 0x0530 回退说明）。
-    重试无意义（``retryable=False``）：除非账本 status 更新，结果不会改变。
+    这是当前 Provider 内的命令事实，不代表可以自动调用另一个 Provider 的
+    同名数据。调用方如需其它 Provider 必须显式发起另一条 Query。
     """
 
     code = "E3035"
     http_status = 501
     default_advice = RetryAdvice(
-        retryable=False, note="命令实测离线：请改用替代命令或更新账本 status"
+        retryable=False,
+        note="命令实测离线：直接返回不可用；如需其它 Provider 请显式选择",
     )
 
 
 class ParseError(ProtocolError):
     code = "E3040"
-    #: 是否为「致命」错误。致命错误**禁止**被三级分派降级到 L2/L3 兜底——
-    #: 因为它意味着已经识别出了明确的数据问题（而非「布局未知」），
-    #: 降级只会把「已知错误」替换成「看起来像数据的噪声」。
     fatal: bool = False
 
 
 class IntegrityViolation(ParseError):
-    """数据完整性违规（✅ 已知错误，禁止降级）。
-
-    与 :class:`ParseError` 的区别：
-
-    ============  ==============================  ==========================
-    错误类型      含义                            分派器行为
-    ============  ==============================  ==========================
-    ParseError    布局未知 / 结构漂移             降级 L2 启发式 → L3 原始
-    本异常        **已明确识别出数据不对**         直接抛出，不做任何兜底
-    ============  ==============================  ==========================
-
-    典型场景：请求参数写反导致服务端返回「**帧结构合法但内容错误**」的响应
-    （实测 0x0530 请求 market 字节写反时，服务端返回一个回声 ``600839``、
-    载荷全零的 56 字节响应）。若此时降级到 L2，调用方会拿到一堆看起来
-    正常的零值记录——这比直接报错危险得多。
-    """
+    """数据完整性违规（已明确识别出脏数据，禁止解析降级）。"""
 
     code = "E3042"
     fatal = True
     default_advice = RetryAdvice(
         retryable=False,
-        note="响应完整性校验未通过（回声/哨兵/区间校验），已拒绝降级以避免脏数据",
+        note="响应完整性校验未通过；拒绝降级以避免把噪声当行情",
     )
 
 
@@ -379,13 +371,7 @@ class SymbolError(DataError):
 
 
 class TruncatedDataError(DataError):
-    """请求 N 条但实际返回不足 N，且**并非**历史数据耗尽（v5 PG1/PG2）。
-
-    典型场景：服务端单请求上限静默截断（``bars`` count>800 不分页直接
-    透传）、多包下载循环提前终止而 ``total_len`` 未满足。仅在调用方
-    ``strict=True`` 时抛出；非 strict 模式以 :class:`UserWarning` 告警
-    （与 ``export_security_list`` 截断告警风格一致）。
-    """
+    """请求 N 条但实际返回不足 N，且并非历史数据耗尽。"""
 
     code = "E4050"
     default_advice = RetryAdvice(
@@ -393,7 +379,21 @@ class TruncatedDataError(DataError):
         backoff=1.0,
         max_retries=2,
         switch_host=True,
-        note="数据被截断：可重试、换主站，或降低单次请求量",
+        note="数据被截断：可在当前 Provider 内重试/换主站，或降低单次请求量",
+    )
+
+
+class FreshnessViolation(DataError):
+    """结果无法满足“最新、真实、可追溯”的数据契约。"""
+
+    code = "E4060"
+    http_status = 503
+    default_advice = RetryAdvice(
+        retryable=True,
+        backoff=0.2,
+        max_retries=1,
+        switch_host=False,
+        note="新鲜度证据不足：只可重试当前 Provider，禁止跨 Provider 替代",
     )
 
 
@@ -413,25 +413,30 @@ class TruncatedRecordError(FileFormatError):
 
 
 # --- E6xxx 流式订阅 ------------------------------------------------------- #
-# 处置决议（工业审计 §3-3 → v1.4.0 M1 接线落地，用户拍板）：本四类自此具备
-# 库内真实抛点——QuoteStream / AsyncQuoteStream 内核由 streaming.engine 组件
-# 构成（DeltaMerger / BackpressureQueue / ReconnectPolicy），其中：
-#   SubscriptionError  → 不可解析订阅符号（streaming/__init__.py::_resolve_payload）
-#   GapUnfilledError   → 标的连续 3 轮未见于响应（同上；不自动补数，0x0530 仅回快照）
-#   BackpressureOverflow → 背压队列溢出丢弃最旧事件（_poll_once 溢出检测）
-# StreamError（E6000）仍为公共基类。禁止再造第五种流式异常。
 class StreamError(TdxError):
     code = "E6000"
 
 
 class SubscriptionError(StreamError):
     code = "E6010"
-    default_advice = RetryAdvice(retryable=True, backoff=1.0, max_retries=3, switch_host=True)
+    default_advice = RetryAdvice(
+        retryable=True,
+        backoff=1.0,
+        max_retries=3,
+        switch_host=True,
+        note="当前 Provider 的订阅失败；只在该 Provider 内重连/换 host",
+    )
 
 
 class GapUnfilledError(StreamError):
     code = "E6020"
-    default_advice = RetryAdvice(retryable=True, backoff=1.0, max_retries=3, switch_host=True)
+    default_advice = RetryAdvice(
+        retryable=True,
+        backoff=1.0,
+        max_retries=3,
+        switch_host=True,
+        note="当前 Provider 流出现缺口；只在该 Provider 内恢复",
+    )
 
 
 class BackpressureOverflow(StreamError):
@@ -440,7 +445,7 @@ class BackpressureOverflow(StreamError):
     default_advice = RetryAdvice(retryable=True, backoff=0.1, max_retries=10)
 
 
-# --- E7xxx HTTP Web 源 ---------------------------------------------------- #
+# --- E7xxx HTTP Web Provider --------------------------------------------- #
 class WebSourceError(TdxError):
     code = "E7000"
     http_status = 502
@@ -449,7 +454,7 @@ class WebSourceError(TdxError):
         backoff=0.5,
         max_retries=2,
         switch_host=True,
-        note="切换下一个 HTTP Web 源",
+        note="当前 Web Provider 请求失败：仅允许同 Provider endpoint 重试/切换",
     )
 
 
@@ -461,50 +466,57 @@ class AntiSpiderBlocked(WebSourceError):
         backoff=5.0,
         max_retries=1,
         switch_host=True,
-        note="疑似被反爬拦截：检查 Referer/UA，降速后切换下一源",
+        note="检查当前 Provider Referer/UA/限速；不得切换 Provider 伪装成功",
     )
 
 
 class WebRateLimited(WebSourceError):
     code = "E7020"
     http_status = 429
-    default_advice = RetryAdvice(retryable=True, backoff=3.0, max_retries=3, switch_host=True)
+    default_advice = RetryAdvice(
+        retryable=True,
+        backoff=3.0,
+        max_retries=3,
+        switch_host=False,
+        note="当前 Provider 被限流：遵循退避/Retry-After，不跨 Provider",
+    )
 
 
 class SourceDeprecated(WebSourceError):
     code = "E7030"
     http_status = 410
-    default_advice = RetryAdvice(switch_host=True, note="上游接口下线，禁用该 Adapter 并上报")
+    default_advice = RetryAdvice(
+        retryable=False,
+        note="当前 Provider 的该 Adapter 已下线；显式报告，不自动切换其它 Provider",
+    )
 
 
 class SourceUnavailable(TdxError):
-    """数据源当前不可用（所有通路均无对应能力或环境失效）。
+    """选定 Provider/Channel 当前无法满足请求。
 
-    与 :class:`AllHostsUnreachable`（传输层：某协议族主站池全部超时）不同，
-    本类专指**能力层面**的不可用：命令已 offline、协议族整体下线、或
-    该方法既无 tdx 通路也无 web 兜底路径——即"当前版本无可用数据源"。
-
-    与 :class:`CommandOffline`（协议层：某命令实测下线）也不同：后者针对
-    具体命令号，本类针对具体**方法**（如 ``block_quotes`` 命令 offline 且
-    无 web 兜底路径 → 抛本类并给出替代方案提示）。
-
-    P13-A：为 facade 层「仅 tdx 路由」但对应命令已停答且**无 web 近似能力**
-    的方法提供明确异常路径，避免用户拿到误导性的 ``AllHostsUnreachable``
-    或长时间读超时。``context["alternatives"]`` 给出可用的替代方案。
+    名称 ``SourceUnavailable`` 为兼容保留；v12 的正式领域实体是 Provider。
+    该异常不是“所有 Provider 都试完”的聚合异常，也不授权继续调用另一个
+    Provider。传输层 host pool 耗尽仍由 :class:`AllHostsUnreachable` 表达，
+    上层可包装成本异常并记录 provider/channel/capability 后结束本次 Query。
     """
 
     code = "E7050"
     http_status = 503
     default_advice = RetryAdvice(
         retryable=False,
-        note="数据源环境级失效或无对应能力，见 context['alternatives']",
+        note="选定 Provider 当前不可用；如需其它 Provider 必须由用户显式选择",
     )
 
 
 class AllSourcesExhausted(TdxError):
+    """旧聚合 WebClient 的兼容异常；Provider-aware 内核不主动产生。"""
+
     code = "E7040"
     http_status = 503
-    default_advice = RetryAdvice(retryable=True, backoff=30.0, max_retries=1)
+    default_advice = RetryAdvice(
+        retryable=False,
+        note="legacy aggregate source client exhausted；新 Provider API 不使用该聚合路径",
+    )
 
 
 # --- E8xxx 兼容层 --------------------------------------------------------- #

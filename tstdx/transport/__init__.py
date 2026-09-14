@@ -17,11 +17,57 @@
 
 from __future__ import annotations
 
+# Side-effect imports install the v1.0 generation/lease + circuit hardening onto
+# the canonical pool classes before callers can receive either public class.
+from . import _async_pool_hardening, _pool_hardening
+
+# Async shutdown is a separate lifecycle transaction: install it immediately
+# after request/circuit hardening so every public AsyncConnectionPool receives a
+# cancellation-atomic, re-drainable close() implementation.
+from . import _async_close_hardening
 from .base import DEFAULT_HEARTBEAT_CMD, ConnectionStats, TcpConnection
+
+# Host hardening order matters. First load the canonical hosts module, then make
+# disk ranking probe-only, then wrap resolve_hosts so each caller owns fresh
+# mutable HostEntry objects. Only after those patches do we bind public exports.
+from . import hosts as _hosts_impl
+from . import _ranking_hardening, _host_selector_hardening
 from .hosts import DEFAULT_HOST_POOL, POOL_BY_FAMILY, HostEntry, RankingStore, resolve_hosts
+
+# Direct TcpConnection/AsyncTcpConnection are public too. Once canonical host
+# parsing is available, install the same endpoint/timeout/boolean configuration
+# contract that pool construction already enforces.
+from . import _connection_contract_hardening
+
+# Direct public pool construction must obey the same canonical family identity as
+# resolve_hosts/client construction. Install this before generation-safe updates.
+from . import _pool_family_hardening
+
+# ``from_config`` is another selector boundary. Install its authoritative empty
+# selector guard after constructor hardening so factory output inherits the same
+# canonical pool validation rather than silently falling back to default hosts.
+from . import _pool_factory_hardening
+
+# Join generation/lease safety with v12 selector/live-health/probe provenance.
+# This layer patches sync+async update_hosts and the sync background speedtest
+# after the canonical classes and probe-only RankingStore are available.
+from . import _pool_provenance_hardening
 from .pool import ConnectionPool, PoolStats, Slot
 from .ratelimit import SessionRateLimiter, SessionState, TokenBucket, session_state
 from .speedtest import ProbeResult, probe, rank_hosts, speedtest, speedtest_and_save
+
+del (
+    _async_pool_hardening,
+    _async_close_hardening,
+    _pool_hardening,
+    _hosts_impl,
+    _ranking_hardening,
+    _host_selector_hardening,
+    _connection_contract_hardening,
+    _pool_family_hardening,
+    _pool_factory_hardening,
+    _pool_provenance_hardening,
+)
 
 __all__ = [
     "TcpConnection",
@@ -47,7 +93,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):  # 延迟导入 asyncio 相关（避免无谓开销）
+def __getattr__(name: str):
     if name in ("AsyncTcpConnection", "AsyncConnectionPool", "AsyncSlot"):
         from . import async_ as _a
 

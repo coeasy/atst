@@ -1,46 +1,46 @@
 name: Live Smoke
 
-# G2（docs/ARCHITECTURE_AND_OPTIMIZATION_PLAN_v6 §4）：
-# 联网冒烟测试从主干 ci.yml 的 test job 中拆出，定时独立执行。
-# 目的：让主干 CI 幂等（不依赖外网），同时保留对真实数据源的定期探活。
-# 失败不阻断主干合并 —— 仅产出可追溯的 run 报告供人工判断。
-
+# G2: network tests stay outside the pull-request merge gate so transient public
+# network failures cannot make deterministic source CI flaky. The scheduled run
+# itself must still be truthful: a failed live probe makes this workflow red and
+# always leaves a JUnit artifact for diagnosis/monitoring.
 on:
   schedule:
-    - cron: '0 1 * * 1,2,3,4,5,6,0'  # 每日 01:00 UTC（避开 A 股交易时段）
+    - cron: '0 1 * * *'  # daily 01:00 UTC, before A-share trading
   workflow_dispatch:
+
+# A second daily/manual probe supersedes an older one; never keep multiple live
+# network diagnostics running concurrently.
+concurrency:
+  group: live-smoke
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   live-smoke:
-    name: Live Smoke (${{ matrix.os }}, Python ${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        python-version: ['3.12']
+    name: Live Smoke (Ubuntu, Python 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.12'
           cache: 'pip'
-      - name: Install package
+      - name: Install package and canonical test dependencies
+        run: python -m pip install -e ".[all,dev]"
+      - name: Run network tests
         run: |
-          pip install -e ".[all]"
-          pip install pytest
-      - name: Run network tests (non-blocking)
-        continue-on-error: true
-        run: pytest tests/ -v --tb=short -m "network"
+          mkdir -p reports
+          python -m pytest tests/ -v --tb=short -m "network" \
+            --junitxml=reports/live-smoke.xml
       - name: Upload live report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: live-smoke-report
-          path: |
-            .pytest_cache/**/lastfailed
-            reports/
-          if-no-files-found: ignore
+          name: live-smoke-report-${{ github.run_number }}
+          path: reports/live-smoke.xml
+          if-no-files-found: warn
+          retention-days: 14

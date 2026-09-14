@@ -4,47 +4,51 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
-# 独立于 wheels.yml 的 Rust 内核构建与对拍自检。
-# `continue-on-error: true`：编译失败或对拍不一致时**不阻塞**纯 Python 发版
-# （与 tstdx_native/README.md 的降级策略一致），但会把问题显式暴露在日志。
+# Only the newest run for the same event/ref can be merge evidence. Cancel stale
+# PR/push runs so retired-native compatibility checks do not queue for old SHAs.
+concurrency:
+  group: native-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# tstdx_native source was retired before v1.4.0 and has never existed in this
+# repository history. Keep this as a blocking compatibility/provenance gate:
+# the deprecated tstdx.native facade must remain pure-Python, must not activate
+# an unrelated environment package named tstdx_native, and its fallback paths
+# must remain in parity with the canonical Python implementations.
 permissions:
   contents: read
 
 jobs:
-  build-native:
-    name: Build & parity-check tstdx_native
+  native-compat:
+    name: Native compatibility & fallback parity
     runs-on: ubuntu-latest
-    continue-on-error: true
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install maturin
-        run: pip install "maturin>=1.4,<2.0"
-
-      - name: Build native wheel
-        run: maturin build --release --manifest-path tstdx_native/Cargo.toml
-
-      - name: Install native wheel
-        run: pip install tstdx_native/target/wheels/*.whl
-
-      - name: Run parity self-test (pure Python reference)
-        # 从仓库根目录外的临时目录运行，避免 `tstdx_native/` 源码目录
-        # 作为命名空间包遮蔽已安装的编译扩展。
-        working-directory: /tmp
-        env:
-          PYTHONPATH: ${{ github.workspace }}
+          cache: 'pip'
+      - name: Install package and canonical test dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Compile compatibility surface
+        run: python -m compileall -q tstdx/native.py
+      - name: Run retired-native compatibility gate
+        run: >-
+          python -W default -m pytest
+          tests/compatibility/test_native_fallback_contract.py
+          -q --tb=short
+      - name: Print fallback parity diagnostic
         run: |
-          python - <<'PY'
+          python -W ignore::UserWarning - <<'PY'
           import json
           from tstdx.native import selftest
+
           result = selftest()
           print(json.dumps(result, ensure_ascii=False, indent=2))
-          if not result["importable"] or not result["native_available"]:
-              print("::warning::tstdx_native 与 Python 参考实现不一致，已回退纯 Python")
+          assert result["native_available"] is False
+          assert result["fallback_parity"] is True
           PY

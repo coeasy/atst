@@ -50,13 +50,18 @@ def get_client(kind: Literal["f10"], **kwargs: Any) -> F10Client: ...
 
 
 def get_client(kind: str = "stock", **kwargs: Any) -> Any:
-    """按种类获取对应协议族客户端。
+    """按 exact canonical kind 获取对应协议族客户端。
 
-    ``kind`` ∈ {stock, goods, ex, mac, f10}。未知 ``kind`` 显式抛
-    :class:`ValueError`（P9：此前静默回退 ``TdxClient``，拼错 kind 不报错，
-    掩盖配置错误）。
+    ``kind`` ∈ {stock, goods, ex, mac, f10}。未知或非字符串 ``kind`` 显式
+    抛 :class:`ValueError`。工厂不做大小写/空白归一化，也不静默回退到
+    ``TdxClient``，避免拼写和配置错误被掩盖。
 
     .. note:: 静态返回类型由上方 ``@overload`` 按 ``kind`` 字面量收窄。"""
+    if not isinstance(kind, str):
+        raise ValueError(
+            "get_client: kind 必须是字符串，"
+            f"收到 {type(kind).__name__}: {kind!r}"
+        )
     if kind not in _CLIENT_REGISTRY:
         raise ValueError(
             f"get_client: 未知客户端 kind={kind!r}，可用值: {sorted(_CLIENT_REGISTRY)}"

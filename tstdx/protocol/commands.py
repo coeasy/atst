@@ -91,8 +91,6 @@ class Command:
             Family.EXTENDED: 7727,
             Family.MAC: 7709,
             Family.GOODS: 7727,
-            # 深审 L2：F10 资料命令显式声明走 7709 主站（此前隐式靠 .get
-            # 回退）；若真机定标发现独立 F10 端口，在此更新。
             Family.F10: 7709,
         }.get(self.family, 7709)
 
@@ -104,11 +102,7 @@ def _c(cmd: int, name: str, summary: str = "", **kw) -> Command:
     return Command(cmd=cmd, name=name, summary=summary, **kw)
 
 
-# --------------------------------------------------------------------------- #
-# 7709 标准协议族（39 条）
-# --------------------------------------------------------------------------- #
 _STD: list[Command] = [
-    # --- 连接与保活 -------------------------------------------------------- #
     _c(
         0x000D,
         "HANDSHAKE",
@@ -120,7 +114,6 @@ _STD: list[Command] = [
     _c(0x0FDB, "LOGIN2", "二次登录/初始化（部分主站要求）", tier=TIER_L2),
     _c(0x0004, "HEARTBEAT", "心跳保活", tier=TIER_L2, verified=True),
     _c(0x0015, "PING", "连接测试", tier=TIER_L2),
-    # --- 代码表 ------------------------------------------------------------ #
     _c(
         0x044E,
         "SECURITY_COUNT",
@@ -135,14 +128,11 @@ _STD: list[Command] = [
         "代码表（证券列表，分页 1000/页）",
         tier=TIER_L2,
         verified=True,
-        # 2026-09-06 实测：6 台 7709 主站全部读取超时（其余命令同机正常），
-        # 公开主站已停答；facade.security_list/security_list_all 走东财 clist 兜底
         status=STATUS_OFFLINE,
         request_fields=("market:uint16", "start:uint16"),
     ),
     _c(0x0450, "SECURITY_LIST_LEGACY", "旧版证券列表", tier=TIER_DECLARED, status=STATUS_OFFLINE),
     _c(0x0452, "PRICE_LIMIT", "特殊品种涨跌停限制表", tier=TIER_DECLARED),
-    # --- K 线 -------------------------------------------------------------- #
     _c(
         0x052D,
         "SECURITY_BARS",
@@ -158,13 +148,12 @@ _STD: list[Command] = [
         ),
     ),
     _c(0x0FD1, "SPARKLINE", "小走势图（sparkline）", tier=TIER_DECLARED),
-    # --- 分时 -------------------------------------------------------------- #
     _c(
         0x0537,
         "MINUTE_TODAY",
-        "当日分时数据（⚠ degraded：深市请求正常；沪市部分主站返回空布局，请求字段完整性待校正）",
+        "当日分时数据（inferred；深市有响应但真实记录布局仍待 golden 锁定）",
         tier=TIER_L2,
-        verified=True,
+        verified=False,
         status=STATUS_DEGRADED,
         request_fields=("market:uint16", "code:char[6]"),
     ),
@@ -173,8 +162,6 @@ _STD: list[Command] = [
         "MINUTE_HISTORY",
         "指定日期历史分时",
         tier=TIER_L2,
-        # 2026-09-06 实测：3 台 7709 主站 × 多日期全部读取超时，公开主站已停答；
-        # 替代：web 分钟 K 线（UnifiedQuoteAPI.minute_klines）覆盖多日场景
         status=STATUS_OFFLINE,
         request_fields=("market:uint16", "code:char[6]", "date:uint32"),
     ),
@@ -192,7 +179,6 @@ _STD: list[Command] = [
         tier=TIER_DECLARED,
         status=STATUS_DEGRADED,
     ),
-    # --- 行情快照 ----------------------------------------------------------- #
     _c(
         0x0530,
         "REALTIME_QUOTE",
@@ -217,21 +203,23 @@ _STD: list[Command] = [
         status=STATUS_OFFLINE,
     ),
     _c(
-        0x0547, "QUOTES_DEPTH_PUSH", "五档刷新 / push 队列（实时推送）", tier=TIER_L2, verified=True
+        0x0547,
+        "QUOTES_DEPTH_PUSH",
+        "五档刷新 / push 队列（实时推送）",
+        tier=TIER_L2,
+        verified=True,
     ),
     _c(0x054B, "QUOTES_BY_CATEGORY", "分类行情（按市场或板块分页排序）", tier=TIER_DECLARED),
-    # --- 成交明细 ----------------------------------------------------------- #
     _c(
         0x0FC5,
         "TRADE_TODAY",
-        "当日成交明细（逐笔）",
+        "当日成交明细（inferred；真实记录布局尚未由 golden 锁定）",
         tier=TIER_L2,
-        verified=True,
+        verified=False,
         request_fields=("market:uint16", "code:char[6]", "start:uint16", "count:uint16"),
     ),
     _c(0x0FC6, "TRADE_TODAY_ALT", "当日成交明细（备用命令号）", tier=TIER_DECLARED),
     _c(0x0FB5, "TRADE_HISTORY", "历史成交明细", tier=TIER_DECLARED),
-    # --- 基本面 ------------------------------------------------------------- #
     _c(
         0x000F,
         "CAPITAL_CHANGES",
@@ -262,7 +250,6 @@ _STD: list[Command] = [
             "length:uint32",
         ),
     ),
-    # --- 盘面统计 ----------------------------------------------------------- #
     _c(
         0x051A,
         "VOLUME_PRICE_DIST",
@@ -296,9 +283,6 @@ _STD: list[Command] = [
     _c(0x0FA8, "UNKNOWN_0FA8", "未命名命令（待抓包确认）", tier=TIER_DECLARED),
 ]
 
-# --------------------------------------------------------------------------- #
-# 7727 扩展市场协议族（港股 / 美股 / 期货 / 外汇）
-# --------------------------------------------------------------------------- #
 _EXT: list[Command] = [
     _c(0x000D, "EX_HANDSHAKE", "扩展市场握手", family=Family.EXTENDED, tier=TIER_L2),
     _c(0x0004, "EX_HEARTBEAT", "扩展市场心跳", family=Family.EXTENDED, tier=TIER_L2),
@@ -319,9 +303,6 @@ _EXT: list[Command] = [
     _c(0x010E, "EX_OPTION_QUOTE", "期权实时", family=Family.EXTENDED),
 ]
 
-# --------------------------------------------------------------------------- #
-# MAC 协议族（7709，MAC 专属服务器，命令号 0x120F–0x2562）
-# --------------------------------------------------------------------------- #
 _MAC: list[Command] = [
     _c(0x120F, "MAC_BLOCK_LIST", "板块列表", family=Family.MAC),
     _c(0x1210, "MAC_BLOCK_MEMBERS", "板块成分股", family=Family.MAC),
@@ -341,9 +322,6 @@ _MAC: list[Command] = [
     _c(0x2562, "MAC_HEARTBEAT", "MAC 心跳", family=Family.MAC),
 ]
 
-# --------------------------------------------------------------------------- #
-# 商品语义（期货 / 期权 / 外汇，走独立协议组）
-# --------------------------------------------------------------------------- #
 _GOODS: list[Command] = [
     _c(0x0200, "GOODS_COUNT", "商品数量", family=Family.GOODS),
     _c(0x0201, "GOODS_LIST", "商品列表", family=Family.GOODS),
@@ -358,9 +336,6 @@ _GOODS: list[Command] = [
     _c(0x020A, "GOODS_CALENDAR", "交易日历/合约到期", family=Family.GOODS),
 ]
 
-# --------------------------------------------------------------------------- #
-# F10 资料网关（7615 / TQLEX 文件型协议）
-# --------------------------------------------------------------------------- #
 _F10: list[Command] = [
     _c(0x0001, "F10_CATALOG", "F10 栏目目录清单", family=Family.F10, tier=TIER_L2),
     _c(
@@ -379,15 +354,11 @@ _F10: list[Command] = [
     ),
 ]
 
-#: 全部登记命令，键为 ``(family, cmd)``
 COMMANDS: dict[tuple[str, int], Command] = {}
 for _cmds in (_STD, _EXT, _MAC, _GOODS, _F10):
     for _c_ in _cmds:
         COMMANDS[(_c_.family, _c_.cmd)] = _c_
 
-
-#: B3：命令名 → 命令号 的单一事实源（键为小写 snake_case，如 ``security_bars``）。
-#: 使用方式：``CMD["security_bars"]`` 或 ``cmd("security_bars")``。
 CMD: dict[str, int] = {}
 for _c_ in COMMANDS.values():
     _k_ = _c_.name.lower()
@@ -396,13 +367,6 @@ for _c_ in COMMANDS.values():
 
 
 def cmd(name: str) -> int:
-    """B3：按命令名查号（替代散落字面量 ``0x052D`` 等）。
-
-    Raises
-    ------
-    KeyError
-        未登记时立即失败——比运行时收到错误响应更容易定位。
-    """
     try:
         return CMD[name]
     except KeyError as exc:
@@ -412,10 +376,9 @@ def cmd(name: str) -> int:
 
 
 def get_command_by_name(name: str, family: str | None = None) -> Command | None:
-    """按名（可加族过滤）取 Command 记录。"""
-    for (fam, _), c in COMMANDS.items():
-        if c.name == name and (family is None or fam == family):
-            return c
+    for (fam, _), command in COMMANDS.items():
+        if command.name == name and (family is None or fam == family):
+            return command
     return None
 
 
@@ -424,33 +387,30 @@ def get_command(cmd: int, family: str = Family.STANDARD) -> Command | None:
 
 
 def by_family(family: str) -> Iterator[Command]:
-    for (fam, _), c in sorted(COMMANDS.items()):
+    for (fam, _), command in sorted(COMMANDS.items()):
         if fam == family:
-            yield c
+            yield command
 
 
 def unknown_command_ids(family: str = Family.STANDARD) -> list[Command]:
-    """该协议族中尚未验证语义的命令（需抓包补齐）。"""
-    return [c for c in by_family(family) if not c.verified]
+    return [command for command in by_family(family) if not command.verified]
 
 
 def by_status(status: str, family: str | None = None) -> list[Command]:
-    """按运行时状态查询命令（如 offline = 实测下线清单）。"""
     return [
-        c
-        for (_, _), c in sorted(COMMANDS.items())
-        if c.status == status and (family is None or c.family == family)
+        command
+        for (_, _), command in sorted(COMMANDS.items())
+        if command.status == status and (family is None or command.family == family)
     ]
 
 
 def stats() -> dict[str, int]:
-    """各协议族 / 各支持级别的命令计数（供 CLI 与 CI 报告）。"""
     out: dict[str, int] = {}
-    for (fam, _), c in COMMANDS.items():
+    for (fam, _), command in COMMANDS.items():
         out[f"{fam}.total"] = out.get(f"{fam}.total", 0) + 1
-        out[f"{fam}.{c.tier}"] = out.get(f"{fam}.{c.tier}", 0) + 1
-        if c.verified:
+        out[f"{fam}.{command.tier}"] = out.get(f"{fam}.{command.tier}", 0) + 1
+        if command.verified:
             out[f"{fam}.verified"] = out.get(f"{fam}.verified", 0) + 1
-        out[f"all.status_{c.status}"] = out.get(f"all.status_{c.status}", 0) + 1
+        out[f"all.status_{command.status}"] = out.get(f"all.status_{command.status}", 0) + 1
     out["all.total"] = len(COMMANDS)
     return out

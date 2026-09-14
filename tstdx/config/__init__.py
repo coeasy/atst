@@ -1,7 +1,7 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""配置中心（§21）：strict schema + 6 源优先级合并。"""
+"""配置中心：strict schema + Provider-bound v12 execution semantics."""
 
 from .loader import (  # noqa: F401
     CONFIG_FILENAMES,
@@ -29,6 +29,7 @@ from .schema import (  # noqa: F401
     ProfileConfig,
     RateLimitConfig,
     SecurityConfig,
+    SourcesConfig,
     WebConfig,
     config_diff,
     config_from_dict,
@@ -46,6 +47,7 @@ __all__ = [
     "OutputConfig",
     "ProfileConfig",
     "WebConfig",
+    "SourcesConfig",
     "ObservabilityConfig",
     "SecurityConfig",
     "CompatibilityConfig",

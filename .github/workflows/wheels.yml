@@ -5,195 +5,165 @@ on:
     types: [published]
   workflow_dispatch:
 
+# Never run two release pipelines for the same ref concurrently. Do not cancel an
+# in-flight publication: a newer invocation must wait rather than interrupting a
+# potentially irreversible external publish operation.
+concurrency:
+  group: wheels-${{ github.ref }}
+  cancel-in-progress: false
+
+# Pure-Python release workflow. Build one canonical universal wheel/sdist, then
+# install that exact artifact across the supported OS/Python matrix before a
+# single trusted-publishing step. Manual dispatch is build/verification only.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  # B12（REFACTOR_PLAN_v7 §2.9）：manylinux 合规 wheel——
-  # cibuildwheel 产出 manylinux2014 标签（旧 glibc 环境可安装），× x86_64/aarch64，
-  # 并在 manylinux 容器内做安装冒烟。macOS/Windows 保留原 build 流程
-  # （纯 Python 包无 ABI 依赖，无需 cibuildwheel）。
-  build-wheels:
-    name: Build wheels (Linux manylinux)
+  build-dist:
+    name: Build canonical wheel + sdist
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build manylinux wheels (cp310–cp313)
-        uses: pypa/cibuildwheel@v2
-        env:
-          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
-          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux2014
-          CIBW_ARCHS: auto64
-          CIBW_TEST_COMMAND: python -c "import tstdx; print(tstdx.__version__)"
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheel-manylinux-${{ strategy.job-index }}
-          path: wheelhouse/*.whl
-
-  build-wheels-macos:
-    name: Build wheels (macOS)
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        python-version: ['3.10', '3.11', '3.12', '3.13']
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install build
-        run: pip install build
-      - name: Build wheel
-        run: python -m build --wheel
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheel-macos-${{ matrix.python-version }}
-          path: dist/*.whl
-
-  build-wheels-windows:
-    name: Build wheels (Windows)
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        python-version: ['3.10', '3.11', '3.12', '3.13']
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install build
-        run: pip install build
-      - name: Build wheel
-        run: python -m build --wheel
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheel-windows-${{ matrix.python-version }}
-          path: dist/*.whl
-
-  publish-pypi:
-    name: Publish to PyPI (trusted publishing)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'release' && github.event.action == 'published'
-    needs: [build-wheels, build-wheels-macos, build-wheels-windows]
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: wheel-*
-          path: dist/
-          merge-multiple: true
-      # 信任发布（OIDC）：不传 password，PyPI 按 environment=pypi 的
-      # Trusted Publisher 映射校验身份（Q3）。
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-
-  build-sdist:
-    name: Build sdist
-    runs-on: ubuntu-latest
-    needs: [build-wheels, build-wheels-macos, build-wheels-windows]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install build
-        run: pip install build
-      - name: Build sdist
-        run: python -m build --sdist
-      - name: Upload sdist artifact
+          cache: 'pip'
+      - name: Verify release tag matches canonical source identity
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os
+          from scripts.build_package import _declared_versions
+
+          project_version, source_version = _declared_versions()
+          assert source_version == project_version, (
+              f"source version {source_version!r} != project version {project_version!r}"
+          )
+          expected = f"v{project_version}"
+          actual = os.environ["RELEASE_TAG"]
+          assert actual == expected, f"release tag {actual!r} != package {expected!r}"
+          print("release source/tag identity OK:", actual)
+          PY
+      - name: Install packaging validators
+        run: python -m pip install build twine
+      - name: Build canonical distributions
+        run: python -m build
+      - name: Verify source, wheel, sdist, PEP 561 and Twine metadata
+        run: python scripts/build_package.py --verify-only --dist-out dist
+      - name: Upload canonical distributions
         uses: actions/upload-artifact@v4
         with:
-          name: sdist
-          path: dist/*.tar.gz
+          name: python-dist
+          path: dist/*
           if-no-files-found: error
+          retention-days: 14
 
-  publish-sdist:
-    name: Publish sdist to PyPI (trusted publishing)
-    runs-on: ubuntu-latest
+  smoke-install:
+    name: Install artifact (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    needs: build-dist
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      # Artifact-only job: intentionally no source checkout. setup-python pip
+      # caching is also intentionally disabled because v5 requires a repository
+      # dependency file for the cache key and would fail before wheel install.
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install the exact built wheel
+        run: >-
+          python -m pip install --no-index --find-links dist
+          --only-binary=:all: tstdx
+      - name: Verify installed public surface and CLI entrypoints
+        run: |
+          python -c "import importlib.metadata as m, tstdx; assert tstdx.__version__ == m.version('tstdx'); print(tstdx.__version__)"
+          python -c "from importlib.resources import files; assert files('tstdx').joinpath('py.typed').is_file()"
+          python -c "from tstdx.tools.host_audit import AuditReport, audit_all; assert callable(audit_all); print(AuditReport.__name__)"
+          python -c "from tstdx.client import AsyncF10Client, AsyncTdxClient, F10Client, TdxClient; assert TdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'; assert AsyncTdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'; assert F10Client.__init__.__module__ == 'tstdx.client._subclient_family_hardening'; assert AsyncF10Client.__init__.__module__ == 'tstdx.client._subclient_family_hardening'; assert TdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'; assert AsyncTdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'; assert AsyncTdxClient.quotes_concurrent.__module__ == 'tstdx.client._async_concurrency_hardening'"
+          python -c "from tstdx.transport import TcpConnection; from tstdx.transport.async_ import AsyncTcpConnection; assert TcpConnection.__init__.__module__ == 'tstdx.transport._connection_contract_hardening'; assert AsyncTcpConnection.__init__.__module__ == 'tstdx.transport._connection_contract_hardening'; assert TcpConnection.request.__module__ == 'tstdx.transport._connection_contract_hardening'; assert AsyncTcpConnection.request.__module__ == 'tstdx.transport._connection_contract_hardening'"
+          python -c "from tstdx.transport import ConnectionPool; assert ConnectionPool.__init__.__module__ == 'tstdx.transport._pool_family_hardening'; assert ConnectionPool.from_config.__func__.__module__ == 'tstdx.transport._pool_factory_hardening'; assert ConnectionPool.request.__module__ == 'tstdx.transport._pool_hardening'; assert ConnectionPool.request_multi.__module__ == 'tstdx.transport._pool_hardening'; assert ConnectionPool.update_hosts.__module__ == 'tstdx.transport._pool_provenance_hardening'; assert ConnectionPool._trigger_background_speedtest.__module__ == 'tstdx.transport._pool_provenance_hardening'"
+          python -c "from tstdx.transport import RankingStore, resolve_hosts; assert RankingStore.load.__module__ == 'tstdx.transport._ranking_hardening'; assert RankingStore.save.__module__ == 'tstdx.transport._ranking_hardening'; assert resolve_hosts.__module__ == 'tstdx.transport._host_selector_hardening'"
+          python -c "from tstdx.transport.async_ import AsyncConnectionPool; assert AsyncConnectionPool.__init__.__module__ == 'tstdx.transport._pool_family_hardening'; assert AsyncConnectionPool.request.__module__ == 'tstdx.transport._async_pool_hardening'; assert AsyncConnectionPool.close.__module__ == 'tstdx.transport._async_close_hardening'; assert AsyncConnectionPool.update_hosts.__module__ == 'tstdx.transport._pool_provenance_hardening'; assert callable(getattr(AsyncConnectionPool, '_circuit_allows', None)); assert callable(getattr(AsyncConnectionPool, '_release_probe_token', None))"
+          tstdx --help
+          tstdx hosts audit --help
+          python -m pip check
+
+  publish-pypi:
+    name: Publish canonical distributions to PyPI
+    needs: [build-dist, smoke-install]
     if: github.event_name == 'release' && github.event.action == 'published'
-    needs: build-sdist
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: pypi
     permissions:
+      contents: read
       id-token: write
     steps:
-      - name: Download sdist artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: sdist
+          name: python-dist
           path: dist
-      - name: Publish to PyPI
+      - name: Publish once with trusted publishing
         uses: pypa/gh-action-pypi-publish@release/v1
 
   publish-release-assets:
-    name: Attach packages to GitHub Release
-    runs-on: ubuntu-latest
+    name: Attach canonical packages to GitHub Release
+    needs: [build-dist, smoke-install, publish-pypi]
     if: github.event_name == 'release' && github.event.action == 'published'
-    needs: [build-wheels, build-wheels-macos, build-wheels-windows, build-sdist]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
-      # Keep artifact directories separate so identical pure-Python wheels from
-      # different runners can be deduplicated and compared before upload.
-      - name: Download wheel artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          pattern: wheel-*
+          name: python-dist
           path: dist
-
-      - name: Download sdist artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: sdist
-          path: dist/sdist
-
-      - name: Prepare release assets
+      - name: Verify canonical release asset count
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p release-assets
-          found=0
-          while IFS= read -r package; do
-            found=1
-            name="$(basename "$package")"
-            target="release-assets/$name"
-            if [[ -e "$target" ]]; then
-              cmp -s "$package" "$target" || {
-                echo "Conflicting packages have the same filename: $name" >&2
-                exit 1
-              }
-            else
-              cp "$package" "$target"
-            fi
-          done < <(find dist -type f \( -name '*.whl' -o -name '*.tar.gz' \) -print | sort)
-          if [[ "$found" -ne 1 ]]; then
-            echo "No wheel or sdist was collected" >&2
-            exit 1
-          fi
-          ls -l release-assets
-
-      - name: Upload packages to GitHub Release
+          wheel_count="$(find dist -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')"
+          sdist_count="$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')"
+          test "$wheel_count" = 1
+          test "$sdist_count" = 1
+      - name: Upload canonical packages to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG_NAME" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "$TAG_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
 
   publish-docker:
     name: Publish Docker image to Docker Hub
+    # Prevent Docker publication when either PyPI or the GitHub Release asset
+    # surface failed. All external surfaces consume the same canonical artifact.
+    needs: [build-dist, smoke-install, publish-pypi, publish-release-assets]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    timeout-minutes: 45
+    if: github.event_name == 'release' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      # Reuse the exact wheel that passed the 12-cell install matrix. The release
+      # image must not rebuild a second wheel from source and accidentally diverge
+      # from the artifact published to PyPI.
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: release-dist
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -211,11 +181,12 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
-      - name: Build and push
+            type=raw,value=latest,enable=${{ github.event.release.prerelease == false }}
+      - name: Build and push canonical-artifact image
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile.release
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}

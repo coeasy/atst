@@ -1,0 +1,25 @@
+# Release-only runtime image. The workflow downloads the already-built and
+# cross-platform-smoke-tested universal wheel into release-dist/. This Dockerfile
+# deliberately has no build stage and no source COPY, so the image cannot drift
+# from the artifact published to PyPI.
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN addgroup --system tstdx && adduser --system --ingroup tstdx tstdx
+
+WORKDIR /app
+
+COPY release-dist/*.whl /tmp/
+RUN set -eu; \
+    count="$(find /tmp -maxdepth 1 -type f -name '*.whl' | wc -l)"; \
+    test "$count" -eq 1; \
+    python -m pip install --no-cache-dir --no-deps /tmp/*.whl; \
+    rm -f /tmp/*.whl; \
+    tstdx --help >/dev/null; \
+    python -m pip check
+
+USER tstdx
+
+CMD ["tstdx", "--help"]

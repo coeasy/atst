@@ -79,51 +79,33 @@ def _cmd_hosts_list(args: argparse.Namespace) -> int:
 
 
 def _cmd_hosts_audit(args: argparse.Namespace) -> int:
-    """``tstdx hosts audit``：5 族候选主站巡检（P14-A2）。
+    """``tstdx hosts audit``：调用 wheel 内置的 5 族主站巡检实现。"""
 
-    薄壳接线 :mod:`scripts.audit_hosts`（scripts 目录下的独立脚本，
-    可 ``python scripts/audit_hosts.py`` 直接运行，也可本 CLI 子命令调用）。
-    探测 5 个协议族（STANDARD / EXTENDED / MAC / GOODS / F10），输出
-    healthy/degraded/offline 三态汇总；写入用户排名文件与 JSON/Markdown 报告。
-    """
+    from ..tools.host_audit import main as host_audit_main
+
     argv: list[str] = []
-    if getattr(args, "family", None):
-        for fam in args.family:
-            argv.extend(["--family", fam])
+    for family in getattr(args, "family", None) or ():
+        argv.extend(["--family", family])
     argv.append(f"--timeout={args.timeout}")
-    if getattr(args, "quiet", False):
-        argv.append("--quiet")
+    if getattr(args, "samples", None) is not None:
+        argv.append(f"--samples={args.samples}")
+    if getattr(args, "workers", None) is not None:
+        argv.append(f"--workers={args.workers}")
     if getattr(args, "report", None):
         argv.append(f"--report={args.report}")
+    if getattr(args, "markdown", None):
+        argv.append(f"--markdown={args.markdown}")
     if getattr(args, "ranking_file", None):
         argv.append(f"--ranking-file={args.ranking_file}")
-    if getattr(args, "workers", None):
-        argv.append(f"--workers={args.workers}")
+    if getattr(args, "hosts_file", None):
+        argv.append(f"--hosts-file={args.hosts_file}")
+    if getattr(args, "quiet", False):
+        argv.append("--quiet")
     if getattr(args, "strict", False):
         argv.append("--strict")
     if getattr(args, "no_save_ranking", False):
         argv.append("--no-save-ranking")
-    if getattr(args, "hosts_file", None):
-        argv.append(f"--hosts-file={args.hosts_file}")
-
-    try:
-        # scripts/ 不在包内，需要注入 sys.path 后动态导入
-        import importlib
-        import sys as _sys
-        from pathlib import Path as _Path
-
-        scripts_dir = str(_Path(__file__).resolve().parents[2] / "scripts")
-        if scripts_dir not in _sys.path:
-            _sys.path.insert(0, scripts_dir)
-        mod = importlib.import_module("audit_hosts")
-        return int(mod.main(argv))
-    except ImportError:
-        print(
-            "scripts/audit_hosts.py 未找到——请以源码形式安装 tstdx "
-            "或运行 `python scripts/audit_hosts.py`。",
-            file=sys.stderr,
-        )
-        return 2
+    return int(host_audit_main(argv))
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
@@ -172,7 +154,6 @@ def _cmd_feedback(args: argparse.Namespace) -> int:
         )
         return 1
 
-    # stats：本地 UserStats 快照（按进程独立，随进程重置）
     snapshot = UserStats().snapshot()
     if args.json:
         print(json.dumps(snapshot, ensure_ascii=False, indent=2))
@@ -213,8 +194,6 @@ def _cmd_probe(args: argparse.Namespace) -> int:
         print("用法：tstdx probe 0x053e --market 1 --code 600519", file=sys.stderr)
         return 2
 
-    # 限速钳制：Prober 的 while-sleep 对 rate<=0 会近乎无限等待，
-    # CLI 层先钳制到安全区间
     rate = min(max(float(args.rate_limit), 0.1), 5.0)
 
     try:
@@ -227,7 +206,6 @@ def _cmd_probe(args: argparse.Namespace) -> int:
                 block_offline_only=not args.allow_trading_hours,
             )
             result = prober.probe_command(cmd_id, market=args.market, code=args.code)
-            # 拿到非空响应即归档 DRAFT yaml（孤儿接线闭环：样本 → DRAFT → 人工评审）
             if result.ok:
                 try:
                     prober.archive(result)
