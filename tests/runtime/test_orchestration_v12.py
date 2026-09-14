@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+import pytest
+
+from tstdx.cache_persistent import PersistentSemanticCache
+from tstdx.domain.models import Quote
+from tstdx.errors import AllSourcesExhausted, ValidationError
+from tstdx.orchestration import FallbackPolicy, ProviderOrchestrator
+from tstdx.query import QueryPlanner, QuerySpec
+from tstdx.result import Provenance, QueryResult
+
+
+def _result(provider: str) -> QueryResult[list[Quote]]:
+    plan = QueryPlanner().compile(
+        QuerySpec.build(
+            "quotes",
+            symbols="sh600519",
+            provider=provider,
+            currentness="live",
+        )
+    )
+    return QueryResult.from_plan(
+        [Quote(code="600519", price=1.0)],
+        plan=plan,
+        provenance=Provenance.direct(plan),
+    )
+
+
+def test_fallback_policy_rejects_empty_duplicate_and_unknown_provider() -> None:
+    with pytest.raises(ValueError):
+        FallbackPolicy.build()
+    with pytest.raises(ValueError):
+        FallbackPolicy.build("tdx", "tdx")
+    with pytest.raises(ValidationError):
+        FallbackPolicy.build("unknown-provider")
+
+
+def test_orchestrator_first_provider_success_is_not_fallback() -> None:
+    class Runtime:
+        def quotes(self, symbols, *, provider, **kwargs):
+            assert provider == "tdx"
+            return _result(provider)
+
+    output = ProviderOrchestrator(Runtime()).quotes(
+        "sh600519", policy=FallbackPolicy.build("tdx", "eastmoney")
+    )
+    assert [(item.provider, item.status) for item in output.attempts] == [("tdx", "ok")]
+    assert output.result.meta.provider == "tdx"
+    assert output.result.meta.provenance.requested_provider == "tdx"
+    assert output.result.meta.provenance.fallback is False
+
+
+def test_orchestrator_fallback_is_explicit_and_auditable(tmp_path) -> None:
+    class Runtime:
+        def quotes(self, symbols, *, provider, **kwargs):
+            if provider == "tdx":
+                raise ValidationError("tdx unavailable", context={"provider": "tdx"})
+            return _result(provider)
+
+    output = ProviderOrchestrator(Runtime()).quotes(
+        "sh600519", policy=FallbackPolicy.build("tdx", "eastmoney")
+    )
+    assert [(item.provider, item.status, item.code) for item in output.attempts] == [
+        ("tdx", "failed", "E1010"),
+        ("eastmoney", "ok", None),
+    ]
+    assert output.result.meta.provider == "eastmoney"
+    assert output.result.meta.provenance.requested_provider == "tdx"
+    assert output.result.meta.provenance.fallback is True
+
+    plan = QueryPlanner().compile(
+        QuerySpec.build(
+            "quotes",
+            symbols="sh600519",
+            provider="eastmoney",
+            currentness="live",
+        )
+    )
+    with PersistentSemanticCache(tmp_path / "semantic.sqlite") as cache:
+        assert cache.put(plan, output.result, ttl=30.0) is False
+
+
+def test_orchestrator_all_failures_are_sanitized() -> None:
+    class Runtime:
+        def quotes(self, symbols, *, provider, **kwargs):
+            raise RuntimeError(f"secret token from {provider}")
+
+    with pytest.raises(AllSourcesExhausted) as info:
+        ProviderOrchestrator(Runtime()).quotes(
+            "sh600519", policy=FallbackPolicy.build("tdx", "eastmoney")
+        )
+    assert info.value.context["fallback"] is True
+    assert info.value.context["errors"] == ["tdx:E9000", "eastmoney:E9000"]
+    assert "secret" not in str(info.value.context)
