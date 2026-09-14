@@ -133,7 +133,7 @@ def _norm_family(raw: str | None) -> str:
 
 def _parse_port(raw: object) -> int:
     try:
-        port = int(raw)
+        port = int(raw)  # type: ignore[call-overload]
     except (TypeError, ValueError) as exc:
         raise ValueError(f"非法端口: {raw!r}") from exc
     if not 1 <= port <= 65535:
@@ -339,8 +339,8 @@ def audit_family(
             audit.results.append(_result_row(result))
             if progress:
                 mark = "OK " if result.ok else "ERR"
-                rtt = f"{result.rtt_ms:.1f}ms" if result.rtt_ms is not None else "-"
-                print(f"  [{family:<9s} {index}/{len(unique):>2}] {mark} {result.key} {rtt}")
+                rtt_str = f"{result.rtt_ms:.1f}ms" if result.rtt_ms is not None else "-"
+                print(f"  [{family:<9s} {index}/{len(unique):>2}] {mark} {result.key} {rtt_str}")
 
     for row in audit.results:
         if not row["ok"]:
@@ -351,7 +351,7 @@ def audit_family(
             audit.degraded += 1
             audit.notes.append(f"{row['host']}:{row['port']} reachable without RTT evidence")
             continue
-        rtt = float(rtt_raw)
+        rtt: float = float(rtt_raw)
         if rtt <= _HEALTHY_RTT_MS:
             audit.healthy += 1
         else:

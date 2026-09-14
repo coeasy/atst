@@ -273,23 +273,27 @@ class DirectProviderExecutor:
             if provider == "eastmoney":
                 from .web.history import EastmoneyHistoryKlineSource
 
-                src: Any = EastmoneyHistoryKlineSource(timeout=self.timeout)
+                src = EastmoneyHistoryKlineSource(timeout=self.timeout)  # type: ignore[assignment]
             else:
                 from .web.adapters_ext import MinuteKlineSource
 
-                src = MinuteKlineSource(timeout=self.timeout)
+                src = MinuteKlineSource(timeout=self.timeout)  # type: ignore[assignment]
             try:
-                return src.fetch_bars(symbol, **kwargs)
+                return src.fetch_bars(symbol, **kwargs)  # type: ignore[attr-defined]
             finally:
                 src.close()
 
         if capability == "history":
             if provider == "eastmoney":
-                from .web.history import EastmoneyHistoryKlineSource as Source
+                from .web.history import (
+                    EastmoneyHistoryKlineSource as Source,  # type: ignore[assignment]
+                )
             else:
-                from .web.history import SinaHistoryKlineSource as Source
+                from .web.history import (
+                    SinaHistoryKlineSource as Source,  # type: ignore[assignment]
+                )
 
-            history = Source(timeout=self.timeout)
+            history = Source(timeout=self.timeout)  # type: ignore[call-arg]
             try:
                 return history.fetch_bars(symbol, **kwargs)
             finally:
@@ -451,12 +455,12 @@ class DirectProviderExecutor:
 
     def _tdx_security_count(self, plan: QueryPlan) -> Any:
         with self._tdx_client() as client:
-            market = 0 if plan.spec.market is None else plan.spec.market
+            market = 0 if getattr(plan.spec, "market", None) is None else plan.spec.market  # type: ignore[attr-defined]
             return client.security_count(market)
 
     def _tdx_security_list(self, plan: QueryPlan) -> Any:
         with self._tdx_client() as client:
-            market = 0 if plan.spec.market is None else plan.spec.market
+            market = 0 if getattr(plan.spec, "market", None) is None else plan.spec.market  # type: ignore[attr-defined]
             return client.security_list(market, plan.spec.start)
 
     def _local_bars(self, plan: QueryPlan) -> Any:
@@ -526,12 +530,12 @@ class DirectProviderExecutor:
             if plan.channel == "minute_kline":
                 if plan.spec.adjustment:
                     raise ValidationError("Tencent minute_kline 不支持复权参数")
-                return src.fetch_bars(
+                return src.fetch_bars(  # type: ignore[attr-defined]
                     plan.spec.symbols[0],
                     period=plan.spec.period,
                     count=plan.spec.count,
                 )
-            return src.fetch_bars(
+            return src.fetch_bars(  # type: ignore[attr-defined]
                 plan.spec.symbols[0],
                 period=plan.spec.period,
                 count=plan.spec.count,
