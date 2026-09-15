@@ -16,8 +16,26 @@ from collections.abc import Sequence
 
 from ..error_envelope import to_error_envelope
 from .parser import build_parser
+from .runtime_commands import (
+    _cmd_changes,
+    _cmd_list,
+    _cmd_quotes_snapshot,
+    _cmd_serve,
+    cmd_stream,
+)
 
-__all__ = ["build_parser", "main"]
+# Legacy v12 command handlers re-exported for backward-compatible test imports.
+_cmd_stream = cmd_stream
+
+__all__ = [
+    "build_parser",
+    "main",
+    "_cmd_changes",
+    "_cmd_list",
+    "_cmd_quotes_snapshot",
+    "_cmd_serve",
+    "_cmd_stream",
+]
 
 
 def main(argv: Sequence[str] | None = None) -> int:

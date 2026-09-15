@@ -6,8 +6,8 @@ from typing import Any
 
 import tstdx.cli as cli
 from tstdx.errors import SourceUnavailable
-from tstdx.integration import JsonRpcHandler
 from tstdx.integration.mcp_app import MCPServer
+from tstdx.integration.ws_app import JsonRpcHandler
 
 
 def _assert_fail_closed_envelope(data: dict[str, Any], *, code: str) -> None:

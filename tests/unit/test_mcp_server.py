@@ -23,9 +23,8 @@ import json
 
 import pytest
 
+from tstdx.integration.mcp._common import ERR_INTERNAL, ERR_METHOD_NOT_FOUND
 from tstdx.integration.mcp_server import (
-    ERR_INTERNAL,
-    ERR_METHOD_NOT_FOUND,
     PROTOCOL_VERSION,
     SERVER_NAME,
     SERVER_VERSION,

@@ -64,6 +64,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -71,6 +72,9 @@ from ..domain.models import Bar, MinutePoint, Quote, Tick, to_dicts
 from ..domain.symbol import normalize_symbol
 from ..errors import AllHostsUnreachable, CommandOffline, SourceUnavailable, TdxError
 from .routing import Route, RouteSelector
+
+# v15：facade 弃用提示仅进程内提示一次（见 UnifiedQuoteAPI.__init__）。
+_FACADE_DEPRECATED_WARNED: bool = False
 
 if TYPE_CHECKING:  # 仅注解引用，运行时不导入（保持零硬依赖与无环）
     from .response import ApiResponse
@@ -201,6 +205,19 @@ class UnifiedQuoteAPI(RouteSelector):
         self._router: Any = None
         # W11 熔断状态初始化收口在 RouteSelector.__init__（P10-2 拆分）
         super().__init__()
+
+        # v15：facade 统一门面保留为「兼容层」，新代码应优先使用
+        # :class:`tstdx.Client` / :class:`tstdx.RuntimeGateway`（v14 DAG 编排）。
+        # 仅进程内提示一次，避免重复污染日志。
+        global _FACADE_DEPRECATED_WARNED  # noqa: PLW0603
+        if not _FACADE_DEPRECATED_WARNED:
+            _FACADE_DEPRECATED_WARNED = True
+            warnings.warn(
+                "UnifiedQuoteAPI 已弃用：请改用 tstdx.Client / tstdx.RuntimeGateway"
+                "（v14 DAG 编排 + v13 执行引擎）；facade 将在 v1.6.0 移除",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
     # ------------------------------------------------------------------ #
     # 资源作用域帮助方法（收口「构造 → 调用 → close」薄委托模板）

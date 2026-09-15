@@ -96,7 +96,7 @@ include = [
 minversion = "7.0"
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-q --strict-markers"
+addopts = "-q --strict-markers --import-mode=importlib"
 markers = [
     "unit: 纯单元测试，无网络无 IO",
     "integration: 集成/loopback 测试；network marker 才表示外网依赖",
@@ -109,6 +109,8 @@ filterwarnings = ["ignore::DeprecationWarning"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+# 代码生成草稿区（auto-generated，不进包内），不纳入 lint
+extend-exclude = ["tstdx/tools/generated_draft"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]

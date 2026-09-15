@@ -13,7 +13,6 @@ from tstdx.providers import PROVIDERS
 from tstdx.query import QuerySpec
 from tstdx.stream_contract import StreamPlanner, StreamSpec
 
-
 TIER_A = {
     "quotes",
     "bars",
@@ -85,9 +84,18 @@ def test_mcp_only_exposes_promoted_canonical_capabilities() -> None:
     }
 
 
-def test_retired_facade_has_no_supported_business_exports() -> None:
+def test_facade_is_deprecated_compat_layer() -> None:
+    import warnings
+
     import tstdx.facade as facade
 
-    assert facade.__all__ == []
-    assert not hasattr(facade, "UnifiedQuoteAPI")
-    assert not hasattr(facade, "runtime_api")
+    # v15：facade 作为兼容层保留（不再要求 __all__ 为空），但 UnifiedQuoteAPI
+    # 构造时必须发出 DeprecationWarning，提示用户迁移到 Client / RuntimeGateway。
+    assert hasattr(facade, "UnifiedQuoteAPI")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        facade.UnifiedQuoteAPI()
+    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+    # 历史 manager.tdx 接口仍可通过 LegacyServiceAdapter 访问（兼容层）。
+    assert hasattr(facade, "LegacyServiceAdapter")
+    assert facade.LegacyServiceAdapter().manager.tdx is not None

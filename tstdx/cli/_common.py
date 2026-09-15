@@ -46,8 +46,9 @@ def _pct(q: Mapping[str, Any]) -> float:
 def _resolve_hosts(args: argparse.Namespace):
     from ..transport.hosts import parse_server
 
-    if args.host:
-        return [parse_server(h) for h in args.host]
+    hosts = getattr(args, "host", None)
+    if hosts:
+        return [parse_server(h) for h in hosts]
     return None
 
 

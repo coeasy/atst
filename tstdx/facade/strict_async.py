@@ -124,7 +124,7 @@ class AsyncUnifiedQuoteAPI:
             close_task = self._close_task
         await _await_thread_call(close_task)
 
-    async def __aenter__(self) -> "AsyncUnifiedQuoteAPI":
+    async def __aenter__(self) -> AsyncUnifiedQuoteAPI:
         return self
 
     async def __aexit__(self, *exc: Any) -> None:

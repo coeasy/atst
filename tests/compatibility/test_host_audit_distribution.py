@@ -6,13 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.cli.cmds_hosts import _cmd_hosts_audit
 from tstdx.cli.parser import build_parser
+from tstdx.cli.runtime_commands import _cmd_hosts_audit
 from tstdx.protocol.commands import Family
 from tstdx.tools import host_audit
 from tstdx.transport.hosts import HostEntry
 from tstdx.transport.speedtest import ProbeResult
-
 
 _ROOT = Path(__file__).resolve().parents[2]
 
@@ -135,7 +134,7 @@ def test_public_cli_host_audit_delegates_to_installed_package_module(
 
 
 def test_public_cli_source_has_no_repository_script_dependency() -> None:
-    source = (_ROOT / "tstdx" / "cli" / "cmds_hosts.py").read_text(encoding="utf-8")
+    source = (_ROOT / "tstdx" / "cli" / "runtime_commands.py").read_text(encoding="utf-8")
 
     assert "from ..tools.host_audit import main as host_audit_main" in source
     assert "scripts/audit_hosts.py" not in source

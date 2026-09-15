@@ -14,6 +14,7 @@ Pure streaming components remain available for testing and advanced composition.
 
 from __future__ import annotations
 
+from .base import AsyncQuoteStream, QuoteStream
 from .engine import (
     BackpressureQueue,
     DeltaMerger,
@@ -28,6 +29,8 @@ from .state import StreamLifecycle, StreamLifecycleSnapshot, StreamState
 from .stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
 
 __all__ = [
+    "QuoteStream",
+    "AsyncQuoteStream",
     "StatefulQuoteStream",
     "AsyncStatefulQuoteStream",
     "StreamState",

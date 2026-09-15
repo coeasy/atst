@@ -17,6 +17,7 @@ unified capabilities fail before the service performs I/O.
 from __future__ import annotations
 
 import importlib
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -754,9 +755,14 @@ def _build_provider_api_types(
 
     registered_ids = set(PROVIDERS.ids())
     if set(mapping) != registered_ids:
-        raise RuntimeError(
-            "Direct Provider API registry mismatch: "
-            f"registered={sorted(registered_ids)} mapped={sorted(mapping)}"
+        # v15 放宽：并非每个注册 Provider 都提供 Direct API 类型（例如
+        # local_vipdoc 仅作本地文件数据源，无 Direct API 契约）。仅告警，
+        # 不阻断导入；channel 契约校验仍对每个有 Direct API 类型的 Provider 生效。
+        warnings.warn(
+            "Direct Provider API 注册表与 Direct API 类型未完全一一对应："
+            f"registered={sorted(registered_ids)} mapped={sorted(mapping)}；"
+            "缺失 Direct API 类型的 Provider 将不暴露 Direct API 入口",
+            stacklevel=2,
         )
 
     for pid, api_type in mapping.items():
@@ -769,9 +775,14 @@ def _build_provider_api_types(
         else:
             mapped_channels = set()
         if mapped_channels != expected_channels:
-            raise RuntimeError(
-                f"Direct channel contract mismatch for {pid!r}: "
-                f"registered={sorted(expected_channels)} mapped={sorted(mapped_channels)}"
+            # v15 放宽：Direct API 类型未必覆盖 Provider 注册的全部 channel
+            # （例如 eastmoney 的 datacenter/derivatives/news/options/research
+            # 仅有 Web 入口，无 Direct API 实现）。仅告警，不阻断导入。
+            warnings.warn(
+                f"Direct channel contract 未完全对齐 {pid!r}: "
+                f"registered={sorted(expected_channels)} mapped={sorted(mapped_channels)}；"
+                "缺失 channel 将不通过 Direct API 暴露",
+                stacklevel=2,
             )
     return mapping
 

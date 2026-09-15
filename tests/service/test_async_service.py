@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from typing import Any
 
 import pytest
 
 from tstdx.async_service import AsyncMarketDataService
 from tstdx.facade import (
     AsyncUnifiedQuoteAPI,
-    LegacyAsyncUnifiedQuoteAPI,
 )
 from tstdx.facade.strict_async import AsyncUnifiedQuoteAPI as StrictAsyncFacade
 from tstdx.query import QuerySpec
@@ -68,9 +66,10 @@ class FakeSyncService:
         self.closed = True
 
 
-def test_official_async_facade_is_strict_and_legacy_remains_available() -> None:
+def test_official_async_facade_is_strict_canonical() -> None:
+    # v15：facade 仅保留严格版 AsyncUnifiedQuoteAPI（strict_async 即其实现），
+    # 旧的非严格 LegacyAsyncUnifiedQuoteAPI 已在 clean-break 中合并移除。
     assert AsyncUnifiedQuoteAPI is StrictAsyncFacade
-    assert AsyncUnifiedQuoteAPI is not LegacyAsyncUnifiedQuoteAPI
 
 
 @pytest.mark.asyncio
