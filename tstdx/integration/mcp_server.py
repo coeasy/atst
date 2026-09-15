@@ -11,11 +11,11 @@ were intentionally removed in the clean-break architecture.
 from __future__ import annotations
 
 from .mcp import (
-    MCPServer,
     PROTOCOL_VERSION,
     SERVER_NAME,
     SERVER_VERSION,
     TOOLS,
+    MCPServer,
     ToolSpec,
     clamp_int,
     create_mcp_server,

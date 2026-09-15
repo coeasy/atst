@@ -522,12 +522,12 @@ async def _heartbeat_loop(self: _impl.AsyncConnectionPool) -> None:
 # Install onto the canonical public class rather than publishing a second class.
 # ``setattr`` keeps this compatibility bridge independent of mypy's method-assign
 # diagnostic code names, so --warn-unused-ignores remains meaningful.
-setattr(_impl.AsyncConnectionPool, "_circuit_allows", _circuit_allows)
-setattr(_impl.AsyncConnectionPool, "_select_allowed_slot", _select_allowed_slot)
-setattr(_impl.AsyncConnectionPool, "_release_probe_token", _release_probe_token)
-setattr(_impl.AsyncConnectionPool, "_mark_failure", _mark_failure)
-setattr(_impl.AsyncConnectionPool, "_mark_success", _mark_success)
-setattr(_impl.AsyncConnectionPool, "request", _request)
-setattr(_impl.AsyncConnectionPool, "request_multi", _request_multi)
-setattr(_impl.AsyncConnectionPool, "iter_frames", _iter_frames)
-setattr(_impl.AsyncConnectionPool, "_heartbeat_loop", _heartbeat_loop)
+_impl.AsyncConnectionPool._circuit_allows = _circuit_allows
+_impl.AsyncConnectionPool._select_allowed_slot = _select_allowed_slot
+_impl.AsyncConnectionPool._release_probe_token = _release_probe_token
+_impl.AsyncConnectionPool._mark_failure = _mark_failure
+_impl.AsyncConnectionPool._mark_success = _mark_success
+_impl.AsyncConnectionPool.request = _request
+_impl.AsyncConnectionPool.request_multi = _request_multi
+_impl.AsyncConnectionPool.iter_frames = _iter_frames
+_impl.AsyncConnectionPool._heartbeat_loop = _heartbeat_loop

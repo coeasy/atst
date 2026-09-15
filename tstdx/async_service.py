@@ -72,7 +72,7 @@ async def _await_cleanup(task: asyncio.Task[None]) -> None:
 class AsyncProviderAPI:
     """Async Direct Provider namespace backed by the same sync ProviderAPI."""
 
-    def __init__(self, owner: "AsyncMarketDataService", provider: str) -> None:
+    def __init__(self, owner: AsyncMarketDataService, provider: str) -> None:
         self._owner = owner
         self.provider = resolve_provider(provider=provider)
 
@@ -217,7 +217,7 @@ class AsyncMarketDataService:
             close_task = self._close_task
         await _await_cleanup(close_task)
 
-    async def __aenter__(self) -> "AsyncMarketDataService":
+    async def __aenter__(self) -> AsyncMarketDataService:
         return self
 
     async def __aexit__(self, *exc: Any) -> None:

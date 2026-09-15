@@ -73,7 +73,7 @@ class UnifiedRuntime:
             self.persistent_cache.close()
             self.persistent_cache = None
 
-    def __enter__(self) -> "UnifiedRuntime":
+    def __enter__(self) -> UnifiedRuntime:
         return self
 
     def __exit__(self, *exc: Any) -> None:

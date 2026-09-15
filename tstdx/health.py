@@ -227,9 +227,9 @@ class SourceHealthRegistry:
             return False
         if isinstance(exc, (ValidationError, InternalError)):
             return False
-        if isinstance(exc, ReadTimeout) and exc.context.get("deadline_scope") == "query":
-            return False
-        return True
+        return not (
+            isinstance(exc, ReadTimeout) and exc.context.get("deadline_scope") == "query"
+        )
 
     def reset(self, provider: str | None = None) -> None:
         """Clear visible health while invalidating all pre-reset in-flight requests."""

@@ -5,7 +5,7 @@ import pytest
 import tstdx.transport.hosts as hosts_module
 from tstdx.protocol.commands import Family
 from tstdx.transport import resolve_hosts
-from tstdx.transport.hosts import HostEntry, POOL_BY_FAMILY
+from tstdx.transport.hosts import POOL_BY_FAMILY, HostEntry
 
 
 @pytest.mark.unit

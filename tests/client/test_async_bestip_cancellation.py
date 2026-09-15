@@ -13,7 +13,6 @@ from tstdx.transport.async_ import AsyncConnectionPool
 from tstdx.transport.hosts import HostEntry
 from tstdx.transport.speedtest import ProbeResult
 
-
 speedtest_module = importlib.import_module("tstdx.transport.speedtest")
 
 

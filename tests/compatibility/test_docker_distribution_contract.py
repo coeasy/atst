@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 _ROOT = Path(__file__).resolve().parents[2]
 _BUILD_TOOL_INSTALL = (
     'python -m pip install --no-cache-dir -e ".[all,dev]" build twine'

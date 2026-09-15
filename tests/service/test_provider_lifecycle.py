@@ -23,7 +23,7 @@ class FakeHttpClient:
 
 
 class FakeAdapter:
-    instances: list["FakeAdapter"] = []
+    instances: list[FakeAdapter] = []
 
     def __init__(self, *, client: Any, timeout: float, **kwargs: Any) -> None:
         self.client = client

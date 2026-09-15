@@ -8,7 +8,7 @@ import pytest
 import tstdx.transport.hosts as hosts_module
 from tstdx.errors import ConfigError
 from tstdx.protocol.commands import Family
-from tstdx.transport.hosts import HostEntry, POOL_BY_FAMILY, RankingStore, resolve_hosts
+from tstdx.transport.hosts import POOL_BY_FAMILY, HostEntry, RankingStore, resolve_hosts
 
 
 def test_shared_endpoint_pools_rebind_family_and_reset_verification_provenance() -> None:

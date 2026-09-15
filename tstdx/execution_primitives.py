@@ -99,13 +99,11 @@ def _clone_error(exc: BaseException) -> BaseException:
     cloned_attrs = getattr(cloned, "__dict__", None)
     if isinstance(source_attrs, dict) and isinstance(cloned_attrs, dict):
         for key, value in source_attrs.items():
-            try:
-                cloned_attrs[key] = copy.deepcopy(value)
-            except Exception:
+            with contextlib.suppress(Exception):
                 # Keep the shallow-copied attribute rather than changing the
                 # exception category merely because one diagnostic field is
                 # backed by an uncopyable native object.
-                pass
+                cloned_attrs[key] = copy.deepcopy(value)
     return cloned
 
 
@@ -135,7 +133,7 @@ class ExecutionBudget:
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @classmethod
-    def from_deadline_ms(cls, deadline_ms: int, *, max_attempts: int = 1) -> "ExecutionBudget":
+    def from_deadline_ms(cls, deadline_ms: int, *, max_attempts: int = 1) -> ExecutionBudget:
         if deadline_ms <= 0:
             raise ValidationError(
                 "deadline_ms 必须大于 0",

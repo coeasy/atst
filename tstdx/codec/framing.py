@@ -257,10 +257,7 @@ def build_request(
     method = _require_uint("method", method, bits=16)
     body = _require_bytes("body", body)
     compress = _require_bool("compress", compress)
-    if seq is None:
-        seq = _default_seq.next()
-    else:
-        seq = _require_uint("seq", seq, bits=32)
+    seq = _default_seq.next() if seq is None else _require_uint("seq", seq, bits=32)
     payload = zlib_compress(body) if compress and body else body
     frame = RequestFrame(method=method, body=payload, seq=seq).encode(spec)
     if len(frame) > spec.max_frame_bytes:

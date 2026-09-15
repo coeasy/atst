@@ -60,13 +60,6 @@ from ..protocol.parsers.std7709 import (
     build_realtime_quote_body,
 )
 from ..protocol.registry import TIER_L3, ParseResult, dispatch
-from .async_ import (
-    AsyncExMarketClient,
-    AsyncF10Client,
-    AsyncGoodsClient,
-    AsyncMacClient,
-    AsyncTdxClient,
-)
 
 # Install behavior/provenance patches before factory/public bindings are exposed.
 # Order is intentional: concurrent output semantics, base pool identity binding,
@@ -76,6 +69,13 @@ from . import (
     _bestip_hardening,
     _pool_binding_hardening,
     _subclient_family_hardening,
+)
+from .async_ import (
+    AsyncExMarketClient,
+    AsyncF10Client,
+    AsyncGoodsClient,
+    AsyncMacClient,
+    AsyncTdxClient,
 )
 from .factory import _CLIENT_REGISTRY, get_client
 from .sync import (

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from tstdx.errors import ValidationError
-from tstdx.providers import ChannelSpec, PROVIDERS, resolve_provider
+from tstdx.providers import PROVIDERS, ChannelSpec, resolve_provider
 
 
 def test_tdx_is_only_default_provider() -> None:

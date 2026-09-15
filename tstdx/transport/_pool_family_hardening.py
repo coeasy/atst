@@ -111,7 +111,7 @@ def _validate_common_options(kwargs: dict[str, Any], *, async_pool: bool) -> Non
     )
     _require_int("max_retries", kwargs.get("max_retries", 3), minimum=0)
     _require_bool("use_tls", kwargs.get("use_tls", False))
-    handshake = kwargs.get("handshake", None)
+    handshake = kwargs.get("handshake")
     if handshake is not None:
         _require_bool("handshake", handshake)
     handshake_strict = _require_bool(
@@ -123,14 +123,14 @@ def _validate_common_options(kwargs: dict[str, Any], *, async_pool: bool) -> Non
             "ConnectionPool handshake=False 时 handshake_strict=True 无效；"
             "请启用握手或关闭 strict"
         )
-    _validate_rate_limiter(kwargs.get("rate_limiter", None), async_pool=async_pool)
+    _validate_rate_limiter(kwargs.get("rate_limiter"), async_pool=async_pool)
 
 
 def _validate_sync_only_options(kwargs: dict[str, Any]) -> None:
     _require_bool("keepalive", kwargs.get("keepalive", True))
     _require_int("speedtest_threshold", kwargs.get("speedtest_threshold", 3), minimum=1)
     _require_number("idle_timeout", kwargs.get("idle_timeout", 300.0))
-    callback = kwargs.get("on_host_down", None)
+    callback = kwargs.get("on_host_down")
     if callback is not None and not callable(callback):
         raise ConfigError(
             "ConnectionPool on_host_down 必须是 callable 或 None，"
@@ -239,5 +239,5 @@ def _async_init(self: _async_impl.AsyncConnectionPool, *args: Any, **kwargs: Any
     _ASYNC_INIT(self, *args, **kwargs)
 
 
-setattr(_sync_impl.ConnectionPool, "__init__", _sync_init)
-setattr(_async_impl.AsyncConnectionPool, "__init__", _async_init)
+_sync_impl.ConnectionPool.__init__ = _sync_init
+_async_impl.AsyncConnectionPool.__init__ = _async_init

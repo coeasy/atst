@@ -43,7 +43,7 @@ def _wrap_fixed_family_init(cls: type[Any], *, family: str) -> None:
         kwargs["family"] = family
         original(self, *args, **kwargs)
 
-    setattr(cls, "__init__", guarded)
+    cls.__init__ = guarded
 
 
 for _cls, _family in (

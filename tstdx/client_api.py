@@ -77,7 +77,7 @@ class Client:
         if self._owns_runtime:
             self.runtime.close()
 
-    def __enter__(self) -> "Client":
+    def __enter__(self) -> Client:
         return self
 
     def __exit__(self, *exc: Any) -> None:
@@ -437,7 +437,7 @@ class AsyncClient:
         if self._owns_client:
             await asyncio.to_thread(self.client.close)
 
-    async def __aenter__(self) -> "AsyncClient":
+    async def __aenter__(self) -> AsyncClient:
         return self
 
     async def __aexit__(self, *exc: Any) -> None:

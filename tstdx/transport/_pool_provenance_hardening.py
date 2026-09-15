@@ -326,6 +326,6 @@ def _sync_trigger_background_speedtest(self: _sync_impl.ConnectionPool) -> None:
     ).start()
 
 
-setattr(_sync_impl.ConnectionPool, "update_hosts", _sync_update_hosts)
-setattr(_sync_impl.ConnectionPool, "_trigger_background_speedtest", _sync_trigger_background_speedtest)
-setattr(_async_impl.AsyncConnectionPool, "update_hosts", _async_update_hosts)
+_sync_impl.ConnectionPool.update_hosts = _sync_update_hosts
+_sync_impl.ConnectionPool._trigger_background_speedtest = _sync_trigger_background_speedtest
+_async_impl.AsyncConnectionPool.update_hosts = _async_update_hosts

@@ -7,8 +7,7 @@ import pytest
 
 from tstdx.client import TdxClient
 from tstdx.errors import NotImplementedFeature
-from tstdx.protocol.commands import COMMANDS, CMD, Family
-
+from tstdx.protocol.commands import CMD, COMMANDS, Family
 
 _ROOT = Path(__file__).resolve().parents[2]
 _FAMILY_BY_SPEC_DIR = {

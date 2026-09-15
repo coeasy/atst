@@ -12,10 +12,11 @@ lives in the planned.py scheduler.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
-
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Type aliases
@@ -102,11 +103,8 @@ class AsyncQuoteStream:
         self._stop.set()
         task = self._task
         if task is not None and not task.done():
-            with asyncio.shield(task) as t:
-                try:
-                    await t
-                except asyncio.CancelledError:
-                    pass
+            with asyncio.shield(task) as t, contextlib.suppress(asyncio.CancelledError):
+                await t
 
     async def _run(self) -> None:
         """Override in subclasses with the polling loop."""

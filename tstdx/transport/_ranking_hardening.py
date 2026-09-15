@@ -193,7 +193,7 @@ def _apply_ranked_observation(
     return replace(base, connect_ms=ranked.connect_ms, rtt_ms=ranked.rtt_ms)
 
 
-setattr(_impl.RankingStore, "load", _load)
-setattr(_impl.RankingStore, "save", _save)
-setattr(_impl.RankingStore, "merge", _merge)
-setattr(_impl, "_apply_ranked_observation", _apply_ranked_observation)
+_impl.RankingStore.load = _load
+_impl.RankingStore.save = _save
+_impl.RankingStore.merge = _merge
+_impl._apply_ranked_observation = _apply_ranked_observation

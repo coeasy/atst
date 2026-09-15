@@ -20,7 +20,6 @@ from tstdx.client import (
     TdxClient,
 )
 
-
 _PAIRS = (
     (TdxClient, AsyncTdxClient),
     (GoodsClient, AsyncGoodsClient),

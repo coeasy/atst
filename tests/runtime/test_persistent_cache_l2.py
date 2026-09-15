@@ -16,7 +16,7 @@ from pathlib import Path
 from tstdx.cache_persistent import PersistentSemanticCache
 from tstdx.error_envelope import ErrorEnvelope, to_error_envelope
 from tstdx.errors import RetryAdvice, TdxError, ValidationError
-from tstdx.query import QueryPlanner, QuerySpec
+from tstdx.query import QueryPlan, QueryPlanner, QuerySpec
 from tstdx.result import Provenance, ProvenanceKind, QueryResult, ResultMeta
 
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import dataclasses
-import importlib
 
 import pytest
 
@@ -168,7 +167,7 @@ class TestDomainTypedCapabilities:
 
     def test_frozen_immutable_contracts(self) -> None:
         """Typed Query 契约为冻结 dataclass。"""
-        for capability, cls in DOMAIN_CAPABILITIES.items():
+        for cls in DOMAIN_CAPABILITIES.values():
             assert dataclasses.is_dataclass(cls)
             assert cls.__dataclass_params__.frozen is True
 

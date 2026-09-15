@@ -8,7 +8,6 @@ from types import ModuleType
 
 import pytest
 
-
 _ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _ROOT / "scripts" / "build_package.py"
 

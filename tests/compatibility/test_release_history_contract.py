@@ -4,7 +4,6 @@ from pathlib import Path
 
 import tstdx
 
-
 _ROOT = Path(__file__).resolve().parents[2]
 
 

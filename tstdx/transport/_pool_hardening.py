@@ -453,9 +453,9 @@ def _start_heartbeat(self: _impl.ConnectionPool) -> None:
     self._hb.start()
 
 
-setattr(_impl.ConnectionPool, "_select_allowed_slot", _select_allowed_slot)
-setattr(_impl.ConnectionPool, "_release_probe_token", _release_probe_token)
-setattr(_impl.ConnectionPool, "request", _request)
-setattr(_impl.ConnectionPool, "request_multi", _request_multi)
-setattr(_impl.ConnectionPool, "iter_frames", _iter_frames)
-setattr(_impl.ConnectionPool, "_start_heartbeat", _start_heartbeat)
+_impl.ConnectionPool._select_allowed_slot = _select_allowed_slot
+_impl.ConnectionPool._release_probe_token = _release_probe_token
+_impl.ConnectionPool.request = _request
+_impl.ConnectionPool.request_multi = _request_multi
+_impl.ConnectionPool.iter_frames = _iter_frames
+_impl.ConnectionPool._start_heartbeat = _start_heartbeat

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from tstdx.domain.records import (
     BondRecord,
     FinancialRecord,

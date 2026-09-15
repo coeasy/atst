@@ -166,5 +166,5 @@ def _async_init(
     )
 
 
-setattr(_sync_impl.TdxClient, "__init__", _sync_init)
-setattr(_async_impl.AsyncTdxClient, "__init__", _async_init)
+_sync_impl.TdxClient.__init__ = _sync_init
+_async_impl.AsyncTdxClient.__init__ = _async_init

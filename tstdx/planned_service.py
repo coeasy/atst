@@ -25,8 +25,8 @@ from .domain.models import Bar, Quote
 from .domain.symbol import normalize_symbol
 from .error_envelope import ErrorEnvelope, to_error_envelope
 from .errors import (
-    InternalError,
     IntegrityViolation,
+    InternalError,
     SourceUnavailable,
     TdxError,
     ValidationError,

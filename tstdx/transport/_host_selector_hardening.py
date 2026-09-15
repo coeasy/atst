@@ -66,4 +66,4 @@ def _resolve_hosts_isolated(
     return [replace(entry) for entry in resolved[:limit]]
 
 
-setattr(_impl, "resolve_hosts", _resolve_hosts_isolated)
+_impl.resolve_hosts = _resolve_hosts_isolated

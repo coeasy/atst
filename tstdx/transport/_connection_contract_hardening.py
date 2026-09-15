@@ -274,7 +274,7 @@ async def _async_request(
     )
 
 
-setattr(_sync_impl.TcpConnection, "__init__", _sync_init)
-setattr(_async_impl.AsyncTcpConnection, "__init__", _async_init)
-setattr(_sync_impl.TcpConnection, "request", _sync_request)
-setattr(_async_impl.AsyncTcpConnection, "request", _async_request)
+_sync_impl.TcpConnection.__init__ = _sync_init
+_async_impl.AsyncTcpConnection.__init__ = _async_init
+_sync_impl.TcpConnection.request = _sync_request
+_async_impl.AsyncTcpConnection.request = _async_request

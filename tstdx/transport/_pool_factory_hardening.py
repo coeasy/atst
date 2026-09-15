@@ -73,4 +73,4 @@ def _from_config(
     )
 
 
-setattr(_sync_impl.ConnectionPool, "from_config", classmethod(_from_config))
+_sync_impl.ConnectionPool.from_config = classmethod(_from_config)

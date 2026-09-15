@@ -6,7 +6,6 @@ import pytest
 
 from tstdx.feedback.reporter import FeedbackReporter
 
-
 _ENDPOINT = "https://collector.example/private/ingest?token=super-secret"
 
 

@@ -110,5 +110,5 @@ async def _async_bestip(
     return results
 
 
-setattr(_sync_impl.TdxClient, "bestip", _sync_bestip)
-setattr(_async_impl.AsyncTdxClient, "bestip", _async_bestip)
+_sync_impl.TdxClient.bestip = _sync_bestip
+_async_impl.AsyncTdxClient.bestip = _async_bestip

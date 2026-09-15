@@ -88,7 +88,7 @@ def _require_output_format(value: Any) -> str:
 def _normalize_symbols(symbols: Any, *, field: str = "symbols") -> list[str]:
     if isinstance(symbols, str):
         return [symbols]
-    if isinstance(symbols, (bytes, bytearray, memoryview)) or isinstance(symbols, Mapping):
+    if isinstance(symbols, (bytes, bytearray, memoryview, Mapping)):
         raise ParseError(
             f"{field} 必须是字符串或字符串 Sequence，收到 {type(symbols).__name__}",
             context={"field": field, "value_type": type(symbols).__name__},

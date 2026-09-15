@@ -105,10 +105,7 @@ def test_unified_direct_methods_are_registry_guarded_before_service_io(
     supported = PROVIDERS.get(provider).supports(capability)
 
     if supported:
-        if capability == "quotes":
-            result = api.quotes("sh600519")
-        else:
-            result = api.bars("sh600519")
+        result = api.quotes("sh600519") if capability == "quotes" else api.bars("sh600519")
         assert result[0] == capability
         assert service.calls == [(capability, provider)]
         return

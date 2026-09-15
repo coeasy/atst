@@ -36,7 +36,6 @@ class TestProviderUnifiedContract:
         assert isinstance(adapter_for("jsl"), WebProvider)
 
     def test_capabilities_derived_from_registry(self) -> None:
-        from tstdx.providers import PROVIDERS
 
         # 无 backend 时未配置，能力应为空（不声明可执行能力）
         for pid in ("tdx", "local_vipdoc", "eastmoney", "tencent", "boc"):

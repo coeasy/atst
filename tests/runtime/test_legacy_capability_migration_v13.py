@@ -17,7 +17,6 @@ from tstdx.errors import ValidationError
 from tstdx.providers import PROVIDERS
 from tstdx.query import QueryPlanner, QuerySpec
 
-
 # Business abilities that existed on the retired UnifiedQuoteAPI surface.
 # Route/query wrapper mechanics are intentionally excluded: Client.call and
 # FallbackPolicy replace them instead of preserving the old router kernel.

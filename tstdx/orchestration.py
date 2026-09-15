@@ -30,7 +30,7 @@ class FallbackPolicy:
     providers: tuple[str, ...]
 
     @classmethod
-    def build(cls, *providers: str) -> "FallbackPolicy":
+    def build(cls, *providers: str) -> FallbackPolicy:
         normalized = tuple(resolve_provider(provider=item) for item in providers)
         if not normalized:
             raise ValueError("fallback policy requires at least one Provider")

@@ -15,7 +15,7 @@ import time
 
 from tstdx.batch import BatchItem, BatchResult, BatchSpec, NegativeCache, SingleFlight
 from tstdx.errors import RetryAdvice, TdxError
-from tstdx.query import QueryPlanner, QuerySpec
+from tstdx.query import QueryPlan, QueryPlanner, QuerySpec
 
 
 def _plan(capability: str = "quotes", symbol: str = "sh600000") -> QueryPlan:

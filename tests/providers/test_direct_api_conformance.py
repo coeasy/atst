@@ -16,7 +16,6 @@ from tstdx.provider_api import (
 )
 from tstdx.providers import PROVIDERS
 
-
 WEB_PROVIDER_APIS = {
     "tencent": TencentProviderAPI,
     "sina": SinaProviderAPI,

@@ -299,7 +299,7 @@ class PlannedQuoteStream:
             value = sub.watermarks[key]
             return replace(value)
 
-    def start(self) -> "PlannedQuoteStream":
+    def start(self) -> PlannedQuoteStream:
         with self._lock:
             if self._state is StreamState.RUNNING:
                 poll_alive = self._poll_thread is not None and self._poll_thread.is_alive()
@@ -412,7 +412,7 @@ class PlannedQuoteStream:
 
     close = stop
 
-    def __enter__(self) -> "PlannedQuoteStream":
+    def __enter__(self) -> PlannedQuoteStream:
         return self.start()
 
     def __exit__(self, *exc: Any) -> None:

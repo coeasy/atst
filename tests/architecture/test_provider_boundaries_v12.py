@@ -17,7 +17,6 @@ from tstdx.provider_api import (
 from tstdx.providers import PROVIDERS
 from tstdx.providers.http import PROVIDER_HTTP_HOST_SUFFIXES
 
-
 ROOT = Path(__file__).resolve().parents[2]
 PKG = ROOT / "tstdx"
 
@@ -102,9 +101,10 @@ def test_no_parallel_source_registry_domain_entity_exists() -> None:
     for path in _python_files():
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
-            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-                if node.name in {"SourceRegistry", "SourceManager"}:
-                    offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}:{node.name}")
+            if isinstance(
+                node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+            ) and node.name in {"SourceRegistry", "SourceManager"}:
+                offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}:{node.name}")
     assert offenders == []
 
 

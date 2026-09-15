@@ -63,7 +63,7 @@ PROVIDER_HTTP_HOST_SUFFIXES: dict[str, tuple[str, ...]] = {
 
 def _hostname(url: Any) -> str:
     if hasattr(url, "host"):
-        host = getattr(url, "host")
+        host = url.host
         if host:
             return str(host).strip(".").lower()
     text = str(url)

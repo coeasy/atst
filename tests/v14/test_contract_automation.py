@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 """Contract Automation 回归保护（v14 Phase 4）。
 
 把 scripts/contract_audit.py 的审计逻辑以 pytest 形态固化，防止
 Typed Query / Registry / Domain Record 三者在后续迭代中漂移。
 """
+
+from __future__ import annotations
 
 import subprocess
 import sys
@@ -52,9 +52,8 @@ class TestContractAutomation:
         """注册表中的业务 capability 必须有 Typed Query 契约。"""
         import dataclasses as dc
 
-        from tstdx.providers import PROVIDERS
-
         import tstdx.typed_query as tq
+        from tstdx.providers import PROVIDERS
 
         internal = {
             "quotes", "bars", "minute", "trades", "snapshot",
@@ -148,11 +147,10 @@ class TestContractAutomation:
 
     def test_every_typed_capability_has_domain_record(self) -> None:
         """每个 Typed Query capability 有对应 Domain Record 映射。"""
-        from tstdx.typed_query import record_type_for
-
         import dataclasses as dc
 
         import tstdx.typed_query as tq
+        from tstdx.typed_query import record_type_for
 
         skip = {
             "CapabilityQuery", "SymbolQuery", "BatchCapabilityQuery",
