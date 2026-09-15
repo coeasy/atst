@@ -37,6 +37,9 @@ __all__ = [
     "JslProviderAPI",
     "BocProviderAPI",
     "IwencaiProviderAPI",
+    "CompositeProviderAPI",
+    "DerivedProviderAPI",
+    "BuiltinProviderAPI",
     "build_provider_api",
 ]
 
@@ -47,6 +50,12 @@ class ProviderAPI:
     """Base namespace bound to exactly one canonical ProviderId."""
 
     provider_id: ClassVar[str | None] = None
+
+    #: ``True`` for composite Providers (``derived`` / ``builtin``) that expose
+    #: capabilities only through the unified QuerySpec path. They own no Direct
+    #: channel API, so the registry ↔ Direct-channel parity check is skipped for
+    #: them instead of forcing a fake adapter per channel.
+    CHANNEL_API_EXEMPT: ClassVar[bool] = False
 
     def __init__(
         self,
@@ -381,6 +390,7 @@ class TencentProviderAPI(WebProviderAPI):
         "global": ("tstdx.web.global_market", "TencentGlobalSource"),
         "market_stat": ("tstdx.web.global_market", "TencentMarketStatSource"),
         "board_rank": ("tstdx.web.boards", "TencentBoardRankSource"),
+        "catalog": ("tstdx.web.facade", "WebQuoteSession"),
     }
 
     def minute(self, symbol: str) -> Any:
@@ -425,6 +435,7 @@ class SinaProviderAPI(WebProviderAPI):
         "board_member": ("tstdx.web.boards", "SinaBoardMemberSource"),
         "fund_flow": ("tstdx.web.fundflow", "SinaFundFlowSource"),
         "news": ("tstdx.web.news", "SinaNewsSource"),
+        "catalog": ("tstdx.web.facade", "WebQuoteSession"),
     }
 
     def suggest(self, key: str, *, limit: int = 10) -> Any:
@@ -600,6 +611,7 @@ class EastmoneyProviderAPI(WebProviderAPI):
         "news": ("tstdx.web.news", "EastmoneyNewsSource"),
         "research": ("tstdx.web.news", "EastmoneyResearchVisitSource"),
         "options": ("tstdx.web.efinance_options", "EastmoneyOptionsSource"),
+        "catalog": ("tstdx.web.facade", "WebQuoteSession"),
     }
 
     def __init__(self, service: UnifiedMarketDataService) -> None:
@@ -763,6 +775,7 @@ class BaiduProviderAPI(WebProviderAPI):
         "kline": ("tstdx.web.adapters_baidu", "BaiduSource"),
         "minute": ("tstdx.web.adapters_baidu", "BaiduSource"),
         "ticks": ("tstdx.web.adapters_baidu", "BaiduSource"),
+        "catalog": ("tstdx.web.facade", "WebQuoteSession"),
     }
 
     def minute(self, symbol: str) -> Any:
@@ -809,6 +822,29 @@ class IwencaiProviderAPI(WebProviderAPI):
     query = screen
 
 
+class CompositeProviderAPI(ProviderAPI):
+    """Composite Provider namespace with no Direct channel API.
+
+    ``derived`` (honest aggregates over first-party Providers) and ``builtin``
+    (static built-in catalogs) are canonical registry Providers so that the
+    migrated-capability catalog has stable homes, but they are reached only
+    through the unified :class:`~tstdx.query.QuerySpec` path. They deliberately
+    expose no Direct channel API rather than a fake adapter, so the registry ↔
+    Direct-channel parity check is skipped for this hierarchy.
+    """
+
+    CHANNEL_API_EXEMPT: ClassVar[bool] = True
+    DIRECT_CHANNELS: ClassVar[frozenset[str]] = frozenset()
+
+
+class DerivedProviderAPI(CompositeProviderAPI):
+    provider_id = "derived"
+
+
+class BuiltinProviderAPI(CompositeProviderAPI):
+    provider_id = "builtin"
+
+
 def _build_provider_api_types(
     api_types: Sequence[type[ProviderAPI]],
 ) -> dict[str, type[ProviderAPI]]:
@@ -834,6 +870,9 @@ def _build_provider_api_types(
         )
 
     for pid, api_type in mapping.items():
+        if api_type.CHANNEL_API_EXEMPT:
+            # Composite Providers intentionally expose no Direct channel API.
+            continue
         spec = PROVIDERS.get(pid)
         expected_channels = {channel.id for channel in spec.channels if not channel.local}
         if issubclass(api_type, WebProviderAPI):
@@ -863,6 +902,8 @@ _PROVIDER_API_TYPES: dict[str, type[ProviderAPI]] = _build_provider_api_types(
         JslProviderAPI,
         BocProviderAPI,
         IwencaiProviderAPI,
+        DerivedProviderAPI,
+        BuiltinProviderAPI,
     )
 )
 

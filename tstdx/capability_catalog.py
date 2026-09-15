@@ -77,6 +77,20 @@ _SOURCE_FOR_PROVIDER = {
     "iwencai": "sina",
     "builtin": "sina",
 }
+#: Capabilities whose canonical registry channel is *not* the generic ``catalog``
+#: channel — the registry is the single source of truth for
+#: ``(provider, channel, capability)``, so the catalog must bind to the same home
+#: or the plan compiled by :class:`~tstdx.query.QueryPlanner` could never be
+#: dispatched. Keeping the two lists aligned by hand is exactly the drift this
+#: table removes for the remaining special cases.
+_CHANNEL_OVERRIDES: dict[str, str] = {
+    "board_list": "board_list",
+    "suggest": "suggest",
+    "market_stat": "market_stat",
+    "board_rank": "board_rank",
+    "wencai": "screening",
+    "rates": "fx",
+}
 _CORE_CAPABILITIES = {
     "quotes",
     "bars",
@@ -103,7 +117,7 @@ def _discover_web_bindings() -> list[MigratedCapabilityBinding]:
             MigratedCapabilityBinding(
                 capability=name,
                 provider=provider,
-                channel="catalog",
+                channel=_CHANNEL_OVERRIDES.get(name, "catalog"),
                 backend="web_session",
                 method=name,
                 source=_SOURCE_FOR_PROVIDER[provider],
@@ -114,29 +128,29 @@ def _discover_web_bindings() -> list[MigratedCapabilityBinding]:
 
 _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
     MigratedCapabilityBinding(
-        "quotes_concurrent", "tdx", "quotation_aux", "tdx_client", "quotes_concurrent"
+        "quotes_concurrent", "tdx", "quotation", "tdx_client", "quotes_concurrent"
     ),
     MigratedCapabilityBinding(
-        "minute_history", "tdx", "quotation_aux", "tdx_client", "minute_history"
+        "minute_history", "tdx", "quotation", "tdx_client", "minute_history"
     ),
     MigratedCapabilityBinding(
-        "block_quotes", "tdx", "quotation_aux", "tdx_client", "block_quotes"
+        "block_quotes", "tdx", "quotation", "tdx_client", "block_quotes"
     ),
     MigratedCapabilityBinding(
-        "auction", "tdx", "quotation_aux", "tdx_client", "auction_snapshot"
+        "auction", "tdx", "quotation", "tdx_client", "auction_snapshot"
     ),
     MigratedCapabilityBinding(
-        "volume_price", "tdx", "quotation_aux", "tdx_client", "volume_price_dist"
+        "volume_price", "tdx", "quotation", "tdx_client", "volume_price_dist"
     ),
-    MigratedCapabilityBinding("finance", "tdx", "finance", "tdx_client", "finance_info"),
+    MigratedCapabilityBinding("finance", "tdx", "quotation", "tdx_client", "finance_info"),
     MigratedCapabilityBinding(
-        "capital_changes", "tdx", "finance", "tdx_client", "capital_changes"
-    ),
-    MigratedCapabilityBinding(
-        "corporate_action", "tdx", "finance", "tdx_client", "capital_changes"
+        "capital_changes", "tdx", "quotation", "tdx_client", "capital_changes"
     ),
     MigratedCapabilityBinding(
-        "security_list_all", "tdx", "quotation_aux", "composed", "security_list_all"
+        "corporate_action", "tdx", "quotation", "tdx_client", "capital_changes"
+    ),
+    MigratedCapabilityBinding(
+        "security_list_all", "tdx", "quotation", "composed", "security_list_all"
     ),
     MigratedCapabilityBinding("f10", "tdx", "f10", "f10_client", "f10"),
     MigratedCapabilityBinding("f10_catalog", "tdx", "f10", "f10_client", "catalog"),

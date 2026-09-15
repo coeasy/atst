@@ -52,12 +52,24 @@ def test_registry_and_direct_bindings_are_exactly_equal() -> None:
 
 def test_tdx_tier_a_is_complete_in_registry() -> None:
     quotation = PROVIDERS.get("tdx").channel("quotation")
-    # Tier A 必须**完整**包含在注册表中；quotation 家族另外声明 finance /
-    # capital_changes（二者本就是 TDX 行情协议命令，见 TdxQuotationAPI.finance
-    # → raw.finance_info），故此处断言「Tier A 全含 + 精确的额外集合」，
-    # 而不是早期的 `== TIER_A` 等值（那会把合法能力误判为越界）。
+    # Tier A 必须**完整**包含在注册表中。canonical quotation channel 另外声明：
+    # - finance / capital_changes / corporate_action：TDX 行情协议命令
+    #   （finance_info / capital_changes），见 TdxQuotationAPI.finance。
+    # - auction / block_quotes / minute_history / quotes_concurrent /
+    #   security_list_all / volume_price：v13 迁移能力，其唯一执行通道即
+    #   canonical quotation（catalog 已按注册表对齐，见 capability_catalog）。
     assert quotation.capabilities >= TIER_A
-    assert quotation.capabilities == TIER_A | {"finance", "capital_changes"}
+    assert quotation.capabilities == TIER_A | {
+        "finance",
+        "capital_changes",
+        "corporate_action",
+        "auction",
+        "block_quotes",
+        "minute_history",
+        "quotes_concurrent",
+        "security_list_all",
+        "volume_price",
+    }
 
 
 def test_web_pseudo_provider_is_rejected() -> None:

@@ -9,6 +9,20 @@ import tstdx.provider_api as provider_api
 from tstdx.errors import ValidationError
 from tstdx.providers import PROVIDERS
 
+#: Composite Providers (``derived`` / ``builtin``) expose their capabilities only
+#: through the unified QuerySpec path and deliberately own **no** Direct channel
+#: API, so the registry ↔ Direct-channel parity gates do not apply to them.
+_COMPOSITE_PROVIDERS = frozenset(
+    pid
+    for pid in PROVIDERS.ids()
+    if provider_api._PROVIDER_API_TYPES[pid].CHANNEL_API_EXEMPT
+)
+
+#: Providers that must expose a Direct channel API covering their registry channels.
+_WEB_PROVIDERS = tuple(
+    pid for pid in PROVIDERS.ids() if pid != "tdx" and pid not in _COMPOSITE_PROVIDERS
+)
+
 
 class FakeManager:
     def web_adapter(
@@ -69,7 +83,7 @@ def test_every_registered_provider_has_exactly_one_direct_api_type(provider: str
     assert api_type.provider_id == provider
 
 
-@pytest.mark.parametrize("provider", tuple(pid for pid in PROVIDERS.ids() if pid != "tdx"))
+@pytest.mark.parametrize("provider", _WEB_PROVIDERS)
 def test_web_direct_channel_mapping_is_generated_from_registry(provider: str) -> None:
     api_type = _api_type(provider)
     registered = {
@@ -83,7 +97,7 @@ def test_web_direct_channel_mapping_is_generated_from_registry(provider: str) ->
         assert isinstance(getattr(module, class_name), type), (provider, channel)
 
 
-@pytest.mark.parametrize("provider", tuple(pid for pid in PROVIDERS.ids() if pid != "tdx"))
+@pytest.mark.parametrize("provider", _WEB_PROVIDERS)
 def test_every_registered_web_channel_resolves_without_network(provider: str) -> None:
     service = FakeService()
     api = provider_api.build_provider_api(service, provider)

@@ -53,6 +53,7 @@ class TestContractAutomation:
         import dataclasses as dc
 
         import tstdx.typed_query as tq
+        from tstdx.capability_catalog import MIGRATED_CAPABILITIES
         from tstdx.providers import PROVIDERS
 
         internal = {
@@ -61,6 +62,11 @@ class TestContractAutomation:
             "ex_instruments", "ex_quotes", "ex_bars", "goods_quotes",
             "goods_bars", "mac_quotes", "f10_catalog", "finance", "news",
         }
+        # v13 migrated-catalog capabilities are reached through the generic
+        # ``query_capability`` gateway / ``Client.call`` contract rather than a
+        # dedicated Typed Query (see integration/mcp/_tools_spec.py). They are a
+        # declared contract of their own, so they are not "missing" a Typed Query.
+        internal |= set(MIGRATED_CAPABILITIES)
         registered: set[str] = set()
         for pid in PROVIDERS.ids():
             registered |= set(PROVIDERS.get(pid).capabilities())

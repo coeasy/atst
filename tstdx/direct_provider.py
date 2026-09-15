@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .capability_catalog import MIGRATED_BINDINGS, binding_for, validate_call
+from .capability_catalog import binding_for, validate_call
 from .errors import InternalError, TdxError, ValidationError
 from .providers import PROVIDERS
 from .query import QueryPlan
@@ -36,6 +36,9 @@ class DirectBinding:
         return (self.provider, self.channel, self.capability)
 
 
+#: Tier-A / first-party capabilities owned by a dedicated executor method.
+#: Every other ``(provider, channel, capability)`` triple in the canonical
+#: registry dispatches through the table-driven ``_migrated_capability`` backend.
 _CORE_BINDINGS: tuple[DirectBinding, ...] = (
     DirectBinding("tdx", "quotation", "quotes", "_tdx_quotes"),
     DirectBinding("tdx", "quotation", "bars", "_tdx_bars"),
@@ -55,17 +58,35 @@ _CORE_BINDINGS: tuple[DirectBinding, ...] = (
     DirectBinding("baidu", "quote", "quotes", "_web_quotes"),
     DirectBinding("baidu", "kline", "bars", "_baidu_bars"),
 )
-_CORE_KEYS = frozenset(item.key for item in _CORE_BINDINGS)
+_CORE_EXECUTORS: dict[tuple[str, str, str], str] = {
+    item.key: item.executor_name for item in _CORE_BINDINGS
+}
 
-DIRECT_BINDINGS = _CORE_BINDINGS + tuple(
-    DirectBinding(
-        item.provider,
-        item.channel,
-        item.capability,
-        "_migrated_capability",
+
+def _executor_for(key: tuple[str, str, str]) -> str:
+    """Resolve the executor method for one canonical registry triple."""
+    return _CORE_EXECUTORS.get(key, "_migrated_capability")
+
+
+def _registry_triples() -> tuple[tuple[str, str, str], ...]:
+    """Every ``(provider, channel, capability)`` triple declared by the registry.
+
+    The registry is the single source of truth for the executable surface, so
+    ``DIRECT_BINDINGS`` is *generated* from it rather than hand-synced. This makes
+    the registry ↔ binding bijection structural: a declared-but-unbound or
+    bound-but-undeclared triple can no longer drift in silently.
+    """
+    return tuple(
+        (provider, channel.id, capability)
+        for provider in PROVIDERS.ids()
+        for channel in PROVIDERS.get(provider).channels
+        for capability in sorted(channel.capabilities)
     )
-    for item in MIGRATED_BINDINGS
-    if item.key not in _CORE_KEYS
+
+
+DIRECT_BINDINGS = tuple(
+    DirectBinding(provider, channel, capability, _executor_for((provider, channel, capability)))
+    for provider, channel, capability in _registry_triples()
 )
 
 
@@ -73,35 +94,32 @@ def audit_direct_bindings() -> tuple[DirectBinding, ...]:
     """Validate that DIRECT_BINDINGS are internally consistent.
 
     Duplicate bindings are a genuine developer error and remain a hard failure.
-    A binding whose ``(provider, channel, capability)`` is not yet declared in
-    the static :data:`PROVIDERS` registry is reported once as a warning rather
-    than raised: the registry is the complete *live* capability surface and
-    intentionally includes capabilities served through other mechanisms, while
-    the direct executor dispatches purely off ``DIRECT_BINDINGS``. The registry
-    will be completed to a perfect bijection in a follow-up v13-runtime pass;
-    raising here would hard-block every ``UnifiedRuntime()`` / ``Client()``
-    construction (and therefore the CLI ``serve`` / ``stream`` paths) for a
-    pre-existing registry-completeness gap that is out of scope for v15.
+    Because :data:`DIRECT_BINDINGS` is generated from the registry, the
+    registry ↔ binding bijection now holds by construction. What can still be
+    *incomplete* is the migrated-capability catalog: a registry triple whose
+    executor is :meth:`_migrated_capability` needs a
+    :data:`~tstdx.capability_catalog.MIGRATED_BINDINGS` entry to route it. Such
+    triples are declared-but-unroutable and reported once as a warning instead of
+    raised, so a registry/executor mismatch cannot hard-block every
+    ``UnifiedRuntime()`` / ``Client()`` construction.
     """
     seen: set[tuple[str, str, str]] = set()
-    undeclared: list[tuple[str, str, str]] = []
+    unroutable: list[tuple[str, str, str]] = []
     for binding in DIRECT_BINDINGS:
         if binding.key in seen:
             raise RuntimeError(f"duplicate Direct binding: {binding.key!r}")
         seen.add(binding.key)
+        if binding.executor_name != "_migrated_capability":
+            continue
         try:
-            PROVIDERS.require(
-                binding.provider,
-                binding.capability,
-                channel=binding.channel,
-            )
-        except ValidationError:
-            undeclared.append(binding.key)
-    if undeclared:
+            binding_for(*binding.key)
+        except KeyError:
+            unroutable.append(binding.key)
+    if unroutable:
         warnings.warn(
-            f"{len(undeclared)} 个 Direct binding 未在 Provider 注册表声明"
-            f"（例如 {undeclared[0]!r}）；运行时按 binding 表派发，"
-            f"注册表将在后续 v13-runtime 补全",
+            f"{len(unroutable)} 个 Direct binding 缺少 migrated-capability 执行元数据"
+            f"（例如 {unroutable[0]!r}）；运行时按 binding 表派发，"
+            f"capability catalog 待补齐",
             stacklevel=2,
         )
     return DIRECT_BINDINGS
