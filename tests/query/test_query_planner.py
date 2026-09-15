@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from tstdx.errors import ValidationError
+from tstdx.providers import resolve_provider
 from tstdx.query import QueryPlanner, QuerySpec
 
 
@@ -49,15 +50,10 @@ def test_tencent_minute_bars_bind_minute_kline_channel() -> None:
 
 
 def test_provider_and_compat_source_conflict_is_rejected() -> None:
+    # v13 SSOT：QuerySpec 不再持有 ``source`` 字段；provider/source 选择器冲突
+    # 在 provider 解析边界统一 fail-fast（见 tstdx.providers.resolve_provider）。
     with pytest.raises(ValidationError):
-        QueryPlanner().compile(
-            QuerySpec.build(
-                "quotes",
-                symbols=["sh600519"],
-                provider="tdx",
-                source="tencent",
-            )
-        )
+        resolve_provider(provider="tdx", source="tencent")
 
 
 def test_fingerprint_changes_with_provider_adjustment_and_window() -> None:

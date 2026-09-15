@@ -131,7 +131,10 @@ def test_tdx_registered_online_channels_resolve_and_vipdoc_is_explicitly_local_o
     local = {channel.id for channel in spec.channels if channel.local}
 
     assert set(provider_api.TdxProviderAPI.DIRECT_CHANNELS) == online
-    assert local == {"vipdoc"}
+    # v13：本地 vipdoc 是独立 Provider local_vipdoc 的 local channel，不再挂在
+    # tdx 上；tdx 自身没有任何 local channel，且其 Direct API 显式拒绝 vipdoc。
+    assert local == set()
+    assert PROVIDERS.get("local_vipdoc").channel("vipdoc").local is True
     for channel in sorted(online):
         assert api.channel(channel) == ("tdx", channel)
 

@@ -17,7 +17,6 @@ unified capabilities fail before the service performs I/O.
 from __future__ import annotations
 
 import importlib
-import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -30,6 +29,7 @@ if TYPE_CHECKING:
 __all__ = [
     "ProviderAPI",
     "TdxProviderAPI",
+    "LocalVipdocProviderAPI",
     "TencentProviderAPI",
     "SinaProviderAPI",
     "EastmoneyProviderAPI",
@@ -356,6 +356,20 @@ class WebProviderAPI(ProviderAPI):
         )
 
 
+class LocalVipdocProviderAPI(WebProviderAPI):
+    """Local TDX vipdoc namespace.
+
+    ``local_vipdoc`` 是显式的本地历史数据 Provider：其唯一 channel ``vipdoc``
+    标记为 ``local=True``，属于本地文件执行器而非在线 Direct 通道，因此本类型的
+    Direct channel 表为空。读取本地 vipdoc 必须经 ``bars`` 能力走本地执行器，
+    绝不允许以 Direct API 之名冒充在线 TDX 行情。
+    """
+
+    provider_id = "local_vipdoc"
+    CHANNELS: ClassVar[dict[str, AdapterRef]] = {}
+    EXPLICIT_CHANNELS: ClassVar[frozenset[str]] = frozenset()
+
+
 class TencentProviderAPI(WebProviderAPI):
     provider_id = "tencent"
     CHANNELS = {
@@ -581,6 +595,11 @@ class EastmoneyProviderAPI(WebProviderAPI):
             "EastmoneyIndexConstituentsSource",
         ),
         "fund": ("tstdx.web.adapters_fund", "FundSource"),
+        "derivatives": ("tstdx.web.efinance_deriv", "EastmoneyFuturesSource"),
+        "datacenter": ("tstdx.web.fin_report", "EastmoneyF10ReportSource"),
+        "news": ("tstdx.web.news", "EastmoneyNewsSource"),
+        "research": ("tstdx.web.news", "EastmoneyResearchVisitSource"),
+        "options": ("tstdx.web.efinance_options", "EastmoneyOptionsSource"),
     }
 
     def __init__(self, service: UnifiedMarketDataService) -> None:
@@ -684,6 +703,58 @@ class EastmoneyProviderAPI(WebProviderAPI):
             "hot_rank", lambda: self.channel("hot_rank").fetch_hot_rank(page=page, size=size)
         )
 
+    def futures_base_info(self) -> Any:
+        return self._invoke(
+            "derivatives", lambda: self.channel("derivatives").fetch_base_info()
+        )
+
+    def report(
+        self,
+        symbol: str,
+        *,
+        report: str = "balance_sheet",
+        report_date: str = "",
+        page: int = 1,
+        size: int = 10,
+    ) -> Any:
+        return self._invoke(
+            "datacenter",
+            lambda: self.channel("datacenter").fetch_report(
+                symbol,
+                report=report,
+                report_date=report_date,
+                page=page,
+                size=size,
+            ),
+        )
+
+    def news(self, *, page: int = 1, size: int = 30) -> Any:
+        return self._invoke(
+            "news", lambda: self.channel("news").fetch_news(page=page, size=size)
+        )
+
+    def research_visits(self, symbol: str, *, page: int = 1, size: int = 20) -> Any:
+        return self._invoke(
+            "research",
+            lambda: self.channel("research").fetch_visits(symbol, page=page, size=size),
+        )
+
+    def options_contracts(
+        self,
+        *,
+        market: str = "",
+        page: int = 1,
+        size: int = 200,
+    ) -> Any:
+        return self._invoke(
+            "options",
+            lambda: self.channel("options").fetch_contract_list(
+                market=market,
+                page=page,
+                size=size,
+            ),
+        )
+
 
 class BaiduProviderAPI(WebProviderAPI):
     provider_id = "baidu"
@@ -755,14 +826,11 @@ def _build_provider_api_types(
 
     registered_ids = set(PROVIDERS.ids())
     if set(mapping) != registered_ids:
-        # v15 放宽：并非每个注册 Provider 都提供 Direct API 类型（例如
-        # local_vipdoc 仅作本地文件数据源，无 Direct API 契约）。仅告警，
-        # 不阻断导入；channel 契约校验仍对每个有 Direct API 类型的 Provider 生效。
-        warnings.warn(
-            "Direct Provider API 注册表与 Direct API 类型未完全一一对应："
-            f"registered={sorted(registered_ids)} mapped={sorted(mapping)}；"
-            "缺失 Direct API 类型的 Provider 将不暴露 Direct API 入口",
-            stacklevel=2,
+        missing = sorted(registered_ids - set(mapping))
+        extra = sorted(set(mapping) - registered_ids)
+        raise RuntimeError(
+            "Direct Provider API registry mismatch: "
+            f"missing API types for {missing}, unknown Providers {extra}"
         )
 
     for pid, api_type in mapping.items():
@@ -775,14 +843,11 @@ def _build_provider_api_types(
         else:
             mapped_channels = set()
         if mapped_channels != expected_channels:
-            # v15 放宽：Direct API 类型未必覆盖 Provider 注册的全部 channel
-            # （例如 eastmoney 的 datacenter/derivatives/news/options/research
-            # 仅有 Web 入口，无 Direct API 实现）。仅告警，不阻断导入。
-            warnings.warn(
-                f"Direct channel contract 未完全对齐 {pid!r}: "
-                f"registered={sorted(expected_channels)} mapped={sorted(mapped_channels)}；"
-                "缺失 channel 将不通过 Direct API 暴露",
-                stacklevel=2,
+            missing = sorted(expected_channels - mapped_channels)
+            extra = sorted(mapped_channels - expected_channels)
+            raise RuntimeError(
+                f"Direct channel contract mismatch for Provider {pid!r}: "
+                f"missing={missing} undeclared={extra}"
             )
     return mapping
 
@@ -790,6 +855,7 @@ def _build_provider_api_types(
 _PROVIDER_API_TYPES: dict[str, type[ProviderAPI]] = _build_provider_api_types(
     (
         TdxProviderAPI,
+        LocalVipdocProviderAPI,
         TencentProviderAPI,
         SinaProviderAPI,
         EastmoneyProviderAPI,

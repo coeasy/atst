@@ -14,16 +14,26 @@ def test_tdx_is_only_default_provider() -> None:
     assert "eastmoney" in PROVIDERS.ids()
 
 
-def test_vipdoc_is_tdx_channel_not_provider() -> None:
+def test_vipdoc_is_standalone_local_provider_not_tdx_channel() -> None:
+    # v13 起 local_vipdoc 是独立 Provider（见
+    # docs/ARCHITECTURE_SEMANTIC_ALIGNMENT_v13.md: "local_vipdoc is a standalone
+    # Provider"）。tdx 只拥有在线协议 channel，本地 vipdoc 不再挂在 tdx 上，
+    # 以免本地历史文件冒充在线 TDX 行情。
     assert "vipdoc" not in PROVIDERS.ids()
-    assert PROVIDERS.get("tdx").channel("vipdoc").local is True
-    assert PROVIDERS.supports("tdx", "bars", channel="vipdoc") is True
+    assert "local_vipdoc" in PROVIDERS.ids()
+    assert PROVIDERS.get("local_vipdoc").channel("vipdoc").local is True
+    assert PROVIDERS.supports("local_vipdoc", "bars", channel="vipdoc") is True
+    with pytest.raises(ValidationError):
+        PROVIDERS.get("tdx").channel("vipdoc")
+    assert resolve_provider(provider="vipdoc") == "local_vipdoc"
 
 
 def test_jsl_registry_exposes_only_verified_convertible_bond_channel() -> None:
     jsl = PROVIDERS.get("jsl")
     assert {channel.id for channel in jsl.channels} == {"bond"}
-    assert jsl.channel("bond").capabilities == frozenset({"bond"})
+    # canonical capability 名为 convertible_bond（见 tstdx/typed_query.py），
+    # 早期测试使用的 "bond" 是历史别名残留。
+    assert jsl.channel("bond").capabilities == frozenset({"convertible_bond"})
     with pytest.raises(ValidationError):
         jsl.channel("etf")
     assert PROVIDERS.supports("jsl", "etf") is False

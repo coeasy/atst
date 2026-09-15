@@ -10,11 +10,11 @@ from tstdx.result import Provenance, ProvenanceKind, QueryResult, ResultMeta
 from tstdx.runtime_v13 import UnifiedRuntime
 
 
-def _quote_plan(*, max_age: float | None = 5.0):
+def _quote_plan(*, max_age: float | None = 5.0, symbol: str = "sh600519"):
     return QueryPlanner().compile(
         QuerySpec.build(
             "quotes",
-            symbols=["sh600519"],
+            symbols=[symbol],
             provider="tdx",
             currentness="live",
             max_age=max_age,
@@ -73,8 +73,12 @@ def test_l2_rejects_replay_and_synthetic_persistence(tmp_path) -> None:
 
 
 def test_l2_hash_blocks_row_copy_poisoning(tmp_path) -> None:
-    first = _quote_plan(max_age=5.0)
-    second = _quote_plan(max_age=1.0)
+    # v13 SSOT：``max_age`` 不再参与数据身份，因此这里用两个**真实不同**的标的
+    # 构造两条独立缓存条目，再验证「把 A 的行改挂到 B 的身份下」会被 payload_hash
+    # 与 provenance fingerprint 双重拒绝——避免张冠李戴地读到他标的数据。
+    first = _quote_plan(symbol="sh600519")
+    second = _quote_plan(symbol="sz000001")
+    assert first.fingerprint.value != second.fingerprint.value
     now = 10_000_000_000
     with PersistentSemanticCache(tmp_path / "semantic.sqlite") as cache:
         assert cache.put(first, _direct_result(first, observed_at_ns=now), ttl=10.0, now_ns=now)

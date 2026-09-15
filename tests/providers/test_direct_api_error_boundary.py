@@ -41,6 +41,7 @@ def test_native_exception_is_wrapped_as_internal_error_with_cause() -> None:
         "provider": "tencent",
         "channel": "quote",
         "fallback": False,
+        "provider_switch_allowed": False,
         "cause_type": "ValueError",
     }
     assert caught.value.cause is original

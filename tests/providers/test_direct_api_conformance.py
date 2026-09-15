@@ -62,14 +62,16 @@ def test_jsl_etf_is_not_a_registry_or_direct_channel() -> None:
 
 
 def test_tdx_registry_channels_are_explicit_protocol_or_local_families() -> None:
+    # tdx 只暴露在线协议 channel 家族；本地 vipdoc 归属独立 Provider
+    # local_vipdoc（v13 canonical design）。
     assert _registry_channels("tdx") == {
         "quotation",
         "extended",
         "goods",
         "f10",
         "mac",
-        "vipdoc",
     }
+    assert _registry_channels("local_vipdoc") == {"vipdoc"}
 
 
 def test_provider_ids_do_not_contain_channel_or_market_names() -> None:

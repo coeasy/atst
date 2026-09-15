@@ -46,7 +46,7 @@ from .observability.planned import (
     record_planned_query,
     record_provider_health,
 )
-from .providers import PROVIDERS
+from .providers import PROVIDERS, resolve_provider
 from .query import QueryPlan, QueryPlanner, QuerySpec
 from .semantic_cache import SemanticQueryCache
 from .service import FreshnessEvidence, QueryResult, ResultMeta
@@ -550,6 +550,18 @@ class UnifiedMarketDataService(ProviderCoreService):
         )
         return chunks
 
+    @staticmethod
+    def _resolve_selector(provider: str | None, source: str | None) -> str | None:
+        """Fold the legacy ``source`` selector into the canonical ``provider``.
+
+        v13 SSOT：``QuerySpec`` 不再持有 ``source`` 字段，选择器在服务边界统一
+        收敛为 provider（provider/source 冲突时 fail-fast，与 resolve_provider 一致）。
+        """
+
+        if provider is None and source is None:
+            return None
+        return resolve_provider(provider=provider, source=source)
+
     def quotes(
         self,
         symbols: str | Sequence[str],
@@ -566,8 +578,7 @@ class UnifiedMarketDataService(ProviderCoreService):
         spec = QuerySpec.build(
             "quotes",
             symbols=seq,
-            provider=provider,
-            source=source,
+            provider=self._resolve_selector(provider, source),
             allow_partial=allow_partial,
             deadline_ms=self.default_deadline_ms if deadline_ms is None else deadline_ms,
             max_age=max_age,
@@ -818,8 +829,7 @@ class UnifiedMarketDataService(ProviderCoreService):
         spec = QuerySpec.build(
             "bars",
             symbols=(symbol,),
-            provider=provider,
-            source=source,
+            provider=self._resolve_selector(provider, source),
             period=period,
             count=count,
             start=start,

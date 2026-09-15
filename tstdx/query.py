@@ -15,13 +15,14 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any
 
 from .domain.period import normalize_bar_period
 from .domain.symbol import normalize_symbol
 from .errors import ValidationError
+from .execution_primitives import ExecutionBudget
 from .providers import PROVIDERS, ChannelSpec, resolve_provider
 
 __all__ = [
@@ -60,6 +61,52 @@ def _norm_text(value: str | None) -> str:
     return "" if value is None else str(value).strip().lower()
 
 
+def _canonical_unified_channel(provider: str, capability: str, period: str) -> str | None:
+    """Return the single channel the unified ``quotes``/``bars`` executor uses.
+
+    ``None`` means the (provider, capability) pair has no unified canonical
+    channel, so an explicit provider-internal channel must be honored verbatim.
+    """
+
+    pid = str(provider)
+    cap = str(capability)
+    if pid == "tencent" and cap == "bars":
+        return "minute_kline" if period in _MINUTE_PERIODS else "kline"
+    return _CANONICAL_UNIFIED_CHANNELS.get((pid, cap))
+
+
+def _reject_core_channel_mismatch(
+    provider: str,
+    capability: str,
+    channel: str | None,
+    canonical: str | None,
+) -> None:
+    """Fail fast when a unified core query targets a provider-specific channel.
+
+    ``quotes`` / ``bars`` are unified capabilities: exactly one canonical channel
+    per Provider executes them. Any other declared channel (``extended``,
+    ``goods``, ``vipdoc`` …) must never be silently re-routed through the
+    canonical executor, so the mismatch is rejected *before* registry lookup.
+    """
+
+    if channel is None or canonical is None or channel == canonical:
+        return
+    if capability not in {"quotes", "bars"}:
+        return
+    raise ValidationError(
+        f"统一 {capability} QueryPlan 不能执行 provider {provider!r} "
+        f"channel {channel!r}；canonical channel 为 {canonical!r}",
+        context={
+            "provider": provider,
+            "channel": channel,
+            "canonical_channel": canonical,
+            "capability": capability,
+            "provider_switch_allowed": False,
+            "channel_switch_allowed": False,
+        },
+    )
+
+
 def _canonical_options(options: Mapping[str, Any] | None) -> str:
     try:
         return json.dumps(
@@ -96,13 +143,11 @@ class QuerySpec:
     capability: str
     symbols: tuple[str, ...] = ()
     provider: str | None = None
-    source: str | None = None
     channel: str | None = None
     period: str = ""
     count: int = 0
     start: int = 0
     adjustment: str = ""
-    allow_partial: bool = False
     currentness: str = CurrentnessMode.AUTO.value
     max_age: float | None = None
     deadline_ms: int = 5000
@@ -116,13 +161,13 @@ class QuerySpec:
         *,
         symbols: str | Sequence[str] = (),
         provider: str | None = None,
-        source: str | None = None,
         channel: str | None = None,
         period: str = "",
         count: int = 0,
         start: int = 0,
         adjustment: str = "",
         allow_partial: bool = False,
+        allow_stale: bool = False,
         currentness: str | CurrentnessMode = CurrentnessMode.AUTO,
         max_age: float | None = None,
         deadline_ms: int = 5000,
@@ -131,28 +176,44 @@ class QuerySpec:
     ) -> QuerySpec:
         symbol_tuple = (symbols,) if isinstance(symbols, str) else tuple(symbols)
         current = _parse_currentness(currentness)
+        # v13 SSOT：``allow_partial`` / ``allow_stale`` 不再是 QuerySpec 一等字段，
+        # 但仍作为构造期 ergonomic 开关保留，统一折叠进 ``options`` 扩展袋。
+        merged_options: dict[str, Any] = dict(options or {})
+        if allow_partial:
+            merged_options["allow_partial"] = True
+        if allow_stale:
+            merged_options["allow_stale"] = True
         return cls(
             capability=capability,
             symbols=symbol_tuple,
             provider=provider,
-            source=source,
             channel=channel,
             period=period,
             count=count,
             start=start,
             adjustment=adjustment,
-            allow_partial=allow_partial,
             currentness=current.value,
             max_age=max_age,
             deadline_ms=deadline_ms,
             schema_version=schema_version,
-            options_json=_canonical_options(options),
+            options_json=_canonical_options(merged_options),
         )
 
     @property
     def options(self) -> dict[str, Any]:
         value = json.loads(self.options_json or "{}")
         return dict(value) if isinstance(value, dict) else {}
+
+    @property
+    def allow_partial(self) -> bool:
+        """Partial-batch tolerance, expressed through the ``options`` bag.
+
+        v13 SSOT：``QuerySpec`` 不再把 ``source`` / ``route`` / ``allow_partial``
+        作为一等字段（历史 route 选择器已由 ``provider`` 取代）。批量容忍度
+        作为 capability 级别的可扩展选项保留在 ``options`` 中，语义不变。
+        """
+
+        return bool(self.options.get("allow_partial", False))
 
     def normalized(self, *, default_provider: str | None = None) -> QuerySpec:
         cap = _norm_text(self.capability)
@@ -185,9 +246,14 @@ class QuerySpec:
             raise ValidationError(f"{cap} 至少需要一个 symbol", context={"capability": cap})
         if cap == "bars" and len(symbols) != 1:
             raise ValidationError("bars 统一 QuerySpec 一次只接受一个 symbol")
+        if self.options.get("allow_stale"):
+            raise ValidationError(
+                "allow_stale 策略尚未实现；如需容忍过期数据请显式提高 max_age",
+                context={"capability": cap, "allow_stale": True},
+            )
         if self.allow_partial and cap != "quotes":
             raise ValidationError(
-                "allow_partial 当前仅允许 quotes 批量能力",
+                "allow_partial 仅支持 quotes 批量能力（quotes BatchResult）",
                 context={"capability": cap, "allow_partial": True},
             )
         if self.count < 0:
@@ -208,24 +274,30 @@ class QuerySpec:
         currentness = _parse_currentness(self.currentness)
         selected = resolve_provider(
             provider=self.provider,
-            source=self.source,
             default=default_provider or PROVIDERS.default_provider,
         )
         channel = _norm_text(self.channel) or None
+        period = normalize_bar_period(self.period) if cap == "bars" else _norm_text(self.period)
+        # v13 SSOT：统一 quotes/bars 只能走 Provider 的 canonical channel。该检查必须先于
+        # 注册表存在性校验，否则 ``provider=tdx, channel=vipdoc`` 会先报“未知 channel”，
+        # 掩盖真正的“canonical channel 不匹配”语义。
+        _reject_core_channel_mismatch(
+            selected,
+            cap,
+            channel,
+            _canonical_unified_channel(selected, cap, period),
+        )
         PROVIDERS.require(selected, cap, channel=channel)
 
-        period = normalize_bar_period(self.period) if cap == "bars" else _norm_text(self.period)
         max_age = None if self.max_age in (None, 0, 0.0) else float(self.max_age)
         return replace(
             self,
             capability=cap,
             symbols=symbols,
             provider=selected,
-            source=None,
             channel=channel,
             period=period,
             adjustment=_norm_text(self.adjustment),
-            allow_partial=bool(self.allow_partial),
             currentness=currentness.value,
             max_age=max_age,
             options_json=_canonical_options(self.options),
@@ -241,6 +313,9 @@ class QueryFingerprint:
 
     @staticmethod
     def _payload(spec: QuerySpec, *, channel: str) -> dict[str, Any]:
+        # v13 SSOT：fingerprint 只描述**数据身份**（问的是什么），不描述**新鲜度策略**
+        # （允许多旧）。``max_age`` 是调用方给出的缓存/新鲜度上界，同一份数据的
+        # 不同 max_age 必须共享一个身份，缓存的过期判定在读取时按实际 age 计算。
         return {
             "schema_version": spec.schema_version,
             "capability": spec.capability,
@@ -251,9 +326,7 @@ class QueryFingerprint:
             "count": spec.count,
             "start": spec.start,
             "adjustment": spec.adjustment,
-            "allow_partial": spec.allow_partial,
             "currentness": spec.currentness,
-            "max_age": spec.max_age,
             "options": spec.options,
         }
 
@@ -294,41 +367,41 @@ class QueryPlan:
     batch_limit: int | None
     live_channel: bool
     local_channel: bool
+    #: 单次逻辑查询共享的总 deadline/尝试预算。属于**运行时状态**而非编译身份，
+    #: 因此刻意排除在相等性与哈希之外（两个独立编译、语义相同的 plan 仍相等）。
+    budget: ExecutionBudget = field(compare=False, repr=False)
 
 
 class QueryPlanner:
     """Compile semantic requests into deterministic one-Provider plans."""
 
     def __init__(self, *, default_provider: str | None = None) -> None:
-        selected = default_provider or PROVIDERS.default_provider
+        if default_provider is None:
+            selected: str = PROVIDERS.default_provider
+        else:
+            # v13 SSOT：显式传入的 default_provider 是调用方的意图声明，空串必须
+            # fail-fast，绝不能静默回落成内置默认 Provider（否则配置拼写错误会被吞掉）。
+            cleaned = str(default_provider).strip()
+            if not cleaned:
+                raise ValidationError(
+                    "default_provider 不能为空；如需内置默认 Provider 请传 None",
+                    context={"default_provider": default_provider},
+                )
+            selected = cleaned
         PROVIDERS.get(selected)
         self.default_provider = resolve_provider(provider=selected)
 
     @staticmethod
     def _canonical_unified_channel(spec: QuerySpec) -> str | None:
-        pid = str(spec.provider)
-        cap = spec.capability
-        if pid == "tencent" and cap == "bars":
-            return "minute_kline" if spec.period in _MINUTE_PERIODS else "kline"
-        return _CANONICAL_UNIFIED_CHANNELS.get((pid, cap))
+        return _canonical_unified_channel(str(spec.provider), spec.capability, spec.period)
 
     @classmethod
     def _reject_core_channel_mismatch(cls, spec: QuerySpec, canonical: str | None) -> None:
-        if spec.channel is None or canonical is None or spec.channel == canonical:
-            return
-        if spec.capability not in {"quotes", "bars"}:
-            return
-        raise ValidationError(
-            f"统一 {spec.capability} QueryPlan 不能执行 provider {spec.provider!r} "
-            f"channel {spec.channel!r}；canonical channel 为 {canonical!r}",
-            context={
-                "provider": spec.provider,
-                "channel": spec.channel,
-                "canonical_channel": canonical,
-                "capability": spec.capability,
-                "provider_switch_allowed": False,
-                "channel_switch_allowed": False,
-            },
+        _reject_core_channel_mismatch(
+            str(spec.provider),
+            spec.capability,
+            spec.channel,
+            canonical,
         )
 
     @classmethod
@@ -338,8 +411,11 @@ class QueryPlanner:
         canonical = cls._canonical_unified_channel(spec)
 
         if spec.channel:
-            PROVIDERS.require(pid, cap, channel=spec.channel)
+            # 先判 canonical 不匹配，再确认 channel 是否注册：这样才能对
+            # ``tdx + vipdoc`` 这类“channel 属于别的 Provider”的情况给出
+            # canonical channel 诊断，而不是笼统的“未知 channel”。
             cls._reject_core_channel_mismatch(spec, canonical)
+            PROVIDERS.require(pid, cap, channel=spec.channel)
             selected = PROVIDERS.get(pid).channel(spec.channel)
         elif canonical is not None:
             PROVIDERS.require(pid, cap, channel=canonical)
@@ -394,4 +470,5 @@ class QueryPlanner:
             batch_limit=selected.batch_limit_for(normalized.capability),
             live_channel=selected.live,
             local_channel=selected.local,
+            budget=ExecutionBudget.from_deadline_ms(normalized.deadline_ms, max_attempts=1),
         )

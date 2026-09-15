@@ -6,7 +6,7 @@ import pytest
 
 import tstdx
 from tstdx.errors import ValidationError
-from tstdx.providers import PROVIDERS
+from tstdx.providers import PROVIDERS, resolve_provider
 from tstdx.query import QueryPlanner, QuerySpec
 from tstdx.result import Provenance, ProvenanceKind, QueryResult
 
@@ -88,20 +88,15 @@ def test_options_order_does_not_change_query_identity() -> None:
 
 
 def test_provider_source_conflict_is_rejected_before_io() -> None:
+    # v13 SSOT：QuerySpec 不再持有 ``source``；provider/source 冲突改为在
+    # provider 解析边界 fail-fast（tstdx.providers.resolve_provider）。
     with pytest.raises(ValidationError):
-        QueryPlanner().compile(
-            QuerySpec.build(
-                "quotes",
-                symbols="sh600519",
-                provider="tdx",
-                source="tencent",
-            )
-        )
+        resolve_provider(provider="tdx", source="tencent")
 
 
 def test_ambiguous_web_selector_is_rejected_before_io() -> None:
     with pytest.raises(ValidationError, match="歧义"):
-        QueryPlanner().compile(QuerySpec.build("quotes", symbols="sh600519", source="web"))
+        resolve_provider(source="web")
 
 
 def test_unsupported_capability_fails_before_io() -> None:

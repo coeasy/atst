@@ -3,9 +3,13 @@
 
 """Canonical Provider-first semantic L1 cache.
 
-Entries are keyed by full QueryFingerprint and preserve original provenance.
-Capacity is enforced with deterministic LRU eviction; the cache never performs
-a whole-map flush simply because one new key arrives.
+Entries are keyed by the full QueryFingerprint **plus the caller's freshness
+policy** (``max_age``).  The fingerprint identifies *which data* is requested;
+``max_age`` identifies *how fresh* it must be.  Keeping the two concerns
+separate means a lax bound can never be reused to answer a stricter query, while
+callers that share both still share one slot.  Capacity is enforced with
+deterministic LRU eviction; the cache never performs a whole-map flush simply
+because one new key arrives.
 """
 
 from __future__ import annotations
@@ -28,6 +32,21 @@ __all__ = [
 
 T = TypeVar("T")
 SEMANTIC_CACHE_SCHEMA_VERSION = 2
+
+
+def _slot_key(plan: QueryPlan) -> str:
+    """Return the cache slot key: data identity + freshness policy.
+
+    The QueryFingerprint deliberately excludes ``max_age`` (it is a cache
+    policy, not part of the data identity — see ``QueryFingerprint._payload``).
+    The L1 result cache therefore re-applies ``max_age`` here so an entry stored
+    under a loose bound is not served to a caller that demanded a strict one.
+    """
+
+    max_age = plan.spec.max_age
+    if max_age is None:
+        return plan.fingerprint.value
+    return f"{plan.fingerprint.value}|max_age={float(max_age)!r}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,7 +154,7 @@ class SemanticResultCache:
         self.rejects = 0
 
     def get(self, plan: QueryPlan, *, now_ns: int | None = None) -> QueryResult[Any] | None:
-        key = plan.fingerprint.value
+        key = _slot_key(plan)
         try:
             with self._lock:
                 entry = self._data.get(key)
@@ -176,7 +195,7 @@ class SemanticResultCache:
         if actual != expected:
             raise ValueError("cache result identity does not match QueryPlan")
         entry = SemanticCacheEntry.from_result(result, ttl=ttl, now_ns=now_ns)
-        key = plan.fingerprint.value
+        key = _slot_key(plan)
         with self._lock:
             if key in self._data:
                 self._data.pop(key, None)
@@ -187,7 +206,7 @@ class SemanticResultCache:
 
     def invalidate(self, plan: QueryPlan) -> bool:
         with self._lock:
-            return self._data.pop(plan.fingerprint.value, None) is not None
+            return self._data.pop(_slot_key(plan), None) is not None
 
     def clear(self) -> int:
         with self._lock:

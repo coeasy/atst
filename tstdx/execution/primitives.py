@@ -12,6 +12,18 @@ This file provides the canonical import surface:
 
 from __future__ import annotations
 
-from ..execution_primitives import BatchPlan, BatchPlanner, ExecutionBudget, SingleFlight
+from ..execution_primitives import (
+    BatchPlan,
+    BatchPlanner,
+    ExecutionBudget,
+    SingleFlight,
+    _clone_error,
+)
 
-__all__ = ["ExecutionBudget", "SingleFlight", "BatchPlan", "BatchPlanner"]
+__all__ = [
+    "ExecutionBudget",
+    "SingleFlight",
+    "BatchPlan",
+    "BatchPlanner",
+    "_clone_error",
+]

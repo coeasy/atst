@@ -43,8 +43,8 @@ Quick start（离线，读取本地通达信数据）::
 
 Quick start（在线，TDX 协议）::
 
-    from tstdx import TdxClient
-    with TdxClient() as c:
+    from tstdx import Client
+    with Client(provider="tdx") as c:
         bars = c.bars("sh600519", period="day", count=30)
 
 Quick start（HTTP Web 源，无需 TDX 主站）::
@@ -61,9 +61,9 @@ __version__ = "1.0.0"
 
 __all__ = [
     "__version__",
-    "TdxClient",
-    "AsyncTdxClient",
-    "WebQuoteClient",
+    # v13 canonical business client surface（唯一推荐入口）。
+    "Client",
+    "AsyncClient",
     "DayBarReader",
     "MinBarReader",
     "BlockReader",
@@ -90,6 +90,10 @@ __all__ = [
     "BatchResult",
     "SingleFlight",
     "NegativeCache",
+    "StreamSpec",
+    "UnifiedRuntime",
+    "FallbackPolicy",
+    "ProviderOrchestrator",
     "ErrorEnvelope",
     "to_error_envelope",
     "records_from_response",
@@ -105,7 +109,6 @@ __all__ = [
     "configure",
     "get_config",
     "load_config",
-    "facade",
     "observability",
     "streaming",
 ]
@@ -130,21 +133,21 @@ def get_config() -> Any:
 
 if TYPE_CHECKING:  # pragma: no cover
     from .cache_semantic import SemanticResultCache
-    from .client import AsyncTdxClient, TdxClient
     from .config import load_config
+    from .orchestration import FallbackPolicy, ProviderOrchestrator
     from .providers import PROVIDERS, ProviderRegistry
     from .query import CurrentnessMode, QueryFingerprint, QueryPlan, QueryPlanner, QuerySpec
     from .reader import BlockReader, DataProfile, DayBarReader, FinanceReader, MinBarReader
     from .result import Provenance, ProvenanceKind, QueryResult, ResultMeta
+    from .runtime_v13 import UnifiedRuntime
+    from .stream_contract import StreamSpec
     from .streaming.state import StreamState
     from .streaming.stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
-    from .web import WebQuoteClient
 
 
 _LAZY: dict[str, tuple[str, str]] = {
-    "TdxClient": ("tstdx.client", "TdxClient"),
-    "AsyncTdxClient": ("tstdx.client", "AsyncTdxClient"),
-    "WebQuoteClient": ("tstdx.web", "WebQuoteClient"),
+    "Client": ("tstdx.client_api", "Client"),
+    "AsyncClient": ("tstdx.client_api", "AsyncClient"),
     "DayBarReader": ("tstdx.reader", "DayBarReader"),
     "MinBarReader": ("tstdx.reader", "MinBarReader"),
     "BlockReader": ("tstdx.reader", "BlockReader"),
@@ -174,6 +177,10 @@ _LAZY: dict[str, tuple[str, str]] = {
     "BatchResult": ("tstdx.batch", "BatchResult"),
     "SingleFlight": ("tstdx.batch", "SingleFlight"),
     "NegativeCache": ("tstdx.batch", "NegativeCache"),
+    "StreamSpec": ("tstdx.stream_contract", "StreamSpec"),
+    "UnifiedRuntime": ("tstdx.runtime_v13", "UnifiedRuntime"),
+    "FallbackPolicy": ("tstdx.orchestration", "FallbackPolicy"),
+    "ProviderOrchestrator": ("tstdx.orchestration", "ProviderOrchestrator"),
     "ErrorEnvelope": ("tstdx.error_envelope", "ErrorEnvelope"),
     "to_error_envelope": ("tstdx.error_envelope", "to_error_envelope"),
     "records_from_response": ("tstdx.typed_query", "records_from_response"),
@@ -187,7 +194,6 @@ _LAZY: dict[str, tuple[str, str]] = {
     "SearchRecord": ("tstdx.domain.records", "SearchRecord"),
     "MacroRecord": ("tstdx.domain.records", "MacroRecord"),
     "load_config": ("tstdx.config", "load_config"),
-    "facade": ("tstdx.facade", ""),
     "observability": ("tstdx.observability", ""),
     "streaming": ("tstdx.streaming", ""),
     "deprecated": ("tstdx.deprecation", "deprecated"),

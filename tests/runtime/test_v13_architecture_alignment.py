@@ -52,7 +52,12 @@ def test_registry_and_direct_bindings_are_exactly_equal() -> None:
 
 def test_tdx_tier_a_is_complete_in_registry() -> None:
     quotation = PROVIDERS.get("tdx").channel("quotation")
-    assert quotation.capabilities == TIER_A
+    # Tier A 必须**完整**包含在注册表中；quotation 家族另外声明 finance /
+    # capital_changes（二者本就是 TDX 行情协议命令，见 TdxQuotationAPI.finance
+    # → raw.finance_info），故此处断言「Tier A 全含 + 精确的额外集合」，
+    # 而不是早期的 `== TIER_A` 等值（那会把合法能力误判为越界）。
+    assert quotation.capabilities >= TIER_A
+    assert quotation.capabilities == TIER_A | {"finance", "capital_changes"}
 
 
 def test_web_pseudo_provider_is_rejected() -> None:
@@ -72,6 +77,9 @@ def test_streaming_is_explicit_and_fails_closed_for_unbound_provider() -> None:
 
 def test_mcp_only_exposes_promoted_canonical_capabilities() -> None:
     names = {tool.name for tool in TOOLS}
+    # 规范 manifest = Tier-A dedicated tools + 统一 query_capability 网关
+    # （见 integration/mcp/_tools_spec.py 模块 docstring：每个 migrated capability
+    # 都经由 query_capability 复用同一条 Client/QuerySpec 执行链）。
     assert names == {
         "get_bars",
         "get_quote",
@@ -81,6 +89,7 @@ def test_mcp_only_exposes_promoted_canonical_capabilities() -> None:
         "get_trades",
         "get_security_count",
         "get_security_list",
+        "query_capability",
     }
 
 

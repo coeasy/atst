@@ -33,13 +33,31 @@ def _result(plan, *, kind: ProvenanceKind, observed_at_ns: int):
     )
 
 
-def test_max_age_is_part_of_query_fingerprint() -> None:
+def test_max_age_is_a_cache_policy_not_part_of_the_data_fingerprint() -> None:
+    """v13 SSOT：``max_age`` 是新鲜度策略，不是数据身份的一部分。
+
+    同一份数据的宽松 / 严格上界共享同一个 QueryFingerprint（数据身份一致），
+    但不得共享 L1 缓存槽：宽松条目不能回答更严格的查询。
+    """
+
     loose = _plan(max_age=5.0)
     strict = _plan(max_age=1.0)
 
-    assert loose.fingerprint.value != strict.fingerprint.value
-    assert '"max_age":5.0' in loose.fingerprint.canonical
-    assert '"max_age":1.0' in strict.fingerprint.canonical
+    assert loose.fingerprint.value == strict.fingerprint.value
+    assert '"max_age"' not in loose.fingerprint.canonical
+    assert '"max_age"' not in strict.fingerprint.canonical
+
+    cache = SemanticResultCache()
+    cache.put(
+        loose,
+        _result(loose, kind=ProvenanceKind.DIRECT, observed_at_ns=1_000_000_000),
+        ttl=30.0,
+        now_ns=1_000_000_000,
+    )
+    # 已在宽松策略下缓存的条目，不得被更严格的 max_age 复用。
+    assert cache.get(strict, now_ns=1_000_000_001) is None
+    # 相同策略仍然命中。
+    assert cache.get(loose, now_ns=1_000_000_001) is not None
 
 
 def test_cache_hit_respects_query_max_age_boundary() -> None:
