@@ -40,6 +40,10 @@ class SmokeClient:
     runtime = SmokeRuntime()
 
     @staticmethod
+    def capabilities():
+        return ("bars", "quotes", "snapshot", "minute", "trades", "security_count", "security_list")
+
+    @staticmethod
     def _result(capability: str, *, symbols=(), data=None):
         kwargs = {"provider": "tdx"}
         if symbols:

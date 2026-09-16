@@ -1,6 +1,6 @@
-# tstdx 快速开始（v1.0.0）
+# tstdx 快速开始
 
-本文对应 v1.0.0 正式稳定版，要求 Python 3.10 或更高版本。
+本文对应当前 `1.0.0` Draft 开发线；最新已发布稳定版是 `v1.0.0`。要求 Python 3.10 或更高版本。
 
 ## 安装
 
@@ -125,13 +125,16 @@ print(gateway.semantic_cache_stats())
 
 ## 核心概念
 
-### 数据源降级链
+### Provider 绑定（禁止跨 Provider 静默降级）
 
-```
-TDX 主站 → HTTP Web 源 → 本地 vipdoc → 缓存 → 合成数据
-```
+v13 clean break 之后，`DataSourceRouter` 退化为**单 Provider 选择器**，不再按顺序逐层尝试：
 
-`DataSourceRouter` 按顺序尝试，任一成功即返回。可通过配置调整顺序或禁用某层。
+- 每次请求绑定**恰好一个** Provider / channel；
+- TDX 失败**不会**自动改走 Web 源、本地 vipdoc、缓存或合成数据；
+- 需要跨 Provider 容错时，必须显式构造 `FallbackPolicy` 交给 `ProviderOrchestrator`，
+  并在返回值 provenance 中留下 `requested_provider` / `fallback` 审计痕迹。
+
+禁止跨 Provider silent fallback；任何降级都必须是调用方的显式选择。
 
 ### 三态输出
 

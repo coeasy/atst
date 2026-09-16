@@ -1,7 +1,14 @@
 # API 参考
 
+当前 `1.0.0` Draft 开发线；最新已发布稳定版是 `v1.0.0`。
+
 > 本页对应 v1.0.0 稳定发布版 + v14 Runtime 编排内核。完整 docstring 驱动文档
 > 由 `pdoc`/`mkdocstrings` 生成；此处提供稳定入口和模块索引。
+>
+> **Provider 契约**：v13 clean break 后禁止跨 Provider silent fallback。每次请求绑定
+> 恰好一个 Provider/channel；跨 Provider 容错只能经显式 `FallbackPolicy` +
+> `ProviderOrchestrator`。`tstdx.facade.UnifiedQuoteAPI` 是官方导出，
+> `tstdx.facade.api.UnifiedQuoteAPI` 仅作为 legacy compatibility router 保留。
 
 ## v14 Runtime（编排内核）
 
@@ -29,7 +36,8 @@
 | `tstdx.client.TdxClient` | 同步客户端主入口 |
 | `tstdx.client.AsyncTdxClient` | 异步镜像客户端 |
 | `tstdx.client.get_client(kind)` | 工厂：std/goods/ex/mac/f10 |
-| `tstdx.facade.api.UnifiedQuoteAPI` | 统一门面 ~40 方法（自动路由 + ApiResponse）|
+| `tstdx.facade.UnifiedQuoteAPI` | 官方门面导出（`tstdx.facade.planned`，走 QueryPlan/Provider 绑定）|
+| `tstdx.facade.api.UnifiedQuoteAPI` | legacy compatibility router + 历史实现（保留供迁移）|
 | `tstdx.facade.async_api.AsyncUnifiedQuoteAPI` | 异步门面（紧凑设计：核心 10 方法桥接 + `arun()` 泛化任意方法；有意不逐方法镜像）|
 | `tstdx.facade.response.ApiResponse` | 统一响应形态（ok/err/wrap + 惰性 .df）|
 | `tstdx.web.facade.WebQuoteSession` | Web 源原生命名会话（异动/人气榜/问财/IPO…）|
@@ -74,7 +82,7 @@
 
 | 模块 | 说明 |
 |---|---|
-| `tstdx.sources.router` | DataSourceRouter 五级降级 |
+| `tstdx.sources.router` | DataSourceRouter 单 Provider 选择器（禁止跨 Provider silent fallback）|
 | `tstdx.web.adapters` | HTTP Web 源（新浪/腾讯/东财/集思录/港股/中行）|
 | `tstdx.web.adapters_ext` | 扩展 Web 源（分时/逐笔/联想/全球）|
 | `tstdx.web.fundflow` | 资金流 + 涨停池 + **盘中异动**（16 类实时池）+ 沪深港通 |
@@ -104,7 +112,7 @@
 |---|---|
 | `tstdx.integration.http_server` | FastAPI 网关（~40 接口，含 /stock_changes /hot_rank /wencai /ipo /search /query）|
 | `tstdx.integration.ws_server` | WebSocket JSON-RPC（bars/quotes/minute/trades/finance/security_count/stock_changes + subscribe）|
-| `tstdx.integration.mcp_server` | MCP stdio 12 工具（含 get_stock_changes / get_hot_rank）|
+| `tstdx.integration.mcp_server` | MCP stdio 工具（canonical Client runtime 能力 + `query_capability` 通用入口）|
 | `tstdx.cli` | CLI 子命令（bars/quotes/…/changes/hot）|
 
 ## 迁移指南

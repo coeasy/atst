@@ -69,14 +69,26 @@ class TestUpdateHosts:
         assert pool._slots[0].host.host == "2.2.2.2"
         pool.close()
 
-    def test_refreshes_probe_metrics_without_overwriting_live_health(self):
-        """Probe observations may refresh RTT but never import probe failure state."""
-        current = _h("1.1.1.1")
-        current.failures = 4
-        current.biz_failures = 2
-        current.last_error = "request timeout"
-        current.live_rtt_ms = 8.0
-        pool = ConnectionPool([current], slots_per_host=1, heartbeat_interval=None)
+    def test_refreshes_probe_metrics_without_overwriting_live_health(self, seed_pool_health):
+        """Probe observations may refresh RTT but never import probe failure state.
+
+        A freshly constructed pool deliberately starts a new runtime-health
+        lifecycle (see ``_pool_family_hardening``): it inherits selector identity
+        and probe latency only, never caller-owned request failures. Live health
+        is therefore seeded *after* construction, exactly as a real request would
+        accrue it on the pool-owned host.
+        """
+        pool = ConnectionPool([_h("1.1.1.1")], slots_per_host=1, heartbeat_interval=None)
+        fresh = pool.hosts[0]
+        assert fresh.failures == 0 and fresh.live_rtt_ms is None
+        live = seed_pool_health(
+            pool,
+            failures=4,
+            biz_failures=2,
+            last_error="request timeout",
+            live_rtt_ms=8.0,
+        )
+        assert live is fresh
 
         new_entry = _h("1.1.1.1")
         new_entry.rtt_ms = 12.5

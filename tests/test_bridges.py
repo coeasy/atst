@@ -123,14 +123,19 @@ class TestBridges:
 
     # ---- 07: 降级链 ----
     def test_07_fallback_chain(self):
-        """#07 6 种降级路径。"""
+        """#07 Provider 绑定：v12 禁止多级 fallback 链，order 仅允许单选择器。"""
         from tstdx.config.schema import SourcesConfig
 
         cfg = SourcesConfig()
-        assert "tdx" in cfg.order
-        assert "web" in cfg.order
-        assert "cache" in cfg.order
-        assert "synthetic" in SourcesConfig().enabled
+        # ``order`` 是 legacy Router 的单入口选择器，不再是降级链。
+        assert cfg.order == ["tdx"]
+        assert len(cfg.order) == 1
+        assert cfg.default_provider == "tdx"
+        # 跨 Provider 静默降级必须显式关闭。
+        assert cfg.continue_on_error is False
+        # 各 Provider 的启用开关仍然存在（供显式选择，而非隐式降级）。
+        assert set(cfg.enabled) == {"tdx", "web", "reader", "cache", "synthetic"}
+        assert cfg.enabled["synthetic"] is False
 
     # ---- 08: 流式韧性 ----
     def test_08_stream_resilience(self):
@@ -214,12 +219,26 @@ class TestBridges:
         paths = {getattr(r, "path", "") for r in app.routes if getattr(r, "methods", None)}
         assert len(paths) >= 32, f"HTTP 端点仅 {len(paths)}，期望 ≥32"
 
-    # ---- 18: MCP 10 工具 ----
+    # ---- 18: MCP 工具清单 ----
     def test_18_mcp_tools(self):
-        """#18 MCP 10 工具。"""
+        """#18 MCP 工具清单：Tier-A 专用工具 + 通用 ``query_capability`` 入口。"""
         from tstdx.integration.mcp_server import TOOLS, create_mcp_server
 
-        assert len(TOOLS) >= 10, f"MCP 工具仅 {len(TOOLS)}，期望 ≥10"
+        names = {tool.name for tool in TOOLS}
+        # v13 clean break：MCP 只暴露走 canonical Client runtime 的能力，
+        # 且每个已迁移能力都能经 query_capability 触达。
+        assert "query_capability" in names
+        assert {
+            "get_bars",
+            "get_quote",
+            "get_quotes",
+            "get_snapshot",
+            "get_minute_today",
+            "get_trades",
+            "get_security_count",
+            "get_security_list",
+        } <= names
+        # ``tools/list`` 必须与清单同源。
         server = create_mcp_server()
         resp = server.handle_request({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         assert resp["result"]["tools"] == [t.to_dict() for t in TOOLS]

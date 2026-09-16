@@ -58,8 +58,13 @@ class MCPServer:
         self._stopped = threading.Event()
 
     def stop(self) -> None:
+        # Idempotent: an owned transport must be closed exactly once even if
+        # ``shutdown`` and the ``serve`` epilogue both race to stop the server.
+        if self._stopped.is_set():
+            return
         self._stopped.set()
         if self._owns_client:
+            self._owns_client = False
             with contextlib.suppress(Exception):
                 self._client.close()
 
@@ -81,17 +86,8 @@ class MCPServer:
                 try:
                     request = json.loads(stripped)
                 except json.JSONDecodeError:
-                    envelope = to_error_envelope(ValidationError("invalid JSON"))
                     self._write(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": None,
-                            "error": {
-                                "code": ERR_PARSE,
-                                "message": "Parse error",
-                                "data": envelope.to_dict(),
-                            },
-                        }
+                        self._protocol_error(None, ERR_PARSE, "Parse error")
                     )
                     continue
                 response = self.handle_request(request)
@@ -118,16 +114,7 @@ class MCPServer:
 
     def handle_request(self, request: dict[str, Any]) -> dict[str, Any] | None:
         if not isinstance(request, dict):
-            envelope = to_error_envelope(ValidationError("Request must be a JSON object"))
-            return {
-                "jsonrpc": "2.0",
-                "id": None,
-                "error": {
-                    "code": ERR_INVALID_REQUEST,
-                    "message": "Invalid Request",
-                    "data": envelope.to_dict(),
-                },
-            }
+            return self._protocol_error(None, ERR_INVALID_REQUEST, "Invalid Request")
 
         method = request.get("method")
         rid = request.get("id")
@@ -146,17 +133,33 @@ class MCPServer:
                 result = {}
                 self.stop()
             else:
-                return self._error(rid, ERR_METHOD_NOT_FOUND, f"Method not found: {method!r}")
+                return self._protocol_error(
+                    rid,
+                    ERR_METHOD_NOT_FOUND,
+                    f"Method not found: {method!r}",
+                    method=method,
+                )
+        except ValidationError as exc:
+            # Invalid tool parameters are a client error, not an internal one:
+            # JSON-RPC ``-32602`` keeps the distinction observable to callers.
+            envelope = to_error_envelope(exc, request_id=str(rid))
+            return self._error(
+                rid,
+                ERR_INVALID_PARAMS,
+                envelope.message,
+                data=envelope.to_dict(),
+            )
         except TdxError as exc:
-            envelope = to_error_envelope(exc)
+            envelope = to_error_envelope(exc, request_id=str(rid))
             return self._error(rid, ERR_INTERNAL, envelope.message, data=envelope.to_dict())
         except KeyError as exc:
             envelope = to_error_envelope(
                 ValidationError(
                     "missing required parameter",
-                    context={"phase": "mcp", "request_id": str(rid)},
+                    context={"phase": "mcp"},
                     cause=exc,
-                )
+                ),
+                request_id=str(rid),
             )
             return self._error(
                 rid,
@@ -166,9 +169,38 @@ class MCPServer:
             )
         except Exception as exc:
             logger.error("mcp_server request failed (method=%s): %s", method, exc, exc_info=exc)
-            envelope = to_error_envelope(exc)
+            envelope = to_error_envelope(exc, phase="mcp", request_id=str(rid))
             return self._error(rid, ERR_INTERNAL, envelope.message, data=envelope.to_dict())
         return {"jsonrpc": "2.0", "id": rid, "result": result}
+
+    def _protocol_error(
+        self,
+        rid: Any,
+        code: int,
+        message: str,
+        *,
+        method: Any = None,
+    ) -> dict[str, Any]:
+        """Protocol-level failure, with the canonical error envelope attached.
+
+        Every failure surface — parse, request shape, method dispatch — answers
+        with the same envelope contract as capability failures, so a client can
+        read ``phase`` / ``request_id`` / fail-closed permits uniformly instead
+        of special-casing the transport.
+        """
+
+        context: dict[str, Any] = {
+            "phase": "mcp_protocol",
+            "fallback": False,
+            "provider_switch_allowed": False,
+        }
+        if method is not None:
+            context["method"] = str(method)
+        envelope = to_error_envelope(
+            ValidationError(message, context=context),
+            request_id=None if rid is None else str(rid),
+        )
+        return self._error(rid, code, message, data=envelope.to_dict())
 
     @staticmethod
     def _handle_initialize() -> dict[str, Any]:
@@ -193,6 +225,14 @@ class MCPServer:
             }
         try:
             data = _TOOLS_BY_NAME[name].handler(self._client, args)
+        except KeyError as exc:
+            # A missing required tool argument is a client error (-32602), not an
+            # internal fault; surface it as such instead of collapsing to E9000.
+            raise ValidationError(
+                f"missing required parameter for tool {name!r}",
+                context={"phase": "mcp", "capability": name},
+                cause=exc,
+            ) from exc
         except TdxError:
             raise
         except Exception as exc:

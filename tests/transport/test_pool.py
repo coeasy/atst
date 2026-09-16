@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import importlib
 import time
 from collections.abc import Iterable
 
@@ -163,11 +164,20 @@ class TestConnectionPoolFailover:
 
         def _fake_speedtest(*a, **k):
             calls.append(1)
+            return []
 
-        import importlib
-
+        # The hardened background trigger is probe-only: it probes via
+        # ``speedtest`` and then commits observations, so patch that entry point
+        # (not the bypassed ``speedtest_and_save``) and stub the ranking store so
+        # the worker never writes the user's real ranking file.
         speedtest_mod = importlib.import_module("tstdx.transport.speedtest")
-        monkeypatch.setattr(speedtest_mod, "speedtest_and_save", _fake_speedtest)
+        hardening = importlib.import_module("tstdx.transport._pool_provenance_hardening")
+        monkeypatch.setattr(speedtest_mod, "speedtest", _fake_speedtest)
+        monkeypatch.setattr(
+            hardening,
+            "RankingStore",
+            lambda *a, **k: type("_Store", (), {"update": lambda self, entries: None})(),
+        )
         pool = _pool(list(down), max_retries=0, speedtest_threshold=2)
         # 第一次请求：触发后台测速；第二次：防抖不再触发
         with monkeypatch.context() as m:

@@ -4,7 +4,7 @@ import io
 import json
 from typing import Any
 
-from tstdx.integration.mcp_app import MCPServer
+from tstdx.integration.mcp_server import MCPServer
 
 
 def test_malformed_stdio_json_uses_canonical_error_envelope(monkeypatch) -> None:  # noqa: ANN001
@@ -24,35 +24,32 @@ def test_malformed_stdio_json_uses_canonical_error_envelope(monkeypatch) -> None
     assert envelope["provider_switch_allowed"] is False
 
 
-def test_injected_mcp_resources_are_not_closed_by_server() -> None:
+def test_injected_mcp_client_is_not_closed_by_server() -> None:
     closed: list[str] = []
 
     class Resource:
         def close(self) -> None:
             closed.append("closed")
 
-    client = Resource()
-    facade = Resource()
-    server = MCPServer(client=client, facade=facade)
-    server._close_runtime()
+    server = MCPServer(client=Resource())  # type: ignore[arg-type]
+    server.stop()
 
     assert closed == []
 
 
-def test_owned_mcp_resources_are_closed_once() -> None:
+def test_owned_mcp_client_is_closed_once_by_stop() -> None:
     closed: list[str] = []
 
     class Resource:
         def close(self) -> None:
             closed.append("closed")
 
-    server = MCPServer()
-    server._client = Resource()
-    server._facade = Resource()
-    server._close_runtime()
-    server._close_runtime()
+    server = MCPServer()  # owns its default Client
+    server._client = Resource()  # probe the owned handle
+    server.stop()
+    server.stop()
 
-    assert closed == ["closed", "closed"]
+    assert closed == ["closed"]
 
 
 def test_mcp_notification_still_has_no_response() -> None:

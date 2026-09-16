@@ -47,23 +47,29 @@ def _capture_try_routes(api: UnifiedQuoteAPI) -> dict:
 # W11：错误聚合 + 逐路由告警
 # --------------------------------------------------------------------------- #
 class TestW11ErrorAggregation:
-    def test_route_errors_aggregated_into_context(self) -> None:
-        """全路由失败：重抛最后一路由异常，且 context 聚合 route_errors。"""
+    def test_auto_failure_contains_only_selected_provider_path(self) -> None:
+        """v13 契约：auto 只选定一路 Provider，失败绝不跨 Provider 兜底。
+
+        因此只有被选中的 tdx 被调用一次；异常 context 的 ``route_errors``
+        仅包含该路径，不会出现 web。
+        """
         api = UnifiedQuoteAPI()
+        calls: list[str] = []
 
         def boom_tdx() -> list:
+            calls.append("tdx")
             raise TdxError("tdx down")
 
         def boom_web() -> list:
+            calls.append("web")
             raise RuntimeError("web down")
 
-        with pytest.raises(RuntimeError) as ei:
+        with pytest.raises(TdxError) as ei:
             api._try_routes("auto", {"tdx": boom_tdx, "web": boom_web})
-        assert "web down" in str(ei.value)  # 仍是最后一路由异常
+        assert calls == ["tdx"]  # web 绝不被尝试
         errs = ei.value.context["route_errors"]
-        assert set(errs) == {"tdx", "web"}
+        assert set(errs) == {"tdx"}
         assert errs["tdx"].startswith("TdxError: ")
-        assert errs["web"].startswith("RuntimeError: ")
 
     def test_route_errors_attached_to_non_tdx_exception(self) -> None:
         """非 TdxError 的最终异常也能挂上 route_errors。"""
@@ -76,7 +82,8 @@ class TestW11ErrorAggregation:
             api._try_routes("tdx", {"tdx": boom})
         assert ei.value.context["route_errors"]["tdx"].startswith("RuntimeError: ")
 
-    def test_one_warning_per_route_failure(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_one_warning_for_selected_route_failure(self, caplog: pytest.LogCaptureFixture) -> None:
+        """每路由失败一条 warning——但 auto 只选定一路，故仅 1 条。"""
         api = UnifiedQuoteAPI()
 
         def boom() -> list:
@@ -85,16 +92,20 @@ class TestW11ErrorAggregation:
         with caplog.at_level(logging.WARNING, logger="tstdx.facade"), pytest.raises(TdxError):
             api._try_routes("auto", {"tdx": boom, "web": boom})
         records = [r for r in caplog.records if r.name == "tstdx.facade"]
-        assert len(records) == 2  # 每路由失败一条
+        assert len(records) == 1  # 只对选中的 Provider 路径告警
         assert all(r.levelno == logging.WARNING for r in records)
+        assert "不会跨 Provider" in records[0].getMessage()
 
 
 # --------------------------------------------------------------------------- #
 # W11：熔断
 # --------------------------------------------------------------------------- #
 class TestW11CircuitBreaker:
-    def test_opens_after_three_consecutive_failures(self) -> None:
-        """连续失败 ≥3 次 → 冷却期内 auto 序跳过该路由。"""
+    def test_opens_after_three_failures_without_switching_provider(self) -> None:
+        """连续失败 ≥3 次 → auto 熔断；第 4 次直接 SourceUnavailable，不换 Provider。
+
+        注意：web 虽然登记在路由映射里，但 auto 只选定 tdx，故 web 调用次数恒为 0。
+        """
         api = UnifiedQuoteAPI()
         calls = {"tdx": 0, "web": 0}
 
@@ -107,13 +118,20 @@ class TestW11CircuitBreaker:
             return ["web"]
 
         for _ in range(3):
-            assert api._try_routes("auto", {"tdx": boom_tdx, "web": ok_web}) == ["web"]
-        assert calls["tdx"] == 3 and calls["web"] == 3
-        # 第 4 次：tdx 已熔断 → 不再尝试，直达 web
-        assert api._try_routes("auto", {"tdx": boom_tdx, "web": ok_web}) == ["web"]
-        assert calls["tdx"] == 3 and calls["web"] == 4
+            with pytest.raises(TdxError):
+                api._try_routes("auto", {"tdx": boom_tdx, "web": ok_web})
+        assert calls == {"tdx": 3, "web": 0}  # 绝不跨 Provider 兜底
+
+        # 第 4 次：tdx 已熔断 → 抛出 SourceUnavailable，且仍不尝试 web
+        with pytest.raises(SourceUnavailable) as ei:
+            api._try_routes("auto", {"tdx": boom_tdx, "web": ok_web})
+        assert calls == {"tdx": 3, "web": 0}
+        assert ei.value.context["provider_path"] == "tdx"
+        assert ei.value.context["fallback"] is False
+        assert ei.value.context["cooldown_seconds"] == api._ROUTE_COOLDOWN_SECONDS
 
     def test_cooldown_error_when_no_other_route(self) -> None:
+        """仅一路可用时熔断同样生效：冷却期内不再调用，且明示 fallback=False。"""
         api = UnifiedQuoteAPI()
         calls = {"n": 0}
 
@@ -125,11 +143,13 @@ class TestW11CircuitBreaker:
             with pytest.raises(TdxError):
                 api._try_routes("auto", {"tdx": boom})
         assert calls["n"] == 3
-        with pytest.raises(TdxError) as ei:
+        with pytest.raises(SourceUnavailable) as ei:
             api._try_routes("auto", {"tdx": boom})
         assert calls["n"] == 3  # 冷却期内不再尝试
         assert "冷却" in str(ei.value)
-        assert ei.value.context["cooldown_routes"] == ["tdx"]
+        assert ei.value.context["provider_path"] == "tdx"
+        assert ei.value.context["route"] == "auto"
+        assert ei.value.context["fallback"] is False
 
     def test_success_resets_failure_count(self) -> None:
         """成功清零：熔断只看「连续」失败。"""
@@ -272,8 +292,11 @@ class TestW12RouteGovernance:
         assert rows == [{"title": "公司概况", "filename": "gsgk.dat"}]
         assert captured and captured[0].closed is True  # 关闭客户端，避免泄漏
 
-    def test_minute_falls_back_to_web(self) -> None:
-        """(b) 双通路：tdx 抛异常 → web 兜底。"""
+    def test_minute_tdx_failure_does_not_call_web(self) -> None:
+        """(b) v13 契约：minute 的双通路是「显式选择」，不是兜底链。
+
+        auto 只选定 tdx；tdx 抛异常时异常直接上抛，web 绝不被调用。
+        """
 
         class _Tdx:
             def minute_today(self, sym: str) -> list:
@@ -281,9 +304,16 @@ class TestW12RouteGovernance:
 
         api = UnifiedQuoteAPI()
         api._tdx = _Tdx()
-        api.minute_web = lambda sym: [{"price": 1.0}, {"price": 2.0}]  # type: ignore[method-assign]
-        rows = api.minute("sh600519")
-        assert rows == [{"price": 1.0}, {"price": 2.0}]
+        web_called: list[str] = []
+
+        def _web(sym: str) -> list:
+            web_called.append(sym)
+            return [{"price": 1.0}, {"price": 2.0}]
+
+        api.minute_web = _web  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError, match="tdx down"):
+            api.minute("sh600519")
+        assert web_called == []
 
     def test_minute_prefers_tdx_when_healthy(self) -> None:
         class _Tdx:
@@ -381,35 +411,34 @@ class TestW13BarsSemantics:
             api.bars("sh600519", start=5, adjust="qfq")
 
     def test_web_adjust_passthrough_and_default_raw(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """adjust 透传；默认（None）→ 原始价，与 tdx/local 口径一致。
+        """``adjust`` 原样透传到 web 通路；默认（None）→ 原始价 ``""``。
 
-        Q1-b 合并后 bars web 路由经 router（内部 ``from ..web import
-        WebQuoteClient`` 调用点解析），mock 目标从 ``api._web`` 改为
-        ``tstdx.web.WebQuoteClient``；断言语义不变。
+        Q1-b 合并后 bars 三通路均经 ``router.kline``（Provider-bound），
+        mock 目标由 ``api._web`` 改为注入 router 替身；断言语义不变。
         """
-        import tstdx.web as web_mod
+        seen: list[str] = []
 
-        seen: dict = {}
-
-        class _Web:
-            def __init__(self, **kw: Any) -> None:
-                pass
-
-            def close(self) -> None:
-                pass
-
-            def klines(
-                self, sym: str, *, period: str = "day", count: int = 320, adjust: str = "qfq"
+        class _Router:
+            def kline(
+                self,
+                sym: str,
+                *,
+                period: str = "day",
+                count: int = 320,
+                start: int = 0,
+                order: Any = None,
+                adjust: str = "",
+                default_empty_ok: bool = False,
             ) -> list:
-                seen.update({"adjust": adjust, "period": period, "count": count})
+                seen.append(adjust)
                 return []
 
-        monkeypatch.setattr(web_mod, "WebQuoteClient", _Web)
         api = UnifiedQuoteAPI()
+        monkeypatch.setattr(api, "_get_router", lambda: _Router())
         assert api.bars("sh600519", route="web") == []
-        assert seen["adjust"] == ""
+        assert seen[-1] == ""  # 默认 → 原始价，与 tdx/local 口径一致
         api.bars("sh600519", route="web", adjust="hfq")
-        assert seen["adjust"] == "hfq"
+        assert seen[-1] == "hfq"  # 显式复权原样透传
 
     def test_web_skip_warning_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         api = UnifiedQuoteAPI()

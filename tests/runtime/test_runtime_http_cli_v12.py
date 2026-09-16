@@ -91,7 +91,10 @@ def test_runtime_http_validation_and_native_failures_use_envelopes() -> None:
         def bars(self, *args, **kwargs):
             raise ValidationError("bad bars", context={"provider": "tdx", "secret": "x"})
 
-    client = TestClient(create_runtime_app(FailingClient()))
+    # 未预期异常由 ``@app.exception_handler(Exception)`` 转 500 信封，而
+    # Starlette 的 ServerErrorMiddleware 在生成响应后**仍会重抛**，因此
+    # TestClient 必须关掉 raise_server_exceptions 才能观察到 500 信封。
+    client = TestClient(create_runtime_app(FailingClient()), raise_server_exceptions=False)
 
     invalid = client.get("/v13/bars/sh600519?count=0")
     assert invalid.status_code == 422

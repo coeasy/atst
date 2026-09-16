@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import importlib
 from collections.abc import Callable
 from typing import Any
 
 import pytest
 
 import tstdx.transport._pool_provenance_hardening as hardening
-import tstdx.transport.speedtest as speedtest_module
 from tstdx.errors import ConfigError
 from tstdx.protocol.commands import Family
 from tstdx.transport.async_ import AsyncConnectionPool
@@ -14,9 +14,16 @@ from tstdx.transport.hosts import HostEntry
 from tstdx.transport.pool import ConnectionPool
 from tstdx.transport.speedtest import ProbeResult
 
+# ``tstdx.transport.speedtest`` is shadowed by a same-named re-exported function
+# in ``tstdx.transport.__init__``, so ``import ... as`` would bind the function.
+# Provenance patches must target the real submodule object.
+speedtest_module = importlib.import_module("tstdx.transport.speedtest")
+
 
 @pytest.mark.asyncio
-async def test_async_update_hosts_publishes_fresh_generation_with_old_identity() -> None:
+async def test_async_update_hosts_publishes_fresh_generation_with_old_identity(
+    seed_pool_health,
+) -> None:
     current = HostEntry(
         host="1.2.3.4",
         family=Family.STANDARD,
@@ -31,6 +38,16 @@ async def test_async_update_hosts_publishes_fresh_generation_with_old_identity()
     )
     pool = AsyncConnectionPool([current], slots_per_host=1, heartbeat_interval=0)
     old_slot = pool._slots[0]
+    # A directly constructed pool owns a fresh runtime-health generation; the
+    # live request health under test is re-established on the pool's own host.
+    seed_pool_health(
+        pool,
+        live_rtt_ms=40.0,
+        failures=3,
+        last_error="current failure",
+        circuit="degraded",
+        consec_weighted=3.0,
+    )
 
     published = (
         await pool.update_hosts(

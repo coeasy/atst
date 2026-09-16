@@ -13,11 +13,11 @@ from unittest.mock import patch
 import pytest
 
 from tstdx.client import _row_to_bar, _row_to_quote, period_to_category, split_symbol
-from tstdx.config.schema import Config, SourcesConfig
+from tstdx.config.schema import Config
 from tstdx.domain.models import Bar, Quote
 from tstdx.errors import DependencyMissingError, ValidationError
 from tstdx.output import Sink, _normalize
-from tstdx.sources import DataSourceRouter, SourceUnavailable
+from tstdx.sources import DataSourceRouter
 
 GOLDEN = Path(__file__).resolve().parents[2] / "tests" / "golden"
 
@@ -101,20 +101,19 @@ def test_client_bar_conversion_from_golden():
 
 
 # --------------------------------------------------------------------------- #
-# DataSourceRouter —— cache 级离线降级
+# DataSourceRouter —— replay / synthetic 显式模式（v13 §5.2，无降级链）
 # --------------------------------------------------------------------------- #
-def _router_cache():
-    cfg = SourcesConfig(
-        order=["cache", "synthetic"],
-        enabled={"cache": True, "synthetic": True, "tdx": False, "web": False, "reader": False},
-    )
-    return DataSourceRouter(config=cfg, golden_root=GOLDEN)
+def _router_replay():
+    """显式授权的 golden replay 路由（legacy ``cache`` 选择器）。"""
+    return DataSourceRouter(order=["cache"], allow_replay=True, golden_root=GOLDEN)
 
 
 def test_router_kline_cache():
-    r = _router_cache()
+    r = _router_replay()
     bars = r.kline("600000", period="day", count=5, as_format="dict")
-    assert r.last_source == "cache"
+    # replay 仍由 tdx Provider 承载（vipdoc/quotation 之外的 replay 模式），
+    # 不再有 "cache" 这一虚构数据源。
+    assert r.last_source == "tdx"
     assert len(bars) == 5
     # cache 源按设计取「最新」实采样本，收盘价随补录漂移——本测试验证
     # 路由与结构；数值正确性由 test_client_bar_conversion_from_golden
@@ -123,43 +122,44 @@ def test_router_kline_cache():
 
 
 def test_router_quotes_cache():
-    r = _router_cache()
+    r = _router_replay()
     qs = r.quotes(["600519", "000002"], as_format="dict")
-    assert r.last_source == "cache"
+    assert r.last_source == "tdx"
     codes = {q["code"] for q in qs}
     assert "600519" in codes and "000002" in codes
 
 
-def test_router_fallback_to_synthetic():
-    # 不存在的样本 → cache 失败 → synthetic 兜底
-    cfg = SourcesConfig(
-        order=["cache", "synthetic"],
-        enabled={"cache": True, "synthetic": True, "tdx": False, "web": False, "reader": False},
-    )
-    r = DataSourceRouter(config=cfg, golden_root=GOLDEN)
+def test_router_synthetic_is_explicit_not_a_fallback():
+    """synthetic 必须显式授权 + 显式选择，不再作为 cache 的兜底分支。"""
+    r = DataSourceRouter(order=["synthetic"], allow_synthetic=True)
     bars = r.kline("999999", period="day", count=3, as_format="dict")
-    assert r.last_source == "synthetic"
+    assert r.last_source == "tdx"
     # Bar.to_dict() 把 extra 内容合并进顶层 dict，没有 "extra" 这个 key
     assert bars[0]["synthetic"] is True
+    assert r.last_errors == []  # 没有「前一级失败」——它根本不是兜底
 
 
-def test_router_all_unavailable_raises():
-    cfg = SourcesConfig(
-        order=["tdx", "web"],
-        enabled={"tdx": True, "web": True, "cache": False, "synthetic": False, "reader": False},
-    )
-    r = DataSourceRouter(config=cfg)  # 无 golden，cache/reader 关闭，tdx/web 在线失败
-    from tstdx.errors import AllSourcesExhausted
+def test_router_single_provider_failure_raises_source_unavailable():
+    """多源 ``order`` 已被禁止；单 Provider 失败即 SourceUnavailable，不换源。"""
+    from tstdx.errors import SourceUnavailable as SU
 
-    # 确定性失败：直接让 tdx / web 两个源都抛 SourceUnavailable，
-    # 不依赖真实网络（沙箱网络被阻断时行为不可控）。
-    with patch("tstdx.client.TdxClient") as MockTdx, patch("tstdx.web.WebQuoteClient") as MockWeb:
-        MockTdx.return_value.__enter__.return_value.bars.side_effect = SourceUnavailable("tdx down")
-        MockWeb.return_value.klines.side_effect = SourceUnavailable("web down")
-        with pytest.raises(AllSourcesExhausted):
+    r = DataSourceRouter(order=["tdx"])
+    # 确定性失败：直接让 tdx 源抛 SourceUnavailable，不依赖真实网络。
+    with patch("tstdx.client.TdxClient") as MockTdx:
+        MockTdx.return_value.__enter__.return_value.bars.side_effect = SU("tdx down")
+        with pytest.raises(SU):
             r.kline("600000", period="day", count=5)
     assert r.last_source is None
-    assert {s for s, _ in r.last_errors} == {"tdx", "web"}
+    assert {s for s, _ in r.last_errors} == {"tdx"}
+
+
+def test_router_multi_order_is_rejected_before_any_request():
+    """编码跨 Provider 兜底语义的多源 ``order`` 直接拒绝。"""
+    from tstdx.errors import ValidationError
+
+    r = DataSourceRouter(order=["tdx", "web"])
+    with pytest.raises(ValidationError):
+        r.kline("600000", period="day", count=5)
 
 
 # --------------------------------------------------------------------------- #

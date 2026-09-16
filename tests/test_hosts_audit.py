@@ -37,6 +37,12 @@ def _import_audit_hosts():
 
 audit_hosts_mod = _import_audit_hosts()
 
+#: ``probe`` is dispatched from the implementation module
+#: (:mod:`tstdx.tools.host_audit`); ``scripts/audit_hosts.py`` only re-exports
+#: it. Patching the implementation module is what actually suppresses network
+#: I/O — patching the wrapper would silently be a no-op.
+from tstdx.tools import host_audit as host_audit_impl  # noqa: E402
+
 
 # --------------------------------------------------------------------------- #
 # CLI 子命令注册与参数解析
@@ -205,7 +211,7 @@ class TestLoadExternalHosts:
     def test_json_list_missing_host_field_raises(self, tmp_path: Path):
         p = tmp_path / "h.json"
         p.write_text(json.dumps([{"port": 7709}]), encoding="utf-8")
-        with pytest.raises(ValueError, match="缺字段"):
+        with pytest.raises(ValueError, match="缺少 host"):
             audit_hosts_mod.load_external_hosts(p)
 
     def test_json_dict_non_list_value_raises(self, tmp_path: Path):
@@ -224,7 +230,7 @@ class TestLoadExternalHosts:
         # dict 格式里字符串 host 项缺 ':' → 抛 ValueError
         p = tmp_path / "h.json"
         p.write_text(json.dumps({"quotation": ["badhost"]}), encoding="utf-8")
-        with pytest.raises(ValueError, match="格式错误"):
+        with pytest.raises(ValueError, match="host:port"):
             audit_hosts_mod.load_external_hosts(p)
 
     def test_file_not_found_raises(self, tmp_path: Path):
@@ -261,8 +267,8 @@ class TestAuditFamilyWithExternalHosts:
                 error="no network (unit test)",
             )
 
-        orig_probe = audit_hosts_mod.probe
-        audit_hosts_mod.probe = _fake_probe
+        orig_probe = host_audit_impl.probe
+        host_audit_impl.probe = _fake_probe
         try:
             audit = audit_hosts_mod.audit_family(
                 Family.STANDARD,
@@ -271,7 +277,7 @@ class TestAuditFamilyWithExternalHosts:
                 additional_hosts=[dup, dup, dup],
             )
         finally:
-            audit_hosts_mod.probe = orig_probe
+            host_audit_impl.probe = orig_probe
 
         # 去重：additional 里的重复条目只算一次
         # 总条数应等于内置池长度（additional 3 个重复被 seen_keys 过滤掉）
@@ -293,12 +299,12 @@ class TestAuditFamilyWithExternalHosts:
                 error="unit",
             )
 
-        orig_probe = audit_hosts_mod.probe
-        audit_hosts_mod.probe = _fake_probe
+        orig_probe = host_audit_impl.probe
+        host_audit_impl.probe = _fake_probe
         try:
             audit = audit_hosts_mod.audit_family(Family.STANDARD, timeout=0.1, progress=False)
         finally:
-            audit_hosts_mod.probe = orig_probe
+            host_audit_impl.probe = orig_probe
 
         assert audit.total == len(audit_hosts_mod.POOL_BY_FAMILY[Family.STANDARD])
         assert audit.family == Family.STANDARD

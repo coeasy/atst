@@ -174,20 +174,29 @@ def test_async_dropped_conn_does_not_poison_next_request():
 # --------------------------------------------------------------------------- #
 # C6：iter_frames —— write+drain 超时 / TdxError 弃连 / _closed 复查
 # --------------------------------------------------------------------------- #
-def test_async_iter_frames_reads_all_frames_no_drop():
-    async def main() -> tuple[list[bytes], object]:
+def test_async_iter_frames_drops_conn_when_caller_cap_reached():
+    """读满调用方上限 ≠ 服务端流已结束：socket 可能残留未读帧，必须弃连。
+
+    ``_async_pool_hardening`` 对齐了同步的 multiframe 截断安全契约：到达
+    ``max_frames`` 上限即弃连（且不计为主站失败），以免下一次请求读到本请求
+    的旧帧。
+    """
+
+    async def main() -> tuple[list[bytes], object, int]:
         with FakeTdxServer() as server:
             async with _make_pool(server) as pool:
                 frames = [
                     f.payload
                     async for f in pool.iter_frames(MULTI_CMD, multi_body(5, 4, 6), max_frames=4)
                 ]
-                return frames, pool._slots[0].conn
+                slot = pool._slots[0]
+                return frames, slot.conn, slot.host.failures
 
-    frames, slot_conn = asyncio.run(main())
+    frames, slot_conn, host_failures = asyncio.run(main())
     assert len(frames) == 4
     assert frames[0] == struct.pack("<H", 5) + multi_blob(5, 4)[:6]
-    assert slot_conn is not None  # 正常读满不弃连（连接归还槽位）
+    assert slot_conn is None, "到达上限后 socket 可能仍有未读帧，必须弃连"
+    assert host_failures == 0, "读满上限是干净结束，不得计入主站失败"
 
 
 def test_async_iter_frames_drops_conn_on_truncated_stream():

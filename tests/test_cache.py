@@ -1,7 +1,11 @@
 """SQLite K 线缓存测试（U4）。
 
-覆盖：merge/get/count 往返、按 datetime 去重（增量只落新根）、
-DataSourceRouter 读命中短路（命中时零网络）、写穿透合并、异常静默降级。
+覆盖：``KlineCache`` 存储引擎的 merge/get/count 往返、按 datetime 去重（增量
+只落新根）、异常静默降级；以及 **v13 §5.5 契约**——``DataSourceRouter`` 内的
+legacy cache 读写路径已退役（存储引擎保留，但 router 不再隐式读写）。
+
+审计结论：legacy cache 的 key 不匹配完整 ``QueryFingerprint``，且行内没有
+Provider provenance；由 router 隐式读写会让缓存命中改变数据来源。
 """
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ import pytest
 
 from tstdx.cache import KlineCache
 from tstdx.config.schema import SourcesConfig
+from tstdx.errors import SourceUnavailable
 from tstdx.sources import DataSourceRouter
 
 
@@ -100,46 +105,88 @@ class TestKlineCache:
 
 
 @pytest.mark.unit
-class TestRouterCacheIntegration:
-    def _router(self, tmp_path) -> DataSourceRouter:
-        cache = KlineCache(str(tmp_path / "k.sqlite3"))
-        return DataSourceRouter(
+class TestRouterLegacyCacheIsRetired:
+    """v13 §5.5：``DataSourceRouter`` 不再有 cache 读/写路径。
+
+    存储引擎 :class:`~tstdx.cache.KlineCache` 仍然可用（上面的 TestKlineCache），
+    但注入给 router 的 legacy cache 只是**构造兼容参数**，不参与任何请求。
+    """
+
+    def _cache(self, tmp_path) -> KlineCache:
+        return KlineCache(str(tmp_path / "k.sqlite3"))
+
+    def test_router_never_reads_injected_kline_cache(self, tmp_path, monkeypatch):
+        """即使缓存里有数据，router 也不会读它（命中不再短路）。"""
+        cache = self._cache(tmp_path)
+        cache.merge("sh600519", "day", [_bar(f"2026-09-{i:02d} 15:00", float(i)) for i in range(1, 5)])
+        reads: list = []
+        original_get = cache.get
+        monkeypatch.setattr(
+            cache, "get", lambda *a, **k: reads.append(a) or original_get(*a, **k)
+        )
+
+        router = DataSourceRouter(
             config=SourcesConfig(order=["tdx"]),
             kline_cache=cache,
-            tdx_hosts=["127.0.0.1:1"],  # 必然连不上：命中缓存时不会触达
+            tdx_hosts=["127.0.0.1:1"],  # 必然连不上：证明没有缓存短路
         )
+        try:
+            with pytest.raises(SourceUnavailable):
+                router.kline("sh600519", period="day", count=3)
+            assert reads == []
+            assert router.last_source != "cache"
+        finally:
+            router.close()
+            cache.close()
 
-    def test_cache_hit_avoids_source(self, tmp_path):
-        """缓存命中直接返回，不再触达 TDX（不可达主站也不报错）。"""
-        router = self._router(tmp_path)
-        bars = [_bar(f"2026-09-{i:02d} 15:00", float(i)) for i in range(1, 5)]
-        router.kline_cache.merge("sh600519", "day", bars)
-        out = router.kline("sh600519", period="day", count=3)
-        assert len(out) == 3
-        assert out[-1]["datetime"] == "2026-09-04 15:00"
-        assert router.last_source == "cache"
+    def test_router_never_writes_injected_kline_cache(self, tmp_path, monkeypatch):
+        """成功取数也不回写 legacy cache（无 provenance，写穿透已退役）。"""
+        cache = self._cache(tmp_path)
+        merges: list = []
+        monkeypatch.setattr(cache, "merge", lambda *a, **k: merges.append(a))
 
-    def test_miss_falls_back_and_writes(self, tmp_path):
-        """缓存未命中 → 走真实源；源失败时正常抛 AllSourcesExhausted。"""
-        router = self._router(tmp_path)
-        with pytest.raises(Exception) as exc:
-            router.kline("sh600519", period="day", count=5)
-        assert "全部 K 线源失败" in str(exc.value) or "TDX" in str(exc.value)
-
-    def test_write_through_populates_cache(self, tmp_path):
-        """写穿透：源返回后写入缓存，二次调用命中。"""
-        cache = KlineCache(str(tmp_path / "k.sqlite3"))
         router = DataSourceRouter(
-            config=SourcesConfig(
-                order=["synthetic"],
-                enabled={"synthetic": True},
-            ),
+            order=["synthetic"],
             kline_cache=cache,
+            allow_synthetic=True,
         )
-        out = router.kline("sh600519", period="day", count=5)
-        assert len(out) == 5
-        assert cache.count("sh600519", "day") == 5
-        # 二次调用应命中缓存（last_source == cache）
-        out2 = router.kline("sh600519", period="day", count=5)
-        assert len(out2) == 5
-        assert router.last_source == "cache"
+        try:
+            out = router.kline("sh600519", period="day", count=5)
+            assert len(out) == 5
+            assert router.last_source == "tdx"
+            assert merges == []
+            assert cache.count("sh600519", "day") == 0
+        finally:
+            router.close()
+            cache.close()
+
+    def test_router_quotes_does_not_consult_injected_quote_cache(
+        self, tmp_path, monkeypatch
+    ) -> None:  # noqa: ANN001
+        """``quote_cache`` 同样是构造兼容参数，quotes 不再读写它。"""
+
+        class _QuoteCache:
+            def __init__(self) -> None:
+                self.get_calls = 0
+                self.put_calls = 0
+
+            def get(self, symbols):  # noqa: ANN001, ANN201
+                self.get_calls += 1
+                return [{"code": "600519", "price": 999.0}]
+
+            def put(self, symbols, rows) -> None:  # noqa: ANN001
+                self.put_calls += 1
+
+        quote_cache = _QuoteCache()
+        router = DataSourceRouter(
+            config=SourcesConfig(order=["tdx"]),
+            quote_cache=quote_cache,
+            tdx_hosts=["127.0.0.1:1"],
+        )
+        try:
+            with pytest.raises(SourceUnavailable):
+                router.quotes(["sh600519"])
+            assert quote_cache.get_calls == 0
+            assert quote_cache.put_calls == 0
+        finally:
+            router.close()

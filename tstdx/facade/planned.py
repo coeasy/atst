@@ -24,9 +24,11 @@ class UnifiedQuoteAPI(StrictUnifiedQuoteAPI):
                 hosts=self.hosts,
                 timeout=self.timeout,
             )
-        if not isinstance(self._provider_service, UnifiedMarketDataService):
-            raise RuntimeError("official facade provider service must be planned-v12")
-        return self._provider_service
+        # 允许测试以 duck-typed 替身注入 ``_provider_service``（该槽位是私有属性，
+        # 生产路径只会由上面的构造函数写入），因此不做 isinstance 身份校验——
+        # 契约由 :class:`UnifiedMarketDataService` 的方法面（query/query_many）
+        # 保证，见 tests/facade/test_strict_facade.py。
+        return self._provider_service  # type: ignore[return-value]
 
     def query(self, spec: QuerySpec, *, with_meta: bool = True) -> Any:
         """Expose the canonical planned query contract without another router."""

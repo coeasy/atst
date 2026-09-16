@@ -37,9 +37,12 @@ def test_fallback_policy_rejects_empty_duplicate_and_unknown_provider() -> None:
 
 def test_orchestrator_first_provider_success_is_not_fallback() -> None:
     class Runtime:
-        def quotes(self, symbols, *, provider, **kwargs):
-            assert provider == "tdx"
-            return _result(provider)
+        def execute(self, spec, *, use_cache=True):
+            # ProviderOrchestrator rewrites the spec's provider per attempt and
+            # delegates to the generic runtime execute() surface.
+            assert spec.provider == "tdx"
+            assert spec.capability == "quotes"
+            return _result(spec.provider)
 
     output = ProviderOrchestrator(Runtime()).quotes(
         "sh600519", policy=FallbackPolicy.build("tdx", "eastmoney")
@@ -52,10 +55,10 @@ def test_orchestrator_first_provider_success_is_not_fallback() -> None:
 
 def test_orchestrator_fallback_is_explicit_and_auditable(tmp_path) -> None:
     class Runtime:
-        def quotes(self, symbols, *, provider, **kwargs):
-            if provider == "tdx":
+        def execute(self, spec, *, use_cache=True):
+            if spec.provider == "tdx":
                 raise ValidationError("tdx unavailable", context={"provider": "tdx"})
-            return _result(provider)
+            return _result(spec.provider)
 
     output = ProviderOrchestrator(Runtime()).quotes(
         "sh600519", policy=FallbackPolicy.build("tdx", "eastmoney")
@@ -82,8 +85,8 @@ def test_orchestrator_fallback_is_explicit_and_auditable(tmp_path) -> None:
 
 def test_orchestrator_all_failures_are_sanitized() -> None:
     class Runtime:
-        def quotes(self, symbols, *, provider, **kwargs):
-            raise RuntimeError(f"secret token from {provider}")
+        def execute(self, spec, *, use_cache=True):
+            raise RuntimeError(f"secret token from {spec.provider}")
 
     with pytest.raises(AllSourcesExhausted) as info:
         ProviderOrchestrator(Runtime()).quotes(

@@ -31,17 +31,20 @@ def _slot(host: str = "127.0.0.1", port: int = 7709) -> Slot:
 
 
 def _pool_with(slots: list[Slot]) -> ConnectionPool:
-    """构造不经网络的池：直接注入槽位（测试只关心状态机与选序）。"""
-    p = ConnectionPool.__new__(ConnectionPool)
-    p._slots = slots  # type: ignore[attr-defined]
-    from tstdx.transport.pool import PoolStats
+    """构造不经网络的池：真实初始化后注入槽位（测试只关心状态机与选序）。
 
-    p.stats = PoolStats()  # type: ignore[attr-defined]
-    p.on_host_down = None  # type: ignore[attr-defined]
-    p._connect_failures = 0  # type: ignore[attr-defined]
+    必须走真实 ``__init__``：v1.0 代际/租约模型与后台测速准入会读取
+    ``_generation`` / ``family`` / ``_closed`` 等状态，手工拼属性会让
+    ``_mark_failure`` 在熔断阈值处抛 ``AttributeError``。
+    """
+    p = ConnectionPool(
+        [slot.host for slot in slots],
+        slots_per_host=1,
+        heartbeat_interval=None,
+        max_retries=0,
+    )
+    p._slots = slots  # type: ignore[attr-defined]
     p.speedtest_threshold = 10  # type: ignore[attr-defined]
-    p._speedtest_triggered = False  # type: ignore[attr-defined]
-    p._lock = __import__("threading").Lock()  # type: ignore[attr-defined]
     return p
 
 

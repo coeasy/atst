@@ -1,4 +1,9 @@
-"""C5 · QuoteCache TTL 缓存与 router 读穿接线测试。"""
+"""C5 · QuoteCache TTL 缓存引擎测试 + v13 §5.5 退役契约。
+
+``QuoteCache`` 作为 TTL 存储引擎保留可用；但 ``DataSourceRouter`` 不再持有
+quote cache 读穿/回写路径（legacy TTL cache 无 Provider provenance，命中会
+改变数据来源）。见 ``docs/REFACTOR_PLAN_v13_CLEAN_BREAK.md`` §5.5。
+"""
 
 from __future__ import annotations
 
@@ -10,43 +15,30 @@ from tstdx.cache import QuoteCache
 from tstdx.sources import DataSourceRouter
 
 
-class _FakeQuoteSource:
-    """计数 fake：任何 tdx/web 源命中都走这里。"""
+class _FakeService:
+    """计数服务替身：所有 Provider 请求都落到这里。"""
 
     def __init__(self) -> None:
         self.calls = 0
 
-    def quotes(self, symbols, *, as_format: str = "dict"):  # noqa: ARG002
+    def quotes(self, symbols, *, provider=None, source=None, with_meta=False):  # noqa: ANN001
         self.calls += 1
         return [
             {"code": s, "price": 10.0 + i, "volume": 100, "amount": 1000.0}
             for i, s in enumerate(symbols)
         ]
 
+    def bars(self, symbol, *, period="day", count=320, start=0, adjust="", provider=None):  # noqa: ANN001
+        return []
+
+    def close(self) -> None:
+        pass
+
 
 @pytest.fixture()
-def router_with_source(monkeypatch: pytest.MonkeyPatch):
-    fake = _FakeQuoteSource()
-
-    class _FakeWebClient:
-        def __init__(self, *a, **kw) -> None:
-            pass
-
-        def quotes(self, symbols):
-            return fake.quotes(symbols)
-
-        def close(self) -> None:
-            pass
-
-    import tstdx.sources as src_mod
-
-    monkeypatch.setattr(src_mod, "_active_sources_for_test", None, raising=False)
-    r = DataSourceRouter(order=["web"])
-    # monkeypatch WebQuoteClient 引用（函数内 from ..web import 延迟导入）
-    import tstdx.web as web_mod
-
-    monkeypatch.setattr(web_mod, "WebQuoteClient", _FakeWebClient, raising=False)
-    return r, fake
+def router_with_source() -> tuple[DataSourceRouter, _FakeService]:
+    fake = _FakeService()
+    return DataSourceRouter(service=fake), fake  # type: ignore[arg-type]
 
 
 def test_quote_cache_ttl_hit_and_miss() -> None:
@@ -65,15 +57,19 @@ def test_quote_cache_ttl_hit_and_miss() -> None:
     assert (c.hits, c.misses) == (2, 2)
 
 
-def test_router_quotes_readthrough(router_with_source) -> None:
+def test_router_does_not_read_or_write_quote_cache(router_with_source) -> None:
+    """v13 §5.5：router 不再读穿/回写 quote cache，每次请求都直达 Provider。"""
     r, fake = router_with_source
     cache = QuoteCache(ttl=5.0)
     r.quote_cache = cache
-    a = r.quotes(["sh600000"])
-    b = r.quotes(["sh600000"])
-    assert fake.calls == 1  # 第二次命中缓存，源不再被调用
-    assert a == b
-    assert r.last_source == "quote_cache"
-    cache.clear()
-    r.quotes(["sh600000"])
-    assert fake.calls == 2
+    try:
+        a = r.quotes(["sh600000"])
+        b = r.quotes(["sh600000"])
+
+        assert fake.calls == 2  # 没有缓存短路：两次都调用 Provider
+        assert a == b
+        assert r.last_source == "tdx"
+        assert (cache.hits, cache.misses) == (0, 0)  # 缓存引擎完全未被触碰
+    finally:
+        cache.clear()
+        r.close()

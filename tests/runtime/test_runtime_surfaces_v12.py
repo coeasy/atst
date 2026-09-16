@@ -9,11 +9,23 @@ from tstdx.integration.runtime_tasks import RuntimeTaskStore
 from tstdx.integration.runtime_ws import RuntimeJsonRpcHandler
 
 
-class _FailingRuntime:
-    class _Planner:
-        default_provider = "tdx"
+class _FailingPlanner:
+    default_provider = "tdx"
 
-    planner = _Planner()
+
+class _FailingRuntimeKernel:
+    planner = _FailingPlanner()
+
+
+class _FailingClient:
+    """Client-shaped double.
+
+    ``RuntimeJsonRpcHandler`` (post v13 tier-a refactor) binds a ``Client``, not
+    a raw runtime, so the failure surface lives on the client methods while the
+    health/capabilities probes read ``client.runtime.planner``.
+    """
+
+    runtime = _FailingRuntimeKernel()
 
     def quotes(self, *args, **kwargs):
         raise RuntimeError("native secret")
@@ -21,9 +33,12 @@ class _FailingRuntime:
     def bars(self, *args, **kwargs):
         raise ValidationError("bad bars", context={"provider": "tdx", "secret": "x"})
 
+    def capabilities(self):
+        return ()
+
 
 def test_runtime_ws_native_error_is_safe_envelope() -> None:
-    handler = RuntimeJsonRpcHandler(runtime=_FailingRuntime())
+    handler = RuntimeJsonRpcHandler(client=_FailingClient())
     response = json.loads(
         handler.handle_message(
             json.dumps(
@@ -42,7 +57,7 @@ def test_runtime_ws_native_error_is_safe_envelope() -> None:
 
 
 def test_runtime_ws_notification_never_replies_on_failure() -> None:
-    handler = RuntimeJsonRpcHandler(runtime=_FailingRuntime())
+    handler = RuntimeJsonRpcHandler(client=_FailingClient())
     assert (
         handler.handle_message(
             json.dumps(

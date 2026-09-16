@@ -21,7 +21,7 @@ import tstdx.client as client_mod  # noqa: E402
 from tstdx.client import TdxClient, _quote_body  # noqa: E402
 from tstdx.codec.framing import ResponseFrame  # noqa: E402
 from tstdx.codec.primitive import encode_leb128  # noqa: E402
-from tstdx.errors import ConnectionFailed, SymbolError  # noqa: E402
+from tstdx.errors import ConnectionFailed, NotImplementedFeature, SymbolError  # noqa: E402
 
 _MAGIC = 0x0074CBB1
 
@@ -301,13 +301,15 @@ class TestExportSecurityListTruncation:
 
 
 class TestQuoteBodyGuard:
-    def test_market_inverted_semantics_unchanged(self) -> None:
-        """0/1 反转语义保持（深→1 沪→0）。"""
-        assert _quote_body("600519", 1) == bytes([0x01, 0]) + b"600519"
-        assert _quote_body("000651", 0) == bytes([0x01, 1]) + b"000651"
+    def test_inferred_quote_body_fails_closed_for_every_market(self) -> None:
+        """``ac5e9cd`` 起：EXTENDED/GOODS/MAC 报价体不再发送推断布局。
 
-    def test_out_of_range_market_clamped(self) -> None:
-        """market>1 不再产出 1-market 负数字节（clamp 到 0/1）。"""
-        assert _quote_body("600519", 5) == bytes([0x01, 0]) + b"600519"
-        assert _quote_body("600519", 255) == bytes([0x01, 0]) + b"600519"
-        assert _quote_body("600519", -3) == bytes([0x01, 1]) + b"600519"
+        旧契约（0/1 反转语义 + 越界 clamp）随之废止——现在无论 ``market`` 取
+        何值，都在触达传输层之前 fail-closed。反转语义只保留在**实时行情**
+        （0x0530）路径，见 ``tests/protocol/test_market_identity_ssot.py``。
+        """
+        for market in (0, 1, 5, 255, -3):
+            with pytest.raises(NotImplementedFeature) as exc_info:
+                _quote_body("600519", market)
+
+            assert exc_info.value.context["commands"] == ["0x0105", "0x0203", "0x1301"]

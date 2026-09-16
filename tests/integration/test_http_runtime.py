@@ -6,7 +6,6 @@ import pytest
 
 from tstdx.errors import ValidationError
 from tstdx.integration.http_runtime import ProviderHttpClient
-from tstdx.integration.tasks import TaskStore
 
 
 class FakeQuotation:
@@ -75,11 +74,40 @@ class FakeService:
         self.closed = True
 
 
-def test_http_server_globals_are_injected_with_v12_runtime() -> None:
-    import tstdx.integration.http_server as http_server
+def test_canonical_runtime_http_injects_client_and_serves_health() -> None:
+    """v15 统一后 HTTP 面由 ``runtime_http`` 构造注入 Client（废除 http_server 全局）。"""
+    from fastapi.testclient import TestClient
 
-    assert http_server._LazyClient is ProviderHttpClient
-    assert http_server.TaskStore is TaskStore
+    from tstdx.integration.runtime_http import create_runtime_app
+
+    class Planner:
+        default_provider = "tdx"
+
+    class Executor:
+        _bindings = {("tdx", "quotation", "quotes"): object()}
+
+    class Runtime:
+        planner = Planner()
+        executor = Executor()
+
+    class InjectedClient:
+        runtime = Runtime()
+
+        @staticmethod
+        def capabilities() -> tuple[str, ...]:
+            return ("quotes", "bars")
+
+    app = create_runtime_app(InjectedClient())
+    with TestClient(app) as http:
+        body = http.get("/v13/runtime/health").json()
+
+    assert body == {
+        "status": "ok",
+        "api": "v13",
+        "default_provider": "tdx",
+        "direct_bindings": 1,
+        "migrated_capabilities": 2,
+    }
 
 
 def test_snapshot_batch_is_normalized_to_single_symbol_tdx_calls() -> None:

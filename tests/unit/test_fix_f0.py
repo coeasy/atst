@@ -205,11 +205,13 @@ def test_load_config_numeric_env_no_crash(monkeypatch: pytest.MonkeyPatch) -> No
     assert cfg.cache.ttl == 0
 
 
-def test_unknown_env_warns_not_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unknown_env_section_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """未知段名的 TSTDX_* 环境变量 fail-closed，不静默忽略。"""
+    from tstdx.errors import ConfigError
+
     monkeypatch.setenv("TSTDX_LOG_LEVEL_NOT_A_SECTION", "debug")
-    with pytest.warns(RuntimeWarning):
-        out = config_from_env(dict(__import__("os").environ))
-    assert "log" not in out  # 被忽略而非崩溃
+    with pytest.raises(ConfigError, match="无法识别环境变量"):
+        config_from_env(dict(__import__("os").environ))
 
 
 def test_rate_limit_env_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:

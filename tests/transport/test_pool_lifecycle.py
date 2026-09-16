@@ -65,15 +65,20 @@ def test_update_hosts_retires_active_generation_without_closing_its_lease(monkey
     assert _BlockingConn.started.wait(timeout=2)
 
     fresh = HostEntry("127.0.0.1", 7709, rtt_ms=5.0)
-    pool.update_hosts([fresh])
-    assert pool._slots[0].host is fresh
+    published = pool.update_hosts([fresh])[0]
+    # Publication always mints a fresh HostEntry; the caller's observed entry is
+    # never rebound as the live generation host.
+    assert published is not fresh
+    assert pool._slots[0].host is published
     assert pool._slots[0].conn is None
 
     _BlockingConn.gate.set()
     worker.join(timeout=3)
     assert "error" not in outcome
+    assert published.rtt_ms == 5.0
+    assert published.live_rtt_ms is None, "旧 generation 的成功不得污染新 live health"
     assert fresh.rtt_ms == 5.0
-    assert fresh.live_rtt_ms is None, "旧 generation 的成功不得污染新 live health"
+    assert fresh.live_rtt_ms is None
     pool.close()
 
 
@@ -100,30 +105,63 @@ def test_half_open_allows_exactly_one_probe_under_concurrency():
     pool.close()
 
 
-def test_background_speedtest_cannot_overwrite_live_health(monkeypatch):
-    host = HostEntry("127.0.0.1", 7709, rtt_ms=80.0, live_rtt_ms=12.0)
+def test_background_speedtest_cannot_overwrite_live_health(
+    monkeypatch, seed_pool_health
+):
+    host = HostEntry("127.0.0.1", 7709, rtt_ms=80.0)
     pool = ConnectionPool([host], slots_per_host=1, heartbeat_interval=None, speedtest_threshold=1)
+    # The pool owns a fresh runtime-health generation, so the live request health
+    # under test is recorded on the pool's own host, as its request path would.
+    seed_pool_health(pool, live_rtt_ms=12.0)
+
     entered = threading.Event()
     release = threading.Event()
+    store_commits: list[object] = []
 
     def fake_speedtest(*_args, **_kwargs):
         entered.set()
         release.wait(timeout=3)
+        return []
+
+    class _RecordingStore:
+        def __init__(self, *_args, **_kwargs) -> None:
+            store_commits.append("constructed")
+
+        def update(self, entries) -> None:
+            store_commits.append(entries)
 
     speedtest_mod = importlib.import_module("tstdx.transport.speedtest")
-    monkeypatch.setattr(speedtest_mod, "speedtest_and_save", fake_speedtest)
+    hardening = importlib.import_module("tstdx.transport._pool_provenance_hardening")
+    monkeypatch.setattr(speedtest_mod, "speedtest", fake_speedtest)
+    monkeypatch.setattr(hardening, "RankingStore", _RecordingStore)
+
+    # Keep the real threaded interleaving, but retain the worker handle so the
+    # stale probe's completion is deterministic instead of timing-dependent.
+    original_thread = threading.Thread
+    workers: list[threading.Thread] = []
+
+    class _RecordingThread(original_thread):
+        def start(self) -> None:
+            workers.append(self)
+            super().start()
+
+    monkeypatch.setattr(hardening.threading, "Thread", _RecordingThread)
+
     slot = pool._slots[0]
     pool._mark_failure(slot, ConnectionFailed("trigger"))
     assert entered.wait(timeout=2)
+    assert len(workers) == 1
 
     new = HostEntry("127.0.0.1", 7709, rtt_ms=2.0)
-    pool.update_hosts([new])
+    published = pool.update_hosts([new])[0]
     release.set()
-    deadline = time.time() + 2
-    while time.time() < deadline and not pool._speedtest_triggered:
-        time.sleep(0.01)
+    workers[0].join(timeout=3)
 
-    assert new.live_rtt_ms == 12.0
-    assert new.rtt_ms == 2.0
-    assert new.score == 12.0 * 4, "真实健康排序应优先于测速排序，但不改写测速值"
+    assert published.live_rtt_ms == 12.0, "旧 generation 的探测不得改写新 live health"
+    assert published.rtt_ms == 2.0
+    assert published.score == 12.0 * 4, "真实健康排序应优先于测速排序，但不改写测速值"
+    assert store_commits == [], "过期 generation 不得提交探测观测"
+    # Publication never adopts the caller's observed entry as the live host.
+    assert published is not new
+    assert new.live_rtt_ms is None
     pool.close()

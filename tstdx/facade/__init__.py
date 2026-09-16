@@ -12,8 +12,13 @@
 
 当前提供：
 
-* :mod:`tstdx.facade.api`    —— 统一行情接口（:class:`UnifiedQuoteAPI`，
-  local/tdx/web 三通路自动路由；已弃用）
+* :mod:`tstdx.facade.planned` —— **官方**统一行情接口（:class:`UnifiedQuoteAPI`，
+  继承 :class:`tstdx.facade.strict.UnifiedQuoteAPI`，走 QueryPlan/SingleFlight，
+  Provider-bound 无跨 Provider 兜底）
+* :mod:`tstdx.facade.api`    —— 历史三通路实现（:class:`UnifiedQuoteAPI`，
+  仅以 ``LegacyUnifiedQuoteAPI`` 别名导出）
+* :mod:`tstdx.facade.strict_async` —— 官方异步门面
+  （:class:`AsyncUnifiedQuoteAPI`，``asyncio.to_thread`` 桥接 planned 门面）
 * :mod:`tstdx.facade.binary`  —— TDX 二进制协议门面（:class:`BinaryClient`）
 * :mod:`tstdx.facade.market`  —— 标准 / 扩展 / 期权市场门面
   （:class:`HqClient` / :class:`ExHqClient` / :class:`OptionClient`）
@@ -24,8 +29,10 @@
 不沿用任何第三方客户端的 API 约定，亦不复制任何第三方源码。
 """
 
-from .api import UnifiedQuoteAPI, quote_api
-from .async_api import AsyncUnifiedQuoteAPI
+from __future__ import annotations
+
+from ..planned_service import UnifiedMarketDataService, market_data
+from .api import UnifiedQuoteAPI as LegacyUnifiedQuoteAPI
 from .binary import TDX_CATEGORY_TO_PERIOD, BinaryClient, binary_client
 from .bridge import FREQUENCY_ALIASES, BridgeClient, bridge_client
 from .legacy_service_adapter import LegacyServiceAdapter
@@ -36,12 +43,17 @@ from .market import (
     OptionClient,
     market_client,
 )
+from .planned import UnifiedQuoteAPI, quote_api
 from .response import ApiResponse, err, ok, wrap
 from .runtime_adapter import RuntimeFacadeAdapter
+from .strict_async import AsyncUnifiedQuoteAPI
 
 __all__ = [
     "UnifiedQuoteAPI",
+    "LegacyUnifiedQuoteAPI",
     "AsyncUnifiedQuoteAPI",
+    "UnifiedMarketDataService",
+    "market_data",
     "quote_api",
     "BinaryClient",
     "binary_client",

@@ -26,7 +26,7 @@ from tstdx.client import (  # noqa: E402
 from tstdx.codec.framing import ResponseFrame  # noqa: E402
 from tstdx.codec.primitive import encode_leb128  # noqa: E402
 from tstdx.domain.symbol import to_tdx_market  # noqa: E402
-from tstdx.errors import TruncatedDataError  # noqa: E402
+from tstdx.errors import ParseError, TruncatedDataError  # noqa: E402
 
 _MAGIC = 0x0074CBB1
 
@@ -291,8 +291,13 @@ class TestBjMarketNumber:
 
         assert quote_request_market(Market.SZ) == 1
         assert quote_request_market(Market.SH) == 0
-        assert quote_request_market(Market.BJ) == 2  # 未定标，回声校验兜底
-        with pytest.raises(ValueError):
+        # BJ 身份已知但 0x0530 request byte 未定标 → fail-closed，不再回声兜底
+        # （ac5e9cd「fail closed on inferred extended request layouts」）。
+        with pytest.raises(ParseError) as exc_info:
+            quote_request_market(Market.BJ)
+        assert exc_info.value.context["market"] == 2
+        assert exc_info.value.context["verified_markets"] == [0, 1]
+        with pytest.raises(ParseError):
             quote_request_market(3)
 
     def test_infer_market_bj(self) -> None:
@@ -304,20 +309,17 @@ class TestBjMarketNumber:
         assert infer_market("600000") == Market.SH  # 沪不回归
         assert infer_market("000651") == Market.SZ  # 深不回归
 
-    def test_bj_body_uses_market_2(self) -> None:
-        """bars 请求体 market 字段对 bj 标的写 2。"""
-        pool = _PagePool(pages={0: 3})
+    def test_bj_symbol_bars_fails_closed_before_any_request(self) -> None:
+        """bj 标的在发出任何请求前 fail-closed——既不写 2，也不静默夹取为 0/1。"""
+        pool = _BodyCapture()
         client = TdxClient(pool=pool)  # type: ignore[arg-type]
-        client.bars("bj430047", period="day", count=3)
-        body = None
-        # 从 _PagePool 无法取 body；改用 _BodyCapturePool 语义在此内联
-        pool2 = _BodyCapture()
-        client2 = TdxClient(pool=pool2)  # type: ignore[arg-type]
-        client2.bars("bj430047", period="day", count=3)
-        body = pool2.last_body
-        assert body is not None
-        (mkt,) = struct.unpack_from("<H", body, 0)
-        assert mkt == 2
+
+        with pytest.raises(ParseError) as exc_info:
+            client.bars("bj430047", period="day", count=3)
+
+        assert exc_info.value.context["market"] == 2
+        assert exc_info.value.context["verified_markets"] == [0, 1]
+        assert pool.last_body is None  # 未发生任何传输 I/O
 
 
 class _BodyCapture:

@@ -8,7 +8,9 @@ from tstdx.transport.hosts import HostEntry
 from tstdx.transport.pool import ConnectionPool
 
 
-def test_update_hosts_publishes_fresh_generation_with_old_identity_and_new_latency() -> None:
+def test_update_hosts_publishes_fresh_generation_with_old_identity_and_new_latency(
+    seed_pool_health,
+) -> None:
     current = HostEntry(
         host="1.2.3.4",
         port=7709,
@@ -29,6 +31,21 @@ def test_update_hosts_publishes_fresh_generation_with_old_identity_and_new_laten
     )
     pool = ConnectionPool([current], slots_per_host=1, heartbeat_interval=0)
     old_slot = pool._slots[0]
+    # The constructed pool owns a fresh runtime-health generation, so live
+    # request health is re-established here exactly as the pool's own request
+    # path would record it.
+    seed_pool_health(
+        pool,
+        live_rtt_ms=40.0,
+        live_ok_at=122.0,
+        failures=4,
+        biz_failures=2,
+        last_ok=123.0,
+        last_error="ConnectionFailed: timeout",
+        circuit="open",
+        consec_weighted=8.0,
+        circuit_opened_at=456.0,
+    )
     observed = HostEntry(
         host="1.2.3.4",
         port=7709,
@@ -72,7 +89,9 @@ def test_update_hosts_publishes_fresh_generation_with_old_identity_and_new_laten
     assert current.live_rtt_ms == 40.0
 
 
-def test_update_hosts_canonicalizes_identity_before_generation_matching() -> None:
+def test_update_hosts_canonicalizes_identity_before_generation_matching(
+    seed_pool_health,
+) -> None:
     current = HostEntry(
         host="1.2.3.4",
         port=7709,
@@ -87,6 +106,14 @@ def test_update_hosts_canonicalizes_identity_before_generation_matching() -> Non
     )
     pool = ConnectionPool([current], slots_per_host=1, heartbeat_interval=0)
     old_slot = pool._slots[0]
+    seed_pool_health(
+        pool,
+        live_rtt_ms=9.0,
+        live_ok_at=10.0,
+        failures=2,
+        circuit="degraded",
+        consec_weighted=3.0,
+    )
 
     published = pool.update_hosts(
         [
@@ -112,7 +139,9 @@ def test_update_hosts_canonicalizes_identity_before_generation_matching() -> Non
     assert pool._slots[0].generation == 1
 
 
-def test_update_hosts_failed_probe_invalidates_probe_latency_but_preserves_live_health() -> None:
+def test_update_hosts_failed_probe_invalidates_probe_latency_but_preserves_live_health(
+    seed_pool_health,
+) -> None:
     current = HostEntry(
         host="1.2.3.4",
         family=Family.STANDARD,
@@ -125,6 +154,14 @@ def test_update_hosts_failed_probe_invalidates_probe_latency_but_preserves_live_
         last_error="request failed",
     )
     pool = ConnectionPool([current], slots_per_host=1, heartbeat_interval=0)
+    seed_pool_health(
+        pool,
+        live_rtt_ms=7.0,
+        live_ok_at=8.0,
+        failures=3,
+        circuit="degraded",
+        last_error="request failed",
+    )
     failed_probe = HostEntry(
         host="1.2.3.4",
         family=Family.STANDARD,
@@ -176,7 +213,9 @@ def test_update_hosts_failed_probe_without_live_health_demotes_stale_probe() -> 
     assert published.score == 1_000_000.0
 
 
-def test_update_hosts_half_open_token_is_not_carried_into_new_generation() -> None:
+def test_update_hosts_half_open_token_is_not_carried_into_new_generation(
+    seed_pool_health,
+) -> None:
     current = HostEntry(
         host="1.2.3.4",
         family=Family.STANDARD,
@@ -186,6 +225,12 @@ def test_update_hosts_half_open_token_is_not_carried_into_new_generation() -> No
         circuit_opened_at=1.0,
     )
     pool = ConnectionPool([current], slots_per_host=1, heartbeat_interval=0)
+    seed_pool_health(
+        pool,
+        circuit="half_open",
+        circuit_probe_inflight=True,
+        circuit_opened_at=1.0,
+    )
 
     published = pool.update_hosts(
         [HostEntry(host="1.2.3.4", family=Family.STANDARD, rtt_ms=2.0)]

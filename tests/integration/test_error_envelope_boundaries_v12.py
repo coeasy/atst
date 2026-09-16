@@ -6,8 +6,8 @@ from typing import Any
 
 import tstdx.cli as cli
 from tstdx.errors import SourceUnavailable
-from tstdx.integration.mcp_app import MCPServer
-from tstdx.integration.ws_app import JsonRpcHandler
+from tstdx.integration.mcp_server import MCPServer
+from tstdx.integration.runtime_ws import RuntimeJsonRpcHandler as JsonRpcHandler
 
 
 def _assert_fail_closed_envelope(data: dict[str, Any], *, code: str) -> None:
@@ -130,6 +130,6 @@ def test_ws_native_error_is_e9000_and_does_not_leak_details() -> None:
 
 
 def test_integration_package_exports_canonical_ws_handler() -> None:
-    from tstdx.integration.ws_app import JsonRpcHandler as CanonicalHandler
+    from tstdx.integration.runtime_ws import RuntimeJsonRpcHandler as CanonicalHandler
 
     assert JsonRpcHandler is CanonicalHandler

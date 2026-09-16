@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 
+from ..protocol.commands import Family
 from .runtime_commands import (
     _cmd_adjusted_bars,
     _cmd_all_market,
@@ -24,6 +25,8 @@ from .runtime_commands import (
     _cmd_fund,
     _cmd_goods,
     _cmd_hosts_audit,
+    _cmd_hosts_list,
+    _cmd_hosts_scan,
     _cmd_hot,
     _cmd_index,
     _cmd_list,
@@ -48,6 +51,17 @@ from .runtime_commands import (
 )
 
 __all__ = ["build_parser"]
+
+#: Canonical 5 protocol families the audit subcommand may target. Kept in sync
+#: with ``tstdx.tools.host_audit._FAMILIES`` without importing the audit stack
+#: at CLI parse time.
+_AUDIT_FAMILIES = (
+    Family.STANDARD,
+    Family.EXTENDED,
+    Family.MAC,
+    Family.GOODS,
+    Family.F10,
+)
 
 
 def _provider_args(parser: argparse.ArgumentParser, *, fallback: bool = False) -> None:
@@ -144,15 +158,38 @@ def build_parser() -> argparse.ArgumentParser:
     hosts_sub = hosts_p.add_subparsers(dest="hosts_command", required=True)
 
     audit_p = hosts_sub.add_parser("audit", help="5 族主站巡检")
-    audit_p.add_argument("--family", action="append", default=[])
+    audit_p.add_argument(
+        "--family",
+        action="append",
+        default=[],
+        choices=_AUDIT_FAMILIES,
+        help="要巡检的协议族；可多次指定；默认全部 5 族",
+    )
     audit_p.add_argument("--timeout", type=float, default=argparse.SUPPRESS)
     audit_p.add_argument("--samples", type=int, default=3)
-    audit_p.add_argument("--workers", type=int, default=4)
-    audit_p.add_argument("--report", default=None)
+    audit_p.add_argument("--workers", type=int, default=16)
+    audit_p.add_argument("--report", default="./host_audit_report.json")
     audit_p.add_argument("--markdown", default=None)
-    audit_p.add_argument("--ranking-file", default=None)
+    audit_p.add_argument("--ranking-file", default="~/.tstdx/server_ranking.json")
     audit_p.add_argument("--no-save-ranking", action="store_true")
+    # ``--strict`` / ``--quiet`` are also accepted at the ``hosts`` group level.
+    # Re-declaring them on ``audit`` keeps the natural ``hosts audit --strict``
+    # spelling working (argparse only parses group-level options before the
+    # subcommand token).
+    audit_p.add_argument("--strict", action="store_true")
+    audit_p.add_argument("--quiet", action="store_true")
     audit_p.set_defaults(func=_cmd_hosts_audit)
+
+    # ``hosts list`` / ``hosts scan`` are first-class operators of the same
+    # subcommand group; dropping them from the parser (while their handlers
+    # stayed in ``runtime_commands``) silently removed a supported surface.
+    list_p = hosts_sub.add_parser("list", help="查看当前生效的主站池")
+    list_p.add_argument("--timeout", type=float, default=argparse.SUPPRESS)
+    list_p.set_defaults(func=_cmd_hosts_list)
+
+    scan_p = hosts_sub.add_parser("scan", help="并发测速候选池并写入排名文件")
+    scan_p.add_argument("--timeout", type=float, default=argparse.SUPPRESS)
+    scan_p.set_defaults(func=_cmd_hosts_scan)
 
     st_p = sub.add_parser("server-test", help="主站连通性测速")
     st_p.add_argument("--timeout", type=float, default=5.0)

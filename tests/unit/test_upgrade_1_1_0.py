@@ -70,7 +70,15 @@ class TestWsStockChanges:
 # --------------------------------------------------------------------------- #
 # C2 MCP get_stock_changes / get_hot_rank
 # --------------------------------------------------------------------------- #
-class TestMcpNewTools:
+class TestMcpToolSurface:
+    """v13 clean break: MCP Tier-A exposes only canonical Client-runtime tools.
+
+    ``get_stock_changes`` / ``get_hot_rank`` were Tier-A MCP tools before the
+    clean break. They are now reachable through the Web Provider surface
+    (``tstdx.web`` / CLI ``tstdx changes`` / ``tstdx hot``) and through the WS
+    ``JsonRpcHandler`` method registry, but NOT through the MCP manifest.
+    """
+
     def _call(self, name: str, arguments: dict) -> dict:
         from tstdx.integration.mcp_server import MCPServer
 
@@ -84,31 +92,19 @@ class TestMcpNewTools:
             }
         )
 
-    def test_get_stock_changes(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from tstdx.web import facade as wf
+    def test_web_only_tools_are_absent_from_mcp_manifest(self) -> None:
+        from tstdx.integration.mcp_server import TOOLS
 
-        monkeypatch.setattr(
-            wf.WebQuoteSession,
-            "stock_changes",
-            staticmethod(
-                lambda types=(), page=1, size=50: [{"code": "600000", "change_name": "火箭发射"}]
-            ),
-        )
-        out = self._call("get_stock_changes", {"types": ["8201"], "size": 10})
-        assert "error" not in out
-        text = out["result"]["content"][0]["text"]
-        assert "火箭发射" in text
+        names = {tool.name for tool in TOOLS}
+        assert "get_stock_changes" not in names
+        assert "get_hot_rank" not in names
 
-    def test_get_hot_rank(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from tstdx.web import facade as wf
-
-        monkeypatch.setattr(
-            wf.WebQuoteSession,
-            "hot_rank",
-            staticmethod(lambda page=1, size=100: [{"rank": 1, "symbol": "sh600127"}]),
-        )
-        out = self._call("get_hot_rank", {"size": 5})
-        assert "sh600127" in out["result"]["content"][0]["text"]
+    def test_unknown_mcp_tool_reports_safe_error(self) -> None:
+        for name in ("get_stock_changes", "get_hot_rank"):
+            out = self._call(name, {"size": 5})
+            assert out["result"]["isError"] is True
+            text = out["result"]["content"][0]["text"]
+            assert name in text
 
 
 # --------------------------------------------------------------------------- #
@@ -304,6 +300,15 @@ class TestAsyncFacade:
 # D3 版本一致性
 # --------------------------------------------------------------------------- #
 def test_version_bumped() -> None:
+    """源码版本必须与打包元数据一致（发布身份由 CHANGELOG/docs/releases 锁定）。"""
+    import re
+    from pathlib import Path
+
     import tstdx
 
-    assert tstdx.__version__ == "1.4.0"
+    pyproject = (Path(__file__).resolve().parents[2] / "pyproject.toml").read_text(
+        encoding="utf-8"
+    )
+    declared = re.search(r'^version\s*=\s*"([^"]+)"\s*$', pyproject, flags=re.MULTILINE)
+    assert declared is not None
+    assert tstdx.__version__ == declared.group(1)

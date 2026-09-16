@@ -145,5 +145,10 @@ class RuntimeJsonRpcHandler:
     def _error(request_id: Any, rpc_code: int, message: str, exc: Exception | None = None) -> dict[str, Any]:
         error: dict[str, Any] = {"code": rpc_code, "message": message}
         if exc is not None:
-            error["data"] = to_error_envelope(exc).to_dict()
+            # Attach the envelope with the request identity so a WS client can
+            # correlate the failure the same way HTTP/MCP/CLI clients do.
+            error["data"] = to_error_envelope(
+                exc,
+                request_id=None if request_id is None else str(request_id),
+            ).to_dict()
         return {"jsonrpc": JSONRPC_VERSION, "id": request_id, "error": error}

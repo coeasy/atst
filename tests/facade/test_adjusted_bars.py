@@ -3,10 +3,15 @@
 
 """F1：``adjusted_bars`` 复权生产入口测试。
 
-覆盖 :meth:`tstdx.facade.api.UnifiedQuoteAPI.adjusted_bars`：
+覆盖 :meth:`tstdx.facade.api.UnifiedQuoteAPI.adjusted_bars`（历史三通路实现）：
 * 本地 vipdoc 日线 + 在线 0x000F 事件（fake tdx 注入）→ 复权 K 线；
 * ``events`` 参数支持 :class:`CapitalChange` 与 0x000F dict 行两种输入；
 * ``method="hfq"`` 事件日后价格按除权系数放大（对齐 adjust 引擎语义）。
+
+注：v13 clean-break 后 ``tstdx.facade`` 顶层 ``UnifiedQuoteAPI`` 官方导出为
+Provider-bound 的 :mod:`tstdx.facade.planned`；本文件测的是**历史实现**
+（``_tdx`` 注入 + ``vipdoc_root``/``factor_cache`` 构造参数），故显式从
+:mod:`tstdx.facade.api` 导入。
 """
 
 from __future__ import annotations
@@ -19,7 +24,7 @@ import pytest
 
 from tstdx.domain.finance import CapitalChangeCache
 from tstdx.domain.models import CapitalChange
-from tstdx.facade import UnifiedQuoteAPI
+from tstdx.facade.api import UnifiedQuoteAPI
 
 _CODE = "sh600519"
 _SCALE = 100

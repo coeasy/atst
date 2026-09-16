@@ -19,8 +19,9 @@ speedtest_module = importlib.import_module("tstdx.transport.speedtest")
 @pytest.mark.asyncio
 async def test_cancelled_async_bestip_cannot_commit_pool_or_persistent_ranking(
     monkeypatch: pytest.MonkeyPatch,
+    seed_pool_health,
 ) -> None:
-    original = HostEntry(
+    source = HostEntry(
         host="1.2.3.4",
         family=Family.STANDARD,
         rtt_ms=40.0,
@@ -29,12 +30,19 @@ async def test_cancelled_async_bestip_cannot_commit_pool_or_persistent_ranking(
         circuit="degraded",
     )
     pool = AsyncConnectionPool(
-        [original],
+        [source],
         family=Family.STANDARD,
         slots_per_host=1,
         heartbeat_interval=0,
     )
     client = AsyncTdxClient(pool=pool)
+    # A freshly constructed pool starts a new runtime-health lifecycle: it keeps
+    # selector identity/probe latency but never caller-owned health. Live health
+    # is therefore seeded on the pool-owned host after construction.
+    pooled = pool.hosts[0]
+    assert pooled is not source
+    assert pooled.failures == 0 and pooled.live_rtt_ms is None
+    seed_pool_health(pool, live_rtt_ms=7.0, failures=2, circuit="degraded")
     started = threading.Event()
     release = threading.Event()
     finished = threading.Event()
@@ -42,7 +50,7 @@ async def test_cancelled_async_bestip_cannot_commit_pool_or_persistent_ranking(
 
     def blocking_speedtest(hosts, **kwargs):
         del kwargs
-        assert hosts[0] is not original
+        assert hosts[0] is not pooled
         started.set()
         try:
             assert release.wait(timeout=5.0), "test did not release blocked speedtest"
@@ -93,12 +101,13 @@ async def test_cancelled_async_bestip_cannot_commit_pool_or_persistent_ranking(
         await asyncio.wait_for(wait_finished(), timeout=2.0)
 
         assert pool._generation == 0
-        assert pool.hosts == [original]
-        assert pool.hosts[0] is original
-        assert original.rtt_ms == 40.0
-        assert original.live_rtt_ms == 7.0
-        assert original.failures == 2
-        assert original.circuit == "degraded"
+        # No new generation was published: the pool still exposes the very same
+        # (pool-owned) host object, untouched by the detached cancelled probe.
+        assert pool.hosts[0] is pooled
+        assert pooled.rtt_ms == 40.0
+        assert pooled.live_rtt_ms == 7.0
+        assert pooled.failures == 2
+        assert pooled.circuit == "degraded"
         assert ranking_updates == []
     finally:
         release.set()

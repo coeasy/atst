@@ -41,10 +41,15 @@ def test_disabled_usage_feedback_remains_noop_before_payload_validation(
     tmp_path: Path,
 ) -> None:
     monkeypatch.delenv("TSTDX_FEEDBACK", raising=False)
-    reporter = FeedbackReporter(store_dir=tmp_path)
+    # ``tmp_path`` itself already exists (pytest pre-creates it), so the store
+    # must be a *child* that only ever appears if the disabled reporter actually
+    # writes. ``FeedbackReporter`` never creates ``store_dir`` at construction —
+    # only ``_send_file`` does — so a disabled report must leave it absent.
+    store = tmp_path / "feedback-store"
+    reporter = FeedbackReporter(store_dir=store)
 
     assert reporter.report_usage("", math.nan, "") is False
-    assert not tmp_path.exists()
+    assert not store.exists()
 
 
 def test_non_finite_nested_profile_never_emits_nonstandard_json(

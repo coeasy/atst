@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from tstdx.domain.models import Bar
-from tstdx.facade import UnifiedQuoteAPI
+from tstdx.facade.api import UnifiedQuoteAPI  # 历史实现：支持 _tdx 注入与 vipdoc_root
 from tstdx.reader.formats import DayBarReader
 from tstdx.sink.local_day import LocalDaySink
 

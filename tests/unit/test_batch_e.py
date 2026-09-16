@@ -15,6 +15,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 from tstdx.client import TdxClient  # noqa: E402
+from tstdx.errors import ParseError  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -79,14 +80,21 @@ class TestQuotesConcurrent:
         assert client.quotes_concurrent([]) == []
 
     def test_workers_cap(self, client: TdxClient, monkeypatch: pytest.MonkeyPatch) -> None:
-        """workers 不超过任务数；异常输入（workers=0）下限保护。"""
+        """workers 不超过任务数；越界输入 fail-closed（不静默夹取）。"""
         monkeypatch.setattr(
             client,
             "quotes",
             lambda symbols, *, as_format="dict", _collect=None: [{"code": symbols[0]}],
         )
-        out = client.quotes_concurrent(["sh600000", "sz000001"], workers=0)
+        # 上限：worker 数按任务数收敛（8 > 2），调用照常成功。
+        out = client.quotes_concurrent(["sh600000", "sz000001"], workers=8)
         assert len(out) == 2
+        # 下限：越界 workers 由 ``_require_int`` 直接拒绝，不静默夹取到 1。
+        # 该 fail-closed 契约由 tests/test_client_batch_input_contract.py 与
+        # tests/client/test_async_quotes_concurrent_parity.py 共同钉死。
+        for bad in (0, -1, 65):
+            with pytest.raises(ParseError, match="workers"):
+                client.quotes_concurrent(["sh600000", "sz000001"], workers=bad)
 
 
 class TestAsyncQuotesConcurrent:

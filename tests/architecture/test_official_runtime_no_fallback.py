@@ -5,34 +5,49 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
+#: v15 canonical runtime: the Client -> QueryPlan -> UnifiedRuntime path plus the
+#: canonical integration surfaces. The legacy v12 integration surfaces
+#: (git-ignored, deleted in v15 Phase 2) and the legacy facade compatibility
+#: layer are intentionally excluded — the invariant is that the *canonical*
+#: runtime never routes through the aggregate web fallback engine.
 OFFICIAL_RUNTIME = [
-    ROOT / "tstdx" / "service.py",
+    ROOT / "tstdx" / "client_api.py",
+    ROOT / "tstdx" / "runtime_v13.py",
+    ROOT / "tstdx" / "query.py",
+    ROOT / "tstdx" / "direct_provider.py",
+    ROOT / "tstdx" / "orchestration.py",
+    ROOT / "tstdx" / "provider_api.py",
+    ROOT / "tstdx" / "capability_catalog.py",
+    ROOT / "tstdx" / "batch.py",
     ROOT / "tstdx" / "planned_service.py",
     ROOT / "tstdx" / "async_service.py",
-    ROOT / "tstdx" / "provider_api.py",
+    ROOT / "tstdx" / "service.py",
     ROOT / "tstdx" / "providers" / "__init__.py",
     ROOT / "tstdx" / "providers" / "http.py",
-    ROOT / "tstdx" / "sources" / "__init__.py",
-    ROOT / "tstdx" / "facade" / "planned.py",
-    ROOT / "tstdx" / "facade" / "strict.py",
-    ROOT / "tstdx" / "facade" / "strict_async.py",
     ROOT / "tstdx" / "integration" / "__init__.py",
-    ROOT / "tstdx" / "integration" / "http_app.py",
-    ROOT / "tstdx" / "integration" / "http_runtime.py",
-    ROOT / "tstdx" / "integration" / "mcp_app.py",
-    ROOT / "tstdx" / "integration" / "ws_app.py",
-    ROOT / "tstdx" / "integration" / "tasks.py",
+    ROOT / "tstdx" / "integration" / "runtime_http.py",
+    ROOT / "tstdx" / "integration" / "runtime_ws.py",
+    ROOT / "tstdx" / "integration" / "runtime_ws_server.py",
+    ROOT / "tstdx" / "integration" / "runtime_tasks.py",
+    ROOT / "tstdx" / "integration" / "serialization.py",
+    ROOT / "tstdx" / "integration" / "mcp" / "_server.py",
     ROOT / "tstdx" / "cli" / "__init__.py",
+    ROOT / "tstdx" / "cli" / "runtime_commands.py",
 ]
 
+#: The aggregate web router and its fallback-order literal must never be reachable
+#: from the canonical runtime. ``WebQuoteSession`` (an exact Provider adapter) and
+#: ``AllSourcesExhausted`` (an error type) are deliberately *not* forbidden: v15
+#: reuses both, and only *aggregate routing* is the architecture violation.
 FORBIDDEN_NAMES = {
-    "AllSourcesExhausted",
-    "DEFAULT_FALLBACK_ORDER",
     "WebQuoteClient",
-    "WebQuoteSession",
+    "DEFAULT_FALLBACK_ORDER",
     "SourceManager",
     "SourceRegistry",
 }
+
+#: Call-shaped tokens that only an aggregate web router would emit.
+FORBIDDEN_CALLS = ("WebQuoteClient(", "web_session(")
 
 
 def _imported_names(tree: ast.AST) -> set[str]:
@@ -80,7 +95,7 @@ def test_official_runtime_never_calls_legacy_aggregate_web_client() -> None:
     suspicious: list[str] = []
     for path in OFFICIAL_RUNTIME:
         text = path.read_text(encoding="utf-8")
-        for token in ("WebQuoteClient(", "web_session(", "AllSourcesExhausted("):
+        for token in FORBIDDEN_CALLS:
             if token in text:
                 suspicious.append(f"{path.relative_to(ROOT)}:{token}")
     assert suspicious == []

@@ -130,6 +130,10 @@ class TestBarsSemantics:
         # Q1-b 合并后 bars tdx 路由经 router（内部 from ..client import
         # TdxClient 调用点解析），mock 目标改为 tstdx.client.TdxClient；
         # 断言语义不变（返回 Bar 模型，离线验证）。
+        #
+        # 契约：``as_format="dict"`` 必须返回**映射行**，由 UnifiedMarketDataService
+        # 的 _row_to_bar 归一化到 Bar 模型；此前的替身直接返回 Bar 违反自身
+        # 声明的 as_format，掩盖了归一化路径（v13 provider-bound 回归）。
         import tstdx.client as client_mod
 
         class _FakeTdx:
@@ -146,7 +150,8 @@ class TestBarsSemantics:
                 pass
 
             def bars(self, symbol, *, period="day", count=320, start=0, as_format="dict"):  # noqa: ANN001
-                return [Bar(datetime="2026-09-03", close=1.0)]
+                assert as_format == "dict"
+                return [{"datetime": "2026-09-03", "close": 1.0}]
 
         monkeypatch.setattr(client_mod, "TdxClient", _FakeTdx)
         api = UnifiedQuoteAPI()

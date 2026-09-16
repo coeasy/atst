@@ -22,7 +22,6 @@ import time
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
-from enum import Enum
 from typing import Any
 
 from ..domain.models import Quote
@@ -38,6 +37,7 @@ from ..observability.planned import record_stream_gap, record_stream_reconnect
 from ..planned_service import UnifiedMarketDataService
 from ..providers import PROVIDERS, resolve_provider
 from .engine import BackpressureQueue, DeltaMerger, ReconnectPolicy
+from .state import StreamState
 
 __all__ = [
     "PlannedQuoteStream",
@@ -57,22 +57,6 @@ _INPUT_ADVICE = RetryAdvice(
 
 QuoteCallback = Callable[[str, dict[str, Any]], None]
 ErrorCallback = Callable[[Exception], None]
-
-
-class StreamState(str, Enum):
-    """Lifecycle states for a planned stream.
-
-    ``stop()/close()`` is terminal. ``FAILED`` is also terminal until an explicit
-    ``stop()`` drains the surviving worker and closes the instance. This prevents
-    a half-dead worker pair from accepting new subscriptions or spawning a second
-    dispatcher.
-    """
-
-    CREATED = "created"
-    RUNNING = "running"
-    STOPPING = "stopping"
-    CLOSED = "closed"
-    FAILED = "failed"
 
 
 def _input_error(

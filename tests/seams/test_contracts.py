@@ -64,6 +64,8 @@ def test_seam_metrics_public_api_intact() -> None:
 
 def test_seam_pool_uses_connection_lock_or_busy_removed() -> None:
     """C2 缝：Slot.busy 死字段不得作为『假实现』存活（T 已删除，注释提及豁免）。"""
+    import threading
+
     import tstdx.transport.pool as pool_mod
 
     slot = getattr(pool_mod, "Slot", None)
@@ -71,13 +73,25 @@ def test_seam_pool_uses_connection_lock_or_busy_removed() -> None:
     assert "busy" not in fields, (
         "Slot.busy 死字段仍在（C2 裁决：落实借还协议或删除字段，禁止第三态）"
     )
-    # 连接级租约锁应作为实例属性在 __init__ 建立（行为面由 T 的并发压测覆盖）
+    # 连接级租约锁应作为实例属性在构造时建立。此处按**行为**断言而非源码
+    # 文本：`TcpConnection.__init__` 会被 transport 加固垫片（
+    # `_connection_contract_hardening._sync_init`）整体替换，源码检索随
+    # 垫片形态漂移而误红，实例属性检查才是跨垫片稳定的契约。
     from tstdx.transport.base import TcpConnection
 
-    init_src = inspect.getsource(TcpConnection.__init__)
-    assert "self._lock" in init_src and "RLock" in init_src, (
-        "C2 连接级租约锁未在 TcpConnection.__init__ 落地"
+    conn = TcpConnection("127.0.0.1", 7709)
+    lock = getattr(conn, "_lock", None)
+    assert isinstance(lock, type(threading.RLock())), (
+        "C2 连接级租约锁未在 TcpConnection 落地（应为可重入 RLock 实例）"
     )
+    # 可重入性：request/ping 持锁期间会经 connect/read_frame 再次加锁，
+    # 同线程重复获取必须成功，否则首帧请求即自锁。
+    assert lock.acquire(blocking=False) is True
+    try:
+        assert lock.acquire(blocking=False) is True
+        lock.release()
+    finally:
+        lock.release()
 
 
 def test_seam_async_bridge_method_parity() -> None:

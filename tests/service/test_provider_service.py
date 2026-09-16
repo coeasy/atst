@@ -12,33 +12,40 @@ class FailingTdx:
         raise AllHostsUnreachable("all tdx hosts failed")
 
 
-class FakeWebSession:
+class FakeQuoteAdapter:
+    """Mirrors the current per-Provider quote adapter surface (`.fetch` / `.fetch_quote`)."""
+
     def __init__(self, provider: str) -> None:
         self.provider = provider
 
-    def quotes(self, symbols):
-        return [
-            Quote(
-                code=symbols[0],
-                price=10.0,
-                last_close=9.9,
-                open=9.95,
-                high=10.1,
-                low=9.8,
-                volume=100,
-                amount=1000.0,
-            )
-        ]
+    def _row(self, symbol: str) -> Quote:
+        return Quote(
+            code=symbol,
+            price=10.0,
+            last_close=9.9,
+            open=9.95,
+            high=10.1,
+            low=9.8,
+            volume=100,
+            amount=1000.0,
+        )
+
+    def fetch(self, symbols):
+        return [self._row(symbols[0])]
+
+    def fetch_quote(self, symbol):
+        return self._row(symbol)
 
 
 class FakeManager:
     def __init__(self) -> None:
         self.tdx = FailingTdx()
+        #: 记录被请求过的 web Provider（`quote_adapter` 即 Provider 级 web adapter 工厂）
         self.web_calls: list[str] = []
 
-    def web_session(self, provider: str):
+    def quote_adapter(self, provider: str) -> FakeQuoteAdapter:
         self.web_calls.append(provider)
-        return FakeWebSession(provider)
+        return FakeQuoteAdapter(provider)
 
     def close(self) -> None:
         pass

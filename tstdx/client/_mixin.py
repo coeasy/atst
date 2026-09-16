@@ -22,6 +22,11 @@
 对外行为不变：公开方法壳留在 sync.py / async_.py（签名、overload、
 docstring 摘要与迁移前一致）；``dispatch`` 经 :mod:`tstdx.client` 包级
 符号在**调用时**解析（monkeypatch 语义不变，见 sync.py 说明）。
+
+**fail-closed 参数校验是本模板的硬约束**：协议参数（市场标识、页偏移、
+日期、文件名、批量容器）必须在**任何 pool I/O 之前**校验完毕并抛
+:class:`~tstdx.errors.ParseError`；同步 / 异步两端不得各维护一套，
+校验只能落在本共享模板或 :mod:`tstdx.client_core` 的 SSOT 纯函数里。
 """
 
 from __future__ import annotations
@@ -29,18 +34,25 @@ from __future__ import annotations
 import logging
 import struct
 import warnings
+from collections.abc import Mapping
 from typing import Any
 
 import tstdx.client as _client_pkg  # 包级符号经此转发（见 sync.py 说明）
 
 from ..client_core import (  # B1：共享核心（纯协议构造，无 I/O）
-    _PREFIX_MARKET,
     _bars_body,
     _emit,
+    _encode_gbk_field,
+    _normalize_symbols,
     _quote_body,
+    _require_bool,
+    _require_int,
+    _require_output_format,
+    _require_yyyymmdd,
     _row_to_bar,
     _row_to_capital,
     _row_to_quote,
+    _standard_market_id,
     period_to_category,
     split_symbol,
 )
@@ -164,15 +176,24 @@ class _ClientMixin:
         strict: bool,
     ) -> Any:
         """K 线 / 分钟线（命令 ``0x052D``，自动分页 + 截断语义，见 sync 壳 docstring）。"""
+        _require_output_format(as_format)
+        _require_bool("index", index)
+        strict_mode = _require_bool("strict", strict)
         category = period_to_category(period)
         mkt, code = split_symbol(symbol)
         if market is not None:
-            mkt = market
+            mkt = _standard_market_id(market)
+
+        remaining = _require_int("count", count, minimum=0, maximum=0xFFFF)
+        offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
+        if offset + remaining > 0x10000:
+            raise ParseError(
+                f"start + count 超出 16-bit 分页地址空间: {offset} + {remaining}",
+                context={"start": offset, "count": remaining},
+            )
 
         bars: list[Bar] = []
         seen: set[str] = set()
-        remaining = max(0, int(count))
-        offset = max(0, int(start))
         drifted = False  # 整页去重后零新增（锚点漂移），非正常历史耗尽
 
         while remaining > 0:
@@ -194,12 +215,12 @@ class _ClientMixin:
             raw_rows = result.rows  # 原始 dict 行（去重以 datetime 字符串为键）
             if not raw_rows:
                 break  # 空页：历史耗尽（正常终止）
-            fresh = [r for r in raw_rows if str(r.get("datetime")) not in seen]
-            seen.update(str(r.get("datetime")) for r in raw_rows)
+            fresh = [row for row in raw_rows if str(row.get("datetime")) not in seen]
+            seen.update(str(row.get("datetime")) for row in raw_rows)
             if not fresh:
                 drifted = True
                 break  # 整页重复：盘中锚点漂移，防死循环
-            bars.extend(_row_to_bar(r) for r in fresh)
+            bars.extend(_row_to_bar(row) for row in fresh)
             if len(raw_rows) < page:
                 break  # 短页：历史耗尽（正常终止）
             offset += len(raw_rows)
@@ -210,7 +231,7 @@ class _ClientMixin:
                 f"bars({symbol!r}, period={period!r}, count={count}) 分页因盘中"
                 f"锚点漂移提前终止：实取 {len(bars)} 根 < 请求 {count} 根"
             )
-            if strict:
+            if strict_mode:
                 raise TruncatedDataError(
                     msg, context={"symbol": symbol, "returned": len(bars), "requested": count}
                 )
@@ -228,11 +249,11 @@ class _ClientMixin:
         _collect: list[tuple[str, BaseException]] | None,
     ) -> Any:
         """实时行情快照（命令 ``0x0530``，逐只请求；坏标的隔离见 sync 壳）。"""
-        if isinstance(symbols, str):
-            symbols = [symbols]
+        _require_output_format(as_format)
+        normalized_symbols = _normalize_symbols(symbols)
         out: list[Quote] = []
         errors: list[tuple[str, BaseException]] = _collect if _collect is not None else []
-        for sym in symbols:
+        for sym in normalized_symbols:
             # 坏标的隔离：符号解析/请求体构造失败只淘汰这一只（此前在
             # try 之外，一只坏标的会中断整批）
             try:
@@ -266,13 +287,12 @@ class _ClientMixin:
     # ------------------------------------------------------------------ #
     def _t_security_count(self, market: Any) -> int:  # type: ignore[misc]
         """某市场的证券总数（命令 ``0x044E``）。"""
-        if isinstance(market, str):
-            market = _PREFIX_MARKET.get(market.lower(), 0)
-        body = struct.pack("<H", int(market)) + b"\x00" * 4
+        market_id = _standard_market_id(market)
+        body = struct.pack("<H", market_id) + b"\x00" * 4
         frame = yield _op_req(CMD["security_count"], body, timeout=self.timeout)
         result = _client_pkg.dispatch(frame, family=self.family)
         if not result.rows:
-            raise ParseError("0x044E 无解析结果", context={"market": market})
+            raise ParseError("0x044E 无解析结果", context={"market": market_id})
         return int(result.rows[0].get("count", 0))
 
     def _t_capital_changes(self, symbol: str) -> list[CapitalChange]:  # type: ignore[misc]
@@ -281,7 +301,7 @@ class _ClientMixin:
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt)
         frame = yield _op_req(CMD["capital_changes"], body, timeout=self.timeout)
         result = _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family)
-        return [_row_to_capital(r) for r in result.rows]
+        return [_row_to_capital(row) for row in result.rows]
 
     def _t_finance_info(self, symbol: str) -> dict[str, Any]:  # type: ignore[misc]
         """财务基础信息（命令 ``0x0010``，F1 语义化字段）。"""
@@ -318,37 +338,52 @@ class _ClientMixin:
         as_format: OutputFormat,
     ) -> Any:
         """任意命令 → 解析行（``as_format`` 自 v6 起真正生效）。"""
+        _require_output_format(as_format)
         result = yield _op_call("request_result", cmd, body, ctx=ctx)
         return _emit(result.rows, as_format)
 
     def _t_request_result(self, cmd: int, body: bytes, *, ctx: Any) -> Any:
         """任意命令 → 完整 :class:`~tstdx.protocol.registry.ParseResult`（v6 A2）。"""
-        frame = yield _op_req(cmd, body, timeout=self.timeout)
-        return _client_pkg.dispatch(frame, family=self.family, **(ctx or {}))
+        command = _require_int("cmd", cmd, minimum=0, maximum=0xFFFF)
+        if not isinstance(body, bytes):
+            raise ParseError(
+                f"body 必须是 bytes，收到 {type(body).__name__}",
+                context={"field": "body", "value_type": type(body).__name__},
+            )
+        if ctx is not None and not isinstance(ctx, Mapping):
+            raise ParseError(
+                f"ctx 必须是 Mapping 或 None，收到 {type(ctx).__name__}",
+                context={"field": "ctx", "value_type": type(ctx).__name__},
+            )
+        frame = yield _op_req(command, body, timeout=self.timeout)
+        return _client_pkg.dispatch(frame, family=self.family, **(dict(ctx) if ctx else {}))
 
     # ------------------------------------------------------------------ #
     # 更多标准命令
     # ------------------------------------------------------------------ #
     def _t_security_list(self, market: Any, start: int) -> Any:
         """代码表（命令 ``0x044D``，分页 1000/页）。"""
-        if isinstance(market, str):
-            market = _PREFIX_MARKET.get(market.lower(), 0)
-        body = struct.pack("<HH", int(market), int(start))
+        market_id = _standard_market_id(market)
+        offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
+        body = struct.pack("<HH", market_id, offset)
         return (
             yield _op_call(
-                "request", CMD["security_list"], body, ctx={"market": market, "start": start}
+                "request",
+                CMD["security_list"],
+                body,
+                ctx={"market": market_id, "start": offset},
             )
         )
 
     def _t_export_security_list(self, market: Any, *, max_pages: int) -> Any:
         """全市场代码表导出（E3：0x044D 分页遍历直至耗尽，截断告警）。"""
-        if isinstance(market, str):
-            market = _PREFIX_MARKET.get(market.lower(), 0)
+        market_id = _standard_market_id(market)
+        page_limit = _require_int("max_pages", max_pages, minimum=1)
         out: list[dict[str, Any]] = []
         start = 0
         truncated = True  # 空页/短页 break 时置 False；耗尽 max_pages 仍满页则为 True
-        for _ in range(max(1, max_pages)):
-            rows = yield _op_call("security_list", int(market), start)
+        for _ in range(page_limit):
+            rows = yield _op_call("security_list", market_id, start)
             if not rows:
                 truncated = False
                 break
@@ -357,9 +392,11 @@ class _ClientMixin:
                 truncated = False
                 break
             start += len(rows)
+            if start > 0xFFFF:
+                break  # 16-bit 分页地址空间耗尽
         if truncated:
             warnings.warn(
-                f"export_security_list(market={market}) 在 max_pages={max_pages} 页内"
+                f"export_security_list(market={market_id}) 在 max_pages={page_limit} 页内"
                 f"未取尽（已取 {len(out)} 条，最后一页仍为满页），结果可能截断",
                 stacklevel=_TPL_WARN_STACKLEVEL,
             )
@@ -368,15 +405,18 @@ class _ClientMixin:
     def _t_minute_history(self, symbol: str, date: int) -> Any:
         """指定日期历史分时（命令 ``0x0FB4``）。``date`` 为 YYYYMMDD 整数。"""
         mkt, code = split_symbol(symbol)
-        body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<HI", mkt, int(date))
+        day = _require_yyyymmdd("date", date)
+        body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<HI", mkt, day)
         frame = yield _op_req(CMD["minute_history"], body, timeout=self.timeout)
         return _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family).rows
 
     def _t_trade_today(self, symbol: str, start: int, count: int) -> Any:
         """当日逐笔成交（命令 ``0x0FC5``）。"""
         mkt, code = split_symbol(symbol)
+        offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
+        page_size = _require_int("count", count, minimum=0, maximum=0xFFFF)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack(
-            "<HHH", mkt, int(start), int(count)
+            "<HHH", mkt, offset, page_size
         )
         return (
             yield _op_call("request", CMD["trade_today"], body, ctx={"code": code, "market": mkt})
@@ -384,10 +424,12 @@ class _ClientMixin:
 
     def _t_block_quotes(self, block_type: int, start: int) -> Any:
         """板块行情（命令 ``0x07E5``）。block_type: 0 概念 / 1 行业 / 2 地区 / 3 指数。"""
-        body = struct.pack("<HH", int(block_type), int(start))
+        kind = _require_int("block_type", block_type, minimum=0, maximum=3)
+        offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
+        body = struct.pack("<HH", kind, offset)
         return (
             yield _op_call(
-                "request", CMD["block_quotes"], body, ctx={"block_type": block_type, "start": start}
+                "request", CMD["block_quotes"], body, ctx={"block_type": kind, "start": offset}
             )
         )
 
@@ -403,34 +445,53 @@ class _ClientMixin:
     ) -> Any:
         """文件分块下载（命令 ``0x06B9``；全量/截断语义见 sync 壳 docstring）。"""
         mkt, code = split_symbol(symbol)
-        if length > 0:
-            rows = yield _op_call("_file_download_once", mkt, code, filename, offset, length)
-            return b"".join(r.get("data", b"") or b"" for r in rows)
+        start_offset = _require_int("offset", offset, minimum=0, maximum=0xFFFFFFFF)
+        requested_length = _require_int("length", length, minimum=0, maximum=0xFFFFFFFF)
+        packet_limit = _require_int("max_packets", max_packets, minimum=1)
+        strict_mode = _require_bool("strict", strict)
+        # 文件名必须在进入任何 I/O 路径前校验；_file_download_once 会重复校验，
+        # 因为它同时是可直接调用的私有兼容 seam。
+        _encode_gbk_field("filename", filename, max_bytes=80)
+
+        if requested_length > 0:
+            rows = yield _op_call(
+                "_file_download_once",
+                mkt,
+                code,
+                filename,
+                start_offset,
+                requested_length,
+            )
+            return b"".join(self._file_row_data(row) for row in rows)
 
         chunks = bytearray()
         total_len: int | None = None
-        for _ in range(max(1, int(max_packets))):
-            rows = yield _op_call(
-                "_file_download_once", mkt, code, filename, offset + len(chunks), 0
-            )
+        for _ in range(packet_limit):
+            current_offset = start_offset + len(chunks)
+            _require_int("offset", current_offset, minimum=0, maximum=0xFFFFFFFF)
+            rows = yield _op_call("_file_download_once", mkt, code, filename, current_offset, 0)
             if not rows:
                 break  # 服务端无更多数据
-            total_len = rows[0].get("total_len", total_len)
-            data = rows[0].get("data", b"") or b""
+            raw_total = rows[0].get("total_len", total_len)
+            if raw_total is not None:
+                total_len = _require_int("total_len", raw_total, minimum=0, maximum=0xFFFFFFFF)
+            data = self._file_row_data(rows[0])
             if not data:
                 break  # 空包：文件已取尽
             chunks.extend(data)
-            if total_len is not None and len(chunks) >= total_len:
+            if total_len is not None and start_offset + len(chunks) >= total_len:
                 break
         # for-else 不需要：max_packets 耗尽时由下方 total_len 校验兜底告警
 
         data = bytes(chunks)
-        if total_len is not None and len(data) < total_len:
+        end_offset = start_offset + len(data)
+        if total_len is not None and end_offset < total_len:
             msg = (
-                f"file_download({symbol!r}, {filename!r}) 累计 {len(data)} 字节"
-                f" < 服务端报告 total_len={total_len}，结果可能截断"
+                f"file_download({symbol!r}, {filename!r}) 从 offset={start_offset} 累计"
+                f" {len(data)} 字节，到达 {end_offset} < 服务端报告 total_len={total_len}，"
+                "结果可能截断"
             )
-            if strict:
+            if strict_mode:
                 raise TruncatedDataError(
                     msg,
                     context={
@@ -438,21 +499,49 @@ class _ClientMixin:
                         "filename": filename,
                         "returned": len(data),
                         "total_len": total_len,
+                        "offset": start_offset,
+                        "end_offset": end_offset,
                     },
                 )
             warnings.warn(msg, stacklevel=_TPL_WARN_STACKLEVEL)
         return data
 
+    @staticmethod
+    def _file_row_data(row: Any) -> bytes:
+        """校验并提取单行 ``file_download`` 响应的 ``data`` 字段。"""
+        if not isinstance(row, dict):
+            raise ParseError(
+                f"file_download 响应行必须是 dict，收到 {type(row).__name__}",
+                context={"row_type": type(row).__name__},
+            )
+        data = row.get("data", b"")
+        if data is None:
+            return b""
+        if not isinstance(data, (bytes, bytearray, memoryview)):
+            raise ParseError(
+                f"file_download data 必须是 bytes-like，收到 {type(data).__name__}",
+                context={"data_type": type(data).__name__},
+            )
+        return bytes(data)
+
     def _t_file_download_once(
         self, mkt: int, code: str, filename: str, offset: int, length: int
     ) -> Any:
         """0x06B9 单次请求（v5 PG2 拆出，供全量模式循环复用）。"""
-        fn = filename.encode("gbk", errors="replace")[:80].ljust(80, b"\x00")
+        market_id = _standard_market_id(mkt)
+        if not isinstance(code, str) or len(code) != 6 or not code.isascii() or not code.isdigit():
+            raise ParseError(
+                f"file_download code 必须是 6 位 ASCII 数字: {code!r}",
+                context={"code": code},
+            )
+        fn = _encode_gbk_field("filename", filename, max_bytes=80)
+        start_offset = _require_int("offset", offset, minimum=0, maximum=0xFFFFFFFF)
+        requested_length = _require_int("length", length, minimum=0, maximum=0xFFFFFFFF)
         body = (
-            code.encode("ascii")[:6].ljust(6, b"\x00")
-            + struct.pack("<H", int(mkt))
+            code.encode("ascii")
+            + struct.pack("<H", market_id)
             + fn
-            + struct.pack("<II", int(offset), int(length))
+            + struct.pack("<II", start_offset, requested_length)
         )
         # 0x06B9 is shared by the standard transport and the F10 facade.  The
         # F10 family has no separate response parser for this command, so a
@@ -484,7 +573,7 @@ class _ClientMixin:
 
     def _t_quotes_snapshot(self, symbols: Any) -> Any:
         """批量行情快照（优先 0x054C，失败/空帧/L3 降级回退逐只 0x0530）。"""
-        syms = [symbols] if isinstance(symbols, str) else list(symbols)
+        syms = _normalize_symbols(symbols)
         # 混合容器：0x054C 批量路径收 Quote 对象，0x0530 回退路径收
         # as_format="dict" 的 dict（to_dicts 对两者都产 dict，运行时一致）。
         out: list[Any] = []
@@ -516,7 +605,7 @@ class _ClientMixin:
                 errors.append(("0x054C", TdxError("0x054C 响应仅 L3 透传")))
                 out.extend((yield _op_call("quotes", chunk, as_format="dict", _collect=errors)))
                 continue
-            out.extend(_row_to_quote(r) for r in result.rows)
+            out.extend(_row_to_quote(row) for row in result.rows)
         self._set_last_errors(errors)
         return _emit(out, "dict")
 
@@ -525,6 +614,7 @@ class _ClientMixin:
     # ------------------------------------------------------------------ #
     def _t_snapshot(self, symbol: str, *, as_format: OutputFormat) -> Any:
         """实时行情 + 当日日线，合成一份快照（表驱动降级在 router 层完成）。"""
+        _require_output_format(as_format)
         quote = yield _op_call("quotes", [symbol], as_format="dict")
         q = quote[0] if quote else None
         day = yield _op_call("bars", symbol, period="day", count=1, as_format="dict")
@@ -546,6 +636,7 @@ class _ClientMixin:
     def _t_goods_bars(
         self, symbol: str, *, period: str, count: int, start: int, as_format: OutputFormat
     ) -> Any:
+        _require_output_format(as_format)
         category = period_to_category(period)
         mkt, code = split_symbol(symbol)
         frame = yield _op_req(
@@ -554,33 +645,38 @@ class _ClientMixin:
             timeout=self.timeout,
         )
         result = _client_pkg.dispatch(frame, category=category, family=self.family)
-        return _emit([_row_to_bar(r) for r in result.rows], as_format)
+        return _emit([_row_to_bar(row) for row in result.rows], as_format)
 
     def _t_goods_quote(self, symbol: str, as_format: OutputFormat) -> Any:
+        _require_output_format(as_format)
         mkt, code = split_symbol(symbol)
         frame = yield _op_req(CMD["goods_quote"], _quote_body(code, mkt), timeout=self.timeout)
         result = _client_pkg.dispatch(
             frame, code=code, market=mkt, price_scale=100, family=self.family
         )
-        return _emit([_row_to_quote(r) for r in result.rows], as_format)
+        return _emit([_row_to_quote(row) for row in result.rows], as_format)
 
     def _t_goods_count(self, market: int) -> Any:
         """商品数量（命令 ``0x0200``，family=GOODS）。返回 ``{"count"}`` 行。"""
-        body = struct.pack("<H", int(market))
-        return (yield _op_call("request", CMD["goods_count"], body, ctx={"market": market}))
+        market_id = _require_int("market", market, minimum=0, maximum=0xFFFF)
+        body = struct.pack("<H", market_id)
+        return (yield _op_call("request", CMD["goods_count"], body, ctx={"market": market_id}))
 
     def _t_goods_list(self, market: int, start: int) -> Any:
         """商品列表（命令 ``0x0201``，family=GOODS）。返回 ``{"code", "name", "category"}`` 行。"""
-        body = struct.pack("<HH", int(market), int(start))
+        market_id = _require_int("market", market, minimum=0, maximum=0xFFFF)
+        offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
+        body = struct.pack("<HH", market_id, offset)
         return (
             yield _op_call(
-                "request", CMD["goods_list"], body, ctx={"market": market, "start": start}
+                "request", CMD["goods_list"], body, ctx={"market": market_id, "start": offset}
             )
         )
 
     def _t_ex_bars(
         self, symbol: str, *, period: str, count: int, start: int, as_format: OutputFormat
     ) -> Any:
+        _require_output_format(as_format)
         category = period_to_category(period)
         mkt, code = split_symbol(symbol)
         frame = yield _op_req(
@@ -589,9 +685,10 @@ class _ClientMixin:
             timeout=self.timeout,
         )
         result = _client_pkg.dispatch(frame, category=category, family=self.family)
-        return _emit([_row_to_bar(r) for r in result.rows], as_format)
+        return _emit([_row_to_bar(row) for row in result.rows], as_format)
 
     def _t_ex_quote(self, symbol: str, as_format: OutputFormat) -> Any:
+        _require_output_format(as_format)
         mkt, code = split_symbol(symbol)
         frame = yield _op_req(
             CMD["ex_instrument_quote"], _quote_body(code, mkt), timeout=self.timeout
@@ -599,7 +696,7 @@ class _ClientMixin:
         result = _client_pkg.dispatch(
             frame, code=code, market=mkt, price_scale=100, family=self.family
         )
-        return _emit([_row_to_quote(r) for r in result.rows], as_format)
+        return _emit([_row_to_quote(row) for row in result.rows], as_format)
 
     def _t_ex_market_count(self) -> Any:
         """扩展市场数量（命令 ``0x0100``，family=EXTENDED）。返回 ``{"count"}`` 行。"""
@@ -611,19 +708,26 @@ class _ClientMixin:
 
     def _t_ex_instrument_count(self, market: int) -> Any:
         """扩展市场品种数量（命令 ``0x0102``，family=EXTENDED）。返回 ``{"count"}`` 行。"""
-        body = struct.pack("<H", int(market))
-        return (yield _op_call("request", CMD["ex_instrument_count"], body, ctx={"market": market}))
+        market_id = _require_int("market", market, minimum=0, maximum=0xFFFF)
+        body = struct.pack("<H", market_id)
+        return (yield _op_call("request", CMD["ex_instrument_count"], body, ctx={"market": market_id}))
 
     def _t_ex_instrument_list(self, market: int, start: int) -> Any:
         """扩展市场品种列表（命令 ``0x0103``，family=EXTENDED）。返回 ``{"market", "code", "name"}`` 行。"""
-        body = struct.pack("<HH", int(market), int(start))
+        market_id = _require_int("market", market, minimum=0, maximum=0xFFFF)
+        offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
+        body = struct.pack("<HH", market_id, offset)
         return (
             yield _op_call(
-                "request", CMD["ex_instrument_list"], body, ctx={"market": market, "start": start}
+                "request",
+                CMD["ex_instrument_list"],
+                body,
+                ctx={"market": market_id, "start": offset},
             )
         )
 
     def _t_mac_quote(self, symbol: str, as_format: OutputFormat) -> Any:
+        _require_output_format(as_format)
         mkt, code = split_symbol(symbol)
         frame = yield _op_req(
             CMD["mac_unified_quote"], _quote_body(code, mkt), timeout=self.timeout
@@ -631,29 +735,33 @@ class _ClientMixin:
         result = _client_pkg.dispatch(
             frame, code=code, market=mkt, price_scale=100, family=self.family
         )
-        return _emit([_row_to_quote(r) for r in result.rows], as_format)
+        return _emit([_row_to_quote(row) for row in result.rows], as_format)
 
     def _t_block_list(self, block_type: int, start: int) -> Any:
         """板块列表（命令 ``0x120F``，family=MAC）。返回 ``{"name", "block_id"}`` 行。"""
-        body = struct.pack("<HH", int(block_type), int(start))
+        kind = _require_int("block_type", block_type, minimum=0, maximum=0xFFFF)
+        offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
+        body = struct.pack("<HH", kind, offset)
         return (
             yield _op_call(
                 "request",
                 CMD["mac_block_list"],
                 body,
-                ctx={"block_type": block_type, "start": start},
+                ctx={"block_type": kind, "start": offset},
             )
         )
 
     def _t_block_members(self, block_id: int, start: int) -> Any:
         """板块成分股（命令 ``0x1210``，family=MAC）。返回 ``{"code"}`` 行。"""
-        body = struct.pack("<HH", int(block_id), int(start))
+        identifier = _require_int("block_id", block_id, minimum=0, maximum=0xFFFF)
+        offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
+        body = struct.pack("<HH", identifier, offset)
         return (
             yield _op_call(
                 "request",
                 CMD["mac_block_members"],
                 body,
-                ctx={"block_id": block_id, "start": start},
+                ctx={"block_id": identifier, "start": offset},
             )
         )
 

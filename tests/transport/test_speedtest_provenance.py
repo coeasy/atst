@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 
 import pytest
 
-import tstdx.transport.speedtest as speedtest_module
 from tstdx.errors import ConfigError
 from tstdx.protocol.commands import Family
 from tstdx.transport.hosts import HostEntry
 from tstdx.transport.speedtest import ProbeResult, rank_hosts, speedtest, speedtest_and_save
+
+# ``tstdx.transport`` re-exports the ``speedtest`` *function* (it is part of the
+# package's public ``__all__``), so ``import tstdx.transport.speedtest as m``
+# binds the function, not the submodule.  These tests need the module object
+# itself in order to monkeypatch its globals (``probe``, ``POOL_BY_FAMILY``,
+# ``_apply_probe_observations``), so resolve it explicitly.
+speedtest_module = importlib.import_module("tstdx.transport.speedtest")
 
 
 def test_speedtest_defaults_to_canonical_family_pool(

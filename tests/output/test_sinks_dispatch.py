@@ -71,6 +71,12 @@ class TestUnknownDestination:
 class TestParquetAtomic:
     """parquet 原子写与空数据 schema。"""
 
+    @pytest.fixture(autouse=True)
+    def _require_pyarrow(self) -> None:
+        # 与 TestDuckdbTableName 同约定：parquet 是可选 extra（``tstdx[parquet]``），
+        # 未安装时跳过而非失败。
+        pytest.importorskip("pyarrow", reason="本机未装 pyarrow；有则连库验证")
+
     def test_no_tmp_leftovers(self, tmp_path: Path) -> None:
         dest = tmp_path / "bars.parquet"
         to_parquet(ROWS, dest)

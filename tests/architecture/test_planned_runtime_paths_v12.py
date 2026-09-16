@@ -1,54 +1,68 @@
 from __future__ import annotations
 
-import inspect
+import ast
+from pathlib import Path
 
 import pytest
 
 import tstdx
 from tstdx.async_service import UnifiedMarketDataService as AsyncSyncService
 from tstdx.batch import BatchResult
+from tstdx.client_api import Client
 from tstdx.facade import AsyncUnifiedQuoteAPI, UnifiedQuoteAPI
 from tstdx.failure import FailureDisposition
-from tstdx.health import SourceHealthRegistry
-from tstdx.integration.http_app import PlannedProviderHttpClient, PlannedTaskStore, create_app
-from tstdx.integration.http_runtime import ProviderHttpClient
-from tstdx.integration.mcp_app import MCPServer as CanonicalMCPServer
-from tstdx.integration.mcp_app import create_mcp_server
-from tstdx.integration.tasks import TaskStore as SafeTaskStore
-from tstdx.integration.ws_app import JsonRpcHandler, serve_ws
-from tstdx.integration.ws_app import JsonRpcHandler as CanonicalWsHandler
 from tstdx.planned_service import UnifiedMarketDataService
 from tstdx.planned_service import UnifiedMarketDataService as PlannedService
-from tstdx.streaming.planned import PlannedQuoteStream, StreamWatermark
+from tstdx.providers import PROVIDERS
+from tstdx.query import QueryPlan, QueryPlanner, QuerySpec
+
+ROOT = Path(__file__).resolve().parents[2]
+PKG = ROOT / "tstdx"
+
+#: v12 integration surfaces deleted in the v15 clean-break (see .gitignore and
+#: ``docs/REFACTOR_PLAN_v15_CONSOLIDATION.md`` Phase 2). Their canonical
+#: replacements are ``runtime_http`` / ``runtime_ws`` / ``runtime_ws_server`` /
+#: ``runtime_tasks`` / ``mcp_server``.
+DELETED_V12_SURFACES = {
+    "http_server",
+    "http_app",
+    "http_runtime",
+    "ws_server",
+    "ws_app",
+    "tasks",
+    "mcp_app",
+}
+
+#: The deleted module files themselves still exist on disk (git-ignored); they
+#: are excluded from the guard below because they legitimately import each other.
+_DELETED_FILES = {PKG / "integration" / f"{name}.py" for name in DELETED_V12_SURFACES}
 
 
-def test_top_level_service_and_query_contracts_point_to_planned_modules() -> None:
-    assert tstdx._LAZY["UnifiedMarketDataService"] == (
-        "tstdx.planned_service",
-        "UnifiedMarketDataService",
-    )
-    assert tstdx._LAZY["market_data"] == ("tstdx.planned_service", "market_data")
+def test_top_level_contracts_point_to_canonical_modules() -> None:
+    """顶层惰性导出必须指向 v15 canonical 模块（单一事实源）。"""
+    assert tstdx._LAZY["Client"] == ("tstdx.client_api", "Client")
+    assert tstdx._LAZY["QuerySpec"] == ("tstdx.query", "QuerySpec")
+    assert tstdx._LAZY["QueryPlan"] == ("tstdx.query", "QueryPlan")
+    assert tstdx._LAZY["QueryPlanner"] == ("tstdx.query", "QueryPlanner")
+    assert tstdx._LAZY["PROVIDERS"] == ("tstdx.providers", "PROVIDERS")
+    assert tstdx._LAZY["UnifiedRuntime"] == ("tstdx.runtime_v13", "UnifiedRuntime")
     assert tstdx._LAZY["BatchResult"] == ("tstdx.batch", "BatchResult")
-    assert tstdx._LAZY["SourceHealthRegistry"] == (
-        "tstdx.health",
-        "SourceHealthRegistry",
-    )
-    assert tstdx._LAZY["PlannedQuoteStream"] == (
-        "tstdx.streaming.planned",
-        "PlannedQuoteStream",
-    )
-    assert tstdx._LAZY["StreamWatermark"] == (
-        "tstdx.streaming.planned",
-        "StreamWatermark",
-    )
-    assert tstdx.UnifiedMarketDataService is PlannedService
+    assert tstdx._LAZY["StreamState"] == ("tstdx.streaming.state", "StreamState")
+
+    assert tstdx.Client is Client
+    assert tstdx.PROVIDERS is PROVIDERS
     assert tstdx.BatchResult is BatchResult
-    assert tstdx.SourceHealthRegistry is SourceHealthRegistry
-    assert tstdx.PlannedQuoteStream is PlannedQuoteStream
-    assert tstdx.StreamWatermark is StreamWatermark
+    assert tstdx.QuerySpec is QuerySpec
+    assert tstdx.QueryPlan is QueryPlan
+    assert tstdx.QueryPlanner is QueryPlanner
 
 
-def test_official_facades_do_not_export_legacy_routing_classes() -> None:
+def test_facade_classes_live_in_their_canonical_modules() -> None:
+    """官方门面必须导出 Provider-bound 的 planned / strict_async 实现。
+
+    历史三通路实现只能通过 ``LegacyUnifiedQuoteAPI`` 别名访问
+    （``tstdx.facade.api``），不得占据 ``UnifiedQuoteAPI`` 位置。
+    """
     assert UnifiedMarketDataService is PlannedService
     assert UnifiedQuoteAPI.__module__ == "tstdx.facade.planned"
     assert AsyncUnifiedQuoteAPI.__module__ == "tstdx.facade.strict_async"
@@ -58,44 +72,43 @@ def test_async_market_data_uses_same_planned_sync_service() -> None:
     assert AsyncSyncService is PlannedService
 
 
-def test_package_http_factory_delegates_to_planned_http_app() -> None:
-    source = inspect.getsource(create_app)
-    assert ".http_app" in source
-    assert "http_server" not in source
-    assert issubclass(PlannedTaskStore, SafeTaskStore)
+def test_http_boundary_is_the_canonical_runtime_http() -> None:
+    from tstdx.integration import runtime_http
 
-    base_client = ProviderHttpClient()
-    planned_client = PlannedProviderHttpClient()
+    assert runtime_http.__all__ == ["create_runtime_app"]
+    app = runtime_http.create_runtime_app()
+    paths = {getattr(route, "path", None) for route in app.routes}
+    assert "/v13/runtime/health" in paths
+    assert "/v13/quotes" in paths
+
+
+def test_ws_and_mcp_boundaries_are_the_canonical_modules() -> None:
+    from tstdx.integration import mcp_server, runtime_ws, runtime_ws_server
+
+    assert runtime_ws.__all__ == ["RuntimeJsonRpcHandler"]
+    assert set(runtime_ws_server.__all__) == {"RuntimeWsConfig", "serve_runtime_ws"}
+    assert {"MCPServer", "create_mcp_server"} <= set(mcp_server.__all__)
+
+    server = mcp_server.create_mcp_server()
     try:
-        assert base_client._service_factory is PlannedService
-        assert planned_client._service_factory is PlannedService
+        assert isinstance(server, mcp_server.MCPServer)
     finally:
-        base_client.close()
-        planned_client.close()
+        server.stop()
 
 
-def test_package_ws_and_mcp_factories_delegate_to_canonical_boundaries() -> None:
-    assert ".ws_app" in inspect.getsource(serve_ws)
-    assert ".mcp_app" in inspect.getsource(create_mcp_server)
-    assert JsonRpcHandler is CanonicalWsHandler
-
-    ws = CanonicalWsHandler()
-    try:
-        assert isinstance(ws._client_obj(), ProviderHttpClient)
-        assert ws._client_obj()._service_factory is PlannedService
-    finally:
-        client = ws._client
-        close = getattr(client, "close", None)
-        if callable(close):
-            close()
-
-    mcp = CanonicalMCPServer()
-    client = mcp._get_client()
-    try:
-        assert isinstance(client, ProviderHttpClient)
-        assert client._service_factory is PlannedService
-    finally:
-        client.close()
+def test_no_tracked_module_imports_deleted_v12_surfaces() -> None:
+    """v15 clean-break 后，canonical 代码不得再导入已删除的 v12 集成面。"""
+    offenders: list[str] = []
+    for path in sorted(PKG.rglob("*.py")):
+        if path in _DELETED_FILES:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                leaf = node.module.rsplit(".", 1)[-1]
+                if leaf in DELETED_V12_SURFACES and "integration" in str(node.module):
+                    offenders.append(f"{path.relative_to(ROOT)} -> {node.module}")
+    assert offenders == []
 
 
 def test_failure_disposition_cannot_be_constructed_with_provider_switch() -> None:

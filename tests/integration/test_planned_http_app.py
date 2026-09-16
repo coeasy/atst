@@ -100,6 +100,10 @@ def test_f10_compatibility_methods_use_f10_channel_only() -> None:
     calls: list[tuple[str, tuple[Any, ...]]] = []
 
     class F10:
+        @property
+        def raw(self) -> F10:
+            return self
+
         def download(self, *args: Any, **kwargs: Any) -> bytes:
             calls.append(("download", args))
             return b"ok"

@@ -74,6 +74,10 @@ _SENSITIVE_KEY_MARKERS = (
 #: 在信封顶层平铺暴露的上下文字段（其余仅保留在 ``context`` 内）。
 _FLAT_CONTEXT_KEYS = ("query_id", "request_id")
 
+#: 已提升为信封顶层独立字段的上下文键：序列化时不再在 ``context`` 里重复出现，
+#: 以免 ``context`` 变成「顶层字段的镜像」，也让「无附加上下文」可被断言为 ``{}``。
+_PROMOTED_CONTEXT_KEYS = ("phase", "query_id", "request_id")
+
 
 def is_sensitive_key(key: str) -> bool:
     """Whether a key names a credential-bearing field.
@@ -119,6 +123,13 @@ class ErrorEnvelope:
         return self.type
 
     def to_dict(self) -> dict[str, Any]:
+        # ``context`` 只暴露「残差诊断」：phase / query_id / request_id 已作为顶层
+        # 独立字段出现，这里剔除以避免镜像重复（无附加诊断时即为 ``{}``）。
+        residual_context = {
+            key: value
+            for key, value in self.context.items()
+            if key not in _PROMOTED_CONTEXT_KEYS
+        }
         payload: dict[str, Any] = {
             "error": self.type,
             "type": self.type,
@@ -130,7 +141,7 @@ class ErrorEnvelope:
             # fail-closed：对外层永远声明不允许 fallback / provider 切换。
             "fallback_allowed": False,
             "provider_switch_allowed": False,
-            "context": dict(self.context),
+            "context": residual_context,
         }
         if self.phase is not None:
             payload["phase"] = self.phase
@@ -224,11 +235,21 @@ def to_error_envelope(exc: Exception, **context: Any) -> ErrorEnvelope:
             partial=bool(merged.get("partial", False)),
             context=_safe_context(merged),
         )
+    # Native exception: no exception-carried context, so only the envelope-level
+    # enrichment kwargs are honored. The raw native message is never exposed, but
+    # the caller's auditable identity (phase / request_id / provider…) still is,
+    # so native failures carry the same envelope contract as domain failures.
+    merged = {key: value for key, value in context.items() if value is not None}
     return ErrorEnvelope(
         code="E9000",
         type="InternalError",
         message="internal error",
         http_status=500,
         retryable=False,
-        context={},
+        phase=_opt_str(merged.get("phase")),
+        provider=_opt_str(merged.get("provider")),
+        channel=_opt_str(merged.get("channel")),
+        capability=_opt_str(merged.get("capability")),
+        partial=bool(merged.get("partial", False)),
+        context=_safe_context(merged),
     )
