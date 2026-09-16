@@ -21,6 +21,7 @@ from typing import Any
 
 from .domain.period import normalize_bar_period
 from .domain.symbol import normalize_symbol
+from .error_envelope import is_sensitive_key
 from .errors import ValidationError
 from .execution_primitives import ExecutionBudget
 from .providers import PROVIDERS, ChannelSpec, resolve_provider
@@ -304,6 +305,41 @@ class QuerySpec:
         )
 
 
+def _secret_digest(value: Any) -> str:
+    """Stable non-reversible placeholder for a credential value.
+
+    The digest keeps the fingerprint deterministic — the same credential still
+    yields the same identity, so caching and single-flight de-duplication keep
+    working — while the plaintext never reaches a fingerprint, log or cache key.
+    """
+
+    payload = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return "__secret_sha256__" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _redact_secrets(value: Any) -> Any:
+    """Recursively replace credential-bearing values with digests."""
+
+    if isinstance(value, Mapping):
+        return {
+            str(key): (
+                _secret_digest(item)
+                if is_sensitive_key(str(key))
+                else _redact_secrets(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_redact_secrets(item) for item in value]
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class QueryFingerprint:
     """Stable full semantic identity used by cache/single-flight layers."""
@@ -316,6 +352,10 @@ class QueryFingerprint:
         # v13 SSOT：fingerprint 只描述**数据身份**（问的是什么），不描述**新鲜度策略**
         # （允许多旧）。``max_age`` 是调用方给出的缓存/新鲜度上界，同一份数据的
         # 不同 max_age 必须共享一个身份，缓存的过期判定在读取时按实际 age 计算。
+        #
+        # ``options`` 会携带调用方凭证（例如 wencai 的 ``cookie``）：它们参与
+        # 身份判定（换凭证即换身份），但**绝不能**以明文进入 fingerprint / 缓存键 /
+        # 日志，故按敏感键递归替换为 sha256 占位符。
         return {
             "schema_version": spec.schema_version,
             "capability": spec.capability,
@@ -327,7 +367,7 @@ class QueryFingerprint:
             "start": spec.start,
             "adjustment": spec.adjustment,
             "currentness": spec.currentness,
-            "options": spec.options,
+            "options": _redact_secrets(spec.options),
         }
 
     @classmethod
@@ -442,9 +482,53 @@ class QueryPlanner:
             PROVIDERS.require_period(pid, selected.id, spec.period)
         return selected
 
+    @classmethod
+    def _validate_migrated_call(cls, spec: QuerySpec, channel: ChannelSpec) -> None:
+        """Bind migrated-call arguments when the caller uses the payload convention.
+
+        A capability served by the table-driven ``_migrated_capability`` backend
+        may reach its implementation through ``options["args"] / options["kwargs"]``.
+        When that payload is present it is bound against the real implementation
+        signature *here*, so a caller who opted into the raw payload convention
+        gets a planning-time :class:`~tstdx.errors.ValidationError`.
+
+        The convention is deliberately optional: the v14 typed path
+        (:class:`~tstdx.execution.semantic.SemanticExecutionAdapter`) compiles the
+        same capability names from semantic fields (``symbols`` / ``period`` …)
+        with no raw payload, and validates at dispatch instead. Requiring the
+        payload at planning would reject that first-class path, so the hard
+        guarantee is enforced where it is universal — before Provider I/O in
+        :meth:`~tstdx.direct_provider.DirectProviderExecutor._migrated_capability`.
+        """
+
+        from .capability_catalog import binding_for, validate_call
+
+        options = spec.options
+        if "args" not in options and "kwargs" not in options:
+            return
+        key = (str(spec.provider), channel.id, spec.capability)
+        try:
+            binding_for(*key)
+        except KeyError:
+            return
+        args = options.get("args", [])
+        kwargs = options.get("kwargs", {})
+        if not isinstance(args, list) or not isinstance(kwargs, dict):
+            raise ValidationError(
+                "migrated capability options 必须包含 args:list / kwargs:object",
+                context={
+                    "provider": key[0],
+                    "channel": key[1],
+                    "capability": key[2],
+                    "phase": "query_validation",
+                },
+            )
+        validate_call(key[0], key[1], key[2], tuple(args), dict(kwargs))
+
     def compile(self, spec: QuerySpec) -> QueryPlan:
         normalized = spec.normalized(default_provider=self.default_provider)
         selected = self._select_channel(normalized)
+        self._validate_migrated_call(normalized, selected)
         currentness = _parse_currentness(normalized.currentness)
         if currentness is CurrentnessMode.LIVE and not selected.live:
             raise ValidationError(

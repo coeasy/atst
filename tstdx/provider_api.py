@@ -41,6 +41,7 @@ __all__ = [
     "DerivedProviderAPI",
     "BuiltinProviderAPI",
     "build_provider_api",
+    "resolve_channel_adapter",
 ]
 
 AdapterRef = tuple[str, str]
@@ -923,3 +924,32 @@ def build_provider_api(service: UnifiedMarketDataService, provider: str) -> Prov
             },
         ) from exc
     return cls(service)
+
+
+def resolve_channel_adapter(provider: str, channel: str) -> type[Any]:
+    """Return the Direct-API adapter class bound to one Provider channel.
+
+    The ``CHANNELS`` tables below are the single home for ``channel -> adapter``
+    bindings. The migrated (v13) catalog resolves through this function instead
+    of duplicating module/class strings, so a channel can never point at a
+    different adapter depending on which execution layer asks.
+    """
+
+    pid = resolve_provider(provider=provider)
+    cid = str(channel).strip().lower()
+    api_type = _PROVIDER_API_TYPES[pid]
+    channels: dict[str, AdapterRef] = getattr(api_type, "CHANNELS", {})
+    try:
+        ref = channels[cid]
+    except KeyError as exc:
+        raise ValidationError(
+            f"Provider {pid!r} 的 channel {cid!r} 没有 Direct adapter 引用",
+            context={
+                "provider": pid,
+                "channel": cid,
+                "phase": "direct_contract",
+                "fallback": False,
+                "provider_switch_allowed": False,
+            },
+        ) from exc
+    return WebProviderAPI._load_adapter(ref)

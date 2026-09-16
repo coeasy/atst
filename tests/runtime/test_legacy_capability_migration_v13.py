@@ -12,7 +12,11 @@ from tstdx.capability_catalog import (
     default_provider_for,
 )
 from tstdx.client_api import Client
-from tstdx.direct_provider import DIRECT_BINDINGS, audit_direct_bindings
+from tstdx.direct_provider import (
+    DIRECT_BINDINGS,
+    DirectProviderExecutor,
+    audit_direct_bindings,
+)
 from tstdx.errors import ValidationError
 from tstdx.providers import PROVIDERS
 from tstdx.query import QueryPlanner, QuerySpec
@@ -186,20 +190,53 @@ def test_every_migrated_capability_has_a_deterministic_default_binding() -> None
         assert candidates[0].key in direct
 
 
-def test_migrated_signature_validation_happens_during_planning() -> None:
+def test_migrated_signature_validation_is_fail_closed_before_provider_io() -> None:
+    """坏 payload 在 Provider I/O 之前 fail-closed；planning 不强制 raw payload。
+
+    同一个迁移能力有两条一等调用路径：
+
+    * **raw payload 约定**：``options={"args": [...], "kwargs": {...}}``；
+    * **v14 typed 路径**（:class:`~tstdx.execution.semantic.SemanticExecutionAdapter`）：
+      从语义字段（``symbols`` / ``period`` …）编译，**不带** raw payload。
+
+    因此 planning 只在调用方提供了 payload 时校验它；硬保证落在两条路径共享的
+    派发点（``_migrated_capability`` 在创建任何 Provider 客户端**之前**调用
+    ``validate_call``）。旧断言“必须在 planning 期校验”与 v14 一等路径互斥，
+    故按真实（且更强：fail-closed 无 I/O）的契约重述。
+    """
+
     planner = QueryPlanner()
     provider = default_provider_for("balance_sheet")
-    with pytest.raises(ValidationError):
-        planner.compile(QuerySpec.build("balance_sheet", provider=provider))
 
-    plan = planner.compile(
+    # 语义字段路径：planning 不要求 raw payload（v14 typed 路径依赖此行为）。
+    plan = planner.compile(QuerySpec.build("balance_sheet", provider=provider))
+    assert plan.spec.capability == "balance_sheet"
+
+    # raw payload 路径：签名不符 → planning 期即 fail-fast。
+    with pytest.raises(ValidationError):
+        planner.compile(
+            QuerySpec.build(
+                "balance_sheet",
+                provider=provider,
+                options={"args": [], "kwargs": {}},
+            )
+        )
+
+    # 合法 payload → 可编译。
+    valid = planner.compile(
         QuerySpec.build(
             "balance_sheet",
             provider=provider,
             options={"args": ["sh600519"], "kwargs": {}},
         )
     )
-    assert plan.spec.capability == "balance_sheet"
+    assert valid.spec.capability == "balance_sheet"
+
+    # 派发期 fail-closed：payload 缺失时在 Provider I/O 之前抛 ValidationError
+    # （而非创建 WebQuoteSession 后才炸出 InternalError）。
+    executor = DirectProviderExecutor(timeout=0.01)
+    with pytest.raises(ValidationError):
+        executor.execute(plan)
 
 
 def test_fingerprint_hashes_secrets_instead_of_storing_plaintext() -> None:

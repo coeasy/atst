@@ -195,11 +195,126 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
     MigratedCapabilityBinding(
         "hk_quotes", "tencent", "catalog", "web_session", "hk_quotes", "tencent"
     ),
+    # MAC 协议行情（TDX 7727 family）。``mac`` channel 的 ``quotes`` capability
+    # 是 v14 Direct API surface（``TdxMacAPI.quote``）；planner 因 canonical
+    # channel 规则不会把它选为统一引用，故只在 ``mac_quotes`` 上补一条。
+    MigratedCapabilityBinding(
+        "mac_quotes", "tdx", "mac", "mac_client", "mac_quote"
+    ),
+    # 权息资料（公司行为 / 股本变迁）在全仓只有**一个**低层实现：TDX
+    # ``capital_changes``（见 ``TdxQuotationAPI.capital_changes`` 与
+    # ``integration/http_server`` 的 ``corporate_action`` 别名注释）。v14 注册表
+    # 把 ``CorporateActionQuery`` 归到 eastmoney ``corporate`` channel，因此该
+    # 语义 home 指向同一实现，而不是杜撰一个不存在的东财资源。
+    MigratedCapabilityBinding(
+        "corporate_action", "eastmoney", "corporate", "tdx_client", "capital_changes"
+    ),
 )
 
 
+#: v14 registry channels whose capabilities map 1:1 onto a same-named
+#: :class:`~tstdx.web.facade.WebQuoteSession` method. These are the *semantic
+#: homes* the v14 registry gave migrated business abilities (``datacenter`` /
+#: ``derivatives`` / ``fund`` …) next to their aggregate ``derived`` home. The
+#: facade is already the single high-level implementation of every one of these
+#: capabilities — ``derived``/``catalog`` binds the identical method — so the
+#: semantic home is bound to the *same* implementation instead of forking a
+#: second one. Capabilities are read from the registry (SSOT), never re-listed
+#: here, and a capability that the facade does not expose is skipped so that
+#: :data:`_DIRECT_ADAPTER_BINDINGS` can own it instead.
+_SEMANTIC_WEB_CHANNELS: tuple[tuple[str, str], ...] = (
+    ("eastmoney", "datacenter"),
+    ("eastmoney", "derivatives"),
+    ("eastmoney", "fund"),
+    ("eastmoney", "fund_flow"),
+    ("eastmoney", "hot_rank"),
+    ("eastmoney", "index_constituents"),
+    ("eastmoney", "limit_pool"),
+    ("eastmoney", "longhu"),
+    ("eastmoney", "margin"),
+    ("eastmoney", "news"),
+    ("eastmoney", "northbound"),
+    ("eastmoney", "options"),
+    ("eastmoney", "rank"),
+    ("eastmoney", "research"),
+    ("eastmoney", "stock_changes"),
+    ("sina", "fund_flow"),
+    ("sina", "news"),
+)
+
+#: Registry triples whose only implementation is a v14 Direct-API channel
+#: adapter. ``backend="direct_adapter"`` resolves the adapter *class* from the
+#: single :data:`tstdx.provider_api` ``CHANNELS`` table at dispatch time, so this
+#: table only names the adapter *method* — module/class strings are never
+#: duplicated here.
+_DIRECT_ADAPTER_BINDINGS: tuple[tuple[str, str, str, str], ...] = (
+    # (capability, provider, channel, adapter_method)
+    ("minute", "baidu", "minute", "fetch_minute"),
+    ("trades", "baidu", "ticks", "fetch_ticks"),
+    ("fx_rates", "boc", "fx", "fetch_rates"),
+    ("minute", "eastmoney", "trends", "fetch_minutes"),
+    ("screening", "iwencai", "screening", "fetch_strategy"),
+    ("convertible_bond", "jsl", "bond", "fetch"),
+    ("board_member", "sina", "board_member", "fetch_members"),
+    ("industry_board", "sina", "industry_board", "fetch_boards"),
+    ("global_quotes", "tencent", "global", "fetch"),
+    ("minute", "tencent", "minute", "fetch_minute"),
+    ("trades", "tencent", "ticks", "fetch_ticks"),
+)
+
+
+def _semantic_web_bindings() -> list[MigratedCapabilityBinding]:
+    from .providers import PROVIDERS
+    from .web.facade import WebQuoteSession
+
+    values: list[MigratedCapabilityBinding] = []
+    for provider, channel in _SEMANTIC_WEB_CHANNELS:
+        spec = PROVIDERS.get(provider).channel(channel)
+        for capability in sorted(spec.capabilities):
+            if not hasattr(WebQuoteSession, capability):
+                continue
+            values.append(
+                MigratedCapabilityBinding(
+                    capability=capability,
+                    provider=provider,
+                    channel=channel,
+                    backend="web_session",
+                    method=capability,
+                    source=_SOURCE_FOR_PROVIDER.get(provider, "sina"),
+                )
+            )
+    return values
+
+
+def _direct_adapter_bindings() -> list[MigratedCapabilityBinding]:
+    return [
+        MigratedCapabilityBinding(
+            capability=capability,
+            provider=provider,
+            channel=channel,
+            backend="direct_adapter",
+            method=method,
+        )
+        for capability, provider, channel, method in _DIRECT_ADAPTER_BINDINGS
+    ]
+
+
 def _build_bindings() -> tuple[MigratedCapabilityBinding, ...]:
-    by_key = {item.key: item for item in _discover_web_bindings()}
+    """Compose the migrated catalog from every declared source of truth.
+
+    Precedence is deliberate: the auto-discovered facade methods give the
+    baseline, the derived/registry-driven tables narrow it per Provider home, and
+    the hand-written :data:`_EXPLICIT_BINDINGS` win last because they encode the
+    non-facade backends (native TDX clients, composed adapters, …).
+    """
+
+    by_key: dict[tuple[str, str, str], MigratedCapabilityBinding] = {}
+    for item in _discover_web_bindings():
+        by_key[item.key] = item
+    for item in _semantic_web_bindings():
+        by_key[item.key] = item
+    for item in _direct_adapter_bindings():
+        by_key[item.key] = item
     for item in _EXPLICIT_BINDINGS:
         by_key[item.key] = item
     return tuple(sorted(by_key.values(), key=lambda x: x.key))
@@ -351,11 +466,21 @@ def validate_call(
             elif len(args) != 1 or kwargs:
                 raise TypeError("f10_catalog requires exactly one symbol")
             return
-        if meta.backend in {"ex_client", "goods_client"}:
-            from .client import ExMarketClient, GoodsClient
+        if meta.backend in {"ex_client", "goods_client", "mac_client"}:
+            from .client import ExMarketClient, GoodsClient, MacClient
 
-            cls = ExMarketClient if meta.backend == "ex_client" else GoodsClient
+            cls = {
+                "ex_client": ExMarketClient,
+                "goods_client": GoodsClient,
+                "mac_client": MacClient,
+            }[meta.backend]
             _bind_signature(getattr(cls, meta.method), args, kwargs)
+            return
+        if meta.backend == "direct_adapter":
+            from .provider_api import resolve_channel_adapter
+
+            adapter = resolve_channel_adapter(provider, meta.channel)
+            _bind_signature(getattr(adapter, meta.method), args, kwargs)
             return
         if meta.backend == "web_adapter":
             _validate_web_adapter(capability, args, kwargs)

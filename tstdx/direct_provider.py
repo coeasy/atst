@@ -90,19 +90,47 @@ DIRECT_BINDINGS = tuple(
 )
 
 
+def _is_unified_reachable(provider: str, channel: str, capability: str) -> bool:
+    """Whether the unified planner can ever select this exact triple.
+
+    A registry triple is only *unified-reachable* when
+    :meth:`~tstdx.query.QueryPlanner._select_channel` would pick this channel for
+    ``(provider, capability)``: the canonical unified channel when one exists,
+    otherwise the unique channel owning the capability. Everything else is a
+    Direct-API-only surface (for example ``tdx/extended/quotes``, whose unified
+    home is the canonical ``quotation`` channel), so it deliberately has no
+    migrated-capability metadata and must not be reported as a gap.
+
+    Deriving this from the planner's own rule — rather than a hand-kept exemption
+    list — keeps the audit and dispatch in lockstep.
+    """
+
+    from .query import _canonical_unified_channel
+
+    if capability == "bars" and provider == "tencent":
+        return channel in {"kline", "minute_kline"}
+    canonical = _canonical_unified_channel(provider, capability, "")
+    if canonical is not None:
+        return channel == canonical
+    owners = [item.id for item in PROVIDERS.get(provider).channels_for(capability)]
+    return len(owners) == 1 and channel in owners
+
+
 def audit_direct_bindings() -> tuple[DirectBinding, ...]:
     """Validate that DIRECT_BINDINGS are internally consistent.
 
     Duplicate bindings are a genuine developer error and remain a hard failure.
     Because :data:`DIRECT_BINDINGS` is generated from the registry, the
-    registry ↔ binding bijection now holds by construction. What can still be
-    *incomplete* is the migrated-capability catalog: a registry triple whose
-    executor is :meth:`_migrated_capability` needs a
-    :data:`~tstdx.capability_catalog.MIGRATED_BINDINGS` entry to route it. Such
-    triples are declared-but-unroutable and reported once as a warning instead of
-    raised, so a registry/executor mismatch cannot hard-block every
-    ``UnifiedRuntime()`` / ``Client()`` construction.
+    registry ↔ binding bijection now holds by construction. The remaining
+    invariant is *unified routability*: every triple the planner can actually
+    select must have an executor — either a dedicated one, or a
+    :data:`~tstdx.capability_catalog.MIGRATED_BINDINGS` entry for the
+    :meth:`_migrated_capability` dispatcher. Such triples are declared-but-
+    unroutable and reported once as a warning instead of raised, so a
+    registry/executor mismatch cannot hard-block every ``UnifiedRuntime()`` /
+    ``Client()`` construction.
     """
+
     seen: set[tuple[str, str, str]] = set()
     unroutable: list[tuple[str, str, str]] = []
     for binding in DIRECT_BINDINGS:
@@ -111,14 +139,16 @@ def audit_direct_bindings() -> tuple[DirectBinding, ...]:
         seen.add(binding.key)
         if binding.executor_name != "_migrated_capability":
             continue
+        if not _is_unified_reachable(*binding.key):
+            continue
         try:
             binding_for(*binding.key)
         except KeyError:
             unroutable.append(binding.key)
     if unroutable:
         warnings.warn(
-            f"{len(unroutable)} 个 Direct binding 缺少 migrated-capability 执行元数据"
-            f"（例如 {unroutable[0]!r}）；运行时按 binding 表派发，"
+            f"{len(unroutable)} 个统一可达的 Direct binding 缺少 migrated-capability "
+            f"执行元数据（例如 {unroutable[0]!r}）；运行时按 binding 表派发，"
             f"capability catalog 待补齐",
             stacklevel=2,
         )
@@ -243,25 +273,40 @@ class DirectProviderExecutor:
             finally:
                 client.close()
 
-        if meta.backend in {"ex_client", "goods_client"}:
-            from .client import ExMarketClient, GoodsClient
+        if meta.backend in {"ex_client", "goods_client", "mac_client"}:
+            from .client import ExMarketClient, GoodsClient, MacClient
 
-            client = (
-                ExMarketClient(timeout=self.timeout)
-                if meta.backend == "ex_client"
-                else GoodsClient(timeout=self.timeout)
-            )
+            client = {
+                "ex_client": ExMarketClient,
+                "goods_client": GoodsClient,
+                "mac_client": MacClient,
+            }[meta.backend](timeout=self.timeout)
             try:
                 if meta.capability in {
                     "ex_bars",
                     "ex_quotes",
                     "goods_bars",
                     "goods_quotes",
+                    "mac_quotes",
                 }:
                     kwargs.setdefault("as_format", "dict")
                 return getattr(client, meta.method)(*args, **kwargs)
             finally:
                 client.close()
+
+        if meta.backend == "direct_adapter":
+            # The adapter class comes from the v14 ``CHANNELS`` table (single
+            # home) rather than a second module/class table in the catalog.
+            from .provider_api import resolve_channel_adapter
+
+            adapter_cls = resolve_channel_adapter(plan.provider, meta.channel)
+            adapter = adapter_cls(timeout=self.timeout)
+            try:
+                return getattr(adapter, meta.method)(*args, **kwargs)
+            finally:
+                close = getattr(adapter, "close", None)
+                if callable(close):
+                    close()
 
         if meta.backend == "web_adapter":
             return self._web_adapter_call(

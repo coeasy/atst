@@ -28,7 +28,7 @@ from typing import Any
 
 from .errors import TdxError, http_status_for
 
-__all__ = ["ErrorEnvelope", "to_error_envelope"]
+__all__ = ["ErrorEnvelope", "to_error_envelope", "is_sensitive_key"]
 
 
 #: 精确匹配的敏感上下文键。
@@ -75,7 +75,14 @@ _SENSITIVE_KEY_MARKERS = (
 _FLAT_CONTEXT_KEYS = ("query_id", "request_id")
 
 
-def _is_sensitive_key(key: str) -> bool:
+def is_sensitive_key(key: str) -> bool:
+    """Whether a key names a credential-bearing field.
+
+    Shared by error-context redaction and query-fingerprint redaction so both
+    surfaces agree on what counts as a secret: exact key matches plus substring
+    markers (which catch ``access_token`` / ``secret_token`` / ``api_key`` …).
+    """
+
     lowered = str(key).lower()
     if lowered in _SENSITIVE_EXACT_KEYS:
         return True
@@ -159,7 +166,7 @@ def _safe_context(context: Mapping[str, Any]) -> dict[str, Any]:
     """
 
     sanitized = {
-        key: value for key, value in context.items() if not _is_sensitive_key(str(key))
+        key: value for key, value in context.items() if not is_sensitive_key(str(key))
     }
     if any(flag in sanitized for flag in _LEGACY_PERMISSION_FLAGS):
         for flag in _LEGACY_PERMISSION_FLAGS:
