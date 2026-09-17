@@ -11,7 +11,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from .provider_guard import ProviderExecutionIdentity, validate_execution_identity
+from .provider_guard import (
+    ProviderExecutionIdentity,
+    ProviderIdentityMismatchError,
+    validate_execution_identity,
+)
 from .runtime_identity import RuntimeExecutionIdentity
 
 
@@ -35,15 +39,18 @@ def validate_runtime_provenance(
             "result provenance missing provider identity"
         )
 
-    validate_execution_identity(
-        ProviderExecutionIdentity(
-            provider=identity.provider,
-            channel=identity.channel,
-            capability=identity.capability,
-        ),
-        ProviderExecutionIdentity(
-            provider=str(provider),
-            channel=str(channel),
-            capability=str(capability),
-        ),
-    )
+    try:
+        validate_execution_identity(
+            ProviderExecutionIdentity(
+                provider=identity.provider,
+                channel=identity.channel,
+                capability=identity.capability,
+            ),
+            ProviderExecutionIdentity(
+                provider=str(provider),
+                channel=str(channel),
+                capability=str(capability),
+            ),
+        )
+    except ProviderIdentityMismatchError as exc:
+        raise RuntimeProvenanceMismatchError(str(exc)) from exc
