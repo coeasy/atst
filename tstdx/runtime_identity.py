@@ -11,6 +11,7 @@ semantic meaning of a query.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +44,11 @@ class RuntimeExecutionIdentity:
         )
 
 
+def _fingerprint_value(value: Any) -> str:
+    raw = getattr(value, "value", value)
+    return str(raw)
+
+
 def cache_identity_from_plan(plan: object) -> RuntimeCacheIdentity:
     """Build a provider-aware cache identity from a canonical QueryPlan."""
 
@@ -51,7 +57,7 @@ def cache_identity_from_plan(plan: object) -> RuntimeCacheIdentity:
         provider=str(getattr(plan, "provider")),
         channel=str(getattr(plan, "channel")),
         capability=str(getattr(spec, "capability")),
-        fingerprint=str(getattr(plan, "fingerprint", "")),
+        fingerprint=_fingerprint_value(getattr(plan, "fingerprint", "")),
     )
 
 
