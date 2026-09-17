@@ -15,19 +15,18 @@ can use it without importing other Provider implementations.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import FrozenSet
 
 
 @dataclass(frozen=True, slots=True)
 class ProviderIdentity:
     """Immutable identity of an independent data source."""
 
-    name: str
+    provider: str
     channel: str
 
     def __post_init__(self) -> None:
-        if not self.name.strip():
-            raise ValueError("provider name must not be empty")
+        if not self.provider.strip():
+            raise ValueError("provider must not be empty")
         if not self.channel.strip():
             raise ValueError("provider channel must not be empty")
 
@@ -37,7 +36,7 @@ class ProviderCapabilityContract:
     """Declared capabilities owned by one Provider."""
 
     provider: str
-    capabilities: FrozenSet[str]
+    capabilities: frozenset[str]
 
     def supports(self, capability: str) -> bool:
         return capability.strip().lower() in self.capabilities
@@ -45,20 +44,31 @@ class ProviderCapabilityContract:
 
 @dataclass(frozen=True, slots=True)
 class ProviderExecutionContract:
-    """Execution metadata passed through Runtime boundaries."""
+    """Execution metadata passed through Runtime boundaries.
 
-    provider: str
-    channel: str
+    Binds one request to exactly one Provider identity. The identity is carried
+    as a :class:`ProviderIdentity` so the execution layer never takes a flat,
+    mutable provider string that could silently drift to another source.
+    """
+
+    identity: ProviderIdentity
     capability: str
 
-    def validate(self) -> None:
-        for value, name in (
-            (self.provider, "provider"),
-            (self.channel, "channel"),
-            (self.capability, "capability"),
-        ):
-            if not value.strip():
-                raise ValueError(f"{name} must not be empty")
+    def assert_provider(self, provider: str) -> None:
+        """Raise :class:`ValueError` if the bound identity is not ``provider``."""
+
+        if self.identity.provider != provider:
+            raise ValueError(
+                f"execution targets {self.identity.provider!r}, not {provider!r}"
+            )
+
+    def assert_identity(self, other: ProviderIdentity) -> None:
+        """Raise :class:`ValueError` if the bound identity differs from ``other``."""
+
+        if self.identity != other:
+            raise ValueError(
+                f"execution identity {self.identity!r} != requested {other!r}"
+            )
 
 
 __all__ = [

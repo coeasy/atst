@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 _RETRYABLE_ERROR_NAMES = frozenset(
     {
         "TimeoutError",
@@ -33,6 +32,9 @@ def should_negative_cache(error: Any) -> bool:
 
     name = type(error).__name__
     if name in _RETRYABLE_ERROR_NAMES:
+        return False
+
+    if getattr(error, "retryable", False) is True:
         return False
 
     context = getattr(error, "context", {}) or {}
