@@ -19,6 +19,7 @@ from .error_envelope import ErrorEnvelope
 from .errors import SourceUnavailable, TdxError, ValidationError
 from .providers import resolve_provider
 from .query import CurrentnessMode, QueryPlan
+from .runtime_identity import RuntimeCacheIdentity
 
 __all__ = ["BatchSpec", "BatchItem", "BatchResult", "SingleFlight", "NegativeCache"]
 
@@ -273,6 +274,36 @@ def _clone_exception(exc: Exception) -> Exception:
         return RuntimeError(str(exc))
 
 
+def _fingerprint_value(value: Any) -> str:
+    return str(getattr(value, "value", value))
+
+
+def _runtime_cache_key(key_source: QueryPlan | RuntimeCacheIdentity | object) -> str:
+    if isinstance(key_source, RuntimeCacheIdentity):
+        return "|".join(key_source.key())
+
+    spec = getattr(key_source, "spec", None)
+    provider = getattr(key_source, "provider", None)
+    channel = getattr(key_source, "channel", None)
+    capability = getattr(spec, "capability", None)
+    fingerprint = getattr(key_source, "fingerprint", None)
+
+    if provider is not None and channel is not None and capability is not None:
+        return "|".join(
+            (
+                str(provider).strip().lower(),
+                str(channel).strip().lower(),
+                str(capability).strip().lower(),
+                _fingerprint_value(fingerprint),
+            )
+        )
+
+    if isinstance(key_source, tuple):
+        return "|".join(str(part).strip().lower() for part in key_source)
+
+    return _fingerprint_value(fingerprint if fingerprint is not None else key_source)
+
+
 class _Flight:
     def __init__(self) -> None:
         self.event = threading.Event()
@@ -281,14 +312,14 @@ class _Flight:
 
 
 class SingleFlight:
-    """Coalesce concurrent work by the complete QueryFingerprint."""
+    """Coalesce concurrent work by the complete provider-aware cache identity."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._flights: dict[str, _Flight] = {}
 
-    def do(self, plan: QueryPlan, fn: Callable[[], T]) -> T:
-        key = plan.fingerprint.value
+    def do(self, key_source: QueryPlan | RuntimeCacheIdentity, fn: Callable[[], T]) -> T:
+        key = _runtime_cache_key(key_source)
         with self._lock:
             flight = self._flights.get(key)
             leader = flight is None
@@ -345,9 +376,14 @@ class NegativeCache:
             return False
         return not exc.advice.retryable
 
-    def get(self, plan: QueryPlan, *, now_ns: int | None = None) -> Exception | None:
+    def get(
+        self,
+        key_source: QueryPlan | RuntimeCacheIdentity,
+        *,
+        now_ns: int | None = None,
+    ) -> Exception | None:
         now = time.time_ns() if now_ns is None else int(now_ns)
-        key = plan.fingerprint.value
+        key = _runtime_cache_key(key_source)
         with self._lock:
             entry = self._data.get(key)
             if entry is None:
@@ -361,12 +397,18 @@ class NegativeCache:
             self.hits += 1
             return _clone_exception(entry.error)
 
-    def put(self, plan: QueryPlan, exc: Exception, *, now_ns: int | None = None) -> bool:
+    def put(
+        self,
+        key_source: QueryPlan | RuntimeCacheIdentity,
+        exc: Exception,
+        *,
+        now_ns: int | None = None,
+    ) -> bool:
         if not self.cacheable(exc):
             self.rejects += 1
             return False
         now = time.time_ns() if now_ns is None else int(now_ns)
-        key = plan.fingerprint.value
+        key = _runtime_cache_key(key_source)
         with self._lock:
             if key in self._data:
                 self._data.pop(key, None)
@@ -379,9 +421,9 @@ class NegativeCache:
             )
         return True
 
-    def invalidate(self, plan: QueryPlan) -> bool:
+    def invalidate(self, key_source: QueryPlan | RuntimeCacheIdentity) -> bool:
         with self._lock:
-            return self._data.pop(plan.fingerprint.value, None) is not None
+            return self._data.pop(_runtime_cache_key(key_source), None) is not None
 
     def metrics(self) -> dict[str, int]:
         with self._lock:
