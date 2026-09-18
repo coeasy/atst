@@ -1,44 +1,26 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Runtime cache policy helpers.
-
-Keeps cache behaviour aligned with Provider isolation.  Cache decisions are
-made from error semantics, not from transport availability alone.
-"""
+"""Runtime negative-cache policy aligned with the canonical error taxonomy."""
 
 from __future__ import annotations
 
 from typing import Any
 
-_RETRYABLE_ERROR_NAMES = frozenset(
-    {
-        "TimeoutError",
-        "ConnectionError",
-        "OSError",
-    }
-)
+from .errors import SourceUnavailable, TdxError
 
 
 def should_negative_cache(error: Any) -> bool:
-    """Return whether an error represents a deterministic negative result.
+    """Return whether an error is a deterministic terminal tstdx failure.
 
-    Transient transport/provider availability failures must not poison a
-    Provider cache boundary.
+    Transport/protocol/freshness failures marked retryable must never poison a
+    Provider cache boundary. Unknown third-party exceptions are also excluded;
+    DirectProviderExecutor wraps those into the canonical TdxError hierarchy
+    before they reach Runtime.
     """
 
-    if error is None:
+    if not isinstance(error, TdxError):
         return False
-
-    name = type(error).__name__
-    if name in _RETRYABLE_ERROR_NAMES:
+    if isinstance(error, SourceUnavailable):
         return False
-
-    if getattr(error, "retryable", False) is True:
-        return False
-
-    context = getattr(error, "context", {}) or {}
-    if context.get("retryable") is True:
-        return False
-
-    return True
+    return not error.advice.retryable
