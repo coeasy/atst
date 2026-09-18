@@ -201,6 +201,21 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   **3238 passed / 7 skipped / 1 xpassed / 0 failed，coverage 78.80%**，`PYTEST_RC=0`，
   阈值 77 未动。
 
+### Fixed（v17 Phase 5 第 6 步 —— `contract_audit` 的自述与行为对齐，F-25）
+
+- `scripts/contract_audit.py` 的模块 docstring 宣称规则 1「每个业务 capability **必须**有
+  Typed Query 契约」、`--ci`「任何缺口 exit 1」、退出码「0=全绿」；实际代码把"注册表有、
+  契约无"降级为 `PENDING`，`run()` 只对 `ERROR` 计数。实测口径是 **155 个业务
+  capability / 63 个有契约 ⇒ 92 项 PENDING 一律 exit 0**——自述比行为强，读文档的人会把
+  "绿"理解成契约全覆盖。现逐条标注级别（规则 1、4 = PENDING，2、3、5 = ERROR）并写明
+  `--ci` 的真实阻断条件。
+- **没有**把 PENDING 升级为阻断：那要求一次性补 92 份契约，且会把已知待办伪装成既成事实。
+  缺口尺寸记在重构方案里（F-25），不塞进门禁。
+- README 的两处描述随之更正：它写的"契约↔注册表↔**绑定**三方对账"里，provider bindings
+  根本不是这个工具的审计维度；现为 Registry/语义就绪/内核编译/Domain Record/往返五段。
+  同批把里程碑表两行停在既成事实之前的状态行（Phase 4「门禁在建」、Phase 5「⏳」）改为
+  实测结论，并保留两项真实待办（CI 侧覆盖率重钉、真实网络 smoke + tag）。
+
 ### Fixed
 
 - **`tstdx.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，

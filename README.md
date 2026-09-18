@@ -425,7 +425,7 @@ make gates                                      # 11 步确定性门禁：lint+f
 python -m tstdx.tools.golden_audit --gate       # Golden L1 真实样本门禁（530 payload）
 python -m pytest tests/adversarial -q           # 对抗矩阵（9 payload × 85 命令，逃逸=0）
 python scripts/audit_reachability.py --strict   # 可达性门禁（孤儿=0）
-python scripts/contract_audit.py --ci           # 契约↔注册表↔绑定三方对账 + typed 内核编译审计
+python scripts/contract_audit.py --ci           # Typed 契约↔注册表↔Domain Record 五段对账 + 内核编译审计（ERROR 级缺口才阻断；契约待补项按 PENDING 报告）
 python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproject fail_under=77）
 ```
 
@@ -447,13 +447,13 @@ python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproj
 |---|---|---|
 | Typed Capability 契约 | ✅ | 60+ 契约（11 领域基类），字段名与内核方法签名一一对应 |
 | Domain Model | ✅ | 9 Domain Record 族 + 记录归一化 |
-| Contract Automation | ✅ | `scripts/contract_audit.py --ci` 三方对账 + 内核编译审计 |
+| Contract Automation | ✅ | `scripts/contract_audit.py --ci`：Registry/语义/内核编译/Domain Record/往返五段对账，ERROR 级缺口阻断（契约待补面按 PENDING 报告） |
 | Streaming | ✅ | StreamSpec/StreamPlanner + StatefulQuoteStream |
 | 单内核收敛（v16） | ✅ | 零缓存直调路径；v12 门面/service/sources/全部缓存层物理删除 |
 | 断链清偿（v17 Phase 3A/3B/3D） | ✅ | v14 信封运行时 + `execution/` DAG + `provider/` router + registry 三件套删除；typed 全线接通 |
 | 命名空间归位（v17 Phase 3C） | ✅ | 根级模块 26→11；`runtime/` `catalog/` `client/` 分层 |
-| 文档与对外面统一（v17 Phase 4） | ◐ | README/ARCHITECTURE 已刷新；历史方案待归档、文档-代码一致性门禁在建 |
-| 发布硬化（v17 Phase 5） | ⏳ | mypy 清零、覆盖率重校准、真实网络 smoke、tag `v1.1.0-dev.1` |
+| 文档与对外面统一（v17 Phase 4） | ✅ | README/ARCHITECTURE 已刷新；30 份历史方案入 `docs/archive/plans`；文档-代码一致性门禁上线（导入语句/点号路径/README 数字/结构树/门禁规模逐项对账） |
+| 发布硬化（v17 Phase 5） | ◐ | mypy 47→0、ruff format 65 文件清零、三项 strict 门禁转绿、豁免清单与 ghost 门禁审计完成、离线整仓覆盖率 78.80%（阈值 77 未动）。仍待：按 CI 环境数字重钉覆盖率 + 真实网络 smoke + tag `v1.1.0-dev.1` |
 
 ### 下一阶段
 

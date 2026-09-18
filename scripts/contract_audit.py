@@ -2,25 +2,26 @@
 """v14 Contract Automation —— 验证 Typed Query = Registry = Record 链路一致性。
 
 中期 P2（REFACTOR_PLAN_v14_FULL_UPGRADE Phase 4 Contract Automation）。
-校验规则：
+校验规则（括号内为不满足时的级别）：
 
-1. **Registry 全覆盖**：每个业务 capability 在 ``PROVIDERS`` 注册表中可路由，
-   且必须有对应的 Typed Query 契约（Typed Query = Registry 一一映射）。
-2. **语义就绪**：每个 Typed Query 契约 ``semantic_ready=True``
+1. **Registry 覆盖**：有 Typed Query 契约却不在 ``PROVIDERS`` 注册表的 capability 是
+   ERROR（契约指向不存在的命令）；注册表有、契约待补的是 PENDING（警告级，**不阻断**
+   ——当前 155 个业务 capability 中 63 个已有契约，其余是登记在案的待补面）。
+2. **语义就绪**（ERROR）：每个 Typed Query 契约 ``semantic_ready=True``
    （即同一个 capability 已出现在 canonical Provider 注册表）。
-3. **编译通过**：每个 Typed Query 可经 ``call_payload_from_typed`` + ``QueryPlanner``
+3. **编译通过**（ERROR）：每个 Typed Query 可经 ``call_payload_from_typed`` + ``QueryPlanner``
    编译为唯一 ``QueryPlan``（Typed Query = Kernel boundary）。
-4. **Domain Record 映射**：每个 Typed Query capability 有对应的
-   Domain Record 类型（Typed Query = Domain Result Model）。
-5. **Record 往返无损**：每个 Domain Record ``to_dict`` -> ``from_dict``
+4. **Domain Record 映射**（PENDING）：每个 Typed Query capability 有对应的
+   Domain Record 类型（Typed Query = Domain Result Model）。当前为 0 项。
+5. **Record 往返无损**（ERROR）：每个 Domain Record ``to_dict`` -> ``from_dict``
    往返保持核心字段（Domain Result Model = Serialization）。
 
 用法::
 
-    python scripts/contract_audit.py            # 全量审计
-    python scripts/contract_audit.py --ci       # CI 模式（任何缺口 exit 1）
+    python scripts/contract_audit.py            # 全量审计（恒 exit 0，仅打印）
+    python scripts/contract_audit.py --ci       # 存在 ERROR 级缺口时 exit 1（PENDING 不阻断）
 
-退出码: 0=全绿，1=存在缺口/异常
+退出码: 0=无 ERROR 级缺口（可能仍有 PENDING 待办），1=--ci 且存在 ERROR
 """
 
 from __future__ import annotations
