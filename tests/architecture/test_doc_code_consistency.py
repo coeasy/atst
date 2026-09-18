@@ -1,8 +1,9 @@
 """文档-代码一致性门禁（V17 Phase 4）。
 
-活文档里的每一条 ``from tstdx... import X``、每一个 ``tstdx.a.b`` 引用和 README
-宣称的每个数字，都必须与运行期事实一致。历史快照（``docs/archive/``、
-``docs/adr/``、``DESIGN.md``）记录的是当时语境，不参与门禁。
+活文档里的每一条 ``from tstdx... import X``、每一个 ``tstdx.a.b`` 引用、README
+宣称的每个数字以及项目结构树里的每个 ``name/`` 与 ``name.py`` 条目，都必须与运行期
+事实一致。历史快照（``docs/archive/``、``docs/adr/``、``DESIGN.md``）记录的是当时
+语境，不参与门禁。
 """
 
 from __future__ import annotations
@@ -218,3 +219,54 @@ def test_readme_numbers_match_runtime(fact: str, pattern: str) -> None:
     claimed = {int(n) for n in re.findall(pattern, _readme())}
     assert claimed, f"README 不再声明 {fact}，门禁失效"
     assert claimed == {_actual_facts()[fact]}, f"README {fact}={sorted(claimed)} 与运行期事实不符"
+
+
+# --------------------------------------------------------------------------
+# README 项目结构树（审计 F-23）
+# --------------------------------------------------------------------------
+
+_BRANCH = re.compile(r"^\s*[├└]──\s+(.*)$")
+
+
+def _readme_tree_names() -> list[str]:
+    """树状图里出现的 ``name/`` 与 ``name.py`` 条目（注释列不算）。"""
+    names: list[str] = []
+    for line in _readme().splitlines():
+        head = line.split("#", 1)[0]
+        matched = _BRANCH.match(head)
+        if not matched:
+            continue
+        names.extend(token for token in matched.group(1).split() if token.endswith(("/", ".py")))
+    return names
+
+
+def test_readme_tree_lists_existing_paths() -> None:
+    names = _readme_tree_names()
+    assert names, "README 不再含项目结构树，门禁失效"
+    missing = [
+        name
+        for name in names
+        if not (ROOT / "tstdx" / name.rstrip("/")).exists()
+        and not (ROOT / "tstdx" / name.rstrip("/") / "__init__.py").exists()
+    ]
+    assert not missing, f"README 结构树指向磁盘不存在的路径：{missing}"
+
+
+def test_readme_tree_covers_every_top_level_package() -> None:
+    on_disk = {
+        path.name + "/"
+        for path in (ROOT / "tstdx").iterdir()
+        if path.is_dir() and path.name != "__pycache__"
+    }
+    unlisted = sorted(on_disk - set(_readme_tree_names()))
+    assert not unlisted, f"新增顶层包未写进 README 结构树：{unlisted}"
+
+
+def test_readme_tree_lists_every_top_level_module() -> None:
+    on_disk = {
+        path.name
+        for path in (ROOT / "tstdx").glob("*.py")
+        if path.name == "__main__.py" or not path.name.startswith("_")
+    }
+    listed = set(_readme_tree_names())
+    assert on_disk <= listed, f"新增顶层模块未写进 README 结构树：{sorted(on_disk - listed)}"

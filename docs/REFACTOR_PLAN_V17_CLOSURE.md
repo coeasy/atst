@@ -53,6 +53,8 @@
 | F-19 | P1 | **spec_audit 的三条口径缺陷使 strict 门禁失真**：① `audit_all` 复用 `codegen.load_all_specs`（以 `spec_id` 为键），跨族同号互相覆盖——实测 `TRADE/0x0001` 吞掉 `F10/0x0001`、`TRADE/0x0100` 吞掉 `7727/0x0100`，**这两条命令永远不会出现在审计输出里**（分母 44 被读成 42）；② `_family_to_constant` 对未知 family 静默回落 STANDARD，于是拿 7709 账本查交易命令，把"查错账本"报成"命令未登记"；③ 无载荷控制帧（`0x0004` 心跳 / `0x000D` 握手，spec 自声明响应 `fields/header/record_size` 全空）被要求"有注册解析器"，而它们按定义没有载荷可解析 | **已清偿**（2026-09-19，Phase 5 第 4 步）：改为逐个 YAML 遍历（自动探测 draft 显式排除并可枚举）；TRADE 族查自己的账本与帧层（`tstdx.trade.constants` 常量值 + `CMD_NAMES` 双向对齐、`tstdx.trade.frames` 编解码锚点）；控制帧豁免**判定源自 spec 内容**而非硬编码清单，且"未声明字段"不等于"声明为空"。复测 `Total: 44 / In Ledger: 44 / Coverage 100.0%`、`--strict` RC=0，**100% 阈值未动**；4 项防回潮断言见 `tests/test_spec_coverage.py` |
 | F-20 | P2 | 7709 账本把 `0x0004 HEARTBEAT` 标为 `verified=True`，但全仓**没有发送方**；传输层探活用未入账本的 `0x0002`（`DEFAULT_HEARTBEAT_CMD`，其注释说明"服务端对未知命令回短帧，探活只判通畅"）。同时该注释指向一个不存在的配置键 `hosts.heartbeat_cmd`（Phase 6 后 `HostsConfig` 只有 `servers`/`slots_per_host`） | **部分处理**（2026-09-19）：只把幻影配置说法改成真实覆盖点（连接池构造参数 `heartbeat_cmd`，并写明"配置面没有这个键"）。**改默认探活码属真实网络行为变化**，须真机验证 ⇒ 未动，登记为发布后小 PR |
 | F-21 | P2 | **测量方法缺陷比红灯更危险**：`cmd \| tail; echo $?` 量到的是管道末端的退出码，因此 originality / spec_audit / reachability 三项曾被读成"已绿"。CI 上它们是硬门禁 | **已清偿**：本仓所有门禁复测改用 `${PIPESTATUS[0]}` 或先重定向再取 `$?`；教训与正确写法写入 CONTRIBUTING 门禁段 |
+| F-22 | P1 | **豁免记录自己无人审计**（Phase 5 第 5 步实测）：`scripts/_reach_allow.txt` 28 条里 **9 条是死记录**——2 条指向 v10/v9 就消失的 `tstdx.sinks`、`tstdx.native`，7 条（`tstdx.feedback*`、`tstdx.domain.adjust`、`tstdx.streaming.{engine,push}`）指向**早已接线、现已从入口可达**的模块。扫描器只把白名单当"孤儿减集"，既不查条目是否还存在，也不查它是否还在豁免任何东西，所以 `--strict` 绿≠记录有效。附带：14 条理由 <40 字符（含 4 条短到"公开：用户统计"），`tstdx.charset` 与 `tstdx.deprecation` 的理由写着"_LAZY 导出"，而根包 `_LAZY` 实测 17 个值里**没有这两项**（理由是假的）；`pyproject.toml` 同一形状的死配置 2 处（mypy 覆盖 `tstdx.native.*`、`keyring.*` 忽略表），后者被 mypy 自己的 `warn_unused_configs` 报了出来但没人当回事 | **已清偿**（2026-09-19）：① 扫描器新增记录守卫，四类缺陷与孤儿同权重使 `--strict` 失败——`[dead]`（指向不存在模块）、`[stale]`（指向已可达模块：**保留它等于把将来真正的断链读成绿**）、`[thin]`（理由 <`MIN_REASON_CHARS=40`）、`[dup]`（同模块重复登记，后一条静默覆盖前一条）；② `tstdx.__main__` 从"豁免"改判为 `_entrypoints()` 种子（与 `tstdx.cli`/`tstdx.tools.*` 同类：静态图永无对它的 import 边，`python -m tstdx` 却必然加载）；③ 清单重写为 17 条，逐条给出可核验证据（docs 路径 + 具体测试文件 + 为何生产链路不 import），"内核不 import"一族按"用户显式导入的公共 API"与"契约/守卫资产"分组，TRADE 族额外写明 `spec_audit` 是**按字符串模块名走 importlib** 解析它（AST 图看不见这种边）；④ 删 9 条死记录、修 2 条假理由、删 `pyproject.toml` 两处死配置。**复测**：`192 模块 / 可达 175 / 豁免 17 / 记录缺陷 0`，`--strict` RC=0；`mypy`（CI 参数）RC=0 且 `unused section` note 消失；守卫回归 8 项见 `tests/architecture/test_reachability_allowlist.py` |
+| F-23 | **P0**（对外承诺类） | **文档声称存在一个已被删除的安全能力**：SECURITY.md「凭据保护」整节写着"tstdx 使用三级凭据存储：系统 keyring / 环境变量 / 加密文件 `~/.tstdx/credentials.enc`"，README 特性表与结构树也各写一遍（`├── security/ # 凭据三级存储…`）。而 `CredentialStore` 早在 **v10** 就按 ADR-007-010 判定"全库零调用方、属过度工程"删除，只剩 `tstdx/security/__init__.py` 一个 `__all__ = []` 的空壳在替它"作证据"。docs-code 门禁当时只校验反引号里的 `tstdx.*` 点号路径与 README 数字，**散文式能力承诺不在射程内**，所以这条假承诺一路全绿 | **已清偿**（2026-09-19，Phase 5 第 5 步）：① 空壳包 `tstdx/security/` 物理删除（历史决议留在 ADR-007-010，不需占位包），其白名单行随之删除；② SECURITY.md「凭据保护」改写为"本库不存储凭据"+ 四条现状（行情链路无凭据 / 交易侧只有纯内存模拟器 / 真券商由调用方自管密钥 / 错误上下文与反馈先脱敏）；③ README 特性行改为可核验的 `security.use_tls` TLS 与错误脱敏事实，并显式标注 `tstdx.providers.http` 主机守卫"已实现但未接入 web 链路"（与 F-18 一致），结构树删去 `security/` 行、补上曾漏掉的 `__main__.py` 行；④ **补门禁**：`test_doc_code_consistency.py` 新增 3 项，把 README 结构树条目与磁盘做双向对账（列出的必须存在 + 磁盘上的顶层包/模块必须都列出），使这类幻影行不能再隐身 |
 
 ---
 
@@ -269,6 +271,43 @@
      的断言意图与实现不符、`family='standard'` 非合法族名），使含它的整仓运行读到
      `15 failed / 78.61%`。该文件随后由并行会话修好并入库（`4ae1e38`，42 项全绿），
      故上表数字为不含任何豁免的整仓值。
+
+5. ✅ **豁免清单与对外安全承诺审计（Phase 5 第 5 步，2026-09-19，见 §0.3 F-22/F-23）**：
+   第 4 步把三个红灯门禁改成绿灯之后，绿灯本身成了新的审查对象——**"门禁绿"只说明
+   判定规则没被违反，不说明规则读到的输入是真的**。两处都属这一类。
+
+   - **F-22 豁免清单**：`scripts/_reach_allow.txt` 28 条中 9 条已无对应事实——2 条指向
+     v10/v9 就消失的模块（`tstdx.sinks`、`tstdx.native`），7 条指向**早已从入口可达**的
+     模块（`tstdx.feedback*`、`tstdx.domain.adjust`、`tstdx.streaming.{engine,push}`）。
+     后者比前者更危险：留着一条"已不需要豁免"的豁免，将来这个模块真被断链时扫描器
+     照样报绿。同时 14 条理由短到无法核验，其中 2 条写着"_LAZY 导出"而根包 `_LAZY`
+     实测根本不含这两项——**理由是编的**。
+   - **处置**：扫描器加记录守卫，`[dead] / [stale] / [thin] / [dup]` 四类记录缺陷与孤儿
+     同权重使 `--strict` 失败；`tstdx.__main__` 由"豁免"改判为进程入口种子（静态图里
+     永不出现对它的 import 边，`python -m tstdx` 却必然加载，与 `tstdx.cli` 同类）；
+     清单重写为 17 条，逐条给出可核验证据（文档路径 + 具体测试文件 + 为何生产链路不
+     import），TRADE 族额外写明 `spec_audit` 是**按字符串模块名走 importlib** 解析它
+     ——AST 静态图看不见这种边，因此它的"不可达"是工具口径而非死代码。
+     `pyproject.toml` 同形状的死配置一并删除（mypy 覆盖 `tstdx.native.*`、`keyring.*`
+     忽略表）；后者 mypy 自己的 `warn_unused_configs` 早已报出，只是没人把 note 当缺陷。
+   - **F-23 对外承诺**：SECURITY.md 整节 + README 两处宣称"三级凭据存储（keyring /
+     环境变量 / 加密文件）"，而 `CredentialStore` 在 **v10** 就按 ADR-007-010 判定过度
+     工程删除，只剩 `tstdx/security/__init__.py` 一个 `__all__ = []` 的空壳替它作证据。
+     docs-code 门禁只校验反引号里的 `tstdx.*` 点号路径，散文式承诺不在射程内 ⇒ 假承诺
+     一路全绿。处置：空壳包物理删除（历史决议在 ADR，不需占位包）、SECURITY.md 改写为
+     "本库不存储凭据"+ 四条现状、README 特性行换成可核验事实（`security.use_tls` TLS、
+     关键字脱敏），并就地标注 `tstdx.providers.http` 守卫"已实现但未接入 web 链路"
+     （与仍待决策的 **F-18** 保持同一口径，不再单方面宣称已覆盖）。
+   - **补门禁**：`test_doc_code_consistency.py` 新增 3 项，把 README 结构树条目与磁盘做
+     **双向**对账（列出的必须存在；磁盘上的顶层包与顶层模块必须都列出）。而"散文式能力
+     承诺"这一类缺陷本质不可机器判定，只能靠结构树对账 + 删空壳包压缩它的隐身空间——
+     这一点如实记录，不过度声称已根治。
+   - **复测**（每项独立取 RC，不走管道）：reachability `--strict` RC=0，
+     `模块总数: 192 / 可达: 175 / 白名单豁免: 17`，`[ALLOW-DEFECT]` **0** 条；
+     `tests/architecture/` **88 passed**（含新增 8 项记录守卫回归
+     `test_reachability_allowlist.py`、12 项 docs-code 一致性）；`mypy`（CI 参数）RC=0
+     且 `unused section(s)` note 消失；`ruff check` / `format --check` 干净。阈值与
+     白名单之外的判定强度均未下调。
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
 

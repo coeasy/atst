@@ -118,6 +118,55 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   退出码，`cmd | tail; echo $?` 因此把三项 strict 红读成「已绿」。该约束连同正确写法已写入
   [CONTRIBUTING.md](CONTRIBUTING.md) 的门禁段。
 
+### Changed（v17 Phase 5 第 5 步 —— 豁免清单本身成为被审计对象，F-22）
+
+上一步把三项 strict 门禁改成绿灯之后，回头审这些绿灯读到的输入：`--strict` 绿只说明
+**判定规则没被违反**，不说明规则吃的清单是真的。
+
+- `scripts/audit_reachability.py` 新增**记录守卫**，四类缺陷与孤儿同权重使 `--strict`
+  失败，并在输出里单列 `[ALLOW-DEFECT]`：
+  - `[dead]`：豁免指向磁盘上不存在的模块——它已经不再豁免任何东西。
+  - `[stale]`：豁免指向**已从入口可达**的模块。这类比 `[dead]` 更危险：留着它，将来
+    这个模块真被断链时扫描器照样报绿，等于把未来的缺陷预付成绿灯。
+  - `[thin]`：理由短于 `MIN_REASON_CHARS = 40`，说不出「谁消费它 + 为什么生产链路不
+    import 它」的记录不可核验。
+  - `[dup]`：同模块重复登记，后一条静默覆盖前一条。
+- `tstdx.__main__` 由「豁免」改判为 `_entrypoints()` **种子**，与 `tstdx.cli` /
+  `tstdx.tools.*` 同类：静态 import 图里永不出现对它的边，而 `python -m tstdx` 一定加载
+  它——用豁免表达这种事入口，等于把工具口径缺陷记成产品决定。
+- `scripts/_reach_allow.txt` 28 → **17** 条：删 9 条死记录（`tstdx.sinks`、`tstdx.native`、
+  `tstdx.feedback*`、`tstdx.domain.adjust`、`tstdx.streaming.{engine,push}`、`tstdx.security`），
+  修正 2 条**编造的理由**（`tstdx.charset`、`tstdx.deprecation` 写着「`_LAZY` 导出」，
+  根包 `_LAZY` 实测 17 个值里没有它们），其余逐条附可核验证据（文档路径 + 具体测试文件）。
+  TRADE 族的理由额外写明：`spec_audit` 是**按字符串模块名走 `importlib`** 解析这些模块的，
+  AST 静态图看不见这种边，故其「不可达」是工具口径而非死代码。
+- 删除 `pyproject.toml` 中同形状的死配置 2 处：mypy 的 `tstdx.native.*` 覆盖段、
+  `keyring.*` 的 ignore-missing-imports 条目。mypy 自己的 `warn_unused_configs` 早已把
+  前者报为 note，只是没人把 note 当缺陷处理；现在该 note 消失。
+- 新增守卫回归 `tests/architecture/test_reachability_allowlist.py`（8 项：真实清单干净、
+  `--strict` 在当前树上为 0、进程入口不靠豁免、四类缺陷各自都被抓住）。
+- 复测：reachability `--strict` RC=0，`模块总数: 192 / 可达: 175 / 白名单豁免: 17 /
+  记录缺陷 0`；`tests/architecture/` 88 passed；`mypy`（CI 参数）RC=0。判定强度未放宽。
+
+### Removed（v17 Phase 5 第 5 步 —— 撤回一条已发布的安全假承诺，F-23）
+
+- **删除空壳包 `tstdx/security/`**：其 `__init__.py` 内容是 `__all__: list[str] = []`，
+  docstring 指向从未存在的 `tstdx/security/capture.py` 与 `origin.py`。它唯一的用途是给
+  SECURITY.md 里那条自 **v10** 起就过时的历史叙述当证据。
+- **SECURITY.md「凭据保护」改写**：原文宣称「tstdx 使用三级凭据存储：系统 keyring /
+  环境变量 / 加密文件 `~/.tstdx/credentials.enc`」。`CredentialStore` 早在 **v10** 就按
+  [ADR-007-010](docs/adr/ADR-007-010.md) 判定「全库零调用方、属
+  过度工程」而物理删除。现改为「本库**不存储凭据**」+ 四条现状：行情链路不涉及凭据；
+  交易侧是纯内存模拟器，`obfuscate_password` 是 clean-room 占位实现；真实券商凭据由调用方
+  自管；错误上下文与反馈先脱敏后出口。
+- **README 两处同步**：特性行的「凭据三级存储」换成可核验事实（`security.use_tls` 走
+  `ssl.create_default_context()`、关键字脱敏、凭据不在本库职责内），并就地标注
+  `tstdx.providers.http` 的主机边界守卫「已实现但尚未接入 web 链路」（与待决策的 F-18
+  同一口径）；ASCII 概览框与结构树删去 `security/` 行，补上此前漏列的 `__main__.py`。
+- **补门禁**：`tests/architecture/test_doc_code_consistency.py` 新增 3 项，把 README
+  结构树条目与磁盘做双向对账——列出的路径必须存在，磁盘上的顶层包与顶层模块必须都列出。
+  散文式能力承诺本质上不可机器判定，这一步只压缩它的隐身空间，不声称根治。
+
 ### Fixed
 
 - **`tstdx.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，

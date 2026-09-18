@@ -17,6 +17,14 @@ AST 静态扫描 tstdx/ 全部模块的 import 边（含 tstdx/__init__.py 的 _
     python scripts/audit_reachability.py --strict   # 有未登记孤儿时 exit 1
 
 白名单：scripts/_reach_allow.txt，每行 ``模块.dotted.path  # 处置理由``。
+白名单自身也是被门禁的对象（工业审计 F22）：一条豁免记录只有在**它豁免的模块确实
+存在、确实不可达、且理由够长**时才有意义。下列四类缺陷在 ``--strict`` 下与孤儿同权重
+失败——死记录会让将来重新变成孤儿的模块静默通过，过期记录则掩盖一次真实的断链：
+
+* 指向不存在模块的死记录（模块被删/改名后忘记撤条目）；
+* 指向**已可达**模块的过期记录（曾经需要豁免，现已接线却没人撤）；
+* 理由短于 :data:`MIN_REASON_CHARS` 的条目；
+* 重复条目。
 """
 
 from __future__ import annotations
@@ -37,6 +45,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PKG = ROOT / "tstdx"
 ALLOW = ROOT / "scripts" / "_reach_allow.txt"
 
+#: 一条豁免记录至少要说清"谁消费它 + 为什么生产链路不 import 它"，短于此即视为无效理由。
+MIN_REASON_CHARS = 40
+
 # 进程入口种子（console script / python -m / 顶层包）
 # 名称必须是当前真实模块：v16 把 integration 服务面从 http_server/ws_server/
 # mcp_server 换成了 runtime_*，写死的旧名会被 `if s in modules` 静默丢弃，
@@ -48,6 +59,35 @@ SEEDS = {
     "tstdx.integration.runtime_ws_server",  # python -m tstdx.integration.runtime_ws_server
     "tstdx.integration.mcp",  # python -m / stdio 客户端拉起
 }
+
+
+def _load_allow(path: Path = ALLOW) -> tuple[dict[str, str], list[str]]:
+    """解析白名单，返回 ``{模块: 理由}`` 与记录级缺陷清单。
+
+    后出现的重复模块会覆盖前一条理由——静默丢记录，因此同样列为缺陷。
+    """
+    records: dict[str, str] = {}
+    defects: list[str] = []
+    if not path.exists():
+        return records, defects
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        module, _, reason = line.partition("#")
+        module = module.strip()
+        reason = reason.strip()
+        if not module:
+            continue
+        if module in records:
+            defects.append(f"[dup] {module}：同一模块登记多次，后一条静默覆盖前一条")
+        if len(reason) < MIN_REASON_CHARS:
+            defects.append(
+                f"[thin] {module}：理由仅 {len(reason)} 字符（须 ≥{MIN_REASON_CHARS}），"
+                f"未说明谁消费它、为何生产链路不 import"
+            )
+        records[module] = reason
+    return records, defects
 
 
 def _ancestors(mod: str) -> list[str]:
@@ -159,18 +199,41 @@ def _import_edges(tree: ast.Module, pkg: str, is_pkg: bool) -> set[str]:
     return edges
 
 
+def _entrypoints(modules: dict[str, Path]) -> set[str]:
+    """`python -m` 与 console-script 入口：静态图里永无对它们的 import 边，只能作种子。
+
+    把它们当种子（而非登记豁免）是必要的：只把入口自身标可达，会让入口独占的
+    依赖（``tools/capture.py`` → 交易日历）被误判成孤儿。
+    """
+    named = {"tstdx.cli", "tstdx.__main__"}
+    return {m for m in modules if m in named or m.startswith("tstdx.tools.")}
+
+
+def _allowlist_defects(records: dict[str, str], modules: set[str], reach: set[str]) -> list[str]:
+    """豁免记录与被豁免模块现状之间的矛盾（死记录 / 过期记录）。"""
+    defects: list[str] = []
+    for module in sorted(records):
+        if module not in modules:
+            defects.append(f"[dead] {module}：模块不存在，豁免记录已失效（应删除该行）")
+        elif module in reach:
+            defects.append(
+                f"[stale] {module}：已从入口可达，保留豁免会把将来真正的断链读成绿（应删除该行）"
+            )
+    return defects
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--strict", action="store_true", help="未登记孤儿 → exit 1")
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="存在未登记孤儿或失效豁免记录时 exit 1",
+    )
     args = ap.parse_args()
 
     modules, packages = _collect_modules()
-    allow: set[str] = set()
-    if ALLOW.exists():
-        for line in ALLOW.read_text(encoding="utf-8").splitlines():
-            line = line.split("#", 1)[0].strip()
-            if line:
-                allow.add(line)
+    records, record_defects = _load_allow()
+    allow: set[str] = set(records)
 
     # 建图：模块 → 依赖模块集合（只保留指向 tstdx 包内的边）
     graph: dict[str, set[str]] = {}
@@ -188,12 +251,9 @@ def main() -> int:
             deps |= {e for e in _lazy_edges(path, name) if e in modules or e in allow}
         graph[name] = deps
 
-    # BFS 从种子（包的边已含 eager import 与 _LAZY 惰性导出）。
-    # tools/* 与 cli 是 `python -m` 进程入口，必须作为种子参与遍历：只把入口
-    # 自身标成可达会让入口独占的依赖（capture → 交易日历）被误判为孤儿。
+    # BFS 从种子（包的边已含 eager import 与 _LAZY 惰性导出；入口见 _entrypoints）
     reach: set[str] = set()
-    entrypoints = {m for m in modules if m == "tstdx.cli" or m.startswith("tstdx.tools.")}
-    stack = [s for s in sorted(SEEDS | entrypoints) if s in modules]
+    stack = [s for s in sorted(SEEDS | _entrypoints(modules)) if s in modules]
     while stack:
         m = stack.pop()
         if m in reach:
@@ -211,18 +271,23 @@ def main() -> int:
 
     orphans = sorted(set(modules) - reach - allow)
     allowed_hit = sorted((set(modules) - reach) & allow)
+    record_defects += _allowlist_defects(records, set(modules), reach)
 
     print(f"模块总数: {len(modules)}  可达: {len(reach)}  白名单豁免: {len(allowed_hit)}")
     for m in allowed_hit:
         print(f"  [allow] {m}")
+    if record_defects:
+        print(f"白名单记录缺陷（{len(record_defects)} 项，须修记录本身）:")
+        for d in sorted(record_defects):
+            print(f"  [ALLOW-DEFECT] {d}")
     if orphans:
         print("未登记孤儿（须接线或删除）:")
         for m in orphans:
             print(f"  [ORPHAN] {m}")
-        if args.strict:
-            return 1
     else:
         print("无未登记孤儿 ✓")
+    if (orphans or record_defects) and args.strict:
+        return 1
     return 0
 
 

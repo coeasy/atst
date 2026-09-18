@@ -139,7 +139,6 @@ module = [
     "httpx.*",
     "fastapi.*",
     "uvicorn.*",
-    "keyring.*",
     "pyarrow.*",
     "pandas.*",
     "websockets.*",
@@ -150,10 +149,6 @@ module = [
     "tomllib",
 ]
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["tstdx.native.*"]
-ignore_errors = true
 
 [tool.coverage.run]
 source = ["tstdx"]

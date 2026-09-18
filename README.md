@@ -67,7 +67,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 ├─────────────────────────────────────────────────────────────────────┤
 │                      基础设施层                                        │
 │  错误体系(E1-E8, 40+ 类) · 可观测性(Prometheus/StatsD/OTLP)            │
-│  配置(6 源合并) · 安全(凭据三级存储) · 输出(DataFrame/Parquet/DuckDB)   │
+│  配置(6 源合并) · 安全(TLS/脱敏) · 输出(DataFrame/Parquet/DuckDB)       │
 │  反馈(遥测/统计) · 工具链(capture/codegen/golden_audit/spec_audit)      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -137,7 +137,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | **零硬依赖** | 所有第三方库均为可选 extra |
 | **40+ 异常类** | 分类错误树（E1–E8）+ `RetryAdvice`；`SourceUnavailable` 归 E7 域 |
 | **可观测性** | zero-dep 指标注册表 + Prometheus/StatsD/OTLP 三导出器 |
-| **安全** | 凭据三级存储（keyring/env/file 互斥写 + 损坏隔离） |
+| **传输与错误卫生** | TDX 连接可按 `security.use_tls` 走 TLS（默认关，`ssl.create_default_context()` 校验主机名）；错误上下文按关键字脱敏后才可外发。凭据存储**不在本库范围内**（ADR-007-010 已删除三级 CredentialStore）；Provider 绑定的 HTTP 主机白名单守卫已实现但尚未接入 web 链路（`docs/REFACTOR_PLAN_V17_CLOSURE.md` F-18） |
 | **原创合规** | 洁净室工程规范：规格驱动 + License 隔离 + AST 相似度审计 + Golden 数据自采集 |
 
 ---
@@ -358,9 +358,9 @@ tstdx/
 ├── integration/    # runtime_http(10 端点)/runtime_ws/runtime_tasks/mcp(9 工具)/serialization
 ├── observability/  # 指标注册表 + Prometheus/StatsD/OTLP 导出器 + start_exporter
 ├── feedback/       # 错误/用量上报 + 遥测 + 使用统计
-├── security/       # 凭据三级存储（keyring/env/file 互斥写 + 损坏隔离）
 ├── tools/          # capture/spec_audit/codegen/golden_audit/golden_expand/check_originality
 ├── trade/          # 交易协议模拟器（实验性可选模块：SimTransport 纯内存模拟，不接入内核）
+├── __main__.py     # python -m tstdx 入口（与 tstdx 控制台脚本等价）
 └── cli/            # CLI 入口（31 子命令，全部委托 Client）
 ```
 
@@ -462,7 +462,7 @@ python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproj
 | **发布硬化** | mypy 既有告警清零 + 覆盖率基线按有效代码重校 + wheel 安装冒烟 |
 | **Live Smoke** | 真实网络 tdx/web/stream 三面各一发（`live-smoke` job 已有骨架） |
 | **Streaming 增量执行** | 流式数据增量合并 + 补数完整性保证 |
-| **可达性收口** | 剩余两项已登记豁免并附理由（`tstdx.catalog.provider_contract`、`tstdx.providers.http` 安全守卫），接线与否属安全面决策 |
+| **可达性收口** | 孤儿=0，且每条豁免记录都被门禁盯着：指向不存在模块的死记录、已接线却未撤销的过期记录、理由过短、重复条目都会让 `--strict` 失败。仍待裁决的一项：`tstdx.providers.http`（Provider 绑定的 HTTP 主机白名单守卫）接线还是删除，属安全面决策 |
 
 ---
 
