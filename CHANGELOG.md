@@ -216,6 +216,32 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   同批把里程碑表两行停在既成事实之前的状态行（Phase 4「门禁在建」、Phase 5「⏳」）改为
   实测结论，并保留两项真实待办（CI 侧覆盖率重钉、真实网络 smoke + tag）。
 
+### Added（v17 Phase 5 第 7 步 —— 声明面 ↔ 执行面对账，F-26）
+
+- **`audit_capability_bindings()` 新增第三面对账**：以 **Provider 注册表**逐 channel 声明的
+  `(provider, channel, capability)` 三元组作为独立分母，与执行器绑定表做**双向**差集——
+  声明了却没有执行路径 ⇒ `registry-declared … with no executor binding`；有执行路径却没在
+  注册表登记 ⇒ `executor bindings outside the Provider registry`。报告新增
+  `declared_bindings` 字段。该审计由 `runtime/audit.py` 在**每次构造
+  `DirectProviderExecutor` 时**执行，所以断链在客户端构造期即失败，不需等到某次取数。
+  该不变量此前只写在离线测试（`tests/runtime/test_v13_architecture_alignment.py`）里，
+  即只保护"跑测试的人"；运行期判据中注册表这一维是缺位的。
+- 守卫测试从"`report.* > 0`"（只剩 1 条绑定也绿）升级为真实不变量：注册表声明的 capability
+  名集合必须等于 `Client.capabilities()` 对外承诺的集合；并用 monkeypatch 注入三处漂移
+  （丢一条目录内绑定、丢一条目录外绑定、加一条幽灵绑定）逐条命中对应错误消息，证明双向
+  各有牙。
+- 当前实测：`migrated 229 ⊆ executable 251 = declared 251`，双向差集为空 ⇒ 主体链路在
+  "声明 ↔ 执行"这一维闭合。这是对本轮"核心功能是否全部实现、主体链路是否全部贯通"的
+  可复核回答；同时如实标注边界——**绑定存在 ≠ 运行期正确**，后者仍依赖 golden/adversarial
+  门禁与尚未获准执行的真实网络冒烟。
+
+### Fixed（v17 Phase 5 第 7 步 —— 审计分母的同源陷阱）
+
+- 曾考虑用 `Client.capabilities()` 充当"对外承诺面"这一分母，**已否决并记录理由**：它本身
+  由 `MIGRATED_CAPABILITIES` 推导，而后者与绑定表同源，用它对账等于左手查右手；且在
+  `catalog` 内惰性 import 入口层会在构造执行器时反向拉起 `Client`。公共面对注册表的约束
+  因此改由测试层承担（`test_registry_declaration_matches_public_surface`）。
+
 ### Fixed
 
 - **`tstdx.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，
