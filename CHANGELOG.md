@@ -101,34 +101,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+> **口径标注（F-14）**：以下 P13/P14/P15 条目写于 `UnifiedQuoteAPI` 门面仍然存在
+> 的时期，其中"门面暴露 X 个方法"是**当时的落地方式**，不是现行入口。该门面已随
+> v16 Phase 2 物理删除，照抄条目里的 `UnifiedQuoteAPI.xxx()` 即 `ImportError`。
+> 条目里的能力本身全部存活：它们注册在 `tstdx/catalog/capability.py`，现行唯一业务
+> 入口是 `Client.call("<capability>", ...)` / `AsyncClient` 同名方法（运行期 172 个
+> capability），底层数据源仍是条目点名的 `tstdx/web/*.py` 模块。门面→现行的对照见
+> 上文 `### Changed（v17 Phase 4 —— 对外文档面对齐代码事实）` 的迁移表。
+
 - P14 数据源补全（ESG 评级 / 筹码分布）：新增 `tstdx/web/esg.py`（新浪 ESG 评级，
   覆盖 13 家机构聚合、季度历史、MSCI 全市场 5200+ 只、华证全市场 6300+ 只，
   含 E/S/G 三维度分项评分），新增 `tstdx/web/chip.py`（东财筹码分布，基于
   push2 资金流接口计算 accumulation_ratio 筹码集中度与 concentration_trend
-  吸筹/派发趋势），新增 `tstdx/web/_facade_mixin_p1.py` 与
-  `UnifiedQuoteAPI` 暴露 `esg_rating` / `esg_history` / `esg_ratings_all` /
-  `chip_distribution` / `chip_distributions` 共 5 个方法；新增
+  吸筹/派发趋势），新增 `tstdx/web/_facade_mixin_p1.py`（当时的挂载点）；这 5 个能力
+  现经 catalog 可调用（入口 `Client.call(<capability>, ...)`）：`esg_rating` /
+  `esg_history` / `esg_ratings_all` / `chip_distribution` / `chip_distributions`；新增
   `tests/web/test_p1_sources.py`（30 例全离线测试）。
 
 - P13 数据源补全：新增 `tstdx/web/fin_report.py`（三大财务报表：资产负债表 / 利润表 /
   现金流量表，东财 datacenter-web `RPT_F10_FINANCE_GBALANCE/GINCOME/GCASHFLOW`，
   SECUCODE 过滤），新增 `tstdx/web/governance.py`（治理四报表：董监高持股
   `RPT_EXECUTIVE_HOLD_DETAILS` / 股东增减持 `RPT_SHARE_HOLDER_INCREASE` /
-  公司概况 `RPT_F10_BASIC_ORGINFO` / 券商评级 `RPT_WEB_RESPREDICT`），门面暴露
+  公司概况 `RPT_F10_BASIC_ORGINFO` / 券商评级 `RPT_WEB_RESPREDICT`）；这 10 个能力
+  现经 catalog 可调用（入口 `Client.call(<capability>, ...)`）：
   `balance_sheet` / `income_sheet` / `cash_flow` / `fin_report` /
   `executive_holds` / `shareholder_changes` / `org_profile` / `org_profiles` /
-  `rating_forecast` / `rating_consensus` 共 10 个方法；新增
+  `rating_forecast` / `rating_consensus`；新增
   `tests/web/test_fundamental_sources.py`（37 例全离线测试）。
 
 - Web 源对标 `Micro-sheep/efinance` 全量补齐：新增 `tstdx/web/efinance_fund.py`
   （天天基金移动端 7 类基金扩展数据）、`tstdx/web/efinance_deriv.py`
-  （东财 push2 期货/债券实时、快照、K 线、逐笔），并在 `UnifiedQuoteAPI` 暴露
+  （东财 push2 期货/债券实时、快照、K 线、逐笔），这 21 个能力现经 catalog 可调用
+  （入口 `Client.call(<capability>, ...)`）：
   `stock_base_info` / `stock_all_performance` / `stock_report_dates` / `ipo_review` /
   `fund_base_info` / `fund_manager` / `fund_holdings` / `fund_period_change` /
   `fund_asset_allocation` / `fund_industry_distribution` / `fund_public_dates` /
   `futures_base_info` / `futures_realtime` / `futures_kline` / `futures_trades` /
   `bond_realtime` / `bond_base_info` / `bond_kline` / `bond_history_bill` /
-  `bond_today_bill` / `bond_trades` 共 21 个方法。
+  `bond_today_bill` / `bond_trades`。
 - 对标 `tiantianlaolao/astock-data-toolkit` 新增基本面衍生域：`tstdx/web/astock_toolkit.py`
   （东财 `RPT_SHAREBONUS_DET` / `RPT_VALUEASSESS_DET` / `RPT_CAPITAL_PARTICIPATION_DET` /
   `RPT_F10_FINANCE_MAIN`），暴露 `dividend_history` / `stock_valuation` /
@@ -137,7 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   暴露 `research_visits`；补齐 niuniu 审计发现的资讯类硬缺口。
 - 补齐 efinance 批量能力：`fund_base_info_multi`（`fund_base_info` 批量别名）与
   `bond_all_base_info`（`bond_base_info` 全市场别名）；并把 `_facade_mixin_info.py`
-  已存在但未暴露的 `free_holders` / `holder_num` 提升到 `UnifiedQuoteAPI`。
+  已存在但当时未对外的 `free_holders` / `holder_num` 接入 catalog（`Client.call`）。
 - 天天基金深度扩展（对标移动端全端点，补齐排行/快照/经理/公司/搜索 5 大子域）：
   新增共享工具 `tstdx/web/_mob_fund.py`（设备指纹 + 公共参数 + 多 host 容错 +
   `apply_fields` 字段归一化），新增三个源：`tstdx/web/fund_rank.py`
