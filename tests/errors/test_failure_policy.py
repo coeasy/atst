@@ -10,8 +10,8 @@ from tstdx.errors import (
     SourceUnavailable,
     ValidationError,
 )
-from tstdx.execution import ExecutionBudget
 from tstdx.failure import FailurePolicy
+from tstdx.query import ExecutionBudget
 
 
 def test_connection_failure_allows_only_same_provider_host_recovery() -> None:

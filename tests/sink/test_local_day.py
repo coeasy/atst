@@ -8,7 +8,7 @@
 * 断点续传：仅拉取本地末日期之后的新日线；
 * 幂等：重跑不产生重复记录；
 * prev_close 链：新记录上日收盘 = 前条收盘；
-* 门面 UnifiedQuoteAPI.sync_daily 批量 + fake tdx。
+* `sync_daily` capability 批量增量同步 + fake tdx。
 """
 
 from __future__ import annotations
@@ -19,9 +19,11 @@ from pathlib import Path
 
 import pytest
 
+from tstdx.client_api import Client
 from tstdx.domain.models import Bar
-from tstdx.facade.api import UnifiedQuoteAPI  # 历史实现：支持 _tdx 注入与 vipdoc_root
+from tstdx.errors import TdxError
 from tstdx.reader.formats import DayBarReader
+from tstdx.runtime.kernel import UnifiedRuntime
 from tstdx.sink.local_day import LocalDaySink
 
 _SCALE = 100
@@ -191,7 +193,7 @@ class TestSync:
 
 
 # --------------------------------------------------------------------------- #
-# 门面 UnifiedQuoteAPI.sync_daily
+# sync_daily capability（Client → DirectProviderExecutor）
 # --------------------------------------------------------------------------- #
 class _FakeTdx:
     """最小 fake TDX 客户端：bars() 按 start 返回内存中的日线。"""
@@ -226,12 +228,30 @@ class _FakeTdx:
         return window
 
 
-class TestFacadeSyncDaily:
+class _FakeTdxContext:
+    """``DirectProviderExecutor._tdx_client`` 替身：返回可 ``with`` 的 fake 客户端。"""
+
+    def __init__(self, client: _FakeTdx) -> None:
+        self._client = client
+
+    def __enter__(self) -> _FakeTdx:
+        return self._client
+
+    def __exit__(self, *exc: object) -> bool:
+        return False
+
+
+def _client(bars_by_symbol: dict[str, list[Bar]], *, root: Path | None) -> Client:
+    runtime = UnifiedRuntime(vipdoc_root=None if root is None else str(root))
+    runtime.executor._tdx_client = lambda: _FakeTdxContext(_FakeTdx(bars_by_symbol))
+    return Client(runtime)
+
+
+class TestSyncDailyCapability:
     def test_sync_daily_writes_and_reports(self, vipdoc: Path) -> None:
         bars = [_bar("2026-01-02", 10.0), _bar("2026-01-05", 10.5)]
-        api = UnifiedQuoteAPI(vipdoc_root=str(vipdoc))
-        api._tdx = _FakeTdx({"sh600519": bars, "sh600000": bars})
-        out = api.sync_daily(["600519", "600000"], root=str(vipdoc))
+        client = _client({"sh600519": bars, "sh600000": bars}, root=vipdoc)
+        out = client.call("sync_daily", ["600519", "600000"], root=str(vipdoc)).data
         assert set(out) == {"600519", "600000"}
         assert out["600519"]["added"] == 2
         assert out["600519"]["last_date"] == "2026-01-05"
@@ -240,18 +260,17 @@ class TestFacadeSyncDaily:
         assert len(read) == 2
 
     def test_sync_daily_requires_root(self) -> None:
-        api = UnifiedQuoteAPI(vipdoc_root=None)
-        with pytest.raises(ValueError, match="root"):
-            api.sync_daily(["600519"])
+        client = _client({}, root=None)
+        with pytest.raises(TdxError, match="root"):
+            client.call("sync_daily", ["600519"])
 
     def test_sync_daily_incremental(self, vipdoc: Path) -> None:
         """已有本地文件时仅补新日线。"""
         path = vipdoc / "sh" / "lday" / "sh600519.day"
         _build_day_file(path, ["2026-01-02"], [10.0])
         new_bar = _bar("2026-01-05", 10.5)
-        api = UnifiedQuoteAPI(vipdoc_root=str(vipdoc))
-        api._tdx = _FakeTdx({"sh600519": [new_bar]})
-        out = api.sync_daily(["600519"], root=str(vipdoc))
+        client = _client({"sh600519": [new_bar]}, root=vipdoc)
+        out = client.call("sync_daily", ["600519"], root=str(vipdoc)).data
         assert out["600519"]["added"] == 1
         assert out["600519"]["existed"] == 1
         read = _read_back(path)

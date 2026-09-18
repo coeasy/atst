@@ -5,7 +5,7 @@
 
 Both bases own the polling kernel required by the canonical contract in
 :mod:`tstdx.streaming`: a subscription is polled through one
-:class:`~tstdx.runtime_v13.UnifiedRuntime` (so streaming shares the exact
+:class:`~tstdx.runtime.kernel.UnifiedRuntime` (so streaming shares the exact
 Provider / Planner / Result semantics of ordinary queries), responses are
 delta-merged when ``diff_only`` is set, bounded queues provide backpressure, and
 failures back off through :class:`~tstdx.streaming.engine.ReconnectPolicy`.
@@ -238,7 +238,7 @@ class QuoteStream:
     # -- runtime ---------------------------------------------------------- #
     def _get_runtime(self) -> Any:
         if self._runtime is None:
-            from ..runtime_v13 import UnifiedRuntime
+            from ..runtime.kernel import UnifiedRuntime
 
             self._runtime = UnifiedRuntime(
                 default_provider=self._provider or "tdx",
@@ -408,7 +408,7 @@ class AsyncQuoteStream:
 
     def _get_runtime(self) -> Any:
         if self._runtime is None:
-            from ..runtime_v13 import UnifiedRuntime
+            from ..runtime.kernel import UnifiedRuntime
 
             self._runtime = UnifiedRuntime(
                 default_provider=self._provider or "tdx",

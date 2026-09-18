@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .capability_catalog import binding_for, validate_call
+from .domain.symbol import normalize_symbol
 from .errors import InternalError, TdxError, ValidationError
 from .providers import PROVIDERS
 from .query import QueryPlan
@@ -415,7 +416,8 @@ class DirectProviderExecutor:
             out: dict[str, Any] = {}
             with self._tdx_client() as client:
                 for symbol in symbols:
-                    normalized = str(symbol)
+                    requested = str(symbol)
+                    normalized = normalize_symbol(requested)
 
                     def fetch(
                         offset: int,
@@ -436,7 +438,7 @@ class DirectProviderExecutor:
                         chunk=chunk,
                         max_windows=max_windows,
                     )
-                    out[normalized] = {
+                    out[requested] = {
                         "added": result.added,
                         "existed": result.existed,
                         "path": result.path,

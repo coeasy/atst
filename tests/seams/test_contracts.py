@@ -26,14 +26,6 @@ def test_seam_client_bars_accepts_index_ctx() -> None:
     assert p.default is False, "bars(index=) 默认必须 False（普通 K 线语义不变）"
 
 
-def test_seam_index_bars_passes_index_true() -> None:
-    """A↔S 缝：facade market.index_bars 必须实际传 index=True。"""
-    import tstdx.facade.market as market_mod
-
-    src = inspect.getsource(market_mod)
-    assert "index=True" in src, "index_bars 未向 client.bars 透传 index=True（静默脏数据管线回归）"
-
-
 def test_seam_symbol_split_shape_stable() -> None:
     """S/G↔G 缝：domain.symbol.split_symbol 返回形态是流式归一化的依赖底座。"""
     from tstdx.domain.symbol import split_symbol
@@ -94,44 +86,20 @@ def test_seam_pool_uses_connection_lock_or_busy_removed() -> None:
         lock.release()
 
 
-def test_seam_async_bridge_method_parity() -> None:
-    """A↔F0 缝：异步门面桥接的方法集必须在同步门面上存在（防 A 重命名）。"""
-    from tstdx.facade.api import UnifiedQuoteAPI
-    from tstdx.facade.async_api import AsyncUnifiedQuoteAPI
+def test_seam_async_client_method_parity() -> None:
+    """A↔F0 缝：AsyncClient 协程方法集必须在同步 Client 上存在（防重命名漂移）。"""
+    from tstdx.client_api import AsyncClient, Client
 
     bridged = {
         n
-        for n, m in vars(AsyncUnifiedQuoteAPI).items()
+        for n, m in vars(AsyncClient).items()
         if inspect.iscoroutinefunction(m) and not n.startswith("_")
     }
-    assert bridged, "异步门面协程方法集为空（结构漂移）"
-    # 命名设计：aquery/arun 为异步侧通用入口（arun 无同步对应；aquery→query）、
-    # close 为生命周期方法——arun/close 不参与 1:1 奇偶校验。
-    a_map = {"aquery": "query"}
-    for name in bridged - {"arun", "close"}:
-        expected = a_map.get(name, name)
-        assert hasattr(UnifiedQuoteAPI, expected), (
-            f"异步方法 {name} 找不到同步门面 {expected!r}（F0-1 契约破坏）"
+    assert bridged, "AsyncClient 协程方法集为空（结构漂移）"
+    for name in bridged - {"aclose"}:
+        assert hasattr(Client, name), (
+            f"异步方法 {name} 找不到同步 Client 入口（F0-1 契约破坏）"
         )
-    # 紧凑设计契约（REFACTOR_PLAN_v9 Q3）：异步门面**有意不逐方法镜像**——
-    # 仅 10 核心方法 + aquery/arun 泛化入口；长尾统一走 ``arun``。
-    # 冻结核心集合：新增镜像须先修订本契约与 facade/async_api docstring。
-    assert bridged - {"arun", "close"} == {
-        "quotes",
-        "bars",
-        "finance",
-        "minute",
-        "capital_changes",
-        "trades",
-        "stock_changes",
-        "hot_rank",
-        "wencai",
-        "search_symbols",
-        "aquery",
-    }, (
-        "异步门面核心方法集漂移（紧凑设计契约）："
-        "扩面前先修订 REFACTOR_PLAN_v9 Q3 与 async_api docstring"
-    )
 
 
 def test_seam_web_source_encoding_hook() -> None:

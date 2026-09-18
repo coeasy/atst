@@ -292,10 +292,10 @@ class TestF10Subcommand:
         assert FakeF10.calls == [("sh600519", "cwbj.dat")]
 
 
-class TestN5FacadeSubcommands:
+class TestN5ClientSubcommands:
     """N5：adjusted-bars / all-market / minute-klines 子命令接线（mock 门面，离线）。"""
 
-    def _patch_facade(self, monkeypatch: pytest.MonkeyPatch) -> type:
+    def _patch_client(self, monkeypatch: pytest.MonkeyPatch) -> type:
         class FakeApi:
             calls: list[tuple[str, tuple, dict]] = []
 
@@ -307,6 +307,9 @@ class TestN5FacadeSubcommands:
 
             def __exit__(self, *exc: Any) -> bool:
                 return False
+
+            def close(self) -> None:
+                return None
 
             def adjusted_bars(self, symbol, *, method="qfq", period="day", count=320):
                 self.calls.append(
@@ -328,14 +331,14 @@ class TestN5FacadeSubcommands:
                 self.calls.append(("minute_klines", (symbol,), dict(period=period, count=count)))
                 return [{"symbol": symbol, "period": period, "count": count}]
 
-        import tstdx.facade.api as facade_mod
+        import tstdx.client_api as client_api_mod
 
-        monkeypatch.setattr(facade_mod, "UnifiedQuoteAPI", FakeApi)
+        monkeypatch.setattr(client_api_mod, "Client", FakeApi)
         FakeApi.calls = []
         return FakeApi
 
     def test_adjusted_bars_default_qfq(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(["adjusted-bars", "sh600519", "--json"])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
@@ -344,7 +347,7 @@ class TestN5FacadeSubcommands:
         assert FakeApi.calls[0][0] == "adjusted_bars"
 
     def test_adjusted_bars_method_flag(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(["adjusted-bars", "sh600519", "--method", "hfq", "--count", "100", "--json"])
         assert rc == 0
         assert FakeApi.calls[0][1] == ("sh600519",)
@@ -352,7 +355,7 @@ class TestN5FacadeSubcommands:
         assert FakeApi.calls[0][2]["count"] == 100
 
     def test_all_market_defaults(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(["all-market", "--json"])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
@@ -361,7 +364,7 @@ class TestN5FacadeSubcommands:
         assert FakeApi.calls[0][0] == "all_market"
 
     def test_all_market_flags(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(
             ["all-market", "--node", "hk", "--source", "tencent", "--max-pages", "2", "--json"]
         )
@@ -371,7 +374,7 @@ class TestN5FacadeSubcommands:
         assert FakeApi.calls[0][2]["max_pages"] == 2
 
     def test_minute_klines_defaults(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(["minute-klines", "sh600519", "--json"])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
@@ -379,7 +382,7 @@ class TestN5FacadeSubcommands:
         assert FakeApi.calls[0][0] == "minute_klines"
 
     def test_minute_klines_flags(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(["minute-klines", "sh600519", "--period", "15min", "--count", "60", "--json"])
         assert rc == 0
         assert FakeApi.calls[0][2]["period"] == "15min"
@@ -396,7 +399,7 @@ class TestN5FacadeSubcommands:
 class TestB0BaiduSubcommand:
     """B0：``baidu`` 子命令接线（mock 门面，离线）。"""
 
-    def _patch_facade(self, monkeypatch: pytest.MonkeyPatch) -> type:
+    def _patch_client(self, monkeypatch: pytest.MonkeyPatch) -> type:
         class FakeApi:
             calls: list[tuple[str, tuple, dict]] = []
 
@@ -408,6 +411,9 @@ class TestB0BaiduSubcommand:
 
             def __exit__(self, *exc: Any) -> bool:
                 return False
+
+            def close(self) -> None:
+                return None
 
             def baidu_kline(self, symbol, *, period="day", count=320, end_time=None):
                 self.calls.append(
@@ -427,14 +433,14 @@ class TestB0BaiduSubcommand:
                 self.calls.append(("baidu_quote", (symbol,), {}))
                 return {"symbol": symbol}
 
-        import tstdx.facade.api as facade_mod
+        import tstdx.client_api as client_api_mod
 
-        monkeypatch.setattr(facade_mod, "UnifiedQuoteAPI", FakeApi)
+        monkeypatch.setattr(client_api_mod, "Client", FakeApi)
         FakeApi.calls = []
         return FakeApi
 
     def test_kline_defaults(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(["baidu", "sh600519", "--json"])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
@@ -443,7 +449,7 @@ class TestB0BaiduSubcommand:
         assert FakeApi.calls[0][0] == "baidu_kline"
 
     def test_kline_flags(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(
             [
                 "baidu",
@@ -463,21 +469,21 @@ class TestB0BaiduSubcommand:
         assert FakeApi.calls[0][2]["end_time"] == 1234
 
     def test_minute(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(["baidu", "600519", "--kind", "minute", "--json"])
         assert rc == 0
         assert json.loads(capsys.readouterr().out)[0]["symbol"] == "600519"
         assert FakeApi.calls[0][0] == "baidu_minute"
 
     def test_ticks(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(["baidu", "600519", "--kind", "ticks", "--limit", "50", "--json"])
         assert rc == 0
         assert FakeApi.calls[0][0] == "baidu_ticks"
         assert FakeApi.calls[0][2]["limit"] == 50
 
     def test_quote(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(["baidu", "600519", "--kind", "quote", "--json"])
         assert rc == 0
         assert json.loads(capsys.readouterr().out)[0]["symbol"] == "600519"
@@ -493,7 +499,7 @@ class TestB0BaiduSubcommand:
 class TestP01FundSubcommand:
     """P0-1：``fund`` 子命令接线（mock 门面，离线）。"""
 
-    def _patch_facade(self, monkeypatch: pytest.MonkeyPatch) -> type:
+    def _patch_client(self, monkeypatch: pytest.MonkeyPatch) -> type:
         class FakeApi:
             calls: list[tuple[str, tuple, dict]] = []
 
@@ -505,6 +511,9 @@ class TestP01FundSubcommand:
 
             def __exit__(self, *exc: Any) -> bool:
                 return False
+
+            def close(self) -> None:
+                return None
 
             def fund_nav_history(self, code, *, page_size=100, page_index=1):
                 self.calls.append(
@@ -520,14 +529,14 @@ class TestP01FundSubcommand:
                 self.calls.append(("fund_list", (), {}))
                 return [{"code": "161725", "name": "招商中证白酒指数(LOF)A"}]
 
-        import tstdx.facade.api as facade_mod
+        import tstdx.client_api as client_api_mod
 
-        monkeypatch.setattr(facade_mod, "UnifiedQuoteAPI", FakeApi)
+        monkeypatch.setattr(client_api_mod, "Client", FakeApi)
         FakeApi.calls = []
         return FakeApi
 
     def test_nav(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(["fund", "nav", "161725", "--json"])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
@@ -535,20 +544,20 @@ class TestP01FundSubcommand:
         assert FakeApi.calls[0][2] == {"page_size": 100, "page_index": 1}
 
     def test_nav_paging(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(["fund", "nav", "161725", "--page-size", "50", "--page-index", "3", "--json"])
         assert rc == 0
         assert FakeApi.calls[0][2] == {"page_size": 50, "page_index": 3}
 
     def test_estimate(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(["fund", "estimate", "161725", "--json"])
         assert rc == 0
         assert json.loads(capsys.readouterr().out)[0]["code"] == "161725"
         assert FakeApi.calls[0][0] == "fund_estimate"
 
     def test_list(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(["fund", "list", "--json"])
         assert rc == 0
         assert json.loads(capsys.readouterr().out)[0]["name"] == "招商中证白酒指数(LOF)A"
@@ -568,7 +577,7 @@ class TestP01FundSubcommand:
 class TestP02IndexSubcommand:
     """P0-2：``index`` 子命令接线（mock 门面，离线）。"""
 
-    def _patch_facade(self, monkeypatch: pytest.MonkeyPatch) -> type:
+    def _patch_client(self, monkeypatch: pytest.MonkeyPatch) -> type:
         class FakeApi:
             calls: list[tuple[str, tuple, dict]] = []
 
@@ -581,18 +590,21 @@ class TestP02IndexSubcommand:
             def __exit__(self, *exc: Any) -> bool:
                 return False
 
+            def close(self) -> None:
+                return None
+
             def index_constituents(self, index):
                 self.calls.append(("index_constituents", (index,), {}))
                 return [{"code": "000001", "name": "平安银行", "weight": 0.45}]
 
-        import tstdx.facade.api as facade_mod
+        import tstdx.client_api as client_api_mod
 
-        monkeypatch.setattr(facade_mod, "UnifiedQuoteAPI", FakeApi)
+        monkeypatch.setattr(client_api_mod, "Client", FakeApi)
         FakeApi.calls = []
         return FakeApi
 
     def test_constituents(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeApi = self._patch_facade(monkeypatch)
+        FakeApi = self._patch_client(monkeypatch)
         rc = cli.main(["index", "constituents", "000300", "--json"])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)

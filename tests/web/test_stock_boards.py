@@ -11,7 +11,6 @@ import json
 import pytest
 
 from tstdx.errors import SourceDeprecated, WebSourceError
-from tstdx.facade.api import UnifiedQuoteAPI
 from tstdx.web.base import HttpResponse, RateLimiter
 from tstdx.web.corporate import EastmoneyIpoSource
 from tstdx.web.facade import WebQuoteSession
@@ -105,7 +104,7 @@ class TestStockBoards:
             lambda self, symbol: [{"code": "BK0456", "name": "家用电器"}],
         )
         assert WebQuoteSession.stock_boards("000651")[0]["code"] == "BK0456"
-        assert UnifiedQuoteAPI.stock_boards("000651")[0]["code"] == "BK0456"
+        assert WebQuoteSession.stock_boards("000651")[0]["code"] == "BK0456"
 
     def test_spec_capability(self) -> None:
         assert "stock_boards" in KNOWN_SOURCES["eastmoney"].capabilities
@@ -200,7 +199,7 @@ class TestIpoCalendar:
         )
         rows = WebQuoteSession.ipo_calendar(apply_date="2026-09-10")
         assert rows[0]["code"] == "301686"
-        assert UnifiedQuoteAPI.ipo_calendar()[0]["code"] == "301686"
+        assert WebQuoteSession.ipo_calendar()[0]["code"] == "301686"
 
     def test_spec_capability(self) -> None:
         assert "ipo" in KNOWN_SOURCES["corporate"].capabilities
@@ -221,7 +220,7 @@ class TestBigOrderFlow:
         row = WebQuoteSession.big_order_flow("000651")
         assert captured["symbols"] == ["000651"]
         assert row is not None and row["main_net_ratio"] == 5.2
-        assert UnifiedQuoteAPI.big_order_flow("000651") is not None
+        assert WebQuoteSession.big_order_flow("000651") is not None
 
     def test_none_when_no_data(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(

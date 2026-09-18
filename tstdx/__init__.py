@@ -13,8 +13,8 @@
   ``QueryPlan``，跨 Provider fallback 只能由显式策略层触发。
 * **Fail-closed Streaming**：canonical stream 采用显式 ``StreamState``，
   worker 半死、启动失败、stop 超时与终态重启都不能静默生成第二 worker。
-* **语义缓存**：canonical cache 以完整 ``QueryFingerprint`` 隔离 Provider /
-  Channel / Capability，并保持原始 provenance，不把缓存命中伪装成真实直连。
+* **零缓存直达数据源**：每次公开查询都编译为唯一 ``QueryPlan`` 并直接请求绑定的
+  Provider；不存在结果缓存、负缓存或请求合并层，provenance 始终反映真实直连。
 * **原创实现**：洁净室流程，协议事实源于自有抓包与本地文件分析。
 
 分层（自底向上）::
@@ -28,12 +28,10 @@
     providers   Provider / Channel / Capability 单一事实源
     query       QuerySpec / QueryPlan / QueryFingerprint
     result      QueryResult / Provenance
-    cache       legacy compatibility caches + v11 semantic result cache
+    runtime     v14 编排壳（RuntimeGateway / Runtime / DAG）+ 零缓存执行内核
     streaming   流式订阅 + 显式生命周期状态机
     web         HTTP Web 行情源（新浪/腾讯/东财/集思录/港股/中行）
-    sinks       DataFrame / Parquet / DuckDB
-    sources     兼容 DataSourceRouter（后续收敛为显式策略层）
-    facade      TDX 二进制协议与行情高层门面（原生命名）
+    output      DataFrame / Parquet / DuckDB 输出层
     observability  Prometheus 风格指标 / 埋点（零硬依赖）
 
 Quick start（离线，读取本地通达信数据）::
@@ -80,16 +78,12 @@ __all__ = [
     "QueryResult",
     "ProviderRegistry",
     "PROVIDERS",
-    "SemanticResultCache",
-    "PersistentSemanticCache",
     "StreamState",
     "StatefulQuoteStream",
     "AsyncStatefulQuoteStream",
     "BatchSpec",
     "BatchItem",
     "BatchResult",
-    "SingleFlight",
-    "NegativeCache",
     "StreamSpec",
     "UnifiedRuntime",
     "FallbackPolicy",
@@ -132,14 +126,13 @@ def get_config() -> Any:
 
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .cache_semantic import SemanticResultCache
     from .config import load_config
     from .orchestration import FallbackPolicy, ProviderOrchestrator
     from .providers import PROVIDERS, ProviderRegistry
     from .query import CurrentnessMode, QueryFingerprint, QueryPlan, QueryPlanner, QuerySpec
     from .reader import BlockReader, DataProfile, DayBarReader, FinanceReader, MinBarReader
     from .result import Provenance, ProvenanceKind, QueryResult, ResultMeta
-    from .runtime_v13 import UnifiedRuntime
+    from .runtime.kernel import UnifiedRuntime
     from .stream_contract import StreamSpec
     from .streaming.state import StreamState
     from .streaming.stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
@@ -164,8 +157,6 @@ _LAZY: dict[str, tuple[str, str]] = {
     "QueryResult": ("tstdx.result", "QueryResult"),
     "ProviderRegistry": ("tstdx.providers", "ProviderRegistry"),
     "PROVIDERS": ("tstdx.providers", "PROVIDERS"),
-    "SemanticResultCache": ("tstdx.cache_semantic", "SemanticResultCache"),
-    "PersistentSemanticCache": ("tstdx.cache_persistent", "PersistentSemanticCache"),
     "StreamState": ("tstdx.streaming.state", "StreamState"),
     "StatefulQuoteStream": ("tstdx.streaming.stateful", "StatefulQuoteStream"),
     "AsyncStatefulQuoteStream": (
@@ -175,10 +166,8 @@ _LAZY: dict[str, tuple[str, str]] = {
     "BatchSpec": ("tstdx.batch", "BatchSpec"),
     "BatchItem": ("tstdx.batch", "BatchItem"),
     "BatchResult": ("tstdx.batch", "BatchResult"),
-    "SingleFlight": ("tstdx.batch", "SingleFlight"),
-    "NegativeCache": ("tstdx.batch", "NegativeCache"),
     "StreamSpec": ("tstdx.stream_contract", "StreamSpec"),
-    "UnifiedRuntime": ("tstdx.runtime_v13", "UnifiedRuntime"),
+    "UnifiedRuntime": ("tstdx.runtime.kernel", "UnifiedRuntime"),
     "FallbackPolicy": ("tstdx.orchestration", "FallbackPolicy"),
     "ProviderOrchestrator": ("tstdx.orchestration", "ProviderOrchestrator"),
     "ErrorEnvelope": ("tstdx.error_envelope", "ErrorEnvelope"),

@@ -1,11 +1,11 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Canonical provider-first execution runtime for v13.
+"""Canonical zero-cache provider-first execution kernel.
 
-Zero-cache contract: every :meth:`UnifiedRuntime.execute` compiles one exact
-single-Provider plan and requests the bound Provider directly. No result,
-negative, promotion or request-coalescing cache exists on this path.
+Every :meth:`UnifiedRuntime.execute` compiles one exact single-Provider plan
+and requests the bound Provider directly. No result, negative, promotion or
+request-coalescing cache exists on this path.
 """
 
 from __future__ import annotations
@@ -13,14 +13,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from .batch import BatchItem, BatchResult
-from .direct_provider import DirectProviderExecutor
-from .domain.symbol import normalize_symbol
-from .query import QueryPlanner, QuerySpec
-from .result import QueryResult
-from .runtime_audit import audit_runtime
-from .runtime_identity import execution_identity_from_plan
-from .runtime_provenance import validate_runtime_provenance
+from ..batch import BatchItem, BatchResult
+from ..direct_provider import DirectProviderExecutor
+from ..domain.symbol import normalize_symbol
+from ..query import QueryPlanner, QuerySpec
+from ..result import QueryResult
+from ..runtime_audit import audit_runtime
+from ..runtime_identity import execution_identity_from_plan
+from ..runtime_provenance import validate_runtime_provenance
 
 __all__ = ["UnifiedRuntime"]
 

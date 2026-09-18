@@ -21,7 +21,7 @@ from .errors import (
     ValidationError,
     advice_for,
 )
-from .execution import ExecutionBudget
+from .query import ExecutionBudget
 
 __all__ = ["FailureDisposition", "FailurePolicy", "DEFAULT_FAILURE_POLICY"]
 

@@ -13,7 +13,7 @@ from .errors import AllSourcesExhausted
 from .providers import PROVIDERS, resolve_provider
 from .query import QuerySpec
 from .result import QueryResult
-from .runtime_v13 import UnifiedRuntime
+from .runtime.kernel import UnifiedRuntime
 
 __all__ = [
     "FallbackPolicy",

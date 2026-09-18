@@ -91,14 +91,14 @@ class TestSectorFlowWiring:
         assert rows == [{"name": "传媒"}]
         assert captured == {"market": "concept", "sort": "main_net", "limit": 5}
 
-    def test_facade_delegates(self, monkeypatch):
-        import tstdx.facade.api as api_mod
+    def test_client_capability_delegates(self, monkeypatch):
+        from tstdx.client_api import Client
         from tstdx.web.facade import WebQuoteSession
 
         def fake_sector_flow(board="industry", *, sort="main_net", limit=20, page=1):
             return [{"board": board}]
 
         monkeypatch.setattr(WebQuoteSession, "sector_flow", staticmethod(fake_sector_flow))
-        api = api_mod.UnifiedQuoteAPI()
-        rows = api.sector_flow("region", limit=3)
-        assert rows == [{"board": "region"}]
+        with Client() as client:
+            result = client.sector_flow("region", limit=3)
+        assert result.data == [{"board": "region"}]

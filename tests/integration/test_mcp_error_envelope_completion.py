@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
+from tstdx.integration.mcp import MCPServer
 from tstdx.integration.mcp._common import ERR_METHOD_NOT_FOUND
-from tstdx.integration.mcp_server import MCPServer
 
 
 def test_mcp_method_not_found_preserves_rpc_code_and_adds_error_envelope() -> None:

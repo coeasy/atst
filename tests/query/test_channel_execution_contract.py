@@ -5,7 +5,6 @@ from typing import Any
 import pytest
 
 from tstdx.errors import ValidationError
-from tstdx.planned_service import UnifiedMarketDataService
 from tstdx.query import QueryPlanner, QuerySpec
 
 
@@ -79,30 +78,25 @@ def test_explicit_canonical_channel_matches_the_actual_unified_executor(
     assert plan.spec.channel == channel
 
 
-class NoIoManager:
+class NoIoExecutor:
+    """Proves an invalid plan never reaches Provider I/O."""
+
     def __init__(self) -> None:
         self.calls = 0
 
-    @property
-    def tdx(self) -> Any:
+    def execute(self, plan: Any) -> Any:
         self.calls += 1
-        raise AssertionError("invalid channel plan must fail before TDX I/O")
-
-    def quote_adapter(self, provider: str) -> Any:
-        self.calls += 1
-        raise AssertionError(f"invalid channel plan must fail before {provider} I/O")
-
-    def bar_adapter(self, provider: str, *, period: str = "day") -> Any:
-        self.calls += 1
-        raise AssertionError(f"invalid channel plan must fail before {provider}/{period} I/O")
+        raise AssertionError(f"invalid channel plan must fail before {plan.channel} I/O")
 
     def close(self) -> None:
         return None
 
 
-def test_planned_service_rejects_channel_mismatch_before_any_io() -> None:
-    manager = NoIoManager()
-    service = UnifiedMarketDataService(manager=manager)  # type: ignore[arg-type]
+def test_kernel_rejects_channel_mismatch_before_any_io() -> None:
+    from tstdx.runtime.kernel import UnifiedRuntime
+
+    runtime = UnifiedRuntime()
+    runtime.executor = NoIoExecutor()
     spec = QuerySpec.build(
         "bars",
         symbols=("sh600519",),
@@ -113,6 +107,6 @@ def test_planned_service_rejects_channel_mismatch_before_any_io() -> None:
     )
 
     with pytest.raises(ValidationError):
-        service.query(spec)
+        runtime.execute(spec)
 
-    assert manager.calls == 0
+    assert runtime.executor.calls == 0

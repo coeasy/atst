@@ -1,7 +1,7 @@
 """efinance 对标门面端到端集成测试（离线，罐头客户端）。
 
 通过 monkeypatch ``_shared_http`` 注入假客户端，验证
-``UnifiedQuoteAPI`` → ``WebQuoteSession`` Mixin → 各 Web 源 的完整调用链
+``WebQuoteSession`` → ``WebQuoteSession`` Mixin → 各 Web 源 的完整调用链
 （覆盖 FundMobSource / EastmoneyFuturesSource / EastmoneyBondSource）。
 不发起任何真实 HTTP。
 """
@@ -13,8 +13,8 @@ import json
 import pytest
 
 import tstdx.web._facade_mixin_efinance as mixin_mod
-from tstdx.facade.api import UnifiedQuoteAPI
 from tstdx.web.base import HttpResponse
+from tstdx.web.facade import WebQuoteSession
 
 
 class FakeHttpClient:
@@ -132,7 +132,7 @@ BOND_CLIST = _j(
 
 @pytest.fixture
 def api(monkeypatch):
-    """注入假客户端的 UnifiedQuoteAPI。"""
+    """注入假客户端的 WebQuoteSession。"""
 
     created: list[FakeHttpClient] = []
 
@@ -148,7 +148,7 @@ def api(monkeypatch):
         return created[0]
 
     monkeypatch.setattr(mixin_mod, "_shared_http", _shared)
-    return UnifiedQuoteAPI(), created
+    return WebQuoteSession(), created
 
 
 _ALL = {

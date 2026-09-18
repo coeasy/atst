@@ -11,7 +11,6 @@ import json
 import pytest
 
 from tstdx.errors import SourceDeprecated, WebSourceError
-from tstdx.facade.api import UnifiedQuoteAPI
 from tstdx.web.base import HttpResponse, RateLimiter
 from tstdx.web.facade import WebQuoteSession
 from tstdx.web.fundflow import EastmoneyStockChangesSource
@@ -147,7 +146,7 @@ class TestStockChanges:
             lambda self, types=(), *, page=1, size=50: [{"change_type": 8201}],
         )
         assert WebQuoteSession.stock_changes((8201,))[0]["change_type"] == 8201
-        assert UnifiedQuoteAPI.stock_changes()[0]["change_type"] == 8201
+        assert WebQuoteSession.stock_changes()[0]["change_type"] == 8201
 
     def test_spec_capability(self) -> None:
         assert "stock_changes" in KNOWN_SOURCES["stock_changes"].capabilities
@@ -238,7 +237,7 @@ class TestHotRank:
             lambda self, *, page=1, size=100: [{"rank": 1, "symbol": "sh600127"}],
         )
         assert WebQuoteSession.hot_rank()[0]["rank"] == 1
-        assert UnifiedQuoteAPI.hot_rank(size=50)[0]["symbol"] == "sh600127"
+        assert WebQuoteSession.hot_rank(size=50)[0]["symbol"] == "sh600127"
 
     def test_spec_capability(self) -> None:
         assert "hot_rank" in KNOWN_SOURCES["hot_rank"].capabilities

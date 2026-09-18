@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -22,12 +24,12 @@ from typing import Any
 from .domain.period import normalize_bar_period
 from .domain.symbol import normalize_symbol
 from .error_envelope import is_sensitive_key
-from .errors import ValidationError
-from .execution_primitives import ExecutionBudget
+from .errors import ReadTimeout, ValidationError
 from .providers import PROVIDERS, ChannelSpec, resolve_provider
 
 __all__ = [
     "CurrentnessMode",
+    "ExecutionBudget",
     "QuerySpec",
     "QueryFingerprint",
     "QueryPlan",
@@ -56,6 +58,61 @@ class CurrentnessMode(str, Enum):
     LIVE = "live"
     HISTORICAL = "historical"
     BUSINESS = "business"
+
+
+@dataclass(slots=True)
+class ExecutionBudget:
+    """One total monotonic deadline shared by the whole logical query."""
+
+    deadline_ns: int
+    max_attempts: int = 1
+    attempts: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    @classmethod
+    def from_deadline_ms(cls, deadline_ms: int, *, max_attempts: int = 1) -> ExecutionBudget:
+        if deadline_ms <= 0:
+            raise ValidationError(
+                "deadline_ms 必须大于 0",
+                context={"deadline_ms": deadline_ms},
+            )
+        if max_attempts <= 0:
+            raise ValidationError(
+                "max_attempts 必须大于 0",
+                context={"max_attempts": max_attempts},
+            )
+        return cls(
+            deadline_ns=time.monotonic_ns() + int(deadline_ms * 1_000_000),
+            max_attempts=max_attempts,
+        )
+
+    def remaining_ns(self) -> int:
+        return max(0, self.deadline_ns - time.monotonic_ns())
+
+    def remaining_s(self) -> float:
+        return self.remaining_ns() / 1_000_000_000
+
+    def ensure_remaining(self, phase: str) -> None:
+        if self.remaining_ns() <= 0:
+            raise ReadTimeout(
+                "查询总 deadline 已耗尽",
+                context={"phase": phase, "deadline_scope": "query"},
+            )
+
+    def begin_attempt(self, phase: str = "provider_request") -> None:
+        self.ensure_remaining(phase)
+        with self._lock:
+            if self.attempts >= self.max_attempts:
+                raise ReadTimeout(
+                    "查询执行次数已耗尽",
+                    context={
+                        "phase": phase,
+                        "attempts": self.attempts,
+                        "max_attempts": self.max_attempts,
+                        "deadline_scope": "query",
+                    },
+                )
+            self.attempts += 1
 
 
 def _norm_text(value: str | None) -> str:

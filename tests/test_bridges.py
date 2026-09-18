@@ -210,19 +210,40 @@ class TestBridges:
         p = REPO_ROOT / "tstdx" / "deprecation.py"
         assert p.exists(), "deprecation.py 不存在"
 
-    # ---- 17: HTTP API 32 接口 ----
+    # ---- 17: HTTP API canonical 面 ----
     def test_17_http_server(self):
-        """#17 HTTP API 32 接口。"""
-        from tstdx.integration.http_server import create_app
+        """#17 canonical HTTP 面：核心专用端点 + 能力泛化查询入口。
 
-        app = create_app()
-        paths = {getattr(r, "path", "") for r in app.routes if getattr(r, "methods", None)}
-        assert len(paths) >= 32, f"HTTP 端点仅 {len(paths)}，期望 ≥32"
+        v16 收敛后不再逐能力开端点：长尾能力统一经 ``POST /v13/query/{capability}``
+        寻址，端点数不随 capability 目录 1:1 膨胀。
+        """
+        from tstdx.capability_catalog import MIGRATED_CAPABILITIES
+        from tstdx.integration.runtime_http import create_runtime_app
+
+        paths = {
+            getattr(r, "path", "")
+            for r in create_runtime_app().routes
+            if getattr(r, "methods", None)
+        }
+        assert {
+            "/v13/capabilities",
+            "/v13/query/{capability}",
+            "/v13/quotes",
+            "/v13/bars/{symbol}",
+            "/v13/snapshot/{symbol}",
+            "/v13/minute/{symbol}",
+            "/v13/trades/{symbol}",
+            "/v13/security/count",
+            "/v13/security/list",
+            "/v13/runtime/health",
+        } <= paths, f"canonical 端点缺失：{sorted(paths)}"
+        # 泛化入口按名寻址整个已迁移目录。
+        assert len(MIGRATED_CAPABILITIES) >= 150
 
     # ---- 18: MCP 工具清单 ----
     def test_18_mcp_tools(self):
         """#18 MCP 工具清单：Tier-A 专用工具 + 通用 ``query_capability`` 入口。"""
-        from tstdx.integration.mcp_server import TOOLS, create_mcp_server
+        from tstdx.integration.mcp import TOOLS, create_mcp_server
 
         names = {tool.name for tool in TOOLS}
         # v13 clean break：MCP 只暴露走 canonical Client runtime 的能力，

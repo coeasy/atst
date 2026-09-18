@@ -80,7 +80,6 @@ def test_mcp_query_capability_delegates_to_client_call() -> None:
             "provider": "derived",
             "args": ["sh600519"],
             "kwargs": {"size": 5},
-            "use_cache": False,
         },
     )
     assert payload["meta"]["provider"] == "boc"

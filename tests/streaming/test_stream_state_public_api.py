@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import tstdx
-from tstdx.streaming.planned import StreamState
+from tstdx.streaming.state import StreamState
 
 
 def test_stream_state_is_part_of_top_level_public_api() -> None:

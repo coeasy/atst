@@ -16,6 +16,7 @@ import pytest
 
 from tstdx.web.base import HttpResponse
 from tstdx.web.efinance_options import OPTIONS_MARKETS, EastmoneyOptionsSource
+from tstdx.web.facade import WebQuoteSession
 
 pytestmark = [pytest.mark.unit]
 
@@ -396,8 +397,7 @@ class TestP4FacadeIntegration:
             assert hasattr(WebQuoteSession, name), f"缺少方法: {name}"
 
     def test_unified_api_has_options(self) -> None:
-        """UnifiedQuoteAPI 包含期权方法。"""
-        from tstdx.facade.api import UnifiedQuoteAPI
+        """WebQuoteSession 包含期权方法。"""
 
         for name in ["options_list", "options_snapshot", "options_trends"]:
-            assert hasattr(UnifiedQuoteAPI, name), f"缺少方法: {name}"
+            assert hasattr(WebQuoteSession, name), f"缺少方法: {name}"

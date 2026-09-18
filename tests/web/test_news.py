@@ -4,7 +4,7 @@
 * 源级：直接用罐头客户端验证 :class:`EastmoneyNewsSource` /
   :class:`EastmoneyResearchVisitSource` / :class:`EastmoneyResearchSource` 的解析。
 * 门面级：monkeypatch ``_shared_http`` 注入假客户端，验证
-  ``UnifiedQuoteAPI`` → ``WebQuoteSession`` Mixin → Web 源 的完整调用链
+  ``WebQuoteSession`` → ``WebQuoteSession`` Mixin → Web 源 的完整调用链
   （覆盖 news_financial / research_reports / research_visits /
   free_holders / holder_num）。
 
@@ -19,9 +19,9 @@ import pytest
 
 import tstdx.web._facade_mixin_info as mixin_info
 import tstdx.web._facade_mixin_news as mixin_news
-from tstdx.facade.api import UnifiedQuoteAPI
 from tstdx.web.base import HttpResponse
 from tstdx.web.corporate import EastmoneyResearchSource
+from tstdx.web.facade import WebQuoteSession
 from tstdx.web.news import EastmoneyNewsSource, EastmoneyResearchVisitSource
 
 
@@ -217,7 +217,7 @@ class TestEastmoneyResearchSource:
 # -- 门面级测试（端到端调用链） --------------------------------------------- #
 @pytest.fixture
 def api(monkeypatch):
-    """注入假客户端的 UnifiedQuoteAPI（同时覆盖两个 Mixin 模块）。"""
+    """注入假客户端的 WebQuoteSession（同时覆盖两个 Mixin 模块）。"""
     bodies = {
         "kuaixun": NEWS_LIST,
         "/report/list": REPORTS,
@@ -232,7 +232,7 @@ def api(monkeypatch):
 
     monkeypatch.setattr(mixin_news, "_shared_http", _shared)
     monkeypatch.setattr(mixin_info, "_shared_http", _shared)
-    return UnifiedQuoteAPI()
+    return WebQuoteSession()
 
 
 class TestNewsFacade:

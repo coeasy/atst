@@ -20,6 +20,7 @@ import pytest
 from tstdx.errors import SourceDeprecated, WebSourceError
 from tstdx.web.base import HttpResponse
 from tstdx.web.corporate import VALID_REPORTS
+from tstdx.web.facade import WebQuoteSession
 from tstdx.web.fin_report import (
     F10_REPORTS,
     EastmoneyF10ReportSource,
@@ -848,10 +849,9 @@ class TestFundamentalMixinChain:
 
 
 class TestUnifiedApiWiring:
-    """UnifiedQuoteAPI 门面注册（防方法遗漏）。"""
+    """WebQuoteSession 门面注册（防方法遗漏）。"""
 
     def test_all_methods_present(self) -> None:
-        from tstdx.facade.api import UnifiedQuoteAPI
 
         for name in (
             "balance_sheet",
@@ -865,4 +865,4 @@ class TestUnifiedApiWiring:
             "rating_forecast",
             "rating_consensus",
         ):
-            assert callable(getattr(UnifiedQuoteAPI, name, None)), name
+            assert callable(getattr(WebQuoteSession, name, None)), name

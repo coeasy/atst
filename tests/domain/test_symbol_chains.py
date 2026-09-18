@@ -1,9 +1,9 @@
 """符号单一事实源一致性测试（审计 §2-1 专项回归）。
 
-对审计点名的五个「两链相反市场号」代码，断言所有权域内的三条链
-（domain.symbol / sources._split_for_cache / reader.formats._guess_market
-与 resolve_vipdoc_path）给出一致结论；协议链（std7709.infer_market）不在
-本域所有权内，其分歧单独用 xfail 标注并在汇报中列出。
+对审计点名的五个「两链相反市场号」代码，断言所有权域内的两条链
+（domain.symbol 与 reader.formats._guess_market / resolve_vipdoc_path）
+给出一致结论；协议链（std7709.infer_market）不在本域所有权内，其分歧
+单独用 xfail 标注并在汇报中列出。
 """
 
 from __future__ import annotations
@@ -14,11 +14,10 @@ import pytest
 
 from tstdx.domain.symbol import parse_symbol, to_tdx_market
 from tstdx.reader.formats import _guess_market, resolve_vipdoc_path
-from tstdx.sources import _split_for_cache
 
 pytestmark = pytest.mark.unit
 
-#: 审计点名的五链一致性样本：code → 期望市场（小写市场码）
+#: 审计点名的链一致性样本：code → 期望市场（小写市场码）
 CASES = {
     "560530": "sh",  # 沪 ETF（旧 reader 链 lstrip 误判边界样本）
     "900901": "sh",  # 沪 B 股
@@ -29,15 +28,7 @@ CASES = {
 
 
 class TestFiveChainConsistency:
-    """domain / sources / reader 三链对同一代码必须同市场。"""
-
-    @pytest.mark.parametrize("code", sorted(CASES))
-    def test_domain_vs_sources_split_for_cache(self, code: str) -> None:
-        mkt_domain, bare = parse_symbol(code).market, parse_symbol(code).code
-        mkt_cache, cache_code = _split_for_cache(code)
-        assert cache_code == bare.upper()
-        # v5 DC1：0=深 1=沪 2=北交所，cache 链直接复用 Symbol.tdx_market
-        assert mkt_cache == {"sh": 1, "sz": 0, "bj": 2}[mkt_domain]
+    """domain / reader 两链对同一代码必须同市场。"""
 
     @pytest.mark.parametrize("code", sorted(CASES))
     def test_domain_vs_reader_guess_market(self, code: str) -> None:

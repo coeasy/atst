@@ -71,19 +71,5 @@ benches/results/ci_time_smoke.json
 tests/golden/**/tmp_*/
 tests/_tmp_golden_test/
 
-# Legacy v12 integration surfaces (deleted in v15 Phase 2)
-tstdx/integration/http_server.py
-tstdx/integration/http_app.py
-tstdx/integration/http_runtime.py
-tstdx/integration/ws_server.py
-tstdx/integration/ws_app.py
-tstdx/integration/tasks.py
-tstdx/integration/mcp_app.py
-
-# Legacy v12 CLI commands (deleted in v15 Phase 3)
-tstdx/cli/cmds_hosts.py
-tstdx/cli/cmds_market.py
-tstdx/cli/cmds_web.py
-
 # Codegen draft area (auto-generated, not part of the package)
 tstdx/tools/generated_draft/

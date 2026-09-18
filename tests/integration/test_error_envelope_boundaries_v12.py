@@ -6,7 +6,7 @@ from typing import Any
 
 import tstdx.cli as cli
 from tstdx.errors import SourceUnavailable
-from tstdx.integration.mcp_server import MCPServer
+from tstdx.integration.mcp import MCPServer
 from tstdx.integration.runtime_ws import RuntimeJsonRpcHandler as JsonRpcHandler
 
 

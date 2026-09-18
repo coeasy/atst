@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.cache_persistent import PersistentSemanticCache
 from tstdx.domain.models import Quote
 from tstdx.errors import AllSourcesExhausted, ValidationError
 from tstdx.orchestration import FallbackPolicy, ProviderOrchestrator
@@ -37,7 +36,7 @@ def test_fallback_policy_rejects_empty_duplicate_and_unknown_provider() -> None:
 
 def test_orchestrator_first_provider_success_is_not_fallback() -> None:
     class Runtime:
-        def execute(self, spec, *, use_cache=True):
+        def execute(self, spec):
             # ProviderOrchestrator rewrites the spec's provider per attempt and
             # delegates to the generic runtime execute() surface.
             assert spec.provider == "tdx"
@@ -53,9 +52,9 @@ def test_orchestrator_first_provider_success_is_not_fallback() -> None:
     assert output.result.meta.provenance.fallback is False
 
 
-def test_orchestrator_fallback_is_explicit_and_auditable(tmp_path) -> None:
+def test_orchestrator_fallback_is_explicit_and_auditable() -> None:
     class Runtime:
-        def execute(self, spec, *, use_cache=True):
+        def execute(self, spec):
             if spec.provider == "tdx":
                 raise ValidationError("tdx unavailable", context={"provider": "tdx"})
             return _result(spec.provider)
@@ -71,21 +70,13 @@ def test_orchestrator_fallback_is_explicit_and_auditable(tmp_path) -> None:
     assert output.result.meta.provenance.requested_provider == "tdx"
     assert output.result.meta.provenance.fallback is True
 
-    plan = QueryPlanner().compile(
-        QuerySpec.build(
-            "quotes",
-            symbols="sh600519",
-            provider="eastmoney",
-            currentness="live",
-        )
-    )
-    with PersistentSemanticCache(tmp_path / "semantic.sqlite") as cache:
-        assert cache.put(plan, output.result, ttl=30.0) is False
+    # 零缓存契约：回退结果不得被任何缓存层吞并，provenance 必须保留回退事实。
+    assert output.result.meta.provenance.fallback is True
 
 
 def test_orchestrator_all_failures_are_sanitized() -> None:
     class Runtime:
-        def execute(self, spec, *, use_cache=True):
+        def execute(self, spec):
             raise RuntimeError(f"secret token from {spec.provider}")
 
     with pytest.raises(AllSourcesExhausted) as info:

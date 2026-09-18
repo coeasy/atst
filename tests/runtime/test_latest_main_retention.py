@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.facade.api import UnifiedQuoteAPI
+from tstdx.capability_catalog import is_migrated_capability
 from tstdx.web.facade import WebQuoteSession
 
 # These capabilities were added to main after PR #1 diverged. The v11 runtime
@@ -100,4 +100,5 @@ def test_latest_main_web_surface_is_not_dropped(method_name: str) -> None:
     ),
 )
 def test_latest_main_unified_surface_is_not_dropped(method_name: str) -> None:
-    assert callable(getattr(UnifiedQuoteAPI, method_name, None)), method_name
+    assert callable(getattr(WebQuoteSession, method_name, None)), method_name
+    assert is_migrated_capability(method_name), method_name

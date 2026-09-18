@@ -363,7 +363,37 @@ def _cmd_probe(args: Any) -> int:
     return 0 if result.ok else 1
 
 
-# --- web / facade (from cmds_web.py) ---
+# --- web / migrated capabilities ---
+
+
+class _ClientRows:
+    """Adapter turning ``Client`` :class:`QueryResult` envelopes into raw rows.
+
+    The CLI commands below print plain rows, so every migrated capability call
+    is unwrapped here instead of at each call site.
+    """
+
+    def __init__(self, *, timeout: float) -> None:
+        from ..client_api import Client
+
+        self._client = Client(timeout=timeout)
+
+    def __enter__(self) -> _ClientRows:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self._client.close()
+
+    def __getattr__(self, name: str) -> Any:
+        def call(*args: Any, **kwargs: Any) -> Any:
+            result = getattr(self._client, name)(*args, **kwargs)
+            return getattr(result, "data", result)
+
+        call.__name__ = name
+        return call
+
+
+
 
 
 def _cmd_changes(args: Any) -> int:
@@ -424,10 +454,8 @@ def _cmd_hot(args: Any) -> int:
 def _cmd_margin(args: Any) -> int:
     """个股融资融券明细：``tstdx margin <symbol> [--days N]``（东财 Web 源）。"""
     from ..domain.models import to_dicts
-    from ..facade.api import UnifiedQuoteAPI
-
     try:
-        with UnifiedQuoteAPI(timeout=args.timeout) as api:
+        with _ClientRows(timeout=args.timeout) as api:
             rows = to_dicts(api.margin(args.symbol, days=args.days))
     except Exception as exc:  # noqa: BLE001 - Web 源异常统一出口
         print(f"错误：融资融券获取失败 —— {exc}", file=sys.stderr)
@@ -460,10 +488,8 @@ def _cmd_margin(args: Any) -> int:
 def _cmd_sector_flow(args: Any) -> int:
     """板块资金流排行：``tstdx sector-flow [--board industry] [--sort main_net]``。"""
     from ..domain.models import to_dicts
-    from ..facade.api import UnifiedQuoteAPI
-
     try:
-        with UnifiedQuoteAPI(timeout=args.timeout) as api:
+        with _ClientRows(timeout=args.timeout) as api:
             rows = to_dicts(api.sector_flow(args.board, sort=args.sort, limit=args.limit))
     except Exception as exc:  # noqa: BLE001 - Web 源异常统一出口
         print(f"错误：板块资金流获取失败 —— {exc}", file=sys.stderr)
@@ -497,10 +523,8 @@ def _cmd_sector_flow(args: Any) -> int:
 def _cmd_adjusted_bars(args: Any) -> int:
     """复权 K 线：``tstdx adjusted-bars <symbol> [--method qfq|hfq|fixed|none]``。"""
     from ..domain.models import to_dicts
-    from ..facade.api import UnifiedQuoteAPI
-
     try:
-        with UnifiedQuoteAPI(timeout=args.timeout) as api:
+        with _ClientRows(timeout=args.timeout) as api:
             data = to_dicts(
                 api.adjusted_bars(
                     args.symbol,
@@ -523,10 +547,8 @@ def _cmd_adjusted_bars(args: Any) -> int:
 def _cmd_all_market(args: Any) -> int:
     """全市场行情摘要：``tstdx all-market [--node hs_a] [--source sina|tencent]``。"""
     from ..domain.models import to_dicts
-    from ..facade.api import UnifiedQuoteAPI
-
     try:
-        with UnifiedQuoteAPI(timeout=args.timeout) as api:
+        with _ClientRows(timeout=args.timeout) as api:
             data = to_dicts(
                 api.all_market(
                     node=args.node,
@@ -549,10 +571,8 @@ def _cmd_all_market(args: Any) -> int:
 def _cmd_minute_klines(args: Any) -> int:
     """分钟 K 线：``tstdx minute-klines <symbol> [--period 5min] [--count 240]``。"""
     from ..domain.models import to_dicts
-    from ..facade.api import UnifiedQuoteAPI
-
     try:
-        with UnifiedQuoteAPI(timeout=args.timeout) as api:
+        with _ClientRows(timeout=args.timeout) as api:
             data = to_dicts(api.minute_klines(args.symbol, period=args.period, count=args.count))
     except Exception as exc:  # noqa: BLE001 - Web 源异常统一出口
         print(f"错误：分钟 K 线获取失败 —— {exc}", file=sys.stderr)
@@ -568,10 +588,8 @@ def _cmd_minute_klines(args: Any) -> int:
 def _cmd_baidu(args: Any) -> int:
     """百度财经源：``tstdx baidu <symbol> [--kind kline|minute|ticks|quote]``。"""
     from ..domain.models import to_dicts
-    from ..facade.api import UnifiedQuoteAPI
-
     try:
-        with UnifiedQuoteAPI(timeout=args.timeout) as api:
+        with _ClientRows(timeout=args.timeout) as api:
             if args.kind == "minute":
                 data = to_dicts(api.baidu_minute(args.symbol))
             elif args.kind == "ticks":
@@ -606,13 +624,11 @@ def _cmd_baidu(args: Any) -> int:
 
 def _cmd_fund(args: Any) -> int:
     """东财基金源：``tstdx fund nav|estimate|list``。"""
-    from ..facade.api import UnifiedQuoteAPI
-
     if args.action in ("nav", "estimate") and not args.code:
         print(f"错误：fund {args.action} 需要 <code>（6 位基金代码）", file=sys.stderr)
         return 2
     try:
-        with UnifiedQuoteAPI(timeout=args.timeout) as api:
+        with _ClientRows(timeout=args.timeout) as api:
             if args.action == "nav":
                 rows = api.fund_nav_history(
                     args.code, page_size=args.page_size, page_index=args.page_index
@@ -634,8 +650,6 @@ def _cmd_fund(args: Any) -> int:
 
 def _cmd_index(args: Any) -> int:
     """东财指数成分股：``tstdx index constituents <code>``。"""
-    from ..facade.api import UnifiedQuoteAPI
-
     if args.action == "constituents" and not args.code:
         print(
             "错误：index constituents 需要 <code>（指数代码，如 000300 / 000905 / 930050）",
@@ -643,7 +657,7 @@ def _cmd_index(args: Any) -> int:
         )
         return 2
     try:
-        with UnifiedQuoteAPI(timeout=args.timeout) as api:
+        with _ClientRows(timeout=args.timeout) as api:
             rows = api.index_constituents(args.code)
     except Exception as exc:  # noqa: BLE001 - Web 源异常统一出口
         print(f"错误：指数成分获取失败 —— {exc}", file=sys.stderr)
@@ -813,83 +827,6 @@ def _cmd_quotes_snapshot(args: Any) -> int:
             _fmt(q.get("low", 0)),
             int(q.get("volume", 0)),
             _fmt(q.get("amount", 0)),
-        ]
-        for q in quotes
-    ]
-    _print_table(["code", "price", "pct", "open", "high", "low", "volume", "amount"], rows)
-    return 0
-
-
-def _cmd_bars_router(args: Any) -> int:
-    """离线 / 降级路径：走 DataSourceRouter（默认 cache 源回放 golden 样本）。"""
-    from ..config.schema import SourcesConfig
-    from ..sources import DataSourceRouter
-
-    cfg = SourcesConfig(
-        order=["cache", "tdx", "web", "reader"],
-        enabled={"cache": True, "tdx": True, "web": True, "reader": True},
-    )
-    router = DataSourceRouter(
-        config=cfg, golden_root=getattr(args, "golden", None) or "tests/golden"
-    )
-    try:
-        bars = router.kline(args.symbol, period=args.period, count=args.count, as_format="dict")
-    except Exception as exc:  # noqa: BLE001
-        print(f"错误：路由获取失败 —— {exc}", file=sys.stderr)
-        return 2
-    if args.json:
-        print(json.dumps(bars, ensure_ascii=False, default=str))
-        return 0
-    print(f"# {args.symbol} {args.period} 共 {len(bars)} 根（源：{router.last_source}）")
-    rows = [
-        [
-            b["datetime"],
-            _fmt(b["open"]),
-            _fmt(b["high"]),
-            _fmt(b["low"]),
-            _fmt(b["close"]),
-            int(b["volume"]),
-            _fmt(b["amount"]),
-        ]
-        for b in bars
-    ]
-    _print_table(["datetime", "open", "high", "low", "close", "volume", "amount"], rows)
-    return 0
-
-
-def _cmd_quotes_router(args: Any) -> int:
-    """离线 / 降级路径：走 DataSourceRouter（默认 cache 源回放 golden 样本）。"""
-    from ..config.schema import SourcesConfig
-    from ..sources import DataSourceRouter
-
-    cfg = SourcesConfig(
-        order=["cache", "tdx", "web"],
-        enabled={"cache": True, "tdx": True, "web": True},
-    )
-    router = DataSourceRouter(
-        config=cfg, golden_root=getattr(args, "golden", None) or "tests/golden"
-    )
-    try:
-        quotes = router.quotes(args.symbols, as_format="dict")
-    except Exception as exc:  # noqa: BLE001
-        print(f"错误：路由获取失败 —— {exc}", file=sys.stderr)
-        return 2
-    if not quotes:
-        print("错误：未获取到任何行情（golden 缓存中可能无对应样本）", file=sys.stderr)
-        return 2
-    if args.json:
-        print(json.dumps(quotes, ensure_ascii=False, default=str))
-        return 0
-    rows = [
-        [
-            q.get("code", ""),
-            _fmt(q["price"]),
-            _fmt(_pct(q)) + "%",
-            _fmt(q["open"]),
-            _fmt(q["high"]),
-            _fmt(q["low"]),
-            int(q["volume"]),
-            _fmt(q["amount"]),
         ]
         for q in quotes
     ]

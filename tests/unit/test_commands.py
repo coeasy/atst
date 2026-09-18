@@ -104,15 +104,3 @@ class TestLedgerCalibration:
         # 漂移命令号不得回潜（0x02CF/0x02EE 为其它实现的习惯号）
         assert "0x02CF" not in src and "0x02EE" not in src
 
-    def test_facade_api_docstrings_no_drift(self) -> None:
-        """防回归：UnifiedQuoteAPI docstring 命令号与 client 实际一致（批次 E）。"""
-        import inspect
-
-        from tstdx.facade.api import UnifiedQuoteAPI
-
-        src = inspect.getsource(UnifiedQuoteAPI)
-        # 旧习惯号漂移（security_list 0x0514 / finance 0x0223 / capital 0x0A03）
-        assert "0x0514" not in src
-        assert "0x0223" not in src
-        assert "0x0A03" not in src
-        assert "0x044D" in src and "0x0010" in src and "0x000F" in src

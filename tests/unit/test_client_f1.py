@@ -224,15 +224,6 @@ class TestIndexBarsCtx:
         bars = client.bars("sh600519", count=2, as_format="dict")
         assert bars and all("up_count" not in b for b in bars)
 
-    def test_facade_index_bars_end_to_end(self) -> None:
-        """P1a：facade market.HqClient.index_bars 显式传 index=True（此前永不传递）。"""
-        from tstdx.facade.market import HqClient
-
-        hq = HqClient(pool=_FakePool({0x052D: _bars_payload_index()}))
-        rows = hq.index_bars("sh000300", limit=2)
-        assert rows[0]["up_count"] == 800
-        assert rows[1]["datetime"] == "2024-01-09 15:00"
-
     def test_async_bars_signature_mirrors_index(self) -> None:
         """同步/异步 bars 签名一致（parity 门禁约束：参数名集合相等）。"""
         import inspect

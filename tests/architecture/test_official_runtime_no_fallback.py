@@ -5,23 +5,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-#: v15 canonical runtime: the Client -> QueryPlan -> UnifiedRuntime path plus the
-#: canonical integration surfaces. The legacy v12 integration surfaces
-#: (git-ignored, deleted in v15 Phase 2) and the legacy facade compatibility
-#: layer are intentionally excluded — the invariant is that the *canonical*
-#: runtime never routes through the aggregate web fallback engine.
+#: v16 canonical runtime: Client -> QueryPlan -> zero-cache kernel plus the
+#: canonical integration surfaces. Deleted legacy layers (v12 facade / service /
+#: sources / cache) cannot appear here; the invariant is that the canonical
+#: runtime never routes through an aggregate web fallback engine.
 OFFICIAL_RUNTIME = [
     ROOT / "tstdx" / "client_api.py",
-    ROOT / "tstdx" / "runtime_v13.py",
+    ROOT / "tstdx" / "runtime" / "kernel.py",
+    ROOT / "tstdx" / "runtime" / "gateway.py",
+    ROOT / "tstdx" / "execution" / "semantic.py",
     ROOT / "tstdx" / "query.py",
     ROOT / "tstdx" / "direct_provider.py",
     ROOT / "tstdx" / "orchestration.py",
     ROOT / "tstdx" / "provider_api.py",
     ROOT / "tstdx" / "capability_catalog.py",
     ROOT / "tstdx" / "batch.py",
-    ROOT / "tstdx" / "planned_service.py",
-    ROOT / "tstdx" / "async_service.py",
-    ROOT / "tstdx" / "service.py",
+    ROOT / "tstdx" / "streaming" / "base.py",
     ROOT / "tstdx" / "providers" / "__init__.py",
     ROOT / "tstdx" / "providers" / "http.py",
     ROOT / "tstdx" / "integration" / "__init__.py",

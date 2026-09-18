@@ -13,9 +13,9 @@ import json
 import pytest
 
 from tstdx.errors import SourceDeprecated
-from tstdx.facade.api import UnifiedQuoteAPI
 from tstdx.web._mob_fund import apply_fields, mob_get_json, mob_rows, mob_rows_any
 from tstdx.web.base import HttpResponse
+from tstdx.web.facade import WebQuoteSession
 from tstdx.web.fund_company import FundCompanySource
 from tstdx.web.fund_manager import FundManagerSource
 from tstdx.web.fund_rank import FundMobRankSource
@@ -866,10 +866,10 @@ _ALL = {
 
 @pytest.fixture
 def api(monkeypatch):
-    """注入假客户端的 UnifiedQuoteAPI（18 个新门面方法全链验证）。"""
+    """注入假客户端的 WebQuoteSession（18 个新门面方法全链验证）。"""
     fc = FakeHttpClient(**_ALL)
     monkeypatch.setattr(mixin_mod, "_shared_http", lambda: fc)
-    return UnifiedQuoteAPI(), fc
+    return WebQuoteSession(), fc
 
 
 class TestFundFacadeChain:

@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.domain.models import Quote
 from tstdx.error_envelope import to_error_envelope
 from tstdx.errors import SourceUnavailable, ValidationError
-from tstdx.planned_service import UnifiedMarketDataService
 
 
 def test_tdx_error_envelope_preserves_contract_and_redacts_sensitive_context() -> None:
@@ -52,29 +50,24 @@ def test_native_exception_is_generic_public_internal_error() -> None:
     assert data["provider_switch_allowed"] is False
 
 
-def test_planned_service_annotates_execution_error_with_query_identity() -> None:
-    class Adapter:
-        def fetch(self, symbols: list[str]) -> list[Quote]:
-            raise SourceUnavailable("provider down")
+def test_kernel_propagates_execution_error_without_fallback() -> None:
+    """A failing Provider surfaces its own envelope identity; the kernel never retries."""
+    from tstdx.runtime.kernel import UnifiedRuntime
 
-    class Manager:
-        def quote_adapter(self, provider: str):  # noqa: ANN202
-            assert provider == "tencent"
-            return Adapter()
+    calls: list[str] = []
 
-        def close(self) -> None:
-            pass
+    class Executor:
+        def execute(self, plan):  # noqa: ANN001, ANN201
+            calls.append(str(plan.spec.provider))
+            raise SourceUnavailable("provider down", context={"provider": plan.spec.provider})
 
-    service = UnifiedMarketDataService(manager=Manager())
+    runtime = UnifiedRuntime()
+    runtime.executor = Executor()
     try:
         with pytest.raises(SourceUnavailable) as caught:
-            service.quotes(["sh600519"], provider="tencent")
-        context = caught.value.context
-        assert context["provider"] == "tencent"
-        assert context["channel"] == "quote"
-        assert context["capability"] == "quotes"
-        assert context["phase"] == "execution"
-        assert context["fallback"] is False
-        assert str(context["query_id"]).startswith("q1:")
+            runtime.quotes(["sh600519"], provider="tencent")
+        assert calls == ["tencent"]
+        assert caught.value.context["provider"] == "tencent"
+        assert caught.value.context.get("fallback") is None
     finally:
-        service.close()
+        runtime.close()

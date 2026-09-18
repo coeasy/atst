@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 
 def test_top_level_v13_public_api_is_client_first() -> None:
     import tstdx
@@ -42,24 +44,10 @@ def test_legacy_business_api_is_not_top_level_public_surface() -> None:
         assert not hasattr(tstdx, name)
 
 
-def test_facade_namespace_is_a_deprecated_compat_layer_without_transport_classes() -> None:
-    """v15：``tstdx.facade`` 是**已弃用**的兼容层，而非 runtime 入口。
+def test_legacy_compat_namespaces_are_physically_removed() -> None:
+    """v16 clean-break：兼容层物理删除，只留 Client / RuntimeGateway 入口。"""
+    import importlib
 
-    它保留历史业务门面（``UnifiedQuoteAPI`` 等）供迁移期使用，但不得暴露
-    底层传输 / 执行实现，也不得再承担 canonical runtime 入口的角色
-    （canonical 入口是 :class:`tstdx.Client` / :class:`tstdx.RuntimeGateway`）。
-    """
-    import tstdx.facade as facade
-
-    assert "UnifiedQuoteAPI" in facade.__all__
-    assert "LegacyUnifiedQuoteAPI" in facade.__all__
-    for name in (
-        "TdxClient",
-        "AsyncTdxClient",
-        "WebQuoteClient",
-        "DirectProviderExecutor",
-        "runtime_api",
-        "UnifiedRuntime",
-    ):
-        assert name not in facade.__all__
-        assert not hasattr(facade, name)
+    for module in ("tstdx.facade", "tstdx.service", "tstdx.planned_service", "tstdx.sources"):
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(module)
