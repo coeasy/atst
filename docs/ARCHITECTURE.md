@@ -82,9 +82,13 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
    主站"的保护实际为死代码（测试全打桩故全绿）。现按 `call_auction/continuous` 判定，
    并由 `tests/protocol/test_prober_offline_guard.py` 逐时段回归。同批把 `mypy tstdx/`
    从 47 项压到 **0**（含删除零消费者的缓存时代残留 `RuntimeCacheIdentity`）。
-7. **F-13 死配置面 —— 待办**：`Config.cache`（`CacheConfig`）与 `Config.compatibility`
-   （`CompatibilityConfig`）生产代码零消费者，却仍接受用户 TOML 写 `[cache]`/
-   `[compatibility]` 段，与"数据请求零缓存 + clean-break"矛盾；须物理删除并重跑门禁。
+7. **F-13/F-16 配置面未接线且装饰化 —— 待办（P0）**：`load_config` 在 `tstdx/` 包内
+   **零调用者**，CLI/HTTP/WS/MCP/`Client` 均不读配置文件（`Client.__init__` 无 `config=`
+   入口），`Config` 只在调用方手工传给 `ConnectionPool.from_config` 时才生效；同时 12 个
+   配置段中 `cache`/`output`/`profile`/`sources`/`observability`/`compatibility`/`feedback`
+   七段的 dataclass 在 `config/` 包外零引用。即"写 TOML 配置文件不改变行为"，且
+   `[cache]` 段与零缓存口径冲突。处置方案与默认选择见 REFACTOR_PLAN_V17_CLOSURE §0.3
+   F-16（最小接线 + 删除装饰段），落地前不得发布新稳定版。
 8. **F-15 门禁基线为红 —— 待办**：`ruff format --check` 74 文件待重排（dev 依赖
    `ruff>=0.5`/`mypy>=1.10` 浮动导致版本漂移；本地 ruff 0.14.4 与 0.9.6 结论一致，
    mypy 1.13 与 2.3.1 下 `tstdx/` 均为 0 错（含 `--warn-unused-ignores`）；
@@ -105,6 +109,7 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
 | capability 语义/参数校验 | `query.py`（`QuerySpec`）+ `catalog/capability.py`（`validate_call`） |
 | 协议命令账本 | `protocol/` YAML 规范 + codegen + golden_audit |
 | 公开导出面 | `tstdx/__init__.py::__all__`（懒加载 `_LAZY`） |
+| 配置结构 | `config/schema.py`（**尚未接入执行链**，见 §4 第 7 条 F-16；生效与否以代码为准） |
 
 ## 6. 开发环境（重要）
 

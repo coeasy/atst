@@ -25,7 +25,9 @@ from tstdx.errors import ConnectionFailed
 **排查**：
 1. `tstdx server-test` — 确认至少一个主站可达
 2. 手动 telnet 测试：`python -c "import socket; s=socket.create_connection(('119.147.212.81', 7709), timeout=5); print('OK')"`
-3. 公司网络可能封锁非常用端口 — 尝试 80/443 端口主站（配置 `tstdx.toml`）
+3. 公司网络可能封锁非常用端口 — 显式传入 80/443 端口主站：
+   `Client(hosts=["119.147.212.81:443"])`（配置文件 `tstdx.toml` 目前**尚未接入**
+   `Client`/内核执行链，见 `docs/REFACTOR_PLAN_V17_CLOSURE.md` F-16，勿依赖其生效）
 
 ### 症状：`[E2030] ReadTimeout`
 
