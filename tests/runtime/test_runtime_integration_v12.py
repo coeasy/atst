@@ -10,8 +10,6 @@ from tstdx.direct_provider import DIRECT_BINDINGS, DirectProviderExecutor, audit
 from tstdx.error_envelope import to_error_envelope
 from tstdx.errors import SourceUnavailable, ValidationError
 from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.result import Provenance, QueryResult
-from tstdx.runtime_v13 import UnifiedRuntime
 
 
 def _plan(provider: str = "tdx"):

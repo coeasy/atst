@@ -28,8 +28,8 @@ def from_direct_binding(item: object) -> ExecutorBinding:
     """Convert a binding declaration into an immutable resolver model."""
 
     return ExecutorBinding(
-        provider=str(getattr(item, "provider")),
-        channel=str(getattr(item, "channel")),
-        capability=str(getattr(item, "capability")),
-        executor_name=str(getattr(item, "executor_name")),
+        provider=str(item.provider),
+        channel=str(item.channel),
+        capability=str(item.capability),
+        executor_name=str(item.executor_name),
     )

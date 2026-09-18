@@ -111,33 +111,32 @@ def test_core_bars_use_canonical_query_provenance_and_zero_cache() -> None:
     assert second.metadata["provenance"]["cache_tier"] is None
 
 
-def test_runtime_policy_fallback_does_not_claim_caller_requested_provider() -> None:
+def test_runtime_never_switches_provider_privately() -> None:
+    """v13 constitution: a failing first candidate is not retried elsewhere.
+
+    Cross-Provider fallback requires an explicit ``FallbackPolicy`` via the
+    orchestrator; the semantic adapter executes exactly one Provider.
+    """
     runtime = Runtime(provider_order=("tdx", "tencent"))
     runtime.register_provider(TdxProvider(BarsOnlyClient()))
     runtime.register_provider(WebProvider("tencent", QuotesSource()))
 
     response = runtime.execute(QueryRequest("quotes", args=(["sh600519"],)))
 
-    assert response.success is True
-    assert response.metadata["provider"] == "tencent"
-    assert response.metadata["channel"] == "quote"
-    assert response.metadata["provenance"]["provider"] == "tencent"
-    assert response.metadata["provenance"]["requested_provider"] == "tencent"
-    assert response.metadata["provenance"]["fallback"] is False
+    assert response.success is False
     assert response.metadata["provider_attempts"] == [
-        {"provider": "tdx", "status": "unsupported", "detail": "quotes"},
-        {"provider": "tencent", "status": "selected"},
+        {"provider": "tdx", "status": "unsupported", "detail": "quotes"}
     ]
 
 
-def test_caller_requested_provider_order_preserves_fallback_provenance() -> None:
+def test_caller_provider_order_executes_first_provider() -> None:
     runtime = Runtime()
     runtime.register_provider(TdxProvider(BarsOnlyClient()))
     runtime.register_provider(WebProvider("tencent", QuotesSource()))
     request = QueryRequest(
         "quotes",
         args=(["sh600519"],),
-        metadata={"providers": ("tdx", "tencent")},
+        metadata={"providers": ("tencent", "tdx")},
     )
 
     response = runtime.execute(request)
@@ -145,5 +144,5 @@ def test_caller_requested_provider_order_preserves_fallback_provenance() -> None
     assert response.success is True
     assert response.metadata["provider"] == "tencent"
     assert response.metadata["provenance"]["provider"] == "tencent"
-    assert response.metadata["provenance"]["requested_provider"] == "tdx"
-    assert response.metadata["provenance"]["fallback"] is True
+    assert response.metadata["provenance"]["requested_provider"] == "tencent"
+    assert response.metadata["provenance"]["fallback"] is False

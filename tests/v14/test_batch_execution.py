@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from tstdx.cache_semantic import SemanticResultCache
 from tstdx.runtime import QueryRequest, create_runtime
 
 

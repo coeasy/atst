@@ -206,7 +206,7 @@ class UnifiedRuntime:
             QuerySpec.build(
                 "security_count",
                 provider=provider,
-                market=market,
+                options={"market": market},
                 currentness=currentness,
                 max_age=max_age,
             )
@@ -225,8 +225,8 @@ class UnifiedRuntime:
             QuerySpec.build(
                 "security_list",
                 provider=provider,
-                market=market,
                 start=start,
+                options={"market": market},
                 currentness=currentness,
                 max_age=max_age,
             )

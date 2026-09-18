@@ -22,7 +22,7 @@ def test_create_runtime_registers_canonical_web_provider_mapping() -> None:
     runtime = create_runtime(
         tdx=BarsOnlyClient(),
         web={"tencent": QuotesSource()},
-        provider_order=("tdx", "tencent"),
+        provider_order=("tencent", "tdx"),
     )
 
     response = runtime.execute(QueryRequest("quotes", args=(["sh600519"],)))

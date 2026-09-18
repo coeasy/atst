@@ -52,19 +52,19 @@ def _fingerprint_value(value: Any) -> str:
 def cache_identity_from_plan(plan: object) -> RuntimeCacheIdentity:
     """Build a provider-aware cache identity from a canonical QueryPlan."""
 
-    spec = getattr(plan, "spec")
+    spec = plan.spec
     return RuntimeCacheIdentity(
-        provider=str(getattr(plan, "provider")),
-        channel=str(getattr(plan, "channel")),
-        capability=str(getattr(spec, "capability")),
+        provider=str(plan.provider),
+        channel=str(plan.channel),
+        capability=str(spec.capability),
         fingerprint=_fingerprint_value(getattr(plan, "fingerprint", "")),
     )
 
 
 def execution_identity_from_plan(plan: object) -> RuntimeExecutionIdentity:
-    spec = getattr(plan, "spec")
+    spec = plan.spec
     return RuntimeExecutionIdentity(
-        provider=str(getattr(plan, "provider")),
-        channel=str(getattr(plan, "channel")),
-        capability=str(getattr(spec, "capability")),
+        provider=str(plan.provider),
+        channel=str(plan.channel),
+        capability=str(spec.capability),
     )

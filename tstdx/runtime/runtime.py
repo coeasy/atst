@@ -17,7 +17,6 @@ from .response import QueryResponse
 
 if TYPE_CHECKING:
     from ..typed_query import CapabilityQuery
-    from .legacy_bridge import LegacyRuntimeBridge
     from .stream import StreamHandle
 
 
@@ -35,16 +34,14 @@ class Runtime:
         router: ProviderRouter | None = None,
         planner: ExecutionPlanner | None = None,
         provider_order: Sequence[str] | None = None,
-        bridge: LegacyRuntimeBridge | None = None,
     ) -> None:
         self._handlers: dict[str, Callable[..., Any]] = {}
         self._subscriptions: dict[str, StreamHandle] = {}
         self._subscription_seq: int = 0
-        self._bridge = bridge
 
         if planner is None:
             self.router = router or ProviderRouter()
-            semantic = SemanticExecutionAdapter(bridge=bridge)
+            semantic = SemanticExecutionAdapter()
             self.planner = ExecutionPlanner(
                 self.router,
                 provider_order=provider_order,
@@ -58,8 +55,6 @@ class Runtime:
                 planner.router = self.router
             if provider_order is not None:
                 planner.provider_order = tuple(provider_order)
-            if bridge is not None:
-                planner.semantic._bridge = bridge
             self.planner = planner
 
     def register(self, operation: str, handler: Callable[..., Any]) -> None:

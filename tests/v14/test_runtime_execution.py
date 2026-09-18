@@ -131,7 +131,7 @@ def test_tdx_provider_preserves_positional_and_keyword_arguments() -> None:
     assert response.data == ("sh600519", 5)
 
 
-def test_runtime_skips_provider_without_operation_capability() -> None:
+def test_runtime_does_not_retry_next_provider_when_first_is_unsupported() -> None:
     class BarsOnlyClient:
         def bars(self, symbol):
             return [symbol]
@@ -146,12 +146,9 @@ def test_runtime_skips_provider_without_operation_capability() -> None:
 
     response = runtime.execute(QueryRequest("quotes", args=(["sh600519"],)))
 
-    assert response.success is True
-    assert response.data == ["sh600519"]
-    assert response.metadata["provider"] == "tencent"
+    assert response.success is False
     assert response.metadata["provider_attempts"] == [
-        {"provider": "tdx", "status": "unsupported", "detail": "quotes"},
-        {"provider": "tencent", "status": "selected"},
+        {"provider": "tdx", "status": "unsupported", "detail": "quotes"}
     ]
 
 

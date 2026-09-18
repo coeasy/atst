@@ -10,15 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .capability_audit import audit_capability_bindings
 from .capability_catalog import binding_for, validate_call
 from .errors import InternalError, TdxError, ValidationError
-from .provider_audit import audit_provider_registry
-from .provider_guard import ProviderExecutionIdentity, validate_execution_identity
-from .runtime_audit import audit_runtime
 from .providers import PROVIDERS
 from .query import QueryPlan
 from .result import Provenance, QueryResult
+from .runtime_audit import audit_runtime
 
 __all__ = [
     "DirectBinding",
@@ -492,13 +489,13 @@ class DirectProviderExecutor:
 
     def _tdx_security_count(self, plan: QueryPlan) -> Any:
         with self._tdx_client() as client:
-            market = 0 if getattr(plan.spec, "market", None) is None else plan.spec.market  # type: ignore[attr-defined]
-            return client.security_count(market)
+            return client.security_count(plan.spec.options.get("market", 0))
 
     def _tdx_security_list(self, plan: QueryPlan) -> Any:
         with self._tdx_client() as client:
-            market = 0 if getattr(plan.spec, "market", None) is None else plan.spec.market  # type: ignore[attr-defined]
-            return client.security_list(market, plan.spec.start)
+            return client.security_list(
+                plan.spec.options.get("market", 0), plan.spec.start
+            )
 
     def _local_bars(self, plan: QueryPlan) -> Any:
         if not self.vipdoc_root:

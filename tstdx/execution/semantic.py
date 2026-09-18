@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from ..errors import ValidationError
 from ..provider.router import ProviderAttempts, ProviderRouter
@@ -13,32 +13,25 @@ from ..providers import PROVIDERS, normalize_provider_id
 from ..query import QueryPlan, QueryPlanner, QuerySpec
 from ..result import Provenance, QueryResult
 
-if TYPE_CHECKING:
-    from ..runtime.legacy_bridge import LegacyRuntimeBridge
-
 _CORE_CAPABILITIES = frozenset({"quotes", "bars"})
 
 
 class SemanticExecutionAdapter:
-    """Bridge V14 orchestration to tstdx's canonical query/result contracts.
+    """Translate V14 orchestration requests into canonical v13 query contracts.
 
-    The adapter does not define a second query, capability or provenance model
-    and performs no caching: requests are compiled through
-    :class:`tstdx.query.QueryPlanner` and executed directly against the bound
-    Provider, returning canonical :class:`QueryResult`.
-
-    When a :class:`LegacyRuntimeBridge` is injected, execution is delegated to
-    the v13 UnifiedRuntime kernel.
+    The adapter is a pure translator plus a single-Provider executor seam: it
+    performs no caching, never switches Providers, and delegates execution to
+    exactly one bound Provider per compiled :class:`QueryPlan`.  Cross-Provider
+    fallback belongs only to the explicit ``FallbackPolicy`` path in
+    :class:`tstdx.orchestration.ProviderOrchestrator`.
     """
 
     def __init__(
         self,
         *,
         query_planner: QueryPlanner | None = None,
-        bridge: LegacyRuntimeBridge | None = None,
     ) -> None:
         self.query_planner = query_planner or QueryPlanner()
-        self._bridge = bridge
 
     @staticmethod
     def _known_provider(provider: str) -> bool:
@@ -151,12 +144,11 @@ class SemanticExecutionAdapter:
         *,
         requested_provider: str | None,
     ) -> tuple[str, ...]:
-        """Drop statically impossible providers only for Runtime-owned policy.
+        """Statically drop providers the canonical registry can never serve.
 
-        Caller-specified provider order is never rewritten: an unsupported
-        explicit candidate remains visible in diagnostics and fallback
-        provenance. Internal default policy, however, should not waste work on a
-        Provider the canonical registry says can never serve the capability.
+        This is deterministic registry routing, not runtime fallback: exactly
+        one candidate survives and is executed.  Caller-specified provider
+        order is never rewritten.
         """
         if requested_provider is not None:
             return candidates
@@ -168,7 +160,7 @@ class SemanticExecutionAdapter:
                     supported.append(provider)
             except ValidationError:
                 continue
-        return tuple(supported) or candidates
+        return tuple(supported) or candidates[:1]
 
     def execute(
         self,
@@ -179,73 +171,32 @@ class SemanticExecutionAdapter:
         attempts: ProviderAttempts,
         requested_provider: str | None = None,
     ) -> tuple[str, QueryResult[Any]]:
+        """Execute against exactly one Provider.
+
+        The adapter never iterates candidates looking for a working Provider:
+        a failing Provider raises.  Cross-Provider fallback requires an
+        explicit ``FallbackPolicy`` through the orchestrator.
+        """
         candidates = tuple(normalize_provider_id(item) for item in providers)
         if not candidates:
             raise RuntimeError("no providers are available for semantic execution")
-        requested = normalize_provider_id(requested_provider) if requested_provider else None
-        candidates = self._policy_candidates(
+        requested = (
+            normalize_provider_id(requested_provider) if requested_provider else None
+        )
+        provider = self._policy_candidates(
             request,
             candidates,
             requested_provider=requested,
+        )[0]
+        plan = self.compile(request, provider)
+        before = len(attempts)
+        raw = router.query(provider, request, attempts=attempts)
+        if len(attempts) == before:
+            attempts.append({"provider": provider, "status": "selected"})
+        provenance = self._fallback_provenance(
+            Provenance.direct(plan),
+            requested_provider=requested,
+            selected_provider=provider,
         )
-        single_provider = len(candidates) == 1
-        failures: list[str] = []
-
-        for provider in candidates:
-            try:
-                plan = self.compile(request, provider)
-            except Exception as exc:
-                attempts.append(
-                    {
-                        "provider": provider,
-                        "status": "unsupported",
-                        "detail": f"{type(exc).__name__}: {exc}",
-                    }
-                )
-                if single_provider:
-                    raise
-                failures.append(f"{provider}=plan:{type(exc).__name__}: {exc}")
-                continue
-
-            # -- Bridge path: delegate to v13 UnifiedRuntime engine -------- #
-            if self._bridge is not None:
-                try:
-                    result = self._bridge.execute_spec(plan.spec)
-                except Exception as exc:
-                    if single_provider:
-                        raise
-                    failures.append(f"{provider}={type(exc).__name__}: {exc}")
-                    continue
-                # Stamp v14 caller intent into provenance
-                if requested and requested != provider:
-                    provenance = replace(
-                        result.meta.provenance,
-                        requested_provider=requested,
-                        fallback=True,
-                    )
-                    result = QueryResult(data=result.data, meta=replace(result.meta, provenance=provenance))
-                attempts.append({"provider": provider, "status": "bridge-executed"})
-                return provider, result
-
-            # -- Legacy path: direct router query -------------------------- #
-            before = len(attempts)
-            try:
-                raw = router.query(provider, request, attempts=attempts)
-            except Exception as exc:
-                if single_provider:
-                    raise
-                failures.append(f"{provider}={type(exc).__name__}: {exc}")
-                continue
-            if len(attempts) == before:
-                attempts.append({"provider": provider, "status": "selected"})
-
-            provenance = self._fallback_provenance(
-                Provenance.direct(plan),
-                requested_provider=requested,
-                selected_provider=provider,
-            )
-            result = QueryResult.from_plan(raw, plan=plan, provenance=provenance)
-            return provider, result
-
-        detail = "; ".join(failures) if failures else "no eligible providers"
-        raise RuntimeError(f"all semantic providers failed: {detail}")
+        result = QueryResult.from_plan(raw, plan=plan, provenance=provenance)
+        return provider, result
