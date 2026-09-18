@@ -3,7 +3,8 @@
 > **文档状态**：执行中 —— Phase 3A(方案 b)/3B/3C/3D/4 已于 2026-09-19 落地（F-1/F-2/F-9 物理
 > 删除、防回潮守卫、typed 全契约对齐内核签名 + CHANGELOG 迁移表、根级模块 26→11、
 > 文档面对齐代码事实 + 文档-代码一致性门禁，见 F-10/F-11）；Phase 5 第 1 步已落地
-> （mypy 47→0、F-12 死守卫修复、缓存时代残留清除）；**Phase 6（配置面接线，F-16 曾为
+> （mypy 47→0、F-12 死守卫修复、缓存时代残留清除），第 2 步已落地（65 文件全量 `ruff
+> format` 纯格式提交清零、dev 工具版本钉死，见 F-15）；**Phase 6（配置面接线，F-16 曾为
 > P0 发布阻塞项）已于 2026-09-19 落地**：`Client()` 现在真的读 `tstdx.toml`/`TSTDX_*`，
 > 配置面从 12 段收缩为 5 段且每键都有读者（ADR-016）。其后才是网络 smoke 与 tag
 > **取代文档**：REFACTOR_PLAN_v16_CONVERGENCE.md 的 Phase 3–5（其 Phase 0/1/2 已于
@@ -47,7 +48,7 @@
 | F-16 | **P0** | **配置系统与产品链路未接线**（Phase 5 实测）：`load_config` 在 `tstdx/` 包内**零调用者**，CLI/HTTP/WS/MCP/`Client` 全都不读配置文件；`Client.__init__` 只接受 `runtime`/`**runtime_kwargs`，没有 `config=` 入口。`Config` 唯一进入运行期的路径是调用方自己构造后传给 `ConnectionPool.from_config`（`pool.py:242` 读 `cfg.rate_limit`，`core/hosts/security` 同族）——即"写 `tstdx.toml` 不生效"。而 `docs/troubleshooting.md` 长期指导用户"尝试 80/443 端口主站（配置 `tstdx.toml`）"（Phase 5 已改为显式 `Client(hosts=[...])` 并就地标注未接线）| **已清偿**（2026-09-19，Phase 6，方案 a）：`UnifiedRuntime` 成为唯一读者并缺省经 `get_config()` 取六源合并单例，保留的 5 段全部键逐个贯通到 `TdxClient`/`ConnectionPool`/`WebQuoteClient`；配置→传输只有 `pool_settings_from_config` 一个翻译点。**接线时实测出的加重情节**：被删除的第二读者 `ConnectionPool.from_config` 读的键名（`rate_call_auction`…）与 `RateLimitConfig` 字段名（`in_session`/`pre_post`/`closed`）从不重合，`getattr(..., 默认)` 把所有配置值静默丢弃为限流器默认值，而它的契约测试正是照幻影键名写的 ⇒ 全绿掩盖。口径见 ADR-016 |
 | F-17 | P2 | 接线时新暴露的两处静默失效（Phase 6）：`tstdx.configure()` 合并后**丢弃返回值**、从不写回单例（调用即无效果）；`WebQuoteClient.__init__` 用 `try/except Exception: pass` 包裹配置读取，配置出错即悄悄退回硬编码默认 | **已修**（2026-09-19）：`configure()` 改为 `load_config(overrides=…, set_global=True)` 并如实记录语义；`WebQuoteClient` 直接 `get_config()`，配置解析失败 fail-closed |
 | F-14 | P2 | CHANGELOG `[Unreleased]` 的 P13/P14 条目仍以已删除的 `UnifiedQuoteAPI` 门面为"暴露面"叙述；新工具未纳入 `test_doc_code_consistency.py` 的活文档集合（CHANGELOG 不在集合内） | 待办：把历史条目改写为当前真实入口（`tstdx/web` 源 + `Client.call`），或标注"当时口径"并指向迁移表 |
-| F-15 | P1 | 格式门禁长期为红：`ruff format --check tstdx/ tests/ scripts/` 在 0.9.6 与 0.14.4 下均报 74 个文件待重排，而 CI 用浮动的 `ruff>=0.5` | 待办：一次纯格式提交 + 钉住 dev 工具版本（见 Phase 5 第 2 项）。**已推进部分**（2026-09-19，Phase 6）：Phase 6 触及文件全部重排后既存待重排降至 **65**；覆盖率阈值数字收敛为 `pyproject.toml [tool.coverage.report] fail_under` 单一事实源（删 Makefile/CI 的 `--cov-fail-under` 副本并加守卫测试），**未下调阈值**；离线实测 76.14% 仍低于 77，重钉待 CI 环境（ubuntu+py3.11）数字 |
+| F-15 | P1 | 格式门禁长期为红：`ruff format --check tstdx/ tests/ scripts/` 在 0.9.6 与 0.14.4 下均报 74 个文件待重排，而 CI 用浮动的 `ruff>=0.5` | **格式与版本已清偿**（2026-09-19，Phase 5 第 2 步）：65 个待重排文件一次纯格式提交清零，重排前后 `ast.dump()` 逐个比对无差异；dev 依赖钉死 `ruff==0.15.2` / `mypy==2.3.1`。**覆盖率部分仍待办**：阈值数字已收敛为 `pyproject.toml [tool.coverage.report] fail_under` 单一事实源（删 Makefile/CI 的 `--cov-fail-under` 副本并加守卫测试），**未下调阈值**；离线实测 76.14% 仍低于 77，重钉待 CI 环境（ubuntu+py3.11）数字 |
 
 ---
 
@@ -200,12 +201,19 @@
      **不在本地下调阈值**：先删死面（F-13 死配置段）再按 CI 环境（ubuntu+py3.11）
      的实测值重钉单一事实源（把数值收敛到 `pyproject.toml [tool.coverage.report]
      fail_under`，Makefile/CI 不再各写一份），避免本地数字误伤跨平台差异。
-2. **`ruff format` 漂移清偿（Phase 4 实测新发现，见 F-15）**：`ruff format --check tstdx/
-   tests/ scripts/` 在 ruff 0.9.6 与 0.14.4 下均报 **74 个文件待重排**（HEAD 既有，
-   Phase 4/5 触及的文件按各自版本仍存差异）。CI 用 `ruff>=0.5` 浮动版本，格式门禁当前为红。
-   需要一次**纯格式提交**（`ruff format` 全量 + 复核 diff 无语义变化）把基线钉回绿色，
-   并把工具版本钉进 dev 依赖区间，避免版本漂移再次造成假红/假绿。
-   Phase 5 的类型修复提交**刻意不夹带**这 74 个文件的格式重排，保持 diff 可审。
+2. ✅ **`ruff format` 漂移清偿（Phase 4 实测新发现，见 F-15）**（2026-09-19，Phase 5
+   第 2 步）：HEAD 既有 74 个待重排文件，Phase 6 删改触及后净减至 **65**。本次以
+   `ruff 0.15.2` 全量重排，并把工具版本钉进 dev 依赖：
+   - **纯格式提交与功能提交分离**：格式提交只含 65 个 `.py`（+665/−396），不夹带任何
+     语义改动；类型修复提交（第 1 步）此前刻意未含格式重排，diff 保持可审。
+   - **语义不变已实证**：对 432 个受跟踪文件建快照，逐个比较 65 个改动文件重排前后的
+     `ast.dump()` ⇒ `offenders: none`（无一处 AST 差异）。
+   - **版本钉死**：dev extras 从 `ruff>=0.5`/`mypy>=1.10` 改为 `ruff==0.15.2`/
+     `mypy==2.3.1`（实测通过门禁的版本）。`ruff format` 的重排结果与 mypy 的错误集均
+     版本敏感，浮动区间意味着任何一次 `pip install -U` 都能让门禁无故变红或变绿。
+   - **门禁复测**：`ruff format --check .` → 432 files already formatted；
+     `ruff check .` → All checks passed；`mypy tstdx/` → 0；
+     离线全量 `-m "not network"` → 0 failed / RC=0。
 3. 真实网络 smoke（tdx 1 所 + web 1 源 + stream 3 帧）+ CLI/HTTP/MCP 三面各一发 +
    wheel 安装冒烟 → tag `v1.1.0-dev.1`。**延后到 Phase 6 之后执行**（见下）。
 
@@ -234,8 +242,8 @@
    覆盖率实测 **76.14%**（Windows+py3.12）。阈值数字已收敛为 `pyproject` 单源
    （Makefile/CI 的 `--cov-fail-under` 副本删除，`test_local_gate_contract.py` 与
    `test_ci_workflow_contracts.py` 双向锁定），**阈值一次都没下调**。
-   ⏳ 未完成：按 CI 环境（ubuntu+py3.11）实测值重钉数字、dev 工具版本钉区间、
-   全量 `ruff format` 纯格式提交（现存 65 文件）——留作 Phase 5 第 2 项。
+   ⏳ 未完成：按 CI 环境（ubuntu+py3.11）实测值重钉覆盖率数字——本机 Windows 值不作依据。
+   （同批挂账的 dev 工具版本钉死与全量 `ruff format` 纯格式提交已在 Phase 5 第 2 步落地。）
 4. ✅ **文档同步**：新增用户面 [docs/configuration.md](configuration.md)（5 段全键清单 +
    读取方 + 取值范围 + fail-closed 语义 + 环境变量规则），已纳入事实型文档门禁
    （`FACT_DOC_PATHS`）；`docs/troubleshooting.md` 的"配置文件尚未接入"改写为可用指令；

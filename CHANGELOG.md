@@ -25,6 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   取值范围 + fail-closed 语义 + 环境变量规则），并纳入事实型文档门禁；决策与取舍记录在
   [ADR-016](docs/adr/ADR-016-config-surface-covers-execution-only.md)。
 
+### Changed（v17 Phase 5 第 2 步 —— 格式基线与 dev 工具版本）
+
+- **`ruff format` 门禁由长期红转为基线绿**：一次纯格式提交重排仓内 **65** 个 `.py`
+  文件（HEAD 既有 74，Phase 6 删改触及后净减 9）。语义不变已实证：对全部 65 个文件
+  比较重排前后 `ast.dump()`，差异为零（`offenders: none`），且格式提交与功能提交分离，
+  diff 可审。
+- dev 依赖 `ruff`/`mypy` 从浮动区间（`ruff>=0.5`、`mypy>=1.10`）改为**精确钉版**
+  （`ruff==0.15.2`、`mypy==2.3.1`，即本次实测通过全部门禁的版本）。理由：`ruff format`
+  的重排结果与 `mypy` 的错误集都是版本敏感的，浮动区间会把格式/类型门禁变成版本漂移报告。
+  安装 `dev` extras 的环境（CI 与本地钩子入口 `python -m ruff` / `python -m mypy`）因此
+  解析到同一版本；升级需单独提交并同步重测门禁。
+
 ### Fixed
 
 - **`tstdx.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，

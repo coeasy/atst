@@ -49,8 +49,11 @@ dev       = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "pytest-asyncio>=0.23",
-    "ruff>=0.5",
-    "mypy>=1.10",
+    # Exact pins, on purpose: `ruff format` output and `mypy` error sets are
+    # version-sensitive, and floating ranges turned the format/type gates into
+    # drift reports (V17 F-15). Upgrade deliberately, in its own commit.
+    "ruff==0.15.2",
+    "mypy==2.3.1",
     "hatchling>=1.25",
 ]
 all       = [
