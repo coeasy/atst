@@ -1,43 +1,26 @@
-from dataclasses import dataclass
+from tstdx.query import QueryPlanner, QuerySpec
+from tstdx.runtime_identity import cache_identity_from_plan
 
 
-@dataclass(frozen=True)
-class SingleFlightKey:
-    provider: str
-    channel: str
-    capability: str
-    fingerprint: str
-
-
-def test_singleflight_key_contains_provider_identity() -> None:
-    tdx = SingleFlightKey(
-        provider="tdx",
-        channel="quotation",
-        capability="bars",
-        fingerprint="same-fingerprint",
+def _identity(provider: str):
+    plan = QueryPlanner(default_provider=provider).compile(
+        QuerySpec.build(
+            "bars",
+            symbols="sh600519",
+            provider=provider,
+            period="day",
+            count=10,
+        )
     )
-    eastmoney = SingleFlightKey(
-        provider="eastmoney",
-        channel="kline",
-        capability="bars",
-        fingerprint="same-fingerprint",
-    )
-
-    assert tdx != eastmoney
+    return cache_identity_from_plan(plan)
 
 
-def test_same_provider_can_share_singleflight_identity() -> None:
-    first = SingleFlightKey(
-        provider="tdx",
-        channel="quotation",
-        capability="bars",
-        fingerprint="same-fingerprint",
-    )
-    second = SingleFlightKey(
-        provider="tdx",
-        channel="quotation",
-        capability="bars",
-        fingerprint="same-fingerprint",
-    )
+def test_singleflight_identity_is_derived_from_real_provider_plan() -> None:
+    tdx = _identity("tdx")
+    eastmoney = _identity("eastmoney")
 
-    assert first == second
+    assert tdx.key() != eastmoney.key()
+
+
+def test_same_real_plan_has_stable_singleflight_identity() -> None:
+    assert _identity("tdx").key() == _identity("tdx").key()
