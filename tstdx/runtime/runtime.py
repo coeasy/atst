@@ -6,7 +6,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
-from ..cache_semantic import SemanticResultCache
 from ..execution.planner import ExecutionPlanner
 from ..execution.semantic import SemanticExecutionAdapter
 from ..provider.base import Provider
@@ -36,24 +35,16 @@ class Runtime:
         router: ProviderRouter | None = None,
         planner: ExecutionPlanner | None = None,
         provider_order: Sequence[str] | None = None,
-        semantic_cache: SemanticResultCache | None = None,
-        default_cache_ttl: float | None = None,
         bridge: LegacyRuntimeBridge | None = None,
     ) -> None:
         self._handlers: dict[str, Callable[..., Any]] = {}
         self._subscriptions: dict[str, StreamHandle] = {}
         self._subscription_seq: int = 0
         self._bridge = bridge
-        if default_cache_ttl is not None and default_cache_ttl < 0:
-            raise ValueError("default_cache_ttl must be >= 0 or None")
 
         if planner is None:
             self.router = router or ProviderRouter()
-            semantic = SemanticExecutionAdapter(
-                cache=semantic_cache,
-                default_cache_ttl=default_cache_ttl,
-                bridge=bridge,
-            )
+            semantic = SemanticExecutionAdapter(bridge=bridge)
             self.planner = ExecutionPlanner(
                 self.router,
                 provider_order=provider_order,
@@ -67,10 +58,6 @@ class Runtime:
                 planner.router = self.router
             if provider_order is not None:
                 planner.provider_order = tuple(provider_order)
-            if semantic_cache is not None:
-                planner.semantic.cache = semantic_cache
-            if default_cache_ttl is not None:
-                planner.semantic.default_cache_ttl = default_cache_ttl
             if bridge is not None:
                 planner.semantic._bridge = bridge
             self.planner = planner
@@ -157,44 +144,19 @@ class Runtime:
         *,
         max_concurrent: int = 8,
     ) -> list[QueryResponse]:
-        """Execute multiple requests with semantic-cache deduplication.
+        """Execute many independent requests, returning order-preserving results.
 
-        Requests whose QuerySpec matches a cached result are served instantly;
-        remaining requests are dispatched concurrently (up to ``max_concurrent``
+        Every request is dispatched to its bound Provider directly (zero cache).
+        Remaining requests are dispatched concurrently (up to ``max_concurrent``
         workers). Results are returned in the original order.
-
-        This is the Phase 7 batch-execution entry point: callers submit many
-        independent queries (e.g. ``bars`` for N symbols) and the runtime
-        collapses duplicate work via the semantic cache and parallelises the
-        rest through the Provider router.
         """
         if not requests:
             return []
         if len(requests) == 1:
             return [self.execute(requests[0])]
 
+        to_execute = list(enumerate(requests))
         results: list[QueryResponse | None] = [None] * len(requests)
-        to_execute: list[tuple[int, QueryRequest]] = []
-
-        # Pass 1: semantic-cache lookup (independent of execution).
-        if self.planner.semantic.cache is not None:
-            cache = self.planner.semantic.cache
-            for i, req in enumerate(requests):
-                hit = self._cache_lookup(req, cache)
-                if hit is not None:
-                    results[i] = QueryResponse.ok(
-                        hit.data,
-                        request_id=str(i),
-                        operation=req.operation,
-                        execution="semantic-cache",
-                        cache_tier=cache.tier,
-                    )
-                else:
-                    to_execute.append((i, req))
-        else:
-            to_execute = list(enumerate(requests))
-
-        # Pass 2: execute uncached requests (serial or concurrent).
         if max_concurrent <= 1 or len(to_execute) <= 1:
             for i, req in to_execute:
                 results[i] = self.execute(req)
@@ -209,26 +171,6 @@ class Runtime:
                     results[idx] = resp
 
         return [r for r in results if r is not None]
-
-    def _cache_lookup(self, request: QueryRequest, cache: Any) -> Any | None:
-        """Try to compile + cache-lookup a single request; return QueryResult or None."""
-        try:
-            spec = self.planner.semantic._build_spec(request, "auto")
-            plan = self.planner.semantic.query_planner.compile(spec)
-            return cache.get(plan)
-        except Exception:
-            return None
-
-    def semantic_cache_stats(self) -> dict[str, Any]:
-        """Return semantic-cache statistics (hit/miss/tier/size)."""
-        cache = self.planner.semantic.cache
-        if cache is None:
-            return {"enabled": False}
-        return {
-            "enabled": True,
-            "tier": cache.tier,
-            "size": len(cache) if hasattr(cache, "__len__") else None,
-        }
 
     @staticmethod
     def _execution_metadata(context: ExecutionContext) -> dict[str, Any]:

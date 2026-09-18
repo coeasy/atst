@@ -111,13 +111,6 @@ def test_gateway_providers_property() -> None:
     assert isinstance(providers, list)
 
 
-def test_gateway_semantic_cache_stats() -> None:
-    gw, _ = _make_gateway()
-
-    stats = gw.semantic_cache_stats()
-    assert stats["enabled"] is False
-
-
 def test_gateway_subscriptions() -> None:
     gw, _ = _make_gateway()
 

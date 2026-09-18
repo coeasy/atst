@@ -67,11 +67,9 @@ class LegacyRuntimeBridge:
     def execute_spec(
         self,
         spec: QuerySpec,
-        *,
-        use_cache: bool = True,
     ) -> QueryResult[Any]:
         """Execute a compiled :class:`QuerySpec` through v13's full pipeline."""
-        return self.runtime.execute(spec, use_cache=use_cache)
+        return self.runtime.execute(spec)
 
     # -- Business methods (mirrors UnifiedRuntime API) --------------------- #
 
@@ -82,14 +80,12 @@ class LegacyRuntimeBridge:
         provider: str | None = None,
         currentness: str = "live",
         max_age: float | None = None,
-        use_cache: bool = True,
     ) -> QueryResult[Any]:
         return self.runtime.quotes(
             symbols,
             provider=provider,
             currentness=currentness,
             max_age=max_age,
-            use_cache=use_cache,
         )
 
     def quotes_batch(
@@ -99,14 +95,12 @@ class LegacyRuntimeBridge:
         provider: str | None = None,
         currentness: str = "live",
         max_age: float | None = None,
-        use_cache: bool = True,
     ) -> BatchResult[QueryResult[Any]]:
         return self.runtime.quotes_batch(
             symbols,
             provider=provider,
             currentness=currentness,
             max_age=max_age,
-            use_cache=use_cache,
         )
 
     def bars(
@@ -120,7 +114,6 @@ class LegacyRuntimeBridge:
         adjustment: str = "",
         currentness: str = "historical",
         max_age: float | None = None,
-        use_cache: bool = True,
     ) -> QueryResult[Any]:
         return self.runtime.bars(
             symbol,
@@ -131,7 +124,6 @@ class LegacyRuntimeBridge:
             adjustment=adjustment,
             currentness=currentness,
             max_age=max_age,
-            use_cache=use_cache,
         )
 
     def snapshot(
@@ -141,14 +133,12 @@ class LegacyRuntimeBridge:
         provider: str | None = None,
         currentness: str = "live",
         max_age: float | None = None,
-        use_cache: bool = True,
     ) -> QueryResult[Any]:
         return self.runtime.snapshot(
             symbol,
             provider=provider,
             currentness=currentness,
             max_age=max_age,
-            use_cache=use_cache,
         )
 
     def minute(
@@ -158,14 +148,12 @@ class LegacyRuntimeBridge:
         provider: str | None = None,
         currentness: str = "live",
         max_age: float | None = None,
-        use_cache: bool = True,
     ) -> QueryResult[Any]:
         return self.runtime.minute(
             symbol,
             provider=provider,
             currentness=currentness,
             max_age=max_age,
-            use_cache=use_cache,
         )
 
     def trades(
@@ -177,7 +165,6 @@ class LegacyRuntimeBridge:
         count: int = 0,
         currentness: str = "live",
         max_age: float | None = None,
-        use_cache: bool = True,
     ) -> QueryResult[Any]:
         return self.runtime.trades(
             symbol,
@@ -186,7 +173,6 @@ class LegacyRuntimeBridge:
             count=count,
             currentness=currentness,
             max_age=max_age,
-            use_cache=use_cache,
         )
 
     def security_count(
@@ -196,14 +182,12 @@ class LegacyRuntimeBridge:
         provider: str | None = None,
         currentness: str = "business",
         max_age: float | None = None,
-        use_cache: bool = True,
     ) -> QueryResult[Any]:
         return self.runtime.security_count(
             market=market,
             provider=provider,
             currentness=currentness,
             max_age=max_age,
-            use_cache=use_cache,
         )
 
     def security_list(
@@ -214,7 +198,6 @@ class LegacyRuntimeBridge:
         provider: str | None = None,
         currentness: str = "business",
         max_age: float | None = None,
-        use_cache: bool = True,
         ) -> QueryResult[Any]:
         return self.runtime.security_list(
             market=market,
@@ -222,7 +205,6 @@ class LegacyRuntimeBridge:
             provider=provider,
             currentness=currentness,
             max_age=max_age,
-            use_cache=use_cache,
         )
 
     # -- Capability dispatch ----------------------------------------------- #
@@ -234,7 +216,6 @@ class LegacyRuntimeBridge:
         provider: str | None = None,
         currentness: str = "business",
         max_age: float | None = None,
-        use_cache: bool = True,
         **kwargs: Any,
     ) -> QueryResult[Any]:
         """Dispatch a capability by name through the v13 UnifiedRuntime."""
@@ -255,7 +236,6 @@ class LegacyRuntimeBridge:
                 provider=provider,
                 currentness=currentness,
                 max_age=max_age,
-                use_cache=use_cache,
                 **kwargs,
             )
         if cap == "bars":
@@ -266,7 +246,6 @@ class LegacyRuntimeBridge:
                 provider=provider,
                 currentness=currentness,
                 max_age=max_age,
-                use_cache=use_cache,
                 **kwargs,
             )
         if cap == "snapshot":
@@ -275,7 +254,6 @@ class LegacyRuntimeBridge:
             return self.snapshot(
                 str(args[0]),
                 provider=provider or "tdx",
-                use_cache=use_cache,
                 **kwargs,
             )
         if cap == "minute":
@@ -284,7 +262,6 @@ class LegacyRuntimeBridge:
             return self.minute(
                 str(args[0]),
                 provider=provider or "tdx",
-                use_cache=use_cache,
                 **kwargs,
             )
         if cap == "trades":
@@ -295,19 +272,16 @@ class LegacyRuntimeBridge:
                 provider=provider or "tdx",
                 start=kwargs.pop("start", 0),
                 count=kwargs.pop("count", 0),
-                use_cache=use_cache,
                 **kwargs,
             )
         if cap == "security_count":
             return self.security_count(
                 provider=provider or "tdx",
-                use_cache=use_cache,
                 **kwargs,
             )
         if cap == "security_list":
             return self.security_list(
                 provider=provider or "tdx",
-                use_cache=use_cache,
                 **kwargs,
             )
         raise RuntimeError(f"unreachable: {cap}")

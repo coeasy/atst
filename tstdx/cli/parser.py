@@ -70,7 +70,6 @@ def _provider_args(parser: argparse.ArgumentParser, *, fallback: bool = False) -
         parser.add_argument("--fallback", help="explicit comma-separated Provider order, e.g. tdx,tencent,sina")
     # 兼容契约：行情类命令保留 --host（单/多主站选择），v13 Client 不消费但解析透传。
     parser.add_argument("--host", action="append", default=[], help="explicit host:port overrides (repeatable)")
-    parser.add_argument("--no-cache", action="store_true")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -91,7 +90,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-age", type=float)
     p.add_argument("--args", dest="args_json", default="[]", help="JSON array of positional arguments")
     p.add_argument("--kwargs", dest="kwargs_json", default="{}", help="JSON object of keyword arguments")
-    p.add_argument("--no-cache", action="store_true")
     p.set_defaults(func=cmd_query)
 
     p = sub.add_parser("quotes", help="query live quotes")

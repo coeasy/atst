@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from tstdx.cache_semantic import SemanticResultCache
 from tstdx.execution.semantic import SemanticExecutionAdapter
 from tstdx.provider import TdxProvider, WebProvider
 from tstdx.query import QueryPlanner, QuerySpec
@@ -78,14 +77,9 @@ def test_semantic_bridge_quotes_plan_matches_direct_query_planner() -> None:
     assert actual.fingerprint.value == expected.fingerprint.value
 
 
-def test_core_bars_use_canonical_query_provenance_and_semantic_cache() -> None:
+def test_core_bars_use_canonical_query_provenance_and_zero_cache() -> None:
     client = CountingBarsClient()
-    cache = SemanticResultCache(tier="l1")
-    runtime = Runtime(
-        provider_order=("tdx",),
-        semantic_cache=cache,
-        default_cache_ttl=60.0,
-    )
+    runtime = Runtime(provider_order=("tdx",))
     runtime.register_provider(TdxProvider(client))
     request = QueryRequest(
         "bars",
@@ -98,7 +92,7 @@ def test_core_bars_use_canonical_query_provenance_and_semantic_cache() -> None:
 
     assert first.success is True
     assert second.success is True
-    assert client.calls == 1
+    assert client.calls == 2
     assert first.metadata["channel"] == "quotation"
     assert first.metadata["query_fingerprint"].startswith("q1:")
     first_provenance = first.metadata["provenance"]
@@ -114,36 +108,7 @@ def test_core_bars_use_canonical_query_provenance_and_semantic_cache() -> None:
     assert second.metadata["query_fingerprint"] == first.metadata["query_fingerprint"]
     assert second.metadata["provenance"]["provider"] == "tdx"
     assert second.metadata["provenance"]["kind"] == "direct"
-    assert second.metadata["provenance"]["cache_tier"] == "l1"
-    assert second.metadata["provider_attempts"] == [
-        {"provider": "tdx", "status": "cache_hit", "detail": "l1"}
-    ]
-
-
-def test_semantic_cache_can_serve_without_registered_provider_executor() -> None:
-    cache = SemanticResultCache(tier="l1")
-    request = QueryRequest("bars", {"period": "day", "count": 2}, args=("600519.SH",))
-
-    online = Runtime(
-        provider_order=("tdx",),
-        semantic_cache=cache,
-        default_cache_ttl=60.0,
-    )
-    online.register_provider(TdxProvider(CountingBarsClient()))
-    populated = online.execute(request)
-    assert populated.success is True
-
-    offline = Runtime(provider_order=("tdx",), semantic_cache=cache)
-    cached = offline.execute(request)
-
-    assert cached.success is True
-    assert cached.data == populated.data
-    assert cached.metadata["provider"] == "tdx"
-    assert cached.metadata["provenance"]["provider"] == "tdx"
-    assert cached.metadata["provenance"]["cache_tier"] == "l1"
-    assert cached.metadata["provider_attempts"] == [
-        {"provider": "tdx", "status": "cache_hit", "detail": "l1"}
-    ]
+    assert second.metadata["provenance"]["cache_tier"] is None
 
 
 def test_runtime_policy_fallback_does_not_claim_caller_requested_provider() -> None:

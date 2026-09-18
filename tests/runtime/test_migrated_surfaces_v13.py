@@ -48,7 +48,6 @@ def test_ws_query_delegates_to_client_call() -> None:
                     "provider": "derived",
                     "args": ["sh600519"],
                     "kwargs": {"size": 5},
-                    "use_cache": False,
                 },
             }
         )
@@ -66,7 +65,6 @@ def test_ws_query_delegates_to_client_call() -> None:
                 "channel": None,
                 "currentness": "business",
                 "max_age": None,
-                "use_cache": False,
                 "size": 5,
             },
         )
@@ -133,7 +131,6 @@ def test_http_query_and_capability_discovery_delegate_to_client() -> None:
                 "provider": "derived",
                 "args": ["sh600519"],
                 "kwargs": {"size": 5},
-                "use_cache": False,
             },
         )
     assert response.status_code == 200

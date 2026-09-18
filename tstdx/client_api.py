@@ -87,13 +87,8 @@ class Client:
     def capabilities() -> tuple[str, ...]:
         return tuple(sorted(_CORE_CAPABILITIES | MIGRATED_CAPABILITIES))
 
-    def execute(
-        self,
-        spec: QuerySpec,
-        *,
-        use_cache: bool = True,
-    ) -> QueryResult[Any]:
-        return self.runtime.execute(spec, use_cache=use_cache)
+    def execute(self, spec: QuerySpec) -> QueryResult[Any]:
+        return self.runtime.execute(spec)
 
     def _call_core(
         self,
@@ -103,7 +98,6 @@ class Client:
         provider: str | None,
         currentness: str,
         max_age: float | None,
-        use_cache: bool,
         kwargs: dict[str, Any],
     ) -> QueryResult[Any]:
         if capability == "quotes":
@@ -114,7 +108,6 @@ class Client:
                 provider=provider,
                 currentness=currentness,
                 max_age=max_age,
-                use_cache=use_cache,
                 **kwargs,
             )
         elif capability == "bars":
@@ -125,7 +118,6 @@ class Client:
                 provider=provider,
                 currentness=currentness,
                 max_age=max_age,
-                use_cache=use_cache,
                 **kwargs,
             )
         elif capability == "snapshot":
@@ -134,7 +126,6 @@ class Client:
             result = self.snapshot(
                 str(args[0]),
                 provider=provider or "tdx",
-                use_cache=use_cache,
                 **kwargs,
             )
         elif capability == "minute":
@@ -143,7 +134,6 @@ class Client:
             result = self.minute(
                 str(args[0]),
                 provider=provider or "tdx",
-                use_cache=use_cache,
                 **kwargs,
             )
         elif capability == "trades":
@@ -152,7 +142,6 @@ class Client:
             result = self.trades(
                 str(args[0]),
                 provider=provider or "tdx",
-                use_cache=use_cache,
                 **kwargs,
             )
         elif capability == "security_count":
@@ -160,7 +149,6 @@ class Client:
                 raise ValidationError("security_count accepts market as a keyword argument")
             result = self.security_count(
                 provider=provider or "tdx",
-                use_cache=use_cache,
                 **kwargs,
             )
         else:
@@ -168,7 +156,6 @@ class Client:
                 raise ValidationError("security_list accepts market/start as keyword arguments")
             result = self.security_list(
                 provider=provider or "tdx",
-                use_cache=use_cache,
                 **kwargs,
             )
         if isinstance(result, OrchestratedResult):
@@ -183,7 +170,6 @@ class Client:
         channel: str | None = None,
         currentness: str = "business",
         max_age: float | None = None,
-        use_cache: bool = True,
         **kwargs: Any,
     ) -> QueryResult[Any]:
         """Execute a core or migrated capability through the canonical runtime."""
@@ -200,7 +186,6 @@ class Client:
                 provider=provider,
                 currentness=core_currentness,
                 max_age=max_age,
-                use_cache=use_cache,
                 kwargs=dict(kwargs),
             )
         if not is_migrated_capability(cap):
@@ -220,9 +205,7 @@ class Client:
                 "kwargs": _json_contract(kwargs),
             },
         )
-        if cap == "sync_daily":
-            use_cache = False
-        return self.execute(spec, use_cache=use_cache)
+        return self.execute(spec)
 
     def __getattr__(self, name: str) -> Any:
         if is_migrated_capability(name):
@@ -231,7 +214,6 @@ class Client:
                 channel = kwargs.pop("channel", None)
                 currentness = kwargs.pop("currentness", "business")
                 max_age = kwargs.pop("max_age", None)
-                use_cache = bool(kwargs.pop("use_cache", True))
                 return self.call(
                     name,
                     *args,
@@ -239,7 +221,6 @@ class Client:
                     channel=channel,
                     currentness=currentness,
                     max_age=max_age,
-                    use_cache=use_cache,
                     **kwargs,
                 )
 
@@ -253,9 +234,8 @@ class Client:
         spec: QuerySpec,
         *,
         policy: FallbackPolicy,
-        use_cache: bool = True,
     ) -> OrchestratedResult:
-        return self.orchestrator.execute(spec, policy=policy, use_cache=use_cache)
+        return self.orchestrator.execute(spec, policy=policy)
 
     def quotes(
         self,
@@ -265,7 +245,6 @@ class Client:
         policy: FallbackPolicy | None = None,
         currentness: str = "live",
         max_age: float | None = None,
-        use_cache: bool = True,
     ) -> QueryResult[Any] | OrchestratedResult:
         spec = QuerySpec.build(
             "quotes",
@@ -277,8 +256,8 @@ class Client:
         if policy is not None:
             if provider is not None:
                 raise ValueError("provider and fallback policy are mutually exclusive")
-            return self.execute_with_policy(spec, policy=policy, use_cache=use_cache)
-        return self.execute(spec, use_cache=use_cache)
+            return self.execute_with_policy(spec, policy=policy)
+        return self.execute(spec)
 
     def quotes_batch(
         self,
@@ -287,14 +266,12 @@ class Client:
         provider: str | None = None,
         currentness: str = "live",
         max_age: float | None = None,
-        use_cache: bool = True,
     ) -> BatchResult[QueryResult[Any]]:
         return self.runtime.quotes_batch(
             symbols,
             provider=provider,
             currentness=currentness,
             max_age=max_age,
-            use_cache=use_cache,
         )
 
     def bars(
@@ -309,7 +286,6 @@ class Client:
         adjustment: str = "",
         currentness: str = "historical",
         max_age: float | None = None,
-        use_cache: bool = True,
     ) -> QueryResult[Any] | OrchestratedResult:
         spec = QuerySpec.build(
             "bars",
@@ -325,26 +301,24 @@ class Client:
         if policy is not None:
             if provider is not None:
                 raise ValueError("provider and fallback policy are mutually exclusive")
-            return self.execute_with_policy(spec, policy=policy, use_cache=use_cache)
-        return self.execute(spec, use_cache=use_cache)
+            return self.execute_with_policy(spec, policy=policy)
+        return self.execute(spec)
 
     def snapshot(
         self,
         symbol: str,
         *,
         provider: str = "tdx",
-        use_cache: bool = True,
     ) -> QueryResult[Any]:
-        return self.runtime.snapshot(symbol, provider=provider, use_cache=use_cache)
+        return self.runtime.snapshot(symbol, provider=provider)
 
     def minute(
         self,
         symbol: str,
         *,
         provider: str = "tdx",
-        use_cache: bool = True,
     ) -> QueryResult[Any]:
-        return self.runtime.minute(symbol, provider=provider, use_cache=use_cache)
+        return self.runtime.minute(symbol, provider=provider)
 
     def trades(
         self,
@@ -353,14 +327,12 @@ class Client:
         provider: str = "tdx",
         start: int = 0,
         count: int = 0,
-        use_cache: bool = True,
     ) -> QueryResult[Any]:
         return self.runtime.trades(
             symbol,
             provider=provider,
             start=start,
             count=count,
-            use_cache=use_cache,
         )
 
     def security_count(
@@ -368,12 +340,10 @@ class Client:
         *,
         market: int | str = 0,
         provider: str = "tdx",
-        use_cache: bool = True,
     ) -> QueryResult[Any]:
         return self.runtime.security_count(
             market=market,
             provider=provider,
-            use_cache=use_cache,
         )
 
     def security_list(
@@ -382,13 +352,11 @@ class Client:
         market: int | str = 0,
         start: int = 0,
         provider: str = "tdx",
-        use_cache: bool = True,
     ) -> QueryResult[Any]:
         return self.runtime.security_list(
             market=market,
             start=start,
             provider=provider,
-            use_cache=use_cache,
         )
 
     def stream(
@@ -450,10 +418,8 @@ class AsyncClient:
     async def execute(
         self,
         spec: QuerySpec,
-        *,
-        use_cache: bool = True,
     ) -> QueryResult[Any]:
-        return await asyncio.to_thread(self.client.execute, spec, use_cache=use_cache)
+        return await asyncio.to_thread(self.client.execute, spec)
 
     async def call(
         self,
@@ -482,13 +448,11 @@ class AsyncClient:
         spec: QuerySpec,
         *,
         policy: FallbackPolicy,
-        use_cache: bool = True,
     ) -> OrchestratedResult:
         return await asyncio.to_thread(
             self.client.execute_with_policy,
             spec,
             policy=policy,
-            use_cache=use_cache,
         )
 
     async def quotes(self, symbols: str | Sequence[str], **kwargs: Any) -> Any:

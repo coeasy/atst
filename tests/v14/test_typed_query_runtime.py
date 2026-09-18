@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.cache_semantic import SemanticResultCache
 from tstdx.errors import ValidationError
 from tstdx.execution.semantic import SemanticExecutionAdapter
 from tstdx.provider import TdxProvider, WebProvider
@@ -156,13 +155,9 @@ def test_runtime_policy_prefilters_statically_unsupported_typed_providers() -> N
     assert response.metadata["provenance"]["fallback"] is False
 
 
-def test_typed_options_participate_in_fingerprint_and_cache_identity() -> None:
+def test_typed_options_participate_in_fingerprint() -> None:
     source = EastmoneySource()
-    runtime = Runtime(
-        provider_order=("eastmoney",),
-        semantic_cache=SemanticResultCache(tier="l1"),
-        default_cache_ttl=60.0,
-    )
+    runtime = Runtime(provider_order=("eastmoney",))
     runtime.register_provider(WebProvider("eastmoney", source))
     q1 = FundHoldingsQuery(
         provider="eastmoney",
@@ -176,17 +171,16 @@ def test_typed_options_participate_in_fingerprint_and_cache_identity() -> None:
     )
 
     first = runtime.execute_typed(q1)
-    cached = runtime.execute_typed(q1)
+    repeat = runtime.execute_typed(q1)
     different = runtime.execute_typed(q2)
 
     assert first.success is True
-    assert cached.success is True
+    assert repeat.success is True
     assert different.success is True
-    assert source.calls == 2
-    assert cached.metadata["query_fingerprint"] == first.metadata["query_fingerprint"]
-    assert cached.metadata["provenance"]["cache_tier"] == "l1"
+    assert source.calls == 3
+    assert repeat.metadata["query_fingerprint"] == first.metadata["query_fingerprint"]
+    assert repeat.metadata["provenance"]["cache_tier"] is None
     assert different.metadata["query_fingerprint"] != first.metadata["query_fingerprint"]
-    assert different.metadata["provenance"]["cache_tier"] is None
 
 
 def test_execute_typed_f10_uses_tdx_channel() -> None:

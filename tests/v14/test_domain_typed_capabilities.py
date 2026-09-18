@@ -285,27 +285,6 @@ class TestDomainQueryExecution:
         assert channel_map["capital_changes"] == "quotation"  # tdx
         assert channel_map["corporate_action"] == "corporate"  # eastmoney
 
-    def test_fund_domain_cache_identity_distinguishes_codes(self) -> None:
-        from tstdx.cache_semantic import SemanticResultCache
-
-        source = _EaseSource()
-        runtime = Runtime(
-            provider_order=("eastmoney",),
-            semantic_cache=SemanticResultCache(tier="l1"),
-            default_cache_ttl=60.0,
-        )
-        runtime.register_provider(_new_web_provider("eastmoney", source))
-
-        first = runtime.execute_typed(FundManagerQuery(code="000001"))
-        cached = runtime.execute_typed(FundManagerQuery(code="000001"))
-        other = runtime.execute_typed(FundManagerQuery(code="000002"))
-
-        assert source.calls == 2  # 第二个命中缓存
-        assert first.success is True and cached.success is True
-        assert cached.metadata["provenance"]["cache_tier"] == "l1"
-        assert cached.metadata["query_fingerprint"] == first.metadata["query_fingerprint"]
-        assert other.metadata["query_fingerprint"] != first.metadata["query_fingerprint"]
-
     def test_execute_typed_market_data_routes_correct_channel(self) -> None:
         runtime = Runtime(provider_order=("eastmoney", "tencent"))
         runtime.register_provider(_new_web_provider("eastmoney", _EaseSource()))

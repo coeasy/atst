@@ -129,25 +129,3 @@ def test_singleflight_followers_get_independent_values() -> None:
     assert outputs[1]["rows"] == [1]
 
 
-def test_unified_runtime_cache_and_singleflight_share_exact_plan_identity(monkeypatch) -> None:
-    runtime = UnifiedRuntime(cache_ttl=30.0)
-    calls = 0
-
-    def fake_execute(plan):
-        nonlocal calls
-        calls += 1
-        return QueryResult.from_plan(
-            [{"code": "600519", "price": 1.0}],
-            plan=plan,
-            provenance=Provenance.direct(plan, observed_at_ns=time.time_ns()),
-        )
-
-    monkeypatch.setattr(runtime.executor, "execute", fake_execute)
-    first = runtime.quotes("sh600519", provider="tdx", currentness="live", max_age=5)
-    second = runtime.quotes("sh600519", provider="tdx", currentness="live", max_age=5)
-    assert calls == 1
-    assert first.meta.fingerprint == second.meta.fingerprint
-    assert second.meta.provenance.cache_hit is True
-
-    runtime.quotes("sh600519", provider="tdx", currentness="live", max_age=1)
-    assert calls == 2

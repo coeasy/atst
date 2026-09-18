@@ -105,22 +105,20 @@ class RuntimeJsonRpcHandler:
                 channel=params.get("channel"),
                 currentness=str(params.get("currentness", "business")),
                 max_age=params.get("max_age"),
-                use_cache=bool(params.get("use_cache", True)),
                 **kwargs,
             ))
 
-        use_cache = bool(params.get("use_cache", True))
         provider = params.get("provider")
         if method == "quotes":
             symbols = params.get("symbols")
             if not isinstance(symbols, (str, list, tuple)) or not symbols:
                 raise ValidationError("symbols is required")
-            return serialize_result(self.client.quotes(symbols, provider=provider, policy=self._policy(params), currentness="live", max_age=params.get("max_age"), use_cache=use_cache))
+            return serialize_result(self.client.quotes(symbols, provider=provider, policy=self._policy(params), currentness="live", max_age=params.get("max_age")))
         if method == "bars":
             symbol = params.get("symbol")
             if not isinstance(symbol, str) or not symbol:
                 raise ValidationError("symbol is required")
-            return serialize_result(self.client.bars(symbol, provider=provider, policy=self._policy(params), period=str(params.get("period", "day")), count=int(params.get("count", 320)), start=int(params.get("start", 0)), adjustment=str(params.get("adjustment", "")), currentness="historical", max_age=params.get("max_age"), use_cache=use_cache))
+            return serialize_result(self.client.bars(symbol, provider=provider, policy=self._policy(params), period=str(params.get("period", "day")), count=int(params.get("count", 320)), start=int(params.get("start", 0)), adjustment=str(params.get("adjustment", "")), currentness="historical", max_age=params.get("max_age")))
 
         symbol = params.get("symbol")
         if method in {"snapshot", "minute", "trades"}:
@@ -128,17 +126,17 @@ class RuntimeJsonRpcHandler:
                 raise ValidationError("symbol is required")
             chosen = str(provider or "tdx")
             if method == "snapshot":
-                return serialize_result(self.client.snapshot(symbol, provider=chosen, use_cache=use_cache))
+                return serialize_result(self.client.snapshot(symbol, provider=chosen))
             if method == "minute":
-                return serialize_result(self.client.minute(symbol, provider=chosen, use_cache=use_cache))
-            return serialize_result(self.client.trades(symbol, provider=chosen, start=int(params.get("start", 0)), count=int(params.get("count", 0)), use_cache=use_cache))
+                return serialize_result(self.client.minute(symbol, provider=chosen))
+            return serialize_result(self.client.trades(symbol, provider=chosen, start=int(params.get("start", 0)), count=int(params.get("count", 0))))
 
         chosen = str(provider or "tdx")
         market = params.get("market", 0)
         if method == "security.count":
-            return serialize_result(self.client.security_count(market=market, provider=chosen, use_cache=use_cache))
+            return serialize_result(self.client.security_count(market=market, provider=chosen))
         if method == "security.list":
-            return serialize_result(self.client.security_list(market=market, start=int(params.get("start", 0)), provider=chosen, use_cache=use_cache))
+            return serialize_result(self.client.security_list(market=market, start=int(params.get("start", 0)), provider=chosen))
         raise RuntimeError("unreachable")
 
     @staticmethod

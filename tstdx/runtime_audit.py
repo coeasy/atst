@@ -30,6 +30,6 @@ def audit_runtime() -> RuntimeAuditReport:
 
     return RuntimeAuditReport(
         providers=provider_report.providers,
-        capabilities=capability_report.capabilities,
-        bindings=capability_report.bindings,
+        capabilities=capability_report.migrated_capabilities,
+        bindings=capability_report.executable_bindings,
     )

@@ -79,7 +79,6 @@ class ProviderOrchestrator:
         spec: QuerySpec,
         *,
         policy: FallbackPolicy,
-        use_cache: bool = True,
     ) -> OrchestratedResult:
         """Execute one semantic QuerySpec across an explicit Provider order.
 
@@ -94,7 +93,7 @@ class ProviderOrchestrator:
         for index, provider in enumerate(policy.providers):
             attempt_spec = replace(base, provider=provider)
             try:
-                result = self.runtime.execute(attempt_spec, use_cache=use_cache)
+                result = self.runtime.execute(attempt_spec)
             except Exception as exc:
                 envelope = to_error_envelope(exc)
                 attempts.append(ProviderAttempt(provider, "failed", envelope.code))
@@ -125,7 +124,6 @@ class ProviderOrchestrator:
         policy: FallbackPolicy,
         currentness: str = "live",
         max_age: float | None = None,
-        use_cache: bool = True,
     ) -> OrchestratedResult:
         return self.execute(
             QuerySpec.build(
@@ -135,7 +133,6 @@ class ProviderOrchestrator:
                 max_age=max_age,
             ),
             policy=policy,
-            use_cache=use_cache,
         )
 
     def bars(
@@ -149,7 +146,6 @@ class ProviderOrchestrator:
         adjustment: str = "",
         currentness: str = "historical",
         max_age: float | None = None,
-        use_cache: bool = True,
     ) -> OrchestratedResult:
         return self.execute(
             QuerySpec.build(
@@ -163,5 +159,4 @@ class ProviderOrchestrator:
                 max_age=max_age,
             ),
             policy=policy,
-            use_cache=use_cache,
         )

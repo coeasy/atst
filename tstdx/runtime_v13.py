@@ -1,38 +1,32 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Canonical provider-first execution runtime for v13."""
+"""Canonical provider-first execution runtime for v13.
+
+Zero-cache contract: every :meth:`UnifiedRuntime.execute` compiles one exact
+single-Provider plan and requests the bound Provider directly. No result,
+negative, promotion or request-coalescing cache exists on this path.
+"""
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Sequence
 from typing import Any
 
-from .batch import BatchItem, BatchResult, NegativeCache, SingleFlight
-from .cache_persistent import PersistentSemanticCache
-from .cache_semantic import SemanticResultCache
+from .batch import BatchItem, BatchResult
 from .direct_provider import DirectProviderExecutor
 from .domain.symbol import normalize_symbol
-from .query import QueryPlan, QueryPlanner, QuerySpec
+from .query import QueryPlanner, QuerySpec
 from .result import QueryResult
 from .runtime_audit import audit_runtime
-from .runtime_cache_adapter import RuntimeCacheAdapter
-from .runtime_cache_policy import should_negative_cache
-from .runtime_identity import (
-    RuntimeCacheIdentity,
-    cache_identity_from_plan,
-    execution_identity_from_plan,
-)
+from .runtime_identity import execution_identity_from_plan
 from .runtime_provenance import validate_runtime_provenance
 
 __all__ = ["UnifiedRuntime"]
 
-_UNCACHEABLE_CAPABILITIES = frozenset({"adjusted_bars", "sync_daily"})
-
 
 class UnifiedRuntime:
-    """Compile, cache, coalesce and execute one exact Provider plan."""
+    """Compile one exact Provider plan and execute it against that Provider."""
 
     def __init__(
         self,
@@ -41,18 +35,7 @@ class UnifiedRuntime:
         timeout: float = 5.0,
         hosts: list[str] | None = None,
         vipdoc_root: str | None = None,
-        cache: SemanticResultCache | None = None,
-        cache_ttl: float | None = 5.0,
-        persistent_cache: PersistentSemanticCache | None = None,
-        persistent_path: str | None = None,
-        persistent_ttl: float | None = 300.0,
-        negative_cache: NegativeCache | None = None,
-        singleflight: SingleFlight | None = None,
     ) -> None:
-        if persistent_cache is not None and persistent_path is not None:
-            raise ValueError(
-                "persistent_cache and persistent_path are mutually exclusive"
-            )
         audit_runtime()
         self.planner = QueryPlanner(default_provider=default_provider)
         self.executor = DirectProviderExecutor(
@@ -60,26 +43,191 @@ class UnifiedRuntime:
             hosts=hosts,
             vipdoc_root=vipdoc_root,
         )
-        self.cache = cache or SemanticResultCache(tier="l1")
-        self.cache_adapter = RuntimeCacheAdapter(self.cache)
-        self.cache_ttl = cache_ttl
-        self._owns_persistent_cache = (
-            persistent_cache is None and persistent_path is not None
-        )
-        self.persistent_cache = (
-            persistent_cache
-            if persistent_cache is not None
-            else (
-                PersistentSemanticCache(persistent_path)
-                if persistent_path is not None
-                else None
-            )
-        )
-        self.persistent_ttl = persistent_ttl
-        self.negative_cache = negative_cache or NegativeCache(ttl=1.0)
-        self.singleflight = singleflight or SingleFlight()
 
     def close(self) -> None:
-        if self._owns_persistent_cache and self.persistent_cache is not None:
-            self.persistent_cache.close()
-            self.persistent_cache = None
+        close = getattr(self.executor, "close", None)
+        if callable(close):
+            close()
+
+    def __enter__(self) -> UnifiedRuntime:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
+
+    def execute(self, spec: QuerySpec) -> QueryResult[Any]:
+        plan = self.planner.compile(spec)
+        result = self.executor.execute(plan)
+        validate_runtime_provenance(execution_identity_from_plan(plan), result)
+        return result
+
+    def quotes(
+        self,
+        symbols: str | Sequence[str],
+        *,
+        provider: str | None = None,
+        currentness: str = "live",
+        max_age: float | None = None,
+    ) -> QueryResult[Any]:
+        return self.execute(
+            QuerySpec.build(
+                "quotes",
+                symbols=symbols,
+                provider=provider,
+                currentness=currentness,
+                max_age=max_age,
+            )
+        )
+
+    def quotes_batch(
+        self,
+        symbols: Sequence[str],
+        *,
+        provider: str | None = None,
+        currentness: str = "live",
+        max_age: float | None = None,
+    ) -> BatchResult[QueryResult[Any]]:
+        """Execute independently auditable quote requests without hidden fallback."""
+        items: dict[str, BatchItem[QueryResult[Any]]] = {}
+        for raw_symbol in symbols:
+            symbol = normalize_symbol(raw_symbol)
+            if symbol in items:
+                continue
+            try:
+                result = self.quotes(
+                    symbol,
+                    provider=provider,
+                    currentness=currentness,
+                    max_age=max_age,
+                )
+            except Exception as exc:
+                items[symbol] = BatchItem("failed", error=exc)
+                continue
+            items[symbol] = (
+                BatchItem("missing")
+                if not result.data
+                else BatchItem("ok", value=result)
+            )
+        return BatchResult.build(items)
+
+    def bars(
+        self,
+        symbol: str,
+        *,
+        provider: str | None = None,
+        period: str = "day",
+        count: int = 320,
+        start: int = 0,
+        adjustment: str = "",
+        currentness: str = "historical",
+        max_age: float | None = None,
+    ) -> QueryResult[Any]:
+        return self.execute(
+            QuerySpec.build(
+                "bars",
+                symbols=symbol,
+                provider=provider,
+                period=period,
+                count=count,
+                start=start,
+                adjustment=adjustment,
+                currentness=currentness,
+                max_age=max_age,
+            )
+        )
+
+    def snapshot(
+        self,
+        symbol: str,
+        *,
+        provider: str | None = None,
+        currentness: str = "live",
+        max_age: float | None = None,
+    ) -> QueryResult[Any]:
+        return self.execute(
+            QuerySpec.build(
+                "snapshot",
+                symbols=symbol,
+                provider=provider,
+                currentness=currentness,
+                max_age=max_age,
+            )
+        )
+
+    def minute(
+        self,
+        symbol: str,
+        *,
+        provider: str | None = None,
+        currentness: str = "live",
+        max_age: float | None = None,
+    ) -> QueryResult[Any]:
+        return self.execute(
+            QuerySpec.build(
+                "minute",
+                symbols=symbol,
+                provider=provider,
+                currentness=currentness,
+                max_age=max_age,
+            )
+        )
+
+    def trades(
+        self,
+        symbol: str,
+        *,
+        provider: str | None = None,
+        start: int = 0,
+        count: int = 0,
+        currentness: str = "live",
+        max_age: float | None = None,
+    ) -> QueryResult[Any]:
+        return self.execute(
+            QuerySpec.build(
+                "trades",
+                symbols=symbol,
+                provider=provider,
+                start=start,
+                count=count,
+                currentness=currentness,
+                max_age=max_age,
+            )
+        )
+
+    def security_count(
+        self,
+        *,
+        market: int | str = 0,
+        provider: str | None = None,
+        currentness: str = "business",
+        max_age: float | None = None,
+    ) -> QueryResult[Any]:
+        return self.execute(
+            QuerySpec.build(
+                "security_count",
+                provider=provider,
+                market=market,
+                currentness=currentness,
+                max_age=max_age,
+            )
+        )
+
+    def security_list(
+        self,
+        *,
+        market: int | str = 0,
+        start: int = 0,
+        provider: str | None = None,
+        currentness: str = "business",
+        max_age: float | None = None,
+    ) -> QueryResult[Any]:
+        return self.execute(
+            QuerySpec.build(
+                "security_list",
+                provider=provider,
+                market=market,
+                start=start,
+                currentness=currentness,
+                max_age=max_age,
+            )
+        )

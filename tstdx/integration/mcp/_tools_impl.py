@@ -37,7 +37,6 @@ def _h_query_capability(client: Client, args: dict[str, Any]) -> dict[str, Any]:
             channel=args.get("channel"),
             currentness=str(args.get("currentness", "business")),
             max_age=args.get("max_age"),
-            use_cache=bool(args.get("use_cache", True)),
             **call_kwargs,
         )
     )

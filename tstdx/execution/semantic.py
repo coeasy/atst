@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-from ..cache_semantic import SemanticResultCache
 from ..errors import ValidationError
 from ..provider.router import ProviderAttempts, ProviderRouter
 from ..providers import PROVIDERS, normalize_provider_id
@@ -23,30 +22,22 @@ _CORE_CAPABILITIES = frozenset({"quotes", "bars"})
 class SemanticExecutionAdapter:
     """Bridge V14 orchestration to tstdx's canonical query/result contracts.
 
-    The adapter does not define a second query, capability, cache or provenance
-    model. Semantic eligibility comes from the canonical Provider registry;
-    requests are compiled through :class:`tstdx.query.QueryPlanner`, optionally
-    served by :class:`tstdx.cache_semantic.SemanticResultCache`, executed by a
-    dynamic Provider adapter, and returned as canonical :class:`QueryResult`.
+    The adapter does not define a second query, capability or provenance model
+    and performs no caching: requests are compiled through
+    :class:`tstdx.query.QueryPlanner` and executed directly against the bound
+    Provider, returning canonical :class:`QueryResult`.
 
     When a :class:`LegacyRuntimeBridge` is injected, execution is delegated to
-    the v13 UnifiedRuntime engine, gaining L2 persistent cache, negative cache,
-    and SingleFlight deduplication for free.
+    the v13 UnifiedRuntime kernel.
     """
 
     def __init__(
         self,
         *,
         query_planner: QueryPlanner | None = None,
-        cache: SemanticResultCache | None = None,
-        default_cache_ttl: float | None = None,
         bridge: LegacyRuntimeBridge | None = None,
     ) -> None:
-        if default_cache_ttl is not None and default_cache_ttl < 0:
-            raise ValueError("default_cache_ttl must be >= 0 or None")
         self.query_planner = query_planner or QueryPlanner()
-        self.cache = cache
-        self.default_cache_ttl = default_cache_ttl
         self._bridge = bridge
 
     @staticmethod
@@ -153,16 +144,6 @@ class SemanticExecutionAdapter:
             fallback=True,
         )
 
-    def _cache_ttl(self, request: Any) -> float | None:
-        metadata = dict(getattr(request, "metadata", {}))
-        value = metadata.get("cache_ttl", self.default_cache_ttl)
-        if value is None:
-            return None
-        ttl = float(value)
-        if ttl < 0:
-            raise ValueError("cache_ttl must be >= 0")
-        return ttl
-
     @staticmethod
     def _policy_candidates(
         request: Any,
@@ -226,22 +207,10 @@ class SemanticExecutionAdapter:
                 failures.append(f"{provider}=plan:{type(exc).__name__}: {exc}")
                 continue
 
-            if self.cache is not None:
-                cached = self.cache.get(plan)
-                if cached is not None:
-                    attempts.append(
-                        {
-                            "provider": provider,
-                            "status": "cache_hit",
-                            "detail": self.cache.tier,
-                        }
-                    )
-                    return provider, cached
-
             # -- Bridge path: delegate to v13 UnifiedRuntime engine -------- #
             if self._bridge is not None:
                 try:
-                    result = self._bridge.execute_spec(plan.spec, use_cache=True)
+                    result = self._bridge.execute_spec(plan.spec)
                 except Exception as exc:
                     if single_provider:
                         raise
@@ -276,9 +245,6 @@ class SemanticExecutionAdapter:
                 selected_provider=provider,
             )
             result = QueryResult.from_plan(raw, plan=plan, provenance=provenance)
-            ttl = self._cache_ttl(request)
-            if self.cache is not None and ttl is not None:
-                self.cache.put(plan, result, ttl=ttl)
             return provider, result
 
         detail = "; ".join(failures) if failures else "no eligible providers"

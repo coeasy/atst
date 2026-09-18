@@ -18,7 +18,7 @@ Usage::
 Design principles:
 
 - No duplicate Provider selection — delegated to RuntimeFacadeAdapter.
-- No cache logic — semantic cache is owned by SemanticExecutionAdapter.
+- No caching — every request hits the bound Provider directly (zero-cache kernel).
 - No provenance logic — QueryResult meta carries canonical provenance.
 - No capability dispatch — operation names map to Registry capabilities.
 """
@@ -147,7 +147,7 @@ class RuntimeGateway:
         *,
         max_concurrent: int = 8,
     ) -> list[QueryResponse]:
-        """Execute multiple requests with semantic-cache deduplication."""
+        """Execute multiple requests directly against their bound Providers."""
         return self.runtime.execute_batch(requests, max_concurrent=max_concurrent)
 
     # -- 直接执行 --------------------------------------------------------- #
@@ -190,10 +190,6 @@ class RuntimeGateway:
         """Return registered Provider names."""
         return list(self.runtime.router.names())
 
-    def semantic_cache_stats(self) -> dict[str, Any]:
-        """Return semantic-cache statistics."""
-        return self.runtime.semantic_cache_stats()
-
     def subscriptions(self) -> Mapping[str, Any]:
         """Return active stream subscriptions."""
         return self.runtime.subscriptions()
@@ -207,7 +203,6 @@ class RuntimeGateway:
         provider: str | None = None,
         currentness: str = "business",
         max_age: float | None = None,
-        use_cache: bool = True,
         **kwargs: Any,
     ) -> QueryResult[Any]:
         """Dispatch a capability through the v13 UnifiedRuntime bridge."""
@@ -221,7 +216,6 @@ class RuntimeGateway:
             provider=provider,
             currentness=currentness,
             max_age=max_age,
-            use_cache=use_cache,
             **kwargs,
         )
 
@@ -230,7 +224,6 @@ class RuntimeGateway:
         spec: QuerySpec,
         *,
         policy: FallbackPolicy,
-        use_cache: bool = True,
     ) -> OrchestratedResult:
         """Execute with explicit cross-Provider fallback policy."""
         if self._orchestrator is None:
@@ -239,7 +232,7 @@ class RuntimeGateway:
 
                 self._bridge = LegacyRuntimeBridge(UnifiedRuntime())
             self._orchestrator = ProviderOrchestrator(self._bridge.runtime)
-        return self._orchestrator.execute(spec, policy=policy, use_cache=use_cache)
+        return self._orchestrator.execute(spec, policy=policy)
 
     def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):
@@ -252,7 +245,6 @@ class RuntimeGateway:
                 kwargs.pop("channel", None)
                 currentness = kwargs.pop("currentness", "business")
                 max_age = kwargs.pop("max_age", None)
-                use_cache = bool(kwargs.pop("use_cache", True))
                 if self._bridge is None:
                     from ..runtime_v13 import UnifiedRuntime
 
@@ -263,7 +255,6 @@ class RuntimeGateway:
                     provider=provider,
                     currentness=currentness,
                     max_age=max_age,
-                    use_cache=use_cache,
                     **kwargs,
                 )
 
@@ -326,13 +317,11 @@ class RuntimeAsyncClient:
         spec: QuerySpec,
         *,
         policy: FallbackPolicy,
-        use_cache: bool = True,
     ) -> OrchestratedResult:
         return await asyncio.to_thread(
             self.gateway.execute_with_policy,
             spec,
             policy=policy,
-            use_cache=use_cache,
         )
 
     async def bars(self, symbol: str, **kwargs: Any) -> QueryResponse:
