@@ -15,6 +15,7 @@ from .capability_catalog import binding_for, validate_call
 from .errors import InternalError, TdxError, ValidationError
 from .provider_audit import audit_provider_registry
 from .provider_guard import ProviderExecutionIdentity, validate_execution_identity
+from .runtime_audit import audit_runtime
 from .providers import PROVIDERS
 from .query import QueryPlan
 from .result import Provenance, QueryResult
@@ -58,6 +59,7 @@ _CORE_BINDINGS: tuple[DirectBinding, ...] = (
     DirectBinding("baidu", "quote", "quotes", "_web_quotes"),
     DirectBinding("baidu", "kline", "bars", "_baidu_bars"),
 )
+
 _CORE_EXECUTORS: dict[tuple[str, str, str], str] = {
     item.key: item.executor_name for item in _CORE_BINDINGS
 }
@@ -130,7 +132,5 @@ class DirectProviderExecutor:
         self.timeout = float(timeout)
         self.hosts = hosts
         self.vipdoc_root = vipdoc_root
-        audit_provider_registry()
-        audit_capability_bindings()
-        audit_direct_bindings()
+        audit_runtime()
         self._bindings = {item.key: item for item in DIRECT_BINDINGS}
