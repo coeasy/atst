@@ -123,7 +123,9 @@ class TdxClient(_ClientMixin):
                 samples=samples,
                 max_workers=max_workers,
             )
-        entries = rank_hosts(results if keep_failures else [result for result in results if result.ok])
+        entries = rank_hosts(
+            results if keep_failures else [result for result in results if result.ok]
+        )
         self._pool.update_hosts(entries)
         return results
 
@@ -326,7 +328,9 @@ class TdxClient(_ClientMixin):
         out: list[dict[str, Any] | None] = [None] * len(syms)
         collected: list[tuple[str, BaseException]] = []
 
-        def _one(pair: tuple[int, str]) -> tuple[int, dict[str, Any] | None, list[tuple[str, BaseException]]]:
+        def _one(
+            pair: tuple[int, str],
+        ) -> tuple[int, dict[str, Any] | None, list[tuple[str, BaseException]]]:
             index, symbol = pair
             local_errors: list[tuple[str, BaseException]] = []
             try:

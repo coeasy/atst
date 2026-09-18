@@ -60,8 +60,14 @@ def test_blocking_workflows_cancel_only_obsolete_same_event_heads() -> None:
     ci = _workflow("ci.yml")
     native = _workflow("native.yml")
 
-    assert "group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}" in ci
-    assert "group: native-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}" in native
+    assert (
+        "group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"
+        in ci
+    )
+    assert (
+        "group: native-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"
+        in native
+    )
     assert "cancel-in-progress: true" in ci
     assert "cancel-in-progress: true" in native
     assert "timeout-minutes:" in ci
@@ -122,7 +128,10 @@ def test_release_builds_once_then_uses_shared_verifier_and_same_wheel_matrix() -
     assert "--only-binary=:all: tstdx" in workflow
     assert "joinpath('py.typed').is_file()" in workflow
     assert "ConnectionPool.request.__module__ == 'tstdx.transport._pool_hardening'" in workflow
-    assert "AsyncConnectionPool.request.__module__ == 'tstdx.transport._async_pool_hardening'" in workflow
+    assert (
+        "AsyncConnectionPool.request.__module__ == 'tstdx.transport._async_pool_hardening'"
+        in workflow
+    )
 
 
 def test_artifact_only_smoke_does_not_enable_setup_python_dependency_cache() -> None:

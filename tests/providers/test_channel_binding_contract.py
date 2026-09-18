@@ -19,7 +19,9 @@ from tstdx.providers import PROVIDERS
 #: through the unified QuerySpec path and deliberately own **no** channel
 #: adapter, so the parity gates do not apply to them.
 _COMPOSITE_PROVIDERS = frozenset(
-    pid for pid in PROVIDERS.ids() if provider_api._CHANNEL_BINDINGS_BY_PROVIDER[pid].CHANNEL_API_EXEMPT
+    pid
+    for pid in PROVIDERS.ids()
+    if provider_api._CHANNEL_BINDINGS_BY_PROVIDER[pid].CHANNEL_API_EXEMPT
 )
 
 _WEB_PROVIDERS = tuple(

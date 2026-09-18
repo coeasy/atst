@@ -252,7 +252,9 @@ def _validated_entry(entry: HostEntry, *, source: str) -> HostEntry:
         allow_none=False,
     )
     failures = _require_non_negative_int(entry.failures, field="failures", source=source)
-    biz_failures = _require_non_negative_int(entry.biz_failures, field="biz_failures", source=source)
+    biz_failures = _require_non_negative_int(
+        entry.biz_failures, field="biz_failures", source=source
+    )
 
     return replace(
         entry,
@@ -507,8 +509,7 @@ class RankingStore:
         if invalid:
             sample = invalid[0]
             raise ConfigError(
-                "RankingStore V1 仅支持 STANDARD: "
-                f"entry={sample.key} family={sample.family!r}"
+                f"RankingStore V1 仅支持 STANDARD: entry={sample.key} family={sample.family!r}"
             )
         seen: set[str] = set()
         for entry in items:
@@ -592,7 +593,9 @@ class RankingStore:
             raise ConfigError(f"RankingStore.top n 必须是正整数，收到 {n!r}")
         if family is not None:
             _require_family_value(family, source="RankingStore.top")
-        items = [entry for entry in self.load().values() if family is None or entry.family == family]
+        items = [
+            entry for entry in self.load().values() if family is None or entry.family == family
+        ]
         items.sort(key=lambda entry: entry.score)
         return items[:n]
 
@@ -641,15 +644,9 @@ def resolve_hosts(
             store = RankingStore()
 
         if store is not None:
-            known = {
-                key: entry
-                for key, entry in store.load().items()
-                if entry.family == family
-            }
+            known = {key: entry for key, entry in store.load().items() if entry.family == family}
             entries = [
-                _apply_ranked_observation(entry, known[entry.key])
-                if entry.key in known
-                else entry
+                _apply_ranked_observation(entry, known[entry.key]) if entry.key in known else entry
                 for entry in entries
             ]
             if allow_ranked_extras:

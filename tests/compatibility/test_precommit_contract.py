@@ -11,8 +11,7 @@ def test_precommit_fast_gates_match_blocking_static_contracts() -> None:
     assert "python -m ruff check tstdx/ tests/ scripts/" in config
     assert "python -m ruff format --check tstdx/ tests/ scripts/" in config
     assert (
-        "python -m mypy tstdx/ --ignore-missing-imports --no-error-summary "
-        "--warn-unused-ignores"
+        "python -m mypy tstdx/ --ignore-missing-imports --no-error-summary --warn-unused-ignores"
     ) in config
     assert "python -m tstdx.tools.check_originality --strict tstdx/" in config
     assert "python -m tstdx.tools.spec_audit --json --strict" in config

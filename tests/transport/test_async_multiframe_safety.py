@@ -196,10 +196,7 @@ def test_async_iter_frames_cap_drops_potentially_dirty_connection(
         slot.conn = conn
 
         try:
-            payloads = [
-                frame.payload
-                async for frame in pool.iter_frames(0x0530, max_frames=2)
-            ]
+            payloads = [frame.payload async for frame in pool.iter_frames(0x0530, max_frames=2)]
             assert payloads == [b"A", b"B"]
             assert slot.conn is None
             assert conn.closed is True

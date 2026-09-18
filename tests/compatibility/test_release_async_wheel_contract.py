@@ -17,8 +17,7 @@ def test_release_matrix_smokes_async_circuit_hardening_from_installed_wheel() ->
     assert "_circuit_allows" in smoke
     assert "_release_probe_token" in smoke
     assert (
-        "AsyncConnectionPool.close.__module__ == "
-        "'tstdx.transport._async_close_hardening'"
+        "AsyncConnectionPool.close.__module__ == 'tstdx.transport._async_close_hardening'"
     ) in smoke
     assert "actions/checkout" not in smoke
 
@@ -31,14 +30,12 @@ def test_release_matrix_smokes_client_behavior_and_pool_binding_hardening() -> N
     assert "AsyncTdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'" in smoke
     assert "F10Client.__init__.__module__ == 'tstdx.client._subclient_family_hardening'" in smoke
     assert (
-        "AsyncF10Client.__init__.__module__ == "
-        "'tstdx.client._subclient_family_hardening'"
+        "AsyncF10Client.__init__.__module__ == 'tstdx.client._subclient_family_hardening'"
     ) in smoke
     assert "TdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'" in smoke
     assert "AsyncTdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'" in smoke
     assert (
-        "AsyncTdxClient.quotes_concurrent.__module__ == "
-        "'tstdx.client._async_concurrency_hardening'"
+        "AsyncTdxClient.quotes_concurrent.__module__ == 'tstdx.client._async_concurrency_hardening'"
     ) in smoke
 
 
@@ -48,20 +45,16 @@ def test_release_matrix_smokes_direct_connection_contract_hardening() -> None:
     assert "from tstdx.transport import TcpConnection" in smoke
     assert "from tstdx.transport.async_ import AsyncTcpConnection" in smoke
     assert (
-        "TcpConnection.__init__.__module__ == "
-        "'tstdx.transport._connection_contract_hardening'"
+        "TcpConnection.__init__.__module__ == 'tstdx.transport._connection_contract_hardening'"
     ) in smoke
     assert (
-        "AsyncTcpConnection.__init__.__module__ == "
-        "'tstdx.transport._connection_contract_hardening'"
+        "AsyncTcpConnection.__init__.__module__ == 'tstdx.transport._connection_contract_hardening'"
     ) in smoke
     assert (
-        "TcpConnection.request.__module__ == "
-        "'tstdx.transport._connection_contract_hardening'"
+        "TcpConnection.request.__module__ == 'tstdx.transport._connection_contract_hardening'"
     ) in smoke
     assert (
-        "AsyncTcpConnection.request.__module__ == "
-        "'tstdx.transport._connection_contract_hardening'"
+        "AsyncTcpConnection.request.__module__ == 'tstdx.transport._connection_contract_hardening'"
     ) in smoke
 
 
@@ -70,8 +63,7 @@ def test_release_matrix_smokes_transport_family_binding_hardening() -> None:
 
     assert "ConnectionPool.__init__.__module__ == 'tstdx.transport._pool_family_hardening'" in smoke
     assert (
-        "AsyncConnectionPool.__init__.__module__ == "
-        "'tstdx.transport._pool_family_hardening'"
+        "AsyncConnectionPool.__init__.__module__ == 'tstdx.transport._pool_family_hardening'"
     ) in smoke
 
 

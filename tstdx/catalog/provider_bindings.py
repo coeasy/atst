@@ -239,9 +239,7 @@ def _build_channel_bindings(
         spec = PROVIDERS.get(pid)
         expected = {channel.id for channel in spec.channels if not channel.local}
         declared = (
-            set(api_type.CHANNELS)
-            | set(api_type.EXPLICIT_CHANNELS)
-            | set(api_type.DIRECT_CHANNELS)
+            set(api_type.CHANNELS) | set(api_type.EXPLICIT_CHANNELS) | set(api_type.DIRECT_CHANNELS)
         )
         if declared != expected:
             missing = sorted(expected - declared)

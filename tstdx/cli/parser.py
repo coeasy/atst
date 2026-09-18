@@ -67,13 +67,19 @@ _AUDIT_FAMILIES = (
 def _provider_args(parser: argparse.ArgumentParser, *, fallback: bool = False) -> None:
     parser.add_argument("--provider", default=None if fallback else "tdx")
     if fallback:
-        parser.add_argument("--fallback", help="explicit comma-separated Provider order, e.g. tdx,tencent,sina")
+        parser.add_argument(
+            "--fallback", help="explicit comma-separated Provider order, e.g. tdx,tencent,sina"
+        )
     # 兼容契约：行情类命令保留 --host（单/多主站选择），v13 Client 不消费但解析透传。
-    parser.add_argument("--host", action="append", default=[], help="explicit host:port overrides (repeatable)")
+    parser.add_argument(
+        "--host", action="append", default=[], help="explicit host:port overrides (repeatable)"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="tstdx", description="tstdx v13 Provider-first market-data client")
+    parser = argparse.ArgumentParser(
+        prog="tstdx", description="tstdx v13 Provider-first market-data client"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("version", help="show package version")
@@ -86,10 +92,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("capability")
     p.add_argument("--provider")
     p.add_argument("--channel")
-    p.add_argument("--currentness", default="business", choices=("auto", "live", "historical", "business"))
+    p.add_argument(
+        "--currentness", default="business", choices=("auto", "live", "historical", "business")
+    )
     p.add_argument("--max-age", type=float)
-    p.add_argument("--args", dest="args_json", default="[]", help="JSON array of positional arguments")
-    p.add_argument("--kwargs", dest="kwargs_json", default="{}", help="JSON object of keyword arguments")
+    p.add_argument(
+        "--args", dest="args_json", default="[]", help="JSON array of positional arguments"
+    )
+    p.add_argument(
+        "--kwargs", dest="kwargs_json", default="{}", help="JSON object of keyword arguments"
+    )
     p.set_defaults(func=cmd_query)
 
     p = sub.add_parser("quotes", help="query live quotes")

@@ -86,8 +86,7 @@ def host_allowed(provider: str, host: str) -> bool:
     normalized = str(host).strip(".").lower()
     suffixes = PROVIDER_HTTP_HOST_SUFFIXES.get(pid, ())
     return bool(normalized) and any(
-        normalized == suffix or normalized.endswith(f".{suffix}")
-        for suffix in suffixes
+        normalized == suffix or normalized.endswith(f".{suffix}") for suffix in suffixes
     )
 
 

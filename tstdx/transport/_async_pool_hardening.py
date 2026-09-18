@@ -112,9 +112,7 @@ async def _mark_failure(
             host.failures += 1
             if not isinstance(exc, ConnectionFailed):
                 host.biz_failures += 1
-            host.consec_weighted += (
-                1.0 if isinstance(exc, ConnectionFailed) else BIZ_FAILURE_WEIGHT
-            )
+            host.consec_weighted += 1.0 if isinstance(exc, ConnectionFailed) else BIZ_FAILURE_WEIGHT
             host.circuit_probe_inflight = False
             if was_half_open or host.consec_weighted >= CIRCUIT_OPEN_AT:
                 if host.circuit != "open" or host.circuit_opened_at == 0.0:
@@ -328,8 +326,7 @@ async def _request_multi(
                             except TdxError as exc:
                                 cont_exc = exc
                                 _LOG.warning(
-                                    "异步 request_multi 续帧中断（%s: %s），"
-                                    "降级返回已合并的 %d 块",
+                                    "异步 request_multi 续帧中断（%s: %s），降级返回已合并的 %d 块",
                                     type(exc).__name__,
                                     exc,
                                     len(chunks),

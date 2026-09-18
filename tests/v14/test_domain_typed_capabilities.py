@@ -194,11 +194,7 @@ class TestDomainTypedCapabilities:
         from tstdx.providers import PROVIDERS
 
         for capability in DOMAIN_CAPABILITIES:
-            channels = [
-                pid
-                for pid in PROVIDERS.ids()
-                if PROVIDERS.supports(pid, capability)
-            ]
+            channels = [pid for pid in PROVIDERS.ids() if PROVIDERS.supports(pid, capability)]
             assert channels, f"{capability} 没有支持它的 Provider"
 
     def test_frozen_immutable_contracts(self) -> None:

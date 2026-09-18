@@ -68,7 +68,9 @@ def test_sync_async_public_parameter_contracts_are_exact_mirrors(
     async_methods = _public_methods(async_cls)
 
     for name in sorted(sync_methods):
-        assert _parameter_contract(sync_methods[name]) == _parameter_contract(async_methods[name]), name
+        assert _parameter_contract(sync_methods[name]) == _parameter_contract(
+            async_methods[name]
+        ), name
 
 
 @pytest.mark.parametrize(("sync_cls", "async_cls"), _PAIRS)

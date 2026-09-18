@@ -39,9 +39,7 @@ def audit_provider_registry() -> ProviderAuditReport:
     seen: set[tuple[str, str, str]] = set()
     for binding in DIRECT_BINDINGS:
         if binding.key in seen:
-            raise ProviderRegistryAuditError(
-                f"duplicate provider binding: {binding.key!r}"
-            )
+            raise ProviderRegistryAuditError(f"duplicate provider binding: {binding.key!r}")
         seen.add(binding.key)
         if binding.provider not in providers:
             raise ProviderRegistryAuditError(

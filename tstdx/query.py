@@ -386,9 +386,7 @@ def _redact_secrets(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {
             str(key): (
-                _secret_digest(item)
-                if is_sensitive_key(str(key))
-                else _redact_secrets(item)
+                _secret_digest(item) if is_sensitive_key(str(key)) else _redact_secrets(item)
             )
             for key, item in value.items()
         }

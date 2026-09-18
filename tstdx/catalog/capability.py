@@ -130,15 +130,9 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
     MigratedCapabilityBinding(
         "quotes_concurrent", "tdx", "quotation", "tdx_client", "quotes_concurrent"
     ),
-    MigratedCapabilityBinding(
-        "minute_history", "tdx", "quotation", "tdx_client", "minute_history"
-    ),
-    MigratedCapabilityBinding(
-        "block_quotes", "tdx", "quotation", "tdx_client", "block_quotes"
-    ),
-    MigratedCapabilityBinding(
-        "auction", "tdx", "quotation", "tdx_client", "auction_snapshot"
-    ),
+    MigratedCapabilityBinding("minute_history", "tdx", "quotation", "tdx_client", "minute_history"),
+    MigratedCapabilityBinding("block_quotes", "tdx", "quotation", "tdx_client", "block_quotes"),
+    MigratedCapabilityBinding("auction", "tdx", "quotation", "tdx_client", "auction_snapshot"),
     MigratedCapabilityBinding(
         "volume_price", "tdx", "quotation", "tdx_client", "volume_price_dist"
     ),
@@ -154,25 +148,19 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
     ),
     MigratedCapabilityBinding("f10", "tdx", "f10", "f10_client", "f10"),
     MigratedCapabilityBinding("f10_catalog", "tdx", "f10", "f10_client", "catalog"),
-    MigratedCapabilityBinding(
-        "ex_market_list", "tdx", "extended", "ex_client", "ex_market_list"
-    ),
+    MigratedCapabilityBinding("ex_market_list", "tdx", "extended", "ex_client", "ex_market_list"),
     MigratedCapabilityBinding(
         "ex_instruments", "tdx", "extended", "ex_client", "ex_instrument_list"
     ),
     MigratedCapabilityBinding("ex_bars", "tdx", "extended", "ex_client", "ex_bars"),
     MigratedCapabilityBinding("ex_quotes", "tdx", "extended", "ex_client", "ex_quote"),
     MigratedCapabilityBinding("goods_bars", "tdx", "goods", "goods_client", "goods_bars"),
-    MigratedCapabilityBinding(
-        "goods_quotes", "tdx", "goods", "goods_client", "goods_quote"
-    ),
+    MigratedCapabilityBinding("goods_quotes", "tdx", "goods", "goods_client", "goods_quote"),
     MigratedCapabilityBinding(
         "adjusted_bars", "derived", "adjustment", "composed", "adjusted_bars"
     ),
     MigratedCapabilityBinding("sync_daily", "derived", "sync", "composed", "sync_daily"),
-    MigratedCapabilityBinding(
-        "minute_web", "tencent", "catalog", "web_adapter", "minute_web"
-    ),
+    MigratedCapabilityBinding("minute_web", "tencent", "catalog", "web_adapter", "minute_web"),
     MigratedCapabilityBinding(
         "minute_klines", "tencent", "catalog", "web_adapter", "minute_klines"
     ),
@@ -180,27 +168,19 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
         "minute_klines", "eastmoney", "catalog", "web_adapter", "minute_klines"
     ),
     MigratedCapabilityBinding("history", "sina", "catalog", "web_adapter", "history"),
-    MigratedCapabilityBinding(
-        "history", "eastmoney", "catalog", "web_adapter", "history"
-    ),
-    MigratedCapabilityBinding(
-        "all_market", "sina", "catalog", "web_session", "all_market", "sina"
-    ),
+    MigratedCapabilityBinding("history", "eastmoney", "catalog", "web_adapter", "history"),
+    MigratedCapabilityBinding("all_market", "sina", "catalog", "web_session", "all_market", "sina"),
     MigratedCapabilityBinding(
         "all_market", "tencent", "catalog", "web_session", "all_market", "tencent"
     ),
-    MigratedCapabilityBinding(
-        "hk_quotes", "sina", "catalog", "web_session", "hk_quotes", "sina"
-    ),
+    MigratedCapabilityBinding("hk_quotes", "sina", "catalog", "web_session", "hk_quotes", "sina"),
     MigratedCapabilityBinding(
         "hk_quotes", "tencent", "catalog", "web_session", "hk_quotes", "tencent"
     ),
     # MAC 协议行情（TDX 7727 family）。``mac`` channel 的 ``quotes`` capability
     # 是 v14 Direct API surface（``TdxMacAPI.quote``）；planner 因 canonical
     # channel 规则不会把它选为统一引用，故只在 ``mac_quotes`` 上补一条。
-    MigratedCapabilityBinding(
-        "mac_quotes", "tdx", "mac", "mac_client", "mac_quote"
-    ),
+    MigratedCapabilityBinding("mac_quotes", "tdx", "mac", "mac_client", "mac_quote"),
     # 权息资料（公司行为 / 股本变迁）在全仓只有**一个**低层实现：TDX
     # ``TdxClient.capital_changes``。v14 注册表把 ``CorporateActionQuery`` 归到
     # eastmoney ``corporate`` channel，因此该语义 home 指向同一实现，而不是杜撰
@@ -393,9 +373,7 @@ def _validate_composed(
         "security_list_all": 0,
     }[capability]
     if len(args) < required:
-        raise TypeError(
-            f"{capability} requires at least {required} positional argument(s)"
-        )
+        raise TypeError(f"{capability} requires at least {required} positional argument(s)")
     allowed = {
         "adjusted_bars": {
             "method",

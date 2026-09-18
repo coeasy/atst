@@ -104,26 +104,18 @@ def test_fingerprint_changes_with_provider_adjustment_and_window() -> None:
 
 def test_same_semantics_have_same_fingerprint_after_symbol_normalization() -> None:
     planner = QueryPlanner()
-    left = planner.compile(
-        QuerySpec.build("quotes", symbols=["600519"], provider="qq")
-    )
-    right = planner.compile(
-        QuerySpec.build("quotes", symbols=["sh600519"], provider="tencent")
-    )
+    left = planner.compile(QuerySpec.build("quotes", symbols=["600519"], provider="qq"))
+    right = planner.compile(QuerySpec.build("quotes", symbols=["sh600519"], provider="tencent"))
     assert left.fingerprint.value == right.fingerprint.value
 
 
 def test_default_bars_period_is_canonical_day() -> None:
     planner = QueryPlanner()
     implicit = planner.compile(
-        QuerySpec.build(
-            "bars", symbols=["600519"], provider="tdx", count=100, period=""
-        )
+        QuerySpec.build("bars", symbols=["600519"], provider="tdx", count=100, period="")
     )
     explicit = planner.compile(
-        QuerySpec.build(
-            "bars", symbols=["sh600519"], provider="tdx", count=100, period="day"
-        )
+        QuerySpec.build("bars", symbols=["sh600519"], provider="tdx", count=100, period="day")
     )
     assert implicit.spec.period == "day"
     assert implicit.fingerprint.value == explicit.fingerprint.value
@@ -131,13 +123,9 @@ def test_default_bars_period_is_canonical_day() -> None:
 
 def test_zero_max_age_is_canonical_direct_policy() -> None:
     planner = QueryPlanner()
-    default = planner.compile(
-        QuerySpec.build("quotes", symbols=["600519"], provider="tencent")
-    )
+    default = planner.compile(QuerySpec.build("quotes", symbols=["600519"], provider="tencent"))
     zero = planner.compile(
-        QuerySpec.build(
-            "quotes", symbols=["600519"], provider="tencent", max_age=0
-        )
+        QuerySpec.build("quotes", symbols=["600519"], provider="tencent", max_age=0)
     )
     assert zero.spec.max_age is None
     assert default.fingerprint.value == zero.fingerprint.value
@@ -146,14 +134,10 @@ def test_zero_max_age_is_canonical_direct_policy() -> None:
 def test_max_age_changes_cache_policy_not_upstream_data_fingerprint() -> None:
     planner = QueryPlanner()
     short = planner.compile(
-        QuerySpec.build(
-            "quotes", symbols=["600519"], provider="tencent", max_age=0.5
-        )
+        QuerySpec.build("quotes", symbols=["600519"], provider="tencent", max_age=0.5)
     )
     long = planner.compile(
-        QuerySpec.build(
-            "quotes", symbols=["sh600519"], provider="tencent", max_age=30.0
-        )
+        QuerySpec.build("quotes", symbols=["sh600519"], provider="tencent", max_age=30.0)
     )
 
     assert short.spec.max_age == 0.5
@@ -199,9 +183,7 @@ def test_bars_requires_single_symbol_and_positive_count() -> None:
             )
         )
     with pytest.raises(ValidationError):
-        planner.compile(
-            QuerySpec.build("bars", symbols=["600519"], provider="tdx", count=0)
-        )
+        planner.compile(QuerySpec.build("bars", symbols=["600519"], provider="tdx", count=0))
 
 
 def test_zero_deadline_is_not_silently_defaulted() -> None:

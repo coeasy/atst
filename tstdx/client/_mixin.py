@@ -710,7 +710,9 @@ class _ClientMixin:
         """扩展市场品种数量（命令 ``0x0102``，family=EXTENDED）。返回 ``{"count"}`` 行。"""
         market_id = _require_int("market", market, minimum=0, maximum=0xFFFF)
         body = struct.pack("<H", market_id)
-        return (yield _op_call("request", CMD["ex_instrument_count"], body, ctx={"market": market_id}))
+        return (
+            yield _op_call("request", CMD["ex_instrument_count"], body, ctx={"market": market_id})
+        )
 
     def _t_ex_instrument_list(self, market: int, start: int) -> Any:
         """扩展市场品种列表（命令 ``0x0103``，family=EXTENDED）。返回 ``{"market", "code", "name"}`` 行。"""

@@ -36,9 +36,7 @@ def audit_capability_bindings() -> CapabilityAuditReport:
 
     missing = sorted(migrated - executable)
     if missing:
-        raise CapabilityAuditError(
-            f"capabilities without executor bindings: {missing[:5]!r}"
-        )
+        raise CapabilityAuditError(f"capabilities without executor bindings: {missing[:5]!r}")
 
     return CapabilityAuditReport(
         migrated_capabilities=len(migrated),

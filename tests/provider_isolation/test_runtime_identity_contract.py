@@ -6,17 +6,13 @@ from tstdx.runtime.identity import RuntimeExecutionIdentity, execution_identity_
 
 def test_runtime_execution_identity_is_provider_specific() -> None:
     tdx = RuntimeExecutionIdentity(provider="tdx", channel="quotation", capability="bars")
-    eastmoney = RuntimeExecutionIdentity(
-        provider="eastmoney", channel="push2", capability="bars"
-    )
+    eastmoney = RuntimeExecutionIdentity(provider="eastmoney", channel="push2", capability="bars")
 
     assert tdx != eastmoney
 
 
 def test_execution_identity_key_normalizes_case_and_padding() -> None:
-    identity = RuntimeExecutionIdentity(
-        provider="  TDX ", channel="Quotation", capability="BARS"
-    )
+    identity = RuntimeExecutionIdentity(provider="  TDX ", channel="Quotation", capability="BARS")
 
     assert identity.key() == ("tdx", "quotation", "bars")
 

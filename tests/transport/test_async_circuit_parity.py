@@ -36,9 +36,7 @@ def test_async_half_open_allows_exactly_one_probe_under_concurrency() -> None:
         host.circuit_opened_at = time.time() - CIRCUIT_COOLDOWN_SECONDS - 1
         pool = _pool(host)
         try:
-            allowed = await asyncio.gather(
-                *(pool._circuit_allows(host) for _ in range(16))
-            )
+            allowed = await asyncio.gather(*(pool._circuit_allows(host) for _ in range(16)))
             return allowed, host
         finally:
             await pool.close()

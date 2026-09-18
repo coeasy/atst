@@ -97,9 +97,7 @@ def test_seam_async_client_method_parity() -> None:
     }
     assert bridged, "AsyncClient 协程方法集为空（结构漂移）"
     for name in bridged - {"aclose"}:
-        assert hasattr(Client, name), (
-            f"异步方法 {name} 找不到同步 Client 入口（F0-1 契约破坏）"
-        )
+        assert hasattr(Client, name), f"异步方法 {name} 找不到同步 Client 入口（F0-1 契约破坏）"
 
 
 def test_seam_web_source_encoding_hook() -> None:

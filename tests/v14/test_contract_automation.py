@@ -27,9 +27,17 @@ class TestContractAutomation:
         import tstdx.typed_query as tq
 
         skip = {
-            "CapabilityQuery", "SymbolQuery", "BatchCapabilityQuery",
-            "TypedQueryResult", "FinancialQuery", "FundQuery", "BondQuery",
-            "FuturesQuery", "OptionsQuery", "MarketDataQuery", "SearchQuery",
+            "CapabilityQuery",
+            "SymbolQuery",
+            "BatchCapabilityQuery",
+            "TypedQueryResult",
+            "FinancialQuery",
+            "FundQuery",
+            "BondQuery",
+            "FuturesQuery",
+            "OptionsQuery",
+            "MarketDataQuery",
+            "SearchQuery",
             "MacroQuery",
         }
         for name in dir(tq):
@@ -57,10 +65,23 @@ class TestContractAutomation:
         from tstdx.providers import PROVIDERS
 
         internal = {
-            "quotes", "bars", "minute", "trades", "snapshot",
-            "security_count", "security_list", "ex_market_list",
-            "ex_instruments", "ex_quotes", "ex_bars", "goods_quotes",
-            "goods_bars", "mac_quotes", "f10_catalog", "finance", "news",
+            "quotes",
+            "bars",
+            "minute",
+            "trades",
+            "snapshot",
+            "security_count",
+            "security_list",
+            "ex_market_list",
+            "ex_instruments",
+            "ex_quotes",
+            "ex_bars",
+            "goods_quotes",
+            "goods_bars",
+            "mac_quotes",
+            "f10_catalog",
+            "finance",
+            "news",
         }
         # v13 migrated-catalog capabilities are reached through the generic
         # ``query_capability`` gateway / ``Client.call`` contract rather than a
@@ -72,9 +93,17 @@ class TestContractAutomation:
             registered |= set(PROVIDERS.get(pid).capabilities())
 
         skip = {
-            "CapabilityQuery", "SymbolQuery", "BatchCapabilityQuery",
-            "TypedQueryResult", "FinancialQuery", "FundQuery", "BondQuery",
-            "FuturesQuery", "OptionsQuery", "MarketDataQuery", "SearchQuery",
+            "CapabilityQuery",
+            "SymbolQuery",
+            "BatchCapabilityQuery",
+            "TypedQueryResult",
+            "FinancialQuery",
+            "FundQuery",
+            "BondQuery",
+            "FuturesQuery",
+            "OptionsQuery",
+            "MarketDataQuery",
+            "SearchQuery",
             "MacroQuery",
         }
         typed: set[str] = set()
@@ -84,9 +113,15 @@ class TestContractAutomation:
                 continue
             if not dc.is_dataclass(cls):
                 continue
-            for kwargs in ({}, {"question": "x"}, {"condition": "x"},
-                           {"keyword": "x"}, {"index_code": "000300"},
-                           {"board_id": "BK0475"}, {"codes": ("000001",)}):
+            for kwargs in (
+                {},
+                {"question": "x"},
+                {"condition": "x"},
+                {"keyword": "x"},
+                {"index_code": "000300"},
+                {"board_id": "BK0475"},
+                {"codes": ("000001",)},
+            ):
                 try:
                     instance = cls(**kwargs)
                 except Exception:
@@ -96,9 +131,7 @@ class TestContractAutomation:
                     typed.add(capability)
                     break
 
-        missing = sorted(
-            (registered - internal) - typed
-        )
+        missing = sorted((registered - internal) - typed)
         assert not missing, f"注册业务 capability 缺少 Typed Query: {missing}"
 
     def test_all_typed_queries_semantic_ready(self) -> None:
@@ -126,9 +159,17 @@ class TestContractAutomation:
         import tstdx.typed_query as tq
 
         skip = {
-            "CapabilityQuery", "SymbolQuery", "BatchCapabilityQuery",
-            "TypedQueryResult", "FinancialQuery", "FundQuery", "BondQuery",
-            "FuturesQuery", "OptionsQuery", "MarketDataQuery", "SearchQuery",
+            "CapabilityQuery",
+            "SymbolQuery",
+            "BatchCapabilityQuery",
+            "TypedQueryResult",
+            "FinancialQuery",
+            "FundQuery",
+            "BondQuery",
+            "FuturesQuery",
+            "OptionsQuery",
+            "MarketDataQuery",
+            "SearchQuery",
             "MacroQuery",
         }
         checked = 0
@@ -146,9 +187,7 @@ class TestContractAutomation:
             if not isinstance(getattr(instance, "capability", None), str):
                 continue
             checked += 1
-            assert getattr(instance, "semantic_ready", False), (
-                f"{name} semantic_ready=False"
-            )
+            assert getattr(instance, "semantic_ready", False), f"{name} semantic_ready=False"
         assert checked >= 60, f"Typed Query 契约数异常: {checked}"
 
     def test_every_typed_capability_has_domain_record(self) -> None:
@@ -159,9 +198,17 @@ class TestContractAutomation:
         from tstdx.typed_query import record_type_for
 
         skip = {
-            "CapabilityQuery", "SymbolQuery", "BatchCapabilityQuery",
-            "TypedQueryResult", "FinancialQuery", "FundQuery", "BondQuery",
-            "FuturesQuery", "OptionsQuery", "MarketDataQuery", "SearchQuery",
+            "CapabilityQuery",
+            "SymbolQuery",
+            "BatchCapabilityQuery",
+            "TypedQueryResult",
+            "FinancialQuery",
+            "FundQuery",
+            "BondQuery",
+            "FuturesQuery",
+            "OptionsQuery",
+            "MarketDataQuery",
+            "SearchQuery",
             "MacroQuery",
         }
         caps: set[str] = set()
@@ -171,9 +218,15 @@ class TestContractAutomation:
                 continue
             if not dc.is_dataclass(cls):
                 continue
-            for kwargs in ({}, {"question": "x"}, {"condition": "x"},
-                           {"keyword": "x"}, {"index_code": "000300"},
-                           {"board_id": "BK0475"}, {"codes": ("000001",)}):
+            for kwargs in (
+                {},
+                {"question": "x"},
+                {"condition": "x"},
+                {"keyword": "x"},
+                {"index_code": "000300"},
+                {"board_id": "BK0475"},
+                {"codes": ("000001",)},
+            ):
                 try:
                     instance = cls(**kwargs)
                 except Exception:

@@ -47,6 +47,5 @@ def validate_execution_identity(
 
     if left != right:
         raise ProviderIdentityMismatchError(
-            "Provider execution identity mismatch: "
-            f"requested={left!r}, executing={right!r}"
+            f"Provider execution identity mismatch: requested={left!r}, executing={right!r}"
         )

@@ -126,9 +126,7 @@ class ErrorEnvelope:
         # ``context`` 只暴露「残差诊断」：phase / query_id / request_id 已作为顶层
         # 独立字段出现，这里剔除以避免镜像重复（无附加诊断时即为 ``{}``）。
         residual_context = {
-            key: value
-            for key, value in self.context.items()
-            if key not in _PROMOTED_CONTEXT_KEYS
+            key: value for key, value in self.context.items() if key not in _PROMOTED_CONTEXT_KEYS
         }
         payload: dict[str, Any] = {
             "error": self.type,
@@ -176,9 +174,7 @@ def _safe_context(context: Mapping[str, Any]) -> dict[str, Any]:
     ``provider_switch_allowed=False``，在最小化的公开 context 里重复常量只会造成噪声。
     """
 
-    sanitized = {
-        key: value for key, value in context.items() if not is_sensitive_key(str(key))
-    }
+    sanitized = {key: value for key, value in context.items() if not is_sensitive_key(str(key))}
     if any(flag in sanitized for flag in _LEGACY_PERMISSION_FLAGS):
         for flag in _LEGACY_PERMISSION_FLAGS:
             sanitized[flag] = False
@@ -225,9 +221,7 @@ def to_error_envelope(exc: Exception, **context: Any) -> ErrorEnvelope:
             type=type(exc).__name__,
             message=exc.message or type(exc).__name__,
             http_status=http_status_for(exc),
-            retryable=_prefers_disposition_retryability(
-                merged, bool(exc.advice.retryable)
-            ),
+            retryable=_prefers_disposition_retryability(merged, bool(exc.advice.retryable)),
             phase=_opt_str(merged.get("phase")),
             provider=_opt_str(merged.get("provider")),
             channel=_opt_str(merged.get("channel")),

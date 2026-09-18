@@ -49,9 +49,7 @@ def _validated_updates(hosts: Sequence[HostEntry], *, family: str) -> list[HostE
     seen: set[str] = set()
     for entry in hosts:
         if not isinstance(entry, HostEntry):
-            raise ConfigError(
-                f"update_hosts 只接受 HostEntry，收到 {type(entry).__name__}"
-            )
+            raise ConfigError(f"update_hosts 只接受 HostEntry，收到 {type(entry).__name__}")
         validated = parse_server(entry, family=family)
         if validated.family != family:
             raise ConfigError(
@@ -132,9 +130,7 @@ def _sync_update_hosts(
                 key = f"{host.key}#{index}"
                 old = old_by_slot_key.get(key)
                 if old is None:
-                    new_slots.append(
-                        _sync_impl.Slot(host=host, index=index, generation=generation)
-                    )
+                    new_slots.append(_sync_impl.Slot(host=host, index=index, generation=generation))
                     continue
                 with old.lock:
                     if old.leases == 0 and not old.retired:

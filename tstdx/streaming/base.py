@@ -52,6 +52,7 @@ _MISSING_ALERT_AFTER = 3
 # Subscription
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Subscription:
     """A single polling subscription with optional bounded queue."""
@@ -73,6 +74,7 @@ class Subscription:
 # ---------------------------------------------------------------------------
 # Row/payload helpers
 # ---------------------------------------------------------------------------
+
 
 def _bare_code(symbol: str) -> str:
     """Return the bare 6-digit code used as the 0x0530 echo key."""
@@ -200,6 +202,7 @@ def _dispatch_round(
 # ---------------------------------------------------------------------------
 # QuoteStream (synchronous base)
 # ---------------------------------------------------------------------------
+
 
 class QuoteStream:
     """Synchronous quote stream that polls one Provider through ``UnifiedRuntime``.
@@ -383,6 +386,7 @@ class QuoteStream:
 # ---------------------------------------------------------------------------
 # AsyncQuoteStream (async base)
 # ---------------------------------------------------------------------------
+
 
 class AsyncQuoteStream:
     """Async quote stream mirroring :class:`QuoteStream` on one event loop."""

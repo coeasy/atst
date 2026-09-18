@@ -67,7 +67,9 @@ async def test_async_update_hosts_canonicalizes_identity_before_generation_match
 
 
 @pytest.mark.asyncio
-async def test_async_update_hosts_cancelled_during_prepare_leaves_old_generation_untouched() -> None:
+async def test_async_update_hosts_cancelled_during_prepare_leaves_old_generation_untouched() -> (
+    None
+):
     first = HostEntry(
         host="1.2.3.4",
         family=Family.STANDARD,

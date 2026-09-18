@@ -29,6 +29,7 @@ class _RecordFactory(Protocol):
     @classmethod
     def from_dict(cls: type[_T], d: dict[str, Any]) -> _T: ...
 
+
 __all__ = [
     "FinancialRecord",
     "FundRecord",

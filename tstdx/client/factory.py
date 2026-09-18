@@ -58,10 +58,7 @@ def get_client(kind: str = "stock", **kwargs: Any) -> Any:
 
     .. note:: 静态返回类型由上方 ``@overload`` 按 ``kind`` 字面量收窄。"""
     if not isinstance(kind, str):
-        raise ValueError(
-            "get_client: kind 必须是字符串，"
-            f"收到 {type(kind).__name__}: {kind!r}"
-        )
+        raise ValueError(f"get_client: kind 必须是字符串，收到 {type(kind).__name__}: {kind!r}")
     if kind not in _CLIENT_REGISTRY:
         raise ValueError(
             f"get_client: 未知客户端 kind={kind!r}，可用值: {sorted(_CLIENT_REGISTRY)}"

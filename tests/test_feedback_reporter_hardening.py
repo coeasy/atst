@@ -33,7 +33,9 @@ def test_feedback_endpoint_rejects_non_http_or_embedded_credentials(endpoint: st
 
 
 def test_feedback_endpoint_accepts_http_and_https() -> None:
-    assert FeedbackReporter(endpoint="http://feedback.example.com/report")._endpoint.startswith("http://")
+    assert FeedbackReporter(endpoint="http://feedback.example.com/report")._endpoint.startswith(
+        "http://"
+    )
     assert FeedbackReporter(endpoint="https://feedback.example.com/report")._endpoint.startswith(
         "https://"
     )

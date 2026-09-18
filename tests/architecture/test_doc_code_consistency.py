@@ -26,9 +26,7 @@ def active_docs() -> list[Path]:
     files = [ROOT / "README.md", ROOT / "SECURITY.md", ROOT / "CONTRIBUTING.md"]
     files.extend(sorted((ROOT / "docs").rglob("*.md")))
     return [
-        path
-        for path in files
-        if path.is_file() and not EXCLUDED_PARTS.intersection(path.parts)
+        path for path in files if path.is_file() and not EXCLUDED_PARTS.intersection(path.parts)
     ]
 
 
@@ -171,6 +169,7 @@ def _resolves(dotted: str) -> bool:
 # --------------------------------------------------------------------------
 # README 宣称的数字
 # --------------------------------------------------------------------------
+
 
 def _readme() -> str:
     return (ROOT / "README.md").read_text(encoding="utf-8")

@@ -86,9 +86,7 @@ class MCPServer:
                 try:
                     request = json.loads(stripped)
                 except json.JSONDecodeError:
-                    self._write(
-                        self._protocol_error(None, ERR_PARSE, "Parse error")
-                    )
+                    self._write(self._protocol_error(None, ERR_PARSE, "Parse error"))
                     continue
                 response = self.handle_request(request)
                 if response is not None:

@@ -103,4 +103,3 @@ class TestLedgerCalibration:
         assert "0x07E5" in src and "0x051A" in src and "0x056A" in src
         # 漂移命令号不得回潜（0x02CF/0x02EE 为其它实现的习惯号）
         assert "0x02CF" not in src and "0x02EE" not in src
-

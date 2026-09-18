@@ -98,9 +98,7 @@ class BatchResult(Generic[T]):
     def __post_init__(self) -> None:
         items = self.items
         if isinstance(items, Mapping):
-            object.__setattr__(
-                self, "items", MappingProxyType(copy.deepcopy(dict(items)))
-            )
+            object.__setattr__(self, "items", MappingProxyType(copy.deepcopy(dict(items))))
         elif not isinstance(items, tuple):
             object.__setattr__(self, "items", tuple(items))
 
@@ -124,9 +122,7 @@ class BatchResult(Generic[T]):
         object.__setattr__(
             self,
             "errors",
-            MappingProxyType(
-                {key: copy.deepcopy(value) for key, value in errors.items()}
-            ),
+            MappingProxyType({key: copy.deepcopy(value) for key, value in errors.items()}),
         )
         object.__setattr__(self, "meta", _safe_deepcopy(self.meta))
 
@@ -218,9 +214,7 @@ class BatchResult(Generic[T]):
 
     @property
     def not_attempted(self) -> tuple[str, ...]:
-        return tuple(
-            key for key, status in self._status_map().items() if status == "not_attempted"
-        )
+        return tuple(key for key, status in self._status_map().items() if status == "not_attempted")
 
     def to_dict(self) -> dict[str, Any]:
         items = self.items

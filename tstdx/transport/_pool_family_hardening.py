@@ -120,8 +120,7 @@ def _validate_common_options(kwargs: dict[str, Any], *, async_pool: bool) -> Non
     )
     if handshake is False and handshake_strict:
         raise ConfigError(
-            "ConnectionPool handshake=False 时 handshake_strict=True 无效；"
-            "请启用握手或关闭 strict"
+            "ConnectionPool handshake=False 时 handshake_strict=True 无效；请启用握手或关闭 strict"
         )
     _validate_rate_limiter(kwargs.get("rate_limiter"), async_pool=async_pool)
 
@@ -133,8 +132,7 @@ def _validate_sync_only_options(kwargs: dict[str, Any]) -> None:
     callback = kwargs.get("on_host_down")
     if callback is not None and not callable(callback):
         raise ConfigError(
-            "ConnectionPool on_host_down 必须是 callable 或 None，"
-            f"收到 {type(callback).__name__}"
+            f"ConnectionPool on_host_down 必须是 callable 或 None，收到 {type(callback).__name__}"
         )
 
 
@@ -172,8 +170,7 @@ def _canonical_family_hosts(hosts: Any, *, family: Any) -> Any:
     for index, entry in enumerate(hosts):
         if not isinstance(entry, HostEntry):
             raise ConfigError(
-                "ConnectionPool hosts 只接受 HostEntry: "
-                f"index={index}, type={type(entry).__name__}"
+                f"ConnectionPool hosts 只接受 HostEntry: index={index}, type={type(entry).__name__}"
             )
         normalized = parse_server(entry, family=family)
         if normalized.family != family:

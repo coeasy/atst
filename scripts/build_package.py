@@ -128,8 +128,7 @@ def _require_packaging_tools(*, need_build: bool) -> None:
             import build
         except ImportError as exc:
             raise SystemExit(
-                "[环境] 缺少 build；请先运行 `python -m pip install build` "
-                "或 `make install`"
+                "[环境] 缺少 build；请先运行 `python -m pip install build` 或 `make install`"
             ) from exc
         print(f"[环境] build {build.__version__} ✓")
 
@@ -137,8 +136,7 @@ def _require_packaging_tools(*, need_build: bool) -> None:
         import twine  # noqa: F401
     except ImportError as exc:
         raise SystemExit(
-            "[环境] 缺少 twine；请先运行 `python -m pip install twine` "
-            "或 `make install`"
+            "[环境] 缺少 twine；请先运行 `python -m pip install twine` 或 `make install`"
         ) from exc
     try:
         twine_version = _pkg_version("twine")
@@ -363,8 +361,7 @@ def _require_archive_runtime_members(
     preview = ", ".join(missing[:8])
     suffix = " ..." if len(missing) > 8 else ""
     raise SystemExit(
-        f"[校验失败] {archive_label} 缺少 {len(missing)} 个运行时源码文件: "
-        f"{preview}{suffix}"
+        f"[校验失败] {archive_label} 缺少 {len(missing)} 个运行时源码文件: {preview}{suffix}"
     )
 
 
@@ -375,15 +372,13 @@ def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
     sdists = sorted(dist_out.glob("*.tar.gz"))
     if len(wheels) != 1 or len(sdists) != 1:
         raise SystemExit(
-            f"[校验失败] 需要恰好 1 wheel + 1 sdist："
-            f"wheel={len(wheels)} sdist={len(sdists)}"
+            f"[校验失败] 需要恰好 1 wheel + 1 sdist：wheel={len(wheels)} sdist={len(sdists)}"
         )
 
     project_version, source_version = _declared_versions()
     if source_version != project_version:
         raise SystemExit(
-            f"[校验失败] source version {source_version!r} != "
-            f"project version {project_version!r}"
+            f"[校验失败] source version {source_version!r} != project version {project_version!r}"
         )
 
     wheel = wheels[0]
@@ -391,13 +386,9 @@ def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
     expected_wheel = f"{PROJECT_NAME}-{project_version}-py3-none-any.whl"
     expected_sdist = f"{PROJECT_NAME}-{project_version}.tar.gz"
     if wheel.name != expected_wheel:
-        raise SystemExit(
-            f"[校验失败] 预期 canonical wheel {expected_wheel}，实际 {wheel.name}"
-        )
+        raise SystemExit(f"[校验失败] 预期 canonical wheel {expected_wheel}，实际 {wheel.name}")
     if sdist.name != expected_sdist:
-        raise SystemExit(
-            f"[校验失败] 预期 canonical sdist {expected_sdist}，实际 {sdist.name}"
-        )
+        raise SystemExit(f"[校验失败] 预期 canonical sdist {expected_sdist}，实际 {sdist.name}")
 
     source_runtime = _source_runtime_members()
     wheel_name, wheel_version, wheel_members = _wheel_metadata(wheel)

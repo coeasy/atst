@@ -129,9 +129,7 @@ def record_singleflight(event: str) -> None:
         _SINGLEFLIGHT_TOTAL.inc(labels={"event": event})
 
 
-def record_batch_chunks(
-    *, provider: str, channel: str, capability: str, chunks: int
-) -> None:
+def record_batch_chunks(*, provider: str, channel: str, capability: str, chunks: int) -> None:
     with contextlib.suppress(Exception):
         _BATCH_CHUNKS.observe(
             max(float(chunks), 0.0),
@@ -143,9 +141,7 @@ def record_batch_chunks(
         )
 
 
-def record_provider_health(
-    *, provider: str, channel: str, capability: str, healthy: bool
-) -> None:
+def record_provider_health(*, provider: str, channel: str, capability: str, healthy: bool) -> None:
     with contextlib.suppress(Exception):
         _PROVIDER_HEALTH.set(
             1.0 if healthy else 0.0,

@@ -89,8 +89,7 @@ def _validate_common(
 
     if tls_context is not None and not isinstance(tls_context, ssl.SSLContext):
         raise ConfigError(
-            "tls_context 必须是 ssl.SSLContext 或 None，"
-            f"收到 {type(tls_context).__name__}"
+            f"tls_context 必须是 ssl.SSLContext 或 None，收到 {type(tls_context).__name__}"
         )
     if tls_context is not None and not tls_enabled:
         raise ConfigError("use_tls=False 时 tls_context 不会生效；请启用 TLS 或移除 tls_context")

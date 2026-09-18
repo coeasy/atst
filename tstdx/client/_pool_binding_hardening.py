@@ -55,8 +55,7 @@ def _require_pool_family(pool: Any | None, requested_family: str) -> None:
         return
     if pool_family != requested_family:
         raise ConfigError(
-            "client/pool family 不匹配: "
-            f"client={requested_family!r}, pool={pool_family!r}",
+            f"client/pool family 不匹配: client={requested_family!r}, pool={pool_family!r}",
             context={
                 "client_family": requested_family,
                 "pool_family": pool_family,

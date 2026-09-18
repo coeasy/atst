@@ -395,7 +395,10 @@ class FundBaseInfoMultiQuery(FundQuery):
 
     def __post_init__(self) -> None:
         if not self.codes:
-            raise ValidationError("fund_base_info_multi 必须提供 codes", context={"capability": "fund_base_info_multi"})
+            raise ValidationError(
+                "fund_base_info_multi 必须提供 codes",
+                context={"capability": "fund_base_info_multi"},
+            )
 
 
 @dataclass(frozen=True, slots=True)

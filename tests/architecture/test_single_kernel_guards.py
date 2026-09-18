@@ -72,9 +72,7 @@ def test_envelope_symbols_are_not_exported(symbol: str) -> None:
 
     runtime_pkg = importlib.import_module("tstdx.runtime")
     assert not hasattr(tstdx, symbol), f"tstdx re-exports deleted symbol {symbol}"
-    assert not hasattr(runtime_pkg, symbol), (
-        f"tstdx.runtime re-exports deleted symbol {symbol}"
-    )
+    assert not hasattr(runtime_pkg, symbol), f"tstdx.runtime re-exports deleted symbol {symbol}"
 
 
 def test_runtime_package_exports_only_the_kernel() -> None:

@@ -105,9 +105,7 @@ def test_half_open_allows_exactly_one_probe_under_concurrency():
     pool.close()
 
 
-def test_background_speedtest_cannot_overwrite_live_health(
-    monkeypatch, seed_pool_health
-):
+def test_background_speedtest_cannot_overwrite_live_health(monkeypatch, seed_pool_health):
     host = HostEntry("127.0.0.1", 7709, rtt_ms=80.0)
     pool = ConnectionPool([host], slots_per_host=1, heartbeat_interval=None, speedtest_threshold=1)
     # The pool owns a fresh runtime-health generation, so the live request health

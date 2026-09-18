@@ -24,7 +24,7 @@ def test_install_uses_ci_equivalent_dependency_ssot() -> None:
 def test_local_test_gate_keeps_ci_offline_scope_and_single_coverage_source() -> None:
     makefile = _makefile()
 
-    assert '--cov-report=xml:coverage.xml' in makefile
+    assert "--cov-report=xml:coverage.xml" in makefile
     assert '-m "not network"' in makefile
     # 阈值只写在 pyproject `[tool.coverage.report] fail_under` 一处；
     # 命令行副本会让"改一处仍绿"的漂移重新出现（v17 Phase 6）。
@@ -35,7 +35,7 @@ def test_local_test_gate_keeps_ci_offline_scope_and_single_coverage_source() -> 
 def test_marker_targets_use_valid_pytest_marker_syntax() -> None:
     makefile = _makefile()
 
-    assert '--mark=' not in makefile
+    assert "--mark=" not in makefile
     assert '-m "golden"' in makefile
     assert '-m "slow"' in makefile
 

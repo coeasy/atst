@@ -3,9 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
-_BUILD_TOOL_INSTALL = (
-    'python -m pip install --no-cache-dir -e ".[all,dev]" build twine'
-)
+_BUILD_TOOL_INSTALL = 'python -m pip install --no-cache-dir -e ".[all,dev]" build twine'
 
 
 def _dockerfile() -> str:
@@ -66,7 +64,7 @@ def test_release_image_has_no_build_stage_and_consumes_only_downloaded_wheel() -
     assert "python -m build" not in dockerfile
     assert "COPY tstdx/" not in dockerfile
     assert "python -m pip install --no-cache-dir --no-deps /tmp/*.whl" in dockerfile
-    assert "test \"$count\" -eq 1" in dockerfile
+    assert 'test "$count" -eq 1' in dockerfile
     assert "python -m pip check" in dockerfile
 
 

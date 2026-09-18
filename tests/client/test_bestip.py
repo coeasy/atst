@@ -142,7 +142,9 @@ class TestBestip:
             hosts[0].live_rtt_ms = 999.0
             assert original.rtt_ms == 55.0
             assert original.live_rtt_ms == 7.0
-            return [ProbeResult(host=host.host, port=host.port, ok=True, rtt_ms=2.0) for host in hosts]
+            return [
+                ProbeResult(host=host.host, port=host.port, ok=True, rtt_ms=2.0) for host in hosts
+            ]
 
         monkeypatch.setattr(speedtest_mod, "speedtest", fake_speedtest)
         client.bestip(save_ranking=False)

@@ -116,13 +116,19 @@ def test_async_direct_request_rejects_invalid_options_before_connect() -> None:
 
 def test_direct_connection_public_signatures_are_preserved() -> None:
     assert inspect.signature(TcpConnection.__init__) == inspect.signature(hardening._SYNC_INIT)
-    assert inspect.signature(AsyncTcpConnection.__init__) == inspect.signature(hardening._ASYNC_INIT)
+    assert inspect.signature(AsyncTcpConnection.__init__) == inspect.signature(
+        hardening._ASYNC_INIT
+    )
     assert inspect.signature(TcpConnection.request) == inspect.signature(hardening._SYNC_REQUEST)
-    assert inspect.signature(AsyncTcpConnection.request) == inspect.signature(hardening._ASYNC_REQUEST)
+    assert inspect.signature(AsyncTcpConnection.request) == inspect.signature(
+        hardening._ASYNC_REQUEST
+    )
 
 
 def test_direct_connection_public_wiring_uses_contract_hardening() -> None:
     assert TcpConnection.__init__.__module__ == "tstdx.transport._connection_contract_hardening"
-    assert AsyncTcpConnection.__init__.__module__ == "tstdx.transport._connection_contract_hardening"
+    assert (
+        AsyncTcpConnection.__init__.__module__ == "tstdx.transport._connection_contract_hardening"
+    )
     assert TcpConnection.request.__module__ == "tstdx.transport._connection_contract_hardening"
     assert AsyncTcpConnection.request.__module__ == "tstdx.transport._connection_contract_hardening"

@@ -149,9 +149,9 @@ def test_stale_background_probe_cannot_commit_after_generation_change(
     assert pool._speedtest_triggered is True
     assert len(captured) == 1
 
-    published = pool.update_hosts(
-        [HostEntry(host="5.6.7.8", family=Family.STANDARD, rtt_ms=10.0)]
-    )[0]
+    published = pool.update_hosts([HostEntry(host="5.6.7.8", family=Family.STANDARD, rtt_ms=10.0)])[
+        0
+    ]
     assert pool._generation == 1
     assert pool._speedtest_triggered is False
 

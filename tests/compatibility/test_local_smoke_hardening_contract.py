@@ -16,20 +16,22 @@ def test_local_wheel_smoke_is_source_isolated_and_checks_all_runtime_hardening()
     assert "TdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'" in script
     assert "AsyncTdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'" in script
     assert (
-        "AsyncTdxClient.quotes_concurrent.__module__ == "
-        "'tstdx.client._async_concurrency_hardening'"
+        "AsyncTdxClient.quotes_concurrent.__module__ == 'tstdx.client._async_concurrency_hardening'"
     ) in script
-    assert "ConnectionPool.__init__.__module__ == 'tstdx.transport._pool_family_hardening'" in script
     assert (
-        "AsyncConnectionPool.__init__.__module__ == "
-        "'tstdx.transport._pool_family_hardening'"
+        "ConnectionPool.__init__.__module__ == 'tstdx.transport._pool_family_hardening'" in script
+    )
+    assert (
+        "AsyncConnectionPool.__init__.__module__ == 'tstdx.transport._pool_family_hardening'"
     ) in script
     assert "ConnectionPool.request.__module__ == 'tstdx.transport._pool_hardening'" in script
     assert (
-        "ConnectionPool.update_hosts.__module__ == "
-        "'tstdx.transport._pool_provenance_hardening'"
+        "ConnectionPool.update_hosts.__module__ == 'tstdx.transport._pool_provenance_hardening'"
     ) in script
-    assert "AsyncConnectionPool.request.__module__ == 'tstdx.transport._async_pool_hardening'" in script
+    assert (
+        "AsyncConnectionPool.request.__module__ == 'tstdx.transport._async_pool_hardening'"
+        in script
+    )
     assert (
         "AsyncConnectionPool.update_hosts.__module__ == "
         "'tstdx.transport._pool_provenance_hardening'"

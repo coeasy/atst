@@ -305,10 +305,7 @@ def audit_typed_kernel_compilation() -> list[str]:
                     f"（expected={inst.capability!r}, got={plan.spec.capability!r}）"
                 )
         except Exception as exc:
-            problems.append(
-                f"ERROR: {cls.__name__} 内核编译失败"
-                f"（{type(exc).__name__}: {exc}）"
-            )
+            problems.append(f"ERROR: {cls.__name__} 内核编译失败（{type(exc).__name__}: {exc}）")
     return problems
 
 
@@ -347,17 +344,25 @@ def audit_record_roundtrip() -> list[str]:
                 left = getattr(record, key)
                 right = getattr(restored, key)
                 if left != right:
-                    problems.append(
-                        f"ERROR: {name}.{key} 往返不一致（{left!r} != {right!r}）"
-                    )
+                    problems.append(f"ERROR: {name}.{key} 往返不一致（{left!r} != {right!r}）")
         except Exception as exc:
-            problems.append(
-                f"ERROR: {name} 往返失败（{type(exc).__name__}: {exc}）"
-            )
+            problems.append(f"ERROR: {name} 往返失败（{type(exc).__name__}: {exc}）")
 
-    check("FinancialRecord", FinancialRecord(code="600519.SH", report_date="2026-06-30"), ("code", "report_date"))
-    check("FundRecord", FundRecord(code="110011", name="基金A", fund_type=1), ("code", "name", "fund_type"))
-    check("BondRecord", BondRecord(code="113001.SH", name="转债", price=118.5), ("code", "name", "price"))
+    check(
+        "FinancialRecord",
+        FinancialRecord(code="600519.SH", report_date="2026-06-30"),
+        ("code", "report_date"),
+    )
+    check(
+        "FundRecord",
+        FundRecord(code="110011", name="基金A", fund_type=1),
+        ("code", "name", "fund_type"),
+    )
+    check(
+        "BondRecord",
+        BondRecord(code="113001.SH", name="转债", price=118.5),
+        ("code", "name", "price"),
+    )
     check("NewsRecord", NewsRecord(id="n1", title="标题", source="sina"), ("id", "title", "source"))
     check(
         "ResearchRecord",
@@ -365,9 +370,17 @@ def audit_record_roundtrip() -> list[str]:
         ("code", "title", "org"),
     )
     check("OptionRecord", OptionRecord(code="10000001", strike=1800.0), ("code", "strike"))
-    check("MarketDataRecord", MarketDataRecord(kind="hot_rank", code="1", name="茅台"), ("kind", "code", "name"))
+    check(
+        "MarketDataRecord",
+        MarketDataRecord(kind="hot_rank", code="1", name="茅台"),
+        ("kind", "code", "name"),
+    )
     check("SearchRecord", SearchRecord(code="600519", name="贵州茅台"), ("code", "name"))
-    check("MacroRecord", MacroRecord(kind="fx_rates", key="USDCNY", value=7.13), ("kind", "key", "value"))
+    check(
+        "MacroRecord",
+        MacroRecord(kind="fx_rates", key="USDCNY", value=7.13),
+        ("kind", "key", "value"),
+    )
     return problems
 
 

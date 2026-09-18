@@ -179,7 +179,9 @@ class Client:
                 raise ValidationError("Tier-A Client.call does not accept an arbitrary channel")
             core_currentness = currentness
             if currentness == "business":
-                core_currentness = "live" if cap in {"quotes", "snapshot", "minute", "trades"} else "historical"
+                core_currentness = (
+                    "live" if cap in {"quotes", "snapshot", "minute", "trades"} else "historical"
+                )
             return self._call_core(
                 cap,
                 args,
@@ -209,6 +211,7 @@ class Client:
 
     def __getattr__(self, name: str) -> Any:
         if is_migrated_capability(name):
+
             def migrated(*args: Any, **kwargs: Any) -> QueryResult[Any]:
                 provider = kwargs.pop("provider", None)
                 channel = kwargs.pop("channel", None)
@@ -449,6 +452,7 @@ class AsyncClient:
 
     def __getattr__(self, name: str) -> Any:
         if is_migrated_capability(name):
+
             async def migrated(*args: Any, **kwargs: Any) -> QueryResult[Any]:
                 return await asyncio.to_thread(
                     getattr(self.client, name),

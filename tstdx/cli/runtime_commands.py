@@ -59,27 +59,53 @@ def cmd_query(args: Any) -> int:
     if not isinstance(call_kwargs, dict):
         raise ValidationError("--kwargs must decode to a JSON object")
     with Client() as client:
-        _print(serialize_result(client.call(
-            args.capability,
-            *call_args,
-            provider=args.provider,
-            channel=args.channel,
-            currentness=args.currentness,
-            max_age=args.max_age,
-            **call_kwargs,
-        )))
+        _print(
+            serialize_result(
+                client.call(
+                    args.capability,
+                    *call_args,
+                    provider=args.provider,
+                    channel=args.channel,
+                    currentness=args.currentness,
+                    max_age=args.max_age,
+                    **call_kwargs,
+                )
+            )
+        )
     return 0
 
 
 def cmd_quotes(args: Any) -> int:
     with Client() as client:
-        _print(serialize_result(client.quotes(args.symbols, provider=args.provider, policy=_policy(args.fallback), max_age=args.max_age)))
+        _print(
+            serialize_result(
+                client.quotes(
+                    args.symbols,
+                    provider=args.provider,
+                    policy=_policy(args.fallback),
+                    max_age=args.max_age,
+                )
+            )
+        )
     return 0
 
 
 def cmd_bars(args: Any) -> int:
     with Client() as client:
-        _print(serialize_result(client.bars(args.symbol, provider=args.provider, policy=_policy(args.fallback), period=args.period, count=args.count, start=args.start, adjustment=args.adjustment, max_age=args.max_age)))
+        _print(
+            serialize_result(
+                client.bars(
+                    args.symbol,
+                    provider=args.provider,
+                    policy=_policy(args.fallback),
+                    period=args.period,
+                    count=args.count,
+                    start=args.start,
+                    adjustment=args.adjustment,
+                    max_age=args.max_age,
+                )
+            )
+        )
     return 0
 
 
@@ -97,7 +123,13 @@ def cmd_minute(args: Any) -> int:
 
 def cmd_trades(args: Any) -> int:
     with Client() as client:
-        _print(serialize_result(client.trades(args.symbol, provider=args.provider, start=args.start, count=args.count)))
+        _print(
+            serialize_result(
+                client.trades(
+                    args.symbol, provider=args.provider, start=args.start, count=args.count
+                )
+            )
+        )
     return 0
 
 
@@ -109,7 +141,11 @@ def cmd_security_count(args: Any) -> int:
 
 def cmd_security_list(args: Any) -> int:
     with Client() as client:
-        _print(serialize_result(client.security_list(market=args.market, start=args.start, provider=args.provider)))
+        _print(
+            serialize_result(
+                client.security_list(market=args.market, start=args.start, provider=args.provider)
+            )
+        )
     return 0
 
 
@@ -393,9 +429,6 @@ class _ClientRows:
         return call
 
 
-
-
-
 def _cmd_changes(args: Any) -> int:
     """盘中异动池（东财 push2ex getAllStockChanges；Web 源，无需主站）。"""
     from ..web.facade import WebQuoteSession
@@ -454,6 +487,7 @@ def _cmd_hot(args: Any) -> int:
 def _cmd_margin(args: Any) -> int:
     """个股融资融券明细：``tstdx margin <symbol> [--days N]``（东财 Web 源）。"""
     from ..domain.models import to_dicts
+
     try:
         with _ClientRows(timeout=args.timeout) as api:
             rows = to_dicts(api.margin(args.symbol, days=args.days))
@@ -488,6 +522,7 @@ def _cmd_margin(args: Any) -> int:
 def _cmd_sector_flow(args: Any) -> int:
     """板块资金流排行：``tstdx sector-flow [--board industry] [--sort main_net]``。"""
     from ..domain.models import to_dicts
+
     try:
         with _ClientRows(timeout=args.timeout) as api:
             rows = to_dicts(api.sector_flow(args.board, sort=args.sort, limit=args.limit))
@@ -523,6 +558,7 @@ def _cmd_sector_flow(args: Any) -> int:
 def _cmd_adjusted_bars(args: Any) -> int:
     """复权 K 线：``tstdx adjusted-bars <symbol> [--method qfq|hfq|fixed|none]``。"""
     from ..domain.models import to_dicts
+
     try:
         with _ClientRows(timeout=args.timeout) as api:
             data = to_dicts(
@@ -547,6 +583,7 @@ def _cmd_adjusted_bars(args: Any) -> int:
 def _cmd_all_market(args: Any) -> int:
     """全市场行情摘要：``tstdx all-market [--node hs_a] [--source sina|tencent]``。"""
     from ..domain.models import to_dicts
+
     try:
         with _ClientRows(timeout=args.timeout) as api:
             data = to_dicts(
@@ -571,6 +608,7 @@ def _cmd_all_market(args: Any) -> int:
 def _cmd_minute_klines(args: Any) -> int:
     """分钟 K 线：``tstdx minute-klines <symbol> [--period 5min] [--count 240]``。"""
     from ..domain.models import to_dicts
+
     try:
         with _ClientRows(timeout=args.timeout) as api:
             data = to_dicts(api.minute_klines(args.symbol, period=args.period, count=args.count))
@@ -588,6 +626,7 @@ def _cmd_minute_klines(args: Any) -> int:
 def _cmd_baidu(args: Any) -> int:
     """百度财经源：``tstdx baidu <symbol> [--kind kline|minute|ticks|quote]``。"""
     from ..domain.models import to_dicts
+
     try:
         with _ClientRows(timeout=args.timeout) as api:
             if args.kind == "minute":

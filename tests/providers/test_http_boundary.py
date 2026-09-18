@@ -89,9 +89,7 @@ def test_stream_rejects_cross_provider_host_before_context_entry() -> None:
     raw = FakeClient()
     client = ProviderBoundHttpClient("eastmoney", raw)
 
-    with pytest.raises(ValidationError), client.stream(
-        "GET", "https://hq.sinajs.cn/list=sh600519"
-    ):
+    with pytest.raises(ValidationError), client.stream("GET", "https://hq.sinajs.cn/list=sh600519"):
         pass
 
     assert raw.calls == []

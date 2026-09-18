@@ -232,9 +232,9 @@ def test_update_hosts_half_open_token_is_not_carried_into_new_generation(
         circuit_opened_at=1.0,
     )
 
-    published = pool.update_hosts(
-        [HostEntry(host="1.2.3.4", family=Family.STANDARD, rtt_ms=2.0)]
-    )[0]
+    published = pool.update_hosts([HostEntry(host="1.2.3.4", family=Family.STANDARD, rtt_ms=2.0)])[
+        0
+    ]
 
     assert published.circuit == "open"
     assert published.circuit_probe_inflight is False

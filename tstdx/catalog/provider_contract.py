@@ -58,17 +58,13 @@ class ProviderExecutionContract:
         """Raise :class:`ValueError` if the bound identity is not ``provider``."""
 
         if self.identity.provider != provider:
-            raise ValueError(
-                f"execution targets {self.identity.provider!r}, not {provider!r}"
-            )
+            raise ValueError(f"execution targets {self.identity.provider!r}, not {provider!r}")
 
     def assert_identity(self, other: ProviderIdentity) -> None:
         """Raise :class:`ValueError` if the bound identity differs from ``other``."""
 
         if self.identity != other:
-            raise ValueError(
-                f"execution identity {self.identity!r} != requested {other!r}"
-            )
+            raise ValueError(f"execution identity {self.identity!r} != requested {other!r}")
 
 
 __all__ = [

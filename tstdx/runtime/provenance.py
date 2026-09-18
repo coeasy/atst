@@ -35,9 +35,7 @@ def validate_runtime_provenance(
     capability = getattr(provenance, "capability", None)
 
     if provider is None:
-        raise RuntimeProvenanceMismatchError(
-            "result provenance missing provider identity"
-        )
+        raise RuntimeProvenanceMismatchError("result provenance missing provider identity")
 
     try:
         validate_execution_identity(

@@ -192,5 +192,3 @@ class TestExportSecurityList:
         monkeypatch.setattr(client, "security_list", fake_security_list)
         client.export_security_list("sz")
         assert seen == [0]
-
-

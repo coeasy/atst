@@ -111,9 +111,7 @@ def _request(
     compress_enabled = _require_bool_option(compress, field="compress")
     request_timeout = _require_request_timeout(timeout)
     self._ensure_open()
-    max_attempts = (
-        (self.max_retries + 1) if (retry_enabled is None or retry_enabled) else 1
-    )
+    max_attempts = (self.max_retries + 1) if (retry_enabled is None or retry_enabled) else 1
     if retry_enabled is None or retry_enabled:
         distinct_hosts = len({slot.host.key for slot in self._slots})
         max_attempts = max(max_attempts, distinct_hosts)
@@ -265,7 +263,9 @@ def _request_multi(
                         record_size = max(1, got // count)
                     need = count * (record_size or 1) if record_size else None
                     frames_read = 1
-                    while count > 0 and need is not None and got < need and frames_read < frame_limit:
+                    while (
+                        count > 0 and need is not None and got < need and frames_read < frame_limit
+                    ):
                         try:
                             nxt = conn.read_frame()
                         except TdxError as exc:
