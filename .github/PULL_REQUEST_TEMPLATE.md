@@ -58,7 +58,6 @@ Fixes #____
 - [ ] mypy 真实执行并绿色
 - [ ] Linux/Windows Python 矩阵真实执行并绿色
 - [ ] Bridge / Golden / Spec / Adversarial / Reachability / Originality / Benchmark / Docs 真实执行并绿色
-- [ ] Native compatibility & fallback parity 真实执行并绿色
 - [ ] 所有阻塞门禁来自**同一个 head SHA**
 - [ ] 没有通过删除/跳过测试、降低 coverage（当前硬门禁 77）、移除 strict 参数或 `continue-on-error` 换取绿色
 

@@ -5,21 +5,29 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
 
+#: workflow 命令行里写死的仓内路径（与 Makefile 侧同一判定）。
+_REPO_PATH_TOKENS = re.compile(r"(?:tests|scripts|tstdx)/[A-Za-z0-9_/]+\.py")
+
 
 def _workflow(name: str) -> str:
     return (_ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
 
 
-def test_native_gate_has_no_nonexistent_manifest_or_soft_failure() -> None:
-    workflow = _workflow("native.yml")
+def test_no_workflow_references_a_nonexistent_repository_path() -> None:
+    """workflow 里写死的仓内路径必须存在。
 
-    assert "continue-on-error" not in workflow
-    assert "maturin build" not in workflow
-    assert "tstdx_native/Cargo.toml" not in workflow
-    assert 'python -m pip install -e ".[dev]"' in workflow
-    assert "pip install pytest" not in workflow
-    assert "tests/compatibility/test_native_fallback_contract.py" in workflow
-    assert 'assert result["fallback_parity"] is True' in workflow
+    旧版只查 `--manifest-path`，于是 native.yml 在 v16 Phase 2 删掉 `tstdx/native.py`
+    与它的契约测试之后仍然"合法"。该 job 是 PR 阻塞项：`compileall -q <不存在的路径>`
+    **打印 "Can't list" 却退出 0**，静默通过后才由 pytest 以退出码 4 固定失败。
+    """
+    missing: list[str] = []
+    for path in sorted((_ROOT / ".github" / "workflows").glob("*.yml")):
+        text = path.read_text(encoding="utf-8")
+        for relative in _REPO_PATH_TOKENS.findall(text):
+            if not (_ROOT / relative).is_file():
+                missing.append(f"{path.name}: {relative}")
+
+    assert missing == [], f"workflow 引用磁盘上不存在的仓内路径：{missing}"
 
 
 def test_any_workflow_manifest_path_points_to_a_repository_file() -> None:
@@ -58,20 +66,13 @@ def test_static_and_auxiliary_test_jobs_use_declared_dev_toolchain() -> None:
 
 def test_blocking_workflows_cancel_only_obsolete_same_event_heads() -> None:
     ci = _workflow("ci.yml")
-    native = _workflow("native.yml")
 
     assert (
         "group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"
         in ci
     )
-    assert (
-        "group: native-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"
-        in native
-    )
     assert "cancel-in-progress: true" in ci
-    assert "cancel-in-progress: true" in native
     assert "timeout-minutes:" in ci
-    assert "timeout-minutes: 20" in native
 
 
 def test_coverage_artifact_is_generated_required_and_preserved_on_failure() -> None:

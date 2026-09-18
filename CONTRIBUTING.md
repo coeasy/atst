@@ -104,7 +104,6 @@ uvx ruff@latest check tstdx tests scripts   # 与 CI 同版本更佳
    - Originality
    - synthetic benchmark smoke
    - docs relative-link integrity
-   - Native compatibility/fallback parity
 
    77% 是当前**最低阻塞阈值**，不是长期目标；新增代码应尽量保持或提升覆盖率，项目目标继续向 80%+ 收敛。不得为了通过 CI 下调阈值、删测试或增加跳过。
 

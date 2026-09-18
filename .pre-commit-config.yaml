@@ -1,6 +1,6 @@
 # Fast commit-time subset of the blocking CI contract.
 # Install through `make install`, then enable with `pre-commit install`.
-# Full tests/coverage/Golden/benchmark/native gates remain in `make gates` and CI.
+# Full tests/coverage/Golden/benchmark gates remain in `make gates` and CI.
 repos:
   - repo: local
     hooks:

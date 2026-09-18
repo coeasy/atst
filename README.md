@@ -421,7 +421,7 @@ tstdx hosts audit --hosts-file extra_hosts.json
 
 ```bash
 pytest tests/                                   # 全量测试（离线，无网络）
-make gates                                      # 六步门禁：lint→format→全量→对抗矩阵→golden 三旗标→可达性
+make gates                                      # 11 步确定性门禁：lint+format→mypy→全量→bridges→golden→spec→对抗→可达性→originality→benchmark→docs
 python -m tstdx.tools.golden_audit --gate       # Golden L1 真实样本门禁（530 payload）
 python -m pytest tests/adversarial -q           # 对抗矩阵（9 payload × 85 命令，逃逸=0）
 python scripts/audit_reachability.py --strict   # 可达性门禁（孤儿=0）
@@ -429,11 +429,11 @@ python scripts/contract_audit.py --ci           # 契约↔注册表↔绑定三
 python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproject fail_under=77）
 ```
 
-- CI：9 jobs；Windows 矩阵 3.11 + 3.12；周三 09:00 UTC 定期 `host-audit`
+- CI：11 jobs；Windows 矩阵 3.11 + 3.12；周三 09:00 UTC 定期 `host-audit`
 - 架构守卫：`tests/architecture/`（唯一内核、零缓存、无聚合降级路由、根级命名空间白名单、
   已删层不可复活）+ `tests/provider_isolation/`（Provider 隔离与溯源）
-- Ruff：`ruff check` 全量清洁（0 errors）；`ruff format --check` 仍有既存待重排文件，
-  以一次纯格式提交清偿（V17 F-15）
+- Ruff：`ruff check` 与 `ruff format --check` 均 0 错（待重排文件已在 V17 Phase 5 第 2 步
+  以一次纯格式提交清零，dev 依赖钉版 `ruff==0.15.2`）
 - mypy：`mypy tstdx/` 0 错（含 `--warn-unused-ignores`；V17 Phase 5 从 47 项清零）
 - Pre-commit hooks：`ruff check --fix` + `ruff format --check`
 

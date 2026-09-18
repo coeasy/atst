@@ -1,4 +1,4 @@
-.PHONY: help install pre-commit test test-live test-unit test-integration test-bridges test-golden test-slow lint lint-fix type-check clean gates audit-originality audit-golden audit-spec audit-reachability audit-adversarial audit-docs benchmark-smoke native-compat host-audit build publish docker-build docker-run
+.PHONY: help install pre-commit test test-live test-unit test-integration test-bridges test-golden test-slow lint lint-fix type-check clean gates audit-originality audit-golden audit-spec audit-reachability audit-adversarial audit-docs benchmark-smoke host-audit build publish docker-build docker-run
 
 PYTHON ?= python
 PIP = $(PYTHON) -m pip
@@ -89,16 +89,16 @@ audit-docs:
 benchmark-smoke:
 	$(PYTHON) scripts/run_benchmark_smoke.py
 
-native-compat:
-	$(PYTEST) tests/compatibility/test_native_fallback_contract.py -q --tb=short
-
 host-audit:
 	$(PYTHON) scripts/audit_hosts.py --timeout 2 --workers 24 --strict \
 		--report audit_report.json --markdown audit_summary.md
 
 # Deterministic PR merge gates only. Network probes remain separate by design.
 # This mirrors the blocking CI jobs without weakening thresholds or strict flags.
-gates: lint type-check test test-bridges audit-golden audit-spec audit-adversarial audit-reachability audit-originality benchmark-smoke audit-docs native-compat
+# Every step must resolve on disk; tests/compatibility/test_local_gate_contract.py
+# enforces it. v16 Phase 2 deleted tstdx.native but left native-compat in this
+# chain pointing at the removed test file, so `make gates` failed for contributors.
+gates: lint type-check test test-bridges audit-golden audit-spec audit-adversarial audit-reachability audit-originality benchmark-smoke audit-docs
 	@echo "ALL DETERMINISTIC GATES PASSED"
 
 build:

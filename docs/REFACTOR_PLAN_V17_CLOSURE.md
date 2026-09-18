@@ -55,6 +55,7 @@
 | F-21 | P2 | **测量方法缺陷比红灯更危险**：`cmd \| tail; echo $?` 量到的是管道末端的退出码，因此 originality / spec_audit / reachability 三项曾被读成"已绿"。CI 上它们是硬门禁 | **已清偿**：本仓所有门禁复测改用 `${PIPESTATUS[0]}` 或先重定向再取 `$?`；教训与正确写法写入 CONTRIBUTING 门禁段 |
 | F-22 | P1 | **豁免记录自己无人审计**（Phase 5 第 5 步实测）：`scripts/_reach_allow.txt` 28 条里 **9 条是死记录**——2 条指向 v10/v9 就消失的 `tstdx.sinks`、`tstdx.native`，7 条（`tstdx.feedback*`、`tstdx.domain.adjust`、`tstdx.streaming.{engine,push}`）指向**早已接线、现已从入口可达**的模块。扫描器只把白名单当"孤儿减集"，既不查条目是否还存在，也不查它是否还在豁免任何东西，所以 `--strict` 绿≠记录有效。附带：14 条理由 <40 字符（含 4 条短到"公开：用户统计"），`tstdx.charset` 与 `tstdx.deprecation` 的理由写着"_LAZY 导出"，而根包 `_LAZY` 实测 17 个值里**没有这两项**（理由是假的）；`pyproject.toml` 同一形状的死配置 2 处（mypy 覆盖 `tstdx.native.*`、`keyring.*` 忽略表），后者被 mypy 自己的 `warn_unused_configs` 报了出来但没人当回事 | **已清偿**（2026-09-19）：① 扫描器新增记录守卫，四类缺陷与孤儿同权重使 `--strict` 失败——`[dead]`（指向不存在模块）、`[stale]`（指向已可达模块：**保留它等于把将来真正的断链读成绿**）、`[thin]`（理由 <`MIN_REASON_CHARS=40`）、`[dup]`（同模块重复登记，后一条静默覆盖前一条）；② `tstdx.__main__` 从"豁免"改判为 `_entrypoints()` 种子（与 `tstdx.cli`/`tstdx.tools.*` 同类：静态图永无对它的 import 边，`python -m tstdx` 却必然加载）；③ 清单重写为 17 条，逐条给出可核验证据（docs 路径 + 具体测试文件 + 为何生产链路不 import），"内核不 import"一族按"用户显式导入的公共 API"与"契约/守卫资产"分组，TRADE 族额外写明 `spec_audit` 是**按字符串模块名走 importlib** 解析它（AST 图看不见这种边）；④ 删 9 条死记录、修 2 条假理由、删 `pyproject.toml` 两处死配置。**复测**：`192 模块 / 可达 175 / 豁免 17 / 记录缺陷 0`，`--strict` RC=0；`mypy`（CI 参数）RC=0 且 `unused section` note 消失；守卫回归 8 项见 `tests/architecture/test_reachability_allowlist.py` |
 | F-23 | **P0**（对外承诺类） | **文档声称存在一个已被删除的安全能力**：SECURITY.md「凭据保护」整节写着"tstdx 使用三级凭据存储：系统 keyring / 环境变量 / 加密文件 `~/.tstdx/credentials.enc`"，README 特性表与结构树也各写一遍（`├── security/ # 凭据三级存储…`）。而 `CredentialStore` 早在 **v10** 就按 ADR-007-010 判定"全库零调用方、属过度工程"删除，只剩 `tstdx/security/__init__.py` 一个 `__all__ = []` 的空壳在替它"作证据"。docs-code 门禁当时只校验反引号里的 `tstdx.*` 点号路径与 README 数字，**散文式能力承诺不在射程内**，所以这条假承诺一路全绿 | **已清偿**（2026-09-19，Phase 5 第 5 步）：① 空壳包 `tstdx/security/` 物理删除（历史决议留在 ADR-007-010，不需占位包），其白名单行随之删除；② SECURITY.md「凭据保护」改写为"本库不存储凭据"+ 四条现状（行情链路无凭据 / 交易侧只有纯内存模拟器 / 真券商由调用方自管密钥 / 错误上下文与反馈先脱敏）；③ README 特性行改为可核验的 `security.use_tls` TLS 与错误脱敏事实，并显式标注 `tstdx.providers.http` 主机守卫"已实现但未接入 web 链路"（与 F-18 一致），结构树删去 `security/` 行、补上曾漏掉的 `__main__.py` 行；④ **补门禁**：`test_doc_code_consistency.py` 新增 3 项，把 README 结构树条目与磁盘做双向对账（列出的必须存在 + 磁盘上的顶层包/模块必须都列出），使这类幻影行不能再隐身 |
+| F-24 | **P0**（发布链路类） | **一条 PR 阻塞 CI job 固定为红，且守卫测试把缺陷写成契约**（Phase 5 第 6 步本地全链复现时暴露）：`77bc2fe`（v16 Phase 2）物理删除 `tstdx/native.py` 与 `tests/compatibility/test_native_fallback_contract.py`，但三处消费者原地未动——① `.github/workflows/native.yml` 的 "Native compatibility & fallback parity" job 仍在 `pull_request: [main]` 上跑：`compileall -q tstdx/native.py` 对不存在的路径**打印 "Can't list" 却退出 0**（本机实测），于是一步静默"通过"，真正跑测试的下一步以 pytest 退出码 4 固定失败；② `Makefile` 的 `native-compat` target 与 `gates` 依赖链仍指向那个已删除的测试 ⇒ `make gates` 走到底必红；③ `test_ci_workflow_contracts.py` 有一条**断言 workflow 必须包含该已删除测试路径**的守卫，即"防止回归"的测试正好把回归钉住。同批发现的文档口径失真：PR 模板要求勾选这条不可能为真的门禁、CONTRIBUTING 门禁清单列着它、README 写 `CI：9 jobs`（实际 11）与"六步门禁"（`gates:` 实际挂了 12 项 target，删掉 ghost 后 11） | **已清偿**（2026-09-19）：① 删 `native.yml` 与 `native-compat` target 及 `gates` 依赖（能力已随 `tstdx.native` 一起退役，无保留理由；不做"恢复测试"是因为被测模块本身不存在）；② **补三类守卫**取代那条反向契约：workflow 与 Makefile 里写死的 `tests/…\|scripts/…\|tstdx/….py` 路径必须存在于磁盘、`gates:` 的每个前置 target 必须已定义；③ 文档面同步（PR 模板勾选项、CONTRIBUTING 清单、README 的 11 jobs / 11 步门禁 / ruff format 既成事实）。**每条守卫都用变异验证过**：往 ci.yml 与 Makefile 各塞一条指向不存在文件的路径、给 `gates:` 加一个未定义 target、把 README 数字改回 9/12，三处分别 RC=1 并指名缺陷，随后原样还原 |
 
 ---
 
@@ -308,6 +309,42 @@
      `test_reachability_allowlist.py`、12 项 docs-code 一致性）；`mypy`（CI 参数）RC=0
      且 `unused section(s)` note 消失；`ruff check` / `format --check` 干净。阈值与
      白名单之外的判定强度均未下调。
+
+6. ✅ **本地整条门禁链复现，抓出一条固定为红的 ghost CI job（Phase 5 第 6 步，
+   2026-09-19，见 §0.3 F-24）**：把 `.github/workflows/*.yml` 与 `Makefile` 的
+   `gates` 链逐条按 CI 参数在本机复跑，每条单独重定向取 RC（不走管道，见 F-21）。
+
+   | 门禁 | CI 参数 | 本机 RC |
+   |---|---|---|
+   | ruff check / format --check | `tstdx/ tests/ scripts/` | 0 / 0 |
+   | mypy | `--ignore-missing-imports --no-error-summary --warn-unused-ignores` | 0 |
+   | originality | `--strict tstdx/` | 0（`Total: 193 / Suspicious: 0`） |
+   | spec-coverage | `--json --strict` | 0（`coverage_pct: 100.0`） |
+   | golden | `--gate --require-markets --require-kline-categories 0,4,9 --require-payloads` | 0 |
+   | reachability | `--strict` | 0（`192 模块 / 可达 175 / 豁免 17`） |
+   | bridges | `tests/test_bridges.py` | 0 |
+   | adversarial | `tests/adversarial` | 0（4 项） |
+   | docs links | `scripts/check_docs_links.py` | 0（82 文件） |
+   | benchmark smoke | `scripts/run_benchmark_smoke.py` | 0 |
+   | **native compat** | `tests/compatibility/test_native_fallback_contract.py` | **4 ＝ 文件不存在** |
+   | docs-code 一致性（仓内守卫） | `tests/architecture` | 0 |
+   | 离线全量套件 + coverage | `-m "not network" --cov=tstdx --cov-report=xml` | 0（**3238 passed / 7 skipped / 1 xpassed / 0 failed，78.80%**，阈值 77 未动） |
+
+   - `native-compat` 这一行是本步的全部收获：它不是"这次没跑起来"，而是**自 `77bc2fe`
+     起就永远跑不起来**——它和被它守护的 `tstdx/native.py` 同批被删。同一形状的错误在
+     CI 侧是 `native.yml` 的一个 PR 阻塞 job，其"编译"步骤用了
+     `compileall -q <不存在的路径>`：该命令**打印 "Can't list" 而退出码 0**（本机实测），
+     所以 job 的前一步是**静默假通过**，红只在下一步才显形。
+   - 更值得记的是**守卫反向**：`test_ci_workflow_contracts.py` 里有一条断言"workflow
+     必须引用那个已删除的测试路径"。它原本用于防止有人把该门禁软化，删除动作落地后
+     却变成把缺陷钉成契约——**任何"必须包含某字符串"的守卫，都要连带断言该字符串指向
+     的东西存在**，否则它只会阻止你删掉僵尸。
+   - 处置：`native.yml`、`Makefile` 的 target 与 `gates` 依赖、PR 模板勾选项、
+     CONTRIBUTING 清单一并删除；新增三项存在性守卫（workflow 路径、Makefile 路径、
+     `gates:` 前置 target 已定义）+ README 门禁规模数字与 `ci.yml`/`Makefile` 对账。
+   - **变异验证**（守卫不亲测等于没有）：往 ci.yml、Makefile 各插一条指向不存在文件的
+     路径，`gates:` 加一个未定义 target，README 数字改回 9/12 —— 四次分别 RC=1 并指名
+     具体缺陷，随后原样还原（`git diff` 确认无残留）。
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
 

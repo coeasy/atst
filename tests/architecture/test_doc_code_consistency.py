@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 import importlib
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -219,6 +220,41 @@ def test_readme_numbers_match_runtime(fact: str, pattern: str) -> None:
     claimed = {int(n) for n in re.findall(pattern, _readme())}
     assert claimed, f"README 不再声明 {fact}，门禁失效"
     assert claimed == {_actual_facts()[fact]}, f"README {fact}={sorted(claimed)} 与运行期事实不符"
+
+
+# --------------------------------------------------------------------------
+# README 宣称的门禁规模（审计 F-24）
+# --------------------------------------------------------------------------
+
+
+def _ci_job_count() -> int:
+    """ci.yml 里 `jobs:` 下的 job 键个数（两空格缩进的 `name:` 行）。"""
+    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    jobs_block = text.split("\njobs:\n", 1)[1]
+    return len(re.findall(r"^  [a-z][a-z0-9_-]*:$", jobs_block, flags=re.M))
+
+
+def _gates_step_count() -> int:
+    line = next(
+        line
+        for line in (ROOT / "Makefile").read_text(encoding="utf-8").splitlines()
+        if line.startswith("gates:")
+    )
+    return len(line.split(":", 1)[1].split())
+
+
+@pytest.mark.parametrize(
+    ("pattern", "actual"),
+    [(r"CI[：:]\s*(\d+)\s*jobs", _ci_job_count), (r"(\d+)\s*步确定性门禁", _gates_step_count)],
+)
+def test_readme_gate_scale_matches_definition(pattern: str, actual: Callable[[], int]) -> None:
+    """README 说门禁有几步 / CI 有几个 job，必须与 workflow 与 Makefile 本身的定义一致。
+
+    门禁链每删一项（F-24 的 native-compat 就是删出来的），这些数字都会静默失真。
+    """
+    claimed = {int(n) for n in re.findall(pattern, _readme())}
+    assert claimed, f"README 不再声明 {pattern}，门禁失效"
+    assert claimed == {actual()}, f"README 声称 {sorted(claimed)}，实际定义是 {actual()}"
 
 
 # --------------------------------------------------------------------------

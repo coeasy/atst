@@ -167,6 +167,40 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   结构树条目与磁盘做双向对账——列出的路径必须存在，磁盘上的顶层包与顶层模块必须都列出。
   散文式能力承诺本质上不可机器判定，这一步只压缩它的隐身空间，不声称根治。
 
+### Removed（v17 Phase 5 第 6 步 —— 删掉一条永远跑不起来的 PR 阻塞门禁，F-24）
+
+本地按 CI 参数逐条复跑整条确定性门禁链（每条先重定向再取 RC），11 项绿灯里抓到一项
+`RC=4`：`make gates` 的最后一步 `native-compat` 指向
+`tests/compatibility/test_native_fallback_contract.py`，而该文件连同被测模块
+`tstdx/native.py` 已在 `77bc2fe`（v16 Phase 2）物理删除。同一形状的引用还留在
+`.github/workflows/native.yml` 的一个 `pull_request` 阻塞 job 里——它的「编译」一步用
+`python -m compileall -q tstdx/native.py`，该命令对不存在的路径**打印 "Can't list" 却
+退出 0**（本机实测），于是前一步静默假通过，红只在下一步的 pytest 上才显形。
+
+- 删除 `native.yml` 与 `Makefile` 的 `native-compat` target 及 `gates` 依赖项。取
+  「删除」而非「恢复测试」，因为被测能力本身已随 `tstdx.native` 退役，没有可恢复的对象。
+- **删掉一条反向契约**：`test_ci_workflow_contracts.py` 原有断言「workflow 必须包含那个
+  已删除的测试路径」。这类「必须包含某字符串」的守卫若不连带断言字符串所指存在，就会在
+  删除之后变成阻止清理僵尸的护栏。
+- 文档面同步：PR 模板去掉那条无人能诚实勾选的合并证据项；CONTRIBUTING 门禁清单去掉
+  Native 一项；`.pre-commit-config.yaml` 注释同改。
+
+### Fixed（v17 Phase 5 第 6 步 —— 门禁定义与文档口径对账）
+
+- 新增三项存在性守卫，把「门禁自己指向不存在的文件」这类缺陷变成红灯而不是绿等：
+  `.github/workflows/*.yml` 与 `Makefile` 里写死的 `tests/…`、`scripts/…`、`tstdx/…`
+  `.py` 路径必须存在于磁盘；`gates:` 的每个前置 target 必须在 Makefile 里已定义。
+- 新增 README 规模数字对账：`CI：N jobs` 与 `N 步确定性门禁` 必须分别等于 `ci.yml` 的
+  job 数与 `gates` 的 target 数。原口径为「9 jobs」「六步门禁」，实际是 11 与 11。
+- README 的 Ruff 行停在既成事实之前（「`ruff format --check` 仍有既存待重排文件」），
+  现改为两项皆 0 错并标明钉版 `ruff==0.15.2`。
+- 上述四项守卫逐一做过**变异验证**：分别往 ci.yml、Makefile 插入指向不存在文件的路径、
+  给 `gates:` 加未定义 target、把 README 数字改回 9/12，四次皆 RC=1 且指名具体缺陷，
+  随后原样还原（`git diff` 确认无残留）。守卫不亲测等于没有。
+- 复测（同一条链、同样单独取 RC）：11 项门禁全 RC=0；离线全量套件
+  **3238 passed / 7 skipped / 1 xpassed / 0 failed，coverage 78.80%**，`PYTEST_RC=0`，
+  阈值 77 未动。
+
 ### Fixed
 
 - **`tstdx.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，
