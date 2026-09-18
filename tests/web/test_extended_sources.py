@@ -1004,9 +1004,9 @@ class TestEastmoneyTopListSource:
         assert 'SECURITY_CODE="600519"' in url
         assert rows[0]["code"] == "000001"
 
-    def test_facade_longhu(self, monkeypatch):
+    def test_session_longhu(self, monkeypatch):
         import tstdx.web.longhu as _longhu
-        from tstdx.web import facade
+        from tstdx.web import session
 
         class _Fake(EastmoneyTopListSource):
             def fetch_lhb(self, date=None, *, symbol=None, page=1, size=50):
@@ -1031,7 +1031,7 @@ class TestEastmoneyTopListSource:
                 ]
 
         monkeypatch.setattr(_longhu, "EastmoneyTopListSource", _Fake)
-        rows = facade.WebQuoteSession.longhu(date="2026-09-01", size=50)
+        rows = session.WebQuoteSession.longhu(date="2026-09-01", size=50)
         assert rows[0]["code"] == "000001"
         assert rows[0]["prime_net"] == 56309200.0
 
@@ -1104,9 +1104,9 @@ class TestExternalQuotes:
         url = src.build_url(["00700"])
         assert "hk00700" in url
 
-    def test_facade_hk_us(self, monkeypatch):
+    def test_session_hk_us(self, monkeypatch):
         import tstdx.web.adapters as _adapters
-        from tstdx.web import facade
+        from tstdx.web import session
 
         class _FakeHk(HkSource):
             def fetch(self, symbols, **kw):
@@ -1118,10 +1118,10 @@ class TestExternalQuotes:
 
         monkeypatch.setattr(_adapters, "HkSource", _FakeHk)
         monkeypatch.setattr(_adapters, "UsSource", _FakeUs)
-        h = facade.WebQuoteSession.hk_quotes(["00700"])[0]
+        h = session.WebQuoteSession.hk_quotes(["00700"])[0]
         assert h.price == pytest.approx(441.4)
         assert h.extra["currency"] == "HKD"
-        u = facade.WebQuoteSession.us_quotes(["AAPL"])[0]
+        u = session.WebQuoteSession.us_quotes(["AAPL"])[0]
         assert u.price == pytest.approx(316.85)
         assert u.extra["currency"] == "USD"
 
@@ -1168,9 +1168,9 @@ class TestSinaNewsSource:
     def test_clean(self):
         assert _clean("&nbsp;<font>研报</font>&nbsp;") == "研报"
 
-    def test_facade_news(self, monkeypatch):
+    def test_session_news(self, monkeypatch):
         import tstdx.web.news as _news
-        from tstdx.web import facade
+        from tstdx.web import session
 
         class _Fake(SinaNewsSource):
             def fetch_news(self, symbol, *, page=1, num=20, tag=None):
@@ -1178,7 +1178,7 @@ class TestSinaNewsSource:
                 return self.parse_news(SINA_NEWS_HTML, tag=tag, page=page, num=num)
 
         monkeypatch.setattr(_news, "SinaNewsSource", _Fake)
-        rows = facade.WebQuoteSession.news("sh600519", num=10)
+        rows = session.WebQuoteSession.news("sh600519", num=10)
         assert rows[0]["title"] == "白酒行业进入存量博弈时代"
         assert rows[2]["tag"] == "研报"
 
@@ -1204,17 +1204,17 @@ class TestSinaNewsSource:
         # 不存在的 tag → 空
         assert SinaNewsSource().parse_news(SINA_NEWS_HTML, tag="公告") == []
 
-    def test_facade_news_pages_aggregation(self, monkeypatch):
+    def test_session_news_pages_aggregation(self, monkeypatch):
         """pages>1 跨页聚合去重：3 条新闻分 2 页（num=2）拼接为 3 条。"""
         import tstdx.web.news as _news
-        from tstdx.web import facade
+        from tstdx.web import session
 
         class _Fake(SinaNewsSource):
             def fetch_news(self, symbol, *, page=1, num=20, tag=None):
                 return self.parse_news(SINA_NEWS_HTML, tag=tag, page=page, num=num)
 
         monkeypatch.setattr(_news, "SinaNewsSource", _Fake)
-        rows = facade.WebQuoteSession.news("sh600519", num=2, pages=2)
+        rows = session.WebQuoteSession.news("sh600519", num=2, pages=2)
         assert len(rows) == 3
         assert {r["datetime"] for r in rows} == {
             "2026-09-01 00:00",
@@ -1264,9 +1264,9 @@ class TestKlineExternal:
         assert bars[0].volume == 32664 * 100
         assert bars[0].amount == 4242440861.0
 
-    def test_facade_klines_hk_us(self, monkeypatch):
+    def test_session_klines_hk_us(self, monkeypatch):
         import tstdx.web.adapters as _adapters
-        from tstdx.web import facade
+        from tstdx.web import session
 
         store = {"hk00700": KLINE_HK_JSON, "usAAPL": KLINE_US_JSON}
 
@@ -1275,7 +1275,7 @@ class TestKlineExternal:
                 return self.parse_bars(store[symbol], symbol)
 
         monkeypatch.setattr(_adapters, "KlineSource", _Fake)
-        hk = facade.WebQuoteSession().klines("hk00700", period="day", count=1)
+        hk = session.WebQuoteSession().klines("hk00700", period="day", count=1)
         assert hk[0].volume == 20149770
-        us = facade.WebQuoteSession().klines("usAAPL", period="day", count=1)
+        us = session.WebQuoteSession().klines("usAAPL", period="day", count=1)
         assert us[0].volume == 41242724

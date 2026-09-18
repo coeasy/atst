@@ -3,7 +3,7 @@
 
 """WebQuoteSession 域 Mixin（三大报表 / 治理 / 评级预测）——P13 数据源补全。
 
-本模块承载 :class:`tstdx.web.facade.WebQuoteSession` 的**基本面深度**方法：
+本模块承载 :class:`tstdx.web.session.WebQuoteSession` 的**基本面深度**方法：
 
 * 三大财务报表明细（资产负债表 / 利润表 / 现金流量表，
   :mod:`tstdx.web.fin_report`，东财 datacenter-web 报表族）
@@ -24,7 +24,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ._facade_mixin_market import _shared_http
+from ._session_market import _shared_http
 
 __all__ = ["FundamentalSessionMixin"]
 

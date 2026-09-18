@@ -9,7 +9,7 @@ import pytest
 
 from tstdx.errors import TdxError
 from tstdx.web.corporate import EastmoneyForecastSource
-from tstdx.web.facade import WebQuoteSession
+from tstdx.web.session import WebQuoteSession
 
 pytestmark = pytest.mark.unit
 

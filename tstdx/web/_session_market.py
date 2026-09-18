@@ -3,16 +3,16 @@
 
 """WebQuoteSession 域 Mixin（行情 / K 线 / 板块）——P4 纯搬移拆分。
 
-本模块只承载 :class:`tstdx.web.facade.WebQuoteSession` 的方法**纯搬移**
+本模块只承载 :class:`tstdx.web.session.WebQuoteSession` 的方法**纯搬移**
 （方法体逐字不变），按域拆为三个 Mixin：
 
 * :class:`QuoteSessionMixin`：实时行情 / 港美股 / 全市场 / 大盘统计 / 指数 / 汇率
 * :class:`KlineSessionMixin`：K 线 / 分时 / 历史行情 / 逐笔成交
 * :class:`BoardSessionMixin`：板块 / 排行 / 人气榜
 
-组合与 ``__init__`` / ``close`` 见 :mod:`tstdx.web.facade`。
+组合与 ``__init__`` / ``close`` 见 :mod:`tstdx.web.session`。
 模块级共享常量（``SOURCE_ALIASES`` 除外）与进程级 HTTP 连接池助手也
-收口于此，由 facade 再导出以保持公开 API 不变。
+收口于此，由 :mod:`tstdx.web.session` 再导出以保持公开 API 不变。
 """
 
 from __future__ import annotations
@@ -81,14 +81,14 @@ def shared_http():
     return _SHARED_HTTP[0]
 
 
-# 旧名别名：facade 内部沿用原私有名。
+# 旧名别名：会话组合层内部沿用原私有名。
 _shared_http = shared_http
 
 
 class QuoteSessionMixin:
     """实时行情 / 港美股 / 全市场快照 / 大盘统计 / 指数 / 汇率。"""
 
-    # These members are provided by ``facade._SessionBase`` at runtime.  Keep
+    # These members are provided by ``session._SessionBase`` at runtime.  Keep
     # the composition contract explicit for type checkers without introducing
     # a second runtime inheritance hierarchy between mixins.
     if TYPE_CHECKING:

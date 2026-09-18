@@ -1,7 +1,10 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""HTTP Web 行情源（§33）：TDX 主站不可用时的降级路径。
+"""HTTP Web 行情源（§33）：每个源是一个精确 Provider，由调用方显式选择。
+
+内核不做自动换源：这里列出的源只有在请求显式指向它时才会被访问；跨源容错必须由
+调用方给出 ``FallbackPolicy``。
 
 Quick start::
 
@@ -9,15 +12,15 @@ Quick start::
     quotes = get_quotes(["sh600519", "sz000001"], source="tencent")
     print(quotes[0].price, quotes[0].volume)   # 元 / 股（已归一化）
 
-或走统一降级::
+或走 ``WebQuoteClient`` 的有序多源取数（顺序由调用方配置，属调用侧策略）::
 
     from tstdx.web import WebQuoteClient
     client = WebQuoteClient()          # 按配置的 enabled_sources 顺序
     quotes = client.quotes(["sh600519"])
 
-高层门面（原生命名）::
+Web 会话面（原生命名）::
 
-    from tstdx.web.facade import web_session
+    from tstdx.web.session import web_session
     sess = web_session("sina")
     sess.quotes(["000001"])            # list[Quote]
     sess.all_market(node="hs_a")       # list[Quote]
@@ -48,7 +51,7 @@ capability            提供该能力的源
 
 惰性导入（Q4-2，PEP 562）：本包 ``__init__`` 只常驻零依赖的
 ``sources``（SourceSpec 注册表）与 ``base``（stdlib HTTP 底座），
-其余 18 个 Source / 门面子模块按需经 :data:`_LAZY` 映射加载，
+其余 18 个 Source / 会话子模块按需经 :data:`_LAZY` 映射加载，
 ``from tstdx.web import X`` 的全部既有导入路径保持不变。
 """
 
@@ -216,9 +219,9 @@ _LAZY: dict[str, str] = {
     "EastmoneyUnlockSource": "corporate",
     "EastmoneyPerformanceSource": "corporate",
     "EastmoneyDataCenterSource": "corporate",
-    # facade.py
-    "WebQuoteSession": "facade",
-    "web_session": "facade",
+    # session.py
+    "WebQuoteSession": "session",
+    "web_session": "session",
     # fin_report.py
     "EastmoneyF10ReportSource": "fin_report",
     "to_eastmoney_secucode": "fin_report",

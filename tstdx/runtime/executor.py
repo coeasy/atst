@@ -216,7 +216,7 @@ class DirectProviderExecutor:
         )
 
         if meta.backend == "web_session":
-            from ..web.facade import WebQuoteSession
+            from ..web.session import WebQuoteSession
 
             session = WebQuoteSession(meta.source or "sina", timeout=self.timeout)
             try:

@@ -3,7 +3,7 @@
 
 """WebQuoteSession 域 Mixin（ESG 评级 / 筹码分布）——P14 数据源补全。
 
-本模块承载 :class:`tstdx.web.facade.WebQuoteSession` 的 **P1 扩展** 方法：
+本模块承载 :class:`tstdx.web.session.WebQuoteSession` 的 **P1 扩展** 方法：
 
 * ESG 评级（:mod:`tstdx.web.esg`，新浪 13 家机构 ESG 评级数据）
 * 筹码分布（:mod:`tstdx.web.chip`，东财资金流驱动的筹码集中度分析）
@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ._facade_mixin_market import _shared_http
+from ._session_market import _shared_http
 
 __all__ = ["P1SessionMixin"]
 

@@ -2,7 +2,7 @@
 
 覆盖：资金流排序自动附带 f62/f184/f66/f72/f78/f84（P12 修复：否则行值
 静默为 None 的实测陷阱）/ 非资金流排序不附带 / 罐头解析 /
-session.sector_flow 与 facade.sector_flow 委托。
+session.sector_flow 与 session.sector_flow 委托。
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ class TestSectorFlowWiring:
             return [{"name": "传媒"}]
 
         monkeypatch.setattr(EastmoneyRankSource, "fetch_rows", fake_fetch_rows)
-        from tstdx.web.facade import WebQuoteSession
+        from tstdx.web.session import WebQuoteSession
 
         rows = WebQuoteSession.sector_flow("concept", sort="main_net", limit=5)
         assert rows == [{"name": "传媒"}]
@@ -93,7 +93,7 @@ class TestSectorFlowWiring:
 
     def test_client_capability_delegates(self, monkeypatch):
         from tstdx.client_api import Client
-        from tstdx.web.facade import WebQuoteSession
+        from tstdx.web.session import WebQuoteSession
 
         def fake_sector_flow(board="industry", *, sort="main_net", limit=20, page=1):
             return [{"board": board}]

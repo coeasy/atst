@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.web._facade_mixin_p3 import P3SessionMixin
+from tstdx.web._session_p3 import P3SessionMixin
 from tstdx.web.base import HttpResponse
 from tstdx.web.corporate import EastmoneyDataCenterSource
-from tstdx.web.facade import WebQuoteSession
+from tstdx.web.session import WebQuoteSession
 
 pytestmark = [pytest.mark.unit]
 

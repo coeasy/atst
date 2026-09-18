@@ -379,6 +379,6 @@ class BaseWebSource(_BaseRetryMixin):
         return q
 
     def close(self) -> None:
-        # B6：注入 client（如 facade 进程级共享池）时归调用方所有，跳过释放
+        # B6：注入 client（如会话层进程级共享池）时归调用方所有，跳过释放
         if self._owns_client:
             self.client.close()

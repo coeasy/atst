@@ -78,9 +78,13 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
    幻影符号（`read_lc1_file`/`read_lc5_file`/`adjust_bars`/`domain.records` 旧类名清单）、
    以及 5 组动作数（CLI 32→31、HTTP ~40→10、MCP 12→9、capability 167→172、
    `integration.http_server/ws_server/mcp_server` → `runtime_*`/`mcp`）全部按运行期事实重写。
-5. **F-11 命名债残留 —— 待办**：`tstdx/web/_facade_mixin_*.py`（11 文件）与
-   `tstdx/web/facade.py` 仍沿用已删除的"门面层"命名；语义是 Web Provider 会话分组，
-   契约无影响，留作纯改名小 PR。
+5. **F-11 命名债 —— 已清偿（Phase 5，2026-09-19）**：`tstdx/web/facade.py` → `tstdx/web/session.py`，
+   11 个 `tstdx/web/_facade_mixin_*.py` → `_session_*.py`（clean-break，不留别名或再导出 shim）。
+   改名动因：这些模块承载的是 `WebQuoteSession`（Web Provider 会话组合层）的按域方法组，
+   而"门面"这个名字指向的 `UnifiedQuoteAPI` 已随 v16 Phase 2 物理删除，继续叫 facade 会让
+   读者以为存在跨源聚合门面。运行期引用同步更正 47 个文件（含 `catalog/provider_bindings.py`
+   的绑定字符串 `("tstdx.web.session", "WebQuoteSession")` 与 `tstdx/web/__init__.py` 的
+   `_LAZY` 子模块名），`docs/api/README.md` 的事实路径同步。
 6. **F-12 死守卫 —— 已修（Phase 5，2026-09-19）**：`Prober.only_offline_hours()` 比较
    从未存在的 `SessionState.IN_SESSION`，未打桩调用必抛 `AttributeError`，"盘中不探测
    主站"的保护实际为死代码（测试全打桩故全绿）。现按 `call_auction/continuous` 判定，

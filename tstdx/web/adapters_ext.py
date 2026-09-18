@@ -92,7 +92,7 @@ class MinuteKlineSource(BaseWebSource):
         ``code=-1`` 空数据，直接调用本源会抛出明确错误。港股 / 美股
         分钟 K 线请走 :class:`~tstdx.web.history.EastmoneyHistoryKlineSource`
         （东财 push2his，``hk`` secid=116.x、``us`` secid=105/106/107 探测）；
-        :meth:`~tstdx.web.facade.WebQuoteSession.klines` 已按市场自动路由。
+        :meth:`~tstdx.web.session.WebQuoteSession.klines` 已按市场自动路由。
 
         成交量单位：A 股腾讯返回「手」需 ``×100`` 到股。
 

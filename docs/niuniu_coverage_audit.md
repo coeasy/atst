@@ -150,10 +150,10 @@
 | 文件 | 变更 |
 |------|------|
 | `tstdx/web/news.py` | 新增 `EastmoneyNewsSource`（财经快讯）、`EastmoneyResearchVisitSource`（机构调研）；保留既有 `SinaNewsSource`（个股新闻） |
-| `tstdx/web/_facade_mixin_news.py` | **新建** `NewsSessionMixin`（`news_financial` / `research_reports` / `research_visits`） |
-| `tstdx/web/facade.py` | `WebQuoteSession` 继承链追加 `NewsSessionMixin` |
+| `tstdx/web/_session_news.py` | **新建** `NewsSessionMixin`（`news_financial` / `research_reports` / `research_visits`） |
+| `tstdx/web/session.py` | `WebQuoteSession` 继承链追加 `NewsSessionMixin` |
 | `tstdx/web/efinance_deriv.py` | `EastmoneyBondSource` 新增 `fetch_all_base_info`（全市场可转债 clist 枚举） |
-| `tstdx/web/_facade_mixin_efinance.py` | 新增 `fund_base_info_multi`（批量基金基础信息）、`bond_all_base_info`（全市场债券） |
+| `tstdx/web/_session_efinance.py` | 新增 `fund_base_info_multi`（批量基金基础信息）、`bond_all_base_info`（全市场债券） |
 | `tstdx/facade/api.py` | `UnifiedQuoteAPI` 新增 7 个方法：`news_financial` / `research_reports` / `research_visits` / `free_holders` / `holder_num` / `fund_base_info_multi` / `bond_all_base_info` |
 | `tstdx/web/corporate.py` | **bug 修复**：新增 `_base_path()`，修复 `fetch_notices`/`fetch_reports` 丢失路径段的问题（见下） |
 | `tests/web/test_news.py` | **新建**，10 个离线用例（源级 + 门面端到端） |

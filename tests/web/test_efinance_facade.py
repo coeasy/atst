@@ -12,9 +12,9 @@ import json
 
 import pytest
 
-import tstdx.web._facade_mixin_efinance as mixin_mod
+import tstdx.web._session_efinance as mixin_mod
 from tstdx.web.base import HttpResponse
-from tstdx.web.facade import WebQuoteSession
+from tstdx.web.session import WebQuoteSession
 
 
 class FakeHttpClient:

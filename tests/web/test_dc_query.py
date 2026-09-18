@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from tstdx.web._facade_mixin_info import CorporateSessionMixin
+from tstdx.web._session_info import CorporateSessionMixin
 from tstdx.web.adapters_margin import EastmoneyMarginSource  # noqa: F401
 from tstdx.web.corporate import VALID_REPORTS, EastmoneyDataCenterSource
 

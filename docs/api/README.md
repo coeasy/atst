@@ -43,7 +43,7 @@
 | `tstdx.client.AsyncTdxClient` | 异步镜像客户端 |
 | `tstdx.client.get_client(kind)` | 工厂：std/goods/ex/mac/f10 |
 | `tstdx.client.core` | 同步/异步共享的纯协议构造与校验 SSOT |
-| `tstdx.web.facade.WebQuoteSession` | Web 源原生命名会话（异动/人气榜/问财/IPO…），精确 Provider 适配器，非聚合路由 |
+| `tstdx.web.session.WebQuoteSession` | Web 源原生命名会话（异动/人气榜/问财/IPO…），精确 Provider 适配器，非聚合路由 |
 
 ## 协议层
 

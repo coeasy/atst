@@ -170,10 +170,16 @@
   `read_lc1_file`/`read_lc5_file`、`adjust_bars`、`domain.records` 的类名清单均为幻影；
   `docs/api/interfaces.md` §2–§4 与 `docs/cookbook/02,07` 整节描述已删除层。
   处置：逐项核对更正 + 上述门禁防回潮。
-- **F-11 命名债残留**：`tstdx/web/_facade_mixin_*.py`（11 个文件）与 `tstdx/web/facade.py`
-  仍以已删除的"门面层"命名。当前语义是 Web Provider 的会话/适配器分组，不影响契约，
-  但名字误导。**后续小 PR**：`_facade_mixin_*` → `_session_*`（或按域命名），
-  与 `WebQuoteSession` 的实际角色对齐；纯改名、无行为变化。
+- **F-11 命名债 —— 已清偿（2026-09-19，Phase 5 第 3 步）**：`tstdx/web/facade.py` →
+  `tstdx/web/session.py`，`tstdx/web/_facade_mixin_*.py`（11 个）→ `_session_*.py`，
+  clean-break 不留别名。原语义词是"Web Provider 的会话/适配器分组"，但"门面"一名指向的
+  `UnifiedQuoteAPI` 已随 v16 Phase 2 物理删除，读者会误以为存在跨源聚合门面。
+  引用面同步：47 个文件重写（生产代码里含 `catalog/provider_bindings.py` 的绑定字符串与
+  `tstdx/web/__init__.py` 的 `_LAZY` 子模块名——后者是**字符串键**，按点号路径 grep 会漏，
+  实测由 `tests/web` 的 ImportError 暴露）；`docs/api/README.md` 事实路径、
+  4 份审计文档的路径引用一并更正；`[1.0.0]` 及归档方案文档的历史叙述保留原名。
+  测试函数名 `test_facade_*` → `test_session_*`（同文件内），测试**文件名**不改：
+  它们被 CHANGELOG/审计文档按名引用，改名会把一次纯改名 PR 变成文档考古 PR。
 - 根级公开面回归单一事实源：`tstdx.__all__` ⇔ `tstdx._LAZY`（46 项）；
   删除 7 个只挂在惰性表、无 `__all__` 条目亦无调用方的根名字。
 

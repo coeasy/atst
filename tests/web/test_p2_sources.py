@@ -450,7 +450,7 @@ class TestP2FacadeIntegration:
 
     @pytest.fixture()
     def session(self) -> Any:
-        from tstdx.web.facade import WebQuoteSession
+        from tstdx.web.session import WebQuoteSession
 
         return WebQuoteSession("eastmoney")
 

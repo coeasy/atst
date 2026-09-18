@@ -3,7 +3,7 @@
 
 """v14 领域业务 Record（Phase 2 Domain Model）。
 
-目标：用类型化 Domain Record 替换 web/facade 层的 ``list[dict]`` 业务结果。
+目标：用类型化 Domain Record 替换 web/session 层的 ``list[dict]`` 业务结果。
 每个 Record 与 ``tstdx.typed_query`` 中的 Typed Query 契约一一对应，
 并可通过 ``to_dict`` / ``from_dict`` 在 Runtime 边界做无损序列化。
 

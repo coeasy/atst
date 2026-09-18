@@ -15,7 +15,7 @@ from tstdx.domain.models import Quote
 from tstdx.errors import CompatibilityError
 from tstdx.web.adapters import SinaSource, TencentSource
 from tstdx.web.base import HttpResponse, RateLimiter
-from tstdx.web.facade import (
+from tstdx.web.session import (
     INDEX_SYMBOLS,
     KLINES_PERIOD_ALIASES,
     SOURCE_ALIASES,
@@ -246,7 +246,7 @@ class TestSessionContextManager:
     """P12：WebQuoteSession 支持 with 语法（__enter__/__exit__ 关闭底层连接）。"""
 
     def test_with_block_closes_session(self):
-        from tstdx.web.facade import WebQuoteSession
+        from tstdx.web.session import WebQuoteSession
 
         closed: list[bool] = []
         sess = WebQuoteSession("sina")
@@ -257,7 +257,7 @@ class TestSessionContextManager:
         assert closed == [True]
 
     def test_exit_closes_even_on_error(self):
-        from tstdx.web.facade import WebQuoteSession
+        from tstdx.web.session import WebQuoteSession
 
         closed: list[bool] = []
         sess = WebQuoteSession("sina")

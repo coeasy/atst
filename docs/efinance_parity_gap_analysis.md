@@ -22,9 +22,9 @@
 新增代码文件：
 - `tstdx/web/efinance_fund.py` —— 天天基金移动端源（`FundMobSource`）
 - `tstdx/web/efinance_deriv.py` —— 期货 / 债券 push2 源（`EastmoneyFuturesSource` / `EastmoneyBondSource`）
-- `tstdx/web/_facade_mixin_efinance.py` —— 三个门面 Mixin
+- `tstdx/web/_session_efinance.py` —— 三个门面 Mixin
 - `tstdx/facade/api.py` —— 新增 21 个 `UnifiedQuoteAPI` 方法
-- `tstdx/web/facade.py` —— `WebQuoteSession` 继承三个 Mixin
+- `tstdx/web/session.py` —— `WebQuoteSession` 继承三个 Mixin
 
 新增测试：
 - `tests/web/test_efinance_fund.py`（7 用例）

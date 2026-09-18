@@ -10,8 +10,8 @@ from __future__ import annotations
 import pytest
 
 from tstdx.errors import TdxError
-from tstdx.web.facade import WebQuoteSession
 from tstdx.web.market_stats import LimitUpLadder, MarketBreadth
+from tstdx.web.session import WebQuoteSession
 
 pytestmark = pytest.mark.network
 

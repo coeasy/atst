@@ -431,7 +431,7 @@ class _ClientRows:
 
 def _cmd_changes(args: Any) -> int:
     """盘中异动池（东财 push2ex getAllStockChanges；Web 源，无需主站）。"""
-    from ..web.facade import WebQuoteSession
+    from ..web.session import WebQuoteSession
 
     try:
         types = tuple(int(t) for t in str(args.types).split(",") if t.strip())
@@ -466,7 +466,7 @@ def _cmd_changes(args: Any) -> int:
 
 def _cmd_hot(args: Any) -> int:
     """股吧个股人气榜（东财 emappdata stockrank；Web 源，无需主站）。"""
-    from ..web.facade import WebQuoteSession
+    from ..web.session import WebQuoteSession
 
     try:
         rows = WebQuoteSession.hot_rank(page=args.page, size=args.size)

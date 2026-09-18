@@ -13,7 +13,7 @@ import pytest
 from tstdx.errors import SourceDeprecated, WebSourceError
 from tstdx.web.base import HttpResponse, RateLimiter
 from tstdx.web.corporate import EastmoneyIpoSource
-from tstdx.web.facade import WebQuoteSession
+from tstdx.web.session import WebQuoteSession
 from tstdx.web.sources import KNOWN_SOURCES
 
 pytestmark = pytest.mark.unit

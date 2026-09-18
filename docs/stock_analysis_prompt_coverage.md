@@ -157,7 +157,7 @@ tstdx 已有 `web().dc_query(report, symbol=…, filters=…, all_pages=True)` �
 - 新增 `tstdx/web/governance.py`：高管持股 + 公司概况 + 股东增减持
 - 在 `corporate.VALID_REPORTS` 注册 7 个新报表名（注释标注验证日期，沿用
   `# 分红送配（2026-09-06 实测可用）` 的写法）
-- 新增 `_facade_mixin_fundamental.py`，门面暴露 `balance_sheet` / `income_sheet` /
+- 新增 `_session_fundamental.py`，门面暴露 `balance_sheet` / `income_sheet` /
   `cash_flow_sheet` / `rating_forecast` / `executive_holds` / `org_profile` /
   `shareholder_changes` 共 7 个方法
 - **合规**：tstdx 硬约束「禁止复制开源代码」，报表名与参数从抓包独立实现，不抄 akshare
@@ -222,7 +222,7 @@ tstdx 已有 `web().dc_query(report, symbol=…, filters=…, all_pages=True)` �
 
 ## 五、审计方法与已验证事实
 
-- **接口面枚举**：`tstdx/facade/api.py`（76 个门面方法）+ `tstdx/web/_facade_mixin_*.py`
+- **接口面枚举**：`tstdx/facade/api.py`（76 个门面方法）+ `tstdx/web/_session_*.py`
   六个 Mixin（约 110 个会话方法），合计约 180 个公开数据接口。
 - **能力边界确认**：全库正则扫描 `macd|rsi|boll|kdj|pandas_ta|ta\.lib` 零命中 →
   确认无技术指标计算；`tstdx/output/` 仅 `__init__.py` 且无报告生成 → 确认无文档导出。

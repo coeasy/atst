@@ -16,8 +16,8 @@ from __future__ import annotations
 import pytest
 
 from tstdx.web import _ADAPTERS, create_source
-from tstdx.web.facade import WebQuoteSession
 from tstdx.web.normalize import _NORMALIZER_REGISTRY
+from tstdx.web.session import WebQuoteSession
 from tstdx.web.sources import KNOWN_SOURCES
 
 pytestmark = pytest.mark.unit

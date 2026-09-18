@@ -57,7 +57,7 @@ def _probe_tdx() -> float:
 
 def _probe_web(source: str) -> float:
     """HTTP Web 源独立调用（新浪 / 腾讯 / 东财）。"""
-    from tstdx.web.facade import web_session
+    from tstdx.web.session import web_session
 
     sess = web_session(source)
     try:

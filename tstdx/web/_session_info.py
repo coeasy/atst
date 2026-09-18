@@ -3,13 +3,13 @@
 
 """WebQuoteSession 域 Mixin（资金流 / 基本面）——P4 纯搬移拆分。
 
-本模块只承载 :class:`tstdx.web.facade.WebQuoteSession` 的方法**纯搬移**
+本模块只承载 :class:`tstdx.web.session.WebQuoteSession` 的方法**纯搬移**
 （方法体逐字不变），按域拆为两个 Mixin：
 
 * :class:`FundFlowSessionMixin`：资金流 / 涨跌停池 / 市场宽度 / 北向
 * :class:`CorporateSessionMixin`：F10 / 公告 / 股东 / 解禁 / 业绩 / 龙虎榜 / 新闻
 
-组合与 ``__init__`` / ``close`` 见 :mod:`tstdx.web.facade`。
+组合与 ``__init__`` / ``close`` 见 :mod:`tstdx.web.session`。
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:  # 仅注解引用（future annotations 下零运行时开销）
     from .market_stats import LimitUpLadder, MarketBreadth
 
-from ._facade_mixin_market import _shared_http  # noqa: E402,F401  共享连接池助手
+from ._session_market import _shared_http  # noqa: E402,F401  共享连接池助手
 
 __all__ = [
     "FundFlowSessionMixin",
@@ -299,7 +299,7 @@ class CorporateSessionMixin:
     def free_holders(symbol: str, *, size: int = 10) -> list[dict[str, Any]]:
         """十大流通股东（主线兼容命名）。
 
-        ``shareholders`` is the native facade name, while ``free_holders`` is
+        ``shareholders`` is the native session name, while ``free_holders`` is
         the established public capability used by the unified API and provider
         registry.  Keep both names on the same implementation so the runtime
         cannot advertise a capability that the web session cannot execute.

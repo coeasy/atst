@@ -3,7 +3,7 @@
 
 """WebQuoteSession 域 Mixin（行业指数 / 概念指数 / 宏观经济 / 可转债）——P2 数据源扩展。
 
-本模块承载 :class:`tstdx.web.facade.WebQuoteSession` 的**行业与宏观**方法：
+本模块承载 :class:`tstdx.web.session.WebQuoteSession` 的**行业与宏观**方法：
 
 * 行业指数（板块/概念指标：涨跌幅/排名，:mod:`tstdx.web.corporate`）
 * 概念指数成分（股票代码→概念映射）
@@ -49,7 +49,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._facade_mixin_market import _shared_http
+from ._session_market import _shared_http
 
 __all__ = ["P2SessionMixin"]
 

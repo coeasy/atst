@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.web.facade import WebQuoteSession
+from tstdx.web.session import WebQuoteSession
 from tstdx.web.sources import KNOWN_SOURCES
 
 pytestmark = pytest.mark.unit

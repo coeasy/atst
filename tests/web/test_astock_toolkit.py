@@ -239,7 +239,7 @@ class TestFacadeMixin:
     """整链离线验证：monkeypatch 共享 HTTP 客户端，驱动 AstockToolkitMixin。"""
 
     def test_all_methods(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import tstdx.web._facade_mixin_astock as mix
+        import tstdx.web._session_astock as mix
 
         bodies = {
             "RPT_SHAREBONUS_DET": DIVIDEND,

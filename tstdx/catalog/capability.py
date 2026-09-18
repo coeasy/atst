@@ -104,7 +104,7 @@ _SKIP_WEB_METHODS = {"close", "mro", *_CORE_CAPABILITIES}
 
 
 def _discover_web_bindings() -> list[MigratedCapabilityBinding]:
-    from ..web.facade import WebQuoteSession
+    from ..web.session import WebQuoteSession
 
     values: list[MigratedCapabilityBinding] = []
     for name, _member in inspect.getmembers(WebQuoteSession, predicate=callable):
@@ -192,14 +192,14 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
 
 
 #: v14 registry channels whose capabilities map 1:1 onto a same-named
-#: :class:`~tstdx.web.facade.WebQuoteSession` method. These are the *semantic
+#: :class:`~tstdx.web.session.WebQuoteSession` method. These are the *semantic
 #: homes* the v14 registry gave migrated business abilities (``datacenter`` /
 #: ``derivatives`` / ``fund`` …) next to their aggregate ``derived`` home. The
-#: facade is already the single high-level implementation of every one of these
+#: session class is already the single high-level implementation of every one of these
 #: capabilities — ``derived``/``catalog`` binds the identical method — so the
 #: semantic home is bound to the *same* implementation instead of forking a
 #: second one. Capabilities are read from the registry (SSOT), never re-listed
-#: here, and a capability that the facade does not expose is skipped so that
+#: here, and a capability that the session class does not expose is skipped so that
 #: :data:`_DIRECT_ADAPTER_BINDINGS` can own it instead.
 _SEMANTIC_WEB_CHANNELS: tuple[tuple[str, str], ...] = (
     ("eastmoney", "datacenter"),
@@ -244,7 +244,7 @@ _DIRECT_ADAPTER_BINDINGS: tuple[tuple[str, str, str, str], ...] = (
 
 def _semantic_web_bindings() -> list[MigratedCapabilityBinding]:
     from ..providers import PROVIDERS
-    from ..web.facade import WebQuoteSession
+    from ..web.session import WebQuoteSession
 
     values: list[MigratedCapabilityBinding] = []
     for provider, channel in _SEMANTIC_WEB_CHANNELS:
@@ -281,10 +281,10 @@ def _direct_adapter_bindings() -> list[MigratedCapabilityBinding]:
 def _build_bindings() -> tuple[MigratedCapabilityBinding, ...]:
     """Compose the migrated catalog from every declared source of truth.
 
-    Precedence is deliberate: the auto-discovered facade methods give the
+    Precedence is deliberate: the auto-discovered WebQuoteSession methods give the
     baseline, the derived/registry-driven tables narrow it per Provider home, and
     the hand-written :data:`_EXPLICIT_BINDINGS` win last because they encode the
-    non-facade backends (native TDX clients, composed adapters, …).
+    session-independent backends (native TDX clients, composed adapters, …).
     """
 
     by_key: dict[tuple[str, str, str], MigratedCapabilityBinding] = {}
@@ -424,7 +424,7 @@ def validate_call(
     try:
         meta = binding_for(provider, channel, capability)
         if meta.backend == "web_session":
-            from ..web.facade import WebQuoteSession
+            from ..web.session import WebQuoteSession
 
             call_kwargs = dict(kwargs)
             if capability == "hk_quotes" and provider in {"sina", "tencent"}:

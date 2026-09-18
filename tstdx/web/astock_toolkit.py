@@ -14,7 +14,7 @@
    估值 / 增减持 / 财务摘要三个报表名（``RPT_VALUEASSESS_DET`` /
    ``RPT_CAPITAL_PARTICIPATION_DET`` / ``RPT_F10_FINANCE_MAIN``）为 best-effort
    映射——东财报表名偶发变动，若服务端返回「报表配置不存在 (code=9501)」需重新
-   抓包校准（与 :class:`~tstdx.web._facade_mixin_efinance.StockEfinanceMixin`
+   抓包校准（与 :class:`~tstdx.web._session_efinance.StockEfinanceMixin`
    的 ``ipo_review`` 同策略）。字段名采用东财常见列名 + 别名容错，未命中列
    原样透传，不丢数据。
 """

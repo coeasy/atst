@@ -48,7 +48,6 @@ from tstdx.web.corporate import (
     EastmoneyProfileSource,
     EastmoneyShareholderSource,
 )
-from tstdx.web.facade import WebQuoteSession
 from tstdx.web.fundflow import (
     EastmoneyFundFlowSource,
     EastmoneyRankSource,
@@ -58,6 +57,7 @@ from tstdx.web.history import EastmoneyHistoryKlineSource, SinaHistoryKlineSourc
 from tstdx.web.hot_rank import EastmoneyHotRankSource
 from tstdx.web.longhu import parse_lhb_row
 from tstdx.web.market_stats import aggregate_breadth, aggregate_limit_pool
+from tstdx.web.session import WebQuoteSession
 from tstdx.web.ticks import MAX_TICK_PAGES, EastmoneyTrendsSource, TencentTickSource
 from tstdx.web.wencai import WencaiSource
 

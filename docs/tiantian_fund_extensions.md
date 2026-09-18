@@ -52,7 +52,7 @@ tstdx/web/
 ├── fund_rank.py             # 新增：排行 / 快照 / 净值 / 详情 / 评级 / 走势（7 方法）
 ├── fund_manager.py          # 新增：基金经理（5 方法）
 ├── fund_company.py          # 新增：公司 / 搜索（6 方法）
-├── _facade_mixin_fund_v2.py # 新增：3 个 Session Mixin
+├── _session_fund_v2.py # 新增：3 个 Session Mixin
 ├── facade.py                # 修改：WebQuoteSession 追加 3 个 Mixin
 └── efinance_fund.py         # 未改：efinance 对标 7 端点保持原样
 tstdx/facade/api.py          # 修改：+18 门面方法

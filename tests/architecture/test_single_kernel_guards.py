@@ -66,6 +66,46 @@ def test_deleted_module_files_are_gone_from_disk(module_name: str) -> None:
     assert not (ROOT / "tstdx" / relative).is_dir()
 
 
+#: F-11 是一次纯改名（clean-break，不留别名）：`facade` 命名指向的 ``UnifiedQuoteAPI``
+#: 门面已随 v16 Phase 2 删除，改名后任何旧路径复现都意味着有人重新引入了那层语义。
+WEB_MODULE_RENAMES: tuple[tuple[str, str], ...] = (
+    ("tstdx.web.facade", "tstdx.web.session"),
+    *(
+        (f"tstdx.web._facade_mixin_{domain}", f"tstdx.web._session_{domain}")
+        for domain in (
+            "astock",
+            "baidu",
+            "efinance",
+            "fund_v2",
+            "fundamental",
+            "info",
+            "market",
+            "news",
+            "p1",
+            "p2",
+            "p3",
+        )
+    ),
+)
+
+
+@pytest.mark.parametrize(("old_module", "new_module"), WEB_MODULE_RENAMES)
+def test_renamed_web_modules_point_at_the_session_layout(old_module: str, new_module: str) -> None:
+    sys.modules.pop(old_module, None)
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(old_module)
+    for relative in (old_module, new_module):
+        path = ROOT / "tstdx" / f"{relative.removeprefix('tstdx.').replace('.', '/')}.py"
+        if relative == old_module:
+            assert not path.exists(), f"{path} 仍在磁盘上，改名未落实"
+        else:
+            assert path.exists(), f"缺少 {path}"
+    module = importlib.import_module(new_module)
+    if new_module == "tstdx.web.session":
+        # 只有组合模块承载 WebQuoteSession；`_session_*` 是按域的方法分组。
+        assert hasattr(module, "WebQuoteSession")
+
+
 @pytest.mark.parametrize("symbol", DELETED_SYMBOLS)
 def test_envelope_symbols_are_not_exported(symbol: str) -> None:
     import tstdx

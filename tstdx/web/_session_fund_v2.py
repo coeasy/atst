@@ -24,7 +24,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ._facade_mixin_market import _shared_http  # 共享连接池助手
+from ._session_market import _shared_http  # 共享连接池助手
 from .fund_company import FundCompanySource
 from .fund_manager import FundManagerSource
 from .fund_rank import FundMobRankSource

@@ -96,7 +96,7 @@ class TencentProviderAPI(ChannelBindings):
         "global": ("tstdx.web.global_market", "TencentGlobalSource"),
         "market_stat": ("tstdx.web.global_market", "TencentMarketStatSource"),
         "board_rank": ("tstdx.web.boards", "TencentBoardRankSource"),
-        "catalog": ("tstdx.web.facade", "WebQuoteSession"),
+        "catalog": ("tstdx.web.session", "WebQuoteSession"),
     }
 
 
@@ -111,14 +111,14 @@ class SinaProviderAPI(ChannelBindings):
         "board_member": ("tstdx.web.boards", "SinaBoardMemberSource"),
         "fund_flow": ("tstdx.web.fundflow", "SinaFundFlowSource"),
         "news": ("tstdx.web.news", "SinaNewsSource"),
-        "catalog": ("tstdx.web.facade", "WebQuoteSession"),
+        "catalog": ("tstdx.web.session", "WebQuoteSession"),
     }
 
 
 class EastmoneyProviderAPI(ChannelBindings):
     provider_id = "eastmoney"
     #: ``corporate`` 是一族共享东财报表后端的子资源，其能力由
-    #: :class:`~tstdx.web.facade.WebQuoteSession` 统一暴露，故无单一 adapter 类。
+    #: :class:`~tstdx.web.session.WebQuoteSession` 统一暴露，故无单一 adapter 类。
     EXPLICIT_CHANNELS: ClassVar[frozenset[str]] = frozenset({"corporate"})
     CHANNELS: ClassVar[dict[str, AdapterRef]] = {
         "quote": ("tstdx.web.adapters", "EastmoneySource"),
@@ -142,7 +142,7 @@ class EastmoneyProviderAPI(ChannelBindings):
         "news": ("tstdx.web.news", "EastmoneyNewsSource"),
         "research": ("tstdx.web.news", "EastmoneyResearchVisitSource"),
         "options": ("tstdx.web.efinance_options", "EastmoneyOptionsSource"),
-        "catalog": ("tstdx.web.facade", "WebQuoteSession"),
+        "catalog": ("tstdx.web.session", "WebQuoteSession"),
     }
 
 
@@ -153,7 +153,7 @@ class BaiduProviderAPI(ChannelBindings):
         "kline": ("tstdx.web.adapters_baidu", "BaiduSource"),
         "minute": ("tstdx.web.adapters_baidu", "BaiduSource"),
         "ticks": ("tstdx.web.adapters_baidu", "BaiduSource"),
-        "catalog": ("tstdx.web.facade", "WebQuoteSession"),
+        "catalog": ("tstdx.web.session", "WebQuoteSession"),
     }
 
 

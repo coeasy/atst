@@ -116,7 +116,7 @@ class TestChangesTypesParsing:
                 calls["types"] = tuple(types)
                 return [{"code": "600000"}]
 
-        import tstdx.web.facade as facade
+        import tstdx.web.session as facade
 
         monkeypatch.setattr(facade, "WebQuoteSession", FakeSession)
         rc = _cmd_changes(_ns(types="8201,8193", page=1, size=30, json=True))

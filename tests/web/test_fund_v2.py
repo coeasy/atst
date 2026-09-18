@@ -15,10 +15,10 @@ import pytest
 from tstdx.errors import SourceDeprecated
 from tstdx.web._mob_fund import apply_fields, mob_get_json, mob_rows, mob_rows_any
 from tstdx.web.base import HttpResponse
-from tstdx.web.facade import WebQuoteSession
 from tstdx.web.fund_company import FundCompanySource
 from tstdx.web.fund_manager import FundManagerSource
 from tstdx.web.fund_rank import FundMobRankSource
+from tstdx.web.session import WebQuoteSession
 
 
 class FakeHttpClient:
@@ -840,7 +840,7 @@ class TestFundCompanySource:
 
 
 # -- 门面端到端链路（monkeypatch _shared_http） --------------------------- #
-import tstdx.web._facade_mixin_fund_v2 as mixin_mod  # noqa: E402
+import tstdx.web._session_fund_v2 as mixin_mod  # noqa: E402
 
 _ALL = {
     "FundMNRank?": RANK,

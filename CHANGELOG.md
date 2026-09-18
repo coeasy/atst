@@ -37,6 +37,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   安装 `dev` extras 的环境（CI 与本地钩子入口 `python -m ruff` / `python -m mypy`）因此
   解析到同一版本；升级需单独提交并同步重测门禁。
 
+### Changed（v17 Phase 5 第 3 步 —— Web 会话层命名归位，F-11）
+
+`tstdx/web/` 里仍以"门面（facade）"命名的模块，其名字指向的 `UnifiedQuoteAPI` 门面已随
+v16 Phase 2 物理删除；这些模块的真实角色是 `WebQuoteSession` 的**按域方法分组**。全部改名，
+clean-break——旧模块名不保留别名或再导出：
+
+| 旧路径 | 新路径 |
+| --- | --- |
+| `tstdx/web/facade.py`（`tstdx.web.facade`） | `tstdx/web/session.py`（`tstdx.web.session`） |
+| `tstdx/web/_facade_mixin_<域>.py`（11 个：`astock` / `baidu` / `efinance` / `fund_v2` / `fundamental` / `info` / `market` / `news` / `p1` / `p2` / `p3`） | `tstdx/web/_session_<域>.py`（后缀一一对应，不重命名域） |
+
+- 符号名不变：`WebQuoteSession`、`web_session`、`_SessionBase` 及各 Mixin 类名保持原样；
+  `from tstdx.web import WebQuoteSession` / `web_session` 的根面包入口也不变。
+- 改的是**运行期字符串**，不只是 import：`tstdx/catalog/provider_bindings.py` 里
+  `catalog` 通道的 `("tstdx.web.facade", "WebQuoteSession")` 绑定、
+  `tstdx/web/__init__.py` 的 `_LAZY` 子模块名 `"facade"`，都是按名字解析的键。
+- 文档面同步：`docs/api/README.md` 的 `tstdx.web.session.WebQuoteSession` 事实路径、
+  4 份数据源审计文档的路径引用。已发布版本段（`[1.0.0]` 及更早）与 `docs/archive/` 的
+  历史叙述保留当时名字。
+
 ### Fixed
 
 - **`tstdx.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，
@@ -107,7 +127,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > 条目里的能力本身全部存活：它们注册在 `tstdx/catalog/capability.py`，现行唯一业务
 > 入口是 `Client.call("<capability>", ...)` / `AsyncClient` 同名方法（运行期 172 个
 > capability），底层数据源仍是条目点名的 `tstdx/web/*.py` 模块。门面→现行的对照见
-> 上文 `### Changed（v17 Phase 4 —— 对外文档面对齐代码事实）` 的迁移表。
+> 上文 `### Changed（v17 Phase 4 —— 对外文档面对齐代码事实）` 的迁移表。条目里的
+> `tstdx/web/_facade_mixin_*.py` 现已随 F-11 改名为 `tstdx/web/_session_*.py`。
 
 - P14 数据源补全（ESG 评级 / 筹码分布）：新增 `tstdx/web/esg.py`（新浪 ESG 评级，
   覆盖 13 家机构聚合、季度历史、MSCI 全市场 5200+ 只、华证全市场 6300+ 只，

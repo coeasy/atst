@@ -3,7 +3,7 @@
 
 """WebQuoteSession 域 Mixin（北向持股 / 十大股东 / 解禁股票 / 业绩预告）——P3 数据源扩展。
 
-本模块承载 :class:`tstdx.web.facade.WebQuoteSession` 的**资金流向与股东结构**方法：
+本模块承载 :class:`tstdx.web.session.WebQuoteSession` 的**资金流向与股东结构**方法：
 
 * 北向持股（沪股通/深股通持仓明细，:mod:`tstdx.web.corporate`）
 * 十大股东（全部股东，含非流通股；区别于 ``free_holders`` 仅流通股东）
@@ -51,7 +51,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._facade_mixin_market import _shared_http
+from ._session_market import _shared_http
 
 __all__ = ["P3SessionMixin"]
 

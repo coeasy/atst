@@ -10,8 +10,8 @@ import json
 import pytest
 
 from tstdx.errors import TdxError
-from tstdx.web.facade import WebQuoteSession
 from tstdx.web.fundflow import SinaFundFlowSource
+from tstdx.web.session import WebQuoteSession
 
 pytestmark = pytest.mark.unit
 

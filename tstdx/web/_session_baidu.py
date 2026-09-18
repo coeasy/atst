@@ -3,9 +3,9 @@
 
 """WebQuoteSession 域 Mixin（百度财经 + 基金 / 指数成分 / 联想搜索 / 问财）。
 
-本模块只承载 :class:`tstdx.web.facade.WebQuoteSession` 的方法**纯搬移**
+本模块只承载 :class:`tstdx.web.session.WebQuoteSession` 的方法**纯搬移**
 （方法体逐字不变）：:class:`BaiduSessionMixin`。
-组合与 ``__init__`` / ``close`` 见 :mod:`tstdx.web.facade`。
+组合与 ``__init__`` / ``close`` 见 :mod:`tstdx.web.session`。
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..domain.models import Bar, MinutePoint, Quote, Tick
-from ._facade_mixin_market import INDEX_SYMBOLS, _shared_http  # noqa: F401  共享助手
+from ._session_market import INDEX_SYMBOLS, _shared_http  # noqa: F401  共享助手
 
 __all__ = ["BaiduSessionMixin"]
 
