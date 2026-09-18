@@ -3,8 +3,8 @@
 > **状态：Archived / 已归档**  
 > 初版日期：2026-09-02  
 > 当前执行基线：[`TDX_PROVIDER_CHANNEL_ARCHITECTURE_PLAN_v12.md`](TDX_PROVIDER_CHANNEL_ARCHITECTURE_PLAN_v12.md)  
-> 术语决策：[`adr/ADR-013-provider-source-terminology.md`](adr/ADR-013-provider-source-terminology.md)  
-> Provider 文档：[`providers/README.md`](providers/README.md)
+> 术语决策：[`adr/ADR-013-provider-source-terminology.md`](../../adr/ADR-013-provider-source-terminology.md)  
+> Provider 文档：[`providers/README.md`](../../providers/README.md)
 
 本文档记录的是 v1 阶段的历史优化思路，完整原文保留在 Git 历史中，不再作为当前实现或执行依据。
 
@@ -39,7 +39,7 @@ with UnifiedMarketDataService() as md:
     result = md.eastmoney.fund_flow("sh600519")
 ```
 
-低层 TDX 协议客户端仍保留在 [`tstdx/client/`](../tstdx/client/) 中，供需要直接协议控制的调用方使用。
+低层 TDX 协议客户端仍保留在 [`tstdx/client/`](../../../tstdx/client/) 中，供需要直接协议控制的调用方使用。
 
 ## 当前唯一执行原则
 

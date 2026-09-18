@@ -39,7 +39,7 @@ def _iso_now() -> str:
 
 def _probe_tdx() -> float:
     """TDX 原生协议独立调用：quotes_concurrent 单只（返回 dict）。"""
-    from tstdx import TdxClient
+    from tstdx.client import TdxClient
 
     with TdxClient(timeout=5.0, max_retries=2) as client:
         quotes = client.quotes_concurrent([_SYMBOL])

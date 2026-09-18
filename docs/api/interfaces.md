@@ -5,23 +5,22 @@
 
 ## 目录
 
-- [1. 客户端层（Client）](#1-客户端层client)
-- [2. 门面层（Facade）](#2-门面层facade)
-- [3. v14 Runtime 层](#3-v14-runtime-层)
-- [4. 服务面（Integration）](#4-服务面integration)
-- [5. 数据落地（Output）](#5-数据落地output)
-- [6. 流式订阅（Streaming）](#6-流式订阅streaming)
-- [7. 域模型（Domain）](#7-域模型domain)
-- [8. 工具链（Tools）](#8-工具链tools)
+- [1. 协议层客户端（TdxClient 族）](#1-协议层客户端tdxclient-族)
+- [2. 统一内核层（Client + UnifiedRuntime）](#2-统一内核层client--unifiedruntime)
+- [3. 服务面（Integration）](#3-服务面integration)
+- [4. 数据落地（Output）](#4-数据落地output)
+- [5. 流式订阅（Streaming）](#5-流式订阅streaming)
+- [6. 域模型（Domain）](#6-域模型domain)
+- [7. 工具链（Tools）](#7-工具链tools)
 
 ---
 
-## 1. 客户端层（Client）
+## 1. 协议层客户端（TdxClient 族）
 
 ### TdxClient（同步）
 
 ```python
-from tstdx import TdxClient
+from tstdx.client import TdxClient
 ```
 
 | 方法 | 签名 | 说明 |
@@ -48,7 +47,7 @@ from tstdx import TdxClient
 ### AsyncTdxClient（异步）
 
 ```python
-from tstdx import AsyncTdxClient
+from tstdx.client import AsyncTdxClient
 ```
 
 与 TdxClient 签名镜像，所有方法为 `async def`。
@@ -73,195 +72,171 @@ client = get_client("async")   # AsyncTdxClient
 
 ---
 
-## 2. 门面层（Facade）
+## 2. 统一内核层（Client + UnifiedRuntime）
 
-### UnifiedQuoteAPI
+### Client（唯一业务入口，同步）
 
 ```python
-from tstdx.facade import quote_api, UnifiedQuoteAPI
+from tstdx import Client, AsyncClient
 ```
 
-| 方法 | 说明 |
+| 方法 | 签名摘要 | 说明 |
+|------|----------|------|
+| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", max_age=None)` | K 线 |
+| `quotes` | `(symbols, *, provider=None, policy=None, currentness="live", max_age=None)` | 实时行情 |
+| `quotes_batch` | `(symbols, *, provider=None, currentness="live", max_age=None) -> BatchResult` | 逐 symbol 三态审计 |
+| `snapshot` | `(symbol, *, provider="tdx")` | 盘口快照 |
+| `minute` | `(symbol, *, provider="tdx")` | 当日分时 |
+| `trades` | `(symbol, *, provider="tdx", start=0, count=0)` | 逐笔成交 |
+| `security_count` | `(*, market=0, provider="tdx")` | 证券数量 |
+| `security_list` | `(*, market=0, start=0, provider="tdx")` | 证券列表分页 |
+| `stream` | `(symbols, *, provider="tdx", interval=1.0, diff_only=False, max_queue=1024, on_quote=None, on_error=None) -> StatefulQuoteStream` | 流式订阅 |
+| `execute` | `(spec: QuerySpec) -> QueryResult` | 通用面：任何 capability 同一入口 |
+| `call` | `(capability, *args, provider=None, channel=None, currentness="business", max_age=None, **kwargs)` | 便捷通用入口 |
+| `execute_with_policy` | `(spec, *, policy: FallbackPolicy) -> OrchestratedResult` | 显式跨源编排 |
+| `typed` | `(query: CapabilityQuery, **kwargs) -> TypedQueryResult` | 冻结 dataclass 契约 → 强类型记录 |
+| `capabilities` | `() -> tuple[str, ...]` | 当前 172 项 capability |
+| `close` | `()` | 释放内核连接 |
+
+`AsyncClient` 是同名异步镜像（`async with AsyncClient() as client: ...`）；
+传 `policy=` 时 `bars/quotes` 返回 `OrchestratedResult` 而非 `QueryResult`。
+
+### UnifiedRuntime（唯一执行内核）
+
+```python
+from tstdx import UnifiedRuntime
+from tstdx.runtime import KernelExecutor   # 执行面 Protocol（测试接缝）
+
+runtime = UnifiedRuntime(
+    default_provider="tdx", timeout=5.0, hosts=None, vipdoc_root=None,
+    executor=None,      # 注入 KernelExecutor 实现即接管全部执行体
+)
+```
+
+执行路径固定为一条：`QuerySpec → QueryPlanner.compile → QueryPlan →
+executor.execute → QueryResult`。内核零缓存、不自动换源；`QueryResult.meta`
+（`provider / channel / capability / fingerprint / provenance`）即审计凭据。
+
+### QuerySpec / QueryPlan
+
+```python
+from tstdx import QuerySpec, QueryPlan
+
+spec = QuerySpec.build(
+    "bars", symbols="sh600519", period="day", count=80,
+    provider=None, currentness="historical", max_age=None, deadline_ms=5000, options={},
+)
+```
+
+`QuerySpec` 字段：`capability, symbols, provider, channel, period, count, start,
+adjustment, currentness, max_age, deadline_ms, schema_version, options_json`。
+`QueryPlan` 字段：`spec, provider, channel, fingerprint, deadline_ms, batch_limit,
+live_channel, local_channel, budget`。参数在规划期按 Provider 实现的**真实签名**校验，
+不合法即 `ValidationError` 且不发请求。
+
+### FallbackPolicy / ProviderOrchestrator
+
+```python
+from tstdx import FallbackPolicy
+from tstdx.runtime.orchestration import OrchestratedResult, ProviderAttempt
+
+policy = FallbackPolicy(providers=("tdx", "tencent"))   # 或 FallbackPolicy.build("tdx", "tencent")
+out = client.quotes("sh600519", policy=policy)
+out.result      # QueryResult —— 第一个成功源的载荷
+out.attempts    # tuple[ProviderAttempt(provider, status, code), ...]
+```
+
+跨源只在显式策略下发生；默认路径永不触发。
+
+### BatchSpec / BatchItem / BatchResult
+
+```python
+from tstdx import BatchSpec, BatchItem, BatchResult
+```
+
+`BatchResult.items` 为 `{symbol: BatchItem}`，`BatchItem.status ∈
+{ok, missing, failed, not_attempted}`；另有 `errors`（`ErrorEnvelope` 映射）、
+`requested`、`partial`、`status_counts`、`success`、`failed`、`missing`。
+
+> `BatchSpec` 目前是**已导出但无生产消费者**的批量请求契约（见路线图"可达性收口"）。
+
+### CapabilityQuery 与 Domain Records
+
+```python
+from tstdx.typed_query import FundHoldingsQuery          # 60+ 冻结契约，11 领域基类
+from tstdx.domain.records import FinancialRecord, FundRecord, BondRecord, NewsRecord
+```
+
+`client.typed(FundHoldingsQuery(code="000001"))` → `TypedQueryResult(data, capability)`。
+Domain Record 族共 9 类：`Financial/Fund/Bond/News/Research/Option/MarketData/Search/Macro`。
+
+### 溯源守卫与启动对账
+
+```python
+from tstdx.runtime.provenance import validate_runtime_provenance   # (identity, result) -> None
+from tstdx.runtime.audit import audit_runtime                      # () -> RuntimeAuditReport
+```
+
+`validate_runtime_provenance` 在结果 provenance 与请求身份不一致时抛错（换源即抛）；
+`audit_runtime()` 启动时对账 registry / catalog / `DIRECT_BINDINGS` 三方事实。
+
+---
+
+## 3. 服务面（Integration）
+
+四个服务面全部委托同一个 `Client`，不存在第二套执行路径。
+
+### HTTP REST 网关（10 路由）
+
+```python
+from tstdx.integration.runtime_http import create_runtime_app
+app = create_runtime_app()          # FastAPI 实例，交由 uvicorn 承载
+```
+
+| 路由 | 方法 |
 |------|------|
-| `query(method, args, **kwargs)` | 通用查询入口 |
-| `bars(...)` | K 线 |
-| `quotes(...)` | 实时行情 |
-| `minute(symbol)` | 当日分时 |
-| `minute_web(symbol)` | 强制 HTTP 分时 |
-| `minute_klines(symbol, period, count)` | 跨日分钟 K 线 |
-| `fund(...)` | 基金数据 |
-| `fundflow(...)` | 资金流 |
-| `changes(...)` | 盘中异动 |
-| `hot(...)` | 人气榜 |
-| `wencai(query)` | i 问财 |
-| `search(...)` | 搜索 |
-| `ipos(...)` | IPO 申购 |
-| `margin(...)` | 融资融券 |
-| `.df` | 惰性 DataFrame 转换 |
+| `/v13/quotes` | GET |
+| `/v13/bars/{symbol}` | GET |
+| `/v13/snapshot/{symbol}` | GET |
+| `/v13/minute/{symbol}` | GET |
+| `/v13/trades/{symbol}` | GET |
+| `/v13/security/count` | GET |
+| `/v13/security/list` | GET |
+| `/v13/query/{capability}` | POST（任意 capability 的通用入口）|
+| `/v13/capabilities` | GET |
+| `/v13/runtime/health` | GET |
 
-### AsyncUnifiedQuoteAPI
+### WebSocket JSON-RPC（10 方法）
 
 ```python
-from tstdx.facade.async_api import AsyncUnifiedQuoteAPI
+from tstdx.integration.runtime_ws_server import serve_runtime_ws
 ```
 
-核心 10 方法桥接 + `arun(method, *args)` 泛化任意方法。
+方法：`quotes`、`bars`、`snapshot`、`minute`、`trades`、`security.count`、
+`security.list`、`query`、`runtime.capabilities`、`runtime.health`。
 
-### ApiResponse
+### MCP stdio（9 工具）
 
 ```python
-from tstdx.facade.response import ApiResponse, ok, err, wrap
+from tstdx.integration.mcp import create_mcp_server, TOOLS
 ```
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `success` | bool | 是否成功 |
-| `data` | Any | 数据载荷 |
-| `error` | str \| None | 错误信息 |
-| `code` | str \| None | 错误码 |
-| `extra` | dict | 附加元数据 |
-| `.df` | DataFrame | 惰性转换 |
+工具：`query_capability`（通用入口）+ `get_bars`、`get_quote`、`get_quotes`、
+`get_snapshot`、`get_minute_today`、`get_trades`、`get_security_count`、
+`get_security_list`。
 
-### RuntimeFacadeAdapter
+### CLI（31 子命令）
 
-```python
-from tstdx.facade.runtime_adapter import RuntimeFacadeAdapter
+```bash
+tstdx --help
 ```
 
-将门面调用桥接到 v14 Runtime 执行。
+全部子命令委托 `Client`；`tstdx.integration.runtime_tasks.RuntimeTaskStore`
+为服务面提供有界后台任务存储。
 
 ---
 
-## 3. v14 Runtime 层
-
-### Runtime
-
-```python
-from tstdx.runtime import Runtime
-```
-
-| 方法 | 签名 | 说明 |
-|------|------|------|
-| `execute` | `(request: QueryRequest) -> QueryResponse` | 单次执行 |
-| `execute_typed` | `(query, metadata=None) -> QueryResponse` | Typed Query 执行 |
-| `execute_batch` | `(requests, max_concurrent=8) -> list[QueryResponse]` | 批量执行（缓存去重 + 并发） |
-| `register` | `(operation, handler)` | 注册操作处理器 |
-| `register_provider` | `(provider)` | 注册 Provider |
-| `subscribe` | `(capability, symbols, provider="tdx", interval=1.0, ...)` | 流式订阅 |
-| `unsubscribe` | `(subscription_id) -> StreamHandle \| None` | 停止订阅 |
-| `get_subscription` | `(subscription_id) -> StreamHandle \| None` | 获取订阅 |
-| `subscriptions` | `() -> Mapping[str, StreamHandle]` | 活跃订阅快照 |
-| `semantic_cache_stats` | `() -> dict` | 缓存诊断 |
-
-### RuntimeGateway
-
-```python
-from tstdx.runtime import RuntimeGateway
-```
-
-| 方法 | 签名 | 说明 |
-|------|------|------|
-| `bars` | `(symbol, period="day", count=320, ...)` | K 线 |
-| `quotes` | `(symbols, as_format="dict", ...)` | 实时行情 |
-| `security_count` | `(market=0, ...)` | 证券数量 |
-| `finance_info` | `(symbol, ...)` | 财务信息 |
-| `minute_today` | `(symbol, ...)` | 当日分时 |
-| `security_list` | `(market=0, start=0, ...)` | 证券列表 |
-| `execute_batch` | `(requests, max_concurrent=8)` | 批量执行 |
-| `execute` | `(request)` | 直接执行 |
-| `execute_typed` | `(query, **kwargs)` | Typed Query |
-| `subscribe` | `(symbols, provider="tdx", interval=1.0, ...)` | 流式订阅 |
-| `providers` | `property -> list[str]` | Provider 列表 |
-| `semantic_cache_stats` | `() -> dict` | 缓存诊断 |
-| `subscriptions` | `() -> Mapping` | 活跃订阅 |
-
-### QueryRequest / QueryResponse
-
-```python
-from tstdx.runtime import QueryRequest, QueryResponse
-```
-
-```python
-# 构造请求
-req = QueryRequest(
-    operation="bars",
-    args=("sh600519",),
-    params={"count": 80, "period": "day"},
-    metadata={"cache_ttl": 60.0, "provider": "tdx"},
-)
-
-# 响应字段
-resp.success        # bool
-resp.data           # Any
-resp.error          # str | None
-resp.code           # str | None
-resp.metadata       # dict (provider/channel/query_fingerprint/provenance/execution)
-```
-
-### create_runtime
-
-```python
-from tstdx.runtime import create_runtime
-```
-
-```python
-runtime = create_runtime(
-    router=None,                    # ProviderRouter（可选）
-    planner=None,                   # ExecutionPlanner（可选）
-    provider_order=None,            # Sequence[str]（Provider 执行顺序）
-    semantic_cache=None,            # SemanticResultCache（可选）
-    default_cache_ttl=None,         # float（默认缓存 TTL 秒）
-)
-```
-
-### StreamHandle
-
-```python
-from tstdx.runtime import StreamHandle
-```
-
-| 属性/方法 | 类型 | 说明 |
-|-----------|------|------|
-| `id` | str | 订阅标识 |
-| `plan` | StreamPlan | 编译后的流计划 |
-| `lifecycle` | StreamLifecycle | 生命周期状态机 |
-| `snapshot()` | StreamLifecycleSnapshot | 生命周期快照 |
-| `stream_state()` | StreamState | 当前状态 |
-| `begin_start()` | None | 幂等启动 |
-| `begin_stop()` | None | 开始停止 |
-| `close()` | None | 关闭 |
-
----
-
-## 4. 服务面（Integration）
-
-### HTTP REST 网关
-
-```python
-from tstdx.integration.http_server import create_app
-```
-
-42 端点，方法白名单 + TaskStore 钳制。
-
-### WebSocket JSON-RPC
-
-```python
-from tstdx.integration.ws_server import create_ws_server
-```
-
-方法：bars/quotes/minute/trades/finance/security_count/stock_changes/subscribe。
-
-### MCP stdio
-
-```python
-from tstdx.integration.mcp_server import create_mcp_server
-```
-
-12 工具，含 get_stock_changes / get_hot_rank。
-
----
-
-## 5. 数据落地（Output）
+## 4. 数据落地（Output）
 
 ```python
 from tstdx.output import write
@@ -269,14 +244,14 @@ from tstdx.output import write
 
 | Sink | URI 格式 | 依赖 |
 |------|----------|------|
-| DataFrame | `output://dataframe` | pandas |
-| Parquet | `parquet://file.parquet` | pyarrow |
-| DuckDB | `duckdb://db.db?table=name` | duckdb |
-| CSV | `csv://file.csv` | 无 |
+| DataFrame | 显式 `fmt="dataframe"`（或 `to_dataframe(items)`）| pandas |
+| Parquet | `path/file.parquet`（`.parquet`/`.pq` 后缀）| pyarrow |
+| DuckDB | `duckdb:<db 路径>@<表名>`，省略路径即内存库 | duckdb |
+| CSV | `path/file.csv`（`.csv` 后缀）| 无 |
 
 ---
 
-## 6. 流式订阅（Streaming）
+## 5. 流式订阅（Streaming）
 
 ### QuoteStream（同步）
 
@@ -308,15 +283,14 @@ from tstdx.streaming.push import PushChannel
 
 ---
 
-## 7. 域模型（Domain）
+## 6. 域模型（Domain）
 
 ### Domain Records
 
 ```python
 from tstdx.domain.records import (
-    Bar, Quote, Level, CapitalChange,
-    FinanceInfo, StockInfo, FundInfo,
-    BondInfo, NewsItem,
+    FinancialRecord, FundRecord, BondRecord, NewsRecord, ResearchRecord,
+    OptionRecord, MarketDataRecord, SearchRecord, MacroRecord,
 )
 ```
 
@@ -325,13 +299,13 @@ from tstdx.domain.records import (
 ```python
 from tstdx.domain.models import Bar, Quote, Level, to_dataframe
 from tstdx.domain.symbol import normalize_symbol, split_symbol
-from tstdx.domain.adjust import adjust_bars
+from tstdx.domain.adjust import AdjustEngine, to_adjusted, compute_factors
 from tstdx.domain.calendar import is_trading_day
 ```
 
 ---
 
-## 8. 工具链（Tools）
+## 7. 工具链（Tools）
 
 ### 主站巡检
 
@@ -360,4 +334,4 @@ python scripts/audit_reachability.py --strict
 
 ## 完整模块索引
 
-详见 [docs/api/README.md](api/README.md)。
+详见 [API 参考索引](README.md)。

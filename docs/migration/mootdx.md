@@ -7,7 +7,7 @@
 ## 原生 API（推荐）
 
 ```python
-from tstdx import TdxClient
+from tstdx.client import TdxClient
 
 client = TdxClient()
 bars = client.bars("sh600036", period="day", count=100)
@@ -49,4 +49,4 @@ bars = read_day_file("C:/new_tdx/vipdoc/sh/lday/sh600036.day")
 
 - **异常体系**：mootdx 返回 `None`/抛裸异常；tstdx 抛 `TdxError` 树（40+ 类），每类带 `RetryAdvice`
 - **异步**：tstdx 有完整 `AsyncTdxClient` 镜像
-- **降级**：`TdxClient` 为 TDX 主站**直连**（无自动降级，主站不可达时抛 `TdxError`）；需要多级降级（Web 源/本地文件兜底）请使用 `DataSourceRouter`（见 `tstdx.sources`）
+- **降级**：`TdxClient` 为 TDX 主站**直连**（无自动降级，主站不可达时抛 `TdxError`）；需要跨 Web 源容错请显式给出 `FallbackPolicy`（内核路径），或使用 `tstdx.web` 的多源会话；不存在自动多级降级链

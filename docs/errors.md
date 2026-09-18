@@ -1,7 +1,7 @@
 # 错误体系与 RetryAdvice 使用指南
 
 > 错误分类树定义于 `tstdx/errors.py`（44 个类，E1-E9 九域，无语义重叠对——
-> v8 审计结论，见 [ARCHITECTURE_AUDIT_v8.md](ARCHITECTURE_AUDIT_v8.md) §二）。
+> v8 审计结论，见 [ARCHITECTURE_AUDIT_v8.md](archive/plans/ARCHITECTURE_AUDIT_v8.md) §二）。
 > 本文是**使用侧**文档：异常怎么接、RetryAdvice 怎么消费、如何扩展。
 
 ## 一、错误树速查（按域）

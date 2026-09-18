@@ -41,6 +41,18 @@ python -c "import tstdx; print(tstdx.__version__)"
 
 `make install` 是开发依赖的推荐入口。不要单独手工拼装 pytest/ruff/mypy 版本后把结果当作正式门禁结论。
 
+在 Windows / 只有 `uv` 的环境里，等价的本地入口是：
+
+```bash
+uv sync --all-extras --dev                 # 生成 .venv，与 CI 依赖一致
+.venv\Scripts\python.exe -X utf8 -m pytest # Windows 下用 venv 解释器，别用裸 python
+.venv\Scripts\python.exe -X utf8 scripts/contract_audit.py --ci
+uvx ruff@latest check tstdx tests scripts   # 与 CI 同版本更佳
+```
+
+`-X utf8` 在 Windows 上是必需的：文档、golden 样本与协议注释含中文，默认 GBK 代码页会让
+读写在 CI 与本机之间产生假差异。
+
 #### 开发流程
 
 1. **创建分支**
@@ -52,9 +64,18 @@ python -c "import tstdx; print(tstdx.__version__)"
 2. **修改实现并同步门禁**
 
    - 遵循现有 Ruff 配置和类型约束。
-   - 公共 API、状态机、缓存、错误边界、构建/发布行为发生变化时必须同时添加对应回归测试。
+   - 公共 API、状态机、错误边界、构建/发布行为发生变化时必须同时添加对应回归测试。
    - Provider 选择保持 fail-closed；TDX host failover 只能发生在 TDX Provider 内部。
    - `KeyboardInterrupt` / `SystemExit` 等进程控制信号不得包装成 Provider 失败。
+   - **文档即门禁对象**：改动作数（CLI 子命令数、HTTP 路由数、MCP 工具数、capability 数、
+     Provider 数）或公开符号时，同步改 `README.md` / `docs/`；
+     `tests/architecture/test_doc_code_consistency.py` 会解析活文档里的 import 与反引号路径，
+     并逐项核对 README 宣称的数字。
+   - **契约先行必须自带实现**：新增 capability / 绑定 / 公开符号的 PR，需在**同一提交**内
+     带上生产消费者与守卫；不得"先声明后补线"，否则该符号会以孤儿形态进入公开面
+     （v17 F-9 的 `freshness/health/failure` 三件套即为此教训）。
+   - **不做跨 PR 的"先删后补"**：删除一个层与其消费者的迁移必须在同一 PR 内闭环，
+     不留中间态（clean break 不引入别名）。
 
 3. **先跑快速提交前检查**
 

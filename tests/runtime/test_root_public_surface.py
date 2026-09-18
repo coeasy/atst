@@ -45,7 +45,7 @@ def test_legacy_business_api_is_not_top_level_public_surface() -> None:
 
 
 def test_legacy_compat_namespaces_are_physically_removed() -> None:
-    """v16 clean-break：兼容层物理删除，只留 Client / RuntimeGateway 入口。"""
+    """v16 clean-break：`tstdx/runtime/gateway.py` 等信封层已删除，兼容层物理删除，只留 Client 一个业务入口。"""
     import importlib
 
     for module in ("tstdx.facade", "tstdx.service", "tstdx.planned_service", "tstdx.sources"):

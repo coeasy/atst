@@ -1,8 +1,8 @@
 # tstdx v17 收口方案：单内核最后一公里与债务清偿
 
-> **文档状态**：执行中 —— Phase 3A(方案 b)/3B/3C/3D 已于 2026-09-19 落地（F-1/F-2/F-9 物理
-> 删除、防回潮守卫、typed 全契约对齐内核签名 + CHANGELOG 迁移表、根级模块 26→11）；
-> Phase 4/5 待续
+> **文档状态**：执行中 —— Phase 3A(方案 b)/3B/3C/3D/4 已于 2026-09-19 落地（F-1/F-2/F-9 物理
+> 删除、防回潮守卫、typed 全契约对齐内核签名 + CHANGELOG 迁移表、根级模块 26→11、
+> 文档面对齐代码事实 + 文档-代码一致性门禁，见 F-10/F-11）；Phase 5（发布硬化）待续
 > **取代文档**：REFACTOR_PLAN_v16_CONVERGENCE.md 的 Phase 3–5（其 Phase 0/1/2 已于
 > `528ad18` / `6a45215` / `77bc2fe` 落地）
 > **前置决策沿用 v16**：v13 内核唯一执行；`Client` 唯一业务入口；数据请求零缓存；clean-break。
@@ -133,21 +133,45 @@
    补 binding 或下线——兑现 "Typed = Registry = Binding = Runtime = Test"。
 3. F-3：`QueryResponse` 收敛为 `QueryResult` 的响应视图（序列化层），不再独立承载执行语义。
 
-### Phase 4 —— 文档与对外面统一（与 3C/3D 并行）
+### Phase 4 —— 文档与对外面统一（与 3C/3D 并行）✅ 已落地（2026-09-19）
 
-1. 新增 `docs/ARCHITECTURE.md` 描述当前事实（首版随本方案落库）。
-2. README：删 v12/v14 旧宣传（门面层、5 级降级、L1/L2 缓存、sources 路由），
+1. ✅ 新增 `docs/ARCHITECTURE.md` 描述当前事实（首版随本方案落库）。
+2. ✅ README：删 v12/v14 旧宣传（门面层、5 级降级、L1/L2 缓存、sources 路由），
    改为 Client 单入口 + provider-first + 零缓存事实；`trade/` 以"实验性可选模块"入册。
-3. `docs/` 归档：v1–v16 方案与状态文档全部移入 `docs/archive/`。
-4. 新增文档-代码一致性门禁（README 导出符号 ⇔ `tstdx.__all__`）。
-5. CONTRIBUTING 增补：本机 Python 环境用 `uv`（`.venv`），禁止跨 PR "先删后补"；
-   contract-first 提交必须附带使测试单跑亦绿的实现（F-2 教训）。
+3. ✅ `docs/` 归档：v1–v16 方案与状态文档全部移入 `docs/archive/plans/`（30 份）。
+4. ✅ 新增文档-代码一致性门禁 `tests/architecture/test_doc_code_consistency.py`：
+   比原计划更强——不止校验 `__all__`，还解析活文档代码块内全部 `from tstdx… import …`、
+   事实型文档反引号中的 `tstdx.*` 路径，并核对 README 的 5 个动作数（CLI/HTTP/MCP/
+   capability/Provider）与运行期事实一致。
+5. ✅ CONTRIBUTING 增补：本机 Python 环境用 `uv`（`.venv`）+ `-X utf8`；禁止跨 PR
+   "先删后补"；contract-first 提交必须附带使测试单跑亦绿的实现（F-2 教训）；
+   "文档即门禁对象"。
+
+落地时暴露并修复的新事实（记入 F-10/F-11）：
+
+- **F-10 文档面系统性失真**：`from tstdx import TdxClient` 在 14 处文档/脚本中不成立
+  （根面自 v15 起不再导出协议客户端），其中 `ops/smoke_30d.py` 是**运行期 ImportError**；
+  落地 sink URI（`output://`、`parquet://`、`duckdb://…?table=`）整套失效；
+  `read_lc1_file`/`read_lc5_file`、`adjust_bars`、`domain.records` 的类名清单均为幻影；
+  `docs/api/interfaces.md` §2–§4 与 `docs/cookbook/02,07` 整节描述已删除层。
+  处置：逐项核对更正 + 上述门禁防回潮。
+- **F-11 命名债残留**：`tstdx/web/_facade_mixin_*.py`（11 个文件）与 `tstdx/web/facade.py`
+  仍以已删除的"门面层"命名。当前语义是 Web Provider 的会话/适配器分组，不影响契约，
+  但名字误导。**后续小 PR**：`_facade_mixin_*` → `_session_*`（或按域命名），
+  与 `WebQuoteSession` 的实际角色对齐；纯改名、无行为变化。
+- 根级公开面回归单一事实源：`tstdx.__all__` ⇔ `tstdx._LAZY`（46 项）；
+  删除 7 个只挂在惰性表、无 `__all__` 条目亦无调用方的根名字。
 
 ### Phase 5 —— 发布硬化
 
 1. 全量门禁：`pytest` 0 failed（含单跑随机序 `-p no:randomly` 抽检）、ruff 0、mypy 0、
    覆盖率按**有效代码**重新校准基线（Phase 2 净删 1.4 万行后旧基线失真）。
-2. 真实网络 smoke（tdx 1 所 + web 1 源 + stream 3 帧）+ CLI/HTTP/MCP 三面各一发 +
+2. **`ruff format` 漂移清偿（Phase 4 实测新发现）**：`ruff format --check tstdx/ tests/
+   scripts/` 在 ruff 0.9.6 与 0.14.4 下均报 **74 个文件待重排**（HEAD 既有，非 Phase 4 引入；
+   Phase 4 触及的 6 个 py 文件全部干净）。CI 用 `ruff>=0.5` 浮动版本，格式门禁当前为红。
+   需要一次**纯格式提交**（`ruff format` 全量 + 复核 diff 无语义变化）把基线钉回绿色，
+   并把工具版本钉进 dev 依赖区间，避免版本漂移再次造成假红/假绿。
+3. 真实网络 smoke（tdx 1 所 + web 1 源 + stream 3 帧）+ CLI/HTTP/MCP 三面各一发 +
    wheel 安装冒烟 → tag `v1.1.0-dev.1`。
 
 ---

@@ -13,14 +13,16 @@
 
 ### 是什么
 
-tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。它完整覆盖 TDX 的 5 套协议族，提供从原始二进制帧解析到高级门面 API 的全链路数据接入能力。
+tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。它完整覆盖 TDX 的 5 套协议族，提供从原始二进制帧解析到统一查询内核（`Client`）的全链路数据接入能力。
 
 ### 解决什么问题
 
 | 痛点 | tstdx 的解法 |
 |---|---|
 | TDX 协议封闭、逆向工程门槛高 | 85 命令账本 + 61 精确解析器 + 三级分派 + YAML 协议规范 |
-| 单一数据源不可靠 | 5 级降级路由（tdx → web → reader → cache → synthetic），45 个 HTTP Web 源 |
+| 单一数据源不可靠 | 11 个 Provider 注册表 + 172 capability 声明；**provider-first**：一次请求绑定一个 Provider，跨源只在显式 `FallbackPolicy` 下发生 |
+| 数据来源不可追溯 | 每个结果携带 `Provenance`（provider/channel/capability/命令），溯源不符即抛，杜绝静默换源 |
+| 数据请求被隐式缓存污染 | 执行路径**零缓存**：每次请求直达绑定 Provider |
 | 同步/异步 API 分裂 | 签名镜像双客户端（`TdxClient` / `AsyncTdxClient`）+ 奇偶门禁 |
 | 协议命令持续演进 | YAML 规范驱动 + codegen 自动生成 + golden_audit 三旗标防漂移 |
 | 主站可用性差 | 主站池治理 + 三级路由降级 + 后台测速排序 + 社区候选注入 |
@@ -39,39 +41,40 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      v14 Runtime 编排内核                             │
-│  Runtime.execute() · execute_batch() · subscribe() · RuntimeGateway  │
-│  60+ Typed Query 契约 · 9 Domain Record 族 · 语义缓存 L1/L2           │
-│  ExecutionPlanner DAG 编排 · StreamPlanner + StreamLifecycle         │
+│                      服务面（可选部署，只翻译不执行）                   │
+│  CLI 31 子命令 · HTTP REST 10 端点 · WebSocket JSON-RPC · MCP 9 工具   │
 ├─────────────────────────────────────────────────────────────────────┤
-│                        服务面（可选部署）                              │
-│  HTTP REST 42 端点 · WebSocket JSON-RPC · MCP stdio 12 工具           │
+│                  Client / AsyncClient（唯一业务入口）                  │
+│  15 便捷方法（bars/quotes/snapshot/minute/trades/stream/call…）        │
+│  execute(QuerySpec) · typed(CapabilityQuery) · execute_with_policy    │
 ├─────────────────────────────────────────────────────────────────────┤
-│                          门面层                                       │
-│  UnifiedQuoteAPI（46 方法，四路由 + 熔断）· AsyncUnifiedQuoteAPI      │
-│  ApiResponse{success, error, data, extra} · 惰性 .df                  │
+│              UnifiedRuntime（唯一执行内核，零缓存）                     │
+│  QueryPlanner.compile → QueryPlan（单 Provider / 单 Channel）          │
+│  DirectProviderExecutor：DIRECT_BINDINGS 251 条精确绑定                │
+│  流式：StreamSpec/StreamPlanner → StatefulQuoteStream                 │
 ├─────────────────────────────────────────────────────────────────────┤
-│                        数据源路由层                                   │
-│  5 级降级：tdx → web(45 源) → reader(vipdoc) → cache → synthetic     │
-│  DataSourceRouter · SourceUnavailable 熔断 · adjust 口径守卫          │
+│              catalog/（静态声明与一致性审计，无执行）                   │
+│  capability 目录 + 规划期签名校验（fail-closed）                        │
+│  Provider channel→adapter 绑定表 · Provider 隔离契约/守卫/审计          │
 ├─────────────────────────────────────────────────────────────────────┤
-│                      客户端层                                         │
-│  TdxClient · AsyncTdxClient · GoodsClient · ExMarketClient            │
-│  MacClient · F10Client（_mixin 共享骨架 + sync/async/factory）        │
+│              providers/（11 Provider · 172 capability 唯一事实源）      │
+│  tdx(85 命令) · tencent/sina/eastmoney/baidu/jsl/boc/iwencai(web 45 源)│
+│  local_vipdoc(reader 本地二进制) · builtin · derived(显式聚合)          │
 ├─────────────────────────────────────────────────────────────────────┤
-│                      协议核心层                                       │
-│  commands(85 账本) · registry(三级分派 + 异常收口)                     │
-│  parsers(61 精确解析器 × 6 族) · codec(帧/原语) · transport(传输)      │
-│  stream_contract(流式契约) · stream_planner(流式规划)                  │
+│                      协议核心层                                        │
+│  commands(85 账本) · registry(三级分派 + 异常收口) · parsers(61 × 6 族) │
+│  codec(帧/原语) · transport(池/心跳/测速) · client/(TdxClient 同步异步)  │
 ├─────────────────────────────────────────────────────────────────────┤
-│                      基础设施层                                       │
-│  错误体系(E1-E8, 40+ 类) · 可观测性(Prometheus/StatsD/OTLP)          │
-│  配置(6 源合并) · 安全(凭据三级存储) · 输出(DataFrame/Parquet/DuckDB)  │
-│  反馈(遥测/统计) · 工具链(capture/codegen/golden_audit/spec_audit)    │
+│                      基础设施层                                        │
+│  错误体系(E1-E8, 40+ 类) · 可观测性(Prometheus/StatsD/OTLP)            │
+│  配置(6 源合并) · 安全(凭据三级存储) · 输出(DataFrame/Parquet/DuckDB)   │
+│  反馈(遥测/统计) · 工具链(capture/codegen/golden_audit/spec_audit)      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**设计原则**：每层可独立使用，零强制上层依赖。底层协议库可用，上层编排可选。
+**设计原则**：每层可独立使用，零强制上层依赖。底层协议库可用，上层内核可选。
+**唯一执行路径**：请求只能沿 `Client → UnifiedRuntime → DirectProviderExecutor → Provider`
+下行；不存在第二条内核、聚合降级路由或隐式缓存层（由 `tests/architecture/` 守卫锁定）。
 
 ---
 
@@ -93,7 +96,6 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | **同步/异步双 API** | `TdxClient` + `AsyncTdxClient`（签名镜像、奇偶门禁） |
 | **多协议族客户端** | GoodsClient / ExMarketClient / MacClient / F10Client |
 | **主站池治理** | `DEFAULT_HOST_POOL` / `POOL_BY_FAMILY` / `RankingStore` + 三级路由降级 + 社区候选注入 |
-| **5 级降级路由** | tdx → web → reader → cache → synthetic，`SourceUnavailable` 熔断 |
 
 ### 数据源层
 
@@ -101,6 +103,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 |---|---|
 | **HTTP Web 45 源类** | 东财/新浪/腾讯/集思录/港股/中行等，`httpx` / `urllib` 双栈，17 模块 |
 | **本地 vipdoc 解析** | `reader/` 解析通达信本地 `.day` / `.min` / 板块 / 财务二进制文件 |
+| **Provider 注册表** | `providers/` 声明 11 Provider × 172 capability × channel，是唯一事实源；`catalog/provider_bindings.py` 声明 channel→adapter 绑定 |
 | **流式订阅** | QuoteStream + AsyncQuoteStream（engine 内核：ReconnectPolicy + BackpressureQueue + DeltaMerger + GapFiller + StreamEngine） |
 
 ### 输出与服务层
@@ -108,24 +111,24 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | 特性 | 说明 |
 |---|---|
 | **3 Sink 策略** | DataFrame / Parquet / DuckDB（原子写） |
-| **门面统一 API** | `UnifiedQuoteAPI`（46 方法，auto/tdx/web/local 四路由 + 熔断 + `adjust` 口径守卫）+ `ApiResponse` |
-| **异步门面** | `AsyncUnifiedQuoteAPI`（`asyncio.to_thread` 桥接，SourceUnavailable 自动继承） |
-| **HTTP REST 网关** | 42 端点（方法白名单 + TaskStore 钳制） |
+| **统一业务入口** | `Client` / `AsyncClient`（15 便捷方法 + `execute`/`typed`/`call` 通用面），永不隐式换源、永不缓存 |
+| **HTTP REST 网关** | 10 端点（capability 白名单 + TaskStore 钳制），只翻译为 `Client` 调用 |
 | **WebSocket JSON-RPC** | 长连接实时推送 |
-| **MCP 工具服务** | 12 工具，AI Agent 可直接调用 |
+| **MCP 工具服务** | 9 工具，AI Agent 可直接调用 |
 
-### v14 Runtime 编排内核
+### 单一执行内核（`tstdx/runtime/`）
 
 | 特性 | 说明 |
 |---|---|
-| **统一入口** | `Runtime.execute()` / `execute_batch()` / `subscribe()` |
-| **RuntimeGateway** | CLI/HTTP/WS 网关适配，禁止独立 Provider 选择/回退/缓存逻辑 |
-| **60+ Typed Query 契约** | 9 领域（bars/quotes/minute/finance/holder/ipo/market/exchange/stream） |
-| **9 Domain Record 族** | BarRecord / QuoteRecord / MinuteRecord / FinanceRecord 等强类型记录 |
-| **语义缓存** | L1 内存（QueryFingerprint）+ L2 持久化，批量执行自动去重 |
-| **批量执行** | `execute_batch()` 并发执行 + 语义缓存去重，保序返回 |
-| **DAG 编排** | `ExecutionPlanner` DAG 拓扑排序 + 依赖解析 |
-| **流式生命周期** | StreamPlanner + StreamLifecycle（订阅/退订/状态查询） |
+| **唯一内核** | `UnifiedRuntime`：`QuerySpec → QueryPlan → 绑定执行 → QueryResult`，零缓存、无请求合并 |
+| **精确绑定执行** | `DirectProviderExecutor` 按 `DIRECT_BINDINGS[(provider, channel, capability)]`（251 条）直调实现 |
+| **规划期 fail-closed** | `catalog/capability.py::validate_call` 用**真实方法签名**绑定参数，参数错误在 I/O 前抛 |
+| **执行身份与溯源** | `runtime/identity.py` + `runtime/provenance.py`：结果 provenance 与计划身份不符即抛 |
+| **显式跨源编排** | `runtime/orchestration.py`：仅当调用方给出 `FallbackPolicy` 时按序尝试，逐次记入 `OrchestratedResult` |
+| **启动三方对账** | `runtime/audit.py::audit_runtime`：registry / catalog / bindings 不一致即报错 |
+| **60+ Typed Query 契约** | 11 领域基类 + 9 Domain Record 族，字段名与内核方法签名一一对应（`Client.typed`） |
+| **批量执行** | `Client.quotes_batch()` → `BatchResult`：逐 symbol 三态（ok/missing/failed）、保序、并发走内核 |
+| **流式生命周期** | `StreamSpec`/`StreamPlanner` + `StatefulQuoteStream`（订阅/退订/状态查询） |
 
 ### 基础设施
 
@@ -160,13 +163,13 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | TDX 协议覆盖 | 85 命令 / 61 精确解析器 / 5 协议族 | ~20 命令 | ~15 命令 | ❌（HTTP only） |
 | 三级分派 | L1 精确 → L2 启发 → L3 透传 | 仅 L1 | 仅 L1 | ❌ |
 | 同步 + 异步 | ✅ 双客户端 | ❌（仅同步） | ❌（仅同步） | ❌ |
-| HTTP Web 降级 | 45 源 / 5 级降级 | ❌ | ❌ | ✅（单一源） |
+| HTTP Web 多源 | 45 源 / 11 Provider 注册表 | ❌ | ❌ | ✅（单一源） |
 | 本地 vipdoc 解析 | ✅ 多格式 | ❌ | ❌ | ❌ |
 | 流式订阅 | ✅ engine 内核 | ❌ | ❌ | ❌ |
 | 主站池治理 | ✅ 多主站 + 测速 + 社区注入 | 基础 | 基础 | ❌ |
-| 门面统一 API | ✅ 46 方法 + 熔断 | ❌ | ❌ | ❌ |
+| 统一业务入口 | ✅ `Client` 15 方法 + 通用 `execute`/`typed` | ❌ | ❌ | ✅（仅行情） |
 | HTTP/WS/MCP 服务 | ✅ 三模式 | ❌ | ❌ | ❌ |
-| v14 Runtime 编排 | ✅ DAG + 批量 + 缓存 | ❌ | ❌ | ❌ |
+| 溯源与 provider-first | ✅ Provenance 强制 + 显式 FallbackPolicy | ❌ | ❌ | ❌ |
 | 可观测性 | ✅ Prometheus/StatsD/OTLP | ❌ | ❌ | ❌ |
 | YAML 协议规范 | ✅ + codegen + spec_audit | ❌ | ❌ | ❌ |
 | 零硬依赖 | ✅ 所有 extra 可选 | 有硬依赖 | 有硬依赖 | 有硬依赖 |
@@ -218,10 +221,10 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 
 ## 快速开始
 
-### 基础用法
+### 协议层直连（`TdxClient`，可脱离内核使用）
 
 ```python
-from tstdx import TdxClient
+from tstdx.client import TdxClient
 
 client = TdxClient()
 
@@ -230,11 +233,11 @@ quotes = client.quotes(["sh600519", "sz000001"])  # 实时行情
 count = client.security_count(market=1)  # 1=上海, 0=深圳
 ```
 
-### 异步用法
+### 协议层异步（`AsyncTdxClient`）
 
 ```python
 import asyncio
-from tstdx import AsyncTdxClient
+from tstdx.client import AsyncTdxClient
 
 
 async def main():
@@ -249,48 +252,60 @@ async def main():
 asyncio.run(main())
 ```
 
-### 门面统一响应（永不抛异常边界）
+### 统一查询内核（`Client`，172 项 capability）
 
 ```python
-from tstdx.facade import quote_api
+from tstdx import Client, FallbackPolicy, QuerySpec
+from tstdx.typed_query import FundHoldingsQuery
 
-api = quote_api()
-resp = api.query("quotes", ["sh600519", "sz000001"])
-if resp:
-    print(len(resp.data), "条, 源=", resp.extra.get("source"))
-    df = resp.df  # pandas DataFrame（可选）
-else:
-    print(f"失败: {resp.error} (code={resp.code})")
+client = Client()
+
+# 1) 便捷方法：每个结果自带 provenance，零缓存、不静默换源
+bars = client.bars("sh600519", period="day", count=80)
+print(len(bars.data), bars.meta.provider, bars.meta.channel)
+
+quotes = client.quotes(["sh600519", "sz000001"])
+
+# 2) 通用面：任何 capability 走同一入口，参数在规划期按真实签名校验
+spec = QuerySpec.build("bars", symbols="sh600519", period="day", count=30)
+result = client.execute(spec)
+
+# 3) 类型化糖衣：冻结 dataclass 契约 → 内核 → 强类型 Domain Record
+typed = client.typed(FundHoldingsQuery(code="000001"))
+print(typed.capability, len(typed.data))
+
+# 4) 批量：逐 symbol 三态（ok/missing/failed），保序
+batch = client.quotes_batch(["sh600519", "sz000001"])
+
+# 5) 跨源只在显式策略下发生（默认永不发生）
+orchestrated = client.quotes(["sh600519"], policy=FallbackPolicy(providers=("tdx", "tencent")))
+
+client.close()
 ```
 
-### v14 Runtime（编排内核 + 批量执行）
+### 内核异步（`AsyncClient`，同一入口）
 
 ```python
-from tstdx.runtime import RuntimeGateway, create_runtime
-from tstdx.cache_semantic import SemanticResultCache
-from tstdx.runtime import QueryRequest
+import asyncio
+from tstdx import AsyncClient
 
-# 创建带语义缓存的 Runtime
-gateway = RuntimeGateway(create_runtime(semantic_cache=SemanticResultCache()))
 
-# 单次查询
-resp = gateway.bars("sh600519", count=30)
-if resp.success:
-    print(resp.data)
+async def main():
+    async with AsyncClient() as client:
+        bars, quotes = await asyncio.gather(
+            client.bars("sh600519", period="day", count=80),
+            client.quotes(["sh600519", "sz000001"]),
+        )
+        print(len(bars.data), len(quotes.data))
 
-# 批量执行（语义缓存去重 + 并发）
-reqs = [
-    QueryRequest(operation="bars", args=("sh600000",), params={"count": 30}),
-    QueryRequest(operation="bars", args=("sh600519",), params={"count": 30}),
-    QueryRequest(operation="bars", args=("sh000001",), params={"count": 30}),
-]
-results = gateway.execute_batch(reqs, max_concurrent=4)
 
-# 缓存诊断
-print(gateway.semantic_cache_stats())  # {'enabled': True, 'tier': 'l1', 'size': 3}
+asyncio.run(main())
 ```
 
-### CLI（19+ 子命令）
+> `TdxClient` / `AsyncTdxClient`（`tstdx.client`）是协议层客户端，可脱离内核单独使用；
+> 服务面（CLI/HTTP/WS/MCP）全部只翻译为 `Client` 调用，不自行选源、不缓存。
+
+### CLI（31 子命令）
 
 ```bash
 tstdx bars sh600519 --period day --count 80     # K 线
@@ -313,43 +328,59 @@ tstdx hosts audit --report /tmp/audit.json --markdown /tmp/audit.md
 
 ```
 tstdx/
-├── protocol/       # 协议核心：commands(85 账本)/registry(三级分派+异常收口)
-│   └── parsers/    #   6 族 61 解析器（std7709/std7709_extra/std7727/mac/goods/f10）
-├── codec/          # 编解码：framing(帧)/primitive(原语+count_guard+zlib strict)
-├── transport/      # 传输：base(RLock 租约)/async_/pool(4 槽)/ratelimit/speedtest/hosts/sniff
-├── client/         # TdxClient/AsyncTdxClient + 5 族客户端（_mixin 共享骨架 + sync/async_/factory）
-├── facade/         # 门面：UnifiedQuoteAPI(四路由+熔断) / response / async_api / 三兼容门面
-├── web/            # 50 Source 类（惰性导入）+ 域 Mixin 会话 + _paginate 共享分页器
-├── sources/        # 5 级降级路由 DataSourceRouter + golden 回放
-├── domain/         # symbol(单一事实源)/models/adjust/calendar
-├── streaming/      # QuoteStream/AsyncQuoteStream（轮询+diff）/push
-├── reader/         # vipdoc 本地文件解析（day/min/板块/财务）
-├── output/         # DataFrame/Parquet/CSV/DuckDB 原子写（v9 自 sinks/ 更名，旧名 shim 兼容）
-├── sink/           # LocalDaySink：写回 vipdoc .day 二进制（与 sinks/ 职责不同）
-├── charset/        # 字符集自动探测（GBK/GB18030/Big5/UTF-8）
-├── profile/        # 数据规格探测（帧/文件双探测器 + presets）
-├── config/         # 6 源合并 + 严格校验 + env 归一
+├── client_api.py   # Client / AsyncClient —— 唯一业务入口（15 便捷方法 + execute/typed/call）
+├── runtime/        # 唯一执行内核：kernel(零缓存)/executor(251 绑定)/orchestration(显式跨源)
+│                   #   /audit(启动三方对账)/identity/provenance(溯源守卫)
+├── catalog/        # 静态声明与一致性审计：capability(目录+规划期签名校验)/provider_bindings
+│                   #   /provider_contract/provider_guard/*_audit —— 无执行、无选源
+├── providers/      # 11 Provider × 172 capability × channel 注册表（唯一事实源）
+├── query.py        # QuerySpec/QueryPlan/QueryPlanner + 指纹
+├── result.py       # QueryResult + ResultMeta + Provenance
+├── batch.py        # BatchResult/BatchItem 三态批量契约
+├── typed_query.py  # 60+ CapabilityQuery 冻结契约 + TypedQueryResult
+├── stream_contract.py  # StreamSpec/StreamPlanner 流式契约
 ├── errors.py       # 错误分类树（E1-E8，40+ 类）+ RetryAdvice
-├── integration/    # http_server(42 端点白名单)/ws_server/mcp_server
+├── error_envelope.py  deprecation.py
+├── protocol/       # commands(85 账本)/registry(三级分派+异常收口)/parsers(61 × 6 族)
+├── codec/          # framing(帧)/primitive(原语 + count_guard + zlib strict)
+├── transport/      # base(RLock 租约)/async_/pool(4 槽)/ratelimit/speedtest/hosts/sniff
+├── client/         # core.py(同步/异步共享纯协议 SSOT) + sync/async_/factory + 5 族客户端
+├── web/            # 45+ HTTP 源类（惰性导入）+ 域 Mixin 会话 + 共享分页器
+├── reader/         # vipdoc 本地文件解析（day/min/板块/财务）
+├── profile/        # 数据规格探测（帧/文件双探测器 + presets）
+├── domain/         # symbol(单一事实源)/models/finance 记录/adjust/calendar
+├── streaming/      # QuoteStream/AsyncQuoteStream（轮询+diff）/push + engine 内核
+├── output/         # DataFrame/Parquet/CSV/DuckDB 原子写
+├── sink/           # LocalDaySink：写回 vipdoc .day 二进制
+├── charset/        # 字符集自动探测（GBK/GB18030/Big5/UTF-8）
+├── config/         # 6 源合并 + 严格校验 + env 归一
+├── integration/    # runtime_http(10 端点)/runtime_ws/runtime_tasks/mcp(9 工具)/serialization
 ├── observability/  # 指标注册表 + Prometheus/StatsD/OTLP 导出器 + start_exporter
 ├── feedback/       # 错误/用量上报 + 遥测 + 使用统计
 ├── security/       # 凭据三级存储（keyring/env/file 互斥写 + 损坏隔离）
 ├── tools/          # capture/spec_audit/codegen/golden_audit/golden_expand/check_originality
-├── trade/          # 交易协议模拟器（独立可选：SimTransport 纯内存模拟）
-├── runtime/        # v14 Runtime 编排内核（Runtime/Gateway/Planner/Query/Stream）
-├── cache_semantic/ # 语义缓存（L1 内存/L2 持久化）
-├── cli/            # CLI 入口（19 子命令）
+├── trade/          # 交易协议模拟器（实验性可选模块：SimTransport 纯内存模拟，不接入内核）
+└── cli/            # CLI 入口（31 子命令，全部委托 Client）
 ```
 
 ---
 
-## 数据源降级
+## Provider 选择与跨源策略
+
+**默认永不跨源**（provider-first 不变量）：
 
 ```
-TDX 主站 → HTTP Web 源(45) → 本地 vipdoc → golden 缓存 → 合成数据
+QuerySpec(capability, provider=None|显式)
+   → QueryPlanner：provider 为 None 时按注册表偏好选唯一 Provider；多 channel 冲突则要求显式指定
+   → QueryPlan(单 provider, 单 channel) → DirectProviderExecutor → 该 Provider 的实现
+   → QueryResult(meta.provenance 记录实际来源；与计划身份不符 → 抛错)
 ```
 
-每级失败时自动降级到下一级，`SourceUnavailable` 异常触发熔断器。可通过 `DataSourceRouter` 配置降级顺序和熔断阈值。
+- Provider 不可用/失败：只抛出该 Provider 的错误，**不自动换源**（历史上"5 级降级 + 熔断 +
+  合成数据"路由已随 v12 门面层物理删除）。
+- 需要跨源时由调用方显式声明顺序：`client.quotes(symbols, policy=FallbackPolicy(providers=("tdx","tencent")))`
+  → `ProviderOrchestrator` 按序尝试，返回 `OrchestratedResult`（逐步记录成败与最终来源）。
+- 时效性：`currentness`（`CurrentnessMode`）+ `max_age` 控制新鲜度口径，`allow_stale` 显式放行。
 
 ---
 
@@ -388,45 +419,48 @@ tstdx hosts audit --hosts-file extra_hosts.json
 ## 质量与门禁
 
 ```bash
-pytest tests/                                   # 全量测试
+pytest tests/                                   # 全量测试（离线，无网络）
 make gates                                      # 六步门禁：lint→format→全量→对抗矩阵→golden 三旗标→可达性
 python -m tstdx.tools.golden_audit --gate       # Golden L1 真实样本门禁（530 payload）
 python -m pytest tests/adversarial -q           # 对抗矩阵（9 payload × 85 命令，逃逸=0）
 python scripts/audit_reachability.py --strict   # 可达性门禁（孤儿=0）
-python -m pytest --cov=tstdx --cov-fail-under=77  # 覆盖率门禁（CI 与本地一致）
+python scripts/contract_audit.py --ci           # 契约↔注册表↔绑定三方对账 + typed 内核编译审计
+python -m pytest --cov=tstdx --cov-fail-under=77  # 覆盖率门禁（v16 净删 1.5 万行后待重校准）
 ```
 
 - CI：9 jobs；Windows 矩阵 3.11 + 3.12；周三 09:00 UTC 定期 `host-audit`
-- 覆盖率门禁：**≥ 77%**（P14-D2 与 CI 对齐）
+- 架构守卫：`tests/architecture/`（唯一内核、零缓存、无聚合降级路由、根级命名空间白名单、
+  已删层不可复活）+ `tests/provider_isolation/`（Provider 隔离与溯源）
+- Ruff：全量清洁（0 errors）
+- mypy：16 文件 47 项既有告警（集中在 hardening 模块的方法替换写法），Phase 5 目标清零
 - Pre-commit hooks：`ruff check --fix` + `ruff format --check`
-- Ruff + mypy：全量清洁（0 errors / 0 warnings）
 
 ---
 
 ## 路线图
 
-### 当前阶段：v1.0.0 稳定版
+### 当前阶段：v1.0.0 稳定版 + v1.x 单内核收口
 
 | 里程碑 | 状态 | 说明 |
 |---|---|---|
-| Phase 1 Typed Capability | ✅ | 60+ 类型化查询契约（9 领域） |
-| Phase 2 Domain Model | ✅ | 9 Domain Record 族 |
-| Phase 3 Provider Adapter | ✅ | 语义执行桥接 |
-| Phase 4 Contract Automation | ✅ | 契约自动化测试 |
-| Phase 5 Streaming v14 | ✅ | StreamPlanner + StreamLifecycle 集成 |
-| Phase 6 Gateway convergence | ✅ | RuntimeGateway 桥接 CLI/HTTP/WS |
-| Phase 7 Optimizer | ✅ | execute_batch() 批量执行 + 语义缓存去重 |
-| Phase 8 Release Hardening | ✅ | Ruff + mypy 清洁 + 测试覆盖率 ≥ 77% |
+| Typed Capability 契约 | ✅ | 60+ 契约（11 领域基类），字段名与内核方法签名一一对应 |
+| Domain Model | ✅ | 9 Domain Record 族 + 记录归一化 |
+| Contract Automation | ✅ | `scripts/contract_audit.py --ci` 三方对账 + 内核编译审计 |
+| Streaming | ✅ | StreamSpec/StreamPlanner + StatefulQuoteStream |
+| 单内核收敛（v16） | ✅ | 零缓存直调路径；v12 门面/service/sources/全部缓存层物理删除 |
+| 断链清偿（v17 Phase 3A/3B/3D） | ✅ | v14 信封运行时 + `execution/` DAG + `provider/` router + registry 三件套删除；typed 全线接通 |
+| 命名空间归位（v17 Phase 3C） | ✅ | 根级模块 26→11；`runtime/` `catalog/` `client/` 分层 |
+| 文档与对外面统一（v17 Phase 4） | ◐ | README/ARCHITECTURE 已刷新；历史方案待归档、文档-代码一致性门禁在建 |
+| 发布硬化（v17 Phase 5） | ⏳ | mypy 清零、覆盖率重校准、真实网络 smoke、tag `v1.1.0-dev.1` |
 
 ### 下一阶段
 
 | 计划 | 方向 |
 |---|---|
-| **CLI 迁移** | 从 TdxClient 迁移到 RuntimeGateway 统一入口 |
-| **DAG CSE** | 公共子表达式消除 + 并行执行优化 |
+| **发布硬化** | mypy 既有告警清零 + 覆盖率基线按有效代码重校 + wheel 安装冒烟 |
+| **Live Smoke** | 真实网络 tdx/web/stream 三面各一发（`live-smoke` job 已有骨架） |
 | **Streaming 增量执行** | 流式数据增量合并 + 补数完整性保证 |
-| **覆盖率提升** | AST 可达性门禁 + golden/spec 门禁 |
-| **Wheel Smoke** | wheel 与 sdist 构建 + 安装冒烟测试 |
+| **可达性收口** | 公开导出面孤儿类型清理（如 `BatchSpec` 尚无生产消费者） |
 
 ---
 
@@ -436,10 +470,9 @@ python -m pytest --cov=tstdx --cov-fail-under=77  # 覆盖率门禁（CI 与本�
 |---|---|
 | [DESIGN.md](DESIGN.md) | 完整设计方案 v2.0（架构/协议/工程规范，历史版本见 docs/archive/）|
 | [docs/quickstart.md](docs/quickstart.md) | 快速入门 |
-| [docs/api/README.md](docs/api/README.md) | API 索引（客户端/门面/Runtime/服务面/工具）|
-| [docs/api/v14-runtime.md](docs/api/v14-runtime.md) | **v14 Runtime 编排内核**完整 API 参考 |
+| [docs/api/README.md](docs/api/README.md) | API 索引（内核/协议/传输/服务面/基础设施）|
 | [docs/api/interfaces.md](docs/api/interfaces.md) | **项目接口文档**（全部公开接口面汇总）|
-| [docs/cookbook/](docs/cookbook/README.md) | 场景示例（批量 K 线/离线 vipdoc/流式/Sinks/自定义命令/v14 Runtime）|
+| [docs/cookbook/](docs/cookbook/README.md) | 场景示例（批量 K 线/显式跨源/离线 vipdoc/流式/Sinks/自定义命令/单内核）|
 | [docs/migration/](docs/migration/README.md) | 从 mootdx/easy_tdx/easyquotation 迁移 |
 | [docs/adr/](docs/adr/README.md) | 架构决策记录（含 ADR-011 流式内核取舍）|
 | [docs/FAQ.md](docs/FAQ.md) | 常见问题 |

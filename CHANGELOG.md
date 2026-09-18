@@ -142,6 +142,45 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
 （`--ci` 门禁），`tests/v14/test_domain_typed_capabilities.py` 覆盖全部 50+ 领域契约的路由
 与载荷断言。
 
+### Changed（v17 Phase 4 —— 对外文档面对齐代码事实）
+
+文档此前大量描述已删除的层，属于"文档说谎"级缺陷。本轮逐项核对并重写为当前事实：
+
+| 位置 | 曾经的错误宣称 | 更正为 |
+|---|---|---|
+| `README.md` / `docs/quickstart.md` / `docs/FAQ.md` / `docs/cookbook/01` / `docs/migration/*` / `SECURITY.md` / `docs/api/interfaces.md` / `tstdx/observability/metrics.py` docstring | `from tstdx import TdxClient` | `from tstdx.client import TdxClient`（根面自 v15 起不再导出协议客户端）|
+| `ops/smoke_30d.py` | 同上，**运行期 ImportError** | 改为 `tstdx.client` 导入 |
+| `README.md` / `docs/api/*` | "32 CLI 子命令 / ~40 HTTP 接口 / 12 MCP 工具 / 167 capability" | 31 子命令 / 10 路由（`/v13/*`）/ 9 工具 / 172 capability / 11 Provider（逐项由门禁核对）|
+| `docs/quickstart.md` §6、`docs/api/interfaces.md` §2–§3、`docs/cookbook/07` | `RuntimeGateway` / `create_runtime` / `QueryRequest` / `SemanticResultCache` / `execute_batch(requests)` | `Client` + `UnifiedRuntime` 单内核；批量为 `quotes_batch → BatchResult`，跨源为 `FallbackPolicy → OrchestratedResult.attempts` |
+| `docs/api/interfaces.md` §3 服务面 | `integration.http_server`（42 端点）/ `ws_server` / `mcp_server`（12 工具）| `runtime_http.create_runtime_app`（10 路由）/ `runtime_ws_server.serve_runtime_ws`（10 方法）/ `integration.mcp.create_mcp_server`（9 工具）|
+| `docs/cookbook/02_realtime_fallback.md` | `DataSourceRouter` 五级自动降级、`q.change_pct` 对象属性 | 默认永不换源 + 显式 `FallbackPolicy`；`QueryResult.data` 为 dict 列表 |
+| `docs/cookbook/07_v14_runtime.md` | 整页 v14 信封运行时 | 重写并更名为 `07_single_kernel_queries.md`（溯源审计 / 批量三态 / 显式跨源 / typed / 流式 / `KernelExecutor` 假执行体）|
+| `docs/api/README.md` | `tstdx.sources.router DataSourceRouter`、门面行 | `tstdx.providers` 注册表 + `catalog/*` + 统一内核层索引 |
+| `README.md` / `docs/quickstart.md` / `docs/cookbook/01,05` / `docs/api/interfaces.md` §4 | 落地 URI `output://dataframe`、`parquet://x.parquet`、`duckdb://db?table=t`、`csv://` | 现行 sink 推断：`.csv/.parquet/.pq` 后缀 + `duckdb:<path>@<table>`，DataFrame 走 `to_dataframe()` 或 `fmt="dataframe"` |
+| `docs/api/interfaces.md` §6 | `domain.records` 导出 `Bar/Quote/Level/FinanceInfo/...` | 9 类 `*Record`（`Bar/Quote/Level/CapitalChange` 属 `domain.models`）|
+| `docs/api/interfaces.md` §6 | `from tstdx.domain.adjust import adjust_bars` | `AdjustEngine` / `to_adjusted` / `compute_factors` |
+| `docs/cookbook/03_offline_vipdoc.md` | `read_lc1_file` / `read_lc5_file`（不存在）| `read_min_file(path, interval=1|5)` |
+| `docs/tiantian_fund_extensions.md` / `docs/migration/easyquotation.md` | `from tstdx import tstdx  # UnifiedQuoteAPI`、`tstdx.facade.quote_api` | `Client.call(capability, **kwargs).data` |
+| `docs/adr/README.md` ADR-004、`ADR-012/014/015` | 状态仍为 Accepted（描述 5 级降级 / 语义缓存 / 含缓存节点的执行链）| 标注 Superseded 并指向 ADR-013 与现行单内核链路（历史正文保留）|
+| `docs/{quickstart,api/README,api/interfaces}.md` 交叉链接 | 指向已归档/相对路径错误的 `api/v14-runtime.md`、`api/README.md`、`ARCHITECTURE_AUDIT_v8.md` | 重指向归档位置或正确相对路径；`scripts/check_docs_links.py` 80 文件全绿 |
+
+新增门禁 `tests/architecture/test_doc_code_consistency.py`（9 例）：活文档代码块里的
+`from tstdx… import …` 必须可解析、事实型文档反引号里的 `tstdx.*` 路径必须可解析、
+`tstdx.__all__` 与惰性导入表必须等集、README 宣称的 5 个数字必须等于运行期事实。
+
+配套清理：
+
+- `tstdx/__init__.py`：移除 7 个只存在于惰性表、既未列入 `__all__` 也无任何调用方的根级
+  名字（`deprecated`、`DeprecationPolicy`、`FeedbackReporter`、`TelemetryCollector`、
+  `UserStats`、`detect_encoding`、`decode_bytes`）。官方面回归单一事实源
+  （`__all__` ⇔ `_LAZY`，46 项），需要时按真实模块路径导入。
+- `tstdx/batch.py`：`BatchResult` 文档串不再引用已删除的 `planned_service` 契约。
+- `tests/runtime/test_runtime_public_api_v12.py` → `test_root_public_surface.py`
+  （文件名与被测契约一致；断言内容不变，注释去掉 `RuntimeGateway`）。
+- 30 份被取代的历史方案文档归档至 `docs/archive/plans/`（含 `docs/api/v14-runtime.md`）。
+- `CONTRIBUTING.md`：补 uv/Windows 本地门禁入口、"文档即门禁对象"、
+  "契约先行必须自带实现"、"不做跨 PR 的先删后补"。
+
 ### Fixed
 
 - 修复 `EastmoneyNoticeSource` / `EastmoneyResearchSource` 的 BASE 路径段丢失问题：

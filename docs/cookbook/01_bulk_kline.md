@@ -15,7 +15,7 @@
 import time
 from pathlib import Path
 
-from tstdx import TdxClient
+from tstdx.client import TdxClient
 from tstdx.errors import TdxError, advice_for
 from tstdx.output import write
 
@@ -43,7 +43,7 @@ def fetch_market(market: int) -> int:
                 continue
             if bars:
                 prefix = "sh" if market == 1 else "sz"
-                write(bars, f"parquet://{OUT / (prefix + code)}.parquet")
+                write(bars, str(OUT / f"{prefix}{code}.parquet"))
                 ok += 1
         time.sleep(0.2)  # 礼貌限速
     return ok

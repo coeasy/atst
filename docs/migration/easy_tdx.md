@@ -9,7 +9,7 @@
 ### 原生 API（推荐）
 
 ```python
-from tstdx import TdxClient, AsyncTdxClient
+from tstdx.client import TdxClient, AsyncTdxClient
 
 client = TdxClient()
 bars = client.bars("sh600519", period="day", count=80)

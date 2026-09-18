@@ -9,14 +9,16 @@ from tstdx.output import write
 
 bars = client.bars("sh600519", period="day", count=500)
 
-# DataFrame（内存对象，需 pandas）
-df = write(bars, "output://dataframe")
+# DataFrame（内存对象，需 pandas）—— sink 无法从 dest 推断，显式传 fmt
+from tstdx.output import to_dataframe
+
+df = to_dataframe(bars)        # 等价于 write(bars, "", fmt="dataframe")
 
 # Parquet 文件（需 pyarrow，列式压缩，适合静态研究数据）
-write(bars, "parquet://data/kline_600519.parquet")
+write(bars, "data/kline_600519.parquet")
 
 # DuckDB 表（需 duckdb，可直接 SQL 分析）
-write(bars, "duckdb://data/market.db?table=kline_600519")
+write(bars, "duckdb:data/market.db@kline_600519")
 ```
 
 ## 选型建议

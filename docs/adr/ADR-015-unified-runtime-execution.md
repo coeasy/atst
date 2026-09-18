@@ -1,6 +1,6 @@
 # ADR-015: Unified Runtime Execution Cutover
 
-Status: Accepted for integration
+Status: Superseded in part — 本文描述的链路含 `SemanticResultCache / NegativeCache` 等缓存节点，该等节点已随 v16 Phase 2 删除。现行唯一路径为 `Client → QuerySpec → QueryPlan → DirectProviderExecutor → QueryResult`（零缓存、不自动换源），见 `docs/ARCHITECTURE.md`。
 
 ## Decision
 

@@ -1,26 +1,30 @@
 # 从 easyquotation 迁移
 
 > **垫片状态**：早期版本提供过 `tstdx.web.easyquotation.use()` 兼容垫片，已在 v1.2.0
-> 清理批次中移除（其能力面已并入 `tstdx.web` 多源路由与门面 API）。迁移请直接使用
-> 原生 Web 源 / 门面 API，字段口径与 easyquotation 兼容（见下）。
+> 清理批次中移除；v1.2 的门面 API（`tstdx.facade.*`）亦已随 v16 Phase 2 物理删除。
+> 迁移请直接使用 `Client`（唯一业务入口）或原生 Web 源，字段口径与 easyquotation
+> 兼容（见下）。
 
 ## 迁移目标 API
 
-### 门面（统一响应 + 多源降级，推荐）
+### 统一内核（推荐）
 
 ```python
-from tstdx.facade import quote_api
+from tstdx import Client
 
-api = quote_api()
-resp = api.query("quotes", ["sh600519", "sz000001"])
-if resp:
-    df = resp.df  # pandas DataFrame（可选）
-    print(resp.data, resp.extra.get("source"))
-else:
-    print(resp.error, resp.code)
+client = Client()
+result = client.quotes(["sh600519", "sz000001"], provider="tencent")
+print(result.data, result.meta.provider)      # meta 即溯源审计
+df = to_dataframe(result.data)                # 可选：from tstdx.output import to_dataframe
+
+# 需要按策略换源时显式声明（默认永不换源）
+from tstdx import FallbackPolicy
+
+out = client.quotes(["sh600519"], policy=FallbackPolicy(providers=("tencent", "sina")))
+print(out.result.meta.provider, [(a.provider, a.status) for a in out.attempts])
 ```
 
-### 多源自动降级（WebQuoteClient / DataSourceRouter）
+### Web 多源会话（`WebQuoteClient`）
 
 ```python
 from tstdx.web import WebQuoteClient
@@ -51,7 +55,7 @@ kline = get_kline("sh600519", period="day")  # K 线
 | `hq.get_klines(symbol, type)` | `get_kline(symbol, period=...)` | 日/周/月/分时 K 线 |
 | `hq.get_index()` | `web_session("sina").index()` | 大盘指数（上证/深成/创业板/沪深 300，`WebQuoteSession.index()`） |
 
-多源自动降级（`WebQuoteClient` / `DataSourceRouter`）与单源直连是**两套独立入口**，按需选用。
+Web 多源会话（`WebQuoteClient`）内部互为备份；内核路径（`Client`）单源绑定、失败即抛，跨源需显式 `FallbackPolicy`。两者是独立入口，按需选用。
 
 ## 行为差异
 
@@ -60,7 +64,7 @@ kline = get_kline("sh600519", period="day")  # K 线
 | 成交量单位 | 源原始口径 | **统一为股** |
 | 成交额单位 | 源原始口径 | **统一为元** |
 | 失败行为 | 抛裸异常 | `TdxError` + `RetryAdvice`（含换源建议）|
-| 降级 | 无 | 单源直连无自动备份；多源互为备份用 `WebQuoteClient` / `DataSourceRouter` |
+| 降级 | 无 | 单源直连无自动备份；多源互备用 `WebQuoteClient`，内核跨源用显式 `FallbackPolicy` |
 | 限流 | 无 | 每源自带 RateLimiter（超时抛 `WebRateLimited`） |
 
 ## 卸载原库

@@ -61,7 +61,7 @@
 
 ```python
 # mootdx 风格 → tstdx 原生
-from tstdx import TdxClient
+from tstdx.client import TdxClient
 
 client = TdxClient()
 bars = client.bars("sh600036", period="day", count=100)

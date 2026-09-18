@@ -1,46 +1,49 @@
 # API 参考
 
-当前 `1.0.0` Draft 开发线；最新已发布稳定版是 `v1.0.0`。
+当前 `1.0.0` Draft 开发线；最新已发布稳定版是 `v1.0.0`（2026-09-09 发布）· [发布说明](../releases/v1.0.0.md)
 
-> 本页对应 v1.0.0 稳定发布版 + v14 Runtime 编排内核。完整 docstring 驱动文档
+> 本页对应 v1.0.0 稳定发布版 + **v13/v17 单一执行内核**。完整 docstring 驱动文档
 > 由 `pdoc`/`mkdocstrings` 生成；此处提供稳定入口和模块索引。
 >
-> **Provider 契约**：v13 clean break 后禁止跨 Provider silent fallback。每次请求绑定
-> 恰好一个 Provider/channel；跨 Provider 容错只能经显式 `FallbackPolicy` +
-> `ProviderOrchestrator`。`tstdx.facade.UnifiedQuoteAPI` 是官方导出，
-> `tstdx.facade.api.UnifiedQuoteAPI` 仅作为 legacy compatibility router 保留。
+> **Provider 契约**：每次请求绑定恰好一个 Provider/channel，禁止跨 Provider silent fallback。
+> 跨 Provider 容错只能经显式 `FallbackPolicy` + `ProviderOrchestrator`。
+> 数据请求**零缓存**。
+> 已删除且不再是事实的层（以目录形式记名，均已物理移除、无兼容别名，也都没有作为
+> legacy compatibility router 保留）：v12 门面 `tstdx/facade/`、
+> 降级路由 `tstdx/sources/`、全部缓存层、v14 信封运行时（`Runtime`/`RuntimeGateway`/
+> `QueryRequest`/`QueryResponse` 及 `tstdx/execution/`、`tstdx/provider/`）。
 
-## v14 Runtime（编排内核）
+## 统一内核层
 
 | 模块 | 说明 |
 |------|------|
-| `tstdx.runtime.Runtime` | 编排内核入口（execute/execute_batch/subscribe/semantic_cache_stats） |
-| `tstdx.runtime.RuntimeGateway` | CLI/HTTP/WS 统一网关适配器（bars/quotes/security_count/...） |
-| `tstdx.runtime.QueryRequest` | 边界调用信封（operation/args/params/metadata） |
-| `tstdx.runtime.QueryResponse` | 结果信封（success/data/error/code/metadata） |
-| `tstdx.runtime.create_runtime()` | 工厂（router/planner/provider_order/semantic_cache/default_cache_ttl） |
-| `tstdx.runtime.StreamHandle` | 流式订阅句柄（plan/lifecycle/snapshot/begin_start/close） |
-| `tstdx.execution.ExecutionPlanner` | DAG 编排编译器（fallback/多 Provider） |
-| `tstdx.execution.SemanticExecutionAdapter` | 语义执行桥接（QuerySpec→QueryPlan→QueryResult） |
-| `tstdx.execution.ExecutionGraph` | DAG 图（拓扑排序 + 串行执行） |
-| `tstdx.cache_semantic.SemanticResultCache` | 语义缓存（L1 内存 / L2 持久化，QueryFingerprint 键） |
-| `tstdx.typed_query.CapabilityQuery` | 类型化查询契约（60+ 契约，9 领域） |
-| `tstdx.domain.records` | Domain Record 族（Bar/Quote/Level/CapitalChange/FinanceInfo/...） |
-
-详见 [v14 Runtime API 完整参考](v14-runtime.md) 与 [项目接口文档](interfaces.md)。
+| `tstdx.Client` / `tstdx.AsyncClient` | **唯一业务入口**（`tstdx.client_api`）：bars/quotes/snapshot/minute/trades/security_*/quotes_batch/stream + `execute`/`call`/`typed`/`execute_with_policy` |
+| `tstdx.runtime.UnifiedRuntime` | 唯一执行内核：`QuerySpec → QueryPlan → 绑定执行 → QueryResult`，零缓存 |
+| `tstdx.runtime.KernelExecutor` | 执行面 Protocol（测试注入假执行体的唯一接缝）|
+| `tstdx.runtime.executor.DirectProviderExecutor` | 按 `DIRECT_BINDINGS` 精确直调 Provider 实现 |
+| `tstdx.runtime.orchestration.ProviderOrchestrator` | 显式 `FallbackPolicy` 跨源编排（返回 `OrchestratedResult`）|
+| `tstdx.runtime.audit.audit_runtime` | 启动三方对账（registry / catalog / bindings）|
+| `tstdx.runtime.identity` / `tstdx.runtime.provenance` | 执行身份派生 + 结果溯源守卫（换源即抛）|
+| `tstdx.query.QuerySpec` / `QueryPlan` / `QueryPlanner` | 请求规格、单 Provider/单 Channel 计划、规划期校验 |
+| `tstdx.result.QueryResult` / `ResultMeta` / `Provenance` | 结果载荷 + 溯源元信息 |
+| `tstdx.batch.BatchResult` / `BatchItem` | 批量三态（ok/missing/failed）保序契约 |
+| `tstdx.typed_query.CapabilityQuery` | 类型化查询契约（60+ 契约，11 领域基类）+ `TypedQueryResult` |
+| `tstdx.domain.records` | Domain Record 族（9 类：Financial/Fund/Bond/News/Research/Option/MarketData/Search/Macro）|
+| `tstdx.stream_contract.StreamSpec` / `StreamPlanner` | 流式请求契约与规划 |
+| `tstdx.catalog.capability` | capability 目录 + 规划期真实签名校验（`validate_call`）|
+| `tstdx.catalog.provider_bindings` | Provider `channel → adapter` 绑定表 |
+| `tstdx.catalog.provider_contract` / `provider_guard` / `*_audit` | Provider 隔离契约、运行时守卫与一致性审计 |
+| `tstdx.providers.PROVIDERS` | 11 Provider × 172 capability × channel 唯一事实源 |
 
 ## 核心入口
 
 | 模块 | 说明 |
 |---|---|
-| `tstdx.client.TdxClient` | 同步客户端主入口 |
+| `tstdx.client.TdxClient` | 同步协议客户端主入口（可脱离内核使用）|
 | `tstdx.client.AsyncTdxClient` | 异步镜像客户端 |
 | `tstdx.client.get_client(kind)` | 工厂：std/goods/ex/mac/f10 |
-| `tstdx.facade.UnifiedQuoteAPI` | 官方门面导出（`tstdx.facade.planned`，走 QueryPlan/Provider 绑定）|
-| `tstdx.facade.api.UnifiedQuoteAPI` | legacy compatibility router + 历史实现（保留供迁移）|
-| `tstdx.facade.async_api.AsyncUnifiedQuoteAPI` | 异步门面（紧凑设计：核心 10 方法桥接 + `arun()` 泛化任意方法；有意不逐方法镜像）|
-| `tstdx.facade.response.ApiResponse` | 统一响应形态（ok/err/wrap + 惰性 .df）|
-| `tstdx.web.facade.WebQuoteSession` | Web 源原生命名会话（异动/人气榜/问财/IPO…）|
+| `tstdx.client.core` | 同步/异步共享的纯协议构造与校验 SSOT |
+| `tstdx.web.facade.WebQuoteSession` | Web 源原生命名会话（异动/人气榜/问财/IPO…），精确 Provider 适配器，非聚合路由 |
 
 ## 协议层
 
@@ -78,11 +81,11 @@
 | `tstdx.profile.detect` | 6 步数据规格探测 |
 | `tstdx.profile.presets` | 9 市场预设 |
 
-## 源与流
+## Web 源与流
 
 | 模块 | 说明 |
 |---|---|
-| `tstdx.sources.router` | DataSourceRouter 单 Provider 选择器（禁止跨 Provider silent fallback）|
+| `tstdx.providers` | Provider 注册表（11 源 × channel），内核唯一可调用实现体 |
 | `tstdx.web.adapters` | HTTP Web 源（新浪/腾讯/东财/集思录/港股/中行）|
 | `tstdx.web.adapters_ext` | 扩展 Web 源（分时/逐笔/联想/全球）|
 | `tstdx.web.fundflow` | 资金流 + 涨停池 + **盘中异动**（16 类实时池）+ 沪深港通 |
@@ -90,7 +93,7 @@
 | `tstdx.web.wencai` | **i问财自然语言选股**（cookie 调用方持有）|
 | `tstdx.web.boards` | 个股所属板块 / 板块行情 |
 | `tstdx.web.corporate` | F10/业绩/IPO 申购日历（datacenter 报表族）|
-| `tstdx.web.adapters_margin` | **融资融券个股明细**（datacenter RPTA_WEB_RZRQ_GGMX；`api.margin()` / `tstdx margin`）|
+| `tstdx.web.adapters_margin` | **融资融券个股明细**（datacenter RPTA_WEB_RZRQ_GGMX；`margin` capability / `tstdx margin`）|
 | `tstdx.web.normalize` | volume/amount 集中归一化 |
 | `tstdx.streaming.engine` | StreamEngine（重连/补数/背压）|
 | `tstdx.streaming.push` | PushChannel 0x0547 原始推送 |
@@ -110,13 +113,17 @@
 
 | 模块 | 说明 |
 |---|---|
-| `tstdx.integration.http_server` | FastAPI 网关（~40 接口，含 /stock_changes /hot_rank /wencai /ipo /search /query）|
-| `tstdx.integration.ws_server` | WebSocket JSON-RPC（bars/quotes/minute/trades/finance/security_count/stock_changes + subscribe）|
-| `tstdx.integration.mcp_server` | MCP stdio 工具（canonical Client runtime 能力 + `query_capability` 通用入口）|
-| `tstdx.cli` | CLI 子命令（bars/quotes/…/changes/hot）|
+| `tstdx.integration.runtime_http` | FastAPI 网关工厂（10 路由：`/v13/quotes` `/v13/bars/{symbol}` `/v13/snapshot/{symbol}` `/v13/minute/{symbol}` `/v13/trades/{symbol}` `/v13/security/count` `/v13/security/list` `/v13/query/{capability}` `/v13/capabilities` `/v13/runtime/health`）|
+| `tstdx.integration.runtime_ws` | WebSocket JSON-RPC（10 方法：quotes/bars/snapshot/minute/trades/security.count/security.list/query/runtime.capabilities/runtime.health）|
+| `tstdx.integration.runtime_ws_server` | WS 服务宿主（`serve_runtime_ws`）|
+| `tstdx.integration.mcp` | MCP stdio 工具（9 项：`query_capability` + get_bars/get_quote(s)/get_snapshot/get_minute_today/get_trades/get_security_count/get_security_list）|
+| `tstdx.integration.runtime_tasks` | 后台任务存储（有界结果保留 + 安全信封）|
+| `tstdx.integration.serialization` | `QueryResult → JSON-safe` 统一序列化 |
+| `tstdx.cli` | CLI 子命令（31 项，全部经 `Client`）|
 
 ## 迁移指南
 
 从 mootdx / easy_tdx / eltdx / easyquotation 迁移见 [docs/migration/](../migration/README.md)。
-（v1.0 时代的 `tstdx.compat.*` / `tstdx.web.easyquotation` 兼容垫片已随 v1.2.0 清理移除，
-迁移请使用原生 `TdxClient` / `tstdx.web` / 门面 API。）
+（v1.0 时代的 `tstdx/compat/` 与 `tstdx/web/easyquotation.py` 兼容垫片已随 v1.2.0 清理移除，
+v1.2 时代的门面 `tstdx/facade/` 亦已随 v16 Phase 2 物理删除；
+迁移请使用 `tstdx.Client`（唯一业务入口）、协议层 `TdxClient`、或 `tstdx.web` 适配器。）

@@ -17,7 +17,7 @@ pip install "tstdx[all]"
 ### 1. 获取 K 线数据
 
 ```python
-from tstdx import TdxClient
+from tstdx.client import TdxClient
 
 client = TdxClient()
 
@@ -39,7 +39,7 @@ for q in quotes:
 
 ```python
 import asyncio
-from tstdx import AsyncTdxClient
+from tstdx.client import AsyncTdxClient
 
 
 async def main():
@@ -61,14 +61,16 @@ from tstdx.output import write
 
 bars = client.bars("sh600519", period="day", count=250)
 
-# DataFrame（需 pandas）
-write(bars, "output://dataframe")
+# DataFrame（需 pandas；sink 由扩展名/前缀推断，内存对象显式传 fmt）
+from tstdx.output import to_dataframe
+
+df = to_dataframe(bars)
 
 # Parquet（需 pyarrow）
-write(bars, "parquet://kline_600519.parquet")
+write(bars, "kline_600519.parquet")
 
 # DuckDB（需 duckdb）
-write(bars, "duckdb://market.db?table=kline")
+write(bars, "duckdb:market.db@kline")
 ```
 
 ### 5. CLI
@@ -80,42 +82,39 @@ tstdx server-test          # 主站测速
 tstdx stream sh600519      # 流式订阅
 ```
 
-### 6. v14 Runtime（编排内核 + 批量执行）
+### 6. 统一查询内核（`Client`，172 项 capability）
 
-v14 Runtime 是统一编排入口，支持单次查询、批量执行（语义缓存去重 + 并发）
-和流式订阅。所有网关（CLI/REST/WS/MCP）均委托 Runtime 执行。
+`Client` 是唯一业务入口；它把每次请求编译为**单 Provider / 单 Channel** 的
+`QueryPlan`，零缓存直调绑定实现，并在结果里携带 provenance。
 
 ```python
-from tstdx.runtime import RuntimeGateway, create_runtime, QueryRequest
-from tstdx.cache_semantic import SemanticResultCache
+from tstdx import Client, FallbackPolicy, QuerySpec
+from tstdx.typed_query import FundHoldingsQuery
 
-# 创建带语义缓存的 Runtime
-gateway = RuntimeGateway(
-    create_runtime(
-        semantic_cache=SemanticResultCache(),
-        default_cache_ttl=60.0,
-    )
-)
+client = Client()
 
-# 单次查询
-resp = gateway.bars("sh600519", period="day", count=30)
-if resp.success:
-    print(resp.data[0]["close"])
+# 便捷方法：返回 QueryResult，自带 provider / channel 溯源
+bars = client.bars("sh600519", period="day", count=30)
+print(len(bars.data), bars.meta.provider, bars.meta.channel)
 
-# 批量执行（3 只股票，语义缓存自动去重）
-reqs = [
-    QueryRequest(operation="bars", args=("sh600000",), params={"count": 30}),
-    QueryRequest(operation="bars", args=("sh600519",), params={"count": 30}),
-    QueryRequest(operation="bars", args=("sh000001",), params={"count": 30}),
-]
-results = gateway.execute_batch(reqs, max_concurrent=4)
-for r in results:
-    print(r.data[0]["symbol"] if r.success else r.error)
+# 通用面：任何 capability 走同一入口，参数在规划期按真实签名校验
+result = client.execute(QuerySpec.build("bars", symbols="sh600519", period="day", count=30))
 
-# 缓存诊断
-print(gateway.semantic_cache_stats())
-# {'enabled': True, 'tier': 'l1', 'size': 3}
+# 类型化糖衣：冻结 dataclass 契约 → 内核 → 强类型 Domain Record
+typed = client.typed(FundHoldingsQuery(code="000001"))
+
+# 批量：逐 symbol 三态（ok/missing/failed），按请求顺序审计
+batch = client.quotes_batch(["sh600519", "sz000001", "sz999999"])
+print(batch.status_counts)          # {'ok': n, 'failed': n, 'missing': n, 'not_attempted': n}
+print(batch.items["sh600519"].status, batch.items["sh600519"].value.data[0]["price"])
+
+# 跨源只在显式策略下发生（默认永不发生）
+policy = FallbackPolicy(providers=("tdx", "tencent"))
+orchestrated = client.quotes("sh600519", policy=policy)
+print(orchestrated.result.meta.provider, [(a.provider, a.status) for a in orchestrated.attempts])
 ```
+
+异步镜像是 `AsyncClient`（`async with AsyncClient() as client: ...`）。
 
 ### 7. 主站池与热更新
 
@@ -127,12 +126,15 @@ print(gateway.semantic_cache_stats())
 
 ### Provider 绑定（禁止跨 Provider 静默降级）
 
-v13 clean break 之后，`DataSourceRouter` 退化为**单 Provider 选择器**，不再按顺序逐层尝试：
+v13 clean break 之后，规划器只为每次请求选定**一个** Provider / channel，
+不存在按顺序逐层尝试的聚合路由器（`DataSourceRouter` 已随 v16 删除）：
 
-- 每次请求绑定**恰好一个** Provider / channel；
-- TDX 失败**不会**自动改走 Web 源、本地 vipdoc、缓存或合成数据；
-- 需要跨 Provider 容错时，必须显式构造 `FallbackPolicy` 交给 `ProviderOrchestrator`，
-  并在返回值 provenance 中留下 `requested_provider` / `fallback` 审计痕迹。
+- 每次请求绑定**恰好一个** Provider / channel，并由 `UnifiedRuntime` 零缓存直调该绑定；
+- TDX 失败**不会**自动改走 Web 源、本地 vipdoc、缓存或合成数据；provenance 与请求
+  Provider 不一致时直接抛错，而不是悄悄换源；
+- 需要跨 Provider 容错时，必须显式构造 `FallbackPolicy`，由 `ProviderOrchestrator`
+  逐源尝试并返回 `OrchestratedResult`，其 `attempts` 留下每次
+  `provider / status / code` 审计痕迹。
 
 禁止跨 Provider silent fallback；任何降级都必须是调用方的显式选择。
 
@@ -160,8 +162,8 @@ except TdxError as e:
 
 ## 下一步
 
-- [v14 Runtime API 参考](api/v14-runtime.md) — 编排内核完整 API
-- [Cookbook 食谱集](cookbook/README.md) — 20+ 实战场景
+- [API 参考](api/README.md) — 统一内核层与全部模块索引
+- [架构说明](ARCHITECTURE.md) — 唯一执行路径与分层
+- [Cookbook 食谱集](cookbook/README.md) — 实战场景
 - [FAQ](FAQ.md) — 常见问题
 - [故障排查](troubleshooting.md) — 问题诊断
-- [API 参考](api/README.md) — 完整 API

@@ -81,10 +81,10 @@ class BatchItem(Generic[T]):
 class BatchResult(Generic[T]):
     """Auditable outcome of one batch request.
 
-    ``items`` carries the **successful values in request order** for the
-    canonical (``planned_service``) contract, and a ``{symbol: BatchItem}``
-    mapping for the legacy ``build()`` view.  ``errors`` maps a requested symbol
-    to the safe :class:`~tstdx.error_envelope.ErrorEnvelope` that explains why it
+    ``items`` carries either a ``{symbol: BatchItem}`` mapping (what
+    :meth:`build` and :meth:`tstdx.runtime.kernel.UnifiedRuntime.quotes_batch`
+    produce) or a plain value sequence.  ``errors`` maps a requested symbol to
+    the safe :class:`~tstdx.error_envelope.ErrorEnvelope` that explains why it
     is absent, and ``partial`` is derived from — and must agree with — whether
     ``errors`` is non-empty.
     """
@@ -152,7 +152,7 @@ class BatchResult(Generic[T]):
     def __deepcopy__(self, memo: dict[int, Any]) -> BatchResult[T]:
         items = self.items
         clone = self.__class__(
-            # 保留 ``items`` 的形态：规范契约是值序列，legacy ``build()`` 是符号映射。
+            # 保留 ``items`` 的形态：映射视图按符号建键，值序列保持元组。
             items=dict(items) if isinstance(items, Mapping) else tuple(items),
             errors=dict(self.errors),
             requested=self.requested,

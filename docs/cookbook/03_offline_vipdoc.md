@@ -19,8 +19,7 @@ from pathlib import Path
 
 from tstdx.reader.formats import (
     read_day_file,
-    read_lc1_file,
-    read_lc5_file,
+    read_min_file,
 )
 from tstdx.errors import DataFileNotFound
 
@@ -38,8 +37,8 @@ if __name__ == "__main__":
     bars = load_daily("600036")
     print(f"共 {len(bars)} 根日线，最新: {bars[-1]}")
 
-    # 分钟线
-    m5 = read_lc5_file(TDX_HOME / "vipdoc/sh/minline/sh600036.lc5")
+    # 分钟线：interval=1 读 .lc1，interval=5 读 .lc5
+    m5 = read_min_file(TDX_HOME / "vipdoc/sh/minline/sh600036.lc5", interval=5)
     print(f"5 分钟线 {len(m5)} 根")
 ```
 

@@ -185,13 +185,6 @@ _LAZY: dict[str, tuple[str, str]] = {
     "load_config": ("tstdx.config", "load_config"),
     "observability": ("tstdx.observability", ""),
     "streaming": ("tstdx.streaming", ""),
-    "deprecated": ("tstdx.deprecation", "deprecated"),
-    "DeprecationPolicy": ("tstdx.deprecation", "DeprecationPolicy"),
-    "FeedbackReporter": ("tstdx.feedback", "FeedbackReporter"),
-    "TelemetryCollector": ("tstdx.feedback", "TelemetryCollector"),
-    "UserStats": ("tstdx.feedback", "UserStats"),
-    "detect_encoding": ("tstdx.charset.encoding", "detect_encoding"),
-    "decode_bytes": ("tstdx.charset.encoding", "decode_bytes"),
 }
 
 

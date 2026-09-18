@@ -1,6 +1,6 @@
 # ADR-013：Provider-first Runtime Contract
 
-- 状态：Accepted for v11 migration
+- 状态：Accepted（v13 起为现行契约；v16/v17 单内核收口后仍是唯一权威口径）
 - 日期：2026-09-12
 - 基线：`main@7720c04952d9092fc24bf63a2225c381618e151c`
 

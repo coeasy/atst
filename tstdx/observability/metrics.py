@@ -570,7 +570,7 @@ def instrument_client(client: Any, metrics: Metrics | None = None) -> Any:
 
     Examples
     --------
-    >>> from tstdx import TdxClient
+    >>> from tstdx.client import TdxClient
     >>> from tstdx.observability.metrics import instrument_client
     >>> c = instrument_client(TdxClient())
     """

@@ -82,9 +82,14 @@ TDX 协议命令数量多且部分未文档化。需要一套机制既能解析�
 
 # ADR-004: HTTP Web 源降级策略
 
-**状态**: Accepted  
+**状态**: Superseded（由 ADR-013 provider-first 契约 + v16 单内核取代）  
 **日期**: 2026-08-31  
 **决策者**: 核心维护者
+
+> 本 ADR 记录的 5 级自动降级链与 `DataSourceRouter` 已随 v16 Phase 2 物理删除。
+> 现行事实：每次请求绑定恰好一个 Provider/channel，**默认永不换源**；跨源容错只能
+> 由调用方显式给出 `FallbackPolicy`（见 [ADR-013](ADR-013-provider-first-runtime-contract.md)）。
+> 保留本文仅为记录当时的决策语境。
 
 ## 背景
 

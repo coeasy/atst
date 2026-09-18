@@ -66,7 +66,7 @@
 ### 配置安全
 
 ```python
-from tstdx import TdxClient
+from tstdx.client import TdxClient
 
 # 使用连接池限制并发
 client = TdxClient(pool_size=4)

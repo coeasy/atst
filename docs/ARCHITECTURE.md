@@ -67,18 +67,29 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
 3. **F-9 孤儿模块 —— 已消灭（Phase 3C）**：`tstdx/freshness.py`（427 行）、`tstdx/health.py`
    （256 行）全仓零引用（含测试与脚本），`tstdx/failure.py` 仅被自身测试引用；三者随
    Phase 3C 删除。新鲜度/健康/失败决策若重来，必须挂到内核执行面上并有消费者，不再先写契约。
-4. **防回潮守卫**：`tests/architecture/test_single_kernel_guards.py`（已删模块/符号不可再现、
+4. **F-10 文档面失真 —— 已清偿（Phase 4，2026-09-19）**：`from tstdx import TdxClient`
+   （14 处，含 `ops/smoke_30d.py` 的运行期 ImportError）、v14 信封运行时用法
+   （`create_runtime`/`RuntimeGateway`/`QueryRequest`/语义缓存）、`DataSourceRouter`
+   五级降级、失效的落地 URI（`output://`/`parquet://`/`duckdb://…?table=`）、
+   幻影符号（`read_lc1_file`/`read_lc5_file`/`adjust_bars`/`domain.records` 旧类名清单）、
+   以及 5 组动作数（CLI 32→31、HTTP ~40→10、MCP 12→9、capability 167→172、
+   `integration.http_server/ws_server/mcp_server` → `runtime_*`/`mcp`）全部按运行期事实重写。
+5. **F-11 命名债残留 —— 待办**：`tstdx/web/_facade_mixin_*.py`（11 文件）与
+   `tstdx/web/facade.py` 仍沿用已删除的"门面层"命名；语义是 Web Provider 会话分组，
+   契约无影响，留作纯改名小 PR。
+6. **防回潮守卫**：`tests/architecture/test_single_kernel_guards.py`（已删模块/符号不可再现、
    `tstdx.runtime.__all__` 仅内核、runtime 包不再引用已删分层、Client 执行面类型为
    `DirectProviderExecutor`）；`tests/architecture/test_namespace_layout.py`（根级白名单 11 项、
-   旧模块路径不可导入）。
+   旧模块路径不可导入）；`tests/architecture/test_doc_code_consistency.py`（活文档 import 可解析、
+   事实型文档 `tstdx.*` 路径可解析、`__all__` ⇔ `_LAZY`、README 数字 == 运行期事实）。
 
 ## 5. 契约与真相源
 
 | 事实 | 唯一真相源 |
 |---|---|
 | Provider/Channel/Capability | `tstdx/providers/__init__.py`（`PROVIDERS` 注册表） |
-| 可执行绑定 | `direct_provider.DIRECT_BINDINGS`（启动时 `audit_runtime()` 三方对账） |
-| capability 语义/参数校验 | `query.QuerySpec.build` + `capability_catalog.validate_call` |
+| 可执行绑定 | `runtime/executor.py`（`DIRECT_BINDINGS`，启动时 `audit_runtime()` 三方对账） |
+| capability 语义/参数校验 | `query.py`（`QuerySpec`）+ `catalog/capability.py`（`validate_call`） |
 | 协议命令账本 | `protocol/` YAML 规范 + codegen + golden_audit |
 | 公开导出面 | `tstdx/__init__.py::__all__`（懒加载 `_LAZY`） |
 

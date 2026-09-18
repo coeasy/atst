@@ -98,34 +98,38 @@ tests/web/test_fund_v2.py    # 新增：50 例离线测试
 ## 五、量化场景串联
 
 ```python
-from tstdx import tstdx   # UnifiedQuoteAPI
+from tstdx import Client
 
-api = tstdx
+client = Client()
+call = lambda capability, **kw: client.call(capability, **kw).data   # noqa: E731
 
 # 1) 选基：近1年收益 Top20 的股票型基金，过滤 4 级风险
-page = api.fund_rank(fund_type=25, sort_column="SYL_1N", size=20, risk_level="4")
+page = call("fund_rank", fund_type=25, sort_column="SYL_1N", size=20, risk_level="4")
 
 # 2) 批量快照：一次拿到净值 + 盘中估值（替代已下线的 fundgz）
-snaps = api.fund_snapshot([r["code"] for r in page["rows"]])
+snaps = call("fund_snapshot", codes=[r["code"] for r in page["rows"]])
 
 # 3) 尽调：单只基金的风险等级 / 业绩基准 / 投资策略
-detail = api.fund_detail("161725")
+detail = call("fund_detail", code="161725")
 
 # 4) 超额收益：基金 vs 沪深300 vs 同类
-curve = api.fund_yield_curve("161725", index_code="000300")
+curve = call("fund_yield_curve", code="161725", index_code="000300")
 
 # 5) 经理打分卡：夏普 / 最大回撤 / 胜率
-mgrs = api.fund_manager_list("161725")
+mgrs = call("fund_manager_list", code="161725")
 live = [m for m in mgrs if m["is_in_office"] == "1"]
-eval_ = api.fund_manager_eval(live[0]["mgrid"])
+eval_ = call("fund_manager_eval", mgrid=live[0]["mgrid"])
 score = eval_["sharp_1y"] - abs(eval_["max_ret_1y"]) / 100
 
 # 6) 公司维度：招商基金旗下全部基金 + 规模变动
-comps = api.fund_companies()
+comps = call("fund_companies")
 zs = next(c for c in comps if c["company_id"] == "80084302")
-funds = api.fund_company_funds(zs["company_id"], sort_field="SYL_Y")
-scale = api.fund_company_scale(zs["company_id"])
+funds = call("fund_company_funds", company_id=zs["company_id"], sort_field="SYL_Y")
+scale = call("fund_company_scale", company_id=zs["company_id"])
 ```
+
+以上均为内核 capability（`tstdx.Client.call`），每次绑定单一 Provider 并在
+`QueryResult.meta` 留下溯源；旧的 `UnifiedQuoteAPI` 门面入口已随 v16 Phase 2 删除。
 
 ## 六、best-effort 边界与失败约定
 
