@@ -174,10 +174,10 @@ def _dispatch_round(
                 payload = _resolve_payload(sub, sym, qmap, warned_bad_symbols)
                 if payload is not None:
                     sub._queue.put((sym, payload))
-            for sym, payload in sub._queue.drain():
+            for queued_sym, queued_quote in sub._queue.drain():
                 if sub.on_quote is not None:
                     with contextlib.suppress(Exception):
-                        sub.on_quote(sym, payload)
+                        sub.on_quote(queued_sym, queued_quote)
             if sub._dropped > dropped_before and sub.on_error is not None:
                 with contextlib.suppress(Exception):
                     sub.on_error(

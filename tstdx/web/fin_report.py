@@ -3,7 +3,7 @@
 
 """三大财务报表（资产负债表 / 利润表 / 现金流量表）。
 
-补齐 tstdx 此前缺失的**报表级**财务明细——:meth:`UnifiedQuoteAPI.financial_abstract`
+补齐 tstdx 此前缺失的**报表级**财务明细——:meth:`WebQuoteSession.financial_abstract`
 只给「财务主要指标摘要」的汇总口径（EPS / ROE / 营收同比 / 毛利率 / 资产负债率等），
 无法做应收账款与长期应收款坏账风险、经营现金流质量、有息负债结构、研发费用
 占收入比等深度分析。本模块直连东财 datacenter-web 报表族，返回**全字段明细**。

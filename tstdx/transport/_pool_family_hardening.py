@@ -239,5 +239,5 @@ def _async_init(self: _async_impl.AsyncConnectionPool, *args: Any, **kwargs: Any
     _ASYNC_INIT(self, *args, **kwargs)
 
 
-_sync_impl.ConnectionPool.__init__ = _sync_init
-_async_impl.AsyncConnectionPool.__init__ = _async_init
+_sync_impl.ConnectionPool.__init__ = _sync_init  # type: ignore[method-assign]
+_async_impl.AsyncConnectionPool.__init__ = _async_init  # type: ignore[method-assign]

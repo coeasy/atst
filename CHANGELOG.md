@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（v17 Phase 5 第 1 步 —— 类型门禁归零与死守卫）
+
+- **修复 `Prober.only_offline_hours()` 的失效盘中守卫**：它比较
+  `SessionState.IN_SESSION`，而 `SessionState` 从未定义该成员（真实成员为
+  `call_auction/continuous/noon_break/closed`），任何未打桩的调用必抛
+  `AttributeError`——即"盘中禁止探测主站"的保护一直是死代码，而所有测试都
+  monkeypatch 掉这个方法，因此全绿从未暴露。现按 `state not in (CALL_AUCTION,
+  CONTINUOUS)` 判定，并补 `tests/protocol/test_prober_offline_guard.py`
+  逐时段回归（盘前/集合竞价/连续竞价/午休/盘后/周末 + `_guard_offline` 抛错路径）。
+- `mypy tstdx/` 错误 **47 → 0**。除上述真实缺陷外，另有：`runtime/identity.py`
+  以 `plan: object` 掩盖类型（改为 `QueryPlan`）、`golden_audit`/`speedtest`/
+  `streaming.base`/`_pool_provenance_hardening` 的同名变量复用（局部重命名）、
+  `config.schema` 的 `getattr` 循环补 `_Validatable` Protocol 锚点、
+  `/v13/runtime/health` 不再伸手取 `executor._bindings` 私有属性而改读
+  `DIRECT_BINDINGS` 事实源。11 个 `*_hardening.py` 的运行期打桩尾部逐行标
+  `# type: ignore[method-assign|attr-defined]`（不整模块豁免；
+  `--warn-unused-ignores` 保证标注失效即红）。
+- 清理缓存时代残留：`runtime/identity.py` 的 `RuntimeCacheIdentity` 与
+  `cache_identity_from_plan()` 生产代码零消费者，随 2 个只测自身的文件一并删除；
+  `tstdx/sink/local_day.py`、`tstdx/domain/symbol.py`、`tstdx/web/efinance_*.py`、
+  `tstdx/web/fin_report.py` 的 docstring 示例仍指向已物理删除的
+  `tstdx.facade.UnifiedQuoteAPI`（照抄即 `ImportError`），改为 `Client` /
+  `WebQuoteSession` 的真实签名。
+
 ### Added
 
 - P14 数据源补全（ESG 评级 / 筹码分布）：新增 `tstdx/web/esg.py`（新浪 ESG 评级，

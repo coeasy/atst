@@ -10,16 +10,16 @@ TDX 7727 扩展行情服务（期货 / 商品期权）在 2026-09 实测主站�
 ====================  ==========================================
 efinance 函数         本模块 / 门面方法
 ====================  ==========================================
-``futures.get_futures_base_info``  :meth:`EastmoneyFuturesSource.fetch_base_info` / ``UnifiedQuoteAPI.futures_base_info``
-``futures.get_realtime_quotes``     :meth:`EastmoneyFuturesSource.fetch_realtime` / ``UnifiedQuoteAPI.futures_realtime``
-``futures.get_quote_history``       :meth:`EastmoneyFuturesSource.fetch_kline` / ``UnifiedQuoteAPI.futures_kline``
-``futures.get_deal_detail``         :meth:`EastmoneyFuturesSource.fetch_deal_detail` / ``UnifiedQuoteAPI.futures_trades``
-``bond.get_base_info``              :meth:`EastmoneyBondSource.fetch_base_info` / ``UnifiedQuoteAPI.bond_base_info``
-``bond.get_realtime_quotes``        :meth:`EastmoneyBondSource.fetch_realtime` / ``UnifiedQuoteAPI.bond_realtime``
-``bond.get_quote_history``          :meth:`EastmoneyBondSource.fetch_kline` / ``UnifiedQuoteAPI.bond_kline``
-``bond.get_history_bill``           :meth:`EastmoneyBondSource.fetch_history_bill` / ``UnifiedQuoteAPI.bond_history_bill``
-``bond.get_today_bill``             :meth:`EastmoneyBondSource.fetch_today_bill` / ``UnifiedQuoteAPI.bond_today_bill``
-``bond.get_deal_detail``            :meth:`EastmoneyBondSource.fetch_deal_detail` / ``UnifiedQuoteAPI.bond_trades``
+``futures.get_futures_base_info``  :meth:`EastmoneyFuturesSource.fetch_base_info` / ``WebQuoteSession.futures_base_info``
+``futures.get_realtime_quotes``     :meth:`EastmoneyFuturesSource.fetch_realtime` / ``WebQuoteSession.futures_realtime``
+``futures.get_quote_history``       :meth:`EastmoneyFuturesSource.fetch_kline` / ``WebQuoteSession.futures_kline``
+``futures.get_deal_detail``         :meth:`EastmoneyFuturesSource.fetch_deal_detail` / ``WebQuoteSession.futures_trades``
+``bond.get_base_info``              :meth:`EastmoneyBondSource.fetch_base_info` / ``WebQuoteSession.bond_base_info``
+``bond.get_realtime_quotes``        :meth:`EastmoneyBondSource.fetch_realtime` / ``WebQuoteSession.bond_realtime``
+``bond.get_quote_history``          :meth:`EastmoneyBondSource.fetch_kline` / ``WebQuoteSession.bond_kline``
+``bond.get_history_bill``           :meth:`EastmoneyBondSource.fetch_history_bill` / ``WebQuoteSession.bond_history_bill``
+``bond.get_today_bill``             :meth:`EastmoneyBondSource.fetch_today_bill` / ``WebQuoteSession.bond_today_bill``
+``bond.get_deal_detail``            :meth:`EastmoneyBondSource.fetch_deal_detail` / ``WebQuoteSession.bond_trades``
 ====================  ==========================================
 
 期货 secid 格式沿用东财：``市场段.合约代码``（郑商所 ``115`` / 大商所 ``114`` /

@@ -227,8 +227,8 @@ async def _async_update_hosts(
             for host in published_hosts:
                 for index in range(self.slots_per_host):
                     key = f"{host.key}#{index}"
-                    old = old_by_slot_key.get(key)
-                    if old is None:
+                    existing = old_by_slot_key.get(key)
+                    if existing is None:
                         new_slots.append(
                             _async_impl.AsyncSlot(
                                 host=host,
@@ -237,11 +237,11 @@ async def _async_update_hosts(
                             )
                         )
                         continue
-                    if old.leases == 0 and not old.retired:
-                        reuse.append((old, host))
-                        new_slots.append(old)
+                    if existing.leases == 0 and not existing.retired:
+                        reuse.append((existing, host))
+                        new_slots.append(existing)
                     else:
-                        retire.append(old)
+                        retire.append(existing)
                         new_slots.append(
                             _async_impl.AsyncSlot(
                                 host=host,
@@ -326,6 +326,6 @@ def _sync_trigger_background_speedtest(self: _sync_impl.ConnectionPool) -> None:
     ).start()
 
 
-_sync_impl.ConnectionPool.update_hosts = _sync_update_hosts
-_sync_impl.ConnectionPool._trigger_background_speedtest = _sync_trigger_background_speedtest
-_async_impl.AsyncConnectionPool.update_hosts = _async_update_hosts
+_sync_impl.ConnectionPool.update_hosts = _sync_update_hosts  # type: ignore[method-assign]
+_sync_impl.ConnectionPool._trigger_background_speedtest = _sync_trigger_background_speedtest  # type: ignore[method-assign]
+_async_impl.AsyncConnectionPool.update_hosts = _async_update_hosts  # type: ignore[method-assign]

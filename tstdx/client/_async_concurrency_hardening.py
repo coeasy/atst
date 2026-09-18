@@ -60,4 +60,4 @@ async def _quotes_concurrent(
     return _emit(canonical, output_format)
 
 
-_impl.AsyncTdxClient.quotes_concurrent = _quotes_concurrent
+_impl.AsyncTdxClient.quotes_concurrent = _quotes_concurrent  # type: ignore[method-assign]

@@ -18,13 +18,18 @@
 
 用法::
 
-    from tstdx.facade import UnifiedQuoteAPI
+    from tstdx import Client
     from tstdx.sink.local_day import LocalDaySink
 
-    api = UnifiedQuoteAPI(route="tdx")
+    client = Client()
     sink = LocalDaySink(r"D:/tdx/vipdoc")
-    # fetch(offset, count) 即 TdxClient.bars(start=offset, count=count)
-    result = sink.sync("sh600519", api.tdx.bars)
+    # fetch(offset, count) 拉取从 start=offset 起的最近 count 根日线
+    result = sink.sync(
+        "sh600519",
+        lambda offset, count: client.bars(
+            "sh600519", period="day", count=count, start=offset
+        ).data,
+    )
     print(result.added)  # 本次新增条数
 """
 

@@ -453,9 +453,9 @@ def _start_heartbeat(self: _impl.ConnectionPool) -> None:
     self._hb.start()
 
 
-_impl.ConnectionPool._select_allowed_slot = _select_allowed_slot
-_impl.ConnectionPool._release_probe_token = _release_probe_token
-_impl.ConnectionPool.request = _request
-_impl.ConnectionPool.request_multi = _request_multi
-_impl.ConnectionPool.iter_frames = _iter_frames
-_impl.ConnectionPool._start_heartbeat = _start_heartbeat
+_impl.ConnectionPool._select_allowed_slot = _select_allowed_slot  # type: ignore[attr-defined]
+_impl.ConnectionPool._release_probe_token = _release_probe_token  # type: ignore[attr-defined]
+_impl.ConnectionPool.request = _request  # type: ignore[method-assign]
+_impl.ConnectionPool.request_multi = _request_multi  # type: ignore[method-assign]
+_impl.ConnectionPool.iter_frames = _iter_frames  # type: ignore[method-assign]
+_impl.ConnectionPool._start_heartbeat = _start_heartbeat  # type: ignore[method-assign]

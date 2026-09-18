@@ -202,13 +202,13 @@ def _apply_probe_observations(
                 f"测速回灌 host family 不匹配: requested={family!r}, "
                 f"entry={validated_host.key} family={validated_host.family!r}"
             )
-        result = by_key.get(validated_host.key)
-        if result is None:
+        observed = by_key.get(validated_host.key)
+        if observed is None:
             continue
-        if result.connect_ms is not None:
-            host.connect_ms = result.connect_ms
-        if result.rtt_ms is not None:
-            host.rtt_ms = result.rtt_ms
+        if observed.connect_ms is not None:
+            host.connect_ms = observed.connect_ms
+        if observed.rtt_ms is not None:
+            host.rtt_ms = observed.rtt_ms
 
 
 def probe(

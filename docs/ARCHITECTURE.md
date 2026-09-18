@@ -77,7 +77,20 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
 5. **F-11 命名债残留 —— 待办**：`tstdx/web/_facade_mixin_*.py`（11 文件）与
    `tstdx/web/facade.py` 仍沿用已删除的"门面层"命名；语义是 Web Provider 会话分组，
    契约无影响，留作纯改名小 PR。
-6. **防回潮守卫**：`tests/architecture/test_single_kernel_guards.py`（已删模块/符号不可再现、
+6. **F-12 死守卫 —— 已修（Phase 5，2026-09-19）**：`Prober.only_offline_hours()` 比较
+   从未存在的 `SessionState.IN_SESSION`，未打桩调用必抛 `AttributeError`，"盘中不探测
+   主站"的保护实际为死代码（测试全打桩故全绿）。现按 `call_auction/continuous` 判定，
+   并由 `tests/protocol/test_prober_offline_guard.py` 逐时段回归。同批把 `mypy tstdx/`
+   从 47 项压到 **0**（含删除零消费者的缓存时代残留 `RuntimeCacheIdentity`）。
+7. **F-13 死配置面 —— 待办**：`Config.cache`（`CacheConfig`）与 `Config.compatibility`
+   （`CompatibilityConfig`）生产代码零消费者，却仍接受用户 TOML 写 `[cache]`/
+   `[compatibility]` 段，与"数据请求零缓存 + clean-break"矛盾；须物理删除并重跑门禁。
+8. **F-15 门禁基线为红 —— 待办**：`ruff format --check` 74 文件待重排（dev 依赖
+   `ruff>=0.5`/`mypy>=1.10` 浮动导致版本漂移；本地 ruff 0.14.4 与 0.9.6 结论一致，
+   mypy 1.13 与 2.3.1 下 `tstdx/` 均为 0 错（含 `--warn-unused-ignores`）；
+   离线覆盖率实测 76.18% 低于 `--cov-fail-under=77`。
+   两者都**不调阈值**：分别以纯格式提交 + 钉版本、死面清理后按 CI 环境实测重钉来解决。
+9. **防回潮守卫**：`tests/architecture/test_single_kernel_guards.py`（已删模块/符号不可再现、
    `tstdx.runtime.__all__` 仅内核、runtime 包不再引用已删分层、Client 执行面类型为
    `DirectProviderExecutor`）；`tests/architecture/test_namespace_layout.py`（根级白名单 11 项、
    旧模块路径不可导入）；`tests/architecture/test_doc_code_consistency.py`（活文档 import 可解析、

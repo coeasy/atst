@@ -303,8 +303,8 @@ class Prober:
         """当前时刻是否允许探测（即**非盘中**时段）。
 
         复用 :func:`tstdx.transport.ratelimit.session_state`，其判定规则为：
-        交易日 09:15–11:30 或 13:00–15:00 → ``in_session``（拒绝探测），
-        其余时段 → ``pre_post`` / ``closed``（允许探测）。
+        交易日 09:15–11:30 或 13:00–15:00 → ``call_auction`` / ``continuous``
+        （拒绝探测），其余时段 → ``noon_break`` / ``closed``（允许探测）。
 
         Parameters
         ----------
@@ -316,7 +316,7 @@ class Prober:
         True 表示可以探测；False 表示处于盘中时段。
         """
         state = session_state(now)
-        return state != SessionState.IN_SESSION
+        return state not in (SessionState.CALL_AUCTION, SessionState.CONTINUOUS)
 
     def _guard_offline(self) -> None:
         """盘中守卫（**strict 模式**）：处于盘中时段时抛 :class:`TdxError`。

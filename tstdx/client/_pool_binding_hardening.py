@@ -166,5 +166,5 @@ def _async_init(
     )
 
 
-_sync_impl.TdxClient.__init__ = _sync_init
-_async_impl.AsyncTdxClient.__init__ = _async_init
+_sync_impl.TdxClient.__init__ = _sync_init  # type: ignore[method-assign]
+_async_impl.AsyncTdxClient.__init__ = _async_init  # type: ignore[method-assign]

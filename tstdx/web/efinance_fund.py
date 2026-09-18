@@ -8,13 +8,13 @@
 ====================  ==========================================
 efinance 函数         本模块 / 门面方法
 ====================  ==========================================
-``get_base_info``     :meth:`FundMobSource.fetch_base_info` / ``UnifiedQuoteAPI.fund_base_info``
-``get_fund_manager``  :meth:`FundMobSource.fetch_manager` / ``UnifiedQuoteAPI.fund_manager``
-``get_invest_position`` :meth:`FundMobSource.fetch_holdings` / ``UnifiedQuoteAPI.fund_holdings``
-``get_period_change`` :meth:`FundMobSource.fetch_period_change` / ``UnifiedQuoteAPI.fund_period_change``
-``get_types_percentage`` :meth:`FundMobSource.fetch_asset_allocation` / ``UnifiedQuoteAPI.fund_asset_allocation``
-``get_industry_distribution`` :meth:`FundMobSource.fetch_industry_distribution` / ``UnifiedQuoteAPI.fund_industry_distribution``
-``get_public_dates``  :meth:`FundMobSource.fetch_public_dates` / ``UnifiedQuoteAPI.fund_public_dates``
+``get_base_info``     :meth:`FundMobSource.fetch_base_info` / ``WebQuoteSession.fund_base_info``
+``get_fund_manager``  :meth:`FundMobSource.fetch_manager` / ``WebQuoteSession.fund_manager``
+``get_invest_position`` :meth:`FundMobSource.fetch_holdings` / ``WebQuoteSession.fund_holdings``
+``get_period_change`` :meth:`FundMobSource.fetch_period_change` / ``WebQuoteSession.fund_period_change``
+``get_types_percentage`` :meth:`FundMobSource.fetch_asset_allocation` / ``WebQuoteSession.fund_asset_allocation``
+``get_industry_distribution`` :meth:`FundMobSource.fetch_industry_distribution` / ``WebQuoteSession.fund_industry_distribution``
+``get_public_dates``  :meth:`FundMobSource.fetch_public_dates` / ``WebQuoteSession.fund_public_dates``
 ``get_quote_history`` （已有，见 :mod:`tstdx.web.adapters_fund` ``fund_nav_history``）
 ``get_realtime_increase_rate`` （已有，见 ``adapters_fund.fund_estimate``）
 ``get_fund_codes``    （已有，见 ``adapters_fund.fund_list``）

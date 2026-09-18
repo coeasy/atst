@@ -347,7 +347,7 @@ class QuerySpec:
         )
         PROVIDERS.require(selected, cap, channel=channel)
 
-        max_age = None if self.max_age in (None, 0, 0.0) else float(self.max_age)
+        max_age = float(self.max_age) if self.max_age else None
         return replace(
             self,
             capability=cap,

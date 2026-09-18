@@ -35,6 +35,15 @@
 | F-7 | P2 | `trade/` 仅自测引用、未列入 README 能力账（模块自身已声明"独立可选 + 模拟红线"） | `tstdx/trade/__init__.py` docstring |
 | F-8 | P2 | `sinks→sink`、`sources` 删除后，`output/`、`profile/`、`feedback/`、`tools/` 归属与门禁未审计；`.venv` 环境要求（本机 `python` 为坏 stub，须用 `uv`/`.venv`）未写入 CONTRIBUTING | 本次调研踩坑 |
 
+### 0.3 Phase 4/5 执行期实测新发现（按严重度）
+
+| # | 级别 | 问题 | 处置 |
+|---|---|---|---|
+| F-12 | **P0** | `Prober.only_offline_hours()` 比较 `SessionState.IN_SESSION`——该成员**从不存在**（真实成员为 `call_auction/continuous/noon_break/closed`）。任何未打桩的调用必抛 `AttributeError`，即盘中探测保护一直是死代码；因所有测试都 monkeypatch 掉该方法，全绿从未暴露 | **已修**（2026-09-19）：改判 `state not in (CALL_AUCTION, CONTINUOUS)`，补 `tests/protocol/test_prober_offline_guard.py` 逐时段回归（含周末与 `_guard_offline` 抛错路径） |
+| F-13 | P1 | 配置面仍保留 `Config.cache`（`CacheConfig`）与 `Config.compatibility`（`CompatibilityConfig`）两段，**生产代码零消费者**（全仓仅 `config/__init__.py` 再导出）。与"数据请求零缓存 / clean-break"直接冲突，且让用户以为 `[cache]` TOML 段仍然生效 | 待办：随 Phase 5 死面清理一并物理删除（含 `_SUBCONFIGS`/`validate`/导出），并确认 loader 对未知段 fail-closed |
+| F-14 | P2 | CHANGELOG `[Unreleased]` 的 P13/P14 条目仍以已删除的 `UnifiedQuoteAPI` 门面为"暴露面"叙述；新工具未纳入 `test_doc_code_consistency.py` 的活文档集合（CHANGELOG 不在集合内） | 待办：把历史条目改写为当前真实入口（`tstdx/web` 源 + `Client.call`），或标注"当时口径"并指向迁移表 |
+| F-15 | P1 | 格式门禁长期为红：`ruff format --check tstdx/ tests/ scripts/` 在 0.9.6 与 0.14.4 下均报 74 个文件待重排，而 CI 用浮动的 `ruff>=0.5` | 待办：一次纯格式提交 + 钉住 dev 工具版本（见 Phase 5 第 2 项） |
+
 ---
 
 ## 1. 分阶段执行计划
@@ -166,11 +175,32 @@
 
 1. 全量门禁：`pytest` 0 failed（含单跑随机序 `-p no:randomly` 抽检）、ruff 0、mypy 0、
    覆盖率按**有效代码**重新校准基线（Phase 2 净删 1.4 万行后旧基线失真）。
-2. **`ruff format` 漂移清偿（Phase 4 实测新发现）**：`ruff format --check tstdx/ tests/
-   scripts/` 在 ruff 0.9.6 与 0.14.4 下均报 **74 个文件待重排**（HEAD 既有，非 Phase 4 引入；
-   Phase 4 触及的 6 个 py 文件全部干净）。CI 用 `ruff>=0.5` 浮动版本，格式门禁当前为红。
+   **执行记录（2026-09-19）**：
+   - 离线全量 `-p no:randomly`：0 failed；`ruff check tstdx/ tests/ scripts/`：0。
+   - **mypy 47 → 0**（`mypy tstdx/ --ignore-missing-imports --warn-unused-ignores`）。
+     其中 14 处是真实缺陷或坏味道：`Prober.only_offline_hours` 引用不存在的
+     `SessionState.IN_SESSION`（F-12，运行期必抛 `AttributeError`）、
+     `runtime/identity.py` 仍以 `plan: object` 掩盖缓存时代残留的 `RuntimeCacheIdentity`
+     （零生产消费者，已连同 2 个自测文件删除/改写）、`golden_audit`/`speedtest`/
+     `streaming.base`/`_pool_provenance_hardening` 四处**同名变量复用**导致 mypy 把
+     Optional 与非 Optional 合并成同一声明类型（局部重命名即解，无运行期行为变化）、
+     `integration/runtime_http` 健康端点伸手拿 `executor._bindings`
+     私有属性（改读 `DIRECT_BINDINGS` 事实源）、`config.schema` 的
+     `getattr(self, name)` 循环缺 `_Validatable` Protocol 锚点。
+     其余 37 处集中在 11 个 `*_hardening.py` 运行期打桩尾部（`Class.method = wrapper`），
+     逐行 `# type: ignore[method-assign|attr-defined]` 标注——**不做整模块豁免**，
+     因为 `--warn-unused-ignores` 会把失效标注退回成红灯，桩层解散时标注同批消失。
+   - 覆盖率：**离线实测 76.18%**（23356 stmt / 4885 miss，Windows+py3.12），
+     低于 Makefile/CI 共用的 `--cov-fail-under=77` ⇒ 该门禁当前为红。
+     **不在本地下调阈值**：先删死面（F-13 死配置段）再按 CI 环境（ubuntu+py3.11）
+     的实测值重钉单一事实源（把数值收敛到 `pyproject.toml [tool.coverage.report]
+     fail_under`，Makefile/CI 不再各写一份），避免本地数字误伤跨平台差异。
+2. **`ruff format` 漂移清偿（Phase 4 实测新发现，见 F-15）**：`ruff format --check tstdx/
+   tests/ scripts/` 在 ruff 0.9.6 与 0.14.4 下均报 **74 个文件待重排**（HEAD 既有，
+   Phase 4/5 触及的文件按各自版本仍存差异）。CI 用 `ruff>=0.5` 浮动版本，格式门禁当前为红。
    需要一次**纯格式提交**（`ruff format` 全量 + 复核 diff 无语义变化）把基线钉回绿色，
    并把工具版本钉进 dev 依赖区间，避免版本漂移再次造成假红/假绿。
+   Phase 5 的类型修复提交**刻意不夹带**这 74 个文件的格式重排，保持 diff 可审。
 3. 真实网络 smoke（tdx 1 所 + web 1 源 + stream 3 帧）+ CLI/HTTP/MCP 三面各一发 +
    wheel 安装冒烟 → tag `v1.1.0-dev.1`。
 

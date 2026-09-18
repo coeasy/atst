@@ -29,7 +29,7 @@ from . import pool as _sync_impl
 from .hosts import HostEntry
 from .ratelimit import SessionRateLimiter
 
-_BASE_FROM_CONFIG = _sync_impl.ConnectionPool.from_config.__func__
+_BASE_FROM_CONFIG = _sync_impl.ConnectionPool.from_config.__func__  # type: ignore[attr-defined]
 
 
 @functools.wraps(
@@ -73,4 +73,4 @@ def _from_config(
     )
 
 
-_sync_impl.ConnectionPool.from_config = classmethod(_from_config)
+_sync_impl.ConnectionPool.from_config = classmethod(_from_config)  # type: ignore[assignment,method-assign]

@@ -312,11 +312,11 @@ def audit(
             cmd_int = int(key, 16)
         except ValueError:
             continue
-        c = get_command(cmd_int)
-        if c is not None:
-            cov.name = c.name
-            cov.tier = c.tier
-            cov.verified = c.verified
+        meta = get_command(cmd_int)
+        if meta is not None:
+            cov.name = meta.name
+            cov.tier = meta.tier
+            cov.verified = meta.verified
 
     ledger = _ledger_commands(ledger_commands)
     l1_keys = [f"0x{c.cmd:x}" for c in ledger]

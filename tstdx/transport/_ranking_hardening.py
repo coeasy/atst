@@ -193,7 +193,7 @@ def _apply_ranked_observation(
     return replace(base, connect_ms=ranked.connect_ms, rtt_ms=ranked.rtt_ms)
 
 
-_impl.RankingStore.load = _load
-_impl.RankingStore.save = _save
-_impl.RankingStore.merge = _merge
+_impl.RankingStore.load = _load  # type: ignore[method-assign]
+_impl.RankingStore.save = _save  # type: ignore[method-assign]
+_impl.RankingStore.merge = _merge  # type: ignore[method-assign]
 _impl._apply_ranked_observation = _apply_ranked_observation

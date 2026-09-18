@@ -274,7 +274,7 @@ async def _async_request(
     )
 
 
-_sync_impl.TcpConnection.__init__ = _sync_init
-_async_impl.AsyncTcpConnection.__init__ = _async_init
-_sync_impl.TcpConnection.request = _sync_request
-_async_impl.AsyncTcpConnection.request = _async_request
+_sync_impl.TcpConnection.__init__ = _sync_init  # type: ignore[method-assign]
+_async_impl.AsyncTcpConnection.__init__ = _async_init  # type: ignore[method-assign]
+_sync_impl.TcpConnection.request = _sync_request  # type: ignore[method-assign]
+_async_impl.AsyncTcpConnection.request = _async_request  # type: ignore[method-assign]

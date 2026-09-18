@@ -11,6 +11,7 @@ from ..client_api import Client
 from ..error_envelope import to_error_envelope
 from ..errors import ValidationError
 from ..providers import PROVIDERS
+from ..runtime.executor import DIRECT_BINDINGS
 from ..runtime.orchestration import FallbackPolicy
 from .serialization import serialize_result
 
@@ -123,6 +124,12 @@ def create_runtime_app(client: Client | None = None) -> Any:
     @app.get("/v13/runtime/health")
     def health() -> dict[str, Any]:
         rt = api.runtime
-        return {"status": "ok", "api": "v13", "default_provider": rt.planner.default_provider, "direct_bindings": len(rt.executor._bindings), "migrated_capabilities": len(api.capabilities())}
+        return {
+            "status": "ok",
+            "api": "v13",
+            "default_provider": rt.planner.default_provider,
+            "direct_bindings": len(DIRECT_BINDINGS),
+            "migrated_capabilities": len(api.capabilities()),
+        }
 
     return app

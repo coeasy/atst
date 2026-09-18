@@ -126,4 +126,4 @@ async def _close(self: _impl.AsyncConnectionPool) -> None:
     await _await_cleanup_before_cancellation(cleanup_task)
 
 
-_impl.AsyncConnectionPool.close = _close
+_impl.AsyncConnectionPool.close = _close  # type: ignore[method-assign]

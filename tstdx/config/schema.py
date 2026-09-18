@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass, field, fields, replace
-from typing import Any
+from typing import Any, Protocol
 
 from ..errors import ConfigError, ValidationError
 
@@ -82,6 +82,12 @@ def _check_mapping(name: str, value: Any) -> Mapping[Any, Any]:
 # --------------------------------------------------------------------------- #
 # 子配置
 # --------------------------------------------------------------------------- #
+class _Validatable(Protocol):
+    """Structural contract every config section satisfies for :meth:`Config.validate`."""
+
+    def validate(self) -> None: ...
+
+
 @dataclass
 class CoreConfig:
     timeout: float = 3.0
@@ -493,7 +499,7 @@ class Config:
     )
 
     def validate(self) -> Config:
-        expected_types = {
+        expected_types: dict[str, type[_Validatable]] = {
             "core": CoreConfig,
             "hosts": HostsConfig,
             "rate_limit": RateLimitConfig,
