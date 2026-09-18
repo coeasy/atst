@@ -1,45 +1,30 @@
-from dataclasses import dataclass
+from tstdx.query import QueryPlanner, QuerySpec
+from tstdx.runtime_identity import cache_identity_from_plan
 
 
-@dataclass(frozen=True)
-class CacheIdentity:
-    provider: str
-    channel: str
-    capability: str
-    fingerprint: str
-
-
-def test_cache_identity_includes_provider_boundary() -> None:
-    tdx = CacheIdentity(
-        provider="tdx",
-        channel="quotation",
-        capability="bars",
-        fingerprint="same-request",
-    )
-    eastmoney = CacheIdentity(
-        provider="eastmoney",
-        channel="kline",
-        capability="bars",
-        fingerprint="same-request",
+def _bars_plan(provider: str):
+    return QueryPlanner(default_provider=provider).compile(
+        QuerySpec.build(
+            "bars",
+            symbols="sh600519",
+            provider=provider,
+            period="day",
+            count=10,
+        )
     )
 
-    assert tdx != eastmoney
+
+def test_query_fingerprint_is_provider_aware() -> None:
+    tdx = _bars_plan("tdx")
+    eastmoney = _bars_plan("eastmoney")
+
+    assert tdx.fingerprint.value != eastmoney.fingerprint.value
 
 
-def test_provider_caches_must_not_share_identity() -> None:
-    keys = {
-        (
-            "tdx",
-            "quotation",
-            "bars",
-            "sh600519-day",
-        ),
-        (
-            "eastmoney",
-            "kline",
-            "bars",
-            "sh600519-day",
-        ),
-    }
+def test_runtime_cache_identity_matches_real_query_plan() -> None:
+    tdx = cache_identity_from_plan(_bars_plan("tdx"))
+    eastmoney = cache_identity_from_plan(_bars_plan("eastmoney"))
 
-    assert len(keys) == 2
+    assert tdx.key() != eastmoney.key()
+    assert tdx.provider == "tdx"
+    assert eastmoney.provider == "eastmoney"
