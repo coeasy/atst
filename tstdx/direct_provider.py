@@ -12,6 +12,7 @@ from typing import Any
 
 from .capability_catalog import binding_for, validate_call
 from .errors import InternalError, TdxError, ValidationError
+from .provider_guard import ProviderExecutionIdentity, validate_execution_identity
 from .providers import PROVIDERS
 from .query import QueryPlan
 from .result import Provenance, QueryResult
@@ -184,6 +185,19 @@ class DirectProviderExecutor:
                     "provider_switch_allowed": False,
                 },
             ) from exc
+
+        validate_execution_identity(
+            ProviderExecutionIdentity(
+                provider=plan.provider,
+                channel=plan.channel,
+                capability=plan.spec.capability,
+            ),
+            ProviderExecutionIdentity(
+                provider=binding.provider,
+                channel=binding.channel,
+                capability=binding.capability,
+            ),
+        )
 
         fn = getattr(self, binding.executor_name)
         try:
