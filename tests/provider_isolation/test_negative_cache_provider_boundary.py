@@ -1,44 +1,27 @@
-from dataclasses import dataclass
+from tstdx.batch import NegativeCache
+from tstdx.errors import ValidationError
+from tstdx.query import QueryPlanner, QuerySpec
+from tstdx.runtime_identity import cache_identity_from_plan
 
 
-@dataclass(frozen=True)
-class NegativeCacheKey:
-    provider: str
-    channel: str
-    capability: str
-    fingerprint: str
-
-
-def test_negative_cache_key_contains_provider() -> None:
-    tdx_error = NegativeCacheKey(
-        provider="tdx",
-        channel="quotation",
-        capability="bars",
-        fingerprint="request-a",
+def _identity(provider: str):
+    plan = QueryPlanner(default_provider=provider).compile(
+        QuerySpec.build(
+            "bars",
+            symbols="sh600519",
+            provider=provider,
+            period="day",
+            count=10,
+        )
     )
-    eastmoney_error = NegativeCacheKey(
-        provider="eastmoney",
-        channel="kline",
-        capability="bars",
-        fingerprint="request-a",
-    )
-
-    assert tdx_error != eastmoney_error
+    return cache_identity_from_plan(plan)
 
 
-def test_retryable_provider_failure_should_not_define_other_provider_state() -> None:
-    failed_provider = NegativeCacheKey(
-        provider="tdx",
-        channel="quotation",
-        capability="bars",
-        fingerprint="request-a",
-    )
+def test_negative_cache_does_not_cross_provider_boundary() -> None:
+    cache = NegativeCache(ttl=1.0)
+    tdx = _identity("tdx")
+    eastmoney = _identity("eastmoney")
 
-    other_provider = NegativeCacheKey(
-        provider="eastmoney",
-        channel="kline",
-        capability="bars",
-        fingerprint="request-a",
-    )
-
-    assert failed_provider.provider != other_provider.provider
+    assert cache.put(tdx, ValidationError("bad request")) is True
+    assert cache.get(tdx) is not None
+    assert cache.get(eastmoney) is None
