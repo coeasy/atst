@@ -232,8 +232,8 @@ class DirectProviderExecutor:
             client = F10Client(timeout=self.timeout)
             try:
                 if meta.capability == "f10":
-                    return client.parse_text(client.download(args[0], args[1]))
-                return list(client.catalog(args[0]))
+                    return client.parse_text(client.download(*args, **kwargs))
+                return list(client.catalog(*args, **kwargs))
             finally:
                 client.close()
 

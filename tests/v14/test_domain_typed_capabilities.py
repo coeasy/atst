@@ -1,11 +1,24 @@
+"""Domain typed-query contracts executed through the single zero-cache kernel.
+
+``Client.typed`` is the sole typed entry (v16 clean-break removed the v14
+envelope). These tests pin: registry alignment, payload compilation, frozen
+contracts, and per-capability Provider/Channel routing via an injected kernel
+executor.
+"""
+
 from __future__ import annotations
 
 import dataclasses
+from typing import Any
 
 import pytest
 
+from tstdx.capability_catalog import default_provider_for
+from tstdx.client_api import Client
 from tstdx.errors import ValidationError
-from tstdx.runtime import Runtime, request_from_typed
+from tstdx.query import QueryPlan, QueryPlanner, QuerySpec
+from tstdx.result import Provenance, QueryResult
+from tstdx.runtime import UnifiedRuntime
 from tstdx.typed_query import (
     AnnouncementsQuery,
     BoardListQuery,
@@ -56,6 +69,7 @@ from tstdx.typed_query import (
     StockValuationQuery,
     SuggestQuery,
     WencaiQuery,
+    call_payload_from_typed,
 )
 
 # 领域化契约的 capability -> 类映射（v14 Phase 1 扩展）
@@ -121,6 +135,23 @@ DOMAIN_CAPABILITIES: dict[str, type] = {
 }
 
 
+class RecordingKernelExecutor:
+    def __init__(self, data: Any = None) -> None:
+        self.plans: list[QueryPlan] = []
+        self.data = data
+
+    def execute(self, plan: QueryPlan) -> QueryResult[Any]:
+        self.plans.append(plan)
+        return QueryResult.from_plan(self.data, plan=plan, provenance=Provenance.direct(plan))
+
+
+def _typed(query: Any, data: Any = None) -> tuple[QueryPlan, Any]:
+    executor = RecordingKernelExecutor({} if data is None else data)
+    client = Client(runtime=UnifiedRuntime(executor=executor))
+    result = client.typed(query)
+    return executor.plans[0], result
+
+
 class TestDomainTypedCapabilities:
     def test_all_domain_capabilities_semantic_ready(self) -> None:
         from tstdx.providers import PROVIDERS
@@ -139,19 +170,24 @@ class TestDomainTypedCapabilities:
             assert instance.semantic_ready, f"{capability} semantic_ready=False"
             assert instance.capability == capability
 
-    def test_all_domain_queries_compile_through_typed_adapter(self) -> None:
-        """每个领域查询可通过 request_from_typed 生成 QueryRequest。"""
-        from tstdx.runtime import QueryRequest
-
+    def test_all_domain_queries_compile_through_kernel_planner(self) -> None:
+        """每个领域查询可经 call_payload_from_typed + QueryPlanner 编译成 plan。"""
         for capability, cls in DOMAIN_CAPABILITIES.items():
             try:
                 instance = cls()
             except ValidationError:
-                # 有必填字段的领域查询：提供最小合法值
                 instance = _minimal_instance(cls)
-            request = request_from_typed(instance)
-            assert isinstance(request, QueryRequest)
-            assert request.operation == capability
+            payload = call_payload_from_typed(instance)
+            spec = QuerySpec.build(
+                capability,
+                provider=instance.provider or default_provider_for(capability),
+                options={"args": [], "kwargs": payload},
+            )
+
+            plan = QueryPlanner().compile(spec)
+
+            assert plan.spec.capability == capability, capability
+            assert plan.fingerprint.value.startswith("q1:")
 
     def test_domain_capability_matches_registry_channel(self) -> None:
         """验证每个领域 capability 在注册表中存在实际数据通道。"""
@@ -173,23 +209,23 @@ class TestDomainTypedCapabilities:
 
 
 class TestDomainFieldValidation:
-    def test_wencai_requires_question(self) -> None:
+    def test_wencai_requires_query(self) -> None:
         with pytest.raises(ValidationError):
             WencaiQuery()
 
-    def test_screening_requires_condition(self) -> None:
+    def test_screening_requires_query(self) -> None:
         with pytest.raises(ValidationError):
             ScreeningQuery()
 
-    def test_suggest_requires_keyword(self) -> None:
+    def test_suggest_requires_key(self) -> None:
         with pytest.raises(ValidationError):
             SuggestQuery()
 
-    def test_index_constituents_requires_index_code(self) -> None:
+    def test_index_constituents_requires_index(self) -> None:
         with pytest.raises(ValidationError):
             IndexConstituentsQuery()
 
-    def test_board_member_requires_board_id(self) -> None:
+    def test_board_member_requires_node(self) -> None:
         with pytest.raises(ValidationError):
             BoardMemberQuery()
 
@@ -199,316 +235,84 @@ class TestDomainFieldValidation:
 
 
 class TestDomainQueryExecution:
-    def test_execute_typed_wencai_routes_to_iwencai(self) -> None:
-        runtime = Runtime(provider_order=("iwencai",))
-        source = _ScreeningSource()
-        runtime.register_provider(_new_web_provider("iwencai", source))
+    def test_typed_wencai_routes_to_iwencai(self) -> None:
+        plan, result = _typed(WencaiQuery(provider="iwencai", query="静态市盈率小于10"))
 
-        response = runtime.execute_typed(WencaiQuery(question="静态市盈率小于10"))
+        assert (plan.provider, plan.channel) == ("iwencai", "screening")
+        assert plan.spec.capability == "wencai"
+        assert result.capability == "wencai"
 
-        assert response.success is True
-        assert response.metadata["provider"] == "iwencai"
-        assert response.metadata["channel"] == "screening"
-        assert response.metadata["provenance"]["capability"] == "wencai"
+    def test_typed_fx_rates_routes_to_boc(self) -> None:
+        plan, _ = _typed(FxRatesQuery(provider="boc"))
 
-    def test_execute_typed_fx_rates_routes_to_boc(self) -> None:
-        runtime = Runtime(provider_order=("boc",))
-        runtime.register_provider(_new_web_provider("boc", _FxSource()))
+        assert (plan.provider, plan.channel) == ("boc", "fx")
+        assert plan.spec.capability == "fx_rates"
 
-        response = runtime.execute_typed(FxRatesQuery())
+    def test_typed_fund_manager_routes_to_eastmoney(self) -> None:
+        plan, result = _typed(FundManagerQuery(provider="eastmoney", code="000001"))
 
-        assert response.success is True
-        assert response.metadata["provider"] == "boc"
-        assert response.metadata["channel"] == "fx"
-        assert response.metadata["provenance"]["capability"] == "fx_rates"
+        assert (plan.provider, plan.channel) == ("eastmoney", "fund")
+        assert plan.spec.options["kwargs"] == {"code": "000001"}
+        from tstdx.domain.records import FundRecord
 
-    def test_execute_typed_fund_manager_routes_to_eastmoney(self) -> None:
-        runtime = Runtime(provider_order=("eastmoney",))
-        runtime.register_provider(_new_web_provider("eastmoney", _EaseSource()))
+        assert isinstance(result.data[0], FundRecord)
 
-        response = runtime.execute_typed(FundManagerQuery(code="000001"))
+    def test_typed_global_quotes_routes_to_tencent(self) -> None:
+        plan, _ = _typed(GlobalQuotesQuery(provider="tencent", symbols=("DJI", "IXIC")))
 
-        assert response.success is True
-        assert response.metadata["provider"] == "eastmoney"
-        assert response.metadata["channel"] == "fund"
-        assert response.data == {"code": "000001", "kind": "fund_manager"}
+        assert (plan.provider, plan.channel) == ("tencent", "global")
+        assert plan.spec.options["kwargs"] == {"symbols": ["DJI", "IXIC"]}
 
-    def test_execute_typed_global_quotes_routes_to_tencent(self) -> None:
-        runtime = Runtime(provider_order=("tencent",))
-        runtime.register_provider(_new_web_provider("tencent", _TencentSource()))
+    def test_typed_convertible_bond_routes_to_jsl(self) -> None:
+        plan, _ = _typed(ConvertibleBondQuery(provider="jsl", symbols=("sh113001",)))
 
-        response = runtime.execute_typed(GlobalQuotesQuery())
+        assert (plan.provider, plan.channel) == ("jsl", "bond")
+        assert plan.spec.options["kwargs"] == {"symbols": ["sh113001"]}
 
-        assert response.success is True
-        assert response.metadata["provider"] == "tencent"
-        assert response.data == {"kind": "global_quotes"}
-
-    def test_execute_typed_convertible_bond_routes_to_jsl(self) -> None:
-        runtime = Runtime(provider_order=("jsl",))
-        runtime.register_provider(_new_web_provider("jsl", _JslSource()))
-
-        response = runtime.execute_typed(ConvertibleBondQuery(symbol="sh113001"))
-
-        assert response.success is True
-        assert response.metadata["provider"] == "jsl"
-        assert response.metadata["channel"] == "bond"
-        assert response.data == {"kind": "convertible_bond", "symbol": "sh113001"}
-
-    def test_execute_typed_financial_queries_route_by_registry(self) -> None:
+    def test_typed_financial_queries_route_by_registry(self) -> None:
         """财务类查询按注册表路由到各自的实际通道。"""
-        from tstdx.provider import TdxProvider
-
-        runtime = Runtime(provider_order=("eastmoney", "tdx"))
-        runtime.register_provider(_new_web_provider("eastmoney", _EaseSource()))
-        runtime.register_provider(TdxProvider(_TdxFinanceSource()))
-
-        responses = [
-            runtime.execute_typed(FinancialAbstractQuery(symbol="600519.SH")),
-            runtime.execute_typed(DividendHistoryQuery(symbol="600519.SH")),
-            runtime.execute_typed(StockValuationQuery(symbol="600519.SH")),
-            runtime.execute_typed(HolderChangesQuery(symbol="600519.SH")),
-            runtime.execute_typed(CapitalChangesQuery(symbol="600519.SH")),
-            runtime.execute_typed(CorporateActionQuery(symbol="600519.SH")),
-        ]
-
-        assert all(response.success for response in responses)
-        channel_map = {
-            response.metadata["provenance"]["capability"]: response.metadata["channel"]
-            for response in responses
-        }
-        # datacenter 族（eastmoney）
-        assert channel_map["financial_abstract"] == "datacenter"
-        assert channel_map["dividend_history"] == "datacenter"
-        assert channel_map["stock_valuation"] == "datacenter"
-        assert channel_map["holder_changes"] == "datacenter"
-        # 非 datacenter 族按注册表真实通道
-        assert channel_map["capital_changes"] == "quotation"  # tdx
-        assert channel_map["corporate_action"] == "corporate"  # eastmoney
-
-    def test_execute_typed_market_data_routes_correct_channel(self) -> None:
-        runtime = Runtime(provider_order=("eastmoney", "tencent"))
-        runtime.register_provider(_new_web_provider("eastmoney", _EaseSource()))
-        runtime.register_provider(
-            _new_web_provider("tencent", _TencentMarketSource())
+        queries = (
+            FinancialAbstractQuery(provider="eastmoney", symbol="600519.SH"),
+            DividendHistoryQuery(provider="eastmoney", symbol="600519.SH"),
+            StockValuationQuery(provider="eastmoney", symbol="600519.SH"),
+            HolderChangesQuery(provider="eastmoney", symbol="600519.SH"),
+            CapitalChangesQuery(provider="tdx", symbol="600519.SH"),
+            CorporateActionQuery(provider="eastmoney", symbol="600519.SH"),
         )
 
-        hot = runtime.execute_typed(HotRankQuery())
-        board = runtime.execute_typed(BoardRankQuery())
+        channel_map = {
+            plan.spec.capability: (plan.provider, plan.channel)
+            for plan in (_typed(query)[0] for query in queries)
+        }
+        # datacenter 族（eastmoney）
+        assert channel_map["financial_abstract"] == ("eastmoney", "datacenter")
+        assert channel_map["dividend_history"] == ("eastmoney", "datacenter")
+        assert channel_map["stock_valuation"] == ("eastmoney", "datacenter")
+        assert channel_map["holder_changes"] == ("eastmoney", "datacenter")
+        # 非 datacenter 族按注册表真实通道
+        assert channel_map["capital_changes"] == ("tdx", "quotation")
+        assert channel_map["corporate_action"] == ("eastmoney", "corporate")
 
-        assert hot.success is True
-        assert hot.metadata["provider"] == "eastmoney"
-        assert hot.metadata["channel"] == "hot_rank"
-        assert board.success is True
-        assert board.metadata["provider"] == "tencent"
-        assert board.metadata["channel"] == "board_rank"
+    def test_typed_market_data_routes_correct_channel(self) -> None:
+        hot_plan, _ = _typed(HotRankQuery(provider="eastmoney"))
+        board_plan, _ = _typed(BoardRankQuery(provider="tencent"))
+
+        assert (hot_plan.provider, hot_plan.channel) == ("eastmoney", "hot_rank")
+        assert (board_plan.provider, board_plan.channel) == ("tencent", "board_rank")
 
 
-def _minimal_instance(cls: type) -> object:
+def _minimal_instance(cls: type) -> Any:
     """为带必填字段的领域查询构造最小合法实例。"""
-    from tstdx.typed_query import (
-        BoardMemberQuery,
-        FundBaseInfoMultiQuery,
-        IndexConstituentsQuery,
-        ScreeningQuery,
-        SuggestQuery,
-        WencaiQuery,
-    )
-
     if cls is WencaiQuery:
-        return WencaiQuery(question="x")
+        return WencaiQuery(query="x")
     if cls is ScreeningQuery:
-        return ScreeningQuery(condition="x")
+        return ScreeningQuery(query="x")
     if cls is SuggestQuery:
-        return SuggestQuery(keyword="x")
+        return SuggestQuery(key="x")
     if cls is IndexConstituentsQuery:
-        return IndexConstituentsQuery(index_code="000300")
+        return IndexConstituentsQuery(index="000300")
     if cls is BoardMemberQuery:
-        return BoardMemberQuery(board_id="BK0475")
+        return BoardMemberQuery(node="BK0475")
     if cls is FundBaseInfoMultiQuery:
         return FundBaseInfoMultiQuery(codes=("000001",))
     return cls()
-
-
-def _new_web_provider(provider: str, source: object):
-    from tstdx.provider import WebProvider
-
-    return WebProvider(provider, source)
-
-
-class _ScreeningSource:
-    def wencai(self, question: str = "", **kwargs):
-        return {"kind": "wencai", "question": question}
-
-    def screening(self, condition: str = "", **kwargs):
-        return {"kind": "screening", "condition": condition, **kwargs}
-
-
-class _FxSource:
-    def fx_rates(self, **kwargs):
-        return {"kind": "fx_rates", **kwargs}
-
-
-class _EaseSource:
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def _count(self) -> None:
-        self.calls += 1
-
-    def fund_manager(self, code: str = "", **kwargs):
-        self._count()
-        return {"kind": "fund_manager", "code": code, **kwargs}
-
-    def fund_base_info(self, code: str = "", **kwargs):
-        return {"kind": "fund_base_info", "code": code, **kwargs}
-
-    def fund_asset_allocation(self, code: str = "", **kwargs):
-        return {"kind": "fund_asset_allocation", "code": code, **kwargs}
-
-    def fund_period_change(self, code: str = "", **kwargs):
-        return {"kind": "fund_period_change", "code": code, **kwargs}
-
-    def fund_industry_distribution(self, code: str = "", **kwargs):
-        return {"kind": "fund_industry_distribution", "code": code, **kwargs}
-
-    def fund_public_dates(self, code: str = "", **kwargs):
-        return {"kind": "fund_public_dates", "code": code, **kwargs}
-
-    def fund_base_info_multi(self, codes=(), **kwargs):
-        return {"kind": "fund_base_info_multi", "codes": codes, **kwargs}
-
-    def financial_abstract(self, symbol: str = "", **kwargs):
-        return {"kind": "financial_abstract", "symbol": symbol, **kwargs}
-
-    def dividend_history(self, symbol: str = "", **kwargs):
-        return {"kind": "dividend_history", "symbol": symbol, **kwargs}
-
-    def stock_valuation(self, symbol: str = "", **kwargs):
-        return {"kind": "stock_valuation", "symbol": symbol, **kwargs}
-
-    def holder_changes(self, symbol: str = "", **kwargs):
-        return {"kind": "holder_changes", "symbol": symbol, **kwargs}
-
-    def holder_num(self, symbol: str = "", **kwargs):
-        return {"kind": "holder_num", "symbol": symbol, **kwargs}
-
-    def free_holders(self, symbol: str = "", **kwargs):
-        return {"kind": "free_holders", "symbol": symbol, **kwargs}
-
-    def announcements(self, symbol: str = "", **kwargs):
-        return {"kind": "announcements", "symbol": symbol, **kwargs}
-
-    def ipo_review(self, symbol: str = "", **kwargs):
-        return {"kind": "ipo_review", "symbol": symbol, **kwargs}
-
-    def capital_changes(self, symbol: str = "", **kwargs):
-        return {"kind": "capital_changes", "symbol": symbol, **kwargs}
-
-    def corporate_action(self, symbol: str = "", **kwargs):
-        return {"kind": "corporate_action", "symbol": symbol, **kwargs}
-
-    def bond_base_info(self, symbol: str = "", **kwargs):
-        return {"kind": "bond_base_info", "symbol": symbol, **kwargs}
-
-    def bond_all_base_info(self, symbol: str = "", **kwargs):
-        return {"kind": "bond_all_base_info", "symbol": symbol, **kwargs}
-
-    def bond_realtime(self, symbol: str = "", **kwargs):
-        return {"kind": "bond_realtime", "symbol": symbol, **kwargs}
-
-    def bond_trades(self, symbol: str = "", **kwargs):
-        return {"kind": "bond_trades", "symbol": symbol, **kwargs}
-
-    def bond_today_bill(self, symbol: str = "", **kwargs):
-        return {"kind": "bond_today_bill", "symbol": symbol, **kwargs}
-
-    def bond_history_bill(self, symbol: str = "", **kwargs):
-        return {"kind": "bond_history_bill", "symbol": symbol, **kwargs}
-
-    def futures_base_info(self, symbol: str = "", **kwargs):
-        return {"kind": "futures_base_info", "symbol": symbol, **kwargs}
-
-    def futures_realtime(self, symbol: str = "", **kwargs):
-        return {"kind": "futures_realtime", "symbol": symbol, **kwargs}
-
-    def futures_trades(self, symbol: str = "", **kwargs):
-        return {"kind": "futures_trades", "symbol": symbol, **kwargs}
-
-    def options_list(self, symbol: str = "", **kwargs):
-        return {"kind": "options_list", "symbol": symbol, **kwargs}
-
-    def options_trends(self, symbol: str = "", **kwargs):
-        return {"kind": "options_trends", "symbol": symbol, **kwargs}
-
-    def research_visits(self, symbol: str = "", **kwargs):
-        return {"kind": "research_visits", "symbol": symbol, **kwargs}
-
-    def hot_rank(self, **kwargs):
-        return {"kind": "hot_rank", **kwargs}
-
-    def limit_pool(self, **kwargs):
-        return {"kind": "limit_pool", **kwargs}
-
-    def northbound(self, **kwargs):
-        return {"kind": "northbound", **kwargs}
-
-    def longhu(self, symbol: str = "", **kwargs):
-        return {"kind": "longhu", "symbol": symbol, **kwargs}
-
-    def market_stat(self, **kwargs):
-        return {"kind": "market_stat", **kwargs}
-
-    def fund_flow(self, symbol: str = "", **kwargs):
-        return {"kind": "fund_flow", "symbol": symbol, **kwargs}
-
-    def stock_changes(self, **kwargs):
-        return {"kind": "stock_changes", **kwargs}
-
-    def rank(self, **kwargs):
-        return {"kind": "rank", **kwargs}
-
-    def index_constituents(self, index_code: str = "", **kwargs):
-        return {"kind": "index_constituents", "index_code": index_code, **kwargs}
-
-
-class _SinaMarketSource:
-    def board_rank(self, **kwargs):
-        return {"kind": "board_rank", **kwargs}
-
-    def board_list(self, **kwargs):
-        return {"kind": "board_list", **kwargs}
-
-    def industry_board(self, **kwargs):
-        return {"kind": "industry_board", **kwargs}
-
-    def suggest(self, keyword: str = "", **kwargs):
-        return {"kind": "suggest", "keyword": keyword, **kwargs}
-
-    def fund_flow(self, symbol: str = "", **kwargs):
-        return {"kind": "fund_flow", "symbol": symbol, **kwargs}
-
-
-class _TdxFinanceSource:
-    def capital_changes(self, symbol: str = "", **kwargs):
-        return {"kind": "capital_changes", "symbol": symbol, **kwargs}
-
-
-class _TencentMarketSource:
-    def board_rank(self, **kwargs):
-        return {"kind": "board_rank", **kwargs}
-
-    def global_quotes(self, **kwargs):
-        return {"kind": "global_quotes", **kwargs}
-
-    def market_stat(self, **kwargs):
-        return {"kind": "market_stat", **kwargs}
-
-
-class _TencentSource:
-    def global_quotes(self, **kwargs):
-        return {"kind": "global_quotes", **kwargs}
-
-
-class _JslSource:
-    def convertible_bond(self, symbol: str = "", **kwargs):
-        return {"kind": "convertible_bond", "symbol": symbol, **kwargs}

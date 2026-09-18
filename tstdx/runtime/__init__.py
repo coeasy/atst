@@ -1,24 +1,14 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""v14 runtime kernel."""
+"""Canonical zero-cache execution kernel (v13/v16 single-kernel line).
 
-from .bootstrap import create_runtime
-from .gateway import RuntimeAsyncClient, RuntimeGateway
-from .request import QueryRequest
-from .response import QueryResponse
-from .runtime import Runtime
-from .stream import StreamHandle, runtime_subscribe
-from .typed import request_from_typed
+The retired v14 envelope layer (``Runtime`` / ``RuntimeGateway`` /
+``QueryRequest`` / ``QueryResponse`` / DAG planner / provider router) was
+physically removed; :class:`tstdx.client_api.Client` is the sole business
+entrypoint on top of :class:`UnifiedRuntime`.
+"""
 
-__all__ = [
-    "Runtime",
-    "RuntimeGateway",
-    "RuntimeAsyncClient",
-    "QueryRequest",
-    "QueryResponse",
-    "StreamHandle",
-    "create_runtime",
-    "request_from_typed",
-    "runtime_subscribe",
-]
+from .kernel import KernelExecutor, UnifiedRuntime
+
+__all__ = ["KernelExecutor", "UnifiedRuntime"]

@@ -549,12 +549,13 @@ class QueryPlanner:
         signature *here*, so a caller who opted into the raw payload convention
         gets a planning-time :class:`~tstdx.errors.ValidationError`.
 
-        The convention is deliberately optional: the v14 typed path
-        (:class:`~tstdx.execution.semantic.SemanticExecutionAdapter`) compiles the
-        same capability names from semantic fields (``symbols`` / ``period`` …)
-        with no raw payload, and validates at dispatch instead. Requiring the
-        payload at planning would reject that first-class path, so the hard
-        guarantee is enforced where it is universal — before Provider I/O in
+        The convention is deliberately optional: the typed path
+        (:meth:`tstdx.Client.typed` via
+        :func:`tstdx.typed_query.call_payload_from_typed`) compiles the same
+        capability names from semantic fields with no raw positional payload,
+        and validates at dispatch instead. Requiring the payload at planning
+        would reject that first-class path, so the hard guarantee is enforced
+        where it is universal — before Provider I/O in
         :meth:`~tstdx.direct_provider.DirectProviderExecutor._migrated_capability`.
         """
 

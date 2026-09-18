@@ -206,7 +206,7 @@ class CapitalChangeCache:
         hit = self._mem.get(symbol)
         if hit is not None:
             ts, events = hit
-            if events and time.time() - ts <= self.ttl:
+            if events and time.time() - ts < self.ttl:
                 return self._clone(events)
             self._mem.pop(symbol, None)
         return self._load_disk(symbol)

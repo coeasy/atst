@@ -237,6 +237,24 @@ class Client:
     ) -> OrchestratedResult:
         return self.orchestrator.execute(spec, policy=policy)
 
+    def typed(self, query: Any, **kwargs: Any) -> Any:
+        """Execute one typed CapabilityQuery end-to-end through the kernel.
+
+        Compilation is fail-closed: unregistered capabilities raise before any
+        Provider request, and the normalized Domain Record payload is returned.
+        """
+        from .typed_query import TypedQueryResult, call_payload_from_typed, records_from_data
+
+        payload = call_payload_from_typed(query)
+        payload.update(kwargs)
+        result = self.call(query.capability, provider=query.provider, **payload)
+        if isinstance(result, OrchestratedResult):
+            raise ValidationError("Client.typed does not produce fallback-policy results")
+        return TypedQueryResult(
+            data=records_from_data(query.capability, result.data),
+            capability=query.capability,
+        )
+
     def quotes(
         self,
         symbols: str | Sequence[str],
@@ -454,6 +472,9 @@ class AsyncClient:
             spec,
             policy=policy,
         )
+
+    async def typed(self, query: Any, **kwargs: Any) -> Any:
+        return await asyncio.to_thread(self.client.typed, query, **kwargs)
 
     async def quotes(self, symbols: str | Sequence[str], **kwargs: Any) -> Any:
         return await asyncio.to_thread(self.client.quotes, symbols, **kwargs)

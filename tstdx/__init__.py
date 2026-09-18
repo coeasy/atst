@@ -28,7 +28,7 @@
     providers   Provider / Channel / Capability 单一事实源
     query       QuerySpec / QueryPlan / QueryFingerprint
     result      QueryResult / Provenance
-    runtime     v14 编排壳（RuntimeGateway / Runtime / DAG）+ 零缓存执行内核
+    runtime     零缓存 provider-first 执行内核（UnifiedRuntime，唯一内核）
     streaming   流式订阅 + 显式生命周期状态机
     web         HTTP Web 行情源（新浪/腾讯/东财/集思录/港股/中行）
     output      DataFrame / Parquet / DuckDB 输出层

@@ -65,6 +65,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 新增文档：`docs/efinance_parity_gap_analysis.md`、`docs/astock_toolkit_parity.md`、
   `docs/niuniu_coverage_audit.md`。
 
+### Removed（v16 Phase 3A/3B —— 单一内核收口，clean-break 无别名）
+
+执行面只剩一条链：`Client` / `AsyncClient` → `runtime.kernel.UnifiedRuntime`（零缓存）
+→ `QueryPlanner.compile(QuerySpec)` → `DirectProviderExecutor`（`DIRECT_BINDINGS` 为唯一
+三元组事实源）。下列 v14 信封层与其支撑 DAG **整体删除**，不提供向后兼容导入路径：
+
+- 模块：`tstdx/runtime/{runtime,gateway,bootstrap,request,response,typed,stream,context}.py`、
+  整个 `tstdx/execution/`（planner/graph/node/plan/semantic）、整个 `tstdx/provider/`
+  （v14 router/base/tdx/web/local）、`tstdx/executor_bindings.py`、
+  `tstdx/executor_binding_registry.py`、`tstdx/executor_registry.py`
+- 符号：`Runtime`、`RuntimeGateway`、`QueryRequest`、`QueryResponse`、`create_runtime`、
+  `request_from_typed`、`runtime_subscribe`、`StreamHandle`、`ExecutionPlanner`、
+  `SemanticExecutionAdapter`、`ProviderRouter`、`resolve_executor`、`ExecutorBindingRegistry`
+- 迁移表（旧 → 新）：
+  `Runtime().execute(QueryRequest(cap, provider, options))` → `Client.execute(QuerySpec.build(cap, provider=..., options={"args": [...], "kwargs": {...}}))`；
+  `RuntimeGateway().execute_typed(q)` / `request_from_typed(q)` → `Client.typed(q)`；
+  `Runtime().subscribe(...)` → `Client.stream(...)`；`QueryResponse.records` → `QueryResult.data`
+  （需要记录视图时用 `records_from_response(result)`）；
+  `create_runtime(tdx=Fake())` 测试注入口 → `UnifiedRuntime(executor=FakeKernelExecutor())`
+- 防回潮守卫：`tests/architecture/test_single_kernel_guards.py`（已删模块不可导入、
+  符号不再出现、`tstdx.runtime.__all__` 仅导出内核、runtime 包不再 import 已删分层）
+
+### Changed（v16 Phase 3D —— typed 契约对齐内核真实签名）
+
+`CapabilityQuery` 家族此前按信封时代的假想参数名建模，与 `DirectProviderExecutor`
+转发的真实方法签名不符（调用即在规划期 fail-closed）。本轮以内核参数名为唯一事实源
+重命名（clean-break，构造参数与校验消息同步）：
+
+| Query | 旧字段 | 新字段 |
+| --- | --- | --- |
+| `F10Query` | `section` | `filename` |
+| `WencaiQuery` | `question` | `query` |
+| `ScreeningQuery` | `condition` | `query` |
+| `SuggestQuery` | `keyword` | `key` |
+| `IndexConstituentsQuery` | `index_code` | `index` |
+| `BoardMemberQuery` | `board_id` | `node` |
+| `FundHoldingsQuery` / `BondKlineQuery` / `BondTradesQuery` / `BondTodayBillQuery` / `BondHistoryBillQuery` | `symbol` | `code` |
+| `FuturesKlineQuery` / `FuturesRealtimeQuery` / `FuturesTradesQuery` / `OptionSnapshotQuery` / `OptionsTrendsQuery` | `symbol` | `quote_id` |
+| `BondBaseInfoQuery` / `BondRealtimeQuery` / `StockBaseInfoQuery` | `symbol` | `codes: tuple` |
+| `AnnouncementsQuery` / `ConvertibleBondQuery` / `FundFlowQuery` / `GlobalQuotesQuery` | `symbol` | `symbols: tuple`（前者改继承 `BatchCapabilityQuery`） |
+| `StockAllPerformanceQuery` | `symbol` | `report_date: str` |
+| `IpoReviewQuery` / `FuturesBaseInfoQuery` / `OptionsListQuery` / `StockReportDatesQuery` | `symbol` | 无参（内核即无入参） |
+
+契约→内核编译审计改由 `scripts/contract_audit.py::audit_typed_kernel_compilation` 承担
+（`--ci` 门禁），`tests/v14/test_domain_typed_capabilities.py` 覆盖全部 50+ 领域契约的路由
+与载荷断言。
+
 ### Fixed
 
 - 修复 `EastmoneyNoticeSource` / `EastmoneyResearchSource` 的 BASE 路径段丢失问题：

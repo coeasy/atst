@@ -1,11 +1,11 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Typed query contracts for the v14 capability runtime.
+"""Typed query contracts for the canonical v13/v16 Client.
 
 Typed queries describe business intent without bypassing the canonical
 Provider/Channel/Capability registry. A typed capability is executable through
-V14 semantic orchestration only after the same capability is present in
+:meth:`tstdx.Client.typed` only after the same capability is present in
 ``tstdx.providers.PROVIDERS``; contracts for data-source methods that are not yet
 registered therefore remain pending automatically instead of creating a second
 capability namespace.
@@ -13,7 +13,7 @@ capability namespace.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Generic, TypeVar
 
 from .errors import ValidationError
@@ -140,13 +140,40 @@ def records_from_data(capability: str, data: Any) -> list[Any]:
     return normalize_to_records(data, record_cls)
 
 
-def records_from_response(query: CapabilityQuery, response: Any) -> list[Any]:
-    """从一次 Typed Query 的 Runtime 响应提取类型化 Domain Record 列表。
+_RESERVED_QUERY_FIELDS = frozenset({"capability", "provider", "options"})
 
-    ``response`` 需具备 ``success`` 与 ``data`` 属性（如
-    :class:`tstdx.runtime.QueryResponse`）。失败响应返回空列表。
+
+def call_payload_from_typed(query: CapabilityQuery) -> dict[str, Any]:
+    """Compile one immutable typed query into fail-closed ``Client.call`` kwargs.
+
+    Refuses contracts that are not registered in the canonical Provider
+    registry, so typed queries cannot become a second capability namespace.
     """
-    if response is None or not getattr(response, "success", False):
+    if not isinstance(query, CapabilityQuery):
+        raise TypeError("query must be a CapabilityQuery")
+    if not query.semantic_ready:
+        raise ValidationError(
+            f"typed capability {query.capability!r} is not registered for semantic runtime execution",
+            context={
+                "capability": query.capability,
+                "semantic_ready": False,
+            },
+        )
+    params = dict(query.options)
+    for item in fields(query):
+        if item.name in _RESERVED_QUERY_FIELDS:
+            continue
+        params[item.name] = getattr(query, item.name)
+    return params
+
+
+def records_from_response(query: CapabilityQuery, response: Any) -> list[Any]:
+    """从一次 Typed Query 的执行结果提取类型化 Domain Record 列表。
+
+    ``response`` 需具备 ``data`` 属性（如 :class:`tstdx.result.QueryResult`）。
+    ``None`` 结果返回空列表；执行失败在 Client 世界以异常表达。
+    """
+    if response is None:
         return []
     return records_from_data(query.capability, getattr(response, "data", None))
 
@@ -202,23 +229,35 @@ class FundRankQuery(CapabilityQuery):
 
 
 @dataclass(frozen=True, slots=True)
-class FundHoldingsQuery(SymbolQuery):
+class FundHoldingsQuery(CapabilityQuery):
+    """Kernel contract: ``fund_holdings(code, dates=None)``."""
+
     capability: str = "fund_holdings"
+    code: str = ""
 
 
 @dataclass(frozen=True, slots=True)
-class BondKlineQuery(SymbolQuery):
+class BondKlineQuery(CapabilityQuery):
+    """Kernel contract: ``bond_kline(code, *, period, count, adjust)``."""
+
     capability: str = "bond_kline"
+    code: str = ""
 
 
 @dataclass(frozen=True, slots=True)
-class FuturesKlineQuery(SymbolQuery):
+class FuturesKlineQuery(CapabilityQuery):
+    """Kernel contract: ``futures_kline(quote_id, *, period, count, adjust)``."""
+
     capability: str = "futures_kline"
+    quote_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
-class OptionSnapshotQuery(SymbolQuery):
+class OptionSnapshotQuery(CapabilityQuery):
+    """Kernel contract: ``options_snapshot(quote_id)``."""
+
     capability: str = "options_snapshot"
+    quote_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,8 +274,10 @@ class ResearchReportQuery(SymbolQuery):
 
 @dataclass(frozen=True, slots=True)
 class F10Query(SymbolQuery):
+    """``filename`` mirrors the kernel ``f10`` contract (F10Client.download)."""
+
     capability: str = "f10"
-    section: str = ""
+    filename: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,7 +292,7 @@ class TypedQueryResult(Generic[T]):
 # 领域化 Typed Query 契约（v14 Phase 1 扩展）
 # --------------------------------------------------------------------------- #
 # 每新增一个 Typed Query 契约，capability 必须与 tstdx.providers.PROVIDERS
-# 注册表一致（semantic_ready 为 True），否则 request_from_typed 会拒绝执行。
+# 注册表一致（semantic_ready 为 True），否则 call_payload_from_typed 会拒绝执行。
 
 
 @dataclass(frozen=True, slots=True)
@@ -300,27 +341,39 @@ class CorporateActionQuery(FinancialQuery):
 
 
 @dataclass(frozen=True, slots=True)
-class AnnouncementsQuery(FinancialQuery):
+class AnnouncementsQuery(BatchCapabilityQuery):
+    """Kernel contract: ``announcements(symbols, *, page, size)``."""
+
     capability: str = "announcements"
 
 
 @dataclass(frozen=True, slots=True)
-class IpoReviewQuery(FinancialQuery):
+class IpoReviewQuery(CapabilityQuery):
+    """Kernel contract: ``ipo_review(*, page, size)`` — 无 symbol 参数。"""
+
     capability: str = "ipo_review"
 
 
 @dataclass(frozen=True, slots=True)
-class StockBaseInfoQuery(FinancialQuery):
+class StockBaseInfoQuery(CapabilityQuery):
+    """Kernel contract: ``stock_base_info(codes)``。"""
+
     capability: str = "stock_base_info"
+    codes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
-class StockAllPerformanceQuery(FinancialQuery):
+class StockAllPerformanceQuery(CapabilityQuery):
+    """Kernel contract: ``stock_all_performance(report_date='')``。"""
+
     capability: str = "stock_all_performance"
+    report_date: str = ""
 
 
 @dataclass(frozen=True, slots=True)
-class StockReportDatesQuery(FinancialQuery):
+class StockReportDatesQuery(CapabilityQuery):
+    """Kernel contract: ``stock_report_dates(limit=100)`` — 无 symbol 参数。"""
+
     capability: str = "stock_report_dates"
 
 
@@ -376,78 +429,99 @@ class FundPublicDatesQuery(FundQuery):
 
 
 @dataclass(frozen=True, slots=True)
-class BondQuery(SymbolQuery):
-    """债券数据领域基类。"""
+class BondQuery(CapabilityQuery):
+    """债券数据领域基类（字段名与内核方法签名逐一对齐）。"""
 
 
 @dataclass(frozen=True, slots=True)
 class BondBaseInfoQuery(BondQuery):
+    """Kernel contract: ``bond_base_info(codes)``."""
+
     capability: str = "bond_base_info"
+    codes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class BondAllBaseInfoQuery(BondQuery):
+    """Kernel contract: ``bond_all_base_info()`` — 全量快照，无参数。"""
+
     capability: str = "bond_all_base_info"
 
 
 @dataclass(frozen=True, slots=True)
 class BondRealtimeQuery(BondQuery):
+    """Kernel contract: ``bond_realtime(codes)``."""
+
     capability: str = "bond_realtime"
+    codes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class BondTradesQuery(BondQuery):
     capability: str = "bond_trades"
+    code: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class BondTodayBillQuery(BondQuery):
     capability: str = "bond_today_bill"
+    code: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class BondHistoryBillQuery(BondQuery):
     capability: str = "bond_history_bill"
+    code: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class ConvertibleBondQuery(BondQuery):
+    """Kernel contract: JSL ``fetch(symbols, **kwargs)``."""
+
     capability: str = "convertible_bond"
+    symbols: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
-class FuturesQuery(SymbolQuery):
-    """期货数据领域基类。"""
+class FuturesQuery(CapabilityQuery):
+    """期货数据领域基类（字段名与内核方法签名对齐）。"""
 
 
 @dataclass(frozen=True, slots=True)
 class FuturesBaseInfoQuery(FuturesQuery):
+    """Kernel contract: ``futures_base_info()`` — 全量列表，无参数。"""
+
     capability: str = "futures_base_info"
 
 
 @dataclass(frozen=True, slots=True)
 class FuturesRealtimeQuery(FuturesQuery):
     capability: str = "futures_realtime"
+    quote_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class FuturesTradesQuery(FuturesQuery):
     capability: str = "futures_trades"
+    quote_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
-class OptionsQuery(SymbolQuery):
-    """期权数据领域基类。"""
+class OptionsQuery(CapabilityQuery):
+    """期权数据领域基类（字段名与内核方法签名对齐）。"""
 
 
 @dataclass(frozen=True, slots=True)
 class OptionsListQuery(OptionsQuery):
+    """Kernel contract: ``options_list(*, market, size, page)`` — 无 symbol 参数。"""
+
     capability: str = "options_list"
 
 
 @dataclass(frozen=True, slots=True)
 class OptionsTrendsQuery(OptionsQuery):
     capability: str = "options_trends"
+    quote_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -498,8 +572,10 @@ class BoardRankQuery(MarketDataQuery):
 
 @dataclass(frozen=True, slots=True)
 class FundFlowQuery(MarketDataQuery):
+    """Kernel contract: ``fund_flow(symbols)``。"""
+
     capability: str = "fund_flow"
-    symbol: str = ""
+    symbols: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -519,42 +595,55 @@ class SearchQuery(CapabilityQuery):
 
 @dataclass(frozen=True, slots=True)
 class WencaiQuery(SearchQuery):
+    """Kernel contract: ``wencai(query, *, page, limit, cookie)``."""
+
     capability: str = "wencai"
-    question: str = ""
+    query: str = ""
 
     def __post_init__(self) -> None:
-        if not self.question.strip():
-            raise ValidationError("wencai 查询必须提供 question", context={"capability": "wencai"})
+        if not self.query.strip():
+            raise ValidationError("wencai 查询必须提供 query", context={"capability": "wencai"})
 
 
 @dataclass(frozen=True, slots=True)
 class ScreeningQuery(SearchQuery):
+    """Kernel contract: ``fetch_strategy(query, *, page, limit)``."""
+
     capability: str = "screening"
-    condition: str = ""
+    query: str = ""
 
     def __post_init__(self) -> None:
-        if not self.condition.strip():
-            raise ValidationError("screening 查询必须提供 condition", context={"capability": "screening"})
+        if not self.query.strip():
+            raise ValidationError(
+                "screening 查询必须提供 query", context={"capability": "screening"}
+            )
 
 
 @dataclass(frozen=True, slots=True)
 class SuggestQuery(SearchQuery):
+    """Kernel contract: sina ``suggest(key, ...)``。"""
+
     capability: str = "suggest"
-    keyword: str = ""
+    key: str = ""
 
     def __post_init__(self) -> None:
-        if not self.keyword.strip():
-            raise ValidationError("suggest 查询必须提供 keyword", context={"capability": "suggest"})
+        if not self.key.strip():
+            raise ValidationError("suggest 查询必须提供 key", context={"capability": "suggest"})
 
 
 @dataclass(frozen=True, slots=True)
 class IndexConstituentsQuery(SearchQuery):
+    """Kernel contract: ``index_constituents(index, ...)``。"""
+
     capability: str = "index_constituents"
-    index_code: str = ""
+    index: str = ""
 
     def __post_init__(self) -> None:
-        if not self.index_code.strip():
-            raise ValidationError("index_constituents 查询必须提供 index_code", context={"capability": "index_constituents"})
+        if not self.index.strip():
+            raise ValidationError(
+                "index_constituents 查询必须提供 index",
+                context={"capability": "index_constituents"},
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -569,12 +658,16 @@ class BoardListQuery(SearchQuery):
 
 @dataclass(frozen=True, slots=True)
 class BoardMemberQuery(SearchQuery):
+    """Kernel contract: sina ``fetch_members(node, *, page_size, max_pages)``。"""
+
     capability: str = "board_member"
-    board_id: str = ""
+    node: str = ""
 
     def __post_init__(self) -> None:
-        if not self.board_id.strip():
-            raise ValidationError("board_member 查询必须提供 board_id", context={"capability": "board_member"})
+        if not self.node.strip():
+            raise ValidationError(
+                "board_member 查询必须提供 node", context={"capability": "board_member"}
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -589,4 +682,7 @@ class FxRatesQuery(MacroQuery):
 
 @dataclass(frozen=True, slots=True)
 class GlobalQuotesQuery(MacroQuery):
+    """Kernel contract: Tencent global ``fetch(symbols, **kwargs)``。"""
+
     capability: str = "global_quotes"
+    symbols: tuple[str, ...] = ()

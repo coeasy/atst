@@ -1,11 +1,22 @@
+"""Typed query contracts compiled through the single zero-cache kernel.
+
+v16 clean-break: the v14 envelope (``Runtime`` / ``QueryRequest`` /
+``SemanticExecutionAdapter``) is physically removed. ``Client.typed`` is the
+only typed entry; these tests pin plan compilation, payload mapping,
+fingerprint identity and Domain Record normalization against the kernel.
+"""
+
 from __future__ import annotations
+
+from typing import Any
 
 import pytest
 
+from tstdx.client_api import Client
 from tstdx.errors import ValidationError
-from tstdx.execution.semantic import SemanticExecutionAdapter
-from tstdx.provider import TdxProvider, WebProvider
-from tstdx.runtime import QueryRequest, Runtime, request_from_typed
+from tstdx.query import QueryPlan, QueryPlanner, QuerySpec
+from tstdx.result import Provenance, QueryResult
+from tstdx.runtime import UnifiedRuntime
 from tstdx.typed_query import (
     BalanceSheetQuery,
     CashFlowQuery,
@@ -14,52 +25,41 @@ from tstdx.typed_query import (
     FundRankQuery,
     IncomeStatementQuery,
     NewsQuery,
+    TypedQueryResult,
 )
 
 
-class EastmoneySource:
-    def __init__(self) -> None:
-        self.calls = 0
+class RecordingKernelExecutor:
+    """Test-only ``KernelExecutor``: capture the compiled plan, return canned data."""
 
-    def fund_holdings(self, symbol: str, *, quarter: str = ""):
-        self.calls += 1
-        return {"symbol": symbol, "quarter": quarter}
+    def __init__(self, data: Any = None) -> None:
+        self.plans: list[QueryPlan] = []
+        self.data = data
 
-    def balance_sheet(self, symbol: str, **kwargs):
-        return {"kind": "balance_sheet", "symbol": symbol, **kwargs}
-
-    def income_sheet(self, symbol: str, **kwargs):
-        return {"kind": "income_sheet", "symbol": symbol, **kwargs}
-
-    def cash_flow(self, symbol: str, **kwargs):
-        return {"kind": "cash_flow", "symbol": symbol, **kwargs}
-
-    def fund_rank(self, *, fund_type: int = 0, **kwargs):
-        return {"kind": "fund_rank", "fund_type": fund_type, **kwargs}
-
-    def news_financial(self, *, page: int = 1, size: int = 30):
-        return {"kind": "news_financial", "page": page, "size": size}
+    def execute(self, plan: QueryPlan) -> QueryResult[Any]:
+        self.plans.append(plan)
+        return QueryResult.from_plan(self.data, plan=plan, provenance=Provenance.direct(plan))
 
 
-class TdxSource:
-    def f10(self, symbol: str, *, section: str = ""):
-        return {"symbol": symbol, "section": section}
+def _client(data: Any = None) -> tuple[Client, RecordingKernelExecutor]:
+    executor = RecordingKernelExecutor(data)
+    return Client(runtime=UnifiedRuntime(executor=executor)), executor
 
 
 @pytest.mark.parametrize(
     ("capability", "provider", "channel", "params"),
     [
-        ("fund_holdings", "eastmoney", "fund", {"symbol": "600519.SH"}),
+        ("fund_holdings", "eastmoney", "fund", {"code": "000001"}),
         ("fund_rank", "eastmoney", "fund", {"fund_type": 0}),
-        ("bond_kline", "eastmoney", "derivatives", {"symbol": "113001.SH"}),
-        ("futures_kline", "eastmoney", "derivatives", {"symbol": "IF2509"}),
-        ("options_snapshot", "eastmoney", "options", {"symbol": "10000001"}),
+        ("bond_kline", "eastmoney", "derivatives", {"code": "113001"}),
+        ("futures_kline", "eastmoney", "derivatives", {"quote_id": "IF2509"}),
+        ("options_snapshot", "eastmoney", "options", {"quote_id": "10000001"}),
         ("research_reports", "eastmoney", "research", {"symbol": "600519.SH"}),
         ("balance_sheet", "eastmoney", "datacenter", {"symbol": "600519.SH"}),
         ("income_sheet", "eastmoney", "datacenter", {"symbol": "600519.SH"}),
         ("cash_flow", "eastmoney", "datacenter", {"symbol": "600519.SH"}),
         ("news_financial", "eastmoney", "news", {"page": 1, "size": 30}),
-        ("f10", "tdx", "f10", {"symbol": "600519.SH"}),
+        ("f10", "tdx", "f10", {"symbol": "600519.SH", "filename": "xxg.txt"}),
     ],
 )
 def test_canonical_typed_capabilities_compile_through_query_planner(
@@ -68,10 +68,13 @@ def test_canonical_typed_capabilities_compile_through_query_planner(
     channel: str,
     params: dict[str, object],
 ) -> None:
-    adapter = SemanticExecutionAdapter()
-    request = QueryRequest(capability, params)
+    spec = QuerySpec.build(
+        capability,
+        provider=provider,
+        options={"args": [], "kwargs": dict(params)},
+    )
 
-    plan = adapter.compile(request, provider)
+    plan = QueryPlanner().compile(spec)
 
     assert plan.provider == provider
     assert plan.channel == channel
@@ -79,29 +82,28 @@ def test_canonical_typed_capabilities_compile_through_query_planner(
     assert plan.fingerprint.value.startswith("q1:")
 
 
-def test_execute_typed_fund_holdings_uses_canonical_semantics() -> None:
-    source = EastmoneySource()
-    runtime = Runtime(provider_order=("eastmoney",))
-    runtime.register_provider(WebProvider("eastmoney", source))
+def test_typed_fund_holdings_compiles_canonical_semantics() -> None:
+    client, executor = _client({"code": "000001", "dates": ["2026Q2"]})
     query = FundHoldingsQuery(
         provider="eastmoney",
-        symbol="600519.SH",
-        options={"quarter": "2026Q2"},
+        code="000001",
+        options={"dates": ["2026Q2"]},
     )
 
-    response = runtime.execute_typed(query)
+    result = client.typed(query)
 
-    assert response.success is True
-    assert response.data == {"symbol": "600519.SH", "quarter": "2026Q2"}
-    assert response.metadata["provider"] == "eastmoney"
-    assert response.metadata["channel"] == "fund"
-    assert response.metadata["provenance"]["capability"] == "fund_holdings"
-    assert response.metadata["query_fingerprint"].startswith("q1:")
+    plan = executor.plans[0]
+    assert plan.provider == "eastmoney"
+    assert plan.channel == "fund"
+    assert plan.spec.capability == "fund_holdings"
+    assert plan.spec.options["kwargs"] == {"code": "000001", "dates": ["2026Q2"]}
+    assert plan.fingerprint.value.startswith("q1:")
+    assert isinstance(result, TypedQueryResult)
+    assert result.capability == "fund_holdings"
 
 
-def test_registered_statement_queries_execute_through_datacenter_channel() -> None:
-    runtime = Runtime(provider_order=("eastmoney",))
-    runtime.register_provider(WebProvider("eastmoney", EastmoneySource()))
+def test_registered_statement_queries_compile_through_datacenter_channel() -> None:
+    client, executor = _client({"rows": []})
     queries = (
         BalanceSheetQuery(
             provider="eastmoney",
@@ -112,101 +114,92 @@ def test_registered_statement_queries_execute_through_datacenter_channel() -> No
         CashFlowQuery(provider="eastmoney", symbol="600519.SH"),
     )
 
-    responses = [runtime.execute_typed(query) for query in queries]
+    results = [client.typed(query) for query in queries]
 
-    assert all(response.success for response in responses)
-    assert all(response.metadata["channel"] == "datacenter" for response in responses)
-    assert [response.metadata["provenance"]["capability"] for response in responses] == [
+    plans = executor.plans
+    assert [plan.channel for plan in plans] == ["datacenter"] * 3
+    assert [plan.spec.capability for plan in plans] == [
         "balance_sheet",
         "income_sheet",
         "cash_flow",
     ]
-
-
-def test_fund_rank_and_news_defaults_match_source_contracts() -> None:
-    runtime = Runtime(provider_order=("eastmoney",))
-    runtime.register_provider(WebProvider("eastmoney", EastmoneySource()))
-
-    rank = runtime.execute_typed(FundRankQuery(provider="eastmoney"))
-    news = runtime.execute_typed(NewsQuery(provider="eastmoney"))
-
-    assert rank.success is True
-    assert rank.data == {"kind": "fund_rank", "fund_type": 0}
-    assert rank.metadata["channel"] == "fund"
-    assert news.success is True
-    assert news.data == {"kind": "news_financial", "page": 1, "size": 30}
-    assert news.metadata["channel"] == "news"
-
-
-def test_runtime_policy_prefilters_statically_unsupported_typed_providers() -> None:
-    source = EastmoneySource()
-    runtime = Runtime(provider_order=("tdx", "eastmoney"))
-    runtime.register_provider(TdxProvider(TdxSource()))
-    runtime.register_provider(WebProvider("eastmoney", source))
-
-    response = runtime.execute_typed(FundHoldingsQuery(symbol="600519.SH"))
-
-    assert response.success is True
-    assert response.metadata["provider"] == "eastmoney"
-    assert response.metadata["provider_attempts"] == [
-        {"provider": "eastmoney", "status": "selected"}
+    assert [result.capability for result in results] == [
+        "balance_sheet",
+        "income_sheet",
+        "cash_flow",
     ]
-    assert response.metadata["provenance"]["requested_provider"] == "eastmoney"
-    assert response.metadata["provenance"]["fallback"] is False
+    assert plans[0].spec.options["kwargs"] == {
+        "symbol": "600519.SH",
+        "report_date": "2026-06-30",
+        "size": 10,
+    }
 
 
-def test_typed_options_participate_in_fingerprint() -> None:
-    source = EastmoneySource()
-    runtime = Runtime(provider_order=("eastmoney",))
-    runtime.register_provider(WebProvider("eastmoney", source))
-    q1 = FundHoldingsQuery(
-        provider="eastmoney",
-        symbol="600519.SH",
-        options={"quarter": "2026Q1"},
-    )
-    q2 = FundHoldingsQuery(
-        provider="eastmoney",
-        symbol="600519.SH",
-        options={"quarter": "2026Q2"},
-    )
+def test_fund_rank_and_news_defaults_reach_the_compiled_plan() -> None:
+    client, executor = _client({"rows": []})
 
-    first = runtime.execute_typed(q1)
-    repeat = runtime.execute_typed(q1)
-    different = runtime.execute_typed(q2)
+    client.typed(FundRankQuery(provider="eastmoney"))
+    client.typed(NewsQuery(provider="eastmoney"))
 
-    assert first.success is True
-    assert repeat.success is True
-    assert different.success is True
-    assert source.calls == 3
-    assert repeat.metadata["query_fingerprint"] == first.metadata["query_fingerprint"]
-    assert repeat.metadata["provenance"]["cache_tier"] is None
-    assert different.metadata["query_fingerprint"] != first.metadata["query_fingerprint"]
+    rank_plan, news_plan = executor.plans
+    assert (rank_plan.provider, rank_plan.channel) == ("eastmoney", "fund")
+    assert rank_plan.spec.options["kwargs"] == {"fund_type": 0}
+    assert (news_plan.provider, news_plan.channel) == ("eastmoney", "news")
+    assert news_plan.spec.options["kwargs"] == {"page": 1, "size": 30}
 
 
-def test_execute_typed_f10_uses_tdx_channel() -> None:
-    runtime = Runtime(provider_order=("tdx",))
-    runtime.register_provider(TdxProvider(TdxSource()))
-    query = F10Query(provider="tdx", symbol="600519.SH", section="股东研究")
+def test_unregistered_provider_defaults_route_through_registry() -> None:
+    client, executor = _client({})
 
-    response = runtime.execute_typed(query)
+    client.typed(FundHoldingsQuery(code="000001"))
 
-    assert response.success is True
-    assert response.data == {"symbol": "600519.SH", "section": "股东研究"}
-    assert response.metadata["provider"] == "tdx"
-    assert response.metadata["channel"] == "f10"
-    assert response.metadata["provenance"]["capability"] == "f10"
+    plan = executor.plans[0]
+    # default_provider_for 优先注册表内的 composite/首方通道，路由完全由注册表决定。
+    assert plan.provider == "derived"
+    assert plan.channel == "catalog"
+    assert plan.spec.capability == "fund_holdings"
 
 
-def test_typed_provider_aliases_normalize_before_conflict_check() -> None:
-    query = FundHoldingsQuery(provider="eastmoney", symbol="600519.SH")
+def test_typed_options_participate_in_fingerprint_identity() -> None:
+    client, executor = _client({})
+    q1 = FundHoldingsQuery(provider="eastmoney", code="000001", options={"dates": ["2026Q1"]})
+    q2 = FundHoldingsQuery(provider="eastmoney", code="000001", options={"dates": ["2026Q2"]})
 
-    request = request_from_typed(query, metadata={"provider": "em"})
+    client.typed(q1)
+    client.typed(q1)
+    client.typed(q2)
 
-    assert request.metadata["provider"] == "eastmoney"
+    first, repeat, different = executor.plans
+    # 零缓存内核：每一次 typed 调用都直达 executor，没有任何结果合并/复用。
+    assert len(executor.plans) == 3
+    assert repeat.fingerprint.value == first.fingerprint.value
+    assert different.fingerprint.value != first.fingerprint.value
 
 
-def test_typed_provider_conflict_is_rejected_before_execution() -> None:
-    query = FundHoldingsQuery(provider="eastmoney", symbol="600519.SH")
+def test_typed_f10_compiles_on_tdx_channel() -> None:
+    client, executor = _client([])
 
-    with pytest.raises(ValidationError, match="conflicts"):
-        request_from_typed(query, metadata={"provider": "tdx"})
+    client.typed(F10Query(provider="tdx", symbol="600519.SH", filename="zhuyao.txt"))
+
+    plan = executor.plans[0]
+    assert plan.provider == "tdx"
+    assert plan.channel == "f10"
+    assert plan.spec.options["kwargs"] == {"symbol": "600519.SH", "filename": "zhuyao.txt"}
+
+
+def test_typed_provider_aliases_normalize_before_planning() -> None:
+    client, executor = _client({})
+
+    client.typed(FundHoldingsQuery(provider="em", code="000001"))
+
+    assert executor.plans[0].provider == "eastmoney"
+
+
+def test_typed_rejects_capability_missing_from_registry_before_execution() -> None:
+    from tstdx.typed_query import CapabilityQuery
+
+    client, executor = _client({})
+
+    with pytest.raises(ValidationError, match="not registered"):
+        client.typed(CapabilityQuery(capability="no_such_capability"))
+    assert executor.plans == []

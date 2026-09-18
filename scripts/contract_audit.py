@@ -8,8 +8,8 @@
    且必须有对应的 Typed Query 契约（Typed Query = Registry 一一映射）。
 2. **语义就绪**：每个 Typed Query 契约 ``semantic_ready=True``
    （即同一个 capability 已出现在 canonical Provider 注册表）。
-3. **编译通过**：每个 Typed Query 可经 ``request_from_typed`` 编译为
-   ``QueryRequest``（Typed Query = Runtime boundary）。
+3. **编译通过**：每个 Typed Query 可经 ``call_payload_from_typed`` + ``QueryPlanner``
+   编译为唯一 ``QueryPlan``（Typed Query = Kernel boundary）。
 4. **Domain Record 映射**：每个 Typed Query capability 有对应的
    Domain Record 类型（Typed Query = Domain Result Model）。
 5. **Record 往返无损**：每个 Domain Record ``to_dict`` -> ``from_dict``
@@ -26,7 +26,6 @@
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import sys
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
@@ -222,15 +221,15 @@ def _minimal_instance(cls: type) -> Any:
     )
 
     if cls is WencaiQuery:
-        return WencaiQuery(question="x")
+        return WencaiQuery(query="x")
     if cls is ScreeningQuery:
-        return ScreeningQuery(condition="x")
+        return ScreeningQuery(query="x")
     if cls is SuggestQuery:
-        return SuggestQuery(keyword="x")
+        return SuggestQuery(key="x")
     if cls is IndexConstituentsQuery:
-        return IndexConstituentsQuery(index_code="000300")
+        return IndexConstituentsQuery(index="000300")
     if cls is BoardMemberQuery:
-        return BoardMemberQuery(board_id="BK0475")
+        return BoardMemberQuery(node="BK0475")
     if cls is FundBaseInfoMultiQuery:
         return FundBaseInfoMultiQuery(codes=("000001",))
     return cls()
@@ -279,10 +278,13 @@ def audit_semantic_ready() -> list[str]:
     return problems
 
 
-def audit_request_from_typed() -> list[str]:
-    """全部 Typed Query 可编译为 Runtime QueryRequest。"""
-    from tstdx.runtime import request_from_typed
+def audit_typed_kernel_compilation() -> list[str]:
+    """全部 Typed Query 可经 call_payload_from_typed + QueryPlanner 编译为 QueryPlan。"""
+    from tstdx.capability_catalog import default_provider_for
+    from tstdx.query import QueryPlanner, QuerySpec
+    from tstdx.typed_query import call_payload_from_typed
 
+    planner = QueryPlanner()
     problems: list[str] = []
     for cls in _all_typed_queries():
         try:
@@ -290,15 +292,21 @@ def audit_request_from_typed() -> list[str]:
         except Exception:
             continue
         try:
-            request = request_from_typed(inst)
-            if request.operation != inst.capability:
+            payload = call_payload_from_typed(inst)
+            spec = QuerySpec.build(
+                inst.capability,
+                provider=inst.provider or default_provider_for(inst.capability),
+                options={"args": [], "kwargs": payload},
+            )
+            plan = planner.compile(spec)
+            if plan.spec.capability != inst.capability:
                 problems.append(
-                    f"ERROR: {cls.__name__} operation 不匹配"
-                    f"（expected={inst.capability!r}, got={request.operation!r}）"
+                    f"ERROR: {cls.__name__} capability 不匹配"
+                    f"（expected={inst.capability!r}, got={plan.spec.capability!r}）"
                 )
         except Exception as exc:
             problems.append(
-                f"ERROR: {cls.__name__} request_from_typed 失败"
+                f"ERROR: {cls.__name__} 内核编译失败"
                 f"（{type(exc).__name__}: {exc}）"
             )
     return problems
@@ -369,14 +377,13 @@ def audit_record_roundtrip() -> list[str]:
 _AUDITS: tuple[tuple[str, Callable[[], list[str]]], ...] = (
     ("Registry 覆盖", audit_registry_coverage),
     ("Semantic 就绪", audit_semantic_ready),
-    ("Typed 编译", audit_request_from_typed),
+    ("Typed 编译", audit_typed_kernel_compilation),
     ("Domain Record", audit_domain_records),
     ("Record 往返", audit_record_roundtrip),
 )
 
 
 def run(ci: bool = False) -> int:
-    from tstdx.providers import PROVIDERS
 
     lines: list[str] = []
     lines.append("=" * 64)

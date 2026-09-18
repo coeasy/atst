@@ -459,11 +459,10 @@ def validate_call(
             _bind_signature(getattr(TdxClient, meta.method), args, kwargs)
             return
         if meta.backend == "f10_client":
-            if capability == "f10":
-                if len(args) != 2 or kwargs:
-                    raise TypeError("f10 requires symbol and filename")
-            elif len(args) != 1 or kwargs:
-                raise TypeError("f10_catalog requires exactly one symbol")
+            from .client import F10Client
+
+            method = "download" if capability == "f10" else "catalog"
+            _bind_signature(getattr(F10Client, method), args, kwargs)
             return
         if meta.backend in {"ex_client", "goods_client", "mac_client"}:
             from .client import ExMarketClient, GoodsClient, MacClient

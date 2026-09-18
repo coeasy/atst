@@ -113,11 +113,11 @@ class TestContractAutomation:
         )
 
         minimal_instances = {
-            WencaiQuery: lambda: WencaiQuery(question="x"),
-            ScreeningQuery: lambda: ScreeningQuery(condition="x"),
-            SuggestQuery: lambda: SuggestQuery(keyword="x"),
-            IndexConstituentsQuery: lambda: IndexConstituentsQuery(index_code="000300"),
-            BoardMemberQuery: lambda: BoardMemberQuery(board_id="BK0475"),
+            WencaiQuery: lambda: WencaiQuery(query="x"),
+            ScreeningQuery: lambda: ScreeningQuery(query="x"),
+            SuggestQuery: lambda: SuggestQuery(key="x"),
+            IndexConstituentsQuery: lambda: IndexConstituentsQuery(index="000300"),
+            BoardMemberQuery: lambda: BoardMemberQuery(node="BK0475"),
             FundBaseInfoMultiQuery: lambda: FundBaseInfoMultiQuery(codes=("000001",)),
         }
 

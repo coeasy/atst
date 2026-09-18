@@ -14,7 +14,8 @@ from tstdx.domain.records import (
     normalize_to_records,
     record_to_dicts,
 )
-from tstdx.runtime import Runtime
+from tstdx.query import QueryPlanner, QuerySpec
+from tstdx.result import Provenance, QueryResult
 from tstdx.typed_query import (
     FundManagerQuery,
     record_type_for,
@@ -165,24 +166,28 @@ class TestRecordQueryIntegration:
         records = records_from_data("unknown_cap", raw)
         assert records == [raw]
 
+    def _fund_manager_result(self, data: object) -> QueryResult:
+        plan = QueryPlanner().compile(
+            QuerySpec.build(
+                "fund_manager",
+                provider="eastmoney",
+                options={"args": [], "kwargs": {"code": "000001"}},
+            )
+        )
+        return QueryResult.from_plan(data, plan=plan, provenance=Provenance.direct(plan))
+
     def test_records_from_response_success_path(self) -> None:
-        class FundSource:
-            def fund_manager(self, code: str = "", **kwargs):
-                return {
-                    "code": code,
-                    "name": "测试基金",
-                    "fund_type": 1,
-                    "nav": 2.5,
-                    "acc_nav": 3.1,
-                }
-
-        from tstdx.provider import WebProvider
-
-        runtime = Runtime(provider_order=("eastmoney",))
-        runtime.register_provider(WebProvider("eastmoney", FundSource()))
+        response = self._fund_manager_result(
+            {
+                "code": "000001",
+                "name": "测试基金",
+                "fund_type": 1,
+                "nav": 2.5,
+                "acc_nav": 3.1,
+            }
+        )
         query = FundManagerQuery(code="000001")
 
-        response = runtime.execute_typed(query)
         records = records_from_response(query, response)
 
         assert len(records) == 1
@@ -190,17 +195,10 @@ class TestRecordQueryIntegration:
         assert records[0].code == "000001"
         assert records[0].metrics["nav"] == 2.5
 
-    def test_records_from_response_failure_returns_empty(self) -> None:
-        class FailingSource:
-            def fund_manager(self, **kwargs):
-                raise RuntimeError("boom")
-
-        from tstdx.provider import WebProvider
-
-        runtime = Runtime(provider_order=("eastmoney",))
-        runtime.register_provider(WebProvider("eastmoney", FailingSource()))
+    def test_records_from_response_empty_result_returns_empty(self) -> None:
+        """v13 内核世界里执行失败即异常，None payload 归一化为空记录。"""
+        response = self._fund_manager_result(None)
         query = FundManagerQuery(code="000001")
 
-        response = runtime.execute_typed(query)
-        assert not response.success
         assert records_from_response(query, response) == []
+        assert records_from_response(query, None) == []

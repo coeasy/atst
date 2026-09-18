@@ -12,8 +12,6 @@ ROOT = Path(__file__).resolve().parents[2]
 OFFICIAL_RUNTIME = [
     ROOT / "tstdx" / "client_api.py",
     ROOT / "tstdx" / "runtime" / "kernel.py",
-    ROOT / "tstdx" / "runtime" / "gateway.py",
-    ROOT / "tstdx" / "execution" / "semantic.py",
     ROOT / "tstdx" / "query.py",
     ROOT / "tstdx" / "direct_provider.py",
     ROOT / "tstdx" / "orchestration.py",
