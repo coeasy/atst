@@ -127,7 +127,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | **显式跨源编排** | `runtime/orchestration.py`：仅当调用方给出 `FallbackPolicy` 时按序尝试，逐次记入 `OrchestratedResult` |
 | **启动三方对账** | `runtime/audit.py::audit_runtime`：registry / catalog / bindings 不一致即报错 |
 | **60+ Typed Query 契约** | 11 领域基类 + 9 Domain Record 族，字段名与内核方法签名一一对应（`Client.typed`） |
-| **批量执行** | `Client.quotes_batch()` → `BatchResult`：逐 symbol 三态（ok/missing/failed）、保序、并发走内核 |
+| **批量执行** | `Client.quotes_batch()` → `BatchResult`：逐 symbol 三态（ok/missing/failed）、保序、串行直连单一 Provider（无隐藏换源） |
 | **流式生命周期** | `StreamSpec`/`StreamPlanner` + `StatefulQuoteStream`（订阅/退订/状态查询） |
 
 ### 基础设施
@@ -462,7 +462,7 @@ python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproj
 | **发布硬化** | mypy 既有告警清零 + 覆盖率基线按有效代码重校 + wheel 安装冒烟 |
 | **Live Smoke** | 真实网络 tdx/web/stream 三面各一发（`live-smoke` job 已有骨架） |
 | **Streaming 增量执行** | 流式数据增量合并 + 补数完整性保证 |
-| **可达性收口** | 公开导出面孤儿类型清理（如 `BatchSpec` 尚无生产消费者） |
+| **可达性收口** | 剩余两项已登记豁免并附理由（`tstdx.catalog.provider_contract`、`tstdx.providers.http` 安全守卫），接线与否属安全面决策 |
 
 ---
 

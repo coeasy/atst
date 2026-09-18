@@ -48,7 +48,11 @@
 | F-16 | **P0** | **配置系统与产品链路未接线**（Phase 5 实测）：`load_config` 在 `tstdx/` 包内**零调用者**，CLI/HTTP/WS/MCP/`Client` 全都不读配置文件；`Client.__init__` 只接受 `runtime`/`**runtime_kwargs`，没有 `config=` 入口。`Config` 唯一进入运行期的路径是调用方自己构造后传给 `ConnectionPool.from_config`（`pool.py:242` 读 `cfg.rate_limit`，`core/hosts/security` 同族）——即"写 `tstdx.toml` 不生效"。而 `docs/troubleshooting.md` 长期指导用户"尝试 80/443 端口主站（配置 `tstdx.toml`）"（Phase 5 已改为显式 `Client(hosts=[...])` 并就地标注未接线）| **已清偿**（2026-09-19，Phase 6，方案 a）：`UnifiedRuntime` 成为唯一读者并缺省经 `get_config()` 取六源合并单例，保留的 5 段全部键逐个贯通到 `TdxClient`/`ConnectionPool`/`WebQuoteClient`；配置→传输只有 `pool_settings_from_config` 一个翻译点。**接线时实测出的加重情节**：被删除的第二读者 `ConnectionPool.from_config` 读的键名（`rate_call_auction`…）与 `RateLimitConfig` 字段名（`in_session`/`pre_post`/`closed`）从不重合，`getattr(..., 默认)` 把所有配置值静默丢弃为限流器默认值，而它的契约测试正是照幻影键名写的 ⇒ 全绿掩盖。口径见 ADR-016 |
 | F-17 | P2 | 接线时新暴露的两处静默失效（Phase 6）：`tstdx.configure()` 合并后**丢弃返回值**、从不写回单例（调用即无效果）；`WebQuoteClient.__init__` 用 `try/except Exception: pass` 包裹配置读取，配置出错即悄悄退回硬编码默认 | **已修**（2026-09-19）：`configure()` 改为 `load_config(overrides=…, set_global=True)` 并如实记录语义；`WebQuoteClient` 直接 `get_config()`，配置解析失败 fail-closed |
 | F-14 | P2 | CHANGELOG `[Unreleased]` 的 P13/P14 条目仍以已删除的 `UnifiedQuoteAPI` 门面为"暴露面"叙述；新工具未纳入 `test_doc_code_consistency.py` 的活文档集合（CHANGELOG 不在集合内） | **已清偿**（2026-09-19）：`### Added` 顶部加"当时口径 vs 现行入口"标注（门面已随 v16 Phase 2 物理删除，照抄即 `ImportError`；能力全部存活于 catalog，入口 `Client.call(<capability>, ...)`），4 处"门面暴露 N 个方法"改写为 catalog 事实；条目点名的 46 个 capability 逐个对运行期 `Client().capabilities()`（172 项）核验存在，无一失配。`[1.0.0]` 及更早版本段属既成发布史，保留原口径 |
-| F-15 | P1 | 格式门禁长期为红：`ruff format --check tstdx/ tests/ scripts/` 在 0.9.6 与 0.14.4 下均报 74 个文件待重排，而 CI 用浮动的 `ruff>=0.5` | **格式与版本已清偿**（2026-09-19，Phase 5 第 2 步）：65 个待重排文件一次纯格式提交清零，重排前后 `ast.dump()` 逐个比对无差异；dev 依赖钉死 `ruff==0.15.2` / `mypy==2.3.1`。**覆盖率部分仍待办**：阈值数字已收敛为 `pyproject.toml [tool.coverage.report] fail_under` 单一事实源（删 Makefile/CI 的 `--cov-fail-under` 副本并加守卫测试），**未下调阈值**；离线实测 76.14% 仍低于 77，重钉待 CI 环境（ubuntu+py3.11）数字 |
+| F-15 | P1 | 格式门禁长期为红：`ruff format --check tstdx/ tests/ scripts/` 在 0.9.6 与 0.14.4 下均报 74 个文件待重排，而 CI 用浮动的 `ruff>=0.5` | **格式与版本已清偿**（2026-09-19，Phase 5 第 2 步）：65 个待重排文件一次纯格式提交清零，重排前后 `ast.dump()` 逐个比对无差异；dev 依赖钉死 `ruff==0.15.2` / `mypy==2.3.1`。**覆盖率部分仍待办**：阈值数字已收敛为 `pyproject.toml [tool.coverage.report] fail_under` 单一事实源（删 Makefile/CI 的 `--cov-fail-under` 副本并加守卫测试），**未下调阈值**；**离线缺口已闭合**（2026-09-19，Phase 5 第 4 步实测）：Windows+py3.12 整仓 `-m "not network"` 为 **78.79%**、`PYTEST_RC=0`，已高于阈值 77；**重钉阈值数字仍待 CI 环境（ubuntu+py3.11）数字**，本机值不作依据 |
+| F-18 | P1 | **安全资产躺在链外**：`tstdx/providers/http.py` 的 Provider 主机边界守卫（`host_allowed` + `ProviderBoundHttpClient` + 逐跳 `Location` 校验，11 项离线测试全覆盖）在 v16 删除跨源路由层后**没有任何生产调用点**。SECURITY.md 与各文档均未声称它在运行 ⇒ 不是"防线失效"，而是"一件造好并测过的防线没人接"。接进 `tstdx/web/_base_http.py` 会改变 web 传输的失败语义（凡未登记在 `PROVIDER_HTTP_HOST_SUFFIXES` 的主机一律挡掉），需逐源核表并真机验证 | ⏳ **待用户决策**（属安全面，不自行拍板）：(a) 接线 `build_client(provider=…)`，先补全 11 个 Provider 的主机表；(b) 连同测试删除，回到"由调用方自证单源"；(c) 维持现状 + 白名单豁免（附理由）。当前默认执行 (c)，见 `scripts/_reach_allow.txt` |
+| F-19 | P1 | **spec_audit 的三条口径缺陷使 strict 门禁失真**：① `audit_all` 复用 `codegen.load_all_specs`（以 `spec_id` 为键），跨族同号互相覆盖——实测 `TRADE/0x0001` 吞掉 `F10/0x0001`、`TRADE/0x0100` 吞掉 `7727/0x0100`，**这两条命令永远不会出现在审计输出里**（分母 44 被读成 42）；② `_family_to_constant` 对未知 family 静默回落 STANDARD，于是拿 7709 账本查交易命令，把"查错账本"报成"命令未登记"；③ 无载荷控制帧（`0x0004` 心跳 / `0x000D` 握手，spec 自声明响应 `fields/header/record_size` 全空）被要求"有注册解析器"，而它们按定义没有载荷可解析 | **已清偿**（2026-09-19，Phase 5 第 4 步）：改为逐个 YAML 遍历（自动探测 draft 显式排除并可枚举）；TRADE 族查自己的账本与帧层（`tstdx.trade.constants` 常量值 + `CMD_NAMES` 双向对齐、`tstdx.trade.frames` 编解码锚点）；控制帧豁免**判定源自 spec 内容**而非硬编码清单，且"未声明字段"不等于"声明为空"。复测 `Total: 44 / In Ledger: 44 / Coverage 100.0%`、`--strict` RC=0，**100% 阈值未动**；4 项防回潮断言见 `tests/test_spec_coverage.py` |
+| F-20 | P2 | 7709 账本把 `0x0004 HEARTBEAT` 标为 `verified=True`，但全仓**没有发送方**；传输层探活用未入账本的 `0x0002`（`DEFAULT_HEARTBEAT_CMD`，其注释说明"服务端对未知命令回短帧，探活只判通畅"）。同时该注释指向一个不存在的配置键 `hosts.heartbeat_cmd`（Phase 6 后 `HostsConfig` 只有 `servers`/`slots_per_host`） | **部分处理**（2026-09-19）：只把幻影配置说法改成真实覆盖点（连接池构造参数 `heartbeat_cmd`，并写明"配置面没有这个键"）。**改默认探活码属真实网络行为变化**，须真机验证 ⇒ 未动，登记为发布后小 PR |
+| F-21 | P2 | **测量方法缺陷比红灯更危险**：`cmd \| tail; echo $?` 量到的是管道末端的退出码，因此 originality / spec_audit / reachability 三项曾被读成"已绿"。CI 上它们是硬门禁 | **已清偿**：本仓所有门禁复测改用 `${PIPESTATUS[0]}` 或先重定向再取 `$?`；教训与正确写法写入 CONTRIBUTING 门禁段 |
 
 ---
 
@@ -223,6 +227,48 @@
      离线全量 `-m "not network"` → 0 failed / RC=0。
 3. 真实网络 smoke（tdx 1 所 + web 1 源 + stream 3 帧）+ CLI/HTTP/MCP 三面各一发 +
    wheel 安装冒烟 → tag `v1.1.0-dev.1`。**延后到 Phase 6 之后执行**（见下）。
+   ⚠️ 仍未执行：该步会产生真实网络请求并在远端可见（tag），须用户明确确认后启动。
+4. ✅ **CI 硬门禁本地红清偿（Phase 5 第 4 步，2026-09-19）**：`.github/workflows/ci.yml`
+   上 originality / spec-coverage / reachability 三个 job 是 `--strict` 硬门禁，本机
+   **三项全红**。测量教训：**门禁命令一旦接上管道，`$?` 量到的是管道末端**——
+   `cmd | tail; echo $?` 会把红灯读成绿灯，此前的"门禁已绿"结论就是这么来的。以下
+   结论全部以 `${PIPESTATUS[0]}` / 重定向后独立取 RC 复测。
+
+   | 门禁 | 原判 | 真缺陷 / 误报 | 处置 |
+   |---|---|---|---|
+   | originality | 红 | 2 文件缺许可证头（`catalog/provider_contract.py`、`py.typed`）＝真缺陷；`batch.py` 一句 "follows from" 散文被 `derived from` 模式命中＝措辞巧合 | 补头；改写该句不含被禁措辞。复测 `Total: 194 … Suspicious: 0`，RC=0 |
+   | reachability | 红 | 3 个真孤儿 + 扫描器自身 3 处漏报（见下） | 1 项接线、2 项删除、2 项登记豁免，RC=0 |
+   | spec-coverage | 红（81.0%） | 工具口径缺陷：分母被 `spec_id` 去重吞掉 2 条命令；TRADE 族被当作 7709 查账本；无载荷控制帧被要求"有解析器" | 口径修正（见 §0.4 F-19），复测 **Total: 44 / Coverage 100.0%**，RC=0，**100% 阈值未动** |
+
+   - 死面删除 3 项：`tstdx/observability/planned.py`（含其测试）、`tstdx/providers/adapter.py`、
+     `BatchSpec` 符号。**BatchSpec 取"删除"而非"接线"**：它文档化的职责指向 v16 已物理
+     删除的 `UnifiedRuntime.execute_batch`，且内核的批量循环已经把归一/去重/逐 symbol
+     直连做实——再造一个信封只会有第二个事实源。根面 46 → 45 项。
+   - 孤儿 `tstdx/domain/calendar.py` **接线**：`tools/capture.py` 的法律自检曾自带一份
+     只认周末的交易时段副本（法定节假日被误判为交易时段 ⇒ 错误中止采集）。改判
+     `TradingSession` 常量 + `is_trading_day` 后，重复事实消除且日历自然生产可达。
+   - 豁免登记 2 项（附评审理由，见 `scripts/_reach_allow.txt`）：
+     `tstdx.catalog.provider_contract`（隔离契约，消费方是 `tests/provider_isolation`；
+     内核不 import 正是它"零依赖可被任一 Provider 使用"的前提）、
+     `tstdx.providers.http`（**F-18**，见下）。
+   - 扫描器修正 3 处，都是**漏报方向**（放宽判定只在"看得更全"这一侧）：种子名单换成
+     v16 现行模块名；`_LAZY` 边支持 `AnnAssign` 与不带包前缀的子模块名字符串；
+     `tstdx.tools.*` / `tstdx.cli` 由"整包直接标可达"改为作为种子参与 BFS。
+   - 复测（每项独立取 RC，不走管道）：`ruff check .` RC=0、`ruff format --check .` RC=0
+     （433 文件）、`mypy tstdx/`（CI 参数）RC=0（193 源文件）、golden gate RC=0、
+     docs-code 一致性门禁 RC=0。
+   - 离线全量套件（当前树，无任何 `--ignore`）：**3227 passed / 7 skipped / 1 xpassed /
+     0 failed**，coverage **78.79%**，`PYTEST_RC=0`（阈值 77 未动）。
+   - 过程中两处非源码噪声，都按"补环境 / 等并行会话"处理而非改测试：
+     ① `tests/reader/test_formats.py` 3 项 DataFrame 断言抛 `DependencyMissingError [E1020]`
+     ＝本机 `.venv` 缺 `[dataframe]` extra（CI 的 `.[dev]` 含它）。`uv pip install
+     "pandas>=2.0"` 后该文件 41 项全绿；**没有加 `importorskip`**——那能当场抹掉这 3 项，
+     但会把本机环境与 CI 永久分叉，也违反"不得为过 CI 增加跳过"。
+     ② 测量当时工作区有一个未跟踪的并行会话 WIP 文件
+     `tests/transport/test_async_transport_coverage.py`（12 项失败：`AsyncConnectionPool([])`
+     的断言意图与实现不符、`family='standard'` 非合法族名），使含它的整仓运行读到
+     `15 failed / 78.61%`。该文件随后由并行会话修好并入库（`4ae1e38`，42 项全绿），
+     故上表数字为不含任何豁免的整仓值。
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
 
@@ -251,6 +297,9 @@
    `test_ci_workflow_contracts.py` 双向锁定），**阈值一次都没下调**。
    ⏳ 未完成：按 CI 环境（ubuntu+py3.11）实测值重钉覆盖率数字——本机 Windows 值不作依据。
    （同批挂账的 dev 工具版本钉死与全量 `ruff format` 纯格式提交已在 Phase 5 第 2 步落地。）
+   **2026-09-19 追记**：76.14% 的实测缺口已由后续真实离线测试填平，本机 Windows+py3.12
+   整仓现为 **78.79%**（`PYTEST_RC=0`，见 Phase 5 第 4 步）；阈值 77 全程未动，重钉仍需
+   CI 侧数字。
 4. ✅ **文档同步**：新增用户面 [docs/configuration.md](configuration.md)（5 段全键清单 +
    读取方 + 取值范围 + fail-closed 语义 + 环境变量规则），已纳入事实型文档门禁
    （`FACT_DOC_PATHS`）；`docs/troubleshooting.md` 的"配置文件尚未接入"改写为可用指令；

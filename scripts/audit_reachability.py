@@ -38,12 +38,15 @@ PKG = ROOT / "tstdx"
 ALLOW = ROOT / "scripts" / "_reach_allow.txt"
 
 # 进程入口种子（console script / python -m / 顶层包）
+# 名称必须是当前真实模块：v16 把 integration 服务面从 http_server/ws_server/
+# mcp_server 换成了 runtime_*，写死的旧名会被 `if s in modules` 静默丢弃，
+# 使整条服务面在图里消失（漏报为"不可达"的反向风险）。
 SEEDS = {
     "tstdx",
     "tstdx.cli",
-    "tstdx.integration.http_server",  # tstdx serve 子命令以外亦有 uvicorn 直挂场景
-    "tstdx.integration.ws_server",  # python -m tstdx.integration.ws_server
-    "tstdx.integration.mcp_server",  # python -m / stdio 客户端拉起
+    "tstdx.integration.runtime_http",  # uvicorn 直挂 / tstdx serve
+    "tstdx.integration.runtime_ws_server",  # python -m tstdx.integration.runtime_ws_server
+    "tstdx.integration.mcp",  # python -m / stdio 客户端拉起
 }
 
 
@@ -72,29 +75,52 @@ def _collect_modules() -> tuple[dict[str, Path], set[str]]:
     return mods, packages
 
 
-def _lazy_edges(init_path: Path) -> set[str]:
-    """解析 tstdx/__init__.py 里 _LAZY 字典值的模块字符串边。"""
+def _lazy_edges(init_path: Path, pkg: str) -> set[str]:
+    """解析包 ``__init__`` 里 ``_LAZY`` 映射值指向的模块边。
+
+    两种写法都必须识别：``_LAZY = {...}``（Assign）与
+    ``_LAZY: dict[str, str] = {...}``（AnnAssign）。只认前者会让根包与
+    ``tstdx.web`` 的惰性导出边整体消失，把纯惰性 façade 子模块误判成孤儿。
+
+    值可以是点号绝对路径（``"tstdx.batch"``、``("tstdx.web.session", "X")``），
+    也可以是包内相对名（``"session"``）；含 ``:`` 的 extras 目标取路径部分。
+    """
     edges: set[str] = set()
     try:
         tree = ast.parse(init_path.read_text(encoding="utf-8"))
     except (OSError, SyntaxError):
         return edges
-    for node in ast.walk(tree):
+
+    def _value(node: ast.AST) -> ast.expr | None:
         if isinstance(node, ast.Assign):
-            for t in node.targets:
-                if isinstance(t, ast.Name) and t.id == "_LAZY" and isinstance(node.value, ast.Dict):
-                    for v in node.value.values:
-                        target = None
-                        if isinstance(v, ast.Constant) and isinstance(v.value, str):
-                            target = v.value
-                        elif (
-                            isinstance(v, ast.Tuple)
-                            and v.elts
-                            and isinstance(v.elts[0], ast.Constant)
-                        ):
-                            target = v.elts[0].value
-                        if isinstance(target, str):
-                            edges.add(target.split(":")[0])
+            if any(isinstance(t, ast.Name) and t.id == "_LAZY" for t in node.targets):
+                return node.value
+            return None
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            return node.value if node.target.id == "_LAZY" else None
+        return None
+
+    def _target(value: ast.expr) -> str | None:
+        raw: object = None
+        if isinstance(value, ast.Constant):
+            raw = value.value
+        elif (
+            isinstance(value, ast.Tuple) and value.elts and isinstance(value.elts[0], ast.Constant)
+        ):
+            raw = value.elts[0].value
+        if not isinstance(raw, str):
+            return None
+        module = raw.split(":")[0]
+        return module if "." in module else f"{pkg}.{module}"
+
+    for node in ast.walk(tree):
+        lazy = _value(node)
+        if not isinstance(lazy, ast.Dict):
+            continue
+        for value in lazy.values:
+            target = _target(value)
+            if target is not None:
+                edges.add(target)
     return edges
 
 
@@ -157,19 +183,17 @@ def main() -> int:
         deps = {
             e for e in _import_edges(tree, name, name in packages) if e in modules or e in allow
         }
+        if name in packages:
+            # 包的 ``_LAZY`` 导出是该包的静态边：按需属性访问在运行期等价于 import。
+            deps |= {e for e in _lazy_edges(path, name) if e in modules or e in allow}
         graph[name] = deps
 
-    # 包 __init__ 与子模块天然互为整体：子包 init 视为该包目录的连接点
-    for name in list(modules):
-        if name.endswith(".__init__"):
-            graph.setdefault(name, set()).update(
-                m for m in modules if m.startswith(name[: -len(".__init__")] + ".")
-            )
-
-    # BFS 从种子（__init__ 的边包含 _LAZY 与 import）
+    # BFS 从种子（包的边已含 eager import 与 _LAZY 惰性导出）。
+    # tools/* 与 cli 是 `python -m` 进程入口，必须作为种子参与遍历：只把入口
+    # 自身标成可达会让入口独占的依赖（capture → 交易日历）被误判为孤儿。
     reach: set[str] = set()
-    stack = [s for s in SEEDS if s in modules]
-    lazy = _lazy_edges(modules["tstdx"]) if "tstdx" in modules else set()
+    entrypoints = {m for m in modules if m == "tstdx.cli" or m.startswith("tstdx.tools.")}
+    stack = [s for s in sorted(SEEDS | entrypoints) if s in modules]
     while stack:
         m = stack.pop()
         if m in reach:
@@ -183,17 +207,7 @@ def main() -> int:
         for d in graph.get(m, set()):
             if d not in reach:
                 stack.append(d)
-        if m == "tstdx":
-            for d in lazy:
-                for mm in modules:
-                    if (mm == d or mm.startswith(d + ".")) and mm not in reach:
-                        stack.append(mm)
         # 任何模块被 __init__ eager-import 时上面的图已覆盖
-
-    # tools 与 cli 是进程入口：包内全部视为可达（python -m 场景）
-    for m in modules:
-        if m.startswith("tstdx.tools") or m == "tstdx.cli":
-            reach.add(m)
 
     orphans = sorted(set(modules) - reach - allow)
     allowed_hit = sorted((set(modules) - reach) & allow)

@@ -10,7 +10,7 @@ def test_top_level_v13_public_api_is_client_first() -> None:
     assert tstdx.AsyncClient.__name__ == "AsyncClient"
     assert tstdx.QuerySpec.__name__ == "QuerySpec"
     assert tstdx.StreamSpec.__name__ == "StreamSpec"
-    assert tstdx.BatchSpec.__name__ == "BatchSpec"
+    assert tstdx.BatchResult.__name__ == "BatchResult"
     assert tstdx.UnifiedRuntime.__name__ == "UnifiedRuntime"
     assert tstdx.FallbackPolicy.__name__ == "FallbackPolicy"
     assert tstdx.ProviderOrchestrator.__name__ == "ProviderOrchestrator"

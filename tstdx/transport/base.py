@@ -60,8 +60,11 @@ _LOG = logging.getLogger("tstdx.transport")
 
 #: 心跳探测命令。
 #: TDX 服务端对未知命令通常回一个短帧，因此探活**只判传输是否通畅**，
-#: 不解析响应内容——这使得探测命令的选择不影响正确性。
-#: 若你的主站对该命令有特殊行为，可用 ``hosts.heartbeat_cmd`` 覆盖。
+#: 不解析响应内容——这使得探测命令的选择不影响正确性。0x0002 是刻意选的中性
+#: 探测码，不在 7709 账本内（账本里登记为 HEARTBEAT 的是 0x0004，见
+#: :mod:`tstdx.protocol.commands`；该命令目前无发送方）。
+#: 覆盖点是连接池构造参数 ``heartbeat_cmd``（``ConnectionPool`` /
+#: ``AsyncConnectionPool``）；配置面**没有**对应键，`tstdx.toml` 写它不会生效。
 DEFAULT_HEARTBEAT_CMD = 0x0002
 
 _RECV_CHUNK = 65536

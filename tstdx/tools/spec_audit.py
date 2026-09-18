@@ -3,12 +3,17 @@
 
 """Spec ↔ 实现 审计工具（§4 / §20：协议全覆盖）。
 
-将 PROTOCOL_SPEC/*.yaml 与当前代码实现进行对比审计：
+将 PROTOCOL_SPEC/**/*.yaml 与当前代码实现进行对比审计。**逐个 YAML 遍历**
+（不按 spec_id 去重，跨族同号命令不会被互相吃掉），自动探测的 draft 除外。
 
-1. **Ledger 检查**：spec_id 是否存在于 ``commands.py`` 账本？
-2. **Parser 检查**：是否有注册的解析器？
+1. **Ledger 检查**：命令号是否登记在该族自己的账本里？
+   行情族查 ``commands.py``；交易族查 ``tstdx/trade/constants.py``（常量值与
+   ``CMD_NAMES`` 都要对得上）。
+2. **Parser / 编解码检查**：行情数据命令须在 ``PARSERS`` 注册；**无载荷控制帧**
+   按 spec 自声明的空响应判为免注册（判定源自 spec 内容，不是硬编码白名单）；
+   交易族须在 ``tstdx/trade/frames.py`` 有该命令的编解码锚点。
 3. **Golden 样本检查**：引用的 golden 样本文件是否存在于磁盘？
-4. **覆盖率统计**：``coverage_summary()`` 返回汇总数据。
+4. **覆盖率统计**：``coverage_summary()`` 返回汇总数据，含 ``uncovered`` 明细。
 
 命令行::
 
@@ -32,12 +37,14 @@ from pathlib import Path
 from typing import Any
 
 from ._console import setup_console
-from .codegen import load_all_specs, load_spec
+from .codegen import load_spec
 
 __all__ = [
     "SpecAuditResult",
     "audit_spec",
     "audit_all",
+    "spec_files",
+    "draft_spec_files",
     "coverage_summary",
     "main",
 ]
@@ -53,14 +60,23 @@ class SpecAuditResult:
     spec_id: str
     name: str
     spec_file: str
-    #: 命令号是否存在于 ``commands.py`` 账本
+    #: 命令号是否存在于该族自己的账本（行情族 = commands.py，交易族 = trade.constants）
     in_ledger: bool = False
-    #: 是否有注册的解析器
+    #: 是否有注册的解析器（无载荷控制帧与交易族帧走各自证据，见 ``notes``）
     has_parser: bool = False
     #: 引用的 golden 样本文件是否全部存在
     golden_samples_ok: bool = True
+    #: 实现所在族："quotation"（commands.py 账本 + PARSERS）或 "trade"
+    plane: str = "quotation"
+    #: spec 自声明响应无载荷（控制帧），因此不要求 PARSERS 注册
+    control_frame: bool = False
     #: 审计备注（问题描述）
     notes: list[str] = field(default_factory=list)
+
+    @property
+    def covered(self) -> bool:
+        """账本已登记，且实现证据齐备（解析器 / 控制帧 / 交易族编解码）。"""
+        return self.in_ledger and (self.has_parser or self.control_frame)
 
 
 # --------------------------------------------------------------------------- #
@@ -71,8 +87,13 @@ def _get_project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _family_to_constant(family: str) -> str:
-    """将 spec family 字符串映射为 commands.py 的 Family 常量。"""
+def _family_to_constant(family: str) -> str | None:
+    """将 spec family 字符串映射为 commands.py 的 Family 常量。
+
+    ``None`` 表示该族不在行情账本里（TRADE 是一例）——由调用方改走该族自己的
+    实现锚点。这里**不做静默回落**：早先未知 family 回落到 STANDARD，于是拿
+    7709 账本去查交易命令，把"查错了账本"报告成"命令没登记"。
+    """
     from tstdx.protocol.commands import Family
 
     mapping = {
@@ -82,7 +103,82 @@ def _family_to_constant(family: str) -> str:
         "F10": Family.F10,
         "GOODS": Family.GOODS,
     }
-    return mapping.get(family, Family.STANDARD)
+    return mapping.get(family)
+
+
+#: 非行情族的实现锚点。交易命令的账本与帧编解码都在 ``tstdx.trade`` 自己的
+#: 模块里（模拟器回路验证，``status: draft``），不走 ``commands.py`` / PARSERS。
+TRADE_FAMILY = "TRADE"
+_TRADE_LEDGER_MODULE = "tstdx.trade.constants"
+_TRADE_CODEC_MODULE = "tstdx.trade.frames"
+#: 命令号 → (账本常量, 帧编解码入口)
+_TRADE_IMPLEMENTATION: dict[int, tuple[str, str]] = {
+    0x0001: ("CMD_LOGIN", "build_login_body"),
+    0x0002: ("CMD_HEARTBEAT", "parse_heartbeat_response"),
+    0x0003: ("CMD_LOGOUT", "build_request"),
+    0x0100: ("CMD_QUERY", "build_query_body"),
+    0x1000: ("CMD_SEND_ORDER", "build_order_body"),
+    0x1001: ("CMD_CANCEL_ORDER", "build_cancel_body"),
+}
+
+
+def _import_module(module: str) -> Any:
+    """导入模块，失败返回 ``None``（审计工具不得因缺失实现而崩溃）。"""
+    import importlib
+
+    try:
+        return importlib.import_module(module)
+    except ImportError:
+        return None
+
+
+def _attr_exists(module: str, attr: str) -> bool:
+    """模块属性是否真实存在——证据缺失即门禁缺失。"""
+    mod = _import_module(module)
+    return mod is not None and hasattr(mod, attr)
+
+
+def _trade_ledger_ok(cmd_int: int, name: str) -> str | None:
+    """交易族账本校验：常量存在且取值与命令号、名字都对上。"""
+    entry = _TRADE_IMPLEMENTATION.get(cmd_int)
+    if entry is None:
+        return f"TRADE 族无命令号 0x{cmd_int:04X} 的账本锚点"
+    const, _codec = entry
+    mod = _import_module(_TRADE_LEDGER_MODULE)
+    if mod is None or not hasattr(mod, const):
+        return f"{_TRADE_LEDGER_MODULE}.{const} 不存在"
+    value = getattr(mod, const)
+    if value != cmd_int:
+        return f"{_TRADE_LEDGER_MODULE}.{const}={value!r} 与 spec 0x{cmd_int:04X} 不符"
+    if getattr(mod, "CMD_NAMES", {}).get(cmd_int) != name:
+        return f"CMD_NAMES[0x{cmd_int:04X}] 与 spec name {name!r} 不符"
+    return None
+
+
+def _trade_codec_ok(cmd_int: int) -> str | None:
+    """交易族帧编解码校验：``tstdx.trade.frames`` 里确有该命令的入口符号。"""
+    entry = _TRADE_IMPLEMENTATION.get(cmd_int)
+    if entry is None:  # pragma: no cover - 账本校验已先报错
+        return f"TRADE 族无命令号 0x{cmd_int:04X} 的编解码锚点"
+    _const, codec = entry
+    if not _attr_exists(_TRADE_CODEC_MODULE, codec):
+        return f"{_TRADE_CODEC_MODULE}.{codec} 不存在"
+    return None
+
+
+def is_payloadless(spec: dict[str, Any]) -> bool:
+    """spec 声明的响应本身就没有载荷字段（控制帧）。
+
+    判定取自 spec 自己的 ``response`` 段，而不是硬编码命令号清单：想让一条
+    数据命令"免解析器"，必须先把它的响应声明改成空——那本身就是伪造样本。
+    **未声明** ``fields`` / ``record_size`` 不等于声明为空，一律按需要解析器处理。
+    """
+    response = spec.get("response")
+    if not isinstance(response, dict):
+        return False
+    if "fields" not in response or "record_size" not in response:
+        return False
+    return not response["fields"] and not response.get("header") and not response["record_size"]
 
 
 def _ensure_parsers_loaded() -> None:
@@ -124,17 +220,40 @@ def audit_spec(spec_path: str) -> SpecAuditResult:
     # 映射 family
     family_str = _family_to_constant(family)
 
-    # 检查 ledger
-    cmd = get_command(cmd_int, family_str)
-    in_ledger = cmd is not None
-    if not in_ledger:
-        notes.append(f"Command 0x{cmd_int:04X} not found in commands.py ledger")
+    if family_str is None and family.upper() != TRADE_FAMILY:
+        notes.append(f"未知 family {family!r}：既不在行情账本映射里，也不是交易族")
 
-    # 检查 parser
-    _ensure_parsers_loaded()
-    has_parser = (family_str, cmd_int) in PARSERS
-    if not has_parser:
-        notes.append(f"No registered parser for 0x{cmd_int:04X}")
+    control_frame = family_str is not None and is_payloadless(spec)
+
+    if family_str is None and family.upper() == TRADE_FAMILY:
+        # 交易族：账本与帧编解码都在 tstdx.trade 自己那一层
+        plane = "trade"
+        ledger_err = _trade_ledger_ok(cmd_int, name)
+        in_ledger = ledger_err is None
+        if ledger_err:
+            notes.append(ledger_err)
+        codec_err = _trade_codec_ok(cmd_int)
+        has_parser = codec_err is None
+        if codec_err:
+            notes.append(codec_err)
+        else:
+            notes.append(f"编解码锚点：{_TRADE_CODEC_MODULE}.{_TRADE_IMPLEMENTATION[cmd_int][1]}")
+    else:
+        plane = "quotation"
+        # 检查 ledger
+        cmd = get_command(cmd_int, family_str) if family_str is not None else None
+        in_ledger = cmd is not None
+        if not in_ledger:
+            notes.append(f"Command 0x{cmd_int:04X} not found in commands.py ledger")
+
+        # 检查 parser
+        _ensure_parsers_loaded()
+        has_parser = family_str is not None and (family_str, cmd_int) in PARSERS
+        if not has_parser:
+            if control_frame:
+                notes.append("无载荷控制帧：spec 自声明响应 fields/header/record_size 皆空")
+            else:
+                notes.append(f"No registered parser for 0x{cmd_int:04X}")
 
     # 检查 golden 样本
     golden_samples = spec.get("golden_samples", [])
@@ -162,6 +281,8 @@ def audit_spec(spec_path: str) -> SpecAuditResult:
         in_ledger=in_ledger,
         has_parser=has_parser,
         golden_samples_ok=golden_ok,
+        plane=plane,
+        control_frame=control_frame,
         notes=notes,
     )
 
@@ -179,37 +300,79 @@ def audit_all(spec_dir: str = "PROTOCOL_SPEC") -> list[SpecAuditResult]:
     list[SpecAuditResult]
         每个 spec 一条审计结果。
     """
-    specs = load_all_specs(spec_dir)
+    root = _spec_root(spec_dir)
     results: list[SpecAuditResult] = []
-    for spec_id, spec in sorted(specs.items()):
-        # 构造 spec 文件路径
-        spec_file = spec.get("_file", "")
-        if not spec_file:
-            # 从 spec_id 和 family 推断路径
-            family = spec.get("family", "7709")
-            spec_file = f"PROTOCOL_SPEC/{family}/"
-            results.append(
-                SpecAuditResult(
-                    spec_id=spec_id,
-                    name=spec.get("name", ""),
-                    spec_file=spec_file,
-                    notes=["_file metadata missing in spec"],
-                )
-            )
-            continue
+    for spec_file in _spec_files(root):
         try:
-            result = audit_spec(spec_file)
-            results.append(result)
+            results.append(audit_spec(spec_file))
         except (FileNotFoundError, ValueError) as exc:
             results.append(
                 SpecAuditResult(
-                    spec_id=spec_id,
-                    name=spec.get("name", ""),
+                    spec_id="",
+                    name="",
                     spec_file=spec_file,
-                    notes=[str(exc)],
+                    notes=[f"spec 无法审计: {exc}"],
                 )
             )
     return results
+
+
+def _spec_root(spec_dir: str) -> Path:
+    root = Path(spec_dir)
+    if not root.is_absolute():
+        root = _get_project_root() / spec_dir
+    return root
+
+
+def _rel_posix(path: Path) -> str:
+    try:
+        return Path(path.resolve().relative_to(_get_project_root())).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _is_draft_probe(spec_file: Path) -> bool:
+    """自动探测产物（``_sniffer`` / ``UNKNOWN`` 下的 draft）不参与账本分母。"""
+    parts = {p.lower() for p in spec_file.parts}
+    return "_sniffer" in parts or "unknown" in parts
+
+
+def spec_files(spec_dir: str = "PROTOCOL_SPEC") -> list[str]:
+    """纳入审计分母的 spec 文件（以仓库根为基准的相对 POSIX 路径）。
+
+    这里逐个 YAML 遍历，而不是复用 :func:`tstdx.tools.codegen.load_all_specs`：
+    后者以 ``spec_id`` 为键，跨族同号会互相覆盖（实测 ``TRADE/0x0001`` 吃掉
+    ``F10/0x0001``、``TRADE/0x0100`` 吃掉 ``7727/0x0100``），分母静默变小比
+    红灯更危险——被吃掉的那两条命令再也不会被审计。
+    """
+    root = _spec_root(spec_dir)
+    if not root.is_dir():
+        return []
+    return [
+        _rel_posix(path) for path in sorted(root.glob("**/*.yaml")) if not _is_draft_probe(path)
+    ]
+
+
+def draft_spec_files(spec_dir: str = "PROTOCOL_SPEC") -> list[str]:
+    """被排除的自动探测 draft（供报告透明展示，不影响严格判定）。"""
+    root = _spec_root(spec_dir)
+    if not root.is_dir():
+        return []
+    return [_rel_posix(path) for path in sorted(root.glob("**/*.yaml")) if _is_draft_probe(path)]
+
+
+def _spec_files(root: Path) -> list[str]:
+    """spec 文件清单，剔除无 ``spec_id`` 的自动探测 draft。"""
+    out: list[str] = []
+    for spec_file in spec_files(str(root)):
+        try:
+            spec = load_spec(spec_file)
+        except (FileNotFoundError, ValueError):
+            out.append(spec_file)  # 解析失败也要进分母：让 audit_spec 报出来
+            continue
+        if spec.get("spec_id"):
+            out.append(spec_file)
+    return out
 
 
 def coverage_summary(
@@ -228,8 +391,8 @@ def coverage_summary(
     Returns
     -------
     dict
-        ``{total_specs, in_ledger, has_parser, has_golden,
-        covered, coverage_pct}``。
+        ``{total_specs, in_ledger, has_parser, has_golden, control_frames,
+        trade_plane, covered, uncovered, coverage_pct}``。
     """
     if results is None:
         results = audit_all(spec_dir)
@@ -237,16 +400,24 @@ def coverage_summary(
     in_ledger = sum(1 for r in results if r.in_ledger)
     has_parser = sum(1 for r in results if r.has_parser)
     has_golden = sum(1 for r in results if r.golden_samples_ok)
+    control_frames = sum(1 for r in results if r.control_frame)
+    trade_plane = sum(1 for r in results if r.plane == "trade")
 
-    # 覆盖 = 同时在 ledger 中有注册 parser
-    covered = sum(1 for r in results if r.in_ledger and r.has_parser)
+    # 覆盖 = 命令号在其族的账本里登记，且实现证据齐备：
+    # 行情数据命令 → PARSERS 注册；无载荷控制帧 → spec 自声明空响应；
+    # 交易族 → tstdx.trade.frames 的编解码锚点。
+    covered_specs = [r for r in results if r.covered]
+    covered = len(covered_specs)
 
     return {
         "total_specs": total,
         "in_ledger": in_ledger,
         "has_parser": has_parser,
         "has_golden": has_golden,
+        "control_frames": control_frames,
+        "trade_plane": trade_plane,
         "covered": covered,
+        "uncovered": [f"{r.spec_id} {r.name}".strip() for r in results if not r.covered],
         "coverage_pct": round(covered / total * 100, 1) if total else 0.0,
     }
 
@@ -265,7 +436,12 @@ def _print_table(results: list[SpecAuditResult], summary: dict[str, Any] | None 
 
     for r in results:
         ledger = "OK" if r.in_ledger else "MISS"
-        parser = "OK" if r.has_parser else "MISS"
+        if r.plane == "trade":
+            parser = "T-codec" if r.has_parser else "MISS"
+        elif r.control_frame:
+            parser = "n/a" if r.in_ledger else "MISS"
+        else:
+            parser = "OK" if r.has_parser else "MISS"
         golden = "OK" if r.golden_samples_ok else "MISS"
 
         note_str = "; ".join(r.notes[:2]) if r.notes else ""
@@ -283,8 +459,12 @@ def _print_table(results: list[SpecAuditResult], summary: dict[str, Any] | None 
         f"In Ledger: {summary['in_ledger']}  "
         f"Has Parser: {summary['has_parser']}  "
         f"Has Golden: {summary['has_golden']}  "
+        f"Control frames: {summary['control_frames']}  "
+        f"Trade plane: {summary['trade_plane']}  "
         f"Coverage: {summary['coverage_pct']}%"
     )
+    if summary["uncovered"]:
+        print("Uncovered: " + ", ".join(summary["uncovered"]))
 
 
 def _result_to_dict(r: SpecAuditResult) -> dict[str, Any]:
@@ -296,6 +476,9 @@ def _result_to_dict(r: SpecAuditResult) -> dict[str, Any]:
         "in_ledger": r.in_ledger,
         "has_parser": r.has_parser,
         "golden_samples_ok": r.golden_samples_ok,
+        "plane": r.plane,
+        "control_frame": r.control_frame,
+        "covered": r.covered,
         "notes": r.notes,
     }
 

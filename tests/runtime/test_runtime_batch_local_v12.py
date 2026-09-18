@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import fields
 from pathlib import Path
 
-from tstdx.batch import BatchSpec
+from tstdx.batch import BatchResult
 from tstdx.domain.models import Bar, Quote
 from tstdx.errors import ValidationError
 from tstdx.query import QueryPlanner, QuerySpec
@@ -27,9 +27,7 @@ def _local_plan(period: str):
 
 def test_partial_success_exists_only_on_batch_contract() -> None:
     assert "allow_partial" not in {item.name for item in fields(QuerySpec)}
-    spec = BatchSpec.quotes(["sh600519", "sh600519", "sz000001"])
-    assert spec.symbols == ("sh600519", "sz000001")
-    assert spec.provider == "tdx"
+    assert "allow_partial" not in {item.name for item in fields(BatchResult)}
 
 
 def test_quotes_batch_reports_ok_missing_and_failed(monkeypatch) -> None:
@@ -55,10 +53,11 @@ def test_quotes_batch_reports_ok_missing_and_failed(monkeypatch) -> None:
         raise ValidationError("bad symbol")
 
     monkeypatch.setattr(runtime, "quotes", fake_quotes)
-    result = runtime.quotes_batch(["sh600519", "sz000001", "bj430047"])
+    result = runtime.quotes_batch(["sh600519", "sh600519", "sz000001", "bj430047"])
     assert result.items["sh600519"].status == "ok"
     assert result.items["sz000001"].status == "missing"
     assert result.items["bj430047"].status == "failed"
+    assert len(result.items) == 3  # 重复 symbol 归一后只请求一次
     assert result.failed == ("bj430047",)
     assert result.missing == ("sz000001",)
 

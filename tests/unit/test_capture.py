@@ -119,6 +119,11 @@ class TestTradingHours:
         dt = datetime(2026, 1, 5, 8, 30, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
         assert _is_in_trading_hours(dt) is False
 
+    def test_legal_holiday_weekday(self):
+        # 2026-01-02 是周五，但在休市表内：曾经只认周末而误判为交易时段
+        dt = datetime(2026, 1, 2, 10, 0, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        assert _is_in_trading_hours(dt) is False
+
     def test_lunch_break(self):
         dt = datetime(2026, 1, 5, 12, 0, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
         assert _is_in_trading_hours(dt) is False

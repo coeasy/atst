@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import Any
 
 from ..codec.framing import ResponseFrame
+from ..domain.calendar import TradingSession, is_trading_day
 from ..errors import TdxError
 from ..protocol.commands import Family, get_command
 from ..transport.base import TcpConnection
@@ -401,15 +402,17 @@ class CaptureOptions:
 def _is_in_trading_hours(
     now: datetime,
 ) -> bool:
-    """判断给定时间是否在 A 股交易时段内（周一至周五 9:15-11:30, 13:00-15:00 CST）。"""
-    if now.weekday() >= 5:  # 周六/周日
+    """``now`` 是否落在 A 股交易相关时段（交易日 + 集合竞价 09:15 至 15:00 CST）。
+
+    时段与交易日均取自 :mod:`tstdx.domain.calendar`：此处曾自带一份只认周末的
+    副本，法定节假日会被误判成交易时段而错误中止采集。
+    """
+    if not is_trading_day(now.date()):
         return False
     total_minutes = now.hour * 60 + now.minute
-    # 上午：9:15 - 11:30（含集合竞价 9:15-9:25 + 连续竞价 9:30-11:30）
-    if 9 * 60 + 15 <= total_minutes < 11 * 60 + 30:
+    if TradingSession.OPEN_AUCTION[0] <= total_minutes < TradingSession.MORNING[1]:
         return True
-    # 下午：13:00 - 15:00
-    return 13 * 60 <= total_minutes < 15 * 60
+    return TradingSession.AFTERNOON[0] <= total_minutes < TradingSession.AFTERNOON[1]
 
 
 def _legal_self_check(

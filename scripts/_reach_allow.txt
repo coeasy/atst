@@ -29,3 +29,7 @@ tstdx.trade.frames        # 交易帧布局（draft，待真机样本定标）
 tstdx.trade.security      # 交易安全模块（模拟器配套）
 tstdx.trade.simulator     # SimTransport 纯内存模拟券商
 tstdx.__main__           # python -m tstdx 入口（P12：等价于控制台脚本，仅 re-export cli.main）
+
+# --- 契约/守卫资产：由架构测试消费，生产链路零 import（登记评审后豁免）---
+tstdx.catalog.provider_contract   # Provider 隔离契约（ProviderIdentity/CapabilityContract）：tests/provider_isolation + tests/architecture/test_namespace_layout 消费；内核不 import 是"零依赖可被任一 Provider 使用"的有意设计
+tstdx.providers.http              # Provider 绑定 HTTP 主机边界守卫（host_allowed 白名单）：tests/providers/test_http_boundary 全离线覆盖；v16 删除跨源路由层后无生产调用点。接线会改变 web 传输的失败语义，属安全面决策，须经用户确认后排期

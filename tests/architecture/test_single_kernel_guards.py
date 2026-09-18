@@ -49,6 +49,7 @@ DELETED_SYMBOLS = (
     "ProviderRouter",
     "resolve_executor",
     "ExecutorBindingRegistry",
+    "BatchSpec",
 )
 
 

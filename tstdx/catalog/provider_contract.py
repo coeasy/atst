@@ -1,3 +1,6 @@
+# Copyright (c) 2026 tstdx contributors
+# Licensed under the MIT License
+
 """Provider isolation contract primitives.
 
 This module defines the architectural boundary for data Providers.

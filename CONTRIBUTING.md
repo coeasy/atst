@@ -108,6 +108,17 @@ uvx ruff@latest check tstdx tests scripts   # 与 CI 同版本更佳
 
    77% 是当前**最低阻塞阈值**，不是长期目标；新增代码应尽量保持或提升覆盖率，项目目标继续向 80%+ 收敛。不得为了通过 CI 下调阈值、删测试或增加跳过。
 
+   **退出码必须裸取**。`some-gate | tail` 之后 `$?` 是管道末端（`tail`）的退出码，不是门禁的：
+   曾被读成"已绿"的 originality / spec-coverage / reachability 就是踩在这个上面。复测时要么
+   先重定向再取 RC，要么显式取管道首段：
+
+   ```bash
+   python -m tstdx.tools.spec_audit --json --strict > /tmp/spec.log 2>&1; echo "RC=$?"
+   make audit-reachability 2>&1 | tail -20; echo "RC=${PIPESTATUS[0]}"
+   ```
+
+   同理：`grep -c` 在零匹配时返回 1，不要把"没有匹配"当成命令失败。
+
 5. **需要联网验证时单独运行**
 
    ```bash

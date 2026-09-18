@@ -148,17 +148,20 @@ out.attempts    # tuple[ProviderAttempt(provider, status, code), ...]
 
 跨源只在显式策略下发生；默认路径永不触发。
 
-### BatchSpec / BatchItem / BatchResult
+### BatchItem / BatchResult
 
 ```python
-from tstdx import BatchSpec, BatchItem, BatchResult
+from tstdx import BatchItem, BatchResult
 ```
 
-`BatchResult.items` 为 `{symbol: BatchItem}`，`BatchItem.status ∈
-{ok, missing, failed, not_attempted}`；另有 `errors`（`ErrorEnvelope` 映射）、
-`requested`、`partial`、`status_counts`、`success`、`failed`、`missing`。
+批量入口只有一个：`client.quotes_batch(symbols, ...)`（内核逐 symbol 直连同一
+Provider，串行下发、无隐藏换源）。`BatchResult.items` 为 `{symbol: BatchItem}`，
+`BatchItem.status ∈ {ok, missing, failed, not_attempted}`；另有 `errors`
+（`ErrorEnvelope` 映射）、`requested`、`partial`、`status_counts`、`success`、
+`failed`、`missing`。
 
-> `BatchSpec` 目前是**已导出但无生产消费者**的批量请求契约（见路线图"可达性收口"）。
+> v13 的 `BatchSpec` 请求信封已在 v17 Phase 5 的可达性收口中**删除**（clean
+> break，无别名）：它从来没有生产消费者，批量展开事实只存在于内核那条循环里。
 
 ### CapabilityQuery 与 Domain Records
 

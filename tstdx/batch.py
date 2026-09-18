@@ -1,11 +1,12 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Canonical v13 batch request contracts.
+"""Canonical batch audit contracts.
 
-Batch execution is strictly zero-cache: :meth:`tstdx.runtime.kernel.UnifiedRuntime.execute_batch`
-expands one :class:`BatchSpec` into independent single-Provider plans and
-requests each bound Provider directly.
+The batch path is one loop in :meth:`tstdx.runtime.kernel.UnifiedRuntime.quotes_batch`:
+it expands the requested symbols into independent single-Provider requests and
+records each outcome here. There is no separate batch request envelope, no
+coalescing layer and no negative cache — one symbol, one direct Provider call.
 """
 
 from __future__ import annotations
@@ -16,48 +17,11 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Generic, TypeVar
 
-from .domain.symbol import normalize_symbol
 from .error_envelope import ErrorEnvelope
-from .errors import ValidationError
-from .providers import resolve_provider
-from .query import CurrentnessMode
 
-__all__ = ["BatchSpec", "BatchItem", "BatchResult"]
+__all__ = ["BatchItem", "BatchResult"]
 
 T = TypeVar("T")
-
-
-@dataclass(frozen=True, slots=True)
-class BatchSpec:
-    """Explicit batch request contract; partial success never lives on QuerySpec."""
-
-    capability: str
-    symbols: tuple[str, ...]
-    provider: str
-    currentness: str
-    max_age: float | None = None
-
-    @classmethod
-    def quotes(
-        cls,
-        symbols: Sequence[str],
-        *,
-        provider: str = "tdx",
-        currentness: str = CurrentnessMode.LIVE.value,
-        max_age: float | None = None,
-    ) -> BatchSpec:
-        values = tuple(dict.fromkeys(normalize_symbol(item) for item in symbols))
-        if not values:
-            raise ValidationError("batch quotes 至少需要一个 symbol")
-        if max_age is not None and max_age < 0:
-            raise ValidationError("max_age 不能为负数")
-        return cls(
-            capability="quotes",
-            symbols=values,
-            provider=resolve_provider(provider=provider),
-            currentness=str(currentness).strip().lower(),
-            max_age=max_age,
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,7 +49,7 @@ class BatchResult(Generic[T]):
     :meth:`build` and :meth:`tstdx.runtime.kernel.UnifiedRuntime.quotes_batch`
     produce) or a plain value sequence.  ``errors`` maps a requested symbol to
     the safe :class:`~tstdx.error_envelope.ErrorEnvelope` that explains why it
-    is absent, and ``partial`` is derived from — and must agree with — whether
+    is absent, and ``partial`` follows from — and must agree with — whether
     ``errors`` is non-empty.
     """
 

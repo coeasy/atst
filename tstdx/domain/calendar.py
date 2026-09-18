@@ -14,8 +14,9 @@
 数据来源
 --------
 内置表覆盖 2024–2026。其中 **2026 年为估算值**（``estimated=True``），
-国务院正式公布后需调用 :meth:`TradingCalendar.set_holidays` 更新，
-或用 :meth:`TradingCalendar.update_from_web` 从公开日历源校准。
+国务院正式公布后需调用 :meth:`TradingCalendar.set_holidays` 更新。
+在线校准（:meth:`TradingCalendar.update_from_web`）**尚未实现**，调用即抛
+``NotImplementedError``，不要把它当作可用的降级路径。
 
 .. warning::
    ``estimated`` 数据仅用于离线降级，**不得**作为交易决策的唯一依据。
@@ -176,8 +177,8 @@ class TradingCalendar:
 
     线程模型：所有可变操作（``set_holidays`` / ``add_holiday`` /
     ``mark_workday``）与触发懒加载的查询（``is_trading_day``）经由模块级
-    :data:`_CALENDAR_LOCK` 串行化——默认单例被多线程共享（ratelimit 等
-    消费方），未加锁年代与节假日集合并发读写存在撕裂风险（审计 §2-7）。
+    :data:`_CALENDAR_LOCK` 串行化——默认单例进程内共享，未加锁年代与节假日
+    集合并发读写存在撕裂风险（审计 §2-7）。
     """
 
     def __init__(self, years: Iterable[int] | None = None) -> None:
@@ -352,8 +353,8 @@ def _to_date(d: date | str) -> date:
 
 
 #: 模块级单例线程锁：保护 ``_default_calendar``（及所有 TradingCalendar 实例）
-#: 的节假日集合读写与懒加载。审计 §2-7：ratelimit 消费点在 transport
-#: （禁改），日历端先保证自身并发安全与未覆盖年份告警。
+#: 的节假日集合读写与懒加载。审计 §2-7：单例跨线程共享，日历端须自证并发
+#: 安全并保留未覆盖年份告警。
 _CALENDAR_LOCK = threading.RLock()
 
 _default_calendar = TradingCalendar()

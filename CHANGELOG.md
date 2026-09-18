@@ -57,6 +57,67 @@ clean-break——旧模块名不保留别名或再导出：
   4 份数据源审计文档的路径引用。已发布版本段（`[1.0.0]` 及更早）与 `docs/archive/` 的
   历史叙述保留当时名字。
 
+### Removed（v17 Phase 5 第 4 步 —— 三项 strict 门禁的本地红清偿）
+
+CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测皆红。逐项区分
+**真缺陷**与**扫描器误报**后清偿，阈值一次都没有放宽：
+
+- 删除 3 项零生产消费者的死面（clean-break，无别名）：`tstdx/observability/planned.py`
+  （缓存 / singleflight 时代的指标名，唯一读者是它自己的测试）连同其测试文件、
+  `tstdx/providers/adapter.py`（`ProviderAdapter` / `ProviderMetadata` ABC，全仓含测试
+  零引用）、以及符号 `BatchSpec`（见下条）。
+- **删除 `BatchSpec`**（`tstdx/batch.py` 里的 v13 批量请求信封）：它文档化的职责——
+  「`UnifiedRuntime.execute_batch` 把一个 BatchSpec 展开成多个计划」——指向 v16 Phase 2
+  已物理删除的方法，且生产代码无一处构造它（只有测试在证明它能构造）。批量展开的唯一
+  实现路径是 `UnifiedRuntime.quotes_batch` 那条逐 symbol 直连循环，业务入口是
+  `Client.quotes_batch`。同步移除：`tstdx.__all__` / `tstdx._LAZY` 条目（根面 46 → 45
+  项）、`docs/api/interfaces.md` 的导入示例、README「下一阶段」里的占位行；符号进入
+  `test_single_kernel_guards.py` 的 `DELETED_SYMBOLS`。`BatchItem` / `BatchResult` 的
+  三态审计契约测试保留，并补上「重复 symbol 归一后只请求一次」这一原由 BatchSpec 测试
+  代管的断言。
+- **交易日历按接线收口，而非豁免**：`tstdx/domain/calendar.py` 原是孤儿，而
+  `tstdx/tools/capture.py` 自带一份只认周末的交易时段副本——法定节假日会被误判成交易
+  时段，从而错误中止本应放行的采集。法律自检改为消费 `TradingSession` 常量与
+  `is_trading_day`：重复事实消除，日历经 `python -m` 入口自然生产可达 ⇒ 不进白名单。
+- **`scripts/audit_reachability.py` 三处图修正**（都是漏报方向，不是放宽判定）：种子名单
+  换成 v16 后的现行模块名（写死的 `http_server` / `ws_server` / `mcp_server` 会被
+  `if s in modules` 静默丢弃，使整条服务面从图里消失）；`_LAZY` 边解析支持 `AnnAssign`
+  与不带包前缀的子模块名字符串（F-11 后 `"facade"` → `"session"` 这类键此前看不见）；
+  `tstdx.tools.*` 与 `tstdx.cli` 由「整包直接标可达」改为**作为种子参与 BFS**，入口独占
+  的依赖不再被误判为孤儿。
+- 白名单登记 2 项并附评审理由：`tstdx.catalog.provider_contract`（Provider 隔离契约，
+  由 `tests/provider_isolation` 与命名空间守卫消费，内核不 import 是其零依赖设计的前提）、
+  `tstdx.providers.http`（Provider 绑定 HTTP 主机边界守卫，离线测试全覆盖；v16 删除跨源
+  路由层后无生产调用点，接线会改变 web 传输的失败语义，属安全面决策待确认）。
+- `check_originality` 的两类红分别是：`tstdx/catalog/provider_contract.py` 与
+  `tstdx/py.typed` 缺许可证头（补头），以及 `tstdx/batch.py` 一段散文被「derived from」
+  模式误命中（改写为不含该措辞的等价表述）。全仓现为
+  `Total: 194  Original: 194  License OK: 194  Header OK: 194  Suspicious: 0`。
+- 顺带清掉三处幻影文档：`tstdx/batch.py` 模块 docstring 指向已删除的 `execute_batch`；
+  `tstdx/domain/calendar.py` 声称「ratelimit 消费点在 transport」（实际无此消费方）并把
+  `update_from_web` 写成可用的在线校准（该方法恒抛 `NotImplementedError`）；README 批量
+  执行行宣称「并发走内核」，而内核批量路径是串行逐 symbol 直连。
+- 复测（每条命令先重定向再取 RC，见下条）：originality `Total: 194 / Original: 194 /
+  License OK: 194 / Header OK: 194 / Suspicious: 0` RC=0、reachability
+  `模块总数: 193 / 可达: 174 / 白名单豁免: 19 / 无未登记孤儿` RC=0、spec-coverage
+  `total 44 / in_ledger 44 / has_parser 42 / control_frames 2 / trade_plane 6 /
+  coverage 100.0%` RC=0（**100% 阈值未动**）。格式与类型：`ruff check .` /
+  `ruff format --check .`（433 文件）/ `mypy tstdx/`（CI 参数，193 源文件）均 RC=0，
+  golden 门禁与 docs-code 一致性门禁 RC=0。
+- 离线全量套件（WIP 文件入库后的整仓值）：**3227 passed / 7 skipped / 1 xpassed /
+  0 failed，coverage 78.79%**，`PYTEST_RC=0`。测量路上读到的三个数都记在这儿，以免日后
+  对不上：WIP 文件尚未跟踪时带 `--ignore` 的运行是 `3185 passed / 78.87%`；含它的运行是
+  `15 failed / 78.61%`（那 12 项失败是并行会话的未完成测试，随后由 `4ae1e38` 修好入库、
+  42 项全绿）；补装 `pandas` 之前是 `3 failed, 3182 passed / 78.20%`。
+  最后这 3 项失败全部来自 `tests/reader/test_formats.py` 的 DataFrame 形状断言抛
+  `DependencyMissingError [E1020]`，即本机缺 `[dataframe]` extra（CI 的 `.[dev]` 含它）。
+  **处置是补环境而不是加 skip**——`uv pip install "pandas>=2.0"` 后该文件 41 项全绿；加
+  `importorskip` 能当场抹掉这 3 项，但会把本机环境与 CI 永久分叉，也违反「不得为过 CI 增加
+  跳过」的约束。
+- 测量方法修正（本次红灯曾被读成绿灯的直接原因）：门禁命令接上管道后 `$?` 是管道末端的
+  退出码，`cmd | tail; echo $?` 因此把三项 strict 红读成「已绿」。该约束连同正确写法已写入
+  [CONTRIBUTING.md](CONTRIBUTING.md) 的门禁段。
+
 ### Fixed
 
 - **`tstdx.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，
