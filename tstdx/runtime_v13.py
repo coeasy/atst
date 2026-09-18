@@ -16,6 +16,14 @@ from .direct_provider import DirectProviderExecutor
 from .domain.symbol import normalize_symbol
 from .query import QueryPlan, QueryPlanner, QuerySpec
 from .result import QueryResult
+from .runtime_cache_adapter import RuntimeCacheAdapter
+from .runtime_cache_policy import should_negative_cache
+from .runtime_identity import (
+    RuntimeCacheIdentity,
+    cache_identity_from_plan,
+    execution_identity_from_plan,
+)
+from .runtime_provenance import validate_runtime_provenance
 
 __all__ = ["UnifiedRuntime"]
 
@@ -51,6 +59,7 @@ class UnifiedRuntime:
             vipdoc_root=vipdoc_root,
         )
         self.cache = cache or SemanticResultCache(tier="l1")
+        self.cache_adapter = RuntimeCacheAdapter(self.cache)
         self.cache_ttl = cache_ttl
         self._owns_persistent_cache = (
             persistent_cache is None and persistent_path is not None
@@ -79,7 +88,11 @@ class UnifiedRuntime:
     def __exit__(self, *exc: Any) -> None:
         self.close()
 
-    def _promote_l2(self, plan: QueryPlan) -> QueryResult[Any] | None:
+    def _promote_l2(
+        self,
+        plan: QueryPlan,
+        cache_identity: RuntimeCacheIdentity,
+    ) -> QueryResult[Any] | None:
         if self.persistent_cache is None:
             return None
         hit = self.persistent_cache.get_with_ttl(plan)
@@ -93,7 +106,12 @@ class UnifiedRuntime:
                 if promotion_ttl is None
                 else min(float(self.cache_ttl), float(promotion_ttl))
             )
-        self.cache.put(plan, result, ttl=promotion_ttl)
+        self.cache_adapter.put(
+            cache_identity,
+            plan,
+            result,
+            ttl=promotion_ttl,
+        )
         return result
 
     def execute(
@@ -103,41 +121,53 @@ class UnifiedRuntime:
         use_cache: bool = True,
     ) -> QueryResult[Any]:
         plan = self.planner.compile(spec)
+        cache_identity = cache_identity_from_plan(plan)
+        execution_identity = execution_identity_from_plan(plan)
         # These operations depend on mutable local state and/or perform writes.
         # Their full freshness/side-effect identity is not representable by the
         # current QueryFingerprint, so semantic/negative caches are forbidden.
         use_cache = use_cache and plan.spec.capability not in _UNCACHEABLE_CAPABILITIES
 
         if use_cache:
-            hit = self.cache.get(plan)
+            hit = self.cache_adapter.get(cache_identity, plan)
             if hit is not None:
+                validate_runtime_provenance(execution_identity, hit)
                 return hit
-            hit = self._promote_l2(plan)
+            hit = self._promote_l2(plan, cache_identity)
             if hit is not None:
+                validate_runtime_provenance(execution_identity, hit)
                 return hit
-            cached_error = self.negative_cache.get(plan)
+            cached_error = self.negative_cache.get(cache_identity)
             if cached_error is not None:
                 raise cached_error
 
         def _leader() -> QueryResult[Any]:
             if use_cache:
-                hit = self.cache.get(plan)
+                hit = self.cache_adapter.get(cache_identity, plan)
                 if hit is not None:
+                    validate_runtime_provenance(execution_identity, hit)
                     return hit
-                hit = self._promote_l2(plan)
+                hit = self._promote_l2(plan, cache_identity)
                 if hit is not None:
+                    validate_runtime_provenance(execution_identity, hit)
                     return hit
-                cached_error = self.negative_cache.get(plan)
+                cached_error = self.negative_cache.get(cache_identity)
                 if cached_error is not None:
                     raise cached_error
             try:
                 result = self.executor.execute(plan)
+                validate_runtime_provenance(execution_identity, result)
             except Exception as exc:
-                if use_cache:
-                    self.negative_cache.put(plan, exc)
+                if use_cache and should_negative_cache(exc):
+                    self.negative_cache.put(cache_identity, exc)
                 raise
             if use_cache:
-                self.cache.put(plan, result, ttl=self.cache_ttl)
+                self.cache_adapter.put(
+                    cache_identity,
+                    plan,
+                    result,
+                    ttl=self.cache_ttl,
+                )
                 if self.persistent_cache is not None:
                     with contextlib.suppress(Exception):
                         self.persistent_cache.put(
@@ -145,10 +175,10 @@ class UnifiedRuntime:
                             result,
                             ttl=self.persistent_ttl,
                         )
-                self.negative_cache.invalidate(plan)
+                self.negative_cache.invalidate(cache_identity)
             return result
 
-        return self.singleflight.do(plan, _leader)
+        return self.singleflight.do(cache_identity, _leader)
 
     def quotes(
         self,
