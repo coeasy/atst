@@ -328,7 +328,8 @@ tstdx hosts audit --report /tmp/audit.json --markdown /tmp/audit.md
 
 ```
 tstdx/
-├── client_api.py   # Client / AsyncClient —— 唯一业务入口（15 便捷方法 + execute/typed/call）
+├── client/         # api.py —— Client / AsyncClient 唯一业务入口（15 便捷方法 + execute/typed/call）
+│                   # core/sync/async_/factory —— TdxClient 传输层与共享纯协议 SSOT
 ├── runtime/        # 唯一执行内核：kernel(零缓存)/executor(251 绑定)/orchestration(显式跨源)
 │                   #   /audit(启动三方对账)/identity/provenance(溯源守卫)
 ├── catalog/        # 静态声明与一致性审计：capability(目录+规划期签名校验)/provider_bindings

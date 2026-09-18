@@ -212,12 +212,13 @@ clean-break——旧模块名不保留别名或再导出：
 
 ### Changed（v17 Phase 3C —— 根级命名空间归位）
 
-`tstdx/` 根级平铺模块从 26 个收敛到 11 个（白名单：`__init__`、`__main__`、`client_api`、
-`query`、`result`、`batch`、`typed_query`、`stream_contract`、`errors`、`error_envelope`、
-`deprecation`）。纯移动、无合并、无兼容别名；导入方需按下表更新：
+`tstdx/` 根级平铺模块从 26 个收敛到 10 个（白名单仅留协议中立契约层：`__init__`、
+`__main__`、`query`、`result`、`batch`、`typed_query`、`stream_contract`、`errors`、
+`error_envelope`、`deprecation`）。纯移动、无合并、无兼容别名；导入方需按下表更新：
 
 | 旧模块路径 | 新模块路径 |
 | --- | --- |
+| `tstdx.client_api` | `tstdx.client.api` |
 | `tstdx.client_core` | `tstdx.client.core` |
 | `tstdx.direct_provider` | `tstdx.runtime.executor` |
 | `tstdx.orchestration` | `tstdx.runtime.orchestration` |

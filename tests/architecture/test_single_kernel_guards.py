@@ -146,7 +146,7 @@ def test_runtime_package_never_reimports_deleted_layers() -> None:
 
 def test_kernel_is_the_only_execution_seam_of_client() -> None:
     """Client 只经 UnifiedRuntime 执行；kernel 之外不存在第二条 plan 消费路径。"""
-    from tstdx.client_api import Client
+    from tstdx.client.api import Client
     from tstdx.runtime.kernel import UnifiedRuntime
 
     client = Client(runtime=UnifiedRuntime(default_provider="tencent"))

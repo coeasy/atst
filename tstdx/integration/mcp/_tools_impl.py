@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...client_api import Client
+from ...client.api import Client
 from ...errors import ValidationError
 from ..serialization import serialize_result
 from ._common import MAX_BARS_COUNT, MAX_PAGE, clamp_int

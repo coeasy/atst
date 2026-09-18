@@ -5,7 +5,7 @@
 
 The retired v14 envelope layer (``Runtime`` / ``RuntimeGateway`` /
 ``QueryRequest`` / ``QueryResponse`` / DAG planner / provider router) was
-physically removed; :class:`tstdx.client_api.Client` is the sole business
+physically removed; :class:`tstdx.client.api.Client` is the sole business
 entrypoint on top of :class:`UnifiedRuntime`.
 """
 

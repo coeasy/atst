@@ -14,6 +14,10 @@ REFACTOR_PLAN_v8 P5：原单模块 ``tstdx/client.py``（1715 行）拆为本包
 * :mod:`tstdx.client.async_`  —— ``AsyncTdxClient`` + 4 个异步镜像；
 * :mod:`tstdx.client.factory` —— ``get_client`` 工厂。
 
+v17 Phase 3C 增补：:mod:`tstdx.client.api` 承载 **唯一业务入口** ``Client`` /
+``AsyncClient``（原根级 ``tstdx/client_api.py``）。本 ``__init__`` 不 re-export 它，
+公开路径仍是 ``from tstdx import Client``，以免传输层包被业务门面反向污染。
+
 **公开 API 不变**：本 ``__init__`` re-export 原模块全部模块级符号，
 ``from tstdx.client import TdxClient`` 等所有既有导入路径照常工作；
 对外部消费者 ``monkeypatch.setattr(tstdx.client, "X", ...)`` 的语义

@@ -110,6 +110,7 @@
 
 | 原案 | 落地 |
 |---|---|
+| `client_api.py → client/api.py` | ✅ 收口（2026-09-18）：唯一业务入口并入 `client/` 包，根级只留契约层 |
 | `client_core.py → client/core.py` | ✅ 同名落地 |
 | `direct_provider.py → runtime/executor.py` | ✅ |
 | `orchestration.py → runtime/orchestration.py` | ✅ |
@@ -117,7 +118,7 @@
 | `capability_catalog.py / capability_audit.py` | ✅ → 新包 `catalog/{capability,capability_audit}.py` |
 | `provider_api.py / provider_contract.py / provider_guard.py / provider_audit.py` | ✅ → `catalog/{provider_bindings,provider_contract,provider_guard,provider_audit}.py` |
 | ~~`freshness/health/failure.py → runtime/support.py`~~ | **偏差 1**：改为整体删除（见下） |
-| 根级白名单 ≤10 | **偏差 2**：落地 11 项——多出的 `client_api.py` 是唯一业务入口，保留根级可发现性 |
+| 根级白名单 ≤10 | ~~偏差 2（曾落地 11 项）~~ **已收口**（2026-09-18）：`client_api.py` 移入 `client/api.py`，白名单回到原案 10 项，公开面 `from tstdx import Client` 不变 |
 
 **偏差说明**
 
@@ -131,7 +132,7 @@
    `runtime → catalog`，不得反向）。
 
 **守卫与门禁**：`tests/architecture/test_namespace_layout.py`（根级白名单精确相等、
-12 个旧路径磁盘不可见且不可导入、新路径可导入）；`test_official_runtime_no_fallback`
+13 个旧路径磁盘不可见且不可导入、新路径可导入）；`test_official_runtime_no_fallback`
 的官方运行时文件清单同步更新；mypy 错误数与 `9c99635` 基线**逐条持平**（47，未新增）。
 一次性迁移脚本 `scripts/_v16_strip_use_cache.py`（目标模式已应用且路径过期）一并删除。
 

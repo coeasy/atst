@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 #: sources / cache) cannot appear here; the invariant is that the canonical
 #: runtime never routes through an aggregate web fallback engine.
 OFFICIAL_RUNTIME = [
-    ROOT / "tstdx" / "client_api.py",
+    ROOT / "tstdx" / "client" / "api.py",
     ROOT / "tstdx" / "runtime" / "kernel.py",
     ROOT / "tstdx" / "query.py",
     ROOT / "tstdx" / "runtime" / "executor.py",

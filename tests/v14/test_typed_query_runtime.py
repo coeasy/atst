@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from tstdx.client_api import Client
+from tstdx.client.api import Client
 from tstdx.errors import ValidationError
 from tstdx.query import QueryPlan, QueryPlanner, QuerySpec
 from tstdx.result import Provenance, QueryResult

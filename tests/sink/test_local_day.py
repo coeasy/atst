@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.client_api import Client
+from tstdx.client.api import Client
 from tstdx.domain.models import Bar
 from tstdx.errors import TdxError
 from tstdx.reader.formats import DayBarReader

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..client_api import Client
+from ..client.api import Client
 from ..error_envelope import to_error_envelope
 from ..errors import ValidationError
 from ..providers import PROVIDERS

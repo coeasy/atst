@@ -92,7 +92,7 @@ class TestSectorFlowWiring:
         assert captured == {"market": "concept", "sort": "main_net", "limit": 5}
 
     def test_client_capability_delegates(self, monkeypatch):
-        from tstdx.client_api import Client
+        from tstdx.client.api import Client
         from tstdx.web.session import WebQuoteSession
 
         def fake_sector_flow(board="industry", *, sort="main_net", limit=20, page=1):

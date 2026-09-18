@@ -12,19 +12,19 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from .batch import BatchResult
-from .catalog.capability import (
+from ..batch import BatchResult
+from ..catalog.capability import (
     MIGRATED_CAPABILITIES,
     default_provider_for,
     is_migrated_capability,
 )
-from .errors import ValidationError
-from .query import QuerySpec
-from .result import QueryResult
-from .runtime.kernel import UnifiedRuntime
-from .runtime.orchestration import FallbackPolicy, OrchestratedResult, ProviderOrchestrator
-from .stream_contract import StreamPlanner, StreamSpec
-from .streaming.stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
+from ..errors import ValidationError
+from ..query import QuerySpec
+from ..result import QueryResult
+from ..runtime.kernel import UnifiedRuntime
+from ..runtime.orchestration import FallbackPolicy, OrchestratedResult, ProviderOrchestrator
+from ..stream_contract import StreamPlanner, StreamSpec
+from ..streaming.stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
 
 __all__ = ["Client", "AsyncClient"]
 
@@ -246,7 +246,7 @@ class Client:
         Compilation is fail-closed: unregistered capabilities raise before any
         Provider request, and the normalized Domain Record payload is returned.
         """
-        from .typed_query import TypedQueryResult, call_payload_from_typed, records_from_data
+        from ..typed_query import TypedQueryResult, call_payload_from_typed, records_from_data
 
         payload = call_payload_from_typed(query)
         payload.update(kwargs)

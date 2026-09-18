@@ -4,7 +4,7 @@
 """Provider ``channel -> adapter`` binding tables.
 
 v16 clean break: the ``md.<provider>`` Direct API object layer was deleted
-together with the v12 service it was bound to. :class:`~tstdx.client_api.Client`
+together with the v12 service it was bound to. :class:`~tstdx.client.api.Client`
 is the only business entry point, and every request travels one zero-cache path
 (:class:`~tstdx.runtime.kernel.UnifiedRuntime` -> ``DirectProviderExecutor`` ->
 the bound Provider).

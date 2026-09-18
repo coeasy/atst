@@ -11,7 +11,7 @@ from tstdx.catalog.capability import (
     MIGRATED_CAPABILITIES,
     default_provider_for,
 )
-from tstdx.client_api import Client
+from tstdx.client.api import Client
 from tstdx.errors import ValidationError
 from tstdx.providers import PROVIDERS
 from tstdx.query import QueryPlanner, QuerySpec

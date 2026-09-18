@@ -17,7 +17,7 @@ CLI/HTTP/WS/MCP 服务面。同步交付物为 `tstdx` Python 包（协议实现
 CLI / HTTP(runtime_http) / WS(runtime_ws) / MCP(integration/mcp)
         │  （四个服务面全部只翻译，委托 Client）
         ▼
-tstdx.Client / AsyncClient（client_api.py，唯一业务入口，172 capabilities）
+tstdx.Client / AsyncClient（client/api.py，唯一业务入口，172 capabilities）
         │  QuerySpec（query.py：capability+symbols+provider+currentness…）
         ▼
 UnifiedRuntime（runtime/kernel.py，零缓存）
@@ -50,14 +50,14 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
 
 | 层 | 模块 | 状态 |
 |---|---|---|
-| 协议层（冻结） | `codec/`（帧/变长数/字符集）、`protocol/`（命令账本+三级解析）、`transport/`（池/心跳/测速）、`client/`（`core.py` 共享纯协议 SSOT + `sync.py`/`async_.py` TdxClient）、`charset/` | 独立完备 |
+| 协议层（冻结） | `codec/`（帧/变长数/字符集）、`protocol/`（命令账本+三级解析）、`transport/`（池/心跳/测速）、`client/`（`api.py` 唯一业务入口 Client/AsyncClient + `core.py` 共享纯协议 SSOT + `sync.py`/`async_.py` TdxClient）、`charset/` | 独立完备 |
 | 数据源层 | `providers/`（静态注册表）、`web/`、`reader/`、`profile/`（DataProfile 复权/周期口径） | 活 |
 | 契约层（无执行） | `query.py`、`result.py`、`batch.py`、`typed_query.py`、`stream_contract.py`、`errors.py`、`error_envelope.py`、`deprecation.py`、`catalog/`（capability 目录与调用校验、Provider channel→adapter 绑定表、Provider 隔离契约/守卫/一致性审计） | 活 |
 | 内核层 | `runtime/`（`kernel.py` 唯一内核、`executor.py` 精确绑定执行、`orchestration.py` 显式跨源编排、`audit.py` 启动三方对账、`identity.py`/`provenance.py` 执行身份与溯源守卫） | 活 |
 | 服务面层 | `cli/`、`integration/`（runtime_http/ws/tasks/mcp + serialization）、`output/`（DataFrame/Parquet/DuckDB）、`sink/` | 活，全部 Client-backed |
 | 类型化糖衣 | `typed_query.py`（CapabilityQuery + Domain Record）、`domain/`（records/symbol/日历） | 全量接通：`Client.typed` / `AsyncClient.typed`，字段名与内核方法签名一一对应 |
 | 基础设施 | `config/`、`security/`、`observability/`、`feedback/` | 活 |
-| **待归位** | `client_api.py`（唯一入口，经决策保留根级以最大化可发现性）、`trade/`（实验模块） | Phase 3C 后仅剩这两项，见 V17 方案 |
+| 实验模块 | `trade/`（自设模拟红线，未进 README 能力账主链） | 唯一剩余待裁定项，见 V17 决策点 3 |
 
 ## 4. 断链清偿状态（V17）
 

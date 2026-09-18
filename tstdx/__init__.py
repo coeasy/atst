@@ -144,8 +144,8 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 _LAZY: dict[str, tuple[str, str]] = {
-    "Client": ("tstdx.client_api", "Client"),
-    "AsyncClient": ("tstdx.client_api", "AsyncClient"),
+    "Client": ("tstdx.client.api", "Client"),
+    "AsyncClient": ("tstdx.client.api", "AsyncClient"),
     "DayBarReader": ("tstdx.reader", "DayBarReader"),
     "MinBarReader": ("tstdx.reader", "MinBarReader"),
     "BlockReader": ("tstdx.reader", "BlockReader"),

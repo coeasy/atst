@@ -88,7 +88,7 @@ def test_seam_pool_uses_connection_lock_or_busy_removed() -> None:
 
 def test_seam_async_client_method_parity() -> None:
     """A↔F0 缝：AsyncClient 协程方法集必须在同步 Client 上存在（防重命名漂移）。"""
-    from tstdx.client_api import AsyncClient, Client
+    from tstdx.client.api import AsyncClient, Client
 
     bridged = {
         n

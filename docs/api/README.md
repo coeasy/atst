@@ -17,7 +17,7 @@
 
 | 模块 | 说明 |
 |------|------|
-| `tstdx.Client` / `tstdx.AsyncClient` | **唯一业务入口**（`tstdx.client_api`）：bars/quotes/snapshot/minute/trades/security_*/quotes_batch/stream + `execute`/`call`/`typed`/`execute_with_policy` |
+| `tstdx.Client` / `tstdx.AsyncClient` | **唯一业务入口**（`tstdx.client.api`）：bars/quotes/snapshot/minute/trades/security_*/quotes_batch/stream + `execute`/`call`/`typed`/`execute_with_policy` |
 | `tstdx.runtime.UnifiedRuntime` | 唯一执行内核：`QuerySpec → QueryPlan → 绑定执行 → QueryResult`，零缓存 |
 | `tstdx.runtime.KernelExecutor` | 执行面 Protocol（测试注入假执行体的唯一接缝）|
 | `tstdx.runtime.executor.DirectProviderExecutor` | 按 `DIRECT_BINDINGS` 精确直调 Provider 实现 |

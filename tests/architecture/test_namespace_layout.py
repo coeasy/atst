@@ -2,8 +2,8 @@
 
 Phase 3C re-rooted every non-contract module into its domain package
 (``client/``, ``runtime/``, ``catalog/``). Only the protocol-neutral contract
-layer plus the single business entrypoint may sit at ``tstdx/`` root, and the
-old module paths must not come back as shims.
+layer may sit at ``tstdx/`` root, and the old module paths must not come back
+as shims.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ ROOT = Path(__file__).resolve().parents[2]
 ROOT_WHITELIST = {
     "__init__.py",
     "__main__.py",
-    "client_api.py",  # the single business entrypoint
     "query.py",
     "result.py",
     "batch.py",
@@ -31,6 +30,7 @@ ROOT_WHITELIST = {
 
 #: old dotted module path -> new dotted module path (clean-break table).
 MOVED: dict[str, str] = {
+    "tstdx.client_api": "tstdx.client.api",
     "tstdx.client_core": "tstdx.client.core",
     "tstdx.direct_provider": "tstdx.runtime.executor",
     "tstdx.orchestration": "tstdx.runtime.orchestration",

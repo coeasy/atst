@@ -331,7 +331,7 @@ class TestN5ClientSubcommands:
                 self.calls.append(("minute_klines", (symbol,), dict(period=period, count=count)))
                 return [{"symbol": symbol, "period": period, "count": count}]
 
-        import tstdx.client_api as client_api_mod
+        import tstdx.client.api as client_api_mod
 
         monkeypatch.setattr(client_api_mod, "Client", FakeApi)
         FakeApi.calls = []
@@ -433,7 +433,7 @@ class TestB0BaiduSubcommand:
                 self.calls.append(("baidu_quote", (symbol,), {}))
                 return {"symbol": symbol}
 
-        import tstdx.client_api as client_api_mod
+        import tstdx.client.api as client_api_mod
 
         monkeypatch.setattr(client_api_mod, "Client", FakeApi)
         FakeApi.calls = []
@@ -529,7 +529,7 @@ class TestP01FundSubcommand:
                 self.calls.append(("fund_list", (), {}))
                 return [{"code": "161725", "name": "招商中证白酒指数(LOF)A"}]
 
-        import tstdx.client_api as client_api_mod
+        import tstdx.client.api as client_api_mod
 
         monkeypatch.setattr(client_api_mod, "Client", FakeApi)
         FakeApi.calls = []
@@ -597,7 +597,7 @@ class TestP02IndexSubcommand:
                 self.calls.append(("index_constituents", (index,), {}))
                 return [{"code": "000001", "name": "平安银行", "weight": 0.45}]
 
-        import tstdx.client_api as client_api_mod
+        import tstdx.client.api as client_api_mod
 
         monkeypatch.setattr(client_api_mod, "Client", FakeApi)
         FakeApi.calls = []

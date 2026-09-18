@@ -5,7 +5,7 @@ from dataclasses import fields
 import pytest
 
 import tstdx
-from tstdx.client_api import AsyncClient, Client
+from tstdx.client.api import AsyncClient, Client
 from tstdx.errors import ValidationError
 from tstdx.integration.mcp._tools_spec import TOOLS
 from tstdx.providers import PROVIDERS

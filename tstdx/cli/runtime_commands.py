@@ -12,7 +12,7 @@ import time
 from typing import Any
 
 from .. import __version__
-from ..client_api import Client
+from ..client.api import Client
 from ..errors import ValidationError
 from ..integration.serialization import jsonable, serialize_result
 from ..runtime.orchestration import FallbackPolicy
@@ -410,7 +410,7 @@ class _ClientRows:
     """
 
     def __init__(self, *, timeout: float) -> None:
-        from ..client_api import Client
+        from ..client.api import Client
 
         self._client = Client(timeout=timeout)
 
