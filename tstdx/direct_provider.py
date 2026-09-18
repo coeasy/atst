@@ -305,30 +305,27 @@ class DirectProviderExecutor:
                 src.close()
 
         if capability == "minute_klines":
-            if provider == "eastmoney":
-                from .web.history import EastmoneyHistoryKlineSource
+            from .web.adapters_ext import MinuteKlineSource
+            from .web.history import EastmoneyHistoryKlineSource
 
-                src = EastmoneyHistoryKlineSource(timeout=self.timeout)  # type: ignore[assignment]
-            else:
-                from .web.adapters_ext import MinuteKlineSource
-
-                src = MinuteKlineSource(timeout=self.timeout)  # type: ignore[assignment]
+            minute_kline_cls: type[Any] = (
+                EastmoneyHistoryKlineSource if provider == "eastmoney" else MinuteKlineSource
+            )
+            minute_src = minute_kline_cls(timeout=self.timeout)
             try:
-                return src.fetch_bars(symbol, **kwargs)  # type: ignore[attr-defined]
+                return minute_src.fetch_bars(symbol, **kwargs)
             finally:
-                src.close()
+                minute_src.close()
 
         if capability == "history":
-            if provider == "eastmoney":
-                from .web.history import (
-                    EastmoneyHistoryKlineSource as Source,  # type: ignore[assignment]
-                )
-            else:
-                from .web.history import (
-                    SinaHistoryKlineSource as Source,  # type: ignore[assignment]
-                )
+            from .web.history import EastmoneyHistoryKlineSource, SinaHistoryKlineSource
 
-            history = Source(timeout=self.timeout)  # type: ignore[call-arg]
+            history_cls: type[Any] = (
+                EastmoneyHistoryKlineSource
+                if provider == "eastmoney"
+                else SinaHistoryKlineSource
+            )
+            history = history_cls(timeout=self.timeout)
             try:
                 return history.fetch_bars(symbol, **kwargs)
             finally:

@@ -202,10 +202,9 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
         "mac_quotes", "tdx", "mac", "mac_client", "mac_quote"
     ),
     # 权息资料（公司行为 / 股本变迁）在全仓只有**一个**低层实现：TDX
-    # ``capital_changes``（见 ``TdxQuotationAPI.capital_changes`` 与
-    # ``integration/http_server`` 的 ``corporate_action`` 别名注释）。v14 注册表
-    # 把 ``CorporateActionQuery`` 归到 eastmoney ``corporate`` channel，因此该
-    # 语义 home 指向同一实现，而不是杜撰一个不存在的东财资源。
+    # ``TdxClient.capital_changes``。v14 注册表把 ``CorporateActionQuery`` 归到
+    # eastmoney ``corporate`` channel，因此该语义 home 指向同一实现，而不是杜撰
+    # 一个不存在的东财资源。
     MigratedCapabilityBinding(
         "corporate_action", "eastmoney", "corporate", "tdx_client", "capital_changes"
     ),
@@ -242,8 +241,8 @@ _SEMANTIC_WEB_CHANNELS: tuple[tuple[str, str], ...] = (
     ("sina", "news"),
 )
 
-#: Registry triples whose only implementation is a v14 Direct-API channel
-#: adapter. ``backend="direct_adapter"`` resolves the adapter *class* from the
+#: Registry triples whose only implementation is a channel adapter class.
+#: ``backend="direct_adapter"`` resolves the adapter *class* from the
 #: single :data:`tstdx.provider_api` ``CHANNELS`` table at dispatch time, so this
 #: table only names the adapter *method* — module/class strings are never
 #: duplicated here.

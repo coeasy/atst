@@ -13,6 +13,7 @@ from tstdx.provider_api import (
     JslProviderAPI,
     SinaProviderAPI,
     TencentProviderAPI,
+    resolve_channel_adapter,
 )
 from tstdx.providers import PROVIDERS
 
@@ -32,33 +33,33 @@ def _registry_channels(provider: str) -> set[str]:
 
 
 @pytest.mark.parametrize("provider,api_cls", WEB_PROVIDER_APIS.items())
-def test_direct_api_provider_id_matches_registry(provider: str, api_cls: type) -> None:
+def test_channel_bindings_provider_id_matches_registry(provider: str, api_cls: type) -> None:
     assert api_cls.provider_id == provider
     assert provider in PROVIDERS.ids()
 
 
 @pytest.mark.parametrize("provider,api_cls", WEB_PROVIDER_APIS.items())
-def test_all_registry_web_channels_have_direct_api_mapping(provider: str, api_cls: type) -> None:
-    mapped = set(api_cls.CHANNELS)
-    if provider == "eastmoney":
-        mapped.add("corporate")  # composite provider-specific namespace
+def test_all_registry_web_channels_have_channel_binding(provider: str, api_cls: type) -> None:
+    mapped = set(api_cls.CHANNELS) | set(api_cls.EXPLICIT_CHANNELS)
     assert mapped == _registry_channels(provider)
 
 
 @pytest.mark.parametrize("provider,api_cls", WEB_PROVIDER_APIS.items())
-def test_direct_adapter_refs_import_without_instantiation(provider: str, api_cls: type) -> None:
+def test_adapter_refs_import_without_instantiation(provider: str, api_cls: type) -> None:
     for channel, (module_name, class_name) in api_cls.CHANNELS.items():
         module = importlib.import_module(module_name)
         adapter_cls = getattr(module, class_name)
         assert isinstance(adapter_cls, type), (provider, channel, module_name, class_name)
 
 
-def test_jsl_etf_is_not_a_registry_or_direct_channel() -> None:
+def test_jsl_etf_is_neither_a_registry_nor_a_bound_channel() -> None:
     assert "etf" not in JslProviderAPI.CHANNELS
-    api = JslProviderAPI(object())  # type: ignore[arg-type]
     with pytest.raises(ValidationError) as caught:
-        api.channel("etf")
-    assert caught.value.context == {"provider": "jsl", "channel": "etf"}
+        resolve_channel_adapter("jsl", "etf")
+    assert caught.value.context["provider"] == "jsl"
+    assert caught.value.context["channel"] == "etf"
+    assert caught.value.context["fallback"] is False
+    assert caught.value.context["provider_switch_allowed"] is False
 
 
 def test_tdx_registry_channels_are_explicit_protocol_or_local_families() -> None:

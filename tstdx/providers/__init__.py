@@ -560,9 +560,9 @@ PROVIDERS = ProviderRegistry(
         # ``derived`` / ``builtin`` are *composite* Providers: their capabilities
         # are honest aggregates / static built-ins rather than one first-party
         # transport. They are declared in the registry so the migrated-capability
-        # catalog has a canonical home, but they own no Direct channel API (see
-        # ``ProviderAPI.CHANNEL_API_EXEMPT``) — they are reachable only through the
-        # unified QuerySpec path, never through a fake Direct adapter.
+        # catalog has a canonical home, but they own no channel adapter (see
+        # ``ChannelBindings.CHANNEL_API_EXEMPT``) — they are reachable only
+        # through the unified QuerySpec path, never through a fake adapter.
         ProviderSpec(
             id="builtin",
             display_name="Built-in static catalog",
