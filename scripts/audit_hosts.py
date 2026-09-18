@@ -25,13 +25,15 @@ if str(_ROOT) not in sys.path:
 from tstdx.tools.host_audit import (  # noqa: E402
     AuditReport,
     FamilyAudit,
-    _norm_family,
     audit_all,
     audit_family,
     load_external_hosts,
     main,
     write_markdown_summary,
     write_report,
+)
+from tstdx.tools.host_audit import (  # noqa: E402
+    _norm_family as _norm_family,  # re-exported for the host-audit test surface
 )
 from tstdx.transport.hosts import (  # noqa: E402
     DEFAULT_HOST_POOL,

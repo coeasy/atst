@@ -1,7 +1,8 @@
 # tstdx v17 收口方案：单内核最后一公里与债务清偿
 
-> **文档状态**：执行中 —— Phase 3A(方案 b)/3B/3D 已于 2026-09-19 落地（F-1/F-2 物理删除、
-> 防回潮守卫、typed 全契约对齐内核签名 + CHANGELOG 迁移表）；Phase 3C/4/5 待续
+> **文档状态**：执行中 —— Phase 3A(方案 b)/3B/3C/3D 已于 2026-09-19 落地（F-1/F-2/F-9 物理
+> 删除、防回潮守卫、typed 全契约对齐内核签名 + CHANGELOG 迁移表、根级模块 26→11）；
+> Phase 4/5 待续
 > **取代文档**：REFACTOR_PLAN_v16_CONVERGENCE.md 的 Phase 3–5（其 Phase 0/1/2 已于
 > `528ad18` / `6a45215` / `77bc2fe` 落地）
 > **前置决策沿用 v16**：v13 内核唯一执行；`Client` 唯一业务入口；数据请求零缓存；clean-break。
@@ -85,20 +86,39 @@
    `_bindings` 字典改由 registry 填充并全量注册 `DIRECT_BINDINGS`，删除本地字典——
    二选一，禁止双轨。
 
-### Phase 3C —— 命名空间整理（P1，1–2 个 PR）
+### Phase 3C —— 命名空间整理（P1，1–2 个 PR）✅ 已落地（2026-09-19）
 
-1. 根级目标白名单（≤10）：`__init__.py`、`__main__.py`、`errors.py`、`error_envelope.py`、
-   `deprecation.py`、`query.py`、`result.py`、`batch.py`、`typed_query.py`、`stream_contract.py`
-   （契约层平铺可接受）；其余归位：
-   - `client_core.py → client/core.py`（约 8 处导入方）
-   - `direct_provider.py → runtime/executor.py`
-   - `orchestration.py → runtime/orchestration.py`
-   - `provider_contract/guard/audit.py、capability_catalog/audit.py → provider/` 或 `runtime/`
-   - `freshness/health/failure.py → runtime/support.py`（合并同族）
-   - `runtime_audit/identity/provenance.py → runtime/`（已在 runtime 域，物理位置保留但统一前缀）
-   - 删除 Phase 3A 冻结的 `execution/` DAG 与 `provider/` v14 适配器 + `bootstrap.py` 旧签名
-2. `tests/architecture/` 增加根级白名单守卫。
-3. clean-break：不留旧导入路径别名，CHANGELOG 记迁移表。
+> 执行结果：根级模块由 26 个收敛到 **11 个**；12 个模块纯移动（无合并）、
+> 3 个孤儿模块删除、1 个一次性脚本删除。两处偏离原案，理由见"偏差说明"。
+
+**实际映射（旧 → 新）**
+
+| 原案 | 落地 |
+|---|---|
+| `client_core.py → client/core.py` | ✅ 同名落地 |
+| `direct_provider.py → runtime/executor.py` | ✅ |
+| `orchestration.py → runtime/orchestration.py` | ✅ |
+| `runtime_audit/identity/provenance.py` | ✅ → `runtime/{audit,identity,provenance}.py` |
+| `capability_catalog.py / capability_audit.py` | ✅ → 新包 `catalog/{capability,capability_audit}.py` |
+| `provider_api.py / provider_contract.py / provider_guard.py / provider_audit.py` | ✅ → `catalog/{provider_bindings,provider_contract,provider_guard,provider_audit}.py` |
+| ~~`freshness/health/failure.py → runtime/support.py`~~ | **偏差 1**：改为整体删除（见下） |
+| 根级白名单 ≤10 | **偏差 2**：落地 11 项——多出的 `client_api.py` 是唯一业务入口，保留根级可发现性 |
+
+**偏差说明**
+
+1. 原案要"合并同族"为 `runtime/support.py`。执行前实测：`tstdx/freshness.py`（427 行）与
+   `tstdx/health.py`（256 行）**全仓零引用**（生产/测试/脚本皆无），`tstdx/failure.py` 仅被
+   自身测试引用——即三者是 F-2 同族的"先写契约、永不上线"孤儿。按零缓存/clean-break 原则
+   **直接删除**（F-9），而非合并成 800 行无人调用的支持模块。
+2. 原案把契约件放进 `provider/`。该包名刚因 v14 router/adapters 被物理删除，且
+   `test_single_kernel_guards` 明令禁止 runtime 包引用 `tstdx.provider.*`——复用会制造
+   "已删层复活"的假象，故新包命名 `tstdx/catalog/`（纯声明与一致性审计，依赖方向单向：
+   `runtime → catalog`，不得反向）。
+
+**守卫与门禁**：`tests/architecture/test_namespace_layout.py`（根级白名单精确相等、
+12 个旧路径磁盘不可见且不可导入、新路径可导入）；`test_official_runtime_no_fallback`
+的官方运行时文件清单同步更新；mypy 错误数与 `9c99635` 基线**逐条持平**（47，未新增）。
+一次性迁移脚本 `scripts/_v16_strip_use_cache.py`（目标模式已应用且路径过期）一并删除。
 
 ### Phase 3D —— typed 糖衣端到端（P1，1–2 个 PR）✅ 已落地（2026-09-19）
 

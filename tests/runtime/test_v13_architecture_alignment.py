@@ -6,11 +6,11 @@ import pytest
 
 import tstdx
 from tstdx.client_api import AsyncClient, Client
-from tstdx.direct_provider import DIRECT_BINDINGS, audit_direct_bindings
 from tstdx.errors import ValidationError
 from tstdx.integration.mcp._tools_spec import TOOLS
 from tstdx.providers import PROVIDERS
 from tstdx.query import QuerySpec
+from tstdx.runtime.executor import DIRECT_BINDINGS, audit_direct_bindings
 from tstdx.stream_contract import StreamPlanner, StreamSpec
 
 TIER_A = {
@@ -57,7 +57,7 @@ def test_tdx_tier_a_is_complete_in_registry() -> None:
     #   （finance_info / capital_changes），见 TdxQuotationAPI.finance。
     # - auction / block_quotes / minute_history / quotes_concurrent /
     #   security_list_all / volume_price：v13 迁移能力，其唯一执行通道即
-    #   canonical quotation（catalog 已按注册表对齐，见 capability_catalog）。
+    #   canonical quotation（catalog 已按注册表对齐，见 catalog.capability）。
     assert quotation.capabilities >= TIER_A
     assert quotation.capabilities == TIER_A | {
         "finance",

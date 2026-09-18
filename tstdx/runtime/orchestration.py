@@ -8,12 +8,12 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any
 
-from .error_envelope import to_error_envelope
-from .errors import AllSourcesExhausted
-from .providers import PROVIDERS, resolve_provider
-from .query import QuerySpec
-from .result import QueryResult
-from .runtime.kernel import UnifiedRuntime
+from ..error_envelope import to_error_envelope
+from ..errors import AllSourcesExhausted
+from ..providers import PROVIDERS, resolve_provider
+from ..query import QuerySpec
+from ..result import QueryResult
+from .kernel import UnifiedRuntime
 
 __all__ = [
     "FallbackPolicy",

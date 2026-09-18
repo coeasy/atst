@@ -9,12 +9,12 @@ import datetime as _dt
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from .domain.finance import to_capital_changes
-from .domain.models import Bar, CapitalChange, Quote
-from .domain.symbol import to_tdx_market
-from .errors import CommandOffline, NotImplementedFeature, ParseError
-from .protocol.commands import CMD, STATUS_OFFLINE, get_command
-from .protocol.parsers.std7709 import KlineCategory
+from ..domain.finance import to_capital_changes
+from ..domain.models import Bar, CapitalChange, Quote
+from ..domain.symbol import to_tdx_market
+from ..errors import CommandOffline, NotImplementedFeature, ParseError
+from ..protocol.commands import CMD, STATUS_OFFLINE, get_command
+from ..protocol.parsers.std7709 import KlineCategory
 
 __all__ = [
     "OutputFormat",
@@ -258,14 +258,14 @@ def _row_to_capital(row: Mapping[str, Any]) -> CapitalChange:
 def _emit(items: Sequence[Any], as_format: OutputFormat):
     output_format = _require_output_format(as_format)
     if output_format == "dataframe":
-        from .domain.models import to_dataframe
+        from ..domain.models import to_dataframe
 
         return to_dataframe(items)
     if output_format == "tuple":
-        from .domain.models import to_tuples
+        from ..domain.models import to_tuples
 
         return to_tuples(items)
-    from .domain.models import to_dicts
+    from ..domain.models import to_dicts
 
     return to_dicts(items)
 

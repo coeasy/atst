@@ -23,8 +23,8 @@ import importlib
 from collections.abc import Sequence
 from typing import Any, ClassVar
 
-from .errors import ValidationError
-from .providers import PROVIDERS, resolve_provider
+from ..errors import ValidationError
+from ..providers import PROVIDERS, resolve_provider
 
 __all__ = [
     "ChannelBindings",

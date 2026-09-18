@@ -85,7 +85,12 @@ def test_runtime_package_exports_only_the_kernel() -> None:
 def test_runtime_package_never_reimports_deleted_layers() -> None:
     import ast
 
-    banned_prefixes = ("tstdx.execution", "tstdx.provider")
+    banned = ("tstdx.execution", "tstdx.provider")
+
+    def is_banned(module: str) -> bool:
+        # package-boundary match: the live `tstdx.providers` registry is not `tstdx.provider`
+        return any(module == name or module.startswith(f"{name}.") for name in banned)
+
     offenders: list[str] = []
     for path in (ROOT / "tstdx" / "runtime").glob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -96,7 +101,7 @@ def test_runtime_package_never_reimports_deleted_layers() -> None:
             for _ in range(node.level - 1):
                 pkg = pkg.rpartition(".")[0]
             module = f"{pkg}.{node.module}" if node.module else pkg
-            if module.startswith(banned_prefixes):
+            if is_banned(module):
                 offenders.append(f"{path.name}: import {module}")
     assert offenders == []
 

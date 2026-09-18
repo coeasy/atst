@@ -6,20 +6,20 @@ from __future__ import annotations
 import pytest
 
 import tstdx
-from tstdx.capability_catalog import (
+from tstdx.catalog.capability import (
     MIGRATED_BINDINGS,
     MIGRATED_CAPABILITIES,
     default_provider_for,
 )
 from tstdx.client_api import Client
-from tstdx.direct_provider import (
+from tstdx.errors import ValidationError
+from tstdx.providers import PROVIDERS
+from tstdx.query import QueryPlanner, QuerySpec
+from tstdx.runtime.executor import (
     DIRECT_BINDINGS,
     DirectProviderExecutor,
     audit_direct_bindings,
 )
-from tstdx.errors import ValidationError
-from tstdx.providers import PROVIDERS
-from tstdx.query import QueryPlanner, QuerySpec
 
 # Business abilities that existed on the retired UnifiedQuoteAPI surface.
 # Route/query wrapper mechanics are intentionally excluded: Client.call and

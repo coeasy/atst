@@ -20,12 +20,12 @@ from typing import Any
 
 import tstdx.client as _client_pkg  # 包级符号经此转发（见 sync.py 说明）
 
-from ..client_core import _guard_offline
 from ..codec.framing import ResponseFrame
 from ..errors import DataError
 from ..protocol.commands import Family
 from ..protocol.registry import ParseResult
 from ._mixin import OutputFormat, _ClientMixin
+from .core import _guard_offline
 
 
 def dispatch(frame: ResponseFrame, **ctx: Any) -> ParseResult:

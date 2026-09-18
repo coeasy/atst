@@ -15,7 +15,7 @@ from .. import __version__
 from ..client_api import Client
 from ..errors import ValidationError
 from ..integration.serialization import jsonable, serialize_result
-from ..orchestration import FallbackPolicy
+from ..runtime.orchestration import FallbackPolicy
 from ._common import (
     _fmt,
     _pct,

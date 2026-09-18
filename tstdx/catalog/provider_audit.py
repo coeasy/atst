@@ -29,8 +29,8 @@ def audit_provider_registry() -> ProviderAuditReport:
     initialization. The actual registry remains the single source of truth.
     """
 
-    from .direct_provider import DIRECT_BINDINGS
-    from .providers import PROVIDERS
+    from ..providers import PROVIDERS
+    from ..runtime.executor import DIRECT_BINDINGS
 
     providers = tuple(PROVIDERS.ids())
     if not providers:

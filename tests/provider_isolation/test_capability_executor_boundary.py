@@ -1,5 +1,5 @@
-from tstdx.capability_audit import audit_capability_bindings
-from tstdx.provider_audit import audit_provider_registry
+from tstdx.catalog.capability_audit import audit_capability_bindings
+from tstdx.catalog.provider_audit import audit_provider_registry
 
 
 def test_provider_and_capability_audits_are_available() -> None:

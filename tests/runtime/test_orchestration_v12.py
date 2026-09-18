@@ -4,9 +4,9 @@ import pytest
 
 from tstdx.domain.models import Quote
 from tstdx.errors import AllSourcesExhausted, ValidationError
-from tstdx.orchestration import FallbackPolicy, ProviderOrchestrator
 from tstdx.query import QueryPlanner, QuerySpec
 from tstdx.result import Provenance, QueryResult
+from tstdx.runtime.orchestration import FallbackPolicy, ProviderOrchestrator
 
 
 def _result(provider: str) -> QueryResult[list[Quote]]:

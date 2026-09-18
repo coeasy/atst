@@ -6,9 +6,9 @@ from types import SimpleNamespace
 import pytest
 
 from tstdx.cli import main as cli_main
-from tstdx.direct_provider import DirectProviderExecutor
 from tstdx.errors import ValidationError
 from tstdx.query import QueryPlanner, QuerySpec
+from tstdx.runtime.executor import DirectProviderExecutor
 
 
 def _bars_plan(provider: str, adjustment: str = "qfq"):

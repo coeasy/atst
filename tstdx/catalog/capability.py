@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from .errors import ValidationError
+from ..errors import ValidationError
 
 __all__ = [
     "MigratedCapabilityBinding",
@@ -104,7 +104,7 @@ _SKIP_WEB_METHODS = {"close", "mro", *_CORE_CAPABILITIES}
 
 
 def _discover_web_bindings() -> list[MigratedCapabilityBinding]:
-    from .web.facade import WebQuoteSession
+    from ..web.facade import WebQuoteSession
 
     values: list[MigratedCapabilityBinding] = []
     for name, _member in inspect.getmembers(WebQuoteSession, predicate=callable):
@@ -243,7 +243,7 @@ _SEMANTIC_WEB_CHANNELS: tuple[tuple[str, str], ...] = (
 
 #: Registry triples whose only implementation is a channel adapter class.
 #: ``backend="direct_adapter"`` resolves the adapter *class* from the
-#: single :data:`tstdx.provider_api` ``CHANNELS`` table at dispatch time, so this
+#: single :data:`tstdx.catalog.provider_bindings` ``CHANNELS`` table at dispatch time, so this
 #: table only names the adapter *method* — module/class strings are never
 #: duplicated here.
 _DIRECT_ADAPTER_BINDINGS: tuple[tuple[str, str, str, str], ...] = (
@@ -263,8 +263,8 @@ _DIRECT_ADAPTER_BINDINGS: tuple[tuple[str, str, str, str], ...] = (
 
 
 def _semantic_web_bindings() -> list[MigratedCapabilityBinding]:
-    from .providers import PROVIDERS
-    from .web.facade import WebQuoteSession
+    from ..providers import PROVIDERS
+    from ..web.facade import WebQuoteSession
 
     values: list[MigratedCapabilityBinding] = []
     for provider, channel in _SEMANTIC_WEB_CHANNELS:
@@ -446,7 +446,7 @@ def validate_call(
     try:
         meta = binding_for(provider, channel, capability)
         if meta.backend == "web_session":
-            from .web.facade import WebQuoteSession
+            from ..web.facade import WebQuoteSession
 
             call_kwargs = dict(kwargs)
             if capability == "hk_quotes" and provider in {"sina", "tencent"}:
@@ -454,18 +454,18 @@ def validate_call(
             _bind_signature(getattr(WebQuoteSession, meta.method), args, call_kwargs)
             return
         if meta.backend == "tdx_client":
-            from .client import TdxClient
+            from ..client import TdxClient
 
             _bind_signature(getattr(TdxClient, meta.method), args, kwargs)
             return
         if meta.backend == "f10_client":
-            from .client import F10Client
+            from ..client import F10Client
 
             method = "download" if capability == "f10" else "catalog"
             _bind_signature(getattr(F10Client, method), args, kwargs)
             return
         if meta.backend in {"ex_client", "goods_client", "mac_client"}:
-            from .client import ExMarketClient, GoodsClient, MacClient
+            from ..client import ExMarketClient, GoodsClient, MacClient
 
             cls = {
                 "ex_client": ExMarketClient,
@@ -475,7 +475,7 @@ def validate_call(
             _bind_signature(getattr(cls, meta.method), args, kwargs)
             return
         if meta.backend == "direct_adapter":
-            from .provider_api import resolve_channel_adapter
+            from .provider_bindings import resolve_channel_adapter
 
             adapter = resolve_channel_adapter(provider, meta.channel)
             _bind_signature(getattr(adapter, meta.method), args, kwargs)

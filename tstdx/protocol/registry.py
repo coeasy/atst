@@ -27,7 +27,7 @@ from typing import Any
 from ..codec.framing import ResponseFrame
 from ..codec.primitive import BinaryReader
 from ..errors import LowConfidenceParse, ParseError, TdxError
-from ..protocol.commands import Family, get_command
+from .commands import Family, get_command
 
 logger = logging.getLogger(__name__)
 

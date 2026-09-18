@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from tstdx.client import TdxClient
-from tstdx.client_core import _emit
+from tstdx.client.core import _emit
 from tstdx.errors import ParseError
 
 

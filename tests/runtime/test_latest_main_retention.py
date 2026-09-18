@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.capability_catalog import is_migrated_capability
+from tstdx.catalog.capability import is_migrated_capability
 from tstdx.web.facade import WebQuoteSession
 
 # These capabilities were added to main after PR #1 diverged. The v11 runtime

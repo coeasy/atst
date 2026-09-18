@@ -8,8 +8,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from ..client_core import _emit, _normalize_symbols, _require_int, _require_output_format
 from . import async_ as _impl
+from .core import _emit, _normalize_symbols, _require_int, _require_output_format
 
 
 async def _quotes_concurrent(

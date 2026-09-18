@@ -13,16 +13,16 @@ from pathlib import Path
 from typing import Any
 
 from .batch import BatchResult
-from .capability_catalog import (
+from .catalog.capability import (
     MIGRATED_CAPABILITIES,
     default_provider_for,
     is_migrated_capability,
 )
 from .errors import ValidationError
-from .orchestration import FallbackPolicy, OrchestratedResult, ProviderOrchestrator
 from .query import QuerySpec
 from .result import QueryResult
 from .runtime.kernel import UnifiedRuntime
+from .runtime.orchestration import FallbackPolicy, OrchestratedResult, ProviderOrchestrator
 from .stream_contract import StreamPlanner, StreamSpec
 from .streaming.stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
 

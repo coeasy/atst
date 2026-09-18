@@ -23,7 +23,7 @@ tstdx.Client / AsyncClient（client_api.py，唯一业务入口，172 capabiliti
 UnifiedRuntime（runtime/kernel.py，零缓存）
         │  QueryPlanner.compile(spec) → QueryPlan（单 Provider/单 Channel）
         ▼
-DirectProviderExecutor（direct_provider.py）
+DirectProviderExecutor（runtime/executor.py）
         │  DIRECT_BINDINGS[(provider, channel, capability)] → 精确 executor 方法
         ▼
 providers/ 注册表（Provider/Channel/Capability 单一事实源）
@@ -33,7 +33,7 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
    └─ derived    → 显式聚合能力
         │  QueryResult（result.py：data + meta.provenance 溯源）
         ▼
-跨 Provider 回退：仅限显式 FallbackPolicy → ProviderOrchestrator（orchestration.py，唯一通道）
+跨 Provider 回退：仅限显式 FallbackPolicy → ProviderOrchestrator（runtime/orchestration.py，唯一通道）
 流式：StreamSpec/StreamPlanner（stream_contract.py）→ StatefulQuoteStream（streaming/）
 ```
 
@@ -46,13 +46,14 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
 
 | 层 | 模块 | 状态 |
 |---|---|---|
-| 协议层（冻结） | `codec/`（帧/变长数/字符集）、`protocol/`（命令账本+三级解析）、`transport/`（池/心跳/测速）、`client/`+`client_core.py`（同步/异步 TdxClient）、`charset/` | 独立完备 |
+| 协议层（冻结） | `codec/`（帧/变长数/字符集）、`protocol/`（命令账本+三级解析）、`transport/`（池/心跳/测速）、`client/`（`core.py` 共享纯协议 SSOT + `sync.py`/`async_.py` TdxClient）、`charset/` | 独立完备 |
 | 数据源层 | `providers/`（静态注册表）、`web/`、`reader/`、`profile/`（DataProfile 复权/周期口径） | 活 |
-| 内核层 | `runtime/kernel.py`、`query.py`、`result.py`、`direct_provider.py`、`batch.py`、`capability_catalog.py`、`orchestration.py`、`runtime_{audit,identity,provenance}.py`、`provider_{contract,guard,audit}.py` | 活 |
+| 契约层（无执行） | `query.py`、`result.py`、`batch.py`、`typed_query.py`、`stream_contract.py`、`errors.py`、`error_envelope.py`、`deprecation.py`、`catalog/`（capability 目录与调用校验、Provider channel→adapter 绑定表、Provider 隔离契约/守卫/一致性审计） | 活 |
+| 内核层 | `runtime/`（`kernel.py` 唯一内核、`executor.py` 精确绑定执行、`orchestration.py` 显式跨源编排、`audit.py` 启动三方对账、`identity.py`/`provenance.py` 执行身份与溯源守卫） | 活 |
 | 服务面层 | `cli/`、`integration/`（runtime_http/ws/tasks/mcp + serialization）、`output/`（DataFrame/Parquet/DuckDB）、`sink/` | 活，全部 Client-backed |
 | 类型化糖衣 | `typed_query.py`（CapabilityQuery + Domain Record）、`domain/`（records/symbol/日历） | 全量接通：`Client.typed` / `AsyncClient.typed`，字段名与内核方法签名一一对应 |
-| 基础设施 | `errors.py`、`error_envelope.py`、`config/`、`security/`、`observability/`、`feedback/`、`deprecation.py`、`freshness/health/failure` | 活 |
-| **待归位** | 根级平铺模块（`client_core.py`、`direct_provider.py`、`orchestration.py`、`*_audit.py` 等）、`trade/`（实验模块） | 可用但位置发散，V17 Phase 3C 处理 |
+| 基础设施 | `config/`、`security/`、`observability/`、`feedback/` | 活 |
+| **待归位** | `client_api.py`（唯一入口，经决策保留根级以最大化可发现性）、`trade/`（实验模块） | Phase 3C 后仅剩这两项，见 V17 方案 |
 
 ## 4. 断链清偿状态（V17）
 
@@ -63,9 +64,13 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
 2. **F-2 registry 三件套 —— 已消灭（2026-09-19）**：`executor_bindings.py`、
    `executor_binding_registry.py`、`executor_registry.py` 及其 4 个契约测试删除，
    `DIRECT_BINDINGS` 恢复为唯一三元组事实源。
-3. **防回潮守卫**：`tests/architecture/test_single_kernel_guards.py`（已删模块/符号不可再现、
+3. **F-9 孤儿模块 —— 已消灭（Phase 3C）**：`tstdx/freshness.py`（427 行）、`tstdx/health.py`
+   （256 行）全仓零引用（含测试与脚本），`tstdx/failure.py` 仅被自身测试引用；三者随
+   Phase 3C 删除。新鲜度/健康/失败决策若重来，必须挂到内核执行面上并有消费者，不再先写契约。
+4. **防回潮守卫**：`tests/architecture/test_single_kernel_guards.py`（已删模块/符号不可再现、
    `tstdx.runtime.__all__` 仅内核、runtime 包不再引用已删分层、Client 执行面类型为
-   `DirectProviderExecutor`）。
+   `DirectProviderExecutor`）；`tests/architecture/test_namespace_layout.py`（根级白名单 11 项、
+   旧模块路径不可导入）。
 
 ## 5. 契约与真相源
 

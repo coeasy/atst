@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from tstdx.capability_catalog import default_provider_for
+from tstdx.catalog.capability import default_provider_for
 from tstdx.client_api import Client
 from tstdx.errors import ValidationError
 from tstdx.query import QueryPlan, QueryPlanner, QuerySpec

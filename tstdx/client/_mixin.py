@@ -4,7 +4,7 @@
 """同步 / 异步客户端共享方法骨架（REFACTOR_PLAN_v9 Q2）。
 
 承载 ``TdxClient`` / ``AsyncTdxClient`` 及四个子客户端镜像方法对的**唯一**
-方法体：协议体构造（复用 :mod:`tstdx.client_core` 纯函数）+ ``dispatch`` 解析
+方法体：协议体构造（复用 :mod:`tstdx.client.core` 纯函数）+ ``dispatch`` 解析
 + ``as_format`` 分派（``_emit``）+ ``last_errors`` 收尾。
 
 异步差异的消除方式——**模板 + trampoline**：
@@ -26,7 +26,7 @@ docstring 摘要与迁移前一致）；``dispatch`` 经 :mod:`tstdx.client` 包
 **fail-closed 参数校验是本模板的硬约束**：协议参数（市场标识、页偏移、
 日期、文件名、批量容器）必须在**任何 pool I/O 之前**校验完毕并抛
 :class:`~tstdx.errors.ParseError`；同步 / 异步两端不得各维护一套，
-校验只能落在本共享模板或 :mod:`tstdx.client_core` 的 SSOT 纯函数里。
+校验只能落在本共享模板或 :mod:`tstdx.client.core` 的 SSOT 纯函数里。
 """
 
 from __future__ import annotations
@@ -39,7 +39,20 @@ from typing import Any
 
 import tstdx.client as _client_pkg  # 包级符号经此转发（见 sync.py 说明）
 
-from ..client_core import (  # B1：共享核心（纯协议构造，无 I/O）
+from ..domain.finance import FINANCE_INFO_FIELDS, map_finance_values
+from ..domain.models import Bar, CapitalChange, Quote
+from ..errors import (
+    ParseError,
+    TdxError,
+    TruncatedDataError,
+)
+from ..protocol.commands import CMD, Family
+from ..protocol.parsers.std7709 import (
+    SecurityBarsParser,
+    build_realtime_quote_body,
+)
+from ..protocol.registry import TIER_L3
+from .core import (  # B1：共享核心（纯协议构造，无 I/O）
     _bars_body,
     _emit,
     _encode_gbk_field,
@@ -56,19 +69,6 @@ from ..client_core import (  # B1：共享核心（纯协议构造，无 I/O）
     period_to_category,
     split_symbol,
 )
-from ..domain.finance import FINANCE_INFO_FIELDS, map_finance_values
-from ..domain.models import Bar, CapitalChange, Quote
-from ..errors import (
-    ParseError,
-    TdxError,
-    TruncatedDataError,
-)
-from ..protocol.commands import CMD, Family
-from ..protocol.parsers.std7709 import (
-    SecurityBarsParser,
-    build_realtime_quote_body,
-)
-from ..protocol.registry import TIER_L3
 
 #: ``quotes_snapshot`` 的 0x054C 单包标的数上限。历史实现一次打包全部标的，
 #: ``>255`` 直接 struct.error 且绕过逐只回退设计；80 为保守分片值。

@@ -14,13 +14,13 @@ from collections.abc import Sequence
 from typing import Any, Protocol
 
 from ..batch import BatchItem, BatchResult
-from ..direct_provider import DirectProviderExecutor
 from ..domain.symbol import normalize_symbol
 from ..query import QueryPlan, QueryPlanner, QuerySpec
 from ..result import QueryResult
-from ..runtime_audit import audit_runtime
-from ..runtime_identity import execution_identity_from_plan
-from ..runtime_provenance import validate_runtime_provenance
+from .audit import audit_runtime
+from .executor import DirectProviderExecutor
+from .identity import execution_identity_from_plan
+from .provenance import validate_runtime_provenance
 
 __all__ = ["KernelExecutor", "UnifiedRuntime"]
 

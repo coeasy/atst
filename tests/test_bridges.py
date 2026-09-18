@@ -217,7 +217,7 @@ class TestBridges:
         v16 收敛后不再逐能力开端点：长尾能力统一经 ``POST /v13/query/{capability}``
         寻址，端点数不随 capability 目录 1:1 膨胀。
         """
-        from tstdx.capability_catalog import MIGRATED_CAPABILITIES
+        from tstdx.catalog.capability import MIGRATED_CAPABILITIES
         from tstdx.integration.runtime_http import create_runtime_app
 
         paths = {

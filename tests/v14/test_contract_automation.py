@@ -53,7 +53,7 @@ class TestContractAutomation:
         import dataclasses as dc
 
         import tstdx.typed_query as tq
-        from tstdx.capability_catalog import MIGRATED_CAPABILITIES
+        from tstdx.catalog.capability import MIGRATED_CAPABILITIES
         from tstdx.providers import PROVIDERS
 
         internal = {

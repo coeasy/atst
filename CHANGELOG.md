@@ -87,6 +87,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 防回潮守卫：`tests/architecture/test_single_kernel_guards.py`（已删模块不可导入、
   符号不再出现、`tstdx.runtime.__all__` 仅导出内核、runtime 包不再 import 已删分层）
 
+### Changed（v17 Phase 3C —— 根级命名空间归位）
+
+`tstdx/` 根级平铺模块从 26 个收敛到 11 个（白名单：`__init__`、`__main__`、`client_api`、
+`query`、`result`、`batch`、`typed_query`、`stream_contract`、`errors`、`error_envelope`、
+`deprecation`）。纯移动、无合并、无兼容别名；导入方需按下表更新：
+
+| 旧模块路径 | 新模块路径 |
+| --- | --- |
+| `tstdx.client_core` | `tstdx.client.core` |
+| `tstdx.direct_provider` | `tstdx.runtime.executor` |
+| `tstdx.orchestration` | `tstdx.runtime.orchestration` |
+| `tstdx.runtime_audit` | `tstdx.runtime.audit` |
+| `tstdx.runtime_identity` | `tstdx.runtime.identity` |
+| `tstdx.runtime_provenance` | `tstdx.runtime.provenance` |
+| `tstdx.capability_catalog` | `tstdx.catalog.capability` |
+| `tstdx.capability_audit` | `tstdx.catalog.capability_audit` |
+| `tstdx.provider_api` | `tstdx.catalog.provider_bindings` |
+| `tstdx.provider_contract` | `tstdx.catalog.provider_contract` |
+| `tstdx.provider_guard` | `tstdx.catalog.provider_guard` |
+| `tstdx.provider_audit` | `tstdx.catalog.provider_audit` |
+
+新包 `tstdx/catalog/` 承载"静态声明与一致性审计"（capability 目录与调用校验、Provider
+channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方向单向 `runtime → catalog`。
+顶层公开面 `tstdx.Client` / `tstdx.ProviderOrchestrator` / `tstdx.FallbackPolicy` 等**不变**
+（`tstdx/__init__.py` 懒加载表已指向新路径）。守卫：`tests/architecture/test_namespace_layout.py`。
+
+同批删除全仓零引用的孤儿模块 `tstdx/freshness.py`（427 行）、`tstdx/health.py`（256 行）与仅
+被自身测试引用的 `tstdx/failure.py`（含 `tests/errors/test_failure_policy.py`）；一次性迁移脚本
+`scripts/_v16_strip_use_cache.py` 一并移除。
+
 ### Changed（v16 Phase 3D —— typed 契约对齐内核真实签名）
 
 `CapabilityQuery` 家族此前按信封时代的假想参数名建模，与 `DirectProviderExecutor`

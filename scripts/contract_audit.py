@@ -280,7 +280,7 @@ def audit_semantic_ready() -> list[str]:
 
 def audit_typed_kernel_compilation() -> list[str]:
     """全部 Typed Query 可经 call_payload_from_typed + QueryPlanner 编译为 QueryPlan。"""
-    from tstdx.capability_catalog import default_provider_for
+    from tstdx.catalog.capability import default_provider_for
     from tstdx.query import QueryPlanner, QuerySpec
     from tstdx.typed_query import call_payload_from_typed
 

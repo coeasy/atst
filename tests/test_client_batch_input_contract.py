@@ -6,7 +6,7 @@ from types import MethodType
 import pytest
 
 from tstdx.client import TdxClient
-from tstdx.client_core import _normalize_symbols
+from tstdx.client.core import _normalize_symbols
 from tstdx.errors import ParseError, SymbolError
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from tstdx.client import ExMarketClient, GoodsClient, MacClient
-from tstdx.client_core import _bars_body, _quote_body
+from tstdx.client.core import _bars_body, _quote_body
 from tstdx.errors import NotImplementedFeature, SymbolError
 
 

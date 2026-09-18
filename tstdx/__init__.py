@@ -127,12 +127,12 @@ def get_config() -> Any:
 
 if TYPE_CHECKING:  # pragma: no cover
     from .config import load_config
-    from .orchestration import FallbackPolicy, ProviderOrchestrator
     from .providers import PROVIDERS, ProviderRegistry
     from .query import CurrentnessMode, QueryFingerprint, QueryPlan, QueryPlanner, QuerySpec
     from .reader import BlockReader, DataProfile, DayBarReader, FinanceReader, MinBarReader
     from .result import Provenance, ProvenanceKind, QueryResult, ResultMeta
     from .runtime.kernel import UnifiedRuntime
+    from .runtime.orchestration import FallbackPolicy, ProviderOrchestrator
     from .stream_contract import StreamSpec
     from .streaming.state import StreamState
     from .streaming.stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
@@ -168,8 +168,8 @@ _LAZY: dict[str, tuple[str, str]] = {
     "BatchResult": ("tstdx.batch", "BatchResult"),
     "StreamSpec": ("tstdx.stream_contract", "StreamSpec"),
     "UnifiedRuntime": ("tstdx.runtime.kernel", "UnifiedRuntime"),
-    "FallbackPolicy": ("tstdx.orchestration", "FallbackPolicy"),
-    "ProviderOrchestrator": ("tstdx.orchestration", "ProviderOrchestrator"),
+    "FallbackPolicy": ("tstdx.runtime.orchestration", "FallbackPolicy"),
+    "ProviderOrchestrator": ("tstdx.runtime.orchestration", "ProviderOrchestrator"),
     "ErrorEnvelope": ("tstdx.error_envelope", "ErrorEnvelope"),
     "to_error_envelope": ("tstdx.error_envelope", "to_error_envelope"),
     "records_from_response": ("tstdx.typed_query", "records_from_response"),

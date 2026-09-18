@@ -4,8 +4,7 @@ import importlib
 
 import pytest
 
-from tstdx.errors import ValidationError
-from tstdx.provider_api import (
+from tstdx.catalog.provider_bindings import (
     BaiduProviderAPI,
     BocProviderAPI,
     EastmoneyProviderAPI,
@@ -15,6 +14,7 @@ from tstdx.provider_api import (
     TencentProviderAPI,
     resolve_channel_adapter,
 )
+from tstdx.errors import ValidationError
 from tstdx.providers import PROVIDERS
 
 WEB_PROVIDER_APIS = {

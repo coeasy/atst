@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from tstdx.client import TdxClient
-from tstdx.client_core import (
+from tstdx.client.core import (
     _encode_gbk_field,
     _require_int,
     _require_yyyymmdd,

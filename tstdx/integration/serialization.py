@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
-from ..orchestration import OrchestratedResult
+from ..runtime.orchestration import OrchestratedResult
 
 __all__ = ["jsonable", "serialize_result"]
 

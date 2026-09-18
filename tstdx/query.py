@@ -556,10 +556,10 @@ class QueryPlanner:
         and validates at dispatch instead. Requiring the payload at planning
         would reject that first-class path, so the hard guarantee is enforced
         where it is universal — before Provider I/O in
-        :meth:`~tstdx.direct_provider.DirectProviderExecutor._migrated_capability`.
+        :meth:`~tstdx.runtime.executor.DirectProviderExecutor._migrated_capability`.
         """
 
-        from .capability_catalog import binding_for, validate_call
+        from .catalog.capability import binding_for, validate_call
 
         options = spec.options
         if "args" not in options and "kwargs" not in options:

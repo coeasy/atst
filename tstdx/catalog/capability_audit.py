@@ -25,8 +25,8 @@ def audit_capability_bindings() -> CapabilityAuditReport:
     not attempt another provider when a binding is absent.
     """
 
-    from .capability_catalog import MIGRATED_BINDINGS
-    from .direct_provider import DIRECT_BINDINGS
+    from ..runtime.executor import DIRECT_BINDINGS
+    from .capability import MIGRATED_BINDINGS
 
     migrated = {item.key for item in MIGRATED_BINDINGS}
     executable = {item.key for item in DIRECT_BINDINGS}

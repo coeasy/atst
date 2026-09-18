@@ -10,13 +10,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .capability_catalog import binding_for, validate_call
-from .domain.symbol import normalize_symbol
-from .errors import InternalError, TdxError, ValidationError
-from .providers import PROVIDERS
-from .query import QueryPlan
-from .result import Provenance, QueryResult
-from .runtime_audit import audit_runtime
+from ..catalog.capability import binding_for, validate_call
+from ..domain.symbol import normalize_symbol
+from ..errors import InternalError, TdxError, ValidationError
+from ..providers import PROVIDERS
+from ..query import QueryPlan
+from ..result import Provenance, QueryResult
+from .audit import audit_runtime
 
 __all__ = [
     "DirectBinding",
@@ -83,7 +83,7 @@ DIRECT_BINDINGS = tuple(
 
 
 def _is_unified_reachable(provider: str, channel: str, capability: str) -> bool:
-    from .query import _canonical_unified_channel
+    from ..query import _canonical_unified_channel
 
     if capability == "bars" and provider == "tencent":
         return channel in {"kline", "minute_kline"}
@@ -180,7 +180,7 @@ class DirectProviderExecutor:
         )
 
     def _tdx_client(self) -> Any:
-        from .client import TdxClient
+        from ..client import TdxClient
 
         return TdxClient(hosts=self.hosts, timeout=self.timeout)
 
@@ -207,7 +207,7 @@ class DirectProviderExecutor:
         )
 
         if meta.backend == "web_session":
-            from .web.facade import WebQuoteSession
+            from ..web.facade import WebQuoteSession
 
             session = WebQuoteSession(meta.source or "sina", timeout=self.timeout)
             try:
@@ -227,7 +227,7 @@ class DirectProviderExecutor:
                 return getattr(client, meta.method)(*args, **kwargs)
 
         if meta.backend == "f10_client":
-            from .client import F10Client
+            from ..client import F10Client
 
             client = F10Client(timeout=self.timeout)
             try:
@@ -238,7 +238,7 @@ class DirectProviderExecutor:
                 client.close()
 
         if meta.backend in {"ex_client", "goods_client", "mac_client"}:
-            from .client import ExMarketClient, GoodsClient, MacClient
+            from ..client import ExMarketClient, GoodsClient, MacClient
 
             client = {
                 "ex_client": ExMarketClient,
@@ -261,7 +261,7 @@ class DirectProviderExecutor:
         if meta.backend == "direct_adapter":
             # The adapter class comes from the v14 ``CHANNELS`` table (single
             # home) rather than a second module/class table in the catalog.
-            from .provider_api import resolve_channel_adapter
+            from ..catalog.provider_bindings import resolve_channel_adapter
 
             adapter_cls = resolve_channel_adapter(plan.provider, meta.channel)
             adapter = adapter_cls(timeout=self.timeout)
@@ -296,7 +296,7 @@ class DirectProviderExecutor:
     ) -> Any:
         symbol = args[0]
         if capability == "minute_web":
-            from .web.adapters_ext import MinuteSource
+            from ..web.adapters_ext import MinuteSource
 
             src = MinuteSource(timeout=self.timeout)
             try:
@@ -305,8 +305,8 @@ class DirectProviderExecutor:
                 src.close()
 
         if capability == "minute_klines":
-            from .web.adapters_ext import MinuteKlineSource
-            from .web.history import EastmoneyHistoryKlineSource
+            from ..web.adapters_ext import MinuteKlineSource
+            from ..web.history import EastmoneyHistoryKlineSource
 
             minute_kline_cls: type[Any] = (
                 EastmoneyHistoryKlineSource if provider == "eastmoney" else MinuteKlineSource
@@ -318,7 +318,7 @@ class DirectProviderExecutor:
                 minute_src.close()
 
         if capability == "history":
-            from .web.history import EastmoneyHistoryKlineSource, SinaHistoryKlineSource
+            from ..web.history import EastmoneyHistoryKlineSource, SinaHistoryKlineSource
 
             history_cls: type[Any] = (
                 EastmoneyHistoryKlineSource
@@ -356,11 +356,11 @@ class DirectProviderExecutor:
             return rows
 
         if capability == "adjusted_bars":
-            from .domain.adjust import AdjustEngine
-            from .domain.finance import to_capital_changes
-            from .domain.models import CapitalChange
-            from .domain.symbol import split_symbol
-            from .reader import DayBarReader
+            from ..domain.adjust import AdjustEngine
+            from ..domain.finance import to_capital_changes
+            from ..domain.models import CapitalChange
+            from ..domain.symbol import split_symbol
+            from ..reader import DayBarReader
 
             symbol = str(args[0])
             method = str(kwargs.pop("method", "qfq"))
@@ -400,7 +400,7 @@ class DirectProviderExecutor:
             )
 
         if capability == "sync_daily":
-            from .sink import LocalDaySink
+            from ..sink import LocalDaySink
 
             symbols = args[0]
             root = kwargs.pop("root", None) or self.vipdoc_root
@@ -512,8 +512,8 @@ class DirectProviderExecutor:
                 },
             )
 
-        from .domain.symbol import split_symbol
-        from .reader import DayBarReader, MinBarReader
+        from ..domain.symbol import split_symbol
+        from ..reader import DayBarReader, MinBarReader
 
         market, code = split_symbol(plan.spec.symbols[0])
         if market not in {"sh", "sz", "bj"}:
@@ -546,7 +546,7 @@ class DirectProviderExecutor:
         return rows[-plan.spec.count:] if plan.spec.count else rows
 
     def _web_quotes(self, plan: QueryPlan) -> Any:
-        from .web import get_quotes
+        from ..web import get_quotes
 
         return get_quotes(
             list(plan.spec.symbols),
@@ -555,7 +555,7 @@ class DirectProviderExecutor:
         )
 
     def _tencent_bars(self, plan: QueryPlan) -> Any:
-        from .web import create_source
+        from ..web import create_source
 
         source_name = "minute_kline" if plan.channel == "minute_kline" else "kline"
         src = create_source(source_name, timeout=self.timeout)
@@ -578,7 +578,7 @@ class DirectProviderExecutor:
             src.close()
 
     def _sina_bars(self, plan: QueryPlan) -> Any:
-        from .web.history import SinaHistoryKlineSource
+        from ..web.history import SinaHistoryKlineSource
 
         src = SinaHistoryKlineSource(timeout=self.timeout)
         try:
@@ -592,7 +592,7 @@ class DirectProviderExecutor:
             src.close()
 
     def _eastmoney_bars(self, plan: QueryPlan) -> Any:
-        from .web.history import EastmoneyHistoryKlineSource
+        from ..web.history import EastmoneyHistoryKlineSource
 
         src = EastmoneyHistoryKlineSource(timeout=self.timeout)
         try:
@@ -606,7 +606,7 @@ class DirectProviderExecutor:
             src.close()
 
     def _baidu_bars(self, plan: QueryPlan) -> Any:
-        from .web.adapters_baidu import BaiduSource
+        from ..web.adapters_baidu import BaiduSource
 
         if plan.spec.adjustment:
             raise ValidationError("Baidu Direct bars 不支持复权参数")

@@ -34,18 +34,6 @@ REFACTOR_PLAN_v8 P5：原单模块 ``tstdx/client.py``（1715 行）拆为本包
 
 from __future__ import annotations
 
-from ..client_core import (  # B1：共享核心（纯协议构造，无 I/O）
-    _PREFIX_MARKET,
-    _bars_body,
-    _emit,
-    _guard_offline,
-    _quote_body,
-    _row_to_bar,
-    _row_to_capital,
-    _row_to_quote,
-    period_to_category,
-    split_symbol,
-)
 from ..codec.framing import ResponseFrame
 from ..domain.finance import FINANCE_INFO_FIELDS, map_finance_values
 from ..domain.models import Bar, CapitalChange, Quote
@@ -76,6 +64,18 @@ from .async_ import (
     AsyncGoodsClient,
     AsyncMacClient,
     AsyncTdxClient,
+)
+from .core import (  # B1：共享核心（纯协议构造，无 I/O）
+    _PREFIX_MARKET,
+    _bars_body,
+    _emit,
+    _guard_offline,
+    _quote_body,
+    _row_to_bar,
+    _row_to_capital,
+    _row_to_quote,
+    period_to_category,
+    split_symbol,
 )
 from .factory import _CLIENT_REGISTRY, get_client
 from .sync import (

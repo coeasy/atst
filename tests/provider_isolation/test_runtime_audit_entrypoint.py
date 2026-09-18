@@ -1,4 +1,4 @@
-from tstdx.runtime_audit import audit_runtime
+from tstdx.runtime.audit import audit_runtime
 
 
 def test_runtime_audit_returns_structural_report() -> None:

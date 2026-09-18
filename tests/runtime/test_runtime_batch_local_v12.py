@@ -4,11 +4,11 @@ from dataclasses import fields
 from pathlib import Path
 
 from tstdx.batch import BatchSpec
-from tstdx.direct_provider import DirectProviderExecutor
 from tstdx.domain.models import Bar, Quote
 from tstdx.errors import ValidationError
 from tstdx.query import QueryPlanner, QuerySpec
 from tstdx.result import Provenance, QueryResult
+from tstdx.runtime.executor import DirectProviderExecutor
 from tstdx.runtime.kernel import UnifiedRuntime
 
 

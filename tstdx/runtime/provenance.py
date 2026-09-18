@@ -11,12 +11,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from .provider_guard import (
+from ..catalog.provider_guard import (
     ProviderExecutionIdentity,
     ProviderIdentityMismatchError,
     validate_execution_identity,
 )
-from .runtime_identity import RuntimeExecutionIdentity
+from .identity import RuntimeExecutionIdentity
 
 
 class RuntimeProvenanceMismatchError(RuntimeError):

@@ -10,8 +10,8 @@ from typing import Any
 from ..client_api import Client
 from ..error_envelope import to_error_envelope
 from ..errors import ValidationError
-from ..orchestration import FallbackPolicy
 from ..providers import PROVIDERS
+from ..runtime.orchestration import FallbackPolicy
 from .serialization import serialize_result
 
 __all__ = ["create_runtime_app"]

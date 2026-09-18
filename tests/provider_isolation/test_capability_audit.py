@@ -1,4 +1,4 @@
-from tstdx.capability_audit import audit_capability_bindings
+from tstdx.catalog.capability_audit import audit_capability_bindings
 
 
 def test_capability_catalog_has_execution_surface() -> None:

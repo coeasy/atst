@@ -26,13 +26,6 @@ if TYPE_CHECKING:
 
 import tstdx.client as _client_pkg
 
-from ..client_core import (
-    _emit,
-    _guard_offline,
-    _normalize_symbols,
-    _require_int,
-    _require_output_format,
-)
 from ..codec.framing import ResponseFrame
 from ..errors import DataError
 from ..protocol.commands import Family
@@ -42,6 +35,13 @@ from ._mixin import (  # noqa: F401
     MAX_BARS_PER_REQUEST,
     OutputFormat,
     _ClientMixin,
+)
+from .core import (
+    _emit,
+    _guard_offline,
+    _normalize_symbols,
+    _require_int,
+    _require_output_format,
 )
 
 

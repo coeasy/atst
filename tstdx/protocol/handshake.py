@@ -35,7 +35,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
-from ..protocol.commands import Family
+from .commands import Family
 
 __all__ = [
     "SetupFrame",

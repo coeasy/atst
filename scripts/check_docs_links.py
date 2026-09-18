@@ -10,7 +10,6 @@ import re
 from pathlib import Path
 from urllib.parse import unquote
 
-
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 _LINK_RE = re.compile(r"\[[^\]]*\]\(([^)#\s]+)")

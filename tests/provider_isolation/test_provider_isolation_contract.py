@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.provider_contract import (
+from tstdx.catalog.provider_contract import (
     ProviderCapabilityContract,
     ProviderExecutionContract,
     ProviderIdentity,

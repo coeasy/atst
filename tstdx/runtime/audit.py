@@ -22,8 +22,8 @@ def audit_runtime() -> RuntimeAuditReport:
     selection and never introduces fallback behaviour.
     """
 
-    from .capability_audit import audit_capability_bindings
-    from .provider_audit import audit_provider_registry
+    from ..catalog.capability_audit import audit_capability_bindings
+    from ..catalog.provider_audit import audit_provider_registry
 
     provider_report = audit_provider_registry()
     capability_report = audit_capability_bindings()
