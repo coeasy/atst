@@ -10,8 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .capability_audit import audit_capability_bindings
 from .capability_catalog import binding_for, validate_call
 from .errors import InternalError, TdxError, ValidationError
+from .provider_audit import audit_provider_registry
 from .provider_guard import ProviderExecutionIdentity, validate_execution_identity
 from .providers import PROVIDERS
 from .query import QueryPlan
@@ -128,30 +130,7 @@ class DirectProviderExecutor:
         self.timeout = float(timeout)
         self.hosts = hosts
         self.vipdoc_root = vipdoc_root
-        audit_direct_bindings()
-        from .provider_audit import audit_provider_registry
-
         audit_provider_registry()
+        audit_capability_bindings()
+        audit_direct_bindings()
         self._bindings = {item.key: item for item in DIRECT_BINDINGS}
-
-    def execute(self, plan: QueryPlan) -> QueryResult[Any]:
-        key = (plan.provider, plan.channel, plan.spec.capability)
-        try:
-            binding = self._bindings[key]
-        except KeyError as exc:
-            raise ValidationError("QueryPlan 没有可执行 Direct Provider binding") from exc
-
-        validate_execution_identity(
-            ProviderExecutionIdentity(plan.provider, plan.channel, plan.spec.capability),
-            ProviderExecutionIdentity(binding.provider, binding.channel, binding.capability),
-        )
-
-        fn = getattr(self, binding.executor_name)
-        try:
-            data = fn(plan)
-        except TdxError:
-            raise
-        except Exception as exc:
-            raise InternalError("Direct Provider executor 未处理异常", cause=exc) from exc
-
-        return QueryResult.from_plan(data, plan=plan, provenance=Provenance.direct(plan))
