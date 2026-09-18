@@ -56,7 +56,7 @@ _RUNTIME_ENV_KEYS = frozenset(
     }
 )
 
-_global_config: Config = DEFAULT_CONFIG
+_global_config: Config | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -207,8 +207,7 @@ def _require_env_field(section: str, field_name: str, *, key: str) -> None:
     allowed = {field.name for field in fields(subconfig)}
     if field_name not in allowed:
         raise ConfigError(
-            f"环境变量 {key} 字段无法识别: {section}.{field_name}; "
-            f"可选: {sorted(allowed)}",
+            f"环境变量 {key} 字段无法识别: {section}.{field_name}; 可选: {sorted(allowed)}",
             context={"env": key, "section": section, "field": field_name},
         )
 
@@ -293,7 +292,14 @@ def load_config(
 
 
 def get_config() -> Config:
-    """获取全局配置单例。"""
+    """获取进程级生效配置；首次访问时按 6 源合并惰性加载。
+
+    这是执行链（``UnifiedRuntime`` / ``WebQuoteClient``）唯一的配置读取入口：
+    文件与环境变量源只在进程内解析一次，解析失败立即抛出而不降级为默认值。
+    """
+    global _global_config
+    if _global_config is None:
+        _global_config = load_config()
     return _global_config
 
 
@@ -303,5 +309,6 @@ def set_config(cfg: Config) -> None:
 
 
 def reset_config() -> None:
+    """清空进程级配置，使下一次 :func:`get_config` 重新读取全部配置源。"""
     global _global_config
-    _global_config = DEFAULT_CONFIG
+    _global_config = None

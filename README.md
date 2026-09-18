@@ -186,8 +186,8 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 ```
 
 > **P14-D2 起**：`[project.optional-dependencies].dev` 已声明，本地与 CI 使用同一
-> 门禁口径（`fail_under=77` / `--cov-fail-under=77`），不再有「装了依赖却跑不出
-> `--cov`」的漂移。
+> 门禁口径（覆盖率阈值只在 `pyproject.toml [tool.coverage.report] fail_under` 写一次，
+> Makefile/CI 不再各传 `--cov-fail-under`），不再有「装了依赖却跑不出 `--cov`」的漂移。
 
 ### Optional Extras
 
@@ -425,14 +425,15 @@ python -m tstdx.tools.golden_audit --gate       # Golden L1 真实样本门禁�
 python -m pytest tests/adversarial -q           # 对抗矩阵（9 payload × 85 命令，逃逸=0）
 python scripts/audit_reachability.py --strict   # 可达性门禁（孤儿=0）
 python scripts/contract_audit.py --ci           # 契约↔注册表↔绑定三方对账 + typed 内核编译审计
-python -m pytest --cov=tstdx --cov-fail-under=77  # 覆盖率门禁（v16 净删 1.5 万行后待重校准）
+python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproject fail_under=77）
 ```
 
 - CI：9 jobs；Windows 矩阵 3.11 + 3.12；周三 09:00 UTC 定期 `host-audit`
 - 架构守卫：`tests/architecture/`（唯一内核、零缓存、无聚合降级路由、根级命名空间白名单、
   已删层不可复活）+ `tests/provider_isolation/`（Provider 隔离与溯源）
-- Ruff：全量清洁（0 errors）
-- mypy：16 文件 47 项既有告警（集中在 hardening 模块的方法替换写法），Phase 5 目标清零
+- Ruff：`ruff check` 全量清洁（0 errors）；`ruff format --check` 仍有既存待重排文件，
+  以一次纯格式提交清偿（V17 F-15）
+- mypy：`mypy tstdx/` 0 错（含 `--warn-unused-ignores`；V17 Phase 5 从 47 项清零）
 - Pre-commit hooks：`ruff check --fix` + `ruff format --check`
 
 ---

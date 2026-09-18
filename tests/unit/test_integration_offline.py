@@ -143,11 +143,10 @@ def test_sinks_unknown_format():
 # --------------------------------------------------------------------------- #
 # config 校验
 # --------------------------------------------------------------------------- #
-def test_sources_config_validation():
+def test_provider_config_validation():
     cfg = Config()
-    cfg.sources.order = ["tdx", "bogus"]
-    with pytest.raises(ValidationError):
+    cfg.core.default_provider = "bogus"
+    with pytest.raises(ValidationError, match="未知 provider"):
         cfg.validate()
     # 合法配置应通过
-    good = Config()
-    good.validate()
+    Config().validate()

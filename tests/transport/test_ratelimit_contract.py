@@ -119,22 +119,27 @@ def test_set_rates_rejects_unknown_state_without_partial_update() -> None:
 
 
 def test_from_config_does_not_coerce_string_rates_or_truthy_strict() -> None:
-    bad_rate = SimpleNamespace(
-        rate_call_auction="80",
-        rate_continuous=120.0,
-        rate_noon_break=25.0,
-        rate_closed=15.0,
+    from tstdx.config.schema import RateLimitConfig
+
+    with pytest.raises(ValueError, match="rates"):
+        SessionRateLimiter.from_config(RateLimitConfig(call_auction="80"))
+
+    with pytest.raises(ValueError, match="strict"):
+        SessionRateLimiter.from_config(RateLimitConfig(strict=1))
+
+
+def test_from_config_refuses_the_pre_wiring_phantom_key_names() -> None:
+    """旧键名（``rate_call_auction`` 等）从未存在于配置面，读它们会静默用内置速率。
+
+    现在属性缺失必须立即报错，而不是退回默认值。
+    """
+
+    phantom = SimpleNamespace(
+        rate_call_auction=1.0,
+        rate_continuous=1.0,
+        rate_noon_break=1.0,
+        rate_closed=1.0,
         rate_limit_strict=False,
     )
-    with pytest.raises(ValueError, match="rates"):
-        SessionRateLimiter.from_config(bad_rate)
-
-    bad_strict = SimpleNamespace(
-        rate_call_auction=80.0,
-        rate_continuous=120.0,
-        rate_noon_break=25.0,
-        rate_closed=15.0,
-        rate_limit_strict=1,
-    )
-    with pytest.raises(ValueError, match="strict"):
-        SessionRateLimiter.from_config(bad_strict)
+    with pytest.raises(AttributeError, match="call_auction"):
+        SessionRateLimiter.from_config(phantom)

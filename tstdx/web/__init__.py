@@ -368,6 +368,7 @@ class WebQuoteClient:
     ----------
     sources:
         降级顺序；None 时取配置 ``web.enabled_sources``，再兜底 DEFAULT_FALLBACK_ORDER。
+        ``timeout`` / ``max_retries`` / ``rates`` 同理取 ``web`` 段缺省值。
     """
 
     def __init__(
@@ -375,31 +376,24 @@ class WebQuoteClient:
         sources: Sequence[str] | None = None,
         *,
         headers: Mapping[str, str] | None = None,
-        timeout: float = 5.0,
-        max_retries: int = 2,
+        timeout: float | None = None,
+        max_retries: int | None = None,
         rates: Mapping[str, int | float] | None = None,
         cookie: str | None = None,
     ) -> None:
-        self.sources = list(sources) if sources else self._config_sources()
+        from ..config import get_config
+
+        cfg = get_config().web
+        self.sources = (
+            list(sources) if sources else list(cfg.enabled_sources or DEFAULT_FALLBACK_ORDER)
+        )
         self.headers = dict(headers or {})
-        self.timeout = timeout
-        self.max_retries = max_retries
-        self.rates = dict(rates or {})
+        self.timeout = float(cfg.timeout if timeout is None else timeout)
+        self.max_retries = int(cfg.max_retries if max_retries is None else max_retries)
+        self.rates = dict(rates if rates is not None else cfg.rate_limit)
         self.cookie = cookie
         self._instances: dict[str, BaseWebSource] = {}
         self.errors: list[tuple[str, BaseException]] = []
-
-    @staticmethod
-    def _config_sources() -> list[str]:
-        try:
-            from ..config import get_config
-
-            cfg = get_config()
-            if cfg.web.enabled_sources:
-                return list(cfg.web.enabled_sources)
-        except Exception:
-            pass
-        return list(DEFAULT_FALLBACK_ORDER)
 
     def _instance(self, name: str) -> BaseWebSource:
         if name not in self._instances:

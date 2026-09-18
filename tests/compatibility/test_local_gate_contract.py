@@ -9,6 +9,10 @@ def _makefile() -> str:
     return (_ROOT / "Makefile").read_text(encoding="utf-8")
 
 
+def _pyproject() -> str:
+    return (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+
 def test_install_uses_ci_equivalent_dependency_ssot() -> None:
     makefile = _makefile()
 
@@ -17,13 +21,15 @@ def test_install_uses_ci_equivalent_dependency_ssot() -> None:
     assert "pip install pytest pytest-cov ruff mypy build" not in makefile
 
 
-def test_local_test_gate_keeps_ci_coverage_threshold_and_offline_scope() -> None:
+def test_local_test_gate_keeps_ci_offline_scope_and_single_coverage_source() -> None:
     makefile = _makefile()
 
-    assert '--cov-fail-under=77' in makefile
     assert '--cov-report=xml:coverage.xml' in makefile
     assert '-m "not network"' in makefile
-    assert '--cov-fail-under=75' not in makefile
+    # 阈值只写在 pyproject `[tool.coverage.report] fail_under` 一处；
+    # 命令行副本会让"改一处仍绿"的漂移重新出现（v17 Phase 6）。
+    assert "--cov-fail-under" not in makefile
+    assert "fail_under = 77" in _pyproject()
 
 
 def test_marker_targets_use_valid_pytest_marker_syntax() -> None:

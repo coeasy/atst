@@ -36,8 +36,7 @@ test:
 	$(PYTEST) tests/ -v --tb=short -m "not network" \
 		--cov=tstdx \
 		--cov-report=term-missing \
-		--cov-report=xml:coverage.xml \
-		--cov-fail-under=77
+		--cov-report=xml:coverage.xml
 
 test-live:
 	$(PYTEST) tests/ -v --tb=short -m "network" --junitxml=reports/live-smoke.xml

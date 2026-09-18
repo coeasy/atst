@@ -27,9 +27,6 @@ from __future__ import annotations
 # contract that pool construction already enforces.
 # Direct public pool construction must obey the same canonical family identity as
 # resolve_hosts/client construction. Install this before generation-safe updates.
-# ``from_config`` is another selector boundary. Install its authoritative empty
-# selector guard after constructor hardening so factory output inherits the same
-# canonical pool validation rather than silently falling back to default hosts.
 # Join generation/lease safety with v12 selector/live-health/probe provenance.
 # This layer patches sync+async update_hosts and the sync background speedtest
 # after the canonical classes and probe-only RankingStore are available.
@@ -38,7 +35,6 @@ from . import (
     _async_pool_hardening,
     _connection_contract_hardening,
     _host_selector_hardening,
-    _pool_factory_hardening,
     _pool_family_hardening,
     _pool_hardening,
     _pool_provenance_hardening,
@@ -51,7 +47,7 @@ from . import (
 from . import hosts as _hosts_impl
 from .base import DEFAULT_HEARTBEAT_CMD, ConnectionStats, TcpConnection
 from .hosts import DEFAULT_HOST_POOL, POOL_BY_FAMILY, HostEntry, RankingStore, resolve_hosts
-from .pool import ConnectionPool, PoolStats, Slot
+from .pool import ConnectionPool, PoolStats, Slot, pool_settings_from_config
 from .ratelimit import SessionRateLimiter, SessionState, TokenBucket, session_state
 from .speedtest import ProbeResult, probe, rank_hosts, speedtest, speedtest_and_save
 
@@ -64,7 +60,6 @@ del (
     _host_selector_hardening,
     _connection_contract_hardening,
     _pool_family_hardening,
-    _pool_factory_hardening,
     _pool_provenance_hardening,
 )
 
@@ -80,6 +75,7 @@ __all__ = [
     "ConnectionPool",
     "PoolStats",
     "Slot",
+    "pool_settings_from_config",
     "SessionRateLimiter",
     "SessionState",
     "TokenBucket",

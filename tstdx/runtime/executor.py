@@ -6,11 +6,13 @@
 from __future__ import annotations
 
 import warnings
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from ..catalog.capability import binding_for, validate_call
+from ..config import Config
 from ..domain.symbol import normalize_symbol
 from ..errors import InternalError, TdxError, ValidationError
 from ..providers import PROVIDERS
@@ -124,12 +126,16 @@ class DirectProviderExecutor:
         self,
         *,
         timeout: float = 5.0,
-        hosts: list[str] | None = None,
+        hosts: Sequence[Any] | None = None,
         vipdoc_root: str | None = None,
+        config: Config | None = None,
     ) -> None:
         self.timeout = float(timeout)
         self.hosts = hosts
         self.vipdoc_root = vipdoc_root
+        #: 单一内核解析后的配置；仅用于把 timeout/重试/槽位/限流/TLS
+        #: 贯通到传输层，不引入任何缓存或降级语义。
+        self.config = config
         audit_runtime()
         self._bindings = {item.key: item for item in DIRECT_BINDINGS}
 
@@ -181,8 +187,13 @@ class DirectProviderExecutor:
 
     def _tdx_client(self) -> Any:
         from ..client import TdxClient
+        from ..transport.pool import pool_settings_from_config
 
-        return TdxClient(hosts=self.hosts, timeout=self.timeout)
+        #: 主站选择已由内核解析完毕；配置在此只提供传输层构造参数，
+        #: 避免同一个键在两处解释。
+        settings = pool_settings_from_config(self.config)
+        settings["timeout"] = self.timeout
+        return TdxClient(self.hosts, **settings)
 
     @staticmethod
     def _call_payload(plan: QueryPlan) -> tuple[list[Any], dict[str, Any]]:
@@ -190,9 +201,7 @@ class DirectProviderExecutor:
         args = options.get("args", [])
         kwargs = options.get("kwargs", {})
         if not isinstance(args, list) or not isinstance(kwargs, dict):
-            raise ValidationError(
-                "migrated capability options 必须包含 args:list / kwargs:object"
-            )
+            raise ValidationError("migrated capability options 必须包含 args:list / kwargs:object")
         return args, dict(kwargs)
 
     def _migrated_capability(self, plan: QueryPlan) -> Any:
@@ -321,9 +330,7 @@ class DirectProviderExecutor:
             from ..web.history import EastmoneyHistoryKlineSource, SinaHistoryKlineSource
 
             history_cls: type[Any] = (
-                EastmoneyHistoryKlineSource
-                if provider == "eastmoney"
-                else SinaHistoryKlineSource
+                EastmoneyHistoryKlineSource if provider == "eastmoney" else SinaHistoryKlineSource
             )
             history = history_cls(timeout=self.timeout)
             try:
@@ -375,9 +382,7 @@ class DirectProviderExecutor:
                     context={"period": period},
                 )
             if not self.vipdoc_root:
-                raise ValidationError(
-                    "adjusted_bars requires vipdoc_root for canonical raw bars"
-                )
+                raise ValidationError("adjusted_bars requires vipdoc_root for canonical raw bars")
 
             market, code = split_symbol(symbol)
             path = Path(self.vipdoc_root) / market / "lday" / f"{market}{code}.day"
@@ -492,9 +497,7 @@ class DirectProviderExecutor:
 
     def _tdx_security_list(self, plan: QueryPlan) -> Any:
         with self._tdx_client() as client:
-            return client.security_list(
-                plan.spec.options.get("market", 0), plan.spec.start
-            )
+            return client.security_list(plan.spec.options.get("market", 0), plan.spec.start)
 
     def _local_bars(self, plan: QueryPlan) -> Any:
         if not self.vipdoc_root:
@@ -543,7 +546,7 @@ class DirectProviderExecutor:
             end = max(0, len(rows) - plan.spec.start)
             begin = max(0, end - plan.spec.count) if plan.spec.count else 0
             return rows[begin:end]
-        return rows[-plan.spec.count:] if plan.spec.count else rows
+        return rows[-plan.spec.count :] if plan.spec.count else rows
 
     def _web_quotes(self, plan: QueryPlan) -> Any:
         from ..web import get_quotes

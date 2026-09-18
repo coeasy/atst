@@ -3,8 +3,9 @@
 > **文档状态**：执行中 —— Phase 3A(方案 b)/3B/3C/3D/4 已于 2026-09-19 落地（F-1/F-2/F-9 物理
 > 删除、防回潮守卫、typed 全契约对齐内核签名 + CHANGELOG 迁移表、根级模块 26→11、
 > 文档面对齐代码事实 + 文档-代码一致性门禁，见 F-10/F-11）；Phase 5 第 1 步已落地
-> （mypy 47→0、F-12 死守卫修复、缓存时代残留清除）；**新增 Phase 6：配置面接线（F-16 为
-> P0 发布阻塞项）**，其后才是网络 smoke 与 tag
+> （mypy 47→0、F-12 死守卫修复、缓存时代残留清除）；**Phase 6（配置面接线，F-16 曾为
+> P0 发布阻塞项）已于 2026-09-19 落地**：`Client()` 现在真的读 `tstdx.toml`/`TSTDX_*`，
+> 配置面从 12 段收缩为 5 段且每键都有读者（ADR-016）。其后才是网络 smoke 与 tag
 > **取代文档**：REFACTOR_PLAN_v16_CONVERGENCE.md 的 Phase 3–5（其 Phase 0/1/2 已于
 > `528ad18` / `6a45215` / `77bc2fe` 落地）
 > **前置决策沿用 v16**：v13 内核唯一执行；`Client` 唯一业务入口；数据请求零缓存；clean-break。
@@ -42,10 +43,11 @@
 | # | 级别 | 问题 | 处置 |
 |---|---|---|---|
 | F-12 | **P0** | `Prober.only_offline_hours()` 比较 `SessionState.IN_SESSION`——该成员**从不存在**（真实成员为 `call_auction/continuous/noon_break/closed`）。任何未打桩的调用必抛 `AttributeError`，即盘中探测保护一直是死代码；因所有测试都 monkeypatch 掉该方法，全绿从未暴露 | **已修**（2026-09-19）：改判 `state not in (CALL_AUCTION, CONTINUOUS)`，补 `tests/protocol/test_prober_offline_guard.py` 逐时段回归（含周末与 `_guard_offline` 抛错路径） |
-| F-13 | P1 | **配置面大面积装饰化**（Phase 5 实测复核）。`tstdx/config/schema.py` 的 12 个段中，`cache`/`output`/`profile`/`sources`/`observability`/`compatibility`/`feedback` 七个段的 dataclass 在 `config/` 包外**零引用**（`CacheConfig`/`CompatibilityConfig` 亦仅被 `config/__init__.py` 再导出）。`[cache]` 段更与"数据请求零缓存"直接冲突 | 待办：与 F-16 一并处置——七段物理删除，loader 对未知段 fail-closed，同步 TOML 规范与文档 |
-| F-16 | **P0** | **配置系统与产品链路未接线**（Phase 5 实测）：`load_config` 在 `tstdx/` 包内**零调用者**，CLI/HTTP/WS/MCP/`Client` 全都不读配置文件；`Client.__init__` 只接受 `runtime`/`**runtime_kwargs`，没有 `config=` 入口。`Config` 唯一进入运行期的路径是调用方自己构造后传给 `ConnectionPool.from_config`（`pool.py:242` 读 `cfg.rate_limit`，`core/hosts/security` 同族）——即"写 `tstdx.toml` 不生效"。而 `docs/troubleshooting.md` 长期指导用户"尝试 80/443 端口主站（配置 `tstdx.toml`）"（Phase 5 已改为显式 `Client(hosts=[...])` 并就地标注未接线）| 待办：二选一并写进 ADR —— (a) 接线：`Client`/内核接受 `config`，把真实生效的键（default_provider/timeout/hosts/vipdoc_root/rate_limit）贯通，删掉不生效的段；(b) 收缩：`load_config`/`configure` 退出公开导出面，`tstdx/config/` 降为 `transport` 内部结构。默认建议 **(a) 的最小接线 + 装饰段删除** |
+| F-13 | P1 | **配置面大面积装饰化**（Phase 5 实测复核）。`tstdx/config/schema.py` 的 12 个段中，`cache`/`output`/`profile`/`sources`/`observability`/`compatibility`/`feedback` 七个段的 dataclass 在 `config/` 包外**零引用**（`CacheConfig`/`CompatibilityConfig` 亦仅被 `config/__init__.py` 再导出）。`[cache]` 段更与"数据请求零缓存"直接冲突 | **已清偿**（2026-09-19，Phase 6）：七段连同 dataclass 与再导出物理删除（`schema.py` −320/+45 行），loader 对未知段/字段/环境变量一律 fail-closed 并在消息里给出当前有效段清单 |
+| F-16 | **P0** | **配置系统与产品链路未接线**（Phase 5 实测）：`load_config` 在 `tstdx/` 包内**零调用者**，CLI/HTTP/WS/MCP/`Client` 全都不读配置文件；`Client.__init__` 只接受 `runtime`/`**runtime_kwargs`，没有 `config=` 入口。`Config` 唯一进入运行期的路径是调用方自己构造后传给 `ConnectionPool.from_config`（`pool.py:242` 读 `cfg.rate_limit`，`core/hosts/security` 同族）——即"写 `tstdx.toml` 不生效"。而 `docs/troubleshooting.md` 长期指导用户"尝试 80/443 端口主站（配置 `tstdx.toml`）"（Phase 5 已改为显式 `Client(hosts=[...])` 并就地标注未接线）| **已清偿**（2026-09-19，Phase 6，方案 a）：`UnifiedRuntime` 成为唯一读者并缺省经 `get_config()` 取六源合并单例，保留的 5 段全部键逐个贯通到 `TdxClient`/`ConnectionPool`/`WebQuoteClient`；配置→传输只有 `pool_settings_from_config` 一个翻译点。**接线时实测出的加重情节**：被删除的第二读者 `ConnectionPool.from_config` 读的键名（`rate_call_auction`…）与 `RateLimitConfig` 字段名（`in_session`/`pre_post`/`closed`）从不重合，`getattr(..., 默认)` 把所有配置值静默丢弃为限流器默认值，而它的契约测试正是照幻影键名写的 ⇒ 全绿掩盖。口径见 ADR-016 |
+| F-17 | P2 | 接线时新暴露的两处静默失效（Phase 6）：`tstdx.configure()` 合并后**丢弃返回值**、从不写回单例（调用即无效果）；`WebQuoteClient.__init__` 用 `try/except Exception: pass` 包裹配置读取，配置出错即悄悄退回硬编码默认 | **已修**（2026-09-19）：`configure()` 改为 `load_config(overrides=…, set_global=True)` 并如实记录语义；`WebQuoteClient` 直接 `get_config()`，配置解析失败 fail-closed |
 | F-14 | P2 | CHANGELOG `[Unreleased]` 的 P13/P14 条目仍以已删除的 `UnifiedQuoteAPI` 门面为"暴露面"叙述；新工具未纳入 `test_doc_code_consistency.py` 的活文档集合（CHANGELOG 不在集合内） | 待办：把历史条目改写为当前真实入口（`tstdx/web` 源 + `Client.call`），或标注"当时口径"并指向迁移表 |
-| F-15 | P1 | 格式门禁长期为红：`ruff format --check tstdx/ tests/ scripts/` 在 0.9.6 与 0.14.4 下均报 74 个文件待重排，而 CI 用浮动的 `ruff>=0.5` | 待办：一次纯格式提交 + 钉住 dev 工具版本（见 Phase 5 第 2 项） |
+| F-15 | P1 | 格式门禁长期为红：`ruff format --check tstdx/ tests/ scripts/` 在 0.9.6 与 0.14.4 下均报 74 个文件待重排，而 CI 用浮动的 `ruff>=0.5` | 待办：一次纯格式提交 + 钉住 dev 工具版本（见 Phase 5 第 2 项）。**已推进部分**（2026-09-19，Phase 6）：Phase 6 触及文件全部重排后既存待重排降至 **65**；覆盖率阈值数字收敛为 `pyproject.toml [tool.coverage.report] fail_under` 单一事实源（删 Makefile/CI 的 `--cov-fail-under` 副本并加守卫测试），**未下调阈值**；离线实测 76.14% 仍低于 77，重钉待 CI 环境（ubuntu+py3.11）数字 |
 
 ---
 
@@ -207,25 +209,44 @@
 3. 真实网络 smoke（tdx 1 所 + web 1 源 + stream 3 帧）+ CLI/HTTP/MCP 三面各一发 +
    wheel 安装冒烟 → tag `v1.1.0-dev.1`。**延后到 Phase 6 之后执行**（见下）。
 
-### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）
+### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
 
 > **为什么插到发布之前**：F-16 是 P0 口径缺陷——对外声称支持 `tstdx.toml` 配置，
 > 实际链路零生效。带着它打 tag 等于把假承诺固化进发布说明。
 
-1. **接线（决策点 7 默认 = 方案 a）**：`Client`/`UnifiedRuntime` 增加
-   `config: Config | None = None`，贯通真实生效的键（`core.default_provider`、
-   `core.timeout`、`hosts.*`、`core.vipdoc_root`、`rate_limit.*`、`security.*`）；
-   `load_config()` 成为 `Client()` 的默认配置源，显式 kwarg 优先级更高；
-   补端到端回归：写 TOML → `Client()` 读到的 timeout/hosts 与文件一致。
-2. **死面删除**：`cache`/`output`/`profile`/`sources`/`observability`/`compatibility`/
-   `feedback` 七个无消费者配置段，连同 dataclass、`_SUBCONFIGS` 条目、
-   `config/__init__.py` 再导出一起物理删除；loader 对未知段 **fail-closed**，
-   错误消息给出"当前有效段清单"。
-3. **门禁复测**：删除后重跑覆盖率，按 CI 环境（ubuntu+py3.11）实测值把 `fail_under`
-   收敛到 `pyproject.toml` 单一事实源（Makefile/CI 不再各写数字）；同批钉住
-   `ruff`/`mypy` 的 dev 版本区间（F-15），并做一次全量 `ruff format` 纯格式提交。
-4. **文档同步**：配置文档与 README 能力账按最终键集合重写；新增 ADR 记录
-   "配置只覆盖执行参数，不引入任何缓存/降级语义"。
+1. ✅ **接线（决策点 7 = 方案 a）**：`UnifiedRuntime.__init__` 增 `config: Config | None`
+   与 `default_provider/timeout/hosts/vipdoc_root` 的 `| None` 化，缺省取
+   `get_config()`；`Client(**runtime_kwargs)` 因此天然获得 `Client(config=...)` 入口。
+   贯通键：`core.default_provider → QueryPlanner`、`core.timeout/max_retries/
+   heartbeat_interval → TdxClient/ConnectionPool`、`core.vipdoc_root → 执行器
+   （`adjusted_bars`/`sync_daily`/`local_vipdoc`）`、`hosts.servers → 执行器 hosts`、
+   `hosts.slots_per_host`、`rate_limit.* → SessionRateLimiter`、`security.use_tls`、
+   `web.* → WebQuoteClient`。端到端回归：`tests/runtime/test_kernel_config_wiring.py`
+   （写 TOML → 内核/传输层参数一致、env 覆盖文件、显式入参覆盖配置、注入 executor
+   时内核仍持有 config 以供溯源）。
+2. ✅ **死面删除**：`cache`/`output`/`profile`/`sources`/`observability`/`compatibility`/
+   `feedback` 七段 dataclass、`_SUBCONFIGS` 条目、`config/__init__.py` 再导出全部物理
+   删除（`schema.py` −320/+45 行）；未知段/字段/环境变量 fail-closed 且消息含当前有效段
+   清单。同批删除第二个配置读者
+   `ConnectionPool.from_config` 与其硬化层 `transport/_pool_factory_hardening.py`（76 行）
+   及 2 个幻影键契约测试；发布 wheel 冒烟改判"唯一 seam 存在 + `from_config` 不存在"。
+3. ✅ **门禁复测**：`ruff check` 0、`mypy tstdx/` 0、离线全量 `-m "not network"` 0 failed；
+   覆盖率实测 **76.14%**（Windows+py3.12）。阈值数字已收敛为 `pyproject` 单源
+   （Makefile/CI 的 `--cov-fail-under` 副本删除，`test_local_gate_contract.py` 与
+   `test_ci_workflow_contracts.py` 双向锁定），**阈值一次都没下调**。
+   ⏳ 未完成：按 CI 环境（ubuntu+py3.11）实测值重钉数字、dev 工具版本钉区间、
+   全量 `ruff format` 纯格式提交（现存 65 文件）——留作 Phase 5 第 2 项。
+4. ✅ **文档同步**：新增用户面 [docs/configuration.md](configuration.md)（5 段全键清单 +
+   读取方 + 取值范围 + fail-closed 语义 + 环境变量规则），已纳入事实型文档门禁
+   （`FACT_DOC_PATHS`）；`docs/troubleshooting.md` 的"配置文件尚未接入"改写为可用指令；
+   `docs/ARCHITECTURE.md` §4 第 7 条转"已清偿"、§5 真相源补两行、§2 不变量加一条；
+   README 门禁口径两行更正（并顺手把 mypy 行从"47 项待清零"改回既成事实）；
+   新增 [ADR-016](adr/ADR-016-config-surface-covers-execution-only.md)
+   「配置面只覆盖执行参数」。
+5. 接线过程中顺手修复的静默失效（记入 F-17）：`tstdx.configure()` 调用即无效果
+   （合并结果被丢弃、不写回单例）、`WebQuoteClient` 以 `except Exception: pass`
+   吞掉配置错误、`get_config()` 惰性解析一次而非返回冻结默认值、`reset_config()`
+   语义从"回到 DEFAULT_CONFIG"改为"清空使下次重新读源"。
 
 ---
 
@@ -236,10 +257,10 @@
 | 1 | v14 编排线归宿 | **(b) 整层删除——已于 2026-09-19 执行**：信封/DAG/router 删除，typed 并入 `Client.typed` |
 | 2 | executor registry 三件套 | **删除**（`DIRECT_BINDINGS` 唯一事实源）+ 防回潮守卫 |
 | 3 | `trade/` | 保留，README 标注 experimental（自设模拟红线，无架构冲突） |
-| 4 | 覆盖率门禁 | Phase 2 后重测并按有效代码重新校准数值（不硬凑旧 77%） |
+| 4 | 覆盖率门禁 | Phase 2 后重测并按有效代码重新校准数值（不硬凑旧 77%）。**现状**：阈值数字已收敛为 `pyproject` 单源，但**一次都没下调**；重钉需要 CI 环境（ubuntu+py3.11）实测数字，本机 Windows 数字不作依据 |
 | 5 | 文档形式 | 本 v17 文档 + ARCHITECTURE.md；v1–v16 移 archive；v16 加状态横幅 |
 | 6 | `cache.py`(KlineCache) | 已被 Phase 2 直删——追认 |
-| 7 | 配置面归宿（F-16） | **(a) 最小接线**：`Client`/内核读 `load_config()`，只保留真实生效键，七个装饰段删除；不选 (b) 全删，因为 `tstdx.toml` 已是公开导出面 |
+| 7 | 配置面归宿（F-16） | **(a) 最小接线——已于 2026-09-19 执行（Phase 6）**：内核读 `get_config()`，只保留真实生效键，七个装饰段删除；不选 (b) 全删，因为 `tstdx.toml` 已是公开导出面 |
 | 8 | 发布次序 | Phase 6（配置接线）先于真实网络 smoke 与 `v1.1.0-dev.1` tag；未接线状态不得进发布说明 |
 
 ## 3. 提交策略与风险
@@ -254,9 +275,11 @@
 
 ## 4. 总体验收清单
 
-- [ ] `RuntimeGateway` 任意路径与 `Client` 同 capability 返回字段级一致结果；`tstdx` 内
-      仅存一条执行链（Client → kernel → executor）
+- [ ] `tstdx` 内仅存一条执行链（Client → kernel → executor），四个服务面只翻译不执行
+      （原 `RuntimeGateway` 并列口径已随 Phase 3A 删除该接缝而失效）
 - [ ] executor registry 三件套不存在，`DIRECT_BINDINGS` 唯一
+- [x] `tstdx.toml` / `TSTDX_*` / `configure()` 三条路径对 `Client()` 真实生效，且
+      配置面不引入任何缓存或降级语义（Phase 6；`tests/runtime/test_kernel_config_wiring.py`）
 - [ ] 根级 `.py` ≤ 10；`execution/` DAG 与 `provider/` v14 适配器已物理删除
 - [ ] 60 typed 契约端到端或有下线记录；`QueryResponse` 仅为视图
 - [ ] README / ARCHITECTURE / `__init__` docstring 与代码零矛盾；旧方案归档

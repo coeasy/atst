@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed（v17 Phase 6 —— 配置面接线与死面清偿，F-13/F-16）
+
+- **`tstdx.toml` 从此真的生效**。`UnifiedRuntime` 成为配置面的唯一读者：`Client()` /
+  `AsyncClient()` 缺省经 `tstdx.config.get_config()`（进程级惰性、6 源合并）取配置，
+  `Client(config=...)` 与显式入参仍然优先。贯通的键：`core.default_provider` →
+  `QueryPlanner`；`core.timeout / max_retries / heartbeat_interval`、
+  `hosts.servers / slots_per_host`、`rate_limit.*`、`security.use_tls` →
+  `DirectProviderExecutor → TdxClient → ConnectionPool`；`core.vipdoc_root` →
+  `adjusted_bars` / `sync_daily` / `local_vipdoc`；`web.*` → `WebQuoteClient`。
+- 配置 → 传输层参数只有**一个**翻译点：`tstdx.transport.pool.pool_settings_from_config()`。
+  取代它的是被删除的第二读者 `ConnectionPool.from_config`。
+- 进程级配置语义变更：`get_config()` 首次访问时按全部源解析一次（此前恒返回
+  `DEFAULT_CONFIG`）；`reset_config()` 改为清空单例使下次重新读源（此前是把
+  `DEFAULT_CONFIG` 塞回去）。
+- 新增用户面文档 [docs/configuration.md](docs/configuration.md)（5 段全键清单 + 读取方 +
+  取值范围 + fail-closed 语义 + 环境变量规则），并纳入事实型文档门禁；决策与取舍记录在
+  [ADR-016](docs/adr/ADR-016-config-surface-covers-execution-only.md)。
+
+### Fixed
+
+- **`tstdx.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，
+  从不写回单例，`get_config()` 因此永远看不到覆盖。现改为
+  `load_config(overrides=kwargs, set_global=True)` 并如实记录语义。
+- **`[rate_limit]` 的所有取值曾被静默丢弃**：唯一的读者 `ConnectionPool.from_config`
+  读的键名是 `rate_call_auction`/`rate_continuous`/…，而 `RateLimitConfig` 的字段名是
+  `in_session`/`pre_post`/`closed` —— 两套名字从不重合，`getattr(..., 默认)` 于是把每个
+  配置值都换成限流器自己的默认数字（其契约测试亦照幻影键名而写，故全绿从未暴露）。
+  现字段名与 `SessionState` 一一对应，`SessionRateLimiter.from_config` 用直接属性访问，
+  读不到的键名立即 `AttributeError`。
+- **`WebQuoteClient` 不再吞掉配置错误**：其 `__init__` 曾以
+  `try: … except Exception: pass` 包裹配置读取，配置解析失败即悄悄退回硬编码默认值；
+  现直接 `get_config()`，fail-closed。
+- 覆盖率门禁阈值收敛为单一事实源 `pyproject.toml [tool.coverage.report] fail_under`：
+  删除 `Makefile` 与 `.github/workflows/ci.yml` 中重复的 `--cov-fail-under=77`
+  （pytest-cov 读配置值，实测确认），并由两个门禁测试双向锁定不再出现副本。
+  **阈值数值一次都没有下调**。
+
+### Removed
+
+- 配置面 12 段 → 5 段（`core` / `hosts` / `rate_limit` / `web` / `security`）。
+  `cache`、`output`、`profile`、`sources`、`observability`、`compatibility`、`feedback`
+  七个 dataclass 与其 `_SUBCONFIGS` 条目、`tstdx.config` 再导出一并物理删除
+  （`tstdx/config/schema.py` −320/+45 行）。这些段在内核里零消费者，写了不改变任何
+  行为，`[cache]` 更与"数据请求零缓存"直接冲突；现在写它们会命中
+  `ValidationError: config 含未知配置段`，而不是被忽略。
+- 删除 `ConnectionPool.from_config`、其硬化层 `tstdx/transport/_pool_factory_hardening.py`
+  （76 行）与 2 个只测幻影键的契约测试；发布 wheel 冒烟改为断言唯一 seam
+  `pool_settings_from_config` 存在且 `ConnectionPool.from_config` 不存在。
+- 段内字段同步收缩：`HostsConfig` 留 `servers`/`slots_per_host`（删
+  `auto_speedtest`/`ranking_file`/`max_hosts`/`speedtest_timeout`）、`WebConfig` 留
+  `enabled_sources`/`timeout`/`max_retries`/`rate_limit`（删 `enabled`/`headers`/
+  `normalize`）、`SecurityConfig` 只剩 `use_tls`（删 `credential_backend`/`user_agent`）。
+  其中 `speedtest_timeout` 与 `web.*`/`security.*` 的被删字段在全仓**无任何读者**；
+  `hosts` 的三个被删字段只有已消失的 `ConnectionPool.from_config` 读，而生产链从不调用它
+  ⇒ 对真实链路同样是死键。`[security]` 现只剩一个真实开关。
+
 ### Fixed（v17 Phase 5 第 1 步 —— 类型门禁归零与死守卫）
 
 - **修复 `Prober.only_offline_hours()` 的失效盘中守卫**：它比较

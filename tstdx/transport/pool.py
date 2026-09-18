@@ -38,6 +38,7 @@ from ..codec.framing import FrameSpec, ResponseFrame, build_request
 from ..errors import (
     ALL_HOSTS_UNREACHABLE_NEXT_STEPS,
     AllHostsUnreachable,
+    ConfigError,
     ConnectionClosed,
     ConnectionFailed,
     TdxError,
@@ -52,10 +53,38 @@ __all__ = [
     "Slot",
     "ConnectionPool",
     "PoolStats",
+    "pool_settings_from_config",
 ]
 
 #: 传输域统一 logger（只获取，不配置 handler——配置交给宿主应用）。
 _LOG = logging.getLogger("tstdx.transport")
+
+
+def pool_settings_from_config(cfg: Any) -> dict[str, Any]:
+    """把 :class:`~tstdx.config.schema.Config` 翻译成 ``ConnectionPool`` 构造参数。
+
+    这是配置面到传输面的**唯一**翻译点：单一内核的执行器与任何手工建池的
+    调用方都走这里，因此同一个 TOML 键不可能在两处含义漂移。
+    ``cfg is None`` 表示"无配置"，返回空 dict（即使用连接池自身默认值）；
+    传入非 ``Config`` 对象一律 fail closed，绝不静默退回默认值。
+    """
+    from ..config.schema import Config
+
+    if cfg is None:
+        return {}
+    if not isinstance(cfg, Config):
+        raise ConfigError(
+            f"pool_settings_from_config 需要 Config 或 None；收到 {type(cfg).__name__}",
+            context={"source": "pool_settings_from_config", "value_type": type(cfg).__name__},
+        )
+    return {
+        "slots_per_host": cfg.hosts.slots_per_host,
+        "timeout": cfg.core.timeout,
+        "heartbeat_interval": cfg.core.heartbeat_interval,
+        "max_retries": cfg.core.max_retries,
+        "rate_limiter": SessionRateLimiter.from_config(cfg.rate_limit),
+        "use_tls": cfg.security.use_tls,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -207,49 +236,6 @@ class ConnectionPool:
         self.idle_timeout = float(idle_timeout) if idle_timeout else 0.0
         if self.heartbeat_interval:
             self._start_heartbeat()
-
-    # -- 构造便捷入口 ------------------------------------------------------- #
-    @classmethod
-    def from_config(
-        cls,
-        cfg: Any,
-        *,
-        family: str = Family.STANDARD,
-        hosts: Sequence[HostEntry] | None = None,
-        rate_limiter: SessionRateLimiter | None = None,
-    ) -> ConnectionPool:
-        """从 :class:`~tstdx.config.schema.Config` 构造。"""
-        from ..config.schema import Config
-        from .hosts import resolve_hosts
-
-        cfg = cfg if isinstance(cfg, Config) else None
-        core = cfg.core if cfg else None
-        hcfg = cfg.hosts if cfg else None
-
-        entries = (
-            list(hosts)
-            if hosts
-            else resolve_hosts(
-                servers=(hcfg.servers if hcfg else None),
-                family=family,
-                ranking_file=(hcfg.ranking_file if hcfg else None),
-                use_ranking=bool(hcfg.auto_speedtest if hcfg else True),
-                max_hosts=(hcfg.max_hosts if hcfg else 8),
-            )
-        )
-        rl = rate_limiter
-        if rl is None and cfg is not None:
-            rl = SessionRateLimiter.from_config(cfg.rate_limit)
-        return cls(
-            entries,
-            family=family,
-            slots_per_host=(hcfg.slots_per_host if hcfg else 4),
-            timeout=(core.timeout if core else 3.0),
-            rate_limiter=rl,
-            heartbeat_interval=(core.heartbeat_interval if core else 30),
-            max_retries=(core.max_retries if core else 3),
-            use_tls=bool(cfg.security.use_tls) if cfg else False,
-        )
 
     # -- 槽位选择 ----------------------------------------------------------- #
     def _ordered_slots(self) -> list[Slot]:

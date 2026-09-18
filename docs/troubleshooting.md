@@ -26,8 +26,9 @@ from tstdx.errors import ConnectionFailed
 1. `tstdx server-test` — 确认至少一个主站可达
 2. 手动 telnet 测试：`python -c "import socket; s=socket.create_connection(('119.147.212.81', 7709), timeout=5); print('OK')"`
 3. 公司网络可能封锁非常用端口 — 显式传入 80/443 端口主站：
-   `Client(hosts=["119.147.212.81:443"])`（配置文件 `tstdx.toml` 目前**尚未接入**
-   `Client`/内核执行链，见 `docs/REFACTOR_PLAN_V17_CLOSURE.md` F-16，勿依赖其生效）
+   `Client(hosts=["119.147.212.81:443"])`，或写进项目配置 `./tstdx.toml`
+   （`[hosts]` 段 `servers = [["119.147.212.81", 443]]`，`Client()` 会读到它，
+   见 [docs/configuration.md](configuration.md)）。
 
 ### 症状：`[E2030] ReadTimeout`
 
@@ -37,9 +38,14 @@ from tstdx.errors import ConnectionFailed
 
 ### 症状：`[E2040] AllHostsUnreachable`
 
-所有主站不可达。此错误携带 `fallback_to_web=True` 建议：
-- 安装 web extra：`pip install "tstdx[web]"`
-- 确认 `SourcesRouter` 配置了 HTTP Web 源层
+所有主站不可达。错误对象上的 `fallback_to_web` 只是**历史兼容字段**，单一内核不消费
+它 —— 不会自动改走 Web 源，这是 provider-first 口径而非缺陷。要拿 Web 行情必须显式：
+
+- 同 capability 换 Provider：`Client().quotes("sh600000", provider="tencent")`
+  （`tencent/sina/eastmoney/baidu` 都是注册表里的 Provider id）
+- 显式跨源编排：`Client().quotes(symbols, policy=FallbackPolicy(...))` —— 这是
+  唯一的跨源通道（见 `docs/ARCHITECTURE.md` §2）
+- 或独立使用 legacy Web 入口 `tstdx.web.WebQuoteClient`（需 `pip install "tstdx[web]"`）
 
 ## 2. 协议/解析问题
 

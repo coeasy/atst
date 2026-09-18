@@ -101,7 +101,7 @@ class TestBridges:
 
         cfg = load_config(overrides=None, use_env=False, use_files=False)
         assert isinstance(cfg, Config)
-        assert cfg.core.timeout == 3.0
+        assert cfg.core.timeout == 5.0
 
     # ---- 05: 错误分类树 ----
     def test_05_error_tree(self):
@@ -123,19 +123,21 @@ class TestBridges:
 
     # ---- 07: 降级链 ----
     def test_07_fallback_chain(self):
-        """#07 Provider 绑定：v12 禁止多级 fallback 链，order 仅允许单选择器。"""
-        from tstdx.config.schema import SourcesConfig
+        """#07 单一内核禁止跨 Provider 降级：配置面不存在任何降级开关。"""
+        from tstdx.config.schema import Config
 
-        cfg = SourcesConfig()
-        # ``order`` 是 legacy Router 的单入口选择器，不再是降级链。
-        assert cfg.order == ["tdx"]
-        assert len(cfg.order) == 1
-        assert cfg.default_provider == "tdx"
-        # 跨 Provider 静默降级必须显式关闭。
-        assert cfg.continue_on_error is False
-        # 各 Provider 的启用开关仍然存在（供显式选择，而非隐式降级）。
-        assert set(cfg.enabled) == {"tdx", "web", "reader", "cache", "synthetic"}
-        assert cfg.enabled["synthetic"] is False
+        # 多级 ``tdx -> web -> reader -> cache`` 与"可打开自动降级"的键都不存在；
+        # 想开启降级没有开关可拧，只能由调用方显式选 Provider。
+        field_names = {
+            name
+            for section in Config._SUBCONFIGS
+            for name in dir(getattr(Config(), section))
+            if not name.startswith("_")
+        }
+        assert field_names.isdisjoint(
+            {"auto_fallback", "continue_on_error", "order", "enabled", "cache"}
+        )
+        assert Config().core.default_provider == "tdx"
 
     # ---- 08: 流式韧性 ----
     def test_08_stream_resilience(self):

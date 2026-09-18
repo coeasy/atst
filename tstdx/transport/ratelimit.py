@@ -120,9 +120,7 @@ class TokenBucket:
     def __init__(self, rate: float, *, burst: float | None = None) -> None:
         normalized_rate = _require_positive_number("rate", rate)
         normalized_burst = (
-            max(1.0, normalized_rate)
-            if burst is None
-            else _require_positive_number("burst", burst)
+            max(1.0, normalized_rate) if burst is None else _require_positive_number("burst", burst)
         )
         self.rate = normalized_rate
         self.burst = normalized_burst
@@ -215,12 +213,9 @@ class SessionRateLimiter:
         if state_fn is not None and not callable(state_fn):
             raise ValueError(f"state_fn 必须是 callable 或 None，收到 {type(state_fn).__name__}")
         self._rates = {
-            state: overrides.get(state, default)
-            for state, default in DEFAULT_RATES.items()
+            state: overrides.get(state, default) for state, default in DEFAULT_RATES.items()
         }
-        self._buckets = {
-            state: TokenBucket(rate) for state, rate in self._rates.items()
-        }
+        self._buckets = {state: TokenBucket(rate) for state, rate in self._rates.items()}
         self._state_fn = state_fn or session_state
         self.strict = _require_bool("strict", strict)
         self._lock = threading.Lock()
@@ -280,12 +275,16 @@ class SessionRateLimiter:
 
     @classmethod
     def from_config(cls, config: Any) -> SessionRateLimiter:
-        """从 ``TdxConfig`` 构建（避免顶层循环导入）。"""
+        """从 :class:`~tstdx.config.schema.RateLimitConfig` 构建（避免顶层循环导入）。
+
+        属性直接访问而非 ``getattr(..., 默认)``：读不到的键名就是配置面的谎话，
+        必须报错而不是悄悄退回内置速率。
+        """
 
         rates = {
-            SessionState.CALL_AUCTION: getattr(config, "rate_call_auction", 80.0),
-            SessionState.CONTINUOUS: getattr(config, "rate_continuous", 120.0),
-            SessionState.NOON_BREAK: getattr(config, "rate_noon_break", 25.0),
-            SessionState.CLOSED: getattr(config, "rate_closed", 15.0),
+            SessionState.CALL_AUCTION: config.call_auction,
+            SessionState.CONTINUOUS: config.continuous,
+            SessionState.NOON_BREAK: config.noon_break,
+            SessionState.CLOSED: config.closed,
         }
-        return cls(rates, strict=getattr(config, "rate_limit_strict", False))
+        return cls(rates, strict=config.strict)

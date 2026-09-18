@@ -1,6 +1,6 @@
 # tstdx 当前架构事实（ARCHITECTURE）
 
-> 快照日期：2026-09-19 · 对应 v16 Phase 2b + V17 Phase 3A/3B（单内核收口、typed 契约对齐内核）
+> 快照日期：2026-09-19 · 对应 V17 Phase 3A–6（单内核收口、typed 契约对齐内核、配置面接线）
 > 本文只描述**代码现状**；演进计划见 [REFACTOR_PLAN_V17_CLOSURE.md](REFACTOR_PLAN_V17_CLOSURE.md)。
 > 历史方案（docs/v1–v16）所述 L1/L2 缓存、UnifiedQuoteAPI 门面、5 级降级路由、
 > sources/sinks 层，以及 v14 信封运行时（`runtime/{runtime,gateway,request,response,typed,stream}.py`、
@@ -41,6 +41,10 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
 - 零缓存：每次请求直达绑定 Provider，无结果/负/提升缓存，无请求合并。
 - provider-first：一个 Plan 永不私选第二 Provider；provenance 校验失败即抛。
 - 单内核：执行只发生在 `UnifiedRuntime → DirectProviderExecutor`。
+- 配置面即执行面契约：`Config` 里每个键都被内核读取并改变行为，配置→传输只有
+  `tstdx.transport.pool.pool_settings_from_config` 一个翻译点，无第二读者
+  （`tests/runtime/test_kernel_config_wiring.py`、
+  `tests/transport/test_pool_settings_from_config_contract.py`）。
 
 ## 3. 分层与包职责
 
@@ -82,18 +86,29 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
    主站"的保护实际为死代码（测试全打桩故全绿）。现按 `call_auction/continuous` 判定，
    并由 `tests/protocol/test_prober_offline_guard.py` 逐时段回归。同批把 `mypy tstdx/`
    从 47 项压到 **0**（含删除零消费者的缓存时代残留 `RuntimeCacheIdentity`）。
-7. **F-13/F-16 配置面未接线且装饰化 —— 待办（P0）**：`load_config` 在 `tstdx/` 包内
-   **零调用者**，CLI/HTTP/WS/MCP/`Client` 均不读配置文件（`Client.__init__` 无 `config=`
-   入口），`Config` 只在调用方手工传给 `ConnectionPool.from_config` 时才生效；同时 12 个
-   配置段中 `cache`/`output`/`profile`/`sources`/`observability`/`compatibility`/`feedback`
-   七段的 dataclass 在 `config/` 包外零引用。即"写 TOML 配置文件不改变行为"，且
-   `[cache]` 段与零缓存口径冲突。处置方案与默认选择见 REFACTOR_PLAN_V17_CLOSURE §0.3
-   F-16（最小接线 + 删除装饰段），落地前不得发布新稳定版。
-8. **F-15 门禁基线为红 —— 待办**：`ruff format --check` 74 文件待重排（dev 依赖
-   `ruff>=0.5`/`mypy>=1.10` 浮动导致版本漂移；本地 ruff 0.14.4 与 0.9.6 结论一致，
-   mypy 1.13 与 2.3.1 下 `tstdx/` 均为 0 错（含 `--warn-unused-ignores`）；
-   离线覆盖率实测 76.18% 低于 `--cov-fail-under=77`。
-   两者都**不调阈值**：分别以纯格式提交 + 钉版本、死面清理后按 CI 环境实测重钉来解决。
+7. **F-13/F-16 配置面未接线且装饰化 —— 已清偿（Phase 6，2026-09-19）**：`UnifiedRuntime`
+   现在是配置面唯一读者（`Client()` 缺省经 `tstdx.config.get_config()` 取进程级惰性
+   六源合并单例，显式入参仍优先），`core.default_provider`/`core.timeout`/
+   `core.heartbeat_interval`/`core.max_retries`/`core.vipdoc_root`/`hosts.servers`/
+   `hosts.slots_per_host`/`rate_limit.*`/`security.use_tls` 逐个贯通到
+   `DirectProviderExecutor → TdxClient → ConnectionPool`（配置→传输的**唯一**翻译点
+   `transport/pool.py::pool_settings_from_config`），`web.*` 贯通到 `WebQuoteClient`。
+   12 段收缩为 5 段：`cache`/`output`/`profile`/`sources`/`observability`/
+   `compatibility`/`feedback` 七段的 dataclass 与再导出物理删除，loader 对未知段
+   fail-closed。同时删除第二个配置读者 `ConnectionPool.from_config`（生产链从未引用，
+   且它读的 `rate_*` 键名与 `RateLimitConfig` 字段从不重合 ⇒ 配置值被静默丢弃）。
+   口径与取舍见 [ADR-016](adr/ADR-016-config-surface-covers-execution-only.md)，
+   用户面见 [docs/configuration.md](configuration.md)，回归锁见
+   `tests/runtime/test_kernel_config_wiring.py`。
+8. **F-15 门禁基线为红 —— 部分待办**：`ruff format --check` 既存待重排 **65 文件**
+   （HEAD 既有 74，Phase 6 删除/重排触及文件后净减 9），dev 依赖 `ruff>=0.5`/
+   `mypy>=1.10` 浮动仍是版本漂移来源；`mypy tstdx/` 为 **0**（Phase 5 已归零）。
+   覆盖率：**离线实测 76.14%**（Windows+py3.12，CI 等价范围 `-m "not network"`），
+   低于 77 阈值 ⇒ 门禁在本地为红。处置：阈值数字已收敛为单一事实源
+   `pyproject.toml [tool.coverage.report] fail_under`（Makefile/CI 的
+   `--cov-fail-under` 副本删除，由 `tests/compatibility/test_local_gate_contract.py`
+   与 `test_ci_workflow_contracts.py` 锁定）；**阈值本身一次都没有下调**。
+   重钉需要 CI 环境（ubuntu+py3.11）的实测数字，本机 Windows 数字不作为依据。
 9. **防回潮守卫**：`tests/architecture/test_single_kernel_guards.py`（已删模块/符号不可再现、
    `tstdx.runtime.__all__` 仅内核、runtime 包不再引用已删分层、Client 执行面类型为
    `DirectProviderExecutor`）；`tests/architecture/test_namespace_layout.py`（根级白名单 11 项、
@@ -109,10 +124,13 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
 | capability 语义/参数校验 | `query.py`（`QuerySpec`）+ `catalog/capability.py`（`validate_call`） |
 | 协议命令账本 | `protocol/` YAML 规范 + codegen + golden_audit |
 | 公开导出面 | `tstdx/__init__.py::__all__`（懒加载 `_LAZY`） |
-| 配置结构 | `config/schema.py`（**尚未接入执行链**，见 §4 第 7 条 F-16；生效与否以代码为准） |
+| 配置结构 | `tstdx.config.schema`（5 段，全部由内核读取；用户面 `docs/configuration.md`，取舍见 ADR-016） |
+| 配置 → 传输层参数 | `tstdx.transport.pool.pool_settings_from_config`（唯一翻译点） |
 
 ## 6. 开发环境（重要）
 
 - 本机裸 `python` 是坏掉的 WindowsApps stub：一律用 `.venv/Scripts/python.exe`
   或 `uv run`（PATH 加 `~/.local/bin`）。
-- 门禁：`pytest`（全量离线）+ `ruff check` + `mypy tstdx/` + 覆盖率（V17 起按有效代码重校准）。
+- 门禁：`pytest`（全量离线）+ `ruff check` + `mypy tstdx/` + 覆盖率（阈值单源：
+  `pyproject.toml [tool.coverage.report] fail_under`，Makefile/CI 不再各传
+  `--cov-fail-under`）。

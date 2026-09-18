@@ -42,6 +42,7 @@ def fenced_code(path: Path) -> list[str]:
 FACT_DOC_PATHS = (
     "README.md",
     "docs/ARCHITECTURE.md",
+    "docs/configuration.md",
     "docs/quickstart.md",
     "docs/errors.md",
     "docs/api/README.md",

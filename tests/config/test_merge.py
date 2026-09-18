@@ -1,4 +1,4 @@
-"""配置合并测试：strict Provider-bound defaults + 类型归一化。"""
+"""配置合并测试：strict execution-only defaults + 类型归一化。"""
 
 from __future__ import annotations
 
@@ -29,18 +29,26 @@ class TestConfigMerge:
     def test_default_only(self):
         cfg = load_config(overrides=None, use_env=False, use_files=False)
         assert isinstance(cfg, Config)
-        assert cfg.core.timeout == 3.0
+        assert cfg.core.timeout == 5.0
         assert cfg.core.max_retries == 3
-        assert cfg.core.auto_fallback is False
-        assert cfg.web.enabled is False
-        assert cfg.sources.default_provider == "tdx"
-        assert cfg.sources.order == ["tdx"]
-        assert cfg.sources.continue_on_error is False
+        assert cfg.core.default_provider == "tdx"
+        assert cfg.hosts.servers == []
+        assert cfg.security.use_tls is False
+
+    def test_schema_has_only_wired_sections(self):
+        """配置面即执行面清单：装饰段不得复活。"""
+
+        assert Config._SUBCONFIGS == ("core", "hosts", "rate_limit", "web", "security")
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("TSTDX_CORE_TIMEOUT", "5")
+        monkeypatch.setenv("TSTDX_CORE_TIMEOUT", "7")
         cfg = load_config(overrides=None, use_env=True, use_files=False)
-        assert cfg.core.timeout == 5.0
+        assert cfg.core.timeout == 7.0
+
+    def test_env_default_provider_override(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("TSTDX_CORE_DEFAULT_PROVIDER", "tencent")
+        cfg = load_config(overrides=None, use_env=True, use_files=False)
+        assert cfg.core.default_provider == "tencent"
 
     def test_file_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         toml_content = b"""
@@ -136,6 +144,12 @@ max_retries = 1
         with pytest.raises(ConfigError, match="无法识别环境变量"):
             config_from_env({"TSTDX_COER_TIMEOUT": "5"})
 
+    def test_removed_section_environment_fails_closed(self):
+        """``[cache]`` 等装饰段删除后，其环境变量不得再被当作有效覆盖。"""
+
+        with pytest.raises(ConfigError, match="无法识别环境变量"):
+            config_from_env({"TSTDX_CACHE_ENABLED": "false"})
+
     def test_unknown_environment_field_fails_closed(self):
         with pytest.raises(ConfigError, match="字段无法识别"):
             config_from_env({"TSTDX_CORE_TIMOUT": "5"})
@@ -144,6 +158,13 @@ max_retries = 1
         with pytest.raises(ValidationError):
             config_from_dict({"bogus_section": {"foo": 1}})
 
+    def test_removed_file_sections_fail_closed(self):
+        """TOML 里保留旧段必须报错，而不是"写了不生效"。"""
+
+        for section in ("cache", "output", "profile", "sources", "observability"):
+            with pytest.raises(ValidationError, match="未知配置段"):
+                config_from_dict({section: {"enabled": True}})
+
     def test_invalid_type_rejection(self):
         with pytest.raises(ValidationError):
             merge_config({"core": {"timeout": "not_a_number"}})
@@ -151,7 +172,7 @@ max_retries = 1
     def test_empty_dict_merge(self):
         cfg = merge_config({}, None, {})
         assert isinstance(cfg, Config)
-        assert cfg.core.timeout == 3.0
+        assert cfg.core.timeout == 5.0
 
     def test_nested_section_merge(self):
         low = {"core": {"timeout": 1.0, "max_retries": 5}}
@@ -175,31 +196,13 @@ max_retries = 1
         assert parse_env_value("0") == 0 and parse_env_value("0") is not False
         assert parse_env_value("off") is False
 
-        # Parsing remains backward compatible. Validation is the boundary that
-        # rejects the old runtime semantic.
-        env = {"TSTDX_CORE_AUTO_FALLBACK": "true", "TSTDX_CACHE_ENABLED": "false"}
-        result = config_from_env(env)
-        assert result["core"]["auto_fallback"] is True
-        assert result["cache"]["enabled"] is False
-
-    def test_float_coercion(self):
-        assert parse_env_value("3.14") == 3.14
-        assert parse_env_value("0.001") == 0.001
-        assert parse_env_value("100.5") == 100.5
-        assert parse_env_value("42") == 42
-        assert isinstance(parse_env_value("42"), int)
-        assert parse_env_value("[1,2,3]") == [1, 2, 3]
-
-    def test_runtime_rejects_cross_provider_fallback_flags(self):
-        with pytest.raises(ValidationError, match="auto_fallback"):
-            config_from_dict({"core": {"auto_fallback": True}})
-        with pytest.raises(ValidationError, match="continue_on_error"):
-            config_from_dict({"sources": {"continue_on_error": True}})
-        with pytest.raises(ValidationError, match="多级 fallback"):
-            config_from_dict({"sources": {"order": ["tdx", "web"]}})
+    def test_tls_flag_is_the_only_security_switch(self):
+        assert config_from_env({"TSTDX_SECURITY_USE_TLS": "true"}) == {
+            "security": {"use_tls": True}
+        }
 
     def test_default_provider_is_registry_validated(self):
-        cfg = config_from_dict({"sources": {"default_provider": "tencent"}})
-        assert cfg.sources.default_provider == "tencent"
-        with pytest.raises(ValidationError, match="未知 provider"):
-            config_from_dict({"sources": {"default_provider": "not-a-provider"}})
+        cfg = config_from_dict({"core": {"default_provider": "tencent"}})
+        assert cfg.core.default_provider == "tencent"
+        with pytest.raises(ValidationError):
+            config_from_dict({"core": {"default_provider": "not-a-provider"}})

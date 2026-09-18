@@ -157,9 +157,11 @@ source = ["tstdx"]
 branch = true
 
 [tool.coverage.report]
-# Keep the deterministic coverage gate unchanged during the v13 refactor.
-# The gate may be raised only from measured exact-head evidence, never lowered
-# or bypassed to make a refactor green.
+# Coverage gate: single source of truth. Makefile and CI invoke pytest without
+# --cov-fail-under because pytest-cov reads this value; the no-duplication rule
+# is pinned by tests/compatibility/test_local_gate_contract.py. It may be raised
+# only from measured exact-head evidence in the CI environment, never lowered or
+# bypassed to make a refactor green.
 fail_under = 77
 skip_covered = true
 exclude_lines = [

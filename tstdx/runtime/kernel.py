@@ -6,6 +6,12 @@
 Every :meth:`UnifiedRuntime.execute` compiles one exact single-Provider plan
 and requests the bound Provider directly. No result, negative, promotion or
 request-coalescing cache exists on this path.
+
+The kernel is also the single consumer of the configuration surface: an
+explicit constructor argument wins, otherwise the value comes from
+:class:`~tstdx.config.schema.Config` (defaults → config files → environment →
+caller overrides). A key that the kernel does not read does not exist in the
+schema.
 """
 
 from __future__ import annotations
@@ -14,6 +20,7 @@ from collections.abc import Sequence
 from typing import Any, Protocol
 
 from ..batch import BatchItem, BatchResult
+from ..config import Config, get_config
 from ..domain.symbol import normalize_symbol
 from ..query import QueryPlan, QueryPlanner, QuerySpec
 from ..result import QueryResult
@@ -37,18 +44,29 @@ class UnifiedRuntime:
     def __init__(
         self,
         *,
-        default_provider: str = "tdx",
-        timeout: float = 5.0,
-        hosts: list[str] | None = None,
+        config: Config | None = None,
+        default_provider: str | None = None,
+        timeout: float | None = None,
+        hosts: Sequence[Any] | None = None,
         vipdoc_root: str | None = None,
         executor: KernelExecutor | None = None,
     ) -> None:
         audit_runtime()
-        self.planner = QueryPlanner(default_provider=default_provider)
+        cfg = (config if config is not None else get_config()).validate()
+        self.config = cfg
+        self.planner = QueryPlanner(
+            default_provider=(
+                cfg.core.default_provider if default_provider is None else default_provider
+            )
+        )
+        configured_hosts: Sequence[Any] | None = (
+            list(cfg.hosts.servers) if cfg.hosts.servers else None
+        )
         self.executor: KernelExecutor = executor or DirectProviderExecutor(
-            timeout=timeout,
-            hosts=hosts,
-            vipdoc_root=vipdoc_root,
+            timeout=cfg.core.timeout if timeout is None else timeout,
+            hosts=hosts if hosts is not None else configured_hosts,
+            vipdoc_root=(cfg.core.vipdoc_root if vipdoc_root is None else vipdoc_root),
+            config=cfg,
         )
 
     def close(self) -> None:
@@ -111,9 +129,7 @@ class UnifiedRuntime:
                 items[symbol] = BatchItem("failed", error=exc)
                 continue
             items[symbol] = (
-                BatchItem("missing")
-                if not result.data
-                else BatchItem("ok", value=result)
+                BatchItem("missing") if not result.data else BatchItem("ok", value=result)
             )
         return BatchResult.build(items)
 

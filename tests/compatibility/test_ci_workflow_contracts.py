@@ -72,7 +72,7 @@ def test_coverage_artifact_is_generated_required_and_preserved_on_failure() -> N
     workflow = _workflow("ci.yml")
     test_job = workflow.split("  test:", 1)[1].split("  originality:", 1)[0]
 
-    assert "--cov-fail-under=77" in test_job
+    assert "--cov-fail-under" not in test_job
     assert "--cov-report=term-missing" in test_job
     assert "--cov-report=xml:coverage.xml" in test_job
     assert "path: coverage.xml" in test_job

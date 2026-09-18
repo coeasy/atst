@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-from tstdx.config.schema import DEFAULT_CONFIG, OutputConfig
 from tstdx.domain.models import Bar, Quote
 
 
@@ -31,16 +30,6 @@ class TestTimezone:
         dt_utc = datetime(2024, 1, 15, 9, 30, tzinfo=timezone.utc)
         dt_sh = dt_utc.astimezone(sh_tz)
         assert dt_sh.hour == 17  # 9 + 8 = 17
-
-    def test_config_timezone_default(self):
-        """#3 配置默认时区为 Asia/Shanghai。"""
-        cfg = DEFAULT_CONFIG
-        assert cfg.output.timezone == "Asia/Shanghai"
-
-    def test_config_timezone_validation(self):
-        """#4 时区配置可修改。"""
-        cfg = OutputConfig(timezone="UTC")
-        assert cfg.timezone == "UTC"
 
     def test_bar_datetime_string(self):
         """#5 Bar 模型的 datetime 字段为字符串。"""
@@ -134,16 +123,6 @@ class TestTimezone:
         assert d["code"] == "600519"
         assert d["price"] == 100.0
         assert d["name"] == "贵州茅台"
-
-    def test_config_timezone_in_output(self):
-        """#13 配置中 output.timezone 被使用。"""
-        cfg = OutputConfig(timezone="Asia/Shanghai")
-        assert cfg.timezone == "Asia/Shanghai"
-        # 验证配置可序列化
-        from dataclasses import asdict
-
-        d = asdict(cfg)
-        assert d["timezone"] == "Asia/Shanghai"
 
     def test_bar_datetime_sortable(self):
         """#14 Bar datetime 字符串可排序。"""

@@ -1,7 +1,11 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""配置中心：strict schema + Provider-bound v12 execution semantics."""
+"""配置中心：strict schema + 单一内核执行参数。
+
+每一个可导出段都由 ``UnifiedRuntime`` / ``DirectProviderExecutor`` /
+``WebQuoteClient`` 真实读取；不存在缓存、降级或输出格式开关。
+"""
 
 from .loader import (  # noqa: F401
     CONFIG_FILENAMES,
@@ -18,18 +22,11 @@ from .loader import (  # noqa: F401
 )
 from .schema import (  # noqa: F401
     DEFAULT_CONFIG,
-    CacheConfig,
-    CompatibilityConfig,
     Config,
     CoreConfig,
-    FeedbackConfig,
     HostsConfig,
-    ObservabilityConfig,
-    OutputConfig,
-    ProfileConfig,
     RateLimitConfig,
     SecurityConfig,
-    SourcesConfig,
     WebConfig,
     config_diff,
     config_from_dict,
@@ -43,15 +40,8 @@ __all__ = [
     "CoreConfig",
     "HostsConfig",
     "RateLimitConfig",
-    "CacheConfig",
-    "OutputConfig",
-    "ProfileConfig",
     "WebConfig",
-    "SourcesConfig",
-    "ObservabilityConfig",
     "SecurityConfig",
-    "CompatibilityConfig",
-    "FeedbackConfig",
     "load_config",
     "get_config",
     "set_config",

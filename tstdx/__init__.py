@@ -112,10 +112,15 @@ from .errors import TdxError  # noqa: E402,F401
 
 
 def configure(**kwargs: Any) -> Any:
-    """以关键字参数覆盖全局配置（等价于 :func:`load_config` 的高优先级源）。"""
+    """以关键字参数覆盖进程级配置，并立即写回 :func:`get_config` 单例。
+
+    键是配置段名，值是字段字典，例如 ``configure(core={"timeout": 8})``。
+    返回合并后的 :class:`~tstdx.config.schema.Config`；后续 ``Client()``
+    与 ``WebQuoteClient()`` 都读取到该值，显式构造参数仍然优先。
+    """
     from .config import load_config
 
-    return load_config(overrides=kwargs)
+    return load_config(overrides=kwargs, set_global=True)
 
 
 def get_config() -> Any:
