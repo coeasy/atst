@@ -2235,6 +2235,14 @@ job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 
       `coverage_pct 100.0` 与 `total_specs 44` 不变、golden_audit `total 530: real 60 / synthetic 470`、
       reachability `190 模块 / 174 可达 / 16 豁免` 且 `[ALLOW-DEFECT]` 0 条、contract_audit、docs links
       82 files、mypy、ruff check「All checks passed!」、ruff format **471 files**（473 − 2）。
+    - **ship 轮（提交树复测，同一解释器与工作树参数，不引用步骤轮读数）**：`05acd91` 落到 main 后另起
+      隔离工作树 `wt_s45ship`（实测 `head=05acd91`、`git status --porcelain` 0 行）把九项门禁与离线全量
+      重跑一遍：`s45ship.gates.log` 与 `s45step.gates.log` **逐字节相同**（两份 sha256 均为
+      `fe75c5720579a2f05c3595e824f4842bb3038bbe46e3b6625ba5dee3eb1a0b81`），`rc=0` 计数 9/9；离线全量
+      junit **3576 / 0 失败 / 0 错误 / 5 跳过**（另 10 项被 `-m 'not network'`  deselected）、150.16s、
+      `SUITE_RC=0`、覆盖率 **81.45%**（TOTAL 22418 / 3581 / 5990 / 1006，
+      `Required test coverage of 77.0% reached`，阈值未下调）——与本步树逐格相同：删掉一条链外守卫这件事
+      在干净提交树与被测工作树上给出同一个数，没有「只在脏树上绿」的差额。
     - **本步未动**：F-65 裁决 (b)（账本函数面）、F-66 裁决 (c)（能力发现面只给名字不给状态）、F-70
       的 4 份对标文档；`docs/archive/OPTIMIZATION_PLAN.md:32` 那句"`unknown_command_ids` 保留为别名"属
       归档史，留给 F-65 一并处置；SECURITY.md 从未提及该守卫，故无需改；`v1.1.0-dev.1` 标签仍未打。
