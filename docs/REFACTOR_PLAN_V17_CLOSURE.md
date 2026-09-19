@@ -858,6 +858,15 @@
       （`coverage_pct: 100.0`）、`golden_audit --gate --require-markets`、reachability
       `--strict`、`contract_audit --ci`（63 契约 / 155 capability，与第 17/19 步逐项相同）、
       docs links（82 文件）**全部 RC=0**。
+    - **提交面的固有缺口（如实登记，不是本步缺陷而是共享工作树的机制事实）**：提交以 26 个
+      pathspec 精确限定，`git show --stat` 逐项核对确无对方在途的 `tstdx/client/_mixin.py`、
+      `docs/errors.md`、`docs/configuration.md`、三条 unit/client 测试混入；但**共享文件按整文件
+      入账**——`CHANGELOG.md` 里对方 `第 21 步 / F-45` 的条目当时已写好尚未提交，随本提交一并
+      落库（其代码已在 `44b02fb` 落地，无工作丢失，只是署名落在本提交），而同一文件的
+      plan doc 侧经复核**零外溢**（提交后的 `REFACTOR_PLAN_V17_CLOSURE.md` 里 `F-45`/`第 21 步`
+      命中数为 0）。口径：pathspec 挡不住"两个人写同一份台账"，台账类文件（CHANGELOG /
+      本文）在并发会话下只能事后对账，不能指望提交粒度——与 F-21"管道尾部读数不是命令读数"
+      同一格：**门禁的粒度必须落在它真正能观察的对象上**。
     - **顺带量出的下一格（F-44，未清偿待裁决）**：同一次 AST 遍历发现 49 个错误类里
       7 个叶子从未被 `raise`，其中 `SourceUnavailable(E7050)` 被 `docs/providers/README.md`
       §12 写成规范语义、`FreshnessViolation(E4060)` 被 `tdx.md` 写成严格模式返回值，而
