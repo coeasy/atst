@@ -137,7 +137,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | **零硬依赖** | 所有第三方库均为可选 extra |
 | **错误分类树** | 九域 code 段（E1–E9）+ 每个异常自带 `RetryAdvice`；类清单以 `tstdx.errors` 现读为准，文档不抄录会过期的数字（`docs/errors.md`） |
 | **可观测性** | zero-dep 指标注册表 + Prometheus/StatsD/OTLP 三导出器 |
-| **传输与错误卫生** | TDX 连接可按 `security.use_tls` 走 TLS（默认关，`ssl.create_default_context()` 校验主机名）；错误上下文按关键字脱敏后才可外发。凭据存储**不在本库范围内**（ADR-007-010 已删除三级 CredentialStore）；Provider 绑定的 HTTP 主机白名单守卫已实现但尚未接入 web 链路（`docs/REFACTOR_PLAN_V17_CLOSURE.md` F-18） |
+| **传输与错误卫生** | TDX 连接可按 `security.use_tls` 走 TLS（默认关，`ssl.create_default_context()` 校验主机名）；错误上下文按关键字脱敏后才可外发。凭据存储**不在本库范围内**（ADR-007-010 已删除三级 CredentialStore）；HTTP 传输层同样**不做** Provider 主机白名单——那条守卫从未接入任何生产链路，已按 F-18 裁决 (b) 删除（`docs/REFACTOR_PLAN_V17_CLOSURE.md`），单源边界由调用方自证，内核侧的跨源约束只有一条：选定的 Provider 不会被悄悄换成别家 |
 | **原创合规** | 洁净室工程规范：规格驱动 + License 隔离 + AST 相似度审计 + Golden 数据自采集 |
 
 ---
@@ -466,7 +466,7 @@ python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproj
 | **发布硬化** | 已做：mypy 既有告警清零、覆盖率基线按有效代码重校（本机 80.84%，阈值 77 未下调）、wheel 安装冒烟 `SMOKE_RC=0`（第 16 步）。未做：按 CI（ubuntu+py3.11）数字重钉 `fail_under`、拿用户确认打 tag `v1.1.0-dev.1` |
 | **Live Smoke** | 已做：七格真实网络/服务面冒烟逐格执行（tdx/web 直连、K 线、stream、CLI/HTTP/MCP 各一发）＝6 PASS / 1 FAIL（第 16 步）。已定：F-37 按裁决 (c) 落地——`0x000F`/`0x0010` 的能力口径已下调为「条数可用、字段语义不保证」，本发布不声称 7709 历史族字段级 live 正确，tag 因此继续推迟。未做：一次工作日盘中复跑（第 16 步落在周六休市）、那两条命令的字段布局判据，以及把 7709 数据面的 live 判据接进门禁（F-38，刻意不在裁决前钉成固定红） |
 | **Streaming 增量执行** | 流式数据增量合并 + 补数完整性保证 |
-| **可达性收口** | 孤儿=0，且每条豁免记录都被门禁盯着：指向不存在模块的死记录、已接线却未撤销的过期记录、理由过短、重复条目都会让 `--strict` 失败。仍待裁决的一项：`tstdx.providers.http`（Provider 绑定的 HTTP 主机白名单守卫）接线还是删除，属安全面决策 |
+| **可达性收口** | 孤儿=0，且每条豁免记录都被门禁盯着：指向不存在模块的死记录、已接线却未撤销的过期记录、理由过短、重复条目都会让 `--strict` 失败。豁免清单里已无待裁决项：曾挂在该清单上的 `tstdx/providers/http.py`（Provider 绑定的 HTTP 主机白名单守卫）已按 F-18 裁决 (b) 物理删除——v16 删除跨源路由层后它没有任何生产调用点，一件没人接的防线不等于一条防线 |
 
 ---
 

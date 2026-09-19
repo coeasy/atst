@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed（v17 Phase 5 第 45 步 —— 一件造好并测过、却没有任何生产调用点的安全资产：F-18 裁决 (b) 的执行；**BREAKING**）
+
+- **删掉 `tstdx/providers/http.py`（360 行）连同它的 10 项离线测试**：公开名 `PROVIDER_HTTP_HOST_SUFFIXES`、
+  `host_allowed`、`ProviderBoundHttpClient`（含逐跳 `Location` 校验）一并物理移除，不留别名、不留空壳。
+  判据是可达性扫描而非印象：v16 删除跨源路由层之后它在 `tstdx/` 内的生产调用点为 **0**，只有
+  `tests/providers/test_http_boundary.py` 在 import 它——一件没人接的防线不等于一条防线。
+- **给今天想约束"只能碰这一家主机"的调用方的替代路径**：本库不再提供 Provider→主机名的可执行白名单，
+  `tstdx/web/_base_http.py` 的 `build_client(prefer_httpx=…, default_headers=…)` 也从不接受 Provider 身份
+  （第 45 步复核时实测；登记为 (a) 路径当时的接线代价被低估了一格）。单源边界请在自己的 transport 层做，
+  或继续用内核那条真实约束：选定的 Provider 不会被悄悄换成别家。
+- **同时撤销 `scripts/_reach_allow.txt` 的对应豁免记录**（17 → 16 条）：模块删掉却不撤记录，正是 F-22
+  定义的 `[dead]` 缺陷。复测 `audit_reachability.py --strict` RC=0：`190 模块 / 174 可达 / 16 豁免 / 记录缺陷 0`。
+- **README 两处对外口径按现状改写**：特性表「传输与错误卫生」行原写"守卫已实现但尚未接入 web 链路"、
+  路线图「可达性收口」行原把它列为"仍待裁决的一项"，现统一为"HTTP 传输层不做 Provider 主机白名单"。
+- **登记本次取证发现的三处抄录数字**：该资产登记为"11 项离线测试全覆盖"（`--collect-only` 实测 **10**）、
+  接线路径登记为"补全 11 个 Provider 的主机表"（守卫表实测 **7** 个键；registry 的 11 个 id 里 4 个
+  `builtin/derived/local_vipdoc/tdx` 本就不走这条 HTTP 守卫）。数字抄本与磁盘的差距由本轮复核消化，
+  原文与实测值并记在 `docs/REFACTOR_PLAN_V17_CLOSURE.md` §0.3 F-18。
+- **删除动作顺手抓到一处门禁自身的失效**：`tests/architecture/test_official_runtime_no_fallback.py` 把这个
+  被删模块手抄在 `OFFICIAL_RUNTIME` 清单里，文件消失后三条判据以 `FileNotFoundError` 崩在读文件那行——
+  读者会读成"环境坏了"而不是"清单过期了"。清单是人工 curated 的子集、不能 glob 推导，因此补
+  `test_official_runtime_inventory_points_at_real_files`：死路径以人读消息报出，另加"清单 ≥15 项"金丝雀，
+  防止覆盖面缩水成空转假绿。
+
 ### Removed（v17 Phase 5 第 44 步 —— 错误树上 4 个「文档承诺、运行期永不发生」的叶子：F-68 裁决 (a) 的执行；**BREAKING**）
 
 - **删掉 4 个从未兑现的公开错误类**：`UnknownCommand`(E3030)、`ChecksumMismatch`(E3050)、

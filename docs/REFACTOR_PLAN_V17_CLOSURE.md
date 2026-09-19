@@ -39,7 +39,8 @@
 ② 已知功能缺口各有账——`0x000F` 资本变动与 `0x0010` 财务信息在新握手下仍解出错位字段（F-37
 余条，待裁决）、7709 数据面在门禁里没有 live 判据（F-38，部分清偿：刻意不在裁决前把每日 live
 job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 PENDING 面，`contract_audit --ci`
-不阻断）、`tstdx/providers/http.py` 的主机守卫无生产调用方（F-18，待裁决）。
+不阻断）。第四项已经不在这张清单上：一件造好并测过、却没有任何生产调用点的 HTTP 主机边界守卫
+按 F-18 裁决 (b) 于第 45 步删除，链外安全资产不再作为开放边界登记。
 
 ### 0.2 遗留不合理点（Phase 3–5 处理对象；第 33 步起逐行现状见最后一列）
 
@@ -64,7 +65,7 @@ job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 
 | F-17 | P2 | 接线时新暴露的两处静默失效（Phase 6）：`tstdx.configure()` 合并后**丢弃返回值**、从不写回单例（调用即无效果）；`WebQuoteClient.__init__` 用 `try/except Exception: pass` 包裹配置读取，配置出错即悄悄退回硬编码默认 | **已修**（2026-09-19）：`configure()` 改为 `load_config(overrides=…, set_global=True)` 并如实记录语义；`WebQuoteClient` 直接 `get_config()`，配置解析失败 fail-closed |
 | F-14 | P2 | CHANGELOG `[Unreleased]` 的 P13/P14 条目仍以已删除的 `UnifiedQuoteAPI` 门面为"暴露面"叙述；新工具未纳入 `test_doc_code_consistency.py` 的活文档集合（CHANGELOG 不在集合内） | **已清偿**（2026-09-19）：`### Added` 顶部加"当时口径 vs 现行入口"标注（门面已随 v16 Phase 2 物理删除，照抄即 `ImportError`；能力全部存活于 catalog，入口 `Client.call(<capability>, ...)`），4 处"门面暴露 N 个方法"改写为 catalog 事实；条目点名的 46 个 capability 逐个对运行期 `Client().capabilities()`（172 项）核验存在，无一失配。`[1.0.0]` 及更早版本段属既成发布史，保留原口径 |
 | F-15 | P1 | 格式门禁长期为红：`ruff format --check tstdx/ tests/ scripts/` 在 0.9.6 与 0.14.4 下均报 74 个文件待重排，而 CI 用浮动的 `ruff>=0.5` | **格式与版本已清偿**（2026-09-19，Phase 5 第 2 步）：65 个待重排文件一次纯格式提交清零，重排前后 `ast.dump()` 逐个比对无差异；dev 依赖钉死 `ruff==0.15.2` / `mypy==2.3.1`。**覆盖率部分仍待办**：阈值数字已收敛为 `pyproject.toml [tool.coverage.report] fail_under` 单一事实源（删 Makefile/CI 的 `--cov-fail-under` 副本并加守卫测试），**未下调阈值**；**离线缺口已闭合**（2026-09-19，Phase 5 第 4 步实测）：Windows+py3.12 整仓 `-m "not network"` 为 **78.79%**、`PYTEST_RC=0`，已高于阈值 77；**重钉阈值数字仍待 CI 环境（ubuntu+py3.11）数字**，本机值不作依据 |
-| F-18 | P1 | **安全资产躺在链外**：`tstdx/providers/http.py` 的 Provider 主机边界守卫（`host_allowed` + `ProviderBoundHttpClient` + 逐跳 `Location` 校验，11 项离线测试全覆盖）在 v16 删除跨源路由层后**没有任何生产调用点**。SECURITY.md 与各文档均未声称它在运行 ⇒ 不是"防线失效"，而是"一件造好并测过的防线没人接"。接进 `tstdx/web/_base_http.py` 会改变 web 传输的失败语义（凡未登记在 `PROVIDER_HTTP_HOST_SUFFIXES` 的主机一律挡掉），需逐源核表并真机验证 | ⏳ **待用户决策**（属安全面，不自行拍板）：(a) 接线 `build_client(provider=…)`，先补全 11 个 Provider 的主机表；(b) 连同测试删除，回到"由调用方自证单源"；(c) 维持现状 + 白名单豁免（附理由）。当前默认执行 (c)，见 `scripts/_reach_allow.txt` |
+| F-18 | P1 | **安全资产躺在链外**：`tstdx/providers/http.py` 的 Provider 主机边界守卫（`host_allowed` + `ProviderBoundHttpClient` + 逐跳 `Location` 校验，11 项离线测试全覆盖）在 v16 删除跨源路由层后**没有任何生产调用点**。SECURITY.md 与各文档均未声称它在运行 ⇒ 不是"防线失效"，而是"一件造好并测过的防线没人接"。接进 `tstdx/web/_base_http.py` 会改变 web 传输的失败语义（凡未登记在 `PROVIDER_HTTP_HOST_SUFFIXES` 的主机一律挡掉），需逐源核表并真机验证 | **已清偿**（2026-09-19，第 45 步按用户裁决 **(b)** 执行；(a)/(c) 未采纳）——三条路径原文保留：**待用户决策**（属安全面，不自行拍板）：(a) 接线 `build_client(provider=…)`，先补全 11 个 Provider 的主机表；(b) 连同测试删除，回到"由调用方自证单源"；(c) 维持现状 + 白名单豁免（附理由）。第 45 步之前默认执行的是 (c)。**执行记录（第 45 步）**：① `tstdx/providers/http.py`（360 行，`PROVIDER_HTTP_HOST_SUFFIXES` + `host_allowed` + `ProviderBoundHttpClient` 及其逐跳 `Location` 校验）与其唯一消费者 `tests/providers/test_http_boundary.py` 一并物理删除，不留别名、不留空壳；② `scripts/_reach_allow.txt` 的对应豁免记录同时撤销（不撤销就会变成 F-22 定义的 `[dead]` 缺陷），复测 reachability `--strict` RC=0：**190 模块 / 174 可达 / 16 豁免 / 记录缺陷 0**；③ 对外口径同步两处（README 特性表「传输与错误卫生」行原本写着"已实现但尚未接入 web 链路"、README 路线图「可达性收口」行原本把它列为"仍待裁决的一项"），改为"HTTP 传输层不做 Provider 主机白名单，单源边界由调用方自证"，内核侧那条真实约束（选定的 Provider 不会被悄悄换成别家）不变；④ 登记本行的两处抄录错误并就地给出实测值——**"11 项离线测试"实为 10 项**（`--collect-only` 实测 10），**"补全 11 个 Provider 的主机表"里守卫表实为 7 个键**（`tencent/sina/eastmoney/baidu/jsl/boc/iwencai`），而 registry 的 11 个 id 中另有 4 个（`builtin/derived/local_vipdoc/tdx`）不经由该 HTTP 守卫，故 (a) 当时的实际缺口不是"补到 11"。**删除的代价如实记下**：这条判据是仓内唯一"跨 Provider 主机名拒绝"的可执行形状，删后 web 面只剩 `_base_http.py` 的单源约定；SECURITY.md 从未声称它在运行，故本次删除不使任何对外承诺变假。**本行的第三处抄录错误**（第 45 步复核时实测）：路径 (a) 写成"接线 `build_client(provider=…)`"，而 `tstdx/web/_base_http.py:498` 的签名是 `build_client(prefer_httpx=True, default_headers=None)`——**没有 `provider` 形参**。即 (a) 当时不是"加一行接线"，而是要先把 Provider 身份送进 web 传输层的构造面（该层的全部调用方都不传身份），改动面比登记的大一格。**本步抓到的门禁自身缺陷**：`tests/architecture/test_official_runtime_no_fallback.py` 把 `tstdx/providers/http.py` 手抄进 `OFFICIAL_RUNTIME` 清单，文件消失后三条判据以 `FileNotFoundError` 崩在 `read_text`（读者会读成"环境坏了"而非"清单过期"）——清单是 curated 子集不能 glob 推导，故补 `test_official_runtime_inventory_points_at_real_files`：死路径以人读消息报出，并加"清单 ≥15 项"金丝雀防止覆盖面塌成空转。 |
 | F-19 | P1 | **spec_audit 的三条口径缺陷使 strict 门禁失真**：① `audit_all` 复用 `codegen.load_all_specs`（以 `spec_id` 为键），跨族同号互相覆盖——实测 `TRADE/0x0001` 吞掉 `F10/0x0001`、`TRADE/0x0100` 吞掉 `7727/0x0100`，**这两条命令永远不会出现在审计输出里**（分母 44 被读成 42）；② `_family_to_constant` 对未知 family 静默回落 STANDARD，于是拿 7709 账本查交易命令，把"查错账本"报成"命令未登记"；③ 无载荷控制帧（`0x0004` 心跳 / `0x000D` 握手，spec 自声明响应 `fields/header/record_size` 全空）被要求"有注册解析器"，而它们按定义没有载荷可解析 | **已清偿**（2026-09-19，Phase 5 第 4 步）：改为逐个 YAML 遍历（自动探测 draft 显式排除并可枚举）；TRADE 族查自己的账本与帧层（`tstdx.trade.constants` 常量值 + `CMD_NAMES` 双向对齐、`tstdx.trade.frames` 编解码锚点）；控制帧豁免**判定源自 spec 内容**而非硬编码清单，且"未声明字段"不等于"声明为空"。复测 `Total: 44 / In Ledger: 44 / Coverage 100.0%`、`--strict` RC=0，**100% 阈值未动**；4 项防回潮断言见 `tests/test_spec_coverage.py` |
 | F-20 | P2 | 7709 账本把 `0x0004 HEARTBEAT` 标为 `verified=True`，但全仓**没有发送方**；传输层探活用未入账本的 `0x0002`（`DEFAULT_HEARTBEAT_CMD`，其注释说明"服务端对未知命令回短帧，探活只判通畅"）。同时该注释指向一个不存在的配置键 `hosts.heartbeat_cmd`（Phase 6 后 `HostsConfig` 只有 `servers`/`slots_per_host`） | **部分处理**（2026-09-19）：只把幻影配置说法改成真实覆盖点（连接池构造参数 `heartbeat_cmd`，并写明"配置面没有这个键"）。**改默认探活码属真实网络行为变化**，须真机验证 ⇒ 未动，登记为发布后小 PR |
 | F-21 | P2 | **测量方法缺陷比红灯更危险**：`cmd \| tail; echo $?` 量到的是管道末端的退出码，因此 originality / spec_audit / reachability 三项曾被读成"已绿"。CI 上它们是硬门禁 | **已清偿**：本仓所有门禁复测改用 `${PIPESTATUS[0]}` 或先重定向再取 `$?`；教训与正确写法写入 CONTRIBUTING 门禁段 |
@@ -2183,6 +2184,60 @@ job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 
     - **本步未动**：F-70 那 4 份文档与「非错误类裸名」判据的扩形；`docs/api/interfaces.md` 与 `docs/cookbook/`
       里指向 `tstdx.web.WebQuoteClient` 的历史入口口径（第 41 步起就在待裁决清单里）；`tests/errors/test_taxonomy.py`
       的 `E_RANGE` 无需扩判据（实测本就全覆盖）；ADR-013 正文原文（只加修订不抹史）；`v1.1.0-dev.1` 标签仍未打。
+
+45. ✅ **执行 F-18 裁决 (b)：把一件造好并测过、却没有任何生产调用点的安全资产物理删除，顺手抓到被删文件在三份清单里的四种过期抄本（2026-09-19）**
+
+    - **裁决与射程**：用户对 F-18 拍板 **(b) 连同测试删除**（原话记于 §0.3 F-18 行），(a) 接线与 (c) 维持
+      豁免均未采纳。本步只做这一件：删除 `tstdx/providers/http.py`（360 行）与它唯一的消费者
+      `tests/providers/test_http_boundary.py`，撤销 `scripts/_reach_allow.txt` 的豁免记录，改写 README 两处
+      对外口径。**零生产调用点不是印象**：全仓 grep `providers.http` / `ProviderBoundHttpClient` /
+      `host_allowed` / `PROVIDER_HTTP_HOST_SUFFIXES`，`tstdx/` 内除模块自身外命中 **0**，`scripts/`、`ops/`、
+      `benches/`、`.github/`、`pyproject.toml` 同样 0，唯一命中是那一份测试文件（取证脚本与逐条输出见
+      `step45/mutations.py` 的 M5：`importlib.util.find_spec` 现为 `None`，`tstdx.providers` 包内也无
+      `http` 字样残留）。
+    - **"11 项离线测试全覆盖"这一格登记了四个错数，本步逐个量出**（都在同一行 F-18 里）：① 该文件
+      `--collect-only` 实为 **10 项**；② 守卫主机表实为 **7 个键**（`tencent/sina/eastmoney/baidu/jsl/boc/iwencai`），
+      而 registry 的 11 个 Provider id 里 `builtin/derived/local_vipdoc/tdx` 这 4 个本就不经这条 HTTP 守卫，
+      故 (a) 的缺口不是"补到 11"；③ "全覆盖"在覆盖率意义上不成立——第 44 步基线日志里
+      `tstdx\providers\http.py` 是 **177 语句 / 64 未命中 / 60 分支 / 13 部分 = 60%**，低于全仓均值，
+      这也正是删掉它之后整仓覆盖率**上升**的原因；④ (a) 写的接线点 `build_client(provider=…)` 根本没有
+      `provider` 形参（`tstdx/web/_base_http.py:498` 实签 `build_client(prefer_httpx=True, default_headers=None)`），
+      真要接得先把 Provider 身份送进 web 传输层构造面——改动面比登记的大一格。
+      教训与 F-42/F-68 同族并已并入既有判据：**登记时的数字就是下一个过期点**，本行只保留原文＋实测并记。
+    - **删一个文件让三份手抄清单同时暴露，其中一份是门禁自己**：`tests/architecture/test_official_runtime_no_fallback.py`
+      把 `tstdx/providers/http.py` 抄在 `OFFICIAL_RUNTIME` 清单里，文件消失后三条判据以
+      `FileNotFoundError` 崩在 `read_text`——读者会读成"环境坏了"而不是"清单过期了"。该清单是人工 curated
+      的子集（删前 20 项 / 删后 19 项，全仓 190 模块），不能 glob 推导，因此补
+      `test_official_runtime_inventory_points_at_real_files`：死路径以人读消息逐个报名，另加"清单 ≥15 项"
+      金丝雀，防止覆盖面缩水成空转假绿。另两处过期抄本按历史口径保留（README 路线图行与 CHANGELOG
+      既成条目各自就地改写为已删除语境；`docs/REFACTOR_PLAN_V17_CLOSURE.md` §0.2 F-8 与 §0.3 F-22 的
+      "17 条豁免"是当时读数，现值 16 记在本行与本步的 F-18 行）。
+    - **对外口径改写而不是抹掉名字**：README 特性表原本写着"守卫已实现但尚未接入 web 链路"（一句把
+      死资产写成活的承诺），路线图「可达性收口」行原本把它列为"仍待裁决的一项"；两处统一为"HTTP 传输层
+      不做 Provider 主机白名单，单源边界由调用方自证"，并保留内核那条真实约束（选定的 Provider 不会被
+      悄悄换成别家）。README 里该模块路径写成斜杠形——点号形 `tstdx.providers.http` 会被
+      `test_backticked_tstdx_paths_are_importable` 当场拒（该判据**不给点号路径退役豁免**，因为点号形就是
+      用户会照抄的 import 语句）；这是本步真实撞出来的一条，记下来免得后人当成判据过严。
+    - **变异取证 7 发全部逐发红数**（`step45/mutations.log`，每条注入→跑指定节点→断言红→字节级还原，
+      末发用 sha256 复核还原）：M5 删除可证性、M1 删模块留豁免记录 → `audit_reachability --strict` 以
+      `[dead]` 红、M2 清单塞回死路径 → 新自检以人读消息红（同一次注入下 M2b 证明三条旧判据仍是
+      `FileNotFoundError`，即缺自检时的真实形状）、M3 清单缩水到 3 项 → 金丝雀红、M4 README 用点号死路径 →
+      文档判据红并指名。首轮 M2 曾误判为 FAIL：新测试的 docstring 里出现了 `FileNotFoundError` 这个词，
+      pytest 连 docstring 一起打印，判据"输出里不该有 FileNotFoundError"因此永远不成立——改成匹配
+      `FileNotFoundError: [Errno 2]` 后才测到真形状（**判据自身缺陷，与被测对象无关**，与第 43 步"两处笔误让
+      判据以 AttributeError 崩掉"同一族）。
+    - **复测（同一轮，解释器 py3.13.12、`-m 'not network'`、`--cov=tstdx`、阈值 77 未动）**：基线 = 第 44 步
+      提交树工作树 `wt_s44ship`（干净 `bd5e5c7`）junit **3585 / 0 / 0 / 5**、81.27%；本步树
+      `wt_s45step`（同一 HEAD + 本步 7 个文件，dirty=7）junit **3576 / 0 失败 / 0 错误 / 5 跳过**、
+      149.83s、覆盖率 **81.45%**（TOTAL 22418 / 3581 / 5990 / 1006）。`3585 − 10 + 1 = 3576` 可核对
+      （删掉 10 项守卫测试、净增 1 项清单自检）。九项确定性门禁 **G1–G9 全部 rc=0**：originality
+      `Total: 191 / Original: 191 / License OK: 191 / Suspicious: 0`（−1 = 被删模块）、spec_audit
+      `coverage_pct 100.0` 与 `total_specs 44` 不变、golden_audit `total 530: real 60 / synthetic 470`、
+      reachability `190 模块 / 174 可达 / 16 豁免` 且 `[ALLOW-DEFECT]` 0 条、contract_audit、docs links
+      82 files、mypy、ruff check「All checks passed!」、ruff format **471 files**（473 − 2）。
+    - **本步未动**：F-65 裁决 (b)（账本函数面）、F-66 裁决 (c)（能力发现面只给名字不给状态）、F-70
+      的 4 份对标文档；`docs/archive/OPTIMIZATION_PLAN.md:32` 那句"`unknown_command_ids` 保留为别名"属
+      归档史，留给 F-65 一并处置；SECURITY.md 从未提及该守卫，故无需改；`v1.1.0-dev.1` 标签仍未打。
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
 

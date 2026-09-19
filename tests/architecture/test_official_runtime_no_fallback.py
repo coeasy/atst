@@ -24,7 +24,6 @@ OFFICIAL_RUNTIME = [
     ROOT / "tstdx" / "batch.py",
     ROOT / "tstdx" / "streaming" / "base.py",
     ROOT / "tstdx" / "providers" / "__init__.py",
-    ROOT / "tstdx" / "providers" / "http.py",
     ROOT / "tstdx" / "integration" / "__init__.py",
     ROOT / "tstdx" / "integration" / "runtime_http.py",
     ROOT / "tstdx" / "integration" / "runtime_ws.py",
@@ -65,6 +64,21 @@ def _imported_names(tree: ast.AST) -> set[str]:
             for alias in node.names:
                 names.add(alias.asname or alias.name)
     return names
+
+
+def test_official_runtime_inventory_points_at_real_files() -> None:
+    """``OFFICIAL_RUNTIME`` 是手抄清单，所以它会与磁盘脱节——本步就是被这件事发现的。
+
+    第 45 步按 F-18 裁决 (b) 删除 ``tstdx/providers/http.py`` 之前，这张清单里躺着它的
+    一行，而三条判据都以 ``FileNotFoundError`` 崩在 ``read_text`` 里：读者看到的是
+    "测试环境坏了"，不是"一份清单过期了"。清单里每一个死路径都等于把那格判据悄悄
+    停摆，所以漂移必须先以一条人读的消息暴露，而不是以异常形式撞进来。
+    """
+    missing = [str(path.relative_to(ROOT)) for path in OFFICIAL_RUNTIME if not path.is_file()]
+    assert missing == [], f"OFFICIAL_RUNTIME 指向不存在的文件，清单已与磁盘脱节：{missing}"
+    assert len(OFFICIAL_RUNTIME) >= 15, (
+        f"清单只剩 {len(OFFICIAL_RUNTIME)} 项，三条判据的覆盖面正在塌"
+    )
 
 
 def test_official_runtime_does_not_import_legacy_fallback_engine() -> None:
