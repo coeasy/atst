@@ -159,15 +159,10 @@ def cmd_security_list(args: Any) -> int:
 
 
 def cmd_stream(args: Any) -> int:
-    """流式订阅（同步 QuoteStream；退出码与 quotes-snapshot 同步）。
+    """流式订阅：编译与执行都在 ``Client.stream`` 里，CLI 只打印与计数。
 
-    使用 :class:`tstdx.streaming.QuoteStream` 作为可注入的流式实现，便于
-    离线测试通过 monkeypatch ``tstdx.streaming.QuoteStream`` 替换。
+    退出码与 quotes-snapshot 同步（V5）：一条数据都没收到 → exit 1。
     """
-    from ..streaming import QuoteStream
-
-    syms = args.symbols
-    stream = QuoteStream(provider=args.provider, **_transport_kwargs(args))
     counts = {"quote": 0, "error": 0}
 
     def _on_quote(code: str, q: dict[str, Any]) -> None:
@@ -178,25 +173,26 @@ def cmd_stream(args: Any) -> int:
         counts["error"] += 1
         print(f"[error] {e}", file=sys.stderr)
 
-    try:
-        stream.subscribe(
-            syms,
+    with Client(**_client_kwargs(args)) as client:
+        stream = client.stream(
+            args.symbols,
+            provider=args.provider,
             interval=args.interval,
             diff_only=args.diff,
             max_queue=args.max_queue,
             on_quote=_on_quote,
             on_error=_on_error,
         )
-        stream.start()
-        print(
-            f"流式订阅已启动（{len(syms)} 只，间隔 {args.interval}s，"
-            f"{'仅变化' if args.diff else '全量'}），按 Ctrl+C 停止 ..."
-        )
-        with contextlib.suppress(KeyboardInterrupt):  # pragma: no cover
-            time.sleep(args.seconds)
-    finally:
-        stream.stop()
-    # 失败退出码与 quotes-snapshot 同步（V5）：一条数据都没收到 → exit 1
+        try:
+            stream.start()
+            print(
+                f"流式订阅已启动（{len(args.symbols)} 只，间隔 {args.interval}s，"
+                f"{'仅变化' if args.diff else '全量'}），按 Ctrl+C 停止 ..."
+            )
+            with contextlib.suppress(KeyboardInterrupt):  # pragma: no cover
+                time.sleep(args.seconds)
+        finally:
+            stream.stop()
     if counts["quote"] == 0:
         print(
             f"错误：流式订阅 {args.seconds}s 内未收到任何行情（错误 {counts['error']} 次）",

@@ -87,7 +87,7 @@
 | F-53 | P1（测量诚实类，F-21 家族：账本记的"绿"不属于它所声称的那棵树） | **两处"判据从未通过，而记录是全绿"同时存在于最近两步**（Phase 5 第 26 步实测）。① 第 24 步为"默认预算下超时不变"留的断言，是对单调时钟剩余量求浮点相等：`_hop_timeout()` 取 `min(self.timeout, budget.remaining_s())`，右侧必然是 `5.0 − 已经过的纳秒`，故 `assert client.kwargs["timeout"] == 5.0` 不可能成立。本轮在 HEAD `288e62f` 单开 worktree、按 CI 参数跑该文件，实测 `assert 4.9999834 == 5.0` **失败**；而同一步的账本记录写着 `ISO_FULL_RC=0 / 3356 tests / 0 failures`——二者互斥，只能是被测树与提交树不逐字节相同（第 25 步恰好把这条口径写成了自己的整改）。相邻的第 23 步当时量到同一条红（实得 `4.9999891`）却归因为"并行会话在途文件"，随后它带着这个形状进了提交。② 同一把尺子量 HEAD `9fbece0`：`test_every_documented_cli_example_parses` 红 **1 项**，offender 只有一条——第 25 步在 F-52 行的 (a) 路径里，把 `providers` 这个不存在的子命令写成了带 CLI 前缀的行内示例，门禁分不出『我在引用一条缺陷』与『我在推荐一个命令』。本轮在 `9fbece0` 的干净 worktree 复跑实测到它（CLI 当场报 invalid choice: providers，RC=1），同一测试在当前 HEAD `15bfb61` 上 RC=0：这条红由并行会话以 `9127d78` 单行改写清偿，`15bfb61` 顺带撤回了第 25 步挂在拼装树上的复测数字。**本步起初把它记成红 2 条、并由本步改写清零，那是两处失真**：2 来自一次跑在他人测量 worktree 里的读数（那棵树同时带着第 25 步原文与本步引用它时写下的可执行前缀，同一 offender 被列了两遍），而清偿动作根本不属于本步——记绿要靠复算，记红同样要靠复算，本行的判据反过来量到自己身上时一样成立。**根因同族**：把计时噪声写成契约（①）、把他人已清偿的红记在自己账上（②），都是 F-43/F-48 那一族"声称一个不会发生的行为"，只不过这次声称的是自己的测量 | **已清偿（代码 + 账本）**（2026-09-19）：① 断言判据改为 `4.9 < hop <= 5.0`，并把"另一侧是单调时钟剩余量、逐位相等即把噪声写成契约"的理由写在断言上方——本步真正要钉的两件事一件没松：默认预算下超时未被缩短到可观察量级、且绝不超过配置值；`4.9` 不是新造的宽容带（1 秒余量远大于计时噪声，又远小于任何可观察的超时收紧：默认 5 秒、被收紧时是 250ms 量级）。该文件已由并行会话带进 `9fbece0`（**代码在此、账本不在**），本轮只补账本、不重复改代码；② 归属更正、不复述为他人未做的清偿：F-52 行按 HEAD 原文整行保留（并行会话正在动注册表与 `tstdx/providers/__init__.py`，那一格的归属是他们，本步不越俎），只把自己账本里的数字与主语改对，并在提交前用两棵干净 worktree（`9fbece0` 与 `15bfb61`）各自复跑该门禁把现状钉死；③ §0.3 F-48 ③ 与 §1 第 24 步"专门留一条 `== 5.0` 的断言钉住"两处措辞就地更正，注明原形状从未通过；④ 顺带修一处从 `5c50487` 起就语法不通的活文档 python 示例（`docs/api/interfaces.md` 的 `options={,` → `options={}`），并如实登记它无人把守：CLI 侧门禁只认以 CLI 主命令名开头的行内/围栏命令位，围栏 python 块不在任何门禁的解析范围内（F-31 只校验 import 路径可解析）；⑤ **本步判据的已知边界**：这不是"门禁太松"，而是任何浮点/时钟**相等**断言都不可满足；同类形状再出现的出路是断言**次序**而非数值（第 25 步 ⑦ 已把 deadline 断言改成比 `plan.budget.deadline_ns` 差值与 `remaining_s()` 次序，同一条路） |
 | F-54 | P1（注册表形状类，F-50/F-52 同族的第三处：注册表里没人执行的第二套词汇） | **`ChannelSpec.markets` 在 23 个 channel 上逐个声明，三面读取点为 0**（Phase 5 第 28 步实测，尺子沿用第 27 步那把）：注册表写着 `cn_a`/`cn_bse`/`hk`/`us`/`future`/`commodity`/`option`/`bond`/`fx` 这套字符串词汇，而 `tstdx/`、`scripts/`、`tests/` 里没有任何一处读它，也没有任何一处把它与 `tstdx.domain.symbol.Market` 对上——市场正确性实际由 `Symbol.tdx_market`（`tstdx/domain/symbol.py:122`，HK/US 抛 `SymbolError` 且 `provider_switch_allowed=False`）承担。注册表有 `require()` 管 capability、`require_period()` 管 period，唯独没有市场的执行位。`ChannelSpec.notes` 同病：零生产读取，全仓唯一的"读取"是第 25 步自己钉位置形状的那条测试，而它承载的那句"本地 vipdoc 不替代在线 TDX"在 `docs/providers/tdx.md:92` 早已存在 | **已清偿（第 28 步，默认走删除而非接线）**：(a) 接进执行面要先新造 `Market → 字符串 token` 映射，再与 `tdx_market` 形成同一件事的两套实现（第 24 步 F-49 刚清掉一个"第二实现"），且会把今天能成的请求变成报错——属对外契约变更且无实测收益，不取；(b) 采纳：`ChannelSpec` 收缩为 `id / capabilities / live / local / periods`，市场与定位留在 `docs/providers/*.md`（§8 模板第 2 条与 §9 已同步改写，注明代码面不再持有）。门禁 `test_every_channel_spec_field_has_a_reader` 与 `test_every_provider_spec_field_has_a_reader` 共用同一把尺子（分母取自 `dataclasses.fields`，读取点由 AST 扫 `tstdx/` 得出，owner 名人工核对），另加形状钉 `fields == {id, capabilities, live, local, periods}`；变异 M1（把 `markets` 以默认值加回）当场红并点名该字段，M2（把 owner 集合换成不可能命中的名字）触发"扫描零命中"自检。**测量方法本身的一条边界，如实登记**：曾尝试把这把尺子推广到 168 个 dataclass 做无人值守普查，两条独立证据判它不成立——它把第 27 步刚测过有 14/6/3 个读取点的 `ProviderSpec.id/channels/default` 判成零读，也把 `CoreConfig.*` 判成零读而 `tstdx/runtime/kernel.py:66` 真在读 `cfg.core.timeout`；原因是实例未绑定到具名变量（注册表里是元组成员）与 `self.` 根的属性链。因此该判据只在"owner 名经人工核对的单个类"上有效，本账本里所有零读取结论都是逐类人工核对后写下的 |
 | F-55 | P2（计划形状类，F-50/F-52/F-54 同族的第四处，这次在流计划面上） | **`StreamPlan.capability` 与 `StreamPlan.channel` 由 `compile()` 写入、`tstdx/` 全包读取点为 0**（Phase 5 第 29 步实测，尺子沿用第 27/28 步那把并加以强化）：`StreamPlanner.compile()`（`tstdx/stream_contract.py:65`）先对 `capability != "quotes"`、`channel != "quotation"` 逐条 fail-closed，再把两个结论原样抄进 `StreamPlan`；而 `StreamPlan` 的唯一消费方是 `Client.stream`（`tstdx/client/api.py:388`）与 `AsyncClient.stream`（`tstdx/client/api.py:512`），两者读走的只有 `symbols / provider / interval / diff_only / max_queue`——恰好是交给 worker 的实参。`runtime/executor.py`、`tstdx/result.py`、`runtime/identity.py` 里出现的 `plan.provider`/`plan.channel`/`plan.spec.capability` 全部属于 `QueryPlan`（同名不同物，逐处人工核对，第 28 步登记的"普查不成立"边界正是为此）。全仓对 `plan.channel` 唯一的"读取"是一条测试断言（`tests/runtime/test_v13_architecture_alignment.py`），它验证的是规则的抄本而非规则本身；`plan.capability` 连抄本读取都没有 | **已清偿（第 29 步，默认走删除而非接线）**：(a) 接线的形状是把 `StatefulQuoteStream` 改成收 plan 而非具名参数，即让公开的 `subscribe(symbols, interval=…, diff_only=…, max_queue=…)` 变成一个内部类型的投影；而今天只有 `provider=tdx` + `channel=quotation` 能通过编译，多传这两个值不改变任何一次请求的成败——不取；(b) 采纳：`StreamPlan` 收缩为 `symbols / provider / interval / diff_only / max_queue`，编译期两条 `ValidationError` 与 `PROVIDERS.require(…, channel="quotation")` 原样保留，删掉的只是抄件；抄本断言改为行为断言（`StreamSpec.build("sh600519", channel="quote")` 当场 `ValidationError`）。门禁 `test_stream_plan_carries_only_the_fields_the_client_reads` 比第 27/28 步更强：`dataclasses.fields(StreamPlan)` 必须与 AST 扫 `tstdx/client/api.py` 得到的 `plan.*` 读取集合**逐字相等**——新增字段没接线红，消费者读到幻影字段同样红；防盲保险为"`plan_fields` 非空"与"`api.py` 至少要读到一条 `plan.*`"。变异：M1 把 `capability` 以默认值加回 → RC=1 点名 `['capability']`；M2 把 owner 名换成不可能命中的 `no_such_plan_var` → RC=1 报"api.py 里读不到任何 plan.*，判据自身失效"；CONTROL 与还原后 RC=0 |
-| F-56 | P1（服务面执行类，F-29 未覆盖的另一半：旁路不在 web 层，在流式面上） | **CLI `stream` 是最后一条不经 `Client` 的数据命令，而它绕开的恰是第 29 步那份抄件所指向的 fail-closed 契约**（Phase 5 第 29 步为找 `StreamPlan` 消费方而排查流式入口时实测）：`cmd_stream`（`tstdx/cli/runtime_commands.py:161`）`from ..streaming import QuoteStream`，以 `QuoteStream(provider=args.provider, **_transport_kwargs(args))` 自建对象，该类的 `_get_runtime()`（`tstdx/streaming/base.py:242`）惰性 new 一个自己的 `UnifiedRuntime`——这条命令既不经 `Client`（唯一业务入口），也不经 `StreamPlanner`（唯一流式契约）。两处矛盾随之落地：① `--provider` 是自由字符串（`tstdx/cli/parser.py:150`），`QuoteStream.__init__`/`_get_runtime` 只把它当 `default_provider` 透传、全路径无任何流式白名单判定，于是 CLI 面实际承诺"任何支持 `quotes` 轮询的 Provider 都能 stream"（`PROVIDERS.supports("tencent","quotes")` 为真），而库面 `Client.stream(provider="tencent")` 抛 `ValidationError`（"Stateful quotes stream 当前只存在 tdx Direct stream binding"）——同一件事两个面给出不同答案；② `tstdx/streaming/__init__.py` 的模块 docstring 声称"受支持的业务流实现是 `StatefulQuoteStream`/`AsyncStatefulQuoteStream`，历史的 `QuoteStream`/`AsyncQuoteStream` 已从公开/核心面移除"，而 `QuoteStream` 既在 `__all__` 里、又是 CLI 的生产路径（F-31 家族：docstring 与代码零矛盾的要求），`docs/api/interfaces.md` §5 更是把 `QuoteStream`/`AsyncQuoteStream` 当作流式订阅门面来写、通篇不提 `StatefulQuoteStream`。既有守卫抓不到它：F-29 的 `test_service_faces_never_import_the_web_layer` 只看服务面是否 import `tstdx.web`，第 9 步（F-28）只看选项有没有转发 | **未清偿——需用户裁决（第 26 步已于 `82f9a99` 落地，原先挡道的 `tests/architecture/test_cli_connection_contract.py` 不再是并发在途面，故修复可在下一步进行）**：(a) 收口为 `Client(**_client_kwargs(args)).stream(syms, provider=…, interval=…, diff_only=…, max_queue=…)`，CLI 只翻译不执行；代价是 `tests/architecture/test_cli_connection_contract.py::test_stream_forwards_provider_and_connection_args`（当前以 monkeypatch `tstdx.streaming.QuoteStream` 钉住旧形状）要随之改写，该断言本身随第 26 步一起入库，不再是并发在途面。(b) 承认 CLI 需要一条"不建 `Client` 也能起流"的旁路，则同步改写 `tstdx/streaming/__init__.py` 的 docstring 与 `docs/` 口径，并把 tdx-only 判据从 `StreamPlanner` 下沉到 `QuoteStream`，使两面同答案。(c) 只收紧门禁不改行为：把服务面守卫从"不得 import `tstdx.web`"扩为"除 `tstdx.client` 外不得 import 任何执行面模块"，让这条旁路当场红着挂账。默认取 (a)，与 F-29 同口径；其代价可接受的理由是第 10 步已两次把 fake `WebQuoteSession` 换成 fake `Client`，"便于离线 monkeypatch"这一原始理由在同族里已被证明不成立 |
+| F-56 | P1（服务面执行类，F-29 未覆盖的另一半：旁路不在 web 层，在流式面上） | **CLI `stream` 是最后一条不经 `Client` 的数据命令，而它绕开的恰是第 29 步那份抄件所指向的 fail-closed 契约**（Phase 5 第 29 步为找 `StreamPlan` 消费方而排查流式入口时实测）：`cmd_stream`（`tstdx/cli/runtime_commands.py:161`）`from ..streaming import QuoteStream`，以 `QuoteStream(provider=args.provider, **_transport_kwargs(args))` 自建对象，该类的 `_get_runtime()`（`tstdx/streaming/base.py:242`）惰性 new 一个自己的 `UnifiedRuntime`——这条命令既不经 `Client`（唯一业务入口），也不经 `StreamPlanner`（唯一流式契约）。两处矛盾随之落地：① `--provider` 是自由字符串（`tstdx/cli/parser.py:150`），`QuoteStream.__init__`/`_get_runtime` 只把它当 `default_provider` 透传、全路径无任何流式白名单判定，于是 CLI 面实际承诺"任何支持 `quotes` 轮询的 Provider 都能 stream"（`PROVIDERS.supports("tencent","quotes")` 为真），而库面 `Client.stream(provider="tencent")` 抛 `ValidationError`（"Stateful quotes stream 当前只存在 tdx Direct stream binding"）——同一件事两个面给出不同答案；② `tstdx/streaming/__init__.py` 的模块 docstring 声称"受支持的业务流实现是 `StatefulQuoteStream`/`AsyncStatefulQuoteStream`，历史的 `QuoteStream`/`AsyncQuoteStream` 已从公开/核心面移除"，而 `QuoteStream` 既在 `__all__` 里、又是 CLI 的生产路径（F-31 家族：docstring 与代码零矛盾的要求），`docs/api/interfaces.md` §5 更是把 `QuoteStream`/`AsyncQuoteStream` 当作流式订阅门面来写、通篇不提 `StatefulQuoteStream`。既有守卫抓不到它：F-29 的 `test_service_faces_never_import_the_web_layer` 只看服务面是否 import `tstdx.web`，第 9 步（F-28）只看选项有没有转发 | **已清偿（2026-09-19，第 31 步按默认 (a) 落地；下面三条路径与原始理由原文保留，作为裁决记录）**：(a) **采纳**：收口为 `Client(**_client_kwargs(args)).stream(syms, provider=…, interval=…, diff_only=…, max_queue=…)`，CLI 只翻译不执行；代价是 `tests/architecture/test_cli_connection_contract.py::test_stream_forwards_provider_and_connection_args`（当前以 monkeypatch `tstdx.streaming.QuoteStream` 钉住旧形状）要随之改写，该断言本身随第 26 步一起入库，不再是并发在途面。(b) 承认 CLI 需要一条"不建 `Client` 也能起流"的旁路，则同步改写 `tstdx/streaming/__init__.py` 的 docstring 与 `docs/` 口径，并把 tdx-only 判据从 `StreamPlanner` 下沉到 `QuoteStream`，使两面同答案。(c) 只收紧门禁不改行为：把服务面守卫从"不得 import `tstdx.web`"扩为"除 `tstdx.client` 外不得 import 任何执行面模块"，让这条旁路当场红着挂账。默认取 (a)，与 F-29 同口径；其代价可接受的理由是第 10 步已两次把 fake `WebQuoteSession` 换成 fake `Client`，"便于离线 monkeypatch"这一原始理由在同族里已被证明不成立 **执行记录（第 31 步）**：`cmd_stream` 现为 `with Client(**_client_kwargs(args)) as client: client.stream(...)`，连接参数走 F-27 的"只转达用户显式说过的"口径；`stream` 子命令的 `--provider`/`--host` 改由 `_provider_args()` 统一声明（该命令此前是 Tier-A 数据命令里唯一没有 `--host` 的一条）；`tstdx/streaming/__init__.py` 的 docstring 与 `docs/api/interfaces.md` §3/§5、README 的"流式订阅"行同步为"唯一入口 `Client.stream`，轮询基类不得由服务面直接构造"；新增结构性门禁 `test_service_faces_never_build_a_stream_themselves`，与 F-29 那条共用一次 AST import 边扫描，任何服务面 → `tstdx.streaming` / `tstdx.stream_contract` 的边即为红，扫描零命中时自曝"两条门禁同时失明"。数字与变异复测见 §1 第 31 步。 |
 
 ---
 
@@ -1343,6 +1343,63 @@
       F-54/F-55/F-56 三行、第 28/29 步的 CHANGELOG 记账、`docs/configuration.md` 与
       `uv.lock` 均未被写入本步提交。
 
+31. ✅ **最后一条旁路数据命令收进内核：CLI `stream` 不再自己造流（2026-09-19，清偿 §0.3 F-56，
+    按默认 (a)；编号如实登记——本步起草时是"第 30 步"，并行会话在那之前把 F-52 provenance 半边
+    落成 `60f6be9` 并占用第 30 步，故本步顺延为 31，两处账本的编号一起改）**：`cmd_stream` 曾
+    `from ..streaming import QuoteStream` 并以 `_transport_kwargs(args)` 自建对象，绕开唯一业务入口
+    `Client` 与唯一流式契约 `StreamPlanner`；`QuoteStream._get_runtime()` 再惰性 new 出第二个
+    `UnifiedRuntime`。副作用是两面不同答案：CLI 的 `--provider` 是自由字符串、全路径无流式白名单，
+    于是 CLI 承诺"注册表支持 `quotes` 轮询的 Provider 都能 stream"，而库面对同一个 Provider 抛
+    `ValidationError`。
+    - **收口形状**：`with Client(**_client_kwargs(args)) as client: client.stream(symbols, provider=…,
+      interval=…, diff_only=…, max_queue=…, on_quote=…, on_error=…)`，随后仍由 CLI `start()`/`stop()`
+      并打印计数；零数据 → exit 1 的判据逐字不变。连接参数由 `_transport_kwargs` 换回
+      `_client_kwargs`，即第 8 步（F-27）那条"CLI 只转达用户显式说过的，其余交给内核读配置面"。
+      两面从此同答案：非法 provider 得到 exit 2 + 与库面同一句话。
+    - **顺带补上 `--host`**：该子命令原先自己写 `--provider` 而完全没有 `--host`。旁路时代声明了也
+      无人消费（`_transport_kwargs` 那条通道本就不进内核），因此这条缺失一直没被 F-28 的选项消费
+      审计抓到；改走 `Client` 后由 `_provider_args()` 与 `snapshot`/`minute`/`trades` 同形声明。
+    - **守卫**：`test_service_faces_never_build_a_stream_themselves` 与 F-29 的 web 守卫共用
+      `_service_face_imports()`（AST 扫 CLI + HTTP/WS/MCP 的全部 import 边，函数体内的 import 同样算，
+      相对导入解析为绝对模块名），禁 `tstdx.streaming` / `tstdx.stream_contract`；零命中即自曝两条
+      门禁同时失明。`test_stream_forwards_provider_and_connection_args` 从"monkeypatch
+      `tstdx.streaming.QuoteStream` 钉住旁路形状"改写为捕获 `Client` 构造参数与 `Client.stream`
+      实参（含 `on_quote` 回调确实转达、`with` 退出即关客户端）；新增
+      `test_stream_command_refuses_a_provider_the_stream_contract_refuses` 用真实 `Client` 跑
+      `main(...)` 并核对信封文案；`tests/unit/test_cli_semantics.py` 两条 stream 用例的替身同样从
+      `QuoteStream` 换到 `Client`。
+    - **本步的变异装置先量到自己**：M2 首轮 `assert 0 == 2`——那条走真实 `Client` 的离线用例在回归
+      现场真的把 tdx 流起来并收到了一帧。按 `test_dunder_docstring_quickstart_examples_construct`
+      的既有做法拦 `socket.getaddrinfo` / `socket.create_connection` 后，同一条变异改报
+      `assert 1 == 2`（拒绝仍成立、egress 不再发生），判据同时收紧到信封文案，任何别的 exit 2 都不算通过。
+    - **让一条既有宣称第一次为真**：`docs/api/interfaces.md` §3 与 `docs/api/README.md` 自第 15 步起
+      就写着"数据命令全部委托同一个 `Client`，6 个传输/诊断命令除外"，而 `stream` 当时是第 7 条旁路；
+      §5 更是把轮询基类当流式订阅门面来写、通篇不提 `StatefulQuoteStream`。本步把两处口径与
+      `tstdx/streaming/__init__.py` 的 docstring（原文声称基类"已从公开/核心面移除"，而它在
+      `__all__` 里且是 CLI 的生产路径）一并归位。
+    - **变异验证 3 条全部 RC=1 且各自指名**（CONTROL 与还原后 RC=0）：**M1** 在 `cmd_stream` 里加回
+      `from ..streaming import QuoteStream` → 新守卫红，报 `tstdx\cli\runtime_commands.py: import
+      tstdx.streaming`；**M2** 删掉 `provider=args.provider` → 三条同时红：转发用例 `KeyError:
+      'provider'`、拒绝用例 `assert 1 == 2`、F-28 的选项消费审计报 `stream: --provider
+      (dest=provider)`（转发与消费两条判据各看一半，互补而非重复）；**M3** 把 `--host` 撤回成
+      `--provider` 独写 → 转发用例在 `parse_args` 处 `SystemExit: 2`。
+    - **本步不动的**：`QuoteStream` / `AsyncQuoteStream` 保留在 `__all__` 与包内（它们是 `Stateful*`
+      的轮询基类，删除会把生命周期实现一起搬回来）；(b) 的"把 tdx-only 判据下沉到 `QuoteStream`"
+      与 (c) 的"只收紧门禁不改行为"未采纳。F-47（`strict` 是否开放为请求参数）、F-44（异常路径的
+      瑕疵通道）、F-37、F-18 仍等裁决，本步不代拍板。
+    - **共享树隔离**：本步提交 7 个代码/测试/文档文件（`tstdx/cli/runtime_commands.py`、
+      `tstdx/cli/parser.py`、`tstdx/streaming/__init__.py`、
+      `tests/architecture/test_cli_connection_contract.py`、`tests/unit/test_cli_semantics.py`、
+      `docs/api/interfaces.md`、`README.md`）加 `CHANGELOG.md` 与本文件的 §0.3 F-56 行、§1 第 31 步。
+      测量树取 `60f6be9` + 本步文件：F-52 那一步（`60f6be9`）与本步改动的文件集合除两处账本外不相交，
+      逐文件校验后拷贝，未把他人在途的 `docs/configuration.md`、`uv.lock` 写进本步。
+    - **复测（同一轮日志；孤立 worktree = `60f6be9` + 本步 9 文件）**：离线全量 junit
+      **3398 / 0 failures / 0 errors / 7 skipped**、`SUITE_RC=0`、167.3s、`--cov=tstdx`
+      **80.70%**（阈值 77 未下调）；对账 `60f6be9` 的 3396 ＋ 本步 2 条新用例 = 3398。同树 13 道
+      门禁全部 RC=0（含 `ruff format --check` 432 文件、reachability 189/172/17、`contract_audit
+      --ci` 63 契约 · 155 capability、`spec_audit` 100.0%、docs links 82 文件、mypy 0 error）。
+      变异 CONTROL/RESTORED RC=0，M1/M2/M3 各自 RC=1。数字取自只差本条文字的那棵树，写入后在同一
+      提交树重跑 `tests/architecture` 与 docs links，两道 RC=0。
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
 

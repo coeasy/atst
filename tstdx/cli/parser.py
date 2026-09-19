@@ -148,7 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("stream", help="stream live quotes using Stateful streaming")
     p.add_argument("symbols", nargs="+")
-    p.add_argument("--provider", default="tdx")
+    _provider_args(p)
     p.add_argument("--interval", type=float, default=1.0)
     p.add_argument("--diff-only", dest="diff", action="store_true")
     p.add_argument("--max-queue", type=int, default=1024)

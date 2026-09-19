@@ -7,8 +7,9 @@ Phase 6 之后配置面只有内核一个读者（``[hosts] servers`` / ``[core]
 CLI 因此只有两种合法姿态：把用户显式说的转下去，或者保持 ``None`` 让内核去读配置。
 第三种——解析了却不消费（幻影开关）、或自带字面默认值（遮蔽配置）——由本门禁挡住。
 最后一条守卫不限于连接参数：parser 声明的任何选项都必须被 handler（或三个助手）读到。
-另有两条结构性守卫：Web 数据命令须经 ``Client`` 执行，且服务面源码不得直接 import
-``tstdx.web``——服务面只翻译，执行入口只有内核一个。
+另有三条结构性守卫：Web 数据命令须经 ``Client`` 执行，且服务面源码不得直接 import
+``tstdx.web``（F-29）、不得自建流（F-56，import ``tstdx.streaming`` /
+``tstdx.stream_contract`` 即为红）——服务面只翻译，执行入口只有内核一个。
 """
 
 from __future__ import annotations
@@ -23,10 +24,11 @@ from typing import Any
 
 import pytest
 
-from tstdx.cli import runtime_commands
+from tstdx.cli import main, runtime_commands
 from tstdx.cli._common import _client_kwargs, _transport_kwargs, _transport_timeout
 from tstdx.cli.parser import build_parser
 from tstdx.config.schema import Config, CoreConfig, HostsConfig
+from tstdx.providers import PROVIDERS
 from tstdx.result import ResultMeta
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -177,31 +179,89 @@ def test_raw_transport_command_reads_hosts_and_timeout_from_config(
 
 
 def test_stream_forwards_provider_and_connection_args(monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = Config(core=CoreConfig(timeout=1.25))
-    monkeypatch.setattr("tstdx.config.get_config", lambda: cfg)
+    """``stream`` 与其余数据命令同路：连接参数进 ``Client``，流式选项进 ``Client.stream``。
+
+    旧形状自建 ``QuoteStream`` 并让它惰性 new 自己的 runtime，于是 ``--provider``
+    从不经过 ``StreamPlanner`` 的 fail-closed 判定，``--host`` 更根本没有声明（F-56）。
+    """
     seen: dict[str, Any] = {}
 
     class _Stream:
-        def __init__(self, **kwargs: Any) -> None:
-            seen.update(kwargs)
-
-        def subscribe(self, *_: Any, **__: Any) -> None:
-            return None
-
-        def start(self) -> None:
-            return None
+        def start(self) -> _Stream:
+            return self
 
         def stop(self) -> None:
             return None
 
-    import tstdx.streaming as streaming_pkg
+    class _StreamClient:
+        def __init__(self, **kwargs: Any) -> None:
+            seen["client"] = kwargs
 
-    monkeypatch.setattr(streaming_pkg, "QuoteStream", _Stream)
-    args = build_parser().parse_args(["stream", "sh600519", "--provider", "tdx", "--seconds", "0"])
-    runtime_commands.cmd_stream(args)
+        def __enter__(self) -> _StreamClient:
+            return self
 
-    assert seen["provider"] == "tdx"
-    assert seen["timeout"] == 1.25
+        def __exit__(self, *exc: Any) -> None:
+            seen["closed"] = True
+
+        def stream(self, symbols: Any, **kwargs: Any) -> _Stream:
+            seen["stream"] = {"symbols": list(symbols), **kwargs}
+            #: 走一次回调，令退出码落在"收到数据 → 0"这一支。
+            kwargs["on_quote"]("sh600519", {"price": 1.0, "last_close": 1.0, "volume": 1})
+            return _Stream()
+
+    monkeypatch.setattr(runtime_commands, "Client", _StreamClient)
+    args = build_parser().parse_args(
+        [
+            "stream",
+            "sh600519",
+            "--host",
+            "127.0.0.1:7709",
+            "--provider",
+            "tdx",
+            "--interval",
+            "0.5",
+            "--diff-only",
+            "--max-queue",
+            "32",
+            "--timeout",
+            "1.25",
+            "--seconds",
+            "0",
+        ]
+    )
+    assert runtime_commands.cmd_stream(args) == 0
+
+    hosts = seen["client"]["hosts"]
+    assert [(entry.host, entry.port) for entry in hosts] == [("127.0.0.1", 7709)]
+    assert seen["client"]["timeout"] == 1.25
+    assert seen["stream"]["symbols"] == ["sh600519"]
+    assert seen["stream"]["provider"] == "tdx"
+    assert (seen["stream"]["interval"], seen["stream"]["diff_only"]) == (0.5, True)
+    assert seen["stream"]["max_queue"] == 32
+    assert seen.get("closed") is True
+
+
+def test_stream_command_refuses_a_provider_the_stream_contract_refuses(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CLI 与库面对同一个 ``--provider`` 必须同答案：注册表支持 ``quotes`` ≠ 支持 stream。
+
+    ``tencent`` 是刻意选的：它在注册表里确实支持 ``quotes`` 轮询（``PROVIDERS.supports``），
+    所以旁路时代它能在 CLI 上悄悄起流。此处不替换任何对象，走真实 ``Client``；禁网两拦
+    是给"万一 fail-closed 又漏了"准备的兜底——那时应当是拒绝，而不是真去连主站。
+    判据落在信封文案上：任何一条别的 exit 2 都不算通过。
+    """
+    import socket
+
+    def _blocked(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("用例内禁止触网")
+
+    monkeypatch.setattr(socket, "getaddrinfo", _blocked)
+    monkeypatch.setattr(socket, "create_connection", _blocked)
+
+    assert PROVIDERS.supports("tencent", "quotes")
+    assert main(["stream", "sh600519", "--provider", "tencent", "--seconds", "0"]) == 2
+    assert "只存在 tdx Direct stream binding" in capsys.readouterr().err
 
 
 def test_helpers_keep_explicit_flags_ahead_of_config(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -289,16 +349,46 @@ def test_service_faces_never_import_the_web_layer() -> None:
     就又开出第二条执行路径。此门禁扫描全部服务面源码（CLI / HTTP / WS / MCP），
     不看具体命令名，故对新增命令同样有效。
     """
-    offenders: list[str] = []
+    offenders = [
+        f"{path}: import {module}"
+        for path, module in _service_face_imports()
+        if _under(module, "tstdx.web")
+    ]
+    assert offenders == []
+
+
+def test_service_faces_never_build_a_stream_themselves() -> None:
+    """F-56：流式的第二条执行路径不在 web 层，在 ``tstdx.streaming``。
+
+    服务面一旦自己构造 ``QuoteStream``，就绕开了 ``Client.stream`` 里那次
+    ``StreamPlanner.compile``——tdx-only 的 fail-closed 判定、Provider 注册表的
+    ``require`` 全部失效，且对象会惰性 new 出自己的 ``UnifiedRuntime``。
+    """
+    edges = _service_face_imports()
+    offenders = [
+        f"{path}: import {module}"
+        for path, module in edges
+        if _under(module, "tstdx.streaming") or _under(module, "tstdx.stream_contract")
+    ]
+    assert offenders == []
+
+
+def _under(module: str, prefix: str) -> bool:
+    return module == prefix or module.startswith(prefix + ".")
+
+
+def _service_face_imports() -> list[tuple[str, str]]:
+    """四个服务面源码里的每一条 import 边，形如 ``(相对路径, 绝对模块名)``。"""
     faces = (ROOT / "tstdx" / "cli", ROOT / "tstdx" / "integration")
+    edges: list[tuple[str, str]] = []
     for face in faces:
         for path in sorted(face.rglob("*.py")):
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             package = ".".join(path.relative_to(ROOT).parts[:-1])
             for module in _imported_modules(tree, package=package):
-                if module == "tstdx.web" or module.startswith("tstdx.web."):
-                    offenders.append(f"{path.relative_to(ROOT)}: import {module}")
-    assert offenders == []
+                edges.append((str(path.relative_to(ROOT)), module))
+    assert edges, "服务面源码里解析不出任何 import，两条门禁同时失明"
+    return edges
 
 
 def _imported_modules(tree: ast.AST, *, package: str) -> list[str]:

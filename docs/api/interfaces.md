@@ -191,10 +191,11 @@ from tstdx.runtime.audit import audit_runtime                      # () -> Runti
 
 ## 3. 服务面（Integration）
 
-四个服务面的数据命令全部委托同一个 `Client`。CLI 另有 6 个传输/诊断命令
-（`probe`/`goods`/`f10`/`blocks`/`list`/`quotes-snapshot`）直连传输层客户端，不经内核——
-它们是协议诊断面，不是第二套能力执行路径（口径见 `tstdx/cli/runtime_commands.py` 的模块
-docstring，守卫是 `test_service_faces_never_import_the_web_layer`）。
+四个服务面的数据命令全部委托同一个 `Client`（含 `stream`：CLI 不自己构造流）。CLI 另有
+6 个传输/诊断命令（`probe`/`goods`/`f10`/`blocks`/`list`/`quotes-snapshot`）直连传输层客户端，
+不经内核——它们是协议诊断面，不是第二套能力执行路径（口径见 `tstdx/cli/runtime_commands.py`
+的模块 docstring，守卫是 `test_service_faces_never_import_the_web_layer` 与
+`test_service_faces_never_build_a_stream_themselves`）。
 
 ### HTTP REST 网关（10 路由）
 
@@ -263,17 +264,45 @@ from tstdx.output import write
 
 ## 5. 流式订阅（Streaming）
 
-### QuoteStream（同步）
+### Client.stream（唯一入口）
 
 ```python
-from tstdx.streaming import QuoteStream
+from tstdx import Client
+
+with Client() as client:
+    stream = client.stream(
+        "sh600519",
+        provider="tdx",
+        interval=1.0,
+        on_quote=lambda code, quote: print(code, quote["price"]),
+    )
+    stream.start()
+    time.sleep(5)
+    stream.stop()
 ```
 
-### AsyncQuoteStream（异步）
+`client.stream` 先用 `tstdx.stream_contract.StreamPlanner` 编译出一张精确计划：当前只有
+`quotes` 能力与 `tdx` Provider 存在 Direct 流式绑定，偏离即抛 `ValidationError`（CLI 的
+`tstdx stream sh600519` 走同一条路、同一个判据）。参数见 §2 的 `stream` 行。
+
+### StatefulQuoteStream / AsyncStatefulQuoteStream（生命周期对象）
 
 ```python
-from tstdx.streaming import AsyncQuoteStream
+from tstdx.streaming import AsyncStatefulQuoteStream, StatefulQuoteStream
 ```
+
+`Client.stream` / `AsyncClient.stream` 返回的对象，轮询走调用方的 `UnifiedRuntime`；
+`state` 与 `failure_reason` 给出显式生命周期状态（`StreamState`）。
+
+### QuoteStream / AsyncQuoteStream（轮询基类）
+
+```python
+from tstdx.streaming import AsyncQuoteStream, QuoteStream
+```
+
+上面两者的轮询基类，属包内组合件：服务面与业务代码不应直接构造它们，否则会绕开
+`StreamPlanner` 的 fail-closed 判定并各自 new 出 runtime（守卫见
+`test_service_faces_never_build_a_stream_themselves`）。
 
 ### StreamEngine（内核）
 

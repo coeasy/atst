@@ -130,56 +130,61 @@ class TestChangesTypesParsing:
 
 
 class TestStreamExitCode:
-    """stream 零数据 → exit 1（与 quotes-snapshot 同步）。"""
+    """stream 零数据 → exit 1（与 quotes-snapshot 同步）。
 
-    def test_zero_quotes_exits_1(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    替身换在 ``Client`` 上而非 ``tstdx.streaming`` 上：F-56 之后 CLI 不再自建流，
+    ``cmd_stream`` 唯一的执行入口就是 ``Client.stream``。
+    """
+
+    @staticmethod
+    def _fake_client(seen: dict[str, Any], *, emit: bool) -> Any:
         class FakeStream:
-            def __init__(self, *a: Any, **kw: Any) -> None:
-                pass
-
-            def subscribe(self, *a: Any, **kw: Any) -> None:
-                pass  # 不回调 on_quote：模拟零数据
-
-            def start(self) -> None:
-                pass
+            def start(self) -> FakeStream:
+                return self
 
             def stop(self) -> None:
-                pass
+                return None
 
-        import tstdx.streaming as streaming_mod
+        class FakeClient:
+            def __init__(self, *a: Any, **kw: Any) -> None:
+                seen["client"] = kw
 
-        monkeypatch.setattr(streaming_mod, "QuoteStream", FakeStream)
+            def __enter__(self) -> FakeClient:
+                return self
+
+            def __exit__(self, *exc: Any) -> None:
+                return None
+
+            def stream(self, symbols, **kwargs):  # type: ignore[no-untyped-def]
+                seen["stream"] = kwargs
+                if emit:
+                    kwargs["on_quote"](symbols[0], {"price": 10.0, "volume": 1})
+                return FakeStream()
+
+        return FakeClient
+
+    def test_zero_quotes_exits_1(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
+        seen: dict[str, Any] = {}
+        monkeypatch.setattr(
+            "tstdx.cli.runtime_commands.Client", self._fake_client(seen, emit=False)
+        )
         rc = cli._cmd_stream(
             _ns(symbols=["600000"], interval=1.0, seconds=0.01, diff=False, max_queue=1024)
         )
         assert rc == 1
         assert "未收到任何行情" in capsys.readouterr().err
+        #: 连接参数走内核助手，不再由 CLI 自带字面默认值（F-27/F-56）。
+        assert seen["client"] == {"hosts": None, "timeout": 3.0}
 
     def test_data_received_exits_0(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
         seen: dict[str, Any] = {}
-
-        class FakeStream:
-            def __init__(self, *a: Any, **kw: Any) -> None:
-                pass
-
-            def subscribe(self, symbols, *, interval, diff_only, max_queue, on_quote, on_error):  # type: ignore[no-untyped-def]
-                seen["max_queue"] = max_queue
-                on_quote("600000", {"price": 10.0, "volume": 1})
-
-            def start(self) -> None:
-                pass
-
-            def stop(self) -> None:
-                pass
-
-        import tstdx.streaming as streaming_mod
-
-        monkeypatch.setattr(streaming_mod, "QuoteStream", FakeStream)
+        monkeypatch.setattr("tstdx.cli.runtime_commands.Client", self._fake_client(seen, emit=True))
         rc = cli._cmd_stream(
             _ns(symbols=["600000"], interval=1.0, seconds=0.01, diff=False, max_queue=32)
         )
         assert rc == 0
-        assert seen["max_queue"] == 32
+        assert seen["stream"]["max_queue"] == 32
+        assert seen["stream"]["provider"] == "tdx"
 
 
 class TestServePortZero:

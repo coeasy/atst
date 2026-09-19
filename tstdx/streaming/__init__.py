@@ -3,13 +3,16 @@
 
 """Canonical v13 streaming subsystem.
 
-The supported business stream implementations are StatefulQuoteStream and
-AsyncStatefulQuoteStream. They poll through UnifiedRuntime, so streaming shares
-the same Provider/Planner/Result semantics as ordinary queries. Historical
-QuoteStream/AsyncQuoteStream implementations were removed from the public/core
-surface.
+The supported entry point is ``Client.stream`` / ``AsyncClient.stream``: they
+compile one exact plan through ``StreamPlanner`` and return a
+:class:`StatefulQuoteStream` / :class:`AsyncStatefulQuoteStream` bound to the
+caller's runtime. Both poll through ``UnifiedRuntime``, so streaming shares the
+same Provider/Planner/Result semantics as ordinary queries.
 
-Pure streaming components remain available for testing and advanced composition.
+:class:`QuoteStream` and :class:`AsyncQuoteStream` are the polling bases those
+two extend with an explicit lifecycle state machine; nothing outside this
+package should build them directly. Pure streaming components remain available
+for testing and advanced composition.
 """
 
 from __future__ import annotations

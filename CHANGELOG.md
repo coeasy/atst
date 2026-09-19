@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed（v17 Phase 5 第 31 步 —— CLI `stream` 收回 `Client` 面，F-56；**BREAKING**）
+
+- **`tstdx stream` 从此经 `Client.stream` 起流**：`cmd_stream`（`tstdx/cli/runtime_commands.py`）
+  不再 `from ..streaming import QuoteStream`，改为
+  `with Client(**_client_kwargs(args)) as client: client.stream(symbols, provider=…, interval=…,
+  diff_only=…, max_queue=…, on_quote=…, on_error=…)`，随后 `start()` / `stop()` 与打印计数留在
+  CLI 一侧。退出码判据（零数据 → exit 1）逐字不变；连接参数由 `_transport_kwargs` 换回
+  `_client_kwargs`，即"只转达用户显式说过的，其余交给内核读配置面"。
+- **两面同答案**（这是本步的实际缺陷）：`--provider` 此前是自由字符串，旁路把它当
+  `default_provider` 透传，`QuoteStream._get_runtime()` 再惰性 new 出第二个 `UnifiedRuntime`，
+  于是 CLI 承诺"注册表支持 `quotes` 轮询的 Provider 都能 stream"（`PROVIDERS.supports("tencent",
+  "quotes")` 为真），而库面 `Client.stream(provider="tencent")` 抛 `ValidationError`。现在
+  `tstdx stream --provider tencent` 得到 exit 2 + 错误信封，与库面同一句话。
+- **顺带补上 `stream` 缺的 `--host`**：该命令原先自己声明 `--provider` 而完全没有 `--host`，
+  是 Tier-A 数据命令里唯一不能钉主站的一条；旁路时代即便声明也无人消费。现由 `_provider_args()`
+  统一声明，与 `snapshot`/`minute`/`trades` 同形。
+- **守卫**：新增结构性门禁 `test_service_faces_never_build_a_stream_themselves`——与 F-29 那条
+  共用 `_service_face_imports()`（AST 扫 CLI + HTTP/WS/MCP 全部 import 边，函数体内的 import 同样
+  算），任何解析到 `tstdx.streaming` / `tstdx.stream_contract` 的边即为红，扫描零命中时
+  "两条门禁同时失明"自曝。`test_stream_forwards_provider_and_connection_args` 从"monkeypatch
+  `tstdx.streaming.QuoteStream` 钉住旁路形状"改写为捕获 `Client` 构造参数与 `Client.stream` 实参
+  （含 `on_quote` 回调确实被转达、`with` 退出即关客户端）；新增
+  `test_stream_command_refuses_a_provider_the_stream_contract_refuses` 用**真实** `Client`
+  跑 `main(...)` 并核对信封文案（禁网两拦，见下条）；`tests/unit/test_cli_semantics.py` 两条
+  stream 用例的替身同样从 `QuoteStream` 换到 `Client`。
+- **本步的变异装置先量到自己**：`--provider` 一旦不转发，那条走真实 `Client` 的回归用例会
+  真的把 tdx 流起来——首次测量时它 `assert 0 == 2`，即离线用例在回归现场触了网。现按
+  `test_dunder_docstring_quickstart_examples_construct` 的既有做法拦
+  `socket.getaddrinfo` / `socket.create_connection`，同一条变异改报 `assert 1 == 2`（拒绝仍成立、
+  egress 不再发生）。判据同时收紧到信封文案，任何别的 exit 2 都不算通过。
+- **口径归位**：`tstdx/streaming/__init__.py` 的 docstring 不再声称 `QuoteStream`/`AsyncQuoteStream`
+  "已从公开/核心面移除"（它们既在 `__all__` 里、又正是 `Stateful*` 的轮询基类），改写为"唯一入口是
+  `Client.stream`，基类不得由服务面直接构造"；`docs/api/interfaces.md` §5 由"QuoteStream /
+  AsyncQuoteStream 两个门面"重写为三层（`Client.stream` 唯一入口 → `Stateful*` 生命周期对象 →
+  轮询基类 + engine 组件），§3 服务面口径补上第二条守卫名并显式写明"含 `stream`"；README 数据源层
+  的"流式订阅"行同批指向 `Client.stream`。
+- **本步让一条既有宣称第一次为真**：`docs/api/interfaces.md` §3 与 `docs/api/README.md` 自第 15 步
+  起就写着"数据命令全部委托同一个 `Client`，6 个传输/诊断命令除外"，而 `stream` 当时仍是第 7 条
+  旁路——该此前无人把守、也从未成立过。
+- **变异验证 3 条全部 RC=1 且各自指名**（CONTROL 与还原后 RC=0）：**M1** 在 `cmd_stream` 里加回
+  `from ..streaming import QuoteStream` → 新守卫红，报
+  `tstdx\cli\runtime_commands.py: import tstdx.streaming`；**M2** 删掉 `provider=args.provider` →
+  三条同时红：转发用例 `KeyError: 'provider'`、拒绝用例 `assert 1 == 2`、F-28 的选项消费审计报
+  `stream: --provider (dest=provider)`（两条判据各看一半，转发与消费互补而非重复）；**M3** 把
+  `--host` 声明撤回 `--provider` 独写 → 转发用例在 `parse_args` 处 `SystemExit: 2`。
+- **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = `60f6be9` + 本步 9 文件，与本步提交树
+  逐文件同内容）**：离线全量 junit **3398 tests / 0 failures / 0 errors / 7 skipped**、`SUITE_RC=0`、
+  167.3s；`--cov=tstdx` **80.70%**（`Required test coverage of 77.0% reached`，阈值 77 未下调）。
+  对账上一步（F-52，`60f6be9`）的同轮 **3396**：本步净增 2 条＝新守卫
+  `test_service_faces_never_build_a_stream_themselves` ＋ 新回归
+  `test_stream_command_refuses_a_provider_the_stream_contract_refuses`。同树 13 道门禁全部 RC=0：
+  `ruff check`、`ruff format --check`（432 文件）、`mypy`（0 error）、originality（Total 190 /
+  Suspicious 0）、reachability（189 模块 / 172 可达 / 17 白名单、`无未登记孤儿 ✓`）、
+  `contract_audit --ci`（63 契约 · 155 capability，PENDING 仍是既有的 Typed Query 缺口，本步未新增）、
+  `spec_audit --strict`（`coverage_pct: 100.0`）、golden 审计、adversarial、bridges、
+  `tests/streaming + tests/runtime`、benchmark smoke、docs links（82 文件）。变异复跑在同一棵树上：
+  CONTROL 与 RESTORED RC=0，M1/M2/M3 各自 RC=1 且逐条指名（见上三条）。
+  **口径边界如实登记**：上面的数字取自 9 个文件里 7 个代码/文档文件与本步两份账本正文都已落地的树，
+  只差本条复测文字本身；写入后在同一提交树重跑 `tests/architecture`（25 条连接契约＋全部活文档
+  判据）与 `check_docs_links.py`，两道均 RC=0，即本条所述与它所声称的那棵树互不矛盾。
+
 ### Removed（v17 Phase 5 第 30 步 —— 出处里那个从未被填过的源时间戳，F-52 provenance 半边；**BREAKING**）
 
 - **`Provenance` 少了一个公开字段**：`provider_timestamp`。`tstdx/result.py:57` 上它写着
