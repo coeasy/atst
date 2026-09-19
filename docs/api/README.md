@@ -33,7 +33,7 @@
 | `tstdx.catalog.capability` | capability 目录 + 规划期真实签名校验（`validate_call`）|
 | `tstdx.catalog.provider_bindings` | Provider `channel → adapter` 绑定表 |
 | `tstdx.catalog.provider_contract` / `provider_guard` / `*_audit` | Provider 隔离契约、运行时守卫与一致性审计 |
-| `tstdx.providers.PROVIDERS` | 11 Provider × 172 capability × channel 唯一事实源 |
+| `tstdx.providers.PROVIDERS` | 11 Provider × 56 channel × 172 capability 唯一事实源；能力发现面只声明名字、不声明可用性，见 [interfaces.md](interfaces.md)「能力发现面」 |
 
 ## 核心入口
 

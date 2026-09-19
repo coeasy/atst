@@ -1011,9 +1011,9 @@ def _client_face_rows() -> list[tuple[str, str]]:
     doc = (ROOT / "docs" / "api" / "interfaces.md").read_text(encoding="utf-8")
     parts = doc.split("### Client（唯一业务入口，同步）", 1)
     assert len(parts) == 2, "interfaces.md 不再有 Client 方法表，门禁失效"
-    rows = re.findall(
-        r"^\| `(\w+)` \| `([^`]*)` \|", parts[1].split("### UnifiedRuntime", 1)[0], re.M
-    )
+    # 窗口收在本节之内：下一节「能力发现面」的表第一列是注册表能力名，不是方法名。
+    body = re.split(r"^### ", parts[1], maxsplit=1, flags=re.M)[0]
+    rows = re.findall(r"^\| `(\w+)` \| `([^`]*)` \|", body, re.M)
     assert rows, "Client 方法表里解析不出任何一行，门禁失效"
     return rows
 

@@ -131,11 +131,58 @@ from tstdx import Client, AsyncClient
 | `call` | `(capability, *args, provider=None, channel=None, currentness="business", **kwargs)` | 便捷通用入口 |
 | `execute_with_policy` | `(spec, *, policy: FallbackPolicy) -> OrchestratedResult` | 显式跨源编排 |
 | `typed` | `(query: CapabilityQuery, **kwargs) -> TypedQueryResult` | 冻结 dataclass 契约 → 强类型记录 |
-| `capabilities` | `() -> tuple[str, ...]` | 当前 172 项 capability |
+| `capabilities` | `() -> tuple[str, ...]` | 能力发现面：**只有名字、没有可用性**，172 项的构成与发不出去的那几个见下节「能力发现面：只有名字，没有可用性」 |
 | `close` | `()` | 释放内核连接 |
 
 `AsyncClient` 是同名异步镜像（`async with AsyncClient() as client: ...`）；
 传 `policy=` 时 `bars/quotes` 返回 `OrchestratedResult` 而非 `QueryResult`。
+
+### 能力发现面：只有名字，没有可用性
+
+```python
+from tstdx import Client
+
+Client.capabilities()   # 172 项 capability 名，按字典序排好
+```
+
+发现面有三处出口，交付的都是**纯名字**：
+
+| 出口 | 形状 | 状态字段 |
+|------|------|----------|
+| `Client.capabilities()` / `AsyncClient.capabilities()` | `tuple[str, ...]`，172 项 | 无 |
+| `GET /v13/capabilities` | `{"capabilities": [...], "providers": {provider: {channel: [...]}}}` | 无 |
+| WS `runtime.capabilities` | 同上，两份名单 | 无 |
+
+名单的构成是一个可复算的恒等式：172 = 7 个内核直绑能力 ∪ 167 个 catalog 迁移能力，并且与
+`PROVIDERS` 注册表（11 Provider × 56 channel）里出现过的能力名集合逐字相等。三处出口在形状上
+就没有放 `available`/`offline` 的位置——条目类型清一色是 `str`（F-66 裁决 (c)：发现面的形状
+不动，把这条口径写清）。于是**「名字在名单里」只承诺"这条能力有实现、参数契约可校验"，不承诺
+"调用会拿到数据"**。
+
+tdx 这条链上有 8 个名字一调就必然失败：6 个名字踩在被账本判 `offline` 的命令上、2 个名字被
+request/parser 仍是 inferred 的结构化拦截挡在发包前。下表由
+`tests/architecture/test_offline_capability_honesty.py` 现推——名字集合、命令号、tdx 侧实现、
+出路 Provider 四个字段全部来自「命令账本 + `client/core.py` 的 `_UNVERIFIED_STRUCTURED_BLOCK` +
+`catalog/capability.py` 绑定表 + `_t_*` 调用图」，在这里手抄一份过期数字过不了门禁。
+
+| 发现名 | tdx 侧实现 | 命令号 | 为什么发不出去 / 一调即抛 | tdx 之外的出路 |
+|--------|-----------|--------|---------------------------|----------------|
+| `auction` | `auction_snapshot` | `0x056A` | 账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
+| `block_quotes` | `block_quotes` | `0x07E5` | 账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
+| `minute` | `minute_today` | `0x0537` | request/parser 仍为 inferred，结构化 API 在发包前拦下，抛 `NotImplementedFeature` | `baidu`、`eastmoney`、`tencent` |
+| `minute_history` | `minute_history` | `0x0FB4` | 账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
+| `security_list` | `security_list` | `0x044D` | 账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
+| `security_list_all` | `export_security_list` | `0x044D` | 自己不写命令号，经 `security_list` 的分页调用由传递闭包判出；账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
+| `trades` | `trade_today` | `0x0FC5` | request/parser 仍为 inferred，结构化 API 在发包前拦下，抛 `NotImplementedFeature` | `baidu`、`tencent` |
+| `volume_price` | `volume_price_dist` | `0x051A` | 账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
+
+这张表只覆盖 tdx 命令账本管得到的 25 个名字（7 个内核直绑 + 18 个 tdx 客户端族 catalog 绑定）；
+其余 147 个名字走 web 会话 / web adapter / channel adapter / composed 四类后端，不经过命令账本，
+也就无从在这里判生死——它们的可用性由各自的 Provider 契约与 `tests/` 冒烟负责。一处显式登记的
+解析盲区是 `f10`：`f10_client` 的分派按 capability 分岔（`runtime/executor.py` 里 `f10` 走
+`client.download`、其余走 `client.catalog`），绑定表的 `method` 只是标签，所以这一格对不上实现；
+门禁因此同时要求 F10 族账本里一条 offline/拦截命令都没有——哪天 F10 命令下线，这条断言当场红，
+盲区不许变成漏报。
 
 ### UnifiedRuntime（唯一执行内核）
 
@@ -266,6 +313,9 @@ app = create_runtime_app()          # FastAPI 实例，交由 uvicorn 承载
 | `/v13/capabilities` | GET |
 | `/v13/runtime/health` | GET |
 
+`/v13/capabilities` 交付两份纯名字列表，没有状态字段：口径与那些发不出去的名字见
+§2「能力发现面：只有名字，没有可用性」。
+
 ### WebSocket JSON-RPC（10 方法）
 
 ```python
@@ -274,6 +324,9 @@ from tstdx.integration.runtime_ws_server import serve_runtime_ws
 
 方法：`quotes`、`bars`、`snapshot`、`minute`、`trades`、`security.count`、
 `security.list`、`query`、`runtime.capabilities`、`runtime.health`。
+
+`runtime.capabilities` 与 HTTP 同一份两份纯名字列表，同样**只有名字、没有可用性**
+（§2「能力发现面：只有名字，没有可用性」）。
 
 ### MCP stdio（9 工具）
 
