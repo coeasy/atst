@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs（v17 Phase 5 第 47 步 —— 能力发现面「只有名字、没有可用性」：F-66 裁决 (c) 的执行）
+
+- **对外契约的形状一个字节都没动**：`Client.capabilities()`、`GET /v13/capabilities`、WS
+  `runtime.capabilities` 三处出口继续只发名字（172 项 capability 名 + 11 Provider × 56 channel 的
+  能力名列表），不加 `available`/`offline`/`unverified` 状态字段，也不收窄名单——这正是裁决 (c)
+  选定的口径。改的是**这句话有没有人替它作证**。
+- **`docs/api/interfaces.md` 新增小节「能力发现面：只有名字，没有可用性」**：写清名单构成
+  （172 = 7 个内核直绑能力 ∪ 167 个 catalog 迁移能力，且与注册表名字集逐字相等）、三处出口的形状，
+  并给出一张**死名字表**：账本可达的 25 个名字（7 内核 + 18 tdx 客户端族绑定）里，8 个一调就必然失败
+  ——6 个踩在账本判 `offline` 的 5 条命令上（`auction` `0x056A` / `volume_price` `0x051A` /
+  `block_quotes` `0x07E5` / `minute_history` `0x0FB4` / `security_list` 与 `security_list_all` `0x044D`），
+  2 个被 request/parser 仍为 inferred 的结构化拦截挡在发包前（`minute` `0x0537` / `trades` `0x0FC5`，
+  抛 `NotImplementedFeature`）。每行同时给"改走哪家"，且那一家必须是注册表真的声明过的 Provider
+  （`minute` → baidu/eastmoney/tencent，`trades` → baidu/tencent；其余六个只有 tdx 声明，出路写「无」）。
+- **门禁的推导补上缺失的那一跳**：第 39 步以「方法名 = 能力名」为键，注册表这套命名是第三套词汇，
+  于是 `auction`→`auction_snapshot`、`volume_price`→`volume_price_dist`、`security_list_all`→
+  `export_security_list` 三个名字既没被文档批注也没被推导判出。本步把推导接成
+  注册表能力名 → `catalog` 绑定 → 实现方法 → `_t_*` 模板 → 命令号（10 个"注册表名 ≠ 实现名"的绑定里
+  其余 7 个本就通，不受影响）。差额实测（`step47/probe_hop_delta.log`）：发现面里"账本可达"的名字
+  **7 → 25**，判为发不出去的名字 **3 → 8**（新增 `auction` / `block_quotes` / `minute_history` /
+  `security_list_all` / `volume_price`），旧的 7 个内核直绑名判定结果一字未变——这一跳只增加覆盖，不重判。
+- **新增 4 项判据（`tests/architecture/test_offline_capability_honesty.py` 8 → 12 项）**：① 发现面每个
+  名字都要归进恰好一格（内核直绑 / 账本可达 / 走 web 与 composed 后端），归不进去即红，唯一的解析盲区
+  `f10` 按名字登记并同时要求「F10 族账本里一条 offline/拦截命令都没有」，否则盲区不再无害；② 三处出口
+  的形状锁——HTTP 与 WS 的返回字面量里出现任何 `status`/`available`/`offline` 类键即红；③ 死名字表的
+  四个字段（名字集合、命令号、实现方法、出路 Provider）全部现推后与文档逐字对账；④ 文档里 7 处计数
+  （172、11 × 56、8/6/2、25 = 7 + 18、147）由运行期重算再回查原文，§3 的 HTTP/WS 小节必须互指这一口径。
+- **顺手抓到一处门禁自身的窗口越界**：`tests/architecture/test_doc_code_consistency.py` 的 Client 方法表
+  窗口原以「下一节是 UnifiedRuntime」为界，新增小节落在两者之间，导致发现面表的能力名被当成方法名报
+  「表里多出 5 个名」。窗口改为收在本节之内（切到下一个 `###` 标题），双向名单对账与逐行参数名差集不变。
+
 ### Removed（v17 Phase 5 第 46 步 —— 命令账本函数面的两个孤儿：F-65 裁决 (b) 的执行；**BREAKING**）
 
 - **删掉 `tstdx/protocol/commands.py` 的 `stats()` 与 `get_command_by_name()`，不留别名、不留空壳**：
