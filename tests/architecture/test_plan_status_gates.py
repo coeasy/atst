@@ -16,11 +16,18 @@
 
 1. §0.1 表体里每个反引号文件路径（`` `a/b/c.py` ``，可带 ``:行号``）必须在磁盘上存在——
    现在时的表不能引用已删除的模块。
-2. §0.2 每行必须带一个当前裁决（已清偿 / 已修 / 部分处理 / 待用户决策 / 维持）并附日期或
+2. §0.2 每行必须带一个当前裁决（已清偿 / 已修 / 部分处理 / 待用户决策 / 维持现状）并附日期或
    提交号，否则"遗留"与"已处理"在文档里无法区分。
 
 防盲保险：两节都必须解析出行来（§0.1 ≥4 行、≥5 条路径；§0.2 ≥6 行），解析不出即判门禁自身
 失效，而不是静默通过。
+
+第 35 步补第三条判据（F-61）：§0.1 的结论句也出过事，方向相反——它把 Phase 5 第 16 步**已经
+跑过**的七格真实网络冒烟写成"真机冒烟尚未执行"。一句凭印象写的"边界"既不挂账也没人复核，
+而 §4 验收清单与 §1 执行记录里都写着它已经做过。于是规定：§0.1 结论里每个带圈编号的边界子句
+必须点一个 §0.3 里真实存在的 F 号，且其中至少一个仍是开放裁决（未清偿/部分清偿/部分处理/
+本轮只登记/本步只登记/待用户决策/维持现状/未处理）——只点已清偿的账，等于把做完的事写成
+待办；一个都不点，等于给凭印象的说法发通行证。
 """
 
 from __future__ import annotations
@@ -51,14 +58,42 @@ def _section(start_title: str, end_title: str) -> str:
     return rest[:end]
 
 
+def _split_row(line: str) -> list[str]:
+    """按 Markdown 表格的行切格，但**行内的 `|` 不算分隔符**。
+
+    账本里两种行内竖线都真实出现过：转义的 `tests/…\\|scripts/…`（F-24），和反引号里的
+    正则字面量 `` `a|b` ``（F-43、F-46）。按 `|` 裸切会把这两行的裁决格劈成碎片，碎片里
+    没有任何裁决词——于是它们在判据里永远读成"已清偿"，一条挂着的账从分母上消失。
+    """
+    cells: list[str] = []
+    buf: list[str] = []
+    code = False
+    escaped = False
+    for char in line:
+        if escaped:
+            escaped = False
+        elif char == "\\" and not code:
+            escaped = True
+        elif char == "`":
+            code = not code
+        elif char == "|" and not code:
+            cells.append("".join(buf).strip())
+            buf = []
+            continue
+        buf.append(char)
+    cells.append("".join(buf).strip())
+    #: 行首的 `|` 切出一个空格子，行尾的 `|` 切出另一个。
+    return [cell for cell in cells[1:] if cell != ""] if cells[0] == "" else cells
+
+
 def _table_rows(section: str) -> list[list[str]]:
     rows: list[list[str]] = []
     for line in section.splitlines():
         stripped = line.strip()
         if not stripped.startswith("|"):
             continue
-        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
-        if cells[0] in {"#", ""} or set("".join(cells)) <= {"-", ":", " "}:
+        cells = _split_row(stripped)
+        if not cells or cells[0] in {"#", ""} or set("".join(cells)) <= {"-", ":", " "}:
             continue
         rows.append(cells)
     return rows
@@ -100,3 +135,70 @@ def test_legacy_list_rows_carry_a_verdict_and_a_stamp() -> None:
 def test_status_sections_are_still_present(title: str) -> None:
     """两节标题改名会让上面两条判据静默失效，这里把它显式钉住。"""
     assert title in PLAN.read_text(encoding="utf-8")
+
+
+_F_REF = re.compile(r"F-\d+")
+#: §0.3 裁决格里代表"这件事还开着"的开头词。刻意不含"已清偿/已修"。
+_OPEN_VERDICTS = (
+    "未清偿",
+    "部分清偿",
+    "部分处理",
+    "本轮只登记",
+    "本步只登记",
+    "待用户决策",
+    "维持现状",
+    "未处理",
+)
+#: 裁决格必须"读得出来"：第一个加粗跨度里得出现过的裁决词之一。F-24/F-43/F-46 三行曾因
+#: 格子里的转义竖线被劈成碎片，碎片里没有任何裁决词——那样一行会被静默读成"已清偿"。
+_VERDICT_HEAD = re.compile(
+    r"^\s*(?:⏳\s*)?\*\*[^*]*?"
+    r"(已清偿|已修|未清偿|部分清偿|部分处理|本轮只登记|本步只登记|待用户决策|维持现状|未处理)"
+)
+#: 结论里的边界子句以带圈编号起头；没有编号就没有可核对的边界，判判据自身失效。
+_CLAUSES = re.compile(r"[①②③④⑤⑥⑦⑧⑨]")
+
+
+def _finding_verdicts() -> dict[str, str]:
+    """§0.3 每行 -> 最后一格（裁决）。分母是账本本身，不是任何抄件。"""
+    section = _section("### 0.3", "\n## 1. 分阶段执行计划")
+    rows = _table_rows(section)
+    assert len(rows) >= 20, f"§0.3 只解析出 {len(rows)} 行，判据自身失效"
+    return {cells[0]: cells[-1] for cells in rows}
+
+
+def _is_open(cell: str) -> bool:
+    """裁决格是否以"这件事还开着"的词起头（允许 `⏳ ` 一类前缀）。"""
+    head = cell.strip().lstrip("⏳").strip()
+    if not head.startswith("**"):
+        return False
+    body = head[2:]
+    return any(body.startswith(word) for word in _OPEN_VERDICTS)
+
+
+def test_open_boundaries_cite_an_open_finding() -> None:
+    """§0.1 结论里的每个边界子句都要挂在一条仍然开着的账上（F-61）。"""
+    section = _section("### 0.1 主链路贯通状态", "### 0.2")
+    start = section.find("**结论")
+    assert start >= 0, "§0.1 没有结论段，判据自身失效"
+    verdicts = _finding_verdicts()
+    unreadable = sorted(key for key, cell in verdicts.items() if not _VERDICT_HEAD.match(cell))
+    assert unreadable == [], f"§0.3 这些行的裁决格读不出来，开放/已清偿无从判断：{unreadable}"
+
+    #: 编号前的引导句不是边界子句，丢掉。
+    clauses = [c.strip() for c in _CLAUSES.split(section[start:]) if c.strip()][1:]
+    assert len(clauses) >= 2, f"结论里只解析出 {len(clauses)} 个编号子句，判据自身失效"
+
+    offenders: list[str] = []
+    for clause in clauses:
+        cited = _F_REF.findall(clause)
+        if not cited:
+            offenders.append(f"没有 F 号：{clause[:40]}…")
+            continue
+        unknown = [f for f in cited if f not in verdicts]
+        if unknown:
+            offenders.append(f"§0.3 里没有这些行：{unknown}")
+            continue
+        if not any(_is_open(verdicts[f]) for f in cited):
+            offenders.append(f"只点到已清偿的账：{cited}")
+    assert offenders == [], "§0.1 的边界声称没有可复核的开放账目：\n  " + "\n  ".join(offenders)
