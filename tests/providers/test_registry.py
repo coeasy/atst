@@ -85,19 +85,28 @@ def test_the_registry_declares_no_batch_quota() -> None:
         ChannelSpec.build("quote", {"quotes"}, batch_limits={"quotes": 60})
 
 
-def test_channel_spec_positional_notes_survive_field_removal() -> None:
-    """删除字段后 ``notes`` 仍在第 6 个位置位：位置式构造是注册表外的公开写法。"""
+def test_channel_spec_positional_shape_after_the_claim_fields_are_gone() -> None:
+    """位置式构造是注册表外的公开写法，删字段会静默改变位置含义——这里钉住新形状。
+
+    ``markets`` / ``notes`` 删除（F-54）后位置为 id, capabilities, live, local, periods；
+    两个已删字段作为关键字传入当场报错，不会被静默吞掉。
+    """
 
     channel = ChannelSpec(
         "legacy",
         frozenset({"quotes"}),
-        frozenset({"cn_a"}),
         True,
         False,
-        "legacy positional notes",
+        frozenset({"day"}),
     )
-    assert channel.notes == "legacy positional notes"
-    assert channel.periods == frozenset()
+    assert channel.id == "legacy"
+    assert channel.live is True
+    assert channel.local is False
+    assert channel.periods == frozenset({"day"})
+    assert channel.supports_period("DAY")
+    for kw in ("markets", "notes", "batch_limits"):
+        with pytest.raises(TypeError, match=kw):
+            ChannelSpec.build("quote", {"quotes"}, **{kw: ("cn_a",)})
 
 
 def test_channel_spec_rejects_periods_for_undeclared_capability() -> None:
@@ -107,23 +116,14 @@ def test_channel_spec_rejects_periods_for_undeclared_capability() -> None:
         ChannelSpec.build("quote", {"quotes"}, periods=("day",))
 
 
-def test_every_provider_spec_field_has_a_reader() -> None:
-    """``ProviderSpec`` 的每个字段都必须有人按它行动（F-52 注册表半边）。
-
-    第 25 步的尺子搬到注册表自己头上：``display_name`` 与 ``role`` 被 11 个 Provider
-    逐个写着，而全包对它们的读取点是 0——注册表里的"事实"若没有任何消费者，就只是一句
-    没人兑现的声称。字段清单取自 dataclass 本身，新增字段没有读取点即当场变红。
-    """
+def _unread_fields(cls: type, owners: set[str]) -> tuple[set[str], int, set[str]]:
+    """扫 ``tstdx/`` 找 ``cls`` 各字段的读取点：返回 (全部字段, 扫过的模块数, 命中的字段)。"""
 
     import ast
     import dataclasses
     from pathlib import Path
 
-    from tstdx.providers import ProviderSpec
-
-    fields = {item.name for item in dataclasses.fields(ProviderSpec)}
-    assert fields, "ProviderSpec 已经没有字段了，判据自身失效"
-    owners = {"self", "spec", "provider", "pspec", "provider_spec", "item", "value"}
+    fields = {item.name for item in dataclasses.fields(cls)}
     reads: set[str] = set()
     scanned = 0
     root = Path(__file__).resolve().parents[2]
@@ -138,6 +138,47 @@ def test_every_provider_spec_field_has_a_reader() -> None:
                 base = base.value
             if isinstance(base, ast.Name) and base.id in owners:
                 reads.add(node.attr)
+    return fields, scanned, reads
+
+
+def test_every_channel_spec_field_has_a_reader() -> None:
+    """``ChannelSpec`` 的每个字段都必须有人按它行动（F-54）。
+
+    ``markets`` 曾在 23 个 channel 上声称支持哪些市场，读取点是 0——而且它的词汇（``cn_a``
+    /``hk``/``us``/``option``…）在代码里没有任何一侧与 ``tstdx.domain.symbol.Market`` 对接：
+    市场正确性实际由 ``Symbol.tdx_market`` 对 HK/US fail-closed 兜住，注册表这套是第二份没人执行
+    的词汇表。
+    ``notes`` 是写在代码里的注释，全仓唯一的"读取"来自测试本身。两者按 clean break 删除
+    （与 F-50/F-52 同口径），市场与定位的说明留在 ``docs/providers/*.md``。
+    """
+
+    fields, scanned, reads = _unread_fields(
+        ChannelSpec, {"self", "spec", "item", "channel", "selected", "ch", "value"}
+    )
+    assert fields, "ChannelSpec 已经没有字段了，判据自身失效"
+    assert scanned > 30, f"只扫到 {scanned} 个模块，读取扫描自身失效"
+    assert reads, "ChannelSpec 字段读取扫描一条都没命中，说明它自身失效了"
+    orphans = sorted(fields - reads)
+    assert orphans == [], f"ChannelSpec 字段没有任何读取点（无人兑现的声称）：{orphans}"
+    assert fields == {"id", "capabilities", "live", "local", "periods"}, (
+        f"注册表声称的形状变了：{sorted(fields)}"
+    )
+
+
+def test_every_provider_spec_field_has_a_reader() -> None:
+    """``ProviderSpec`` 的每个字段都必须有人按它行动（F-52 注册表半边）。
+
+    第 25 步的尺子搬到注册表自己头上：``display_name`` 与 ``role`` 被 11 个 Provider
+    逐个写着，而全包对它们的读取点是 0——注册表里的"事实"若没有任何消费者，就只是一句
+    没人兑现的声称。字段清单取自 dataclass 本身，新增字段没有读取点即当场变红。
+    """
+
+    from tstdx.providers import ProviderSpec
+
+    fields, scanned, reads = _unread_fields(
+        ProviderSpec, {"self", "spec", "provider", "pspec", "provider_spec", "item", "value"}
+    )
+    assert fields, "ProviderSpec 已经没有字段了，判据自身失效"
     assert scanned > 30, f"只扫到 {scanned} 个模块，读取扫描自身失效"
     assert reads, "ProviderSpec 字段读取扫描一条都没命中，说明它自身失效了"
     orphans = sorted(fields - reads)

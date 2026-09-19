@@ -36,15 +36,15 @@ class ChannelSpec:
     """Static execution facts for one provider-internal channel.
 
     No per-call quotas here: a batching ceiling belongs beside the protocol code
-    that enforces it.
+    that enforces it. No market claims either: market correctness fail-closes in
+    ``Symbol.tdx_market``, and a second market vocabulary here would be enforced
+    by nobody.
     """
 
     id: str
     capabilities: frozenset[str]
-    markets: frozenset[str] = frozenset()
     live: bool = False
     local: bool = False
-    notes: str = ""
     periods: frozenset[str] = frozenset()
 
     @classmethod
@@ -53,10 +53,8 @@ class ChannelSpec:
         id: str,
         capabilities: Iterable[str],
         *,
-        markets: Iterable[str] = (),
         live: bool = False,
         local: bool = False,
-        notes: str = "",
         periods: Iterable[str] = (),
     ) -> ChannelSpec:
         channel_id = str(id).strip().lower()
@@ -73,10 +71,8 @@ class ChannelSpec:
         return cls(
             id=channel_id,
             capabilities=caps,
-            markets=frozenset(str(x).strip().lower() for x in markets if str(x).strip()),
             live=bool(live),
             local=bool(local),
-            notes=str(notes),
             periods=normalized_periods,
         )
 
@@ -249,19 +245,15 @@ def resolve_provider(
 def _c(
     id: str,
     *capabilities: str,
-    markets: Iterable[str] = (),
     live: bool = False,
     local: bool = False,
-    notes: str = "",
     periods: Iterable[str] = (),
 ) -> ChannelSpec:
     return ChannelSpec.build(
         id,
         capabilities,
-        markets=markets,
         live=live,
         local=local,
-        notes=notes,
         periods=periods,
     )
 
@@ -290,7 +282,6 @@ PROVIDERS = ProviderRegistry(
                     "quotes_concurrent",
                     "security_list_all",
                     "volume_price",
-                    markets=("cn_a", "cn_bse"),
                     live=True,
                     periods=(
                         "1min",
@@ -321,7 +312,6 @@ PROVIDERS = ProviderRegistry(
                     "bars",
                     "goods_quotes",
                     "goods_bars",
-                    markets=("future", "commodity"),
                     live=True,
                 ),
                 _c("f10", "f10_catalog", "f10"),
@@ -334,34 +324,30 @@ PROVIDERS = ProviderRegistry(
                 _c(
                     "vipdoc",
                     "bars",
-                    markets=("cn_a", "future"),
                     local=True,
                     periods=("1min", "5min", "day"),
-                    notes="Explicit local historical Provider; never substitutes live TDX",
                 ),
             ),
         ),
         ProviderSpec(
             id="tencent",
             channels=(
-                _c("quote", "quotes", markets=("cn_a", "hk", "us"), live=True),
+                _c("quote", "quotes", live=True),
                 _c(
                     "kline",
                     "bars",
-                    markets=("cn_a", "hk", "us"),
                     periods=("day", "week", "month"),
                 ),
                 _c(
                     "minute_kline",
                     "bars",
-                    markets=("cn_a",),
                     periods=("1min", "5min", "15min", "30min", "60min"),
                 ),
-                _c("minute", "minute", markets=("cn_a",), live=True),
-                _c("ticks", "trades", markets=("cn_a",), live=True),
+                _c("minute", "minute", live=True),
+                _c("ticks", "trades", live=True),
                 _c("global", "global_quotes", live=True),
                 _c("market_stat", "market_stat", live=True),
-                _c("board_rank", "board_rank", markets=("cn_a",), live=True),
+                _c("board_rank", "board_rank", live=True),
                 _c(
                     "catalog",
                     "all_market",
@@ -377,18 +363,20 @@ PROVIDERS = ProviderRegistry(
         ProviderSpec(
             id="sina",
             channels=(
-                _c("quote", "quotes", markets=("cn_a", "hk"), live=True),
+                _c("quote", "quotes", live=True),
                 _c(
                     "history_kline",
                     "bars",
-                    markets=("cn_a",),
                     periods=("5min", "15min", "30min", "60min", "120min", "day", "1200min"),
                 ),
                 _c("suggest", "suggest"),
                 _c("industry_board", "industry_board"),
                 _c("board_list", "board_list"),
                 _c("board_member", "board_member"),
-                _c("fund_flow", "fund_flow", markets=("cn_a",)),
+                _c(
+                    "fund_flow",
+                    "fund_flow",
+                ),
                 _c("news", "news"),
                 _c(
                     "catalog",
@@ -407,14 +395,13 @@ PROVIDERS = ProviderRegistry(
         ProviderSpec(
             id="eastmoney",
             channels=(
-                _c("quote", "quotes", markets=("cn_a",), live=True),
+                _c("quote", "quotes", live=True),
                 _c(
                     "kline",
                     "bars",
-                    markets=("cn_a", "hk", "us"),
                     periods=("1min", "5min", "15min", "30min", "60min", "day"),
                 ),
-                _c("trends", "minute", markets=("cn_a",), live=True),
+                _c("trends", "minute", live=True),
                 _c("rank", "rank"),
                 _c("fund_flow", "fund_flow"),
                 _c("limit_pool", "limit_pool", live=True),
@@ -475,7 +462,6 @@ PROVIDERS = ProviderRegistry(
                     "options_list",
                     "options_snapshot",
                     "options_trends",
-                    markets=("option",),
                     live=True,
                 ),
                 _c(
@@ -492,29 +478,45 @@ PROVIDERS = ProviderRegistry(
         ProviderSpec(
             id="baidu",
             channels=(
-                _c("quote", "quotes", markets=("cn_a",), live=True),
+                _c("quote", "quotes", live=True),
                 _c(
                     "kline",
                     "bars",
-                    markets=("cn_a",),
                     periods=("day", "week", "month"),
                 ),
-                _c("minute", "minute", markets=("cn_a",), live=True),
-                _c("ticks", "trades", markets=("cn_a",), live=True),
+                _c("minute", "minute", live=True),
+                _c("ticks", "trades", live=True),
                 _c("catalog", "baidu_kline", "baidu_minute", "baidu_quote", "baidu_ticks"),
             ),
         ),
         ProviderSpec(
             id="jsl",
-            channels=(_c("bond", "convertible_bond", markets=("bond",)),),
+            channels=(
+                _c(
+                    "bond",
+                    "convertible_bond",
+                ),
+            ),
         ),
         ProviderSpec(
             id="boc",
-            channels=(_c("fx", "fx_rates", "rates", markets=("fx",)),),
+            channels=(
+                _c(
+                    "fx",
+                    "fx_rates",
+                    "rates",
+                ),
+            ),
         ),
         ProviderSpec(
             id="iwencai",
-            channels=(_c("screening", "wencai", "screening", markets=("cn_a",)),),
+            channels=(
+                _c(
+                    "screening",
+                    "wencai",
+                    "screening",
+                ),
+            ),
         ),
         # ``derived`` / ``builtin`` are *composite* Providers: their capabilities
         # are honest aggregates / static built-ins rather than one first-party

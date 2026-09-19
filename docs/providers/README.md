@@ -173,7 +173,9 @@ news
 
 1. Provider ID（人类可读的名称与定位写在正文里——代码面的 `ProviderSpec` 只持有执行面
    真会读到的字段，`display_name` / `role` 曾在那里写着却无人读取，已随 F-52 删除）；
-2. 支持 Market；
+2. 支持 Market（市场归属只写在文档里：代码面的 `ChannelSpec` 曾逐 channel 写着 `markets`
+   却无任何读取点，市场正确性实际由 `Symbol.tdx_market` 对 HK/US fail-closed 兜住，`markets`
+   已随 F-54 删除）；
 3. Channel 列表；
 4. Capability 列表；
 5. Unified API；
@@ -192,6 +194,13 @@ news
 18. ProviderRegistry/ChannelRegistry/CapabilityRegistry entry。
 
 ## 9. Registry 目标
+
+> **本节是 v12 的目标结构，不是当前代码的形状。** 代码面的注册表只持有"有人按它行动"的
+> 字段：`ProviderSpec = id / channels / default`，`ChannelSpec = id / capabilities / live /
+> local / periods`。下面清单里从未有读取点的条目（`role`、`markets`、`auth/rate policy`、
+> `production status`、`batch/rate/freshness constraints`）不进代码——其中 `display_name`/`role`
+> 与 `markets`/`notes` 曾真的躺在代码里，分别由 F-52、F-54 删除；`tests/providers/test_registry.py`
+> 的门禁负责让"再写一个没人读的字段"当场变红。
 
 ### ProviderRegistry
 

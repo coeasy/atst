@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed（v17 Phase 5 第 28 步 —— 注册表里第二套没人执行的市场词汇，F-54；**BREAKING**）
+
+- **`ChannelSpec` 少了两个公开字段**：`markets`、`notes`。23 个 channel 逐个写着
+  `markets=("cn_a", "hk", "us")` 这类字符串，而 `tstdx/`+`scripts/`+`tests/` 三面对它的读取点
+  是 **0**；这套词汇（`cn_a`/`cn_bse`/`hk`/`us`/`future`/`commodity`/`option`/`bond`/`fx`）在代码里
+  没有任何一处与 `tstdx.domain.symbol.Market` 对上。市场正确性实际由 `Symbol.tdx_market`
+  （`tstdx/domain/symbol.py:122`：HK/US 抛 `SymbolError`、`provider_switch_allowed=False`）承担——
+  注册表有 `require()` 管 capability、`require_period()` 管 period，唯独市场没有执行位。
+  `notes` 同理：零生产读取，唯一"读到"它的是第 25 步自己钉位置形状的那条测试；它写的那句
+  "本地 vipdoc 不替代在线 TDX"在 `docs/providers/tdx.md:92` 本来就有。`ChannelSpec` 现为
+  `id / capabilities / live / local / periods`，`live`/`local`/`periods` 逐个实测有读取者
+  （`query.py` 的 currentness 判定、`catalog/provider_bindings.py` 的绑定核对、`require_period`）。
+- **为什么不接线而是删**：接线要先造一个 `Market → 字符串 token` 的映射，再与 `tdx_market`
+  形成同一件事的两套实现——第 24 步刚按 F-49 清掉过一个"第二实现"，而且它会把今天能成的请求
+  变成报错（对外契约变更，无实测收益）。市场与定位的说明留在 `docs/providers/*.md`：§8 模板
+  第 2 条与 §9"Registry 目标"同步改写，§9 另加一条前言说明那一节是 v12 目标结构而非当前代码形状
+  （清单里 `auth/rate policy`、`production status` 这类条目从来没有代码落点）。
+- **门禁推广**：`test_every_provider_spec_field_has_a_reader` 与新的
+  `test_every_channel_spec_field_has_a_reader` 共用同一个 `_unread_fields()` 尺子（分母取自
+  `dataclasses.fields`，读取点由 AST 扫 `tstdx/` 全部模块、owner 名人工核对），三把防盲保险不变；
+  ChannelSpec 额外钉死形状 `fields == {id, capabilities, live, local, periods}`，位置式构造测试
+  改写为新形状并断言 `markets`/`notes`/`batch_limits` 作关键字传入当场 `TypeError`。
+  变异验证：**M1** 把 `markets` 以默认值加回 → 两条测试红，判据点名 `markets`；**M2** 把 owner
+  集合换成不可能命中的名字 → 红并报"ChannelSpec 字段读取扫描一条都没命中"。
+- **测量方法的一条边界（登记，不改）**：曾想把这把尺子推广成 168 个 dataclass 的无人值守普查，
+  两条独立证据判它不成立——它把第 27 步刚测过有 14/6/3 个读取点的 `ProviderSpec.id/channels/default`
+  判成零读，也把 `CoreConfig.*` 判成零读而 `tstdx/runtime/kernel.py:66` 真在读 `cfg.core.timeout`。
+  成因：实例未绑定到具名变量（注册表里是元组成员）与 `self.` 根的属性链。所以本账本里每个
+  "零读取"结论都是逐类人工核对 owner 之后写下的，普查脚本不进门禁。
+- **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = `463b9ae` + 本步 5 文件，与本步提交树逐文件同内容）**：
+  离线全量 junit **3367 tests / 0 failures / 0 errors / 7 skipped**、`SUITE_RC=0`、140.1s；
+  `--cov=tstdx` **80.65%**（`Required test coverage of 77.0% reached`，阈值 77 未下调）。
+  同树 12 道门禁全部 RC=0：`ruff check`、`ruff format --check`、`mypy`（0 error）、originality
+  （Total 189 / Suspicious 0）、reachability（188 模块 / 171 可达 / 17 白名单）、
+  `contract_audit --ci`（63 契约 · 155 capability）、`spec_audit --strict`（44/44、100.0%）、
+  golden 审计、adversarial、bridges、benchmark smoke、docs links（82 文件）。
+  共享树隔离：只提交 `tstdx/providers/__init__.py`、`tests/providers/test_registry.py`、
+  `docs/providers/README.md` 与本文件；并行会话的第 26 步在途改动（`tstdx/diagnostics.py`、
+  `result.py`、`executor.py` 等 22 文件）全部留在工作区未动。
+
 ### Removed（v17 Phase 5 第 27 步 —— 注册表里两个没人读取的字段，F-52 注册表半边；**BREAKING**）
 
 - **`ProviderSpec` 少了两个公开字段**：`display_name`、`role`。11 个 Provider 各自写着
