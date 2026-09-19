@@ -46,20 +46,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Provenance.provider_timestamp` 同样零读取点（`tstdx/`+`scripts/`+`tests/` 三面对前两者的
   读取均为 0；后者从未被传入非默认值，也不在序列化面的显式键里）。因涉及两个公开 dataclass
   的形状，按 F-44/F-47 口径只钉事实、不代为拍板。
-- **复测（同一轮日志；HEAD `288e62f` + 本步 7 个文件的孤立 worktree）**：基线同提交单开
-  worktree 实测 `3373 tests / 0 failures / 0 errors / 8 skipped`，加本步文件后 junit
-  **3375 / 0 / 0 / 8**、`RC=0`，条数可核对：`3373 + 2`（本步新增 2 条门禁，注册表侧 3 换 3）。
-  `--cov=tstdx` **80.65%**（日志明写 `Required test coverage of 77.0% reached`，阈值 77 未下调，
-  未新增或删除任何 skip 标记）。同树 `ruff check` 与 `format --check`（427 files）、`mypy tstdx/`、
-  originality `--strict`（`Total: 189 Suspicious: 0`）、reachability `--strict`
+- **复测以提交树为准，不以拼装树为准**：本步代码提交为 `9fbece0` 后从该提交单开 worktree
+  复跑，第一条读数就是**一条红**——`test_every_documented_cli_example_parses` 报本文件
+  `exit 2`：F-52 行把"接进自省面"的 (a) 路径写成了一个 `providers` 子命令的行内示例，而 CLI
+  parser 里根本没有它（只有 `capabilities`）。一条登记"某字段无人读取"的账本行，自己臆造了
+  一个读取面，并被专为防这类事而上线的门禁抓住——`9127d78` 单行改写清零。清零后同一提交树
+  实测：**采集 3375 项**（基线 `288e62f` 的 3373 + 本步 2 条计划面门禁，注册表侧 3 换 3），
+  `-m "not network"` 选中 **3365** 项、**0 failed / 0 errors / 7 skipped**、139s，
+  `--cov=tstdx` **80.64%**（日志明写 `Required test coverage of 77.0% reached`，阈值 77 未
+  下调，未新增或删除任何 skip 标记）。**口径更正（F-53 同族）**：本条此前写的是"HEAD + 本步
+  7 个文件"拼装树上的 `3375 tests / 0 failures / 8 skipped`——那棵树的 junit `tests=` 计的是
+  **采集总数**（含 10 条被 `-m` deselect 的网络用例），且该树与本步提交内容并不逐字节相同
+  （每跳超时那条断言在拼装树里仍是旧写法），两个原因叠加使绝对数字不可复用，故以提交树读数为准。
+- **同树门禁逐个 RC=0**：`ruff check`、`ruff format --check`（427 files）、`mypy tstdx/`
+  （CI 参数）、originality `--strict`（`Total: 189 Suspicious: 0`）、reachability `--strict`
   （188 模块 / 171 可达 / 17 白名单豁免，`无未登记孤儿 ✓`）、`contract_audit --ci`
   （**63 契约 · 155 capability**，与第 17/19/20/22/24 步逐项相同）、`spec_audit --json --strict`
-  （44 specs · `coverage_pct: 100.0`）、`golden_audit --gate --require-markets`、docs links
-  （82 文件）、`tests/adversarial`、`tests/test_bridges.py` **全部 RC=0**。测量期间主树另有
-  并行会话在途（`client/api.py`、`result.py`、`integration/serialization.py`、`executor.py`
-  的 warnings 通道与 `strict` 面），同轮主树实测 1 条红
+  （44 specs · `coverage_pct: 100.0`）、`golden_audit --gate --require-markets
+  --require-kline-categories 0,4,9 --require-payloads`、docs links（82 文件）、
+  `tests/adversarial` + `tests/test_bridges.py`（28 项）。
+- **一次测量自伤，如实登记**：第一次跑该树离线全量时给子进程传了一个臆造的环境变量
+  `TSTDX_OFFLINE=1`，Phase 6 的 fail-closed 配置装载器当场拒绝未知 `TSTDX_*`，于是 **86 条**
+  测试红成同一个 `ConfigError`。判据正确、测量者错误；记下是因为"整片同因红"很容易被读成真实
+  回归，而判别只需读一条错误消息。
+- 测量期间主树另有并行会话在途（`client/api.py`、`result.py`、`integration/serialization.py`、
+  `executor.py` 的 warnings 通道与 `strict` 面），同轮主树实测 1 条红
   （`test_every_executed_option_key_still_compiles[strict]`：`白名单新增了 strict，但这里没有
-  对应的探针取值`），属对方在途的第 23 步白名单扩展，与本步零交集，故权威数字取孤立树。
+  对应的探针取值`），属对方在途的白名单扩展，与本步零交集，未代为提交、未改写。
 
 ### Changed（v17 Phase 5 第 24 步 —— `deadline_ms` 第一次真的约束执行面，F-48）
 
