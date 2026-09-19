@@ -311,14 +311,14 @@ asyncio.run(main())
 tstdx bars sh600519 --period day --count 80     # K 线
 tstdx quotes sh600519 sz000001                  # 实时行情
 tstdx server-test                               # 主站测速
-tstdx serve --host 0.0.0.0 --port 8000          # HTTP 服务
+tstdx serve --bind 0.0.0.0 --port 8000           # HTTP 服务
 tstdx probe 0x052D                              # 协议探测
 tstdx feedback stats                            # 使用统计
 
 # 主站池巡检
 tstdx hosts audit --family quotation            # 仅 7709 标准族
 tstdx hosts audit                               # 全 5 族并发巡检
-tstdx hosts audit --hosts-file extra_hosts.json # 注入社区贡献主站候选
+tstdx hosts --hosts-file extra_hosts.json audit  # 注入社区贡献主站候选
 tstdx hosts audit --report /tmp/audit.json --markdown /tmp/audit.md
 ```
 
@@ -408,7 +408,7 @@ cat > extra_hosts.json <<'JSON'
   ]
 }
 JSON
-tstdx hosts audit --hosts-file extra_hosts.json
+tstdx hosts --hosts-file extra_hosts.json audit
 ```
 
 输出：每族 healthy/degraded/offline 三态 + JSON/Markdown 报告；候选延迟样本写

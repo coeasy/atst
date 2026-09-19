@@ -9,7 +9,17 @@ import argparse
 from collections.abc import Mapping
 from typing import Any
 
-__all__ = ["_fmt", "_pct", "_print_bars_table", "_print_rows", "_print_table", "_resolve_hosts"]
+__all__ = [
+    "_client_kwargs",
+    "_fmt",
+    "_pct",
+    "_print_bars_table",
+    "_print_rows",
+    "_print_table",
+    "_resolve_hosts",
+    "_transport_kwargs",
+    "_transport_timeout",
+]
 
 
 def _print_table(headers: list[str], rows: list[list[Any]]) -> None:
@@ -50,6 +60,45 @@ def _resolve_hosts(args: argparse.Namespace):
     if hosts:
         return [parse_server(h) for h in hosts]
     return None
+
+
+def _client_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+    """Kernel path: forward only what the caller actually said.
+
+    ``UnifiedRuntime`` is the single reader of the config surface, so an
+    unset ``--host`` / ``--timeout`` must stay ``None`` here; substituting a
+    CLI-side default would silently outrank ``tstdx.toml``.
+    """
+    return {"hosts": _resolve_hosts(args), "timeout": getattr(args, "timeout", None)}
+
+
+def _transport_timeout(args: argparse.Namespace) -> float:
+    """Timeout for a command that builds its client outside the kernel.
+
+    ``[core] timeout`` is the documented default; an explicit ``--timeout``
+    still wins. The kernel applies the same rule to the family clients it
+    builds, so the CLI must not substitute its own literal default here.
+    """
+    from ..config import get_config
+
+    timeout = getattr(args, "timeout", None)
+    return float(timeout) if timeout is not None else get_config().core.timeout
+
+
+def _transport_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+    """Connection kwargs for raw **TDX-family** commands (``probe`` / ``blocks`` / …).
+
+    These build a transport client outside the kernel, so nothing else applies
+    the config surface for them; resolving it here is what keeps
+    ``[hosts] servers`` and ``[core] timeout`` true on every command.
+    """
+    from ..config import get_config
+
+    hosts = _resolve_hosts(args)
+    return {
+        "hosts": hosts if hosts is not None else (list(get_config().hosts.servers) or None),
+        "timeout": _transport_timeout(args),
+    }
 
 
 # --------------------------------------------------------------------------- #

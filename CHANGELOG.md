@@ -242,6 +242,41 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   `catalog` 内惰性 import 入口层会在构造执行器时反向拉起 `Client`。公共面对注册表的约束
   因此改由测试层承担（`test_registry_declaration_matches_public_surface`）。
 
+### Changed（v17 Phase 5 第 8 步 —— CLI 连接参数与配置面对齐，F-27）
+
+- **`tstdx --host` / `--timeout` 从此真的到达执行面**。改前 7 个行情命令（`quotes`/`bars`/
+  `snapshot`/`minute`/`trades`/`security-count`/`security-list`）解析了 `--host` 却构造裸
+  `Client()`，参数当场丢弃且命令照常返回数据（fail-open）；15 个命令的 `--timeout` 带
+  `default=5.0` 字面值，与 `[core] timeout` 的默认值数值相同，因此只有在用户真去改
+  `tstdx.toml` 时才暴露为"配置不生效"。现 CLI 只有两种合法姿态：**用户显式说过即转下去，
+  未说过即交 `None` 让内核读配置**。
+- `probe`/`blocks`/`list`/`quotes-snapshot`/`stream` 5 个"内核外自建传输客户端"的命令改为
+  经 `_transport_kwargs` 解析 `[hosts] servers`（与内核 `runtime/kernel.py` 同一条优先级
+  规则）；`goods`/`f10` 只统一 timeout，其 `hosts` 仍只认 `--host`——`[hosts] servers` 是
+  7709 标准族条目，喂给 goods/F10 协议客户端是错的。
+- `stream --provider` 此前解析后从不转发（非 tdx 静默按 tdx 跑），现已接线。
+- `--timeout` 的字面默认值仅保留在 `hosts` 与 `server-test` 两个诊断命令上（它们要遍历
+  候选主站池，本就不该吃 `[core] timeout`），其余 15 处改为 `None`。
+
+### Added（v17 Phase 5 第 8 步 —— 防"幻影开关"与失效示例的两道门禁）
+
+- `tests/architecture/test_cli_connection_contract.py`：用 fake `Client` 捕获真实构造参数，
+  对每个走内核的命令断言"显式 `--host` 必达 / 未指定必为 `None`"；另有一条**结构性守卫**，
+  凡 parser 声明了 `--host`/`--timeout` 且不在诊断白名单内的命令，其 handler 必须使用
+  `_client_kwargs` / `_transport_kwargs` / `_transport_timeout` 之一 —— 对将来新增的命令
+  同样生效。变异验证：把 `cmd_quotes` 退回裸 `Client()` 后三条断言同时命中。
+- `tests/architecture/test_doc_code_consistency.py::test_every_documented_cli_example_parses`：
+  活文档（围栏代码块 + 行内代码）里以 CLI 程序名开头的命令行逐条过真实 parser，含 `<>` /
+  `[…]` 的用法语法行豁免。**上线即抓到 4 条本轮之前就失效的文档命令**（见下条 Fixed）。
+
+### Fixed（v17 Phase 5 第 8 步 —— 文档里的 CLI 示例照抄即 exit 2）
+
+- README：`serve` 的绑定参数写成了已改名的 `--host`（现为 `--bind`）；两处 `hosts audit
+  --hosts-file …` 把组级选项放在子命令之后，parser 拒为 exit 2，改为
+  `hosts --hosts-file … audit`。
+- `docs/api/interfaces.md`：`hosts audit --family all` 中 `all` 不是合法取值（不写即全 5
+  族）；`docs/api/README.md` 的 `margin` 命令示例缺必填位置参数。
+
 ### Fixed
 
 - **`tstdx.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，

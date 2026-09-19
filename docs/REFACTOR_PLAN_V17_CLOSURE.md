@@ -58,6 +58,7 @@
 | F-24 | **P0**（发布链路类） | **一条 PR 阻塞 CI job 固定为红，且守卫测试把缺陷写成契约**（Phase 5 第 6 步本地全链复现时暴露）：`77bc2fe`（v16 Phase 2）物理删除 `tstdx/native.py` 与 `tests/compatibility/test_native_fallback_contract.py`，但三处消费者原地未动——① `.github/workflows/native.yml` 的 "Native compatibility & fallback parity" job 仍在 `pull_request: [main]` 上跑：`compileall -q tstdx/native.py` 对不存在的路径**打印 "Can't list" 却退出 0**（本机实测），于是一步静默"通过"，真正跑测试的下一步以 pytest 退出码 4 固定失败；② `Makefile` 的 `native-compat` target 与 `gates` 依赖链仍指向那个已删除的测试 ⇒ `make gates` 走到底必红；③ `test_ci_workflow_contracts.py` 有一条**断言 workflow 必须包含该已删除测试路径**的守卫，即"防止回归"的测试正好把回归钉住。同批发现的文档口径失真：PR 模板要求勾选这条不可能为真的门禁、CONTRIBUTING 门禁清单列着它、README 写 `CI：9 jobs`（实际 11）与"六步门禁"（`gates:` 实际挂了 12 项 target，删掉 ghost 后 11） | **已清偿**（2026-09-19）：① 删 `native.yml` 与 `native-compat` target 及 `gates` 依赖（能力已随 `tstdx.native` 一起退役，无保留理由；不做"恢复测试"是因为被测模块本身不存在）；② **补三类守卫**取代那条反向契约：workflow 与 Makefile 里写死的 `tests/…\|scripts/…\|tstdx/….py` 路径必须存在于磁盘、`gates:` 的每个前置 target 必须已定义；③ 文档面同步（PR 模板勾选项、CONTRIBUTING 清单、README 的 11 jobs / 11 步门禁 / ruff format 既成事实）。**每条守卫都用变异验证过**：往 ci.yml 与 Makefile 各塞一条指向不存在文件的路径、给 `gates:` 加一个未定义 target、把 README 数字改回 9/12，三处分别 RC=1 并指名缺陷，随后原样还原 |
 | F-25 | P2（口径类） | **`contract_audit.py` 的自述比它的行为强**：模块 docstring 写着规则 1「每个业务 capability **必须**有对应的 Typed Query 契约」、用法段写着「`--ci` 任何缺口 exit 1」「退出码 0=全绿」，而代码把"注册表有、契约无"判为 `PENDING` 且 `run()` 只对 `ERROR` 计数（`if ci and errors`）。实测口径：155 个业务 capability / 63 个有契约 ⇒ **92 项 PENDING 全部 exit 0**。README 另把它写成"契约↔注册表↔**绑定**三方对账"，而它的五段审计里根本没有 provider bindings 这一维 | **已清偿**（2026-09-19）：docstring 改为逐条标注级别（规则 1、4 为 PENDING，2、3、5 为 ERROR）并写清"`--ci` 仅在存在 ERROR 级缺口时 exit 1，PENDING 是登记在案的待补面不阻断"；README 的两处描述改成实际的五段对账。**没有**把 PENDING 升级为阻断——那需要一次性补 92 份契约，且会把一个已知待办伪装成既成事实；缺口尺寸记在本行而不是塞进门禁 |
 | F-26 | P1（链路贯通类） | **唯一在每次构造执行器时运行的贯通审计，看不见它名字里那件事**：`tstdx/catalog/capability_audit.py::audit_capability_bindings()`（由 `runtime/audit.py` 在 `DirectProviderExecutor.__init__` 调用）只断言 `MIGRATED_BINDINGS ⊆ DIRECT_BINDINGS`，而**能力目录本身就是从绑定表生成的**——某项对外能力悄悄失去执行路径时两侧同时缩小，审计照绿；反向（绑定表里藏着没承诺过的暗绑定）也不查。Provider 注册表逐 channel 声明的 `(provider, channel, capability)` 这一独立事实源**只在离线测试 `tests/runtime/test_v13_architecture_alignment.py:50` 里对账过**——它保护的是"跑测试的人"，产品内一次单侧漂移不会被任何运行期判据捕获（同处的 `audit_direct_bindings()` 只查重复键与执行元数据，缺元数据仅 `warnings.warn`）。守卫测试本身也形同虚设：只断言 `report.* > 0`，剩 1 条绑定也通过 | **已清偿**（2026-09-19）：① 审计改为以**注册表声明**为独立分母的双向对账——`migrated ⊆ executable`、`declared − executable` 非空即报"registry-declared … with no executor binding"（声明了却没有执行路径）、`executable − declared` 非空即报"outside the Provider registry"（执行路径不受声明约束），报告新增 `declared_bindings`；运行期判据由此与离线测试同权重，任何一侧漂移都在 `Client()` 构造期失败；② **不引入 `Client` 依赖**：曾考虑用 `Client.capabilities()` 当对外面，但它自身由 `MIGRATED_CAPABILITIES` 推导（同源于绑定表，不是独立分母），且在 catalog 里惰性 import client 会在构造执行器时反向拉起入口层；③ 测试补真实断言：注册表 capability 名集合 == `Client.capabilities()`（172），并以 monkeypatch `DIRECT_BINDINGS` 做三次变异（丢目录内绑定 / 丢目录外绑定 / 加幽灵绑定）分别命中三条消息，证明守卫有牙。**复测**：当前三面对账 `migrated 229 ⊆ executable 251 = declared 251`、双向差集为空 ⇒ 主体链路在"声明↔执行"这一维确实闭合（这是对本轮"核心功能是否全部实现、主体链路是否贯通"的机器可复核回答，同时如实标注：绑定存在 ≠ 运行期正确，后者仍靠 golden/adversarial 与尚未执行的真实网络冒烟）。`tests/provider_isolation` / `tests/runtime` / `tests/architecture` RC=0，`mypy` RC=0，`ruff check`/`format --check` 干净 |
+| F-27 | P1（配置面 ↔ 使用面） | **CLI 声明了一整排连接参数，却把它们丢在传输适配层**（Phase 5 第 8 步实测）。Phase 6 让 `UnifiedRuntime` 成为配置面唯一读者之后，CLI 这条最常用的入口并未跟着改：① `quotes`/`bars`/`snapshot`/`minute`/`trades`/`security-count`/`security-list` 7 个命令由 `_provider_args()` 声明了 `--host`，handler 却构造裸 `Client()`——`--host` 与 `--timeout` 双双丢弃，命令正常返回数据、退出码 0，即"幻影开关"（fail-open：用户以为钉住了主站，实际仍在配置/内置池上）；② 15 个命令的 `--timeout` 带 `default=5.0` 字面值，而 `[core] timeout` 默认同为 5.0 ⇒ 数值上看不见差异，**只要用户真在 `tstdx.toml` 里改过就静默失效**，F-16 刚承诺的"配置面即执行面契约"在 CLI 侧被重新破掉；③ `probe`/`blocks`/`list`/`quotes-snapshot` 4 个命令有意走传输客户端 `TdxClient`（不经内核），却把 `_resolve_hosts()` 的"未指定"折成 `None` 直接交给构造器 ⇒ `[hosts] servers` 对它们永远是空头支票（内核在 `kernel.py:62-67` 做的正是"未指定即读配置"这一步）；`goods`/`f10` 同族问题但**只修 timeout**——它们是多步流程的族客户端（goods/F10 协议），而 `[hosts] servers` 是 7709 标准族条目，把行情主站喂给它们是错的，故其 `hosts` 仍只认 `--host`；④ `stream --provider` 解析后从不转发，非 tdx Provider 静默按 tdx 跑。触发发现的是一条无关的文档修正：README 写着 `serve --host 0.0.0.0`（前面带 CLI 程序名），而 `serve` 早已改名 `--bind`，照抄即 exit 2——**没有任何门禁跑过文档里的 CLI 示例** | **已清偿**（2026-09-19）：① `_common.py` 新增三个单一职责助手，把"CLI 只有两种合法姿态"写成代码——`_client_kwargs`（内核路径：只转达用户显式说过的，未说即 `None` 让内核读配置）、`_transport_kwargs`（内核外传输客户端：就地复现内核的配置解析，`--host` 缺席时取 `[hosts] servers`）、`_transport_timeout`（同规则的单值版）；16 处内核侧构造点（8 `Client(**_client_kwargs(args))` + 8 `_ClientRows(**_client_kwargs(args))`）、7 处传输侧构造点（`probe`/`blocks`/`list`/`quotes-snapshot`/`stream` 走 `_transport_kwargs`，`goods`/`f10` 走 `_transport_timeout`）、`stream` 的 `--provider` 全部接线；② 15 个 `--timeout` 字面默认改 `None`，只保留 `hosts`/`server-test` 两处诊断命令的 5.0（它们要遍历候选池，本就不该吃 `[core] timeout`，就地注明理由）；③ **补两道门禁**：`tests/architecture/test_cli_connection_contract.py`（20 项，用 fake Client 捕获真实构造参数，含"逐命令结构性守卫"——凡声明 `--host`/`--timeout` 又非诊断白名单的命令，其 handler 源码必须出现三个助手之一）与 `test_doc_code_consistency.py::test_every_documented_cli_example_parses`（活文档的围栏块+行内 CLI 示例逐条过真实 parser）。**门禁上线即抓到 4 条已失效文档命令**：README 两处 `hosts audit --hosts-file X`（`--hosts-file` 属 `hosts` 组级选项，必须在 `audit` 之前）被 parser 拒为 exit 2、`docs/api/interfaces.md` 的 `--family all`（`all` 不是合法取值，默认即全 5 族）、`docs/api/README.md` `margin` 那一行缺必填位置参数——全部按真实语法改正，未放宽门禁。**变异验证**：把 `cmd_quotes` 改回裸 `Client()` ⇒ 三条断言分别命中 `KeyError: 'hosts'` ×2 与结构性守卫 `['quotes'] == []`，随后原样还原（`git diff --stat` 与改前一致）并复绿 |
 
 ---
 
@@ -371,6 +372,46 @@
      （阈值 77 未动）。三次变异（丢目录内绑定 / 丢目录外绑定 / 加幽灵绑定）分别命中
      三条不同错误消息。
 
+8. ✅ **CLI 连接参数 ↔ 配置面对齐（Phase 5 第 8 步，2026-09-19，见 §0.3 F-27）**：
+   第 7 步证明"声明 ↔ 执行"闭合之后，这一步查的是另一条容易被忽略的边——**用户当面
+   说过的话**（命令行选项）有没有走到执行面。答案是四项都在静默丢失（详见 F-27 行）。
+
+   - **判据不是"数字对不对"，而是"谁有优先权"**。改前 `--timeout` 的字面 5.0 与
+     `[core] timeout` 的默认 5.0 数值相同，因此任何默认状态下的手工测试都看不出问题；
+     只有真去改配置文件的人才撞得上——这类缺陷的通用形状就是"CLI 自带默认值 = 静默否决
+     配置面"。修法是让 CLI 只在用户显式说话时发言：`_client_kwargs` 对未指定的项交 `None`
+     （内核读配置），`_transport_kwargs` 对内核外自建的传输客户端就地复现同一条优先级
+     规则（与 `runtime/kernel.py:62-67` 同构）。**没有**为此把 CLI 塞进内核：那会让
+     适配层反过来依赖被适配者。
+   - **一族两式的取舍**：`goods`/`f10` 与 `probe`/`blocks` 同为"内核外传输客户端"，却
+     只统一 timeout 不统一 hosts——`[hosts] servers` 里的条目是 7709 标准族主站，喂给
+     goods/F10 协议客户端是错的（会把请求指到不应答的端口）。这类"看着对称、实际不对称"
+     的点写进注释与助手 docstring（`_transport_kwargs` 明写"仅 TDX 标准族"），避免后来者
+     顺手统一。
+   - **两道门禁**：`tests/architecture/test_cli_connection_contract.py` 用 fake `Client`
+     捕获真实构造参数（`Client` 在 `runtime_commands` 与 `tstdx.client.api` 两处都要换，
+     因为 `_ClientRows` 在 `__init__` 内 import），除逐命令的 host/timeout 转发的正反面
+     外，加一条**结构性守卫**：凡 parser 声明了 `--host`/`--timeout`、又不属诊断白名单
+     （`hosts`/`server-test`：要遍历候选池，本就不该吃 `[core] timeout`）的命令，其
+     handler 源码必须出现三个助手之一——这条不看具体命令，故对**新增**命令同样有效。
+     另一道 `test_doc_code_consistency.py::test_every_documented_cli_example_parses`
+     把活文档（围栏块 + 行内代码）里以 CLI 程序名开头的命令行逐条过真实 parser，含 `<>`/`[…]` 的
+     用法语法行豁免。
+   - **门禁上线即抓到 4 条已失效命令**（都是本轮之前就存在的缺陷，非本次引入）：README
+     两处 `hosts audit --hosts-file …`（组级选项必须前置于 `audit`）、
+     `docs/api/interfaces.md` 的 `--family all`（非法取值，默认即全 5 族）、
+     `docs/api/README.md` `margin` 那一行缺必填位置参数 `symbol`。一律按真实语法
+     改正，**未放宽门禁**；同时改掉 README 里 `serve` 的 `--host` → `--bind`。
+   - **变异验证**：把 `cmd_quotes` 退回裸 `Client()` ⇒ 三条断言同时命中
+     （`KeyError: 'hosts'` ×2 + 结构性守卫报出 `['quotes']`），原样还原后复绿；
+     `git diff --stat` 与变异前一致，无残留。
+   - **复测**（本机 Windows/py3.12，同一轮日志）：`ruff check` / `format --check` RC=0，
+     `mypy tstdx/`（CI 参数）RC=0，originality `Total: 193 / Suspicious: 0`，
+     spec `coverage_pct: 100.0`，reachability `--strict` RC=0（记录缺陷 0），
+     golden / contract_audit `--ci` / benchmark smoke / docs links（82 文件）逐条 RC=0；
+     离线全量套件 `-m "not network"` **3276 项 / 0 失败 / 0 错误 / 7 跳过**，
+     覆盖率 **78.83%**（阈值 77 未动）。
+
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
 
 > **为什么插到发布之前**：F-16 是 P0 口径缺陷——对外声称支持 `tstdx.toml` 配置，
@@ -445,7 +486,11 @@
 - [ ] executor registry 三件套不存在，`DIRECT_BINDINGS` 唯一
 - [x] `tstdx.toml` / `TSTDX_*` / `configure()` 三条路径对 `Client()` 真实生效，且
       配置面不引入任何缓存或降级语义（Phase 6；`tests/runtime/test_kernel_config_wiring.py`）
-- [ ] 根级 `.py` ≤ 10；`execution/` DAG 与 `provider/` v14 适配器已物理删除
+- [x] 根级 `.py` ≤ 10（实测 10）；`execution/` DAG 与 `provider/` v14 适配器目录已不存在
+      （Phase 3A/3C；根级白名单守卫见 `tests/architecture`）
 - [ ] 60 typed 契约端到端或有下线记录；`QueryResponse` 仅为视图
 - [ ] README / ARCHITECTURE / `__init__` docstring 与代码零矛盾；旧方案归档
+- [x] CLI 声明的每个连接参数都到达执行面，且活文档里的 CLI 示例逐条过真实 parser
+      （Phase 5 第 8 步 F-27；`tests/architecture/test_cli_connection_contract.py` +
+      `test_doc_code_consistency.py::test_every_documented_cli_example_parses`）
 - [ ] 随机测试序无红；全量门禁绿；三面冒烟通过（同 SHA 证据）

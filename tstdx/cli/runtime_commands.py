@@ -1,7 +1,16 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""v13 CLI command handlers backed exclusively by Client."""
+"""CLI command handlers.
+
+Data commands go through :class:`~tstdx.client.api.Client`. Six commands stay
+on the transport client on purpose: ``probe`` drives the protocol prober,
+``goods`` / ``f10`` use family-specific clients with multi-step flows, and
+``blocks`` / ``list`` / ``quotes-snapshot`` page over raw calls and report raw
+per-symbol failures. All of them resolve the config surface through
+:func:`~tstdx.cli._common._transport_kwargs` so ``tstdx.toml`` stays true there
+too.
+"""
 
 from __future__ import annotations
 
@@ -17,12 +26,15 @@ from ..errors import ValidationError
 from ..integration.serialization import jsonable, serialize_result
 from ..runtime.orchestration import FallbackPolicy
 from ._common import (
+    _client_kwargs,
     _fmt,
     _pct,
     _print_bars_table,
     _print_rows,
     _print_table,
     _resolve_hosts,
+    _transport_kwargs,
+    _transport_timeout,
 )
 
 
@@ -58,7 +70,7 @@ def cmd_query(args: Any) -> int:
         raise ValidationError("--args must decode to a JSON array")
     if not isinstance(call_kwargs, dict):
         raise ValidationError("--kwargs must decode to a JSON object")
-    with Client() as client:
+    with Client(**_client_kwargs(args)) as client:
         _print(
             serialize_result(
                 client.call(
@@ -76,7 +88,7 @@ def cmd_query(args: Any) -> int:
 
 
 def cmd_quotes(args: Any) -> int:
-    with Client() as client:
+    with Client(**_client_kwargs(args)) as client:
         _print(
             serialize_result(
                 client.quotes(
@@ -91,7 +103,7 @@ def cmd_quotes(args: Any) -> int:
 
 
 def cmd_bars(args: Any) -> int:
-    with Client() as client:
+    with Client(**_client_kwargs(args)) as client:
         _print(
             serialize_result(
                 client.bars(
@@ -110,19 +122,19 @@ def cmd_bars(args: Any) -> int:
 
 
 def cmd_snapshot(args: Any) -> int:
-    with Client() as client:
+    with Client(**_client_kwargs(args)) as client:
         _print(serialize_result(client.snapshot(args.symbol, provider=args.provider)))
     return 0
 
 
 def cmd_minute(args: Any) -> int:
-    with Client() as client:
+    with Client(**_client_kwargs(args)) as client:
         _print(serialize_result(client.minute(args.symbol, provider=args.provider)))
     return 0
 
 
 def cmd_trades(args: Any) -> int:
-    with Client() as client:
+    with Client(**_client_kwargs(args)) as client:
         _print(
             serialize_result(
                 client.trades(
@@ -134,13 +146,13 @@ def cmd_trades(args: Any) -> int:
 
 
 def cmd_security_count(args: Any) -> int:
-    with Client() as client:
+    with Client(**_client_kwargs(args)) as client:
         _print(serialize_result(client.security_count(market=args.market, provider=args.provider)))
     return 0
 
 
 def cmd_security_list(args: Any) -> int:
-    with Client() as client:
+    with Client(**_client_kwargs(args)) as client:
         _print(
             serialize_result(
                 client.security_list(market=args.market, start=args.start, provider=args.provider)
@@ -158,7 +170,7 @@ def cmd_stream(args: Any) -> int:
     from ..streaming import QuoteStream
 
     syms = args.symbols
-    stream = QuoteStream(hosts=_resolve_hosts(args), timeout=args.timeout)
+    stream = QuoteStream(provider=args.provider, **_transport_kwargs(args))
     counts = {"quote": 0, "error": 0}
 
     def _on_quote(code: str, q: dict[str, Any]) -> None:
@@ -365,14 +377,15 @@ def _cmd_probe(args: Any) -> int:
         return 2
 
     rate = min(max(float(args.rate_limit), 0.1), 5.0)
+    conn = _transport_kwargs(args)
 
     try:
-        with TdxClient(hosts=_resolve_hosts(args), timeout=args.timeout) as client:
+        with TdxClient(**conn) as client:
             prober = Prober(
                 client=client,
                 rate_limit=rate,
                 archive_dir=args.archive_dir,
-                timeout=args.timeout,
+                timeout=conn["timeout"],
                 block_offline_only=not args.allow_trading_hours,
             )
             result = prober.probe_command(cmd_id, market=args.market, code=args.code)
@@ -409,10 +422,10 @@ class _ClientRows:
     is unwrapped here instead of at each call site.
     """
 
-    def __init__(self, *, timeout: float) -> None:
+    def __init__(self, *, timeout: float | None = None, hosts: Any | None = None) -> None:
         from ..client.api import Client
 
-        self._client = Client(timeout=timeout)
+        self._client = Client(hosts=hosts, timeout=timeout)
 
     def __enter__(self) -> _ClientRows:
         return self
@@ -489,7 +502,7 @@ def _cmd_margin(args: Any) -> int:
     from ..domain.models import to_dicts
 
     try:
-        with _ClientRows(timeout=args.timeout) as api:
+        with _ClientRows(**_client_kwargs(args)) as api:
             rows = to_dicts(api.margin(args.symbol, days=args.days))
     except Exception as exc:  # noqa: BLE001 - Web 源异常统一出口
         print(f"错误：融资融券获取失败 —— {exc}", file=sys.stderr)
@@ -524,7 +537,7 @@ def _cmd_sector_flow(args: Any) -> int:
     from ..domain.models import to_dicts
 
     try:
-        with _ClientRows(timeout=args.timeout) as api:
+        with _ClientRows(**_client_kwargs(args)) as api:
             rows = to_dicts(api.sector_flow(args.board, sort=args.sort, limit=args.limit))
     except Exception as exc:  # noqa: BLE001 - Web 源异常统一出口
         print(f"错误：板块资金流获取失败 —— {exc}", file=sys.stderr)
@@ -560,7 +573,7 @@ def _cmd_adjusted_bars(args: Any) -> int:
     from ..domain.models import to_dicts
 
     try:
-        with _ClientRows(timeout=args.timeout) as api:
+        with _ClientRows(**_client_kwargs(args)) as api:
             data = to_dicts(
                 api.adjusted_bars(
                     args.symbol,
@@ -585,7 +598,7 @@ def _cmd_all_market(args: Any) -> int:
     from ..domain.models import to_dicts
 
     try:
-        with _ClientRows(timeout=args.timeout) as api:
+        with _ClientRows(**_client_kwargs(args)) as api:
             data = to_dicts(
                 api.all_market(
                     node=args.node,
@@ -610,7 +623,7 @@ def _cmd_minute_klines(args: Any) -> int:
     from ..domain.models import to_dicts
 
     try:
-        with _ClientRows(timeout=args.timeout) as api:
+        with _ClientRows(**_client_kwargs(args)) as api:
             data = to_dicts(api.minute_klines(args.symbol, period=args.period, count=args.count))
     except Exception as exc:  # noqa: BLE001 - Web 源异常统一出口
         print(f"错误：分钟 K 线获取失败 —— {exc}", file=sys.stderr)
@@ -628,7 +641,7 @@ def _cmd_baidu(args: Any) -> int:
     from ..domain.models import to_dicts
 
     try:
-        with _ClientRows(timeout=args.timeout) as api:
+        with _ClientRows(**_client_kwargs(args)) as api:
             if args.kind == "minute":
                 data = to_dicts(api.baidu_minute(args.symbol))
             elif args.kind == "ticks":
@@ -667,7 +680,7 @@ def _cmd_fund(args: Any) -> int:
         print(f"错误：fund {args.action} 需要 <code>（6 位基金代码）", file=sys.stderr)
         return 2
     try:
-        with _ClientRows(timeout=args.timeout) as api:
+        with _ClientRows(**_client_kwargs(args)) as api:
             if args.action == "nav":
                 rows = api.fund_nav_history(
                     args.code, page_size=args.page_size, page_index=args.page_index
@@ -696,7 +709,7 @@ def _cmd_index(args: Any) -> int:
         )
         return 2
     try:
-        with _ClientRows(timeout=args.timeout) as api:
+        with _ClientRows(**_client_kwargs(args)) as api:
             rows = api.index_constituents(args.code)
     except Exception as exc:  # noqa: BLE001 - Web 源异常统一出口
         print(f"错误：指数成分获取失败 —— {exc}", file=sys.stderr)
@@ -717,7 +730,7 @@ def _cmd_blocks(args: Any) -> int:
     from ..client import TdxClient
 
     try:
-        with TdxClient(hosts=_resolve_hosts(args), timeout=args.timeout) as c:
+        with TdxClient(**_transport_kwargs(args)) as c:
             rows: list[dict[str, Any]] = []
             for start in range(0, args.count, 1000):
                 page = c.block_quotes(args.block_type, start=start)
@@ -742,7 +755,7 @@ def _cmd_goods(args: Any) -> int:
     from ..client import get_client
 
     try:
-        with get_client("goods", hosts=_resolve_hosts(args), timeout=args.timeout) as c:
+        with get_client("goods", hosts=_resolve_hosts(args), timeout=_transport_timeout(args)) as c:
             if args.kind == "quote":
                 data = c.goods_quote(args.symbol, as_format="dict")
             else:
@@ -782,7 +795,7 @@ def _cmd_f10(args: Any) -> int:
     from ..client import get_client
 
     try:
-        with get_client("f10", hosts=_resolve_hosts(args), timeout=args.timeout) as c:
+        with get_client("f10", hosts=_resolve_hosts(args), timeout=_transport_timeout(args)) as c:
             if args.file:
                 sections = c.parse_text(c.download(args.symbol, args.file))
                 data = [{"title": s.title, "text": s.text} for s in sections]
@@ -814,7 +827,7 @@ def _cmd_list(args: Any) -> int:
     if market in ("sh", "sz", "bj"):
         market = _PREFIX_MARKET[market]
     try:
-        with TdxClient(hosts=_resolve_hosts(args), timeout=args.timeout) as c:
+        with TdxClient(**_transport_kwargs(args)) as c:
             rows: list[dict[str, Any]] = []
             for start in range(int(args.start), int(args.start) + int(args.count), 1000):
                 page = c.security_list(int(market), start=start)
@@ -841,7 +854,7 @@ def _cmd_quotes_snapshot(args: Any) -> int:
 
     last_errors: list[tuple[str, BaseException]] = []
     try:
-        with TdxClient(hosts=_resolve_hosts(args), timeout=args.timeout) as c:
+        with TdxClient(**_transport_kwargs(args)) as c:
             quotes = c.quotes_snapshot(args.symbols)
             last_errors = list(getattr(c, "last_errors", []))
     except Exception as exc:  # noqa: BLE001

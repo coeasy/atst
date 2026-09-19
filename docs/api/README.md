@@ -93,7 +93,7 @@
 | `tstdx.web.wencai` | **i问财自然语言选股**（cookie 调用方持有）|
 | `tstdx.web.boards` | 个股所属板块 / 板块行情 |
 | `tstdx.web.corporate` | F10/业绩/IPO 申购日历（datacenter 报表族）|
-| `tstdx.web.adapters_margin` | **融资融券个股明细**（datacenter RPTA_WEB_RZRQ_GGMX；`margin` capability / `tstdx margin`）|
+| `tstdx.web.adapters_margin` | **融资融券个股明细**（datacenter RPTA_WEB_RZRQ_GGMX；`margin` capability / `tstdx margin <symbol>`）|
 | `tstdx.web.normalize` | volume/amount 集中归一化 |
 | `tstdx.streaming.engine` | StreamEngine（重连/补数/背压）|
 | `tstdx.streaming.push` | PushChannel 0x0547 原始推送 |

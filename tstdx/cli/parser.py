@@ -70,7 +70,8 @@ def _provider_args(parser: argparse.ArgumentParser, *, fallback: bool = False) -
         parser.add_argument(
             "--fallback", help="explicit comma-separated Provider order, e.g. tdx,tencent,sina"
         )
-    # 兼容契约：行情类命令保留 --host（单/多主站选择），v13 Client 不消费但解析透传。
+    # ``--host`` pins the server pool for this invocation; absent means
+    # ``[hosts] servers`` from the config surface (or the built-in pool).
     parser.add_argument(
         "--host", action="append", default=[], help="explicit host:port overrides (repeatable)"
     )
@@ -154,7 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--interval", type=float, default=1.0)
     p.add_argument("--diff-only", dest="diff", action="store_true")
     p.add_argument("--max-queue", type=int, default=1024)
-    p.add_argument("--timeout", type=float, default=5.0)
+    p.add_argument("--timeout", type=float, default=None)
     p.add_argument("--seconds", type=float, default=0.0)
     p.set_defaults(func=cmd_stream)
 
@@ -231,7 +232,7 @@ def build_parser() -> argparse.ArgumentParser:
     probe_p.add_argument("--rate-limit", type=float, default=1.0)
     probe_p.add_argument("--archive-dir", default=None)
     probe_p.add_argument("--allow-trading-hours", action="store_true")
-    probe_p.add_argument("--timeout", type=float, default=5.0)
+    probe_p.add_argument("--timeout", type=float, default=None)
     probe_p.add_argument("--json", action="store_true")
     probe_p.set_defaults(func=_cmd_probe)
 
@@ -253,7 +254,7 @@ def build_parser() -> argparse.ArgumentParser:
     mg_p = sub.add_parser("margin", help="融资融券明细")
     mg_p.add_argument("symbol")
     mg_p.add_argument("--days", type=int, default=30)
-    mg_p.add_argument("--timeout", type=float, default=5.0)
+    mg_p.add_argument("--timeout", type=float, default=None)
     mg_p.add_argument("--json", action="store_true")
     mg_p.set_defaults(func=_cmd_margin)
 
@@ -261,7 +262,7 @@ def build_parser() -> argparse.ArgumentParser:
     sf_p.add_argument("--board", default="industry")
     sf_p.add_argument("--sort", default="main_net")
     sf_p.add_argument("--limit", type=int, default=50)
-    sf_p.add_argument("--timeout", type=float, default=5.0)
+    sf_p.add_argument("--timeout", type=float, default=None)
     sf_p.add_argument("--json", action="store_true")
     sf_p.set_defaults(func=_cmd_sector_flow)
 
@@ -270,7 +271,7 @@ def build_parser() -> argparse.ArgumentParser:
     ab_p.add_argument("--method", default="qfq")
     ab_p.add_argument("--period", default="day")
     ab_p.add_argument("--count", type=int, default=320)
-    ab_p.add_argument("--timeout", type=float, default=5.0)
+    ab_p.add_argument("--timeout", type=float, default=None)
     ab_p.add_argument("--json", action="store_true")
     ab_p.set_defaults(func=_cmd_adjusted_bars)
 
@@ -279,7 +280,7 @@ def build_parser() -> argparse.ArgumentParser:
     am_p.add_argument("--source", default="sina")
     am_p.add_argument("--page-size", type=int, default=80)
     am_p.add_argument("--max-pages", type=int, default=None)
-    am_p.add_argument("--timeout", type=float, default=5.0)
+    am_p.add_argument("--timeout", type=float, default=None)
     am_p.add_argument("--json", action="store_true")
     am_p.set_defaults(func=_cmd_all_market)
 
@@ -287,7 +288,7 @@ def build_parser() -> argparse.ArgumentParser:
     mk_p.add_argument("symbol")
     mk_p.add_argument("--period", default="5min")
     mk_p.add_argument("--count", type=int, default=240)
-    mk_p.add_argument("--timeout", type=float, default=5.0)
+    mk_p.add_argument("--timeout", type=float, default=None)
     mk_p.add_argument("--json", action="store_true")
     mk_p.set_defaults(func=_cmd_minute_klines)
 
@@ -298,7 +299,7 @@ def build_parser() -> argparse.ArgumentParser:
     bd_p.add_argument("--count", type=int, default=320)
     bd_p.add_argument("--end-time", type=int, default=None)
     bd_p.add_argument("--limit", type=int, default=200)
-    bd_p.add_argument("--timeout", type=float, default=5.0)
+    bd_p.add_argument("--timeout", type=float, default=None)
     bd_p.add_argument("--json", action="store_true")
     bd_p.set_defaults(func=_cmd_baidu)
 
@@ -314,7 +315,7 @@ def build_parser() -> argparse.ArgumentParser:
     fund_est.add_argument("--json", action="store_true")
     fund_list = fund_sub.add_parser("list")
     fund_list.add_argument("--json", action="store_true")
-    fund_p.add_argument("--timeout", type=float, default=5.0)
+    fund_p.add_argument("--timeout", type=float, default=None)
     fund_p.set_defaults(func=_cmd_fund)
 
     idx_p = sub.add_parser("index", help="指数成分股")
@@ -322,7 +323,7 @@ def build_parser() -> argparse.ArgumentParser:
     idx_const = idx_sub.add_parser("constituents")
     idx_const.add_argument("code", nargs="?")
     idx_const.add_argument("--json", action="store_true")
-    idx_p.add_argument("--timeout", type=float, default=5.0)
+    idx_p.add_argument("--timeout", type=float, default=None)
     idx_p.set_defaults(func=_cmd_index)
 
     # --- market (migrated from cmds_market.py) ---
@@ -330,7 +331,7 @@ def build_parser() -> argparse.ArgumentParser:
     blk_p = sub.add_parser("blocks", help="板块行情")
     blk_p.add_argument("block_type")
     blk_p.add_argument("--count", type=int, default=1000)
-    blk_p.add_argument("--timeout", type=float, default=5.0)
+    blk_p.add_argument("--timeout", type=float, default=None)
     blk_p.add_argument("--json", action="store_true")
     blk_p.set_defaults(func=_cmd_blocks)
 
@@ -339,14 +340,14 @@ def build_parser() -> argparse.ArgumentParser:
     goods_p.add_argument("--kind", default="quote", choices=("quote", "bars"))
     goods_p.add_argument("--period", default="day")
     goods_p.add_argument("--count", type=int, default=320)
-    goods_p.add_argument("--timeout", type=float, default=5.0)
+    goods_p.add_argument("--timeout", type=float, default=None)
     goods_p.add_argument("--json", action="store_true")
     goods_p.set_defaults(func=_cmd_goods)
 
     f10_p = sub.add_parser("f10", help="F10 资料")
     f10_p.add_argument("symbol")
     f10_p.add_argument("--file", default=None)
-    f10_p.add_argument("--timeout", type=float, default=5.0)
+    f10_p.add_argument("--timeout", type=float, default=None)
     f10_p.add_argument("--json", action="store_true")
     f10_p.set_defaults(func=_cmd_f10)
 
@@ -354,13 +355,13 @@ def build_parser() -> argparse.ArgumentParser:
     list_p.add_argument("market", default="0")
     list_p.add_argument("--start", type=int, default=0)
     list_p.add_argument("--count", type=int, default=1000)
-    list_p.add_argument("--timeout", type=float, default=5.0)
+    list_p.add_argument("--timeout", type=float, default=None)
     list_p.add_argument("--json", action="store_true")
     list_p.set_defaults(func=_cmd_list)
 
     qs_p = sub.add_parser("quotes-snapshot", help="批量快照")
     qs_p.add_argument("symbols", nargs="+")
-    qs_p.add_argument("--timeout", type=float, default=5.0)
+    qs_p.add_argument("--timeout", type=float, default=None)
     qs_p.add_argument("--json", action="store_true")
     qs_p.set_defaults(func=_cmd_quotes_snapshot)
 

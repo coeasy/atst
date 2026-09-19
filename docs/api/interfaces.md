@@ -313,7 +313,7 @@ from tstdx.domain.calendar import is_trading_day
 ### 主站巡检
 
 ```bash
-tstdx hosts audit --family all --timeout 3 --workers 20
+tstdx hosts audit --family quotation --family ex_quotation --timeout 3 --workers 20
 python scripts/audit_hosts.py --report audit.json
 python scripts/contract_audit.py --ci
 ```

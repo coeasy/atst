@@ -306,3 +306,58 @@ def test_readme_tree_lists_every_top_level_module() -> None:
     }
     listed = set(_readme_tree_names())
     assert on_disk <= listed, f"新增顶层模块未写进 README 结构树：{sorted(on_disk - listed)}"
+
+
+# --------------------------------------------------------------------------
+# 文档里的 CLI 示例必须是真实可解析的命令行（审计 F-27）
+# --------------------------------------------------------------------------
+
+_CMD_LINE = re.compile(r"^\s*(?:\$ )?tstdx(?:\.exe)?\s+(\S+)(.*)$")
+#: 含这些记号的是"用法语法"（`tstdx list <market> [--start N]`），不是可执行示例。
+_USAGE_SYNTAX = re.compile(r"[\[<>|…]|\.\.\.")
+_INLINE_CODE = re.compile(r"`([^`\n]+)`")
+
+
+def _cli_examples() -> list[tuple[str, str, list[str]]]:
+    """活文档中所有形如 ``tstdx <sub> …`` 的可执行示例（围栏块 + 行内代码）。"""
+    found: list[tuple[str, str, list[str]]] = []
+    for path in active_docs():
+        text = path.read_text(encoding="utf-8")
+        lines: list[str] = []
+        for block in fenced_code(path):
+            lines.extend(block.splitlines())
+        for line in text.splitlines():
+            lines.extend(_INLINE_CODE.findall(line))
+        for line in lines:
+            matched = _CMD_LINE.match(line.split("#", 1)[0].strip())
+            if matched is None:
+                continue
+            rest = matched.group(2)
+            if _USAGE_SYNTAX.search(rest):
+                continue
+            tokens = [matched.group(1), *(rest.split())]
+            found.append((path.relative_to(ROOT).as_posix(), line.strip(), tokens))
+    return found
+
+
+def test_every_documented_cli_example_parses() -> None:
+    """README/文档写的每条 CLI 命令都要能被真实 parser 接受。
+
+    parser 的选项名会随重构变化（F-27 里 `serve --host` 就已被 `--bind` 取代），
+    没有这道门禁，示例会像那条一样静默失效：用户照抄即得到 exit 2。
+    """
+    examples = _cli_examples()
+    assert examples, "活文档里找不到任何 CLI 示例，门禁失效"
+
+    from tstdx.cli.parser import build_parser
+
+    broken: list[str] = []
+    for rel, raw, tokens in examples:
+        try:
+            build_parser().parse_args(tokens)
+        except SystemExit as exc:  # argparse 对未知选项 exit(2)
+            if exc.code not in (0, None):
+                broken.append(f"{rel}: {raw} → exit {exc.code}")
+        except Exception as exc:  # noqa: BLE001 - 解析期不应抛别的异常
+            broken.append(f"{rel}: {raw} → {type(exc).__name__}: {exc}")
+    assert not broken, "文档里的 CLI 示例无法解析：\n" + "\n".join(broken)

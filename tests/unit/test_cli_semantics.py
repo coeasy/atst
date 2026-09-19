@@ -61,7 +61,7 @@ def fake_client(monkeypatch: pytest.MonkeyPatch) -> type[FakeTdxClient]:
 
 
 def _ns(**kw: Any) -> argparse.Namespace:
-    base = {"host": None, "timeout": 3.0, "json": False}
+    base = {"host": None, "timeout": 3.0, "json": False, "provider": "tdx"}
     base.update(kw)
     return argparse.Namespace(**base)
 
