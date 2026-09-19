@@ -346,6 +346,26 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 - **变异验证**：删一行层 ⇒ 报缺失；插一行幽灵层 ⇒ 报幽灵；入参退回 `provider=` ⇒ 报
   `TypeError`，三条分别 RC=1。
 
+### Fixed（v17 Phase 5 第 14 步 —— 事实文档的规模数字钉回真相源，F-34）
+
+- **`docs/ARCHITECTURE.md` 里有两条"现状"是假的**：① 防回潮守卫条写
+  `test_namespace_layout.py`「根级白名单 **11** 项」，实际是 **10**（`ROOT_WHITELIST` 与
+  磁盘上的 `tstdx/*.py` 同数）；② F-15 门禁基线条仍在宣称「离线实测 76.14% … 低于 77
+  阈值 ⇒ 门禁在本地为红」，而第 14 步同轮离线全量实测 **80.53%**、日志明写
+  `Required test coverage of 77.0% reached`。**阈值 77 一次都没有下调**。
+- **覆盖率陈述不再抄百分比**：F-15 那条改为判据口径（"离线全量已越过阈值 ⇒ 本地为绿"），
+  逐轮实测数字统一记在 `docs/REFACTOR_PLAN_V17_CLOSURE.md` 的步骤日志里——一份声明"只描述
+  代码现状"的文档抄一个每轮都会漂移的读数，就是在预约下一条失真；「CI 环境（ubuntu+py3.11）
+  重钉仍需实测数字、本机 Windows 数字不作为依据」的口径原样保留。
+- **数字门禁由"只读 README"扩展到事实文档全体**（`tests/architecture/test_doc_code_consistency.py`
+  新增 9 项）：`test_fact_doc_numbers_match_their_truth_source` 把 README 与 ARCHITECTURE 的
+  能力数、命令账本（`protocol.commands.COMMANDS`）、解析器数（`protocol.registry.PARSERS`）、
+  配置段数（`dataclasses.fields(Config)`）、根级白名单（磁盘 `tstdx/*.py` 计数）逐个钉回运行期
+  真相源；`test_documented_http_source_floor_still_holds` 把「45+ HTTP 源」按下界语义判定
+  （实际 73 个 `*Source` 类：加源不必改文档，掉到宣称界下必须改）。
+- **变异验证 10 条全部 RC=1 且各自指名**：172→167、85→84、61→62、5→6、10→11、删白名单宣称、
+  README 85→86、README 61→60、下界 45→90、删下界宣称。
+
 ### Fixed
 
 - **`tstdx.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，

@@ -3,7 +3,9 @@
 活文档里的每一条 ``from tstdx... import X``、每一个 ``tstdx.a.b`` 引用、README
 宣称的每个数字以及项目结构树里的每个 ``name/`` 与 ``name.py`` 条目，都必须与运行期
 事实一致；``tstdx/__init__.py`` 的包 docstring 同样按活文档对待——分层图双向对上磁盘
-布局，Quick start 的入口调用在禁网下真的构造得起来。
+布局，Quick start 的入口调用在禁网下真的构造得起来。README 与
+``docs/ARCHITECTURE.md`` 的规模数字（命令账本 / 解析器 / 配置段 / 根级白名单 / HTTP 源
+下界）一律钉回运行期真相源，抄一次就失真的数字不再有藏身处。
 历史快照（``docs/archive/``、``docs/adr/``、``DESIGN.md``）记录的是当时
 语境，不参与门禁。
 """
@@ -257,6 +259,108 @@ def test_readme_gate_scale_matches_definition(pattern: str, actual: Callable[[],
     claimed = {int(n) for n in re.findall(pattern, _readme())}
     assert claimed, f"README 不再声明 {pattern}，门禁失效"
     assert claimed == {actual()}, f"README 声称 {sorted(claimed)}，实际定义是 {actual()}"
+
+
+# --------------------------------------------------------------------------
+# 事实文档宣称的规模数字（审计 F-34）
+# --------------------------------------------------------------------------
+
+
+def _architecture() -> str:
+    return (ROOT / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
+
+
+_DOC_READERS: dict[str, Callable[[], str]] = {
+    "README.md": _readme,
+    "docs/ARCHITECTURE.md": _architecture,
+}
+
+
+def _protocol_commands() -> int:
+    from tstdx.protocol.commands import COMMANDS
+
+    return len(COMMANDS)
+
+
+def _protocol_parsers() -> int:
+    from tstdx.protocol.registry import PARSERS
+
+    return len(PARSERS)
+
+
+def _config_sections() -> int:
+    import dataclasses
+
+    from tstdx.config.schema import Config
+
+    return len(dataclasses.fields(Config))
+
+
+def _root_modules() -> int:
+    return len(list((ROOT / "tstdx").glob("*.py")))
+
+
+def _web_source_classes() -> int:
+    """``tstdx/web/`` 里定义的 ``*Source`` 类个数（按 AST 数，不触发导入副作用）。"""
+    total = 0
+    for path in (ROOT / "tstdx" / "web").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        total += sum(
+            1
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef) and node.name.endswith("Source")
+        )
+    return total
+
+
+#: ``(文档, 事实, 定位模式, 真相源)``：README 那组门禁只覆盖 capability / Provider /
+#: 服务面规模，这里补齐协议与内核侧的规模事实，以及 ARCHITECTURE 自己的全部宣称。
+_EXACT_CLAIMS: tuple[tuple[str, str, str, Callable[[], int]], ...] = (
+    (
+        "docs/ARCHITECTURE.md",
+        "capability 数",
+        r"(\d+)\s+capabilit",
+        lambda: _actual_facts()["capabilities"],
+    ),
+    ("docs/ARCHITECTURE.md", "协议命令数", r"（(\d+) 命令", _protocol_commands),
+    ("docs/ARCHITECTURE.md", "解析器数", r"、(\d+) 解析器", _protocol_parsers),
+    ("docs/ARCHITECTURE.md", "配置段数", r"（(\d+) 段", _config_sections),
+    ("docs/ARCHITECTURE.md", "根级模块白名单", r"根级白名单\s*(\d+)\s*项", _root_modules),
+    ("README.md", "协议命令数", r"(\d+)\s*命令账本", _protocol_commands),
+    ("README.md", "解析器数", r"(\d+)\s*精确解析器", _protocol_parsers),
+)
+
+
+@pytest.mark.parametrize(("source", "fact", "pattern", "actual"), _EXACT_CLAIMS)
+def test_fact_doc_numbers_match_their_truth_source(
+    source: str, fact: str, pattern: str, actual: Callable[[], int]
+) -> None:
+    """事实型文档的规模数字必须等于它背后的注册表 / schema / 磁盘目录。
+
+    真相源是命令账本、解析器表、配置 dataclass 这类运行期对象：文档抄一次数字，
+    此后每次增删都静默失真，所以把它钉回真相源。
+    """
+    text = _DOC_READERS[source]()
+    claimed = {int(n) for n in re.findall(pattern, text)}
+    assert claimed, f"{source} 不再声明 {fact}（{pattern}），门禁失效"
+    assert claimed == {actual()}, f"{source} 声称 {fact}={sorted(claimed)}，真相源是 {actual()}"
+
+
+@pytest.mark.parametrize(
+    ("source", "pattern", "actual"),
+    [
+        ("README.md", r"(\d+)\+\s*HTTP 源", _web_source_classes),
+        ("docs/ARCHITECTURE.md", r"(\d+)\+\s*HTTP 源", _web_source_classes),
+    ],
+)
+def test_documented_http_source_floor_still_holds(
+    source: str, pattern: str, actual: Callable[[], int]
+) -> None:
+    """``45+ HTTP 源`` 是下界宣称：加源不必改文档，掉到界下必须改。"""
+    floors = [int(n) for n in re.findall(pattern, _DOC_READERS[source]())]
+    assert floors, f"{source} 不再声明 {pattern}，门禁失效"
+    real = actual()
+    assert max(floors) <= real, f"{source} 声称 {max(floors)}+ 个 HTTP 源类，实际只有 {real} 个"
 
 
 # --------------------------------------------------------------------------

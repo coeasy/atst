@@ -104,20 +104,24 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
    口径与取舍见 [ADR-016](adr/ADR-016-config-surface-covers-execution-only.md)，
    用户面见 [docs/configuration.md](configuration.md)，回归锁见
    `tests/runtime/test_kernel_config_wiring.py`。
-8. **F-15 门禁基线 —— 格式/类型已绿，覆盖率待 CI 重钉**：`ruff format --check` 现存
+8. **F-15 门禁基线 —— 格式/类型/覆盖率三项均绿**：`ruff format --check` 现存
    **65 文件待重排已清零**（一次纯格式提交，重排前后 `ast.dump()` 逐个比对无差异），
    dev 依赖把 `ruff==0.15.2` / `mypy==2.3.1` 钉死，格式/类型门禁不再随工具版本漂移；
-   `mypy tstdx/` 为 **0**（Phase 5 已归零）。覆盖率：**离线实测 76.14%**（Windows+py3.12，
-   CI 等价范围 `-m "not network"`），低于 77 阈值 ⇒ 门禁在本地为红。处置：阈值数字已收敛为单一事实源
+   `mypy tstdx/` 为 **0**（Phase 5 已归零）。覆盖率：**离线全量（CI 等价范围
+   `-m "not network"`）已越过阈值 ⇒ 本地为绿**；本条**刻意不写百分比**——本机读数会随
+   每一轮改动漂移，把它抄进"只描述代码现状"的本文就是下一次失真的来源，逐轮实测数字
+   一律记在 [REFACTOR_PLAN_V17_CLOSURE.md](REFACTOR_PLAN_V17_CLOSURE.md) 的步骤日志里。
+   阈值数字收敛为单一事实源
    `pyproject.toml [tool.coverage.report] fail_under`（Makefile/CI 的
    `--cov-fail-under` 副本删除，由 `tests/compatibility/test_local_gate_contract.py`
    与 `test_ci_workflow_contracts.py` 锁定）；**阈值本身一次都没有下调**。
    重钉需要 CI 环境（ubuntu+py3.11）的实测数字，本机 Windows 数字不作为依据。
 9. **防回潮守卫**：`tests/architecture/test_single_kernel_guards.py`（已删模块/符号不可再现、
    `tstdx.runtime.__all__` 仅内核、runtime 包不再引用已删分层、Client 执行面类型为
-   `DirectProviderExecutor`）；`tests/architecture/test_namespace_layout.py`（根级白名单 11 项、
+   `DirectProviderExecutor`）；`tests/architecture/test_namespace_layout.py`（根级白名单 10 项、
    旧模块路径不可导入）；`tests/architecture/test_doc_code_consistency.py`（活文档 import 可解析、
-   事实型文档 `tstdx.*` 路径可解析、`__all__` ⇔ `_LAZY`、README 数字 == 运行期事实）。
+   事实型文档 `tstdx.*` 路径可解析、`__all__` ⇔ `_LAZY`、README 数字 == 运行期事实、
+   README 与本文宣称的规模数字 == 命令账本/解析器表/配置 schema/根目录实际文件数）。
 
 ## 5. 契约与真相源
 
