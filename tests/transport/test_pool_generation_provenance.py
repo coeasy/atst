@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-import tstdx.transport._pool_provenance_hardening as hardening
+import tstdx.transport.pool as pool_module
 from tstdx.errors import ConfigError
 from tstdx.protocol.commands import Family
 from tstdx.transport.async_ import AsyncConnectionPool
@@ -123,7 +123,7 @@ def test_stale_background_probe_cannot_commit_after_generation_change(
         def start(self) -> None:
             captured.append(self._target)
 
-    monkeypatch.setattr(hardening.threading, "Thread", DeferredThread)
+    monkeypatch.setattr(pool_module.threading, "Thread", DeferredThread)
     monkeypatch.setattr(
         speedtest_module,
         "speedtest",
@@ -143,7 +143,7 @@ def test_stale_background_probe_cannot_commit_after_generation_change(
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             raise AssertionError("stale generation must not open persistent ranking")
 
-    monkeypatch.setattr(hardening, "RankingStore", ExplodingStore)
+    monkeypatch.setattr(pool_module, "RankingStore", ExplodingStore)
 
     pool._trigger_background_speedtest()
     assert pool._speedtest_triggered is True

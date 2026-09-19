@@ -20,15 +20,10 @@ def test_release_wheel_smoke_requires_probe_only_ranking_hardening() -> None:
 def test_release_wheel_smoke_requires_generation_safe_pool_provenance() -> None:
     workflow = _release_workflow()
 
+    # 代际发布规则住在池类体内；provenance 侧车层已解散。
+    assert "ConnectionPool.update_hosts.__module__ == 'tstdx.transport.pool'" in workflow
     assert (
-        "ConnectionPool.update_hosts.__module__ == 'tstdx.transport._pool_provenance_hardening'"
+        "ConnectionPool._trigger_background_speedtest.__module__ == 'tstdx.transport.pool'"
         in workflow
     )
-    assert (
-        "ConnectionPool._trigger_background_speedtest.__module__ == 'tstdx.transport._pool_provenance_hardening'"
-        in workflow
-    )
-    assert (
-        "AsyncConnectionPool.update_hosts.__module__ == 'tstdx.transport._pool_provenance_hardening'"
-        in workflow
-    )
+    assert "AsyncConnectionPool.update_hosts.__module__ == 'tstdx.transport.async_'" in workflow

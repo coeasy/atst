@@ -655,3 +655,62 @@ def resolve_hosts(
 
     entries.sort(key=lambda entry: entry.score)
     return entries[:limit]
+
+
+# --------------------------------------------------------------------------- #
+# 连接池主站代际更新共享原语（同步池 / 异步池同一套发布规则）
+# --------------------------------------------------------------------------- #
+def validate_host_updates(hosts: Sequence[HostEntry], *, family: str) -> list[HostEntry]:
+    """校验并返回 generation 匹配用的 canonical 快照（不改调用方对象）。"""
+
+    items: list[HostEntry] = []
+    seen: set[str] = set()
+    for entry in hosts:
+        if not isinstance(entry, HostEntry):
+            raise ConfigError(f"update_hosts 只接受 HostEntry，收到 {type(entry).__name__}")
+        validated = parse_server(entry, family=family)
+        if validated.family != family:
+            raise ConfigError(
+                "update_hosts family 不匹配: "
+                f"requested={family!r}, entry={validated.key} family={validated.family!r}"
+            )
+        if validated.key in seen:
+            raise ConfigError(f"update_hosts 存在重复 endpoint: {validated.key}")
+        seen.add(validated.key)
+        items.append(validated)
+    return items
+
+
+def new_endpoint_entry(entry: HostEntry, *, family: str) -> HostEntry:
+    """新主站进入池时的自有副本：只带身份与探测证据，不带运行期健康。"""
+
+    validated = parse_server(entry, family=family)
+    return HostEntry(
+        host=validated.host,
+        port=validated.port,
+        family=validated.family,
+        name=validated.name,
+        verified=validated.verified,
+        connect_ms=validated.connect_ms,
+        rtt_ms=validated.rtt_ms,
+    )
+
+
+def next_generation_host(old: HostEntry, observed: HostEntry) -> HostEntry:
+    """沿用上一代的身份与运行期健康，仅采纳探测层证据。"""
+
+    fresh = replace(old)
+    if observed.rtt_ms is not None:
+        fresh.rtt_ms = observed.rtt_ms
+        fresh.connect_ms = observed.connect_ms
+    elif observed.failures > 0 or bool(observed.last_error):
+        fresh.rtt_ms = None
+        fresh.connect_ms = None
+    elif observed.connect_ms is not None:
+        fresh.connect_ms = observed.connect_ms
+
+    if old.circuit_probe_inflight:
+        fresh.circuit = "open"
+        fresh.circuit_opened_at = time.time()
+    fresh.circuit_probe_inflight = False
+    return fresh

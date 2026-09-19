@@ -38,7 +38,7 @@ from tstdx.errors import (
 )
 from tstdx.protocol.commands import Family
 from tstdx.transport.async_ import AsyncConnectionPool, AsyncTcpConnection
-from tstdx.transport.hosts import HostEntry
+from tstdx.transport.hosts import HostEntry, next_generation_host
 from tstdx.transport.ratelimit import SessionRateLimiter
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -597,7 +597,12 @@ class TestAsyncPoolUpdateHosts:
 
             run(go())
 
-    def test_inherit_runtime_health_carries_circuit(self) -> None:
+    def test_next_generation_host_carries_health_and_inflight_probe(self) -> None:
+        """代际发布沿用池自身的运行期健康；在飞探测标记必须重开熔断。
+
+        原 ``AsyncConnectionPool._inherit_runtime_health`` 是桩层里的第二份事实源，
+        解散后与同步池共用 :func:`tstdx.transport.hosts.next_generation_host`。
+        """
         old = HostEntry("h", 1, rtt_ms=30.0)
         old.live_rtt_ms = 12.0
         old.live_ok_at = 123.0
@@ -607,15 +612,17 @@ class TestAsyncPoolUpdateHosts:
         old.last_error = "boom"
         old.consec_weighted = 0.5
         old.circuit_probe_inflight = True
-        new = HostEntry("h", 1, rtt_ms=99.0)
-        AsyncConnectionPool._inherit_runtime_health(old, new)
-        assert new.live_rtt_ms == 12.0
-        assert new.live_ok_at == 123.0
-        assert new.failures == 2 and new.biz_failures == 1
-        assert new.last_ok == 456.0 and new.last_error == "boom"
-        assert new.consec_weighted == 0.5
+        published = next_generation_host(old, HostEntry("h", 1, rtt_ms=99.0))
+        assert published.live_rtt_ms == 12.0
+        assert published.live_ok_at == 123.0
+        assert published.failures == 2 and published.biz_failures == 1
+        assert published.last_ok == 456.0 and published.last_error == "boom"
+        assert published.consec_weighted == 0.5
         # 在飞探测标记 → 熔断态保留为 open，标记清空
-        assert new.circuit == "open" and new.circuit_probe_inflight is False
+        assert published.circuit == "open" and published.circuit_probe_inflight is False
+        assert published.circuit_opened_at > 0.0
+        # 探测证据仍会刷新，但不改写身份
+        assert published.rtt_ms == 99.0 and published is not old
 
 
 class TestAsyncPoolMultiFrame:

@@ -177,7 +177,7 @@ def test_async_dropped_conn_does_not_poison_next_request():
 def test_async_iter_frames_drops_conn_when_caller_cap_reached():
     """读满调用方上限 ≠ 服务端流已结束：socket 可能残留未读帧，必须弃连。
 
-    ``_async_pool_hardening`` 对齐了同步的 multiframe 截断安全契约：到达
+    异步池的 ``iter_frames`` 对齐了同步池的 multiframe 截断安全契约：到达
     ``max_frames`` 上限即弃连（且不计为主站失败），以免下一次请求读到本请求
     的旧帧。
     """

@@ -24,17 +24,10 @@ def test_local_wheel_smoke_is_source_isolated_and_checks_all_runtime_hardening()
     assert (
         "AsyncConnectionPool.__init__.__module__ == 'tstdx.transport._pool_family_hardening'"
     ) in script
-    assert "ConnectionPool.request.__module__ == 'tstdx.transport._pool_hardening'" in script
-    assert (
-        "ConnectionPool.update_hosts.__module__ == 'tstdx.transport._pool_provenance_hardening'"
-    ) in script
-    assert (
-        "AsyncConnectionPool.request.__module__ == 'tstdx.transport._async_pool_hardening'"
-        in script
-    )
-    assert (
-        "AsyncConnectionPool.update_hosts.__module__ == "
-        "'tstdx.transport._pool_provenance_hardening'"
-    ) in script
+    # 桩层解散后，冒烟断言改判实现住在池模块自身。
+    assert "ConnectionPool.request.__module__ == 'tstdx.transport.pool'" in script
+    assert "ConnectionPool.update_hosts.__module__ == 'tstdx.transport.pool'" in script
+    assert "AsyncConnectionPool.request.__module__ == 'tstdx.transport.async_'" in script
+    assert ("AsyncConnectionPool.update_hosts.__module__ == 'tstdx.transport.async_'") in script
     assert "RankingStore.load.__module__ == 'tstdx.transport._ranking_hardening'" in script
     assert "resolve_hosts.__module__ == 'tstdx.transport._host_selector_hardening'" in script

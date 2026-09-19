@@ -128,11 +128,8 @@ def test_release_builds_once_then_uses_shared_verifier_and_same_wheel_matrix() -
     assert "python-version: ['3.10', '3.11', '3.12', '3.13']" in workflow
     assert "--only-binary=:all: tstdx" in workflow
     assert "joinpath('py.typed').is_file()" in workflow
-    assert "ConnectionPool.request.__module__ == 'tstdx.transport._pool_hardening'" in workflow
-    assert (
-        "AsyncConnectionPool.request.__module__ == 'tstdx.transport._async_pool_hardening'"
-        in workflow
-    )
+    assert "ConnectionPool.request.__module__ == 'tstdx.transport.pool'" in workflow
+    assert "AsyncConnectionPool.request.__module__ == 'tstdx.transport.async_'" in workflow
 
 
 def test_artifact_only_smoke_does_not_enable_setup_python_dependency_cache() -> None:

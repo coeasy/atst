@@ -47,7 +47,21 @@ from ..errors import (
 from ..observability import metrics
 from ..protocol.commands import Family
 from .base import DEFAULT_HEARTBEAT_CMD, ConnectionStats
-from .hosts import HostEntry
+from .hosts import (
+    HostEntry,
+    new_endpoint_entry,
+    next_generation_host,
+    validate_host_updates,
+)
+from .pool import (
+    BIZ_FAILURE_WEIGHT,
+    CIRCUIT_COOLDOWN_SECONDS,
+    CIRCUIT_DEGRADED_AT,
+    CIRCUIT_OPEN_AT,
+    _require_bool_option,
+    _require_positive_frame_limit,
+    _require_request_timeout,
+)
 from .ratelimit import SessionRateLimiter
 
 __all__ = [
@@ -60,6 +74,18 @@ __all__ = [
 _LOG = logging.getLogger("tstdx.transport")
 
 _RECV_CHUNK = 65536
+
+
+# --------------------------------------------------------------------------- #
+# 熔断异常构造（入参校验原语复用 pool 的同一套 fail-closed 口径）
+# --------------------------------------------------------------------------- #
+def _circuit_unreachable(method: int, *, attempts: int = 0) -> AllHostsUnreachable:
+    cause = ConnectionFailed("所有候选主站均处于熔断门禁")
+    return AllHostsUnreachable(
+        f"所有主站均处于熔断门禁。\n{ALL_HOSTS_UNREACHABLE_NEXT_STEPS}",
+        context={"hosts": [], "method": hex(method), "attempts": attempts},
+        cause=cause,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -416,6 +442,38 @@ class AsyncSlot:
         return f"{self.host.key}#{self.index}"
 
 
+# --------------------------------------------------------------------------- #
+# 关停事务辅助
+# --------------------------------------------------------------------------- #
+def _unique_slots(pool: AsyncConnectionPool) -> list[AsyncSlot]:
+    slots: list[AsyncSlot] = []
+    seen: set[int] = set()
+    for slot in [*pool._slots, *pool._retired_slots]:
+        identity = id(slot)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        slots.append(slot)
+    return slots
+
+
+async def _await_cleanup_before_cancellation(cleanup_task: asyncio.Task) -> None:
+    """把清理与调用方取消解耦：先排空，再决定是否传播取消。"""
+    cancelled = False
+    while not cleanup_task.done():
+        try:
+            await asyncio.shield(cleanup_task)
+        except asyncio.CancelledError:
+            cancelled = True
+            continue
+
+    # 清理失败必须显式面上来，不能被伪装成一次成功关闭。
+    # 任务此时已 done，``result()`` 不再 await。
+    cleanup_task.result()
+    if cancelled:
+        raise asyncio.CancelledError
+
+
 class AsyncConnectionPool:
     """异步连接池：与 :class:`ConnectionPool` 同构。"""
 
@@ -535,6 +593,104 @@ class AsyncConnectionPool:
                 and not self._closed
             )
 
+    # -- 熔断与运行期健康状态机（与同步池同一套语义） ---------------------- #
+    async def _circuit_allows(self, host: HostEntry) -> bool:
+        """单次探测放行门禁：HALF_OPEN 同期只放一个探针。"""
+        async with self._lock:
+            if host.circuit == "open":
+                if time.time() - host.circuit_opened_at < CIRCUIT_COOLDOWN_SECONDS:
+                    return False
+                if host.circuit_probe_inflight:
+                    return False
+                host.circuit = "half_open"
+                host.circuit_probe_inflight = True
+                _LOG.info("异步主站 %s 熔断冷却到期，转 HALF_OPEN 放行单次探测", host.key)
+                return True
+            if host.circuit == "half_open":
+                if host.circuit_probe_inflight:
+                    return False
+                host.circuit_probe_inflight = True
+                return True
+            return True
+
+    async def _select_allowed_slot(
+        self, *, exclude_hosts: set[str] | None = None
+    ) -> AsyncSlot | None:
+        """取选序后第一个被熔断状态机放行的槽位。"""
+        slots = self._ordered()
+        if exclude_hosts:
+            preferred = [slot for slot in slots if slot.host.key not in exclude_hosts]
+            candidates = preferred or slots
+        else:
+            candidates = slots
+        for candidate in candidates:
+            if await self._circuit_allows(candidate.host):
+                return candidate
+        return None
+
+    async def _release_probe_token(self, slot: AsyncSlot, generation: int | None) -> None:
+        """归还 HALF_OPEN 令牌，但不伪造任何主站健康证据。"""
+        if generation is not None and not await self._slot_is_current(slot, generation):
+            return
+        async with self._lock:
+            if slot.host.circuit == "half_open":
+                slot.host.circuit_probe_inflight = False
+
+    async def _mark_failure(
+        self,
+        slot: AsyncSlot,
+        exc: BaseException,
+        *,
+        generation: int | None = None,
+        conn: AsyncTcpConnection | None = None,
+    ) -> None:
+        """仅当产出该失败的代际仍是当代时才推进运行期健康。"""
+        current = generation is None or await self._slot_is_current(slot, generation)
+        if current:
+            async with self._lock:
+                host = slot.host
+                was_half_open = host.circuit == "half_open" or host.circuit_probe_inflight
+                host.failures += 1
+                if not isinstance(exc, ConnectionFailed):
+                    host.biz_failures += 1
+                host.consec_weighted += (
+                    1.0 if isinstance(exc, ConnectionFailed) else BIZ_FAILURE_WEIGHT
+                )
+                host.circuit_probe_inflight = False
+                if was_half_open or host.consec_weighted >= CIRCUIT_OPEN_AT:
+                    if host.circuit != "open" or host.circuit_opened_at == 0.0:
+                        host.circuit_opened_at = time.time()
+                    host.circuit = "open"
+                elif host.consec_weighted >= CIRCUIT_DEGRADED_AT:
+                    host.circuit = "degraded"
+                host.last_error = f"{type(exc).__name__}: {exc}"
+        metrics.record_error(type(exc).__name__)
+        await self._drop(slot, expected=conn)
+
+    async def _mark_success(
+        self,
+        slot: AsyncSlot,
+        *,
+        generation: int | None = None,
+        rtt_ms: float | None = None,
+    ) -> None:
+        """仅当代际仍有效时才清零运行期健康与熔断状态。"""
+        if generation is not None and not await self._slot_is_current(slot, generation):
+            return
+        async with self._lock:
+            host = slot.host
+            host.failures = 0
+            host.biz_failures = 0
+            host.last_error = ""
+            host.last_ok = time.time()
+            if rtt_ms is not None:
+                host.live_rtt_ms = max(0.0, float(rtt_ms))
+                host.live_ok_at = host.last_ok
+            host.circuit = "healthy"
+            host.circuit_probe_inflight = False
+            host.consec_weighted = 0.0
+            host.circuit_opened_at = 0.0
+
     # -- 请求 --------------------------------------------------------------- #
     def _ensure_open(self) -> None:
         if self._closed:
@@ -560,64 +716,66 @@ class AsyncConnectionPool:
     async def request(
         self, method: int, body: bytes = b"", *, timeout: float | None = None
     ) -> ResponseFrame:
+        """单帧请求：主站覆盖度、限流与熔断语义与同步池一致。"""
+        request_timeout = _require_request_timeout(timeout)
         self._ensure_open()
-        await self._acquire_rate()
-
+        max_attempts = self.max_retries + 1
+        distinct_hosts = len({slot.host.key for slot in self._slots})
+        max_attempts = max(max_attempts, distinct_hosts)
         last_exc: BaseException | None = None
         tried: list[str] = []
         started = time.perf_counter()
-        for attempt in range(self.max_retries + 1):
-            # T5：close() 与在飞请求竞态——每轮复查，池已关则终止重建。
+
+        for attempt in range(max_attempts):
             self._ensure_open()
-            slots = self._ordered()
-            if not slots:
+            await self._acquire_rate()
+            slot = await self._select_allowed_slot(exclude_hosts=set(tried))
+            if slot is None:
+                last_exc = ConnectionFailed("所有候选主站均处于熔断门禁")
                 break
-            # P1：tried_hosts 生效于选序（与同步池一致），全部试过则退回 slots[0]。
-            slot = next((s for s in slots if s.host.key not in tried), slots[0])
             tried.append(slot.host.key)
+
             conn: AsyncTcpConnection | None = None
             generation: int | None = None
+            attempt_started = time.perf_counter()
             try:
                 conn, generation = await self._acquire_lease(slot)
                 try:
-                    frame = await conn.request(method, body, timeout=timeout)
-                except BaseException:
+                    frame = await conn.request(method, body, timeout=request_timeout)
+                finally:
                     await self._release_lease(slot, conn)
-                    raise
-                await self._release_lease(slot, conn)
             except TdxError as exc:
                 last_exc = exc
-                if generation is None or await self._slot_is_current(slot, generation):
-                    slot.host.failures += 1
-                    slot.host.last_error = f"{type(exc).__name__}: {exc}"
-                _LOG.warning("异步槽位 %s 请求失败: %s", slot.key, exc)
-                metrics.record_error(type(exc).__name__)
-                await self._drop(slot, expected=conn)
+                await self._mark_failure(slot, exc, generation=generation, conn=conn)
                 advice = exc.advice
-                if attempt + 1 > self.max_retries or not advice.retryable:
+                if attempt + 1 >= max_attempts or not advice.retryable:
                     break
                 if advice.switch_host:
                     _LOG.info("异步换主站：离开 %s（attempt=%d）", slot.host.key, attempt)
                     self._rotate_away(slot.host.key)
                 if advice.backoff:
                     delay = advice.backoff * (2**attempt) * (0.75 + 0.5 * random.random())
-                    _LOG.debug("异步退避 %.3fs 后重试（%s）", delay, type(exc).__name__)
                     await asyncio.sleep(delay)
                 continue
-            except Exception as exc:  # pragma: no cover
+            except asyncio.CancelledError:
+                await self._release_probe_token(slot, generation)
+                raise
+            except Exception as exc:
                 last_exc = exc
-                if generation is None or await self._slot_is_current(slot, generation):
-                    slot.host.failures += 1
-                await self._drop(slot, expected=conn)
-                if attempt + 1 > self.max_retries:
+                await self._mark_failure(slot, exc, generation=generation, conn=conn)
+                if attempt + 1 >= max_attempts:
                     break
                 await asyncio.sleep(0.05 * (attempt + 1))
                 continue
-            if generation is None or await self._slot_is_current(slot, generation):
-                slot.host.failures = 0
-                slot.host.last_ok = time.time()
-                slot.host.live_rtt_ms = (time.perf_counter() - started) * 1000.0
-                slot.host.live_ok_at = slot.host.last_ok
+            except BaseException:
+                await self._release_probe_token(slot, generation)
+                raise
+
+            await self._mark_success(
+                slot,
+                generation=generation,
+                rtt_ms=(time.perf_counter() - attempt_started) * 1000.0,
+            )
             metrics.record_request(
                 command=f"0x{method:04x}", ok=True, duration=time.perf_counter() - started
             )
@@ -626,7 +784,12 @@ class AsyncConnectionPool:
         metrics.record_request(command=f"0x{method:04x}", ok=False)
         raise AllHostsUnreachable(
             f"所有主站均不可达（已尝试 {tried}）。\n{ALL_HOSTS_UNREACHABLE_NEXT_STEPS}",
-            context={"hosts": tried, "method": hex(method)},
+            context={
+                "hosts": tried,
+                "method": hex(method),
+                "attempts": max_attempts,
+                "last_error": str(last_exc) if last_exc else None,
+            },
             cause=last_exc,
         )
 
@@ -637,72 +800,100 @@ class AsyncConnectionPool:
                 return
 
     # -- bestip 热更新（镜像同步版） ----------------------------------------- #
-    @staticmethod
-    def _inherit_runtime_health(old: HostEntry, new: HostEntry) -> None:
-        new.live_rtt_ms = old.live_rtt_ms
-        new.live_ok_at = old.live_ok_at
-        new.failures = max(old.failures, new.failures)
-        new.biz_failures = max(old.biz_failures, new.biz_failures)
-        if old.last_ok is not None:
-            new.last_ok = old.last_ok
-        if old.last_error:
-            new.last_error = old.last_error
-        new.consec_weighted = old.consec_weighted
-        if old.circuit_probe_inflight:
-            new.circuit = "open"
-            new.circuit_opened_at = time.time()
-        else:
-            new.circuit = old.circuit
-            new.circuit_opened_at = old.circuit_opened_at
-        new.circuit_probe_inflight = False
+
+    async def _drain_retired_slots(self, slots: list[AsyncSlot]) -> None:
+        for slot in slots:
+            await self._drop(slot)
 
     async def update_hosts(self, hosts: Sequence[HostEntry]) -> list[HostEntry]:
-        """按新序重建主站池，复用现有连接（镜像 :meth:`ConnectionPool.update_hosts`）。
+        """发布一次主站代际；相对取消保持原子性。
 
-        ``bestip`` 运行时测速后调用：保留仍在新列表里的槽位连接并刷新其
-        ``HostEntry``（带入新 RTT / 失败计数），丢弃被移除主站的连接。
+        ``bestip`` 测速后调用。整段替换在持有池锁 + 全部槽位锁时完成，锁序恒为
+        pool._lock → slot.lock（与 :meth:`_drop` 一致），且提交段内不再 await，
+        因此并发 :meth:`close` 与取消只能观察到完整的旧代或完整的新代。
         """
+        self._ensure_open()
         if not hosts:
             return list(self.hosts)
-        new_hosts = [h for h in hosts if h is not None]
+        observed = validate_host_updates(hosts, family=self.family)
         to_close: list[AsyncSlot] = []
+
         async with self._lock:
-            self._generation += 1
-            generation = self._generation
-            old_by_key = {s.key: s for s in self._slots}
-            new_slots: list[AsyncSlot] = []
-            for host in new_hosts:
-                for i in range(self.slots_per_host):
-                    old = old_by_key.get(f"{host.key}#{i}")
-                    if old is None:
-                        new_slots.append(AsyncSlot(host=host, index=i, generation=generation))
-                        continue
-                    async with old.lock:
-                        self._inherit_runtime_health(old.host, host)
-                        if old.leases == 0 and not old.retired:
-                            old.host = host
-                            old.generation = generation
-                            new_slots.append(old)
+            self._ensure_open()
+            old_slots = list(self._slots)
+            locked: list[AsyncSlot] = []
+            try:
+                for old in old_slots:
+                    await old.lock.acquire()
+                    locked.append(old)
+
+                # close() 无法在本池锁持有期间提交；仍在全部 await 之后再复查一次
+                # 事务边界，防止后续重构把可观察状态变更挪到边界之前。
+                self._ensure_open()
+                old_by_slot_key = {slot.key: slot for slot in old_slots}
+                old_host_by_key = {slot.host.key: slot.host for slot in old_slots}
+                generation = self._generation + 1
+
+                published_hosts: list[HostEntry] = []
+                for item in observed:
+                    old_host = old_host_by_key.get(item.key)
+                    published_hosts.append(
+                        next_generation_host(old_host, item)
+                        if old_host is not None
+                        else new_endpoint_entry(item, family=self.family)
+                    )
+
+                new_slots: list[AsyncSlot] = []
+                reuse: list[tuple[AsyncSlot, HostEntry]] = []
+                retire: list[AsyncSlot] = []
+                for host in published_hosts:
+                    for index in range(self.slots_per_host):
+                        key = f"{host.key}#{index}"
+                        existing = old_by_slot_key.get(key)
+                        if existing is None:
+                            new_slots.append(
+                                AsyncSlot(host=host, index=index, generation=generation)
+                            )
+                            continue
+                        if existing.leases == 0 and not existing.retired:
+                            reuse.append((existing, host))
+                            new_slots.append(existing)
                         else:
-                            old.retired = True
-                            self._retired_slots.append(old)
-                            new_slots.append(AsyncSlot(host=host, index=i, generation=generation))
-            new_keys = {s.key for s in new_slots}
-            for old in self._slots:
-                if old.key in new_keys:
-                    continue
-                async with old.lock:
-                    old.retired = True
-                    if old not in self._retired_slots:
-                        self._retired_slots.append(old)
+                            retire.append(existing)
+                            new_slots.append(
+                                AsyncSlot(host=host, index=index, generation=generation)
+                            )
+
+                new_keys = {slot.key for slot in new_slots}
+                for old in old_slots:
+                    if old.key in new_keys:
+                        continue
+                    retire.append(old)
                     if old.leases == 0:
                         to_close.append(old)
-            self.hosts = new_hosts
-            self._slots = new_slots
-            self._rr = 0
-        for old in to_close:
-            await self._drop(old)
-        return new_hosts
+
+                self._generation = generation
+                for old, host in reuse:
+                    old.host = host
+                    old.generation = generation
+                for old in retire:
+                    old.retired = True
+                    if not any(item is old for item in self._retired_slots):
+                        self._retired_slots.append(old)
+                self.hosts = published_hosts
+                self._slots = new_slots
+                self._rr = 0
+            finally:
+                for old in reversed(locked):
+                    old.lock.release()
+
+        if to_close:
+            cleanup_task = asyncio.create_task(
+                self._drain_retired_slots(to_close),
+                name="tstdx-pool-update-cleanup",
+            )
+            await _await_cleanup_before_cancellation(cleanup_task)
+        return published_hosts
 
     # -- 多帧 --------------------------------------------------------------- #
     async def request_multi(
@@ -715,186 +906,243 @@ class AsyncConnectionPool:
         max_frames: int = 512,
         timeout: float | None = None,
     ) -> ResponseFrame:
+        """多帧请求：与同步池同一套截断判定与熔断安全。
+
+        asyncio.Lock 不可重入：持锁续帧期间必须走 ``_request_locked`` /
+        ``_read_frame_locked``（``conn.request`` 会再次取锁 → 自死锁）。
+        弃连（``_drop`` 需取 slot.lock）延迟到连接锁外，锁序恒为 slot → conn。
+        """
+        frame_limit = _require_positive_frame_limit(max_frames, field="max_frames")
+        if record_size is not None:
+            _require_positive_frame_limit(record_size, field="record_size")
+        expect_count_enabled = _require_bool_option(expect_count, field="expect_count")
+        request_timeout = _require_request_timeout(timeout)
         self._ensure_open()
         await self._acquire_rate()
-        slot = self._ordered()[0]
-        conn, generation = await self._acquire_lease(slot)
+        slot = await self._select_allowed_slot()
+        if slot is None:
+            raise _circuit_unreachable(method)
+
+        conn: AsyncTcpConnection | None = None
+        generation: int | None = None
+        started = time.perf_counter()
         first_exc: TdxError | None = None
         cont_exc: TdxError | None = None
         result: ResponseFrame | None = None
-        started = time.perf_counter()
-        # C6：首帧 + 全部续帧在同一连接租约（conn._lock）内读完，期间
-        # 其它请求/心跳无法插入同一 socket 的读写序。弃连（_drop 需取
-        # slot.lock）延迟到锁外执行——锁序恒为 slot.lock → conn._lock。
-        async with conn._lock:
+
+        try:
+            conn, generation = await self._acquire_lease(slot)
             try:
-                # asyncio.Lock 不可重入：持锁续帧期间必须走 _request_locked
-                # （conn.request 会再次取锁 → 自死锁）。
-                first = await conn._request_locked(method, body, timeout=timeout)
-            except TdxError as exc:
-                first_exc = exc
-            else:
-                payload = first.payload
-                if not expect_count or len(payload) < 2:
-                    metrics.record_request(
-                        command=f"0x{method:04x}",
-                        ok=True,
-                        duration=time.perf_counter() - started,
-                    )
-                    await self._release_lease(slot, conn)
-                    return first
-                count = int.from_bytes(payload[:2], "little")
-                chunks = [payload[2:]]
-                got = len(chunks[0])
-                if count > 0 and record_size is None and got > 0:
-                    record_size = max(1, got // count)
-                need = count * (record_size or 1) if record_size else None
-                read = 1
-                while need is not None and got < need and read < max_frames:
+                async with conn._lock:
                     try:
-                        nxt = await conn._read_frame_locked()
+                        first = await conn._request_locked(method, body, timeout=request_timeout)
                     except TdxError as exc:
-                        cont_exc = exc
-                        _LOG.warning(
-                            "异步 request_multi 续帧中断（%s: %s），降级返回已合并的 %d 块",
-                            type(exc).__name__,
-                            exc,
-                            len(chunks),
-                        )
-                        break
-                    read += 1
-                    if not nxt.payload:
-                        break
-                    chunks.append(nxt.payload)
-                    got += len(nxt.payload)
-                result = ResponseFrame(
-                    magic=first.magic,
-                    zip_flag=first.zip_flag,
-                    seq=first.seq,
-                    method=first.method,
-                    zip_size=sum(len(c) for c in chunks),
-                    unzip_size=sum(len(c) for c in chunks),
-                    body=b"",
-                    payload=b"".join(chunks),
-                    header_raw=first.header_raw,
-                )
-                metrics.record_request(
-                    command=f"0x{method:04x}",
-                    ok=cont_exc is None,
-                    duration=time.perf_counter() - started,
-                )
-        await self._release_lease(slot, conn)
-        if first_exc is not None:
-            if await self._slot_is_current(slot, generation):
-                slot.host.failures += 1
-                slot.host.last_error = f"{type(first_exc).__name__}: {first_exc}"
+                        first_exc = exc
+                    else:
+                        payload = first.payload
+                        if not expect_count_enabled or len(payload) < 2:
+                            result = first
+                        else:
+                            count = int.from_bytes(payload[:2], "little")
+                            chunks = [payload[2:]]
+                            got = len(chunks[0])
+                            if count > 0 and record_size is None and got > 0:
+                                record_size = max(1, got // count)
+                            need = count * (record_size or 1) if record_size else None
+                            read = 1
+                            while need is not None and got < need and read < frame_limit:
+                                try:
+                                    nxt = await conn._read_frame_locked()
+                                except TdxError as exc:
+                                    cont_exc = exc
+                                    _LOG.warning(
+                                        "异步 request_multi 续帧中断（%s: %s），降级返回已合并的 %d 块",
+                                        type(exc).__name__,
+                                        exc,
+                                        len(chunks),
+                                    )
+                                    break
+                                read += 1
+                                if not nxt.payload:
+                                    break
+                                chunks.append(nxt.payload)
+                                got += len(nxt.payload)
+                            if need is not None and got < need and cont_exc is None:
+                                cont_exc = FramingError(
+                                    "request_multi 响应截断: "
+                                    f"need={need} got={got} max_frames={frame_limit}",
+                                    context={
+                                        "method": hex(method),
+                                        "need": need,
+                                        "got": got,
+                                        "max_frames": frame_limit,
+                                    },
+                                )
+                            joined = b"".join(chunks)
+                            result = ResponseFrame(
+                                magic=first.magic,
+                                zip_flag=first.zip_flag,
+                                seq=first.seq,
+                                method=first.method,
+                                zip_size=len(joined),
+                                unzip_size=len(joined),
+                                body=b"",
+                                payload=joined,
+                                header_raw=first.header_raw,
+                            )
+            finally:
+                await self._release_lease(slot, conn)
+        except asyncio.CancelledError:
+            await self._release_probe_token(slot, generation)
             await self._drop(slot, expected=conn)
+            raise
+        except BaseException:
+            await self._release_probe_token(slot, generation)
+            await self._drop(slot, expected=conn)
+            raise
+
+        if first_exc is not None:
+            await self._mark_failure(slot, first_exc, generation=generation, conn=conn)
             raise first_exc
         if cont_exc is not None:
-            # C6：对齐同步池 _mark_failure → _drop 语义——续帧中断一律弃连。
-            # 旧实现 ``except TdxError: break`` 不断连，超时后 reader 缓冲里
-            # 残留的半帧会污染该槽位的下一个请求（经典半包）。
-            if await self._slot_is_current(slot, generation):
-                slot.host.failures += 1
-                slot.host.last_error = f"{type(cont_exc).__name__}: {cont_exc}"
-            await self._drop(slot, expected=conn)
+            # 续帧中断一律弃连：残留半帧会污染该槽位的下一个请求（经典半包）。
+            _LOG.warning("异步 request_multi 数据不完整，返回已收到前缀并弃连: %s", cont_exc)
+            await self._mark_failure(slot, cont_exc, generation=generation, conn=conn)
+            metrics.record_request(
+                command=f"0x{method:04x}",
+                ok=False,
+                duration=time.perf_counter() - started,
+            )
+            assert result is not None
+            return result
+
+        await self._mark_success(
+            slot,
+            generation=generation,
+            rtt_ms=(time.perf_counter() - started) * 1000.0,
+        )
+        metrics.record_request(
+            command=f"0x{method:04x}", ok=True, duration=time.perf_counter() - started
+        )
         assert result is not None
         return result
 
     async def iter_frames(
         self, method: int, body: bytes = b"", *, max_frames: int = 512
     ) -> AsyncIterator[ResponseFrame]:
+        """逐帧迭代：与同步池同一套上限校验与脏 socket 处置。
+
+        整体租约：seq 分配、写帧、逐帧读取全程持连接锁；逐帧 touch last_used
+        让心跳的空闲判定对活跃流让路。消费方弃读（GeneratorExit / aclose）时
+        socket 内残留未读帧，连接不可复用——弃连。
+        """
+        frame_limit = _require_positive_frame_limit(max_frames, field="max_frames")
         self._ensure_open()
         await self._acquire_rate()
-        slot = self._ordered()[0]
-        conn, generation = await self._acquire_lease(slot)
-        # T#2 整体租约：seq 分配、写帧、逐帧读取全程持连接锁——心跳与并发
-        # 请求无法插入读写序；逐帧 touch last_used，心跳空闲判定对活跃流
-        # 让路（不再排队等锁）。消费方弃读（GeneratorExit / aclose）时
-        # socket 内残留未读帧，连接不可复用——弃连。
+        slot = await self._select_allowed_slot()
+        if slot is None:
+            raise _circuit_unreachable(method)
+
+        conn: AsyncTcpConnection | None = None
+        generation: int | None = None
         failed: TdxError | None = None
+        frames_read = 0
         try:
-            async with conn._lock:
-                frame_bytes, _ = build_request(method, body, seq=conn.next_seq(), spec=conn.spec)
-                writer = conn._writer
-                if writer is None:
-                    raise ConnectionClosed(
-                        f"连接已关闭: {conn.host}:{conn.port}",
-                        context={"host": conn.host, "port": conn.port},
+            conn, generation = await self._acquire_lease(slot)
+            try:
+                async with conn._lock:
+                    frame_bytes, _ = build_request(
+                        method,
+                        body,
+                        seq=conn.next_seq(),
+                        spec=conn.spec,
                     )
-                try:
-                    writer.write(frame_bytes)
-                    await asyncio.wait_for(writer.drain(), timeout=conn.timeout)
-                    conn.stats.bytes_sent += len(frame_bytes)
-                except TdxError as exc:
-                    failed = exc
-                except OSError as exc:
-                    failed = ConnectionClosed(
-                        f"发送失败: {exc}",
-                        context={"host": conn.host, "port": conn.port},
-                        cause=exc,
-                    )
-                if failed is None:
-                    for _ in range(max_frames):
-                        try:
-                            frame = await conn._read_frame_locked()
-                        except TdxError as exc:
-                            failed = exc
-                            break
-                        conn.stats.last_used = time.time()
-                        yield frame
-        except GeneratorExit:
+                    writer = conn._writer
+                    if writer is None:
+                        raise ConnectionClosed(
+                            f"连接已关闭: {conn.host}:{conn.port}",
+                            context={"host": conn.host, "port": conn.port},
+                        )
+                    try:
+                        writer.write(frame_bytes)
+                        await asyncio.wait_for(writer.drain(), timeout=conn.timeout)
+                        conn.stats.bytes_sent += len(frame_bytes)
+                    except TdxError as exc:
+                        failed = exc
+                    except OSError as exc:
+                        failed = ConnectionClosed(
+                            f"发送失败: {exc}",
+                            context={"host": conn.host, "port": conn.port},
+                            cause=exc,
+                        )
+                    if failed is None:
+                        while frames_read < frame_limit:
+                            try:
+                                frame = await conn._read_frame_locked()
+                            except TdxError as exc:
+                                failed = exc
+                                break
+                            frames_read += 1
+                            conn.stats.last_used = time.time()
+                            yield frame
+            finally:
+                await self._release_lease(slot, conn)
+        except asyncio.CancelledError:
+            await self._release_probe_token(slot, generation)
             await self._drop(slot, expected=conn)
             raise
-        finally:
-            await self._release_lease(slot, conn)
+        except BaseException:
+            await self._release_probe_token(slot, generation)
+            await self._drop(slot, expected=conn)
+            raise
+
         if failed is not None:
             _LOG.warning("异步 iter_frames 中断（%s: %s），弃连", type(failed).__name__, failed)
-            if await self._slot_is_current(slot, generation):
-                slot.host.failures += 1
-                slot.host.last_error = f"{type(failed).__name__}: {failed}"
-            await self._drop(slot, expected=conn)
+            await self._mark_failure(slot, failed, generation=generation, conn=conn)
             return
-        # C6：正常结束不弃连（连接归还槽位），但需复查池状态——
-        # 迭代期间池被 close 的话，不留活连接。
-        if self._closed:
+
+        await self._mark_success(slot, generation=generation)
+        # 命中调用方上限并不能证明服务端流已结束：socket 里可能还有本次请求的
+        # 未读帧，这种连接绝不能归还给池复用。
+        if frames_read >= frame_limit or self._closed:
             await self._drop(slot, expected=conn)
 
     # -- 生命周期 ----------------------------------------------------------- #
     async def _heartbeat_loop(self) -> None:
+        """心跳镜像：喂给同一套熔断/运行期健康状态机。"""
         interval = max(1, int(self.heartbeat_interval or 0))
         while not self._closed:
             await asyncio.sleep(interval)
             for slot in list(self._slots):
                 if self._closed:
                     return
-                # T5：每轮从 slot 重取 conn 引用，绝不跨 await 持旧引用做决策——
+                if not await self._circuit_allows(slot.host):
+                    continue
+                # 每轮从 slot 重取 conn 引用，绝不跨 await 持旧引用做决策——
                 # ping 挂起期间该槽位可能已被请求路径弃连并重建。
+                conn: AsyncTcpConnection | None = None
+                generation: int | None = None
                 try:
                     conn, generation = await self._acquire_lease(slot)
-                except TdxError:
-                    continue
-                idle = time.time() - (conn.stats.last_used or conn.stats.created_at)
-                if idle < interval:
-                    await self._release_lease(slot, conn)
-                    continue
-                try:
-                    rtt = await conn.ping(self.heartbeat_cmd)
+                    idle = time.time() - (conn.stats.last_used or conn.stats.created_at)
+                    if idle < interval:
+                        await self._release_lease(slot, conn)
+                        await self._release_probe_token(slot, generation)
+                        continue
+                    try:
+                        rtt = await conn.ping(self.heartbeat_cmd)
+                    finally:
+                        await self._release_lease(slot, conn)
+                except asyncio.CancelledError:
+                    await self._release_probe_token(slot, generation)
+                    raise
                 except Exception as exc:
-                    _LOG.warning("异步心跳失败 %s: %s", slot.key, exc)
-                    if await self._slot_is_current(slot, generation):
-                        slot.host.failures += 1
-                    if slot.conn is conn:
-                        # 只弃自己探测的那条连接；探测期间 slot.conn 已换成
-                        # 新建连接时不得误杀（否则新连接被孤儿化/反复重建）。
-                        await self._drop(slot, expected=conn)
+                    await self._mark_failure(slot, exc, generation=generation, conn=conn)
+                except BaseException:
+                    await self._release_probe_token(slot, generation)
+                    raise
                 else:
-                    if await self._slot_is_current(slot, generation) and slot.conn is conn:
-                        slot.host.live_rtt_ms = rtt
-                        slot.host.live_ok_at = time.time()
-                        slot.host.failures = 0
-                        slot.host.last_ok = time.time()
-                await self._release_lease(slot, conn)
+                    await self._mark_success(slot, generation=generation, rtt_ms=rtt)
 
     def start_heartbeat(self) -> None:
         if self.heartbeat_interval and self._hb is None:
@@ -902,21 +1150,68 @@ class AsyncConnectionPool:
             # 统一用 get_running_loop()。
             self._hb = asyncio.get_running_loop().create_task(self._heartbeat_loop())
 
-    async def close(self) -> None:
-        async with self._lock:
-            if self._closed:
-                return
-            self._closed = True
-            self._generation += 1
-            slots = list(self._slots) + list(self._retired_slots)
-            for slot in slots:
-                async with slot.lock:
-                    slot.retired = True
-        if self._hb is not None:
-            self._hb.cancel()
-            self._hb = None
+    async def _cleanup_committed_close(
+        self, *, heartbeat: asyncio.Task | None, slots: list[AsyncSlot]
+    ) -> None:
+        """排空全部关停资源，然后把首个清理失败面上来。"""
+        first_error: BaseException | None = None
+        current = asyncio.current_task()
+        if heartbeat is not None and heartbeat is not current:
+            heartbeat.cancel()
+            try:
+                await heartbeat
+            except asyncio.CancelledError:
+                pass
+            except BaseException as exc:
+                first_error = exc
+
         for slot in slots:
-            await self._drop(slot)
+            try:
+                await self._drop(slot)
+            except BaseException as exc:
+                if first_error is None:
+                    first_error = exc
+
+        if first_error is not None:
+            raise first_error
+
+    async def close(self) -> None:
+        """取消安全的三段式关停。
+
+        1. 在旧池状态完全不动的前提下取到当前 + 已退役的全部槽位锁；
+        2. 提交关闭代际——提交段内没有 await，取消只能观察到完整旧代或完整新代；
+        3. 取消心跳并排空每条连接，再传播取消或任何清理失败。
+
+        重复 ``close()`` 依旧执行清理：已关闭是资源状态，不是跳过幂等排空的理由。
+        """
+        slots: list[AsyncSlot]
+        heartbeat: asyncio.Task | None
+
+        async with self._lock:
+            slots = _unique_slots(self)
+            locked: list[AsyncSlot] = []
+            try:
+                # 准备阶段可安全取消：拿到全部锁之前不改任何池/槽位状态。
+                for slot in slots:
+                    await slot.lock.acquire()
+                    locked.append(slot)
+
+                if not self._closed:
+                    self._closed = True
+                    self._generation += 1
+                for slot in slots:
+                    slot.retired = True
+                heartbeat = self._hb
+                self._hb = None
+            finally:
+                for slot in reversed(locked):
+                    slot.lock.release()
+
+        cleanup_task = asyncio.create_task(
+            self._cleanup_committed_close(heartbeat=heartbeat, slots=slots),
+            name="tstdx-pool-close-cleanup",
+        )
+        await _await_cleanup_before_cancellation(cleanup_task)
 
     async def __aenter__(self) -> AsyncConnectionPool:
         self.start_heartbeat()

@@ -12,7 +12,7 @@ from tstdx.errors import ConfigError, FramingError
 from tstdx.transport.async_ import AsyncConnectionPool
 from tstdx.transport.hosts import HostEntry
 
-hardening = importlib.import_module("tstdx.transport._async_pool_hardening")
+async_module = importlib.import_module("tstdx.transport.async_")
 
 
 def _frame(payload: bytes, method: int = 0x0530) -> ResponseFrame:
@@ -143,7 +143,7 @@ def test_async_request_multi_truncation_marks_failure_and_drops_connection(
 
         monkeypatch.setattr(pool, "_acquire_lease", acquire)
         monkeypatch.setattr(pool, "_release_lease", release)
-        monkeypatch.setattr(hardening, "_mark_failure", mark_failure)
+        monkeypatch.setattr(AsyncConnectionPool, "_mark_failure", mark_failure)
         slot.conn = conn  # allow canonical _drop to clear the slot
 
         try:
@@ -191,8 +191,8 @@ def test_async_iter_frames_cap_drops_potentially_dirty_connection(
 
         monkeypatch.setattr(pool, "_acquire_lease", acquire)
         monkeypatch.setattr(pool, "_release_lease", release)
-        monkeypatch.setattr(hardening, "_mark_success", mark_success)
-        monkeypatch.setattr(hardening._impl, "build_request", lambda *a, **k: (b"REQ", 1))
+        monkeypatch.setattr(AsyncConnectionPool, "_mark_success", mark_success)
+        monkeypatch.setattr(async_module, "build_request", lambda *a, **k: (b"REQ", 1))
         slot.conn = conn
 
         try:

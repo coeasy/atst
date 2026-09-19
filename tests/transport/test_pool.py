@@ -171,10 +171,10 @@ class TestConnectionPoolFailover:
         # (not the bypassed ``speedtest_and_save``) and stub the ranking store so
         # the worker never writes the user's real ranking file.
         speedtest_mod = importlib.import_module("tstdx.transport.speedtest")
-        hardening = importlib.import_module("tstdx.transport._pool_provenance_hardening")
+        pool_mod = importlib.import_module("tstdx.transport.pool")
         monkeypatch.setattr(speedtest_mod, "speedtest", _fake_speedtest)
         monkeypatch.setattr(
-            hardening,
+            pool_mod,
             "RankingStore",
             lambda *a, **k: type("_Store", (), {"update": lambda self, entries: None})(),
         )

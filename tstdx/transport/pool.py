@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import math
 import random
 import threading
 import time
@@ -41,12 +42,19 @@ from ..errors import (
     ConfigError,
     ConnectionClosed,
     ConnectionFailed,
+    FramingError,
     TdxError,
 )
 from ..observability import metrics
 from ..protocol.commands import Family
 from .base import DEFAULT_HEARTBEAT_CMD, TcpConnection
-from .hosts import HostEntry
+from .hosts import (
+    HostEntry,
+    RankingStore,
+    new_endpoint_entry,
+    next_generation_host,
+    validate_host_updates,
+)
 from .ratelimit import SessionRateLimiter
 
 __all__ = [
@@ -98,6 +106,38 @@ CIRCUIT_OPEN_AT = 8.0
 CIRCUIT_COOLDOWN_SECONDS = 30.0
 #: 业务失败（连接成功但交换失败）的加权系数
 BIZ_FAILURE_WEIGHT = 0.5
+
+
+# --------------------------------------------------------------------------- #
+# 入参校验（同步/异步池共用同一套 fail-closed 口径）
+# --------------------------------------------------------------------------- #
+def _require_positive_frame_limit(value: Any, *, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ConfigError(f"{field} 必须是正整数，收到 {value!r}")
+    return value
+
+
+def _require_bool_option(value: Any, *, field: str) -> bool:
+    if not isinstance(value, bool):
+        raise ConfigError(f"{field} 必须是 bool，收到 {value!r}")
+    return value
+
+
+def _require_optional_bool_option(value: Any, *, field: str) -> bool | None:
+    if value is not None and not isinstance(value, bool):
+        raise ConfigError(f"{field} 必须是 bool 或 None，收到 {value!r}")
+    return value
+
+
+def _require_request_timeout(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"timeout 必须是正有限数值或 None，收到 {value!r}")
+    timeout = float(value)
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ConfigError(f"timeout 必须是正有限数值或 None，收到 {value!r}")
+    return timeout
 
 
 # --------------------------------------------------------------------------- #
@@ -388,34 +428,46 @@ class ConnectionPool:
                 self._trigger_background_speedtest()
 
     def _trigger_background_speedtest(self) -> None:
-        """后台异步测速（仅触发一次，防抖）。"""
+        """后台测速：只把观测写回它出发时的那一代。"""
         if self._speedtest_triggered:
             return
         with self._lock:
             if self._speedtest_triggered:
                 return
             self._speedtest_triggered = True
-            # Snapshot both candidates and generation.  The worker must never
-            # observe a list that update_hosts is replacing underneath it.
-            snapshot = tuple(getattr(self, "hosts", [slot.host for slot in self._slots]))
+            generation = self._generation
+            snapshot = tuple(self.hosts)
+            family = self.family
+            timeout = min(self.timeout, 2.0)
 
         def _run() -> None:
             try:
-                from .speedtest import speedtest_and_save
+                from .speedtest import _apply_probe_observations, rank_hosts, speedtest
 
-                _LOG.info("后台测速：对 %d 台候选主站刷新排名文件", len(snapshot))
-                # This worker only updates the persistent probe ranking.  It
-                # must not call update_hosts or overwrite live request health.
-                speedtest_and_save(
+                results = speedtest(
                     snapshot,
-                    family=getattr(self, "family", Family.STANDARD),
-                    timeout=min(getattr(self, "timeout", 3.0), 2.0),
+                    family=family,
+                    timeout=timeout,
                 )
-            except Exception as exc:  # pragma: no cover - 后台任务失败不应影响主流程
+                with self._lock:
+                    if self._closed or self._generation != generation:
+                        _LOG.info(
+                            "丢弃旧 generation 后台测速：started=%d current=%d",
+                            generation,
+                            self._generation,
+                        )
+                        return
+                    _apply_probe_observations(snapshot, results, family=family)
+                    if family == Family.STANDARD:
+                        RankingStore().update(rank_hosts(results))
+            except Exception as exc:  # pragma: no cover - 优化路径必须 fail-open
                 _LOG.warning("后台测速失败: %s", exc)
 
-        t = threading.Thread(target=_run, name="tstdx-speedtest", daemon=True)
-        t.start()
+        threading.Thread(
+            target=_run,
+            name="tstdx-speedtest",
+            daemon=True,
+        ).start()
 
     def _mark_success(
         self,
@@ -466,6 +518,27 @@ class ConnectionPool:
                 return True
             return True
 
+    def _select_allowed_slot(self, *, exclude_hosts: set[str] | None = None) -> Slot | None:
+        """按选序逐个尝试领取唯一的熔断探测令牌。"""
+        slots = self._ordered_slots()
+        if exclude_hosts:
+            preferred = [slot for slot in slots if slot.host.key not in exclude_hosts]
+            candidates = preferred or slots
+        else:
+            candidates = slots
+        for candidate in candidates:
+            if self._circuit_allows(candidate.host):
+                return candidate
+        return None
+
+    def _release_probe_token(self, slot: Slot, generation: int | None) -> None:
+        """归还 HALF_OPEN 令牌，不伪造任何主站健康证据。"""
+        if generation is not None and not self._slot_is_current(slot, generation):
+            return
+        with self._lock:
+            if slot.host.circuit == "half_open":
+                slot.host.circuit_probe_inflight = False
+
     # -- 请求 --------------------------------------------------------------- #
     def request(
         self,
@@ -476,42 +549,28 @@ class ConnectionPool:
         retry: bool | None = None,
         compress: bool = False,
     ) -> ResponseFrame:
-        """发一帧收一帧，自动重试 / 换槽 / 换主站。"""
+        """发一帧收一帧：单次 HALF_OPEN 放行 + 自动重试 / 换槽 / 换主站。"""
+        retry_enabled = _require_optional_bool_option(retry, field="retry")
+        compress_enabled = _require_bool_option(compress, field="compress")
+        request_timeout = _require_request_timeout(timeout)
         self._ensure_open()
-        # 每次重试在「换主站」建议下都会推进到下一台候选；因此尝试次数至少要
-        # 覆盖池内每台主站一次，否则会出现「池里还有可用主站却提前放弃」。
-        max_attempts = (self.max_retries + 1) if (retry is None or retry) else 1
-        if retry is None or retry:
-            distinct_hosts = len({s.host.key for s in self._slots})
+        max_attempts = (self.max_retries + 1) if (retry_enabled is None or retry_enabled) else 1
+        if retry_enabled is None or retry_enabled:
+            distinct_hosts = len({slot.host.key for slot in self._slots})
             max_attempts = max(max_attempts, distinct_hosts)
         last_exc: BaseException | None = None
         tried_hosts: list[str] = []
         started = time.perf_counter()
 
         for attempt in range(max_attempts):
-            # T5：close() 与在飞请求竞态——每轮复查，池已关则立即终止，
-            # 不再为已关闭的池重建连接（重建即泄漏：无人再去关闭它）。
             self._ensure_open()
             if self.rate_limiter is not None:
                 self.rate_limiter.acquire()
-            slots = self._ordered_slots()
-            if not slots:
-                break
-            # P1：tried_hosts 生效于选序——优先选本轮调用尚未试过的主机，
-            # 不再因「快主机刚失败但分数仍占优」而重复敲已失败主机；
-            # 全部试过时退回 slots[0]（保持既有重试深度，零回归）。
-            # B4：OPEN 主站直接跳过（不再吃 3s 超时）；全部 OPEN 时退回
-            # 原选序兜底（不因熔断把「可用池为空」误判为「无主站」）。
-            candidates = [s for s in slots if s.host.key not in tried_hosts] or slots
-            allowed = [s for s in candidates if self._circuit_allows(s.host)]
-            if not allowed:
+            slot = self._select_allowed_slot(exclude_hosts=set(tried_hosts))
+            if slot is None:
                 self.stats.circuit_skips += 1
-                # Never bypass OPEN/HALF_OPEN admission when every candidate
-                # is gated.  The old fallback sent traffic straight through
-                # an OPEN circuit and defeated the cooldown contract.
                 last_exc = ConnectionFailed("所有候选主站均处于熔断门禁")
                 break
-            slot = allowed[0]
             tried_hosts.append(slot.host.key)
 
             leased_conn: TcpConnection | None = None
@@ -521,7 +580,12 @@ class ConnectionPool:
                 with self._lease(slot) as (conn, generation):
                     leased_conn = conn
                     leased_generation = generation
-                    frame = conn.request(method, body, timeout=timeout, compress=compress)
+                    frame = conn.request(
+                        method,
+                        body,
+                        timeout=request_timeout,
+                        compress=compress_enabled,
+                    )
             except TdxError as exc:
                 last_exc = exc
                 self.stats.failures += 1
@@ -539,7 +603,7 @@ class ConnectionPool:
                     _LOG.debug("退避 %.3fs 后重试（%s）", delay, type(exc).__name__)
                     time.sleep(delay)
                 continue
-            except Exception as exc:  # pragma: no cover - 兜底
+            except Exception as exc:
                 last_exc = exc
                 self._mark_failure(slot, exc, generation=leased_generation, conn=leased_conn)
                 if attempt + 1 >= max_attempts:
@@ -547,6 +611,11 @@ class ConnectionPool:
                 self.stats.retries += 1
                 time.sleep(0.05 * (attempt + 1))
                 continue
+            except BaseException:
+                # KeyboardInterrupt/SystemExit 属于控制流：租约已由上下文管理器归还，
+                # 只释放本请求的 HALF_OPEN 令牌，原样传播。
+                self._release_probe_token(slot, leased_generation)
+                raise
 
             self.stats.requests += 1
             self.stats.frames += 1
@@ -581,98 +650,82 @@ class ConnectionPool:
                     return
 
     # -- bestip 热更新 ------------------------------------------------------ #
-    @staticmethod
-    def _inherit_runtime_health(old: HostEntry, new: HostEntry) -> None:
-        """Merge process-local health into a fresh probe entry.
-
-        ``new.rtt_ms`` is a speed-test observation and is intentionally kept;
-        live request health is copied to its separate fields.  Circuit and
-        failure state is also retained so bestip cannot silently heal a host
-        that the real request path has just opened.
-        """
-        new.live_rtt_ms = old.live_rtt_ms
-        new.live_ok_at = old.live_ok_at
-        new.failures = max(old.failures, new.failures)
-        new.biz_failures = max(old.biz_failures, new.biz_failures)
-        if old.last_ok is not None:
-            new.last_ok = old.last_ok
-        if old.last_error:
-            new.last_error = old.last_error
-        new.consec_weighted = old.consec_weighted
-        if old.circuit_probe_inflight:
-            # A half-open probe from the retired generation must not leave the
-            # new generation permanently half-open with no owner.
-            new.circuit = "open"
-            new.circuit_opened_at = time.time()
-            new.circuit_probe_inflight = False
-        else:
-            new.circuit = old.circuit
-            new.circuit_opened_at = old.circuit_opened_at
-            new.circuit_probe_inflight = False
 
     def update_hosts(self, hosts: Sequence[HostEntry]) -> list[HostEntry]:
-        """bestip 热更新：按新序重建主站池，复用现有连接（不重启、不中断）。
+        """按新序发布一代主站，复用空闲槽位、退役在飞槽位。
 
-        保留旧池中仍在新列表里的槽位连接（按 ``host:port#index`` 匹配复用），
-        并刷新其 ``HostEntry`` 对象（把测速得到的新 RTT / 失败计数带进池内）；
-        丢弃不在新列表中的槽位（关闭连接）。适合 :meth:`~tstdx.client.TdxClient.bestip`
-        运行时测速后重新排序主站优先级。
-
-        Returns
-        -------
-        更新后的主站列表（即入参 ``hosts``）。
+        ``bestip`` 测速后调用。整段替换在池锁内完成，锁序恒为 pool._lock →
+        slot.lock（与 :meth:`_drop` 一致），避免与请求路径的弃连判定互相死锁。
+        发布的 ``HostEntry`` 是池自有副本：只采纳探测层证据，运行期健康与身份
+        由 :func:`~tstdx.transport.hosts.next_generation_host` 延续。
         """
+        self._ensure_open()
         if not hosts:
             return list(self.hosts)
+        observed = validate_host_updates(hosts, family=self.family)
         to_close: list[Slot] = []
+
         with self._lock:
-            new_hosts = [h for h in hosts if h is not None]
+            self._ensure_open()
             self._generation += 1
             generation = self._generation
-            old_by_key = {s.key: s for s in self._slots}
+            self._speedtest_triggered = False
+            old_slots = list(self._slots)
+            old_by_slot_key = {slot.key: slot for slot in old_slots}
+            old_host_by_key = {slot.host.key: slot.host for slot in old_slots}
+
+            published_hosts: list[HostEntry] = []
+            for item in observed:
+                old_host = old_host_by_key.get(item.key)
+                published_hosts.append(
+                    next_generation_host(old_host, item)
+                    if old_host is not None
+                    else new_endpoint_entry(item, family=self.family)
+                )
+
             new_slots: list[Slot] = []
-            for host in new_hosts:
-                for i in range(self.slots_per_host):
-                    key = f"{host.key}#{i}"
-                    old = old_by_key.get(key)
-                    if old is not None:
-                        with old.lock:
-                            self._inherit_runtime_health(old.host, host)
-                            if old.leases == 0 and not old.retired:
-                                old.host = host  # idle slot: safe connection reuse
-                                old.generation = generation
-                                new_slots.append(old)
-                            else:
-                                # Do not mutate a host/connection visible to an
-                                # in-flight request. Publish a fresh slot and
-                                # retire the old one after its lease returns.
-                                old.retired = True
+            for host in published_hosts:
+                for index in range(self.slots_per_host):
+                    key = f"{host.key}#{index}"
+                    old = old_by_slot_key.get(key)
+                    if old is None:
+                        new_slots.append(Slot(host=host, index=index, generation=generation))
+                        continue
+                    with old.lock:
+                        if old.leases == 0 and not old.retired:
+                            old.host = host
+                            old.generation = generation
+                            new_slots.append(old)
+                        else:
+                            old.retired = True
+                            if old not in self._retired_slots:
                                 self._retired_slots.append(old)
-                                new_slots.append(Slot(host=host, index=i, generation=generation))
-                    else:
-                        new_slots.append(Slot(host=host, index=i, generation=generation))
-            # Retire removed hosts.  An active request owns its connection
-            # until the lease returns; an idle one can be closed now.
-            new_keys = {s.key for s in new_slots}
-            for s in self._slots:
-                if s.key not in new_keys:
-                    with s.lock:
-                        s.retired = True
-                        if s not in self._retired_slots:
-                            self._retired_slots.append(s)
-                        if s.leases == 0:
-                            to_close.append(s)
-            self.hosts = new_hosts
+                            new_slots.append(Slot(host=host, index=index, generation=generation))
+
+            new_keys = {slot.key for slot in new_slots}
+            for old in old_slots:
+                if old.key in new_keys:
+                    continue
+                with old.lock:
+                    old.retired = True
+                    if old not in self._retired_slots:
+                        self._retired_slots.append(old)
+                    if old.leases == 0:
+                        to_close.append(old)
+
+            self.hosts = published_hosts
             self._slots = new_slots
             self._rr = 0
             _LOG.info(
-                "bestip 热更新主站池：%d 台（复用 %d 槽）",
-                len(new_hosts),
-                len([s for s in new_slots if s.conn is not None]),
+                "bestip 热更新主站池：%d 台（复用 %d 槽，generation=%d）",
+                len(published_hosts),
+                len([slot for slot in new_slots if slot.conn is not None]),
+                generation,
             )
+
         for slot in to_close:
             self._drop(slot)
-        return new_hosts
+        return published_hosts
 
     # -- 多帧请求 ----------------------------------------------------------- #
     def request_multi(
@@ -685,195 +738,204 @@ class ConnectionPool:
         max_frames: int = 512,
         timeout: float | None = None,
     ) -> ResponseFrame:
-        """读取分帧响应并合并为单个 :class:`ResponseFrame`。
-
-        TDX 的部分命令（证券列表、财务数据等）在记录数较多时会**分多帧**下发：
-        第一帧开头是 ``uint16 总数``，后续帧是纯记录续体，没有数量头。
-
-        合并策略：把首帧去掉 2 字节数量头后的 payload 与后续帧 payload 拼接，
-        重组成一个逻辑帧交给解析器，从而对上层屏蔽分帧细节。
-
-        .. note:: **同连接多帧取舍（C6 书面说明）**
-            本方法固定在**单一连接**上按帧序依次收完再合并，不利用多槽位并发。
-            原因：TDX 分帧协议依赖 TCP 字节序——「首帧数量头 + 续体帧」必须
-            来自同一请求上下文，跨连接乱序收取无法重组；且同一连接上并发两个
-            分帧请求会让续体帧交织，无法归属。因此多帧命令的吞吐瓶颈在单连接
-            带宽而非槽位数，属**已知且接受的取舍**；如需并发应在上层对
-            ``security_list`` 按 start 偏移分段后用多个客户端实例（各自独立
-            连接）并发请求，再在调用方合并。
-
-        Parameters
-        ----------
-        record_size:
-            单条记录字节数；``None`` 时从首帧推断 ``(len-2)//count``。
-        expect_count:
-            首帧是否带 ``uint16`` 数量头（默认 True）。
-        """
+        """多帧合并请求：不绕熔断、不把截断的脏 socket 归还池。"""
+        frame_limit = _require_positive_frame_limit(max_frames, field="max_frames")
+        if record_size is not None:
+            _require_positive_frame_limit(record_size, field="record_size")
+        expect_count_enabled = _require_bool_option(expect_count, field="expect_count")
+        request_timeout = _require_request_timeout(timeout)
         self._ensure_open()
-        # 首帧与后续帧必须来自同一连接，因此这里直连一个槽位读完
         if self.rate_limiter is not None:
             self.rate_limiter.acquire()
-        slot = self._ordered_slots()[0]
+        slot = self._select_allowed_slot()
+        if slot is None:
+            self.stats.circuit_skips += 1
+            raise AllHostsUnreachable(
+                f"所有主站均处于熔断门禁。\n{ALL_HOSTS_UNREACHABLE_NEXT_STEPS}",
+                context={"hosts": [], "method": hex(method), "attempts": 0},
+                cause=ConnectionFailed("所有候选主站均处于熔断门禁"),
+            )
+
         conn: TcpConnection | None = None
         generation: int | None = None
         try:
             conn, generation = self._acquire_lease(slot)
         except TdxError as exc:
-            self._mark_failure(slot, exc)
+            self._mark_failure(slot, exc, generation=generation, conn=conn)
+            raise
+        except BaseException:
+            self._release_probe_token(slot, generation)
             raise
 
         first_exc: TdxError | None = None
-        cont_exc: TdxError | None = None
+        stream_exc: TdxError | None = None
         merged: ResponseFrame | None = None
         started = time.perf_counter()
-        # C2 连接租约：首帧 + 全部续帧在同一临界区内读完，期间其它请求 /
-        # 心跳无法插入同一 socket 的读写序（conn.request/read_frame 可重入）。
-        # 注意锁序恒为 slot.lock → conn._lock：_mark_failure 需要 slot.lock，
-        # 因此一律延迟到锁外执行。
-        with conn._lock:
-            try:
-                first = conn.request(method, body, timeout=timeout)
-            except TdxError as exc:
-                first_exc = exc
-            else:
-                payload = first.payload
-                if not expect_count or len(payload) < 2:
-                    self.stats.requests += 1
+        try:
+            with conn._lock:
+                try:
+                    first = conn.request(method, body, timeout=request_timeout)
+                except TdxError as exc:
+                    first_exc = exc
+                else:
                     self.stats.frames += 1
-                    self._release_lease(slot, conn)
-                    return first
-
-                count = int.from_bytes(payload[:2], "little")
-                chunk = payload[2:]
-                chunks = [chunk]
-                got = len(chunk)
-
-                if count > 0 and record_size is None and len(chunk) > 0:
-                    record_size = max(1, len(chunk) // count)
-                need = count * (record_size or 1) if record_size else None
-
-                frames_read = 1
-                while count > 0 and need is not None and got < need and frames_read < max_frames:
-                    try:
-                        nxt = conn.read_frame()
-                    except TdxError as exc:
-                        cont_exc = exc
-                        # 已读到的数据不丢弃：降级返回已合并部分并附告警
-                        _LOG.warning(
-                            "request_multi 续帧中断（%s: %s），降级返回已合并的 %d 块",
-                            type(exc).__name__,
-                            exc,
-                            len(chunks),
+                    payload = first.payload
+                    if not expect_count_enabled or len(payload) < 2:
+                        merged = first
+                    else:
+                        count = int.from_bytes(payload[:2], "little")
+                        chunks = [payload[2:]]
+                        got = len(chunks[0])
+                        if count > 0 and record_size is None and got > 0:
+                            record_size = max(1, got // count)
+                        need = count * (record_size or 1) if record_size else None
+                        frames_read = 1
+                        while (
+                            count > 0
+                            and need is not None
+                            and got < need
+                            and frames_read < frame_limit
+                        ):
+                            try:
+                                nxt = conn.read_frame()
+                            except TdxError as exc:
+                                stream_exc = exc
+                                break
+                            frames_read += 1
+                            self.stats.frames += 1
+                            if not nxt.payload:
+                                break
+                            chunks.append(nxt.payload)
+                            got += len(nxt.payload)
+                        joined = b"".join(chunks)
+                        merged = ResponseFrame(
+                            magic=first.magic,
+                            zip_flag=first.zip_flag,
+                            seq=first.seq,
+                            method=first.method,
+                            zip_size=len(joined),
+                            unzip_size=len(joined),
+                            body=b"",
+                            payload=joined,
+                            header_raw=first.header_raw,
                         )
-                        break
-                    frames_read += 1
-                    self.stats.frames += 1
-                    if not nxt.payload:
-                        break
-                    chunks.append(nxt.payload)
-                    got += len(nxt.payload)
+                        if need is not None and got < need and stream_exc is None:
+                            stream_exc = FramingError(
+                                "request_multi 响应截断: "
+                                f"need={need} got={got} max_frames={frame_limit}",
+                                context={
+                                    "method": hex(method),
+                                    "need": need,
+                                    "got": got,
+                                    "max_frames": frame_limit,
+                                },
+                            )
+        except BaseException:
+            self._release_lease(slot, conn)
+            self._release_probe_token(slot, generation)
+            self._drop(slot, expected=conn)
+            raise
 
-                joined = b"".join(chunks)
-                merged = ResponseFrame(
-                    magic=first.magic,
-                    zip_flag=first.zip_flag,
-                    seq=first.seq,
-                    method=first.method,
-                    zip_size=len(joined),
-                    unzip_size=len(joined),
-                    body=b"",
-                    payload=joined,
-                    header_raw=first.header_raw,
-                )
-                if got < (need or 0):
-                    # 深审 M1：保留已收到的部分数据（与 async 版一致）。
-                    # 旧实现清空 payload：① 与 header 尺寸自相矛盾；
-                    # ② 把「部分数据」伪装成「无数据」——payload 是顺序
-                    # 前缀拼接，前缀数据本身有效（每帧 seq/格式已校验），
-                    # 丢弃只会浪费可用信息。不完整性由本告警暴露。
-                    _LOG.warning(
-                        "request_multi 数据不完整（need=%s got=%d），降级返回已合并的 %d 块",
-                        need,
-                        got,
-                        len(chunks),
-                    )
-                self.stats.requests += 1
-                if cont_exc is None:
-                    self._mark_success(
-                        slot,
-                        generation=generation,
-                        rtt_ms=(time.perf_counter() - started) * 1000.0,
-                    )
-                    metrics.record_request(
-                        command=f"0x{method:04x}",
-                        ok=True,
-                        duration=time.perf_counter() - started,
-                    )
-                    self._release_lease(slot, conn)
-                    return merged
-                # 续帧失败：保持「降级返回部分数据」语义，弃连在锁外执行
-                # （不调用 _mark_success——读中断不是成功，host 失败计数应保留）。
-
-        assert conn is not None
         self._release_lease(slot, conn)
         if first_exc is not None:
             self._mark_failure(slot, first_exc, generation=generation, conn=conn)
             metrics.record_request(command=f"0x{method:04x}", ok=False)
             raise first_exc
-        assert cont_exc is not None and merged is not None
-        self._mark_failure(slot, cont_exc, generation=generation, conn=conn)
-        metrics.record_request(command=f"0x{method:04x}", ok=False)
+
+        assert merged is not None
+        self.stats.requests += 1
+        if stream_exc is not None:
+            _LOG.warning("request_multi 数据不完整，返回已收到前缀并弃连: %s", stream_exc)
+            self._mark_failure(slot, stream_exc, generation=generation, conn=conn)
+            metrics.record_request(
+                command=f"0x{method:04x}",
+                ok=False,
+                duration=time.perf_counter() - started,
+            )
+            return merged
+
+        self._mark_success(
+            slot,
+            generation=generation,
+            rtt_ms=(time.perf_counter() - started) * 1000.0,
+        )
+        metrics.record_request(
+            command=f"0x{method:04x}", ok=True, duration=time.perf_counter() - started
+        )
         return merged
 
     def iter_frames(
         self, method: int, body: bytes = b"", *, max_frames: int = 512
     ) -> Iterator[ResponseFrame]:
-        """在同一条连接上逐帧迭代（供抓包 / Golden 采集使用）。
-
-        发出请求后持续读帧，直到读超时或达到 ``max_frames``。
-        调用方需自行判断何时停止（例如累计记录数已达首帧声明的总数）。
-
-        T#2 整体租约：seq 分配、写帧、逐帧读取全程持连接锁（RLock 可重入，
-        read_frame 内层取锁安全）——心跳与并发请求无法插入读写序；逐帧
-        touch ``last_used``，心跳空闲判定对活跃流让路。消费方弃读（生成器
-        被 close/GeneratorExit）时 socket 内残留未读帧、连接不可复用，弃连。
-        """
+        """逐帧迭代：走同一套熔断放行 + 保守的连接复用判定。"""
+        frame_limit = _require_positive_frame_limit(max_frames, field="max_frames")
         self._ensure_open()
         if self.rate_limiter is not None:
             self.rate_limiter.acquire()
-        slot = self._ordered_slots()[0]
-        conn, generation = self._acquire_lease(slot)
+        slot = self._select_allowed_slot()
+        if slot is None:
+            self.stats.circuit_skips += 1
+            raise AllHostsUnreachable(
+                f"所有主站均处于熔断门禁。\n{ALL_HOSTS_UNREACHABLE_NEXT_STEPS}",
+                context={"hosts": [], "method": hex(method), "attempts": 0},
+                cause=ConnectionFailed("所有候选主站均处于熔断门禁"),
+            )
+
+        conn: TcpConnection | None = None
+        generation: int | None = None
+        try:
+            conn, generation = self._acquire_lease(slot)
+        except TdxError as exc:
+            self._mark_failure(slot, exc, generation=generation, conn=conn)
+            raise
+        except BaseException:
+            self._release_probe_token(slot, generation)
+            raise
+
         failed: TdxError | None = None
+        frames_read = 0
         try:
             with conn._lock:
-                frame_bytes, seq = build_request(method, body, seq=conn.next_seq(), spec=conn.spec)
+                frame_bytes, _ = build_request(
+                    method,
+                    body,
+                    seq=conn.next_seq(),
+                    spec=conn.spec,
+                )
                 conn._sendall(frame_bytes)
-                read = 0
-                while read < max_frames:
+                while frames_read < frame_limit:
                     try:
-                        yield conn.read_frame()
+                        frame = conn.read_frame()
                     except TdxError as exc:
                         failed = exc
                         break
-                    read += 1
+                    frames_read += 1
                     self.stats.frames += 1
                     conn.stats.last_used = time.time()
-            if failed is not None:
-                self._mark_failure(slot, failed, generation=generation, conn=conn)
-            else:
-                self._mark_success(slot, generation=generation)
-        except GeneratorExit:
+                    yield frame
+        except BaseException:
+            self._release_lease(slot, conn)
+            self._release_probe_token(slot, generation)
             self._drop(slot, expected=conn)
             raise
-        finally:
-            self._release_lease(slot, conn)
+
+        self._release_lease(slot, conn)
+        if failed is not None:
+            self._mark_failure(slot, failed, generation=generation, conn=conn)
+            return
+
+        self._mark_success(slot, generation=generation)
+        # 命中调用方上限并不能证明服务端流已结束：复用这条 socket 会把未读的
+        # 旧帧暴露给下一个请求，因此不计失败地直接关掉。
+        if frames_read >= frame_limit:
+            self._drop(slot, expected=conn)
 
     # -- 探活 --------------------------------------------------------------- #
     def _start_heartbeat(self) -> None:
+        """心跳线程同样受 OPEN/HALF_OPEN 放行门禁约束。"""
         interval = max(1, int(self.heartbeat_interval or 0))
 
         def loop() -> None:
-            # 首个周期先做一次空闲回收（此时多半无在飞请求，安全）。
             self._sweep_idle()
             while not self._closed:
                 time.sleep(interval)
@@ -883,27 +945,29 @@ class ConnectionPool:
                 for slot in list(self._slots):
                     if self._closed:
                         break
+                    if not self._circuit_allows(slot.host):
+                        continue
                     failed: BaseException | None = None
                     rtt: float | None = None
                     generation = slot.generation
-                    # C2：ping 全程持 slot.lock 调度、conn._lock 执行——
-                    # 在飞请求持有 conn._lock 时，心跳在锁外等待，天然串行，
-                    # 心跳帧不会再插入请求的读写序。
-                    with slot.lock:
-                        conn = slot.conn
-                        if conn is None or not conn.connected:
-                            continue
-                        idle = time.time() - (conn.stats.last_used or conn.stats.created_at)
-                        if idle < interval:
-                            continue
-                        try:
-                            rtt = conn.ping(self.heartbeat_cmd)
-                        except Exception as exc:
-                            failed = exc
+                    try:
+                        with slot.lock:
+                            conn = slot.conn
+                            if conn is None or not conn.connected:
+                                self._release_probe_token(slot, generation)
+                                continue
+                            idle = time.time() - (conn.stats.last_used or conn.stats.created_at)
+                            if idle < interval:
+                                self._release_probe_token(slot, generation)
+                                continue
+                            try:
+                                rtt = conn.ping(self.heartbeat_cmd)
+                            except Exception as exc:
+                                failed = exc
+                    except BaseException:
+                        self._release_probe_token(slot, generation)
+                        raise
                     if failed is not None:
-                        # 必须**先释放 slot.lock 再标记失败**：_mark_failure →
-                        # _drop 会重入 slot.lock（非可重入锁，旧实现在此自死锁，
-                        # 心跳线程与该槽位全部请求永久卡死）。
                         self._mark_failure(slot, failed, generation=generation, conn=conn)
                     elif rtt is not None:
                         self._mark_success(slot, generation=generation, rtt_ms=rtt)

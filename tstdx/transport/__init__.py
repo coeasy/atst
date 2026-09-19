@@ -17,27 +17,17 @@
 
 from __future__ import annotations
 
-# Side-effect imports install the v1.0 generation/lease + circuit hardening onto
-# the canonical pool classes before callers can receive either public class.
-# Async shutdown is a separate lifecycle transaction: install it immediately
-# after request/circuit hardening so every public AsyncConnectionPool receives a
-# cancellation-atomic, re-drainable close() implementation.
+# Side-effect imports install the remaining transport contracts onto the public
+# classes before callers can receive them.
 # Direct TcpConnection/AsyncTcpConnection are public too. Once canonical host
 # parsing is available, install the same endpoint/timeout/boolean configuration
 # contract that pool construction already enforces.
 # Direct public pool construction must obey the same canonical family identity as
 # resolve_hosts/client construction. Install this before generation-safe updates.
-# Join generation/lease safety with v12 selector/live-health/probe provenance.
-# This layer patches sync+async update_hosts and the sync background speedtest
-# after the canonical classes and probe-only RankingStore are available.
 from . import (
-    _async_close_hardening,
-    _async_pool_hardening,
     _connection_contract_hardening,
     _host_selector_hardening,
     _pool_family_hardening,
-    _pool_hardening,
-    _pool_provenance_hardening,
     _ranking_hardening,
 )
 
@@ -52,15 +42,11 @@ from .ratelimit import SessionRateLimiter, SessionState, TokenBucket, session_st
 from .speedtest import ProbeResult, probe, rank_hosts, speedtest, speedtest_and_save
 
 del (
-    _async_pool_hardening,
-    _async_close_hardening,
-    _pool_hardening,
     _hosts_impl,
     _ranking_hardening,
     _host_selector_hardening,
     _connection_contract_hardening,
     _pool_family_hardening,
-    _pool_provenance_hardening,
 )
 
 __all__ = [

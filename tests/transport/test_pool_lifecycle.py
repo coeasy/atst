@@ -129,9 +129,9 @@ def test_background_speedtest_cannot_overwrite_live_health(monkeypatch, seed_poo
             store_commits.append(entries)
 
     speedtest_mod = importlib.import_module("tstdx.transport.speedtest")
-    hardening = importlib.import_module("tstdx.transport._pool_provenance_hardening")
+    pool_mod = importlib.import_module("tstdx.transport.pool")
     monkeypatch.setattr(speedtest_mod, "speedtest", fake_speedtest)
-    monkeypatch.setattr(hardening, "RankingStore", _RecordingStore)
+    monkeypatch.setattr(pool_mod, "RankingStore", _RecordingStore)
 
     # Keep the real threaded interleaving, but retain the worker handle so the
     # stale probe's completion is deterministic instead of timing-dependent.
@@ -143,7 +143,7 @@ def test_background_speedtest_cannot_overwrite_live_health(monkeypatch, seed_poo
             workers.append(self)
             super().start()
 
-    monkeypatch.setattr(hardening.threading, "Thread", _RecordingThread)
+    monkeypatch.setattr(pool_mod.threading, "Thread", _RecordingThread)
 
     slot = pool._slots[0]
     pool._mark_failure(slot, ConnectionFailed("trigger"))

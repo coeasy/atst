@@ -146,4 +146,4 @@ def test_repeated_close_redrains_already_closed_pool(
 
 
 def test_async_close_public_wiring_uses_atomic_hardening() -> None:
-    assert AsyncConnectionPool.close.__module__ == "tstdx.transport._async_close_hardening"
+    assert AsyncConnectionPool.close.__module__ == "tstdx.transport.async_"
