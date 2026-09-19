@@ -30,7 +30,6 @@ __all__ = [
     "CMD",
     "cmd",
     "get_command",
-    "get_command_by_name",
     "by_family",
     "by_status",
     "unknown_command_ids",
@@ -333,6 +332,12 @@ for _c_ in COMMANDS.values():
 
 
 def cmd(name: str) -> int:
+    """命令名 → 命令号。
+
+    账本 85 行的名字逐名唯一（按 ``lower()`` 后比较），所以 ``CMD[name]`` 不需要族
+    上下文；那条唯一性由 ``tests/unit/test_commands.py`` 钉住。要整行就组合
+    ``get_command(cmd(name), family)``。
+    """
     try:
         return CMD[name]
     except KeyError as exc:
@@ -341,42 +346,45 @@ def cmd(name: str) -> int:
         ) from exc
 
 
-def get_command_by_name(name: str, family: str | None = None) -> Command | None:
-    for (fam, _), command in COMMANDS.items():
-        if command.name == name and (family is None or fam == family):
-            return command
-    return None
-
-
 def get_command(cmd: int, family: str = Family.STANDARD) -> Command | None:
+    """按 ``(族, 命令号)`` 取账本行；未登记者返回 ``None``。
+
+    ``None`` 不是错误：未登记号照旧由 :mod:`tstdx.protocol.generic` 走 L2 通用解析 +
+    L3 原始透传，永不丢包。
+    """
     return COMMANDS.get((family, cmd))
 
 
 def by_family(family: str) -> Iterator[Command]:
+    """一个协议族的全部账本行，按命令号升序。
+
+    族名是 :class:`Family` 的常量值（``Family.STANDARD == "quotation"``）。未登记的族名
+    得到空序列，不报错——它表达的是"该族无登记"，与调用方写错族名同形，故拼写要靠常量。
+    """
     for (fam, _), command in sorted(COMMANDS.items()):
         if fam == family:
             yield command
 
 
 def unknown_command_ids(family: str = Family.STANDARD) -> list[Command]:
+    """语义尚未由 golden 样本校正（``verified=False``）的账本行。
+
+    名字里的 "unknown" 指**协议语义未定**，不是"这条命令不存在"：这些号照样发得出去，
+    L2 通用解析照样出结果。返回的是 :class:`Command` 行而不是裸命令号，要号请取
+    ``[c.cmd for c in unknown_command_ids(...)]``。
+    """
     return [command for command in by_family(family) if not command.verified]
 
 
 def by_status(status: str, family: str | None = None) -> list[Command]:
+    """按运行时状态（``STATUS_ONLINE`` / ``OFFLINE`` / ``DEGRADED``）列出该状态的全部行。
+
+    状态是「实测下线/降级事实」的归宿，与语义验证 ``verified`` 是两根独立的轴。发包前的
+    fail-fast 读的是**单行的** ``status``（``tstdx/client/core.py`` 的 ``_guard_offline``
+    经 ``get_command`` 取行），本函数只负责「按状态列全部行」这一侧。
+    """
     return [
         command
         for (_, _), command in sorted(COMMANDS.items())
         if command.status == status and (family is None or command.family == family)
     ]
-
-
-def stats() -> dict[str, int]:
-    out: dict[str, int] = {}
-    for (fam, _), command in COMMANDS.items():
-        out[f"{fam}.total"] = out.get(f"{fam}.total", 0) + 1
-        out[f"{fam}.{command.tier}"] = out.get(f"{fam}.{command.tier}", 0) + 1
-        if command.verified:
-            out[f"{fam}.verified"] = out.get(f"{fam}.verified", 0) + 1
-        out[f"all.status_{command.status}"] = out.get(f"all.status_{command.status}", 0) + 1
-    out["all.total"] = len(COMMANDS)
-    return out

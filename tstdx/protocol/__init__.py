@@ -22,7 +22,6 @@ from .commands import (  # noqa: F401
     Family,
     by_family,
     get_command,
-    stats,
     unknown_command_ids,
 )
 from .generic import (  # noqa: F401
@@ -52,7 +51,6 @@ __all__ = [
     "get_command",
     "by_family",
     "unknown_command_ids",
-    "stats",
     "BaseParser",
     "ParseResult",
     "PARSERS",

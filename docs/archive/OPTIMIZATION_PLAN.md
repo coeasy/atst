@@ -30,6 +30,13 @@
 - 0x0010 / 0x0537 / 0x0FC5 升 **verified=True**（有 golden 实采 + 精确解析器；按账本自有升级规则）。
 - 0x0FB4 / 0x06B9 保持 verified=False（语料无实采样本，不可虚标）。
 - 新增 `by_status()` / `unknown_commands()` 查询助手（`unknown_command_ids` 保留为别名）。
+  - **修订（2026-09-19，v17 第 46 步 / F-65）**：这句里的"别名"关系从未成立。账本侧自初始提交
+    （`f73ef61` 的 `commands.py`）就只有 `unknown_command_ids()`，没有过 `unknown_commands()`。
+    仓里确实有这个名字，但它是 `Sniffer.unknown_commands()`（`tstdx/transport/sniff.py`）——
+    采集器给出"观察到但**未登记**"的裸命令号，与账本函数给出"已登记但**语义未经 golden 校正**"
+    的 `Command` 行，是两件不同的事，名字撞车属巧合。归档原文按史保留、不回溯改写；当前口径见
+    `docs/api/interfaces.md`「命令账本查询面」：`unknown_command_ids()` 与 `by_family()` 一起被
+    定为账本的公开查询面，同批删掉的是 `stats()` 与 `get_command_by_name()`（不留别名）。
 
 ### A3 Golden payload 有效性下限门禁 ✅
 - **问题实证**：2026-09-02 午休实采的 0x0537 样本仅 4 字节（疑似空分时布局）——`real 样本 ≠ 有效样本`。

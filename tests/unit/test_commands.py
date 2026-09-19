@@ -10,13 +10,17 @@ from dataclasses import fields
 import pytest
 
 from tstdx.protocol.commands import (
+    CMD,
     COMMANDS,
     STATUS_OFFLINE,
     STATUS_ONLINE,
     Command,
+    Family,
+    by_family,
     by_status,
+    cmd,
     get_command,
-    stats,
+    unknown_command_ids,
 )
 
 pytestmark = pytest.mark.unit
@@ -41,6 +45,78 @@ class TestLedgerFieldShape:
         """``summary`` 是 46 条无 PROTOCOL_SPEC 条目命令的唯一描述，且直接进报错文案。"""
         blank = sorted(c.hex for c in COMMANDS.values() if not c.summary.strip())
         assert blank == []
+
+
+class TestLedgerQuerySurface:
+    """F-65 裁决 (b)：保留的公开查询面必须逐条有用例，而不是"挂在 ``__all__`` 上就算存在"。
+
+    裁决前 ``by_family``/``unknown_command_ids`` 在 ``tstdx/`` 与 ``tests/`` 里的调用点
+    都是 0（``by_family`` 只被 ``unknown_command_ids`` 自己调一次）。一个既没人调、用例
+    也不调的名字挂在对外名单上，读者只能靠猜它做什么。
+    """
+
+    @pytest.mark.parametrize(
+        ("family", "size"),
+        [
+            (Family.STANDARD, 39),
+            (Family.EXTENDED, 17),
+            (Family.MAC, 16),
+            (Family.GOODS, 11),
+            (Family.F10, 2),
+        ],
+    )
+    def test_by_family_yields_exactly_its_own_rows(self, family: str, size: int) -> None:
+        rows = list(by_family(family))
+        assert len(rows) == size == sum(1 for key in COMMANDS if key[0] == family)
+        assert {c.family for c in rows} == {family}
+        assert [c.cmd for c in rows] == sorted(c.cmd for c in rows)
+
+    def test_by_family_partitions_the_whole_ledger(self) -> None:
+        """五个族常量的并集 = 账本全集：新增一族却忘了写进这里，分母立刻对不上。"""
+        families = (
+            Family.STANDARD,
+            Family.EXTENDED,
+            Family.MAC,
+            Family.GOODS,
+            Family.F10,
+        )
+        assert sum(len(list(by_family(f))) for f in families) == len(COMMANDS)
+
+    def test_unknown_family_is_empty_not_an_error(self) -> None:
+        assert list(by_family("no_such_family")) == []
+        assert unknown_command_ids("no_such_family") == []
+
+    def test_unknown_command_ids_are_the_unverified_rows(self) -> None:
+        """``unknown`` 的口径是"语义未经 golden 校正"，且返回的是行不是号（文档同口径）。"""
+        rows = unknown_command_ids()
+        assert len(rows) == 30
+        assert all(isinstance(c, Command) and not c.verified for c in rows)
+        assert [c.cmd for c in rows] == sorted(c.cmd for c in rows)
+        assert {c.cmd for c in rows} == {
+            c.cmd for c in COMMANDS.values() if not c.verified and c.family == Family.STANDARD
+        }
+        # 尚未有实采样本的四个族，其全部行都是 unknown
+        assert set(unknown_command_ids(Family.GOODS)) == set(by_family(Family.GOODS))
+
+    def test_name_lookup_composes_instead_of_scanning(self) -> None:
+        """删掉 ``get_command_by_name()`` 不削能力：名字 → 行 = ``get_command(cmd(name), family)``。
+
+        被删的那个是全包唯一对 85 行做线性名字扫描的入口，而它给出的东西这条组合
+        已经给得出，且给的是同一个对象。逐行验证，不抽样。
+        """
+        for (family, number), row in COMMANDS.items():
+            assert cmd(row.name.lower()) == number
+            assert get_command(number, family) is row
+
+    def test_cmd_names_are_unique_across_families(self) -> None:
+        """``cmd()`` 不需要族上下文的前提是名字全局唯一；一旦撞名，这条先红。"""
+        names = [c.name.lower() for c in COMMANDS.values()]
+        assert len(set(names)) == len(names) == len(CMD) == len(COMMANDS)
+
+    def test_unregistered_name_raises_with_the_ledger_size(self) -> None:
+        with pytest.raises(KeyError) as excinfo:
+            cmd("no_such_command")
+        assert "85" in str(excinfo.value)
 
 
 class TestLedgerCalibration:
@@ -71,9 +147,9 @@ class TestLedgerCalibration:
 
     def test_offline_facts_recorded(self) -> None:
         """实测下线命令（0x054C/0x053E/0x0450）status=offline。"""
-        for cmd in (0x054C, 0x053E, 0x0450, 0x051A, 0x056A, 0x07E5):
-            c = get_command(cmd)
-            assert c is not None and c.status == STATUS_OFFLINE, hex(cmd)
+        for number in (0x054C, 0x053E, 0x0450, 0x051A, 0x056A, 0x07E5):
+            c = get_command(number)
+            assert c is not None and c.status == STATUS_OFFLINE, hex(number)
 
     def test_degraded_facts_recorded(self) -> None:
         """0x0537 沪市空布局事实 → degraded，但真实布局未由 golden 锁定，故 verified=False。"""
@@ -100,14 +176,18 @@ class TestLedgerCalibration:
         # family 过滤
         assert all(c.family == "quotation" for c in by_status(STATUS_OFFLINE, "quotation"))
 
-    def test_stats_status_counts(self) -> None:
-        st = stats()
-        assert st["all.status_offline"] == 9
-        assert st["all.status_degraded"] == 2
-        assert st["all.status_online"] == st["all.total"] - 11
+    def test_status_and_verified_counts_read_off_the_ledger(self) -> None:
+        """账本三类计数的事实。F-65 删掉了 ``stats()``：那张按族聚合的字典在 ``tstdx/``
+        里零读取点，只有本测试是它的读者——于是这些数字改由**执行面真在用的读法**给出
+        （``by_status`` 是 fail-fast 的依据、``by_family`` 是保留的公开查询面），
+        而不是由一个只为测试存在的聚合器代读。
+        """
+        assert len(by_status(STATUS_OFFLINE)) == 9
+        assert len(by_status("degraded")) == 2
+        assert len(by_status(STATUS_ONLINE)) == len(COMMANDS) - 11
         # 9 条 verified：0x0004/0x000d/0x000f/0x0010/0x044d/0x044e/0x052d/0x0530/0x0547
         # （0x0537/0x0FC5 为 inferred，布局待 golden 锁定，不计入 verified）
-        assert st["quotation.verified"] == 9
+        assert sum(1 for c in by_family(Family.STANDARD) if c.verified) == 9
 
     def test_facade_docstring_matches_client_commands(self) -> None:
         """防回归：client 注释命令号必须与实际请求一致（批次 A1）。

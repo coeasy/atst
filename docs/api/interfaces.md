@@ -65,6 +65,38 @@ from tstdx.client import AsyncTdxClient
 | `MacClient` | `tstdx.client.sync` | MAC | MAC 专属 |
 | `F10Client` | `tstdx.client.sync` | F10 | F10 资料 |
 
+### 命令账本查询面
+
+```python
+from tstdx.protocol.commands import (
+    COMMANDS,
+    CMD,
+    by_family,
+    by_status,
+    cmd,
+    get_command,
+    unknown_command_ids,
+)
+```
+
+账本（`tstdx/protocol/commands.py`）是「协议全覆盖」的登记表：85 行、5 协议族
+（`quotation 39 / ex_quotation 17 / mac_quotation 16 / goods 11 / f10 2`）。它对外只有
+这几个函数——**名单、规模数字、以及「每个名字都有用例真的在调」**这三件事由
+`tests/architecture/test_ledger_public_surface.py` 与本表双向核对。
+
+| 函数 | 签名 | 返回 | 口径 |
+|------|------|------|------|
+| `cmd` | `(name)` | `int` | 命令名 → 命令号。85 行的名字全局唯一，所以不需要族上下文；未登记名抛 `KeyError`，消息里带账本规模 |
+| `get_command` | `(cmd, family=Family.STANDARD)` | `Command \| None` | `(族, 号)` → 账本行；未登记号返回 `None`，照旧交 L2 通用解析 + L3 原始透传，不丢包 |
+| `by_family` | `(family)` | `Iterator[Command]` | 一族全部行，按命令号升序；未知族名得到空序列，不报错 |
+| `by_status` | `(status, family=None)` | `list[Command]` | 按实测状态列全部行：`online` 74 / `offline` 9 / `degraded` 2。发包前的 fail-fast 读的是**单行的** `status`（`tstdx/client/core.py` 的 `_guard_offline` 走 `get_command`），本函数是"按状态列全部行"那一侧 |
+| `unknown_command_ids` | `(family=Family.STANDARD)` | `list[Command]` | 语义未经 golden 校正（`verified=False`）的行：默认族 30 条、全账本 76 条。**返回行而不是裸命令号**，「unknown」也不等于「命令不存在」 |
+
+F-65 裁决 (b) 删掉了两个查询函数，不留别名：`stats()`（按族聚合的计数字典，`tstdx/` 内
+零读取点，唯一的读者是它自己的测试）、`get_command_by_name()`（对 85 行做线性名字扫描，
+全包零调用、零测试）。名字 → 整行的需求由 `get_command(cmd(name), family)` 覆盖，用例
+逐行验证它给的是同一个对象，所以删除不削能力。
+
 ### 工厂
 
 ```python

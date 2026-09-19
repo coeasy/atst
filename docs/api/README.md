@@ -49,7 +49,7 @@
 
 | 模块 | 说明 |
 |---|---|
-| `tstdx.protocol.commands` | 85 命令账本（5 协议族）|
+| `tstdx.protocol.commands` | 85 命令账本（5 协议族）；它的 5 个查询函数逐个写了口径，见 `docs/api/interfaces.md`「命令账本查询面」|
 | `tstdx.protocol.registry` | BaseParser + dispatch（L1/L2/L3）|
 | `tstdx.protocol.generic` | L2 启发式 + ProtocolSniffer |
 | `tstdx.protocol.prober` | 未知命令探测（限速 + 非交易时段）|

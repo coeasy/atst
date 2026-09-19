@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed（v17 Phase 5 第 46 步 —— 命令账本函数面的两个孤儿：F-65 裁决 (b) 的执行；**BREAKING**）
+
+- **删掉 `tstdx/protocol/commands.py` 的 `stats()` 与 `get_command_by_name()`，不留别名、不留空壳**：
+  `stats()` 是按族聚合的计数字典，`tstdx/` 内零读取点、全仓唯一读者是它自己的测试
+  （`tests/unit/test_commands.py` 里那一句 `st = stats()`）；`get_command_by_name()` 对 85 行做线性名字扫描，
+  零调用、零测试、且从未从 `tstdx.protocol` 再导出——挂在模块 `__all__` 上只是一个没人兑的承诺。
+- **两条被删能力都有归宿，不是"删了就没了"**：名字 → 整行由 `get_command(cmd(name), family)` 覆盖，
+  并有一条用例对 85 行逐行证明两式等价；按状态计数由 `len(by_status(STATUS_OFFLINE))` 这类直接读法取代
+  （`offline` 9 / `degraded` 2 / `online` 74，门禁从运行期重算这几个数）。
+- **账本对外函数面收口为 5 个查询函数**（`cmd` / `get_command` / `by_family` / `by_status` /
+  `unknown_command_ids`），其中按裁决 (b) 保留为**公开查询面**的是 `by_family` 与 `unknown_command_ids`；
+  五个名字逐个写了口径（返回类型、未知输入的语义、`unknown_command_ids` 返回**行**而非裸命令号），
+  见 `docs/api/interfaces.md`「命令账本查询面」。
+- **`cmd()` 是同一把尺子量出来的第三个零生产读取点的名，裁决 (b) 没有覆盖它**（`tstdx/` 内对它的调用为 0，
+  消费者只有测试）。本步不擅自扩大删除范围：**保留 + 补文档 + 补用例**，并把它由新门禁的
+  "公开名必须被测试真的调用"判据持续把住——它现在满足，将来静默失去读者就会红。
+- **新门禁 `tests/architecture/test_ledger_public_surface.py`（5 项）**：模块函数面名单与 `__all__` 双向锁死、
+  包面不得声明模块面否认的名、文档表格名单与声明名单对账、文档里的 5 处规模数字全部由账本运行期重算
+  （85 行 / 5 族 / `39-17-16-11-2` / `74-9-2` / 未验证 30 与 76）、已删的两个聚合器不得回潜（模块面与包面各查）。
+- **顺手抓到两处登记文本的失真，按事实就地改写**：① F-65 登记时写"`by_family()` 只被 `commands.py` 内部的
+  `by_status`/`unknown_command_ids` 调用"，实测 `by_status` 直接遍历 `COMMANDS`，`by_family` 的生产读取点
+  只有 `unknown_command_ids` 一处；② `by_status` 的 docstring 与文档行原写"客户端 fail-fast 就以它为依据"，
+  实测 `_guard_offline` 走的是 `get_command` + 单行 `status` 字段——现已改写为"本函数负责按状态列全部行"。
+- **`docs/archive/OPTIMIZATION_PLAN.md` 那句"`unknown_command_ids` 保留作 `unknown_commands()` 的别名"从未成立**：
+  初始提交里两个名字就在同一模块，而真实的 `unknown_commands` 是 `tstdx/transport/sniff.py` 上
+  `ProtocolSniffer.unknown_commands()`（观察到的未登记命令号，与账本无关）。归档原文按"不抹史"保留，另加修订注记。
+
 ### Removed（v17 Phase 5 第 45 步 —— 一件造好并测过、却没有任何生产调用点的安全资产：F-18 裁决 (b) 的执行；**BREAKING**）
 
 - **删掉 `tstdx/providers/http.py`（360 行）连同它的 10 项离线测试**：公开名 `PROVIDER_HTTP_HOST_SUFFIXES`、
