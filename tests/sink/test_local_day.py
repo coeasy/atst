@@ -243,7 +243,8 @@ class _FakeTdxContext:
 
 def _client(bars_by_symbol: dict[str, list[Bar]], *, root: Path | None) -> Client:
     runtime = UnifiedRuntime(vipdoc_root=None if root is None else str(root))
-    runtime.executor._tdx_client = lambda: _FakeTdxContext(_FakeTdx(bars_by_symbol))
+    # `_tdx_client` 现在收"这一跳的超时上界"（配置值与 deadline 剩余预算取小）。
+    runtime.executor._tdx_client = lambda _timeout: _FakeTdxContext(_FakeTdx(bars_by_symbol))
     return Client(runtime)
 
 

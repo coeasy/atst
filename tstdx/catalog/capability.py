@@ -143,8 +143,10 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
     MigratedCapabilityBinding(
         "corporate_action", "tdx", "quotation", "tdx_client", "capital_changes"
     ),
+    #: 分页只有一份实现：绑定到 `TdxClient.export_security_list`（页数上限、短页判据、
+    #: 空首页告警都在那里），不再在 composed 面另写一条 start 游标循环。
     MigratedCapabilityBinding(
-        "security_list_all", "tdx", "quotation", "composed", "security_list_all"
+        "security_list_all", "tdx", "quotation", "tdx_client", "export_security_list"
     ),
     MigratedCapabilityBinding("f10", "tdx", "f10", "f10_client", "f10"),
     MigratedCapabilityBinding("f10_catalog", "tdx", "f10", "f10_client", "catalog"),
@@ -370,7 +372,6 @@ def _validate_composed(
     required = {
         "adjusted_bars": 1,
         "sync_daily": 1,
-        "security_list_all": 0,
     }[capability]
     if len(args) < required:
         raise TypeError(f"{capability} requires at least {required} positional argument(s)")
@@ -384,7 +385,6 @@ def _validate_composed(
             "anchor_date",
         },
         "sync_daily": {"root", "profile", "chunk", "max_windows"},
-        "security_list_all": {"market"},
     }[capability]
     unknown = sorted(set(kwargs) - allowed)
     if unknown:

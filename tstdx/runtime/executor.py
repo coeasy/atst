@@ -185,14 +185,26 @@ class DirectProviderExecutor:
             provenance=Provenance.direct(plan),
         )
 
-    def _tdx_client(self) -> Any:
+    def _hop_timeout(self, plan: QueryPlan) -> float:
+        """本次请求的 socket 超时上界：配置值与总 deadline **剩余预算**取小。
+
+        ``deadline_ms`` 由 ``QueryPlanner`` 折算成 ``plan.budget``。在接上这一跳之前，
+        预算只有构造处、没有读取处——调用方设的超时上界在执行面上不存在（与已删除的
+        ``max_age`` 同形）。这里取小而非替换：预算耗尽时按 ``deadline_ms`` 立刻失败，
+        预算宽于配置时仍按配置，默认两者同为 5 秒，故默认路径逐字节不变。
+        """
+        budget = plan.budget
+        budget.ensure_remaining("provider_request")
+        return min(self.timeout, budget.remaining_s())
+
+    def _tdx_client(self, timeout: float) -> Any:
         from ..client import TdxClient
         from ..transport.pool import pool_settings_from_config
 
         #: 主站选择已由内核解析完毕；配置在此只提供传输层构造参数，
         #: 避免同一个键在两处解释。
         settings = pool_settings_from_config(self.config)
-        settings["timeout"] = self.timeout
+        settings["timeout"] = timeout
         return TdxClient(self.hosts, **settings)
 
     @staticmethod
@@ -214,11 +226,13 @@ class DirectProviderExecutor:
             tuple(args),
             kwargs,
         )
+        #: 一次逻辑请求只有一份预算读数：下面每个后端的 socket 超时都取它。
+        hop = self._hop_timeout(plan)
 
         if meta.backend == "web_session":
             from ..web.session import WebQuoteSession
 
-            session = WebQuoteSession(meta.source or "sina", timeout=self.timeout)
+            session = WebQuoteSession(meta.source or "sina", timeout=hop)
             try:
                 if meta.capability == "hk_quotes" and plan.provider in {
                     "sina",
@@ -230,7 +244,7 @@ class DirectProviderExecutor:
                 session.close()
 
         if meta.backend == "tdx_client":
-            with self._tdx_client() as client:
+            with self._tdx_client(hop) as client:
                 if meta.capability == "quotes_concurrent":
                     kwargs.setdefault("as_format", "obj")
                 return getattr(client, meta.method)(*args, **kwargs)
@@ -238,7 +252,7 @@ class DirectProviderExecutor:
         if meta.backend == "f10_client":
             from ..client import F10Client
 
-            client = F10Client(timeout=self.timeout)
+            client = F10Client(timeout=hop)
             try:
                 if meta.capability == "f10":
                     return client.parse_text(client.download(*args, **kwargs))
@@ -253,7 +267,7 @@ class DirectProviderExecutor:
                 "ex_client": ExMarketClient,
                 "goods_client": GoodsClient,
                 "mac_client": MacClient,
-            }[meta.backend](timeout=self.timeout)
+            }[meta.backend](timeout=hop)
             try:
                 if meta.capability in {
                     "ex_bars",
@@ -273,7 +287,7 @@ class DirectProviderExecutor:
             from ..catalog.provider_bindings import resolve_channel_adapter
 
             adapter_cls = resolve_channel_adapter(plan.provider, meta.channel)
-            adapter = adapter_cls(timeout=self.timeout)
+            adapter = adapter_cls(timeout=hop)
             try:
                 return getattr(adapter, meta.method)(*args, **kwargs)
             finally:
@@ -287,9 +301,10 @@ class DirectProviderExecutor:
                 plan.provider,
                 args,
                 kwargs,
+                timeout=hop,
             )
         if meta.backend == "composed":
-            return self._composed_call(meta.capability, args, kwargs)
+            return self._composed_call(meta.capability, args, kwargs, timeout=hop)
 
         raise ValidationError(
             "unknown migrated backend",
@@ -302,12 +317,14 @@ class DirectProviderExecutor:
         provider: str,
         args: list[Any],
         kwargs: dict[str, Any],
+        *,
+        timeout: float,
     ) -> Any:
         symbol = args[0]
         if capability == "minute_web":
             from ..web.adapters_ext import MinuteSource
 
-            src = MinuteSource(timeout=self.timeout)
+            src = MinuteSource(timeout=timeout)
             try:
                 return src.fetch_minute(symbol)
             finally:
@@ -320,7 +337,7 @@ class DirectProviderExecutor:
             minute_kline_cls: type[Any] = (
                 EastmoneyHistoryKlineSource if provider == "eastmoney" else MinuteKlineSource
             )
-            minute_src = minute_kline_cls(timeout=self.timeout)
+            minute_src = minute_kline_cls(timeout=timeout)
             try:
                 return minute_src.fetch_bars(symbol, **kwargs)
             finally:
@@ -332,7 +349,7 @@ class DirectProviderExecutor:
             history_cls: type[Any] = (
                 EastmoneyHistoryKlineSource if provider == "eastmoney" else SinaHistoryKlineSource
             )
-            history = history_cls(timeout=self.timeout)
+            history = history_cls(timeout=timeout)
             try:
                 return history.fetch_bars(symbol, **kwargs)
             finally:
@@ -348,20 +365,9 @@ class DirectProviderExecutor:
         capability: str,
         args: list[Any],
         kwargs: dict[str, Any],
+        *,
+        timeout: float,
     ) -> Any:
-        if capability == "security_list_all":
-            market = args[0] if args else kwargs.pop("market", 0)
-            rows: list[Any] = []
-            start = 0
-            with self._tdx_client() as client:
-                while True:
-                    page = list(client.security_list(market, start))
-                    if not page:
-                        break
-                    rows.extend(page)
-                    start += len(page)
-            return rows
-
         if capability == "adjusted_bars":
             from ..domain.adjust import AdjustEngine
             from ..domain.finance import to_capital_changes
@@ -392,7 +398,7 @@ class DirectProviderExecutor:
             bars = bars[begin:end]
 
             if not events:
-                with self._tdx_client() as client:
+                with self._tdx_client(timeout) as client:
                     events = list(client.capital_changes(symbol))
             event_list = list(events)
             if event_list and not isinstance(event_list[0], CapitalChange):
@@ -416,7 +422,7 @@ class DirectProviderExecutor:
                 raise ValidationError("sync_daily requires root or vipdoc_root")
             sink = LocalDaySink(root, profile=profile)
             out: dict[str, Any] = {}
-            with self._tdx_client() as client:
+            with self._tdx_client(timeout) as client:
                 for symbol in symbols:
                     requested = str(symbol)
                     normalized = normalize_symbol(requested)
@@ -454,7 +460,7 @@ class DirectProviderExecutor:
         )
 
     def _tdx_quotes(self, plan: QueryPlan) -> Any:
-        with self._tdx_client() as client:
+        with self._tdx_client(self._hop_timeout(plan)) as client:
             return client.quotes(list(plan.spec.symbols))
 
     def _tdx_bars(self, plan: QueryPlan) -> Any:
@@ -467,7 +473,7 @@ class DirectProviderExecutor:
                     "adjustment": plan.spec.adjustment,
                 },
             )
-        with self._tdx_client() as client:
+        with self._tdx_client(self._hop_timeout(plan)) as client:
             return client.bars(
                 plan.spec.symbols[0],
                 period=plan.spec.period,
@@ -476,15 +482,15 @@ class DirectProviderExecutor:
             )
 
     def _tdx_snapshot(self, plan: QueryPlan) -> Any:
-        with self._tdx_client() as client:
+        with self._tdx_client(self._hop_timeout(plan)) as client:
             return client.snapshot(plan.spec.symbols[0], as_format="dict")
 
     def _tdx_minute(self, plan: QueryPlan) -> Any:
-        with self._tdx_client() as client:
+        with self._tdx_client(self._hop_timeout(plan)) as client:
             return client.minute_today(plan.spec.symbols[0])
 
     def _tdx_trades(self, plan: QueryPlan) -> Any:
-        with self._tdx_client() as client:
+        with self._tdx_client(self._hop_timeout(plan)) as client:
             return client.trade_today(
                 plan.spec.symbols[0],
                 start=plan.spec.start,
@@ -492,11 +498,11 @@ class DirectProviderExecutor:
             )
 
     def _tdx_security_count(self, plan: QueryPlan) -> Any:
-        with self._tdx_client() as client:
+        with self._tdx_client(self._hop_timeout(plan)) as client:
             return client.security_count(plan.spec.options.get("market", 0))
 
     def _tdx_security_list(self, plan: QueryPlan) -> Any:
-        with self._tdx_client() as client:
+        with self._tdx_client(self._hop_timeout(plan)) as client:
             return client.security_list(plan.spec.options.get("market", 0), plan.spec.start)
 
     def _local_bars(self, plan: QueryPlan) -> Any:
@@ -554,14 +560,14 @@ class DirectProviderExecutor:
         return get_quotes(
             list(plan.spec.symbols),
             source=plan.provider,
-            timeout=self.timeout,
+            timeout=self._hop_timeout(plan),
         )
 
     def _tencent_bars(self, plan: QueryPlan) -> Any:
         from ..web import create_source
 
         source_name = "minute_kline" if plan.channel == "minute_kline" else "kline"
-        src = create_source(source_name, timeout=self.timeout)
+        src = create_source(source_name, timeout=self._hop_timeout(plan))
         try:
             if plan.channel == "minute_kline":
                 if plan.spec.adjustment:
@@ -583,7 +589,7 @@ class DirectProviderExecutor:
     def _sina_bars(self, plan: QueryPlan) -> Any:
         from ..web.history import SinaHistoryKlineSource
 
-        src = SinaHistoryKlineSource(timeout=self.timeout)
+        src = SinaHistoryKlineSource(timeout=self._hop_timeout(plan))
         try:
             return src.fetch_bars(
                 plan.spec.symbols[0],
@@ -597,7 +603,7 @@ class DirectProviderExecutor:
     def _eastmoney_bars(self, plan: QueryPlan) -> Any:
         from ..web.history import EastmoneyHistoryKlineSource
 
-        src = EastmoneyHistoryKlineSource(timeout=self.timeout)
+        src = EastmoneyHistoryKlineSource(timeout=self._hop_timeout(plan))
         try:
             return src.fetch_bars(
                 plan.spec.symbols[0],
@@ -613,7 +619,7 @@ class DirectProviderExecutor:
 
         if plan.spec.adjustment:
             raise ValidationError("Baidu Direct bars 不支持复权参数")
-        src = BaiduSource(timeout=self.timeout)
+        src = BaiduSource(timeout=self._hop_timeout(plan))
         try:
             return src.fetch_kline(
                 plan.spec.symbols[0],
