@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   而 §0.1 与 README 的口径是「`Client` 唯一业务入口」。三条路径（(a) 收口删入口、(b) 承认双入口并开书面
   例外、(c) 留入口但去掉隐式换源）连同实测代价一起写进 §0.3，不代拍板——删除或改写对外入口不是一轮
   内部加固的授权范围。
+- **配套做了一次全仓构造点普查**：本步之后，内核到 web 的取数跳**全部**是单源构造点（`create_source` 两处、
+  三家历史 K 线源类直构造、迁移能力跳的 `WebQuoteSession(源名)`）；有序降级的构造点在发行代码里只剩
+  `tstdx/web/__init__.py:498` 与 `:506` 两处缺省分支。普查顺带抓出一条假事实：`tstdx/web/session.py:168`
+  自称会话「底层复用 `tstdx.web` 的零依赖适配器与降级逻辑」，而会话的 `_c` 只 `create_source(self.source_name)`，
+  `session.py` 与 11 个 `_session_*.py` mixin 对降级符号零引用——那句话描述的降级只属于 `WebQuoteClient`。
+  它随 F-71 一起处置，本步不改对外文档口径。
 
 ### Docs（v17 Phase 5 第 47 步 —— 能力发现面「只有名字、没有可用性」：F-66 裁决 (c) 的执行）
 
