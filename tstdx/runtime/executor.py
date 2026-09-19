@@ -596,13 +596,18 @@ class DirectProviderExecutor:
         return rows[-plan.spec.count :] if plan.spec.count else rows
 
     def _web_quotes(self, plan: QueryPlan) -> Any:
-        from ..web import get_quotes
+        """Web 报价一跳：源名取 `plan.provider`，构造即单源，不存在换源下一步。
 
-        return get_quotes(
-            list(plan.spec.symbols),
-            source=plan.provider,
-            timeout=self._hop_timeout(plan),
-        )
+        刻意不复用公开便捷函数 `tstdx.web.get_quotes`——它在 `source` 缺省时会 new 一个
+        `WebQuoteClient`，按 `web.enabled_sources` 顺序降级，而有序降级是内核禁止的形状。
+        """
+        from ..web import create_source, normalize_symbol
+
+        src = create_source(plan.provider, timeout=self._hop_timeout(plan))
+        try:
+            return src.fetch([normalize_symbol(s) for s in plan.spec.symbols])
+        finally:
+            src.close()
 
     def _tencent_bars(self, plan: QueryPlan) -> Any:
         from ..web import create_source

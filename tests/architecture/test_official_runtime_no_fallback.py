@@ -4,6 +4,9 @@ import ast
 import dataclasses
 import re
 from pathlib import Path
+from typing import Any, NoReturn
+
+import pytest
 
 from tstdx.query import EXECUTED_OPTIONS, REJECTED_OPTIONS, QuerySpec
 
@@ -118,6 +121,62 @@ def test_official_runtime_never_calls_legacy_aggregate_web_client() -> None:
             if token in text:
                 suspicious.append(f"{path.relative_to(ROOT)}:{token}")
     assert suspicious == []
+
+
+def test_kernels_web_hop_uses_exactly_the_source_the_plan_named(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """内核的 web 一跳必须恰好构造 `plan.provider` 一个源，且绝不碰有序降级客户端。
+
+    上一条判据读的是字面量：`executor.py` 里没有 `WebQuoteClient(` 就通过。它看不见
+    改道——`tstdx.web.get_quotes` 这个公开便捷函数在 `source` 缺省时会 new 一个
+    `WebQuoteClient`，按 `web.enabled_sources` 顺序换源直到有一家成功，而调用它不需要
+    任何被禁的字面量（第 48 步之前内核正是走这条路）。所以本判据用真实求值封住两条路：
+    把那个多源客户端换成"一被构造就抛"，再拿 binding 表里每一个派发 `_web_quotes` 的
+    Provider 各跑一跳，要求构造的源名 == `plan.provider`、符号归一化后原样送达。
+    """
+    import tstdx.web
+    from tstdx.query import QueryPlanner, QuerySpec
+    from tstdx.runtime.executor import DIRECT_BINDINGS, DirectProviderExecutor
+
+    def _never_a_fallback_chain(*args: object, **kwargs: object) -> NoReturn:
+        raise AssertionError("内核的 web 一跳落进了有序多源降级链")
+
+    hops: list[tuple[str, list[str]]] = []
+
+    class _RecordingSource:
+        def __init__(self, name: str) -> None:
+            self._name = name
+
+        def fetch(self, symbols: list[str]) -> list[Any]:
+            hops.append((self._name, list(symbols)))
+            return list(symbols)
+
+        def close(self) -> None:
+            return None
+
+    def fake_create_source(name: str, **kwargs: Any) -> _RecordingSource:
+        return _RecordingSource(name)
+
+    monkeypatch.setattr(tstdx.web, "WebQuoteClient", _never_a_fallback_chain)
+    monkeypatch.setattr(tstdx.web, "create_source", fake_create_source)
+
+    web_quote_providers = sorted(
+        {b.provider for b in DIRECT_BINDINGS if b.executor_name == "_web_quotes"}
+    )
+    assert web_quote_providers, "没有 binding 派发 _web_quotes，本判据的覆盖面塌成了空转"
+
+    executor = DirectProviderExecutor(timeout=5.0)
+    for provider in web_quote_providers:
+        plan = QueryPlanner().compile(
+            QuerySpec.build("quotes", symbols=["sh600519", "600519"], provider=provider)
+        )
+        assert plan.provider == provider, f"规划器把 {provider} 换成了 {plan.provider}"
+        executor._web_quotes(plan)
+
+    assert hops == [(p, ["sh600519", "sh600519"]) for p in web_quote_providers], (
+        f"web 一跳的取数源不唯一、不是 plan.provider 或符号没原样到达：{hops}"
+    )
 
 
 def test_package_defines_no_data_cache_layer() -> None:

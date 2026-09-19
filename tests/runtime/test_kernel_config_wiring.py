@@ -232,16 +232,21 @@ def test_web_route_also_gets_the_bounded_timeout(monkeypatch: pytest.MonkeyPatch
 
     五个 ``_web_*`` / ``_*_bars`` 直调执行器各自构造 HTTP 源，任何一处漏接都会让
     调用方的 deadline 在该 Provider 上失效——变异验证里这正是唯一逃过判据的一格。
+    第 48 步把 quotes 一跳从公开便捷函数改成直接构造源，判据的对象也随之从"函数入参"
+    变成"构造参数"；取小的那把尺子没变。
     """
 
-    captured: dict[str, Any] = {}
+    captured: list[dict[str, Any]] = []
 
     class _FakeSource:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
-            captured.update(kwargs)
+            captured.append(kwargs)
 
         def close(self) -> None:
             return None
+
+        def fetch(self, symbols: Any) -> list[Any]:  # noqa: ARG002
+            return []
 
         def fetch_bars(self, symbol: str, **kwargs: Any) -> list[Any]:  # noqa: ARG002
             return []
@@ -251,19 +256,11 @@ def test_web_route_also_gets_the_bounded_timeout(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(tstdx.web, "create_source", _FakeSource)
     executor = DirectProviderExecutor(timeout=30.0)
     executor._tencent_bars(_bars_plan(250))
-
-    assert 0 < captured["timeout"] <= 0.25
-
-    captured.clear()
-
-    def fake_get_quotes(symbols: Any, **kwargs: Any) -> list[Any]:  # noqa: ARG001
-        captured.update(kwargs)
-        return []
-
-    monkeypatch.setattr(tstdx.web, "get_quotes", fake_get_quotes)
     executor._web_quotes(_bars_plan(250))  # quotes 走同一预算读数
 
-    assert 0 < captured["timeout"] <= 0.25
+    assert len(captured) == 2, f"两跳各该只构造一个源，实际 {len(captured)} 个：{captured}"
+    for kwargs in captured:
+        assert 0 < kwargs["timeout"] <= 0.25
 
 
 def test_the_configured_timeout_is_bounded_in_exactly_one_place() -> None:

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed + Tests（v17 Phase 5 第 48 步 —— 内核的 web 一跳不再借道对外便利入口，并把它该不该存在登记为 F-71）
+
+- **对外行为零变化，改的是内核依赖了谁**：`DirectProviderExecutor._web_quotes` 原先调用公开的
+  `tstdx.web.get_quotes(...)` 并显式传 `source=plan.provider`；现在与兄弟跳 `_tencent_bars` 同形，
+  直接 `create_source(plan.provider, timeout=...)` + `normalize_symbol` 取数并 `close()`。两条路径语义等价
+  （`get_quotes` 的"指定源"分支就是这三行，省略掉的 `headers`/`cookie` 在 `create_source` 里的缺值正是
+  当时传进去的 `None`，而 `plan.provider` 经 `resolve_provider` 恒为已注册非空名，那一支恒被走到），
+  但内核从此不再依赖"公开默认值恰好不出错"这个前提才不会换源。
+- **为什么这一格值得动**：`get_quotes` 在 `source` 缺省时会 new 一个 `WebQuoteClient`，按
+  `web.enabled_sources` 顺序换源直到有一家成功——正是 `tests/architecture/test_official_runtime_no_fallback.py`
+  三条判据禁止内核触碰的形状，而那三条判据读的是**字面量**（`WebQuoteClient(`、`web_session(`、
+  import 名单），内核走 `get_quotes` 一个字面量都不触发。当场取证：把 `source=plan.provider` 这一行删掉，
+  三条既有判据全部照绿，`tests/architecture` + `tests/runtime` + `tests/web` 离线邻域整片只有新写的
+  行为判据红（`step48/m1_neighbors.log`）——"改道"在这套门禁下是静默的。
+- **新增行为判据** `test_kernels_web_hop_uses_exactly_the_source_the_plan_named`：把 `WebQuoteClient`
+  换成"一被构造就抛"，再拿 `DIRECT_BINDINGS` 现推出的 4 家 web 报价 Provider（`baidu` / `eastmoney` /
+  `sina` / `tencent`）各跑一跳，要求恰好构造一个源、源名 == `plan.provider`、符号原样送达；名单不手抄，
+  派生为空时判据自曝。变异读数 5 条（`step48/mutations2.log`）：改回不点名源的 `get_quotes` ⇒ 红，
+  源名写死成一家 ⇒ 红，派生分母清空 ⇒ 红（金丝雀），而"这一跳不取 deadline 预算"由 F-48 的超时判据
+  负责抓（本判据照绿）——各判据管各自的格，不互相顶。
+- **一条如实登记的判据边界**：把执行面那次 `normalize_symbol` 去掉**不会**变红，因为符号在进入内核前
+  已由规划器归一化（实测 `plan.spec.symbols == ('sh600519', 'sh600519')`）。执行面这次归一化是为与旧路径
+  等价而保留的冗余第二遍，本判据的符号断言只钉"参数原样送达"，不声称钉住归一化。
+- **同轮登记 F-71（待裁决）**：`tstdx.web` 至今仍是一条公开、被 `docs/migration/easyquotation.md` 与
+  `docs/configuration.md` 指向、且被根包 docstring 的 Quick start **禁网真实求值**保活的数据入口，
+  而 §0.1 与 README 的口径是「`Client` 唯一业务入口」。三条路径（(a) 收口删入口、(b) 承认双入口并开书面
+  例外、(c) 留入口但去掉隐式换源）连同实测代价一起写进 §0.3，不代拍板——删除或改写对外入口不是一轮
+  内部加固的授权范围。
+
 ### Docs（v17 Phase 5 第 47 步 —— 能力发现面「只有名字、没有可用性」：F-66 裁决 (c) 的执行）
 
 - **对外契约的形状一个字节都没动**：`Client.capabilities()`、`GET /v13/capabilities`、WS
