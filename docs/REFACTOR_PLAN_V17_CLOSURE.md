@@ -2174,6 +2174,12 @@ job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 
       verified commands have real samples (OK)」+ 既有 `suspect_short` WARN 1 条，reachability 191 模块 / 174 可达 /
       17 白名单「无未登记孤儿」，contract_audit，docs links 82 files，mypy，ruff check「All checks passed!」，
       ruff format 473 files（+1 = 本步新增的投递测试）。
+    - **ship 轮（提交树复测，同一解释器与工作树参数）**：`1e4340b` 落到 main 后另起隔离工作树 `wt_s44ship`
+      再量一遍，`head=1e4340b dirty=0`。九项确定性门禁 **G1–G9 全部 rc=0**，且本份门禁日志与 `wt_s44step`
+      那份**逐字节相同**（只在末尾多记一行本脚本自加的 rc=0 计数），即提交内容与被测内容一致；离线全量
+      junit **3585 / 0 失败 / 0 错误 / 5 跳过**、150.17s、覆盖率 **81.27%**（TOTAL 22595 / 3645 / 6050 / 1019，
+      `Required test coverage of 77.0% reached`，阈值未下调），与本步树逐格相同——没有「只在干净树上绿」
+      或「只在脏树上绿」的差额。
     - **本步未动**：F-70 那 4 份文档与「非错误类裸名」判据的扩形；`docs/api/interfaces.md` 与 `docs/cookbook/`
       里指向 `tstdx.web.WebQuoteClient` 的历史入口口径（第 41 步起就在待裁决清单里）；`tests/errors/test_taxonomy.py`
       的 `E_RANGE` 无需扩判据（实测本就全覆盖）；ADR-013 正文原文（只加修订不抹史）；`v1.1.0-dev.1` 标签仍未打。
