@@ -426,10 +426,10 @@ def _generic_or_raw(
                     "min_confidence": min_confidence,
                 },
             )
-    # P#1 归档闭环：registry 模块头、generic 模块头与 errors.UnknownCommand
-    # 的恢复建议都承诺「未知/低置信样本交给 ProtocolSniffer 归档」，但旧实现
-    # 零调用点——样本静默丢失。现在接线；归档是旁路观测，落盘失败仅忽略，
-    # 绝不影响解析结果。（enabled=False 或已验证 L1 命令时 archive 内部直接跳过）
+    # P#1 归档闭环：registry 模块头与 generic 模块头都承诺「未知/低置信样本交给
+    # ProtocolSniffer 归档」，但旧实现零调用点——样本静默丢失。现在接线；归档是旁路
+    # 观测，落盘失败仅忽略，绝不影响解析结果。（enabled=False 或已验证 L1 命令时
+    # archive 内部直接跳过）
     try:
         from .generic import get_sniffer
 

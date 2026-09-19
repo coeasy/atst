@@ -109,7 +109,7 @@ Provider-specific raw model 可以保留东财原始字段/缩放值。
 
 ## 8. Errors
 
-`SourceUnavailable(E7050)` context 使用 `provider=eastmoney`；其它包括 CapabilityUnsupported、FreshnessViolation、DataIntegrityError、RateLimited、ProviderRejected。
+错误面只有 `docs/providers/README.md` §12 那一棵树：能力/period/`currentness` 口径与东财 channel 不匹配时是规划期的 `ValidationError`(E1010)（`kline`/`news`/`fund` 一类非 live channel 上 `currentness='live'` 当场拒绝），上游失败保持 `WebSourceError`(E7xxx) 家族原异常（429 → `WebRateLimited`，反爬 → `AntiSpiderBlocked`，接口下线或返回空 → `SourceDeprecated`，读超时 → `ReadTimeout` E2030），context 带 `provider=eastmoney`/`channel`/`capability`；容错只在同 Channel 内换 endpoint，跨 Provider 不会以错误码的形式偷偷发生。
 
 ## 9. Conformance
 

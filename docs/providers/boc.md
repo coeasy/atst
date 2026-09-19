@@ -19,6 +19,6 @@ md.boc.fx_rate(pair=...)
 
 Freshness 按牌价发布日期/更新时间验证，不使用实时股票 quote 的秒级 profile。
 
-错误沿用 `SourceUnavailable(E7050)`，context 写 `provider=boc`，并统一 FreshnessViolation / DataIntegrityError / CapabilityUnsupported。
+错误沿用 `docs/providers/README.md` §12 那一棵树：`fx` 是非 live channel，`currentness='live'` 在规划期就被 `ValidationError`(E1010) 拒绝；牌价抓取失败保持 `WebSourceError`(E7xxx) 家族原异常，context 始终带 `provider=boc`/`channel`/`capability`。
 
 BOC 不参与其它 Provider 的自动替代，也不会被其它 Provider 自动替代。

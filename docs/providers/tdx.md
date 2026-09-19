@@ -189,7 +189,7 @@ ConnectionFailed / ReadTimeout / WebSourceError
 
 `FreshnessViolation`(E4060) 是唯一由 `currentness` 契约触发的数据新鲜度错误，抛点见 §5。Provider 真实不可用在本仓表现为上面那组传输层原异常（`TdxError` 原样保留并补齐 Provider/Channel context）。
 
-`SourceUnavailable`(E7050) 仍在错误树里但 v17 **没有抛点**：它唯一的用武之地是已删除的 `UnifiedQuoteAPI` auto 兜底门面。`CapabilityUnsupported` 与 `DataIntegrityError` 两个名字从未存在于 `tstdx.errors`（此前是本文档独有的幻影，F-68 登记），跨能力不支持由 `ValidationError`(E1010) 表达，数据完整性由 `IntegrityViolation`/`TruncatedDataError` 表达。
+能力/period/channel 与 tdx 不匹配（含把 `currentness='live'` 打在非 live channel 上）在规划期就是 `ValidationError`(E1010)；协议侧字段自洽性由 `IntegrityViolation`(E3042) 表达，严格口径下分页漂移或累计字节未达服务端声明数是 `TruncatedDataError`(E4050)。本仓没有"Provider 不支持某能力"或"数据完整性"的专用异常类，也不做统一"不可用"包装（退役记录见 `docs/errors.md` §一之二）。
 
 ## 8. 协议事实保护
 

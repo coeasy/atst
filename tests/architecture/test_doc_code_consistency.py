@@ -8,7 +8,8 @@
 （命令账本 / 解析器 / 配置段 / 根级白名单 / 服务面方法数 / HTTP 源与契约下界）一律钉回
 运行期真相源，WS 方法与 Domain Record 的**名单**也要逐个对上分派器与 ``__all__``——
 WS 名单有两种形状（``docs/api/README.md`` 的括号清单、``docs/api/interfaces.md`` 的散文顿号
-清单），两种都在射程内——抄一次就失真的数字与清单不再有藏身处。
+清单），两种都在射程内——抄一次就失真的数字与清单不再有藏身处。异常类计数走**反向**判据：
+活文档不许写回 ``NN+ 异常类`` 这种快照（方案/台账文档除外），类数以 ``tstdx.errors`` 现读为准。
 事实文档里反引号写出的**斜杠**路径（``facade/api.py`` 那种文件名形状）同样要落位——
 按仓库根 / ``tstdx/`` / ``docs/`` 三个根各试一次；只有同一逻辑块（段落 / 列表项 / 表格行）
 里写明删除史、或该目录由代码在运行期自建的，才允许以死路径出现。F-67 那整节虚构的
@@ -602,12 +603,6 @@ def _client_methods() -> int:
     )
 
 
-def _error_classes() -> int:
-    """`tstdx/errors.py` 里定义的异常类数（"40+ 异常类"的真相源，按 AST 不触发导入）。"""
-    tree = ast.parse((ROOT / "tstdx" / "errors.py").read_text(encoding="utf-8"))
-    return sum(1 for node in tree.body if isinstance(node, ast.ClassDef))
-
-
 #: 合并层数写在 `load_config` 的模块 docstring 里（代码自己的那份声明），文档抄了 4 遍。
 _MERGE_ITEM = re.compile(r"^\s+\d+\.\s", re.M)
 
@@ -739,7 +734,6 @@ _FLOOR_CLAIMS: tuple[tuple[str, str, str, Callable[[], int]], ...] = (
     ("README.md", "HTTP 源类", r"(\d+)\+\s*源\s*/", _web_source_classes),
     ("docs/ARCHITECTURE.md", "HTTP 源类", r"(\d+)\+\s*HTTP 源", _web_source_classes),
     ("docs/api/README.md", "Typed 契约", r"(\d+)\+\s*契约", _typed_contracts),
-    ("README.md", "异常类", r"(\d+)\+\s*(?:异常)?类", _error_classes),
 )
 
 
@@ -751,6 +745,38 @@ def test_documented_floors_still_hold(
     assert floors, f"{source} 不再声明 {fact}（{pattern}），门禁失效"
     real = actual()
     assert max(floors) <= real, f"{source} 声称 {max(floors)}+ 个{fact}，实际只有 {real} 个"
+
+
+#: 异常类计数是**反向**判据：第 44 步按 F-68 (a) 删掉 4 个从不发射的叶子之后，
+#: "NN+ 异常类"这类快照当场过期。类数以 ``tstdx.errors`` 现读为准，活文档不得写回数字。
+_ERROR_CLASS_COUNT = re.compile(r"\d+\s*\+?\s*(?:个)?\s*(?:异常|错误)\s*类")
+
+#: 方案/台账文档记录的正是"某一步当时是多少"，它是工作日志而非对外宣称，不参与本判据。
+_WORKLOG_DOCS = re.compile(r"^docs/REFACTOR")
+
+
+def _worklog_docs() -> list[Path]:
+    return [
+        path for path in active_docs() if not _WORKLOG_DOCS.match(path.relative_to(ROOT).as_posix())
+    ]
+
+
+def test_the_class_count_scan_covers_the_live_doc_set() -> None:
+    """金丝雀：扫描集本身必须非空并含 README，否则上一条判据会因为"没文档可读"而假绿。"""
+    scanned = {p.relative_to(ROOT).as_posix() for p in _worklog_docs()}
+    assert "README.md" in scanned
+    assert len(scanned) >= 30, f"活文档只剩 {len(scanned)} 份，扫描面塌了"
+
+
+@pytest.mark.parametrize("path", _worklog_docs(), ids=lambda p: p.relative_to(ROOT).as_posix())
+def test_no_live_doc_states_an_error_class_count(path: Path) -> None:
+    """活文档里出现"40+ 异常类"这种计数快照即红——它只会在下一次删类时静默变谎。"""
+    text = path.read_text(encoding="utf-8")
+    hits = [m.group(0) for m in _ERROR_CLASS_COUNT.finditer(text)]
+    assert not hits, (
+        f"{path.relative_to(ROOT).as_posix()} 写回了异常类计数快照 {hits}："
+        f"类数请以 `tstdx.errors` 现读为准（见 `docs/errors.md` 头部条款）"
+    )
 
 
 #: 类名清单也是事实：两份文档各抄一遍 ``Domain Record`` 族的九个名字。

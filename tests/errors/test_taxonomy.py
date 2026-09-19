@@ -16,9 +16,8 @@ from tstdx.errors import (
     AntiSpiderBlocked,
     BackpressureOverflow,
     CalendarError,
-    ChecksumMismatch,
+    CommandOffline,
     CompatibilityError,
-    CompatibilityWarning,
     ConfigError,
     ConnectionClosed,
     ConnectionFailed,
@@ -28,6 +27,7 @@ from tstdx.errors import (
     DependencyMissingError,
     FileFormatError,
     FramingError,
+    FreshnessViolation,
     GapUnfilledError,
     IntegrityViolation,
     InternalError,
@@ -46,8 +46,8 @@ from tstdx.errors import (
     SymbolError,
     TdxError,
     TransportError,
+    TruncatedDataError,
     TruncatedRecordError,
-    UnknownCommand,
     ValidationError,
     WebRateLimited,
     WebSourceError,
@@ -71,17 +71,18 @@ ALL_ERROR_CLASSES = [
     ProtocolError,
     FramingError,
     DecompressError,
-    UnknownCommand,
+    CommandOffline,
     ParseError,
     IntegrityViolation,
     LowConfidenceParse,
-    ChecksumMismatch,
     DataError,
     ProfileError,
     ProfileUndetectable,
     AdjustError,
     CalendarError,
     SymbolError,
+    TruncatedDataError,
+    FreshnessViolation,
     FileFormatError,
     DataFileNotFound,
     TruncatedRecordError,
@@ -114,17 +115,18 @@ E_RANGE: dict[type, str] = {
     ProtocolError: "E3",
     FramingError: "E3",
     DecompressError: "E3",
-    UnknownCommand: "E3",
+    CommandOffline: "E3",
     ParseError: "E3",
     IntegrityViolation: "E3",
     LowConfidenceParse: "E3",
-    ChecksumMismatch: "E3",
     DataError: "E4",
     ProfileError: "E4",
     ProfileUndetectable: "E4",
     AdjustError: "E4",
     CalendarError: "E4",
     SymbolError: "E4",
+    TruncatedDataError: "E4",
+    FreshnessViolation: "E4",
     FileFormatError: "E5",
     DataFileNotFound: "E5",
     TruncatedRecordError: "E5",
@@ -142,7 +144,8 @@ E_RANGE: dict[type, str] = {
     NotImplementedFeature: "E9",
 }
 
-#: 期望的 http_status 范围（4xx 或 5xx）
+#: 偏离 ``TdxError`` 默认 500 的 http_status（由 ``test_http_status_table_matches_deviations``
+#: 双向核对：继承默认值的类不得进表，改过状态码的类必须进表）
 EXPECTED_HTTP_STATUS = {
     ConfigError: 400,
     ValidationError: 422,
@@ -157,22 +160,24 @@ EXPECTED_HTTP_STATUS = {
     ProtocolError: 502,
     FramingError: 502,
     DecompressError: 502,
-    UnknownCommand: 501,
+    CommandOffline: 501,
     ParseError: 502,
     IntegrityViolation: 502,
     LowConfidenceParse: 502,
-    ChecksumMismatch: 502,
     SymbolError: 404,
+    FreshnessViolation: 503,
     DataFileNotFound: 404,
     BackpressureOverflow: 429,
     AntiSpiderBlocked: 403,
+    WebSourceError: 502,
     WebRateLimited: 429,
     SourceDeprecated: 410,
     AllSourcesExhausted: 503,
     NotImplementedFeature: 501,
 }
 
-#: 期望的继承层级
+#: 期望的继承层级（直接基类）：必须覆盖 ``ALL_ERROR_CLASSES`` 每一个类，
+#: 由 ``test_hierarchy_table_covers_every_class`` 双向核对
 EXPECTED_PARENTS: dict[type, type] = {
     ConfigError: TdxError,
     ValidationError: ConfigError,
@@ -187,16 +192,18 @@ EXPECTED_PARENTS: dict[type, type] = {
     ProtocolError: TdxError,
     FramingError: ProtocolError,
     DecompressError: ProtocolError,
-    UnknownCommand: ProtocolError,
+    CommandOffline: ProtocolError,
     ParseError: ProtocolError,
     IntegrityViolation: ParseError,
     LowConfidenceParse: ParseError,
-    ChecksumMismatch: ProtocolError,
     DataError: TdxError,
     ProfileError: DataError,
     ProfileUndetectable: ProfileError,
+    AdjustError: DataError,
     CalendarError: DataError,
     SymbolError: DataError,
+    TruncatedDataError: DataError,
+    FreshnessViolation: DataError,
     FileFormatError: TdxError,
     DataFileNotFound: FileFormatError,
     TruncatedRecordError: FileFormatError,
@@ -251,6 +258,23 @@ class TestErrorTaxonomy:
         """http_status 必须是 4xx 或 5xx。"""
         status = cls.http_status
         assert 400 <= status <= 599, f"{cls.__name__}: http_status={status}"
+
+    def test_http_status_table_matches_deviations(self):
+        """``EXPECTED_HTTP_STATUS`` 必须正好等于「偏离默认 500」的那批类。
+
+        这张表此前没有任何测试读取它——一张无人核对的期望表比没有表更糟，它会让人
+        误以为 http_status 已经被双向核对过。
+        """
+        deviations = {cls for cls in ALL_ERROR_CLASSES if cls.http_status != 500}
+        listed = set(EXPECTED_HTTP_STATUS)
+        assert deviations == listed, (
+            f"表里缺：{sorted(c.__name__ for c in deviations - listed)}；"
+            f"表里多（其实继承 500）：{sorted(c.__name__ for c in listed - deviations)}"
+        )
+        for cls, status in EXPECTED_HTTP_STATUS.items():
+            assert cls.http_status == status, (
+                f"{cls.__name__}: 表期望 {status}，实际 {cls.http_status}"
+            )
 
     @pytest.mark.parametrize("cls", ALL_ERROR_CLASSES, ids=lambda c: c.__name__)
     def test_has_retry_advice(self, cls: type):
@@ -311,17 +335,49 @@ class TestErrorTaxonomy:
         """继承层级必须符合设计。"""
         assert issubclass(cls, parent), f"{cls.__name__} 应继承 {parent.__name__}"
 
+    def test_hierarchy_table_covers_every_class(self):
+        """``EXPECTED_PARENTS`` 必须写到每一个类，且写的就是直接基类。
+
+        逐条 ``test_hierarchy`` 只核对表内已有条目：漏一行不会红，那张表就会退化成
+        一份没人核对的历史清单（本步实测漏掉 4 行）。
+        """
+        listed = set(EXPECTED_PARENTS)
+        missing = {cls.__name__ for cls in ALL_ERROR_CLASSES} - {c.__name__ for c in listed}
+        extra = {c.__name__ for c in listed} - {cls.__name__ for cls in ALL_ERROR_CLASSES}
+        assert not missing and not extra, (
+            f"表未覆盖：{sorted(missing)}；表内是表外类：{sorted(extra)}"
+        )
+        for cls, parent in EXPECTED_PARENTS.items():
+            assert cls.__mro__[1] is parent, (
+                f"{cls.__name__}: 直接基类是 {cls.__mro__[1].__name__}，表里写 {parent.__name__}"
+            )
+
     def test_integrity_violation_is_fatal(self):
         """IntegrityViolation 必须标记为 fatal。"""
         assert IntegrityViolation.fatal is True
         assert not ParseError.fatal
 
-    def test_warning_is_not_exception(self):
-        """CompatibilityWarning 是 Warning 不是 Exception。"""
-        assert issubclass(CompatibilityWarning, Warning)
-        assert not issubclass(CompatibilityWarning, TdxError)
-
     def test_all_classes_subclass_tdx_error(self):
         """所有异常类必须继承 TdxError。"""
         for cls in ALL_ERROR_CLASSES:
             assert issubclass(cls, TdxError), f"{cls.__name__} 不是 TdxError 子类"
+
+    def test_the_table_is_the_module_surface(self):
+        """本表必须正好覆盖 ``tstdx.errors`` 对外的异常类，双向都不许多。
+
+        删类与删表是两次独立动作：多删一行会红（名字不存在），少删一行在既有判据里
+        完全静默——表就会变成一份没人核对的历史清单。
+        """
+        import tstdx.errors as errors
+
+        public = {
+            name
+            for name in errors.__all__
+            if isinstance(getattr(errors, name), type)
+            and issubclass(getattr(errors, name), TdxError)
+            and getattr(errors, name) is not TdxError
+        }
+        listed = {cls.__name__ for cls in ALL_ERROR_CLASSES}
+        assert public == listed, (
+            f"模块有而表里没有：{sorted(public - listed)}；表里有而模块没有：{sorted(listed - public)}"
+        )

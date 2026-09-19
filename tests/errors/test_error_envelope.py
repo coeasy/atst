@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from tstdx.error_envelope import to_error_envelope
-from tstdx.errors import SourceUnavailable, ValidationError
+from tstdx.errors import ValidationError, WebSourceError
 
 
 def test_tdx_error_envelope_preserves_contract_and_redacts_sensitive_context() -> None:
@@ -59,12 +59,12 @@ def test_kernel_propagates_execution_error_without_fallback() -> None:
     class Executor:
         def execute(self, plan):  # noqa: ANN001, ANN201
             calls.append(str(plan.spec.provider))
-            raise SourceUnavailable("provider down", context={"provider": plan.spec.provider})
+            raise WebSourceError("provider down", context={"provider": plan.spec.provider})
 
     runtime = UnifiedRuntime()
     runtime.executor = Executor()
     try:
-        with pytest.raises(SourceUnavailable) as caught:
+        with pytest.raises(WebSourceError) as caught:
             runtime.quotes(["sh600519"], provider="tencent")
         assert calls == ["tencent"]
         assert caught.value.context["provider"] == "tencent"

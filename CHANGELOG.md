@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed（v17 Phase 5 第 44 步 —— 错误树上 4 个「文档承诺、运行期永不发生」的叶子：F-68 裁决 (a) 的执行；**BREAKING**）
+
+- **删掉 4 个从未兑现的公开错误类**：`UnknownCommand`(E3030)、`ChecksumMismatch`(E3050)、
+  `SourceUnavailable`(E7050)、`CompatibilityWarning`。判据是同一把尺子两遍：全仓 AST 扫 `raise`、
+  `raise <变量>` 回溯与 `on_error(...)`/`warn(...)`/`emit(...)` 投递三类站点，加上 38 份活文档的点名普查。
+  它们既没有抛点也没有投递站点，却被对外文档写成「你会拿到这个异常」——`docs/providers/README.md` §12
+  甚至规定各 Provider 统一以 `SourceUnavailable` 表达「选定的 Provider 不可用」。
+- **写破坏性变更的理由与替代**：今天这些位置上的真实下场是——Provider 不可用 = 传输层原异常
+  （`ConnectionFailed` E2010 / `AllHostsUnreachable` E2040 / Web 面的 `WebSourceError` E7xxx 家族），
+  命令已下线 = `CommandOffline` E3035，未知/低置信样本由离线工具链归档而非运行期异常，兼容性判定
+  一直是 `CompatibilityError` E8000 而不曾发过警告。已按 F-68 裁决 (a) 接受「用户写了 `except
+  SourceUnavailable` 会失效」这一代价；`docs/errors.md` §一之二 是全仓唯一的退役登记表。
+- **裁决里的第 5 个叶子被取证否掉，没有删**：`BackpressureOverflow`(E6030) 在补上「投递站点」判据后
+  实测有真实站点（`tstdx/streaming/base.py:185-186` 队列溢出时 `sub.on_error(BackpressureOverflow(...))`，
+  context 带 `dropped_total`/`max_queue`）。删它等于删一条对外承诺，与裁决意图相反，故保留并新增行为测试
+  `tests/streaming/test_backpressure_delivery.py`。
+- **对外文档按实测行为改写，不是把名字抹掉**：6 份 Provider 文档的错误段统一为 `ValidationError`(E1010) +
+  `WebSourceError`(E7xxx) 口径，其中两处是假承诺——`FreshnessViolation` 只在读本地文件的 channel 上触发，
+  纯 HTTP 的 baidu 严格模式不会因新鲜度报错；iwencai 的「认证错误」在本仓根本没有独立类。
+  `docs/migration/easy_tdx.md` 的「未知 category 发 `CompatibilityWarning` 并回退 `"day"`」整句作废
+  （未知 period 由所选 Provider 的 `supported_periods` 以 422 拒绝，不存在告警后回退）。
+  `docs/tdx_status.md` 的 `route="web"/"local"` 「仍报 `ValueError`」也是假事实——v17 的 `Client.quotes()`
+  没有 `route` 形参，实测是构造期 `TypeError`；改写为 pre-v17 → v17 对照并补上真实失败形状。
+  ADR-013 §11 的原文不抹史：保留并追加带日期与裁决号的作废修订。
+- **承诺门禁改成双向，并把自己写的表钉回事实**：`tests/architecture/test_error_promises.py` 新增反向判据
+  「活文档错误小节点名的 CamelCase 名字必须存在于代码里」与退役登记判据；`tests/errors/test_taxonomy.py` 里
+  此前**没有任何测试读取**的 `EXPECTED_HTTP_STATUS` 现按「偏离默认 500 的类」双向核对，`EXPECTED_PARENTS`
+  必须覆盖每个类的直接基类，表与 `tstdx.errors.__all__` 双向对账。三条新判据当场量出既有表的 8 处漂移
+  （`CommandOffline`/`FreshnessViolation`/`TruncatedDataError` 三个真类在四张表里全部缺席等）。
+- **README 不再声明异常类个数**：`40+ 异常类` 这类快照会在下一次删类时静默变谎，故撤下其下界宣称，并换成
+  反向判据（任何活文档写回 `NN+ 异常类` 即红）+ 扫描面金丝雀。顺带删掉那条宣称的旧真相源，它数的是
+  `errors.py` 全部顶层 `ClassDef`，把 `RetryAdvice` 这个 dataclass 也算成了「异常类」。
+- **取证与复测**：14 发变异逐发点名（含把 `on_error` 投递前缀摘掉时金丝雀确实报警），每发注入→断言该判据红→
+  字节级还原；隔离工作树同一轮复测（py3.13.12、`-m 'not network'`、`--cov=tstdx`、阈值 77 未动）：基线 `9ba2385`
+  junit 3531 / 0 失败 / 5 跳过、81.26%，本步树 junit 3585 / 0 / 5、81.27%（净增 54 个用例）；九项确定性门禁
+  两树逐格相同且全部 rc=0（originality 192/192、spec_audit 100.0%、reachability 无未登记孤儿、docs links 82 files、
+  mypy、ruff check、ruff format 473 files）。
+
 ### Fixed（v17 Phase 4 第 43 步 —— 「照本库自己的指引做，就会把自己弄坏」的开关：F-69，同时给配置面文档上机器对账门禁）
 
 - **`TSTDX_WENCAI_COOKIE` 此前是一个自毁开关**：`tstdx/web/wencai.py` 读它取 i问财 cookie，同文件的错误消息直接叫用户「设置 `TSTDX_WENCAI_COOKIE`」——可它没登记进 `config/loader.py` 的 `_RUNTIME_ENV_KEYS`。`TSTDX_` 是 strict 环境扫描的**保留命名空间**，未登记的名字一律按拼写错误 fail closed，所以用户照本库指引做完，下一条 `Client()` 就抛 `ConfigError [E1000] 无法识别环境变量 TSTDX_WENCAI_COOKIE`：不是「这个变量不生效」，而是整条配置链起不来。基线（`7a3bae7` 干净树）实测复现、修复后同一命令构造成功。本轮登记该变量、在 `docs/configuration.md` §4 的 runtime 变量表补一行，并写明「该前缀为保留命名空间，测试与工具不得占用」。

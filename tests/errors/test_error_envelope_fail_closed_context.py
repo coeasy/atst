@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from tstdx.error_envelope import to_error_envelope
-from tstdx.errors import SourceUnavailable
+from tstdx.errors import WebSourceError
 
 
 def test_legacy_fallback_flags_cannot_contradict_canonical_envelope() -> None:
     envelope = to_error_envelope(
-        SourceUnavailable(
+        WebSourceError(
             "legacy source unavailable",
             context={
                 "provider": "tdx",

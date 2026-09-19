@@ -2,8 +2,9 @@
 
 > 错误分类树定义于 `tstdx/errors.py`（E1-E9 九域，无语义重叠对——v8 审计结论，
 > 见 [ARCHITECTURE_AUDIT_v8.md](archive/plans/ARCHITECTURE_AUDIT_v8.md) §二）。
-> 类数不在本文抄录：v8 写的是 44 个类，v17 当前是 46 个类（`errors.py` 顶层类计数；
-> `tstdx.errors.__all__` 另有 49 个名字，多出的 3 个是函数）——抄一次就过期的数字不如指向源头。
+> 类数不在本文抄录，也不给"当前是 N 个"的快照数字：一律以 `tstdx/errors.py` 现读
+> （`tests/errors/test_taxonomy.py` 把 `tstdx.errors.__all__` 与分类表双向核对，
+> `tests/architecture/test_error_promises.py` 把本文点名的类与错误树双向核对）。
 > 本文是**使用侧**文档：异常怎么接、RetryAdvice 怎么消费、如何扩展。
 
 ## 一、错误树速查（按域）
@@ -12,13 +13,13 @@
 |---|---|---|---|
 | 配置 | `ConfigError` | E1xxx | `ValidationError` E1010 / `DependencyMissingError` E1020 |
 | 传输 | `TransportError` | E2xxx | `ConnectionFailed` E2010 / `ConnectionClosed` E2020 / `ReadTimeout` E2030（← `WriteTimeout` E2031）/ `AllHostsUnreachable` E2040 / `RateLimitedLocal` E2050 |
-| 协议 | `ProtocolError` | E3xxx | `FramingError` E3010 / `DecompressError` E3020 / `UnknownCommand` E3030 / `CommandOffline` E3035 / `ParseError` E3040（← `LowConfidenceParse` E3041、`IntegrityViolation` E3042）/ `ChecksumMismatch` E3050 |
-| 数据 | `DataError` | E4xxx | `ProfileError` E4010（← `ProfileUndetectable` E4011）/ `AdjustError` E4020 / `CalendarError` E4030 / `SymbolError` E4040 / `TruncatedDataError` E4050 |
+| 协议 | `ProtocolError` | E3xxx | `FramingError` E3010 / `DecompressError` E3020 / `CommandOffline` E3035 / `ParseError` E3040（← `LowConfidenceParse` E3041、`IntegrityViolation` E3042） |
+| 数据 | `DataError` | E4xxx | `ProfileError` E4010（← `ProfileUndetectable` E4011）/ `AdjustError` E4020 / `CalendarError` E4030 / `SymbolError` E4040 / `TruncatedDataError` E4050 / `FreshnessViolation` E4060 |
 | 文件 | `FileFormatError` | E5xxx | `DataFileNotFound` E5010 / `TruncatedRecordError` E5020 |
 | 流式 | `StreamError` | E6xxx | `SubscriptionError` E6010 / `GapUnfilledError` E6020 / `BackpressureOverflow` E6030 |
 | Web | `WebSourceError` | E7xxx | `AntiSpiderBlocked` E7010 / `WebRateLimited` E7020 / `SourceDeprecated` E7030；`AllSourcesExhausted` E7040（直继承 TdxError，语义是「整条降级链耗尽」而非单源故障） |
 | 门面/兼容 | `CompatibilityError` | E8xxx | （facade / bridge shim 迁移兼容面） |
-| 内部与依赖 | `TdxError` 直系 | E9xxx | `NotImplementedFeature` E9010 |
+| 内部与依赖 | `TdxError` 直系 | E9xxx | `InternalError` E9000 / `NotImplementedFeature` E9010 |
 
 易混对照（**不重叠**，按域区分）：
 
@@ -37,29 +38,32 @@
 - `CommandOffline`（E3035）：TDX 命令在主站已下线；
   `SourceDeprecated`（E7030）：Web 数据源接口下线。
 
-## 一之二、树里存在但运行期永不发生的类
+## 一之二、退役登记：曾是错误树成员、如今已不存在的名字
 
-下面这些名字在错误树里，却在 `tstdx/` 全仓没有任何抛点、也没有作为投递口
-（`on_error(...)`）的实参交出去——**不要为它们写 `except`，那段代码不会执行**：
+**本节是全仓唯一允许点名"不存在的错误类"的地方**——它的职责就是登记退役。其它对外文档
+（README、`docs/providers/*`、`docs/troubleshooting.md` 等）只许点名树里真实存在且有运行期
+站点的类，两侧都由 `tests/architecture/test_error_promises.py` 把守：文档点名的树内类必须
+有站点（否则是幻影异常），文档点名的非树成员必须是本节列出的退役名（否则是幻影名），
+而本节点名的类必须确实**不在**树里（否则这份登记表自己就在说谎）。
 
-| 类 | code | 为什么不会发生 |
-|---|---|---|
-| `UnknownCommand` | E3030 | 内核不发送未知命令；只有离线工具（`tools/capture`、`ProtocolSniffer`）在研究命令表 |
-| `ChecksumMismatch` | E3050 | 协议与传输层没有任何校验和读取点 |
-| `BackpressureOverflow` | E6030 | `BackpressureQueue.put` 的既定语义是丢最旧元素并计数，从不抛 |
-| `SourceUnavailable` | E7050 | 唯一的用武之地是已删除的 `UnifiedQuoteAPI` auto 兜底门面；Provider 真实不可用现为传输层原异常 |
-| `CompatibilityWarning` | — | 从未发射的 `UserWarning`；兼容性判定走 `CompatibilityError` |
+| 退役名 | code | 退役于 | 曾经为什么虚 |
+|---|---|---|---|
+| `UnknownCommand` | E3030 | 第 44 步（F-68 裁决 (a)） | 内核从不发送账本外的命令，未知/低置信样本走离线归档 |
+| `ChecksumMismatch` | E3050 | 第 44 步（F-68 裁决 (a)） | 协议与传输层没有任何校验和读取点 |
+| `SourceUnavailable` | E7050 | 第 44 步（F-68 裁决 (a)） | 唯一用武之地是已删除的 pre-v17 auto 兜底门面 |
+| `CompatibilityWarning` | —（`UserWarning`） | 第 44 步（F-68 裁决 (a)） | 从未发射过；兼容性判定走 `CompatibilityError` |
 
-抽象基类 `TransportError`/`StreamError`/`ProfileError` 自身也不被 `raise`，
-但它们的子类全部有站点，属于正常的分类节点，不在上表。
+按同一份判据取证时被**否掉**的第 5 个名额：`BackpressureOverflow`（E6030）。它的两个事实
+并存——`BackpressureQueue.put` 确实从不抛（丢最旧元素并计数），而"溢出"仍以
+`BackpressureOverflow` 的形式**投递**给订阅方的 `on_error`（`tstdx/streaming/base.py`）。
+"从不抛"被误读成"信号不存在"，源头是门禁按类名后缀识别构造点、看不见投递口；修判据后
+豁免撤销，行为证据见 `tests/streaming/test_backpressure_delivery.py`（真起一轮订阅、队列
+容量 1、断言回调拿到 `code=E6030` 且 `advice.retryable` 为真）。
 
-本表由 `tests/architecture/test_error_promises.py` 把守：对外文档点名的错误类
-必须有真实站点，否则要么接线、要么登记裁决后进豁免表；一旦某类被接线，
-它的豁免必须同步撤销（门禁会主动报"豁免已过期"）。
+## 一之三、同族里被"接线"而不是被删除的类
 
-同一步里被**接上**的是 `FreshnessViolation`（E4060）：`currentness` 从只进 plan 的
-声明口径变成运行期判据，判据与落点见 `docs/providers/tdx.md` §5 与
-`tstdx/runtime/freshness.py`。
+`FreshnessViolation`（E4060）：`currentness` 从只进 plan 的声明口径变成运行期判据，
+判据与落点见 `docs/providers/tdx.md` §5 与 `tstdx/runtime/freshness.py`。
 
 ## 二、每个异常都带 RetryAdvice
 

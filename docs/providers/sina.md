@@ -56,7 +56,7 @@ quote/history/news/fund_flow 使用各自 freshness profile；新闻和板块更
 
 ## 6. Errors
 
-`SourceUnavailable(E7050)` context 使用 `provider=sina`；其它包括 CapabilityUnsupported、FreshnessViolation、DataIntegrityError、RateLimited、ProviderRejected。
+错误面只有 `docs/providers/README.md` §12 那一棵树：能力/`currentness` 口径与新浪 channel 不匹配时是规划期的 `ValidationError`(E1010)（`history_kline`/`news`/`fund_flow` 等非 live channel 上 `currentness='live'` 当场拒绝），上游失败保持 `WebSourceError`(E7xxx) 家族原异常（429 → `WebRateLimited`，反爬 → `AntiSpiderBlocked`，接口下线或返回空 → `SourceDeprecated`，读超时 → `ReadTimeout` E2030），context 带 `provider=sina`/`channel`/`capability`。
 
 ## 7. Provider-specific Model
 

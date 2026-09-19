@@ -66,7 +66,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 │  codec(帧/原语) · transport(池/心跳/测速) · client/(TdxClient 同步异步)  │
 ├─────────────────────────────────────────────────────────────────────┤
 │                      基础设施层                                        │
-│  错误体系(E1-E8, 40+ 类) · 可观测性(Prometheus/StatsD/OTLP)            │
+│  错误体系(E1-E9 九域) · 可观测性(Prometheus/StatsD/OTLP)               │
 │  配置(6 源合并) · 安全(TLS/脱敏) · 输出(DataFrame/Parquet/DuckDB)       │
 │  反馈(遥测/统计) · 工具链(capture/codegen/golden_audit/spec_audit)      │
 └─────────────────────────────────────────────────────────────────────┘
@@ -135,7 +135,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | 特性 | 说明 |
 |---|---|
 | **零硬依赖** | 所有第三方库均为可选 extra |
-| **40+ 异常类** | 分类错误树（E1–E8）+ `RetryAdvice`；`SourceUnavailable` 归 E7 域 |
+| **错误分类树** | 九域 code 段（E1–E9）+ 每个异常自带 `RetryAdvice`；类清单以 `tstdx.errors` 现读为准，文档不抄录会过期的数字（`docs/errors.md`） |
 | **可观测性** | zero-dep 指标注册表 + Prometheus/StatsD/OTLP 三导出器 |
 | **传输与错误卫生** | TDX 连接可按 `security.use_tls` 走 TLS（默认关，`ssl.create_default_context()` 校验主机名）；错误上下文按关键字脱敏后才可外发。凭据存储**不在本库范围内**（ADR-007-010 已删除三级 CredentialStore）；Provider 绑定的 HTTP 主机白名单守卫已实现但尚未接入 web 链路（`docs/REFACTOR_PLAN_V17_CLOSURE.md` F-18） |
 | **原创合规** | 洁净室工程规范：规格驱动 + License 隔离 + AST 相似度审计 + Golden 数据自采集 |
@@ -340,7 +340,7 @@ tstdx/
 ├── batch.py        # BatchResult/BatchItem 三态批量契约
 ├── typed_query.py  # 60+ CapabilityQuery 冻结契约 + TypedQueryResult
 ├── stream_contract.py  # StreamSpec/StreamPlanner 流式契约
-├── errors.py       # 错误分类树（E1-E8，40+ 类）+ RetryAdvice
+├── errors.py       # 错误分类树（E1-E9 九域）+ RetryAdvice
 ├── diagnostics.py  # 结果侧数据瑕疵的唯一发射口（WarningCode + 收集器，strict 的判据来源）
 ├── error_envelope.py  deprecation.py
 ├── protocol/       # commands(85 账本)/registry(三级分派+异常收口)/parsers(61 × 5 族)

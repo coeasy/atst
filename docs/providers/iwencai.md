@@ -21,6 +21,6 @@ Cookie/token 等认证信息必须由 Provider runtime 管理，不能散落在�
 
 Freshness 按筛选结果的数据日期/更新时间验证；不得把历史筛选结果伪装为当前实时状态。
 
-错误沿用 `SourceUnavailable(E7050)`，context 写 `provider=iwencai`，并统一 AuthenticationRequired / ProviderRejected / RateLimited / FreshnessViolation / DataIntegrityError。
+错误沿用 `docs/providers/README.md` §12 那一棵树：`screening` 是非 live channel，`currentness='live'` 在规划期就被 `ValidationError`(E1010) 拒绝；认证缺失/被拒、限流与反爬都由 `WebSourceError`(E7xxx) 家族表达（本仓没有单独的认证错误类），context 带 `provider=iwencai`/`channel`/`capability`。
 
 失败不得切其它 Provider。

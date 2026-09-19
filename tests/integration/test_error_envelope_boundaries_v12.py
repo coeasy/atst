@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import tstdx.cli as cli
-from tstdx.errors import SourceUnavailable
+from tstdx.errors import WebSourceError
 from tstdx.integration.mcp import MCPServer
 from tstdx.integration.runtime_ws import RuntimeJsonRpcHandler as JsonRpcHandler
 
@@ -25,7 +25,7 @@ def test_cli_tdx_error_emits_canonical_envelope(monkeypatch, capsys) -> None:  #
     class Parser:
         def parse_args(self, argv):  # noqa: ANN001,ANN201
             def fail(args):  # noqa: ANN001,ANN202
-                raise SourceUnavailable(
+                raise WebSourceError(
                     "selected provider unavailable",
                     context={
                         "provider": "tdx",
@@ -42,7 +42,7 @@ def test_cli_tdx_error_emits_canonical_envelope(monkeypatch, capsys) -> None:  #
     assert cli.main([]) == 2
     payload = json.loads(capsys.readouterr().err)
     envelope = payload["error"]
-    _assert_fail_closed_envelope(envelope, code="E7050")
+    _assert_fail_closed_envelope(envelope, code="E7000")
     assert envelope["provider"] == "tdx"
     assert "authorization" not in envelope["context"]
 
@@ -68,7 +68,7 @@ def test_cli_native_error_is_e9000_without_native_message(monkeypatch, capsys) -
 def test_mcp_domain_error_embeds_same_envelope() -> None:
     class FailingServer(MCPServer):
         def _handle_tools_call(self, params):  # noqa: ANN001,ANN201
-            raise SourceUnavailable(
+            raise WebSourceError(
                 "provider unavailable",
                 context={
                     "provider": "sina",
@@ -83,7 +83,7 @@ def test_mcp_domain_error_embeds_same_envelope() -> None:
     )
     assert response is not None
     envelope = response["error"]["data"]
-    _assert_fail_closed_envelope(envelope, code="E7050")
+    _assert_fail_closed_envelope(envelope, code="E7000")
     assert envelope["request_id"] == "m1"
     assert envelope["provider"] == "sina"
 
@@ -91,7 +91,7 @@ def test_mcp_domain_error_embeds_same_envelope() -> None:
 def test_ws_domain_error_embeds_same_envelope() -> None:
     class FailingHandler(JsonRpcHandler):
         def _dispatch(self, method: str, params: Any) -> Any:
-            raise SourceUnavailable(
+            raise WebSourceError(
                 "provider unavailable",
                 context={
                     "provider": "tencent",
@@ -107,7 +107,7 @@ def test_ws_domain_error_embeds_same_envelope() -> None:
     assert raw is not None
     response = json.loads(raw)
     envelope = response["error"]["data"]
-    _assert_fail_closed_envelope(envelope, code="E7050")
+    _assert_fail_closed_envelope(envelope, code="E7000")
     assert envelope["request_id"] == "w1"
     assert envelope["provider"] == "tencent"
 

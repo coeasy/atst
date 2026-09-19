@@ -49,11 +49,21 @@ from tstdx.errors import ConnectionFailed
 
 ## 2. 协议/解析问题
 
-### 症状：`[E3030] UnknownCommand`
+### 症状：`[E3035] CommandOffline`（命令已下线）
 
-命令不在 85 命令账本。分派器已用 L2/L3 兜底：
-- 检查命令号拼写（十六进制大小写无关）
-- 用 `Prober` 探测该命令的真实响应结构
+TDX 主站已停答该命令，85 命令账本把它标成 offline，客户端在发帧前就 fail-fast（不再走超时重试链）。
+
+- 看 `context["name"]` / `context["summary"]` 确认是哪条命令，账本状态在
+  `tstdx/protocol/commands.py`，实测背景见 `docs/tdx_status.md`
+- 要拿同类数据得由你显式改选：同一 capability 换 Provider
+  （`Client().quotes("sh600000", provider="eastmoney")`），或改用替代能力
+  （如 `security_list` 停答后用东财目录类接口）
+- 内核不会自动替换 Provider，所以也不会替你决定"换谁"——错误自带的事实到此为止
+
+E3030 那一格此前点名的是一个已退役的类：内核不会发出账本外的命令，那个类既无抛点、
+也已按 F-68 裁决 (a) 从错误树删除，退役名单与对应 code 只在 `docs/errors.md` §一之二
+登记。未知/低置信样本的归档由离线工具链（`tools/capture`、`ProtocolSniffer`）负责，
+不是运行期错误。
 
 ### 症状：`[E3042] IntegrityViolation`（禁止降级）
 

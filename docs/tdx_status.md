@@ -9,10 +9,12 @@
 > **P13-A 增量（2026-09-06 22:00）**：6 个「仅 tdx 路由」方法补齐兜底路径——
 > `block_quotes` 增加 web 近似兜底（腾讯板块排行），`auction` / `volume_price` /
 > `f10_catalog` / `ex_market_list` / `ex_instruments` 在 auto 路由下把
-> `CommandOffline` / `AllHostsUnreachable` 转换为新增的
-> `SourceUnavailable`（E7050），context 附 `alternatives` 明确可用替代方案；
-> 显式 `route="tdx"` 保持 W12 契约透传原异常，显式
-> `route="web"/"local"` 仍报 `ValueError`（收缩承诺不变）。
+> `CommandOffline` / `AllHostsUnreachable` 转换为当时的 E7050「源不可用」异常，
+> context 附 `alternatives` 明确可用替代方案。**该转换随 pre-v17 门面一起删除，
+> v17 单内核不替换 Provider**，今天这些路径一律以 `CommandOffline` / 传输层原异常
+> 结束本次查询（详见 §四、§五、§六）。入参面也已经收缩：v17 的 `Client.quotes()` 只收
+> `symbols`/`provider`/`policy`/`currentness`，`route` 这个形参不存在——实测传 `route="web"`
+> 在构造期即 `TypeError`，而不是 §五 末段那句历史口径说的 `ValueError`。选数据源用 `provider=`。
 
 ## 一、7709 标准行情族（✅ 全部打通，含 2 条已停答命令的兜底 + 3 条 offline 命令的替代路径）
 
@@ -30,15 +32,15 @@
 | **security_list 代码表** | 0x044D | ⚠️→✅ | **命令已停答**（6 台主站读取超时，2026-09-06 实测）；已登记 offline + fail-fast（<75ms），`UnifiedQuoteAPI.security_list / security_list_all` 自动降级**东财 clist**（实测沪 100 行/深 3089 行真实数据） |
 | **minute_history 历史分时** | 0x0FB4 | ⚠️ | **命令已停答**（3 台主站 × 多日期超时）；已登记 offline + fail-fast；替代：`minute_klines`（web 分钟 K 线） |
 | **block_quotes 板块行情** | 0x07E5 | ⛔→⚠️ | 命令 offline（既知下线）；**P13-A：新增 web 近似兜底**——auto/显式 web 路由降级到 `WebQuoteSession.board_rank`（腾讯板块排行，含领涨股与 5/20 日涨幅），每行附 `source="tencent_board_rank"` 标记；`block_type` 映射 0/1/2→concept/industry/region，3（指数）无映射 |
-| **auction_snapshot 竞价** | 0x056A | ⛔→⚠️ | 命令 offline；**P13-A：auto 路由下抛 `SourceUnavailable`**，`context["alternatives"]` 提示 `hot_rank`（人气榜）/ `longhu`（龙虎榜）/ `quotes + snapshot`（实时快照 + 五档） |
-| **volume_price_dist 量价分布** | 0x051A | ⛔→⚠️ | 命令 offline；**P13-A：auto 路由下抛 `SourceUnavailable`**，提示 `bars`（K 线，自算量价指标）；筹码分布为 TDX 端本地计算，web 侧无对应能力 |
+| **auction_snapshot 竞价** | 0x056A | ⛔→⚠️ | 命令 offline；v17 以 `CommandOffline` 结束本次查询（pre-v17 门面曾转 E7050 + `alternatives`）；替代需调用方自选：`hot_rank`（人气榜）/ `longhu`（龙虎榜）/ `quotes + snapshot`（实时快照 + 五档） |
+| **volume_price_dist 量价分布** | 0x051A | ⛔→⚠️ | 命令 offline；v17 同上（`CommandOffline`）；替代：`bars`（K 线，自算量价指标）；筹码分布为 TDX 端本地计算，web 侧无对应能力 |
 
 ## 二、扩展市场族（⛔ 环境级失效，P13-A 显式化替代方案）
 
 | 项 | 实测 | 说明 |
 |---|---|---|
 | 7727 主站池（4 台候选） | ⛔ | 全部连接超时；且 13 台 7709 存活主机均未双开 7727——扩展行情服务疑似整体迁移/下线 |
-| **ex_market_list** | ⛔→⚠️ | **P13-A：auto 路由下抛 `SourceUnavailable`**，`context["alternatives"]` 提示按市场直取行情跳过目录列举：`hk_quotes`（港股）/ `us_quotes`（美股）/ `rates`（外汇）/ `dc_query`（期货期权） |
+| **ex_market_list** | ⛔→⚠️ | 命令 offline；v17 以 `CommandOffline` 结束（pre-v17 门面曾转 E7050 + `alternatives`）；替代需调用方自选：按市场直取行情跳过目录列举 `hk_quotes`（港股）/ `us_quotes`（美股）/ `rates`（外汇）/ `dc_query`（期货期权） |
 | **ex_instruments** | ⛔→⚠️ | 同上，与 ex_market_list 同因 |
 | ex_bars / ex_quotes | ⛔ | 7727 主站失效；web 侧 hk_quotes/us_quotes 已覆盖行情场景（语义直取） |
 | GOODS 商品语义（0x0200 族） | ⛔ | 与 EXTENDED 共池（7727）；另 `domain.symbol` 不解析商品代码（SymbolError），双重不可用 |
@@ -48,7 +50,7 @@
 
 | 项 | 实测 | 说明 |
 |---|---|---|
-| **catalog 栏目目录** | 0x0001 | 命令 offline（7709 上无响应）；**P13-A：auto 路由下抛 `SourceUnavailable`**，`context["alternatives"]` 提示 `dc_query`（dividend/performance/holder_num/ipo）/ `corporate_action` / `finance` |
+| **catalog 栏目目录** | 0x0001 | 命令 offline（7709 上无响应）；v17 以 `CommandOffline` 结束（pre-v17 门面曾转 E7050 + `alternatives`）；替代需调用方自选：`dc_query`（dividend/performance/holder_num/ipo）/ `corporate_action` / `finance` |
 | download 文件下载 | 0x06B9 | ⚠️→✅ 服务器**应答但返回空字节**（F10 内容停止分发）——已加空内容检测，显式抛 `DataError`（同步/异步镜像一致），不再静默返回空文本 |
 
 ## 四、异步面
@@ -56,33 +58,40 @@
 - `AsyncTdxClient` 与同步逐方法镜像（33 组共享 `_mixin` 骨架）；新增的
   offline fail-fast 与空内容检测在异步侧同步生效（实测 async security_list /
   minute_history / download 与同步行为一致）。
-- P13-A 的 `SourceUnavailable` 转换只存在于 `UnifiedQuoteAPI`/`AsyncQuoteAPI` 门面，
-  而这两个门面已随 v17 单内核删除：v17 运行期没有任何 `SourceUnavailable` 抛点，
-  offline 命令统一以 `CommandOffline` 结束本次查询（F-44 的剩余面即由此而来）。
+- P13-A 的 E7050「源不可用」转换只存在于 `UnifiedQuoteAPI`/`AsyncQuoteAPI` 门面，
+  而这两个门面已随 v17 单内核删除：v17 运行期没有那个类，也没有与之等价的统一
+  不可用异常，offline 命令统一以 `CommandOffline` 结束本次查询（F-44 的剩余面即由此而来）。
 
 ## 五、P13-A 兜底路径矩阵（2026-09-06 增量）
 
 > **v17 状态**：本表描述的是 pre-v17 门面的跨源兜底路由，随门面一并下线。
-> 表中所有 "auto→`SourceUnavailable`" 的转换在 v17 **不存在**——单内核不做
+> 表中所有 "auto→E7050 不可用异常" 的转换在 v17 **不存在**——单内核不做
 > Provider 切换，offline 命令按 `CommandOffline` 结束本次查询。"替代"一列仍是
 > 有效的方法学指引（由调用方自己改选能力），只是不再由运行期自动给出。
 
 | 方法 | 原契约 | 新契约（P13-A） | 语义差异 |
 |---|---|---|---|
 | `block_quotes` | 仅 tdx | tdx/web/auto 三路由 | web 兜底为腾讯板块排行（近似），字段 schema 不同；每行附 `source` 标记；`block_type=3`（指数）无映射；`start>0` 显式 web 报 `ValueError` |
-| `auction` | 仅 tdx | auto/tdx 保持，tdx 失效时 auto→SourceUnavailable | web 侧无对应能力；替代：`hot_rank` / `longhu` / `quotes + snapshot` |
+| `auction` | 仅 tdx | auto/tdx 保持，tdx 失效时 auto→E7050 不可用异常（v17 已无此转换） | web 侧无对应能力；替代：`hot_rank` / `longhu` / `quotes + snapshot` |
 | `volume_price` | 仅 tdx | 同上 | 同上；替代：`bars`（自算） |
 | `f10_catalog` | 仅 tdx | 同上 | 替代：`dc_query` / `corporate_action` / `finance` |
 | `ex_market_list` | 仅 tdx | 同上 | 替代：按市场直取行情（hk_quotes / us_quotes / rates / dc_query） |
 | `ex_instruments` | 仅 tdx | 同上 | 同上 |
 
-**路由契约保持**：
+**路由契约：pre-v17 → v17**。下面前两条是已删除门面的历史口径，逐字保留只为让旧
+issue 读得懂；v17 的对应事实写在第三条与末条。
 
-- 显式 `route="tdx"` → 透传原异常（`CommandOffline` / `AllHostsUnreachable`），
-  用户显式要求 tdx 时看到真实错误；
-- 显式 `route="web"/"local"` → 保持 `ValueError`（除 `block_quotes` 的 web 支持）；
-- auto/None → tdx 抛 `CommandOffline`/`AllHostsUnreachable` 时转成
-  `SourceUnavailable`（含 `alternatives` + `hint`）。
+- 历史：显式 `route="tdx"` → 透传原异常（`CommandOffline` / `AllHostsUnreachable`）；
+  显式 `route="web"/"local"` → `ValueError`（除 `block_quotes` 的 web 支持）。
+- 历史：auto/None → 门面在 tdx 抛 `CommandOffline`/`AllHostsUnreachable` 时转成统一
+  「不可用」异常（含 `alternatives` + `hint`）。
+- **v17：`route` 形参不存在**，`Client.quotes(..., route="web")` 是构造期 `TypeError`
+  而非运行期 `ValueError`；数据源由 `provider=` 单选（缺省走注册表默认绑定），
+  `provider` 写了注册表没有的 id → 规划期 `ValidationError`（E1010/422），context 带
+  `known_providers` 名单与所写的 `provider`。
+- **v17：单内核不替换 Provider**，`CommandOffline` / 传输层原异常原样到调用方，不再有
+  统一的"源不可用"异常（E7050 已按 F-68 裁决 (a) 从错误树删除，退役登记见
+  `docs/errors.md` §一之二）。替代方案仍在本表"替代"一列，但由调用方自己发起另一条 Query。
 
 ## 六、维护约定
 
@@ -94,6 +103,6 @@
    （P13-A）；字段 schema 差异在方法文档中声明。
 4. 「仅 tdx」方法的环境级失效在 v17 表现为 `CommandOffline`（账本 `STATUS_OFFLINE`）
    或传输层原异常（`ConnectionFailed`/`AllHostsUnreachable`/`WebSourceError`）：
-   内核不替换 Provider，所以也不替用户决定"换谁"。pre-v17 门面曾用
-   `SourceUnavailable`（E7050）+ `context["alternatives"]` 承载同一事实，
-   该抛点已随门面删除（F-44 剩余面）。
+   内核不替换 Provider，所以也不替用户决定"换谁"。pre-v17 门面曾用 E7050 那个
+   统一「源不可用」类 + `context["alternatives"]` 承载同一事实，该抛点已随门面删除
+   （F-44 剩余面），类本身已按 F-68 裁决 (a) 从错误树里移除。

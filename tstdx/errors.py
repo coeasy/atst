@@ -44,12 +44,10 @@ __all__ = [
     "ProtocolError",
     "FramingError",
     "DecompressError",
-    "UnknownCommand",
     "CommandOffline",
     "ParseError",
     "IntegrityViolation",
     "LowConfidenceParse",
-    "ChecksumMismatch",
     "DataError",
     "ProfileError",
     "ProfileUndetectable",
@@ -69,10 +67,8 @@ __all__ = [
     "AntiSpiderBlocked",
     "WebRateLimited",
     "SourceDeprecated",
-    "SourceUnavailable",
     "AllSourcesExhausted",
     "CompatibilityError",
-    "CompatibilityWarning",
     "InternalError",
     "NotImplementedFeature",
 ]
@@ -297,12 +293,6 @@ class DecompressError(ProtocolError):
     )
 
 
-class UnknownCommand(ProtocolError):
-    code = "E3030"
-    http_status = 501
-    default_advice = RetryAdvice(note="未知命令：由同 Provider 的解析/协议诊断处理")
-
-
 class CommandOffline(ProtocolError):
     """命令已被协议事实账本确认 offline。
 
@@ -337,10 +327,6 @@ class IntegrityViolation(ParseError):
 class LowConfidenceParse(ParseError):
     code = "E3041"
     default_advice = RetryAdvice(note="L2 置信度过低，要求调用方显式指定 DataProfile")
-
-
-class ChecksumMismatch(ProtocolError):
-    code = "E3050"
 
 
 # --- E4xxx 数据与领域 ----------------------------------------------------- #
@@ -491,23 +477,6 @@ class SourceDeprecated(WebSourceError):
     )
 
 
-class SourceUnavailable(TdxError):
-    """选定 Provider/Channel 当前无法满足请求。
-
-    名称 ``SourceUnavailable`` 为兼容保留；v12 的正式领域实体是 Provider。
-    该异常不是“所有 Provider 都试完”的聚合异常，也不授权继续调用另一个
-    Provider。传输层 host pool 耗尽仍由 :class:`AllHostsUnreachable` 表达，
-    上层可包装成本异常并记录 provider/channel/capability 后结束本次 Query。
-    """
-
-    code = "E7050"
-    http_status = 503
-    default_advice = RetryAdvice(
-        retryable=False,
-        note="选定 Provider 当前不可用；如需其它 Provider 必须由用户显式选择",
-    )
-
-
 class AllSourcesExhausted(TdxError):
     """旧聚合 WebClient 的兼容异常；Provider-aware 内核不主动产生。"""
 
@@ -522,10 +491,6 @@ class AllSourcesExhausted(TdxError):
 # --- E8xxx 兼容层 --------------------------------------------------------- #
 class CompatibilityError(TdxError):
     code = "E8000"
-
-
-class CompatibilityWarning(UserWarning):
-    """兼容垫片行为与原始库不一致时发出（非异常，不中断）。"""
 
 
 # --- E9xxx 内部 ----------------------------------------------------------- #

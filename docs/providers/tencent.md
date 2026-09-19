@@ -32,7 +32,7 @@ md.tencent.kline(symbol, period="day", count=320)
 md.tencent.minute_kline(symbol, period="1m|5m|15m|30m|60m")
 ```
 
-不支持的 Market 必须 `CapabilityUnsupported`，不得改去其它 Provider。
+不支持的 Market 当场失败（symbol 归一化抛 `SymbolError` E4040，或规划期 `ValidationError` E1010），不得改去其它 Provider。
 
 ### minute
 
@@ -95,13 +95,11 @@ Provider-specific raw model 可保留腾讯原始手/万元等字段，但必须
 
 ## 7. Errors
 
-现有 `SourceUnavailable(E7050)` 继续使用，context 写：
+错误面只有 `docs/providers/README.md` §12 那一棵树：能力/period/`currentness` 口径与腾讯 channel 不匹配时是规划期的 `ValidationError`(E1010)，上游失败保持 `WebSourceError`(E7xxx) 家族原异常（429 → `WebRateLimited`，反爬 → `AntiSpiderBlocked`，接口下线或返回空 → `SourceDeprecated`，读超时 → `ReadTimeout` E2030），context 带：
 
 ```json
 {"provider":"tencent","channel":"quote","capability":"quotes"}
 ```
-
-其它：CapabilityUnsupported / FreshnessViolation / DataIntegrityError / RateLimited / ProviderRejected。
 
 ## 8. Provider-specific 数据
 

@@ -41,7 +41,10 @@ async def main():
 | 10 | 季线 | `"quarter"` |
 | 11 | 年线 | `"year"` |
 
-未知 category 会发 `CompatibilityWarning` 并回退 `"day"`。
+垫片删除后这张表只剩历史语境：`period` 现在只认字符串别名（`tstdx/domain/period.py` 的
+`normalize_bar_period` 对未知值原样透传），整数 category 会被当成未知 period，最终由所选
+Provider 的 `supported_periods` 判据当场拒绝——`ValidationError`（E1010），context 带
+`supported_periods`。不存在"告警后回退 `"day"`"的行为。
 
 ## eltdx → tstdx
 
