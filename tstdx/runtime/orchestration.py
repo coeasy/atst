@@ -123,14 +123,12 @@ class ProviderOrchestrator:
         *,
         policy: FallbackPolicy,
         currentness: str = "live",
-        max_age: float | None = None,
     ) -> OrchestratedResult:
         return self.execute(
             QuerySpec.build(
                 "quotes",
                 symbols=symbols,
                 currentness=currentness,
-                max_age=max_age,
             ),
             policy=policy,
         )
@@ -145,7 +143,6 @@ class ProviderOrchestrator:
         start: int = 0,
         adjustment: str = "",
         currentness: str = "historical",
-        max_age: float | None = None,
     ) -> OrchestratedResult:
         return self.execute(
             QuerySpec.build(
@@ -156,7 +153,6 @@ class ProviderOrchestrator:
                 start=start,
                 adjustment=adjustment,
                 currentness=currentness,
-                max_age=max_age,
             ),
             policy=policy,
         )

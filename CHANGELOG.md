@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（v17 Phase 5 第 21 步 —— 首页空响应不得静默读成成功，F-45）
+
+- **`bars()` 把"服务端声明 0 条"读成"历史已经耗尽"**：`tstdx/client/_mixin.py::_t_bars`
+  的分页循环里，空页出口是一行 `break  # 空页：历史耗尽（正常终止）`——首页空与次页空
+  共用同一个出口，而紧随其后的截断判据是 `len(bars) < count and drifted`，只在**锚点漂移**
+  时才成立。于是主站对 `0x052D` 只回 2 字节 `count=0` 空桩时（F-37 实测到的现场），
+  调用方拿到的是"请求成功、恰好 0 根"：不告警、不抛错、`strict=True` 也不抛。这正是
+  F-37 在全绿的离线门禁里结构性隐形的机制面。判据现改为：**耗尽只会表现为短页或次页空**，
+  首页空响应是另一件事（该标的无此周期历史，或主站对这个命令只回空桩）。
+- **默认只加可观测性，不改数据**：首页空 → `UserWarning`（返回仍是空序列，与旧行为逐字节
+  一致），`strict=True` → `TruncatedDataError`，与既有的漂移截断同级。
+  `_t_export_security_list` 的 `0x044D` 同形缺陷（首页 0 条 ⇒ 读成"这个市场没有证券"，
+  而 0/1 两个市场必有数千标的）一并接上同一判据。
+- **一项测试改判**：`test_client_f1.py::test_empty_first_page_no_warning` 原用
+  `warnings.simplefilter("error")` 断言"空首页不许留痕"——它把缺陷本身钉成了契约。现改为
+  `test_empty_first_page_warns`，理由写进 docstring。新增离线回归 4 项（同步告警、
+  同步 strict 抛错、异步镜像、次页空仍须静默——后者用 `simplefilter("error")` 反向钉住，
+  保证这次改动没有把"正常耗尽"也变成噪声）。
+- **口径文档同步**：`docs/errors.md` 的 `TruncatedDataError` 条目原先只说"网络响应数据被
+  截断"，读者会以为只有漂移一个触发点；现列出 `_mixin.py` 的全部抛出点。刻意不写条数
+  （F-42 的教训：数量抄本就是下一个过期点）。
+- **变异验证 2 条各自 RED**：`empty_first_page = not seen` → `= False`、
+  `if not out:` → `if False:`，对应测试各自行列失败——把判据退回静默路径必红。
+- **复测（同一轮日志）**：整仓离线 `-m "not network"` junit **3344 tests / 0 failures /
+  0 errors / 7 skipped**、`COV_FULL_RC=0`、`--cov=tstdx` **80.53%**（日志明写
+  `Required test coverage of 77.0% reached`，阈值 77 未下调）；`mypy tstdx/`（CI 参数）、
+  `audit_reachability --strict`（无未登记孤儿 ✓）、`check_originality --strict tstdx/`
+  （189 · Suspicious 0）、`spec_audit --json --strict`、`golden_audit --gate --require-markets`、
+  `contract_audit --ci`（63 契约 · 155 capability）、docs links（82 文件）、`ruff check` 与
+  `format --check`（430 files）**全部 RC=0**。
+- **如实登记两个未闭合点**：① `QueryResult` 没有 warnings 通道，所以这条告警只在调用方
+  进程 stderr 上——HTTP/WS/MCP 三面的 wire 里看不见"本次结果为首页空桩"；② 唯一业务
+  入口 `Client.bars()` 没有 `strict` 形参（`strict` 只存在于 `TdxClient.bars`），
+  经内核绑定的路径拿不到"必须完整"的语义。两处都要改 `tstdx/client/api.py` 与
+  `tstdx/result.py`，而这两个文件此刻正被并行会话编辑，本步未代为决定。
+
+### Removed（v17 Phase 5 第 20 步 —— `max_age` 幻影旋钮与缓存口径散文，F-43；**BREAKING**）
+
+- **`max_age` 从全部五张入口物理删除，不留别名**：`Client.bars()/quotes()/…` 的
+  `max_age=` 形参、CLI 的 `--max-age`（3 个子命令）、HTTP/WS 的 `max_age` 请求字段、
+  MCP inputSchema 的 `max_age` 属性与 `QuerySpec.max_age` 字段一并退场（9 个文件 50 行）。
+  它此前**只进不出**：值被一路送进 `QueryPlan`，执行面没有任何一处读它，因此调用方设置
+  它只会得到"已经生效"的错觉。直连路径上的合法口径只有两个——新鲜度**口径**
+  `currentness`（`CurrentnessMode`）与执行**预算** `deadline_ms`，两者都参与 fingerprint。
+  `allow_stale` 此前恒被拒绝，现在的拒绝文案说明**为何**无对象可作用。
+- **`docs/providers/README.md` 的 `### bounded cache` 整节改写为 `### no result cache`**：
+  原先 6 行在规定 cache key/fingerprint/provenance/cache-hit 语义，即一个已被物理删除的层；
+  现在的契约是 `provenance.cache_tier` 恒为 `null`、Provider 不得自带"命中即跳过上游"、
+  结果 provenance 必须与当前 `QueryPlan` 完全一致、freshness mode 由 Provider 如实声明。
+  §13 CI 清单同步替换 `cache hit -> …` 一行。`README.md` 的"`allow_stale` 显式放行"与
+  `docs/api/interfaces.md` 的 6 处 `max_age` 签名同批改正。
+- **8 个生产文件的缓存口径散文纠正**（`QueryFingerprint` 的 "used by cache/single-flight
+  layers"、`domain/period.py` 的 "and cache lookup"、`config/schema.py` 把"缓存/降级链"
+  列为可配置面、`result.py`/`__init__.py`/`domain/symbol.py`/`protocol/handshake.py`/
+  `runtime/kernel.py` 各一处）：读者照注释理解系统，注释指向不存在的层就是假事实。
+- **两条新门禁把"零缓存"从标识符扩展到散文与字段**：`test_production_prose_never_claims_a_data_cache`
+  扫 `tstdx/` 全部 docstring/注释里的缓存词根（10 条放行形状各自登记口径来源），
+  `test_every_query_spec_field_is_consumed` 以 `dataclasses.fields(QuerySpec)` 为分母禁止
+  幻影开关（豁免字段由反向核验守卫看住）。两条都带"扫描器零命中即自曝失明"的自我校验。
+  变异验证 6 条全部 RC=1 且各自指名；其中幻影门禁的首轮变异先跑成 RC=0，暴露
+  `dict.fromkeys(keys, set())` 共享集合使守卫失明，改推导式后才有牙齿。
+- **顺带登记 F-44（待用户裁决）**：49 个错误类中 7 个叶子从未被 `raise`，其中
+  `SourceUnavailable(E7050)` 与 `FreshnessViolation(E4060)` 被 Provider 文档明文承诺，
+  而运行期既无包装站点也无 currentness 校验器。本轮只钉事实，未改对外错误契约。
+
 ### Fixed（v17 Phase 5 第 19 步 —— README"第二种写法"的数字与协议覆盖矩阵每族分布入门禁，F-42）
 
 - **协议覆盖矩阵的每族分列是手抄本，5 行错 4 行**：矩阵原先只有一列"精确解析"，逐族写

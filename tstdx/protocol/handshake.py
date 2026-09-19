@@ -94,7 +94,7 @@ class SetupFrame:
 
     method: int
     body: bytes
-    #: 完整帧字节（含 12 字节头），原样缓存以避免重复拼装
+    #: 完整帧字节（含 12 字节头），构造时预生成以避免重复拼装
     frame: bytes
     note: str = ""
 

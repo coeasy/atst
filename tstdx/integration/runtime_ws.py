@@ -153,7 +153,6 @@ class RuntimeJsonRpcHandler:
                     provider=params.get("provider"),
                     channel=params.get("channel"),
                     currentness=str(params.get("currentness", "business")),
-                    max_age=params.get("max_age"),
                     **kwargs,
                 )
             )
@@ -169,7 +168,6 @@ class RuntimeJsonRpcHandler:
                     provider=provider,
                     policy=self._policy(params),
                     currentness="live",
-                    max_age=params.get("max_age"),
                 )
             )
         if method == "bars":
@@ -186,7 +184,6 @@ class RuntimeJsonRpcHandler:
                     start=int(params.get("start", 0)),
                     adjustment=str(params.get("adjustment", "")),
                     currentness="historical",
-                    max_age=params.get("max_age"),
                 )
             )
 

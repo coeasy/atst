@@ -96,7 +96,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--currentness", default="business", choices=("auto", "live", "historical", "business")
     )
-    p.add_argument("--max-age", type=float)
     p.add_argument(
         "--args", dest="args_json", default="[]", help="JSON array of positional arguments"
     )
@@ -108,7 +107,6 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("quotes", help="query live quotes")
     p.add_argument("symbols", nargs="+")
     _provider_args(p, fallback=True)
-    p.add_argument("--max-age", type=float)
     p.set_defaults(func=cmd_quotes)
 
     p = sub.add_parser("bars", help="query historical bars")
@@ -118,7 +116,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--count", type=int, default=320)
     p.add_argument("--start", type=int, default=0)
     p.add_argument("--adjustment", default="")
-    p.add_argument("--max-age", type=float)
     p.set_defaults(func=cmd_bars)
 
     p = sub.add_parser("snapshot", help="query canonical market snapshot")

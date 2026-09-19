@@ -3,8 +3,8 @@
 
 """Canonical query result and provenance contracts.
 
-Data origin and retrieval location are separate facts. The v17 runtime performs
-**no** result caching, so every production provenance is built by
+Data origin and retrieval location are separate facts. The v17 runtime does
+no result caching, so every production provenance is built by
 :meth:`Provenance.direct` and carries ``cache_tier=None``; the field is kept on
 the wire precisely because callers assert it stays ``None``. Replay or
 synthetic data can therefore never be mistaken for a live Provider read, and a

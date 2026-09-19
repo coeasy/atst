@@ -4,8 +4,8 @@
 """Canonical zero-cache provider-first execution kernel.
 
 Every :meth:`UnifiedRuntime.execute` compiles one exact single-Provider plan
-and requests the bound Provider directly. No result, negative, promotion or
-request-coalescing cache exists on this path.
+and requests the bound Provider directly. No result/negative/coalescing cache
+exists on this path.
 
 The kernel is also the single consumer of the configuration surface: an
 explicit constructor argument wins, otherwise the value comes from
@@ -92,7 +92,6 @@ class UnifiedRuntime:
         *,
         provider: str | None = None,
         currentness: str = "live",
-        max_age: float | None = None,
     ) -> QueryResult[Any]:
         return self.execute(
             QuerySpec.build(
@@ -100,7 +99,6 @@ class UnifiedRuntime:
                 symbols=symbols,
                 provider=provider,
                 currentness=currentness,
-                max_age=max_age,
             )
         )
 
@@ -110,7 +108,6 @@ class UnifiedRuntime:
         *,
         provider: str | None = None,
         currentness: str = "live",
-        max_age: float | None = None,
     ) -> BatchResult[QueryResult[Any]]:
         """Execute independently auditable quote requests without hidden fallback."""
         items: dict[str, BatchItem[QueryResult[Any]]] = {}
@@ -123,7 +120,6 @@ class UnifiedRuntime:
                     symbol,
                     provider=provider,
                     currentness=currentness,
-                    max_age=max_age,
                 )
             except Exception as exc:
                 items[symbol] = BatchItem("failed", error=exc)
@@ -143,7 +139,6 @@ class UnifiedRuntime:
         start: int = 0,
         adjustment: str = "",
         currentness: str = "historical",
-        max_age: float | None = None,
     ) -> QueryResult[Any]:
         return self.execute(
             QuerySpec.build(
@@ -155,7 +150,6 @@ class UnifiedRuntime:
                 start=start,
                 adjustment=adjustment,
                 currentness=currentness,
-                max_age=max_age,
             )
         )
 
@@ -165,7 +159,6 @@ class UnifiedRuntime:
         *,
         provider: str | None = None,
         currentness: str = "live",
-        max_age: float | None = None,
     ) -> QueryResult[Any]:
         return self.execute(
             QuerySpec.build(
@@ -173,7 +166,6 @@ class UnifiedRuntime:
                 symbols=symbol,
                 provider=provider,
                 currentness=currentness,
-                max_age=max_age,
             )
         )
 
@@ -183,7 +175,6 @@ class UnifiedRuntime:
         *,
         provider: str | None = None,
         currentness: str = "live",
-        max_age: float | None = None,
     ) -> QueryResult[Any]:
         return self.execute(
             QuerySpec.build(
@@ -191,7 +182,6 @@ class UnifiedRuntime:
                 symbols=symbol,
                 provider=provider,
                 currentness=currentness,
-                max_age=max_age,
             )
         )
 
@@ -203,7 +193,6 @@ class UnifiedRuntime:
         start: int = 0,
         count: int = 0,
         currentness: str = "live",
-        max_age: float | None = None,
     ) -> QueryResult[Any]:
         return self.execute(
             QuerySpec.build(
@@ -213,7 +202,6 @@ class UnifiedRuntime:
                 start=start,
                 count=count,
                 currentness=currentness,
-                max_age=max_age,
             )
         )
 
@@ -223,7 +211,6 @@ class UnifiedRuntime:
         market: int | str = 0,
         provider: str | None = None,
         currentness: str = "business",
-        max_age: float | None = None,
     ) -> QueryResult[Any]:
         return self.execute(
             QuerySpec.build(
@@ -231,7 +218,6 @@ class UnifiedRuntime:
                 provider=provider,
                 options={"market": market},
                 currentness=currentness,
-                max_age=max_age,
             )
         )
 
@@ -242,7 +228,6 @@ class UnifiedRuntime:
         start: int = 0,
         provider: str | None = None,
         currentness: str = "business",
-        max_age: float | None = None,
     ) -> QueryResult[Any]:
         return self.execute(
             QuerySpec.build(
@@ -251,6 +236,5 @@ class UnifiedRuntime:
                 start=start,
                 options={"market": market},
                 currentness=currentness,
-                max_age=max_age,
             )
         )

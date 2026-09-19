@@ -79,7 +79,6 @@ def cmd_query(args: Any) -> int:
                     provider=args.provider,
                     channel=args.channel,
                     currentness=args.currentness,
-                    max_age=args.max_age,
                     **call_kwargs,
                 )
             )
@@ -95,7 +94,6 @@ def cmd_quotes(args: Any) -> int:
                     args.symbols,
                     provider=args.provider,
                     policy=_policy(args.fallback),
-                    max_age=args.max_age,
                 )
             )
         )
@@ -114,7 +112,6 @@ def cmd_bars(args: Any) -> int:
                     count=args.count,
                     start=args.start,
                     adjustment=args.adjustment,
-                    max_age=args.max_age,
                 )
             )
         )

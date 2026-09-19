@@ -266,17 +266,17 @@ verified=true
 currentness_verified=false
 ```
 
-历史数据可以是真实、可审计、可缓存的数据，但不能满足要求“当前/最新”的 live contract，也不能把 `verified` 等同于 `verified_fresh`。
+历史数据可以是真实、可审计的数据，但不能满足要求“当前/最新”的 live contract，也不能把 `verified` 等同于 `verified_fresh`。
 
-### bounded cache
+### no result cache
 
-显式允许 `max_age` 时，cache 只是优化层：
+v17 运行期不做结果缓存：每一次公开查询都编译为一个 `QueryPlan` 并直接请求它绑定的 Provider，`provenance.cache_tier` 恒为 `null`。因此 Provider 侧的契约是：
 
-- cache key/fingerprint 必须绑定 Provider/Channel/Capability 与查询窗口；
-- cache payload provenance 必须与当前 QueryPlan 完全一致；
-- replay/synthetic/fallback 或跨 Provider payload 直接作废并回源当前 Provider；
-- cache hit 必须保留原始 freshness mode；历史窗口从 cache 返回后仍是 `historical_closed`，不能被重标为 `current_series`；
-- current-series cache hit 仍需重新校验 Provider tail currentness。
+- 不得自带"命中即跳过上游"的语义——那是运行期缓存的职责，而运行期缓存已被物理删除；
+- 返回的 provenance 必须与当前 `QueryPlan` 的 Provider/Channel/Capability 完全一致，否则结果被拒（`ResultMeta.from_plan` 抛 `ValidationError`）；
+- replay/synthetic 或跨 Provider 的 payload 不能冒充当前 Provider 的真实数据；
+- freshness mode 由 Provider 如实声明：历史窗口返回后仍是 `historical_closed`，不得因为"数据还新"被重标为 `current_series`；
+- 调用方要控制的是新鲜度**口径**（`currentness`）与执行**预算**（`deadline_ms`），不是过期容忍度——`allow_stale` 在直连执行面上恒被拒绝。
 
 ## 12. Error
 
@@ -311,7 +311,8 @@ Direct API -> documented + callable
 provider/source alias -> same ProviderId
 no hk/us/kline/minute/ticks as Provider IDs
 vipdoc -> tdx/vipdoc only
-cache hit -> same Provider/Channel/Capability + same freshness mode
+no result cache -> provenance.cache_tier is always null
+result provenance -> same Provider/Channel/Capability as the QueryPlan
 historical closed -> currentness_verified=false
 ```
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from tstdx.errors import ValidationError
@@ -121,33 +123,35 @@ def test_default_bars_period_is_canonical_day() -> None:
     assert implicit.fingerprint.value == explicit.fingerprint.value
 
 
-def test_zero_max_age_is_canonical_direct_policy() -> None:
-    planner = QueryPlanner()
-    default = planner.compile(QuerySpec.build("quotes", symbols=["600519"], provider="tencent"))
-    zero = planner.compile(
+def test_query_spec_has_no_max_age_knob() -> None:
+    """``max_age`` 是缓存层的新鲜度上界，直连执行面没有它可作用的对象，故整体删除。
+
+    删除前它挂在 Client / CLI / HTTP / WS / MCP 五个入口上，却没有任何执行期消费者：
+    调用方设置它只会得到"已经生效"的错觉。这里同时钉住它不许回来。
+    """
+    assert "max_age" not in {field.name for field in dataclasses.fields(QuerySpec)}
+    with pytest.raises(TypeError):
         QuerySpec.build("quotes", symbols=["600519"], provider="tencent", max_age=0)
-    )
-    assert zero.spec.max_age is None
-    assert default.fingerprint.value == zero.fingerprint.value
 
 
-def test_max_age_changes_cache_policy_not_upstream_data_fingerprint() -> None:
+def test_deadline_ms_changes_execution_budget_not_data_identity() -> None:
+    """``max_age`` 退场后，唯一合法的"策略不进身份"实例是 ``deadline_ms``。"""
     planner = QueryPlanner()
-    short = planner.compile(
-        QuerySpec.build("quotes", symbols=["600519"], provider="tencent", max_age=0.5)
+    tight = planner.compile(
+        QuerySpec.build("quotes", symbols=["600519"], provider="tencent", deadline_ms=1000)
     )
-    long = planner.compile(
-        QuerySpec.build("quotes", symbols=["sh600519"], provider="tencent", max_age=30.0)
+    loose = planner.compile(
+        QuerySpec.build("quotes", symbols=["600519"], provider="tencent", deadline_ms=9000)
     )
 
-    assert short.spec.max_age == 0.5
-    assert long.spec.max_age == 30.0
-    assert short.fingerprint.value == long.fingerprint.value
-    assert '"max_age"' not in short.fingerprint.canonical
+    assert (tight.deadline_ms, loose.deadline_ms) == (1000, 9000)
+    assert tight.fingerprint.value == loose.fingerprint.value
+    assert '"deadline_ms"' not in tight.fingerprint.canonical
 
 
-def test_allow_stale_is_rejected_until_policy_is_implemented() -> None:
-    with pytest.raises(ValidationError):
+def test_allow_stale_is_rejected_because_the_path_is_direct() -> None:
+    """不是"尚未实现"，而是直连口径下永远没有可容忍的过期副本。"""
+    with pytest.raises(ValidationError, match="currentness"):
         QueryPlanner().compile(
             QuerySpec.build(
                 "quotes",

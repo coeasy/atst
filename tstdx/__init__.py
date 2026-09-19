@@ -14,7 +14,9 @@
 * **Fail-closed Streaming**：canonical stream 采用显式 ``StreamState``，
   worker 半死、启动失败、stop 超时与终态重启都不能静默生成第二 worker。
 * **零缓存直达数据源**：每次公开查询都编译为唯一 ``QueryPlan`` 并直接请求绑定的
-  Provider；不存在结果缓存、负缓存或请求合并层，provenance 始终反映真实直连。
+  Provider；不存在结果级缓存、结果级负缓存或请求合并层（web 传输层对失败主机有
+  进程级 TTL 排序，只改变尝试顺序、不省掉任何一次数据请求），provenance 始终反映
+  真实直连。
 * **原创实现**：洁净室流程，协议事实源于自有抓包与本地文件分析。
 
 分层（自底向上）::

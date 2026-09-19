@@ -82,9 +82,9 @@ from tstdx import Client, AsyncClient
 
 | 方法 | 签名摘要 | 说明 |
 |------|----------|------|
-| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", max_age=None)` | K 线 |
-| `quotes` | `(symbols, *, provider=None, policy=None, currentness="live", max_age=None)` | 实时行情 |
-| `quotes_batch` | `(symbols, *, provider=None, currentness="live", max_age=None) -> BatchResult` | 逐 symbol 三态审计 |
+| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical")` | K 线 |
+| `quotes` | `(symbols, *, provider=None, policy=None, currentness="live")` | 实时行情 |
+| `quotes_batch` | `(symbols, *, provider=None, currentness="live") -> BatchResult` | 逐 symbol 三态审计 |
 | `snapshot` | `(symbol, *, provider="tdx")` | 盘口快照 |
 | `minute` | `(symbol, *, provider="tdx")` | 当日分时 |
 | `trades` | `(symbol, *, provider="tdx", start=0, count=0)` | 逐笔成交 |
@@ -92,7 +92,7 @@ from tstdx import Client, AsyncClient
 | `security_list` | `(*, market=0, start=0, provider="tdx")` | 证券列表分页 |
 | `stream` | `(symbols, *, provider="tdx", interval=1.0, diff_only=False, max_queue=1024, on_quote=None, on_error=None) -> StatefulQuoteStream` | 流式订阅 |
 | `execute` | `(spec: QuerySpec) -> QueryResult` | 通用面：任何 capability 同一入口 |
-| `call` | `(capability, *args, provider=None, channel=None, currentness="business", max_age=None, **kwargs)` | 便捷通用入口 |
+| `call` | `(capability, *args, provider=None, channel=None, currentness="business", **kwargs)` | 便捷通用入口 |
 | `execute_with_policy` | `(spec, *, policy: FallbackPolicy) -> OrchestratedResult` | 显式跨源编排 |
 | `typed` | `(query: CapabilityQuery, **kwargs) -> TypedQueryResult` | 冻结 dataclass 契约 → 强类型记录 |
 | `capabilities` | `() -> tuple[str, ...]` | 当前 172 项 capability |
@@ -124,12 +124,12 @@ from tstdx import QuerySpec, QueryPlan
 
 spec = QuerySpec.build(
     "bars", symbols="sh600519", period="day", count=80,
-    provider=None, currentness="historical", max_age=None, deadline_ms=5000, options={},
+    provider=None, currentness="historical", deadline_ms=5000, options={,
 )
 ```
 
 `QuerySpec` 字段：`capability, symbols, provider, channel, period, count, start,
-adjustment, currentness, max_age, deadline_ms, schema_version, options_json`。
+adjustment, currentness, deadline_ms, schema_version, options_json`。
 `QueryPlan` 字段：`spec, provider, channel, fingerprint, deadline_ms, batch_limit,
 live_channel, local_channel, budget`。参数在规划期按 Provider 实现的**真实签名**校验，
 不合法即 `ValidationError` 且不发请求。

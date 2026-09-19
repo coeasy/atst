@@ -3,8 +3,8 @@
 
 """Canonical bar-period normalization shared by planning and execution.
 
-Equivalent public spellings must collapse before Provider selection, fingerprint
-construction and cache lookup, otherwise the same request can acquire different
+Equivalent public spellings must collapse before Provider selection and
+fingerprint construction, otherwise the same request can acquire different
 identities in different layers.
 """
 

@@ -64,7 +64,6 @@ def test_ws_query_delegates_to_client_call() -> None:
                 "provider": "derived",
                 "channel": None,
                 "currentness": "business",
-                "max_age": None,
                 "size": 5,
             },
         )

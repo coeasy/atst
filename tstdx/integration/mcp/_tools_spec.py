@@ -42,7 +42,6 @@ TOOLS: list[ToolSpec] = [
                 "args": {"type": "array", "items": {}},
                 "kwargs": {"type": "object", "additionalProperties": True},
                 "currentness": _str_prop("auto/live/historical/business."),
-                "max_age": {"type": ["number", "null"], "minimum": 0},
             },
             "required": ["capability"],
         },

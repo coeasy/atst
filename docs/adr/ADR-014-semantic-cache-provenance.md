@@ -1,14 +1,14 @@
 # ADR-014: Semantic cache identity and provenance
 
-Status: Partially superseded — 语义缓存层（`SemanticResultCache`/L1/L2/`cache_ttl`）已随 v16 Phase 2 物理删除，数据请求零缓存；本 ADR 的 **identity/provenance 不可伪造**结论保留为现行契约，落在 `tstdx/runtime/identity.py` 与 `tstdx/runtime/provenance.py`。
+Status: Partially superseded — 语义缓存层（`SemanticResultCache`/L1/L2/`cache_ttl`）与遗留的 `QuoteCache`/`KlineCache` 已随 v16 Phase 2 物理删除，数据请求零缓存；本 ADR 的 **identity/provenance 不可伪造**结论保留为现行契约，落在 `tstdx/runtime/identity.py` 与 `tstdx/runtime/provenance.py`。
 
 ## Context
 
-The legacy caches predate Provider-first planning. `QuoteCache` keys only by the
-symbol sequence, and `KlineCache` persists by symbol/period/datetime. Those APIs
-remain useful as compatibility optimizations, but neither identity is sufficient
-for a runtime where the same request may be served by different Providers,
-Channels, currentness modes or semantic options.
+The legacy caches predate Provider-first planning. `QuoteCache` keyed only by the
+symbol sequence, and `KlineCache` persisted by symbol/period/datetime (both are
+since deleted; they are named here only as the history of this decision). Neither
+identity is sufficient for a runtime where the same request may be served by
+different Providers, Channels, currentness modes or semantic options.
 
 A second problem is provenance laundering: a cache hit must not transform replay
 or synthetic data into direct Provider data merely because it was retrieved from

@@ -207,7 +207,6 @@ class QuerySpec:
     start: int = 0
     adjustment: str = ""
     currentness: str = CurrentnessMode.AUTO.value
-    max_age: float | None = None
     deadline_ms: int = 5000
     schema_version: int = 1
     options_json: str = "{}"
@@ -227,7 +226,6 @@ class QuerySpec:
         allow_partial: bool = False,
         allow_stale: bool = False,
         currentness: str | CurrentnessMode = CurrentnessMode.AUTO,
-        max_age: float | None = None,
         deadline_ms: int = 5000,
         schema_version: int = 1,
         options: Mapping[str, Any] | None = None,
@@ -251,7 +249,6 @@ class QuerySpec:
             start=start,
             adjustment=adjustment,
             currentness=current.value,
-            max_age=max_age,
             deadline_ms=deadline_ms,
             schema_version=schema_version,
             options_json=_canonical_options(merged_options),
@@ -306,7 +303,8 @@ class QuerySpec:
             raise ValidationError("bars 统一 QuerySpec 一次只接受一个 symbol")
         if self.options.get("allow_stale"):
             raise ValidationError(
-                "allow_stale 策略尚未实现；如需容忍过期数据请显式提高 max_age",
+                "直连执行面不接受 allow_stale：数据始终来自绑定的 Provider，"
+                "过期容忍没有可作用的对象，新鲜度口径请用 currentness",
                 context={"capability": cap, "allow_stale": True},
             )
         if self.allow_partial and cap != "quotes":
@@ -326,8 +324,6 @@ class QuerySpec:
             )
         if self.schema_version <= 0:
             raise ValidationError("schema_version 必须大于 0")
-        if self.max_age is not None and self.max_age < 0:
-            raise ValidationError("max_age 不能为负数", context={"max_age": self.max_age})
 
         currentness = _parse_currentness(self.currentness)
         selected = resolve_provider(
@@ -347,7 +343,6 @@ class QuerySpec:
         )
         PROVIDERS.require(selected, cap, channel=channel)
 
-        max_age = float(self.max_age) if self.max_age else None
         return replace(
             self,
             capability=cap,
@@ -357,7 +352,6 @@ class QuerySpec:
             period=period,
             adjustment=_norm_text(self.adjustment),
             currentness=currentness.value,
-            max_age=max_age,
             options_json=_canonical_options(self.options),
         )
 
@@ -366,8 +360,8 @@ def _secret_digest(value: Any) -> str:
     """Stable non-reversible placeholder for a credential value.
 
     The digest keeps the fingerprint deterministic — the same credential still
-    yields the same identity, so caching and single-flight de-duplication keep
-    working — while the plaintext never reaches a fingerprint, log or cache key.
+    yields the same identity across processes — while the plaintext never
+    reaches a fingerprint, a log line or a wire payload.
     """
 
     payload = json.dumps(
@@ -397,20 +391,25 @@ def _redact_secrets(value: Any) -> Any:
 
 @dataclass(frozen=True, slots=True)
 class QueryFingerprint:
-    """Stable full semantic identity used by cache/single-flight layers."""
+    """Stable full semantic identity of one request.
+
+    The kernel binds every result back to the plan that produced it through
+    this value and emits it verbatim on the canonical serialization; nothing on
+    the request path reads it to skip a Provider call.
+    """
 
     value: str
     canonical: str
 
     @staticmethod
     def _payload(spec: QuerySpec, *, channel: str) -> dict[str, Any]:
-        # v13 SSOT：fingerprint 只描述**数据身份**（问的是什么），不描述**新鲜度策略**
-        # （允许多旧）。``max_age`` 是调用方给出的缓存/新鲜度上界，同一份数据的
-        # 不同 max_age 必须共享一个身份，缓存的过期判定在读取时按实际 age 计算。
+        # v13 SSOT：fingerprint 只描述**数据身份**（问的是什么），不描述**执行预算**。
+        # ``deadline_ms`` 是调用方给的超时上界，同一份数据的不同 deadline 必须共享
+        # 一个身份；新鲜度口径由 ``currentness`` 表达，所以它在身份之内。
         #
         # ``options`` 会携带调用方凭证（例如 wencai 的 ``cookie``）：它们参与
-        # 身份判定（换凭证即换身份），但**绝不能**以明文进入 fingerprint / 缓存键 /
-        # 日志，故按敏感键递归替换为 sha256 占位符。
+        # 身份判定（换凭证即换身份），但**绝不能**以明文进入 fingerprint 或日志，
+        # 故按敏感键递归替换为 sha256 占位符。
         return {
             "schema_version": spec.schema_version,
             "capability": spec.capability,

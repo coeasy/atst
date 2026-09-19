@@ -2,7 +2,7 @@
 
 覆盖 :mod:`tstdx.cli.runtime_commands` 中此前无测试的分支：
 
-* ``cmd_*``：唯一业务入口 ``Client`` 的选择器透传（provider/channel/policy/max_age）
+* ``cmd_*``：唯一业务入口 ``Client`` 的选择器透传（provider/channel/policy/currentness）
   与结果信封序列化，以及连接释放；
 * ``_cmd_*``：迁移自 v12 的传输层 / Web 源薄壳——表格式输出、空数据、异常出口
   三条路径（旧测试只走 ``--json``）；
@@ -146,7 +146,6 @@ class TestV13QueryHandlers:
             provider="tencent",
             channel="web_quote",
             currentness="live",
-            max_age=30,
         )
         assert rc.cmd_query(args) == 0
         call_args, call_kwargs = _last(fake_client, "call")
@@ -155,7 +154,6 @@ class TestV13QueryHandlers:
             "provider": "tencent",
             "channel": "web_quote",
             "currentness": "live",
-            "max_age": 30,
             "count": 5,
         }
         payload = json.loads(capsys.readouterr().out)
@@ -181,7 +179,6 @@ class TestV13QueryHandlers:
             provider=None,
             channel=None,
             currentness=None,
-            max_age=None,
         )
         with pytest.raises(ValidationError, match=message):
             rc.cmd_query(args)
@@ -190,12 +187,11 @@ class TestV13QueryHandlers:
         self, fake_client: type[FakeClient], capsys: pytest.CaptureFixture[str]
     ) -> None:
         fake_client.data = [{"code": "600000", "price": 10.0}]
-        args = _ns(symbols=["600000"], provider="tencent", fallback="tdx,eastmoney", max_age=5)
+        args = _ns(symbols=["600000"], provider="tencent", fallback="tdx,eastmoney")
         assert rc.cmd_quotes(args) == 0
         call_args, call_kwargs = _last(fake_client, "quotes")
         assert call_args == (["600000"],)
         assert call_kwargs["provider"] == "tencent"
-        assert call_kwargs["max_age"] == 5
         assert call_kwargs["policy"].providers == ("tdx", "eastmoney")
         assert json.loads(capsys.readouterr().out)["meta"]["capability"] == "quotes"
 
@@ -208,7 +204,6 @@ class TestV13QueryHandlers:
             count=320,
             start="2024-01-01",
             adjustment="qfq",
-            max_age=None,
         )
         assert rc.cmd_bars(args) == 0
         call_args, call_kwargs = _last(fake_client, "bars")

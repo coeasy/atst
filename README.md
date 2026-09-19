@@ -381,7 +381,8 @@ QuerySpec(capability, provider=None|显式)
   合成数据"路由已随 v12 门面层物理删除）。
 - 需要跨源时由调用方显式声明顺序：`client.quotes(symbols, policy=FallbackPolicy(providers=("tdx","tencent")))`
   → `ProviderOrchestrator` 按序尝试，返回 `OrchestratedResult`（逐步记录成败与最终来源）。
-- 时效性：`currentness`（`CurrentnessMode`）+ `max_age` 控制新鲜度口径，`allow_stale` 显式放行。
+- 时效性：`currentness`（`CurrentnessMode`）声明口径，`deadline_ms` 只是执行预算；
+  直连路径恒拒绝 `allow_stale`——每次请求都回源，不存在可容忍的过期副本。
 
 ---
 

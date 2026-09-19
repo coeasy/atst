@@ -91,7 +91,6 @@ def create_runtime_app(client: Client | None = None) -> Any:
                 provider=payload.get("provider"),
                 channel=payload.get("channel"),
                 currentness=str(payload.get("currentness", "business")),
-                max_age=payload.get("max_age"),
                 **kwargs,
             )
         )
@@ -101,7 +100,6 @@ def create_runtime_app(client: Client | None = None) -> Any:
         symbols: str = Query(..., min_length=1),
         provider: str | None = None,
         fallback: str | None = None,
-        max_age: float | None = None,
     ) -> dict[str, Any]:
         values = tuple(item.strip() for item in symbols.split(",") if item.strip())
         if not values:
@@ -112,7 +110,6 @@ def create_runtime_app(client: Client | None = None) -> Any:
                 provider=provider,
                 policy=_policy(fallback),
                 currentness="live",
-                max_age=max_age,
             )
         )
 
@@ -125,7 +122,6 @@ def create_runtime_app(client: Client | None = None) -> Any:
         count: int = Query(320, ge=1, le=10000),
         start: int = Query(0, ge=0),
         adjustment: str = "",
-        max_age: float | None = None,
     ) -> dict[str, Any]:
         return serialize_result(
             api.bars(
@@ -137,7 +133,6 @@ def create_runtime_app(client: Client | None = None) -> Any:
                 start=start,
                 adjustment=adjustment,
                 currentness="historical",
-                max_age=max_age,
             )
         )
 

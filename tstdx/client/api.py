@@ -97,7 +97,6 @@ class Client:
         *,
         provider: str | None,
         currentness: str,
-        max_age: float | None,
         kwargs: dict[str, Any],
     ) -> QueryResult[Any]:
         if capability == "quotes":
@@ -107,7 +106,6 @@ class Client:
                 args[0],
                 provider=provider,
                 currentness=currentness,
-                max_age=max_age,
                 **kwargs,
             )
         elif capability == "bars":
@@ -117,7 +115,6 @@ class Client:
                 str(args[0]),
                 provider=provider,
                 currentness=currentness,
-                max_age=max_age,
                 **kwargs,
             )
         elif capability == "snapshot":
@@ -169,7 +166,6 @@ class Client:
         provider: str | None = None,
         channel: str | None = None,
         currentness: str = "business",
-        max_age: float | None = None,
         **kwargs: Any,
     ) -> QueryResult[Any]:
         """Execute a core or migrated capability through the canonical runtime."""
@@ -187,7 +183,6 @@ class Client:
                 args,
                 provider=provider,
                 currentness=core_currentness,
-                max_age=max_age,
                 kwargs=dict(kwargs),
             )
         if not is_migrated_capability(cap):
@@ -201,7 +196,6 @@ class Client:
             provider=selected,
             channel=channel,
             currentness=currentness,
-            max_age=max_age,
             options={
                 "args": _json_contract(list(args)),
                 "kwargs": _json_contract(kwargs),
@@ -216,14 +210,12 @@ class Client:
                 provider = kwargs.pop("provider", None)
                 channel = kwargs.pop("channel", None)
                 currentness = kwargs.pop("currentness", "business")
-                max_age = kwargs.pop("max_age", None)
                 return self.call(
                     name,
                     *args,
                     provider=provider,
                     channel=channel,
                     currentness=currentness,
-                    max_age=max_age,
                     **kwargs,
                 )
 
@@ -265,14 +257,12 @@ class Client:
         provider: str | None = None,
         policy: FallbackPolicy | None = None,
         currentness: str = "live",
-        max_age: float | None = None,
     ) -> QueryResult[Any] | OrchestratedResult:
         spec = QuerySpec.build(
             "quotes",
             symbols=symbols,
             provider=provider,
             currentness=currentness,
-            max_age=max_age,
         )
         if policy is not None:
             if provider is not None:
@@ -286,13 +276,11 @@ class Client:
         *,
         provider: str | None = None,
         currentness: str = "live",
-        max_age: float | None = None,
     ) -> BatchResult[QueryResult[Any]]:
         return self.runtime.quotes_batch(
             symbols,
             provider=provider,
             currentness=currentness,
-            max_age=max_age,
         )
 
     def bars(
@@ -306,7 +294,6 @@ class Client:
         start: int = 0,
         adjustment: str = "",
         currentness: str = "historical",
-        max_age: float | None = None,
     ) -> QueryResult[Any] | OrchestratedResult:
         spec = QuerySpec.build(
             "bars",
@@ -317,7 +304,6 @@ class Client:
             start=start,
             adjustment=adjustment,
             currentness=currentness,
-            max_age=max_age,
         )
         if policy is not None:
             if provider is not None:
