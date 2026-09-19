@@ -727,6 +727,14 @@
       `ruff check` + `format --check` 触及的 5 个文件干净，`mypy`（CI 参数）对
       `tstdx/result.py`、`tstdx/domain/finance.py` Success；`tests/test_spec_coverage.py`
       15 项 RC=0。
+    - **孤立提交复验（把并行会话的在途改动排除在外）**：上一次的 3313 是在**含对方 WIP**
+      的工作树里跑的，因此对 `28abb69` 单独开 worktree 复跑——junit
+      **3307 tests / 0 failures / 0 errors / 5 skipped**、`ISO_FULL_RC=0`；计数关系
+      可核对：`3313 - 8（删除的缓存自测）+ 2（新增守卫）= 3307`。同一 worktree 内
+      `audit_reachability --strict`（无未登记孤儿 ✓）、`mypy tstdx/`（CI 参数）、
+      `check_originality --strict`、`spec_audit --json --strict`、
+      `golden_audit --gate --require-markets`、`contract_audit --ci`、docs links
+      **全部 RC=0**（且每条 RC 直接取自命令本身而非管道尾部，见 F-21）。
     - **顺带把第 17 步那"2 条红"如实结清**：它们不是谁的口径冲突，而是两个会话在
       同一工作树里交叉撞上的**我方在途改动**——① `description` 含 `zero-cache` 触发
       `cach` 守卫：现已改为完全不含 cache 词根，守卫转绿；② 未跟踪的
