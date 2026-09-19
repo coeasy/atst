@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（v17 Phase 5 第 16 步 —— 发布冒烟引用已删除模块，F-36）
+
+- **wheel 安装冒烟不再 import 已不存在的 `tstdx.facade`**：`scripts/build_package.py` 的
+  安装探针里残留 `from tstdx.facade import UnifiedQuoteAPI`，而该模块已随 Phase 1b
+  单内核化物理删除。这段 import 住在 `python -I -c "<字符串>"` 里，因此按文件路径对账的
+  存在性守卫（F-24 补的那套）结构性扫不到它——`make build --smoke` 与 wheels job 的最后
+  一步会 ImportError，发布链路固定为红。
+- 探针改为断言**唯一业务入口的通用面在 wheel 内可用**：`from tstdx import Client` +
+  `callable(Client.call)` / `callable(Client.typed)`，而不是删掉了事。
+- **新增防回潮守卫** `tests/compatibility/test_local_smoke_hardening_contract.py::
+  test_release_smoke_imports_only_symbols_that_still_exist`：正则抽出 `build_package.py`
+  与 `.github/workflows/wheels.yml` 两处冒烟脚本里的全部 `tstdx` import，逐个过
+  `importlib.util.find_spec` 与 `hasattr`，并断言解析结果非空以免守卫自身失明。
+  变异验证：把那行 facade import 塞回探针即报
+  `发布冒烟 import 了不存在的模块：['tstdx.facade']`。
+- **本轮把该冒烟真正跑通**（全离线建临时 venv 装 canonical wheel）：`SMOKE_RC=0`、
+  `tstdx --help` 与 `tstdx hosts audit --help` 均退出 0、`pip check` 回
+  `No broken requirements found`；wheel 内零 `facade` 与零已解散的整方法侧车。
+- 同一轮的真实网络/服务面冒烟另立出 **F-37（P0：7709 K 线在当下可达主站返回 2 字节
+  空桩却被读成成功）** 与 **F-38（该类缺陷在现有门禁里零 live 判据）**，处置路径待裁决，
+  详见 `docs/REFACTOR_PLAN_V17_CLOSURE.md` §0.3；本轮未改任何协议字节。
+
 ### Changed（v17 Phase 5 收口 —— 传输层"整方法桩层"解散，F-30）
 
 - **连接池的 import 期整方法 monkey-patch 层物理删除**：`_pool_hardening`（461 行）、

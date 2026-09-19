@@ -597,7 +597,62 @@
       （`Total: 189 Suspicious: 0`）、`spec_audit --json --strict`、
       `golden_audit --gate --require-markets`、reachability `--strict`、docs links（82 文件）
       均 RC=0。
+16. ✅ **三面冒烟 + 真实网络 + wheel 安装冒烟一次性跑完，并把两处发布缺陷钉成守卫
+    （Phase 5 第 16 步，2026-09-19，见 §0.3 F-36/F-37/F-38）**：桩层解散（第 11 步）后，
+    按用户"等桩层收口后再冒烟"的决定执行了这项一直延后的验收。**tag 未启动**——
+    打标签需另行确认，且本轮冒烟暴露 F-37 后本就不该继续。
 
+    - **wheel 安装冒烟（全离线，本轮真正跑通）**：`python -m build --wheel --no-isolation`
+      出 `tstdx-1.0.0-py3-none-any.whl` → 直接调 `build_package._smoke()` 建临时 venv 装它：
+      `SMOKE_RC=0`、日志 `tstdx 1.0.0 …\site-packages\tstdx\__init__.py wheel smoke OK`、
+      `tstdx --help` 列出 33 个子命令、`tstdx hosts audit --help`（5 个 `--family` 族）退出 0、
+      `pip check` 回 `No broken requirements found`。这一步顺带抓出 **F-36**：探针里
+      `from tstdx.facade import UnifiedQuoteAPI` 引用了 Phase 1b 已物理删除的模块，而这段
+      import 住在 `python -I -c "<字符串>"` 里，F-24 那套按文件路径对账的守卫结构性看不见。
+      已改为判 `from tstdx import Client` + `callable(Client.call)/callable(Client.typed)`
+      （把"唯一业务入口的通用面在 wheel 内可用"这条真契约补进去），并新增字符串 import
+      守卫 `test_release_smoke_imports_only_symbols_that_still_exist`（扫 `build_package.py`
+      与 `wheels.yml` 的全部 `tstdx` import，逐个过 `find_spec`/`hasattr`，且断言解析结果
+      非空以防守卫自身失明）。**变异验证**：把那行 facade import 塞回探针 → 守卫报
+      `发布冒烟 import 了不存在的模块：['tstdx.facade']`；还原后本轮
+      `tests/compatibility + tests/architecture` **264 项通过、PYTEST_RC=0**，
+      `ruff check` `All checks passed!`、`ruff format --check` `2 files already formatted`。
+    - **七格真实网络/服务面冒烟（同一脚本、同一次运行，6 PASS / 1 FAIL）**：
+      ①`network/tdx-direct` PASS（`provider=tdx channel=quotation kind=direct
+      cache_tier=null` 000001 price=11.7）；②`network/web-direct` PASS（`tencent`
+      `kind=direct`，平安银行 11.7）；③`network/tdx-bars` **形式 PASS 但 rows=0**；
+      ④`network/stream-3-frames` **FAIL：frames=0 errors=[]**；⑤`surface/cli-live`
+      PASS（`python -m tstdx quotes sz000001 --provider tdx` rc=0，JSON meta 里
+      `kind=direct / cache_tier=null / fallback=false`）；⑥`surface/http-live` PASS
+      （`tstdx serve` 起网关，`/v13/runtime/health` 回
+      `direct_bindings=251 migrated_capabilities=172`，`/v13/quotes` 1 行且 provenance
+      为 direct）；⑦`surface/mcp-live` PASS（`tools/list` 后按 `get_quotes` 的
+      `inputSchema.required` 组参，`provenance_direct=true`、`isError=false`）。
+      ⇒ **零缓存直连这条主链在 CLI / HTTP / MCP 三个服务面与两个 provider 上一致成立**
+      （`cache_tier=null` + `fallback=false` 即 v17 的验收判据本身）。
+    - **两处 FAIL 的归因要如实分开**：第一轮 5 格里 3 格的失败是我的**冒烟脚手架**缺陷
+      （脚本放在 TEMP 导致 `ModuleNotFoundError: No module named 'tstdx'`；MCP 格误选
+      `get_bars` 而触发 `ValidationError: missing required parameter`；HTTP/MCP 判据只做了
+      子串匹配）——补齐 `sys.path`、按名字选工具、把判据改成解析 JSON 后核
+      `provenance.kind/fallback/cache_tier` 才是本轮那 6/7。**不是**运行期回归。
+    - **抓出 F-37（P0）**：`tstdx server-test` 本轮 **3/8 主站可达**
+      （180.153.18.170 23.8ms、218.6.170.47 25.1ms、123.125.108.14 31.6ms），而全部 golden
+      样本的采集主机 218.75.126.9 超时。同一批可达主站 `0x0530` 实时行情正常、`0x052D`
+      一律回 `zip_size=2 payload=2 字节 = 2003`——**与 golden `body_hex` 逐位相同的 26 字节
+      请求**在 2026-08-31 曾拿到 180 字节 / 10 根真样本；12 个 category、SH/SZ、日线/1分/5分
+      全 0 根。`Client.bars()` 因此返回 `data=[]` 却标 `ProvenanceKind.DIRECT / cache_tier=None`
+      且 `strict=True` 不报错。同批真机上 `capital_changes`(0x000f, 250 行)、
+      `finance_info`(0x0010, 37 行) 有数据但字段错位（`code='519\x01'`、`market=48`），
+      而离线 `-k "capital or finance or bars or kline or hand"` 本轮 8 项 **RC=0**
+      ⇒ 解析器与归档样本自洽、与当下线路不一致。**按仓内既有口径（"差分基准待真机样本
+      裁决，禁止盲改"）本轮未改任何协议字节**，三条处置路径交用户拍板（见 §0.3 F-37）。
+    - **抓出 F-38（P1，测量口径）**：全库 `@pytest.mark.network` 仅 6 项且全在
+      `tests/web/*`，`host_audit` 从不发 K 线请求 ⇒ 7709 数据面在门禁里零 live 判据，
+      F-37 这类缺陷结构性隐形。本轮刻意**未**先加带 network 标记的 K 线断言（F-24 的教训：
+      守卫把缺陷钉成契约＝每日 live job 固定红），待 F-37 裁决后再补并挂进 `live-smoke.yml`。
+    - **时段口径**：本轮为周六休市，行情读到周五收盘快照（腾讯 `time='20260918161427'`）。
+      历史 K 线与交易时段无关，故"0 根"结论不受影响；但 stream 的 0 帧与字段错位需一次
+      **工作日盘中**复跑才能出严格结论，已登记为后续动作。
 
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
@@ -706,6 +761,11 @@
       整仓乱序各 `3276 passed / 5 skipped / 10 deselected`、RC=0；固定序同轮
       `--cov=tstdx` 80.60% ≥ 阈值 77，`ruff check`/`format --check`、`mypy`（CI 参数）、
       originality/spec/reachability `--strict`、contract_audit `--ci`、docs links 全 RC=0）
-- [ ] 三面冒烟（CLI / HTTP / MCP）+ 真实网络 smoke（tdx 1 所 + web 1 源 + stream 3 帧）
-      + wheel 安装冒烟 → tag `v1.1.0-dev.1`（⏳ **按用户决定继续延后**：会产生真实网络
-      请求并在远端可见，须明确确认后启动；桩层解散这一前置条件已满足，见 Phase 5 第 11 步）
+- [x] 三面冒烟（CLI / HTTP / MCP）+ 真实网络 smoke（tdx 1 所 + web 1 源 + stream 3 帧）
+      + wheel 安装冒烟（Phase 5 第 16 步已执行：wheel 冒烟 `SMOKE_RC=0` 并顺带抓出并清偿
+      F-36；七格真实冒烟 6 PASS / 1 FAIL，`cache_tier=null + fallback=false` 在 CLI/HTTP/MCP
+      三面与两个 provider 上一致 ⇒ 零缓存直连主链贯通）
+- [ ] 发布 `v1.1.0-dev.1` tag：⏳ **仍待用户明确确认**，且本轮冒烟暴露 **F-37（P0：7709
+      K 线在当下可达主站回 2 字节空桩却被读成成功）与 F-38（该缺陷在门禁里结构性隐形）**，
+      需先取 F-37 的 (a)/(b)/(c) 处置裁决；另有工作日盘中复跑（stream 0 帧、字段错位）
+      与 F-18（`tstdx/providers/http` 守卫未接线）两项待裁决
