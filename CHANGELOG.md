@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（v17 Phase 5 第 19 步 —— README"第二种写法"的数字与协议覆盖矩阵每族分布入门禁，F-42）
+
+- **协议覆盖矩阵的每族分列是手抄本，5 行错 4 行**：矩阵原先只有一列"精确解析"，逐族写
+  18 / 12 / 8 / 15 / 8——**和**恰好等于总解析器数 61，所以"61 精确解析器"的总数门禁一直绿，
+  分列却全错。真相源（`PARSERS` 的 `(family, code)` 键）是 18 / 15 / 16 / 1 / 11；命令账本
+  另有其数 39 / 17 / 16 / 2 / 11（和 = 85，此前被读成"每族命令数"）。矩阵现拆成
+  "命令账本 / 精确解析器"两列，并把族键写进每行标签（`**MAC 专属**（\`mac_quotation\`）`），
+  门禁因此不必在测试里另抄一份"显示名→族键"映射——文档自己声明它指哪一族。
+- **商品语义的端口写反**：文档 7709，而 `protocol/commands.py::Command.port` 与主站池
+  （`transport/hosts.py:351` 把 GOODS 池由 EXTENDED 池派生）都是 7727。新门禁
+  `test_readme_protocol_matrix_matches_the_registries` 逐行比 `(端口, 命令数, 解析器数)`
+  三元组，并要求族集合与注册表相等（新增协议族不写这行即红）。
+- **同一事实的第二种写法长期在表外**：已钉"45+ HTTP 源"，未钉"web 45 源"这种裸抄本；
+  `172 capability`、`11 Provider`、`CLI 31 子命令`、`10 端点`、`9 工具`、`5 套协议族`、
+  `全 5 族`、`5 族客户端`、`61 × N 族`、`15 便捷方法`、`Client 15 方法`、`28 模块`、
+  `6 源合并`、`251 条精确绑定`（框图/特性表/目录树三种措辞）此前没有一行被读过。本步补
+  20 条精确宣称行 + 3 条下界行 + 10 个真相源 helper。README 的 `parsers(61 × 6 族)`
+  （两处）与"17 模块"是同批过期抄本，改为真相源（5 族 / 28 模块）；"web 45 源"改为
+  非数字写法"web 多源"，`docs/api/README.md` 的"11 源 × channel"改为"11 Provider ×
+  channel"，让 Provider 数与 HTTP 源类不再共用"源"这个量词。
+- **改写法不能静默逃逸**：每行的 `assert claimed` 使宣称串一旦改名或删除就报"门禁失效"
+  而非悄悄少对一处（与 F-35 同形）。
+- **变异验证 26 条全部 RED 且各自指名**：矩阵 4 例（解析器 18→17、MAC 命令 16→8、商品端口
+  7727→7709、族键 `ex_quotation`→`extended` 报"族集合不符：矩阵 ['extended'] 多、
+  ['ex_quotation'] 缺"）、下界 3 例（"45+ 源类"→"45 源类" 报"门禁失效"、"40+ 异常类"→"50+"
+  报"实际只有 46 个"）、精确宣称 16 例（17 模块 vs 28、170/171 capability、CLI 30、
+  HTTP 12 端点、MCP 12 工具、全 4 族、61 × 6 族、14 便捷方法、`Client` 16 方法、
+  4 套协议族、5/7 源合并、85 命令账本（6 协议族）等）、绑定条数 3 例（250/240/252 vs 251）。
+- **复测（同一轮日志）**：主树整仓离线 `-m "not network"` junit `3334 tests / 24 failures /
+  0 errors / 7 skipped`、覆盖率 79.42%——**24 条红全部是同一个根因
+  `TypeError: QuerySpec.build() got an unexpected keyword argument 'max_age'`**，来自并行会话
+  在途的 `tstdx/query.py` 改动，本步未代为修改。为此按第 18 步的做法在 HEAD
+  （`867f6d2`）+ 本步 3 个文件单开 worktree 复跑：junit **3337 tests / 0 failures / 0 errors /
+  7 skipped**、`ISO_FULL_RC=0`、`--cov=tstdx` **80.51%**（日志明写
+  `Required test coverage of 77.0% reached`，阈值 77 未下调）。计数关系可核对：
+  `3334 + 3（本步新增的三条绑定宣称行）= 3337`。同一 worktree 内
+  `check_originality --strict tstdx/`（189 文件、Suspicious 0）、`spec_audit --json --strict`
+  （`coverage_pct: 100.0`）、`golden_audit --gate --require-markets`、
+  `audit_reachability --strict`（无未登记孤儿 ✓）、`contract_audit --ci`
+  （63 契约 / 155 capability）、docs links（82 文件）、`ruff check` 与 `format --check`
+  （430 files）、`mypy tstdx/`（CI 参数）**全部 RC=0**。本步只动文档与门禁测试，
+  未触碰 `tstdx/` 任何一行代码。
+
 ### Removed（v17 Phase 5 第 18 步 —— 缓存层删除后残留的"缓存形状"，F-40/F-41）
 
 - **`tstdx.domain.finance` 的 `CapitalChangeCache` 整族物理删除**（不留别名）：

@@ -308,6 +308,13 @@ def _providers() -> int:
     return _actual_facts()["providers"]
 
 
+def _direct_bindings() -> int:
+    """`DIRECT_BINDINGS` 条数：每次加/删绑定都变，README 三处抄本最容易静默过期。"""
+    from tstdx.runtime.executor import DIRECT_BINDINGS
+
+    return len(DIRECT_BINDINGS)
+
+
 def _cli_subcommands() -> int:
     return _actual_facts()["cli_subcommands"]
 
@@ -389,6 +396,89 @@ def _change_types() -> int:
     return len(EastmoneyStockChangesSource.CHANGE_TYPES)
 
 
+def _protocol_family_names() -> set[str]:
+    """``Family`` 声明的协议族键集合（文档"5 协议族"与覆盖矩阵行标签的真相源）。"""
+    from tstdx.protocol.commands import Family
+
+    return {
+        value
+        for name, value in vars(Family).items()
+        if isinstance(value, str) and not name.startswith("_")
+    }
+
+
+def _protocol_families() -> int:
+    return len(_protocol_family_names())
+
+
+def _parser_family_counts() -> dict[str, int]:
+    """L1 精确解析器按族分布：``PARSERS`` 的键就是 ``(family, code)``。"""
+    from tstdx.protocol.registry import PARSERS
+
+    counts: dict[str, int] = {}
+    for family, _code in PARSERS:
+        counts[family] = counts.get(family, 0) + 1
+    return counts
+
+
+def _command_family_counts() -> dict[str, int]:
+    """命令账本按族分布（覆盖矩阵"命令账本"列的真相源）。"""
+    from tstdx.protocol.commands import COMMANDS
+
+    counts: dict[str, int] = {}
+    for command in COMMANDS.values():
+        counts[command.family] = counts.get(command.family, 0) + 1
+    return counts
+
+
+def _family_port(family: str) -> int:
+    """族 → 端口：`Command.port` 是代码里唯一的这份映射。"""
+    from tstdx.protocol.commands import Command
+
+    return Command(cmd=0, name="", family=family).port
+
+
+def _web_source_modules() -> int:
+    """定义了至少一个 ``*Source`` 类的 ``tstdx/web/`` 模块数（文档"28 模块"的真相源）。"""
+    modules = 0
+    for path in sorted((ROOT / "tstdx" / "web").glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        if any(
+            isinstance(node, ast.ClassDef) and node.name.endswith("Source") for node in tree.body
+        ):
+            modules += 1
+    return modules
+
+
+def _client_methods() -> int:
+    """`Client` 的公开方法数（文档"15 便捷方法"的真相源）。"""
+    import inspect
+
+    from tstdx import Client
+
+    return sum(
+        1
+        for name, value in inspect.getmembers(Client, predicate=inspect.isfunction)
+        if not name.startswith("_")
+    )
+
+
+def _error_classes() -> int:
+    """`tstdx/errors.py` 里定义的异常类数（"40+ 异常类"的真相源，按 AST 不触发导入）。"""
+    tree = ast.parse((ROOT / "tstdx" / "errors.py").read_text(encoding="utf-8"))
+    return sum(1 for node in tree.body if isinstance(node, ast.ClassDef))
+
+
+#: 合并层数写在 `load_config` 的模块 docstring 里（代码自己的那份声明），文档抄了 4 遍。
+_MERGE_ITEM = re.compile(r"^\s+\d+\.\s", re.M)
+
+
+def _config_merge_layers() -> int:
+    import tstdx.config.loader as loader
+
+    return len(_MERGE_ITEM.findall(loader.__doc__ or ""))
+
+
 def _typed_domain_base_names() -> set[str]:
     """``tstdx.typed_query`` 里的领域基类名（文档宣称的"10 领域基类"的真相源）。
 
@@ -459,6 +549,31 @@ _EXACT_CLAIMS: tuple[tuple[str, str, str, Callable[[], int]], ...] = (
     ("docs/api/README.md", "领域基类数", r"(\d+)\s*领域基类", _typed_domain_bases),
     ("docs/api/interfaces.md", "领域基类数", r"(\d+)\s*领域基类", _typed_domain_bases),
     ("README.md", "Domain Record 族数", r"(\d+)\s*Domain Record 族", _domain_record_classes),
+    # 第 19 步（F-42）：README 里同一事实的**第二种写法**曾长期在表外——"45 源"这种裸抄本
+    # 与已钉的"45+ HTTP 源"是同一个数，"172 capability"在架构框图与内核小节各写一遍。
+    # 表按"写法"逐行登记，每行的 `assert claimed` 保证写法一旦改名或删除就报"门禁失效"，
+    # 而不是静默少对一处；新增一种写法时补一行即可。
+    ("README.md", "capability 数", r"(\d+)\s+capabilit", _capabilities),
+    ("README.md", "capability 数", r"(\d+)\s*项\s+capability", _capabilities),
+    ("README.md", "Provider 数", r"(\d+)\s*个?\s*Provider", _providers),
+    # 绑定条数在 README 写了三遍（框图 / 特性表 / 目录树），措辞各不相同，逐种写法各钉一行
+    ("README.md", "执行绑定数", r"(\d+)\s*条精确绑定", _direct_bindings),
+    ("README.md", "执行绑定数", r"（(\d+) 条）直调", _direct_bindings),
+    ("README.md", "执行绑定数", r"executor\((\d+)\s*绑定\)", _direct_bindings),
+    ("README.md", "CLI 子命令数", r"CLI\s*(\d+)\s*子命令", _cli_subcommands),
+    ("README.md", "HTTP 路由数", r"(\d+)\s*端点", _http_routes),
+    ("README.md", "MCP 工具数", r"(\d+)\s*工具", _mcp_tools),
+    ("README.md", "协议族数", r"(\d+)\s*套?\s*协议族", _protocol_families),
+    ("README.md", "协议族巡检数", r"全\s*(\d+)\s*族", _protocol_families),
+    ("README.md", "协议族客户端数", r"(\d+)\s*族客户端", _protocol_families),
+    ("README.md", "解析器族数", r"61\s*×\s*(\d+)\s*族", _protocol_families),
+    ("README.md", "Client 便捷方法数", r"(\d+)\s*便捷方法", _client_methods),
+    ("README.md", "Client 方法数", r"`Client`\s*(\d+)\s*方法", _client_methods),
+    ("README.md", "HTTP 源模块数", r"(\d+)\s*模块", _web_source_modules),
+    ("README.md", "配置合并层数", r"(\d+)\s*源合并", _config_merge_layers),
+    ("docs/api/README.md", "配置合并层数", r"(\d+)\s*源合并", _config_merge_layers),
+    ("docs/configuration.md", "配置合并层数", r"(\d+)\s*源合并", _config_merge_layers),
+    ("docs/api/README.md", "协议族数", r"(\d+)\s*协议族", _protocol_families),
 )
 
 
@@ -481,8 +596,11 @@ def test_fact_doc_numbers_match_their_truth_source(
 #: 最后又变成一处过期数字。
 _FLOOR_CLAIMS: tuple[tuple[str, str, str, Callable[[], int]], ...] = (
     ("README.md", "HTTP 源类", r"(\d+)\+\s*HTTP 源", _web_source_classes),
+    ("README.md", "HTTP 源类", r"(\d+)\+\s*源类", _web_source_classes),
+    ("README.md", "HTTP 源类", r"(\d+)\+\s*源\s*/", _web_source_classes),
     ("docs/ARCHITECTURE.md", "HTTP 源类", r"(\d+)\+\s*HTTP 源", _web_source_classes),
     ("docs/api/README.md", "Typed 契约", r"(\d+)\+\s*契约", _typed_contracts),
+    ("README.md", "异常类", r"(\d+)\+\s*(?:异常)?类", _error_classes),
 )
 
 
@@ -534,6 +652,47 @@ def test_documented_ws_method_list_matches_the_dispatcher() -> None:
             f"{source} 的 WS 方法清单与 `runtime_ws._dispatch` 不符："
             f"多 {sorted(listed - real)} 缺 {sorted(real - listed)}"
         )
+
+
+#: 覆盖矩阵每行把族键写在标签里（``**7709 标准**（`quotation`）``），门禁因此不需要在测试里
+#: 另抄一份"显示名→族键"映射：文档自己声明它指的是哪一族，测试只核对它给的键与数字是否成立。
+_MATRIX_ROW = re.compile(
+    r"^\| \*\*[^*]+?\*\*（`(?P<family>[a-z0-9_]+)`）\s*\|\s*(?P<port>\d+)\s*\|"
+    r"[^|]*\|\s*(?P<commands>\d+)\s*\|\s*(?P<parsers>\d+)\s*\|",
+    re.M,
+)
+
+
+def test_readme_protocol_matrix_matches_the_registries() -> None:
+    """协议覆盖矩阵的每族分布必须逐行对上命令账本、解析器表与端口映射。
+
+    第 19 步（F-42）实测：矩阵的总数（85 命令 / 61 解析器）一直被钉着，而每族分列是手抄本——
+    4/5 行都错（MAC 8 实际 16、F10 15 实际 1、商品 8 实际 11、扩展市场 12 实际 15），
+    且商品语义的端口写反（7709，代码 `Command.port` 与主站池都是 7727）。总数对得上让
+    分列的错误看起来无害，所以这里比的是分布而不是和。
+    """
+    rows = {
+        match["family"]: (
+            int(match["port"]),
+            int(match["commands"]),
+            int(match["parsers"]),
+        )
+        for match in _MATRIX_ROW.finditer(_doc_text("README.md"))
+    }
+    assert rows, "README 不再有带族键的协议覆盖矩阵，门禁失效"
+    commands, parsers = _command_family_counts(), _parser_family_counts()
+    assert len(rows) == len(_MATRIX_ROW.findall(_doc_text("README.md"))), "矩阵里同一族写了多行"
+    assert set(rows) == set(commands) == set(parsers), (
+        f"矩阵的族集合与注册表不符：矩阵 {sorted(set(rows) - set(commands))} 多、"
+        f"{sorted(set(commands) - set(rows))} 缺（新增协议族必须同步这张表）"
+    )
+    wrong = [
+        f"{family}：宣称 端口 {port} / {command} 命令 / {parser} 解析器，"
+        f"实际 {_family_port(family)} / {commands[family]} / {parsers[family]}"
+        for family, (port, command, parser) in rows.items()
+        if (port, command, parser) != (_family_port(family), commands[family], parsers[family])
+    ]
+    assert not wrong, "协议覆盖矩阵与注册表不符：\n" + "\n".join(wrong)
 
 
 #: 同一个枚举数字也写在代码自己的注释与 docstring 里（F-35 发现 6 处写着 16，

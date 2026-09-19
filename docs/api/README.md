@@ -85,7 +85,7 @@
 
 | 模块 | 说明 |
 |---|---|
-| `tstdx.providers` | Provider 注册表（11 源 × channel），内核唯一可调用实现体 |
+| `tstdx.providers` | Provider 注册表（11 Provider × channel），内核唯一可调用实现体 |
 | `tstdx.web.adapters` | HTTP Web 源（新浪/腾讯/东财/集思录/港股/中行）|
 | `tstdx.web.adapters_ext` | 扩展 Web 源（分时/逐笔/联想/全球）|
 | `tstdx.web.fundflow` | 资金流 + 涨停池 + **盘中异动**（20 类异动枚举）+ 沪深港通 |

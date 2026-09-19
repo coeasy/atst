@@ -58,11 +58,11 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 │  Provider channel→adapter 绑定表 · Provider 隔离契约/守卫/审计          │
 ├─────────────────────────────────────────────────────────────────────┤
 │              providers/（11 Provider · 172 capability 唯一事实源）      │
-│  tdx(85 命令) · tencent/sina/eastmoney/baidu/jsl/boc/iwencai(web 45 源)│
+│  tdx(85 命令) · tencent/sina/eastmoney/baidu/jsl/boc/iwencai(web 多源)│
 │  local_vipdoc(reader 本地二进制) · builtin · derived(显式聚合)          │
 ├─────────────────────────────────────────────────────────────────────┤
 │                      协议核心层                                        │
-│  commands(85 账本) · registry(三级分派 + 异常收口) · parsers(61 × 6 族) │
+│  commands(85 账本) · registry(三级分派 + 异常收口) · parsers(61 × 5 族) │
 │  codec(帧/原语) · transport(池/心跳/测速) · client/(TdxClient 同步异步)  │
 ├─────────────────────────────────────────────────────────────────────┤
 │                      基础设施层                                        │
@@ -101,7 +101,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 
 | 特性 | 说明 |
 |---|---|
-| **HTTP Web 45 源类** | 东财/新浪/腾讯/集思录/港股/中行等，`httpx` / `urllib` 双栈，17 模块 |
+| **HTTP Web 45+ 源类** | 东财/新浪/腾讯/集思录/港股/中行等，`httpx` / `urllib` 双栈，28 模块 |
 | **本地 vipdoc 解析** | `reader/` 解析通达信本地 `.day` / `.min` / 板块 / 财务二进制文件 |
 | **Provider 注册表** | `providers/` 声明 11 Provider × 172 capability × channel，是唯一事实源；`catalog/provider_bindings.py` 声明 channel→adapter 绑定 |
 | **流式订阅** | QuoteStream + AsyncQuoteStream（engine 内核：ReconnectPolicy + BackpressureQueue + DeltaMerger + GapFiller + StreamEngine） |
@@ -144,13 +144,13 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 
 ## 协议覆盖矩阵
 
-| 协议族 | 端口 | 覆盖范围 | 精确解析 | 通用/透传 |
-|---|---|---|---|---|
-| **7709 标准** | 7709 | A 股行情（K 线/实时/分时/逐笔/证券计数） | 18 命令 | 是 |
-| **7727 扩展市场** | 7727 | 港股/美股/期货/外汇/期权 | 12 命令 | 是 |
-| **MAC 专属** | 7709 | 板块/指数/概念/财务 | 8 命令 | 是 |
-| **F10 资料** | 7709 | 公司概况/股东/财务/交易信息 | 15 命令 | 是 |
-| **商品语义** | 7709 | 商品品种/合约/行情 | 8 命令 | 是 |
+| 协议族 | 端口 | 覆盖范围 | 命令账本 | 精确解析器 | 通用/透传 |
+|---|---|---|---|---|---|
+| **7709 标准**（`quotation`） | 7709 | A 股行情（K 线/实时/分时/逐笔/证券计数） | 39 | 18 | 是 |
+| **7727 扩展市场**（`ex_quotation`） | 7727 | 港股/美股/期货/外汇/期权 | 17 | 15 | 是 |
+| **MAC 专属**（`mac_quotation`） | 7709 | 板块/指数/概念/财务 | 16 | 16 | 是 |
+| **F10 资料**（`f10`） | 7709 | 公司概况/股东/财务/交易信息 | 2 | 1 | 是 |
+| **商品语义**（`goods`） | 7727 | 商品品种/合约/行情 | 11 | 11 | 是 |
 
 > 未知命令自动归档至 `PROTOCOL_SPEC/UNKNOWN/`，工具链支持 `capture` 采集 → `codegen` 生成 → `spec_audit` 验证闭环。
 
@@ -163,7 +163,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | TDX 协议覆盖 | 85 命令 / 61 精确解析器 / 5 协议族 | ~20 命令 | ~15 命令 | ❌（HTTP only） |
 | 三级分派 | L1 精确 → L2 启发 → L3 透传 | 仅 L1 | 仅 L1 | ❌ |
 | 同步 + 异步 | ✅ 双客户端 | ❌（仅同步） | ❌（仅同步） | ❌ |
-| HTTP Web 多源 | 45 源 / 11 Provider 注册表 | ❌ | ❌ | ✅（单一源） |
+| HTTP Web 多源 | 45+ 源 / 11 Provider 注册表 | ❌ | ❌ | ✅（单一源） |
 | 本地 vipdoc 解析 | ✅ 多格式 | ❌ | ❌ | ❌ |
 | 流式订阅 | ✅ engine 内核 | ❌ | ❌ | ❌ |
 | 主站池治理 | ✅ 多主站 + 测速 + 社区注入 | 基础 | 基础 | ❌ |
@@ -342,7 +342,7 @@ tstdx/
 ├── stream_contract.py  # StreamSpec/StreamPlanner 流式契约
 ├── errors.py       # 错误分类树（E1-E8，40+ 类）+ RetryAdvice
 ├── error_envelope.py  deprecation.py
-├── protocol/       # commands(85 账本)/registry(三级分派+异常收口)/parsers(61 × 6 族)
+├── protocol/       # commands(85 账本)/registry(三级分派+异常收口)/parsers(61 × 5 族)
 ├── codec/          # framing(帧)/primitive(原语 + count_guard + zlib strict)
 ├── transport/      # base(RLock 租约)/async_/pool(4 槽)/ratelimit/speedtest/hosts/sniff
 ├── client/         # core.py(同步/异步共享纯协议 SSOT) + sync/async_/factory + 5 族客户端

@@ -73,6 +73,7 @@
 | F-39 | P2（口径类：对外契约数的分母由手抄名单决定，而名单已被自身判据遮蔽） | `scripts/contract_audit.py::_all_typed_queries` 用一份 12 个名字的 `skip` 集合排除抽象基类，同一份名单在 `tests/v14/test_contract_automation.py` 里又各自抄了 4 遍（共 5 份副本）。实测这 12 个类在四种构造路径（`cls()`、`_minimal_instance`、kwargs 阶梯、factory 映射）下**全部构造失败**，即它们的排除早已由各站点自带的 `except Exception: continue` 完成——名单不决定任何东西，却决定读者的信任。**危害方向是漏更而非多余**：新增一个抽象基类只要不在这 5 份名单里，就会被算进"契约数"，于是 `60+ 契约`、`10 领域基类`、PyPI 描述里的规模口径同时虚增，而审计依旧全绿（与 F-19"跨族同号互相覆盖使分母被读小"同族，这次是被读大）。连带：`docs/api/README.md`、`docs/api/interfaces.md`、README 两处宣称的"11 领域基类"按任何自然定义都不成立（`typed_query` 里被继承的抽象基类是 10 个，含根 `CapabilityQuery` 才 11 个，而根不是"领域"）——第 15 步 F-35 曾以"分母含糊"为由刻意不钉，本步给出显式判据后改判为必须钉 | **已清偿**（2026-09-19）：① 契约分母改为**纯结构判据**（可构造 + `capability` 为字符串），删掉 5 份手抄名单；`contract_audit --ci` 同轮实测 `contracts: 63 / business caps: 155`，与删名单前逐项相同 ⇒ 改动行为无损；② README（2 处）+ `docs/api/README.md` + `docs/api/interfaces.md` 的"11 领域基类"统一改为 **10**，判据写进 `_typed_domain_base_names()` 的 docstring（被其它契约直接继承的抽象 dataclass，不含根）；③ 三条新守卫：`test_fact_doc_numbers_match_their_truth_source` 新增 4 行（三处领域基类数 + README 的"9 Domain Record 族"，后者此前只在 api 文档被钉、README 的两处抄本在盲区）、`test_contract_audit_docstring_numbers_match_the_audit` 把审计脚本自述的 155/63 钉回它自己算出的数（F-25 只对齐了它跑什么，没对齐它抄什么）、`test_typed_query_denominator_is_not_a_hand_copied_list` 禁止名单回潮（名单里任何一个名字以字符串字面量出现在这两个文件即为红）；④ 顺手修掉该套件里一处测量装置缺陷：`test_cli_script_exits_zero` 以 `text=True` 捕获子进程输出却不指定编码，Windows 下子进程的 GBK 输出使 `_readerthread` 抛 `UnicodeDecodeError`（以 `PytestUnhandledThreadExceptionWarning` 形式滞留，且失败分支的 `result.stdout[-800:]` 会因 `stdout is None` 二次崩）——现显式 `PYTHONIOENCODING=utf-8` + `encoding="utf-8"`，警告消失。**复测（同一轮日志）**：`tests/architecture/` + `tests/v14/` junit `211 tests / 0 failures` RC=0；`contract_audit --ci` RC=0（`63 契约 / 155 业务 capability`，与删名单前逐项相同）；`ruff check`/`format --check`、reachability `--strict`、`spec_audit --json --strict`、docs links（82 文件）均 RC=0；整仓离线 junit `3313 tests / 0 failures / 7 skipped`、`--cov=tstdx` **80.52%**（阈值 77 未下调）。**变异验证 8 条全部 RC=1 且各自指名**（塞回一份 `skip = {"MarketDataQuery"}`、自述 155→150、63→62、三处领域基类各改 1、README Record 族 9→8） |
 | F-40 | P1（零缓存口径类） | **缓存层删掉了，"缓存形状"留在包里，而且其中一个真的能跳过数据源**（Phase 5 第 18 步实测）。Phase 2 物理删除 v12 缓存层后，仓内还剩三处缓存遗产：① `tstdx/domain/finance.py::CapitalChangeCache`——除权事件 **TTL 缓存 + `~/.tstdx/factors` 落盘**，类 docstring 明写"命中（未过期且非空）直接返回，**跳过 0x0010/gpcw 网络与解析**"，即一句话就能把"数据请求不需要缓存"这条主口径变成可一键恢复的旁路；而它在 `tstdx/` 内**零调用方**（复权引擎 `domain/adjust.py::compute_factors(bars, events)` 由调用方直接喂事件），只有它自己的 8 项单测在测自己——典型的"测试维持死亡的公共面"；② `Provenance.cached(tier)` / `cache_hit` / `direct_fetch`：生产路径永不产出 tier（内核只经 `Provenance.direct()` 构造），故这三个成员在 `tstdx/` 里同样零消费者，唯一引用是 `tests/runtime/test_query_contracts.py::test_cache_hit_preserves_direct_origin`（自己造一个 tier 再断言它能被造出来）；③ `tstdx/result.py` 模块 docstring 仍在描述 `cache_tier='l1'/'l2'` 的取回模型，并称其为"later cache-poisoning and freshness gates 的地基"——**包内文档描述了一个不存在的层**，`help()` 与任何交互式阅读都会照单全收。**根因与 F-30/F-34 同格**：可达性门禁把 `__all__` 导出与"有测试覆盖"都算活，于是删层之后剩下的接口形状恰好躲过所有判据 | **已清偿**（2026-09-19）：① `CapitalChangeCache` 一族**物理删除**（`CapitalChangeCache`/`get_capital_change_cache`/`default_factor_cache_dir`/`ENV_FACTOR_CACHE_DIR`/`DEFAULT_FACTOR_TTL_SECONDS`/`_FETCHED_AT_KEY` 及其 `__all__` 条目，`finance.py` 301→162 行，连带删除那 8 项自测用例），不留别名，与 Phase 1b/2 的 clean-break 口径一致；② 删除 `cached()`/`cache_hit`/`direct_fetch`（`result.py` 161→148 行），**`cache_tier` 字段刻意保留**——它是三面 wire 上那个恒为 `null` 的零缓存证据，CLI/HTTP/MCP 冒烟与文档都以它作判据；③ `result.py` docstring 改写为当下事实：运行期不做结果缓存，所有生产 provenance 由 `direct()` 构造并带 `cache_tier=None`，保留该字段正是为了让调用方断言它仍为 `None`；④ 那项自测换成 `test_direct_provenance_carries_no_cache_tier`——除断言 `direct()` 的 `cache_tier is None`，还用 `hasattr` 反向钉住三个已删词汇，重新引入即红；⑤ 新增包级守卫 `tests/architecture/test_official_runtime_no_fallback.py::test_package_defines_no_data_cache_layer`：AST 扫 `tstdx/**` 全部类名含 `cache` 的类定义与 `get_*cache*` 函数，命中即列出路径。**变异验证**：临时塞入 `class QuoteCache` → 守卫报 `tstdx\domain\finance.py:class QuoteCache`、RC=1。纯函数记忆化（`functools.lru_cache`）明确不在禁止之列——它不省掉任何一次网络请求，守卫 docstring 里写明了这条边界 |
 | F-41 | P1（对外承诺类） | **PyPI 元数据仍在宣称一个已被删除的架构层**：`pyproject.toml` 的 `description` 写着 "…with explicit Providers, **semantic caching**, Stateful streaming and canonical HTTP/WebSocket/MCP adapters"。这是 v12 语义缓存时代的残留，会出现在 `pip show`、PyPI 项目页与任何索引站的第一行——**对外最显眼的一句话恰好是仓内最错的一句**，而它不在任何事实门禁的扫描范围里（`FACT_DOC_PATHS` 只覆盖 README/ARCHITECTURE/docs，元数据文件从来不在名单上），`tests/` 里也没有任何断言读过 `description` | **已清偿**（2026-09-19）：① 描述改为 "…with explicit Providers, **direct Provider reads**, Stateful streaming…"——刻意**不提缓存**（连 "zero-cache" 这种写法也不用：包描述不该为一个不存在的东西占词，守卫也因此能保持"描述里出现 `cach` 即红"这个简单形状）；② 新增守卫 `test_pypi_description_claims_no_caching`：正则取出 `[project] description`（解析不到即报"守卫自身失效"），断言不含 `cach`。**变异验证**：把 `semantic caching` 塞回描述 → RC=1 且整句回显。同一轮顺带改写 `README.md` 的存储行（`~/.tstdx/` 配置/**缓存**/排名 → 配置/主站排名/反馈）：随 F-40 删掉落盘目录后，`~/.tstdx/` 下只剩配置、`server_ranking.json` 与 `feedback/` 三类，该行此刻正被并行会话编辑，故未并入本次提交 |
+| F-42 | P2（口径类：门禁只钉总数与"第一种写法"，同一事实的第二种写法和矩阵每族分列全是手抄本） | **README 的规模数字有一半在门禁外，而协议覆盖矩阵的每族分布 5 行错 4 行、端口错 1 行**（Phase 5 第 19 步实测）。F-34/F-35 把"事实文档的抄本数字"钉回真相源后，钉的是**每张表里已登记的那一种写法**与**总数**：① 协议覆盖矩阵原有一列"精确解析"，逐族写 18 / 12 / 8 / 15 / 8，**和恰为 61**——与真相源总解析器数相同，于是"61 精确解析器"的总数门禁一直绿，而分列全错（真相源 `PARSERS` 的 `(family, code)` 键分组：18 / 15 / 16 / 1 / 11；命令账本 `COMMANDS` 另有其数 39 / 17 / 16 / 2 / 11，和 = 85），且**商品语义端口写反**（文档 7709，`protocol/commands.py::Command.port` 与主站池 `transport/hosts.py:351` 的 GOODS←EXTENDED 派生都是 7727）；② 同一事实换一种写法就脱离表：已钉"45+ HTTP 源"却看不见框图里的"web 45 源"、已钉 `docs/api/README.md` 的"Provider 数"却看不见 README 的"11 Provider · 172 capability"与"172 项 capability"，`CLI 31 子命令`/`10 端点`/`9 工具`/`5 套协议族`/`全 5 族`/`5 族客户端`/`61 × N 族`/`15 便捷方法`/`Client 15 方法`/`28 模块`/`6 源合并`/`251 条精确绑定`（README 三处三种措辞）此前一行未读——其中"6 族""17 模块"已经过期，"45 源"是精确抄本而真源在增长。**根因是表的形状**：行按 `(文档, 事实, 定位模式)` 登记，一个事实写两遍就只钉到第一遍；总数门禁则给分列错误提供了"看起来无害"的掩护 | **已清偿**（2026-09-19）：① 矩阵重写为"命令账本 / 精确解析器"两列并把族键写进每行标签（`**MAC 专属**（\`mac_quotation\`）`）——文档自己声明它指哪一族，测试因此不必再抄一份"显示名→族键"映射（那是 F-39 删掉的名单同形物）；② 新增 `test_readme_protocol_matrix_matches_the_registries`：逐行比 `(端口, 命令数, 解析器数)` 三元组，端口取自 `Command.port` 而非另一份常量表，族集合必须与 `COMMANDS`/`PARSERS` 三方相等（新增协议族不写这行即红），同一族写两行也红；③ 补 20 条 `_EXACT_CLAIMS` 行 + 3 条 `_FLOOR_CLAIMS` 行 + 10 个真相源 helper（`_protocol_families`/`_command_family_counts`/`_parser_family_counts`/`_family_port`/`_web_source_modules`/`_client_methods`/`_error_classes`/`_config_merge_layers`/`_direct_bindings` 等），按"写法"逐行登记而非按事实登记，每行 `assert claimed` 保证写法改名或删除即报"门禁失效"（F-35 同形）；④ README 的过期抄本改回真相源（`parsers(61 × 6 族)`→5 族两处、"17 模块"→28 模块），不可钉的裸抄本改成非数字写法（框图"web 45 源"→"web 多源"），下界写法统一为"45+ 源类/45+ 源"，`docs/api/README.md`"11 源 × channel"→"11 Provider × channel"以消除"源"这个量词的二义性。**变异验证 26 条全部 RED 且各自指名**（矩阵 4：解析器 18→17、MAC 命令 16→8、商品端口 7727→7709、族键 `ex_quotation`→`extended` 报"矩阵 ['extended'] 多、['ex_quotation'] 缺"；下界 3：`45+ 源类`→`45 源类` 报"门禁失效"、`40+ 异常类`→`50+` 报"实际只有 46 个"；精确宣称 16：17 模块 vs 28、170/171 capability、CLI 30、HTTP 12 端点、MCP 12 工具、全 4 族、61×6 族、14 便捷方法、`Client` 16 方法、4 套协议族、5/7 源合并、`85 命令账本（6 协议族）`；绑定条数 3：250/240/252 vs 251）。**复测（同一轮日志）**：主树整仓离线 junit `3334 tests / 24 failures / 0 errors / 7 skipped`、79.42%，24 条红同一个根因 `TypeError: QuerySpec.build() got an unexpected keyword argument 'max_age'`，全部来自并行会话在途的 `tstdx/query.py`，本步未代为修改；按第 18 步做法在 HEAD（`867f6d2`）+ 本步 3 个文件单开 worktree 复跑 junit **3337 / 0 failures / 0 errors / 7 skipped**、`ISO_FULL_RC=0`、覆盖率 **80.51%**（阈值 77 未下调，`3334 + 3 = 3337` 可核对），同树 originality（189 文件 Suspicious 0）/ `spec_audit`（`coverage_pct: 100.0`）/ golden / reachability / `contract_audit --ci`（63 契约 · 155 capability）/ docs links（82 文件）/ ruff + format（430 files）/ `mypy tstdx/` **全部 RC=0**。**尚未钉的剩余写法**（本步实测仍在，属低挥发或无唯一真相源）：README 的"3 Sink 策略""pool(4 槽)""11 步确定性门禁""6 个传输/诊断命令"与"Windows 10/11 · macOS 12+" |
 
 ---
 
@@ -745,6 +746,64 @@
       `%TEMP%/qoder_live_smoke/sniffer_mac_quotation_20260919/`，仓库内已无残留），守卫复跑 RC=0。
       这条顺序本身就是 F-38 的另一面证据：**门禁只看得到仓内文件，冒烟留下的现场证据
       要么进 golden 要么滚出仓库**，中间态必然产生噪声红。
+19. ✅ **README"第二种写法"的数字与协议覆盖矩阵每族分布入门禁（Phase 5 第 19 步，
+    2026-09-19，见 §0.3 F-42）**：F-34/F-35 已经把"事实文档抄数字"钉回真相源，但钉的是
+    **每张表里已登记的那一种写法**与**总数**。这一步把两类漏网变成门禁。
+
+    - **总数门禁恰好掩护了分布错误**：协议覆盖矩阵原先只有一列"精确解析"，逐族写
+      18 / 12 / 8 / 15 / 8——**和恰为 61**，等于总解析器数，所以"61 精确解析器"的门禁一路
+      绿灯，而 5 行里 4 行是错的（真相源是 `PARSERS` 按 `(family, code)` 键分组：
+      18 / 15 / 16 / 1 / 11）；命令账本的每族分布（`COMMANDS`：39 / 17 / 16 / 2 / 11，
+      和 = 85）从未被写过，把 61 的分列读成"每族命令数"是必然误读。商品语义的端口还写反
+      （7709），而 `protocol/commands.py::Command.port` 与主站池（`transport/hosts.py:351`
+      把 GOODS 池由 EXTENDED 池派生）都是 7727。矩阵现拆成"命令账本 / 精确解析器"两列，
+      **族键写进每行标签**（`**MAC 专属**（\`mac_quotation\`）`）——文档自己声明它指哪一族，
+      测试就不必另抄一份"显示名→族键"映射（那正是 F-39 删掉的名单同形物）。新门禁
+      `test_readme_protocol_matrix_matches_the_registries` 逐行比 `(端口, 命令数, 解析器数)`
+      三元组，并要求族集合与 `COMMANDS`/`PARSERS` 三方相等：新增协议族不写这行即红、
+      同一族写两行也红。
+    - **表的登记单位是"写法"而不是"事实"**：同一事实写两遍，只有第一遍进过表。已钉
+      "45+ HTTP 源"，框图里的"web 45 源"没人读；已钉 `docs/api/README.md` 的 Provider 数，
+      README 的"11 Provider · 172 capability"与"172 项 capability"两种写法都在表外。本步
+      补 20 条 `_EXACT_CLAIMS` 行 + 3 条 `_FLOOR_CLAIMS` 行 + 10 个真相源 helper，把
+      `CLI 31 子命令`、`10 端点`、`9 工具`、`5 套协议族`、`全 5 族`、`5 族客户端`、
+      `61 × N 族`、`15 便捷方法`、`Client 15 方法`、`28 模块`、`6 源合并`（README /
+      api-README / configuration 三处）、`251 条精确绑定`（框图 / 特性表 / 目录树三种措辞）
+      逐一钉回 `build_parser()`、`create_runtime_app()`、`TOOLS`、`Family`、`PARSERS`、
+      `Client`、`tstdx/web/`、`loader.py` docstring、`errors.py`、`DIRECT_BINDINGS`。
+      每行的 `assert claimed` 让"换一种写法"不能静默逃逸：宣称串改名或删除就报"门禁失效"。
+    - **改判与消歧**：README 的过期抄本按真相源改（`parsers(61 × 6 族)`→5 族两处、
+      "17 模块"→28 模块），无法钉成精确值的裸抄本改成非数字写法（框图"web 45 源"→
+      "web 多源"），下界统一为"45+ 源类 / 45+ 源"；`docs/api/README.md`"11 源 × channel"
+      改"11 Provider × channel"，让 Provider 数与 HTTP 源类不再共用"源"这个量词——
+      量词二义正是这类抄本能长期共存的原因。
+    - **变异验证 26 条全部 RED 且各自指名**：矩阵 4 例（解析器 18→17、MAC 命令 16→8、
+      商品端口 7727→7709、族键 `ex_quotation`→`extended` 报"矩阵 ['extended'] 多、
+      ['ex_quotation'] 缺（新增协议族必须同步这张表）"）、下界 3 例（"45+ 源类"→"45 源类"
+      报"门禁失效"、"40+ 异常类"→"50+" 报"实际只有 46 个"）、精确宣称 16 例、绑定条数 3 例
+      （250 / 240 / 252 vs 251，三种措辞各打红一次）。
+    - **复测（同一轮日志）+ 孤立 worktree 复验**：主树整仓离线 `-m "not network"` junit
+      `3334 tests / 24 failures / 0 errors / 7 skipped`、覆盖率 79.42%——24 条红**全部是
+      同一个根因** `TypeError: QuerySpec.build() got an unexpected keyword argument 'max_age'`，
+      落在 `tests/v14`（14）、`tests/sink`（3）、`tests/runtime/test_orchestration_v12`（3）、
+      `tests/query`（2）、`tests/web`（1）、`tests/errors`（1），来自并行会话在途的
+      `tstdx/query.py` 改动（本步复跑该次运行日志时对方仍在改，主树稍后 `mypy` 已回到
+      RC=0），本步未代为修改。按第 18 步的做法在 HEAD（`867f6d2`）+ 本步 3 个文件单开 worktree
+      复跑：junit **3337 tests / 0 failures / 0 errors / 7 skipped**、`ISO_FULL_RC=0`、
+      `--cov=tstdx` **80.51%**（日志明写 `Required test coverage of 77.0% reached`，阈值 77
+      未下调），计数可核对：`3334 + 3（新增的三条绑定宣称行）= 3337`。同树
+      `check_originality --strict tstdx/`（189 文件 · Suspicious 0）、`spec_audit --json --strict`
+      （`coverage_pct: 100.0`）、`golden_audit --gate --require-markets`、
+      `audit_reachability --strict`（无未登记孤儿 ✓）、`contract_audit --ci`
+      （63 契约 · 155 capability，与第 17 步逐项相同）、docs links（82 文件）、
+      `ruff check` + `format --check`（430 files）、`mypy tstdx/`（CI 参数）**全部 RC=0**；
+      主树收尾时 `tests/architecture/` 单跑 **182 项 RC=0**（含对方当前在途改动），其中
+      `test_doc_code_consistency.py` 77 项。
+    - **本步只动文档与门禁测试**：`tstdx/` 零改动。仍在表外的剩余写法也已实测登记（不是
+      遗漏而是取舍）：README 的"3 Sink 策略""pool(4 槽)""11 步确定性门禁""6 个传输/诊断
+      命令"与"Windows 10/11 · macOS 12+"——前者没有唯一的运行期真相源（分属枚举、模块常量、
+      Makefile 步骤数、CLI 命令集合的补集），后者是支持矩阵而非规模事实，钉住它们只会把
+      "改文案"变成"改门禁"。
 
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
