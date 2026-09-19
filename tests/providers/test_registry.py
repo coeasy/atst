@@ -105,3 +105,40 @@ def test_channel_spec_rejects_periods_for_undeclared_capability() -> None:
 
     with pytest.raises(ValueError, match="non-bars"):
         ChannelSpec.build("quote", {"quotes"}, periods=("day",))
+
+
+def test_every_provider_spec_field_has_a_reader() -> None:
+    """``ProviderSpec`` 的每个字段都必须有人按它行动（F-52 注册表半边）。
+
+    第 25 步的尺子搬到注册表自己头上：``display_name`` 与 ``role`` 被 11 个 Provider
+    逐个写着，而全包对它们的读取点是 0——注册表里的"事实"若没有任何消费者，就只是一句
+    没人兑现的声称。字段清单取自 dataclass 本身，新增字段没有读取点即当场变红。
+    """
+
+    import ast
+    import dataclasses
+    from pathlib import Path
+
+    from tstdx.providers import ProviderSpec
+
+    fields = {item.name for item in dataclasses.fields(ProviderSpec)}
+    assert fields, "ProviderSpec 已经没有字段了，判据自身失效"
+    owners = {"self", "spec", "provider", "pspec", "provider_spec", "item", "value"}
+    reads: set[str] = set()
+    scanned = 0
+    root = Path(__file__).resolve().parents[2]
+    for path in sorted((root / "tstdx").rglob("*.py")):
+        scanned += 1
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in fields:
+                continue
+            base = node.value
+            while isinstance(base, ast.Attribute):
+                base = base.value
+            if isinstance(base, ast.Name) and base.id in owners:
+                reads.add(node.attr)
+    assert scanned > 30, f"只扫到 {scanned} 个模块，读取扫描自身失效"
+    assert reads, "ProviderSpec 字段读取扫描一条都没命中，说明它自身失效了"
+    orphans = sorted(fields - reads)
+    assert orphans == [], f"ProviderSpec 字段没有任何读取点（无人兑现的声称）：{orphans}"

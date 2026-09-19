@@ -171,7 +171,8 @@ news
 
 每份 `docs/providers/<provider>.md` 必须包含：
 
-1. Provider ID / display name / role；
+1. Provider ID（人类可读的名称与定位写在正文里——代码面的 `ProviderSpec` 只持有执行面
+   真会读到的字段，`display_name` / `role` 曾在那里写着却无人读取，已随 F-52 删除）；
 2. 支持 Market；
 3. Channel 列表；
 4. Capability 列表；

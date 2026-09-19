@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed（v17 Phase 5 第 27 步 —— 注册表里两个没人读取的字段，F-52 注册表半边；**BREAKING**）
+
+- **`ProviderSpec` 少了两个公开字段**：`display_name`、`role`。11 个 Provider 各自写着
+  `display_name="Tencent Finance"` 与 `role="auxiliary_live"`，而全包对它们的读取点是 **0**——
+  与第 25 步的 `QueryPlan.deadline_ms` 同族：一张可被外部 introspect 的注册表里躺着没人兑现的
+  声称。按 clean break 口径物理删除，不留 alias/兼容 property（与 F-40/F-50 同口径）；`ProviderSpec`
+  现在只剩 `id / channels / default` 三个执行面真会读到的字段（`tstdx/providers/__init__.py` −24 行）。
+- **人类可读的名称与定位改由文档承载**：`docs/providers/README.md` §8 的模板第 1 条从
+  "Provider ID / display name / role"改为"Provider ID，名称与定位写在正文"。`docs/adr/ADR-013`
+  的 `ProviderSpec` 示例**不动**——它连同 `markets=`/`auth_policy=`/`production=` 这些从未存在的
+  字段一起被 `tests/architecture/test_doc_code_consistency.py` 判为历史语境快照（`docs/adr/` 在
+  `EXCLUDED_PARTS` 里），不参与活文档门禁；把它当现状改是误读，把它当现状删是篡改。
+- **判据是结构式的，不是逐条断言**：新增 `test_every_provider_spec_field_has_a_reader`——字段
+  分母取自 `dataclasses.fields(ProviderSpec)` 本身，读取点由 AST 扫 `tstdx/` 全部模块的属性访问
+  （owner 名过滤）得出，任何字段失去读者即当场变红，新增字段无需改测试。判据自带三把防盲保险：
+  `assert fields`（dataclass 空了即自失效）、`assert scanned > 30`（遍历没覆盖到模块即红）、
+  `assert reads`（一条读取都没命中说明过滤器写错了）。实测删除后读取点数：`id` 14、`channels` 6、
+  `default` 3，`display_name`/`role` 各 0。
+- **三条变异证明门禁不是摆设**：M1' 把两个字段以默认值加回类定义 → RC=1 并点名
+  `['display_name', 'role']`；M2 把 owner 集合换成不可能命中的名字 → RC=1 报"字段读取扫描一条
+  都没命中"；M3 把扫描根目录指向空处 → RC=1 报"只扫到 0 个模块"。CONTROL（只删不改）RC=0，
+  harness 零残留。
+- **`Provenance.provider_timestamp` 本轮不动**（F-52 的 provenance 半边）：它同样零读取、同样
+  不进 wire（`integration/serialization.py` 按显式键构造），但 `tstdx/result.py` 此刻正被并行
+  会话按第 26 步改写，同一文件两把刀只会制造假冲突，故把删除推到那一步合树之后；裁决位仍挂在
+  方案 §0.3 的 F-52 行。
+- **测量自伤一条，如实登记**：本步第一次孤立复测（12:58）里 `ruff format --check` 是 **RC=1**，
+  原因是我追加的测试块以 LF 落盘而该文件在工作区是 CRLF（`core.autocrlf=true`、无
+  `.gitattributes`），`ruff` 按 `line-ending=auto` 认首个行尾为 CRLF。修复是 `ruff format` 该文件
+  一类的行尾归一，不涉及任何语义变更；下方复测数字来自归一之后的重跑。
+- **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = `15bfb61` + 本步 3 文件）**：
+  离线全量 junit **3366 tests / 0 failures / 0 errors / 7 skipped**、`SUITE_RC=0`、130.1s；
+  `--cov=tstdx` **80.64%**（`Required test coverage of 77.0% reached`，阈值 77 未下调）。
+  同树 12 道门禁全部 RC=0：`ruff check`、`ruff format --check`、`mypy`（0 error）、originality
+  `Total: 189 / Suspicious: 0`、reachability `188 模块 / 171 可达 / 17 白名单`、`contract_audit --ci`
+  （63 契约 · 155 capability）、`spec_audit --strict`（44/44、100.0%）、golden 审计、
+  adversarial 与 bridges、benchmark smoke、docs links（82 文件）。
+  工作区隔离：只提交 `tstdx/providers/__init__.py`、`tests/providers/test_registry.py`、
+  `docs/providers/README.md` 与本文件，按 index 级 blob 暂存切出本步内容；并行会话的第 26 步
+  在途改动与其 `docs/REFACTOR_PLAN_V17_CLOSURE.md` 改写全部留在工作区未动。
+
 ### Removed（v17 Phase 5 第 25 步 —— 计划面上的无人读取副本与"执行次数预算"，F-50；**BREAKING**）
 
 - **`QueryPlan` 少了四个字段**：`deadline_ms`、`batch_limit`、`live_channel`、`local_channel`。

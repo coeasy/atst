@@ -89,8 +89,6 @@ class ProviderSpec:
     """Static facts for one independent data Provider."""
 
     id: str
-    display_name: str
-    role: str
     channels: tuple[ChannelSpec, ...]
     default: bool = False
 
@@ -272,8 +270,6 @@ PROVIDERS = ProviderRegistry(
     (
         ProviderSpec(
             id="tdx",
-            display_name="TDX",
-            role="primary_live",
             default=True,
             channels=(
                 _c(
@@ -334,8 +330,6 @@ PROVIDERS = ProviderRegistry(
         ),
         ProviderSpec(
             id="local_vipdoc",
-            display_name="Local TDX vipdoc",
-            role="local_historical",
             channels=(
                 _c(
                     "vipdoc",
@@ -349,8 +343,6 @@ PROVIDERS = ProviderRegistry(
         ),
         ProviderSpec(
             id="tencent",
-            display_name="Tencent Finance",
-            role="auxiliary_live",
             channels=(
                 _c("quote", "quotes", markets=("cn_a", "hk", "us"), live=True),
                 _c(
@@ -384,8 +376,6 @@ PROVIDERS = ProviderRegistry(
         ),
         ProviderSpec(
             id="sina",
-            display_name="Sina Finance",
-            role="auxiliary_live_info",
             channels=(
                 _c("quote", "quotes", markets=("cn_a", "hk"), live=True),
                 _c(
@@ -416,8 +406,6 @@ PROVIDERS = ProviderRegistry(
         ),
         ProviderSpec(
             id="eastmoney",
-            display_name="Eastmoney",
-            role="auxiliary_live_info",
             channels=(
                 _c("quote", "quotes", markets=("cn_a",), live=True),
                 _c(
@@ -503,8 +491,6 @@ PROVIDERS = ProviderRegistry(
         ),
         ProviderSpec(
             id="baidu",
-            display_name="Baidu Finance",
-            role="auxiliary_live",
             channels=(
                 _c("quote", "quotes", markets=("cn_a",), live=True),
                 _c(
@@ -520,20 +506,14 @@ PROVIDERS = ProviderRegistry(
         ),
         ProviderSpec(
             id="jsl",
-            display_name="Jisilu",
-            role="auxiliary_info",
             channels=(_c("bond", "convertible_bond", markets=("bond",)),),
         ),
         ProviderSpec(
             id="boc",
-            display_name="Bank of China",
-            role="auxiliary_info",
             channels=(_c("fx", "fx_rates", "rates", markets=("fx",)),),
         ),
         ProviderSpec(
             id="iwencai",
-            display_name="iWencai",
-            role="auxiliary_info",
             channels=(_c("screening", "wencai", "screening", markets=("cn_a",)),),
         ),
         # ``derived`` / ``builtin`` are *composite* Providers: their capabilities
@@ -544,14 +524,10 @@ PROVIDERS = ProviderRegistry(
         # through the unified QuerySpec path, never through a fake adapter.
         ProviderSpec(
             id="builtin",
-            display_name="Built-in static catalog",
-            role="local_static",
             channels=(_c("catalog", "dc_reports", "index_list"),),
         ),
         ProviderSpec(
             id="derived",
-            display_name="Derived/composite runtime",
-            role="derived",
             channels=(
                 _c(
                     "catalog",
