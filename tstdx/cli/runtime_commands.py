@@ -186,6 +186,7 @@ def cmd_stream(args: Any) -> int:
             syms,
             interval=args.interval,
             diff_only=args.diff,
+            max_queue=args.max_queue,
             on_quote=_on_quote,
             on_error=_on_error,
         )

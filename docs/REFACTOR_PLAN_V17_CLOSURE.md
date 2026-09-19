@@ -59,6 +59,7 @@
 | F-25 | P2（口径类） | **`contract_audit.py` 的自述比它的行为强**：模块 docstring 写着规则 1「每个业务 capability **必须**有对应的 Typed Query 契约」、用法段写着「`--ci` 任何缺口 exit 1」「退出码 0=全绿」，而代码把"注册表有、契约无"判为 `PENDING` 且 `run()` 只对 `ERROR` 计数（`if ci and errors`）。实测口径：155 个业务 capability / 63 个有契约 ⇒ **92 项 PENDING 全部 exit 0**。README 另把它写成"契约↔注册表↔**绑定**三方对账"，而它的五段审计里根本没有 provider bindings 这一维 | **已清偿**（2026-09-19）：docstring 改为逐条标注级别（规则 1、4 为 PENDING，2、3、5 为 ERROR）并写清"`--ci` 仅在存在 ERROR 级缺口时 exit 1，PENDING 是登记在案的待补面不阻断"；README 的两处描述改成实际的五段对账。**没有**把 PENDING 升级为阻断——那需要一次性补 92 份契约，且会把一个已知待办伪装成既成事实；缺口尺寸记在本行而不是塞进门禁 |
 | F-26 | P1（链路贯通类） | **唯一在每次构造执行器时运行的贯通审计，看不见它名字里那件事**：`tstdx/catalog/capability_audit.py::audit_capability_bindings()`（由 `runtime/audit.py` 在 `DirectProviderExecutor.__init__` 调用）只断言 `MIGRATED_BINDINGS ⊆ DIRECT_BINDINGS`，而**能力目录本身就是从绑定表生成的**——某项对外能力悄悄失去执行路径时两侧同时缩小，审计照绿；反向（绑定表里藏着没承诺过的暗绑定）也不查。Provider 注册表逐 channel 声明的 `(provider, channel, capability)` 这一独立事实源**只在离线测试 `tests/runtime/test_v13_architecture_alignment.py:50` 里对账过**——它保护的是"跑测试的人"，产品内一次单侧漂移不会被任何运行期判据捕获（同处的 `audit_direct_bindings()` 只查重复键与执行元数据，缺元数据仅 `warnings.warn`）。守卫测试本身也形同虚设：只断言 `report.* > 0`，剩 1 条绑定也通过 | **已清偿**（2026-09-19）：① 审计改为以**注册表声明**为独立分母的双向对账——`migrated ⊆ executable`、`declared − executable` 非空即报"registry-declared … with no executor binding"（声明了却没有执行路径）、`executable − declared` 非空即报"outside the Provider registry"（执行路径不受声明约束），报告新增 `declared_bindings`；运行期判据由此与离线测试同权重，任何一侧漂移都在 `Client()` 构造期失败；② **不引入 `Client` 依赖**：曾考虑用 `Client.capabilities()` 当对外面，但它自身由 `MIGRATED_CAPABILITIES` 推导（同源于绑定表，不是独立分母），且在 catalog 里惰性 import client 会在构造执行器时反向拉起入口层；③ 测试补真实断言：注册表 capability 名集合 == `Client.capabilities()`（172），并以 monkeypatch `DIRECT_BINDINGS` 做三次变异（丢目录内绑定 / 丢目录外绑定 / 加幽灵绑定）分别命中三条消息，证明守卫有牙。**复测**：当前三面对账 `migrated 229 ⊆ executable 251 = declared 251`、双向差集为空 ⇒ 主体链路在"声明↔执行"这一维确实闭合（这是对本轮"核心功能是否全部实现、主体链路是否贯通"的机器可复核回答，同时如实标注：绑定存在 ≠ 运行期正确，后者仍靠 golden/adversarial 与尚未执行的真实网络冒烟）。`tests/provider_isolation` / `tests/runtime` / `tests/architecture` RC=0，`mypy` RC=0，`ruff check`/`format --check` 干净 |
 | F-27 | P1（配置面 ↔ 使用面） | **CLI 声明了一整排连接参数，却把它们丢在传输适配层**（Phase 5 第 8 步实测）。Phase 6 让 `UnifiedRuntime` 成为配置面唯一读者之后，CLI 这条最常用的入口并未跟着改：① `quotes`/`bars`/`snapshot`/`minute`/`trades`/`security-count`/`security-list` 7 个命令由 `_provider_args()` 声明了 `--host`，handler 却构造裸 `Client()`——`--host` 与 `--timeout` 双双丢弃，命令正常返回数据、退出码 0，即"幻影开关"（fail-open：用户以为钉住了主站，实际仍在配置/内置池上）；② 15 个命令的 `--timeout` 带 `default=5.0` 字面值，而 `[core] timeout` 默认同为 5.0 ⇒ 数值上看不见差异，**只要用户真在 `tstdx.toml` 里改过就静默失效**，F-16 刚承诺的"配置面即执行面契约"在 CLI 侧被重新破掉；③ `probe`/`blocks`/`list`/`quotes-snapshot` 4 个命令有意走传输客户端 `TdxClient`（不经内核），却把 `_resolve_hosts()` 的"未指定"折成 `None` 直接交给构造器 ⇒ `[hosts] servers` 对它们永远是空头支票（内核在 `kernel.py:62-67` 做的正是"未指定即读配置"这一步）；`goods`/`f10` 同族问题但**只修 timeout**——它们是多步流程的族客户端（goods/F10 协议），而 `[hosts] servers` 是 7709 标准族条目，把行情主站喂给它们是错的，故其 `hosts` 仍只认 `--host`；④ `stream --provider` 解析后从不转发，非 tdx Provider 静默按 tdx 跑。触发发现的是一条无关的文档修正：README 写着 `serve --host 0.0.0.0`（前面带 CLI 程序名），而 `serve` 早已改名 `--bind`，照抄即 exit 2——**没有任何门禁跑过文档里的 CLI 示例** | **已清偿**（2026-09-19）：① `_common.py` 新增三个单一职责助手，把"CLI 只有两种合法姿态"写成代码——`_client_kwargs`（内核路径：只转达用户显式说过的，未说即 `None` 让内核读配置）、`_transport_kwargs`（内核外传输客户端：就地复现内核的配置解析，`--host` 缺席时取 `[hosts] servers`）、`_transport_timeout`（同规则的单值版）；16 处内核侧构造点（8 `Client(**_client_kwargs(args))` + 8 `_ClientRows(**_client_kwargs(args))`）、7 处传输侧构造点（`probe`/`blocks`/`list`/`quotes-snapshot`/`stream` 走 `_transport_kwargs`，`goods`/`f10` 走 `_transport_timeout`）、`stream` 的 `--provider` 全部接线；② 15 个 `--timeout` 字面默认改 `None`，只保留 `hosts`/`server-test` 两处诊断命令的 5.0（它们要遍历候选池，本就不该吃 `[core] timeout`，就地注明理由）；③ **补两道门禁**：`tests/architecture/test_cli_connection_contract.py`（20 项，用 fake Client 捕获真实构造参数，含"逐命令结构性守卫"——凡声明 `--host`/`--timeout` 又非诊断白名单的命令，其 handler 源码必须出现三个助手之一）与 `test_doc_code_consistency.py::test_every_documented_cli_example_parses`（活文档的围栏块+行内 CLI 示例逐条过真实 parser）。**门禁上线即抓到 4 条已失效文档命令**：README 两处 `hosts audit --hosts-file X`（`--hosts-file` 属 `hosts` 组级选项，必须在 `audit` 之前）被 parser 拒为 exit 2、`docs/api/interfaces.md` 的 `--family all`（`all` 不是合法取值，默认即全 5 族）、`docs/api/README.md` `margin` 那一行缺必填位置参数——全部按真实语法改正，未放宽门禁。**变异验证**：把 `cmd_quotes` 改回裸 `Client()` ⇒ 三条断言分别命中 `KeyError: 'hosts'` ×2 与结构性守卫 `['quotes'] == []`，随后原样还原（`git diff --stat` 与改前一致）并复绿 |
+| F-28 | P2（同类外溢） | **F-27 的守卫只盯连接参数，等于承认"其余选项没人管"**：把该守卫从"必须消费 `--host`/`--timeout`"推广到"parser 声明的每个选项都必须被读到"（对 31 个命令 × 全部 dest 逐个扫 handler 源码，豁免面收敛为四个点名的助手 `_client_kwargs`/`_transport_kwargs`/`_transport_timeout`/`_resolve_hosts` + 两个诊断命令），实测唯一命中项是 **`stream --max-queue`**：parser 声明它（`default=1024`），`cmd_stream` 却调 `stream.subscribe(symbols, interval=, diff_only=, on_quote=, on_error=)` 而**不传** `max_queue`，于是 `QuoteStream.subscribe` 自己的 `max_queue=1024` 默认值接管。与 F-27 同形：CLI 字面默认与库默认同为 1024，**只有把队列上限调小以约束内存的用户会被静默忽略**——而这恰恰是背压参数唯一的用途 | **已清偿**（2026-09-19）：① `cmd_stream` 补 `max_queue=args.max_queue` 转发；② 结构性守卫由"连接参数专用"改为**全量选项消费审计**（`_dead_cli_options()`），并把豁免面从"整个 `_common` 模块源码"收紧为四个点名助手——否则任意一处 `args.x` 会给所有命令开绿灯；③ `tests/unit/test_cli_semantics.py` 的 stream 假对象改用与真实 `subscribe` 一致的完整关键字签名并断言 `max_queue` 实到（此前它的假签名恰好缺该参数，正是"测试替身比生产接口更窄"导致幻影参数无人发现）。**变异验证**：删掉 `max_queue=args.max_queue` 一行 ⇒ 守卫报出 `stream: --max-queue (dest=max_queue)`，还原后复绿 |
 
 ---
 
@@ -404,13 +405,31 @@
      改正，**未放宽门禁**；同时改掉 README 里 `serve` 的 `--host` → `--bind`。
    - **变异验证**：把 `cmd_quotes` 退回裸 `Client()` ⇒ 三条断言同时命中
      （`KeyError: 'hosts'` ×2 + 结构性守卫报出 `['quotes']`），原样还原后复绿；
-     `git diff --stat` 与变异前一致，无残留。
+     `git diff --stat` 与变异前一致，无残留。**该守卫随后在第 9 步被推广为全量选项消费
+     审计**（F-28），此处按推广前的口径记录。
    - **复测**（本机 Windows/py3.12，同一轮日志）：`ruff check` / `format --check` RC=0，
      `mypy tstdx/`（CI 参数）RC=0，originality `Total: 193 / Suspicious: 0`，
      spec `coverage_pct: 100.0`，reachability `--strict` RC=0（记录缺陷 0），
      golden / contract_audit `--ci` / benchmark smoke / docs links（82 文件）逐条 RC=0；
      离线全量套件 `-m "not network"` **3276 项 / 0 失败 / 0 错误 / 7 跳过**，
      覆盖率 **78.83%**（阈值 77 未动）。
+
+9. ✅ **CLI 全量选项消费审计（Phase 5 第 9 步，2026-09-19，见 §0.3 F-28）**：第 8 步的
+   守卫按参数名白名单工作（`--host`/`--timeout`），这本身就是一处自我设限——它证明的是
+   "我检查过的这几项没问题"，不是"没有同类缺陷"。把判据换成**与选项名无关**的形式：
+   parser 声明的每个 dest 都必须出现在 handler 源码或四个点名助手里。
+
+   - 全量扫描 31 个命令的实测命中项只有一个：`stream --max-queue` 声明后从未转发给
+     `QuoteStream.subscribe()`，被库侧同名默认值接管——与 F-27 完全同形（CLI 字面默认与
+     库默认同为 1024，只有主动调小背压上限的用户会撞上线）。补转发并在单元测试里断言实到。
+   - **两道收紧**：守卫的豁免面从"整个 `tstdx/cli/_common.py` 源码"改为逐个点名的四个
+     助手（否则任意一处 `args.x` 会给所有命令开绿灯）；单元测试的 stream 假对象签名改为
+     与真实 `subscribe` 一致（原假签名恰好缺 `max_queue`，替身比生产接口更窄，是这类幻影
+     参数能长期存活的直接原因）。
+   - **变异验证**：删掉 `max_queue=args.max_queue` ⇒ 守卫报出
+     `stream: --max-queue (dest=max_queue)`；还原后 `tests/architecture` +
+     `tests/unit` + `tests/runtime` RC=0。
+
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
 
@@ -491,6 +510,7 @@
 - [ ] 60 typed 契约端到端或有下线记录；`QueryResponse` 仅为视图
 - [ ] README / ARCHITECTURE / `__init__` docstring 与代码零矛盾；旧方案归档
 - [x] CLI 声明的每个连接参数都到达执行面，且活文档里的 CLI 示例逐条过真实 parser
-      （Phase 5 第 8 步 F-27；`tests/architecture/test_cli_connection_contract.py` +
+      （Phase 5 第 8 步 F-27 + 第 9 步 F-28；`tests/architecture/test_cli_connection_contract.py`
+      含"全量选项消费审计"守卫 +
       `test_doc_code_consistency.py::test_every_documented_cli_example_parses`）
 - [ ] 随机测试序无红；全量门禁绿；三面冒烟通过（同 SHA 证据）

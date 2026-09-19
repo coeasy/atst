@@ -144,16 +144,21 @@ class TestStreamExitCode:
         import tstdx.streaming as streaming_mod
 
         monkeypatch.setattr(streaming_mod, "QuoteStream", FakeStream)
-        rc = cli._cmd_stream(_ns(symbols=["600000"], interval=1.0, seconds=0.01, diff=False))
+        rc = cli._cmd_stream(
+            _ns(symbols=["600000"], interval=1.0, seconds=0.01, diff=False, max_queue=1024)
+        )
         assert rc == 1
         assert "未收到任何行情" in capsys.readouterr().err
 
     def test_data_received_exits_0(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
+        seen: dict[str, Any] = {}
+
         class FakeStream:
             def __init__(self, *a: Any, **kw: Any) -> None:
                 pass
 
-            def subscribe(self, symbols, *, interval, diff_only, on_quote, on_error):  # type: ignore[no-untyped-def]
+            def subscribe(self, symbols, *, interval, diff_only, max_queue, on_quote, on_error):  # type: ignore[no-untyped-def]
+                seen["max_queue"] = max_queue
                 on_quote("600000", {"price": 10.0, "volume": 1})
 
             def start(self) -> None:
@@ -165,8 +170,11 @@ class TestStreamExitCode:
         import tstdx.streaming as streaming_mod
 
         monkeypatch.setattr(streaming_mod, "QuoteStream", FakeStream)
-        rc = cli._cmd_stream(_ns(symbols=["600000"], interval=1.0, seconds=0.01, diff=False))
+        rc = cli._cmd_stream(
+            _ns(symbols=["600000"], interval=1.0, seconds=0.01, diff=False, max_queue=32)
+        )
         assert rc == 0
+        assert seen["max_queue"] == 32
 
 
 class TestServePortZero:

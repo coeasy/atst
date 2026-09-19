@@ -6,11 +6,13 @@
 Phase 6 之后配置面只有内核一个读者（``[hosts] servers`` / ``[core] timeout``）。
 CLI 因此只有两种合法姿态：把用户显式说的转下去，或者保持 ``None`` 让内核去读配置。
 第三种——解析了却不消费（幻影开关）、或自带字面默认值（遮蔽配置）——由本门禁挡住。
+最后一条守卫不限于连接参数：parser 声明的任何选项都必须被 handler（或三个助手）读到。
 """
 
 from __future__ import annotations
 
 import argparse
+import re
 from types import SimpleNamespace
 from typing import Any
 
@@ -34,10 +36,6 @@ CLIENT_COMMANDS = (
 
 #: 诊断类命令自带超时字面值是刻意的：它们要遍历候选主站池，不吃 ``[core] timeout``。
 DIAGNOSTIC_COMMANDS = {"hosts", "server-test"}
-
-#: 一个命令"消费"连接参数的全部合法写法（``_resolve_hosts`` 只覆盖 ``--host``，
-#: 用于 handler 自己已经单独取 timeout 的情形）。
-_CONNECTION_CONSUMERS = ("_client_kwargs", "_transport_kwargs", "_transport_timeout", "_resolve_hosts")
 
 
 def _query_result() -> Any:
@@ -205,22 +203,47 @@ def test_helpers_keep_explicit_flags_ahead_of_config(monkeypatch: pytest.MonkeyP
     assert _client_kwargs(empty) == {"hosts": None, "timeout": None}
 
 
-def test_no_command_declares_a_connection_option_it_does_not_consume() -> None:
-    """F-27 的结构性守卫：解析了 ``--host`` / ``--timeout`` 就必须转下去。
+def test_no_command_declares_an_option_it_does_not_consume() -> None:
+    """F-27/F-28 的结构性守卫：parser 收下每个选项，handler 就必须消费它。
 
     逐命令断言只能覆盖已知的命令；新增命令若复刻"幻影开关"（CLI 收下参数、
-    handler 从不消费），用户照抄即得到静默失效。此门禁让这类命令在合入前就红。
+    handler 从不消费），用户照抄即得到静默失效。此门禁不看具体命令，也不看具体
+    选项名，故对新增命令同样有效。
     """
+    offenders = _dead_cli_options()
+    assert offenders == []
+
+
+def _dead_cli_options() -> list[str]:
+    """返回"声明了却没有任何源码读取"的 ``<command> --<option>`` 清单。"""
     import inspect
 
+    from tstdx.cli import _common
+
+    # 只有这四个助手被允许"代 handler 消费参数"，且逐个点名——把整模块源码当作
+    # 豁免面会让任意一个 `args.x` 为所有命令开绿灯。
+    helper_src = "".join(
+        inspect.getsource(getattr(_common, fn))
+        for fn in ("_client_kwargs", "_transport_kwargs", "_transport_timeout", "_resolve_hosts")
+    )
     subparsers = build_parser()._subparsers._group_actions[0]  # type: ignore[union-attr]
-    offenders: list[str] = []
+    dead: list[str] = []
     for name, sub in subparsers.choices.items():
-        declared = {opt for action in sub._actions for opt in action.option_strings}
-        if not declared & {"--host", "--timeout"} or name in DIAGNOSTIC_COMMANDS:
-            continue
         func = sub.get_default("func")
-        assert callable(func), f"{name} 声明了连接参数却没有 func，无法审计消费面"
-        if not any(token in inspect.getsource(func) for token in _CONNECTION_CONSUMERS):
-            offenders.append(name)
-    assert offenders == []
+        if not callable(func) or name in DIAGNOSTIC_COMMANDS:
+            continue
+        src = inspect.getsource(func) + helper_src
+        for action in sub._actions:
+            dest = action.dest
+            if dest in ("func", "help"):
+                continue
+            if not _is_read(dest, src):
+                dead.append(f"{name}: --{action.option_strings[-1].lstrip('-')} (dest={dest})")
+    return dead
+
+
+def _is_read(dest: str, src: str) -> bool:
+    return (
+        re.search(rf"args\.{re.escape(dest)}\b", src) is not None
+        or re.search(rf'getattr\(args,\s*"{re.escape(dest)}"', src) is not None
+    )

@@ -277,6 +277,17 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 - `docs/api/interfaces.md`：`hosts audit --family all` 中 `all` 不是合法取值（不写即全 5
   族）；`docs/api/README.md` 的 `margin` 命令示例缺必填位置参数。
 
+### Fixed（v17 Phase 5 第 9 步 —— CLI 全量选项消费审计，F-28）
+
+- **`tstdx stream --max-queue N` 此前是幻影开关**：parser 收下该值（默认 1024）却从不转给
+  `QuoteStream.subscribe()`，于是库侧同名默认接管——与 F-27 同形（CLI 默认与库默认同为
+  1024，只有主动调小背压上限以约束内存的用户会被静默忽略）。现补转发。
+- 第 8 步的结构性守卫由"只查 `--host`/`--timeout`"推广为**与选项名无关**的全量消费审计：
+  parser 声明的每个 dest 都必须出现在 handler 源码或四个点名的连接助手里。豁免面刻意收紧
+  为逐个点名的助手（而非整个 `_common` 模块），否则任意一处 `args.x` 会给所有命令开绿灯。
+- 单元测试中 stream 的假对象签名改为与真实 `subscribe` 一致（原假签名恰好缺 `max_queue`）：
+  **测试替身比生产接口更窄**，正是这类幻影参数能长期存活的原因。
+
 ### Fixed
 
 - **`tstdx.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，
