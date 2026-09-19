@@ -157,16 +157,43 @@ class TestBarsPagination:
         assert not [x for x in caught if "锚点漂移" in str(x.message)]
 
     def test_empty_page_stops(self) -> None:
-        """次页空响应 → 终止，返回首页 800 根，不告警。"""
+        """次页空响应 → 终止，返回首页 800 根，不告警（次页空才是历史耗尽）。"""
         pool = _PagePool(pages={800: None})
         client = TdxClient(pool=pool)  # type: ignore[arg-type]
         import warnings as _w
 
-        with _w.catch_warnings(record=True) as caught:
-            _w.simplefilter("always")
+        with _w.catch_warnings():
+            _w.simplefilter("error")
             bars = client.bars("sh600519", period="day", count=1600)
         assert len(bars) == 800
-        assert not [x for x in caught if "锚点漂移" in str(x.message)]
+
+    def test_empty_first_page_warns(self) -> None:
+        """首页即 0 条（服务端 count=0 空桩）不得静默读成"成功取到 0 根"（F-45）。"""
+        pool = _PagePool(pages={0: None})
+        client = TdxClient(pool=pool)  # type: ignore[arg-type]
+        with pytest.warns(UserWarning, match="首页即空响应"):
+            bars = client.bars("sh600519", period="day", count=100)
+        assert bars == []
+        assert len(pool.requests) == 1  # 不额外重试：空桩换不来数据
+
+    def test_empty_first_page_strict_raises(self) -> None:
+        """strict=True 时空首页与漂移截断同级 → TruncatedDataError。"""
+        pool = _PagePool(pages={0: None})
+        client = TdxClient(pool=pool)  # type: ignore[arg-type]
+        with pytest.raises(TruncatedDataError):
+            client.bars("sh600519", period="day", count=100, strict=True)
+
+    def test_async_empty_first_page_warns(self) -> None:
+        """异步侧同一判据（同步/异步共享同一模板，告警不得只在一侧生效）。"""
+
+        class _AsyncStubPool(_PagePool):
+            async def request(self, cmd, body, timeout=None):  # noqa: ANN001
+                return _PagePool.request(self, cmd, body, timeout)
+
+        client = AsyncTdxClient(pool=_AsyncStubPool(pages={0: None}))  # type: ignore[arg-type]
+        with pytest.warns(UserWarning, match="首页即空响应"):
+            bars = asyncio.run(client.bars("sh600519", period="day", count=100))
+        assert bars == []
 
     def test_drift_dedupe_warns_by_default(self) -> None:
         """整页重复（锚点漂移）→ 去重防死循环 + 默认 UserWarning。"""

@@ -20,7 +20,10 @@
 
 易混对照（**不重叠**，按域区分）：
 
-- `TruncatedDataError`（E4050，DataError）：**网络响应**数据被截断；
+- `TruncatedDataError`（E4050，DataError）：**网络响应**数据被截断，抛出点都在
+  `tstdx/client/_mixin.py`：`bars(strict=True)` 的分页锚点漂移、`bars(strict=True)` 的
+  首页空响应（服务端声明 0 条记录——空首页不是历史耗尽，耗尽只会表现为短页），
+  以及 `file_download(strict=True)` 累计字节未达服务端报告的 `total_len`。
   `TruncatedRecordError`（E5020，FileFormatError）：**本地 vipdoc 文件**记录不完整。
 - `RateLimitedLocal`（E2050）：**本地**限流器主动拒绝（客户端节流）；
   `WebRateLimited`（E7020）：**远端 HTTP** 429/反爬限流。

@@ -283,11 +283,11 @@ class TestExportSecurityListTruncation:
             out = client.export_security_list(0)
         assert len(out) == 1600
 
-    def test_empty_first_page_no_warning(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_empty_first_page_warns(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """空首页不是"该市场没有证券"：0/1 两个市场必有数千标的，空首页只能是空桩（F-45）。"""
         client = TdxClient()
         monkeypatch.setattr(client, "security_list", lambda m, start=0: [])
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
+        with pytest.warns(UserWarning, match="首页即空响应"):
             assert client.export_security_list(0) == []
 
 

@@ -168,8 +168,10 @@ class TestExportSecurityList:
         assert calls == [0, 1000]
 
     def test_empty_first_page(self, client: TdxClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        """空首页导出为空，但必须留痕（F-45：此前与"市场无标的"共用同一静默路径）。"""
         monkeypatch.setattr(client, "security_list", lambda m, start=0: [])
-        assert client.export_security_list(0) == []
+        with pytest.warns(UserWarning, match="首页即空响应"):
+            assert client.export_security_list(0) == []
 
     def test_max_pages_guard(self, client: TdxClient, monkeypatch: pytest.MonkeyPatch) -> None:
         """满页永不短页时受 max_pages 上限保护，并告警可能截断（F1）。"""

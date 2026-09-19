@@ -195,6 +195,7 @@ class _ClientMixin:
         bars: list[Bar] = []
         seen: set[str] = set()
         drifted = False  # 整页去重后零新增（锚点漂移），非正常历史耗尽
+        empty_first_page = False  # 第一页就 0 条：不是耗尽，是空桩/无该标的数据
 
         while remaining > 0:
             page = min(remaining, MAX_BARS_PER_REQUEST)
@@ -214,7 +215,10 @@ class _ClientMixin:
             result = _client_pkg.dispatch(frame, category=category, family=self.family, index=index)
             raw_rows = result.rows  # 原始 dict 行（去重以 datetime 字符串为键）
             if not raw_rows:
-                break  # 空页：历史耗尽（正常终止）
+                # 次页空 = 历史耗尽（正常终止，真实耗尽只会表现为短页或空次页）；
+                # 首页空 = 服务端声明 0 条记录，与"没有更早的历史"是两件事
+                empty_first_page = not seen
+                break
             fresh = [row for row in raw_rows if str(row.get("datetime")) not in seen]
             seen.update(str(row.get("datetime")) for row in raw_rows)
             if not fresh:
@@ -234,6 +238,19 @@ class _ClientMixin:
             if strict_mode:
                 raise TruncatedDataError(
                     msg, context={"symbol": symbol, "returned": len(bars), "requested": count}
+                )
+            warnings.warn(msg, stacklevel=_TPL_WARN_STACKLEVEL)
+        elif empty_first_page:
+            # 空首页此前与"历史耗尽"共用一个 break，读起来就是"请求成功、恰好 0 根"；
+            # 主站对 0x052D 只回 2 字节 count=0 空桩时，整条链路因此永远全绿。
+            msg = (
+                f"bars({symbol!r}, period={period!r}, count={count}) 首页即空响应："
+                f"服务端声明 0 条记录，实取 0 根。空首页不是历史耗尽（耗尽只会表现为"
+                f"短页），它意味着该标的无此周期历史，或主站对这个命令只回空桩"
+            )
+            if strict_mode:
+                raise TruncatedDataError(
+                    msg, context={"symbol": symbol, "returned": 0, "requested": count}
                 )
             warnings.warn(msg, stacklevel=_TPL_WARN_STACKLEVEL)
         return _emit(bars, as_format)
@@ -386,6 +403,13 @@ class _ClientMixin:
             rows = yield _op_call("security_list", market_id, start)
             if not rows:
                 truncated = False
+                if not out:
+                    warnings.warn(
+                        f"export_security_list(market={market_id}) 首页即空响应：0x044D 在 "
+                        f"start=0 就声明 0 条记录，导出为空。空首页不代表该市场没有证券，"
+                        f"而是主站对这个命令只回空桩",
+                        stacklevel=_TPL_WARN_STACKLEVEL,
+                    )
                 break
             out.extend(rows)
             if len(rows) < 1000:
