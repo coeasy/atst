@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed（v17 Phase 5 第 24 步 —— `deadline_ms` 第一次真的约束执行面，F-48）
+
+- **查询总预算从"折进对象就完事"变成每一跳的超时上界**：`DirectProviderExecutor` 新增
+  唯一取数口 `_hop_timeout(plan)` = `min(配置 timeout, plan.budget.remaining_s())`，并在
+  取数前跑 `ensure_remaining("provider_request")`。它分发到 TDX 套接字（`_tdx_client(timeout)`
+  改为收形参，7 个 `_tdx_*` 直调执行器与 composed 原始读全部经它）、`WebQuoteSession`、
+  `F10Client`、ex/goods/mac 族客户端、`direct_adapter`、`_web_adapter_call`、`_composed_call`
+  （签名从此强制要求 `timeout`）与 5 个 Web 直调执行器。此前 `ExecutionBudget` 的
+  `ensure_remaining()` / `remaining_s()` 在 `tstdx/` 内**零调用点**：调用方给 250ms 预算，
+  传输层照样拿 5 秒（配置调到 30 秒时更糟）。与已删除的 `max_age` 同形，只是这次连"新鲜度"
+  的托词都没有。
+- **默认路径可证明未变**：默认 `deadline_ms=5000` 与默认 `[core] timeout=5.0` 同值，
+  `min()` 在默认配置下是恒等操作，并有断言钉住（`timeout == 5.0`）。行为变化只发生在
+  **显式设置过 `deadline_ms` 的调用方**身上——此前该参数没有任何效果。
+- **预算耗尽改为 fail-fast**：剩余预算为 0 时在构造客户端之前抛
+  `ReadTimeout("查询总 deadline 已耗尽")`，离线回归连"零个客户端实例"都断言。
+- **两条新判据**：① 字段侧把第 20 步的"必须被消费"收紧为"读的人必须在执行面"
+  （`tstdx/query.py` 自身的读取不算），`spec → plan.budget` 的折叠链由 `QueryPlan(...)`
+  构造处的 AST 推导而非手抄名单；② 结构性守卫——`executor.py` 里 `self.timeout` 只允许
+  被 `_hop_timeout` 读一次，任何新直调执行器绕过预算当场红。首轮变异正是从"逐函数写断言"
+  的缝里活下来的（`_web_quotes` 退回裸配置值时无人变红），补结构判据后同一变异双红。
+- **一处测试替身纠正**：`tests/sink/test_local_day.py` 的 `_tdx_client` 替身签名比生产窄
+  （零参 lambda），随形参新增改为收 `_timeout`；改的是替身，未放宽任何断言。
+
+### Fixed（v17 Phase 5 第 24 步 —— 分页只剩一份实现，F-49）
+
+- **`security_list_all` 不再自带第二份游标分页**：composed 面那段 `while True` + `start`
+  游标循环**没有页数上限、空首页静默返回 `[]`**——正是第 21 步（F-45）刚给
+  `TdxClient.export_security_list` 修掉的两个缺陷，只是这份影子实现永远走不到那条判据。
+  该能力现绑到真相源 `("tdx_client", "export_security_list")`，`_validate_composed` 的
+  `required`/`allowed` 两张表同步删除该条目。实测口径如实：`0x044D` 目前是
+  `STATUS_OFFLINE`，`_guard_offline` 会先 fail-fast，故缺陷是形状而非当场的数据事故。
+- **反向门禁按形状判定**：绑定 `(backend, method)` 必须仍是那一对，且 `_composed_call`
+  函数体内不允许出现任何 `ast.While`——给另一条能力再写一份游标循环同样当场红。
+- **变异验证 8 条全部 RED 且各自指名**（预算退化、预检查删除、Web 跳与 TDX 跳各绕过一次、
+  绑定改回单页调用、游标循环插回、豁免表漏项、身份读取函数改名），harness 结束后被改文件
+  `md5sum -c` 全部一致：测量过程零残留。复测数字见方案文档 §1 第 24 步。
+
 ### Added（v17 Phase 5 第 23 步 —— 三张服务面的"已声明入参"门禁，F-47 登记）
 
 - **HTTP 路由形参必须进入执行路径**：`tests/runtime/test_migrated_surfaces_v13.py::
