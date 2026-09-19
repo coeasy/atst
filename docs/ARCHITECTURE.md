@@ -56,8 +56,13 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
 | 内核层 | `runtime/`（`kernel.py` 唯一内核、`executor.py` 精确绑定执行、`orchestration.py` 显式跨源编排、`audit.py` 启动三方对账、`identity.py`/`provenance.py` 执行身份与溯源守卫） | 活 |
 | 服务面层 | `cli/`、`integration/`（runtime_http/ws/tasks/mcp + serialization）、`output/`（DataFrame/Parquet/DuckDB）、`sink/` | 活，全部 Client-backed |
 | 类型化糖衣 | `typed_query.py`（CapabilityQuery + Domain Record）、`domain/`（records/symbol/日历） | 全量接通：`Client.typed` / `AsyncClient.typed`，字段名与内核方法签名一一对应 |
-| 基础设施 | `config/`、`security/`、`observability/`、`feedback/` | 活 |
+| 基础设施 | `config/`、`observability/`、`feedback/` | 活 |
 | 实验模块 | `trade/`（自设模拟红线，未进 README 能力账主链） | 唯一剩余待裁定项，见 V17 决策点 3 |
+
+> 本表此前还写着 `security/` 一层"活"：`tstdx/security/` 已随 `fcf8e92`（撤回一项过期的
+> 安全承诺）一并删除——它删除前也只有一个 docstring 与 `__all__ = []`，包内从来没有独立的安全
+> 目录。错误越界时的凭据脱敏由 `tstdx/error_envelope.py` 的按关键字过滤承担，
+> 安全口径见 [SECURITY.md](../SECURITY.md)。
 
 ## 4. 断链清偿状态（V17）
 

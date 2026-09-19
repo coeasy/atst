@@ -8,6 +8,10 @@
 （命令账本 / 解析器 / 配置段 / 根级白名单 / 服务面方法数 / HTTP 源与契约下界）一律钉回
 运行期真相源，WS 方法与 Domain Record 的**名单**也要逐个对上分派器与 ``__all__``——
 抄一次就失真的数字与清单不再有藏身处。
+事实文档里反引号写出的**斜杠**路径（``facade/api.py`` 那种文件名形状）同样要落位——
+按仓库根 / ``tstdx/`` / ``docs/`` 三个根各试一次；只有同一逻辑块（段落 / 列表项 / 表格行）
+里写明删除史、或该目录由代码在运行期自建的，才允许以死路径出现。F-67 那整节虚构的
+"门面层边界"正是被"只认点号形状"漏掉的。
 历史快照（``docs/archive/``、``docs/adr/``、``DESIGN.md``）记录的是当时
 语境，不参与门禁。
 """
@@ -156,6 +160,140 @@ def test_backticked_tstdx_paths_are_importable() -> None:
                 continue
             offenders.append(f"{path.relative_to(ROOT)}: 无法解析 `{ref}`")
     assert offenders == [], "\n".join(offenders)
+
+
+# --------------------------------------------------------------------------
+# 斜杠形式的死路径（F-67）
+# --------------------------------------------------------------------------
+
+#: 上面的点号判据只认 ``tstdx.a.b.C`` 那种形状，而 ``docs/errors.md`` §四 写的是
+#: ``facade/api.py`` 这种**斜杠形式**——形状上就不进判据，于是整段虚构的"门面层边界"
+#: 一路绿灯。本节把同一批文档按斜杠形式再扫一遍。
+_BACKTICK = re.compile(r"`([^`\n]+)`")
+_PATH_SUFFIXES = (".py", ".md", ".toml", ".json", ".txt", ".yaml", ".yml", ".cfg")
+#: 删除史语境的判据词。只在**同一逻辑块**内有效：把整份文档当成一块等于没有判据。
+_RETIRED_MARKERS = (
+    "删除",
+    "移除",
+    "清理",
+    "不再",
+    "下线",
+    "已消灭",
+    "退役",
+    "历史",
+    "曾经",
+    "retract",
+)
+#: 斜杠判据额外覆盖的事实文档（点号判据的集合不动，避免把本步之外的口径一起改写）。
+_PATH_DOC_EXTRA = ("docs/tdx_status.md",)
+_PATH_DOC_DIRS = ("docs/providers",)
+_LIST_OR_ROW = re.compile(r"\s*(?:[-*+]\s|\d+\.\s|\|)")
+
+
+def path_fact_docs() -> list[Path]:
+    """按斜杠形式扫描的事实文档集合。"""
+    paths = list(fact_docs())
+    paths.extend(ROOT / rel for rel in _PATH_DOC_EXTRA)
+    for rel in _PATH_DOC_DIRS:
+        paths.extend(sorted((ROOT / rel).rglob("*.md")))
+    return sorted({path for path in paths if path.is_file()})
+
+
+def logical_blocks(text: str) -> list[str]:
+    """切成"同一段落 / 同一个列表项 / 同一个表格行"的块。
+
+    删除史通常写成"下列模块均已物理删除"的整句，跨行；而表格行是逐行的独立断言，
+    一行说"活"就不能被另一行的"删除"赦免。
+    """
+    blocks: list[str] = []
+    current: list[str] = []
+    for line in text.splitlines():
+        if not line.strip():
+            if current:
+                blocks.append("\n".join(current))
+                current = []
+            continue
+        if current and _LIST_OR_ROW.match(line):
+            blocks.append("\n".join(current))
+            current = []
+        current.append(line)
+    if current:
+        blocks.append("\n".join(current))
+    return blocks
+
+
+def _looks_like_repo_path(token: str) -> bool:
+    if "/" not in token or token.startswith(("./", "../", "/", "http", "~")):
+        return False
+    #: 命令行、URI 与模板占位都不是"仓库里的一个路径"。
+    if " " in token or "://" in token or "<" in token or ">" in token:
+        return False
+    if any(part in EXCLUDED_PARTS or part == ".." for part in token.split("/")):
+        return False
+    return token.endswith("/") or token.endswith(_PATH_SUFFIXES)
+
+
+def _path_exists(token: str) -> bool:
+    """相对仓库根 / ``tstdx/`` / ``docs/`` 任一处能落位，就算活路径。
+
+    文档里同一个东西有三种写法（``docs/providers/tdx.md``、``facade/api.py`` 指
+    ``tstdx/facade/api.py``、``archive/plans/…`` 指 ``docs/archive/plans/…``），
+    只按一种根匹配会虚报——探针虚报比漏报更难查（F-67/F-44 的同形教训）。
+    """
+    return any((root / token).exists() for root in (ROOT, ROOT / "tstdx", ROOT / "docs"))
+
+
+@functools.cache
+def _runtime_dir_names() -> frozenset[str]:
+    """代码在运行期自建的目录名（草稿区、缓存区）——不要求存在于版本库。
+
+    判据是推导而不是一份名单：同一个 .py 文件里既调用 ``mkdir``，又把这个名字作为
+    路径分量写出来（``... / "generated_draft" / "_generated.py"``）。刻意不用
+    "代码里出现过这个字符串"当判据——``tstdx/security/`` 那类死目录会被
+    ``/v13/security/count`` 这种 HTTP 路由字符串白白赦免。
+    """
+    names: set[str] = set()
+    sources = list((ROOT / "tstdx").rglob("*.py")) + list((ROOT / "scripts").glob("*.py"))
+    for path in sources:
+        text = path.read_text(encoding="utf-8")
+        if "mkdir" not in text:
+            continue
+        names.update(re.findall(r"[\"']([\w.\-]+)[\"']\s*/", text))
+    return frozenset(names)
+
+
+def _dead_path_findings() -> tuple[list[str], list[str]]:
+    """返回 ``(违约清单, 被删除史或代码语义豁免的死路径)``。"""
+    offenders: list[str] = []
+    waived: list[str] = []
+    for path in path_fact_docs():
+        rel = path.relative_to(ROOT).as_posix()
+        for block in logical_blocks(path.read_text(encoding="utf-8")):
+            for raw in _BACKTICK.findall(block):
+                token = raw.strip()
+                if not _looks_like_repo_path(token) or _path_exists(token):
+                    continue
+                if any(marker in block for marker in _RETIRED_MARKERS):
+                    waived.append(token)
+                    continue
+                if token.endswith("/") and token.split("/")[-2] in _runtime_dir_names():
+                    waived.append(token)
+                    continue
+                offenders.append(f"{rel}: 把磁盘上不存在的 `{token}` 写成现行事实")
+    return offenders, waived
+
+
+def test_fact_docs_do_not_assert_dead_repo_paths() -> None:
+    offenders, _ = _dead_path_findings()
+    assert offenders == [], "\n".join(offenders)
+
+
+def test_the_slash_ruler_itself_sees_the_deleted_layers() -> None:
+    """自检：这套判据必须真的"看见"过删除史里的死路径，否则它可能只是在空转。"""
+    _, waived = _dead_path_findings()
+    seen = set(waived)
+    assert {"execution/", "provider/", "tstdx/facade/"} <= seen, sorted(seen)
+    assert len(seen) >= 5, sorted(seen)
 
 
 def _resolves(dotted: str) -> bool:

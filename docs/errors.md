@@ -105,9 +105,29 @@ class MyDomainError(TdxError):
 
 ## 四、上层边界约定
 
-- **门面层**（`facade/api.py`）永不抛异常边界：`query()`/`aquery()` 把任何
-  异常转 `ApiResponse{success=False, error, code}`；路由链失败时最后一路由
-  异常的 `context["route_errors"]` 聚合各路由失败摘要（W11）。
-- **服务面**（`integration/http_server.py`）用 `http_status_for()` 把
-  TdxError.code 映射为 HTTP 状态码。
-- **CLI** 捕获 `TdxError` 打印 `str(exc)`（含 `[code]` 前缀）并以退出码 2 结束。
+**没有"永不抛异常"的门面层**：`facade/api.py` 与「`query()` 把任何异常转
+`ApiResponse{success=False, ...}`、路由链失败时聚合 `context["route_errors"]`」是 v12 门面
+（`tstdx/facade/`）的形状，该目录已随单内核物理删除，`ApiResponse` 与 `route_errors` 在
+`tstdx/` 里都不存在——本节此前把它们写成了现行边界（F-67）。今天的边界事实：
+
+- **业务入口**（`tstdx/client/api.py` 的 `Client`/`AsyncClient`）不吞异常：整个模块没有一处
+  `except`，失败以 `TdxError` 家族原样抛给调用方，`code`/`advice`/`context` 随异常走。
+- **越过信任边界的错误只有一个形状**：`tstdx/error_envelope.py::to_error_envelope` 产出的
+  :class:`~tstdx.error_envelope.ErrorEnvelope`。它带 `code`/`type`/`message`/`http_status`/
+  `retryable`/`partial` 与 `provider`/`channel`/`capability`/`phase` 诊断；按**关键字**脱敏
+  （`token`/`cookie`/`secret` 一类键不进正文，新增诊断字段默认可见）；并且 fail-closed：
+  `fallback_allowed` 与 `provider_switch_allowed` 对外恒为 `false`。`error` 键是 `type` 的
+  序列化别名。
+- **HTTP 面**（`tstdx/integration/runtime_http.py`）响应状态取 `envelope.http_status`
+  （数值由异常类自带的 `http_status` 声明，经 `http_status_for()` 读出——注意它吃的是
+  **异常实例**，喂 code 字符串会静默落到 500 默认值），响应体固定为 `{"error": <envelope>}`；
+  框架自身的 4xx 也换成本信封、只保留框架状态码。
+- **WS 与 MCP 两面的人读位置不对称（实测）**：两面都把信封挂在 JSON-RPC `error.data`，但
+  `tstdx/integration/runtime_ws.py` 的 `error.message` 是通用 RPC 文案（理由句在
+  `data.message`），而 `tstdx/integration/mcp/_server.py` 把 `envelope.message` 直接平铺进
+  `error.message`。写客户端时别照抄另一面的读法。
+- **CLI**（`tstdx/cli/__init__.py::main`）捕获 `TdxError` 时向 stderr 打印一行
+  `{"error": <envelope>}` JSON 并以退出码 **2** 结束；非领域异常同样走信封但退出码 **1**，
+  `KeyboardInterrupt` 保留原生语义返回 **130**。本节此前写的是"打印 `str(exc)`（含 `[code]`
+  前缀）"，那是已删除的旧 CLI 形状。
+

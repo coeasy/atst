@@ -7,7 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed（v17 Phase 5 第 41 步 —— `currentness` 从声明口径变成运行期判据，"文档点名的错误类 ⇒ 代码里真有站点"上门禁：F-44 裁决 (a) 的执行）
+### Fixed（v17 Phase 4 第 42 步 —— 事实文档里的**斜杠死路径**上门禁：F-67 (a) 的清偿，Phase 4「文档统一」的第一格）
+
+- **这一格改的是两份对外文档里的假事实，不是代码**：`docs/errors.md` §四「上层边界约定」把两个
+  磁盘上不存在的模块（`facade/api.py`、`integration/http_server.py`）写成今天的边界，第一条 bullet
+  还承诺了 `ApiResponse{success=False, ...}` 与 `context["route_errors"]` 聚合整套已随 v12 门面删除的
+  形状；`docs/ARCHITECTURE.md` §3 的分层表把已随 `fcf8e92` 删除的 `tstdx/security/` 标成「活」。
+  §四 整节按实测重写为五条边界事实：`tstdx/client/api.py` 全文没有一处 `except`（异常原样上抛）、
+  越过信任边界的错误只有 `ErrorEnvelope` 一个形状、HTTP 面真身 `runtime_http.py` 取
+  `envelope.http_status`、WS 与 MCP 的人读位置不对称、CLI 向 stderr 打一行 JSON 信封并以
+  2/1/130 退出；旧文写错的每一处都留了「此前写的是什么」的说明，不静默抹史。表下补的安全口径
+  第一稿多声称了一句「凭据一律走环境变量注入」并链向根本不存在的 `docs/security.md`，
+  两处都在落笔前删掉/改指根 `SECURITY.md`。
+- **事实型文档门禁为什么一路放行**：判据只认反引号里的**点号**模块路径（`tstdx.a.b.C` 那种形状），
+  而这几处写的是**斜杠**文件名——形状上就不进判据。本节把同一批文档按斜杠形式再扫一遍，并按 F-67
+  登记时的要求先做单独一轮全量取证（`step42/probe_slash_paths.log`）：活文档里含斜杠的路径引用共
+  **828 处**、磁盘上不存在的 **85 个不同 token**，收窄到 25 份事实文档后真需要改的只有 **3 处**
+  （§四 两处 + ARCHITECTURE 一处），其余落在 `docs/archive/`、`docs/adr/` 与各版本方案史的刻意
+  历史语境里，按设计不参与事实检查。
+- **判据的两条豁免都很窄**：① 同一**逻辑块**（段落 / 列表项 / 表格行）内写明删除史才赦免——块粒度
+  是它的全部效力所在，整份文档当一块等于没有判据；② 该目录由代码在运行期自建，判据是推导不是名单
+  （同一个 .py 文件里既调用 `mkdir`、又把这个名字写成路径分量）。落点回退按仓库根 / `tstdx/` /
+  `docs/` 三个根各试一次，只认仓库根会**虚报 37 处**（文档对同一物件有三种写法）。基线读数：
+  **0 违约 / 18 个豁免 token**，18 个逐个核过出处，无一处是现时口径的假事实。
+- **自检与被自检**：另加一条测试，硬要求这套判据**真的看见过** `execution/`、`provider/`、
+  `tstdx/facade/` 三层已删除目录——一套只会说「没问题」的判据与没有判据等价。**变异 9 例、
+  UNEXPECTED 0**（`step42/mutations2.log`）：控制组绿；3 个植入的现时口径死路径（表格行断言、
+  跨段删除史、`tstdx/security/`）全部被抓；把整份文档当一块 ⇒ 跨段那条**逃逸**；豁免退回
+  「目录名在源码里出现过就算」⇒ `tstdx/security/` 被 `/v13/security/count` 这条路由字符串
+  **白白赦免**（这正是本步第一版的实际错法）；只认仓库根 ⇒ 误报 37 处；摘掉形状排除 ⇒
+  `output://`、`mypy tstdx/`、`docs/providers/<provider>.md` 等 5 处垃圾进名单；扫描面缩到一份
+  文档 ⇒ 自检当场报警。
+- **复测（孤立 worktree，同一轮，解释器 cpython-3.13.12）**：基线 `wt_s42base` = 干净 `39a1b30`，
+  junit **3509 / 0 失败 / 0 错误 / 5 跳过**、157.414s、**81.23%**（`step42/s42base.suite.log`）；
+  本步树 `wt_s42step` = 同一 HEAD + 本步 3 个文件（dirty=3），junit **3511 / 0 / 0 / 5**、155.107s、
+  **81.23%**（`step42/s42step.suite.log`），`3509 + 2`（斜杠判据 + 自检）对得上，阈值 77 未下调；
+  覆盖率 TOTAL 与基线逐格相同（`22606 / 3654 / 6050 / 1023`），因为 `--cov=tstdx` 只看包而本步
+  零生产代码。9 主门禁两树全部 rc=0 且逐项读数逐行相同（originality 192/192、spec_audit 100.0%、
+  docs link 82 files、ruff format 471 files）。
+  提交内容所在的同一棵树另跑三轮（`s42commit`/`s42commit2`/`s42final`，每轮之间只动文档措辞），
+  九项门禁同样全部 rc=0、junit 3511 / 0 / 0 / 5；三轮里只有 `s42commit` 把覆盖率记成 **81.24%**，
+  差异整格在 `tstdx/protocol/generic.py`（缺语句 20↔21、部分分支 9↔10），与第 41 步记录的是
+  同一格运行间抖动。
+
+ —— `currentness` 从声明口径变成运行期判据，"文档点名的错误类 ⇒ 代码里真有站点"上门禁：F-44 裁决 (a) 的执行）
 
 - **对外行为变化（本步唯一一处，且只有一个可达形状）**：本地 vipdoc channel 被要求
   `currentness='business'`（HTTP 面默认口径）时，`strict=True` 从"安静地返回一份无法证明新鲜度的本地文件"

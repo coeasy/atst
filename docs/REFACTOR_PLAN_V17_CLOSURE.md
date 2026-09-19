@@ -113,7 +113,7 @@ job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 
 | F-64 | P2（口径类，F-50/F-52/F-54/F-55/F-57 同族：数据面登记了没人读的东西；本条另有一半——那个没人读的字段同时是全账本唯一的描述） | **命令账本 `Command` 登记 10 个字段，其中 4 个在 `tstdx/` 里没有任何读取点**（第 38 步在干净 `bb201b1` 上 AST 扫 189 个模块实测，脚本 `s38_probe.py`、日志 `s38_probe_base.log`）：`request_fields` 0 处、`aliases` 0 处、`spec_file` 1 处而那处属 `tstdx/tools/spec_audit.py:475` 的 `AuditResult.spec_file`（同名不同物）——三个是纯登记。第 4 个是 `summary`：85 条命令逐条写着中文描述（空 0 条），全包读它的却是 0 处（扫到的 3 处 `.summary` 属 `tstdx/domain/records.py` 的 `NewsRecord`/`ResearchRecord`/`SearchRecord`）。它与前三个不该同判：账本 85 条只有 39 条在 `PROTOCOL_SPEC/` 有 YAML 条目（该目录 44 个 yaml、42 个命令号），另外 **46 条**的语义说明只活在 `summary` 这一行，而客户端唯一把命令说给用户听的地方（`_guard_offline` 的两条 fail-fast）只报了名字。另有一条只剩「写」那半边的生成线：`tstdx/tools/codegen.py:generate_command_entry` 从 YAML 的 `request.fields` 推出 `request_fields=(...)` 写进 `_c(...)`，账本里因此躺着 13 处该实参而读侧无人消费 ⇒ 只删字段不删生成线，下一次真跑 `python -m tstdx.tools.codegen --write` 就是 TypeError | **已清偿**（2026-09-19，第 38 步）：① `Command` 由 10 字段收到 7（`cmd`/`name`/`family`/`tier`/`verified`/`status`/`summary`），13 处 `request_fields=(...)` 实参与生成器那 7 行推导同删；② `summary` 按「无理由孤儿一律接线或删除」取接线：`_guard_offline` 的两条文案由「0x07E5（BLOCK_QUOTES）」改为「0x07E5（BLOCK_QUOTES：板块行情（2026-09 三主站实测无响应，client 方法保留待参数校正））」，`CommandOffline` 与 `NotImplementedFeature` 的 `context` 各加 `"summary"` 键；③ 判据四条加一条分母自曝：形状锁（`fields(Command)` 逐字相等，删完再走后门登记回来当场红）、85 条 `summary` 普查、按账本自身分母（8 条被拦 offline + 2 条 inferred-block）逐个钉「`message` 里有这句话」与「`context` 里有这个键」两侧、codegen 生成的那一行喂回 `_c` 求值；④ 变异 6 发各自 rc=1（`s38b_mut.log`），其中 M1 第一轮以 RC=0 溜过，见 §1 第 38 步；⑤ 同族函数侧的孤儿登记为 F-65，本步不删公开查询面 |
 | F-65 | P3（对外面口径，F-44/F-47 同族：删它就是收窄契约，不该由本步替用户定） | **账本的函数侧躺着同一批孤儿**（同一轮同一把尺子量出，孤立树 `bb201b1`）：`commands.stats()` 在 `tstdx/` 内零调用点（`tstdx/transport/sniff.py:150` 那个 `stats` 是另一个类的方法定义），唯一的读者是它自己的测试；`get_command_by_name()` 连测试都没有，全包零调用且未从 `tstdx/protocol/__init__.py` 再导出；`unknown_command_ids()` 同样零调用却挂在 `__all__` 上，`by_family()` 只被 `commands.py` 内部的 `by_status`/`unknown_command_ids` 调用；而 `docs/archive/OPTIMIZATION_PLAN.md:32` 还写着「`unknown_command_ids` 保留为别名」——被别名掉的那个 `unknown_commands()` 早已不在模块里，这正是 v16「兼容层删除而非别名」该处理而未处理的一件 | **本轮只登记，不改**（2026-09-19，第 38 步，待用户裁决）：路径 (a) 四个全删，账本对外只留 `get_command`/`by_status`/`CMD`/`COMMANDS`；路径 (b) 保留 `by_family`/`unknown_command_ids` 为公开查询面，补文档与用例，删 `stats()`/`get_command_by_name()`；路径 (c) 只删两个纯孤儿（`stats()`/`get_command_by_name()`），公开面原样。本步只收口 `Command` 的字段面，未动这四个函数，也没动那句说错了的归档文档 |
 | F-66 | P2（对外契约类：机器可读的能力声称面，F-63② 的同格补集） | **第 39 步为 F-63② 推导「哪些面写着已下线」时实测出第六张面，而它是唯一机器可读的那张：能力发现面**（2026-09-19）。`GET /v13/capabilities`（`tstdx/integration/runtime_http.py:67`）返回 `{"capabilities": [...], "providers": {provider: {channel: [能力名…]}}}`——两份名单都只有名字，**没有任何状态字段**（探针 `step39/probe_f66.log` 直接打该路由：顶层 `capabilities` 172 项、`providers.tdx.quotation` 16 项，条目类型清一色是裸 `str`，形状上就没有放状态的地方）。实测其 tdx/quotation 平铺 16 个名字，其中 **8 个在客户端就发不出去**：`minute`(0x0537)/`trades`(0x0FC5) 属 inferred 拦截、`security_list`(0x044D)/`block_quotes`(0x07E5)/`minute_history`(0x0FB4) 属账本 offline、`security_list_all` 经 `catalog/capability.py:149` 绑到 `export_security_list`（下线由传递闭包判出），另两条 `auction`/`volume_price` 在本轮**当场量出** `CommandOffline`（同一探针还逐项 `Client().call(cap, '600519')`，两条各回 `CommandOffline: 0x056A` 与 `0x051A`，与账本 summary 同口径）。同一轮量出本步门禁自身的一条边界：第 39 步的推导以「方法名 = 能力名」为键，注册表这套 channel 词汇是**第三套命名**（`auction` vs `_t_auction_snapshot`、`volume_price` vs `_t_volume_price_dist`、`security_list_all` vs `export_security_list`），因此 `auction`/`volume_price` 落在本步五张面之外——它们既不在文档里被批注，也不被新门禁判出。后果与 F-63② 同形但受众不同：文档面骗的是读文档的人，这张面骗的是自动发现能力的调用方（`tests/runtime/test_migrated_surfaces_v13.py:127` 与 `tests/test_bridges.py:231` 已在消费它） | **本轮只登记（2026-09-19，第 39 步），待用户裁决**：(a) 发现面加状态——每个能力附带由账本 ∪ 拦截集 ∪ 绑定闭包现推的 `available`/`offline`/`unverified`，`Client.capabilities()` 与 wire 同批改，属新增对外键；(b) 收窄名单——把发不出去的名字从声明里拿掉（发现面 fail-closed，对按名单枚举的调用方是破坏性变更）；(c) 不改面、只补判据——把第 39 步的门禁扩到注册表词汇（能力名 → 绑定 → 命令号），并在 `docs/api/*` 写明「发现面只声明名字、不声明可用性」。与 F-44 同批裁决（同格里曾挂着的 F-47 已由第 40 步清偿）：三者都动对外契约的形状，而本步的授权范围是「把已下线写清」而非「重设计发现面」；判据本身可复算（上面那两条 `CommandOffline` 与 16 个名字即现场），故先钉事实与路径，不代拍板 |
-| F-67 | P3（事实型文档里的死路径，Phase 4 文档统一的第一格） | **`docs/errors.md` §四「上层边界约定」把两个早已不存在的模块写成今天的边界**（Phase 5 第 40 步顺带实测，2026-09-19）。该节三条 bullet 里有两条点名死路径：门面层 `facade/api.py`（`tstdx/facade/` 目录 `exists=False`）与「服务面（`integration/http_server.py`）」（`exists=False`，今天的真身是 `tstdx/integration/runtime_http.py`）。第一条还承诺了一整套不存在的形状——「`query()`/`aquery()` 把任何异常转 `ApiResponse{success=False, error, code}`」与「路由链失败时最后一路由异常的 context 里 `route_errors` 聚合各路由失败摘要（W11）」：实测 `hasattr(tstdx, "ApiResponse")` 为 False，`route_errors` 与 `W11` 在 `tstdx/` 内 grep **零命中**。**事实型文档门禁为什么看不见它**：`tests/architecture/test_doc_code_consistency.py` 的解析正则只认反引号里的**点号**模块路径（形如 `tstdx.a.b.C` 那种一段一个标识符的形状），而这三处写的都是**斜杠**形式的文件名——形状上就不进判据。同轮把 7 份活文档全扫了一遍：含死路径的只有 `docs/errors.md` 一份（README 与 `docs/ARCHITECTURE.md` 的 `facade` 命中是 `tstdx/web/facade.py` → `session.py` 的重命名史，写的就是删除本身，属实）。全仓范围另有 `facade/api.py` 24 个 markdown、`integration/http_server.py` 9 个，多数在 `docs/archive/`（刻意的历史语境，不参与事实检查）。取证两份都留档：`step40/probe_f67.log` 与 `step40/probe_f67_precise.log`——**前一份是错的取证**，它按文件名尾串匹配，把 `tstdx/client/api.py` 也算成命中，虚报了 README 与 ARCHITECTURE 两份活文档；改成整串匹配才对上事实。两处都记在这里，因为「探针多报」与「判据漏报」是同一族缺陷的两面 | **本轮只登记（2026-09-19，第 40 步），待第 41 步执行**：(a) 把 §四 改写为今天的边界事实（唯一业务入口 `Client` 抛 `TdxError` 家族、`error_envelope` 在对外层收敛为 fail-closed 信封、HTTP 面 `runtime_http.py` 用 `http_status_for()` 映射状态码），并把门禁正则扩成同时认斜杠形式的活路径；(b) 只改文字、不动门禁（同类形状以后仍会漏）；(c) 只扩门禁、把 §四 改成指向 `docs/api/interfaces.md` §3 的一句话。**为什么不顺手改掉**：本步的授权范围是 F-47 的三面入参契约，改一份对外文档的边界章节属 Phase 4「文档统一」的题；且 (a) 的扩门禁会不会牵出别的活文档死路径需要单独一轮取证与复测，不该混进一次入参契约的提交
+| F-67 | P3（事实型文档里的死路径，Phase 4 文档统一的第一格） | **`docs/errors.md` §四「上层边界约定」把两个早已不存在的模块写成今天的边界**（Phase 5 第 40 步顺带实测，2026-09-19）。该节三条 bullet 里有两条点名死路径：门面层 `facade/api.py`（`tstdx/facade/` 目录 `exists=False`）与「服务面（`integration/http_server.py`）」（`exists=False`，今天的真身是 `tstdx/integration/runtime_http.py`）。第一条还承诺了一整套不存在的形状——「`query()`/`aquery()` 把任何异常转 `ApiResponse{success=False, error, code}`」与「路由链失败时最后一路由异常的 context 里 `route_errors` 聚合各路由失败摘要（W11）」：实测 `hasattr(tstdx, "ApiResponse")` 为 False，`route_errors` 与 `W11` 在 `tstdx/` 内 grep **零命中**。**事实型文档门禁为什么看不见它**：`tests/architecture/test_doc_code_consistency.py` 的解析正则只认反引号里的**点号**模块路径（形如 `tstdx.a.b.C` 那种一段一个标识符的形状），而这三处写的都是**斜杠**形式的文件名——形状上就不进判据。同轮把 7 份活文档全扫了一遍：含死路径的只有 `docs/errors.md` 一份（README 与 `docs/ARCHITECTURE.md` 的 `facade` 命中是 `tstdx/web/facade.py` → `session.py` 的重命名史，写的就是删除本身，属实）。全仓范围另有 `facade/api.py` 24 个 markdown、`integration/http_server.py` 9 个，多数在 `docs/archive/`（刻意的历史语境，不参与事实检查）。取证两份都留档：`step40/probe_f67.log` 与 `step40/probe_f67_precise.log`——**前一份是错的取证**，它按文件名尾串匹配，把 `tstdx/client/api.py` 也算成命中，虚报了 README 与 ARCHITECTURE 两份活文档；改成整串匹配才对上事实。两处都记在这里，因为「探针多报」与「判据漏报」是同一族缺陷的两面 | **已清偿（2026-09-19，第 42 步执行 (a)）**：登记时的三条路径——(a) 把 §四 改写为今天的边界事实（唯一业务入口 `Client` 抛 `TdxError` 家族、`error_envelope` 在对外层收敛为 fail-closed 信封、HTTP 面 `runtime_http.py` 用 `http_status_for()` 映射状态码），并把门禁正则扩成同时认斜杠形式的活路径；(b) 只改文字、不动门禁（同类形状以后仍会漏）；(c) 只扩门禁、把 §四 改成指向 `docs/api/interfaces.md` §3 的一句话。**为什么不顺手改掉**：本步的授权范围是 F-47 的三面入参契约，改一份对外文档的边界章节属 Phase 4「文档统一」的题；且 (a) 的扩门禁会不会牵出别的活文档死路径需要单独一轮取证与复测，不该混进一次入参契约的提交。**第 42 步按 (a) 落地**：§四 整节按实测重写（Client 模块零 `except`、越过信任边界的唯一形状是 `ErrorEnvelope`、HTTP/WS/MCP/CLI 四面各自真实的落点与退出码），并把事实文档门禁扩出**斜杠形式**的死路径判据；扩判据前按登记时的要求先做单独一轮全量取证，除 §四 之外另抓出一处假事实——`docs/ARCHITECTURE.md` §3 把已随 `fcf8e92` 删除的 `tstdx/security/` 写成「活」，一并改掉。(b)「只改文字不动门禁」与 (c)「只扩门禁把 §四 压成一句话」都不再需要。执行记录见 §1.5 条目 42
 | F-68 | P2（对外契约类：错误树上的占位叶子与文档独有的幻影名，F-44 的剩余面 / F-43 同族） | **F-44 的 (a) 接线在 `SourceUnavailable` 这一面无落点，而同一次扫描量出四处"文档写着、代码里没有"的名字**（Phase 5 第 41 步实测，2026-09-19）。① 站点普查（`step41/probe_sites.log`，AST 走查全仓 191 模块，分 raise / `raise <变量>`回溯 / `on_error(...)` 投递三类）：错误树 46 类中 5 类既无抛点也无投递——`SourceUnavailable` E7050、`ChecksumMismatch` E3050、`UnknownCommand` E3030、`BackpressureOverflow` E6030、`CompatibilityWarning`（`UserWarning`，不在 `TdxError` 树下）；抽象基类 `TransportError`/`StreamError`/`ProfileError` 自身也不抛但子类全部有站点，属正常分类节点。② 文档点名普查（`step41/probe_promises.log`：82 份 md 里 46 份是对外文档，排除台账/变更日志/归档）：对外文档以反引号点名 45 个错误类，37 个已接线，上面这 5 个未接线的**全部**被对外文档承诺过——`SourceUnavailable` 被 4 份文档点名（`docs/providers/README.md` §12 规范语义、`docs/tdx_status.md` 六处 P13-A、`docs/providers/tdx.md` §7、`docs/adr/ADR-013-provider-source-terminology.md` 称其为"稳定公共资产"），`BackpressureOverflow` 被 `docs/cookbook/04_streaming.md` 与 ADR-006-010 承诺，而 `BackpressureQueue.put`的既定语义是丢最旧元素并计数、从不抛。③ 同一轮量出四处**只存在于文档**的名字：`docs/providers/tdx.md` §7 的 `CapabilityUnsupported` 与 `DataIntegrityError`（`hasattr(tstdx.errors, …)` 双双 False，`tstdx/errors.py` 里根本没有这两个类）、`docs/providers/README.md` §11 的 freshness 模式名 `historical_closed`/`current_series`（全仓 grep 零命中，运行期只有 `CurrentnessMode` 四值）、`docs/errors.md` §二 把 `RetryAdvice.fallback_to_offline`/`fallback_to_web` 的消费方写成"sources 路由"（该路由已随单内核删除，实测全仓对这两个字段的唯一读点是 `tstdx/errors.py:154` 自己的序列化字典，而 `errors.py:20` 早已写明"新内核不消费"——与 F-43 幻影开关同族）；同一份 `docs/errors.md` 头部还抄着"44 个类"，当前是 46 个类（`errors.py` 顶层 AST 计数；`tstdx.errors.__all__` 的 49 个名字里含 `RETRY_ADVICE`/`advice_for`/`http_status_for` 三个非类名，v8 那个 44 与之并非同一口径）。④ 判据自身的第一版是错的：`step41/probe_orphan.log` 只认字面 `raise X(`，把 `last_exc = AntiSpiderBlocked(...)` + `raise last_exc` 这条已接线的重试环误报成幽灵（多报 3 类）；补上同作用域赋值回溯后才对上事实——与第 40 步 F-67 的"探针多报/判据漏报同一族"同形，两份读数都留档 | **本轮只登记（2026-09-19，第 41 步），待用户裁决**：本步已做的是**把不兑现的承诺改成实话**（§12 改为"占位、不承诺 `except` 得到"、tdx.md §7 换成真实类名、README §11 换成 `currentness` 四值口径、errors.md §二 两行改为"无消费方"并新增"一之二、树里存在但运行期永不发生的类"表）+ 把事实钉进本文 + 上新门禁（文档点名 ⇒ 必须有站点，豁免表自洁）。剩下没做的是这 5 个叶子本身，三条路径：(a) 全删——5 个类连同 `errors.py` 的 E 段声明与 `__all__` 一起删，文档同步（与 F-40/F-41 的删除口径一致，clean break；代价是推翻 ADR-013 里"`SourceUnavailable` 是稳定公共资产"那条，以及 `docs/api/*` 的码表）；(b) 全留为登记占位——保持现状：代码树不动、文档已改成"不承诺"、门禁把守不许新增未接线的承诺（本步交付即此路径的形态）；(c) 折中——删掉 4 个纯内部叶子（`ChecksumMismatch`/`UnknownCommand`/`BackpressureOverflow`/`CompatibilityWarning`），保留 E7050 `SourceUnavailable` 作跨 Provider 术语资产（ADR-013 的 `ProviderUnavailable = SourceUnavailable` 映射仍可读），并把它的接线挂到"若 auto 路由某天回来"**为什么不自行拍板**：与 F-44/F-47/F-66 同格，动的是对外可见的错误面；且 (a) 与 (c) 的差异恰好落在 ADR-013 承诺过的稳定资产上——删除一个从未抛过的类在运行期是零影响，在文档与用户已写的 `except` 分支上不是。判据本身可复算（两份探针日志 + 门禁的豁免表就是清单） |
 
 ---
@@ -225,6 +225,8 @@ job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 
    比原计划更强——不止校验 `__all__`，还解析活文档代码块内全部 `from tstdx… import …`、
    事实型文档反引号中的 `tstdx.*` 路径，并核对 README 的 5 个动作数（CLI/HTTP/MCP/
    capability/Provider）与运行期事实一致。
+   第 42 步把这条判据扩成同时认**斜杠**形式（`facade/api.py`、`security/` 那种文件名形状）的死路径，
+   豁免只剩「同一逻辑块内写明删除史」与「代码运行期自建目录」两条，F-67 的执行记录见 §1.5 条目 42。
 5. ✅ CONTRIBUTING 增补：本机 Python 环境用 `uv`（`.venv`）+ `-X utf8`；禁止跨 PR
    "先删后补"；contract-first 提交必须附带使测试单跑亦绿的实现（F-2 教训）；
    "文档即门禁对象"。
@@ -1946,6 +1948,83 @@ job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 
       （没有字段、没有生产者，造判据等于造需求）；非 live 的 Web channel 在 `business` 口径下的
       可证明性（注册表没有这个事实，硬判会把 HTTP 默认口径 `business` 全线变成 503）；
       行内时间戳的时区归属（`domain/models.py` 的 UTC 声明与解析器的 CST 字面量不一致，另案）。
+
+42. ✅ **事实文档的斜杠死路径上门禁：清偿 F-67 (a)，Phase 4「文档统一」的第一格（2026-09-19）**
+    - **本步零生产代码**：动的是 `docs/errors.md` §四、`docs/ARCHITECTURE.md` §3 的一行，以及判据
+      `tests/architecture/test_doc_code_consistency.py`；`--cov=tstdx` 只看包，因此覆盖率 TOTAL 与基线
+      逐格相同（两边都是 `22606 stmts / 3654 缺 / 6050 分支 / 1023 缺分支`、81.23%）。这不是"没测到"，
+      而是本步确实没往 `tstdx/` 里放东西。
+    - **改写前先量"这一节错在哪一层"**：§四 原文三条 bullet 里两条点名磁盘上不存在的模块
+      （`facade/api.py`、`integration/http_server.py`），第一条还承诺了整套不存在的形状
+      （`ApiResponse{success=False, ...}` 与 `context["route_errors"]` 聚合，W11）。今天的事实是：
+      `tstdx/client/api.py` 全文**没有一处 `except`**（`Client` 在 56 行、`AsyncClient` 在 427 行，
+      异常原样上抛），越过信任边界的错误只有一个形状（`tstdx/error_envelope.py::to_error_envelope`），
+      HTTP 面真身是 `runtime_http.py` 且状态码取自 `envelope.http_status`，CLI 走 stderr 一行 JSON
+      信封并以 **2**（领域错）/ **1**（非领域错）/ **130**（Ctrl-C）退出。五条逐条实测后写进新 §四，
+      并保留"此前写的是什么、为什么那是已删除的旧形状"的说明——不静默抹掉史。
+    - **顺带量出第二处假事实**：`docs/ARCHITECTURE.md` §3 分层表把 `security/` 一层标成「活」，
+      而 `tstdx/security/` 早在 `fcf8e92`（撤回一项过期的安全承诺）里连同其唯一文件一起删除。
+      该行删掉，另在表下补一段说明：包内没有独立安全目录，越界时的凭据处理由 `error_envelope.py`
+      的按关键字过滤承担，安全口径指向根 `SECURITY.md`（第一稿曾额外声称"凭据一律走环境变量注入"
+      并链向不存在的 `docs/security.md`，两处都在落笔前删掉/改指，否则会撞 G6 链接门禁）。
+      补的说明里「删除前也只有一个 docstring 与 `__all__ = []`」这一格不是转述——按
+      `git show fcf8e92^:tstdx/security/__init__.py` 读出来核对，与根 `SECURITY.md` 的记法一致
+      （那个模块的 docstring 还预告了 `capture.py`/`origin.py` 两个从未存在的文件）。
+    - **判据扩形（(a) 的第二半）**：新增斜杠形式判据，与原点号判据并存互不干扰——
+      扫 25 份事实文档（原 8 份 + `docs/providers/` 全部 + `docs/tdx_status.md`），取反引号里
+      含斜杠、且以 `/` 或文件后缀收尾的 token，要求它在**仓库根 / `tstdx/` / `docs/`** 任一处落位。
+      三个根是取证逼出来的：文档对同一物件有三种写法（`docs/providers/tdx.md` 全写、
+      `quickstart.md` 指 `docs/quickstart.md`、`transport/pool.py` 指 `tstdx/transport/pool.py`），
+      只按仓库根匹配会虚报 37 处（见下面的变异读数），而**虚报比漏报更难查**（F-44/F-67 同一口径）。
+    - **豁免只有两条，且都窄**：① 同一**逻辑块**（段落 / 列表项 / 表格行）内写明删除史
+      （`删除`/`移除`/`清理`/`不再`/`下线`/`已消灭`/`退役`/`历史`/`曾经`/`retract`）；
+      块粒度是判据的全部效力所在——整份文档当一块等于没有判据。② 该目录由代码在运行期自建，
+      判据是推导而非名单：同一个 .py 文件里既调用 `mkdir`、又把这个名字写成路径分量
+      （`codegen.py` 的 `"generated_draft" / "_generated.py"`）。当前基线读数：**0 违约 / 18 个豁免
+      token**，18 个逐个看过出处，全部落在"删除史叙述"或运行期草稿区两类，无一处是现时口径的假事实。
+    - **扩判据前先全量取证**（`step42/probe_slash_paths.log`）：活文档里斜杠形式的路径引用共
+      **828 处**，磁盘上不存在的有 **85 个不同 token**；绝大多数在 `docs/archive/`、`docs/adr/`、
+      各版本方案史里（刻意的历史语境，事实门禁按 `EXCLUDED_PARTS` 不参与）。收窄到 25 份事实文档后，
+      真需要改的只有 **3 处**（§四 的两处 + ARCHITECTURE 的 `security/` 一处），其余全是删除史叙述。
+      探针第一版还把 `output://`、`parquet://`、`mypy tstdx/`、`docs/providers/<provider>.md`、
+      `~/.tstdx/config.toml` 当成路径报了出来（9 处噪声），因此判据加了形状排除：含空格、`://`、
+      `<`、`>`、以 `~`/绝对路径起头的都不是"仓库里的一个路径"。
+    - **自检与被自检**：另加 `test_the_slash_ruler_itself_sees_the_deleted_layers`，硬要求判据**真的
+      看见过** `execution/`、`provider/`、`tstdx/facade/` 这三层已删除目录（且豁免名单 ≥5 项）——
+      一套只会说"没问题"的判据与没有判据等价。**变异 9 例、UNEXPECTED 0**（`step42/mutations2.log`）：
+      控制组绿；3 个植入的现时口径死路径（表格行、跨段删除史、`tstdx/security/`）全部被抓；
+      把整份文档当一块 ⇒ 跨段那条**逃逸**（证明块粒度承重）；豁免退回"目录名在源码里出现过就算"
+      ⇒ `tstdx/security/` 被 `/v13/security/count` 这条路由字符串**白白赦免**（证明 `mkdir`+路径分量
+      判据承重，这正是本步第一版的实际错法）；只认仓库根 ⇒ 误报 37 处；摘掉形状排除 ⇒ 5 处垃圾
+      进名单；把扫描面缩到一份文档 ⇒ **自检报警**（证明自检耦合在扫描面上，不是空转）。
+    - **复测（孤立 worktree，同一轮；解释器 cpython-3.13.12，非仓内 `.venv`）**：基线
+      `wt_s42base` = 干净 `39a1b30`（dirty=0），junit **3509 / 0 失败 / 0 错误 / 5 跳过**、157.414s、
+      **81.23%**（`step42/s42base.suite.log`）；本步树 `wt_s42step` = 同一 HEAD + 本步 3 个文件
+      （dirty=3），junit **3511 / 0 / 0 / 5**、155.107s、**81.23%**（`step42/s42step.suite.log`），
+      `3509 + 2`（斜杠判据 + 自检）对得上，阈值 77 未下调。9 主门禁两树全部 rc=0
+      （`step42/s42base.log`、`step42/s42step.log`），且逐项读数逐行相同：originality 192/192、
+      spec_audit 100.0%、G6 docs link 82 files（新增的 `../SECURITY.md` 相对链接可解析）、
+      ruff check「All checks passed!」、ruff format 471 files——本步没有新增文件，故两侧同数。
+    - **落笔后再跑一轮提交内容所在的同一棵树（`wt_s42step`，dirty=5：判据 + 2 份文档 + 本台账 +
+      CHANGELOG）**：`step42/s42commit.log` 九项 rc=0，`s42commit.suite.log` junit **3511 / 0 / 0 / 5**、
+      145.696s、**81.24%**、TOTAL `22606 / 3653 / 6050 / 1022`；补完安全口径那一格的措辞后同一棵树
+      再跑 `s42commit2.log`（九项 rc=0）与 `s42commit2.suite.log`——junit **3511 / 0 / 0 / 5**、
+      145.601s、**81.23%**、TOTAL 回到 `22606 / 3654 / 6050 / 1023`，与本步首轮 `s42step` 逐格相同。
+      两轮之间那 0.01 个百分点仍整格落在 `tstdx/protocol/generic.py`（缺语句 20↔21、部分分支 9↔10，
+      逐文件表 diff 只有这一行）——与第 41 步记录的是同一格运行间抖动，四个读数里三个给 21/10，
+      而本步没碰那个文件。
+    - **第三次跑同一棵树收口（`step42/s42final.log`、`s42final.suite.log`，内容即提交本身）**：
+      九项门禁 rc=0，junit **3511 / 0 / 0 / 5**、146.851s、**81.23%**、TOTAL
+      `22606 / 3654 / 6050 / 1023`，与 `s42base`/`s42step`/`s42commit2` 逐格相同。
+      本条与 CHANGELOG 的复测口径落定后，同一棵树再跑最后一轮（`step42/s42ship.log`、
+      `s42ship.suite.log`）：九项门禁 rc=0、junit **3511 / 0 / 0 / 5**、146.489s、**81.23%**、
+      TOTAL `22606 / 3654 / 6050 / 1023`，逐格不变。六轮读数里只有 `s42commit` 那一轮把
+      `tstdx/protocol/generic.py` 记成 20/9，其余五轮都是 21/10。
+    - **本步未动**：点号判据的扫描面（扩到 `docs/providers/` 与 `tdx_status.md` 只加在斜杠判据上，
+      避免一次改动顺带改写别的口径）；`docs/archive/`、`docs/adr/`、各版本方案史里的死路径
+      （按设计豁免）；F-67 登记时提过的全仓范围命中（`facade/api.py` 24 份 md、
+      `integration/http_server.py` 9 份）绝大多数就在这些归档里，不参与事实检查；
+      门禁只判"路径在不在磁盘上"，不判"这行话术是否夸大"——后者仍是逐本人读。
 
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
