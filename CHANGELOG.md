@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（v17 Phase 5 第 38 步 —— 命令账本四个没人读的字段，其中一个还是全账本唯一的描述：F-64 的清偿）
+
+- **量的是账本自己**：`Command` 登记 10 个字段，干净 `bb201b1` 上 AST 扫 `tstdx/` 189 个模块，
+  `request_fields` 0 处、`aliases` 0 处、`spec_file` 1 处而那处属 `spec_audit.AuditResult`（同名不同物）。
+  第四个是 `summary`——85 条命令逐条写着中文描述，全包读它 0 处（3 处同名命中属 `domain/records.py` 的
+  `NewsRecord`/`ResearchRecord`/`SearchRecord`）。但它跟前三个不同判：85 条里只有 39 条在 `PROTOCOL_SPEC/`
+  有 YAML（该目录 44 个 yaml、42 个命令号），另外 **46 条**的语义说明只活在 `summary` 这一行，而客户端
+  唯一把命令说给用户听的地方（`_guard_offline` 的两条 fail-fast）只报了名字。
+- **三件改动**：① `Command` 10 → 7 字段，13 处 `request_fields=(...)` 实参与 `codegen.py` 里那 7 行推导
+  同删（生成器只剩"写"的半边时，删字段会让下一次真跑 `--write` 直接 TypeError）；② `summary` 接线：
+  报错文案变成「0x07E5（BLOCK_QUOTES：板块行情（2026-09 三主站实测无响应，client 方法保留待参数校正））」，
+  `context` 加 `"summary"` 键；③ 判据四条 + 分母自曝一条：形状锁、85 条普查、按账本自身分母
+  （8 条被拦 offline + 2 条 inferred-block）逐个钉「文案里有这句话」与「context 里有这个键」、
+  生成那一行喂回 `_c` 求值。
+- **判据上线即绿，而绿是假的**：M1 把 `summary` 从文案里摘掉、`context` 留着 → 第一轮 **RC=0**。
+  `TdxError.__str__`（`tstdx/errors.py:135-140`）把 `context` 前六个键拼进字符串，`summary in str(exc)`
+  被机读侧单独满足，"人读的那句话"从没被断言过。改读 `ei.value.message` 后 M1 红 10 项，反向的 M6
+  （只摘 `context["summary"]`）红 8 项。本族前五次都是新判据上线即红，这次是上线即**绿**——
+  只有真去做变异才现形。六发变异最终各自 rc=1（`s38b_mut.log`）。
+- **孤立 worktree 同轮复测（本机 Windows+py3.12，仓内 `.venv` cpython-3.12.13）**：基线（干净 `bb201b1`）
+  junit 3423 / 0 失败 / 7 跳过、80.79%；本步树 junit **3438 / 0 / 0 / 7**、**80.84%**，
+  对账 `3423 + 2 形状普查 + 11 到达判据 + 2 生成器往返 = 3438`，阈值 77 未下调；链上 15 项全部 rc=0
+  （originality 190/190、reachability 189/172/17、`spec_audit` coverage 100.0%、golden `[GATE] … (OK)`、
+  docs links 82 文件、mypy 无输出、`ruff check` / `format --check` 435 文件）。六个文件先在 `abef5e1` 上
+  跑过一轮（3416 → 3431、80.77% → 80.82%），并发会话把第 37 步落成 `bb201b1` 后整步让基线重测，
+  不拼接两轮数字。
+- **顺手改掉一句谎**：`test_exactly_seven_offline_commands` 断言的是 9（账本自 2026-09-06 起下线 9 条），
+  改名 `test_exactly_nine_offline_commands`。
+- **登记不静默修（F-65，待用户裁决）**：账本函数侧同一批孤儿——`stats()`/`get_command_by_name()`/
+  `unknown_command_ids()`/`by_family()` 零生产调用点，其中两个挂在 `tstdx/protocol/__init__.py` 的
+  `__all__` 上；`docs/archive/OPTIMIZATION_PLAN.md:32` 还把 `unknown_command_ids` 写成"保留为别名"，
+  而被别名掉的 `unknown_commands()` 早已不在模块里。删公开查询面是对外契约收窄（F-44/F-47 同族），
+  本步只把 `Command` 的字段面收口，未动这四个函数。
+
 ### Fixed（v17 Phase 5 第 37 步 —— 解码层的判断只有 bars 一条命令能上 wire：F-63① 的清偿）
 
 - **第 26 步 F-51 的"已经接线"只覆盖了一条命令**：`tstdx/client/_mixin.py` 里有 15 处

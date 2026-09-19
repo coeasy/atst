@@ -281,23 +281,31 @@ _UNVERIFIED_STRUCTURED_BLOCK: frozenset[int] = frozenset(
 
 def _guard_offline(cmd: int) -> None:
     command = get_command(cmd)
+    name = command.name if command is not None else f"0x{cmd:04X}"
+    summary = command.summary if command is not None else ""
+    label = f"{name}：{summary}" if summary else name
     if cmd in _UNVERIFIED_STRUCTURED_BLOCK:
-        name = command.name if command is not None else f"0x{cmd:04X}"
         raise NotImplementedFeature(
-            f"命令 0x{cmd:04X}（{name}）当前 parser/request 仍为 inferred，"
+            f"命令 0x{cmd:04X}（{label}）当前 parser/request 仍为 inferred，"
             "在真机 golden 锁定前不通过结构化 TdxClient API 发包",
             context={
                 "cmd": cmd,
                 "name": name,
+                "summary": summary,
                 "raw_transport_available": True,
                 "provider_switch_allowed": False,
             },
         )
     if command is not None and command.status == STATUS_OFFLINE and cmd not in _OFFLINE_FALLBACK_OK:
         raise CommandOffline(
-            f"命令 0x{cmd:04X}（{command.name}）多主站实测无响应，已在客户端 fail-fast"
+            f"命令 0x{cmd:04X}（{label}）多主站实测无响应，已在客户端 fail-fast"
             "（不再走超时重试链）；请改用替代命令，或参考 PROTOCOL_SPEC 对应条目",
-            context={"cmd": cmd, "name": command.name, "family": command.family},
+            context={
+                "cmd": cmd,
+                "name": command.name,
+                "summary": command.summary,
+                "family": command.family,
+            },
         )
 
 

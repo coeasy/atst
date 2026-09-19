@@ -408,30 +408,8 @@ def generate_command_entry(spec: dict) -> str:
     tier = _tier_constant(status)
     verified = "True" if status in ("stable", "verified") else "False"
 
-    # 构建 request_fields
-    request = spec.get("request", {})
-    fields = request.get("fields", [])
-    request_fields: list[str] = []
-    for field in fields:
-        if not isinstance(field, dict):
-            continue
-        fname = field.get("name", "")
-        ftype = field.get("type", "")
-        if ftype.startswith("string["):
-            n = ftype[7:-1]
-            request_fields.append(f"{fname}:char[{n}]")
-        elif ftype.startswith("raw["):
-            n = ftype[4:-1]
-            request_fields.append(f"{fname}:raw[{n}]")
-        else:
-            request_fields.append(f"{fname}:{ftype}")
-
-    request_fields_str = ", ".join(request_fields)
-
     entry = (
-        f'_c(0x{cmd_int:04X}, "{name_upper}", "{description}", '
-        f"tier={tier}, verified={verified}, "
-        f"request_fields=({request_fields_str})),"
+        f'_c(0x{cmd_int:04X}, "{name_upper}", "{description}", tier={tier}, verified={verified}),'
     )
     return entry
 

@@ -1,21 +1,46 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""命令账本校准测试：tier/verified 状态、status 字段与查询助手。"""
+"""命令账本校准测试：tier/verified 状态、status 字段与查询助手、字段形状（F-64）。"""
 
 from __future__ import annotations
+
+from dataclasses import fields
 
 import pytest
 
 from tstdx.protocol.commands import (
+    COMMANDS,
     STATUS_OFFLINE,
     STATUS_ONLINE,
+    Command,
     by_status,
     get_command,
     stats,
 )
 
 pytestmark = pytest.mark.unit
+
+#: 账本形状。F-64 量过：``spec_file``/``request_fields``/``aliases`` 三个字段在 ``tstdx/``
+#: 里零读取点（``spec_file`` 唯一的同名命中属于 ``spec_audit.AuditResult``，另一个类），
+#: ``summary`` 曾同样无人读——它因此不是"留下的幸存者"，而是本步才被接进
+#: ``_guard_offline`` 报错文案的（到达判据见 ``tests/client/test_offline_failfast.py``）。
+#: 刻意不套 :func:`tests.support.field_readers.unread_fields`：``name``/``status``/``tier``
+#: 这类名字在 ``tstdx/`` 里到处都是，按 owner 变量名扫只会量出假读取点。
+#: 于是这里的判据是"形状逐字相等 + 读取点由行为判据证明"。
+LEDGER_SHAPE = ("cmd", "name", "family", "tier", "verified", "status", "summary")
+
+
+class TestLedgerFieldShape:
+    """F-64：账本里不得再出现"登记了但没人读"的字段。"""
+
+    def test_command_shape_is_exactly_the_read_fields(self) -> None:
+        assert tuple(f.name for f in fields(Command)) == LEDGER_SHAPE
+
+    def test_every_command_carries_a_summary(self) -> None:
+        """``summary`` 是 46 条无 PROTOCOL_SPEC 条目命令的唯一描述，且直接进报错文案。"""
+        blank = sorted(c.hex for c in COMMANDS.values() if not c.summary.strip())
+        assert blank == []
 
 
 class TestLedgerCalibration:

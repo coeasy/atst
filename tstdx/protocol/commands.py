@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 __all__ = [
     "Family",
@@ -73,12 +73,9 @@ class Command:
     verified: bool = False
     #: 运行时状态（实测）：online 默认 / offline 多主站无响应 / degraded 需回退
     status: str = STATUS_ONLINE
+    #: 一行语义。无 PROTOCOL_SPEC 条目的命令以此为其唯一描述，且随 ``_guard_offline``
+    #: 的报错文案直接到达调用方——账本里每条命令都必须填。
     summary: str = ""
-    spec_file: str | None = None
-    #: 请求 body 的字段序列（供 codegen / 文档生成使用）
-    request_fields: tuple[str, ...] = ()
-    #: 已知别名
-    aliases: tuple[str, ...] = field(default_factory=tuple)
 
     @property
     def hex(self) -> str:
@@ -109,7 +106,6 @@ _STD: list[Command] = [
         "连接握手：服务端日期时间、交易时段、主站名、产品标识",
         tier=TIER_L2,
         verified=True,
-        request_fields=(),
     ),
     _c(0x0FDB, "LOGIN2", "二次登录/初始化（部分主站要求）", tier=TIER_L2),
     _c(0x0004, "HEARTBEAT", "心跳保活", tier=TIER_L2, verified=True),
@@ -120,7 +116,6 @@ _STD: list[Command] = [
         "市场代码数量",
         tier=TIER_L1,
         verified=True,
-        request_fields=("market:uint16",),
     ),
     _c(
         0x044D,
@@ -129,7 +124,6 @@ _STD: list[Command] = [
         tier=TIER_L2,
         verified=True,
         status=STATUS_OFFLINE,
-        request_fields=("market:uint16", "start:uint16"),
     ),
     _c(0x0450, "SECURITY_LIST_LEGACY", "旧版证券列表", tier=TIER_DECLARED, status=STATUS_OFFLINE),
     _c(0x0452, "PRICE_LIMIT", "特殊品种涨跌停限制表", tier=TIER_DECLARED),
@@ -139,13 +133,6 @@ _STD: list[Command] = [
         "K 线 / 周期线（日/周/月/季/年/分钟）",
         tier=TIER_L1,
         verified=True,
-        request_fields=(
-            "market:uint16",
-            "code:char[6]",
-            "category:uint16",
-            "start:uint16",
-            "count:uint16",
-        ),
     ),
     _c(0x0FD1, "SPARKLINE", "小走势图（sparkline）", tier=TIER_DECLARED),
     _c(
@@ -155,7 +142,6 @@ _STD: list[Command] = [
         tier=TIER_L2,
         verified=False,
         status=STATUS_DEGRADED,
-        request_fields=("market:uint16", "code:char[6]"),
     ),
     _c(
         0x0FB4,
@@ -163,7 +149,6 @@ _STD: list[Command] = [
         "指定日期历史分时",
         tier=TIER_L2,
         status=STATUS_OFFLINE,
-        request_fields=("market:uint16", "code:char[6]", "date:uint32"),
     ),
     _c(
         0x0FEB,
@@ -185,7 +170,6 @@ _STD: list[Command] = [
         "实时行情快照（单只，当前唯一可用）",
         tier=TIER_L1,
         verified=True,
-        request_fields=("flag:uint8=1", "market:uint8(语义反转)", "code:char[6]"),
     ),
     _c(
         0x053E,
@@ -193,7 +177,6 @@ _STD: list[Command] = [
         "旧版批量行情（原生五档）",
         tier=TIER_DECLARED,
         status=STATUS_OFFLINE,
-        request_fields=("count:uint16", "market:uint16+code:char[6] * n"),
     ),
     _c(
         0x054C,
@@ -216,7 +199,6 @@ _STD: list[Command] = [
         "当日成交明细（inferred；真实记录布局尚未由 golden 锁定）",
         tier=TIER_L2,
         verified=False,
-        request_fields=("market:uint16", "code:char[6]", "start:uint16", "count:uint16"),
     ),
     _c(0x0FC6, "TRADE_TODAY_ALT", "当日成交明细（备用命令号）", tier=TIER_DECLARED),
     _c(0x0FB5, "TRADE_HISTORY", "历史成交明细", tier=TIER_DECLARED),
@@ -226,7 +208,6 @@ _STD: list[Command] = [
         "股本变迁 / 除权除息（GBBQ）",
         tier=TIER_L1,
         verified=True,
-        request_fields=("market:uint16", "code:char[6]"),
     ),
     _c(
         0x0010,
@@ -234,7 +215,6 @@ _STD: list[Command] = [
         "财务基础信息（股本/EPS/资产负债等）",
         tier=TIER_L2,
         verified=True,
-        request_fields=("market:uint16", "code:char[6]"),
     ),
     _c(0x001E, "FINANCE_EXT", "扩展财务数据（多期报表）", tier=TIER_DECLARED),
     _c(
@@ -242,13 +222,6 @@ _STD: list[Command] = [
         "FILE_DOWNLOAD",
         "服务器文件分块读取（F10/资讯正文）",
         tier=TIER_L2,
-        request_fields=(
-            "market:uint16",
-            "code:char[6]",
-            "filename:char[80]",
-            "offset:uint32",
-            "length:uint32",
-        ),
     ),
     _c(
         0x051A,
@@ -344,13 +317,6 @@ _F10: list[Command] = [
         "F10 栏目正文（GBK 文本，由 0x06B9 下载）",
         family=Family.F10,
         tier=TIER_L2,
-        request_fields=(
-            "market:uint16",
-            "code:char[6]",
-            "filename:char[80]",
-            "offset:uint32",
-            "length:uint32",
-        ),
     ),
 ]
 

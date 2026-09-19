@@ -457,13 +457,13 @@ python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproj
 | 断链清偿（v17 Phase 3A/3B/3D） | ✅ | v14 信封运行时 + `execution/` DAG + `provider/` router + registry 三件套删除；typed 全线接通 |
 | 命名空间归位（v17 Phase 3C） | ✅ | 根级模块 26→11；`runtime/` `catalog/` `client/` 分层 |
 | 文档与对外面统一（v17 Phase 4） | ✅ | README/ARCHITECTURE 已刷新；30 份历史方案入 `docs/archive/plans`；文档-代码一致性门禁上线（导入语句/点号路径/README 数字/结构树/门禁规模逐项对账） |
-| 发布硬化（v17 Phase 5） | ◐ | mypy 47→0、ruff format 65 文件清零、三项 strict 门禁转绿、豁免清单与 ghost 门禁审计完成、离线整仓覆盖率 80.77%（本机 Windows+py3.12 仓内 `.venv`，阈值 77 未动）、七格真实网络/服务面冒烟与 wheel 安装冒烟均已执行（6 PASS / 1 FAIL；K 线那一格已在第 34 步归因为本端握手字节并修复）。仍待：F-37 余条处置 + 一次工作日盘中复跑 + 按 CI 环境数字重钉覆盖率 + tag `v1.1.0-dev.1` |
+| 发布硬化（v17 Phase 5） | ◐ | mypy 47→0、ruff format 65 文件清零、三项 strict 门禁转绿、豁免清单与 ghost 门禁审计完成、离线整仓覆盖率 80.84%（本机 Windows+py3.12 仓内 `.venv`，阈值 77 未动）、七格真实网络/服务面冒烟与 wheel 安装冒烟均已执行（6 PASS / 1 FAIL；K 线那一格已在第 34 步归因为本端握手字节并修复）。仍待：F-37 余条处置 + 一次工作日盘中复跑 + 按 CI 环境数字重钉覆盖率 + tag `v1.1.0-dev.1` |
 
 ### 下一阶段
 
 | 计划 | 方向 |
 |---|---|
-| **发布硬化** | 已做：mypy 既有告警清零、覆盖率基线按有效代码重校（本机 80.77%，阈值 77 未下调）、wheel 安装冒烟 `SMOKE_RC=0`（第 16 步）。未做：按 CI（ubuntu+py3.11）数字重钉 `fail_under`、拿用户确认打 tag `v1.1.0-dev.1` |
+| **发布硬化** | 已做：mypy 既有告警清零、覆盖率基线按有效代码重校（本机 80.84%，阈值 77 未下调）、wheel 安装冒烟 `SMOKE_RC=0`（第 16 步）。未做：按 CI（ubuntu+py3.11）数字重钉 `fail_under`、拿用户确认打 tag `v1.1.0-dev.1` |
 | **Live Smoke** | 已做：七格真实网络/服务面冒烟逐格执行（tdx/web 直连、K 线、stream、CLI/HTTP/MCP 各一发）＝6 PASS / 1 FAIL（第 16 步）。未做：一次工作日盘中复跑（第 16 步落在周六休市）、F-37 余条处置，以及把 7709 数据面的 live 判据接进门禁（F-38，刻意不在裁决前钉成固定红） |
 | **Streaming 增量执行** | 流式数据增量合并 + 补数完整性保证 |
 | **可达性收口** | 孤儿=0，且每条豁免记录都被门禁盯着：指向不存在模块的死记录、已接线却未撤销的过期记录、理由过短、重复条目都会让 `--strict` 失败。仍待裁决的一项：`tstdx.providers.http`（Provider 绑定的 HTTP 主机白名单守卫）接线还是删除，属安全面决策 |

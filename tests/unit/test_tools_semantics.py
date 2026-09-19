@@ -6,17 +6,19 @@
 * golden_expand：嵌套 yaml meta 解析（_yaml_min）、缺 sha256 记 bad；
 * check_originality：``--fix`` 方向性门控（白名单/缺声明才补盖）；
 * spec_audit：结果缓存（一次解析复用）；
-* codegen：spec_id 前置 raise 两处统一 + ``--write`` 草稿路径。
+* codegen：spec_id 前置 raise 两处统一 + ``--write`` 草稿路径 + 生成条目与账本形状同真（F-64）。
 """
 
 from __future__ import annotations
 
 import hashlib
 import shutil
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
 
+from tstdx.protocol.commands import TIER_DECLARED, TIER_L1, TIER_L2, Command, _c
 from tstdx.tools import capture as capture_mod
 from tstdx.tools import codegen as codegen_mod
 from tstdx.tools import golden_expand as ge_mod
@@ -333,3 +335,54 @@ class TestCodegenSpecId:
         finally:
             draft_dir = Path(codegen_mod.__file__).resolve().parent / "generated_draft"
             shutil.rmtree(draft_dir, ignore_errors=True)
+
+
+class TestCodegenLedgerShape:
+    """F-64：生成器与账本形状必须同真。
+
+    旧生成器会往 ``_c(...)`` 里写 ``request_fields=(...)``，而读侧那三个字段本步已删。
+    真跑一次 codegen 才会 TypeError，日常测试碰不到——于是这里把生成的那一行喂回
+    ``_c``，形状不符当场红；反向（账本长回幻影字段）由
+    ``tests/unit/test_commands.py::TestLedgerFieldShape`` 守。
+    """
+
+    _SPEC: dict = {
+        "name": "realtime_quote",
+        "spec_id": "0x0530",
+        "description": "实时行情快照",
+        "status": "stable",
+        "request": {
+            "fields": [
+                {"name": "market", "type": "uint16"},
+                {"name": "code", "type": "string[6]"},
+            ]
+        },
+    }
+
+    def test_generated_entry_builds_a_command_on_the_current_shape(self) -> None:
+        entry = codegen_mod.generate_command_entry(self._SPEC)
+        namespace = {
+            "_c": _c,
+            "TIER_L1": TIER_L1,
+            "TIER_L2": TIER_L2,
+            "TIER_DECLARED": TIER_DECLARED,
+        }
+        command = eval(entry.rstrip(","), dict(namespace))
+        assert isinstance(command, Command)
+        assert command.cmd == 0x0530
+        assert command.name == "REALTIME_QUOTE"
+        assert command.summary == "实时行情快照"
+        assert {f.name for f in fields(command)} == {
+            "cmd",
+            "name",
+            "family",
+            "tier",
+            "verified",
+            "status",
+            "summary",
+        }
+
+    def test_generated_entry_does_not_replay_deleted_fields(self) -> None:
+        entry = codegen_mod.generate_command_entry(self._SPEC)
+        for dead in ("request_fields", "aliases", "spec_file"):
+            assert dead not in entry, f"生成器又在写已删字段 {dead}"
