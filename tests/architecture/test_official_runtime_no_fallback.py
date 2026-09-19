@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -96,3 +97,36 @@ def test_official_runtime_never_calls_legacy_aggregate_web_client() -> None:
             if token in text:
                 suspicious.append(f"{path.relative_to(ROOT)}:{token}")
     assert suspicious == []
+
+
+def test_package_defines_no_data_cache_layer() -> None:
+    """「零缓存」是运行期事实，所以它必须可门禁，而不是只写在 README 与 docstring 里。
+
+    ``CapitalChangeCache`` 是 Phase 2 删缓存层后留下的孤儿：它自带"命中即跳过
+    0x0010 网络与解析"的 TTL + 落盘语义，却在 ``tstdx/`` 里没有任何调用方，
+    只有它自己的单测在测它——一个能跳过数据源的形状留在包里，下次接线只需一行。
+    纯函数记忆化（``functools.lru_cache``）不在此列：它不省掉任何一次网络请求。
+    """
+    offenders: list[str] = []
+    for path in sorted((ROOT / "tstdx").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            name = getattr(node, "name", None) or ""
+            if "cache" not in name.lower():
+                continue
+            relative = str(path.relative_to(ROOT))
+            is_function = isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            if isinstance(node, ast.ClassDef):
+                offenders.append(f"{relative}:class {name}")
+            elif is_function and name.startswith("get_"):
+                offenders.append(f"{relative}:def {name}()")
+    assert offenders == []
+
+
+def test_pypi_description_claims_no_caching() -> None:
+    """发布元数据是对外承诺：删掉缓存层后它仍写着 "semantic caching"。"""
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(r"^description\s*=\s*\"([^\"]*)\"", text, flags=re.M)
+    assert match is not None, "pyproject 里没有可解析的 description，守卫自身失效"
+    description = match.group(1)
+    assert "cach" not in description.lower(), f"PyPI 描述仍在宣称缓存：{description}"

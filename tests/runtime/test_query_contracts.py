@@ -184,15 +184,20 @@ def test_query_spec_is_immutable() -> None:
         spec.provider = "tencent"  # type: ignore[misc]
 
 
-def test_cache_hit_preserves_direct_origin() -> None:
+def test_direct_provenance_carries_no_cache_tier() -> None:
+    """v17 请求路径零缓存：provenance 只能声明直连，不带任何 tier。
+
+    v12 的 ``cached()/cache_hit/direct_fetch`` 词汇随缓存层一起物理删除；
+    重新引入即红——那意味着请求路径上又出现了一个能改写结果来源的层。
+    """
+
     plan = QueryPlanner().compile(QuerySpec.build("quotes", symbols="sh600519"))
     direct = Provenance.direct(plan, observed_at_ns=1)
-    cached = direct.cached("l1")
-    assert direct.direct_fetch is True
-    assert cached.direct_fetch is False
-    assert cached.cache_hit is True
-    assert cached.real is True
-    assert cached.kind is ProvenanceKind.DIRECT
+    assert direct.cache_tier is None
+    assert direct.real is True
+    assert direct.kind is ProvenanceKind.DIRECT
+    for retired in ("cached", "cache_hit", "direct_fetch"):
+        assert not hasattr(Provenance, retired), f"已删除的缓存词汇 {retired} 又回来了"
 
 
 def test_query_result_rejects_provenance_identity_mismatch() -> None:

@@ -3,17 +3,19 @@
 
 """Canonical query result and provenance contracts.
 
-Data origin and cache retrieval are separate facts. A cached direct Provider
-result remains ``origin=DIRECT`` with ``cache_tier='l1'``/``'l2'``; replay or
-synthetic data can therefore never become "real" merely because it was cached.
-This distinction is the foundation for later cache-poisoning and freshness
-gates.
+Data origin and retrieval location are separate facts. The v17 runtime performs
+**no** result caching, so every production provenance is built by
+:meth:`Provenance.direct` and carries ``cache_tier=None``; the field is kept on
+the wire precisely because callers assert it stays ``None``. Replay or
+synthetic data can therefore never be mistaken for a live Provider read, and a
+future tier stamp would have to be an explicit, visible decision rather than an
+implicit side effect of the request path.
 """
 
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import Enum
 from typing import Generic, TypeVar
 
@@ -78,21 +80,6 @@ class Provenance:
             requested_provider=plan.provider,
             fallback=False,
         )
-
-    def cached(self, tier: str) -> Provenance:
-        """Return a cache-hit clone while preserving the original data origin."""
-        normalized = str(tier).strip().lower()
-        if not normalized:
-            raise ValueError("cache tier must not be empty")
-        return replace(self, cache_tier=normalized)
-
-    @property
-    def cache_hit(self) -> bool:
-        return self.cache_tier is not None
-
-    @property
-    def direct_fetch(self) -> bool:
-        return self.kind is ProvenanceKind.DIRECT and not self.cache_hit
 
     @property
     def real(self) -> bool:

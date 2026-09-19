@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed（v17 Phase 5 第 18 步 —— 缓存层删除后残留的"缓存形状"，F-40/F-41）
+
+- **`tstdx.domain.finance` 的 `CapitalChangeCache` 整族物理删除**（不留别名）：
+  `CapitalChangeCache` / `get_capital_change_cache` / `default_factor_cache_dir` /
+  `ENV_FACTOR_CACHE_DIR`（`TSTDX_FACTOR_CACHE_DIR`）/ `DEFAULT_FACTOR_TTL_SECONDS` /
+  `_FETCHED_AT_KEY` 及其 `__all__` 条目，`finance.py` 301→162 行。它是 Phase 2 删缓存层
+  后留下的孤儿：自带 TTL + `~/.tstdx/factors` 落盘语义，docstring 明写命中即"跳过
+  0x0010/gpcw 网络与解析"，却在 `tstdx/` 内**零调用方**——只有它自己的 8 项单测在维持
+  "它活着"的假象。运行期"数据请求不需要缓存"由此从口径变成包内事实：不再有形状可以被
+  一行 import 接回去。
+- **`Provenance.cached(tier)` / `cache_hit` / `direct_fetch` 删除**（`result.py`
+  161→148 行）：生产路径只经 `Provenance.direct()` 构造，tier 永不为非空，这三个成员同样
+  零消费者，唯一引用是那项"自己造一个 tier 再断言能造出来"的自测。**`cache_tier` 字段
+  刻意保留**——它是 CLI/HTTP/MCP 三面 wire 上恒为 `null` 的零缓存证据。
+- **`result.py` 模块 docstring 改写**：原文描述 `cache_tier='l1'/'l2'` 取回模型并称其为
+  "later cache-poisoning and freshness gates 的地基"，即包内文档在描述一个不存在的层。
+- **PyPI 元数据不再宣称 `semantic caching`**（F-41）：`pyproject.toml` 的 `description`
+  改为 "explicit Providers, direct Provider reads, Stateful streaming and canonical
+  HTTP/WebSocket/MCP adapters"。对外最显眼的一句话此前是全仓最错的一句，而元数据文件
+  从来不在事实门禁的扫描名单里。
+- **三条门禁**：`test_package_defines_no_data_cache_layer`（AST 扫 `tstdx/**` 的
+  `*Cache*` 类与 `get_*cache*` 函数；`functools.lru_cache` 这类纯函数记忆化明确排除，
+  因为它不省掉任何一次网络请求）、`test_pypi_description_claims_no_caching`（描述含
+  `cach` 即红）、`test_direct_provenance_carries_no_cache_tier`（`hasattr` 反向钉住三个
+  已删词汇）。两条变异验证各自 RC=1 且指名（塞入 `class QuoteCache`、把
+  `semantic caching` 写回描述）。
+- **同一轮复测**：整仓离线 `-m "not network"` junit `3313 tests / 0 failures / 0 errors /
+  5 skipped`、`FULL_RC=0`，`--cov=tstdx` **80.58%**（阈值 77 未下调）；`ruff check` /
+  `format --check` 干净，`mypy`（CI 参数）对改动的两个模块 Success。
+
 ### Fixed（v17 Phase 5 第 16 步 —— 发布冒烟引用已删除模块，F-36）
 
 - **wheel 安装冒烟不再 import 已不存在的 `tstdx.facade`**：`scripts/build_package.py` 的

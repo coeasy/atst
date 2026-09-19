@@ -25,12 +25,7 @@
 
 from __future__ import annotations
 
-import contextlib
-import json
-import os
-import time
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import asdict
 from typing import Any
 
 from .models import CapitalChange
@@ -40,8 +35,6 @@ __all__ = [
     "FINANCE_INFO_FIELDS",
     "map_finance_values",
     "to_capital_changes",
-    "CapitalChangeCache",
-    "get_capital_change_cache",
 ]
 
 # --------------------------------------------------------------------------- #
@@ -167,135 +160,3 @@ def to_capital_changes(rows: Iterable[Mapping[str, Any]]) -> list[CapitalChange]
             )
         )
     return out
-
-
-# --------------------------------------------------------------------------- #
-# 除权除息事件 TTL 缓存（N4）
-# --------------------------------------------------------------------------- #
-#: 落盘缓存目录环境变量（测试 / 部署可覆盖，缺省 ~/.tstdx/factors）。
-ENV_FACTOR_CACHE_DIR = "TSTDX_FACTOR_CACHE_DIR"
-#: 默认 TTL：除权事件为低频数据（仅在除权日更新），24h 内复用安全。
-DEFAULT_FACTOR_TTL_SECONDS = 24 * 3600
-_FETCHED_AT_KEY = "_fetched_at"
-
-
-class CapitalChangeCache:
-    """除权除息事件 TTL 缓存（进程级内存 + 可选落盘，N4/I2 落地）。
-
-    * 进程级：``{symbol: (fetched_at, events)}``，命中（未过期且非空）直接
-      返回，跳过 0x0010/gpcw 网络与解析；
-    * 可选落盘：``disk_dir/{symbol}.json``（含 ``_fetched_at`` 时间戳），
-      离线复用，跨进程共享；
-    * 降级：TTL 过期 / JSON 损坏 / 缺失字段 → 返回 ``None`` 并（对损坏文件）
-      删除后重取，绝不因缓存故障阻塞主链路。
-
-    返回值为重建的 :class:`~tstdx.domain.models.CapitalChange` 列表（深拷贝），
-    调用方修改不污染缓存。
-    """
-
-    def __init__(
-        self, ttl: float = DEFAULT_FACTOR_TTL_SECONDS, disk_dir: str | None = None
-    ) -> None:
-        self.ttl = ttl
-        self.disk_dir = disk_dir
-        self._mem: dict[str, tuple[float, list[CapitalChange]]] = {}
-
-    # -- 读写 ---------------------------------------------------------------- #
-    def get(self, symbol: str) -> list[CapitalChange] | None:
-        """命中返回事件列表（深拷贝），未命中 / 过期 / 损坏返回 ``None``。"""
-        hit = self._mem.get(symbol)
-        if hit is not None:
-            ts, events = hit
-            if events and time.time() - ts < self.ttl:
-                return self._clone(events)
-            self._mem.pop(symbol, None)
-        return self._load_disk(symbol)
-
-    def put(self, symbol: str, events: Sequence[CapitalChange]) -> None:
-        """写入缓存并落盘。空事件列表不缓存（避免永久屏蔽后续真实查询）。"""
-        rows = [e for e in events if isinstance(e, CapitalChange)]
-        if not rows:
-            return
-        self._mem[symbol] = (time.time(), rows)
-        self._save_disk(symbol, rows)
-
-    def clear(self, symbol: str | None = None) -> None:
-        """清空全部（symbol=None）或单个 symbol 的缓存（内存 + 落盘）。"""
-        if symbol is None:
-            self._mem.clear()
-            if self.disk_dir and os.path.isdir(self.disk_dir):
-                for name in os.listdir(self.disk_dir):
-                    if name.endswith(".json"):
-                        with contextlib.suppress(OSError):
-                            os.remove(os.path.join(self.disk_dir, name))
-            return
-        self._mem.pop(symbol, None)
-        if self.disk_dir:
-            with contextlib.suppress(OSError):
-                os.remove(self._disk_path(symbol))
-
-    # -- 落盘 ---------------------------------------------------------------- #
-    def _disk_path(self, symbol: str) -> str:
-        return os.path.join(self.disk_dir, f"{symbol}.json")  # type: ignore[arg-type]
-
-    def _load_disk(self, symbol: str) -> list[CapitalChange] | None:
-        if not self.disk_dir:
-            return None
-        try:
-            with open(self._disk_path(symbol), encoding="utf-8") as fh:
-                raw = json.load(fh)
-            fetched = float(raw.get(_FETCHED_AT_KEY, 0.0))
-            if time.time() - fetched > self.ttl:
-                return None
-            rows = to_capital_changes(raw.get("events", []))
-            if not rows:
-                return None
-            self._mem[symbol] = (time.time(), rows)
-            return self._clone(rows)
-        except (OSError, ValueError, TypeError, AttributeError):
-            # 损坏 / 缺字段 → 删除降级重取
-            self._discard_disk(symbol)
-            return None
-
-    def _save_disk(self, symbol: str, rows: Sequence[CapitalChange]) -> None:
-        if not self.disk_dir:
-            return
-        try:
-            os.makedirs(self.disk_dir, exist_ok=True)
-            payload = {_FETCHED_AT_KEY: time.time(), "events": [asdict(e) for e in rows]}
-            tmp = self._disk_path(symbol) + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(payload, fh, ensure_ascii=False)
-            os.replace(tmp, self._disk_path(symbol))
-        except OSError:
-            # 落盘失败（只读目录 / 磁盘满）不阻断主链路
-            pass
-
-    def _discard_disk(self, symbol: str) -> None:
-        if not self.disk_dir:
-            return
-        with contextlib.suppress(OSError):
-            os.remove(self._disk_path(symbol))
-
-    @staticmethod
-    def _clone(events: Sequence[CapitalChange]) -> list[CapitalChange]:
-        return [CapitalChange(**asdict(e)) for e in events]
-
-
-def default_factor_cache_dir() -> str | None:
-    """落盘目录：环境变量覆盖，缺省 ``~/.tstdx/factors``（不保证存在）。"""
-    return os.environ.get(ENV_FACTOR_CACHE_DIR) or os.path.join(
-        os.path.expanduser("~"), ".tstdx", "factors"
-    )
-
-
-_CAPITAL_CHANGE_CACHE: CapitalChangeCache | None = None
-
-
-def get_capital_change_cache() -> CapitalChangeCache:
-    """进程级单例（惰性创建）。测试请注入独立 ``CapitalChangeCache`` 实例，
-    避免污染全局状态。"""
-    global _CAPITAL_CHANGE_CACHE
-    if _CAPITAL_CHANGE_CACHE is None:
-        _CAPITAL_CHANGE_CACHE = CapitalChangeCache(disk_dir=default_factor_cache_dir())
-    return _CAPITAL_CHANGE_CACHE
