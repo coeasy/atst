@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（v17 Phase 5 第 33 步 —— 方案文档的「现状判定」与磁盘同真，F-58）
+
+- **本步量的是方案文档自己**：`docs/REFACTOR_PLAN_V17_CLOSURE.md` §0.1「主链路贯通状态」一直
+  停在 Phase 3 之前的时态——两行 ❌ 把 v14 编排信封与 registry 三件套写成**现行断链**，而它们
+  的证据列点名的 `runtime/gateway.py`、`executor_registry.py`、`provider/router.py`、
+  `executor_bindings.py` 早已在 Phase 3A/3B 整层物理删除、磁盘上不存在；服务面那行还写着
+  "全部 import `client_api.Client`"，那个根级模块也在 Phase 3C 并入 `tstdx/client/`。§0.2
+  的八行"遗留不合理点"统一挂在"Phase 3–5 处理对象"下，其中七行在文档别处已记为清偿，却没有
+  一行把判决写回表格——于是"还有哪些不合理、链路是否贯通"这个问题按字面读会得到"还有八条待办
+  加两条断链"的答案。**编号竞争**：本步产物先按 `0d7fbe1` 写好并测过一轮，期间并发会话把 F-57
+  作为第 32 步提交（`85cc43e`），故本步序号让到 **33** 并在其之上整轮重测（变异也重跑）。
+- **为什么既有活文档门禁抓不到**：`test_doc_code_consistency.py` 校验的是反引号里的
+  `tstdx.x.y` **点号**路径与 README 数字；表格里的**带斜杠文件路径**与**时态**都不在射程内。
+  这是 F-23/F-34/F-35 同族的第四处，位置在被当作事实源的文档本身。
+- **§0.1 重写为五行现在时**：内核主链 / 四个服务面 / 流式面 / 配置面 / 已删除的旧接缝。原来那两
+  行 ❌ 改判为"✅ 已整层物理删除，因此不再可能是断链"并指向 16 项 `unimportable` 防回潮守卫；
+  结论行就地写清两处"实现"的边界（真机冒烟未跑、F-37 的 2 字节桩、92 项 PENDING 契约、
+  F-18 的链外守卫），不把未做的说成做了。
+- **§0.2 增列「现状」**：八行逐条补 `**已清偿**（2026-09-19，…）` 并指向清偿它的那一步/那一
+  Phase，历史问题陈述与证据列原文保留——改的是"这条现在还开着吗"，不是重写历史；§0.2 的
+  标题也从「Phase 3–5 处理对象」补为「…；第 33 步起逐行现状见最后一列」，否则只看标题仍会
+  读成八条待办。
+- **新门禁 `tests/architecture/test_plan_status_gates.py`（4 条测试）**：① §0.1 表体里每个反引号
+  文件路径（可带 `:行号`）必须存在于磁盘，先试仓库相对路径再试 `tstdx/` 下同名路径；② §0.2 每行
+  的最后一格必须以加粗裁决开头（已清偿/已修/部分处理/待用户决策/维持现状）并含日期或提交号；
+  ③④ 两节标题仍在（改名即红），外加"§0.1 ≥4 行且 ≥5 条路径、§0.2 ≥6 行"的防盲断言——解析不
+  出行判门禁自身失效，不静默通过。
+- **判据被自己的变异修硬了一次**：M2 首轮 **RC=0 逃逸**。原因是裁决正则放宽成子串匹配，而 F-5
+  那行的判决文字里含"不再依赖**已删除**的信封线"——一句历史叙述替当前裁决打了勾。收紧为"必须以
+  `**裁决**` 开头"后 M2 转红。同轮还发现自己把八行的判决并进了「证据」格（少写一个 `|`，表格
+  列数与表头不符），一并修回五列。
+- **变异验证 3 条全部 RC=1 且各自指名**（CONTROL 与还原后 RC=0）：**M1** 把 §0.1 里现存的
+  `tstdx/runtime/executor.py` 换成已删除的 `tstdx/runtime/gateway.py` → 红并点名该路径；
+  **M2** 抹掉 F-5 行的加粗裁决 → 红并点名 `['F-5']`；**M3** 把 §0.1 标题改名 → 三条判据同时红，
+  报的是"解析不出节，门禁自身失效"而不是"没问题"。
+- **本步不动生产代码**：`tstdx/` 零改动，因此运行期行为、契约与覆盖率构成都不变；新增的是 4 条
+  门禁测试。
+- **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = `85cc43e` + 本步 3 文件）**：离线全量
+  junit **3404 tests / 0 failures / 0 errors / 7 skipped**、`SUITE_RC=0`、143.3s；`--cov=tstdx`
+  **80.69%**（阈值 77 未下调）。对账上一步（第 32 步）在其提交树上读到的 **3400** ＋ 本步 4 条新
+  门禁 = **3404**；百分比与上一步的 80.77% 同量级，因为本步零改生产代码、覆盖率构成不变。7 条
+  skipped 逐条取自同轮 junit：全部落在 `tests/output/test_sinks_dispatch.py` 的 parquet/duckdb
+  缺依赖用例上。同树 13 道门禁全部 RC=0：`ruff check`、`ruff format --check`（433 文件）、`mypy`
+  （0 error）、originality（Total 190 / Suspicious 0）、reachability（189 模块 / 172 可达 / 17
+  白名单、`无未登记孤儿 ✓`）、`contract_audit --ci`（63 契约 · 155 capability · 92 项 PENDING 不
+  阻断）、`spec_audit --strict`（`coverage_pct: 100.0`）、golden 审计、adversarial、bridges、
+  `tests/streaming + tests/runtime`、benchmark smoke、docs links（82 文件）。变异 CONTROL 与还原后
+  RC=0，M1/M2/M3 各自 RC=1 并逐条指名（M1 点 `tstdx/runtime/gateway.py`、M2 点 `['F-5']`、M3 报
+  "门禁自身失效"）。**口径边界如实登记**：上面的数字取自只差本条复测文字与三处账本散文订正（§1
+  序号让位后的 `33.`、§0.2 标题与编号竞争说明、两处换行）的那棵树；写入后在**同一提交树**重跑
+  `tests/architecture`（含本步新门禁与既有文档门禁）与 `check_docs_links.py`，两道均 RC=0。
+
 ### Removed（v17 Phase 5 第 32 步 —— 出处词表里那两种不可能出现的出处，F-57；**BREAKING**）
 
 - **`ProvenanceKind` 只剩 `DIRECT`**：`REPLAY`/`SYNTHETIC` 两条成员被物理删除。它们在 `tstdx/` 全部

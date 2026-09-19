@@ -17,27 +17,37 @@
 
 ### 0.1 主链路贯通状态
 
+
+> **口径**：本节用**现在时**——只描述磁盘上现存的东西，反引号里每个 `…/….py` 路径都由
+> `tests/architecture/test_plan_status_gates.py` 核对存在（F-58）。历史上断过、后来整层删除的
+> 接缝不摆在这里当"现行断链"，它们的经过记在 §0.2 的现状列、§0.3 与 §1 的执行记录里。
+
 | 链路 | 状态 | 证据 |
 |---|---|---|
-| `Client` → `UnifiedRuntime`（`runtime/kernel.py`）→ `QueryPlanner` → `DirectProviderExecutor`（DIRECT_BINDINGS 精确派发）→ provenance 校验 | ✅ 贯通，零缓存 | `Client()` 冒烟通过；172 个 capability 注册；`tests/v14 tests/runtime tests/query tests/provider_isolation` **全绿** |
-| 服务面 CLI / HTTP(`integration/runtime_http.py`) / WS(`runtime_ws.py`) / MCP(`integration/mcp/`) → `Client` | ✅ 贯通 | 全部 import `client_api.Client` |
-| v14 信封线 `RuntimeGateway.execute/execute_typed/execute_batch` → `Runtime` → `ExecutionPlanner` → `SemanticExecutionAdapter` → `ProviderRouter` | ❌ **默认不可用**（F-1） | `RuntimeGateway().execute(QueryRequest(bars))` 实测返回 `unsupported operation: bars`；默认 `Runtime()` 的 router 为空 |
-| executor binding registry 线（`executor_registry.resolve_executor`） | ❌ **断线**（F-2） | `register_direct_binding` 非测试代码零调用，注册表恒空；相关契约测试**单跑必红**，全绿仅因 pytest 文件序状态泄漏 |
+| `Client` / `AsyncClient`（`tstdx/client/api.py`）→ `UnifiedRuntime`（`tstdx/runtime/kernel.py`）→ `QueryPlanner` → `DirectProviderExecutor`（`tstdx/runtime/executor.py`，`DIRECT_BINDINGS` 精确派发）→ provenance 校验 | ✅ 唯一执行主链，零缓存 | 构造期把注册表声明与执行绑定做双向对账（`tstdx/catalog/capability_audit.py`，第 7 步 F-26）；`Client().capabilities()` 实测 172 项；`tests/v14`、`tests/runtime`、`tests/query`、`tests/provider_isolation` 全绿 |
+| 服务面 CLI（`tstdx/cli/`）/ HTTP（`tstdx/integration/runtime_http.py`）/ WS（`tstdx/integration/runtime_ws.py`）/ MCP（`tstdx/integration/mcp/`）→ `Client` | ✅ 四面只翻译不执行 | 两条 AST 结构门禁共用同一次服务面 import 边扫描：`test_service_faces_never_import_the_web_layer`（F-29）与 `test_service_faces_never_build_a_stream_themselves`（F-56，第 31 步），函数体里的 import 同样算 |
+| 流式面 `Client.stream` → `StreamPlanner.compile`（`tstdx/stream_contract.py`）→ `StatefulQuoteStream` | ✅ 贯通，tdx-only 判据只有一个落点 | CLI 与库面对同一个 `--provider` 同答案（`test_stream_command_refuses_a_provider_the_stream_contract_refuses`）；计划面字段判据 `test_stream_plan_carries_only_the_fields_the_client_reads`（F-55） |
+| 配置面 `[core]`/`[hosts]`/`[rate_limit]`/`[web]`/`[security]`（`tstdx/config/`）→ 内核唯一读者 | ✅ 贯通（Phase 6，2026-09-19） | `tests/runtime/test_kernel_config_wiring.py`：写 TOML → 内核与传输层参数一致、env 覆盖文件、显式入参覆盖配置；未接线前"配置即装饰"的假承诺登记在 §0.3 F-16 |
+| 曾经的第二接缝：v14 编排信封（`RuntimeGateway`/`Runtime`/`ExecutionPlanner`/`ProviderRouter`）与 registry 三件套（`executor_registry`/`executor_bindings`/`provider/router`） | ✅ 已整层物理删除，因此不再可能是断链 | Phase 3A 方案 (b) 与 Phase 3B（§2 决策点 1/2，2026-09-19）；防回潮由 `test_deleted_modules_stay_unimportable`（16 项）与 `test_moved_modules_are_gone_from_disk` 把守 |
 
-**结论：核心查询功能已实现且唯一主链贯通；v14 编排信封与 registry 三件套是仅剩的两条断链。**
+**结论：核心查询、流式、传输与诊断功能全部实现，主链只剩一条且四个服务面贯通。**"实现"的两处
+边界照旧如实标注，不写成既成事实：① 真机冒烟尚未执行（绑定与契约存在 ≠ 现网返回正确，属
+Phase 5 尾声，需用户授权）；② 已知功能缺口各有账——`0x052D` 在现网只回 2 字节桩（F-37，待
+裁决）、92 项注册能力尚无 Typed Query 契约（F-25 的 PENDING 面，`contract_audit --ci` 不阻断）、
+`tstdx/providers/http.py` 的主机守卫无生产调用方（F-18，待裁决）。
 
-### 0.2 遗留不合理点（Phase 3–5 处理对象）
+### 0.2 遗留不合理点（Phase 3–5 处理对象；第 33 步起逐行现状见最后一列）
 
-| # | 级别 | 问题 | 证据 |
-|---|---|---|---|
-| F-1 | P0 | **第二执行接缝**：`Runtime.execute` 走 `ExecutionPlanner` DAG + `provider/router.ProviderRouter`，与 Client 内核并行；typed/batch 信封全部悬空。**2026-09-19 补充实证：信封层在 `tstdx/runtime/` 包外零生产消费者**（CLI/HTTP/WS/MCP 全直连 Client，仅 13 个测试文件引用）→ 处置新增选项 (b) 整层删除，见 §1-3A 与 §2 决策点 1 | `runtime/runtime.py:43-58`、`execution/semantic.py`、实测见 0.1；引用面 grep 复核 |
-| F-2 | P0 | registry 三件套（`executor_bindings.py`/`executor_binding_registry.py`/`executor_registry.py`）为恒空注册表 + 4 个泄漏序依赖的测试；与 `DIRECT_BINDINGS` 构成第三份 binding 三元组 | 单跑红证据见 0.1 |
-| F-3 | P1 | `QueryResponse`/`QueryResult` 双结果类型并存，gateway/Runtime 需 `_wrap`/`_unwrap_result` 双份翻译 | `runtime/gateway.py:91-122`、`runtime/runtime.py:180-199` |
-| F-4 | P1 | 根级仍散落 28 个模块，命名债未清：`client_api` vs `client_core` vs `client/`；`provider_contract/guard/audit` 游离在 `provider/` 包外；`query.py`/`result.py`/`typed_query.py`/`stream_contract.py` 契约文件平铺 | `ls tstdx/*.py` |
-| F-5 | P1 | typed query（60 契约 + Domain Record）无 `Client.typed()` 入口，只能经悬空的 F-1 信封线；端到端糖衣未兑现 | 冒烟：`tstdx.typed_query` 无 REGISTRY 导出，仅 `Runtime.execute_typed` |
-| F-6 | P1 | 文档-代码矛盾：README 架构图仍宣传 "v14 编排内核 / 语义缓存 L1/L2 / 5 级降级路由 / UnifiedQuoteAPI 门面层 / sources 路由层"，全部已物理删除；`tstdx/__init__.py` docstring 仍含"语义缓存"设计目标 | `README.md` 架构总览 |
-| F-7 | P2 | `trade/` 仅自测引用、未列入 README 能力账（模块自身已声明"独立可选 + 模拟红线"） | `tstdx/trade/__init__.py` docstring |
-| F-8 | P2 | `sinks→sink`、`sources` 删除后，`output/`、`profile/`、`feedback/`、`tools/` 归属与门禁未审计；`.venv` 环境要求（本机 `python` 为坏 stub，须用 `uv`/`.venv`）未写入 CONTRIBUTING | 本次调研踩坑 |
+| # | 级别 | 问题 | 证据 | 现状（第 33 步补，F-58） |
+|---|---|---|---|---|
+| F-1 | P0 | **第二执行接缝**：`Runtime.execute` 走 `ExecutionPlanner` DAG + `provider/router.ProviderRouter`，与 Client 内核并行；typed/batch 信封全部悬空。**2026-09-19 补充实证：信封层在 `tstdx/runtime/` 包外零生产消费者**（CLI/HTTP/WS/MCP 全直连 Client，仅 13 个测试文件引用）→ 处置新增选项 (b) 整层删除，见 §1-3A 与 §2 决策点 1 | `runtime/runtime.py:43-58`、`execution/semantic.py`、实测见 0.1；引用面 grep 复核 | **已清偿**（2026-09-19，Phase 3A 方案 (b)：信封/DAG/router 整层物理删除，防回潮 16 项 unimportable 守卫；§2 决策点 1 已追认） |
+| F-2 | P0 | registry 三件套（`executor_bindings.py`/`executor_binding_registry.py`/`executor_registry.py`）为恒空注册表 + 4 个泄漏序依赖的测试；与 `DIRECT_BINDINGS` 构成第三份 binding 三元组 | 单跑红证据见 0.1 | **已清偿**（2026-09-19，Phase 3B：三件套删除，`DIRECT_BINDINGS` 为唯一事实源；第 7 步把构造期审计改成注册表↔绑定的双向判据，见 §0.3 F-26） |
+| F-3 | P1 | `QueryResponse`/`QueryResult` 双结果类型并存，gateway/Runtime 需 `_wrap`/`_unwrap_result` 双份翻译 | `runtime/gateway.py:91-122`、`runtime/runtime.py:180-199` | **已清偿**（2026-09-19，随 Phase 3A 的信封层一起消失：`tstdx/result.py` 现在只有 `QueryResult` 一个结果类型，`QueryResponse` 与 `_wrap`/`_unwrap_result` 双份翻译均不存在） |
+| F-4 | P1 | 根级仍散落 28 个模块，命名债未清：`client_api` vs `client_core` vs `client/`；`provider_contract/guard/audit` 游离在 `provider/` 包外；`query.py`/`result.py`/`typed_query.py`/`stream_contract.py` 契约文件平铺 | `ls tstdx/*.py` | **已清偿**（2026-09-19，Phase 3C：根级从 28 个模块收到 11 个，白名单由 `test_root_namespace_matches_whitelist` 逐名钉住；11 超出原案上限 10 的偏差登记在 §1 第 26 步，未静默改口径） |
+| F-5 | P1 | typed query（60 契约 + Domain Record）无 `Client.typed()` 入口，只能经悬空的 F-1 信封线；端到端糖衣未兑现 | 冒烟：`tstdx.typed_query` 无 REGISTRY 导出，仅 `Runtime.execute_typed` | **已清偿**（2026-09-19，Phase 3D：`Client.typed()` 上线，typed 面不再依赖已删除的信封线；其返回形状不带 provenance 与 warnings 的边界另立 F-51 尾条 (a)，属新增对外承诺而非本行回潮） |
+| F-6 | P1 | 文档-代码矛盾：README 架构图仍宣传 "v14 编排内核 / 语义缓存 L1/L2 / 5 级降级路由 / UnifiedQuoteAPI 门面层 / sources 路由层"，全部已物理删除；`tstdx/__init__.py` docstring 仍含"语义缓存"设计目标 | `README.md` 架构总览 | **已清偿**（2026-09-19，Phase 4 起：README 架构图与包 docstring 改写为可核验事实（F-31 族），此后活文档数字门禁、结构树双向对账与 CLI 示例解析门禁逐轮把住口径（第 12/14/15/19/23 步）） |
+| F-7 | P2 | `trade/` 仅自测引用、未列入 README 能力账（模块自身已声明"独立可选 + 模拟红线"） | `tstdx/trade/__init__.py` docstring | **已清偿**（2026-09-19，§2 决策点 3：README 结构树把 `tstdx/trade/` 标注为「交易协议模拟器（实验性可选模块，`SimTransport` 纯内存模拟，不接入内核）」） |
+| F-8 | P2 | `sinks→sink`、`sources` 删除后，`output/`、`profile/`、`feedback/`、`tools/` 归属与门禁未审计；`.venv` 环境要求（本机 `python` 为坏 stub，须用 `uv`/`.venv`）未写入 CONTRIBUTING | 本次调研踩坑 | **已清偿**（2026-09-19，归属与门禁两半都补上：17 条可达性豁免逐条附可核验证据（含 `output`/`profile`/`charset`/`providers.http`，见 §0.3 F-22 的记录守卫），CONTRIBUTING 已写 `uv sync` 与「Windows 下别用裸 `python`」的踩坑说明） |
 
 ### 0.3 Phase 4/5 执行期实测新发现（按严重度）
 
@@ -89,6 +99,7 @@
 | F-55 | P2（计划形状类，F-50/F-52/F-54 同族的第四处，这次在流计划面上） | **`StreamPlan.capability` 与 `StreamPlan.channel` 由 `compile()` 写入、`tstdx/` 全包读取点为 0**（Phase 5 第 29 步实测，尺子沿用第 27/28 步那把并加以强化）：`StreamPlanner.compile()`（`tstdx/stream_contract.py:65`）先对 `capability != "quotes"`、`channel != "quotation"` 逐条 fail-closed，再把两个结论原样抄进 `StreamPlan`；而 `StreamPlan` 的唯一消费方是 `Client.stream`（`tstdx/client/api.py:388`）与 `AsyncClient.stream`（`tstdx/client/api.py:512`），两者读走的只有 `symbols / provider / interval / diff_only / max_queue`——恰好是交给 worker 的实参。`runtime/executor.py`、`tstdx/result.py`、`runtime/identity.py` 里出现的 `plan.provider`/`plan.channel`/`plan.spec.capability` 全部属于 `QueryPlan`（同名不同物，逐处人工核对，第 28 步登记的"普查不成立"边界正是为此）。全仓对 `plan.channel` 唯一的"读取"是一条测试断言（`tests/runtime/test_v13_architecture_alignment.py`），它验证的是规则的抄本而非规则本身；`plan.capability` 连抄本读取都没有 | **已清偿（第 29 步，默认走删除而非接线）**：(a) 接线的形状是把 `StatefulQuoteStream` 改成收 plan 而非具名参数，即让公开的 `subscribe(symbols, interval=…, diff_only=…, max_queue=…)` 变成一个内部类型的投影；而今天只有 `provider=tdx` + `channel=quotation` 能通过编译，多传这两个值不改变任何一次请求的成败——不取；(b) 采纳：`StreamPlan` 收缩为 `symbols / provider / interval / diff_only / max_queue`，编译期两条 `ValidationError` 与 `PROVIDERS.require(…, channel="quotation")` 原样保留，删掉的只是抄件；抄本断言改为行为断言（`StreamSpec.build("sh600519", channel="quote")` 当场 `ValidationError`）。门禁 `test_stream_plan_carries_only_the_fields_the_client_reads` 比第 27/28 步更强：`dataclasses.fields(StreamPlan)` 必须与 AST 扫 `tstdx/client/api.py` 得到的 `plan.*` 读取集合**逐字相等**——新增字段没接线红，消费者读到幻影字段同样红；防盲保险为"`plan_fields` 非空"与"`api.py` 至少要读到一条 `plan.*`"。变异：M1 把 `capability` 以默认值加回 → RC=1 点名 `['capability']`；M2 把 owner 名换成不可能命中的 `no_such_plan_var` → RC=1 报"api.py 里读不到任何 plan.*，判据自身失效"；CONTROL 与还原后 RC=0 |
 | F-56 | P1（服务面执行类，F-29 未覆盖的另一半：旁路不在 web 层，在流式面上） | **CLI `stream` 是最后一条不经 `Client` 的数据命令，而它绕开的恰是第 29 步那份抄件所指向的 fail-closed 契约**（Phase 5 第 29 步为找 `StreamPlan` 消费方而排查流式入口时实测）：`cmd_stream`（`tstdx/cli/runtime_commands.py:161`）`from ..streaming import QuoteStream`，以 `QuoteStream(provider=args.provider, **_transport_kwargs(args))` 自建对象，该类的 `_get_runtime()`（`tstdx/streaming/base.py:242`）惰性 new 一个自己的 `UnifiedRuntime`——这条命令既不经 `Client`（唯一业务入口），也不经 `StreamPlanner`（唯一流式契约）。两处矛盾随之落地：① `--provider` 是自由字符串（`tstdx/cli/parser.py:150`），`QuoteStream.__init__`/`_get_runtime` 只把它当 `default_provider` 透传、全路径无任何流式白名单判定，于是 CLI 面实际承诺"任何支持 `quotes` 轮询的 Provider 都能 stream"（`PROVIDERS.supports("tencent","quotes")` 为真），而库面 `Client.stream(provider="tencent")` 抛 `ValidationError`（"Stateful quotes stream 当前只存在 tdx Direct stream binding"）——同一件事两个面给出不同答案；② `tstdx/streaming/__init__.py` 的模块 docstring 声称"受支持的业务流实现是 `StatefulQuoteStream`/`AsyncStatefulQuoteStream`，历史的 `QuoteStream`/`AsyncQuoteStream` 已从公开/核心面移除"，而 `QuoteStream` 既在 `__all__` 里、又是 CLI 的生产路径（F-31 家族：docstring 与代码零矛盾的要求），`docs/api/interfaces.md` §5 更是把 `QuoteStream`/`AsyncQuoteStream` 当作流式订阅门面来写、通篇不提 `StatefulQuoteStream`。既有守卫抓不到它：F-29 的 `test_service_faces_never_import_the_web_layer` 只看服务面是否 import `tstdx.web`，第 9 步（F-28）只看选项有没有转发 | **已清偿（2026-09-19，第 31 步按默认 (a) 落地；下面三条路径与原始理由原文保留，作为裁决记录）**：(a) **采纳**：收口为 `Client(**_client_kwargs(args)).stream(syms, provider=…, interval=…, diff_only=…, max_queue=…)`，CLI 只翻译不执行；代价是 `tests/architecture/test_cli_connection_contract.py::test_stream_forwards_provider_and_connection_args`（当前以 monkeypatch `tstdx.streaming.QuoteStream` 钉住旧形状）要随之改写，该断言本身随第 26 步一起入库，不再是并发在途面。(b) 承认 CLI 需要一条"不建 `Client` 也能起流"的旁路，则同步改写 `tstdx/streaming/__init__.py` 的 docstring 与 `docs/` 口径，并把 tdx-only 判据从 `StreamPlanner` 下沉到 `QuoteStream`，使两面同答案。(c) 只收紧门禁不改行为：把服务面守卫从"不得 import `tstdx.web`"扩为"除 `tstdx.client` 外不得 import 任何执行面模块"，让这条旁路当场红着挂账。默认取 (a)，与 F-29 同口径；其代价可接受的理由是第 10 步已两次把 fake `WebQuoteSession` 换成 fake `Client`，"便于离线 monkeypatch"这一原始理由在同族里已被证明不成立 **执行记录（第 31 步）**：`cmd_stream` 现为 `with Client(**_client_kwargs(args)) as client: client.stream(...)`，连接参数走 F-27 的"只转达用户显式说过的"口径；`stream` 子命令的 `--provider`/`--host` 改由 `_provider_args()` 统一声明（该命令此前是 Tier-A 数据命令里唯一没有 `--host` 的一条）；`tstdx/streaming/__init__.py` 的 docstring 与 `docs/api/interfaces.md` §3/§5、README 的"流式订阅"行同步为"唯一入口 `Client.stream`，轮询基类不得由服务面直接构造"；新增结构性门禁 `test_service_faces_never_build_a_stream_themselves`，与 F-29 那条共用一次 AST import 边扫描，任何服务面 → `tstdx.streaming` / `tstdx.stream_contract` 的边即为红，扫描零命中时自曝"两条门禁同时失明"。数字与变异复测见 §1 第 31 步。 |
 | F-57 | P2（出处词汇类，F-50/F-52/F-54/F-55 同族的第五处，这次在出处类别词表上） | **`ProvenanceKind` 声明三种出处，而零缓存内核只能生产一种；配套三条判定属性对 `tstdx/` 生产代码读取点为 0**（Phase 5 第 30 步量完 `Provenance` 的字段后顺着 `kind` 那一格读到时实测，尺子沿用第 27-30 步那把并补出成员维度）：`tstdx/` 全部 189 个模块里对 `kind` 的唯一赋值是 `Provenance.direct()` 写死的 `ProvenanceKind.DIRECT`，`REPLAY`/`SYNTHETIC` 两条成员的全部引用就是它们自己的判定属性 `replay`/`synthetic`（`tstdx/result.py:95,99`）——没有任何代码能造出这两种出处，却有代码在教调用方如何判断它；`real` 同理，全仓唯一读取点是 `tests/runtime/test_query_contracts.py` 的 `assert direct.real is True`，它验证的是规则的抄本而不是规则本身（第 29 步为 `StreamPlan` 登记过的同款现场）。`tstdx/tools/golden_audit.py` 里成片的 `ORIGIN_SYNTHETIC`/`.real`/`.synthetic` 属于该工具自有的 `Coverage` 类（同名不同物，逐处人工核对，第 28 步登记的"普查不成立"边界正是为此） | **已清偿（第 32 步，默认走删除而非接线）**：(a) 接线的形状是给测试/回放运行时开一条生产 `REPLAY` 结果的通路（把 golden 回放标成 `REPLAY` 再送进 `QueryResult`）——那是新功能，且方向与 v17 相反：它要在**公开结果面**上出现一种真实 Provider 读取永远给不出的出处；本仓的回放数据一律停在解码层断言字节，从不冒充运行期结果，不取；(c) 保留成员并注释"将来会用到"正是 F-50/F-52/F-54/F-55 逐次删除的形状；(b) 采纳：`ProvenanceKind` 收缩为 `DIRECT` 一个成员，`real`/`replay`/`synthetic` 三条判定属性一并物理删除（出处由 `kind` 字段本身说明，不需要一个只能返回 `True/False` 却无人按它行动的翻译层），`tests/runtime/test_query_contracts.py` 那条断言随属性一起删除——同族规则仍由 `assert direct.kind is ProvenanceKind.DIRECT` 与退役词汇 `cached`/`cache_hit`/`direct_fetch` 循环钉住；wire 侧 `integration/serialization.py:41` 发射 `provenance.kind.value`，删成员等于收窄线上词汇，这正是零缓存口径想要的而非新增限制（此前 `replay`/`synthetic` 也从没出现在任何真实响应里，`cache_tier` 仍恒为 `null`，第 30 步口径不变）。门禁 `tests/architecture/test_result_shape_gates.py` 两条新判据：`test_every_declared_provenance_kind_has_a_producer` 分母取 `{item.name for item in ProvenanceKind}`（F-43 口径：清单会过期，枚举不会），分子用 AST 扫 `tstdx/` 得到的 `ProvenanceKind.<MEMBER>` 具名引用集合，**双向**做差——声明了没人生产红、引用了不存在的成员同样红，再加"只能有 `DIRECT`"这条形状锁；`test_provenance_exposes_no_judgement_property` 钉住 `vars(Provenance)` 里 property 恒为空集，即翻译层不得回长。防盲三条沿用（`scanned > 30`、引用集合非空、声明集合非空）。尺子补出成员维度并顺带收掉第三份抄件：`tests/support/field_readers.py` 新增 `members_referenced(owner, skip=…)`，`tests/architecture/test_caveat_channel_gates.py` 那条 `WarningCode` 发射点判据改为调用它（原先自带一份私有 AST 遍历，同一把尺子抄第三次即本族要删之物）。变异 4 项：**M1** 把 `REPLAY` 成员装回枚举 → 红，点名 `['REPLAY']`；**M2** 让判定属性 `real` 回长 → 红；**M3** 让尺子失明（owner 名换成不可能存在的 `NoSuchKindEnum`）→ 红且报的是自检而不是"零幻影"；**M4** 生产者躲开扫描（`Provenance.direct()` 改为按值构造 `ProvenanceKind("direct")`）→ 红，`DIRECT` 也失去具名生产点。CONTROL 与逐项复原后 RC=0，`MUT_RC 0`。**本步不动的**：`docs/adr/ADR-013`、`CONTRIBUTING.md`、PR 模板里"replay/synthetic 不得冒充实时数据"那句是**禁令**而不是存在性声称，删成员让它更强而不是矛盾，故原文保留 |
+| F-58 | P1（口径类，F-23/F-34/F-35 同族，这次量的是方案文档自己） | **§0.1「主链路贯通状态」与 §0.2「遗留不合理点」长期停在 Phase 3 之前的时态**（第 31 步之后，为回答「主体链路是否全部贯通」而复读本文档时实测）：§0.1 的两行 ❌ 把 v14 编排信封与 registry 三件套写成**现行断链**，其证据列点名的 `runtime/gateway.py`、`executor_registry.py`、`provider/router.py` 与`executor_bindings.py` 在磁盘上全部不存在（Phase 3A/3B 已整层物理删除），服务面那行还写着「全部 import `client_api.Client`」——那个根级模块也早在 Phase 3C 并入 `tstdx/client/`；§0.2 八行统一挂在「Phase 3–5 处理对象」标题下，其中 F-1…F-6 已在别处记为清偿、F-7/F-8 也已落地，却没有一行把判决写回表格，读起来像仍有八条待办。既有活文档门禁抓不到它：它校验反引号里的 `tstdx.x.y` 点号路径与 README 数字，**带斜杠的文件路径与表格时态都不在射程内** | **已清偿（2026-09-19，第 33 步）**：① §0.1 重写为五行现在时（内核主链 / 四个服务面 / 流式面 / 配置面 / 已删除的旧接缝），把「断链」改为「已整层删除故不可能断链」并指向防回潮守卫，同时就地写清两处「实现」的边界（真机冒烟未跑、F-37 的 2 字节桩、92 项 PENDING 契约、F-18 的链外守卫）；② §0.2 增列「现状」，八行逐条给裁决＋日期并指向清偿它的第几步；③ 新门禁 `tests/architecture/test_plan_status_gates.py`——§0.1 引用的每个 `…/….py` 必须存在于磁盘、§0.2 每行必须带裁决（已清偿/待用户决策/…）与日期或提交号，两节解析不出行即判「门禁自身失效」。本步只改文档与门禁，不改任何生产代码；变异与数字见 §1 第 33 步 |
 
 ---
 
@@ -1413,6 +1424,39 @@
     - **口径边界**：上表的门禁与全量数字取自**只含本步 5 个代码文件**的那棵树；两处账本 .md 写入后，在**与提交树逐文件相同**的树上重跑，读作 **3400 tests / 0 failures / 0 errors / 5 skipped**（141.4s）、`--cov=tstdx` **80.77%**、`full rc=0`、docs links `rc=0`——本节数字因此属于它所声称的那棵树（F-53 口径）；写进这一句本身只动 .md，不再另起全量轮，只在同树复跑 docs links（`rc=0`）。另注：第 31 步那轮在同一内容的树上记 7 条 skipped，本轮两侧都是 5 条（全部落在 parquet/duckdb 缺依赖的用例上）——条件跳过数随环境而变，故本步对账只用同轮两侧的数，不跨轮拼。
     - **共享树隔离**：本步只提交 `tstdx/result.py`、`tests/support/field_readers.py`、`tests/architecture/test_result_shape_gates.py`、`tests/architecture/test_caveat_channel_gates.py`、`tests/runtime/test_query_contracts.py` 五个代码文件，加本文件的 §0.3 F-57 一行与 §1 第 32 步一条、`CHANGELOG.md` 一处。并发会话的第 31 步全部产物（`0d7fbe1`：`tstdx/cli`、`tstdx/streaming`、`tests/architecture/test_cli_connection_contract.py`、`tests/unit/test_cli_semantics.py`、`docs/api/interfaces.md`、`README.md`，以及 F-56 行的改判与 §1 第 31 条、CHANGELOG 第 31 步块）逐字节未动；`docs/configuration.md` 的 autocrlf stat 噪声与 `uv.lock` 未纳入本步提交。
 
+
+33. ✅ **方案文档的"现状判定"停在 Phase 3 之前的时态（2026-09-19，清偿 §0.3 F-58；本步不动
+    生产代码）**：为回答"核心功能是否全部实现、主体链路是否贯通"而复读本文档时实测——§0.1 的两行
+    ❌ 与 §0.2 的八行"处理对象"都还是三、四个 Phase 之前的口径，其中引用的四个模块路径
+    （`runtime/gateway.py`、`executor_registry.py`、`provider/router.py`、
+    `executor_bindings.py`）与那个根级 `client_api` 都已从磁盘消失。
+    - **编号竞争如实登记**：本步的 §0.1/§0.2 重写与新门禁先按 `0d7fbe1`（第 31 步）基线写好
+      并测过一轮，期间并发会话把 F-57（`ProvenanceKind` 的幻影成员）作为**第 32 步**提交为
+      `85cc43e`，于是本步序号让到 **33**，并在 `85cc43e` 之上整轮重测（三条变异也重跑）。第一轮
+      那批数字不写进任何账本——它属于它所声称的那棵更早的树（F-53 口径）。
+    - **这是 F-23/F-34/F-35 同族的第四处**：文档门禁只校验反引号里的 `tstdx.x.y` 点号路径与
+      README 数字，**带斜杠的文件路径与表格的时态不在射程内**；被当作事实源的文档自己失真时，
+      所有下游读者（包括本轮提问的人）都会照字面接受。
+    - **改法**：§0.1 重写为五行现在时（内核主链 / 四个服务面 / 流式面 / 配置面 / 已删除的旧
+      接缝），两行 ❌ 改判"已整层物理删除，因此不再可能是断链"并指向防回潮守卫；§0.2 增列
+      「现状」逐行补裁决与日期。历史陈述与证据原文保留——本轮只回答"这条还开着吗"；§0.2 标题补为
+      「Phase 3–5 处理对象；第 33 步起逐行现状见最后一列」，让只看标题的人也读得到判决。
+    - **新门禁 `tests/architecture/test_plan_status_gates.py`**：路径存在性（§0.1）、裁决＋日期
+      （§0.2）、两节标题仍在（防解析空转）、以及"§0.1 ≥4 行且 ≥5 条路径 / §0.2 ≥6 行"的防盲
+      断言。防盲那半不是装饰：M3 改名后三条判据全部报"门禁自身失效"而不是绿。
+    - **本步先红在自己写的判据上两次**：① 裁决正则用子串匹配，F-5 行里"不再依赖**已删除**的信封
+      线"这句历史叙述替当前裁决打了勾，M2 逃逸（RC=0）→ 收紧为必须以 `**裁决**` 开头；② 补
+      裁决时少写一个 `|`，八行的判决并进了「证据」格、列数与五列表头不符 → 修回并把列数写进
+      断言。两条都在变异复跑里才现形，是"新门禁第一个被测出的是它自己"这条重复教训的第六次。
+    - **复测（同一轮日志；孤立 worktree = `85cc43e` + 本步 3 文件）**：离线全量 junit
+      **3404 / 0 failures / 0 errors / 7 skipped**、`SUITE_RC=0`、143.3s、`--cov=tstdx` **80.69%**
+      （阈值 77 未下调；本步零改生产代码，构成与第 32 步的 80.77% 同量级）；对账其在提交树上的
+      3400 ＋ 本步 4 条新门禁 = 3404。7 条 skipped 全部落在 `tests/output/test_sinks_dispatch.py`
+      的 parquet/duckdb 缺依赖用例。同树 13 道门禁全部 RC=0（`ruff format --check` 433 文件、
+      reachability 189/172/17、`contract_audit --ci` 63 契约 · 155 capability · 92 PENDING、
+      `spec_audit` 100.0%、docs links 82 文件、mypy 0 error、originality Total 190 / Suspicious 0）。
+      变异 CONTROL/RESTORED RC=0，M1/M2/M3 各自 RC=1 且逐条指名。数字取自只差本条文字与三处散文
+      订正的那棵树，写入后在同一提交树重跑 `tests/architecture` 与 docs links，两道 RC=0。
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
 
