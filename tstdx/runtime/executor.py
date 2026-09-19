@@ -20,6 +20,7 @@ from ..providers import PROVIDERS
 from ..query import QueryPlan
 from ..result import Provenance, QueryResult
 from .audit import audit_runtime
+from .freshness import verify_currentness
 
 __all__ = [
     "DirectBinding",
@@ -178,6 +179,8 @@ class DirectProviderExecutor:
         #: 一次查询一份告警收集器：Provider 侧记录的任何数据完整性瑕疵都在这个块里
         #: 落进 ``collected``，随后随结果出发（F-45）。
         with warning_sink() as collected:
+            #: currentness 的判据先于 I/O：无法证明的契约不该先用一次请求去换一条告警。
+            verify_currentness(plan, strict=strict)
             try:
                 data = fn(plan)
             except TdxError as exc:

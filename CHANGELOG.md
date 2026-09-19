@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（v17 Phase 5 第 41 步 —— `currentness` 从声明口径变成运行期判据，"文档点名的错误类 ⇒ 代码里真有站点"上门禁：F-44 裁决 (a) 的执行）
+
+- **对外行为变化（本步唯一一处，且只有一个可达形状）**：本地 vipdoc channel 被要求
+  `currentness='business'`（HTTP 面默认口径）时，`strict=True` 从"安静地返回一份无法证明新鲜度的本地文件"
+  改为运行期 `FreshnessViolation`（E4060，HTTP 面 503）；非严格时结果照样返回，但携带
+  `currentness_unproven` 瑕疵。`live` 打本地 channel **到不了**这条判据——规划期先以 `ValidationError`/422
+  拒掉（本步未改），所以规则里的两个 mode 在用户侧只落地一个。`auto`/`historical` 与其余 55 个非本地 channel
+  的行为一字未动。
+- **落笔前先量裁决的边界**：(a) 那一格里写着两件事——"Provider 失败路径统一包成 `SourceUnavailable`"与
+  "为 `currentness` 落一个可判据的运行期校验器"。第二轮取证把两件事分成了两种下场：后者有落点并已接线，
+  前者没有。没有落点的证据：`DIRECT_BINDINGS` 251 条与注册表三元组一一对应，2100 个 (provider, capability)
+  组合经 `QueryPlanner.compile` 全部或编译成功、或以 `ValidationError` 结束，**能到达执行器"没有可执行
+  Direct Provider binding"分支的组合数是 0**；而把 Provider 真实失败统一包成 `SourceUnavailable` 要推翻
+  `docs/providers/README.md` §12 自己那条"Provider-specific `TdxError` 必须原样保留"的保护——那是另一次
+  对外契约决定，不在"接线"授权里，登记为 F-68 待裁决。
+- **校验器的形状**：新增 `tstdx/runtime/freshness.py::verify_currentness(plan, *, strict)`，在
+  `DirectProviderExecutor.execute()` 里**先于任何 Provider I/O** 调用（也在 `warning_sink()` 块内，所以
+  非严格面的瑕疵进得了本次结果的 `meta.warnings`）。判据只读两件事：`ChannelSpec.local`（注册表事实）与
+  `_parse_currentness`。`auto`/`historical` 不要求证据；`live`/`business` 要求"当期"，而本地文件 channel
+  给不出"文件已覆盖当期"的判据 ⇒ 无法证明。三面分工：规划期 422（`live` 打非 live channel，输入本身不
+  可满足）/ 运行期 503（`strict` 且口径无法证明）/ 非严格 200 + 瑕疵（发射口仍只有
+  `tstdx/diagnostics.py::record_warning` 一处）。
+- **否决了一条看似更聪明的规则**：不做"行内时间戳晚于今天 ⇒ 假数据"判据。行内时间戳在本仓至少有三种
+  写法（8 位无分隔、`YYYY-MM-DD HH:MM`、`YYYYMMDD`），全部是无时区的源本地 CST 字面量，而
+  `Provenance.observed_at_ns` 是 UTC 墙钟——拿 CST 字面量跟 UTC 墙钟比符号，主机时区不在 +8 时每天误报约
+  8 小时。先解决时区归属，本步只落"注册表可判据"的半边。
+- **新门禁 4 项 + 判据测试 13 项**（`tests/architecture/test_error_promises.py`、
+  `tests/runtime/test_freshness_verifier.py`）：门禁的分母由扫描现推（82 份 md 里 46 份对外文档、被反引号
+  点名的 45 个错误类），判据是"文档点名 ⇒ 该类子树里有真实站点（`raise` / `raise <变量>` 作用域回溯 /
+  `on_error(...)` 投递）"；5 个未接线叶子进豁免表，每条必须挂一个仍在台账里的 F 号，且撤销只看类自身站点
+  ——接线后不撤表，门禁自己报过期。幻影异常与幻影开关（F-43/F-46）同族：用户按文档写 `except`，那段代码
+  永远不会执行。行为侧 13 项含 channel×mode 全矩阵与"注册表事实自校验"，并断言同一开关的两面一致
+  （抛出的类与落进 `warnings` 的瑕疵同现同灭）。
+- **8 发变异逐发被抓住**（规则收窄成只认 `live` / 删掉执行器调用 / `strict` 面失效 / 非 `strict` 面静默 /
+  豁免表漏一类 / 已接线类仍挂豁免 / 文档点名扫描失明 / `raise <变量>` 判据退化）：`变异数 8，未被抓到 0`，
+  三个被改文件事后逐一做残留检查均为 OK。
+- **文档面（把不兑现的承诺改成实话）**：`docs/providers/tdx.md` §5 写明运行期只有一处 `currentness` 判据、
+  `age`/`received_at` 在本仓既无字段也无读写方（全仓 grep 0 命中），§7 删掉 `CapabilityUnsupported` /
+  `DataIntegrityError` 两个从未存在的类名并写明 `SourceUnavailable` 无抛点；`docs/providers/README.md`
+  §11 的 `historical_closed`/`current_series` 换成 `CurrentnessMode` 四值口径，§12 从"`SourceUnavailable ==
+  selected Provider unavailable`"改成"登记占位 + 选定 Provider 无法满足请求时用户实际拿到的是哪四类"；
+  `docs/errors.md` 新增"树里存在但运行期永不发生的类"表（5 行各配为什么不会发生）、
+  `fallback_to_offline`/`fallback_to_web` 的消费方从"sources 路由"改为"无消费方"、头部类数改为指向源头
+  并记下 v8 的 44 与当前 46 个类的口径差；`docs/tdx_status.md` 三处 P13-A 的 `SourceUnavailable` 承诺改写
+  为 v17 实况，并在兜底矩阵上加"v17 状态"横幅。
+- **判据自身的第一版错过两处，两处都留档**：站点普查最初只认字面 `raise X(`，把
+  `last_exc = AntiSpiderBlocked(...)` + `raise last_exc` 这条已接线的重试环虚报成幽灵（多报 3 类）；豁免表
+  的自洁判据最初按子树计数，于是三个抽象基类被自己判成"已接线却仍挂豁免"——事实是它们不该在豁免表里。
+- **孤立 worktree 同轮复测（本机 Windows + 外部解释器 cpython-3.13.12，非仓内 `.venv`）**：基线（干净
+  `b52a122`）junit 3492 / 0 / 0 / 5、149.270s、**81.21%**；本步树 junit **3509 / 0 / 0 / 5**、159.392s、
+  **81.23%**、RC=0，`3492 + 13 + 4 = 3509` 对得上，阈值 77 未下调。覆盖率 TOTAL 行
+  `22580 stmts / 3654 缺 / 6042 分支 / 1023 缺分支` → `22606 / 3654 / 6050 / 1023`：新增 26 条语句、
+  8 条分支全部被执行到（缺语句与缺分支两格一格没动）。9 主门禁两树全部 rc=0（originality 191→192 模块、
+  ruff format 468→471 文件、docs link 两侧同为 82 files，其余六项读数与基线逐格相同）。
+- **落笔后对提交内容所在的同一棵树再跑两轮**：九项门禁两次全部 rc=0；junit 两次同为 **3509 / 0 / 0 / 5**，
+  覆盖率一次 **81.24%**（TOTAL 3653 缺语句 / 1022 缺分支）、一次 **81.23%**（3654 / 1023，与首轮相等）。
+  0.01 个百分点的差整格在 `tstdx/protocol/generic.py`（逐文件覆盖率表 diff 只有这一行，本步没碰那个文件），
+  与上一步记录的是同一格运行间抖动——两个读数都记下，而不是只留相等的那个。
+
 ### Fixed（v17 Phase 5 第 40 步 —— 三张 wire 面对未声明的请求字段当场拒绝：F-47 裁决 (a) 的执行）
 
 - **裁决即边界**：F-47 选 (a) 三面 fail-closed——HTTP 查询串与 body、WS `params`、MCP `arguments`

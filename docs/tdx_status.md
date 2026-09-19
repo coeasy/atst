@@ -56,10 +56,16 @@
 - `AsyncTdxClient` 与同步逐方法镜像（33 组共享 `_mixin` 骨架）；新增的
   offline fail-fast 与空内容检测在异步侧同步生效（实测 async security_list /
   minute_history / download 与同步行为一致）。
-- P13-A 的 `SourceUnavailable` 转换仅作用于 `UnifiedQuoteAPI` 门面（同步），
-  异步门面 `AsyncQuoteAPI` 仍走 `_mixin` 共享骨架——P13-A 后续批次可扩展。
+- P13-A 的 `SourceUnavailable` 转换只存在于 `UnifiedQuoteAPI`/`AsyncQuoteAPI` 门面，
+  而这两个门面已随 v17 单内核删除：v17 运行期没有任何 `SourceUnavailable` 抛点，
+  offline 命令统一以 `CommandOffline` 结束本次查询（F-44 的剩余面即由此而来）。
 
 ## 五、P13-A 兜底路径矩阵（2026-09-06 增量）
+
+> **v17 状态**：本表描述的是 pre-v17 门面的跨源兜底路由，随门面一并下线。
+> 表中所有 "auto→`SourceUnavailable`" 的转换在 v17 **不存在**——单内核不做
+> Provider 切换，offline 命令按 `CommandOffline` 结束本次查询。"替代"一列仍是
+> 有效的方法学指引（由调用方自己改选能力），只是不再由运行期自动给出。
 
 | 方法 | 原契约 | 新契约（P13-A） | 语义差异 |
 |---|---|---|---|
@@ -86,6 +92,8 @@
 3. 兜底路径以「能力不丢」为准：代码表 → 东财 clist（行内 `source` 字段标记
    数据来源）；历史分时 → 引导 `minute_klines`；板块行情 → 腾讯板块排行
    （P13-A）；字段 schema 差异在方法文档中声明。
-4. 「仅 tdx」方法的环境级失效统一走 `SourceUnavailable`（E7050），
-   `context["alternatives"]` 必须给出可用的替代方法清单——避免用户拿到
-   误导性的 `AllHostsUnreachable` 或长时间读超时。
+4. 「仅 tdx」方法的环境级失效在 v17 表现为 `CommandOffline`（账本 `STATUS_OFFLINE`）
+   或传输层原异常（`ConnectionFailed`/`AllHostsUnreachable`/`WebSourceError`）：
+   内核不替换 Provider，所以也不替用户决定"换谁"。pre-v17 门面曾用
+   `SourceUnavailable`（E7050）+ `context["alternatives"]` 承载同一事实，
+   该抛点已随门面删除（F-44 剩余面）。

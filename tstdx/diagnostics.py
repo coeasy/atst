@@ -76,6 +76,9 @@ class WarningCode(str, Enum):
     WEB_TENCENT_AMOUNT_ALL_ZERO = "web_tencent_amount_all_zero"
     #: 东财报表在 ``max_pages`` 内未取尽。
     WEB_EASTMONEY_PAGE_LIMIT = "web_eastmoney_page_limit"
+    #: 声明的 ``currentness`` 要求当期数据，而执行 channel 给不出可判据的证据（本地文件）。
+    #: 见 :mod:`tstdx.runtime.freshness`；``strict=True`` 时它不是告警而是失败。
+    CURRENTNESS_UNPROVEN = "currentness_unproven"
 
 
 @dataclass(frozen=True, slots=True)

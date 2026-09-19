@@ -285,22 +285,28 @@ v17 运行期不做结果缓存：每一次公开查询都编译为一个 `Query
 - 不得自带"命中即跳过上游"的语义——那是运行期缓存的职责，而运行期缓存已被物理删除；
 - 返回的 provenance 必须与当前 `QueryPlan` 的 Provider/Channel/Capability 完全一致，否则结果被拒（`ResultMeta.from_plan` 抛 `ValidationError`）；
 - replay/synthetic 或跨 Provider 的 payload 不能冒充当前 Provider 的真实数据；
-- freshness mode 由 Provider 如实声明：历史窗口返回后仍是 `historical_closed`，不得因为"数据还新"被重标为 `current_series`；
+- 新鲜度只有 `currentness`（`auto`/`live`/`historical`/`business`）这一套口径：它是调用方的声明，运行期只对能判据的那一面（本地文件 channel 被要求当期口径）兑现，其余口径差异不产出 per-result 的 freshness 标签（`historical_closed`/`current_series` 这类模式名从未存在于代码，F-68 登记）；
 - 调用方要控制的是新鲜度**口径**（`currentness`）与执行**预算**（`deadline_ms`），不是过期容忍度
   或部分放行——`options` 袋里只有 `tstdx.query.EXECUTED_OPTIONS` 的键会被执行面读取，
   其余键（含 `tstdx.query.REJECTED_OPTIONS` 的策略键）在直连执行面上恒被当场拒绝。
 
 ## 12. Error
 
-现有 `SourceUnavailable` 保持 E7050，不创建第二棵错误树。
+错误树只有一棵：`tstdx/errors.py`，不创建第二棵。
 
-规范语义：
+`SourceUnavailable`(E7050) 目前的定位是**尚未接线的分类占位**：v17 运行期没有任何抛点，"选定 Provider 不可用"这件事由下面的传输层原异常承担。本仓不承诺用户能 `except` 到它（F-44 剩余面，已登记为 F-68：删除或登记为占位待裁决），新增 Provider 也不得以它替代真实失败原因。
+
+选定 Provider 无法满足请求时，用户实际拿到的是：
 
 ```text
-SourceUnavailable == selected Provider unavailable
+能力不在该 Provider 的 channel 上 -> ValidationError(E1010, 422)
+命令 offline                  -> CommandOffline
+连接/超时/HTTP 层失败          -> ConnectionFailed / AllHostsUnreachable /
+                                ReadTimeout / WebSourceError / AntiSpiderBlocked
+当期口径无法证明（本地文件）    -> FreshnessViolation(E4060, 503)
 ```
 
-context 应统一使用：
+任一异常的 context 统一带 `provider`/`channel`/`capability`（执行器负责补齐），例如：
 
 ```json
 {

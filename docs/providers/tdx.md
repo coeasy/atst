@@ -152,7 +152,15 @@ received_at
 age
 ```
 
-无法证明满足 freshness profile 时严格模式返回 `FreshnessViolation`，不得用缓存/Replay/Web 伪装 TDX 实时成功。
+运行期对 `currentness` 的判据只有一处，落在 `tstdx/runtime/freshness.py`：
+执行 channel 读本地文件（`ChannelSpec.local`）却被要求当期口径（`live`/`business`）时，
+运行期没有证据证明文件已覆盖当期——`strict=True` 当场返回 `FreshnessViolation`，
+非严格模式把它作为 `currentness_unproven` 瑕疵随结果出发（不静默）。
+
+上面 freshness profile 清单里的 `age`/`received_at` 在 v17 运行期**没有对应字段、没有生产者、也没有读取者**（全仓 `received_at`/`age` 命中 0 处），`observed_at` 只有 `Provenance.observed_at_ns` 一个事实；因此除上述本地文件面之外，本仓不声称任何运行期年龄校验（剩余面登记为 F-68，等删除或占位裁决）。
+
+`live` 打在非 live channel 上仍是规划期的输入错误（`ValidationError`/422），不改写成 503：请求本身不可满足，与结果是否新鲜无关。
+不得用缓存/Replay/Web 伪装 TDX 实时成功。
 
 ## 6. ResultMeta
 
@@ -173,14 +181,15 @@ real=true
 
 ```text
 AllHostsUnreachable
-SourceUnavailable(E7050)
 CommandOffline
-CapabilityUnsupported
 FreshnessViolation
-DataIntegrityError
+IntegrityViolation
+ConnectionFailed / ReadTimeout / WebSourceError
 ```
 
-`SourceUnavailable` 在 v12 的规范含义是“selected Provider unavailable”，context 使用 `provider=tdx`。
+`FreshnessViolation`(E4060) 是唯一由 `currentness` 契约触发的数据新鲜度错误，抛点见 §5。Provider 真实不可用在本仓表现为上面那组传输层原异常（`TdxError` 原样保留并补齐 Provider/Channel context）。
+
+`SourceUnavailable`(E7050) 仍在错误树里但 v17 **没有抛点**：它唯一的用武之地是已删除的 `UnifiedQuoteAPI` auto 兜底门面。`CapabilityUnsupported` 与 `DataIntegrityError` 两个名字从未存在于 `tstdx.errors`（此前是本文档独有的幻影，F-68 登记），跨能力不支持由 `ValidationError`(E1010) 表达，数据完整性由 `IntegrityViolation`/`TruncatedDataError` 表达。
 
 ## 8. 协议事实保护
 

@@ -1,7 +1,9 @@
 # 错误体系与 RetryAdvice 使用指南
 
-> 错误分类树定义于 `tstdx/errors.py`（44 个类，E1-E9 九域，无语义重叠对——
-> v8 审计结论，见 [ARCHITECTURE_AUDIT_v8.md](archive/plans/ARCHITECTURE_AUDIT_v8.md) §二）。
+> 错误分类树定义于 `tstdx/errors.py`（E1-E9 九域，无语义重叠对——v8 审计结论，
+> 见 [ARCHITECTURE_AUDIT_v8.md](archive/plans/ARCHITECTURE_AUDIT_v8.md) §二）。
+> 类数不在本文抄录：v8 写的是 44 个类，v17 当前是 46 个类（`errors.py` 顶层类计数；
+> `tstdx.errors.__all__` 另有 49 个名字，多出的 3 个是函数）——抄一次就过期的数字不如指向源头。
 > 本文是**使用侧**文档：异常怎么接、RetryAdvice 怎么消费、如何扩展。
 
 ## 一、错误树速查（按域）
@@ -35,6 +37,30 @@
 - `CommandOffline`（E3035）：TDX 命令在主站已下线；
   `SourceDeprecated`（E7030）：Web 数据源接口下线。
 
+## 一之二、树里存在但运行期永不发生的类
+
+下面这些名字在错误树里，却在 `tstdx/` 全仓没有任何抛点、也没有作为投递口
+（`on_error(...)`）的实参交出去——**不要为它们写 `except`，那段代码不会执行**：
+
+| 类 | code | 为什么不会发生 |
+|---|---|---|
+| `UnknownCommand` | E3030 | 内核不发送未知命令；只有离线工具（`tools/capture`、`ProtocolSniffer`）在研究命令表 |
+| `ChecksumMismatch` | E3050 | 协议与传输层没有任何校验和读取点 |
+| `BackpressureOverflow` | E6030 | `BackpressureQueue.put` 的既定语义是丢最旧元素并计数，从不抛 |
+| `SourceUnavailable` | E7050 | 唯一的用武之地是已删除的 `UnifiedQuoteAPI` auto 兜底门面；Provider 真实不可用现为传输层原异常 |
+| `CompatibilityWarning` | — | 从未发射的 `UserWarning`；兼容性判定走 `CompatibilityError` |
+
+抽象基类 `TransportError`/`StreamError`/`ProfileError` 自身也不被 `raise`，
+但它们的子类全部有站点，属于正常的分类节点，不在上表。
+
+本表由 `tests/architecture/test_error_promises.py` 把守：对外文档点名的错误类
+必须有真实站点，否则要么接线、要么登记裁决后进豁免表；一旦某类被接线，
+它的豁免必须同步撤销（门禁会主动报"豁免已过期"）。
+
+同一步里被**接上**的是 `FreshnessViolation`（E4060）：`currentness` 从只进 plan 的
+声明口径变成运行期判据，判据与落点见 `docs/providers/tdx.md` §5 与
+`tstdx/runtime/freshness.py`。
+
 ## 二、每个异常都带 RetryAdvice
 
 `TdxError.advice` 返回 :class:`~tstdx.errors.RetryAdvice`，字段契约：
@@ -45,9 +71,14 @@
 | `backoff` | 重试前退避秒数 | pool 重试 sleep |
 | `max_retries` | 建议最大重试次数 | pool 重试上限 |
 | `switch_host` | 换一台主站再试 | pool 故障转移 |
-| `fallback_to_offline` | 可降级读本地 vipdoc | sources 路由 |
-| `fallback_to_web` | 可降级走 HTTP Web 源 | sources 路由 |
+| `fallback_to_offline` | 历史兼容字段 | **无消费方**（见下） |
+| `fallback_to_web` | 历史兼容字段 | **无消费方**（见下） |
 | `note` | 人类可读建议（进日志/错误摘要） | 各层日志 |
+
+最后两行是 v17 的实况：`sources` 路由已随单内核删除，全仓对这两个字段的唯一
+读点就是 `TdxError.to_dict` 自己把它们写进序列化字典（`errors.py:154`）。
+`errors.py:20` 早已声明"仅为序列化兼容保留，新内核不消费"——本文此前把它们
+写成有消费方的路由开关，属于幻影字段（F-68 登记，与 F-43 同族）。
 
 **核心设计**：故障转移策略由异常自带、不在传输层硬编码——新增一种错误
 只需在 `errors.py` 声明 `default_advice`，传输层自动获得正确行为
