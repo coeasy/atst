@@ -60,7 +60,9 @@
 | F-26 | P1（链路贯通类） | **唯一在每次构造执行器时运行的贯通审计，看不见它名字里那件事**：`tstdx/catalog/capability_audit.py::audit_capability_bindings()`（由 `runtime/audit.py` 在 `DirectProviderExecutor.__init__` 调用）只断言 `MIGRATED_BINDINGS ⊆ DIRECT_BINDINGS`，而**能力目录本身就是从绑定表生成的**——某项对外能力悄悄失去执行路径时两侧同时缩小，审计照绿；反向（绑定表里藏着没承诺过的暗绑定）也不查。Provider 注册表逐 channel 声明的 `(provider, channel, capability)` 这一独立事实源**只在离线测试 `tests/runtime/test_v13_architecture_alignment.py:50` 里对账过**——它保护的是"跑测试的人"，产品内一次单侧漂移不会被任何运行期判据捕获（同处的 `audit_direct_bindings()` 只查重复键与执行元数据，缺元数据仅 `warnings.warn`）。守卫测试本身也形同虚设：只断言 `report.* > 0`，剩 1 条绑定也通过 | **已清偿**（2026-09-19）：① 审计改为以**注册表声明**为独立分母的双向对账——`migrated ⊆ executable`、`declared − executable` 非空即报"registry-declared … with no executor binding"（声明了却没有执行路径）、`executable − declared` 非空即报"outside the Provider registry"（执行路径不受声明约束），报告新增 `declared_bindings`；运行期判据由此与离线测试同权重，任何一侧漂移都在 `Client()` 构造期失败；② **不引入 `Client` 依赖**：曾考虑用 `Client.capabilities()` 当对外面，但它自身由 `MIGRATED_CAPABILITIES` 推导（同源于绑定表，不是独立分母），且在 catalog 里惰性 import client 会在构造执行器时反向拉起入口层；③ 测试补真实断言：注册表 capability 名集合 == `Client.capabilities()`（172），并以 monkeypatch `DIRECT_BINDINGS` 做三次变异（丢目录内绑定 / 丢目录外绑定 / 加幽灵绑定）分别命中三条消息，证明守卫有牙。**复测**：当前三面对账 `migrated 229 ⊆ executable 251 = declared 251`、双向差集为空 ⇒ 主体链路在"声明↔执行"这一维确实闭合（这是对本轮"核心功能是否全部实现、主体链路是否贯通"的机器可复核回答，同时如实标注：绑定存在 ≠ 运行期正确，后者仍靠 golden/adversarial 与尚未执行的真实网络冒烟）。`tests/provider_isolation` / `tests/runtime` / `tests/architecture` RC=0，`mypy` RC=0，`ruff check`/`format --check` 干净 |
 | F-27 | P1（配置面 ↔ 使用面） | **CLI 声明了一整排连接参数，却把它们丢在传输适配层**（Phase 5 第 8 步实测）。Phase 6 让 `UnifiedRuntime` 成为配置面唯一读者之后，CLI 这条最常用的入口并未跟着改：① `quotes`/`bars`/`snapshot`/`minute`/`trades`/`security-count`/`security-list` 7 个命令由 `_provider_args()` 声明了 `--host`，handler 却构造裸 `Client()`——`--host` 与 `--timeout` 双双丢弃，命令正常返回数据、退出码 0，即"幻影开关"（fail-open：用户以为钉住了主站，实际仍在配置/内置池上）；② 15 个命令的 `--timeout` 带 `default=5.0` 字面值，而 `[core] timeout` 默认同为 5.0 ⇒ 数值上看不见差异，**只要用户真在 `tstdx.toml` 里改过就静默失效**，F-16 刚承诺的"配置面即执行面契约"在 CLI 侧被重新破掉；③ `probe`/`blocks`/`list`/`quotes-snapshot` 4 个命令有意走传输客户端 `TdxClient`（不经内核），却把 `_resolve_hosts()` 的"未指定"折成 `None` 直接交给构造器 ⇒ `[hosts] servers` 对它们永远是空头支票（内核在 `kernel.py:62-67` 做的正是"未指定即读配置"这一步）；`goods`/`f10` 同族问题但**只修 timeout**——它们是多步流程的族客户端（goods/F10 协议），而 `[hosts] servers` 是 7709 标准族条目，把行情主站喂给它们是错的，故其 `hosts` 仍只认 `--host`；④ `stream --provider` 解析后从不转发，非 tdx Provider 静默按 tdx 跑。触发发现的是一条无关的文档修正：README 写着 `serve --host 0.0.0.0`（前面带 CLI 程序名），而 `serve` 早已改名 `--bind`，照抄即 exit 2——**没有任何门禁跑过文档里的 CLI 示例** | **已清偿**（2026-09-19）：① `_common.py` 新增三个单一职责助手，把"CLI 只有两种合法姿态"写成代码——`_client_kwargs`（内核路径：只转达用户显式说过的，未说即 `None` 让内核读配置）、`_transport_kwargs`（内核外传输客户端：就地复现内核的配置解析，`--host` 缺席时取 `[hosts] servers`）、`_transport_timeout`（同规则的单值版）；16 处内核侧构造点（8 `Client(**_client_kwargs(args))` + 8 `_ClientRows(**_client_kwargs(args))`）、7 处传输侧构造点（`probe`/`blocks`/`list`/`quotes-snapshot`/`stream` 走 `_transport_kwargs`，`goods`/`f10` 走 `_transport_timeout`）、`stream` 的 `--provider` 全部接线；② 15 个 `--timeout` 字面默认改 `None`，只保留 `hosts`/`server-test` 两处诊断命令的 5.0（它们要遍历候选池，本就不该吃 `[core] timeout`，就地注明理由）；③ **补两道门禁**：`tests/architecture/test_cli_connection_contract.py`（20 项，用 fake Client 捕获真实构造参数，含"逐命令结构性守卫"——凡声明 `--host`/`--timeout` 又非诊断白名单的命令，其 handler 源码必须出现三个助手之一）与 `test_doc_code_consistency.py::test_every_documented_cli_example_parses`（活文档的围栏块+行内 CLI 示例逐条过真实 parser）。**门禁上线即抓到 4 条已失效文档命令**：README 两处 `hosts audit --hosts-file X`（`--hosts-file` 属 `hosts` 组级选项，必须在 `audit` 之前）被 parser 拒为 exit 2、`docs/api/interfaces.md` 的 `--family all`（`all` 不是合法取值，默认即全 5 族）、`docs/api/README.md` `margin` 那一行缺必填位置参数——全部按真实语法改正，未放宽门禁。**变异验证**：把 `cmd_quotes` 改回裸 `Client()` ⇒ 三条断言分别命中 `KeyError: 'hosts'` ×2 与结构性守卫 `['quotes'] == []`，随后原样还原（`git diff --stat` 与改前一致）并复绿 |
 | F-28 | P2（同类外溢） | **F-27 的守卫只盯连接参数，等于承认"其余选项没人管"**：把该守卫从"必须消费 `--host`/`--timeout`"推广到"parser 声明的每个选项都必须被读到"（对 31 个命令 × 全部 dest 逐个扫 handler 源码，豁免面收敛为四个点名的助手 `_client_kwargs`/`_transport_kwargs`/`_transport_timeout`/`_resolve_hosts` + 两个诊断命令），实测唯一命中项是 **`stream --max-queue`**：parser 声明它（`default=1024`），`cmd_stream` 却调 `stream.subscribe(symbols, interval=, diff_only=, on_quote=, on_error=)` 而**不传** `max_queue`，于是 `QuoteStream.subscribe` 自己的 `max_queue=1024` 默认值接管。与 F-27 同形：CLI 字面默认与库默认同为 1024，**只有把队列上限调小以约束内存的用户会被静默忽略**——而这恰恰是背压参数唯一的用途 | **已清偿**（2026-09-19）：① `cmd_stream` 补 `max_queue=args.max_queue` 转发；② 结构性守卫由"连接参数专用"改为**全量选项消费审计**（`_dead_cli_options()`），并把豁免面从"整个 `_common` 模块源码"收紧为四个点名助手——否则任意一处 `args.x` 会给所有命令开绿灯；③ `tests/unit/test_cli_semantics.py` 的 stream 假对象改用与真实 `subscribe` 一致的完整关键字签名并断言 `max_queue` 实到（此前它的假签名恰好缺该参数，正是"测试替身比生产接口更窄"导致幻影参数无人发现）。**变异验证**：删掉 `max_queue=args.max_queue` 一行 ⇒ 守卫报出 `stream: --max-queue (dest=max_queue)`，还原后复绿 |
+| F-30 | **P0**（口径类：门禁读数失真） | **`*_hardening` 侧车在 import 期整体替换连接池方法，使类体内的真实实现成为永不执行的死代码**（Phase 5 第 11 步实测）。四个侧车（`_pool_hardening` 461 行 / `_async_pool_hardening` 530 行 / `_async_close_hardening` 129 行 / `_pool_provenance_hardening` 327 行）以 `ConnectionPool.request = _request` 之类的整方法赋值收尾，读代码的人在 `pool.py`/`async_.py` 里看到的 `request`/`update_hosts`/`close` 一行都不会跑；后果有三层——① 覆盖率读数被系统性压低（`pool.py` 46.2%、`async_.py` 44.7%，被测试覆盖的是侧车那份拷贝），F-15 的"覆盖率缺口"里有一块是这种记账假象；② 可达性门禁**结构上看不见**这种遮蔽（被覆盖的原方法在静态导入图里照样"可达"，F-22 的记录守卫无从命中）；③ 主站代际发布规则有两份事实源（`_pool_provenance_hardening` 与两个池类体各写一遍 `update_hosts`），且守卫测试 `test_public_pool_hardening_wiring.py` 把"实现住在侧车"钉成契约——想改回去必须先红一条测试 | **已清偿**（2026-09-19，Phase 5 第 11 步，提交 `9e5734a`）：按用户拍板的处置"**搬回类体，解散桩层**"执行——1 447 行侧车删除，实现搬回 owning 类体，三条共享发布原语（`validate_host_updates`/`new_endpoint_entry`/`next_generation_host`）上收到 `tstdx/transport/hosts.py` 供两池共用。**等价性以 AST 实证**：31 个搬迁成员逐个与 `git HEAD` 侧车原文比对归一化 `ast.dump()`（仅归一 `pool`→`self`、`_impl.X`→`X`、`helper(self, …)`→`self.helper(…)`、重命名成员、docstring/注解），`offenders: 0`。**守卫反转为防回潮**：同一测试改判"实现必须住在池模块 + `importlib.util.find_spec` 判侧车不存在 + `__wrapped__` 为空"，本地冒烟与两条 wheel 契约同批改判。**复测（同一轮日志）**：`PYTEST_RC=0`、整仓覆盖率 **80.60%**（阈值 77 未下调），`pool.py` → **80%**、`async_.py` → **89%**；`ruff check`/`format --check` 干净、`mypy`（CI 参数）188 文件 0 错、reachability `--strict` RC=0（`188 模块 / 可达 171 / 豁免 17`）、docs links 82 文件 OK。**未纳入本项**：`_pool_family_hardening.__init__`、`_ranking_hardening`、`_connection_contract_hardening`、`_host_selector_hardening` 与 client 层四件仍是 import 期打桩，但它们做**局部包装**（校验/参数注入）而非整方法替换，遮蔽面小一个量级；全部收敛为装饰器/显式调用登记为发布后独立 PR |
 | F-29 | P2（链路贯通类） | **CLI 最后两条不经内核的数据命令：`changes` 与 `hot` 直接调用 `WebQuoteSession.stock_changes()` / `WebQuoteSession.hot_rank()` 静态方法**（第 9 步查完选项消费后，顺势排查同一模块的执行入口而暴露）。两项能力早已注册并有执行路径（`stock_changes` / `hot_rank` 各有 `derived`+`catalog` 与 `eastmoney`+ 同名 channel 的 `web_session` 绑定），所以这不是能力缺口，而是**同一个 Web 源有两条可达路径**：旁路那条拿不到 `QueryResult` 信封与 `Provenance.direct` 指纹，不经过 `validate_call` 的参数校验，也吃不到 F-27 的三个助手（`--host`/`--timeout` 对旁路命令天然失效）；更要紧的是它给验收口径「服务面只翻译不执行」留了一个活反例 | **已清偿**（2026-09-19）：① 两个 handler 改为 `with _ClientRows(**_client_kwargs(args))` 调用 `api.stock_changes(types, page=…, size=…)` / `api.hot_rank(page=…, size=…)`，`--types` 的 ValueError→exit 2 分支仍排在构造客户端之前（非法输入不触网）；② 新增**结构性守卫** `test_service_faces_never_import_the_web_layer`：以 AST 扫描 `tstdx/cli/**.py` 与 `tstdx/integration/**.py`（CLI + HTTP/WS/MCP 四个服务面）的全部 import，任何解析到 `tstdx.web` 的边即为红——判据与命令名无关，新增命令复刻旁路当场被抓；③ 逐命令断言 `test_web_backed_command_calls_the_kernel_not_the_source` 证明两命令确实以 capability 名调用 `Client`；④ 两处单元测试的假 `WebQuoteSession` 换成 fake `Client`（与既有 `fake_client` 夹具同形，避免替身比生产接口更窄）。**离线对拍**：stub 掉 `EastmoneyStockChangesSource.fetch_changes` / `EastmoneyHotRankSource.fetch_hot_rank` 后走内核，返回行与旁路一致，provenance 为 `ProvenanceKind.DIRECT`（provider/channel = `derived`/`catalog`），实参 `(8201, 8193)` 与 `page/size` 原样到达数据源。**变异验证**：把 `changes` 改回直接调用 ⇒ 结构性守卫报 `runtime_commands.py: import tstdx.web.session`、逐命令断言报 `kwargs is None`，双双 exit 1，还原后复绿 |
+| F-31 | P2（口径类） | **包自己的门面 `tstdx/__init__.py` docstring 是三处矛盾的合集，而没有任何门禁看它一眼**（第 10 步核对验收清单「docstring 与代码零矛盾」时实测）：① Quick start 写着 `with Client(provider="tdx") as c:`，而 `Client.__init__(runtime=None, **runtime_kwargs)` 把关键字原样转给 `UnifiedRuntime.__init__`，其形参名是 `default_provider` ⇒ 照抄即 `TypeError: UnifiedRuntime.__init__() got an unexpected keyword argument 'provider'`（实测；仓内其余活文档一律写 `default_provider=`，只有这一处例外）；② 「分层（自底向上）」图列 14 层，磁盘上顶层包实为 24 个，`catalog`/`config`/`cli`/`integration`/`charset`/`profile`/`sink`/`tools`/`trade`/`feedback` 全部缺席——**这张图是新人理解本库的第一张地图，缺的恰是 v17 新增的服务面与配置面**；③ 门禁侧同源失明：`test_doc_code_consistency.py` 的 README 结构树检查（3 条）只覆盖 README，import 解析检查只看 markdown ⇒ 包 docstring 既不在文档门禁内，也不在 CLI 示例门禁内，①②永远不会被任何人抓到 | **已清偿**（2026-09-19）：① Quick start 改为 `Client(default_provider="tdx")`，**不给 `provider` 加别名**（v17 是 clean-break 口径，`Client(**runtime_kwargs)` 的键名以内核形参为准）；② 分层图补齐 24 层并逐条给一句话职责：服务面标注「只翻译不执行」，`trade` 标注「不接入内核」，`catalog` 标注「无执行」；③ README 结构树里 `cli/` 的「31 子命令，全部委托 Client」改为如实口径（数据命令全部经 `Client`，6 个传输/诊断命令除外并指向模块 docstring）；④ **包 docstring 纳入活文档门禁**：`test_dunder_docstring_layer_map_matches_the_package_layout` 双向对账（磁盘上的顶层包必须在图里、图里的层必须在磁盘上），`test_dunder_docstring_quickstart_examples_construct` 抽出 Quick start 的**名字直调**（`Client(…)` / `DayBarReader()` / `get_quotes(…)`）在禁网（`getaddrinfo` + `create_connection` 双拦）下真实求值——`TypeError`/`NameError`/`AttributeError`/`ImportError` 即矛盾，因禁网或文件缺失而失败则说明入口与签名成立（属性调用 `c.bars(…)` 留给真实网络冒烟）。**变异验证**：删掉分层图的 `integration` 行 ⇒ 报 `新增顶层包未写进包 docstring 分层图：['integration']`；插一行幽灵层 `execution` ⇒ 报 `分层图指向磁盘不存在的层：['execution']`；入参改回 `provider=` ⇒ 报 `Client(provider='tdx') -> TypeError: …`；三条各自 RC=1，还原后文档门禁 17 项全绿，`ruff check`/`format --check`、`mypy tstdx/`、originality `--strict`、docs links 均 RC=0 |
 
 ---
 
@@ -198,7 +200,9 @@
 
 ### Phase 5 —— 发布硬化
 
-1. 全量门禁：`pytest` 0 failed（含单跑随机序 `-p no:randomly` 抽检）、ruff 0、mypy 0、
+1. 全量门禁：`pytest` 0 failed（含单跑随机序 `-p no:randomly` 抽检 ⚠️ **该口径当场写错，
+   见 F-31**：`-p no:randomly` 是**关闭**随机化，且本仓从未声明该插件，这项抽检无实现手段）、
+   ruff 0、mypy 0、
    覆盖率按**有效代码**重新校准基线（Phase 2 净删 1.4 万行后旧基线失真）。
    **执行记录（2026-09-19）**：
    - 离线全量 `-p no:randomly`：0 failed；`ruff check tstdx/ tests/ scripts/`：0。
@@ -454,6 +458,58 @@
       `Total coverage: 80.53%`、`Required test coverage of 77.0% reached`（阈值 77 未动；
       高于第 8/9 步记录的 78.83% / 78.09%，差异来源未做归因——工作区此刻含其他会话的
       transport 改动，重钉仍以 CI 环境实测为准）。
+11. ✅ **传输层"整方法桩层"解散（Phase 5 第 11 步，2026-09-19，见 §0.3 F-30）**：
+    第 10 步那条 80.53% 的读数是**记账假象修正前**的最后一版——两个连接池的类体里放着
+    永不执行的原件，执行的是侧车拷贝，于是 `pool.py` 46.2% / `async_.py` 44.7% 的缺口
+    不是"测试不够"，而是"被测代码不在那里"。用户就此拍板 **搬回类体，解散桩层**。
+
+    - **一次搬完两侧**：同步池与异步池的 `request`/`request_multi`/`iter_frames`/
+      `update_hosts`/心跳/`close` 全部回到 owning 类体；4 个侧车（合计 1 447 行）连同
+      被遮蔽的原件一起删除，提交 `9e5734a` 净减 **1 034 行**（+1 012 / −2 046）；
+      主站代际发布的三条共享原语上收 `hosts.py`，"两份事实源"归一。
+    - **等价性判定不靠目测**：写一次性 AST 对拍工具，把侧车原文（`git show HEAD:…`）
+      与类体现做归一化后比 `ast.dump()`——归一面只允许机械差异（`pool`→`self`、
+      `_impl.X`→`X`、`helper(self, …)`→`self.helper(…)`、成员重命名、docstring/注解）。
+      首轮报 15 处 DIFF，逐条追因**全部是工具自身缺陷**（`find_func` 未按类定界，
+      把 `AsyncTcpConnection.request` 当成 `AsyncConnectionPool.request` 来比），
+      修工具后 `31/31 same / offenders: 0`。登记此段是因为它与 F-21 同形：
+      **测量工具的假阳性会让人去"修"一段本来正确的代码**。
+    - **守卫反转**：`test_public_pool_hardening_wiring.py` 原先断言
+      `ConnectionPool.request.__module__ == "tstdx.transport._pool_hardening"`，
+      即把遮蔽写成契约；现改为断言实现住在 `tstdx.transport.pool` / `tstdx.transport.async_`、
+      `__wrapped__` 为空、且 `importlib.util.find_spec("tstdx.transport._pool_hardening")`
+      为 `None`——重新引入任一桩层即红。本地冒烟（`test_local_smoke_hardening_contract.py`
+      等 4 个契约文件）与 `scripts/build_package.py`、`wheels.yml` 的 wheel 冒烟同批改判。
+    - **复测（本机 Windows+py3.13，同一轮日志）**：`PYTEST_RC=0`；整仓
+      `--cov=tstdx` **80.60%**（阈值 77 未下调）；`pool.py` 46.2%→**80%**、
+      `async_.py` 44.7%→**89%**——整仓数字几乎不动（80.53%→80.60%）而两个池各抬
+      30~40 个点，正说明原先那块缺口是"记账假象"而非新获得的测试；
+      `ruff check`/`ruff format --check` 干净、`mypy`（CI 参数）188 文件 0 错、
+      reachability `--strict` RC=0（`188 模块 / 可达 171 / 豁免 17`）、docs links 82 OK。
+      真实网络冒烟与 `v1.1.0-dev.1`  tagging 按用户选择**继续延后到本步收口之后**（第 3 步）。
+12. ✅ **包 docstring 纳入活文档门禁（Phase 5 第 12 步，2026-09-19，见 §0.3 F-31）**：
+    验收清单的「README / ARCHITECTURE / `__init__` docstring 与代码零矛盾」长期挂空，
+    根因是文档门禁的三项检查（import 解析、反引号路径、README 数字与结构树）都只扫
+    markdown——**包自己的门面文档不在任何门禁的读数范围内**。据此实测三处矛盾：
+    Quick start 的 `Client(provider="tdx")` 照抄即 `TypeError`（内核形参名是
+    `default_provider`）、分层图只画了 24 个顶层包中的 14 个（缺的正是 v17 新增的服务面与
+    配置面）、README 结构树把 `cli/` 写成「31 子命令，全部委托 Client」。
+
+    - 前两项按事实改正；第三项改为如实口径（数据命令全部经 `Client`，6 个传输/诊断命令除外
+      并指向 `runtime_commands.py` 的模块 docstring——即第 8/10 步建立的口径）。
+      **不给 `provider` 加入参别名**：`Client(**runtime_kwargs)` 的键名以内核形参为准，
+      加别名等于违反 v17 的 clean-break 口径。
+    - **门禁补齐两条**：分层图与磁盘顶层包**双向**对账（缺一层或指一层幽灵都红），
+      Quick start 的名字直调在禁网下真实求值（`TypeError`/`NameError`/
+      `AttributeError`/`ImportError` 记为矛盾，因禁网/读文件失败说明入口与签名成立）。
+    - **变异验证**：删 `integration` 行 ⇒ `新增顶层包未写进包 docstring 分层图：
+      ['integration']`；插幽灵层 `execution` ⇒ `分层图指向磁盘不存在的层：['execution']`；
+      入参退回 `provider=` ⇒ `Client(provider='tdx') -> TypeError: …`；三条分别 RC=1。
+    - **复测（本机 Windows，同一轮日志）**：文档门禁 17 项、`tests/architecture` 全绿；
+      `ruff check`/`ruff format --check`（本次触及文件）、`mypy tstdx/`（CI 参数）、
+      originality `--strict`、docs links（82 文件）均 RC=0；离线全量套件
+      `-m "not network"` **3282 项 / 0 失败 / 0 错误 / 7 跳过**。
+
 
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
@@ -539,7 +595,11 @@
 - [x] 根级 `.py` ≤ 10（实测 10）；`execution/` DAG 与 `provider/` v14 适配器目录已不存在
       （Phase 3A/3C；根级白名单守卫见 `tests/architecture`）
 - [ ] 60 typed 契约端到端或有下线记录；`QueryResponse` 仅为视图
-- [ ] README / ARCHITECTURE / `__init__` docstring 与代码零矛盾；旧方案归档
+- [x] README / ARCHITECTURE / `__init__` docstring 与代码零矛盾；旧方案归档
+      （Phase 4 文档面统一 + 归档；对账由 `tests/architecture/test_doc_code_consistency.py`
+      承担：markdown import 可解析、反引号 `tstdx.*` 路径可导入、README 数字对运行期事实、
+      README 结构树双向、CLI 示例过真实 parser、包 docstring 分层图与 Quick start
+      （Phase 5 第 12 步 F-31 补上最后一格））
 - [x] CLI 声明的每个连接参数都到达执行面，且活文档里的 CLI 示例逐条过真实 parser
       （Phase 5 第 8 步 F-27 + 第 9 步 F-28；`tests/architecture/test_cli_connection_contract.py`
       含"全量选项消费审计"守卫 +

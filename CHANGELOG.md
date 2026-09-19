@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed（v17 Phase 5 收口 —— 传输层"整方法桩层"解散，F-30）
+
+- **连接池的 import 期整方法 monkey-patch 层物理删除**：`_pool_hardening`（461 行）、
+  `_async_pool_hardening`（530 行）、`_async_close_hardening`（129 行）、
+  `_pool_provenance_hardening`（327 行）四个侧车整体替换 `ConnectionPool` /
+  `AsyncConnectionPool` 的方法，使 `pool.py`、`async_.py` 类体内的原实现成为
+  **永不执行的死代码**（语句覆盖率 46.2% / 44.7%），而可达性门禁看不见这种遮蔽——
+  被覆盖的原方法在静态导入图里依旧"可达"。
+- 实现搬回拥有它的类体；主站代际发布的三条共享原语（`validate_host_updates` /
+  `new_endpoint_entry` / `next_generation_host`）上收到 `tstdx/transport/hosts.py`，
+  同步池与异步池共用一套规则，消掉"第二事实源"。
+- **等价性是实证不是目测**：31 个搬迁成员逐个与 `git HEAD` 的侧车原文做归一化
+  `ast.dump()` 比对（只归一 `pool`→`self`、`_impl.X`→`X`、`helper(self, …)`→
+  `self.helper(…)`、重命名成员、docstring 与注解），差异 0。
+- **防回潮反向钉住**：`tests/transport/test_public_pool_hardening_wiring.py` 从
+  "断言实现住在 `_hardening` 侧车"改为"断言实现住在池模块 + `find_spec` 判侧车
+  不存在"；本地冒烟与两条 wheel 契约同批改判，重新引入桩层即红。
+- 保留的注册型侧车（`_pool_family_hardening.__init__`、`_ranking_hardening`、
+  `_connection_contract_hardening`、`_host_selector_hardening`、client 层四件）
+  不属本项：它们只做局部包装，不整方法替换。收敛它们登记为发布后独立 PR。
+- **同一轮复测**：`PYTEST_RC=0`，整仓离线覆盖率 **80.60%**（阈值 77 未下调），
+  `pool.py` 46.2%→**80%**、`async_.py` 44.7%→**89%**；`ruff check` 与
+  `ruff format --check` 干净、`mypy`（CI 参数）188 文件 0 错、
+  `audit_reachability.py --strict` RC=0（`188 模块 / 可达 171 / 豁免 17`）、
+  docs link check 82 文件 OK。
+
 ### Changed（v17 Phase 6 —— 配置面接线与死面清偿，F-13/F-16）
 
 - **`tstdx.toml` 从此真的生效**。`UnifiedRuntime` 成为配置面的唯一读者：`Client()` /
@@ -303,6 +329,22 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 - 两处单元测试的假 `WebQuoteSession` 换成 fake `Client`，与既有夹具同形。
 - **变异验证**：把 `changes` 改回直接调用 ⇒ 两条守卫同时 exit 1（分别报出
   `import tstdx.web.session` 与 `recorder.kwargs is None`），还原后复绿。
+
+### Fixed（v17 Phase 5 第 12 步 —— 包 docstring 纳入活文档门禁，F-31）
+
+- **`Client(provider="tdx")` 这个写在包 docstring Quick start 里的例子照抄即 `TypeError`**：
+  `Client(**runtime_kwargs)` 的键名以内核形参为准，正确写法是
+  `Client(default_provider="tdx")`。**不加入参别名**（v17 clean-break 口径）。
+- **`tstdx/__init__.py` 的「分层（自底向上）」图补齐到 24 个顶层包**（原先只有 14 个，
+  缺的正是 v17 新增的服务面 `cli`/`integration` 与配置面 `config`/`catalog`），并逐条标注
+  职责边界：服务面「只翻译不执行」、`catalog`「无执行」、`trade`「不接入内核」。
+  README 结构树里 `cli/` 的「31 子命令，全部委托 Client」同步改为如实口径。
+- **两条新门禁**（`tests/architecture/test_doc_code_consistency.py`）：分层图与磁盘顶层包
+  **双向**对账；Quick start 的名字直调在禁网（`getaddrinfo` + `create_connection`）下真实
+  求值，`TypeError`/`NameError`/`AttributeError`/`ImportError` 记为矛盾，因禁网或读文件
+  而失败则说明入口与签名成立。此前文档门禁的三项检查只扫 markdown，包自己的门面无人对账。
+- **变异验证**：删一行层 ⇒ 报缺失；插一行幽灵层 ⇒ 报幽灵；入参退回 `provider=` ⇒ 报
+  `TypeError`，三条分别 RC=1。
 
 ### Fixed
 

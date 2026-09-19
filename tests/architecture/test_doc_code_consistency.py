@@ -2,7 +2,9 @@
 
 活文档里的每一条 ``from tstdx... import X``、每一个 ``tstdx.a.b`` 引用、README
 宣称的每个数字以及项目结构树里的每个 ``name/`` 与 ``name.py`` 条目，都必须与运行期
-事实一致。历史快照（``docs/archive/``、``docs/adr/``、``DESIGN.md``）记录的是当时
+事实一致；``tstdx/__init__.py`` 的包 docstring 同样按活文档对待——分层图双向对上磁盘
+布局，Quick start 的入口调用在禁网下真的构造得起来。
+历史快照（``docs/archive/``、``docs/adr/``、``DESIGN.md``）记录的是当时
 语境，不参与门禁。
 """
 
@@ -306,6 +308,91 @@ def test_readme_tree_lists_every_top_level_module() -> None:
     }
     listed = set(_readme_tree_names())
     assert on_disk <= listed, f"新增顶层模块未写进 README 结构树：{sorted(on_disk - listed)}"
+
+
+# --------------------------------------------------------------------------
+# 包 docstring：分层图 ↔ 磁盘布局，Quick start ↔ 真实入口（审计 F-31）
+# --------------------------------------------------------------------------
+
+_LAYER_BLOCK = re.compile(r"分层（自底向上）::\n\n((?:    .+\n)+)")
+_LAYER_LINE = re.compile(r"^    (\w+)\s\s+\S", flags=re.M)
+_QUICKSTART_BLOCK = re.compile(r"Quick start[^:\n]*::\n\n((?:    .+\n)+)")
+
+
+def _tstdx_root() -> Path:
+    import tstdx
+
+    return Path(tstdx.__file__).parent
+
+
+def test_dunder_docstring_layer_map_matches_the_package_layout() -> None:
+    """分层图是包自己对该库的第一张地图：漏一层或指向已删除的一层都是矛盾。"""
+    import tstdx
+
+    matched = _LAYER_BLOCK.search(tstdx.__doc__ or "")
+    assert matched, "tstdx/__init__.py 不再有「分层（自底向上）」图，门禁失效"
+    documented = set(_LAYER_LINE.findall(matched.group(1)))
+
+    root = _tstdx_root()
+    packages = {
+        path.name for path in root.iterdir() if path.is_dir() and path.name != "__pycache__"
+    }
+    modules = {
+        path.stem
+        for path in root.glob("*.py")
+        if path.name == "__main__.py" or not path.name.startswith("_")
+    }
+    missing = sorted(packages - documented)
+    ghosts = sorted(documented - packages - modules)
+    assert not missing, f"新增顶层包未写进包 docstring 分层图：{missing}"
+    assert not ghosts, f"包 docstring 分层图指向磁盘不存在的层：{ghosts}"
+
+
+def test_dunder_docstring_quickstart_examples_construct(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Quick start 里的每个入口调用都必须真的构造得起来。
+
+    只执行名字直接调用（``Client(...)``、``DayBarReader()``），属性调用
+    （``c.bars(...)``）留给真实网络冒烟；解析与域名一并禁掉，因此"因禁网/读文件而
+    失败"算通过，``TypeError`` 一类的签名或入口缺陷才算红。
+    """
+    import socket
+    from typing import Any
+
+    class _Blocked(RuntimeError):
+        pass
+
+    def _blocked(*_args: Any, **_kwargs: Any) -> None:
+        raise _Blocked("门禁内禁止触网")
+
+    monkeypatch.setattr(socket, "getaddrinfo", _blocked)
+    monkeypatch.setattr(socket, "create_connection", _blocked)
+
+    import tstdx
+
+    offenders: list[str] = []
+    blocks = _QUICKSTART_BLOCK.findall(tstdx.__doc__ or "")
+    assert blocks, "包 docstring 不再有 Quick start 段，门禁失效"
+    for raw in blocks:
+        source = "\n".join(line[4:] for line in raw.splitlines())
+        tree = ast.parse(source)
+        namespace: dict[str, Any] = {}
+        for node in tree.body:
+            if isinstance(node, ast.Import | ast.ImportFrom):
+                exec(compile(ast.Module([node], []), "<doc>", "exec"), namespace)
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+                continue
+            label = ast.unparse(node)
+            try:
+                value = eval(compile(ast.Expression(node), "<doc>", "eval"), namespace)
+            except (TypeError, NameError, AttributeError, ImportError) as exc:
+                offenders.append(f"{label} -> {type(exc).__name__}: {exc}")
+            except Exception:  # noqa: BLE001 - 触网/读文件被拦即证明入口与签名成立
+                continue
+            close = getattr(value, "close", None)
+            if callable(close):
+                close()
+    assert offenders == []
 
 
 # --------------------------------------------------------------------------

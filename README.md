@@ -361,7 +361,7 @@ tstdx/
 ├── tools/          # capture/spec_audit/codegen/golden_audit/golden_expand/check_originality
 ├── trade/          # 交易协议模拟器（实验性可选模块：SimTransport 纯内存模拟，不接入内核）
 ├── __main__.py     # python -m tstdx 入口（与 tstdx 控制台脚本等价）
-└── cli/            # CLI 入口（31 子命令，全部委托 Client）
+└── cli/            # CLI 入口（31 子命令；数据命令全部经 Client，6 个传输/诊断命令除外，见 runtime_commands.py）
 ```
 
 ---

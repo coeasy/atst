@@ -19,20 +19,30 @@
 
 分层（自底向上）::
 
-    codec       报文帧 / 变长数值 / 字符集
-    protocol    命令登记 + 三级解析（L1/L2/L3）
-    transport   TCP 连接 / 连接池 Slot / 心跳 / 限流 / 主站测速
-    client      同步 + 异步客户端（Standard / Extended / MAC / Goods）
-    reader      本地 vipdoc 二进制（.day/.lc1/.lc5/.dat/gpcw）
-    domain      数据模型 / 复权 / 日历 / 时区
-    providers   Provider / Channel / Capability 单一事实源
-    query       QuerySpec / QueryPlan / QueryFingerprint
-    result      QueryResult / Provenance
-    runtime     零缓存 provider-first 执行内核（UnifiedRuntime，唯一内核）
-    streaming   流式订阅 + 显式生命周期状态机
-    web         HTTP Web 行情源（新浪/腾讯/东财/集思录/港股/中行）
-    output      DataFrame / Parquet / DuckDB 输出层
+    codec          报文帧 / 变长数值
+    charset        字符集自动探测（GBK/GB18030/Big5/UTF-8）
+    protocol       命令登记 + 三级解析（L1/L2/L3）
+    config         6 源合并 + 严格校验（配置面即执行面契约）
+    transport      TCP 连接 / 连接池 Slot / 心跳 / 限流 / 主站测速
+    client         同步 + 异步客户端（Standard / Extended / MAC / Goods）
+    reader         本地 vipdoc 二进制（.day/.lc1/.lc5/.dat/gpcw）
+    profile        数据规格探测（帧 / 文件双探测器 + presets）
+    sink           LocalDaySink：写回 vipdoc .day 二进制
+    domain         数据模型 / 复权 / 日历 / 时区
+    providers      Provider / Channel / Capability 单一事实源
+    catalog        能力目录 + 规划期签名校验 + channel→adapter 绑定（无执行）
+    query          QuerySpec / QueryPlan / QueryFingerprint
+    result         QueryResult / Provenance
+    runtime        零缓存 provider-first 执行内核（UnifiedRuntime，唯一内核）
+    streaming      流式订阅 + 显式生命周期状态机
+    web            HTTP Web 行情源（新浪/腾讯/东财/集思录/港股/中行）
+    output         DataFrame / Parquet / DuckDB 输出层
     observability  Prometheus 风格指标 / 埋点（零硬依赖）
+    feedback       错误 / 用量上报 + 使用统计
+    tools          协议账本审计 / 代码生成 / 原创性检查
+    trade          交易协议模拟器（实验性：纯内存模拟，不接入内核）
+    cli            命令行面（31 子命令，只翻译不执行）
+    integration    HTTP / WS / MCP 服务面（只翻译不执行）
 
 Quick start（离线，读取本地通达信数据）::
 
@@ -42,7 +52,7 @@ Quick start（离线，读取本地通达信数据）::
 Quick start（在线，TDX 协议）::
 
     from tstdx import Client
-    with Client(provider="tdx") as c:
+    with Client(default_provider="tdx") as c:
         bars = c.bars("sh600519", period="day", count=30)
 
 Quick start（HTTP Web 源，无需 TDX 主站）::
