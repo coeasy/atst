@@ -333,6 +333,12 @@ class Client:
         *,
         provider: str = "tdx",
     ) -> QueryResult[Any]:
+        """当日分时。
+
+        **默认的 ``provider="tdx"`` 已下线**：tdx 的 ``0x0537`` request/parser 仍为 inferred，
+        客户端在发包前抛 :class:`NotImplementedFeature`（真机 golden 锁定前不通过结构化 API
+        发包）。需要当日分时请显式选一个声明了该能力的 Web Provider。
+        """
         return self.runtime.minute(symbol, provider=provider)
 
     def trades(
@@ -343,6 +349,11 @@ class Client:
         start: int = 0,
         count: int = 0,
     ) -> QueryResult[Any]:
+        """当日逐笔成交。
+
+        与 :meth:`minute` 同一条拦截：默认的 ``provider="tdx"`` 走 ``0x0FC5``，其 request/parser
+        仍为 inferred，发包前即抛 :class:`NotImplementedFeature`。
+        """
         return self.runtime.trades(
             symbol,
             provider=provider,
@@ -368,6 +379,13 @@ class Client:
         start: int = 0,
         provider: str = "tdx",
     ) -> QueryResult[Any]:
+        """代码表分页（tdx Provider 的 ``0x044D``）。
+
+        **该面当前已下线**：``0x044D`` 在命令账本登记为 offline（多主站实测无响应），
+        客户端在发包前 fail-fast，所以本调用总是抛 :class:`CommandOffline`（context 里带
+        provider/channel/capability）而不是返回空页；保留 API 面是为了参数校正后接回。
+        可用判据与推导见 ``docs/providers/tdx.md`` 的 quotation 能力清单。
+        """
         return self.runtime.security_list(
             market=market,
             start=start,

@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（v17 Phase 5 第 39 步 —— 发不出去的命令，在调用方读得到的每一面写明「已下线」：F-63② 与 F-37 (c) 裁决的执行）
+
+- **授权的边界就是这一步的边界**：用户裁决 F-63② 取「保留，只把『已下线』写清」、F-37 取
+  「下调能力声称 + 推迟 tag」。零改协议字节、零改解析器、零删除公开面，改的全是"说法"层。
+- **一条推导链取代五份手抄名单**：账本 `STATUS_OFFLINE`（9 条）∪ inferred 拦截集（2 条）− 放行集（1 条）
+  → trampoline 模板（含 `_op_call` 传递闭包）→ 内核 tdx 直绑能力 → MCP 处理器 → 两份 markdown 表。
+  同轮实测分母：模板面 9 个、业务入口面 3 个、MCP 死工具 3 个、接口表 47 行可解析 / 23 行可推导。
+  口径相反的那格单独写清：`0x054C` 虽登记 offline，却是唯一被 `_OFFLINE_FALLBACK_OK` 放行的命令，
+  所以 `_t_quotes_snapshot` 说的是「本方法仍可用，真实数据走逐只 `0x0530` 回退」——给它套 fail-fast
+  套话同样是假话。
+- **F-37 的降级落在四处调用方可读面**：`_t_capital_changes`/`_t_finance_info` 各挂 `.. warning::`、
+  Provider 文档两行同口径、README 三行改写，统一说法是「条数可用、字段语义不保证」；
+  tag `v1.1.0-dev.1` 继续推迟；解析器一个字节没动。
+- **新门禁 8 项**（`tests/architecture/test_offline_capability_honesty.py`），分母全现推、每条带自检下限、
+  Provider 文档面两侧都判；13 发变异里 12 发各自只红自己那条，第 13 发（把 `_op_call` 的常量参数换成同值
+  f-string，行为不变而 AST 失明）同时红两格——两格读同一条闭包，这正是"同源"的证据。
+- **变异揭出自己的假绿**：MCP 判据原写 `"offline" in description`，而 `CommandOffline` 这个类名自带该子串，
+  只提异常类名就能喂饱断言；改成 `\boffline\b` 词边界后 M5 才真的红（第 38 步 M1 的同形故事）。
+- **登记为 F-66，不代拍板**：`GET /v13/capabilities` 是第六张面、也是唯一机器可读的那张——16 个
+  tdx/quotation 能力名平铺成裸字符串、无状态字段，其中 8 个发不出去（`auction`/`volume_price` 探针当场
+  `CommandOffline`）。改发现面形状属对外契约，三条路径与判据一并写进 `docs/REFACTOR_PLAN_V17_CLOSURE.md`。
+- **孤立 worktree 同轮复测（本机 Windows + 外部解释器 cpython-3.13.12，非仓内 `.venv`）**：基线
+  （干净 `4dd2af9`）junit 3438 / 0 失败 / 5 跳过、80.91%；本步树 junit **3446 / 0 / 0 / 5**、**80.91%**、
+  RC=0，`3438 + 8 = 3446` 对得上，阈值 77 未下调；覆盖率 TOTAL 行与基线逐格相同（本步在 `tstdx/`
+  里没新增可执行语句）。**同轮先前那次读到的是 80.90%**，差的 0.01 个百分点整格在
+  `tstdx/transport/pool.py`（缺 113→111、缺分支 37→36），本步没碰那个文件，是 transport 测试的
+  运行间抖动，两轮都记下而不是只留相等的那个；9 主门禁两树全部 rc=0（originality 190/190、
+  `spec_audit` coverage 100.0%、golden `[GATE] … (OK)`、reachability 无未登记孤儿、`contract_audit --ci`、
+  docs links 82 文件、mypy 无输出、`ruff check` 干净、`ruff format --check` 466 / 465 文件）。
+
 ### Fixed（v17 Phase 5 第 38 步 —— 命令账本四个没人读的字段，其中一个还是全账本唯一的描述：F-64 的清偿）
 
 - **量的是账本自己**：`Command` 登记 10 个字段，干净 `bb201b1` 上 AST 扫 `tstdx/` 189 个模块，

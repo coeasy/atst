@@ -23,23 +23,27 @@
 from tstdx.client import TdxClient
 ```
 
+> 下表「已下线」不是编辑判断，而是命令账本（`tstdx/protocol/commands.py`）与
+> `core._UNVERIFIED_STRUCTURED_BLOCK` 的现值：这些方法在客户端**主动不发**那条帧。
+> 由 `tests/architecture/test_offline_capability_honesty.py` 逐行核对，改状态请改账本。
+
 | 方法 | 签名 | 说明 |
 |------|------|------|
 | `bars` | `(symbol, period="day", count=320, start=0, market=None, index=False, as_format="dict", strict=False)` | K 线/分钟线 |
 | `quotes` | `(symbols, as_format="dict")` | 实时行情快照 |
 | `quotes_concurrent` | `(symbols, workers=8, as_format="dict")` | 并发批量行情 |
 | `security_count` | `(market=0)` | 证券数量 |
-| `finance_info` | `(symbol)` | 财务信息 |
-| `minute_today` | `(symbol)` | 当日分时 |
-| `security_list` | `(market=0, start=0)` | 证券列表 |
-| `export_security_list` | `(market=0, max_pages=100)` | 全市场代码表 |
-| `minute_history` | `(symbol, date)` | 历史分时 |
-| `trade_today` | `(symbol, start=0, count=0)` | 当日逐笔 |
-| `block_quotes` | `(block_type=0, start=0)` | 板块行情 |
+| `finance_info` | `(symbol)` | 财务信息（结构与条数可用，**逐字段语义不保证**，见 F-37） |
+| `minute_today` | `(symbol)` | **已下线**（0x0537 request/parser 仍 inferred，发包前抛 `NotImplementedFeature`） |
+| `security_list` | `(market=0, start=0)` | 证券列表：**已下线**（0x044D 账本 offline，发包前抛 `CommandOffline`） |
+| `export_security_list` | `(market=0, max_pages=100)` | 全市场代码表：**已下线**（随 `security_list`，抛 `CommandOffline`） |
+| `minute_history` | `(symbol, date)` | 历史分时：**已下线**（0x0FB4 账本 offline，抛 `CommandOffline`） |
+| `trade_today` | `(symbol, start=0, count=0)` | 当日逐笔：**已下线**（0x0FC5 inferred 拦截，抛 `NotImplementedFeature`） |
+| `block_quotes` | `(block_type=0, start=0)` | 板块行情：**已下线**（0x07E5 账本 offline，抛 `CommandOffline`） |
 | `file_download` | `(symbol, filename, offset=0, length=0, max_packets=500, strict=False)` | 文件下载 |
-| `auction_snapshot` | `(symbol)` | 集合竞价 |
-| `volume_price_dist` | `(symbol)` | 量价分布 |
-| `quotes_snapshot` | `(symbols)` | 批量行情快照 |
+| `auction_snapshot` | `(symbol)` | 集合竞价：**已下线**（0x056A 账本 offline，抛 `CommandOffline`） |
+| `volume_price_dist` | `(symbol)` | 量价分布：**已下线**（0x051A 账本 offline，抛 `CommandOffline`） |
+| `quotes_snapshot` | `(symbols)` | 批量行情快照（0x054C 账本 offline 但被放行，逐片**回退** 0x0530 ⇒ 可用） |
 | `snapshot` | `(symbol, as_format="dict")` | 单只完整快照 |
 | `request` | `(cmd, body, ctx=None, as_format="dict")` | 通用命令 |
 | `bestip` | `(timeout=1.0, samples=1, max_workers=16, ...)` | 运行时测速 |
@@ -86,10 +90,10 @@ from tstdx import Client, AsyncClient
 | `quotes` | `(symbols, *, provider=None, policy=None, currentness="live")` | 实时行情 |
 | `quotes_batch` | `(symbols, *, provider=None, currentness="live") -> BatchResult` | 逐 symbol 三态审计 |
 | `snapshot` | `(symbol, *, provider="tdx")` | 盘口快照 |
-| `minute` | `(symbol, *, provider="tdx")` | 当日分时 |
-| `trades` | `(symbol, *, provider="tdx", start=0, count=0)` | 逐笔成交 |
+| `minute` | `(symbol, *, provider="tdx")` | 当日分时（**默认 tdx 已下线**，抛 `NotImplementedFeature`；分时改用声明该能力的 Web Provider） |
+| `trades` | `(symbol, *, provider="tdx", start=0, count=0)` | 逐笔成交（**默认 tdx 已下线**，抛 `NotImplementedFeature`） |
 | `security_count` | `(*, market=0, provider="tdx")` | 证券数量 |
-| `security_list` | `(*, market=0, start=0, provider="tdx")` | 证券列表分页 |
+| `security_list` | `(*, market=0, start=0, provider="tdx")` | 证券列表分页：**已下线**，总是抛 `CommandOffline` |
 | `stream` | `(symbols, *, provider="tdx", interval=1.0, diff_only=False, max_queue=1024, on_quote=None, on_error=None) -> StatefulQuoteStream` | 流式订阅 |
 | `execute` | `(spec: QuerySpec) -> QueryResult` | 通用面：任何 capability 同一入口 |
 | `call` | `(capability, *args, provider=None, channel=None, currentness="business", **kwargs)` | 便捷通用入口 |

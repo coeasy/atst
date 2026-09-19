@@ -212,7 +212,12 @@ class _ClientMixin:
         as_format: OutputFormat,
         strict: bool,
     ) -> Any:
-        """K 线 / 分钟线（命令 ``0x052D``，自动分页 + 截断语义，见 sync 壳 docstring）。"""
+        """K 线 / 分钟线（命令 ``0x052D``，自动分页 + 截断语义）。
+
+        空桩首页与锚点漂移截断的判据就在本模板里：瑕疵逐条发 ``UserWarning``（经
+        ``Client`` 内核时同时进 ``ResultMeta.warnings``），``strict=True`` 时同一条判据
+        直接抛 :class:`TruncatedDataError` 而不是返回后靠调用方自查。
+        """
         _require_output_format(as_format)
         _require_bool("index", index)
         strict_mode = _require_bool("strict", strict)
@@ -375,7 +380,14 @@ class _ClientMixin:
         return int(result.rows[0].get("count", 0))
 
     def _t_capital_changes(self, symbol: str) -> list[CapitalChange]:  # type: ignore[misc]
-        """除权除息 / 股本变迁（命令 ``0x000F``）。"""
+        """除权除息 / 股本变迁（命令 ``0x000F``）。
+
+        .. warning:: **字段口径未闭合（§REFACTOR_PLAN_V17_CLOSURE F-37）**：2026-09-19 在
+           可达主站上实测本命令能回整批记录，但解出的 ``market``/``code``/``date`` 逐字段
+           错位（如 ``market`` 读到 ASCII ``'0'``），且不带任何解码告警；离线 golden 只钉住
+           长度与条数、不校验字段值，所以全绿门禁看不见它。当前口径是**条数可用、字段语义
+           不保证**；修它要新的真机布局判据，不按猜测改解析器。
+        """
         mkt, code = split_symbol(symbol)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt)
         frame = yield _op_req(CMD["capital_changes"], body, timeout=self.timeout)
@@ -386,7 +398,12 @@ class _ClientMixin:
         return [_row_to_capital(row) for row in result.rows]
 
     def _t_finance_info(self, symbol: str) -> dict[str, Any]:  # type: ignore[misc]
-        """财务基础信息（命令 ``0x0010``，F1 语义化字段）。"""
+        """财务基础信息（命令 ``0x0010``，F1 语义化字段）。
+
+        .. warning:: 与 :meth:`capital_changes` 同一条未闭合口径（§REFACTOR_PLAN_V17_CLOSURE
+           F-37）：真机回包长度与 golden 同形，实测解出的 ``market``/``code``/``values``
+           却是空值/错位，且不触发解码告警 ⇒ 字段语义不保证，条数与结构可用。
+        """
         mkt, code = split_symbol(symbol)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt)
         frame = yield _op_req(CMD["finance_info"], body, timeout=self.timeout)
@@ -404,7 +421,12 @@ class _ClientMixin:
         return out
 
     def _t_minute_today(self, symbol: str) -> list[Any]:  # type: ignore[misc]
-        """当日分时数据（命令 ``0x0537``）。"""
+        """当日分时数据（命令 ``0x0537``）。
+
+        **本方法当前不发泡**：``0x0537`` 的 parser/request 仍是 inferred，
+        ``core._UNVERIFIED_STRUCTURED_BLOCK`` 在发包前抛 ``NotImplementedFeature``
+        （真机 golden 锁定前不通过结构化 API 发包，原始线路面仍可用）。
+        """
         mkt, code = split_symbol(symbol)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt) + b"\x00" * 4
         frame = yield _op_req(CMD["minute_today"], body, timeout=self.timeout)
@@ -455,7 +477,13 @@ class _ClientMixin:
     # 更多标准命令
     # ------------------------------------------------------------------ #
     def _t_security_list(self, market: Any, start: int) -> Any:
-        """代码表（命令 ``0x044D``，分页 1000/页）。"""
+        """代码表（命令 ``0x044D``，分页 1000/页）。
+
+        **本方法已下线**：``0x044D`` 在命令账本登记为 ``STATUS_OFFLINE``（账本对该状态的
+        定义即「多主站实测无响应」），请求在发包前由
+        :func:`tstdx.client.core._guard_offline` fail-fast 抛 :class:`CommandOffline`。
+        API 面保留是为了参数校正后接回，不表示它当前可用。
+        """
         market_id = _standard_market_id(market)
         offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
         body = struct.pack("<HH", market_id, offset)
@@ -469,7 +497,12 @@ class _ClientMixin:
         )
 
     def _t_export_security_list(self, market: Any, *, max_pages: int) -> Any:
-        """全市场代码表导出（E3：0x044D 分页遍历直至耗尽，截断告警）。"""
+        """全市场代码表导出（E3：0x044D 分页遍历直至耗尽，截断告警）。
+
+        跟 ``security_list`` 同源，**本方法同样已下线**：``0x044D`` 登记为 ``STATUS_OFFLINE``
+        （多主站实测无响应），首页请求即由 ``_guard_offline`` 抛 :class:`CommandOffline`，
+        走不到分页循环。
+        """
         market_id = _standard_market_id(market)
         page_limit = _require_int("max_pages", max_pages, minimum=1)
         out: list[dict[str, Any]] = []
@@ -505,7 +538,11 @@ class _ClientMixin:
         return out
 
     def _t_minute_history(self, symbol: str, date: int) -> Any:
-        """指定日期历史分时（命令 ``0x0FB4``）。``date`` 为 YYYYMMDD 整数。"""
+        """指定日期历史分时（命令 ``0x0FB4``）。``date`` 为 YYYYMMDD 整数。
+
+        **本方法已下线**：``0x0FB4`` 登记为 ``STATUS_OFFLINE``（多主站实测无响应），
+        发包前由 ``_guard_offline`` fail-fast 抛 :class:`CommandOffline`。
+        """
         mkt, code = split_symbol(symbol)
         day = _require_yyyymmdd("date", date)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<HI", mkt, day)
@@ -517,7 +554,11 @@ class _ClientMixin:
         return result.rows
 
     def _t_trade_today(self, symbol: str, start: int, count: int) -> Any:
-        """当日逐笔成交（命令 ``0x0FC5``）。"""
+        """当日逐笔成交（命令 ``0x0FC5``）。
+
+        与 ``minute_today`` 同一条拦截：request/parser 仍为 inferred，
+        ``core._UNVERIFIED_STRUCTURED_BLOCK`` 在发包前抛 ``NotImplementedFeature``。
+        """
         mkt, code = split_symbol(symbol)
         offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
         page_size = _require_int("count", count, minimum=0, maximum=0xFFFF)
@@ -529,7 +570,11 @@ class _ClientMixin:
         )
 
     def _t_block_quotes(self, block_type: int, start: int) -> Any:
-        """板块行情（命令 ``0x07E5``）。block_type: 0 概念 / 1 行业 / 2 地区 / 3 指数。"""
+        """板块行情（命令 ``0x07E5``）。block_type: 0 概念 / 1 行业 / 2 地区 / 3 指数。
+
+        **本方法已下线**：``0x07E5`` 登记为 ``STATUS_OFFLINE``（2026-09 三主站实测无响应），
+        发包前由 ``_guard_offline`` fail-fast 抛 :class:`CommandOffline`；方法保留待参数校正。
+        """
         kind = _require_int("block_type", block_type, minimum=0, maximum=3)
         offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
         body = struct.pack("<HH", kind, offset)
@@ -661,7 +706,11 @@ class _ClientMixin:
         return result.rows
 
     def _t_auction_snapshot(self, symbol: str) -> Any:
-        """集合竞价过程快照（命令 ``0x056A``）。"""
+        """集合竞价过程快照（命令 ``0x056A``）。
+
+        **本方法已下线**：``0x056A`` 登记为 ``STATUS_OFFLINE``（2026-09 三主站实测无响应），
+        发包前由 ``_guard_offline`` fail-fast 抛 :class:`CommandOffline`；方法保留待参数校正。
+        """
         mkt, code = split_symbol(symbol)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt) + b"\x00" * 4
         return (
@@ -671,7 +720,11 @@ class _ClientMixin:
         )
 
     def _t_volume_price_dist(self, symbol: str) -> Any:
-        """量价分布 / 筹码分布（命令 ``0x051A``）。"""
+        """量价分布 / 筹码分布（命令 ``0x051A``）。
+
+        **本方法已下线**：``0x051A`` 登记为 ``STATUS_OFFLINE``（2026-09 三主站实测无响应），
+        发包前由 ``_guard_offline`` fail-fast 抛 :class:`CommandOffline`；方法保留待参数校正。
+        """
         mkt, code = split_symbol(symbol)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt) + b"\x00" * 4
         return (
@@ -681,7 +734,12 @@ class _ClientMixin:
         )
 
     def _t_quotes_snapshot(self, symbols: Any) -> Any:
-        """批量行情快照（优先 0x054C，失败/空帧/L3 降级回退逐只 0x0530）。"""
+        """批量行情快照（优先 0x054C，失败/空帧/L3 降级回退逐只 0x0530）。
+
+        ``0x054C`` 登记为 ``STATUS_OFFLINE``（多主站实测无响应），但它是账本里唯一被
+        ``core._OFFLINE_FALLBACK_OK`` 放行的 offline 命令：**本方法仍可用**，代价是每次
+        批量尝试都按已知会失败处理，真实数据来自逐只 ``0x0530`` 回退路径。
+        """
         syms = _normalize_symbols(symbols)
         # 混合容器：0x054C 批量路径收 Quote 对象，0x0530 回退路径收
         # as_format="dict" 的 dict（to_dicts 对两者都产 dict，运行时一致）。

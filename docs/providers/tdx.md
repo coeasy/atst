@@ -22,14 +22,18 @@ Capabilities：
 ```text
 quotes
 bars
-minute
-trades
+minute（0x0537 的 request/parser 仍为 inferred，结构化 API 在发包前抛 NotImplementedFeature；分时改走 Web Provider）
+trades（0x0FC5 同上：tdx 面的当日逐笔没有可用结构化入口，逐笔改走 Web Provider）
 security_count
-security_list（只在 Command Ledger online 时）
-finance
-capital_changes
-snapshot（只在 Command Ledger online 时）
+security_list（0x044D 多主站实测无响应，已下线：发包前抛 CommandOffline）
+finance（字段口径未闭合，见 REFACTOR_PLAN_V17_CLOSURE F-37：结构与条数可用，逐字段语义不保证）
+capital_changes（同 finance，F-37）
+snapshot
 ```
+
+括号里的批注不是可选项，由 `tests/architecture/test_offline_capability_honesty.py` 按命令账本、
+`core._UNVERIFIED_STRUCTURED_BLOCK` 与内核直绑表（`runtime/executor.py`）现推：判据是"这条链
+在客户端就发不出去"，所以**通的能力也不许被写成受限能力**。要改这一栏，先改账本状态或拦截集。
 
 Direct API：
 

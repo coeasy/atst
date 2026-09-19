@@ -98,7 +98,11 @@ TOOLS: list[ToolSpec] = [
     ),
     ToolSpec(
         name="get_minute_today",
-        description="Fetch canonical intraday minute data.",
+        description=(
+            "Unavailable on the tdx provider: its 0x0537 request/parser is still inferred, "
+            "so the structured client refuses to send it (NotImplementedFeature). "
+            "Only web providers (e.g. tencent) declare this capability today."
+        ),
         inputSchema={
             "type": "object",
             "properties": {"symbol": _str_prop("Security symbol."), "provider": _PROVIDER},
@@ -108,7 +112,11 @@ TOOLS: list[ToolSpec] = [
     ),
     ToolSpec(
         name="get_trades",
-        description="Fetch canonical intraday trades/ticks.",
+        description=(
+            "Unavailable on the tdx provider: its 0x0FC5 request/parser is still inferred, "
+            "so the structured client refuses to send it (NotImplementedFeature). "
+            "Intraday ticks are only declared by web providers (e.g. baidu/tencent)."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
@@ -137,7 +145,11 @@ TOOLS: list[ToolSpec] = [
     ),
     ToolSpec(
         name="get_security_list",
-        description="Fetch canonical security catalog page for a market.",
+        description=(
+            "Offline: 0x044D is registered offline (multi-host measured, no response), so "
+            "the client fail-fasts with CommandOffline before sending; no other provider "
+            "declares a security catalog page."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
