@@ -109,7 +109,7 @@ job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 
 | F-60 | P2（口径类，F-51/F-53/F-59 同族：接线是对的，漏网的是旁边那句硬编码） | **同一个空桩结果会发出两条互相否证的告警：`decode_caveat` 说『声明 800 条』，`bars_empty_first_page` 说『服务端声明 0 条记录』**（第 34 步实测）。把 2026-09-19 实测到的那个 2 字节空桩（帧头 `b1cb74000c01000000002d0502000200`，载荷 `2003`）原样注入传输层，其余走生产链路（`TdxClient(pool=fake).bars(...)`，解码器/分页模板/告警通道一律真代码；脚本 `s34_stubpair.py`，日志 `s34_stubpair.log`），实收 **2 条**：`[decode_caveat] ... 分页解码：count 失真已钳制：声明 800 条，按剩余字节 16B/条 只能容纳 0 条` 与 `[bars_empty_first_page] ... 首页即空响应：服务端声明 0 条记录，实取 0 根...`。前者是线路事实（`2003` 小端 = `0x0320 = 800`），后者是 `tstdx/client/_mixin.py:254-258` 写死的字符串，其上方 `:226-227` 与 `:252-253` 两处注释同样把空桩说成 `count=0`——**『声明 0』与『声明 800 而记录字节为 0』是两回事，而区分它们正是这条告警存在的唯一理由**；第 26 步 F-51 已把解码侧真话接进 wire（`:216-223`），本条因此不是静默，而是**一句旧文案与新接线当面打架**。**全仓 3413 项测试为何仍绿**：`tests/client/test_v5_pagination.py:173-185` 的 fake 用 `_bars_payload(0)` 合成空页，即载荷 `0000` = **真的声明 0 条**，fake 与代码犯了同一个错，两条断言于是彼此自洽；该测试还把 `caveats` 写死为恰 1 条，等于把『同一结果上两条互证』这个真实形状排除在射程外 ⇒ 门禁测的是自己编造的场景。与 F-59『证据指向不存在的文件』同族，但更隐蔽：这里的 fake、断言、文案三者全在，只是全都不等于线路。 | **已清偿**（2026-09-19，第 36 步）。① 声明数改为随 `ParseResult.meta` 暴露：`tstdx/protocol/registry.py:253-256` 把 `state["declared_count"]` 写进 `meta`（走 `meta` 的内部形状接线，不引入对外契约），分页侧 `_mixin.py:199` 声明 `first_page_declared`、`:228-232` 在首页空分支上读 `result.meta.get("declared_count")`；`:258-266` 把`BARS_EMPTY_FIRST_PAGE` 的文案改成按声明数**三分支**——`N>0` 说「声明 N 条记录却一个记录字节都没回，这是空桩，不是该标的没有历史」、`0` 说「声明 0 条：该标的无此周期历史，或主站对这条命令只回空桩」、读不到计数头（`Optional` 为 `None`）说「解析器没在响应里读到记录数头，声明数未知」，**不拿『未知』冒充『0』**，这正是本条原来犯的错的镜像；strict 分支的 `context` 加 `"declared"` 键（`:274-279`），让 `TruncatedDataError` 的机读侧与文案同数。② 空桩 fake 改喂线路实测的 `2003`（新增 `_StubPayloadPool`），判据从「恰 1 条告警」换成「**2 条且两条都含 800**、第二条不得出现『声明 0 条』」（`tests/client/test_v5_pagination.py:211-235`），并在真声明 0 的那条既有测试上补 `assert "声明 0 条记录" in ...`（`:202-204`）——两支各有主，互不覆盖。③ 原 `:226-227`、`:252-253` 两处注释同批改写为「按服务端声明数分家，而不是替它编一个数字」，`tstdx/diagnostics.py:56-57` 与 `docs/errors.md:25-26` 的口径同步。变异 M1–M4 各自 rc=1 并逐条指名（`mutate_s36.log`），全量与门禁读数见 §1 第 36 步。 |
 | F-61 | P1（口径类，F-58 的镜像：同一张表现在把**做过**的事写成没做） | **§0.1 结论的第一条边界、本文 Phase 5 计划项 3 与 README 两处路线图，都把 Phase 5 第 16 步已经跑过的真实网络/服务面冒烟写成"尚未执行"**（第 34 步落地后重读 §0.1 时实测）：§1 第 16 步逐格记着七格真实冒烟 6 PASS / 1 FAIL 与 wheel 安装冒烟 `SMOKE_RC=0`，§4 验收清单该格已勾 `[x]`；而 §0.1 写着"真机冒烟尚未执行……需用户授权"、Phase 5 计划项 3 仍挂"⚠️ 仍未执行"、README 路线图行写"仍待：…… + 真实网络 smoke + tag"，「下一阶段」表还把已经跑通的 wheel 冒烟与三面 live 各一发列为计划。四处都不是保守而是失真：读者会以为主链从未在现网验证过，并把 F-37 读成"冒烟还没跑"而不是"跑过；K 线那一格已在第 34 步归因为本端握手字节并修好，余下是 `0x000F`/`0x0010` 字段错位待裁决"——本轮向用户复述现状时确实这样读过一次，错的是文档。成因：第 33 步重写 §0.1 时把"再跑一次须授权"（现行约束）与"从未跑过"（历史事实）揉进同一个短句，而凭印象写的边界既不挂账、也没有任何判据核对，于是全绿。第 33 步的门禁抓不到它——它核对文件路径存在性与 §0.2 的裁决格，**边界子句里的动作声称不在射程内** | **已清偿**（2026-09-19，第 35 步）：① §0.1 结论第一条改为"现网证据只到一次性冒烟为止"，就地标注第 16 步读数与第 34 步对 `rows=0` 那一格的归因，并把"仍缺"精确到两件事（一次工作日盘中复跑、F-37 余条处置裁决），"再跑一次真实网络仍须用户授权"作为现行约束保留；② §0.1 的第二条缺口清单同步换成有账可查的四项（F-37 余条、F-38、F-25 的 PENDING 面、F-18）；③ Phase 5 计划项 3 与 README 三处同批改口径，README 覆盖率一格按本步同轮日志重钉（原值 78.80% 是 Phase 5 第 4 步读数，此后整仓删码已把它推高）；④ **门禁补第三条判据** `test_open_boundaries_cite_an_open_finding`：§0.1 结论里每个带圈编号的边界子句必须点一个 §0.3 真实存在的 F 号，且其中至少一个是开放裁决（未清偿/部分清偿/部分处理/本轮只登记/本步只登记/待用户决策/维持现状/未处理）——一个都不点＝给凭印象的说法发通行证，只点已清偿的账＝把做完的事写成待办，点了账本里没有的号＝幻影引用，三者各有自己的失败消息。变异 M4/M5/M6 各自 RC=1 并逐条指名，读数见 §1 第 35 步。本步零改生产代码 |
 | F-62 | P3（测量口径类，本行由第 35 步**自我撤回**后重写） | **一条只凭仓内 `.venv` 的推断，把并发会话在另一解释器上的真实读数改成了历史假账**：本步原登记"账本 12 处复测行写着 `Windows+py3.13`，而这台机器上从未存在过 3.13"，依据为 `.venv/pyvenv.cfg`（`cpython-3.12.13`）、`%APPDATA%\uv\python` 目录清单与本步覆盖率头 `python 3.12.13-final-0`，并据此把 `CHANGELOG.md` 8 处、本文 4 处标签批量改为 `py3.12`。撤回依据出现在让号之后的同机对照：同一棵 `f60c3b5` 基线，并发会话第 36 步记 **5 skipped / 80.82%**，仓内 `.venv` 这轮记 **7 skipped / 80.75%**（4 项缺 pyarrow、3 项缺 duckdb）——同一棵树、两个环境、两套数字都真，故"从未存在过 3.13"不成立，那 12 处是别人合法的实测环境。批量改写的后果不是排版问题而是**把他人的正确实测涂成假的**：与 F-59"证据指向不存在的文件"同族而方向相反（那里是编造证据，这里是凭局部证据否证别人的证据）。真正可登记的缺陷只剩一个：**复测行没有强制写明测量者当轮实际使用的解释器与所在环境**，同一机器上的多解释器因此让"环境标签"成为可互相误读的模糊信息 | **已修正**（2026-09-19，第 35 步自我撤回）：① 12 处 `Windows+py3.13` 全部恢复原文（回改脚本只在"该行其余文本与基线中含 `py3.13` 的那一行完全相同"时才动手，未改动任何数字、阈值或判据），本行即为撤回记录；② 立新规：自本步起 §1 与 `CHANGELOG.md` 的复测行**必须写明测量者当轮实际使用的解释器与所在环境**（仓内 `.venv` 或外部解释器），历史条目的环境标签由其作者自行维护，其它会话不得批量改写；③ **不给这条新规加门禁**，理由与 F-61 同：环境标签是每条记录各自的环境事实，硬钉判据只会造出随环境漂移变红的假门禁。本步自己的复测行按新规写 `本机 Windows+py3.12（仓内 .venv）` |
-| F-63 | P2（口径类，F-51/F-60 同族：接线只修到一条命令，其余照旧丢弃；另一句告警替现场编数字，而它自己在那条路径上永不可达） | **①`DECODE_CAVEAT` 全仓只有一个发射点，而解码层为其它命令产出的判断仍在整族丢弃**：`tstdx/client/_mixin.py` 里有 15 处 `_client_pkg.dispatch(...)` 调用点（`:216`、`:313`、`:336`、`:346`、`:354`、`:369`、`:402`、`:463`、`:603`、`:641`、`:699`、`:706`、`:739`、`:748`、`:789`），其中只有 bars 分页那一处（`:216-223`）读 `result.warnings`——其余 14 处只取 `result.rows`（三种写法：`return result.rows`、`_emit(result.rows, …)`、`[… for row in result.rows]`，如 `:370`、`:463`、`:604`、`:700`），`ParseResult.warnings` 就地丢弃；发射侧的规模是 `guarded_count` 在 8 个解析器模块里的 43 个调用点（本步实测：脚本 `s36_probe_nonbars.py` 把 `2003` 空桩喂 `dispatch(0x044D, family="quotation")` → `rows=0`、`meta.declared_count=800` 与告警 `count 失真已钳制：声明 800 条，按剩余字节 29B/条 只能容纳 0 条`）。⇒ 第 26 步 F-51「把解码告警接进 wire」实际只覆盖了一条命令。**②`SECURITY_LIST_EMPTY_FIRST_PAGE` 的文案与 F-60 同法写死数字，而它的发射点在真实客户端路径上不可达**：`_mixin.py:435-437` 说「0x044D 在 start=0 就声明 0 条记录」，可这条命令在 `tstdx/protocol/commands.py:125-133` 登记为 `status=STATUS_OFFLINE`，`_guard_offline`（`tstdx/client/core.py:296-301`）在 `TdxClient._req` 里 fail-fast——本步实测 `TdxClient(pool=fake).security_list(0, 0)` 直接抛 `CommandOffline`，走不到解析器。仓库里唯一让这条告警变绿的 `tests/unit/test_batch_e.py:187-196` 是先把 `client.security_list` 整个 monkeypatch 掉再跑的 ⇒ **它的绿是一个假桩的绿**，而 `catalog/capability.py:101,146-149` 仍把 `security_list`/`security_list_all` 挂在 tdx 面，CLI（`cli/runtime_commands.py:155`）、HTTP（`integration/runtime_http.py:161`）、MCP（`integration/mcp/_tools_impl.py:98`）三个入口按调用链都会撞上那条 fail-fast。 | **本步只登记，不改**。①的修复是通用接线而非逐点补：把「读 `result.warnings` → `record_warning(DECODE_CAVEAT, …)`」从 bars 循环里提出来给 15 个分派点共用，并配一条判据（发射点数 ≥ 分派点数），否则修一条漏十四条；②要先由用户裁决 `security_list` 面是「已下线，删掉 capability 与三个入口」还是「保留，但明确只走替代命令」——两条路都不该留下一句永不可发、且措辞替现场编造数字的告警。（编号跳过 F-61/F-62：并发会话已在孤立 worktree `wt_f61` 用这两个号写 §0.1 边界口径与解释器标签复称，截至本步测量（2026-09-19 16:35 本地）尚未提交，本步不复述、不认领、也不改它们的行。） |
+| F-63 | P2（口径类，F-51/F-60 同族：接线只修到一条命令，其余照旧丢弃；另一句告警替现场编数字，而它自己在那条路径上永不可达） | **①`DECODE_CAVEAT` 全仓只有一个发射点，而解码层为其它命令产出的判断仍在整族丢弃**：`tstdx/client/_mixin.py` 里有 15 处 `_client_pkg.dispatch(...)` 调用点（`:216`、`:313`、`:336`、`:346`、`:354`、`:369`、`:402`、`:463`、`:603`、`:641`、`:699`、`:706`、`:739`、`:748`、`:789`），其中只有 bars 分页那一处（`:216-223`）读 `result.warnings`——其余 14 处只取 `result.rows`（三种写法：`return result.rows`、`_emit(result.rows, …)`、`[… for row in result.rows]`，如 `:370`、`:463`、`:604`、`:700`），`ParseResult.warnings` 就地丢弃；发射侧的规模是 `guarded_count` 在 8 个解析器模块里的 43 个调用点（本步实测：脚本 `s36_probe_nonbars.py` 把 `2003` 空桩喂 `dispatch(0x044D, family="quotation")` → `rows=0`、`meta.declared_count=800` 与告警 `count 失真已钳制：声明 800 条，按剩余字节 29B/条 只能容纳 0 条`）。⇒ 第 26 步 F-51「把解码告警接进 wire」实际只覆盖了一条命令。**②`SECURITY_LIST_EMPTY_FIRST_PAGE` 的文案与 F-60 同法写死数字，而它的发射点在真实客户端路径上不可达**：`_mixin.py:435-437` 说「0x044D 在 start=0 就声明 0 条记录」，可这条命令在 `tstdx/protocol/commands.py:125-133` 登记为 `status=STATUS_OFFLINE`，`_guard_offline`（`tstdx/client/core.py:296-301`）在 `TdxClient._req` 里 fail-fast——本步实测 `TdxClient(pool=fake).security_list(0, 0)` 直接抛 `CommandOffline`，走不到解析器。仓库里唯一让这条告警变绿的 `tests/unit/test_batch_e.py:187-196` 是先把 `client.security_list` 整个 monkeypatch 掉再跑的 ⇒ **它的绿是一个假桩的绿**，而 `catalog/capability.py:101,146-149` 仍把 `security_list`/`security_list_all` 挂在 tdx 面，CLI（`cli/runtime_commands.py:155`）、HTTP（`integration/runtime_http.py:161`）、MCP（`integration/mcp/_tools_impl.py:98`）三个入口按调用链都会撞上那条 fail-fast。 | **部分清偿（第 37 步：① 已清偿，② 仍待用户裁决）**：① 已在第 37 步收口。`_mixin.py:104-118` 新增**唯一**转发口 `_forward_decode_caveats(result, label)`（读 `result.warnings` → `record_warning(DECODE_CAVEAT, f"{label}：{caveat}", stacklevel=_caller_stacklevel())`，原样返回 `ParseResult`），上列 15 个分派点全部过它一次，bars 原来的 inline 循环删掉、文案逐字未动（第 36 步的空桩守卫照旧有效）。登记的判据「发射点数 ≥ 分派点数」没有采用——它会被「把同一处复制十五遍」满足；实际落地的是三条更强的门禁（`tests/architecture/test_caveat_channel_gates.py`）：含 `dispatch` 调用的函数必须调用该转发口（AST 扫描，`scanned ≥ 15` 防扫描自身失效）、每条转发文案必须以发起它的公共方法名开头（复制粘贴的归属错位即红）、转发口本体必须同时读 `.warnings`、调 `record_warning`、引用 `DECODE_CAVEAT`（空转即红）。归属行号按当前调用栈实测（`_caller_stacklevel()`，`:121-136`），不用写死常量：`_op_call` 会让一次公共 API 嵌套三跳 trampoline，实测常量形状把 `block_list` 的告警记在 `_mixin.py:169`。② 仍要先由用户裁决 `security_list` 面是「已下线，删掉 capability 与三个入口」还是「保留，但明确只走替代命令」——两条路都不该留下一句永不可发、且措辞替现场编造数字的告警。（F-61/F-62 由并发会话以第 35 步落在 `abef5e1`，本步不复述、不改它们的行。） |
 
 ---
 
@@ -1617,6 +1617,62 @@ job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 
       该轮之后只剩两处纯文字订正（`一个自相矛盾`→`自相矛盾的一对`、`那三行`→`那处暴露（4 行）`），
       落盘后在同一提交树上复验 docs links（82 文件）与 `tests/architecture` 200 项均 rc=0，
       其余 5 个代码/测试文件与该轮逐字节 `cmp` 相同。
+
+37. ✅ **解码层的判断只有 bars 一条命令能上 wire：清偿 F-63①（2026-09-19）**
+    - **本步量的是第 26 步 F-51 那句"已经接线"**：`_mixin.py` 有 15 处 `_client_pkg.dispatch(...)`
+      （本步最终树 `:256`、`:348`、`:370`、`:383`、`:394`、`:412`、`:450`、`:514`、`:658`、`:699`、
+      `:760`、`:770`、`:804`、`:816`、`:858`），而全仓只有 bars 分页那一处读 `result.warnings`。解码层
+      的产出侧一点没缩水：`guarded_count` 在 8 个解析器模块里有 43 个调用点会写「count 失真已钳制」，
+      §2-17 写「记录截断：声明 N 条，实收 M 条」，`dispatch` 写「L1 解析失败 → 降级」与「L2 置信度不足
+      → 回落 L3 原始透传」。这些判断进了袋，袋没人读，wire 上就是静默——用户拿到一份被截断、被降级、
+      字段映射可能已经错位的行，且没有任何一条告警告诉他。
+    - **改法是一个口，不是补十四处**：新增 `_forward_decode_caveats(result, label)`（`:104-118`）逐条
+      `record_warning(WarningCode.DECODE_CAVEAT, …)` 后原样返回 `ParseResult`，15 个分派点全部经过它。
+      bars 的原 inline 循环删除、文案逐字未动（`bars({symbol!r}) 分页解码：…`），故第 36 步那条
+      「两条告警都含 800」的空桩守卫继续成立，且现在它与转发口本体互为证据。真正放大覆盖面的是通用口
+      `_t_request_result`（`:450`）：`security_list` 之外的 `trade_today` / `block_*` / `goods_*` /
+      `ex_*` / F10 目录等十几个公共方法共用这一个分派口，接一次十几条面同时看得见解码判断。
+    - **归属行号是实测的，不是猜的**：`_caller_stacklevel()`（`:121-136`）沿当前调用栈找"离开 tstdx 的
+      第一帧"。固定常量 `_TPL_WARN_STACKLEVEL = 4`（`:90`）只对单跳成立——模板之间用 `_op_call` 互调，
+      `block_list` → `request` → `request_result` 实测三跳，常量形状把告警落在 `_mixin.py:169`（库里），
+      等于把缺陷指给一个没做错的人。异步侧的诚实边界：归属帧落在 `asyncio` 里（不在 tstdx 栈内），本步
+      对异步只钉「通道 + 标签」两条，不钉行号。
+    - **判据（3 条结构门禁 + 5 条行为守卫）**：结构侧见 §0.3 F-63 裁决格所述三条。旧的 bars 专属门禁
+      （断言 `_t_bars` 本体自己读 `.warnings` 并 `record_warning`）被这次重构合法打破，删掉换成通用判据
+      ——不是放宽，是分母从 1 变 15。行为守卫 `tests/client/test_decode_caveat_wiring.py` 只挑**可达**
+      形状：`0x120F` 走 `request` 通用口（断言整句文案逐字相等）、`0x000F` 走 `capital_changes`（同一条
+      payload 同时产出「钳制」与「降级」两句，是 F-37 的取证口）、异步同命令一条、干净页静默一条、
+      归属行号一条。0x0537 / 0x0FC5 / 0x0FB4 / goods / ex / mac 的 bars+quote 在本步实测为 fail-closed
+      （`NotImplementedFeature` / `CommandOffline`），拿它们做守卫只会测到门、测不到接线。
+    - **变异证据（`mutate_s37.log`，四发各自 rc=1，各红自己那条判据）**：M1 撤掉 `request` 口的转发
+      （回到 F-63① 的原始形状）→ 红 4 条（分派点门禁 + 标签门禁 + `request` 口行为守卫 + 归属守卫）；
+      M2 让转发口空转（只 `return result`）→ 红 7 条，其中 `test_every_declared_warning_code_has_an_emit_site`
+      证明 `DECODE_CAVEAT` 又变回虚设类别，`test_real_stub_warns_with_the_declared_count` 证明 bars 现在
+      确实与其余 14 点同口；M3 `stacklevel` 退回常量 → 只红归属那条，实测误报落点 `_mixin.py:169`；
+      M4 把 `ex_bars` 的标签前缀抄成 `goods_bars` → 只红标签门禁（复制粘贴的归属错位有主）。
+    - **自己的代码先被自己的守卫抓了一次**：`_caller_stacklevel()` 初版把循环写成"先移动到 `f_back` 再
+      计数"，计数因此多出一帧，`block_list` 的告警落到 `_pytest/python.py:167`；33 项里只有归属那条红。
+      同时首轮的 `mypy` 报 `_mixin.py:135` 的 `FrameType | None` 赋值不兼容（rc=1），改为让变量类型稳定
+      的循环形状而不是加标注。两处都不是放宽判据，是照判据修实现。
+    - **复测（本机 Windows+py3.13.14，同一轮日志；孤立 worktree：基线 = 干净 `abef5e1`，本步树 =
+      `abef5e1` + 本步 3 个文件，与提交树逐文件 `cmp` 相同）**：基线 junit **3416 tests / 0 failures /
+      0 errors / 5 skipped**、142.1s、`--cov=tstdx` **80.83%**；本步树 junit **3423 tests / 0 failures /
+      0 errors / 5 skipped**、135.6s、`--cov=tstdx` **80.85%**（`junit_s37step.xml` / `full_s37step.log`）。
+      对账 `3416 + 5 条新守卫 + 3 条新门禁 − 1 条被替换的 bars 专属门禁 = 3423`，阈值 77 未下调。同轮
+      9 道主门禁本步树与基线各全部 rc=0（`gates_s37step.log`）：originality（Total 190 / Original 190 /
+      Suspicious 0 / External imports 17）、`spec_audit --strict`（coverage 100.0%）、golden 审计
+      （`[GATE] all L1 verified commands have real samples (OK)`、`0x052D real category coverage: [0…11]`）、
+      reachability（189 模块 / 172 可达 / 17 白名单豁免）、`contract_audit --ci`（63 Typed Query 契约 ·
+      155 capability）、docs links（82 文件）、mypy（rc=0，无输出）、`ruff check`（All checks passed!）、
+      `ruff format --check`（465 files already formatted）；`tests/architecture` 203 项 rc=0（基线同轮
+      201 项 rc=0）。该轮之后只落下本节账本与 `CHANGELOG.md` 两处纯文字改动，提交树上复验
+      docs links（82 文件）与 `tests/architecture` 203 项均 rc=0，3 个代码/测试文件与该测量树逐字节
+      `cmp` 相同。工作树里那 1 项 `test_spec_coverage` 失败来自未跟踪的
+      `PROTOCOL_SPEC/_sniffer/quotation/**/DRAFT.yaml`（本步不提交它们），孤立基线树同轮 0 失败 ⇒ 非代码
+      回归。解释器版本按本步实测写：`python -V` → 3.13.14（`.workbuddy/binaries/python/versions/3.13.12`），
+      非仓内 `.venv` 的 3.12.13。
+    - **未做**：F-63②（`SECURITY_LIST_EMPTY_FIRST_PAGE` 的永不可达发射点与写死数字）等用户裁决 `security_list`
+      面的去留后再动；本步没碰那条文案，也没碰 `_t_export_security_list`。
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
 

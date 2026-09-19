@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import logging
 import struct
+import sys
 from collections.abc import Mapping
 from typing import Any
 
@@ -51,7 +52,7 @@ from ..protocol.parsers.std7709 import (
     SecurityBarsParser,
     build_realtime_quote_body,
 )
-from ..protocol.registry import TIER_L3
+from ..protocol.registry import TIER_L3, ParseResult
 from .core import (  # B1：共享核心（纯协议构造，无 I/O）
     _bars_body,
     _emit,
@@ -85,6 +86,7 @@ OutputFormat = str  # "dict" | "tuple" | "dataframe"
 
 #: 模板内 ``warnings.warn`` 的 stacklevel：原实现（方法体直呼）为 2 =
 #: 调用方；模板化后调用链多出 2 帧（生成器帧 + drive 帧），故 +2。
+#: 只对**单跳**模板成立——嵌套 ``_op_call`` 的路径靠 :func:`_caller_stacklevel` 实测。
 _TPL_WARN_STACKLEVEL = 4
 
 
@@ -97,6 +99,41 @@ def _op_call(name: str, *args: Any, **kwargs: Any) -> tuple[str, str, tuple, dic
     """op：调用本客户端另一方法（sync 直呼 / async ``await``），保持
     monkeypatch 可见性与拆分前一致。"""
     return ("call", name, args, kwargs)
+
+
+def _forward_decode_caveats(result: ParseResult, label: str) -> ParseResult:
+    """把解码层记在 ``ParseResult.warnings`` 里的判断接进结果侧的告警通道。
+
+    解码层每一页都会把"声明 N 实收 M""钳制""降级为 L3 透传"这类判断写进
+    ``warnings`` 袋；袋本身没人读就是 wire 上的静默（F-51 的第 26 步接线只覆盖了
+    ``bars`` 一条命令，其余 14 个分派点把判断整族丢弃 —— F-63①）。这里给出唯一
+    的通用转发口：每个分派点都必须过它一次。
+    """
+    for caveat in result.warnings:
+        record_warning(
+            WarningCode.DECODE_CAVEAT,
+            f"{label}：{caveat}",
+            stacklevel=_caller_stacklevel(),
+        )
+    return result
+
+
+def _caller_stacklevel() -> int:
+    """取"离开 tstdx 向上的第一帧"在 ``record_warning`` 语义下的 stacklevel。
+
+    模板之间用 ``_op_call`` 互相调用，一次公共 API 可以嵌套好几层 trampoline
+    （实测 ``block_list`` → ``request`` → ``request_result`` 三跳）。固定常量只对
+    单跳成立，多跳会把告警的归属行留在库里——归属错位的告警等于把缺陷指给一个
+    没做错的人，所以这里按当前调用栈实测，而不是猜一个数。
+    """
+    frame = sys._getframe(1)  # 调用方：_forward_decode_caveats
+    depth = 0
+    while frame.f_globals.get("__name__", "").startswith("tstdx"):
+        depth += 1
+        if frame.f_back is None:
+            break
+        frame = frame.f_back
+    return depth + 1
 
 
 class _ClientMixin:
@@ -213,15 +250,12 @@ class _ClientMixin:
                 0,
             )
             frame = yield _op_req(CMD["security_bars"], body, timeout=self.timeout)
-            result = _client_pkg.dispatch(frame, category=category, family=self.family, index=index)
-            #: 解码层每一页都记了"声明 N 实收 M"这类判断，此前落进 ParseResult.warnings
-            #: 就再没人读过（F-51）：这里把它接进结果侧的告警通道，wire 才看得见。
-            for caveat in result.warnings:
-                record_warning(
-                    WarningCode.DECODE_CAVEAT,
-                    f"bars({symbol!r}) 分页解码：{caveat}",
-                    stacklevel=_TPL_WARN_STACKLEVEL,
-                )
+            #: 逐页的解码判断（"声明 N 实收 M"）必须上 wire，转发口见
+            #: :func:`_forward_decode_caveats`（F-51 的原始症状就长在这里）。
+            result = _forward_decode_caveats(
+                _client_pkg.dispatch(frame, category=category, family=self.family, index=index),
+                f"bars({symbol!r}) 分页解码",
+            )
             raw_rows = result.rows  # 原始 dict 行（去重以 datetime 字符串为键）
             if not raw_rows:
                 # 次页空 = 历史耗尽（正常终止，真实耗尽只会表现为短页或空次页）；
@@ -310,12 +344,11 @@ class _ClientMixin:
             except TdxError as exc:
                 errors.append((sym, exc))
                 continue
-            result = _client_pkg.dispatch(
-                frame,
-                code=code,
-                market=mkt,
-                price_scale=100,
-                family=self.family,
+            result = _forward_decode_caveats(
+                _client_pkg.dispatch(
+                    frame, code=code, market=mkt, price_scale=100, family=self.family
+                ),
+                f"quotes({sym!r}) {CMD['realtime_quote']:#06x} 解码",
             )
             if not result.rows:
                 errors.append((sym, ParseError(f"0x0530 无解析结果: {result.warnings}")))
@@ -333,7 +366,10 @@ class _ClientMixin:
         market_id = _standard_market_id(market)
         body = struct.pack("<H", market_id) + b"\x00" * 4
         frame = yield _op_req(CMD["security_count"], body, timeout=self.timeout)
-        result = _client_pkg.dispatch(frame, family=self.family)
+        result = _forward_decode_caveats(
+            _client_pkg.dispatch(frame, family=self.family),
+            f"security_count(market={market_id}) {CMD['security_count']:#06x} 解码",
+        )
         if not result.rows:
             raise ParseError("0x044E 无解析结果", context={"market": market_id})
         return int(result.rows[0].get("count", 0))
@@ -343,7 +379,10 @@ class _ClientMixin:
         mkt, code = split_symbol(symbol)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt)
         frame = yield _op_req(CMD["capital_changes"], body, timeout=self.timeout)
-        result = _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family)
+        result = _forward_decode_caveats(
+            _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family),
+            f"capital_changes({symbol!r}) {CMD['capital_changes']:#06x} 解码",
+        )
         return [_row_to_capital(row) for row in result.rows]
 
     def _t_finance_info(self, symbol: str) -> dict[str, Any]:  # type: ignore[misc]
@@ -351,7 +390,10 @@ class _ClientMixin:
         mkt, code = split_symbol(symbol)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt)
         frame = yield _op_req(CMD["finance_info"], body, timeout=self.timeout)
-        result = _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family)
+        result = _forward_decode_caveats(
+            _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family),
+            f"finance_info({symbol!r}) {CMD['finance_info']:#06x} 解码",
+        )
         if not result.rows:
             return {}
         row = dict(result.rows[0])
@@ -366,7 +408,10 @@ class _ClientMixin:
         mkt, code = split_symbol(symbol)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt) + b"\x00" * 4
         frame = yield _op_req(CMD["minute_today"], body, timeout=self.timeout)
-        result = _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family)
+        result = _forward_decode_caveats(
+            _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family),
+            f"minute_today({symbol!r}) {CMD['minute_today']:#06x} 解码",
+        )
         return result.rows
 
     # ------------------------------------------------------------------ #
@@ -399,7 +444,12 @@ class _ClientMixin:
                 context={"field": "ctx", "value_type": type(ctx).__name__},
             )
         frame = yield _op_req(command, body, timeout=self.timeout)
-        return _client_pkg.dispatch(frame, family=self.family, **(dict(ctx) if ctx else {}))
+        #: 这里是十几个公共方法（security_list / trade_today / block_* / goods_* /
+        #: ex_* / f10 catalog …）共用的分派口：接一次，十几条面同时看得见解码判断。
+        return _forward_decode_caveats(
+            _client_pkg.dispatch(frame, family=self.family, **(dict(ctx) if ctx else {})),
+            f"request({command:#06x}) 解码",
+        )
 
     # ------------------------------------------------------------------ #
     # 更多标准命令
@@ -460,7 +510,11 @@ class _ClientMixin:
         day = _require_yyyymmdd("date", date)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<HI", mkt, day)
         frame = yield _op_req(CMD["minute_history"], body, timeout=self.timeout)
-        return _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family).rows
+        result = _forward_decode_caveats(
+            _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family),
+            f"minute_history({symbol!r}, date={day}) {CMD['minute_history']:#06x} 解码",
+        )
+        return result.rows
 
     def _t_trade_today(self, symbol: str, start: int, count: int) -> Any:
         """当日逐笔成交（命令 ``0x0FC5``）。"""
@@ -600,7 +654,10 @@ class _ClientMixin:
         # generic F10 request would silently discard the file chunk.  Parse it
         # through the canonical standard file-download parser for both clients.
         frame = yield _op_req(CMD["file_download"], body, timeout=self.timeout)
-        result = _client_pkg.dispatch(frame, family=Family.STANDARD)
+        result = _forward_decode_caveats(
+            _client_pkg.dispatch(frame, family=Family.STANDARD),
+            f"file_download({code!r}, {filename!r}) {CMD['file_download']:#06x} 单包解码",
+        )
         return result.rows
 
     def _t_auction_snapshot(self, symbol: str) -> Any:
@@ -638,7 +695,10 @@ class _ClientMixin:
                     mkt, code = split_symbol(sym)
                     body += struct.pack("<H", mkt) + code.encode("ascii")[:6].ljust(6, b"\x00")
                 frame = yield _op_req(CMD["quotes_snapshot"], body, timeout=self.timeout)
-                result = _client_pkg.dispatch(frame, family=self.family, price_scale=100)
+                result = _forward_decode_caveats(
+                    _client_pkg.dispatch(frame, family=self.family, price_scale=100),
+                    f"quotes_snapshot {CMD['quotes_snapshot']:#06x} 解码",
+                )
             except TdxError as exc:
                 # 批量失败（含主站不回 0x054C）：记日志 + 计数，本片回退逐只
                 logger.warning("quotes_snapshot 0x054C 批量失败，本片回退逐只 0x0530: %s", exc)
@@ -696,15 +756,19 @@ class _ClientMixin:
             _bars_body(mkt, code, category, start, count),
             timeout=self.timeout,
         )
-        result = _client_pkg.dispatch(frame, category=category, family=self.family)
+        result = _forward_decode_caveats(
+            _client_pkg.dispatch(frame, category=category, family=self.family),
+            f"goods_bars({symbol!r}) {CMD['goods_bars']:#06x} 解码",
+        )
         return _emit([_row_to_bar(row) for row in result.rows], as_format)
 
     def _t_goods_quote(self, symbol: str, as_format: OutputFormat) -> Any:
         _require_output_format(as_format)
         mkt, code = split_symbol(symbol)
         frame = yield _op_req(CMD["goods_quote"], _quote_body(code, mkt), timeout=self.timeout)
-        result = _client_pkg.dispatch(
-            frame, code=code, market=mkt, price_scale=100, family=self.family
+        result = _forward_decode_caveats(
+            _client_pkg.dispatch(frame, code=code, market=mkt, price_scale=100, family=self.family),
+            f"goods_quote({symbol!r}) {CMD['goods_quote']:#06x} 解码",
         )
         return _emit([_row_to_quote(row) for row in result.rows], as_format)
 
@@ -736,7 +800,10 @@ class _ClientMixin:
             _bars_body(mkt, code, category, start, count),
             timeout=self.timeout,
         )
-        result = _client_pkg.dispatch(frame, category=category, family=self.family)
+        result = _forward_decode_caveats(
+            _client_pkg.dispatch(frame, category=category, family=self.family),
+            f"ex_bars({symbol!r}) {CMD['ex_instrument_bars']:#06x} 解码",
+        )
         return _emit([_row_to_bar(row) for row in result.rows], as_format)
 
     def _t_ex_quote(self, symbol: str, as_format: OutputFormat) -> Any:
@@ -745,8 +812,9 @@ class _ClientMixin:
         frame = yield _op_req(
             CMD["ex_instrument_quote"], _quote_body(code, mkt), timeout=self.timeout
         )
-        result = _client_pkg.dispatch(
-            frame, code=code, market=mkt, price_scale=100, family=self.family
+        result = _forward_decode_caveats(
+            _client_pkg.dispatch(frame, code=code, market=mkt, price_scale=100, family=self.family),
+            f"ex_quote({symbol!r}) {CMD['ex_instrument_quote']:#06x} 解码",
         )
         return _emit([_row_to_quote(row) for row in result.rows], as_format)
 
@@ -786,8 +854,9 @@ class _ClientMixin:
         frame = yield _op_req(
             CMD["mac_unified_quote"], _quote_body(code, mkt), timeout=self.timeout
         )
-        result = _client_pkg.dispatch(
-            frame, code=code, market=mkt, price_scale=100, family=self.family
+        result = _forward_decode_caveats(
+            _client_pkg.dispatch(frame, code=code, market=mkt, price_scale=100, family=self.family),
+            f"mac_quote({symbol!r}) {CMD['mac_unified_quote']:#06x} 解码",
         )
         return _emit([_row_to_quote(row) for row in result.rows], as_format)
 

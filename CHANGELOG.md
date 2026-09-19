@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（v17 Phase 5 第 37 步 —— 解码层的判断只有 bars 一条命令能上 wire：F-63① 的清偿）
+
+- **第 26 步 F-51 的"已经接线"只覆盖了一条命令**：`tstdx/client/_mixin.py` 里有 15 处
+  `_client_pkg.dispatch(...)`，而只有 bars 分页那一处读 `result.warnings`，其余 14 处只取 `result.rows`
+  就把袋丢掉。产出侧从没缩水：`guarded_count` 在 8 个解析器模块有 43 个调用点会写「count 失真已钳制」，
+  还有「记录截断：声明 N 实收 M」「L1 解析失败→降级」「L2 置信度不足→回落 L3 原始透传」。用户因此会拿到
+  一份被截断、被降级、字段映射可能已错位的行，而 wire 上一条告警都没有——除了 `bars`。
+- **修的是一个口，不是补十四处**：新增唯一的转发口 `_forward_decode_caveats(result, label)`（读
+  `result.warnings` → `record_warning(DECODE_CAVEAT, …)`，原样返回 `ParseResult`），15 个分派点全部过它
+  一次；bars 的旧 inline 循环删除但文案逐字未动，第 36 步的空桩守卫照旧成立。放大覆盖面的是通用口
+  `_t_request_result`：`trade_today` / `block_*` / `goods_*` / `ex_*` / F10 目录等十几个公共方法共用它，
+  接一次十几条面同时看得见解码判断。
+- **归属行号按调用栈实测**：`_caller_stacklevel()` 沿栈找"离开 tstdx 的第一帧"。写死常量只对单跳成立，
+  而 `block_list` → `request` → `request_result` 实测三跳，常量把告警记在 `_mixin.py:169`（库里）——
+  归属错位的告警等于把缺陷指给一个没做错的人。异步侧只钉「通道 + 标签」，行号落在 `asyncio` 里，不假装修。
+- **判据三条 + 守卫五条，变异四发各自 rc=1**：结构门禁钉住"含 `dispatch` 的函数必须调用转发口"
+  （`scanned ≥ 15` 防扫描自身失效）、"每条文案以发起它的公共方法名开头"（复制粘贴错位即红）、"转发口
+  本体必须真的 `record_warning(DECODE_CAVEAT)`"（空转即红）；行为守卫挑可达命令（`0x120F` 走通用口、
+  `0x000F` 同步与异步各一条、干净页静默、归属行号）。M1 撤 `request` 口转发 → 红 4；M2 让转发口空转 →
+  红 7（含 `DECODE_CAVEAT` 重新虚设、bars 那条旧守卫）；M3 stacklevel 退回常量 → 只红归属那条；
+  M4 把 `ex_bars` 标签抄成 `goods_bars` → 只红标签门禁。
+- **孤立 worktree 同轮复测**：基线（干净 `abef5e1`）3416 项 / 0 失败 / 5 跳过、80.83%；本步树 3423 项 /
+  0 失败 / 5 跳过、80.85%（对账 `3416 + 5 守卫 + 3 门禁 − 1 被替换的 bars 专属门禁`），阈值 77 未下调；
+  9 道主门禁两侧全部 rc=0（含 mypy 与 `ruff check` / `format --check` 465 文件），`tests/architecture`
+  203 项 rc=0。
+- **仍未做（等用户裁决）**：F-63②——`SECURITY_LIST_EMPTY_FIRST_PAGE` 的发射点在真实客户端路径上不可达
+  （0x044D 登记为 `STATUS_OFFLINE`，`_guard_offline` 在 `_req` 里 fail-fast），而它的文案与 F-60 同法写死
+  「声明 0 条」。要先定 `security_list` 面是「已下线，删 capability 与 CLI/HTTP/MCP 三个入口」还是
+  「保留但明确只走替代命令」；本步没碰那条文案。
+
 ### Fixed（v17 Phase 5 第 36 步 —— 空首页告警替服务端编数字：F-60 的清偿，顺带量到 F-51 只接了一条命令）
 
 - **本步量的是第 34 步自己留下的那句话**：F-59 修好握手帧 3 的产品标识块之后，同一条链路上留下一对互相否证的

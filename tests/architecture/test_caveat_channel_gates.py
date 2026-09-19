@@ -1,10 +1,10 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""告警通道的两条结构性门禁：类别表不许虚设，发射口不许旁路。
+"""告警通道的结构性门禁：类别表不许虚设，发射口不许旁路，分派点不许丢袋。
 
 ``WarningCode`` 是一张名单，名单的价值取决于有没有人把守它（F-39/F-42 的教训：
-抄一次就过期的清单比没有清单更糟）。这里两条判据分别看住名单的两个方向，
+抄一次就过期的清单比没有清单更糟）。这里的判据分别看住名单的几个方向，
 并且各自带"扫不到东西就自杀"的自检。
 """
 
@@ -76,20 +76,115 @@ def test_every_declared_warning_code_has_an_emit_site() -> None:
     assert undeclared == [], f"引用了不存在的告警类别：{undeclared}"
 
 
-def test_bars_pagination_consumes_what_the_decoder_recorded() -> None:
-    """解码层每一页都记了"声明 N 实收 M"，模板层必须把它接进通道而不是丢弃。
+def test_every_dispatch_site_forwards_the_decode_caveats() -> None:
+    """解码层每一条判断都必须有人读：`_mixin.py` 的每个分派点共用同一个转发口。
 
-    判据落在形状上：``_t_bars`` 既要读 ``result.warnings``，也要在函数体内调用
-    ``record_warning``——只满足其一都说明那条链断了。
+    第 26 步（F-51）的接线只覆盖了 ``bars`` 一条命令：15 个 ``dispatch(`` 调用点里
+    14 个仍然 ``return result.rows``，把"声明 N 实收 M""降级为 L3 透传"整族丢弃
+    （F-63①）。所以这条判据不能钉在某个函数上，只能钉在形状上——**任何调用
+    ``dispatch(`` 的函数体内必须出现 ``_forward_decode_caveats(``**，否则修一条漏十四条。
     """
-    source = (SOURCE / "client" / "_mixin.py").read_text(encoding="utf-8")
-    tree = ast.parse(source)
+    tree = ast.parse((SOURCE / "client" / "_mixin.py").read_text(encoding="utf-8"))
+
+    def called_names(node: ast.AST) -> set[str]:
+        names: set[str] = set()
+        for item in ast.walk(node):
+            if not isinstance(item, ast.Call):
+                continue
+            if isinstance(item.func, ast.Name):
+                names.add(item.func.id)
+            elif isinstance(item.func, ast.Attribute):
+                names.add(item.func.attr)
+        return names
+
+    scanned = 0
+    unwired: list[str] = []
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        hits = called_names(fn)
+        if "dispatch" not in hits:
+            continue
+        scanned += 1
+        if "_forward_decode_caveats" not in hits:
+            unwired.append(fn.name)
+    assert scanned >= 15, f"只扫到 {scanned} 个含 dispatch 调用的函数，扫描自身失效"
+    assert unwired == [], f"这些分派点把解码层的判断丢在了袋里：{unwired}"
+
+
+#: 模板函数名与公共方法名不一致的两处：0x06B9 的单包 seam 只由 ``file_download``
+#: 消费；``request`` 与 ``request_result`` 共用 `_t_request_result` 这一个分派口。
+_LABEL_NAME_ALIASES = {"_t_file_download_once": "file_download", "_t_request_result": "request"}
+
+
+def test_every_forwarded_caveat_is_blamed_on_the_method_that_asked_for_it() -> None:
+    """转发标签的前缀必须是用户真能调用的方法名，并且与本函数一一对应。
+
+    15 个标签是手写的：复制粘贴把 ``_t_ex_bars`` 的标签写成 ``goods_bars(`` 这类错，
+    数据照旧、判断照旧上 wire，只有归属换了个人——所以钉在"标签前缀 == 本模板的
+    公共名"这个对应关系上，而不是钉在某一条文案的字样上。
+    """
+    from tstdx.client.async_ import AsyncTdxClient
+    from tstdx.client.sync import (
+        ExMarketClient,
+        F10Client,
+        GoodsClient,
+        MacClient,
+        TdxClient,
+    )
+
+    api: set[str] = set()
+    for cls in (TdxClient, AsyncTdxClient, GoodsClient, ExMarketClient, MacClient, F10Client):
+        api |= {item for item in dir(cls) if not item.startswith("_")}
+    assert {"bars", "quotes", "goods_bars", "ex_bars", "file_download"} <= api, "取公共名自身失效"
+
+    tree = ast.parse((SOURCE / "client" / "_mixin.py").read_text(encoding="utf-8"))
+    scanned = 0
+    offenders: list[str] = []
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        for call in ast.walk(fn):
+            if (
+                not isinstance(call, ast.Call)
+                or not isinstance(call.func, ast.Name)
+                or call.func.id != "_forward_decode_caveats"
+                or len(call.args) < 2
+            ):
+                continue
+            scanned += 1
+            label = call.args[1]
+            head = ""
+            if isinstance(label, ast.JoinedStr) and label.values:
+                first = label.values[0]
+                head = first.value if isinstance(first, ast.Constant) else ""
+            elif isinstance(label, ast.Constant):
+                head = str(label.value)
+            expected = _LABEL_NAME_ALIASES.get(fn.name, fn.name.removeprefix("_t_"))
+            # 标签允许三种起法：`name(`、`name(arg=`、`name `（后跟别的标识符字符
+            # 就算另一个名字，比如把 ex_bars 写成 barsfoo）。
+            ok = head.startswith(expected) and (
+                len(head) == len(expected) or head[len(expected)] in ("(", " ")
+            )
+            if not ok or expected not in api:
+                offenders.append(f"{fn.name}: 标签前缀 {head!r}，应为公共方法 {expected!r}")
+    assert scanned >= 15, f"只扫到 {scanned} 处转发调用，扫描自身失效"
+    assert offenders == [], "解码告警指名道姓错了：" + "；".join(offenders)
+
+
+def test_the_forwarder_records_into_the_channel_it_claims_to_fill() -> None:
+    """转发口若不再 ``record_warning``，上一条判据就成了空转的形状检查。
+
+    两头都要钉：读 ``ParseResult.warnings`` + 走 ``DECODE_CAVEAT`` 发射，缺任一
+    都等于把接回来的判断原样丢掉。
+    """
+    tree = ast.parse((SOURCE / "client" / "_mixin.py").read_text(encoding="utf-8"))
     fn = next(
         node
         for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == "_t_bars"
+        if isinstance(node, ast.FunctionDef) and node.name == "_forward_decode_caveats"
     )
-    reads_page_caveats = any(
+    reads_caveats = any(
         isinstance(node, ast.Attribute) and node.attr == "warnings" for node in ast.walk(fn)
     )
     records = any(
@@ -98,6 +193,9 @@ def test_bars_pagination_consumes_what_the_decoder_recorded() -> None:
         and node.func.id == "record_warning"
         for node in ast.walk(fn)
     )
-    assert reads_page_caveats and records, (
-        "_t_bars 不再把解码层的分页判断接进告警通道（ParseResult.warnings 又变成没人读的袋）"
+    uses_decode_caveat_code = any(
+        isinstance(node, ast.Attribute) and node.attr == "DECODE_CAVEAT" for node in ast.walk(fn)
+    )
+    assert reads_caveats and records and uses_decode_caveat_code, (
+        "_forward_decode_caveats 不再把 ParseResult.warnings 发进 DECODE_CAVEAT 通道"
     )
