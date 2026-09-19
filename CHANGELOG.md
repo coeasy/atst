@@ -288,6 +288,22 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 - 单元测试中 stream 的假对象签名改为与真实 `subscribe` 一致（原假签名恰好缺 `max_queue`）：
   **测试替身比生产接口更窄**，正是这类幻影参数能长期存活的原因。
 
+### Fixed（v17 Phase 5 第 10 步 —— CLI 最后两条旁路命令收口，F-29）
+
+- **`tstdx changes` 与 `tstdx hot` 此前不走内核**：两个 handler 直接调用
+  `WebQuoteSession.stock_changes()` / `WebQuoteSession.hot_rank()` 静态方法，绕开了
+  CLI 承诺的唯一执行链。它们因此拿不到 `QueryResult` 信封与 `Provenance.direct` 指纹，
+  不经过能力层的 `validate_call` 参数校验，也享受不到 F-27 刚接线的 `--host`/`--timeout`
+  助手。两项能力本就有执行绑定（`web_session` backend），故本次**只删旁路、不改执行路径**：
+  改为经 `Client` 调用同名 capability，离线对拍显示数据源收到的实参与返回行完全一致。
+- **补两道守卫**（`tests/architecture/test_cli_connection_contract.py`）：一条逐命令断言确认
+  两个命令以 capability 名调用 `Client`；另一条是**与命令名无关**的结构性扫描——用 AST 检查
+  四个服务面（`tstdx/cli/`、`tstdx/integration/`）的全部 import，任何指向 `tstdx.web` 的边
+  即为红。新增命令若复刻旁路，无需为它补测试就会被抓到。
+- 两处单元测试的假 `WebQuoteSession` 换成 fake `Client`，与既有夹具同形。
+- **变异验证**：把 `changes` 改回直接调用 ⇒ 两条守卫同时 exit 1（分别报出
+  `import tstdx.web.session` 与 `recorder.kwargs is None`），还原后复绿。
+
 ### Fixed
 
 - **`tstdx.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，

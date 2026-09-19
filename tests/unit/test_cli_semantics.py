@@ -107,21 +107,26 @@ class TestChangesTypesParsing:
         err = capsys.readouterr().err
         assert "--types" in err
 
-    def test_valid_types_calls_web(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_valid_types_reaches_the_kernel(self, monkeypatch: pytest.MonkeyPatch) -> None:
         calls: dict[str, Any] = {}
 
-        class FakeSession:
-            @staticmethod
-            def stock_changes(types, page=1, size=30):  # type: ignore[no-untyped-def]
+        class FakeClient:
+            def __init__(self, *a: Any, **kw: Any) -> None:
+                pass
+
+            def close(self) -> None:
+                pass
+
+            def stock_changes(self, types, *, page=1, size=30):  # type: ignore[no-untyped-def]
                 calls["types"] = tuple(types)
-                return [{"code": "600000"}]
+                calls["size"] = size
+                return argparse.Namespace(data=[{"code": "600000"}])
 
-        import tstdx.web.session as facade
-
-        monkeypatch.setattr(facade, "WebQuoteSession", FakeSession)
+        monkeypatch.setattr("tstdx.client.api.Client", FakeClient)
         rc = _cmd_changes(_ns(types="8201,8193", page=1, size=30, json=True))
         assert rc == 0
         assert calls["types"] == (8201, 8193)
+        assert calls["size"] == 30
 
 
 class TestStreamExitCode:

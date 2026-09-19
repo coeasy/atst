@@ -7,12 +7,16 @@ Phase 6 之后配置面只有内核一个读者（``[hosts] servers`` / ``[core]
 CLI 因此只有两种合法姿态：把用户显式说的转下去，或者保持 ``None`` 让内核去读配置。
 第三种——解析了却不消费（幻影开关）、或自带字面默认值（遮蔽配置）——由本门禁挡住。
 最后一条守卫不限于连接参数：parser 声明的任何选项都必须被 handler（或三个助手）读到。
+另有两条结构性守卫：Web 数据命令须经 ``Client`` 执行，且服务面源码不得直接 import
+``tstdx.web``——服务面只翻译，执行入口只有内核一个。
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import re
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -22,6 +26,8 @@ from tstdx.cli import runtime_commands
 from tstdx.cli._common import _client_kwargs, _transport_kwargs, _transport_timeout
 from tstdx.cli.parser import build_parser
 from tstdx.config.schema import Config, CoreConfig, HostsConfig
+
+ROOT = Path(__file__).resolve().parents[2]
 
 #: 走 ``Client``（内核）的命令；``--host`` 必须在这些命令上生效。
 CLIENT_COMMANDS = (
@@ -38,7 +44,7 @@ CLIENT_COMMANDS = (
 DIAGNOSTIC_COMMANDS = {"hosts", "server-test"}
 
 
-def _query_result() -> Any:
+def _query_result(data: Any = None) -> Any:
     """可被 ``serialize_result`` 接受的最小 QueryResult 替身。"""
     provenance = SimpleNamespace(
         kind=SimpleNamespace(value="direct"),
@@ -54,7 +60,9 @@ def _query_result() -> Any:
         fingerprint="0" * 16,
         provenance=provenance,
     )
-    return SimpleNamespace(data=[{"code": "sh600519", "name": "测试"}], meta=meta)
+    return SimpleNamespace(
+        data=[{"code": "sh600519", "name": "测试"}] if data is None else data, meta=meta
+    )
 
 
 class _Recorder:
@@ -63,6 +71,8 @@ class _Recorder:
     def __init__(self) -> None:
         self.kwargs: dict[str, Any] | None = None
         self.calls: list[str] = []
+        #: 命令的表格打印按列取值，故被测命令需要自己的载荷形状。
+        self.data: Any = None
 
     def factory(self, **kwargs: Any) -> _Recorder:
         self.kwargs = kwargs
@@ -80,13 +90,14 @@ class _Recorder:
     def __getattr__(self, name: str) -> Any:
         def call(*args: Any, **kwargs: Any) -> Any:
             self.calls.append(name)
-            return _query_result()
+            return _query_result(self.data)
 
         return call
 
 
-def _run(monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> _Recorder:
+def _run(monkeypatch: pytest.MonkeyPatch, argv: list[str], *, data: Any = None) -> _Recorder:
     recorder = _Recorder()
+    recorder.data = data
     # ``cmd_*`` 用模块全局的 Client，``_ClientRows`` 在函数内从 api 模块取——两处都要换。
     monkeypatch.setattr(runtime_commands, "Client", recorder.factory)
     monkeypatch.setattr("tstdx.client.api.Client", recorder.factory)
@@ -247,3 +258,52 @@ def _is_read(dest: str, src: str) -> bool:
         re.search(rf"args\.{re.escape(dest)}\b", src) is not None
         or re.search(rf'getattr\(args,\s*"{re.escape(dest)}"', src) is not None
     )
+
+
+#: 数据源在 Web 侧、但同样已注册为 capability 的命令。
+WEB_CAPABILITY_COMMANDS: tuple[tuple[list[str], str], ...] = (
+    (["changes", "--types", "8201"], "stock_changes"),
+    (["hot"], "hot_rank"),
+)
+
+
+@pytest.mark.parametrize(("argv", "capability"), WEB_CAPABILITY_COMMANDS)
+def test_web_backed_command_calls_the_kernel_not_the_source(
+    monkeypatch: pytest.MonkeyPatch, argv: list[str], capability: str
+) -> None:
+    """Web 数据也必须经 ``Client``：旁路会同时丢掉信封、provenance 与能力校验。"""
+    recorder = _run(monkeypatch, argv, data=[])
+    assert recorder.calls == [capability]
+
+
+def test_service_faces_never_import_the_web_layer() -> None:
+    """F-29 的结构性守卫：服务面只翻译不执行，数据入口只有 ``Client`` 一个。
+
+    逐命令断言只能看住已知命令；新增命令若直接 ``from ..web.session import …``
+    就又开出第二条执行路径。此门禁扫描全部服务面源码（CLI / HTTP / WS / MCP），
+    不看具体命令名，故对新增命令同样有效。
+    """
+    offenders: list[str] = []
+    faces = (ROOT / "tstdx" / "cli", ROOT / "tstdx" / "integration")
+    for face in faces:
+        for path in sorted(face.rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            package = ".".join(path.relative_to(ROOT).parts[:-1])
+            for module in _imported_modules(tree, package=package):
+                if module == "tstdx.web" or module.startswith("tstdx.web."):
+                    offenders.append(f"{path.relative_to(ROOT)}: import {module}")
+    assert offenders == []
+
+
+def _imported_modules(tree: ast.AST, *, package: str) -> list[str]:
+    """把 ``import`` 节点解析成绝对模块名（相对导入按所属包补全）。"""
+    names: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            base = package
+            for _ in range(node.level - 1):
+                base = base.rpartition(".")[0]
+            names.append(f"{base}.{node.module}" if node.module else base)
+        elif isinstance(node, ast.Import):
+            names.extend(alias.name for alias in node.names)
+    return names

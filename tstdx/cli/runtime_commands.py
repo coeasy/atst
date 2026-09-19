@@ -444,17 +444,16 @@ class _ClientRows:
 
 
 def _cmd_changes(args: Any) -> int:
-    """盘中异动池（东财 push2ex getAllStockChanges；Web 源，无需主站）。"""
-    from ..web.session import WebQuoteSession
-
+    """盘中异动池（东财 push2ex getAllStockChanges；走统一内核的 Web 能力）。"""
     try:
-        types = tuple(int(t) for t in str(args.types).split(",") if t.strip())
-        rows = WebQuoteSession.stock_changes(types, page=args.page, size=args.size)
+        types = [int(t) for t in str(args.types).split(",") if t.strip()]
+        with _ClientRows(**_client_kwargs(args)) as api:
+            rows = api.stock_changes(types, page=args.page, size=args.size)
     except ValueError as exc:
         print(f"错误：--types 必须是逗号分隔整数 —— {exc}", file=sys.stderr)
         print("用法：tstdx changes --types 8201,8193 [--page N] [--size N]", file=sys.stderr)
         return 2
-    except Exception as exc:  # noqa: BLE001 - Web 源异常统一出口
+    except Exception as exc:  # noqa: BLE001 - 内核异常统一出口
         print(f"错误：盘中异动获取失败 —— {exc}", file=sys.stderr)
         return 2
     if args.json:
@@ -479,12 +478,11 @@ def _cmd_changes(args: Any) -> int:
 
 
 def _cmd_hot(args: Any) -> int:
-    """股吧个股人气榜（东财 emappdata stockrank；Web 源，无需主站）。"""
-    from ..web.session import WebQuoteSession
-
+    """股吧个股人气榜（东财 emappdata stockrank；走统一内核的 Web 能力）。"""
     try:
-        rows = WebQuoteSession.hot_rank(page=args.page, size=args.size)
-    except Exception as exc:  # noqa: BLE001 - Web 源异常统一出口
+        with _ClientRows(**_client_kwargs(args)) as api:
+            rows = api.hot_rank(page=args.page, size=args.size)
+    except Exception as exc:  # noqa: BLE001 - 内核异常统一出口
         print(f"错误：人气榜获取失败 —— {exc}", file=sys.stderr)
         return 2
     if args.json:

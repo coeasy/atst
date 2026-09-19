@@ -793,22 +793,9 @@ class TestWebCapabilityHandlers:
     """迁移自 v12 的 Web 能力薄壳：表格 / 空数据 / 异常三分支。"""
 
     def test_changes_table_empty_and_error(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+        self, fake_client: type[FakeClient], capsys: pytest.CaptureFixture[str]
     ) -> None:
-        import tstdx.web.session as session_mod
-
-        class FakeSession:
-            rows: list[dict[str, Any]] = []
-            error: BaseException | None = None
-
-            @staticmethod
-            def stock_changes(types, page=1, size=30):  # type: ignore[no-untyped-def]
-                if FakeSession.error is not None:
-                    raise FakeSession.error
-                return list(FakeSession.rows)
-
-        monkeypatch.setattr(session_mod, "WebQuoteSession", FakeSession)
-        FakeSession.rows = [
+        fake_client.data = [
             {
                 "time": "09:31:02",
                 "code": "600000",
@@ -822,47 +809,37 @@ class TestWebCapabilityHandlers:
         assert rc._cmd_changes(args) == 0
         out = capsys.readouterr().out
         assert "火箭发射" in out and "1.0,2.0" in out
+        assert _last(fake_client, "stock_changes")[0] == ([8201],)
 
-        FakeSession.rows = []
+        fake_client.data = []
         assert rc._cmd_changes(args) == 0
         assert "当前无异动数据" in capsys.readouterr().out
 
-        FakeSession.error = RuntimeError("eastmoney blocked")
+        fake_client.error = RuntimeError("eastmoney blocked")
         assert rc._cmd_changes(args) == 2
         assert "eastmoney blocked" in capsys.readouterr().err
 
     def test_hot_json_table_and_error(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+        self, fake_client: type[FakeClient], capsys: pytest.CaptureFixture[str]
     ) -> None:
-        import tstdx.web.session as session_mod
-
-        class FakeSession:
-            rows: list[dict[str, Any]] = [
-                {
-                    "rank": 1,
-                    "symbol": "SH600000",
-                    "code": "600000",
-                    "rank_change": 2,
-                    "his_rank_change": -1,
-                }
-            ]
-            error: BaseException | None = None
-
-            @staticmethod
-            def hot_rank(page=1, size=30):  # type: ignore[no-untyped-def]
-                if FakeSession.error is not None:
-                    raise FakeSession.error
-                return list(FakeSession.rows)
-
-        monkeypatch.setattr(session_mod, "WebQuoteSession", FakeSession)
+        fake_client.data = [
+            {
+                "rank": 1,
+                "symbol": "SH600000",
+                "code": "600000",
+                "rank_change": 2,
+                "his_rank_change": -1,
+            }
+        ]
         args = _ns(page=1, size=1, json=True)
         assert rc._cmd_hot(args) == 0
         assert json.loads(capsys.readouterr().out)[0]["symbol"] == "SH600000"
+        assert _last(fake_client, "hot_rank")[1] == {"page": 1, "size": 1}
 
         assert rc._cmd_hot(_ns(page=1, size=1, json=False)) == 0
         assert "SH600000" in capsys.readouterr().out
 
-        FakeSession.error = RuntimeError("rank unavailable")
+        fake_client.error = RuntimeError("rank unavailable")
         assert rc._cmd_hot(_ns(page=1, size=1, json=False)) == 2
         assert "rank unavailable" in capsys.readouterr().err
 
