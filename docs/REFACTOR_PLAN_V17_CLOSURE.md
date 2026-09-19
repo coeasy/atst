@@ -2092,6 +2092,7 @@ job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 
       （`"1"` 走整数档），未按文档措辞逐档探针——那属 `parse_env_value` 的行为测试，`tests/config/` 已有
       覆盖但不是从文档推导；`tests/` 目录不参与 `TSTDX_*` 对账；`docs/archive/`、`docs/adr/` 里的旧环境
       变量口径按历史语境豁免。
+    - **ship 轮（提交树复测，同一解释器与工作树参数）**：`3582469` 落到 main 后另起隔离工作树 `wt_s43commit` 再量一遍，`head=3582469 dirty=0`。九项确定性门禁 **G1–G9 全部 rc=0**（originality 192/192 全 MIT、spec_audit `coverage_pct 100.0`、golden_audit「all L1 verified commands have real samples (OK)」+ 既有 `suspect_short` WARN 1 条、reachability 无未登记孤儿、contract_audit、docs links 82 files、mypy、ruff check、ruff format 472 files already formatted）；离线全量 **junit 3531 / 0 失败 / 0 错误 / 5 跳过**、163.516s、覆盖率 **81.26%**（TOTAL 22606 / 3648 / 6050 / 1020，`Required 77.0% reached`），与本步树逐格相同——提交内容与被测内容一致，无「只在干净树上绿」的差额。
 
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
