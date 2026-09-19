@@ -37,6 +37,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   5 skipped`、`FULL_RC=0`，`--cov=tstdx` **80.58%**（阈值 77 未下调）；`ruff check` /
   `format --check` 干净，`mypy`（CI 参数）对改动的两个模块 Success。
 
+### Fixed（v17 Phase 5 第 17 步 —— 契约分母改结构判据、领域基类数入门禁，F-39）
+
+- **"60+ Typed Query 契约"的分母不再由手抄名单决定**：`scripts/contract_audit.py::
+  _all_typed_queries` 原先用一份 12 个名字的 `skip` 集合排除抽象基类，同一份名单在
+  `tests/v14/test_contract_automation.py` 里又各自抄了 4 遍（全仓共 5 份副本）。实测这
+  12 个类在四种构造路径（`cls()`、`_minimal_instance`、kwargs 阶梯、factory 映射）下
+  **全部构造失败**——各站点自带的 `except Exception: continue` 早就把它们排除了，名单不
+  决定读数，却决定读者的信任。危险方向是**漏更**：新增抽象基类若没同步这 5 份名单就会被
+  算进契约数，`60+ 契约` 与 PyPI 规模口径同时虚增而审计全绿（F-19 是同一处的反方向缺陷：
+  那次分母被读小）。现改为**纯结构判据**（可构造 + `capability` 为字符串），5 份名单全部
+  删除。`contract_audit --ci` 实测回显 `63 个 Typed Query 契约 / 155 个注册业务
+  capability`，与删名单前逐项相同 ⇒ 改判无损。
+- **"11 领域基类"撤回为 10**：该宣称在 README（2 处）、`docs/api/README.md`、
+  `docs/api/interfaces.md` 共 4 份抄本，而按任何自然定义都不成立——`tstdx/typed_query.py`
+  里被其它契约直接继承的抽象 dataclass 是 10 个，含根 `CapabilityQuery` 才 11 个，根不是
+  "领域"。判据（不含根）写进 `_typed_domain_base_names()` 的 docstring 后进入门禁；第 15
+  步 F-35 那条"分母含糊所以刻意不钉"的口径就此撤销——含糊的不是事实，是没写判据。同批把
+  README 两处"9 Domain Record 族"也纳入数字门禁（此前只在 api 文档钉过，README 抄本在
+  盲区）。
+- **审计脚本的自述进门禁 + 防回潮**：`test_contract_audit_docstring_numbers_match_the_audit`
+  把 `_all_typed_queries` docstring 里写着的 155/63 钉回它自己算出的数（F-25 对齐了"它跑
+  什么"，没对齐"它抄什么"）；`test_typed_query_denominator_is_not_a_hand_copied_list` 禁止
+  名单回潮——那 12 个名字里任何一个以字符串字面量重新出现在审计脚本或 v14 套件里即为红。
+- **顺带修掉该套件里一处测量装置缺陷**：`test_cli_script_exits_zero` 以 `text=True` 捕获
+  子进程输出却不指定编码，Windows 下子进程的 GBK 输出使 `_readerthread` 抛
+  `UnicodeDecodeError`（以 `PytestUnhandledThreadExceptionWarning` 长期滞留；且审计一旦
+  真失败，失败分支的 `result.stdout[-800:]` 会因 `stdout is None` 二次崩掉诊断信息）。
+  现固定 `PYTHONIOENCODING=utf-8` + `encoding="utf-8"`，warning 消失。
+- **同一轮复测**：`tests/architecture/` + `tests/v14/` junit `211 tests / 0 failures /
+  0 errors`、RC=0；`contract_audit --ci` RC=0；`ruff check` 与 `format --check` 对触及的
+  3 个文件干净；整仓离线 `-m "not network"` junit `3313 tests / 0 failures / 0 errors /
+  7 skipped`、`FULL_RC=0`，`--cov=tstdx` **80.52%**（日志明写 `Required test coverage of
+  77.0% reached`，阈值 77 未下调）。**变异验证 8 条全部 RED 且各自指名**：塞回
+  `skip = {"MarketDataQuery"}`、自述 155→150、63→62、三处领域基类各改 1、README 的
+  Record 族 9→8。
+
 ### Fixed（v17 Phase 5 第 16 步 —— 发布冒烟引用已删除模块，F-36）
 
 - **wheel 安装冒烟不再 import 已不存在的 `tstdx.facade`**：`scripts/build_package.py` 的

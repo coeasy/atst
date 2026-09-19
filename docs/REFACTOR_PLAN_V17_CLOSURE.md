@@ -67,10 +67,12 @@
 | F-33 | P2（守卫失效类） | **三轮乱序里唯一稳定出现的 `XPASS` 是一根反向的守卫**：`tests/domain/test_symbol_chains.py::test_protocol_chain_agrees_on_000300` 挂着 `xfail(strict=False)`，理由写着"协议链自建旧启发式、属本任务禁改域、待 protocol 同批修复"。而 `std7709.infer_market` 现在直接委派 canonical `domain.symbol.to_tdx_market`（`tstdx/protocol/parsers/_std7709_common.py:132-149`，docstring 明写"000xxx 歧义不再由协议层自建启发式裁决"），五链早已收敛、该断言实际在过。`strict=False` 使"标记过期"零成本滞留，后果是**协议链一旦回退到旧惯例就重新变成 xfail（预期失败）**——一个本应报警的回归被过期标记自动消音 | **已清偿**（2026-09-19）：先读实现确认是"缺陷已修"而非"断言变弱"，再删标记使该断言成为常态守卫（回归即红）。**复测**：`tests/domain/test_symbol_chains.py` 24 项 RC=0，`ruff check`/`format --check` 干净 |
 | F-34 | P2（口径类：事实文档带假数字，而数字门禁只读 README） | **`docs/ARCHITECTURE.md` 开篇声明"本文只描述代码现状"，正文却留着两条与代码矛盾的现状**（Phase 5 第 14 步实测）：① 防回潮守卫条写着 `test_namespace_layout.py`「根级白名单 **11** 项」，而该测试的 `ROOT_WHITELIST` 与磁盘上的 `tstdx/*.py` 都是 **10**（Phase 3C 的验收上限正是 ≤10，多出的那 1 项是被迁走的模块，代码改了文档没跟）；② F-15 门禁基线条写着「覆盖率：**离线实测 76.14%** … 低于 77 阈值 ⇒ **门禁在本地为红**」，那是 Phase 3C/4 期间的读数；其后的配置接线、旁路收口与传输层桩层解散（F-30）把读数抬过了阈值，本轮离线全量实测 **80.53%**、同轮日志明写 `Required test coverage of 77.0% reached`，文档仍在宣称一条已经不存在的红。**根因是门禁的读数对象**：数字一致性检查 `test_readme_numbers_match_runtime` 只读 `_readme()`，于是 ARCHITECTURE 的 172 capabilities / 85 命令 / 61 解析器 / 5 段配置全部无人对账，README 自己的「85 命令账本」「61 精确解析器」同样在盲区——与第 12 步 F-31 同一格失明（文档门禁只看结构与路径，不看散文里的规模断言），只是这次落在另一份事实文档上 | **已清偿**（2026-09-19）：① 白名单条改回 10 项；② F-15 覆盖率条**删掉百分比**，改判据口径为「离线全量（CI 等价范围）已越过阈值 ⇒ 本地为绿」，并写明**逐轮实测数字一律记在本文的步骤日志里**——把会随每轮改动漂移的读数抄进事实文档，就是在制造下一条 F-34；「阈值单源 `pyproject [tool.coverage.report] fail_under`」「CI 环境（ubuntu+py3.11）重钉仍待 push 后实测」「阈值一次都没下调」三句原样保留；③ **数字门禁由 README 扩展到事实文档全体**：`test_fact_doc_numbers_match_their_truth_source` 以「文档 / 事实 / 定位模式 / 真相源」表把 README + ARCHITECTURE 的 capability 数、命令账本、解析器数、配置段数、根级白名单逐个钉回运行期对象（`Client.capabilities()`、`protocol.commands.COMMANDS`、`protocol.registry.PARSERS`、`dataclasses.fields(Config)`、磁盘 `tstdx/*.py` 计数），`test_documented_http_source_floor_still_holds` 对「45+ HTTP 源」按下界语义判定（加源不必改文档，掉到界下必须改；真相源为 `tstdx/web/` 里按 AST 数出的 `*Source` 类，实测 73）。**变异验证 10 条全部 RC=1 且各自指名**：172→167、85→84、61→62、5→6、10→11、删白名单宣称、README 85→86、README 61→60、下界 45→90、删下界宣称（README 两条因同一数字在文中出现多次，报出的是 `[85, 86]` 这种自相矛盾集合）。**复测（本机 Windows+py3.12.13，同一轮日志）**：`tests/architecture` 全绿；离线全量 `-m "not network"` **3285 passed / 7 skipped / 10 deselected**、0 失败；整仓 `--cov=tstdx` **80.53%**（阈值 77 未下调）；`ruff check`（`tstdx/`+`tests/`+`scripts/`）与 `ruff format --check`（触及文件）、`mypy`（CI 参数）、originality `--strict`（`Total: 189 Suspicious: 0`）、`spec_audit --json --strict`（`coverage_pct: 100.0`）、reachability `--strict`、docs links（82 文件）均 RC=0 |
 | F-35 | P2（口径类：门禁只覆盖两份文档、清单只核条数、代码注释里的同一数字无人管） | 第 14 步把数字门禁铺到 README+ARCHITECTURE 后，同一批事实在 `docs/api/`、`quickstart`、`troubleshooting`、`cookbook` 里仍是盲区，且清单类宣称只核条数。铺满后抓出三处（Phase 5 第 15 步实测）：① **服务面过度承诺**——`docs/api/interfaces.md` 写"四个服务面全部委托同一个 `Client`，不存在第二套执行路径"，而 CLI 实有 6 个传输/诊断命令（`probe`/`goods`/`f10`/`blocks`/`list`/`quotes-snapshot`）直连传输层客户端，`docs/api/README.md` 的 CLI 行同病；② **一个错数在代码里繁殖**——盘中异动 `CHANGE_TYPES` 有 20 项、`tests/web/test_hot_rank.py` 早已断言 `len(et)==20`，文档与 6 处生产 docstring/注释却集体写着"16 类"（枚举扩容时只改了测试那一侧，注释与文档按 F-34 一样静默失真）；③ **清单只数个数**——`Domain Record` 族与 WS JSON-RPC 方法在文档里以 `A/B/C…` 公示名单，条数对上而名字漂移时用户照抄即得 `-32601` 或不存在的 Record，原门禁对此完全无感。**根因与 F-34 同格**：门禁的覆盖对象与断言强度，而非文档写作态度 | **已清偿**（2026-09-19）：① 两处服务面口径按事实改写为"数据命令全部委托 `Client`；6 个传输/诊断命令直连传输层，属协议诊断面而非第二套能力执行路径"，并指名口径来源（`runtime_commands.py` 模块 docstring）与守卫（`test_service_faces_never_import_the_web_layer`）；② 枚举数字 9 处统一到 20，新增 `test_code_comments_about_change_types_match_the_enum` 扫 `tstdx/` 全部含"异动"的行、把 `N 类` 钉回 `CHANGE_TYPES`——生产代码的注释首次进入事实门禁；③ `_EXACT_CLAIMS` 由 10 行扩到 **22 行**（新增 api/README 6 项、interfaces 5 项、quickstart/troubleshooting/cookbook 各 1 项），`_FLOOR_CLAIMS` 3 行（`45+ HTTP 源`×2 实际 73、`60+ 契约` 实际 63），并加两条**集合级**名单守卫：Record 名单比 `domain.records.__all__` 去 `Record` 词缀后的集合，WS 方法名单比 `runtime_ws._dispatch` 的 AST 提取结果（`method ==` 与 `method in {...}` 两种写法都要认——初版只认 `==` 数出 9 个，差点把正确的文档改错）；④ "11 领域基类"因分母含糊（直接子类 10 / 去重基类名 11）**刻意不钉**并在此登记，不制造下一条伪事实。**复测（同一轮日志）**：`tests/architecture/` 146 passed；离线全量 junit `3313 tests / 0 failures / 0 errors / 7 skipped`、RC=0；整仓 `--cov=tstdx` 80.54%（阈值 77 未下调）；`ruff check` + `format --check`（430 files）、`mypy`（CI 参数）、originality `--strict`（`Total: 189 Suspicious: 0`）、`spec_audit --json --strict`、`golden_audit --gate --require-markets`、reachability `--strict`、docs links（82 文件）均 RC=0。**变异验证 20 条全部 RC=1 且各自指名**：17 条文档侧（含清单里塞幽灵方法名 `runtime.ping`、幽灵 Record 名 `Warrants`、删清单宣称、契约下界 60→70），3 条枚举侧（两处生产注释 20→16、api/README 20→19） |
-
 | F-36 | P1（发布链路类，与 F-24 同形） | **wheel 冒烟 import 了一个已被物理删除的模块，而所有路径类守卫看不见它**（Phase 5 第 16 步实测）：`scripts/build_package.py` 的 wheel 安装探针仍执行 `from tstdx.facade import UnifiedQuoteAPI;`，而 `tstdx/facade.py` 早已随 Phase 1b 单内核化删除（磁盘无此文件、`tstdx/__init__.py` 也不导出）。这段 import 住在 `python -I -c "<probe>"` 的**字符串**里 ⇒ F-24 补的三类存在性守卫（按文件路径对账 workflow / Makefile / `gates:`）结构性扫不到它，AST 与 import 门禁同理。后果：`make build`（即 `build_package.py --smoke`）与 wheels job 的最后一步会在装好的干净 venv 里 ImportError——发布链路固定为红，与 F-24 那条"release job 引用已删模块"同形，只是这次藏在字符串里 | **已清偿**（2026-09-19）：① 探针改判 `from tstdx import Client;` + `assert callable(Client.call) and callable(Client.typed)`——把"唯一业务入口的通用面在 wheel 内可用"这条真实契约补进去，而不是删掉了事；② **补字符串 import 守卫** `test_release_smoke_imports_only_symbols_that_still_exist`：正则抽出 `build_package.py` 与 `.github/workflows/wheels.yml` 两处冒烟里的全部 `from tstdx…` / `import tstdx…`，逐个过 `importlib.util.find_spec` 与 `hasattr`，并断言"解析结果非空"以免守卫自身失明；③ **变异验证**：把那行 facade import 原样塞回探针 ⇒ 守卫报 `发布冒烟 import 了不存在的模块：['tstdx.facade']`，还原后 `tests/compatibility/test_local_smoke_hardening_contract.py` 2 项 RC=0；④ **本轮把该冒烟真正跑通**（全离线：`python -m build --wheel --no-isolation` 出 `tstdx-1.0.0-py3-none-any.whl` → `_smoke()` 建临时 venv 装它）：`SMOKE_RC=0`，池层 `__module__` 断言（F-30 改判后）逐条通过、`tstdx --help` 与 `tstdx hosts audit --help` 均退出 0、`pip check` 回 `No broken requirements found`；wheel 内 194 个成员零 `facade`、零已解散的四个整方法侧车（余 8 件局部包装 `_hardening` 见 F-30 尾注） |
 | F-37 | **P0**（链路贯通类） | **真实网络冒烟抓到：7709 K 线在当下可达主站上返回 2 字节空桩，而库把它读成成功**（Phase 5 第 16 步实测，2026-09-19 周六 09:14–09:19 北京时间）。`tstdx server-test` 读数 **3/8 主站可达**（180.153.18.170 23.8ms、218.6.170.47 25.1ms、123.125.108.14 31.6ms），而全部 golden 样本的采集主机 218.75.126.9 超时不可达。同一批可达主站上 `0x0530` 实时行情正常（600519 price=1257.12、000001 price=11.7），`0x052D` 却一律回 `zip_size=2 unzip_size=2 payload=2 字节 = 2003`（帧头 `b1cb74000c01000000002d0502000200`）——**请求字节与 `tests/golden/quotation/0x052d_security_bars_600000_cat4/20260831-125353/meta.yaml` 记录的 `body_hex`（26 字节 `01003630303030300400010000000a0000000000000000000000`）逐位相同，而那次同字节请求在 2026-08-31 拿到 180 字节 / 10 根真样本**。周期枚举 0…11 全 12 个 category、日线/1分/5分、SH/SZ 两市一律 0 根 ⇒ 与请求参数无关。三层后果：① `Client.bars()` 返回 `data=[]` 而 `provenance=ProvenanceKind.DIRECT / cache_tier=None`，`strict=True` 也不报错，即"空即成功"，与 `0x0537`/`0x0fc5` 的 `NotImplementedFeature`、`0x0fb4`/`0x051a` 的 `CommandOffline` 两条 fail-fast 口径自相矛盾；② 同批真机上 `capital_changes`(0x000f) 与 `finance_info`(0x0010) 分别回 250/37 行但字段错位（首行 `code='519\x01'`、`market=48` 即 ASCII `'0'`），而离线 `-k "capital or finance or bars or kline"` 本轮 RC=0 ⇒ 解析器与**归档样本**自洽、与**当下线路**不一致；③ `PROTOCOL_SPEC/7709/0x052D_SECURITY_BARS.yaml` 与解析器注释都标 "L1 精确解析，golden-verified"，而这条"真机"证据链实际只挂在单台主站上 | **未清偿——需用户裁决，本轮不猜协议**：① 按仓内既有口径（`parsers/mac.py`「差分基准待真机样本裁决（P1c，禁止盲改）」）**未做任何 body/header 试探性改写**，本轮只把事实钉进本文，并停止把 0x052D 记为"live 已验证"；② 时段口径要如实标注：本轮为周六休市，行情读到的是周五收盘快照（腾讯源 `time='20260918161427'`），**历史 K 线与交易时段无关**故 0 根仍成立，但严格结论需一次工作日盘中复跑；③ 三条待选路径由用户拍板：(a) 对当下可达主站重采 K 线/股本/财务样本并按需扩 golden 与 `PROTOCOL_SPEC`（多主站对账，需至少一台提供历史的服务）；(b) 先补"空结果不得读成成功"的运行期口径（0 根时 `strict=True` 抛错、默认给告警与不完整标记）——属产品契约改动，须与 F-13/F-16 的"不静默"口径一并定；(c) 接受"本次发布不含 7709 K 线 live 保证"，在 README/CHANGELOG 显式降级该能力口径，并把 tag 推迟到 (a) 或 (b) 落地 |
 | F-38 | P1（测量口径类） | **整个 7709 数据面在门禁里没有任何 live 判据，所以 F-37 这类缺陷结构性隐形**：全库 `@pytest.mark.network` 仅 6 项，且逐文件 grep 显示它们全部落在 `tests/web/*`——协议层（`tstdx/protocol`、`tstdx/client`、`tstdx/transport`）**零 live 覆盖**；`live-smoke.yml` 每日 01:00 UTC 跑的就是这 6 项 web 用例。`tstdx/tools/host_audit.py` 名义上巡检 5 个协议族，但该模块 grep `security_bars\|bars` 零命中 ⇒ 巡检不看 K 线。于是"主站可达 + 行情能回"被隐式当成"链路通"，历史族命令的真实可用性只在本轮那次一次性人工冒烟里被碰过 | **部分清偿**（2026-09-19）：本轮把"三面 + 真实网络"写成可复现的七格判据与逐格证据（Phase 5 第 16 步），使这条验收不再是口头动作；**刻意未**新增 K 线的 `@pytest.mark.network` 断言——F-37 未裁决前加它，等于把每日 live job 钉成固定红（F-24 的教训正是"守卫把缺陷写成契约"）。待 F-37 选 (a)/(b) 落地后再补 live 断言并挂进 `live-smoke.yml` |
+| F-39 | P2（口径类：对外契约数的分母由手抄名单决定，而名单已被自身判据遮蔽） | `scripts/contract_audit.py::_all_typed_queries` 用一份 12 个名字的 `skip` 集合排除抽象基类，同一份名单在 `tests/v14/test_contract_automation.py` 里又各自抄了 4 遍（共 5 份副本）。实测这 12 个类在四种构造路径（`cls()`、`_minimal_instance`、kwargs 阶梯、factory 映射）下**全部构造失败**，即它们的排除早已由各站点自带的 `except Exception: continue` 完成——名单不决定任何东西，却决定读者的信任。**危害方向是漏更而非多余**：新增一个抽象基类只要不在这 5 份名单里，就会被算进"契约数"，于是 `60+ 契约`、`10 领域基类`、PyPI 描述里的规模口径同时虚增，而审计依旧全绿（与 F-19"跨族同号互相覆盖使分母被读小"同族，这次是被读大）。连带：`docs/api/README.md`、`docs/api/interfaces.md`、README 两处宣称的"11 领域基类"按任何自然定义都不成立（`typed_query` 里被继承的抽象基类是 10 个，含根 `CapabilityQuery` 才 11 个，而根不是"领域"）——第 15 步 F-35 曾以"分母含糊"为由刻意不钉，本步给出显式判据后改判为必须钉 | **已清偿**（2026-09-19）：① 契约分母改为**纯结构判据**（可构造 + `capability` 为字符串），删掉 5 份手抄名单；`contract_audit --ci` 同轮实测 `contracts: 63 / business caps: 155`，与删名单前逐项相同 ⇒ 改动行为无损；② README（2 处）+ `docs/api/README.md` + `docs/api/interfaces.md` 的"11 领域基类"统一改为 **10**，判据写进 `_typed_domain_base_names()` 的 docstring（被其它契约直接继承的抽象 dataclass，不含根）；③ 三条新守卫：`test_fact_doc_numbers_match_their_truth_source` 新增 4 行（三处领域基类数 + README 的"9 Domain Record 族"，后者此前只在 api 文档被钉、README 的两处抄本在盲区）、`test_contract_audit_docstring_numbers_match_the_audit` 把审计脚本自述的 155/63 钉回它自己算出的数（F-25 只对齐了它跑什么，没对齐它抄什么）、`test_typed_query_denominator_is_not_a_hand_copied_list` 禁止名单回潮（名单里任何一个名字以字符串字面量出现在这两个文件即为红）；④ 顺手修掉该套件里一处测量装置缺陷：`test_cli_script_exits_zero` 以 `text=True` 捕获子进程输出却不指定编码，Windows 下子进程的 GBK 输出使 `_readerthread` 抛 `UnicodeDecodeError`（以 `PytestUnhandledThreadExceptionWarning` 形式滞留，且失败分支的 `result.stdout[-800:]` 会因 `stdout is None` 二次崩）——现显式 `PYTHONIOENCODING=utf-8` + `encoding="utf-8"`，警告消失。**复测（同一轮日志）**：`tests/architecture/` + `tests/v14/` junit `211 tests / 0 failures` RC=0；`contract_audit --ci` RC=0（`63 契约 / 155 业务 capability`，与删名单前逐项相同）；`ruff check`/`format --check`、reachability `--strict`、`spec_audit --json --strict`、docs links（82 文件）均 RC=0；整仓离线 junit `3313 tests / 0 failures / 7 skipped`、`--cov=tstdx` **80.52%**（阈值 77 未下调）。**变异验证 8 条全部 RC=1 且各自指名**（塞回一份 `skip = {"MarketDataQuery"}`、自述 155→150、63→62、三处领域基类各改 1、README Record 族 9→8） |
+| F-40 | P1（零缓存口径类） | **缓存层删掉了，"缓存形状"留在包里，而且其中一个真的能跳过数据源**（Phase 5 第 18 步实测）。Phase 2 物理删除 v12 缓存层后，仓内还剩三处缓存遗产：① `tstdx/domain/finance.py::CapitalChangeCache`——除权事件 **TTL 缓存 + `~/.tstdx/factors` 落盘**，类 docstring 明写"命中（未过期且非空）直接返回，**跳过 0x0010/gpcw 网络与解析**"，即一句话就能把"数据请求不需要缓存"这条主口径变成可一键恢复的旁路；而它在 `tstdx/` 内**零调用方**（复权引擎 `domain/adjust.py::compute_factors(bars, events)` 由调用方直接喂事件），只有它自己的 8 项单测在测自己——典型的"测试维持死亡的公共面"；② `Provenance.cached(tier)` / `cache_hit` / `direct_fetch`：生产路径永不产出 tier（内核只经 `Provenance.direct()` 构造），故这三个成员在 `tstdx/` 里同样零消费者，唯一引用是 `tests/runtime/test_query_contracts.py::test_cache_hit_preserves_direct_origin`（自己造一个 tier 再断言它能被造出来）；③ `tstdx/result.py` 模块 docstring 仍在描述 `cache_tier='l1'/'l2'` 的取回模型，并称其为"later cache-poisoning and freshness gates 的地基"——**包内文档描述了一个不存在的层**，`help()` 与任何交互式阅读都会照单全收。**根因与 F-30/F-34 同格**：可达性门禁把 `__all__` 导出与"有测试覆盖"都算活，于是删层之后剩下的接口形状恰好躲过所有判据 | **已清偿**（2026-09-19）：① `CapitalChangeCache` 一族**物理删除**（`CapitalChangeCache`/`get_capital_change_cache`/`default_factor_cache_dir`/`ENV_FACTOR_CACHE_DIR`/`DEFAULT_FACTOR_TTL_SECONDS`/`_FETCHED_AT_KEY` 及其 `__all__` 条目，`finance.py` 301→162 行，连带删除那 8 项自测用例），不留别名，与 Phase 1b/2 的 clean-break 口径一致；② 删除 `cached()`/`cache_hit`/`direct_fetch`（`result.py` 161→148 行），**`cache_tier` 字段刻意保留**——它是三面 wire 上那个恒为 `null` 的零缓存证据，CLI/HTTP/MCP 冒烟与文档都以它作判据；③ `result.py` docstring 改写为当下事实：运行期不做结果缓存，所有生产 provenance 由 `direct()` 构造并带 `cache_tier=None`，保留该字段正是为了让调用方断言它仍为 `None`；④ 那项自测换成 `test_direct_provenance_carries_no_cache_tier`——除断言 `direct()` 的 `cache_tier is None`，还用 `hasattr` 反向钉住三个已删词汇，重新引入即红；⑤ 新增包级守卫 `tests/architecture/test_official_runtime_no_fallback.py::test_package_defines_no_data_cache_layer`：AST 扫 `tstdx/**` 全部类名含 `cache` 的类定义与 `get_*cache*` 函数，命中即列出路径。**变异验证**：临时塞入 `class QuoteCache` → 守卫报 `tstdx\domain\finance.py:class QuoteCache`、RC=1。纯函数记忆化（`functools.lru_cache`）明确不在禁止之列——它不省掉任何一次网络请求，守卫 docstring 里写明了这条边界 |
+| F-41 | P1（对外承诺类） | **PyPI 元数据仍在宣称一个已被删除的架构层**：`pyproject.toml` 的 `description` 写着 "…with explicit Providers, **semantic caching**, Stateful streaming and canonical HTTP/WebSocket/MCP adapters"。这是 v12 语义缓存时代的残留，会出现在 `pip show`、PyPI 项目页与任何索引站的第一行——**对外最显眼的一句话恰好是仓内最错的一句**，而它不在任何事实门禁的扫描范围里（`FACT_DOC_PATHS` 只覆盖 README/ARCHITECTURE/docs，元数据文件从来不在名单上），`tests/` 里也没有任何断言读过 `description` | **已清偿**（2026-09-19）：① 描述改为 "…with explicit Providers, **direct Provider reads**, Stateful streaming…"——刻意**不提缓存**（连 "zero-cache" 这种写法也不用：包描述不该为一个不存在的东西占词，守卫也因此能保持"描述里出现 `cach` 即红"这个简单形状）；② 新增守卫 `test_pypi_description_claims_no_caching`：正则取出 `[project] description`（解析不到即报"守卫自身失效"），断言不含 `cach`。**变异验证**：把 `semantic caching` 塞回描述 → RC=1 且整句回显。同一轮顺带改写 `README.md` 的存储行（`~/.tstdx/` 配置/**缓存**/排名 → 配置/主站排名/反馈）：随 F-40 删掉落盘目录后，`~/.tstdx/` 下只剩配置、`server_ranking.json` 与 `feedback/` 三类，该行此刻正被并行会话编辑，故未并入本次提交 |
 
 ---
 
@@ -653,6 +655,88 @@
     - **时段口径**：本轮为周六休市，行情读到周五收盘快照（腾讯 `time='20260918161427'`）。
       历史 K 线与交易时段无关，故"0 根"结论不受影响；但 stream 的 0 帧与字段错位需一次
       **工作日盘中**复跑才能出严格结论，已登记为后续动作。
+17. ✅ **契约分母改判为结构口径，"领域基类"数从口头事实变成门禁（Phase 5 第 17 步，
+    2026-09-19，见 §0.3 F-39）**：第 15 步留下一格待办（"11 领域基类"分母含糊故不钉），
+    顺藤摸到它背后的真问题——对外契约数的分母由一份手抄的抽象基类名单决定，而同一份名单
+    在仓内抄了 5 遍。
+
+    - **名单是被自身判据遮蔽的冗余**：实测那 12 个名字在四种构造路径（`cls()`、
+      `_minimal_instance`、kwargs 阶梯、factory 映射）下**全部构造失败**，各站点自带的
+      `except Exception: continue` 早就把它们排除了——名单不决定读数，却决定读者的信任。
+      危险方向是**漏更**：新增抽象基类若没同步这 5 份名单就会被算进契约数，`60+ 契约` 与
+      PyPI 描述同时虚增而审计全绿（F-19 是同类缺陷的反方向：那次分母被读小）。现改为
+      纯结构判据（可构造 + `capability` 为字符串），5 份名单全部删除；`contract_audit --ci`
+      同轮实测 `contracts: 63 / business caps: 155`，与删除前逐项相同 ⇒ 改判无损。
+    - **"11 领域基类"改判为 10**：显式判据（被其它契约直接继承的抽象 dataclass，不含根
+      `CapabilityQuery`）写进 `_typed_domain_base_names()`，README（2 处）、
+      `docs/api/README.md`、`docs/api/interfaces.md` 的抄本统一改 10。第 15 步"分母含糊
+      所以不钉"的口径就此撤销——含糊的不是事实，是没写判据。同批补上 README 两处
+      "9 Domain Record 族"（此前只在 api 文档钉过，README 抄本在盲区）。
+    - **审计脚本的自述也进门禁**：`test_contract_audit_docstring_numbers_match_the_audit`
+      把它 docstring 里的 155/63 钉回它自己算出的数（F-25 对齐了"它跑什么"，没对齐
+      "它抄什么"）；`test_typed_query_denominator_is_not_a_hand_copied_list` 禁止名单回潮。
+    - **顺带修一处测量装置缺陷**：`test_cli_script_exits_zero` 用 `text=True` 捕获子进程
+      输出却不指定编码，Windows 下子进程的 GBK 输出使 `_readerthread` 抛
+      `UnicodeDecodeError`（以 warning 形式长期滞留；且一旦审计真失败，
+      `result.stdout[-800:]` 会因 `stdout is None` 二次崩掉诊断信息）。现固定
+      `PYTHONIOENCODING=utf-8` + `encoding="utf-8"`，warning 消失。
+    - **变异验证 8 条全部 RC=1 且各自指名**：塞回 `skip = {"MarketDataQuery"}`、
+      自述 155→150、63→62、README/api-README/interfaces 三处领域基类各改 1、
+      README 的 Record 族 9→8。
+    - **复测（同一轮日志）**：`tests/architecture/` + `tests/v14/` junit `211 tests /
+      0 failures / 0 errors`、RC=0；`contract_audit --ci` RC=0（`63 契约 / 155 业务
+      capability`）；`ruff check` 与 `format --check`（触及的 3 个文件）干净，
+      reachability `--strict`、`spec_audit --json --strict`、docs links（82 文件）均 RC=0。
+    - **同一轮的整仓离线复测**：junit `3313 tests / 0 failures / 0 errors / 7 skipped`、
+      `FULL_RC=0`，`--cov=tstdx` **80.52%**（日志明写 `Required test coverage of 77.0%
+      reached`，阈值 77 从未下调）。本步中途曾有 2 条红，均来自并行会话在同一工作树里的
+      在途改动（`pyproject.toml` 描述一度含 `zero-cache`；ProtocolSniffer 的一次性抓包产物
+      一度落在 `PROTOCOL_SPEC/_sniffer/`），两处都由对方在 **F-40/F-41（第 18 步）** 内
+      自行结清，本步未代为修改——详见下一条步骤日志。
+18. ✅ **缓存层删除后残留的"缓存形状"一并清偿（Phase 5 第 18 步，2026-09-19，
+    见 §0.3 F-40/F-41）**：目标口径是"数据请求不需要缓存，直接请求对应数据源"。
+    第 16 步的零缓存证据（CLI/HTTP/MCP 三面 `cache_tier=null`）只证明了**运行期**没有
+    缓存；这一步把"包里没有缓存形状"也变成事实与门禁。
+
+    - **零调用方的缓存面 = 一句 import 就能恢复的旁路**：`CapitalChangeCache` 自带
+      TTL + `~/.tstdx/factors` 落盘，docstring 明写命中即"跳过 0x0010/gpcw 网络与解析"，
+      却在 `tstdx/` 内无任何调用方（复权引擎 `compute_factors(bars, events)` 由调用方喂
+      事件），只有它自己的 8 项单测维持其"活着"。按 clean-break 口径整族物理删除、
+      不留别名（`finance.py` 301→162 行）。`Provenance` 上同源的 `cached()`/`cache_hit`/
+      `direct_fetch` 三个生产零消费者成员一并删除（`result.py` 161→148 行）；
+      **`cache_tier` 字段保留**——它是 wire 上那个恒为 `null` 的零缓存证据，删掉它等于
+      把判据本身删掉。
+    - **包内文档不再描述不存在的层**：`result.py` 模块 docstring 原写 `cache_tier='l1'/
+      'l2'` 取回模型并称其为"later cache-poisoning and freshness gates 的地基"，改写为
+      当下事实（运行期不做结果缓存，生产 provenance 一律 `direct()` + `cache_tier=None`）。
+      `pyproject.toml` 的 `description` 仍宣称 "semantic caching"——PyPI 项目页第一行是
+      对外最显眼的承诺，也是全仓最错的一句，且元数据从来不在任何事实门禁的扫描名单里
+      （F-41）。改为 "direct Provider reads"，刻意连 "zero-cache" 都不写：包描述不该为
+      不存在的东西占词，守卫也因此保持"描述含 `cach` 即红"的简单形状。
+    - **两条新守卫 + 一条改判**：`test_package_defines_no_data_cache_layer`（AST 扫
+      `tstdx/**` 的 `*Cache*` 类与 `get_*cache*` 函数，`lru_cache` 这类纯函数记忆化明确
+      排除并在 docstring 写明边界）、`test_pypi_description_claims_no_caching`；
+      `test_cache_hit_preserves_direct_origin`（自造 tier 再断言能造出来）换成
+      `test_direct_provenance_carries_no_cache_tier`（断言 `direct()` 的 `cache_tier is None`
+      + `hasattr` 反向钉住三个已删词汇）。**变异验证 2 条各自 RC=1**：塞入
+      `class QuoteCache` → 报 `tstdx\domain\finance.py:class QuoteCache`；把 `semantic
+      caching` 写回描述 → 整句回显。
+    - **复测（同一轮日志）**：整仓离线 `-m "not network"` junit
+      **3313 tests / 0 failures / 0 errors / 5 skipped**、`FULL_RC=0`，`--cov=tstdx`
+      **80.58%**（日志明写 `Required test coverage of 77.0% reached`，阈值 77 未下调）；
+      `ruff check` + `format --check` 触及的 5 个文件干净，`mypy`（CI 参数）对
+      `tstdx/result.py`、`tstdx/domain/finance.py` Success；`tests/test_spec_coverage.py`
+      15 项 RC=0。
+    - **顺带把第 17 步那"2 条红"如实结清**：它们不是谁的口径冲突，而是两个会话在
+      同一工作树里交叉撞上的**我方在途改动**——① `description` 含 `zero-cache` 触发
+      `cach` 守卫：现已改为完全不含 cache 词根，守卫转绿；② 未跟踪的
+      `PROTOCOL_SPEC/_sniffer/mac_quotation/{052d,0530}/` 是第 16 步诊断 F-37 时
+      ProtocolSniffer 的一次性抓包产物（含 `DRAFT.yaml`，其文件头本就写着"请勿直接提交"），
+      它撞中 `test_audit_covers_every_non_probe_yaml` 的精确清单断言。原始 `.bin`/
+      `.meta.json` 证据已整目录移出仓库保存在于 F-37 裁决使用（Windows
+      `%TEMP%/qoder_live_smoke/sniffer_mac_quotation_20260919/`，仓库内已无残留），守卫复跑 RC=0。
+      这条顺序本身就是 F-38 的另一面证据：**门禁只看得到仓内文件，冒烟留下的现场证据
+      要么进 golden 要么滚出仓库**，中间态必然产生噪声红。
 
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）

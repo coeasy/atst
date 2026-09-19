@@ -126,7 +126,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | **执行身份与溯源** | `runtime/identity.py` + `runtime/provenance.py`：结果 provenance 与计划身份不符即抛 |
 | **显式跨源编排** | `runtime/orchestration.py`：仅当调用方给出 `FallbackPolicy` 时按序尝试，逐次记入 `OrchestratedResult` |
 | **启动三方对账** | `runtime/audit.py::audit_runtime`：registry / catalog / bindings 不一致即报错 |
-| **60+ Typed Query 契约** | 11 领域基类 + 9 Domain Record 族，字段名与内核方法签名一一对应（`Client.typed`） |
+| **60+ Typed Query 契约** | 10 领域基类 + 9 Domain Record 族，字段名与内核方法签名一一对应（`Client.typed`） |
 | **批量执行** | `Client.quotes_batch()` → `BatchResult`：逐 symbol 三态（ok/missing/failed）、保序、串行直连单一 Provider（无隐藏换源） |
 | **流式生命周期** | `StreamSpec`/`StreamPlanner` + `StatefulQuoteStream`（订阅/退订/状态查询） |
 
@@ -215,7 +215,7 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 | **操作系统** | Windows 10/11 · macOS 12+ · Linux（主流发行版） |
 | **CI 矩阵** | Windows 3.11 + 3.12 |
 | **网络** | TCP 7709/7727（TDX 主站）+ HTTPS（Web 源） |
-| **存储** | 文件系统（`~/.tstdx/` 配置/缓存/排名）+ Parquet/DuckDB |
+| **存储** | 文件系统（`~/.tstdx/` 配置/主站排名/反馈）+ Parquet/DuckDB |
 
 ---
 
@@ -445,7 +445,7 @@ python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproj
 
 | 里程碑 | 状态 | 说明 |
 |---|---|---|
-| Typed Capability 契约 | ✅ | 60+ 契约（11 领域基类），字段名与内核方法签名一一对应 |
+| Typed Capability 契约 | ✅ | 60+ 契约（10 领域基类），字段名与内核方法签名一一对应 |
 | Domain Model | ✅ | 9 Domain Record 族 + 记录归一化 |
 | Contract Automation | ✅ | `scripts/contract_audit.py --ci`：Registry/语义/内核编译/Domain Record/往返五段对账，ERROR 级缺口阻断（契约待补面按 PENDING 报告） |
 | Streaming | ✅ | StreamSpec/StreamPlanner + StatefulQuoteStream |

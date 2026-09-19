@@ -165,29 +165,20 @@ def _iter_domain_capabilities() -> Iterator[str]:
 
 
 def _all_typed_queries() -> list[type]:
-    """收集 typed_query 模块中全部具体 Query 契约类。"""
+    """收集 typed_query 模块中全部具体 Query 契约类。
+
+    具体与否按结构判据判定（可构造 + `capability` 为字符串），不靠手抄名单：抽象基类
+    （根 `CapabilityQuery`、9 个领域基类、`BatchCapabilityQuery`、`TypedQueryResult`）
+    因缺必填参数无法构造，本就被排除；写死名单会在新增基类时把它静默算成契约。
+    """
     import dataclasses as dc
 
     import tstdx.typed_query as tq
 
-    skip = {
-        "CapabilityQuery",
-        "SymbolQuery",
-        "BatchCapabilityQuery",
-        "TypedQueryResult",
-        "FinancialQuery",
-        "FundQuery",
-        "BondQuery",
-        "FuturesQuery",
-        "OptionsQuery",
-        "MarketDataQuery",
-        "SearchQuery",
-        "MacroQuery",
-    }
     out: list[type] = []
     for name in dir(tq):
         cls = getattr(tq, name)
-        if not isinstance(cls, type) or name in skip:
+        if not isinstance(cls, type):
             continue
         if not dc.is_dataclass(cls):
             continue

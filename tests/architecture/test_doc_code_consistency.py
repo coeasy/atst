@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import ast
 import functools
-import importlib
+import importlib.util
 import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -362,23 +363,56 @@ def _ws_methods() -> set[str]:
     return found
 
 
-def _typed_contracts() -> int:
-    """`scripts/contract_audit.py` 眼里的 Typed Query 契约数（对外口径以它为准）。"""
-    import importlib.util
-
+@functools.lru_cache(maxsize=1)
+def _contract_audit() -> Any:
+    """`scripts/contract_audit.py` 作为真相源加载一次（对外契约口径以它为准）。"""
     spec = importlib.util.spec_from_file_location(
         "_contract_audit", ROOT / "scripts" / "contract_audit.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return len(module._all_typed_queries())
+    return module
+
+
+def _typed_contracts() -> int:
+    return len(_contract_audit()._all_typed_queries())
+
+
+def _business_capabilities() -> int:
+    return len(set(_contract_audit()._iter_domain_capabilities()))
 
 
 def _change_types() -> int:
     from tstdx.web.fundflow import EastmoneyStockChangesSource
 
     return len(EastmoneyStockChangesSource.CHANGE_TYPES)
+
+
+def _typed_domain_base_names() -> set[str]:
+    """``tstdx.typed_query`` 里的领域基类名（文档宣称的"10 领域基类"的真相源）。
+
+    判据与 ``contract_audit`` 同源：抽象基类因缺必填参数构造不出来，所以"被其它契约直接
+    继承的类"即基类；根 ``CapabilityQuery`` 本身是全部基类的父类，不算一个领域。
+    """
+    import dataclasses
+
+    import tstdx.typed_query as tq
+
+    classes = {
+        name: value
+        for name, value in vars(tq).items()
+        if isinstance(value, type) and dataclasses.is_dataclass(value)
+    }
+    return {
+        name
+        for name, cls in classes.items()
+        if name != "CapabilityQuery" and any(cls in other.__bases__ for other in classes.values())
+    }
+
+
+def _typed_domain_bases() -> int:
+    return len(_typed_domain_base_names())
 
 
 def _web_source_classes() -> int:
@@ -421,6 +455,10 @@ _EXACT_CLAIMS: tuple[tuple[str, str, str, Callable[[], int]], ...] = (
     ("docs/quickstart.md", "capability 数", r"(\d+)\s*项\s+capability", _capabilities),
     ("docs/troubleshooting.md", "协议命令数", r"(\d+)\s*命令账本", _protocol_commands),
     ("docs/cookbook/06_custom_command.md", "协议命令数", r"(\d+)\s*命令账本", _protocol_commands),
+    ("README.md", "领域基类数", r"(\d+)\s*领域基类", _typed_domain_bases),
+    ("docs/api/README.md", "领域基类数", r"(\d+)\s*领域基类", _typed_domain_bases),
+    ("docs/api/interfaces.md", "领域基类数", r"(\d+)\s*领域基类", _typed_domain_bases),
+    ("README.md", "Domain Record 族数", r"(\d+)\s*Domain Record 族", _domain_record_classes),
 )
 
 
@@ -515,6 +553,39 @@ def test_code_comments_about_change_types_match_the_enum() -> None:
     real = _change_types()
     wrong = sorted({f"{rel}：宣称 {n} 类" for rel, n in claims if n != real})
     assert not wrong, f"`CHANGE_TYPES` 实际有 {real} 项，代码注释却写：{wrong}"
+
+
+#: 审计脚本自述的规模数字同样是抄本（F-25 让它"描述它真正跑的门禁"，但没对账数字）。
+_AUDIT_SELF_FACTS = re.compile(r"当前\s*(\d+)\s*个业务 capability 中\s*(\d+)\s*个已有契约")
+
+
+def test_contract_audit_docstring_numbers_match_the_audit() -> None:
+    text = (ROOT / "scripts" / "contract_audit.py").read_text(encoding="utf-8")
+    matched = _AUDIT_SELF_FACTS.search(text)
+    assert matched, "contract_audit 不再自述业务 capability 与契约数，门禁失效"
+    caps, contracts = int(matched.group(1)), int(matched.group(2))
+    assert caps == _business_capabilities(), (
+        f"contract_audit 自述 {caps} 个业务 capability，真相源是 {_business_capabilities()}"
+    )
+    assert contracts == _typed_contracts(), (
+        f"contract_audit 自述 {contracts} 个契约，真相源是 {_typed_contracts()}"
+    )
+
+
+def test_typed_query_denominator_is_not_a_hand_copied_list() -> None:
+    """契约分母只能由结构判据算出，不能靠手抄的基类名单。
+
+    同一份 12 个名字曾在 5 处各自抄一遍：漏更的那一处会把新增的抽象基类静默算成契约，
+    于是对外宣称的契约数虚增——而"名单 vs 构造失败"两套判据同时成立时无人发现。
+    """
+    offenders: list[str] = []
+    hand_copied = _typed_domain_base_names() | {"CapabilityQuery", "TypedQueryResult"}
+    for rel in ("scripts/contract_audit.py", "tests/v14/test_contract_automation.py"):
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        quoted = [name for name in hand_copied if f'"{name}"' in text]
+        if quoted:
+            offenders.append(f"{rel}: {sorted(quoted)}")
+    assert not offenders, f"契约计数重新依赖手抄基类名单：{offenders}"
 
 
 # --------------------------------------------------------------------------
@@ -614,7 +685,6 @@ def test_dunder_docstring_quickstart_examples_construct(monkeypatch: pytest.Monk
     失败"算通过，``TypeError`` 一类的签名或入口缺陷才算红。
     """
     import socket
-    from typing import Any
 
     class _Blocked(RuntimeError):
         pass

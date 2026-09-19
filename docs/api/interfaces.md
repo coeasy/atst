@@ -166,7 +166,7 @@ Provider，串行下发、无隐藏换源）。`BatchResult.items` 为 `{symbol:
 ### CapabilityQuery 与 Domain Records
 
 ```python
-from tstdx.typed_query import FundHoldingsQuery          # 60+ 冻结契约，11 领域基类
+from tstdx.typed_query import FundHoldingsQuery          # 60+ 冻结契约，10 领域基类
 from tstdx.domain.records import FinancialRecord, FundRecord, BondRecord, NewsRecord
 ```
 

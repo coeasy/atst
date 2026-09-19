@@ -27,7 +27,7 @@
 | `tstdx.query.QuerySpec` / `QueryPlan` / `QueryPlanner` | 请求规格、单 Provider/单 Channel 计划、规划期校验 |
 | `tstdx.result.QueryResult` / `ResultMeta` / `Provenance` | 结果载荷 + 溯源元信息 |
 | `tstdx.batch.BatchResult` / `BatchItem` | 批量三态（ok/missing/failed）保序契约 |
-| `tstdx.typed_query.CapabilityQuery` | 类型化查询契约（60+ 契约，11 领域基类）+ `TypedQueryResult` |
+| `tstdx.typed_query.CapabilityQuery` | 类型化查询契约（60+ 契约，10 领域基类）+ `TypedQueryResult` |
 | `tstdx.domain.records` | Domain Record 族（9 类：Financial/Fund/Bond/News/Research/Option/MarketData/Search/Macro）|
 | `tstdx.stream_contract.StreamSpec` / `StreamPlanner` | 流式请求契约与规划 |
 | `tstdx.catalog.capability` | capability 目录 + 规划期真实签名校验（`validate_call`）|

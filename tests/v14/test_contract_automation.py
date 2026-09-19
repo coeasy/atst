@@ -2,6 +2,10 @@
 
 把 scripts/contract_audit.py 的审计逻辑以 pytest 形态固化，防止
 Typed Query / Registry / Domain Record 三者在后续迭代中漂移。
+
+"具体契约"按结构判据识别（可构造 + `capability` 为字符串）：抽象基类因缺必填参数构造
+不出来，本就被排除，因此这里不维护任何基类名单——手抄名单会在新增基类时把它静默算成
+契约，让对外宣称的契约数虚增（曾同时存在 5 份副本）。
 """
 
 from __future__ import annotations
@@ -26,23 +30,9 @@ class TestContractAutomation:
 
         import tstdx.typed_query as tq
 
-        skip = {
-            "CapabilityQuery",
-            "SymbolQuery",
-            "BatchCapabilityQuery",
-            "TypedQueryResult",
-            "FinancialQuery",
-            "FundQuery",
-            "BondQuery",
-            "FuturesQuery",
-            "OptionsQuery",
-            "MarketDataQuery",
-            "SearchQuery",
-            "MacroQuery",
-        }
         for name in dir(tq):
             cls = getattr(tq, name)
-            if not isinstance(cls, type) or name in skip:
+            if not isinstance(cls, type):
                 continue
             if not dc.is_dataclass(cls):
                 continue
@@ -92,24 +82,10 @@ class TestContractAutomation:
         for pid in PROVIDERS.ids():
             registered |= set(PROVIDERS.get(pid).capabilities())
 
-        skip = {
-            "CapabilityQuery",
-            "SymbolQuery",
-            "BatchCapabilityQuery",
-            "TypedQueryResult",
-            "FinancialQuery",
-            "FundQuery",
-            "BondQuery",
-            "FuturesQuery",
-            "OptionsQuery",
-            "MarketDataQuery",
-            "SearchQuery",
-            "MacroQuery",
-        }
         typed: set[str] = set()
         for name in dir(tq):
             cls = getattr(tq, name)
-            if not isinstance(cls, type) or name in skip:
+            if not isinstance(cls, type):
                 continue
             if not dc.is_dataclass(cls):
                 continue
@@ -158,24 +134,10 @@ class TestContractAutomation:
 
         import tstdx.typed_query as tq
 
-        skip = {
-            "CapabilityQuery",
-            "SymbolQuery",
-            "BatchCapabilityQuery",
-            "TypedQueryResult",
-            "FinancialQuery",
-            "FundQuery",
-            "BondQuery",
-            "FuturesQuery",
-            "OptionsQuery",
-            "MarketDataQuery",
-            "SearchQuery",
-            "MacroQuery",
-        }
         checked = 0
         for name in dir(tq):
             cls = getattr(tq, name)
-            if not isinstance(cls, type) or name in skip:
+            if not isinstance(cls, type):
                 continue
             if not dc.is_dataclass(cls):
                 continue
@@ -197,24 +159,10 @@ class TestContractAutomation:
         import tstdx.typed_query as tq
         from tstdx.typed_query import record_type_for
 
-        skip = {
-            "CapabilityQuery",
-            "SymbolQuery",
-            "BatchCapabilityQuery",
-            "TypedQueryResult",
-            "FinancialQuery",
-            "FundQuery",
-            "BondQuery",
-            "FuturesQuery",
-            "OptionsQuery",
-            "MarketDataQuery",
-            "SearchQuery",
-            "MacroQuery",
-        }
         caps: set[str] = set()
         for name in dir(tq):
             cls = getattr(tq, name)
-            if not isinstance(cls, type) or name in skip:
+            if not isinstance(cls, type):
                 continue
             if not dc.is_dataclass(cls):
                 continue
@@ -241,12 +189,17 @@ class TestContractAutomation:
 
     def test_cli_script_exits_zero(self) -> None:
         """scripts/contract_audit.py --ci 必须退出 0。"""
+        import os
+
         script = _ROOT / "scripts" / "contract_audit.py"
         assert script.exists(), f"脚本缺失: {script}"
         result = subprocess.run(
             [sys.executable, str(script), "--ci"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
             cwd=str(_ROOT),
         )
         assert result.returncode == 0, (
