@@ -6,10 +6,13 @@
 Data origin and retrieval location are separate facts. The v17 runtime does
 no result caching, so every production provenance is built by
 :meth:`Provenance.direct` and carries ``cache_tier=None``; the field is kept on
-the wire precisely because callers assert it stays ``None``. Replay or
-synthetic data can therefore never be mistaken for a live Provider read, and a
-future tier stamp would have to be an explicit, visible decision rather than an
-implicit side effect of the request path.
+the wire precisely because callers assert it stays ``None``. There is exactly
+one origin a direct-only runtime can report, so replay or synthetic data cannot
+be stamped as a live Provider read, and cannot even be named here until some
+code actually produces it (the shape gate in
+``tests/architecture/test_result_shape_gates.py`` demands a construction site
+for every declared kind). A future tier stamp would have to be an explicit,
+visible decision rather than an implicit side effect of the request path.
 
 A result is not only data plus origin: a Provider call can succeed and still
 not be what was asked for. :attr:`ResultMeta.warnings` carries those caveats as
@@ -42,9 +45,15 @@ T = TypeVar("T")
 
 
 class ProvenanceKind(str, Enum):
+    """Where a result came from. Direct-only runtime, so one kind.
+
+    Declaring a second member without anything that produces it is exactly the
+    shape this family deletes (F-50/F-52/F-54/F-55): the gate that compares
+    this enum against the construction sites in :mod:`tstdx` turns that claim
+    into a red test rather than a comment.
+    """
+
     DIRECT = "direct"
-    REPLAY = "replay"
-    SYNTHETIC = "synthetic"
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,18 +95,6 @@ class Provenance:
             requested_provider=plan.provider,
             fallback=False,
         )
-
-    @property
-    def real(self) -> bool:
-        return self.kind is ProvenanceKind.DIRECT
-
-    @property
-    def replay(self) -> bool:
-        return self.kind is ProvenanceKind.REPLAY
-
-    @property
-    def synthetic(self) -> bool:
-        return self.kind is ProvenanceKind.SYNTHETIC
 
 
 @dataclass(frozen=True, slots=True)

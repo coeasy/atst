@@ -42,3 +42,30 @@ def unread_fields(cls: type[Any], owners: set[str]) -> tuple[set[str], int, set[
             if isinstance(base, ast.Name) and base.id in owners:
                 reads.add(node.attr)
     return fields, scanned, reads
+
+
+def members_referenced(owner: str, *, skip: str = "") -> tuple[int, set[str]]:
+    """扫 ``tstdx/`` 找 ``<owner>.<MEMBER>`` 的引用点：返回 (扫过的模块数, 命中的成员名)。
+
+    与 :func:`unread_fields` 同族：分母取枚举自身（`{item.name for item in SomeEnum}`），
+    名单由本函数产出，于是"声明了一个没人生产的成员"当场红，而不是靠注释保证。成员名按
+    全大写识别——本仓两个数据面枚举（``WarningCode``/``ProvenanceKind``）都是这个形状。
+    ``skip`` 传文件相对路径（如 ``tstdx/diagnostics.py``）以排除声明处自身。
+    """
+
+    refs: set[str] = set()
+    scanned = 0
+    for path in sorted((REPO_ROOT / "tstdx").rglob("*.py")):
+        if str(path.relative_to(REPO_ROOT)).replace("\\", "/") == skip:
+            continue
+        scanned += 1
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr.isupper()
+                and isinstance(node.value, ast.Name)
+                and node.value.id == owner
+            ):
+                refs.add(node.attr)
+    return scanned, refs

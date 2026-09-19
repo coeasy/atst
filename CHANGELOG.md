@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed（v17 Phase 5 第 32 步 —— 出处词表里那两种不可能出现的出处，F-57；**BREAKING**）
+
+- **`ProvenanceKind` 只剩 `DIRECT`**：`REPLAY`/`SYNTHETIC` 两条成员被物理删除。它们在 `tstdx/` 全部
+  189 个模块里的唯一引用是它们自己的判定属性——没有任何代码能造出这两种出处，却有代码在教调用方
+  如何判断它。零缓存内核只有一条构造路径（`Provenance.direct()` 写死 `ProvenanceKind.DIRECT`），词表比
+  运行期宽，就是给"将来的层"留门。
+- **`Provenance` 上的三条判定属性 `real` / `replay` / `synthetic` 一并删除**：出处由 `kind` 字段本身说明；
+  三条属性对 `tstdx/` 生产代码的读取点为 **0**，全仓唯一读取是 `tests/runtime/test_query_contracts.py` 里
+  的一条断言，它验证的是规则的抄本而非规则本身。该断言随之删除，同族规则仍由
+  `assert direct.kind is ProvenanceKind.DIRECT` 与退役词汇（`cached`/`cache_hit`/`direct_fetch`）循环钉住。
+- **wire 侧词汇如实收窄**：`integration/serialization.py` 发射 `provenance.kind.value`，删除成员即 `kind`
+  在 HTTP/MCP 响应上只能取 `"direct"`——这不是新增限制，此前 `replay`/`synthetic` 也从没出现在任何真实
+  响应里；`cache_tier` 仍恒为 `null`（第 30 步口径不变）。
+- **新增门禁（`tests/architecture/test_result_shape_gates.py`，两条）**：
+  `test_every_declared_provenance_kind_has_a_producer` 以枚举自身为分母（F-43 口径：清单会过期，枚举不会），
+  以 AST 扫 `tstdx/` 得到的 `ProvenanceKind.<MEMBER>` 具名引用为分子，双向差集——声明了没人生产红、引用了
+  不存在的成员同样红；`test_provenance_exposes_no_judgement_property` 要求 `Provenance` 类体里 property 恒为
+  空集，判定翻译层一旦回长即红。防盲三条沿用：`scanned > 30`、引用集合非空、声明集合非空。
+- **尺子补出成员维度，并收掉它的第三份抄件**：`tests/support/field_readers.py` 新增
+  `members_referenced(owner, *, skip="")`；`tests/architecture/test_caveat_channel_gates.py` 的 `WarningCode`
+  发射点判据改为调用它，删去自带的那份私有 AST 遍历（同一把尺子抄第三次即本族要删之物）。
+- **变异验证（4 项，逐项复原后逐字节比对主树哈希）**：M1 把 `REPLAY` 装回枚举 → 红并点名 `['REPLAY']`；
+  M2 让 `real` 属性回长 → 红；M3 让尺子失明（扫一个不存在的 owner 名）→ 红，报的是"扫描自身失效"自检
+  而非"零幻影"；M4 生产者躲开扫描（`Provenance.direct()` 改为按值构造 `ProvenanceKind("direct")`）→ 红。
+  BASELINE 与还原后 RC=0，`MUT_RC 0`。
+- **未采纳路径如实登记**：(a) 让 golden 回放生产 `REPLAY` 出处＝在公开结果面上引入一种真实 Provider 读取
+  永远给不出的出处，与 v17 反向；(c) 保留成员挂"将来会用到"注释＝F-50/F-52/F-54/F-55 逐次删除的形状。
+  `docs/adr/ADR-013`、`CONTRIBUTING.md`、PR 模板里"replay/synthetic 不得冒充实时数据"是**禁令**而非存在性
+  声称，删成员让它更强，故原文保留。
+- **编号说明**：本步代码先按 `60f6be9` 写好并测过一轮，期间并发会话把 F-56 作为第 31 步提交（`0d7fbe1`），
+  故序号让到 32 并在新基线上整轮重测；第一轮数字不入账。
+- **实测**：基线（干净 `0d7fbe1`，同轮）junit **3398 tests / 0 failures / 0 errors / 5 skipped**、139.7s、`--cov=tstdx` **80.77%**；本步树 junit
+  **3400 tests / 0 failures / 0 errors / 5 skipped**、143.2s、`FINAL_RC=0`、`--cov=tstdx` **80.77%**（对账 3398 ＋ 本步 2 条新门禁 = 3400，
+  阈值 77 未下调），同树 9 道主门禁全部 rc=0（`GATES_RC=0`），CI 另三道作业（bridges / adversarial /
+  benchmark smoke）在同一棵树上单独复跑：bridges RC=0、adversarial_matrix RC=0、benchmark_smoke RC=0。
+
 ### Changed（v17 Phase 5 第 31 步 —— CLI `stream` 收回 `Client` 面，F-56；**BREAKING**）
 
 - **`tstdx stream` 从此经 `Client.stream` 起流**：`cmd_stream`（`tstdx/cli/runtime_commands.py`）

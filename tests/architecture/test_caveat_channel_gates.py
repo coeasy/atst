@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from tests.support.field_readers import members_referenced
 from tstdx.diagnostics import WarningCode
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -59,20 +60,14 @@ def test_bare_warn_calls_stay_inside_the_channel_and_two_justified_sites() -> No
 
 
 def test_every_declared_warning_code_has_an_emit_site() -> None:
-    """声明了却没人发射的类别，就是 wire 上一个永远不会出现的键（幻影开关的镜像）。"""
-    emitted: set[str] = set()
-    for path in sorted(SOURCE.rglob("*.py")):
-        if str(path.relative_to(SOURCE)) == CHANNEL.split("/")[-1]:
-            continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Attribute)
-                and node.attr.isupper()
-                and isinstance(node.value, ast.Name)
-                and node.value.id == "WarningCode"
-            ):
-                emitted.add(node.attr)
+    """声明了却没人发射的类别，就是 wire 上一个永远不会出现的键（幻影开关的镜像）。
+
+    遍历本身取自 :func:`tests.support.field_readers.members_referenced`——同一把尺子在
+    第 31 步量 `ProvenanceKind`，两处判据不该各养一份 AST 走查。
+    """
+
+    scanned, emitted = members_referenced("WarningCode", skip=CHANNEL)
+    assert scanned > 30, f"只扫到 {scanned} 个模块，扫描自身失效"
     assert emitted, "全仓没有一处 WarningCode 引用，说明扫描自身失效了"
     declared = {item.name for item in WarningCode}
     dead = sorted(declared - emitted)

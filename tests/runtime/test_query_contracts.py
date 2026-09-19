@@ -192,7 +192,6 @@ def test_direct_provenance_carries_no_cache_tier() -> None:
     plan = QueryPlanner().compile(QuerySpec.build("quotes", symbols="sh600519"))
     direct = Provenance.direct(plan, observed_at_ns=1)
     assert direct.cache_tier is None
-    assert direct.real is True
     assert direct.kind is ProvenanceKind.DIRECT
     for retired in ("cached", "cache_hit", "direct_fetch"):
         assert not hasattr(Provenance, retired), f"已删除的缓存词汇 {retired} 又回来了"
