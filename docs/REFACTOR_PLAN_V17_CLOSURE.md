@@ -66,6 +66,11 @@
 | F-32 | P2（测量口径类） | **验收清单要求"随机测试序无红"，但仓内从未有实现手段**（Phase 5 第 13 步实测）。第 1 步的执行记录写着"离线全量 `-p no:randomly`：0 failed"，并被第 8/9/10 步当作既成事实继续引用。两处错：① `-p no:randomly` 的语义是**关闭** `pytest-randomly` 的随机化，用它跑出的"0 failed"正是固定顺序的结果，把它读成随机序证据方向写反；② 本仓 dev 依赖与本环境**都没有 `pytest-randomly`**（`pip list` 只有 pytest / pytest-asyncio / pytest-cov），而 `-p no:<未安装插件>` 静默无操作——于是这条抽检无论真假永远读成绿，与 F-21"接上管道的 `$?`"同形：**测量装置 itself 缺判据时，绿灯是被构造出来的** | **已清偿**（2026-09-19）：不为一条抽检动 dev 钉版（`pytest-randomly` 会改变全套测试顺序基线），改用一次性 scratch 插件在 `pytest_collection_modifyitems` 里按种子洗牌。**实测**：seed 1 / 7 / 42 三轮整仓离线乱序全绿，各 `3276 passed / 5 skipped / 10 deselected / 1 xpassed`、RC=0（72–79 s）。**首轮踩到的新坑要记**：种子变量最初取名 `TSTDX_SHUFFLE_SEED`，被 F-16 之后 fail-closed 的配置加载器判为"无法识别的环境变量"，一次跑出 69 failed——**测量装置污染被测系统**（与 F-21 互为镜像），改名 `QODER_SHUFFLE_SEED` 后干净。那 53 条 `ConfigError` 反过来证明 F-16 的 fail-closed 边界有效 |
 | F-33 | P2（守卫失效类） | **三轮乱序里唯一稳定出现的 `XPASS` 是一根反向的守卫**：`tests/domain/test_symbol_chains.py::test_protocol_chain_agrees_on_000300` 挂着 `xfail(strict=False)`，理由写着"协议链自建旧启发式、属本任务禁改域、待 protocol 同批修复"。而 `std7709.infer_market` 现在直接委派 canonical `domain.symbol.to_tdx_market`（`tstdx/protocol/parsers/_std7709_common.py:132-149`，docstring 明写"000xxx 歧义不再由协议层自建启发式裁决"），五链早已收敛、该断言实际在过。`strict=False` 使"标记过期"零成本滞留，后果是**协议链一旦回退到旧惯例就重新变成 xfail（预期失败）**——一个本应报警的回归被过期标记自动消音 | **已清偿**（2026-09-19）：先读实现确认是"缺陷已修"而非"断言变弱"，再删标记使该断言成为常态守卫（回归即红）。**复测**：`tests/domain/test_symbol_chains.py` 24 项 RC=0，`ruff check`/`format --check` 干净 |
 | F-34 | P2（口径类：事实文档带假数字，而数字门禁只读 README） | **`docs/ARCHITECTURE.md` 开篇声明"本文只描述代码现状"，正文却留着两条与代码矛盾的现状**（Phase 5 第 14 步实测）：① 防回潮守卫条写着 `test_namespace_layout.py`「根级白名单 **11** 项」，而该测试的 `ROOT_WHITELIST` 与磁盘上的 `tstdx/*.py` 都是 **10**（Phase 3C 的验收上限正是 ≤10，多出的那 1 项是被迁走的模块，代码改了文档没跟）；② F-15 门禁基线条写着「覆盖率：**离线实测 76.14%** … 低于 77 阈值 ⇒ **门禁在本地为红**」，那是 Phase 3C/4 期间的读数；其后的配置接线、旁路收口与传输层桩层解散（F-30）把读数抬过了阈值，本轮离线全量实测 **80.53%**、同轮日志明写 `Required test coverage of 77.0% reached`，文档仍在宣称一条已经不存在的红。**根因是门禁的读数对象**：数字一致性检查 `test_readme_numbers_match_runtime` 只读 `_readme()`，于是 ARCHITECTURE 的 172 capabilities / 85 命令 / 61 解析器 / 5 段配置全部无人对账，README 自己的「85 命令账本」「61 精确解析器」同样在盲区——与第 12 步 F-31 同一格失明（文档门禁只看结构与路径，不看散文里的规模断言），只是这次落在另一份事实文档上 | **已清偿**（2026-09-19）：① 白名单条改回 10 项；② F-15 覆盖率条**删掉百分比**，改判据口径为「离线全量（CI 等价范围）已越过阈值 ⇒ 本地为绿」，并写明**逐轮实测数字一律记在本文的步骤日志里**——把会随每轮改动漂移的读数抄进事实文档，就是在制造下一条 F-34；「阈值单源 `pyproject [tool.coverage.report] fail_under`」「CI 环境（ubuntu+py3.11）重钉仍待 push 后实测」「阈值一次都没下调」三句原样保留；③ **数字门禁由 README 扩展到事实文档全体**：`test_fact_doc_numbers_match_their_truth_source` 以「文档 / 事实 / 定位模式 / 真相源」表把 README + ARCHITECTURE 的 capability 数、命令账本、解析器数、配置段数、根级白名单逐个钉回运行期对象（`Client.capabilities()`、`protocol.commands.COMMANDS`、`protocol.registry.PARSERS`、`dataclasses.fields(Config)`、磁盘 `tstdx/*.py` 计数），`test_documented_http_source_floor_still_holds` 对「45+ HTTP 源」按下界语义判定（加源不必改文档，掉到界下必须改；真相源为 `tstdx/web/` 里按 AST 数出的 `*Source` 类，实测 73）。**变异验证 10 条全部 RC=1 且各自指名**：172→167、85→84、61→62、5→6、10→11、删白名单宣称、README 85→86、README 61→60、下界 45→90、删下界宣称（README 两条因同一数字在文中出现多次，报出的是 `[85, 86]` 这种自相矛盾集合）。**复测（本机 Windows+py3.12.13，同一轮日志）**：`tests/architecture` 全绿；离线全量 `-m "not network"` **3285 passed / 7 skipped / 10 deselected**、0 失败；整仓 `--cov=tstdx` **80.53%**（阈值 77 未下调）；`ruff check`（`tstdx/`+`tests/`+`scripts/`）与 `ruff format --check`（触及文件）、`mypy`（CI 参数）、originality `--strict`（`Total: 189 Suspicious: 0`）、`spec_audit --json --strict`（`coverage_pct: 100.0`）、reachability `--strict`、docs links（82 文件）均 RC=0 |
+| F-35 | P2（口径类：门禁只覆盖两份文档、清单只核条数、代码注释里的同一数字无人管） | 第 14 步把数字门禁铺到 README+ARCHITECTURE 后，同一批事实在 `docs/api/`、`quickstart`、`troubleshooting`、`cookbook` 里仍是盲区，且清单类宣称只核条数。铺满后抓出三处（Phase 5 第 15 步实测）：① **服务面过度承诺**——`docs/api/interfaces.md` 写"四个服务面全部委托同一个 `Client`，不存在第二套执行路径"，而 CLI 实有 6 个传输/诊断命令（`probe`/`goods`/`f10`/`blocks`/`list`/`quotes-snapshot`）直连传输层客户端，`docs/api/README.md` 的 CLI 行同病；② **一个错数在代码里繁殖**——盘中异动 `CHANGE_TYPES` 有 20 项、`tests/web/test_hot_rank.py` 早已断言 `len(et)==20`，文档与 6 处生产 docstring/注释却集体写着"16 类"（枚举扩容时只改了测试那一侧，注释与文档按 F-34 一样静默失真）；③ **清单只数个数**——`Domain Record` 族与 WS JSON-RPC 方法在文档里以 `A/B/C…` 公示名单，条数对上而名字漂移时用户照抄即得 `-32601` 或不存在的 Record，原门禁对此完全无感。**根因与 F-34 同格**：门禁的覆盖对象与断言强度，而非文档写作态度 | **已清偿**（2026-09-19）：① 两处服务面口径按事实改写为"数据命令全部委托 `Client`；6 个传输/诊断命令直连传输层，属协议诊断面而非第二套能力执行路径"，并指名口径来源（`runtime_commands.py` 模块 docstring）与守卫（`test_service_faces_never_import_the_web_layer`）；② 枚举数字 9 处统一到 20，新增 `test_code_comments_about_change_types_match_the_enum` 扫 `tstdx/` 全部含"异动"的行、把 `N 类` 钉回 `CHANGE_TYPES`——生产代码的注释首次进入事实门禁；③ `_EXACT_CLAIMS` 由 10 行扩到 **22 行**（新增 api/README 6 项、interfaces 5 项、quickstart/troubleshooting/cookbook 各 1 项），`_FLOOR_CLAIMS` 3 行（`45+ HTTP 源`×2 实际 73、`60+ 契约` 实际 63），并加两条**集合级**名单守卫：Record 名单比 `domain.records.__all__` 去 `Record` 词缀后的集合，WS 方法名单比 `runtime_ws._dispatch` 的 AST 提取结果（`method ==` 与 `method in {...}` 两种写法都要认——初版只认 `==` 数出 9 个，差点把正确的文档改错）；④ "11 领域基类"因分母含糊（直接子类 10 / 去重基类名 11）**刻意不钉**并在此登记，不制造下一条伪事实。**复测（同一轮日志）**：`tests/architecture/` 146 passed；离线全量 junit `3313 tests / 0 failures / 0 errors / 7 skipped`、RC=0；整仓 `--cov=tstdx` 80.54%（阈值 77 未下调）；`ruff check` + `format --check`（430 files）、`mypy`（CI 参数）、originality `--strict`（`Total: 189 Suspicious: 0`）、`spec_audit --json --strict`、`golden_audit --gate --require-markets`、reachability `--strict`、docs links（82 文件）均 RC=0。**变异验证 20 条全部 RC=1 且各自指名**：17 条文档侧（含清单里塞幽灵方法名 `runtime.ping`、幽灵 Record 名 `Warrants`、删清单宣称、契约下界 60→70），3 条枚举侧（两处生产注释 20→16、api/README 20→19） |
+
+| F-36 | P1（发布链路类，与 F-24 同形） | **wheel 冒烟 import 了一个已被物理删除的模块，而所有路径类守卫看不见它**（Phase 5 第 16 步实测）：`scripts/build_package.py` 的 wheel 安装探针仍执行 `from tstdx.facade import UnifiedQuoteAPI;`，而 `tstdx/facade.py` 早已随 Phase 1b 单内核化删除（磁盘无此文件、`tstdx/__init__.py` 也不导出）。这段 import 住在 `python -I -c "<probe>"` 的**字符串**里 ⇒ F-24 补的三类存在性守卫（按文件路径对账 workflow / Makefile / `gates:`）结构性扫不到它，AST 与 import 门禁同理。后果：`make build`（即 `build_package.py --smoke`）与 wheels job 的最后一步会在装好的干净 venv 里 ImportError——发布链路固定为红，与 F-24 那条"release job 引用已删模块"同形，只是这次藏在字符串里 | **已清偿**（2026-09-19）：① 探针改判 `from tstdx import Client;` + `assert callable(Client.call) and callable(Client.typed)`——把"唯一业务入口的通用面在 wheel 内可用"这条真实契约补进去，而不是删掉了事；② **补字符串 import 守卫** `test_release_smoke_imports_only_symbols_that_still_exist`：正则抽出 `build_package.py` 与 `.github/workflows/wheels.yml` 两处冒烟里的全部 `from tstdx…` / `import tstdx…`，逐个过 `importlib.util.find_spec` 与 `hasattr`，并断言"解析结果非空"以免守卫自身失明；③ **变异验证**：把那行 facade import 原样塞回探针 ⇒ 守卫报 `发布冒烟 import 了不存在的模块：['tstdx.facade']`，还原后 `tests/compatibility/test_local_smoke_hardening_contract.py` 2 项 RC=0；④ **本轮把该冒烟真正跑通**（全离线：`python -m build --wheel --no-isolation` 出 `tstdx-1.0.0-py3-none-any.whl` → `_smoke()` 建临时 venv 装它）：`SMOKE_RC=0`，池层 `__module__` 断言（F-30 改判后）逐条通过、`tstdx --help` 与 `tstdx hosts audit --help` 均退出 0、`pip check` 回 `No broken requirements found`；wheel 内 194 个成员零 `facade`、零已解散的四个整方法侧车（余 8 件局部包装 `_hardening` 见 F-30 尾注） |
+| F-37 | **P0**（链路贯通类） | **真实网络冒烟抓到：7709 K 线在当下可达主站上返回 2 字节空桩，而库把它读成成功**（Phase 5 第 16 步实测，2026-09-19 周六 09:14–09:19 北京时间）。`tstdx server-test` 读数 **3/8 主站可达**（180.153.18.170 23.8ms、218.6.170.47 25.1ms、123.125.108.14 31.6ms），而全部 golden 样本的采集主机 218.75.126.9 超时不可达。同一批可达主站上 `0x0530` 实时行情正常（600519 price=1257.12、000001 price=11.7），`0x052D` 却一律回 `zip_size=2 unzip_size=2 payload=2 字节 = 2003`（帧头 `b1cb74000c01000000002d0502000200`）——**请求字节与 `tests/golden/quotation/0x052d_security_bars_600000_cat4/20260831-125353/meta.yaml` 记录的 `body_hex`（26 字节 `01003630303030300400010000000a0000000000000000000000`）逐位相同，而那次同字节请求在 2026-08-31 拿到 180 字节 / 10 根真样本**。周期枚举 0…11 全 12 个 category、日线/1分/5分、SH/SZ 两市一律 0 根 ⇒ 与请求参数无关。三层后果：① `Client.bars()` 返回 `data=[]` 而 `provenance=ProvenanceKind.DIRECT / cache_tier=None`，`strict=True` 也不报错，即"空即成功"，与 `0x0537`/`0x0fc5` 的 `NotImplementedFeature`、`0x0fb4`/`0x051a` 的 `CommandOffline` 两条 fail-fast 口径自相矛盾；② 同批真机上 `capital_changes`(0x000f) 与 `finance_info`(0x0010) 分别回 250/37 行但字段错位（首行 `code='519\x01'`、`market=48` 即 ASCII `'0'`），而离线 `-k "capital or finance or bars or kline"` 本轮 RC=0 ⇒ 解析器与**归档样本**自洽、与**当下线路**不一致；③ `PROTOCOL_SPEC/7709/0x052D_SECURITY_BARS.yaml` 与解析器注释都标 "L1 精确解析，golden-verified"，而这条"真机"证据链实际只挂在单台主站上 | **未清偿——需用户裁决，本轮不猜协议**：① 按仓内既有口径（`parsers/mac.py`「差分基准待真机样本裁决（P1c，禁止盲改）」）**未做任何 body/header 试探性改写**，本轮只把事实钉进本文，并停止把 0x052D 记为"live 已验证"；② 时段口径要如实标注：本轮为周六休市，行情读到的是周五收盘快照（腾讯源 `time='20260918161427'`），**历史 K 线与交易时段无关**故 0 根仍成立，但严格结论需一次工作日盘中复跑；③ 三条待选路径由用户拍板：(a) 对当下可达主站重采 K 线/股本/财务样本并按需扩 golden 与 `PROTOCOL_SPEC`（多主站对账，需至少一台提供历史的服务）；(b) 先补"空结果不得读成成功"的运行期口径（0 根时 `strict=True` 抛错、默认给告警与不完整标记）——属产品契约改动，须与 F-13/F-16 的"不静默"口径一并定；(c) 接受"本次发布不含 7709 K 线 live 保证"，在 README/CHANGELOG 显式降级该能力口径，并把 tag 推迟到 (a) 或 (b) 落地 |
+| F-38 | P1（测量口径类） | **整个 7709 数据面在门禁里没有任何 live 判据，所以 F-37 这类缺陷结构性隐形**：全库 `@pytest.mark.network` 仅 6 项，且逐文件 grep 显示它们全部落在 `tests/web/*`——协议层（`tstdx/protocol`、`tstdx/client`、`tstdx/transport`）**零 live 覆盖**；`live-smoke.yml` 每日 01:00 UTC 跑的就是这 6 项 web 用例。`tstdx/tools/host_audit.py` 名义上巡检 5 个协议族，但该模块 grep `security_bars\|bars` 零命中 ⇒ 巡检不看 K 线。于是"主站可达 + 行情能回"被隐式当成"链路通"，历史族命令的真实可用性只在本轮那次一次性人工冒烟里被碰过 | **部分清偿**（2026-09-19）：本轮把"三面 + 真实网络"写成可复现的七格判据与逐格证据（Phase 5 第 16 步），使这条验收不再是口头动作；**刻意未**新增 K 线的 `@pytest.mark.network` 断言——F-37 未裁决前加它，等于把每日 live job 钉成固定红（F-24 的教训正是"守卫把缺陷写成契约"）。待 F-37 选 (a)/(b) 落地后再补 live 断言并挂进 `live-smoke.yml` |
 
 ---
 
@@ -551,6 +556,47 @@
       `--cov=tstdx` **80.53%**（阈值 77 未下调）；`ruff check`、`ruff format --check`（触及
       文件）、`mypy`（CI 参数）、originality `--strict`、`spec_audit --json --strict`、
       reachability `--strict`、docs links（82 文件）均 RC=0。
+15. ✅ **事实文档的名单、代码注释数字与服务面口径一起钉回真相源（Phase 5 第 15 步，
+    2026-09-19，见 §0.3 F-35）**：第 14 步的表当时只铺了 README + ARCHITECTURE 两份，
+    `docs/api/`、`quickstart`、`troubleshooting`、`cookbook` 里的同一批事实仍在盲区；
+    把表铺满后另抓出三类矛盾（服务面"不存在第二套执行路径"过度承诺、公开枚举的类数在
+    文档与 6 处生产注释里集体写错、清单只数个数不核名字），详见 §0.3 F-35。
+
+    - **清单要逐个核名字，不能只对个数**：`Domain Record` 族与 WS JSON-RPC 方法都在文档里
+      以 `A/B/C…` 形式公示。条数对上而名字漂移时，用户照抄即得到不存在的 Record 或
+      `-32601`。故两条新守卫把文档清单拆成集合，逐个比对
+      `tstdx.domain.records.__all__` 与 `runtime_ws._dispatch`（后者用 AST 提取
+      `method ==` 与 `method in {...}` 两种写法的字符串常量——初版按 `==` 提只数到 9 个，
+      差点把正确的文档"修"成错的）。
+    - **口径矛盾按事实改写，不靠门禁掩盖**：`docs/api/interfaces.md` 原写"四个服务面
+      全部委托同一个 `Client`，不存在第二套执行路径"，而 CLI 另有 6 个传输/诊断命令
+      （`probe`/`goods`/`f10`/`blocks`/`list`/`quotes-snapshot`）直连传输层客户端。这 6 条是
+      协议诊断面、不是第二套能力执行路径（口径与 `runtime_commands.py` 的模块 docstring
+      一致，守卫是 `test_service_faces_never_import_the_web_layer`），文档遂改为如实写明
+      例外；`docs/api/README.md` 的 CLI 行同步补"6 个传输/诊断命令除外"。
+    - **同一个错数会在代码注释里繁殖**：盘中异动枚举的 `CHANGE_TYPES` 有 20 项、且
+      `tests/web/test_hot_rank.py` 早已断言 `len(et) == 20`，可文档与 6 处生产 docstring /
+      注释仍写"16 类"。数字改了 9 处，并新增 `test_code_comments_about_change_types_match_the_enum`
+      扫 `tstdx/` 里所有含"异动"的行、把 `N 类` 钉回该字典——事实不只住在 markdown 里。
+    - **刻意不钉的项**：`docs/api/README.md` 的"11 领域基类"分母含糊（`domain` 下直接
+      子类 10 个、去重后的基类名 11 个），钉一个定义不清的事实只会制造下一条失真；待
+      该口径在文档侧收敛后再入门禁。运行期规模事实统一经 `@lru_cache` 的 `_actual_facts()`
+      取一次（构造 Client + HTTP app 的代价不为每条断言重复付）。
+    - **变异验证（本轮 20 条全部 RC=1 且各自指名）**：17 条落在文档侧
+      （api/README 的 CLI 31→30、MCP 9→8、WS 方法数 10→9、Record 类数 9→8、契约下界
+      60→70，interfaces 的 capability/路由/工具/子命令/Record 各 1 条，quickstart、
+      troubleshooting、cookbook 的命令账本，删清单宣称、清单里塞一个幽灵方法名
+      `runtime.ping`、幽灵 Record 名 `Warrants`），3 条落在枚举侧
+      （`_session_info.py` 与 `fundflow.py` 的"20 类"→"16 类"、api/README 的"20"→"19"），
+      报出的都是"声称 X，真相源 Y"这一形式的定位结论。
+    - **复测（本机 Windows+py3.12.13，同一轮日志）**：`tests/architecture/` **146 passed**；
+      离线全量 `-m "not network"` junit 计数 **3313 tests / 0 failures / 0 errors /
+      7 skipped**、RC=0；整仓 `--cov=tstdx` **80.54%**（阈值 77 未下调，日志明写
+      `Required test coverage of 77.0% reached`）；全仓 `ruff check`、`ruff format --check`
+      （430 files already formatted）、`mypy`（CI 参数）、originality `--strict`
+      （`Total: 189 Suspicious: 0`）、`spec_audit --json --strict`、
+      `golden_audit --gate --require-markets`、reachability `--strict`、docs links（82 文件）
+      均 RC=0。
 
 
 
@@ -649,7 +695,9 @@
       README 结构树双向、CLI 示例过真实 parser、包 docstring 分层图与 Quick start
       （Phase 5 第 12 步 F-31 补上最后一格）；第 14 步 F-34 再把 README 与 ARCHITECTURE
       的规模数字（能力数 / 命令账本 / 解析器数 / 配置段数 / 根级白名单 / HTTP 源下界）
-      逐个钉回运行期真相源，事实文档里不再有"抄一次就过期"的藏身处）
+      逐个钉回运行期真相源；第 15 步 F-35 把同一张表铺满 `docs/api/`、`quickstart`、
+      `troubleshooting`、`cookbook`，并把 Domain Record 与 WS 方法两处**名单**、
+      生产注释里的枚举类数一并纳入——事实文档与代码注释里都不再有"抄一次就过期"的藏身处）
 - [x] CLI 声明的每个连接参数都到达执行面，且活文档里的 CLI 示例逐条过真实 parser
       （Phase 5 第 8 步 F-27 + 第 9 步 F-28；`tests/architecture/test_cli_connection_contract.py`
       含"全量选项消费审计"守卫 +

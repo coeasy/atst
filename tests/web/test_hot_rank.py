@@ -105,7 +105,7 @@ class TestStockChanges:
         url = src.client.calls[0][0]
         assert "getAllStockChanges" in url
         assert "dpt=wzchanges" in url
-        assert "8201" in url and "8193" in url  # 空 types → 全部 16 类
+        assert "8201" in url and "8193" in url  # 空 types → 全部 20 类
 
     def test_url_type_filter_and_pagination(self) -> None:
         src = _changes_src()
@@ -134,7 +134,7 @@ class TestStockChanges:
         assert _changes_src(body).fetch_changes() == []
 
     def test_change_types_enum_complete(self) -> None:
-        """16 类枚举键连续可查（8193-8196, 8201-8216）。"""
+        """20 类枚举键连续可查（8193-8196, 8201-8216）。"""
         et = EastmoneyStockChangesSource.CHANGE_TYPES
         assert len(et) == 20
         assert et[8201] == "火箭发射" and et[8193] == "大笔买入"

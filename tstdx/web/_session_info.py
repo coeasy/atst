@@ -176,13 +176,13 @@ class FundFlowSessionMixin:
     def stock_changes(
         types: Sequence[int] = (), *, page: int = 1, size: int = 50
     ) -> list[dict[str, Any]]:
-        """盘中异动池（16 类异动，交易时段实时滚动）。
+        """盘中异动池（20 类异动，交易时段实时滚动）。
 
         Parameters
         ----------
         types:
             异动类型（:data:`~tstdx.web.fundflow.EastmoneyStockChangesSource.CHANGE_TYPES`
-            的键，如 ``8201`` 火箭发射 / ``8193`` 大笔买入）；空 = 全部 16 类。
+            的键，如 ``8201`` 火箭发射 / ``8193`` 大笔买入）；空 = 全部 20 类。
         page, size:
             分页。
 

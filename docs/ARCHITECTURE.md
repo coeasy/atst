@@ -121,7 +121,8 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
    `DirectProviderExecutor`）；`tests/architecture/test_namespace_layout.py`（根级白名单 10 项、
    旧模块路径不可导入）；`tests/architecture/test_doc_code_consistency.py`（活文档 import 可解析、
    事实型文档 `tstdx.*` 路径可解析、`__all__` ⇔ `_LAZY`、README 数字 == 运行期事实、
-   README 与本文宣称的规模数字 == 命令账本/解析器表/配置 schema/根目录实际文件数）。
+   README、本文与 `docs/api/` 等事实文档宣称的规模数字 == 命令账本 / 解析器表 / 配置
+   schema / 根目录实际文件数 / 服务面方法与 Record 名单）。
 
 ## 5. 契约与真相源
 

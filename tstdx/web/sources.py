@@ -112,7 +112,7 @@ LHB = "longhu"
 SINA_FUND_FLOW = "sina_fund_flow"
 #: i问财自然语言选股（www.iwencai.com load-data；需调用方注入 cookie）
 WENCAI = "wencai"
-#: 盘中异动池（东财 push2ex getAllStockChanges，16 类异动枚举）
+#: 盘中异动池（东财 push2ex getAllStockChanges，20 类异动枚举）
 STOCK_CHANGES = "stock_changes"
 #: 股吧个股人气榜（东财 emappdata stockrank，POST JSON）
 HOT_RANK = "hot_rank"
@@ -413,7 +413,7 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
         summary="盘中异动池（东财 push2ex getAllStockChanges）",
         default_rate=2,
         capabilities=("stock_changes",),
-        notes="16 类异动枚举（火箭发射/大笔买入/60日新高…，2026-09 实测验证）；"
+        notes="20 类异动枚举（火箭发射/大笔买入/60日新高…，2026-09 实测验证）；"
         "输出为 dict 列表（time/code/name/change_type/metrics），"
         "metrics 为异动指标数值列表（含义随类型不同，不强行归一）；"
         "非交易时段返回空 allstock 为合法状态",

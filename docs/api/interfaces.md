@@ -187,7 +187,10 @@ from tstdx.runtime.audit import audit_runtime                      # () -> Runti
 
 ## 3. 服务面（Integration）
 
-四个服务面全部委托同一个 `Client`，不存在第二套执行路径。
+四个服务面的数据命令全部委托同一个 `Client`。CLI 另有 6 个传输/诊断命令
+（`probe`/`goods`/`f10`/`blocks`/`list`/`quotes-snapshot`）直连传输层客户端，不经内核——
+它们是协议诊断面，不是第二套能力执行路径（口径见 `tstdx/cli/runtime_commands.py` 的模块
+docstring，守卫是 `test_service_faces_never_import_the_web_layer`）。
 
 ### HTTP REST 网关（10 路由）
 

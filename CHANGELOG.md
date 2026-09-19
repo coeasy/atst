@@ -366,6 +366,44 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 - **变异验证 10 条全部 RC=1 且各自指名**：172→167、85→84、61→62、5→6、10→11、删白名单宣称、
   README 85→86、README 61→60、下界 45→90、删下界宣称。
 
+### Fixed（v17 Phase 5 第 15 步 —— 名单、代码注释数字与服务面口径一并钉回真相源，F-35）
+
+- **`docs/api/interfaces.md` 承诺了一条不存在的纯度**：原文写"四个服务面全部委托同一个
+  `Client`，不存在第二套执行路径"，而 CLI 另有 6 个传输/诊断命令（`probe`/`goods`/`f10`/
+  `blocks`/`list`/`quotes-snapshot`）直连传输层客户端。现按事实改写为"数据命令全部委托
+  `Client`，这 6 条属协议诊断面而非第二套能力执行路径"，并指名口径出处
+  （`tstdx/cli/runtime_commands.py` 的模块 docstring）与既有守卫
+  （`test_service_faces_never_import_the_web_layer`）；`docs/api/README.md` 的 CLI 行同步补
+  "6 个传输/诊断命令除外"。**没有为凑口径给这 6 条硬造内核路径**——诊断命令的意义正是绕开
+  能力语义看原始协议。
+- **一个公开枚举的类数在 9 处写着错的值**：盘中异动 `CHANGE_TYPES` 有 **20** 项，
+  `tests/web/test_hot_rank.py` 也早已断言 `len(et) == 20`，可 `docs/api/README.md` 与
+  `tstdx/web/{fundflow,sources,_session_info}.py` 的 6 处 docstring/注释仍写"16 类"
+  （枚举扩容时只动了测试那一侧）。数字全部改为 20，并新增
+  `test_code_comments_about_change_types_match_the_enum` 扫 `tstdx/` 里所有含"异动"的行、
+  把 `N 类` 钉回该字典——**生产代码的注释第一次进入事实门禁**。
+- **数字表由 2 份文档铺满 6 份**：`_EXACT_CLAIMS` 10 行 → **22 行**，新增 `docs/api/README.md`
+  （capability / Provider / 命令账本 / CLI 子命令 / MCP 工具 / WS 方法数 / Record 类数 /
+  异动枚举数）、`docs/api/interfaces.md`（capability / HTTP 路由 / MCP 工具 / CLI 子命令 /
+  Record 类数）、`docs/quickstart.md`、`docs/troubleshooting.md`、
+  `docs/cookbook/06_custom_command.md` 的同一批事实；`_FLOOR_CLAIMS` 3 行按下界判定
+  （`45+ HTTP 源` 实际 73、`60+ 契约` 实际 63，真相源取 `scripts/contract_audit.py` 的
+  `_all_typed_queries()`）。
+- **清单从"数个数"升级为"核名字"**：`test_documented_domain_record_names_match_the_module`
+  比对 `tstdx.domain.records.__all__` 去掉 `Record` 词缀后的集合；
+  `test_documented_ws_method_list_matches_the_dispatcher` 比对 `runtime_ws._dispatch` 的
+  AST 提取结果（`method == "x"` 与 `method in {"a","b"}` 两种写法都认——只认前者会数出 9 个，
+  把正确的文档判成错的）。文档写了分派器不认的方法名，用户照抄即 `-32601`。
+- **刻意不钉的一项**：`docs/api/README.md` 的"11 领域基类"分母含糊（`domain` 下直接子类 10 个、
+  去重后基类名 11 个），钉一个定义不清的事实只会制造下一条失真；已在计划里登记，待口径收敛。
+- **变异验证 20 条全部 RC=1 且各自指名**：17 条文档侧（各数字 ±1、删清单宣称、清单里塞幽灵
+  方法名 `runtime.ping` 与幽灵 Record 名 `Warrants`、契约下界 60→70），3 条枚举侧（两处生产
+  注释 20→16、api/README 20→19）。**复测（同一轮日志）**：`tests/architecture/` 146 passed；
+  离线全量 `-m "not network"` junit `3313 tests / 0 failures / 0 errors / 7 skipped`、RC=0；
+  整仓 `--cov=tstdx` 80.54%（阈值 77 未下调）；`ruff check` + `format --check`（430 files）、
+  `mypy`（CI 参数）、originality `--strict`（`Total: 189 Suspicious: 0`）、`spec_audit`、
+  `golden_audit --gate --require-markets`、reachability `--strict`、docs links（82 文件）均 RC=0。
+
 ### Fixed
 
 - **`tstdx.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，

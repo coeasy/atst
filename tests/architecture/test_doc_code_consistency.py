@@ -4,8 +4,10 @@
 宣称的每个数字以及项目结构树里的每个 ``name/`` 与 ``name.py`` 条目，都必须与运行期
 事实一致；``tstdx/__init__.py`` 的包 docstring 同样按活文档对待——分层图双向对上磁盘
 布局，Quick start 的入口调用在禁网下真的构造得起来。README 与
-``docs/ARCHITECTURE.md`` 的规模数字（命令账本 / 解析器 / 配置段 / 根级白名单 / HTTP 源
-下界）一律钉回运行期真相源，抄一次就失真的数字不再有藏身处。
+``docs/ARCHITECTURE.md``、``docs/api/``、``docs/quickstart.md`` 等事实文档的规模数字
+（命令账本 / 解析器 / 配置段 / 根级白名单 / 服务面方法数 / HTTP 源与契约下界）一律钉回
+运行期真相源，WS 方法与 Domain Record 的**名单**也要逐个对上分派器与 ``__all__``——
+抄一次就失真的数字与清单不再有藏身处。
 历史快照（``docs/archive/``、``docs/adr/``、``DESIGN.md``）记录的是当时
 语境，不参与门禁。
 """
@@ -13,6 +15,7 @@
 from __future__ import annotations
 
 import ast
+import functools
 import importlib
 import re
 from collections.abc import Callable
@@ -181,7 +184,9 @@ def _readme() -> str:
     return (ROOT / "README.md").read_text(encoding="utf-8")
 
 
+@functools.lru_cache(maxsize=1)
 def _actual_facts() -> dict[str, int]:
+    """运行期规模事实：构造一次 Client + HTTP app 就够全组门禁读（缓存避免重复对账）。"""
     from tstdx import Client
     from tstdx.cli import build_parser
     from tstdx.integration.mcp import TOOLS
@@ -262,18 +267,12 @@ def test_readme_gate_scale_matches_definition(pattern: str, actual: Callable[[],
 
 
 # --------------------------------------------------------------------------
-# 事实文档宣称的规模数字（审计 F-34）
+# 事实文档宣称的规模数字（审计 F-34 / F-35）
 # --------------------------------------------------------------------------
 
 
-def _architecture() -> str:
-    return (ROOT / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
-
-
-_DOC_READERS: dict[str, Callable[[], str]] = {
-    "README.md": _readme,
-    "docs/ARCHITECTURE.md": _architecture,
-}
+def _doc_text(rel: str) -> str:
+    return (ROOT / rel).read_text(encoding="utf-8")
 
 
 def _protocol_commands() -> int:
@@ -300,6 +299,88 @@ def _root_modules() -> int:
     return len(list((ROOT / "tstdx").glob("*.py")))
 
 
+def _capabilities() -> int:
+    return _actual_facts()["capabilities"]
+
+
+def _providers() -> int:
+    return _actual_facts()["providers"]
+
+
+def _cli_subcommands() -> int:
+    return _actual_facts()["cli_subcommands"]
+
+
+def _http_routes() -> int:
+    return _actual_facts()["http_endpoints"]
+
+
+def _mcp_tools() -> int:
+    return _actual_facts()["mcp_tools"]
+
+
+def _domain_record_classes() -> int:
+    from tstdx.domain import records
+
+    return len(records.__all__)
+
+
+def _domain_record_stems() -> set[str]:
+    from tstdx.domain import records
+
+    return {name[: -len("Record")] for name in records.__all__ if name.endswith("Record")}
+
+
+def _ws_methods() -> set[str]:
+    """WS 分派器真正认账的方法名（`if method == ...` 与 `method in {...}` 两种写法）。"""
+    source = (ROOT / "tstdx" / "integration" / "runtime_ws.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    dispatch = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "_dispatch"
+    )
+    found: set[str] = set()
+    for node in ast.walk(dispatch):
+        if not (isinstance(node, ast.Compare) and isinstance(node.left, ast.Name)):
+            continue
+        if node.left.id != "method":
+            continue
+        for op, comparator in zip(node.ops, node.comparators, strict=True):
+            if not isinstance(op, (ast.Eq, ast.In)):
+                continue
+            values = (
+                [comparator]
+                if isinstance(comparator, ast.Constant)
+                else list(comparator.elts)
+                if isinstance(comparator, (ast.Set, ast.Tuple, ast.List))
+                else []
+            )
+            for value in values:
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    found.add(value.value)
+    return found
+
+
+def _typed_contracts() -> int:
+    """`scripts/contract_audit.py` 眼里的 Typed Query 契约数（对外口径以它为准）。"""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "_contract_audit", ROOT / "scripts" / "contract_audit.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return len(module._all_typed_queries())
+
+
+def _change_types() -> int:
+    from tstdx.web.fundflow import EastmoneyStockChangesSource
+
+    return len(EastmoneyStockChangesSource.CHANGE_TYPES)
+
+
 def _web_source_classes() -> int:
     """``tstdx/web/`` 里定义的 ``*Source`` 类个数（按 AST 数，不触发导入副作用）。"""
     total = 0
@@ -313,21 +394,33 @@ def _web_source_classes() -> int:
     return total
 
 
-#: ``(文档, 事实, 定位模式, 真相源)``：README 那组门禁只覆盖 capability / Provider /
-#: 服务面规模，这里补齐协议与内核侧的规模事实，以及 ARCHITECTURE 自己的全部宣称。
+#: ``(文档, 事实, 定位模式, 真相源)``：第 14 步之前数字门禁只读 README，
+#: 于是同一件事实在 ``docs/api/`` 等副本里漂移无人发现。这里把每个事实的
+#: **所有**文档出处都列进表——真相源只有一个，文档侧只有抄本。
 _EXACT_CLAIMS: tuple[tuple[str, str, str, Callable[[], int]], ...] = (
-    (
-        "docs/ARCHITECTURE.md",
-        "capability 数",
-        r"(\d+)\s+capabilit",
-        lambda: _actual_facts()["capabilities"],
-    ),
+    ("docs/ARCHITECTURE.md", "capability 数", r"(\d+)\s+capabilit", _capabilities),
     ("docs/ARCHITECTURE.md", "协议命令数", r"（(\d+) 命令", _protocol_commands),
     ("docs/ARCHITECTURE.md", "解析器数", r"、(\d+) 解析器", _protocol_parsers),
     ("docs/ARCHITECTURE.md", "配置段数", r"（(\d+) 段", _config_sections),
     ("docs/ARCHITECTURE.md", "根级模块白名单", r"根级白名单\s*(\d+)\s*项", _root_modules),
     ("README.md", "协议命令数", r"(\d+)\s*命令账本", _protocol_commands),
     ("README.md", "解析器数", r"(\d+)\s*精确解析器", _protocol_parsers),
+    ("docs/api/README.md", "capability 数", r"(\d+)\s+capability", _capabilities),
+    ("docs/api/README.md", "Provider 数", r"(\d+)\s+Provider", _providers),
+    ("docs/api/README.md", "协议命令数", r"(\d+)\s*命令账本", _protocol_commands),
+    ("docs/api/README.md", "CLI 子命令数", r"CLI 子命令（(\d+) 项", _cli_subcommands),
+    ("docs/api/README.md", "MCP 工具数", r"MCP stdio 工具（(\d+) 项", _mcp_tools),
+    ("docs/api/README.md", "WS 方法数", r"（(\d+) 方法：", lambda: len(_ws_methods())),
+    ("docs/api/README.md", "Domain Record 类数", r"(\d+)\s*类：", _domain_record_classes),
+    ("docs/api/README.md", "盘中异动类型数", r"（(\d+) 类异动枚举）", _change_types),
+    ("docs/api/interfaces.md", "capability 数", r"(\d+)\s*项\s+capability", _capabilities),
+    ("docs/api/interfaces.md", "HTTP 路由数", r"（(\d+) 路由", _http_routes),
+    ("docs/api/interfaces.md", "MCP 工具数", r"（(\d+) 工具", _mcp_tools),
+    ("docs/api/interfaces.md", "CLI 子命令数", r"（(\d+) 子命令", _cli_subcommands),
+    ("docs/api/interfaces.md", "Domain Record 类数", r"(\d+)\s*类：", _domain_record_classes),
+    ("docs/quickstart.md", "capability 数", r"(\d+)\s*项\s+capability", _capabilities),
+    ("docs/troubleshooting.md", "协议命令数", r"(\d+)\s*命令账本", _protocol_commands),
+    ("docs/cookbook/06_custom_command.md", "协议命令数", r"(\d+)\s*命令账本", _protocol_commands),
 )
 
 
@@ -340,27 +433,88 @@ def test_fact_doc_numbers_match_their_truth_source(
     真相源是命令账本、解析器表、配置 dataclass 这类运行期对象：文档抄一次数字，
     此后每次增删都静默失真，所以把它钉回真相源。
     """
-    text = _DOC_READERS[source]()
-    claimed = {int(n) for n in re.findall(pattern, text)}
+    claimed = {int(n) for n in re.findall(pattern, _doc_text(source))}
     assert claimed, f"{source} 不再声明 {fact}（{pattern}），门禁失效"
     assert claimed == {actual()}, f"{source} 声称 {fact}={sorted(claimed)}，真相源是 {actual()}"
 
 
-@pytest.mark.parametrize(
-    ("source", "pattern", "actual"),
-    [
-        ("README.md", r"(\d+)\+\s*HTTP 源", _web_source_classes),
-        ("docs/ARCHITECTURE.md", r"(\d+)\+\s*HTTP 源", _web_source_classes),
-    ],
+#: 下界宣称（``45+ HTTP 源`` / ``60+ 契约``）：加东西不必改文档，
+#: 掉到宣称界之下必须改——把界写死成精确值只会诱使作者每次新增都改一遍文档，
+#: 最后又变成一处过期数字。
+_FLOOR_CLAIMS: tuple[tuple[str, str, str, Callable[[], int]], ...] = (
+    ("README.md", "HTTP 源类", r"(\d+)\+\s*HTTP 源", _web_source_classes),
+    ("docs/ARCHITECTURE.md", "HTTP 源类", r"(\d+)\+\s*HTTP 源", _web_source_classes),
+    ("docs/api/README.md", "Typed 契约", r"(\d+)\+\s*契约", _typed_contracts),
 )
-def test_documented_http_source_floor_still_holds(
-    source: str, pattern: str, actual: Callable[[], int]
+
+
+@pytest.mark.parametrize(("source", "fact", "pattern", "actual"), _FLOOR_CLAIMS)
+def test_documented_floors_still_hold(
+    source: str, fact: str, pattern: str, actual: Callable[[], int]
 ) -> None:
-    """``45+ HTTP 源`` 是下界宣称：加源不必改文档，掉到界下必须改。"""
-    floors = [int(n) for n in re.findall(pattern, _DOC_READERS[source]())]
-    assert floors, f"{source} 不再声明 {pattern}，门禁失效"
+    floors = [int(n) for n in re.findall(pattern, _doc_text(source))]
+    assert floors, f"{source} 不再声明 {fact}（{pattern}），门禁失效"
     real = actual()
-    assert max(floors) <= real, f"{source} 声称 {max(floors)}+ 个 HTTP 源类，实际只有 {real} 个"
+    assert max(floors) <= real, f"{source} 声称 {max(floors)}+ 个{fact}，实际只有 {real} 个"
+
+
+#: 类名清单也是事实：两份文档各抄一遍 ``Domain Record`` 族的九个名字。
+_RECORD_LIST = re.compile(r"(\d+)\s*类[：:]\s*`?([A-Za-z][A-Za-z/]+)")
+
+
+@pytest.mark.parametrize("source", ["docs/api/README.md", "docs/api/interfaces.md"])
+def test_documented_domain_record_names_match_the_module(source: str) -> None:
+    matches = _RECORD_LIST.findall(_doc_text(source))
+    assert matches, f"{source} 不再列出 Domain Record 族清单，门禁失效"
+    for count, names in matches:
+        listed = set(names.split("/"))
+        real = _domain_record_stems()
+        assert int(count) == len(listed) == len(real), (
+            f"{source} 声称 {count} 类，清单 {len(listed)} 项，模块实际 {len(real)} 项"
+        )
+        assert listed == real, (
+            f"{source} 的 Record 清单与 `tstdx.domain.records.__all__` 不符："
+            f"多 {sorted(listed - real)} 缺 {sorted(real - listed)}"
+        )
+
+
+#: 服务面公示的方法名同样是事实：文档写了分派器不认的名字，用户照抄即 -32601。
+_WS_METHOD_LIST = re.compile(r"（(\d+) 方法：([A-Za-z][A-Za-z./]*)）")
+
+
+def test_documented_ws_method_list_matches_the_dispatcher() -> None:
+    source = "docs/api/README.md"
+    matches = _WS_METHOD_LIST.findall(_doc_text(source))
+    assert matches, f"{source} 不再列出 WS JSON-RPC 方法清单，门禁失效"
+    for count, names in matches:
+        listed = set(names.split("/"))
+        real = _ws_methods()
+        assert int(count) == len(listed) == len(real), (
+            f"{source} 声称 {count} 个方法，清单 {len(listed)} 项，分派器实际 {len(real)} 项"
+        )
+        assert listed == real, (
+            f"{source} 的 WS 方法清单与 `runtime_ws._dispatch` 不符："
+            f"多 {sorted(listed - real)} 缺 {sorted(real - listed)}"
+        )
+
+
+#: 同一个枚举数字也写在代码自己的注释与 docstring 里（F-35 发现 6 处写着 16，
+#: 而字典有 20 项、且已有测试断言 20）：生产代码的口径同样要钉回真相源。
+_CHANGE_TYPE_COUNT = re.compile(r"(\d+)\s*类")
+
+
+def test_code_comments_about_change_types_match_the_enum() -> None:
+    claims: list[tuple[str, int]] = []
+    for path in sorted((ROOT / "tstdx").rglob("*.py")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if "异动" not in line:
+                continue
+            for num in _CHANGE_TYPE_COUNT.findall(line):
+                claims.append((path.relative_to(ROOT).as_posix(), int(num)))
+    assert claims, "代码里不再有关于异动类型的数字说明，门禁失效"
+    real = _change_types()
+    wrong = sorted({f"{rel}：宣称 {n} 类" for rel, n in claims if n != real})
+    assert not wrong, f"`CHANGE_TYPES` 实际有 {real} 项，代码注释却写：{wrong}"
 
 
 # --------------------------------------------------------------------------

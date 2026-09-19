@@ -625,7 +625,7 @@ class EastmoneyLimitPoolSource(BaseWebSource):
 # 盘中异动池
 # --------------------------------------------------------------------------- #
 class EastmoneyStockChangesSource(BaseWebSource):
-    """盘中异动池（push2ex ``getAllStockChanges``，16 类异动枚举）。
+    """盘中异动池（push2ex ``getAllStockChanges``，20 类异动枚举）。
 
     接口事实（2026-09 实测验证 + 页面公开枚举提取）::
 
@@ -703,7 +703,7 @@ class EastmoneyStockChangesSource(BaseWebSource):
         Parameters
         ----------
         types:
-            异动类型（:data:`CHANGE_TYPES` 的键）；空 = 全部 16 类。
+            异动类型（:data:`CHANGE_TYPES` 的键）；空 = 全部 20 类。
         page, size:
             分页（pageindex 0-based）。
 

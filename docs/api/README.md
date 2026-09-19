@@ -88,7 +88,7 @@
 | `tstdx.providers` | Provider 注册表（11 源 × channel），内核唯一可调用实现体 |
 | `tstdx.web.adapters` | HTTP Web 源（新浪/腾讯/东财/集思录/港股/中行）|
 | `tstdx.web.adapters_ext` | 扩展 Web 源（分时/逐笔/联想/全球）|
-| `tstdx.web.fundflow` | 资金流 + 涨停池 + **盘中异动**（16 类实时池）+ 沪深港通 |
+| `tstdx.web.fundflow` | 资金流 + 涨停池 + **盘中异动**（20 类异动枚举）+ 沪深港通 |
 | `tstdx.web.hot_rank` | **股吧个股人气榜**（emappdata POST JSON）|
 | `tstdx.web.wencai` | **i问财自然语言选股**（cookie 调用方持有）|
 | `tstdx.web.boards` | 个股所属板块 / 板块行情 |
@@ -119,7 +119,7 @@
 | `tstdx.integration.mcp` | MCP stdio 工具（9 项：`query_capability` + get_bars/get_quote(s)/get_snapshot/get_minute_today/get_trades/get_security_count/get_security_list）|
 | `tstdx.integration.runtime_tasks` | 后台任务存储（有界结果保留 + 安全信封）|
 | `tstdx.integration.serialization` | `QueryResult → JSON-safe` 统一序列化 |
-| `tstdx.cli` | CLI 子命令（31 项，全部经 `Client`）|
+| `tstdx.cli` | CLI 子命令（31 项；数据命令全部经 `Client`，6 个传输/诊断命令除外，见 `runtime_commands.py`）|
 
 ## 迁移指南
 
