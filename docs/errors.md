@@ -22,7 +22,8 @@
 
 - `TruncatedDataError`（E4050，DataError）：**网络响应**数据被截断。抛出点在
   `tstdx/client/_mixin.py`：`bars(strict=True)` 的分页锚点漂移、`bars(strict=True)` 的
-  首页空响应（服务端声明 0 条记录——空首页不是历史耗尽，耗尽只会表现为短页），
+  首页空响应（告警里的数字取服务端当次声明数：声明 0 是该标的无此周期历史，声明 N 却回 0 个
+  记录字节是空桩；两者都不是历史耗尽——耗尽只会表现为短页），
   以及 `file_download(strict=True)` 累计字节未达服务端报告的 `total_len`；
   另一处在内核 `tstdx/runtime/executor.py`——`options["strict"]` 为真且本次结果携带
   任何一条数据瑕疵（`ResultMeta.warnings`，发射点见 `tstdx/diagnostics.py` 的

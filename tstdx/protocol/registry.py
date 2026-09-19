@@ -250,6 +250,10 @@ class BaseParser:
                 f"记录截断：声明 {declared} 条，实收 {len(rows)} 条（响应不完整或记录布局漂移）"
             )
         meta.update(meta_out)
+        if isinstance(declared, int):
+            # 声明数上 `meta`：分页侧要拿它区分"真没有历史"（声明 0）与
+            # "声明 N 却回 0 个记录字节"（空桩），二者处置完全不同。
+            meta["declared_count"] = declared
         return ParseResult(
             command=self.MSG_ID,
             name=self.NAME,

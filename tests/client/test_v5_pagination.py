@@ -118,6 +118,23 @@ def _frame(cmd: int, payload: bytes) -> ResponseFrame:
     )
 
 
+class _StubPayloadPool:
+    """把一段固定载荷原样回给 0x052D，用于复刻线路实测的空桩形状（F-60）。
+
+    `_PagePool` 的空页一律合成 `0000`——那是**真的声明 0 条**，与主站实际行为
+    （声明 800 条却回 0 个记录字节）不是一种东西，所以空桩场景必须有第二条 fake。
+    """
+
+    def __init__(self, payload: bytes):
+        self.payload = payload
+        self.requests: list[tuple[int, bytes]] = []
+
+    def request(self, cmd: int, body: bytes, timeout=None):  # noqa: ANN001, ARG002
+        assert cmd == 0x052D
+        self.requests.append((cmd, body))
+        return _frame(cmd, self.payload)
+
+
 # --------------------------------------------------------------------------- #
 # PG1：bars() 分页
 # --------------------------------------------------------------------------- #
@@ -182,7 +199,9 @@ class TestBarsPagination:
         assert bars == []
         assert len(pool.requests) == 1  # 不额外重试：空桩换不来数据
         #: 同一条事实从此有两个读者：stderr 给进程内的人，sink 给执行器与 wire。
+        #: 文案里的数字取服务端**当次声明数**（这个 fake 真的声明 0），不是写死的 0（F-60）。
         assert [item.code for item in caveats] == [WarningCode.BARS_EMPTY_FIRST_PAGE]
+        assert "声明 0 条记录" in caveats[0].message
 
     def test_empty_first_page_strict_raises(self) -> None:
         """strict=True 时空首页与漂移截断同级 → TruncatedDataError。"""
@@ -190,6 +209,32 @@ class TestBarsPagination:
         client = TdxClient(pool=pool)  # type: ignore[arg-type]
         with pytest.raises(TruncatedDataError):
             client.bars("sh600519", period="day", count=100, strict=True)
+
+    def test_real_stub_warns_with_the_declared_count(self) -> None:
+        """线路实测的空桩声明 800 条却回 0 个记录字节：告警必须说这个数，不是 0（F-60）。
+
+        同一个结果还会带一条 `DECODE_CAVEAT`（钳制告警），两条必须同向——它们此前
+        互相否证，是 F-60 的原始形状。
+        """
+        client = TdxClient(pool=_StubPayloadPool(bytes.fromhex("2003")))  # type: ignore[arg-type]
+        import warnings as _w
+
+        with _w.catch_warnings(), warning_sink() as caveats:
+            _w.simplefilter("ignore")
+            bars = client.bars("sh600519", period="day", count=100)
+        assert bars == []
+        assert [item.code for item in caveats] == [
+            WarningCode.DECODE_CAVEAT,
+            WarningCode.BARS_EMPTY_FIRST_PAGE,
+        ]
+        assert all("800" in item.message for item in caveats), [i.message for i in caveats]
+        assert "声明 0 条" not in caveats[1].message
+
+    def test_real_stub_strict_context_carries_the_declared_count(self) -> None:
+        client = TdxClient(pool=_StubPayloadPool(bytes.fromhex("2003")))  # type: ignore[arg-type]
+        with pytest.raises(TruncatedDataError) as exc_info:
+            client.bars("sh600519", period="day", count=100, strict=True)
+        assert exc_info.value.context["declared"] == 800
 
     def test_async_empty_first_page_warns(self) -> None:
         """异步侧同一判据（同步/异步共享同一模板，告警不得只在一侧生效）。"""

@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（v17 Phase 5 第 36 步 —— 空首页告警替服务端编数字：F-60 的清偿，顺带量到 F-51 只接了一条命令）
+
+- **本步量的是第 34 步自己留下的那句话**：F-59 修好握手帧 3 的产品标识块之后，同一条链路上留下一对互相否证的
+  告警。线路实测的 `0x052D` 空桩声明 **800 条**（载荷 `2003` 小端 = `0x0320`），解码侧照实说
+  「count 失真已钳制：声明 800 条，按剩余字节 16B/条 只能容纳 0 条」，而 `BARS_EMPTY_FIRST_PAGE` 说的是
+  「服务端声明 **0** 条记录」——后者是 `tstdx/client/_mixin.py` 里一句写死的字符串，把「声明 0」与「声明 N
+  却回 0 个记录字节」压成同一件事，而这两件事的处置完全不同（前者是该标的没有这段历史，后者是服务端回了个
+  不携带任何记录字节、却仍声明 800 条的桩），区分它们恰是这条告警存在的唯一理由。判据方向对，数字是编的。
+- **为什么 3413 项测试全绿也看不见它**：`tests/client/test_v5_pagination.py` 造空页用的是
+  `_bars_payload(0)`，即载荷 `0000`＝**真的声明 0 条**，fake 与被测代码犯了同一个错，两条断言因此彼此自洽；
+  该测试还把告警条数钉成「恰 1 条」，等于把「同一个结果上两条互证」这个真实形状排除在射程外。本步把空桩 fake
+  换成线路实测的 `2003`（新增 `_StubPayloadPool`），判据随之改为「2 条且两条都含 800、第二条不得出现
+  『声明 0 条』」，并给真声明 0 那条补上文案断言——两支各有主。
+- **改法三件**：① `tstdx/protocol/registry.py` 把 `state["declared_count"]` 随 `ParseResult.meta` 暴露
+  （走 `meta` 的内部形状接线，不引入对外契约）；② `_mixin.py` 的空首页文案改为按声明数三分支——`N>0` 说
+  「声明 N 条却一个记录字节都没回，这是空桩，不是该标的没有历史」，`0` 说「声明 0 条：该标的无此周期历史或
+  主站对这条命令只回空桩」，读不到计数头则说「声明数未知」，**不拿未知冒充 0**（那正是本条原罪的镜像），
+  `strict` 的 `TruncatedDataError.context` 加 `"declared"` 键让机读侧与文案同数；③ 两处旧注释、
+  `tstdx/diagnostics.py` 的 `WarningCode` 注释与 `docs/errors.md` 的易混对照同批改写。
+- **变异四发各自 rc=1**：M1 退回写死 0 → 只红新空桩守卫（证明它咬的是文案不是条数）；M2 撤掉 `meta` 暴露 →
+  红三条，含既有那条，说明「声明 0」这句现在也是从线路上读的；M3 让「声明为 0」那一支永不成立 → 只红
+  真声明 0 那条（两支确实分家）；M4 删 `context` 的 `"declared"` → 只红 strict 那条。
+- **顺带登记不静默修（F-63）**：查 `DECODE_CAVEAT` 发射点时量到 15 个 dispatch 调用点里只有 bars 那一处读
+  `result.warnings`，其余 14 处只取 `result.rows`，把解码层判断整族丢弃——第 26 步 F-51 的「接线」只覆盖了
+  一条命令，而 `guarded_count` 在 8 个解析器模块里有 43 个调用点会产出这种判断；同时 `SECURITY_LIST_EMPTY_FIRST_PAGE`
+  的文案与 F-60 同法写死「声明 0 条」，而 0x044D 登记为 `STATUS_OFFLINE`、`_guard_offline` 在 `_req` 里
+  fail-fast（实测 `TdxClient(pool=fake).security_list(0, 0)` 直接 `CommandOffline`），于是它只在把
+  `security_list` 整个 monkeypatch 掉的测试里才发射——那格绿是一个假桩的绿。两条都写进 §0.3 F-63，本步不动
+  代码，其中②需用户裁决（要么承认这条面已下线并删 capability 与三个入口，要么保留并明确只走替代命令）。
+- **编号竞争**：并发会话在 `wt_f61` 以「第 35 步」写 F-61/F-62 的账本清偿，本步测量时仍未提交；按第 33 步同法
+  让号取 **36**，新发现跳过 F-61/F-62 用 **F-63**，不复述也不改它们的行。
+- **复测（本机 Windows+py3.13.14，同一轮日志；孤立 worktree = `f60c3b5` + 本步全部 7 个文件，与提交树逐文件
+  `cmp` 相同）**：基线取
+  干净 `f60c3b5` 同轮实测 junit **3413 / 0 failures / 0 errors / 5 skipped**、143.3s、覆盖率 **80.82%**
+  （与第 34 步记的同一棵树逐格相同）；本步树 junit **3415 / 0 / 0 / 5**、135.9s、覆盖率 **80.83%**
+  （`junit_s36_final.xml` / `full_s36_final.log`；先于账本落盘的 `runA`/`runB` 两轮逐格相同），对账
+  `3413 + 2 条空桩守卫 = 3415`，阈值 77 未下调。同树 9 道主门禁全部 rc=0（originality Total 190 / Suspicious 0、
+  `spec_audit --strict` coverage 100.0%、golden `[GATE] all L1 verified commands have real samples (OK)`、
+  reachability 189/172/17 无未登记孤儿、`contract_audit --ci` 63 契约 · 155 capability、docs links 82 文件、
+  mypy 无输出、`ruff check` All checks passed!、`ruff format --check` 464 files already formatted），
+  `tests/architecture` 200 项 rc=0。
+
 ### Fixed（v17 Phase 5 第 34 步 —— 握手帧 3 的产品标识块：一句未验证的断言让 K 线整族恒 0 根，F-59/F-37）
 
 - **现象与归因**：F-37 记的"7 台可达主站对 `0x052D` 只回 2 字节空桩（K 线恒 0 根），而请求体与 2026-08-31 拿到

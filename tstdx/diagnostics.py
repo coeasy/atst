@@ -53,7 +53,8 @@ class WarningCode(str, Enum):
 
     #: ``bars`` 分页因盘中锚点漂移提前终止：实取根数 < 请求根数，且不是历史耗尽。
     BARS_ANCHOR_DRIFT = "bars_anchor_drift"
-    #: ``bars`` 首页即空响应：服务端声明 0 条记录，与"更早的历史已取完"是两件事。
+    #: ``bars`` 首页即空响应：判据取服务端当次声明数——0 是该标的无此周期历史，N>0 却回 0
+    #: 个记录字节是空桩；两者都不是"更早的历史已取完"（那只会表现为短页）。
     BARS_EMPTY_FIRST_PAGE = "bars_empty_first_page"
     #: 解码层对某一页的判断：实收记录数少于声明数、字段布局哨兵异常等。
     DECODE_CAVEAT = "decode_caveat"

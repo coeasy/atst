@@ -196,6 +196,7 @@ class _ClientMixin:
         seen: set[str] = set()
         drifted = False  # 整页去重后零新增（锚点漂移），非正常历史耗尽
         empty_first_page = False  # 第一页就 0 条：不是耗尽，是空桩/无该标的数据
+        first_page_declared: int | None = None  # 首页服务端声明的记录数，用于分家二者
 
         while remaining > 0:
             page = min(remaining, MAX_BARS_PER_REQUEST)
@@ -224,8 +225,11 @@ class _ClientMixin:
             raw_rows = result.rows  # 原始 dict 行（去重以 datetime 字符串为键）
             if not raw_rows:
                 # 次页空 = 历史耗尽（正常终止，真实耗尽只会表现为短页或空次页）；
-                # 首页空 = 服务端声明 0 条记录，与"没有更早的历史"是两件事
-                empty_first_page = not seen
+                # 首页空要按服务端**声明的记录数**分家：声明 0 才是"没有这段历史"，
+                # 声明 N 却回 0 个记录字节是空桩（实测主站对 0x052D 声明 800 条）。
+                if not seen:
+                    empty_first_page = True
+                    first_page_declared = result.meta.get("declared_count")
                 break
             fresh = [row for row in raw_rows if str(row.get("datetime")) not in seen]
             seen.update(str(row.get("datetime")) for row in raw_rows)
@@ -250,15 +254,29 @@ class _ClientMixin:
             record_warning(WarningCode.BARS_ANCHOR_DRIFT, msg, stacklevel=_TPL_WARN_STACKLEVEL)
         elif empty_first_page:
             # 空首页此前与"历史耗尽"共用一个 break，读起来就是"请求成功、恰好 0 根"；
-            # 主站对 0x052D 只回 2 字节 count=0 空桩时，整条链路因此永远全绿。
+            # 判据分家靠服务端声明数，而不是替它编一个数字（F-60）。
+            if first_page_declared:
+                cause = (
+                    f"服务端声明 {first_page_declared} 条记录，却一个记录字节都没回——"
+                    f"这是空桩，不是该标的没有历史（真没有历史时声明数就是 0）"
+                )
+            elif first_page_declared == 0:
+                cause = "服务端声明 0 条记录：该标的无此周期历史，或主站对这个命令只回空桩"
+            else:
+                cause = "解析器没在响应里读到记录数头，声明数未知"
             msg = (
                 f"bars({symbol!r}, period={period!r}, count={count}) 首页即空响应："
-                f"服务端声明 0 条记录，实取 0 根。空首页不是历史耗尽（耗尽只会表现为"
-                f"短页），它意味着该标的无此周期历史，或主站对这个命令只回空桩"
+                f"{cause}，实取 0 根。空首页不是历史耗尽（耗尽只会表现为短页）"
             )
             if strict_mode:
                 raise TruncatedDataError(
-                    msg, context={"symbol": symbol, "returned": 0, "requested": count}
+                    msg,
+                    context={
+                        "symbol": symbol,
+                        "returned": 0,
+                        "requested": count,
+                        "declared": first_page_declared,
+                    },
                 )
             record_warning(WarningCode.BARS_EMPTY_FIRST_PAGE, msg, stacklevel=_TPL_WARN_STACKLEVEL)
         return _emit(bars, as_format)
