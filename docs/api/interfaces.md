@@ -201,6 +201,19 @@ from tstdx.runtime.audit import audit_runtime                      # () -> Runti
 的模块 docstring，守卫是 `test_service_faces_never_import_the_web_layer` 与
 `test_service_faces_never_build_a_stream_themselves`）。
 
+三张 wire 面（HTTP REST、WebSocket JSON-RPC、MCP stdio）对**未声明的请求字段**口径一致：
+一律当场拒绝，不存在「收下但无人读」的第三种下场（F-47 裁决 (a)，Phase 5 第 40 步落地，2026-09-19）。
+白名单就是各面自己那份声明，不是第二份抄件——HTTP 查询串 = 路由签名本身，HTTP body 与 WS `params`
+= `tstdx/integration/wire_fields.py` 里的两份名单，MCP `arguments` = 该工具的 `inputSchema`
+（9 张 schema 都写着 `additionalProperties: false`，且这条声明被真实执行）。拒绝的落点是 HTTP
+`422`（`E1010` / `ValidationError`）与 JSON-RPC `-32602`；人读的那句话与机读侧的
+`context.unknown_fields` 都点名被拒的那个键。判据见 `tests/runtime/test_wire_declared_fields.py`
+（名单与分派读取点求差 + 三面逐路由 / 逐方法 / 逐工具真打一遍）。
+
+> **破坏性变更口径**：此前多余的查询串参数与 body / `params` / `arguments` 键会被静默忽略并照常
+> 返回 200 或 result，现在开始被拒。客户端追加的缓存穿透参数（`_=1700000000` 一类）同样会被拒——
+> 路由签名没声明它，它也就不改变任何行为。
+
 ### HTTP REST 网关（10 路由）
 
 ```python

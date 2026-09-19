@@ -15,6 +15,7 @@ from typing import Any
 from ...client.api import Client
 from ...error_envelope import to_error_envelope
 from ...errors import InternalError, TdxError, ValidationError
+from ..wire_fields import reject_undeclared
 from ._common import (
     ERR_INTERNAL,
     ERR_INVALID_PARAMS,
@@ -215,14 +216,23 @@ class MCPServer:
                 "content": [{"type": "text", "text": f"Unknown tool: {name!r}"}],
                 "isError": True,
             }
+        tool = _TOOLS_BY_NAME[name]
         args = params.get("arguments") or {}
         if not isinstance(args, dict):
             return {
                 "content": [{"type": "text", "text": "arguments must be an object"}],
                 "isError": True,
             }
+        # 拒绝用的白名单就是对外声明的那一份 schema，不是第二份抄件（F-47 裁决 (a)）：
+        # 只把 additionalProperties: false 写进 schema 而不执行，等于承诺一个不会发生的行为。
+        reject_undeclared(
+            face="mcp_arguments",
+            where=f"MCP tool {name} arguments",
+            declared=tool.inputSchema["properties"],
+            received=args.keys(),
+        )
         try:
-            data = _TOOLS_BY_NAME[name].handler(self._client, args)
+            data = tool.handler(self._client, args)
         except KeyError as exc:
             # A missing required tool argument is a client error (-32602), not an
             # internal fault; surface it as such instead of collapsing to E9000.

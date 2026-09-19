@@ -3,8 +3,10 @@
 
 """Canonical Provider-first HTTP v13 surface."""
 
-from __future__ import annotations
-
+# 这里刻意**不**加 ``from __future__ import annotations``：FastAPI 按名字从模块全局解析
+# 形参注记，而 ``Request`` 是可选依赖、只在工厂内部导入。字符串化之后它解析不出来，
+# 就会被当成一个必填查询参数——实测每个请求都 422（``loc: ["query", "request"]``）。
+# 注记保持求值，本地导入的类在嵌套 def 执行时仍在作用域里。
 from typing import Any
 
 from ..client.api import Client
@@ -14,6 +16,7 @@ from ..providers import PROVIDERS
 from ..runtime.executor import DIRECT_BINDINGS
 from ..runtime.orchestration import FallbackPolicy
 from .serialization import serialize_result
+from .wire_fields import QUERY_BODY_FIELDS, reject_undeclared
 
 __all__ = ["create_runtime_app"]
 
@@ -27,14 +30,32 @@ def _policy(value: str | None) -> FallbackPolicy | None:
 
 def create_runtime_app(client: Client | None = None) -> Any:
     try:
-        from fastapi import FastAPI, HTTPException, Query, Request
+        from fastapi import Depends, FastAPI, HTTPException, Query, Request
         from fastapi.exceptions import RequestValidationError
         from fastapi.responses import JSONResponse
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("HTTP 服务需要安装可选依赖: pip install tstdx[server]") from exc
 
     api = client or Client()
-    app = FastAPI(title="tstdx v13 Runtime", version="13")
+
+    def _no_undeclared_query(request: Request) -> None:
+        """查询串的白名单就是路由签名本身，因此这里没有第二份名单可过期。
+
+        未声明的键过去无人过问（``?max_age=0`` 返回 200），F-47 的裁决是让它当场 422。
+        """
+        route = request.scope["route"]
+        reject_undeclared(
+            face="http_query",
+            where=f"{request.method} {request.url.path}",
+            declared=[param.name for param in route.dependant.query_params],
+            received=request.query_params.keys(),
+        )
+
+    app = FastAPI(
+        title="tstdx v13 Runtime",
+        version="13",
+        dependencies=[Depends(_no_undeclared_query)],
+    )
 
     def _response(exc: Exception) -> JSONResponse:
         envelope = to_error_envelope(exc)
@@ -78,6 +99,13 @@ def create_runtime_app(client: Client | None = None) -> Any:
 
     @app.post("/v13/query/{capability}")
     def query_capability(capability: str, payload: dict[str, Any]) -> dict[str, Any]:
+        # body 不经查询串那道闸：它是 payload 这一个 dict，键由本函数自己挑。
+        reject_undeclared(
+            face="http_body",
+            where=f"POST /v13/query/{capability}",
+            declared=QUERY_BODY_FIELDS,
+            received=payload.keys(),
+        )
         args = payload.get("args", [])
         kwargs = payload.get("kwargs", {})
         if not isinstance(args, list):

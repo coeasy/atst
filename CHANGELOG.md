@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（v17 Phase 5 第 40 步 —— 三张 wire 面对未声明的请求字段当场拒绝：F-47 裁决 (a) 的执行）
+
+- **裁决即边界**：F-47 选 (a) 三面 fail-closed——HTTP 查询串与 body、WS `params`、MCP `arguments`
+  统一按白名单核对，未知键即拒，并让 MCP schema 的 `additionalProperties: false` 真正被执行。
+  (c) 的「GET 查询串维持宽容」未采纳，所以这是一次**对外请求契约的收紧**：此前返回 200 的请求
+  现在开始返回 422 / `-32602`，属破坏性变更；`docs/api/interfaces.md` §3 就地写明口径，连客户端
+  爱加的缓存穿透参数 `_=…` 同样会被拒这一条一起写。
+- **一条拒绝口 + 四份「声明本身」**：新增 `tstdx/integration/wire_fields.py`（`reject_undeclared`
+  把人读的那句话与机读侧的 `unknown_fields` 一起给出）。HTTP 查询串的白名单就是路由签名
+  （`route.dependant.query_params` 运行时现取，结构上没有第二份名单可过期）；body 与 WS `params`
+  用本模块的两份名单；MCP 用该工具自己的 `inputSchema.properties`，9 张 schema 同时补上
+  `additionalProperties: false`——只声明不执行等于承诺一个不会发生的行为。
+- **实现先造出一次全站故障**：接上依赖后每条路由都 422。根因用两变体探针钉死——该文件顶部的
+  `from __future__ import annotations` 让 FastAPI 解析不出工厂内局部 import 的 `Request` 注解，
+  于是把依赖形参当成必填查询参数。删除该 future import 并在原地记因：这条约束隐形到一次
+  「顺手统一导入风格」就能让全站再挂一次。
+- **两张 JSON-RPC 面的人读位置并不对称（实测）**：WS 把理由放在 `error.data.message`
+  （`error.message` 是通用的 `invalid params`），MCP 平铺进 `error.message`；判据各按本面真实
+  公开的读法断言，照抄一条就会有一面永远绿。
+- **新门禁 46 项**（`tests/runtime/test_wire_declared_fields.py`：6 条推导 + 40 条行为）：名单与
+  分派读取点双向求差、每张 schema 必须写着拒绝、四面必须调用唯一拒绝口、名单在全包只有一个定义点；
+  行为侧逐路由 / 逐方法 / 逐工具真打，带满已声明字段必须通、多一个 `max_age` 必须两侧点名被拒。
+  13 发变异逐发「红掉的测试集合与预期完全相等」（无越界、无漏抓），红数依次
+  1/2/1/1/1/1/10/7/1/10/9/30/11；`baseline` 与 `restore check` 两侧都是「红 无」。
+- **孤立 worktree 同轮复测（本机 Windows + 外部解释器 cpython-3.13.12，非仓内 `.venv`）**：基线
+  （干净 `8fe0d0e`）junit 3446 / 0 / 0 / 5、**80.91%**；本步树 junit **3492 / 0 / 0 / 5**、
+  **81.21%**、RC=0，`3446 + 46 = 3492` 对得上，阈值 77 未下调。覆盖率 +0.30 个百分点不只是新模块
+  自己绿：TOTAL `22555 stmts / 3712 缺` → `22580 / 3654 缺`，新增 25 条语句的同时把 58 条原本没执行到
+  的服务面语句跑到了；9 主门禁两树全部 rc=0。
+- **落笔后对同一棵树再跑一轮（这一轮读的树就是提交内容）**：`s40final.log` 九项 rc=0、`s40final.suite.log` junit **3492 / 0 / 0 / 5**、**81.21%**、RC=0。两次同树读数的 TOTAL 差一格（缺语句 3654→3653、缺分支 1023→1022，整格在 `tstdx/protocol/generic.py` 87%→88%，本步没碰那个文件），百分比读数相同——两处读数都记下。
+- **提交树再跑第三轮，把那一格抖动归了因**：`s40commit.suite.log` junit **3492 / 0 / 0 / 5**、**81.21%**、TOTAL 3654 缺语句 / 1023 缺分支——回到第一轮的读数，说明第二轮那一格是 `tstdx/protocol/generic.py` 自身测试的抖动，不是本步改出来的。同一轮 `s40commit.log` 九项 rc=0，补完这段文字后同一棵树再跑的 `s40commit2.log` 仍九项 rc=0（两份日志只差这条文档文字）。三轮都记。
+- **登记 F-67，不顺手改**：`docs/errors.md` §四 把 `facade/api.py` 与 `integration/http_server.py` 两个已不存在的模块写成今天的边界，还承诺了 `ApiResponse{success=False, ...}` 这套零命中的形状；事实型文档门禁看不见，因为判据只认反引号里的**点号**路径而这儿写的是**斜杠**形式。同轮全扫 7 份活文档只有这一份含死路径；第一次取证自己虚报了两份（按尾串匹配），改整串匹配才对上。属 Phase 4「文档统一」，三条路径与两份读数写进账本。
+
+
 ### Fixed（v17 Phase 5 第 39 步 —— 发不出去的命令，在调用方读得到的每一面写明「已下线」：F-63② 与 F-37 (c) 裁决的执行）
 
 - **授权的边界就是这一步的边界**：用户裁决 F-63② 取「保留，只把『已下线』写清」、F-37 取

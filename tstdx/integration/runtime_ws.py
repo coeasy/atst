@@ -15,6 +15,7 @@ from ..errors import ValidationError
 from ..providers import PROVIDERS
 from ..runtime.orchestration import FallbackPolicy
 from .serialization import serialize_result
+from .wire_fields import WS_PARAMS_FIELDS, reject_undeclared
 
 __all__ = ["RuntimeJsonRpcHandler"]
 
@@ -118,6 +119,14 @@ class RuntimeJsonRpcHandler:
         return FallbackPolicy.build(*values)
 
     def _dispatch(self, method: str, params: dict[str, Any]) -> Any:
+        # params 的白名单按方法给出（``wire_fields.WS_PARAMS_FIELDS``）：过去未知键经
+        # ``params.get(...)`` 蒸发，同一个调用在 ``Client`` 面上会 ``TypeError``（F-47）。
+        reject_undeclared(
+            face="ws_params",
+            where=f"WS {method} params",
+            declared=WS_PARAMS_FIELDS[method],
+            received=params.keys(),
+        )
         if method == "runtime.health":
             return {
                 "status": "ok",

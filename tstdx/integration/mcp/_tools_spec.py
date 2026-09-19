@@ -35,6 +35,7 @@ TOOLS: list[ToolSpec] = [
         description="Execute any migrated v13 business capability through the canonical Client runtime.",
         inputSchema={
             "type": "object",
+            "additionalProperties": False,
             "properties": {
                 "capability": _str_prop("Migrated capability name."),
                 "provider": _PROVIDER,
@@ -52,6 +53,7 @@ TOOLS: list[ToolSpec] = [
         description="Fetch canonical historical bars through the v13 Client runtime.",
         inputSchema={
             "type": "object",
+            "additionalProperties": False,
             "properties": {
                 "symbol": _str_prop("Security symbol."),
                 "provider": _PROVIDER,
@@ -71,6 +73,7 @@ TOOLS: list[ToolSpec] = [
         description="Fetch one live quote through the v13 Client runtime.",
         inputSchema={
             "type": "object",
+            "additionalProperties": False,
             "properties": {"symbol": _str_prop("Security symbol."), "provider": _PROVIDER},
             "required": ["symbol"],
         },
@@ -81,6 +84,7 @@ TOOLS: list[ToolSpec] = [
         description="Fetch live quotes through the v13 Client runtime.",
         inputSchema={
             "type": "object",
+            "additionalProperties": False,
             "properties": {"symbols": _list_of_strings("Security symbols."), "provider": _PROVIDER},
             "required": ["symbols"],
         },
@@ -91,6 +95,7 @@ TOOLS: list[ToolSpec] = [
         description="Fetch canonical TDX market snapshot/orderbook data.",
         inputSchema={
             "type": "object",
+            "additionalProperties": False,
             "properties": {"symbol": _str_prop("Security symbol."), "provider": _PROVIDER},
             "required": ["symbol"],
         },
@@ -105,6 +110,7 @@ TOOLS: list[ToolSpec] = [
         ),
         inputSchema={
             "type": "object",
+            "additionalProperties": False,
             "properties": {"symbol": _str_prop("Security symbol."), "provider": _PROVIDER},
             "required": ["symbol"],
         },
@@ -119,6 +125,7 @@ TOOLS: list[ToolSpec] = [
         ),
         inputSchema={
             "type": "object",
+            "additionalProperties": False,
             "properties": {
                 "symbol": _str_prop("Security symbol."),
                 "provider": _PROVIDER,
@@ -139,6 +146,7 @@ TOOLS: list[ToolSpec] = [
         description="Fetch canonical security count for a market.",
         inputSchema={
             "type": "object",
+            "additionalProperties": False,
             "properties": {"market": _str_prop("Market id/prefix."), "provider": _PROVIDER},
         },
         handler=_h_get_security_count,
@@ -152,6 +160,7 @@ TOOLS: list[ToolSpec] = [
         ),
         inputSchema={
             "type": "object",
+            "additionalProperties": False,
             "properties": {
                 "market": _str_prop("Market id/prefix."),
                 "provider": _PROVIDER,
