@@ -65,11 +65,11 @@
 from __future__ import annotations
 
 import json
-import warnings
 from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import quote, urlsplit
 
+from ..diagnostics import WarningCode, record_warning
 from ..errors import SourceDeprecated, WebSourceError
 from .base import (
     _EastmoneyJson,
@@ -309,7 +309,8 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
             if pages_total is not None and cur > pages_total:
                 break  # 服务端报告页数取尽
         else:
-            warnings.warn(
+            record_warning(
+                WarningCode.WEB_EASTMONEY_PAGE_LIMIT,
                 f"东财报表 {report or self.report} 在 max_pages={max_pages} 页内"
                 f"未取尽（已取 {len(out)} 行，最后一页仍满页），结果可能截断",
                 stacklevel=2,

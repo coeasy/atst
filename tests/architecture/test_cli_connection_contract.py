@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import ast
 import re
+from dataclasses import fields
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -26,6 +27,7 @@ from tstdx.cli import runtime_commands
 from tstdx.cli._common import _client_kwargs, _transport_kwargs, _transport_timeout
 from tstdx.cli.parser import build_parser
 from tstdx.config.schema import Config, CoreConfig, HostsConfig
+from tstdx.result import ResultMeta
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -53,13 +55,17 @@ def _query_result(data: Any = None) -> Any:
         fallback=False,
         requested_provider="tdx",
     )
-    meta = SimpleNamespace(
-        provider="tdx",
-        channel="quotation",
-        capability="quotes",
-        fingerprint="0" * 16,
-        provenance=provenance,
-    )
+    values: dict[str, Any] = {
+        "provider": "tdx",
+        "channel": "quotation",
+        "capability": "quotes",
+        "fingerprint": "0" * 16,
+        "provenance": provenance,
+        "warnings": (),
+    }
+    #: 替身按 ``ResultMeta`` 声明的字段逐个成型：生产新增字段而这里没给取值，当场
+    #: ``KeyError`` 指名，而不是等 serializer 在别的测试里才炸（F-28"替身比生产窄"）。
+    meta = SimpleNamespace(**{item.name: values[item.name] for item in fields(ResultMeta)})
     return SimpleNamespace(
         data=[{"code": "sh600519", "name": "测试"}] if data is None else data, meta=meta
     )

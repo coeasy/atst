@@ -82,7 +82,7 @@ from tstdx import Client, AsyncClient
 
 | 方法 | 签名摘要 | 说明 |
 |------|----------|------|
-| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical")` | K 线 |
+| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", strict=False)` | K 线；`strict=True` 时结果携带任何数据瑕疵即抛 `TruncatedDataError` |
 | `quotes` | `(symbols, *, provider=None, policy=None, currentness="live")` | 实时行情 |
 | `quotes_batch` | `(symbols, *, provider=None, currentness="live") -> BatchResult` | 逐 symbol 三态审计 |
 | `snapshot` | `(symbol, *, provider="tdx")` | 盘口快照 |
@@ -115,7 +115,10 @@ runtime = UnifiedRuntime(
 
 执行路径固定为一条：`QuerySpec → QueryPlanner.compile → QueryPlan →
 executor.execute → QueryResult`。内核零缓存、不自动换源；`QueryResult.meta`
-（`provider / channel / capability / fingerprint / provenance`）即审计凭据。
+（`provider / channel / capability / fingerprint / provenance / warnings`）即审计凭据。
+`warnings` 是本次结果携带的数据瑕疵清单（`WarningCode` + 一句人话，发射口只有
+`tstdx/diagnostics.py` 一个）：空元组是"干净"这一判断的证据，三张服务面把它逐条写进
+`meta.warnings`；`strict=True` 时内核改为在返回前抛 `TruncatedDataError`。
 
 ### QuerySpec / QueryPlan
 
@@ -124,7 +127,7 @@ from tstdx import QuerySpec, QueryPlan
 
 spec = QuerySpec.build(
     "bars", symbols="sh600519", period="day", count=80,
-    provider=None, currentness="historical", deadline_ms=5000, options={,
+    provider=None, currentness="historical", deadline_ms=5000, options={},
 )
 ```
 

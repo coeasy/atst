@@ -294,7 +294,14 @@ class Client:
         start: int = 0,
         adjustment: str = "",
         currentness: str = "historical",
+        strict: bool = False,
     ) -> QueryResult[Any] | OrchestratedResult:
+        """K 线。``strict=True`` 时"结果带瑕疵"直接失败，而不是返回后靠调用方自查。
+
+        执行器把一次查询里记录的全部数据完整性瑕疵装进
+        :attr:`~tstdx.result.ResultMeta.warnings`（空桩首页、锚点漂移截断等）；
+        ``strict`` 就是那份名单的开关，任何 Provider、任何瑕疵类别同一条判据。
+        """
         spec = QuerySpec.build(
             "bars",
             symbols=symbol,
@@ -304,6 +311,7 @@ class Client:
             start=start,
             adjustment=adjustment,
             currentness=currentness,
+            options={"strict": True} if strict else None,
         )
         if policy is not None:
             if provider is not None:

@@ -341,6 +341,7 @@ tstdx/
 ├── typed_query.py  # 60+ CapabilityQuery 冻结契约 + TypedQueryResult
 ├── stream_contract.py  # StreamSpec/StreamPlanner 流式契约
 ├── errors.py       # 错误分类树（E1-E8，40+ 类）+ RetryAdvice
+├── diagnostics.py  # 结果侧数据瑕疵的唯一发射口（WarningCode + 收集器，strict 的判据来源）
 ├── error_envelope.py  deprecation.py
 ├── protocol/       # commands(85 账本)/registry(三级分派+异常收口)/parsers(61 × 5 族)
 ├── codec/          # framing(帧)/primitive(原语 + count_guard + zlib strict)

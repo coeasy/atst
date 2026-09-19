@@ -10,6 +10,12 @@ the wire precisely because callers assert it stays ``None``. Replay or
 synthetic data can therefore never be mistaken for a live Provider read, and a
 future tier stamp would have to be an explicit, visible decision rather than an
 implicit side effect of the request path.
+
+A result is not only data plus origin: a Provider call can succeed and still
+not be what was asked for. :attr:`ResultMeta.warnings` carries those caveats as
+first-class result facts (see :mod:`tstdx.diagnostics`), so the HTTP / WS / MCP
+faces transmit "this result is an empty stub" instead of leaving it as a line
+in the server's stderr.
 """
 
 from __future__ import annotations
@@ -19,6 +25,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Generic, TypeVar
 
+from .diagnostics import ResultWarning, WarningCode
 from .errors import ValidationError
 from .query import QueryPlan
 
@@ -27,6 +34,8 @@ __all__ = [
     "Provenance",
     "ResultMeta",
     "QueryResult",
+    "ResultWarning",
+    "WarningCode",
 ]
 
 T = TypeVar("T")
@@ -101,9 +110,19 @@ class ResultMeta:
     capability: str
     fingerprint: str
     provenance: Provenance
+    #: 本次结果携带的数据完整性瑕疵。空元组是"干净"这一判断的**证据**，而不是
+    #: "还没有告警被记录"的默认值：每个记录点都必须经过 :mod:`tstdx.diagnostics`
+    #: 的单一发射口，执行器把一次查询内收集到的全部瑕疵装进这里，三张服务面据此
+    #: 才能把"结果为空桩"传到 wire 上（F-45）。
+    warnings: tuple[ResultWarning, ...] = ()
 
     @classmethod
-    def from_plan(cls, plan: QueryPlan, provenance: Provenance) -> ResultMeta:
+    def from_plan(
+        cls,
+        plan: QueryPlan,
+        provenance: Provenance,
+        warnings: tuple[ResultWarning, ...] | list[ResultWarning] = (),
+    ) -> ResultMeta:
         expected = (plan.provider, plan.channel, plan.spec.capability)
         actual = (provenance.provider, provenance.channel, provenance.capability)
         if actual != expected:
@@ -124,6 +143,7 @@ class ResultMeta:
             capability=plan.spec.capability,
             fingerprint=plan.fingerprint.value,
             provenance=provenance,
+            warnings=tuple(warnings),
         )
 
     @property
@@ -144,5 +164,9 @@ class QueryResult(Generic[T]):
         *,
         plan: QueryPlan,
         provenance: Provenance,
+        warnings: tuple[ResultWarning, ...] | list[ResultWarning] = (),
     ) -> QueryResult[T]:
-        return cls(data=data, meta=ResultMeta.from_plan(plan, provenance))
+        return cls(
+            data=data,
+            meta=ResultMeta.from_plan(plan, provenance, warnings),
+        )

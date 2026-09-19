@@ -44,6 +44,9 @@ def _query_result(result: Any) -> dict[str, Any]:
                 "fallback": provenance.fallback,
                 "requested_provider": provenance.requested_provider,
             },
+            # 结果侧的"这条数据有瑕疵"必须和请求侧的入参一样逐字段到达 wire：
+            # 缺一个键，HTTP/WS/MCP 的调用方就永远只能靠翻服务端日志知道这件事。
+            "warnings": [item.to_dict() for item in meta.warnings],
         },
     }
 

@@ -34,8 +34,9 @@
 
 **缺前收盘价的降级口径**：bar 未携带 ``extra["prev_close"]`` 时，价格因子
 退化为 ``1/(1+S+R)``（只还原股本扩张，**忽略现金红利**）——现金红利会
-因此丢失，引擎对此做一次性 :class:`warnings.warn` 提示（见
-:func:`_price_adjust_ratio`）。需要精确复权请确保事件携带前收盘价。
+因此丢失，引擎把这条瑕疵记进结果侧的告警通道（:func:`tstdx.diagnostics.record_warning`，
+类别 ``ADJUST_PREV_CLOSE_MISSING``；见 :func:`_price_adjust_ratio`），stderr 只唠叨一次。
+需要精确复权请确保事件携带前收盘价。
 
 事件类别过滤
 ------------
@@ -45,12 +46,12 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date as _date
 from typing import Any
 
+from ..diagnostics import WarningCode, record_warning
 from ..errors import AdjustError
 from .models import Bar, CapitalChange
 
@@ -193,13 +194,17 @@ def _price_adjust_ratio(ev: CapitalChange, bar: Bar) -> float:
         return 1.0 / k
 
     # 无前收盘价：仅按股本扩张倍数还原，现金红利被忽略 —— 一次性告警
-    if d and not _warned_missing_prev_close:
+    if d:
+        # 去重只管 stderr（一次进程说一次），结果侧的瑕疵逐次都要记（F-45）。
+        fresh = not _warned_missing_prev_close
         _warned_missing_prev_close = True
-        warnings.warn(
+        record_warning(
+            WarningCode.ADJUST_PREV_CLOSE_MISSING,
             f"复权事件 {ev.date} 缺少前收盘价（bar.extra['prev_close']），"
             f"每股现金红利 {d:.4f} 元被忽略：价格因子按 1/(1+S+R) 近似。"
             "精确复权请提供前收盘价。",
             stacklevel=3,
+            stderr=fresh,
         )
     return denom
 

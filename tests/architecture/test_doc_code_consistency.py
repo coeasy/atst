@@ -798,6 +798,62 @@ def test_readme_tree_lists_every_top_level_module() -> None:
     assert on_disk <= listed, f"新增顶层模块未写进 README 结构树：{sorted(on_disk - listed)}"
 
 
+def _client_face_rows() -> list[tuple[str, str]]:
+    """``docs/api/interfaces.md`` 的 Client 方法表：``[(方法名, 签名摘要), ...]``。"""
+    doc = (ROOT / "docs" / "api" / "interfaces.md").read_text(encoding="utf-8")
+    parts = doc.split("### Client（唯一业务入口，同步）", 1)
+    assert len(parts) == 2, "interfaces.md 不再有 Client 方法表，门禁失效"
+    rows = re.findall(
+        r"^\| `(\w+)` \| `([^`]*)` \|", parts[1].split("### UnifiedRuntime", 1)[0], re.M
+    )
+    assert rows, "Client 方法表里解析不出任何一行，门禁失效"
+    return rows
+
+
+def _documented_params(sig: str) -> list[str]:
+    """从 ``(<参数>) -> <返回>`` 摘要里取参数名（按 AST，不猜字符串形状）。"""
+    args = ast.parse(f"def _f{sig}: pass").body[0].args
+    names = [item.arg for item in args.posonlyargs + args.args + args.kwonlyargs]
+    if args.vararg:
+        names.append(args.vararg.arg)
+    if args.kwarg:
+        names.append(args.kwarg.arg)
+    return names
+
+
+def test_client_method_table_matches_the_real_signatures() -> None:
+    """表里每行签名都是手抄本：给 ``Client`` 加一个形参而表没跟上，当场过期（F-42）。
+
+    第 26 步给 ``Client.bars()`` 加 ``strict`` 时正是这张表先变的——它的行此前只被
+    "方法数"门禁读过，参数名一个都不在校验范围内。双向判据：名单不漏行也不多行，
+    每行参数名与真实签名求差为空。
+    """
+    import inspect
+
+    from tstdx import Client
+
+    rows = _client_face_rows()
+    public = {
+        name
+        for name, value in inspect.getmembers(Client, predicate=inspect.isfunction)
+        if not name.startswith("_")
+    }
+    listed = {name for name, _sig in rows}
+    assert listed == public, (
+        f"Client 方法表与真实公开方法不一致：表里缺 {sorted(public - listed)}，"
+        f"多出 {sorted(listed - public)}"
+    )
+    for name, sig in rows:
+        real = [
+            item for item in inspect.signature(getattr(Client, name)).parameters if item != "self"
+        ]
+        documented = _documented_params(sig)
+        assert set(documented) == set(real), (
+            f"interfaces.md 的 `Client.{name}` 签名摘要已过期：文档 {sorted(documented)} "
+            f"≠ 真实 {sorted(real)}"
+        )
+
+
 # --------------------------------------------------------------------------
 # 包 docstring：分层图 ↔ 磁盘布局，Quick start ↔ 真实入口（审计 F-31）
 # --------------------------------------------------------------------------

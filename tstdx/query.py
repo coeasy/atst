@@ -49,11 +49,12 @@ REJECTED_OPTIONS: dict[str, str] = {
     ),
 }
 #: ``options`` 袋里唯一被直连执行面读取的键（``runtime/executor.py`` 的
-#: ``options.get("args")`` / ``options.get("kwargs")`` / ``options.get("market")``）。
+#: ``options.get("args")`` / ``options.get("kwargs")`` / ``options.get("market")`` /
+#: ``options.get("strict")``）。
 #: 袋里的键从此只有两种下场：在这个名单里被执行面读取，或者在 ``normalized()`` 当场被拒。
 #: 名单与真实读取点的一致性由架构门禁 ``test_option_bag_keys_are_executed_or_rejected``
 #: 对 AST 扫描结果求差把守——在这里加一个执行面不读的键，门禁即红。
-EXECUTED_OPTIONS: frozenset[str] = frozenset({"args", "kwargs", "market"})
+EXECUTED_OPTIONS: frozenset[str] = frozenset({"args", "kwargs", "market", "strict"})
 _CANONICAL_UNIFIED_CHANNELS: dict[tuple[str, str], str] = {
     ("tdx", "quotes"): "quotation",
     ("tdx", "bars"): "quotation",

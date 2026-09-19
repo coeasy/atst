@@ -25,11 +25,11 @@
 from __future__ import annotations
 
 import threading
-import warnings
 from collections.abc import Iterable
 from datetime import date, timedelta
 from typing import Any
 
+from ..diagnostics import WarningCode, record_warning
 from ..errors import CalendarError
 
 __all__ = [
@@ -228,14 +228,16 @@ class TradingCalendar:
 
     def _warn_uncovered(self, year: int) -> None:
         """对未覆盖年份做一次性告警（once：按实例 + 年份去重）。"""
-        if year not in self._uncovered_warned:
-            self._uncovered_warned.add(year)
-            warnings.warn(
-                f"交易日历未覆盖 {year} 年（内置表仅到 "
-                f"{max(BUILTIN_CALENDARS)} 年）：该年节假日按「无节假日」处理，"
-                "法定节假日将被误判为交易日。请用 set_holidays() 补充该年数据。",
-                stacklevel=3,
-            )
+        fresh = year not in self._uncovered_warned
+        self._uncovered_warned.add(year)
+        record_warning(
+            WarningCode.CALENDAR_YEAR_UNCOVERED,
+            f"交易日历未覆盖 {year} 年（内置表仅到 "
+            f"{max(BUILTIN_CALENDARS)} 年）：该年节假日按「无节假日」处理，"
+            "法定节假日将被误判为交易日。请用 set_holidays() 补充该年数据。",
+            stacklevel=3,
+            stderr=fresh,
+        )
 
     def set_holidays(self, year: int, days: Iterable[str]) -> None:
         """覆盖某年的休市日（用于校正估算数据）。

@@ -25,6 +25,7 @@ ROOT_WHITELIST = {
     "stream_contract.py",
     "errors.py",
     "error_envelope.py",
+    "diagnostics.py",
     "deprecation.py",
 }
 

@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import json
 import logging
-import warnings
 from collections.abc import Callable
 from typing import Any
 
+from ..diagnostics import WarningCode, record_warning
 from ..domain.models import Bar
 from ..errors import SourceDeprecated
 from .base import num_f as _f
@@ -108,11 +108,11 @@ def rows_to_bars(
 def warn_amount_all_zero(bars: list[Bar], symbol: str) -> None:
     """A5：整批 ``amount`` 恒为 0（区别于个别缺失）时一次性 UserWarning。"""
     if bars and all(b.amount == 0.0 for b in bars):
-        warnings.warn(
+        record_warning(
+            WarningCode.WEB_TENCENT_AMOUNT_ALL_ZERO,
             f"腾讯 K 线 {symbol} 共 {len(bars)} 条 amount 均为 0"
             "（腾讯接口本周期不返回成交额字段），成交额不可用于计算，"
             "请改用分线或换源",
-            UserWarning,
             stacklevel=3,
         )
 

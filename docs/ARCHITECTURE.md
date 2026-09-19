@@ -118,7 +118,7 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
    重钉需要 CI 环境（ubuntu+py3.11）的实测数字，本机 Windows 数字不作为依据。
 9. **防回潮守卫**：`tests/architecture/test_single_kernel_guards.py`（已删模块/符号不可再现、
    `tstdx.runtime.__all__` 仅内核、runtime 包不再引用已删分层、Client 执行面类型为
-   `DirectProviderExecutor`）；`tests/architecture/test_namespace_layout.py`（根级白名单 10 项、
+   `DirectProviderExecutor`）；`tests/architecture/test_namespace_layout.py`（根级白名单 11 项、
    旧模块路径不可导入）；`tests/architecture/test_doc_code_consistency.py`（活文档 import 可解析、
    事实型文档 `tstdx.*` 路径可解析、`__all__` ⇔ `_LAZY`、README 数字 == 运行期事实、
    README、本文与 `docs/api/` 等事实文档宣称的规模数字 == 命令账本 / 解析器表 / 配置

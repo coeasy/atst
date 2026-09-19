@@ -33,12 +33,12 @@ from __future__ import annotations
 
 import logging
 import struct
-import warnings
 from collections.abc import Mapping
 from typing import Any
 
 import tstdx.client as _client_pkg  # 包级符号经此转发（见 sync.py 说明）
 
+from ..diagnostics import WarningCode, record_warning
 from ..domain.finance import FINANCE_INFO_FIELDS, map_finance_values
 from ..domain.models import Bar, CapitalChange, Quote
 from ..errors import (
@@ -213,6 +213,14 @@ class _ClientMixin:
             )
             frame = yield _op_req(CMD["security_bars"], body, timeout=self.timeout)
             result = _client_pkg.dispatch(frame, category=category, family=self.family, index=index)
+            #: 解码层每一页都记了"声明 N 实收 M"这类判断，此前落进 ParseResult.warnings
+            #: 就再没人读过（F-51）：这里把它接进结果侧的告警通道，wire 才看得见。
+            for caveat in result.warnings:
+                record_warning(
+                    WarningCode.DECODE_CAVEAT,
+                    f"bars({symbol!r}) 分页解码：{caveat}",
+                    stacklevel=_TPL_WARN_STACKLEVEL,
+                )
             raw_rows = result.rows  # 原始 dict 行（去重以 datetime 字符串为键）
             if not raw_rows:
                 # 次页空 = 历史耗尽（正常终止，真实耗尽只会表现为短页或空次页）；
@@ -239,7 +247,7 @@ class _ClientMixin:
                 raise TruncatedDataError(
                     msg, context={"symbol": symbol, "returned": len(bars), "requested": count}
                 )
-            warnings.warn(msg, stacklevel=_TPL_WARN_STACKLEVEL)
+            record_warning(WarningCode.BARS_ANCHOR_DRIFT, msg, stacklevel=_TPL_WARN_STACKLEVEL)
         elif empty_first_page:
             # 空首页此前与"历史耗尽"共用一个 break，读起来就是"请求成功、恰好 0 根"；
             # 主站对 0x052D 只回 2 字节 count=0 空桩时，整条链路因此永远全绿。
@@ -252,7 +260,7 @@ class _ClientMixin:
                 raise TruncatedDataError(
                     msg, context={"symbol": symbol, "returned": 0, "requested": count}
                 )
-            warnings.warn(msg, stacklevel=_TPL_WARN_STACKLEVEL)
+            record_warning(WarningCode.BARS_EMPTY_FIRST_PAGE, msg, stacklevel=_TPL_WARN_STACKLEVEL)
         return _emit(bars, as_format)
 
     # ------------------------------------------------------------------ #
@@ -404,7 +412,8 @@ class _ClientMixin:
             if not rows:
                 truncated = False
                 if not out:
-                    warnings.warn(
+                    record_warning(
+                        WarningCode.SECURITY_LIST_EMPTY_FIRST_PAGE,
                         f"export_security_list(market={market_id}) 首页即空响应：0x044D 在 "
                         f"start=0 就声明 0 条记录，导出为空。空首页不代表该市场没有证券，"
                         f"而是主站对这个命令只回空桩",
@@ -419,7 +428,8 @@ class _ClientMixin:
             if start > 0xFFFF:
                 break  # 16-bit 分页地址空间耗尽
         if truncated:
-            warnings.warn(
+            record_warning(
+                WarningCode.SECURITY_LIST_PAGE_LIMIT,
                 f"export_security_list(market={market_id}) 在 max_pages={page_limit} 页内"
                 f"未取尽（已取 {len(out)} 条，最后一页仍为满页），结果可能截断",
                 stacklevel=_TPL_WARN_STACKLEVEL,
@@ -527,7 +537,7 @@ class _ClientMixin:
                         "end_offset": end_offset,
                     },
                 )
-            warnings.warn(msg, stacklevel=_TPL_WARN_STACKLEVEL)
+            record_warning(WarningCode.FILE_DOWNLOAD_SHORT, msg, stacklevel=_TPL_WARN_STACKLEVEL)
         return data
 
     @staticmethod

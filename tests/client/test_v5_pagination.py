@@ -25,6 +25,7 @@ from tstdx.client import (  # noqa: E402
 )
 from tstdx.codec.framing import ResponseFrame  # noqa: E402
 from tstdx.codec.primitive import encode_leb128  # noqa: E402
+from tstdx.diagnostics import WarningCode, warning_sink  # noqa: E402
 from tstdx.domain.symbol import to_tdx_market  # noqa: E402
 from tstdx.errors import ParseError, TruncatedDataError  # noqa: E402
 
@@ -162,19 +163,26 @@ class TestBarsPagination:
         client = TdxClient(pool=pool)  # type: ignore[arg-type]
         import warnings as _w
 
-        with _w.catch_warnings():
+        with _w.catch_warnings(), warning_sink() as caveats:
             _w.simplefilter("error")
             bars = client.bars("sh600519", period="day", count=1600)
         assert len(bars) == 800
+        #: 正常耗尽不许变成 wire 上的噪声：空元组是"这次结果干净"的证据。
+        assert caveats == []
 
     def test_empty_first_page_warns(self) -> None:
         """首页即 0 条（服务端 count=0 空桩）不得静默读成"成功取到 0 根"（F-45）。"""
         pool = _PagePool(pages={0: None})
         client = TdxClient(pool=pool)  # type: ignore[arg-type]
-        with pytest.warns(UserWarning, match="首页即空响应"):
+        with (
+            pytest.warns(UserWarning, match="首页即空响应"),
+            warning_sink() as caveats,
+        ):
             bars = client.bars("sh600519", period="day", count=100)
         assert bars == []
         assert len(pool.requests) == 1  # 不额外重试：空桩换不来数据
+        #: 同一条事实从此有两个读者：stderr 给进程内的人，sink 给执行器与 wire。
+        assert [item.code for item in caveats] == [WarningCode.BARS_EMPTY_FIRST_PAGE]
 
     def test_empty_first_page_strict_raises(self) -> None:
         """strict=True 时空首页与漂移截断同级 → TruncatedDataError。"""

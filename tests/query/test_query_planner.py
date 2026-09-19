@@ -204,7 +204,7 @@ def test_every_executed_option_key_still_compiles(key: str) -> None:
     以 ``EXECUTED_OPTIONS`` 而非硬编码名单为分母，所以新增被执行面读取的键若忘了在这里
     补一个取值，测试会指名"缺探针"而不是悄悄漏掉。
     """
-    probes: dict[str, Any] = {"args": [], "kwargs": {}, "market": "0"}
+    probes: dict[str, Any] = {"args": [], "kwargs": {}, "market": "0", "strict": True}
     assert key in probes, f"白名单新增了 {key}，但这里没有对应的探针取值"
     QueryPlanner().compile(
         QuerySpec.build(

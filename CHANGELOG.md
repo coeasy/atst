@@ -88,6 +88,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/providers/README.md` 与本文件，按 index 级 blob 暂存切出本步内容；并行会话的第 26 步
   在途改动与其 `docs/REFACTOR_PLAN_V17_CLOSURE.md` 改写全部留在工作区未动。
 
+### Added（v17 Phase 5 第 26 步 —— 结果侧数据瑕疵通道：一条发射口、`meta.warnings`、内核 `strict`，F-45 尾条 + F-51）
+
+- **`tstdx/diagnostics.py` 是数据瑕疵的唯一发射口**：`record_warning(code, message, *,
+  stacklevel=2, stderr=True)` 把同一条事实送到两处——本次查询的收集器（`warning_sink()`，
+  `contextvars` 实现，线程/任务隔离）与既有的进程 `UserWarning`。12 个 `WarningCode` 声明为
+  枚举，"新增类别却没发射点"和"发射点没声明类别"都由架构门禁双向把守；全仓裸 `warnings.warn`
+  只剩发射口自身、`deprecation.py` 与执行器把告警换成异常的那处，共 3 个白名单豁免。
+- **`QueryResult.meta.warnings` 是新载体**：`ResultMeta` 增 `warnings: tuple[ResultWarning, ...] = ()`，
+  执行器在返回前装入本次收集到的瑕疵；HTTP/WS/MCP 三面共用的序列化把它逐条写进
+  `meta.warnings`（**additive 键**）。空元组从此是"这次结果干净"的证据，而不是沉默——第 21 步
+  那条"首页即空响应"的告警，此前只能从服务端 stderr 读到。
+- **`Client.bars(..., strict=True)` 是公开入口**：`strict` 由内核在发起任何 I/O 之前集中读取
+  （`options["strict"]`，非 bool 即 `ValidationError`，键已入 `EXECUTED_OPTIONS` 白名单），本次
+  结果携带任何瑕疵即抛 `TruncatedDataError`。判据与 Provider 无关，不再有第二个"每源各认一次"
+  的开关。默认 `False`，`strict=False` 的路径与第 21 步以来逐字节相同。
+- **解码器的静默修正第一次到达调用方（F-51 的 ②半边）**：`ParseResult.warnings` 此前在执行
+  路径上零读取点（9 个发射点：count 失真钳制、记录不完整即停、正文截断、L2→L3 回落），现在
+  `bars` 分页把每一页该判断以 `WarningCode.DECODE_CAVEAT` 记进通道。
+- **默认行为不变清单**：stderr 文案与 `stacklevel` 指向、返回的数据、`strict` 默认值、无收集器
+  时"不抛不吞"的既成语义全部保持；wire 只多一个键。`stderr=False` 供已自带去重的发射点使用
+  （复权缺前收盘价、日历未覆盖年份）——去重是对终端的礼貌，不该决定某一次结果要不要声明缺陷。
+- **4 条新门禁 + 21 项接线断言 + 10 条变异全部按形状判据**：裸 `warn` 白名单正反两向、`WarningCode` 枚举 ⇔
+  发射点、`_t_bars` 同时读 `.warnings` 与发射、`docs/api/interfaces.md` 的 Client 方法表逐行
+  与真实签名双向对账（实测只有 `bars` 一格漂移）。10 条变异各自指名、对照全绿、harness 零残留。
+- **归属更正（F-53）**：`test_kernel_config_wiring.py` 里那条对单调时钟剩余量求浮点相等的断言
+  （自 `524c687` 起从未通过）改为 `4.9 < hop <= 5.0` 并写明判据——代码由并行会话带进 `9fbece0`，
+  账本由本步补齐。HEAD `9fbece0` 上那条 CLI 示例红**不由本步清偿**：`9127d78` 已把不存在的子
+  命令从行内示例位改写、`15bfb61` 撤回了第 25 步挂在拼装树上的复测数字；本步起初把它记成自己
+  清零，现按两棵干净 worktree 的复跑改回归属（`9fbece0` 该门禁 1 项红，`15bfb61` 同一测试
+  RC=0）。`docs/api/interfaces.md` 一处自 `5c50487` 起语法不通的 python 示例由本步修正。
+- **已知边界（登记，不改）**：`Client.typed()` 的返回 `TypedQueryResult(data, capability)` 既无
+  provenance 也无 warnings（接进去要改 63 张契约形状，等裁决）；`strict` 未开放为 HTTP/WS/MCP
+  请求参数（属 F-47）；通道不覆盖异常路径（属 F-44）。
+- **根级 `.py` 白名单 10 → 11**（新增 `diagnostics.py`）：见 `docs/ARCHITECTURE.md` §4、README
+  结构树与验收清单的同步改写。
+- **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = HEAD `a944964` + 本步 25 个文件）**：
+  基线跟着 HEAD 挪过两次（`15bfb61`→`463b9ae`→`a944964`，三个提交都出自并行会话），只记与本步
+  提交树同基的那组：同一提交的纯净树以相同参数跑基线 `3367 tests / 0 failures / 0 errors /
+  5 skipped`、80.72%；加本步文件后 junit **3390 / 0 / 0 / 5 skipped**、`PYTEST_RC=0`，
+  `--cov=tstdx` **80.76%**（`Required test coverage of 77.0% reached`，阈值 77 未下调，未增删任何 skip 标记，
+  5 条 skip 与基线逐名相同）。条数：`3367 + 23`（18 接线 + 3 通道门禁 + 1 方法表对账 + 1 袋
+  探针）。同树 9 道 CI 门禁全部 RC=0（originality `Total: 190 / Suspicious: 0`、`contract_audit
+  --ci` 63 契约 · 155 capability、docs links 82 文件、`ruff format --check` 460 files、`mypy` 0）。
+
 ### Removed（v17 Phase 5 第 25 步 —— 计划面上的无人读取副本与"执行次数预算"，F-50；**BREAKING**）
 
 - **`QueryPlan` 少了四个字段**：`deadline_ms`、`batch_limit`、`live_channel`、`local_channel`。

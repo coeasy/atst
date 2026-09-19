@@ -37,10 +37,10 @@ import logging
 import re
 import threading
 import time
-import warnings
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from ..diagnostics import WarningCode, record_warning
 from ..domain.models import Bar, Level, Quote
 from ..errors import ReadTimeout, SourceDeprecated, WebSourceError
 from ._paginate import (
@@ -300,7 +300,8 @@ class SinaSource(BaseWebSource):
         for page in range(1, last_valid[0]):
             result.extend(out.get(page, ()))
         if failed_pages:
-            warnings.warn(
+            record_warning(
+                WarningCode.WEB_SINA_PAGES_MISSING,
                 f"新浪全市场 fetch_all(node={node}) 以下分页拉取失败（已含重试与补拉），"
                 f"结果缺页: {sorted(failed_pages)}",
                 stacklevel=2,
@@ -480,11 +481,11 @@ class TencentSource(BaseWebSource):
                     retried_failed.extend(retry_batch)
             if retried_failed:
                 # A4：不静默丢数据 —— 结束时一次性 UserWarning，列出失败样本
-                warnings.warn(
+                record_warning(
+                    WarningCode.WEB_TENCENT_BATCH_FAILED,
                     "腾讯全市场 fetch_all 单批重试后仍失败 "
                     f"{len(retried_failed)}/{len(codes)} 只代码"
                     f"（样本 {retried_failed[:5]}），本次结果可能不完整",
-                    UserWarning,
                     stacklevel=2,
                 )
         if not out:

@@ -13,8 +13,9 @@ from typing import Any
 
 from ..catalog.capability import binding_for, validate_call
 from ..config import Config
+from ..diagnostics import warning_sink
 from ..domain.symbol import normalize_symbol
-from ..errors import InternalError, TdxError, ValidationError
+from ..errors import InternalError, TdxError, TruncatedDataError, ValidationError
 from ..providers import PROVIDERS
 from ..query import QueryPlan
 from ..result import Provenance, QueryResult
@@ -121,6 +122,22 @@ def audit_direct_bindings() -> tuple[DirectBinding, ...]:
     return DIRECT_BINDINGS
 
 
+def _strict_requested(plan: QueryPlan) -> bool:
+    """``options["strict"]``：把"结果带瑕疵"从一条告警升级为一次失败。
+
+    它刻意读执行器收集到的告警，而不是逐个 Provider 转发各自的 ``strict`` 形参：
+    一个开关对六种 bars 后端、对全部瑕疵类别同时成立，不存在"某个后端收下却无人执行"
+    的第三种下场（F-43/F-46 用的是同一条判据）。
+    """
+    strict = plan.spec.options.get("strict", False)
+    if not isinstance(strict, bool):
+        raise ValidationError(
+            "options['strict'] 必须是 bool",
+            context={"strict_type": type(strict).__name__},
+        )
+    return strict
+
+
 class DirectProviderExecutor:
     def __init__(
         self,
@@ -156,33 +173,54 @@ class DirectProviderExecutor:
             ) from exc
 
         fn = getattr(self, binding.executor_name)
-        try:
-            data = fn(plan)
-        except TdxError as exc:
-            exc.context.setdefault("provider", plan.provider)
-            exc.context.setdefault("channel", plan.channel)
-            exc.context.setdefault("capability", plan.spec.capability)
-            exc.context.setdefault("fallback", False)
-            exc.context.setdefault("provider_switch_allowed", False)
-            raise
-        except Exception as exc:
-            raise InternalError(
-                "Direct Provider executor 未处理异常",
+        #: 非法的 strict 必须在任何 I/O 之前拒绝，而不是等一次成功的查询再报错。
+        strict = _strict_requested(plan)
+        #: 一次查询一份告警收集器：Provider 侧记录的任何数据完整性瑕疵都在这个块里
+        #: 落进 ``collected``，随后随结果出发（F-45）。
+        with warning_sink() as collected:
+            try:
+                data = fn(plan)
+            except TdxError as exc:
+                exc.context.setdefault("provider", plan.provider)
+                exc.context.setdefault("channel", plan.channel)
+                exc.context.setdefault("capability", plan.spec.capability)
+                exc.context.setdefault("fallback", False)
+                exc.context.setdefault("provider_switch_allowed", False)
+                raise
+            except Exception as exc:
+                raise InternalError(
+                    "Direct Provider executor 未处理异常",
+                    context={
+                        "provider": plan.provider,
+                        "channel": plan.channel,
+                        "capability": plan.spec.capability,
+                        "fallback": False,
+                        "provider_switch_allowed": False,
+                        "cause_type": type(exc).__name__,
+                    },
+                    cause=exc,
+                ) from exc
+
+        caveats = tuple(collected)
+        if caveats and strict:
+            raise TruncatedDataError(
+                "strict=True 且本次结果携带数据完整性瑕疵：拒绝返回带瑕疵的数据",
                 context={
                     "provider": plan.provider,
                     "channel": plan.channel,
                     "capability": plan.spec.capability,
+                    "codes": sorted({item.code.value for item in caveats}),
+                    "messages": [item.message for item in caveats],
                     "fallback": False,
                     "provider_switch_allowed": False,
-                    "cause_type": type(exc).__name__,
                 },
-                cause=exc,
-            ) from exc
+            )
 
         return QueryResult.from_plan(
             data,
             plan=plan,
             provenance=Provenance.direct(plan),
+            warnings=caveats,
         )
 
     def _hop_timeout(self, plan: QueryPlan) -> float:
