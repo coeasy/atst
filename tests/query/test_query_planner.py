@@ -136,7 +136,11 @@ def test_query_spec_has_no_max_age_knob() -> None:
 
 
 def test_deadline_ms_changes_execution_budget_not_data_identity() -> None:
-    """``max_age`` 退场后，唯一合法的"策略不进身份"实例是 ``deadline_ms``。"""
+    """``max_age`` 退场后，唯一合法的"策略不进身份"实例是 ``deadline_ms``。
+
+    差值必须落在 ``plan.budget`` 上——它是 deadline 的唯一载体，plan 上曾经另存的
+    ``deadline_ms`` 副本无人读取（F-50），所以这里不再对着副本断言。
+    """
     planner = QueryPlanner()
     tight = planner.compile(
         QuerySpec.build("quotes", symbols=["600519"], provider="tencent", deadline_ms=1000)
@@ -145,7 +149,9 @@ def test_deadline_ms_changes_execution_budget_not_data_identity() -> None:
         QuerySpec.build("quotes", symbols=["600519"], provider="tencent", deadline_ms=9000)
     )
 
-    assert (tight.deadline_ms, loose.deadline_ms) == (1000, 9000)
+    delta_ns = loose.budget.deadline_ns - tight.budget.deadline_ns
+    assert 7_000_000_000 < delta_ns < 9_000_000_000
+    assert tight.budget.remaining_s() < loose.budget.remaining_s()
     assert tight.fingerprint.value == loose.fingerprint.value
     assert '"deadline_ms"' not in tight.fingerprint.canonical
 

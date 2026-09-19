@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import threading
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -80,57 +79,33 @@ class CurrentnessMode(str, Enum):
 
 @dataclass(slots=True)
 class ExecutionBudget:
-    """One total monotonic deadline shared by the whole logical query."""
+    """The wall-clock ceiling of **one** ``execute()``.
+
+    A ``policy`` fan-out re-compiles per symbol and therefore re-starts the clock;
+    attempt counting is not here on purpose - retries belong to the transport pool
+    (``[core] max_retries``) and to the fallback policy, not to this object.
+    """
 
     deadline_ns: int
-    max_attempts: int = 1
-    attempts: int = 0
-    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @classmethod
-    def from_deadline_ms(cls, deadline_ms: int, *, max_attempts: int = 1) -> ExecutionBudget:
+    def from_deadline_ms(cls, deadline_ms: int) -> ExecutionBudget:
         if deadline_ms <= 0:
             raise ValidationError(
                 "deadline_ms 必须大于 0",
                 context={"deadline_ms": deadline_ms},
             )
-        if max_attempts <= 0:
-            raise ValidationError(
-                "max_attempts 必须大于 0",
-                context={"max_attempts": max_attempts},
-            )
-        return cls(
-            deadline_ns=time.monotonic_ns() + int(deadline_ms * 1_000_000),
-            max_attempts=max_attempts,
-        )
-
-    def remaining_ns(self) -> int:
-        return max(0, self.deadline_ns - time.monotonic_ns())
+        return cls(deadline_ns=time.monotonic_ns() + int(deadline_ms * 1_000_000))
 
     def remaining_s(self) -> float:
-        return self.remaining_ns() / 1_000_000_000
+        return max(0.0, (self.deadline_ns - time.monotonic_ns()) / 1_000_000_000)
 
     def ensure_remaining(self, phase: str) -> None:
-        if self.remaining_ns() <= 0:
+        if time.monotonic_ns() >= self.deadline_ns:
             raise ReadTimeout(
                 "查询总 deadline 已耗尽",
                 context={"phase": phase, "deadline_scope": "query"},
             )
-
-    def begin_attempt(self, phase: str = "provider_request") -> None:
-        self.ensure_remaining(phase)
-        with self._lock:
-            if self.attempts >= self.max_attempts:
-                raise ReadTimeout(
-                    "查询执行次数已耗尽",
-                    context={
-                        "phase": phase,
-                        "attempts": self.attempts,
-                        "max_attempts": self.max_attempts,
-                        "deadline_scope": "query",
-                    },
-                )
-            self.attempts += 1
 
 
 def _norm_text(value: str | None) -> str:
@@ -466,12 +441,9 @@ class QueryPlan:
     provider: str
     channel: str
     fingerprint: QueryFingerprint
-    deadline_ms: int
-    batch_limit: int | None
-    live_channel: bool
-    local_channel: bool
-    #: 单次逻辑查询共享的总 deadline/尝试预算。属于**运行时状态**而非编译身份，
+    #: 单次逻辑查询共享的总 deadline 预算。属于**运行时状态**而非编译身份，
     #: 因此刻意排除在相等性与哈希之外（两个独立编译、语义相同的 plan 仍相等）。
+    #: 它是 deadline 的唯一载体——`deadline_ms` 曾经另存一份，无人读取（F-50）。
     budget: ExecutionBudget = field(compare=False, repr=False)
 
 
@@ -614,9 +586,5 @@ class QueryPlanner:
             provider=str(normalized.provider),
             channel=selected.id,
             fingerprint=fingerprint,
-            deadline_ms=normalized.deadline_ms,
-            batch_limit=selected.batch_limit_for(normalized.capability),
-            live_channel=selected.live,
-            local_channel=selected.local,
-            budget=ExecutionBudget.from_deadline_ms(normalized.deadline_ms, max_attempts=1),
+            budget=ExecutionBudget.from_deadline_ms(normalized.deadline_ms),
         )

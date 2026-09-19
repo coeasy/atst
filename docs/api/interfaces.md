@@ -130,9 +130,10 @@ spec = QuerySpec.build(
 
 `QuerySpec` 字段：`capability, symbols, provider, channel, period, count, start,
 adjustment, currentness, deadline_ms, schema_version, options_json`。
-`QueryPlan` 字段：`spec, provider, channel, fingerprint, deadline_ms, batch_limit,
-live_channel, local_channel, budget`。参数在规划期按 Provider 实现的**真实签名**校验，
-不合法即 `ValidationError` 且不发请求。
+`QueryPlan` 字段：`spec, provider, channel, fingerprint, budget`——`budget`
+（`ExecutionBudget`）是 `deadline_ms` 的唯一载体，逐跳约束传输层超时；plan 上不再
+另存 deadline、批量上限或 channel 布尔位，那些字段曾经无人读取。参数在规划期按
+Provider 实现的**真实签名**校验，不合法即 `ValidationError` 且不发请求。
 
 ### FallbackPolicy / ProviderOrchestrator
 

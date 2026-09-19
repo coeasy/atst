@@ -33,7 +33,11 @@ __all__ = [
 
 @dataclass(frozen=True, slots=True)
 class ChannelSpec:
-    """Static execution facts for one provider-internal channel."""
+    """Static execution facts for one provider-internal channel.
+
+    No per-call quotas here: a batching ceiling belongs beside the protocol code
+    that enforces it.
+    """
 
     id: str
     capabilities: frozenset[str]
@@ -41,7 +45,6 @@ class ChannelSpec:
     live: bool = False
     local: bool = False
     notes: str = ""
-    batch_limits: tuple[tuple[str, int], ...] = ()
     periods: frozenset[str] = frozenset()
 
     @classmethod
@@ -54,7 +57,6 @@ class ChannelSpec:
         live: bool = False,
         local: bool = False,
         notes: str = "",
-        batch_limits: Mapping[str, int] | None = None,
         periods: Iterable[str] = (),
     ) -> ChannelSpec:
         channel_id = str(id).strip().lower()
@@ -63,18 +65,6 @@ class ChannelSpec:
         caps = frozenset(str(x).strip().lower() for x in capabilities if str(x).strip())
         if not caps:
             raise ValueError(f"channel {channel_id!r} must declare at least one capability")
-
-        limits: list[tuple[str, int]] = []
-        for capability, limit in dict(batch_limits or {}).items():
-            cap = str(capability).strip().lower()
-            if cap not in caps:
-                raise ValueError(
-                    f"batch limit capability {cap!r} is not declared on channel {channel_id!r}"
-                )
-            if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
-                raise ValueError(f"batch limit for {cap!r} must be a positive int")
-            limits.append((cap, limit))
-        limits.sort()
 
         normalized_periods = frozenset(str(x).strip().lower() for x in periods if str(x).strip())
         if normalized_periods and "bars" not in caps:
@@ -87,16 +77,8 @@ class ChannelSpec:
             live=bool(live),
             local=bool(local),
             notes=str(notes),
-            batch_limits=tuple(limits),
             periods=normalized_periods,
         )
-
-    def batch_limit_for(self, capability: str) -> int | None:
-        cap = str(capability).strip().lower()
-        for name, limit in self.batch_limits:
-            if name == cap:
-                return limit
-        return None
 
     def supports_period(self, period: str) -> bool:
         return not self.periods or str(period).strip().lower() in self.periods
@@ -273,7 +255,6 @@ def _c(
     live: bool = False,
     local: bool = False,
     notes: str = "",
-    batch_limits: Mapping[str, int] | None = None,
     periods: Iterable[str] = (),
 ) -> ChannelSpec:
     return ChannelSpec.build(
@@ -283,7 +264,6 @@ def _c(
         live=live,
         local=local,
         notes=notes,
-        batch_limits=batch_limits,
         periods=periods,
     )
 
@@ -316,7 +296,6 @@ PROVIDERS = ProviderRegistry(
                     "volume_price",
                     markets=("cn_a", "cn_bse"),
                     live=True,
-                    batch_limits={"quotes": 60},
                     periods=(
                         "1min",
                         "5min",

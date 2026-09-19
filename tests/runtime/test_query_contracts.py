@@ -55,8 +55,6 @@ def test_default_quotes_plan_is_tdx_quotation() -> None:
     assert plan.provider == "tdx"
     assert plan.channel == "quotation"
     assert plan.spec.symbols == ("sh600519",)
-    assert plan.batch_limit == 60
-    assert plan.local_channel is False
     assert plan.fingerprint.value.startswith("q1:")
 
 
@@ -108,7 +106,7 @@ def test_latest_eastmoney_option_capability_has_unique_channel() -> None:
     plan = QueryPlanner().compile(QuerySpec.build("options_list", provider="eastmoney"))
     assert plan.provider == "eastmoney"
     assert plan.channel == "options"
-    assert plan.live_channel is True
+    assert PROVIDERS.get("eastmoney").channel("options").live is True
 
 
 def test_local_vipdoc_is_explicit_historical_provider() -> None:
@@ -123,7 +121,7 @@ def test_local_vipdoc_is_explicit_historical_provider() -> None:
     )
     assert plan.provider == "local_vipdoc"
     assert plan.channel == "vipdoc"
-    assert plan.local_channel is True
+    assert PROVIDERS.get("local_vipdoc").channel("vipdoc").local is True
 
     with pytest.raises(ValidationError, match="不是 live channel"):
         QueryPlanner().compile(

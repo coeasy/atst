@@ -5,7 +5,9 @@
 配置里的键必须一路到达传输层构造参数。
 
 第 24 步把同一判据从"配置面"扩展到"计划面"：``deadline_ms`` 折进 ``plan.budget``
-之后必须真的约束每一跳的超时（F-48），而分页只允许一份实现（F-49）。
+之后必须真的约束每一跳的超时（F-48），而分页只允许一份实现（F-49）。第 25 步把尺子
+反过来量计划自己：``QueryPlan`` 的每个字段、``ExecutionBudget`` 的每个方法都必须有
+读取点，注册表不得再声称无人执行的批量上限（F-50）。
 """
 
 from __future__ import annotations
@@ -218,7 +220,11 @@ def test_default_deadline_leaves_the_configured_timeout_intact(fake_tdx_client: 
     executor._tdx_bars(_bars_plan(5000))
 
     (client,) = fake_tdx_client.instances
-    assert client.kwargs["timeout"] == 5.0
+    hop = client.kwargs["timeout"]
+    #: 取小的另一侧是**单调时钟剩余量**，它必然比 5.0 少几微秒，逐位相等是把计时噪声
+    #: 写成契约（该断言在 `524c687` 之后从未通过）。判据保持本步真正要钉的那件事：
+    #: 默认预算下超时既没有被缩短到可观察的量级，也绝不超过配置值。
+    assert 4.9 < hop <= 5.0
 
 
 def test_web_route_also_gets_the_bounded_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -455,6 +461,72 @@ def test_query_spec_field_exemptions_still_hold() -> None:
     identity = read_inside("_payload")
     stale = sorted(name for name in _FIELD_EXEMPTIONS if name not in bag | identity)
     assert stale == [], f"豁免字段既不进 options 袋也不进数据身份，应删除而非豁免：{stale}"
+
+
+# --------------------------------------------------------------------------- #
+# 计划面：plan 上的每个字段、预算上的每个方法都必须有人按它行动（F-50）
+# --------------------------------------------------------------------------- #
+
+
+def test_every_query_plan_field_is_read_by_the_execution_face() -> None:
+    """``QueryPlan`` 曾带着四个无人读取的字段：``deadline_ms``、``batch_limit``、
+    ``live_channel``、``local_channel``。规划器把 channel 的事实另抄一份到 plan，抄本
+    就成了第二真相源——而执行面从来按 ``plan.provider``/``plan.channel`` 查注册表。
+
+    这是 ``test_every_query_spec_field_reaches_the_execution_face`` 的对偶：同一把 AST
+    尺子，量的对象从入参换成计划。字段清单取自 dataclass 本身，不另抄一份。
+    """
+
+    import dataclasses
+
+    from tstdx.query import QueryPlan
+
+    _, plan_reads = _execution_face_reads()
+    fields = {item.name for item in dataclasses.fields(QueryPlan)}
+    assert plan_reads & fields, "计划面读取扫描一条都没命中，说明它自身失效了"
+    orphans = sorted(fields - plan_reads)
+    assert orphans == [], f"QueryPlan 字段止步于规划器（幻影副本）：{orphans}"
+
+
+def test_execution_budget_has_no_unexercised_member() -> None:
+    """第 24 步接上 deadline 时，同一对象另一侧的尝试记账从来没有一个调用点。
+
+    ``begin_attempt()``/``max_attempts``/``attempts`` 比一个幻影入参更隐蔽：它带着锁
+    和计数，读代码的人会以为"执行次数预算"是通的。判据落在形状上——每个公开实例方法
+    都必须经由 ``budget`` / ``plan.budget`` 被执行面读到。构造子 ``from_deadline_ms``
+    例外，它是 ``compile()`` 唯一的入口，正是"折进对象"的那一步本身。
+    """
+
+    import ast
+    import inspect
+
+    from tstdx.query import ExecutionBudget
+
+    root = Path(__file__).resolve().parents[2]
+    reads: set[str] = set()
+    for path in sorted((root / "tstdx").rglob("*.py")):
+        if path.name == "query.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute):
+                continue
+            owner = node.value
+            on_budget = (isinstance(owner, ast.Name) and owner.id == "budget") or (
+                isinstance(owner, ast.Attribute) and owner.attr == "budget"
+            )
+            if on_budget:
+                reads.add(node.attr)
+    assert reads, "预算读取扫描一条都没命中，说明它自身失效了"
+
+    methods = {
+        name
+        for name, member in inspect.getmembers(ExecutionBudget, callable)
+        if not name.startswith("_") and getattr(member, "__self__", None) is not ExecutionBudget
+    }
+    assert "from_deadline_ms" not in methods, "from_deadline_ms 不再是类方法，例外前提失效"
+    unexercised = sorted(methods - reads)
+    assert unexercised == [], f"ExecutionBudget 成员无调用点（死掉的运行时状态）：{unexercised}"
 
 
 # --------------------------------------------------------------------------- #

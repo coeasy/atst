@@ -57,18 +57,37 @@ def test_market_and_channel_are_not_provider_ids() -> None:
         PROVIDERS.get("kline")
 
 
-def test_only_verified_capability_batch_limits_are_declared() -> None:
-    quotation = PROVIDERS.get("tdx").channel("quotation")
-    assert quotation.batch_limits == (("quotes", 60),)
-    assert quotation.batch_limit_for("quotes") == 60
-    assert quotation.batch_limit_for("bars") is None
-    assert not hasattr(quotation, "batch_limit")
-    assert PROVIDERS.get("tencent").channel("quote").batch_limits == ()
-    assert PROVIDERS.get("sina").channel("quote").batch_limits == ()
-    assert PROVIDERS.get("eastmoney").channel("quote").batch_limits == ()
+def test_the_registry_declares_no_batch_quota() -> None:
+    """注册表不再声称批量上限（F-50）。
+
+    旧形状是 ``ChannelSpec.batch_limits={"quotes": 60}`` → ``batch_limit_for()`` →
+    ``plan.batch_limit`` → **无人读取**：一条完整的死链，而且那个 60 与真正生效的
+    分片上限 ``tstdx/client/_mixin.py`` 的 ``_QUOTES_SNAPSHOT_BATCH = 80`` 直接矛盾。
+    按"无理由孤儿一律接线或删除"，声称数字而无人执行的一侧删除，数字只留在执行它
+    的那处代码里。
+    """
+
+    import dataclasses
+    import inspect
+
+    from tstdx.client._mixin import _QUOTES_SNAPSHOT_BATCH
+
+    fields = {item.name for item in dataclasses.fields(ChannelSpec)}
+    assert "batch_limits" not in fields
+    assert not hasattr(ChannelSpec, "batch_limit_for")
+    for spec in (PROVIDERS.get(pid) for pid in PROVIDERS.ids()):
+        for channel in spec.channels:
+            assert "batch_limit" not in repr(channel)
+    assert "batch_limits" not in inspect.signature(ChannelSpec.build).parameters
+    # 批量上限只由真正分片的那处代码持有，注册表不再另报一个数（旧值 60 与此矛盾）。
+    assert _QUOTES_SNAPSHOT_BATCH == 80
+    with pytest.raises(TypeError, match="batch_limits"):
+        ChannelSpec.build("quote", {"quotes"}, batch_limits={"quotes": 60})
 
 
-def test_channel_spec_new_batch_limits_do_not_move_historical_notes_position() -> None:
+def test_channel_spec_positional_notes_survive_field_removal() -> None:
+    """删除字段后 ``notes`` 仍在第 6 个位置位：位置式构造是注册表外的公开写法。"""
+
     channel = ChannelSpec(
         "legacy",
         frozenset({"quotes"}),
@@ -78,13 +97,11 @@ def test_channel_spec_new_batch_limits_do_not_move_historical_notes_position() -
         "legacy positional notes",
     )
     assert channel.notes == "legacy positional notes"
-    assert channel.batch_limits == ()
+    assert channel.periods == frozenset()
 
 
-def test_channel_spec_rejects_batch_limit_for_undeclared_capability() -> None:
-    with pytest.raises(ValueError, match="not declared"):
-        ChannelSpec.build(
-            "quote",
-            {"quotes"},
-            batch_limits={"bars": 60},
-        )
+def test_channel_spec_rejects_periods_for_undeclared_capability() -> None:
+    """注册表仍然只校验它**真的**会执行的那条规则：周期只属于 bars channel。"""
+
+    with pytest.raises(ValueError, match="non-bars"):
+        ChannelSpec.build("quote", {"quotes"}, periods=("day",))

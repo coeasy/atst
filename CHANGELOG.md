@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed（v17 Phase 5 第 25 步 —— 计划面上的无人读取副本与"执行次数预算"，F-50；**BREAKING**）
+
+- **`QueryPlan` 少了四个字段**：`deadline_ms`、`batch_limit`、`live_channel`、`local_channel`。
+  `compile()` 逐行写入它们，而 plan 之外的读取点是 **0**——`deadline_ms` 在全包内 4 次命中
+  全部落在 `query.py` 自己体内，其余三个字段连一次属性读取都没有。第 24 步把 `deadline_ms`
+  接进 `plan.budget` 之后，这份副本只是第二个真相源。`plan.budget` 从此是 deadline 的唯一载体。
+- **`ExecutionBudget` 只剩墙钟**：`max_attempts`、`attempts`、`begin_attempt()` 物理删除——
+  它们在 `tstdx/` 内零调用点（`begin_attempt` 全包读取 0 次）。第 24 步点亮的是
+  `remaining_s` / `ensure_remaining` 那半边，"执行次数预算"仍是一张带着 `threading.Lock` 的
+  空支票。对象 docstring 同步改写为"一次 `execute()` 的墙钟上界"，并写明重试归传输池
+  （`[core] max_retries`）与 fallback 策略所辖（关闭 F-48 尾条 ⑥）；外部读者为零的
+  `remaining_ns()` 一并删除。
+- **注册表不再声称批量上限**：`ChannelSpec.batch_limits`、`batch_limit_for()` 与 tdx quotation
+  channel 上的 `{"quotes": 60}` 整链删除。该链唯一读者就是写入它的规划器（`batch_limit_for`
+  全包命中 **1** 次），而它声称的 60 与真正生效的分片上限 `_QUOTES_SNAPSHOT_BATCH = 80`
+  （`tstdx/client/_mixin.py:75`）**直接矛盾**。取删除而非"接成执行期校验"：后者会静默把
+  quotes 分片从 80 改成 60，本步不改任何默认行为。
+- **迁移口径**：`ChannelSpec` 构造不再接受 `batch_limits=`（其余字段位置不变，`notes` 仍是
+  第 6 个位置参数，有断言钉住）；`QueryPlan` 的构造点全仓仅规划器一处；deadline 请读
+  `plan.budget.deadline_ns`，quotes 批量上限请读 `_QUOTES_SNAPSHOT_BATCH`。
+  `docs/api/interfaces.md` 的字段清单已同步。
+- **两条计划面结构门禁 + 一条注册表反向门禁**：`test_every_query_plan_field_is_read_by_the_execution_face`
+  （第 20 步字段门禁的对偶，分母取 `dataclasses.fields(QueryPlan)`、读取扫描跳过 `query.py`）、
+  `test_execution_budget_has_no_unexercised_member`（每个公开实例方法必须经由
+  `budget`/`plan.budget` 被执行面读到；构造子 `from_deadline_ms` 因"它就是折叠那一步"而例外，
+  且例外前提自身要核验）、`test_the_registry_declares_no_batch_quota`（字段不存在 + `repr`
+  不含 `batch_limit` + `build()` 签名无该形参 + 真正生效的 `_QUOTES_SNAPSHOT_BATCH == 80`）。
+  原先维持死面的两条 `batch_limits` 用例改写成注册表**真正执行**的那条规则（`periods` 只属于
+  bars channel）；三处"对着抄本断言"的测试改为对着真相源断言（live/local 读
+  `PROVIDERS…channel(...)`，deadline 读 `plan.budget`）。
+- **变异验证 4 条全部 RED 且各自指名**：把 `deadline_ms` 副本装回 plan → `['deadline_ms']`；
+  把 `begin_attempt()` 装回预算且只在 `query.py` 内部调用它（F-50 当时的真实形状）→
+  `['begin_attempt']`；注册表重新声称 `batch_limits` 并把"字段不存在"那条断言削弱成永真 →
+  `repr` 扫描仍指名；把读取扫描改瞎 → 自曝"计划面读取扫描一条都没命中，说明它自身失效了"。
+  harness 结束后被改文件全部还原，测量过程零残留。
+- **顺带实测、登记待裁决（F-52）**：`ProviderSpec.display_name`/`role` 与
+  `Provenance.provider_timestamp` 同样零读取点（`tstdx/`+`scripts/`+`tests/` 三面对前两者的
+  读取均为 0；后者从未被传入非默认值，也不在序列化面的显式键里）。因涉及两个公开 dataclass
+  的形状，按 F-44/F-47 口径只钉事实、不代为拍板。
+- **复测（同一轮日志；HEAD `288e62f` + 本步 7 个文件的孤立 worktree）**：基线同提交单开
+  worktree 实测 `3373 tests / 0 failures / 0 errors / 8 skipped`，加本步文件后 junit
+  **3375 / 0 / 0 / 8**、`RC=0`，条数可核对：`3373 + 2`（本步新增 2 条门禁，注册表侧 3 换 3）。
+  `--cov=tstdx` **80.65%**（日志明写 `Required test coverage of 77.0% reached`，阈值 77 未下调，
+  未新增或删除任何 skip 标记）。同树 `ruff check` 与 `format --check`（427 files）、`mypy tstdx/`、
+  originality `--strict`（`Total: 189 Suspicious: 0`）、reachability `--strict`
+  （188 模块 / 171 可达 / 17 白名单豁免，`无未登记孤儿 ✓`）、`contract_audit --ci`
+  （**63 契约 · 155 capability**，与第 17/19/20/22/24 步逐项相同）、`spec_audit --json --strict`
+  （44 specs · `coverage_pct: 100.0`）、`golden_audit --gate --require-markets`、docs links
+  （82 文件）、`tests/adversarial`、`tests/test_bridges.py` **全部 RC=0**。测量期间主树另有
+  并行会话在途（`client/api.py`、`result.py`、`integration/serialization.py`、`executor.py`
+  的 warnings 通道与 `strict` 面），同轮主树实测 1 条红
+  （`test_every_executed_option_key_still_compiles[strict]`：`白名单新增了 strict，但这里没有
+  对应的探针取值`），属对方在途的第 23 步白名单扩展，与本步零交集，故权威数字取孤立树。
+
 ### Changed（v17 Phase 5 第 24 步 —— `deadline_ms` 第一次真的约束执行面，F-48）
 
 - **查询总预算从"折进对象就完事"变成每一跳的超时上界**：`DirectProviderExecutor` 新增
