@@ -88,11 +88,6 @@ class TestShIndexWhitelistBoundary:
             assert parse_symbol(code).market == "sz", code
 
 
-@pytest.mark.xfail(
-    reason="协议链 std7709.infer_market 属 protocol 域（本任务禁改），"
-    "其对 000300 仍按旧「后三位<100」惯例归深市；五链收敛待 protocol 域同批修复",
-    strict=False,
-)
 def test_protocol_chain_agrees_on_000300() -> None:
     from tstdx.protocol.parsers.std7709 import infer_market
 
