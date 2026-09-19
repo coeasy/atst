@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added（v17 Phase 5 第 23 步 —— 三张服务面的"已声明入参"门禁，F-47 登记）
+
+- **HTTP 路由形参必须进入执行路径**：`tests/runtime/test_migrated_surfaces_v13.py::
+  test_http_route_parameters_all_reach_the_execution_path` 以 AST 取 10 条 `@app.get` /
+  `@app.post` 路由，逐个形参核对它是否出现在同一函数体的读取名字里——一个收下却不用的路由
+  形参就是门面版的 `max_age`（F-43）。同族判据此前已覆盖 CLI 选项（F-27/F-28）、`QuerySpec`
+  一等字段（F-43）与 `options` 袋键（F-46），服务面签名是最后一处没有对应物的入口。
+- **MCP `inputSchema` 与 handler 双向相等**：9 个 `ToolSpec` 声明的属性集合必须与其 handler
+  从 `args` 袋实际读出的字面量键完全一致——多一个键是幻影开关，少一个键是未声明输入。
+- **WS `METHODS` 与实际分派分支双向相等**：JSON-RPC 名单（10 项）里声明却不派发的方法、
+  以及派发却未声明的方法都会当场让门禁红。判据认识 `method == "x"` 与
+  `method in {"snapshot", "minute", "trades"}` 两种形状；三条门禁各带"扫到 0 个即门禁自身
+  失效"的自我校验，且都用变异验证过会咬人（见下）。
+
+### Changed（v17 Phase 5 第 23 步 —— `options` 袋改为 fail-closed 白名单；**BREAKING**）
+
+- **`QuerySpec.options` 里不被执行面读取的键现在当场被拒**：新增
+  `tstdx.query.EXECUTED_OPTIONS`（`args` / `kwargs` / `market`，即 `runtime/executor.py`
+  真实读取的三处），`normalized()` 对名单之外的键抛 `ValidationError` 并在 context 里回显
+  `unknown_options` 与白名单本身。这补上了 F-46 当时言过其实的一句：`REJECTED_OPTIONS` 只拦
+  名单内的两个策略键、且只在取值为真时命中，因此
+  `Client.execute(QuerySpec.build(..., options={"max_age": 0}))` 曾把已被删除的旋钮原样带进
+  执行面静默忽略，`options={"allow_stale": False}` 同样能入袋。两者现在都红。此前只有
+  `Client.bars(..., max_age=0)` 这类形参位置会 `TypeError`，袋侧没有对应防线。
+- **白名单是一份被门禁钉住的抄本**：袋级门禁 `test_option_bag_keys_are_executed_or_rejected`
+  加了第三条断言，把名单与 AST 扫出的真实读取点求差，双向都要为空——名单多一个键报
+  "名单多 `['max_age']`"，少一个键报"名单漏 `['market']`"（F-42：能被钉住的抄本才是安全的）。
+- **一处测试口径纠正**：`test_options_order_does_not_change_query_identity` 原先用
+  `{"a": 1, "b": 2}` 这类任意键演示指纹顺序无关，现改为袋内真实键——判据不该依赖违规输入
+  才成立。
+- **变异验证 9 条全部按预期红/绿**：袋侧 4 条（删掉白名单检查 → `DID NOT RAISE`；名单加幽灵
+  键 → "名单多"；名单删 `market` → "名单漏"；让策略键专属理由永不触发 → 报"实际消息是通用
+  白名单消息"），wire 侧 4 条（给 `quotes()` 加不使用形参 → `['unused_probe']`；给
+  `query_capability` 的 schema 加 `max_age` → "声明却无人读取"；在 `METHODS` 声明不存在的
+  `history` → "声明却未分派"；关掉集合字面量识别 → 重新误报 `trades`），未变异对照 `RC=0`。
+- **未清偿（需用户裁决，见 `docs/REFACTOR_PLAN_V17_CLOSURE.md` §0.3 F-47）**：HTTP 查询串与
+  body、WS `params`、MCP `arguments` 对**未声明**的请求字段仍一律静默忽略——同一轮探针实测
+  `GET /v13/bars/600519?max_age=0` 返回 200 且参数蒸发、WS 未知 params 不报错、9 张
+  `inputSchema` 无一声明 `additionalProperties: false`。把它改成 fail-closed 会让今天返回
+  200 的请求开始返回 4xx，属对外契约的破坏性变更，与 F-44 同格，故本轮不代为拍板。
+
 ### Removed（v17 Phase 5 第 22 步 —— `allow_partial` 幻影开关与 options 袋门禁，F-46；**BREAKING**）
 
 - **`allow_partial` 不再是 `QuerySpec.build()` 的形参，也不再是 `QuerySpec` 的属性**：它此前

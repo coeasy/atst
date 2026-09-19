@@ -34,6 +34,7 @@ __all__ = [
     "QueryFingerprint",
     "QueryPlan",
     "QueryPlanner",
+    "EXECUTED_OPTIONS",
     "REJECTED_OPTIONS",
 ]
 
@@ -48,6 +49,12 @@ REJECTED_OPTIONS: dict[str, str] = {
         "quotes BatchResult 始终逐 symbol 记录三态，partial 是结果事实而非可放行的策略"
     ),
 }
+#: ``options`` 袋里唯一被直连执行面读取的键（``runtime/executor.py`` 的
+#: ``options.get("args")`` / ``options.get("kwargs")`` / ``options.get("market")``）。
+#: 袋里的键从此只有两种下场：在这个名单里被执行面读取，或者在 ``normalized()`` 当场被拒。
+#: 名单与真实读取点的一致性由架构门禁 ``test_option_bag_keys_are_executed_or_rejected``
+#: 对 AST 扫描结果求差把守——在这里加一个执行面不读的键，门禁即红。
+EXECUTED_OPTIONS: frozenset[str] = frozenset({"args", "kwargs", "market"})
 _CANONICAL_UNIFIED_CHANNELS: dict[tuple[str, str], str] = {
     ("tdx", "quotes"): "quotation",
     ("tdx", "bars"): "quotation",
@@ -304,6 +311,16 @@ class QuerySpec:
                     f"直连执行面不接受 {rejected}：{reason}",
                     context={"capability": cap, rejected: True},
                 )
+        if not self.options.keys() <= EXECUTED_OPTIONS:
+            raise ValidationError(
+                "options 里有直连执行面不读取的键（设置它们不会改变任何行为，"
+                "因此当场拒绝而不是静默收下）",
+                context={
+                    "capability": cap,
+                    "unknown_options": sorted(set(self.options) - set(EXECUTED_OPTIONS)),
+                    "executed_options": sorted(EXECUTED_OPTIONS),
+                },
+            )
         if self.count < 0:
             raise ValidationError("count 不能为负数", context={"count": self.count})
         if cap == "bars" and self.count <= 0:

@@ -74,14 +74,14 @@ def test_options_order_does_not_change_query_identity() -> None:
         QuerySpec.build(
             "quotes",
             symbols="sh600519",
-            options={"b": 2, "a": 1},
+            options={"args": [], "kwargs": {}, "market": "0"},
         )
     )
     second = planner.compile(
         QuerySpec.build(
             "quotes",
             symbols="sh600519",
-            options={"a": 1, "b": 2},
+            options={"market": "0", "kwargs": {}, "args": []},
         )
     )
     assert first.fingerprint == second.fingerprint

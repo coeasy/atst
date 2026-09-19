@@ -77,7 +77,10 @@
 | F-43 | P1（零缓存口径类，与 F-40/F-41 同族：对象是**旋钮与散文**而非代码形状） | **`max_age` 是五张入口都收、内核零消费的新鲜度旋钮，而缓存层删掉后仍有 8 个生产文件与 3 份文档在替它说话**（Phase 5 第 20 步实测）：`QuerySpec.max_age` 带着 `build()` 形参、`max_age < 0` 校验与 normalize 行住在 `tstdx/query.py`，Client（`kwargs.pop("max_age")`）、CLI `--max-age`（3 个子命令 + 3 处透传）、HTTP（5）、WS（3）、MCP（JSON Schema + impl）、`runtime/kernel.py`（16）、`orchestration.py`（4）共 **9 个文件 50 行**把值一路送到 `QueryPlan`，而执行面没有任何一处读它——调用方设置它只会得到"已经生效"的错觉（F-27/F-28 已给 CLI 选项立过同形判据，`QuerySpec` 字段侧一直没有对应门禁）。散文侧同批失真：`QueryFingerprint` docstring 写着 "used by cache/single-flight layers"、`domain/period.py` 写 "and cache lookup"、`config/schema.py` 把"缓存/降级链"列为可配置面、`result.py` 说生产 provenance 由缓存层构造、`__init__.py` 门面宣称缓存能力、`protocol/handshake.py`/`domain/symbol.py` 各一处；文档侧 `docs/providers/README.md` 的 **`### bounded cache` 整节 6 行**在规定 cache key/fingerprint/provenance/cache-hit 语义（描述一个已被物理删除的层，且 §13 CI 清单列着 `cache hit -> …`），`docs/api/interfaces.md` 6 处签名带 `max_age`，README 写"`allow_stale` 显式放行"（它实际恒被拒绝） | **已清偿**（2026-09-19）：① **旋钮整体物理删除**（不留别名）：字段、`build()` 形参、校验、normalize 与 9 个文件的全部透传一并删；新鲜度口径归 `currentness`，执行预算归 `deadline_ms`，二者都在 fingerprint 之内；`allow_stale` 的拒绝文案改为说明**为何**无对象可作用（"过期容忍没有可作用的对象，新鲜度口径请用 currentness"），构造期 ergonomic 折叠不变；② **散文门禁**（新增 `test_production_prose_never_claims_a_data_cache`）：按 AST 扫 `tstdx/` 全部模块/类/函数 docstring 与 `#` 注释里的 `cache|caching|缓存|single-flight` 词根，只放行 10 条**逐条给出口径来源**的形状（英文否定句、"零缓存/不存在…缓存"、`cache_tier` 证明字段、`hq_cache`/`__pycache__` 字面量、`functools` 纯函数记忆化、`RankingStore`/`disk cache` 主站排名、`tools/` 进程内解析复用、"服务端缓存"外部事实），其余一律红；配 `test_pure_function_memoization_claim_is_true` 反向核验"宣称 LRU 记忆化"的文件里真的挂着 `lru_cache`；③ **幻影开关门禁**（`test_every_query_spec_field_is_consumed`）：分母取 `dataclasses.fields(QuerySpec)`，判据是"有没有非 `self` 的属性读取"，豁免表 `_QUERY_SPEC_STORE_ONLY_FIELDS = {options_json}` 由 `test_query_spec_store_only_fields_are_still_reached` 自检（该字段必须仍被 `json.loads` 解码、且 `plan.spec.options` 仍是 executor 输入），两条都带"扫描器零命中即自曝失明"的自我校验；④ **首轮抓到 8 处散文红，全部改写散文而非放宽门禁**：4 处是否定句被换行截断（否定词与 cache 词根不同行），2 处是豁免表缺了合法形状（`live elsewhere`、`服务端缓存`），另删掉一条匹配不到任何真实代码的死豁免；⑤ **变异验证 6 条全部 RC=1 且各自指名**（kernel 反宣称缓存 → 指名 `tstdx/runtime/kernel.py`、撤销"服务端缓存"豁免 → 指名 `adapters_baidu.py`、注入无人消费字段 `phantom_knob` → 报 `['phantom_knob']`、executor 的 `plan.spec.options` 改名 → 报"options 袋不再是执行面输入"、`options_json` 不再解码 → 报"豁免不再成立"、在无 `lru_cache` 的文件宣称 LRU → 报"宣称 LRU 记忆化却没有 lru_cache"），**其中第 3 条先跑成 RC=0，暴露守卫自身的缺陷**：`dict.fromkeys(keys, set[str]())` 让所有字段共享同一个集合，任一字段被读就全体"已被消费"——幻影门禁当时是瞎的，改成推导式后才红；⑥ **复测（同一轮日志）**：守卫文件 9 项 RC=0，整仓离线 `-m "not network"` junit **3341 tests / 0 failures / 0 errors / 5 skipped**、`FULL_RC=0`（与第 19 步孤立 worktree 的 3337 差 4，正是本步新增的 4 条守卫），`--cov=tstdx` **80.59%**（日志明写 `Required test coverage of 77.0% reached`，阈值 77 未下调）；`ruff check`（`tstdx/`+`tests/`+`scripts/`）、`ruff format --check`（457 files）、`mypy`（CI 参数）、originality `--strict`（`Total: 189 Suspicious: 0`）、`spec_audit --json --strict`（`coverage_pct: 100.0`）、`golden_audit --gate --require-markets`、reachability `--strict`（无未登记孤儿 ✓）、`contract_audit --ci`（**63 契约 / 155 业务 capability**，与第 17/19 步逐项相同）、docs links（82 文件）**全部 RC=0**；⑦ **残留 `max_age` 只在两类地方**：`docs/archive/plans/*`（历史方案，按"历史不改写"口径保留）与守卫里指认它的注释/断言字符串。同一格失明在文档面的补集仍在：`docs/providers/*.md` 的 per-provider 承诺长文（`FreshnessViolation` 一类）尚未纳入 `_EXACT_CLAIMS`，见 F-44 |
 | F-44 | P1（对外契约类：错误码树里有从未发生的叶子） | **49 个错误类中 7 个叶子没有任何 raise 站点，其中 2 个是文档明文承诺的对外行为**（Phase 5 第 20 步顺带实测，AST 遍历 `tstdx/` 全部 `raise` 目标与类继承树）：真正的基类可以只被继承——`TransportError`（6 个子类全部有 raise）、`StreamError`（`SubscriptionError` 有）、`ProfileError`（`ProfileUndetectable` 有）都属正常；**从未被抛且无被抛子类**的是 `SourceUnavailable(E7050)`、`FreshnessViolation(E4060)`、`UnknownCommand`、`ChecksumMismatch`、`AntiSpiderBlocked`、`BackpressureOverflow`、`GapUnfilledError` 7 个。前两处不只是"没用到"，而是**对外承诺了一个不会发生的行为**：`docs/providers/README.md` §12 写"规范语义：`SourceUnavailable == selected Provider unavailable`"并规定各 Provider 文档统一用它，`tstdx/errors.py:494` 的 docstring 也说"上层可包装成本异常并记录 provider/channel/capability 后结束本次 Query"——而全仓没有一个包装站点（Provider 不可用时用户实际拿到的是 `ConnectionFailed`/`AllHostsUnreachable`/`WebSourceError` 等传输层原异常）；`docs/providers/tdx.md:151` 写"无法证明满足 freshness profile 时严格模式返回 `FreshnessViolation`"，而运行期**没有任何 currentness 校验器**（`currentness` 只是进 plan 的声明口径）。与 F-43 同族（幻影开关），只是这次幻影在异常树上 | **未清偿——需用户裁决，本轮不擅自改对外错误契约**：三条待选路径 (a) 接线：在 Provider 失败路径统一包成 `SourceUnavailable`（context 记 provider/channel/capability），并为 `currentness` 落一个可判据的运行期校验器，无法证明时抛 `FreshnessViolation`；(b) 改口径：把 §12 与 `tdx.md` 的承诺改写为"实际抛点即传输层异常"，并从 `__all__` 与 E 段树里删掉不打算兑现的叶子（clean break，与 F-40/F-41 的删除口径一致）；(c) 折中：显式登记为 taxonomy placeholder，并加门禁禁止文档承诺未接线的错误类。本轮只把事实与分母钉进本文（判据可复算），**未**新增门禁——判据一旦落笔就必须先定 (a)/(b)/(c)，否则会把"未兑现"写成契约（F-24 的教训同形）；该裁决与 F-13/F-16 的"不静默"口径、F-37 的 (b) 属同一次产品决定 |
 | F-45 | P1（可观测性类：分页终端把"空"读成"耗尽"，F-37 因此能在一片全绿里隐形） | **`bars()` 首页 0 条与"历史已经取完"共用同一个出口，调用方拿到的是"请求成功、恰好 0 根"**（Phase 5 第 21 步实测）。`tstdx/client/_mixin.py::_t_bars` 的分页循环里，空页出口是一行 `break  # 空页：历史耗尽（正常终止）`，紧随其后的截断判据 `len(bars) < count and drifted` 只在**锚点漂移**时成立——空首页因此既走不到告警、也走不到 `strict` 抛错，三张服务面同样看不见任何异常。F-37 在线冒烟实测到的现场正是这一形状：主站对 `0x052D` 只回 2 字节 `count=0` 空桩。与 F-43/F-44 同族（幻影开关、幻影叶子），但这一格更严重：**幻影在这里以"成功"的面目出现**，离线门禁的判据（"有返回、无异常"）永远满足，于是结构性失明不是缺一条断言而是缺一个区分。`_t_export_security_list` 的 `0x044D` 同形缺陷一并实测在案（首页 0 条 ⇒ 读成"这个市场没有证券"，而 0/1 两个市场必有数千标的）。一项旧测试 `test_client_f1.py::test_empty_first_page_no_warning` 用 `warnings.simplefilter("error")` 断言"空首页不许留痕"，**把缺陷本身钉成了契约** | **已清偿**（2026-09-19，`44b02fb`）：① 判据改为**耗尽只会表现为短页或次页空**，首页空响应是另一件事（该标的无此周期历史，或主站对这个命令只回空桩）；② **默认只加可观测性、不改数据**——首页空 → `UserWarning` 且返回仍是空序列（与旧行为逐字节一致），`strict=True` → `TruncatedDataError`（与既有漂移截断同级），`_t_export_security_list` 接同一判据；③ 那条把缺陷写成契约的测试改判为 `test_empty_first_page_warns`，理由写进 docstring，另新增离线回归 4 项，其中"次页空仍须静默"用 `simplefilter("error")` **反向**钉住，防止这次改动把正常耗尽一并变成噪声；④ `docs/errors.md` 的 `TruncatedDataError` 条目列出 `_mixin.py` 全部抛出点，**刻意不写条数**（F-42 的教训：数量抄本就是下一个过期点）；⑤ 变异验证 2 条（`empty_first_page = not seen`→`= False`、`if not out:`→`if False:`）各自行列失败——把判据退回静默路径必红。合树复测数字见 §1 第 21 步条目。**两个未闭合点如实登记**：`QueryResult` 没有 warnings 通道，这条告警只活在调用方进程 stderr，HTTP/WS/MCP 三面的 wire 里看不见"本次结果为首页空桩"；唯一业务入口 `Client.bars()` 没有 `strict` 形参（`strict` 只存在于 `TdxClient.bars`），经内核绑定的路径拿不到"必须完整"的语义。两处都要改 `tstdx/client/api.py` 与 `tstdx/result.py`，第 21 步落地时这两个文件正被并行会话编辑，故本步未代为决定——与 F-44 不同，它们是**内部形状**而非对外承诺，接线不引入新的对外契约，可与 F-18 一并处置 |
-| F-46 | P1（零缓存口径类，与 F-43 同族：`max_age` 的判据只覆盖一等字段，袋里的字符串键是它的补集） | **`allow_partial` 是折进 `options` 袋的 `max_age`**（Phase 5 第 22 步实测）：`QuerySpec.build(allow_partial=...)` 把它写进袋、`QuerySpec.allow_partial` 属性把它读回来，而全仓对它只有**一条校验**（"仅支持 quotes"），执行面 `tstdx/runtime/`、`tstdx/client/`、`tstdx/integration/` **零读取**——`BatchResult.partial` 由 `errors` 与逐 symbol 三态推导（`tstdx/batch.py:52-79` 要求 `partial` 与 `errors` 严格一致），所以它本来就是结果事实，不是可以被"放行"的策略。净效果：在 quotes 上设置它什么也不改变，在非 quotes 上只是提前报错；而 `Client.quotes_batch()` 根本不接受该参数，它只能经 `QuerySpec.build` / `options=` 这张通用面到达。第 20 步的字段门禁看不见它，因为 `dataclasses.fields(QuerySpec)` 里已经没有这个名额——**降级成袋里的字符串键，正是绕过"字段必须被消费"判据的那条路** | **已清偿**（2026-09-19）：① `build()` 形参与 `allow_partial` 属性物理删除（clean break，不留别名），quotes 之外的专属校验一并删除；② 新增 `tstdx.query.REJECTED_OPTIONS: dict[str, str]`（`allow_stale` + `allow_partial`，各带一句"为何无对象可作用"），`normalized()` 逐键当场抛 `ValidationError`，袋里的键从此**要么被执行面消费、要么明确拒绝**，没有第三种；③ 新门禁 `test_option_bag_keys_are_executed_or_rejected`：AST 取两处写入点的字面量键（`build()` 内折叠 + 生产代码 `QuerySpec.build(..., options={...})` 显式注入），与执行面实际读取的键（`options.get("k")`/`options["k"]`）求差必须为空，且每个 `allow_*` 形参必须落进袋里；消费扫描与调用点扫描各带"零命中即自曝失明"断言。同一轮把 README 与 `docs/providers/README.md` 里被拒键的手抄清单改成**按 `REJECTED_OPTIONS` 引用**（F-39/F-42：抄本必过期）；④ **变异验证 6 条**：未折叠的 `allow_noop` 形参 → `['allow_noop']（收下即丢）`、`build()` 内折叠幽灵键 → `幻影开关：['allow_noop']`、生产调用点注入 → `幻影开关：['phantom_key']`、分别改瞎消费扫描与调用点扫描 → 两条自曝断言各自命中、未变异对照 GREEN。首轮还暴露门禁自身一个**运算符优先级缺陷**（`folded | injected - rejected` 因 `|` 优先级低于 `-` 而让折叠键绕开拒绝集，`allow_stale` 被误报），加括号后修正——继第 20 步的 `dict.fromkeys` 共享集合之后，同类门禁第二轮又一次先红在自己身上；⑤ 复测数字见 §1 第 22 步 |
+| F-46 | P1（零缓存口径类，与 F-43 同族：`max_age` 的判据只覆盖一等字段，袋里的字符串键是它的补集） | **`allow_partial` 是折进 `options` 袋的 `max_age`**（Phase 5 第 22 步实测）：`QuerySpec.build(allow_partial=...)` 把它写进袋、`QuerySpec.allow_partial` 属性把它读回来，而全仓对它只有**一条校验**（"仅支持 quotes"），执行面 `tstdx/runtime/`、`tstdx/client/`、`tstdx/integration/` **零读取**——`BatchResult.partial` 由 `errors` 与逐 symbol 三态推导（`tstdx/batch.py:52-79` 要求 `partial` 与 `errors` 严格一致），所以它本来就是结果事实，不是可以被"放行"的策略。净效果：在 quotes 上设置它什么也不改变，在非 quotes 上只是提前报错；而 `Client.quotes_batch()` 根本不接受该参数，它只能经 `QuerySpec.build` / `options=` 这张通用面到达。第 20 步的字段门禁看不见它，因为 `dataclasses.fields(QuerySpec)` 里已经没有这个名额——**降级成袋里的字符串键，正是绕过"字段必须被消费"判据的那条路** | **已清偿**（2026-09-19）：① `build()` 形参与 `allow_partial` 属性物理删除（clean break，不留别名），quotes 之外的专属校验一并删除；② 新增 `tstdx.query.REJECTED_OPTIONS: dict[str, str]`（`allow_stale` + `allow_partial`，各带一句"为何无对象可作用"），`normalized()` 逐键当场抛 `ValidationError`，袋里的键从此**要么被执行面消费、要么明确拒绝**，没有第三种；③ 新门禁 `test_option_bag_keys_are_executed_or_rejected`：AST 取两处写入点的字面量键（`build()` 内折叠 + 生产代码 `QuerySpec.build(..., options={...})` 显式注入），与执行面实际读取的键（`options.get("k")`/`options["k"]`）求差必须为空，且每个 `allow_*` 形参必须落进袋里；消费扫描与调用点扫描各带"零命中即自曝失明"断言。同一轮把 README 与 `docs/providers/README.md` 里被拒键的手抄清单改成**按 `REJECTED_OPTIONS` 引用**（F-39/F-42：抄本必过期）；④ **变异验证 6 条**：未折叠的 `allow_noop` 形参 → `['allow_noop']（收下即丢）`、`build()` 内折叠幽灵键 → `幻影开关：['allow_noop']`、生产调用点注入 → `幻影开关：['phantom_key']`、分别改瞎消费扫描与调用点扫描 → 两条自曝断言各自命中、未变异对照 GREEN。首轮还暴露门禁自身一个**运算符优先级缺陷**（`folded | injected - rejected` 因 `|` 优先级低于 `-` 而让折叠键绕开拒绝集，`allow_stale` 被误报），加括号后修正——继第 20 步的 `dict.fromkeys` 共享集合之后，同类门禁第二轮又一次先红在自己身上；⑤ 复测数字见 §1 第 22 步。**第 23 步追记（本行的②当时言过其实）**：`REJECTED_OPTIONS` 只拦名单内的策略键，任意陌生键（`options={'max_age': 0}`）仍可入袋并被 `compile` 原样带出——"没有第三种"在字面上并不成立，实测见 §1 第 23 步；现已由 `EXECUTED_OPTIONS` 白名单补全，袋里的键从此真的只剩两种下场。
+| F-47 | P1（对外契约类：入参面的另一半） | **三张服务面对"未声明的请求字段"一律静默忽略，于是刚被删掉的旋钮在 wire 面上重新变成"看起来生效"**（Phase 5 第 23 步实测）。F-43/F-46 把 `max_age` / `allow_partial` 从构造面清掉后，同一个调用在三个入口上的下场并不一致：`Client.bars(..., max_age=0)` 与 `QuerySpec.build(..., max_age=0)` 都 `TypeError`，而 HTTP `GET /v13/bars/600519?max_age=0` 返回 **200 + 正常结果**——FastAPI 只绑定声明过的形参，多余的查询串参数无人过问；`POST /v13/query/{capability}` 只 `payload.get("args"/"kwargs"/"provider"/"channel"/"currentness")`（`runtime_http.py:79-96`），body 里其他键直接蒸发；WS `_dispatch` 全部经 `params.get(...)`（`runtime_ws.py:117-…`），未知 params 同样静默；MCP `tools/call` 把 `arguments` 原样交给 handler（`_server.py:218-221` 只做"是不是对象"的形状检查），而 9 张 `inputSchema` **没有一张声明 `additionalProperties: false`**（`mcp/_common.py` 的 `_str_prop`/`_int_prop`/`_list_of_strings` 产出的形状里根本没有这个键）——schema 因此既不构成约束也不构成拒绝。以上四条在同一轮以探针实测（`probe_f47.py`，孤立 worktree `ac49328` + 本步文件，`PROBE_RC=0`）：`Client.bars(..., max_age=0)` → `TypeError: Client.bars() got an unexpected keyword argument 'max_age'`、`QuerySpec.build('bars', symbols=[…], max_age=0)` → 同形 `TypeError`，而 `GET /v13/bars/600519?max_age=0` → **200** 且转发参数只有 `{provider, policy, period, count, start, adjustment, currentness}`（`max_age` 蒸发）、`POST /v13/query/rates` body 带 `max_age` → **200** 且转发只剩 `{provider:'boc', channel:None, currentness:'business'}`、WS `bars` 的 params 带 `max_age` + `bogus` → `"result" in out` 且 `error: None`，MCP 侧 `additionalProperties` 命中清单为 **`[]`（9 张 schema 全无）**。**同一轮还量出构造面的同形缺口**：`REJECTED_OPTIONS` 只拦已知策略键，任意键仍可入袋——`QuerySpec.build('rates', provider='boc', options={'max_age': 0})` 通过 `normalized()`，`QueryPlanner().compile(spec)` 原样带出 `options == {'max_age': 0}`，而 `Client.execute(spec)`（`tstdx/client/api.py:90`，公开方法）正是这条袋路径的公开落点，故第 22 步"剩下的风险需要调用方自己构造"一句应当读作"调用方经 `Client.execute` 就能构造"。**这一格本步已就地清偿**：`normalized()` 现按 `tstdx.query.EXECUTED_OPTIONS` 白名单 fail-closed，`options={'max_age': 0}` 当场报 `unknown_options=['max_age']`（变异验证见 §1 第 23 步），于是 F-47 的未决面收缩为下面这三张 wire 面。**同一轮把"已声明字段"这一半钉住了**：新增 3 条门禁实测 10 条 HTTP 路由的每个形参都进入执行路径、9 个 MCP 工具的"声明属性 ↔ handler 读取"双向相等、`METHODS` 名单与分派分支双向一致（其中 `trades` 经 `method in {...}` 分派，扫描必须认识集合字面量，否则门禁自己先误报）。剩下没钉的是"未声明字段"这一半 | **未清偿——需用户裁决，本轮不擅自收紧对外请求契约**：(a) 三面 fail-closed——HTTP 查询串与 body、WS `params`、MCP `arguments` 统一按白名单核对，未知键即 `ValidationError` / `ERR_INVALID_PARAMS`，并让 MCP schema 的 `additionalProperties: false` 真正被执行（只加 schema 不加执行 = 把 F-44 那格"文档承诺一个不会发生的行为"复制到入参面）；(b) 维持宽容 + 把口径写进 `docs/api/*` 与 MCP 工具描述，并纳入事实型文档门禁，让"未声明字段被忽略"成为显式承诺而非沉默；(c) 折中——JSON 入参面（POST body / WS params / MCP arguments）fail-closed，HTTP GET 查询串维持宽容（浏览器与代理会追加 `_=…` 一类缓存穿透参数，严格化会误伤）并把这处不对称写进文档。**为什么不自行拍板**：与 F-44 同格，这是对外契约——(a) 会让今天返回 200 的请求开始返回 4xx，属破坏性变更；判据本身已可复算（三面各自的读取点即白名单），故先钉事实与三条路径，与 F-13/F-16/F-37/F-44 一并裁决 |
+| F-48 | P1（零缓存口径类，与 F-43 同族但深一层：幻影不在字段上，而在字段折进的对象里） | **`deadline_ms` 被规划器折进 `plan.budget` 之后再无人读，于是"查询总预算"是一张对外收、对内作废的支票**（Phase 5 第 24 步实测，AST 扫 `tstdx/` 全部 `plan.X`/`*.plan.X`/`spec.X`/`*.spec.X` 读取点）。`QuerySpec.deadline_ms` 带着 `build()` 形参与 `> 0` 校验住在 `tstdx/query.py`，`QueryPlanner.compile()` 把它折算成 `QueryPlan.budget: ExecutionBudget`，而 `ExecutionBudget.ensure_remaining()` / `remaining_s()` 两个方法在 `tstdx/` 内**零调用点**——执行面每一跳的 socket 超时自始至终取的是配置值 `DirectProviderExecutor.timeout`。后果不是"数值差一点"而是**方向相反**：调用方要 250ms 预算，仍然拿到 5 秒（`tstdx.toml` 调到 30 秒时更糟）的挂起容忍；`min()` 之所以从未生效，是因为根本没人取小。第 20 步的字段门禁抓不到它，因为判据是"`QuerySpec` 字段有没有被读到"，而 `deadline_ms` 的读取点全在规划器自己身上（折进 budget 的那一行）——**规划器自读被算成了消费，而它只是搬运**。**同一轮实测另一处同形失真**：`ExecutionBudget` 的 docstring 写着 "shared by the whole logical query"，但 `policy` 扇出会为每个 symbol 重新 `compile()`、从而重新计时，该句只对单次 `execute()` 成立 | **已清偿**（2026-09-19，`524c687`）：① 执行面新增唯一取数口 `DirectProviderExecutor._hop_timeout(plan)` = `min(配置 timeout, budget.remaining_s())`，并先跑 `ensure_remaining("provider_request")`——**预算已耗尽时在建立任何连接之前**抛 `ReadTimeout`；② 该读数贯穿每一跳：`_tdx_client(timeout)` 改为收形参（7 个 `_tdx_*` 直调执行器 + composed 原始读全部经它），`_migrated_capability` 一次取值 `hop` 后分发给 `WebQuoteSession` / `F10Client` / ex·goods·mac 族客户端 / `direct_adapter` / `_web_adapter_call` / `_composed_call`（后者签名从此强制要求 `timeout`），5 个 Web 直调执行器（`_web_quotes`/`_tencent_bars`/`_sina_bars`/`_eastmoney_bars`/`_baidu_bars`）各取一次；③ **默认路径可证明未变**：`deadline_ms` 默认 5000 与 `[core] timeout` 默认 5.0 同值，故 `min()` 在默认配置下逐字节等于旧行为，专门留一条断言钉住（`== 5.0`），本步不引入任何默认超时收紧；④ 判据补齐：字段侧改为"读的人必须在执行面"（`tstdx/query.py` 自身的读取不算），`spec → plan.budget → 执行面` 这条折叠链由 `QueryPlan(...)` 构造处的 AST **推导**而非手抄名单（F-39 口径），另点名核验 `budget` 确由 `deadline_ms` 承载；⑤ **结构判据而非逐函数断言**：`self.timeout` 在 `executor.py` 里只允许被 `_hop_timeout` 读一次，其余任何函数出现即红——逐函数写断言追不上"新增一个直调执行器"，变异 M3 正是首轮从这条缝里活下来的（当时只有 `_tencent_bars` 被测到），补结构判据后同一变异点名 `test_web_route_also_gets_the_bounded_timeout` 与结构判据双双变红；⑥ `ExecutionBudget` docstring 的"whole logical query"措辞**本步未改**：该文件（`tstdx/query.py`）测量期间正被并行会话编辑（第 23 步的 `EXECUTED_OPTIONS`），按其 docstring 只描述对象自身契约的方式重写属下一轮；⑦ **本步判据的已知边界**：预算约束的是每一跳开始时的超时上界，不是硬取消——一跳已经发出请求后只能靠 socket 超时回来，故总墙钟时间上界是"deadline + 最后一跳的容忍"，且多跳累计会随重试增长（每跳重读 `remaining_s()`，只会越给越少，不会放大）；`stream` / `trade` 两张面不经执行器，因此不受该预算约束。复测与变异数字见 §1 第 24 步 |
+| F-49 | P1（重复实现类：F-45 的判据被一份影子实现绕开） | **`security_list_all` 在 composed 面自带第二份游标分页，而它恰好是 F-45 刚修完那一族的漏网之鱼**（Phase 5 第 24 步实测）。`TdxClient.export_security_list` 早已有一份带页数上限、短页判据与空首页告警（第 21 步）的实现，`MigratedCapabilityBinding("security_list_all", …, "composed", "security_list_all")` 却在 `DirectProviderExecutor._composed_call` 里另写了一条 `while True` + `start` 游标循环：它**没有页数上限**（主站回桩时按 `page_size` 无界自增）、**空首页静默**（`if not page: break` 直接返回 `[]`），因而第 21 步给它立的判据永远覆盖不到这条路径；`catalog/capability.py::_validate_composed` 还同时为它保留了 `required`/`allowed` 参数名单，把影子实现写进了契约校验。**实测口径如实**：`0x044D SECURITY_LIST` 在 `COMMANDS` 里是 `STATUS_OFFLINE`，`_guard_offline` 会先 fail-fast，故这条路径今天不会返回错数据——缺陷是**形状**（一旦该命令解封或有人复用这条 composed 路径，无界循环与静默空页立刻生效），不是当场的数据事故 | **已清偿**（2026-09-19，`524c687`）：① 绑定改指真相源 `("tdx_client", "export_security_list")`——页数上限、短页判据、空首页告警从此只有那一处，F-45 的判据自动覆盖这条能力；② `_composed_call` 里那段 `while True` 游标循环**物理删除**（clean break，不留兼容分支），`_validate_composed` 的 `required`/`allowed` 两张表同时失去 `security_list_all` 条目（能力目录仍由绑定表生成，对外 capability 名与签名不变）；③ 反向门禁 `test_security_list_all_is_not_a_second_pagination_implementation` 钉两件事：绑定 `(backend, method)` 必须仍是 `("tdx_client", "export_security_list")`，且 `_composed_call` 函数体内**不允许出现任何 `ast.While`**——判据落在形状上而非命令名清单，故"给另一条能力再写一份游标循环"同样当场变红；④ **变异验证 2 条各自指名**：改回 `"tdx_client", "security_list"`（原始单页调用）→ 报绑定元组不等；在 `_composed_call` 里插回一个 `while True` → 报 `composed 面重新出现了游标分页循环（第二份实现回来了）`。**本步判据的已知边界**：结构检查只覆盖 `_composed_call` 这一处宿主；若第二份实现以后落在别的函数里，需要把同一扫描扩到执行器全部成员——已按"未登记孤儿一律接线或删除"的口径留在 F-45 的尾条一并处置 |
 
 ---
 
@@ -980,6 +983,136 @@
       `normalized()`，对任何来源的键一律生效，所以"被拒的键"不依赖字面量可见性；剩下的
       风险只有"塞进一个既不被拒也没人读的键"，那需要调用方自己构造，且其后果与本步删除前
       的 `allow_partial` 相同（无效果），不再新增生产侧幻影。
+    - **第 23 步对该边界的修正（写在原条目之外的同一处）**：探针实测显示这条边界比当时的
+      措辞更宽——`Client.execute(QuerySpec.build(..., options={'max_age': 0}))` 是公开路径，
+      且 `REJECTED_OPTIONS` 只在取值为真时命中（`allow_stale=False` 一样能入袋）。本步把
+      "不被执行面读取"整体变成构造期错误（`EXECUTED_OPTIONS` 白名单），故上述"剩下的风险"
+      已经不存在；字面量局限仍在，但它现在只影响门禁的**告警覆盖面**，不影响运行期拒绝。
+
+23. ✅ **入参面收口：三张服务面的"已声明字段"钉住，`options` 袋改为 fail-closed 白名单
+    （2026-09-19，见 §0.3 F-46 追记与 F-47 登记）**：F-43/F-46/F-27/F-28 已经分别给
+    `QuerySpec` 字段、袋里键、CLI 选项立过"收下就必须被消费"的判据，唯一没有对应物的是
+    **对外服务面的签名**——路由形参与 JSON Schema 属性同样是"看起来生效"的入口。本步补上
+    这三条门禁，并顺手把袋的判据从"名单内的键要有理由"升级为"袋里只许有被执行面读取的键"。
+
+    - **三条新门禁**（`tests/runtime/test_migrated_surfaces_v13.py`，与三面既有委托回归同处
+      一个文件）：① `test_http_route_parameters_all_reach_the_execution_path`——AST 取带
+      `@app.get/@app.post` 装饰器的函数（实测 **10** 条，下限 8 条自曝），每个形参必须出现在
+      同一函数体的 `ast.Load` 名字里，否则报"查询参数没有进入执行路径（幻影开关）"；
+      ② `test_mcp_input_schema_and_handler_agree_in_both_directions`——9 个 `ToolSpec` 的
+      `inputSchema.properties` 与其 handler 从 `args` 袋读出的字面量键**双向相等**（多一个是
+      幻影开关，少一个是未声明输入）；③ `test_ws_declared_methods_are_all_dispatched`——
+      `RuntimeJsonRpcHandler.METHODS`（**10** 项）与 `_dispatch` 里的分派分支双向相等。
+      三条各带"扫到 0 个即门禁自身失效"的断言（路由 <8、工具 <5、分派分支 <5、schema 属性
+      为空都直接报"扫描自身失效"），沿用第 20/22 步确立的自我校验形状。
+    - **`trades` 教给扫描器的一课（第三条判据首轮先红在自己身上）**：WS 的分派里
+      `snapshot`/`minute`/`trades` 共用一个 `if method in {"snapshot", "minute", "trades"}`
+      分支（`runtime_ws.py:191`），只认 `method == "字面量"` 的扫描把 `trades` 报成"声明却未
+      分派"——**这是假红，但恰好证明判据真的在比对两侧**。补上 `ast.Set`/`Tuple`/`List`
+      比较项后 GREEN；变异 `G3b` 把该分支的集合比较识别整段关掉，判据立刻重新指名
+      `['trades']`，把这条形状钉成可回归的判据。
+    - **袋改为 fail-closed 白名单（`tstdx/query.py`）**：新增 `EXECUTED_OPTIONS`
+      （`args` / `kwargs` / `market`，即执行面真实读取的三处），`normalized()` 在
+      `REJECTED_OPTIONS` 之后核对其余键，凡不被执行面读取一律 `ValidationError`（context 带
+      `unknown_options` 与名单本身）。这一步让 F-46 条目里"袋里的键从此没有第三种"那句
+      **第一次真正成立**——`options={'max_age': 0}` 与 `options={'allow_stale': False}`
+      （假值绕过了策略键专属理由）现在都在构造面当场被拒，而不是被 `Client.execute` 带进
+      执行面静默忽略。白名单是一份**刻意留下的抄本**，由袋级门禁的第三条断言把它钉回真实
+      读取点：名单多一个键报"袋白名单与执行面实际读取点脱节：名单多 ['max_age']"，少一个键
+      报"名单漏 ['market']"，两个方向都红，抄本因此不可能悄悄过期。
+    - **配套测试**：`test_unknown_option_key_is_rejected_even_when_falsy`（三种形状：陌生键、
+      假值策略键、`None` 值键）、`test_every_executed_option_key_still_compiles`（以
+      `sorted(EXECUTED_OPTIONS)` 为分母，白名单新增键而测试没配取值即报"缺探针取值"）；
+      `test_options_order_does_not_change_query_identity` 原先用 `{"a":1,"b":2}` 这类任意键
+      演示指纹顺序无关，改为袋内真实键——**判据不该靠违规输入才成立**（同 F-45 那条把缺陷
+      写成契约的旧测试同理）。
+    - **变异验证 9 条（每条 RC 取自命令自身，`MUTBAG_RC=0` / `mut_wire` 同轮 5 条 RC 全中）**：
+      袋侧 M1 删掉白名单检查 → `DID NOT RAISE ValidationError`；M2 名单加执行面不读的键 →
+      "名单多 ['max_age']"；M3 名单删掉 `market` → "名单漏 ['market']"（同轮接受面测试也红，
+      真实入参开始被拒）；M4 让策略键的专属理由永不触发 → 参数化测试报"实际消息是通用白名单
+      消息"，顺带量到一个事实：**白名单已经覆盖"拒绝"这个动作本身，被覆盖的只是"为什么拒绝"
+      这句话**；wire 侧 G1 给 `quotes()` 加不使用形参 → `['unused_probe']`；G2 给
+      `query_capability` 的 schema 加 `max_age` 属性 → "声明却无人读取 ['max_age']"；
+      G3 在 `METHODS` 里声明不存在的 `history` → "声明却未分派 ['history']"；G3b 见上；
+      未变异对照 `RC=0`。
+    - **复测（同一轮日志；HEAD `ac49328` + 本步 9 个文件的孤立 worktree `wt_wire`，因并行会话
+      正在改 `tstdx/runtime/executor.py`、`tstdx/catalog/capability.py`、
+      `tests/sink/test_local_day.py` 与 `tests/runtime/test_kernel_config_wiring.py`）**：
+      整仓离线 `-m "not network"` junit **3354 tests / 0 failures / 0 errors / 5 skipped**、
+      `ISO2_FULL_RC=0`、161.6s，`--cov=tstdx` **80.59%**（日志明写
+      `Required test coverage of 77.0% reached. Total coverage: 80.59%`，阈值 77 未下调）。
+      条数可核对：第 22 步 3347 + wire 门禁 3 + 袋侧新测试 4 = **3354**。本步在同树先跑过
+      一轮只含 wire 门禁的测量（**3350 / 0 / 0 / 5**、80.58%），随后加袋白名单再跑到 3354，
+      两次都绿，权威数字取后一次。同树 originality `--strict`（`Total: 189 Suspicious: 0`）、
+      `spec_audit --json --strict`（`coverage_pct: 100.0`）、`golden_audit --gate
+      --require-markets`、reachability `--strict`、`contract_audit --ci`（PENDING 仍是既有的
+      Typed Query 契约缺口，本步未新增）、docs links（82 文件）、`mypy tstdx/`（CI 参数）、
+      `ruff check tstdx/ tests/ scripts/`、`ruff format --check tstdx/ tests/ scripts/`
+      （457 files already formatted）**全部 RC=0**。
+      **一处测量口径纠正**：本轮先用 `ruff format --check .` 量到 RC=1，7 个"未格式化"文件
+      全在 `docs/**.md`（`ruff` 只在被显式指到路径时才格式化 markdown 代码块），而 CI 与实际
+      门禁口径是 `tstdx/ tests/ scripts/`（`.github/workflows/ci.yml:37`）；按 CI 参数复跑
+      `RC=0`。教训与 F-21 同形：**判据的失败必须先在门禁真实定义的范围内复现，才允许登记**。
+      主树同轮 subsets 复跑只有一条红，且属并行会话在途文件
+      （`test_kernel_config_wiring.py::test_default_deadline_leaves_the_configured_timeout_intact`
+      断言 `timeout == 5.0` 而实得 `4.9999891`，是剩余时间取整的形状），本步未代为修改。
+    - **F-47 登记为待裁决**：三面（HTTP 查询串与 body、WS `params`、MCP `arguments`）对
+      **未声明**请求字段仍一律静默忽略——探针实测见 §0.3 F-47。与 F-44 同格，属对外契约的
+      破坏性变更（今天返回 200 的请求会开始返回 4xx），故本轮只钉事实与三条候选路径
+      (a)/(b)/(c)，不代为拍板；袋侧因已有 F-46 的同类先例（clean break 口径）而当场清偿。
+
+24. ✅ **`deadline_ms` 不再是折进对象就完事的幻影旋钮：预算第一次约束每一跳；分页也
+    只剩一份实现（2026-09-19，见 §0.3 F-48/F-49）**：第 20 步删掉 `max_age` 时给字段
+    立了"必须被消费"的判据，但该判据把**规划器自读**算成消费，于是同一个缺陷换了一个
+    更深的位置活下来——`deadline_ms` 被折进 `plan.budget`，`ExecutionBudget` 的两个方法
+    从此零调用点。本步同时补上 F-45 那一族的漏网：`security_list_all` 的影子分页。
+
+    - **取数口只有一个**：`DirectProviderExecutor._hop_timeout(plan)` 先 `ensure_remaining`
+      再 `min(self.timeout, budget.remaining_s())`；`_migrated_capability` 一次取值 `hop`
+      分发给 6 类后端，7 个 `_tdx_*` 直调执行器经 `_tdx_client(timeout)`，5 个 Web 直调
+      执行器各取一次，`_composed_call` 的签名从此强制要求 `timeout`。
+    - **不静默改变默认行为**：默认 `deadline_ms=5000` 与默认 `[core] timeout=5.0` 同值，
+      `min()` 在默认路径上是恒等操作，留一条 `== 5.0` 的断言把这个"不变"也钉住；
+      预算耗尽时的 `ReadTimeout` 发生在**构造客户端之前**，断言里连"零个客户端实例"
+      都要核。
+    - **判据形状的两处教训**：① 字段侧改为"读的人必须在执行面"（跳过 `query.py`），
+      `spec → plan.budget` 的折叠关系由 `QueryPlan(...)` 构造处 AST 推导，不抄名单；
+      ② 逐函数断言追不上新增直调执行器——首轮变异 M3（`_web_quotes` 退回 `self.timeout`）
+      在只测 `_tencent_bars` 时活了，补一条"全文件只允许 `_hop_timeout` 读 `self.timeout`"
+      的结构判据后，M3 与另一条新造的 M8（TDX 跳绕过预算）双双变红。继第 20/22 步之后，
+      这是同类门禁**第三轮**先红在自己身上。
+    - **分页收口**：`security_list_all` 改绑 `TdxClient.export_security_list`，composed 面
+      那段无页数上限、空首页静默的 `while True` 物理删除，`_validate_composed` 的两张参数
+      名单同步失去该条目；反向门禁断言 `_composed_call` 函数体内**没有任何 `ast.While`**——
+      命令名清单不是判据，形状才是。
+    - **变异验证 8 条全部 RED 且各自指名**（M1 `min()` 退化成 `self.timeout`、M2 删掉
+      预检查、M3 Web 跳绕过预算、M8 TDX 跳绕过预算、M4 绑定改回单页 `security_list`、
+      M5 游标循环插回 composed、M6 豁免表漏掉 `currentness`、M7 身份读取函数改名使豁免
+      前提失效），harness 结束后三个被改文件 `md5sum -c` 全部 OK——**测量过程零残留**。
+    - **本步抓到并修的是自己**：主树首轮整仓 2 条红，根因
+      `TypeError: lambda() takes 0 positional arguments but 1 was given`——
+      `tests/sink/test_local_day.py` 的 `_tdx_client` 替身签名比生产窄（F-28 已给同类
+      立过判据："测试替身比生产接口更窄"正是幻影参数的成因）。改的是替身签名并加一句
+      理由，**未放宽任何断言**。
+    - **复测（同一轮日志；HEAD `ac49328` + 本步 4 个文件的孤立 worktree）**：基线同树实测
+      `3347 tests / 0 failures / 0 errors / 7 skipped`（`BASE_RC=0`），加本步文件后
+      junit **3356 tests / 0 failures / 0 errors / 7 skipped**、`ISO_FULL_RC=0`，条数可核对：
+      `3347 + 9`（`test_kernel_config_wiring.py` 由 6 项扩到 15 项）。`--cov=tstdx`
+      **80.62%**（日志明写 `Required test coverage of 77.0% reached`，阈值 77 未下调，
+      本步未新增或删除任何 skip 标记）。同树 originality `--strict`（`Total: 189 Suspicious: 0`）、
+      `spec_audit --json --strict`（`coverage_pct: 100.0`）、`golden_audit --gate
+      --require-markets`、reachability `--strict`（无未登记孤儿 ✓）、`contract_audit --ci`
+      （**63 契约 · 155 capability**，与第 17/19/20/22 步逐项相同）、docs links（82 文件）、
+      `ruff check`、`ruff format --check`（427 files）、`mypy tstdx/`（CI 参数）**全部 RC=0**。
+      主树同轮另测得 `3359 / 0 / 0 / 7`、80.63%——多出的 3 项来自并行会话在途的第 23 步
+      门禁，与本步零交集，故权威数字取孤立树（第 18/19/20/22 步同法）。
+    - **账本与本步代码不在同一提交**：代码与测试 4 个文件已作为 `524c687` 单独提交；
+      本条与 §0.3 F-48/F-49 落在并行会话正在编辑的同一份账本文件上，属第 20 步已登记的
+      共享账本风险——若本提交带上了对方在途的账本行，史实以对方提交为准。
+    - **登记未办**（本步不动，等裁决或等文件腾出）：`ExecutionBudget` docstring 的
+      "shared by the whole logical query" 对 `policy` 扇出不成立（每个 symbol 重新
+      `compile()` 即重新计时），该文件正被并行会话编辑；F-45 尾条的两处（`QueryResult`
+      warnings 通道、`Client.bars()` 的 `strict`）与 F-44/F-47/F-18 同批待裁决。
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
 
@@ -1094,5 +1227,6 @@
 - [ ] 发布 `v1.1.0-dev.1` tag：⏳ **仍待用户明确确认**，且本轮冒烟暴露 **F-37（P0：7709
       K 线在当下可达主站回 2 字节空桩却被读成成功）与 F-38（该缺陷在门禁里结构性隐形）**，
       需先取 F-37 的 (a)/(b)/(c) 处置裁决；另有工作日盘中复跑（stream 0 帧、字段错位）、
-      F-18（`tstdx/providers/http` 守卫未接线）与 F-44（7 个从未被抛的错误叶子，其中
-      `SourceUnavailable`/`FreshnessViolation` 两处被文档明文承诺）三项待裁决
+      F-18（`tstdx/providers/http` 守卫未接线）、F-44（7 个从未被抛的错误叶子，其中
+      `SourceUnavailable`/`FreshnessViolation` 两处被文档明文承诺）与 F-47（HTTP/WS/MCP 三面对
+      **未声明**请求字段静默忽略，第 23 步已探针实测并登记三条路径）四项待裁决

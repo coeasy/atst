@@ -277,7 +277,8 @@ v17 运行期不做结果缓存：每一次公开查询都编译为一个 `Query
 - replay/synthetic 或跨 Provider 的 payload 不能冒充当前 Provider 的真实数据；
 - freshness mode 由 Provider 如实声明：历史窗口返回后仍是 `historical_closed`，不得因为"数据还新"被重标为 `current_series`；
 - 调用方要控制的是新鲜度**口径**（`currentness`）与执行**预算**（`deadline_ms`），不是过期容忍度
-  或部分放行——`tstdx.query.REJECTED_OPTIONS` 里的策略键在直连执行面上恒被当场拒绝。
+  或部分放行——`options` 袋里只有 `tstdx.query.EXECUTED_OPTIONS` 的键会被执行面读取，
+  其余键（含 `tstdx.query.REJECTED_OPTIONS` 的策略键）在直连执行面上恒被当场拒绝。
 
 ## 12. Error
 

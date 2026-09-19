@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import dataclasses
+from typing import Any
 
 import pytest
 
 from tstdx.errors import ValidationError
 from tstdx.providers import resolve_provider
-from tstdx.query import REJECTED_OPTIONS, QueryPlanner, QuerySpec
+from tstdx.query import EXECUTED_OPTIONS, REJECTED_OPTIONS, QueryPlanner, QuerySpec
 
 
 def test_default_provider_is_tdx_and_quotes_bind_quotation() -> None:
@@ -175,6 +176,35 @@ def test_allow_partial_is_not_a_constructor_knob() -> None:
     assert not hasattr(QuerySpec, "allow_partial")
     with pytest.raises(TypeError):
         QuerySpec.build("quotes", symbols=["600519"], provider="tencent", allow_partial=True)
+
+
+def test_unknown_option_key_is_rejected_even_when_falsy() -> None:
+    """袋里的键只有两种下场：被执行面读取，或者当场被拒——不存在第三种。
+
+    ``allow_stale=False`` 这种"看起来无害"的假值尤其要看住：策略键的专属理由只在取值为真
+    时才用得上，假值若被放行，就等于把 F-43 删掉的 ``max_age`` 换了个写法重新收回袋里。
+    """
+    planner = QueryPlanner()
+    for payload in ({"max_age": 0}, {"allow_stale": False}, {"phantom_knob": None}):
+        spec = QuerySpec.build("quotes", symbols=["600519"], provider="tencent", options=payload)
+        with pytest.raises(ValidationError, match="不读取的键"):
+            planner.compile(spec)
+
+
+@pytest.mark.parametrize("key", sorted(EXECUTED_OPTIONS))
+def test_every_executed_option_key_still_compiles(key: str) -> None:
+    """白名单不许把真实生效的入参拒掉：名单里每个键都必须过得了构造面。
+
+    以 ``EXECUTED_OPTIONS`` 而非硬编码名单为分母，所以新增被执行面读取的键若忘了在这里
+    补一个取值，测试会指名"缺探针"而不是悄悄漏掉。
+    """
+    probes: dict[str, Any] = {"args": [], "kwargs": {}, "market": "0"}
+    assert key in probes, f"白名单新增了 {key}，但这里没有对应的探针取值"
+    QueryPlanner().compile(
+        QuerySpec.build(
+            "quotes", symbols=["sh600519"], provider="tencent", options={key: probes[key]}
+        )
+    )
 
 
 def test_bars_requires_single_symbol_and_positive_count() -> None:

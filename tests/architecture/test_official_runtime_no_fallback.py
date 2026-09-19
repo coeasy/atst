@@ -5,7 +5,7 @@ import dataclasses
 import re
 from pathlib import Path
 
-from tstdx.query import REJECTED_OPTIONS, QuerySpec
+from tstdx.query import EXECUTED_OPTIONS, REJECTED_OPTIONS, QuerySpec
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -263,6 +263,9 @@ def test_option_bag_keys_are_executed_or_rejected() -> None:
     下面走过——``allow_partial`` 的实际效果就是"quotes 上设了它什么也不改变"。
     判据覆盖两处写入点：``build()`` 内部的 ergonomic 折叠，与调用方在生产代码里
     直接传 ``options={...}`` 的字面量键（``client/api.py`` 的泛化调用面就走这条路）。
+    第三段判据管的是**读取侧的账本**：``normalized()`` 按 ``EXECUTED_OPTIONS`` 白名单
+    fail-closed，所以那份名单必须与实际读取点严格相等——名单里多一个键就是"接受却无人读"
+    （正是本步要消灭的形状），少一个键则会当场拒掉一个真实生效的入参。
     """
     folded, flags = _build_option_folds()
     injected, build_sites = _injected_option_keys()
@@ -273,6 +276,14 @@ def test_option_bag_keys_are_executed_or_rejected() -> None:
     assert silent == [], f"构造期折叠了无人消费的 option 键（幻影开关）：{silent}"
     dropped = sorted(flags - folded)
     assert dropped == [], f"build() 的 allow_* 形参没有落进袋里（收下即丢）：{dropped}"
+    whitelist = set(EXECUTED_OPTIONS)
+    assert whitelist == executed, (
+        f"袋白名单与执行面实际读取点脱节：名单多 {sorted(whitelist - executed)}、"
+        f"名单漏 {sorted(executed - whitelist)}"
+    )
+    assert whitelist.isdisjoint(REJECTED_OPTIONS), (
+        f"同一个键既声明被执行面读取又被声明为策略禁用：{sorted(whitelist & set(REJECTED_OPTIONS))}"
+    )
 
 
 def _build_option_folds() -> tuple[set[str], set[str]]:
