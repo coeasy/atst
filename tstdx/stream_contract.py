@@ -50,10 +50,14 @@ class StreamSpec:
 
 @dataclass(frozen=True, slots=True)
 class StreamPlan:
-    capability: str
+    """Exactly the values ``Client.stream`` hands to a worker.
+
+    ``capability`` and ``channel`` are deliberately absent: ``compile`` fail-closes
+    on both, and keeping a second copy in the plan would be a claim no code reads.
+    """
+
     symbols: tuple[str, ...]
     provider: str
-    channel: str
     interval: float
     diff_only: bool
     max_queue: int
@@ -93,10 +97,8 @@ class StreamPlanner:
             )
         PROVIDERS.require(provider, "quotes", channel=channel)
         return StreamPlan(
-            capability=capability,
             symbols=symbols,
             provider=provider,
-            channel=channel,
             interval=float(spec.interval),
             diff_only=bool(spec.diff_only),
             max_queue=int(spec.max_queue),

@@ -82,9 +82,41 @@ def test_web_pseudo_provider_is_rejected() -> None:
 def test_streaming_is_explicit_and_fails_closed_for_unbound_provider() -> None:
     plan = StreamPlanner().compile(StreamSpec.build("sh600519", provider="tdx"))
     assert plan.provider == "tdx"
-    assert plan.channel == "quotation"
     with pytest.raises(ValidationError):
         StreamPlanner().compile(StreamSpec.build("sh600519", provider="tencent"))
+    # canonical channel 是编译期事实，compile 对偏离它的一侧 fail-closed。
+    with pytest.raises(ValidationError):
+        StreamPlanner().compile(StreamSpec.build("sh600519", channel="quote"))
+
+
+def test_stream_plan_carries_only_the_fields_the_client_reads() -> None:
+    """``StreamPlan`` 的每个字段都必须由唯一消费方真正读取（F-55）。
+
+    旧形状里 ``plan.capability`` 与 ``plan.channel`` 由 ``compile`` 写入，而 ``tstdx/``
+    对它们的读取点是 0：唯一的"读取"是一条测试断言，而 compile 本身已经对两者
+    fail-closed——一条写给自己看的记录。删掉之后判据钉住剩下的形状：plan 字段清单
+    必须与 ``tstdx/client/api.py`` 里 ``plan.*`` 的读取集合逐字相等，新增字段没有接线
+    或读取幻影字段都当场变红。
+    """
+
+    import ast
+    from pathlib import Path
+
+    from tstdx.stream_contract import StreamPlan
+
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "tstdx" / "client" / "api.py").read_text(encoding="utf-8")
+    reads = {
+        node.attr
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "plan"
+    }
+    plan_fields = {item.name for item in fields(StreamPlan)}
+    assert plan_fields, "StreamPlan 已经没有字段了，判据自身失效"
+    assert reads, "api.py 里读不到任何 plan.*，判据自身失效"
+    assert plan_fields == reads, f"plan 字段与消费方读取不一致：{sorted(plan_fields ^ reads)}"
 
 
 def test_mcp_only_exposes_promoted_canonical_capabilities() -> None:

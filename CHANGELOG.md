@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed（v17 Phase 5 第 29 步 —— 流计划上两条只写不读的记录，F-55；**BREAKING**）
+
+- **`StreamPlan` 少了两个字段**：`capability`、`channel`。`StreamPlanner.compile()`
+  （`tstdx/stream_contract.py:65`）先对 `capability != "quotes"`、`channel != "quotation"` 逐条
+  fail-closed，再把两个结论原样抄进 plan；而 AST 扫 `tstdx/` 全部 189 个模块，对
+  `plan.capability`/`plan.channel` 的读取点是 **0**。`StreamPlan` 的唯一消费方是 `Client.stream`
+  （`tstdx/client/api.py:388`）与 `AsyncClient.stream`（`tstdx/client/api.py:512`），两者读走的只有
+  `symbols / provider / interval / diff_only / max_queue`——恰好是交给 worker 的实参。
+  `runtime/executor.py`、`tstdx/result.py`、`runtime/identity.py` 里的 `plan.provider`/`plan.channel`/
+  `plan.spec.capability` 全部属于 `QueryPlan`（同名不同物，逐处人工核对）。全仓对 `plan.channel`
+  唯一的"读取"是一条测试断言——它验的是规则的抄本，不是规则；`plan.capability` 连抄本读取都没有。
+- **为什么不接线而是删**：接线要把 `StatefulQuoteStream` 改成收 plan 而非具名参数，等于让公开的
+  `subscribe(symbols, interval=…, diff_only=…, max_queue=…)` 变成一个内部类型的投影；而今天只有
+  `provider=tdx` + `channel=quotation` 能通过编译，把这两个值再传一次不改变任何一次请求的成败。
+  编译期两条 `ValidationError` 原样保留，删掉的只是抄件。那条抄本断言改成行为断言：
+  `StreamSpec.build("sh600519", channel="quote")` 当场 `ValidationError`。
+- **门禁换了更强的判据**：新增 `test_stream_plan_carries_only_the_fields_the_client_reads`——
+  不再只问"每个字段有没有读者"，而是要求 `dataclasses.fields(StreamPlan)` 与 AST 扫
+  `tstdx/client/api.py` 得到的 `plan.*` 读取集合**逐字相等**：新增字段没接线是红，消费者读到幻影
+  字段也是红。防盲保险两处：`plan_fields` 非空、`api.py` 至少要读到一条 `plan.*`。变异验证：
+  **M1** 把 `capability` 以默认值加回 `StreamPlan` → RC=1 并点名 `['capability']`；**M2** 把扫描的
+  owner 名换成不可能命中的 `no_such_plan_var` → RC=1 报"api.py 里读不到任何 plan.*，判据自身失效"；
+  CONTROL 与还原后 RC=0。
+- **顺带暴露、本步不动（登记为 §0.3 F-56）**：为找 `StreamPlan` 的消费方而排查流式入口时发现，
+  CLI `stream` 是最后一条不经 `Client` 的数据命令——它自建 `QuoteStream`，因此完全跳过
+  `StreamPlanner` 的 tdx-only fail-closed。删抄件不掩盖它：判据本来就在编译期执行，只是此前
+  plan 上那份副本让它看起来像"计划面知道 channel"。
+- **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = `82f9a99` + 本步 4 文件，与本步提交树
+  逐文件同内容）**：离线全量 junit **3391 tests / 0 failures / 0 errors / 7 skipped**、
+  `SUITE_RC=0`、142.7s；`--cov=tstdx` **80.69%**（`Required test coverage of 77.0% reached`，
+  阈值 77 未下调）。同树 12 道门禁全部 RC=0：`ruff check`、`ruff format --check`（430 文件）、
+  `mypy`（0 error）、originality（Total 190 / Suspicious 0）、reachability（189 模块 / 172 可达 /
+  17 白名单）、`contract_audit --ci`（63 契约 · 155 capability）、`spec_audit --strict`
+  （44/44、100.0%）、golden 审计、adversarial、bridges、benchmark smoke、docs links（82 文件）。
+  共享树隔离：只提交 `tstdx/stream_contract.py`、`tests/runtime/test_v13_architecture_alignment.py`、
+  本文件与 `docs/REFACTOR_PLAN_V17_CLOSURE.md` 的 F-55/F-56 两行；本步测量期间并行会话把第 26 步
+  落成了 `82f9a99`（25 文件），提交基因此从 `a944964` 换到它，两者都不含我方未提交的改动。
+  **口径边界如实登记**：`142.7s` 与 `80.69%` 取自上面那一轮全量日志（上一轮同树读作 150.2s / 80.70%，
+  差在测量本身而非树），把它们写进本行是提交树与该轮日志之间唯一的差异；写入后在同一提交树另跑
+  `check_docs_links.py` 与 `pytest tests/architecture -q`（覆盖活文档↔代码判据），两道均 RC=0。
+
 ### Removed（v17 Phase 5 第 28 步 —— 注册表里第二套没人执行的市场词汇，F-54；**BREAKING**）
 
 - **`ChannelSpec` 少了两个公开字段**：`markets`、`notes`。23 个 channel 逐个写着
