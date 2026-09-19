@@ -124,6 +124,14 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 | `TSTDX_CONFIG_FILE` | `find_config_files` | 显式配置文件路径 |
 | `TSTDX_HOSTS` | `tstdx.transport.hosts` | 直接给主站列表（`host:port,host:port`） |
 | `TSTDX_FEEDBACK` / `TSTDX_FEEDBACK_ENDPOINT` / `TSTDX_FEEDBACK_STORE_DIR` | `tstdx.feedback` | 反馈数据的传输开关与落点 |
+| `TSTDX_WENCAI_COOKIE` | `tstdx.web.wencai` | i问财 `hexin-v` cookie（值写成 `v=<token>` 头）；本库不存储它 |
+
+`TSTDX_` 前缀是**保留命名空间**：库内代码从环境读取的每一个非 schema 变量都必须登记在
+`tstdx/config/loader.py` 的 `_RUNTIME_ENV_KEYS`，否则用户一旦设置它，strict 扫描就把整条
+配置加载判成拼写错误而 fail closed。`TSTDX_WENCAI_COOKIE` 曾漏登记：问财缺 cookie 时的
+错误消息让用户"设置 `TSTDX_WENCAI_COOKIE`"，而照做之后 `Client()` 直接抛
+`ConfigError`——按自己的指引修自己修不好的错（V17 第 43 步，F-69）。测试与工具用的开关
+因此**不得**占用该前缀。
 
 ## 5. fail-closed：不认识的键一律报错
 
@@ -166,6 +174,7 @@ reset_config()                         # 清空单例：下一次 get_config() �
 
 | 事实 | 测试 |
 |---|---|
+| 本文 §3 的键清单/默认值/取值范围、§4 的环境变量命名与专用变量表、§5 的报错消息，逐项对上 schema 与 loader | `tests/architecture/test_config_doc_contract.py` |
 | 写 `./tstdx.toml` ⇒ `Client()`/内核/传输层参数与文件一致 | `tests/runtime/test_kernel_config_wiring.py` |
 | `Config` 只有 5 段、阈值数字单源 | `tests/config/test_merge.py`、`tests/compatibility/test_local_gate_contract.py` |
 | 配置 → 池构造参数只有一个翻译点 | `tests/transport/test_pool_settings_from_config_contract.py` |

@@ -14,8 +14,13 @@
 
 环境变量命名规则：``TSTDX_<SECTION>_<KEY>``，全大写；
 值按 JSON → bool → int/float → 逗号分隔列表 → 字符串 的顺序解析。
-专用 runtime 变量（主站、显式配置文件、反馈传输开关）不属于 schema
+专用 runtime 变量（主站、显式配置文件、反馈传输开关、问财 cookie）不属于 schema
 配置命名空间，必须显式保留，不能被 strict schema 扫描误判成拼写错误。
+``TSTDX_`` 前缀是本库的保留命名空间：**代码从环境读取的每一个非 schema 变量都必须
+登记在 :data:`_RUNTIME_ENV_KEYS`**，否则用户一旦设置它，整条配置加载就会 fail closed
+（``Client()`` 直接抛 ``ConfigError``）——问财 cookie 曾这样自毁过一条官方指引，
+见 ``docs/REFACTOR_PLAN_V17_CLOSURE.md`` §0.3 F-69；漏登记由
+``tests/architecture/test_config_doc_contract.py`` 的派生判据当场报红。
 """
 
 from __future__ import annotations
@@ -53,6 +58,8 @@ _RUNTIME_ENV_KEYS = frozenset(
         "TSTDX_FEEDBACK",
         "TSTDX_FEEDBACK_ENDPOINT",
         "TSTDX_FEEDBACK_STORE_DIR",
+        # ``tstdx.web.wencai`` 直接读它；不登记则用户照错误消息设置后整条配置链 fail closed。
+        "TSTDX_WENCAI_COOKIE",
     }
 )
 

@@ -115,6 +115,7 @@ job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 
 | F-66 | P2（对外契约类：机器可读的能力声称面，F-63② 的同格补集） | **第 39 步为 F-63② 推导「哪些面写着已下线」时实测出第六张面，而它是唯一机器可读的那张：能力发现面**（2026-09-19）。`GET /v13/capabilities`（`tstdx/integration/runtime_http.py:67`）返回 `{"capabilities": [...], "providers": {provider: {channel: [能力名…]}}}`——两份名单都只有名字，**没有任何状态字段**（探针 `step39/probe_f66.log` 直接打该路由：顶层 `capabilities` 172 项、`providers.tdx.quotation` 16 项，条目类型清一色是裸 `str`，形状上就没有放状态的地方）。实测其 tdx/quotation 平铺 16 个名字，其中 **8 个在客户端就发不出去**：`minute`(0x0537)/`trades`(0x0FC5) 属 inferred 拦截、`security_list`(0x044D)/`block_quotes`(0x07E5)/`minute_history`(0x0FB4) 属账本 offline、`security_list_all` 经 `catalog/capability.py:149` 绑到 `export_security_list`（下线由传递闭包判出），另两条 `auction`/`volume_price` 在本轮**当场量出** `CommandOffline`（同一探针还逐项 `Client().call(cap, '600519')`，两条各回 `CommandOffline: 0x056A` 与 `0x051A`，与账本 summary 同口径）。同一轮量出本步门禁自身的一条边界：第 39 步的推导以「方法名 = 能力名」为键，注册表这套 channel 词汇是**第三套命名**（`auction` vs `_t_auction_snapshot`、`volume_price` vs `_t_volume_price_dist`、`security_list_all` vs `export_security_list`），因此 `auction`/`volume_price` 落在本步五张面之外——它们既不在文档里被批注，也不被新门禁判出。后果与 F-63② 同形但受众不同：文档面骗的是读文档的人，这张面骗的是自动发现能力的调用方（`tests/runtime/test_migrated_surfaces_v13.py:127` 与 `tests/test_bridges.py:231` 已在消费它） | **本轮只登记（2026-09-19，第 39 步），待用户裁决**：(a) 发现面加状态——每个能力附带由账本 ∪ 拦截集 ∪ 绑定闭包现推的 `available`/`offline`/`unverified`，`Client.capabilities()` 与 wire 同批改，属新增对外键；(b) 收窄名单——把发不出去的名字从声明里拿掉（发现面 fail-closed，对按名单枚举的调用方是破坏性变更）；(c) 不改面、只补判据——把第 39 步的门禁扩到注册表词汇（能力名 → 绑定 → 命令号），并在 `docs/api/*` 写明「发现面只声明名字、不声明可用性」。与 F-44 同批裁决（同格里曾挂着的 F-47 已由第 40 步清偿）：三者都动对外契约的形状，而本步的授权范围是「把已下线写清」而非「重设计发现面」；判据本身可复算（上面那两条 `CommandOffline` 与 16 个名字即现场），故先钉事实与路径，不代拍板 |
 | F-67 | P3（事实型文档里的死路径，Phase 4 文档统一的第一格） | **`docs/errors.md` §四「上层边界约定」把两个早已不存在的模块写成今天的边界**（Phase 5 第 40 步顺带实测，2026-09-19）。该节三条 bullet 里有两条点名死路径：门面层 `facade/api.py`（`tstdx/facade/` 目录 `exists=False`）与「服务面（`integration/http_server.py`）」（`exists=False`，今天的真身是 `tstdx/integration/runtime_http.py`）。第一条还承诺了一整套不存在的形状——「`query()`/`aquery()` 把任何异常转 `ApiResponse{success=False, error, code}`」与「路由链失败时最后一路由异常的 context 里 `route_errors` 聚合各路由失败摘要（W11）」：实测 `hasattr(tstdx, "ApiResponse")` 为 False，`route_errors` 与 `W11` 在 `tstdx/` 内 grep **零命中**。**事实型文档门禁为什么看不见它**：`tests/architecture/test_doc_code_consistency.py` 的解析正则只认反引号里的**点号**模块路径（形如 `tstdx.a.b.C` 那种一段一个标识符的形状），而这三处写的都是**斜杠**形式的文件名——形状上就不进判据。同轮把 7 份活文档全扫了一遍：含死路径的只有 `docs/errors.md` 一份（README 与 `docs/ARCHITECTURE.md` 的 `facade` 命中是 `tstdx/web/facade.py` → `session.py` 的重命名史，写的就是删除本身，属实）。全仓范围另有 `facade/api.py` 24 个 markdown、`integration/http_server.py` 9 个，多数在 `docs/archive/`（刻意的历史语境，不参与事实检查）。取证两份都留档：`step40/probe_f67.log` 与 `step40/probe_f67_precise.log`——**前一份是错的取证**，它按文件名尾串匹配，把 `tstdx/client/api.py` 也算成命中，虚报了 README 与 ARCHITECTURE 两份活文档；改成整串匹配才对上事实。两处都记在这里，因为「探针多报」与「判据漏报」是同一族缺陷的两面 | **已清偿（2026-09-19，第 42 步执行 (a)）**：登记时的三条路径——(a) 把 §四 改写为今天的边界事实（唯一业务入口 `Client` 抛 `TdxError` 家族、`error_envelope` 在对外层收敛为 fail-closed 信封、HTTP 面 `runtime_http.py` 用 `http_status_for()` 映射状态码），并把门禁正则扩成同时认斜杠形式的活路径；(b) 只改文字、不动门禁（同类形状以后仍会漏）；(c) 只扩门禁、把 §四 改成指向 `docs/api/interfaces.md` §3 的一句话。**为什么不顺手改掉**：本步的授权范围是 F-47 的三面入参契约，改一份对外文档的边界章节属 Phase 4「文档统一」的题；且 (a) 的扩门禁会不会牵出别的活文档死路径需要单独一轮取证与复测，不该混进一次入参契约的提交。**第 42 步按 (a) 落地**：§四 整节按实测重写（Client 模块零 `except`、越过信任边界的唯一形状是 `ErrorEnvelope`、HTTP/WS/MCP/CLI 四面各自真实的落点与退出码），并把事实文档门禁扩出**斜杠形式**的死路径判据；扩判据前按登记时的要求先做单独一轮全量取证，除 §四 之外另抓出一处假事实——`docs/ARCHITECTURE.md` §3 把已随 `fcf8e92` 删除的 `tstdx/security/` 写成「活」，一并改掉。(b)「只改文字不动门禁」与 (c)「只扩门禁把 §四 压成一句话」都不再需要。执行记录见 §1.5 条目 42
 | F-68 | P2（对外契约类：错误树上的占位叶子与文档独有的幻影名，F-44 的剩余面 / F-43 同族） | **F-44 的 (a) 接线在 `SourceUnavailable` 这一面无落点，而同一次扫描量出四处"文档写着、代码里没有"的名字**（Phase 5 第 41 步实测，2026-09-19）。① 站点普查（`step41/probe_sites.log`，AST 走查全仓 191 模块，分 raise / `raise <变量>`回溯 / `on_error(...)` 投递三类）：错误树 46 类中 5 类既无抛点也无投递——`SourceUnavailable` E7050、`ChecksumMismatch` E3050、`UnknownCommand` E3030、`BackpressureOverflow` E6030、`CompatibilityWarning`（`UserWarning`，不在 `TdxError` 树下）；抽象基类 `TransportError`/`StreamError`/`ProfileError` 自身也不抛但子类全部有站点，属正常分类节点。② 文档点名普查（`step41/probe_promises.log`：82 份 md 里 46 份是对外文档，排除台账/变更日志/归档）：对外文档以反引号点名 45 个错误类，37 个已接线，上面这 5 个未接线的**全部**被对外文档承诺过——`SourceUnavailable` 被 4 份文档点名（`docs/providers/README.md` §12 规范语义、`docs/tdx_status.md` 六处 P13-A、`docs/providers/tdx.md` §7、`docs/adr/ADR-013-provider-source-terminology.md` 称其为"稳定公共资产"），`BackpressureOverflow` 被 `docs/cookbook/04_streaming.md` 与 ADR-006-010 承诺，而 `BackpressureQueue.put`的既定语义是丢最旧元素并计数、从不抛。③ 同一轮量出四处**只存在于文档**的名字：`docs/providers/tdx.md` §7 的 `CapabilityUnsupported` 与 `DataIntegrityError`（`hasattr(tstdx.errors, …)` 双双 False，`tstdx/errors.py` 里根本没有这两个类）、`docs/providers/README.md` §11 的 freshness 模式名 `historical_closed`/`current_series`（全仓 grep 零命中，运行期只有 `CurrentnessMode` 四值）、`docs/errors.md` §二 把 `RetryAdvice.fallback_to_offline`/`fallback_to_web` 的消费方写成"sources 路由"（该路由已随单内核删除，实测全仓对这两个字段的唯一读点是 `tstdx/errors.py:154` 自己的序列化字典，而 `errors.py:20` 早已写明"新内核不消费"——与 F-43 幻影开关同族）；同一份 `docs/errors.md` 头部还抄着"44 个类"，当前是 46 个类（`errors.py` 顶层 AST 计数；`tstdx.errors.__all__` 的 49 个名字里含 `RETRY_ADVICE`/`advice_for`/`http_status_for` 三个非类名，v8 那个 44 与之并非同一口径）。④ 判据自身的第一版是错的：`step41/probe_orphan.log` 只认字面 `raise X(`，把 `last_exc = AntiSpiderBlocked(...)` + `raise last_exc` 这条已接线的重试环误报成幽灵（多报 3 类）；补上同作用域赋值回溯后才对上事实——与第 40 步 F-67 的"探针多报/判据漏报同一族"同形，两份读数都留档 | **本轮只登记（2026-09-19，第 41 步），待用户裁决**：本步已做的是**把不兑现的承诺改成实话**（§12 改为"占位、不承诺 `except` 得到"、tdx.md §7 换成真实类名、README §11 换成 `currentness` 四值口径、errors.md §二 两行改为"无消费方"并新增"一之二、树里存在但运行期永不发生的类"表）+ 把事实钉进本文 + 上新门禁（文档点名 ⇒ 必须有站点，豁免表自洁）。剩下没做的是这 5 个叶子本身，三条路径：(a) 全删——5 个类连同 `errors.py` 的 E 段声明与 `__all__` 一起删，文档同步（与 F-40/F-41 的删除口径一致，clean break；代价是推翻 ADR-013 里"`SourceUnavailable` 是稳定公共资产"那条，以及 `docs/api/*` 的码表）；(b) 全留为登记占位——保持现状：代码树不动、文档已改成"不承诺"、门禁把守不许新增未接线的承诺（本步交付即此路径的形态）；(c) 折中——删掉 4 个纯内部叶子（`ChecksumMismatch`/`UnknownCommand`/`BackpressureOverflow`/`CompatibilityWarning`），保留 E7050 `SourceUnavailable` 作跨 Provider 术语资产（ADR-013 的 `ProviderUnavailable = SourceUnavailable` 映射仍可读），并把它的接线挂到"若 auto 路由某天回来"**为什么不自行拍板**：与 F-44/F-47/F-66 同格，动的是对外可见的错误面；且 (a) 与 (c) 的差异恰好落在 ADR-013 承诺过的稳定资产上——删除一个从未抛过的类在运行期是零影响，在文档与用户已写的 `except` 分支上不是。判据本身可复算（两份探针日志 + 门禁的豁免表就是清单） |
+| F-69 | P1（对外口径类，F-13/F-16/F-20 同族：一个「照本库自己的指引做就会自毁」的开关） | **`TSTDX_` 是 strict 环境扫描的保留命名空间，而发行代码里有一个读它却没登记的名字**（Phase 4 第 43 步实测，2026-09-19）。第 43 步给 `docs/configuration.md` 的键/默认值/取值范围/错误消息/环境变量五类抄本上双向对账门禁时，把环境变量的判据从「文档 §4 那张表 ⇄ loader 登记表」的一致性，扩成**发行代码里出现的每一个 `TSTDX_*` 名字都必须有归属**（登记进 `loader._RUNTIME_ENV_KEYS`，或本身是 schema 形 `TSTDX_<SECTION>_<KEY>`）。当场量出 `TSTDX_WENCAI_COOKIE`：`tstdx/web/wencai.py:77` 读它取值，同文件 `:122` 的错误消息直接叫用户「设置 `TSTDX_WENCAI_COOKIE`」，`docs/providers/` 与 `tstdx/web/sources.py` 也把它写成正式注入途径——可它既不在 §4 的 runtime 变量表里，也不在 loader 的登记表里。后果不是「这个变量无效」，而是**用户照本库指引做完之后 `Client()` 直接抛 `ConfigError [E1000] 无法识别环境变量 TSTDX_WENCAI_COOKIE`**：strict 扫描把它判成拼写错误并让整条配置加载 fail closed。基线复现（干净 `7a3bae7` 树、同一解释器、`TSTDX_WENCAI_COOKIE=v=sometoken` 下构造 `Client()`）实测抛错，修复后同一命令构造成功。同轮另量出一条同形缺陷：`tests/unit/test_golden.py` 的合成样本开关写作 `TSTDX_GOLDEN_SYNTHETIC`——测试夹具占用了运行时保留命名空间，任何设了它的会话会让 5 个配置贯通测试红。**为什么既有门禁看不见**：§4 表与 loader 登记表此前互为真相源的两份抄本，同一个名字两边都漏时它们完全自洽（一致的错）；而 `wencai.py` 里那行读取、以及它自己的错误消息，都不在任何对账射程内 | **已清偿（2026-09-19，第 43 步取路径 (a)）**：三条候选——(a) 登记该变量 + 把测试开关改出保留前缀 + 上「代码读取 ⇒ 必须有归属」的派生判据；(b) 把问财 cookie 改名成非 `TSTDX_` 前缀（推翻已写进多份文档与错误消息的对外口径，代价大于收益）；(c) 让 strict 扫描放过未知变量（与 F-13/F-16 的「不静默」口径正面冲突：拼错的键将悄悄失效）。本步按 (a) 落地：`TSTDX_WENCAI_COOKIE` 入 `_RUNTIME_ENV_KEYS`（附 WHY 注释，并在 loader 模块 docstring 写明该前缀是保留命名空间这条不变量），`TSTDX_GOLDEN_SYNTHETIC` → `GOLDEN_INCLUDE_SYNTHETIC`（全仓 grep 证明旧名除 `test_golden.py` 那两行外零引用：无 CI/Makefile/文档依赖 ⇒ 契约零变化），§4 表补一行并写明「该前缀为保留命名空间、测试与工具不得占用」，防回潮判据落在 `tests/architecture/test_config_doc_contract.py` 的 `test_every_env_var_the_library_reads_is_registered_or_schema`（扫描 `tstdx/` + `scripts/` 全部 .py 的 `TSTDX_*` 字面量，`tests/` 刻意排除——那里的 `TSTDX_CORE_TIMOUT` 一类是负例夹具）。变异验证：删掉登记项 ⇒ 4 条判据同时红（含「设置它就能用」那条真实回归），塞进一个未登记的读取点 ⇒ 派生判据点名报红 |
 
 ---
 
@@ -2025,6 +2026,72 @@ job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 
       （按设计豁免）；F-67 登记时提过的全仓范围命中（`facade/api.py` 24 份 md、
       `integration/http_server.py` 9 份）绝大多数就在这些归档里，不参与事实检查；
       门禁只判"路径在不在磁盘上"，不判"这行话术是否夸大"——后者仍是逐本人读。
+43. ✅ **配置面文档的五类抄本上机器对账门禁，当场量出「照指引做就自毁」的 F-69（2026-09-19）**
+
+    - **本步问的是「文档写的每个数字，代码真的认账吗」**：`docs/configuration.md` 是配置面唯一的用户
+      口径——一张表列全 5 段 17 键，每格写着默认值、取值范围与读取方；§4 定下 `TSTDX_<SECTION>_<KEY>`
+      命名规则与一张「专用 runtime 变量」表；§5 逐格承诺「这种写法会以什么消息报错」。第 43 步之前，
+      这一整面声称里只有「配置段数 = 5」一个数字被既有门禁读过。新模块
+      `tests/architecture/test_config_doc_contract.py`（18 个用例）把其余五类逐类钉回运行期事实：
+      ① 段与键**双向**对账（schema 有的必须都记录，记录的不许是幻影）；② 默认值对上运行期
+      `DEFAULT_CONFIG` 的实际取值（读实例，不猜 dataclass 元数据形状）；③ 取值范围改成**行为化**判据
+      ——文档写的边界必须真被 `validate()` 接受、越界一档必须真被拒（`_numeric_bounds()` 的边界取自文档、
+      整/浮步长取自 schema，`rate_limit` 那格写在表外的 prose 也被读到）；④ 注册表成员声称
+      （`default_provider`/`web.enabled_sources`/`web.rate_limit`）以 `PROVIDERS` 与 `KNOWN_SOURCES` 两个
+      真相源逐个试正反例，且「文档点名的行」与「判据认识的行」必须是同一份集合；⑤ §5 的 8 条
+      fail-closed 场景**就地触发**，异常类名与文档写出的消息片段逐个命中，场景表双向对账（文档新增
+      不认识的红、删掉已认识的红）；⑥ 环境变量：命名规则对**全部** 17 键逐个成立，§4 表与 loader
+      登记表双向相等。
+    - **测下来这份文档今天全部为真**（这条要写清，它决定本步的性质）：17 键的默认值、6 个数值键的
+      边界、8 条报错消息片段、7 个「已删除段仍 fail closed」、命名规则 17/17——逐格对上，没有一格需要
+      改文档措辞。所以第 43 步的主体是**防回潮**而不是纠错，唯一量出的错在环境变量命名空间那一格。
+      这一点与 F-67 不同：那一格是文档真的写错了，本步六类判据里有五类是给「今天对、明天会漂」的抄本
+      上闸（F-13 的死配置段、F-16 的「写了 TOML 不生效」、F-20 的幻影键 `hosts.heartbeat_cmd`、F-43 的
+      幻影开关 `allow_partial` 都是这一族反复出错的那几类）。
+    - **量出的真实缺陷（F-69，登记见 §0.3）**：`TSTDX_WENCAI_COOKIE` 被 `tstdx/web/wencai.py:77` 读、
+      被它自己的错误消息叫用户设置，却没登记进 `loader._RUNTIME_ENV_KEYS` ⇒ 照指引做完 `Client()` 抛
+      `ConfigError [E1000]`。基线复现与修后对照（干净 `7a3bae7` 树 vs 本步树，同一解释器同一命令）：
+      基线 `ConfigError [E1000] 无法识别环境变量 TSTDX_WENCAI_COOKIE：段名须属于 ['core', 'hosts', 
+      'rate_limit', 'web', 'security']`，修后 `Client OK`。修法取 (a)：登记该变量、§4 表补一行、把测试
+      夹具用的 `TSTDX_GOLDEN_SYNTHETIC` 改名 `GOLDEN_INCLUDE_SYNTHETIC`（旧名全仓零引用，契约零变化），
+      并把判据从「两份抄本互相印证」升级成「**代码从环境读的每个 `TSTDX_*` 都必须有归属**」——扫描
+      `tstdx/` 与 `scripts/` 全部 .py 字面量，只放行已登记与 schema 形两类；`tests/` 排除（负例夹具是
+      刻意的错拼）。前缀示意的写法（`TSTDX_RATE_LIMIT_*`）由 `_TRUNCATED_NAME` 滤掉，否则 loader 自己的
+      docstring 会被判成未登记变量。
+    - **顺手撤销一条已经失效的豁免**：`tests/runtime/test_kernel_config_wiring.py` 的 `_FIELD_EXEMPTIONS`
+      还写着 `currentness`「运行期校验器尚不存在（未裁决，见 §0.3 F-44）」——第 41 步已落
+      `tstdx/runtime/freshness.py:40` 直接读 `plan.spec.currentness`，那句话成了假事实而豁免本身也不再
+      需要。取撤销而非改措辞：该字段自此受幻影旋钮判据管（M12 证明撤销有牙）。
+    - **变异 12 发全部被点名抓出、两条 CONTROL 绿**（`step43/mut.py`）：M1 幻影键行、M2 删键行、
+      M3 过期默认值、M4 放宽范围、M5 改报错消息措辞、M6 删 §5 场景行、M7 段数抄本、M8 取消登记
+      `TSTDX_WENCAI_COOKIE`、M9 塞入未登记的环境读取、M10 删 §4 表一行、M11 改 `docs/api/interfaces.md`
+      的 WS 方法名、M12 摘掉 `currentness` 的执行面读取点。逐发要求 rc=1 **且**指名该条判据红 **且**消息
+      里点着缺陷，无一发溜过；首轮有两发因判据自身缺陷而读数失真，见下一条。
+    - **变异轮逼出两条判据自身的缺陷**（这是它的全部价值所在——落笔时它们看起来都是好的）：
+      ① M1 第一轮报出 4 条红，其中 `test_membership_claims_match_the_registries` 说的是「成员声称与
+      判据对不上账」——幻影键让一条与本判据无关的声称也报了误导性结论。修法是让成员声称判据只量真实
+      存在的键（`_schema_keys()`），幻影由双向判据专门报；M1 收敛到 3 条红且每条说自己那句。同一过滤
+      补进 `_numeric_bounds()`/`_keys_of_type()`/nan-inf 目标选取，否则一处文档笔误会炸出三条
+      `AttributeError` 而不是三条断言。② M6 让自检用例以 `KeyError: '段内未知字段'` 崩溃——「判据自身
+      失效」应当是一句人话，不是一次异常栈，已改为显式断言。两条都是**只在变异下才现形**的形状缺陷，
+      正向跑 18 个用例全绿时看不见（与 F-67/F-44 的「探针多报与判据漏报同一族」同形）。
+    - **同轮把 `docs/api/interfaces.md` 的两种新形状纳入既有门禁**（`test_doc_code_consistency.py`
+      +45 行）：WS 方法名单的第二种写法（顿号分隔的散文清单，不是 `docs/api/README.md` 那种
+      括号清单）逐个对 `runtime_ws._dispatch` 认账，MCP「N 工具」的数对 `TOOLS` 注册表认账。一个名字
+      两种抄法就有一条判据的漏网形状——M11 正是这条判据的现场证据。
+    - **复测（隔离工作树，同一解释器 py3.13.12、`-m 'not network'`、`--cov=tstdx`）**：基线树 `7a3bae7`
+      junit 3511 / 0 失败 / 0 错误 / 5 跳过、
+      157.874s、覆盖率 **81.23%**（TOTAL 22606 / 3654 / 6050 / 1023）——与第 42 步 ship 读数
+      逐格相同；本步树 junit 3531 / 0 / 0 / 5、
+      150.179s、覆盖率 **81.26%**（TOTAL 22606 / 3648 / 6050 / 1020）。净增 20 个用例、
+      覆盖率+0.03pp（本步只加测试与文档，未动 `tstdx/` 除 loader 登记表一行）。两棵树 `rc` 均为 0，
+      `ruff check`、`ruff format --check` 与 `mypy tstdx/`（CI 同参数，191 模块）均 0 问题；阈值 77
+      一次都没动。
+    - **本步未动**：`docs/configuration.md` §1 的数据流图与 §6 编程接口示例（人读口径，没有逐格抄本可
+      钉）；§4 的「值解析顺序 JSON→bool→int→float→逗号列表→字符串」六档只在命名规则判据里被间接用到
+      （`"1"` 走整数档），未按文档措辞逐档探针——那属 `parse_env_value` 的行为测试，`tests/config/` 已有
+      覆盖但不是从文档推导；`tests/` 目录不参与 `TSTDX_*` 对账；`docs/archive/`、`docs/adr/` 里的旧环境
+      变量口径按历史语境豁免。
 
 
 ### Phase 6 —— 配置面接线与死面清偿（F-13/F-16，发布 v1.1.0 前必须完成）✅ 已落地（2026-09-19）
@@ -2064,6 +2131,11 @@ job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 
    README 门禁口径两行更正（并顺手把 mypy 行从"47 项待清零"改回既成事实）；
    新增 [ADR-016](adr/ADR-016-config-surface-covers-execution-only.md)
    「配置面只覆盖执行参数」。
+   **2026-09-19 第 43 步追记**：这份文档的五类抄本（键清单 / 默认值 / 取值范围 / fail-closed 消息 /
+   环境变量规则）已从「人读」升级为与 `schema.py` + `loader.py` 的**机器双向对账**，判据在
+   `tests/architecture/test_config_doc_contract.py`；同一轮把 `TSTDX_*` 的判据从「两份抄本互相印证」扩成
+   「代码读取 ⇒ 必须有归属」，当场量出并清偿 F-69（`TSTDX_WENCAI_COOKIE` 未登记，照本库指引设置它反而
+   让 `Client()` fail closed）。抄本从此改一处不联动即红。
 5. 接线过程中顺手修复的静默失效（记入 F-17）：`tstdx.configure()` 调用即无效果
    （合并结果被丢弃、不写回单例）、`WebQuoteClient` 以 `except Exception: pass`
    吞掉配置错误、`get_config()` 惰性解析一次而非返回冻结默认值、`reset_config()`

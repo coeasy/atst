@@ -323,10 +323,11 @@ def test_exhausted_deadline_fails_before_any_io(fake_tdx_client: Any) -> None:
 
 #: 不进执行面的字段与其**可核验**的理由；每条都由下面的反向核验撑着，
 #: 理由失效即红——豁免表不是免检通道（``_QUERY_SPEC_STORE_ONLY_FIELDS`` 同形）。
+#: ``currentness`` 曾在此列（"运行期校验器尚不存在"），第 41 步接线后它已由
+#: ``tstdx/runtime/freshness.py`` 直接读取，豁免因此撤销：字段该受判据管。
 _FIELD_EXEMPTIONS = {
     "options_json": "存储形态：执行面读的是解码后的 ``spec.options`` 袋",
     "schema_version": "契约版本戳：进 fingerprint 与 wire，不是执行输入",
-    "currentness": "口径声明字段：运行期校验器尚不存在（未裁决，见 §0.3 F-44）",
 }
 
 

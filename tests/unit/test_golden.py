@@ -37,7 +37,9 @@ def _iter_samples():
     默认只回放 ``source: self-captured`` 实采样本 —— 它们才是协议「事实基准」。
     合成衍生样本（``source: synthetic``）是解析器回归基线，其请求维度经过
     变异，**不满足** OHLC/回声等实采校验，默认排除；
-    设 ``TSTDX_GOLDEN_SYNTHETIC=1`` 可显式纳入。
+    设 ``GOLDEN_INCLUDE_SYNTHETIC=1`` 可显式纳入。刻意不用 ``TSTDX_`` 前缀：
+    那是配置 schema 与环境覆盖的保留命名空间，未登记的 ``TSTDX_*`` 一旦出现在
+    环境里就会让 ``load_config()`` fail closed（见 ``tstdx/config/loader.py``）。
 
     .. note::
        这里**不能**调用 ``pytest.skip``——该函数会在 parametrize 收集阶段
@@ -48,7 +50,7 @@ def _iter_samples():
         return
     import os
 
-    include_synthetic = os.environ.get("TSTDX_GOLDEN_SYNTHETIC", "") == "1"
+    include_synthetic = os.environ.get("GOLDEN_INCLUDE_SYNTHETIC", "") == "1"
     # 样本路径: tests/golden/<family>/0x<cmd>_<name>/<timestamp>/meta.json
     # 即 golden 之下 3 层，因此 glob 必须是 */*/*/meta.json
     for meta_path in sorted(GOLDEN_ROOT.glob("*/*/*/meta.json")):

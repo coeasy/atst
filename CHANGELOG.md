@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（v17 Phase 4 第 43 步 —— 「照本库自己的指引做，就会把自己弄坏」的开关：F-69，同时给配置面文档上机器对账门禁）
+
+- **`TSTDX_WENCAI_COOKIE` 此前是一个自毁开关**：`tstdx/web/wencai.py` 读它取 i问财 cookie，同文件的错误消息直接叫用户「设置 `TSTDX_WENCAI_COOKIE`」——可它没登记进 `config/loader.py` 的 `_RUNTIME_ENV_KEYS`。`TSTDX_` 是 strict 环境扫描的**保留命名空间**，未登记的名字一律按拼写错误 fail closed，所以用户照本库指引做完，下一条 `Client()` 就抛 `ConfigError [E1000] 无法识别环境变量 TSTDX_WENCAI_COOKIE`：不是「这个变量不生效」，而是整条配置链起不来。基线（`7a3bae7` 干净树）实测复现、修复后同一命令构造成功。本轮登记该变量、在 `docs/configuration.md` §4 的 runtime 变量表补一行，并写明「该前缀为保留命名空间，测试与工具不得占用」。
+- **同一族缺陷的第二格在测试中**：`tests/unit/test_golden.py` 的合成样本开关原名 `TSTDX_GOLDEN_SYNTHETIC`——一个仅用于回放基线的测试夹具占了运行时保留前缀，任何设了它的会话会让 5 个配置贯通测试红。改名 `GOLDEN_INCLUDE_SYNTHETIC`（全仓 grep 证明旧名除那两行外零引用，无 CI / Makefile / 文档依赖 ⇒ 对外契约零变化）。
+- **判据从「两份抄本互相印证」升级为「代码读取 ⇒ 必须有归属」**：§4 的表与 loader 的登记表此前只要一起漏同一个名字就完全自洽。新增 `tests/architecture/test_config_doc_contract.py`（18 个用例）扫描 `tstdx/` 与 `scripts/` 全部 .py 里的 `TSTDX_*` 字面量，每一个都必须已登记或本身是 schema 形 `TSTDX_<SECTION>_<KEY>`；`tests/` 刻意排除（那里的错拼是负例夹具）。
+- **`docs/configuration.md` 的五类抄本一并钉回运行期事实**：段与键**双向**对账（幻影键与漏记的键各自报红）、默认值对上运行期 `DEFAULT_CONFIG`、取值范围改成行为化判据（文档写的边界必须真被 `validate()` 接受、越界一档必须真被拒）、注册表成员声称以 `PROVIDERS`/`KNOWN_SOURCES` 试正反例、§5 的 8 条 fail-closed 场景就地触发并逐个命中文档写出的异常类名与消息片段、§4 命名规则对全部 17 键逐个成立。**测下来这份文档今天全部为真**，需要改的只有上面那一条环境变量——本步的主体是防回潮。
+- **`docs/api/interfaces.md` 的 WS 方法名单第二种写法纳入既有门禁**：`docs/api/README.md` 写的是括号清单，interfaces 写的是顿号分隔的散文清单，此前只有前者对分派器认账。同一轮把 MCP「N 工具」的数钉回 `TOOLS` 注册表。一个名字两种抄法就有一条判据的漏网形状。
+- **顺手撤销一条已失效的豁免**：`tests/runtime/test_kernel_config_wiring.py` 还以「运行期校验器尚不存在」豁免 `QuerySpec.currentness`，而第 41 步的 `tstdx/runtime/freshness.py` 已直接读它 ⇒ 撤销豁免，该字段自此受幻影旋钮判据管。
+- **12 发变异全部被点名抓出**（含取消登记该变量、塞入未登记的环境读取、改一格默认值、放宽一格范围、改一条报错措辞、删一行文档），并在过程中逼出判据自身的两条形状缺陷（幻影键会让成员声称判据报出误导性结论；§5 场景被删时自检用例以 `KeyError` 崩溃而不是一句人话），两条都已修。
+- 隔离工作树复测（`-m 'not network'`，同一解释器）：基线 junit 3511 / 0 失败 / 5 跳过、81.23%，本步 junit 3531 / 0 / 5、81.26%；`ruff check`、`ruff format --check`、`mypy tstdx/`（CI 同参数）均 0 问题，覆盖率阈值 77 未动。
+
 ### Fixed（v17 Phase 4 第 42 步 —— 事实文档里的**斜杠死路径**上门禁：F-67 (a) 的清偿，Phase 4「文档统一」的第一格）
 
 - **这一格改的是两份对外文档里的假事实，不是代码**：`docs/errors.md` §四「上层边界约定」把两个

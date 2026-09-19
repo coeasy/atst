@@ -7,7 +7,8 @@
 ``docs/ARCHITECTURE.md``、``docs/api/``、``docs/quickstart.md`` 等事实文档的规模数字
 （命令账本 / 解析器 / 配置段 / 根级白名单 / 服务面方法数 / HTTP 源与契约下界）一律钉回
 运行期真相源，WS 方法与 Domain Record 的**名单**也要逐个对上分派器与 ``__all__``——
-抄一次就失真的数字与清单不再有藏身处。
+WS 名单有两种形状（``docs/api/README.md`` 的括号清单、``docs/api/interfaces.md`` 的散文顿号
+清单），两种都在射程内——抄一次就失真的数字与清单不再有藏身处。
 事实文档里反引号写出的**斜杠**路径（``facade/api.py`` 那种文件名形状）同样要落位——
 按仓库根 / ``tstdx/`` / ``docs/`` 三个根各试一次；只有同一逻辑块（段落 / 列表项 / 表格行）
 里写明删除史、或该目录由代码在运行期自建的，才允许以死路径出现。F-67 那整节虚构的
@@ -791,6 +792,49 @@ def test_documented_ws_method_list_matches_the_dispatcher() -> None:
             f"多 {sorted(listed - real)} 缺 {sorted(real - listed)}"
         )
 
+
+#: 同一个服务面的方法清单在两份文档里各写一遍，形状却不同：``docs/api/README.md`` 把它
+#: 塞进括号（``（10 方法：a/b/c）``），``docs/api/interfaces.md`` 用散文顿号列举并单独声明条数。
+#: 只钉前者的话，后者就是一处无人对账的抄本——而它写的每一个名字都是用户会照抄的 JSON-RPC
+#: 方法名，写错即 -32601（第 43 步把第二种形状纳入）。
+_INTERFACE_WS_BLOCK = re.compile(
+    r"### WebSocket JSON-RPC（(?P<count>\d+) 方法）(?P<body>.*?)### ", re.S
+)
+
+
+def test_interfaces_ws_method_prose_matches_the_dispatcher() -> None:
+    source = "docs/api/interfaces.md"
+    matched = _INTERFACE_WS_BLOCK.search(_doc_text(source))
+    assert matched, f"{source} 不再有「WebSocket JSON-RPC（N 方法）」小节，门禁失效"
+    listed = set(re.findall(r"`([a-z][a-z.]*)`", matched.group("body")))
+    real = _ws_methods()
+    assert listed, f"{source} 的 WS 小节解析不出方法名，门禁失效"
+    assert listed == real, (
+        f"{source} 的 WS 方法清单与 `runtime_ws._dispatch` 不符："
+        f"多 {sorted(listed - real)} 缺 {sorted(real - listed)}"
+    )
+    assert int(matched.group("count")) == len(real), (
+        f"{source} 声称 {matched.group('count')} 个方法，分派器实际 {len(real)} 个"
+    )
+
+
+_INTERFACE_MCP_COUNT = re.compile(r"### MCP stdio（(\d+) 工具）")
+
+
+def test_interfaces_mcp_tool_count_matches_the_registry() -> None:
+    from tstdx.integration.mcp import TOOLS
+
+    source = "docs/api/interfaces.md"
+    claimed = _INTERFACE_MCP_COUNT.findall(_doc_text(source))
+    assert claimed, f"{source} 不再声明 MCP 工具数，门禁失效"
+    assert [int(n) for n in claimed] == [len(TOOLS)] * len(claimed), (
+        f"{source} 声称 {claimed} 个 MCP 工具，注册表实际 {len(TOOLS)} 个"
+    )
+
+
+# --------------------------------------------------------------------------
+# 覆盖矩阵（README）
+# --------------------------------------------------------------------------
 
 #: 覆盖矩阵每行把族键写在标签里（``**7709 标准**（`quotation`）``），门禁因此不需要在测试里
 #: 另抄一份"显示名→族键"映射：文档自己声明它指的是哪一族，测试只核对它给的键与数字是否成立。
