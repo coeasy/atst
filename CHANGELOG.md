@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed（v17 Phase 5 第 30 步 —— 出处里那个从未被填过的源时间戳，F-52 provenance 半边；**BREAKING**）
+
+- **`Provenance` 少了一个公开字段**：`provider_timestamp`。`tstdx/result.py:57` 上它写着
+  `provider_timestamp: str | None = None`，`Provenance.direct()` 把同名形参原样透传，而三重沉默
+  同时成立：AST 扫 `tstdx/` 全部 189 个模块读取点 **0**、没有任何调用方给 `direct()` 传过非默认值
+  （即没有 Provider 上报过源侧时刻）、`integration/serialization.py` 按显式键构造 wire 而键集合里
+  没有它。按 clean break 物理删除字段与形参，不留 `= None` 兼容位；`Provenance` 现为
+  `provider / channel / capability / kind / observed_at_ns / cache_tier / requested_provider / fallback`
+  八个字段，逐字段读取点实测 2、2、2、2、1、1、1、1。
+- **为什么不接线**：接线要求 9 个解码器开始上报"源侧时刻"——那是新增的对外承诺，而它们今天一个
+  都拿不出这个数据；`observed_at_ns` 承载的才是唯一真实可知的时刻（本地观察时刻）。让这个字段
+  继续躺着，等于对外声称直连结果的出处比观察本身更丰富。
+- **删除由判据双向钉住**：新增 `test_deleted_provenance_field_is_not_a_back_door`——显式关键字
+  构造 `Provenance` 当场 `TypeError` 且消息含字段名（不静默收下再丢），`Provenance.direct()` 的
+  签名里也不存在该形参。
+- **新门禁 `tests/architecture/test_result_shape_gates.py`（5 条）**：`Provenance` 与 `ResultMeta`
+  各一条读取点判据、各一条顺序敏感形状清单，加那条后门判据。owner 名逐类人工核对
+  （`Provenance` 认 `provenance/p/prov`，`ResultMeta` 认 `meta/result`），**不放 `self`**——类内
+  `__post_init__` 的自检不算字段被人兑现的证据。防盲保险沿用第 27/28 步三条：`fields` 非空、
+  `scanned > 30`、`reads` 非空。
+- **尺子收成一把**：第 27/28 步的读取点扫描写在 `tests/providers/test_registry.py` 的私有
+  `_unread_fields` 里，本步搬进 `tests/support/field_readers.py` 作为全仓唯一实现，`test_registry.py`
+  改为 import——判据本身也不该有第二份抄件（F-49/F-50 那条口径用到测试侧）。
+- **四条变异（孤立 worktree = `dab85b5` + 本步 4 文件，逐项复原后逐字节校验一致）**：**M1** 把
+  `provider_timestamp` 以默认值装回类定义 → RC=1 点名 `['provider_timestamp']`；**M2** 把 owner
+  集合换成 `zzz_unbound_name` → RC=1 报"扫描一条都没命中，判据自身失效"；**M3** 给 `Provenance`
+  新增一个没人读的 `notes: str = ""` → RC=1 点名该字段；**M4** 给 `ResultMeta` 同样加一个没人读的
+  `notes` → 读取点判据**假绿**、形状清单红。CONTROL 与还原后 RC=0。
+- **M4 是本步测出来的判据边界，写在这里而不是抹掉**：`tstdx/cli/runtime_commands.py:406` 的
+  `result.notes` 属于探针结果对象、不是 `ResultMeta`，AST 层面同名字段分不出所有者——第 28 步
+  登记的"普查不成立"边界的第三个现场（前两个：`self.` 根、实例未绑定具名变量）。修法是补第二层
+  判据（形状清单对字段顺序敏感，回长字段必须先改清单），而不是把尺子改宽。
+- **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = `dab85b5` + 本步 4 文件，与本步提交树
+  逐文件同内容）**：基线为干净 `dab85b5` 同轮实测 junit **3391 tests / 0 failures / 0 errors /
+  5 skipped**、`--cov=tstdx` **80.77%**；本步树 junit **3396 / 0 / 0 / 5**、`FINAL_RC=0`、148.2s、
+  **80.77%**（`Required test coverage of 77.0% reached`，阈值 77 未下调），对账 `3391 + 5`
+  （本步 5 条新门禁）= **3396**。同树 9 道门禁全部 RC=0：`ruff check`、`ruff format --check`
+  （462 文件）、mypy（RC=0）、originality（Total 190 / Suspicious 0）、reachability
+  （189 模块 / 172 可达 / 17 白名单）、`contract_audit --ci`（63 契约 · 155 capability）、
+  `spec_audit --strict`（coverage 100.0%）、golden 审计、docs links（82 文件）。**第一轮门禁抓到
+  本步自己的缺陷**：新测试文件 import 段少一个空行，`ruff check` 当场 rc=1，补空行后重跑，上方
+  每个数字都来自修正后的那一轮。共享树隔离：只提交 `tstdx/result.py`、
+  `tests/providers/test_registry.py`、`tests/architecture/test_result_shape_gates.py`、
+  `tests/support/field_readers.py` 与本文件、`docs/REFACTOR_PLAN_V17_CLOSURE.md` 的两处账本；
+  §0.3 F-52 行就地改判为"已清偿（按 (b)，两半分别第 27/30 步）"并保留三条路径原文。
+  **口径边界**：上表数字取自本步 4 个代码文件的树（148.2s）；账本两处 .md 写入后，在与提交树
+  逐文件同内容的 6 文件树上重跑离线全量与 docs links，读作 **3396 tests / 0 failures /
+  0 errors / 5 skipped**、`FINAL_RC=0`、143.8s、覆盖率 **80.77%**、docs links RC=0——同条数同
+  百分比，只差墙钟（F-53 口径：数字要属于它所声称的那棵树）。
+
 ### Removed（v17 Phase 5 第 29 步 —— 流计划上两条只写不读的记录，F-55；**BREAKING**）
 
 - **`StreamPlan` 少了两个字段**：`capability`、`channel`。`StreamPlanner.compile()`

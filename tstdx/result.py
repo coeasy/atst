@@ -54,7 +54,6 @@ class Provenance:
     capability: str
     kind: ProvenanceKind
     observed_at_ns: int
-    provider_timestamp: str | None = None
     cache_tier: str | None = None
     requested_provider: str | None = None
     fallback: bool = False
@@ -76,7 +75,6 @@ class Provenance:
         cls,
         plan: QueryPlan,
         *,
-        provider_timestamp: str | None = None,
         observed_at_ns: int | None = None,
     ) -> Provenance:
         return cls(
@@ -85,7 +83,6 @@ class Provenance:
             capability=plan.spec.capability,
             kind=ProvenanceKind.DIRECT,
             observed_at_ns=time.time_ns() if observed_at_ns is None else int(observed_at_ns),
-            provider_timestamp=provider_timestamp,
             requested_provider=plan.provider,
             fallback=False,
         )

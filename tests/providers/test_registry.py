@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from tests.support.field_readers import unread_fields
 from tstdx.errors import ValidationError
 from tstdx.providers import PROVIDERS, ChannelSpec, resolve_provider
 
@@ -116,31 +117,6 @@ def test_channel_spec_rejects_periods_for_undeclared_capability() -> None:
         ChannelSpec.build("quote", {"quotes"}, periods=("day",))
 
 
-def _unread_fields(cls: type, owners: set[str]) -> tuple[set[str], int, set[str]]:
-    """扫 ``tstdx/`` 找 ``cls`` 各字段的读取点：返回 (全部字段, 扫过的模块数, 命中的字段)。"""
-
-    import ast
-    import dataclasses
-    from pathlib import Path
-
-    fields = {item.name for item in dataclasses.fields(cls)}
-    reads: set[str] = set()
-    scanned = 0
-    root = Path(__file__).resolve().parents[2]
-    for path in sorted((root / "tstdx").rglob("*.py")):
-        scanned += 1
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Attribute) or node.attr not in fields:
-                continue
-            base = node.value
-            while isinstance(base, ast.Attribute):
-                base = base.value
-            if isinstance(base, ast.Name) and base.id in owners:
-                reads.add(node.attr)
-    return fields, scanned, reads
-
-
 def test_every_channel_spec_field_has_a_reader() -> None:
     """``ChannelSpec`` 的每个字段都必须有人按它行动（F-54）。
 
@@ -152,7 +128,7 @@ def test_every_channel_spec_field_has_a_reader() -> None:
     （与 F-50/F-52 同口径），市场与定位的说明留在 ``docs/providers/*.md``。
     """
 
-    fields, scanned, reads = _unread_fields(
+    fields, scanned, reads = unread_fields(
         ChannelSpec, {"self", "spec", "item", "channel", "selected", "ch", "value"}
     )
     assert fields, "ChannelSpec 已经没有字段了，判据自身失效"
@@ -175,7 +151,7 @@ def test_every_provider_spec_field_has_a_reader() -> None:
 
     from tstdx.providers import ProviderSpec
 
-    fields, scanned, reads = _unread_fields(
+    fields, scanned, reads = unread_fields(
         ProviderSpec, {"self", "spec", "provider", "pspec", "provider_spec", "item", "value"}
     )
     assert fields, "ProviderSpec 已经没有字段了，判据自身失效"
