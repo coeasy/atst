@@ -79,8 +79,8 @@ handshake_sequence:
           offset: 0
           type: "raw[30]"
           length: 30
-          description: "Opaque 30-byte product identifier block (self-captured)"
-          notes: "Server does not validate content, only length. Zeroed block also accepted."
+          description: "30-byte product identifier block; this package sends 30 zero bytes"
+          notes: "Content is NOT free: on 2026-09-19 the reachable fleet answered 0x052D with a 2-byte stub when the self-captured sample block was replayed, and with 180 bytes / 10 bars when 30 zero bytes were sent (7/7 hosts, 2 passes each plus 3 further alternating rounds on the golden host). b'A'*30 and b'\\xff'*30 also return real bars, so the stub is specific to that sample block, not to any non-zero value. Length must stay 30."
     response_discarded: true
 
 # =============================================================================
@@ -94,8 +94,14 @@ context:
 
 notes: |
   Frames 1 and 2 use method=0x000D with a single-byte body.
-  Frame 3 uses method=0x0FDB (LOGIN2) with a 30-byte opaque product identifier.
+  Frame 3 uses method=0x0FDB (LOGIN2) with a 30-byte product identifier block.
   All three responses should be read and discarded.
-  The product identifier block is self-captured from a real session;
-  its exact content is not validated by the server (length only).
+  Frames 1+2 alone are enough to get data: with only those two frames, 7/7 reachable
+  hosts answered 0x052D with 180 bytes / 10 bars on 2026-09-19. Sending no frame at
+  all timed out on 6/7 of them (60.191.117.167 excepted), and one host answered both
+  ways minutes apart, so the unhandshaked path is not a dependable behaviour.
+  The block's content is load-bearing, not padding: replaying the self-captured
+  sample block made 0x052D answer with a 2-byte stub (declared count 800, zero record
+  bytes) while 30 zero bytes on the same host and the same request bytes returned 180
+  bytes / 10 real bars.
   Refer to tstdx/protocol/handshake.py for the complete implementation.

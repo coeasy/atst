@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（v17 Phase 5 第 34 步 —— 握手帧 3 的产品标识块：一句未验证的断言让 K 线整族恒 0 根，F-59/F-37）
+
+- **现象与归因**：F-37 记的"7 台可达主站对 `0x052D` 只回 2 字节空桩（K 线恒 0 根），而请求体与 2026-08-31 拿到
+  180 字节真样本时逐字节相同"——本轮证明**它既不是服务端行为也不是时段效应，而是本端握手帧 3 的 30 字节产品标识块**。
+  同主机、同一条新建连接、请求体照抄 golden，只换这 30 字节：重放自采集样本（含 GBK 券商名）⇒ `payload=2B rows=0`，
+  换成 30 个零字节 ⇒ `payload=180B rows=10`（首根 `2026-09-07 15:00`、`close=9.23`）。7 台可达主机各 2 轮全同向，
+  golden 采集主机再交替 3 轮（累计 5 次），7/7 无一例外。
+- **根因是两处"✅ 实测"从未被实测**：`tstdx/protocol/handshake.py` 写着"服务端不校验内容，只校验长度"，证据点名的
+  `tests/integration/test_handshake.py`（及 `test_opaque_blob_tolerance`）与 `tests/golden/7709/_handshake/`
+  **在仓库任何一次提交里都没有出现过**（`git log --all --diff-filter=A` 空）；同一文件另一句"三帧都得发"同样从未被测
+  ——只发帧 1+2 时 7/7 主机照样回数据。而全仓对握手字节的测试数为 **0**（本步之前 `setup_frames` 在 `tests/` 里只命中
+  `.pyc`）。默认值照那句假断言选了"原样重放抓包样本"，于是整族 K 线在真实主站上永远是空的。
+- **改法四件**：① 默认块改为 30 个零字节（`_PRODUCT_ID_BLOB`，附长度断言）；② 三个零调用点符号 `OPAQUE_BLOB_BYTES` /
+  `opaque_blob()` / `build_setup_frame3()` 物理删除，`__all__` 收缩为 3 项（clean break，不留别名）；③ 模块 docstring
+  与 `PROTOCOL_SPEC/7709/0x000D_HANDSHAKE.yaml` 改写为本轮可复算口径，并显式点名那两处假证据；④ 新增
+  `tests/protocol/test_handshake_frames.py` 9 项离线线路形状守卫（默认零块、帧 3 `pkg_len == 32` 与两处长度字段和
+  `method=0x0FDB` 逐个对齐、帧 1/2 步骤号未动、覆盖只替换帧 3 body（STANDARD/MAC）、长度非 30 即 `ValueError`、
+  EXTENDED/F10/GOODS 仍返回空元组）。
+- **本轮另测出的三条边界，都写进 docstring 而不是留给下一个人踩**：`b"A"*30` 与 `b"\xff"*30` 同样拿回 180B/10 根，
+  所以关键不是"零"，而是别把抓包样本当默认值重放；全零块把末 4 字节换成样本块的 `00000002` 会让 3/3 主机在握手中途
+  直接断开连接 ⇒ 这块字节被结构化解析，"opaque"这个命名本身就在替一个错误模型说话；完全不发握手帧时 6/7 主机对
+  `0x052D` 读超时，但 60.191.117.167 回了数据，且 218.75.126.9 在相隔两分钟的两轮里一次回数据、一次读超时——按事实
+  登记为**不稳定**，不写成契约。
+- **端到端复验（走唯一业务入口、无任何 monkeypatch）**：`Client().bars(…, strict=True)` × {sh600000, sz000001,
+  sz300750} × {day, week, month, 1min, 5min, 15min, 30min, 60min} = **24/24 各 10 根**，每条都 `kind=direct`、
+  `cache_tier=None`、`warnings=0`；`count=320` ⇒ 320 根；`BAD=0`。**F-37 因此只闭合了 K 线那一半**：0x000F
+  `capital_changes` 与 0x0010 `finance_info` 在新默认握手下仍解出错位字段（首行 `market=48` / `code='000\x01'`，
+  0x0010 首行 `market=0`、`code=''`、`values` 全 0），而 0x0010 的 live 载荷长度在两台主机上都与 golden 同长
+  14302 字节——错位属解码布局一侧，且这两条命令的 golden 从不校验解析值；需用户裁决，本步不擅自改解析器。
+- **顺带登记不静默修（F-60）**：第 21 步给空首页立的告警写着"服务端声明 0 条记录"，而本轮的 2 字节空桩声明的恰恰是
+  800 条（`2003` 小端 = `0x0320`）。把那个桩原样注入传输层、其余走生产链路实测，同一个结果发出 **2 条互相否证的
+  告警**：`decode_caveat` 说"声明 800 条，按剩余字节 16B/条 只能容纳 0 条"，`bars_empty_first_page` 说"服务端声明
+  0 条记录"。第 26 步 F-51 把解码侧真话接进 wire 的那条链是好的，坏的是 `tstdx/client/_mixin.py:254-258` 那句写死
+  的数字（`:226-227`、`:252-253` 两处注释同错）；而 `tests/client/test_v5_pagination.py` 的 fake 用
+  `_bars_payload(0)` 造了个"真声明 0"的假桩，于是这一对在测试里永不出现——本步只登记，修复形状见 §0.3 F-60。
+- **为什么取全零而不是"干脆不发帧 3"**：两条在本轮实测都拿得到数据；取全零保留的是与真实客户端同形的三帧会话形状，
+  `setup_frames()` 的帧数契约、两池握手计数与既有测试形状都不动，而"不发帧 3"要新增一项对外协议声称，不属本步。
+  **未解释的**：服务端为什么对那 30 个字节回空桩而不是报错——机制未知，本轮只登记可复算的行为。
+- **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = `1be93ea` + 本步 5 个文件，与主树提交前内容逐文件相同）**：
+  基线取干净 `1be93ea` 同轮实测 junit **3404 tests / 0 failures / 0 errors / 5 skipped**、142.1s、`--cov=tstdx`
+  **80.77%**；本步树 junit **3413 tests / 0 failures / 0 errors / 5 skipped**、135.3s、
+  `--cov=tstdx` **80.82%**、`SUITE_EXIT=0`（对账：`3404 + 本步 9 条线路形状守卫 = 3413`，阈值 77 未下调）。同树 9 道主门禁全部 rc=0（`GATES_RC=0`，`gates_s34b.log`）：originality（Total 190 / Original 190 / Suspicious 0 / External imports 17）、`spec_audit --strict`（coverage 100.0%）、golden 审计（`[GATE] all L1 verified commands have real samples (OK)`、`0x052D real category coverage: [0…11]`）、reachability（189 模块 / 172 可达 / 17 白名单豁免，无未登记孤儿）、`contract_audit --ci`（63 Typed Query 契约 · 155 capability）、docs links（82 文件）、mypy（rc=0，无输出）、`ruff check`（All checks passed!）、`ruff format --check`（464 files already formatted）；`tests/architecture` 9 个文件共 200 项 rc=0。
+
 ### Fixed（v17 Phase 5 第 33 步 —— 方案文档的「现状判定」与磁盘同真，F-58）
 
 - **本步量的是方案文档自己**：`docs/REFACTOR_PLAN_V17_CLOSURE.md` §0.1「主链路贯通状态」一直

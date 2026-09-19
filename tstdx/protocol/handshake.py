@@ -3,9 +3,10 @@
 
 """连接握手（§7.3）。
 
-TDX 服务端在 TCP 连接建立后，要求客户端**先发送一组握手帧**才响应业务命令。
-未握手直接发业务命令，服务端会**静默不回**（表现为读超时），
-这是一个极易误判为"网络不通"的坑。
+TDX 服务端在 TCP 连接建立后，多数主站要求客户端**先发送握手帧**才响应业务命令。
+一帧都不发时，实测 7 台可达主站里 6 台对 ``0x052D`` 直接静默不回（表现为读超时），
+仅 60.191.117.167 例外；同一台主机（218.75.126.9）在相隔两分钟的两轮里一次回了数据、
+一次读超时 ⇒ 不握手能否侥幸**不稳定，不可依赖**。这是极易误判为"网络不通"的坑。
 
 握手序列（7709 标准族，✅ 实测）
 --------------------------------
@@ -16,18 +17,35 @@ TDX 服务端在 TCP 连接建立后，要求客户端**先发送一组握手帧
     帧3  method=0x0fdb  body=<30 字节产品标识>      30 字节载荷
 
 其中帧 1/2 的 ``body`` 是 1 字节的步骤号，帧头里 ``pkg_len = 1 + 2 = 3``。
+**帧 1+2 足以拿到数据**：只发这两帧，7/7 可达主机对 ``0x052D`` 一律回 180 字节 / 10 根。
 
-帧 3 的 30 字节 body 是**不透明的产品标识块**（含 GBK 文本片段与若干
-二进制字段）。它的内容不影响服务端是否接受业务命令（实测：把整块换成
-等长零字节同样能握手成功，见 ``tests/integration/test_handshake.py``::
-``test_opaque_blob_tolerance``），因此本项目:
+帧 3 的 30 字节 body 是**产品标识块**。它不是取数据的必要条件，但它的**内容会改变
+服务端给不给业务数据**——所以既不能不校验长度，也不能"照抄抓包样本"：
 
-* 默认**原样重放**自采集样本（最稳，避免主站做指纹校验）；
-* 同时提供 :func:`opaque_blob` 生成零字节版本用于兼容性验证。
+* 2026-09-19 逐位 A/B：同一主机、同一条新建连接、同一个逐字节照抄 golden 的
+  ``0x052D`` 请求体，只换这 30 字节。重放自采集样本（含 GBK 券商名）让响应缩成
+  2 字节 ``2003``（count 字段声明 800 条、记录字节 0 条，K 线恒 0 根）；换成 30 个
+  零字节则拿回 180 字节 / 10 根真实日线。每台可达主机跑 2 轮全同向，golden 采集主机
+  218.75.126.9 再交替重复 3 轮（该机累计 5 次），7/7 主机无一例外；第 8 台候选
+  119.147.212.81 两轮均连接超时，不在此列。
+* 因此本包默认发送 **30 个零字节**。这不是"任何非零值都被拒"：``b"A"*30`` 与
+  ``b"\\xff"*30`` 同样拿到 180 字节 / 10 根（3/3 受测主机）。削成空桩是那 30 个样本
+  字节特有的。另有一条实测边界：全零块把末 4 字节改成 ``00000002``（样本块的尾巴）
+  会让 3/3 主机在握手中途直接断开连接——这块字节是被**结构化解析**的，不是不透明填充。
+
+.. important::
+   本文件此前两处断言"内容不影响服务端是否接受业务命令""只校验长度、不校验内容"，
+   并把它交给了一个不存在的证据：``tests/integration/test_handshake.py``
+   （及其 ``test_opaque_blob_tolerance``）和 ``tests/golden/7709/_handshake/``
+   在仓库任何一次提交里都没有出现过（F-59）。断言因此从未被测到，而默认值又照它
+   选了"原样重放"，于是 F-37 的"主站只回 2 字节空桩"从头到尾是本端握手问题。
+   本段上方那些实测结论由 :mod:`tests.protocol.test_handshake_frames` 钉住**线路形状**
+   （默认零块、帧头 ``pkg_len``、覆盖只替换 body、无握手族返回空），服务端反应属真实
+   网络行为，不在离线断言射程内——重测方法见本文档 §1 第 34 步。
 
 .. note::
-   这些字节是**线路上观测到的协议事实**，不是从任何开源项目抄录的代码。
-   样本来源标记为 ``self-captured``，存于 ``tests/golden/7709/_handshake/``。
+   那 30 个样本字节本身仍是线路上观测到的协议事实（GBK 片段近似"招商证券"＋若干
+   二进制字段＋尾部 ``00000002``），但既然默认不再重放它，字节就不留在代码里。
 """
 
 from __future__ import annotations
@@ -40,43 +58,15 @@ from .commands import Family
 __all__ = [
     "SetupFrame",
     "SETUP_FRAMES",
-    "OPAQUE_BLOB_BYTES",
-    "opaque_blob",
     "setup_frames",
-    "build_setup_frame3",
 ]
 
-#: 帧 3 中 30 字节不透明产品标识块（自采集样本）。
+#: 帧 3 的 30 字节产品标识块——全零。
 #:
-#: 结构（30 字节，按抓包切片推断）：:
-#:
-#:     偏移  长度  内容               说明
-#:     0     8     GBK 文本片段       近似 "招商证券"（券商/产品名）
-#:     8     4     二进制             版本或构建号，含义未知
-#:     12    4     二进制             含义未知
-#:     16    4     二进制             含义未知
-#:     20    6     GBK 文本片段       近似 "商金钻"
-#:     26    4     ``00 00 00 02``    尾部固定字段
-#:
-#: .. important::
-#:    该块**只校验长度、不校验内容**——已实测把整块替换为 30 个零字节同样
-#:    握手成功（见 ``tests/integration/test_handshake.py``）。
-#:    默认仍原样重放自采集样本，是为兼容个别可能做指纹校验的主站。
-#:
-#: .. note::
-#:    字节取自单次线路抓包后重建（抓包记录为十六进制文本，转录时有个别
-#:    字符误差，已按"GBK 可解 + 长度自洽"反推校正）。由于服务端不校验内容，
-#:    个别字节的取值差异**不影响功能**，也不作为断言依据——单元测试只断言
-#:    ``len == 30`` 与握手结果，不逐字节比对。
-OPAQUE_BLOB_BYTES: Final[bytes] = bytes.fromhex(
-    "d5d0c9ccd6a4c8af"  # [0:8]   GBK 文本片段（≈"招商证券"）
-    "0000008f"  # [8:12]  版本/构建号
-    "c2254013"  # [12:16] 二进制，含义未知
-    "00000d50"  # [16:20] 二进制，含义未知
-    "c9ccbdf0d7ea"  # [20:26] GBK 文本片段（≈"商金钻"）
-    "00000002"  # [26:30] 尾部固定字段
-)
-assert len(OPAQUE_BLOB_BYTES) == 30, "产品标识块必须为 30 字节"
+#: 取值理由见模块 docstring 的 A/B 实测：带券商名的自采集样本会让主站对
+#: ``0x052D`` 只回 2 字节空响应，全零才拿得到 K 线数据。
+_PRODUCT_ID_BLOB: Final[bytes] = b"\x00" * 30
+assert len(_PRODUCT_ID_BLOB) == 30, "产品标识块必须为 30 字节"
 
 _MAGIC_STEP1: Final[bytes] = bytes.fromhex("0c0218930001030003000d0001")
 _MAGIC_STEP2: Final[bytes] = bytes.fromhex("0c0218940001030003000d0002")
@@ -85,7 +75,7 @@ _MAGIC_STEP2: Final[bytes] = bytes.fromhex("0c0218940001030003000d0002")
 #: 单独抽出以便 :func:`setup_frames` 能替换 body 而不重算帧头。
 _MAGIC_HEADER_3: Final[bytes] = bytes.fromhex("0c031899000120002000db0f")
 
-_MAGIC_STEP3: Final[bytes] = _MAGIC_HEADER_3 + OPAQUE_BLOB_BYTES
+_MAGIC_STEP3: Final[bytes] = _MAGIC_HEADER_3 + _PRODUCT_ID_BLOB
 
 
 @dataclass(frozen=True)
@@ -106,20 +96,8 @@ class SetupFrame:
 SETUP_FRAMES: Final[tuple[SetupFrame, ...]] = (
     SetupFrame(0x000D, b"\x01", _MAGIC_STEP1, "握手步骤 1"),
     SetupFrame(0x000D, b"\x02", _MAGIC_STEP2, "握手步骤 2"),
-    SetupFrame(0x0FDB, OPAQUE_BLOB_BYTES, _MAGIC_STEP3, "产品标识（不透明块）"),
+    SetupFrame(0x0FDB, _PRODUCT_ID_BLOB, _MAGIC_STEP3, "产品标识（全零块）"),
 )
-
-
-def opaque_blob(zeroed: bool = False) -> bytes:
-    """返回帧 3 的 30 字节标识块。
-
-    Parameters
-    ----------
-    zeroed:
-        True 时返回 30 个零字节——用于验证服务端是否校验该块内容
-        （实测多数主站不校验，仅校验长度）。
-    """
-    return b"\x00" * 30 if zeroed else OPAQUE_BLOB_BYTES
 
 
 def setup_frames(
@@ -134,8 +112,8 @@ def setup_frames(
         协议族。目前仅 7709 标准族（含 MAC 变体）需要握手；
         扩展市场（7727）暂无已知握手要求，返回空元组。
     blob:
-        覆盖帧 3 的 30 字节标识块。传 :func:`opaque_blob` ``(zeroed=True)``
-        可做"服务端是否校验内容"的兼容性验证；``None`` 表示原样重放样本。
+        覆盖帧 3 的 30 字节标识块；``None`` 表示用模块默认的 30 个零字节。
+        服务端对这块内容的反应见模块 docstring——它不是可有可无的填充。
 
     Returns
     -------
@@ -145,15 +123,8 @@ def setup_frames(
         return ()
     if blob is None:
         return tuple(f.frame for f in SETUP_FRAMES)
-    if len(blob) != 30:
-        raise ValueError(f"标识块必须为 30 字节，收到 {len(blob)} 字节")
+    if len(blob) != len(_PRODUCT_ID_BLOB):
+        raise ValueError(f"标识块必须为 {len(_PRODUCT_ID_BLOB)} 字节，收到 {len(blob)} 字节")
     out = [SETUP_FRAMES[0].frame, SETUP_FRAMES[1].frame]
     out.append(_MAGIC_HEADER_3 + blob)
     return tuple(out)
-
-
-def build_setup_frame3(blob: bytes) -> bytes:
-    """用给定的 30 字节标识块拼出帧 3 的完整帧字节。"""
-    if len(blob) != 30:
-        raise ValueError(f"标识块必须为 30 字节，收到 {len(blob)} 字节")
-    return _MAGIC_HEADER_3 + blob
