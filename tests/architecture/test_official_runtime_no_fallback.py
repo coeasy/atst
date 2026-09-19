@@ -5,7 +5,7 @@ import dataclasses
 import re
 from pathlib import Path
 
-from tstdx.query import QuerySpec
+from tstdx.query import REJECTED_OPTIONS, QuerySpec
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -253,6 +253,99 @@ def test_query_spec_store_only_fields_are_still_reached() -> None:
     assert "plan.spec.options" in (ROOT / "tstdx" / "runtime" / "executor.py").read_text(
         encoding="utf-8"
     ), "options 袋不再是执行面输入"
+
+
+def test_option_bag_keys_are_executed_or_rejected() -> None:
+    """``options`` 袋不是 ``max_age`` 的备用入口：写进袋里的键必须被执行面读到或当场拒绝。
+
+    字段侧由 ``test_every_query_spec_field_is_consumed`` 看住，而 v13 把
+    ``allow_partial`` / ``allow_stale`` 从一等字段降级成袋里的字符串键，正好从那条判据
+    下面走过——``allow_partial`` 的实际效果就是"quotes 上设了它什么也不改变"。
+    判据覆盖两处写入点：``build()`` 内部的 ergonomic 折叠，与调用方在生产代码里
+    直接传 ``options={...}`` 的字面量键（``client/api.py`` 的泛化调用面就走这条路）。
+    """
+    folded, flags = _build_option_folds()
+    injected, build_sites = _injected_option_keys()
+    executed = _executed_option_keys()
+    assert executed, "执行面一个 option 键都没读到，说明消费扫描自身失效了"
+    assert build_sites, "生产代码里一个 QuerySpec.build 调用点都没找到，说明调用点扫描自身失效"
+    silent = sorted((folded | injected) - set(REJECTED_OPTIONS) - executed)
+    assert silent == [], f"构造期折叠了无人消费的 option 键（幻影开关）：{silent}"
+    dropped = sorted(flags - folded)
+    assert dropped == [], f"build() 的 allow_* 形参没有落进袋里（收下即丢）：{dropped}"
+
+
+def _build_option_folds() -> tuple[set[str], set[str]]:
+    """Keys ``QuerySpec.build`` folds into the bag, plus its ``allow_*`` parameters."""
+
+    tree = ast.parse((ROOT / "tstdx" / "query.py").read_text(encoding="utf-8"))
+    build = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "build"
+    )
+    folded = {
+        node.slice.value
+        for node in ast.walk(build)
+        if isinstance(node, ast.Subscript)
+        and isinstance(node.slice, ast.Constant)
+        and isinstance(node.slice.value, str)
+    }
+    flags = {
+        arg.arg
+        for arg in [*build.args.args, *build.args.kwonlyargs]
+        if arg.arg.startswith("allow_")
+    }
+    return folded, flags
+
+
+def _injected_option_keys() -> tuple[set[str], int]:
+    """Literal ``options=`` keys passed at production ``.build(...)`` call sites."""
+
+    keys: set[str] = set()
+    sites = 0
+    for path in sorted((ROOT / "tstdx").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+                continue
+            if node.func.attr != "build":
+                continue
+            sites += 1
+            for keyword in node.keywords:
+                if keyword.arg != "options" or not isinstance(keyword.value, ast.Dict):
+                    continue
+                keys.update(
+                    item.value
+                    for item in keyword.value.keys
+                    if isinstance(item, ast.Constant) and isinstance(item.value, str)
+                )
+    return keys, sites
+
+
+def _executed_option_keys() -> set[str]:
+    """Keys the execution surface actually reads out of an ``options`` mapping."""
+
+    keys: set[str] = set()
+    for path in sorted((ROOT / "tstdx").rglob("*.py")):
+        if path.name == "query.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if node.func.attr != "get" or not node.args:
+                    continue
+                owner = node.func.value
+                target = node.args[0]
+            elif isinstance(node, ast.Subscript):
+                owner, target = node.value, node.slice
+            else:
+                continue
+            if "options" not in ast.unparse(owner).lower():
+                continue
+            if isinstance(target, ast.Constant) and isinstance(target.value, str):
+                keys.add(target.value)
+    return keys
 
 
 def _query_spec_non_self_readers() -> dict[str, set[str]]:

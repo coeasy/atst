@@ -382,7 +382,8 @@ QuerySpec(capability, provider=None|显式)
 - 需要跨源时由调用方显式声明顺序：`client.quotes(symbols, policy=FallbackPolicy(providers=("tdx","tencent")))`
   → `ProviderOrchestrator` 按序尝试，返回 `OrchestratedResult`（逐步记录成败与最终来源）。
 - 时效性：`currentness`（`CurrentnessMode`）声明口径，`deadline_ms` 只是执行预算；
-  直连路径恒拒绝 `allow_stale`——每次请求都回源，不存在可容忍的过期副本。
+  直连路径对 `tstdx.query.REJECTED_OPTIONS` 里的策略键（过期容忍、部分放行）恒当场拒绝——
+  每次请求都回源，不存在可容忍的过期副本，partial 也始终是结果事实。
 
 ---
 

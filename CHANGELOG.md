@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed（v17 Phase 5 第 22 步 —— `allow_partial` 幻影开关与 options 袋门禁，F-46；**BREAKING**）
+
+- **`allow_partial` 不再是 `QuerySpec.build()` 的形参，也不再是 `QuerySpec` 的属性**：它此前
+  被折进 `options` 袋、只在"capability 必须是 quotes"这条校验里出现，而执行面
+  （`runtime/`、`client/`、`integration/`）没有一处读它——`BatchResult.partial` 由逐 symbol
+  的三态结果推导，是**结果事实**而非可放行的策略。因此在 quotes 上设置它的实际效果是
+  "什么也不改变"，在非 quotes 上设置它只是提前报错。`Client.quotes_batch()` 本来也不接受该
+  参数，它只能经通用构造面到达。这与第 20 步退场的 `max_age` 同族：收下但无人读。
+- **策略键统一进 `tstdx.query.REJECTED_OPTIONS`，命中即当场 `ValidationError` 并说明理由**
+  （`allow_stale`：数据始终来自绑定的 Provider，过期容忍没有可作用的对象；`allow_partial`：
+  partial 是 `BatchResult` 的结果事实）。袋里的键从此只有两种下场——被执行面消费，或者
+  明确拒绝，不存在第三种。
+- **新门禁 `test_option_bag_keys_are_executed_or_rejected`**：以 AST 取两处写入点的字面量键
+  （`build()` 内部的 ergonomic 折叠 + 生产代码里 `QuerySpec.build(..., options={...})` 的
+  显式注入），与执行面实际读取的键（`options.get("k")` / `options["k"]`）求差；差的集合
+  必须为空，且 `build()` 的每个 `allow_*` 形参都必须落进袋里。两条自我校验（消费扫描零命中、
+  调用点扫描零命中）各自指名"门禁自身失效"。文档不再手抄被拒键的清单，改为按
+  `REJECTED_OPTIONS` 引用（F-39：抄本必过期）。
+- **变异验证 6 条**：注入未折叠的 `allow_noop` 形参 → `['allow_noop']（收下即丢）`；
+  在 `build()` 里折叠无人消费的键 → `幻影开关：['allow_noop']`；在生产调用点注入
+  `phantom_key` → `幻影开关：['phantom_key']`；把消费扫描与调用点扫描分别改瞎 → 两条
+  自曝失明断言各自命中；未变异对照 GREEN。首轮还抓到门禁自身的一个运算符优先级缺陷
+  （`folded | injected - rejected` 让 `build()` 折叠的键绕开拒绝集），修好后 `allow_stale`
+  不再被误报。
+- **复测（同一轮日志；HEAD + 本步 5 个文件的孤立 worktree）**：整仓离线 `-m "not network"`
+  junit **3347 tests / 0 failures / 0 errors / 5 skipped**、`ISO_FULL_RC=0`、`--cov=tstdx`
+  **80.59%**（阈值 77 未下调；3344 − 1 条删除 + 4 条新增 = 3347）；originality `--strict`
+  （189 · Suspicious 0）、`spec_audit --json --strict`、`golden_audit --gate --require-markets`、
+  reachability `--strict`、`contract_audit --ci`（63 契约 · 155 capability）、docs links
+  （82 文件）、`ruff check` 与 `format --check`（457 files）、`mypy tstdx/`（CI 参数）
+  **全部 RC=0**。测量期间主树另有并行会话在途的 `runtime/executor.py`，同轮实测 3 条红
+  （`DirectProviderExecutor._tdx_client() missing 1 required positional argument: 'timeout'`），
+  与本步无关，故权威数字取孤立树。
+
 ### Fixed（v17 Phase 5 第 21 步 —— 首页空响应不得静默读成成功，F-45）
 
 - **`bars()` 把"服务端声明 0 条"读成"历史已经耗尽"**：`tstdx/client/_mixin.py::_t_bars`

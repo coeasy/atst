@@ -34,9 +34,20 @@ __all__ = [
     "QueryFingerprint",
     "QueryPlan",
     "QueryPlanner",
+    "REJECTED_OPTIONS",
 ]
 
 _MINUTE_PERIODS = frozenset({"1min", "5min", "15min", "30min", "60min"})
+#: 直连执行面上没有对象可作用的策略键。设置它们必须当场失败，而不是被静默收下——
+#: 一个"看起来生效"的开关比没有开关更糟（``max_age`` 就是静默收下然后无人消费）。
+REJECTED_OPTIONS: dict[str, str] = {
+    "allow_stale": (
+        "数据始终来自绑定的 Provider，过期容忍没有可作用的对象，新鲜度口径请用 currentness"
+    ),
+    "allow_partial": (
+        "quotes BatchResult 始终逐 symbol 记录三态，partial 是结果事实而非可放行的策略"
+    ),
+}
 _CANONICAL_UNIFIED_CHANNELS: dict[tuple[str, str], str] = {
     ("tdx", "quotes"): "quotation",
     ("tdx", "bars"): "quotation",
@@ -223,7 +234,6 @@ class QuerySpec:
         count: int = 0,
         start: int = 0,
         adjustment: str = "",
-        allow_partial: bool = False,
         allow_stale: bool = False,
         currentness: str | CurrentnessMode = CurrentnessMode.AUTO,
         deadline_ms: int = 5000,
@@ -232,11 +242,9 @@ class QuerySpec:
     ) -> QuerySpec:
         symbol_tuple = (symbols,) if isinstance(symbols, str) else tuple(symbols)
         current = _parse_currentness(currentness)
-        # v13 SSOT：``allow_partial`` / ``allow_stale`` 不再是 QuerySpec 一等字段，
-        # 但仍作为构造期 ergonomic 开关保留，统一折叠进 ``options`` 扩展袋。
+        # 构造期只保留"折叠进 options 袋"这一条通路：袋里的键要么被执行面消费，
+        # 要么在 ``REJECTED_OPTIONS`` 里当场拒绝，不存在第三种"收下但没人读"。
         merged_options: dict[str, Any] = dict(options or {})
-        if allow_partial:
-            merged_options["allow_partial"] = True
         if allow_stale:
             merged_options["allow_stale"] = True
         return cls(
@@ -258,17 +266,6 @@ class QuerySpec:
     def options(self) -> dict[str, Any]:
         value = json.loads(self.options_json or "{}")
         return dict(value) if isinstance(value, dict) else {}
-
-    @property
-    def allow_partial(self) -> bool:
-        """Partial-batch tolerance, expressed through the ``options`` bag.
-
-        v13 SSOT：``QuerySpec`` 不再把 ``source`` / ``route`` / ``allow_partial``
-        作为一等字段（历史 route 选择器已由 ``provider`` 取代）。批量容忍度
-        作为 capability 级别的可扩展选项保留在 ``options`` 中，语义不变。
-        """
-
-        return bool(self.options.get("allow_partial", False))
 
     def normalized(self, *, default_provider: str | None = None) -> QuerySpec:
         cap = _norm_text(self.capability)
@@ -301,17 +298,12 @@ class QuerySpec:
             raise ValidationError(f"{cap} 至少需要一个 symbol", context={"capability": cap})
         if cap == "bars" and len(symbols) != 1:
             raise ValidationError("bars 统一 QuerySpec 一次只接受一个 symbol")
-        if self.options.get("allow_stale"):
-            raise ValidationError(
-                "直连执行面不接受 allow_stale：数据始终来自绑定的 Provider，"
-                "过期容忍没有可作用的对象，新鲜度口径请用 currentness",
-                context={"capability": cap, "allow_stale": True},
-            )
-        if self.allow_partial and cap != "quotes":
-            raise ValidationError(
-                "allow_partial 仅支持 quotes 批量能力（quotes BatchResult）",
-                context={"capability": cap, "allow_partial": True},
-            )
+        for rejected, reason in REJECTED_OPTIONS.items():
+            if self.options.get(rejected):
+                raise ValidationError(
+                    f"直连执行面不接受 {rejected}：{reason}",
+                    context={"capability": cap, rejected: True},
+                )
         if self.count < 0:
             raise ValidationError("count 不能为负数", context={"count": self.count})
         if cap == "bars" and self.count <= 0:

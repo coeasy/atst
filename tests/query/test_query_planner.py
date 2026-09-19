@@ -6,7 +6,7 @@ import pytest
 
 from tstdx.errors import ValidationError
 from tstdx.providers import resolve_provider
-from tstdx.query import QueryPlanner, QuerySpec
+from tstdx.query import REJECTED_OPTIONS, QueryPlanner, QuerySpec
 
 
 def test_default_provider_is_tdx_and_quotes_bind_quotation() -> None:
@@ -162,17 +162,19 @@ def test_allow_stale_is_rejected_because_the_path_is_direct() -> None:
         )
 
 
-def test_allow_partial_is_limited_to_quotes() -> None:
-    with pytest.raises(ValidationError, match="quotes BatchResult"):
-        QueryPlanner().compile(
-            QuerySpec.build(
-                "bars",
-                symbols=["600519"],
-                provider="tdx",
-                count=10,
-                allow_partial=True,
-            )
-        )
+@pytest.mark.parametrize("key", sorted(REJECTED_OPTIONS))
+def test_every_rejected_option_key_fails_loudly_instead_of_being_ignored(key: str) -> None:
+    """``options`` 袋不许成为 ``max_age`` 的重演通道：收下但无人读的键必须当场报错。"""
+    spec = QuerySpec.build("quotes", symbols=["600519"], provider="tencent", options={key: True})
+    with pytest.raises(ValidationError, match=f"不接受 {key}"):
+        QueryPlanner().compile(spec)
+
+
+def test_allow_partial_is_not_a_constructor_knob() -> None:
+    """批量容忍度既不是字段也不是形参：逐 symbol 三态是 ``BatchResult`` 的结果事实。"""
+    assert not hasattr(QuerySpec, "allow_partial")
+    with pytest.raises(TypeError):
+        QuerySpec.build("quotes", symbols=["600519"], provider="tencent", allow_partial=True)
 
 
 def test_bars_requires_single_symbol_and_positive_count() -> None:
