@@ -1,6 +1,8 @@
 # tstdx v18 结构收口与对外契约重设方案
 
-> **文档状态**：待用户裁决（§6 的 D7–D12 六个决策点；§5 的阶段可分批授权）。
+> **文档状态**：**执行中**——§5 的 V18-A3、V18-B1、V18-B4 已落地（第 1 轮，提交 `94b97d6`，
+> 读数见 §9），B5 与 G1 前半截经实测作废/已满足（更正就地写在 §5）；其余阶段仍待按 §6 的 D7–D12 裁决推进。
+> §0 的基线是**方案取证轮**的数，§9 是**执行轮**的数，两者环境标签相同（3.12.13）但不混用。
 > **授权尺度（本轮用户已答，2026-09-20）**：
 > ① 重构尺度 = **含对外契约破坏**（允许改 capability 语义、三面入参/响应形状、门面定位）；
 > ② 门禁尺度 = **可合并可删除**（覆盖率阈值 77 与 strict 旗标仍不降）；
@@ -221,17 +223,43 @@ A4 | 把 §2 的"贯通≠全部实现"口径写进 README §核心特性 与 F-
 
 B1 **`quotes` 整体失败语义**（按 D1 默认 = 全失败抛 `AllHostsUnreachable`、部分失败写 `warnings`）；
 判据：禁网夹具下"全失败 ⇒ 要么抛、要么 `warnings` 非空"，`strict=True` 必须能拒收空成功。
+> **已落地（V18 第 1 轮，`94b97d6`）**：批量 `quotes` 的逐只失败不再静默吞掉——全败直接抛第一手异常
+> （内核补 `context`），部分失败以新声明的 `WarningCode.QUOTES_PARTIAL_FAILURE` 随结果携带，
+> `options["strict"]` 能把它升级成 `TruncatedDataError`。旧账 ≈F-72（并行会话登记，此处只引用不重复领号）。
+> 替掉的是 `last_errors` 侧信道：夹具用 `_collect=None` 即判红，防止退回"错误装在另一个对象里"。
+> 顺带把只读这个侧信道的一处 `warnings.warn` 消费者（`error_envelope`）里从未被写入的 `terminal` 分支删除，
+> 并把查询级 deadline 的"不许同 Provider 重试"从建议升级为写进 `context` 的决策。
 B2 **三面入参 fail-closed**（F-47 收口）：HTTP query/body、WS `params`、MCP `arguments` 未知键
 一律拒（MCP 的 `additionalProperties: False` 已在 `_tools_spec.py` 声明 9 处，改为**强制**并被判据扫得到）。
 B3 **G1 三格给结论**（按 D4）：三面保留则在响应里区分"本仓结构化拦截"与"Provider 故障"，
 三面摘除则同时删 capability 注册 + CLI + 文档行。两种都比现状诚实，**不允许保留"入口在、永远抛错"**。
+> **落地复核（V18 第 1 轮，`94b97d6`）**：这条的"前半截"其实早已成立，本项收敛为只做摘面决策。
+> `CommandOffline`(`E3035`, `errors.py:304`) 与 `NotImplementedFeature`(`E9010`, `errors.py:503`) 各自带
+> `http_status = 501`，经 `error_envelope.http_status_for()` 直达 `runtime_http.py:62` 的响应状态码，
+> 且被 `tests/errors/test_taxonomy.py:163,176` 两格钉住——"本仓结构化拦截"与"Provider 故障(5xx/4xx)"
+> 在 HTTP 面上已经是两个数。故 B3 剩余工作只有 D7 的那一问：这三格入口留还是摘。
 B4 **R-2 审计转 fail-closed**：`audit_direct_bindings` 的 `warnings.warn` 改 raise；
 `_is_unified_reachable` 里的 tencent/bars 特例下沉为注册表数据（`ChannelSpec` 加一个被读的字段，或改判据），
 执行器里不留业务事实。
-B5 **错误树对账**（F-44 另一半）：本轮实测 `SourceUnavailable` 仍零 raise，
-`ProfileError/StreamError/GapUnfilledError/BackpressureOverflow/AntiSpiderBlocked/RetryAdvice` 六个叶子零 raise。
+> **已落地（V18 第 1 轮，`94b97d6`）**：审计改为 `raise RuntimeError`（缺执行元数据的可达三元组不再只是
+> 一条被 pytest 收走就完事的 warning）；可达性谓词改由注册表自己的 `channel.periods` 推导，
+> 硬编码的 `tencent → {kline, minute_kline}` 影子规则删除——234 条迁移派生绑定逐条比对**零差异**，
+> 即删除是行为保持的。新增 AST 判据 `test_binding_audit_holds_no_provider_business_facts`
+> 钉住"这两段函数体里不许再出现任何 Provider 名或 capability 名"，并有正向对照（重新塞回特例即红）。
+B5 **错误树对账**（F-44 另一半）：~~本轮实测 `SourceUnavailable` 仍零 raise，
+`ProfileError/StreamError/GapUnfilledError/BackpressureOverflow/AntiSpiderBlocked/RetryAdvice` 六个叶子零 raise。~~
 逐叶二选一：接线（有真实触发点）或删叶（同步 `docs/errors.md` 与 E 码表）。
-**41 个类里留 7 个"永远不发生"的叶子不是分类学，是谎言。**
+> **作废更正（V18 第 1 轮，AST 逐文件计数）**：上面那行数字是抄来的旧账，实测**不成立**——
+> `SourceUnavailable` 已从代码里整类消失（F-68 那一轮删的就是它）；
+> `GapUnfilledError`(`streaming/base.py:156`)、`BackpressureOverflow`(`:186`)、
+> `AntiSpiderBlocked`(`web/_base_core.py:141,244`) 各有真实构造点；
+> `RetryAdvice` 构造 26 次；`ProfileError`/`StreamError` 零构造是因为它们是**基类**
+> （`StreamError` 是前两叶的父类，`ProfileError` 的子类 `ProfileUndetectable` 在
+> `profile/detect.py:596,739` 与 `reader/profile.py:396` 三处 raise）。
+> 于是"41 个类里留 7 个永远不发生的叶子"这句判词随之撤回：**它骂的是一批不存在的叶子**。
+> B5 剩下的唯一有效问题是 F-44 的另一半——`docs/errors.md`/E 码表与 `errors.py` 的 E 码是否逐格对上，
+> 归入 V18-E 的"生成而非校验"一起做，不再单列。
+
 
 **验收**：三面的响应/入参形状有对账判据；每条破坏性变更在 CHANGELOG `[Unreleased]` 有"旧→新"迁移行；
 变异证据齐（每条新判据各自红一次）。
@@ -344,6 +372,11 @@ F5（tag）与 F3/F4 保持在后。
 | `%TEMP%/v18rev_mypy.log` | mypy CI 参数，0 行输出 / RC=0 |
 | `%TEMP%/v18rev_contract.txt` | `contract_audit`：63 契约 / 155 capability / 92 PENDING / RC=0 |
 | 工作树 `wt_v18review` | detached @ `616d065`；本方案取证用，未改动其内容 |
+| `wt_v18b1step/gates_v18b1.log` | 第 1 轮步骤轮九门禁逐条 RC 与摘要行 |
+| `wt_v18b1step/fulltest_v18b1.log` + `.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数 |
+| `wt_v18b1step/mutate_v18_round1.log` | 第 1 轮 8 条反证变异：每条 `rc=1` 且 `restored=True` |
+| `wt_v18b1ship/gates_ship.log` | **提交树**（`94b97d6`，`dirty=0`）九门禁复测 |
+| `wt_v18b1ship/fulltest_ship.log` + `.xml` + `collect_ship.txt` | 提交树离线全量、junit 与 `--collect-only` 规模 |
 
 ## 8. 本方案不做什么（避免被读成"又要一轮无限重构"）
 
@@ -351,3 +384,58 @@ F5（tag）与 F3/F4 保持在后。
 - 不为让门禁变绿而删测试或降阈值（§4 的三条红线是删判据的前置条件）。
 - 不重写 TDX 协议层：44 项规格 100% 覆盖、85 条命令账本、191 文件 originality 全绿，**它是这个项目最健康的一层**，重构预算不给它。
 - 不猜协议字节：G3 的解法是本轮已入库的 `.bin` 样本 + 离线重放，猜与试都不如把样本读干净。
+
+---
+
+## 9. 执行记录
+
+### 第 1 轮｜V18-B1 + V18-B4 + V18-A3 + R-9 的判据扩形（提交 `94b97d6`，17 个文件）
+
+按 §5 的阶段序执行了 V18-B 的两格与 V18-A3，并按 §4 第二类的处置口径把"形状枚举型死引用扫描"
+**改写**为按成员存在性判定（不是再加一条正则）。本轮不领 F 号也不领步骤号（D12 默认 (a)）；
+v17 台账的登记等并行会话那两笔未提交改动落盘后一并做，`CHANGELOG` 的"旧→新"迁移行同一批写。
+
+| 轮 | 树 | 九项确定性门禁 | 离线全量 | 覆盖率（阈值 77 未动） |
+|---|---|---|---|---|
+| 步骤轮 | `wt_v18b1step`（detached @ `f990ae6` + 本步 17 文件，与工作树 md5 逐格相同） | **G1–G9 全部 rc=0** | `PYTEST_RC=0`；junit 3611 / 0 失败 / 0 错误 / 7 跳过，119.3s | **81.46%**（TOTAL 22413 stmt / 3581 miss / 5984 branch / 1002 partial） |
+| ship 轮（提交树复测） | `wt_v18b1ship`（detached @ `94b97d6`，`dirty=0`） | **G1–G9 全部 rc=0**（`gates_ship.log`，与步骤轮逐格同判据） | junit 3611 / 0 失败 / 0 错误 / 7 跳过，159.8s；`--collect-only` **3611 项 / 229 个含测试文件**（基线 3598/228 ⇒ 净 +13 项 / +1 文件，无删除） | **81.48%**（TOTAL 22413 / 3578 / 5984 / 1000） |
+
+两轮同一环境标签：仓库 `.venv` = **cpython-3.12.13**、主机 `WIN-PM`。按 R-13，这个读数与并行会话
+3.13.12 的读数**不可互换**，也**不能**用来重钉阈值（阈值重钉只认 CI ubuntu+py3.11 的 exact-head 读数）。
+
+提交树九门禁的分项读数：originality `Total: 191 / Original: 191 / License OK: 191 / Header OK: 191 /
+Suspicious: 0`；spec_audit `total_specs 44 / coverage_pct 100.0`；golden_audit
+`[GATE] all L1 verified commands have real samples (OK)`（既有 `suspect_short` WARN 1 条：`0x537 4B<12B x3`）；
+reachability `模块总数 190 / 可达 174 / 白名单豁免 16 / 无未登记孤儿 ✓`；contract_audit RC=0；
+docs links `OK (83 files)`（基线 82，多的那一格是本方案文档自身入库）；mypy（CI 参数）0 行输出 RC=0；
+ruff check `All checks passed!`；ruff format `443 files already formatted`。
+
+**反证证据（§4 第三类：一条判据必须能指出"删掉哪一行生产代码它会红"）**——8 条变异全部 `rc=1`、
+`restored=True`（`wt_v18b1step/mutate_v18_round1.log`）：
+
+| 变异 | 删/改的生产代码 | 被谁抓红 |
+|---|---|---|
+| M1 | `_tdx_quotes` 全败不再 raise，改回返回空袋 | `test_tdx_quotes_failure.py` 两格（全败、单标的）**同时红** |
+| M2 | 部分失败不再 `record_warning` | 部分失败携带 + `strict` 拒收两格红 |
+| M3 | 绑定审计 `raise` 退回 `warnings.warn` | `test_binding_audit_fails_closed_instead_of_warning`（DID NOT RAISE） |
+| M4 | 审计谓词里重新塞回 `tencent`/`bars` 字面量 | `test_binding_audit_holds_no_provider_business_facts` |
+| M5 | 查询 deadline 不再写 `retry_same_provider: False` 决策 | `test_exhausted_query_deadline_is_never_advertised_as_retryable` |
+| M6 | 文档重新引用 `client.router.last_errors_never_written()` | `test_backticked_call_chains_name_real_members` |
+| M7 | docstring 重新引用 `:class:` 不存在符号 | `test_sphinx_roles_in_package_docstrings_resolve` |
+| M8 | `per-file-ignores` 指向不存在的路径 | `test_ruff_per_file_ignores_still_point_at_existing_paths` |
+
+M4/M8 还各带一条**正向对照自检**（`test_the_provider_fact_ruler_sees_a_reintroduced_special_case`、
+以及成员链判据自带的 `scanned > 10` / `refs > 20` / 豁免清单非空三类"尺子必须真的看见过"断言），
+用来防"判据在空转"这一族（F-26/F-27/F-28/F-63① 的老根）。
+
+**顺带清掉的幻影引用**（新尺子上线当轮即抓出，全部实测不存在）：
+`tstdx/web/sources.py` 的 `:mod:`tstdx.sources.router``（该模块早在 v16 前置决策里被路由删除取代）、
+`tstdx/error_envelope.py` 的 `tstdx.failure.FailureDisposition`、`tstdx/web/fund_rank.py:38` 的
+`EastmoneyIpoAuditSource`（真名 `EastmoneyIpoSource`）、`docs/migration/README.md` 的
+`tstdx.facade.quote_api()`、`docs/troubleshooting.md` §3 的 `client.router.last_errors()` 与
+"7 个 Web 源 / 触发限流后自动切换下一源 / 连续失败达阈值抛 `SourceDeprecated`"三处假事实。
+
+**本轮明确未做**（是排期不是遗漏）：B2 三面入参 fail-closed、B3 的摘面决策（D7）、
+A1/A2（= 并行会话步骤 50/51 的 F-70(b)/F-71(c)）、C/D/E/F 全部阶段、G2 的 D10(b) 口径改写。
+§5 的 B5 与 G1 前半截经实测**作废/已满足**，更正记录就地写在 §5 对应条目下。
+
