@@ -106,14 +106,21 @@ class BaiduSessionMixin:
 
     @staticmethod
     def fund_estimate(code: str) -> dict[str, Any]:
-        """东财基金实时估值快照（盘中估算）——**端点已下线，本方法永不返回**。
+        """东财基金实时估值快照（盘中估算）——端点已下线，取净值请走 :meth:`fund_nav_history`。
+
+        本方法仍会发出一次真实请求（不是当场拒绝），失败形状因此取决于站点：
 
         Raises
         ------
         SourceDeprecated:
-            ``fundgz.1234567.com.cn`` 已于 2026 年下线（HTTP 410 语义）。保留这个
-            入口是为了给按名调用的调用方一句明确交代，而不是一个 AttributeError；
-            取净值请改用 :meth:`fund_nav_history`。
+            ``fundgz.1234567.com.cn`` 下线后按 :class:`tstdx.web.adapters_fund.FundSource`
+            记录的实测形状回"页面未找到"HTML，适配器据此抛此错（HTTP 410 语义）。
+            保留这个入口是为了给按名调用的调用方一句明确交代，而不是一个 AttributeError。
+        WebSourceError:
+            站点不可达/超时等非"已下线"形状走底座既有异常，不会被翻译成 410。
+
+        注：解析层随端点一起留着（``_parse_jsonp`` 与适配器侧的字段表），接口复活时
+        本方法会重新返回 dict——"现网只抛"是 2026 年的实测结果，不是这段代码的结构性质。
         """
         from .adapters_fund import FundSource
 

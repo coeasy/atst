@@ -1,16 +1,17 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""声明出来的旋钮必须真的被拧动（V18 第 3 轮）。
+"""声明出来的旋钮必须真的被拧动（V18 第 3–4 轮）。
 
-三格同族形状，都是"docstring 对读者做了一个代码里没有的承诺"：
+四格同族形状，都是"文档/注册面对读者做了一个代码里没有的承诺"：
 
 * ``Parameters`` 段点名一个入参，函数体从头到尾没读它——调用方拧了个空开关，
   比根本没有这个开关更糟（他以为已经关掉前缀归一了）；
 * 进程级惰性单例自称"线程安全"，实际是无锁 check-then-act；
-* "共 N 个（见 :data:`X`）"里的 N 与被点名集合的真值不符。
+* "共 N 个（见 :data:`X`）"里的 N 与被点名集合的真值不符；
+* CLI 面 ``add_argument`` 注册一个 ``--flag``，处理链路里没有人读它的 dest（第 4 轮）。
 
-三者都能用 AST + 现算真值判掉，因此这里是**派生**判据而不是抄来的名单。
+四者都能用 AST + 现算真值判掉，因此这里是**派生**判据而不是抄来的名单。
 """
 
 from __future__ import annotations
@@ -382,3 +383,112 @@ def test_an_uncheckable_count_claim_is_a_defect_not_a_pass() -> None:
     assert len(findings) == 1 and "无法复核" in findings[0], findings
     # 反面对照：没有计数声明的文件确实该静默通过，否则整包会被噪声淹没
     assert _count_findings("tstdx.no_such_module_anywhere", "一句话，没有指针。\n") == ([], 0)
+
+
+# --------------------------------------------------------------------------- #
+# 判据四：CLI 面注册的每个 --flag，处理链路必须真的读它（第 4 轮）
+# --------------------------------------------------------------------------- #
+
+#: 命令行命名空间对象的常见变量名——只有它们的取值算"读取了这个入参"。
+_NS_NAMES = frozenset({"args", "ns", "namespace", "parsed", "opts"})
+CLI_DIR = PKG / "cli"
+
+
+def _dests_of(tree: ast.AST) -> dict[str, list[str]]:
+    """``add_argument`` 注册出的 ``dest -> 字面 flag 列表``（含 ``dest=`` 显式命名）。"""
+    found: dict[str, list[str]] = {}
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "add_argument"
+        ):
+            continue
+        literals = [
+            a.value for a in node.args if isinstance(a, ast.Constant) and isinstance(a.value, str)
+        ]
+        longs = [x for x in literals if x.startswith("--")]
+        dest = next(
+            (
+                kw.value.value
+                for kw in node.keywords
+                if kw.arg == "dest"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+            ),
+            None,
+        )
+        if dest is None:
+            if not longs:
+                continue  # 位置参数没有"拧了没反应"这一格
+            dest = longs[0].lstrip("-").replace("-", "_")
+        found.setdefault(dest, []).extend(longs)
+    return found
+
+
+def _is_namespace(name: ast.expr) -> bool:
+    """这个表达式是不是"命令行命名空间"对象（``args``/``ns``/``*_args``…）。"""
+    if not isinstance(name, ast.Name):
+        return False
+    host = name.id.lower()
+    return host in _NS_NAMES or host.endswith("args")
+
+
+def _reads_of(tree: ast.AST) -> set[str]:
+    """对命名空间对象的属性读取（``args.x`` 与 ``getattr(args, "x")``）。
+
+    口径故意严格：注册语句里 ``dest="x"`` 是关键字常量、``"--x"`` 是位置常量，两者都
+    不是属性访问，因此**注册自身不可能自证为被读取**——这是本判据与"文本里搜到名字
+    就算数"的关键差别，后者会让每条新 flag 天然通过。
+    """
+    reads: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and _is_namespace(node.value):
+            reads.add(node.attr)
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+            and len(node.args) >= 2
+            and _is_namespace(node.args[0])
+            and isinstance(node.args[1], ast.Constant)
+            and isinstance(node.args[1].value, str)
+        ):
+            reads.add(node.args[1].value)
+    return reads
+
+
+def test_every_registered_cli_flag_is_read_by_the_runtime() -> None:
+    """CLI 是 31 个命令的用户面，这里量的是"用户拧的每个开关都接通"。"""
+    dests: dict[str, list[str]] = {}
+    reads: set[str] = set()
+    for path in sorted(PKG.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        reads |= _reads_of(tree)
+        if path.parent.name == "cli":
+            for dest, flags in _dests_of(tree).items():
+                dests.setdefault(dest, []).extend(flags)
+    assert len(dests) >= 40, f"CLI 面只解析出 {len(dests)} 个入参，判据自身失明"
+    unread = sorted(set(dests) - reads)
+    assert not unread, "这些 --flag 被注册却无人读取（用户拧了个空开关）：" + ", ".join(
+        f"{d}({', '.join(sorted(set(dests[d]))) or d})" for d in unread
+    )
+
+
+def test_the_cli_ruler_sees_a_planted_unread_flag() -> None:
+    """正控：同一套代码必须认得"注册了但没人读"的形状，否则上一条的零缺陷没分量。"""
+    tree = ast.parse(
+        """
+import argparse
+
+p = argparse.ArgumentParser()
+p.add_argument("--sentinel-never-read", type=int, help="注册了没人读")
+p.add_argument("--explicit", dest="explicit_dest", help="下面会读")
+args = p.parse_args()
+print(args.explicit_dest)
+getattr(args, "another_one", None)
+""",
+    )
+    assert set(_dests_of(tree)) == {"sentinel_never_read", "explicit_dest"}, _dests_of(tree)
+    assert _reads_of(tree) == {"explicit_dest", "another_one"}, _reads_of(tree)
+    assert sorted(set(_dests_of(tree)) - _reads_of(tree)) == ["sentinel_never_read"]
