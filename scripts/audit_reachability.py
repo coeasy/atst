@@ -24,6 +24,8 @@ AST 静态扫描 tstdx/ 全部模块的 import 边（含 tstdx/__init__.py 的 _
 * 指向不存在模块的死记录（模块被删/改名后忘记撤条目）；
 * 指向**已可达**模块的过期记录（曾经需要豁免，现已接线却没人撤）；
 * 理由短于 :data:`MIN_REASON_CHARS` 的条目；
+* 理由里引用的仓内路径指针已经不存在（``[dead-pointer]``），或整条理由找不出一个
+  可核验路径（``[no-pointer]``）——两者都让"谁消费它"退化成无法反驳的自由文本；
 * 重复条目。
 """
 
@@ -32,6 +34,7 @@ from __future__ import annotations
 import argparse
 import ast
 import contextlib
+import re
 import sys
 from pathlib import Path
 
@@ -47,6 +50,29 @@ ALLOW = ROOT / "scripts" / "_reach_allow.txt"
 
 #: 一条豁免记录至少要说清"谁消费它 + 为什么生产链路不 import 它"，短于此即视为无效理由。
 MIN_REASON_CHARS = 40
+
+#: 理由里"谁消费它"的可核验指针：形如 ``tests/trade/``、``docs/api/README.md``、
+#: ``tstdx/profile/detect.py`` 的仓内路径。长度门槛只保证理由**像**一句话，
+#: 不保证它指向的东西还在——一条写着"tests/output/ 消费"而该目录已被改名的记录，
+#: 和没写理由等价（F-67 的同形教训：把已失效的证据读成绿，比缺证据更糟）。
+_CONSUMER_PATH = re.compile(r"[\w.\-]+(?:/[\w.\-]+)+/?")
+
+#: 路径后缀白名单之外的斜杠串不是仓内路径（HTTP 路由、URI、命令行片段）。
+_PATH_SUFFIXES = (".py", ".md", ".txt", ".yaml", ".yml", ".json", ".toml", ".bin")
+
+
+def _consumer_pointers(reason: str) -> tuple[list[str], list[str]]:
+    """把理由里的仓内路径指针分成 ``(存在, 已失效)`` 两堆。"""
+    live: list[str] = []
+    dead: list[str] = []
+    for token in _CONSUMER_PATH.findall(reason):
+        if not token.endswith("/") and not token.endswith(_PATH_SUFFIXES):
+            continue
+        if any(part in {"..", "http:", "https:"} for part in token.split("/")):
+            continue
+        (live if (ROOT / token).exists() else dead).append(token)
+    return live, dead
+
 
 # 进程入口种子（console script / python -m / 顶层包）
 # 名称必须是当前真实模块：v16 把 integration 服务面从 http_server/ws_server/
@@ -86,6 +112,18 @@ def _load_allow(path: Path = ALLOW) -> tuple[dict[str, str], list[str]]:
                 f"[thin] {module}：理由仅 {len(reason)} 字符（须 ≥{MIN_REASON_CHARS}），"
                 f"未说明谁消费它、为何生产链路不 import"
             )
+        else:
+            live, dead = _consumer_pointers(reason)
+            for token in dead:
+                defects.append(
+                    f"[dead-pointer] {module}：理由引用的 `{token}` 在磁盘上不存在，"
+                    f"这条豁免的证据已经过期"
+                )
+            if not live and not dead:
+                defects.append(
+                    f"[no-pointer] {module}：理由没有任何可核验的仓内路径指针"
+                    f"（tests/… · docs/… · tstdx/…），因此无人能证实谁在链外消费它"
+                )
         records[module] = reason
     return records, defects
 

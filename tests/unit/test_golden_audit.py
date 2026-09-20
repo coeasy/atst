@@ -260,3 +260,53 @@ class TestGateCli:
         data = json.loads(capsys.readouterr().out)
         assert data["summary"]["real"] == 1
         assert "0x530" in data["by_command"]
+
+
+# --------------------------------------------------------------------------- #
+# payload 克隆普查：份数与"证明了几件事"必须分开报
+# --------------------------------------------------------------------------- #
+class TestPayloadClones:
+    def test_identical_payloads_group_and_split_by_origin(self, corpus_root: Path) -> None:
+        same = bytes(range(40))
+        _sample(corpus_root, "0x530", "REALTIME_QUOTE", source="self-captured", payload=same)
+        _sample(corpus_root, "0x530", "REALTIME_QUOTE", source="synthetic", payload=same)
+        _sample(corpus_root, "0x530", "REALTIME_QUOTE", source="synthetic", payload=same)
+        _sample(corpus_root, "0x530", "REALTIME_QUOTE", source="synthetic", payload=b"\x00" * 40)
+        clones = audit(corpus_root)["payload_clones"]
+        assert len(clones) == 1, "只有前 3 份字节相同，应恰好一组"
+        group = clones[0]
+        assert (len(group["samples"]), group["real"], group["synthetic"]) == (3, 1, 2)
+        assert group["size"] == 40 and group["commands"] == ["0x530"]
+
+    def test_clone_census_is_report_only_and_leaves_the_gate_alone(self, corpus_root: Path) -> None:
+        """克隆再多也不改判：L1 门禁只看"有没有有效 real 样本"，不看份数。"""
+        same = bytes(range(200))
+        l1 = _l1_keys(corpus_root)
+        for key in l1:
+            _sample(
+                corpus_root,
+                key,
+                "FAKE",
+                source="self-captured",
+                market=0,
+                code="600000",
+                payload=same,
+            )
+        for _ in range(9):
+            _sample(
+                corpus_root,
+                "0x530",
+                "FAKE",
+                source="synthetic",
+                market=0,
+                code="600000",
+                payload=same,
+            )
+        clones = audit(corpus_root)["payload_clones"]
+        assert len(clones) == 1 and len(clones[0]["samples"]) == len(l1) + 9
+        assert main(["--root", str(corpus_root), "--gate"]) == 0
+
+    def test_distinct_payloads_produce_no_group(self, corpus_root: Path) -> None:
+        _sample(corpus_root, "0x530", "A", source="self-captured", payload=b"\x01" * 40)
+        _sample(corpus_root, "0x530", "B", source="self-captured", payload=b"\x02" * 40)
+        assert audit(corpus_root)["payload_clones"] == []

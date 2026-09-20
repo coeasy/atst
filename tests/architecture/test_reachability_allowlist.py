@@ -37,8 +37,12 @@ def _write(tmp_path: Path, *lines: str) -> Path:
     return path
 
 
-#: 够长且合格的理由样本——各缺陷用例只在"模块对不对/是否重复"这一维度上失败。
-LONG_REASON = "公共 API：由用户显式 import，内核不 import 属预期，测试逐条覆盖其语义与边界"
+#: 够长且合格的理由样本——带一个真实存在的指针，各缺陷用例只在"模块对不对/是否重复"
+#: 这一维度上失败，不会被 `[no-pointer]` 顺带判红。
+LONG_REASON = (
+    "公共 API：由用户显式 import，内核不 import 属预期，"
+    "tests/architecture/test_reachability_allowlist.py 逐条覆盖其语义与边界"
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -79,7 +83,7 @@ def test_process_entrypoints_are_seeded_not_exempted() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 四类记录缺陷各自都被抓住
+# 六类记录缺陷各自都被抓住
 # --------------------------------------------------------------------------- #
 def test_thin_reason_is_a_defect(tmp_path: Path) -> None:
     path = _write(tmp_path, "tstdx.batch  # 太短")
@@ -89,8 +93,7 @@ def test_thin_reason_is_a_defect(tmp_path: Path) -> None:
 
 
 def test_duplicate_entry_is_a_defect(tmp_path: Path) -> None:
-    reason = "公开 API：由用户显式 import，内核不 import 属预期，测试逐条覆盖其语义"
-    path = _write(tmp_path, f"tstdx.batch  # {reason}", f"tstdx.batch  # {reason}")
+    path = _write(tmp_path, f"tstdx.batch  # {LONG_REASON}", f"tstdx.batch  # {LONG_REASON}")
     _, defects = ar._load_allow(path)
     assert [d.split("]")[0] for d in defects] == ["[dup"]
 
@@ -108,3 +111,35 @@ def test_stale_entry_is_a_defect(tmp_path: Path) -> None:
     records, _ = ar._load_allow(path)
     defects = ar._allowlist_defects(records, {"tstdx.batch"}, {"tstdx.batch"})
     assert [d.split("]")[0] for d in defects] == ["[stale"]
+
+
+# --------------------------------------------------------------------------- #
+# "谁消费它"必须是可核验的指针，不是自由文本
+# --------------------------------------------------------------------------- #
+def test_reason_pointing_at_a_removed_path_is_a_defect(tmp_path: Path) -> None:
+    """豁免理由引用的目录被改名/删除后，这条证据就已经不成立，必须当场判红。"""
+    path = _write(
+        tmp_path,
+        "tstdx.batch  # 由 tests/this_directory_was_renamed_long_ago/ 与它的测试消费，"
+        "内核不 import 属预期，理由本身够长不会被 thin 抢先",
+    )
+    _, defects = ar._load_allow(path)
+    assert [d.split("]")[0] for d in defects] == ["[dead-pointer"]
+
+
+def test_reason_without_any_verifiable_pointer_is_a_defect(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        "tstdx.batch  # 这是一段说得很长很圆、却一个文件都举不出来的自由文本理由，"
+        "读的人无法反驳，因此也无法信任",
+    )
+    _, defects = ar._load_allow(path)
+    assert [d.split("]")[0] for d in defects] == ["[no-pointer"]
+
+
+def test_the_pointer_ruler_itself_sees_the_real_records() -> None:
+    """自检：真实清单的每条理由都要拿出至少一个活指针，否则上面两条判据可能在空转。"""
+    records, _ = ar._load_allow()
+    assert records
+    empty = [m for m, r in records.items() if not ar._consumer_pointers(r)[0]]
+    assert not empty, f"这些豁免记录拿不出存在的消费方路径：{empty}"

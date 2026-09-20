@@ -24,6 +24,9 @@ Golden 语料有两种来源，信任级别不同：
 4. **L1 门禁**：账本中 ``tier=L1 且 verified=True`` 的命令**必须**有
    ≥1 个**有效** real 样本 —— ``--gate`` 模式下缺失即非零退出（CI 阻断）。
    「已宣布精确解析却没有真实主站样本」视同回归。
+5. **克隆普查（只报告，不判分）**：payload 字节完全相同的样本归组并计入
+   ``payload_clones``。样本份数可以靠复制上涨，能证明的协议事实不能，
+   所以"语料共 N 份"这句话需要一个"其中有多少是同一份字节"的对照读法。
 
 命令行::
 
@@ -43,6 +46,7 @@ Golden 语料有两种来源，信任级别不同：
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from collections.abc import Sequence
@@ -154,6 +158,8 @@ class SampleInfo:
     market: int | None
     code: str
     payload_size: int = 0
+    #: payload.bin 内容的 sha256（前 16 位）。用于识别"看起来很多、其实一份"的克隆样本。
+    digest: str = ""
 
 
 @dataclass
@@ -226,6 +232,10 @@ def scan_corpus(root: Path | None = None) -> list[SampleInfo]:
             payload_size = payload_path.stat().st_size
         except OSError:  # pragma: no cover
             payload_size = 0
+        try:
+            digest = hashlib.sha256(payload_path.read_bytes()).hexdigest()[:16]
+        except OSError:  # pragma: no cover
+            digest = ""
         meta = _load_meta(sample_dir)
         ctx = meta.get("parse_ctx") or {}
         rel = meta_path.relative_to(root).as_posix()
@@ -240,6 +250,7 @@ def scan_corpus(root: Path | None = None) -> list[SampleInfo]:
                 market=_to_int(ctx.get("market")),
                 code=str(ctx.get("code", "") or ""),
                 payload_size=payload_size,
+                digest=digest,
             )
         )
     return out
@@ -252,6 +263,36 @@ def _ledger_commands(override: Sequence[Any] | None) -> list[Any]:
     from ..protocol.commands import COMMANDS, TIER_L1
 
     return [c for c in COMMANDS.values() if c.tier == TIER_L1 and c.verified]
+
+
+def _payload_clones(samples: list[SampleInfo]) -> list[dict[str, Any]]:
+    """字节完全相同的 payload 分组（≥2 份才报）。
+
+    样本"份数"是语料库的健康指标，而份数最容易用复制来冒充：一条 real 样本被复制成
+    10 个不同 code 的 synthetic 目录，`total` 立刻涨 10，可它证明的东西一件也没多——
+    被复制的字节不会因为它换了目录名就多解释一种布局。这里只如实登记，不改判
+    （克隆不扣分也不加分，L1 门槛照旧），为的是让"我们有 530 份样本"这句话
+    能被读成它真正的意思。
+    """
+    groups: dict[str, list[SampleInfo]] = {}
+    for s in samples:
+        if s.digest:
+            groups.setdefault(s.digest, []).append(s)
+    out: list[dict[str, Any]] = []
+    for digest, members in groups.items():
+        if len(members) < 2:
+            continue
+        out.append(
+            {
+                "digest": digest,
+                "size": members[0].payload_size,
+                "commands": sorted({m.command or "<unparsed>" for m in members}),
+                "real": sum(1 for m in members if m.origin == ORIGIN_REAL),
+                "synthetic": sum(1 for m in members if m.origin == ORIGIN_SYNTHETIC),
+                "samples": [m.rel for m in members],
+            }
+        )
+    return sorted(out, key=lambda item: (-len(item["samples"]), item["digest"]))
 
 
 def audit(
@@ -394,6 +435,7 @@ def audit(
             for c in missing_valid_real
         ],
         "suspect_short": suspect_short,
+        "payload_clones": _payload_clones(samples),
         "market_gaps": market_gaps,
         "kline_categories_real": sorted(kline_real.categories) if kline_real else [],
         "hints": hints,
@@ -441,6 +483,15 @@ def _print_report(a: dict[str, Any]) -> None:
             f"{k} {v[0]['size']}B<{v[0]['min']}B x{len(v)}" for k, v in a["suspect_short"].items()
         )
         print(f"  [WARN] suspect_short real samples (below per-command floor): {parts}")
+    clones = a["payload_clones"]
+    if clones:
+        copied = sum(len(c["samples"]) for c in clones) - len(clones)
+        widest = max(clones, key=lambda c: len(c["samples"]))
+        print(
+            f"  [INFO] payload clones: {len(clones)} byte-identical group(s), "
+            f"{copied} extra copy(ies) that add no independent evidence"
+            f"（最大一组 {len(widest['samples'])} 份 @ {widest['commands']}）"
+        )
     print(f"  [INFO] 0x052D real category coverage: {a['kline_categories_real'] or 'none'}")
 
 
