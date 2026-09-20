@@ -73,3 +73,13 @@ tests/_tmp_golden_test/
 
 # Codegen draft area (auto-generated, not part of the package)
 tstdx/tools/generated_draft/
+
+# Local verification worktrees created by refactor sessions (git worktree add)
+wt_*/
+
+# uv environment lock: nothing in the gate chain reads it (CI installs
+# `pip install -e ".[all,dev]"`), and it has never been tracked.
+uv.lock
+
+# Sniffer auto-inferred specs stay out until hand-verified into PROTOCOL_SPEC
+PROTOCOL_SPEC/_sniffer/**/DRAFT.yaml

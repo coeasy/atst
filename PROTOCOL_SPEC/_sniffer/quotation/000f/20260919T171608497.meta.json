@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-09-19T17:16:08+0800",
+  "family": "quotation",
+  "command": "0x000f",
+  "command_name": "CAPITAL_CHANGES",
+  "frame": {
+    "magic": "0x74cbb1",
+    "seq": 1,
+    "method": "0xf",
+    "zip_size": 0,
+    "unzip_size": 0,
+    "compressed": false,
+    "payload_len": 32
+  },
+  "result": {
+    "tier": "L2",
+    "confidence": 0.85,
+    "rows": 1,
+    "warnings": []
+  },
+  "candidate": {
+    "has_count_prefix": false,
+    "count": 1,
+    "record_size": 32,
+    "field_types": [
+      "u32",
+      "zero_u32",
+      "zero_u32",
+      "zero_u32",
+      "zero_u32",
+      "zero_u32",
+      "zero_u32",
+      "zero_u32"
+    ],
+    "score": 0.85,
+    "notes": [
+      "按候选记录长度整除"
+    ]
+  },
+  "source": "self-captured"
+}

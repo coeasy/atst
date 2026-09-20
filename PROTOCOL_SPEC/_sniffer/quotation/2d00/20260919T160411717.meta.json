@@ -1,0 +1,35 @@
+{
+  "captured_at": "2026-09-19T16:04:11+0800",
+  "family": "quotation",
+  "command": "0x2d00",
+  "command_name": "UNKNOWN_2D00",
+  "frame": {
+    "magic": "0x74cbb1",
+    "seq": 1,
+    "method": "0x2d00",
+    "zip_size": 517,
+    "unzip_size": 512,
+    "compressed": true,
+    "payload_len": 2
+  },
+  "result": {
+    "tier": "L3",
+    "confidence": 0.0,
+    "rows": 0,
+    "warnings": [
+      "L2 置信度 0.00 < 0.5，回落 L3 原始透传",
+      "L2 置信度不足，已回落 L3 原始透传；建议显式指定 DataProfile 或为该命令补充 spec/golden"
+    ]
+  },
+  "candidate": {
+    "has_count_prefix": false,
+    "count": 0,
+    "record_size": 0,
+    "field_types": [],
+    "score": 0.0,
+    "notes": [
+      "payload 过短"
+    ]
+  },
+  "source": "self-captured"
+}
