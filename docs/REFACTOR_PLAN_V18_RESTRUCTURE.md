@@ -385,6 +385,11 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b1step/mutate_v18_round1.log` | 第 1 轮 8 条反证变异：每条 `rc=1` 且 `restored=True` |
 | `wt_v18b1ship/gates_ship.log` | **提交树**（`94b97d6`，`dirty=0`）九门禁复测 |
 | `wt_v18b1ship/fulltest_ship.log` + `.xml` + `collect_ship.txt` | 提交树离线全量、junit 与 `--collect-only` 规模 |
+| `wt_v18b2step/gates_v18b2.log` | 第 2 轮步骤轮（`0a13d9f` + 本步 5 文件）九门禁逐条 RC 与摘要行 |
+| `wt_v18b2step/fulltest_v18b2.log` + `.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数 |
+| `wt_v18b2step/mutate_v18_round2.py` + `.log` | 第 2 轮 4 条反证变异（N1–N4）：每条 `rc=1` 且 `restored=True` |
+| `wt_v18b2ship/gates_ship.log` | **提交树**（`d1bd446`，`dirty=0`）九门禁复测 |
+| `wt_v18b2ship/fulltest_ship.log` + `.xml` | 提交树离线全量与 junit 计数；克隆普查读数与步骤轮逐字相同 |
 
 ## 8. 本方案不做什么（避免被读成"又要一轮无限重构"）
 
@@ -511,6 +516,20 @@ junit **3617 项 / 0 失败 / 0 错误 / 7 跳过**、154.7s；覆盖率 **81.49
 
 **本轮明确未做**：C1/C2/C3、D1（按 §10 改写后的口径）、E1/E3/E4、F1–F5、G2 的 D10 裁决、
 以及 F-70(b)/F-71(c)（并行会话名下）。D8 默认 (b) 依 §10 证据**撤回**，改为待用户重设。
+
+**ship 轮（提交树复测，同一解释器与工作树参数）**：`d1bd446` 落到 main 后另起隔离工作树
+`wt_v18b2ship` 再量一遍，`head=d1bd446 dirty=0`。九项确定性门禁 **G1–G9 全部 rc=0**
+（`gates_ship.log`：originality `Total: 191 / Original: 191 / Suspicious: 0`、spec_audit
+`coverage_pct 100.0`、golden_audit `[GATE] all L1 verified commands have real samples (OK)`
++ 既有 `suspect_short` WARN 1 条、reachability `无未登记孤儿 ✓`、contract_audit、
+docs links 83 files、mypy 0 行、ruff check `All checks passed!`、ruff format 443 files）；
+离线全量 junit **3617 / 0 失败 / 0 错误 / 7 跳过**、153.8s、覆盖率 **81.50%**
+（TOTAL 22 433 / 3 578 / 5 994 / 1 000，`Required 77.0% reached`）。
+克隆普查读数在两棵树**逐字相同**（54 组 / 314 份额外副本 / 最大一组 24 份 @ `0x52d`），
+提交内容与被测内容一致。两轮覆盖率 81.49% / 81.50%：`stmt` 与 `branch` 两格完全相同
+（22 433 / 5 994），差在 `miss` 3 580→3 578、`partial` 1 001→1 000——**这 2 格的来路本轮没有归因**，
+只登记为读数微动，不用于任何阈值或趋势判断；阈值 77 未动。
+
 
 
 
