@@ -15,9 +15,9 @@ The envelope is the *only* error shape allowed to cross a trust boundary.  It
 * is fail-closed: the top level always reports ``fallback_allowed`` and
   ``provider_switch_allowed`` as ``False``, and legacy permission keys inside the
   context are normalized to ``False`` rather than injected;
-* prefers an explicit :class:`~tstdx.failure.FailureDisposition` over raw
-  transport retry advice, so a budget-exhausted or terminal failure is never
-  reported as retryable.
+* lets an explicit ``retry_same_provider`` decision in the exception context
+  outrank the transport's static retry advice, so a query whose total deadline
+  is already gone is never advertised as retryable.
 """
 
 from __future__ import annotations
@@ -185,19 +185,17 @@ def _prefers_disposition_retryability(
     context: Mapping[str, Any],
     advice_retryable: bool,
 ) -> bool:
-    """Return retryability, honoring an explicit failure disposition.
+    """Retryability: an explicit decision in the context outranks static advice.
 
-    ``FailureDisposition`` writes ``retry_same_provider`` / ``terminal`` into the
-    exception context.  Those facts are *decisions* (a deadline may already be
-    exhausted), so they override the static transport advice — otherwise an
-    un-retryable outcome would still be advertised as retryable.
+    ``retry_same_provider`` 由写入方放进异常 context——今天是
+    :meth:`~tstdx.query.ExecutionBudget.ensure_remaining`（查询总 deadline 已耗尽）。
+    它压过传输建议：建议是"这类错误一般可以重试"，决策是"这一次不该再来"，
+    后者不赢就会对调用方宣告一个明知无用的重试。
     """
 
     decided = context.get("retry_same_provider")
     if isinstance(decided, bool):
         return decided
-    if context.get("terminal") is True:
-        return False
     return advice_retryable
 
 

@@ -10,7 +10,7 @@
 
 | 原库 | 建议目标 API | 对照表 |
 |---|---|---|
-| easyquotation | `tstdx.facade.quote_api()` / `tstdx.web.WebQuoteClient` / `get_quotes` | frequency/category → period |
+| easyquotation | `Client` 的 `quotes`（唯一业务入口）/ `tstdx.web.WebQuoteClient` / `get_quotes` | frequency/category → period |
 | mootdx | `TdxClient` / `AsyncTdxClient` / `tstdx.reader.formats` | frequency → period |
 | easy_tdx | `TdxClient` / `AsyncTdxClient` | category → period |
 | eltdx | `TdxClient` / `AsyncTdxClient` | frequency → period |

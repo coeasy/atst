@@ -71,3 +71,24 @@ def test_kernel_propagates_execution_error_without_fallback() -> None:
         assert caught.value.context.get("fallback") is None
     finally:
         runtime.close()
+
+
+def test_exhausted_query_deadline_is_never_advertised_as_retryable() -> None:
+    """预算耗尽是一条**决策**，不该被传输层的静态建议盖过去。
+
+    ``ReadTimeout`` 的 advice 写着"读取超时：可重试"，而查询总 deadline 已经用完
+    时重试同一 Provider 只会再撞一次同一个时钟。信封在这里取得显式
+    ``retry_same_provider``，wire 上的 ``retryable`` 因此不再撒谎。
+    """
+    import time
+
+    from tstdx.errors import ReadTimeout
+    from tstdx.query import ExecutionBudget
+
+    with pytest.raises(ReadTimeout) as caught:
+        ExecutionBudget(deadline_ns=time.monotonic_ns() - 1).ensure_remaining("provider_request")
+
+    assert caught.value.advice.retryable is True  # 静态建议没变
+    envelope = to_error_envelope(caught.value).to_dict()
+    assert envelope["retryable"] is False
+    assert envelope["context"]["retry_same_provider"] is False

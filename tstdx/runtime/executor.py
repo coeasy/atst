@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +12,7 @@ from typing import Any
 
 from ..catalog.capability import binding_for, validate_call
 from ..config import Config
-from ..diagnostics import warning_sink
+from ..diagnostics import WarningCode, record_warning, warning_sink
 from ..domain.symbol import normalize_symbol
 from ..errors import InternalError, TdxError, TruncatedDataError, ValidationError
 from ..providers import PROVIDERS
@@ -87,18 +86,34 @@ DIRECT_BINDINGS = tuple(
 
 
 def _is_unified_reachable(provider: str, channel: str, capability: str) -> bool:
+    """这个三元组会不会真的被统一执行面派发。
+
+    判据只取注册表自己的数据：``bars`` 的 canonical channel 随周期分家，而这条
+    事实的唯一持有者是 :func:`tstdx.query._canonical_unified_channel`。所以"可达"
+    = 这个 channel **声明的任一周期** 的 canonical 就是它本身。早先这里写死过
+    ``tencent → {kline, minute_kline}``，等于把同一个业务事实在第二个地方抄一遍
+    （F-27/F-49 那一族"影子规则"的现存样本）。
+    """
     from ..query import _canonical_unified_channel
 
-    if capability == "bars" and provider == "tencent":
-        return channel in {"kline", "minute_kline"}
-    canonical = _canonical_unified_channel(provider, capability, "")
-    if canonical is not None:
-        return channel == canonical
+    declared = next((item for item in PROVIDERS.get(provider).channels if item.id == channel), None)
+    periods = sorted(declared.periods) if declared is not None and declared.periods else [""]
+    canonical = {_canonical_unified_channel(provider, capability, period) for period in periods}
+    if channel in canonical:
+        return True
+    if canonical != {None}:
+        return False
     owners = [item.id for item in PROVIDERS.get(provider).channels_for(capability)]
     return len(owners) == 1 and channel in owners
 
 
 def audit_direct_bindings() -> tuple[DirectBinding, ...]:
+    """绑定表自查：重复即红，"统一可达却没有执行元数据"也即红。
+
+    后者原先只 ``warnings.warn``（同文件的注册表对账却是 raise）。一软一硬的差别
+    不是分寸而是成败：pytest 收集告警却不因它失败，于是这条缺陷在 CI 上永远看不见，
+    只有读日志的人能发现。判据既然写得出来，就该按它决定要不要放行。
+    """
     seen: set[tuple[str, str, str]] = set()
     unroutable: list[tuple[str, str, str]] = []
     for binding in DIRECT_BINDINGS:
@@ -114,11 +129,10 @@ def audit_direct_bindings() -> tuple[DirectBinding, ...]:
         except KeyError:
             unroutable.append(binding.key)
     if unroutable:
-        warnings.warn(
+        raise RuntimeError(
             f"{len(unroutable)} 个统一可达的 Direct binding 缺少 migrated-capability "
-            f"执行元数据（例如 {unroutable[0]!r}）；运行时按 binding 表派发，"
-            f"capability catalog 待补齐",
-            stacklevel=2,
+            f"执行元数据（例如 {unroutable[0]!r}）：运行时按 binding 表派发，"
+            f"capability catalog 却不认这个三元组，两侧必须补齐而不是带着缺口上线"
         )
     return DIRECT_BINDINGS
 
@@ -501,8 +515,27 @@ class DirectProviderExecutor:
         )
 
     def _tdx_quotes(self, plan: QueryPlan) -> Any:
+        """``quotes`` 的失败必须显形：全败即抛，部分失败随结果携带。
+
+        子客户端对逐只失败做了隔离，默认把它们只写进 ``client.last_errors``——
+        一个每次调用都被整体覆盖的实例属性。内核既不读那个属性也不另作声明，
+        于是"所有主机都连不上"在 wire 上的形状与"这只代码没有行情"完全相同
+        （``data=[]`` + ``warnings=()`` + HTTP 200）。失败袋在此显式取走，
+        整体与部分按 :meth:`_tdx_bars` 的同一条界线分家：连不上就抛，缺几只需报。
+        """
+        symbols = list(plan.spec.symbols)
+        errors: list[tuple[str, BaseException]] = []
         with self._tdx_client(self._hop_timeout(plan)) as client:
-            return client.quotes(list(plan.spec.symbols))
+            rows = client.quotes(symbols, _collect=errors)
+        if errors and not rows:
+            raise errors[0][1]
+        if errors:
+            record_warning(
+                WarningCode.QUOTES_PARTIAL_FAILURE,
+                f"quotes 有 {len(errors)}/{len(symbols)} 只标的未取得行情："
+                + "；".join(f"{sym} → {type(exc).__name__}({exc})" for sym, exc in errors[:3]),
+            )
+        return rows
 
     def _tdx_bars(self, plan: QueryPlan) -> Any:
         if plan.spec.adjustment:

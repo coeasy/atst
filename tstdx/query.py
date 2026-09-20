@@ -105,7 +105,13 @@ class ExecutionBudget:
         if time.monotonic_ns() >= self.deadline_ns:
             raise ReadTimeout(
                 "查询总 deadline 已耗尽",
-                context={"phase": phase, "deadline_scope": "query"},
+                context={
+                    "phase": phase,
+                    "deadline_scope": "query",
+                    #: 这是一条**决策**而不是建议：预算已经用光的失败不许再被对外
+                    #: 宣告成"可以重试同一个 Provider"（`error_envelope` 读的就是它）。
+                    "retry_same_provider": False,
+                },
             )
 
 

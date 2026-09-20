@@ -203,6 +203,11 @@ executor.execute → QueryResult`。内核零缓存、不自动换源；`QueryRe
 `tstdx/diagnostics.py` 一个）：空元组是"干净"这一判断的证据，三张服务面把它逐条写进
 `meta.warnings`；`strict=True` 时内核改为在返回前抛 `TruncatedDataError`。
 
+`quotes` 的失败形状与同族便捷方法共用一条判据：**全部**标的都失败即抛（断网时就是
+`AllHostsUnreachable`，与 `bars` 同形），**部分**标的失败则照常返回已集到的行，并携带
+一条 `quotes_partial_failure` 告警——于是 `strict=True` 能拒收一份不完整的答案。
+"这只代码没有行情"与"根本连不上"在 wire 上不是同一个形状。
+
 ### QuerySpec / QueryPlan
 
 ```python

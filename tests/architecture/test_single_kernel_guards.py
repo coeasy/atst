@@ -8,6 +8,7 @@ second execution seam can never silently reappear.
 
 from __future__ import annotations
 
+import ast
 import importlib
 import sys
 from pathlib import Path
@@ -156,3 +157,49 @@ def test_kernel_is_the_only_execution_seam_of_client() -> None:
         assert type(client.runtime.executor).__name__ == "DirectProviderExecutor"
     finally:
         client.close()
+
+
+#: 绑定审计里不许出现业务事实（R-2）。字符串字面量是唯一的抓手：`tencent`/`sina`
+#: 这类 Provider 名一旦出现在这两个函数体内，就说明"谁能被派发到"这条判断开始
+#: 在第二个地方被抄写——注册表与 canonical 表才是唯一事实源。
+_AUDITED_FUNCTIONS = ("_is_unified_reachable", "audit_direct_bindings")
+_EXECUTOR_SOURCE = ROOT / "tstdx" / "runtime" / "executor.py"
+
+
+def _string_constants_in(function_name: str) -> set[str]:
+    tree = ast.parse(_EXECUTOR_SOURCE.read_text(encoding="utf-8"), filename=str(_EXECUTOR_SOURCE))
+    body = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == function_name
+    )
+    doc = ast.get_docstring(body)
+    return {
+        node.value
+        for node in ast.walk(body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value != doc
+    }
+
+
+def test_binding_audit_holds_no_provider_business_facts() -> None:
+    from tstdx.providers import PROVIDERS
+
+    providers = set(PROVIDERS.ids()) | {"bars", "quotes"}
+    offenders: dict[str, set[str]] = {}
+    for name in _AUDITED_FUNCTIONS:
+        hits = _string_constants_in(name) & providers
+        if hits:
+            offenders[name] = hits
+    assert offenders == {}, f"绑定审计里出现了业务事实，注册表才是唯一事实源：{offenders}"
+
+
+def test_the_provider_fact_ruler_sees_a_reintroduced_special_case() -> None:
+    """正控：判据必须真的能抓住"把 Provider 名写回审计函数"这一变异。"""
+    sample = 'def f():\n    return "tencent" == "tencent" and "bars"\n'
+    tree = ast.parse(sample)
+    found = {
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    assert {"tencent", "bars"} <= found

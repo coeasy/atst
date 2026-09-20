@@ -191,6 +191,13 @@ _PATH_DOC_EXTRA = ("docs/tdx_status.md",)
 _PATH_DOC_DIRS = ("docs/providers",)
 _LIST_OR_ROW = re.compile(r"\s*(?:[-*+]\s|\d+\.\s|\|)")
 
+#: 受体名单：迁移对照表的左列写的是**别家库**的 API（easyquotation 的 `hq`），
+#: 那些链不是对 tstdx 的断言，按成员存在性判它们等于让文档不能提第三方接口。
+#: 与 `BARE_WARN_ALLOWED` 同一条纪律：理由不再成立时判据即红，不许留空豁免。
+FOREIGN_RECEIVERS: dict[str, str] = {
+    "hq": "docs/migration/easyquotation.md 的对照表左列是 easyquotation 自己的 API",
+}
+
 
 def path_fact_docs() -> list[Path]:
     """按斜杠形式扫描的事实文档集合。"""
@@ -314,6 +321,107 @@ def _resolves(dotted: str) -> bool:
             return False
         return True
     return False
+
+
+# --------------------------------------------------------------------------
+# 点号调用链与小写成员（R-9 的两种新形状）
+# --------------------------------------------------------------------------
+
+#: 前两节各管一种形状：反引号里的 ``tstdx.a.b`` 点号路径、``facade/api.py`` 斜杠路径。
+#: ``docs/troubleshooting.md`` 教用户调 ``client.router.last_errors()`` 时两种都不是——
+#: 首段是一个变量名，其余全小写，判据按形状就收不进去，于是"照着做必然 AttributeError"
+#: 的指令在活文档里存活了一整轮。这里把尺子从"路径"换成"成员"：调用链上除受体以外的
+#: 每一段，都必须在生产代码里真的是某个属性/方法/类名。
+_DOC_CALL = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\([^`]*\)`")
+
+
+def chain_docs() -> list[Path]:
+    """调用链判据覆盖的文档：全部活文档，但方案/台账类除外。
+
+    后者的工作正是复述"某个名字曾经存在过"，块级"删除"豁免在这种文件上不成立——
+    一份几千行的台账里"删除"二字到处都是（`logical_blocks` 的粒度救不了它）。
+    """
+    return [path for path in active_docs() if "REFACTOR_PLAN" not in path.name]
+
+
+@functools.lru_cache(maxsize=1)
+def _production_members() -> frozenset[str]:
+    names: set[str] = set()
+    for path in sorted((ROOT / "tstdx").rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Attribute):
+                names.add(node.attr)
+            elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                names.add(node.name)
+    return frozenset(names)
+
+
+def _dead_call_chain_findings() -> tuple[list[str], int, list[str]]:
+    """返回 ``(违约清单, 扫到的调用链条数, 因外库受体而豁免的受体名)``。"""
+    members = _production_members()
+    offenders: list[str] = []
+    scanned = 0
+    waived: list[str] = []
+    for path in chain_docs():
+        rel = path.relative_to(ROOT).as_posix()
+        for block in logical_blocks(path.read_text(encoding="utf-8")):
+            for chain in _DOC_CALL.findall(block):
+                segments = chain.split(".")
+                if segments[0] in FOREIGN_RECEIVERS:
+                    scanned += 1
+                    waived.append(segments[0])
+                    continue
+                scanned += 1
+                if any(marker in block for marker in _RETIRED_MARKERS):
+                    continue
+                for segment in segments[1:]:
+                    if segment not in members:
+                        offenders.append(
+                            f"{rel}: `{chain}()` 的 `{segment}` 在生产代码里不是任何对象的成员"
+                        )
+                        break
+    return offenders, scanned, sorted(set(waived))
+
+
+def test_backticked_call_chains_name_real_members() -> None:
+    offenders, scanned, waived = _dead_call_chain_findings()
+    assert scanned > 10, f"活文档里只扫到 {scanned} 条点号调用链，说明扫描自身失效了"
+    stale = sorted(set(FOREIGN_RECEIVERS) - set(waived))
+    assert stale == [], f"外库受体豁免已经无人使用，请撤销：{stale}"
+    assert offenders == [], "\n".join(offenders)
+
+
+def test_the_member_ruler_itself_sees_the_router_chain() -> None:
+    """正控：这套判据必须真的认得它要抓的那条链，否则它可能只是在空转。"""
+    hit = _DOC_CALL.findall("`client.router.last_errors()`")
+    assert hit == ["client.router.last_errors"], hit
+    phantom, real = hit[0].split(".")[1:]
+    assert phantom not in _production_members(), f"{phantom} 已经复活，正控失效"
+    assert real in _production_members(), f"{real} 不在生产代码里，正控抓不到区分度"
+
+
+# --------------------------------------------------------------------------
+# 生产代码 docstring 里的 Sphinx 角色
+# --------------------------------------------------------------------------
+
+#: 点号判据的覆盖面是**文档**，于是包内的模块 docstring 成了一条空档：
+#: ``tstdx/web/sources.py`` 曾用现在时语气写"在 :mod:`tstdx.sources.router` 中统一路由"，
+#: 指向 v16 就物理删除的模块。它比文档里的假指令更糟——读代码的人正是写代码的人，
+#: 而 :mod: 角色在任何 Sphinx 构建里都会直接报错。
+_ROLE = re.compile(r":(?:mod|class|func|attr|meth|data):`(~?tstdx(?:\.[A-Za-z_][A-Za-z0-9_]*)+)`")
+
+
+def test_sphinx_roles_in_package_docstrings_resolve() -> None:
+    refs = 0
+    offenders: list[str] = []
+    for path in sorted((ROOT / "tstdx").rglob("*.py")):
+        for target in _ROLE.findall(path.read_text(encoding="utf-8")):
+            refs += 1
+            dotted = target.removeprefix("~")
+            if not _resolves(dotted):
+                offenders.append(f"{path.relative_to(ROOT)}: `{target}` 无法解析")
+    assert refs > 20, f"整包只扫到 {refs} 处 Sphinx 角色引用，说明扫描自身失效了"
+    assert offenders == [], "\n".join(offenders)
 
 
 # --------------------------------------------------------------------------

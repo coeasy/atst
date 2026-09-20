@@ -87,14 +87,20 @@ bars = client.bars("sh600519", profile=DataProfile(...))
 
 被反爬拦截：
 - 库已自动带 Referer + UA；仍被拦截说明频率过高
-- 每个源自带限流；触发后自动切换下一源
-- 连续失败达阈值会抛 `SourceDeprecated`（该源可能已改版）
+- 每个源自带限速；限速本身不改变取数路径
+- 取数路径只有一条：经 `Client` 的查询由内核按 `(provider, channel)` 精确派发，
+  指定哪个 Provider 就只走哪个 Provider，TDX 连不上不会把请求递给 Web 源，反之亦然
+  （ADR-015）。只有直接用 `tstdx.web` 的便捷入口时才有"按 `[web] enabled_sources`
+  顺序逐个试"这条路径，它是 web 层自己的便利，不是内核的降级
+- 源回了为空或无法解析的响应会抛 `SourceDeprecated`（该源可能已改版）；本仓没有
+  "连续失败计数到阈值就切换"这回事
 
 ### 症状：`[E7040] AllSourcesExhausted`
 
-7 个 Web 源全部失败：
+Web 便捷入口按顺序试完候选源仍全部失败（或显式 fallback 策略把名单跑空）：
 - 检查本机网络（能否 curl 新浪接口）
-- 查看各源最近失败原因：`client.router.last_errors()`
+- 逐源原因挂在异常自己身上：`exc.context["errors"]` 是 `["源名: 原因", ...]` 的清单，
+  `exc.context["sources"]` 是本次试过哪些源
 
 ### 数据口径对不上
 

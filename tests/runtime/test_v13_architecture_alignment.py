@@ -135,3 +135,35 @@ def test_mcp_only_exposes_promoted_canonical_capabilities() -> None:
         "get_security_list",
         "query_capability",
     }
+
+
+def test_binding_audit_fails_closed_instead_of_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """可达三元组缺 catalog 元数据 ⇒ 一次失败（R-2）。
+
+    原先是 ``warnings.warn``：pytest 会把告警收进报告却不因它失败，于是这条判据在
+    CI 上等于不存在——同文件的注册表对账却是 raise，一软一硬。
+    """
+    import warnings
+
+    from tstdx.runtime import executor as ex
+
+    target = next(
+        item
+        for item in ex.DIRECT_BINDINGS
+        if item.executor_name == "_migrated_capability" and ex._is_unified_reachable(*item.key)
+    )
+    real = ex.binding_for
+
+    def fake_binding_for(provider: str, channel: str, capability: str) -> object:
+        if (provider, channel, capability) == target.key:
+            raise KeyError(target.key)
+        return real(provider, channel, capability)
+
+    monkeypatch.setattr(ex, "binding_for", fake_binding_for)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with pytest.raises(RuntimeError, match="执行元数据"):
+            ex.audit_direct_bindings()
+    assert [str(item.message) for item in caught] == [], "审计退回告警即为本条判据失效"

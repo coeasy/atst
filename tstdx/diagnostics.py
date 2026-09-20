@@ -56,6 +56,9 @@ class WarningCode(str, Enum):
     #: ``bars`` 首页即空响应：判据取服务端当次声明数——0 是该标的无此周期历史，N>0 却回 0
     #: 个记录字节是空桩；两者都不是"更早的历史已取完"（那只会表现为短页）。
     BARS_EMPTY_FIRST_PAGE = "bars_empty_first_page"
+    #: 批量 ``quotes`` 只取回了部分标的的行情：逐只失败被隔离，结果不完整。
+    #: 全部失败不走这条——那是一次 ``AllHostsUnreachable``，不是一袋瑕疵数据。
+    QUOTES_PARTIAL_FAILURE = "quotes_partial_failure"
     #: 解码层对某一页的判断：实收记录数少于声明数、字段布局哨兵异常等。
     DECODE_CAVEAT = "decode_caveat"
     #: ``export_security_list`` 首页即空响应：不代表该市场没有证券。

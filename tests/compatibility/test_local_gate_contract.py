@@ -112,3 +112,24 @@ def test_local_build_uses_safe_smoke_enabled_builder() -> None:
     makefile = _makefile()
 
     assert "scripts/build_package.py --smoke" in makefile
+
+
+#: `[tool.ruff.lint.per-file-ignores]` 的键：形如 `"tstdx/cli/__init__.py" = ["F401"]`。
+_PER_FILE_IGNORE = re.compile(r'^"(?P<path>[^"]+)"\s*=\s*\[', re.MULTILINE)
+
+
+def test_ruff_per_file_ignores_still_point_at_existing_paths() -> None:
+    """每一条 lint 豁免必须落在磁盘上真实存在的路径上。
+
+    豁免指向已删除的文件不是无害的冗余：它让那条规则对**下一个**占用该路径的文件
+    静默失效，而没人会想到去看一份不存在的对象的配置。`tstdx/integration/mcp_server.py`
+    就是 MCP 面迁进 `tstdx/integration/mcp/` 之后留下的死键。
+    """
+    text = _pyproject()
+    section = text.split("[tool.ruff.lint.per-file-ignores]", 1)
+    assert len(section) == 2, "per-file-ignores 段不存在，判据自身失效"
+    body = re.split(r"\n\[", section[1], maxsplit=1)[0]
+    paths = _PER_FILE_IGNORE.findall(body)
+    assert len(paths) >= 4, f"只扫到 {len(paths)} 条豁免，说明解析自身失效了"
+    missing = [relative for relative in paths if not (_ROOT / relative.rstrip("*")).exists()]
+    assert not missing, f"ruff 豁免指向磁盘上不存在的路径：{missing}"

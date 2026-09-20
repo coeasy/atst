@@ -35,7 +35,7 @@
    ``FundGradeDetail`` / ``FundVPageAcc`` / ``FundRankDiagram`` /
    ``FundMNDetailInformation`` 为非 ``FundMN*`` 前缀端点，host 与 PascalCase
    命名沿用移动端惯例，属 best-effort：若线上返回 ``ErrCode!=0`` 请重新
-   抓包校准（同 :class:`~tstdx.web.corporate.EastmoneyIpoAuditSource` 策略）。
+   抓包校准（同 :class:`~tstdx.web.corporate.EastmoneyIpoSource` 策略）。
 """
 
 from __future__ import annotations
