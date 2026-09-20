@@ -4,6 +4,8 @@
 > 读数见 §9），B5 与 G1 前半截经实测作废/已满足（更正就地写在 §5）；第 2 轮把"证据本身"
 > 变成被门禁的对象（提交 `d1bd446`，读数见 §11），第 3 轮把"文档承诺 ↔ 代码兑现"这条轴上的
 > 幻影旋钮与手抄计数改成行为与判据（提交 `0a4a232`，读数见 §12，并撤回 C2(a)/D5、新登记 G5）；
+> 第 4 轮把同一根轴补到命令行面（`--flag` 注册了必须有人读），并当场反掉自己上一轮写下的
+> 过度承诺（提交 `7fe7e54`，读数见 §13）；
 > 其余阶段仍待按 §6 的 D7–D12 裁决推进。
 > §0 的基线是**方案取证轮**的数，§9 是**执行轮**的数，两者环境标签相同（3.12.13）但不混用。
 > **授权尺度（本轮用户已答，2026-09-20）**：
@@ -87,7 +89,7 @@
 | G2 | **typed 面只覆盖 40%**：155 个业务 capability 里 92 个无契约，`contract_audit` 判 PENDING 且 RC=0 不阻断 | 本轮 `scripts/contract_audit.py`：`63 契约 / 155 capability / WARN: 92 个待办` | P1（功能账，非缺陷） |
 | G3 | **`0x000F` 资本变动 / `0x0010` 财务在新握手下仍解错**，F-37 余条未裁决；本轮离线日志里就能看到 `[E3040] 股权信息记录数异常: count=300, body=30, size=0` 的解码告警 | 隔离树测试日志 `v18rev_test.log` 的 warnings summary 段（`tests/client/test_decode_caveat_wiring.py` 现场复现） | P0（数据正确性） |
 | G4 | **7709 数据面从未在交易时段被验证过**：CI 的 live-smoke 是 `cron '0 1 * * *'` UTC = 北京 09:00，注释自己写着 "before A-share trading"（9:30 开盘），host-audit 是周三 09:00 UTC = 北京 17:00（收盘后） | `.github/workflows/live-smoke.yml:9`、`.github/workflows/host-audit.yml:5` | P1（验证盲区，F-38 的真正根因） |
-| G5 | **`fund_estimate` 是 G1 的同族、Provider 侧的那一格**（第 3 轮登记）：能力面仍声明它，实现却恒抛 `SourceDeprecated`，调用方要读源码才知道这一格永不给数 | `tstdx/web/sources.py:449` 与 `tstdx/providers/__init__.py:570` 仍列该能力，`tstdx/cli/runtime_commands.py:681` 仍可从 CLI 抵达，而 `tstdx/web/_session_baidu.py` 的实现恒抛（端点已下线，HTTP 410 语义） | P2（对外承诺形状，与 F-66/F-75 同批裁决） |
+| G5 | **`fund_estimate` 是 G1 的同族、Provider 侧的那一格**（第 3 轮登记、第 4 轮按代码更正口径）：能力面仍声明它，而实现只在"站点回 404/页面未找到 HTML"这一实测形状上抛 `SourceDeprecated`——它**仍会先发一次真实请求**，端点复活就会重新返回 dict。调用方要读源码才知道这一格现网不给数 | `tstdx/web/sources.py:449` 与 `tstdx/providers/__init__.py:570` 仍列该能力，`tstdx/cli/runtime_commands.py:681` 仍可从 CLI 抵达，实现链是 `tstdx/web/_session_baidu.py:108` → `tstdx/web/adapters_fund.py:188`（该函数先 `_request_text`，命中 404 页才抛，其余响应走 `_parse_jsonp` 返回 dict） | P2（对外承诺形状，与 F-66/F-75 同批裁决） |
 
 **结论口径建议统一成这句**（写进 README 与 F-37 裁决记录，避免每轮重新解释）：
 > 链是通的，声明与执行是闭合的；G1/G2/G5 是"实现了但选择不给数/不给类型"的登记账，
@@ -401,6 +403,12 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b3step/mutate_v18b3.py` + `.log` | 第 3 轮 7 条反证变异（M1–M7）：每条 `rc=1`、`turned_red=True` 且 `restored=True` |
 | `wt_v18b3ship/gates_ship.log` | **提交树**（`0a4a232`，`dirty=0`）九门禁复测 |
 | `wt_v18b3ship/fulltest_ship.log` + `.xml` | 提交树离线全量与 junit 计数；与步骤轮逐格相同 |
+| `wt_v18b4step/gates_v18b4.log` | 第 4 轮步骤轮（`10a4488` + 本步 2 文件）九门禁逐条 RC 与摘要行 |
+| `wt_v18b4step/fulltest_v18b4.log` + `.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数 |
+| `wt_v18b4step/mutate_v18b4.py` + `.log` | 第 4 轮 5 条反证变异（K1–K5）：每条 `rc=1`、`turned_red=True` 且 `restored=True` |
+| `wt_v18b4step/probe_never_returns.py`、`probe_rerun.log` | 第 4 轮四个判据候选（A/B/C/D）+ CLI 严格口径的量法与实测计数；"量过但不立"的凭据 |
+| `wt_v18b4ship/gates_ship.log` | **提交树**（`7fe7e54`，`dirty=0`）九门禁复测 |
+| `wt_v18b4ship/fulltest_ship.log` + `.xml` | 提交树离线全量与 junit 计数；与步骤轮逐格相同 |
 
 ## 8. 本方案不做什么（避免被读成"又要一轮无限重构"）
 
@@ -555,7 +563,7 @@ docs links 83 files、mypy 0 行、ruff check `All checks passed!`、ruff format
 |---|---|
 | `tstdx/transport/sniff.py` | `known()` / `unknown_commands()` 此前把判定域写死成单一族 `Family.STANDARD`（实测其值 `"quotation"`），而 `families` 是构造函数文档承诺的入参：一条登记在 `mac_quotation`/`goods`/`f10` 的命令号被读成"未知"，`export_drafts` 再拿错的账本给它生成草稿。现在两处都按 `self.families` 取域（显式 `family=` 仍可收窄），`attach(families=…)` 也真正改写作用域——`attach` 原文自己写着"仅影响未知命令判定、实际记录仍按 cmd_id 存"，等于承认旋钮只拧了一半 |
 | `tstdx/web/_session_market.py` | ① `shared_http()` 自称"线程安全惰性单例"却做无锁 check-then-append（它的兄弟 `shared_bucket` 在 `_base_http.py:101` 是持锁的），并发首建会造出多个 `HttpClient`，多出来的连同各自 keep-alive 连接池一起泄漏（进程级列表，永不关闭）；整段"取或建"移进 `_SHARED_HTTP_LOCK`。② 删掉 `quotes()` 上从未被函数体读取的 `prefix: bool = True` 形参（仓内与 docs 零调用点，属纯幻影入参） |
-| `tstdx/web/{global_market,session,__init__,limits,_session_baidu,adapters_fund}.py` | 手抄数字改成"点名事实源"或当场改对：外盘品种 14→**13**（`GLOBAL_CODES` 真值，且与 `_session_market.globals` 原有口径对齐）、`web/__init__` 的"其余 18 个 Source/会话子模块"删除（真实是 `_LAZY` 67 键 / 22 个目标模块——写成新数字同样会烂，故改为指向 `_LAZY`）、`session` 的"7 个零依赖适配器"改为指向 `_ADAPTER_SPECS`；`all_market` 的 `max_pages=None` 不再承诺"拉到底"（缺省 `DEFAULT_MAX_PAGES`=100 页，实测 `adapters.py:86,197,451`）；`TENCENT_KLINE_MAX` 上方"分段请求（尚未封装，见 v5 PG8）"改成 C9 已落地路径 `fetch_bars_paged(…, paging=True)`；`fund_estimate` 的 Returns 段改成"端点已下线，本方法永不返回"+`Raises SourceDeprecated`，`FundSource` 类文档不再把它列为能力 |
+| `tstdx/web/{global_market,session,__init__,limits,_session_baidu,adapters_fund}.py` | 手抄数字改成"点名事实源"或当场改对：外盘品种 14→**13**（`GLOBAL_CODES` 真值，且与 `_session_market.globals` 原有口径对齐）、`web/__init__` 的"其余 18 个 Source/会话子模块"删除（真实是 `_LAZY` 67 键 / 22 个目标模块——写成新数字同样会烂，故改为指向 `_LAZY`）、`session` 的"7 个零依赖适配器"改为指向 `_ADAPTER_SPECS`；`all_market` 的 `max_pages=None` 不再承诺"拉到底"（缺省 `DEFAULT_MAX_PAGES`=100 页，实测 `adapters.py:86,197,451`）；`TENCENT_KLINE_MAX` 上方"分段请求（尚未封装，见 v5 PG8）"改成 C9 已落地路径 `fetch_bars_paged(…, paging=True)`；`fund_estimate` 的 Returns 段改成"端点已下线，本方法永不返回"+`Raises SourceDeprecated`（**这句本身是过度承诺，第 4 轮按代码更正，见 §13**），`FundSource` 类文档不再把它列为能力 |
 | `scripts/audit_reachability.py` | 两类新缺陷，与孤儿同权重在 `--strict` 下失败：`[weak-pointer]`——豁免理由点名的 `.py` 文件必须真的**触达**它豁免的模块（直接 import、沿图走父包导出这一跳、或按点号全名提及），"某某测试覆盖它"从此必须真的覆盖它；`[dead-seed]`——`SEEDS` 里改了名的条目不再被 BFS 的 `if s in modules` 静默丢弃。图构建抽成 `_build_graph()` 供判据复用 |
 | `tests/architecture/test_declared_knobs.py`（新） | 三把尺子，每把都带**下限 +  planted 正控**：① numpydoc `Parameters` 里承诺的入参必须被函数体读取（全量现扫 **130** 个带参数文档的函数，修复后 `offenders=[]`；本轮抓到并修掉的真实幻影 2 处 = `attach(families=…)` 与 `quotes(prefix=…)`）；② 自称"线程安全"且动到进程级 `_SHARED_*` 的函数必须拿得出锁证据（全量 `defects=[]`）；③ 写成"共 N 个（见 :data:`X`）"的计数在导入期现算回查，**模块导不进来时报缺陷而不是跳过**——"无法复核"不许读成绿 |
 | `tests/transport/test_sniffer_passive.py`（新） | 被动采集族 10 格行为判据：默认判定域、显式 `family=` 收窄、`unknown_commands` 随作用域、`attach` 的记录/幂等/空转三条、环形缓冲与上限、两个零值入参 `ValueError` |
@@ -590,8 +598,10 @@ junit **3643 项 / 0 失败 / 0 错误 / 7 跳过**、171.7s；覆盖率 **81.73
   "发现面不许长出状态字段"钉成门禁；(a) 要加的正是那类字段，重做已裁决格属越权。C2 的 (b)/(c)
   两条同样动对外面，维持"待裁决"不变。
 - **新登记 G5（§2）**：`fund_estimate` 是 G1 的同族、Provider 侧那一格——`web/sources.py:449`
-  与 `providers/__init__.py:570` 仍声明该能力、`cli/runtime_commands.py:681` 仍可达，实现却恒抛
-  `SourceDeprecated`。本轮只把文档改成实话，**没动声明面**（动它属对外契约，与 F-66/F-75 同批裁决）。
+  与 `providers/__init__.py:570` 仍声明该能力、`cli/runtime_commands.py:681` 仍可达，实现则
+  在"站点回 404 页"这一实测形状上抛 `SourceDeprecated`（**第 3 轮此处写作"恒抛"、并把会话
+  docstring 写成"永不返回"，两者都是过度承诺，第 4 轮按代码更正，见 §13**）。本轮只把文档改成
+  更接近实话的说法，**没动声明面**（动它属对外契约，与 F-66/F-75 同批裁决）。
 
 **ship 轮（提交树复测，同一解释器与工作树参数）**：`0a4a232` 落到 main 后另起隔离工作树
 `wt_v18b3ship` 再量一遍，`head=0a4a232 dirty=0`。九项确定性门禁 **G1–G9 全部 rc=0**
@@ -609,6 +619,77 @@ CI 读数无法在同轮隔离树复现，故不写任何覆盖率再钉）、F3
 （仓内样本锁不出 `0x000F`/`0x0010` 语义，见 §8）、G2 的 D10 裁决；
 CHANGELOG `[Unreleased]` 的两条破坏性登记（`quotes` 失败语义、移除 `quotes(prefix=)` 形参）
 因并行会话该文件仍未提交而押后。
+
+---
+
+## 13. 执行记录（续）
+
+### 第 4 轮｜命令行面不许有"注册了没人读的开关"，并当场反掉上一轮写下的过度承诺（提交 `7fe7e54`，2 个文件）
+
+第 3 轮的轴是"文档承诺 ↔ 代码兑现"，落点是**函数入参、锁、计数**三种形状。本轮把同一根轴
+补到最后一种受众——**命令行用户**：`argparse` 收下并印进 `--help` 的每一个 `--flag`，处理链路
+必须真的读它的 `dest`，否则用户以为拧了开关而运行时什么都没发生。
+
+同时用本轮新写的探针回头复核第 3 轮自己的文档改动。**抓到的正是我**：为了改掉 `fund_estimate`
+的假 Returns 段，我在第 3 轮把它写成"端点已下线，本方法永不返回"，而实现
+（`tstdx/web/_session_baidu.py:108` → `tstdx/web/adapters_fund.py:188`）是**先发一次真实请求**、
+只在命中"404 / 页面未找到 HTML"这一形状时才抛 `SourceDeprecated`，其余响应照样 `_parse_jsonp`
+返回 dict。"永不返回"与 §2 G5 原来那句"恒抛"是同一种病：**把 2026 年的实测结果写成了结构性质**。
+本轮把这两处口径改成实话（代码 docstring + §2 G5 + §12 就地标注，改动见提交与该两节）。
+
+| 改动 | 内容 |
+|---|---|
+| `tests/architecture/test_declared_knobs.py`（新判据四：CLI 面） | `_dests_of()` 从 CLI 源文件的 `add_argument(...)` 现算 dest→flags 表（`dest=` 优先，否则取长选项名 dashes→underscores），`_reads_of()` 只认**两种严格读取形状**：`<像命名空间的名字>.<dest>` 属性访问、`getattr(<像命名空间的名字>, "<dest>")`。命名空间宿主必须叫 `args/ns/namespace/parsed/opts` 或以 `args` 结尾，因此**注册语句本身不可能自证为已读**。全量普查 `test_every_registered_cli_flag_is_read_by_the_runtime` 带**下限 `len(dests) >= 40`**（尺子解析不出东西时必须自己先红，不许把"扫不到"读成绿），planted 正控 `test_the_cli_ruler_sees_a_planted_unread_flag` 保证规则不是恒真 |
+| `tstdx/web/_session_baidu.py::fund_estimate` | docstring 从"永不返回"改成实测形状：一句话交代端点已下线并指向 `fund_nav_history`、明示**仍会发出一次真实请求**、`Raises SourceDeprecated`（410 语义，按 `FundSource` 记录的实测形状）与 `Raises WebSourceError`（不可达/超时等非下线形状）分开，末尾留一句"解析层随端点一起留着，接口复活本方法会重新返回 dict——『现网只抛』不是它的结构性质"。**没动声明面**（G5 与 F-66/F-75 同批裁决） |
+
+**四个"量过、按数字不立"的判据候选**（探针与计数见 `wt_v18b4step/probe_rerun.log`，本轮同轮在
+main 工作树上重跑；不立的判据不留代码，只留这段读数）：
+
+| 候选 | 实测 | 不立的理由 |
+|---|---|---|
+| A：能力恒不可用（函数体任何路径都只抛）却仍挂在声明面 | `hits=0` | 这一格形状当前**零实例**（`fund_estimate` 按代码看并不属于它）。为零样本建尺子只能靠 planted 正控撑着，收益不抵一条恒真空判据的维护成本；G5 已在 §2 登记成人读得懂的账 |
+| B：docstring 同句写"尚未/未实现"且点名符号，而符号已存在 | `hits=2`，**2/2 误报** | 两条都判错：`tstdx/domain/calendar.py:18` 说 `TradingCalendar.update_from_web` "尚未实现，调用即抛 `NotImplementedError`"——该函数在 `calendar.py:335` 确实**只有**一句 `raise NotImplementedError`，文档是实话；`tstdx/web/_session_efinance.py:6` 的"尚未被 tstdx 覆盖"讲的是能力覆盖面而非某个符号。"符号存在"≠"能力已实现"，这条谓词根本盯不住它想盯的东西 |
+| C：散文式"永不返回/恒抛"↔ 控制流是否真的无返回路径 | 修复前 `claims=1 unfounded=1`，修复后 `claims=0 unfounded=0` | 全包活样本只有 1 个，而且**就是我上一轮亲手写的那句**；更糟的是**它对否定是瞎的**——把"『永不返回』不是它的结构性质"这句**更正**写回 docstring，token 扫描仍把它读成"声称永不返回"（K5 复现的就是这个形状）。散文里的 token 匹配做不成判据：要么换成控制流分析（为零样本付这个代价不值），要么留下 K5 那种自证式噪声 |
+| D：numpydoc `Raises` 段点名的异常是否在该函数可达 raise 集合里 | 全包**只有 2 个**函数带 `Raises` 段；D1 严格口径 `hits=2`，D2 全包范围 `hits=0` | 那 2 条命中全在 `fund_estimate`，且两条都是**真承诺**（`raise` 站点在单跳之外的 `FundSource.fetch_estimate` 里，严格口径把真话读成缺陷）。为 2 格样本、首跑就 100% 误报的判据入门禁，等于给判据集加一条必须写豁免的形状 |
+
+**步骤轮**（`wt_v18b4step`，detached @ `10a4488` + 本步 2 文件，两文件 md5 与 main 工作树逐格相同：
+`test_declared_knobs.py` = `4e2817f5…`、`_session_baidu.py` = `a2b7fc45…`）：九项确定性门禁
+**G1–G9 全部 rc=0**（`gates_v18b4.log`：originality `Total: 191 / Original: 191 / License OK: 191 /
+Header OK: 191 / Suspicious: 0 / External imports: 17`、spec_audit `"coverage_pct": 100.0`、
+golden_audit `[GATE] all L1 verified commands have real samples (OK)` + 既有 `suspect_short` WARN 1 条
+（`0x537 4B<12B x3`）、reachability `模块总数: 190 / 可达: 174 / 白名单豁免: 16` 且 `无未登记孤儿 ✓`、
+contract_audit rc=0、docs links `83 files`、mypy 0 行、ruff check `All checks passed!`、
+ruff format `445 files already formatted`）；离线全量进度走到 `[100%]`、junit
+**3645 项 / 0 失败 / 0 错误 / 7 跳过**、159.742s；覆盖率 **81.73%**
+（TOTAL 22 440 stmt / 3 523 miss / 5 996 branch / 1 001 partial），`Required test coverage of 77.0%
+reached`，**阈值未动**。判据规模 3643 → **3645（+2）**，无删除。环境标签同前三轮：
+`.venv` cpython-3.12.13、`WIN-PM`。
+
+**反证证据**（`wt_v18b4step/mutate_v18b4.log`，5 条全部 `rc=1`、`turned_red=True` 且 `restored=True`）：
+
+| 变异 | 动了什么 | 结果 |
+|---|---|---|
+| K1 | `_dests_of` 解析不出任何 dest（尺子失明） | 下限与正控**同时**红——证明 `>= 40` 那条兜底真的在兜 |
+| K2 | 命名空间读取集恒空（所有 flag 都被误判成没人读） | 全量普查与正控同时红 |
+| K3 | 改成"文本里搜到名字就算读取" | **只有正控红、全量普查仍绿** ⇒ 严格 AST 口径是必要的：宽松口径下注册语句会自证为已读 |
+| K4 | 真实 CLI 里把 `tstdx/cli/parser.py:207` 的 `--port` dest 改名（制造无人读取的 flag） | 全量普查红 ⇒ 判据对真实面有效，不只是对 planted 样本有效 |
+| K5 | 把第 3 轮那句"本方法永不返回"写回去 | 探针 C `claims=1 unfounded=1` ⇒ 本轮的口径更正确实盯住了它要盯的东西 |
+
+**ship 轮（提交树复测，同一解释器与工作树参数）**：`7fe7e54` 落到 main 后另起隔离工作树
+`wt_v18b4ship` 再量一遍，`head=7fe7e54 dirty=0`。九项确定性门禁 **G1–G9 全部 rc=0**，摘要行与
+步骤轮逐字相同（`gates_ship.log`：`Total: 191 / Suspicious: 0`、`coverage_pct 100.0`、
+`模块总数: 190 / 可达: 174 / 白名单豁免: 16 / 无未登记孤儿 ✓`、docs links 83 files、mypy 0 行、
+ruff check `All checks passed!`、ruff format 445 files）；离线全量 junit
+**3645 / 0 失败 / 0 错误 / 7 跳过**、159.689s、覆盖率 **81.73%**
+（TOTAL 22 440 / 3 523 / 5 996 / 1 001，`Required 77.0% reached`）——与被测步骤轮**逐格相同**。
+两棵树的 `tstdx/`、`tests/`、`scripts/` 逐文件比对（`diff -r --strip-trailing-cr`）除 `__pycache__`
+外**内容一致**，仅工作树检出为 CRLF、提交树为 LF：提交内容与被测内容一致。
+
+**本轮明确未做**：候选 A/B/C/D 四把尺子（读数见上表，量过而不立）；§2 G5 的**声明面**改动
+（`sources.py:449` / `providers/__init__.py:570` 是否摘掉 `fund_estimate` 属对外契约，与 F-66/F-75
+同批裁决）；C1/C2/C3、D1–D4、E1–E4、F2、F3、F4/G3、G2 的 D10 裁决；CHANGELOG `[Unreleased]`
+三条登记（`quotes` 失败语义、移除 `quotes(prefix=)` 形参、`Sniffer` 判定域随 `families` 收窄）
+仍因并行会话该文件未提交而押后。
 
 
 
