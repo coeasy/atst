@@ -51,7 +51,7 @@ capability            提供该能力的源
 
 惰性导入（Q4-2，PEP 562）：本包 ``__init__`` 只常驻零依赖的
 ``sources``（SourceSpec 注册表）与 ``base``（stdlib HTTP 底座），
-其余 18 个 Source / 会话子模块按需经 :data:`_LAZY` 映射加载，
+其余符号（含各 Source 与会话子模块）按需经 :data:`_LAZY` 映射加载，
 ``from tstdx.web import X`` 的全部既有导入路径保持不变。
 """
 

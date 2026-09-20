@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -70,15 +71,22 @@ INDEX_SYMBOLS: dict[str, str] = {
 #: client 归进程所有：源实例 ``close()`` 对注入 client 不生效（见
 #: ``BaseWebSource._owns_client``），连接随 keep-alive 池复用。
 _SHARED_HTTP: list[Any] = []
+_SHARED_HTTP_LOCK = threading.Lock()
 
 
 def shared_http():
-    """返回进程级共享 :class:`HttpClient`（线程安全惰性单例）。"""
-    if not _SHARED_HTTP:
-        from .base import build_client
+    """返回进程级共享 :class:`HttpClient`（线程安全惰性单例）。
 
-        _SHARED_HTTP.append(build_client())
-    return _SHARED_HTTP[0]
+    与 :func:`tstdx.web._base_http.shared_bucket` 同法：整段"取或建"在锁内完成。
+    早先的无锁 check-then-append 会让并发首建各自造一个 client，其中一个连同
+    其 keep-alive 连接池一起泄漏（进程级对象，再没人引用也永不关闭）。
+    """
+    with _SHARED_HTTP_LOCK:
+        if not _SHARED_HTTP:
+            from .base import build_client
+
+            _SHARED_HTTP.append(build_client())
+        return _SHARED_HTTP[0]
 
 
 # 旧名别名：会话组合层内部沿用原私有名。
@@ -97,15 +105,15 @@ class QuoteSessionMixin:
         _c: Any
 
     # -- 实时行情 ----------------------------------------------------------- #
-    def quotes(self, codes: Sequence[str], *, prefix: bool = True) -> list[Quote]:
+    def quotes(self, codes: Sequence[str]) -> list[Quote]:
         """查询指定标的的实时行情，返回 ``list[Quote]``。
 
         Parameters
         ----------
         codes:
-            6 位代码（``000001``）或带市场前缀（``sh600519``）。
-        prefix:
-            是否按 ``{market}{code}`` 全前缀归一（默认 True）。
+            6 位代码（``000001``）或带市场前缀（``sh600519``）。入参一律经
+            :func:`~tstdx.web.base.normalize_symbol` 归一（单一事实源），
+            不存在"关掉前缀归一"的开关。
         """
         if isinstance(codes, str):
             codes = [codes]
@@ -196,7 +204,9 @@ class QuoteSessionMixin:
         page_size:
             每页条数（新浪上限 100；腾讯上限 200）。
         max_pages:
-            页数上限（防失控）；``None`` 表示拉到底。
+            页数上限；``None`` **不是**"拉到底"——底层适配器把它取成
+            :data:`~tstdx.web.adapters.DEFAULT_MAX_PAGES`（100 页）硬上限，
+            与显式传值同样受"防失控"钳制。要更大范围请显式给更大的 ``max_pages``。
         """
         if node.lower() in ("hk", "us", "hk_main", "us_main"):
             raise ValueError(

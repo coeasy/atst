@@ -18,7 +18,7 @@ AST 静态扫描 tstdx/ 全部模块的 import 边（含 tstdx/__init__.py 的 _
 
 白名单：scripts/_reach_allow.txt，每行 ``模块.dotted.path  # 处置理由``。
 白名单自身也是被门禁的对象（工业审计 F22）：一条豁免记录只有在**它豁免的模块确实
-存在、确实不可达、且理由够长**时才有意义。下列四类缺陷在 ``--strict`` 下与孤儿同权重
+存在、确实不可达、且理由够长**时才有意义。下列六类缺陷在 ``--strict`` 下与孤儿同权重
 失败——死记录会让将来重新变成孤儿的模块静默通过，过期记录则掩盖一次真实的断链：
 
 * 指向不存在模块的死记录（模块被删/改名后忘记撤条目）；
@@ -26,7 +26,12 @@ AST 静态扫描 tstdx/ 全部模块的 import 边（含 tstdx/__init__.py 的 _
 * 理由短于 :data:`MIN_REASON_CHARS` 的条目；
 * 理由里引用的仓内路径指针已经不存在（``[dead-pointer]``），或整条理由找不出一个
   可核验路径（``[no-pointer]``）——两者都让"谁消费它"退化成无法反驳的自由文本；
+* 理由点名的 ``.py`` 文件其实**不触达**它所豁免的模块（``[weak-pointer]``，
+  见 :func:`_pointer_defects`）——"某某测试覆盖它"必须真的覆盖它；
 * 重复条目。
+
+种子表也在被核验之列：:data:`SEEDS` 里一个改了名的条目会被 BFS 的
+``if s in modules`` 静默丢弃，整条服务面就此从可达集消失（``[dead-seed]``）。
 """
 
 from __future__ import annotations
@@ -237,6 +242,27 @@ def _import_edges(tree: ast.Module, pkg: str, is_pkg: bool) -> set[str]:
     return edges
 
 
+def _build_graph(
+    modules: dict[str, Path], packages: set[str], allow: set[str]
+) -> dict[str, set[str]]:
+    """建图：模块 → 依赖模块集合（只保留指向 tstdx 包内或白名单内的边）。"""
+    graph: dict[str, set[str]] = {}
+    for name, path in modules.items():
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            graph[name] = set()
+            continue
+        deps = {
+            e for e in _import_edges(tree, name, name in packages) if e in modules or e in allow
+        }
+        if name in packages:
+            # 包的 ``_LAZY`` 导出是该包的静态边：按需属性访问在运行期等价于 import。
+            deps |= {e for e in _lazy_edges(path, name) if e in modules or e in allow}
+        graph[name] = deps
+    return graph
+
+
 def _entrypoints(modules: dict[str, Path]) -> set[str]:
     """`python -m` 与 console-script 入口：静态图里永无对它们的 import 边，只能作种子。
 
@@ -260,6 +286,115 @@ def _allowlist_defects(records: dict[str, str], modules: set[str], reach: set[st
     return defects
 
 
+def _seed_defects(modules: set[str], seeds: set[str] = SEEDS) -> list[str]:
+    """种子表与当前模块清单的矛盾。
+
+    BFS 的种子写作 ``[s for s in seeds if s in modules]``——一个改了名的种子会被
+    **静默丢弃**，于是它连同整条下游依赖一起从图里消失，而门禁只会把它们报成孤儿，
+    报不到"种子本身已经烂了"这一格。v16 换名（http_server → runtime_*）就踩过一次，
+    当时是靠人读到那行过滤才发现。种子缺失与孤儿同权重失败。
+    """
+    return [
+        f"[dead-seed] SEEDS 里的 `{s}` 不是当前存在的模块：它已被改名或删除，"
+        f"整条以它为根的链路从可达集里静默消失"
+        for s in sorted(seeds - modules)
+    ]
+
+
+_PY_FILE = re.compile(r"[\w.\-]+(?:/[\w.\-]+)+\.py")
+
+
+def _module_pointers(reason: str) -> list[str]:
+    """理由里点名的**仓内 .py 文件**指针（tests/… 或 tstdx/…），路径归一成斜杠形式。"""
+    return [t.replace("\\", "/") for t in _PY_FILE.findall(reason)]
+
+
+def _file_imports(path: Path) -> set[str]:
+    """一个仓内 .py 文件的静态 import 目标（绝对名）。"""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return set()
+    return {
+        e
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for e in (a.name for a in node.names)
+    } | {
+        e
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module
+        for e in (node.module, *(f"{node.module}.{a.name}" for a in node.names))
+    }
+
+
+def _pointer_defects(
+    records: dict[str, str],
+    modules: dict[str, Path],
+    graph: dict[str, set[str]],
+    root: Path = ROOT,
+) -> list[str]:
+    """理由点名的 .py 文件必须真的触达被豁免的模块。
+
+    ``[dead-pointer]`` 只证明"那个文件还在"，而一条写着"某某测试覆盖它"的理由，
+    在该测试其实测的是**另一个同名族**时依旧绿——本轮实测抓到一例：某条豁免引用
+    的测试文件覆盖的是同名不同模块的另一族。因此要求指针**有内容**：
+    该文件直接 import 到目标模块（含父包 eager/惰性导出这一跳，即沿 ``graph`` 走），
+    或在文本里以点号全名出现（``importlib`` 按字符串解析的边看不见，只认字面名）。
+    """
+    defects: list[str] = []
+    for module in sorted(records):
+        pointers = [
+            p
+            for p in _module_pointers(records[module])
+            if (root / p).exists() and p != "conftest.py"
+        ]
+        if not pointers:
+            continue  # 没点名 .py 文件的理由由 [dead-pointer]/[no-pointer] 那两格管
+        if any(_reaches(root / p, module, modules, graph) for p in pointers):
+            continue
+        defects.append(
+            f"[weak-pointer] {module}：理由点名的 {', '.join(sorted(set(pointers)))} "
+            f"既不 import 也不按全名提到它——这条豁免的证据与它豁免的模块无关"
+        )
+    return defects
+
+
+def _reaches(
+    source: Path, module: str, modules: dict[str, Path], graph: dict[str, set[str]]
+) -> bool:
+    """``source`` 这个文件是否（按全名提及、或经 import 闭包）触达 ``module``。"""
+    try:
+        text = source.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    if re.search(rf"\b{re.escape(module)}\b", text):
+        return True  # 字面全名：AST 看不见 importlib 按字符串解析的边
+    pkg_module = _mod_name(source) if _in_pkg(source) else None
+    if pkg_module is not None:
+        frontier = set(graph.get(pkg_module, set()))
+    else:
+        frontier = _file_imports(source)  # tests/ 与 scripts/ 里的文件：只看绝对 import
+    seen: set[str] = set()
+    stack = list(frontier)
+    while stack:
+        dep = stack.pop()
+        if dep in seen:
+            continue
+        seen.add(dep)
+        if dep == module or module in _ancestors(dep):
+            return True  # 命中自身，或命中它的一个子模块（父包导出即触达）
+        stack.extend(graph.get(dep, set()))
+    return False
+
+
+def _in_pkg(path: Path) -> bool:
+    try:
+        return path.resolve().is_relative_to(PKG)
+    except OSError:
+        return False
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
@@ -272,22 +407,7 @@ def main() -> int:
     modules, packages = _collect_modules()
     records, record_defects = _load_allow()
     allow: set[str] = set(records)
-
-    # 建图：模块 → 依赖模块集合（只保留指向 tstdx 包内的边）
-    graph: dict[str, set[str]] = {}
-    for name, path in modules.items():
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except (OSError, SyntaxError):
-            graph[name] = set()
-            continue
-        deps = {
-            e for e in _import_edges(tree, name, name in packages) if e in modules or e in allow
-        }
-        if name in packages:
-            # 包的 ``_LAZY`` 导出是该包的静态边：按需属性访问在运行期等价于 import。
-            deps |= {e for e in _lazy_edges(path, name) if e in modules or e in allow}
-        graph[name] = deps
+    graph = _build_graph(modules, packages, allow)
 
     # BFS 从种子（包的边已含 eager import 与 _LAZY 惰性导出；入口见 _entrypoints）
     reach: set[str] = set()
@@ -310,6 +430,8 @@ def main() -> int:
     orphans = sorted(set(modules) - reach - allow)
     allowed_hit = sorted((set(modules) - reach) & allow)
     record_defects += _allowlist_defects(records, set(modules), reach)
+    record_defects += _seed_defects(set(modules))
+    record_defects += _pointer_defects(records, modules, graph)
 
     print(f"模块总数: {len(modules)}  可达: {len(reach)}  白名单豁免: {len(allowed_hit)}")
     for m in allowed_hit:

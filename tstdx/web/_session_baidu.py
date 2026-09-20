@@ -106,11 +106,14 @@ class BaiduSessionMixin:
 
     @staticmethod
     def fund_estimate(code: str) -> dict[str, Any]:
-        """东财基金实时估值快照（盘中估算）。
+        """东财基金实时估值快照（盘中估算）——**端点已下线，本方法永不返回**。
 
-        Returns
-        -------
-        dict，含 code / name / jzrq / dwjz / gsz / gszzl / gztime。
+        Raises
+        ------
+        SourceDeprecated:
+            ``fundgz.1234567.com.cn`` 已于 2026 年下线（HTTP 410 语义）。保留这个
+            入口是为了给按名调用的调用方一句明确交代，而不是一个 AttributeError；
+            取净值请改用 :meth:`fund_nav_history`。
         """
         from .adapters_fund import FundSource
 

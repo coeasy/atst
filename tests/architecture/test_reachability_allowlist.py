@@ -143,3 +143,69 @@ def test_the_pointer_ruler_itself_sees_the_real_records() -> None:
     assert records
     empty = [m for m, r in records.items() if not ar._consumer_pointers(r)[0]]
     assert not empty, f"这些豁免记录拿不出存在的消费方路径：{empty}"
+
+
+# --------------------------------------------------------------------------- #
+# 指针必须"有内容"：点名的文件要真的触达被豁免的模块
+# --------------------------------------------------------------------------- #
+def test_real_allowlist_pointers_reach_the_modules_they_excuse() -> None:
+    """真实清单的每条理由都要逐格复核：点名的 .py 文件确实 import（或按全名提及）该模块。"""
+    modules, packages = ar._collect_modules()
+    records, _ = ar._load_allow()
+    graph = ar._build_graph(modules, packages, set(records))
+    assert ar._pointer_defects(records, modules, graph) == []
+
+
+#: 三条指针用例共用的理由正文：只有指针指向的文件不同，判定差异不能来自理由长度。
+REASON_TAIL = (
+    " 消费它，内核不 import 属有意设计，理由本身足够长，不会被 thin 或 no-pointer 抢先判红"
+)
+
+
+def test_a_pointer_at_an_unrelated_file_is_a_defect(tmp_path: Path) -> None:
+    """ "某某测试覆盖它"必须真的覆盖它——引用的文件与模块无关即判红。
+
+    records 直接构造而不走 :func:`_load_allow`：后者对指针只做"文件在不在磁盘"
+    （``[dead-pointer]``，另有专测），而这一格要的正是"存在但无关"的形状。
+    """
+    unrelated = tmp_path / "tests" / "unrelated.py"
+    unrelated.parent.mkdir(parents=True)
+    unrelated.write_text("import tstdx.charset\n", encoding="utf-8")
+    found = ar._pointer_defects(
+        {"tstdx.batch": f"由 tests/unrelated.py{REASON_TAIL}"}, {}, {}, root=tmp_path
+    )
+    assert [d.split("]")[0] for d in found] == ["[weak-pointer"], found
+
+
+def test_a_pointer_that_really_touches_the_module_is_accepted(tmp_path: Path) -> None:
+    """正控的正面：同一形状，只要文件真的 import 到该模块就不该报。"""
+    consumer = tmp_path / "tests" / "real.py"
+    consumer.parent.mkdir(parents=True)
+    consumer.write_text("from tstdx.batch import __version__\n", encoding="utf-8")
+    records = {"tstdx.batch": f"由 tests/real.py{REASON_TAIL}"}
+    assert ar._pointer_defects(records, {}, {}, root=tmp_path) == []
+
+
+def test_a_pointer_via_a_parent_package_export_is_accepted(tmp_path: Path) -> None:
+    """``from tstdx.trade import X`` 也算触达 ``tstdx.trade.client``——只要父包真的导出它。"""
+    consumer = tmp_path / "tests" / "pkg.py"
+    consumer.parent.mkdir(parents=True)
+    consumer.write_text("from tstdx.trade import TradeClient\n", encoding="utf-8")
+    graph = {"tstdx.trade": {"tstdx.trade.client"}, "tstdx.trade.client": set()}
+    records = {"tstdx.trade.client": f"由 tests/pkg.py{REASON_TAIL}"}
+    assert ar._pointer_defects(records, {}, graph, root=tmp_path) == []
+
+
+# --------------------------------------------------------------------------- #
+# 种子表自身
+# --------------------------------------------------------------------------- #
+def test_every_seed_names_a_real_module() -> None:
+    """SEEDS 里的名字必须都存在：BFS 的 ``if s in modules`` 会静默丢弃改名掉的种子。"""
+    modules, _ = ar._collect_modules()
+    assert ar._seed_defects(set(modules)) == []
+
+
+def test_a_stale_seed_is_a_defect() -> None:
+    defects = ar._seed_defects({"tstdx"}, seeds={"tstdx", "tstdx.integration.http_server"})
+    assert [d.split("]")[0] for d in defects] == ["[dead-seed"]
+    assert "tstdx.integration.http_server" in defects[0]

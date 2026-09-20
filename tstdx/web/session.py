@@ -3,10 +3,12 @@
 
 """Web Provider 会话组合层（§33）。
 
-在 :mod:`tstdx.web` 的 7 个零依赖适配器之上提供一套**原生命名**的便捷会话，
+在 :mod:`tstdx.web` 注册表（``_ADAPTER_SPECS``，惰性 import 的零依赖适配器）之上
+提供一套**原生命名**的便捷会话，
 使「取实时行情 / 全市场快照 / K 线 / 指数 / 汇率」等操作统一收口，返回 tstdx
 自有 :class:`~tstdx.domain.models.Quote` / :class:`~tstdx.domain.models.Bar`
-模型（已归一化到「股 / 元」全局契约）。
+模型（已归一化到「股 / 元」全局契约——外盘行情例外，其 ``volume`` 是合约手数，
+单位由 ``extra["volume_unit"]`` 明示，见 :meth:`~tstdx.web._session_market.QuoteSessionMixin.globals`）。
 
 本模块不是路由层：它按精确 Provider 取数，**不会**在源不可用时自动换到别的源，
 也不构成 v16 已删除的 ``UnifiedQuoteAPI`` 那类跨源聚合门面。
@@ -14,8 +16,10 @@
 设计原则
 --------
 * **原生命名**：不沿用任何第三方库的字段或方法命名，所有输出走 tstdx 数据模型。
-* **零反向语义**：``volume`` 恒为成交量（股）、``amount`` 恒为成交额（元），
-  不再出现「turnover/volume 互换」这类反直觉约定。
+* **零反向语义**：A 股 / 港美股口径下 ``volume`` 恒为成交量（股）、``amount`` 恒为
+  成交额（元），不再出现「turnover/volume 互换」这类反直觉约定。外盘行情是**明示的
+  例外**：``volume`` 为合约手数并带 ``extra["volume_unit"] == "lot"``（见
+  :mod:`tstdx.web.global_market` 的"单位归一化"节），按股票股数用会差 100 倍。
 * **懒加载**：底层源客户端按需创建，``close()`` 释放。
 
 Quick start::
@@ -27,10 +31,11 @@ Quick start::
     bars   = sess.klines("sh600519", period="day") # -> list[Bar]
     sess.close()
 
-P4 拆分说明：方法体按域纯搬移到 :mod:`tstdx.web._session_market`
-（行情 / K 线 / 板块）与 :mod:`tstdx.web._session_info`
-（资金流 / 基本面 / 百度与扩展源）；本模块保留组合类 ``WebQuoteSession``、
-生命周期（``__init__`` / ``close`` / 懒加载 ``_c``）与工厂函数，公开 API 不变。
+P4 拆分说明：本模块只保留组合类 ``WebQuoteSession``、生命周期（``__init__`` /
+``close`` / 懒加载 ``_c``）与工厂函数；方法体按域纯搬移到 ``tstdx/web/_session_*.py``
+的域 Mixin（行情/K 线/板块在 :mod:`tstdx.web._session_market`，
+资金流与基本面在 :mod:`tstdx.web._session_info`，百度与扩展源在
+:mod:`tstdx.web._session_baidu`，其余按域名）。公开 API 不变。
 """
 
 from __future__ import annotations

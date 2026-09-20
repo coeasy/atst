@@ -14,7 +14,7 @@ tstdx.output  # DataFrame/Parquet/CSV/DuckDB 输出层公共 API（Sink/write/to
 tstdx.profile  # 数据规格探测包公共 API（DataProfile/detect_profile/get_profile/ProfileDetector）：docs/api/README.md 与 docs/cookbook/03_offline_vipdoc.md 记录，tests/unit/test_profile_detect_semantics.py 等 14 个测试文件引用
 tstdx.profile.detect  # 帧档案探测器实现（28KB，detect_profile/BUILTIN_PROFILES）：由 profile 包 __init__ eager 再导出，tests/reader/test_formats.py 与 tests/compatibility/test_matrix.py 消费；vipdoc 之外的自动识别属可选能力
 tstdx.profile.presets  # 市场档案预设表（MarketPreset/PRESETS/match_preset）：只被 tstdx/profile/detect.py 与包 __init__ 使用，随 profile 族一起落在 import 图外；它是 detect 的已知市场指纹源，删了探测就只剩裸启发式
-tstdx.transport.sniff  # 被动流量采集与未知命令发现（Sniffer/CommandStats/attach）：docs/cookbook/06_custom_command.md 记录的扩展入口，tests/protocol/test_sniffer_loop.py 与 conftest 覆盖；产物是 PROTOCOL_SPEC/_sniffer 下的 draft，不参与生产解码
+tstdx.transport.sniff  # 被动流量采集与未知命令发现（Sniffer/CommandStats/attach）：docs/cookbook/06_custom_command.md 记录的扩展入口，tests/transport/test_sniffer_passive.py 逐条覆盖其观测、判定域与挂接语义；产物是 PROTOCOL_SPEC/_sniffer 下的 draft，不参与生产解码
 tstdx.charset  # 字符集探测包公共 API（detect_encoding/decode_bytes/is_valid_gbk 等 11 项）：docs/api/README.md 记录，tests/i18n/test_encoding.py 消费；根包 _LAZY 不含它，用户按子模块显式导入
 tstdx.charset.encoding  # 探测实现（GB18030/GBK/Big5/UTF-8 优先级表与置信度）：仅经 charset 包 __init__ 再导出，故与包同处链外；tests/unit/test_i18n_priority.py 锁定优先级语义
 

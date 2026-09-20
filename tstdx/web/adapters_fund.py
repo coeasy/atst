@@ -110,8 +110,10 @@ def _to_float(value: Any) -> float | None:
 class FundSource(BaseWebSource):
     """东财基金数据源（天天基金系）。
 
-    能力：``fund_nav_history``（历史净值）/ ``fund_estimate``（实时估值）
-    / ``fund_list``（全量基金列表）。
+    能力：``fund_nav_history``（历史净值）/ ``fund_list``（全量基金列表）。
+    ``fetch_estimate``（实时估值）的端点已下线——它**总是**抛
+    :class:`~tstdx.errors.SourceDeprecated`，不是一项可用能力，只保留解析层
+    以备端点复活（详见该方法 docstring）。
 
     Quick start::
 

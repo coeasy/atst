@@ -157,14 +157,24 @@ class Sniffer:
         with self._lock:
             return list(self._rings.get(cmd_id, ()))
 
-    def known(self, cmd_id: int, family: str = Family.STANDARD) -> bool:
-        """该命令号是否已在 :mod:`tstdx.protocol.commands` 账本中登记。"""
-        return get_command(cmd_id, family) is not None
+    def _families(self, family: str | None) -> list[str]:
+        return [family] if family is not None else list(self.families)
 
-    def unknown_commands(self, *, family: str = Family.STANDARD) -> list[int]:
-        """所有已观察但**未登记**的命令号，按 cmd_id 升序。"""
+    def known(self, cmd_id: int, family: str | None = None) -> bool:
+        """该命令号是否已在 :mod:`tstdx.protocol.commands` 账本中登记。
+
+        ``family`` 省略时按本观察器的 :attr:`families` 逐族查——只要任一族登记过
+        即算已知。写死单一族会把其余族的合法命令号判成未知。
+        """
+        return any(get_command(cmd_id, fam) is not None for fam in self._families(family))
+
+    def unknown_commands(self, *, family: str | None = None) -> list[int]:
+        """所有已观察但**未登记**的命令号，按 cmd_id 升序。
+
+        ``family`` 省略时的判定域同 :meth:`known`（本观察器的全部协议族）。
+        """
         with self._lock:
-            return sorted(cmd for cmd in self._stats if get_command(cmd, family) is None)
+            return sorted(cmd for cmd in self._stats if not self.known(cmd, family=family))
 
     def observed_commands(self) -> list[int]:
         """所有观察过的命令号（不论是否已知），按 cmd_id 升序。"""
@@ -180,6 +190,11 @@ class Sniffer:
         overwrite: bool = False,
     ) -> list[str]:
         """为所有未知命令号生成 spec DRAFT yaml。
+
+        ``family`` 在这里是**双重**参数：既决定草稿归到哪个协议族，也限定
+        "未知"的判定域（只查这一族的账本）。因此对一个登记在别的族的命令号，
+        本方法会按"本族未知"生成草稿——想要跨族的"全族皆未登记"名单请用
+        :meth:`unknown_commands` 的缺省判定域。
 
         Returns
         -------
@@ -287,8 +302,9 @@ def attach(
     pool_or_client:
         目标客户端或连接池。
     families:
-        可选：覆盖 sniffer 观察的协议族（当前仅影响未知命令判定，
-        实际记录仍按 cmd_id 存）。
+        可选：覆盖 sniffer 观察的协议族集合，即就地改写
+        :attr:`Sniffer.families`，随后的 :meth:`Sniffer.known` /
+        :meth:`Sniffer.unknown_commands` 缺省判定域随之改变。
 
     Returns
     -------
@@ -301,6 +317,8 @@ def attach(
       本函数返回该对象但不做任何挂接（调用方需手动调用
       :meth:`Sniffer.observe_response`）。
     """
+    if families is not None:
+        sniffer.families = list(families)
     # 1) 语义化客户端：优先下钻到内部 pool
     inner = getattr(pool_or_client, "pool", None) or getattr(pool_or_client, "_pool", None)
     target = inner if inner is not None else pool_or_client
