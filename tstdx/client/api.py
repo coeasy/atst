@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, is_dataclass
 from enum import Enum
@@ -117,71 +118,50 @@ class Client:
         currentness: str,
         kwargs: dict[str, Any],
     ) -> QueryResult[Any]:
-        if capability == "quotes":
-            if len(args) != 1:
-                raise ValidationError("quotes requires exactly one symbols argument")
-            result = self.quotes(
-                args[0],
-                provider=provider,
-                currentness=currentness,
-                **kwargs,
-            )
-        elif capability == "bars":
-            if len(args) != 1:
-                raise ValidationError("bars requires exactly one symbol argument")
-            result = self.bars(
-                str(args[0]),
-                provider=provider,
-                currentness=currentness,
-                **kwargs,
-            )
-        elif capability == "snapshot":
-            if len(args) != 1:
-                raise ValidationError("snapshot requires exactly one symbol argument")
-            result = self.snapshot(
-                str(args[0]),
-                provider=provider or "tdx",
-                **kwargs,
-            )
-        elif capability == "minute":
-            if len(args) != 1:
-                raise ValidationError("minute requires exactly one symbol argument")
-            result = self.minute(
-                str(args[0]),
-                provider=provider or "tdx",
-                **kwargs,
-            )
-        elif capability == "trades":
-            if len(args) != 1:
-                raise ValidationError("trades requires exactly one symbol argument")
-            result = self.trades(
-                str(args[0]),
-                provider=provider or "tdx",
-                **kwargs,
-            )
-        elif capability == "security_count":
-            if args:
-                raise ValidationError("security_count accepts market as a keyword argument")
-            result = self.security_count(
-                provider=provider or "tdx",
-                **kwargs,
-            )
-        elif capability == "security_list":
-            if args:
-                raise ValidationError("security_list accepts market/start as keyword arguments")
-            result = self.security_list(
-                provider=provider or "tdx",
-                **kwargs,
-            )
-        else:
-            #: 这条不是防御性代码，是这一段的**唯一**闭合点：核心集现在由执行体表派生，
-            #: 派生结果与这里的分支谁多谁少都可能自行发生，而少一格的下场是拿最后一条
-            #: 分支去跑**另一个能力**（实测：改名前落在 ``security_list`` 上，参数个数
-            #: 合适时直接返回一份不相干的结果）。声明表派生出来的东西，分派必须也派生自它。
+        """核心集的分派不抄表：目标方法自己就是那份表。
+
+        这里原本有七段 ``if capability == ...``，每段各自抄三件事——收几个位置参、
+        ``provider`` 缺省是谁、``currentness`` 转不转。抄件的代价量得过：多给一个签名里没有的
+        关键字（``call("snapshot", "600519", count=5)``）会穿过 ``**kwargs`` 撞到方法本体，抛出来的是
+        裸 ``TypeError``，于是四张面**一致地**把调用方写错的键说成 E9000/HTTP 500；而整数代码只在
+        写了 ``str(args[0])`` 的那一格侥幸能用，换任何一条路都是同一个裸 ``TypeError``。
+        现在绑定交给 :func:`inspect.signature`，缺省交给方法自己的签名，本段只留三件事：
+        核心集的闭合点、"入参不合签名"归 ``ValidationError``、以及 fallback 结果不许从这条路出来。
+        """
+        target = getattr(type(self), capability, None)
+        if not callable(target):
+            #: 闭合点。核心集由执行体表派生，派生结果长出一格而便捷方法面没有对应方法时，
+            #: 绝不能借邻格去跑——借用的下场是返回一份不相干的能力的结果。
             raise ValidationError(
-                f"capability {capability!r} 在核心集内却没有分派分支",
-                context={"capability": capability, "known_core": sorted(_CORE_CAPABILITIES)},
+                f"capability {capability!r} 在核心集内但 Client 上没有对应方法",
+                context={
+                    "capability": capability,
+                    "known_core": sorted(_CORE_CAPABILITIES),
+                    "phase": "wire_validation",
+                },
             )
+        method = getattr(self, capability)
+        forwarded = dict(kwargs)
+        if provider is not None:
+            forwarded["provider"] = provider
+        if currentness != "business":
+            #: ``business`` 的含义写在各能力自己的缺省里（``Client.<cap>`` 的签名，判据
+            #: ``test_the_business_default_is_not_a_second_table`` 盯住它与内核那一侧一致），
+            #: 这里不再抄第二份"哪些能力算盘中"的名单。
+            forwarded["currentness"] = currentness
+        try:
+            bound = inspect.signature(method).bind(*args, **forwarded)
+        except TypeError as exc:
+            raise ValidationError(
+                f"Client.call({capability!r}) 的入参不合它自己的签名：{exc}",
+                context={
+                    "capability": capability,
+                    "phase": "wire_validation",
+                    "received": sorted(forwarded),
+                    "positional": len(args),
+                },
+            ) from exc
+        result = method(*bound.args, **bound.kwargs)
         if isinstance(result, OrchestratedResult):
             raise ValidationError("Client.call core path does not accept hidden fallback policy")
         return result
@@ -200,16 +180,11 @@ class Client:
         if cap in _CORE_CAPABILITIES:
             if channel is not None:
                 raise ValidationError("Tier-A Client.call does not accept an arbitrary channel")
-            core_currentness = currentness
-            if currentness == "business":
-                core_currentness = (
-                    "live" if cap in {"quotes", "snapshot", "minute", "trades"} else "historical"
-                )
             return self._call_core(
                 cap,
                 args,
                 provider=provider,
-                currentness=core_currentness,
+                currentness=currentness,
                 kwargs=dict(kwargs),
             )
         if not is_migrated_capability(cap):
@@ -349,14 +324,16 @@ class Client:
         symbol: str,
         *,
         provider: str = "tdx",
+        currentness: str = "live",
     ) -> QueryResult[Any]:
-        return self.runtime.snapshot(symbol, provider=provider)
+        return self.runtime.snapshot(symbol, provider=provider, currentness=currentness)
 
     def minute(
         self,
         symbol: str,
         *,
         provider: str = "tdx",
+        currentness: str = "live",
     ) -> QueryResult[Any]:
         """当日分时。
 
@@ -364,7 +341,7 @@ class Client:
         客户端在发包前抛 :class:`NotImplementedFeature`（真机 golden 锁定前不通过结构化 API
         发包）。需要当日分时请显式选一个声明了该能力的 Web Provider。
         """
-        return self.runtime.minute(symbol, provider=provider)
+        return self.runtime.minute(symbol, provider=provider, currentness=currentness)
 
     def trades(
         self,
@@ -373,6 +350,7 @@ class Client:
         provider: str = "tdx",
         start: int = 0,
         count: int = 0,
+        currentness: str = "live",
     ) -> QueryResult[Any]:
         """当日逐笔成交。
 
@@ -384,6 +362,7 @@ class Client:
             provider=provider,
             start=start,
             count=count,
+            currentness=currentness,
         )
 
     def security_count(
@@ -391,10 +370,12 @@ class Client:
         *,
         market: int | str = 0,
         provider: str = "tdx",
+        currentness: str = "business",
     ) -> QueryResult[Any]:
         return self.runtime.security_count(
             market=market,
             provider=provider,
+            currentness=currentness,
         )
 
     def security_list(
@@ -403,6 +384,7 @@ class Client:
         market: int | str = 0,
         start: int = 0,
         provider: str = "tdx",
+        currentness: str = "business",
     ) -> QueryResult[Any]:
         """代码表分页（tdx Provider 的 ``0x044D``）。
 
@@ -415,6 +397,7 @@ class Client:
             market=market,
             start=start,
             provider=provider,
+            currentness=currentness,
         )
 
     def stream(

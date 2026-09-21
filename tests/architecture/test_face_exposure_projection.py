@@ -28,6 +28,30 @@
 四 **尺子自检**：派生集与四面的入口规模低于下限时先红，免得"零违例"是读空的。
 五 **入参错误归类**：``fallback`` 这一族三种写错的方式在四面都必须落在 E1010 那一类；
     一次执行面泄漏（探针的防火墙 ``E0000``）与一次 ``E9000`` 都不许出现。
+
+第 11 轮把同一把尺子往下挪一层——量核心分派自己。``Client._call_core`` 里那张
+``if capability == ...`` 是第 8～10 份手抄（谁能转 ``currentness``、谁的 ``provider``
+有缺省、位置参要不要被 ``str()`` 校正），而上面五条一条都照不到它：它们只打**专用**入口，
+专用入口各自直接调便捷方法，根本不经过那张表。实测代价三条（``probe11b/11d_readings.log``）：
+
+* 七条能力里五条在泛型入口上点名 ``currentness`` 会被静默丢掉：``POST /v13/query/minute`` 带
+  ``currentness=historical``，内核收到的是 ``live``；只有 ``bars`` 与 ``quotes`` 转得出去——
+  它们恰好是仅有的两个签名里已经有这个旋钮的便捷方法（``probe11b`` 第三、四段）；
+* 签名里没有的关键字（``call("snapshot", "600519", count=5)``）穿过 ``**kwargs`` 撞到方法本体，
+  抛出来的是裸 ``TypeError``，于是四面**一致地**把它报成 E9000/HTTP 500——正是第 10 轮
+  刚清掉的那一类，只是藏在下一层；
+* 整数代码只在写了 ``str(args[0])`` 的那一格侥幸能用（``bars``），换任何一条路都是裸
+  ``TypeError``；而那一格的"侥幸"本身是错的：``000001`` 写成整数就已经是 ``1`` 了。
+
+于是这一轮的三条判据同样不抄任何名单：
+
+六 **泛型面推动**：五张泛型入口（库层 ``Client.call`` 加四面各自包它的那一层）上点名
+    ``currentness``，七条能力 × 四个取值 × 五张面都得让内核真收到那一次请求，值等于期望；
+    ``business`` 的期望从各能力自己的缺省推导，不另立名单。
+六b **不抄第二份表**：``Client.<cap>`` 的 ``currentness`` 缺省逐字等于内核那一侧，
+    且 ``Client.call`` / ``_call_core`` 的源码里不出现能力的名字、也不出现 Provider 的名字。
+七 **入参错误归类**：签名外的关键字、位置参多了、位置参少了、纯关键字能力被塞位置参、
+    整数代码，五张泛型面都必须落在 E1010——既不许出现 E9000，也不许漏到执行面。
 """
 
 from __future__ import annotations
@@ -50,6 +74,7 @@ from tstdx.integration.mcp._tools_spec import TOOLS
 from tstdx.integration.runtime_http import create_runtime_app
 from tstdx.integration.runtime_ws import RuntimeJsonRpcHandler
 from tstdx.integration.wire_fields import WS_PARAMS_FIELDS
+from tstdx.query import CurrentnessMode
 from tstdx.runtime.executor import DEDICATED_CAPABILITIES
 from tstdx.runtime.orchestration import FallbackPolicy
 
@@ -615,4 +640,296 @@ def test_fallback_wire_parser_is_the_only_one() -> None:
         assert not split_calls, (
             f"{target.__qualname__} 又自己切了一遍逗号：同一条解析在两个地方各说一遍，"
             "就会有一份过期（本轮删掉的正是这四份抄件）"
+        )
+
+
+# ---------------------------------------------------------- 第 11 轮：泛型查询面那一层
+#: 五张泛型入口：库层的 ``Client.call``，加上四张服务面各自包它的那一层
+#: （``POST /v13/query/{capability}``、WS ``query``、MCP ``query_capability``、CLI ``query``）。
+#: 第 10 轮的判据打的是**专用**入口，那些入口直接调便捷方法，核心分派表不在射程内。
+GENERIC_FACES = ("call", "http", "ws", "mcp", "cli")
+
+#: 取值由枚举派生，不抄名单。
+CURRENTNESS_MODES: tuple[str, ...] = tuple(item.value for item in CurrentnessMode)
+
+
+def _signature_of(capability: str) -> inspect.Signature:
+    return inspect.signature(getattr(Client, capability))
+
+
+def _positional_for(capability: str) -> list[Any]:
+    """这条能力收不收位置参：问它自己的签名第一个形参是什么种类，不抄表。"""
+    first = list(_signature_of(capability).parameters.values())[1]
+    return [] if first.kind is inspect.Parameter.KEYWORD_ONLY else ["600519"]
+
+
+def _default_currentness_of(capability: str) -> str:
+    """``business`` 落到这条能力上是什么值：只有它自己的缺省知道。"""
+    parameter = _signature_of(capability).parameters.get("currentness")
+    assert parameter is not None, (
+        f"{capability} 的便捷方法面上没有 currentness 这个旋钮——泛型入口上点名它就没有落点"
+    )
+    return str(parameter.default)
+
+
+def _kernel_specs(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """把执行面换成"记下 spec 再立拒"的桩，返回那块账本。
+
+    记账点选在 :meth:`UnifiedRuntime.execute` 而不是任何中间层：旋钮到底转没转出去，
+    看的是内核收到的那一份 spec。替身 ``Client`` 看不见这一点——第 10 轮已经栽过一次。
+    """
+    from tstdx.runtime.kernel import UnifiedRuntime
+
+    specs: list[Any] = []
+
+    def _blocked(self: Any, spec: Any) -> Any:
+        del self
+        specs.append(spec)
+        raise ValidationError("探针防火墙：这一格已经走到执行面", code=FIREWALL_CODE)
+
+    monkeypatch.setattr(UnifiedRuntime, "execute", _blocked)
+    return specs
+
+
+def _drive_generic(
+    face: str,
+    client: Any,
+    *,
+    capability: str,
+    args: list[Any],
+    kwargs: dict[str, Any],
+    knobs: dict[str, Any],
+) -> dict[str, Any]:
+    """把一个泛型查询请求打进某一张面，拿回它的错误信封。
+
+    一律用真 ``Client``：这里量的是"入参在内核算完线之后被报成什么"，替身永远不算线。
+    """
+    from fastapi.testclient import TestClient
+
+    if face == "call":
+        try:
+            client.call(capability, *args, **knobs, **kwargs)
+        except Exception as exc:
+            return _envelope_of(exc)
+        raise AssertionError(f"{capability} 这一格居然查通了，判据要看的是它的失败")
+    if face == "http":
+        with TestClient(create_runtime_app(client), raise_server_exceptions=False) as tc:  # type: ignore[arg-type]
+            response = tc.post(
+                f"/v13/query/{capability}", json={"args": args, "kwargs": kwargs, **knobs}
+            )
+        assert response.status_code != 200, "这一格居然查通了，判据要看的是它的失败"
+        return dict(response.json()["error"])
+    if face == "ws":
+        raw = RuntimeJsonRpcHandler(client).handle_message(  # type: ignore[arg-type]
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "query",
+                    "params": {
+                        "capability": capability,
+                        "args": args,
+                        "kwargs": kwargs,
+                        **knobs,
+                    },
+                }
+            )
+        )
+        data = (json.loads(str(raw)).get("error") or {}).get("data") or {}
+        assert data, f"WS 没有把这一格报成错误：{raw}"
+        return dict(data)
+    if face == "mcp":
+        reply = MCPServer(client).handle_request(  # type: ignore[arg-type]
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "query_capability",
+                    "arguments": {
+                        "capability": capability,
+                        "args": args,
+                        "kwargs": kwargs,
+                        **knobs,
+                    },
+                },
+            }
+        )
+        assert reply is not None
+        data = (reply.get("error") or {}).get("data") or {}
+        assert data, f"MCP 没有把这一格报成错误：{reply}"
+        return dict(data)
+    if face == "cli":
+        from tstdx.cli import main
+
+        argv = [
+            "query",
+            capability,
+            "--args",
+            json.dumps(args),
+            "--kwargs",
+            json.dumps(kwargs),
+        ]
+        for key, value in knobs.items():
+            argv += [f"--{key}", str(value)]
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = main(argv)
+        assert rc != 0, f"CLI 这一格返回了成功退出码：{rc}"
+        return dict(json.loads(err.getvalue().strip())["error"])
+    raise AssertionError(f"未知的泛型面 {face!r}")
+
+
+@pytest.mark.parametrize("mode", CURRENTNESS_MODES)
+@pytest.mark.parametrize("capability", sorted(DEDICATED_CAPABILITIES))
+def test_currentness_named_on_a_generic_face_reaches_the_kernel(
+    capability: str, mode: str, kernel: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """六：泛型入口上点名的 ``currentness``，五张面都得把它原样送到内核。
+
+    ``business`` 的期望值从这条能力自己的缺省推导（:func:`_default_currentness_of`）：
+    四张面的缺省都是 ``business``，它的含义是"调用方没表态"，所以此时内核该看到什么，
+    只有便捷方法自己的签名说了算——那也正是判据六b 钉住不许再抄第二份的东西。
+    """
+    specs = _kernel_specs(monkeypatch)
+    expected = _default_currentness_of(capability) if mode == "business" else mode
+    subject = _positional_for(capability)
+    problems: list[str] = []
+    for face in GENERIC_FACES:
+        del specs[:]
+        envelope = _drive_generic(
+            face,
+            kernel,
+            capability=capability,
+            args=subject,
+            kwargs={},
+            knobs={"currentness": mode},
+        )
+        if not specs:
+            problems.append(
+                f"{face} 面根本没到内核：{envelope.get('code')} "
+                f"（{str(envelope.get('message'))[:70]}）"
+            )
+            continue
+        spec = specs[-1]
+        if spec.capability != capability:
+            problems.append(
+                f"{face} 面把 {capability!r} 送成了 {spec.capability!r}：分派走错了便捷方法"
+            )
+        if spec.currentness != expected:
+            problems.append(
+                f"{face} 面送到内核的是 currentness={spec.currentness!r}，"
+                f"期望 {expected!r}：调用方点名的旋钮被抹平了"
+            )
+    assert not problems, (
+        f"currentness={mode!r} 在 {capability} 上没有贯通五张泛型面：\n" + "\n".join(problems)
+    )
+
+
+def test_core_dispatch_is_derived_not_recopied() -> None:
+    """六b：核心分派不抄第二份表——两处都能量出来，一处比一份文档可靠。
+
+    一 **签名层**：``Client.<cap>`` 的 ``currentness`` 缺省必须逐字等于内核那一侧。
+       这两份缺省过去各写各的（便捷方法面上压根没这个旋钮），"默认值"因此在两层各有说法。
+    二 **源码层**：``Client.call`` 与 ``Client._call_core`` 里不许出现能力的名字，
+       也不许出现 Provider 的名字。它们一旦回来，那张表就又是从 ``DIRECT_BINDINGS``
+       抄出来的副本——本轮删掉的正是那七段 ``if capability == ...``。
+    """
+    import ast
+    import textwrap
+
+    from tstdx.providers import PROVIDERS
+    from tstdx.runtime.kernel import UnifiedRuntime
+
+    problems: list[str] = []
+    for capability in sorted(DEDICATED_CAPABILITIES):
+        on_client = _default_currentness_of(capability)
+        on_runtime = str(
+            inspect.signature(getattr(UnifiedRuntime, capability)).parameters["currentness"].default
+        )
+        if on_client != on_runtime:
+            problems.append(f"{capability} 的缺省两份：Client={on_client} 内核={on_runtime}")
+
+    forbidden = set(DEDICATED_CAPABILITIES) | set(PROVIDERS.ids())
+    allowed_comparands = set(CURRENTNESS_MODES)
+    for target in (Client._call_core, Client.call):
+        tree = ast.parse(textwrap.dedent(inspect.getsource(target)))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and node.value in forbidden:
+                problems.append(
+                    f"{target.__qualname__} 里又出现了能力/Provider 的名字 {node.value!r}"
+                )
+            if isinstance(node, ast.Compare):
+                for side in (node.left, *node.comparators):
+                    value = getattr(side, "value", None)
+                    if isinstance(value, str) and value not in allowed_comparands:
+                        problems.append(
+                            f"{target.__qualname__} 拿字面量 {value!r} 分了个支"
+                            f"（第 {node.lineno} 行）"
+                        )
+    assert not problems, "核心分派又长回了手抄表：\n" + "\n".join(problems)
+
+
+def _wrong_input_battery() -> list[tuple[str, dict[str, Any]]]:
+    """五种"把入参写错"的形状，全部落在 :data:`GENERIC_FACES` 都说得出来的那一层。"""
+    return [
+        (
+            "签名外的关键字",
+            {"capability": "snapshot", "args": ["600519"], "kwargs": {"count": 5}},
+        ),
+        (
+            "位置参多于签名",
+            {"capability": "snapshot", "args": ["600519", "000001"], "kwargs": {}},
+        ),
+        (
+            "必填位置参缺失",
+            {"capability": "snapshot", "args": [], "kwargs": {}},
+        ),
+        (
+            "纯关键字能力被塞了位置参",
+            {"capability": "security_count", "args": ["0"], "kwargs": {}},
+        ),
+        (
+            "整数代码",
+            {"capability": "quotes", "args": [600519], "kwargs": {}},
+        ),
+    ]
+
+
+@pytest.mark.parametrize("face", GENERIC_FACES)
+def test_wrong_input_on_a_generic_face_is_an_input_error(
+    face: str, kernel: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """七：泛型入口上的入参错误必须说成入参错误（E1010），五张面一张都不例外。
+
+    裸 ``TypeError`` 会被每张面一致地报成 E9000/500/-32603/退出码 1——第 10 轮量出来的
+    那件事。差别在于：那次是在 ``FallbackPolicy.build``，这一次在核心分派，
+    而第 10 轮的五条判据对它一个都没响。
+    """
+    specs = _kernel_specs(monkeypatch)
+    problems: list[str] = []
+    for label, shape in _wrong_input_battery():
+        del specs[:]
+        envelope = _drive_generic(face, kernel, knobs={}, **shape)
+        code = envelope.get("code")
+        if code == FIREWALL_CODE:
+            problems.append(f"「{label}」根本没被入参判据挡住，已经走到执行面")
+        elif code != "E1010":
+            problems.append(
+                f"「{label}」没有落在入参那一类，而是 {code}"
+                f"（{str(envelope.get('message'))[:60]}）：调用方写错的入参被抹成了服务器故障"
+            )
+        elif specs:
+            problems.append(f"「{label}」既被判成入参错误，又走到了内核：{specs[-1].capability}")
+    assert not problems, f"{face} 面的泛型入参错误归类不对：\n" + "\n".join(problems)
+
+
+def test_the_generic_face_rulers_have_a_real_denominator() -> None:
+    """四的同类自检：这一族的分母不能是空的，空表读出来的"零违例"不算数。"""
+    cells = len(GENERIC_FACES) * len(DEDICATED_CAPABILITIES) * len(CURRENTNESS_MODES)
+    assert cells >= 140, f"泛型面 × 能力 × currentness 只有 {cells} 格，判据被读空了"
+    assert len(_wrong_input_battery()) >= 5, "入参错误这一族不能只有一两种形状"
+    for capability in sorted(DEDICATED_CAPABILITIES):
+        assert _default_currentness_of(capability) in CURRENTNESS_MODES, (
+            f"{capability} 的缺省 currentness 不在枚举里，判据六的期望值会是凭空定的"
         )

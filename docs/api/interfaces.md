@@ -121,11 +121,11 @@ from tstdx import Client, AsyncClient
 | `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", strict=False)` | K 线；`strict=True` 时结果携带任何数据瑕疵即抛 `TruncatedDataError` |
 | `quotes` | `(symbols, *, provider=None, policy=None, currentness="live")` | 实时行情 |
 | `quotes_batch` | `(symbols, *, provider=None, currentness="live") -> BatchResult` | 逐 symbol 三态审计 |
-| `snapshot` | `(symbol, *, provider="tdx")` | 盘口快照 |
-| `minute` | `(symbol, *, provider="tdx")` | 当日分时（**默认 tdx 已下线**，抛 `NotImplementedFeature`；分时改用声明该能力的 Web Provider） |
-| `trades` | `(symbol, *, provider="tdx", start=0, count=0)` | 逐笔成交（**默认 tdx 已下线**，抛 `NotImplementedFeature`） |
-| `security_count` | `(*, market=0, provider="tdx")` | 证券数量 |
-| `security_list` | `(*, market=0, start=0, provider="tdx")` | 证券列表分页：**已下线**，总是抛 `CommandOffline` |
+| `snapshot` | `(symbol, *, provider="tdx", currentness="live")` | 盘口快照 |
+| `minute` | `(symbol, *, provider="tdx", currentness="live")` | 当日分时（**默认 tdx 已下线**，抛 `NotImplementedFeature`；分时改用声明该能力的 Web Provider） |
+| `trades` | `(symbol, *, provider="tdx", start=0, count=0, currentness="live")` | 逐笔成交（**默认 tdx 已下线**，抛 `NotImplementedFeature`） |
+| `security_count` | `(*, market=0, provider="tdx", currentness="business")` | 证券数量 |
+| `security_list` | `(*, market=0, start=0, provider="tdx", currentness="business")` | 证券列表分页：**已下线**，总是抛 `CommandOffline` |
 | `stream` | `(symbols, *, provider="tdx", interval=1.0, diff_only=False, max_queue=1024, on_quote=None, on_error=None) -> StatefulQuoteStream` | 流式订阅 |
 | `execute` | `(spec: QuerySpec) -> QueryResult` | 通用面：任何 capability 同一入口 |
 | `call` | `(capability, *args, provider=None, channel=None, currentness="business", **kwargs)` | 便捷通用入口 |
@@ -136,6 +136,14 @@ from tstdx import Client, AsyncClient
 
 `AsyncClient` 是同名异步镜像（`async with AsyncClient() as client: ...`）；
 传 `policy=` 时 `bars/quotes` 返回 `OrchestratedResult` 而非 `QueryResult`。
+
+`currentness` 的缺省只有上表这一处：`Client.<方法>` 的签名与 `UnifiedRuntime.<方法>` 的缺省
+逐字相等，`call`/`_call_core` 不再另立一份"谁能转、谁不能转"的名单（判据见
+`tests/architecture/test_face_exposure_projection.py` 的
+`test_core_dispatch_is_derived_not_recopied`）。四张服务面的泛型入口（`POST /v13/query/{capability}`、
+WS `query`、MCP `query_capability`、CLI `query`）缺省都是 `business`，它的含义是"调用方没表态"，
+此时内核看到的是这条能力自己的缺省口径（`bars`→`historical`、`security_*`→`business`、
+其余→`live`）；要指定口径就直接点名它——显式写 `business` 与不写，在核心集上是同一个值。
 
 ### 能力发现面：只有名字，没有可用性
 

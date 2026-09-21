@@ -229,7 +229,24 @@ class QuerySpec:
         schema_version: int = 1,
         options: Mapping[str, Any] | None = None,
     ) -> QuerySpec:
-        symbol_tuple = (symbols,) if isinstance(symbols, str) else tuple(symbols)
+        if isinstance(symbols, str):
+            symbol_tuple: tuple[Any, ...] = (symbols,)
+        else:
+            try:
+                symbol_tuple = tuple(symbols)
+            except TypeError as exc:
+                #: 裸 ``TypeError`` 会被四张面一致地报成 E9000/HTTP 500——调用方写错的键被说成
+                #: 服务器故障。这里也不替调用方把整数翻成字符串：``000001`` 写成整数就是 ``1``，
+                #: 猜一次就是一条安静错码的查询。
+                raise ValidationError(
+                    "symbols 必须是代码字符串或代码字符串的序列：整数不是合法写法，"
+                    "前导零会在到达这里之前就已经丢了",
+                    context={
+                        "phase": "wire_validation",
+                        "capability": capability,
+                        "symbols_type": type(symbols).__name__,
+                    },
+                ) from exc
         current = _parse_currentness(currentness)
         # 构造期只保留"折叠进 options 袋"这一条通路：袋里的键要么被执行面消费，
         # 要么在 ``REJECTED_OPTIONS`` 里当场拒绝，不存在第三种"收下但没人读"。
