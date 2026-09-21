@@ -14,6 +14,10 @@
 > 改由三个派生来源对账，"既无契约也不在任何派发面"从 PENDING 升为 ERROR），撤掉一份 17 个名字的
 > 手抄豁免名单与一条 63 项的死名单，并就地更正 §2 的诊断——所谓"92 项缺契约"里有 92 项其实
 > 全在通用派发面上，真·无声明形状的是 0 项（代码 `a98755d`+`e26300e`+`c7db30b`，读数见 §16）；
+> 第 8 轮收掉 C4 的后半截（V18-D3）：包内零消费者的 206 行退役机制 `tstdx/deprecation.py` 物理删除，
+> 防回潮不新建判据、由四道既有尺子分头盯住（根级白名单 / 可达性 `[ORPHAN]` / 事实文档可解析 /
+> 换形后的贯通第 16 项），并顺手把治理文档教的 `@deprecated` 与审计索引教的死 make 目标改成实话
+> （代码 `f92d827` + 文档 `cb92bc0`，读数见 §17）；
 > 其余阶段仍待按 §6 的 D7–D12 裁决推进。
 > §0 的基线是**方案取证轮**的数，§9 是**执行轮**的数，两者环境标签相同（3.12.13）但不混用。
 > **授权尺度（本轮用户已答，2026-09-20）**：
@@ -152,7 +156,7 @@ CLI parser · HTTP 路由 · WS `METHODS` · MCP `inputSchema` —— 八处事�
 
 **R-7｜P2｜16 项可达性豁免把约 5 500 行"公共 API 名义资产"永久停在静态图外。**
 `deprecation.py` 206 行在 `tstdx/` 包内**零引用**（本轮独立复核：`grep -rn deprecation --include=*.py tstdx/`
-除自身外 0 命中，也不在 `__all__` 45 个名字里，≈F-74）；`profile/`(1 262) `output/`(305)
+除自身外 0 命中，也不在 `__all__` 45 个名字里，≈F-74；**第 8 轮已按 D3(a) 删除，见 §17**）；`profile/`(1 262) `output/`(305)
 `charset/`(510) `trade/`(1 535) 各有豁免理由且理由可核验。**问题不在单个豁免，
 在于"公共 API"这个豁免类别本身没有价值判据**：一个 206 行的机制可以凭"docs 里记着"长期存活。
 
@@ -311,7 +315,7 @@ C4 **豁免类别加价值判据**（R-7）：`_reach_allow.txt` 每条豁免必
 > （形状枚举，换个写法就复活）要删的东西。实际写进 CI 的是：反引号点名的符号必须在被豁免模块的
 > 静态命名空间里（`[dead-claim]`），全清单点名总数低于 30 即判据自报失明（`[blind-claims]`）；
 > "消费它的文件"那一维早就由 `[dead-pointer]`/`[weak-pointer]` 盯住（路径存在且真触达），不重复建。
-> 读数与 5 处过期写法的修正见 §15；`deprecation.py` 的 D3 处置**未做**。
+> 读数与 5 处过期写法的修正见 §15；`deprecation.py` 的 D3 处置在第 8 轮按默认 (a) 落地，见 §17。
 
 **验收**：八张面与派生源的一致性由**一条**框架判据守；`tstdx/` 根级与 `client/` 包内命名空间由白名单
 钉住（沿用 F-4 的机制）；删除的 curated 清单逐条列名并给"覆盖面不减"证明。
@@ -444,6 +448,12 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b7step/probe_n_typed_coverage.py`、`probe_readings_step.log` | 三个派生来源与旧 92 格 PENDING 的口径分解（§16 第一张表的来源） |
 | `wt_v18b7ship/run_gates.sh`、`gates_ship.log` | **提交树**（`e26300e`，被跟踪文件 0 改动）十次调用复测 |
 | `wt_v18b7ship/fulltest_ship.log` + `.xml` | 提交树离线全量与 junit 计数；与步骤轮唯一差异仍是 `transport/pool.py` 一行，方向与 §15 相反 |
+| `wt_v18b8step/run_gates.sh`、`gates_v18b8.log` | 第 8 轮步骤轮（`0bf2994` + 本步 11 文件）环境与十次调用逐条 RC 与摘要行 |
+| `wt_v18b8step/fulltest_v18b8.log` + `.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数。同一棵树本步跑过两次：第一次 3 519 miss / 997 partial / **81.70%**（`pool.py`、`ratelimit.py` 两行各抖 2/1），日志被第二次同名覆盖、只余 §17 的数字；第二次（最终内容）3 523 / 999 / **81.68%**，即这份存档 |
+| `wt_v18b8step/mutate_v18b8.py` + `.log` | 第 8 轮 9 格反证（C0 对照 + P1–P8 回潮形状）：每格至少一道门禁红、每格按字节还原；harness `rc=0` |
+| `wt_v18b8step/_base_deprecation.py`、`_base_test_deprecation.py` | 提交前版本（`0bf2994`）的两个被删文件快照——P1/P2/P8 三格的取证对象，只在步骤树内，不入库 |
+| `wt_v18b8ship/run_gates.sh`、`gates_ship8.log` | **提交树**（`cb92bc0`，被跟踪文件 0 改动）十次调用复测 |
+| `wt_v18b8ship/fulltest_ship8.log` + `.xml` | 提交树离线全量与 junit 计数；与步骤轮的 `tstdx/` 覆盖表逐行相同 |
 
 ## 8. 本方案不做什么（避免被读成"又要一轮无限重构"）
 
@@ -911,8 +921,8 @@ TOTAL miss 3 523→3 525、partial 1 001→1 002——这正是 §14 末段第�
 分母恒为 22 440。结论按 §14 已确立的口径写：**该差值落在 pool 的抖动行上，与本轮改动无因果**，
 覆盖率真值仍以 CI 为准，本轮不据此重钉基线。
 
-**本轮明确未做**：C4 的后半截——`tstdx/deprecation.py` 按 D3 的处置（默认删除 + 防回潮守卫）没做，
-本轮只把它的台账格子说清楚；配置面 K/L 两把尺子（读数见上表，量过而不立）；`tstdx.trade` 那条记录
+**本轮明确未做**：C4 的后半截——`tstdx/deprecation.py` 按 D3 的处置（默认删除 + 防回潮守卫）当时没做，
+本轮只把它的台账格子说清楚（**第 8 轮已落地，见 §17**）；配置面 K/L 两把尺子（读数见上表，量过而不立）；`tstdx.trade` 那条记录
 仍是"包级理由 + 零反引号点名"（下限有余量：49 ≫ 30，所以它绿得有依据，但也确实没被符号口径盯住）；
 `_module_namespace()` 不核"名字在但形状/语义与理由描述不符"（比如理由说是类、实为函数）；
 §2 G5 的声明面改动（与 F-66/F-75 同批裁决）；C1/C2/C3、D1–D4、E1–E4、F2、F3、F4/G3、G2 的 D10 裁决；
@@ -1022,10 +1032,119 @@ docs links `83 files`、mypy 0 行、ruff check、ruff format）。
 `spec_audit` 与 F-4 命名空间白名单的域）；规则 4（Domain Record 映射）仍是 PENDING 级——
 它与本轮改掉的 PENDING 不同类，"要不要给某能力建结果模型"确实是可押后的产品选择，当前 0 命中；
 D10 的"核心族之外要不要补专属契约"从此变成纯产品决策，本方案不为它开账；
-A1/A2/A4（README 半截）、C1/C2/C3、C4 后半（`deprecation.py` 的 D3 处置）、D1–D4、E1–E4、
+A1/A2/A4（README 半截）、C1/C2/C3、C4 后半（`deprecation.py` 的 D3 处置，**第 8 轮已落地，见 §17**）、D1–D4、E1–E4、
 F2、F3、F4/G3、§2 G5 的声明面改动；CHANGELOG `[Unreleased]` 仍因并行会话该文件未提交而押后。
 
+## 17. 执行记录（续）
 
+### 第 8 轮｜轴的第六次延伸：登记越齐全，死机制越像活的（代码 `f92d827` + `cb92bc0`，11 个文件 `39 insertions / 354 deletions`）—— C4 后半按 D3 默认 (a) 落地
 
+前七轮的轴都是同一个方向：**声明了就得兑现**（旋钮、入参、字段、符号、名单）。这一轮把轴翻过来——
+`tstdx/deprecation.py` 在磁盘上、在四处登记（根级白名单、可达性豁免、裸告警豁免、公共 API 表）里
+全都活着，登记越齐全，门禁看它就越健康；而它服务的对象一个都没有。这是那条轴的**反向失效模式**：
+"被登记" 不等于 "被使用"，一份越写越全的豁免台账完全可以给零消费者的代码发持续供养费。
+D3 给的默认处置是物理删除 + 防回潮守卫，本轮按 (a) 落地。
 
+**取证**（本轮现测，`git grep -i deprecat 0bf2994 -- tstdx/`）：该模块 206 行、`__all__` 五项
+（`DeprecationPolicy` / `deprecated` / `DeprecationInfo` / `get_deprecation_count` /
+`reset_deprecation_count`）外加一个不进 `__all__` 的 `DeprecationError`，
+包内**除自身外零引用**——上面那次全库 grep 的每一条命中都是另一条路径上的 `SourceDeprecated`
+或 `_check_deprecated`，没有一处 `from .deprecation import`。真正在跑的生命周期信号是
+`tstdx/errors.py:471` 的 `SourceDeprecated`，由 `tstdx/web/_base_core.py:349`、
+`tstdx/web/_base_em.py:136`、`tstdx/web/adapters.py:156,209,216,225` 发射，
+加 `tstdx/diagnostics.WarningCode` 的告警信封。所以删掉它不是"扔掉一个还没人用的正确机制"，
+而是**同一件事的第二套写法且没人走**；`tests/test_deprecation.py` 那 9 项（`--collect-only` 实测，
+台账里写的 13 项是抄本）全部只在给自己写的模块计数。
 
+**改了什么**（11 个文件、两笔提交）：
+
+| 文件 | 动作 |
+|---|---|
+| `tstdx/deprecation.py` | 整文件删除（206 行） |
+| `tests/test_deprecation.py` | 整文件删除（130 行 / 9 项）。"删测试要有凭据"这一格本轮的凭据是文件本身：9 项断言的对象全部来自开头那一行 `from tstdx.deprecation import …`，包内其它代码零涉及；P1/P2 两格另证没有任何一条**别的**判据以"这个模块存在"为条件 |
+| `tests/test_bridges.py` | #16 **换形**而不是取消：从"弃用策略从 deprecate 到 remove 至少 2 个 minor"改成"包内不留自建退役机制"，三面各一条断言——磁盘上没有这个文件、`importlib.import_module` 抛 `ImportError`、根包公共面（`__all__` 与属性）不重新导出那三个名字。套件仍为 24 项，三份写着"24 项"的文档因此不用改 |
+| `tests/architecture/test_namespace_layout.py` | 根级白名单去掉 `deprecation.py`（11 → 10；该判据是**集合相等**，多一项少一项都红） |
+| `tests/architecture/test_caveat_channel_gates.py` | 撤回裸告警豁免，`BARE_WARN_ALLOWED` 只剩 `CHANNEL` 一项。讽刺的是逼着撤回它的正是第 6 轮那条"豁免不能过期"的判据：模块没了，豁免就成了它自己禁止的 stale exemption |
+| `scripts/_reach_allow.txt` | 删掉该模块的豁免记录（16 → 15 条；反引号符号声明 51 → 48 处，仍高于 `MIN_SYMBOL_CLAIMS = 30`） |
+| `docs/api/README.md` | 删掉公共 API 表那一行——第 6 轮那道"免费守卫" `test_backticked_tstdx_paths_are_importable` 正盯这张表，写回去就是红 |
+| `README.md` / `docs/ARCHITECTURE.md` | 目录树一行去掉该文件名；"根级白名单 11 项" → 10 项（后者是被 `_root_modules()` 现算钉住的事实数字，不是可自由改的文案） |
+| `AUDIT_AND_BRIDGES.md` | 验收项 16 改写为新语义；两处 `make audit-bridges` → `make test-bridges`（pickaxe：`f73ef61` 加入该目标时命令就带着 `\|\| echo "⚠ bridges test 未就绪"`，失败被吞成成功；`340624c` 已删除该目标，文档还在教人跑它） |
+| `GOVERNANCE.md` §4.2 | 弃用策略改为直接 `warnings.warn(..., DeprecationWarning, stacklevel=2)`；不建包内装饰器；`warnings.deprecated`（3.13）在 `requires-python = ">=3.10"` 下不可用，这一句写进政策而不是留给下个人重新发现 |
+
+**为什么这一轮不新增判据**：删除之后"它回来"只有四种形状，每种都已被现存的尺子单独盯住——
+本轮的工作因此是**证明那四把尺子真会咬**，而不是再刻第五把。
+
+| 回潮形状 | 由谁认得 |
+|---|---|
+| 模块文件回到包根（登记一概不动） | `test_root_namespace_matches_whitelist`（集合相等）＋ 可达性审计 `[ORPHAN]`（它不在豁免里了）＋ #16 |
+| 模块回来且四处登记全部补回 | 只有 #16（见 P2 那一格） |
+| 只在公共 API 表写回一行 | `test_backticked_tstdx_paths_are_importable` |
+| 只在豁免台账写回一行 | 可达性审计的 `[ALLOW-DEFECT] [dead]`（第 6 轮的战果） |
+| 只把裸告警豁免写回 | `test_bare_warn_calls_stay_inside_the_channel_and_one_justified_site` |
+| 只把根包 `__all__` 写回 | #16 第三面 |
+| 把删掉的 9 项测试整包搬回来 | pytest 收集期 `ModuleNotFoundError`（rc=2） |
+
+**规模账（−9 与"覆盖不降"证明）**：判据 3661 → **3652**，差值 9 项全在被删的
+`tests/test_deprecation.py`；#16 换形 1 条、新增 0、被删判据 0（没有任何一条判据以"这个模块存在"
+为条件，P1/P2 两格就是查这一点的）、新增 skip 0、阈值 77.0% 未动。删测试文件必须配覆盖证明，
+本轮是**逐行等式**而非"大概没降"：与 `wt_v18b7ship` 的 `tstdx/` 覆盖表按（文件名 + 四个计数列）
+归一后 `diff`，唯一差异是 `tstdx\deprecation.py 77 2 14 3 95%` 整行消失，其余 **140 行逐字节相同**；
+TOTAL 差值 22 440−22 363 = 77 stmt、3 525−3 523 = 2 miss、5 996−5 982 = 14 branch、
+1 002−999 = 3 partial，恰好就是那一行。**81.72% → 81.68% 不是回潮**：删掉一个 95% 的、
+高于均值的文件，加权结果必然往下挪，而"留存代码的覆盖"两个方向都没变差。基线仍只由
+CI（ubuntu + py3.11）重钉，本机数字不作依据。
+
+**步骤轮读数**（`wt_v18b8step` @ `0bf2994` + 本步 11 文件，复制后与主树逐字节相同）：环境探针 +
+CI 规范调用的门禁共 **10 次调用全部 rc=0**（`gates_v18b8.log`：`3.12.13 … [MSC v.1944 64 bit]`、
+originality `Total: 190 / Original: 190 / License OK: 190 / Header OK: 190 / Suspicious: 0 /
+External imports: 17`（上轮 191，正好少一个被删文件）、spec_audit `"coverage_pct": 100.0`、
+golden_audit `[GATE] all L1 verified commands have real samples (OK)` + 既有 `suspect_short` WARN、
+**reachability `模块总数: 189 可达: 174 白名单豁免: 15` + `无未登记孤儿 ✓`**（上轮 190 / 174 / 16）、
+**contract_audit `形状来源：63 个有专属契约 / 172 个在通用派发面 / 0 个无任何声明形状` +
+`PASS: 172 个注册 capability 全部落在声明形状之内`**、docs links `83 files`、mypy 0 行、
+ruff check `All checks passed!`、ruff format `443 files already formatted`）。
+离线全量 junit **3652 项 / 0 失败 / 0 错误 / 7 跳过**、163.943s；覆盖率 **81.68%**
+（TOTAL 22 363 stmt / 3 523 miss / 5 982 branch / 999 partial），`Required test coverage of 77.0%
+reached`。
+两处门禁先于文档发现漂移，都是本轮改动的必然后果：`test_fact_doc_numbers_match_their_truth_source
+[docs/ARCHITECTURE.md-根级模块白名单]`（11 → 10）与 `test_readme_tree_lists_existing_paths`（README 树）。
+另两处不粉饰：新写的 #16 第一次 `ruff format --check` 是红的；同一棵树本步跑过两次全量，
+第一次 **3 519 miss / 997 partial / 81.70%**（差值全在 `transport/pool.py`、`transport/ratelimit.py`
+两行已知抖动行），日志被第二次同名覆盖，只余本节这两个数字——引用的最终读数是第二次（改动已完成）。
+
+**反证证据**（`wt_v18b8step/mutate_v18b8.log`，harness `rc=0`；9 格，每格跑完按字节还原）：
+
+| 格 | 动了什么 | 结果 |
+|---|---|---|
+| C0 | 不改动（对照） | 4 道相关门禁全绿 ⇒ 下面每一格的红都不是恒报出来的 |
+| P1 | 只把模块文件放回包根（四处登记不动） | 变红 **4/5**：白名单集合、#16、裸告警豁免、可达性 `[ORPHAN] tstdx.deprecation`；docs 那格按设计仍绿（没写回表） |
+| P2 | 模块回来 + 四处登记全部补回（一个"复活后处处自洽"的死机制） | 只有 #16 红 ⇒ 泛化的四把尺子都会点头，防回潮靠的是那三条专门断言，这一点记在这里而不是补一把泛尺子 |
+| P3 | 只把公共 API 表那一行写回去 | `test_backticked_tstdx_paths_are_importable` 红 |
+| P4 | 只把可达性豁免记录写回去 | `audit_reachability --strict` 红：`[ALLOW-DEFECT] [dead] tstdx.deprecation：模块不存在，豁免记录已失效（应删除该行）` |
+| P5 | 只把裸告警豁免写回去 | `test_bare_warn_calls_stay_inside_the_channel_and_one_justified_site` 红 |
+| P6 | 只把根级白名单写回去 | `test_root_namespace_matches_whitelist` 红 |
+| P7 | 根包公共面重新导出 `deprecated` | #16 第三面红 |
+| P8 | 把删掉的 9 项测试整包搬回来（模块不回来） | 收集期 `ModuleNotFoundError: No module named 'tstdx.deprecation'`，rc=2 |
+
+**harness 自己的两格缺陷值得记一句**（因为它对所有后续取证脚本都成立）：主树工作副本是 CRLF，
+`Path.read_text()/write_text()` 会把换行归一化，于是"按 md5 还原"必然假失败、而"锚点字符串"
+必须带 `\r\n` 才命中；第一版正是栽在这里。第二版把快照改成 `read_bytes()`、还原改成
+`write_bytes()`、植入改成从 `_base_*.py` 字节拷贝，并对同一文件的二次编辑复用首份快照，才拿到 `rc=0`。
+
+**ship 轮（提交树复测）**：`f92d827`（删除 + 三面守卫 + 四处登记）与 `cb92bc0`（两份政策/验收文档）
+落到 main 后，另起 `wt_v18b8ship` @ `cb92bc0`，被跟踪文件 **0 处改动**，10 次调用**全部 rc=0**，
+摘要行与步骤轮逐字相同（`gates_ship8.log`：`Total: 190 / Suspicious: 0`、`"coverage_pct": 100.0`、
+`模块总数: 189 / 可达: 174 / 白名单豁免: 15`、`形状来源：63 / 172 / 0` + `PASS: 172 …`、
+docs links 83 files、ruff format 443 files）。离线全量 junit **3652 / 0 / 0 / 7**、171.100s、
+覆盖率 **81.68%**（TOTAL 22 363 / 3 523 / 5 982 / 999）。**两棵树的 `tstdx/` 覆盖表逐行相同**
+（归一后 `diff` 空输出，140 行），本轮不需要归因差值。
+
+**本轮明确未做**：P2 那一格说明"复活且处处自洽"只有 #16 认得，而 #16 是**手抄的三条断言**
+（一个文件名、一个模块名、三个公共名字），本轮没有、也不打算把它泛化成"任何被删根级模块都不得回来"
+——那是白名单与可达性两把尺子的职责，泛化会造出第五把重复尺子；`warnings.deprecated` 的启用等
+`requires-python` 抬到 ≥3.13 再说，本轮已把这条限制写进 GOVERNANCE；`tests/web/` 里带
+"deprecation" 字样的两项测的是 `SourceDeprecated` 的下线检测，与被删机制无关，不动；
+A1/A2/A4（README 半截）、C1/C2/C3、D1–D4、E1–E4、F2、F3、F4/G3、§2 G5 的声明面改动；
+其余 15 条"公共 API 名义资产"豁免（`trade/`、`profile/`、`output/`、`charset/`）仍等 R-7 的
+类别价值标准——本轮只删了一处**没有任何判据替它说话**的资产，那 15 条各有判据在盯（第 6 轮的
+符号账），不能由本轮外推到"它们也该删"；CHANGELOG `[Unreleased]` 仍因并行会话该文件未提交而押后。
