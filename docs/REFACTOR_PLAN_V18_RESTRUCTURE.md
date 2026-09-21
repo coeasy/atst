@@ -304,6 +304,12 @@ MCP `inputSchema`、typed 契约**由它生成或校验为它的投影**。
 > 仍是手抄的：注册表 `channel.capabilities`、typed 契约、`_call_core` 的 if/elif 分派表（本轮给它装了
 > 闭合点）、catalog 那份 `_CORE_CAPABILITIES`（引派生集会成导入环）；MCP `inputSchema` 是被判据
 > **认成**投影、不是被**生成**出来。八张表→四张外表面的口径更正见 §10 第 2 轮，读数见 §19。
+> **第 11 轮落地（第二段：那张 if/elif 表删掉了）**：核心分派不再抄"谁能转 `currentness`、谁的
+> `provider` 有缺省、位置参要不要被 `str()` 校正"——绑定交回 `inspect.signature`，缺省交回方法
+> 自己的签名；七条能力的便捷方法面统一挂上 `currentness`，它与 `UnifiedRuntime.<cap>` 的缺省由一条
+> 源码级判据钉成同一份，`Client.call`/`_call_core` 里出现能力名或 Provider 名即红。泛型入口从四张
+> 面算成五张（库层 `Client.call` + HTTP/WS/MCP/CLI 各包它那一层），140 格逐格量。仍是手抄的：
+> 注册表 `channel.capabilities`、typed 契约、catalog 那份 `_CORE_CAPABILITIES`（导入环未解）。读数见 §20。
 C2 **`Client` 发现面收口**（按 D5）：三选一并落实——
 (a) ~~维持 `__getattr__`，但把 `capabilities()` 升级为带签名/必填项的结构化发现面（推荐，破坏性小）~~
 　**第 3 轮撤回**：F-66 已由用户拍板 (c)「不改面、只补判据」，第 47 步更把"发现面不许长出状态字段"钉成门禁，
@@ -480,7 +486,19 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b10step/probe10e_catalog.log` | catalog 那份手抄名单与本轮派生集的逐格对照：`WebQuoteSession` 的可调用成员数、名单里真正命中成员的条目数、两份 capability 名单的双向差 |
 | `wt_v18b10step/mutate10.py`、`mutate_v18b10.log` + `mut10_out_1..9.log` | 第 10 轮 10 格反证（C0 对照 + M1–M9）：每格变红数与红名单在 `.log`，每格 pytest 原文分格存 `mut10_out_N.log`，每格跑完按字节还原 |
 | `wt_v18b10ship/run_gates.sh`、`gates_v18b10.log` | **提交树**（`27d2a11`，2 285 个被跟踪文件与 HEAD 逐字节相同）十次调用复测 |
-| `wt_v18b10ship/fulltest_v18b10.log` + `.xml` | 提交树离线全量与 junit 计数；`tstdx/` 覆盖表 141 行与步骤轮**逐行相同** |
+| `wt_v18b10ship/fulltest_v18b10.log` + `.xml` | 提交树离线全量与 junit 计数；`tstdx/` 覆盖表 141 行（含 TOTAL），与步骤轮**2 行不同**：TOTAL 与 `transport\pool.py`（miss 111↔113、partial 36↔37，两边都仍是 80%）——原先这行写的是"逐行相同"，与 §19 步骤轮段自相矛盾，第 11 轮按两份日志重量后更正 |
+| `wt_v18b11step/run_gates11.sh`、`gates11_step.log` | 第 11 轮步骤轮（`4b66552` + 本步 4 文件）环境与十次调用逐条 RC 与摘要行 |
+| `wt_v18b11step/fulltest_v18b11.log` + `.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数 |
+| `wt_v18b11step/covdiff11.py` | 覆盖表逐行比对器（行数、文件名双向差、差异行）；本轮用它量了三对：step↔ship11、ship11↔ship10、step10↔ship10 |
+| `wt_v18b11step/probe11.py`、`probe11_readings.log` | 静态抽取版探针。它的事实映射整段判错（`provider or "tdx"` 是 BoolOp 不是 Compare、elif 链嵌套后每个子树都吞掉后面的分支），本轮弃用其结论、只留作方法论读数——与第 10 轮 `probe10.py` 同一条教训 |
+| `wt_v18b11step/probe11b.py`、`probe11b_readings.log` + `_after.log` | 库层行为探针：七条能力 × 四个 `currentness` 写法 → 内核 `QuerySpec` 收到什么（28 格），加"便捷方法签名里有没有这个旋钮"与"HTTP 泛型入口带 currentness 时七条能力收到什么"。修复前 5 条能力整列不动，修复后逐格随写法而动 |
+| `wt_v18b11step/probe11c.py`、`probe11c_readings.log` | 形状派生的可行性读数：位置参/关键字-only 由 `Client.<cap>` 签名现推，28/28 格能编译出请求（`count<=0` 落在 `QuerySpec.normalized()` 而非 `build()`，第一版探针因此误报四格） |
+| `wt_v18b11step/probe11d.py`、`probe11d_readings.log` + `_after.log` | 入参写错在库层的归类：签名外的关键字、位置参形状、整数代码——修复前裸 `TypeError`（会被四面一致报成 E9000），修复后一律 `E1010` |
+| `wt_v18b11step/probe11f.py`、`probe11f_readings_pre.log` + `_after.log` | 面上读数，与判据六/七共用同一份驱动：140 格（五张泛型面 × 七条能力 × 四个口径）的内核 `currentness`，加 25 格入参错误形状各报成什么码。`_pre` 是把两个源文件按 `git show HEAD^` 还原后跑的 |
+| `wt_v18b11step/mutate11.py`、`mutate_v18b11.log` + `mut11_out_1..8.log` | 第 11 轮 9 格反证（C0 对照 + M1–M8）：每格变红数与红名单在 `.log`，pytest 原文分格存 `mut11_out_N.log`，每格跑完按字节还原 |
+| `wt_v18b11ship/run_gates.sh`、`gates_v18b11.log` | **提交树**（`20d32a9`）十次调用复测 |
+| `wt_v18b11ship/verify_tree.py` | 提交树 ↔ HEAD 的内容核对（2 285 个被跟踪文件、换行归一后逐字节比；同时打印落盘带 CRLF 的文件数，用来说明为什么必须先归一化） |
+| `wt_v18b11ship/fulltest_v18b11.log` + `.xml` | 提交树离线全量与 junit 计数；`tstdx/` 覆盖表 141 行与步骤轮**2 行不同**（TOTAL 与 `transport\ratelimit.py`） |
 
 ## 8. 本方案不做什么（避免被读成"又要一轮无限重构"）
 
@@ -1452,9 +1470,12 @@ partial-branch 37→36，两边都仍是 80%——就是第 7、8 两轮各记�
   一条框架判据守"——四张外表面现在由这一条守着（新文件），另两处仍是 §4 第一类判据（curated 清单）。
 - **`_call_core` 的分派本身仍是手抄 if/elif**。本轮给它装了闭合点和两条判据（M7 那一格），
   没把它改成从 `DEDICATED_CAPABILITIES` 生成的表：那要连带重排 `Client` 便捷方法的签名，属 C1 下一段。
+  **（第 11 轮已把那张表删掉、便捷方法签名统一挂上 `currentness`，读数见 §20。）**
 - **`currentness` 与 `strict` 在七条专属能力的四面上都推不动**。补任何一面都立刻造出"只有一面能推动"
   的同进同退违例，四面一起补则是对外契约扩容（`Client.bars(currentness=…)` 逐面语义要定义），
   属待裁决项，不在"先量后改"的这一轮拍板。
+  **（第 11 轮补的是**库层**：`Client.<cap>` 七个方法现在都有 `currentness`，缺省与内核那一侧逐格相等；
+  四张服务面的**专用**入口仍一格都没挂、`strict` 仍全面无，所以规则三依旧成立。见 §20。）**
 - **MCP 与 HTTP 的 `provider` 缺省不一致**：`get_quote`/`get_quotes` 钉 `"tdx"`，而 HTTP
   `/v13/quotes` 与 CLI `quotes` 把缺省交回内核选。本轮只让 MCP 那份缺省在 `fallback` 在场时让位
   （M9 那一格），缺省本身没统一——统一会动 `requested_provider` 的 provenance 读数，属对外口径改动。
@@ -1466,6 +1487,151 @@ partial-branch 37→36，两边都仍是 80%——就是第 7、8 两轮各记�
   `DEDICATED_CAPABILITIES` 会成
   catalog↔executor 的导入环；要接先得定那份名单归谁（C1 后半）。
 - 沿用的旧未做格：F3 盘中复跑、F4/G3 真机判据那半截、F5 tag、F2、A1/A2/A4（README 半截）、
+  C2/C3、D1–D4、E1–E4、其余 15 条"公共 API 名义资产"豁免（等 R-7）、§16 的
+  `gateway_capabilities()` 两分支错标盲区、复权"0 事件 ⇒ 因子全 1.0"那把尺子。
+  CHANGELOG `[Unreleased]` 仍因并行会话该文件未提交而押后。
+
+## 20. 执行记录（续）
+
+### 第 11 轮｜轴的第九次延伸：分派表自己也是手抄件（提交 `20d32a9`，4 个文件 `402 insertions / 77 deletions`）—— V18-C1 第二段
+
+前十轮把"声明了就得兑现"推到旋钮、入参、字段、符号、名单、登记、等级，第 10 轮把四张外表面收成一份
+`DEDICATED_CAPABILITIES`。本轮的靶子住在它下面一层：`Client._call_core` 里那七段
+`if capability == "..."`。第 10 轮删掉的是"哪些能力走专用路径"这份**名单**，而每条分支
+**自己干什么**仍然是手抄的——谁能转 `currentness`、谁的 `provider` 要硬写 `"tdx"`、位置参要不要被
+`str()` 校正、要不要 arity 守卫。§19 末尾"本轮明确未做"第二条记的就是它，本轮动手。
+
+第 10 轮那五格规则一条都没响，原因写在 §19 里：它打的是四张面的**专用入口**、替身是 `Client`。
+泛型入口（`Client.call` 与包着它的 HTTP/WS/MCP/CLI 各一层）走到的是那张 if/elif 表，专用入口走的是
+便捷方法——两条路在表里分岔，而判据只站在其中一条路上。本轮因此把"面"从四张算成**五张泛型面**
+（`call` / `http` / `ws` / `mcp` / `cli`），一律用真 `Client`、执行面换成"记下 spec 再立拒"的
+`E0000` 桩，记账点选在 `UnifiedRuntime.execute`：旋钮到底转没转出去，只看内核收到的那一份 spec。
+
+**量出来的第一格：那份表规定了"谁有口径"，而它规定错了。**`probe11f_readings_pre.log`
+（与判据六共用同一份驱动，探针直接 import 那个测试模块——记录里的表和判据跑的表因此不会各说一遍）：
+七条能力 × 四个 `currentness` 写法 × 五张泛型面 = **140 格**。修复前 **100 格整列冻结**——
+`minute`、`security_count`、`security_list`、`snapshot`、`trades` 五条能力无论从哪张面点名哪个口径，
+内核收到的都是它自己的缺省（`minute` 四格全 `live`、`security_count`/`security_list` 全 `business`、
+`snapshot`/`trades` 全 `live`）。只有 `bars`、`quotes` 两列会动，因为那两段分支手抄了
+`currentness=currentness`。库层同一件事（`probe11b_readings.log`，7 × 4 = 28 格）读数一致，
+不是某一张面的偶发。修复后（`probe11f_readings_after.log`）**逐格随写法而动**，只有
+`business` 那一行按设计落回各能力自己的缺省（`bars→historical`、`security_*→business`、余下→`live`）。
+可行性先量过（`probe11c_readings.log`）：`QueryPlanner.compile` 对 7 能力 × 4 口径 = **28 格全部
+`ok[tdx/quotation]`**——转交 `currentness` 不新增任何失败，所以这一格不是对外契约改动。
+
+**量出来的第二格：同一族入参错误，表里抄了几种归类就漂几种。**`probe11f_readings_pre.log` 第 2 段
+（5 种写错形状 × 5 张面 = **25 格**）：15 格已经是 `E1010`，10 格以**裸 `TypeError`** 逃出去、
+被五张面**一致地**说成 `E9000 / HTTP 500 / -32603 / rc=1` 的 `internal error`（`message` 被改写、
+`context` 清空）——「签名外的关键字」5 格、「整数代码」5 格。库层同一件事见
+`probe11d_readings.log` → `_after.log`，其中"整数代码"那一格最刺眼：手抄表里 `bars` 那段写了
+`str(args[0])`，于是 `call('bars', 600519)` **穿过入参判据走到了执行面**，而 `call('quotes', 600519)`
+（那格没抄 `str()`）抛裸 `TypeError`——同一种写错，两种结局，都是错的：那次"侥幸"本身就不成立，
+`000001` 写成整数在到达 `str()` 之前就已经是 `1` 了。`probe11e_readings.log` 顺带量出这一族的边界：
+`symbols=['600519', 1]` 混列表照旧能 build，元素级归类由下游 `normalize_symbol` 兜住（`E4040`，
+仍是 `TdxError`）；`symbols=None` 到本轮为止仍是裸 `TypeError`（见"未做"）。
+
+**为什么本轮的改动不是"把表换成另一份表"**：绑定交回 `inspect.signature(method).bind(...)`，
+缺省交回方法自己的签名。`_call_core` 现在只剩三件事——核心集的闭合点、"入参不合签名"归
+`ValidationError`、`OrchestratedResult` 不许从这条路出来。核心集那份派生别名
+（`from ..runtime.executor import DEDICATED_CAPABILITIES as _CORE_CAPABILITIES`，`tstdx/client/api.py:25`）
+是第 10 轮就接上的，本轮没有新接东西，只是把它在分支里抄走的那七个名字收了回去：`Client.call` 与
+`_call_core` 的源码里现在字面上不出现任何能力名或 Provider 名（六b 那把 AST 尺子量的就是这一句）。
+
+**改了什么**（4 个文件、一笔提交）：
+
+| 文件 | 动作 |
+|---|---|
+| `tstdx/client/api.py` `125 行` | 七段 `if capability == ...` 删掉，换成 `inspect.signature` 绑定（核心集那份派生别名是第 10 轮接的，本轮只是不再往分支里抄名字）；五条便捷方法面补上 `currentness` 形参并逐层转发（缺省与 `UnifiedRuntime.<cap>` 相同：`snapshot`/`minute`/`trades`→`live`、`security_count`/`security_list`→`business`）；删掉 `provider or "tdx"` 那五处硬写与 `str(args[0])` 那四处校正 |
+| `tstdx/query.py` `19 行` | `QuerySpec.build` 对 `symbols` 的形状当场归类：不是字符串又不是可迭代的→`ValidationError` 并点名"整数不是合法写法、前导零在到达这里之前已经丢了"；不替调用方把整数 `str()` 成代码 |
+| `tests/architecture/test_face_exposure_projection.py` `+317 行` | 新段落四格规则（见下），该文件 20 项 → **55 项** |
+| `docs/api/interfaces.md` `18 行` | `Client` 方法表五行加上 `currentness="…"`；表后加一段说明缺省只在 `Client.<method>` 一处、与 `UnifiedRuntime.<method>` 逐字节相同，以及 `business` 在四张服务面上是"调用方没表态"的哨兵 |
+
+**新判据的四格规则**（35 项全在同一文件的新段落）：
+
+| 规则 | 内容 | 项数 |
+|---|---|---|
+| 六 泛型入口的口径要能到内核 | 每条能力 × 每个 `CurrentnessMode`，五张泛型面各自打进去：内核收到的 spec 的 `currentness` 必须等于点名的值，`business` 则等于**该能力自己的缺省**（期望值现推自签名，不写死） | 28 |
+| 六b 分派不许再抄表 | `Client._call_core` / `Client.call` 的源码里出现能力名或 Provider 名的字符串常量、或把 `currentness` 与字符串字面量比较（`CURRENTNESS_MODES` 之外）即红；`Client.<cap>` 与 `UnifiedRuntime.<cap>` 的 `currentness` 缺省七格必须逐一相等 | 1 |
+| 七 入参写错必须说成入参错误 | 5 种形状 × 5 张面：必须 `E1010`，不许 `E9000`，更不许泄漏到执行面（`E0000`），且一格都不该到内核 | 5 |
+| 分母自检 | 判据六/七不许被读空当绿：面 × 能力 × 口径 ≥ 140 格、入参形状 ≥ 5 种、每个缺省必须 ∈ `CurrentnessMode` | 1 |
+
+**规模账（+35 与"覆盖不降"证明）**：判据 3 676 → **3 711**（新增 35 项全在上面那四格里），
+新增 skip 0，删除判据 0，阈值 `fail_under = 77.0` 未动。`tstdx/` 覆盖表 141 行（含 TOTAL），
+与 `wt_v18b10ship` 按（文件名 + 四个计数列 + 百分比）逐行比，**5 行不同**、文件名集合双向差 0：
+TOTAL `22 375 / 3 483 / 5 982 / 1 008` → `22 363 / 3 461 / 5 960 / 1 000`、
+`client\api.py` 65%→69%（stmts 207→190、**miss 68→53**——删掉那张表让分母和漏数一起小了 15）、
+`query.py` 90%→91%（stmts 218→223、**miss 16→16 未变**：新加的归类一行都没漏）、
+`runtime\kernel.py` 85%→92%（miss 9→4）、`transport\ratelimit.py` 92%→94%（miss 12→10）。
+**没有任何一行的 miss 变大**，也没有一行靠缩分母变绿（唯一 stmts 减少的一格 `client\api.py`
+同时 miss 减少 15）。`kernel.py` / `ratelimit.py` 两格只报计数不报成因——第 10 轮那份日志的表头
+没有 `Missing` 列（本轮两份都有），逐行归因量不出来，就不硬编一个故事。TOTAL **81.94% → 82.03%**。
+基线仍只由 CI（ubuntu + py3.11）精确头寸重钉，本机数字不作依据。
+
+**步骤轮读数**（`wt_v18b11step` @ `4b66552` + 本步 4 文件）：`run_gates11.sh` 环境与 CI 规范调用
+**10 次调用全部 rc=0**；离线全量 junit **3 711 项 / 0 失败 / 0 错误 / 7 跳过**、165.994s、
+覆盖率 **82.02%**（TOTAL `22 363 / 3 463 / 5 960 / 1 001`）。两处不粉饰：
+① 新测试文件写完第一次跑 `ruff format --check` 是红的，`ruff format` 就地格式化后复跑才绿——
+**红那次没留日志**（覆盖式改写在同一文件上，原文不在盘上），所以只记事实不记读数，别把它读成"一次就绿"。
+② 本轮改动被**第 3 轮写下的旧判据**抓到过一次：`test_client_method_table_matches_the_real_signatures`
+读 `interfaces.md` 的签名摘要与真实 `inspect.signature`，文档落后一步即红。它不是本轮新写的尺子，
+是既有尺子在本轮生效；同一个断言在 `mut11_out_2.log:43` 留着一条反方向的可回查读数
+（M2 把 `Client.snapshot` 的旋钮拿掉、文档留着 `currentness`，报同一句"签名摘要已过期"）。
+
+**ship 轮（提交树复测）**：`20d32a9` 落到 main 后，`wt_v18b11ship` 由 `git checkout-index` 直出，
+`verify_tree.py` 按 git 的换行归一口径逐文件比：**被跟踪文件 2 285、归一化后内容一致 2 285、不符 0**，
+同时打出"落盘时带 CRLF 的文件 1 752"——这就是必须先归一化再比的原因，否则这条结论是假的。
+十次调用**全部 rc=0**（originality `Total: 190 / Original: 190 / Suspicious: 0 / External imports: 17`、
+spec_audit `"coverage_pct": 100.0`、golden_audit `L1 verified: 0x44e, 0x52d, 0x530` + `[GATE] … (OK)`
++ 既有 `suspect_short` WARN `0x537 4B<12B x3`、reachability `模块总数: 189 可达: 174 白名单豁免: 15`、
+contract_audit `63 / 172 / 0` + `PASS: 172 个注册 capability 全部落在声明形状之内`、docs links
+`83 files`、mypy 无输出、ruff check `All checks passed!`、ruff format `444 files already formatted`）。
+离线全量 junit **3 711 / 0 / 0 / 7**、173.706s、覆盖率 **82.03%**（TOTAL `22 363 / 3 461 / 5 960 / 1 000`）。
+覆盖表 141 行与步骤轮比 **2 行不同**：TOTAL 与 `transport\ratelimit.py`（miss 12→10、
+partial-branch 2→1，92%→94%）——与第 10 轮那条 `transport\pool.py` 同一族的时间敏感抖动，
+本轮换了一格抖。步骤轮 **82.02%**、ship 轮 **82.03%**，差值全在这一行，不写成"两棵树零抖动"。
+顺手按两份日志重量了第 10 轮的 step↔ship 差（`wt_v18b10step/fulltest_v18b10.log` ↔
+`wt_v18b10ship/fulltest_v18b10.log`）：**2 行**（TOTAL 与 `transport\pool.py`），§7 原先那行
+"逐行相同"是错的，已在索引里更正。
+
+**反证证据**（`wt_v18b11step/mutate_v18b11.log`；C0 对照 + 8 格回潮/致盲形状，目标面 =
+`tests/architecture` 全目录 + 三份既有 wire/编排/MCP 文件。每格按字节备份、跑完还原，
+八格全部 `还原后字节一致：是`；每格 pytest 原文分格存 `mut11_out_1..8.log`）：
+
+| 格 | 动了什么 | 结果 |
+|---|---|---|
+| C0 | 不改动（对照） | rc=0、变红 0 ⇒ 下面每一格的红都不是恒报 |
+| M1 | 「不表态才用缺省」那条判据写成永假（分派不再转 `currentness`） | 变红 **16**（全在判据六）。28 格里 12 格不红是对的：那 12 格点名的值恰好等于该能力自己的缺省（`bars` 的 `historical`/`business`、`quotes` 与 `snapshot`/`trades`/`minute` 的 `live`/`business`、`security_*` 的 `business`），改前改后同值 |
+| M2 | `Client.snapshot` 的旋钮整个拿掉、也不再转发 | 变红 **7**：判据六[snapshot] 四格 + 六b + 分母自检 + **第 3 轮那把文档签名尺子** |
+| M3 | 给 `bars` 单独 `setdefault` 一个 `period`（分派仍对、口径仍转，只是那句话又被抄第二遍） | 变红 1：六b |
+| M4 | `Client.security_count` 的缺省改成 `live`、内核侧仍是 `business` | 变红 1：六b（两层缺省各说各话那一格） |
+| M5 | 绑定失败不再归类，原样抛裸 `TypeError` | 变红 5：判据七 ×5 面 |
+| M6 | `QuerySpec.build` 接不到那个异常（整数代码回到无人归类） | 变红 5：判据七 ×5 面 |
+| M7 | 第 10 轮装的闭合点被删 | 变红 1：`test_unknown_core_capability_is_refused_not_borrowed` |
+| M8 | 闭合点改回"借用 `security_list`" | 变红 2：那条旧判据 + 六b |
+
+M1 与 M5/M6 的红名单互不重叠，说明这轮装的是三件不同的事：口径转发、归类、表本身不许回来。
+
+**一条方法论读数（与第 10 轮同一条教训的第二次）**：静态抽取版探针 `probe11.py` /
+`probe11_readings.log` 把这份表整个读错了——`provider or "tdx"` 是 `BoolOp` 不是 `Compare`，
+所以那一列 7 格全报"透传"；`elif` 链嵌套后它的遍历每个子树都吞掉后面的分支。它给出的五条
+"单 Provider=True 而手抄硬写=False"因此不采信，第 2 段还直接 `ImportError` 崩在半路。本轮所有
+结论都来自"换一个值进去、看内核哪个槽位动了"的行为探针。**本轮不采信任何名字对名字的分歧**，
+这份日志只作方法论留档。
+
+**本轮明确未做**：
+- **`symbols=None` 仍是裸 `TypeError`**（`probe11e_readings.log`：`compile none → TypeError`）。
+  本轮只把"整数代码"这一种归类了；`None` 与元素级混写（`['600519', 1]` 到下游才 `E4040`）都在
+  判据七那张 5 形状表之外——`None` 是探针量到了却没补的一条，因为补它要先定"`None` 算入参错误
+  还是算调用方根本没给"（语义归 B 类契约，不在这轮拍板）。
+- **`Client.<cap>` 的 `provider="tdx"` 与 `UnifiedRuntime.<cap>` 的 `provider=None` 仍不一致**
+  （`probe11b_readings.log` 第三段逐条列了哪五格有 `'tdx'`）。本轮删的是 `_call_core` 里那份硬写，
+  便捷方法自己签名里那份还在；统一它会动 `requested_provider` 的 provenance 读数，属对外口径改动。
+- **`tstdx/catalog/capability.py:94` 的 `_CORE_CAPABILITIES` 仍是第 9 份手抄**，此刻与派生集
+  双向差 0（七个名字逐字相同），而"恰好"没有尺子守着。导入环没解，同 §19 那条。
+- **泛型面上 `strict` 与 `channel` 仍推不动**，`symbols={...}`（集合）仍被接受且顺序不定
+  ——三条都是第 10 轮"未做"里的原样，本轮没有新的读数支持动它们。
+- 沿用的旧未做格：注册表 `channel.capabilities` 与 typed 契约各自成表、MCP `inputSchema` 是被
+  校验为投影而非生成、F3 盘中复跑、F4/G3 真机判据那半截、F5 tag、F2、A1/A2/A4（README 半截）、
   C2/C3、D1–D4、E1–E4、其余 15 条"公共 API 名义资产"豁免（等 R-7）、§16 的
   `gateway_capabilities()` 两分支错标盲区、复权"0 事件 ⇒ 因子全 1.0"那把尺子。
   CHANGELOG `[Unreleased]` 仍因并行会话该文件未提交而押后。
