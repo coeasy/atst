@@ -10,6 +10,10 @@
 > 的部署命令（提交 `788e533`，读数见 §14）；第 6 轮把同一把尺子量到**判据自己的台账**上
 > （V18-C4：可达性豁免理由点名的公共 API 名必须真在模块里），当场修掉台账里 5 处过期写法——
 > 点到不存在的符号 2 处、"等 N 个"这类核不了的计数 3 处（提交 `b4c3bc8`，读数见 §15）；
+> 第 7 轮把同一把尺子量到**判据自己赖以放行的那份例外名单**上（G2 按 D10(b) 落地：注册表覆盖
+> 改由三个派生来源对账，"既无契约也不在任何派发面"从 PENDING 升为 ERROR），撤掉一份 17 个名字的
+> 手抄豁免名单与一条 63 项的死名单，并就地更正 §2 的诊断——所谓"92 项缺契约"里有 92 项其实
+> 全在通用派发面上，真·无声明形状的是 0 项（代码 `a98755d`+`e26300e`+`c7db30b`，读数见 §16）；
 > 其余阶段仍待按 §6 的 D7–D12 裁决推进。
 > §0 的基线是**方案取证轮**的数，§9 是**执行轮**的数，两者环境标签相同（3.12.13）但不混用。
 > **授权尺度（本轮用户已答，2026-09-20）**：
@@ -42,7 +46,7 @@
 | originality | `Total: 191 / Original: 191 / License OK: 191 / Header OK: 191 / Suspicious: 0`，RC=0 | `tstdx.tools.check_originality` |
 | spec_audit `--strict` | RC=0 | `tstdx.tools.spec_audit --json --strict` |
 | docs links | 82 文件 OK | `scripts/check_docs_links.py` |
-| 契约对账 `contract_audit` | **63 个 Typed 契约 / 155 个注册业务 capability / 92 项 PENDING / 0 ERROR**，RC=0（PENDING 不阻断） | `scripts/contract_audit.py` |
+| 契约对账 `contract_audit` | **63 个 Typed 契约 / 155 个注册业务 capability / 92 项 PENDING / 0 ERROR**，RC=0（PENDING 不阻断）。⚠️ 该读数已被第 7 轮更正为**口径产物**：92 项全部在通用派发面上，真缺口 0 项，见 §16 | `scripts/contract_audit.py` |
 | 注册表面 | `Client().capabilities()` = **172**；`DIRECT_BINDINGS` = **251**；**11 Provider × 56 (provider,channel)** | 运行期内省 |
 | 绑定的执行方式 | **234/251（93.2%）走同一条泛化派发 `_migrated_capability`，仅 17 条有专属执行器**；按 Provider 分：derived 114 / eastmoney 59 / sina 17 / tencent 15 / tdx 30 / builtin 2 / baidu 8 / iwencai 2 / boc 2 / jsl 1 / local_vipdoc 1 | `Counter(b.executor_name for b in DIRECT_BINDINGS)` |
 | 代码规模 | `tstdx/` **59 073 行 / 190 py**；`tests/` **74 307 行**；`docs/` **22 284 行 / 83 篇**；`PROTOCOL_SPEC/` 5 182 行 | `wc -l` 求和 |
@@ -90,13 +94,14 @@
 | # | 缺口 | 实测证据 | 严重度 |
 |---|---|---|---|
 | G1 | **三格能力在任何 Provider 上都不可能给数**，但仍占着 HTTP/WS/MCP 三面入口 | `minute`(0x0537)/`trades`(0x0FC5) 在 `tstdx/client/core.py:288,314,326` 恒定 `raise NotImplementedFeature`；`security_list`(0x044D) 在 `core.py:300` 恒定 `raise CommandOffline` | P1（对外承诺形状） |
-| G2 | **typed 面只覆盖 40%**：155 个业务 capability 里 92 个无契约，`contract_audit` 判 PENDING 且 RC=0 不阻断 | 本轮 `scripts/contract_audit.py`：`63 契约 / 155 capability / WARN: 92 个待办` | P1（功能账，非缺陷） |
+| G2 | **typed 面只覆盖 40%**：155 个业务 capability 里 92 个无契约，`contract_audit` 判 PENDING 且 RC=0 不阻断。<br>**更正（第 7 轮实测，见 §16）**：这一格诊断错了一半——92 个"无契约"**全部**在通用派发面上（迁移网关或内核专属执行体），真·无任何声明形状的是 **0 个**。所以"缺 92 份契约"不是功能缺口而是口径产物；已按 D10(b) 把判据换成派生三来源 + 规模下限，缺形状改 ERROR 阻断 | 本轮 `scripts/contract_audit.py`：`63 契约 / 155 capability / WARN: 92 个待办`；更正读数：`172 注册 / 63 专属契约 / 172 在派发面 / 0 无形状` | P1（功能账，非缺陷）→ **口径账，已改** |
 | G3 | **`0x000F` 资本变动 / `0x0010` 财务在新握手下仍解错**，F-37 余条未裁决；本轮离线日志里就能看到 `[E3040] 股权信息记录数异常: count=300, body=30, size=0` 的解码告警 | 隔离树测试日志 `v18rev_test.log` 的 warnings summary 段（`tests/client/test_decode_caveat_wiring.py` 现场复现） | P0（数据正确性） |
 | G4 | **7709 数据面从未在交易时段被验证过**：CI 的 live-smoke 是 `cron '0 1 * * *'` UTC = 北京 09:00，注释自己写着 "before A-share trading"（9:30 开盘），host-audit 是周三 09:00 UTC = 北京 17:00（收盘后） | `.github/workflows/live-smoke.yml:9`、`.github/workflows/host-audit.yml:5` | P1（验证盲区，F-38 的真正根因） |
 | G5 | **`fund_estimate` 是 G1 的同族、Provider 侧的那一格**（第 3 轮登记、第 4 轮按代码更正口径）：能力面仍声明它，而实现只在"站点回 404/页面未找到 HTML"这一实测形状上抛 `SourceDeprecated`——它**仍会先发一次真实请求**，端点复活就会重新返回 dict。调用方要读源码才知道这一格现网不给数 | `tstdx/web/sources.py:449` 与 `tstdx/providers/__init__.py:570` 仍列该能力，`tstdx/cli/runtime_commands.py:681` 仍可从 CLI 抵达，实现链是 `tstdx/web/_session_baidu.py:108` → `tstdx/web/adapters_fund.py:188`（该函数先 `_request_text`，命中 404 页才抛，其余响应走 `_parse_jsonp` 返回 dict） | P2（对外承诺形状，与 F-66/F-75 同批裁决） |
 
 **结论口径建议统一成这句**（写进 README 与 F-37 裁决记录，避免每轮重新解释）：
-> 链是通的，声明与执行是闭合的；G1/G2/G5 是"实现了但选择不给数/不给类型"的登记账，
+> 链是通的，声明与执行是闭合的；G1/G5 是"实现了但选择不给数/不给类型"的登记账，
+> G2 经第 7 轮更正后是**口径账**（已改判据，无待补契约），
 > G3 是唯一一处"给了错数"的真缺陷，G4 是"我们其实还没在有效时段看过它"的验证空白。
 
 ---
@@ -383,7 +388,7 @@ F5（tag）与 F3/F4 保持在后。
 | D7 | V18-B 的破坏性幅度 | (甲) 只补失败语义、不动入口 (乙) 同时把 G1 三格从三面摘除 | **(甲)**：先让失败显形，摘面留到 C1 派生表上线后一起决策 |
 | D8 | web 门面（140 方法 + `tstdx.web.__all__` 69）去留 | ~~(b) 收缩到内核实际绑定的 104 条能力~~ **(已撤回，见 §10)**：内核触达 140 里的 137 个方法，"收缩"买不到减行只会破坏绑定 | 剩下的真实选项：(a) 保留并单源化、(c) 只留 Provider 客户端删会话门面、或 (d) 保留门面但把 137 个方法与 Provider 的对应关系**做成表**（与 D1 的单位口径外移同一批）。默认改为**待重设**，不沿用 (b) |
 | D9 | 协议库与运行时的产品身份 | (a) 一仓双身份、README 明说边界（现状+结构） (b) 拆两个发布单元（`tstdx-tdx` 协议库 / `tstdx` 运行时） | **(a)**：拆包成本高于收益，先用 C3 的分包把边界变成结构 |
-| D10 | 92 项 typed 契约缺口（G2） | (a) 按业务族分 3 批补齐（约 90 份契约） (b) 承认 typed 面只覆盖核心族，把口径与判据一起改 (c) 维持 PENDING 不阻断 | **(b)**：(a) 是为覆盖率买代码，(c) 是把已知缺口藏成噪声 |
+| D10 | 92 项 typed 契约缺口（G2） | (a) 按业务族分 3 批补齐（约 90 份契约） (b) 承认 typed 面只覆盖核心族，把口径与判据一起改 (c) 维持 PENDING 不阻断 | **(b)**：(a) 是为覆盖率买代码，(c) 是把已知缺口藏成噪声。**第 7 轮已按 (b) 落地**（派生三来源 + 下限 + 缺形状 ERROR，见 §16）；"要不要为核心族之外补专属契约"从此是产品选择，不再是门禁里的 92 行噪声 |
 | D11 | 判据收缩的量化目标 | (a) 无目标，只按 §4 三类逐条处置 (b) 定"架构判据 126→≤60、`tests/` 行数 −20%" | **(a)**：定数字就会为凑数字删有价值的判据 |
 | D12 | V18 是否沿用 F 号/步骤号 | (a) 本方案 R-# 自编号，落地时领号 (b) 立刻在 v17 台账为 R-9② 等新账开 F 号 | **(a)**：并行会话正在写台账，争号必撞 |
 
@@ -432,6 +437,13 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b6step/probe_{k,l,m}.py`、`probe_readings_step.log` | 豁免台账的第三种口径探针（M）+ 配置面两把"量过不立"的候选（K/L）在步骤树内的读数 |
 | `wt_v18b6ship/run_gates.sh`、`gates_ship.log` | **提交树**（`b4c3bc8`，被跟踪文件 0 改动）九门禁复测 |
 | `wt_v18b6ship/fulltest_ship.log` + `.xml` | 提交树离线全量与 junit 计数；与步骤轮的唯一差异是 `transport/pool.py` 一行（§15 ship 段） |
+| `wt_v18b7step/run_gates.sh`、`gates_v18b7.log` | 第 7 轮步骤轮（`27e1014` + 本步 3 文件）环境与十次调用逐条 RC 与摘要行；`contract_audit` 一格按 CI 用 `--ci` 跑（第 6 轮是裸脚本，本轮更严） |
+| `wt_v18b7step/fulltest_v18b7.log` + `.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数 |
+| `wt_v18b7step/mutate_v18b7.py` + `.log` | 第 7 轮 10 格反证（V1/V2 ＝ 旧口径为什么哑；M1–M8 ＝ 每格新判据各自红一次）；harness `rc=0`，每格跑完按 md5 还原 |
+| `wt_v18b7step/_base_contract_audit.py` | 提交前版本（`27e1014`）的审计脚本快照——V1/V2 两格的取证对象，只在步骤树内，不入库 |
+| `wt_v18b7step/probe_n_typed_coverage.py`、`probe_readings_step.log` | 三个派生来源与旧 92 格 PENDING 的口径分解（§16 第一张表的来源） |
+| `wt_v18b7ship/run_gates.sh`、`gates_ship.log` | **提交树**（`e26300e`，被跟踪文件 0 改动）十次调用复测 |
+| `wt_v18b7ship/fulltest_ship.log` + `.xml` | 提交树离线全量与 junit 计数；与步骤轮唯一差异仍是 `transport/pool.py` 一行，方向与 §15 相反 |
 
 ## 8. 本方案不做什么（避免被读成"又要一轮无限重构"）
 
@@ -905,6 +917,114 @@ TOTAL miss 3 523→3 525、partial 1 001→1 002——这正是 §14 末段第�
 `_module_namespace()` 不核"名字在但形状/语义与理由描述不符"（比如理由说是类、实为函数）；
 §2 G5 的声明面改动（与 F-66/F-75 同批裁决）；C1/C2/C3、D1–D4、E1–E4、F2、F3、F4/G3、G2 的 D10 裁决；
 CHANGELOG `[Unreleased]` 三条登记仍因并行会话该文件未提交而押后。
+
+---
+
+## 16. 执行记录（续）
+
+### 第 7 轮｜轴的第五次延伸：判据自己赖以放行的那份名单也得能派生（代码 `a98755d` + `e26300e` + `c7db30b`，3 个文件 + README 两行）—— G2 按 D10(b) 落地
+
+前四轮量的是"声明出来的东西有没有被读"，第 6 轮量的是"台账点名的符号在不在"，这一轮把尺子
+转向**判据的输入**：`contract_audit` 的 Registry 覆盖一格拿注册表去比一份手抄豁免名单，
+名单说谁免检谁就免检。这条轴上的危险方向和前面相反——不是"承诺了没做"，而是"尺子的刻度本身
+是抄来的"，所以它越绿越没人怀疑。
+
+**先更正 §2 的诊断**（就地改在 G2 那一行）。取证轮写下"155 个业务 capability 里 92 个无契约
+⇒ typed 面只覆盖 40%"，D10 因此给了三选一。把三个来源分开量之后（`wt_v18b7step/probe_readings_step.log`）：
+
+| 口径 | 实测 | 说明 |
+|---|---|---|
+| 注册 capability（PROVIDERS 全集） | **172** | 派生自注册表 |
+| 走通用迁移网关 | **167** | `MIGRATED_CAPABILITIES`，由 `MIGRATED_BINDINGS` 派生 |
+| 走内核专属执行体 | **7** | `bars` `minute` `quotes` `security_count` `security_list` `snapshot` `trades` |
+| 专属执行体且不在迁移表（真协议原语） | **5** | `bars` `quotes` `security_count` `security_list` `snapshot` |
+| 有专属 Typed Query 契约 | **63**（契约类 63 个） | 且 63 个**全部**同时也在派发面上 |
+| 三者之外（无任何声明形状） | **0** | 这一格才是缺口，本轮起按 ERROR 阻断 |
+| 旧口径那 92 条 PENDING | **92 / 92 全在派发面上** | 没有一条是"实现不了"或"没人接线" |
+| 手抄豁免名单 `_INTERNAL_CAPABILITIES` | **17 项 = 12 项与迁移表逐字重复 + 5 项原语** | 12 项重复=纯抄；5 项原语可由 `executor_name` 现算 |
+
+也就是说："还差 92 份契约"既不是功能缺口也不是缺陷，而是**分母被读错**的产物——`registered - typed`
+里混进了 109 个设计上从来就不需要专属契约的能力。而那份 17 项名单里 12 项与迁移表重复的部分
+是真正的危险：把某个名字的迁移绑定摘掉，审计不会有任何反应（M5 就是照这一格设计的）。
+
+**改了什么**（4 个文件、三笔提交，合计 `216 insertions / 316 deletions`）：
+
+| 文件 | 动作 |
+|---|---|
+| `scripts/contract_audit.py` | 删掉三条手抄/死代码：`_DOMAIN_TYPED`（63 项名单，全文件只有一处定义、零引用）、`_INTERNAL_CAPABILITIES`（17 项）、`_iter_domain_capabilities()`。新增三个派生入口 `registered_capabilities()` / `gateway_capabilities()` / `typed_capabilities()` 与三格规模下限 `MIN_REGISTERED=150`、`MIN_TYPED_COVERAGE=50`、`MIN_GATEWAY_COVERAGE=150`。`audit_registry_coverage()` 从"注册表有、契约没有 ⇒ PENDING"改成"**既无契约也不在任何派发面 ⇒ ERROR**"，并加三格"来源解析不出来就红"的自检。报告头现算现印形状来源，docstring 里的计数全部撤掉（规则 4 那句"当前为 0 项"也是抄本，一并删） |
+| `tests/v14/test_contract_automation.py` | 5 条 → 11 条，且**判据只有一份实现**：同一个"哪些算具体契约"的遍历原本在本文件里抄了 4 份，其中 2 份各带一份手抄 kwargs 名单（`{"index_code": "000300"}` 这类），契约类一改构造函数副本会各自静默少算；现在统一走 `ca` fixture 复用脚本口径。新增：派生形状覆盖、三格下限、"注册表塌成 1 个必须红"、"契约面塌成 1 个必须红"、"遮掉派发面缺口必须现形"、"派发面确实来自生产表" |
+| `tests/architecture/test_doc_code_consistency.py` | `test_contract_audit_docstring_numbers_match_the_audit` 从"抄的数字对不对"换成"**有没有再抄**"（出现 `N 个/N 项` 即红）+ 三格下限自检。射程是**每一段 docstring**：本轮一开始只扫模块那一段，而函数说明里还留着 `17 个名字／12 个重复／9 个领域基类` 三个数——前者是旧名单的历史规模（该记在有取证日志可查的本文件里），后者是当前口径的抄本，两处都从代码散文里删掉。另删 `_business_capabilities()`（它调的正是被删的 `_iter_domain_capabilities`）。这是判据**换形**不是删除：职责由新形态继续承担，覆盖面从 155 的手抄口径变成 172 的全注册表 |
+| `README.md`（两行） | 该脚本的说明原来写着"契约待补项按 PENDING 报告"——本轮之后规则 1 不再产 PENDING，改成"注册能力缺声明形状即 ERROR 阻断；Domain Record 待映射项按 PENDING 报告" |
+
+**与并行会话台账的一句话**（不改他们的文件，只在此登记）：F-25 的裁决句写着"**没有**把 PENDING
+升级为阻断——那需要一次性补 92 份契约"。本轮实测这个前提是假的：升级**不需要补任何契约**，
+当前 0 项无形状，新 ERROR 今天零命中。该句的"缺口尺寸记在本行"随之失效，请台账所有者按 §16
+这张表改写。
+
+**步骤轮读数**（`wt_v18b7step` @ `27e1014` + 本步 3 文件；复制后与主树逐字节相同：原始 md5
+`18e37195…` / `4a093c2a…` / `ab9c17c0…`）：环境探针 + CI 规范调用的门禁共 **10 次调用全部 rc=0**
+（`gates_v18b7.log`：`3.12.13 … [MSC v.1944 64 bit]`、originality `Total: 191 / Original: 191 /
+License OK: 191 / Header OK: 191 / Suspicious: 0 / External imports: 17`、spec_audit `"coverage_pct": 100.0`、
+golden_audit `[GATE] all L1 verified commands have real samples (OK)` + 既有 `suspect_short` WARN、
+**reachability `模块总数: 190 可达: 174 白名单豁免: 16` + `无未登记孤儿 ✓`**、
+**contract_audit `63 个 Typed Query 契约 / 172 个注册 capability` + `形状来源：63 个有专属契约 /
+172 个在通用派发面 / 0 个无任何声明形状` + `PASS: …` rc=0，PENDING 行数 0（旧报告 184 行 = 92×2）**、
+docs links `83 files`、mypy 0 行、ruff check、ruff format）。
+离线全量 junit **3661 项 / 0 失败 / 0 错误 / 7 跳过**、160.572s；覆盖率 **81.72%**
+（TOTAL 22 440 stmt / 3 525 miss / 5 996 branch / 1 002 partial），`Required 77.0% reached`，
+**阈值未动**。判据规模 3655 → **3661（+6，全部在 `tests/v14`：5 → 11）**，零删除、零 skip。
+本轮改动全在 `scripts/` 与 `tests/`，`tstdx/` 一行未动，分母恒为 22 440。
+注：这一轮的 `contract_audit` 一格改用 `--ci` 调用（第 6 轮跑的是裸脚本），是收紧不是放松。
+
+**反证证据**（`wt_v18b7step/mutate_v18b7.log`，harness `rc=0`；10 格全部按预期变色，每格跑完即按 md5 还原）：
+
+| 格 | 动了什么 | 结果 |
+|---|---|---|
+| V1 | 不改动：拿**提交前版本**的脚本（`_base_contract_audit.py`）跑同一棵树 | `rc=0`、PENDING **92 格**（打印 184 行）⇒ 老门禁的原始形状 |
+| V2 | 老口径下往注册表塞一个"无契约也无派发面"的能力 | ERROR 集合为空，只落一条 PENDING ⇒ 老尺子对**真缺口**也哑 |
+| M1 | 把缺口计算摘成 `uncovered = []` | `tests/v14` 红（`test_masking_the_dispatch_face_exposes_the_gap`）|
+| M2 | `MIN_REGISTERED` 150 → 0 | `test_a_collapsed_registry_source_is_reported` 红 ⇒ 下限被单独盯住，不是摆设 |
+| M3 | `MIN_TYPED_COVERAGE` 50 → 0 | `test_a_collapsed_typed_source_is_reported` 红 |
+| M4 | `if got < floor:` → `if False:`（整段自检 disable） | 两格下限判据同时红 |
+| M5 | 派发面遮成只含网关（摘掉"专属执行体"那一支） | `test_coverage_sources_agree_with_production_tables` 红 ⇒ 手抄名单能藏的事，派生口径藏不住 |
+| M6 | 在脚本 docstring 里再抄一个"92 个待补" | `test_contract_audit_docstring_numbers_match_the_audit` 红 |
+| M7 | 脚本里重新出现手抄基类名字符串 | `test_typed_query_denominator_is_not_a_hand_copied_list` 红 |
+| M8 | 往 `gateway_capabilities()` 的 docstring 里塞一句"旧名单 17 个名字的规模" | `test_contract_audit_docstring_numbers_match_the_audit` 红 ⇒ 判据射程含函数级散文，不只模块那一段 |
+
+**M8 的来历要记一句**：本轮新写的规则在脚本 docstring 里留下一句"散文（含本 docstring）不抄任何
+计数"，而同一个文件的**函数** docstring 里当时还写着 `17 个名字／12 个重复／9 个领域基类`——
+判据最初只扫模块那一段，于是这句话自己就是它所禁止的东西。是复核 §16 那张表时对着文件读出来
+的，不是门禁报的。修法是把范围换成"AST 里每一段 docstring"（M8 盯住这一格），并把三处数字从
+代码里删掉：旧名单规模属历史证据，留在本文件这张带日志出处的表里；基类个数是当前口径的抄本，
+删掉后由 `_typed_domain_base_names()` 现算。
+
+**M3 那一格值得单独记**：把契约来源遮成只剩 1 个时，`registered - typed - gateway` 仍然是**空**
+（派发面盖住一切），也就是说"缺口=0"这个读数是彻底假的——只有规模下限认得出来。这正是本轮
+给三个来源各配一条下限的全部理由，也是它比"数一数报多少人"更强的地方。
+
+**ship 轮（提交树复测）**：三笔代码提交 `a98755d`（规则与判据）+ `e26300e`（把说明里的副本数
+改成实测的 4）+ `c7db30b`（把散文判据的射程扩到每一段 docstring + README 两行）落到 main 后，
+另起 `wt_v18b7ship` @ `c7db30b`，被跟踪文件 **0 处改动**，10 次调用**全部 rc=0**，摘要行与步骤轮
+逐字相同（`gates_ship.log`：`Total: 191 / Suspicious: 0`、spec_audit `"coverage_pct": 100.0`、
+`模块总数: 190 / 可达: 174 / 白名单豁免: 16 / 无未登记孤儿 ✓`、`形状来源：63 / 172 / 0`、
+`PASS: 172 个注册 capability 全部落在声明形状之内`、docs links 83 files）。离线全量 junit
+**3661 / 0 / 0 / 7**、159.363s、覆盖率 **81.72%**（TOTAL 22 440 / 3 525 / 5 996 / 1 002）。
+**本轮两棵树的 `tstdx/` 覆盖表逐行相同**（`diff` 空输出），连 §14、§15 各见过一次的那行
+`transport/pool.py` 这次也同为 113 miss / 37 partial——它仍是抖动行，只是这一轮两棵树抖到了同一格，
+所以本轮没有需要归因的差值；改动全在 `scripts/` 与 `tests/`，`tstdx/` 一行未动，分母恒为 22 440，
+覆盖率真值仍以 CI 为准，本轮不重钉基线。提交内容与实测内容按 md5 双向核对：步骤树原始 md5 与主树
+逐字节相同，去掉 CR 后与 `c7db30b` 提交版逐文件相同（`18e59495…` / `1810d535…` / `ab9c17c0…`）。
+
+**本轮明确未做**：`gateway_capabilities()` 的两支（迁移网关 / 专属执行体）在"是否需要专属契约"这一格
+是**并集**关系，因此把某条能力从一支错标到另一支不会改变 172，本判据看不见这种分类漂移——
+新加的对账测试只盯"派生集合与生产表一致"三条包含式，同样不区分两支，这一点写在这里而不是偷偷改掉判据；
+覆盖仍是 **capability 名字级**，不核参数级（有契约但契约入参与实际 args 不符不在射程内，那是
+`spec_audit` 与 F-4 命名空间白名单的域）；规则 4（Domain Record 映射）仍是 PENDING 级——
+它与本轮改掉的 PENDING 不同类，"要不要给某能力建结果模型"确实是可押后的产品选择，当前 0 命中；
+D10 的"核心族之外要不要补专属契约"从此变成纯产品决策，本方案不为它开账；
+A1/A2/A4（README 半截）、C1/C2/C3、C4 后半（`deprecation.py` 的 D3 处置）、D1–D4、E1–E4、
+F2、F3、F4/G3、§2 G5 的声明面改动；CHANGELOG `[Unreleased]` 仍因并行会话该文件未提交而押后。
+
 
 
 
