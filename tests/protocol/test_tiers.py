@@ -15,6 +15,7 @@ from tstdx.codec.framing import ResponseFrame
 from tstdx.errors import IntegrityViolation, ParseError
 from tstdx.protocol.generic import infer_record_layout, parse_generic
 from tstdx.protocol.registry import (
+    PARSERS,
     TIER_L1,
     TIER_L2,
     TIER_L3,
@@ -268,3 +269,47 @@ class TestProtocolTiers:
         assert d["count"] == 5
         assert d["record_size"] == 32
         assert d["score"] == 0.8
+
+    def test_l1_is_a_two_sided_claim(self):
+        """#16 ``L1`` 必须同时被账本和注册表声称，缺一边就是空话。
+
+        起因（V18-F4 / F-37②）：``register_parser`` 的 ``tier`` 默认值就是
+        ``TIER_L1``，于是**没写** ``tier=`` 的解析器白得了一个对外精确度声称；
+        ``0x000F`` 的账本行也长期跟着写 ``tier=L1, verified=True``，而它的真实
+        样本重放后 910 行里有 1587 个字段值落在域外。账本与注册表各说各话时，
+        两条声称都没有代价——本判据把它们钉成同一件事：
+
+        - 注册表以 ``L1`` 注册的每条命令，账本必须也声称 ``L1``；
+        - 账本声称 ``L1`` 的每条命令，注册表必须真的以 ``L1`` 注册，且带
+          ``verified=True``（``L1`` 而不 ``verified`` 是"L1 只是默认值的回声"）。
+
+        反方向（注册表 ``L2`` 而账本 ``TIER_DECLARED``，实测 49 条）**不**在本判据
+        内：那是一条命令"文档层面只声明、但存在启发式兜底解析器"的既有口径，
+        不是精确度声称。
+
+        三层判据串起来才是"L1 的代价"：默认值让解析器声称 L1 ⇒ 本判据要求账本同一
+        条也声称 L1 且 ``verified=True`` ⇒ 账本的 L1+verified 又要过
+        ``tests/unit/test_golden.py`` 的实采样本重放（字段值必须落在 domain 合法域内）。
+        """
+        from tstdx.protocol.commands import COMMANDS
+
+        ledger_l1 = {(fam, cmd) for (fam, cmd), row in COMMANDS.items() if row.tier == TIER_L1}
+        parser_l1 = {
+            (fam, cmd)
+            for (fam, cmd), cls in PARSERS.items()
+            if getattr(cls, "TIER", None) == TIER_L1
+        }
+
+        assert parser_l1 == ledger_l1, (
+            f"仅账本声称 L1：{sorted((f, hex(c)) for f, c in ledger_l1 - parser_l1)}；"
+            f"仅注册表声称 L1：{sorted((f, hex(c)) for f, c in parser_l1 - ledger_l1)}"
+        )
+        # 规模下限：把全部 L1 声称一次性抹掉会让本判据两边同时变空而静默放行，
+        # 那种"收敛"必须自己变红，而不是被读成"分歧清零"。
+        assert len(ledger_l1) >= 3, (
+            f"L1 声称只剩 {sorted((f, hex(c)) for f, c in ledger_l1)}，本判据失去比对对象"
+        )
+        for fam, cmd in sorted(ledger_l1):
+            assert COMMANDS[(fam, cmd)].verified is True, (
+                f"{fam} {hex(cmd)}：账本声称 L1 却 verified=False——先把字段布局判据补上再改这一格"
+            )

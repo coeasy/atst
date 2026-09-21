@@ -26,8 +26,8 @@
 | snapshot 五档全量 | 0x0535 | ✅ | |
 | minute_today 当日分时 | 0x0537 | ✅ | 87 点 |
 | trade_today 逐笔 | 0x0FC5 | ✅ | |
-| finance_info 财务 | 0x0010 | ✅ | 37 字段 |
-| capital_changes 除权除息 | 0x000F | ✅ | 250 事件 |
+| finance_info 财务 | 0x0010 | ✅ | 实采四份均回 14302 字节 / 100 行；**只有条数可采信**，逐字段语义未由 golden 锁定（F-37，账本 `verified=False`） |
+| capital_changes 除权除息 | 0x000F | ✅ | 回 250 条；**只有条数可采信**，记录布局未锁定（F-37；`market`/`code`/`date` 三格实测落在域外，账本 `verified=False`） |
 | security_count 证券总数 | 0x044E | ✅ | 27904 |
 | **security_list 代码表** | 0x044D | ⚠️→✅ | **命令已停答**（6 台主站读取超时，2026-09-06 实测）；已登记 offline + fail-fast（<75ms），`UnifiedQuoteAPI.security_list / security_list_all` 自动降级**东财 clist**（实测沪 100 行/深 3089 行真实数据） |
 | **minute_history 历史分时** | 0x0FB4 | ⚠️ | **命令已停答**（3 台主站 × 多日期超时）；已登记 offline + fail-fast；替代：`minute_klines`（web 分钟 K 线） |

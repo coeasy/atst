@@ -40,7 +40,7 @@ from tstdx.catalog.capability import MIGRATED_BINDINGS
 from tstdx.client.api import Client
 from tstdx.diagnostics import WarningCode
 from tstdx.integration.mcp._tools_spec import TOOLS
-from tstdx.protocol.commands import CMD, COMMANDS, STATUS_OFFLINE, Family
+from tstdx.protocol.commands import CMD, COMMANDS, STATUS_OFFLINE, TIER_L1, Family
 from tstdx.providers import PROVIDERS
 from tstdx.runtime.executor import _CORE_BINDINGS
 
@@ -464,11 +464,26 @@ def test_the_api_interface_table_matches_the_ledger() -> None:
 
 
 def test_the_two_unclosed_field_layouts_stay_downgraded() -> None:
-    """F-37 的裁决是"下调能力声称"：``0x000F``/``0x0010`` 的字段口径不许被写回成已验证。"""
+    """F-37 的裁决是"下调能力声称"：``0x000F``/``0x0010`` 的字段口径不许被写回成已验证。
+
+    V18 第 9 轮把这条判据从文档那半边接到**账本那半边**：口径降级当时只落在 docstring
+    与 Provider 文档上，``commands.py`` 里 0x000F 却仍写着 ``tier=L1, verified=True``
+    （那个 L1 是 ``register_parser`` 的缺省值，不是判断）。于是同一件事在两个文件里
+    互相矛盾而无人报红——读文档的人看到"字段语义不保证"，读账本的人看到"已验证"。
+    """
     for name in ("_t_capital_changes", "_t_finance_info"):
         doc = ast.get_docstring(_TEMPLATES[name]) or ""
         assert "F-37" in doc, f"{name} 的字段口径降级说明被删掉了"
         assert "不保证" in doc, f"{name} 不再声明字段语义的边界"
+    for number in (0x000F, 0x0010):
+        row = COMMANDS[(Family.STANDARD, number)]
+        assert row.verified is False, (
+            f"0x{number:04X} 在账本里又变回 verified=True——它的实采样本重放后仍有字段值落在域外，"
+            "先把布局判据补上再改这一格"
+        )
+        assert row.tier != TIER_L1, (
+            f"0x{number:04X} 的 tier 写回了 L1，而本文件上面两句 docstring 口径仍写着「不保证」"
+        )
     lines = _doc_quotation_capabilities()
     for capability in ("finance", "capital_changes"):
         assert "F-37" in lines.get(capability, ""), (

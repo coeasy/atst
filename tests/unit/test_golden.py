@@ -12,23 +12,46 @@
    （``reader_meta == payload_len``），这是字段布局正确的最强证据。
 3. **合理性**：数值落在 OHLC × 成交量构成的区间内（防止解码漂移后仍然自洽）。
 4. **不丢包**：任何样本都必须解析出结果，绝不静默返回空。
+5. **域内合法**（V18 第 9 轮 / F-37②·G3）：账本自报 ``tier=L1 且 verified=True`` 的命令，
+   拿它**自己的实采样本**重放后，解出的字段值必须落在 domain SSOT 的取值域内。
+   这条判据的适用范围由账本推导，不是第 2 条那份手工名单——见
+   :func:`test_l1_verified_commands_replay_to_domain_legal_rows` 的说明。
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
+from collections import Counter
+from collections.abc import Callable
+from dataclasses import fields as dataclass_fields
+from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from tstdx.codec.framing import ResponseFrame
+from tstdx.domain.symbol import Market, Symbol, parse_symbol
+from tstdx.errors import SymbolError
+from tstdx.protocol.commands import TIER_L1
 from tstdx.protocol.registry import dispatch
+from tstdx.tools.golden_audit import (
+    MIN_PAYLOAD_BYTES,
+    ORIGIN_REAL,
+    _ledger_commands,
+    classify_origin,
+)
 
 GOLDEN_ROOT = Path(__file__).resolve().parents[1] / "golden"
 
 #: 已锁定布局、必须**精确耗尽缓冲区**的命令
 EXACT_COMMANDS = {0x052D, 0x0530, 0x044E}
+
+#: 账本自报「L1 精确解析 + 已验证」的命令号——与 ``golden_audit`` 那句
+#: ``all L1 verified commands have real samples`` 用同一个谓词、同一个来源。
+L1_VERIFIED_COMMANDS: dict[int, Any] = {c.cmd: c for c in _ledger_commands(None)}
 
 
 def _iter_samples():
@@ -197,3 +220,154 @@ def test_kline_cross_check():
             )
             checked += 1
     assert checked >= 20, f"K 线交叉校验样本过少（{checked}）"
+
+
+# ---------------------------------------------------------------------------
+# 第 5 条判据：L1 + verified 的声明必须能被自己的实采样本证伪
+# ---------------------------------------------------------------------------
+
+#: 字段名的唯一来源：domain SSOT 的 :class:`~tstdx.domain.symbol.Symbol` 有哪几个字段，
+#: 本判据就管哪几个字段——不另立一份词表（抄一次就过期，F-42）。
+_SYMBOL_FIELDS = frozenset(f.name for f in dataclass_fields(Symbol))
+
+
+# TDX 二进制市场编号由 ``Market.ALL`` 现推：只有真能进协议的 token 才算数。
+def _derived_tdx_market_ids() -> frozenset[int]:
+    out: set[int] = set()
+    for token in Market.ALL:
+        try:
+            out.add(Symbol(market=token, code="000000").tdx_market)
+        except SymbolError:
+            continue
+    return frozenset(out)
+
+
+_TDX_MARKET_IDS = _derived_tdx_market_ids()
+
+_DATE_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}")
+
+
+def _illegal_market(value: Any) -> str | None:
+    if value in _TDX_MARKET_IDS or value in Market.ALL:
+        return None
+    return f"市场 {value!r} 既不是 TDX 二进制市场编号 {sorted(_TDX_MARKET_IDS)}，也不是 canonical token"
+
+
+def _illegal_code(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return f"代码 {value!r} 不是字符串"
+    try:
+        symbol = parse_symbol(value)
+    except Exception as exc:  # noqa: BLE001 - 判据要把"解析不出"本身当结论
+        return f"代码 {value!r} 不是 symbol 引擎认得的代码（{type(exc).__name__}）"
+    if symbol.bare != value:
+        return f"代码 {value!r} 经 symbol 引擎归一后成了 {symbol.bare!r}：不是原样的真实代码"
+    return None
+
+
+#: ``Symbol`` 的每个字段都要有一把尺子；缺一格当场红，不许新增字段后静默免检。
+_CHECKERS: dict[str, Callable[[Any], str | None]] = {
+    "market": _illegal_market,
+    "code": _illegal_code,
+}
+
+
+def _row_violations(value: Any, path: str = "row") -> list[str]:
+    """递归走进行形状，返回「哪里、哪个字段、什么值、为什么不合法」。"""
+    out: list[str] = []
+    if isinstance(value, dict):
+        for key, sub in value.items():
+            checker = _CHECKERS.get(key)
+            if checker is not None and (problem := checker(sub)) is not None:
+                out.append(f"{path}.{key}: {problem}")
+            out.extend(_row_violations(sub, f"{path}.{key}"))
+    elif isinstance(value, (list, tuple)):
+        for index, sub in enumerate(value):
+            out.extend(_row_violations(sub, f"{path}[{index}]"))
+    elif isinstance(value, str):
+        head = _DATE_PREFIX.match(value)
+        if head:
+            try:
+                date.fromisoformat(head.group(0))
+            except ValueError:
+                out.append(f"{path}: 值 {value!r} 写成日期形状却不是真日历日")
+    return out
+
+
+def test_the_ruler_covers_every_symbol_field() -> None:
+    """``Symbol`` 长出新字段而本判据没跟上 ⇒ 立刻红，而不是静默少判一格。"""
+    assert set(_CHECKERS) == _SYMBOL_FIELDS, (
+        f"尺子覆盖 {sorted(_CHECKERS)} 与 domain 字段 {sorted(_SYMBOL_FIELDS)} 不符"
+    )
+
+
+def test_the_field_rule_fires_on_a_planted_fabricated_row() -> None:
+    """正控：把 F-37 实测到的那类错位值种进去，四条都要被认出——顺带证明合法行不误伤。"""
+    planted = {
+        "market": 48,  # ASCII '0' 被当成市场编号读
+        "code": "001",  # 记录错位后剩下的半个代码
+        "date": "4231-66-07",  # 日期形状却不是真日历日
+        "extra": {"code": ""},  # 嵌套层里的空代码
+    }
+    assert len(_row_violations(planted)) == 4, _row_violations(planted)
+    assert _row_violations({"market": 1, "code": "600000", "date": "2026-08-18"}) == []
+
+
+def test_l1_verified_commands_replay_to_domain_legal_rows() -> None:
+    """账本说「L1 精确解析、已验证」，代价是：它自己的实采样本重放后字段值必须合法。
+
+    F-37②（v17 台账）留着的半句话是"这两条命令的 golden 从不校验解析出的字段值"。
+    本轮把这句话变成判据前先量了一遍：``0x000F`` 的 4 份实采样本按它自己的解析器重放，
+    910 行里 ``market`` 取 48/52/56…（那是 ASCII 数字的字节值）、``code`` 取
+    ``''``/``'001'``、``date`` 取 ``'3110811704'``——没有一行落在域内，而账本当时写的是
+    ``tier=L1, verified=True``。那个"L1"根本不是做出来的判断：``register_parser`` 的
+    ``tier`` 缺省就是 L1，写解析器的人没填它，账本照着缺省升了级。
+
+    为什么第 2 条判据（按字节耗尽缓冲区）没抓到它：那条要求挂在手工名单 ``EXACT_COMMANDS``
+    上，而名单里没有 0x000F；把名单换成账本推导也不行——实测 0x000F 的解析器用
+    ``reader.rest()`` 取正文，而 ``rest()`` 不推进 ``pos``（``tstdx/codec/primitive.py:145``），
+    ``reader_meta`` 永远停在 2，4/4 样本都会假红。那把尺子对"以 ``rest()`` 取正文的解析器"
+    结构性失明，本判据因此走语义（值域）而不是走字节数。
+
+    只认 ``self-captured`` 样本：synthetic 目录里的 payload 是解析器自己产出的形状，
+    拿它回放等于让被告给原告作证。
+    """
+    in_scope: set[int] = set()
+    rows_by_command: Counter[int] = Counter()
+    problems: list[str] = []
+    for meta_path, payload_path in SAMPLES:
+        meta, payload = _load(meta_path, payload_path)
+        if classify_origin(meta.get("source")) != ORIGIN_REAL:
+            continue
+        command = int(meta["command"], 16)
+        if command not in L1_VERIFIED_COMMANDS:
+            continue
+        floor = MIN_PAYLOAD_BYTES.get(command)
+        if floor is not None and len(payload) < floor:
+            continue  # 低于 payload 下限的空桩不作语义证据（与 golden_audit 同口径）
+        in_scope.add(command)
+        label = f"{meta_path.parent.parent.name}/{meta_path.parent.name}"
+        frame = _make_frame(command, meta, payload)
+        result = dispatch(
+            frame,
+            family=meta.get("family", "quotation"),
+            **dict(meta.get("parse_ctx") or {}),
+        )
+        if result.tier != TIER_L1:
+            problems.append(
+                f"{label}: 账本声明 L1，实收 {result.tier}（落到兜底去了）warnings={result.warnings}"
+            )
+        rows_by_command[command] += len(result.rows)
+        for index, row in enumerate(result.rows):
+            problems.extend(f"{label} 第 {index} {v}" for v in _row_violations(row))
+
+    assert len(in_scope) >= 3, (
+        f"L1∧verified 且带实采样本的命令只剩 {sorted(f'0x{c:x}' for c in in_scope)}，"
+        "少于三条：要么账本被清空，要么谓词改名了——判据自身失效"
+    )
+    for command in sorted(in_scope):
+        if not rows_by_command[command]:
+            problems.append(f"0x{command:04X}: 实采样本一份行都没解出来，L1 声明无证据")
+    assert problems == [], "自报 L1 的命令重放实采样本后字段值不合法：\n" + "\n".join(
+        problems[:25] + ([f"…另有 {len(problems) - 25} 条"] if len(problems) > 25 else [])
+    )

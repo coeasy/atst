@@ -87,9 +87,13 @@ class TestLedgerQuerySurface:
         assert unknown_command_ids("no_such_family") == []
 
     def test_unknown_command_ids_are_the_unverified_rows(self) -> None:
-        """``unknown`` 的口径是"语义未经 golden 校正"，且返回的是行不是号（文档同口径）。"""
+        """``unknown`` 的口径是"语义未经 golden 校正"，且返回的是行不是号（文档同口径）。
+
+        2026-09-21（V18 第 9 轮）30 → 32：``0x000F``/``0x0010`` 的 ``verified`` 撤回后落进
+        这一格。这一数是"未经校正"的规模，只会长不会缩——账本诚实度的读数不许反向调小。
+        """
         rows = unknown_command_ids()
-        assert len(rows) == 30
+        assert len(rows) == 32
         assert all(isinstance(c, Command) and not c.verified for c in rows)
         assert [c.cmd for c in rows] == sorted(c.cmd for c in rows)
         assert {c.cmd for c in rows} == {
@@ -122,20 +126,31 @@ class TestLedgerQuerySurface:
 class TestLedgerCalibration:
     """2026-09 账本校准批次（docs/archive/OPTIMIZATION_PLAN.md 批次 A2）。"""
 
-    @pytest.mark.parametrize("cmd", [0x0010, 0x000F, 0x052D, 0x0530, 0x0547])
+    @pytest.mark.parametrize("cmd", [0x052D, 0x0530, 0x0547])
     def test_golden_backed_commands_verified(self, cmd: int) -> None:
-        """有精确解析器/实采样本的命令必须 verified（账本自有升级规则）。
+        """账本自报 verified 的命令：这一格必须与它声称的证据同时成立。
+
+        升级规则不是"有精确解析器就算"，也不是"``register_parser`` 的 ``tier``
+        缺省值就是 L1"。``0x000F`` 当初正是吃了这个缺省：没人写过判断，账本却拿它
+        换了 ``tier=L1, verified=True`` 两句声明（V18 第 9 轮撤回，见
+        ``tests/unit/test_golden.py`` 的域内合法判据）。今天留在这里的三条，
+        ``0x052D``/``0x0530`` 另有缓冲区耗尽 + 区间交叉校验两道实采判据背书。
 
         注意：``0x0537``(MINUTE_TODAY) / ``0x0FC5``(TRADE_TODAY) 的真实记录布局
         尚未由 golden 锁定，账本刻意保持 ``verified=False``（见 da655d5
-        “align inferred command registry with specs”）。
+        "align inferred command registry with specs"）。
         """
         c = get_command(cmd)
         assert c is not None and c.verified
 
-    @pytest.mark.parametrize("cmd", [0x0537, 0x0FC5])
+    @pytest.mark.parametrize("cmd", [0x0537, 0x0FC5, 0x000F, 0x0010])
     def test_inferred_commands_not_verified(self, cmd: int) -> None:
-        """inferred（真实布局待 golden 锁定）的命令必须 verified=False（da655d5 校准）。"""
+        """inferred（真实布局待 golden 锁定）的命令必须 verified=False（da655d5 校准）。
+
+        ``0x000F``/``0x0010`` 于 V18 第 9 轮加入：F-37② 的裁决一向是"条数可用、
+        字段语义不保证"，而账本那半边还写着已验证——两条命令的实采样本重放后
+        分别有 1587/581 个字段值落在域外，写回 ``verified=True`` 即红。
+        """
         c = get_command(cmd)
         assert c is not None and not c.verified
 
@@ -185,9 +200,10 @@ class TestLedgerCalibration:
         assert len(by_status(STATUS_OFFLINE)) == 9
         assert len(by_status("degraded")) == 2
         assert len(by_status(STATUS_ONLINE)) == len(COMMANDS) - 11
-        # 9 条 verified：0x0004/0x000d/0x000f/0x0010/0x044d/0x044e/0x052d/0x0530/0x0547
-        # （0x0537/0x0FC5 为 inferred，布局待 golden 锁定，不计入 verified）
-        assert sum(1 for c in by_family(Family.STANDARD) if c.verified) == 9
+        # 7 条 verified：0x0004/0x000d/0x044d/0x044e/0x052d/0x0530/0x0547
+        # （0x0537/0x0FC5 为 inferred，布局待 golden 锁定，不计入 verified；
+        #   0x000f/0x0010 于 V18 第 9 轮按 F-37② 撤回——实采样本重放后字段值仍落在域外）
+        assert sum(1 for c in by_family(Family.STANDARD) if c.verified) == 7
 
     def test_facade_docstring_matches_client_commands(self) -> None:
         """防回归：client 注释命令号必须与实际请求一致（批次 A1）。

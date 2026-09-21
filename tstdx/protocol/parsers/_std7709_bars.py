@@ -248,26 +248,27 @@ class SecurityBarsParser(BaseParser):
 # --------------------------------------------------------------------------- #
 
 
-@register_parser(0x000F, family=Family.STANDARD, name="CAPITAL_CHANGES", head=2)
+@register_parser(0x000F, family=Family.STANDARD, name="CAPITAL_CHANGES", head=2, tier=TIER_L2)
 class CapitalChangesParser(BaseParser):
     """除权除息（GBBQ）。
 
-
-
     请求体：``<6s code><H market>``（✅ 实测）。
-
-
 
     .. warning::
 
-       ⚠️ 记录布局未按样本锁定。公开资料给出的 29 字节定长结构与
+       ⚠️ **记录布局未锁定**，本解析器产出的行只能按"条数"读，字段语义不保证
+       （F-37②；``_t_capital_changes`` 的口径注释与 ``docs/providers/tdx.md`` 同）。
 
-       实测响应长度不自洽，因此本解析器采用**自适应**策略：
+       账本一度把它记成 ``tier=L1, verified=True``——那不是判断，是 ``register_parser``
+       的 ``tier`` 缺省值被当成了结论，V18 第 9 轮撤回（``tests/unit/test_golden.py``
+       的域内合法判据当场为它作证：4 份实采样本重放出 910 行、1587 个字段值落在域外，
+       ``market`` 读到 48/52/56 即 ASCII 数字、``code`` 读到 ``''``/``'001'``）。
 
-       按缓冲区均分推断记录长度，并按已知语义做最佳努力解析。
-
-       一旦取得 golden 样本即改为定长解析并置 ``verified=True``。
-
+       为什么不顺手改成"看起来对"的定长结构：实采正文里确实反复出现 29 字节间隔的
+       日期串（单条正文最多 832 次相邻间隔为 29），但正文开头不是这里假设的
+       ``<市场><代码>``，首部的 ``uint16`` 也与正文长度不自洽（13705/250、26331/160
+       都不整除）；对 offset 0-39 × 步长 9-59 的全部组合逐一试解，没有一种能让半数
+       以上的行合法。缺布局判据时不猜（与 ``parsers/mac.py``「禁止盲改」同一口径）。
     """
 
     CATEGORY = {
@@ -407,6 +408,12 @@ class FinanceInfoParser(BaseParser):
        依赖主站版本。本解析器先按**自适应记录长度**输出原始切片与
 
        float32 数组，语义映射交由 ``domain.models`` 按 profile 处理。
+
+       账本一度写着 ``verified=True``，V18 第 9 轮按 F-37② 撤回：4 份实采样本重放出的
+
+       400 行里有 581 个字段值落在域外（``market`` 读到 48/56/93、``code`` 读到 ``''``），
+
+       与 :class:`CapitalChangesParser` 是同一格未闭合的布局判据。
 
     """
 

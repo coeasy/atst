@@ -204,16 +204,16 @@ _STD: list[Command] = [
     _c(
         0x000F,
         "CAPITAL_CHANGES",
-        "股本变迁 / 除权除息（GBBQ）",
-        tier=TIER_L1,
-        verified=True,
+        "股本变迁 / 除权除息（GBBQ，inferred；真实记录布局尚未由 golden 锁定）",
+        tier=TIER_L2,
+        verified=False,
     ),
     _c(
         0x0010,
         "FINANCE_INFO",
-        "财务基础信息（股本/EPS/资产负债等）",
+        "财务基础信息（股本/EPS/资产负债等，inferred；字段序尚未由 golden 锁定）",
         tier=TIER_L2,
-        verified=True,
+        verified=False,
     ),
     _c(0x001E, "FINANCE_EXT", "扩展财务数据（多期报表）", tier=TIER_DECLARED),
     _c(
