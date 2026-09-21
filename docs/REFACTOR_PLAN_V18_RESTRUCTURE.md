@@ -454,6 +454,15 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b8step/_base_deprecation.py`、`_base_test_deprecation.py` | 提交前版本（`0bf2994`）的两个被删文件快照——P1/P2/P8 三格的取证对象，只在步骤树内，不入库 |
 | `wt_v18b8ship/run_gates.sh`、`gates_ship8.log` | **提交树**（`cb92bc0`，被跟踪文件 0 改动）十次调用复测 |
 | `wt_v18b8ship/fulltest_ship8.log` + `.xml` | 提交树离线全量与 junit 计数；与步骤轮的 `tstdx/` 覆盖表逐行相同 |
+| `wt_v18b9step/run_gates.sh`、`gates_v18b9.log` | 第 9 轮步骤轮（`02b7973` + 本步 10 文件）环境与十次调用逐条 RC 与摘要行 |
+| `wt_v18b9step/gates_v18b9_first_ruff_red.log` | 同一次步骤轮里**第一次**跑的原始日志：`ruff check` rc=1（`I001`，本轮往 `test_offline_capability_honesty` 的导入行加了 `TIER_L1` 导致成员序变了）。留着是为了说明"绿"不是重跑出来的巧合 |
+| `wt_v18b9step/fulltest_v18b9.log` + `.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数 |
+| `wt_v18b9step/mutate9.py`、`mutate_v18b9.log` + `mut9_out_1..6.log` | 第 9 轮 7 格反证（C0 对照 + M1–M6 回潮/致盲形状）：每格变红数与红名单在 `.log` 里，每格 pytest 原文分格存 `mut9_out_N.log`；harness 每格跑完按字节还原 |
+| `wt_v18b9step/probe9.py`、`probe9_readings.log` | 实采样本重放行数/域外字段值数（撤回那两条 + 留下的三条 L1 做正控），口径与判据同一把尺子 |
+| `wt_v18b9step/probe9b.py`、`probe9b_readings.log` | 0x000F 喂进复权链路的后果计数：调整类别事件数、其中日期解不开数（FAQ 那句话的数字来源） |
+| `wt_v18b9step/probe9c.py`、`probe9c_readings.log` | 布局为什么锁不上：声明条数 vs 正文长度、`offset × stride` 全组合的最好命中率 |
+| `wt_v18b9ship/run_gates.sh`、`gates_v18b9.log` | **提交树**（`2e4e6bb`，`checkout-index` 直出）十次调用复测 |
+| `wt_v18b9ship/fulltest_v18b9.log` + `.xml` | 提交树离线全量与 junit 计数；`tstdx/` 覆盖表与步骤轮逐行相同 |
 
 ## 8. 本方案不做什么（避免被读成"又要一轮无限重构"）
 
@@ -1148,3 +1157,129 @@ A1/A2/A4（README 半截）、C1/C2/C3、D1–D4、E1–E4、F2、F3、F4/G3、�
 其余 15 条"公共 API 名义资产"豁免（`trade/`、`profile/`、`output/`、`charset/`）仍等 R-7 的
 类别价值标准——本轮只删了一处**没有任何判据替它说话**的资产，那 15 条各有判据在盯（第 6 轮的
 符号账），不能由本轮外推到"它们也该删"；CHANGELOG `[Unreleased]` 仍因并行会话该文件未提交而押后。
+
+## 18. 执行记录（续）
+
+### 第 9 轮｜轴的第七次延伸：等级声称也要有代价，缺省值不是判断（提交 `2e4e6bb`，10 个文件 `297 insertions / 33 deletions`）—— F-37② 的账本半边，V18-F4 / G3
+
+前八轮把"声明了就得兑现"从旋钮、入参、字段、符号一路推到名单，第 8 轮翻面看到"被登记不等于被使用"。
+这一轮落在同一条轴的第三种形态：**等级本身的声称**。`tstdx/protocol/commands.py` 里 `0x000F` 长期写着
+`tier=TIER_L1, verified=True`——对外话术是"精确解析、已验证"。那个 L1 不是谁判断出来的：
+`register_parser` 的 `tier` 缺省值就是 `TIER_L1`（`tstdx/protocol/registry.py:113`），写解析器的人没填
+这一格，账本又照着缺省升了级。v17 的 F-37 裁决 (c) 把口径下调为"条数可用、字段语义不保证"，但那一步
+**只落在文档那半边**；于是同一件事在两个文件里互相矛盾而无人报红——读文档的人看到"不保证"，读账本的
+人看到"已验证"，而 `0x0010` 的 `verified=True` 也是同一类回声。
+
+**取证**（`wt_v18b9step/probe9_readings.log`，口径与判据完全同源：只认实采、同一 payload 下限、
+同一 `_row_violations`）：
+
+| 命令 | 实采样本 | 重放行数 | 域外字段值 | 按字段 | 实收 tier |
+|---|---|---|---|---|---|
+| `0x000F`（本轮撤回） | 4 份 | 910 | **1587** | `market` 722 / `code` 865 | L2 ×4 |
+| `0x0010`（本轮撤回） | 4 份 | 400 | **581** | `market` 236 / `code` 345 | L2 ×4 |
+| `0x044E`（留下的正控） | 6 份 | 6 | 0 | — | L1 ×6 |
+| `0x052D`（留下的正控） | 28 份 | 280 | 0 | — | L1 ×28 |
+| `0x0530`（留下的正控） | 10 份 | 10 | 0 | — | L1 ×10 |
+
+域外长什么样（M1 原文，`mut9_out_1.log`）：`market` 读到 48/49/51/52/53/55/56/57（那是 ASCII 数字的
+字节值）、`code` 读到 `''`、`'001'`、`'\x0168812'`。这不是"个别行错位"，而是**没有一行**落在域内。
+
+**复权链路的后果**（`probe9b_readings.log`）：910 行里落在调整类别（`ADJUST_CATEGORIES = {1}`）的事件
+**34 条，34 条的日期 `_parse_date` 全解不开**（`compute_factors` 就是在这里抛 `AdjustError`）。四份样本
+各贡献 15 / 0 / 4 / 15 条。所以 `docs/FAQ.md` 现在的答复分成两种明说不静默的后果：有事件 ⇒ 抛错；
+唯一那份一条调整事件都没有的样本 ⇒ 因子全 1.0 的"不复权"输出。
+
+**三把现存尺子为什么全都哑**（这一格决定判据换形，而不是再补一把同形状的尺子）：
+
+| 尺子 | 为什么看不见 |
+|---|---|
+| 字节耗尽判据（手抄名单 `EXACT_COMMANDS` + "缓冲区必须恰好用完"） | `0x000F` 不在名单里；把名单换成账本推导也**假红**——它的解析器用 `reader.rest()` 取正文，而 `rest()` 不推进 `pos`（`tstdx/codec/primitive.py:145`），`reader_meta` 恒停在 2。那把尺子对"以 `rest()` 取正文的解析器"结构性失明，所以新判据走语义值域而不是字节数 |
+| yaml 状态对齐（`test_registry_spec_verification_alignment`） | 这两条命令根本没有 `PROTOCOL_SPEC` yaml，无对象可比 |
+| `golden_audit` 的 `[GATE] all L1 verified commands have real samples` | 只问"有没有实采样本"，不问"样本解出来对不对"。`0x000F` 恰恰有 4 份 ⇒ 它一直 OK，而且**样本越多越像健康** |
+
+**改了什么**（10 个文件、一笔提交）：
+
+| 文件 | 动作 |
+|---|---|
+| `tstdx/protocol/commands.py` | `0x000F`：`tier` L1→L2、`verified` True→False；`0x0010`：`verified` True→False。两条 summary 补 "inferred；…尚未由 golden 锁定"——照抄同文件 `0x0FC5` 已有的诚实写法，不发明新话术 |
+| `tstdx/protocol/parsers/_std7709_bars.py` | 两个解析器**显式** `tier=TIER_L2`（不再吃缺省值）；docstring 里 `0x000F` 那段"一旦取得 golden 样本即改为定长解析并置 verified=True"的许诺换成本轮实测数字 + `offset × stride` 穷举结论（见 `probe9c`），并写下"缺布局判据时不猜"（与 `parsers/mac.py` 同政策） |
+| `tests/unit/test_golden.py` | +3 项：`L1 ∧ verified` 的命令重放实采样本后 `market`/`code` 必须落在 domain 合法域、日期形状必须是真日历日；尺子覆盖 `Symbol` 全字段（`set(_CHECKERS) == 字段集`，新增字段免检即红）；正控把 F-37 实测到的那四类错位值种进去，四条全认得、合法行不误伤；in-scope 规模下限 ≥3 |
+| `tests/protocol/test_tiers.py` | +1 项（#16）：**L1 是双向声称**——注册表 L1 集必须等于账本 L1 集，账本 L1 行必须同时 `verified=True`，两边同时抹空由规模下限自报 |
+| `tests/architecture/test_offline_capability_honesty.py` | 那道口径门禁从"只看 docstring"接到"也看账本行"：`verified is False` 且 `tier != TIER_L1`，各带一句"先把布局判据补上再改这一格" |
+| `tests/unit/test_commands.py` | 升级规则改文（"有精确解析器就算"和"缺省 tier 说了算"都不再是升级依据）；`test_golden_backed_commands_verified` 参数去掉 `0x000F`/`0x0010`、`test_inferred_commands_not_verified` 加上它们；两格计数**钉高**而非删掉：未验证行 30 → 32、`verified` 行 9 → 7 |
+| `README.md` / `docs/FAQ.md` / `docs/tdx_status.md` / `docs/api/interfaces.md` | 口径与派生计数同步（`interfaces.md` 那格是文档-代码门禁逼出来的：默认族 30→32、全账本 76→78） |
+
+**规模账（+4 与"覆盖不降"证明）**：判据 3 652 → **3 656**（语义重放 +1、尺子全覆盖 +1、正控 +1、#16 +1），
+新增 skip 0，删除判据 0，阈值 `fail_under = 77.0` 未动。覆盖表按（文件名 + 四个计数列）归一后与
+`wt_v18b8ship` 做 `diff`：140 行里**只有两行不同，且两行都是变好的方向**——
+`domain\symbol.py` miss 4→3、`transport\pool.py` miss 113→111 / partial 37→36（后两列是第 7、8 两轮
+都记过名的计时抖动行）。本轮真正改动的两个生产文件（`protocol/commands.py`、
+`protocol/parsers/_std7709_bars.py`）在覆盖表里**逐列未变**。TOTAL `22 363 / 3 520 / 5 982 / 998`、
+**81.70%**（上轮 ship 是 `22 363 / 3 523 / 5 982 / 999`、81.68%）。基线仍只由 CI（ubuntu + py3.11）
+精确头寸重钉，本机数字不作依据。
+
+**步骤轮读数**（`wt_v18b9step` @ `02b7973` + 本步 10 文件，复制后与主树归一化逐字节相同）：环境探针 +
+CI 规范调用共 **10 次调用全部 rc=0**（`gates_v18b9.log`：originality `Total: 190 / Original: 190 /
+Suspicious: 0 / External imports: 17`、spec_audit `"coverage_pct": 100.0`、**golden_audit
+`L1 verified: 0x44e, 0x52d, 0x530`**（上轮同一格印的是四条，末位是 `0xf`）+ `[GATE] … (OK)` +
+既有 `suspect_short` WARN `0x537 4B<12B x3`、reachability `模块总数: 189 可达: 174 白名单豁免: 15`、
+contract_audit `63 / 172 / 0` + `PASS: 172 个注册 capability 全部落在声明形状之内`、docs links
+`83 files`、mypy 无输出、ruff check `All checks passed!`、ruff format `443 files already formatted`）。
+离线全量 junit **3 656 项 / 0 失败 / 0 错误 / 7 跳过**、161.928s、覆盖率 **81.70%**。
+两处不粉饰：① 步骤轮**第一次**跑十次调用时 `ruff check` 是 rc=1（`I001`，本轮给
+`test_offline_capability_honesty` 的导入行加了 `TIER_L1`，成员序不再合规），原始日志留在
+`gates_v18b9_first_ruff_red.log`，`--fix` 后才是上面那十个 rc=0；② 同一棵树本步跑过两次全量，
+第一次（#16 加入前）**3 655 项 / 81.70%**，日志被同名覆盖，只余这里的数字，最终存档是 3 656 那次。
+主树里另外还有一格红——`tests/test_spec_coverage.py::test_audit_covers_every_non_probe_yaml`——
+两棵隔离树都绿：它断言"非探针草稿恰好一份"，而 2026-09-19 live smoke 落在磁盘上的三份 gitignored
+草稿（`PROTOCOL_SPEC/_sniffer/quotation/{000f,0200,2d00}/DRAFT.yaml`，`.gitignore:85`）把它撑红了。
+本轮没有靠放宽那句断言去"修"它。
+
+**反证证据**（`wt_v18b9step/mutate_v18b9.log`；7 格，每格跑完按字节还原，全部 `还原后字节一致：是`）：
+
+| 格 | 动了什么 | 结果 |
+|---|---|---|
+| C0 | 不改动（对照） | 4 个目标文件 0 红 ⇒ 下面每一格的红都不是恒报出来的 |
+| M1 | 把 `0x000F` 的账本行原样写回 `tier=L1, verified=True` | 变红 **6**：语义重放（1 591 条问题，末行"…另有 1566 条"）、#16（`仅账本声称 L1：[('quotation','0xf')]`）、口径门禁、两格计数钉、`test_inferred_commands_not_verified[15]` |
+| M2 | 删掉解析器上显式的 `tier=TIER_L2`，让**缺省值**重新白送一个 L1（账本不动） | 变红 **1**：#16 反向那一面（`仅注册表声称 L1：[('quotation','0xf')]`）。这一格是本轮根因的形状：缺省值声称等级，从此要账本签字 |
+| M3 | 把 `0x0010` 的 `verified=True` 写回（tier 仍是 L2） | 变红 **4**：口径门禁 + 两格计数钉 + 参数化名单。**不变红的是语义重放**——它的取范围与 `golden_audit` 同口径（`tier==L1 ∧ verified`），一条 L2 行不在其列。为什么不扩大：见"未做" |
+| M4 | 从 `_CHECKERS` 里摘掉 `code` 这一把尺子 | 变红 **2**：尺子全覆盖 + 正控（种进去的四条只认得三条） |
+| M5 | `_illegal_market` 写成永远放行（有函数、无判断） | 变红 **1**：正控。这一格证明"写了尺子但不咬"也会被单独认出来 |
+| M6 | 三条真 L1 同时降级：账本三行 `tier`→L2、三个吃缺省值的注册显式降 L2 | 变红 **7**：#16 的规模下限自报（`L1 声称只剩 []，本判据失去比对对象`）、语义重放、三条 L1 行为测试、两条 cross-check。两边同时抹空**不会**被读成"分歧清零" |
+
+**harness 自己的两格缺陷值得记一句**（它对所有取证脚本都成立）：第二版把 `restore()` 漏在 `finally`
+之外，M1/M2 的植入留在盘上没还原，第三次跑以"锚点命中 0 次"暴露——修成 finally 还原 + 每格立即落盘
+（不再等全程跑完才写日志）；M2 的替换串少写一个右括号，第一版读数因此是收集期 rc=2 的"红得不对"，
+换成正确形状（删掉整个 `tier=` 实参）后才是上面那一格。步骤树里被前一版污染的 `commands.py` /
+`_std7709_bars.py` 已按主树重新拷贝并做归一化哈希比对（四文件 `SAME`）。
+
+**ship 轮（提交树复测）**：`2e4e6bb` 落到 main 并推送后，`wt_v18b9ship` 由 `git checkout-index` 从该头寸
+直出（不叠加任何文件），十次调用**全部 rc=0**，摘要行与步骤轮逐字相同（`gates_v18b9.log` 里
+`L1 verified: 0x44e, 0x52d, 0x530` 这一行由门禁自己复述了本轮的口径变化）。离线全量 junit
+**3 656 / 0 / 0 / 7**、162.491s、覆盖率 **81.70%**，`tstdx/` 覆盖表与步骤轮逐行相同。
+
+**两处副作用，都不粉饰**：
+① 归档闸口重新开了一条：`tstdx/protocol/generic.py:314` 的跳过条件是 `info.verified ∧ result.tier == "L1"`，
+`0x000F` 撤回后不再被跳过，真机抓包可以来锁布局；`0x0010` 本来就不跳过（它的解析器一直是显式 L2），
+所以"开闸"的只有 `0x000F` 一条。
+② `0x0010` 那一格 `verified` 的撤回**没有运行时读取点**——包内读 `CommandInfo.verified` 的只有
+`generic.py:314` 和 `golden_audit._ledger_commands`（后者要 `tier==L1`），两条都不看一个 L2 行。它兑现的是
+文档口径与 M3 那一格反证。这恰好是第 8 轮那条轴的回声：账本里非 L1 行的 `verified` 是一个只有文档级
+读者的声称；本轮把它改对了，但不假称"改对之后有运行时效果"。
+
+**本轮明确未做**：
+- **那两条命令的记录布局判据本身**。本轮只撤回声称 + 立语义尺子，没有把布局锁上，也锁不上——
+  `probe9c_readings.log` 是现测：4 份样本里 3 份的头部 uint16 条数与正文长度根本不自洽
+  （`250 / 13 705 B` ⇒ 均分 54 余 205；`160 / 26 331 B` ⇒ 均分 164 余 91），唯一整除的那份
+  （`250 / 2 250 B` = 9 B/条）用判据自己那把尺子量，`offset ∈ [0,40) × stride ∈ [8,60)` 全组合的
+  最好命中率是 **0.0%**，另外三份的最好命中率是 2.5% / 5.0% / 2.5%。缺判据时不猜，等真机样本或经过验证的
+  第三方布局说明。
+- **客户端拦截**。`_UNVERIFIED_STRUCTURED_BLOCK` 仍只列 `minute_today` / `trade_today`，不把
+  `capital_changes` 加进去：F-37 的裁决是"下调能力声称"，不是"拒绝服务"，要升级成拦截得另走一次裁决。
+- **把语义重放扩到"任何 `verified` 行"**（M3 那一格暴露的边界）。刻意不扩：L2 是启发式，本来就不承诺
+  字段映射，扩了等于把"承诺"降级成"误报"；那条声称由口径门禁与计数钉守着，红名单在 M3 里。
+- **复权静默那半边的判据**。本轮把"0 事件 ⇒ 因子全 1.0"写进 FAQ，没有立尺子：判据要能区分"这条命令
+  这次确实没有调整事件"（合法结果）和"事件全被解坏了"，量不出来之前不立。
+- F3 盘中复跑、F4/G3 的真机判据那半截、F5 tag、F2、A1/A2/A4（README 半截）、C1/C2/C3、D1–D4、
+  E1–E4、其余 15 条"公共 API 名义资产"豁免（等 R-7）、§16 的 `gateway_capabilities()` 两分支错标盲区。
+- CHANGELOG `[Unreleased]` 仍因并行会话该文件未提交而押后。
