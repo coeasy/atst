@@ -134,7 +134,8 @@
 
 ## 4. 验收入口（贯通清单 24 项）
 
-执行 `make audit-bridges`（详见 §32）一次性跑完 24 项：
+执行 `make test-bridges`（旧目标名 `make audit-bridges` 把失败吞成一行
+`⚠ bridges test 未就绪`，已随"本地门禁不得弱于 CI"那次改动删除）一次性跑完 24 项：
 
 | # | 验收项 | 对应章节 | 自动化测试 |
 |---|---|---|---|
@@ -153,7 +154,7 @@
 | 13 | AST 相似度门禁：tstdx 内部任意 2 文件 > 0.95 报警 / 与参考项目 > 0.30 阻断 | §4 | `test_originality.py` |
 | 14 | License 白名单扫描全过 | §4 | `test_licenses.py` |
 | 15 | wheel 矩阵（12 组合）均能装且 smoke 通过 | §29 | `ci_wheel_matrix.yml` |
-| 16 | 弃用策略：从 deprecate 到 remove 至少 2 个 minor | §29 | `test_deprecation.py` |
+| 16 | 弃用机制不自建：包内不留退役支架，生命周期信号只走告警信封与 `SourceDeprecated` | §29 | `test_bridges.py` |
 | 17 | HTTP API 契约测试：32 接口全过 | §13 | `test_http_api.py` |
 | 18 | MCP 工具契约：10 工具 schema 与实现一致 | §13 | `test_mcp_contracts.py` |
 | 19 | 可观测性零依赖可启用；exporter 提供 prom/statsd/otel | §14 + §20 | `test_observability.py` |
@@ -175,7 +176,7 @@
 | 章节数 | 19 章 | 32 章 | **33 章** |
 | 断链点 | — | 21 | **24**（+A5 口径归一 / +A6 反爬韧性 / +A7 兼容迁移） |
 | 贯通工程 | — | 9 | **10**（+E10 HTTP Web 源闭环） |
-| 验收清单 | 零散于 §16 §17 §19 | **集中 22 项** | **24 项** 自动化脚本 `make audit-bridges` |
+| 验收清单 | 零散于 §16 §17 §19 | **集中 22 项** | **24 项** 自动化脚本 `make test-bridges` |
 | 路线图 | 22 周 4 阶段 | **28 周 5 阶段** | 28 周不变（W14b 为可并行组 F，不占关键路径） |
 
 ---

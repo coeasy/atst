@@ -68,7 +68,9 @@ ADR-XXX: 决策标题
 
 ### 4.2 弃用策略
 
-- 弃用标记：使用 `@deprecated` 装饰器或 `DeprecationWarning`
+- 弃用标记：用标准库告警 `warnings.warn(..., DeprecationWarning, stacklevel=2)`；本包不自带
+  `@deprecated` 装饰器（`tstdx/deprecation.py` 206 行在包内零消费者，V18 第 8 轮按 F-74/D3 删除；
+  `warnings.deprecated` 需 Python 3.13，而本包下限是 3.10，故不作为机制）
 - 保留周期：至少 2 个 minor 版本
 - 迁移指南：每个弃用功能需在 `docs/migration/` 中提供迁移指南
 
