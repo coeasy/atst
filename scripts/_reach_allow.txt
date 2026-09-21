@@ -12,7 +12,6 @@
 # 作为 BFS 种子，与 SEEDS 同权。
 
 # --- 面向用户的显式导入 API：用户 `from tstdx.<pkg> import ...` 即可用，内核不 import ---
-tstdx.deprecation  # 弃用策略公共 API（`DeprecationPolicy`/`deprecated`/`get_deprecation_count`）：docs/api/README.md 记录，tests/test_deprecation.py 全量覆盖；供调用方给自己的 API 打弃用标记，内核链路不需要它
 tstdx.output  # DataFrame/Parquet/CSV/DuckDB 输出层公共 API（`Sink`/`write`/`to_dataframe`/`to_parquet`/`to_duckdb`）：docs/api/interfaces.md 记录，tests/output/ 与 tests/test_bridges.py 消费；内核只交裸记录，落地格式由调用方显式选
 tstdx.profile  # 数据规格探测包公共 API（`DataProfile`/`detect_profile`/`get_profile`/`ProfileDetector`）：docs/api/README.md 与 docs/cookbook/03_offline_vipdoc.md 记录，tests/unit/test_profile_detect_semantics.py 逐条覆盖其探测语义
 tstdx.profile.detect  # 帧档案探测器实现（28KB，`detect`/`BUILTIN_PROFILES`；探测入口 `tstdx.profile.detect_profile` 由 reader.profile 提供、包 __init__ 再导出）：tests/reader/test_formats.py 与 tests/compatibility/test_matrix.py 消费；vipdoc 之外的自动识别属可选能力

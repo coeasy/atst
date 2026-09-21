@@ -6,6 +6,7 @@ pytest.skip("pending: <module>")。目标 ≥18 项真实通过。
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 
@@ -206,11 +207,31 @@ class TestBridges:
         p = REPO_ROOT / ".github" / "workflows" / "wheels.yml"
         assert p.exists(), "wheels.yml 不存在"
 
-    # ---- 16: 弃用策略模块 ----
-    def test_16_deprecation(self):
-        """#16 tstdx/deprecation.py 存在。"""
-        p = REPO_ROOT / "tstdx" / "deprecation.py"
-        assert p.exists(), "deprecation.py 不存在"
+    # ---- 16: 弃用机制退役（不留支架） ----
+    def test_16_deprecation_mechanism_retired(self):
+        """#16 包内不留自建的退役机制：三个面（磁盘 / 导入 / 根包公共面）都要干净。
+
+        F-74/D3 (a) 的验收。原判据是"``tstdx/deprecation.py`` 存在"——它服务的门面层已在
+        v16 Phase 2 物理删除（F-70），此后 206 行在 ``tstdx/`` 内零消费者，钉着它的只剩
+        外围：9 项单测、本项验收、三处豁免或白名单（根级布局、裸告警通道、可达性记录）与
+        一行公共 API 表。判据随之换形：从"这件工具在不在"变成"这把承诺还在不在"。
+        运行期的生命周期信号另有其主——告警信封 ``tstdx/diagnostics.WarningCode``（结果内
+        提示）与错误树 ``SourceDeprecated`` E7030/410（上游接口下线），各由
+        ``tests/architecture/test_caveat_channel_gates.py``、``tests/errors/test_taxonomy.py``
+        盯住，本项不重复计量。
+        """
+        assert not (REPO_ROOT / "tstdx" / "deprecation.py").exists(), "退役机制模块回到了包根"
+        importlib.invalidate_caches()
+        with pytest.raises(ImportError):
+            importlib.import_module("tstdx.deprecation")
+        import tstdx
+
+        leaked = {
+            name
+            for name in ("deprecated", "DeprecationPolicy", "DeprecationInfo")
+            if hasattr(tstdx, name) or name in tstdx.__all__
+        }
+        assert not leaked, f"根包公共面重新导出退役机制：{sorted(leaked)}"
 
     # ---- 17: HTTP API canonical 面 ----
     def test_17_http_server(self):

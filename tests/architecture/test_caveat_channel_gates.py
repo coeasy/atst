@@ -21,12 +21,12 @@ SOURCE = ROOT / "tstdx"
 CHANNEL = "tstdx/diagnostics.py"
 
 #: 允许直接 ``warnings.warn`` 的文件与理由。豁免的门槛是"这条告警**不是**某个结果的
-#: 事实"——通道的发射口自身，以及不属于任何一次查询的 API 生命周期提示。
-#: 执行器的 binding 审计曾在此列（"import 期没有 QueryPlan 可以携带它"）：那句话只
-#: 解释了它为什么不能进通道，没有解释它为什么可以不报错——它现在直接 raise。
+#: 事实"——只有通道的发射口自身过这道门槛。执行器的 binding 审计曾在此列（"import 期
+#: 没有 QueryPlan 可以携带它"）：那句话只解释了它为什么不能进通道，没有解释它为什么
+#: 可以不报错——它现在直接 raise。``tstdx/deprecation.py`` 也曾在此列（"API 生命周期
+#: 提示"）：那个模块在包内零消费者，V18 第 8 轮按 F-74/D3 删除，豁免随宿主一起撤销。
 BARE_WARN_ALLOWED: dict[str, str] = {
     CHANNEL: "通道的唯一发射口",
-    "tstdx/deprecation.py": "DeprecationWarning 是 API 生命周期提示，不属于任何一次查询的结果",
 }
 
 

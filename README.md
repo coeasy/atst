@@ -342,7 +342,7 @@ tstdx/
 ├── stream_contract.py  # StreamSpec/StreamPlanner 流式契约
 ├── errors.py       # 错误分类树（E1-E9 九域）+ RetryAdvice
 ├── diagnostics.py  # 结果侧数据瑕疵的唯一发射口（WarningCode + 收集器，strict 的判据来源）
-├── error_envelope.py  deprecation.py
+├── error_envelope.py
 ├── protocol/       # commands(85 账本)/registry(三级分派+异常收口)/parsers(61 × 5 族)
 ├── codec/          # framing(帧)/primitive(原语 + count_guard + zlib strict)
 ├── transport/      # base(RLock 租约)/async_/pool(4 槽)/ratelimit/speedtest/hosts/sniff

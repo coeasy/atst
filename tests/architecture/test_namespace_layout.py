@@ -26,7 +26,6 @@ ROOT_WHITELIST = {
     "errors.py",
     "error_envelope.py",
     "diagnostics.py",
-    "deprecation.py",
 }
 
 #: old dotted module path -> new dotted module path (clean-break table).

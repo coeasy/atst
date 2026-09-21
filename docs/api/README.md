@@ -107,7 +107,6 @@
 | `tstdx.charset.encoding` | UTF-8/GBK/GB18030/Big5 自动探测 |
 | `tstdx.feedback` | 反馈上报（opt-in + 7 步脱敏）|
 | `tstdx.observability` | Prometheus/Statsd/OTLP 导出 |
-| `tstdx.deprecation` | DeprecationPolicy + @deprecated |
 
 ## 集成服务
 
