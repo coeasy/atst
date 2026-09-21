@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""v14 Contract Automation —— 验证 Typed Query = Registry = Record 链路一致性。
+"""v14 Contract Automation —— 对账 Registry 的声明形状与 Typed Query/Record 的一致性。
 
 中期 P2（REFACTOR_PLAN_v14_FULL_UPGRADE Phase 4 Contract Automation）。
 校验规则（括号内为不满足时的级别）：
 
-1. **Registry 覆盖**：有 Typed Query 契约却不在 ``PROVIDERS`` 注册表的 capability 是
-   ERROR（契约指向不存在的命令）；注册表有、契约待补的是 PENDING（警告级，**不阻断**
-   ——当前 155 个业务 capability 中 63 个已有契约，其余是登记在案的待补面）。
+1. **Registry 覆盖**（ERROR）：注册表里每个 capability 必须落在某个**派生**的声明形状内——
+   有专属 Typed Query 契约、或在通用迁移网关/内核专属执行体上。三者之外的才算缺口。
+   旧口径把"注册表有、契约没有"一律记 PENDING（不阻断），而实测那些能力**全部**走迁移网关：
+   这种 PENDING 既掩盖真缺口，又把"要不要补专属契约"说成一个已知尺寸的待办面。
+   规模数字只在报告行里现算现印，散文（含本 docstring）不抄任何计数。
+   反方向照旧是 ERROR：契约指向注册表里不存在的 capability ＝ 对外承诺一条没有命令的查询。
 2. **语义就绪**（ERROR）：每个 Typed Query 契约 ``semantic_ready=True``
    （即同一个 capability 已出现在 canonical Provider 注册表）。
 3. **编译通过**（ERROR）：每个 Typed Query 可经 ``call_payload_from_typed`` + ``QueryPlanner``
    编译为唯一 ``QueryPlan``（Typed Query = Kernel boundary）。
 4. **Domain Record 映射**（PENDING）：每个 Typed Query capability 有对应的
-   Domain Record 类型（Typed Query = Domain Result Model）。当前为 0 项。
+   Domain Record 类型（Typed Query = Domain Result Model）。
 5. **Record 往返无损**（ERROR）：每个 Domain Record ``to_dict`` -> ``from_dict``
    往返保持核心字段（Domain Result Model = Serialization）。
 
@@ -28,7 +31,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -42,126 +45,50 @@ for _root in _ROOTS:
         sys.path.insert(0, str(_root))
         break
 
+
 # --------------------------------------------------------------------------- #
-# 领域 Query 白名单（有 Typed Query 的 capability）
+# 能力覆盖的三个来源：注册表 / 专属契约 / 通用派发面（全部现算，不维护手抄名单）
 # --------------------------------------------------------------------------- #
-_DOMAIN_TYPED: frozenset[str] = frozenset(
-    {
-        # Financial
-        "balance_sheet",
-        "income_sheet",
-        "cash_flow",
-        "financial_abstract",
-        "dividend_history",
-        "stock_valuation",
-        "holder_changes",
-        "holder_num",
-        "free_holders",
-        "capital_changes",
-        "corporate_action",
-        "announcements",
-        "ipo_review",
-        "stock_base_info",
-        "stock_all_performance",
-        "stock_report_dates",
-        # Fund
-        "fund_rank",
-        "fund_holdings",
-        "fund_base_info",
-        "fund_base_info_multi",
-        "fund_manager",
-        "fund_asset_allocation",
-        "fund_period_change",
-        "fund_industry_distribution",
-        "fund_public_dates",
-        # Bond
-        "bond_kline",
-        "bond_base_info",
-        "bond_all_base_info",
-        "bond_realtime",
-        "bond_trades",
-        "bond_today_bill",
-        "bond_history_bill",
-        "convertible_bond",
-        # Futures
-        "futures_kline",
-        "futures_base_info",
-        "futures_realtime",
-        "futures_trades",
-        # Options
-        "options_snapshot",
-        "options_list",
-        "options_trends",
-        # News / Research
-        "news_financial",
-        "research_reports",
-        "research_visits",
-        # Market data
-        "hot_rank",
-        "limit_pool",
-        "northbound",
-        "margin",
-        "longhu",
-        "market_stat",
-        "board_rank",
-        "fund_flow",
-        "stock_changes",
-        "rank",
-        # Search
-        "wencai",
-        "screening",
-        "suggest",
-        "index_constituents",
-        "industry_board",
-        "board_list",
-        "board_member",
-        # Macro
-        "fx_rates",
-        "global_quotes",
-        "f10",
-    }
-)
-
-
-# 不入 Contract Automation 的内部/基础 capability（已有 QuerySpec 或
-# 属于协议层而非 Typed 业务能力）
-_INTERNAL_CAPABILITIES: frozenset[str] = frozenset(
-    {
-        "quotes",
-        "bars",
-        "minute",
-        "trades",
-        "snapshot",
-        "security_count",
-        "security_list",
-        "ex_market_list",
-        "ex_instruments",
-        "ex_quotes",
-        "ex_bars",
-        "goods_quotes",
-        "goods_bars",
-        "mac_quotes",
-        "f10_catalog",
-        "finance",
-        "news",
-    }
-)
-
-
-def _iter_domain_capabilities() -> Iterator[str]:
-    """遍历注册表中所有业务 capability（排除内部基础能力）。"""
+def registered_capabilities() -> set[str]:
+    """PROVIDERS 注册表声明的全部 capability 名。"""
     from tstdx.providers import PROVIDERS
 
-    seen: set[str] = set()
+    out: set[str] = set()
     for pid in PROVIDERS.ids():
-        spec = PROVIDERS.get(pid)
-        for capability in spec.capabilities():
-            if capability in _INTERNAL_CAPABILITIES:
-                continue
-            if capability in seen:
-                continue
-            seen.add(capability)
-            yield capability
+        out |= set(PROVIDERS.get(pid).capabilities())
+    return out
+
+
+def gateway_capabilities() -> set[str]:
+    """不需要专属 Typed Query 的那些：走通用迁移网关或内核专属执行体。
+
+    两个来源都是生产表自身的投影——``MIGRATED_CAPABILITIES`` 由注册表派生的迁移绑定算出，
+    ``DIRECT_BINDINGS`` 里 ``executor_name != "_migrated_capability"`` 的是内核自带的协议
+    原语（quotes/bars/snapshot/security_count/security_list）。这里原本是一份 17 个名字的
+    手抄名单，其中 12 个与迁移表重复：手抄的那部分等于"名单说了算"，某个名字被摘掉绑定或
+    改了名，审计不会有任何反应。
+    """
+    from tstdx.catalog.capability import MIGRATED_CAPABILITIES
+    from tstdx.runtime.executor import DIRECT_BINDINGS
+
+    dedicated = {
+        binding.capability
+        for binding in DIRECT_BINDINGS
+        if binding.executor_name != "_migrated_capability"
+    }
+    return set(MIGRATED_CAPABILITIES) | dedicated
+
+
+def typed_capabilities() -> set[str]:
+    """有专属 Typed Query 契约的 capability（口径见 :func:`_all_typed_queries`）。"""
+    return _typed_capabilities()
+
+
+#: 三个来源各自的规模下限。任一来源解析失败都会把"没有缺口"读成假绿，所以判据
+#: 必须自己盯住尺子的刻度（同 ``scripts/audit_reachability.py`` 的 ``[blind-claims]``）。
+MIN_REGISTERED = 150
+MIN_TYPED_COVERAGE = 50
+MIN_GATEWAY_COVERAGE = 150
 
 
 def _all_typed_queries() -> list[type]:
@@ -231,20 +158,36 @@ def _minimal_instance(cls: type) -> Any:
 # 审计点
 # --------------------------------------------------------------------------- #
 def audit_registry_coverage() -> list[str]:
-    """注册表业务 capability 与 Typed Query 契约一一对应。"""
-    problems: list[str] = []
-    registered = set(_iter_domain_capabilities())
-    typed = _typed_capabilities()
+    """每个注册 capability 要么有专属 Typed Query，要么在已声明的派发面上。
 
-    # 注册表有、但没有 Typed Query 的：允许待补（pending），警告级
-    missing_typed = sorted(registered - typed)
-    # 有 Typed Query、但注册表没有的：错误级（契约指向不存在的 capability）
+    早先这一格对"注册表有、契约没有"只报 PENDING（92 条，不阻断），于是新增一个
+    没形状的能力与把它写进台账是同一个读数。现在按**来源**判：能被三个派生集合
+    （注册表 / Typed 契约 / 通用派发面）覆盖之外的那个能力，才是真缺口，按 ERROR 阻断。
+    规模下限是这条判据的自检——三个来源任一解析失败都会让"零缺口"变成假绿。
+    """
+    problems: list[str] = []
+    registered = registered_capabilities()
+    typed = typed_capabilities()
+    gateway = gateway_capabilities()
+
+    uncovered = sorted(registered - typed - gateway)
     orphan_typed = sorted(typed - registered)
 
-    for cap in missing_typed:
-        problems.append(f"PENDING: registry capability {cap!r} 无 Typed Query 契约")
+    for cap in uncovered:
+        problems.append(
+            f"ERROR: registry capability {cap!r} 既无 Typed Query 契约，也不在任何派发面上"
+        )
     for cap in orphan_typed:
         problems.append(f"ERROR: Typed Query capability {cap!r} 不在 PROVIDERS 注册表")
+    for label, got, floor in (
+        ("注册 capability", len(registered), MIN_REGISTERED),
+        ("Typed Query 契约", len(typed), MIN_TYPED_COVERAGE),
+        ("通用派发面", len(gateway), MIN_GATEWAY_COVERAGE),
+    ):
+        if got < floor:
+            problems.append(
+                f"ERROR: {label}只算出 {got} 个（下限 {floor}）：来源没解析出来，覆盖结论不可信"
+            )
     return problems
 
 
@@ -389,12 +332,18 @@ _AUDITS: tuple[tuple[str, Callable[[], list[str]]], ...] = (
 
 
 def run(ci: bool = False) -> int:
-
     lines: list[str] = []
+    registered = registered_capabilities()
+    typed = _typed_capabilities()
+    gateway = gateway_capabilities()
     lines.append("=" * 64)
     lines.append("v14 Contract Automation 审计")
     lines.append(f"{len(_all_typed_queries())} 个 Typed Query 契约")
-    lines.append(f"{len(set(_iter_domain_capabilities()))} 个注册业务 capability")
+    lines.append(f"{len(registered)} 个注册 capability")
+    lines.append(
+        f"形状来源：{len(typed)} 个有专属契约 / {len(gateway)} 个在通用派发面 / "
+        f"{len(registered - typed - gateway)} 个无任何声明形状（这一格才是缺口）"
+    )
     lines.append("=" * 64)
 
     errors: list[str] = []
@@ -422,7 +371,10 @@ def run(ci: bool = False) -> int:
         for w in warnings:
             lines.append(f"  {w}")
     else:
-        lines.append("PASS: 全链路一致（Registry = Typed = Runtime = Record）")
+        lines.append(
+            f"PASS: {len(registered)} 个注册 capability 全部落在声明形状之内"
+            f"（专属 Typed Query {len(typed)} ∪ 通用派发面 {len(gateway)}）"
+        )
     lines.append("=" * 64)
 
     print("\n".join(lines))

@@ -634,10 +634,6 @@ def _typed_contracts() -> int:
     return len(_contract_audit()._all_typed_queries())
 
 
-def _business_capabilities() -> int:
-    return len(set(_contract_audit()._iter_domain_capabilities()))
-
-
 def _change_types() -> int:
     from tstdx.web.fundflow import EastmoneyStockChangesSource
 
@@ -1031,20 +1027,23 @@ def test_code_comments_about_change_types_match_the_enum() -> None:
 
 
 #: 审计脚本自述的规模数字同样是抄本（F-25 让它"描述它真正跑的门禁"，但没对账数字）。
-_AUDIT_SELF_FACTS = re.compile(r"当前\s*(\d+)\s*个业务 capability 中\s*(\d+)\s*个已有契约")
+#: V18 第 7 轮把覆盖口径改成三个派生集合之后，散文里**不该再有**计数：这条判据因此
+#: 从"抄的数字对不对"换成"有没有再抄"，并留下一条反向自检——"没有抄本"必须是有人
+#: 在算才有意义，否则它只是"没人算"的另一种说法。
+_AUDIT_DOCSTRING = re.compile(r'"""(.*?)"""', re.S)
+_AUDIT_COUNT_PROSE = re.compile(r"\d+\s*个")
 
 
 def test_contract_audit_docstring_numbers_match_the_audit() -> None:
     text = (ROOT / "scripts" / "contract_audit.py").read_text(encoding="utf-8")
-    matched = _AUDIT_SELF_FACTS.search(text)
-    assert matched, "contract_audit 不再自述业务 capability 与契约数，门禁失效"
-    caps, contracts = int(matched.group(1)), int(matched.group(2))
-    assert caps == _business_capabilities(), (
-        f"contract_audit 自述 {caps} 个业务 capability，真相源是 {_business_capabilities()}"
-    )
-    assert contracts == _typed_contracts(), (
-        f"contract_audit 自述 {contracts} 个契约，真相源是 {_typed_contracts()}"
-    )
+    doc = _AUDIT_DOCSTRING.search(text)
+    assert doc, "contract_audit 不再有名实相符的模块 docstring，门禁失效"
+    copied = [m.group(0) for m in _AUDIT_COUNT_PROSE.finditer(doc.group(1))]
+    assert not copied, f"contract_audit 的 docstring 又抄了计数：{copied}（口径应现算在报告行里）"
+    ca = _contract_audit()
+    assert len(ca.registered_capabilities()) >= ca.MIN_REGISTERED
+    assert len(ca.typed_capabilities()) >= ca.MIN_TYPED_COVERAGE
+    assert len(ca.gateway_capabilities()) >= ca.MIN_GATEWAY_COVERAGE
 
 
 def test_typed_query_denominator_is_not_a_hand_copied_list() -> None:
