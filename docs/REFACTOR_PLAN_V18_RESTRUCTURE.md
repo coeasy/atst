@@ -7,7 +7,9 @@
 > 第 4 轮把同一根轴补到命令行面（`--flag` 注册了必须有人读），并当场反掉自己上一轮写下的
 > 过度承诺（提交 `7fe7e54`，读数见 §13）；第 5 轮把它补到机器对机器的声明面（HTTP 路由形参与
 > MCP `inputSchema` 属性声明了必须有人读），新尺子第一件事就抓到一条教人吃 `ModuleNotFoundError`
-> 的部署命令（提交 `788e533`，读数见 §14）；
+> 的部署命令（提交 `788e533`，读数见 §14）；第 6 轮把同一把尺子量到**判据自己的台账**上
+> （V18-C4：可达性豁免理由点名的公共 API 名必须真在模块里），当场修掉台账里 5 处过期写法——
+> 点到不存在的符号 2 处、"等 N 个"这类核不了的计数 3 处（提交 `b4c3bc8`，读数见 §15）；
 > 其余阶段仍待按 §6 的 D7–D12 裁决推进。
 > §0 的基线是**方案取证轮**的数，§9 是**执行轮**的数，两者环境标签相同（3.12.13）但不混用。
 > **授权尺度（本轮用户已答，2026-09-20）**：
@@ -299,6 +301,12 @@ C3 **`tstdx/client/` 分包**（R-3）：内核侧入口留 `tstdx/client/`，�
 C4 **豁免类别加价值判据**（R-7）：`_reach_allow.txt` 每条豁免必须写"谁在链外使用它"（真实调用方：
 用户可见 API 名 + 消费它的 docs/cookbook 篇 + 测试文件），三类缺一即 `[thin]` 红；
 `deprecation.py` 按 D3 处置（默认删除 + 防回潮守卫）。
+> **第 6 轮落地口径更正**：前半截按**派生判据**而非"三类缺一"的形状判据落地——
+> "三类缺一即 `[thin]`"要求先定义"哪一段算 API 名 / 哪一段算 docs 篇"，那正是 §4 第二类
+> （形状枚举，换个写法就复活）要删的东西。实际写进 CI 的是：反引号点名的符号必须在被豁免模块的
+> 静态命名空间里（`[dead-claim]`），全清单点名总数低于 30 即判据自报失明（`[blind-claims]`）；
+> "消费它的文件"那一维早就由 `[dead-pointer]`/`[weak-pointer]` 盯住（路径存在且真触达），不重复建。
+> 读数与 5 处过期写法的修正见 §15；`deprecation.py` 的 D3 处置**未做**。
 
 **验收**：八张面与派生源的一致性由**一条**框架判据守；`tstdx/` 根级与 `client/` 包内命名空间由白名单
 钉住（沿用 F-4 的机制）；删除的 curated 清单逐条列名并给"覆盖面不减"证明。
@@ -418,6 +426,12 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b5step/probe_{g,h,i,j}.py`、`probe_readings.log`、`probe_readings_step.log` | 判据五取证 + 三个"量过但不立"的候选（H1/H2/I）计数；前者在 main 工作树跑、后者在步骤树内重跑 |
 | `wt_v18b5ship/run_gates.sh`、`gates_ship.log` | **提交树**（`788e533`，被跟踪文件 0 改动）九门禁复测 |
 | `wt_v18b5ship/fulltest_ship.log` + `.xml` | 提交树离线全量与 junit 计数；与步骤轮逐格相同 |
+| `wt_v18b6step/run_gates.sh`、`gates_v18b6.log` | 第 6 轮步骤轮（`7420d9d` + 本步 3 文件）环境与九门禁逐条 RC 与摘要行 |
+| `wt_v18b6step/fulltest_v18b6.log` + `.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数 |
+| `wt_v18b6step/mutate_v18b6.py` + `.log` | 第 6 轮 7 条反证变异（C1–C7）：每条 `rc=1`、`turned_red=True` 且 `restored=True`；C7 走的是 `--strict` 那条路 |
+| `wt_v18b6step/probe_{k,l,m}.py`、`probe_readings_step.log` | 豁免台账的第三种口径探针（M）+ 配置面两把"量过不立"的候选（K/L）在步骤树内的读数 |
+| `wt_v18b6ship/run_gates.sh`、`gates_ship.log` | **提交树**（`b4c3bc8`，被跟踪文件 0 改动）九门禁复测 |
+| `wt_v18b6ship/fulltest_ship.log` + `.xml` | 提交树离线全量与 junit 计数；与步骤轮的唯一差异是 `transport/pool.py` 一行（§15 ship 段） |
 
 ## 8. 本方案不做什么（避免被读成"又要一轮无限重构"）
 
@@ -791,6 +805,105 @@ mypy 0 行、ruff check `All checks passed!`、ruff format 445 files）；离线
 **本轮明确未做**：候选 H1/H2/I 三把尺子（读数见上表，量过而不立）；`chain_docs()` 之外的文档（归档计划、
 并行会话在途台账）不纳入任何命令/引用判据；`docs/FAQ.md` 其余段落未逐条复核（本轮只动部署与监控两段）；
 §2 G5 的**声明面**改动（与 F-66/F-75 同批裁决）；C1/C2/C3、D1–D4、E1–E4、F2、F3、F4/G3、G2 的 D10 裁决；
+CHANGELOG `[Unreleased]` 三条登记仍因并行会话该文件未提交而押后。
+
+## 15. 执行记录（续）
+
+### 第 6 轮｜轴的第四次延伸：门禁自己的台账也在"声明了就得兑现"之列（提交 `b4c3bc8`，3 个文件）—— V18-C4 前半
+
+前四轮把这根轴量在**产品**身上：第 3 轮函数入参、第 4 轮 `--flag`、第 5 轮 HTTP 形参与 MCP
+`inputSchema`。本轮把它量到**判据自己的账本**上——C4 要的就是这一格。
+`scripts/_reach_allow.txt` 的 16 条豁免记录是 reachability `--strict` 那句
+"190 模块 / 174 可达 / 16 豁免 / 无未登记孤儿"的全部依据；`--strict` 此前已经钉住记录指向的模块存在、
+不过期、理由够长、理由里的仓内路径存在且**真的触达**被豁免模块（`[dead-pointer]`/`[no-pointer]`/`[weak-pointer]`）。
+**没钉的只剩理由里那些符号名**：每条理由都在说"这个模块的公共入口是 `X`/`Y`"，而这些名字一格都不核。
+它比代码过期得慢、也比代码隐蔽：类拆并或改名之后，路径还在、理由够长、指针也还触达，
+白名单其余各类缺陷全绿，
+而照着台账那句话去 `from tstdx.catalog.provider_contract import CapabilityContract` 的人拿不到任何东西——
+本轮实测这个名字**在本仓今天的代码里根本不存在**（`grep -E "(^|[^A-Za-z_])CapabilityContract"` 在 `tstdx/` 下
+只命中 `ProviderCapabilityContract` 这个真名的子串）。
+
+| 改动 | 内容 |
+|---|---|
+| `scripts/audit_reachability.py`（新增两类缺陷，接入 `main()`） | `_SYMBOL_CLAIM` 抽理由里**反引号点名**的裸标识符（含 `/` `.` 或以 `.py`/`.md` 结尾的不算，指针那几格已经管它们）；`_module_namespace()` 从被豁免模块文件的 AST 现算静态可见的顶层名字：定义、赋值名、`import`/`from` 别名（含 `as`）、`if`/`try` 分支里的条件与兜底导入、以及 `__all__` 的字面量条目；`_claim_defects()` 逐格比对，报 `[dead-claim]`，并在**全清单点名的符号总数 < `MIN_SYMBOL_CLAIMS`（30）** 时另报 `[blind-claims]`——记号被批量擦掉时判据自己喊红，不许把"没人声明"读成"没缺陷" |
+| `scripts/_reach_allow.txt`（16 条，其中 15 条带点名） | 49 格公共 API 名全部加反引号（可核口径），并修掉 5 处过期写法（下表）；文件头补一段"记号约定"，说明反引号＝"本模块导出什么"、散文＝"它在讲什么"，两者混成一个口径会误报 |
+| `tests/architecture/test_reachability_allowlist.py`（+5 格，22 格全绿） | 真实清单普查（含 `total >= 40` 证据面下限）＋ 四格 planted：点名的符号不存在→`[dead-claim]`、`from .impl import X` 再导出算命名空间、`__all__` 条目算合法声明（`__getattr__` 动态给名那一族不会误报）、同一份记录在 `min_claims=0` 下绿而下限默认值红→**下限红的是规模不是真假** |
+
+**修掉的 5 处过期写法**（分布在 4 行、5 条记录：点名到不存在的符号 2 处 + "等 N 个"这类核不了的计数 3 处；
+都在本轮之前就已与代码不符，`git show 7420d9d:scripts/_reach_allow.txt` 可回查）：
+
+| 记录 | 原写法 | 现写法（实测） |
+|---|---|---|
+| `tstdx.catalog.provider_contract` | `ProviderIdentity`/**`CapabilityContract`** | `ProviderIdentity`/`ProviderCapabilityContract`/`ProviderExecutionContract`；消费方从"三个文件"改成点名的两份真实测试，并补 `test_namespace_layout.py` 钉迁移后位置 |
+| `tstdx.profile.detect` | `detect_profile`/`BUILTIN_PROFILES` | `detect`/`BUILTIN_PROFILES`，并写明探测入口 `tstdx.profile.detect_profile` 的真身在 `tstdx/reader/profile.py:670`、由包 `__init__` 再导出 |
+| `tstdx.trade.errors` | "tests/trade/ **两个文件**断言其语义" | 点名 `tests/trade/test_frames.py` 与 `tests/trade/test_simulator.py`（指针口径要求可核文件名，"两个文件"核不了） |
+| `tstdx.charset` / `tstdx.profile` | "… 等 11 项" / "… 等 14 个测试文件引用" | 改成"完整清单见 charset 包 `__init__` 的 `__all__`" / 只留可核的那一份测试——**"等 N 个"这类手抄计数正是第 3 轮 R-10 的口径**，本轮在自己台账上把它清掉 |
+
+**为什么是"反引号 + 静态 AST"而不是"括号里的名字 + `importlib` 真导入"**：另一把探针（`probe_m.py`）按后一种口径
+在 pre-fix 清单上能认出 14/16 条记录、43 个名字，并 flag 出 3 条记录 5 个"不存在"的名字——其中
+`tstdx.charset.encoding` 那条点名的 `GB18030`/`GBK`/`Big5` **3/3 全是误报**（那句散文讲的是"优先级表里含哪些
+编码名"，不是"本模块导出什么"，`hasattr` 必然为假），另外 2 个才是本轮真修的 `detect_profile` 与
+`CapabilityContract`。两种口径因此**互盲**：修完之后同一把括号探针只剩 1 条记录 2 个名字（16 条里的 15 条它再也看不见），
+而反引号口径在 pre-fix 清单上同样什么都抽不出来。选反引号是因为它能把"导出什么"与"在讲什么"分开——
+这正是括号口径做不到的那件事。改成静态命名空间还有一条硬理由：CI（ubuntu + py3.11）不装
+`[server]`/`output` 的 extras，`importlib.import_module("tstdx.output")` 在那里直接抛，基于导入的尺子在 CI 上是瞎的
+（本地能跑是因为工作树装了全套 extras，这正是 §14 记下的环境标签不可混用问题）。
+
+**两把"量过、按数字不立"的配置面候选**（步骤树内读数，`wt_v18b6step/probe_readings_step.log`）：
+
+| 候选 | 实测 | 不立的理由 |
+|---|---|---|
+| K：`tstdx/config/schema.py` 声明的字段必须在包内被读到 | 声明面 6 段 / 22 字段；K1 严格（schema 外的受体属性读取）、K2（+字符串键）、K3（含 schema 自身）**三档 unread 全为 0** | 读取集是**按名字**在全包属性名并集里查的，`timeout` 这种名字分不清 `cfg.timeout` 与 `sock.timeout` ⇒ "0 未读"是口径必然，不是事实断言。零发现＋零分量的判据就是 §4 第二类要删的形状 |
+| L：把配置对象按"段 → 字段"的链式读取来核 | 5 段 / 17 字段，包内属性链只读到 8 对；`rate_limit` 5/5、`web` 4/4 报"未见" ⇒ **9 格全部误报** | 误报来源是两种真实写法，都能指到行：整段对象原样传出去（`transport/pool.py:93` 把 `cfg.rate_limit` 交给 `SessionRateLimiter.from_config`，字段在形参名上读，`ratelimit.py:285-290`），以及先落到别名（`web/__init__.py:391` 的 `cfg.enabled_sources`）。要修就得维护"哪些受体算同一个对象"的跨函数别名图——那是第 4 轮否掉的形状，不是派生判据 |
+
+**步骤轮**（`wt_v18b6step`，detached @ `7420d9d` + 本步 3 文件；`audit_reachability.py` md5 `65eccf6e…`、
+`_reach_allow.txt` `c9e00ad9…`、`test_reachability_allowlist.py` `b7e662be…`，与 main 工作树逐格相同）：
+环境探针 + 九项确定性门禁 G1–G9 共 10 次调用**全部 rc=0**（`gates_v18b6.log`：`3.12.13 … [MSC v.1944 64 bit]`、
+originality `Total: 191 / Original: 191 / License OK: 191 / Header OK: 191 / Suspicious: 0 / External imports: 17`、
+spec_audit `"coverage_pct": 100.0`、golden_audit `[GATE] all L1 verified commands have real samples (OK)` + 既有
+`suspect_short` WARN 1 条（`0x537 4B<12B x3`）、**reachability `模块总数: 190 可达: 174 白名单豁免: 16` +
+`无未登记孤儿 ✓`（新增两类缺陷在同一格里，0 条）**、contract_audit `63 个 Typed Query 契约` + 92 待办 rc=0、
+docs links `83 files`、mypy 0 行、ruff check `All checks passed!`、ruff format `445 files already formatted`）。
+新判据自身读数：**16 条记录 / 15 条带点名 / 49 格符号 / `[dead-claim]` 0 条 / 下限 30**。
+离线全量进度走到 `[100%]`、junit **3655 项 / 0 失败 / 0 错误 / 7 跳过**、154.899s；覆盖率 **81.73%**
+（TOTAL 22 440 stmt / 3 523 miss / 5 996 branch / 1 001 partial），`Required test coverage of 77.0% reached`，
+**阈值未动**。判据规模 3650 → **3655（+5）**，无删除。环境标签与前五轮相同：`.venv` cpython-3.12.13、`WIN-PM`。
+
+**反证证据**（`wt_v18b6step/mutate_v18b6.log`，7 条全部 `rc=1`、`turned_red=True` 且 `restored=True`）：
+
+| 变异 | 动了什么 | 结果 |
+|---|---|---|
+| C1 | 命名空间解析恒空（所有点名都算不存在） | 真实清单普查红 ⇒ 尺子坏在自己身上时也会喊 |
+| C2 | 反引号记号解析不出来（判据失明） | 普查红 ⇒ `MIN_SYMBOL_CLAIMS` 那条下限真的在兜 |
+| C3 | 下限抹成 0 | planted 的"薄点名"格红 ⇒ 下限与符号真假是两条独立的红 |
+| C4 | 真实清单里把一个点名的公共 API 改成不存在的名字 | 普查红 |
+| C5 | 把本轮刚改对的那格退回改错前的形状（`CapabilityContract`） | 普查红 ⇒ **本轮修的那一格现在有了门禁**，改回去就红 |
+| C6 | 改**代码**：把被点名的契约类连它的 `__all__` 条目一起改名，清单不动 | 普查红 ⇒ 判据读的是当前模块，不是清单自证 |
+| C7 | CI 路径：同一格缺陷交给 `--strict` | `rc=1` + `[ALLOW-DEFECT] [dead-claim] tstdx.profile.presets：…` ⇒ 门禁与测试是同一套口径 |
+
+**C6 的来历值得记一句**：最初只改 `class ProviderIdentity` 那一行时它是**绿的**——`__all__` 里那串
+`"ProviderIdentity",` 还留着，按命名空间口径这一格仍然"有这个名字"。这不是判据漏了本轮要的账
+（"清单说它有、代码里没有"这一格已经成立），而是它管不到"改了实现忘了改 `__all__`"——那属 F-4 的
+命名空间白名单与 contract_audit 的域，不该由豁免台账代管。变异因此加宽成两处改动，并把这句盲区写在这里而不是偷偷改掉判据。
+
+**ship 轮（提交树复测，同一解释器与工作树参数）**：`b4c3bc8` 落到 main 后另起隔离工作树 `wt_v18b6ship`
+再量一遍，`head=b4c3bc8`、被跟踪文件 **0 处改动**。10 次调用**全部 rc=0**，摘要行与步骤轮逐字相同
+（`gates_ship.log`：`Total: 191 / Suspicious: 0`、`coverage_pct 100.0`、`模块总数: 190 / 可达: 174 / 白名单豁免: 16 /
+无未登记孤儿 ✓`、`63 个 Typed Query 契约`、docs links 83 files、mypy 0 行、ruff check `All checks passed!`、
+ruff format 445 files）；离线全量 junit **3655 / 0 失败 / 0 错误 / 7 跳过**、160.737s、覆盖率 **81.72%**
+（TOTAL 22 440 / 3 525 / 5 996 / 1 002，`Required 77.0% reached`）。两棵树的 `scripts/`、`tests/architecture/`
+逐文件比对（`diff -r --strip-trailing-cr`）**内容一致**（仅工作树检出 CRLF、提交树 LF）。
+两轮之间 0.01pp 的差**只有 `tstdx/transport/pool.py` 一行**：步骤轮 111 miss/36 partial，提交轮 113/37，
+TOTAL miss 3 523→3 525、partial 1 001→1 002——这正是 §14 末段第三次全量亲自量到的那个计时抖动文件
+（同树连跑就会在 ±1～2 行之间跳）。本轮改动全在 `scripts/` 与 `tests/architecture/`，`tstdx/` 一行未动，
+分母恒为 22 440。结论按 §14 已确立的口径写：**该差值落在 pool 的抖动行上，与本轮改动无因果**，
+覆盖率真值仍以 CI 为准，本轮不据此重钉基线。
+
+**本轮明确未做**：C4 的后半截——`tstdx/deprecation.py` 按 D3 的处置（默认删除 + 防回潮守卫）没做，
+本轮只把它的台账格子说清楚；配置面 K/L 两把尺子（读数见上表，量过而不立）；`tstdx.trade` 那条记录
+仍是"包级理由 + 零反引号点名"（下限有余量：49 ≫ 30，所以它绿得有依据，但也确实没被符号口径盯住）；
+`_module_namespace()` 不核"名字在但形状/语义与理由描述不符"（比如理由说是类、实为函数）；
+§2 G5 的声明面改动（与 F-66/F-75 同批裁决）；C1/C2/C3、D1–D4、E1–E4、F2、F3、F4/G3、G2 的 D10 裁决；
 CHANGELOG `[Unreleased]` 三条登记仍因并行会话该文件未提交而押后。
 
 
