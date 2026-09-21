@@ -1307,3 +1307,78 @@ def test_every_documented_cli_example_parses() -> None:
         except Exception as exc:  # noqa: BLE001 - 解析期不应抛别的异常
             broken.append(f"{rel}: {raw} → {type(exc).__name__}: {exc}")
     assert not broken, "文档里的 CLI 示例无法解析：\n" + "\n".join(broken)
+
+
+# --------------------------------------------------------------------------
+# 文档里的**命令形状**点名的模块/对象必须可解析（V18 第 5 轮）
+# --------------------------------------------------------------------------
+
+#: 上一节钉的是 `tstdx <子命令>` 这一类 CLI 示例；这一节钉"把 tstdx 的某个模块交给外部
+#: 解释器"的写法：`python -m tstdx.x.y`、`uvicorn tstdx.x.y:attr`、`from/import tstdx.x`。
+#: 反引号点号判据看不见它们——那条正则要求**整格反引号恰好是一个点号路径**，而命令行里的
+#: 引用后面跟着 `:attr` 与参数，还多半躺在代码围栏里。`docs/FAQ.md` 的部署段就因此教了
+#: 用户一条当场 `ModuleNotFoundError` 的命令（`tstdx.integration.http_server` 早已不存在，
+#: 真身是 `runtime_http.create_runtime_app`），本轮全量扫描 101 处里唯一的一处。
+#:
+#: **为什么不扩成"所有点号引用都扫"**：取证探针按那个口径扫全部活文档得到 20 处命中，19 处是
+#: `tstdx.git`（URL 尾巴）、`tstdx.toml`（文件名）与迁移/发布说明里的**否定句**（"不再有
+#: `tstdx.compat`"）——第 4 轮探针 C 那条"散文里对否定是瞎的"在这里原形重现。命令形状没有
+#: 叙述语境（用户照着敲），所以这一格不需要任何豁免名单。
+_CMD_TARGET = re.compile(
+    r"(?:python(?:\d\.\d+)?|uvicorn)\s+(?:-m\s+)?[\"']?"
+    r"(tstdx(?:\.[A-Za-z_][A-Za-z0-9_]*)+)(?::([A-Za-z_][A-Za-z0-9_]*))?"
+)
+_IMPORT_TARGET = re.compile(r"\b(?:from|import)\s+(tstdx(?:\.[A-Za-z_][A-Za-z0-9_]*)*)")
+
+
+def _command_targets(text: str) -> list[tuple[str, str | None]]:
+    """正文里以命令/导入形状点名的 ``(模块, 可选对象名)``；对象名来自 `module:attr` 写法。"""
+    found: list[tuple[str, str | None]] = [
+        (m.group(1), m.group(2)) for m in _CMD_TARGET.finditer(text)
+    ]
+    found += [(m.group(1), None) for m in _IMPORT_TARGET.finditer(text)]
+    return found
+
+
+def _target_offense(module: str, attr: str | None) -> str | None:
+    """模块导得进来、且 `:attr` 点名的对象真在，才算这条命令跑得起来。"""
+    try:
+        obj: object = importlib.import_module(module)
+    except Exception as exc:  # noqa: BLE001 - 报告而非中断
+        return f"{module} 导入失败（{type(exc).__name__}）"
+    if attr is not None and not hasattr(obj, attr):
+        return f"{module} 里没有 {attr}"
+    return None
+
+
+def test_documented_command_targets_resolve() -> None:
+    offenders: list[str] = []
+    checked = 0
+    for path in chain_docs():
+        text = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT).as_posix()
+        for module, attr in _command_targets(text):
+            checked += 1
+            why = _target_offense(module, attr)
+            if why:
+                offenders.append(f"{rel}: {why}")
+    assert checked >= 60, f"只扫到 {checked} 处命令/导入形状，判据自身失明"
+    assert offenders == [], "文档教了跑不起来的命令：\n" + "\n".join(sorted(set(offenders)))
+
+
+def test_the_command_target_ruler_sees_a_planted_dead_target() -> None:
+    """正控：形状必须是"命令里的模块引用"，且 `:attr` 那一半也在射程内。"""
+    planted = (
+        "```bash\n"
+        "docker run -p 8000:8000 tstdx python -m uvicorn "
+        "tstdx.integration.http_server:create_app --factory\n"
+        "```\n"
+    )
+    targets = _command_targets(planted)
+    assert targets == [("tstdx.integration.http_server", "create_app")], targets
+    offense = _target_offense(*targets[0])
+    assert offense is not None and "http_server" in offense, offense
+    # 反面对照：写对了就不许报，否则"零缺陷"是恒报报出来的
+    assert _target_offense("tstdx.integration.runtime_http", "create_runtime_app") is None
+    # 模块存在但对象名是抄错的，同样必须报
+    assert _target_offense("tstdx.integration.runtime_http", "no_such_app") is not None

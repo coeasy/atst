@@ -103,12 +103,14 @@ quotes = get_quotes(["sh600519"], source="sina")
 ```bash
 docker build -t tstdx .
 docker run --rm tstdx tstdx --help
-# HTTP 网关
-docker run -p 8000:8000 tstdx python -m uvicorn tstdx.integration.http_server:create_app --factory
+# HTTP 行情网关（镜像的 CMD 是 --help，起服务要显式给命令）
+docker run -p 8000:8000 --rm tstdx tstdx serve --bind 0.0.0.0 --port 8000
+# 等价写法：把 app 直接交给 uvicorn（需 `pip install "tstdx[server]"`）
+docker run -p 8000:8000 --rm tstdx python -m uvicorn tstdx.integration.runtime_http:create_runtime_app --factory --host 0.0.0.0
 ```
 
 ### Q: 如何监控？
 
-- `GET /api/v1/system/metrics` — Prometheus 文本格式
+- `PrometheusExporter` — 独立 HTTP 服务，`GET /metrics` 文本格式（缺省 `127.0.0.1:9090`）
 - `StatsdExporter` — UDP 推送
-- `OtelExporter` — OTLP JSON 导出
+- `OtelExporter` — OTLP JSON 导出（`endpoint` 须显式给出，例如 `http://localhost:4318/v1/metrics`）

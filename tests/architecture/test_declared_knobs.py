@@ -1,17 +1,18 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""声明出来的旋钮必须真的被拧动（V18 第 3–4 轮）。
+"""声明出来的旋钮必须真的被拧动（V18 第 3–5 轮）。
 
-四格同族形状，都是"文档/注册面对读者做了一个代码里没有的承诺"：
+五格同族形状，都是"文档/注册面对读者做了一个代码里没有的承诺"：
 
 * ``Parameters`` 段点名一个入参，函数体从头到尾没读它——调用方拧了个空开关，
   比根本没有这个开关更糟（他以为已经关掉前缀归一了）；
 * 进程级惰性单例自称"线程安全"，实际是无锁 check-then-act；
 * "共 N 个（见 :data:`X`）"里的 N 与被点名集合的真值不符；
-* CLI 面 ``add_argument`` 注册一个 ``--flag``，处理链路里没有人读它的 dest（第 4 轮）。
+* CLI 面 ``add_argument`` 注册一个 ``--flag``，处理链路里没有人读它的 dest（第 4 轮）；
+* wire 面（HTTP 路由签名、MCP ``inputSchema``）公开声明一个字段，处理函数却不读它（第 5 轮）。
 
-四者都能用 AST + 现算真值判掉，因此这里是**派生**判据而不是抄来的名单。
+五者都能用 AST + 现算真值判掉，因此这里是**派生**判据而不是抄来的名单。
 """
 
 from __future__ import annotations
@@ -20,8 +21,10 @@ import ast
 import contextlib
 import importlib
 import importlib.util
+import inspect
 import re
 import sys
+import textwrap
 import threading
 from pathlib import Path
 
@@ -492,3 +495,136 @@ getattr(args, "another_one", None)
     assert set(_dests_of(tree)) == {"sentinel_never_read", "explicit_dest"}, _dests_of(tree)
     assert _reads_of(tree) == {"explicit_dest", "another_one"}, _reads_of(tree)
     assert sorted(set(_dests_of(tree)) - _reads_of(tree)) == ["sentinel_never_read"]
+
+
+# --------------------------------------------------------------------------- #
+# 判据五：wire 面上声明的入参，处理函数必须读它（第 5 轮）
+# --------------------------------------------------------------------------- #
+
+#: HTTP 路由与 MCP 请求 schema 的共同形状：**声明即被接受**。FastAPI 把路由签名的形参公开成
+#: 查询串参数，``wire_fields`` 又拿同一份签名 / 同一份 ``inputSchema`` 当拒绝白名单——于是加进
+#: 签名（或 schema）却无人读的字段能顺利通过闸口，调用方那边就成了"我传了，它没理我"。比 CLI
+#: 那一格更隐蔽：CLI 的 ``--help`` 至少还在手边，wire 面上它看起来就是一个生效的开关。
+#:
+#: 与 ``tests/runtime/test_wire_declared_fields.py``（F-47）的分工：那一份管**反方向**——
+#: 请求里出现了未声明的字段必须当场被拒，并核对 body/params 白名单与分派读取点的差；
+#: 本格管"声明了的字段有没有真的被读"。两面合起来才是那句"要么被读走，要么被拒"。
+HTTP_MODULE = PKG / "integration" / "runtime_http.py"
+_ROUTE_DECOS = ("app.get(", "app.post(", "app.put(", "app.delete(")
+#: 只有这些变量名上的字符串取值算"读了请求体的这个键"。理由与判据四相同：声明侧的
+#: ``_str_prop("...")`` 与 ``{"type": "string"}`` 都不是这种形状，注册无法自证为被读取。
+_BODY_DICT_NAMES = frozenset({"args", "params", "payload", "data", "options"})
+
+_PLANTED_HTTP_SOURCE = """
+def create_app():
+    @app.get("/v13/sentinel")
+    def sentinel_route(symbol: str, sentinel_never_read: str = "", period: str = "day"):
+        return {"symbol": symbol, "period": period}
+
+    return app
+"""
+
+
+def _route_handlers(tree: ast.AST) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    """被 ``app.get/post/put/delete`` 装饰的那几个函数（FastAPI 路由）。"""
+    out: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        decos = [ast.unparse(d) for d in node.decorator_list]
+        if any(d.startswith(_ROUTE_DECOS) for d in decos):
+            out.append(node)
+    return out
+
+
+def _params_of(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    return [a.arg for a in fn.args.args if a.arg not in {"self", "cls"}]
+
+
+def _body_reads(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    """函数体里以**加载**方式出现的名字——形参被用过才算被读。"""
+    return {n.id for n in ast.walk(fn) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+
+
+def _http_scan(source: str) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """源码 -> (每个路由的形参集, 每个路由的读取集)。"""
+    declared: dict[str, set[str]] = {}
+    reads: dict[str, set[str]] = {}
+    for fn in _route_handlers(ast.parse(source)):
+        declared[fn.name] = set(_params_of(fn))
+        reads[fn.name] = _body_reads(fn)
+    return declared, reads
+
+
+def _dict_keys(fn) -> set[str]:
+    """handler 函数体里 ``<请求体字典>.get("K")`` / ``<请求体字典>["K"]`` 的键集合。"""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    keys: set[str] = set()
+    for node in ast.walk(tree):
+        const: ast.Constant | None = None
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id.lower() in _BODY_DICT_NAMES
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+        ):
+            const = node.args[0]
+        elif (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.value, ast.Name)
+            and node.value.id.lower() in _BODY_DICT_NAMES
+            and isinstance(node.slice, ast.Constant)
+        ):
+            const = node.slice
+        if const is not None and isinstance(const.value, str):
+            keys.add(const.value)
+    return keys
+
+
+def _wire_unread(declared: dict[str, set[str]], reads: dict[str, set[str]]) -> list[str]:
+    """两面共用的谓词：声明了却没进读取集的 ``位置.字段``。"""
+    return sorted(
+        f"{where}.{field}"
+        for where, fields in declared.items()
+        for field in fields
+        if field not in reads.get(where, set())
+    )
+
+
+def test_every_http_route_param_is_read_by_the_handler() -> None:
+    """HTTP 是对外 10 格路由的用户面：签名里每个形参都会被公开成查询参数，必须有人读。"""
+    declared, reads = _http_scan(HTTP_MODULE.read_text(encoding="utf-8"))
+    total = sum(len(v) for v in declared.values())
+    assert total >= 20, f"HTTP 面只解析出 {total} 个路由形参，判据自身失明"
+    unread = _wire_unread(declared, reads)
+    assert not unread, "这些路由形参被公开声明却无人读取（传了等于没传）：" + ", ".join(unread)
+
+
+def test_every_mcp_declared_property_is_read_by_its_handler() -> None:
+    """MCP 的 ``inputSchema`` 既对外声明又是拒绝白名单：声明的属性必须真的进执行链路。"""
+    from tstdx.integration.mcp._tools_spec import TOOLS
+
+    assert len(TOOLS) >= 5, f"MCP 工具清单只读到 {len(TOOLS)} 张，判据自身失明"
+    declared = {t.name: set(t.inputSchema.get("properties", {})) for t in TOOLS}
+    reads = {t.name: _dict_keys(t.handler) for t in TOOLS}
+    total = sum(len(v) for v in declared.values())
+    assert total >= 20, f"MCP 面只解析出 {total} 个声明属性，判据自身失明"
+    unread = _wire_unread(declared, reads)
+    assert not unread, "这些 MCP 属性被 schema 声明却无人读取：" + ", ".join(unread)
+
+
+def test_the_wire_ruler_sees_planted_unread_fields() -> None:
+    """正控：两面各自塞一个"声明了没人读"的字段，谓词必须当场点名它。"""
+    declared, reads = _http_scan(_PLANTED_HTTP_SOURCE)
+    assert declared == {"sentinel_route": {"symbol", "sentinel_never_read", "period"}}, declared
+    assert _wire_unread(declared, reads) == ["sentinel_route.sentinel_never_read"]
+    # MCP 侧同一谓词：只报没读的那个，读了的一个都不许报
+    assert _wire_unread(
+        {"get_bars": {"symbol", "period", "sentinel_never_read"}},
+        {"get_bars": {"symbol", "period"}},
+    ) == ["get_bars.sentinel_never_read"]
+    # 反面对照：全读时谓词必须为空，否则"零缺陷"是恒报而不是看出来的
+    assert _wire_unread({"get_bars": {"symbol"}}, {"get_bars": {"symbol"}}) == []
