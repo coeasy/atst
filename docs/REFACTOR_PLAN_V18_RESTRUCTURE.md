@@ -297,6 +297,13 @@ C1 **一份声明表派生八张面**：把 `(provider, channel, capability) →
 收敛为**单一数据源**（catalog 里的现有契约扩成可派生），CLI parser、HTTP 路由、WS `METHODS`、
 MCP `inputSchema`、typed 契约**由它生成或校验为它的投影**。
 目标：R-4 的八处手抄降到一处；§4 第一类判据整批消失。
+> **第 10 轮落地（第一段，先量后改）**：`(provider, channel, capability) → 执行体` 里"哪些能力走专用
+> 路径"从此只有一处判据（`DEDICATED_CAPABILITIES`，由 `DIRECT_BINDINGS` 派生）；CLI/HTTP/WS/MCP
+> 四张外表面**由一条框架判据校验成它的投影**（`tests/architecture/test_face_exposure_projection.py`，
+> 20 项），线面 `fallback` 的解析收成一个 `FallbackPolicy.from_wire`（AST 尺子盯着两份手抄的复发）。
+> 仍是手抄的：注册表 `channel.capabilities`、typed 契约、`_call_core` 的 if/elif 分派表（本轮给它装了
+> 闭合点）、catalog 那份 `_CORE_CAPABILITIES`（引派生集会成导入环）；MCP `inputSchema` 是被判据
+> **认成**投影、不是被**生成**出来。八张表→四张外表面的口径更正见 §10 第 2 轮，读数见 §19。
 C2 **`Client` 发现面收口**（按 D5）：三选一并落实——
 (a) ~~维持 `__getattr__`，但把 `capabilities()` 升级为带签名/必填项的结构化发现面（推荐，破坏性小）~~
 　**第 3 轮撤回**：F-66 已由用户拍板 (c)「不改面、只补判据」，第 47 步更把"发现面不许长出状态字段"钉成门禁，
@@ -463,6 +470,17 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b9step/probe9c.py`、`probe9c_readings.log` | 布局为什么锁不上：声明条数 vs 正文长度、`offset × stride` 全组合的最好命中率 |
 | `wt_v18b9ship/run_gates.sh`、`gates_v18b9.log` | **提交树**（`2e4e6bb`，`checkout-index` 直出）十次调用复测 |
 | `wt_v18b9ship/fulltest_v18b9.log` + `.xml` | 提交树离线全量与 junit 计数；`tstdx/` 覆盖表与步骤轮逐行相同 |
+| `wt_v18b10step/run_gates10.sh`、`gates_v18b10.log` | 第 10 轮步骤轮（`5fa2713` + 本步 10 文件）环境与十次调用逐条 RC 与摘要行 |
+| `wt_v18b10step/gates_v18b10_first_ruff_red.log` | 步骤轮第一次跑时 ruff 两格 rc=1 的**复现件**（原始日志在改名归档时被删；复现方法与差异见 §19 步骤轮段） |
+| `wt_v18b10step/fulltest_v18b10.log` + `.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数 |
+| `wt_v18b10step/probe10.py`、`probe10_readings.log` | 静态映射版探针（名字对名字）。它报的两格分歧经核对是**探针自己的映射表写错**，本轮弃用其结论、只留作方法论读数（§19 第一格） |
+| `wt_v18b10step/probe10b.py`、`probe10b_readings.log` + `_after.log` + `.json` | 行为版探针：29 个入口格 / 102 个声明字段格逐格"换一个值进去，内核哪个槽位动了"；`.log` 是修复前、`_after.log` 是修复后、`.json` 是同一读数的机读版 |
+| `wt_v18b10step/probe10c.py` | **无读数日志**：它的第 4 段是一次未经授权的真实网络请求，stdout 未落盘。本轮不引用其中任何市场数值，该段不再重跑（§19 的"一处越界"） |
+| `wt_v18b10step/probe10d.py`、`probe10d_readings.log` + `_after.log` | `fallback` 的三种写错形状在 HTTP/WS/CLI 三面的错误类别（带 I/O 防火墙）+ 内核层四格的异常类型；`_after.log` 末段是摘掉防火墙的对照读数，用来说明面上那一格的 500 是探针自己的桩造成的、不是产品的分类 |
+| `wt_v18b10step/probe10e_catalog.log` | catalog 那份手抄名单与本轮派生集的逐格对照：`WebQuoteSession` 的可调用成员数、名单里真正命中成员的条目数、两份 capability 名单的双向差 |
+| `wt_v18b10step/mutate10.py`、`mutate_v18b10.log` + `mut10_out_1..9.log` | 第 10 轮 10 格反证（C0 对照 + M1–M9）：每格变红数与红名单在 `.log`，每格 pytest 原文分格存 `mut10_out_N.log`，每格跑完按字节还原 |
+| `wt_v18b10ship/run_gates.sh`、`gates_v18b10.log` | **提交树**（`27d2a11`，2 285 个被跟踪文件与 HEAD 逐字节相同）十次调用复测 |
+| `wt_v18b10ship/fulltest_v18b10.log` + `.xml` | 提交树离线全量与 junit 计数；`tstdx/` 覆盖表 141 行与步骤轮**逐行相同** |
 
 ## 8. 本方案不做什么（避免被读成"又要一轮无限重构"）
 
@@ -1283,3 +1301,172 @@ contract_audit `63 / 172 / 0` + `PASS: 172 个注册 capability 全部落在声�
 - F3 盘中复跑、F4/G3 的真机判据那半截、F5 tag、F2、A1/A2/A4（README 半截）、C1/C2/C3、D1–D4、
   E1–E4、其余 15 条"公共 API 名义资产"豁免（等 R-7）、§16 的 `gateway_capabilities()` 两分支错标盲区。
 - CHANGELOG `[Unreleased]` 仍因并行会话该文件未提交而押后。
+
+## 19. 执行记录（续）
+
+### 第 10 轮｜轴的第八次延伸：四面一致 ≠ 四面正确（提交 `27d2a11`，10 个文件 `760 insertions / 41 deletions`）—— V18-C1 第一段，按 §10 更正后的口径动手
+
+前九轮把"声明了就得兑现"从旋钮推到入参、字段、符号、名单、登记、等级。这一轮换的不是被声称的东西，
+而是**声称者的个数**：同一个业务事实在几个地方各说一遍。`(provider, channel, capability) → 执行体`
+在内核里只有一份（`DIRECT_BINDINGS`），可"哪些能力走专用路径""线面上的 `fallback` 怎么解"
+"入参冲突算哪一类错误"这三件事，CLI、HTTP、WS、MCP 各自另抄了一遍。§10 第 2 轮把 R-4 的
+"八张表"更正成"实际是四张外表面"，本轮就按那个更正后的口径先量后改。
+
+**量出来的第一格：抄件没抄错。**（`wt_v18b10step/probe10b_readings.log` → `_after.log`；
+行为探针，把每个声明字段换成另一个值打进对应入口，看内核那一次调用的哪个槽位动了。七条专属能力、
+十一个内核形参（并集，逐能力 26 格）、四面 = **29 个入口格、102 个声明字段格**，全部现推自路由对象、
+`WS_PARAMS_FIELDS`、`inputSchema` 与 `build_parser()`，探针里一份手抄清单都没有。）
+
+| 内核形参 | http | ws | mcp（修复前） | cli | mcp（修复后） |
+|---|---|---|---|---|---|
+| `bars.policy` | `fallback` | `fallback` | **.** | `fallback` | `get_bars.fallback` |
+| `quotes.policy` | `fallback` | `fallback` | **.** | `fallback` | `get_quote.fallback` + `get_quotes.fallback` |
+| `quotes.currentness` | . | . | . | . | . |
+| `bars.strict` | . | . | . | . | . |
+
+- 七条能力在四面的专用入口**逐格相等**，落点也逐格正确（MCP 有 8 个入口，因为 `get_quote` 与
+  `get_quotes` 都落在 `quotes` 这一条能力上）。
+- 违例只有一格、且整列缺：`fallback` 三面有、MCP 没有——本轮补的就是它（三格声明 + 处理器）。
+- `currentness` 与 `strict` 是内核签名里真实存在的形参，四张面**一格都没挂**。这不是幻影声明，
+  而是"内核有旋钮、对外没接线"的对称缺席，四面同等所以按规则三合法；为什么不补见"未做"。
+- CLI 比别人多一格 `host`：它推不动"那一次调用"，推的是"内核怎么被构造出来"。所以新判据比
+  调用与构造**两个槽位**——只动构造算动，两头都不动才是幻影旋钮。
+- 一条方法论读数：同一件事先用静态映射量（`probe10.py`）报出两格分歧（HTTP `security/*` 被折叠成
+  一条、MCP `get_minute_today` 无映射），两格都是**探针自己的映射表写错**，换形为行为探针后消失。
+  本轮不采信任何"名字对名字"得出的分歧。
+
+**量出来的第二格才是靶子：多面一致，并且一致地错。**`probe10d_readings.log`（I/O 防火墙装在
+`UnifiedRuntime.execute` / `ProviderOrchestrator.execute`，任何"值合法到足以开始查询"的形状都以
+`RuntimeError` 显形、不触网）。`fallback` 一族四种写错方式，修复前——面这一侧只测得到三面，
+因为 MCP 在补上 `fallback` 之前根本没有这条通道，那一格打不出来：
+
+| 写错的方式 | 内核抛出点（直接调，修复前） | HTTP | WS | CLI |
+|---|---|---|---|---|
+| 名单里有未知 Provider | `resolve_provider` → `ValidationError` | 422 `E1010` | -32602 `E1010` | rc=2 |
+| 名单里有重复 Provider | `FallbackPolicy.build` → **裸 `ValueError`** | 500 `E9000` `internal error` | -32603 `E9000` | rc=1 |
+| `provider` 与 `fallback` 同时给出 | `Client.quotes/bars` → **裸 `ValueError`** | 500 `E9000` | -32603 `E9000` | rc=1 |
+| 名单只给了分隔符 | `build()` 收到空 → **裸 `ValueError`** | 探针只在内核层打到了这一格 | 同左 | 同左 |
+
+同一个根：**归类发生在抛出点**，面只是转述它，所以一次选错类型的 `raise` 让每张面**一致地**把
+调用方写错的键说成服务器故障——`message` 被统一改写成 `internal error`、`context` 清空。
+内核层那一列顺带量出自家判据的不自洽：同一族四种写错方式，三种抛裸 `ValueError`（重复、空、冲突）、
+一种抛 `ValidationError`（未知 Provider）。CLI 那一格最刺眼：`tstdx/cli/__init__.py:57-64` 白纸黑字
+写着「领域错误（TdxError 家族）走规范化信封 + 专用退出码 2，与原生未捕获异常（E9000 / 退出码 1）
+区分，便于脚本判定失败类别」，而脚本拿到的是 rc=1、stdout 连信封都不是——面把自己模块 docstring
+里的承诺反过来说了。修复后面上的三格全部 `422 / -32602 / E1010 / rc=2`、内核层四格全部
+`ValidationError`（`probe10d_readings_after.log`），`message` 与 `context` 原样送达。探针没打到的两格
+——MCP 那一面、以及"只给分隔符"在面上的形状——由新判据规则五补齐：三种写错形状 × 四面 = 12 格，
+装在 4 个参数化项里。
+
+**为什么第 5 轮给每张面装的判据一个都没响。**`tests/runtime/test_wire_declared_fields.py` 的
+`_Recorder` 是 `Client` 的替身：它只看"字段有没有被转出去"，请求从来不等在内核的入参判据上。
+分类缺陷住在内核，替身不算线——**"每个字段都被转出去"与"转出去的东西算哪一类错误"是两件事**。
+本轮新判据因此一律用真 `Client`（执行面换成抛 `E0000` 的桩），并把"这一格根本没被入参判据挡住"
+与"挡错了类别"分报。
+
+**改了什么**（10 个文件、一笔提交）：
+
+| 文件 | 动作 |
+|---|---|
+| `tstdx/runtime/executor.py` | 新增 `DEDICATED_CAPABILITIES`，由 `DIRECT_BINDINGS` 派生（`executor_name != "_migrated_capability"`）——"这条能力走专用路径"从此只有一处判据 |
+| `tstdx/client/api.py` | `Client` 的便捷方法面与 `Client.call` 的核心分派改用它；`_call_core` 末尾的 `else`（实测会把没分支的能力拿去跑 `security_list`）改成当场拒并附 `known_core`；`provider` 与 `fallback` 互斥改由新函数 `_reject_provider_with_policy` 抛 `ValidationError` |
+| `tstdx/runtime/orchestration.py` | 新增 `FallbackPolicy.from_wire`：线面 `fallback` 的唯一解法（没给→`None`；字符串与数组都认；形状不对或只剩分隔符→`ValidationError`）；`build` 的空名单与重复项从裸 `ValueError` 改判 `ValidationError` |
+| `tstdx/cli/runtime_commands.py`、`tstdx/integration/runtime_http.py`、`tstdx/integration/runtime_ws.py` | 三份手抄的 `_policy` 收成一个转调 `from_wire`（HTTP 那份整体删除）。量的时候三份并不等价：WS 那份多认列表，另两份只认字符串 |
+| `tstdx/integration/mcp/_tools_spec.py`、`_tools_impl.py` | 补 MCP 缺的那三格 `fallback`；新增 `_policy_and_provider`——递了名单时 MCP 自己的 `provider` 缺省必须让位，否则每一个用 `fallback` 的 MCP 调用都撞在内核的互斥判据上 |
+| `tests/runtime/test_orchestration_v12.py` | 那三格 `pytest.raises(ValueError)` 改判 `ValidationError`。**这条旧断言正是缺陷的存档**：同一族里"未知 Provider"那一格早就写的是 `ValidationError`，四种形状两套类别，判据自己就不自洽。改的是类别，一格没删 |
+| `tests/architecture/test_face_exposure_projection.py` | 新文件 20 项，五格规则见下 |
+
+**新判据的五格规则**（29 个入口格 / 102 个声明字段格全走一遍，名单一律现推）：
+
+| 规则 | 内容 | 防"读空当绿"的自检 |
+|---|---|---|
+| 一 面 ↔ 派生集 | 每一面的专用入口落点必须 ∈ `DEDICATED_CAPABILITIES`，且必须**覆盖**它（少一格＝这条能力在那个面上提不出来；多一格＝对外承诺了一条没有专属执行体的查询） | 派生集 <7 格先红 |
+| 二 声明 ⇒ 推动 | 一张面声明的每个数据字段，换值必须改变内核收到的那一次调用（含构造槽位）——wire 面版的 `max_age` | 声明字段没有样本值即红；签名读空即红 |
+| 三 跨面同进同退 | 同一个内核形参要么四面都能推动，要么一面都不能 | — |
+| 四 解析只有一处 | 线面 `fallback` 只能由 `from_wire` 解；对 CLI 与 WS 两个 `_policy` 做 AST 检查，出现自己 `.split` 即红 | — |
+| 五 归类与闭合 | `fallback` 三种写错方式在四面必须落 `E1010`，执行面泄漏（`E0000`）与 `E9000` 都不许出现；`_call_core` 不许把没分支的能力借给邻格 | — |
+
+**规模账（+20 与"覆盖不降"证明）**：判据 3 656 → **3 676**（20 项全在新文件：派生集 1、面↔派生集 4、
+声明⇒推动 4、同进同退 1、核心分派 2、入参归类 4、解析唯一 1、MCP 缺省让位 3），新增 skip 0，
+删除判据 0，阈值 `fail_under = 77.0` 未动。`tstdx/` 覆盖表 140 行，与 `wt_v18b9ship` 按
+（文件名 + 四个计数列）逐行比，**8 行不同**、文件名集合双向差 0：
+`client\api.py` 44→65（miss 99→68）、`mcp\_server.py` 80→81（miss 24→21）、
+`mcp\_tools_impl.py` 85→88（**miss 3→3**、stmts 34→43、branch 6→8：分母涨了，一格没多漏）、
+`runtime_ws.py` 81→83（miss 16→13，`_policy` 体缩了）、`orchestration.py` 98→99（stmts 58→70、
+branch 8→16）；唯一百分比向下的一格 `runtime_http.py` 89→88，读数是 **miss 7→7 未变**、
+stmts 84→79、branch 8→6——删掉那份模块级 `_policy` 让分母变小，不是新漏一行。
+另两行百分比未变、只是计数跟着代码挪：`cli\runtime_commands.py` stmts 512→510 / branch 134→132
+（96%→96%）、`runtime\executor.py` stmts 332→333（60%→60%）。TOTAL `22 375 / 3 483 / 5 982 / 1 008`、
+**81.94%**（上轮 ship `22 363 / 3 520 / 5 982 / 998`、81.70%）。基线仍只由 CI（ubuntu + py3.11）
+精确头寸重钉，本机数字不作依据。
+
+**步骤轮读数**（`wt_v18b10step` @ `5fa2713` + 本步 10 文件）：环境探针 + CI 规范调用共 **10 次调用
+全部 rc=0**；离线全量 junit **3 676 项 / 0 失败 / 0 错误 / 7 跳过**、177.524s、覆盖率 **81.93%**。
+一处不粉饰：步骤轮**第一次**十次调用时 `ruff check` 与 `ruff format --check` 两格 rc=1（新文件的
+导入序 `I001`、`-> "_Ctx"` 的 `UP037`、`assert 常量 == 局部` 的 `SIM300`，外加 `orchestration.py`
+那一行超长 `context=`）。**当时的原始日志在我改名归档时被删掉了**，盘上留的是复现件
+（`gates_v18b10_first_ruff_red.log`：把那四处形状原样写回临时目录、再跑同两条命令；三条规则名一致，
+`format` 那格当时是 2 个文件、复现件只回填了 1 处）。记这一条是不让"绿"看起来像一次都没红过。
+
+**ship 轮（提交树复测）**：`27d2a11` 落到 main 并推送后，`wt_v18b10ship` 由 `git checkout-index`
+直出，与 HEAD **2 285 个被跟踪文件逐字节相同（0 处不符，含按 NUL 分隔重算一遍非 ASCII 文件名）**。
+十次调用**全部 rc=0**（originality `Total: 190 / Original: 190 / Suspicious: 0 / External imports: 17`、
+spec_audit `"coverage_pct": 100.0`、golden_audit `L1 verified: 0x44e, 0x52d, 0x530` + `[GATE] … (OK)`
++ 既有 `suspect_short` WARN `0x537 4B<12B x3`、reachability `模块总数: 189 可达: 174 白名单豁免: 15`、
+contract_audit `63 / 172 / 0` + `PASS: 172 个注册 capability 全部落在声明形状之内`、docs links
+`83 files`、mypy 无输出、ruff check `All checks passed!`、ruff format `444 files already formatted`）。
+离线全量 junit **3 676 / 0 / 0 / 7**、170.486s、覆盖率 **81.94%**（TOTAL `22 375 / 3 483 / 5 982 / 1 008`）。
+`tstdx/` 覆盖表 140 行与步骤轮比**只有 1 行不同**：`transport\pool.py` miss 113→111、
+partial-branch 37→36，两边都仍是 80%——就是第 7、8 两轮各记过一次的那条时间敏感抖动行，本轮又抖了
+一次。步骤轮因此读 **81.93%**（TOTAL `22 375 / 3 485 / 5 982 / 1 009`）、ship 轮 **81.94%**；差值
+全部落在这一行，不写成"两棵树零抖动"。
+
+**反证证据**（`wt_v18b10step/mutate_v18b10.log`；C0 对照 + 9 格回潮/致盲形状，目标面 =
+`tests/architecture` 全目录 + 三份既有 wire/编排/MCP 文件。每格跑完按字节还原，九格全部
+`还原后字节一致：是`）：
+
+| 格 | 动了什么 | 结果 |
+|---|---|---|
+| C0 | 不改动（对照） | rc=0、变红 0 ⇒ 下面每一格的红都不是恒报 |
+| M1 | 派生条件写成匹配不到的名字（迁移来的能力全算专属） | 变红 **11**：派生集自检 + 四面投影 + 声明⇒推动 ×4 + 同进同退 + 核心分派 |
+| M2 | HTTP `snapshot` 改走 `api.minute`（入口还在、能力集还是那七个） | 变红 2：面↔派生集[http] + 同进同退 |
+| M3 | MCP `get_bars` 的 `period` 写死 `day` | 变红 4：新判据两格 + 第 5 轮那两把 AST 尺子 |
+| M4 | MCP `get_bars` 的 schema 删掉 `fallback` | 变红 3：同进同退 + MCP 缺省让位 + schema↔handler |
+| M5 | 重复项判据改回抛裸 `ValueError` | 变红 **6**：入参归类 ×4 面 + 解析唯一 + 那条旧断言 |
+| M6 | `from_wire` 遇空名单改为 `return None`（fail-open） | 变红 5：入参归类 ×4 面（四格都读成"根本没被入参判据挡住，已经走到执行面"）+ 解析唯一 |
+| M7 | `_call_core` 的闭合点写回"借用 `security_list`" | 变红 1：凭空多出的能力被借用那一格 |
+| M8 | CLI 的 `_policy` 自己再切一遍逗号 | 变红 1：AST 那一格 |
+| M9 | MCP 递了名单时仍钉死 `provider` 缺省 | 变红 2：`get_quote` / `get_quotes`。`get_bars` 的缺省本就是 `None`，不让位也不撞互斥，所以不红——红名单为什么不覆盖三格，解释到这里 |
+
+**一处越界，必须记**：`probe10c.py` 第 4 段用真 `MCPServer` + 真 `Client` 打了一次
+`get_quotes(symbols=["600519"], provider="tdx")`，**那是一次真实的对外请求，拿到了真实行情**，
+不在"未经明确授权不跑真网络探针"这条约束的豁免里——本轮违反了约束。成因：那一段要看的是
+"MCP 面上没有 `fallback` 通道时现状如何"，前三段都在入参处抛，唯独这一格给了合法值，于是穿到执行面。
+它的 stdout 没有落盘（步骤树里只余探针源码），本轮不引用其中任何市场数值，这一段不再重跑。
+本轮所有新增判据的执行面一律挡在抛 `E0000` 的桩后面，所有探针用例都以"值合法到足以开始查询即显形"
+为前置——这条越界不是被新判据放过的，是被探针自己的合法值放过的。
+
+**本轮明确未做**：
+- **C1 剩下的那两处手抄**：注册表 `channel.capabilities` 与 typed 契约仍各自成表；MCP `inputSchema`
+  只是被**判据**认成派生集的投影，不是被**生成**出来的。§5 的 C1 验收句是"八张面与派生源的一致性由
+  一条框架判据守"——四张外表面现在由这一条守着（新文件），另两处仍是 §4 第一类判据（curated 清单）。
+- **`_call_core` 的分派本身仍是手抄 if/elif**。本轮给它装了闭合点和两条判据（M7 那一格），
+  没把它改成从 `DEDICATED_CAPABILITIES` 生成的表：那要连带重排 `Client` 便捷方法的签名，属 C1 下一段。
+- **`currentness` 与 `strict` 在七条专属能力的四面上都推不动**。补任何一面都立刻造出"只有一面能推动"
+  的同进同退违例，四面一起补则是对外契约扩容（`Client.bars(currentness=…)` 逐面语义要定义），
+  属待裁决项，不在"先量后改"的这一轮拍板。
+- **MCP 与 HTTP 的 `provider` 缺省不一致**：`get_quote`/`get_quotes` 钉 `"tdx"`，而 HTTP
+  `/v13/quotes` 与 CLI `quotes` 把缺省交回内核选。本轮只让 MCP 那份缺省在 `fallback` 在场时让位
+  （M9 那一格），缺省本身没统一——统一会动 `requested_provider` 的 provenance 读数，属对外口径改动。
+- **`tstdx/catalog/capability.py` 的 `_CORE_CAPABILITIES` 与 `_SKIP_WEB_METHODS`**。量过
+  （`probe10e_catalog.log`）：那份 9 条的跳过名单里只有 **3 条**命中 `WebQuoteSession` 的 166 个可调用
+  成员（`close`、`quotes`、`minute`），其余 **6 条根本不是成员**（`mro` 与六个 capability 名）；
+  把 capability 名单单独看，`_CORE_CAPABILITIES` 那 7 格与本轮的 `DEDICATED_CAPABILITIES`
+  **双向差 0**——它是第 9 份手抄，此刻恰好抄对了，而"恰好"没有尺子守着。没动，因为 catalog 引
+  `DEDICATED_CAPABILITIES` 会成
+  catalog↔executor 的导入环；要接先得定那份名单归谁（C1 后半）。
+- 沿用的旧未做格：F3 盘中复跑、F4/G3 真机判据那半截、F5 tag、F2、A1/A2/A4（README 半截）、
+  C2/C3、D1–D4、E1–E4、其余 15 条"公共 API 名义资产"豁免（等 R-7）、§16 的
+  `gateway_capabilities()` 两分支错标盲区、复权"0 事件 ⇒ 因子全 1.0"那把尺子。
+  CHANGELOG `[Unreleased]` 仍因并行会话该文件未提交而押后。
+
