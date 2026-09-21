@@ -5,27 +5,30 @@
 # 指向不存在模块的死记录、指向已可达模块的过期记录、理由过短、重复条目一律失败。
 # 为什么过期记录也算缺陷：豁免一条模块等于宣布"它不可达是预期的"，若它其实早已
 # 接线，这条记录就会把将来真正的断链读成绿。接线后必须把行删掉。
+# 记号约定：理由里**用反引号点名的标识符**是"本模块的公共 API 名"声明，门禁按该模块的
+# 静态命名空间逐格核（[dead-claim]，V18 第 6 轮）；不带反引号的散文（"GB18030/GBK 优先级表"
+# 这类在讲什么、而非导出什么）故意不核——把两者混成一个口径会 3/3 误报。
 # 进程入口（tstdx.cli / tstdx.__main__ / tstdx.tools.*）不登记在此——扫描器把它们
 # 作为 BFS 种子，与 SEEDS 同权。
 
 # --- 面向用户的显式导入 API：用户 `from tstdx.<pkg> import ...` 即可用，内核不 import ---
-tstdx.deprecation  # 弃用策略公共 API（DeprecationPolicy/deprecated/get_deprecation_count）：docs/api/README.md 记录，tests/test_deprecation.py 全量覆盖；供调用方给自己的 API 打弃用标记，内核链路不需要它
-tstdx.output  # DataFrame/Parquet/CSV/DuckDB 输出层公共 API（Sink/write/to_dataframe/to_parquet/to_duckdb）：docs/api/interfaces.md 记录，tests/output/ 与 tests/test_bridges.py 消费；内核只交裸记录，落地格式由调用方显式选
-tstdx.profile  # 数据规格探测包公共 API（DataProfile/detect_profile/get_profile/ProfileDetector）：docs/api/README.md 与 docs/cookbook/03_offline_vipdoc.md 记录，tests/unit/test_profile_detect_semantics.py 等 14 个测试文件引用
-tstdx.profile.detect  # 帧档案探测器实现（28KB，detect_profile/BUILTIN_PROFILES）：由 profile 包 __init__ eager 再导出，tests/reader/test_formats.py 与 tests/compatibility/test_matrix.py 消费；vipdoc 之外的自动识别属可选能力
-tstdx.profile.presets  # 市场档案预设表（MarketPreset/PRESETS/match_preset）：只被 tstdx/profile/detect.py 与包 __init__ 使用，随 profile 族一起落在 import 图外；它是 detect 的已知市场指纹源，删了探测就只剩裸启发式
-tstdx.transport.sniff  # 被动流量采集与未知命令发现（Sniffer/CommandStats/attach）：docs/cookbook/06_custom_command.md 记录的扩展入口，tests/transport/test_sniffer_passive.py 逐条覆盖其观测、判定域与挂接语义；产物是 PROTOCOL_SPEC/_sniffer 下的 draft，不参与生产解码
-tstdx.charset  # 字符集探测包公共 API（detect_encoding/decode_bytes/is_valid_gbk 等 11 项）：docs/api/README.md 记录，tests/i18n/test_encoding.py 消费；根包 _LAZY 不含它，用户按子模块显式导入
-tstdx.charset.encoding  # 探测实现（GB18030/GBK/Big5/UTF-8 优先级表与置信度）：仅经 charset 包 __init__ 再导出，故与包同处链外；tests/unit/test_i18n_priority.py 锁定优先级语义
+tstdx.deprecation  # 弃用策略公共 API（`DeprecationPolicy`/`deprecated`/`get_deprecation_count`）：docs/api/README.md 记录，tests/test_deprecation.py 全量覆盖；供调用方给自己的 API 打弃用标记，内核链路不需要它
+tstdx.output  # DataFrame/Parquet/CSV/DuckDB 输出层公共 API（`Sink`/`write`/`to_dataframe`/`to_parquet`/`to_duckdb`）：docs/api/interfaces.md 记录，tests/output/ 与 tests/test_bridges.py 消费；内核只交裸记录，落地格式由调用方显式选
+tstdx.profile  # 数据规格探测包公共 API（`DataProfile`/`detect_profile`/`get_profile`/`ProfileDetector`）：docs/api/README.md 与 docs/cookbook/03_offline_vipdoc.md 记录，tests/unit/test_profile_detect_semantics.py 逐条覆盖其探测语义
+tstdx.profile.detect  # 帧档案探测器实现（28KB，`detect`/`BUILTIN_PROFILES`；探测入口 `tstdx.profile.detect_profile` 由 reader.profile 提供、包 __init__ 再导出）：tests/reader/test_formats.py 与 tests/compatibility/test_matrix.py 消费；vipdoc 之外的自动识别属可选能力
+tstdx.profile.presets  # 市场档案预设表（`MarketPreset`/`PRESETS`/`match_preset`）：只被 tstdx/profile/detect.py 与包 __init__ 使用，随 profile 族一起落在 import 图外；它是 detect 的已知市场指纹源，删了探测就只剩裸启发式
+tstdx.transport.sniff  # 被动流量采集与未知命令发现（`Sniffer`/`CommandStats`/`attach`）：docs/cookbook/06_custom_command.md 记录的扩展入口，tests/transport/test_sniffer_passive.py 逐条覆盖其观测、判定域与挂接语义；产物是 PROTOCOL_SPEC/_sniffer 下的 draft，不参与生产解码
+tstdx.charset  # 字符集探测包公共 API（`detect_encoding`/`decode_bytes`/`is_valid_gbk`，完整清单见 charset 包 __init__ 的 __all__）：docs/api/README.md 记录，tests/i18n/test_encoding.py 消费；根包 _LAZY 不含它，用户按子模块显式导入
+tstdx.charset.encoding  # 探测实现（`CANDIDATE_ENCODINGS`/`DEFAULT_PRIORITY`，即 GB18030/GBK/Big5/UTF-8 优先级表与置信度）：仅经 charset 包 __init__ 再导出，故与包同处链外；tests/unit/test_i18n_priority.py 锁定优先级语义
 
 # --- 交易协议研究族（P2-1，独立可选；红线：不连真实券商）---
 tstdx.trade  # 交易协议模拟器包：docs/api/README.md 记为可选子系统，tests/trade/ 5 个文件覆盖；因不参与行情主链路且接真实券商属范围红线，内核与 CLI 都不 import 它
-tstdx.trade.client  # TradeClient/SocketTransport/normalize_code：随 tstdx.trade 包 __init__ eager 导出，tests/trade/test_client.py 覆盖；SocketTransport 只对本地模拟器说话，接进生产链路是范围扩张而非接线
-tstdx.trade.constants  # 交易命令常量（Family/CMD_LOGIN/CMD_QUERY/CMD_SEND_ORDER…）：tstdx.tools.spec_audit 以**字符串模块名**经 importlib 解析它来做 TRADE 族账本对齐（AST 图看不见这种边），tests/test_spec_coverage.py 锁定该对齐
-tstdx.trade.frames  # 交易帧编解码（build_request/parse_response/build_order_body…）：同 constants，被 spec_audit 动态解析为 TRADE 族 codec 锚点；tests/trade/test_frames.py 逐帧自对拍
-tstdx.trade.errors  # 交易域异常（TradeError/TradeNotLoggedIn/TradeRejected/TradingUnavailable）：只在 trade 族内部 raise，tests/trade/ 两个文件断言其语义；行情链路不会碰到它们
-tstdx.trade.security  # 交易登录口令混淆（obfuscate_password/deobfuscate_password，洁净室占位实现）：tests/trade/test_security.py 覆盖；真实凭据路径按 ADR-007-010 明确排除在本项目范围外
-tstdx.trade.simulator  # 纯内存模拟券商（TradeSimulator/SimTransport/Position/Order/Deal）：tests/trade/test_simulator.py 覆盖，是 trade 族协议回路研究的载体，与运行时数据链路无关
+tstdx.trade.client  # `TradeClient`/`SocketTransport`/`normalize_code`：随 tstdx.trade 包 __init__ eager 导出，tests/trade/test_client.py 覆盖；`SocketTransport` 只对本地模拟器说话，接进生产链路是范围扩张而非接线
+tstdx.trade.constants  # 交易命令常量（`Family`/`CMD_LOGIN`/`CMD_QUERY`/`CMD_SEND_ORDER`）：tstdx.tools.spec_audit 以**字符串模块名**经 importlib 解析它来做 TRADE 族账本对齐（AST 图看不见这种边），tests/test_spec_coverage.py 锁定该对齐
+tstdx.trade.frames  # 交易帧编解码（`build_request`/`parse_response`/`build_order_body`）：同 constants，被 spec_audit 动态解析为 TRADE 族 codec 锚点；tests/trade/test_frames.py 逐帧自对拍
+tstdx.trade.errors  # 交易域异常（`TradeError`/`TradeNotLoggedIn`/`TradeRejected`/`TradingUnavailable`）：只在 trade 族内部 raise，tests/trade/test_frames.py 与 tests/trade/test_simulator.py 直接 import 本模块断言其语义；行情链路不会碰到它们
+tstdx.trade.security  # 交易登录口令混淆（`obfuscate_password`/`deobfuscate_password`，洁净室占位实现）：tests/trade/test_security.py 覆盖；真实凭据路径按 ADR-007-010 明确排除在本项目范围外
+tstdx.trade.simulator  # 纯内存模拟券商（`TradeSimulator`/`SimTransport`/`Position`/`Order`/`Deal`）：tests/trade/test_simulator.py 覆盖，是 trade 族协议回路研究的载体，与运行时数据链路无关
 
 # --- 契约/守卫资产：由架构测试消费，生产链路零 import（登记评审后豁免）---
-tstdx.catalog.provider_contract  # Provider 隔离契约（ProviderIdentity/CapabilityContract）：tests/provider_isolation 三个文件 + tests/architecture/test_namespace_layout.py 消费；内核不 import 是"零依赖、可被任一 Provider 使用"的有意设计
+tstdx.catalog.provider_contract  # Provider 隔离契约（`ProviderIdentity`/`ProviderCapabilityContract`/`ProviderExecutionContract`）：tests/provider_isolation/test_direct_provider_guard.py 与 tests/provider_isolation/test_provider_isolation_contract.py 消费，tests/architecture/test_namespace_layout.py 钉住它的迁移后位置；内核不 import 是"零依赖、可被任一 Provider 使用"的有意设计

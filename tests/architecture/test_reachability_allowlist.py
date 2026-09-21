@@ -209,3 +209,81 @@ def test_a_stale_seed_is_a_defect() -> None:
     defects = ar._seed_defects({"tstdx"}, seeds={"tstdx", "tstdx.integration.http_server"})
     assert [d.split("]")[0] for d in defects] == ["[dead-seed"]
     assert "tstdx.integration.http_server" in defects[0]
+
+
+# --------------------------------------------------------------------------- #
+# 理由点名的**符号**必须真在该模块里（V18 第 6 轮）
+# --------------------------------------------------------------------------- #
+
+
+def _fake_module(tmp_path: Path, stem: str, source: str) -> tuple[dict[str, Path], str]:
+    """造一个 ``tstdx/<stem>.py`` 的假模块，返回 ``(modules 映射, 点号模块名)``。"""
+    module = tmp_path / "tstdx" / f"{stem}.py"
+    module.parent.mkdir(parents=True, exist_ok=True)
+    module.write_text(source, encoding="utf-8")
+    dotted = f"tstdx.{stem}"
+    return {dotted: module}, dotted
+
+
+#: 只替换符号名，理由其余部分逐字相同：判定差异不许来自正文长度。
+CLAIM_TAIL = " 是本模块的公共入口，内核不 import 属有意设计，理由本身足够长"
+
+
+def test_real_allowlist_symbol_claims_resolve() -> None:
+    """真实清单里每一格反引号点名的 API 名，都要在被豁免模块的静态命名空间里。"""
+    modules, _ = ar._collect_modules()
+    records, _ = ar._load_allow()
+    claims = {
+        m: [
+            c
+            for c in sorted(set(ar._SYMBOL_CLAIM.findall(r)))
+            if "/" not in c and "." not in c and not c.endswith((".py", ".md"))
+        ]
+        for m, r in records.items()
+    }
+    total = sum(len(v) for v in claims.values())
+    assert total >= 40, f"全清单只点名了 {total} 格符号，证据面太薄，判据等于没上"
+    assert ar._claim_defects(records, modules) == []
+
+
+def test_a_claimed_symbol_that_the_module_does_not_have_is_a_defect(tmp_path: Path) -> None:
+    """写着 `CapabilityContract` 而模块里其实叫别的名字——按图索骥的人一个也找不到。"""
+    modules, dotted = _fake_module(tmp_path, "phantom", "RealName = 1\n\n\nother = 2\n")
+    found = ar._claim_defects(
+        {dotted: f"`RealName`/`PhantomName`{CLAIM_TAIL}"}, modules, min_claims=0
+    )
+    assert [d.split("]")[0] for d in found] == ["[dead-claim"], found
+    assert "PhantomName" in found[0] and "`RealName`" not in found[0]
+
+
+def test_a_reexported_name_counts_as_part_of_the_namespace(tmp_path: Path) -> None:
+    """正控的正面：`from .impl import Thing` 再导出与自身定义同等有效——真实清单靠这个吃饭。"""
+    modules, dotted = _fake_module(
+        tmp_path,
+        "reexport",
+        "from .impl import ViaImport  # noqa: F401\n\n\nclass Defined:\n    pass\n",
+    )
+    records = {dotted: f"`ViaImport`/`Defined`{CLAIM_TAIL}"}
+    assert ar._claim_defects(records, modules, min_claims=0) == []
+
+
+def test_names_in_all_list_count_as_claims(tmp_path: Path) -> None:
+    """``__all__`` 里登记的名字即使由 ``__getattr__`` 动态给出，也算这一格的合法声明。"""
+    modules, dotted = _fake_module(
+        tmp_path, "star", '__all__ = ["Exported"]\n\n\ndef __getattr__(name):\n    return None\n'
+    )
+    records = {dotted: f"`Exported`{CLAIM_TAIL}"}
+    assert ar._claim_defects(records, modules, min_claims=0) == []
+
+
+def test_a_thin_claim_set_blinds_the_ruler(tmp_path: Path) -> None:
+    """下限：记号被批量擦掉时判据必须自己喊出来，不许把"没声明"读成"没缺陷"。
+
+    同一份 records 在 ``min_claims=0`` 下零缺陷，说明这一格红的是**规模**，
+    不是符号真假——被豁免模块全都对，也照样要红。
+    """
+    modules, dotted = _fake_module(tmp_path, "few", "A = 1\n")
+    records = {dotted: f"`A`{CLAIM_TAIL}"}
+    assert ar._claim_defects(records, modules, min_claims=0) == []
+    defects = ar._claim_defects(records, modules)
+    assert [d.split("]")[0] for d in defects] == ["[blind-claims"], defects

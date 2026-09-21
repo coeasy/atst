@@ -28,6 +28,8 @@ AST 静态扫描 tstdx/ 全部模块的 import 边（含 tstdx/__init__.py 的 _
   可核验路径（``[no-pointer]``）——两者都让"谁消费它"退化成无法反驳的自由文本；
 * 理由点名的 ``.py`` 文件其实**不触达**它所豁免的模块（``[weak-pointer]``，
   见 :func:`_pointer_defects`）——"某某测试覆盖它"必须真的覆盖它；
+* 理由用反引号点名的**公共 API 名**不在该模块的静态命名空间里（``[dead-claim]``，
+  见 :func:`_claim_defects`）——路径指针钉住"谁消费它"，这一格钉"它说自己是谁"；
 * 重复条目。
 
 种子表也在被核验之列：:data:`SEEDS` 里一个改了名的条目会被 BFS 的
@@ -77,6 +79,101 @@ def _consumer_pointers(reason: str) -> tuple[list[str], list[str]]:
             continue
         (live if (ROOT / token).exists() else dead).append(token)
     return live, dead
+
+
+#: 一条豁免记录里"它到底是什么"的可核验锚点：写成 `` `名字` `` 的反引号格。
+#: 反引号是**刻意的记号**——不加记号就无法区分"公共 API 名"与"它讲的编码名"：
+#: 取证探针按"括号内斜杠分隔的标识符形状"提取时，``tstdx.charset.encoding`` 那条
+#: 写着 GB18030/GBK/Big5 的说明被当成三个符号声明而全部判错（3/3 误报）。
+#: 判据也只在静态命名空间上算（定义、导入别名、``__all__``），**不 import 目标模块**：
+#: `tstdx.output` 与 `tstdx.*.web` 一类模块要装 extras 才导得进来，
+#: 让门禁去 import 可选依赖等于把"环境没装全"读成"豁免记录有缺陷"。
+_SYMBOL_CLAIM = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)`")
+
+#: 全清单至少要点名这么多符号格，少了说明记号被人擦掉、判据已经失明。
+MIN_SYMBOL_CLAIMS = 30
+
+
+def _module_namespace(path: Path) -> set[str]:
+    """一个模块文件里静态可见的顶层名字：定义、导入别名（含 `as`）、``__all__`` 条目。"""
+    names: set[str] = set()
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return names
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.Import):
+            names.update((a.asname or a.name.split(".", 1)[0]) for a in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            names.update(a.asname or a.name for a in node.names if a.name != "*")
+        elif isinstance(node, ast.If | ast.Try):
+            # 条件/兜底导入（可选 extras、平台分支）里的名字同样是命名空间的一部分
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.ImportFrom):
+                    names.update(a.asname or a.name for a in sub.names if a.name != "*")
+                elif isinstance(sub, ast.Import):
+                    names.update((a.asname or a.name.split(".", 1)[0]) for a in sub.names)
+        if (
+            isinstance(node, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets)
+            and isinstance(node.value, ast.List | ast.Tuple | ast.Set)
+        ):
+            names.update(
+                elt.value
+                for elt in node.value.elts
+                if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+            )
+    return names
+
+
+def _claim_defects(
+    records: dict[str, str],
+    modules: dict[str, Path],
+    root: Path = ROOT,
+    min_claims: int = MIN_SYMBOL_CLAIMS,
+) -> list[str]:
+    """理由点名的**符号**必须真的在该模块的静态命名空间里（``[dead-claim]``）。
+
+    路径指针那一半已经由 :func:`_consumer_pointers` / :func:`_pointer_defects` 钉住
+    （存在、且真的触达被豁免的模块）；这一半管的是"它说自己是公共 API"这句话本身：
+    一条写着 ``CapabilityContract`` 而模块里其实叫 ``ProviderCapabilityContract`` 的记录，
+    按图索骥的人一个也找不到。点名的符号格总数低于 :data:`MIN_SYMBOL_CLAIMS` 时另报
+    ``[blind-claims]``——记号被批量删掉与判据从未存在过，在输出上必须区分得开。
+    """
+    defects: list[str] = []
+    checked = 0
+    for module in sorted(records):
+        claims = sorted(
+            c
+            for c in set(_SYMBOL_CLAIM.findall(records[module]))
+            # 反引号里的路径不是符号声明（`tests/trade/…py` 由指针那两格管）；
+            # 带点号的格（`tstdx.profile.detect_profile`）是"别的模块的名字"，本格不判。
+            if "/" not in c and "." not in c and not c.endswith((".py", ".md"))
+        )
+        if not claims:
+            continue
+        path = modules.get(module)
+        if path is None:
+            continue  # 模块本身不存在已由 [dead] 判红，这里不重复报
+        namespace = _module_namespace(path)
+        checked += len(claims)
+        for claim in claims:
+            if claim not in namespace:
+                defects.append(
+                    f"[dead-claim] {module}：理由点名的 `{claim}` 不在该模块的命名空间里"
+                )
+    if checked < min_claims:
+        defects.append(
+            f"[blind-claims] 全部豁免记录只点名了 {checked} 格符号（下限 {min_claims}）："
+            f"要么记号被擦掉了，要么这条判据从未真正生效"
+        )
+    return defects
 
 
 # 进程入口种子（console script / python -m / 顶层包）
@@ -432,6 +529,7 @@ def main() -> int:
     record_defects += _allowlist_defects(records, set(modules), reach)
     record_defects += _seed_defects(set(modules))
     record_defects += _pointer_defects(records, modules, graph)
+    record_defects += _claim_defects(records, modules)
 
     print(f"模块总数: {len(modules)}  可达: {len(reach)}  白名单豁免: {len(allowed_hit)}")
     for m in allowed_hit:
