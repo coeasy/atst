@@ -21,16 +21,13 @@ from ..catalog.capability import (
 from ..errors import ValidationError
 from ..query import QuerySpec
 from ..result import QueryResult
+from ..runtime.executor import DEDICATED_CAPABILITIES as _CORE_CAPABILITIES
 from ..runtime.kernel import UnifiedRuntime
 from ..runtime.orchestration import FallbackPolicy, OrchestratedResult, ProviderOrchestrator
 from ..stream_contract import StreamPlanner, StreamSpec
 from ..streaming.stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
 
 __all__ = ["Client", "AsyncClient"]
-
-_CORE_CAPABILITIES = frozenset(
-    {"quotes", "bars", "snapshot", "minute", "trades", "security_count", "security_list"}
-)
 
 
 def _json_contract(value: Any) -> Any:
@@ -50,6 +47,27 @@ def _json_contract(value: Any) -> Any:
     raise ValidationError(
         "capability 参数必须可转换为确定性 JSON contract",
         context={"value_type": type(value).__name__},
+    )
+
+
+def _reject_provider_with_policy(provider: str | None, policy: FallbackPolicy) -> None:
+    """``provider`` 与 ``fallback`` 同时给出＝同时要求「只走这家」和「这家失败就换」。
+
+    这里必须是 :class:`ValidationError`（E1010 / HTTP 422 / JSON-RPC -32602 / CLI 退出码 2），
+    而不是原来那个裸 ``ValueError``：入参冲突的归类发生在**抛出点**，四面只是转述它，所以
+    一次选错类型的 raise 会让四张面**一致地**把它说成 ``E9000`` 服务器故障、把调用方写错的
+    那两个键从消息里抹掉（实测四面同读数，见 ``docs/REFACTOR_PLAN_V18_RESTRUCTURE.md``
+    第 19 节）。四面各自加转换只会把这第七份抄件再抄四遍。
+    """
+    if provider is None:
+        return
+    raise ValidationError(
+        "provider 与 fallback 互斥：指定 provider 就是钉死一跳，fallback 名单要求换跳执行",
+        context={
+            "phase": "wire_validation",
+            "provider": provider,
+            "fallback": list(policy.providers),
+        },
     )
 
 
@@ -148,12 +166,21 @@ class Client:
                 provider=provider or "tdx",
                 **kwargs,
             )
-        else:
+        elif capability == "security_list":
             if args:
                 raise ValidationError("security_list accepts market/start as keyword arguments")
             result = self.security_list(
                 provider=provider or "tdx",
                 **kwargs,
+            )
+        else:
+            #: 这条不是防御性代码，是这一段的**唯一**闭合点：核心集现在由执行体表派生，
+            #: 派生结果与这里的分支谁多谁少都可能自行发生，而少一格的下场是拿最后一条
+            #: 分支去跑**另一个能力**（实测：改名前落在 ``security_list`` 上，参数个数
+            #: 合适时直接返回一份不相干的结果）。声明表派生出来的东西，分派必须也派生自它。
+            raise ValidationError(
+                f"capability {capability!r} 在核心集内却没有分派分支",
+                context={"capability": capability, "known_core": sorted(_CORE_CAPABILITIES)},
             )
         if isinstance(result, OrchestratedResult):
             raise ValidationError("Client.call core path does not accept hidden fallback policy")
@@ -265,8 +292,7 @@ class Client:
             currentness=currentness,
         )
         if policy is not None:
-            if provider is not None:
-                raise ValueError("provider and fallback policy are mutually exclusive")
+            _reject_provider_with_policy(provider, policy)
             return self.execute_with_policy(spec, policy=policy)
         return self.execute(spec)
 
@@ -314,8 +340,7 @@ class Client:
             options={"strict": True} if strict else None,
         )
         if policy is not None:
-            if provider is not None:
-                raise ValueError("provider and fallback policy are mutually exclusive")
+            _reject_provider_with_policy(provider, policy)
             return self.execute_with_policy(spec, policy=policy)
         return self.execute(spec)
 

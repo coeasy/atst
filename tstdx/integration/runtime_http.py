@@ -21,13 +21,6 @@ from .wire_fields import QUERY_BODY_FIELDS, reject_undeclared
 __all__ = ["create_runtime_app"]
 
 
-def _policy(value: str | None) -> FallbackPolicy | None:
-    if value is None or not value.strip():
-        return None
-    providers = tuple(item.strip() for item in value.split(",") if item.strip())
-    return FallbackPolicy.build(*providers)
-
-
 def create_runtime_app(client: Client | None = None) -> Any:
     try:
         from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -136,7 +129,7 @@ def create_runtime_app(client: Client | None = None) -> Any:
             api.quotes(
                 values,
                 provider=provider,
-                policy=_policy(fallback),
+                policy=FallbackPolicy.from_wire(fallback),
                 currentness="live",
             )
         )
@@ -155,7 +148,7 @@ def create_runtime_app(client: Client | None = None) -> Any:
             api.bars(
                 symbol,
                 provider=provider,
-                policy=_policy(fallback),
+                policy=FallbackPolicy.from_wire(fallback),
                 period=period,
                 count=count,
                 start=start,

@@ -107,16 +107,7 @@ class RuntimeJsonRpcHandler:
 
     @staticmethod
     def _policy(params: dict[str, Any]) -> FallbackPolicy | None:
-        raw = params.get("fallback")
-        if raw in (None, "", []):
-            return None
-        if isinstance(raw, str):
-            values = [item.strip() for item in raw.split(",") if item.strip()]
-        elif isinstance(raw, (list, tuple)):
-            values = [str(item).strip() for item in raw if str(item).strip()]
-        else:
-            raise ValidationError("fallback must be a provider list")
-        return FallbackPolicy.build(*values)
+        return FallbackPolicy.from_wire(params.get("fallback"))
 
     def _dispatch(self, method: str, params: dict[str, Any]) -> Any:
         # params 的白名单按方法给出（``wire_fields.WS_PARAMS_FIELDS``）：过去未知键经

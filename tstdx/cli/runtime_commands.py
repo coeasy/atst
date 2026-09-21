@@ -43,9 +43,8 @@ def _print(value: Any) -> None:
 
 
 def _policy(raw: str | None) -> FallbackPolicy | None:
-    if not raw:
-        return None
-    return FallbackPolicy.build(*(item.strip() for item in raw.split(",") if item.strip()))
+    """``--fallback`` 的解法在内核那一格（:meth:`FallbackPolicy.from_wire`），这里不抄第二份。"""
+    return FallbackPolicy.from_wire(raw)
 
 
 def cmd_version(args: Any) -> int:

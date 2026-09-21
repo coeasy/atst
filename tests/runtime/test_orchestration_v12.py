@@ -26,9 +26,12 @@ def _result(provider: str) -> QueryResult[list[Quote]]:
 
 
 def test_fallback_policy_rejects_empty_duplicate_and_unknown_provider() -> None:
-    with pytest.raises(ValueError):
+    # 第 10 轮：前三格原本抛裸 ``ValueError``，四面一致地把它报成 E9000/HTTP 500/
+    # -32603/退出码 1——调用方写错的键被抹成服务器故障。原先只有最后一格（未知的
+    # Provider）已经是 ValidationError，这一族判据本身就不自洽。
+    with pytest.raises(ValidationError):
         FallbackPolicy.build()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError):
         FallbackPolicy.build("tdx", "tdx")
     with pytest.raises(ValidationError):
         FallbackPolicy.build("unknown-provider")

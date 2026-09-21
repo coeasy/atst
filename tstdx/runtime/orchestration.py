@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from ..error_envelope import to_error_envelope
-from ..errors import AllSourcesExhausted
+from ..errors import AllSourcesExhausted, ValidationError
 from ..providers import PROVIDERS, resolve_provider
 from ..query import QuerySpec
 from ..result import QueryResult
@@ -33,12 +33,51 @@ class FallbackPolicy:
     def build(cls, *providers: str) -> FallbackPolicy:
         normalized = tuple(resolve_provider(provider=item) for item in providers)
         if not normalized:
-            raise ValueError("fallback policy requires at least one Provider")
+            raise ValidationError(
+                "fallback 名单至少要点一个 Provider",
+                context={"phase": "wire_validation", "received": []},
+            )
         if len(normalized) != len(set(normalized)):
-            raise ValueError("fallback policy cannot contain duplicate Providers")
+            raise ValidationError(
+                "fallback 名单里有重复的 Provider：同一家排两次不会带来第二次机会，"
+                "只会让失败次数与名单长度对不上",
+                context={"phase": "wire_validation", "received": list(normalized)},
+            )
         for provider in normalized:
             PROVIDERS.get(provider)
         return cls(normalized)
+
+    @classmethod
+    def from_wire(cls, raw: Any) -> FallbackPolicy | None:
+        """线面上 ``fallback`` 的**唯一**解法：没给 → ``None``，给了 → 名单。
+
+        四面原本各抄一份解析（CLI ``_policy``、HTTP ``_policy``、WS ``_policy``，MCP 干脆没有
+        这一格）：字符串按逗号切、空白项丢弃这些规则本身没错，错在同一件业务事实有四个持有者——
+        实测 WS 那份多认列表、另两份只认字符串，而"名单里有重复项"这件事到谁都一样地抛
+        裸 ``ValueError``（见 :meth:`build`）。多形状不是分歧的全部：抄件之间真正危险的是
+        **没人要求它们一致**，所以这一格由 :mod:`tests.architecture.test_face_exposure_projection`
+        按"同一个值打进四面，内核收到的名单必须相同"将。
+        """
+        if raw is None or raw == "" or raw == [] or raw == ():
+            return None
+        if isinstance(raw, str):
+            values = [item.strip() for item in raw.split(",") if item.strip()]
+        elif isinstance(raw, (list, tuple)):
+            values = [str(item).strip() for item in raw if str(item).strip()]
+        else:
+            raise ValidationError(
+                "fallback 必须是 Provider 名单（逗号分隔字符串或数组）",
+                context={"phase": "wire_validation", "fallback_shape": type(raw).__name__},
+            )
+        if not values:
+            raise ValidationError(
+                "fallback 给了却什么也没剩下：名单里只有分隔符或空白",
+                context={
+                    "phase": "wire_validation",
+                    "received": raw if isinstance(raw, str) else [],
+                },
+            )
+        return cls.build(*values)
 
 
 @dataclass(frozen=True, slots=True)

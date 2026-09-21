@@ -22,6 +22,7 @@ from .audit import audit_runtime
 from .freshness import verify_currentness
 
 __all__ = [
+    "DEDICATED_CAPABILITIES",
     "DirectBinding",
     "DirectProviderExecutor",
     "DIRECT_BINDINGS",
@@ -82,6 +83,15 @@ def _registry_triples() -> tuple[tuple[str, str, str], ...]:
 DIRECT_BINDINGS = tuple(
     DirectBinding(provider, channel, capability, _executor_for((provider, channel, capability)))
     for provider, channel, capability in _registry_triples()
+)
+
+#: 有内核专属执行体的 capability——「这条能力走专用路径」的唯一判据。
+#: ``Client`` 的便捷方法面、``Client.call`` 的核心分派、三张 wire 面的专用入口以前
+#: 各自抄一份同名清单；抄到第四份时，清单与执行体表已经可以各说一套而无人报警。
+DEDICATED_CAPABILITIES: frozenset[str] = frozenset(
+    binding.capability
+    for binding in DIRECT_BINDINGS
+    if binding.executor_name != "_migrated_capability"
 )
 
 

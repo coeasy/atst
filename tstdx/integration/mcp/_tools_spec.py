@@ -28,6 +28,10 @@ __all__ = ["TOOLS", "_TOOLS_BY_NAME"]
 _PROVIDER = _str_prop(
     "Canonical Provider id; defaults to the capability's canonical Provider where omitted."
 )
+#: 与 HTTP 查询串、WS ``params``、CLI ``--fallback`` 同一个旋钮、同一条解析
+#: （:meth:`tstdx.runtime.orchestration.FallbackPolicy.from_wire`）。此前只有 MCP 没有它，
+#: 所以同一个「这家失败就换」的请求在三张面上能提、在面向模型的那张面上提不出来。
+_FALLBACK = _str_prop("Comma-separated ordered Provider list for cross-Provider fallback.")
 
 TOOLS: list[ToolSpec] = [
     ToolSpec(
@@ -57,6 +61,7 @@ TOOLS: list[ToolSpec] = [
             "properties": {
                 "symbol": _str_prop("Security symbol."),
                 "provider": _PROVIDER,
+                "fallback": _FALLBACK,
                 "period": _str_prop("Canonical bar period."),
                 "count": _int_prop(
                     "Number of bars.", default=320, minimum=1, maximum=MAX_BARS_COUNT
@@ -74,7 +79,11 @@ TOOLS: list[ToolSpec] = [
         inputSchema={
             "type": "object",
             "additionalProperties": False,
-            "properties": {"symbol": _str_prop("Security symbol."), "provider": _PROVIDER},
+            "properties": {
+                "symbol": _str_prop("Security symbol."),
+                "provider": _PROVIDER,
+                "fallback": _FALLBACK,
+            },
             "required": ["symbol"],
         },
         handler=_h_get_quote,
@@ -85,7 +94,11 @@ TOOLS: list[ToolSpec] = [
         inputSchema={
             "type": "object",
             "additionalProperties": False,
-            "properties": {"symbols": _list_of_strings("Security symbols."), "provider": _PROVIDER},
+            "properties": {
+                "symbols": _list_of_strings("Security symbols."),
+                "provider": _PROVIDER,
+                "fallback": _FALLBACK,
+            },
             "required": ["symbols"],
         },
         handler=_h_get_quotes,
