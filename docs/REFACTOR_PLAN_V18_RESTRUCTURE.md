@@ -5,7 +5,9 @@
 > 变成被门禁的对象（提交 `d1bd446`，读数见 §11），第 3 轮把"文档承诺 ↔ 代码兑现"这条轴上的
 > 幻影旋钮与手抄计数改成行为与判据（提交 `0a4a232`，读数见 §12，并撤回 C2(a)/D5、新登记 G5）；
 > 第 4 轮把同一根轴补到命令行面（`--flag` 注册了必须有人读），并当场反掉自己上一轮写下的
-> 过度承诺（提交 `7fe7e54`，读数见 §13）；
+> 过度承诺（提交 `7fe7e54`，读数见 §13）；第 5 轮把它补到机器对机器的声明面（HTTP 路由形参与
+> MCP `inputSchema` 属性声明了必须有人读），新尺子第一件事就抓到一条教人吃 `ModuleNotFoundError`
+> 的部署命令（提交 `788e533`，读数见 §14）；
 > 其余阶段仍待按 §6 的 D7–D12 裁决推进。
 > §0 的基线是**方案取证轮**的数，§9 是**执行轮**的数，两者环境标签相同（3.12.13）但不混用。
 > **授权尺度（本轮用户已答，2026-09-20）**：
@@ -409,6 +411,13 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b4step/probe_never_returns.py`、`probe_rerun.log` | 第 4 轮四个判据候选（A/B/C/D）+ CLI 严格口径的量法与实测计数；"量过但不立"的凭据 |
 | `wt_v18b4ship/gates_ship.log` | **提交树**（`7fe7e54`，`dirty=0`）九门禁复测 |
 | `wt_v18b4ship/fulltest_ship.log` + `.xml` | 提交树离线全量与 junit 计数；与步骤轮逐格相同 |
+| `wt_v18b5step/run_gates.sh`、`gates_v18b5.log` | 第 5 轮步骤轮（`9384796` + 本步 3 文件）环境与九门禁逐条 RC 与摘要行 |
+| `wt_v18b5step/fulltest_v18b5.log` + `.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数 |
+| `wt_v18b5step/fulltest_v18b5_rerun.log` | **同一棵树、同一批文件的第三次全量**：用于把 −0.01pp 钉成计时抖动而非退化（§14 末段） |
+| `wt_v18b5step/mutate_v18b5.py` + `.log` | 第 5 轮 7 条反证变异（L1–L7）：每条 `turned_red=True` 且 `restored=True` |
+| `wt_v18b5step/probe_{g,h,i,j}.py`、`probe_readings.log`、`probe_readings_step.log` | 判据五取证 + 三个"量过但不立"的候选（H1/H2/I）计数；前者在 main 工作树跑、后者在步骤树内重跑 |
+| `wt_v18b5ship/run_gates.sh`、`gates_ship.log` | **提交树**（`788e533`，被跟踪文件 0 改动）九门禁复测 |
+| `wt_v18b5ship/fulltest_ship.log` + `.xml` | 提交树离线全量与 junit 计数；与步骤轮逐格相同 |
 
 ## 8. 本方案不做什么（避免被读成"又要一轮无限重构"）
 
@@ -690,6 +699,99 @@ ruff check `All checks passed!`、ruff format 445 files）；离线全量 junit
 同批裁决）；C1/C2/C3、D1–D4、E1–E4、F2、F3、F4/G3、G2 的 D10 裁决；CHANGELOG `[Unreleased]`
 三条登记（`quotes` 失败语义、移除 `quotes(prefix=)` 形参、`Sniffer` 判定域随 `families` 收窄）
 仍因并行会话该文件未提交而押后。
+
+---
+
+## 14. 执行记录（续）
+
+### 第 5 轮｜机器对机器的声明面也不许有"传了没人读"的字段；文档教的命令必须跑得起来（提交 `788e533`，3 个文件）
+
+同一根轴的第三种受众。第 3 轮量**函数入参**（docstring `Parameters` ↔ 函数体），第 4 轮量**命令行用户**
+（`--flag` ↔ `args.<dest>`）。本轮量**机器对机器的声明面**：HTTP 路由的函数签名与 MCP 工具的
+`inputSchema.properties` 是对外公开的白名单——FastAPI 把路由形参公开成查询串参数，
+`wire_fields`/MCP schema 又拿同一份声明当拒绝白名单，于是"加进声明却无人读"的字段能一路绿灯穿过闸口，
+调用方那边变成"我传了，它没理我"。比 CLI 那一格更隐蔽：`--help` 至少还在手边，wire 面上它看起来就是
+一个生效的开关。
+
+| 改动 | 内容 |
+|---|---|
+| `tests/architecture/test_declared_knobs.py`（新判据五：wire 面） | HTTP 侧 `_http_scan()` 从 `runtime_http.py` 的 AST 现算 `app.get/post/put/delete` 装饰过的 handler 形参表（`self/cls` 除外），`_body_reads()` 只认函数体里 **Load 语境**的名字；MCP 侧从 `_tools_spec.TOOLS` 的 `inputSchema.properties` 现算声明属性，读取集 `_dict_keys()` 只认 `<请求体字典>.get("K")` / `<body-dict>["K"]` 两种形状，字典名必须叫 `args/params/payload/data/options`——**声明自身的字面量不是这两种形状，注册无法自证为被读取**（沿用判据四的口径）。两面共用谓词 `_wire_unread()`；三张下限 `HTTP total >= 20`、`len(TOOLS) >= 5` 且 `MCP total >= 20`；planted 正控 `test_the_wire_ruler_sees_planted_unread_fields` 用一段含"注册了没人读"形状的假路由源码，同时验正反两向 |
+| `tests/architecture/test_doc_code_consistency.py`（新判据：文档命令形状） | `_CMD_TARGET` 抽 `python [-3.x] -m …` / `uvicorn …` 里点名的 `tstdx.x.y` 与可选 `:attr`，`_IMPORT_TARGET` 抽 `from/import tstdx.x`；`_target_offense()` 真的 `importlib.import_module()` 并对 `:attr` 做 `hasattr`——判据落在"这条命令敲下去起不起来"，不是"字符串像不像个模块"。作用域沿用同文件的 `chain_docs()`（活文档），下限 `checked >= 60`；正控三格：planted 死模块红、写对的 `runtime_http:create_runtime_app` 绿、模块在而对象名抄错红 |
+| `docs/FAQ.md` 部署段 + 监控段 | 见下段 |
+
+**与 F-47 的分工**（避免被读成重复建设）：`tests/runtime/test_wire_declared_fields.py` 管**反方向**——
+请求里出现未声明的字段必须当场被 `reject_undeclared` 拒掉；本判据管**声明了的字段有没有真的被读**。
+前者是运行期行为、后者是静态 AST，两面合起来才是那句"wire 面上每个字段要么被读走、要么被拒"。
+
+**新尺子第一件事抓到的唯一真实缺陷**：`docs/FAQ.md` 部署段教用户
+`python -m uvicorn tstdx.integration.http_server:create_app --factory`，而 `tstdx/integration/http_server.py`
+早已被物理删除（真身是 `runtime_http.create_runtime_app`）——照抄文档的人第一步就吃 `ModuleNotFoundError`；
+101 处命令/导入形状里唯一的一处。同段另两处也按代码钉实：镜像 CMD 是 `--help`，起服务要么走
+`tstdx serve --bind 0.0.0.0 --port 8000`（`cli/parser.py:206-209` 确有这两个 flag），要么把 app 交给 uvicorn
+（需 `tstdx[server]`，`pyproject.toml:45` 确有该 extra）；监控段原来那句 `GET /api/v1/system/metrics`
+在网关里根本不存在（全树 grep `system/metrics` 现已 0 命中），改成代码里真有的 `PrometheusExporter.serve()`
+——`host="127.0.0.1", port=9090` 缺省、暴露 `GET /metrics`（`prometheus_exporter.py:166`）。
+**第 4 轮的教训在这一格起了作用**：我一度把 `OtelExporter` 写成"缺省端点 `http://localhost:4318/v1/metrics`"，
+读到 `__init__` 签名是 `endpoint: str | None = None`（**没有**缺省值）才收回，改成"`endpoint` 须显式给出，
+例如 …"。
+
+**三个"量过、按数字不立"的判据候选**（步骤树内重跑，读数见 `wt_v18b5step/probe_readings_step.log`）：
+
+| 候选 | 实测 | 不立的理由 |
+|---|---|---|
+| H1：文档点名的 wire 查询键必须存在于声明面 | 声明并集 13 个路由形参 / 17 个 wire 键（并集口径，与判据五的逐路由 25 格不同），文档命中 1 个未知键：`max_age`，来自并行会话**在途未提交**的台账 `docs/REFACTOR_PLAN_V17_CLOSURE.md`（F-43 正是在记这个旋钮的账） | 唯一命中是对方会话写给自己的缺陷描述，不是"文档教错"。要立它就得把别人的活文档纳入我的判据域，并解决"叙述语境 vs 指令语境"的区分——这条区分本轮没有可推导的口径 |
+| H2：文档点名的 `--flag` 必须已注册 | CLI 声明面 70 个 dest/flag 写法，文档命中 38 个未注册 | 38 个几乎全是**别的工具的**旗标（`--cov`、`--rm`、`--stat`、`--ignore-missing-imports`、`--strip-trailing-cr`）与归档计划里的设想命令（`--regen-all`、`--require-hashes`）。立它等于维护一份"哪些命令行不属于 tstdx"的豁免名单——正是第 4 轮否掉的那种形状 |
+| I：文档里所有反引号点号引用必须可解析 | 39 份活文档、点号引用 214 次 / 去重 121 个，19 次解析不出（分布在 9 份文档） | 19 处**全是误报**：`tstdx.git`（URL 尾巴）、`tstdx.toml`（文件名）、迁移/发布说明里的**否定句**（"不再有 `tstdx.compat`"）——第 4 轮探针 C 那条"散文里对否定是瞎的"在这里原形重现。更能说明问题的是：本轮真正的缺陷（`http_server:create_app`）**不在**这 19 处里，反引号口径看不见命令，命令口径才看得见 |
+
+**步骤轮**（`wt_v18b5step`，detached @ `9384796` + 本步 3 文件，三文件 md5 与 main 工作树逐格相同：
+`test_declared_knobs.py` = `f08ef8f4…`、`test_doc_code_consistency.py` = `0cf2c0e9…`、`FAQ.md` = `b707432e…`）：
+环境探针 + 九项确定性门禁 G1–G9 共 10 次调用**全部 rc=0**（`gates_v18b5.log`：originality `Total: 191 /
+Original: 191 / License OK: 191 / Header OK: 191 / Suspicious: 0 / External imports: 17`、spec_audit
+`"coverage_pct": 100.0`、golden_audit `[GATE] all L1 verified commands have real samples (OK)` + 既有
+`suspect_short` WARN 1 条（`0x537 4B<12B x3`）、reachability `模块总数: 190 / 可达: 174 / 白名单豁免: 16`
+且 `无未登记孤儿 ✓`、contract_audit `63 个 Typed Query 契约` + 92 待办 rc=0、docs links `83 files`、mypy 0 行、
+ruff check `All checks passed!`、ruff format `445 files already formatted`）。判据五自身读数：**HTTP 10 张路由 /
+25 个形参，unread=0；MCP 9 个工具 / 29 个声明属性，unread=0；正控（塞一个不读的声明属性）被抓住 True**。
+离线全量进度走到 `[100%]`、junit **3650 项 / 0 失败 / 0 错误 / 7 跳过**、160.286s；覆盖率 **81.72%**
+（TOTAL 22 440 stmt / 3 525 miss / 5 996 branch / 1 002 partial），`Required test coverage of 77.0% reached`，
+**阈值未动**。判据规模 3645 → **3650（+5）**，无删除。环境标签与前四轮相同：`.venv` cpython-3.12.13、`WIN-PM`。
+
+**反证证据**（`wt_v18b5step/mutate_v18b5.log`，7 条全部 `rc=1`、`turned_red=True` 且 `restored=True`）：
+
+| 变异 | 动了什么 | 结果 |
+|---|---|---|
+| L1 | HTTP 路由解析不出任何 handler（尺子失明） | 普查与正控**同时**红 ⇒ `total >= 20` 那条兜底真的在兜 |
+| L2 | MCP handler 读取集恒空（所有声明属性都被误判成没人读） | MCP 普查红 |
+| L3 | 共用谓词 `_wire_unread` 恒不报 | **只有正控红、两张普查仍绿** ⇒ 正控是有分量的那一半：没有它，"unread=0"读不出任何区别 |
+| L4 | 真实 `runtime_http.py` 里加一个没人读的路由形参 | HTTP 普查红 ⇒ 判据对真实面有效，不只是对 planted 样本有效 |
+| L5 | 真实 `_tools_spec.py` 声明一个 handler 不读的属性 | MCP 普查红 |
+| L6 | 文档命令形状扫不到东西 | 普查与正控同时红（`checked >= 60` 兜底） |
+| L7 | 把本轮修掉的死命令（`http_server:create_app`）原样写回 FAQ | 文档命令判据红 ⇒ 新格确实盯住了它要盯的那一处 |
+
+**ship 轮（提交树复测，同一解释器与工作树参数）**：`788e533` 落到 main 后另起隔离工作树 `wt_v18b5ship`
+再量一遍，`head=788e533`、被跟踪文件 0 处改动（树里只剩本轮取证脚本与日志自己）。10 次调用**全部 rc=0**，
+摘要行与步骤轮逐字相同（`gates_ship.log`：`Total: 191 / Suspicious: 0`、`coverage_pct 100.0`、
+`模块总数: 190 / 可达: 174 / 白名单豁免: 16 / 无未登记孤儿 ✓`、`63 个 Typed Query 契约`、docs links 83 files、
+mypy 0 行、ruff check `All checks passed!`、ruff format 445 files）；离线全量 junit
+**3650 / 0 失败 / 0 错误 / 7 跳过**、166.899s、覆盖率 **81.72%**（TOTAL 22 440 / 3 525 / 5 996 / 1 002，
+`Required 77.0% reached`）——与被测步骤轮**逐格相同**。两棵树的 `tstdx/`、`tests/`、`scripts/` 逐文件比对
+（`diff -r --strip-trailing-cr`）除 `__pycache__` 外**内容一致**，仅工作树检出为 CRLF、提交树为 LF：
+提交内容与被测内容一致。
+
+**−0.01pp 的来历（量清楚了才写进这份文档）**：上一轮 81.73% → 本轮 81.72%，而本轮**没碰任何运行时代码**
+（改动全在 `tests/architecture/` 与 `docs/FAQ.md`，`--cov=tstdx` 的总语句数四次运行恒为 22 440，分母没动）。
+逐文件比对：两轮之间的差异集中在 `tstdx/transport/pool.py`（607 stmt，未覆盖 111→113、partial branch 36→37）。
+为了把它钉成"计时抖动"而不是"本轮造成的退化"，同一棵步骤树、同一批文件又跑了第三次全量
+（`fulltest_v18b5_rerun.log`，`PYTEST_RC=0`）：`pool.py` 这次稳定在 113/37，动的换成了
+`tstdx/protocol/generic.py`（20/9 → 21/10），TOTAL 随之 3 525/1 002 → 3 526/1 003。也就是说这两个并发/计时
+相关文件的未覆盖行集**逐次运行本身就会抖 ±1～2 行**，"两次独立读数相同"不能作为零退化的证据。按实测口径
+写结论：**本轮 −0.01pp 落在计时抖动行上，与本轮改动无因果**；覆盖率真值仍以 CI（ubuntu + py3.11、同一提交树）
+为准，本轮不据此重钉基线。
+
+**本轮明确未做**：候选 H1/H2/I 三把尺子（读数见上表，量过而不立）；`chain_docs()` 之外的文档（归档计划、
+并行会话在途台账）不纳入任何命令/引用判据；`docs/FAQ.md` 其余段落未逐条复核（本轮只动部署与监控两段）；
+§2 G5 的**声明面**改动（与 F-66/F-75 同批裁决）；C1/C2/C3、D1–D4、E1–E4、F2、F3、F4/G3、G2 的 D10 裁决；
+CHANGELOG `[Unreleased]` 三条登记仍因并行会话该文件未提交而押后。
 
 
 
