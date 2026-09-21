@@ -64,9 +64,10 @@ def gateway_capabilities() -> set[str]:
 
     两个来源都是生产表自身的投影——``MIGRATED_CAPABILITIES`` 由注册表派生的迁移绑定算出，
     ``DIRECT_BINDINGS`` 里 ``executor_name != "_migrated_capability"`` 的是内核自带的协议
-    原语（quotes/bars/snapshot/security_count/security_list）。这里原本是一份 17 个名字的
-    手抄名单，其中 12 个与迁移表重复：手抄的那部分等于"名单说了算"，某个名字被摘掉绑定或
-    改了名，审计不会有任何反应。
+    原语。这里原本是一份手抄名单：与迁移表重复的那部分等于"名单说了算"——某个名字被摘掉绑定
+    或改了名，审计不会有任何反应；不重复的那几个则是能从 ``executor_name`` 现算的原语，
+    本就不必抄。旧名单的规模与重复比例记在重构方案里（那里有取证日志可回查），不写进散文——
+    抄下来的计数没人能自查，写下的那一刻就开始腐烂。
     """
     from tstdx.catalog.capability import MIGRATED_CAPABILITIES
     from tstdx.runtime.executor import DIRECT_BINDINGS
@@ -95,7 +96,7 @@ def _all_typed_queries() -> list[type]:
     """收集 typed_query 模块中全部具体 Query 契约类。
 
     具体与否按结构判据判定（可构造 + `capability` 为字符串），不靠手抄名单：抽象基类
-    （根 `CapabilityQuery`、9 个领域基类、`BatchCapabilityQuery`、`TypedQueryResult`）
+    （根 `CapabilityQuery`、各领域的抽象基类、`BatchCapabilityQuery`、`TypedQueryResult`）
     因缺必填参数无法构造，本就被排除；写死名单会在新增基类时把它静默算成契约。
     """
     import dataclasses as dc

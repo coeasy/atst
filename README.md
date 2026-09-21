@@ -429,7 +429,7 @@ make gates                                      # 11 步确定性门禁：lint+f
 python -m tstdx.tools.golden_audit --gate       # Golden L1 真实样本门禁（530 payload）
 python -m pytest tests/adversarial -q           # 对抗矩阵（9 payload × 85 命令，逃逸=0）
 python scripts/audit_reachability.py --strict   # 可达性门禁（孤儿=0）
-python scripts/contract_audit.py --ci           # Typed 契约↔注册表↔Domain Record 五段对账 + 内核编译审计（ERROR 级缺口才阻断；契约待补项按 PENDING 报告）
+python scripts/contract_audit.py --ci           # Typed 契约↔注册表↔Domain Record 五段对账 + 内核编译审计（注册能力缺声明形状即 ERROR 阻断；Domain Record 待映射项按 PENDING 报告）
 python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproject fail_under=77）
 ```
 
@@ -451,7 +451,7 @@ python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproj
 |---|---|---|
 | Typed Capability 契约 | ✅ | 60+ 契约（10 领域基类），字段名与内核方法签名一一对应 |
 | Domain Model | ✅ | 9 Domain Record 族 + 记录归一化 |
-| Contract Automation | ✅ | `scripts/contract_audit.py --ci`：Registry/语义/内核编译/Domain Record/往返五段对账，ERROR 级缺口阻断（契约待补面按 PENDING 报告） |
+| Contract Automation | ✅ | `scripts/contract_audit.py --ci`：Registry/语义/内核编译/Domain Record/往返五段对账，ERROR 级缺口阻断（注册能力既无 Typed 契约也不在任何派发面即 ERROR；Domain Record 待映射面按 PENDING 报告） |
 | Streaming | ✅ | StreamSpec/StreamPlanner + StatefulQuoteStream |
 | 单内核收敛（v16） | ✅ | 零缓存直调路径；v12 门面/service/sources/全部缓存层物理删除 |
 | 断链清偿（v17 Phase 3A/3B/3D） | ✅ | v14 信封运行时 + `execution/` DAG + `provider/` router + registry 三件套删除；typed 全线接通 |

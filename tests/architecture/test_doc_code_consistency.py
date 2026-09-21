@@ -1030,16 +1030,35 @@ def test_code_comments_about_change_types_match_the_enum() -> None:
 #: V18 第 7 轮把覆盖口径改成三个派生集合之后，散文里**不该再有**计数：这条判据因此
 #: 从"抄的数字对不对"换成"有没有再抄"，并留下一条反向自检——"没有抄本"必须是有人
 #: 在算才有意义，否则它只是"没人算"的另一种说法。
-_AUDIT_DOCSTRING = re.compile(r'"""(.*?)"""', re.S)
-_AUDIT_COUNT_PROSE = re.compile(r"\d+\s*个")
+#: 射程是**每一段** docstring：本轮一开始只盯模块那一段，而函数说明里同样写着
+#: "17 个名字／12 个重复／9 个领域基类"——旧名单的规模是历史证据（记在重构方案，有日志可查），
+#: 契约基类的数则是当前口径的抄本，两者都不该留在代码散文里。
+_AUDIT_COUNT_PROSE = re.compile(r"\d+\s*[个项]")
+
+
+def _audit_docstrings() -> dict[str, str]:
+    """``scripts/contract_audit.py`` 里模块与所有类/函数的 docstring，按名字索引。"""
+    tree = ast.parse((ROOT / "scripts" / "contract_audit.py").read_text(encoding="utf-8"))
+    out: dict[str, str] = {}
+    module_doc = ast.get_docstring(tree)
+    if module_doc is not None:
+        out["<module>"] = module_doc
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        doc = ast.get_docstring(node)
+        if doc is not None:
+            out[node.name] = doc
+    return out
 
 
 def test_contract_audit_docstring_numbers_match_the_audit() -> None:
-    text = (ROOT / "scripts" / "contract_audit.py").read_text(encoding="utf-8")
-    doc = _AUDIT_DOCSTRING.search(text)
-    assert doc, "contract_audit 不再有名实相符的模块 docstring，门禁失效"
-    copied = [m.group(0) for m in _AUDIT_COUNT_PROSE.finditer(doc.group(1))]
-    assert not copied, f"contract_audit 的 docstring 又抄了计数：{copied}（口径应现算在报告行里）"
+    docs = _audit_docstrings()
+    assert len(docs) >= 10, f"只解析出 {len(docs)} 段 docstring，门禁自身失效"
+    copied = {
+        name: found for name, doc in docs.items() if (found := _AUDIT_COUNT_PROSE.findall(doc))
+    }
+    assert not copied, f"contract_audit 的散文又抄了计数：{copied}（口径应现算在报告行里）"
     ca = _contract_audit()
     assert len(ca.registered_capabilities()) >= ca.MIN_REGISTERED
     assert len(ca.typed_capabilities()) >= ca.MIN_TYPED_COVERAGE
