@@ -552,6 +552,10 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b14final/run_gates14final.sh`、`run_gates14final.log` | **最终候选树**（内容 = 本次提交：`ls-files -co` + `CHANGELOG.md` 换回 HEAD 版 + 删掉并行会话那份未跟踪计划的副本）十次调用：10/10 `rc=0` |
 | `wt_v18b14final/fulltest_v18b14final.log` + `reports/fulltest_v18b14final.xml` | 候选树离线全量：3 752 / 0 / 0 / 7、182.710 s、`TOTAL 22 428 / 3 455 / 5 992 / 1 003`、82.11%；告警摘要里 `field_out_of_domain` 只剩 2 行（G7 判据自己重放实采样本那两行） |
 | `wt_v18b14step/fulltest_v18b14_rerun.log` | 步骤树原样重跑第三次全量：用来把 `tstdx/protocol/generic.py` 那一行的 ±1 钉成抖动还是退化 |
+| `wt_v18b14final/fulltest_v18b14final_rerun.log` + `reports/fulltest_v18b14final_rerun.xml` | **同一棵候选树**的第二次全量（14:12 起，176.358 s）：3 752 / 0 / 0 / 7、`TOTAL 22 428 / 3 454 / 5 992 / 1 002`、82.12%。与上一行合起来是"同一棵树自身给两个覆盖读数"的直接证据（差的正是 `generic.py` 那一行） |
+| `wt_v18b14ship/run_gates14ship.sh`、`run_gates14ship.log` | **提交树**（`ef3b97e`，`git checkout-index` 直出）十次调用复测：10/10 `rc=0`；抬头第一行是 `tstdx 1.1.0 …wt_v18b14ship\tstdx\__init__.py` |
+| `wt_v18b14ship/fulltest_v18b14ship.log` + `reports/fulltest_v18b14ship.xml` | 提交树离线全量：junit **3 752 / 0 / 0 / 7**、180.359 s、`TOTAL 22 428 / 3 455 / 5 992 / 1 003`、**82.11%**；`field_out_of_domain` 只余 2 行（G7 判据重放实采样本） |
+| `wt_v18b14ship/build_v18b14_ship.log` | 提交树上的 canonical 构建 + 校验 + 干净 venv 冒烟：`BUILD_RC=0`、`runtime_files=191`（第 13 轮是 190，多的正是本轮新增的 `tstdx/domain/integrity.py`）、`twine check` 通过、`[冒烟] 通过 ✓`，两份产物的字节数与 sha256 逐字在末尾 |
 
 ## 8. 本方案不做什么（避免被读成"又要一轮无限重构"）
 
@@ -2098,11 +2102,12 @@ reachability `无未登记孤儿 ✓`、contract_audit
 | `test_doc_code_consistency.py` 126 → 127 | +1（**新增的那页 `docs/releases/v1.1.0.md` 自己进了这轮的参数化名单**——那把尺子按 `docs/**/*.md` 逐文件铺开，新页面无需登记即被扫） |
 | 新 `tests/live/test_tdx_core_chain.py` | +5，但走 `-m network`，**不在这 3 752 里** |
 
-删除 0 项。本轮两次全量（步骤树 13:39 的 3 751 / 82.12% 与候选树 14:04 的 3 752 / 82.11%）差的那 1 项
-就是上表倒数第二行；覆盖表 141 行逐行比对后两次的**唯一差异行**是
-`tstdx/protocol/generic.py`（miss 20 → 21、partial branch 9 → 10）。±1 抖动这件事第 8/11/12 轮并排过，
-当时落在 `pool.py`/`ratelimit.py`，本轮落在 `generic.py`——**换的是落点，不是同一条已知的线**，
-所以本轮再用同一棵树重跑一次坐实（读数见"提交树复测"段；不把它先写成结论）。
+删除 0 项。本轮一共跑了**四次**全量：步骤树两次（3 751 / 82.12%、82.12%）与候选树两次
+（3 752 / 82.11%、3 752 / 82.12%）。两次步骤树读数逐格相同，两次候选树也只差
+`tstdx/protocol/generic.py` 一行（miss 20↔21、partial branch 9↔10，同一棵树两种读数都出现过）
+——**同一棵树自身就会给两个答案**，所以那 1 行是执行时序造成的覆盖抖动，不是本轮改动造成的退化；
+第 8/11/12 轮并排过同一种现象，当时落在 `pool.py`/`ratelimit.py`。判据规模那 +1 项则与它无关，
+是上表倒数第二行说的那件确定事实。
 
 **变异台账**（`wt_v18m14mut/mutate14.log`，基线 27 项 0 红）：M1 摘掉出口尺子 ⇒ 2 红、
 M2 让 `row_violations` 恒回空 ⇒ 5 红、M3 把可见代码尺换成"6 位数字"⇒ 1 红；
@@ -2112,7 +2117,36 @@ M5a 给被拦命令盖 ✅ ⇒ 1 红、M5b 命令号改成幻影 ⇒ 2 红、M5c
 与主工作树 sha256 前 16 位逐字节相同。G4 的反证 5 格（`live14_negative_controls.log`）里决定性的是
 **N1：把探针指向一台死主机 ⇒ 5 格全红、0 skip**——这正是"盘中照不到"那条账的根因形状。
 
-#### 八、本轮明确未做
+#### 八、提交树复测与构建（`wt_v18b14ship`，14:16–14:23）
+
+`ef3b97e` 落盘后用 `git checkout-index` 直出一棵干净的**提交树**——不掺任何未提交改动，
+`git diff --name-only HEAD` 在这棵树里数得是 **0**（`git status` 那几行 ` M` 是 checkout 的 CRLF
+落盘产物，不是内容差）。十次调用 `rc=0` 逐条在 `run_gates14ship.log`，读数与候选树逐项相同：
+`All checks passed!`、`451 files already formatted`、mypy 无输出、
+`Total: 191 / Original: 191 / Suspicious: 0 / External imports: 17`、`"coverage_pct": 100.0`、
+`[GATE] all L1 verified commands have real samples (OK)`、`无未登记孤儿 ✓`、
+`PASS: 172 个注册 capability …（专属 63 ∪ 派发面 172）`、`docs link check OK (84 files)`、
+benchmark smoke OK。离线全量（`fulltest_v18b14ship.log` + `reports/fulltest_v18b14ship.xml`，
+14:16:50 起）：junit **3 752 / 0 失败 / 0 错误 / 7 跳过**、180.359 s、
+`TOTAL 22 428 / 3 455 / 5 992 / 1 003`、覆盖率 **82.11%**；`suite_rc=0`，
+告警摘要里 `field_out_of_domain` **2 行**（G7 判据自己重放实采样本那两行）。
+
+提交树上跑 canonical 构建（`build_v18b14_ship.log`，`python scripts/build_package.py --smoke`，
+`BUILD_RC=0`）：PEP 517 隔离构建 → 产物形状校验
+`tstdx-1.1.0-py3-none-any.whl` + `tstdx-1.1.0.tar.gz`、`version=1.1.0`、`runtime_files=191`
+（第 13 轮 190，多的那一个正是本轮新增的 `tstdx/domain/integrity.py`）→ `twine check` 两份都过 →
+临时干净 venv 装 wheel 冒烟（导入闭包 + `py.typed` + 五处补丁落点断言 + `tstdx --help` + `pip check`）
+→ `[冒烟] 通过 ✓`。产物指纹：
+
+| 产物 | 字节 | sha256 |
+|---|---|---|
+| `dist/tstdx-1.1.0-py3-none-any.whl` | 747 287 | `905e5a773be5b1709eca4b1ebec8ad8d972d77ab35a0361faa4f6b47f17fc1f7` |
+| `dist/tstdx-1.1.0.tar.gz` | 1 572 632 | `58452fceff98c7a5fc485bb865f039c19693b72804c636f78e3e5ebd5798ae03` |
+
+这一段与第七段是**两次独立的十次调用 + 两次独立的全量**，不是一个数抄两遍；两次的判据规模同为
+3 752，覆盖差的正是上面说过的那一行抖动。
+
+#### 九、本轮明确未做
 
 - **G3 的布局本身**：`0x000F`/`0x0010` 在账本上仍是 `tier=L2, verified=False`（本轮复核读数），
   不猜协议字节；本轮做的 G7 是让它在线上可见，不是让它变对。
