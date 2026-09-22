@@ -304,6 +304,15 @@ MCP `inputSchema`、typed 契约**由它生成或校验为它的投影**。
 > 仍是手抄的：注册表 `channel.capabilities`、typed 契约、`_call_core` 的 if/elif 分派表（本轮给它装了
 > 闭合点）、catalog 那份 `_CORE_CAPABILITIES`（引派生集会成导入环）；MCP `inputSchema` 是被判据
 > **认成**投影、不是被**生成**出来。八张表→四张外表面的口径更正见 §10 第 2 轮，读数见 §19。
+>
+> **第 12 轮落地（后半第一段：那份 catalog 名单）**：环解不了——`runtime/executor.py` 顶层就
+> import 了 catalog，而 catalog 在**模块导入期**要跑完 `_build_bindings()`，所以双向都拿不到对方，
+> 派生只能换成**判据钉住**。做法是把那一张混了三种说法的 9 条名单拆成两份各管一件事的集合：
+> `_RESERVED_CORE_CAPABILITIES`（保留名，权威是 `DEDICATED_CAPABILITIES`，八 号判据量它双向差为 0）
+> 与 `_NOT_A_QUERY_MEMBER`（成员黑名单，每条必须真的是可调用成员，八b）；幽灵条目 `mro` 删除。
+> 剩下的手抄：注册表 `channel.capabilities`、typed 契约、`_PROVIDER_OVERRIDES` /
+> `_CHANNEL_OVERRIDES` / `_SEMANTIC_WEB_CHANNELS` 三张目录内部表；MCP `inputSchema` 仍是被**认成**
+> 投影。读数与代价见 §21。
 > **第 11 轮落地（第二段：那张 if/elif 表删掉了）**：核心分派不再抄"谁能转 `currentness`、谁的
 > `provider` 有缺省、位置参要不要被 `str()` 校正"——绑定交回 `inspect.signature`，缺省交回方法
 > 自己的签名；七条能力的便捷方法面统一挂上 `currentness`，它与 `UnifiedRuntime.<cap>` 的缺省由一条
@@ -499,6 +508,17 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b11ship/run_gates.sh`、`gates_v18b11.log` | **提交树**（`20d32a9`）十次调用复测 |
 | `wt_v18b11ship/verify_tree.py` | 提交树 ↔ HEAD 的内容核对（2 285 个被跟踪文件、换行归一后逐字节比；同时打印落盘带 CRLF 的文件数，用来说明为什么必须先归一化） |
 | `wt_v18b11ship/fulltest_v18b11.log` + `.xml` | 提交树离线全量与 junit 计数；`tstdx/` 覆盖表 141 行与步骤轮**2 行不同**（TOTAL 与 `transport\ratelimit.py`） |
+| `wt_v18b12step/run_gates12.sh`、`run_gates12.log` | 第 12 轮步骤轮（`84ba378` + 本步 2 文件）环境与十次调用逐条 RC 与摘要行；格式化后重跑过一次，两份读数一致 |
+| `wt_v18b12step/fulltest_v18b12.log` + `junit_v18b12.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数 |
+| `wt_v18b12step/covdiff12.py` | 覆盖表逐行比对器（沿用第 11 轮那份）；本轮用它量了两对：step12↔ship11、step12↔step11，并把第 10–12 轮五份日志里 `pool.py`/`ratelimit.py`/TOTAL 三格并排（§21 规模账的表） |
+| `wt_v18b12step/probe12.py`、`probe12_readings.log` | 跳过名单的逐格行为探针：9 条各自命中类的哪一层、摘掉每条多出哪些三元组、目录那份核心集与派生集的双向差、两份模块的顶层/延迟 import 清单 |
+| `wt_v18b12step/probe12b.py`、`probe12b_readings.log` | `mro` 在四种口径下的答案（`dir`/`getattr`/`getmembers`/`vars`，对照 `close` 的四种答案）；目录三元组 229 vs 执行器 `_migrated_capability` 234 的双向差；`audit_capability_bindings` 对"目录多开一个家"响不响的实测 |
+| `wt_v18b12step/ruff12_pre_format_red.log` | 新测试文件第一次 `ruff format --check` 的红（rc=1 + `--diff` 两处换行）。第 11 轮同一条没留档，本轮补上 |
+| `wt_v18b12step/mutate12.py`、`mutate_v18b12.log` + `mut12_out_1..7.log` | 第 12 轮 8 格反证（C0 对照 + M1–M7）：每格变红数与红名单在 `.log`，pytest 原文分格存 `mut12_out_N.log`，每格跑完按字节还原 |
+| `wt_v18b12step/mutate_v18b12_run1_anchorbug.log` | **第一次跑的失败留档**：M6 锚点写错（新绑定插进了 `_EXPLICIT_BINDINGS` 第一格的括号里）⇒ 目标面 8 个文件 collection error、`rc=2`、"变红 0"。它不是判据红，是变异台自己写坏了；修正后重跑成上面那份日志（§21 的"两处不粉饰"第二条） |
+| `wt_v18b12ship/run_gates12.sh`、`gates_v18b12.log` | **提交树**（`f6c4a0c`）十次调用复测 |
+| `wt_v18b12ship/verify_tree.py`、`verify_tree.log` | 提交树 ↔ HEAD 的内容核对：被跟踪文件 2 286、归一化后一致 2 286、不符 0；同时打印落盘带 CRLF 的 1 753 个文件（第 11 轮是 2 285 / 1 752，差的正好是本轮新增那份测试） |
+| `wt_v18b12ship/fulltest_v18b12.log` + `junit_v18b12.xml` | 提交树离线全量与 junit 计数；覆盖表与步骤轮的逐行差见 §21 的 ship 段 |
 
 ## 8. 本方案不做什么（避免被读成"又要一轮无限重构"）
 
@@ -1481,11 +1501,13 @@ partial-branch 37→36，两边都仍是 80%——就是第 7、8 两轮各记�
   （M9 那一格），缺省本身没统一——统一会动 `requested_provider` 的 provenance 读数，属对外口径改动。
 - **`tstdx/catalog/capability.py` 的 `_CORE_CAPABILITIES` 与 `_SKIP_WEB_METHODS`**。量过
   （`probe10e_catalog.log`）：那份 9 条的跳过名单里只有 **3 条**命中 `WebQuoteSession` 的 166 个可调用
-  成员（`close`、`quotes`、`minute`），其余 **6 条根本不是成员**（`mro` 与六个 capability 名）；
+  成员（`close`、`quotes`、`minute`），其余 **6 条根本不是成员**（`mro` 加五条 capability 名——
+  原句写的是"`mro` 与六个 capability 名"，把 6 条数成了 6+1，第 12 轮按 `probe12_readings.log` 更正）；
   把 capability 名单单独看，`_CORE_CAPABILITIES` 那 7 格与本轮的 `DEDICATED_CAPABILITIES`
   **双向差 0**——它是第 9 份手抄，此刻恰好抄对了，而"恰好"没有尺子守着。没动，因为 catalog 引
   `DEDICATED_CAPABILITIES` 会成
   catalog↔executor 的导入环；要接先得定那份名单归谁（C1 后半）。
+  **# 这一格第 12 轮已裁决并动手：名单归"两种说法各自的两个集合"，环用判据代替 import 接——见 §21。**
 - 沿用的旧未做格：F3 盘中复跑、F4/G3 真机判据那半截、F5 tag、F2、A1/A2/A4（README 半截）、
   C2/C3、D1–D4、E1–E4、其余 15 条"公共 API 名义资产"豁免（等 R-7）、§16 的
   `gateway_capabilities()` 两分支错标盲区、复权"0 事件 ⇒ 因子全 1.0"那把尺子。
@@ -1628,6 +1650,7 @@ M1 与 M5/M6 的红名单互不重叠，说明这轮装的是三件不同的事�
   便捷方法自己签名里那份还在；统一它会动 `requested_provider` 的 provenance 读数，属对外口径改动。
 - **`tstdx/catalog/capability.py:94` 的 `_CORE_CAPABILITIES` 仍是第 9 份手抄**，此刻与派生集
   双向差 0（七个名字逐字相同），而"恰好"没有尺子守着。导入环没解，同 §19 那条。
+  **# 上一句第 12 轮作废：那份名单拆成两份各管一种说法，"恰好"由判据八钉住，见 §21。**
 - **泛型面上 `strict` 与 `channel` 仍推不动**，`symbols={...}`（集合）仍被接受且顺序不定
   ——三条都是第 10 轮"未做"里的原样，本轮没有新的读数支持动它们。
 - 沿用的旧未做格：注册表 `channel.capabilities` 与 typed 契约各自成表、MCP `inputSchema` 是被
@@ -1636,3 +1659,154 @@ M1 与 M5/M6 的红名单互不重叠，说明这轮装的是三件不同的事�
   `gateway_capabilities()` 两分支错标盲区、复权"0 事件 ⇒ 因子全 1.0"那把尺子。
   CHANGELOG `[Unreleased]` 仍因并行会话该文件未提交而押后。
 
+## 21. 执行记录（续）
+
+### 第 12 轮｜轴的第十次延伸：一份名单混着三种说法（提交 `f6c4a0c`，2 个文件 `218 insertions / 10 deletions`）—— V18-C1 后半第一段
+
+第 11 轮删掉的是分派表里"能力的名字"，本轮的靶子是它旁边那份**关于一个类的名单**：
+`tstdx/catalog/capability.py` 的 `_SKIP_WEB_METHODS = {"close", "mro", *_CORE_CAPABILITIES}`。
+§19 第 10 轮量过它、§20 末尾把它列为"第 9 份手抄，此刻恰好抄对了，而恰好没有尺子守着"，本轮动手。
+
+**先量（`probe12_readings.log` / `probe12b_readings.log`，全部离线，只做类内省与绑定表组合）**：
+
+| 量到什么 | 读数 |
+|---|---|
+| 9 条里有几条真挡在发现环那一圈上 | **3 条**：`close`（定义在 `_SessionBase`）、`minute`（`KlineSessionMixin`）、`quotes`（`QuoteSessionMixin`）。探针第 3 段逐格把每条摘掉重跑一次自动发现：其余 6 条摘掉后多出的三元组一律是"无" |
+| `mro` 是什么 | **不是成员**：`dir()` 无、`vars(WebQuoteSession)` 无、`getmembers(predicate=callable)` 无（连下划线的 166 个里也没有），只有 `getattr` 拿得到——而发现环用的不是 `getattr` 口径。同一件事对 `close` 的四种答案是 `[True, True, True, False]`：它是被 `vars()` 漏在基类上的真成员 |
+| 其余 5 条是什么 | **保留名**（`bars`/`snapshot`/`trades`/`security_count`/`security_list`）：类上今天没有、哪天长出同名方法就得挡住 |
+| 这份名单还在挡别的吗 | 没有：140 个公开可调用成员里，非下划线且未被跳过的 137 条中"名字带基础设施味道的"为 **0** 条，且全部已在 `MIGRATED_CAPABILITIES` 内 |
+
+一份名单同时装着三种说法——"这条能力归核心分派"、"这个成员不是查询"、"这个类成员不存在"——
+读的人分不出哪条是哪条。代价本轮就采到一条：§19 把"6 条不是成员"写成了"`mro` 与六个 capability 名"
+（6 = `mro` 加**五**条 capability 名），已按上面的读数更正。
+
+**为什么不能派生**：`tstdx/runtime/executor.py` 在模块顶层就 `from ..catalog.capability import
+binding_for, validate_call`，而 catalog 在**模块导入期**必须跑完 `_build_bindings()`
+（`MIGRATED_BINDINGS = _build_bindings()` 那一行）。方向反过来无论写成顶层 import 还是函数体内延迟
+import，都是在一个只初始化了一半的模块上取属性。所以第 11 轮押的那句"要接先得定那份名单归谁"，
+本轮的裁决是：**归"两种说法各自的两个集合"，环用判据代替 import 去接**。
+
+**改了什么**
+
+| 文件 | 改动 |
+|---|---|
+| `tstdx/catalog/capability.py` | `_SKIP_WEB_METHODS` 拆成 `_RESERVED_CORE_CAPABILITIES`（保留名，权威是 `DEDICATED_CAPABILITIES`）与 `_NOT_A_QUERY_MEMBER`（成员黑名单，每一条必须真的命中一个可调用成员），删掉幽灵条目 `mro`；注释写明导入环、归属与"今天只有两格真的在挡" |
+| `tests/architecture/test_catalog_reserved_names.py`（新） | 5 项：八、八b、八c 前半、八c 后半、口径自检 |
+
+**新判据各自守什么**
+
+| 判据 | 规则 | 项数 |
+|---|---|---|
+| 八 保留名 = 派生集 | `_RESERVED_CORE_CAPABILITIES` 与 `DEDICATED_CAPABILITIES` **双向差为 0**，并报出各是哪一侧多出来；保留名数 ≥ 7 防读空 | 1 |
+| 八b 黑名单只点真成员 | 先自校三格口径（`close` 在成员圈、`mro` 与 `bars` 不在），再要求 `_NOT_A_QUERY_MEMBER` ⊆ 成员圈、且整份跳过名单里不许出现"既不是成员又不是保留名"的条目 | 1 |
+| 八c 前半 家不许重开 | 目录里没有任何 `backend="web_session"` 的绑定占用核心能力名；同时验"确实看到过候选"（目录里必须存在同名于核心集的迁移绑定），否则这条从头到尾没看过任何东西 | 1 |
+| 八c 后半 名单在做事 | 摘掉保留名单 → `(derived,catalog,minute)`/`(derived,catalog,quotes)` 立刻长家；摘掉黑名单 → `close` 立刻变成一条能力；两份都在 → 三条一颗不长。再给五格保留名**现场装同名方法**：摘掉就长、留着就不长 | 1 |
+| 口径自检 | 把跳过名单清空后，发现环产出的 `{item.method}` 必须**逐字等于**判据量那一圈成员；"今天实际被挡掉的"必须等于名单 ∩ 成员圈 | 1 |
+
+**既有那把审计尺子看得见多少（一条不粉饰的更正）**：`audit_capability_bindings` 对"目录多开一个家"
+**是响的**——探针 12b 第 3 段现场摘掉 `minute`/`quotes` 两条跳过后，它报
+`capabilities without executor bindings: [('derived','catalog','minute'), ('derived','catalog','quotes')]`，
+还原后回到 `migrated=229 executable=251 declared=251`。所以本轮不是给一个无人管的洞上第一把尺子。
+但两件事仍只有新尺子看得见：M1/M2/M3 三格（幽灵条目、保留名少一格、多一格）在 438 项的目标面上
+**只有新判据各红一次**，既有审计一声不响；而它即便响，报的也是通用三元组差，不指到"哪份名单的哪一格"。
+顺带更正探针 12b 第 4 段自己写下的那句解读（"执行器迁移侧那半边是从目录生成的，所以审计永远看不见"）：
+它不成立——目录三元组 229 条，执行器里执行体名为 `_migrated_capability` 的 234 条，"执行器有/目录无"
+的 5 条是 `(tdx,extended,bars)`、`(tdx,extended,quotes)`、`(tdx,goods,bars)`、`(tdx,goods,quotes)`、
+`(tdx,mac,quotes)`，两份表本来就允许这个方向的差。本轮只按逐格读数写，不采任何笼统说法。
+
+**规模账（+5 与"覆盖不降"证明）**：判据 3 711 → **3 716**（新增 5 项全在新文件里），
+新增 skip 0，删除判据 0，阈值 `fail_under = 77.0` 未动。`tstdx/` 覆盖表 141 行（含 TOTAL），
+文件名双向差 0。与第 11 轮 **ship** 树比 **3 行不同**：TOTAL、`tstdx\catalog\capability.py`
+（stmts 145→**146**、miss 20 未变、84% 未变——新加的那一行并集就是本轮唯一的确定性分母变化）、
+`tstdx\transport\ratelimit.py`（miss 10→12、partial 1→2，94%→92%）。与第 11 轮 **step** 树比只差
+**2 行**：TOTAL 与同一格 `capability.py`，且 TOTAL 的 miss/partial **逐字相同**（3 463 / 1 001），
+差额只在 stmts 的 +1。时间敏感那一族的六份日志一并列出，不硬编成因：
+
+| 日志 | `pool.py` miss / partial | `ratelimit.py` miss / partial | TOTAL miss / partial |
+|---|---|---|---|
+| `wt_v18b10step/fulltest_v18b10.log` | 113 / 37 | 12 / 2 | 3 485 / 1 009 |
+| `wt_v18b10ship/fulltest_v18b10.log` | 111 / 36 | 12 / 2 | 3 483 / 1 008 |
+| `wt_v18b11step/fulltest_v18b11.log` | 111 / 36 | 12 / 2 | 3 463 / 1 001 |
+| `wt_v18b11ship/fulltest_v18b11.log` | 111 / 36 | 10 / 1 | 3 461 / 1 000 |
+| `wt_v18b12step/fulltest_v18b12.log` | 111 / 36 | 12 / 2 | 3 463 / 1 001 |
+| `wt_v18b12ship/fulltest_v18b12.log` | 111 / 36 | 12 / 2 | 3 463 / 1 001 |
+
+**没有任何一行的 miss 因本轮改动而变大**，也没有一格靠缩分母变绿：本轮唯一 stmts 变化那一格
+（`capability.py` 145→146）miss 与百分比双双未动。**一条自证**：步骤树的全量在本轮跑过两次
+（第一次之后新测试文件只有 docstring 改动，为让日志对上最终文件而重跑），第二份把第一份覆盖了；
+覆盖前抄下的两份 **TOTAL 行逐字相同**（`22 364 / 3 463 / 5 960 / 1 001`、82.02%），差异全在
+`pool.py` 与 `ratelimit.py` 两格互换读数（第一份是 113/37 与 10/1，第二份是 111/36 与 12/2，
+一涨一落正好抵成 0）。同一棵树、同一批文件、间隔二十分钟就能给出这对换值——这就是上表把六份日志
+并排、并且只引用在盘上那份的原因。
+
+**步骤轮读数**（`wt_v18b12step` @ `84ba378` + 本步 2 文件）：`run_gates12.sh` 环境与 CI 规范调用
+**10 次调用全部 rc=0**（originality `Total: 190 / Original: 190 / Suspicious: 0 / External imports: 17`、
+spec_audit `"coverage_pct": 100.0`、golden_audit `L1 verified: 0x44e, 0x52d, 0x530` + `[GATE] … (OK)`
++ 既有 `suspect_short` WARN `0x537 4B<12B x3`、reachability `模块总数: 189 可达: 174 白名单豁免: 15`、
+contract_audit `63 / 172 / 0` + `PASS: 172 个注册 capability 全部落在声明形状之内`、docs links
+`83 files`、mypy 无输出、ruff check `All checks passed!`、ruff format `445 files already formatted`）。
+离线全量 junit **3 716 项 / 0 失败 / 0 错误 / 7 跳过**、167.638s、覆盖率 **82.02%**
+（TOTAL `22 364 / 3 463 / 5 960 / 1 001`）。反证目标面（`tests/architecture` + `tests/provider_isolation`
++ `tests/runtime/test_legacy_capability_migration_v13.py` + `tests/v14/test_contract_automation.py`）
+的规模按 `--collect-only` 数是 **438 项**，C0 在这上面 rc=0、变红 0。
+
+步骤轮的**两处不粉饰**：
+① 新测试文件第一次 `ruff format --check` 是红的，`ruff format` 就地格式化后复跑才绿——与第 11 轮同一条，
+第 11 轮那次红没留档，本轮留了（`wt_v18b12step/ruff12_pre_format_red.log`：rc=1，`--diff` 两处换行）。
+② **变异台第一次的 M6 锚点写错了**：它把新绑定插进了 `_EXPLICIT_BINDINGS` 第一格的括号里，模块在
+`sorted(MIGRATED_CAPABILITIES)` 处 `TypeError`，目标面 8 个文件 collection error、`rc=2`、"变红 0"。
+这不是判据红，是台子自己写坏了——第一次的日志留在 `mutate_v18b12_run1_anchorbug.log`，修正锚点后重跑成
+下面那张表。这条也钉住一个读法：**`rc=2` 配"一格都没红"绝不能读成"这条改动没有代价"**。
+（另记一条口径：八格反证跑在 docstring 那次改动之前，两者之间只差测试文件里两行文档字符串，
+不改任何判据逻辑；为了让日志与最终文件完全对上，全量与十次调用在改动后各重跑了一次，上面引的都是重跑那份。）
+
+**ship 轮（提交树复测）**：`f6c4a0c` 落到 main 后，`wt_v18b12ship` 由 `git checkout-index` 直出，
+`verify_tree.py` 按 git 的换行归一口径逐文件比：**被跟踪文件 2 286、归一化后内容一致 2 286、不符 0**，
+同时打出"落盘时带 CRLF 的文件 1 753"（第 11 轮是 2 285 / 1 752，多的正好是本轮新增那份测试）。
+十次调用**全部 rc=0**，且九项读数与步骤轮逐字相同（含 `445 files already formatted`）。离线全量
+junit **3 716 / 0 / 0 / 7**、191.288s、覆盖率 **82.02%**（TOTAL `22 364 / 3 463 / 5 960 / 1 001`）；
+覆盖表 141 行与步骤轮 **0 行不同**——本轮两棵树的时间敏感格读到了一起，所以这一步没有上一轮那种
+"差一行"的账要交，也不把它写成"两棵树永不抖动"：上面那族六份日志里已经有三次 step↔ship 互换读数。
+
+**反证证据**（`wt_v18b12step/mutate_v18b12.log`；C0 对照 + 7 格回潮形状。目标面 = 上面那 438 项。
+每格按字节备份、跑完还原，七格全部 `还原后字节一致：是`；每格 pytest 原文分格存 `mut12_out_1..7.log`，
+红名单按行首 `FAILED`/`ERROR` 严格匹配，免得把断言消息里的"`ERROR at setup of …`"当成一格）：
+
+| 格 | 动了什么 | 结果 |
+|---|---|---|
+| C0 | 不改动（对照） | rc=0、变红 0 ⇒ 下面每一格的红都不是恒报 |
+| M1 | 幽灵条目 `mro` 回到成员黑名单 | 变红 **1**：八b。全仓只有新尺子响 |
+| M2 | 保留名抄漏一格（`security_count` 拿掉） | 变红 **1**：八 |
+| M3 | 保留名多塞一格（塞进不属于核心集的 `f10`） | 变红 **1**：八 |
+| M4 | 并集断线：发现环只看成员黑名单 | 变红 **74**：八c 前半 + 八c 后半 + 既有 `test_capability_audit.py` 3 格 + `test_capability_executor_boundary.py` 1 格，其余是面数/文档数那两类连带（`test_face_exposure_projection` 39、`test_doc_code_consistency` 21） |
+| M5 | 发现环换尺子：`startswith("_")` 改成 `startswith("__")` | 变红 **75**：口径自检 + 既有审计 4 格 + 同类连带 |
+| M6 | 绕过名单、直接在末尾优先的 `_EXPLICIT_BINDINGS` 里给 `quotes` 开一个 web_session 家 | 变红 **73**：八c 前半 + 既有审计 3 格 + 同类连带 |
+| M7 | 成员黑名单被掏空（`close` 不再跳） | 变红 **75**：八c 后半（"名单留着就该什么都不长"那一格）+ 既有审计 4 格 + 同类连带 |
+
+M1/M2/M3 各只红 1 项且红的正是对应那一格，是"名单本身写错"的形状——既有审计看不见（`mro` 不在成员圈，
+挡不挡都一样；保留名多一格少一格也不改三元组集合）。M4–M7 的红名单大（73–75 / 438），因为目录只要
+多出一条能力，面数尺子与文档数字尺子会一起动；本轮**不把这些连带算作新判据的功劳**，只记"新判据在其中
+各自指到了名字"：M4 指到"哪些家重开了"、M5 指到"判据与发现环量的不是同一圈"、M6 指到"哪条绑定越了家"、
+M7 指到"名单不再挡任何东西"。M7 那条尤其值：`close` 变成一条对外能力时，八b 的两条集合差检查仍全绿
+（空集合 ⊆ 任何集合），响的是八c 后半那个负控。
+
+**一条方法论读数（与第 10、11 轮那两条"探针自己的解读不能盖过实测"同族）**：探针
+`probe12b_readings.log` 第 4 段先写下了一个解读（"执行器迁移侧是从目录生成的 ⇒ 审计看不见目录多开的
+家"），同一份日志第 3 段的实测就把它否掉了。本轮把它改写成上面"既有那把审计尺子看得见多少"那段的
+逐格读数，采信的只有"现场换值看哪一格动"的行为证据。
+
+**本轮明确未做**：
+- **catalog 那份保留名仍是第二份表**，只是从"没人管"变成"判据钉住"。要真派生得解环：把这七个名字的
+  家搬到第三处（例如 `tstdx/catalog/core.py`）让 `executor` 与 `capability` 都 import 它——那会动公共
+  导入路径，是 §19 那条"要接先得定那份名单归谁"里没答完的后半，本轮没拍板。
+- **`_PROVIDER_OVERRIDES` / `_CHANNEL_OVERRIDES` / `_SEMANTIC_WEB_CHANNELS` 三张目录内部表仍是手抄**，
+  本轮只量了它们没有正在说谎（第 6 段：137 条发现项全部落在 `MIGRATED_CAPABILITIES` 内、无基础设施味道的
+  名字），没给它们各自上尺子。
+- **`audit_capability_bindings` 的"执行器有/目录无"那一半仍被允许差 5 格**（tdx 的 extended/goods/mac）。
+  这是设计如此还是漏登记，本轮没判——它属 §5 C1 收口时"两份表谁说了算"的同一批裁决。
+- 沿用的旧未做格：`symbols=None` 仍裸 `TypeError`、`Client.<cap>` 的 `provider="tdx"` 与内核的
+  `None` 仍不一致、泛型面 `strict`/`channel` 仍推不动、`symbols={...}` 仍被接受且顺序不定、
+  注册表 `channel.capabilities` 与 typed 契约各自成表、MCP `inputSchema` 是被校验为投影而非生成、
+  F3 盘中复跑、F4/G3 真机判据那半截、F5 tag、F2、A1/A2/A4（README 半截）、C2/C3、D1–D4、E1–E4、
+  其余 15 条"公共 API 名义资产"豁免（等 R-7）、§16 的 `gateway_capabilities()` 两分支错标盲区、
+  复权"0 事件 ⇒ 因子全 1.0"那把尺子。CHANGELOG `[Unreleased]` 仍因并行会话该文件未提交而押后。
