@@ -6,6 +6,11 @@
 
 核心运行时**零硬依赖**。按需安装 extras：
 
+> **当前安装路径**（G9，2026-09-22 实测）：本包不在 PyPI 上
+> （`https://pypi.org/pypi/tstdx/json` 回 404），所以下表这些写法要等上架后才能直接
+> 执行。现在请在本仓库根目录用 `pip install ".[extra]"`（把 `tstdx` 换成 `.`），
+> extras 的名字完全相同；README「安装」一节给的是同一口径。
+
 | 需求 | 安装 |
 |---|---|
 | DataFrame 输出 | `pip install "tstdx[dataframe]"` |

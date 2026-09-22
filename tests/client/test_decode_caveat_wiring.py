@@ -13,8 +13,10 @@
 from __future__ import annotations
 
 import inspect
+import json
 import struct
 import warnings
+from pathlib import Path
 
 import pytest
 
@@ -136,3 +138,63 @@ class TestDecodeCaveatWiring:
 def _marker_line() -> int:
     """返回调用它的那一行行号（下一行才是被测调用，见唯一调用点）。"""
     return inspect.getframeinfo(inspect.currentframe().f_back).lineno
+
+
+# --------------------------------------------------------------------------- #
+# G7：值域尺子的判断也要从同一个转发口上 wire
+# --------------------------------------------------------------------------- #
+
+_GOLDEN_QUOTATION = Path(__file__).resolve().parents[1] / "golden" / "quotation"
+
+
+def _real_payload(sample_dir: str) -> tuple[int, bytes]:
+    """取该样本目录里第一份实采载荷。
+
+    只认 ``self-captured``：synthetic 副本的 payload 是解析器自己产出的形状，拿它当
+    证据等于让被告给原告作证——这条越域告警的两端（该响的要响、不该响的不响）都必须
+    由真机样本说话。
+    """
+    from tstdx.tools.golden_audit import ORIGIN_REAL, classify_origin
+
+    for meta_path in sorted((_GOLDEN_QUOTATION / sample_dir).glob("*/meta.json")):
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        if classify_origin(meta.get("source")) != ORIGIN_REAL:
+            continue
+        return int(meta["command"], 16), (meta_path.parent / "payload.bin").read_bytes()
+    raise AssertionError(f"{sample_dir} 里没有实采样本，本判据的正/负控都失去证据")
+
+
+@pytest.mark.unit
+class TestDomainCaveatReachesTheWire:
+    """F-37/G3 的余下半边（G7）：布局错位解出的值，调用方此前只能读源码才知道。
+
+    盘前一轮真机复现（2026-09-22 10:45）里 ``capital_changes``/``finance`` 回的是
+    ``provenance.kind=DIRECT``、``warnings`` 为空的错值——形状与一条干净结果一字不差。
+    """
+
+    @pytest.mark.parametrize(
+        ("sample_dir", "method"),
+        [
+            ("0x000f_capital_changes_600000", "capital_changes"),
+            ("0x0010_finance_info_600000", "finance_info"),
+        ],
+    )
+    def test_a_real_misaligned_page_says_so_on_the_wire(self, sample_dir, method) -> None:
+        cmd, payload = _real_payload(sample_dir)
+        client = TdxClient(pool=_TablePool({cmd: payload}))  # type: ignore[arg-type]
+        with warning_sink() as caveats:
+            rows = getattr(client, method)("sh600000")
+        assert rows, "实采样本解不出行，本判据的负例那一半是空的"
+        codes = [item.code for item in caveats]
+        assert WarningCode.FIELD_OUT_OF_DOMAIN in codes, (
+            f"{sample_dir} 的实采载荷解出了越域值，告警却没上 wire：{codes}"
+        )
+        caveat = next(item for item in caveats if item.code is WarningCode.FIELD_OUT_OF_DOMAIN)
+        assert f"0x{cmd:04x}" in caveat.message, caveat.message
+        #: 例子要能定位：只有计数的告警等于把 250 行错值写成一句"有问题"。
+        assert "row[" in caveat.message, caveat.message
+
+    #: 反向证据（"别给干净结果制造噪声"）分两处判：本文件既有的
+    #: :meth:`TestDecodeCaveatWiring.test_clean_page_stays_silent` 钉住公共 API 一条告警
+    #: 都不许多发，:func:`tests.unit.test_domain_integrity.test_the_ruler_stays_silent_on_every_other_captured_command`
+    #: 钉住全部实采样本。

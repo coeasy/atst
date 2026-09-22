@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -222,3 +223,72 @@ def test_scheduled_live_smoke_is_bounded_truthful_and_always_emits_junit() -> No
     assert "if: always()" in workflow
     assert "path: reports/live-smoke.xml" in workflow
     assert "retention-days: 14" in workflow
+
+
+#: G4 的核心链探针：流水线上唯一真发 7709 包的那族判据。
+_CORE_CHAIN_PROBE = _ROOT / "tests" / "live" / "test_tdx_core_chain.py"
+
+
+def test_live_smoke_runs_a_7709_probe_inside_the_trading_session() -> None:
+    """调度必须落在 A 股盘中，并且盘中有可执行的 7709 判据（G4）。
+
+    只有 01:00 UTC（北京 09:00，开盘前）的调度照不到盘中：那一刻既没有"正在形成的
+    分钟 K 线"，`quotes` 给的也只是昨收。探针本身在 ``tests/live/``，被 ``-m
+    network`` 选中——这两件事都由本判据钉住，缺一条就红。
+    """
+    workflow = _workflow("live-smoke.yml")
+
+    assert "cron: '30 2 * * 1-5'" in workflow  # 02:30 UTC = 北京 10:30，上午时段
+
+    assert _CORE_CHAIN_PROBE.is_file(), "7709 核心链探针被删除，live-smoke 将无声退化为纯 web 探针"
+    probe = _CORE_CHAIN_PROBE.read_text(encoding="utf-8")
+    assert "pytestmark = pytest.mark.network" in probe
+    assert 'provider="tdx"' in probe, "探针未钉住 tdx，可能测到的是别的 Provider"
+    for capability in ("security_count", "bars", "quotes", "snapshot"):
+        assert capability in probe, f"探针漏了核心链的一格：{capability}"
+
+
+def test_the_7709_probe_fails_instead_of_skipping_when_the_chain_is_down() -> None:
+    """探针的每一条 ``pytest.skip`` 都必须由"此刻不适用"触发，而不是由异常触发。
+
+    把网络失败写成 skip 是 G4 的原始形状：主站全体下线时流水线仍然全绿。这里按
+    AST 走，抓的是"异常处理块里的 skip"——那种 skip 与链路健康无关，只与运行环境
+    有关，正是让探针变成安慰剂的写法。
+    """
+    tree = ast.parse(_CORE_CHAIN_PROBE.read_text(encoding="utf-8"))
+    parents: dict[ast.AST, ast.AST] = {
+        child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)
+    }
+
+    def is_skip(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "skip"
+        )
+
+    def guarded_by_clock(node: ast.AST) -> bool:
+        parent = parents.get(node)
+        while parent is not None:
+            if isinstance(parent, ast.If) and "in_trading_session" in ast.unparse(parent.test):
+                return True
+            parent = parents.get(parent)
+        return False
+
+    skipped_from_handlers = [
+        node.lineno
+        for handler in ast.walk(tree)
+        if isinstance(handler, ast.ExceptHandler)
+        for node in ast.walk(handler)
+        if is_skip(node)
+    ]
+    skips = [node for node in ast.walk(tree) if is_skip(node)]
+
+    assert skips, "探针一条 skip 也没有——休市时那条盘中断言怎么办？"
+    assert all(guarded_by_clock(node) for node in skips), (
+        "探针出现了不由交易时段门控的 skip："
+        f"{[node.lineno for node in skips if not guarded_by_clock(node)]}"
+    )
+    assert skipped_from_handlers == [], (
+        f"探针把网络失败吞成了 skip（行 {skipped_from_handlers}）——主站下线时这条流水线必须红"
+    )

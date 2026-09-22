@@ -22,19 +22,17 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from collections import Counter
-from collections.abc import Callable
 from dataclasses import fields as dataclass_fields
-from datetime import date
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from tstdx.codec.framing import ResponseFrame
-from tstdx.domain.symbol import Market, Symbol, parse_symbol
-from tstdx.errors import SymbolError
+from tstdx.domain.integrity import FIELD_CHECKERS
+from tstdx.domain.integrity import row_violations as _row_violations
+from tstdx.domain.symbol import Symbol
 from tstdx.protocol.commands import TIER_L1
 from tstdx.protocol.registry import dispatch
 from tstdx.tools.golden_audit import (
@@ -227,77 +225,15 @@ def test_kline_cross_check():
 # ---------------------------------------------------------------------------
 
 #: 字段名的唯一来源：domain SSOT 的 :class:`~tstdx.domain.symbol.Symbol` 有哪几个字段，
-#: 本判据就管哪几个字段——不另立一份词表（抄一次就过期，F-42）。
+#: 那把尺子就管哪几个字段——不另立一份词表（抄一次就过期，F-42）。尺子本身在
+#: :mod:`tstdx.domain.integrity`：同一个判断在出口给调用方看（G7），测试不许各养一份。
 _SYMBOL_FIELDS = frozenset(f.name for f in dataclass_fields(Symbol))
 
 
-# TDX 二进制市场编号由 ``Market.ALL`` 现推：只有真能进协议的 token 才算数。
-def _derived_tdx_market_ids() -> frozenset[int]:
-    out: set[int] = set()
-    for token in Market.ALL:
-        try:
-            out.add(Symbol(market=token, code="000000").tdx_market)
-        except SymbolError:
-            continue
-    return frozenset(out)
-
-
-_TDX_MARKET_IDS = _derived_tdx_market_ids()
-
-_DATE_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}")
-
-
-def _illegal_market(value: Any) -> str | None:
-    if value in _TDX_MARKET_IDS or value in Market.ALL:
-        return None
-    return f"市场 {value!r} 既不是 TDX 二进制市场编号 {sorted(_TDX_MARKET_IDS)}，也不是 canonical token"
-
-
-def _illegal_code(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return f"代码 {value!r} 不是字符串"
-    try:
-        symbol = parse_symbol(value)
-    except Exception as exc:  # noqa: BLE001 - 判据要把"解析不出"本身当结论
-        return f"代码 {value!r} 不是 symbol 引擎认得的代码（{type(exc).__name__}）"
-    if symbol.bare != value:
-        return f"代码 {value!r} 经 symbol 引擎归一后成了 {symbol.bare!r}：不是原样的真实代码"
-    return None
-
-
-#: ``Symbol`` 的每个字段都要有一把尺子；缺一格当场红，不许新增字段后静默免检。
-_CHECKERS: dict[str, Callable[[Any], str | None]] = {
-    "market": _illegal_market,
-    "code": _illegal_code,
-}
-
-
-def _row_violations(value: Any, path: str = "row") -> list[str]:
-    """递归走进行形状，返回「哪里、哪个字段、什么值、为什么不合法」。"""
-    out: list[str] = []
-    if isinstance(value, dict):
-        for key, sub in value.items():
-            checker = _CHECKERS.get(key)
-            if checker is not None and (problem := checker(sub)) is not None:
-                out.append(f"{path}.{key}: {problem}")
-            out.extend(_row_violations(sub, f"{path}.{key}"))
-    elif isinstance(value, (list, tuple)):
-        for index, sub in enumerate(value):
-            out.extend(_row_violations(sub, f"{path}[{index}]"))
-    elif isinstance(value, str):
-        head = _DATE_PREFIX.match(value)
-        if head:
-            try:
-                date.fromisoformat(head.group(0))
-            except ValueError:
-                out.append(f"{path}: 值 {value!r} 写成日期形状却不是真日历日")
-    return out
-
-
 def test_the_ruler_covers_every_symbol_field() -> None:
-    """``Symbol`` 长出新字段而本判据没跟上 ⇒ 立刻红，而不是静默少判一格。"""
-    assert set(_CHECKERS) == _SYMBOL_FIELDS, (
-        f"尺子覆盖 {sorted(_CHECKERS)} 与 domain 字段 {sorted(_SYMBOL_FIELDS)} 不符"
+    """``Symbol`` 长出新字段而尺子没跟上 ⇒ 立刻红，而不是静默少判一格。"""
+    assert set(FIELD_CHECKERS) == _SYMBOL_FIELDS, (
+        f"尺子覆盖 {sorted(FIELD_CHECKERS)} 与 domain 字段 {sorted(_SYMBOL_FIELDS)} 不符"
     )
 
 
@@ -305,12 +241,32 @@ def test_the_field_rule_fires_on_a_planted_fabricated_row() -> None:
     """正控：把 F-37 实测到的那类错位值种进去，四条都要被认出——顺带证明合法行不误伤。"""
     planted = {
         "market": 48,  # ASCII '0' 被当成市场编号读
-        "code": "001",  # 记录错位后剩下的半个代码
+        "code": "519\x01",  # 2026-09-22 盘中实测：错位记录剩下的半个代码带着控制字节
         "date": "4231-66-07",  # 日期形状却不是真日历日
         "extra": {"code": ""},  # 嵌套层里的空代码
     }
     assert len(_row_violations(planted)) == 4, _row_violations(planted)
     assert _row_violations({"market": 1, "code": "600000", "date": "2026-08-18"}) == []
+
+
+def _real_replays():
+    """重放全部实采样本，产出 ``(命令号, 样本标签, ParseResult, payload)``。
+
+    只认 ``self-captured``：synthetic 目录里的 payload 是解析器自己产出的形状，拿它
+    回放等于让被告给原告作证。两条值域判据共用这一份重放，别在这里养第二份循环。
+    """
+    for meta_path, payload_path in SAMPLES:
+        meta, payload = _load(meta_path, payload_path)
+        if classify_origin(meta.get("source")) != ORIGIN_REAL:
+            continue
+        command = int(meta["command"], 16)
+        frame = _make_frame(command, meta, payload)
+        result = dispatch(
+            frame,
+            family=meta.get("family", "quotation"),
+            **dict(meta.get("parse_ctx") or {}),
+        )
+        yield command, f"{meta_path.parent.parent.name}/{meta_path.parent.name}", result, payload
 
 
 def test_l1_verified_commands_replay_to_domain_legal_rows() -> None:
@@ -335,24 +291,13 @@ def test_l1_verified_commands_replay_to_domain_legal_rows() -> None:
     in_scope: set[int] = set()
     rows_by_command: Counter[int] = Counter()
     problems: list[str] = []
-    for meta_path, payload_path in SAMPLES:
-        meta, payload = _load(meta_path, payload_path)
-        if classify_origin(meta.get("source")) != ORIGIN_REAL:
-            continue
-        command = int(meta["command"], 16)
+    for command, label, result, payload in _real_replays():
         if command not in L1_VERIFIED_COMMANDS:
             continue
         floor = MIN_PAYLOAD_BYTES.get(command)
         if floor is not None and len(payload) < floor:
             continue  # 低于 payload 下限的空桩不作语义证据（与 golden_audit 同口径）
         in_scope.add(command)
-        label = f"{meta_path.parent.parent.name}/{meta_path.parent.name}"
-        frame = _make_frame(command, meta, payload)
-        result = dispatch(
-            frame,
-            family=meta.get("family", "quotation"),
-            **dict(meta.get("parse_ctx") or {}),
-        )
         if result.tier != TIER_L1:
             problems.append(
                 f"{label}: 账本声明 L1，实收 {result.tier}（落到兜底去了）warnings={result.warnings}"
@@ -371,3 +316,49 @@ def test_l1_verified_commands_replay_to_domain_legal_rows() -> None:
     assert problems == [], "自报 L1 的命令重放实采样本后字段值不合法：\n" + "\n".join(
         problems[:25] + ([f"…另有 {len(problems) - 25} 条"] if len(problems) > 25 else [])
     )
+
+
+# ---------------------------------------------------------------------------
+# 第 6 条判据：尺子上了生产侧，误伤的代价就升级（G7 的反向证据）
+# ---------------------------------------------------------------------------
+
+#: 实采样本里今天唯一两条解出越域值的命令——G3 那两处未经真机 golden 锁定的布局
+#: (``0x000F`` 股本变迁、``0x0010`` 财务)。这个集合是第 14 轮量出来的（60 份实采样本
+#: 重放出 1667 行，越域行全部落在这两条命令上），不是先验名单。
+_DOMAIN_SUSPECT_COMMANDS = frozenset({0x000F, 0x0010})
+
+
+def test_the_ruler_stays_silent_on_every_other_captured_command() -> None:
+    """值域尺子现在会从公共 API 的出口对**所有**命令发声，所以它不许对别的命令误伤。
+
+    第 9 轮它只量 ``L1∧verified`` 那三条命令，误伤面天然窄；第 14 轮把它接进
+    ``_forward_decode_caveats`` 之后，一次假告警就等于把"这条结果不可信"写在一条好数据
+    上——调用方很快会学会无视整条通道（F-13/F-16 那族反过来的形态）。所以这里把
+    "除嫌疑两条之外全部安静"钉成判据。
+    """
+    rows_by_command: Counter[int] = Counter()
+    offenders: Counter[int] = Counter()
+    replays = list(_real_replays())
+    for command, _label, result, _payload in replays:
+        rows_by_command[command] += len(result.rows)
+        bad = sum(1 for row in result.rows if _row_violations(row))
+        if bad:
+            offenders[command] += bad
+
+    #: 自检：分母塌了本判据就是空话，先证 scanners 没瞎。
+    assert len(replays) >= 40, f"实采样本只重放出 {len(replays)} 份，免检名单没有分母"
+    assert len(rows_by_command) >= 6, f"只覆盖到 {len(rows_by_command)} 条命令，负控没有分母"
+    clean_rows = sum(n for c, n in rows_by_command.items() if c not in _DOMAIN_SUSPECT_COMMANDS)
+    assert clean_rows >= 200, f"非嫌疑命令只重放出 {clean_rows} 行，「不误伤」没有被量过"
+
+    false_positives = sorted(c for c in offenders if c not in _DOMAIN_SUSPECT_COMMANDS)
+    assert false_positives == [], "值域尺子对实采样本误伤：" + "；".join(
+        f"0x{c:04X} 有 {offenders[c]} 行被点名（共 {rows_by_command[c]} 行）"
+        for c in false_positives
+    )
+    missing = sorted(_DOMAIN_SUSPECT_COMMANDS - set(rows_by_command))
+    assert missing == [], f"嫌疑命令的实采样本不见了：{[hex(c) for c in missing]}——G3 失去取证口"
+    for command in sorted(_DOMAIN_SUSPECT_COMMANDS):
+        assert offenders[command] > 0, (
+            f"0x{command:04X} 一行都没被点名，而它的布局仍是推断的：尺子瞎了或样本被换成了合成副本"
+        )

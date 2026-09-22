@@ -4,8 +4,8 @@
 >
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
-- 当前 Draft 开发版本：`1.0.0`
-- 最新已发布稳定版：`v1.0.0`（2026-09-09 发布） · [发布说明](docs/releases/v1.0.0.md) · [CHANGELOG](CHANGELOG.md)
+- 当前 Draft 开发版本：`1.1.0`
+- 最新已发布稳定版：`v1.0.0`（2026-09-09 发布） · [发布说明](docs/releases/v1.0.0.md) · [v1.1.0 版本说明](docs/releases/v1.1.0.md) · [CHANGELOG](CHANGELOG.md)
 
 ---
 
@@ -179,11 +179,24 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 ## 安装
 
 ```bash
-pip install tstdx                    # 零依赖基础安装
-pip install "tstdx[all]"             # 完整功能
-pip install "tstdx[dataframe,parquet,duckdb,web,metrics,server,mcp]"
+pip install "tstdx[all]"             # ← 尚不可用：本包目前不在 PyPI 上（见下）
 pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-asyncio/hatchling）
 ```
+
+> **装包的实际口径**（G9，2026-09-22 实测）：`https://pypi.org/pypi/tstdx/json` 返回
+> `{"message": "Not Found"}`——PyPI 上没有 `tstdx` 这个名字，所以 `pip install tstdx`
+> 与上面第一行的 extras 安装今天都装不到东西。可用的安装路径只有两条：
+>
+> ```bash
+> git clone https://github.com/coeasy/tstdx.git && cd tstdx
+> pip install ".[all]"                       # 从源码
+> pip install "tstdx[all] @ file:///绝对路径/tstdx-<版本>-py3-none-any.whl"   # 从构建产物
+> python -m build                            # 产物在 dist/；make build 走同一套 canonical 校验
+> ```
+>
+> extras 的名字（`config` / `dataframe` / `parquet` / `duckdb` / `web` / `metrics` /
+> `server` / `mcp` / `tools` / `all`）是仓内 `pyproject.toml` 声明的那一套，从源码或
+> wheel 装时同样可用；本节只在真正上架 PyPI 后才需要改写。
 
 > **P14-D2 起**：`[project.optional-dependencies].dev` 已声明，本地与 CI 使用同一
 > 门禁口径（覆盖率阈值只在 `pyproject.toml [tool.coverage.report] fail_under` 写一次，
@@ -457,14 +470,14 @@ python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproj
 | 断链清偿（v17 Phase 3A/3B/3D） | ✅ | v14 信封运行时 + `execution/` DAG + `provider/` router + registry 三件套删除；typed 全线接通 |
 | 命名空间归位（v17 Phase 3C） | ✅ | 根级模块 26→11；`runtime/` `catalog/` `client/` 分层 |
 | 文档与对外面统一（v17 Phase 4） | ✅ | README/ARCHITECTURE 已刷新；30 份历史方案入 `docs/archive/plans`；文档-代码一致性门禁上线（导入语句/点号路径/README 数字/结构树/门禁规模逐项对账） |
-| 发布硬化（v17 Phase 5） | ◐ | mypy 47→0、ruff format 65 文件清零、三项 strict 门禁转绿、豁免清单与 ghost 门禁审计完成、离线整仓覆盖率 80.84%（本机 Windows+py3.12 仓内 `.venv`，阈值 77 未动）、七格真实网络/服务面冒烟与 wheel 安装冒烟均已执行（6 PASS / 1 FAIL；K 线那一格已在第 34 步归因为本端握手字节并修复）。F-37 已按用户裁决 (c) 执行：下调能力声称、tag `v1.1.0-dev.1` 继续推迟（见下）。仍待：`0x000F`/`0x0010` 字段错位的真机判据、一次工作日盘中复跑、按 CI 环境数字重钉覆盖率 |
+| 发布硬化（v17 Phase 5） | ◐ | mypy 47→0、ruff format 65 文件清零、三项 strict 门禁转绿、豁免清单与 ghost 门禁审计完成、离线整仓覆盖率 80.84%（本机 Windows+py3.12 仓内 `.venv`，阈值 77 未动）、七格真实网络/服务面冒烟与 wheel 安装冒烟均已执行（6 PASS / 1 FAIL；K 线那一格已在第 34 步归因为本端握手字节并修复）。F-37 已按用户裁决 (c) 执行：下调能力声称，预发布 tag `v1.1.0-dev.1` 已打并推送。仍待：`0x000F`/`0x0010` 字段错位的真机布局判据（V18 第 14 轮已把「值落在自己声明的域外」这条判断接到 wire 上，见 G7；布局本身仍要真机 golden，不猜字节）、按 CI 环境数字重钉覆盖率。已清：一次工作日盘中复跑（V18 第 13 轮）、7709 核心链 live 判据进流水线（V18 第 14 轮，G4） |
 
 ### 下一阶段
 
 | 计划 | 方向 |
 |---|---|
-| **发布硬化** | 已做：mypy 既有告警清零、覆盖率基线按有效代码重校（本机 80.84%，阈值 77 未下调）、wheel 安装冒烟 `SMOKE_RC=0`（第 16 步）。未做：按 CI（ubuntu+py3.11）数字重钉 `fail_under`、拿用户确认打 tag `v1.1.0-dev.1` |
-| **Live Smoke** | 已做：七格真实网络/服务面冒烟逐格执行（tdx/web 直连、K 线、stream、CLI/HTTP/MCP 各一发）＝6 PASS / 1 FAIL（第 16 步）。已定：F-37 按裁决 (c) 落地——`0x000F`/`0x0010` 的能力口径已下调为「条数可用、字段语义不保证」，本发布不声称 7709 历史族字段级 live 正确，tag 因此继续推迟。口径降级在 V18 第 9 轮补齐了**账本那半边**：`0x000F` 的 `tier=L1, verified=True`（实为 `register_parser` 的缺省值）已撤回，改由 `tests/unit/test_golden.py` 的「实采样本重放后字段值必须落在域内」判据把守。未做：一次工作日盘中复跑（第 16 步落在周六休市）、那两条命令的字段布局判据，以及把 7709 数据面的 live 判据接进门禁（F-38，刻意不在裁决前钉成固定红） |
+| **发布硬化** | 已做：mypy 既有告警清零、覆盖率基线按有效代码重校（本机 80.84%，阈值 77 未下调）、wheel 安装冒烟 `SMOKE_RC=0`（第 16 步）、预发布 tag `v1.1.0-dev.1` 已推送。未做：按 CI（ubuntu+py3.11）数字重钉 `fail_under`；把 `v1.1.0` 从 tag 变成真正可安装的发布（PyPI/GitHub Release 只能人工点，且本包至今不在 PyPI 上——见「安装」一节 G9） |
+| **Live Smoke** | 已做：七格真实网络/服务面冒烟逐格执行（tdx/web 直连、K 线、stream、CLI/HTTP/MCP 各一发）＝6 PASS / 1 FAIL（第 16 步，那次落在周六休市）。**工作日盘中复跑**已在 V18 第 13 轮做掉（北京时间 10:42–11:18 逐格真取）。**7709 核心链的 live 判据已进流水线**（V18 第 14 轮，G4）：`tests/live/test_tdx_core_chain.py` 那五格由 live-smoke 的盘中调度（工作日 02:30 UTC = 北京 10:30）执行，主链接不上时它红而不是 skip。已定：F-37 按裁决 (c) 落地——`0x000F`/`0x0010` 的能力口径已下调为「条数可用、字段语义不保证」，本发布不声称 7709 历史族字段级 live 正确；那次口径降级在 V18 第 9 轮补齐了**账本那半边**（`0x000F` 的 `tier=L1, verified=True` 实为 `register_parser` 的缺省值，已撤回，改由 `tests/unit/test_golden.py` 的「实采样本重放后字段值必须落在域内」判据把守），第 14 轮又把这条判断搬到了 wire 上（G7：值落在库自己声明的域外时发 `field_out_of_domain` 告警）。仍未做：那两条命令的字段布局判据（不猜协议字节，要真机 golden） |
 | **Streaming 增量执行** | 流式数据增量合并 + 补数完整性保证 |
 | **可达性收口** | 孤儿=0，且每条豁免记录都被门禁盯着：指向不存在模块的死记录、已接线却未撤销的过期记录、理由过短、重复条目都会让 `--strict` 失败。豁免清单里已无待裁决项：曾挂在该清单上的 `tstdx/providers/http.py`（Provider 绑定的 HTTP 主机白名单守卫）已按 F-18 裁决 (b) 物理删除——v16 删除跨源路由层后它没有任何生产调用点，一件没人接的防线不等于一条防线 |
 
@@ -489,6 +502,7 @@ python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproj
 | [PROTOCOL_SPEC/](PROTOCOL_SPEC/README.md) | 协议命令 YAML 规范 + codegen/spec_audit 闭环 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录（含 native 弃用时间线 v1.5.0/v1.6.0）|
 | [docs/releases/v1.0.0.md](docs/releases/v1.0.0.md) | v1.0.0 正式发布说明、兼容性与验证结果 |
+| [docs/releases/v1.1.0.md](docs/releases/v1.1.0.md) | v1.1.0 版本说明：这一版收口了什么、发布链走到哪一格 |
 | [docs/archive/](docs/archive/) | 历史计划与设计归档 |
 
 ---

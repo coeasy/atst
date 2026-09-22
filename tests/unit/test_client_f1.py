@@ -221,7 +221,10 @@ class TestIndexBarsCtx:
     def test_without_index_ctx_no_updown_fields(self) -> None:
         """默认 index=False 行为不回归：股票路径无涨跌家数字段（布局需 golden 定标）。"""
         client = TdxClient(pool=_FakePool({0x052D: _bars_payload_index()}))
-        bars = client.bars("sh600519", count=2, as_format="dict")
+        # 指数尾 4 字节被股票布局吃掉 ⇒ 第二条的日期解不成真日历日。
+        # 这一格正是"布局未定标 ⇒ 出口必须说破"的形状，不是可忽略的噪声。
+        with pytest.warns(UserWarning, match="field_out_of_domain"):
+            bars = client.bars("sh600519", count=2, as_format="dict")
         assert bars and all("up_count" not in b for b in bars)
 
     def test_async_bars_signature_mirrors_index(self) -> None:

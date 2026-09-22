@@ -11,14 +11,19 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
-from tests.support.field_readers import members_referenced
+from tests.support.field_readers import member_reference_sites, members_referenced
 from tstdx.diagnostics import WarningCode
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "tstdx"
 CHANNEL = "tstdx/diagnostics.py"
+#: 面向使用者的类别表所在文档与小节标题。
+WARN_DOC = ROOT / "docs" / "errors.md"
+WARN_SECTION = "## 一之四、结果侧数据瑕疵：`WarningCode`"
+_PY_IN_CELL = re.compile(r"`([^`]+\.py)`")
 
 #: 允许直接 ``warnings.warn`` 的文件与理由。豁免的门槛是"这条告警**不是**某个结果的
 #: 事实"——只有通道的发射口自身过这道门槛。执行器的 binding 审计曾在此列（"import 期
@@ -200,3 +205,88 @@ def test_the_forwarder_records_into_the_channel_it_claims_to_fill() -> None:
     assert reads_caveats and records and uses_decode_caveat_code, (
         "_forward_decode_caveats 不再把 ParseResult.warnings 发进 DECODE_CAVEAT 通道"
     )
+
+
+def test_the_forwarder_also_runs_the_domain_ruler_over_every_page() -> None:
+    """G7：同一个转发口必须把值域尺子也跑在每一页的行上。
+
+    两路判断在 wire 上是同一个缺陷的两半：解码层自己记下的判断（上一条）与解码层
+    **不记**、只有把值放回域里量才看得见的错位（这一条）。少了这一环，"这页字段错位"
+    就又回到只有读源码的人才知道的地方——实采载荷的重放判据在
+    ``tests/client/test_decode_caveat_wiring.py``，本判据一旦空转它立刻红。
+    """
+    tree = ast.parse((SOURCE / "client" / "_mixin.py").read_text(encoding="utf-8"))
+    fn = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "_forward_decode_caveats"
+    )
+    reads_rows = any(
+        isinstance(node, ast.Attribute) and node.attr == "rows" for node in ast.walk(fn)
+    )
+    calls_ruler = any(
+        isinstance(node, ast.Call)
+        and (
+            (isinstance(node.func, ast.Name) and node.func.id == "row_violations")
+            or (isinstance(node.func, ast.Attribute) and node.func.attr == "row_violations")
+        )
+        for node in ast.walk(fn)
+    )
+    uses_domain_code = any(
+        isinstance(node, ast.Attribute) and node.attr == "FIELD_OUT_OF_DOMAIN"
+        for node in ast.walk(fn)
+    )
+    assert reads_rows and calls_ruler and uses_domain_code, (
+        "_forward_decode_caveats 不再把行交给值域尺子/不再发 FIELD_OUT_OF_DOMAIN"
+        f"（读行={reads_rows} 调尺子={calls_ruler} 发码={uses_domain_code}）"
+    )
+
+
+def _warning_table_rows() -> dict[str, list[str]]:
+    """取 `docs/errors.md` 那张类别表的行：``code`` → 其余各列。"""
+    text = WARN_DOC.read_text(encoding="utf-8").replace("\r\n", "\n")
+    start = text.find(WARN_SECTION)
+    assert start != -1, f"docs/errors.md 里找不到小节 {WARN_SECTION!r}——判据自身失效"
+    rest = text[start + len(WARN_SECTION) :]
+    end = rest.find("\n## ")
+    section = rest if end == -1 else rest[:end]
+    rows: dict[str, list[str]] = {}
+    for line in section.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 3 or not cells[0].startswith("`"):
+            continue
+        code = cells[0].strip("`")
+        if code == "code":  # 表头
+            continue
+        assert code not in rows, f"类别表里 {code!r} 出现两行，判据读到的将是巧合"
+        rows[code] = cells[1:]
+    return rows
+
+
+def test_the_user_doc_table_is_the_same_closed_set_as_the_enum_and_names_real_emitters() -> None:
+    """类别要有使用者读得到的说明，而说明里的"谁发射"必须是事实。
+
+    三个方向一起判：文档漏一行 = 该类别在面向使用者的文档里隐身（调用方在 wire 上见到
+    一个没人解释过的键）；文档多一行 = 幻影类别；"发射口"一列与代码引用点不等 = 把一条
+    判断记在了不产出它的模块头上。分母取枚举自身，路径集合取 `tstdx/` 现扫，两处都不抄名单。
+    """
+    scanned, sites = member_reference_sites("WarningCode", skip=CHANNEL)
+    assert scanned > 30, f"只扫到 {scanned} 个模块，扫描自身失效"
+    assert len(sites) >= 10, f"只扫到 {sorted(sites)} 这些发射点，少于枚举规模，扫描自身失效"
+    rows = _warning_table_rows()
+    declared = {item.name: item.value for item in WarningCode}
+    assert set(rows) == set(declared.values()), (
+        f"文档类别表与枚举不等：文档多 {sorted(set(rows) - set(declared.values()))}、"
+        f"文档缺 {sorted(set(declared.values()) - set(rows))}"
+    )
+    problems: list[str] = []
+    for name, value in sorted(declared.items()):
+        when, outlet = rows[value]
+        if len(when) < 20:
+            problems.append(f"{value}: 『什么时候会出现』一列只有 {when!r}，等于没写")
+        cited = set(_PY_IN_CELL.findall(outlet))
+        if cited != sites[name]:
+            problems.append(
+                f"{value}: 文档写发射口 {sorted(cited)}，代码里引用它的却是 {sorted(sites[name])}"
+            )
+    assert problems == [], "docs/errors.md 的 WarningCode 表与代码不符：" + "；".join(problems)

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tstdx"
-version = "1.0.0"
+version = "1.1.0"
 description = "Provider-first market-data runtime and TDX protocol toolkit with explicit Providers, direct Provider reads, Stateful streaming and canonical HTTP/WebSocket/MCP adapters"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -157,7 +157,10 @@ class TestSyncAsyncParity:
                 )
 
         client = TdxClient(pool=FakePool())
-        result = client.bars("600000", period="day", count=5, as_format="dict")
+        # 全零载荷解出来的日期不是真日历日：出口那把尺子必须当场说破，
+        # 不能让一条越域数据以"干净结果"的形状出门（G7）。
+        with pytest.warns(UserWarning, match="field_out_of_domain"):
+            result = client.bars("600000", period="day", count=5, as_format="dict")
         assert result is not None
 
     def test_async_bars_with_fake_pool(self):
@@ -183,7 +186,9 @@ class TestSyncAsyncParity:
             client = AsyncTdxClient(pool=AsyncFakePool())
             return await client.bars("600000", period="day", count=5, as_format="dict")
 
-        result = asyncio.run(run())
+        # 同上一条：异步面共用同一个出口，越域形状也得被说破。
+        with pytest.warns(UserWarning, match="field_out_of_domain"):
+            result = asyncio.run(run())
         assert result is not None
 
     def test_sync_quotes_with_fake_pool(self):

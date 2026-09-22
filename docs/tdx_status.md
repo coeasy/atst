@@ -16,24 +16,55 @@
 > `symbols`/`provider`/`policy`/`currentness`，`route` 这个形参不存在——实测传 `route="web"`
 > 在构造期即 `TypeError`，而不是 §五 末段那句历史口径说的 `ValueError`。选数据源用 `provider=`。
 
-## 一、7709 标准行情族（✅ 全部打通，含 2 条已停答命令的兜底 + 3 条 offline 命令的替代路径）
+## 一、7709 标准行情族（逐格按命令账本判定）
+
+> **本表的"实测"列与代码同源**：命令号、`status`、`tier`、`verified` 取自
+> `tstdx/protocol/commands.py` 的账本，发包前拦截取自 `tstdx/client/core.py` 的
+> `_OFFLINE_FALLBACK_OK` / `_UNVERIFIED_STRUCTURED_BLOCK`。判据是
+> `tests/architecture/test_tdx_status_matrix.py`：写一个账本里没有的命令号、给一条
+> offline/拦截命令标 ✅、或漏登记一条 offline/`degraded` 的 quotation 命令，都当场红。
+> 三档含义——**✅**：账本 `online` 且 `verified=True`（真机 golden 锁过），结构化 API 给数；
+> **⚠️**：账本上这条命令给不出可采信的内容（offline，或 `verified=False` 布局未锁定）；
+> **⛔**：这条接口在 tstdx 的结构化入口上一次都发不出去（账本 offline 且 fail-fast，或被
+> inferred 拦截），调用方拿到的是异常而不是数据。
 
 | 接口 | 命令 | 实测 | 说明 |
 |---|---|---|---|
-| quotes 实时行情 | 0x0530 | ✅ | sh600519 真实价格 |
+| quotes 实时行情 | 0x0530 | ✅ | sh600519 真实价格。`datetime`/`bid`/`ask` 三格恒空，见 §一之二 |
 | bars 日/分钟 K 线 | 0x052D | ✅ | day/5min 均正常，分页正常 |
-| quotes_snapshot 批量快照 | 0x054C | ✅ | |
-| snapshot 五档全量 | 0x0535 | ✅ | |
-| minute_today 当日分时 | 0x0537 | ✅ | 87 点 |
-| trade_today 逐笔 | 0x0FC5 | ✅ | |
-| finance_info 财务 | 0x0010 | ✅ | 实采四份均回 14302 字节 / 100 行；**只有条数可采信**，逐字段语义未由 golden 锁定（F-37，账本 `verified=False`） |
-| capital_changes 除权除息 | 0x000F | ✅ | 回 250 条；**只有条数可采信**，记录布局未锁定（F-37；`market`/`code`/`date` 三格实测落在域外，账本 `verified=False`） |
 | security_count 证券总数 | 0x044E | ✅ | 27904 |
-| **security_list 代码表** | 0x044D | ⚠️→✅ | **命令已停答**（6 台主站读取超时，2026-09-06 实测）；已登记 offline + fail-fast（<75ms），`UnifiedQuoteAPI.security_list / security_list_all` 自动降级**东财 clist**（实测沪 100 行/深 3089 行真实数据） |
-| **minute_history 历史分时** | 0x0FB4 | ⚠️ | **命令已停答**（3 台主站 × 多日期超时）；已登记 offline + fail-fast；替代：`minute_klines`（web 分钟 K 线） |
-| **block_quotes 板块行情** | 0x07E5 | ⛔→⚠️ | 命令 offline（既知下线）；**P13-A：新增 web 近似兜底**——auto/显式 web 路由降级到 `WebQuoteSession.board_rank`（腾讯板块排行，含领涨股与 5/20 日涨幅），每行附 `source="tencent_board_rank"` 标记；`block_type` 映射 0/1/2→concept/industry/region，3（指数）无映射 |
-| **auction_snapshot 竞价** | 0x056A | ⛔→⚠️ | 命令 offline；v17 以 `CommandOffline` 结束本次查询（pre-v17 门面曾转 E7050 + `alternatives`）；替代需调用方自选：`hot_rank`（人气榜）/ `longhu`（龙虎榜）/ `quotes + snapshot`（实时快照 + 五档） |
-| **volume_price_dist 量价分布** | 0x051A | ⛔→⚠️ | 命令 offline；v17 同上（`CommandOffline`）；替代：`bars`（K 线，自算量价指标）；筹码分布为 TDX 端本地计算，web 侧无对应能力 |
+| snapshot 快照合成 | 组合面 | ✅ | **不是一条命令**：`quotes` + 当日 `bars(count=1)` 合成的字典。本行此前配了一个账本里不存在的命令号，并把它叫"五档全量"——那个名字是 pre-v17 的叫法，它不含盘口深度（§一之二） |
+| finance_info 财务 | 0x0010 | ⚠️ | 实采四份均回 14302 字节 / 100 行；**只有条数可采信**，逐字段语义未由 golden 锁定（F-37，账本 `verified=False`）。错位值现在会带一条 `field_out_of_domain` 告警随结果上 wire（G7，类别表见 `docs/errors.md` §一之四） |
+| capital_changes 除权除息 | 0x000F | ⚠️ | 回 250 条；**只有条数可采信**，记录布局未锁定（F-37；`market`/`code`/`date` 三格实测落在域外，账本 `verified=False`）。同上，那条判断由出口处的值域尺子重新量出，不再只活在 `ParseResult.warnings` 袋里 |
+| quotes_snapshot 批量快照 | 0x054C | ⚠️ | 账本 offline（多主站实测已下线），但是 `_OFFLINE_FALLBACK_OK` 里唯一被放行的一条：客户端仍按 60 只/包发一次，批量解不出或降级 L3 时**本片回退逐只 0x0530**——同一 Provider 内的分片回退，不换源 |
+| minute_today 当日分时 | 0x0537 | ⛔ | 账本 `degraded`、request/parser 仍为 inferred：结构化 API 在**发包前**抛 `NotImplementedFeature`（`_UNVERIFIED_STRUCTURED_BLOCK`）。本行此前写"✅ 87 点"，那是绕过拦截直接喂字节时的读数，今天的调用方拿不到 |
+| trade_today 逐笔 | 0x0FC5 | ⛔ | 账本 `online` 但布局未锁定，与 0x0537 同族：发包前抛 `NotImplementedFeature`。同名能力在 `baidu`/`tencent` 上有出路（另一条 Query） |
+| security_list 代码表 | 0x044D | ⛔ | 命令已停答（6 台主站读取超时，2026-09-06 实测）；客户端 fail-fast，一调即抛 `CommandOffline`。**tdx 之外无人声明它**——"代码表改走东财 clist"那条转换是 pre-v17 门面的行为，随门面删除（§五），要代码表得调用方自己另发 Query 或读本地 vipdoc 文件 |
+| minute_history 历史分时 | 0x0FB4 | ⛔ | 3 台主站 × 多日期超时；fail-fast 抛 `CommandOffline`。同名能力无出路；要分钟线只能改走 `minute_klines`（tencent / eastmoney 的 web 适配器，另一条 Query） |
+| block_quotes 板块行情 | 0x07E5 | ⛔ | 三主站实测无响应；fail-fast 抛 `CommandOffline`。本行此前写的"P13-A 换到腾讯板块排行（每行附 `source` 标记）"随 pre-v17 门面删除，今天没有任何自动换源（§五） |
+| auction_snapshot 竞价 | 0x056A | ⛔ | 三主站实测无响应；fail-fast 抛 `CommandOffline`。替代需调用方自选：`hot_rank`（人气榜）/ `longhu`（龙虎榜）/ `quotes`（实时快照，无盘口深度） |
+| volume_price_dist 量价分布 | 0x051A | ⛔ | 三主站实测无响应；fail-fast 抛 `CommandOffline`。筹码分布为 TDX 端本地计算，web 侧无同名能力，可用 `bars` 自算量价指标 |
+| security_list_legacy 代码表旧包 | 0x0450 | ⚠️ | 账本 offline；包内既无解析器也无客户端入口，只在协议档案里留名。登记在此是为了让本表覆盖账本里每一条已停答的 quotation 命令 |
+| quotes_legacy 批量行情旧包 | 0x053E | ⚠️ | 账本 offline（部分主站已停用）。解析器 `QuotesLegacyParser` 仍在，但没有任何客户端方法发它——只能经通用 `request` 口手工发包，且响应按 L2 通用解析处理 |
+| minute_recent 近几日分时 | 0x0FEB | ⚠️ | 账本 offline；无解析器、无客户端入口，同上 |
+| minute_subplot 分时副图 | 0x051B | ⚠️ | 账本 `degraded`（有响应但布局未锁定）；无解析器、无客户端入口，同上 |
+
+### 一之二、`quotes` / `snapshot` 回来却填不上的三格（G8）
+
+7709 实时行情给得出价格，给不出**时间戳与盘口深度**。`Client.quotes()` / `Client.snapshot()`
+返回的记录里 `datetime` 恒为 `null`、`bid` 与 `ask` 恒为空列表，而 `price`/`volume`/`amount`
+都是真数。这不是丢字段，是解析器按"不臆造未锁定布局"的契约主动留空
+（`tstdx/protocol/parsers/_std7709_quote.py`：五档尾段 73~99 字节长短随标的而变，精确布局尚未
+锁定，于是整段按 LEB128 原样收进 `extra['tail_leb128']`、未识别的 `u4` 收进 `extra['_u4']`，
+**绝不**把它们当价格或时间输出）。
+
+调用方要拿到"这一笔是什么时候的"，取的是**请求时刻**而非响应时刻——响应里没有这个信息。
+要盘口深度（买五卖五），7709 这条链上目前任何接口都给不了：换 `provider` 也一样，`snapshot`
+这个发现名的出路只有 tdx（推导见 `docs/api/interfaces.md` 的「能力发现面」）。
+
+同一形状在 `docs/api/interfaces.md` §6 与本节都写了，判据是
+`tests/architecture/test_tdx_status_matrix.py` 的最后一节——它拿 `Quote` 的字段名回查文档，
+所以把这三格从文档里删掉、或改解析器真的开始填它们，都会当场红。
 
 ## 二、扩展市场族（⛔ 环境级失效，P13-A 显式化替代方案）
 
@@ -46,12 +77,12 @@
 | GOODS 商品语义（0x0200 族） | ⛔ | 与 EXTENDED 共池（7727）；另 `domain.symbol` 不解析商品代码（SymbolError），双重不可用 |
 | MAC 专属（0x120F 族，2 台候选） | ⛔ | 两台候选连接超时；MAC 命令发往标准 7709 主站无响应 |
 
-## 三、F10 资料族（⛔ 内容停发，P13-A 显式化替代方案）
+## 三、F10 资料族（⛔ 内容停发）
 
-| 项 | 实测 | 说明 |
-|---|---|---|
-| **catalog 栏目目录** | 0x0001 | 命令 offline（7709 上无响应）；v17 以 `CommandOffline` 结束（pre-v17 门面曾转 E7050 + `alternatives`）；替代需调用方自选：`dc_query`（dividend/performance/holder_num/ipo）/ `corporate_action` / `finance` |
-| download 文件下载 | 0x06B9 | ⚠️→✅ 服务器**应答但返回空字节**（F10 内容停止分发）——已加空内容检测，显式抛 `DataError`（同步/异步镜像一致），不再静默返回空文本 |
+| 接口 | 命令 | 实测 | 说明 |
+|---|---|---|---|
+| f10_catalog 栏目目录 | 0x0001 | ⚠️ | 账本 `online`、`verified=False`（布局未由真机 golden 锁定）。本节此前写"命令 offline（7709 上无响应）"——那句话与账本不符，也进不了「能力发现面」的死名字推导，本轮按账本更正：它**会发包**，只是解出来的目录可不可信没有判据。替代：`dc_query`（dividend/performance/holder_num/ipo）/ `corporate_action` / `finance`，都是另一条 Query |
+| f10 download 文件下载 | 0x06B9 | ⚠️ | 服务器**应答但返回空字节**（F10 内容停止分发）——已加空内容检测，显式抛 `DataError`（同步/异步镜像一致），不再静默返回空文本；账本 `verified=False` |
 
 ## 四、异步面
 
@@ -98,9 +129,11 @@ issue 读得懂；v17 的对应事实写在第三条与末条。
 1. 「命令级失效」登记在账本（`protocol/commands.py` 的 `status=STATUS_OFFLINE`
    + 实测日期注释），fail-fast 前先尝试过全部主站——误标时改账本即可恢复。
 2. 主机级失效标注在 `transport/hosts.py` 池注释（含实测日期与复测建议）。
-3. 兜底路径以「能力不丢」为准：代码表 → 东财 clist（行内 `source` 字段标记
-   数据来源）；历史分时 → 引导 `minute_klines`；板块行情 → 腾讯板块排行
-   （P13-A）；字段 schema 差异在方法文档中声明。
+3. 本表不写"自动兜底"：v17 内核不替换 Provider，所以"改走哪里"永远是**调用方另发一条
+   Query**。哪些名字还有第二条路，看 `docs/api/interfaces.md`「能力发现面」那张由注册表现推
+   的出路列（由 `tests/architecture/test_offline_capability_honesty.py` 判它）。本节此前手抄
+   过一份"代码表 → 东财 clist""板块行情 → 腾讯板块排行"，那两条转换都随 pre-v17 门面删除；
+   抄一份可用性出来，就等于再造一个会过期的第二事实源。
 4. 「仅 tdx」方法的环境级失效在 v17 表现为 `CommandOffline`（账本 `STATUS_OFFLINE`）
    或传输层原异常（`ConnectionFailed`/`AllHostsUnreachable`/`WebSourceError`）：
    内核不替换 Provider，所以也不替用户决定"换谁"。pre-v17 门面曾用 E7050 那个

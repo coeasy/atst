@@ -53,10 +53,23 @@ def members_referenced(owner: str, *, skip: str = "") -> tuple[int, set[str]]:
     ``skip`` 传文件相对路径（如 ``tstdx/diagnostics.py``）以排除声明处自身。
     """
 
-    refs: set[str] = set()
+    scanned, sites = member_reference_sites(owner, skip=skip)
+    return scanned, set(sites)
+
+
+def member_reference_sites(owner: str, *, skip: str = "") -> tuple[int, dict[str, set[str]]]:
+    """同一把尺子的**按文件**版本：返回 (扫过的模块数, 成员名 → 引用它的仓内相对路径)。
+
+    ``members_referenced`` 只回答"有没有人生产这个成员"，回答不了"文档说它由甲模块发射，
+    究竟是不是甲"。判据要钉住后者就得留下文件这一维，而重复实现一份 AST 走查正是本模块
+    存在的理由所要避免的，于是前者由本函数投影得到。
+    """
+
+    refs: dict[str, set[str]] = {}
     scanned = 0
     for path in sorted((REPO_ROOT / "tstdx").rglob("*.py")):
-        if str(path.relative_to(REPO_ROOT)).replace("\\", "/") == skip:
+        relative = str(path.relative_to(REPO_ROOT)).replace("\\", "/")
+        if relative == skip:
             continue
         scanned += 1
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -67,5 +80,5 @@ def members_referenced(owner: str, *, skip: str = "") -> tuple[int, set[str]]:
                 and isinstance(node.value, ast.Name)
                 and node.value.id == owner
             ):
-                refs.add(node.attr)
+                refs.setdefault(node.attr, set()).add(relative)
     return scanned, refs

@@ -4,9 +4,15 @@ name: Live Smoke
 # network failures cannot make deterministic source CI flaky. The scheduled run
 # itself must still be truthful: a failed live probe makes this workflow red and
 # always leaves a JUnit artifact for diagnosis/monitoring.
+#
+# G4: the daily 01:00 UTC run is *before* the A-share session, so it can never
+# see a live quote or a forming minute bar. The weekday 02:30 UTC run (10:30
+# Beijing, morning session) is what makes tests/live/test_tdx_core_chain.py --
+# the only 7709 assertions the pipeline runs -- actually intraday-capable.
 on:
   schedule:
     - cron: '0 1 * * *'  # daily 01:00 UTC, before A-share trading
+    - cron: '30 2 * * 1-5'  # weekdays 02:30 UTC = 10:30 Beijing, morning session
   workflow_dispatch:
 
 # A second daily/manual probe supersedes an older one; never keep multiple live

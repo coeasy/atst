@@ -41,6 +41,7 @@ import tstdx.client as _client_pkg  # 包级符号经此转发（见 sync.py 说
 
 from ..diagnostics import WarningCode, record_warning
 from ..domain.finance import FINANCE_INFO_FIELDS, map_finance_values
+from ..domain.integrity import row_violations
 from ..domain.models import Bar, CapitalChange, Quote
 from ..errors import (
     ParseError,
@@ -89,6 +90,10 @@ OutputFormat = str  # "dict" | "tuple" | "dataframe"
 #: 只对**单跳**模板成立——嵌套 ``_op_call`` 的路径靠 :func:`_caller_stacklevel` 实测。
 _TPL_WARN_STACKLEVEL = 4
 
+#: 一条越域告警最多带几条实例。910 行的错位页能产出上千条理由，全塞进 wire 等于
+#: 用噪声换信号；计数始终是全文，例子只截前几条。
+_DOMAIN_CAVEAT_SAMPLES = 3
+
 
 def _op_req(cmd: int, body: bytes, **kw: Any) -> tuple[str, int, bytes, dict[str, Any]]:
     """op：发送单命令帧（sync ``self._req`` / async ``await self._req``）。"""
@@ -102,17 +107,36 @@ def _op_call(name: str, *args: Any, **kwargs: Any) -> tuple[str, str, tuple, dic
 
 
 def _forward_decode_caveats(result: ParseResult, label: str) -> ParseResult:
-    """把解码层记在 ``ParseResult.warnings`` 里的判断接进结果侧的告警通道。
+    """把"这一页数据有问题"的判断接进结果侧的告警通道——唯一的那个转发口。
 
-    解码层每一页都会把"声明 N 实收 M""钳制""降级为 L3 透传"这类判断写进
-    ``warnings`` 袋；袋本身没人读就是 wire 上的静默（F-51 的第 26 步接线只覆盖了
-    ``bars`` 一条命令，其余 14 个分派点把判断整族丢弃 —— F-63①）。这里给出唯一
-    的通用转发口：每个分派点都必须过它一次。
+    两路判断都从这里过，因为它们在 wire 上是同一个缺陷的两半：
+
+    * 解码层每一页记下的"声明 N 实收 M""钳制""降级为 L3 透传"。袋本身没人读就是
+      wire 上的静默（F-51 的第 26 步接线只覆盖了 ``bars`` 一条命令，其余 14 个分派点
+      把判断整族丢弃 —— F-63①）。
+    * 解出来的行落在库自己声明的值域之外。布局未经真机 golden 锁定的命令（G3 的
+      ``0x000F``/``0x0010``）页内字节数对得上，解码层因此一个字都不记，而值已经错位
+      ——调用方此前只能靠读源码 docstring 知道（G7）。
     """
     for caveat in result.warnings:
         record_warning(
             WarningCode.DECODE_CAVEAT,
             f"{label}：{caveat}",
+            stacklevel=_caller_stacklevel(),
+        )
+    offenders = 0
+    samples: list[str] = []
+    for index, row in enumerate(result.rows):
+        if violations := row_violations(row, f"row[{index}]"):
+            offenders += 1
+            if len(samples) < _DOMAIN_CAVEAT_SAMPLES:
+                samples.extend(violations[: _DOMAIN_CAVEAT_SAMPLES - len(samples)])
+    if samples:
+        record_warning(
+            WarningCode.FIELD_OUT_OF_DOMAIN,
+            f"{label}：{offenders} 行的字段值落在库自己声明的取值域之外"
+            f"（例：{'；'.join(samples)}）——这些字段不可当作可信输入；对记录布局尚未"
+            "由真机 golden 锁定的命令（见命令账本的 tier/verified），这正是错位的形状",
             stacklevel=_caller_stacklevel(),
         )
     return result

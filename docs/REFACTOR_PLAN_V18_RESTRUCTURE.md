@@ -100,18 +100,27 @@
 | G1 | **三格能力在任何 Provider 上都不可能给数**，但仍占着 HTTP/WS/MCP 三面入口 | `minute`(0x0537)/`trades`(0x0FC5) 在 `tstdx/client/core.py:288,314,326` 恒定 `raise NotImplementedFeature`；`security_list`(0x044D) 在 `core.py:300` 恒定 `raise CommandOffline` | P1（对外承诺形状） |
 | G2 | **typed 面只覆盖 40%**：155 个业务 capability 里 92 个无契约，`contract_audit` 判 PENDING 且 RC=0 不阻断。<br>**更正（第 7 轮实测，见 §16）**：这一格诊断错了一半——92 个"无契约"**全部**在通用派发面上（迁移网关或内核专属执行体），真·无任何声明形状的是 **0 个**。所以"缺 92 份契约"不是功能缺口而是口径产物；已按 D10(b) 把判据换成派生三来源 + 规模下限，缺形状改 ERROR 阻断 | 本轮 `scripts/contract_audit.py`：`63 契约 / 155 capability / WARN: 92 个待办`；更正读数：`172 注册 / 63 专属契约 / 172 在派发面 / 0 无形状` | P1（功能账，非缺陷）→ **口径账，已改** |
 | G3 | **`0x000F` 资本变动 / `0x0010` 财务在新握手下仍解错**，F-37 余条未裁决；本轮离线日志里就能看到 `[E3040] 股权信息记录数异常: count=300, body=30, size=0` 的解码告警。<br>**第 13 轮盘中复现（2026-09-22 10:45/10:54，见 §22）**：换标的也是同一形状——`600519` 与 `000001` 各回 250 条，首条 `CapitalChange(code='519\x01', market=48, date='00104524' / '00000000')`、`finance` 回 `market=48, code='519\x01', eps=1235.0, profit_per_share=-40714.76`；`market` 读到 48 就是 ASCII `'0'` 的字节值，与第 9 轮离线穷举的错位域完全同形 | 离线：`v18rev_test.log` warnings 段（`tests/client/test_decode_caveat_wiring.py`）；盘中：`wt_v18b13step/live/L2_client_intraday.log`、`L2b_extra.log` | P0（数据正确性） |
-| G4 | **7709 数据面从未在交易时段被验证过**：CI 的 live-smoke 是 `cron '0 1 * * *'` UTC = 北京 09:00，注释自己写着 "before A-share trading"（9:30 开盘），host-audit 是周三 09:00 UTC = 北京 17:00（收盘后）。<br>**部分清偿（第 13 轮，2026-09-22 周二盘中 10:42–11:18 手工一轮）**：8 主站里 7 个可达（`119.147.212.81` 连接超时 E2010），`quotes`/`bars 日线`/`bars 1m`（拿到北京时间 10:37 的当根）/`snapshot`/`security_count`（SZ 24296 / SH 27472）五格真实给数，`-m network` 的 web 侧 10 项真取通过。**剩下的**：这一格靠人记得跑，不靠流水线——cron 仍在开盘前与收盘后，"盘中"依然是验证盲区，V18-F 的排期不动 | `.github/workflows/live-smoke.yml:9`、`.github/workflows/host-audit.yml:5`；盘中读数 `wt_v18b13step/live/L1_server_test.log`、`L2_client_intraday.log`、`L3_network_web.log` | P1（验证盲区，F-38 的真正根因）→ **手工已见过一次，常态化仍缺** |
+| G4 | **7709 数据面从未在交易时段被验证过**：CI 的 live-smoke 是 `cron '0 1 * * *'` UTC = 北京 09:00，注释自己写着 "before A-share trading"（9:30 开盘），host-audit 是周三 09:00 UTC = 北京 17:00（收盘后）。<br>**部分清偿（第 13 轮，2026-09-22 周二盘中 10:42–11:18 手工一轮）**：8 主站里 7 个可达（`119.147.212.81` 连接超时 E2010），`quotes`/`bars 日线`/`bars 1m`（拿到北京时间 10:37 的当根）/`snapshot`/`security_count`（SZ 24296 / SH 27472）五格真实给数，`-m network` 的 web 侧 10 项真取通过。**剩下的**：这一格靠人记得跑，不靠流水线——cron 仍在开盘前与收盘后，"盘中"依然是验证盲区，V18-F 的排期不动 | `.github/workflows/live-smoke.yml:9`、`.github/workflows/host-audit.yml:5`；盘中读数 `wt_v18b13step/live/L1_server_test.log`、`L2_client_intraday.log`、`L3_network_web.log` | P1（验证盲区，F-38 的真正根因）→ **手工已见过一次，常态化仍缺** → **已清偿（第 14 轮）**：`tests/live/test_tdx_core_chain.py` 五格 7709 判据进 `-m network`，live-smoke 增加工作日 02:30 UTC（北京 10:30，上午时段）那次调度；主链接不上时红而不是 skip（N1 反证：5 格全红、0 skip） |
 | G5 | **`fund_estimate` 是 G1 的同族、Provider 侧的那一格**（第 3 轮登记、第 4 轮按代码更正口径）：能力面仍声明它，而实现只在"站点回 404/页面未找到 HTML"这一实测形状上抛 `SourceDeprecated`——它**仍会先发一次真实请求**，端点复活就会重新返回 dict。调用方要读源码才知道这一格现网不给数 | `tstdx/web/sources.py:449` 与 `tstdx/providers/__init__.py:570` 仍列该能力，`tstdx/cli/runtime_commands.py:681` 仍可从 CLI 抵达，实现链是 `tstdx/web/_session_baidu.py:108` → `tstdx/web/adapters_fund.py:188`（该函数先 `_request_text`，命中 404 页才抛，其余响应走 `_parse_jsonp` 返回 dict） | P2（对外承诺形状，与 F-66/F-75 同批裁决） |
 | G6 | **三张机器面对外声明的缺省值，库自己解不开**（第 13 轮盘中实测并已清偿）：`market` 这个旋钮在 CLI/HTTP/MCP 三面被声明成字符串（`--market` 的缺省就是 `"0"`、HTTP 查询串与 MCP `inputSchema` 同为 `string`），而解析器只认 `sz/sh/bj` 前缀——**连自己声明的缺省都拒**，`tstdx security-count` 与 `GET /v13/security/count` 当场 `E3040`，五张面里只有库面和 WS（缺省走 int 分支）能用。更糟的是错误消息自己写着"可选 sz/sh/bj **或 0/1/2**"，即消息在教用户走一条死路 | 改前/改后各一轮：`wt_v18b13step/live/L5_before.log`（`"0"` 五面三红）↔ `L5_after.log`（`"0"`/`"sz"` 同解 24296，`"1"`/`"sh"` 同解 27472，`"3"` 五面一致仍拒）；判据 `tests/architecture/test_declared_knobs.py` 判据六 5 项 + 变异 M1/M2/M3（`mutate13.log`） | **已清偿（第 13 轮）**：值域按表派生，六张面同答案 |
-| G7 | **G3 的"调用方看得见"那半边还空着**（第 13 轮登记，第 9 轮的账本半边不覆盖它）：第 9 轮把 `0x000F`/`0x0010` 的 `tier`/`verified` 与四处文档口径一起下调了，可是**线上传回来的形状一字未变**——盘中 `capital_changes`/`finance` 仍是 `provenance.kind=DIRECT`、`degraded=None`、`warnings=0` 的 250 条错值，调用方只有读源码 docstring 才知道字段不可信。这与 G5、≈F-72 是同一族：判断写在文档里，不写在结果里 | `wt_v18b13step/live/L2b_extra.log`（三条 G3 格 meta 逐字）；机制现成但无生产者：`_forward_decode_caveats`（`tstdx/client/_mixin.py:104`）只转发解码层自己记下的告警，而这两个解析器不记；`ProvenanceKind` 只有 `DIRECT` 一个成员，其 docstring 明写" declaring a second member without anything that produces it 正是本族要删的形状"，所以加等级必须同时给生产者 | P1（对外可见性，非数据正确性本身） |
-| G8 | **`Quote` 的三个公开字段在 tdx 实时路径上恒空，而对外文档一字未提**（第 13 轮盘中量到）：`quotes`/`snapshot` 回来的记录里 `datetime=null`、`bid=[]`、`ask=[]`，价格/量/额都是真的（12:01 从已装 wheel 里读到 1255.6 / 1 581 000 手）。这是**诚实的形状**——解析器 docstring 明写"绝不臆造 bid/ask 价格，以免把未经验证的布局当成事实输出"，未识别的末段原样留在 `extra['tail_leb128']`／`extra['_u4']`——缺口不在解析器，在**读者**：`docs/api/interfaces.md` 与 `docs/tdx_status.md` 里 `datetime`/`bid`/`ask` 零命中，调用方只能靠撞上看 null 才知道这三格在 7709 实时面上没有来源 | 盘中：`live/L2_client_intraday.log`（`_hdr=8205`、`bid/ask=[]`）、`wt_wheelcheck/wheel_probe.log`（已装 wheel 的 `snapshot` 同形状）；文档侧：全 `docs/` grep `datetime` 在 `interfaces.md`/`tdx_status.md` 0 命中；源码侧：`tstdx/protocol/parsers/_std7709_quote.py:185-197`（`u4` 语义未识别）、`:370-389`（不臆造 bid/ask、末段原样保留） | P2（对外字段口径，G7/F-75 同族：形状真、说法缺） |
+| G7 | **G3 的"调用方看得见"那半边还空着**（第 13 轮登记，第 9 轮的账本半边不覆盖它）：第 9 轮把 `0x000F`/`0x0010` 的 `tier`/`verified` 与四处文档口径一起下调了，可是**线上传回来的形状一字未变**——盘中 `capital_changes`/`finance` 仍是 `provenance.kind=DIRECT`、`degraded=None`、`warnings=0` 的 250 条错值，调用方只有读源码 docstring 才知道字段不可信。这与 G5、≈F-72 是同一族：判断写在文档里，不写在结果里 | `wt_v18b13step/live/L2b_extra.log`（三条 G3 格 meta 逐字）；机制现成但无生产者：`_forward_decode_caveats`（`tstdx/client/_mixin.py:104`）只转发解码层自己记下的告警，而这两个解析器不记；`ProvenanceKind` 只有 `DIRECT` 一个成员，其 docstring 明写" declaring a second member without anything that produces it 正是本族要删的形状"，所以加等级必须同时给生产者 | P1（对外可见性，非数据正确性本身）→ **已清偿（第 14 轮）**：出口处的值域尺子（`tstdx/domain/integrity.py`）挂进唯一转发口 `_forward_decode_caveats`，错值行随结果带一条 `field_out_of_domain` 上 wire，五张面与 `strict` 同口径；布局本身仍按 G3 的"不猜字节"留在真机 golden 之后 |
+| G8 | **`Quote` 的三个公开字段在 tdx 实时路径上恒空，而对外文档一字未提**（第 13 轮盘中量到）：`quotes`/`snapshot` 回来的记录里 `datetime=null`、`bid=[]`、`ask=[]`，价格/量/额都是真的（12:01 从已装 wheel 里读到 1255.6 / 1 581 000 手）。这是**诚实的形状**——解析器 docstring 明写"绝不臆造 bid/ask 价格，以免把未经验证的布局当成事实输出"，未识别的末段原样留在 `extra['tail_leb128']`／`extra['_u4']`——缺口不在解析器，在**读者**：`docs/api/interfaces.md` 与 `docs/tdx_status.md` 里 `datetime`/`bid`/`ask` 零命中，调用方只能靠撞上看 null 才知道这三格在 7709 实时面上没有来源 | 盘中：`live/L2_client_intraday.log`（`_hdr=8205`、`bid/ask=[]`）、`wt_wheelcheck/wheel_probe.log`（已装 wheel 的 `snapshot` 同形状）；文档侧：全 `docs/` grep `datetime` 在 `interfaces.md`/`tdx_status.md` 0 命中；源码侧：`tstdx/protocol/parsers/_std7709_quote.py:185-197`（`u4` 语义未识别）、`:370-389`（不臆造 bid/ask、末段原样保留） | P2（对外字段口径，G7/F-75 同族：形状真、说法缺）→ **已清偿（第 14 轮）**：`docs/tdx_status.md` §一之二 + `docs/api/interfaces.md` 的 `Quote` 段写明三格恒空与其来源；新增 `tests/architecture/test_tdx_status_matrix.py` 把整张状态表钉回命令账本与分派拦截表（幻影命令号、给被拦命令盖 ✅、⛔ 行写错异常都当场红） |
+| G9 | **两份用户文档教用户 `pip install tstdx`，而这个名字在 PyPI 上不存在**（第 14 轮为"发布新版本"取证时量到）：`https://pypi.org/pypi/tstdx/json` 与 `/simple/tstdx/` 都回 404，即名字从未被领取；而 `README.md` 的"安装"第一行与 `docs/quickstart.md:9` 都把 `pip install tstdx` 写成可直接执行的指令。`docs/releases/v1.0.0.md:57` 自己写着产物"在安装矩阵通过并完成 PyPI Trusted Publishing 后"才附加——发布链的这一步从来没走过，读者的安装指令却一直在替它背书 | 本轮实测：`reports/g9_pypi_probe.log`（两个端点的 404 与 JSON 原文逐字、`grep -rn "pip install tstdx" README.md docs/` 的命中清单）；判据：`tests/compatibility/test_release_history_contract.py::test_no_user_doc_presents_an_unpublished_install_path_as_available` | P2（对外可安装性口径；文档侧已按实测改写，真正关闭它要的是发布动作） |
 
-**结论口径建议统一成这句**（写进 README 与 F-37 裁决记录，避免每轮重新解释）：
-> 链是通的，声明与执行是闭合的；G1/G5 是"实现了但选择不给数/不给类型"的登记账，
+**结论口径建议统一成这句**（写进 README 与 F-37 裁决记录，避免每轮重新解释）：> 链是通的，声明与执行是闭合的；G1/G5 是"实现了但选择不给数/不给类型"的登记账，
 > G2 经第 7 轮更正后是**口径账**（已改判据，无待补契约），
 > G3 是唯一一处"给了错数"的真缺陷（盘中第 13 轮再次复现），G7 是它"调用方在线上看不见"的那半边，
 > G4 已经不再成立为"从未看过"——第 13 轮在交易时段手工看过一次且主链给数，但流水线仍照不到那个时段，
 > G6（三面解不开自己声明的缺省值）是第 13 轮盘中量到并当场清偿的功能性断裂。
+
+**第 14 轮之后的同一句话（把上面三条的时态改掉，其余不变）**：
+> 链是通的，声明与执行是闭合的；G1/G5 仍是"实现了但选择不给数"的登记账；
+> G3 仍是唯一一处"给了错数"的真缺陷（不猜协议字节，等真机 golden），但它的**可见性那半边 G7 已清偿**
+> ——错值现在随结果带 `field_out_of_domain` 上 wire，`strict=True` 直接拒；
+> G4 不再是验证盲区：7709 核心链有五条盘中判据跑在 live-smoke 的工作日 02:30 UTC 调度上，
+> 主站不通时它红而不 skip；G8 的空字段口径已写在读者会读的两页上，并由矩阵判据钉住；
+> 本轮新登记 G9（文档教用户 `pip install tstdx` 而 PyPI 上没有这个名字），文档侧已按实测改写，
+> 关闭它需要的是发布动作本身。
 
 ---
 
@@ -533,6 +542,16 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b13ship/fulltest_ship.log` + `junit_ship.xml` | 提交树离线全量：3 723 / 0 失败 / 0 错误 / 7 跳过、180.438 s、`TOTAL 22 367 / 3 464 / 5 962 / 1 002`、**82.02%**——与步骤轮逐格相同（只有用时不同） |
 | `wt_v18b13ship/build_smoke.log` | 提交树上的 canonical 构建 + 校验 + 干净 venv 冒烟：`BUILD_RC=0`、`runtime_files=190`、`twine check` 通过、`[冒烟] 通过 ✓`，两份产物的 sha256 逐字在末尾 |
 | `wt_wheelcheck/probe_wheel.py`、`wheel_probe.log` | **交付物本身的**盘中/午间真取：临时干净 venv 只装 `dist/tstdx-1.0.0-py3-none-any.whl`，`quotes`/`bars`/`snapshot`/`security-count` 四格给数、`--market 0` 与 `--market sz` 同答案 24 296、`--market 3` 仍 rc=2 E3040。第一版探针因该 venv 无 `tzdata` 而 `ZoneInfoNotFoundError`（G8 那格的旁证：库自己在这条坑上有兜底，见 `tstdx/tools/capture.py:84-92`） |
+| `wt_v18b14step/run_gates14.log` | 第 14 轮步骤轮十次调用（树由 `git -c core.quotepath=false ls-files -co --exclude-standard` 生成：HEAD + 本轮未提交改动，**不含** `.gitignore` 遮蔽的本机产物）：10/10 `rc=0` |
+| `wt_v18b14step/fulltest_v18b14.log` + `wt_v18b14step/reports/fulltest_v18b14.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数：3 751 / 0 失败 / 0 错误 / 7 跳过、173.480 s、82.12% |
+| `wt_v18m14mut/_mut14.py`、`mutate14.log` | 第 14 轮 8 格反证（M1–M3 打出口尺子、M4a–M4b 打文档表门禁、M5a–M5c 打状态矩阵门禁）+ 还原后 27 项复测；四份被改文件另与主工作树做 sha256 逐字节核对 |
+| `wt_v18m14mut/_mut14live.py`、`live14_negative_controls.log` | G4 的 5 格反证（N1–N5）：每格跑完 `restored clean=True`；N4 第一版锚点未命中（workflow 那行带尾注释），修锚点后重跑的那次才是读数 |
+| `reports/live14_probe_run1.log`、`reports/live14_probe_run2.log` | G4 探针盘中真取两次（13:15:28 / 13:15:55）：第一次 4 过 1 红——红在**探针自己**把 `snapshot` 猜成平铺 `price`；第二次 5/5。两份抬头各写一行只读授权来源 |
+| `reports/g9_pypi_probe.log` | G9 取证：`pypi.org/pypi/tstdx/json` 与 `/simple/tstdx/` 的 404 原文逐字 + `grep -rn "pip install tstdx" README.md docs/` 的命中清单 |
+| `wt_v18b14step/_g9mut.py`、`g9_negative_controls.log` | G9 判据两格反证（C1 抹掉 README 的口径声明、C2 往干净页塞一条裸指令）：各自点名该点名的那份文件，还原后 `rc=0` |
+| `wt_v18b14final/run_gates14final.sh`、`run_gates14final.log` | **最终候选树**（内容 = 本次提交：`ls-files -co` + `CHANGELOG.md` 换回 HEAD 版 + 删掉并行会话那份未跟踪计划的副本）十次调用：10/10 `rc=0` |
+| `wt_v18b14final/fulltest_v18b14final.log` + `reports/fulltest_v18b14final.xml` | 候选树离线全量：3 752 / 0 / 0 / 7、182.710 s、`TOTAL 22 428 / 3 455 / 5 992 / 1 003`、82.11%；告警摘要里 `field_out_of_domain` 只剩 2 行（G7 判据自己重放实采样本那两行） |
+| `wt_v18b14step/fulltest_v18b14_rerun.log` | 步骤树原样重跑第三次全量：用来把 `tstdx/protocol/generic.py` 那一行的 ±1 钉成抖动还是退化 |
 
 ## 8. 本方案不做什么（避免被读成"又要一轮无限重构"）
 
@@ -1930,3 +1949,176 @@ CLI 冒烟全通过，`rc=0`：`dist/tstdx-1.0.0-py3-none-any.whl` 725.6 KB（sh
 G1/G5 的裁决、`_PROVIDER_OVERRIDES` 等三张目录内部表、`audit_capability_bindings` 允许差 5 格那半截，全部照
 §21 末段那串名单继续挂着。CHANGELOG `[Unreleased]` 仍押后：并行会话在该文件里有未提交的账，本轮不碰它，
 以免把别人的登记一起 commit。
+
+---
+
+## 23. 执行记录（续）
+
+### 第 14 轮｜把"看得见"做成机制、把"盘中"做成调度，并当场量出一条从未走过的发布链（G7/G8/G4 清偿、G9 登记、版本 `1.0.0 → 1.1.0`）
+
+**本轮授权**：用户请求「剩余的问题一次性全部修复，修复之后，提交最新代码，发布新版本」。"剩余的问题"
+按 §2 的账本逐格读：**G4/G7/G8 本轮清偿**；**G9 本轮量出并登记**；G1/G3/G5 三格不在"可修"之列——
+G1 是设计上的 fail-fast（本轮复核：`core._UNVERIFIED_STRUCTURED_BLOCK = {0x0537, 0x0FC5}`、
+`_OFFLINE_FALLBACK_OK = {0x054C}` 两张拦截表在树上一字未变）、G3 缺的是真机布局判据不是代码、
+G5 等的是裁决。本轮对它们只做了一件事：把"仍然如此"量出来写回账本（末段），而不是顺手改掉。
+真实查询沿用第 13 轮的只读口径（只做读，不写、不认证、不上传），逐字写进每份 live 日志抬头。
+
+#### 一、G7：出口处那把尺子（生产代码两个文件）
+
+第 13 轮登记这一格时列了三条候选落点，本轮选的是**出口统一量**而不是"让每个解析器自己记账"：
+新增 `tstdx/domain/integrity.py`（106 行），在 `_forward_decode_caveats` 这个唯一转发口里对
+`result.rows` 逐行跑 `row_violations`，越域行 ≥ 1 就记一条新的 `WarningCode.FIELD_OUT_OF_DOMAIN`
+（`WarningCode` 因此 14 → **15** 个成员），告警随 `ResultMeta.warnings` 上五张面，`strict=True` 把它
+升级成 `TruncatedDataError`。三处设计取舍写进了模块自己的注释：
+
+| 取舍 | 理由 |
+|---|---|
+| 域**属于字段**，不属于命令号（`FIELD_CHECKERS` 按键名挂尺子） | 不为每条命令抄一份"该查什么"的第二名单；新命令自动被同一把尺子量到 |
+| 市场域从入口解析器那张表派生（`tdx_market_ids()`），空集即全体红 | 宁可响，也不要静默变成一条永不触发的判据 |
+| `code` 只要求"非空的可见 ASCII"（`^[\x21-\x7e]+$`），不要求 6 位数字 | 7727 扩展市场交出的港股是 5 位（`00700`）、商品是字母开头（`rb2010`），按 6 位判会把噪声混进信号；而错位后的形状（`519\x01`、空串）一条也躲不过 |
+| 一条告警最多带 3 条例子（`_DOMAIN_CAVEAT_SAMPLES`） | 910 行的错位页能产出上千条理由；计数始终全文，例子截前几条 |
+
+**同一轮把测试那半边也合并了**：`tests/unit/test_golden.py` 里第 9 轮那套 `_illegal_market` /
+`_illegal_code` / `_row_violations`（19 行）删掉，改为 `from tstdx.domain.integrity import ...`——
+同一个判断在出口给调用方看，测试不许各养一份（`tests/support/field_readers.py` 的
+`member_reference_sites()` 是那套抽取的公共件）。新增判据
+`test_the_ruler_stays_silent_on_every_other_captured_command`：尺子在其余实采命令上必须**不响**，
+否则它就是噪声源。
+
+**用户侧那半边**：`docs/errors.md` 新增 §一之四，把 15 个 `WarningCode` 逐个列成表（谁发射、在结果里
+长什么样、`strict` 会怎样）。`tests/architecture/test_caveat_channel_gates.py` 加两条判据：
+`test_the_forwarder_also_runs_the_domain_ruler_over_every_page`（尺子真的挂在唯一转发口上）、
+`test_the_user_doc_table_is_the_same_closed_set_as_the_enum_and_names_real_emitters`（表与枚举双向闭合，
+且每行点名的发射模块真的存在）。`tests/client/test_decode_caveat_wiring.py` 加
+`test_a_real_misaligned_page_says_so_on_the_wire`（参数化 ×2）：拿 `0x000F`/`0x0010` 的**实采样本**重放，
+断言越域告警出现在 wire 上——判据的证据不是构造的假行，是真机回来的那两页。
+
+#### 二、G8：状态表回到命令账本这边（文档 + 一个新门禁文件）
+
+`docs/tdx_status.md` 按命令账本（85 条）与客户端拦截表重写，§一之二写明 `Quote` 的
+`datetime`/`bid`/`ask` 在 7709 实时路径恒空及其来源；`docs/api/interfaces.md` 的 `Quote` 段同口径。
+新增 `tests/architecture/test_tdx_status_matrix.py`（7 项）把整张表钉回真相源：表里出现的命令号必须在
+账本里、给被拦命令盖 ✅ 即红、每条 ⛔ 必须写调用方真正拿到的异常类（`NotImplementedFeature` 与
+`CommandOffline` 不可互换）、幻影命令号即红、快照那一行组合出来的能力不许混进命令账本、
+"自动切源"这类话术永不许出现。
+
+#### 三、G4：盘中从"记得跑"变成"排期"
+
+`tests/live/test_tdx_core_chain.py`（5 项，`pytestmark = pytest.mark.network`）——7709 主链的盘中判据：
+`security_count` 两市场各 >1000、`bars(period="day", strict=True)` 十根且**末根日期 == 期望交易日**、
+`quotes` 有价、`snapshot` 组合得出价与昨收、`bars("1m")` 最新一根落在今天（时段外才 skip）。
+全部断言都带 `_assert_stayed_on_tdx`：`meta.provider == "tdx"` 且 `not provenance.fallback`——
+这一组测的是 7709，被 web 兜底救活的绿灯不算数。
+
+`​.github/workflows/live-smoke.yml` 增加 `cron: '30 2 * * 1-5'`（工作日 02:30 UTC = 北京 10:30，
+上午时段内）。`tests/compatibility/test_ci_workflow_contracts.py` 加两条判据：
+`test_live_smoke_runs_a_7709_probe_inside_the_trading_session`（调度表里必须存在一次落在时段内的运行，
+且被点名的探针文件真的含 `pytestmark`、`provider="tdx"` 与四格能力）、
+`test_the_7709_probe_fails_instead_of_skipping_when_the_chain_is_down`（用 AST 读探针自己：`skip` 调用
+只能出现在 `in_trading_session(...)` 的守卫里，从 handler 里裸 `skip` 即红）。
+"期望交易日"与"是否在时段"这两个纯函数有 7 项离线判据（`tests/unit/test_live_probe_market_clock.py`），
+时钟本身用 `timezone(timedelta(hours=8))` 而不是 `ZoneInfo`——A 股无夏令时，这样 CI 机器不装 `tzdata`
+也不会红（第 13 轮 `wt_wheelcheck` 那次 `ZoneInfoNotFoundError` 的教训）。
+
+**探针自己错过一次，留着**：`reports/live14_probe_run1.log` 里 `test_snapshot_composes_quote_and_bar`
+红——它假设 `snapshot` 返回平铺的 `price`，真实形状是 `{'code','quote','prev_close'}`。改的是**判据**
+不是产品（`_t_snapshot` 的行为没变，第 13 轮盘中也是这个形状），改后 `run2.log` 5/5。
+这条与 §19/§21/§22 那三条"探针的解读不能盖过实测"同族，只是这次被拍下来的对象是本轮新写的判据自己。
+
+#### 四、G9：一条没人走过的发布链（登记 + 文档侧清偿）
+
+为"发布新版本"取证时第一次去量 PyPI：`https://pypi.org/pypi/tstdx/json` 与
+`https://pypi.org/simple/tstdx/` **都回 404**（`reports/g9_pypi_probe.log`，13:28 实测），即这个名字从未
+被领取；而 `README.md` 的安装首行、`docs/quickstart.md`、`docs/FAQ.md`、`docs/releases/v1.0.0.md` 四处
+把 `pip install tstdx` 写成可直接执行的指令。同一份日志里 `grep -rni pypi docs/ README.md pyproject.toml`
+（除 archive 与本轮新写的段落）零命中——**没有任何一条判据对过这件事**。这是 G8 的镜像：形状对、说法缺，
+只是这次代价落在新读者第一次 `pip install` 上。
+
+本轮改的是文档不是发布链：四处改为可执行的两条路径（clone 后 `pip install ".[all]"`、或装构建产物
+wheel），`docs/releases/v1.0.0.md` 以**追加日期化说明**的方式更正而不改写历史。新增判据
+`test_no_user_doc_presents_an_unpublished_install_path_as_available`：名单上的安装文档若出现
+`pip install [—-upgrade] tstdx[...]` 而页面上没有"不在 PyPI"这句口径声明即红，并带
+`scanned == len(_INSTALL_DOCS)` 的自瞄检查。**判据第一次跑就抓到第 4 名 offender**（`docs/FAQ.md`），
+即它不是为已改好的三份文档补的票。两格反证（`g9_negative_controls.log`）：C1 抹掉 README 的口径声明
+⇒ 点名 `README.md`；C2 往一份干净页塞裸指令 ⇒ 点名 `docs/api/README.md`；还原后 `rc=0`。
+
+真正关闭 G9 的是发布动作本身，不是这一页文档。
+
+#### 五、版本身份：`1.0.0 → 1.1.0`
+
+`pyproject.toml` 的 `version` 与 `tstdx/__init__.py` 的 `__version__` 同步改为 `1.1.0`，README /
+`docs/api/README.md` / `docs/quickstart.md` 三处的"当前 Draft 开发版本"随之改写；这三处由既有判据
+`test_general_docs_distinguish_stable_release_from_development_identity` 绑定，它同时要求
+"最新已发布稳定版 `v1.0.0`"这句话留着——本轮不抹掉它，因为下面这条实测事实：
+`git ls-remote --tags origin` 只回**一个** tag（`v1.1.0-dev.1`），即 `v1.0.0` 从未在这台远端打过 tag，
+本机也没有 `gh` 可查 GitHub Release（仓库私有，匿名 HTTPS 回 404）。所以"已发布"在注册表意义上从未
+成立过，这与 G9 是同一条链上的两个断面；本轮新打的 `v1.1.0` 会取代它成为第一个 tag，
+但 tag ≠ PyPI 上架——`wheels.yml` 只在 *published, non-prerelease* 的 GitHub Release 上跑
+trusted publishing，那一格只有用户能点（授权口径见 §6 的 D 系列与下方"本轮明确未做"）。
+
+#### 六、告警通道自己的噪声：5 条无人认领的 UserWarning
+
+离线全量里 `field_out_of_domain` 共出现 **5 行**，其中 2 行是 G7 自己的判据（`test_decode_caveat_wiring.py`
+重放实采错位样本，走 `warning_sink` 断言），另外 3 处是**别的测试的 fixture 副产品**：
+`tests/client/test_sync_async_parity.py` 的两格喂全零载荷（解出 `0000-00-00`）、
+`tests/unit/test_client_f1.py::test_without_index_ctx_no_updown_fields` 用股票布局吃指数尾 4 字节
+（解出 `1310-80-00`）。尺子在那里都是对的——错的行确实被解出来了；不对的是**没人认领它**。
+本轮把这三处改成 `pytest.warns(UserWarning, match="field_out_of_domain")`：断言加了（尺子哪天不响，
+这三格跟着红），摘要里的噪声没了——最终那轮离线全量里 `field_out_of_domain` 从 **5 行降到 2 行**，
+余下 2 行是 G7 判据自己重放实采样本，属于"已被认领"的那一类。判据规模不因此变化（0 新增项）。
+
+#### 七、基线复测与规模账（最终候选树 `wt_v18b14final`，14:00–14:04）
+
+树由 `git -c core.quotepath=false ls-files -co --exclude-standard` 生成（HEAD + 本轮全部改动，
+不含 `.gitignore` 遮蔽的本机产物），再把 `CHANGELOG.md` 换回 HEAD 版本、删掉并行会话那份未跟踪的
+`docs/REFACTOR_PLAN_V18_REVIEW.md` 副本——**候选树的内容就是本次要提交的内容**，别人的账一格不带。
+
+十次调用 `rc=0` 逐条在 `run_gates14final.log`：`ruff check` All checks passed、`ruff format --check`
+451 files already formatted、mypy 无输出、originality `Total: 191 / Original: 191 / Suspicious: 0 /
+External imports: 17`、spec_audit `"coverage_pct": 100.0`（`total_specs 44 / in_ledger 44 / covered 44`）、
+golden_audit `[GATE] all L1 verified commands have real samples (OK)`（`0xf`/`0x10` 两行仍 `tier L2`）、
+reachability `无未登记孤儿 ✓`、contract_audit
+`PASS: 172 个注册 capability …（专属 63 ∪ 派发面 172）`、docs links `OK (84 files)`、benchmark smoke OK。
+离线全量（`fulltest_v18b14final.log` + `reports/fulltest_v18b14final.xml`）：junit
+**3 752 项 / 0 失败 / 0 错误 / 7 跳过**、182.710 s、`TOTAL 22 428 / 3 455 / 5 992 / 1 003`、
+覆盖率 **82.11%**；阈值 `fail_under = 77.0` 未动。
+
+判据规模 3 723 → 3 752（**+29**）逐项归属，按"改前/改后各自 `--collect-only` 实测"而非估算：
+
+| 来源 | 项数 |
+|---|---|
+| `test_caveat_channel_gates.py` 5 → 7 | +2（尺子挂口 / 文档表 ↔ 枚举闭合） |
+| `test_decode_caveat_wiring.py` 5 → 7 | +2（实采错页上 wire，参数化 ×2） |
+| `test_ci_workflow_contracts.py` 16 → 18 | +2（盘中调度 + 探针红而不 skip） |
+| `test_release_history_contract.py` 3 → 4 | +1（G9） |
+| `test_golden.py` 66 → 67 | +1（尺子在其余命令上守 silence；同时删掉 19 行手抄尺子） |
+| 新 `test_tdx_status_matrix.py` | +7（G8） |
+| 新 `test_domain_integrity.py` | +6（尺子自身 + 正控/负控） |
+| 新 `test_live_probe_market_clock.py` | +7（G4 的两个纯函数，参数化后 7 项） |
+| `test_doc_code_consistency.py` 126 → 127 | +1（**新增的那页 `docs/releases/v1.1.0.md` 自己进了这轮的参数化名单**——那把尺子按 `docs/**/*.md` 逐文件铺开，新页面无需登记即被扫） |
+| 新 `tests/live/test_tdx_core_chain.py` | +5，但走 `-m network`，**不在这 3 752 里** |
+
+删除 0 项。本轮两次全量（步骤树 13:39 的 3 751 / 82.12% 与候选树 14:04 的 3 752 / 82.11%）差的那 1 项
+就是上表倒数第二行；覆盖表 141 行逐行比对后两次的**唯一差异行**是
+`tstdx/protocol/generic.py`（miss 20 → 21、partial branch 9 → 10）。±1 抖动这件事第 8/11/12 轮并排过，
+当时落在 `pool.py`/`ratelimit.py`，本轮落在 `generic.py`——**换的是落点，不是同一条已知的线**，
+所以本轮再用同一棵树重跑一次坐实（读数见"提交树复测"段；不把它先写成结论）。
+
+**变异台账**（`wt_v18m14mut/mutate14.log`，基线 27 项 0 红）：M1 摘掉出口尺子 ⇒ 2 红、
+M2 让 `row_violations` 恒回空 ⇒ 5 红、M3 把可见代码尺换成"6 位数字"⇒ 1 红；
+M4a 改文档表里的一个码名 ⇒ 1 红、M4b 把发射口改指不存在的模块 ⇒ 1 红；
+M5a 给被拦命令盖 ✅ ⇒ 1 红、M5b 命令号改成幻影 ⇒ 2 红、M5c 写错异常类 ⇒ 1 红；
+跑完还原后 27 项复测 0 红，且四份被改文件（`_mixin.py`、`integrity.py`、`errors.md`、`tdx_status.md`）
+与主工作树 sha256 前 16 位逐字节相同。G4 的反证 5 格（`live14_negative_controls.log`）里决定性的是
+**N1：把探针指向一台死主机 ⇒ 5 格全红、0 skip**——这正是"盘中照不到"那条账的根因形状。
+
+#### 八、本轮明确未做
+
+- **G3 的布局本身**：`0x000F`/`0x0010` 在账本上仍是 `tier=L2, verified=False`（本轮复核读数），
+  不猜协议字节；本轮做的 G7 是让它在线上可见，不是让它变对。
+- **G1/G5 的裁决**：三格 fail-fast 与 `fund_estimate` 原样保留。
+- **G9 的发布动作**：PyPI/Docker 由 *published 非预发布* GitHub Release 触发，这一步公开且不可逆，
+  只有用户能点；本轮做到的是"tag 就位 + 文档不再替一条装不通的命令背书"。
+- **并行会话的账**：`CHANGELOG.md`、`docs/REFACTOR_PLAN_V17_CLOSURE.md`、`docs/REFACTOR_PLAN_V18_REVIEW.md`
+  三份有别人的未提交登记，本轮**不 commit 它们**。本轴也不重裁 F-#：那套编号属于并行会话，
+  §2 的 G-家族每格都自带本轮磁盘上的证据，两套账各自成账。

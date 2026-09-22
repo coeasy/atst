@@ -1,16 +1,22 @@
 # tstdx 快速开始
 
-本文对应当前 `1.0.0` Draft 开发线；最新已发布稳定版是 `v1.0.0`。要求 Python 3.10 或更高版本。
+本文对应当前 `1.1.0` Draft 开发线；最新已发布稳定版是 `v1.0.0`。要求 Python 3.10 或更高版本。
 
 ## 安装
 
 ```bash
-# 基础安装（零依赖）
-pip install tstdx
+# 从源码（当前唯一可直接执行的路径）
+git clone https://github.com/coeasy/tstdx.git && cd tstdx
+pip install ".[all]"
 
-# 完整功能
-pip install "tstdx[all]"
+# 开发体验（跑门禁用）
+pip install -e ".[dev]"
 ```
+
+> **为什么不是 `pip install tstdx`**：本包当前不在 PyPI 上（实测 2026-09-22，
+> `https://pypi.org/pypi/tstdx/json` 与 `/simple/tstdx/` 均 404）。extras 的名字
+> （`[all]`、`[web]`、`[mcp]` …）在源码安装下同样可用；上架之后本节改写为
+> `pip install "tstdx[all]"`。
 
 ## 5 分钟上手
 

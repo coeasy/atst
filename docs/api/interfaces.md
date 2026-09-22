@@ -457,6 +457,12 @@ from tstdx.domain.adjust import AdjustEngine, to_adjusted, compute_factors
 from tstdx.domain.calendar import is_trading_day
 ```
 
+`Quote` 的三格在 7709 实时面上没有来源，别按『可能有值』写代码：`datetime` 恒为 `None`、
+`bid` / `ask` 恒为空列表，而 `price`/`volume`/`amount` 都是真数。0x0530 的响应里五档尾段
+长度随标的而变、精确布局尚未由真机 golden 锁定，解析器按『不臆造未锁定布局』的契约把整段
+原样收进 `extra['tail_leb128']`（未识别的 `u4` 进 `extra['_u4']`），因此这三格是**主动留空**
+而不是丢字段。要时间戳请取发起请求的时刻（响应不含它）；要盘口深度，这条链上目前没有
+任何接口给得了。实测口径与判据见 `docs/tdx_status.md` §一之二。
 ---
 
 ## 7. 工具链（Tools）

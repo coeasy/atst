@@ -65,6 +65,37 @@
 `FreshnessViolation`（E4060）：`currentness` 从只进 plan 的声明口径变成运行期判据，
 判据与落点见 `docs/providers/tdx.md` §5 与 `tstdx/runtime/freshness.py`。
 
+## 一之四、结果侧数据瑕疵：`WarningCode`
+
+异常说的是"这次查询失败了"，`WarningCode` 说的是"这次查询成功了，但结果带着一条你
+该知道的事实"。两者出口不同：瑕疵随 `QueryResult.meta.warnings` 上到 HTTP / WS / MCP /
+CLI 每张面（序列化后是 `{"code", "message"}`），同时以 `UserWarning` 落在调用方进程里；
+`strict=True` 时内核在返回前把**任意一条**瑕疵变成 `TruncatedDataError`（E4050）——所以
+这张表同时也是"哪些结果会被 strict 拒收"的清单。空元组不是"没查"，是"干净"这一判断的证据。
+
+类别集合是封闭的：全仓只有 `tstdx/diagnostics.py::record_warning` 一个发射口，新增类别
+不在枚举里声明就在运行期 `TypeError`。下表与枚举由
+`tests/architecture/test_caveat_channel_gates.py` 双向核对——文档少一行等于该类别在文档里
+隐身，多一行等于幻影类别，"发射口"一列指错文件等于把一条判断记在了不产出它的模块头上。
+
+| code | 什么时候会出现 | 发射口 |
+|---|---|---|
+| `bars_anchor_drift` | `bars` 分页中途锚点漂移而提前终止：实取根数少于请求根数，且不是"更早的历史已取完"（历史耗尽只表现为短页） | `tstdx/client/_mixin.py` |
+| `bars_empty_first_page` | `bars` 首页即空响应。判据取服务端当次声明数：声明 0 是该标的无此周期历史，声明 N 却回 0 个记录字节是空桩；两者都不是历史耗尽 | `tstdx/client/_mixin.py` |
+| `quotes_partial_failure` | 批量 `quotes` 只取回部分标的的行情：逐只失败被隔离，结果不完整。全部失败不走这条，而是抛 `AllHostsUnreachable` | `tstdx/runtime/executor.py` |
+| `decode_caveat` | 解码层对自己解出的这一页的判断：实收记录数少于声明数、字段布局哨兵异常、精确解析失败后降级为启发式 | `tstdx/client/_mixin.py` |
+| `field_out_of_domain` | 解出来的行里有字段落在库自己声明的取值域之外——`market` 既不是 TDX 二进制市场编号也不是 canonical token、`code` 不是非空可见 ASCII、日期字段不是 ISO 形状。与上一条的区别在发射者：`decode_caveat` 是解码层自认的瑕疵，这一条是出口处拿 `tstdx/domain/integrity.py` 的尺子重新量出来的。记录布局尚未经真机 golden 锁定的命令页内字节数对得上，解码层因此一个字都不记，值却已经错位 | `tstdx/client/_mixin.py` |
+| `security_list_empty_first_page` | `export_security_list` 首页即空响应，导出为空。空首页不代表该市场没有证券 | `tstdx/client/_mixin.py` |
+| `security_list_page_limit` | `export_security_list` 在 `max_pages` 内未取尽（最后一页仍是满页），结果可能截断 | `tstdx/client/_mixin.py` |
+| `file_download_short` | 分块文件下载累计字节数小于服务端报告的 `total_len` | `tstdx/client/_mixin.py` |
+| `adjust_prev_close_missing` | 复权事件缺前收盘价：每股现金红利被忽略，价格因子是按 1/(1+S+R) 算的近似值 | `tstdx/domain/adjust.py` |
+| `calendar_year_uncovered` | 交易日历未覆盖所请求的年份：该年节假日按"无节假日"处理 | `tstdx/domain/calendar.py` |
+| `web_sina_pages_missing` | 新浪全市场分页在重试与补拉之后仍缺页：拿到的是缺页结果，不是全市场 | `tstdx/web/adapters.py` |
+| `web_tencent_batch_failed` | 腾讯全市场单批重试后仍失败：结果不完整，缺的那批不会以空行占位 | `tstdx/web/adapters.py` |
+| `web_tencent_amount_all_zero` | 腾讯 K 线整批 `amount` 恒为 0（该源本周期不返回成交额字段），该字段不可用于计算 | `tstdx/web/_paginate.py` |
+| `web_eastmoney_page_limit` | 东财报表在 `max_pages` 内未取尽（最后一页仍满页），结果可能截断 | `tstdx/web/corporate.py` |
+| `currentness_unproven` | 声明的 `currentness` 要求当期数据，而本次 channel 给不出可判据的证据（本地文件）；`strict=True` 时它不是告警而是失败 | `tstdx/runtime/freshness.py` |
+
 ## 二、每个异常都带 RetryAdvice
 
 `TdxError.advice` 返回 :class:`~tstdx.errors.RetryAdvice`，字段契约：

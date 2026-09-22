@@ -61,6 +61,11 @@ class WarningCode(str, Enum):
     QUOTES_PARTIAL_FAILURE = "quotes_partial_failure"
     #: 解码层对某一页的判断：实收记录数少于声明数、字段布局哨兵异常等。
     DECODE_CAVEAT = "decode_caveat"
+    #: 解出来的行里，有字段落在库自己声明的取值域之外（市场编号、代码、日期形状）。
+    #: 与 ``DECODE_CAVEAT`` 的区别是发射者：那条是解码层自己承认的瑕疵，这条是本模块
+    #: 在出口处重新量出来的——布局未经真机 golden 锁定的命令（G3 的 0x000F/0x0010）
+    #: 页内字节数对得上，解码层因此一个字都不说，而值已经错位（G7）。
+    FIELD_OUT_OF_DOMAIN = "field_out_of_domain"
     #: ``export_security_list`` 首页即空响应：不代表该市场没有证券。
     SECURITY_LIST_EMPTY_FIRST_PAGE = "security_list_empty_first_page"
     #: ``export_security_list`` 在 ``max_pages`` 内未取尽（最后一页仍为满页）。
