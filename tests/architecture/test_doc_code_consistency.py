@@ -756,6 +756,54 @@ def _web_source_classes() -> int:
     return total
 
 
+@functools.cache
+def _output_fmt_choices() -> dict[str, frozenset[str]]:
+    """``tstdx/output`` 两处 fmt 分派真正认识的取值：按 AST 数，不读错误文案。
+
+    ``write()`` 与 ``Sink.write()`` 的可选格式各写一份 ``if fmt == ...`` 链，两串的
+    成员并不相同（CSV 只在前者）。README 把这两个数分开写，就必须分开钉。
+    """
+    tree = ast.parse((ROOT / "tstdx" / "output" / "__init__.py").read_text(encoding="utf-8"))
+    found: dict[str, set[str]] = {}
+
+    def is_fmt(node: ast.expr) -> bool:
+        return (isinstance(node, ast.Name) and node.id == "fmt") or (
+            isinstance(node, ast.Attribute) and node.attr == "fmt"
+        )
+
+    def collect(fn: ast.FunctionDef, key: str) -> None:
+        values = {
+            right.value
+            for sub in ast.walk(fn)
+            if isinstance(sub, ast.Compare)
+            and len(sub.ops) == 1
+            and isinstance(sub.ops[0], ast.Eq)
+            and is_fmt(sub.left)
+            and isinstance(sub.comparators[0], ast.Constant)
+            and isinstance((right := sub.comparators[0]).value, str)
+        }
+        assert values, f"tstdx/output 里 {key} 的 fmt 分派形状变了，判据读不出来"
+        found[key] = values
+
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "write":
+            collect(node, "write")
+        elif isinstance(node, ast.ClassDef) and node.name == "Sink":
+            for method in node.body:
+                if isinstance(method, ast.FunctionDef) and method.name == "write":
+                    collect(method, "Sink.write")
+    assert set(found) == {"write", "Sink.write"}, f"分派点少了一个：{sorted(found)}"
+    return {key: frozenset(values) for key, values in found.items()}
+
+
+def _output_write_fmts() -> int:
+    return len(_output_fmt_choices()["write"])
+
+
+def _sink_class_fmts() -> int:
+    return len(_output_fmt_choices()["Sink.write"])
+
+
 #: ``(文档, 事实, 定位模式, 真相源)``：第 14 步之前数字门禁只读 README，
 #: 于是同一件事实在 ``docs/api/`` 等副本里漂移无人发现。这里把每个事实的
 #: **所有**文档出处都列进表——真相源只有一个，文档侧只有抄本。
@@ -812,6 +860,10 @@ _EXACT_CLAIMS: tuple[tuple[str, str, str, Callable[[], int]], ...] = (
     ("docs/api/README.md", "配置合并层数", r"(\d+)\s*源合并", _config_merge_layers),
     ("docs/configuration.md", "配置合并层数", r"(\d+)\s*源合并", _config_merge_layers),
     ("docs/api/README.md", "协议族数", r"(\d+)\s*协议族", _protocol_families),
+    # 第 15 轮（V18 R-15）：README 的"3 Sink 策略"字面上没错，却把只有 3 个取值的
+    # `Sink` 当成了整个出口面，读者据此找 CSV 导出的那条路就找不到。两格分开钉。
+    ("README.md", "Sink 可选格式数", r"`Sink`\s*(\d+)\s*种格式", _sink_class_fmts),
+    ("README.md", "write 可选格式数", r"`write\(\)`\s*认\s*(\d+)\s*种格式", _output_write_fmts),
 )
 
 
@@ -827,6 +879,19 @@ def test_fact_doc_numbers_match_their_truth_source(
     claimed = {int(n) for n in re.findall(pattern, _doc_text(source))}
     assert claimed, f"{source} 不再声明 {fact}（{pattern}），门禁失效"
     assert claimed == {actual()}, f"{source} 声称 {fact}={sorted(claimed)}，真相源是 {actual()}"
+
+
+def test_csv_reaches_only_the_module_level_write() -> None:
+    """fmt 判据的正控：两串取值必须真的不同，否则 README 那两格是在抄同一个数。
+
+    这条同时钉住"CSV 只能经 ``write()`` 出口"这一 README 口径——哪天 ``Sink`` 认识了
+    csv，README 与这两格数字要一起改，而不是让文档单独漂着。
+    """
+    choices = _output_fmt_choices()
+    assert "csv" in choices["write"], "write() 的 csv 分派不见了"
+    assert "csv" not in choices["Sink.write"], "Sink 现在也认 csv，README 的口径需同步"
+    assert set(choices["Sink.write"]) < set(choices["write"])
+    assert {"dataframe", "parquet", "duckdb"} <= choices["Sink.write"]
 
 
 #: 下界宣称（``45+ HTTP 源`` / ``60+ 契约``）：加东西不必改文档，
@@ -1144,6 +1209,18 @@ def _client_face_rows() -> list[tuple[str, str]]:
     return rows
 
 
+def _tdx_face_rows() -> list[tuple[str, str]]:
+    """``docs/api/interfaces.md`` §1 的 TdxClient 方法表（协议层客户端）。"""
+    doc = (ROOT / "docs" / "api" / "interfaces.md").read_text(encoding="utf-8")
+    parts = doc.split("### TdxClient（同步）", 1)
+    assert len(parts) == 2, "interfaces.md 不再有 TdxClient 方法表，门禁失效"
+    # 本节止于下一节 AsyncTdxClient：再往后的表属于多协议族客户端与命令账本查询面。
+    body = re.split(r"^### ", parts[1], maxsplit=1, flags=re.M)[0]
+    rows = re.findall(r"^\| `(\w+)` \| `([^`]*)` \|", body, re.M)
+    assert rows, "TdxClient 方法表里解析不出任何一行，门禁失效"
+    return rows
+
+
 def _documented_params(sig: str) -> list[str]:
     """从 ``(<参数>) -> <返回>`` 摘要里取参数名（按 AST，不猜字符串形状）。"""
     args = ast.parse(f"def _f{sig}: pass").body[0].args
@@ -1184,6 +1261,42 @@ def test_client_method_table_matches_the_real_signatures() -> None:
         documented = _documented_params(sig)
         assert set(documented) == set(real), (
             f"interfaces.md 的 `Client.{name}` 签名摘要已过期：文档 {sorted(documented)} "
+            f"≠ 真实 {sorted(real)}"
+        )
+
+
+def test_tdx_client_method_table_matches_the_real_signatures() -> None:
+    """协议层客户端那张表与 ``Client`` 表同形，却一度只在人眼里核对过。
+
+    V18 第 15 轮给 ``TdxClient`` 表补 `request_result` / `capital_changes` / `open` /
+    `close` 四行时，全仓没有任何判据读过这张表的第二列——同一份文档里
+    `Client` 表被钉到参数名级别，而它上面那张表连"漏了一整个公开方法"都不会响。
+    """
+    import inspect
+
+    from tstdx.client import TdxClient
+
+    rows = _tdx_face_rows()
+    public = {
+        name
+        for name, value in inspect.getmembers(TdxClient, predicate=inspect.isfunction)
+        if not name.startswith("_")
+    }
+    listed = {name for name, _sig in rows}
+    assert listed == public, (
+        f"TdxClient 方法表与真实公开方法不一致：表里缺 {sorted(public - listed)}，"
+        f"多出 {sorted(listed - public)}"
+    )
+    for name, sig in rows:
+        # 下划线前缀参数是内部通道（如 `quotes(_collect=...)` 的失败袋），不进对外签名表。
+        real = [
+            item
+            for item in inspect.signature(getattr(TdxClient, name)).parameters
+            if item != "self" and not item.startswith("_")
+        ]
+        documented = _documented_params(sig)
+        assert set(documented) == set(real), (
+            f"interfaces.md 的 `TdxClient.{name}` 签名摘要已过期：文档 {sorted(documented)} "
             f"≠ 真实 {sorted(real)}"
         )
 
@@ -1400,3 +1513,54 @@ def test_the_command_target_ruler_sees_a_planted_dead_target() -> None:
     assert _target_offense("tstdx.integration.runtime_http", "create_runtime_app") is None
     # 模块存在但对象名是抄错的，同样必须报
     assert _target_offense("tstdx.integration.runtime_http", "no_such_app") is not None
+
+
+# --------------------------------------------------------------------------
+# 反向指路牌：代码注释里的 docs 路径也要落位（V18 R-15）
+
+
+#: 代码里指向文档的"指路牌"。中文文件名要进字符类，否则 ADR 那类引用扫不到；
+#: 斜杠也要进，否则 "docs" 目录下多层展开的那类路径整个不在形状内。
+_DOCS_CITE = re.compile(r"(?<![\w./-])docs/[\w./\-\u4e00-\u9fff]+\.md")
+
+
+def _doc_citations_in(text: str) -> list[str]:
+    return _DOCS_CITE.findall(text)
+
+
+def _code_doc_citations() -> list[tuple[str, str]]:
+    """``[(文件:行, 所引 docs 路径)]``：``tstdx/``、``scripts/``、``tests/`` 全量。"""
+    found: list[tuple[str, str]] = []
+    for sub in ("tstdx", "scripts", "tests"):
+        for path in sorted((ROOT / sub).rglob("*.py")):
+            rel = path.relative_to(ROOT).as_posix()
+            for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+                found.extend((f"{rel}:{lineno}", token) for token in _doc_citations_in(line))
+    return found
+
+
+def test_code_cites_only_docs_paths_that_exist() -> None:
+    """代码把文档路径写进注释当证据出处，文档一归档这个出处就指空。
+
+    第 15 轮把 5 份对标文档移入 ``docs/archive/parity/`` 时，实测有 4 处这样的断指路牌
+    （``tstdx/web/limits.py`` 引 v5 计划、两处测试引已归档计划、一处引刚移动的对标件）——
+    文档侧的路径判据是"文档 → 磁盘"，从来没有人反向量过"代码 → 文档"。
+    """
+    cited = _code_doc_citations()
+    assert len(cited) >= 25, f"只扫到 {len(cited)} 处代码里的 docs 引用，判据自身失明"
+    offenders = sorted({f"{loc} -> {token}" for loc, token in cited if not (ROOT / token).exists()})
+    assert offenders == [], "代码把不存在（多半是已归档）的文档路径写成出处：\n" + "\n".join(
+        offenders
+    )
+
+
+def test_the_docs_citation_ruler_sees_a_planted_dead_path() -> None:
+    """正控：指路牌的形状必须被抓得到，且"移动后失效"这种改法要报得出来。
+
+    路径按运行期拼接，源码里不留下一条完整的死路径——否则本文件自己就是第一个违约者。
+    """
+    dead = "docs/archive/parity/" + "no_such_plan.md"
+    line = f"# 见 docs/quickstart.md 与 {dead} 两处的口径"
+    assert _doc_citations_in(line) == ["docs/quickstart.md", dead]
+    cited = _code_doc_citations()
+    assert [loc for loc, token in cited if token == "docs/quickstart.md"], "活文档路径没被扫到"

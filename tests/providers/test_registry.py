@@ -17,7 +17,7 @@ def test_tdx_is_only_default_provider() -> None:
 
 def test_vipdoc_is_standalone_local_provider_not_tdx_channel() -> None:
     # v13 起 local_vipdoc 是独立 Provider（见
-    # docs/ARCHITECTURE_SEMANTIC_ALIGNMENT_v13.md: "local_vipdoc is a standalone
+    # docs/archive/plans/ARCHITECTURE_SEMANTIC_ALIGNMENT_v13.md: "local_vipdoc is a standalone
     # Provider"）。tdx 只拥有在线协议 channel，本地 vipdoc 不再挂在 tdx 上，
     # 以免本地历史文件冒充在线 TDX 行情。
     assert "vipdoc" not in PROVIDERS.ids()

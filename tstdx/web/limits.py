@@ -8,7 +8,7 @@
 若按早期审计假设钳 800 反而降级）。
 
 实测方法：直接请求目标接口并统计返回条数，见
-``docs/OPTIMIZATION_PLAN_v5.md`` §5.1 PG4 与修改记录。
+``docs/archive/plans/OPTIMIZATION_PLAN_v5.md`` §5.1 PG4 与修改记录。
 """
 
 from __future__ import annotations

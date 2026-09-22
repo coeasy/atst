@@ -36,8 +36,13 @@
 
 ### Q: 被主站封 IP 了怎么办？
 
-- 库内置限流器（`RateLimitedLocal`）避免触发封禁
-- 配置 `SourcesRouter` 降级到 HTTP Web 源（新浪/腾讯/东财）
+- 库内置令牌桶限速（`tstdx/transport/ratelimit.py`）避免触发封禁；超限的行为由
+  `[rate_limit]` 段的 `strict` 决定——`false`（默认）阻塞等令牌，`true` 立即抛
+  `RateLimitedLocal`
+- **不会**自动改走 HTTP Web 源：跨源的形状只有一种，调用方显式给
+  `Client().quotes(symbols, policy=FallbackPolicy(providers=("tdx", "tencent")))`
+  （v16 删除了 `SourcesRouter` 那条自动降级链；`tstdx.web` 便捷入口的按序尝试是 web 层自己的事，
+  与内核无关）
 - 降低请求频率，避免高峰期大批量拉取
 
 ### Q: 实时行情一次能查几只股票？
@@ -52,7 +57,10 @@
 
 ### Q: 时间戳是什么时区？
 
-内部一律 **UTC**，输出时可通过 `tz` 字段转为本地时区（`Asia/Shanghai`）。
+**没有时区换算这一说**：`datetime` 是服务端按**交易所本地时间**给的字符串（日线只有日期，
+分钟线带 `HH:MM`），库照原样透出，不换算成 UTC、也不提供任何 `tz` 出参。
+需要带时区的时间戳请在调用方自己按 `Asia/Shanghai` 解释这个字符串。
+`DataProfile.timezone` 是探测层的元数据字段，运行期没有任何代码读它。
 
 ### Q: 复权因子在哪里？
 

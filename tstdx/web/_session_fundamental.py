@@ -10,7 +10,7 @@
 * 治理数据（董监高持股 / 股东增减持 / 公司概况，:mod:`tstdx.web.governance`）
 * 卖方一致预期（券商评级 / 目标价 / EPS 预测，:mod:`tstdx.web.governance`）
 
-补 :doc:`/docs/stock_analysis_prompt_coverage` 审计中的 P0 缺口——
+补 :doc:`/docs/archive/parity/stock_analysis_prompt_coverage`（归档审计）中的 P0 缺口——
 「财务健康度与排雷」「核心风险揭示」「治理与供应链」「估值合理性」「市场情绪」
 五个维度此前只有摘要口径、缺报表级明细。
 

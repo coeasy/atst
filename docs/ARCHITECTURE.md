@@ -52,7 +52,7 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
 |---|---|---|
 | 协议层（冻结） | `codec/`（帧/变长数/字符集）、`protocol/`（命令账本+三级解析）、`transport/`（池/心跳/测速）、`client/`（`api.py` 唯一业务入口 Client/AsyncClient + `core.py` 共享纯协议 SSOT + `sync.py`/`async_.py` TdxClient）、`charset/` | 独立完备 |
 | 数据源层 | `providers/`（静态注册表）、`web/`、`reader/`、`profile/`（DataProfile 复权/周期口径） | 活 |
-| 契约层（无执行） | `query.py`、`result.py`、`batch.py`、`typed_query.py`、`stream_contract.py`、`errors.py`、`error_envelope.py`、`deprecation.py`、`catalog/`（capability 目录与调用校验、Provider channel→adapter 绑定表、Provider 隔离契约/守卫/一致性审计） | 活 |
+| 契约层（无执行） | `query.py`、`result.py`、`batch.py`、`typed_query.py`、`stream_contract.py`、`errors.py`、`error_envelope.py`、`catalog/`（capability 目录与调用校验、Provider channel→adapter 绑定表、Provider 隔离契约/守卫/一致性审计） | 活 |
 | 内核层 | `runtime/`（`kernel.py` 唯一内核、`executor.py` 精确绑定执行、`orchestration.py` 显式跨源编排、`audit.py` 启动三方对账、`identity.py`/`provenance.py` 执行身份与溯源守卫） | 活 |
 | 服务面层 | `cli/`、`integration/`（runtime_http/ws/tasks/mcp + serialization）、`output/`（DataFrame/Parquet/DuckDB）、`sink/` | 活，全部 Client-backed |
 | 类型化糖衣 | `typed_query.py`（CapabilityQuery + Domain Record）、`domain/`（records/symbol/日历） | 全量接通：`Client.typed` / `AsyncClient.typed`，字段名与内核方法签名一一对应 |

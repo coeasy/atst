@@ -17,6 +17,7 @@
 
 ```python
 import time
+from typing import Any
 
 from tstdx import Client, FallbackPolicy
 from tstdx.errors import TdxError
@@ -30,6 +31,11 @@ POLICY = FallbackPolicy(providers=("tdx", "tencent"))
 client = Client()
 
 
+def _field(row: Any, name: str, default: Any = 0.0) -> Any:
+    """tdx 回 dict、Web 源回 Quote 对象：两种形状读同一个字段。"""
+    return row.get(name, default) if isinstance(row, dict) else getattr(row, name, default)
+
+
 def poll_once() -> None:
     try:
         out = client.quotes(WATCHLIST, policy=POLICY)
@@ -39,8 +45,11 @@ def poll_once() -> None:
     used = out.result.meta.provider
     tried = [(a.provider, a.status, a.code) for a in out.attempts]
     for q in out.result.data:
-        flag = "⚠️" if abs(q["change_pct"]) >= ALERT_PCT else "  "
-        print(f"{flag} {q['symbol']} {q['price']:.2f} {q['change_pct']:+.2f}% (via {used})")
+        price = _field(q, "price")
+        last = _field(q, "last_close")
+        pct = (price - last) / last * 100 if last else 0.0
+        flag = "⚠️" if abs(pct) >= ALERT_PCT else "  "
+        print(f"{flag} {_field(q, 'code')} {price:.2f} {pct:+.2f}% (via {used})")
     print("   attempts:", tried)
 
 
@@ -49,6 +58,13 @@ if __name__ == "__main__":
         poll_once()
         time.sleep(3)
 ```
+
+`_field()` 那层不是装饰：`quotes` 的行形状按源不同。dict 行的键固定为
+`code / datetime / price / last_close / open / high / low / volume / amount / bid / ask`；
+`change`、`pct_change`、`turnover_rate` 只在 `Quote` 对象（`tstdx.domain.models.Quote`）上是
+派生属性，dict 里没有 —— 涨幅要么自己按 `price` 与 `last_close` 算，要么统一转成 `Quote`。
+**7709 实时路径上 `datetime` / `bid` / `ask` 恒空**（口径见 `docs/tdx_status.md`），
+别拿它们当"没有行情"的判据。
 
 只要不传 `policy=`，同样的循环就是单源版本：
 

@@ -8,7 +8,7 @@
 * ESG 评级（:mod:`tstdx.web.esg`，新浪 13 家机构 ESG 评级数据）
 * 筹码分布（:mod:`tstdx.web.chip`，东财资金流驱动的筹码集中度分析）
 
-补 :doc:`/docs/stock_analysis_prompt_coverage` 审计中的 P1 缺口——
+补 :doc:`/docs/archive/parity/stock_analysis_prompt_coverage`（归档审计）中的 P1 缺口——
 维度 9「ESG 表现」与维度 8「筹码分布」此前完全缺失。
 
 与 :class:`FundamentalSessionMixin` 的组合关系：本 Mixin 依赖相同的

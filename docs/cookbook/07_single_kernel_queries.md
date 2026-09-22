@@ -103,8 +103,8 @@ stream = client.stream(
     interval=1.0,
     diff_only=True,
     max_queue=1024,
-    on_quote=lambda q: print(q["symbol"], q["price"]),
-    on_error=lambda e: print("stream error:", e),
+    on_quote=lambda code, quote: print(code, quote["price"]),
+    on_error=lambda exc: print("stream error:", type(exc).__name__, exc),
 )
 stream.start()
 print(stream.state)          # StreamState.RUNNING
@@ -114,8 +114,9 @@ print(stream.state)          # CLOSED（半死/重启失败会落 FAILED，绝�
 stream.close()
 ```
 
-`StreamState` 五态：`CREATED / RUNNING / STOPPING / CLOSED / FAILED`。
-详见 [04_streaming.md](04_streaming.md)。
+`on_quote` 收两个参数（`(code, quote)`），`quote` 是这一轮那条 dict 行；`diff_only=True` 时
+它只含**变化过的键**，所以别假设每帧都带齐全部字段。`StreamState` 五态：
+`CREATED / RUNNING / STOPPING / CLOSED / FAILED`。详见 [04_streaming.md](04_streaming.md)。
 
 ## 6. 离线测试：注入假执行体
 

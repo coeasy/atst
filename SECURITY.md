@@ -68,13 +68,14 @@
 ```python
 from tstdx.client import TdxClient
 
-# 使用连接池限制并发
-client = TdxClient(pool_size=4)
+# 限制并发：每台主站开几条连接（连接池没有 pool_size 这个参数）
+client = TdxClient(slots_per_host=4)
 
-# 使用速率限制
-client = TdxClient(rate_limit=10)
+# 限制请求频率：按交易时段分档的令牌桶，取值写在配置的 [rate_limit] 段
+# （continuous / call_auction / noon_break / closed 各一档）。超限行为由
+# rate_limit.strict 决定：false 阻塞等令牌，true 立即抛 RateLimitedLocal。
 
-# 设置超时
+# 单次请求超时
 client = TdxClient(timeout=10.0)
 ```
 

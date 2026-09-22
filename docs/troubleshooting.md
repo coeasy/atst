@@ -73,13 +73,18 @@ E3030 那一格此前点名的是一个已退役的类：内核不会发出账�
 
 ### 症状：`[E3041] LowConfidenceParse`
 
-L2 启发式置信度过低。显式指定 profile：
+L2 启发式置信度过低。这一格的旋钮**在协议层**，不在语义客户端上（`client.bars()` 不收
+`profile=` 参数）：
 
 ```python
-from tstdx.reader.profile import DataProfile
+from tstdx.profile.detect import detect  # 从样本字节反推 DataProfile（长度/缩放/日期编码）
+from tstdx.protocol.registry import dispatch
 
-bars = client.bars("sh600519", profile=DataProfile(...))
+result = dispatch(frame, family="quotation", allow_generic=False)  # 拒绝降级，直接拿到异常
+result = dispatch(frame, family="quotation", min_confidence=0.7)  # 低于阈值即抛，不返回噪声
 ```
+
+要长期解决只有一条路：给这条命令补 L1 解析器 + golden 样本（[食谱 06](cookbook/06_custom_command.md)）。
 
 ## 3. Web 源问题
 
@@ -111,7 +116,8 @@ Web 便捷入口按顺序试完候选源仍全部失败（或显式 fallback 策
 ### 批量拉取慢
 
 - `0x0530` 逐只请求是服务端约束；并发请求数受连接池限制
-- `TdxClient(pool_size=8)` 增大连接池
+- `TdxClient(slots_per_host=8)` 增大每台主站的并发槽（连接池没有 `pool_size` 这个参数，
+  写了会在构造期 `TypeError`）
 - 大批量历史 K 线优先本地 vipdoc（`reader/formats.py`），比在线快百倍
 
 ### 内存占用高

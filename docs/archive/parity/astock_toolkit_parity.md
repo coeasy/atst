@@ -1,5 +1,7 @@
 # astock-data-toolkit 对标补全 — 覆盖与缺口分析
 
+> **归档说明（2026-09-23）**：本文是当时的对标/审计快照，**不是现行契约**。文中以现在时出现的 `UnifiedQuoteAPI` 统一门面（包括「新增 N 个门面方法」一类清单与给下游的校验指令）已随 v16 Phase 2 物理删除；今天的对外接口面是 `tstdx.client.TdxClient` / `Client` 与 capability 目录，口径见 [interfaces.md](../../api/interfaces.md) 与 [ARCHITECTURE.md](../../ARCHITECTURE.md)。本文的点位数、方法名与端点清单按原文留存而不逐条订正 —— 归档负责说明当时为什么这么做，不负责说明现在怎么用。
+
 > 对标对象：<https://github.com/tiantianlaolao/astock-data-toolkit>
 > （A 股全市场数据本地化工具箱：行情 / 估值 / 财务 / 分红 / 公告 / 增减持）
 > 目标：延续 efinance 对标工作，补齐 tstdx 此前缺失的「基本面衍生」数据接口。

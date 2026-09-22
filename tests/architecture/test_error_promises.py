@@ -106,9 +106,10 @@ def _not_error_class_names() -> frozenset[str]:
     """合法的非错误 CamelCase 名：Python 内建 + 全仓 ``tstdx/`` 真实定义过的类。
 
     这一层是从代码现推的，不是手抄名单：``docs/errors.md`` 在错误小节里提到
-    ``WarningCode``（``diagnostics.py`` 的枚举）不算说谎，而
-    ``docs/tiantian_fund_extensions.md`` 的 ``FundGradeDetail`` 是东方财富移动端的
-    **endpoint 名**，本仓从未有过这个类——后者要靠下面的小节豁免处理，前者天然通过。
+    ``WarningCode``（``diagnostics.py`` 的枚举）不算说谎。反过来，第三方服务的
+    endpoint 名常常长成 PascalCase（如东方财富移动端的 ``FundGradeDetail``），
+    那不是本仓类名，得靠下面的小节豁免处理——这类文档一旦整体归档就自动出射程，
+    豁免表也必须随之清空，不许留下无主的豁免。
     """
     import builtins
 
@@ -139,12 +140,12 @@ def _error_section_candidates() -> dict[str, set[str]]:
 
 #: 已知"看起来像类名但其实不是本仓类"的小节：key 是 ``文件::小节标题``，
 #: 必须与 :meth:`TestPhantomNameGate.test_section_exemptions_are_still_needed` 同时撤销。
-SECTION_NAME_EXEMPTIONS: dict[str, str] = {
-    "docs/tiantian_fund_extensions.md::## 六、best-effort 边界与失败约定": (
-        "该节点名的 ``FundGradeDetail``/``CompanyApi2`` 一类是东方财富移动端接口的 endpoint 名"
-        "（文档自己写明「PascalCase 命名沿用移动端惯例」），不是本仓类名"
-    ),
-}
+#: 第 15 轮（V18 R-15）清空：唯一的条目挂在 ``docs/archive/parity/tiantian_fund_extensions.md`` §六，
+#: 该文档连同另外 4 份现在时引用已删除 ``UnifiedQuoteAPI`` 门面的对标件一起移入
+#: ``docs/archive/parity/``，落在 :data:`HISTORICAL_DOC_PREFIXES` 射程之外。
+#: 与 :data:`PROMISE_EXEMPTIONS` 同形：空表不是判据失效，新条目只有在
+#: "确属第三方命名、所在文档仍在活文档射程内"时才允许进来。
+SECTION_NAME_EXEMPTIONS: dict[str, str] = {}
 
 
 @functools.cache

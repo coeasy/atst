@@ -29,24 +29,32 @@ from tstdx.client import TdxClient
 
 | 方法 | 签名 | 说明 |
 |------|------|------|
-| `bars` | `(symbol, period="day", count=320, start=0, market=None, index=False, as_format="dict", strict=False)` | K 线/分钟线 |
-| `quotes` | `(symbols, as_format="dict")` | 实时行情快照 |
-| `quotes_concurrent` | `(symbols, workers=8, as_format="dict")` | 并发批量行情 |
+| `bars` | `(symbol, *, period="day", count=320, start=0, market=None, index=False, as_format="dict", strict=False)` | K 线/分钟线；`count` > 800 时内部自动按 800 一页翻页 |
+| `quotes` | `(symbols, *, as_format="dict")` | 实时行情快照（`0x0530` 逐只请求再汇总） |
+| `quotes_concurrent` | `(symbols, *, workers=8, as_format="dict")` | 并发批量行情 |
 | `security_count` | `(market=0)` | 证券数量 |
 | `finance_info` | `(symbol)` | 财务信息（结构与条数可用，**逐字段语义不保证**，见 F-37） |
+| `capital_changes` | `(symbol)` | 除权除息 / 股本变迁（`0x000F`）：口径与 `finance_info` 同格——条数可用、字段语义不保证，越域行会带 `field_out_of_domain` 告警 |
 | `minute_today` | `(symbol)` | **已下线**（0x0537 request/parser 仍 inferred，发包前抛 `NotImplementedFeature`） |
 | `security_list` | `(market=0, start=0)` | 证券列表：**已下线**（0x044D 账本 offline，发包前抛 `CommandOffline`） |
-| `export_security_list` | `(market=0, max_pages=100)` | 全市场代码表：**已下线**（随 `security_list`，抛 `CommandOffline`） |
+| `export_security_list` | `(market=0, *, max_pages=100)` | 全市场代码表：**已下线**（随 `security_list`，抛 `CommandOffline`） |
 | `minute_history` | `(symbol, date)` | 历史分时：**已下线**（0x0FB4 账本 offline，抛 `CommandOffline`） |
 | `trade_today` | `(symbol, start=0, count=0)` | 当日逐笔：**已下线**（0x0FC5 inferred 拦截，抛 `NotImplementedFeature`） |
 | `block_quotes` | `(block_type=0, start=0)` | 板块行情：**已下线**（0x07E5 账本 offline，抛 `CommandOffline`） |
-| `file_download` | `(symbol, filename, offset=0, length=0, max_packets=500, strict=False)` | 文件下载 |
+| `file_download` | `(symbol, filename, *, offset=0, length=0, max_packets=500, strict=False)` | 文件下载 |
 | `auction_snapshot` | `(symbol)` | 集合竞价：**已下线**（0x056A 账本 offline，抛 `CommandOffline`） |
 | `volume_price_dist` | `(symbol)` | 量价分布：**已下线**（0x051A 账本 offline，抛 `CommandOffline`） |
 | `quotes_snapshot` | `(symbols)` | 批量行情快照（0x054C 账本 offline 但被放行，逐片**回退** 0x0530 ⇒ 可用） |
-| `snapshot` | `(symbol, as_format="dict")` | 单只完整快照 |
-| `request` | `(cmd, body, ctx=None, as_format="dict")` | 通用命令 |
-| `bestip` | `(timeout=1.0, samples=1, max_workers=16, ...)` | 运行时测速 |
+| `snapshot` | `(symbol, *, as_format="dict")` | 单只完整快照 |
+| `request` | `(cmd, body, *, ctx=None, as_format="dict")` | 任意命令 → 解析行（L3 时只会看到空列表） |
+| `request_result` | `(cmd, body, *, ctx=None) -> ParseResult` | 任意命令 → **完整**解析结果（`tier`/`confidence`/`raw`/`warnings` 都在这里，见 [食谱 06](../cookbook/06_custom_command.md)） |
+| `open` | `(*, bestip=False, **speedtest_kwargs) -> Self` | 建连；`bestip=True` 先测速热更新主站池再返回。与 `close()` 组成 `with TdxClient() as client:` |
+| `close` | `()` | 释放连接池（`with` 语句自动调用） |
+| `bestip` | `(*, timeout=1.0, samples=1, max_workers=16, save_ranking=True, keep_failures=True)` | 运行时测速并热更新主站池 |
+
+构造签名同样在这一格：`TdxClient(hosts=None, *, family="quotation", timeout=5.0, max_retries=3,
+pool=None, **pool_kwargs)`。`pool_kwargs` 直通 `ConnectionPool`，所以并发旋钮是
+`slots_per_host`；**没有 `pool_size` 这个参数**，写了在构造期就 `TypeError`。
 
 ### AsyncTdxClient（异步）
 
@@ -463,6 +471,40 @@ from tstdx.domain.calendar import is_trading_day
 原样收进 `extra['tail_leb128']`（未识别的 `u4` 进 `extra['_u4']`），因此这三格是**主动留空**
 而不是丢字段。要时间戳请取发起请求的时刻（响应不含它）；要盘口深度，这条链上目前没有
 任何接口给得了。实测口径与判据见 `docs/tdx_status.md` §一之二。
+
+### 市场拼写（`market=` 收哪些写法）
+
+`market` 的值域由入口解析器那张表派生，不是文档手抄：`0`/`1`/`2` 与 `sz`/`sh`/`bj`
+在六张面（库/CLI/HTTP/WS/MCP）上同答案，大小写与空白不敏感，其余写法一律
+`ParseError`。但**入口收 ≠ 协议走得通**：`Symbol.tdx_market` 给 SZ/SH/BJ 分别返回
+0/1/2，而 symbol-based 的 7709 请求在 `split_symbol` 处只放行 0/1——北交所标的在这里抛
+`ParseError`（"尚未验证 market=2"），不是静默按沪市发。
+
+```python
+from tstdx.domain.integrity import tdx_market_ids  # 协议侧认得的市场 id，现读
+```
+
+### 出口处的域尺子（`tstdx.domain.integrity`）
+
+解码越域值在结果里看得见，靠的是这四个名字：
+
+```python
+from tstdx.domain.integrity import (
+    FIELD_CHECKERS,
+    illegal_code,
+    illegal_market,
+    row_violations,
+)
+```
+
+`row_violations(row)` 是客户端出口（`_forward_decode_caveats`）唯一的判据：一条记录里
+哪个字段落在库自己声明的域外，它就点名列出哪个字段，发 `field_out_of_domain` 告警并随
+`ResultMeta.warnings` 上五张面；`strict=True` 时同一条判据升级为 `TruncatedDataError`。
+它的用武之地是记录布局尚未由真机 golden 锁定的那两条命令（`0x000F` 资本变动 /
+`0x0010` 财务）——页内字节数对得上、解码层因此一个字都不记，而值已经错位。
+域表本身（`FIELD_CHECKERS` 覆盖哪些字段、边界是多少）以模块现值为准，
+`tests/unit/test_golden.py` 用实采样本重放盯着它不许松口。
+
 ---
 
 ## 7. 工具链（Tools）

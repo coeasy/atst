@@ -1,5 +1,7 @@
 # niuniu ↔ tstdx 接口覆盖审计
 
+> **归档说明（2026-09-23）**：本文是当时的对标/审计快照，**不是现行契约**。文中以现在时出现的 `UnifiedQuoteAPI` 统一门面（包括「新增 N 个门面方法」一类清单与给下游的校验指令）已随 v16 Phase 2 物理删除；今天的对外接口面是 `tstdx.client.TdxClient` / `Client` 与 capability 目录，口径见 [interfaces.md](../../api/interfaces.md) 与 [ARCHITECTURE.md](../../ARCHITECTURE.md)。本文的点位数、方法名与端点清单按原文留存而不逐条订正 —— 归档负责说明当时为什么这么做，不负责说明现在怎么用。
+
 > 审计对象：`P:\sd\niuniu`（牛牛 A股量化/选股/行情平台，FastAPI + ECharts，84 个 py 文件）
 > 审计方：`p:\github_public\tstdx`（TDX 行情通用库，统一门面 `UnifiedQuoteAPI`）
 > 审计日期：2026-09-09

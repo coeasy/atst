@@ -2156,3 +2156,190 @@ benchmark smoke OK。离线全量（`fulltest_v18b14ship.log` + `reports/fulltes
 - **并行会话的账**：`CHANGELOG.md`、`docs/REFACTOR_PLAN_V17_CLOSURE.md`、`docs/REFACTOR_PLAN_V18_REVIEW.md`
   三份有别人的未提交登记，本轮**不 commit 它们**。本轴也不重裁 F-#：那套编号属于并行会话，
   §2 的 G-家族每格都自带本轮磁盘上的证据，两套账各自成账。
+
+---
+
+## 24. 执行记录（续）
+
+### 第 15 轮｜"删除历史无效文档"量出来是 0 份该删、5 条指错路的出处，另起一把把代码块当代码读的尺子（文档面收口）
+
+**本轮授权**：用户请求「提交最新代码，删除历史无效文档，更新最新接口使用文档，更新项目说明文档」。
+四格里第二格在动手前先量（第一节），量完结论反转；其余三格照做。本轮**不动生产行为**：`tstdx/` 里
+改的六处全是注释/文档串（5 条死出处 + 1 条说错的时区口径），§2 的 G-家族一格未清也一格未脏——
+G1/G3/G5/G9 的账原样留着（末段）。
+
+#### 一、先量"无效"，再谈删除：删除名额归零
+
+请求写的是"删除历史无效文档"。能落地的判据只有一条：**有没有活代码还在引用它**。本轮真去数了——
+`docs/archive/**` 下 40 份归档件（不含归档区自己的 README），拿文件名与完整路径两种写法在
+`tstdx/` `scripts/` `tests/` 的全部 `.py` 里搜引用（带词界，`INDUSTRIAL_OPTIMIZATION_PLAN.md`
+不计入 `OPTIMIZATION_PLAN.md` 的账）：**34 份零入站**，有入站的那 6 份是——
+
+| 入站 | 归档件 | 引用方 |
+|---|---|---|
+| 2 | `docs/archive/plans/INDUSTRIAL_OPTIMIZATION_PLAN.md` | `tests/protocol/test_adversarial_escapes.py`、`tests/web/test_f3_web_fixes.py` |
+| 1 | `docs/archive/plans/OPTIMIZATION_PLAN_v5.md` | `tstdx/web/limits.py` |
+| 1 | `docs/archive/plans/ARCHITECTURE_SEMANTIC_ALIGNMENT_v13.md` | `tests/providers/test_registry.py` |
+| 1 | `docs/archive/parity/tiantian_fund_extensions.md` | `tests/architecture/test_error_promises.py`（本轮新挂的归档说明本身） |
+| 1 | `docs/archive/OPTIMIZATION_PLAN.md` | `tests/unit/test_commands.py` |
+| 1 | `docs/archive/GAP_ANALYSIS_v0.md` | `tstdx/charset/__init__.py` |
+
+于是这一格反转：**"零入站"不是无效的证据，是归档区的常态**——计划文档写完就不再被代码点名，
+按这条判删等于一轮删掉 34 份、把台账的来路全抹掉。反过来，真正会误导今天读者的那 5 份**根本不在
+归档区里**：它们是躺在 `docs/` 根上、用现在时讲 `UnifiedQuoteAPI` 门面的对标/审计件，而那个门面
+早在 v16 Phase 2 就物理删了。删除名额因此为 **0**，本轮做的是第二节那件事：把 5 份移进归档区、
+给整个归档区补一条阅读口径，然后把"代码指错文档"这件事变成一条判据（第三节）。
+
+#### 二、五份现在时对标件入档 + 归档区的阅读口径
+
+`docs/{astock_toolkit_parity,efinance_parity_gap_analysis,niuniu_coverage_audit,stock_analysis_prompt_coverage,tiantian_fund_extensions}.md`
+→ `docs/archive/parity/`（`git mv` 保历史），五份 H1 下挂同一条归档说明：写明它是**当时的**对标快照、
+不是现行契约，点名 `UnifiedQuoteAPI` 已随 v16 Phase 2 删除，并把今天的口径指到
+`docs/api/interfaces.md` 与 `ARCHITECTURE.md`。这条 banner 第一次就写错了链接层级（`../` 而非 `../../`），
+被链接检查器当场拍成 10 条死链——移动文件不算完，指路得由尺子验。
+
+新增 `docs/archive/README.md`：归档区自己的读法。里面写清三件本区之外看不到的事——本目录任何文件
+都不是现行契约；banner 的写法约定；以及**归档件在判据眼里的三种身份**并不一致：
+`test_doc_code_consistency.active_docs()` 与 `test_error_promises` 的
+`AUDIT_DOC_PREFIXES`/`HISTORICAL_DOC_PREFIXES` 都豁免 `archive`，
+但**代码里指向 `docs/**.md` 的出处不豁免**（第三节的尺子照样扫它）。
+
+#### 三、5 条代码→文档的死出处，与一把反着走的尺子
+
+按第一节的表逐条核，代码里指着的归档路径**有一半是断的**：文件早被搬进 `plans/` 或 `parity/`，
+注释里的路径还停在原地。修掉的 5 处——`tstdx/web/limits.py:11`、`tests/providers/test_registry.py:20`、
+`tests/web/test_f3_web_fixes.py:4`、`tstdx/web/_session_p1.py` 与 `_session_fundamental.py`
+的两条 `:doc:` 角色（指向已归档的 `stock_analysis_prompt_coverage`）。
+
+只修不钉等于下轮再烂一遍，于是 `tests/architecture/test_doc_code_consistency.py` 里加了本轴第一次
+**反向**尺子：`_DOCS_CITE` 扫 `tstdx/` `scripts/` `tests/` 全部源码里的 `docs/….md` 字样，
+逐条 `Path.exists()`。本轮实测扫面 **101 处引用 / 23 个不同目标**，判据自带下限
+（`assert len(cited) >= 25`，扫描面萎缩即红）与一条种下的死路径正控
+（`test_the_docs_citation_ruler_sees_a_planted_dead_path`，路径运行期拼接，源码里不留死链）。
+
+正则的第二版把我**自己注释里**举例的 `docs/archive/plans/x.md` 判成违约——这是尺子咬到自己，
+也正是它该有的反应；改写那条注释而不是给尺子开后门。
+
+#### 四、围栏代码块第一次被当代码读（`tests/architecture/test_doc_code_examples.py`，4 项）
+
+十四轮的文档门禁读的是反引号里的点号链与 CLI 示例，```` ```python ```` 块**无人解析**——于是
+`docs/cookbook/04_streaming.md` 能把 `StreamEngine` 写成 `queue_size=`（真名 `max_queue`）、
+把 `ReconnectPolicy` 写成 `max_retries/backoff_base/backoff_max`（真名 `base/cap/max_attempts`），
+`docs/cookbook/01_bulk_kline.md` 能 `TdxClient(pool_size=4)`。照抄即 `TypeError`，门禁一路绿灯。
+本轮新尺子把块里的 `tstdx` 名字当对象：属性存在性与入参形状一律现读 `inspect`。
+实测扫描面：38 份活文档 / 73 个含 `tstdx` 的 pythonish 块 / **68 个真建立起绑定的块** / 修完后
+0 违规；判据自带 `scanned >= 20` 的萎缩下限与一条 `_PLANTED` 正控（把当年那四类写法原样塞回去，
+量到 3 处幻影 kwarg + 1 处缺失方法 + 1 处缺失属性，同时确认两处合法构造不误报）。
+
+`inspect.signature` 看不见 `**kwargs` 转发，`TdxClient(**pool_kwargs)` 正是第一版尺子的射程外——
+变异 M3 当场量出这一格**红=0**。本轮不放过它：`_FORWARDED_KWARGS` 点名那一跳的下游
+（`ConnectionPool` / `AsyncConnectionPool`，两者签名都不开放），入参形状按下游真签名判；
+配对关系由 `test_the_pool_forwarding_pairing_still_holds` 现读 `tstdx/client/sync.py` 与
+`async_.py` 源码守住（`ConnectionPool(` 与 `**pool_kwargs` 两个 token 都要在，下游一旦换成开放签名
+即红——那正是"规则无声失效"的形状）。修完后 M3 红=1。
+
+#### 五、链接检查器扫到仓库根：README 的两条死链
+
+`scripts/check_docs_links.py` 过去只走 `docs/`，README 整份在射程外，于是它指向
+`docs/FEATURE_MAP_AND_ROADMAP.md` 与 `docs/POTENTIAL_ISSUES_AND_PLAN.md` 的两条死链能在绿灯下活着
+（两份都早已进归档区）。本轮把扫描面改成 `docs/` 递归 + 仓库根 `*.md`，并且**明确豁免
+`CHANGELOG.md`**——它每条写的是当时的路径，为绿灯改写历史条目等于让这份日志失去证据价值。
+反向判据在 `tests/compatibility/test_shared_ci_scripts.py`：`test_docs_link_checker_scans_root_docs_and_spares_the_changelog`
+同时钉住"README 要报"与"CHANGELOG 不许报"两面。它自己的夹具第一次用了 `docs/gone.md`，
+被第三节的指路牌尺子判成违约（1 红 / 3 749 绿）——改用无扩展名的 `docs/gone` 并写明原因。
+
+#### 六、接口文档与项目说明的刷新（请求的第三、四格）
+
+接口文档那半边（`docs/api/interfaces.md` +58 行、6 份 cookbook/quickstart/FAQ/troubleshooting/SECURITY）
+是照真签名逐条改的，删掉的幻影包括：`TdxClient(pool_size=4)` / `rate_limit=10`、`SourcesRouter`、
+`RateLimitedLocal`、`CsvSink(Sink)` 那套不存在的"策略子类 + `scheme` + 注册表"、
+`dispatch(0x1234, raw_payload)`、`Prober(rate_limit=1.0).assert_offline_hours()`；
+补的是实际存在的形状（`client.request_result()` 才交得出 `tier/confidence/raw/warnings`、
+`write()` 认 4 种格式而 `Sink` 只认 3 种、CSV 只走 `write()`/`to_csv()`、
+`write(bars, "out.txt")` 现在抛 `ValueError` 而不是静默回一个不落盘的 DataFrame）。
+
+README 六处：架构框图 `输出(DataFrame/Parquet/DuckDB)` 补上 CSV；"3 Sink 策略"那行改写成
+`write()` 4 种 / `Sink` 3 种的真实口径；extras 表里 `ParquetSink`/`DuckDBSink` 两个不存在的类名
+换成 `to_parquet` / `Sink("parquet")`；CI 矩阵从"Windows 3.11 + 3.12"改成 `.github/workflows/ci.yml`
+真正的 Ubuntu 3.10/3.11/3.12/3.13 + Windows 3.11/3.12；文档导航重建（ARCHITECTURE 与 interfaces 提到最前、
+补 configuration/providers/tdx_status/本轮计划页，两条死链折进归档区那一行）；`DESIGN.md` 降级为
+"2026-08-31 的 v2.0 立项稿"并在文件顶部自己写明。
+
+`_EXACT_CLAIMS` 里 README 那两个格式数字**不手抄真值**：`_output_write_fmts()` 与 `_sink_class_fmts()`
+用 AST 现读 `tstdx/output/__init__.py` 里 `write()` 与 `Sink.write` 各自比较的 `fmt` 字面量，
+外加一条 `test_csv_reaches_only_the_module_level_write()` 把"CSV 只在上层函数"这件事钉住（4 种 ⊋ 3 种）。
+
+#### 七、随之失效的豁免与补注
+
+`SECTION_NAME_EXEMPTIONS` 清空：唯一那条挂在 `docs/tiantian_fund_extensions.md` §六，文档一归档就出了
+射程，豁免随之失效（`test_section_exemptions_are_still_needed` 就是为这一刻准备的，见变异 M7）。
+`docs/ARCHITECTURE.md` 契约层那一行删掉 `deprecation.py`（第 8 轮就物理删了的模块）。
+`docs/adr/ADR-006-010.md` 给 `make audit-bridges` 补一条后续修订：那个 target 在 `340624c` 被删，
+因为它 `|| echo` 吞失败，今天是 `make test-bridges`，golden 语料 530 份。
+`tstdx/domain/models.py` 的时区口径改对：日线/分钟线交的是**交易所本地时间字符串**，出口不做换算——
+这句是说给自己看的：`DataProfile.timezone` 至今是"声明了没人读"的旋钮，本轮只把文档里那句谎改掉，
+旋钮本身没登记成 G 项。
+
+#### 八、判据规模：3 752 → 3 758，逐项归属
+
+按"改前/改后各自 `--collect-only` 实测"，不用估算。HEAD（`17c95cc`）总收集 **3 767**、
+离线运行集 3 752；候选树总收集 **3 773**、离线运行集 **3 758**（15 项 `network` 始终不在这笔账里）。
+
+| 来源 | 项数 |
+|---|---|
+| `test_doc_code_consistency.py` 122 → 128 | +6（Sink/write 数字行 ×2、csv 上下层正控 ×1、docs 指路牌 ×2、`_worklog_docs` 里 README 新增一行 ×1） |
+| 新 `test_doc_code_examples.py` 0 → 4 | +4（调用级判据 / 扫描面下限 / `_PLANTED` 正控 / `**pool_kwargs` 配对哨兵） |
+| `test_shared_ci_scripts.py` 7 → 8 | +1（根级扫描 + CHANGELOG 豁免） |
+| 5 份对标件离开 `active_docs()` | **−5**（`test_no_live_doc_states_an_error_class_count` 逐文档铺开，文档一进归档区这五格就没了） |
+
+净 +6，删除判据 0 条——被"删"掉的那 5 项不是判据失效，是它们扫的对象离开了活文档射程，
+而它们该不该被扫本轮已由第一节的实测回答过。
+
+#### 九、候选树复测（`wt_v18b15step`，03:57）
+
+先对账候选树与主工作树：本轮改到的 32 个路径 sha256 前 16 位逐格相同，5 条旧路径在候选树里确认不存在。
+十一次门禁调用 `rc=0` 逐条在 `reports/run_gates15step2.log`：`ruff check` All checks passed、
+`ruff format --check` 全部已格式化、`mypy` `Success: no issues found in 190 source files`、
+`check_originality --strict tstdx/` `Total: 191 / Original: 191 / Suspicious: 0 / External imports: 17`、
+`spec_audit --json --strict` `"total_specs": 44 / "coverage_pct": 100.0`、
+`golden_audit --gate` `L1 verified: 0x44e, 0x52d, 0x530` + `[GATE] all L1 verified commands have real samples (OK)`、
+`audit_reachability --strict` `模块总数: 190 可达: 175 白名单豁免: 15 / 无未登记孤儿 ✓`、
+`contract_audit --ci` `PASS: 172 个注册 capability 全部落在声明形状之内（专属 63 ∪ 派发面 172）`、
+`check_docs_links` `OK (92 files)`、benchmark smoke OK、`tests/test_bridges.py` 24 passed。
+
+离线全量（同一份日志末段 + `reports/fulltest_v18b15step3.xml`）：junit **3 758 / 0 失败 / 0 错误 /
+7 跳过**、171.210 s、`TOTAL 22 428 / 3 454 / 5 992 / 1 002`、覆盖率 **82.12%**；
+`fail_under = 77.0` 一字未动。
+
+本轮第一次跑（`run_gates15step.log`，03:23 那份）有两处不干净，都记着：`check_originality` 我漏传了
+位置参数 `tstdx/` 而 `rc=2`（工具要求路径，`--strict` 不给 path 就是用法错），以及后来 `ruff check .`
+抓到候选树里我自己的两份临时脚本（`mutate15.py` 未格式化、`run_gates15.py` 一个 F541 空 f-string）。
+两处都是本轮的账，不是判据的账；修完后重跑得上面那份全 `rc=0` 的读数。
+
+#### 十、变异台账（`wt_v18b15step/reports/mutate15.log`）
+
+七格逐条把本轮的判断改坏，量它红几项：
+
+| 代号 | 改坏的东西 | 结果 |
+|---|---|---|
+| M1 | README 把 `write()` 的 4 种格式写成 3 | 1 红（数字行判据） |
+| M2 | README 把 `Sink` 的 3 种写成 4（含 CSV） | 1 红 |
+| M3 | 食谱 01 回到 HEAD 的 `TdxClient(pool_size=4)` | **首跑红=0** ⇒ 暴露 `**pool_kwargs` 转发洞；点名下游后复跑 1 红 |
+| M4 | 食谱 04 回到 HEAD 的 `queue_size=` + `max_retries/backoff_*` | 1 红（代码块尺子） |
+| M5 | `limits.py` 的出处指回 HEAD 里那条死路径 | 1 红（指路牌尺子） |
+| M6 | 链接检查器退回只看 `docs/` | 1 红（根级扫描判据） |
+| M7 | 把已归档文档的小节豁免原样贴回豁免表 | 1 红（`test_section_exemptions_are_still_needed`） |
+
+七格跑完逐文件还原：`red=0 / green=148 / rc=0`，且被改过的 6 份文件与主工作树 sha256 前 16 位相同。
+M3 那一格本轮最有价值：它是**唯一一条首跑没红的**，而"没红"本身就是那条判据的射程声明——
+按 §四 处理完之后它才真的咬得住。
+
+#### 十一、本轮明确未做
+
+- **G1/G3/G5/G9 一格未清**：三格 fail-fast、`0x000F`/`0x0010` 的真机布局、`fund_estimate` 的裁决、
+  以及"把 `v1.1.0` 变成装得通的发布"这条动作，都不在本轮请求的四格里。本轮不顺手改，也不顺手删。
+- **`DataProfile.timezone` 那格**：文档里的谎已改（§七），旋钮本身"声明了没人读"这件事还没登记成 G 项。
+- **归档件的清理**：第一节的实测否掉了"零入站即无效"，本轮一份都没删。
+- **并行会话的账**：`CHANGELOG.md`、`docs/REFACTOR_PLAN_V17_CLOSURE.md`、`docs/REFACTOR_PLAN_V18_REVIEW.md`
+  三份仍是别人的未提交登记，本轮**不 commit 它们**。
+

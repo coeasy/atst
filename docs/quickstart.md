@@ -27,19 +27,28 @@ from tstdx.client import TdxClient
 
 client = TdxClient()
 
-# 日线，最近 80 根
+# 日线，最近 80 根（默认 as_format="dict"，每根是一个 dict）
 bars = client.bars("sh600519", period="day", count=80)
 for bar in bars[:5]:
-    print(f"{bar.date} O={bar.open} H={bar.high} L={bar.low} C={bar.close} V={bar.volume}")
+    print(
+        f"{bar['datetime']} O={bar['open']} H={bar['high']} "
+        f"L={bar['low']} C={bar['close']} V={bar['volume']}"
+    )
 ```
 
 ### 2. 实时行情
 
 ```python
-quotes = client.quotes(["sh600519", "sz000001"])
+quotes = client.quotes(["sh600519", "sz000001"])  # 同样默认 list[dict]
 for q in quotes:
-    print(f"{q.code} {q.name}: 价格={q.price} 涨跌={q.change_pct:+.2f}%")
+    last = q["last_close"]
+    pct = (q["price"] - last) / last * 100 if last else 0.0
+    print(f"{q['code']} 价格={q['price']} 涨跌={pct:+.2f}%")
 ```
+
+行情 dict 的键是 `code / datetime / price / last_close / open / high / low / volume / amount /
+bid / ask`；`change` / `pct_change` 只是 `Quote` 对象的派生属性，dict 里得自己算。这一格里
+`datetime` / `bid` / `ask` 在 7709 实时路径上恒空，也**没有证券名称**（要名字走 Web 源或 F10）。
 
 ### 3. 异步并发
 
@@ -146,10 +155,13 @@ v13 clean break 之后，规划器只为每次请求选定**一个** Provider / 
 
 ### 三态输出
 
+`as_format` 是**语义客户端**（`TdxClient` / `AsyncTdxClient`）上的旋钮，`Client` 内核入口不收
+这个参数：
+
 ```python
-client.bars("sh600519", as_format="dict")  # list[dict]
-client.bars("sh600519", as_format="tuple")  # list[tuple]
-client.bars("sh600519", as_format="dataframe")  # pandas.DataFrame
+client.bars("sh600519", as_format="dict")  # list[dict]（默认）
+client.bars("sh600519", as_format="tuple")  # list[tuple]，字段序即 BAR_FIELDS
+client.bars("sh600519", as_format="dataframe")  # pandas.DataFrame（需装 extras）
 ```
 
 ### 错误处理

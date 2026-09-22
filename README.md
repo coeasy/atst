@@ -67,7 +67,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 ├─────────────────────────────────────────────────────────────────────┤
 │                      基础设施层                                        │
 │  错误体系(E1-E9 九域) · 可观测性(Prometheus/StatsD/OTLP)               │
-│  配置(6 源合并) · 安全(TLS/脱敏) · 输出(DataFrame/Parquet/DuckDB)       │
+│  配置(6 源合并) · 安全(TLS/脱敏) · 输出(DataFrame/Parquet/CSV/DuckDB)   │
 │  反馈(遥测/统计) · 工具链(capture/codegen/golden_audit/spec_audit)      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -110,7 +110,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 
 | 特性 | 说明 |
 |---|---|
-| **3 Sink 策略** | DataFrame / Parquet / DuckDB（原子写） |
+| **数据出口（`tstdx/output/`）** | `write()` 认 4 种格式：DataFrame / Parquet / CSV / DuckDB；`Sink` 3 种格式（不含 CSV，CSV 只走 `write()` 或 `to_csv()`），全部原子写 |
 | **统一业务入口** | `Client` / `AsyncClient`（15 便捷方法 + `execute`/`typed`/`call` 通用面），永不隐式换源、永不缓存 |
 | **HTTP REST 网关** | 10 端点（capability 白名单 + TaskStore 钳制），只翻译为 `Client` 调用 |
 | **WebSocket JSON-RPC** | 长连接实时推送 |
@@ -208,8 +208,8 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 |-------------|---------------------------|--------------------|
 | `config`    | pydantic                  | 严格配置校验       |
 | `dataframe` | pandas                    | DataFrame 输出     |
-| `parquet`   | pyarrow                   | ParquetSink        |
-| `duckdb`    | duckdb                    | DuckDBSink         |
+| `parquet`   | pyarrow                   | Parquet 写出（`to_parquet` / `Sink("parquet")`） |
+| `duckdb`    | duckdb                    | DuckDB 写出（`to_duckdb` / `Sink("duckdb")`） |
 | `web`       | httpx                     | HTTP Web 行情源    |
 | `metrics`   | prometheus-client         | Prometheus 导出    |
 | `server`    | fastapi, uvicorn, websockets | HTTP REST 网关 + WebSocket RPC |
@@ -226,7 +226,7 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 |---|---|
 | **Python** | 3.10+（使用了 `X \| Y` 类型语法与 `zoneinfo`） |
 | **操作系统** | Windows 10/11 · macOS 12+ · Linux（主流发行版） |
-| **CI 矩阵** | Windows 3.11 + 3.12 |
+| **CI 矩阵** | Ubuntu 3.10/3.11/3.12/3.13 + Windows 3.11/3.12 |
 | **网络** | TCP 7709/7727（TDX 主站）+ HTTPS（Web 源） |
 | **存储** | 文件系统（`~/.tstdx/` 配置/主站排名/反馈）+ Parquet/DuckDB |
 
@@ -446,7 +446,7 @@ python scripts/contract_audit.py --ci           # Typed 契约↔注册表↔Dom
 python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproject fail_under=77）
 ```
 
-- CI：11 jobs；Windows 矩阵 3.11 + 3.12；周三 09:00 UTC 定期 `host-audit`
+- CI：11 jobs；测试矩阵 Ubuntu 3.10–3.13 加 Windows 3.11/3.12；周三 09:00 UTC 定期 `host-audit`
 - 架构守卫：`tests/architecture/`（唯一内核、零缓存、无聚合降级路由、根级命名空间白名单、
   已删层不可复活）+ `tests/provider_isolation/`（Provider 隔离与溯源）
 - Ruff：`ruff check` 与 `ruff format --check` 均 0 错（待重排文件已在 V17 Phase 5 第 2 步
@@ -487,23 +487,28 @@ python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproj
 
 | 文档 | 内容 |
 |---|---|
-| [DESIGN.md](DESIGN.md) | 完整设计方案 v2.0（架构/协议/工程规范，历史版本见 docs/archive/）|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | **现行架构**（分层/内核/契约/服务面，与代码同轮钉死）|
+| [docs/api/interfaces.md](docs/api/interfaces.md) | **项目接口文档**（全部公开接口面汇总）|
 | [docs/quickstart.md](docs/quickstart.md) | 快速入门 |
 | [docs/api/README.md](docs/api/README.md) | API 索引（内核/协议/传输/服务面/基础设施）|
-| [docs/api/interfaces.md](docs/api/interfaces.md) | **项目接口文档**（全部公开接口面汇总）|
+| [docs/configuration.md](docs/configuration.md) | 配置段、合并层与环境变量归一 |
 | [docs/cookbook/](docs/cookbook/README.md) | 场景示例（批量 K 线/显式跨源/离线 vipdoc/流式/Sinks/自定义命令/单内核）|
 | [docs/migration/](docs/migration/README.md) | 从 mootdx/easy_tdx/easyquotation 迁移 |
+| [docs/providers/](docs/providers/README.md) | 逐 Provider 能力与口径 |
+| [docs/tdx_status.md](docs/tdx_status.md) | TDX 全接口连通性矩阵（真机逐项实测口径）|
 | [docs/adr/](docs/adr/README.md) | 架构决策记录（含 ADR-011 流式内核取舍）|
 | [docs/FAQ.md](docs/FAQ.md) | 常见问题 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 排障指南 |
 | [docs/errors.md](docs/errors.md) | 错误体系与 RetryAdvice 使用指南 |
-| [docs/FEATURE_MAP_AND_ROADMAP.md](docs/FEATURE_MAP_AND_ROADMAP.md) | 主体功能地图 + v1.2.0 后路线 |
-| [docs/POTENTIAL_ISSUES_AND_PLAN.md](docs/POTENTIAL_ISSUES_AND_PLAN.md) | 当前批次状态表与后续规划 |
 | [PROTOCOL_SPEC/](PROTOCOL_SPEC/README.md) | 协议命令 YAML 规范 + codegen/spec_audit 闭环 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录（含 native 弃用时间线 v1.5.0/v1.6.0）|
 | [docs/releases/v1.0.0.md](docs/releases/v1.0.0.md) | v1.0.0 正式发布说明、兼容性与验证结果 |
 | [docs/releases/v1.1.0.md](docs/releases/v1.1.0.md) | v1.1.0 版本说明：这一版收口了什么、发布链走到哪一格 |
-| [docs/archive/](docs/archive/) | 历史计划与设计归档 |
+| [docs/REFACTOR_PLAN_V18_RESTRUCTURE.md](docs/REFACTOR_PLAN_V18_RESTRUCTURE.md) | 当前重构轴的计划与执行台账 |
+| [docs/archive/](docs/archive/README.md) | 历史计划、对标审计与设计快照（**都不是现行契约**，含 FEATURE_MAP/POTENTIAL_ISSUES 两份旧规划表）|
+
+> [DESIGN.md](DESIGN.md) 是 2026-08-31 的 v2.0 立项设计稿，架构判断仍成立，规模数字（命令/解析器
+> 账本）早已过期，因此**不作现行方案卖**：今天的架构读 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ---
 

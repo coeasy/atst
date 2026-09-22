@@ -1,7 +1,7 @@
 """F3「Web 源」修复批次回归测试（W1/W3/W4/W5/W6/W7/W8/W9/W10/W14/P2）。
 
 全部离线：罐头响应 + 假 HTTP 客户端，不发起真实网络请求。
-覆盖计划文档 docs/INDUSTRIAL_OPTIMIZATION_PLAN.md F3 批次各项修复，
+覆盖计划文档 docs/archive/plans/INDUSTRIAL_OPTIMIZATION_PLAN.md F3 批次各项修复，
 含「四板斧」防御用例（缺字段 / None / 短行 / 非 JSON）与 §7 双栈冒烟矩阵
 （urllib / httpx 同罐头序列回归）。
 """
