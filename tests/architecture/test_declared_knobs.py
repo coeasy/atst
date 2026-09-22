@@ -628,3 +628,251 @@ def test_the_wire_ruler_sees_planted_unread_fields() -> None:
     ) == ["get_bars.sentinel_never_read"]
     # 反面对照：全读时谓词必须为空，否则"零缺陷"是恒报而不是看出来的
     assert _wire_unread({"get_bars": {"symbol"}}, {"get_bars": {"symbol"}}) == []
+
+
+# --------------------------------------------------------------------------- #
+# 判据六：同一个旋钮，每张面递给解析器的值必须解得开、且解成同一个答案（第 13 轮）
+# --------------------------------------------------------------------------- #
+
+#: 2026-09-22（周二，A 股上午盘中）实测：`Client.security_count(market=0)` 给出 24296，
+#: 而 `tstdx security-count`（`--market` 声明成字符串、缺省 `"0"`）与
+#: `GET /v13/security/count`（路由签名 `market: str = "0"`）当场
+#: `E3040 未知标准市场 '0'；可选 sz/sh/bj 或 0/1/2`——**消息点名的写法正是代码拒绝的写法**，
+#: 三张面连自己声明的缺省值都解不开。前五格判据全都看不见它：字段被声明了（判据三）、
+#: 也被读走了（判据五），读它的那个函数却只认三种前缀。"声明与执行闭合"缺的正是这一维：
+#: **声明的形状必须落在解析器真的接受的值域里**。
+
+CLI_MODULE = PKG / "cli" / "parser.py"
+WS_MODULE = PKG / "integration" / "runtime_ws.py"
+#: 形状上就不该被解开的写法（与值域无关，所以市场表怎么长它们都还是死的）。
+_SHAPE_DEAD_MARKET_TEXTS = ("", " ", "00", "0x0", "sh1", "市场", "true", "-1", "+1", "1.0")
+
+
+def _unacceptable_market_values() -> list[object]:
+    """该被拒的市场写法：形状死的若干种，加上当下值域之外的两种写法。
+
+    越界值是**算出来**的而不是抄来的：抄一个 `3` 进名单，等市场表真长出 id 3 时这条
+    判据就会把合法值当成缺陷。
+    """
+    from tstdx.client.core import _PREFIX_MARKET
+
+    beyond = max(_PREFIX_MARKET.values()) + 1
+    return [*_SHAPE_DEAD_MARKET_TEXTS, str(beyond), beyond]
+
+
+def _handed_value(type_text: str, default_node: ast.expr) -> object | None:
+    """一张面**实际递下去**的那个值：声明了 ``type=int``（或注解 ``int``）就先按它过一遍。"""
+    if not isinstance(default_node, ast.Constant):
+        return None
+    value = default_node.value
+    caster = {"int": int, "str": str, "float": float, "bool": bool}.get(type_text)
+    return caster(value) if caster is not None else value
+
+
+def _cli_market_values(source: str) -> dict[str, object]:
+    """CLI 面：每个 ``market`` 入参声明 -> 该面会递下去的那个值。"""
+    out: dict[str, object] = {}
+    for node in ast.walk(ast.parse(source)):
+        if (
+            not isinstance(node, ast.Call)
+            or not isinstance(node.func, ast.Attribute)
+            or node.func.attr != "add_argument"
+            or not node.args
+        ):
+            continue
+        flag = node.args[0]
+        if not (isinstance(flag, ast.Constant) and isinstance(flag.value, str)):
+            continue
+        if flag.value.lstrip("-") != "market":
+            continue
+        keywords = {k.arg: k.value for k in node.keywords}
+        if "default" not in keywords:
+            continue
+        type_node = keywords.get("type")
+        value = _handed_value(
+            type_node.id if isinstance(type_node, ast.Name) else "", keywords["default"]
+        )
+        if value is not None:
+            out[f"cli:{flag.value}@{node.lineno}"] = value
+    return out
+
+
+def _arg_defaults(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, tuple[str, ast.expr]]:
+    """形参名 -> (注解文本, 缺省表达式)；FastAPI 按注解把查询串转成该类型。"""
+    defaults = fn.args.defaults or []
+    positional = [a for a in fn.args.args if a.arg not in {"self", "cls"}]
+    offset = len(positional) - len(defaults)
+    return {
+        arg.arg: (ast.unparse(arg.annotation) if arg.annotation is not None else "", default)
+        for arg, default in zip(positional[offset:], defaults, strict=True)
+    }
+
+
+def _http_market_values(source: str) -> dict[str, object]:
+    """HTTP 面：路由签名里 ``market`` 的缺省，就是该面收不到参数时递下去的值。"""
+    out: dict[str, object] = {}
+    for fn in _route_handlers(ast.parse(source)):
+        for name, (annotation, default) in _arg_defaults(fn).items():
+            if name != "market":
+                continue
+            value = _handed_value(annotation, default)
+            if value is not None:
+                out[f"http:{fn.name}@{fn.lineno}"] = value
+    return out
+
+
+def _ws_market_values(source: str) -> dict[str, object]:
+    """WS 面：``params.get("market", 缺省)`` 里那个缺省，是该面收不到键时递下去的值。"""
+    out: dict[str, object] = {}
+    for node in ast.walk(ast.parse(source)):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and len(node.args) == 2
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value == "market"
+        ):
+            value = _handed_value("", node.args[1])
+            if value is not None:
+                out[f"ws:default@{node.lineno}"] = value
+    return out
+
+
+def _library_market_values() -> dict[str, object]:
+    """库面：``Client`` 上那两个公开方法的声明缺省。"""
+    from inspect import signature
+
+    from tstdx import Client
+
+    out: dict[str, object] = {}
+    for name in ("security_count", "security_list"):
+        parameter = signature(getattr(Client, name)).parameters.get("market")
+        if parameter is not None and parameter.default is not inspect.Parameter.empty:
+            out[f"library:{name}"] = parameter.default
+    return out
+
+
+def _market_face_values() -> dict[str, object]:
+    """四张泛型面加库面，在 ``market`` 这个旋钮上各自会递下去的那个值。"""
+    out: dict[str, object] = {}
+    out.update(_cli_market_values(CLI_MODULE.read_text(encoding="utf-8")))
+    out.update(_http_market_values(HTTP_MODULE.read_text(encoding="utf-8")))
+    out.update(_ws_market_values(WS_MODULE.read_text(encoding="utf-8")))
+    out.update(_library_market_values())
+    return out
+
+
+def _mcp_market_schemas() -> dict[str, str]:
+    """MCP 面：每张工具的 ``inputSchema`` 里 ``market`` 声明的 JSON 类型。"""
+    from tstdx.integration.mcp._tools_spec import TOOLS
+
+    out: dict[str, str] = {}
+    for tool in TOOLS:
+        schema = tool.inputSchema.get("properties", {}).get("market")
+        if isinstance(schema, dict) and isinstance(schema.get("type"), str):
+            out[tool.name] = schema["type"]
+    return out
+
+
+def test_every_market_face_hands_the_parser_a_value_it_accepts() -> None:
+    """同一份声明表派生出来的面，不许在同一个旋钮上给出四种不同下场。"""
+    from tstdx.client.core import _standard_market_id
+
+    sites = _market_face_values()
+    assert len(sites) >= 6, f"市场旋钮只解析出 {len(sites)} 处声明，判据自身失明：{sorted(sites)}"
+    answers: dict[object, list[str]] = {}
+    for label, value in sorted(sites.items()):
+        try:
+            decoded = _standard_market_id(value)
+        except Exception as exc:  # noqa: BLE001 - 要点名是哪张面解不开
+            raise AssertionError(
+                f"{label} 递给市场解析器的 {value!r} 解不开（{type(exc).__name__}: {exc}）"
+            ) from exc
+        answers.setdefault(decoded, []).append(f"{label}={value!r}")
+    joined = " | ".join(f"{key}: {sites_}" for key, sites_ in sorted(answers.items()))
+    assert len(answers) == 1, f"同一个缺省市场，各张面解成了不同 id：{joined}"
+
+
+def test_a_string_declared_market_face_can_name_every_market() -> None:
+    """凡把这个旋钮声明成字符串的面，都必须能表达每一个市场——否则它只在拒自己的用户。"""
+    from tstdx.client.core import _PREFIX_MARKET, _standard_market_id
+
+    string_sites = sorted(
+        label for label, value in _market_face_values().items() if isinstance(value, str)
+    )
+    assert string_sites, "没有任何面把 market 声明成字符串，判据自身失明"
+    for market_id in sorted(set(_PREFIX_MARKET.values())):
+        text = str(market_id)
+        assert _standard_market_id(text) == market_id, (
+            f"{string_sites} 把这些旋钮声明成字符串，{text!r} 是它们能写出的数字形式，"
+            "而解析器拒了它"
+        )
+        #: 数字写法与 int 写法必须同答案：上下限一旦是从表里抄的而不是派生的，
+        #: 就会长出"文本能解、整数不能解"这种半死不活的市场。
+        assert _standard_market_id(market_id) == market_id, (
+            f"市场 {market_id} 的 int 写法被拒了，而它的文本写法 {text!r} 能解开"
+        )
+
+
+def test_every_string_typed_market_tool_can_name_every_market() -> None:
+    """MCP 的 schema 声明 ``string`` 就是"按字符串给我"的承诺：那数字写法必须是活的。"""
+    from tstdx.client.core import _PREFIX_MARKET, _standard_market_id
+
+    schemas = _mcp_market_schemas()
+    assert schemas, "MCP 面没有解析出任何 market 声明，判据自身失明"
+    for tool, json_type in sorted(schemas.items()):
+        if json_type != "string":
+            continue
+        for market_id in sorted(set(_PREFIX_MARKET.values())):
+            assert _standard_market_id(str(market_id)) == market_id, (
+                f"MCP 工具 {tool} 把 market 声明成 string，数字写法 {str(market_id)!r} 却是死的"
+            )
+
+
+def test_the_market_message_only_advertises_what_the_parser_accepts() -> None:
+    """那条消息点名了两组词，两词都必须真能解开——否则它在教用户走一条死路。"""
+    from tstdx.client.core import _PREFIX_MARKET, _standard_market_id
+    from tstdx.errors import ParseError
+
+    with pytest.raises(ParseError) as raised:
+        _standard_market_id("这一格故意不存在")
+    message = raised.value.message
+    advertised = re.search(r"可选 (\S+) 或 (\S+)", message)
+    assert advertised, f"消息不再点名可选值，本判据就看不到值域了：{message!r}"
+    prefixes, digits = (set(group.split("/")) for group in advertised.groups())
+    assert prefixes == set(_PREFIX_MARKET), f"消息点名的前缀与表不符：{sorted(prefixes)}"
+    assert digits == {str(value) for value in _PREFIX_MARKET.values()}, (
+        f"消息点名的数字写法与表不符：{sorted(digits)}"
+    )
+    for text, expected in _PREFIX_MARKET.items():
+        assert _standard_market_id(text) == expected
+    for text in digits:
+        assert _standard_market_id(text) == int(text)
+    values = _unacceptable_market_values()
+    assert values, "越界值算不出来，本判据的负例那一半是空的"
+    for value in values:
+        try:
+            _standard_market_id(value)
+        except ParseError:
+            continue
+        raise AssertionError(f"{value!r} 本该被市场解析器拒掉，却解开了")
+
+
+def test_the_market_ruler_sees_a_planted_face_value() -> None:
+    """正控：三张面的声明形状都要解析得出来，坏值要被认出、好值不许误报。"""
+    planted_http = (
+        'def create_app():\n    @app.get("/v13/sentinel")\n'
+        '    def sentinel(market: str = "nope"):\n        return market\n\n    return app\n'
+    )
+    assert _http_market_values(planted_http) == {"http:sentinel@3": "nope"}
+    planted_cli = (
+        'p.add_argument("--market", default="0")\n'
+        'p.add_argument("--market", type=int, default=0)\n'
+        'p.add_argument("--market")\n'
+    )
+    assert _cli_market_values(planted_cli) == {"cli:--market@1": "0", "cli:--market@2": 0}
+    assert _ws_market_values('market = params.get("market", 0)\n') == {"ws:default@1": 0}
+    from tstdx.client.core import _standard_market_id
+
+    assert {_standard_market_id(value) for value in ("0", "sz", "1", "sh", 2, "bj")} == {0, 1, 2}

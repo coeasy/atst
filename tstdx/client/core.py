@@ -39,6 +39,11 @@ __all__ = [
 
 OutputFormat = str
 _PREFIX_MARKET: dict[str, int] = {"sh": 1, "sz": 0, "bj": 2}
+#: 市场的数字写法，从 :data:`_PREFIX_MARKET` 的值派生：CLI、HTTP、MCP 三张面把这个旋钮声明成
+#: 字符串（``--market`` 的缺省就是 ``"0"``），所以 ``"0"/"1"/"2"`` 是同一份契约的另一半写法，
+#: 不是对脏输入的宽容。只认前缀会让那三张面连自己声明的缺省值都解不开——2026-09-22 盘中实测
+#: ``tstdx security-count`` 与 ``GET /v13/security/count`` 都当场 E3040。
+_MARKET_IDS_BY_TEXT: dict[str, int] = {str(value): value for value in _PREFIX_MARKET.values()}
 _OUTPUT_FORMATS = frozenset({"dict", "tuple", "dataframe"})
 
 
@@ -146,13 +151,21 @@ def _encode_gbk_field(name: str, value: Any, *, max_bytes: int) -> bytes:
 def _standard_market_id(market: Any) -> int:
     if isinstance(market, str):
         key = market.strip().lower()
-        if key not in _PREFIX_MARKET:
-            raise ParseError(
-                f"未知标准市场 {market!r}；可选 sz/sh/bj 或 0/1/2",
-                context={"market": market},
-            )
-        return _PREFIX_MARKET[key]
-    return _require_int("market", market, minimum=0, maximum=2)
+        if key in _PREFIX_MARKET:
+            return _PREFIX_MARKET[key]
+        if key in _MARKET_IDS_BY_TEXT:
+            return _MARKET_IDS_BY_TEXT[key]
+        raise ParseError(
+            f"未知标准市场 {market!r}；可选 {'/'.join(sorted(_PREFIX_MARKET))} "
+            f"或 {'/'.join(sorted(_MARKET_IDS_BY_TEXT))}",
+            context={"market": market},
+        )
+    return _require_int(
+        "market",
+        market,
+        minimum=min(_PREFIX_MARKET.values()),
+        maximum=max(_PREFIX_MARKET.values()),
+    )
 
 
 def split_symbol(symbol: str) -> tuple[int, str]:

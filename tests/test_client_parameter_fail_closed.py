@@ -17,7 +17,7 @@ def _client_without_io() -> TdxClient:
     return TdxClient(pool=object())
 
 
-@pytest.mark.parametrize("market", ["xx", "", -1, 3, True, 1.0, "1"])
+@pytest.mark.parametrize("market", ["xx", "", -1, 3, True, 1.0, "01", "9", "sh1"])
 def test_standard_market_parser_rejects_unknown_or_coercible_identity(market) -> None:
     with pytest.raises(ParseError):
         _standard_market_id(market)
@@ -28,6 +28,10 @@ def test_standard_market_parser_accepts_only_canonical_names_and_ids() -> None:
     assert _standard_market_id("SH") == 1
     assert _standard_market_id(" bj ") == 2
     assert [_standard_market_id(value) for value in (0, 1, 2)] == [0, 1, 2]
+    #: CLI/HTTP/MCP 把 market 声明成字符串（`--market` 的缺省就是 `"0"`），所以数字写法
+    #: 是同一份契约的另一半，不是对脏输入的宽容。2026-09-22 盘中只认前缀时
+    #: `tstdx security-count` 与 `GET /v13/security/count` 当场 E3040。
+    assert [_standard_market_id(value) for value in ("0", "1", "2")] == [0, 1, 2]
 
 
 @pytest.mark.parametrize("period", ["99", "-1", "", None, 4])
