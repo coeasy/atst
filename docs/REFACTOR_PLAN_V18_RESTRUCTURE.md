@@ -2334,7 +2334,27 @@ README 六处：架构框图 `输出(DataFrame/Parquet/DuckDB)` 补上 CSV；"3 
 M3 那一格本轮最有价值：它是**唯一一条首跑没红的**，而"没红"本身就是那条判据的射程声明——
 按 §四 处理完之后它才真的咬得住。
 
-#### 十一、本轮明确未做
+#### 十一、提交树复测（`wt_v18b15ship`，04:08）
+
+`2398305` 落盘后用 `git checkout-index` 直出一棵干净的**提交树**——五处抽查（`README.md`、
+`tests/architecture/test_doc_code_examples.py`、`scripts/check_docs_links.py`、
+`docs/archive/parity/tiantian_fund_extensions.md`、`tstdx/web/limits.py`）的 blob 哈希与 HEAD 逐格相同，
+旧路径 `docs/tiantian_fund_extensions.md` 在这棵树里确认不存在，顶层也没有任何临时 `.py`
+（runner 脚本刻意放在树外，`ruff check .` 才不会被它脏——第九节那两次 `rc=1` 就是这么来的）。
+十一次调用 `rc=0` 逐条在 `P:/github_public/ship15_logs/run_gates15ship.log`，读数与第九节候选树逐项相同：
+`All checks passed!`、`455 files already formatted`、`Success: no issues found in 190 source files`、
+`Total: 191 / Original: 191 / Suspicious: 0 / External imports: 17`、`"total_specs": 44 / "coverage_pct": 100.0`、
+`L1 verified: 0x44e, 0x52d, 0x530` + `[GATE] … (OK)`、`模块总数: 190 可达: 175 白名单豁免: 15 / 无未登记孤儿 ✓`、
+`PASS: 172 个注册 capability …（专属 63 ∪ 派发面 172）`、`docs link check OK (92 files)`、
+benchmark smoke OK、bridges 24 passed。离线全量（`fulltest_v18b15ship.xml`，04:08:01 起）：junit
+**3 758 / 0 失败 / 0 错误 / 7 跳过**、174.591 s、`TOTAL 22 428 / 3 454 / 5 992 / 1 002`、
+覆盖率 **82.12%**——与第九节是**两次独立的十一次调用 + 两次独立的全量**，不是一个数抄两遍，
+两次的覆盖数字逐格相同（本轮没有第 8/11/12/14 轮那种一行抖动）。
+
+提交规模：33 个文件 `+1 167 / −182`，其中 5 条以 rename 入库（相似度 88%–96%，历史保住）。
+`v1.1.0` 标签不动——本轮没有可发布的产物变化，且 G9 那一格等的从来不是 tag。
+
+#### 十二、本轮明确未做
 
 - **G1/G3/G5/G9 一格未清**：三格 fail-fast、`0x000F`/`0x0010` 的真机布局、`fund_estimate` 的裁决、
   以及"把 `v1.1.0` 变成装得通的发布"这条动作，都不在本轮请求的四格里。本轮不顺手改，也不顺手删。
