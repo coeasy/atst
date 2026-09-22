@@ -91,16 +91,30 @@ _CHANNEL_OVERRIDES: dict[str, str] = {
     "wencai": "screening",
     "rates": "fx",
 }
-_CORE_CAPABILITIES = {
-    "quotes",
-    "bars",
-    "snapshot",
-    "minute",
-    "trades",
-    "security_count",
-    "security_list",
-}
-_SKIP_WEB_METHODS = {"close", "mro", *_CORE_CAPABILITIES}
+#: 自动发现要跳开的名字分成两件事，因为它们**为不同的说法负责**，混在一个集合里就没人能
+#: 核对任何一件：
+#:
+#: * :data:`_RESERVED_CORE_CAPABILITIES` 是**保留名**——"这条能力归核心分派，web 面哪天长出
+#:   同名方法都不许在这里再开一个家"。今天 `WebQuoteSession` 上只有 `quotes` 与 `minute` 两个
+#:   同名成员真的会被挡住，其余五格是为将来留的（留着的代价是零，去掉的代价见 §21 的读数）。
+#:   它的权威在 :data:`tstdx.runtime.executor.DEDICATED_CAPABILITIES`（从执行体表派生）；catalog
+#:   不能直接 import 它——`runtime/executor.py` 顶层就 import 了本模块，方向反过来是硬环。
+#:   两份名单的一致性由 `tests/architecture/test_catalog_reserved_names.py` 钉住。
+#: * :data:`_NOT_A_QUERY_MEMBER` 是**成员黑名单**——类上真实存在、但不是查询的东西。每一条
+#:   都必须真的命中一个可调用成员，否则它就是一句关于这个类的谎话（判据同上一份文件）。
+_RESERVED_CORE_CAPABILITIES = frozenset(
+    {
+        "quotes",
+        "bars",
+        "snapshot",
+        "minute",
+        "trades",
+        "security_count",
+        "security_list",
+    }
+)
+_NOT_A_QUERY_MEMBER = frozenset({"close"})
+_SKIP_WEB_METHODS = _RESERVED_CORE_CAPABILITIES | _NOT_A_QUERY_MEMBER
 
 
 def _discover_web_bindings() -> list[MigratedCapabilityBinding]:
