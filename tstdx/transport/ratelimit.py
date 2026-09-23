@@ -147,14 +147,16 @@ class TokenBucket:
         requested = _require_positive_number("tokens", tokens)
         blocking_enabled = _require_bool("blocking", blocking)
         wait_timeout = _require_nonnegative_timeout(timeout)
-        if requested > self.burst:
-            # 桶容量永远达不到该请求量；旧实现会在 blocking=True 时死循环。
-            raise ValueError(f"请求 tokens={requested:g} 超过桶容量 burst={self.burst:g}")
 
         deadline = None if wait_timeout is None else time.monotonic() + wait_timeout
         while True:
             with self._lock:
                 self._refill()
+                # 容量守卫必须在锁内、每轮重做：入口处的单次检查读的是锁外的
+                # ``self.burst``，而 ``set_rate`` 会在等待期间收缩它——旧实现因此
+                # 可以把已入站的调用方永久停在这里（requested > burst 再也补不满）。
+                if requested > self.burst:
+                    raise ValueError(f"请求 tokens={requested:g} 超过桶容量 burst={self.burst:g}")
                 if self._tokens >= requested:
                     self._tokens -= requested
                     return True

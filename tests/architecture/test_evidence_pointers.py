@@ -1,7 +1,8 @@
 """证据指针门禁：台账自称的证据规模要现量，收走的树要就地写明。
 
 第 20 轮"删除历史无效文件"这一问，普查量到的第一件事不是"该删哪些"，而是**删不动**：
-本台账按名字引用了 45 棵 ``wt_*`` 工作树（本轮实测 212 处指针），全仓活文档合起来引用 67 棵
+本台账当时按名字引用了 45 棵 ``wt_*`` 工作树（第 20 轮实测 212 处指针；第 21 轮的两遍普查把它
+推到 47 棵 / 216 处，现值以 §2 那句声明为准），全仓活文档合起来引用 67 棵
 （``scratch_v18b20/deletable_trees.log``）——1.77 GB 的本机工作树因此是**证据存储**而不是垃圾，
 它记的是取证现场。
 
@@ -38,23 +39,56 @@ LEDGER = ROOT / "docs" / "REFACTOR_PLAN_V18_RESTRUCTURE.md"
 #: 工作树名。`wt_` 之后允许下划线分段（`wt_v18b16head`、`wt_s40base`）。
 #: 尾部的负向预查是给普查脚本自己的日志名留的：`wt_census.log` 长得像树名，但它是一行
 #: 输出文件而不是取证现场——把它算进"证据规模"等于让判据数错自己的账。
-_TREE = re.compile(r"\bwt_[0-9A-Za-z]+(?:_[0-9A-Za-z]+)*\b(?!\.(?:log|py|md|txt|sh|json|xml))")
+#:
+#: 前缀 `tstdx_` 是第 21 轮补的第二种形状。这一轮起候选树落在**仓库外面**
+#: （`P:/github_public/tstdx_wt_v18b21step`），目录名因此带上 `tstdx_` 前缀；而 `\bwt_` 在
+#: `x_w` 之间不成立，旧正则**一处都数不到它**——台账写满这种指针也不会红，判据 ② 也就永远
+#: 追不到它们。归一化（剥掉前缀）由 `_tree_names` 一处负责，磁盘侧与台账侧走同一条路，
+#: 否则"存在"会被读成"已消失"。
+_TREE = re.compile(
+    r"\b(?:tstdx_)?wt_[0-9A-Za-z]+(?:_[0-9A-Za-z]+)*\b(?!\.(?:log|py|md|txt|sh|json|xml))"
+)
+
+
+def _tree_names(text: str) -> list[str]:
+    """按形状扫出树名，并把仓库外那种 `tstdx_wt_*` 归一化成 `wt_*`。"""
+
+    return [name.removeprefix("tstdx_") for name in _TREE.findall(text)]
+
+
 #: 与 `test_doc_code_consistency._RETIRED_MARKERS` 同族，这里只收指针语境下成立的那几个。
 _RECYCLED_MARKERS = ("已回收", "已删除", "已清理", "已不存在", "本机已无")
 #: 台账 §2 里那句自我声明；两个数字都是判据的账。
 _DECLARATION = re.compile(r"引用\s*(\d+)\s*棵\s*`wt_\*`\s*工作树，共\s*(\d+)\s*处指针")
 
 
-def evidence_trees() -> set[str]:
-    """本机现存的证据树（`wt_*` 目录）。"""
+def _trees_under(root: Path) -> set[str]:
+    """从 ``root`` 这棵树的位置看：本机现存的证据树叫什么。
 
-    return {path.name for path in ROOT.glob("wt_*") if path.is_dir()}
+    仓库内是 ``wt_*``，仓库外是 ``tstdx_wt_*``。仓库外那一支必须排掉**正在量的这棵树自己**：
+    候选工作树就躺在证据目录的旁边，把它算成"本机持有证据"会让跳过条件失效——判据 ② 于是
+    对着一个只有自己的磁盘，把 47 棵已回收的树全报成违约。量尺不能是自己的证据。
+    """
+
+    inside = {path.name for path in root.glob("wt_*") if path.is_dir()}
+    outside = {
+        path.name.removeprefix("tstdx_")
+        for path in root.parent.glob("tstdx_wt_*")
+        if path.is_dir() and path.resolve() != root.resolve()
+    }
+    return inside | outside
+
+
+def evidence_trees() -> set[str]:
+    """本机现存的证据树（仓库内的 `wt_*`，与仓库外的 `tstdx_wt_*`）。"""
+
+    return _trees_under(ROOT)
 
 
 def citation_counts(text: str) -> tuple[int, int]:
     """现扫台账全文： ``(被引用的树数, 指针出现次数)``。"""
 
-    names = _TREE.findall(text)
+    names = _tree_names(text)
     return len(set(names)), len(names)
 
 
@@ -62,7 +96,7 @@ def pointer_blocks(text: str) -> list[tuple[str, list[str]]]:
     """``(逻辑块, 块内树名)``——只含带指针的块；块粒度与斜杠死路径判据同源。"""
 
     return [
-        (block, sorted(set(_TREE.findall(block))))
+        (block, sorted(set(_tree_names(block))))
         for block in logical_blocks(text)
         if _TREE.search(block)
     ]
@@ -122,8 +156,31 @@ def test_the_pointer_ruler_is_not_blind(ledger: str) -> None:
     trees = {tree for _block, names in blocks for tree in names}
     assert len(blocks) >= 60, f"台账里只读出 {len(blocks)} 个含指针的块"
     assert len(trees) >= 30, f"台账里只认得 {len(trees)} 棵树名，指针的形状变了"
+    #: 两种命名形状都得认得：仓库内 `wt_*` 与仓库外 `tstdx_wt_*`（第 21 轮起的候选树）。
+    #: 这一条不看台账——台账此刻完全可以只写一种形状，而尺子对另一种已经失明。
+    both = _tree_names("wt_v18b99inside 与 tstdx_wt_v18b99outside")
+    assert both == ["wt_v18b99inside", "wt_v18b99outside"], f"前缀归一化失效：{both}"
     trees_on_disk = evidence_trees()
     assert trees_on_disk or _no_trees, "本判据的跳过条件自身失效：磁盘上有树却没被扫到"
+
+
+def test_the_measuring_tree_is_not_its_own_evidence(tmp_path: Path) -> None:
+    """正控：仓库外那条扫描支路不能把"正在量的这棵树"算成证据。
+
+    第 21 轮补前缀时踩到的那一格：候选树 `tstdx_wt_*` 与证据目录同级，扫法不改就会在
+    候选树里数出"本机持有 1 棵"，跳过条件从此不再成立，判据 ② 把 47 棵已回收的树全报成违约。
+    """
+
+    measuring = tmp_path / "tstdx_wt_measuring"
+    (tmp_path / "tstdx_wt_evidence").mkdir()
+    measuring.mkdir()
+    (measuring / "wt_child").mkdir()
+    #: 断言是集合等式，所以"排掉自己"退化成"仓库外那一支永远为空"也会在这里红。
+    assert _trees_under(measuring) == {"wt_evidence", "wt_child"}, _trees_under(measuring)
+    #: 只有一棵孤立的候选树时，跳过条件必须仍然成立（全新克隆/CI 就是这个形状）。
+    lone = tmp_path / "lone" / "tstdx_wt_only"
+    lone.mkdir(parents=True)
+    assert _trees_under(lone) == set(), "候选树把自己当成了证据，跳过条件会被它顶穿"
 
 
 def test_planted_defects_each_get_caught(ledger: str) -> None:

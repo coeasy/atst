@@ -120,9 +120,15 @@
 | G19 | **并行会话的台账里另有 16 处指向已消失工作树的指针，且一处是命名模板而非树**（第 20 轮登记，本会话不清偿）：现扫三本活台账后，16 棵已不存在于本机的树名全部落在 `docs/REFACTOR_PLAN_V17_CLOSURE.md` 里，另有 `docs/REFACTOR_PLAN_V18_REVIEW.md` 的一处 `wt_` 形状串其实是**命名模板**（按「树名是否存在」判它会误报） | 本轮实测：`scratch_v18b20/pointer_census2.py` 的现扫（逐棵树核对磁盘是否存在；本会话台账 0 处违约、上述两本 16+1 处） | P3（他人台账的口径账）→ **开放**：按「不改他人台账、不替他人裁决 G/F 账」的纪律留给其所有者；`test_evidence_pointers.py` 的判据对象因此限本会话台账一份，这个边界写在判据的文件 docstring 里 |
 | G20 | **台账自己写下了没发生过的门禁读数**（第 20 轮登记并清偿）：§28 第 19 轮那张候选树读数表把 `ruff check .` 与 `ruff format --check .` 两格写成 `RC=0 / RC=0`，正文再补一句「12 道门禁 RC 全 0」——而它引用的**同一份日志**第 86/93 行就是两格 `rc=1`（5 处 `I001`/`SIM300` 加 2 个待格式化文件，全在第 19 轮新写的两个判据文件里），末尾重跑摘要第 1348/1350 行同样 `rc=1`：一次都没绿过。这与 G14/G15 同族，只是这次长在台账自己身上——一张没人能对账的读数表，和一条把本机现场写进断言的门禁，递给读者的都是假的「已经核过」 | 第 20 轮把同一套门禁跑在候选树上时那两格当场 `rc=1`；`--fix` 加 `ruff format` 后就地复跑绿：同范围 `All checks passed!` 与 `458 files already formatted`，`.` 范围 `461 files already formatted`。**改前两格在** `scratch_v18b20/gates_round20.log` **第 82/87 行，改后两格出自本轮末在候选树的单独复跑、没有回写进那份 runner 日志**——引用时得分清是哪一次。随后逐格回读第 19 轮日志：其余十格读数与日志逐字相同，只有这两格是抄印象抄出来的 | P1（读者照死口径行动的那类，且是本会话自己的账）→ **已清偿（第 20 轮）**：§28 那一格与「12 道」那句按日志就地校正，原误读法保留在括号里可追溯；措辞纪律补一条——**读数表每一格逐字抄自本轮那份日志的 `rc=` 行，抄不到就不写**。这类缺陷**不可门禁化**：仓库里的判据读不到仓外的 scratch 日志，能钉的只有写表的那只手 |
 
-> **证据尺账（第 20 轮现扫，由 `tests/architecture/test_evidence_pointers.py` 逐格对账）**：
-> 本台账按名字引用 45 棵 `wt_*` 工作树，共 212 处指针；磁盘上现存的 48
-> 棵 `wt_*` 合计 1.58 GiB。这两个数字不是统计兴趣：它们决定"哪些树删得掉"（判据见 G18），
+| G21 | **「不存在死循环」这一格量到一处可达的永久停等，而且它形状完全合格**（第 21 轮登记并清偿）：:meth:`tstdx.transport.ratelimit.TokenBucket.acquire` 的容量守卫（`requested > burst` 就报错）写在 `while True` **之前**，读的还是**锁外**的一次性快照；:meth:`TokenBucket.set_rate` 却会在等待期间把 `burst` 收缩到 `max(1.0, rate)`——已经过了入口检查的调用方从此没人复查它的需求还可不可满足：令牌永远补不到 50，而 `blocking=True, timeout=None` 是本类的缺省语义，于是既不报错也不返回。这个 `while` 有 `return`、形状尺子与人都判它"有守卫"，**唯一能证它的是行为** | 复现两栏对照：`scratch_v18b21/hang_repro21.log`（改前 `burst_after_shrink = 1.0 tokens = 1.0` / `WAITER_RETURNED = False`；改后同一脚本下一轮循环即 `ValueError: 请求 tokens=50 超过桶容量 burst=1`）；判据改前当场红：`scratch_v18b21/mutate21.log` 末两行 `2 failed, 33 passed in 7.14s` + `----- rc=1 : pytest pre-fix (contract + loop gates) -----`；全包普查：`scratch_v18b21/census21.log` [1]（50 条 `while`：escape 30 / progress 12 / stop-flag 4 / trampoline 2 / 命名豁免 2，**未归类 0**）；可达性口径：包内 5 处限流调用点（`tstdx/transport/pool.py:568,749,874`、`tstdx/transport/async_.py:711,713`）全部只取 1 枚令牌、`burst` 有 1.0 下限，所以线上要 `tokens > 1` 才落得到——本轮**没有**在线上观察到停等，被抓的是导出符号 `TokenBucket` 自己的阻塞契约 | P1（限流器把调用方挂死＝主链上的断链）→ **已清偿（第 21 轮）**：守卫移进循环、锁内每轮重做（`tstdx/transport/ratelimit.py:152-159`）；行为判据 1 项 + 形状判据 1 项 + 复现测试 1 项，另把"每个 `while` 都要当场说得出自己凭什么停"收成 `tests/architecture/test_loop_termination_gates.py`（5 项，豁免表双向核对） |
+| G22 | **结果侧那份手抄的 wire 键清单没有对账人**（第 21 轮登记，本轮建判据、不改出口形状）：`tstdx/integration/serialization.py::_query_result` 逐字段手抄（`meta` 6 格 + 嵌套 `provenance` 5 格 + `warnings`）。请求侧早在 F-47 收成"每一格要么被读走、要么当场被拒"，结果侧却只有读取点扫描把守——它管"有字段没人读"，管不到"有人读的字段在三面出口被丢掉"。后果不对等：读点缺一个，调用方只是拿不到；wire 少一格，调用方**不知道自己少拿了** | 判据：`tests/architecture/test_wire_field_completeness.py`（8 项：`ResultMeta`/`Provenance`/`ResultWarning` 三张 dataclass 逐字段对账、身份三格的去重裁决、4 条正控——删 `fingerprint`/`kind`/`message` 各一次 + 凭空多一格 `invented_field`）；被否决的改法实测过：把出口换成 `jsonable(meta)`（`asdict` 整张摊平）后 `scratch_v18b21/g22_asdict_experiment.log` 第 95/96 行 `2 failed, 38 passed in 2.42s` + `----- rc=1 : pytest with asdict-flattened exit -----`——全仓唯一的读取点尺子 `tests/support/field_readers.py` 按**字段名**找人读它，摊平后 `Provenance` 掉出 4 格、`ResultMeta` 2 格"无人读"；复原后同文件第 101/102 行回到 `40 passed` + `rc=0` | P2（对外可见性，G7/F-47 同族）→ **判据已建（第 21 轮）**：清单从此钉在 `dataclasses.fields()` 上，加字段不接出口即红；本轮 wire 一字未改，所以这一格对外的答案与第 20 轮相同 |
+| G23 | **同一个 `1.1.0` 版本号对应两份不同的产物，发布说明只钉了其中一份**（第 21 轮登记）：`docs/releases/v1.1.0.md:82-85` 写明 wheel 747 287 字节 / `sha256:905e5a77…`、sdist 1 572 632 字节 / `sha256:58452fce…`，并说这两份"只在本地构建目录里"。本轮把 tag `v1.1.0`（`ef3b97e`）单独开成一棵树、用 `--dist-out` 指到 scratch 重构建，两格字节数与 sha256 **逐字复现**——构建是确定性的，发布说明那格声称站得住。站不住的是本地：`dist/tstdx-1.1.0-py3-none-any.whl` 现在是 751 907 字节 / `sha256:f809b43a…`，即第 19 轮那次没带 `--dist-out` 的重构建**覆盖**了发布说明所指的那一份。同目录另有 `tstdx-1.4.0-*`（2026-09-07）：那是 `cf74b31 release: publish v1.0.0` 把版本线从 1.4.0 收回 1.0.0 **之前**的编号，无 tag、从未发布，而 §29 上一版把它写成"第 19 轮构建、是发布动作的输入"——本轮就地改正 | 取证：`scratch_v18b21/artifact_chain21.log`（四行 `bytes=`/`sha256=` 逐字，加 `ls -l --time-style=long-iso dist/` 的六个时间戳）；`scratch_v18b21/dist_tag/`（tag 树重构建产物，即复现那两格哈希的来源，树已回收）；`scratch_v18b21/build_final21.log`（候选树最终构建 + 干净 venv 安装冒烟，末两行 `sha256: 6edc376b…`/`76db9f2b…`，`BUILD_RC=0`）——**同一个 `1.1.0` 于是有第三份产物**，三份里只有 tag 那一份与发布说明对得上 | P2（产物身份＝"读者照哪一份校验"的口径账，G9 同族）→ **量清并就地改正台账（第 21 轮）**：此后凡重构建一律 `--dist-out` 指到 scratch，不覆盖已记录的产物。这一类**不可门禁化**（同 G20 的道理：判据跑在仓库里，产物在仓库外）。同轮第二次构建把"确定性"的量词逼出来了：**wheel 逐字相同，sdist 却换哈希**——sdist 里 `tests/` 有 1914 个条目、`tstdx/` 只有 191 个，所以任何只改测试的提交都会让发布说明的 sdist 那一格过期（现扫见 §30 第四节）。版本线要不要往前走（HEAD 上的 V18 改动——含本轮 G21 的限流修复——**不在 `v1.1.0` 里**）是发布决定，本会话不动 tag、不点发布 |
+| G24 | **证据尺子自己被补宽的那一刀，同时制造了假绿与假红**（第 21 轮登记并清偿）：这件缺陷有两半。前半在第 21 轮之前就在——`tests/architecture/test_evidence_pointers.py` 的树名正则只认仓库内的 `wt_*` 形状，而本轮起候选工作树落在仓库**外面**、目录名带 `tstdx_` 前缀，旧正则对这种形状一处都数不到（`\bwt_` 在 `x_w` 之间不成立），台账写满这类指针也不会红。后半是补前缀时新增的：`evidence_trees()` 加上仓外扫描之后，**在候选树里跑判据会把正在量的那棵树数成"本机持有证据"**，于是"磁盘上一棵证据树都没有就跳过"的那个条件不再成立——一台只有候选树自己的机器，被当成持有证据的机器，47 棵已回收的树当场报成违约。假绿与假红出自同一次修改，而且只有把同一套门禁搬到候选树上重跑才露得出来 | 前半的现场是本轮那次红之前的所有跑动（无法回溯引用，只能指出正则那一行当时不含前缀支路）；后半当场红：`scratch_v18b21/gates_round21b.log` 第 1160/1161 行 `1 failed, 485 passed in 51.44s` + `--- rc=1 : architecture ---`，唯一红格正是 `test_pointers_at_recycled_trees_say_so`，其正文里"已不在磁盘上"那行重复 **187** 次。修法的正控：`scratch_v18b21/g21b_selfexcl_mutation.log` 第 239/240 行——把"排掉 ROOT 自身"那一行删掉即 `2 failed, 3 passed in 0.28s` + `--- rc=1 : pre-fix ---`，复原后第 256/257 行回到 `47 passed, 1 skipped in 2.01s` + `--- rc=0 : after restore ---`；修后全量：`scratch_v18b21/gates_round21c.log` 第 967/968 行 `486 passed, 1 skipped in 50.38s` / `rc=0`（+1 正是新加的那条正控）。同一份日志第 235/236 行还顺手量出台账抄错了一格：`payload clones` 那行是 `[INFO]` 而不是 `WARN`，§30 上一版把它写成了"两处既有 WARN"——G20 那一族的第二次现身，就地改正 | P2（判据自身的账：假红会把 47 棵"已登记回收"的树重新变成待办，假绿让新形状指针无限累积）→ **已清偿（第 21 轮）**：`_trees_under()` 把"正在量的这棵树"从磁盘清单里排掉，并加集合等式正控 `test_the_measuring_tree_is_not_its_own_evidence`（退化成"仓外那一支永远为空"也会红）。口径教训一条：**扩大任何扫描范围，必须同时复查以该范围为对象的跳过/豁免条件**——一条判据的"没有对象可量"和"对象全体违约"读的是同一份清单，两者互换比假绿更醒目，但同样是错 |
+
+> **证据尺账（第 21 轮现扫，由 `tests/architecture/test_evidence_pointers.py` 逐格对账）**：
+> 本台账按名字引用 47 棵 `wt_*` 工作树，共 216 处指针。磁盘上现存 49 棵：仓内 48 棵合计
+> 1.58 GiB（`du -sk` 实测 1654373 KiB），仓外本轮候选树 1 棵 37.8 MiB——它不在仓内，
+> 所以第 21 轮之前这把尺子一直扫不到它，两半的账都登记在 G24。这两个数字不是统计兴趣：它们决定"哪些树删得掉"（判据见 G18），
 > 也决定下一次同类普查的起点。改动指针而不改这两格，判据当场红。
 
 **结论口径建议统一成这句**（写进 README 与 F-37 裁决记录，避免每轮重新解释）：> 链是通的，声明与执行是闭合的；G1/G5 是"实现了但选择不给数/不给类型"的登记账，
@@ -183,6 +189,17 @@
 > 而它自己引用的那份日志里那两格从头到尾是 `rc=1`；本轮跑同一套门禁时当场撞红，改完回读才对上。
 > 这一类没法用判据钉（仓内读不到仓外的日志），能钉的只有写表的手：**读数每一格逐字抄自本轮那份日志的
 > `rc=` 行，抄不到就不写**。
+> 一句话里的账不变：线上仍在给错数的还是只有 G3 那一格。
+
+**第 21 轮之后的同一句话（只补三格，其余不变）**：
+> G21/G22 是「至少检查 3 遍」这一口令量出来的两格，都不属于"给错数"那一列：G21 是**限流器可以把
+> 调用方永久挂住**的行为缺陷（本轮改实现，并用改前当场红的复现兜住），G22 是**结果侧 wire 出口
+> 没人对账**的口径缺陷（本轮只建判据，三面出口一字未改）。同一遍普查还补上证据尺子自己的两个
+> 瞎点：① 第 21 轮起候选树落在仓库外面（目录名带 `tstdx_` 前缀），旧正则对这种形状**一处都数不到**，
+> 台账写满这类指针也不会红；② 但把前缀补上之后，这把尺子在候选树里**把正在量的那棵树数成了证据**，
+> 于是"本机一棵树都没有"的跳过条件不再成立，47 棵已回收的树被一次性报成 187 行违约——**假绿与假红
+> 出自同一次修改**，登记为 G24，当场清偿。G23 是这一轮唯一"量清但不归代码管"的一格：同一个 `1.1.0`
+> 底下现在躺着三份不同哈希的产物，只有 tag 那一份与发布说明对得上，关掉它要的是发布决定。
 > 一句话里的账不变：线上仍在给错数的还是只有 G3 那一格。
 
 
@@ -3071,6 +3088,10 @@ MSYS 缺 tzdata，`TZ=Asia/Shanghai` 未生效，按日志原样引用；折算�
 同轮还清掉了两处**本会话自己**留下的东西：重复的 wheel 副本 `wt_v_v18b19step`（751907 字节，
 与 `dist/` 里那份同内容，已删除）与两棵失效注册，`git worktree list` 因此从 **59 → 57**。`dist/` 里
 `1.4.0` 的 wheel+sdist 保留——第 19 轮构建、冒烟过，是发布动作的输入，不是历史无效文件。
+**（第 21 轮就地改正：那半句是错的。`ls -l --time-style=long-iso dist/` 现量：`1.4.0` 那一对是
+2026-09-07 22:55/22:56，早于 `cf74b31 release: publish v1.0.0` 把版本线从 1.4.0 收回 1.0.0，
+不是第 19 轮的产物；第 19 轮构建的是 `1.1.0` 那一对（2026-09-23 22:01，751 907 / 1 615 253 字节），
+而它把 `docs/releases/v1.1.0.md:82-85` 钉了 sha256 的那一份**覆盖**掉了。账登记为 G23。）**
 
 **这一节是本轮真正的结论：1.58 GiB 里删得掉 46 MB。** 如果按字面执行"删除历史无效文件"，
 造出来的正是第 17/18 轮开始让死指针赔钱的那类失真。
@@ -3182,3 +3203,206 @@ MSYS 缺 tzdata，`TZ=Asia/Shanghai` 未生效，按日志原样引用；折算�
 * 仍开放的账不变：G1、G3、G5、G9 四格，加 G18 的剩余部分与 G19（他人台账）。
 * 本节上一版此处写的是「未提交、未推送」，`d733e2d` 落地的那一刻它就变成假话了——按 G17 的
   同一口径改成现时事实，措辞见 §29 第五节末条。
+
+---
+
+## 30. 执行记录（续）
+
+### 第 21 轮｜「至少检查 3 遍」量出四件事：一处可达的永久停等、一份没人对账的 wire 清单、同一个版本号下三份不同哈希的产物、一把量尺把正在量的那棵树数成了证据（G21/G24 清偿，G22/G23 登记）
+
+用户口令原文是「继续收敛修复，继续检查还有哪些逻辑存在潜在问题，主体流程全部联通，核心链路不存在断链，
+逻辑连贯不存在孤儿逻辑，不存在死循环，前后端全部贯通。至少检查 3 遍，必须修复全部问题，达到发布条件」。
+本轮按 **死循环 / 主链连通与孤儿 / 前后端贯通** 各跑一遍，再加一遍**发布条件**——口令最后一句要的是
+"可发布"，而可发布的判据不在测试条数里，在产物身份上。授权口径：**全部离线**，本轮没有打任何线上探针；
+构建与安装冒烟是本地动作，读数单列在第四节。
+
+#### 一、第 1 遍｜不存在死循环：50 条 `while` 全部要当场说出自己凭什么停
+
+人肉读循环这一遍不做——它数不过 50 条，也记不住哪条没守卫。做法是把全包 `tstdx/` 的 `while`
+现扫出来按**形状**归类（`tests/architecture/test_loop_termination_gates.py`，AST，5 项判据）：
+
+| 形状 | 凭什么停 | 本轮计数 |
+|---|---|---|
+| `escape` | 循环体内有 `break`/`return`/`raise`，且**不穿过更内层**的 `for`/`while`——内层循环里的 `break` 属于内层，拿它给外层作证是假绿 | 30 |
+| `progress` | 循环条件读到的名字/属性在本循环体内被重新赋值（条件有人拧） | 12 |
+| `stop-flag` | 条件是 `not flag` / `not flag.is_set()` / `not flag.wait(超时)`，且该 flag 在本文件里被赋值过或被 `.set()`/`.clear()` 动过 | 4 |
+| `trampoline` | 外层是 `try/except StopIteration` 的生成器驱动循环（`gen.send` 回来的值喂下一轮，耗尽即 `StopIteration`） | 2 |
+| 命名豁免 | 归不进四类、但写在豁免表里并附终止论证（`tstdx/transport/async_.py` 的 `_acquire_rate` 与 `_await_cleanup_before_cancellation`） | 2 |
+| **未归类** | —— | **0** |
+
+分母与逐格名单在 `scratch_v18b21/census21.log` 第一节；另有 `while True` 字面量 9 处
+（`grep -rn "while True" --include=*.py tstdx/` 现量，最集中的是 `tstdx/codec/primitive.py` 3 处），
+都落进上面五类里。豁免表是**双向**核对的：表里多一条（对象已不存在）与循环外漏一条都当场红。
+
+**这一遍真正抓到的一格，形状完全合格**：:meth:`tstdx.transport.ratelimit.TokenBucket.acquire` 的
+`while True` 里有 `return`，无论人读还是形状尺子都判它"有守卫"。问题在守卫的**位置**——容量守卫
+（`requested > burst` 就报错）写在循环**之前**，读的是**锁外**的一次性快照，而
+:meth:`TokenBucket.set_rate` 会在等待期间把 `burst` 收缩到 `max(1.0, rate)`。于是已经通过入口检查的
+调用方再没人复查自己的需求还可不可满足：`acquire(50)` 碰上 `set_rate(1.0)`，令牌最多补到 1，
+而 `blocking=True, timeout=None` 恰是本类缺省语义——既不报错也不返回。两线程复现，逐字：
+
+```
+=== [pre-fix] tree=tstdx_wt_v18b21mut (ratelimit.py @ HEAD 582f5e9) ===
+burst_after_shrink = 1.0 tokens = 1.0
+WAITER_RETURNED = False
+=== [fixed] tree=tstdx_wt_v18b21step ===
+  File "P:\github_public\tstdx_wt_v18b21step\tstdx\transport\ratelimit.py", line 159, in acquire
+    raise ValueError(f"请求 tokens={requested:g} 超过桶容量 burst={self.burst:g}")
+ValueError: 请求 tokens=50 超过桶容量 burst=1
+```
+（`scratch_v18b21/hang_repro21.log`；改前那棵树是把 `tstdx/transport/ratelimit.py` 换回 HEAD 版本、
+其余文件不动，取证后**已回收**，留存锚 `582f5e9`。）
+
+修法是把守卫移进循环、锁内每轮重做（`tstdx/transport/ratelimit.py:152-159`），并加两重兜底：
+行为判据 `tests/transport/test_ratelimit_contract.py::test_capacity_shrink_cannot_park_a_waiter_forever`
+（真起一个等待线程、`entered` 事件证明它已进过循环，再收缩容量），与形状判据
+`test_bucket_capacity_guard_lives_inside_the_wait_loop`（AST：守卫必须落在那个唯一的 `while` 里，
+且**不得**同时出现在循环之前——否则"移进来"会变成"再抄一份"）。改前红：
+`scratch_v18b21/mutate21.log` 末两行 `2 failed, 33 passed in 7.14s` 与
+`----- rc=1 : pytest pre-fix (contract + loop gates) -----`。
+
+**这一格档案层早就登记过，登记的修法恰恰是没用的那一半**：`docs/archive/plans/INDUSTRIAL_OPTIMIZATION_PLAN.md:52`
+的 C7 行把缺陷写成"`TokenBucket` `tokens>burst` 同样永等（当前调用点未触发，公共 API 面）"，处置列给的是
+"deadline 兜底；**入口校验** `tokens<=burst`；`rate≤0` 显式报错"。本轮实测：`rate≤0` 那格确实已经关掉了
+（`__init__`/`set_rate` 都过 `_require_positive_number`，`tstdx/transport/ratelimit.py:121,178`），入口校验也确实
+照着档案写了——但**入口校验在会收缩的容量面前不构成守卫**，永等原样保留。档案层归档而不删的用处就在这里：
+它给出的是同一问题的第二次现场，而不是"已经修过"的凭据。
+
+**可达性要说满，不能借复现夸大**：包内五处限流调用点（`tstdx/transport/pool.py:568,749,874`、
+`tstdx/transport/async_.py:711,713`）全部只取 1 枚令牌，而 `burst` 有 `max(1.0, rate)` 下限——
+这一格要 `tokens > 1` 才落得到 shipped 路径，本轮**没有**在任何线上路径观察到停等。被抓的是
+`TokenBucket` 这个**导出符号**（`tstdx/transport/__init__.py:67`，`__all__` 在册）自己的阻塞契约。
+同名不同实现的另一把桶（`tstdx/web/_base_http.py:514`）不受影响：它的阻塞路径受
+`DEFAULT_ACQUIRE_TIMEOUT` 约束，超时由 `RateLimiter` 抛 `WebRateLimited`（带可重试 advice）。
+
+#### 二、第 2 遍｜主链连通、无孤儿：四张分母不同的账本，先把"差在哪一个对象"说清
+
+| 账本 | 现量 | 出处 |
+|---|---|---|
+| 命令面 | `CMD` 常量 85 条，**库内零引用 0 条**；有专属解析器 61 座，没有的 24/85（走 L2 通用派发或 L3 原字节，ADR-003 的分层，不是断链） | `census21.log` [2] |
+| 模块面（可达性口径） | `模块总数: 190  可达: 175  白名单豁免: 15`，`无未登记孤儿 ✓` | `gates_round21.log` |
+| 模块面（可导入口径） | `walk_packages` 出 189 个模块名，**导入失败 0** | `census21.log` [3] |
+| 导出面 | `__all__` 里 1310 个名字全部指得到对象，死导出 0 | `census21.log` [3] |
+| 版本面 | `tstdx.__version__ = 1.1.0`，与 `pyproject.toml:7` 一致 | `census21.log` [4] |
+
+189 与 190 不是矛盾，本轮专门对账（`scratch_v18b21/module_denominators.log`）：差的恰好是 `tstdx`
+**自己**——`walk_packages` 只产子模块名，文件口径把包根算一条。两个分母各自成立，台账不把它们
+硬抹平成同一个数（第 17 轮那条"按名记账把同名不同定义混成一格"的教训反过来用：分母不同就要写两次）。
+
+#### 三、第 3 遍｜前后端贯通：请求侧早已 fail-closed，结果侧那份手抄清单第一次有对账人（G22）
+
+入参那一侧第 3/4/5 轮就收成了"每一格要么被读走、要么当场被拒"（F-47 的 `wire_fields.py`）。
+这一遍问反方向：**执行体交回来的每一格，三面出口是否都带上了**。答案是一份没人对账的手抄清单
+（`tstdx/integration/serialization.py::_query_result` 逐字段列 `meta` 6 格 + 嵌套 `provenance` 5 格
++ `warnings`）。现有的读取点扫描管不到它：那把尺子管"有字段没人读"，不管"有人读的字段在出口被丢掉"。
+两者后果不对等——读点缺一个，调用方只是拿不到；wire 少一格，调用方**不知道自己少拿了**。
+
+先试派生：把 `_query_result` 换成 `jsonable(meta)`（`asdict` 整张摊平）。实测否决——
+`scratch_v18b21/g22_asdict_experiment.log` 第 95/96 行 `2 failed, 38 passed in 2.42s` 与
+`----- rc=1 : pytest with asdict-flattened exit -----`：读取点尺子按**字段名**找人读它，摊平之后
+`Provenance` 掉出 4 格（`cache_tier`/`fallback`/`observed_at_ns`/`requested_provider`）、
+`ResultMeta` 2 格（`fingerprint`/`provider`）"无人读"。同一份实验第 101/102 行清单复原后回到
+`40 passed` + `rc=0`。于是本轮**不改出口形状**，改的是"漏一格要当场红"：
+`tests/architecture/test_wire_field_completeness.py`（8 项）把清单钉在 `dataclasses.fields()` 上。
+允许缺席的只有身份三格（`provider`/`channel`/`capability`：值已在 `meta` 一层给出，且
+`ResultMeta.from_plan` 在构造时就断言两侧逐字相等——这是裁决不是漏抄）；表里没有的键多出来也算违约。
+4 条正控各造一次失效（删 `fingerprint`／删 `kind`／删 `message`／凭空加 `invented_field`）。
+
+#### 四、发布条件｜同一个 `1.1.0` 底下现在有三份产物（G23）
+
+「达到发布条件」要的不是第 N 道绿门禁，是**装得上、且装到的就是被测过的那一份**。本轮把产物链拉出来
+逐格对哈希（`scratch_v18b21/artifact_chain21.log`、`build_final21.log`）：
+
+| 来源 | wheel | 与发布说明（`docs/releases/v1.1.0.md:82-85`）对得上吗 |
+|---|---|---|
+| tag `v1.1.0`（`ef3b97e`）本轮重构建，`--dist-out` 指到 scratch | `747287` 字节 / `sha256=905e5a773be5b1709eca4b1ebec8ad8d972d77ab35a0361faa4f6b47f17fc1f7` | **逐字相同**（构建是确定性的，这一格声称站得住） |
+| `dist/` 里现存那一份（第 19 轮 22:01 重构建，未带 `--dist-out`） | `751907` 字节 / `sha256=f809b43a41661ad896f32fd1ac0afdc7ea4af91d4944b25e870f00647d8562ba` | 对不上——它**覆盖**了上一行那份 |
+| 本轮候选树（含 G21 修复）最终构建 | `734.6 KB` / `sha256=6edc376b96bc72b977d1aed3bc7eb459eb38243d74217982b9afb8407106b929` | 第三份内容、同一个版本号 |
+| **定稿后**同树再构建一次（`build_ship21.log`，第 4 遍收口） | wheel `752182` 字节 / `sha256=6edc376b…`——与上一行**逐字相同**；sdist `1634879` 字节 / `sha256=ea26ed5c…`，而更早那次是 `1633449` 字节 / `sha256=76db9f2b…` | 第四格：wheel 没动，sdist 差 1430 字节 |
+
+**这一格把"构建是确定性的"那句的量词逼出来了**（同一棵树、两次跑动、`--dist-out` 全指 scratch）：
+两次 wheel 的 sha256 完全相同，sdist 却换了一个哈希。`tarfile` 现扫两份的条目表**逐字相同**（2188 个
+条目，差在那 1430 字节的内容里），而条目构成是 `tests 1914 / tstdx 191 / PROTOCOL_SPEC 69 / docs 7`——
+**sdist 打的测试文件比运行文件多一个数量级**，两次构建之间改的恰恰只有 `tests/`（G24 的判据文件）。
+所以"确定性"必须说清楚是哪一侧：wheel 只跟 `tstdx/` 走，sdist 跟测试与文档走；本台账定稿之后 `docs/`
+只进 7 个文件、台账本身不在其中（现扫 `has ledger: False`）。发布说明同时钉了 wheel 与 sdist 两格哈希，
+那么**任何一次只改测试的提交都会让 sdist 那一格过期**——这是 G23 关掉时必须一并裁决的口径
+（要么 sdist 不收 `tests/`，要么发布说明只钉 wheel）。
+
+好消息：发布说明钉的两格哈希（wheel 与 sdist）都能从 tag 逐字节复现。坏消息：**版本号已经不能标识
+内容**——`v1.1.0` 之后 main 上的全部 V18 改动（含本轮 G21 的限流修复）不在那个 tag 里，而 `dist/`
+与本轮构建各自又产出一份叫 `1.1.0` 的不同产物。于是这一格的三件事要分开：点 GitHub Release（触发
+PyPI/Docker，公开且不可逆）是人的决定；要不要往前走一个版本号同样是；本会话做的只有"此后重构建一律
+`--dist-out` 指到 scratch，不再覆盖已记录的产物"，加上把这一格登记成 G23。
+
+同一次还抓到 §29 的一处假声称：上一版把 `dist/` 里 `tstdx-1.4.0-*` 写成"第 19 轮构建、冒烟过、
+是发布动作的输入"。现量时间戳是 **2026-09-07 22:55/22:56**，早于 `cf74b31 release: publish v1.0.0`
+把版本线从 1.4.0 收回 1.0.0 那一次；第 19 轮构建的是 `1.1.0` 那一对（2026-09-23 22:01）。就地改正、
+原句留在括号里可追溯（改法与 G20 同一口径）。
+
+#### 五、本轮新增与修好的尺子（三把，其中一把就地修了两格）
+
+* `tests/architecture/test_loop_termination_gates.py`（5 项）：先证明尺子认得四种形状、再证明它对
+  没形状的循环当场报错（含"内层 `break` 冒充外层守卫"那一格陷阱），最后才拿它数全包；豁免表双向
+  核对；外加容量守卫的位置判据。docstring 明写**它证不到什么**：形状有守卫 ≠ 一定向前推进。
+* `tests/architecture/test_wire_field_completeness.py`（8 项）：三张 dataclass 对 wire 逐格配对，
+  身份三格按裁决豁免，多键也算违约，4 条正控。
+* `tests/architecture/test_evidence_pointers.py` 补第二种树名形状：第 21 轮起候选树落在**仓库外面**
+  （目录名前缀 `tstdx_`），而旧正则要的是 `\bwt_`——`x_w` 之间不构成词边界，这种指针**一处都数不到**，
+  台账写满它也不会红。现在两种形状归一化（剥掉那层前缀）后一起入账，磁盘侧与台账侧走同一条路，
+  并加一条不看台账内容的形状正控（两种形状各造一个临时名字，都要被认出来并归一化）。
+  这是本族第二次因**名字形状**给假绿（第一次是第 17 轮的重名类）。
+* 同一把尺子的第二格：补宽扫描之后，在候选树里跑判据把**正在量的那棵树**数成了"本机持有证据"，
+  跳过条件因此顶穿，47 棵已回收的树被报成 187 行违约。修法是 `_trees_under()` 排除 `ROOT` 自身，
+  并加集合等式正控 `test_the_measuring_tree_is_not_its_own_evidence`——它同时钉住两个退化方向：
+  "排掉自己"排成"仓外那一支永远为空"要红，"只有一棵孤立候选树时应当跳过"被顶穿也要红。
+  登记为 **G24**，教训一句：扩大扫描范围必须连带复查以该范围为对象的**跳过条件**。
+
+#### 六、候选树读数表（逐格抄自本轮那几份日志；抄不到的不写）
+
+日志首行：`gates_ship21.log` 的 `captured: 2026-09-23 22:40:22 GMT`（北京时间 2026-09-24 06:40）。
+候选树 = `tstdx_wt_v18b21step` @ `582f5e9` + 本轮 6 个文件（`ratelimit.py`、`test_ratelimit_contract.py`、
+`test_evidence_pointers.py`、本台账、两份新判据），**且是本节文字全部落完之后重跑的那一套**：
+这张表里 15 道门禁的每一格都出自这一份日志，离线全量那一格出自同树的 `fulltest_v18b21_run6.log`。
+本轮此前还有三次跑动（`gates_round21.log` / `_b` / `_c` 与 `fulltest run2~run5`），读数一律作废——
+`_b` 那次 architecture 是 `rc=1`（红因 = G24），另两次是本节文字尚未定稿时的中间态。
+**这张表本身也是台账文字，改它就会动到读台账的那几格判据**，所以定稿后又单跑一次只对账：
+`gates_ledger21a.log` 第 44~47 行 = `486 passed, 1 skipped in 52.90s`（`rc=0`）+
+`docs link check OK (93 files)`（`rc=0`）。上面那一句引用是台账的最后一处改动，它只加了一行散文、
+不含树名也不构成 CLI 样子；加完之后两棵树的台账再次 `cmp` 相同、这四格判据复跑仍绿（不再抄数，
+因为再抄一次就又动一次台账——这正是 G20 那条纪律说的自指）。
+
+| 门禁 | 读数 |
+|---|---|
+| `ruff check tstdx/ tests/ scripts/` / `ruff format --check` 同范围 | `rc=0 / rc=0`，`All checks passed!` 与 `460 files already formatted` |
+| 同两条跑在 `.` 范围 | `rc=0 / rc=0`，`All checks passed!` / `463 files already formatted` |
+| `mypy tstdx/ --ignore-missing-imports --no-error-summary --warn-unused-ignores` | `rc=0`（该旗标下无输出是预期） |
+| `check_originality --strict tstdx/` | `rc=0`，`Total: 191  Original: 191  License OK: 191  Header OK: 191  Suspicious: 0  External imports: 17` |
+| `golden_audit --gate --require-markets --require-kline-categories 0,4,9 --require-payloads` | `rc=0`，`[GATE] all L1 verified commands have real samples (OK)`；既有两行口径未变（第 235 行 `[WARN] suspect_short real samples (below per-command floor): 0x537 4B<12B x3`、第 236 行 `[INFO] payload clones: 54 byte-identical group(s), 314 extra copy(ies)`）。**这一格本轮抄错过一次**：上一版把 `[INFO]` 那行写成"两处既有 WARN"，按日志改回（G24 的取证段） |
+| `spec_audit --json --strict` | `rc=0`，`"uncovered": []`、`"coverage_pct": 100.0` |
+| `audit_reachability --strict` | `rc=0`，`模块总数: 190  可达: 175  白名单豁免: 15`，`无未登记孤儿 ✓` |
+| `run_benchmark_smoke` / `check_docs_links` | `rc=0 / rc=0`，`benchmark smoke OK: kline, market, vipdoc`、`docs link check OK (93 files)`。这一版的 runner 已显式 `export PYTHONIOENCODING=utf-8`，同节中文（Q4 内存基准那行标题、`JSON 已写入:` 那行路径）在日志里是可读的——上一版那格 GBK 乱码的说明随之作废（G20 那条纪律的配套：**要引中文读数行的脚本必须显式设编码**） |
+| `pytest tests/adversarial` | `rc=0`，`4 passed in 0.16s` |
+| `pytest tests/architecture` | `rc=0`，`486 passed, 1 skipped in 50.43s`（第 20 轮同格是 `472 passed, 1 skipped`，+14 = 本轮两份新判据的 5 + 8，加 G24 的那条正控 1）。跳过的那格仍是 `test_evidence_pointers.py::test_pointers_at_recycled_trees_say_so`——它量的是磁盘上的 `wt_*` 树，候选树根下一棵也没有，而**候选树自己不算证据**（G24 修的就是这一格被顶穿后报出的 187 行假违约），按 G14 的教训**宁跳不假绿** |
+| `pytest tests/transport` | `rc=0`，`374 passed in 22.96s` |
+| `pytest tests/test_bridges.py` | `rc=0`，`24 passed in 0.64s` |
+| 离线全量（带覆盖率） | `3830 passed, 8 skipped, 15 deselected, 23 warnings in 226.88s (0:03:46)`（`fulltest_v18b21_run6.log` 第 524~526 行），`Required test coverage of 77.0% reached. Total coverage: 82.17%`，`PYTEST_RC=0`。`fail_under = 77` 与所有 strict 旗标一律未动。这一格与上面 15 道门禁同树同刻：那次跑动之前本节文字已经定稿，所以台账本身也是被测对象 |
+| 改前红（候选树换回 HEAD 版 `ratelimit.py`，其余不动） | `2 failed, 33 passed in 7.14s`，`----- rc=1 : pytest pre-fix (contract + loop gates) -----` |
+| G24 的当场红（同一套门禁，本轮中间那次跑） | `gates_round21b.log` 第 1160/1161 行 `1 failed, 485 passed in 51.44s` / `--- rc=1 : architecture ---`，唯一红格 `test_pointers_at_recycled_trees_say_so`，正文"已不在磁盘上"重复 187 次；修法正控见 `g21b_selfexcl_mutation.log` 第 239/240 行（删掉排除自身那一行 → `2 failed, 3 passed in 0.28s` / `rc=1`）与第 256/257 行（复原 → `47 passed, 1 skipped in 2.01s` / `rc=0`） |
+| G22 的派生实验 | patch 后 `2 failed, 38 passed in 2.42s` / `----- rc=1 :`；`git checkout -- tstdx/integration/serialization.py` 复原后 `40 passed` / `----- rc=0 : pytest after restore -----` |
+| canonical 构建 + 干净 venv 安装冒烟（候选树，`--dist-out` 指到 scratch，定稿后重跑：`build_ship21.log`） | `BUILD_RC=0`，`[校验] canonical typed distribution ✓ (tstdx-1.1.0-py3-none-any.whl, tstdx-1.1.0.tar.gz, version=1.1.0, runtime_files=191)`，`[冒烟] 通过 ✓`，末两格 `sha256: ea26ed5c…`（sdist，日志印 `1596.6 KB`、`ls` 实测 1634879 字节——那一栏的单位是 KiB）与 `sha256=6edc376b…`（wheel，`734.6 KB` = 752182 字节）。注意这正是要登记 G23 的那一格：**构建与冒烟全绿，也不代表这份 `1.1.0` 就是 tag 上的 `1.1.0`**；而 wheel 与本轮更早那次构建逐字相同、sdist 不同，原因写在第四节 |
+| tag `v1.1.0` 树重构建 | wheel `747287` / `sha256=905e5a77…`、sdist `1572632` / `sha256=58452fce…`，与 `docs/releases/v1.1.0.md:82-85` 逐字相同（该树取证后已回收，锚点 `ef3b97e`） |
+
+#### 七、本轮之后仍然开放的账
+
+* **G21 已清偿**（改实现 + 行为判据 + 形状判据 + 改前当场红的复现）；**G22 判据已建**，wire 一字
+  未改，所以三面给调用方的答案与第 20 轮相同；**G23 登记并量清**，它的关闭要的是**发布决定**
+  （往前走版本号，或按 tag 重构建并把哈希写回发布说明），不是又一轮代码；**G24 已清偿**——
+  这一格是本轮自己造出来的：补宽证据尺子的扫描范围时把候选树数成了本机持有的证据，187 行假违约，
+  改回来只需一行排除 + 一条集合等式正控，但**没有那次候选树重跑就看不见它**。
+* 老账不变：**G1**（三格能力在任何 Provider 上都不可能给数）、**G3**（`0x000F`/`0x0010` 的字节
+  布局——不猜协议字节，等真机 golden）、**G5**（`fund_estimate` 不给数）、**G9**（`pip install tstdx`
+  要的是发布动作本身，那一格只能由人点）、**G18** 的剩余部分与 **G19**（他人台账的指针）。
+* **发布条件的一句话结论**：离线全量与 15 道门禁在候选树上全绿（含构建与安装冒烟），核心链没有断链、
+  没有孤儿、没有形状之外还查不出守卫的循环；线上仍在给错数的还是只有 G3 那一格。剩下的一格不在
+  代码里——`v1.1.0` 这个 tag 不包含 `v1.1.0` 之后的 V18 改动，要发就得先决定版本号（G23、G9）。

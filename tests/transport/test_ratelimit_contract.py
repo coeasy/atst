@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -36,6 +37,47 @@ def test_request_larger_than_burst_fails_instead_of_blocking_forever() -> None:
 
     with pytest.raises(ValueError, match="超过桶容量"):
         bucket.acquire(2.0, blocking=True)
+
+
+def test_capacity_shrink_cannot_park_a_waiter_forever() -> None:
+    """等待期间 ``set_rate`` 收缩容量：已入站的调用方必须报错，不能永久停等。
+
+    第 21 轮实测到的那一格（``scratch_v18b21/hang_repro.py``）：入口守卫读的是**锁外**
+    的一次性快照，所以进了循环的调用方再也没有人复查它的需求是否还可满足——
+    ``burst`` 从 50 收缩到 1 之后，令牌永远补不满 50，``timeout=None`` 就等价于挂死。
+
+    ``entered`` 只在循环内第一次 ``_refill()`` 时置位，因此这个复现一定发生在
+    "入口守卫已经放行"之后——否则旧实现会在守卫处就报错，测试就成了假绿。
+    """
+    bucket = TokenBucket(10.0, burst=50.0)
+    assert bucket.acquire(50, blocking=False) is True  # 抽干令牌
+
+    entered = threading.Event()
+    original_refill = bucket._refill
+
+    def refill_then_signal() -> None:
+        original_refill()
+        entered.set()
+
+    bucket._refill = refill_then_signal  # type: ignore[method-assign]
+
+    outcome: list[object] = []
+
+    def wait_for_tokens() -> None:
+        try:
+            bucket.acquire(50, blocking=True, timeout=None)
+            outcome.append("returned")
+        except BaseException as exc:  # noqa: BLE001 - 原样带回线程判断
+            outcome.append(exc)
+
+    waiter = threading.Thread(target=wait_for_tokens, daemon=True)
+    waiter.start()
+    assert entered.wait(2.0), "等待方没进过取令牌循环，本复现不成立"
+    bucket.set_rate(1.0)  # 容量收缩到 1，50 个令牌再也补不满
+    waiter.join(5.0)
+
+    assert not waiter.is_alive(), "等待方被容量收缩永久停在了循环里"
+    assert isinstance(outcome[0], ValueError)
 
 
 @pytest.mark.parametrize("blocking", [0, 1, "yes", None])
