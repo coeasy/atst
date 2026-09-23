@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -88,6 +89,203 @@ def members_referenced(owner: str, *, skip: str = "") -> tuple[int, set[str]]:
 
     scanned, sites = member_reference_sites(owner, skip=skip)
     return scanned, set(sites)
+
+
+@dataclass(frozen=True)
+class ConstantVocabulary:
+    """「常量类」词表的实测结果。"""
+
+    target: str
+    scanned: int
+    members: dict[str, list[str]]
+    values: dict[str, dict[str, str]]
+    tables: dict[str, list[str]]
+    other: dict[str, list[str]]
+    table_members: dict[str, dict[str, list[str]]]
+    reads: dict[str, set[str]]
+    foreign: dict[str, set[str]]
+    unresolved: dict[str, set[str]]
+
+    def sites(self, cls: str, attr: str) -> set[str]:
+        """解析到本定义的 ``cls.attr`` 读取点所在模块。"""
+
+        return self.reads.get(f"{cls}.{attr}", set())
+
+    def is_member(self, cls: str, attr: str) -> bool:
+        return attr in self.members.get(cls, [])
+
+    def is_table(self, cls: str, attr: str) -> bool:
+        return attr in self.tables.get(cls, [])
+
+    def members_in_tables(self, cls: str) -> dict[str, list[str]]:
+        """本类里"以裸成员名当键/元素"的表：表名 → 用到的成员名。
+
+        类体内 ``CODES = {SH: 1, ...}`` 的键是 ``Name`` 而非 ``Market.SH``，按属性走查看不见；
+        而表一旦被有人查，这些成员就是**按值被行动**的，不能量成孤儿。
+        """
+
+        return self.table_members.get(cls, {})
+
+
+def constant_class_vocabulary(target: str, classes: tuple[str, ...]) -> ConstantVocabulary:
+    """量"常量类"（类体里只有 ``NAME = "value"`` 与 ``TABLE = {...}`` 的那类词表）。
+
+    与 :func:`member_reference_sites` 的**按名**走查不同，本函数先解析导入，再决定一次
+    ``Class.MEMBER`` 命中该记在**哪个定义**头上。理由是本仓真实踩过的那格假绿：
+    ``tstdx/reader/profile.py`` 与 ``tstdx/domain/symbol.py`` **都叫 ``Market``**，按名统计
+    时 ``symbol`` 的 8 处 ``Market.ALL`` 会被记到档案层那同名成员上，把一张零读取点的表量成
+    "有人查"。字段含义：
+
+    * ``scanned``：解析过的 ``tstdx/`` 模块数（防盲分母）
+    * ``members``：类名 → 成员名（按源码顺序）
+    * ``values``：类名 → 成员名 → 取值（只收字符串常量，判据用它核对"按值被行动"）
+    * ``tables``：类名 → 类级表名
+    * ``table_members``：类名 → 表名 → 该表以裸成员名写下的键/元素
+    * ``other``：类名 → 类体里既非常量也非表的赋值（判据要求它为空，否则新增形态静默隐身）
+    * ``reads``：``"类.属性"`` → 命中且**解析到本定义**的模块
+    * ``foreign``：``"类.属性"`` → 命中但解析到**同名别处定义**（正向对照的证据）
+    * ``unresolved``：``"类.属性"`` → 解析不出定义的模块（被局部变量遮蔽等）
+
+    只认 ``from … import X [as Y]`` 这一种绑定形态；``import a.b`` 后写 ``a.b.C.D`` 的形态落进
+    ``unresolved``，而不是静默记给别处或本处。
+    """
+
+    repo_root = REPO_ROOT
+    files = sorted((repo_root / "tstdx").rglob("*.py"))
+    trees = {path: ast.parse(path.read_text(encoding="utf-8")) for path in files}
+    rel_of = {path: path.relative_to(repo_root).as_posix() for path in files}
+
+    defined: dict[str, set[str]] = {}  # 相对路径 → 模块级类名
+    imports: dict[tuple[str, str], str] = {}  # (引用文件, 绑定名) → 被导入模块相对路径
+
+    def package_root() -> Path:
+        return repo_root / "tstdx"
+
+    def module_path(node: ast.ImportFrom, current: Path) -> str | None:
+        """把一条 ``from`` 解析成被导入模块的仓内相对路径（目录取 ``__init__.py``）。"""
+
+        if node.level:
+            base = current.parent
+            for _ in range(node.level - 1):
+                base = base.parent
+            found: Path | None = base if not node.module else base.joinpath(*node.module.split("."))
+        elif node.module == "tstdx" or node.module.startswith("tstdx."):
+            tail = node.module[len("tstdx") :].lstrip(".")
+            found = package_root() if not tail else package_root().joinpath(*tail.split("."))
+        else:
+            return None
+        if found is None:
+            return None
+        if found.is_dir():
+            found = found / "__init__.py"
+        elif found.suffix != ".py":
+            found = found.with_suffix(".py")
+        if not found.exists():
+            return None
+        try:
+            return found.relative_to(repo_root).as_posix()
+        except ValueError:
+            return None
+
+    for path, tree in trees.items():
+        rel = rel_of[path]
+        defined[rel] = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
+        # 函数体内的 import 也算：tstdx/web/fundflow.py 就在函数里 `from ..domain.symbol import Market`，
+        # 只摸模块级会把那处 ``Market.BJ`` 记成"解析不出"而不是"解析到别处"。
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            source = module_path(node, path)
+            if source is None:
+                continue
+            for alias in node.names:
+                if alias.name != "*":
+                    imports[(rel, alias.asname or alias.name)] = source
+
+    def defining_module(rel: str, name: str) -> str | None:
+        """``name`` 在 ``rel`` 里最终定义于哪个模块（跟随再导出链条，遇环返回 None）。"""
+
+        seen: set[str] = set()
+        while rel not in seen:
+            seen.add(rel)
+            if name in defined.get(rel, set()):
+                return rel
+            nxt = imports.get((rel, name))
+            if nxt is None:
+                return None
+            rel = nxt
+        return None
+
+    members: dict[str, list[str]] = {name: [] for name in classes}
+    values: dict[str, dict[str, str]] = {name: {} for name in classes}
+    tables: dict[str, list[str]] = {name: [] for name in classes}
+    other: dict[str, list[str]] = {name: [] for name in classes}
+    table_members: dict[str, dict[str, list[str]]] = {name: {} for name in classes}
+    for node in ast.parse((repo_root / target).read_text(encoding="utf-8")).body:
+        if not isinstance(node, ast.ClassDef) or node.name not in members:
+            continue
+        for stmt in node.body:
+            attr: str | None
+            if isinstance(stmt, ast.Assign):
+                attr = (
+                    stmt.targets[0].id
+                    if len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name)
+                    else None
+                )
+                value: ast.expr | None = stmt.value
+            elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+                attr, value = stmt.target.id, stmt.value
+            else:
+                attr, value = None, None
+            bucket = node.name
+            if attr is None or value is None:
+                continue
+            if isinstance(value, ast.Constant):
+                members[bucket].append(attr)
+                if isinstance(value.value, str):
+                    values[bucket][attr] = value.value
+            elif isinstance(value, (ast.Dict, ast.Tuple, ast.List, ast.Set)):
+                tables[bucket].append(attr)
+                operands = value.keys if isinstance(value, ast.Dict) else value.elts
+                table_members[bucket][attr] = [
+                    item.id for item in operands if isinstance(item, ast.Name)
+                ]
+            else:
+                other[bucket].append(attr)
+
+    reads: dict[str, set[str]] = {}
+    foreign: dict[str, set[str]] = {}
+    unresolved: dict[str, set[str]] = {}
+    for path, tree in trees.items():
+        rel = rel_of[path]
+        for node in ast.walk(tree):
+            if (
+                not isinstance(node, ast.Attribute)
+                or not isinstance(node.value, ast.Name)
+                or node.value.id not in classes
+            ):
+                continue
+            cls = node.value.id
+            key = f"{cls}.{node.attr}"
+            origin = defining_module(rel, cls)
+            if origin == target:
+                reads.setdefault(key, set()).add(rel)
+            elif origin is None:
+                unresolved.setdefault(key, set()).add(rel)
+            else:
+                foreign.setdefault(key, set()).add(f"{rel} → {origin}")
+    return ConstantVocabulary(
+        target=target,
+        scanned=len(files),
+        members=members,
+        values=values,
+        tables=tables,
+        other=other,
+        table_members=table_members,
+        reads=reads,
+        foreign=foreign,
+        unresolved=unresolved,
+    )
 
 
 def member_reference_sites(owner: str, *, skip: str = "") -> tuple[int, dict[str, set[str]]]:

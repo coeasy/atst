@@ -108,6 +108,8 @@
 | G9 | **两份用户文档教用户 `pip install tstdx`，而这个名字在 PyPI 上不存在**（第 14 轮为"发布新版本"取证时量到）：`https://pypi.org/pypi/tstdx/json` 与 `/simple/tstdx/` 都回 404，即名字从未被领取；而 `README.md` 的"安装"第一行与 `docs/quickstart.md:9` 都把 `pip install tstdx` 写成可直接执行的指令。`docs/releases/v1.0.0.md:57` 自己写着产物"在安装矩阵通过并完成 PyPI Trusted Publishing 后"才附加——发布链的这一步从来没走过，读者的安装指令却一直在替它背书 | 本轮实测：`reports/g9_pypi_probe.log`（两个端点的 404 与 JSON 原文逐字、`grep -rn "pip install tstdx" README.md docs/` 的命中清单）；判据：`tests/compatibility/test_release_history_contract.py::test_no_user_doc_presents_an_unpublished_install_path_as_available` | P2（对外可安装性口径；文档侧已按实测改写，真正关闭它要的是发布动作） |
 | G10 | **`DataProfile.timezone` 是一格从未有人拧过的旋钮，而它暗示的换算产品并不做**（第 15 轮 §七 量到、只改了文档那半边；第 16 轮登记并清偿）：档案把 `timezone="Asia/Shanghai"` 当成第 15 个维度登记，全仓 190 个模块里**零读取点**，`docs/FAQ.md` 却拿"档案层有这个字段"作为时区问答的凭据。日线/分钟线交的是交易所本地时间字符串、出口不做换算，于是这个字段唯一的作用是让探测报告看起来像做过时区裁决 | 本轮实测：`tests/support/field_readers.py` 的 AST 扫描（DataProfile 14 字段 / 扫面 190 模块，读取点只落在 4 份真读取者上，见 §25 第一节），`timezone` 不在任何一格的命中字段里；判据：`tests/architecture/test_profile_knob_gates.py::test_profile_timezone_knob_stays_deleted`（含"不许把时区塞进豁免清单蒙过上一条"的反洞正控）；变异 M1 量出装回旋钮即 3 项红 | P2（形状卫生 + 一句文档谎）→ **已清偿（第 16 轮）**：字段删除，`docs/FAQ.md` 的时区问答改写成"规格档案层不带任何时区入参"的实测口径；`from_dict` 按 `__dataclass_fields__` 过滤，旧序列化 dict 带 `timezone` 仍能加载，不留兼容垫 |
 | G11 | **`MarketPreset` 这张表 12 列里只有 3 列有人按它行动，其余 9 列是"预设能解码"的谎**（第 16 轮登记并清偿）：`market_name`/`asset_class`/`typical_categories`/`quote_scale`/`volume_unit`/`price_encoding`/`time_encoding`/`default_period`/`notes` 九列加一座 `data_profile_kwargs()` 桥，把**行情快照**口径的缩放原样填进 K 线解码器的 `price_scale`——两套口径之间没有任何换算（快照对 EX_GOLD/EX_FUTURES 记 1000，日线档案 `future_day` 却记 100，接线即差一个数量级）。生产链路上真正被咨询的只有 `code_prefixes` 与 `market_id` 两列，加 `name` 当报告标识 | 本轮实测：MarketPreset 改前 12 字段、改后 3 字段，读取扫描命中的模块只有 `tstdx/profile/presets.py` 与 `tstdx/profile/detect.py`（第三份 `tstdx/trade/simulator.py` 是外来的 `p.name`，正是读取者白名单要挡的那类假绿）；判据：`test_every_market_preset_field_has_a_reader`（零豁免）+ `test_market_preset_shape_is_pinned` + `test_preset_table_has_no_road_into_the_decoder`；变异 M2/M3/M8 各当场红 | P1（错数来源，与 G3 同族但这一格在档案层）→ **已清偿（第 16 轮）**：表收缩到身份三列、桥整体删除；两条单位口径（ETF/LOF 记「股」、债券记「张」）从被删的 `notes` 迁进模块 docstring，因为它们是读者核对发行文件时真正要用的信息 |
+| G12 | **档案层那七座"枚举常量类"是一整张没人查的第二手词表**（第 17 轮登记并当场清偿）：`tstdx/reader/profile.py` 在 48 个成员、7 张类级表里登记了 12 个市场与 10 个品种，可是符号引擎只认 5 个市场（`parse_symbol(code, market="cffex")` 当场 `SymbolError: 未知市场 'cffex'；可选: ('sh','sz','bj','hk','us')`），探测层也只会产出 `STOCK` 一个品种。更糟的是三张表**与线上口径矛盾或只抄一半**：`Period.CMD_CATEGORY` 把 `quarter` 记成 10，而 `KlineCategory.NAMES[10]` 是 `season`（`season` 自己反倒没登记），它还拿 `"day_alt"` 当键——那根本不是 `Period` 的成员；`Period.FILE_EXT` 与 `Market.DIRS` 各是 `resolve_vipdoc_path` 的一半手抄件（前者只有扩展名、丢了目录名，后者把"市场 token 即目录名"这条又写了一遍） | 本轮实测：`scratch_v18b17/head_shape.log`（改前 48 成员/7 表逐格名单）↔ `scratch_v18b17/census17.log`（改后 34 成员/1 表，190 模块解析式扫描，35 格里"解析不出"全为 0）；判据：`tests/architecture/test_profile_vocabulary_gates.py`（11 项，含"每个成员都要有人读/是有人查的表的键/取值有人按"、"每张表都要有人查"、"docstring 份数由成员数现推"）；变异 M1/M2/M6/M8 各当场红（`scratch_v18b17/mutate17.log`） | P2（形状卫生 + 一处会指错路的表）→ **已清偿（第 17 轮）**：删 14 个成员与 6 张表，只留 `Market.CODES`；每格删除理由写在该类 docstring 里，判据把"复活"变成一次有意识的动作 |
+| G13 | **同一份周期词表在三个地方各自声明、互不派生**（第 17 轮登记，未清偿）：`Period` 的 12 档、`tstdx/client/core.py::_PERIOD_TO_CATEGORY` 的 24 个手写字符串键（含 `d`/`1m`/`daily`/`1hour` 等 `Period` 里没有的别名）、`KlineCategory` 的 12 个协议号，三者之间没有派生关系。后果已经量到一次：`QUARTER`/`YEAR`/`SEASON` 三档在 `tstdx/` 里**零 `Period.X` 读取点**，只有取值字符串被那张手写键表收着——第 12 轮之前的 `CMD_CATEGORY` 就是这种"第四份手抄件"，它一长出来就与线上矛盾（见 G12）。本轮**不接线也不删**：删掉三档等于把"线上年金线确实可查"这句真话抹掉，接线则要动对外 `period` 入参的取值口径 | 本轮实测：`census17.log` 里 `Period.QUARTER/YEAR/SEASON` 三行"本定义读取=0"，而 `_PERIOD_TO_CATEGORY` 的键集实测含 `quarter`/`year`/`season`（判据现量，不靠注释）；判据：`test_g13_period_vocabulary_is_still_declared_three_times`（现场一旦改变就当众红，逼着回来关账）；变异 M5 抽掉线上 `season` 键 → 2 项红 | P2（口径卫生；G12 是它的症状，本轮只清了症状最重的那一格） |：`market_name`/`asset_class`/`typical_categories`/`quote_scale`/`volume_unit`/`price_encoding`/`time_encoding`/`default_period`/`notes` 九列加一座 `data_profile_kwargs()` 桥，把**行情快照**口径的缩放原样填进 K 线解码器的 `price_scale`——两套口径之间没有任何换算（快照对 EX_GOLD/EX_FUTURES 记 1000，日线档案 `future_day` 却记 100，接线即差一个数量级）。生产链路上真正被咨询的只有 `code_prefixes` 与 `market_id` 两列，加 `name` 当报告标识 | 本轮实测：MarketPreset 改前 12 字段、改后 3 字段，读取扫描命中的模块只有 `tstdx/profile/presets.py` 与 `tstdx/profile/detect.py`（第三份 `tstdx/trade/simulator.py` 是外来的 `p.name`，正是读取者白名单要挡的那类假绿）；判据：`test_every_market_preset_field_has_a_reader`（零豁免）+ `test_market_preset_shape_is_pinned` + `test_preset_table_has_no_road_into_the_decoder`；变异 M2/M3/M8 各当场红 | P1（错数来源，与 G3 同族但这一格在档案层）→ **已清偿（第 16 轮）**：表收缩到身份三列、桥整体删除；两条单位口径（ETF/LOF 记「股」、债券记「张」）从被删的 `notes` 迁进模块 docstring，因为它们是读者核对发行文件时真正要用的信息 |
 
 **结论口径建议统一成这句**（写进 README 与 F-37 裁决记录，避免每轮重新解释）：> 链是通的，声明与执行是闭合的；G1/G5 是"实现了但选择不给数/不给类型"的登记账，
 > G2 经第 7 轮更正后是**口径账**（已改判据，无待补契约），
@@ -130,6 +132,15 @@
 > 这种挂在自己身上的读取路径从前扫不到）与新的 `tests/architecture/test_profile_knob_gates.py`。
 > 于是"G3 是唯一一处给了错数的真缺陷"这句要加一个限定才立得住：G11 那座 `preset → price_scale`
 > 的桥是同族的错数来源，只是它在档案层、且本轮已物理删除，所以**线上仍在给错数的只剩 G3 一格**。
+
+**第 17 轮之后的同一句话（只补两格，其余不变）**：
+> G12 本轮登记并当场清偿——档案层那七座词表从 48 成员/7 表收缩到 34 成员/1 表，删掉的 14 个
+> 成员与 6 张表里没有一格有人按它行动，其中 `Period.CMD_CATEGORY` 还会把年金线的 category 指错。
+> 同一次量法顺手把共享尺子升级了：它原先**按名**记账，而本仓有两处同名不同定义的 `Market`
+> （档案层与符号层），于是符号层 `Market.ALL` 的 8 个读取点被记到档案层那张零读取点的表上——
+> **这是本族判据第一次因为重名而给出假绿**，现在尺子先解析导入再记账，并留了一条正控钉住它。
+> G13 是这次清理的量出但未接线的真缺口（周期词表三处声明互不派生），它的现场由判据盯着。
+> 一句话里的账不变：线上仍在给错数的还是只有 G3 那一格。
 
 ---
 
@@ -2537,3 +2548,146 @@ Suspicious: 0 / External imports: 17`、`spec_audit --json --strict` `"total_spe
   下一轮按同一把尺子量过再定。
 - **并行会话的账**：`CHANGELOG.md`、`docs/REFACTOR_PLAN_V17_CLOSURE.md`、`docs/REFACTOR_PLAN_V18_REVIEW.md`
   三份仍是别人的未提交登记，本轮**不 commit 它们**。
+
+---
+
+## 26. 执行记录（续）
+
+### 第 17 轮｜档案层那七座词表第一次上分母：48 个成员里量出 14 个没人按它行动，另把共享尺子的**重名假绿**补掉了（G12 登记并清偿、G13 登记）
+
+本轮是"声明了没人读"这一族的第七次动手，也是第一次量到**判据自己给出的假绿**。
+轴没换：还是"registry/词表里只留有人按它行动的东西"。动手前先量，逐格用
+`scratch_v18b17/census17.log`（解析导入的 AST 扫描，`scanned=190`）与
+`scratch_v18b17/head_shape.log`（HEAD 侧形状）说话，两份都是本轮产物。
+
+#### 一、改前的形状：48 个成员、7 张类级表，其中 6 张表没人查
+
+`head_shape.log` 逐格列着：`Market` 12 成员 + `ALL`/`CODES`/`DIRS` 三张表、
+`AssetClass` 10 成员 + `ALL`、`Period` 12 成员 + `ALL`/`FILE_EXT`/`CMD_CATEGORY`、
+`PriceEncoding` 4、`TimeEncoding` 4、`VolumeUnit` 3、`AmountUnit` 3。合计 **48 成员 / 7 表**。
+改后是 **34 成员 / 1 表**（只剩 `Market.CODES`）——删掉 14 个成员与 6 张表，
+每一格的理由写在该类的 docstring 里，判据负责让"复活"变成一次有意识的动作。
+
+#### 二、`Market` 12→6：六格词表是"档案层登记了、主链解不开"
+
+`CFFEX`/`DCE`/`CZCE`/`INE`/`GFEX`/`FX` 六个成员在 `tstdx/` 里既没有 `Market.X` 读取点，
+取值字符串也没有落点（`"cffex"` 等只出现在自己的声明行）。当场探针打的是符号引擎：
+`parse_symbol(code, market="cffex")` → `SymbolError: 未知市场 'cffex'；可选: ('sh','sz','bj','hk','us')`。
+即这六个不是"暂时无数据"，而是**词表比主链宽**。留下的六格里 `SHFE` 是特殊的一格：
+它在 `Market.CODES` 里**没有**编号（表里只有 `SH/SZ/BJ/HK/US` 五个键），
+只作为 `future_day` 档案的市场身份存在——本轮按实测把这点写进 docstring 而不是删掉它。
+
+`DIRS = {SH: "sh", SZ: "sz", ...}` 是市场 token 的第二份手抄件：目录名恒等于 token 本身，
+真正拼路径的 `resolve_vipdoc_path` 用的是 `sym.market`，全仓零读取点。
+
+#### 三、本轮真正的收获：`Market.ALL` 那 8 个"读取点"全是别人的
+
+第一次按名统计时，`Market.ALL` 得到 8 处命中，看起来"有人查"。逐条解析后 8 处
+**全部**落在 `tstdx/domain/symbol.py` 与 `tstdx/protocol/parsers/_std7709_common.py` 的
+同名类上——本仓有**两处 `class Market`、三处**（含协议层的 `KlineCategory` 邻居）。
+也就是说：G10/G11 用的那把尺子（以及它之前几轮的同类扫描）在**重名**这一格上是会张冠李戴的。
+处理分三步：
+
+1. 尺子升级：`tests/support/field_readers.py` 新增 `constant_class_vocabulary()`，
+   先把每个 `from … import X [as Y]`（含函数体内的）解析成定义所在模块，再决定命中记给谁；
+   结果带 `reads`（解析到本定义）/`foreign`（解析到同名别处）/`unresolved`（解析不出）三本账。
+2. `Market.ALL` 删除（档案层那张确实零读取点）。
+3. 留一条永久正控：`test_the_name_collision_is_what_the_by_name_ruler_cannot_see` 断言
+   符号层的 `Market.ALL` 出现在 `foreign` 而**不**出现在 `reads`，同时断言按名尺子
+   `member_reference_sites("Market")` 仍然看得到 `ALL`。变异 **M4**（把尺子改回按名记账）
+   正是只红这一条，其余十条照绿——这就是"判据失明时它自己会喊"的形状。
+
+`unresolved` 那本账也不白记：`test_the_scan_is_not_blind` 要求它为空，于是"用局部变量遮蔽
+类名"这类会让读取点静默消失的写法会当场红（变异 **M10** 在 `sink/local_day.py` 里加一个
+名为 `Market` 的形参，实测只红这一条）。
+
+#### 四、`Period` 的三张表：一张会指错路，两张只抄了一半
+
+`census17.log` 里 `ALL`/`FILE_EXT`/`CMD_CATEGORY` 三行都是"本定义读取=0"。删除的根据不是
+"没人查"这一句，而是它们与线上口径的关系：
+
+* `FILE_EXT = {M1: "lc1", M5: "lc5", DAY: "day"}`——`resolve_vipdoc_path` 同时决定目录名
+  （`lday`/`minline`/`fzline`）并对其他周期 `raise ValueError`，这张表只有它的一半。
+* `CMD_CATEGORY`（11 格）比"没人查"更糟：它把 `QUARTER` 记成 **10**，而线上
+  `KlineCategory.SEASON == 10`、`NAMES[10] == "season"`（`YEAR` 才是 11）；表里既没有
+  `SEASON` 也没有 `TICK`；它的 `"day_alt"` 键是 `DAY + "_alt"` 拼出来的，
+  **根本不是 `Period` 的任何一个成员**（值 9 恰好对上 `KlineCategory.DAY_ALT`，
+  可一张没人查的表里的巧合从未被核对过）。一份会指错路的表留在词表里，比没有表更糟。
+* `QUARTER`/`YEAR`/`SEASON` 三档**成员**留下：它们在 `tstdx/` 里零 `Period.X` 读取点，
+  可取值字符串确实被 `tstdx/client/core.py::_PERIOD_TO_CATEGORY` 按键收着——
+  删掉三档等于把"线上年金线可查"这句真话抹掉。于是登记 **G13**（同一份周期词表在
+  `Period`/`_PERIOD_TO_CATEGORY`/`KlineCategory` 三处各自声明、互不派生），
+  并让 `test_g13_period_vocabulary_is_still_declared_three_times` 盯着现场：
+  变异 **M5** 从线上键表里抽掉 `"season"`，`test_every_member_is_acted_on` 与 G13 那条同时红。
+
+#### 五、`AssetClass` 10→4、两个编码成员、以及**没删**的那两格
+
+`AssetClass` 的 `ETF`/`LOF`/`BOND`/`WARRANT`/`FX`/`OTHER` 六格零生产者零读取者；全仓命中的
+`"etf"`/`"bond"` 字面量属于**别的词表**（Web capability 名、资金流板块码、基金资产配置键），
+本轮逐条看过才敢这么写。基金/债券在本产品里是按 `tstdx/profile/presets.py` 的预设名与代码段
+行动的，不是按档案品种。
+
+`PriceEncoding.INT32` 的注释写着"有符号，可能为负，如 MAC 协议返回"——那是**一格意图**而不是
+一格兑现：`"int32"` 的两处字面量属于 `tstdx.tools.codegen` 的字段类型词表，没有任何档案声明它、
+没有任何解码分支比较它。`TimeEncoding.EPOCH` 同形（取值 `"epoch"` 全仓零落点）。
+
+反过来两格**没删**：`VolumeUnit.CONTRACT` 是两份期货/期权档案写的值；`AmountUnit.WAN`/`YI`
+在 `to_amount` 里有换算分支，只是八份内置档案全写 `YUAN`——它们经
+`DataProfile.from_dict`（用户自定义档案）进入运行期。这两条口径写进了各自新补的 docstring，
+`test_every_member_is_acted_on` 允许的第一种"有人读"就包含这种"分支按它行动"。
+
+#### 六、新判据：11 项，一条裁决规则 + 四把防盲保险
+
+`tests/architecture/test_profile_vocabulary_gates.py`：
+
+* 裁决规则只有一句——**每个成员必须满足三者之一**：有人 `Class.MEMBER` 读它（解析到本定义）、
+  它是**有人查的表**的键、它的取值被某个现量得到的键表按字符串收着。
+  `test_every_member_is_acted_on` 把第三种豁免限定在下面这张表的实测键集上，不靠注释放行。
+* 保险一：形状清单（11 项里的 `test_member_names_and_order_are_pinned`）顺序敏感，
+  补的是"按名读取能蒙过扫描、蒙不过清单"那一类洞。
+* 保险二：`test_class_bodies_hold_only_constants_and_tables` 要求类体里不许长出尺子不认的形态
+  （M8 用一个字典推导式验证：它既不是常量也不是表，只能靠这条暴露）。
+* 保险三：docstring 首行的「（N 类/档）」由成员数现推（M3 改一个数字即红）——本轮删掉的
+  正是"手抄份数"这一类腐烂，所以新留下的份数必须自己付账。
+* 保险四：`test_no_member_is_a_second_name_for_one_value`（M6）与
+  `test_deleted_vocabularies_stay_deleted`（M1/M2），前者管"一名两值"，
+  后者把本轮的 20 个被删名字钉成一张不许悄悄复活的清单。
+
+#### 七、变异账本：10 条，`mutations=10 bad=0`
+
+`scratch_v18b17/mutate17.log`（每步种缺陷→跑整套→还原→sha256 逐位比对→复跑）：
+M1 装回 `Market.CFFEX` → **4 红**（形状/已删清单/无人行动/份数）；M2 补一张没人查的 `Period.ALL`
+→ 2 红；M3 手抄份数 → 1 红；M4 尺子退回按名记账 → 1 红（**只有**重名正控红，其余十条绿，
+即假绿确实只有这条抓得住）；M5 抽掉线上 `"season"` 键 → 2 红；M6 一名两值 → 4 红；
+M7 扫描范围收缩到 `tstdx/reader/` → 6 红且 0.81s 就跑完（分母塌了）；M8 类体新形态 → 1 红；
+M9 预设多写一个未登记市场号 → 1 红；M10 同名局部遮蔽 → 1 红（防盲断言）。
+还原后十条全部 11 passed。
+
+#### 八、候选树复测：12 道全 rc=0，覆盖率地板一字未动
+
+`scratch_v18b17/gates_20260923_190628.log`（隔离树 `wt_v18b17step @ 2f1ceba` + 本轮三个文件；
+日志头 `captured: 2026-09-23 11:06:28 GMT` = 北京 19:06）：
+`ruff check` `All checks passed!`、`ruff format --check` `457 files already formatted`、
+`mypy tstdx/` `Success: no issues found in 190 source files`，
+`check_originality --strict` / `spec_audit --strict` / `golden_audit --gate` /
+`audit_reachability --strict` / `contract_audit --ci` / `check_docs_links` /
+`run_benchmark_smoke` / `tests/test_bridges.py`（24 passed）逐条 `----- rc=0`；
+离线全量 `3775 passed, 7 skipped, 15 deselected in 261.16s`，
+`Required test coverage of 77.0% reached. Total coverage: 82.13%`。
+**`fail_under = 77` 与所有 strict 旗标未下调**（授权 ② 的边界）。
+
+#### 九、本轮留下与待办的
+
+* **G12 已清偿**（词表收缩 + 尺子补格 + 11 项判据 + 10 条变异）。
+* **G13 开放**：周期词表三处声明互不派生。接线要动对外 `period` 入参的取值口径
+  （`_PERIOD_TO_CATEGORY` 还收着 `d`/`1m`/`daily`/`1hour` 等 21 个别名，`Period` 里没有它们），
+  属对外契约，需一次裁决；现场已由判据盯着，不会静默腐烂。
+* **`DESIGN.md` 仍写着六所期货交易所与 `Market.CFFEX`**（799/816 行的「市场（12 类）」「品种（10 类）」
+  标题、862/884 行的档案示例、555 行的"覆盖交易所"一句）。它按自己的 banner
+  「本文是 2026-08-31 的立项设计快照，不是现行方案……本文按原文留存，不随代码订正」
+  被排除在活文档尺子（`active_docs()` = README/SECURITY/CONTRIBUTING + `docs/**.md`）之外，
+  本轮**不改**它；记在这里是为了让下一轮不必把这当成漏网。
+* **口径账**：本轮所有数字来自 `head_shape.log` / `census17.log` / `mutate17.log` /
+  `gates_20260923_190628.log` 四份本轮产物，无一格来自记忆。
+* **并行会话的账**：`CHANGELOG.md`、`docs/REFACTOR_PLAN_V17_CLOSURE.md`、
+  `docs/REFACTOR_PLAN_V18_REVIEW.md` 仍是别人的未提交登记，本轮**不 commit 它们**。

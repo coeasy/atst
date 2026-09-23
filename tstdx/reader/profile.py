@@ -5,11 +5,14 @@
 
 通达信生态里同一份"日线"至少有这些维度的差异::
 
-    市场(12) × 品种(10) × 周期(12) × price_scale × price_encoding
+    市场 × 品种 × 周期 × price_scale × price_encoding
              × volume_unit × amount_unit × time_encoding × charset
 
 硬编码任何一种组合都会在其他品种上产生错误数据（典型事故：
 把「手」当「股」，成交量差 100 倍；把「万元」当「元」，成交额差 10000 倍）。
+下面几张词表**只登记有人按它行动的成员**，各自的规模由
+``tests/architecture/test_profile_vocabulary_gates.py`` 现读成员数钉住，
+不在本 docstring 里手抄份数。
 
 本模块提供：
 
@@ -56,48 +59,87 @@ __all__ = [
 # 枚举常量（用简单类而非 Enum，便于外部扩展与序列化）
 # --------------------------------------------------------------------------- #
 class Market:
-    """市场（12 类）。"""
+    """市场（6 类）：只登记产品真的按它行动的市场。
+
+    每个成员的兑现处：``SH``/``SZ``/``BJ``/``HK``/``US`` 有 :attr:`CODES` 的
+    文件/探测链编号，探测与预设按编号裁决；``SHFE`` **没有任何编号**，它只作为
+    :data:`BUILTIN_PROFILES` 里 ``future_day`` 的市场身份存在，随档案序列化交给读者。
+
+    本类曾登记 中金所/大商所/郑商所/能源中心/广期所/外汇 六个成员，外加两张
+    零读取点的表（``ALL``、``DIRS``），本轮删除，理由是逐格量出来的：
+
+    * 那六个成员在 ``tstdx/`` 里既没有 ``Market.X`` 形式的读取点，取值字符串也没有
+      任何落点（``"cffex"``/``"dce"``/``"czce"``/``"ine"``/``"gfex"`` 全仓仅出现在它们
+      自己的声明行）；
+    * 符号引擎认的市场号只有五个 —— ``parse_symbol(code, market="cffex")`` 当场
+      ``SymbolError: 未知市场 'cffex'；可选: ('sh', 'sz', 'bj', 'hk', 'us')``，
+      所以那六个是"档案层声明了、主链解不开"的词表；
+    * ``DIRS``（vipdoc 目录名）恒等于市场 token 本身，真正拼路径的
+      :func:`tstdx.reader.formats.resolve_vipdoc_path` 用的是 ``sym.market``，
+      这张表是它的第二份手抄件；
+    * ``ALL`` 曾被 8 处 ``Market.ALL`` 指认，但那 8 处全部解析到
+      :class:`tstdx.domain.symbol.Market` —— 与本类**重名而不同定义**，本类的 ``ALL``
+      一个读取点都没有。同名两处 ``Market`` 的口径分界见
+      ``tests/architecture/test_profile_vocabulary_gates.py``。
+    """
 
     SH = "sh"  # 上交所
     SZ = "sz"  # 深交所
     BJ = "bj"  # 北交所
     HK = "hk"  # 港股
     US = "us"  # 美股
-    CFFEX = "cffex"  # 中金所
-    SHFE = "shfe"  # 上期所
-    DCE = "dce"  # 大商所
-    CZCE = "czce"  # 郑商所
-    INE = "ine"  # 能源中心
-    GFEX = "gfex"  # 广期所
-    FX = "fx"  # 外汇
-
-    ALL = (SH, SZ, BJ, HK, US, CFFEX, SHFE, DCE, CZCE, INE, GFEX, FX)
+    SHFE = "shfe"  # 上期所：仅作期货档案的身份，无协议/文件编号
 
     #: 市场代码（TDX 协议中的 market 字段）
     CODES = {SH: 1, SZ: 0, BJ: 2, HK: 71, US: 74}
-    #: vipdoc 目录名
-    DIRS = {SH: "sh", SZ: "sz", BJ: "bj", HK: "hk", US: "us"}
 
 
 class AssetClass:
-    """品种（10 类）。"""
+    """品种（4 类）：只登记有生产者的品种。
+
+    兑现处：:data:`BUILTIN_PROFILES` 逐份档案写着 ``STOCK``/``INDEX``/``FUTURE``/
+    ``OPTION``，探测层 :mod:`tstdx.profile.detect` 目前只会产出 ``STOCK``；这四个值
+    都随 :attr:`DataProfile.asset_class` 序列化给用户看。
+
+    本类曾登记 ``ETF``/``LOF``/``BOND``/``WARRANT``/``FX``/``OTHER`` 六个成员与一张
+    零读取点的 ``ALL``，本轮删除。逐格实测：六个成员在 ``tstdx/`` 里没有任何
+    ``AssetClass.X`` 读取点，也没有任何代码把它们写进档案或按它们分支；全仓命中的
+    ``"etf"``/``"bond"`` 字面量属于**别的词表**（Web 源的 capability 名、资金流板块码、
+    基金资产配置键），与档案层的品种口径无关。基金/债券在本产品里是按
+    :mod:`tstdx.profile.presets` 的预设名与代码前缀行动的，不是按档案品种。
+    """
 
     STOCK = "stock"
     INDEX = "index"
-    ETF = "etf"
-    LOF = "lof"
-    BOND = "bond"
-    WARRANT = "warrant"
     FUTURE = "future"
     OPTION = "option"
-    FX = "fx"
-    OTHER = "other"
-
-    ALL = (STOCK, INDEX, ETF, LOF, BOND, WARRANT, FUTURE, OPTION, FX, OTHER)
 
 
 class Period:
-    """周期（12 档）。"""
+    """周期（12 档）。
+
+    九档（``TICK``/``M1``/``M5``/``M15``/``M30``/``M60``/``DAY``/``WEEK``/``MONTH``）
+    在 ``tstdx/`` 里有 ``Period.X`` 形式的读取点（探测层的分支、reader 的路径解析、
+    sink 的换算）。另外三档 ``QUARTER``/``YEAR``/``SEASON`` **只以取值字符串被消费**：
+    线上 ``bars(period="year")`` 走的是 :data:`tstdx.client.core._PERIOD_TO_CATEGORY`
+    里手写的字符串键，不是本类的常量。这一格"同一份周期词表有两处声明、彼此不派生"
+    已登记为 G13，本轮不接线也不删（删掉等于把一句真话抹掉）。
+
+    本类曾另带三张表，实测**零读取点**，本轮删除：
+
+    * ``ALL``（12 项）——没人按它分支；
+    * ``FILE_EXT``（``{1min: lc1, 5min: lc5, day: day}``）——真正决定本地路径的是
+      :func:`tstdx.reader.formats.resolve_vipdoc_path`，它连目录名一起写（
+      ``lday``/``minline``/``fzline``），本表是它缺了一半的第二份手抄件；
+    * ``CMD_CATEGORY``（11 项）——线上口径是 ``KlineCategory`` 与
+      ``_PERIOD_TO_CATEGORY``；本表不仅没人查，还**与线上口径矛盾**：它把 ``quarter``
+      记成 10，而 ``KlineCategory.NAMES[10]`` 是 ``season``（``season`` 自己反倒没登记），
+      并且它拿 ``"day_alt"`` 当键——那根本不是本类任何一个成员。一份会指错路的表放在
+      这里，比没有表更糟。
+
+    守这条线（成员必须有人读或有人按值行动、表必须有人查）的判据见
+    ``tests/architecture/test_profile_vocabulary_gates.py``。
+    """
 
     TICK = "tick"
     M1 = "1min"
@@ -112,50 +154,59 @@ class Period:
     YEAR = "year"
     SEASON = "season"
 
-    ALL = (TICK, M1, M5, M15, M30, M60, DAY, WEEK, MONTH, QUARTER, YEAR, SEASON)
-
-    #: 本地文件扩展名
-    FILE_EXT = {M1: "lc1", M5: "lc5", DAY: "day"}
-    #: K 线请求 category 参数
-    CMD_CATEGORY = {
-        M5: 0,
-        M15: 1,
-        M30: 2,
-        M60: 3,
-        DAY: 4,
-        WEEK: 5,
-        MONTH: 6,
-        M1: 7,
-        DAY + "_alt": 9,
-        QUARTER: 10,
-        YEAR: 11,
-    }
-
 
 class PriceEncoding:
+    """价格编码（3 档）。
+
+    ``INT32``（注释写着"有符号，可能为负，如 MAC 协议返回"）已删除：全仓没有任何
+    档案用它，也没有任何解码器按它分支，取值 ``"int32"`` 在本包里的两处字面量都是
+    :mod:`tstdx.tools.codegen` 的**字段类型**词表，不是价格编码。若 MAC 侧确实需要
+    有符号价格，那是一格待接的功能缺口，不该由一个成员占位。
+    """
+
     UINT32 = "uint32"  # 定长整数，需除以 price_scale
     FLOAT32 = "float32"  # 无需缩放
     VARINT = "varint"  # 6-bit 变长（网络协议）
-    INT32 = "int32"  # 有符号（可能为负，如 MAC 协议返回）
 
 
 class VolumeUnit:
+    """成交量单位（3 档）。
+
+    ``SHARE`` 是档案默认值也是探测层的默认产出；``LOT`` 有人**按它行动**——
+    :meth:`DataProfile.to_volume` 与 :class:`~tstdx.sink.local_day.LocalDaySink` 各自
+    乘 100。``CONTRACT``（张/合约）只作为两份期货/期权档案的标签随档案序列化，换算
+    上等同「股」：这一格是本库口径，不是漏接。
+    """
+
     SHARE = "share"  # 股
     LOT = "lot"  # 手（A 股 1 手 = 100 股）
     CONTRACT = "contract"  # 张/合约（期权、债券）
 
 
 class AmountUnit:
+    """成交额单位（3 档）。
+
+    ``YUAN`` 是八份内置档案共同写的值；``WAN``/``YI`` 在 ``to_amount`` 里有换算分支，
+    但内置档案表里没有生产者——它们只经 :meth:`DataProfile.from_dict`（用户自定义档案）
+    进入运行期。把这两档删掉就等于宣布"自定义档案不能声明万元/亿元"。
+    """
+
     YUAN = "yuan"  # 元
     WAN = "wan"  # 万元
     YI = "yi"  # 亿元
 
 
 class TimeEncoding:
+    """时间编码（3 档）。
+
+    ``EPOCH``（``"epoch"``，Unix 秒/毫秒）已删除：没有任何档案声明它，也没有任何
+    解码分支比较它，取值在全仓零落点——它是 :data:`BUILTIN_PROFILES` 之外的一格
+    "词表里备着、链路没人走"的选项。
+    """
+
     YYYYMMDD = "yyyymmdd"  # uint32 20260831
     LC16 = "lc16"  # uint16：(n//2048+2004, n%2048//100, n%2048%100)
     DATETIME32 = "datetime32"  # 位域：year@20 month@16 day@11 hour@6 minute@0
-    EPOCH = "epoch"  # Unix 秒/毫秒
 
 
 # --------------------------------------------------------------------------- #
