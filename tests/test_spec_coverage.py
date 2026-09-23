@@ -111,8 +111,20 @@ def test_audit_covers_every_non_probe_yaml() -> None:
     audited = {r.spec_file for r in ALL_RESULTS}
     assert "PROTOCOL_SPEC/F10/0x0001_F10_CATALOG.yaml" in audited
     assert "PROTOCOL_SPEC/7727/0x0100_EX_MARKET_COUNT.yaml" in audited
-    # 无 spec_id 的自动探测 draft 明确排除，且排除项可枚举（不是静默丢弃）
-    assert draft_spec_files("PROTOCOL_SPEC") == ["PROTOCOL_SPEC/_sniffer/f10/06b9/DRAFT.yaml"]
+    # 排除项可枚举（不是静默丢弃）。这里刻意**不写死路径清单**：跑一次自动探测就会
+    # 落下若干未入库的 ``_sniffer/**/DRAFT.yaml``（.gitignore 第 85 行），钉死清单等于
+    # 把某一次跑包的现场写进门禁——换一棵树就红（第 18 轮实测：1 份变 4 份）。
+    # 真正的不变量是"被排除的必须长成探测产物的样子"：一张手写 spec 悄悄掉出
+    # 分母，这条仍然会响。
+    drafts = draft_spec_files("PROTOCOL_SPEC")
+    assert "PROTOCOL_SPEC/_sniffer/f10/06b9/DRAFT.yaml" in drafts, "排除名单瞎了"
+    offenders = [
+        relative
+        for relative in drafts
+        if ("/_sniffer/" not in relative and "/UNKNOWN/" not in relative)
+        or not relative.endswith("/DRAFT.yaml")
+    ]
+    assert offenders == [], f"非探测产物的 YAML 被排除出审计分母：{offenders}"
 
 
 def test_control_frame_exemption_is_derived_from_spec() -> None:

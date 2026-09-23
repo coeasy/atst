@@ -1580,3 +1580,97 @@ def test_the_docs_citation_ruler_sees_a_planted_dead_path() -> None:
     assert _doc_citations_in(line) == ["docs/quickstart.md", dead]
     cited = _code_doc_citations()
     assert [loc for loc, token in cited if token == "docs/quickstart.md"], "活文档路径没被扫到"
+
+
+#: 账本表格行的形状：一行必须与它所在表格的表头同竖线数。
+#: 第 18 轮由自己踩出来：往 §2 账本插 G13 那一行时，插入手法把上一行（G11）的 814 字符尾巴
+#: 粘进了新行——一行 8 个竖线而表头是 5 个，读者看到的是"一条行里装着两条账"。
+#: 本文件其余判据都按**内容**读文档（路径、数字、代码块），没有一把尺量过表格行的形状。
+_TABLE_EXEMPT: dict[str, str] = {
+    "docs/REFACTOR_PLAN_V17_CLOSURE.md#F-46": (
+        "并行会话的账本行缺收尾竖线（4 竖线 / 表头 5）。本轮不代改别人的账本，"
+        "见 V18 方案 §27 第七节"
+    ),
+    "docs/REFACTOR_PLAN_V17_CLOSURE.md#F-67": "同上",
+}
+
+
+def _table_cells(line: str) -> int:
+    """数一行 markdown 表格的竖线：行内代码整段不算，转义竖线不算。"""
+
+    return re.sub(r"`[^`]*`", "", line).replace("\\|", "").count("|")
+
+
+def _markdown_table_blocks(text: str) -> list[list[tuple[int, str]]]:
+    """按连续行切出表格块（至少表头 + 分隔行 + 一行内容）。"""
+
+    blocks: list[list[tuple[int, str]]] = []
+    current: list[tuple[int, str]] = []
+    for number, line in enumerate(text.replace("\r\n", "\n").split("\n"), start=1):
+        if line.lstrip().startswith("|"):
+            current.append((number, line))
+        else:
+            if len(current) >= 3:
+                blocks.append(current)
+            current = []
+    if len(current) >= 3:
+        blocks.append(current)
+    return blocks
+
+
+def _table_shape_offenders(text: str) -> list[tuple[int, int, int, str]]:
+    """返回 (行号, 本行竖线数, 表头竖线数, 行首单元格摘要)。"""
+
+    offenders: list[tuple[int, int, int, str]] = []
+    for block in _markdown_table_blocks(text):
+        header = _table_cells(block[0][1])
+        for number, line in block:
+            cells = _table_cells(line)
+            if cells != header:
+                summary = line.strip().strip("|").split("|")[0].strip()
+                offenders.append((number, cells, header, summary[:40]))
+    return offenders
+
+
+def _offense_keys(path: Path) -> set[str]:
+    """把每处形状不符折算成 ``文件#行首格`` ——豁免按这个身份点名。"""
+
+    relative = path.relative_to(ROOT).as_posix()
+    return {
+        f"{relative}#{summary.split(' ')[0]}"
+        for _, _, _, summary in _table_shape_offenders(path.read_text(encoding="utf-8"))
+    }
+
+
+def test_markdown_table_rows_match_their_header() -> None:
+    """活文档里每张表格的行形状：与表头不同竖线数的行必须被点名豁免。"""
+
+    offenders: list[str] = []
+    hit: set[str] = set()
+    for path in active_docs():
+        relative = path.relative_to(ROOT).as_posix()
+        for number, cells, header, summary in _table_shape_offenders(
+            path.read_text(encoding="utf-8")
+        ):
+            key = f"{relative}#{summary.split(' ')[0]}"
+            if key in _TABLE_EXEMPT:
+                hit.add(key)
+                continue
+            offenders.append(f"{relative}:{number} 本行 {cells} 竖线 / 表头 {header}：{summary}")
+    assert offenders == [], "表格行与表头列数不符：\n" + "\n".join(offenders)
+    assert hit == set(_TABLE_EXEMPT), (
+        f"这些豁免已不再需要，要从清单里删掉：{sorted(set(_TABLE_EXEMPT) - hit)}"
+    )
+
+
+def test_the_table_shape_ruler_itself_sees_a_merged_row() -> None:
+    """正控：上一行的尾巴粘进新行必须量得到，行内代码里的竖线不许被误当列。"""
+
+    merged = "| # | 问题 | 处置 |\n|---|---|---|\n| A | 甲 | 已改 |\n"
+    assert _table_shape_offenders(merged) == []
+    planted = merged + "| B | 乙 | 已改 |：甲 的旧尾巴又粘了一遍 | 已改 |\n"
+    offenders = _table_shape_offenders(planted)
+    assert len(offenders) == 1 and offenders[0][0] == 4 and offenders[0][3] == "B", (
+        f"粘行的形状没被量到（{offenders}），尺子失效"
+    )
+    assert _table_shape_offenders("| a | `x | y` |\n|---|---|\n| b | `p | q` |\n") == []

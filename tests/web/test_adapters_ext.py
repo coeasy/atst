@@ -88,7 +88,7 @@ class TestMinuteKline:
     def test_url_uses_mkline_path(self):
         """URL 路径为 /kline/mkline，周期同时在路径与参数。"""
         src = self._src()
-        src.fetch_bars("sh600519", period="m15", count=10)
+        src.fetch_bars("sh600519", period="15min", count=10)
         url = src.client.calls[0]
         assert "/kline/mkline?" in url
         assert "sh600519,m15,,,10" in url
@@ -120,15 +120,15 @@ class TestMinuteKlineExternal:
 
     def test_hk_raises_clear_error(self):
         with pytest.raises(WebSourceError, match="港股/美股"):
-            self._src(self.HK_EMPTY).fetch_bars("hk00700", period="m5")
+            self._src(self.HK_EMPTY).fetch_bars("hk00700", period="5min")
 
     def test_us_raises_clear_error(self):
         with pytest.raises(WebSourceError, match="港股/美股"):
-            self._src(self.US_EMPTY).fetch_bars("usAAPL", period="m5")
+            self._src(self.US_EMPTY).fetch_bars("usAAPL", period="5min")
 
     def test_a_volume_hand_to_shares(self):
         """A 股腾讯量返回「手」，须 ×100 到股。"""
-        bars = self._src(TestMinuteKline.CANNED).fetch_bars("sh600519", period="m5")
+        bars = self._src(TestMinuteKline.CANNED).fetch_bars("sh600519", period="5min")
         assert bars[0].volume == 123450  # 1234.5 手 → 股
         assert bars[1].volume == 45600
 
@@ -138,7 +138,7 @@ class TestMinuteKlineExternal:
         以 A 股罐头样本、强制 hk 前缀验证缩放分支（vol_scale=1）。
         """
         bars = self._src(TestMinuteKline.CANNED).parse_bars(
-            TestMinuteKline.CANNED.decode("utf-8"), "hk00700", period="m5"
+            TestMinuteKline.CANNED.decode("utf-8"), "hk00700", period="5min"
         )
         assert bars[0].volume == 1234  # 1234.50 股，非 123450
 

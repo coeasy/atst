@@ -126,7 +126,7 @@ from tstdx import Client, AsyncClient
 
 | 方法 | 签名摘要 | 说明 |
 |------|----------|------|
-| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", strict=False)` | K 线；`strict=True` 时结果携带任何数据瑕疵即抛 `TruncatedDataError` |
+| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", strict=False)` | K 线；`strict=True` 时结果携带任何数据瑕疵即抛 `TruncatedDataError`；`period=` 收哪些写法见本文 §6「K 线周期拼写」一表 |
 | `quotes` | `(symbols, *, provider=None, policy=None, currentness="live")` | 实时行情 |
 | `quotes_batch` | `(symbols, *, provider=None, currentness="live") -> BatchResult` | 逐 symbol 三态审计 |
 | `snapshot` | `(symbol, *, provider="tdx", currentness="live")` | 盘口快照 |
@@ -483,6 +483,48 @@ from tstdx.domain.calendar import is_trading_day
 ```python
 from tstdx.domain.integrity import tdx_market_ids  # 协议侧认得的市场 id，现读
 ```
+
+### K 线周期拼写（`period=` 收哪些写法）
+
+周期词表只有 `tstdx/domain/period.py` 一处声明：规范档 `CANONICAL_PERIODS` 11 个
+（`tick`/`1min`/`5min`/`15min`/`30min`/`60min`/`day`/`week`/`month`/`season`/`year`），
+公开别名 `PERIOD_ALIASES` 29 个，合起来 40 种写法。空白与大小写不敏感
+（`normalize_bar_period` 先 `strip().lower()` 再查别名），`"  5M "` 与 `"5min"` 同答案。
+内核、CLI、HTTP、WS、MCP 五张面吃同一份派生表，不再各抄一张——第 18 轮之前那五份手抄件
+互相分叉，量出 15 个"一面收、另一面拒"的拼写。别名解析只发生在公开入口：内核与会话面
+先 `normalize_bar_period` 再把规范拼写交所选源，而上游裸源只认规范拼写。
+
+```python
+from tstdx.domain.period import CANONICAL_PERIODS, PERIOD_ALIASES, normalize_bar_period
+```
+
+各面的实际接受集（第 19 轮离线实测，HEAD `2ae022b`）。"接受写法数"是这一入口能认下的
+拼写个数，"服务档"是它真能取回的规范周期档数——两者之差就是这一面派生出来的别名：
+
+| 入口 | 服务档 | 接受写法数 | 不服时的行为 |
+|---|---|---|---|
+| `Client.bars` / 统一 `bars` 查询（CLI `bars --period`、HTTP、WS、MCP 同此） | `1min`/`5min`/`15min`/`30min`/`60min`/`day`/`week`/`month`/`season`/`year`（10） | 39 | `ValidationError` `[E1010]`，消息带该 channel 的可选集 |
+| `WebQuoteSession.klines`（ifzq 会话面） | 5 个分钟档 + `day`/`week`/`month`（8） | 31 | `ValueError`，列出 `KLINES_PERIOD_ALIASES` |
+| `WebQuoteSession.history(source="sina")` | `5min`/`15min`/`30min`/`60min`/`120min`/`1200min`/`day`（7） | 20 | `ValueError` |
+| `WebQuoteSession.history(source="eastmoney")` | `1min`/`5min`/`15min`/`30min`/`60min`/`day`（6） | 22 | `ValueError` |
+| `baidu_kline` | `day`/`week`/`month`（3） | 13 | `ValueError`，并指路"分钟线请走腾讯面" |
+| `SinaHistoryKlineSource`（裸源，只收规范拼写） | 同 sina 会话面（7） | 7 | `ValueError` |
+| `EastmoneyHistoryKlineSource`（裸源） | 同东财会话面（6） | 6 | `ValueError` |
+| `KlineSource`（腾讯 fqkline 裸源） | 5 个分钟档 + `day`/`week`/`month`（8） | 8 | `ValueError` |
+| 腾讯 mkline 分钟裸源 | 5 个分钟档（5） | 5 | `ValueError` |
+
+三条读表时要记住的口径：
+
+- **`120min`/`1200min` 是新浪专属档**，故意不进规范集合：tdx 协议没有对应的 K 线
+  category，把它们收进规范档就得伪造一个协议号，而本库的规矩是不猜协议字节。它们只由
+  `sina/history_kline` 声明，因此 `bars(period="120min")` 走默认路由会被
+  `[E1010]` 拒掉，写上 `provider="sina"` 才成立。
+- **`tick` 是规范档但不是 K 线档**：分笔走 `ticks` 能力，`Client.bars(period="tick")`
+  同样报 `[E1010]`。
+- **"这一面不服务"必须显式报错，不许换个周期返回**。第 19 轮前新浪表里有
+  `"1min": 5` 这一格，把 1 分钟请求悄悄换成了 5 分钟线；百度表里有 `"1m": 3`，而域内
+  `1m` 是 1 分钟，即 1 分钟在百度面会被解成月线。两格都已删掉，换成了上面那一列的
+  `ValueError`。
 
 ### 出口处的域尺子（`tstdx.domain.integrity`）
 

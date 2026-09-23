@@ -116,28 +116,27 @@ class AssetClass:
 
 
 class Period:
-    """周期（12 档）。
+    """周期（11 档）：取值必须是 :data:`tstdx.domain.period.CANONICAL_PERIODS` 的成员。
 
-    九档（``TICK``/``M1``/``M5``/``M15``/``M30``/``M60``/``DAY``/``WEEK``/``MONTH``）
-    在 ``tstdx/`` 里有 ``Period.X`` 形式的读取点（探测层的分支、reader 的路径解析、
-    sink 的换算）。另外三档 ``QUARTER``/``YEAR``/``SEASON`` **只以取值字符串被消费**：
-    线上 ``bars(period="year")`` 走的是 :data:`tstdx.client.core._PERIOD_TO_CATEGORY`
-    里手写的字符串键，不是本类的常量。这一格"同一份周期词表有两处声明、彼此不派生"
-    已登记为 G13，本轮不接线也不删（删掉等于把一句真话抹掉）。
+    本类是"档案按哪一档周期描述布局"的常量名，**不是**另一份周期词表：规范拼写只有
+    :mod:`tstdx.domain.period` 那一处声明，两边的一致性由
+    ``tests/architecture/test_period_vocabulary_gates.py`` 现比集合。
 
-    本类曾另带三张表，实测**零读取点**，本轮删除：
+    十档里除 ``TICK`` 外每档都有一个协议落点：``tstdx/client/core.py`` 的
+    ``_CANONICAL_TO_CATEGORY`` 把规范拼写映射成 7709 的 K 线 category 编号，
+    ``bars(period="year")`` 与 ``bars(period="1y")`` 因此走同一格。``TICK`` 是唯一
+    不进那张编号表的规范周期——分笔是另一条命令，不是 K 线的一档。
 
-    * ``ALL``（12 项）——没人按它分支；
-    * ``FILE_EXT``（``{1min: lc1, 5min: lc5, day: day}``）——真正决定本地路径的是
-      :func:`tstdx.reader.formats.resolve_vipdoc_path`，它连目录名一起写（
-      ``lday``/``minline``/``fzline``），本表是它缺了一半的第二份手抄件；
-    * ``CMD_CATEGORY``（11 项）——线上口径是 ``KlineCategory`` 与
-      ``_PERIOD_TO_CATEGORY``；本表不仅没人查，还**与线上口径矛盾**：它把 ``quarter``
-      记成 10，而 ``KlineCategory.NAMES[10]`` 是 ``season``（``season`` 自己反倒没登记），
-      并且它拿 ``"day_alt"`` 当键——那根本不是本类任何一个成员。一份会指错路的表放在
-      这里，比没有表更糟。
+    ``QUARTER = "quarter"`` 已在第 18 轮删除，理由是实测出来的：域内规范表写着
+    ``"quarter" -> "season"``（季线的规范拼写是 ``season``，协议号 10 的名字也叫
+    ``season``），所以它不是"另一档周期"，而是 :attr:`SEASON` 的一个**别名**却被登记成
+    平级成员；``BUILTIN_PROFILES`` 里也没有任何档案写它。删常量不影响用户仍可以打字
+    ``period="quarter"``——别名照旧被接受，只是档案层不再假装有两种季线。
 
-    守这条线（成员必须有人读或有人按值行动、表必须有人查）的判据见
+    本类曾另带三张表，第 17 轮实测**零读取点**后删除（``ALL``、``FILE_EXT``、
+    ``CMD_CATEGORY``；最后一张把 ``quarter`` 记成 10 而 ``KlineCategory.NAMES[10]``
+    是 ``season``，还拿 ``"day_alt"`` 当键——那根本不是本类任何一个成员）。守这条线
+    （成员必须有人读或有人按值行动、表必须有人查）的判据见
     ``tests/architecture/test_profile_vocabulary_gates.py``。
     """
 
@@ -150,7 +149,6 @@ class Period:
     DAY = "day"
     WEEK = "week"
     MONTH = "month"
-    QUARTER = "quarter"
     YEAR = "year"
     SEASON = "season"
 

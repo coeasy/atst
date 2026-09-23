@@ -22,15 +22,15 @@
 ``test_the_name_collision_is_what_the_by_name_ruler_cannot_see`` 把这格陷阱钉成正控：尺子
 一旦退回按名扫描，它当众红。
 
-三档周期 ``QUARTER``/``YEAR``/``SEASON`` 留下来了，因为它们的**取值**确实有人按：
-``tstdx.client.core._PERIOD_TO_CATEGORY`` 用手写字符串键收它们。"同一份周期词表在
-``Period``、``_PERIOD_TO_CATEGORY``、``KlineCategory`` 三处各自声明、互不派生"已登记为
-**G13**，由 ``test_g13_period_vocabulary_is_still_declared_three_times`` 量着现场。
+三档周期 ``QUARTER``/``YEAR``/``SEASON`` 第 17 轮留下来了，因为它们的**取值**确实有人按。
+第 18 轮把那句话落实成派生：周期词表只有 :mod:`tstdx.domain.period` 一处声明，
+``tstdx/client/core.py`` 的 category 表由它派生，``QUARTER`` 则被量出是 :attr:`Period.SEASON`
+的**别名**（``"quarter" -> "season"``）却被登记成平级成员，已删。**G13 随之关闭**，
+跨面一致性由 `tests/architecture/test_period_vocabulary_gates.py` 守着。
 """
 
 from __future__ import annotations
 
-import ast
 import re
 from pathlib import Path
 
@@ -39,7 +39,9 @@ from tests.support.field_readers import (
     ConstantVocabulary,
     constant_class_vocabulary,
     member_reference_sites,
+    string_keys_of_table,
 )
+from tstdx.domain.period import CANONICAL_PERIODS
 from tstdx.reader.profile import (
     AmountUnit,
     AssetClass,
@@ -65,16 +67,16 @@ CLASSES = (
 DELETED: dict[str, list[str]] = {
     "Market": ["ALL", "DIRS", "CFFEX", "DCE", "CZCE", "INE", "GFEX", "FX"],
     "AssetClass": ["ALL", "ETF", "LOF", "BOND", "WARRANT", "FX", "OTHER"],
-    "Period": ["ALL", "FILE_EXT", "CMD_CATEGORY"],
+    "Period": ["ALL", "FILE_EXT", "CMD_CATEGORY", "QUARTER"],
     "PriceEncoding": ["INT32"],
     "TimeEncoding": ["EPOCH"],
 }
 
 #: 零 ``Class.MEMBER`` 读取点、只以**取值字符串**被消费的成员：``类.成员`` → 兑现它的键表。
+#: 第 18 轮起那张表是"规范拼写 → 协议 category"的十行手写表，别名一律派生。
 _BY_VALUE_CONSUMERS = {
-    "Period.QUARTER": ("tstdx/client/core.py", "_PERIOD_TO_CATEGORY"),
-    "Period.YEAR": ("tstdx/client/core.py", "_PERIOD_TO_CATEGORY"),
-    "Period.SEASON": ("tstdx/client/core.py", "_PERIOD_TO_CATEGORY"),
+    "Period.YEAR": ("tstdx/client/core.py", "_CANONICAL_TO_CATEGORY"),
+    "Period.SEASON": ("tstdx/client/core.py", "_CANONICAL_TO_CATEGORY"),
 }
 
 #: ``presets.py`` 允许直接写数字的市场号：TDX 扩展市场号，确实不在 ``Market.CODES`` 五段内
@@ -98,24 +100,6 @@ def _target_class(cls: str) -> type:
         "AmountUnit": AmountUnit,
         "TimeEncoding": TimeEncoding,
     }[cls]
-
-
-def _string_keys_of_table(relative: str, table: str) -> set[str]:
-    """读某模块里那张 ``NAME = {...}`` 的字符串键——按值消费的兑现处必须现量。"""
-
-    tree = ast.parse((REPO_ROOT / relative).read_text(encoding="utf-8"))
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            targets, value = node.targets, node.value
-        elif isinstance(node, ast.AnnAssign):
-            targets, value = [node.target], node.value
-        else:
-            continue
-        if not any(isinstance(t, ast.Name) and t.id == table for t in targets):
-            continue
-        if isinstance(value, ast.Dict):
-            return {key.value for key in value.keys if isinstance(key, ast.Constant)}
-    raise AssertionError(f"{relative} 里已经没有字符串键表 {table}：按值消费的口径变了")
 
 
 # --------------------------------------------------------------------------- #
@@ -157,7 +141,6 @@ def test_member_names_and_order_are_pinned() -> None:
             "DAY",
             "WEEK",
             "MONTH",
-            "QUARTER",
             "YEAR",
             "SEASON",
         ),
@@ -211,7 +194,7 @@ def test_every_member_is_acted_on() -> None:
                 continue
             relative, table = consumer
             value = vocab.values[cls][member]
-            if value not in _string_keys_of_table(relative, table):
+            if value not in string_keys_of_table(relative, table):
                 unacted.append(f"{cls}.{member} 的取值 {value!r} 已不在 {table} 的键里")
     assert unacted == [], f"档案层词表里没人按它行动的词：{unacted}"
 
@@ -266,15 +249,17 @@ def test_the_name_collision_is_what_the_by_name_ruler_cannot_see() -> None:
     assert "ALL" in by_name, "按名尺子已看不到 Market.ALL——它是否还会张冠李戴需要重新评估"
 
 
-def test_g13_period_vocabulary_is_still_declared_three_times() -> None:
-    """G13 的现场：``Period`` 的三档周期只以取值字符串活在 ``_PERIOD_TO_CATEGORY`` 里。
+def test_g13_is_closed_the_period_category_table_is_derived() -> None:
+    """G13 已关闭的现场：``Period`` 只按值消费两档，而那张 category 表**不许再手抄别名**。
 
-    接线（让那张键表由 ``Period`` 派生）后这条会红——那时应当关闭 G13 并把本判据改成
-    派生关系检查，而不是把三档删掉。
+    第 17 轮登记 G13 时，``_PERIOD_TO_CATEGORY`` 是 24 个手写字面量键，与域内规范表各抄
+    一份别名；第 18 轮它变成派生表，手写部分只剩"规范拼写 → 协议号"。本判据按第 17 轮
+    判据 docstring 自己指的路改写：接线后要检查的是**派生关系**，而不是把成员删掉。
+    一旦有人把别名重新写成字面量键（第 5 份手抄件复活），``_table_is_derived`` 那条当场红。
     """
 
     vocab = _vocab()
-    keys = _string_keys_of_table("tstdx/client/core.py", "_PERIOD_TO_CATEGORY")
+    keys = string_keys_of_table("tstdx/client/core.py", "_CANONICAL_TO_CATEGORY")
     by_value = {
         member: vocab.values["Period"][member]
         for member in vocab.members["Period"]
@@ -284,11 +269,10 @@ def test_g13_period_vocabulary_is_still_declared_three_times() -> None:
         f"只按值消费的周期成员已经变了：{sorted(by_value)}"
     )
     assert set(by_value.values()) <= keys, (
-        f"这些取值已不是线上键表的键：{sorted(by_value.values())}"
+        f"这些取值已不是 category 表的键：{sorted(by_value.values())}"
     )
-    # 键表还收着 ``Period`` 没有的别名（``d``/``1m``/``daily``…）——这就是"两处声明互不派生"
-    aliases = sorted(keys - set(by_value.values()))
-    assert len(aliases) > 5, f"周期别名比预想少，G13 的账要重算：{aliases}"
+    # 手写那张表的键必须仍是规范拼写：别名回到这里就是 G13 复活。
+    assert keys <= set(CANONICAL_PERIODS), f"category 表里出现了非规范周期拼写：{sorted(keys)}"
 
 
 def test_market_codes_table_is_the_single_source_for_market_numbers() -> None:

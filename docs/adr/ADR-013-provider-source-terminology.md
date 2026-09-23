@@ -1,6 +1,10 @@
 # ADR-013: Provider / source / Channel 术语与模型统一
 
 - Status: Accepted
+- 编号警示：本目录里有**两份** ADR-013（本文 2026-09-08，与
+  [`ADR-013-provider-first-runtime-contract.md`](ADR-013-provider-first-runtime-contract.md) 2026-09-06）。台账里「ADR-013 §11」「稳定公共资产」这类**带节号**的引用落在本文
+  （只有本文有编号章节，`## 11. Error 术语`）；两份都不改号，因为号被在写的台账按文件名整段引用，
+  改号会把活引用变成死指针。消歧表见 [`README.md`](README.md)。
 - Branch: `refactor/industry-benchmark-v12`
 - Date: 2026-09-08
 - Scope: v12 architecture, public API, registries, docs, errors and provenance

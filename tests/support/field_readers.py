@@ -313,3 +313,36 @@ def member_reference_sites(owner: str, *, skip: str = "") -> tuple[int, dict[str
             ):
                 refs.setdefault(node.attr, set()).add(relative)
     return scanned, refs
+
+
+def module_assignment(relative: str, table: str) -> ast.expr:
+    """取某模块顶层 ``NAME = ...``（含带标注写法）的右侧节点。
+
+    判据要区分"手抄的一张表"与"由别处派生的一张表"，这两者在运行时看不出来，
+    只在赋值右侧长什么样上分得开。
+    """
+
+    tree = ast.parse((REPO_ROOT / relative).read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign):
+            targets, value = [node.target], node.value
+        else:
+            continue
+        if any(isinstance(t, ast.Name) and t.id == table for t in targets):
+            return value
+    raise AssertionError(f"{relative} 里已经没有赋值 {table}：口径的声明处变了")
+
+
+def string_keys_of_table(relative: str, table: str) -> set[str]:
+    """那张 ``NAME = {...}`` 里的**字面量**字符串键——按值消费的兑现处必须现量。
+
+    派生表（``{**a, **b}``）的字面量键集自然为空，所以本函数同时能回答"这张表还留着
+    几格手抄"，这正是第 18 轮要的分辨力。
+    """
+
+    value = module_assignment(relative, table)
+    if isinstance(value, ast.Dict):
+        return {key.value for key in value.keys if isinstance(key, ast.Constant)}
+    raise AssertionError(f"{relative}::{table} 的右侧不是字典字面量：键集口径要重算")

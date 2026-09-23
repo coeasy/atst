@@ -496,7 +496,7 @@ python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproj
 | [docs/migration/](docs/migration/README.md) | 从 mootdx/easy_tdx/easyquotation 迁移 |
 | [docs/providers/](docs/providers/README.md) | 逐 Provider 能力与口径 |
 | [docs/tdx_status.md](docs/tdx_status.md) | TDX 全接口连通性矩阵（真机逐项实测口径）|
-| [docs/adr/](docs/adr/README.md) | 架构决策记录（含 ADR-011 流式内核取舍）|
+| [docs/adr/](docs/adr/README.md) | 架构决策记录索引（逐条编号/状态/出处，含 ADR-011 流式内核取舍与两处编号撞号登记）|
 | [docs/FAQ.md](docs/FAQ.md) | 常见问题 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 排障指南 |
 | [docs/errors.md](docs/errors.md) | 错误体系与 RetryAdvice 使用指南 |

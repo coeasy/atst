@@ -65,8 +65,11 @@ class SinaHistoryKlineSource(BaseWebSource):
     encoding = "utf-8"  # 新浪 json_v2 响应为 UTF-8（W10）
 
     #: tstdx period → 新浪 scale（分钟值；日线=240）
+    #:
+    #: 这里没有 ``"1min"``：新浪这个端点最细就是 5 分钟，旧表用 ``"1min": 5``
+    #: 把 1 分钟请求悄悄换成了 5 分钟线——周期拼写里的分钟数必须等于它请求的
+    #: scale，做不到就说"这一面不服务"（第 19 轮，G15）。
     SCALES = {
-        "1min": 5,
         "5min": 5,
         "15min": 15,
         "30min": 30,
@@ -101,8 +104,8 @@ class SinaHistoryKlineSource(BaseWebSource):
         symbol:
             ``600519`` / ``sh600519`` 均可。
         period:
-            ``1min``(=5min) / ``5min`` / ``15min`` / ``30min`` / ``60min``
-            / ``120min`` / ``day`` / ``1200min``。
+            ``5min`` / ``15min`` / ``30min`` / ``60min`` / ``120min`` /
+            ``day`` / ``1200min``。本端点没有 1 分钟粒度，``1min`` 显式报错。
         count:
             返回根数。
         """

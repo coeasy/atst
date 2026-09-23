@@ -11,6 +11,7 @@ from typing import Any
 
 from ..domain.finance import to_capital_changes
 from ..domain.models import Bar, CapitalChange, Quote
+from ..domain.period import PERIOD_ALIASES
 from ..domain.symbol import to_tdx_market
 from ..errors import CommandOffline, NotImplementedFeature, ParseError
 from ..protocol.commands import CMD, STATUS_OFFLINE, get_command
@@ -183,31 +184,28 @@ def split_symbol(symbol: str) -> tuple[int, str]:
     return market, code
 
 
-_PERIOD_TO_CATEGORY: dict[str, int] = {
+#: 规范周期 → 7709 K 线 category 编号：**协议号**只有这一处手写。
+_CANONICAL_TO_CATEGORY: dict[str, int] = {
     "1min": KlineCategory.MIN_1,
-    "min": KlineCategory.MIN_1,
-    "1m": KlineCategory.MIN_1,
     "5min": KlineCategory.MIN_5,
     "15min": KlineCategory.MIN_15,
     "30min": KlineCategory.MIN_30,
     "60min": KlineCategory.HOUR_1,
-    "1hour": KlineCategory.HOUR_1,
-    "1h": KlineCategory.HOUR_1,
     "day": KlineCategory.DAY,
-    "daily": KlineCategory.DAY,
     "week": KlineCategory.WEEK,
     "month": KlineCategory.MONTH,
     "season": KlineCategory.SEASON,
-    "quarter": KlineCategory.SEASON,
     "year": KlineCategory.YEAR,
-    "d": KlineCategory.DAY,
-    "w": KlineCategory.WEEK,
-    "m": KlineCategory.MONTH,
-    "mo": KlineCategory.MONTH,
-    "5m": KlineCategory.MIN_5,
-    "15m": KlineCategory.MIN_15,
-    "30m": KlineCategory.MIN_30,
-    "60m": KlineCategory.HOUR_1,
+}
+
+#: 公开拼写 → category：由 :mod:`tstdx.domain.period` 那份唯一词表派生。
+#: 此前这里是 24 个手写字面量，与域内规范表**各抄一份别名**，实测分叉出 15 个拼写
+#: （``Client.bars(period="1y")`` 报 ``ParseError``，而经 ``normalize_bar_period`` 的
+#: 运行期路径接受同一写法）。派生之后两条路径的接受集必然相同，由
+#: ``tests/architecture/test_period_vocabulary_gates.py`` 钉住。
+_PERIOD_TO_CATEGORY: dict[str, int] = {
+    **{alias: _CANONICAL_TO_CATEGORY[canon] for alias, canon in PERIOD_ALIASES.items()},
+    **_CANONICAL_TO_CATEGORY,
 }
 
 

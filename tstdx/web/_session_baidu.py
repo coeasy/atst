@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..domain.models import Bar, MinutePoint, Quote, Tick
+from ..domain.period import normalize_bar_period
 from ._session_market import INDEX_SYMBOLS, _shared_http  # noqa: F401  共享助手
 
 __all__ = ["BaiduSessionMixin"]
@@ -33,7 +34,9 @@ class BaiduSessionMixin:
         symbol:
             A 股代码（``600519`` / ``sh600519`` / ``sz301086``）。
         period:
-            ``day`` / ``week`` / ``month``。
+            ``day`` / ``week`` / ``month``；其余域内别名（``d`` / ``1w`` /
+            ``monthly`` …）先经 :func:`~tstdx.domain.period.normalize_bar_period`
+            规范再下发，规范后落在分钟档的写法一律显式报错——百度这一面不服务分钟线。
         count:
             返回根数；超过 250 自动分页向前翻页收集。
         end_time:
@@ -47,7 +50,9 @@ class BaiduSessionMixin:
 
         src = BaiduSource(client=_shared_http())
         try:
-            return src.fetch_kline(symbol, period=period, count=count, end_time=end_time)
+            return src.fetch_kline(
+                symbol, period=normalize_bar_period(period), count=count, end_time=end_time
+            )
         finally:
             src.close()
 

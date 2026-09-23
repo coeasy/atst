@@ -49,19 +49,12 @@ from .sources import BAIDU
 
 __all__ = ["BaiduSource"]
 
-#: 周期别名 → ktype
-_KLINE_KTYPES: dict[str, int] = {
-    "day": 1,
-    "d": 1,
-    "1d": 1,
-    "week": 2,
-    "w": 2,
-    "1w": 2,
-    "month": 3,
-    "m": 3,
-    "1M": 3,
-    "1m": 3,
-}
+#: 规范周期拼写 → 百度 ktype。百度这个端点只有日/周/月三档，所以本表只收
+#: :data:`tstdx.domain.period.CANONICAL_PERIODS` 里服务得起的那三格；别名由公开面
+#: 用 :func:`~tstdx.domain.period.normalize_bar_period` 一次解掉，不再在这里手抄。
+#: 旧表手抄了 6 个别名键，其中 ``"1m": 3`` 把域内意为"1 分钟"的写法解成了**月线**
+#: ——帧合法但内容是另一个周期，属 G15 那类错数（第 19 轮）。
+_KLINE_KTYPES: dict[str, int] = {"day": 1, "week": 2, "month": 3}
 #: 服务端单页根数上限
 _MAX_COUNT = 250
 
@@ -71,7 +64,8 @@ def _ktype(period: str) -> int:
         return _KLINE_KTYPES[period]
     except KeyError:
         raise ValueError(
-            f"百度 K 线周期 {period!r} 不支持；可选: {sorted(set(_KLINE_KTYPES.values()))}"
+            f"百度 K 线不服务周期 {period!r}（这一面只有 "
+            f"{sorted(_KLINE_KTYPES)}，分钟线请走 mkline/腾讯面）"
         ) from None
 
 

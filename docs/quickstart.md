@@ -36,6 +36,9 @@ for bar in bars[:5]:
     )
 ```
 
+`period=` 收哪些写法、哪一面不服务哪一档，见
+[`docs/api/interfaces.md`](api/interfaces.md) §6「K 线周期拼写（`period=` 收哪些写法）」。
+
 ### 2. 实时行情
 
 ```python

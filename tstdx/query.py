@@ -20,7 +20,7 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any
 
-from .domain.period import normalize_bar_period
+from .domain.period import MINUTE_PERIODS, normalize_bar_period
 from .domain.symbol import normalize_symbol
 from .error_envelope import is_sensitive_key
 from .errors import ReadTimeout, ValidationError
@@ -37,7 +37,6 @@ __all__ = [
     "REJECTED_OPTIONS",
 ]
 
-_MINUTE_PERIODS = frozenset({"1min", "5min", "15min", "30min", "60min"})
 #: 直连执行面上没有对象可作用的策略键。设置它们必须当场失败，而不是被静默收下——
 #: 一个"看起来生效"的开关比没有开关更糟（``max_age`` 就是静默收下然后无人消费）。
 REJECTED_OPTIONS: dict[str, str] = {
@@ -129,7 +128,7 @@ def _canonical_unified_channel(provider: str, capability: str, period: str) -> s
     pid = str(provider)
     cap = str(capability)
     if pid == "tencent" and cap == "bars":
-        return "minute_kline" if period in _MINUTE_PERIODS else "kline"
+        return "minute_kline" if period in MINUTE_PERIODS else "kline"
     return _CANONICAL_UNIFIED_CHANNELS.get((pid, cap))
 
 

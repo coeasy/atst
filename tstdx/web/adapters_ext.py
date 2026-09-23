@@ -56,28 +56,26 @@ __all__ = [
     "SuggestSource",
 ]
 
-#: 周期 → 腾讯 mkline 周期参数（接受 tstdx 与腾讯两种写法）
+#: 规范周期拼写 → 腾讯 mkline 周期参数。本表只收 :data:`tstdx.domain.period
+#: .CANONICAL_PERIODS` 的分钟档，且每一行都真的服务它键上写的那个周期
+#: （``Nmin`` → ``mN``）。旧表另抄了 ``m1``/``m5``…五个别名键——别名归域内那份
+#: 唯一词表管，公开面先规范再下发（第 19 轮，与 G13 同一条裁决）。
 _MKLINE_PERIODS = {
     "1min": "m1",
-    "m1": "m1",
     "5min": "m5",
-    "m5": "m5",
     "15min": "m15",
-    "m15": "m15",
     "30min": "m30",
-    "m30": "m30",
     "60min": "m60",
-    "m60": "m60",
 }
 
 
 def _mkline_period(period: str) -> str:
-    """周期别名 → 腾讯 mkline 参数；未知值显式报错（P1 #13，不静默回退 m5）。"""
+    """规范周期 → 腾讯 mkline 参数；未知值显式报错（P1 #13，不静默回退 m5）。"""
     try:
         return _MKLINE_PERIODS[period]
     except KeyError:
         raise ValueError(
-            f"未知分钟 K 线周期 {period!r}；可选: {sorted(set(_MKLINE_PERIODS.values()))}"
+            f"腾讯分钟 K 线不服务周期 {period!r}（这一面只有 {sorted(_MKLINE_PERIODS)}）"
         ) from None
 
 

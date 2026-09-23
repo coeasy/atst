@@ -22,6 +22,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from ..domain.models import Bar, MinutePoint, Quote
+from ..domain.period import PERIOD_ALIASES, normalize_bar_period
 from ..errors import CompatibilityError
 from .base import normalize_symbol
 from .sources import BOC, SINA, TENCENT
@@ -35,27 +36,24 @@ __all__ = [
     "shared_http",
 ]
 
-#: K 线周期别名 → tstdx period（KlineSource）。
+#: 本面（腾讯 ifzq K 线）能服务的**规范**周期。这里只登记"服务得起哪几档"这一件真差异，
+#: 别名一律取自 :mod:`tstdx.domain.period` 那份唯一词表——``tick``/``season``/``year``
+#: 上游没有对应参数，所以它们不在名单里，写它们仍按"未知周期"显式报错。
+_KLINE_SERVABLE: tuple[str, ...] = (
+    "1min",
+    "5min",
+    "15min",
+    "30min",
+    "60min",
+    "day",
+    "week",
+    "month",
+)
+
+#: K 线周期别名 → tstdx period（KlineSource）：由域内词表派生，不再手抄别名。
 KLINES_PERIOD_ALIASES: dict[str, str] = {
-    "day": "day",
-    "d": "day",
-    "week": "week",
-    "w": "week",
-    "month": "month",
-    "m": "month",
-    "m1": "1min",
-    "1min": "1min",
-    "1m": "1min",
-    "m5": "5min",
-    "5min": "5min",
-    "5m": "5min",
-    "m15": "15min",
-    "15min": "15min",
-    "m30": "30min",
-    "30min": "30min",
-    "m60": "60min",
-    "60min": "60min",
-    "60m": "60min",
+    **{alias: canon for alias, canon in PERIOD_ALIASES.items() if canon in _KLINE_SERVABLE},
+    **{canon: canon for canon in _KLINE_SERVABLE},
 }
 
 #: 常用大盘指数代码（用于 :meth:`WebQuoteSession.index`）。
@@ -370,14 +368,20 @@ class KlineSessionMixin:
     ) -> list[Bar]:
         """历史 K 线（新浪 / 东财双源；东财含成交额与复权选项）。
 
+        周期先经 :func:`~tstdx.domain.period.normalize_bar_period` 规范，再交给
+        所选源自己的周期表：新浪最细到 ``5min``（没有 1 分钟档），另含 ``120min`` /
+        ``1200min``；东财 ``1min``–``day``。请求该源不服务的档位是**显式报错**，
+        不会被换成另一个周期。
+
         Parameters
         ----------
         source:
-            ``"sina"``（5/15/30/60/120/240/1200 scale）或
-            ``"eastmoney"``（5min–day，支持 adjust="" / "qfq" / "hfq"）。
+            ``"sina"``（``5min``/``15min``/``30min``/``60min``/``120min``/``day``/
+            ``1200min``）或 ``"eastmoney"``（``1min``–``day``，支持 adjust="" / "qfq" / "hfq"）。
         """
         from .history import EastmoneyHistoryKlineSource, SinaHistoryKlineSource
 
+        period = normalize_bar_period(period)
         src: Any
         # 深审 M9：新浪只提供原始价——复权请求自动路由到东财源
         if source == "eastmoney" or adjust not in ("", None):
