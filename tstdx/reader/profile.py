@@ -6,7 +6,7 @@
 通达信生态里同一份"日线"至少有这些维度的差异::
 
     市场(12) × 品种(10) × 周期(12) × price_scale × price_encoding
-             × volume_unit × amount_unit × time_encoding × charset × timezone
+             × volume_unit × amount_unit × time_encoding × charset
 
 硬编码任何一种组合都会在其他品种上产生错误数据（典型事故：
 把「手」当「股」，成交量差 100 倍；把「万元」当「元」，成交额差 10000 倍）。
@@ -181,7 +181,6 @@ class DataProfile:
     amount_unit: str = AmountUnit.YUAN
     time_encoding: str = TimeEncoding.YYYYMMDD
     charset: str = "gbk"
-    timezone: str = "Asia/Shanghai"
 
     #: 本地文件记录字节数（0 表示变长）
     record_size: int = 32

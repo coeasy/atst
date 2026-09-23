@@ -804,6 +804,13 @@ def _sink_class_fmts() -> int:
     return len(_output_fmt_choices()["Sink.write"])
 
 
+def _market_presets() -> int:
+    """``PRESETS`` 的行数（文档"9 市场预设"的真相源）。"""
+    from tstdx.profile.presets import PRESETS
+
+    return len(PRESETS)
+
+
 #: ``(文档, 事实, 定位模式, 真相源)``：第 14 步之前数字门禁只读 README，
 #: 于是同一件事实在 ``docs/api/`` 等副本里漂移无人发现。这里把每个事实的
 #: **所有**文档出处都列进表——真相源只有一个，文档侧只有抄本。
@@ -864,6 +871,15 @@ _EXACT_CLAIMS: tuple[tuple[str, str, str, Callable[[], int]], ...] = (
     # `Sink` 当成了整个出口面，读者据此找 CSV 导出的那条路就找不到。两格分开钉。
     ("README.md", "Sink 可选格式数", r"`Sink`\s*(\d+)\s*种格式", _sink_class_fmts),
     ("README.md", "write 可选格式数", r"`write\(\)`\s*认\s*(\d+)\s*种格式", _output_write_fmts),
+    # 第 16 轮（G11）：预设表从 12 列收缩到 3 列，"9 个预设"这一格用户文档写了两处，
+    # 行数由此从"手抄"变成"派生"——删预设的人不必再记得改两份文档，加预设也一样。
+    ("docs/api/README.md", "市场预设数", r"\|\s*(\d+)\s*市场预设", _market_presets),
+    (
+        "docs/cookbook/03_offline_vipdoc.md",
+        "市场预设数",
+        r"内置\s*(\d+)\s*个市场预设",
+        _market_presets,
+    ),
 )
 
 

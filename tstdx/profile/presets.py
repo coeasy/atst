@@ -1,21 +1,34 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""Market presets：常见市场/品种的默认数据规格（Tier D item D3）。
+"""Market presets：常见市场/品种的命名与代码段登记表（Tier D item D3）。
 
-每个预设是 :class:`MarketPreset` 实例，为 :mod:`tstdx.profile.detect`
-提供**先验**（先验越强，探测置信度越高）。
+每个预设是 :class:`MarketPreset` 实例。本表在生产链路上一共被咨询两处，
+两处都只按 **市场号 + 代码前缀** 行动：
 
-预设与 :mod:`tstdx.reader.profile.Market` / :mod:`AssetClass` 的关系：
+* :func:`match_preset`（公开入口）——按 ``code_prefixes`` 命中、``market_id``
+  裁决，返回预设；
+* :mod:`tstdx.profile.detect` 的 ``_match_preset_name``——把 ``hint_market``
+  反查成预设名，命中时给首要记录长度候选 +0.1 置信度加权。
 
-* ``market_id`` 采用 :class:`~tstdx.reader.profile.Market.CODES` 的
-  **文件/探测链编号**（0=深 1=沪 2=北 71=港 74=美），与 PROTOCOL_SPEC
-  yaml、:class:`DataProfile.market` 同一口径；**这不是 TDX 二进制协议
-  链的市场号**——协议帧里北交所复用 0（与深市同段，见下）；
-* ``market_name`` 用 :class:`~tstdx.reader.profile.Market` 的字符串常量
-  （如 ``"sh"`` / ``"sz"``），便于与 :class:`DataProfile.market` 互转；
-* ``asset_class`` 用 :class:`~tstdx.reader.profile.AssetClass` 的字符串
-  （``"stock"`` / ``"etf"`` / ``"bond"`` / ``"future"`` 等）。
+**这张表不声明任何解码口径**。影响数值正确性的维度一律由
+:class:`~tstdx.reader.profile.DataProfile` 与其探测层承载：探测构造档案走的是
+:func:`~tstdx.reader.profile.detect_profile` 的字节探测，从不咨询预设。
+
+本表因此也不得通往档案：快照缩放与文件内缩值是两套口径，中间没有任何换算——
+行情侧对黄金/期货惯用 1000，而日线档案 ``future_day`` 记 100，一座把前者填进
+后者 ``price_scale`` 的桥就是十分之一价。守这条线（本表只有身份三列、且没有
+通往 ``DataProfile`` 的桥）的判据见 ``tests/architecture/test_profile_knob_gates.py``。
+
+两个单位口径本表管不了、内置档案也没写死，只能按发行文件逐一核对，记在这里
+当提醒：ETF/LOF 的成交量在部分主站记「股」而非「份」；债券的成交量记「张」，
+而一些报表把一张等同一元面值。
+
+``market_id`` 采用 :class:`~tstdx.reader.profile.Market.CODES` 的
+**文件/探测链编号**（0=深 1=沪 2=北 71=港 74=美），与 PROTOCOL_SPEC yaml、
+:class:`DataProfile.market` 同一口径；**这不是 TDX 二进制协议链的市场号**——
+协议帧里北交所复用 0（与深市同段，见下）。EX_GOLD/EX_FUTURES 的 73/75 是
+TDX 扩展市场号，不在 ``Market.CODES`` 的五个段内。
 
 **BJ 市场码双轨口径（§5 对齐）**：协议链 BJ=0（TDX 老协议把北交所并入
 深市市场号段，0=深/北）；文件链 BJ=2（reader/profile 探测与 PROTOCOL_SPEC
@@ -45,16 +58,8 @@ EX_FUTURES        75          cu/ru/al/zn/pb/IF/IH/IC（中金所/上期所）
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
-from ..reader.profile import (
-    AssetClass,
-    Market,
-    Period,
-    PriceEncoding,
-    TimeEncoding,
-    VolumeUnit,
-)
+from ..reader.profile import Market
 
 __all__ = [
     "MarketPreset",
@@ -70,88 +75,24 @@ __all__ = [
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
 class MarketPreset:
-    """一份市场/品种预设。
+    """一份市场/品种预设的**身份**：叫什么、市场号、管哪些代码段。
 
     Attributes
     ----------
     name:
-        预设名（如 ``"SH_A"``），用于 :func:`get_preset` 查找。
+        预设名（如 ``"SH_A"``），用于 :func:`get_preset` 查找，也是
+        :mod:`tstdx.profile.detect` 报告里的 ``preset_name``。
     market_id:
-        TDX 协议中的原始市场编号（0=深 1=沪 2=北 …）。
-    market_name:
-        :class:`~tstdx.reader.profile.Market` 的字符串常量
-        （``"sh"`` / ``"sz"`` / ``"bj"`` …）。
-    asset_class:
-        :class:`~tstdx.reader.profile.AssetClass` 的字符串常量。
+        文件/探测链市场编号（口径见模块 docstring）：:func:`match_preset`
+        用它裁决市场，探测层用它做先验加权。
     code_prefixes:
-        该市场/品种下 6 字节代码串的常见前缀。用于 :func:`match_preset`。
-    typical_categories:
-        常见 K 线 category 取值（对应
-        :class:`~tstdx.reader.profile.Period.CMD_CATEGORY` 的 category 编号），
-        供探测时缩小搜索空间。
-    quote_scale:
-        价格缩放倍数（行情快照用；K 线通常为 1000）。
-    volume_unit:
-        :class:`~tstdx.reader.profile.VolumeUnit` 字符串（``"share"`` /
-        ``"lot"`` / ``"contract"``）。
-    price_encoding:
-        :class:`~tstdx.reader.profile.PriceEncoding` 字符串。
-    time_encoding:
-        :class:`~tstdx.reader.profile.TimeEncoding` 字符串。
-    default_period:
-        默认周期（:class:`~tstdx.reader.profile.Period` 字符串）。
-    notes:
-        额外说明（如交易所名称、注意事项）。
+        该市场/品种下 6 字节代码串的常见前缀，:func:`match_preset` 唯一的
+        匹配依据。
     """
 
     name: str
     market_id: int
-    market_name: str
-    asset_class: str
     code_prefixes: tuple[str, ...]
-    typical_categories: tuple[int, ...]
-    quote_scale: int
-    volume_unit: str
-    price_encoding: str = PriceEncoding.UINT32
-    time_encoding: str = TimeEncoding.YYYYMMDD
-    default_period: str = Period.DAY
-    notes: str = ""
-
-    def to_dict(self) -> dict[str, Any]:
-        """序列化为 dict，便于配置持久化。"""
-        return {
-            "name": self.name,
-            "market_id": self.market_id,
-            "market_name": self.market_name,
-            "asset_class": self.asset_class,
-            "code_prefixes": list(self.code_prefixes),
-            "typical_categories": list(self.typical_categories),
-            "quote_scale": self.quote_scale,
-            "volume_unit": self.volume_unit,
-            "price_encoding": self.price_encoding,
-            "time_encoding": self.time_encoding,
-            "default_period": self.default_period,
-            "notes": self.notes,
-        }
-
-    def data_profile_kwargs(self, *, period: str | None = None) -> dict[str, Any]:
-        """生成 :class:`DataProfile` 关键字参数。
-
-        Parameters
-        ----------
-        period:
-            覆盖默认周期；None 使用 :attr:`default_period`。
-        """
-        eff_period = period or self.default_period
-        return {
-            "market": self.market_name,
-            "asset_class": self.asset_class,
-            "period": eff_period,
-            "price_scale": self.quote_scale,
-            "price_encoding": self.price_encoding,
-            "volume_unit": self.volume_unit,
-            "time_encoding": self.time_encoding,
-        }
 
 
 # --------------------------------------------------------------------------- #
@@ -161,132 +102,44 @@ _PRESETS: dict[str, MarketPreset] = {
     "SH_A": MarketPreset(
         name="SH_A",
         market_id=Market.CODES[Market.SH],
-        market_name=Market.SH,
-        asset_class=AssetClass.STOCK,
         code_prefixes=("600", "601", "603", "605", "688"),
-        typical_categories=(4, 7),  # day / 1min
-        quote_scale=100,
-        volume_unit=VolumeUnit.SHARE,
-        price_encoding=PriceEncoding.UINT32,
-        time_encoding=TimeEncoding.YYYYMMDD,
-        default_period=Period.DAY,
-        notes="上交所主板 + 科创板；A 股日线价格 ×100，成交量股",
     ),
     "SZ_A": MarketPreset(
         name="SZ_A",
         market_id=Market.CODES[Market.SZ],
-        market_name=Market.SZ,
-        asset_class=AssetClass.STOCK,
         code_prefixes=("000", "001", "002", "003", "300", "301"),
-        typical_categories=(4, 7),
-        quote_scale=100,
-        volume_unit=VolumeUnit.SHARE,
-        price_encoding=PriceEncoding.UINT32,
-        time_encoding=TimeEncoding.YYYYMMDD,
-        default_period=Period.DAY,
-        notes="深交所主板 + 创业板；规则同 SH_A",
     ),
+    # 文件链 BJ=2；TDX 协议帧把 BJ 并入 0（与深市同段）——见上方双轨口径说明。
     "BJ_A": MarketPreset(
         name="BJ_A",
-        market_id=Market.CODES[Market.BJ],  # 文件链=2；协议链 BJ=0（见模块 docstring 双轨口径）
-        market_name=Market.BJ,
-        asset_class=AssetClass.STOCK,
+        market_id=Market.CODES[Market.BJ],
         code_prefixes=("43", "83", "87", "88", "92"),
-        typical_categories=(4, 7),
-        quote_scale=100,
-        volume_unit=VolumeUnit.SHARE,
-        price_encoding=PriceEncoding.UINT32,
-        time_encoding=TimeEncoding.YYYYMMDD,
-        default_period=Period.DAY,
-        notes=(
-            "北交所；市场码双轨：文件/探测链 market_id=2，TDX 二进制协议帧"
-            "复用 0（与深市同段）——部分老主站因此把 BJ 归到 market_id=0 下。"
-            "裁决以代码前缀为准（domain.symbol 单一事实源），不依赖市场号"
-        ),
     ),
     "SH_FUND": MarketPreset(
         name="SH_FUND",
         market_id=Market.CODES[Market.SH],
-        market_name=Market.SH,
-        asset_class=AssetClass.ETF,
         code_prefixes=("510", "511", "512", "513", "515", "516", "517", "518", "560", "588"),
-        typical_categories=(4, 7),
-        quote_scale=100,
-        volume_unit=VolumeUnit.SHARE,
-        price_encoding=PriceEncoding.UINT32,
-        time_encoding=TimeEncoding.YYYYMMDD,
-        default_period=Period.DAY,
-        notes="上交所 ETF / LOF；单位「股」而非「份」需按发行文件核对",
     ),
     "SZ_FUND": MarketPreset(
         name="SZ_FUND",
         market_id=Market.CODES[Market.SZ],
-        market_name=Market.SZ,
-        asset_class=AssetClass.ETF,
         code_prefixes=("15", "16", "18"),
-        typical_categories=(4, 7),
-        quote_scale=100,
-        volume_unit=VolumeUnit.SHARE,
-        price_encoding=PriceEncoding.UINT32,
-        time_encoding=TimeEncoding.YYYYMMDD,
-        default_period=Period.DAY,
-        notes="深交所 ETF / LOF；代码 15/16/18 开头",
     ),
     "SH_BOND": MarketPreset(
         name="SH_BOND",
         market_id=Market.CODES[Market.SH],
-        market_name=Market.SH,
-        asset_class=AssetClass.BOND,
         code_prefixes=("01", "10", "11", "12", "13", "14"),
-        typical_categories=(4,),
-        quote_scale=100,
-        volume_unit=VolumeUnit.SHARE,
-        price_encoding=PriceEncoding.UINT32,
-        time_encoding=TimeEncoding.YYYYMMDD,
-        default_period=Period.DAY,
-        notes="上交所债券；成交量单位「张」在部分报表里等同「元」面值",
     ),
     "SZ_BOND": MarketPreset(
         name="SZ_BOND",
         market_id=Market.CODES[Market.SZ],
-        market_name=Market.SZ,
-        asset_class=AssetClass.BOND,
         code_prefixes=("11", "12", "13", "14", "15"),
-        typical_categories=(4,),
-        quote_scale=100,
-        volume_unit=VolumeUnit.SHARE,
-        price_encoding=PriceEncoding.UINT32,
-        time_encoding=TimeEncoding.YYYYMMDD,
-        default_period=Period.DAY,
-        notes="深交所债券；与 SH_BOND 共享大部分编码规则",
     ),
-    "EX_GOLD": MarketPreset(
-        name="EX_GOLD",
-        market_id=73,
-        market_name=Market.SHFE,
-        asset_class=AssetClass.FUTURE,
-        code_prefixes=("au", "AU"),
-        typical_categories=(4, 7),
-        quote_scale=1000,
-        volume_unit=VolumeUnit.LOT,
-        price_encoding=PriceEncoding.UINT32,
-        time_encoding=TimeEncoding.YYYYMMDD,
-        default_period=Period.DAY,
-        notes="上期所黄金期货（TDX 扩展市场 73）；量单位「手」，价格 ×1000",
-    ),
+    "EX_GOLD": MarketPreset(name="EX_GOLD", market_id=73, code_prefixes=("au", "AU")),
     "EX_FUTURES": MarketPreset(
         name="EX_FUTURES",
         market_id=75,
-        market_name=Market.SHFE,
-        asset_class=AssetClass.FUTURE,
         code_prefixes=("cu", "CU", "ru", "al", "AL", "zn", "pb", "IF", "IH", "IC"),
-        typical_categories=(4, 7),
-        quote_scale=1000,
-        volume_unit=VolumeUnit.CONTRACT,
-        price_encoding=PriceEncoding.UINT32,
-        time_encoding=TimeEncoding.YYYYMMDD,
-        default_period=Period.DAY,
-        notes="期货主连/主力合约（TDX 扩展市场 75）；量单位「张/合约」",
     ),
 }
 

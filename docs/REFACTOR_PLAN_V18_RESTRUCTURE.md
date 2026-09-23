@@ -106,6 +106,8 @@
 | G7 | **G3 的"调用方看得见"那半边还空着**（第 13 轮登记，第 9 轮的账本半边不覆盖它）：第 9 轮把 `0x000F`/`0x0010` 的 `tier`/`verified` 与四处文档口径一起下调了，可是**线上传回来的形状一字未变**——盘中 `capital_changes`/`finance` 仍是 `provenance.kind=DIRECT`、`degraded=None`、`warnings=0` 的 250 条错值，调用方只有读源码 docstring 才知道字段不可信。这与 G5、≈F-72 是同一族：判断写在文档里，不写在结果里 | `wt_v18b13step/live/L2b_extra.log`（三条 G3 格 meta 逐字）；机制现成但无生产者：`_forward_decode_caveats`（`tstdx/client/_mixin.py:104`）只转发解码层自己记下的告警，而这两个解析器不记；`ProvenanceKind` 只有 `DIRECT` 一个成员，其 docstring 明写" declaring a second member without anything that produces it 正是本族要删的形状"，所以加等级必须同时给生产者 | P1（对外可见性，非数据正确性本身）→ **已清偿（第 14 轮）**：出口处的值域尺子（`tstdx/domain/integrity.py`）挂进唯一转发口 `_forward_decode_caveats`，错值行随结果带一条 `field_out_of_domain` 上 wire，五张面与 `strict` 同口径；布局本身仍按 G3 的"不猜字节"留在真机 golden 之后 |
 | G8 | **`Quote` 的三个公开字段在 tdx 实时路径上恒空，而对外文档一字未提**（第 13 轮盘中量到）：`quotes`/`snapshot` 回来的记录里 `datetime=null`、`bid=[]`、`ask=[]`，价格/量/额都是真的（12:01 从已装 wheel 里读到 1255.6 / 1 581 000 手）。这是**诚实的形状**——解析器 docstring 明写"绝不臆造 bid/ask 价格，以免把未经验证的布局当成事实输出"，未识别的末段原样留在 `extra['tail_leb128']`／`extra['_u4']`——缺口不在解析器，在**读者**：`docs/api/interfaces.md` 与 `docs/tdx_status.md` 里 `datetime`/`bid`/`ask` 零命中，调用方只能靠撞上看 null 才知道这三格在 7709 实时面上没有来源 | 盘中：`live/L2_client_intraday.log`（`_hdr=8205`、`bid/ask=[]`）、`wt_wheelcheck/wheel_probe.log`（已装 wheel 的 `snapshot` 同形状）；文档侧：全 `docs/` grep `datetime` 在 `interfaces.md`/`tdx_status.md` 0 命中；源码侧：`tstdx/protocol/parsers/_std7709_quote.py:185-197`（`u4` 语义未识别）、`:370-389`（不臆造 bid/ask、末段原样保留） | P2（对外字段口径，G7/F-75 同族：形状真、说法缺）→ **已清偿（第 14 轮）**：`docs/tdx_status.md` §一之二 + `docs/api/interfaces.md` 的 `Quote` 段写明三格恒空与其来源；新增 `tests/architecture/test_tdx_status_matrix.py` 把整张状态表钉回命令账本与分派拦截表（幻影命令号、给被拦命令盖 ✅、⛔ 行写错异常都当场红） |
 | G9 | **两份用户文档教用户 `pip install tstdx`，而这个名字在 PyPI 上不存在**（第 14 轮为"发布新版本"取证时量到）：`https://pypi.org/pypi/tstdx/json` 与 `/simple/tstdx/` 都回 404，即名字从未被领取；而 `README.md` 的"安装"第一行与 `docs/quickstart.md:9` 都把 `pip install tstdx` 写成可直接执行的指令。`docs/releases/v1.0.0.md:57` 自己写着产物"在安装矩阵通过并完成 PyPI Trusted Publishing 后"才附加——发布链的这一步从来没走过，读者的安装指令却一直在替它背书 | 本轮实测：`reports/g9_pypi_probe.log`（两个端点的 404 与 JSON 原文逐字、`grep -rn "pip install tstdx" README.md docs/` 的命中清单）；判据：`tests/compatibility/test_release_history_contract.py::test_no_user_doc_presents_an_unpublished_install_path_as_available` | P2（对外可安装性口径；文档侧已按实测改写，真正关闭它要的是发布动作） |
+| G10 | **`DataProfile.timezone` 是一格从未有人拧过的旋钮，而它暗示的换算产品并不做**（第 15 轮 §七 量到、只改了文档那半边；第 16 轮登记并清偿）：档案把 `timezone="Asia/Shanghai"` 当成第 15 个维度登记，全仓 190 个模块里**零读取点**，`docs/FAQ.md` 却拿"档案层有这个字段"作为时区问答的凭据。日线/分钟线交的是交易所本地时间字符串、出口不做换算，于是这个字段唯一的作用是让探测报告看起来像做过时区裁决 | 本轮实测：`tests/support/field_readers.py` 的 AST 扫描（DataProfile 14 字段 / 扫面 190 模块，读取点只落在 4 份真读取者上，见 §25 第一节），`timezone` 不在任何一格的命中字段里；判据：`tests/architecture/test_profile_knob_gates.py::test_profile_timezone_knob_stays_deleted`（含"不许把时区塞进豁免清单蒙过上一条"的反洞正控）；变异 M1 量出装回旋钮即 3 项红 | P2（形状卫生 + 一句文档谎）→ **已清偿（第 16 轮）**：字段删除，`docs/FAQ.md` 的时区问答改写成"规格档案层不带任何时区入参"的实测口径；`from_dict` 按 `__dataclass_fields__` 过滤，旧序列化 dict 带 `timezone` 仍能加载，不留兼容垫 |
+| G11 | **`MarketPreset` 这张表 12 列里只有 3 列有人按它行动，其余 9 列是"预设能解码"的谎**（第 16 轮登记并清偿）：`market_name`/`asset_class`/`typical_categories`/`quote_scale`/`volume_unit`/`price_encoding`/`time_encoding`/`default_period`/`notes` 九列加一座 `data_profile_kwargs()` 桥，把**行情快照**口径的缩放原样填进 K 线解码器的 `price_scale`——两套口径之间没有任何换算（快照对 EX_GOLD/EX_FUTURES 记 1000，日线档案 `future_day` 却记 100，接线即差一个数量级）。生产链路上真正被咨询的只有 `code_prefixes` 与 `market_id` 两列，加 `name` 当报告标识 | 本轮实测：MarketPreset 改前 12 字段、改后 3 字段，读取扫描命中的模块只有 `tstdx/profile/presets.py` 与 `tstdx/profile/detect.py`（第三份 `tstdx/trade/simulator.py` 是外来的 `p.name`，正是读取者白名单要挡的那类假绿）；判据：`test_every_market_preset_field_has_a_reader`（零豁免）+ `test_market_preset_shape_is_pinned` + `test_preset_table_has_no_road_into_the_decoder`；变异 M2/M3/M8 各当场红 | P1（错数来源，与 G3 同族但这一格在档案层）→ **已清偿（第 16 轮）**：表收缩到身份三列、桥整体删除；两条单位口径（ETF/LOF 记「股」、债券记「张」）从被删的 `notes` 迁进模块 docstring，因为它们是读者核对发行文件时真正要用的信息 |
 
 **结论口径建议统一成这句**（写进 README 与 F-37 裁决记录，避免每轮重新解释）：> 链是通的，声明与执行是闭合的；G1/G5 是"实现了但选择不给数/不给类型"的登记账，
 > G2 经第 7 轮更正后是**口径账**（已改判据，无待补契约），
@@ -121,6 +123,13 @@
 > 主站不通时它红而不 skip；G8 的空字段口径已写在读者会读的两页上，并由矩阵判据钉住；
 > 本轮新登记 G9（文档教用户 `pip install tstdx` 而 PyPI 上没有这个名字），文档侧已按实测改写，
 > 关闭它需要的是发布动作本身。
+
+**第 16 轮之后的同一句话（只补两格，其余不变）**：
+> G10/G11 本轮登记并当场清偿——档案层与预设表里那些"声明了没人拧"的旋钮已收缩到有人行动的行，
+> 判据是共享尺子 `tests/support/field_readers.py`（本轮给它补了 `holders` 一格：`self.profile.x`
+> 这种挂在自己身上的读取路径从前扫不到）与新的 `tests/architecture/test_profile_knob_gates.py`。
+> 于是"G3 是唯一一处给了错数的真缺陷"这句要加一个限定才立得住：G11 那座 `preset → price_scale`
+> 的桥是同族的错数来源，只是它在档案层、且本轮已物理删除，所以**线上仍在给错数的只剩 G3 一格**。
 
 ---
 
@@ -2363,3 +2372,147 @@ benchmark smoke OK、bridges 24 passed。离线全量（`fulltest_v18b15ship.xml
 - **并行会话的账**：`CHANGELOG.md`、`docs/REFACTOR_PLAN_V17_CLOSURE.md`、`docs/REFACTOR_PLAN_V18_REVIEW.md`
   三份仍是别人的未提交登记，本轮**不 commit 它们**。
 
+---
+
+## 25. 执行记录（续）
+
+### 第 16 轮｜档案层与预设表各有一排"没人拧的旋钮"：预设表 12 列量出 9 列是空的，另给共享尺子补了一格 `holders`（G10/G11 登记并当场清偿）
+
+**本轮授权**：用户请求「提交最新代码，继续改进优化」。第一格实测后是空的——`dbe7652` 已与
+`origin/main` 同步，工作树里唯一的改动来自并行会话的三份登记（见第八节），本轮不 commit 它们；
+力气因此全落在第二格，动的正是第 15 轮 §七 末尾自己写下的那笔"旋钮本身还没登记成 G 项"的账。
+本轮**动了生产形状**：`DataProfile` 15 字段 → 14，`MarketPreset` 12 字段 → 3，并删掉一座
+`preset → DataProfile` 的关键字桥。按授权①（含对外契约破坏）执行，不留兼容垫。
+
+#### 一、G10：`DataProfile.timezone` 是删，不是豁免
+
+第 15 轮改文档时留了一句话：`DataProfile.timezone` "声明了没人读"。本轮先按同一把尺子把它量实：
+`tstdx/` 全部 **190** 个模块做 AST 读取扫描，`timezone` 的读取点是 **0**。留着它的代价不是内存，
+是它在探测报告里替一桩从未发生的换算背书——日线/分钟线交的是**交易所本地时间字符串**、出口不做
+换算，这是 `docs/FAQ.md` 与 `tstdx/domain/models.py` 现行的对外口径，而 `timezone="Asia/Shanghai"`
+恰好是这句口径的反面。所以本轮删字段，并把 FAQ 那条时区问答的最后一句从"档案层有这个元数据字段"
+改写成"规格档案层因此也不带任何时区入参：`DataProfile` 的字段全是解码器真正按它行动的差异维度"。
+
+不留兼容垫不等于会断：`from_dict`（`tstdx/reader/profile.py:226`）本来就是按
+`cls.__dataclass_fields__` 过滤入参字典的，旧的序列化档案里带着 `timezone` 依旧加载得动，
+多余键被丢弃——这条形状现读自代码，不是推测。
+
+#### 二、G11：预设表 12 列收缩到 3 列，以及一处**不对称**的裁决
+
+`MarketPreset` 改前 12 列，生产链路上真正被咨询的只有三列：`code_prefixes`（`match_preset` 的唯一
+匹配依据）、`market_id`（`tstdx/profile/detect.py:505` 拿 `hint_market` 反查）、`name`（同一处返回，
+进探测报告）。其余九列（`market_name`/`asset_class`/`typical_categories`/`quote_scale`/`volume_unit`/
+`price_encoding`/`time_encoding`/`default_period`/`notes`）加一座 `data_profile_kwargs()` 桥全部删除。
+桥删得最不含糊：它把**行情快照**口径的缩放原样填进 K 线解码器的 `price_scale`，两套口径之间没有任何
+换算——快照对 EX_GOLD/EX_FUTURES 记 1000，日线档案 `future_day` 记 100，接线即十分之一价。这正是
+G3 那一族"给了错数"的形状，只是它长在档案层。
+
+同一轮里 `DataProfile` 的 `market`/`asset_class`/`period` 三列**保留并豁免**，而 `MarketPreset` 的
+同名列删除。这条不对称不是手抖，是量出来的：前者经 `DetectionResult.to_dict()` 的 `profile` 格
+到达用户，生产者就在 `tstdx/profile/detect.py:149`；后者的 `to_dict()` 在全仓**零调用点**，
+"用户看得到"这条豁免理由对它不成立。豁免清单因此在判据里也要兑现——
+`test_identity_labels_reach_the_user` 直接构造 `DataProfile().to_dict()` 并要求三个豁免名都在产物里，
+`test_identity_exemptions_still_name_real_fields` 反着钉（清单里不许留已不存在的字段）。
+
+被删的 `notes` 里存着两条真有用的核对提醒（ETF/LOF 的成交量在部分主站记「股」而非「份」；债券成交量
+记「张」而一些报表把一张等同一元面值），它们随字段一起删就等于把知识丢掉，本轮把它们迁进模块
+docstring，并写明这张表**不声明任何解码口径**。
+
+#### 三、共享尺子的延伸：`holders` 一格，和一份会自检的读取者白名单
+
+本轮第一次把 `tests/support/field_readers.py` 交给档案层用，就量出这把尺子的两个盲区，
+一个是假孤立、一个是假通过：
+
+- **假孤立**：`amount_unit` 唯一的读取点在 `tstdx/sink/local_day.py:246`，写作 `self.profile.amount_unit`。
+  属性链回溯到根是 `Name('self')`，而 owner 名单里放 `self` 会让任何类的任何字段都算被读——所以
+  旧版尺子把 `amount_unit` 报成孤儿。补法不是往 owner 里塞 `self`，是给尺子加一格 `holders`：
+  链上出现"实例挂在自己身上"的属性名即认定命中。这一格由
+  `test_the_holder_path_is_what_buys_amount_unit_a_reader` 正控守住（同一字段：不带 `holders` 扫不到、
+  带 `holders` 扫得到），变异 M4 抽掉它当场 2 红。
+- **假通过**：`tstdx/trade/simulator.py` 里有个别类的 `p.name`，按 owner 名单它同时被记成 `DataProfile`
+  与 `MarketPreset` 的读取点。第一版 mitigation 是"模块正文提到类名才算"，结果把 `tstdx/profile/detect.py`
+  的合法 `name` 读取一起误杀（它只 `import PRESETS`，从不写 `MarketPreset` 这个 token），
+  判据当众红成 `orphans == ['name']`。最终换成**显式读取者白名单**，并且白名单每一格都 `is_file()` 自检
+  ——名单烂掉本身要当账，不是当沉默（变异 M5 把一个模块名改成不存在的，1 红）。
+  实测扫描面：`DataProfile` 的字段读取命中 5 个模块（白名单承认其中 4 个），`MarketPreset` 命中 3 个
+  （承认 2 个）；两边被拒的那一格都是 `tstdx/trade/simulator.py` 的 `name`。
+
+#### 四、"9 个市场预设"从两处手抄变成一处派生
+
+预设表行数这一格在用户文档里写了两处：`docs/api/README.md:82` 的 `| 9 市场预设 |` 与
+`docs/cookbook/03_offline_vipdoc.md:59` 的"内置 9 个市场预设"。本轮把它们挂进 `_EXACT_CLAIMS`，
+真相源是 `len(PRESETS)`——从此删预设不必再记得改两份文档，加预设也一样（变异 M6/M7 各改一处 → 各 1 红，
+M8 真删一个预设 → 判据与文档一起红）。
+
+#### 五、判据规模：3 758 → 3 771，逐项归属
+
+按"HEAD 树与候选树各自 `--collect-only` 实测"，不用估算。HEAD（`dbe7652`，`wt_v18b16head`）总收集
+**3 773** / 离线运行集 **3 758**；候选树总收集 **3 786** / 离线运行集 **3 771**（15 项 `network` 不在这笔账里）。
+净 **+13**，逐项对得上：
+
+| 来源 | 项数 |
+|---|---|
+| 新 `tests/architecture/test_profile_knob_gates.py` 0 → 11 | +11（DataProfile 全字段兑现 / 形状清单钉死 / `timezone` 留删 / 豁免仍指真字段 / 豁免到达产物 / `holders` 正控 / 内置档案自洽 / 预设零豁免 / 预设形状 / 预设无通往解码器的桥 / 预设仍是 9 个） |
+| `test_doc_code_consistency.py` 的 `_EXACT_CLAIMS` +2 行 | +2（两份文档的市场预设数） |
+
+删除判据 **0** 条。本轮没有合并、没有下调任何阈值。
+
+#### 六、候选树复测（`wt_v18b16step` @ `dbe7652`，08:40–08:44）
+
+先对账：本轮改到的 6 个路径（`docs/FAQ.md`、`tests/architecture/test_doc_code_consistency.py`、
+`tests/support/field_readers.py`、`tstdx/profile/presets.py`、`tstdx/reader/profile.py`、
+`tests/architecture/test_profile_knob_gates.py`）sha256 前 16 位主工作树与候选树**逐格相同**。
+runner 与变异脚本都放在被测树之外（`P:/github_public/scratch_v18b16/`）——第 15 轮 §九 那两次
+`rc≠0` 就是脚手架留在树里造成的，本轮不重犯。
+
+十一次门禁调用 `rc=0` 逐条在 `P:/github_public/scratch_v18b16/gates_20260923_084050.log`：
+`ruff check` `All checks passed!`、`ruff format --check` `456 files already formatted`、
+`mypy tstdx/` `Success: no issues found in 190 source files`、
+`check_originality --strict tstdx/` `Total: 191 / Original: 191 / License OK: 191 / Header OK: 191 /
+Suspicious: 0 / External imports: 17`、`spec_audit --json --strict` `"total_specs": 44` /
+`"coverage_pct": 100.0`、`golden_audit --gate` `L1 verified: 0x44e, 0x52d, 0x530` +
+`[GATE] all L1 verified commands have real samples (OK)`、`audit_reachability --strict`
+`模块总数: 190 可达: 175 白名单豁免: 15`、`contract_audit --ci`
+`PASS: 172 个注册 capability 全部落在声明形状之内（专属 Typed Query 63 ∪ 通用派发面 172）`、
+`check_docs_links` `docs link check OK (92 files)`、benchmark smoke
+`benchmark smoke OK: kline, market, vipdoc`、`tests/test_bridges.py` **24 passed**。
+
+离线全量（同一份日志末段）：**3 764 passed / 7 skipped / 15 deselected**，135.40 s。
+覆盖率另跑一次带 `--cov` 的独立全量（`fulltest_v18b16step.xml`）：同 3 764 / 7 / 15，192.98 s，
+`TOTAL 22 412 / 3 447 miss / 5 992 branch / 1 003 partial` = **82.14%**，
+`Required test coverage of 77.0% reached`——`fail_under = 77` 一字未动（第 15 轮 82.12%）。
+
+#### 七、变异台账（`P:/github_public/scratch_v18b16/mutate_v18b16.py`，08:45）
+
+八格逐条把本轮的判断改坏，量它红几项；每格跑完立刻按原始字节还原并比 sha256：
+
+| 代号 | 改坏的东西 | 种缺陷 | 还原 |
+|---|---|---|---|
+| M1 | 把 `DataProfile.timezone` 装回字段表 | 3 红（留删判据 + 形状清单 + 全字段兑现） | sha256 相同，复跑 3 passed |
+| M2 | 给 `MarketPreset` 补回一列没人行动的 `quote_scale` | 2 红（形状钉 + 零豁免） | 同上，2 passed |
+| M3 | 让预设表重新长出 `data_profile_kwargs()` 桥 | 1 红（无桥判据） | 同上，1 passed |
+| M4 | 抽掉尺子的 `holders` 维度 | 2 红（正控 + DataProfile 全字段） | 同上，2 passed |
+| M5 | 读取者白名单里留一个不存在的模块 | 1 红（白名单自检） | 同上，1 passed |
+| M6 | `docs/api/README.md` 的预设数手抄成 8 | 1 红 / 50 passed | 同上，51 passed |
+| M7 | cookbook 的预设数手抄成 8 | 1 红 / 50 passed | 同上，51 passed |
+| M8 | 从预设表真删一个预设 | 1 红（仍是 9 个） | 同上，1 passed |
+
+`mutations=8 bad=0`。第一版脚本有 4 格报 `ANCHOR-NOT-UNIQUE (0 hits)`——那是我自己的锚点按 LF
+去匹配 CRLF checkout 出来的源文件，属账本自身的形状错；改成按文件实际行尾归一后八格全按预期。
+记这一笔是因为"锚点 0 命中"与"判据失明"在日志里长得太像，得由人分开。
+
+#### 八、本轮明确未做
+
+- **G1/G3/G5/G9 一格未动**：三格 fail-fast 表、`0x000F`/`0x0010` 的真机布局（不猜协议字节）、
+  `fund_estimate` 的裁决、以及"把 `v1.1.0` 变成装得通的发布"这条只有人手能点的动作。
+- **`DESIGN.md` 的蓝图不改**：§6.1 那份 `DataProfile` 草案（`DESIGN.md:773-787`）仍列着
+  `volume_encoding`/`endian`/`timezone`/`ohlc_order`，`:320` 还写着"price_scale 由所属 Profile 决定
+  （见 profile/presets.py）"。两个独立理由让它留在射程外：文件自己第 7 行写明"本文按原文留存，
+  不随代码订正"；而 `test_doc_code_consistency.active_docs()` 的射程是 README/SECURITY/CONTRIBUTING +
+  `docs/**.md`，仓库根的 `DESIGN.md` 本来就不在活文档尺子之内。
+- **一处只记不猜的标签观察**：`tstdx/runtime/executor.py:623,628` 的 1min 与 5min 两条本地 vipdoc
+  路径都用 `MinBarReader(profile="a_share_min", ...)`，真正的间隔由 `interval=` 决定——档案名读起来
+  像"只管 1 分钟"。它没让任何一格给错数，所以本轮不动它；改名属"标签与用途不符"那一族，
+  下一轮按同一把尺子量过再定。
+- **并行会话的账**：`CHANGELOG.md`、`docs/REFACTOR_PLAN_V17_CLOSURE.md`、`docs/REFACTOR_PLAN_V18_REVIEW.md`
+  三份仍是别人的未提交登记，本轮**不 commit 它们**。
