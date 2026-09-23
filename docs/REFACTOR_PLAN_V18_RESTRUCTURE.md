@@ -2457,13 +2457,14 @@ M8 真删一个预设 → 判据与文档一起红）。
 
 删除判据 **0** 条。本轮没有合并、没有下调任何阈值。
 
-#### 六、候选树复测（`wt_v18b16step` @ `dbe7652`，08:40–08:44）
+#### 六、候选树复测（`wt_v18b16step` @ `dbe7652`，08:40–08:51，时刻一律北京时）
 
 先对账：本轮改到的 6 个路径（`docs/FAQ.md`、`tests/architecture/test_doc_code_consistency.py`、
 `tests/support/field_readers.py`、`tstdx/profile/presets.py`、`tstdx/reader/profile.py`、
 `tests/architecture/test_profile_knob_gates.py`）sha256 前 16 位主工作树与候选树**逐格相同**。
 runner 与变异脚本都放在被测树之外（`P:/github_public/scratch_v18b16/`）——第 15 轮 §九 那两次
-`rc≠0` 就是脚手架留在树里造成的，本轮不重犯。
+`rc≠0` 就是脚手架留在树里造成的，本轮不重犯。日志头部的 `# captured:` 是 shell `date` 打的 GMT，
+本文所有时刻按本机北京时记（同一台机器上两者差 8 小时）。
 
 十一次门禁调用 `rc=0` 逐条在 `P:/github_public/scratch_v18b16/gates_20260923_084050.log`：
 `ruff check` `All checks passed!`、`ruff format --check` `456 files already formatted`、
@@ -2501,7 +2502,27 @@ Suspicious: 0 / External imports: 17`、`spec_audit --json --strict` `"total_spe
 去匹配 CRLF checkout 出来的源文件，属账本自身的形状错；改成按文件实际行尾归一后八格全按预期。
 记这一笔是因为"锚点 0 命中"与"判据失明"在日志里长得太像，得由人分开。
 
-#### 八、本轮明确未做
+#### 八、提交树复测（`wt_v18b16ship` @ `3dd14a3`，08:56–09:03）
+
+`3dd14a3`（7 个文件 `+464 / −194`）落盘后另开一棵干净的**提交树**，三处抽查
+（`tstdx/profile/presets.py`、`tests/architecture/test_profile_knob_gates.py`、
+`docs/REFACTOR_PLAN_V18_RESTRUCTURE.md`）的 blob 哈希与工作树逐格相同，树内 `dirty=0`，
+顶层没有任何临时 `.py`（runner 与变异脚本都在 `P:/github_public/scratch_v18b16/`）。
+十一次调用 `rc=0` 逐条在 `gates_v18b16ship.log`，读数与第六节**逐项相同**：`All checks passed!`、
+`456 files already formatted`、`Success: no issues found in 190 source files`、
+`Total: 191 / Original: 191 / Suspicious: 0 / External imports: 17`、`"total_specs": 44` /
+`"coverage_pct": 100.0`、`L1 verified: 0x44e, 0x52d, 0x530` + `[GATE] … (OK)`、
+`模块总数: 190 可达: 175 白名单豁免: 15`、`PASS: 172 个注册 capability …（专属 63 ∪ 派发面 172）`、
+`docs link check OK (92 files)`（主工作树那一遍报 93，多的那一份是并行会话未提交的
+`docs/REFACTOR_PLAN_V18_REVIEW.md`，不在这笔账里）、benchmark smoke OK、bridges 24 passed。
+
+离线全量两次独立跑：`gates_v18b16ship.log` 末段 **3 764 / 7 跳过 / 15 排除**、144.59 s；
+带 `--cov` 的第二次（`fulltest_v18b16ship.xml`）同样 3 764 / 7 / 15、194.54 s，
+`TOTAL 22 412 / 3 447 / 5 992 / 1 003` = **82.14%**——与第六节候选树是两次独立测量，
+数字逐格相同。`fail_under = 77` 一字未动。`v1.1.0` 标签不移动：本轮没有新的可发布产物变化，
+而 G9 那一格等的从来不是 tag。
+
+#### 九、本轮明确未做
 
 - **G1/G3/G5/G9 一格未动**：三格 fail-fast 表、`0x000F`/`0x0010` 的真机布局（不猜协议字节）、
   `fund_estimate` 的裁决、以及"把 `v1.1.0` 变成装得通的发布"这条只有人手能点的动作。
