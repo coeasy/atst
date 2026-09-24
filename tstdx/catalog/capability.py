@@ -275,7 +275,9 @@ def _semantic_web_bindings() -> list[MigratedCapabilityBinding]:
                     channel=channel,
                     backend="web_session",
                     method=capability,
-                    source=_SOURCE_FOR_PROVIDER.get(provider, "sina"),
+                    # 与 :func:`_discover_web_bindings` 同一口径：Provider 没有登记来源就当场
+                    # 报错。带默认值的查表会让一个新 Provider 的能力悄悄以别家的量纲单位上线。
+                    source=_SOURCE_FOR_PROVIDER[provider],
                 )
             )
     return values
@@ -479,6 +481,20 @@ def validate_call(
             _validate_composed(capability, args, kwargs)
             return
         raise TypeError(f"unknown migrated backend {meta.backend!r}")
+    except AttributeError as exc:
+        # 绑定表指向的实现取不到：这是表与代码分叉，不是调用方的参数错了。
+        # 让它穿过这里，HTTP/WS 两张面会把内部漂移报成 E9000/500——一张过期条目
+        # 对调用方是可诊断的契约问题，对本仓库是必须当场红的账。
+        raise ValidationError(
+            f"capability {capability!r} 的绑定指向了不存在的实现：{exc}",
+            context={
+                "provider": provider,
+                "channel": channel,
+                "capability": capability,
+                "phase": "binding_resolution",
+            },
+            cause=exc,
+        ) from exc
     except (KeyError, TypeError, ValueError) as exc:
         raise ValidationError(
             f"capability {capability!r} 参数不符合 v13 contract",

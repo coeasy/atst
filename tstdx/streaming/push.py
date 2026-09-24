@@ -225,22 +225,36 @@ class PushChannel:
         并记录 :attr:`last_error` 供调用方感知重连；非传输类异常继续抛出
         （数据损坏伪装成「无推送」比报错更危险）。
         """
+        frame, _ = self._read_with_reason(timeout)
+        return frame
+
+    #: 「这一轮没有帧」里仍然终止 :meth:`iter_messages` 的那几种原因。
+    #: ``timeout`` / ``empty`` 不在其中：它们只说明这一刻没有数据，通道照样能用。
+    _TERMINAL_READ = frozenset({"closed", "eof", "transport"})
+
+    def _read_with_reason(self, timeout: float) -> tuple[PushFrame | None, str]:
+        """一次读帧，连同「为什么没有帧」一起返回。
+
+        原因分两类是这张面的口径：把「超时」和「通道已关闭 / 传输耗尽」混成同一个
+        ``None``，消费者就无法区分「再等一会儿还有帧」和「这条通道再也不会给帧」——
+        后者若被当成前者包在 ``while True`` 里，是一个不会自己结束的空转。
+        """
         if self._closed:
-            return None
+            return None, "closed"
         try:
             raw = self._read_frame(timeout)
         except TimeoutError:
-            return None
+            return None, "timeout"
         except (ConnectionError, OSError) as exc:
             self._last_error = exc
             logger.warning("PushChannel 传输断开（连接层错误，可重连）: %s", exc)
-            return None
+            return None, "transport"
         if raw is None:
-            return None
+            return None, "eof"
         payload = getattr(raw, "payload", raw)  # ResponseFrame → 取载荷字节
         if not payload:
-            return None
-        return PushFrame.parse(payload)
+            return None, "empty"
+        return PushFrame.parse(payload), "ok"
 
     @property
     def last_error(self) -> BaseException | None:
@@ -250,13 +264,15 @@ class PushChannel:
     def iter_messages(self, timeout: float = 1.0) -> Iterator[PushFrame]:
         """持续产出推送帧；通道关闭或传输耗尽（``read_frame`` 返回 None）时停止。
 
-        需要持续轮询的调用方请在外层 ``while True`` 中消费本生成器。
+        超时与空载荷**不**结束迭代——它们不是终态。需要持续轮询的调用方请在外层
+        ``while True`` 中消费本生成器：本生成器自己只会在终止原因上收口。
         """
-        while not self._closed:
-            frame = self.read(timeout=timeout)
-            if frame is None:
-                break
-            yield frame
+        while True:
+            frame, reason = self._read_with_reason(timeout)
+            if reason in self._TERMINAL_READ:
+                return
+            if frame is not None:
+                yield frame
 
     @property
     def subscribed(self) -> set[str]:

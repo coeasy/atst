@@ -53,6 +53,34 @@ _MISSING_ALERT_AFTER = 3
 # ---------------------------------------------------------------------------
 
 
+def validate_subscription(
+    symbols: str | Sequence[str], *, interval: float, max_queue: int
+) -> list[str]:
+    """One subscription contract for every base and facade.
+
+    ``interval`` must be positive because the polling kernel sleeps on it
+    (:meth:`QuoteStream._poll_once`, :meth:`AsyncQuoteStream._poll_once`): a zero
+    interval turns the worker thread into a tight request loop against the host.
+    """
+    values = [symbols] if isinstance(symbols, str) else list(symbols)
+    if not values:
+        raise SubscriptionError(
+            "symbols 不能为空",
+            context={"phase": "subscription_validation"},
+        )
+    if interval <= 0:
+        raise SubscriptionError(
+            "interval 必须大于 0（轮询内核按它 sleep，0 会退化成忙等）",
+            context={"interval": interval, "phase": "subscription_validation"},
+        )
+    if max_queue < 0:
+        raise SubscriptionError(
+            "max_queue 不能为负数",
+            context={"max_queue": max_queue, "phase": "subscription_validation"},
+        )
+    return values
+
+
 @dataclass
 class Subscription:
     """A single polling subscription with optional bounded queue."""
@@ -69,6 +97,13 @@ class Subscription:
     _missing: dict[str, int] = field(default_factory=dict, repr=False)
     #: Per-bare-code last-snapshot merger, only consulted when ``diff_only``.
     _merger: DeltaMerger = field(default_factory=DeltaMerger, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.interval <= 0:
+            raise SubscriptionError(
+                "interval 必须大于 0（轮询内核按它 sleep，0 会退化成忙等）",
+                context={"interval": self.interval, "phase": "subscription_validation"},
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -261,12 +296,12 @@ class QuoteStream:
         on_quote: on_quote_t | None = None,
         on_error: on_error_t | None = None,
     ) -> str:
-        values = [symbols] if isinstance(symbols, str) else list(symbols)
+        values = validate_subscription(symbols, interval=interval, max_queue=max_queue)
         queue = BackpressureQueue(max_queue) if max_queue > 0 else None
         with self._lock:  # symmetric with ``unsubscribe``
             key = f"sub{len(self._subs)}"
             sub = Subscription(
-                symbols=list(values),
+                symbols=values,
                 interval=float(interval),
                 diff_only=bool(diff_only),
                 max_queue=int(max_queue),
@@ -431,11 +466,11 @@ class AsyncQuoteStream:
         on_quote: on_quote_t | None = None,
         on_error: on_error_t | None = None,
     ) -> str:
-        values = [symbols] if isinstance(symbols, str) else list(symbols)
+        values = validate_subscription(symbols, interval=interval, max_queue=max_queue)
         queue = BackpressureQueue(max_queue) if max_queue > 0 else None
         key = f"sub{len(self._subs)}"
         sub = Subscription(
-            symbols=list(values),
+            symbols=values,
             interval=float(interval),
             diff_only=bool(diff_only),
             max_queue=int(max_queue),

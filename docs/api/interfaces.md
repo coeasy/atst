@@ -296,7 +296,7 @@ from tstdx.runtime.audit import audit_runtime                      # () -> Runti
 ## 3. 服务面（Integration）
 
 四个服务面的数据命令全部委托同一个 `Client`（含 `stream`：CLI 不自己构造流）。CLI 另有
-6 个传输/诊断命令（`probe`/`goods`/`f10`/`blocks`/`list`/`quotes-snapshot`）直连传输层客户端，
+6 个直连传输层命令（`probe`/`goods`/`f10`/`blocks`/`list`/`quotes-snapshot`，落点口径见 §3 CLI 表），
 不经内核——它们是协议诊断面，不是第二套能力执行路径（口径见 `tstdx/cli/runtime_commands.py`
 的模块 docstring，守卫是 `test_service_faces_never_import_the_web_layer` 与
 `test_service_faces_never_build_a_stream_themselves`）。
@@ -334,6 +334,10 @@ app = create_runtime_app()          # FastAPI 实例，交由 uvicorn 承载
 | `/v13/capabilities` | GET |
 | `/v13/runtime/health` | GET |
 
+标题里的"10 路由"只数上表这 10 支业务端点；`create_runtime_app()` 返回的 FastAPI 实例还会自带
+`/openapi.json`、`/docs`、`/docs/oauth2-redirect`、`/redoc` 四支文档页与三份异常处理器，它们不发
+行情、也不受上面的未声明字段口径管辖。
+
 `/v13/capabilities` 交付两份纯名字列表，没有状态字段：口径与那些发不出去的名字见
 §2「能力发现面：只有名字，没有可用性」。
 
@@ -345,6 +349,10 @@ from tstdx.integration.runtime_ws_server import serve_runtime_ws
 
 方法：`quotes`、`bars`、`snapshot`、`minute`、`trades`、`security.count`、
 `security.list`、`query`、`runtime.capabilities`、`runtime.health`。
+
+监听地址与路径由 `RuntimeWsConfig` 决定，默认 127.0.0.1:8765 上的 `/v13/ws`；连到别的路径
+会被以 1008 状态码关闭（reason 为 "unsupported path"）。`serve_runtime_ws` 是协程，返回 websockets
+库的 server 对象，本仓库不给它 `-m` 入口，也没有对应的命令行子命令（§3 CLI 表那一格里没有它）。
 
 `runtime.capabilities` 与 HTTP 同一份两份纯名字列表，同样**只有名字、没有可用性**
 （§2「能力发现面：只有名字，没有可用性」）。
@@ -359,13 +367,124 @@ from tstdx.integration.mcp import create_mcp_server, TOOLS
 `get_snapshot`、`get_minute_today`、`get_trades`、`get_security_count`、
 `get_security_list`。
 
-### CLI（31 子命令）
+### CLI（31 子命令 / 36 个叶子命令）
 
 ```bash
 tstdx --help
 ```
 
-全部子命令委托 `Client`；`tstdx.integration.runtime_tasks.RuntimeTaskStore`
+下表是 CLI 的**接口面本身**，不是一句"见 `--help`"：命令名、位置参数、旗标集合与落点全部
+由 `tests/architecture/test_cli_reference_table.py` 从 `argparse` 现值与处理器源码重新派生，
+逐格核对。改一个旗标、加一支命令、或把一支命令从内核挪到直连传输层而不改这张表，门禁就红。
+
+**落点**只有六种，含义是"这条命令的数据从哪儿来"：
+
+| 落点 | 含义 |
+|------|------|
+| 内核·typed | `Client` 的类型化方法或 `client.call`，stdout 打 `serialize_result` 信封（带 `provenance`/`currentness`） |
+| 内核·rows | 同一内核，经 `tstdx/cli/runtime_commands.py::_ClientRows` 把信封拆成裸行；`--json` 决定行数组还是人读表格 |
+| 直连传输层 | 不经内核，直接 `TdxClient` / `get_client(...)`——协议诊断面，不是第二套能力执行路径 |
+| 服务面宿主 | 拉起 HTTP 应用本身 |
+| 传输·诊断 | 主站解析与测速（`tstdx.transport.*` / `tstdx.tools.host_audit`） |
+| 反馈 | `tstdx.feedback`，不发行情请求 |
+| 元信息 | 只打印包版本，不发请求也不建连接 |
+
+| 命令 | 位置参数 | 旗标 | 落点 |
+|------|----------|------|------|
+| `adjusted-bars` | `symbol` | `--method` `--period` `--count` `--timeout` `--json` | 内核·rows |
+| `all-market` | — | `--node` `--source` `--page-size` `--max-pages` `--timeout` `--json` | 内核·rows |
+| `baidu` | `symbol` | `--kind` `--period` `--count` `--end-time` `--limit` `--timeout` `--json` | 内核·rows |
+| `bars` | `symbol` | `--provider` `--fallback` `--host` `--period` `--count` `--start` `--adjustment` | 内核·typed |
+| `blocks` | `block_type` | `--count` `--timeout` `--json` | 直连传输层 |
+| `capabilities` | — | — | 内核·typed |
+| `changes` | — | `--types` `--page` `--size` `--json` | 内核·rows |
+| `f10` | `symbol` | `--file` `--timeout` `--json` | 直连传输层 |
+| `feedback stats` | — | `--json` | 反馈 |
+| `feedback submit` | — | `--message` `--endpoint` `--store-dir` | 反馈 |
+| `fund estimate` | `code` | `--timeout` `--json` | 内核·rows |
+| `fund list` | — | `--timeout` `--json` | 内核·rows |
+| `fund nav` | `code` | `--page-size` `--page-index` `--timeout` `--json` | 内核·rows |
+| `goods` | `symbol` | `--kind` `--period` `--count` `--timeout` `--json` | 直连传输层 |
+| `hosts audit` | — | `--family` `--timeout` `--samples` `--workers` `--report` `--markdown` `--ranking-file` `--no-save-ranking` `--strict` `--quiet` | 传输·诊断 |
+| `hosts list` | — | `--timeout` | 传输·诊断 |
+| `hosts scan` | — | `--timeout` | 传输·诊断 |
+| `hot` | — | `--page` `--size` `--json` | 内核·rows |
+| `index constituents` | `code` | `--timeout` `--json` | 内核·rows |
+| `list` | `market` | `--start` `--count` `--timeout` `--json` | 直连传输层 |
+| `margin` | `symbol` | `--days` `--timeout` `--json` | 内核·rows |
+| `minute` | `symbol` | `--provider` `--host` | 内核·typed |
+| `minute-klines` | `symbol` | `--period` `--count` `--timeout` `--json` | 内核·rows |
+| `probe` | `cmd` | `--market` `--code` `--rate-limit` `--archive-dir` `--allow-trading-hours` `--timeout` `--json` | 直连传输层 |
+| `query` | `capability` | `--provider` `--channel` `--currentness` `--args` `--kwargs` | 内核·typed |
+| `quotes` | `symbols` | `--provider` `--fallback` `--host` | 内核·typed |
+| `quotes-snapshot` | `symbols` | `--timeout` `--json` | 直连传输层 |
+| `sector-flow` | — | `--board` `--sort` `--limit` `--timeout` `--json` | 内核·rows |
+| `security-count` | — | `--provider` `--host` `--market` | 内核·typed |
+| `security-list` | — | `--provider` `--host` `--market` `--start` | 内核·typed |
+| `serve` | — | `--port` `--bind` | 服务面宿主 |
+| `server-test` | — | `--timeout` | 传输·诊断 |
+| `snapshot` | `symbol` | `--provider` `--host` | 内核·typed |
+| `stream` | `symbols` | `--provider` `--host` `--interval` `--diff-only` `--max-queue` `--timeout` `--seconds` | 内核·typed |
+| `trades` | `symbol` | `--provider` `--host` `--start` `--count` | 内核·typed |
+| `version` | — | — | 元信息 |
+
+四条组命令（`feedback` / `fund` / `hosts` / `index`）必须给出叶子命令才能执行，所以上表的
+36 行 = 27 支单命令 + 9 支叶子命令。`--json` 只出现在 rows 与直连传输层那两支落点上：
+内核·typed 那九支**只发 JSON 信封，没有 `--json` 可关**。
+
+下面这一段是 36 支叶子命令各一条可直接照抄的示例：示例里的每一个参数都会被真实 parser 解析
+（`test_every_documented_cli_example_parses`），`test_every_leaf_command_has_an_example` 再要求
+36 支叶子一支不缺。
+
+```bash
+tstdx version                                              # 包版本
+tstdx capabilities                                         # 内核能力名清单（只有名字，无可用性）
+tstdx query stock_changes --args [[8201]] --kwargs {"size": 5}   # 任意能力的通用入口
+tstdx quotes sh600519 sz000001                            # 实时行情
+tstdx bars sh600519 --period day --count 80               # 日 K 线
+tstdx snapshot sh600519                                    # 规范快照
+tstdx minute sh600519                                      # 今日分时
+tstdx trades sh600519 --count 100                          # 逐笔成交
+tstdx security-count --market 0                             # 某市场的代码总数
+tstdx security-list --market 0 --start 0                   # 分页代码表
+tstdx stream sh600519 --interval 3 --diff-only --seconds 30    # 流式订阅
+tstdx hosts audit --family quotation --timeout 3           # 主站巡检（5 族）
+tstdx hosts list                                            # 当前生效的主站池
+tstdx hosts scan                                            # 并发测速并写排名文件
+tstdx server-test                                           # 主站连通性测速
+tstdx serve --bind 127.0.0.1 --port 8000                   # HTTP 网关（上面那 10 路由）
+tstdx feedback submit --message "这里写问题描述"            # 反馈上报
+tstdx feedback stats --json                                 # 本地反馈统计
+tstdx probe 0x052D --market 0 --code sh600000              # 未知命令主动探测
+tstdx changes --types 8201,8193 --size 10                   # 盘中异动池
+tstdx hot --page 1 --size 10                                # 股吧人气榜
+tstdx margin sh600519 --days 10                             # 融资融券明细
+tstdx sector-flow --board industry --sort main_net --limit 10    # 板块资金流
+tstdx adjusted-bars sh600519 --method qfq --count 100       # 复权 K 线
+tstdx all-market --node hs_a --source sina --max-pages 1    # 全市场行情摘要
+tstdx minute-klines sh600519 --period 5min --count 48       # 分钟 K 线
+tstdx baidu sh600519 --kind kline --period day --count 40   # 百度财经源
+tstdx fund nav 000001 --page-size 20                        # 基金历史净值
+tstdx fund estimate 000001                                  # 基金盘中估值
+tstdx fund list --json                                      # 基金代码列表
+tstdx index constituents 000300                             # 指数成分股
+tstdx blocks 1 --count 50                                   # 板块行情（直连传输层）
+tstdx goods AU2412 --kind quote                             # 商品行情（直连传输层）
+tstdx f10 sh600519                                          # F10 栏目目录
+tstdx f10 sh600519 --file 公司概况                          # F10 正文下载并解析
+tstdx list 0 --count 100                                    # 代码表（直连传输层）
+tstdx quotes-snapshot sh600519 sz000001 --json              # 批量快照（直连传输层）
+```
+
+`feedback submit` / `fund estimate` / `index constituents` 的 `--timeout` 现在两种位置都吃：
+`tstdx fund estimate 000001 --timeout 5` 与 `tstdx fund --timeout 5 estimate 000001` 等价
+（第 22 轮 G26 之前只有后一种能解析，前一种当场 exit 2）。
+
+`serve` 只承载上面那张 HTTP 表（10 路由），**不承载 WebSocket**：`create_runtime_app()` 里没有任何
+`websocket` 路由，JSON-RPC 面要另外跑 `await serve_runtime_ws()`（`tstdx/integration/runtime_ws_server.py`，
+默认 `127.0.0.1:8765`、路径 `/v13/ws`，见 `RuntimeWsConfig`）——那一支没有 `python -m` 入口，
+也没有 `tstdx` 子命令，只能作为协程由调用方托管。二者不是同一个端口上的两个协议。
+`tstdx.integration.runtime_tasks.RuntimeTaskStore`
 为服务面提供有界后台任务存储。
 
 ---

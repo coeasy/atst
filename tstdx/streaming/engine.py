@@ -31,12 +31,15 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import random
 import threading
 import time
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "ReconnectPolicy",
@@ -61,8 +64,8 @@ class ReconnectPolicy:
     base, cap:
         退避基准与上限（秒）。第 ``n`` 次失败后延迟 ``∈ [0, min(cap, base*2^n)]``。
     max_attempts:
-        最大连续失败次数；超过则 :meth:`should_give_up` 返回 ``True``（建议降级到
-        Web 源 / 离线），``0`` 表示永不放弃。
+        最大连续失败次数；超过则 :meth:`should_give_up` 返回 ``True``，
+        :class:`StreamEngine` 的轮询线程据此停止重拉（一次告警收尾），``0`` 表示永不放弃。
     jitter:
         是否启用全抖动（full jitter），默认开启，避免多客户端同步重连「惊群」。
     on_rotate_host:
@@ -100,6 +103,18 @@ class ReconnectPolicy:
         """成功一次即重置失败计数。"""
         with self._lock:
             self._attempts = 0
+
+    def current_delay(self) -> float:
+        """按**已计入**的失败次数给出退避时长，不再累加计数。
+
+        :meth:`next_delay` 会顺带 ``+1``；先调 :meth:`fail` 记录失败、再等待的
+        调用方若用它取延迟，指数会被同一轮失败计两次，退避跳得比声明的更快。
+        """
+        with self._lock:
+            exp = min(self.cap, self.base * (2**self._attempts))
+            if self.jitter:
+                return random.uniform(0.0, exp)
+            return exp
 
     def fail(self) -> None:
         """仅累加失败计数（不计算延迟）。"""
@@ -326,6 +341,16 @@ class QuoteChannel:
         with self._lock:
             self._subs.append(cb)
 
+    @property
+    def last_failed(self) -> bool:
+        """上一轮 :meth:`tick` 是否失败——驱动侧据此决定按间隔还是按退避等待。"""
+        return self._last_failed
+
+    @property
+    def reconnect(self) -> ReconnectPolicy:
+        """本通道的退避策略（驱动侧读，不改）。"""
+        return self._reconnect
+
     def _dispatch(self, ev: StreamEvent) -> None:
         for cb in self._subs:
             with contextlib.suppress(Exception):  # 订阅者异常不应中断通道
@@ -438,6 +463,10 @@ class StreamEngine:
         self._channel = QuoteChannel(
             poll, symbols, diff_only=diff_only, max_queue=max_queue, reconnect=reconnect
         )
+        # ``_run`` sleeps on this value; a non-positive interval would turn the
+        # polling thread into a tight loop against the host.
+        if interval <= 0:
+            raise ValueError("interval 必须大于 0（轮询线程按它 sleep，0 会退化成忙等）")
         self._interval = interval
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -468,4 +497,17 @@ class StreamEngine:
     def _run(self) -> None:
         while not self._stop.is_set():
             self._channel.tick()
-            self._stop.wait(self._interval)
+            if not self._channel.last_failed:
+                self._stop.wait(self._interval)
+                continue
+            policy = self._channel.reconnect
+            if policy.should_give_up():
+                logger.warning(
+                    "StreamEngine 连续失败 %s 次，达到 max_attempts=%s，停止轮询"
+                    "（每轮失败都已派发 error 事件，降级由调用方决定）",
+                    policy.attempts,
+                    policy.max_attempts,
+                )
+                return
+            # 失败轮按策略退避，不按轮询间隔立即重试。
+            self._stop.wait(policy.current_delay())

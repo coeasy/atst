@@ -10,36 +10,20 @@ import contextlib
 from collections.abc import Sequence
 from typing import Any
 
-from ..errors import SubscriptionError
-from .base import AsyncQuoteStream, QuoteStream, Subscription, on_error_t, on_quote_t
+from .base import (
+    AsyncQuoteStream,
+    QuoteStream,
+    Subscription,
+    on_error_t,
+    on_quote_t,
+    validate_subscription,
+)
 from .engine import BackpressureQueue
 from .state import StreamLifecycle, StreamState
 
 __all__ = ["StatefulQuoteStream", "AsyncStatefulQuoteStream", "StreamState"]
 
 _DEFAULT_QUEUE = 1024
-
-
-def _validate_subscription(
-    symbols: str | Sequence[str], *, interval: float, max_queue: int
-) -> list[str]:
-    values = [symbols] if isinstance(symbols, str) else list(symbols)
-    if not values:
-        raise SubscriptionError(
-            "symbols 不能为空",
-            context={"phase": "subscription_validation"},
-        )
-    if interval <= 0:
-        raise SubscriptionError(
-            "interval 必须大于 0",
-            context={"interval": interval, "phase": "subscription_validation"},
-        )
-    if max_queue < 0:
-        raise SubscriptionError(
-            "max_queue 不能为负数",
-            context={"max_queue": max_queue, "phase": "subscription_validation"},
-        )
-    return values
 
 
 def _build_subscription(
@@ -96,7 +80,7 @@ class StatefulQuoteStream(QuoteStream):
         on_quote: on_quote_t | None = None,
         on_error: on_error_t | None = None,
     ) -> str:
-        values = _validate_subscription(symbols, interval=interval, max_queue=max_queue)
+        values = validate_subscription(symbols, interval=interval, max_queue=max_queue)
         self._lifecycle.require_subscribable()
         sub = _build_subscription(
             values,
@@ -185,7 +169,7 @@ class AsyncStatefulQuoteStream(AsyncQuoteStream):
         on_quote: on_quote_t | None = None,
         on_error: on_error_t | None = None,
     ) -> str:
-        values = _validate_subscription(symbols, interval=interval, max_queue=max_queue)
+        values = validate_subscription(symbols, interval=interval, max_queue=max_queue)
         self._lifecycle.require_subscribable()
         sub = _build_subscription(
             values,

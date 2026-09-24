@@ -305,9 +305,10 @@ def _cmd_server_test(args: Any) -> int:
 
 
 def _cmd_serve(args: Any) -> int:
-    """启动 HTTP 行情网关（40+ 端点 + WebSocket）。
+    """启动 HTTP 行情网关（``create_runtime_app`` 的那 10 支业务路由）。
 
-    复用 :func:`tstdx.integration.runtime_http.create_runtime_app` 的 uvicorn 启动逻辑；
+    WebSocket JSON-RPC 不在这张面上：它由
+    :func:`tstdx.integration.runtime_ws_server.serve_runtime_ws` 单独托管。
     ``--port 0`` 是合法值（OS 分配随机空闲端口），不得被 ``or 8000`` 短路。
     """
     from ..integration.runtime_http import create_runtime_app
