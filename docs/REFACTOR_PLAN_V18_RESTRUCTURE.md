@@ -3655,16 +3655,44 @@ architecture `509 passed, 1 skipped in 53.32s`、streaming `38 passed`，两棵�
 
 #### 七、本轮之后仍然开放的账
 
-* **落号（本节定稿后回读，不是预写）**：本轮待提交的是 12 个代码/文档/判据文件加本台账，共 **13 个路径**
-  （另有并行会话的 `CHANGELOG.md`、`docs/REFACTOR_PLAN_V17_CLOSURE.md`、未跟踪的
-  `docs/REFACTOR_PLAN_V18_REVIEW.md`——不是本会话的现场，不进本轮提交）。纪律未变：**不执行 `git add`**，
-  等用户 staged。
+* **落号（本节定稿后回读，不是预写）**：本轮的 13 个路径（12 个代码/文档/判据文件加本台账）已提交为
+  `b66e771`（`13 files changed, 1519 insertions(+), 65 deletions(-)`，其中三份判据文件是新建），并推送：
+  `d3aaeee..b66e771 main -> main`，`git status -sb` 现读 `main...origin/main`，无前滑无落后。**索引此前为空，
+  暂存范围是用户在看过上一轮那份 13 路径清单之后给出的"推送最新代码"口令**；`git add` 只带这 13 个具名路径，
+  并行会话的 `CHANGELOG.md`、`docs/REFACTOR_PLAN_V17_CLOSURE.md` 与未跟踪的 `docs/REFACTOR_PLAN_V18_REVIEW.md`
+  事后回读仍分别停在 ` M` / ` M` / `??`——它们不属于本会话。纪律未变：**不 `git add -A`、不代人裁决他人台账**。
+* **落地口径（第 22 轮的交付面）**：从 `b66e771` 单独开一棵**干净导出树**（`P:/github_public/export_v18b22_ship`，
+  `git status --porcelain` 为空）跑发布测量，产物一律 `--dist-out` 指到 scratch，**不覆盖任何已记录的产物**
+  （G23 那条纪律就此兑现）：
+  * 17 道门禁全绿：`scratch_v18b22/gates_ship22.log` 第 6/9/12/15/17/18/219/238/868/887/908/911/924/970/988/1027/1075/1088
+    行逐格 `rc=0`，其中 architecture `509 passed, 1 skipped in 69.31s (0:01:09)`（第 969 行）、streaming
+    `38 passed`（第 987 行）、`无未登记孤儿 ✓`（第 886 行）、`docs link check OK (93 files)`（第 910 行）。
+  * canonical 构建 + 干净 venv 安装冒烟：`build_ship22.log`（`BUILD_RC=0`），wheel `754101` 字节 /
+    `sha256:4cc00cc65c666213…`、sdist `1651370` 字节 / `sha256:d0ef6a898f14efb5…`，`runtime_files=191`。
+    这是**同一个 `1.1.0` 版本号下的又一份产物**（G23 那一族的第五次构建），sdist 条目 2191（`tests 1917 /
+    tstdx 191 / PROTOCOL_SPEC 69 / docs 7`），而 `docs/api/interfaces.md` 与本台账**都不在其中**——本轮新造的
+    那张 CLI 接口表不随 sdist 交付，与第四节量的是同一套 include 机制。
+  * 离线全量（run3 同一套旗标，跑在落地后的导出树上）：`fulltest_v18b22_ship.log` 第 527/528/529 行
+    `Required test coverage of 77.0% reached. Total coverage: 82.41%` / `=== 3869 passed, 8 skipped,
+    15 deselected, 23 warnings in 282.64s (0:04:42) ===` / `PYTEST_RC=0`。条数与 `run5` 那格逐字相同
+    （同一棵树的内容）。82.42% → 82.41% 那一格差异是**可对账的**：两份逐文件表格 diff 只有一行移动——
+    `tstdx/transport/pool.py` 的 Missed `111 → 113`、BrPart `36 → 37`（TOTAL 随之 `3388 → 3390`、
+    `1006 → 1007`），也就是第 12 轮记录过的那族计时抖动行，不是回归；`fail_under = 77` 未动。
+  * **装出来的包自己兑现本轮四处修复**（不是只在源码树里绿）：`wheel_probe22c.log` 第 8~10 行三种 `--timeout`
+    拼法都给出 `timeout = 5.0`（G26）、第 17~22 行逐字抄出 `_cmd_serve` 的新 docstring 并派生出
+    `claims_40plus_endpoints = False` / `ws_denied_in_same_breath = True`（G25）、第 26~27 行
+    `ValidationError phase = binding_resolution` 与 `provider_table_has_default = False`（G27）、第 31~35 行
+    两次 `SubscriptionError` 加 `duplicate_validator_in_stateful = False`（G28）、第 39~40 行
+    `alive_after_3s = False` / `raised: 请求 tokens=50 超过桶容量 burst=1`（G21 的守卫确在循环内）。
+    同一份日志第 42/43 行登记了一格**没跑**的：临时 venv 里没有 pytest，装它要从 PyPI 取，而本轮授权口径是
+    离线——所以判据的绿灯只记在上面那份门禁日志里，不假装在包内重跑过。
 * **G25/G26/G27/G28 已清偿**；**G29 登记未清偿**（两把桶都没有排队与截止期，只有形状证据，关闭要测量）；
   **G22 判据已建**（wire 一字未改）；**G23 量清且本轮又添两份产物 + 一层交付口径**，关闭它要的是发布决定。
 * 老账不变：**G1**、**G3**（不猜协议字节，等真机 golden）、**G5**、**G9**（发布动作只能由人点）、
   **G18** 的剩余部分与 **G19**（他人台账的指针）。
-* **发布条件的一句话结论**：17 道门禁与离线全量在候选树上全绿（含构建与安装冒烟），六面里最后一张没有
-  接口面的表已改成派生接口面并被判据钉住；核心链没有断链、没有孤儿、没有形状之外还查不出守卫的循环
-  （轮询面的四处"声明了没人执行"本轮全部兑现）。线上仍在给错数的还是 G3 那一格；仍不在代码里的是
-  `v1.1.0` 这个 tag 装不下 tag 之后的 V18 改动（G23、G9），以及接口文档不随 sdist 交付这一层口径。
+* **发布条件的一句话结论**：17 道门禁与离线全量在候选树、以及在落地后的干净导出树上**各绿一遍**（读数分别
+  记在第五节那张表与上面那格，含构建与安装冒烟），六面里最后一张没有接口面的表已改成派生接口面并被判据
+  钉住；核心链没有断链、没有孤儿、没有形状之外还查不出守卫的循环（轮询面的四处"声明了没人执行"本轮全部
+  兑现）。线上仍在给错数的还是 G3 那一格；仍不在代码里的是 `v1.1.0` 这个 tag 装不下 tag 之后的 V18 改动
+  （G23、G9），以及接口文档不随 sdist 交付这一层口径。
 
