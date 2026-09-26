@@ -30,7 +30,6 @@ tstdx 全局契约：**volume = 股，amount = 元，price = 元**。
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 
 __all__ = [
@@ -492,7 +491,3 @@ def list_sources(*, capability: str | None = None) -> list[str]:
     if capability is None:
         return sorted(SOURCES)
     return sorted(n for n, s in SOURCES.items() if capability in s.capabilities)
-
-
-def sources_with_capability(cap: str) -> Iterable[SourceSpec]:
-    return (s for s in SOURCES.values() if cap in s.capabilities)

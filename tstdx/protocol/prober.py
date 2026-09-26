@@ -107,12 +107,6 @@ _RECORD_SIZE_CANDIDATES: tuple[int, ...] = (
 # --------------------------------------------------------------------------- #
 # 结构分析辅助
 # --------------------------------------------------------------------------- #
-def _gcd(a: int, b: int) -> int:
-    while b:
-        a, b = b, a % b
-    return a
-
-
 def _plausible_record_sizes(body_len: int) -> list[int]:
     """推断合理的记录长度候选：整除 body 且长度在常见集内。"""
     if body_len <= 0:

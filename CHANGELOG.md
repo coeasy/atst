@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（逻辑审查第 3 轮：孤儿符号清零 + 参数转发断裂修复）
+
+判据五条：主体流程全部联通 / 核心链路无断链 / 无孤儿逻辑 / 无死循环 / 前后端贯通。
+按「每轮修完全部问题再进下一轮」执行三轮，对外契约零变化（capability 名称、`Client`/`AsyncClient`
+签名、三面路由形状、`DIRECT_BINDINGS` 数量、`providers` 注册表均不动）：
+
+- **删除 6 处全仓零引用符号**（死码 / 孤儿逻辑家族）：
+  - `web/sources.py::sources_with_capability`（连带孤立的 `collections.abc.Iterable` 导入）；
+  - `domain/records.py::DividendRecord`（不在 `__all__` 的 9 类 Domain Record 族口径内，
+    与 `docs/api/README.md`、`docs/api/interfaces.md`、`tests/architecture/test_doc_code_consistency.py`
+    的「9 类 Record 族」声明对齐）；
+  - `observability/otel_exporter.py::_OTLP_DATA_TYPE_SPANS`（`_OTLP_DATA_TYPE_METRICS` 仍有读取点，保留）；
+  - `protocol/prober.py::_gcd`（现逻辑已改为候选记录长度集合 + 整除展开，注释里的「GCD」无调用点）；
+  - `tools/codegen.py::_struct_format`（YAML 类型→struct 格式字符，被 `_header_size` 取代后成孤儿）；
+  - `web/_base_core.py::WebSourceBase._request_json`（docstring 谎称「自定义 `fetch_*` 中取 JSON
+    类接口统一走本方法」，实际各 `fetch_*` 均内联 `json.loads(self._request_text(...))`）。
+- **修复一处参数转发断裂**：`web/corporate.py::EastmoneyUnlockSource.fetch_unlocks` 声明
+  `all_pages: bool = True, max_pages: int = 50`、docstring 写「v5 PG3：默认翻页取全量」，
+  但调用 `self.fetch_rows(...)` 时**未转发这两个参数**，落回 `fetch_rows` 自身的
+  `all_pages=False` 单页语义 —— 声明与行为相悖，调用方显式传值被静默忽略。同文件其余 5 个
+  同类方法（`:721/:773/:904/:976/:1057`）均正确转发，唯此一处漏掉，现补齐转发。
+- **排查面与结论（无新增缺陷）**：`__all__` 全解析（189 模块 / 162 声明 / 0 未解析 / 0 重复）；
+  模块级 import 环 3 处均为**刻意的包级符号转发**（`client/{sync,async_,_mixin,__init__}` 的
+  `_client_pkg.dispatch(...)` 全在函数体内按名访问，支撑 monkeypatch 语义，安全）；
+  类方法孤儿扫描 818 个方法收敛后为 0（唯一命中 `prometheus_exporter.do_HEAD` 是 stdlib
+  `BaseHTTPRequestHandler` 按名分派的框架钩子，`# noqa: N802`）；未读参数扫描 3941 个参数，
+  294 条候选中 293 条为 `@overload` 桩 / 抽象桩 / 框架回调签名假阳性。
+- **收口读数（2026-09-27 本机 Windows + Python 3.12）**：`pytest -m "not network"`
+  **4041 passed / 9 skipped / 0 failed**；`ruff check`、`ruff format --check`、`mypy tstdx/`
+  （189 文件）、`tests/architecture`、`scripts/audit_reachability.py --strict`（无未登记孤儿）、
+  `scripts/check_docs_links.py`（96 文件）全部 rc=0。
+
 ### Changed（V20 技术债清偿：hardening 物理合并、executor 分派规则化、web/ 按 Provider 归组）
 
 对外契约零变化：capability 名称、`Client`/`AsyncClient` 便捷方法签名、三面路由形状、

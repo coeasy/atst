@@ -868,7 +868,13 @@ class EastmoneyUnlockSource(EastmoneyDataCenterSource):
         if end:
             filters.append(f"FREE_DATE<='{end}'")
         rows = self.fetch_rows(
-            filters=filters, sort_columns="FREE_DATE", sort_types="1", page=page, size=size
+            filters=filters,
+            sort_columns="FREE_DATE",
+            sort_types="1",
+            page=page,
+            size=size,
+            all_pages=all_pages,
+            max_pages=max_pages,
         )
         return [
             {

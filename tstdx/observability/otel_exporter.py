@@ -69,7 +69,6 @@ OTLP_SPANS_PATH = "/v1/traces"
 
 #: OpenTelemetry 数据类型常量（proto3 JSON）。
 _OTLP_DATA_TYPE_METRICS = "metrics"
-_OTLP_DATA_TYPE_SPANS = "spans"
 
 _SCOPE_NAME = "tstdx.observability"
 _SCOPE_VERSION = "0.1"

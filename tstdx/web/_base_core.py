@@ -320,38 +320,6 @@ class BaseWebSource(_BaseRetryMixin):
         )
         return resp.text(encoding)
 
-    def _request_json(
-        self,
-        url: str,
-        *,
-        encoding: str = "utf-8",
-        err_cls: type[WebSourceError] = WebSourceError,
-        err_msg: str | None = None,
-        retries: int | None = None,
-    ) -> Any:
-        """:meth:`_request_text` + ``json.loads`` 的便捷组合。
-
-        自定义 ``fetch_*`` 中「取 JSON」类接口统一走本方法，避免散落
-        ``self.client.get`` 直调（无重试 / 无退避 / 不累计失败桶）。
-        """
-        text = self._request_text(
-            url,
-            encoding=encoding,
-            err_cls=err_cls,
-            err_msg=err_msg,
-            retries=retries,
-        )
-        import json as _json
-
-        try:
-            return _json.loads(text)
-        except _json.JSONDecodeError as exc:
-            raise SourceDeprecated(
-                f"{self.source_name} 返回非 JSON",
-                context={"source": self.source_name, "sample": text[:160]},
-                cause=exc,
-            ) from exc
-
     # -- 归一化 ------------------------------------------------------------ #
     def normalize_quote(self, q: Quote) -> Quote:
         """按 SourceSpec 的系数把原始值换算到全局契约（股 / 元）。

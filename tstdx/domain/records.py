@@ -75,31 +75,6 @@ class FinancialRecord:
         )
 
 
-@dataclass(slots=True)
-class DividendRecord:
-    """分红记录。"""
-
-    code: str = ""
-    date: str = ""
-    #: 每 10 股派息（元）
-    dividend: float = 0.0
-    #: 送转比例（每 10 股）
-    bonus_ratio: float = 0.0
-    extra: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        d = _clean_none(
-            {
-                "code": self.code,
-                "date": self.date,
-                "dividend": self.dividend,
-                "bonus_ratio": self.bonus_ratio,
-            }
-        )
-        d.update(self.extra)
-        return d
-
-
 # --------------------------------------------------------------------------- #
 # Fund 基金
 # --------------------------------------------------------------------------- #

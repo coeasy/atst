@@ -189,29 +189,6 @@ def _read_method(type_str: str) -> str:
     return f"# TODO: read {type_str}"
 
 
-def _struct_format(type_str: str) -> str:
-    """YAML 类型 → struct 格式字符。"""
-    type_str = type_str.strip()
-    mapping = {
-        "uint8": "B",
-        "int8": "b",
-        "uint16": "H",
-        "int16": "h",
-        "uint32": "I",
-        "int32": "i",
-        "float32": "f",
-        "float64": "d",
-        "bool": "B",
-    }
-    if type_str in mapping:
-        return mapping[type_str]
-    if type_str.startswith("string["):
-        return f"{type_str[7:-1]}s"
-    if type_str.startswith("raw["):
-        return f"{type_str[4:-1]}s"
-    return "B"  # fallback
-
-
 def _header_size(spec: dict) -> int:
     """计算响应 header 的字节数（用于 HEAD 元信息）。"""
     response = spec.get("response", {})
