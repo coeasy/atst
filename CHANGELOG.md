@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed（V20 技术债清偿：hardening 物理合并、executor 分派规则化、web/ 按 Provider 归组）
+
+对外契约零变化：capability 名称、`Client`/`AsyncClient` 便捷方法签名、三面路由形状、
+`DIRECT_BINDINGS` 数量（251）、`providers` 注册表（11 Provider）全部不动。本次是**内部收敛**，
+方案与逐项对账见 [docs/REFACTOR_PLAN_V20_DEBT_SYNTHESIS.md](docs/REFACTOR_PLAN_V20_DEBT_SYNTHESIS.md) §8。
+
+- **Phase 1 —— hardening monkey-patch 物理合并回基类**：8 个 `*hardening*.py` 通过
+  `transport/__init__.py` / `client/__init__.py` 的 side-effect import 在运行时替换构造器守卫，
+  一条构造逻辑跨 3–4 个文件才能读全。现已逐条 merge 回真正的宿主：`transport/base.py`、
+  `transport/pool.py`、`transport/hosts.py`、`transport/speedtest.py`、`client/async_.py`、
+  `client/sync.py`；8 个 hardening 文件与两处 side-effect import 一并删除，新增
+  `transport/_validation.py` 承载两边共用的校验原语。外部 `from tstdx.transport import TcpConnection`
+  等导入路径与构造行为不变，`tests/transport/`、`tests/client/` 的守卫判据原样全绿。
+- **Phase 2 —— executor 分派从手抄元组改为规则函数**：`_CORE_BINDINGS` 那 17 条手维护的
+  `DirectBinding` 元组删除，改由 `_executor_for()` 规则函数按 capability 派生，`DIRECT_BINDINGS`
+  退化为「注册表全量三元组 × 是否专属执行体」的派生结果；`MigratedCapabilityBinding` 新增
+  `factory: str`（`"tstdx.web.tencent.adapters:MinuteSource"` 形状的惰性导入路径，5 条 web_adapter
+  绑定已填），executor 里两处按 provider 硬编码的 if 分支随之删除。缺 `factory` 时执行面
+  fail-closed 抛 `ValidationError`，不再靠隐式 fallback 猜实现。
+- **Phase 3 —— `web/` 按 Provider 归组**：`web/adapters.py`(884 行)、`web/adapters_ext.py`、
+  `web/adapters_baidu.py`、`web/adapters_index.py`、`web/adapters_margin.py`、`web/history.py`
+  六个物理文件删除，18 个适配器类按 Provider 分流进 `web/tencent/`(7) `web/sina/`(4)
+  `web/eastmoney/`(4) `web/baidu/`(1) `web/jsl/`(1) `web/boc/`(1) 六个包，每个包只有
+  `__init__.py` + `adapters.py`。`tstdx/web/__init__.py` 的 `_LAZY` 惰性导出表与 `_ADAPTER_SPECS`
+  注册表同步改指新路径，**`from tstdx.web import TencentSource` 这类既有导入路径与
+  `tstdx.web.<provider>.adapter` 之外的一切对外入口保持不变**（新路径是复数 `adapters`）。
+  域文件（`boards`/`chip`/`corporate`/`fundflow`/`news`/`wencai`/`ticks`/`longhu`/`hot_rank`/`esg`/
+  `governance`/`fin_report`/`market_stats`/`global_market`/`adapters_fund`/`efinance_*` 等）按方案
+  3f 决策**留在原位**——它们横跨多个 Provider，塞进单个 provider 包只会制造新的错位。
+- **构建链加固（本机无控制台解释器）**：`scripts/build_package.py::_run` 的子进程改为
+  `stdin=subprocess.DEVNULL`。本机 venv 里只有 `pythonw.exe`（GUI 子系统），三个标准流都不重定向时
+  CPython 会把裸句柄塞进 `STARTUPINFO`，子进程写 stderr 会**静默**以 RC=1 退出——而 `python -m build`
+  的全部进度都走 stderr，表现就是打包链无任何输出地失败。显式重定向任一标准流即恢复句柄复制路径。
+- **收口读数（2026-09-26 本机 Windows + Python 3.12）**：`pytest tests -m "not network"`
+  **4041 passed / 9 skipped / 15 deselected**；`ruff check`、`ruff format --check`、
+  `mypy --warn-unused-ignores tstdx/`、`audit_reachability --strict`（189 模块 / 174 可达 /
+  15 白名单 / 无未登记孤儿）、`test_doc_code_consistency.py`、`check_docs_links.py` 全部 rc=0；
+  `scripts/build_package.py --smoke` 走通（`runtime_files=190`，`twine check` PASSED，
+  临时 venv 装 wheel + CLI 冒烟通过）。三轮逻辑审查的覆盖面与**未达标项**（executor 710 行 vs
+  原计划 ≤420、`DEDICATED_CAPABILITIES` 7 vs 9 的口径差异）在 V20 文档 §8.4–§8.5 如实登记。
+
+### 复评（v17 第 49 步 —— 全盘走查一遍主链，登记 F-72…F-76 五笔新账，本轮不改代码）
+
+- **复评取证**：隔离工作树 `wt_s50review`（@ `616d065`）重跑九项门禁（9/9 rc=0）与离线全量
+  （3598 / 0 失败 / 5 跳过，覆盖率 81.50%），并把 7 个内核直绑便捷方法在**禁网**下逐个走查：
+  4 格把失败显形为异常、3 格恒定抛错（`minute`/`trades`/`security_list`，口径第 39/47 步已写明）。
+- **F-72（新，P0）**：`quotes` 是唯一一格「16 次连接全失败仍返回 `data=[]` + `warnings=()`」——逐只失败
+  被写进 `client.last_errors` 侧信道，内核不读，于是 HTTP/WS/MCP 三面在断网时看到 200 加空结果；
+  CLI 早已自建绕行（读 `last_errors` 才报得出原因），这条不对称就是缺口的位置。
+- **F-73…F-76（新）**：活文档指令调用已删除的 `client.router.last_errors()`（小写点号形状是两条判据的
+  盲区）；`tstdx/deprecation.py` 206 行退役机制包内零消费者；三个恒定抛错能力仍占三面入口且缺响应分类；
+  167 个能力靠 `__getattr__` 动态出现、`dir()` 与类型检查器都看不见。
+- **新文档**：`docs/REFACTOR_PLAN_V18_REVIEW.md` 记录功能/架构/实现现状、主链贯通判定、五笔新账的三条
+  路径与默认建议（D1–D6），并把已裁决未执行的 F-70 (b)、F-71 (c) 排进第 50/51 步。本轮**未新增门禁**。
+
 ### Changed + Tests（v17 Phase 5 第 48 步 —— 内核的 web 一跳不再借道对外便利入口，并把它该不该存在登记为 F-71）
 
 - **对外行为零变化，改的是内核依赖了谁**：`DirectProviderExecutor._web_quotes` 原先调用公开的

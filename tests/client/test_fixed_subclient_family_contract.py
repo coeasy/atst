@@ -56,8 +56,8 @@ def test_fixed_subclients_accept_matching_explicit_family(
 
     assert sync_client.family == required_family
     assert async_client.family == required_family
-    assert sync_cls.__init__.__module__ == "tstdx.client._subclient_family_hardening"
-    assert async_cls.__init__.__module__ == "tstdx.client._subclient_family_hardening"
+    assert sync_cls.__init__.__module__ == "tstdx.client.sync"
+    assert async_cls.__init__.__module__ == "tstdx.client.async_"
 
 
 def test_factory_rejects_conflicting_fixed_family_override() -> None:

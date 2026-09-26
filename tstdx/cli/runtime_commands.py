@@ -161,7 +161,16 @@ def cmd_stream(args: Any) -> int:
     """流式订阅：编译与执行都在 ``Client.stream`` 里，CLI 只打印与计数。
 
     退出码与 quotes-snapshot 同步（V5）：一条数据都没收到 → exit 1。
+
+    ``--seconds`` 是这次订阅**保持**的时长，默认 10 秒；给 0 或负数等于要求"订阅零秒并收到
+    行情"，那按构造只能以失败收场，所以在这里就地判死（E1010 / 退出码 2），而不是让它跑完
+    再回一句"0.0s 内未收到任何行情"。
     """
+    if float(args.seconds) <= 0:
+        raise ValidationError(
+            "--seconds 必须为正数（默认 10）：零或负数的订阅窗口收不到任何行情",
+            context={"phase": "wire_validation", "seconds": args.seconds},
+        )
     counts = {"quote": 0, "error": 0}
 
     def _on_quote(code: str, q: dict[str, Any]) -> None:
@@ -372,6 +381,13 @@ def _cmd_probe(args: Any) -> int:
 
     rate = min(max(float(args.rate_limit), 0.1), 5.0)
     conn = _transport_kwargs(args)
+    #: ``--archive-dir`` 不给（``None``）时直接透传：落地目录的默认值归
+    #: :class:`~tstdx.protocol.prober.Prober` 自己所有（``DEFAULT_ARCHIVE_DIR``），
+    #: 不在这里抄第二份。第 23 轮两处实测把这条钉住：改前 CLI 递 ``None`` 进
+    #: ``Path(...)`` 当场 ``TypeError``，而 CLI 只接 :class:`TdxError`，于是文档那条
+    #: ``tstdx probe 0x052D`` 示例报成空 context 的 E9000；改成 ``signature(Prober)``
+    #: 反查默认值后，单元测试把 ``Prober`` 换成 ``**kwargs`` 桩类时又当场 ``KeyError``
+    #: —— introspection 读的是"这一秒被绑到名字上的那个类"，默认值的所有者该是 callee。
 
     try:
         with TdxClient(**conn) as client:
@@ -586,7 +602,12 @@ def _cmd_adjusted_bars(args: Any) -> int:
 
 
 def _cmd_all_market(args: Any) -> int:
-    """全市场行情摘要：``tstdx all-market [--node hs_a] [--source sina|tencent]``。"""
+    """全市场行情摘要：``tstdx all-market [--node hs_a] [--source sina|tencent]``。
+
+    ``--source`` 选的是**Provider**（``all_market`` 只登记了 sina / tencent 两条
+    绑定），不是 :meth:`WebQuoteSession.all_market` 的关键字——那个签名里没有
+    ``source``，把它当参数递交进去会被 ``validate_call`` 当场判 E1010。
+    """
     from ..domain.models import to_dicts
 
     try:
@@ -596,7 +617,7 @@ def _cmd_all_market(args: Any) -> int:
                     node=args.node,
                     page_size=args.page_size,
                     max_pages=args.max_pages,
-                    source=args.source,
+                    provider=args.source,
                 )
             )
     except Exception as exc:  # noqa: BLE001 - Web 源异常统一出口

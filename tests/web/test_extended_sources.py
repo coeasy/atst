@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 from urllib.parse import unquote
 
 import pytest
 
 from tstdx.errors import SourceDeprecated, WebSourceError
-from tstdx.web.adapters import HkSource, KlineSource, SinaHkSource, UsSource
 from tstdx.web.base import HttpResponse
 from tstdx.web.corporate import (
     EastmoneyBlockTradeSource,
@@ -31,6 +32,8 @@ from tstdx.web.fundflow import (
 from tstdx.web.global_market import TencentGlobalSource, TencentMarketStatSource
 from tstdx.web.longhu import EastmoneyTopListSource, parse_lhb_row
 from tstdx.web.news import SinaNewsSource, _clean
+from tstdx.web.sina.adapters import SinaHkSource
+from tstdx.web.tencent.adapters import HkSource, KlineSource, UsSource
 from tstdx.web.ticks import TICKS_PER_PAGE, EastmoneyTrendsSource, TencentTickSource
 
 
@@ -523,11 +526,27 @@ class TestTencentTickSource:
         assert ticks[1].volume == 600
         assert ticks[1].price == 1292.22
 
-    def test_pagination_requests_sequential_pages(self):
-        src, http = _attach(TencentTickSource(), TENCENT_TICK)
-        src.fetch_ticks("sh600519", max_pages=3)
+    def test_pagination_full_pages_honor_max_pages(self):
+        """每页都满 :data:`TICKS_PER_PAGE` 条时按 ``max_pages`` 逐页翻。"""
+        bodies = [_tick_body(TICKS_PER_PAGE) for _ in range(3)]
+        src, http = _attach(TencentTickSource(), *bodies)
+        ticks = src.fetch_ticks("sh600519", max_pages=3)
         assert len(http.calls) == 3
         assert "p=0" in http.calls[0] and "p=1" in http.calls[1] and "p=2" in http.calls[2]
+        assert len(ticks) == 3 * TICKS_PER_PAGE
+
+    def test_pagination_stops_at_short_page(self):
+        """未满一页即末页：不再花一次请求去确认空页（F-79 的执行方）。"""
+        bodies = [
+            _tick_body(TICKS_PER_PAGE),
+            _tick_body(TICKS_PER_PAGE),
+            _tick_body(5),
+            _tick_body(TICKS_PER_PAGE),
+        ]
+        src, http = _attach(TencentTickSource(), *bodies)
+        ticks = src.fetch_ticks("sh600519", max_pages=5)
+        assert len(http.calls) == 3, "末页之后不应再翻页"
+        assert len(ticks) == 2 * TICKS_PER_PAGE + 5
 
     def test_empty_response_returns_empty(self):
         body = b'v_detail_data_sh600519=[0,""]'
@@ -539,6 +558,26 @@ class TestTencentTickSource:
 
     def test_per_page_constant(self):
         assert TICKS_PER_PAGE == 70
+
+    def test_per_page_constant_owns_the_prose(self):
+        """docstring 复写「每页 N 条」的地方必须等于 TICKS_PER_PAGE（F-79）。
+
+        ``sources.py`` 的注册表 notes 明写"以 TICKS_PER_PAGE 为单一事实源（勿在此
+        复写具体数字）"；散文里的字面量同样是声明，改常量时它必须跟着红。
+        """
+        root = Path(__file__).resolve().parents[2]
+        for relative in ("tstdx/web/ticks.py", "tstdx/web/_session_market.py"):
+            text = (root / relative).read_text(encoding="utf-8")
+            for claimed in re.findall(r"每页\s*(\d+)\s*条", text):
+                assert int(claimed) == TICKS_PER_PAGE, (
+                    f"{relative} 散文里复写了每页 {claimed} 条，而现值是 {TICKS_PER_PAGE}"
+                )
+
+
+def _tick_body(count: int) -> bytes:
+    """构造一页腾讯分笔：恰好 ``count`` 条（每页容量见 ``TICKS_PER_PAGE``）。"""
+    records = "|".join(f"{i}/09:30:{i % 10}/10.00/0.01/1/10.0/S" for i in range(count))
+    return f'v_detail_data_sh600519=[0,"{records}"]'.encode("gbk")
 
 
 # --------------------------------------------------------------------------- #
@@ -1105,7 +1144,7 @@ class TestExternalQuotes:
         assert "hk00700" in url
 
     def test_session_hk_us(self, monkeypatch):
-        import tstdx.web.adapters as _adapters
+        import tstdx.web.tencent.adapters as _adapters
         from tstdx.web import session
 
         class _FakeHk(HkSource):
@@ -1265,7 +1304,7 @@ class TestKlineExternal:
         assert bars[0].amount == 4242440861.0
 
     def test_session_klines_hk_us(self, monkeypatch):
-        import tstdx.web.adapters as _adapters
+        import tstdx.web.tencent.adapters as _adapters
         from tstdx.web import session
 
         store = {"hk00700": KLINE_HK_JSON, "usAAPL": KLINE_US_JSON}

@@ -17,37 +17,11 @@
 
 from __future__ import annotations
 
-# Side-effect imports install the remaining transport contracts onto the public
-# classes before callers can receive them.
-# Direct TcpConnection/AsyncTcpConnection are public too. Once canonical host
-# parsing is available, install the same endpoint/timeout/boolean configuration
-# contract that pool construction already enforces.
-# Direct public pool construction must obey the same canonical family identity as
-# resolve_hosts/client construction. Install this before generation-safe updates.
-from . import (
-    _connection_contract_hardening,
-    _host_selector_hardening,
-    _pool_family_hardening,
-    _ranking_hardening,
-)
-
-# Host hardening order matters. First load the canonical hosts module, then make
-# disk ranking probe-only, then wrap resolve_hosts so each caller owns fresh
-# mutable HostEntry objects. Only after those patches do we bind public exports.
-from . import hosts as _hosts_impl
 from .base import DEFAULT_HEARTBEAT_CMD, ConnectionStats, TcpConnection
 from .hosts import DEFAULT_HOST_POOL, POOL_BY_FAMILY, HostEntry, RankingStore, resolve_hosts
 from .pool import ConnectionPool, PoolStats, Slot, pool_settings_from_config
 from .ratelimit import SessionRateLimiter, SessionState, TokenBucket, session_state
 from .speedtest import ProbeResult, probe, rank_hosts, speedtest, speedtest_and_save
-
-del (
-    _hosts_impl,
-    _ranking_hardening,
-    _host_selector_hardening,
-    _connection_contract_hardening,
-    _pool_family_hardening,
-)
 
 __all__ = [
     "TcpConnection",

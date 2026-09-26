@@ -16,7 +16,7 @@
     // [10]领涨股价 [11]领涨股涨跌额 [12]领涨股名称
 
 **新浪板块成分** ``Market_Center.getHQNodeData?node=new_xxx``（分页，
-行结构与全市场接口一致，见 :class:`~tstdx.web.adapters.SinaSource`）。
+行结构与全市场接口一致，见 :class:`~tstdx.web.sina.adapters.SinaSource`）。
 
 **腾讯板块排行** ``proxy.finance.qq.com/ifzqgtimg/appstock/app/mktHs/rank``
 （行业 ``t=01/averatio``、概念 ``t=02/averatio``）::
@@ -279,7 +279,7 @@ class SinaBoardMemberSource(BaseWebSource):
         max_pages:
             页数上限；``None`` 拉到底。
         """
-        from .adapters import SinaSource
+        from .sina.adapters import SinaSource
 
         delegator = SinaSource(
             client=self.client,

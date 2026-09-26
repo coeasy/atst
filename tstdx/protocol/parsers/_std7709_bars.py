@@ -17,10 +17,11 @@ from ...codec.primitive import (
     count_guard,
     decode_gbk,
 )
-from ...errors import ParseError
+from ...errors import ParseError, ProtocolError
 from ..commands import Family
 from ..registry import TIER_L2, BaseParser, register_parser
 from ._std7709_common import (
+    DAYLIKE_CATEGORIES,
     MINUTELIKE_CATEGORIES,
     SHARES_PER_LOT,
     VOLUME_LOT_CATEGORIES,
@@ -214,6 +215,15 @@ class SecurityBarsParser(BaseParser):
             day = remainder % 100
 
             return year, month, day, minutes // 60, minutes % 60
+
+        #: 两族之外的 category 没有已证逆向的 datetime 布局：按 uint32 猜会把整行
+        #: 后续字段全部错位（F-78）。fail-closed 而不是静默猜测。
+        if category not in DAYLIKE_CATEGORIES:
+            raise ProtocolError(
+                f"7709 K 线未知周期 category={category}："
+                "datetime 既不在分钟族（uint16+uint16）也不在日线族（uint32）的已证布局内，拒绝猜测",
+                context={"category": category, "field": "datetime"},
+            )
 
         raw = reader.uint32()
 

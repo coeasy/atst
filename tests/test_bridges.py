@@ -326,15 +326,11 @@ class TestBridges:
     # ---- 23: Web 7 Adapters ----
     def test_23_web_adapters(self):
         """#23 HTTP Web 源 7 Adapter 类存在。"""
-        from tstdx.web.adapters import (
-            BocSource,
-            EastmoneySource,
-            HkSource,
-            JslSource,
-            KlineSource,
-            SinaSource,
-            TencentSource,
-        )
+        from tstdx.web.boc.adapters import BocSource
+        from tstdx.web.eastmoney.adapters import EastmoneySource
+        from tstdx.web.jsl.adapters import JslSource
+        from tstdx.web.sina.adapters import SinaSource
+        from tstdx.web.tencent.adapters import HkSource, KlineSource, TencentSource
 
         adapters = [
             SinaSource,

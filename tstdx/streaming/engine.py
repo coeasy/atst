@@ -337,6 +337,18 @@ class QuoteChannel:
         except Exception:  # noqa: BLE001
             pass
 
+    def _record_reconnect(self) -> None:
+        # F-117：`tstdx_stream_reconnects_total` 与 `record_reconnect()` 从注册那天
+        # 起就没人调用——断线恢复对抓取方不可见，而同在流这一族的 drop 事件与背压
+        # gauge 上面那个钩子都在上报。补上唯一落点：与 kind="reconnect" 事件同一次
+        # tick、同一个刻度。指标写入不许把一次成功的轮询变成失败，所以整段包住。
+        try:
+            from ..observability.metrics import metrics
+
+            metrics.record_reconnect()
+        except Exception:  # noqa: BLE001
+            pass
+
     def subscribe(self, cb: Callable[[StreamEvent], None]) -> None:
         with self._lock:
             self._subs.append(cb)
@@ -367,6 +379,7 @@ class QuoteChannel:
                 # R4 断线恢复：发重连事件并置位，引擎据此立即补拉一轮
                 # （不必等下个轮询周期）。
                 self._reconnected = True
+                self._record_reconnect()
                 self._dispatch(
                     StreamEvent(
                         kind="reconnect",
@@ -409,21 +422,6 @@ class QuoteChannel:
         # 派发队列
         for ev in self._bp.drain():
             self._dispatch(ev)
-
-    def poll_delay(self) -> float:
-        """下一次 tick 前的建议等待（受重连策略影响）。
-
-        深审 M14：旧实现恒 0——:class:`ReconnectPolicy` 的指数退避完全
-        失效，tick 失败后立即重试形成风暴。现在按连续失败次数给出退避
-        （与 :meth:`ReconnectPolicy.next_delay` 同公式；成功时为 0）。
-        """
-        attempts = self._reconnect.attempts
-        if attempts <= 0:
-            return 0.0
-        exp = min(self._reconnect.cap, self._reconnect.base * (2 ** (attempts - 1)))
-        if self._reconnect.jitter:
-            return random.uniform(0.0, exp)
-        return exp
 
     def take_reconnect(self) -> bool:
         """R4：取出「刚断线恢复」标志（供引擎立即补拉一轮），取后复位。"""
@@ -486,6 +484,13 @@ class StreamEngine:
         self._stop.set()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=timeout)
+            if self._thread.is_alive():
+                # 未退出就不清引用：清掉后 ``start()`` 会以为没有 worker 在跑，
+                # 再起一条并 ``_stop.clear()``，把这条孤儿线程重新唤醒——两条线程
+                # 共享同一个 channel 的 ``_subs``/``_bp``/``_merger`` 继续轮询
+                # （第 26 轮 F-92，与 :meth:`QuoteStream.stop` 同一口径）。
+                logger.warning("StreamEngine 轮询线程未在 %ss 内退出，等待其自行收尾", timeout)
+                return
         self._thread = None
 
     def __enter__(self) -> StreamEngine:
@@ -497,6 +502,10 @@ class StreamEngine:
     def _run(self) -> None:
         while not self._stop.is_set():
             self._channel.tick()
+            if self._channel.take_reconnect():
+                # R4 断线恢复：立刻补拉一轮，不等下个轮询周期。标志只在"失败轮之后的
+                # 第一个成功轮"置位、且取后即清，所以这里每次恢复最多多跑一轮，不会忙等。
+                continue
             if not self._channel.last_failed:
                 self._stop.wait(self._interval)
                 continue
@@ -509,5 +518,8 @@ class StreamEngine:
                     policy.max_attempts,
                 )
                 return
-            # 失败轮按策略退避，不按轮询间隔立即重试。
+            # 失败轮按策略退避，不按轮询间隔立即重试（深审 M14）。
+            # F-104：这条 `_run` 路径是退避公式**唯一**的落点。`QuoteChannel.poll_delay()`
+            # 曾另抄一份 `base*2**(attempts-1)`（靠 `-1` 去抵消 `fail()` 已经加过的那次计数），
+            # 零调用点、也没进任何文档——两份指数只在今天碰巧同值，改日必分叉，故按 D3 删除。
             self._stop.wait(policy.current_delay())

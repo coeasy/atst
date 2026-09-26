@@ -50,7 +50,9 @@ __all__ = [
 GOLDEN_ROOT = Path("tests/golden/quotation")
 TARGET_CASES = 500
 
-#: 每个种子的默认衍生维度：市场 × 代码 × 类别 组合（≤ per-seed 上限）
+#: 每个种子的默认衍生维度：市场 × 代码 组合（≤ per-seed 上限）。
+#: 类别维不参与合成——曾经声明过 `SYNTHETIC_CATEGORIES = (0,1,2,3,4)`，但生成器
+#: 从没按它展开过一格，留着等于一张假告示（F-82，按 D3 删除）。
 SYNTHETIC_MARKETS = (0, 1)
 SYNTHETIC_CODES = (
     "600000",
@@ -66,7 +68,6 @@ SYNTHETIC_CODES = (
     "002415",
     "300059",  # 深市
 )
-SYNTHETIC_CATEGORIES = (0, 1, 2, 3, 4)
 
 
 @dataclass(frozen=True)

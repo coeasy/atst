@@ -41,7 +41,12 @@ __all__ = [
     "CommandStats",
     "Sniffer",
     "attach",
+    "detach",
 ]
+
+#: ``CommandStats.sizes`` 直接构造时的保留窗口（与 :class:`Sniffer` 默认的
+#: ``ring_size`` 同值）；由 Sniffer 创建时会改用调用方拧的那个 knob。
+_SIZES_WINDOW = 16
 
 
 # --------------------------------------------------------------------------- #
@@ -53,7 +58,11 @@ class CommandStats:
 
     cmd_id: int
     count: int = 0
-    sizes: list[int] = field(default_factory=list)  # 每次 payload 长度
+    #: 最近 ``Sniffer.ring_size`` 次的 payload **原始长度**（与样本环形缓冲同窗口）。
+    #: 曾经是 ``list``：每条响应 append 一个整数、永不清理，长期挂着观察的连接
+    #: 就此无界增长，``to_dict()``/spec 草稿还会把整份历史原样打印出来（第 26 轮 F-96）。
+    #: ``count`` 仍是精确总次数，所以窗口化不掩盖截断。
+    sizes: deque[int] = field(default_factory=lambda: deque(maxlen=_SIZES_WINDOW))
     first_seen: float = 0.0  # monotonic 秒
     last_seen: float = 0.0
     last_payload_size: int = 0
@@ -87,6 +96,12 @@ class Sniffer:
         ``CommandStats.sizes``（记的是**原始长度**，不是截断后长度）。
     families:
         参与"已知 vs 未知"判定的协议族集合。默认全部家族。
+
+    留痕的宽度
+    ----------
+    每个命令号只保留最近 ``ring_size`` 份 payload 样本**和**同样多份长度记录，
+    所以 ``size_min``/``size_max``/``size_avg`` 的口径是"最近 ring_size 次"，
+    不是全时段；全时段的精确次数在 ``count`` 里。长期挂载不会无界增长。
     """
 
     def __init__(
@@ -131,7 +146,9 @@ class Sniffer:
         with self._lock:
             stats = self._stats.get(cmd_id)
             if stats is None:
-                stats = CommandStats(cmd_id=cmd_id, first_seen=now)
+                stats = CommandStats(
+                    cmd_id=cmd_id, first_seen=now, sizes=deque(maxlen=self.ring_size)
+                )
                 self._stats[cmd_id] = stats
                 self._rings[cmd_id] = deque(maxlen=self.ring_size)
             stats.count += 1
@@ -345,6 +362,7 @@ def attach(
 
     wrapper._sniffer_wrapped = True  # type: ignore[attr-defined]
     wrapper.__wrapped__ = orig  # type: ignore[attr-defined]
+    wrapper._sniffer_owner = sniffer  # type: ignore[attr-defined]
     wrapper.__name__ = getattr(orig, "__name__", "request")
     try:
         target.request = wrapper
@@ -352,6 +370,44 @@ def attach(
         # 不可变对象（如 frozen）；无法就地替换
         return pool_or_client
     return pool_or_client
+
+
+def detach(sniffer: Sniffer, pool_or_client: Any) -> bool:
+    """卸下 :func:`attach` 装上的观察钩子，把目标的 ``request`` 换回原方法。
+
+    与 :func:`attach` 对称：同一个目标解析顺序（先下钻 ``pool``/``_pool``，
+    再取对象自身）。attach 是**就地永久替换**，没有这一步就再也拿不回原方法——
+    钩子闭包会把整个 Sniffer 连同它的环形缓冲替目标一直留着，直到目标本身被回收
+    （第 26 轮 F-95）。
+
+    Parameters
+    ----------
+    sniffer:
+        当初挂上去的那个观察器。目标上同时只有一层钩子，所以这里核对的是
+        **归属**：拿另一个观察器来 detach 不会卸下别人的钩子，只返回 ``False``。
+    pool_or_client:
+        当初 attach 的那个对象。
+
+    Returns
+    -------
+    ``True`` 说明确有一层钩子被卸下；``False`` 表示目标当前没挂钩子、或钩子不属于
+    这个观察器（幂等，可安全重复调用）。
+    """
+    inner = getattr(pool_or_client, "pool", None) or getattr(pool_or_client, "_pool", None)
+    target = inner if inner is not None else pool_or_client
+    current = getattr(target, "request", None)
+    if not getattr(current, "_sniffer_wrapped", False):
+        return False
+    if getattr(current, "_sniffer_owner", None) is not sniffer:
+        return False
+    orig = getattr(current, "__wrapped__", None)
+    if orig is None:  # pragma: no cover - attach 必然写入 __wrapped__
+        return False
+    try:
+        target.request = orig
+    except AttributeError:  # pragma: no cover - 与 attach 同一不可变分支
+        return False
+    return True
 
 
 __all__.append("_hex_of")

@@ -23,8 +23,10 @@ from __future__ import annotations
 import ast
 import functools
 import importlib.util
+import keyword
 import re
-from collections.abc import Callable
+import shlex
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -303,6 +305,116 @@ def test_the_slash_ruler_itself_sees_the_deleted_layers() -> None:
     seen = set(waived)
     assert {"execution/", "provider/", "tstdx/facade/"} <= seen, sorted(seen)
     assert len(seen) >= 5, sorted(seen)
+
+
+# --------------------------------------------------------------------------
+# 包目录的模块名册：写了几个，就必须是全部
+# --------------------------------------------------------------------------
+
+#: 目录名（``integration/`` 这种带尾斜杠的形态）。
+_PKG_DIR_TOKEN = re.compile(r"^[A-Za-z0-9_.\-]+/$")
+#: 归属名册里的一项（``runtime_ws.py``）；带斜杠的完整路径不属这里——它自带自己的目录，
+#: 上面那把斜杠尺子已经管着它，再按"上一格目录的成员"判它等于把两把尺子搅成一团。
+_MODULE_TOKEN = re.compile(r"^[A-Za-z0-9_]+\.py$")
+
+
+def _package_dir(token: str) -> Path | None:
+    """把 ``name/`` 落成一个**Python 包**目录（按仓库根 / ``tstdx/`` / ``docs/`` 三根）。
+
+    只认包：判据断言的是"这个包的模块名册"，非包目录（``docs/api/``）里躺着什么
+    不由它负责。
+    """
+    for root in (ROOT, ROOT / "tstdx", ROOT / "docs"):
+        candidate = root / token
+        if candidate.is_dir() and (candidate / "__init__.py").is_file():
+            return candidate
+    return None
+
+
+def _module_roster(pkg: Path) -> set[str]:
+    """包里当前的公开模块名（无 ``_`` 前缀）——名册的真相源。
+
+    下划线开头的私有模块不参与：文档名册历来只报公开面，逼作者把
+    ``_session_quote.py`` 那 11 个内部切片抄进架构表，只会换来一份更长的抄件。
+    """
+    return {path.stem for path in pkg.glob("*.py") if not path.name.startswith("_")}
+
+
+def _roster_groups(text: str) -> list[tuple[Path, str, set[str]]]:
+    """把一段文本切成 ``(包目录, 那一格, 被归到它名下的模块)``。
+
+    归属是位置性的，但**严格锁在同一个逻辑格里**：一个裸 ``x.py`` 归给它前面最近的
+    那个包目录，跨格（换段落 / 换表格行）不续账。上一版在这里漏了重置，于是
+    "``profile/``、``reader/``"那一行的名册一路吃到下一行的 ``batch.py``——三条假阳性
+    就是这么来的，而假阳性会把判据训练成"作者想办法让它闭嘴"的噪声。
+    """
+    groups: list[tuple[Path, str, set[str]]] = []
+    for block in logical_blocks(text):
+        if any(marker in block for marker in _RETIRED_MARKERS):
+            continue
+        current: Path | None = None
+        named: set[str] = set()
+        for raw in _BACKTICK.findall(block):
+            token = raw.strip()
+            if _PKG_DIR_TOKEN.match(token):
+                package = _package_dir(token)
+                if package is not None:
+                    if current is not None and named:
+                        groups.append((current, current.name, set(named)))
+                    current, named = package, set()
+            elif token.endswith(".py") and current is not None and _MODULE_TOKEN.match(token):
+                named.add(token[: -len(".py")])
+        if current is not None and named:
+            groups.append((current, current.name, named))
+    return groups
+
+
+def _roster_findings() -> list[str]:
+    offenders: list[str] = []
+    for path in path_fact_docs():
+        rel = path.relative_to(ROOT).as_posix()
+        for package, name, named in _roster_groups(path.read_text(encoding="utf-8")):
+            live = _module_roster(package)
+            missing = sorted(live - named)
+            phantom = sorted(named - live)
+            if missing or phantom:
+                offenders.append(
+                    f"{rel}: `{name}/` 的名册写着 {sorted(named)}，"
+                    f"磁盘上还在却查无此条 {missing}，名册里写了却没有 {phantom}"
+                )
+    return offenders
+
+
+def test_fact_docs_module_rosters_are_complete() -> None:
+    """事实文档一旦按目录点名了模块，那份名册就必须是该目录的**全部**公开模块。
+
+    斜杠尺管"写出来的路径存不存在"，这条管"该写的没写、不该有的还留着"。
+    第 3 遍量出的三条全是后者：``integration/`` 那格把已经物理删除的 ``tasks`` 写成
+    现行模块（还不是反引号形态，斜杠尺看不见），``runtime/`` 少了活的 ``freshness.py``，
+    ``client/`` 少了活的 ``factory.py``。
+    """
+    assert _roster_findings() == []
+
+
+def test_the_roster_ruler_itself_sees_a_phantom_and_an_omission() -> None:
+    """自检：造一格"少一个 + 多一个"的名册，判据必须两条都报出来。"""
+    groups = _roster_groups("| x | `runtime/`（`kernel.py`、`executor.py`、`deleted.py`） | 活 |")
+    assert [(name, named) for package, name, named in groups] == [
+        ("runtime", {"kernel", "executor", "deleted"})
+    ]
+    live = _module_roster(ROOT / "tstdx" / "runtime")
+    assert live - {"kernel", "executor", "deleted"}, "判据在这格上其实是空转"
+    assert "freshness" in live - {"kernel", "executor", "deleted"}
+    assert {"kernel", "executor", "deleted"} - live == {"deleted"}
+    # 完整名册必须不报（否则判据只是无条件红，没有判出任何东西）
+    full = (
+        "| x | `runtime/`（"
+        + "、".join(f"`{stem}.py`" for stem in sorted(_module_roster(ROOT / "tstdx" / "runtime")))
+        + "） | 活 |"
+    )
+    assert _roster_groups(full)[0][2] == live
+    #: 跨格不续账：换了表格行/段落，上一格的目录名吃不到下一格的模块名。
+    assert _roster_groups("| a | `runtime/`（活） |\n| b | `batch.py`、`result.py` |") == []
 
 
 def _resolves(dotted: str) -> bool:
@@ -676,16 +788,29 @@ def _command_family_counts() -> dict[str, int]:
 
 
 def _family_port(family: str) -> int:
-    """族 → 端口：`Command.port` 是代码里唯一的这份映射。"""
-    from tstdx.protocol.commands import Command
+    """族 → 端口：内置主站池里该族唯一的那个端口。
 
-    return Command(cmd=0, name="", family=family).port
+    这张映射此前挂在 ``Command.port`` 上，而它在 ``tstdx/`` 生产树里没有任何读取点
+    （连接池连的是 `HostEntry.port`，不是命令对象）——第 27 轮（V19 §4 P1-A2）把它删了，
+    真相源随之换成池本身：文档宣称的端口必须就是代码真的拿去建连的那个端口。
+    """
+    from tstdx.transport.hosts import POOL_BY_FAMILY
+
+    ports = {entry.port for entry in POOL_BY_FAMILY[family]}
+    if len(ports) != 1:
+        raise AssertionError(f"内置主站池里 {family} 的端口不唯一：{sorted(ports)}")
+    return ports.pop()
 
 
 def _web_source_modules() -> int:
-    """定义了至少一个 ``*Source`` 类的 ``tstdx/web/`` 模块数（文档"28 模块"的真相源）。"""
+    """定义了至少一个顶层 ``*Source`` 类的 ``tstdx/web/`` 模块数（文档"28 模块"的真相源）。
+
+    V20 Phase 3 之后各家 HTTP 适配器按 Provider 归入 ``web/<provider>/adapters.py``，
+    所以这里与 :func:`_web_source_classes` 同口径走递归扫描——"HTTP 源模块"数的是
+    定义源类的文件，不是它们的目录深度。
+    """
     modules = 0
-    for path in sorted((ROOT / "tstdx" / "web").glob("*.py")):
+    for path in sorted((ROOT / "tstdx" / "web").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         if any(
             isinstance(node, ast.ClassDef) and node.name.endswith("Source") for node in tree.body
@@ -1043,6 +1168,64 @@ def test_interfaces_mcp_tool_count_matches_the_registry() -> None:
     )
 
 
+#: ``docs/api/README.md`` 的"集成服务"表里，HTTP 与 MCP 两格各抄了一份**名单**，
+#: 而门禁此前只钉过条数：把 ``/v13/security/count`` 写成 ``/v13/security/counts``、
+#: 或者把 ``get_minute_today`` 改名，条数不变、判据不响，用户照抄即 404 / tool not found。
+#: WS 那一格的名单早已有双向判据（上面两条），这里补齐同族的另外两格。
+_FACE_CELL = re.compile(
+    r"^\|\s*`tstdx\.integration\.(?P<face>runtime_http|mcp)`\s*\|(?P<cell>[^|\n]*)", re.M
+)
+
+
+def _app_route_paths() -> set[str]:
+    from tstdx.integration.runtime_http import create_runtime_app
+
+    return {
+        str(route.path)
+        for route in create_runtime_app().routes
+        if str(getattr(route, "path", "")).startswith("/v13/")
+    }
+
+
+def _mcp_tool_names() -> set[str]:
+    from tstdx.integration.mcp import TOOLS
+
+    return {tool.name for tool in TOOLS}
+
+
+@pytest.mark.parametrize(
+    ("face", "declared", "truth", "token"),
+    [
+        ("runtime_http", "路由", _app_route_paths, r"`(/v13/[^`]*)`"),
+        ("mcp", "项", _mcp_tool_names, r"`([a-z_]+)`"),
+    ],
+    ids=["http-routes", "mcp-tools"],
+)
+def test_documented_service_face_lists_match_the_runtime(
+    face: str, declared: str, truth: Callable[[], set[str]], token: str
+) -> None:
+    """集成服务表里的路由/工具名单逐个等于运行期事实，两个方向都不许有差。"""
+    source = "docs/api/README.md"
+    cells = {
+        match.group("face"): match.group("cell") for match in _FACE_CELL.finditer(_doc_text(source))
+    }
+    assert face in cells, f"{source} 不再有 `{face}` 那一格，门禁失效"
+    header = re.search(rf"（(\d+) {declared}：", cells[face])
+    assert header, f"`{face}` 那一格不再声明「N {declared}：…」，门禁失效"
+    named = set(re.findall(token, cells[face]))
+    real = truth()
+    assert named, f"`{face}` 那一格一个名字都没扫到，判据读空了"
+    assert len(named) == int(header.group(1)), (
+        f"`{face}` 那一格声明 {header.group(1)} {declared}，"
+        f"实际写出 {len(named)} 个：{sorted(named)}"
+    )
+    assert named == real, (
+        f"`{face}` 的名单与运行期不符：文档写了而运行期没有 {sorted(named - real)}，"
+        f"运行期有而文档没写 {sorted(real - named)}"
+    )
+    assert len(real) >= 9, f"{face} 的运行期名单只剩 {sorted(real)}，真相比判据先坏了"
+
+
 # --------------------------------------------------------------------------
 # 覆盖矩阵（README）
 # --------------------------------------------------------------------------
@@ -1061,7 +1244,8 @@ def test_readme_protocol_matrix_matches_the_registries() -> None:
 
     第 19 步（F-42）实测：矩阵的总数（85 命令 / 61 解析器）一直被钉着，而每族分列是手抄本——
     4/5 行都错（MAC 8 实际 16、F10 15 实际 1、商品 8 实际 11、扩展市场 12 实际 15），
-    且商品语义的端口写反（7709，代码 `Command.port` 与主站池都是 7727）。总数对得上让
+    且商品语义的端口写反（7709，而当时代码里的族→端口映射与主站池都是 7727；那条映射
+    即第 27 轮删掉的 `Command.port`，现在端口只从内置主站池现读）。总数对得上让
     分列的错误看起来无害，所以这里比的是分布而不是和。
     """
     rows = {
@@ -1211,6 +1395,71 @@ def test_readme_tree_lists_every_top_level_module() -> None:
     }
     listed = set(_readme_tree_names())
     assert on_disk <= listed, f"新增顶层模块未写进 README 结构树：{sorted(on_disk - listed)}"
+
+
+#: 审计文档不是用户会读的那一页：台账与变更日志里点名某个导出，不等于它有使用文档。
+#: （`docs/archive`、`docs/adr` 已由 :func:`active_docs` 排掉。）
+AUDIT_DOC_MARKS = ("REFACTOR", "CHANGELOG")
+
+
+def _user_docs() -> list[Path]:
+    return [
+        path for path in active_docs() if not any(mark in path.name for mark in AUDIT_DOC_MARKS)
+    ]
+
+
+def _undocumented_exports(names: Iterable[str]) -> list[str]:
+    """顶层导出名里，用户文档一个字都没提到的那几个。"""
+
+    text = "\n".join(path.read_text(encoding="utf-8") for path in _user_docs())
+    return sorted(name for name in names if not re.search(rf"\b{re.escape(name)}\b", text))
+
+
+def test_every_root_export_is_named_by_user_docs() -> None:
+    """包上挂着的名字，读者必须查得到（第 25 轮第 2 遍登记）。
+
+    与 :func:`test_root_export_map_and_dunder_all_agree` 的分工：那条管"声明的名字解析得出"，
+    这一条管"解析得出的名字说得出用途"。分母是运行期的 ``tstdx.__all__``，不是文档里的
+    一份抄件——加一个顶层导出不写文档，当场红。第一版量出 45 个名字里恰缺 1 个
+    （`FinanceReader`：包上挂着、`tests/reader/` 在用、用户文档一个字没提）。
+    """
+    import tstdx
+
+    missing = _undocumented_exports(tstdx.__all__)
+    assert not missing, f"顶层导出没有用户文档可查：{missing}"
+    #: 正控：尺子必须认得一个它从没见过的名字。
+    planted = "PlantedSurfaceName25"
+    assert _undocumented_exports([*tstdx.__all__, planted]) == [planted], (
+        "凭空加的顶层导出没被抓到——本判据对新增名字是瞎的"
+    )
+
+
+def _reader_surface_rows() -> list[str]:
+    """``docs/api/interfaces.md`` 本地文件读取面表格的第一列。"""
+
+    doc = (ROOT / "docs" / "api" / "interfaces.md").read_text(encoding="utf-8")
+    parts = doc.split("### 本地文件读取面（vipdoc 落地文件）", 1)
+    assert len(parts) == 2, "interfaces.md 不再有本地文件读取面那一节，门禁失效"
+    body = re.split(r"^### |^## ", parts[1], maxsplit=1, flags=re.M)[0]
+    rows = re.findall(r"^\| `(\w+)` \|", body, re.M)
+    assert rows, "读取面表格解析不出任何一行，门禁失效"
+    return rows
+
+
+def test_reader_surface_table_matches_the_lazy_map() -> None:
+    """读取面表格 = 顶层惰性导入表落在 `tstdx.reader` 的那一批，双向相等。
+
+    这一族的"公开面"由 `tstdx._LAZY` 决定（它就是 `tstdx.<name>` 的来源），所以文档表格的
+    分母从那里现取：往 `_LAZY` 里加一个 reader 名字而文档没跟上，或从表格里抹掉一行，都红。
+    """
+    import tstdx
+
+    derived = sorted(
+        name for name, (module, _attr) in tstdx._LAZY.items() if module == "tstdx.reader"
+    )
+    assert sorted(_reader_surface_rows()) == derived, (
+        f"读取面表格 {sorted(_reader_surface_rows())} ≠ _LAZY 派生的 {derived}"
+    )
 
 
 def _client_face_rows() -> list[tuple[str, str]]:
@@ -1406,14 +1655,21 @@ def test_dunder_docstring_quickstart_examples_construct(monkeypatch: pytest.Monk
 # --------------------------------------------------------------------------
 
 _CMD_LINE = re.compile(r"^\s*(?:\$ )?tstdx(?:\.exe)?\s+(\S+)(.*)$")
-#: 含这些记号的是"用法语法"（`tstdx list <market> [--start N]`），不是可执行示例。
-_USAGE_SYNTAX = re.compile(r"[\[<>|…]|\.\.\.")
+#: "用法语法"而非可执行示例的形状：可选旗标 ``[--start N]``、尖括号占位符 ``<market>``、
+#: 竖线分支 ``day|week``、省略号。旧口径还额外把**任何**裸 ``[`` 算进来，于是
+#: ``--args [[8201]]`` 这类真实示例整行免检——第 23 轮文档里那条坏示例正是这样全绿的。
+_USAGE_SYNTAX = re.compile(r"\[--|<[^>\s]+>|\||…|\.\.\.")
 _INLINE_CODE = re.compile(r"`([^`\n]+)`")
 
 
-def _cli_examples() -> list[tuple[str, str, list[str]]]:
-    """活文档中所有形如 ``tstdx <sub> …`` 的可执行示例（围栏块 + 行内代码）。"""
-    found: list[tuple[str, str, list[str]]] = []
+def _cli_examples() -> list[tuple[str, str, list[str] | None]]:
+    """活文档中所有形如 ``tstdx <sub> …`` 的可执行示例（围栏块 + 行内代码）。
+
+    返回 ``(相对路径, 原始行, token 列表)``；token 按 :func:`shlex.split`（POSIX shell 的
+    引号/分词规则——示例的交付口径就是用户在 shell 里照抄）切，引号不闭合（这行本来就
+    粘不进 shell）时 token 列表为 ``None``，由调用方判红而不是静默跳过。
+    """
+    found: list[tuple[str, str, list[str] | None]] = []
     for path in active_docs():
         text = path.read_text(encoding="utf-8")
         lines: list[str] = []
@@ -1428,7 +1684,10 @@ def _cli_examples() -> list[tuple[str, str, list[str]]]:
             rest = matched.group(2)
             if _USAGE_SYNTAX.search(rest):
                 continue
-            tokens = [matched.group(1), *(rest.split())]
+            try:
+                tokens: list[str] | None = [matched.group(1), *shlex.split(rest)]
+            except ValueError:
+                tokens = None
             found.append((path.relative_to(ROOT).as_posix(), line.strip(), tokens))
     return found
 
@@ -1446,14 +1705,50 @@ def test_every_documented_cli_example_parses() -> None:
 
     broken: list[str] = []
     for rel, raw, tokens in examples:
+        if tokens is None:
+            broken.append(f"{rel}: {raw} → 引号不闭合，这行粘不进 shell")
+            continue
         try:
             build_parser().parse_args(tokens)
         except SystemExit as exc:  # argparse 对未知选项 exit(2)
             if exc.code not in (0, None):
-                broken.append(f"{rel}: {raw} → exit {exc.code}")
+                broken.append(f"{rel}: {' '.join(tokens)} → exit {exc.code}")
         except Exception as exc:  # noqa: BLE001 - 解析期不应抛别的异常
             broken.append(f"{rel}: {raw} → {type(exc).__name__}: {exc}")
     assert not broken, "文档里的 CLI 示例无法解析：\n" + "\n".join(broken)
+
+
+def test_cli_example_usage_filter_lets_quoted_json_through() -> None:
+    """豁免本身不许失明：窄口径必须比旧的整行 ``[`` 扫描少放走真实示例。
+
+    三格都是人工种下的，不读活文档：①旧口径（``[\\[<>|…]|...``）会把文档那条 query
+    示例整行判成"用法语法"而永不解析——这正是第 23 轮它坏了却全绿的机制；②新口径必须
+    解析它；③新口径仍然放过真的用法语法（``[--start N]`` / ``<market>`` / ``day|week``）。
+    """
+    example = "tstdx query stock_changes --args '[[8201]]' --kwargs '{\"size\": 5}'"
+    matched = _CMD_LINE.match(example)
+    assert matched is not None
+    rest = matched.group(2)
+    assert re.search(r"[\[<>|…]|\.\.\.", rest), "旧口径已不再放宽：这一格对照测不到收窄"
+    assert not _USAGE_SYNTAX.search(rest), "新口径把加了引号的 JSON 示例整行放走了"
+
+    for usage in (
+        "tstdx list <market>",
+        "tstdx list 0 [--start N]",
+        "tstdx bars sh600519 --period day|week",
+        "tstdx query …",
+    ):
+        matched_usage = _CMD_LINE.match(usage)
+        assert matched_usage is not None
+        assert _USAGE_SYNTAX.search(matched_usage.group(2)), f"真用法语法被当成可执行示例：{usage}"
+
+    #: 引号不闭合的行必须进清单并被标成 ``None``，而不是被静默跳过。
+    broken_line = "tstdx query stock_changes --args '[[8201]]"
+    matched_broken = _CMD_LINE.match(broken_line)
+    assert matched_broken is not None
+    assert not _USAGE_SYNTAX.search(matched_broken.group(2))
+    with pytest.raises(ValueError):
+        shlex.split(matched_broken.group(2))
 
 
 # --------------------------------------------------------------------------
@@ -1674,3 +1969,251 @@ def test_the_table_shape_ruler_itself_sees_a_merged_row() -> None:
         f"粘行的形状没被量到（{offenders}），尺子失效"
     )
     assert _table_shape_offenders("| a | `x | y` |\n|---|---|\n| b | `p | q` |\n") == []
+
+
+# --------------------------------------------------------------------------- #
+# 指标门面表格 ↔ 运行期注册表（第 26 轮 F-112 / F-115 / F-117 / F-118）
+# --------------------------------------------------------------------------- #
+
+
+def _interfaces_metric_series_rows() -> list[tuple[str, str, tuple[str, ...], str]]:
+    """``docs/api/interfaces.md`` §8 指标表：``[(序列名, 类型, 标签, 写入方), ...]``。"""
+    doc = (ROOT / "docs" / "api" / "interfaces.md").read_text(encoding="utf-8")
+    parts = doc.split("### 指标门面（`tstdx.observability.metrics`）", 1)
+    assert len(parts) == 2, "interfaces.md 不再有指标门面那一节，门禁失效"
+    #: 窗口收在本节之内，别把下一节导出器表格的第一列吃进来。
+    body = re.split(r"^### |^## ", parts[1], maxsplit=1, flags=re.M)[0]
+    rows = re.findall(r"^\| `(tstdx_\w+)` \| (\w+)(?:（([^（）]*)）)? \|([^|\n]*)\|", body, re.M)
+    assert rows, "指标表格解析不出任何一行，门禁失效"
+    return [
+        (
+            name,
+            kind,
+            tuple(x.strip() for x in labels.split(" / ")) if labels else (),
+            writer.strip().strip("|").strip(),
+        )
+        for name, kind, labels, writer in rows
+    ]
+
+
+def _metric_series_diff(
+    doc_rows: list[tuple[str, str, tuple[str, ...], str]],
+    live: dict[str, tuple[str, tuple[str, ...]]],
+) -> tuple[list[str], list[str], list[str]]:
+    """文档表格与注册表之间的三种分歧：漏写、多写、类型或标签抄错。"""
+    doc = {name: (kind, labels) for name, kind, labels, _writer in doc_rows}
+    missing = sorted(set(live) - set(doc))
+    extra = sorted(set(doc) - set(live))
+    mismatched = sorted(n for n in set(doc) & set(live) if doc[n] != live[n])
+    return missing, extra, mismatched
+
+
+def test_interfaces_metric_series_table_matches_the_registry() -> None:
+    """§8 那张表与运行期注册表双向相等，且每一格都说得出谁在写（第 26 轮）。
+
+    分母是 ``metrics.registry.snapshot_metrics()`` 的现值，不是文档里的抄件：往门面里注册一格
+    新指标而文档没跟上，或从表格里抹掉一行，都当场红。第三列「写入方」非空是这条判据的
+    真正目的——F-112 撤下的 ``tstdx_active_connections`` 就是这么一根仪表：注册了、被
+    ``/metrics`` 渲染了、还被 statsd 的线格式示例引用过，却全仓没人写它。表格不许再给
+    这种"没人写的对外声称"留位置。
+    """
+    from tstdx.observability import Counter, Gauge, Histogram, Summary  # noqa: F401
+    from tstdx.observability.metrics import metrics
+
+    kinds = {"Counter": "counter", "Gauge": "gauge", "Histogram": "histogram", "Summary": "summary"}
+    live = {
+        m.name: (kinds[type(m).__name__], tuple(m.labelnames))
+        for m in metrics.registry.snapshot_metrics()
+    }
+    rows = _interfaces_metric_series_rows()
+    assert live, "注册表是空的——本判据失去比对对象"
+    missing, extra, mismatched = _metric_series_diff(rows, live)
+    assert not (missing or extra or mismatched), (
+        f"表格漏写 {missing}；凭空多写 {extra}；类型或标签与现值不符 {mismatched}"
+    )
+    for name, _kind, _labels, writer in rows:
+        assert writer, f"{name} 这一格没写「谁在写」——没人写的对外声称按 F-112 撤下，不许留表位"
+    assert "tstdx_active_connections" not in live, "F-112 撤下的恒初值仪表又回来了"
+
+    #: 正控：三型分歧各自必须抓得住，否则这条判据对新增/漏写/抄错是瞎的。
+    assert _metric_series_diff(rows[:-1], live)[0] == [rows[-1][0]]
+    planted = (*rows[:-1], (rows[-1][0], rows[-1][1], ("planted",), "没人写"))
+    assert _metric_series_diff(planted, live)[2] == [planted[-1][0]]
+    phantom = [*rows, ("tstdx_planted_series", "counter", (), "凭空造的一格")]
+    assert _metric_series_diff(phantom, live)[1] == ["tstdx_planted_series"]
+
+
+# --------------------------------------------------------------------------- #
+# 三份服务面的 Client 所有权表 ↔ 实现（第 26 轮 F-100 / G40 同族）
+# --------------------------------------------------------------------------- #
+
+
+#: 那张表所在的小节锚，与表格行的形状。行首要读回 `entry(param=None)`：
+#: 表里写的签名就是用户会照抄的入口签名，签名变了而表格没变要当场红。
+_OWNERSHIP_ANCHOR = "**三份服务面的 `Client` 所有权是同一口径**"
+_OWNERSHIP_ROW = re.compile(r"^\|\s*(HTTP|WS|MCP)\s+`(\w+)\((\w+)=None\)`")
+
+#: 每一面量哪个模块：文档只说"造出 `Client` 的一方"和"收尾的地方"，判据按面去现读实现，
+#: 不认文档里抄的文件名（那一格写错也没人红）。
+_OWNERSHIP_FACE: dict[str, tuple[str, str]] = {
+    "HTTP": ("tstdx.integration.runtime_http", "tstdx/integration/runtime_http.py"),
+    "WS": ("tstdx.integration.runtime_ws_server", "tstdx/integration/runtime_ws_server.py"),
+    "MCP": ("tstdx.integration.mcp._server", "tstdx/integration/mcp/_server.py"),
+}
+
+#: 反引号里写出的名字：允许点号尾段（`server.tstdx_handler`）与可调用括号（`stop()`）。
+#: 带斜杠的是路径不是符号，含 `=` 的是签名，两者都不进判据。
+_OWNERSHIP_TOKEN = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)*(?:\(\))?)`")
+
+
+def _ownership_section() -> str:
+    """所有权那一节从锚到下一个二级/三级标题为止。"""
+
+    parts = _doc_text("docs/api/interfaces.md").split(_OWNERSHIP_ANCHOR, 1)
+    assert len(parts) == 2, f"interfaces.md 不再有「{_OWNERSHIP_ANCHOR}」那一节，门禁失效"
+    return re.split(r"^### |^## ", parts[1], maxsplit=1, flags=re.M)[0]
+
+
+def _ownership_rows() -> list[tuple[str, str, str, str]]:
+    """``[(面, 入口, 入参, 整行原文), ...]``。"""
+
+    rows = [
+        (m.group(1), m.group(2), m.group(3), line)
+        for line in _ownership_section().splitlines()
+        if (m := _OWNERSHIP_ROW.match(line))
+    ]
+    assert rows, "所有权表格解析不出任何一行，门禁失效"
+    return rows
+
+
+def _ownership_tokens(line: str) -> set[str]:
+    """这一行反引号点到的符号名（取点号尾段）。
+
+    `finally` / `yield` 这类反引号包住的是散文里的关键字，不是任何人会去 import 的名字，
+    按 Python 关键字撤下；其余一律要求实现里读得到（:func:`_ownership_symbols`）。
+    """
+
+    return {
+        word.rsplit(".", 1)[-1]
+        for raw in _OWNERSHIP_TOKEN.findall(line)
+        for word in [raw[:-2] if raw.endswith("()") else raw]
+        if not keyword.iskeyword(word)
+    }
+
+
+@functools.cache
+def _ownership_symbols(rel: str) -> frozenset[str]:
+    """这个模块的 AST 里读得到的所有名字段。
+
+    收字符串常量是有意的：MCP 面把 ``shutdown`` 写成分派表里的一个键，代码里根本没有同名
+    标识符，而文档那一格必须说得出它。代价是这一族对纯字符串的名字不设防，所以「谁造谁关」
+    这件事由 :func:`_ownership_flag` 从代码里**反推**，不由文档自选。
+    """
+
+    tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            found.add(node.name)
+        elif isinstance(node, ast.Name):
+            found.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            found.add(node.attr)
+        elif isinstance(node, ast.arg):
+            found.add(node.arg)
+        elif isinstance(node, ast.keyword):
+            if node.arg is not None:
+                found.add(node.arg)
+        elif isinstance(node, ast.alias):
+            found.add(node.name.rsplit(".", 1)[-1])
+        elif (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", node.value)
+        ):
+            found.add(node.value)
+    return frozenset(found)
+
+
+def _ownership_flag(rel: str, param: str) -> set[str]:
+    """实现里 `flag = <param> is None` 的那个 flag 名——「谁造的」在代码里的形状。"""
+
+    tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
+    flags: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AnnAssign):
+            targets: list[ast.expr] = [node.target]
+        elif isinstance(node, ast.Assign):
+            targets = list(node.targets)
+        else:
+            continue
+        value = node.value
+        if value is None or not isinstance(value, ast.Compare) or len(value.ops) != 1:
+            continue
+        if not isinstance(value.ops[0], ast.Is):
+            continue
+        comparator = value.comparators[0]
+        if not (isinstance(comparator, ast.Constant) and comparator.value is None):
+            continue
+        left = value.left
+        if not (isinstance(left, ast.Name) and left.id == param):
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name):
+                flags.add(target.id)
+            elif isinstance(target, ast.Attribute):
+                flags.add(target.attr)
+    return flags
+
+
+def _ownership_offenders(face: str, param: str, line: str) -> tuple[list[str], list[str]]:
+    """这一行的两种违约：点到实现里没有的名字，以及没点名实现里那个所有权 flag。"""
+
+    _module, rel = _OWNERSHIP_FACE[face]
+    tokens = _ownership_tokens(line)
+    flag = _ownership_flag(rel, param)
+    return (
+        sorted(tokens - set(_ownership_symbols(rel))),
+        [] if tokens & flag else [f"没点名实现里的 {param} is None 标志 {sorted(flag)}"],
+    )
+
+
+def test_service_plane_client_ownership_table_matches_the_code() -> None:
+    """那张三行表说的每一格，都在实现里读得到；「谁造谁关」的 flag 必须被点名（第 26 轮）。
+
+    F-100 之前 HTTP 面只是 `return app`：文档写"传入的归调用方"没有任何人会去核，因为它
+    在代码里根本没有对应的形状。修完之后三面各有一个 `x = client is None` 式的 flag，
+    于是"这一面自己造不造"第一次成了可以现读的东西——本判据据此双向收口：文档点到的名字
+    要在实现里读得到（写错的钩子、凭空造的属性当场红），实现里那个 flag 要被文档点名
+    （悄悄把收尾改成无条件 `close()`、flag 撤掉了，表格那一格也就说不下去了）。
+    """
+
+    import inspect
+
+    rows = _ownership_rows()
+    assert sorted(r[0] for r in rows) == ["HTTP", "MCP", "WS"], (
+        f"所有权表应当恰好三行，现在是 {sorted(r[0] for r in rows)}"
+    )
+    assert "归调用方" in _ownership_section(), "那一节没再写明「传进来的那份归调用方」"
+
+    for face, entry, param, line in rows:
+        module_name, _rel = _OWNERSHIP_FACE[face]
+        obj = importlib.import_module(module_name)
+        for part in entry.split("."):
+            obj = getattr(obj, part)
+        signature = inspect.signature(obj if not isinstance(obj, type) else obj.__init__)
+        declared = signature.parameters[param]
+        assert declared.default is None, (
+            f"{face} 行写着 `{entry}({param}=None)`，签名现值是 {declared!r}"
+        )
+        unresolved, flag_missing = _ownership_offenders(face, param, line)
+        assert not unresolved, f"{face} 行点到 {module_name} 里读不到的名字：{unresolved}"
+        assert not flag_missing, f"{face} 行没说出谁造的那份：{flag_missing}"
+
+    #: 正控：凭空造的钩子与撤掉 flag 点名，两型都必须当场抓得住。
+    bogus = "| WS `serve_runtime_ws(handler=None)` | 造一份 | 收尾时读 `server.tstdx_bogus_hook` |"
+    unresolved, _flag_missing = _ownership_offenders("WS", "handler", bogus)
+    assert unresolved == ["tstdx_bogus_hook"], f"凭空钩子没被量到（{unresolved}），尺子失效"
+    silent = "| HTTP `create_runtime_app(client=None)` | 造一份 | 收尾时调 `api.close()` |"
+    _unresolved, flag_missing = _ownership_offenders("HTTP", "client", silent)
+    assert flag_missing, "漏写所有权 flag 没被量到，尺子失效"

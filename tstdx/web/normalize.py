@@ -190,7 +190,7 @@ class SinaNormalizer(VolumeNormalizer):
 
 @register_normalizer(BAIDU)
 class BaiduNormalizer(VolumeNormalizer):
-    """百度财经: 解析层 :class:`~tstdx.web.adapters_baidu.BaiduSource`
+    """百度财经: 解析层 :class:`~tstdx.web.baidu.adapters.BaiduSource`
     已把日K量统一为「股」、金额为「元」（与 tstdx 全局契约一致），
     此处 identity 防二次缩放。"""
 

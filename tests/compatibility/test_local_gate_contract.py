@@ -3,6 +3,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests.support.gate_inventory import (
+    GATES_TO_CI_JOBS,
+    ci_check_cells,
+    ci_job_keys,
+    ci_test_matrix_cells,
+    gates_targets,
+)
+
 _ROOT = Path(__file__).resolve().parents[2]
 
 #: 门禁脚本里写死的仓内路径（Makefile 与 workflow 共用同一判定）。
@@ -133,3 +141,45 @@ def test_ruff_per_file_ignores_still_point_at_existing_paths() -> None:
     assert len(paths) >= 4, f"只扫到 {len(paths)} 条豁免，说明解析自身失效了"
     missing = [relative for relative in paths if not (_ROOT / relative.rstrip("*")).exists()]
     assert not missing, f"ruff 豁免指向磁盘上不存在的路径：{missing}"
+
+
+# --------------------------------------------------------------------------- #
+# 门禁分母的唯一口径（第 27 轮 A3，V19 §3 B-3 / §6 D-5）
+# --------------------------------------------------------------------------- #
+
+
+def test_make_gates_and_ci_jobs_are_the_same_check_set() -> None:
+    """发布口径只有一套：`make gates` 的目标与 `ci.yml` 的作业按键一一对应，两边都不许多。
+
+    B-3 的病不是"数字对不上"，而是**没有任何一条判据拥有那个分母**——台账连用 5 轮的"17 道
+    门禁"其实是本机 scratch runner 的步数（其中 ruff 算两次），`make gates` 的 11 个目标和
+    CI 展开的 check 格数各是另一本账。本步把 11 这套升成唯一发布口径，并用一张显式映射表
+    钉住它：加一个本地目标必须同时说出 CI 上谁跑它，加一个 CI 作业必须说出本地链路谁复现它。
+    """
+    targets = gates_targets()
+    jobs = ci_job_keys()
+    assert sorted(targets) == sorted(GATES_TO_CI_JOBS), (
+        f"`make gates` 目标与本步锁定的映射表不符："
+        f"多 {sorted(set(targets) - set(GATES_TO_CI_JOBS))}、"
+        f"缺 {sorted(set(GATES_TO_CI_JOBS) - set(targets))}"
+    )
+    dangling = sorted(set(GATES_TO_CI_JOBS.values()) - set(jobs))
+    assert dangling == [], f"映射表指向 CI 里不存在的作业键：{dangling}"
+    unmirrored = sorted(set(jobs) - set(GATES_TO_CI_JOBS.values()))
+    assert unmirrored == [], f"CI 有确定性作业没被本地链路镜像（本地全绿≠CI 全绿）：{unmirrored}"
+    assert len(set(jobs)) == len(jobs), "CI 作业键有重复，映射判据自身失效"
+
+
+def test_the_documented_gate_denominators_are_computed_not_copied() -> None:
+    """三个分母必须能由 `tests/support/gate_inventory.py` 现算：11 / 11 / 16。
+
+    这条看着像在钉数字，实际钉的是"数字有没有唯一算处"：矩阵加一格、CI 加一个作业，
+    这里报的是现算值，改的人顺势把口径一起改；而手抄的"17"没有任何地方能重算它，
+    所以它不配当分母——V19 §0 从此只把 runner 步数称作"本轮 runner 的 N 步"。
+    """
+    assert len(gates_targets()) == len(ci_job_keys()) == len(GATES_TO_CI_JOBS) == 11, (
+        f"发布口径的三处计数不再相等：gates {len(gates_targets())}、"
+        f"CI 作业 {len(ci_job_keys())}、映射表 {len(GATES_TO_CI_JOBS)}"
+    )
+    assert ci_test_matrix_cells() == 6, f"test 矩阵现算为 {ci_test_matrix_cells()} 格"
+    assert ci_check_cells() == 16, f"CI check 格现算为 {ci_check_cells()}"

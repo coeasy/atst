@@ -61,10 +61,16 @@ from ..transport.ratelimit import SessionState, session_state
 from .commands import Family
 
 __all__ = [
+    "DEFAULT_ARCHIVE_DIR",
     "OFFLINE_HOURS_NOTE",
     "ProbeResult",
     "Prober",
 ]
+
+#: 未显式给目录时的 DRAFT yaml 落地处。**相对当前工作目录**，所以仓库树内跑会落在
+#: ``./PROTOCOL_SPEC/UNKNOWN``，装好的包跑则落在调用方的 cwd 之下——这正是 CLI
+#: 必须把 ``--archive-dir`` 交给调用方覆盖的原因（第 23 轮真机取证用的就是 scratch 目录）。
+DEFAULT_ARCHIVE_DIR: str = "PROTOCOL_SPEC/UNKNOWN"
 
 #: 合规说明（写入每次 DRAFT yaml 头部）。
 OFFLINE_HOURS_NOTE: str = (
@@ -243,7 +249,9 @@ class Prober:
         每秒最多发出的探测请求数；通过 :func:`time.monotonic` 本地强制。
         默认 1.0，建议不要调高。
     archive_dir:
-        DRAFT yaml 的落地目录，相对工作目录或绝对路径均可。
+        DRAFT yaml 的落地目录，相对工作目录或绝对路径均可。给 ``None`` 表示
+        "用 :data:`DEFAULT_ARCHIVE_DIR`"——CLI 的 ``--archive-dir`` 不给时就是
+        ``None``，而默认值归本类所有，不该由调用方按 introspection 反抄一份。
     family:
         协议族标签，写入 DRAFT yaml 头部（默认 ``quotation``）。
     timeout:
@@ -263,7 +271,7 @@ class Prober:
         self,
         client: Any = None,
         rate_limit: float = 1.0,
-        archive_dir: str = "PROTOCOL_SPEC/UNKNOWN",
+        archive_dir: str | Path | None = None,
         *,
         family: str = Family.STANDARD,
         timeout: float = 3.0,
@@ -277,7 +285,7 @@ class Prober:
             )
         self.client = client
         self.rate_limit = float(rate_limit)
-        self.archive_dir = Path(archive_dir)
+        self.archive_dir = Path(DEFAULT_ARCHIVE_DIR if archive_dir is None else archive_dir)
         self.family = family
         self.timeout = float(timeout)
         self.block_offline_only = bool(block_offline_only)

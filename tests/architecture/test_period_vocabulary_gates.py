@@ -39,7 +39,7 @@ from tstdx.domain.period import (
 from tstdx.query import _canonical_unified_channel
 from tstdx.reader.profile import Period
 from tstdx.web._session_market import _KLINE_SERVABLE, KLINES_PERIOD_ALIASES
-from tstdx.web.adapters import KlineSource
+from tstdx.web.tencent.adapters import KlineSource
 
 #: 第 18 轮实测那 15 个"一面能查、另一面报错"的拼写。它们是本轮的来路，
 #: 留着是为了让"派生"这一步不许悄悄退回去。
@@ -249,17 +249,20 @@ def _accepted_by_normalizer(served: set[str]) -> set[str]:
 def _runtime_surface() -> dict[str, tuple[int, int]]:
     """每一行文档 → ``(服务档数, 接受写法数)``，全部现读运行期表。"""
 
-    from tstdx.web import adapters, adapters_baidu, adapters_ext, history
     from tstdx.web._session_market import _KLINE_SERVABLE, KLINES_PERIOD_ALIASES
+    from tstdx.web.baidu.adapters import _KLINE_KTYPES
+    from tstdx.web.eastmoney.adapters import EastmoneyHistoryKlineSource
+    from tstdx.web.sina.adapters import SinaHistoryKlineSource
+    from tstdx.web.tencent.adapters import _MKLINE_PERIODS, KlineSource
 
     def row(served: set[str], accepted: set[str]) -> tuple[int, int]:
         return (len(served), len(accepted))
 
-    sina = set(history.SinaHistoryKlineSource.SCALES)
-    eastmoney = set(history.EastmoneyHistoryKlineSource.KLTS)
-    baidu = set(adapters_baidu._KLINE_KTYPES)
-    tencent = set(adapters.KlineSource.PERIODS)
-    mkline = set(adapters_ext._MKLINE_PERIODS)
+    sina = set(SinaHistoryKlineSource.SCALES)
+    eastmoney = set(EastmoneyHistoryKlineSource.KLTS)
+    baidu = set(_KLINE_KTYPES)
+    tencent = set(KlineSource.PERIODS)
+    mkline = set(_MKLINE_PERIODS)
     return {
         "`Client.bars` / 统一 `bars` 查询（CLI `bars --period`、HTTP、WS、MCP 同此）": row(
             set(_CANONICAL_TO_CATEGORY), set(_PERIOD_TO_CATEGORY)

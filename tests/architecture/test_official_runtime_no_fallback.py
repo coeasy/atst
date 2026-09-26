@@ -31,7 +31,6 @@ OFFICIAL_RUNTIME = [
     ROOT / "tstdx" / "integration" / "runtime_http.py",
     ROOT / "tstdx" / "integration" / "runtime_ws.py",
     ROOT / "tstdx" / "integration" / "runtime_ws_server.py",
-    ROOT / "tstdx" / "integration" / "runtime_tasks.py",
     ROOT / "tstdx" / "integration" / "serialization.py",
     ROOT / "tstdx" / "integration" / "mcp" / "_server.py",
     ROOT / "tstdx" / "cli" / "__init__.py",

@@ -61,6 +61,6 @@ def test_explicit_selector_host_is_copied_before_runtime_ownership() -> None:
 
 
 @pytest.mark.unit
-def test_public_and_module_resolver_both_use_state_isolation_hardening() -> None:
-    assert resolve_hosts.__module__ == "tstdx.transport._host_selector_hardening"
-    assert hosts_module.resolve_hosts.__module__ == "tstdx.transport._host_selector_hardening"
+def test_public_and_module_resolver_both_are_canonical() -> None:
+    assert resolve_hosts.__module__ == "tstdx.transport.hosts"
+    assert hosts_module.resolve_hosts.__module__ == "tstdx.transport.hosts"

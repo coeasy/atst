@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 import tstdx.client as _client_pkg
 
 from ..codec.framing import ResponseFrame
-from ..errors import DataError
+from ..errors import ConfigError, DataError
 from ..protocol.commands import Family
 from ..protocol.registry import ParseResult
 from ._mixin import (  # noqa: F401
@@ -51,6 +51,111 @@ def dispatch(frame: ResponseFrame, **ctx: Any) -> ParseResult:
     return _client_pkg.dispatch(frame, **ctx)
 
 
+# --- Pool-binding / fixed-family fail-closed validation ---------------------- #
+# merged from _pool_binding_hardening.py + _subclient_family_hardening.py
+
+_MISSING = object()
+_DEFAULT_MAX_RETRIES = 3
+_VALID_FAMILIES = frozenset(
+    {Family.STANDARD, Family.EXTENDED, Family.MAC, Family.GOODS, Family.F10}
+)
+
+
+def _require_pool_family(pool: Any | None, requested_family: str) -> None:
+    if requested_family not in _VALID_FAMILIES:
+        raise ConfigError(
+            f"client family 非法: {requested_family!r}",
+            context={"client_family": requested_family, "provider_switch_allowed": False},
+        )
+    if pool is None:
+        return
+    pool_family = getattr(pool, "family", _MISSING)
+    if pool_family is _MISSING:
+        return  # 向后兼容：有些 pool 伪装没有 family 属性
+    if pool_family != requested_family:
+        raise ConfigError(
+            f"client/pool family 不匹配: client={requested_family!r}, pool={pool_family!r}",
+            context={
+                "client_family": requested_family,
+                "pool_family": pool_family,
+                "provider_switch_allowed": False,
+            },
+        )
+
+
+def _require_unambiguous_pool_binding(
+    *,
+    pool: Any | None,
+    family: str,
+    hosts: Sequence[Any] | None,
+    max_retries: int,
+    pool_kwargs: Mapping[str, Any],
+) -> None:
+    """Fail closed when injected pool config is ambiguous / ignored."""
+
+    _require_pool_family(pool, family)
+    if pool is None:
+        return
+    if hosts is not None:
+        raise ConfigError(
+            "注入 pool= 时不能同时传 hosts=；hosts 不会重新构造已有连接池",
+            context={"client_family": family, "ignored_parameter": "hosts"},
+        )
+    if max_retries != _DEFAULT_MAX_RETRIES:
+        raise ConfigError(
+            "注入 pool= 时不能覆盖 max_retries；请在构造连接池时设置",
+            context={"client_family": family, "ignored_parameter": "max_retries"},
+        )
+    if pool_kwargs:
+        names = sorted(pool_kwargs)
+        raise ConfigError(
+            "注入 pool= 时不能再传连接池构造参数: " + ", ".join(names),
+            context={"client_family": family, "ignored_parameters": names},
+        )
+
+
+def _check_fixed_family_kwargs(cls_name: str, fixed_family: str, kwargs: dict[str, Any]) -> None:
+    """Fail closed when fixed-family subclass receives a conflicting family=."""
+
+    requested = kwargs.get("family", fixed_family)
+    if requested != fixed_family:
+        raise ConfigError(
+            "固定协议族客户端不接受冲突 family: "
+            f"client={cls_name}, required={fixed_family!r}, requested={requested!r}",
+            context={
+                "client": cls_name,
+                "required_family": fixed_family,
+                "requested_family": requested,
+                "provider_switch_allowed": False,
+            },
+        )
+
+
+# --- bestip two-phase contract (merged from _bestip_hardening.py) ----------- #
+
+
+def _probe_snapshot(pool: Any) -> list[Any]:
+    """Detached HostEntry snapshots — probe side effects never leak into live pool."""
+
+    from dataclasses import replace
+
+    return [replace(h) for h in pool.hosts]
+
+
+def _rank_entries(results: list[Any], *, keep_failures: bool) -> list[Any]:
+    from ..transport.speedtest import rank_hosts
+
+    selected = results if keep_failures else [r for r in results if r.ok]
+    return rank_hosts(selected)
+
+
+def _persist_standard(entries: list[Any], *, family: str, save_ranking: bool) -> None:
+    if save_ranking and family == Family.STANDARD:
+        from ..transport.hosts import RankingStore
+
+        RankingStore().update(entries)
+
+
 class TdxClient(_ClientMixin):
     """同步 TDX 在线客户端（基于 :class:`~tstdx.transport.pool.ConnectionPool`）。"""
 
@@ -64,6 +169,15 @@ class TdxClient(_ClientMixin):
         pool: Any | None = None,
         **pool_kwargs: Any,
     ) -> None:
+        # --- merged from _pool_binding_hardening: fail closed on ambiguous pool binding ---
+        _require_unambiguous_pool_binding(
+            pool=pool,
+            family=family,
+            hosts=hosts,
+            max_retries=max_retries,
+            pool_kwargs=pool_kwargs,
+        )
+
         if pool is not None:
             self._pool = pool
             self._owns_pool = False
@@ -99,34 +213,29 @@ class TdxClient(_ClientMixin):
         save_ranking: bool = True,
         keep_failures: bool = True,
     ) -> list[Any]:
-        """运行时测速并热更新主站池（对标 mootdx ``bestip=True``）。"""
+        """运行时测速并热更新主站池（对标 mootdx ``bestip=True``）。
 
-        from ..transport.speedtest import rank_hosts, speedtest, speedtest_and_save
+        merged from _bestip_hardening.py：detached replace 快照 + 两阶段 commit。
+        speedtest 永远作用在 detached 副本上，不修改 pool 持有的 HostEntry。
+        pool.update_hosts 是第一阶段 commit（generation-safe），RankingStore 持久化
+        只在 update 成功后执行，避免孤立持久化副作用。
+        """
 
-        hosts = list(self._pool.hosts)
+        from ..transport.speedtest import speedtest
+
+        hosts = _probe_snapshot(self._pool)
         if not hosts:
             return []
-        if save_ranking:
-            results = speedtest_and_save(
-                hosts,
-                family=self.family,
-                timeout=timeout,
-                samples=samples,
-                max_workers=max_workers,
-                keep_failures=keep_failures,
-            )
-        else:
-            results = speedtest(
-                hosts,
-                family=self.family,
-                timeout=timeout,
-                samples=samples,
-                max_workers=max_workers,
-            )
-        entries = rank_hosts(
-            results if keep_failures else [result for result in results if result.ok]
+        results = speedtest(
+            hosts,
+            family=self.family,
+            timeout=timeout,
+            samples=samples,
+            max_workers=max_workers,
         )
+        entries = _rank_entries(results, keep_failures=keep_failures)
         self._pool.update_hosts(entries)
+        _persist_standard(entries, family=self.family, save_ranking=save_ranking)
         return results
 
     def close(self) -> None:
@@ -443,6 +552,7 @@ class TdxClient(_ClientMixin):
 
 class GoodsClient(TdxClient):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        _check_fixed_family_kwargs("GoodsClient", Family.GOODS, kwargs)
         kwargs["family"] = Family.GOODS
         super().__init__(*args, **kwargs)
 
@@ -471,6 +581,7 @@ class GoodsClient(TdxClient):
 
 class ExMarketClient(TdxClient):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        _check_fixed_family_kwargs("ExMarketClient", Family.EXTENDED, kwargs)
         kwargs["family"] = Family.EXTENDED
         super().__init__(*args, **kwargs)
 
@@ -505,6 +616,7 @@ class ExMarketClient(TdxClient):
 
 class MacClient(TdxClient):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        _check_fixed_family_kwargs("MacClient", Family.MAC, kwargs)
         kwargs["family"] = Family.MAC
         super().__init__(*args, **kwargs)
 
@@ -520,6 +632,7 @@ class MacClient(TdxClient):
 
 class F10Client(TdxClient):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        _check_fixed_family_kwargs("F10Client", Family.F10, kwargs)
         kwargs["family"] = Family.F10
         super().__init__(*args, **kwargs)
 

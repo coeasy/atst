@@ -177,10 +177,10 @@ class TestReporterSanitize:
         exc = TdxError(
             "boom",
             code="E2010",
-            advice=RetryAdvice(retryable=True, backoff=1.5, max_retries=3),
+            advice=RetryAdvice(retryable=True, backoff=1.5),
         )
         payload = reporter._build_error_payload(exc)
-        assert payload["advice"] == {"retryable": True, "backoff": 1.5, "max_retries": 3}
+        assert payload["advice"] == {"retryable": True, "backoff": 1.5}
 
     def test_report_disabled_returns_false_no_send(self, monkeypatch):
         monkeypatch.delenv("TSTDX_FEEDBACK", raising=False)

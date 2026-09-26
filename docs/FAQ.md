@@ -18,9 +18,15 @@
 | DuckDB 落地 | `pip install "tstdx[duckdb]"` |
 | HTTP Web 源降级 | `pip install "tstdx[web]"` |
 | Prometheus 指标 | `pip install "tstdx[metrics]"` |
-| HTTP REST 网关 | `pip install "tstdx[server]"` |
-| MCP 工具服务 | `pip install "tstdx[mcp]"` |
+| HTTP REST 网关 / WebSocket RPC | `pip install "tstdx[server]"` |
+| capture 工具链（时区 + zstd） | `pip install "tstdx[tools]"` |
+| MCP 工具服务 | 无需 extras：`tstdx/integration/mcp/` 是纯标准库的 JSON-RPC over stdio |
 | 全部 | `pip install "tstdx[all]"` |
+
+> **为什么 MCP 没有 extra**（第 23 轮实测）：全仓对 `mcp` / `pydantic` 两个第三方包的
+> 读取次数为 0（`tstdx/`、`scripts/`、`tests/` 一起按 `import` 普查，只有 `DESIGN.md`
+> 的一段示例代码提到 pydantic）。过去 `pyproject.toml` 里那两份 extra 是没人按它行动的
+> 声明，已经删除；照它装包只会多装两个用不上的包。
 
 ### Q: 支持 Python 3.9 吗？
 

@@ -12,7 +12,7 @@ import pytest
 
 from tstdx.domain.models import Bar, MinutePoint, Quote, Tick
 from tstdx.errors import SourceDeprecated, WebSourceError
-from tstdx.web.adapters_baidu import BaiduSource
+from tstdx.web.baidu.adapters import BaiduSource
 from tstdx.web.base import HttpResponse, RateLimiter
 from tstdx.web.sources import BAIDU, get_source, list_sources
 

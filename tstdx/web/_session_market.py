@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import atexit
+import contextlib
 import threading
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
@@ -34,6 +36,7 @@ __all__ = [
     "KLINES_PERIOD_ALIASES",
     "INDEX_SYMBOLS",
     "shared_http",
+    "close_shared_http",
 ]
 
 #: 本面（腾讯 ifzq K 线）能服务的**规范**周期。这里只登记"服务得起哪几档"这一件真差异，
@@ -78,13 +81,35 @@ def shared_http():
     与 :func:`tstdx.web._base_http.shared_bucket` 同法：整段"取或建"在锁内完成。
     早先的无锁 check-then-append 会让并发首建各自造一个 client，其中一个连同
     其 keep-alive 连接池一起泄漏（进程级对象，再没人引用也永不关闭）。
+
+    这份 client 归进程所有，所以它的释放点也必须挂在进程上：首建时登记
+    :func:`atexit`，一次性进程（``tstdx web ...`` 那批命令、脚本）退出时
+    keep-alive 连接池被确定地关掉，而不是等解释器把整个模块一起丢弃
+    （第 26 轮 F-103）。长期进程里想提前收尾就直接调 :func:`close_shared_http`。
     """
     with _SHARED_HTTP_LOCK:
         if not _SHARED_HTTP:
             from .base import build_client
 
             _SHARED_HTTP.append(build_client())
+            atexit.register(close_shared_http)
         return _SHARED_HTTP[0]
+
+
+def close_shared_http() -> bool:
+    """关掉 :func:`shared_http` 那份进程级 client（幂等；由 atexit 兑现）。
+
+    Returns
+    -------
+    ``True`` 表示确有一份被关掉；``False`` 表示还没人建过、或已经关过。
+    """
+    with _SHARED_HTTP_LOCK:
+        client = _SHARED_HTTP.pop(0) if _SHARED_HTTP else None
+    if client is None:
+        return False
+    with contextlib.suppress(Exception):
+        client.close()
+    return True
 
 
 # 旧名别名：会话组合层内部沿用原私有名。
@@ -146,7 +171,8 @@ class QuoteSessionMixin:
         返回价格 / 成交额以原生币种港元(HKD)计，``extra["currency"]`` 标记；
         成交量单位为「股」（已与全局契约对齐）。
         """
-        from .adapters import HkSource, SinaHkSource
+        from .sina.adapters import SinaHkSource
+        from .tencent.adapters import HkSource
 
         src_cls = SinaHkSource if provider == "sina" else HkSource
         src = src_cls(client=_shared_http())
@@ -168,7 +194,7 @@ class QuoteSessionMixin:
         返回价格 / 成交额以原生币种美元(USD)计，``extra["currency"]`` 标记；
         成交量单位为「股」（已与全局契约对齐）。
         """
-        from .adapters import UsSource
+        from .tencent.adapters import UsSource
 
         src = UsSource(client=_shared_http())
         try:
@@ -203,7 +229,7 @@ class QuoteSessionMixin:
             每页条数（新浪上限 100；腾讯上限 200）。
         max_pages:
             页数上限；``None`` **不是**"拉到底"——底层适配器把它取成
-            :data:`~tstdx.web.adapters.DEFAULT_MAX_PAGES`（100 页）硬上限，
+            :data:`~tstdx.web.tencent.adapters.DEFAULT_MAX_PAGES`（100 页）硬上限，
             与显式传值同样受"防失控"钳制。要更大范围请显式给更大的 ``max_pages``。
         """
         if node.lower() in ("hk", "us", "hk_main", "us_main"):
@@ -260,7 +286,7 @@ class QuoteSessionMixin:
     # -- 外汇牌价 ----------------------------------------------------------- #
     def rates(self) -> list[dict[str, Any]]:
         """中国银行外汇牌价。"""
-        from .adapters import BocSource
+        from .boc.adapters import BocSource
 
         src = BocSource(**self._kwargs, client=_shared_http())
         try:
@@ -318,7 +344,7 @@ class KlineSessionMixin:
             # src 在三分支被赋不同源类型——显式 Any 化统一推断
             src: Any
             if mkt in ("hk", "us"):
-                from .history import EastmoneyHistoryKlineSource
+                from .eastmoney.adapters import EastmoneyHistoryKlineSource
 
                 src = EastmoneyHistoryKlineSource(client=_shared_http())
                 try:
@@ -327,7 +353,7 @@ class KlineSessionMixin:
                     return src.fetch_bars(symbol, period=p, count=count, adjust=adjust)
                 finally:
                     src.close()
-            from .adapters_ext import MinuteKlineSource
+            from .tencent.adapters import MinuteKlineSource
 
             src = MinuteKlineSource(client=_shared_http())
             try:
@@ -336,8 +362,8 @@ class KlineSessionMixin:
             finally:
                 src.close()
 
-        # 方法内导入：保留测试对 tstdx.web.adapters.KlineSource 的注入 seam
-        from .adapters import KlineSource as _KlineSource
+        # 方法内导入：保留测试对 tstdx.web.tencent.adapters.KlineSource 的注入 seam
+        from .tencent.adapters import KlineSource as _KlineSource
 
         src = _KlineSource(client=_shared_http())
         try:
@@ -348,7 +374,7 @@ class KlineSessionMixin:
     # -- 当日分时 ----------------------------------------------------------- #
     def minute(self, symbol: str) -> list[MinutePoint]:
         """当日 1 分钟分时（价格 / 分钟增量成交量 / 增量成交额）。"""
-        from .adapters_ext import MinuteSource
+        from .tencent.adapters import MinuteSource
 
         src = MinuteSource(client=_shared_http())
         try:
@@ -379,7 +405,8 @@ class KlineSessionMixin:
             ``"sina"``（``5min``/``15min``/``30min``/``60min``/``120min``/``day``/
             ``1200min``）或 ``"eastmoney"``（``1min``–``day``，支持 adjust="" / "qfq" / "hfq"）。
         """
-        from .history import EastmoneyHistoryKlineSource, SinaHistoryKlineSource
+        from .eastmoney.adapters import EastmoneyHistoryKlineSource
+        from .sina.adapters import SinaHistoryKlineSource
 
         period = normalize_bar_period(period)
         src: Any

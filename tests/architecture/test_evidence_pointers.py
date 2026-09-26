@@ -20,6 +20,9 @@
    上有意义：跳过条件写成"这棵树的仓内那一支 ``wt_*`` 证据目录是空的"（全新克隆、CI 与
    **候选工作树**都是这种形状）。第 21 轮写的是"磁盘上一棵都没有"，第 22 轮改成看仓内——
    理由见 :func:`holds_evidence_store`：判据该在哪种环境里运行，不能由隔壁目录活没活着决定。
+③ 相对 HEAD **新增**的树名，除了"本机存在"只剩一条出路：每一处引用格里写明「已回收」**并且**
+   给出一个解得开的提交锚（:func:`recycled_registration`）。② 不查锚，③ 查——新指针登记的
+   代价比历史指针高，这是第 25 轮补的形状，理由写在该判据的 docstring 里。
 
 判据对象限本会话所有的 ``REFACTOR_PLAN_V18_RESTRUCTURE.md``：并行会话的台账里另有 16 处死指针
 （实测见 §29），按"不改他人台账"的纪律登记为 G19，不在这里替别人裁决。
@@ -29,6 +32,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -58,10 +62,46 @@ def _tree_names(text: str) -> list[str]:
     return [name.removeprefix("tstdx_") for name in _TREE.findall(text)]
 
 
+#: 仓外**绝对路径**指针的第一段目录名（`P:/github_public/<目录>`）。第 26 轮补的形状：
+#: `_TREE` 只认 `wt_` 开头的名字，而台账还把三类现场写成绝对路径——发布用的干净导出树、
+#: runner 所在的工作目录、门禁日志目录。这一族对旧尺子完全隐形（实测：台账里 4 个这样的
+#: 名字，3 个已从磁盘消失，判据 ②/③ 一处都抓不到）。只取第一段，因为判据的对象是"那个
+#: 现场目录还在不在"，不是目录里某个文件。
+_ABS_DIR = re.compile(r"[A-Za-z]:/github_public/(?!\.)([0-9A-Za-z][0-9A-Za-z_.-]*)")
+
+
+def _dir_names(text: str) -> list[str]:
+    return _ABS_DIR.findall(text)
+
+
 #: 与 `test_doc_code_consistency._RETIRED_MARKERS` 同族，这里只收指针语境下成立的那几个。
 _RECYCLED_MARKERS = ("已回收", "已删除", "已清理", "已不存在", "本机已无")
+#: 提交锚。G18 的口径从来是「已回收 **+ 锚**」，锚必须是一条走得通的引用，不是一个词。
+_ANCHOR = re.compile(r"\b[0-9a-f]{7,40}\b")
 #: 台账 §2 里那句自我声明；两个数字都是判据的账。
 _DECLARATION = re.compile(r"引用\s*(\d+)\s*棵\s*`wt_\*`\s*工作树，共\s*(\d+)\s*处指针")
+
+
+@cache
+def _anchor_resolves(rev: str) -> bool:
+    """这个短串在本仓库里解得开成一个提交吗（解不开 = 锚是假的，登记不算登记）。"""
+
+    return (
+        subprocess.run(
+            ["git", "cat-file", "-e", f"{rev}^{{commit}}"],
+            cwd=ROOT,
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
+def recycled_registration(block: str) -> bool:
+    """这一格里写了「已回收」，并且给了一个**解得开的**提交锚。"""
+
+    return any(marker in block for marker in _RECYCLED_MARKERS) and any(
+        _anchor_resolves(rev) for rev in _ANCHOR.findall(block)
+    )
 
 
 def _in_repo_store(root: Path) -> set[str]:
@@ -152,6 +192,34 @@ def dead_pointer_findings(
     ]
 
 
+def dirs_on_disk(root: Path = ROOT) -> set[str]:
+    """本机现存的仓外现场目录（与被引用名字同一层：`root.parent`）。"""
+
+    return {path.name for path in root.parent.iterdir() if path.is_dir()}
+
+
+def dir_blocks(text: str) -> list[tuple[str, list[str]]]:
+    """``(逻辑块, 块内绝对路径目录名)``——只含带这类指针的块。"""
+
+    return [
+        (block, sorted(set(_dir_names(block))))
+        for block in logical_blocks(text)
+        if _ABS_DIR.search(block)
+    ]
+
+
+def dead_dir_findings(blocks: list[tuple[str, list[str]]], on_disk: set[str]) -> list[str]:
+    """同一族判据② 的另一半：指向已消失的**仓外现场目录**的指针必须写明「已回收」。"""
+
+    return [
+        f"{name} 已不在磁盘上，但所在块仍以现时语气引用绝对路径"
+        f"（缺 {'/'.join(_RECYCLED_MARKERS)} 之一）"
+        for block, names in blocks
+        for name in names
+        if name not in on_disk and not any(marker in block for marker in _RECYCLED_MARKERS)
+    ]
+
+
 @pytest.fixture(scope="module")
 def ledger() -> str:
     return LEDGER.read_text(encoding="utf-8")
@@ -169,6 +237,39 @@ def test_the_ledger_declares_the_size_of_its_evidence_store(ledger: str) -> None
 def test_pointers_at_recycled_trees_say_so(ledger: str) -> None:
     findings = dead_pointer_findings(pointer_blocks(ledger), evidence_trees())
     assert not findings, "\n".join(findings)
+
+
+@pytest.mark.skipif(_no_trees, reason="本机不持有证据库：仓外现场目录的账没有对象可对")
+def test_pointers_at_recycled_out_of_repo_sites_say_so(ledger: str) -> None:
+    """G42：仓外绝对路径指针（导出树 / runner 目录 / 日志目录）与工作树走同一条口径。
+
+    跳过条件与判据 ② 用同一个 `holds_evidence_store()`：这类目录只存在于"本机持有这份台账
+    的证据库"那种机器上，CI 与全新克隆里 `P:/github_public` 这一层根本不存在，让它运行就会
+    把每一条绝对路径指针报成违约（G24 那一次假红的形状：扩大扫描范围必须同时复查跳过条件）。
+    """
+
+    findings = dead_dir_findings(dir_blocks(ledger), dirs_on_disk())
+    assert not findings, "\n".join(findings)
+
+
+def test_out_of_repo_dir_pointers_are_neither_blind_nor_self_exempting(tmp_path: Path) -> None:
+    """正控：新补的这一族形状要认得、违约要抓到、写明回收要放行。"""
+
+    #: 形状识别（不看磁盘——台账此刻完全可以只写工作树形状，而尺子对绝对路径已经失明）。
+    both = _dir_names("P:/github_public/scratch_v18b99/gates.log 与 p:/github_public/site22")
+    assert both == ["scratch_v18b99", "site22"], f"绝对路径目录名扫错：{both}"
+    #: 磁盘上没有的名字，裸写必须抓到；同一块里写明回收必须放行。
+    (tmp_path / "tstdx").mkdir()
+    measuring = tmp_path / "tstdx"
+    gone = "P:/github_public/site_missing22/run.log"
+    present = "P:/github_public/tstdx"
+    on_disk = dirs_on_disk(measuring)
+    assert "tstdx" in on_disk
+    findings = dead_dir_findings(dir_blocks(f"门禁日志在 `{gone}`。"), on_disk)
+    assert len(findings) == 1 and "site_missing22" in findings[0], findings
+    assert dead_dir_findings(dir_blocks(f"门禁日志在 `{gone}`（本机已回收）。"), on_disk) == []
+    #: 现存的那条不该被报成违约，否则豁免词会逼着活现场也写"已回收"。
+    assert dead_dir_findings(dir_blocks(f"被测树在 `{present}`。"), on_disk) == []
 
 
 def test_the_pointer_ruler_is_not_blind(ledger: str) -> None:
@@ -227,20 +328,42 @@ def test_the_run_condition_is_not_decided_by_a_neighbour(tmp_path: Path) -> None
     assert holds_evidence_store(store), "持有证据库的那棵树被跳过了，② 成了永不运行的判据"
 
 
+def unlawful_new_pointers(text: str, added: set[str], on_disk: set[str]) -> set[str]:
+    """新增树名里"既不现存、又没登记清楚"的那些。
+
+    登记清楚 = **每一处**引用它的逻辑块都同时写着「已回收」与一个解得开的提交锚。只看带名字
+    的那几格，所以隔壁格子里喊一万次"已回收"也救不了一处裸指针。
+    """
+
+    blocks = pointer_blocks(text)
+    return {
+        tree
+        for tree in added - on_disk
+        if not all(recycled_registration(block) for block, names in blocks if tree in names)
+    }
+
+
 def test_new_pointers_must_be_lawful_additions_not_pre_declared_exemptions(
     ledger: str,
 ) -> None:
-    """正控：新增指针只有一条合法出路——那棵树**在盘上**，且两格账同时跟着改。
+    """正控：新增指针只有两条合法出路——那棵树**在盘上**，或者就地按「已回收 + 锚」登记。
 
     判据 ① 的形状是"声明 == 现扫"，所以只要声明跟着改数，多加指针不赔；真正拦住它的是
     这一格。拿 HEAD 版台账当基线（它自己必须自洽，否则下面的差集推理没有根据），要求：
 
     * 基线的声明 == 基线的现扫（尺子对"改前"也不瞎）；
-    * 本轮新引入的每个树名都必须**本机存在**——把一棵不在盘上的树写成新指针，走的只能是
-      「已回收」那条登记口径，不能被"我声明了"洗成合法；
+    * 本轮新引入的每个树名要么**本机存在**，要么在**每一处**引用格里登记为已回收，且登记的锚
+      解得开（:func:`recycled_registration`）——把一棵不在盘上的树写成新指针，不能被
+      "我声明了"洗成合法；
     * 指针处数单调不减（这是棘轮，下一轮仍然成立，不靠硬编码本轮树名）。
 
-    再加一条正控：凭空种一棵不在盘上的树名，上面第二条必须当场把它点出来。
+    第二条原本是"必须本机存在"，没有豁免支路。第 25 轮量到它没有出路：台账文本写在**未提交**
+    的工作树里、指针当时指的就是当时的候选树，那棵树随后被回收（`wt_v18b23step`，锚 `07477e8`），
+    于是"新增"与"不在盘上"同时成立，而唯一被报错信息指明的出路（按「已回收」登记）恰好就是
+    违约本身。判据的意图从来不是禁止登记过的回收，而是禁止**裸的**死指针，所以这一格改判成
+    现在这样，并且比原来更严：新增指针要付"锚必须解得开"这一格，判据 ② 至今不查锚。
+    四条形种各造一次（裸名／只写「已回收」不给锚／给一个解不开的锚／给真锚），只有最后一格
+    必须放行。
     """
 
     before = subprocess.run(
@@ -257,9 +380,11 @@ def test_new_pointers_must_be_lawful_additions_not_pre_declared_exemptions(
     #: "新指针必须指得到现存现场"会在测量现场自己家里当场假红。
     on_disk = evidence_trees() | {ROOT.name.removeprefix("tstdx_")}
     added = set(_tree_names(ledger)) - set(_tree_names(before))
-    assert added <= on_disk, (
-        f"本轮新引用的树里有不在盘上的：{sorted(added - on_disk)}"
-        "——新指针只能指向现存的测量现场，回收过的要按「已回收」登记，不能靠改声明通过"
+    offenders = unlawful_new_pointers(ledger, added, on_disk)
+    assert not offenders, (
+        f"本轮新引用的树里有不在盘上、又没登记回收的：{sorted(offenders)}"
+        "——新指针只能指向现存的测量现场，回收过的要在每一处引用格里写明「已回收 + 解得开的锚」，"
+        "不能靠改声明通过"
     )
     assert citation_counts(ledger)[1] >= citation_counts(before)[1], (
         "指针处数比 HEAD 少：删除指针要走 G18 的单调收缩口径，不能顺手抹掉"
@@ -273,6 +398,24 @@ def test_new_pointers_must_be_lawful_additions_not_pre_declared_exemptions(
     assert phantom_name in planted and planted - on_disk, (
         "种下去的死指针没被认成新增——本判据对『先声明后违约』是瞎的"
     )
+    #: 四条形种：只有"写明回收 + 锚解得开"这一格放行，其余三格必须当场抓到。
+    anchor = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    shapes = {
+        "裸名": f"本轮另跑过 `{phantom_name}`。",
+        "只写已回收": f"本轮另跑过 `{phantom_name}`（已回收）。",
+        "锚解不开": f"本轮另跑过 `{phantom_name}`（已回收，锚 = 提交 `ffffffffffffffff`）。",
+        "真锚": f"本轮另跑过 `{phantom_name}`（已回收，锚 = 提交 `{anchor}`）。",
+    }
+    for shape, line in shapes.items():
+        caught = unlawful_new_pointers(ledger + "\n" + line, planted, on_disk)
+        expect_caught = shape != "真锚"
+        assert (phantom_name in caught) is expect_caught, f"形种「{shape}」判错：{sorted(caught)}"
 
 
 def test_planted_defects_each_get_caught(ledger: str) -> None:

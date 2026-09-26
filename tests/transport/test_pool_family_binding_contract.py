@@ -54,19 +54,19 @@ def test_pool_rejects_duplicate_canonical_endpoints(pool_cls: type[Any]) -> None
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
-        ({"slots_per_host": 0}, "slots_per_host"),
-        ({"slots_per_host": True}, "slots_per_host"),
-        ({"timeout": 0.0}, "timeout"),
-        ({"timeout": float("nan")}, "timeout"),
-        ({"timeout": "3"}, "timeout"),
-        ({"connect_timeout": 0.0}, "connect_timeout"),
-        ({"connect_timeout": float("inf")}, "connect_timeout"),
-        ({"heartbeat_interval": -1}, "heartbeat_interval"),
-        ({"heartbeat_interval": 1.5}, "heartbeat_interval"),
-        ({"heartbeat_cmd": -1}, "heartbeat_cmd"),
-        ({"heartbeat_cmd": 65536}, "heartbeat_cmd"),
-        ({"max_retries": -1}, "max_retries"),
-        ({"max_retries": True}, "max_retries"),
+        ({"slots_per_host": 0}, "必须满足 >=1"),
+        ({"slots_per_host": True}, "必须是整数"),
+        ({"timeout": 0.0}, "必须是正有限数值"),
+        ({"timeout": float("nan")}, "必须是正有限数值"),
+        ({"timeout": "3"}, "必须是有限数值"),
+        ({"connect_timeout": 0.0}, "必须是正有限数值"),
+        ({"connect_timeout": float("inf")}, "必须是正有限数值"),
+        ({"heartbeat_interval": -1}, "必须满足 >=0"),
+        ({"heartbeat_interval": 1.5}, "必须是整数"),
+        ({"heartbeat_cmd": -1}, "必须满足 0..65535"),
+        ({"heartbeat_cmd": 65536}, "必须满足 0..65535"),
+        ({"max_retries": -1}, "必须满足 >=0"),
+        ({"max_retries": True}, "必须是整数"),
         ({"use_tls": 1}, "use_tls"),
         ({"handshake": "yes"}, "handshake"),
         ({"handshake_strict": 1}, "handshake_strict"),
@@ -104,9 +104,9 @@ def test_async_rate_limiter_requires_nonblocking_contract() -> None:
     ("kwargs", "message"),
     [
         ({"keepalive": 1}, "keepalive"),
-        ({"speedtest_threshold": 0}, "speedtest_threshold"),
-        ({"speedtest_threshold": True}, "speedtest_threshold"),
-        ({"idle_timeout": float("nan")}, "idle_timeout"),
+        ({"speedtest_threshold": 0}, "必须满足 >=1"),
+        ({"speedtest_threshold": True}, "必须是整数"),
+        ({"idle_timeout": float("nan")}, "必须是有限数值"),
         ({"on_host_down": object()}, "on_host_down"),
     ],
 )
@@ -133,7 +133,7 @@ def test_documented_nonpositive_idle_timeout_still_disables_idle_sweep() -> None
         pool.close()
 
 
-def test_sync_async_constructor_signatures_survive_hardening_wrapper() -> None:
+def test_sync_async_constructor_signatures_and_wiring_are_canonical() -> None:
     sync = inspect.signature(ConnectionPool.__init__)
     async_ = inspect.signature(AsyncConnectionPool.__init__)
 
@@ -141,8 +141,8 @@ def test_sync_async_constructor_signatures_survive_hardening_wrapper() -> None:
     assert "family" in sync.parameters
     assert "hosts" in async_.parameters
     assert "family" in async_.parameters
-    assert ConnectionPool.__init__.__module__ == "tstdx.transport._pool_family_hardening"
-    assert AsyncConnectionPool.__init__.__module__ == "tstdx.transport._pool_family_hardening"
+    assert ConnectionPool.__init__.__module__ == "tstdx.transport.pool"
+    assert AsyncConnectionPool.__init__.__module__ == "tstdx.transport.async_"
 
 
 def test_valid_same_family_pool_still_constructs() -> None:

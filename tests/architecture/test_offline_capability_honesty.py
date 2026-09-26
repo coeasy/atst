@@ -42,7 +42,7 @@ from tstdx.diagnostics import WarningCode
 from tstdx.integration.mcp._tools_spec import TOOLS
 from tstdx.protocol.commands import CMD, COMMANDS, STATUS_OFFLINE, TIER_L1, Family
 from tstdx.providers import PROVIDERS
-from tstdx.runtime.executor import _CORE_BINDINGS
+from tstdx.runtime.executor import DIRECT_BINDINGS
 
 ROOT = Path(__file__).resolve().parents[2]
 MIXIN = ROOT / "tstdx" / "client" / "_mixin.py"
@@ -129,7 +129,9 @@ _TEMPLATES = _templates()
 _SYNC = _sync_methods()
 #: 内核直绑能力 → 该能力在 tdx 上实际调用的 client 方法名（``_tdx_bars`` 里那几个 ``client.x()``）。
 _CAPABILITY_CALLS: dict[str, set[str]] = {}
-for _binding in _CORE_BINDINGS:
+for _binding in DIRECT_BINDINGS:
+    if _binding.executor_name == "_migrated_capability":
+        continue
     if _binding.provider != "tdx":
         continue
     _executor_tree = _tree(EXECUTOR)

@@ -23,7 +23,6 @@ __all__ = [
     "MAX_TEXT_CHARS",
     "MAX_BARS_COUNT",
     "MAX_PAGE",
-    "clamp_int",
     "ToolSpec",
     "_str_prop",
     "_int_prop",
@@ -44,14 +43,6 @@ MAX_ROWS = 500
 MAX_TEXT_CHARS = 32_000
 MAX_BARS_COUNT = 2000
 MAX_PAGE = 10_000
-
-
-def clamp_int(value: Any, default: int, lo: int = 1, hi: int = MAX_BARS_COUNT) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return default
-    return max(lo, min(parsed, hi))
 
 
 class ToolSpec:

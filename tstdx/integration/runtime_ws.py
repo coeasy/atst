@@ -15,7 +15,7 @@ from ..errors import ValidationError
 from ..providers import PROVIDERS
 from ..runtime.orchestration import FallbackPolicy
 from .serialization import serialize_result
-from .wire_fields import WS_PARAMS_FIELDS, reject_undeclared
+from .wire_fields import WS_PARAMS_FIELDS, as_request_int, reject_undeclared
 
 __all__ = ["RuntimeJsonRpcHandler"]
 
@@ -45,6 +45,19 @@ class RuntimeJsonRpcHandler:
 
     def __init__(self, client: Client | None = None) -> None:
         self.client = client or Client()
+        #: 传入的 client 归调用方，自己造的才由 :meth:`close` 释放——与 MCP 面
+        #: ``MCPServer._owns_client``（``_server.py``）同一口径。
+        self._owns_client = client is None
+
+    def close(self) -> None:
+        """释放本处理器自建的 ``Client``（连带它的连接池）。幂等。
+
+        过去 WS 面没有任何释放入口：托管进程退出时这条 ``Client`` 一路 socket 与
+        心跳线程原地留下（第 26 轮 F-100）。
+        """
+        if self._owns_client:
+            self._owns_client = False
+            self.client.close()
 
     def handle_message(self, raw: str | bytes) -> str | None:
         try:
@@ -108,6 +121,22 @@ class RuntimeJsonRpcHandler:
     @staticmethod
     def _policy(params: dict[str, Any]) -> FallbackPolicy | None:
         return FallbackPolicy.from_wire(params.get("fallback"))
+
+    @staticmethod
+    def _int_param(method: str, name: str, value: Any, default: int) -> int:
+        """整数格走 :func:`as_request_int`：坏值当场 E1010，不再裸 ``int()`` 炸成 E9000。
+
+        形参收**已取出的值**而不是整个 ``params``：调用处必须自己写 ``params.get("count")``，
+        ``tests/runtime/test_wire_declared_fields.py`` 那份 AST 才看得见"声明的字段有人读"。
+        键名一旦变成变量，那道判据就当场失明（第 25 轮建口时被它抓到一次）。
+        """
+        return as_request_int(
+            face="ws_params",
+            where=f"WS {method} params",
+            name=name,
+            value=value,
+            default=default,
+        )
 
     def _dispatch(self, method: str, params: dict[str, Any]) -> Any:
         # params 的白名单按方法给出（``wire_fields.WS_PARAMS_FIELDS``）：过去未知键经
@@ -180,8 +209,8 @@ class RuntimeJsonRpcHandler:
                     provider=provider,
                     policy=self._policy(params),
                     period=str(params.get("period", "day")),
-                    count=int(params.get("count", 320)),
-                    start=int(params.get("start", 0)),
+                    count=self._int_param(method, "count", params.get("count"), 320),
+                    start=self._int_param(method, "start", params.get("start"), 0),
                     adjustment=str(params.get("adjustment", "")),
                     currentness="historical",
                 )
@@ -200,8 +229,8 @@ class RuntimeJsonRpcHandler:
                 self.client.trades(
                     symbol,
                     provider=chosen,
-                    start=int(params.get("start", 0)),
-                    count=int(params.get("count", 0)),
+                    start=self._int_param(method, "start", params.get("start"), 0),
+                    count=self._int_param(method, "count", params.get("count"), 0),
                 )
             )
 
@@ -212,7 +241,9 @@ class RuntimeJsonRpcHandler:
         if method == "security.list":
             return serialize_result(
                 self.client.security_list(
-                    market=market, start=int(params.get("start", 0)), provider=chosen
+                    market=market,
+                    start=self._int_param(method, "start", params.get("start"), 0),
+                    provider=chosen,
                 )
             )
         raise RuntimeError("unreachable")

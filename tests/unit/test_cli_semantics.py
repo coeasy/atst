@@ -335,15 +335,22 @@ class TestN5ClientSubcommands:
                 )
                 return [{"symbol": symbol, "method": method, "period": period, "count": count}]
 
-            def all_market(self, *, node="hs_a", page_size=80, max_pages=None, source="sina"):
+            def all_market(self, *, node="hs_a", page_size=80, max_pages=None, provider=None):
+                # 门面签名按真实那一侧抄过一遍就会把 bug 钉成事实：这里原先写的是
+                # ``source=``，而 ``Client.<capability>`` 动态门面只吃 ``provider`` /
+                # ``channel`` / ``currentness`` 三个路由关键字（``tstdx/client/api.py::
+                # Client.__getattr__``），``--source`` 选的正是 Provider。第 23 轮真机
+                # 装包实测 ``tstdx all-market --source sina`` 当场 E1010，修完才出数据。
                 self.calls.append(
                     (
                         "all_market",
                         (),
-                        dict(node=node, page_size=page_size, max_pages=max_pages, source=source),
+                        dict(
+                            node=node, page_size=page_size, max_pages=max_pages, provider=provider
+                        ),
                     )
                 )
-                return [{"node": node, "source": source}]
+                return [{"node": node, "provider": provider}]
 
             def minute_klines(self, symbol, *, period="5min", count=240):
                 self.calls.append(("minute_klines", (symbol,), dict(period=period, count=count)))
@@ -378,7 +385,7 @@ class TestN5ClientSubcommands:
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
         assert payload[0]["node"] == "hs_a"
-        assert payload[0]["source"] == "sina"
+        assert payload[0]["provider"] == "sina"
         assert FakeApi.calls[0][0] == "all_market"
 
     def test_all_market_flags(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
@@ -388,7 +395,7 @@ class TestN5ClientSubcommands:
         )
         assert rc == 0
         assert FakeApi.calls[0][2]["node"] == "hk"
-        assert FakeApi.calls[0][2]["source"] == "tencent"
+        assert FakeApi.calls[0][2]["provider"] == "tencent"
         assert FakeApi.calls[0][2]["max_pages"] == 2
 
     def test_minute_klines_defaults(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]

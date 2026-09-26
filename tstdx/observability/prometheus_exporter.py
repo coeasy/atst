@@ -204,15 +204,26 @@ class PrometheusExporter:
         try:
             server.serve_forever()
         finally:
-            self.stop()
+            # 只关**自己**这一台：热更新时 ``stop()`` 已经把旧服务摘掉了，旧线程
+            # 的收尾若无判据再关一次，关掉的是刚换上的新服务（第 26 轮 F-102）。
+            self.stop(expected=server)
 
-    def stop(self) -> None:
-        """关闭 :meth:`serve` 启动的 HTTP 服务（幂等、线程安全）。"""
+    def stop(self, *, expected: Any = None) -> None:
+        """关闭 :meth:`serve` 启动的 HTTP 服务（幂等、线程安全）。
+
+        Parameters
+        ----------
+        expected:
+            只有关的是这一台时才动手。与连接池 ``_drop(slot, expected=conn)``
+            同一口径：``serve()`` 的 ``finally`` 由那条服务线程执行，而它看到的
+            ``self._server`` 可能已经被调用方换成了新一代。
+        """
         with self._server_lock:
-            if self._server is not None:
-                try:
-                    self._server.shutdown()
-                    self._server.server_close()
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("PrometheusExporter.stop failed: %s", exc)
-                self._server = None
+            if self._server is None or (expected is not None and self._server is not expected):
+                return
+            try:
+                self._server.shutdown()
+                self._server.server_close()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("PrometheusExporter.stop failed: %s", exc)
+            self._server = None

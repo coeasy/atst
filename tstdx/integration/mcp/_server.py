@@ -270,7 +270,3 @@ class MCPServer:
 
 def create_mcp_server(client: Client | None = None) -> MCPServer:
     return MCPServer(client=client)
-
-
-if __name__ == "__main__":  # pragma: no cover
-    create_mcp_server().serve()

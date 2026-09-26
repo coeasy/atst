@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from tstdx.web.adapters import KlineSource
 from tstdx.web.limits import TENCENT_KLINE_MAX
+from tstdx.web.tencent.adapters import KlineSource
 
 
 class _FakeSegmentHttp:

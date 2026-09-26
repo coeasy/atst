@@ -52,16 +52,6 @@ from ..protocol.parsers.std7709 import (
     build_realtime_quote_body,
 )
 from ..protocol.registry import TIER_L3, ParseResult, dispatch
-
-# Install behavior/provenance patches before factory/public bindings are exposed.
-# Order is intentional: concurrent output semantics, base pool identity binding,
-# detached bestip snapshots, then fixed-family subclass argument validation.
-from . import (
-    _async_concurrency_hardening,
-    _bestip_hardening,
-    _pool_binding_hardening,
-    _subclient_family_hardening,
-)
 from .async_ import (
     AsyncExMarketClient,
     AsyncF10Client,
@@ -91,13 +81,6 @@ from .sync import (
     MacClient,
     OutputFormat,
     TdxClient,
-)
-
-del (
-    _async_concurrency_hardening,
-    _bestip_hardening,
-    _pool_binding_hardening,
-    _subclient_family_hardening,
 )
 
 __all__ = [

@@ -28,6 +28,13 @@ class KlineCategory:
     SEASON = 10
     YEAR = 11
 
+    #: 类别整数 → 周期拼写。这张表就是唯一入口：消费方先验域再取值
+    #: （``client/core.py`` 的 ``if category not in KlineCategory.NAMES``），
+    #: 架构门禁 ``test_provider_period_tables`` 也按 ``NAMES[category]`` 读它。
+    #: F-106：原来还有一个 ``KlineCategory.name_of(category)`` 类方法，体是
+    #: ``NAMES.get(category, f"category_{category}")``——零调用点、零点名，
+    #: 而它那个"越域就编一个 ``category_N`` 名字"的兜底跟验域口径直接冲突
+    #: （同一个越域输入，两条路给出两种结果）。按 D3 删除，不留第二种拼法。
     NAMES = {
         0: "5min",
         1: "15min",
@@ -42,10 +49,6 @@ class KlineCategory:
         10: "season",
         11: "year",
     }
-
-    @classmethod
-    def name_of(cls, category: int) -> str:
-        return cls.NAMES.get(category, f"category_{category}")
 
 
 #: 日线及以上：datetime 为 **uint32 YYYYMMDD**

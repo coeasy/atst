@@ -364,8 +364,8 @@ def test_local_smoke_never_imports_package_from_source_checkout(
     assert "-I" in probe_cmd
     probe_text = probe_cmd[probe_cmd.index("-c") + 1]
     assert "package_file.is_relative_to(venv_root)" in probe_text
-    assert "TdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'" in probe_text
-    assert "AsyncTdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'" in probe_text
+    assert "TdxClient.bestip.__module__ == 'tstdx.client.sync'" in probe_text
+    assert "AsyncTdxClient.bestip.__module__ == 'tstdx.client.async_'" in probe_text
 
 
 def test_twine_check_runs_on_the_exact_verified_artifacts(

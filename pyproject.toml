@@ -32,19 +32,20 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-config    = ["pydantic>=2.5"]
 dataframe = ["pandas>=2.0"]
 parquet   = ["pyarrow>=14.0"]
 duckdb    = ["duckdb>=0.10"]
 # Concrete HTTP Provider adapters (Tencent/Sina/Eastmoney/Baidu etc.).
 web       = ["httpx>=0.26"]
-tools     = ["tzdata>=2024.1; sys_platform == 'win32'"]
+# capture 的两件可选依赖：Windows 上 zoneinfo 要有 tzdata 才认得住名时区，
+# zstd 编码要有 zstandard（``tstdx/tools/capture.py`` 里 import 失败才回退 zlib）。
+tools     = ["tzdata>=2024.1; sys_platform == 'win32'", "zstandard>=0.22"]
 metrics   = ["prometheus-client>=0.19"]
 # Canonical /v13 HTTP + /v13/ws transports. The asyncio.server API used by the
 # canonical WS transport is part of the modern websockets API.
 server    = ["fastapi>=0.110", "uvicorn>=0.27", "websockets>=13.0"]
-# MCP stdio packaging/integration extra.
-mcp       = ["mcp>=1.0"]
+# MCP stdio 面是纯标准库的 JSON-RPC over stdio（``tstdx/integration/mcp/`` 不 import
+# 任何第三方包），所以它**没有** extra：过去那份 ``mcp = ["mcp>=1.0"]`` 全仓 0 处读取。
 dev       = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -56,8 +57,9 @@ dev       = [
     "mypy==2.3.1",
     "hatchling>=1.25",
 ]
+# ``all`` 是上面每个 extra 的并集，逐条对应，不额外塞东西：过去这里多出的
+# ``pydantic`` / ``mcp`` 全仓 0 处读取，已经随 extra 一起删掉。
 all       = [
-    "pydantic>=2.5",
     "pandas>=2.0",
     "pyarrow>=14.0",
     "duckdb>=0.10",
@@ -66,7 +68,6 @@ all       = [
     "fastapi>=0.110",
     "uvicorn>=0.27",
     "websockets>=13.0",
-    "mcp>=1.0",
     "zstandard>=0.22",
     "tzdata>=2024.1; sys_platform == 'win32'",
 ]

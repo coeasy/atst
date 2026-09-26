@@ -38,18 +38,7 @@ from typing import Any
 
 __all__ = [
     "TelemetryCollector",
-    "DEFAULT_EVENT_TYPES",
 ]
-
-#: 标准事件类型。
-DEFAULT_EVENT_TYPES: tuple[str, ...] = (
-    "error",
-    "command",
-    "parse",
-    "connection",
-    "download",
-    "profile",
-)
 
 
 class TelemetryCollector:
@@ -112,8 +101,9 @@ class TelemetryCollector:
         Parameters
         ----------
         event_type : str
-            事件类型。推荐使用 :data:`DEFAULT_EVENT_TYPES` 中的标准值，
-            但不会强制校验，允许自定义类型。
+            事件类型。收集器不校验取值，也不维护标准值表——第 26 轮删掉了那份
+            声明了六类却一类都没产出、连本包自己上报的 ``usage`` 都不在表内的
+            "标准事件类型"词表（F-81：零执行方的词表按 D3 删除，而不是留成假告示）。
         properties : dict, optional
             事件的附加属性（键值对）。默认空字典。
 

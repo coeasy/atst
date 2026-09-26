@@ -14,9 +14,10 @@
 数据来源
 --------
 内置表覆盖 2024–2026。其中 **2026 年为估算值**（``estimated=True``），
-国务院正式公布后需调用 :meth:`TradingCalendar.set_holidays` 更新。
-在线校准（:meth:`TradingCalendar.update_from_web`）**尚未实现**，调用即抛
-``NotImplementedError``，不要把它当作可用的降级路径。
+国务院正式公布后需调用 :meth:`TradingCalendar.set_holidays` 更新
+（单日补充用 :meth:`TradingCalendar.add_holiday`）。
+**没有在线校准**：本模块不联网取日历，也不留一个"调用即抛"的占位方法
+（F-110 按 D3 删掉了这样的 ``update_from_web``）——估算年份的校准只有上面两条真能走通的路。
 
 .. warning::
    ``estimated`` 数据仅用于离线降级，**不得**作为交易决策的唯一依据。
@@ -27,7 +28,6 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterable
 from datetime import date, timedelta
-from typing import Any
 
 from ..diagnostics import WarningCode, record_warning
 from ..errors import CalendarError
@@ -175,8 +175,8 @@ ESTIMATED_YEARS: frozenset[int] = frozenset({2026})
 class TradingCalendar:
     """A 股交易日历。
 
-    线程模型：所有可变操作（``set_holidays`` / ``add_holiday`` /
-    ``mark_workday``）与触发懒加载的查询（``is_trading_day``）经由模块级
+    线程模型：所有可变操作（``set_holidays`` / ``add_holiday``）
+    与触发懒加载的查询（``is_trading_day``）经由模块级
     :data:`_CALENDAR_LOCK` 串行化——默认单例进程内共享，未加锁年代与节假日
     集合并发读写存在撕裂风险（审计 §2-7）。
     """
@@ -188,8 +188,8 @@ class TradingCalendar:
             self._holidays.update(self._year_holidays(y))
             self._loaded_years.add(y)
         self._extra_holidays: set[date] = set()  # 临时休市（如重大事件）
-        self._workdays: set[date] = set()  # 周末调休上班（A 股仍休市，仅记录）
         # set_holidays() 覆盖过的年份：这些年份的内置估算数据已失效
+        # （F-109 删除的 `_workdays` 曾经住在这里——见下方数据维护段的说明）
         self._overridden_years: set[int] = set()
         # 已就「未覆盖年份」告警过的年份（once 语义，按实例去重）
         self._uncovered_warned: set[int] = set()
@@ -258,19 +258,21 @@ class TradingCalendar:
             self._overridden_years.add(year)
 
     def add_holiday(self, day: str) -> None:
+        """追加单个休市日（``"YYYY-MM-DD"``），只影响内存中的日历。"""
         with _CALENDAR_LOCK:
             y, m, d = (int(x) for x in day.split("-"))
             self._holidays.add(date(y, m, d))
             self._loaded_years.add(y)
 
-    def mark_workday(self, day: str) -> None:
-        """记录周末调休上班日（不改变 A 股休市判定，仅供展示）。"""
-        with _CALENDAR_LOCK:
-            y, m, d = (int(x) for x in day.split("-"))
-            self._workdays.add(date(y, m, d))
+    # F-109：这里曾有 ``mark_workday(day)``，把日期写进 ``self._workdays``。
+    # 那个集合**只被写过一次、从未被读过**（全仓零读者，连取回的属性都没有），
+    # 于是它既不影响 :meth:`is_trading_day` 的判定，也无处展示——一条对外宣称
+    # "记录周末调休上班"的写路径，效果任何调用方都观察不到。写-only 状态比
+    # 死代码更糟：它让读代码的人以为有人在用。按 D3 连字段一起删除。
 
     # -- 查询 -------------------------------------------------------------- #
     def is_trading_day(self, d: date | str) -> bool:
+        """该日是否交易。周末恒为 ``False``；内置表未覆盖的年份按"无节假日"处理并一次性告警。"""
         d = _to_date(d)
         if d.weekday() >= 5:  # 周六/周日
             return False
@@ -283,6 +285,7 @@ class TradingCalendar:
             return d not in self._holidays
 
     def next_trading_day(self, d: date | str, *, inclusive: bool = False) -> date:
+        """``d`` 之后的第一个交易日；``inclusive=True`` 时 ``d`` 本身可入选。"""
         d = _to_date(d)
         if not inclusive:
             d += timedelta(days=1)
@@ -291,6 +294,7 @@ class TradingCalendar:
         return d
 
     def prev_trading_day(self, d: date | str, *, inclusive: bool = False) -> date:
+        """``d`` 之前的第一个交易日；``inclusive=True`` 时 ``d`` 本身可入选。"""
         d = _to_date(d)
         if not inclusive:
             d -= timedelta(days=1)
@@ -299,6 +303,7 @@ class TradingCalendar:
         return d
 
     def trading_days_between(self, start: date | str, end: date | str) -> list[date]:
+        """闭区间 ``[start, end]`` 内的交易日列表（升序）。``start > end`` 抛 :class:`CalendarError`。"""
         s, e = _to_date(start), _to_date(end)
         if s > e:
             raise CalendarError(
@@ -313,6 +318,7 @@ class TradingCalendar:
         return out
 
     def count_trading_days(self, start: date | str, end: date | str) -> int:
+        """闭区间 ``[start, end]`` 内的交易日天数（含两端），入参口径同 :meth:`trading_days_between`。"""
         return len(self.trading_days_between(start, end))
 
     def is_estimated(self, d: date | str) -> bool:
@@ -325,18 +331,23 @@ class TradingCalendar:
             return year in ESTIMATED_YEARS and year not in self._overridden_years
 
     def warnings_for(self, d: date | str) -> list[str]:
+        """该日期的数据质量告警（目前只有一类：所在年份为估算值）；权威数据返回空表。"""
         if self.is_estimated(d):
             return [
-                f"{_to_date(d).year} 年节假日为估算值，"
-                f"请用 set_holidays() 或 update_from_web() 校准"
+                f"{_to_date(d).year} 年节假日为估算值，请用 set_holidays() 或 add_holiday() 校准"
             ]
         return []
 
-    def update_from_web(self, *args: Any, **kwargs: Any) -> None:
-        """从公开日历源校准（需配合 :mod:`tstdx.web` 的交易日历适配器）。"""
-        raise NotImplementedError(
-            "交易日历在线校准在 W14b HTTP Web 源批次实现；当前请用 set_holidays() 手动补充"
-        )
+    # F-110：这里曾有 `update_from_web(*args, **kwargs)`，签名收任意入参、体只有一句
+    # ``raise NotImplementedError("…当前请用 set_holidays() 手动补充")``，docstring 还把
+    # 落点指向 :mod:`tstdx.web` 里**并不存在**的交易日历适配器（web 侧只有 `ipo_calendar`，
+    # 是另一件事）。它自己不算谎（模块 docstring 第 18-19 行老实写着"尚未实现"），
+    # 谎在**上一条**：`warnings_for` 曾把 "或 update_from_web()" 写成校准办法，而
+    # `warnings_for` 是有真实读者的一条对外告警（tests/i18n/test_calendar.py:115）——
+    # 照它说的做只会拿回一个异常。CHANGELOG:1420 记着 README 上同一句谎已经修过一次，
+    # 这一处的原文漏了。现在告警只指两把真能校准的锁（`set_holidays` / `add_holiday`），
+    # 占位方法按 D3 删除：等 W14b 真做在线校准时，连同实现一起回来，而不是留一个
+    # 永远抛异常的入口教用户走死路。
 
 
 def _to_date(d: date | str) -> date:

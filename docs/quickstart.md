@@ -15,7 +15,7 @@ pip install -e ".[dev]"
 
 > **为什么不是 `pip install tstdx`**：本包当前不在 PyPI 上（实测 2026-09-22，
 > `https://pypi.org/pypi/tstdx/json` 与 `/simple/tstdx/` 均 404）。extras 的名字
-> （`[all]`、`[web]`、`[mcp]` …）在源码安装下同样可用；上架之后本节改写为
+> （`[all]`、`[web]`、`[server]` …）在源码安装下同样可用；上架之后本节改写为
 > `pip install "tstdx[all]"`。
 
 ## 5 分钟上手
@@ -97,7 +97,7 @@ write(bars, "duckdb:market.db@kline")
 tstdx bars sh600519 --period day --count 20
 tstdx quotes sh600519 sz000001
 tstdx server-test          # 主站测速
-tstdx stream sh600519      # 流式订阅
+tstdx stream sh600519      # 流式订阅：默认保持 10 秒后自停，中途按 Ctrl+C 也可停
 ```
 
 ### 6. 统一查询内核（`Client`，172 项 capability）

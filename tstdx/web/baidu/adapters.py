@@ -1,37 +1,10 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""百度财经数据源适配器（B0，§OPTIMIZATION_PLAN_v3）。
+"""百度财经数据源适配器（实时行情 / K 线 / 分时 / 逐笔）。
 
-接口事实（2026-09-03 实测，finance.pae.baidu.com/selfselect/getstockquotation）：
-* 日/周/月 K 线（含 MA 指标）: ``group=quotation_kline_ab&ktype={1|2|3}``
-  - ``all=1`` 只返回服务端缓存窗口（实测滞后数月的快照），**不可靠**；
-    取全量须走分页 ``all=0&count≤250&end_time=<unix>``，end_time 为**闭区间**，
-    向前翻页取最旧 bar 的 ``time`` 减 1 天。
-  - 响应 ``Result`` 为 list，**旧→新**排列；每条含 ``kline``/``ma5``/``ma10``/``ma20``。
-* 当日分时 / 五档 / 逐笔 / 快照: ``group=quotation_minute_ab&all=1``
-  - 响应 ``Result`` 为 dict：``priceinfo``(分时 266 点) / ``buyinfos``+``askinfos``(五档)
-    / ``detailinfos``(逐笔 200 条) / ``cur``(快照) / ``basicinfos``。
-
-口径坑（关键，实测验证）
-------------------------
-* K 线 JSON 的 ``kline.volume`` 字段实为**成交额(元)**、``kline.amount`` 实为
-  **成交量(手)**——与常规命名相反，解析层必须交换映射：
-  ``Bar.volume = int(float(kline.amount) * 100)``、``Bar.amount = float(kline.volume)``。
-* 分时 ``priceinfo.volume`` 为「手」（×100 到股）；``amount`` 为含『万』字符串
-  （如 ``"1615.16万"``），优先用 ``oriAmount``（元）。
-* 五档 ``bidvolume``/``askvolume`` 为「手」（×100 到股）。
-* 逐笔 ``detailinfos.volume`` 为「手」；``bsFlag``：``B``=买(0) ``S``=卖(1)。
-
-约束
-----
-* 仅 A 股（``stockType=ab``）；港股/美股传入抛明确错误。**指数同样不支持**：
-  2026-09-06 实测 ``isIndex=true`` 参数无效（``000001`` 恒返回深市个股平安
-  银行而非上证指数；带市场前缀/1A0001/999999 均空结果）——沪指/成指请走
-  TDX 主站或腾讯/东财源。
-* 非官方公开接口，随时可能改版/下线——继承 :class:`~tstdx.web.base.BaseWebSource`
-  的失败计数 + 下线检测（:class:`~tstdx.errors.SourceDeprecated`）。
-* 不提供资金流（``vapi/v1/fundflow`` 2026-05 起返回空，a-stock-data issue #5）。
+从 ``tstdx.web.adapters_baidu`` 拆分归组而来，唯一类
+:class:`BaiduSource` 直接继承 :class:`~tstdx.web.base.BaseWebSource`。
 """
 
 from __future__ import annotations
@@ -41,11 +14,11 @@ import time as _time
 from collections.abc import Sequence
 from typing import Any
 
-from ..domain.models import Bar, Level, MinutePoint, Quote, Tick
-from ..errors import SourceDeprecated, WebSourceError
-from .base import BaseWebSource
-from .base import num_f as _f
-from .sources import BAIDU
+from ...domain.models import Bar, Level, MinutePoint, Quote, Tick
+from ...errors import SourceDeprecated, WebSourceError
+from ..base import BaseWebSource
+from ..base import num_f as _f
+from ..sources import BAIDU
 
 __all__ = ["BaiduSource"]
 
@@ -117,7 +90,7 @@ class BaiduSource(BaseWebSource):
 
     Quick start::
 
-        from tstdx.web.adapters_baidu import BaiduSource
+        from tstdx.web.baidu.adapters import BaiduSource
         src = BaiduSource()
         bars   = src.fetch_kline("600519", count=320)     # -> list[Bar]
         minute = src.fetch_minute("600519")               # -> list[MinutePoint]
@@ -366,10 +339,6 @@ class BaiduSource(BaseWebSource):
             if isinstance(lv, dict):
                 q.ask.append(Level(_f(lv.get("askprice")), _vol_to_shares(lv.get("askvolume"))))
         return q
-
-    def parse_quote(self, text: str, symbol: str) -> Quote:
-        code = _pure_code(symbol)
-        return self._parse_quote(self._loads(text), code)
 
     # -- 基类出口 ---------------------------------------------------------- #
     def parse(self, text: str, symbols: Sequence[str], **kwargs: Any) -> list[Any]:

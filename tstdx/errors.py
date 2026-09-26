@@ -85,7 +85,6 @@ class RetryAdvice:
 
     retryable: bool = False
     backoff: float = 0.0
-    max_retries: int = 0
     switch_host: bool = False
     fallback_to_offline: bool = False
     fallback_to_web: bool = False
@@ -145,10 +144,10 @@ class TdxError(Exception):
             "advice": {
                 "retryable": a.retryable,
                 "backoff": a.backoff,
-                "max_retries": a.max_retries,
                 "switch_host": a.switch_host,
                 "fallback_to_offline": a.fallback_to_offline,
                 "fallback_to_web": a.fallback_to_web,
+                "note": a.note,
             },
         }
 
@@ -189,7 +188,6 @@ class TransportError(TdxError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=0.5,
-        max_retries=3,
         switch_host=True,
         note="传输失败：只允许当前 Provider 内部重试/切换等价 host 或 endpoint",
     )
@@ -200,7 +198,6 @@ class ConnectionFailed(TransportError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=0.5,
-        max_retries=2,
         switch_host=True,
         note="当前 Provider 内连接失败：可重试或切换同 Provider 等价 host/endpoint",
     )
@@ -211,7 +208,6 @@ class ConnectionClosed(TransportError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=0.5,
-        max_retries=3,
         switch_host=True,
         note="连接已关闭：在当前 Provider 内重连",
     )
@@ -223,7 +219,6 @@ class ReadTimeout(TransportError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=1.0,
-        max_retries=2,
         switch_host=True,
         note="读取超时：只允许当前 Provider 内部恢复",
     )
@@ -241,7 +236,6 @@ class AllHostsUnreachable(TransportError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=5.0,
-        max_retries=1,
         switch_host=False,
         note="当前 Provider/Channel 主站池已耗尽；显式报错，不跨 Provider 兜底",
     )
@@ -263,7 +257,7 @@ ALL_HOSTS_UNREACHABLE_NEXT_STEPS = (
 class RateLimitedLocal(TransportError):
     code = "E2050"
     http_status = 429
-    default_advice = RetryAdvice(retryable=True, backoff=0.2, max_retries=5)
+    default_advice = RetryAdvice(retryable=True, backoff=0.2)
 
 
 # --- E3xxx 协议层 --------------------------------------------------------- #
@@ -273,7 +267,6 @@ class ProtocolError(TdxError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=0.5,
-        max_retries=1,
         switch_host=True,
         note="协议错误：只允许当前 Provider 内部恢复",
     )
@@ -288,7 +281,6 @@ class DecompressError(ProtocolError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=0.5,
-        max_retries=1,
         switch_host=True,
     )
 
@@ -363,7 +355,6 @@ class TruncatedDataError(DataError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=1.0,
-        max_retries=2,
         switch_host=True,
         note="数据被截断：可在当前 Provider 内重试/换主站，或降低单次请求量",
     )
@@ -377,7 +368,6 @@ class FreshnessViolation(DataError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=0.2,
-        max_retries=1,
         switch_host=False,
         note="新鲜度证据不足：只可重试当前 Provider，禁止跨 Provider 替代",
     )
@@ -408,7 +398,6 @@ class SubscriptionError(StreamError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=1.0,
-        max_retries=3,
         switch_host=True,
         note="当前 Provider 的订阅失败；只在该 Provider 内重连/换 host",
     )
@@ -419,7 +408,6 @@ class GapUnfilledError(StreamError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=1.0,
-        max_retries=3,
         switch_host=True,
         note="当前 Provider 流出现缺口；只在该 Provider 内恢复",
     )
@@ -428,7 +416,7 @@ class GapUnfilledError(StreamError):
 class BackpressureOverflow(StreamError):
     code = "E6030"
     http_status = 429
-    default_advice = RetryAdvice(retryable=True, backoff=0.1, max_retries=10)
+    default_advice = RetryAdvice(retryable=True, backoff=0.1)
 
 
 # --- E7xxx HTTP Web Provider --------------------------------------------- #
@@ -438,7 +426,6 @@ class WebSourceError(TdxError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=0.5,
-        max_retries=2,
         switch_host=True,
         note="当前 Web Provider 请求失败：仅允许同 Provider endpoint 重试/切换",
     )
@@ -450,7 +437,6 @@ class AntiSpiderBlocked(WebSourceError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=5.0,
-        max_retries=1,
         switch_host=True,
         note="检查当前 Provider Referer/UA/限速；不得切换 Provider 伪装成功",
     )
@@ -462,7 +448,6 @@ class WebRateLimited(WebSourceError):
     default_advice = RetryAdvice(
         retryable=True,
         backoff=3.0,
-        max_retries=3,
         switch_host=False,
         note="当前 Provider 被限流：遵循退避/Retry-After，不跨 Provider",
     )

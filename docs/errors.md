@@ -90,10 +90,11 @@ CLI 每张面（序列化后是 `{"code", "message"}`），同时以 `UserWarnin
 | `file_download_short` | 分块文件下载累计字节数小于服务端报告的 `total_len` | `tstdx/client/_mixin.py` |
 | `adjust_prev_close_missing` | 复权事件缺前收盘价：每股现金红利被忽略，价格因子是按 1/(1+S+R) 算的近似值 | `tstdx/domain/adjust.py` |
 | `calendar_year_uncovered` | 交易日历未覆盖所请求的年份：该年节假日按"无节假日"处理 | `tstdx/domain/calendar.py` |
-| `web_sina_pages_missing` | 新浪全市场分页在重试与补拉之后仍缺页：拿到的是缺页结果，不是全市场 | `tstdx/web/adapters.py` |
-| `web_tencent_batch_failed` | 腾讯全市场单批重试后仍失败：结果不完整，缺的那批不会以空行占位 | `tstdx/web/adapters.py` |
+| `web_sina_pages_missing` | 新浪全市场分页在重试与补拉之后仍缺页：拿到的是缺页结果，不是全市场 | `tstdx/web/sina/adapters.py` |
+| `web_tencent_batch_failed` | 腾讯全市场单批重试后仍失败：结果不完整，缺的那批不会以空行占位 | `tstdx/web/tencent/adapters.py` |
 | `web_tencent_amount_all_zero` | 腾讯 K 线整批 `amount` 恒为 0（该源本周期不返回成交额字段），该字段不可用于计算 | `tstdx/web/_paginate.py` |
 | `web_eastmoney_page_limit` | 东财报表在 `max_pages` 内未取尽（最后一页仍满页），结果可能截断 | `tstdx/web/corporate.py` |
+| `web_fund_sort_column_undeclared` | 基金排行请求的 `sort_column` 不在本包声明的常用列词表 `SORT_COLUMNS` 里：请求原样发出，服务端可能按自己的默认列返回 | `tstdx/web/fund_rank.py` |
 | `currentness_unproven` | 声明的 `currentness` 要求当期数据，而本次 channel 给不出可判据的证据（本地文件）；`strict=True` 时它不是告警而是失败 | `tstdx/runtime/freshness.py` |
 
 ## 二、每个异常都带 RetryAdvice
@@ -103,21 +104,53 @@ CLI 每张面（序列化后是 `{"code", "message"}`），同时以 `UserWarnin
 | 字段 | 含义 | 消费方 |
 |---|---|---|
 | `retryable` | 是否值得重试（确定性错误如 404 为 False） | `transport/pool.py` 故障转移循环 |
-| `backoff` | 重试前退避秒数 | pool 重试 sleep |
-| `max_retries` | 建议最大重试次数 | pool 重试上限 |
+| `backoff` | 重试前退避的**基准**秒数：实际等待 = `min(基准 × 2^已试轮数, 8 秒) × 抖动` | pool 重试 sleep（`pool.py::retry_backoff_delay`，同步与异步池共用同一处声明） |
 | `switch_host` | 换一台主站再试 | pool 故障转移 |
 | `fallback_to_offline` | 历史兼容字段 | **无消费方**（见下） |
 | `fallback_to_web` | 历史兼容字段 | **无消费方**（见下） |
-| `note` | 人类可读建议（进日志/错误摘要） | 各层日志 |
+| `note` | 人类可读建议 | `TdxError.to_dict()` 的 advice 字典（见下） |
+
+`backoff` 那一格的形状是第 25 轮补的：退避只兑现给"回到刚失败过的那台主站"，
+换到一台没试过的机器时上一轮的退避不再花调用方时间（旧形状下 8 台主站的一次
+失败请求要睡 127 秒，真机 159 秒——本文此前写"重试前退避秒数"，读者按字面
+理解会以为那是一次重试的成本）。上限是
+`tstdx/transport/pool.py::MAX_RETRY_BACKOFF_SECONDS`，与 web 面的
+`tstdx/web/_base_retry.py::MAX_BACKOFF_SECONDS` 同值（8 秒）。
+
+`max_retries` 那一格此前写着"pool 重试上限"，第 25 轮按读取点核对是**假的**：
+连接池的尝试次数来自 `[core] max_retries`（`ConnectionPool.max_retries`）与
+主站数量，全仓对 `advice.max_retries` 的读取只有两处序列化——
+`TdxError.to_dict` 与反馈载荷 `tstdx/feedback/reporter.py`，它们把它当事实转述
+出去，没有人按它行动（台账 G39）。**第 28 轮按 D3 口径把它从声明面删掉了**：
+`RetryAdvice` 现在六个字段、`to_dict()` 六个键、反馈载荷两格。删而不接的理由是
+它只能收紧一个本来就权威的上界，接进池里等于给"尝试几次"造第二个真相源。要恢复
+这个字段，得先说清哪一类错误该比 `[core] max_retries` 更早收口，并让两张池真的
+按每类错误的建议值行动——判据 `test_advice_field_actors.py` 会先要求执行方出现，
+再允许文档写它有消费方（同文件 §二 的表与字段名单两向相等，删一格必须同时删一行）。
+
+`note` 那一格此前写着「各层日志」，第 26 轮按读取点核对是**假的**：包内没有任何
+logger 读它，而 `TdxError.to_dict()` 的 advice 字典当时恰好漏列本字段——也就是
+说文档承诺的出口在唯一的序列化点上并不存在。本文这轮把 `note` 补进 `to_dict()`
+的 advice 字典（`errors.py`），并把这一格改成按真实出口描述：`to_dict()` 现在
+六个字段全量输出；反馈上报载荷（`tstdx/feedback/reporter.py`）仍只带
+`retryable` / `backoff` 两格；HTTP / MCP 的错误信封按设计只暴露
+`retryable`，不带 advice 字典。新增的判据
+`tests/architecture/test_advice_field_actors.py` 钉住这条口径：每个 advice 字段
+要么有按它行动的执行方，要么在本文表格里显式写着无执行方，且 `to_dict()` 的键
+必须与字段名单逐一相等。
 
 最后两行是 v17 的实况：`sources` 路由已随单内核删除，全仓对这两个字段的唯一
-读点就是 `TdxError.to_dict` 自己把它们写进序列化字典（`errors.py:154`）。
-`errors.py:20` 早已声明"仅为序列化兼容保留，新内核不消费"——本文此前把它们
+读点就是 `TdxError.to_dict` 自己把它们写进序列化字典（`errors.py` 里
+`advice` 字典那两行）。`tstdx/errors.py` 的模块 docstring 早已声明"仅为序列化
+兼容保留，新内核不消费"——本文此前把它们
 写成有消费方的路由开关，属于幻影字段（F-68 登记，与 F-43 同族）。
 
 **核心设计**：故障转移策略由异常自带、不在传输层硬编码——新增一种错误
 只需在 `errors.py` 声明 `default_advice`，传输层自动获得正确行为
-（`transport/__init__.py` docstring、`pool.py:423` 消费 `advice.retryable`）。
+（`transport/__init__.py` docstring、`ConnectionPool.request` 的失败分支消费
+`advice.retryable`——本文此处原先写的是 `pool.py:423` 这样的行号，第 25 核对
+HEAD 时它已经指错地方（真读取点在那时是 :594），行号会随任何一次上方编辑腐坏，
+因此改成按符号引用）。
 
 解析优先级：实例 `advice=` 参数 → `RETRY_ADVICE[type]`（`_register_all()`
 模块加载时全量注册）→ 类属性 `default_advice` → 全局默认（全 False）。
@@ -130,7 +163,7 @@ from tstdx.errors import TdxError, RetryAdvice
 class MyDomainError(TdxError):
     code = "E9500"
     default_advice = RetryAdvice(
-        retryable=True, backoff=0.5, max_retries=2, switch_host=True,
+        retryable=True, backoff=0.5, switch_host=True,
         note="主站抖动，建议换主机重试",
     )
 ```

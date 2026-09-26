@@ -13,9 +13,6 @@
 from __future__ import annotations
 
 __all__ = [
-    "Family",
-    "TRADE_FAMILY",
-    "DEFAULT_TRADE_PORT",
     "CMD_LOGIN",
     "CMD_HEARTBEAT",
     "CMD_LOGOUT",
@@ -45,21 +42,9 @@ __all__ = [
     "ORDER_STATUS_PARTIAL",
     "ORDER_STATUS_FILLED",
     "ORDER_STATUS_CANCELLED",
-    "PRICE_SCALE",
     "CMD_SET",
 ]
 
-
-class Family:
-    """协议族。``trade`` 为交易协议族：独立端口、独立帧布局（区别于行情族）。"""
-
-    TRADE = "trade"
-
-
-TRADE_FAMILY = Family.TRADE
-
-#: 网上交易默认端口（行情 7709 / 扩展 7727 之外的服务端口，推断值）
-DEFAULT_TRADE_PORT = 7702
 
 # --- 命令号（推断占位，待真机定标） ---------------------------------------- #
 CMD_LOGIN = 0x0001  # 登录
@@ -124,6 +109,3 @@ ORDER_STATUS_SUBMITTED = 0  # 已报
 ORDER_STATUS_PARTIAL = 1  # 部分成交
 ORDER_STATUS_FILLED = 2  # 全部成交
 ORDER_STATUS_CANCELLED = 3  # 已撤
-
-#: 价格/资金字段的整数缩放：元 = 分 / 100
-PRICE_SCALE = 100

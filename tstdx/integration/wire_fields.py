@@ -28,7 +28,13 @@ from typing import Any, Final
 
 from ..errors import ValidationError
 
-__all__ = ["QUERY_BODY_FIELDS", "WS_PARAMS_FIELDS", "reject_undeclared", "undeclared_fields"]
+__all__ = [
+    "QUERY_BODY_FIELDS",
+    "WS_PARAMS_FIELDS",
+    "as_request_int",
+    "reject_undeclared",
+    "undeclared_fields",
+]
 
 #: ``POST /v13/query/{capability}`` 的 body 顶层键。
 QUERY_BODY_FIELDS: Final[frozenset[str]] = frozenset(
@@ -74,6 +80,71 @@ def reject_undeclared(
         f"{where} 收到了未声明的请求字段 {', '.join(unknown)}："
         "它们不会改变任何行为，所以当场拒绝而不是静默收下",
         context=_context(face, unknown, declared),
+    )
+
+
+def as_request_int(
+    *,
+    face: str,
+    where: str,
+    name: str,
+    value: Any,
+    default: int,
+    lo: int | None = None,
+    hi: int | None = None,
+) -> int:
+    """整数请求字段的唯一规整/拒绝口（第 25 轮 G34）。
+
+    过去每个面各自处理 ``count``/``start`` 这类整数：HTTP 靠 FastAPI 的 ``Query`` 规整，
+    WS 直接 ``int(params.get(...))``（一个非数字串就抛裸 ``ValueError``，被 :meth:`
+    RuntimeJsonRpcHandler.handle_message` 的兜底 ``except Exception`` 误判成 **E9000 内部
+    错误**——客户端打错一个字，服务端却怪自己、还把细节清空），MCP 过去那个已删除的整数钳位
+    则把不合要求的值**静默换成**另一个数（``count="abc"`` 偷偷变 320、``count=0`` 偷偷变 1、
+    ``count=99999999`` 偷偷夹到上限），于是工具自己 ``inputSchema`` 声明的 ``minimum``/
+    ``maximum`` 成了一张没人按它行事的假告示（F-47 那一族）。本函数把这三样并成一条口径：
+
+    * 缺席（``None``）→ 用 ``default``（这是对外声明的缺省，不是"把坏值改成 default"）；
+    * :class:`int` → 原样；纯数字串 → 按整数解析（与 HTTP 查询串天然承载字符串一致）；
+    * 其它任何形状（:class:`bool` / :class:`float` / 列表 / 非数字串 / ``None`` 以外的对象）
+      → ``ValidationError``（E1010 / JSON-RPC -32602），**不当作内部错误、也不替换**；
+    * 给了 ``lo``/``hi`` 而解析值越界 → 同样 ``ValidationError``，让声明的边界真的生效。
+
+    调用方拿到的永远是已经过闸的 :class:`int`，所以再往 :meth:`Client.bars` 之类传下去时，
+    内核的 :func:`tstdx.query` 那侧不会看到字符串。
+    """
+    if value is None:
+        parsed = default
+    elif isinstance(value, bool):
+        raise _bad_int(face, where, name, value, lo, hi)
+    elif isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = int(value.strip())
+        except ValueError:
+            raise _bad_int(face, where, name, value, lo, hi) from None
+    else:
+        raise _bad_int(face, where, name, value, lo, hi)
+    if (lo is not None and parsed < lo) or (hi is not None and parsed > hi):
+        raise _bad_int(face, where, name, value, lo, hi)
+    return parsed
+
+
+def _bad_int(
+    face: str, where: str, name: str, value: Any, lo: int | None, hi: int | None
+) -> ValidationError:
+    bound = f"，允许区间 [{lo if lo is not None else '-∞'}, {hi if hi is not None else '+∞'}]"
+    return ValidationError(
+        f"{where} 的 {name}={value!r} 不是一个区间内的整数：当场拒绝，"
+        f"而不是替换成另一个数或当成内部错误{bound}",
+        context={
+            "phase": "wire_validation",
+            "face": face,
+            "field": name,
+            "received": repr(value),
+            "minimum": lo,
+            "maximum": hi,
+        },
     )
 
 

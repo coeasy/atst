@@ -110,8 +110,9 @@ class TencentTickSource(BaseWebSource):
         symbol:
             ``600519`` / ``sh600519`` / ``600519.SH`` 均可。
         max_pages:
-            最多翻多少页（每页 70 条）。默认 1 页；设为 ``0`` 或负数表示
-            一直翻到接口不再返回数据——但受 :data:`MAX_TICK_PAGES`
+            最多翻多少页（每页 :data:`TICKS_PER_PAGE` 条）。默认 1 页；设为 ``0``
+            或负数表示一直翻到接口返回空页或**不满一页**为止（未满一页即末页，
+            实测每页固定 :data:`TICKS_PER_PAGE` 条）——但受 :data:`MAX_TICK_PAGES`
             （100 页，P2 #1 硬上限）保护，不会无界翻页。
 
         Returns
@@ -130,6 +131,11 @@ class TencentTickSource(BaseWebSource):
                 break
             out.extend(batch)
             page += 1
+            #: 已证逆向事实「每页固定 ``TICKS_PER_PAGE`` 条」在这里兑现成终止条件：
+            #: 未满一页即末页，不再花一次请求去确认空页（第 26 轮 F-79：这条声明
+            #: 此前只被一个断言自己数值的测试读，没有任何执行方）。
+            if len(batch) < TICKS_PER_PAGE:
+                break
         return out
 
     # -- 解析 ---------------------------------------------------------------- #

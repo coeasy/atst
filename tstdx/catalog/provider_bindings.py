@@ -88,10 +88,10 @@ class LocalVipdocProviderAPI(ChannelBindings):
 class TencentProviderAPI(ChannelBindings):
     provider_id = "tencent"
     CHANNELS: ClassVar[dict[str, AdapterRef]] = {
-        "quote": ("tstdx.web.adapters", "TencentSource"),
-        "kline": ("tstdx.web.adapters", "KlineSource"),
-        "minute_kline": ("tstdx.web.adapters_ext", "MinuteKlineSource"),
-        "minute": ("tstdx.web.adapters_ext", "MinuteSource"),
+        "quote": ("tstdx.web.tencent.adapters", "TencentSource"),
+        "kline": ("tstdx.web.tencent.adapters", "KlineSource"),
+        "minute_kline": ("tstdx.web.tencent.adapters", "MinuteKlineSource"),
+        "minute": ("tstdx.web.tencent.adapters", "MinuteSource"),
         "ticks": ("tstdx.web.ticks", "TencentTickSource"),
         "global": ("tstdx.web.global_market", "TencentGlobalSource"),
         "market_stat": ("tstdx.web.global_market", "TencentMarketStatSource"),
@@ -103,9 +103,9 @@ class TencentProviderAPI(ChannelBindings):
 class SinaProviderAPI(ChannelBindings):
     provider_id = "sina"
     CHANNELS: ClassVar[dict[str, AdapterRef]] = {
-        "quote": ("tstdx.web.adapters", "SinaSource"),
-        "history_kline": ("tstdx.web.history", "SinaHistoryKlineSource"),
-        "suggest": ("tstdx.web.adapters_ext", "SuggestSource"),
+        "quote": ("tstdx.web.sina.adapters", "SinaSource"),
+        "history_kline": ("tstdx.web.sina.adapters", "SinaHistoryKlineSource"),
+        "suggest": ("tstdx.web.sina.adapters", "SuggestSource"),
         "industry_board": ("tstdx.web.boards", "SinaIndustryBoardSource"),
         "board_list": ("tstdx.web.boards", "SinaBoardListSource"),
         "board_member": ("tstdx.web.boards", "SinaBoardMemberSource"),
@@ -121,8 +121,8 @@ class EastmoneyProviderAPI(ChannelBindings):
     #: :class:`~tstdx.web.session.WebQuoteSession` 统一暴露，故无单一 adapter 类。
     EXPLICIT_CHANNELS: ClassVar[frozenset[str]] = frozenset({"corporate"})
     CHANNELS: ClassVar[dict[str, AdapterRef]] = {
-        "quote": ("tstdx.web.adapters", "EastmoneySource"),
-        "kline": ("tstdx.web.history", "EastmoneyHistoryKlineSource"),
+        "quote": ("tstdx.web.eastmoney.adapters", "EastmoneySource"),
+        "kline": ("tstdx.web.eastmoney.adapters", "EastmoneyHistoryKlineSource"),
         "trends": ("tstdx.web.ticks", "EastmoneyTrendsSource"),
         "rank": ("tstdx.web.fundflow", "EastmoneyRankSource"),
         "fund_flow": ("tstdx.web.fundflow", "EastmoneyFundFlowSource"),
@@ -131,9 +131,9 @@ class EastmoneyProviderAPI(ChannelBindings):
         "northbound": ("tstdx.web.fundflow", "EastmoneyNorthboundSource"),
         "hot_rank": ("tstdx.web.hot_rank", "EastmoneyHotRankSource"),
         "longhu": ("tstdx.web.longhu", "EastmoneyTopListSource"),
-        "margin": ("tstdx.web.adapters_margin", "EastmoneyMarginSource"),
+        "margin": ("tstdx.web.eastmoney.adapters", "EastmoneyMarginSource"),
         "index_constituents": (
-            "tstdx.web.adapters_index",
+            "tstdx.web.eastmoney.adapters",
             "EastmoneyIndexConstituentsSource",
         ),
         "fund": ("tstdx.web.adapters_fund", "FundSource"),
@@ -149,22 +149,22 @@ class EastmoneyProviderAPI(ChannelBindings):
 class BaiduProviderAPI(ChannelBindings):
     provider_id = "baidu"
     CHANNELS: ClassVar[dict[str, AdapterRef]] = {
-        "quote": ("tstdx.web.adapters_baidu", "BaiduSource"),
-        "kline": ("tstdx.web.adapters_baidu", "BaiduSource"),
-        "minute": ("tstdx.web.adapters_baidu", "BaiduSource"),
-        "ticks": ("tstdx.web.adapters_baidu", "BaiduSource"),
+        "quote": ("tstdx.web.baidu.adapters", "BaiduSource"),
+        "kline": ("tstdx.web.baidu.adapters", "BaiduSource"),
+        "minute": ("tstdx.web.baidu.adapters", "BaiduSource"),
+        "ticks": ("tstdx.web.baidu.adapters", "BaiduSource"),
         "catalog": ("tstdx.web.session", "WebQuoteSession"),
     }
 
 
 class JslProviderAPI(ChannelBindings):
     provider_id = "jsl"
-    CHANNELS: ClassVar[dict[str, AdapterRef]] = {"bond": ("tstdx.web.adapters", "JslSource")}
+    CHANNELS: ClassVar[dict[str, AdapterRef]] = {"bond": ("tstdx.web.jsl.adapters", "JslSource")}
 
 
 class BocProviderAPI(ChannelBindings):
     provider_id = "boc"
-    CHANNELS: ClassVar[dict[str, AdapterRef]] = {"fx": ("tstdx.web.adapters", "BocSource")}
+    CHANNELS: ClassVar[dict[str, AdapterRef]] = {"fx": ("tstdx.web.boc.adapters", "BocSource")}
 
 
 class IwencaiProviderAPI(ChannelBindings):

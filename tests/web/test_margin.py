@@ -11,7 +11,7 @@ import pytest
 
 from tstdx.errors import SourceDeprecated
 from tstdx.web import _ADAPTERS
-from tstdx.web.adapters_margin import EastmoneyMarginSource
+from tstdx.web.eastmoney.adapters import EastmoneyMarginSource
 from tstdx.web.sources import KNOWN_SOURCES
 
 pytestmark = pytest.mark.unit

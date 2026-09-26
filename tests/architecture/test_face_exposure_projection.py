@@ -52,6 +52,13 @@
     且 ``Client.call`` / ``_call_core`` 的源码里不出现能力的名字、也不出现 Provider 的名字。
 七 **入参错误归类**：签名外的关键字、位置参多了、位置参少了、纯关键字能力被塞位置参、
     整数代码，五张泛型面都必须落在 E1010——既不许出现 E9000，也不许漏到执行面。
+
+第 28 轮把本文件自己剩下的两份手抄换成派生：那 7 行 ``capability → /v13 路径`` 与那 7 行
+``capability → WS 方法名``。前者由 app 的路由表反推（"路由的固定段逐个等于能力名按 ``_``
+切开的每一段"），后者按同一条规则把 ``_`` 写成 ``.``。于是泛型通道
+``/v13/query/{capability}`` 与 ``query``/``runtime.*`` 三格不必被谁豁免就落在射程之外，
+而"改天给某条能力换个 URL 拼法"不再是文档与判据各说一套的口子——判据是
+``test_the_wire_entry_names_are_derived_from_the_faces_themselves``。
 """
 
 from __future__ import annotations
@@ -143,24 +150,67 @@ def _one(keys: Any, field: str) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------ 四面驱动
-_HTTP_PATHS = {
-    "quotes": "/v13/quotes",
-    "bars": "/v13/bars/{symbol}",
-    "snapshot": "/v13/snapshot/{symbol}",
-    "minute": "/v13/minute/{symbol}",
-    "trades": "/v13/trades/{symbol}",
-    "security_count": "/v13/security/count",
-    "security_list": "/v13/security/list",
-}
-_WS_METHODS = {
-    "quotes": "quotes",
-    "bars": "bars",
-    "snapshot": "snapshot",
-    "minute": "minute",
-    "trades": "trades",
-    "security_count": "security.count",
-    "security_list": "security.list",
-}
+def _v13_routes() -> list[tuple[str, list[str], list[str]]]:
+    """``(路径, 固定段, 声明字段)``——HTTP 面的入口清单由 app 的路由表自己报出来。"""
+    app = create_runtime_app(Recorder())  # type: ignore[arg-type]
+    rows: list[tuple[str, list[str], list[str]]] = []
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        if not path.startswith("/v13/"):
+            continue
+        fields = [p.name for p in route.dependant.path_params] + [
+            p.name for p in route.dependant.query_params
+        ]
+        fixed = [seg for seg in path[len("/v13/") :].split("/") if not seg.startswith("{")]
+        rows.append((path, fixed, fields))
+    return rows
+
+
+def _http_paths() -> dict[str, str]:
+    """capability → 专用路径：路由的固定段逐个等于能力名按 ``_`` 切开的每一段。
+
+    这条形状规则本身就是判据，所以它不需要一份"谁算例外"的手抄名单：
+    ``/v13/query/{capability}`` 的固定段是 ``["query"]``，落不到任何专属能力上，泛型入口
+    因此天然留在射程之外。反过来说，``security_count`` 必须写成 ``/v13/security/count``
+    才点得到名——把路径改名或不声明，这里当场对不出路由。
+    """
+    rows = _v13_routes()
+    mapping: dict[str, str] = {}
+    for capability in sorted(DEDICATED_CAPABILITIES):
+        segments = capability.split("_")
+        hits = [path for path, fixed, _ in rows if fixed == segments]
+        if len(hits) != 1:
+            raise AssertionError(
+                f"{capability} 在 /v13/ 上有 {len(hits)} 条固定段相符的路由：{hits}"
+            )
+        mapping[capability] = hits[0]
+    return mapping
+
+
+#: WS 面上不属于任何专属能力的入口：一张泛型通道加两个元信息方法。
+#: 它是"这张面还剩什么"的差集，不是能力名单——加进来的第四条专属方法若不在这三格里，
+#: :func:`_ws_methods` 就报它。
+_WS_GENERIC_METHODS = frozenset({"query", "runtime.capabilities", "runtime.health"})
+
+
+def _ws_methods() -> dict[str, str]:
+    """capability → WS 方法名：专属能力的 ``_`` 在 JSON-RPC 面上写成 ``.``。
+
+    与 HTTP 同一条派生规则，只是分隔符不同（CLI 用 ``-``，WS 用 ``.``）。分派器和入参
+    白名单各有一道双向判据守着（``test_ws_declared_methods_are_all_dispatched``、
+    ``test_wire_declared_fields.py``），这一格补的是最后那份手抄：本文件里那份
+    7 行 ``capability → method`` 对照表。
+    """
+    derived = {
+        capability: capability.replace("_", ".") for capability in sorted(DEDICATED_CAPABILITIES)
+    }
+    extra = sorted(set(RuntimeJsonRpcHandler.METHODS) - set(derived.values()))
+    if extra != sorted(_WS_GENERIC_METHODS):
+        raise AssertionError(
+            f"WS 面上既非专属投影、也不在泛型/元信息三格里的方法：{extra}"
+            f"（三格现值 {sorted(_WS_GENERIC_METHODS)}）"
+        )
+    return derived
 
 
 def _http_fields(path: str) -> list[str]:
@@ -273,9 +323,10 @@ class _Ctx:
 #: 每一面的「专用入口」清单：入口标识 → (驱动函数, 该入口声明的字段)。全部现算，不抄。
 def _face_entries() -> dict[str, dict[str, tuple[Callable[[str, dict], Any], list[str]]]]:
     entries: dict[str, dict[str, tuple[Callable[[str, dict], Any], list[str]]]] = {
-        "http": {path: (_drive_http, _http_fields(path)) for path in _HTTP_PATHS.values()},
+        "http": {path: (_drive_http, _http_fields(path)) for path in _http_paths().values()},
         "ws": {
-            method: (_drive_ws, sorted(WS_PARAMS_FIELDS[method])) for method in _WS_METHODS.values()
+            method: (_drive_ws, sorted(WS_PARAMS_FIELDS[method]))
+            for method in _ws_methods().values()
         },
         "mcp": {
             tool.name: (_drive_mcp, sorted(tool.inputSchema["properties"]))
@@ -314,6 +365,27 @@ def test_dedicated_set_is_what_the_executor_table_says() -> None:
         assert callable(getattr(Client, capability, None)), (
             f"{capability} 有专属执行体却没有 Client 便捷方法：它到底是谁的面？"
         )
+
+
+def test_the_wire_entry_names_are_derived_from_the_faces_themselves() -> None:
+    """两张投影表由运行期面反推：派生脱钩时，上面那条"全覆盖"就成了自证。
+
+    判据三件事：一，逐条专属能力都且只对得上一个入口（多对＝形状规则认错，零对＝这个面
+    提不出这条能力）；二，HTTP 专用入口的 path 参数只能是 ``symbol``，否则
+    ``/v13/query/{capability}`` 那类泛型通道会被固定段规则误认成专用入口；三，WS 投影出来的
+    名字必须真的在分派器与入参白名单里活着——``_ws_methods`` 里那句差集判据是它的对向。
+    """
+    http = _http_paths()
+    ws = _ws_methods()
+    assert sorted(http) == sorted(DEDICATED_CAPABILITIES)
+    assert sorted(ws) == sorted(DEDICATED_CAPABILITIES)
+    assert len(set(http.values())) == len(http), f"两条能力对到了同一条 HTTP 路由：{http}"
+    assert len(set(ws.values())) == len(ws), f"两条能力对到了同一个 WS 方法：{ws}"
+    for path in set(http.values()):
+        remainder = path[len("/v13/") :].replace("{symbol}", "")
+        assert "{" not in remainder, f"{path} 上还有 symbol 以外的 path 参数，形状规则会认错入口"
+    assert set(ws.values()) <= set(RuntimeJsonRpcHandler.METHODS)
+    assert set(ws.values()) <= set(WS_PARAMS_FIELDS)
 
 
 @pytest.mark.parametrize("face", FACES)

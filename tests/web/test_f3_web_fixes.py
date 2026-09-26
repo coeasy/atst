@@ -25,8 +25,6 @@ from tstdx.errors import (
     WebSourceError,
 )
 from tstdx.web import WebQuoteClient, get_quotes, get_rates
-from tstdx.web.adapters import BocSource, EastmoneySource, KlineSource, SinaSource, TencentSource
-from tstdx.web.adapters_ext import MinuteKlineSource, MinuteSource
 from tstdx.web.base import (
     DEFAULT_ACQUIRE_TIMEOUT,
     MAX_BACKOFF_SECONDS,
@@ -41,6 +39,7 @@ from tstdx.web.base import (
     shared_bucket,
 )
 from tstdx.web.boards import EastmoneyBoardSource
+from tstdx.web.boc.adapters import BocSource
 from tstdx.web.corporate import (
     VALID_REPORTS,
     EastmoneyDataCenterSource,
@@ -48,16 +47,18 @@ from tstdx.web.corporate import (
     EastmoneyProfileSource,
     EastmoneyShareholderSource,
 )
+from tstdx.web.eastmoney.adapters import EastmoneyHistoryKlineSource, EastmoneySource
 from tstdx.web.fundflow import (
     EastmoneyFundFlowSource,
     EastmoneyRankSource,
     _symbol_from_market,
 )
-from tstdx.web.history import EastmoneyHistoryKlineSource, SinaHistoryKlineSource
 from tstdx.web.hot_rank import EastmoneyHotRankSource
 from tstdx.web.longhu import parse_lhb_row
 from tstdx.web.market_stats import aggregate_breadth, aggregate_limit_pool
 from tstdx.web.session import WebQuoteSession
+from tstdx.web.sina.adapters import SinaHistoryKlineSource, SinaSource
+from tstdx.web.tencent.adapters import KlineSource, MinuteKlineSource, MinuteSource, TencentSource
 from tstdx.web.ticks import MAX_TICK_PAGES, EastmoneyTrendsSource, TencentTickSource
 from tstdx.web.wencai import WencaiSource
 

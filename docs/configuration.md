@@ -108,6 +108,33 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 |---|---|---|
 | `use_tls` | `false` | `ConnectionPool`：标准族 TCP 是否包裹 TLS。主流 TDX 站点明文服务，故默认关闭 |
 
+### 传输池参数：哪些**不**经配置面
+
+`ConnectionPool` 的构造参数共 17 个，配置面只翻译其中 6 个（`slots_per_host`、`timeout`、
+`heartbeat_interval`、`max_retries`、`rate_limit`（→ `rate_limiter`）、`use_tls`）。下表这 11 个
+**没有配置键**，写进 TOML 也不会生效——它们要么由调用方按次决定，要么是刻意留给手工建池的调优口。
+名单（下表第一列）由 `tests/architecture/test_pool_knob_reachability.py` 与本表双向核对：签名里
+有、表里没有 ⇒ 红，表里有、签名里没有 ⇒ 红。"由谁给值"这一列只有 `family` 一行被现读核对（判据
+从 `TdxClient.__init__` 的默认值读它），其余格子是写给人看的理由，没有尺子指向。
+
+| 参数 | 由谁给值 | 口径 |
+|---|---|---|
+| `hosts` | 调用方 | 主站清单来自 `[hosts] servers`（空则内置候选池），但作为位置参数按次传入，不是池自己读配置 |
+| `family` | 公开 API | `get_client(family=...)` / `TdxClient(family=...)` 按次选择协议族 |
+| `connect_timeout` | 手工建池 | 建连超时与读写超时分离（默认 2s，故障转移时快速跳下一台） |
+| `heartbeat_cmd` | 手工建池 | 心跳探测用的命令号，缺省 `DEFAULT_HEARTBEAT_CMD = 0x0002`。该码**不在** 7709 账本内，而账本里的 `0x0004 HEARTBEAT` 本包没有默认发送方（只有 `tstdx probe 0x0004` 会显式发出）。2026-09-26 真机实测两条都答（0x0002 回 50 字节、0x0004 回 10 字节无结构载荷），探活只判通畅、不解析响应，故刻意保持 0x0002 不动（台账 F-20 已清偿；字节证据见 `PROTOCOL_SPEC/7709/0x0004_HEARTBEAT.yaml` 的 `measured` 块，对账判据见 `tests/protocol/test_heartbeat_claim_evidence.py`） |
+| `spec` | 手工建池 | 帧头长度规格；缺省由 `codec/framing.py` 的单一 `FrameSpec` 推断 |
+| `keepalive` | 手工建池 | 是否发送 TCP keepalive |
+| `handshake` | 手工建池 | `None` 时按协议族推断（标准族/MAC 需要握手，扩展市场不需要） |
+| `handshake_strict` | 手工建池 | 握手失败是否让连接失败，而不是宽容放行 |
+| `on_host_down` | 手工建池 | 主站判死后的回调钩子（可观察性用，库不替宿主做事） |
+| `speedtest_threshold` | 手工建池 | 多少次失败后触发重测速 |
+| `idle_timeout` | 手工建池 | 空闲槽位回收秒数（默认 300s），下次使用惰性重建 |
+
+想改这 11 个参数，走 `TdxClient(...)` / `ConnectionPool(...)` 显式构造；把它们接进 `Config`
+是一次对外契约扩张（会新增段与键、并让 `docs/ARCHITECTURE.md` §2 的"配置面即执行面契约"
+覆盖面变大），本方案不擅自做，登记为待决项。
+
 ## 4. 环境变量规则
 
 命名：`TSTDX_<SECTION>_<KEY>`，全大写。段名按最长前缀切分，因此

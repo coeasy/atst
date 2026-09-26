@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from tstdx.errors import WebSourceError
-from tstdx.web.adapters_index import (
+from tstdx.web.eastmoney.adapters import (
     INDEX_TYPE_MAP,
     EastmoneyIndexConstituentsSource,
     _resolve_index_code,

@@ -142,7 +142,16 @@ class TokenBucket:
         blocking: bool = True,
         timeout: float | None = None,
     ) -> bool:
-        """获取 token；``blocking=False`` 时不足立即返回 False。"""
+        """获取 token；``blocking=False`` 时不足立即返回 False。
+
+        **并发契约（第 24 轮 G29 实测，见 ``census24c_g29_concurrency.py``）**：这是单个共享
+        令牌池、无每等待者排队结构，因此**不保证先到先得（非 FIFO）**——24 个错开到达的等待者
+        争 ``rate=100/burst=1`` 时实测到 121 对服务次序反转，到达序与放行序无关。可依赖的只有
+        两条**边界**语义：``timeout`` 给定时等待被它截断（到点返回 ``False``，实测饿死者白等约
+        31 ms 即离开）；``timeout=None``（默认）则一直回填到取到为止——**无界等待**。需要"排队
+        公平"的调用方本原语不提供；需要"要么立刻有、要么失败"的调用方应走
+        :class:`SessionRateLimiter` 的 ``strict=True``。
+        """
 
         requested = _require_positive_number("tokens", tokens)
         blocking_enabled = _require_bool("blocking", blocking)

@@ -47,6 +47,7 @@ from ..errors import (
     ParseError,
     TdxError,
     TruncatedDataError,
+    ValidationError,
 )
 from ..protocol.commands import CMD, Family
 from ..protocol.parsers.std7709 import (
@@ -253,7 +254,7 @@ class _ClientMixin:
         remaining = _require_int("count", count, minimum=0, maximum=0xFFFF)
         offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
         if offset + remaining > 0x10000:
-            raise ParseError(
+            raise ValidationError(
                 f"start + count 超出 16-bit 分页地址空间: {offset} + {remaining}",
                 context={"start": offset, "count": remaining},
             )

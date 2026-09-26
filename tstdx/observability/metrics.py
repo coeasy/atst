@@ -449,9 +449,14 @@ class Metrics:
                 labelnames=("command",),
             )
         )
-        self.active_connections = self.registry.register(
-            Gauge("tstdx_active_connections", "当前活跃连接数")
-        )
+        # F-112：这里曾注册 `Gauge("tstdx_active_connections", "当前活跃连接数")`，
+        # 并由下面的 `set_active_connections()` 写入——而**全仓没有任何一处写它**。
+        # 一个已经注册、会被 `/metrics` 渲染、还被 statsd 文档当示例的仪表恒为 0，
+        # 比缺一根仪表更糟：它把"运行时没有活连接"当成实测值说给抓取方，而池里此刻
+        # 可能正挂着好几条。成对的 `set_backpressure()` 有人喂（streaming/engine.py:335），
+        # 可见这一半本就是漏接。要么补上 transport 层的连接生命周期钩子（两条池路径都要，
+        # 且必须与 retire/drain 同刻度，否则会漂），要么撤下——在没有前者这一版之前，
+        # 按「宁跳不假绿」撤下仪表与其 setter，而不是留一根恒 0 的对外假读数。
         # 流式
         self.stream_events = self.registry.register(
             Counter(
@@ -508,11 +513,9 @@ class Metrics:
         with contextlib.suppress(Exception):
             self.errors_total.inc(labels={"error_type": error_type})
 
-    def set_active_connections(self, n: int) -> None:
-        with contextlib.suppress(Exception):
-            self.active_connections.set(n)
-
     def set_backpressure(self, n: int) -> None:
+        """流式背压队列长度（F-112 撤下恒 0 的 `set_active_connections()` 后，
+        这是唯一的 gauge setter，且确实有人喂：``streaming/engine.py:335``）。"""
         with contextlib.suppress(Exception):
             self.stream_backpressure.set(n)
 

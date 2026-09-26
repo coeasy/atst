@@ -100,10 +100,20 @@ def _validate_dist_out(path: pathlib.Path) -> pathlib.Path:
 
 
 def _run(cmd: list[str], *, cwd: pathlib.Path | None = None) -> None:
-    """Run one subprocess and fail closed on any non-zero exit."""
+    """Run one subprocess and fail closed on any non-zero exit.
 
+    ``stdin`` 显式接 :data:`subprocess.DEVNULL` 而不是让它继承：本机 venv 里
+    只有 ``pythonw.exe``（GUI 子系统、无控制台），此时父进程的 stdin 是个换不成
+    真实句柄的占位值；CPython 在"三个标准流都不需要重定向"时会把裸句柄原样塞进
+    ``STARTUPINFO``，子进程拿到的 stderr 于是写不出去——而 `python -m build` 的
+    全部进度都走 stderr，表现就是子进程**静默**退出码 1（本机实测：任何写 stderr
+    的子进程都 RC=1，只写 stdout 的正常）。一旦有任一标准流被显式重定向，CPython
+    改走句柄复制路径，三个流才都可用。
+    这里选 stdin 是因为构建链上的命令（build / twine / pip / CLI --help）都不读
+    标准输入，而 stdout/stderr 必须保持继承以便实时看到构建日志。
+    """
     print(f"  $ {' '.join(cmd)}")
-    proc = subprocess.run(cmd, cwd=cwd or ROOT)
+    proc = subprocess.run(cmd, cwd=cwd or ROOT, stdin=subprocess.DEVNULL)
     if proc.returncode != 0:
         raise SystemExit(f"[构建失败] 命令退出码 {proc.returncode}: {' '.join(cmd)}")
 
@@ -496,19 +506,19 @@ def _smoke(wheel: pathlib.Path) -> None:
             "assert tstdx.__version__ == m.version('tstdx'); "
             "assert files('tstdx').joinpath('py.typed').is_file(); "
             "assert callable(audit_all); "
-            "assert TdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'; "
-            "assert AsyncTdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'; "
-            "assert TdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'; "
-            "assert AsyncTdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'; "
-            "assert AsyncTdxClient.quotes_concurrent.__module__ == 'tstdx.client._async_concurrency_hardening'; "
-            "assert ConnectionPool.__init__.__module__ == 'tstdx.transport._pool_family_hardening'; "
+            "assert TdxClient.__init__.__module__ == 'tstdx.client.sync'; "
+            "assert AsyncTdxClient.__init__.__module__ == 'tstdx.client.async_'; "
+            "assert TdxClient.bestip.__module__ == 'tstdx.client.sync'; "
+            "assert AsyncTdxClient.bestip.__module__ == 'tstdx.client.async_'; "
+            "assert AsyncTdxClient.quotes_concurrent.__module__ == 'tstdx.client.async_'; "
+            "assert ConnectionPool.__init__.__module__ == 'tstdx.transport.pool'; "
             "assert ConnectionPool.request.__module__ == 'tstdx.transport.pool'; "
             "assert ConnectionPool.update_hosts.__module__ == 'tstdx.transport.pool'; "
-            "assert AsyncConnectionPool.__init__.__module__ == 'tstdx.transport._pool_family_hardening'; "
+            "assert AsyncConnectionPool.__init__.__module__ == 'tstdx.transport.async_'; "
             "assert AsyncConnectionPool.request.__module__ == 'tstdx.transport.async_'; "
             "assert AsyncConnectionPool.update_hosts.__module__ == 'tstdx.transport.async_'; "
-            "assert RankingStore.load.__module__ == 'tstdx.transport._ranking_hardening'; "
-            "assert resolve_hosts.__module__ == 'tstdx.transport._host_selector_hardening'; "
+            "assert RankingStore.load.__module__ == 'tstdx.transport.hosts'; "
+            "assert resolve_hosts.__module__ == 'tstdx.transport.hosts'; "
             "print('tstdx', tstdx.__version__, package_file, 'wheel smoke OK')"
         )
         _run([str(python), "-I", "-c", probe], cwd=work_dir)

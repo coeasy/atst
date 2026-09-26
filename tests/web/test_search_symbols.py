@@ -27,7 +27,7 @@ def _fake_fetch_suggest(self, key: str, *, limit: int = 10) -> list[dict[str, st
 
 @pytest.fixture()
 def patch_suggest(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("tstdx.web.adapters_ext.SuggestSource.fetch_suggest", _fake_fetch_suggest)
+    monkeypatch.setattr("tstdx.web.sina.adapters.SuggestSource.fetch_suggest", _fake_fetch_suggest)
 
 
 class TestSearchSymbols:

@@ -38,6 +38,9 @@ class MigratedCapabilityBinding:
     backend: str
     method: str
     source: str = ""
+    #: Lazy import path for web_adapter backends: `"tstdx.web.tencent.adapters:MinuteSource"`.
+    #: Empty means the executor must resolve the adapter via its own fallback logic.
+    factory: str = ""
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -176,15 +179,46 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
         "adjusted_bars", "derived", "adjustment", "composed", "adjusted_bars"
     ),
     MigratedCapabilityBinding("sync_daily", "derived", "sync", "composed", "sync_daily"),
-    MigratedCapabilityBinding("minute_web", "tencent", "catalog", "web_adapter", "minute_web"),
     MigratedCapabilityBinding(
-        "minute_klines", "tencent", "catalog", "web_adapter", "minute_klines"
+        "minute_web",
+        "tencent",
+        "catalog",
+        "web_adapter",
+        "minute_web",
+        factory="tstdx.web.tencent.adapters:MinuteSource",
     ),
     MigratedCapabilityBinding(
-        "minute_klines", "eastmoney", "catalog", "web_adapter", "minute_klines"
+        "minute_klines",
+        "tencent",
+        "catalog",
+        "web_adapter",
+        "minute_klines",
+        factory="tstdx.web.tencent.adapters:MinuteKlineSource",
     ),
-    MigratedCapabilityBinding("history", "sina", "catalog", "web_adapter", "history"),
-    MigratedCapabilityBinding("history", "eastmoney", "catalog", "web_adapter", "history"),
+    MigratedCapabilityBinding(
+        "minute_klines",
+        "eastmoney",
+        "catalog",
+        "web_adapter",
+        "minute_klines",
+        factory="tstdx.web.eastmoney.adapters:EastmoneyHistoryKlineSource",
+    ),
+    MigratedCapabilityBinding(
+        "history",
+        "sina",
+        "catalog",
+        "web_adapter",
+        "history",
+        factory="tstdx.web.sina.adapters:SinaHistoryKlineSource",
+    ),
+    MigratedCapabilityBinding(
+        "history",
+        "eastmoney",
+        "catalog",
+        "web_adapter",
+        "history",
+        factory="tstdx.web.eastmoney.adapters:EastmoneyHistoryKlineSource",
+    ),
     MigratedCapabilityBinding("all_market", "sina", "catalog", "web_session", "all_market", "sina"),
     MigratedCapabilityBinding(
         "all_market", "tencent", "catalog", "web_session", "all_market", "tencent"
@@ -496,13 +530,17 @@ def validate_call(
             cause=exc,
         ) from exc
     except (KeyError, TypeError, ValueError) as exc:
+        #: 收敛成 ValidationError 是对的，但只报「不符合 contract」等于把判据丢在调用方
+        #: 够不到的地方：``cause`` 不进错误信封，实测 ``tstdx all-market`` 拿到 E1010 后
+        #: 无人能说出是哪几个键越了界（第 23 轮）。被拒的键名必须出现在消息里。
         raise ValidationError(
-            f"capability {capability!r} 参数不符合 v13 contract",
+            f"capability {capability!r} 参数不符合 v13 contract：{exc}",
             context={
                 "provider": provider,
                 "channel": channel,
                 "capability": capability,
                 "phase": "query_validation",
+                "reason": str(exc),
             },
             cause=exc,
         ) from exc

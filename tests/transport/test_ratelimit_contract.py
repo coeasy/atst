@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import ast
+import inspect
 import math
+import textwrap
 import threading
 from types import SimpleNamespace
 
 import pytest
 
+from tstdx.transport.async_ import AsyncConnectionPool
 from tstdx.transport.ratelimit import SessionRateLimiter, SessionState, TokenBucket
 
 
@@ -185,3 +189,78 @@ def test_from_config_refuses_the_pre_wiring_phantom_key_names() -> None:
     )
     with pytest.raises(AttributeError, match="call_auction"):
         SessionRateLimiter.from_config(phantom)
+
+
+# --------------------------------------------------------------------------- #
+# G29（第 24 轮真实并发测量后写下的两条**可判定**边界）
+# --------------------------------------------------------------------------- #
+# 并发契约的其余部分——非 FIFO、无界等待、饿死——都由 ``census24c_g29_concurrency.py``
+# 的一次真实争用测量决定其出路 (a)「写成契约」，其数值记于 §33 台账。这里只钉住契约里
+# 能被结构判定的那两条，好让 ``TokenBucket.acquire`` / ``_acquire_rate`` 的两段 docstring
+# 里的话不会悄悄过期：若有人把异步等待改成了可传超时、或给桶加了排队结构，本判据当场红，
+# 逼着同一只手去改文档。"不保证 FIFO" 是**减**承诺（宁可少承诺），无需时序断言。
+_QUEUE_CONSTRUCTORS = frozenset(
+    {"deque", "Queue", "LifoQueue", "PriorityQueue", "SimpleQueue", "list"}
+)
+
+
+def _self_attrs_assigned_a_queue(init_src: str) -> list[str]:
+    """``__init__`` 源码里被赋成容器/队列（含 ``[]``）的 ``self.<name>`` 属性名。"""
+    tree = ast.parse(textwrap.dedent(init_src))
+    flagged: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        value = node.value
+        if value is None:
+            continue
+        ctor: str | None
+        if isinstance(value, ast.List):
+            ctor = "list"
+        elif isinstance(value, ast.Call):
+            func = value.func
+            ctor = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+        else:
+            ctor = None
+        if ctor not in _QUEUE_CONSTRUCTORS:
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        for target in targets:
+            if (
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "self"
+            ):
+                flagged.append(target.attr)
+    return flagged
+
+
+def test_the_async_rate_wait_takes_no_deadline_so_escapes_request_timeout() -> None:
+    """异步限流等待**没有超时形参**：它发生在 I/O 之前，不计入调用方的 ``request_timeout``。
+
+    反洞正控用同一把尺：``request`` 的确带 ``timeout`` 形参。同一 ``inspect.signature``
+    在相邻两个方法上一眼看得到"有超时"、一眼看不到"异步等待有超时"——所以 ``== ["self"]``
+    是真信号，不是尺子瞎了。
+    """
+    rate_params = list(inspect.signature(AsyncConnectionPool._acquire_rate).parameters)
+    assert rate_params == ["self"], f"异步限流等待出现了新的超时形参，需回写契约：{rate_params}"
+    # 正控：真正被超时覆盖的是 I/O 那一步，它的签名里必须能看到 timeout。
+    assert "timeout" in inspect.signature(AsyncConnectionPool.request).parameters
+
+
+def test_the_bucket_holds_its_wait_state_as_a_scalar_not_a_waiter_queue() -> None:
+    """契约说"单个共享令牌池、无每等待者排队结构"——那 ``__init__`` 里就不该有队列容器。
+
+    正控：把同一把分类器对准一个真的 ``self._waiters = deque()``，它必须抓到；而对
+    ``self._lock = threading.Lock()``（同步原语，非等待队列）必须放过——否则"抓到 deque"
+    只是尺子在乱指。
+    """
+    assert _self_attrs_assigned_a_queue(inspect.getsource(TokenBucket.__init__)) == []
+    planted_init = (
+        "def __init__(self):\n"
+        "    import collections\n"
+        "    self._waiters = collections.deque()\n"
+        "    self._lock = threading.Lock()\n"
+    )
+    # deque 抓到、Lock（同步原语非等待队列）放过——否则"抓到 deque"只是尺子在乱指。
+    assert _self_attrs_assigned_a_queue(planted_init) == ["_waiters"]

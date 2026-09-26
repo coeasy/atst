@@ -15,10 +15,8 @@ from tstdx.web.boards import (
     SinaIndustryBoardSource,
     TencentBoardRankSource,
 )
-from tstdx.web.history import (
-    EastmoneyHistoryKlineSource,
-    SinaHistoryKlineSource,
-)
+from tstdx.web.eastmoney.adapters import EastmoneyHistoryKlineSource
+from tstdx.web.sina.adapters import SinaHistoryKlineSource
 
 
 class FakeHttp:

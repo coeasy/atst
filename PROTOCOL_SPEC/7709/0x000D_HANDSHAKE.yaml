@@ -43,6 +43,7 @@ response:
   header: []
   fields: []
   record_size: 0
+  parse: false
   encoding: "raw"
   notes: "Handshake response is opaque and should be discarded. The exact layout is not documented."
 

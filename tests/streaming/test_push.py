@@ -117,17 +117,19 @@ class TestPushChannelConnectionAdapter:
         ``read_frame()`` 回退 + ResponseFrame 自动取 ``.payload``。"""
 
         class _FakeConn:
-            """模拟 TcpConnection 的真实 API 面（request / 无参 read_frame）。"""
+            """模拟 TcpConnection 的真实 API 面（request / read_frame(timeout=…)）。"""
 
             def __init__(self, payload: bytes):
                 self.payload = payload
                 self.requested: list[tuple[int, bytes]] = []
+                self.timeouts: list[float | None] = []
 
             def request(self, cmd: int, body: bytes):
                 self.requested.append((cmd, body))
                 return b"ok"
 
-            def read_frame(self):  # 无 timeout 参数
+            def read_frame(self, timeout: float | None = None):
+                self.timeouts.append(timeout)
                 from tstdx.codec.framing import ResponseFrame
 
                 return ResponseFrame(
@@ -150,6 +152,8 @@ class TestPushChannelConnectionAdapter:
         assert frame.code == "600519"
         assert frame.market == 1
         assert frame.raw_data == raw
+        # 调用方的截止值必须真的到达传输对象（第 28 轮：它曾被 except TypeError 吞掉）
+        assert conn.timeouts == [1.0]
 
     def test_close_uses_request_adapter(self):
         """close 注销同样经 request 适配（不再调不存在的 send_command）。"""
@@ -162,7 +166,7 @@ class TestPushChannelConnectionAdapter:
                 self.requested.append((cmd, body))
                 return b"ok"
 
-            def read_frame(self):
+            def read_frame(self, timeout: float | None = None):
                 raise TimeoutError("no frame")
 
         conn = _FakeConn()

@@ -16,6 +16,21 @@ def test_valid_request_frame_bytes_remain_canonical() -> None:
     assert frame == expected
 
 
+def test_the_default_frame_header_sizes_come_from_the_struct_formats() -> None:
+    """7709 标准布局的请求 12B / 响应 16B：这两个数只能由 ``*_header_fmt`` 现算出来。
+
+    改前 ``FrameSpec`` 上还挂着 ``req_header_len=12`` / ``resp_header_len=16`` 两个没人读的
+    手抄常数（第 25 轮 G36 删除）。它们与格式串之间没有任何约束，改了格式串不会有人发现
+    ——所以这一格判据要的是"现算的值仍是这两个数"，不是"名单里还有这两个字段"。
+    """
+    from tstdx.codec.framing import DEFAULT_7709_SPEC
+
+    assert (DEFAULT_7709_SPEC.req_header_size, DEFAULT_7709_SPEC.resp_header_size) == (12, 16)
+    assert not any(
+        name.endswith("_header_len") for name in DEFAULT_7709_SPEC.__dataclass_fields__
+    ), "手抄长度字段又长回来了：同一事实的两份口径会各自过期"
+
+
 @pytest.mark.parametrize("method", [-1, 0x10000, True, 1.5, "0x052d"])
 def test_request_frame_rejects_non_uint16_method(method: object) -> None:
     with pytest.raises(FramingError, match="method"):

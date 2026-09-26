@@ -97,6 +97,10 @@ class Symbol:
     """归一化后的证券符号。"""
 
     market: str
+    #: 裸 6 位代码。F-105：这里曾有第二个属性 ``bare``（体就是 ``return self.code``），
+    #: 全仓零调用点、用户文档零点名——同一个值两种拼法，改日只会分叉，按 D3 删除。
+    #: 要裸码写 ``sym.code``；"600519" 这种无市场前缀的入参走 :func:`split_symbol`，
+    #: 与 ``streaming/base.py`` 那批**字符串局部变量** ``bare`` 无关（它们从不经过本类）。
     code: str
 
     def __str__(self) -> str:
@@ -113,10 +117,6 @@ class Symbol:
     @property
     def suffix_dot(self) -> str:
         return f"{self.code}.{self.market}"
-
-    @property
-    def bare(self) -> str:
-        return self.code
 
     @property
     def tdx_market(self) -> int:

@@ -21,7 +21,7 @@ DogStatsD 格式（Datagram 字符串）::
 
     # 例：
     tstdx.request_total:5|c|#command:0x0530,status:ok
-    tstdx.active_connections:3|g
+    tstdx.stream_backpressure:3|g
     tstdx.request_duration_seconds:0.12|d|#command:0x0530
     tstdx.parse_confidence:0.95|h|#family:f10
 
@@ -55,6 +55,10 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+#: :meth:`StatsdExporter.stop_pushing` 等推送线程退出的上限（秒）。睡眠本身由该轮
+#: 循环自己的停止事件兑现；这只留给"醒来时正卡在一次 ``push_all`` 上"的情况。
+_PUSH_JOIN_SECONDS = 5.0
 
 #: metric_type → DogStatsD 短代码映射。
 STATSD_TYPE_SHORTCODES: dict[str, str] = {
@@ -124,6 +128,9 @@ class StatsdExporter:
         # 周期推送线程
         self._push_thread: threading.Thread | None = None
         self._push_stop = threading.Event()
+        #: 只保护上面两个字段。不复用 :attr:`_lock`：那只管指标/基线字典，而
+        #: ``push_all`` 内部会取它——在 holding 它的时候 join 线程就是自锁。
+        self._push_lock = threading.Lock()
 
     # -- 内部 --------------------------------------------------------------- #
     def _get_socket(self) -> socket.socket | None:
@@ -394,23 +401,39 @@ class StatsdExporter:
             )
             return
         self.stop_pushing()
+        #: 每轮循环一份**私有**停止事件，而不是复用共享的那只：共享事件要
+        #: ``clear()`` 才能重启，而上一轮线程若正卡在 ``push_all`` 里、没在 join
+        #: 上限内退出，这次 ``clear()`` 就把它复活成第二条推送线程——两条线程一起
+        #: 推同一份计数器增量，且旧的再也无法被 join（``_push_thread`` 已指向新的）。
+        #: 第 26 轮 F-101 记的就是这条复活路径。
+        stop = threading.Event()
 
         def _loop() -> None:
-            while not self._push_stop.wait(itv):
+            while not stop.wait(itv):
                 self.push_all(metrics)
 
-        self._push_stop.clear()
         th = threading.Thread(target=_loop, name="tstdx-statsd-push", daemon=True)
-        self._push_thread = th
+        with self._push_lock:
+            self._push_stop = stop
+            self._push_thread = th
         th.start()
 
     def stop_pushing(self) -> None:
         """停止后台周期推送线程（幂等、线程安全）。"""
-        self._push_stop.set()
-        th = self._push_thread
-        self._push_thread = None
+        with self._push_lock:
+            stop = self._push_stop
+            self._push_stop = threading.Event()
+            stop.set()
+            th = self._push_thread
+            self._push_thread = None
         if th is not None and th.is_alive() and th is not threading.current_thread():
-            th.join(timeout=5.0)
+            th.join(timeout=_PUSH_JOIN_SECONDS)
+            if th.is_alive():
+                logger.warning(
+                    "StatsdExporter 推送线程未在 %ss 内退出：它持有的停止事件已置位，"
+                    "会在本轮 push_all 结束后自行退出",
+                    _PUSH_JOIN_SECONDS,
+                )
 
     def flush(self) -> None:
         """保持 API 对称（与 Prometheus / OTel 导出器对齐）；UDP 无缓冲故为 no-op。"""

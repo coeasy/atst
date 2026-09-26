@@ -3,8 +3,8 @@
 
 """腾讯 K 线族共享的分页拉取 / 行解析辅助（v9 Q4-1）。
 
-此前 :class:`~tstdx.web.adapters.KlineSource`（fqkline 日/周/月/分线）与
-:class:`~tstdx.web.adapters_ext.MinuteKlineSource`（mkline 分钟线）各自持有
+此前 :class:`~tstdx.web.tencent.adapters.KlineSource`（fqkline 日/周/月/分线）与
+:class:`~tstdx.web.tencent.adapters.MinuteKlineSource`（mkline 分钟线）各自持有
 一份结构雷同的 ``fetch_bars`` / ``parse_bars``：JSON 解码报错、按市场缩放
 成交量、行 → :class:`~tstdx.domain.models.Bar` 组装，以及超上限时按日期
 向前翻页拼接去重。本模块将其上收为一处实现，两源仅保留各自的差异点

@@ -73,10 +73,10 @@ class TestUpdateHosts:
         """Probe observations may refresh RTT but never import probe failure state.
 
         A freshly constructed pool deliberately starts a new runtime-health
-        lifecycle (see ``_pool_family_hardening``): it inherits selector identity
-        and probe latency only, never caller-owned request failures. Live health
-        is therefore seeded *after* construction, exactly as a real request would
-        accrue it on the pool-owned host.
+        lifecycle: it inherits selector identity and probe latency only, never
+        caller-owned request failures. Live health is therefore seeded *after*
+        construction, exactly as a real request would accrue it on the
+        pool-owned host.
         """
         pool = ConnectionPool([_h("1.1.1.1")], slots_per_host=1, heartbeat_interval=None)
         fresh = pool.hosts[0]

@@ -7,6 +7,7 @@
 # 形参注记，而 ``Request`` 是可选依赖、只在工厂内部导入。字符串化之后它解析不出来，
 # 就会被当成一个必填查询参数——实测每个请求都 422（``loc: ["query", "request"]``）。
 # 注记保持求值，本地导入的类在嵌套 def 执行时仍在作用域里。
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from ..client.api import Client
@@ -29,6 +30,7 @@ def create_runtime_app(client: Client | None = None) -> Any:
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("HTTP 服务需要安装可选依赖: pip install tstdx[server]") from exc
 
+    owns_client = client is None
     api = client or Client()
 
     def _no_undeclared_query(request: Request) -> None:
@@ -44,10 +46,25 @@ def create_runtime_app(client: Client | None = None) -> Any:
             received=request.query_params.keys(),
         )
 
+    @asynccontextmanager
+    async def _lifespan(_app: Any) -> Any:
+        """应用生命周期收尾：关掉本工厂自己造的那份 ``Client``。
+
+        ``Client`` 背后是整条传输连接池。``tstdx serve`` 与 uvicorn 退出时过去没有
+        任何释放路径（``create_runtime_app`` 只是 ``return app``），于是每起停一次
+        服务就留下一批 socket 与心跳线程（第 26 轮 F-100）。传入的那份归调用方所有，
+        这里不关——与 MCP 面 ``_owns_client`` 同一口径。
+        """
+        yield
+        if owns_client:
+            with suppress(Exception):
+                api.close()
+
     app = FastAPI(
         title="tstdx v13 Runtime",
         version="13",
         dependencies=[Depends(_no_undeclared_query)],
+        lifespan=_lifespan,
     )
 
     def _response(exc: Exception) -> JSONResponse:

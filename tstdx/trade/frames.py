@@ -29,7 +29,7 @@
     4     2     seq          回显请求序号
     6     2     status       0=成功，非 0=错误码
 
-字段编码约定：金额/价格以**分**（整数）传输（``PRICE_SCALE=100``）；
+字段编码约定：金额/价格以**分**（整数）传输；
 字符串为 ``<H 长度> + GBK 字节``；证券代码为 6 字节 ASCII 右补 NUL。
 """
 
@@ -349,7 +349,7 @@ def parse_query_response(body: bytes) -> dict[str, Any]:
 def build_order_body(*, code: str, side: int, price_type: int, price: int, quantity: int) -> bytes:
     """委托请求体：``<6s code><B side><B price_type><I price><I qty>``。
 
-    价格以**分**为单位（``PRICE_SCALE=100``）；市价单 ``price`` 可传 0。
+    价格以**分**为单位的整数传输；市价单 ``price`` 可传 0。
     """
     code_raw = code.encode("ascii", errors="replace")[:6].ljust(6, b"\x00")
     return struct.pack("<6sBBII", code_raw, side, price_type, price, quantity)

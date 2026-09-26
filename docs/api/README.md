@@ -67,7 +67,9 @@
 
 连接池在 v1.0.0 中提供 generation/lease 生命周期保护、half-open 单探测门禁，
 并将后台测速 RTT 与真实请求 health RTT 分开维护；热更新主站时，仍在执行的旧代请求
-不会回写新代主站状态。
+不会回写新代主站状态。异步侧的 `AsyncTcpConnection.close()` 有停机上界：发出关闭后
+最多等 1 秒对端确认，超时或报错都直接丢弃该传输，调用方的 `await pool.close()`
+因此不会因为一条半断的连接而挂住。
 
 ## 数据与落地
 
@@ -86,14 +88,18 @@
 | 模块 | 说明 |
 |---|---|
 | `tstdx.providers` | Provider 注册表（11 Provider × channel），内核唯一可调用实现体 |
-| `tstdx.web.adapters` | HTTP Web 源（新浪/腾讯/东财/集思录/港股/中行）|
-| `tstdx.web.adapters_ext` | 扩展 Web 源（分时/逐笔/联想/全球）|
+| `tstdx.web.tencent.adapters` | 腾讯系 HTTP 源（实时行情 / K 线 / 分钟线 / 分时 / 港股 / 美股）|
+| `tstdx.web.sina.adapters` | 新浪系 HTTP 源（实时行情 / 港股 / 历史 K 线 / 代码联想）|
+| `tstdx.web.eastmoney.adapters` | 东财系 HTTP 源（实时行情 / push2his 历史 K 线 / 融资融券 / 指数成分）|
+| `tstdx.web.baidu.adapters` | 百度财经 HTTP 源（日/周/月 K 线 / 分时 / 逐笔 / 五档）|
+| `tstdx.web.jsl.adapters` | 集思录 HTTP 源（可转债）|
+| `tstdx.web.boc.adapters` | 中行 HTTP 源（外汇牌价）|
 | `tstdx.web.fundflow` | 资金流 + 涨停池 + **盘中异动**（20 类异动枚举）+ 沪深港通 |
 | `tstdx.web.hot_rank` | **股吧个股人气榜**（emappdata POST JSON）|
 | `tstdx.web.wencai` | **i问财自然语言选股**（cookie 调用方持有）|
 | `tstdx.web.boards` | 个股所属板块 / 板块行情 |
 | `tstdx.web.corporate` | F10/业绩/IPO 申购日历（datacenter 报表族）|
-| `tstdx.web.adapters_margin` | **融资融券个股明细**（datacenter RPTA_WEB_RZRQ_GGMX；`margin` capability / `tstdx margin <symbol>`）|
+| `tstdx.web.adapters_fund` | 基金净值 / 估值 / 列表；**融资融券个股明细**见 `tstdx.web.eastmoney.adapters`（`margin` capability / `tstdx margin <symbol>`）|
 | `tstdx.web.normalize` | volume/amount 集中归一化 |
 | `tstdx.streaming.engine` | StreamEngine（重连/补数/背压）|
 | `tstdx.streaming.push` | PushChannel 0x0547 原始推送 |
@@ -105,8 +111,8 @@
 | `tstdx.errors` | 40+ 异常树 + RetryAdvice |
 | `tstdx.config.loader` | 6 源合并配置 |
 | `tstdx.charset.encoding` | UTF-8/GBK/GB18030/Big5 自动探测 |
-| `tstdx.feedback` | 反馈上报（opt-in + 7 步脱敏）|
-| `tstdx.observability` | Prometheus/Statsd/OTLP 导出 |
+| `tstdx.feedback` | 反馈上报（opt-in + 7 步脱敏）+ `TelemetryCollector` / `UserStats`，口径见 `docs/api/interfaces.md`「反馈上报」|
+| `tstdx.observability` | 内置指标门面 + Prometheus/Statsd/OTLP 三个导出器 + `start_exporter`；只有库面，逐格"谁在写"见 `docs/api/interfaces.md` §8 |
 
 ## 集成服务
 
@@ -114,9 +120,8 @@
 |---|---|
 | `tstdx.integration.runtime_http` | FastAPI 网关工厂（10 路由：`/v13/quotes` `/v13/bars/{symbol}` `/v13/snapshot/{symbol}` `/v13/minute/{symbol}` `/v13/trades/{symbol}` `/v13/security/count` `/v13/security/list` `/v13/query/{capability}` `/v13/capabilities` `/v13/runtime/health`）|
 | `tstdx.integration.runtime_ws` | WebSocket JSON-RPC（10 方法：quotes/bars/snapshot/minute/trades/security.count/security.list/query/runtime.capabilities/runtime.health）|
-| `tstdx.integration.runtime_ws_server` | WS 服务宿主（`serve_runtime_ws`）|
-| `tstdx.integration.mcp` | MCP stdio 工具（9 项：`query_capability` + get_bars/get_quote(s)/get_snapshot/get_minute_today/get_trades/get_security_count/get_security_list）|
-| `tstdx.integration.runtime_tasks` | 后台任务存储（有界结果保留 + 安全信封）|
+| `tstdx.integration.runtime_ws_server` | WS 服务宿主（`serve_runtime_ws`；一键拉起 `python -m tstdx.integration.runtime_ws_server`）|
+| `tstdx.integration.mcp` | MCP stdio 工具（9 项：`query_capability`/`get_bars`/`get_quote`/`get_quotes`/`get_snapshot`/`get_minute_today`/`get_trades`/`get_security_count`/`get_security_list`；一键拉起 `python -m tstdx.integration.mcp`，不需要 extra）|
 | `tstdx.integration.serialization` | `QueryResult → JSON-safe` 统一序列化 |
 | `tstdx.cli` | CLI 子命令（31 项；数据命令全部经 `Client`，6 个传输/诊断命令除外，见 `runtime_commands.py`）|
 

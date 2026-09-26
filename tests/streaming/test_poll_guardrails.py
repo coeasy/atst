@@ -19,6 +19,10 @@
   实现却在任何一次 ``read()`` 返回 ``None`` 时收口，而超时也返回 ``None``。于是外层
   ``while True``（docstring 亲口建议的用法）里，一次空闲超时会让生成器永久不再产出，
   调用方看不出「没有推送」和「通道已经不给帧了」是两回事。
+* **``take_reconnect`` 零调用点**（第 25 轮 G35 补上）：``tick`` 的注释与该方法自己的
+  docstring 都写着「恢复后引擎立即补拉一轮」，而 ``_run`` 从来没有人取这个标志——于是
+  恢复位置了没人清，补拉退化成"等下一个轮询周期"。在 ``interval`` 很长的那类订阅里，
+  这就是断线恢复后最长一小时不出数据。护栏 4 钉住它。
 
 三条判据都是成对写的：先给护栏本身，再给「护栏看得见那次植入的失效」。
 """
@@ -161,6 +165,93 @@ def test_the_channel_exposes_what_the_driver_needs() -> None:
     failing.tick()
     assert failing.last_failed is True, "驱动侧读不到失败位，就退化成按 interval 忙重试"
     assert isinstance(failing.reconnect, ReconnectPolicy)
+
+
+# --------------------------------------------------------------------------- #
+# 护栏 4：断线恢复后的「立即补拉」真被驱动取走（V18 第 25 轮，G35）
+# --------------------------------------------------------------------------- #
+
+
+class _FailsOnceThenRecovers:
+    """第一轮抛错，之后每轮成功——正好走一遍 ``_last_failed`` → ``_reconnected`` 的形状。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, symbols: Any) -> list[dict[str, Any]]:
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("host down")
+        return []
+
+
+def _recovers_without_the_catch_up_pull(engine: StreamEngine, poll: Any) -> int:
+    """跑 0.5 秒后返回轮询次数：``interval`` 设成一小时，所以数字只能由恢复轮解释。"""
+    engine.start()
+    try:
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline and poll.calls < 3:
+            time.sleep(0.005)
+        return poll.calls
+    finally:
+        engine.stop()
+
+
+def test_a_recovered_channel_is_polled_again_without_waiting_the_interval() -> None:
+    """R4 的承诺写在两处：``tick`` 的注释与 :meth:`QuoteChannel.take_reconnect` 的 docstring。
+
+    改前 ``take_reconnect`` 全包零调用点——恢复位被置起来之后没有任何人读，
+    "立即补拉一轮"于是变成"等下一个轮询周期"；``interval`` 是一小时的那条订阅里，
+    这就是断线恢复后最长一小时不出数据。
+    """
+    poll = _FailsOnceThenRecovers()
+    policy = ReconnectPolicy(base=0.01, cap=0.02, max_attempts=50, jitter=False)
+    engine = StreamEngine(poll, ["sh600519"], interval=3600.0, reconnect=policy)
+    kinds: list[str] = []
+    engine.subscribe(lambda ev: kinds.append(ev.kind))
+    assert _recovers_without_the_catch_up_pull(engine, poll) >= 3, (
+        f"恢复后仍按 interval 干等：只轮询了 {poll.calls} 次（1=失败轮，2=恢复轮）"
+    )
+    assert "reconnect" in kinds, "补拉走通了，但重连事件没派发给订阅者"
+
+
+def test_the_catch_up_pull_is_what_makes_that_test_move(monkeypatch: pytest.MonkeyPatch) -> None:
+    """正控：把驱动取不到标志这一条植回去，上一条判据必须停回 2 次。"""
+    monkeypatch.setattr(QuoteChannel, "take_reconnect", lambda self: False)
+    poll = _FailsOnceThenRecovers()
+    policy = ReconnectPolicy(base=0.01, cap=0.02, max_attempts=50, jitter=False)
+    engine = StreamEngine(poll, ["sh600519"], interval=3600.0, reconnect=policy)
+    assert _recovers_without_the_catch_up_pull(engine, poll) == 2, (
+        "取走标志与否都不影响轮询次数——上一条判据是在空跑"
+    )
+
+
+def test_the_catch_up_pull_happens_once_per_recovery() -> None:
+    """每次恢复只补拉一轮：取后即清，否则一小时间隔会变成永久忙等。"""
+    channel = QuoteChannel(lambda syms: [], ["sh600519"])
+    channel._last_failed = True  # noqa: SLF001 - 直接摆出"刚恢复"那一格
+    channel.tick()
+    assert channel.take_reconnect() is True
+    assert channel.take_reconnect() is False, "标志没被清掉，驱动会一直补拉"
+
+
+def test_a_recovery_tick_is_counted_in_the_reconnect_metric() -> None:
+    """F-117：``tstdx_stream_reconnects_total`` 改前注册即被 ``/metrics`` 渲染、全仓零写入点。
+
+    同一族的 drop 事件与背压 gauge 都在上报，唯独断线恢复对抓取方不可见。补上的落点必须与
+    ``kind="reconnect"`` 事件同一次 tick：失败轮什么都不恢复、不计数，恢复轮恰多加一。
+    """
+    from tstdx.observability.metrics import metrics
+
+    channel = QuoteChannel(_FailsOnceThenRecovers(), ["sh600519"])
+    kinds: list[str] = []
+    channel.subscribe(lambda ev: kinds.append(ev.kind))
+    before = metrics.stream_reconnects.value()
+    channel.tick()  # 失败轮
+    assert metrics.stream_reconnects.value() == before, "没恢复也计数，重连数就成了噪声"
+    channel.tick()  # 恢复轮
+    assert metrics.stream_reconnects.value() == before + 1
+    assert kinds.count("reconnect") == 1, "计数与派发事件不同刻度：指标说的和订阅者收到的不是一件事"
 
 
 # --------------------------------------------------------------------------- #

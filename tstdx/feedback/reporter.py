@@ -208,7 +208,6 @@ class FeedbackReporter:
             advice = {
                 "retryable": current.retryable,
                 "backoff": current.backoff,
-                "max_retries": current.max_retries,
             }
         return self._sanitize(
             {

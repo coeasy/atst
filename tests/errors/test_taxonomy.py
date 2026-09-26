@@ -294,7 +294,8 @@ class TestErrorTaxonomy:
         exc = ConnectionFailed("test")
         adv = advice_for(exc)
         assert adv.retryable is True
-        assert adv.max_retries >= 1
+        assert adv.backoff > 0.0, "宣称可重试却不给退避底数"
+        assert not hasattr(adv, "max_retries"), "G39 删掉的零执行方字段回来了"
 
     def test_advice_for_non_tdx(self):
         """advice_for 对非 TdxError 返回默认 advice。"""

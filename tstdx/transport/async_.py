@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import random
 import ssl
 import time
 from collections.abc import AsyncIterator, Sequence
@@ -46,6 +45,13 @@ from ..errors import (
 )
 from ..observability import metrics
 from ..protocol.commands import Family
+from ._validation import (
+    canonical_family_hosts,
+    require_bool,
+    require_timeout,
+    validate_common_connection_args,
+    validate_common_pool_options,
+)
 from .base import DEFAULT_HEARTBEAT_CMD, ConnectionStats
 from .hosts import (
     HostEntry,
@@ -61,6 +67,7 @@ from .pool import (
     _require_bool_option,
     _require_positive_frame_limit,
     _require_request_timeout,
+    retry_backoff_delay,
 )
 from .ratelimit import SessionRateLimiter
 
@@ -74,6 +81,22 @@ __all__ = [
 _LOG = logging.getLogger("tstdx.transport")
 
 _RECV_CHUNK = 65536
+
+#: :meth:`AsyncTcpConnection.close` 等待传输收尾的墙钟上限（秒）。
+#:
+#: ``writer.wait_closed()`` 等的是 asyncio 协议的 ``connection_lost`` 回调，而 ``close()``
+#: 之后这个回调**不一定到来**：selector 传输要先排空发送缓冲才断开，对端不再读取时它会
+#: 一直挂着（CPython 3.12 的 ``streams.StreamWriter.wait_closed`` 就在 await 那个 future）。
+#: TLS 那条路由 :data:`asyncio.constants.SSL_SHUTDOWN_TIMEOUT` 兜底，现值 30.0 秒——
+#: 而池的关停是**逐个槽位**排空（:meth:`AsyncConnectionPool._cleanup_committed_close`），
+#: 于是"关不掉"的代价按 N 个槽位乘上去。
+#:
+#: 为什么是 1 秒而不是接到 ``self.timeout``：调用这行时套接字已经 ``close()`` 过了，
+#: 等待只为收掉一次回调，健康循环里它在一个 tick 内就返回；把它绑到请求超时（默认 3 秒、
+#: 可配到更大）会让关停无端比"探活一次"还慢。真挂住的连接也不会拖住调用方——最坏
+#: ``槽位数 × 1 秒``。放弃等待不会漏掉释放：套接字由 ``connection_lost`` 自己关，有没有人
+#: 在 await 那个 future 不参与它的时机。
+CLOSE_WAIT_SECONDS = 1.0
 
 
 # --------------------------------------------------------------------------- #
@@ -110,18 +133,36 @@ class AsyncTcpConnection:
         handshake_strict: bool = False,
         handshake_blob: bytes | None = None,
     ) -> None:
-        self.host = host
-        self.port = int(port)
-        self.timeout = float(timeout)
-        self.connect_timeout = float(connect_timeout or timeout)
-        self.spec = spec
-        self.use_tls = use_tls
+        # --- fail-closed contract validation (merged from hardening) --------- #
+        (
+            self.host,
+            self.port,
+            self.family,
+            self.timeout,
+            self.connect_timeout,
+            self.use_tls,
+            self.slot_id,
+            self.handshake,
+            self.handshake_strict,
+            self.handshake_blob,
+        ) = validate_common_connection_args(
+            host=host,
+            port=port,
+            family=family,
+            timeout=timeout,
+            connect_timeout=connect_timeout,
+            use_tls=use_tls,
+            tls_context=tls_context,
+            slot_id=slot_id,
+            handshake=handshake,
+            handshake_strict=handshake_strict,
+            handshake_blob=handshake_blob,
+        )
         self.tls_context = tls_context
-        self.slot_id = slot_id
-        self.family = family
-        self.handshake = handshake
-        self.handshake_strict = handshake_strict
-        self.handshake_blob = handshake_blob
+        self.spec = spec
+        self.connect_timeout = (
+            self.connect_timeout if self.connect_timeout is not None else self.timeout
+        )
 
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
@@ -144,6 +185,20 @@ class AsyncTcpConnection:
 
     # -- 生命周期 ----------------------------------------------------------- #
     async def connect(self) -> AsyncTcpConnection:
+        """建连（公开原子入口）。
+
+        T5（TOCTOU，第 26 轮 F-94）：与同步版 :meth:`TcpConnection.connect` 同一判据——
+        检查与建连必须在同一临界区内完成。旧实现在锁外读 ``self.connected``，两个协程同时看到
+        "未连接"会各自 ``open_connection``，先建的那条 writer 被后建的覆盖后永久泄漏
+        （socket 一直开着，没人关也没人读）。
+        ``asyncio.Lock`` 不可重入，所以持锁路径（``_request_locked`` / ``ping``）必须
+        走 :meth:`_connect_locked`，不得再进本入口。
+        """
+        async with self._lock:
+            return await self._connect_locked()
+
+    async def _connect_locked(self) -> AsyncTcpConnection:
+        """``connect()`` 的无锁核心（调用方必须已持有 :attr:`_lock`）。"""
         if self.connected:
             return self
         try:
@@ -156,12 +211,14 @@ class AsyncTcpConnection:
                 timeout=self.connect_timeout,
             )
         except asyncio.TimeoutError as exc:
+            _LOG.warning("连接 %s:%s 超时(%.2fs)", self.host, self.port, self.connect_timeout)
             raise ConnectionFailed(
                 f"连接 {self.host}:{self.port} 超时({self.connect_timeout}s)",
                 context={"host": self.host, "port": self.port},
                 cause=exc,
             ) from exc
         except OSError as exc:
+            _LOG.warning("连接 %s:%s 失败: %s", self.host, self.port, exc)
             raise ConnectionFailed(
                 f"连接 {self.host}:{self.port} 失败: {exc}",
                 context={"host": self.host, "port": self.port},
@@ -214,7 +271,7 @@ class AsyncTcpConnection:
         if writer is not None:
             try:
                 writer.close()
-                await writer.wait_closed()
+                await asyncio.wait_for(writer.wait_closed(), timeout=CLOSE_WAIT_SECONDS)
             except Exception:
                 pass
 
@@ -263,15 +320,24 @@ class AsyncTcpConnection:
         self._seq = (self._seq + 1) & 0xFFFFFFFF
         return self._seq
 
-    async def read_frame(self) -> ResponseFrame:
+    async def read_frame(self, timeout: float | None = None) -> ResponseFrame:
         """读取并解码一个完整响应帧（公开原子入口）。
 
         T#2：asyncio.Lock 不可重入——持锁路径（_request_locked / request_multi
         租约 / iter_frames 租约 / _send_setup）必须调用 :meth:`_read_frame_locked`；
         本入口供无外层锁的独立调用（原子性由连接锁保证）。
+
+        `timeout` 与 :meth:`request` 的同名参数同义：只对本次读帧生效（改的是
+        持锁期间的 :attr:`timeout`，退出时复原），缺省沿用连接自身的超时。
         """
         async with self._lock:
-            return await self._read_frame_locked()
+            saved = self.timeout
+            if timeout is not None:
+                self.timeout = float(timeout)
+            try:
+                return await self._read_frame_locked()
+            finally:
+                self.timeout = saved
 
     async def _read_frame_locked(self) -> ResponseFrame:
         """read_frame 的无锁核心（调用方必须已持有 :attr:`_lock`）。"""
@@ -299,6 +365,10 @@ class AsyncTcpConnection:
         compress: bool = False,
         timeout: float | None = None,
     ) -> ResponseFrame:
+        # --- fail-closed contract validation (merged from hardening) --------- #
+        require_bool("check_seq", check_seq)
+        require_bool("compress", compress)
+        timeout = require_timeout("request.timeout", timeout, allow_none=True)
         # C5：与同步版对齐的连接级租约——建连、seq 分配、发帧、收帧
         # 全程持锁；ping/续帧/iter_frames 与在飞请求在锁上天然串行。
         # 注意：asyncio.Lock 不可重入——池的 request_multi 持锁续帧时
@@ -318,8 +388,8 @@ class AsyncTcpConnection:
         timeout: float | None = None,
     ) -> ResponseFrame:
         """请求主流程（调用方必须已持有 ``self._lock``）。"""
-        if not self.connected:
-            await self.connect()
+        # 已持锁：必须走无锁核心，否则 asyncio.Lock 不可重入 → 自死锁。
+        await self._connect_locked()
         seq = self.next_seq()
         frame_bytes, seq = build_request(method, body, seq=seq, spec=self.spec, compress=compress)
         self.stats.requests += 1
@@ -382,8 +452,8 @@ class AsyncTcpConnection:
         在飞请求的读序造成交叉，且 ``next_seq()`` 锁外自增可能撞号。
         """
         async with self._lock:
-            if not self.connected:
-                await self.connect()
+            # 已持锁：走无锁核心，理由同 _request_locked。
+            await self._connect_locked()
             frame_bytes, _ = build_request(cmd, body, seq=self.next_seq(), spec=self.spec)
             started = time.perf_counter()
             try:
@@ -488,26 +558,50 @@ class AsyncConnectionPool:
         rate_limiter: SessionRateLimiter | None = None,
         heartbeat_interval: int | None = 30,
         heartbeat_cmd: int = DEFAULT_HEARTBEAT_CMD,
+        #: M6 空闲回收阈值（秒），与同步池同一默认值、同一语义；``<=0`` 表示不回收。
+        #: 异步池此前没有这套回收，"与 :class:`ConnectionPool` 同构"这句自述因此是假的
+        #: （第 26 轮 F-89）：一台长期存活的 ``AsyncTdxClient`` 会把每个槽位那条
+        #: TLS 连接一直握到 ``close()`` 为止，闲置多久都不放手。
+        idle_timeout: float = 300.0,
         max_retries: int = 3,
         spec: FrameSpec | None = None,
         use_tls: bool = False,
         handshake: bool | None = None,
         handshake_strict: bool = False,
     ) -> None:
-        if not hosts:
-            raise ValueError("hosts 不能为空")
+        # --- fail-closed contract validation (merged from hardening) --------- #
+        # 1. hosts 归一化 + family 匹配 + 去重（pool 持有快照，隔离外部修改）
+        self.hosts = canonical_family_hosts(hosts, family=family)
         self.family = family
+        # 2. 公共 options 校验（async_pool=True 分支）
+        validate_common_pool_options(
+            dict(
+                slots_per_host=slots_per_host,
+                timeout=timeout,
+                connect_timeout=connect_timeout,
+                rate_limiter=rate_limiter,
+                heartbeat_interval=heartbeat_interval,
+                heartbeat_cmd=heartbeat_cmd,
+                max_retries=max_retries,
+                use_tls=use_tls,
+                handshake=handshake,
+                handshake_strict=handshake_strict,
+                idle_timeout=idle_timeout,
+            ),
+            async_pool=True,
+        )
+
         self.handshake = (
             family in (Family.STANDARD, Family.MAC) if handshake is None else bool(handshake)
         )
         self.handshake_strict = bool(handshake_strict)
-        self.hosts = list(hosts)
         self.slots_per_host = max(1, slots_per_host)
         self.timeout = timeout
         self.connect_timeout = connect_timeout
         self.rate_limiter = rate_limiter
         self.heartbeat_interval = heartbeat_interval
         self.heartbeat_cmd = heartbeat_cmd
+        self.idle_timeout = float(idle_timeout) if idle_timeout else 0.0
         self.max_retries = max(0, max_retries)
         self.spec = spec
         self.use_tls = use_tls
@@ -572,6 +666,20 @@ class AsyncConnectionPool:
             should_drop = slot.retired and slot.leases == 0
         if should_drop:
             await self._drop(slot, expected=conn)
+            await self._prune_retired_slots()
+
+    async def _prune_retired_slots(self) -> int:
+        """摘掉已排空的退役槽位；判据与理由见同步池
+        :meth:`~tstdx.transport.pool.ConnectionPool._prune_retired_slots`（同名同口径）。
+        """
+        async with self._lock:
+            if not self._retired_slots:
+                return 0
+            kept = [slot for slot in self._retired_slots if slot.leases or slot.conn is not None]
+            removed = len(self._retired_slots) - len(kept)
+            if removed:
+                self._retired_slots = kept
+            return removed
 
     async def _drop(self, slot: AsyncSlot, *, expected: AsyncTcpConnection | None = None) -> None:
         async with slot.lock:
@@ -703,6 +811,13 @@ class AsyncConnectionPool:
         try_acquire 结果（无论成败都放行，限流形同虚设）；request_multi /
         iter_frames 则完全绕过限流器。统一收口于此：strict 模式超速直接抛
         RateLimitedLocal（对齐同步池语义）；否则异步等待令牌，不阻塞事件循环。
+
+        **并发契约（第 24 轮 G29 实测）**：非 strict 这一支是
+        ``while not try_acquire(): await asyncio.sleep(0.05)`` 的轮询——与同步
+        :meth:`TokenBucket.acquire` 同为共享令牌池，**不保证先到先得**（异步形状副本实测
+        136 对次序反转、中位等待 508 ms > 理想末位 230 ms，0.05 粒度使其更慢）；且本方法
+        **不接受超时参数**，等待发生在真正 I/O 之前，因此**不计入调用方的 ``request_timeout``**
+        ——``timeout=None`` 语义上等于回填到取到为止的无界等待。要"超速即失败"须配 strict。
         """
         limiter = self.rate_limiter
         if limiter is None:
@@ -725,6 +840,7 @@ class AsyncConnectionPool:
         last_exc: BaseException | None = None
         tried: list[str] = []
         started = time.perf_counter()
+        pending_backoff = 0.0
 
         for attempt in range(max_attempts):
             self._ensure_open()
@@ -733,6 +849,11 @@ class AsyncConnectionPool:
             if slot is None:
                 last_exc = ConnectionFailed("所有候选主站均处于熔断门禁")
                 break
+            # 与同步池同一条口径：冷却只兑现给刚失败过的那台，换到没试过的
+            # 主站时上一轮的退避不再花调用方时间。
+            if pending_backoff and slot.host.key in tried:
+                await asyncio.sleep(pending_backoff)
+            pending_backoff = 0.0
             tried.append(slot.host.key)
 
             conn: AsyncTcpConnection | None = None
@@ -754,8 +875,7 @@ class AsyncConnectionPool:
                     _LOG.info("异步换主站：离开 %s（attempt=%d）", slot.host.key, attempt)
                     self._rotate_away(slot.host.key)
                 if advice.backoff:
-                    delay = advice.backoff * (2**attempt) * (0.75 + 0.5 * random.random())
-                    await asyncio.sleep(delay)
+                    pending_backoff = retry_backoff_delay(advice.backoff, attempt)
                 continue
             except asyncio.CancelledError:
                 await self._release_probe_token(slot, generation)
@@ -765,7 +885,7 @@ class AsyncConnectionPool:
                 await self._mark_failure(slot, exc, generation=generation, conn=conn)
                 if attempt + 1 >= max_attempts:
                     break
-                await asyncio.sleep(0.05 * (attempt + 1))
+                pending_backoff = 0.05 * (attempt + 1)
                 continue
             except BaseException:
                 await self._release_probe_token(slot, generation)
@@ -893,6 +1013,7 @@ class AsyncConnectionPool:
                 name="tstdx-pool-update-cleanup",
             )
             await _await_cleanup_before_cancellation(cleanup_task)
+            await self._prune_retired_slots()
         return published_hosts
 
     # -- 多帧 --------------------------------------------------------------- #
@@ -1108,11 +1229,54 @@ class AsyncConnectionPool:
             await self._drop(slot, expected=conn)
 
     # -- 生命周期 ----------------------------------------------------------- #
+    async def _sweep_idle(self) -> int:
+        """M6：回收闲置连接，与同步池 :meth:`~tstdx.transport.pool.ConnectionPool._sweep_idle`
+        同一判据、同一把锁序（先 ``slot.lock`` 再 ``conn._lock``），只有一条 in-flight
+        请求都没占用的槽位才可能被扫走。
+        """
+        if self.idle_timeout <= 0:
+            return 0
+        cutoff = time.time() - self.idle_timeout
+        reclaimed = 0
+        for slot in list(self._slots):
+            async with slot.lock:
+                conn = slot.conn
+                if conn is None or not conn.connected or slot.leases or slot.retired:
+                    continue
+                last = conn.stats.last_used or conn.stats.created_at
+                if not last or last >= cutoff:
+                    continue
+                async with conn._lock:
+                    with contextlib.suppress(Exception):
+                        await conn.close()
+                if slot.conn is conn:
+                    slot.conn = None
+                reclaimed += 1
+        if reclaimed:
+            _LOG.info(
+                "M6 空闲回收（异步池）：关闭 %d 个闲置连接（%ds 未使用）",
+                reclaimed,
+                self.idle_timeout,
+            )
+        return reclaimed
+
     async def _heartbeat_loop(self) -> None:
-        """心跳镜像：喂给同一套熔断/运行期健康状态机。"""
-        interval = max(1, int(self.heartbeat_interval or 0))
+        """心跳镜像：喂给同一套熔断/运行期健康状态机。
+
+        这个循环同时是异步池 **M6 空闲回收** 的唯一执行方，所以它的启动条件不能只看
+        ``heartbeat_interval``——与同步池第 26 轮 F-88 那条同一口径：把心跳调成 0
+        （合法取值，意为"不主动探活"）不得顺手关掉空闲回收。
+        """
+        probe_interval = max(1, int(self.heartbeat_interval or 0))
+        #: 唤醒节奏：心跳开着跟心跳，只开回收时跟回收阈值的四分之一（不早于 1 秒）。
+        tick = float(probe_interval) if self.heartbeat_interval else max(1.0, self.idle_timeout / 4)
         while not self._closed:
-            await asyncio.sleep(interval)
+            await asyncio.sleep(tick)
+            if self._closed:
+                return
+            await self._sweep_idle()
+            if not self.heartbeat_interval:
+                continue
             for slot in list(self._slots):
                 if self._closed:
                     return
@@ -1125,7 +1289,7 @@ class AsyncConnectionPool:
                 try:
                     conn, generation = await self._acquire_lease(slot)
                     idle = time.time() - (conn.stats.last_used or conn.stats.created_at)
-                    if idle < interval:
+                    if idle < probe_interval:
                         await self._release_lease(slot, conn)
                         await self._release_probe_token(slot, generation)
                         continue
@@ -1145,7 +1309,7 @@ class AsyncConnectionPool:
                     await self._mark_success(slot, generation=generation, rtt_ms=rtt)
 
     def start_heartbeat(self) -> None:
-        if self.heartbeat_interval and self._hb is None:
+        if (self.heartbeat_interval or self.idle_timeout > 0) and self._hb is None:
             # T5：get_event_loop() 在 3.12+ 的运行中协程里已弃用/报错，
             # 统一用 get_running_loop()。
             self._hb = asyncio.get_running_loop().create_task(self._heartbeat_loop())

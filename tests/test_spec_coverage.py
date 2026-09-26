@@ -5,7 +5,9 @@
 2. spec_id 唯一；
 3. 必备字段齐全（spec_id/name/family/request/response）；
 4. 命令号登记在 commands.py 账本；
-5. stable/verified spec 的 golden 样本真实存在。
+5. stable/verified spec 的 golden 样本真实存在；
+6. 免解析器的控制帧须**显式**声明 ``response.parse: false``（台账 F-20），
+   带 ``measured`` 证据格的 spec 该证据格必须自洽。
 
 注意：``PROTOCOL_SPEC/UNKNOWN/`` 下的 draft spec 为自动探测生成，
 不在本测试覆盖范围内（待人工评审升级为正式 spec 后纳入）。
@@ -13,12 +15,13 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from tstdx.tools.codegen import load_all_specs
+from tstdx.tools.codegen import load_all_specs, load_spec
 from tstdx.tools.spec_audit import (
     audit_all,
     coverage_summary,
@@ -128,14 +131,55 @@ def test_audit_covers_every_non_probe_yaml() -> None:
 
 
 def test_control_frame_exemption_is_derived_from_spec() -> None:
-    """免解析器判定来自 spec 自己声明的空响应，不是硬编码命令号清单。"""
-    assert is_payloadless({"response": {"header": [], "fields": [], "record_size": 0}})
-    assert not is_payloadless({"response": {"fields": [{"name": "price"}]}})
-    assert not is_payloadless({"response": {"fields": [], "record_size": 28}})
+    """免解析器判定来自 spec 的两条自声明：**显式** ``parse: false`` + 空响应结构。
+
+    第 28 轮把依据从"响应看起来为空"换成"spec 主动认领不解析"（台账 F-20）：
+    真机实测 0x0004 的响应**有 10 字节**，可它照样该免注册——因为它没有记录结构，
+    而且本包不解析它。旧口径下"响应体为空"这句从未核对过的主张就能换来绿灯；
+    现在想让一条命令免注册，必须写下"不解析"这三个字，而这句话有读取点
+    （:func:`tstdx.tools.spec_audit.is_payloadless`）。
+    """
+    declared = {"header": [], "fields": [], "record_size": 0, "parse": False}
+    assert is_payloadless({"response": dict(declared)})
+    # 结构为空但没写下"不解析"——旧实现认这张，新实现不认（改前必红的那一条）
+    assert not is_payloadless({"response": {k: v for k, v in declared.items() if k != "parse"}})
+    assert not is_payloadless({"response": {**declared, "parse": True}})
+    assert not is_payloadless({"response": {**declared, "fields": [{"name": "price"}]}})
+    assert not is_payloadless({"response": {**declared, "record_size": 28}})
     assert not is_payloadless({})
     exempt = sorted(r.spec_id for r in ALL_RESULTS if r.control_frame)
     assert exempt == ["0x0004", "0x000D"]
     assert all(r.covered for r in ALL_RESULTS if r.control_frame)
+    # 免注册的两条各自真的带着 parse:false —— 不是审计器替它们猜出来的
+    for result in ALL_RESULTS:
+        if result.control_frame:
+            response = load_spec(result.spec_file).get("response")
+            assert isinstance(response, dict) and response.get("parse") is False, result.spec_file
+
+
+def test_measured_evidence_blocks_are_internally_consistent() -> None:
+    """带 ``measured`` 证据格的 spec 必须自洽——这是该键唯一的读取点。
+
+    实测块是 ``verified`` 主张的证据（G42：主张要能指向量到的东西）。它抓的是
+    "把实测写成另一回事"：十六进制串与 ``body_length`` 对不上、把连接超时的主站
+    算进"有响应"、或者日期格写成别的形状，都会在这里变红。没有 spec 带证据格时
+    本判据也要红——一条永远空转的 ruler 不算判据。
+    """
+    carriers: list[str] = []
+    for relative in spec_files("PROTOCOL_SPEC"):
+        measured = load_spec(relative).get("measured")
+        if measured is None:
+            continue
+        carriers.append(relative)
+        assert isinstance(measured, dict), relative
+        body_hex = str(measured["body_hex"])
+        assert re.fullmatch(r"[0-9a-fA-F]+", body_hex), relative
+        assert measured["body_length"] == len(bytes.fromhex(body_hex)), relative
+        assert measured["body_length"] > 0, relative
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(measured["captured"])), relative
+        answered, _, total = str(measured["hosts_answered"]).partition("/")
+        assert 0 < int(answered) <= int(total), relative
+    assert carriers == ["PROTOCOL_SPEC/7709/0x0004_HEARTBEAT.yaml"], carriers
 
 
 def test_trade_plane_specs_are_audited_against_trade_anchors() -> None:

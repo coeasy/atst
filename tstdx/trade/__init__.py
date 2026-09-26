@@ -21,10 +21,13 @@
 
     with TradeClient() as c:
         c.login("100001", "123456")
-        print(c.query_cash())   # {'available_cash': 1000000, ...}
-        c.send_order("sh600519", ORDER_SIDE_BUY, price=150000, quantity=100)
+        print(c.query_cash())   # {'available_cash': 1000000, ...}（单位：分）
+        c.send_order("sh600519", ORDER_SIDE_BUY, price=1000, quantity=200)
         print(c.query_orders())
-        c.cancel_order(1)
+        #: 撮合在交易所，不在本库范围内：成交只能显式注入，账本随之变化。
+        c.transport.simulator.fill_order(order_id=1, qty=100, at="09:30:00")
+        print(c.query_deals())
+        c.cancel_order(1)  # 只撤未成交的那 100 股
 """
 
 from __future__ import annotations
@@ -38,14 +41,12 @@ from .constants import (
     CMD_LOGOUT,
     CMD_QUERY,
     CMD_SEND_ORDER,
-    DEFAULT_TRADE_PORT,
     ORDER_SIDE_BUY,
     ORDER_SIDE_SELL,
     ORDER_STATUS_CANCELLED,
     ORDER_STATUS_FILLED,
     ORDER_STATUS_PARTIAL,
     ORDER_STATUS_SUBMITTED,
-    PRICE_SCALE,
     PRICE_TYPE_LIMIT,
     PRICE_TYPE_MARKET,
     QUERY_CATEGORY_CANCELABLE_ORDER,
@@ -61,7 +62,6 @@ from .constants import (
     QUERY_CATEGORY_SHAREHOLDERS_CODE,
     QUERY_CATEGORY_STOCK_LOAN_BALANCE,
     QUERY_CATEGORY_STOCKS,
-    TRADE_FAMILY,
 )
 from .errors import TradeError, TradeNotLoggedIn, TradeRejected, TradingUnavailable
 from .frames import (
@@ -104,8 +104,6 @@ __all__ = [
     "TradeRejected",
     "TradingUnavailable",
     # 常量
-    "TRADE_FAMILY",
-    "DEFAULT_TRADE_PORT",
     "CMD_LOGIN",
     "CMD_HEARTBEAT",
     "CMD_LOGOUT",
@@ -133,7 +131,6 @@ __all__ = [
     "ORDER_STATUS_PARTIAL",
     "ORDER_STATUS_FILLED",
     "ORDER_STATUS_CANCELLED",
-    "PRICE_SCALE",
     # 口令混淆
     "OBFUSCATION_KEY",
     "obfuscate_password",

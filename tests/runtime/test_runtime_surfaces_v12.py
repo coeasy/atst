@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import json
-import time
 
 from tstdx.errors import ValidationError
 from tstdx.integration.mcp._server import MCPServer
-from tstdx.integration.runtime_tasks import RuntimeTaskStore
 from tstdx.integration.runtime_ws import RuntimeJsonRpcHandler
 
 
@@ -86,28 +84,3 @@ def test_mcp_domain_error_uses_canonical_envelope() -> None:
     assert response is not None
     assert response["error"]["data"]["code"] == "E1010"
     assert response["error"]["data"]["context"] == {"provider": "tdx"}
-
-
-def test_runtime_task_store_keeps_safe_envelope_and_expires_payload() -> None:
-    store = RuntimeTaskStore(max_tasks=2, retention_seconds=0.01)
-
-    def fail():
-        raise RuntimeError("secret filesystem path")
-
-    task_id = store.submit(fail)
-    for _ in range(100):
-        record = store.get(task_id)
-        if record and record["status"] == "failed":
-            break
-        time.sleep(0.002)
-    record = store.get(task_id)
-    assert record is not None
-    assert record["error"]["code"] == "E9000"
-    assert "secret filesystem path" not in json.dumps(record)
-
-    time.sleep(0.02)
-    expired = store.get(task_id)
-    assert expired is not None
-    assert expired["expired"] is True
-    assert expired["result"] is None
-    assert expired["error"] is None

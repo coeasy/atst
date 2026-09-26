@@ -12,12 +12,12 @@ import json
 
 import pytest
 
-from tstdx.errors import SourceDeprecated
+from tstdx.errors import SourceDeprecated, ValidationError
 from tstdx.web._mob_fund import apply_fields, mob_get_json, mob_rows, mob_rows_any
 from tstdx.web.base import HttpResponse
 from tstdx.web.fund_company import FundCompanySource
 from tstdx.web.fund_manager import FundManagerSource
-from tstdx.web.fund_rank import FundMobRankSource
+from tstdx.web.fund_rank import SORT_COLUMNS, FundMobRankSource
 from tstdx.web.session import WebQuoteSession
 
 
@@ -255,6 +255,22 @@ class TestFundMobRankSource:
         # 缺失字段归默认值
         assert out["rows"][1]["company"] == ""
         assert out["rows"][1]["return_1y"] == 0.0
+
+    def test_fetch_rank_rejects_undeclared_direction(self) -> None:
+        """``sort`` 是调用方入参、闭值域：表外取值当场 E1010，且不落到请求上（G34 同族）。"""
+        src = _src(FundMobRankSource, {"FundMNRank?": RANK})
+        with pytest.raises(ValidationError) as caught:
+            src.fetch_rank(sort="DESC")
+        assert caught.value.code == "E1010"
+        assert src.client.calls == []
+
+    def test_fetch_rank_warns_on_undeclared_column(self) -> None:
+        """列名在 `SORT_COLUMNS` 之外：请求照发，但调用方看得见一条告警（F-80）。"""
+        src = _src(FundMobRankSource, {"FundMNRank?": RANK})
+        assert "SYL_5Y" not in SORT_COLUMNS
+        with pytest.warns(UserWarning, match="web_fund_sort_column_undeclared"):
+            src.fetch_rank(sort_column="SYL_5Y")
+        assert len(src.client.calls) == 1, "未声明不等于越域：词表外的列仍要发给服务端"
 
     def test_fetch_rank_query_carries_filters(self) -> None:
         src = _src(FundMobRankSource, {"FundMNRank?": RANK})

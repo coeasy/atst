@@ -46,7 +46,7 @@ class BaiduSessionMixin:
         -------
         旧→新排列的 ``list[Bar]``。MA 指标与换手率/涨跌幅挂到 ``extra``。
         """
-        from .adapters_baidu import BaiduSource
+        from .baidu.adapters import BaiduSource
 
         src = BaiduSource(client=_shared_http())
         try:
@@ -59,7 +59,7 @@ class BaiduSessionMixin:
     @staticmethod
     def baidu_minute(symbol: str) -> list[MinutePoint]:
         """百度财经当日 1 分钟分时（旧→新）。"""
-        from .adapters_baidu import BaiduSource
+        from .baidu.adapters import BaiduSource
 
         src = BaiduSource(client=_shared_http())
         try:
@@ -70,7 +70,7 @@ class BaiduSessionMixin:
     @staticmethod
     def baidu_ticks(symbol: str, *, limit: int = 200) -> list[Tick]:
         """百度财经当日逐笔成交（默认 200 条）。"""
-        from .adapters_baidu import BaiduSource
+        from .baidu.adapters import BaiduSource
 
         src = BaiduSource(client=_shared_http())
         try:
@@ -81,7 +81,7 @@ class BaiduSessionMixin:
     @staticmethod
     def baidu_quote(symbol: str) -> Quote:
         """百度财经五档快照（含分时收盘价 / 均价 / 涨跌 / 五档盘口）。"""
-        from .adapters_baidu import BaiduSource
+        from .baidu.adapters import BaiduSource
 
         src = BaiduSource(client=_shared_http())
         try:
@@ -168,7 +168,7 @@ class BaiduSessionMixin:
         region / price / change_pct / pe / eps / roe / bps / total_shares /
         free_shares / free_cap / type；``weight`` 仅部分指数族提供。
         """
-        from .adapters_index import EastmoneyIndexConstituentsSource
+        from .eastmoney.adapters import EastmoneyIndexConstituentsSource
 
         src = EastmoneyIndexConstituentsSource(client=_shared_http())
         try:
@@ -199,7 +199,7 @@ class BaiduSessionMixin:
         rqyl（融券余量，股）/ rzrqye（两融余额）/ rzyezb（融资余额占比%）/
         close / pct_change / total_mv 等；3/5/10 日差分字段在 ``extra``。
         """
-        from .adapters_margin import EastmoneyMarginSource
+        from .eastmoney.adapters import EastmoneyMarginSource
 
         src = EastmoneyMarginSource(client=_shared_http())
         try:
@@ -217,7 +217,7 @@ class BaiduSessionMixin:
         ``[{"code": "600519", "name": "贵州茅台", "market": "sh",
         "symbol": "sh600519"}, ...]``
         """
-        from .adapters_ext import SuggestSource
+        from .sina.adapters import SuggestSource
 
         src = SuggestSource(client=_shared_http())
         try:
@@ -250,7 +250,7 @@ class BaiduSessionMixin:
         ``[{"code": "600519", "name": "贵州茅台", "market": "sh",
           "symbol": "sh600519", "display": "贵州茅台(600519)"}, ...]``
         """
-        from .adapters_ext import SuggestSource
+        from .sina.adapters import SuggestSource
 
         src = SuggestSource(client=_shared_http())
         try:

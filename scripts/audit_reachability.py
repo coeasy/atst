@@ -263,7 +263,8 @@ def _lazy_edges(init_path: Path, pkg: str) -> set[str]:
     ``tstdx.web`` 的惰性导出边整体消失，把纯惰性 façade 子模块误判成孤儿。
 
     值可以是点号绝对路径（``"tstdx.batch"``、``("tstdx.web.session", "X")``），
-    也可以是包内相对名（``"session"``）；含 ``:`` 的 extras 目标取路径部分。
+    也可以是包内相对名（``"session"``，或带子包的 ``"jsl.adapters"``）；含 ``:``
+    的 extras 目标取路径部分。
     """
     edges: set[str] = set()
     try:
@@ -280,7 +281,7 @@ def _lazy_edges(init_path: Path, pkg: str) -> set[str]:
             return node.value if node.target.id == "_LAZY" else None
         return None
 
-    def _target(value: ast.expr) -> str | None:
+    def _targets(value: ast.expr) -> list[str]:
         raw: object = None
         if isinstance(value, ast.Constant):
             raw = value.value
@@ -289,18 +290,20 @@ def _lazy_edges(init_path: Path, pkg: str) -> set[str]:
         ):
             raw = value.elts[0].value
         if not isinstance(raw, str):
-            return None
+            return []
         module = raw.split(":")[0]
-        return module if "." in module else f"{pkg}.{module}"
+        # "含点即绝对"是 V20 Phase 3 之前的旧假设：那时包内相对名都是单段
+        # （``"session"``），带点的只可能是 ``"tstdx.batch"`` 这种绝对路径。按
+        # Provider 归组后包内相对名也能带点（``"jsl.adapters"``），两种都给出候选，
+        # 由调用方用"该模块是否存在"这一唯一判据挑出真实的那条边。
+        return [module, f"{pkg}.{module}"]
 
     for node in ast.walk(tree):
         lazy = _value(node)
         if not isinstance(lazy, ast.Dict):
             continue
         for value in lazy.values:
-            target = _target(value)
-            if target is not None:
-                edges.add(target)
+            edges.update(_targets(value))
     return edges
 
 
@@ -365,9 +368,17 @@ def _entrypoints(modules: dict[str, Path]) -> set[str]:
 
     把它们当种子（而非登记豁免）是必要的：只把入口自身标可达，会让入口独占的
     依赖（``tools/capture.py`` → 交易日历）被误判成孤儿。
+
+    ``__main__.py`` 按**文件名**判定而不是抄一份模块名清单：``python -m <包>`` 找的就是
+    这个文件名，写死的名单会在每加一个入口时静默漏掉它——第 23 轮给 MCP 面补
+    ``tstdx/integration/mcp/__main__.py`` 时，旧名单正会把新入口报成孤儿。
     """
-    named = {"tstdx.cli", "tstdx.__main__"}
-    return {m for m in modules if m in named or m.startswith("tstdx.tools.")}
+    named = {"tstdx.cli"}
+    return {
+        m
+        for m, path in modules.items()
+        if m in named or m.startswith("tstdx.tools.") or path.name == "__main__.py"
+    }
 
 
 def _allowlist_defects(records: dict[str, str], modules: set[str], reach: set[str]) -> list[str]:

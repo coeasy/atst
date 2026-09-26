@@ -13,11 +13,14 @@ F-64 量的是账本的**字段**侧（10 个字段里 4 个无人读），F-65 
   运行期重算后再回查原文，抄本一旦过期就红（不是靠人记得去改）；
 * 用例侧：每个声明的函数都必须由"真的从账本模块 import 了它、并且调用它"的测试文件够到，
   只 import 不调用不算读者。
+* 成员侧：`Command` 除字段之外只剩 `hex` 一个成员——族→端口那种"账本对外宣称传输细节、
+  而真正的行动处在别处"的成员不得再登记回来（V19 §4 P1-A2）。
 """
 
 from __future__ import annotations
 
 import ast
+import dataclasses
 import re
 from pathlib import Path
 
@@ -47,6 +50,11 @@ DECLARED_FUNCTIONS = {
 
 #: 由用户从包上拿的公开查询面（F-65 裁决 (b) 点名的两个）。
 PUBLIC_QUERY_SURFACE = {"by_family", "unknown_command_ids"}
+
+#: `Command` 实例上的公开成员（字段之外）——只有 `hex`。第 27 轮（V19 §4 P1-A2）删掉了
+#: `port`：族→端口是传输细节，连接池真的拿去建连的是 `HostEntry.port`，`Command.port`
+#: 在生产树里零读取点，只剩文档门禁在替它"证明存在"。
+DECLARED_COMMAND_MEMBERS = {"hex"}
 
 #: 族常量全集，文档里的分布串按这个顺序写。
 FAMILIES = (
@@ -244,3 +252,35 @@ def test_deleted_aggregators_stay_deleted() -> None:
     for name in ("stats", "get_command_by_name"):
         assert not hasattr(ledger, name), f"tstdx.protocol.commands.{name} 又回来了"
         assert not hasattr(tstdx.protocol, name), f"tstdx.protocol.{name} 以别名的方式回来了"
+
+
+def test_command_member_face_has_no_transport_mapping() -> None:
+    """`Command` 除字段外的成员账只剩 「hex」，「port」 那种假承诺不得回来。
+
+    「port」 的病与 「stats」 同形：挂在公开类上像是账本对外口径，实际全 「tstdx/」 零读取点——
+    连接池按 「HostEntry.port」 建连，族→端口的真相源在主站池里。文档的协议覆盖矩阵曾按这条成员
+    核对端口，于是「只有门禁读它」的孤儿被一份文档判据供成了事实源；第 27 轮（V19 §4 P1-A2）
+    先把端口真相源换成池本身（「test_doc_code_consistency.py::_family_port」），再删掉它。
+    """
+    fields = {field.name for field in dataclasses.fields(ledger.Command)}
+    members = {
+        name
+        for name in dir(ledger.Command)
+        if not name.startswith("_")
+        and name not in fields
+        and isinstance(getattr(ledger.Command, name, None), property)
+    }
+    assert members == DECLARED_COMMAND_MEMBERS, (
+        f"Command 成员面与本步锁定的名单不符：多 {sorted(members - DECLARED_COMMAND_MEMBERS)}、"
+        f"缺 {sorted(DECLARED_COMMAND_MEMBERS - members)}"
+    )
+    assert not hasattr(ledger.Command, "port"), "Command.port 回来了：族→端口只该由主站池给出"
+
+    from tstdx.transport.hosts import POOL_BY_FAMILY
+
+    ports = {
+        family: {entry.port for entry in entries} for family, entries in POOL_BY_FAMILY.items()
+    }
+    assert set(ports) == {f for f in FAMILIES}, f"主站池族集合与账本族不符：{sorted(ports)}"
+    not_unique = sorted(family for family, values in ports.items() if len(values) != 1)
+    assert not_unique == [], f"主站池里这些族的端口不唯一，端口真相源不成立：{not_unique}"

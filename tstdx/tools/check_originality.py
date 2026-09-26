@@ -82,9 +82,16 @@ DEFAULT_LICENSE_HEADER: str = (
 )
 
 #: 项目已知的可选外部依赖（来自 pyproject.toml）。
+#: 预期外部依赖的顶层包名。这份名单的口径是**``tstdx/`` 真实 import 到的外部根**，
+#: 不是"打包时声明过什么"：第 23 轮清幻影 extra 时量出来它两头都过期——
+#: ``pydantic`` / ``mcp`` 全仓 0 处 import（``mcp`` 那格尤其误导，本库自己的子包就叫
+#: ``tstdx.integration.mcp``），而 ``websockets`` / ``zstandard`` / ``tomli`` /
+#: ``typing_extensions`` 四处真实 import 从没登记过，于是 ``unknown external import``
+#: 的普查里长期挂着 5 条噪声。等式由
+#: ``tests/architecture/test_declared_knobs.py::test_originality_external_import_whitelist_matches_reality``
+#: 逐名核对，改一处 import 或加一个 extra 都要在这里同步，否则门禁先红。
 KNOWN_EXTERNAL_IMPORTS: frozenset[str] = frozenset(
     {
-        "pydantic",
         "pandas",
         "pyarrow",
         "duckdb",
@@ -92,7 +99,10 @@ KNOWN_EXTERNAL_IMPORTS: frozenset[str] = frozenset(
         "prometheus_client",
         "fastapi",
         "uvicorn",
-        "mcp",
+        "websockets",
+        "zstandard",
+        "tomli",
+        "typing_extensions",
     }
 )
 

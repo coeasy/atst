@@ -13,12 +13,12 @@ import logging
 
 import pytest
 
-pytestmark = pytest.mark.unit
+from tstdx.web.corporate import EastmoneyShareholderSource
+from tstdx.web.limits import TENCENT_KLINE_MAX
+from tstdx.web.sina.adapters import SinaSource
+from tstdx.web.tencent.adapters import KlineSource, MinuteKlineSource
 
-from tstdx.web.adapters import KlineSource, SinaSource  # noqa: E402
-from tstdx.web.adapters_ext import MinuteKlineSource  # noqa: E402
-from tstdx.web.corporate import EastmoneyShareholderSource  # noqa: E402
-from tstdx.web.limits import TENCENT_KLINE_MAX  # noqa: E402
+pytestmark = pytest.mark.unit
 
 
 # --------------------------------------------------------------------------- #
@@ -28,7 +28,7 @@ from tstdx.web.limits import TENCENT_KLINE_MAX  # noqa: E402
 class TestTencentKlineClamp:
     def test_kline_url_clamped(self, caplog):
         src = KlineSource()
-        with caplog.at_level(logging.WARNING, logger="tstdx.web.adapters"):
+        with caplog.at_level(logging.WARNING, logger="tstdx.web.tencent.adapters"):
             url = src.build_url(["sh600519"], period="day", count=2000)
         assert f",,,{TENCENT_KLINE_MAX}," in url
         assert "已钳制" in caplog.text
@@ -40,7 +40,7 @@ class TestTencentKlineClamp:
 
     def test_mkline_url_clamped(self, caplog):
         src = MinuteKlineSource()
-        with caplog.at_level(logging.WARNING, logger="tstdx.web.adapters_ext"):
+        with caplog.at_level(logging.WARNING, logger="tstdx.web.tencent.adapters"):
             url = src.build_url(["sh600519"], period="5min", count=3000)
         assert f",,,{TENCENT_KLINE_MAX}" in url
         assert "已钳制" in caplog.text
@@ -153,7 +153,7 @@ class TestSinaFetchAllHardening:
         src = SinaSource(max_retries=0)
         monkeypatch.setattr(src, "_request_text", responder)
         monkeypatch.setattr(src.rate_limiter, "acquire", lambda source: True)
-        monkeypatch.setattr("tstdx.web.adapters.time.sleep", lambda s: None)
+        monkeypatch.setattr("tstdx.web.sina.adapters.time.sleep", lambda s: None)
         return src
 
     def test_retry_recovers_transient_failure(self, monkeypatch):

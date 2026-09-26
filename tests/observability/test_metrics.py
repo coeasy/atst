@@ -240,6 +240,8 @@ class TestMetrics:
         # 应包含所有内置指标名
         assert "tstdx_protocol_parse_total" in output
         assert "tstdx_request_total" in output
-        assert "tstdx_active_connections" in output
+        assert (
+            "tstdx_stream_backpressure" in output
+        )  # F-112：原先这一格盯的是恒 0 的 active_connections
         assert "tstdx_stream_events_total" in output
         assert "tstdx_errors_total" in output

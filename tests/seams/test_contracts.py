@@ -66,9 +66,8 @@ def test_seam_pool_uses_connection_lock_or_busy_removed() -> None:
         "Slot.busy 死字段仍在（C2 裁决：落实借还协议或删除字段，禁止第三态）"
     )
     # 连接级租约锁应作为实例属性在构造时建立。此处按**行为**断言而非源码
-    # 文本：`TcpConnection.__init__` 会被 transport 加固垫片（
-    # `_connection_contract_hardening._sync_init`）整体替换，源码检索随
-    # 垫片形态漂移而误红，实例属性检查才是跨垫片稳定的契约。
+    # 文本：构造实现已内联到 transport.base 的 TcpConnection 中，源码检索
+    # 随实现形态漂移而误红，实例属性检查才是稳定的跨实现契约。
     from tstdx.transport.base import TcpConnection
 
     conn = TcpConnection("127.0.0.1", 7709)

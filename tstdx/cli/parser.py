@@ -153,7 +153,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--diff-only", dest="diff", action="store_true")
     p.add_argument("--max-queue", type=int, default=1024)
     p.add_argument("--timeout", type=float, default=None)
-    p.add_argument("--seconds", type=float, default=0.0)
+    p.add_argument(
+        "--seconds", type=float, default=10.0, help="订阅保持时长（秒），到点自动停；默认 10"
+    )
     p.set_defaults(func=cmd_stream)
 
     # --- hosts / transport (migrated from cmds_hosts.py) ---
@@ -332,7 +334,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- market (migrated from cmds_market.py) ---
 
     blk_p = sub.add_parser("blocks", help="板块行情")
-    blk_p.add_argument("block_type")
+    blk_p.add_argument("block_type", type=int)
     blk_p.add_argument("--count", type=int, default=1000)
     blk_p.add_argument("--timeout", type=float, default=None)
     blk_p.add_argument("--json", action="store_true")

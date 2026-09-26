@@ -43,11 +43,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from ..diagnostics import WarningCode, record_warning
+from ..errors import ValidationError
 from . import _mob_fund as _m
 from .base import BaseWebSource, num_i
 from .sources import FUND
 
-__all__ = ["FundMobRankSource", "SORT_COLUMNS"]
+__all__ = ["FundMobRankSource", "SORT_COLUMNS", "SORT_DIRECTIONS"]
 
 #: 排行行字段映射。
 _RANK_FIELDS: dict[str, tuple[str, str]] = {
@@ -139,6 +141,9 @@ SORT_COLUMNS = {
     "SYL_Z": "成立至今",
 }
 
+#: ``Sort`` 的两值域；与 :data:`SORT_COLUMNS` 一起充当 ``fetch_rank`` 入参的域。
+SORT_DIRECTIONS = ("desc", "asc")
+
 
 class FundMobRankSource(BaseWebSource):
     """天天基金排行 / 快照 / 净值 / 画像数据源。
@@ -201,9 +206,13 @@ class FundMobRankSource(BaseWebSource):
             基金类型编号（``0``=全部，``25``=股票，``27``=混合，``35``=货币，
             ``6``=QDII，``4``=LOF）。
         sort_column:
-            排序列，见 :data:`SORT_COLUMNS`（默认近1年）。
+            排序列，取值域为 :data:`SORT_COLUMNS`（默认近1年）。表外取值不拦截
+            （东财自己认的列我们未逐一逆向，第 26 轮不猜协议字节），但会发一条
+            :data:`~tstdx.diagnostics.WarningCode.WEB_FUND_SORT_COLUMN_UNDECLARED`
+            告警：调用方打错列名时，服务端按自己的默认列返回，结果看起来仍是成功。
         sort:
-            ``"desc"`` / ``"asc"``。
+            ``"desc"`` / ``"asc"``（见 :data:`SORT_DIRECTIONS`）；表外取值当场
+            :class:`~tstdx.errors.ValidationError`（E1010），不把它拼进查询串。
         page, size:
             页码（1 起）与每页条数。
         company_id:
@@ -222,6 +231,18 @@ class FundMobRankSource(BaseWebSource):
         ``{"total": int, "page": int, "size": int, "rows": list[dict]}``；
         ``rows`` 字段见 :data:`_RANK_FIELDS`。
         """
+        if sort not in SORT_DIRECTIONS:
+            raise ValidationError(
+                f"未知排序方向 sort={sort!r}：只接受 {SORT_DIRECTIONS}",
+                context={"sort": sort, "allowed": list(SORT_DIRECTIONS)},
+            )
+        if sort_column not in SORT_COLUMNS:
+            record_warning(
+                WarningCode.WEB_FUND_SORT_COLUMN_UNDECLARED,
+                f"基金排行 sort_column={sort_column!r} 不在本包声明的常用列词表里，"
+                f"请求按原值发出，服务端可能按自己的默认列返回（已声明：{sorted(SORT_COLUMNS)}）",
+                stacklevel=2,
+            )
         q = (
             f"FundType={fund_type}&SortColumn={sort_column}&Sort={sort}"
             f"&pageIndex={page}&pageSize={size}{_m.MOB_COMMON}"

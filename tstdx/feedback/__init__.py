@@ -32,11 +32,10 @@
 
 from .reporter import FeedbackReporter
 from .stats import UserStats
-from .telemetry import DEFAULT_EVENT_TYPES, TelemetryCollector
+from .telemetry import TelemetryCollector
 
 __all__ = [
     "FeedbackReporter",
     "TelemetryCollector",
     "UserStats",
-    "DEFAULT_EVENT_TYPES",
 ]

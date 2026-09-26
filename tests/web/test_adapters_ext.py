@@ -11,12 +11,9 @@ import pytest
 
 from tstdx.domain.models import Bar, MinutePoint
 from tstdx.errors import SourceDeprecated, WebSourceError
-from tstdx.web.adapters_ext import (
-    MinuteKlineSource,
-    MinuteSource,
-    SuggestSource,
-)
 from tstdx.web.base import HttpResponse, RateLimiter
+from tstdx.web.sina.adapters import SuggestSource
+from tstdx.web.tencent.adapters import MinuteKlineSource, MinuteSource
 
 
 class FakeHttp:

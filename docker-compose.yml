@@ -22,15 +22,18 @@ services:
     container_name: tstdx-dev
     ports:
       - "8000:8000"
-      # 8001 预留：WebSocket RPC 服务需单独进程
-      # python -m tstdx.integration.ws_server（tstdx serve 不启动 WS）
-      - "8001:8001"
+      # WS JSON-RPC 面是另一个进程：`python -m tstdx.integration.runtime_ws_server`
+      # 默认监听 127.0.0.1:8765 上的 /v13/ws（`tstdx serve` 不启动 WS）。要在容器里
+      # 暴露它，先把 RuntimeWsConfig 的 host 改成 0.0.0.0，再放行同一个端口号：
+      # - "8765:8765"
     environment:
       - TSTDX_LOG_LEVEL=DEBUG
       - TSTDX_FEEDBACK=0
     volumes:
       - .:/app
-    command: ["python", "-m", "tstdx.cli", "serve", "--bind", "0.0.0.0", "--port", "8000"]
+    # `python -m tstdx.cli` 跑不起来（第 23 轮实测 rc=1：No module named tstdx.cli.__main__）；
+    # `python -m tstdx` 才是与控制台脚本等价的那一条。
+    command: ["python", "-m", "tstdx", "serve", "--bind", "0.0.0.0", "--port", "8000"]
     restart: on-failure
 
 volumes:

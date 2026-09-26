@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib
+import threading
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -108,7 +110,14 @@ def test_stale_background_probe_cannot_commit_after_generation_change(
     pool = ConnectionPool([current], slots_per_host=1, heartbeat_interval=0)
     captured: list[Callable[[], None]] = []
 
-    class DeferredThread:
+    class DeferredThread(threading.Thread):
+        """登记成线程、但把起跑权交给测试本体：代际复查要跨线程，不能靠调度。
+
+        它继承 :class:`threading.Thread` 而不是鸭子类型：池会把句柄存进
+        ``_speedtest_threads`` 并在 ``close()``/下一次起跑时按线程协议问
+        ``is_alive()``/``join()``（第 26 轮 F-97），鸭子类型的假线程会当场漏形。
+        """
+
         def __init__(
             self,
             *,
@@ -118,7 +127,7 @@ def test_stale_background_probe_cannot_commit_after_generation_change(
         ) -> None:
             assert name == "tstdx-speedtest"
             assert daemon is True
-            self._target = target
+            super().__init__(target=target, name=name, daemon=daemon)
 
         def start(self) -> None:
             captured.append(self._target)
@@ -166,3 +175,64 @@ def test_stale_background_probe_cannot_commit_after_generation_change(
     pool._trigger_background_speedtest()
     assert pool._speedtest_triggered is True
     assert len(captured) == 1
+
+
+def test_closed_pool_never_starts_a_background_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """已关闭的池不许再为了"下次启动更快"去拨整表主站（第 26 轮 F-97）。"""
+    pool = ConnectionPool(
+        [HostEntry(host="1.2.3.4", family=Family.STANDARD)], slots_per_host=1, heartbeat_interval=0
+    )
+    dials: list[Any] = []
+    monkeypatch.setattr(speedtest_module, "speedtest", lambda *a, **k: dials.append(a) or [])
+
+    pool.close()
+    # 关掉之后再来一次触发（真实链路：update_hosts 会按代重置这个开关）。
+    pool._speedtest_triggered = False
+    pool._trigger_background_speedtest()
+
+    assert pool._speedtest_threads == []
+    assert dials == []
+
+
+def test_close_reaps_the_background_probe_handle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """起跑中的测速线程必须留下句柄，让 ``close()`` 追得上、又不被它拖住（F-97）。"""
+    current = HostEntry(host="1.2.3.4", family=Family.STANDARD, rtt_ms=50.0)
+    pool = ConnectionPool([current], slots_per_host=1, heartbeat_interval=0)
+    dial_started = threading.Event()
+    dial_release = threading.Event()
+    applied: list[Any] = []
+
+    def _blocking_speedtest(*_args: Any, **_kwargs: Any) -> list[ProbeResult]:
+        dial_started.set()
+        assert dial_release.wait(timeout=5.0) is True
+        return []
+
+    monkeypatch.setattr(speedtest_module, "speedtest", _blocking_speedtest)
+    monkeypatch.setattr(
+        speedtest_module, "_apply_probe_observations", lambda *a, **k: applied.append(a)
+    )
+    handles: list[threading.Thread] = []
+    try:
+        pool._trigger_background_speedtest()
+        assert dial_started.wait(timeout=2.0) is True
+        handles = list(pool._speedtest_threads)
+        assert len(handles) == 1
+        assert handles[0].is_alive()
+
+        started = time.monotonic()
+        pool.close()
+        # 停机只借一小段预算：句柄登记在这里，等不到也要说得出谁还在跑。
+        assert time.monotonic() - started < 2.0
+        assert pool._speedtest_threads == []
+    finally:
+        dial_release.set()
+
+    for handle in handles:
+        handle.join(timeout=5.0)
+        assert not handle.is_alive()
+    # 线程活到了池关闭之后，也只许把结果咽下去：一处观测写回都不能有。
+    assert applied == []

@@ -180,30 +180,32 @@ logger = logging.getLogger(__name__)
 # 常驻符号（本模块直接定义）：WebQuoteClient / get_quotes / get_kline /
 # get_rates / create_source；其余 __all__ 符号全部走 _LAZY。
 _LAZY: dict[str, str] = {
-    # adapters.py
-    "SinaSource": "adapters",
-    "TencentSource": "adapters",
-    "EastmoneySource": "adapters",
-    "JslSource": "adapters",
-    "HkSource": "adapters",
-    "UsSource": "adapters",
-    "TencentExternalSource": "adapters",
-    "SinaHkSource": "adapters",
-    "KlineSource": "adapters",
-    "BocSource": "adapters",
-    # adapters_baidu.py
-    "BaiduSource": "adapters_baidu",
-    # adapters_ext.py
-    "MinuteKlineSource": "adapters_ext",
-    "MinuteSource": "adapters_ext",
-    "SuggestSource": "adapters_ext",
+    # tencent/adapters.py
+    "TencentSource": "tencent.adapters",
+    "TencentExternalSource": "tencent.adapters",
+    "HkSource": "tencent.adapters",
+    "UsSource": "tencent.adapters",
+    "KlineSource": "tencent.adapters",
+    "MinuteKlineSource": "tencent.adapters",
+    "MinuteSource": "tencent.adapters",
+    # sina/adapters.py
+    "SinaSource": "sina.adapters",
+    "SinaHkSource": "sina.adapters",
+    "SuggestSource": "sina.adapters",
+    "SinaHistoryKlineSource": "sina.adapters",
+    # eastmoney/adapters.py
+    "EastmoneySource": "eastmoney.adapters",
+    "EastmoneyHistoryKlineSource": "eastmoney.adapters",
+    "EastmoneyMarginSource": "eastmoney.adapters",
+    "EastmoneyIndexConstituentsSource": "eastmoney.adapters",
+    # jsl/adapters.py
+    "JslSource": "jsl.adapters",
+    # boc/adapters.py
+    "BocSource": "boc.adapters",
+    # baidu/adapters.py
+    "BaiduSource": "baidu.adapters",
     # adapters_fund.py
     "FundSource": "adapters_fund",
-    # adapters_fund.py
-    # adapters_margin.py
-    "EastmoneyMarginSource": "adapters_margin",
-    # adapters_index.py
-    "EastmoneyIndexConstituentsSource": "adapters_index",
     # boards.py
     "SinaIndustryBoardSource": "boards",
     "SinaBoardListSource": "boards",
@@ -247,9 +249,6 @@ _LAZY: dict[str, str] = {
     # global_market.py
     "TencentGlobalSource": "global_market",
     "TencentMarketStatSource": "global_market",
-    # history.py
-    "SinaHistoryKlineSource": "history",
-    "EastmoneyHistoryKlineSource": "history",
     # hot_rank.py
     "EastmoneyHotRankSource": "hot_rank",
     # longhu.py
@@ -297,18 +296,18 @@ def __dir__() -> list[str]:
 # 源名 → (子模块, 类名)。首次访问 _ADAPTERS / create_source 时才实际
 # import 各 Source 子模块（原先为包初始化期全量 import）。
 _ADAPTER_SPECS: dict[str, tuple[str, str]] = {
-    SINA: ("adapters", "SinaSource"),
-    TENCENT: ("adapters", "TencentSource"),
-    EASTMONEY: ("adapters", "EastmoneySource"),
-    JSL: ("adapters", "JslSource"),
-    HK: ("adapters", "HkSource"),
-    HK_SINA: ("adapters", "SinaHkSource"),
-    US: ("adapters", "UsSource"),
-    KLINE: ("adapters", "KlineSource"),
-    BOC: ("adapters", "BocSource"),
-    MINUTE_KLINE: ("adapters_ext", "MinuteKlineSource"),
-    MINUTE: ("adapters_ext", "MinuteSource"),
-    SUGGEST: ("adapters_ext", "SuggestSource"),
+    SINA: ("sina.adapters", "SinaSource"),
+    TENCENT: ("tencent.adapters", "TencentSource"),
+    EASTMONEY: ("eastmoney.adapters", "EastmoneySource"),
+    JSL: ("jsl.adapters", "JslSource"),
+    HK: ("tencent.adapters", "HkSource"),
+    HK_SINA: ("sina.adapters", "SinaHkSource"),
+    US: ("tencent.adapters", "UsSource"),
+    KLINE: ("tencent.adapters", "KlineSource"),
+    BOC: ("boc.adapters", "BocSource"),
+    MINUTE_KLINE: ("tencent.adapters", "MinuteKlineSource"),
+    MINUTE: ("tencent.adapters", "MinuteSource"),
+    SUGGEST: ("sina.adapters", "SuggestSource"),
     # —— 扩展源（2026-09 新增）——
     TICKS: ("ticks", "TencentTickSource"),
     TRENDS: ("ticks", "EastmoneyTrendsSource"),
@@ -326,10 +325,10 @@ _ADAPTER_SPECS: dict[str, tuple[str, str]] = {
     SINA_FUND_FLOW: ("fundflow", "SinaFundFlowSource"),
     WENCAI: ("wencai", "WencaiSource"),
     HOT_RANK: ("hot_rank", "EastmoneyHotRankSource"),
-    BAIDU: ("adapters_baidu", "BaiduSource"),
+    BAIDU: ("baidu.adapters", "BaiduSource"),
     FUND: ("adapters_fund", "FundSource"),
-    MARGIN: ("adapters_margin", "EastmoneyMarginSource"),
-    INDEX_CONS: ("adapters_index", "EastmoneyIndexConstituentsSource"),
+    MARGIN: ("eastmoney.adapters", "EastmoneyMarginSource"),
+    INDEX_CONS: ("eastmoney.adapters", "EastmoneyIndexConstituentsSource"),
 }
 
 

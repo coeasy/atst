@@ -48,6 +48,11 @@ from ..errors import (
     WriteTimeout,
 )
 from ..protocol.commands import Family
+from ._validation import (
+    require_bool,
+    require_timeout,
+    validate_common_connection_args,
+)
 
 __all__ = [
     "TcpConnection",
@@ -58,11 +63,14 @@ __all__ = [
 #: 传输域统一 logger（只获取，不配置 handler——配置交给宿主应用）。
 _LOG = logging.getLogger("tstdx.transport")
 
-#: 心跳探测命令。
-#: TDX 服务端对未知命令通常回一个短帧，因此探活**只判传输是否通畅**，
-#: 不解析响应内容——这使得探测命令的选择不影响正确性。0x0002 是刻意选的中性
-#: 探测码，不在 7709 账本内（账本里登记为 HEARTBEAT 的是 0x0004，见
-#: :mod:`tstdx.protocol.commands`；该命令目前无发送方）。
+#: 心跳探测命令：探活只判传输是否通畅，**不解析响应**。
+#: 2026-09-26 真机实测（7/7 可达主站一致）把旧注释的理由否证了：这里并非"服务端对
+#: 未知命令回一个短帧"——0x0002 回 50 字节（含 GBK 文本「上交所公告」，布局未锁定），
+#: 账本里登记为 HEARTBEAT 的 0x0004 回 10 字节无结构载荷（``0000000000003c283501``）。
+#: 两条都答，换谁都不影响探活正确性，故保持 0x0002 不动（台账 F-20；字节证据见
+#: ``PROTOCOL_SPEC/7709/0x0004_HEARTBEAT.yaml`` 的 ``measured`` 块）。
+#: 两码的账本地位不同：0x0002 **未**登记在 7709 标准族账本，0x0004 登记了但本包没有
+#: 默认发送方，只有 ``tstdx probe 0x0004`` 会显式把它发出去。
 #: 覆盖点是连接池构造参数 ``heartbeat_cmd``（``ConnectionPool`` /
 #: ``AsyncConnectionPool``）；配置面**没有**对应键，`tstdx.toml` 写它不会生效。
 DEFAULT_HEARTBEAT_CMD = 0x0002
@@ -129,23 +137,38 @@ class TcpConnection:
         handshake_strict: bool = False,
         handshake_blob: bytes | None = None,
     ) -> None:
-        self.host = host
-        self.port = int(port)
-        self.timeout = float(timeout)
-        self.connect_timeout = float(connect_timeout if connect_timeout is not None else timeout)
-        self.spec = spec
-        self.use_tls = use_tls
+        # --- fail-closed contract validation (merged from hardening) --------- #
+        (
+            self.host,
+            self.port,
+            self.family,
+            self.timeout,
+            self.connect_timeout,
+            self.use_tls,
+            self.slot_id,
+            self.handshake,
+            self.handshake_strict,
+            self.handshake_blob,
+        ) = validate_common_connection_args(
+            host=host,
+            port=port,
+            family=family,
+            timeout=timeout,
+            connect_timeout=connect_timeout,
+            use_tls=use_tls,
+            tls_context=tls_context,
+            slot_id=slot_id,
+            handshake=handshake,
+            handshake_strict=handshake_strict,
+            handshake_blob=handshake_blob,
+            keepalive=keepalive,
+        )
         self.tls_context = tls_context
-        self.keepalive = keepalive
-        self.slot_id = slot_id
-        self.family = family
-        #: 建连后是否自动发送握手帧（TDX 服务端未握手会**静默不回**）
-        self.handshake = handshake
-        #: 握手失败是否视为建连失败。默认容忍——少数主站/网关不要求握手，
-        #: 强行判定失败会把可用连接误杀。
-        self.handshake_strict = handshake_strict
-        #: 覆盖帧 3 的 30 字节标识块（测试用）
-        self.handshake_blob = handshake_blob
+        self.spec = spec
+        self.keepalive = require_bool("keepalive", keepalive)
+        self.connect_timeout = (
+            self.connect_timeout if self.connect_timeout is not None else self.timeout
+        )
 
         self._sock: socket.socket | None = None
         self._seq = 0
@@ -367,36 +390,56 @@ class TcpConnection:
         self._seq = (self._seq + 1) & 0xFFFFFFFF
         return self._seq
 
-    def read_frame(self) -> ResponseFrame:
+    def read_frame(self, timeout: float | None = None) -> ResponseFrame:
         """读取并解码一个完整响应帧。
 
         C2：读帧全程持连接锁——request_multi 的续帧读取在锁外调用本方法
         时逐帧原子；与在飞 request/心跳 ping 天然串行。
+
+        `timeout` 与 :meth:`request` 的同名参数同义：只对本次读帧生效，
+        缺省沿用连接自身的 :attr:`timeout`。持锁期间临时改 socket 超时、
+        退出时复原，因此调用方给的截止值真的会传到 socket 上。
         """
         with self._lock:
-            header = self._recv_exact(self.spec.resp_header_size)
-            frame = parse_response_header(header, self.spec)
-            if frame.magic != self.spec.magic:
-                raise FramingError(
-                    f"magic 不匹配: 收到 {hex(frame.magic)}，期望 {hex(self.spec.magic)}",
-                    context={"host": self.host, "port": self.port},
-                )
-            if frame.zip_size > self.spec.max_frame_bytes:
-                raise FramingError(
-                    f"响应帧过大: {frame.zip_size} > {self.spec.max_frame_bytes}",
-                    context={"zip_size": frame.zip_size},
-                )
-            body = self._recv_exact(frame.zip_size)
+            sock = self._require()
+            old_timeout: float | None = None
+            if timeout is not None and abs(float(timeout) - self.timeout) > 1e-9:
+                old_timeout = self.timeout
+                self.timeout = float(timeout)
+                sock.settimeout(self.timeout)
             try:
-                return decode_response_body(frame, body, strict=True)
-            except DecompressError:
-                raise
-            except FramingError as exc:
-                raise ProtocolError(
-                    f"响应帧长度自洽性校验失败: {exc}",
-                    context={"host": self.host, "port": self.port},
-                    cause=exc,
-                ) from exc
+                return self._read_frame_unlocked()
+            finally:
+                if old_timeout is not None:
+                    self.timeout = old_timeout
+                    if self._sock is not None:
+                        self._sock.settimeout(old_timeout)
+
+    def _read_frame_unlocked(self) -> ResponseFrame:
+        """read_frame 的无锁核心（调用方必须已持有 ``self._lock``）。"""
+        header = self._recv_exact(self.spec.resp_header_size)
+        frame = parse_response_header(header, self.spec)
+        if frame.magic != self.spec.magic:
+            raise FramingError(
+                f"magic 不匹配: 收到 {hex(frame.magic)}，期望 {hex(self.spec.magic)}",
+                context={"host": self.host, "port": self.port},
+            )
+        if frame.zip_size > self.spec.max_frame_bytes:
+            raise FramingError(
+                f"响应帧过大: {frame.zip_size} > {self.spec.max_frame_bytes}",
+                context={"zip_size": frame.zip_size},
+            )
+        body = self._recv_exact(frame.zip_size)
+        try:
+            return decode_response_body(frame, body, strict=True)
+        except DecompressError:
+            raise
+        except FramingError as exc:
+            raise ProtocolError(
+                f"响应帧长度自洽性校验失败: {exc}",
+                context={"host": self.host, "port": self.port},
+                cause=exc,
+            ) from exc
 
     # -- 请求 --------------------------------------------------------------- #
     def request(
@@ -415,6 +458,10 @@ class TcpConnection:
         传输层异常统一为 :class:`~tstdx.errors.TransportError` 子类，
         其 :attr:`~tstdx.errors.TdxError.advice` 指示是否应重试 / 换主站 / 降级。
         """
+        # --- fail-closed contract validation (merged from hardening) --------- #
+        require_bool("check_seq", check_seq)
+        require_bool("compress", compress)
+        timeout = require_timeout("request.timeout", timeout, allow_none=True)
         # C2 连接级租约：整个「建连 → seq → 发帧 → 收帧 → seq 校验」会话
         # 在同一临界区内完成，杜绝同 socket 帧交织。
         with self._lock:

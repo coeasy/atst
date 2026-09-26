@@ -9,9 +9,11 @@ MCP 9 工具三张表在 ``docs/api/interfaces.md`` 里逐名列出，且与运�
   ``hosts scan`` / ``index constituents`` / ``minute-klines`` / ``sector-flow``；
   口径与现场见 ``scratch_v18b22/census_docs22.log``——按"示例行 ``tstdx <命令>`` 或反引号里的
   名字"算点到，HEAD 的 blob 用 ``git show`` 读，所以本轮改完文档之后这一格仍可重跑对账）；
-* "全部委托 `Client`"不成立——36 个叶子里 **14 支碰不到内核**：6 支直连传输层、
-  1 支拉起 HTTP 应用、4 支主站诊断、2 支反馈、1 支版本（这一格的分母由
-  :func:`_landing` 现读处理器源码派生，判据 ④ 管它，所以这里的分类改不动）。
+* "全部委托 `Client`"不成立——36 个叶子里 **15 支碰不到内核**：6 支直连传输层、
+  1 支拉起 HTTP 应用、4 支主站诊断、2 支反馈、2 支元信息（``version`` 打包版本、
+  ``capabilities`` 打 ``Client.capabilities()`` 那份静态名单——第 24 轮把后一支从
+  ``内核·typed`` 改判到这里：处理器连 ``Client`` 都没构造，就谈不上 ``runtime.execute``）。
+  这一格的分母由 :func:`_landing` 现读处理器源码派生，判据 ④ 管它，所以这里的分类改不动。
   同一句话还掩盖了 ``serve`` 不承载 WebSocket
   这件事（:func:`tstdx.cli.runtime_commands._cmd_serve` 的 docstring 当时写着"40+ 端点 +
   WebSocket"，而 ``create_runtime_app()`` 是 10 支路由、零条 websocket 路由）。
@@ -119,7 +121,10 @@ def _landing(fn: Any) -> str:
     if "__version__" in idents:
         return "元信息"
     if "Client" in seen:
-        return "内核·typed"
+        # ``Client`` 只是被**提到**（类级 static/classmethod，例如 ``Client.capabilities()``）
+        # 不等于碰得到内核：没有构造点就没有 ``runtime.execute``。落点写"内核"，处理器就得
+        # 真的构造 ``Client``——否则这一格是在替文档撒一个"看起来走了内核"的谎。
+        return "内核·typed" if "Client" in names else "元信息"
     raise AssertionError(f"{getattr(fn, '__name__', fn)} 的落点不在词汇表里——先扩上面的判据，别猜")
 
 
@@ -350,6 +355,38 @@ def test_the_capability_ruler_sees_a_planted_typo() -> None:
     assert not is_migrated_capability("stock_changesd"), "拼错的名字竟然是合法能力，判据 ⑦ 是空的"
 
 
+def test_the_landing_ruler_sees_a_handler_that_only_borrows_the_name() -> None:
+    """正控（第 24 轮）：把 ``Client`` 当**名字**用，不等于构造了它。
+
+    ``capabilities`` 这一格 originally 被读成 ``内核·typed``——处理器里只有
+    ``Client.capabilities()`` 一处类级静态调用，没有构造点，也就没有 ``runtime.execute``。
+    判据不许靠人记住这件事：同一把尺子对两个形状必须给出两个答案，且答案要从**源码**出，
+    所以这里把两段函数体喂进 :func:`_landing`，一段必须落 ``元信息``、一段必须落 ``内核·typed``。
+    """
+    import linecache
+
+    from tstdx.client.api import Client
+
+    def landing_of(body: str) -> str:
+        source = f"def planted(args):\n{body}\n"
+        linecache.cache["<planted-landing>"] = (
+            len(source),
+            None,
+            source.splitlines(True),
+            "<planted-landing>",
+        )
+        namespace: dict[str, Any] = {"Client": Client, "TdxClient": Client}
+        exec(compile(source, "<planted-landing>", "exec"), namespace)  # noqa: S102
+        return _landing(namespace["planted"])
+
+    borrowed = landing_of("    print(list(Client.capabilities()))")
+    constructed = landing_of(
+        "    with Client() as client:\n        return client.snapshot('sh600519')"
+    )
+    assert borrowed == "元信息", f"只借类名读静态名单的处理器被判成了 {borrowed}"
+    assert constructed == "内核·typed", f"真的构造 Client 的处理器被判成了 {constructed}"
+
+
 def test_the_ruler_itself_sees_a_planted_drift(doc_text: str) -> None:
     """正控：四类失效各造一次，尺子必须只点出那一处——锚点全部取自真表，不硬抄字面量。"""
     section = cli_section(doc_text)
@@ -439,3 +476,68 @@ def test_the_example_ruler_sees_a_removed_example(doc_text: str) -> None:
         if not re.match(rf"^\s*tstdx\s+{re.escape(victim)}\s", line)
     )
     assert example_leaves(stripped) == runtime - {victim}, "删掉一条示例却看不出来"
+
+
+# ---------------------------------------------------------------------------
+# ⑨ 「真机口径」那一节必须点到每一支叶子命令的名
+# ---------------------------------------------------------------------------
+
+#: 标题按"含真机口径"找，不把它里面的数字写进锚点：36/37 这一格本轮正好量错过
+#: （37 行示例 = 36 支叶子），把会随口径变的数字当锚点等于给下一次改动埋一条假绿。
+_VERDICT_HEADING = re.compile(r"^### [^\n]*真机口径[^\n]*$", re.M)
+
+
+def verdict_section(text: str) -> str:
+    """「真机口径」那一节：从它的标题到下一个 `##` / `---` 之前。"""
+    matched = _VERDICT_HEADING.search(text)
+    if matched is None:
+        raise AssertionError("文档里没有「真机口径」那一节，判据 ⑨ 失去对象")
+    tail = text[matched.end() :]
+    cut = re.search(r"^(?:## |---$)", tail, re.M)
+    return tail[: cut.start()] if cut else tail
+
+
+def section_leaves(section: str) -> set[str]:
+    """节内反引号片段点到的叶子命令：按**词首**匹配，不吃子串。
+
+    `minute` 不能因为 `minute-klines` 在场就算被点到——否则抹掉分时那一格，判据照样绿。
+    """
+    leaves = set(runtime_leaves())
+    found: set[str] = set()
+    for token in _TICKED.findall(section):
+        words = token.split()
+        if words[:1] == ["tstdx"]:
+            words = words[1:]
+        if not words:
+            continue
+        if words[0] in leaves:
+            found.add(words[0])
+        if len(words) > 1 and f"{words[0]} {words[1]}" in leaves:
+            found.add(f"{words[0]} {words[1]}")
+    return found
+
+
+def test_every_leaf_command_has_a_real_machine_verdict(doc_text: str) -> None:
+    runtime = set(runtime_leaves())
+    section = verdict_section(doc_text)
+    covered = section_leaves(section)
+    assert covered, "「真机口径」那一节里点不出任何命令名，判据 ⑨ 是瞎的"
+    assert covered <= runtime, f"那一节点了不存在的命令名：{sorted(covered - runtime)}"
+    assert sorted(runtime - covered) == [], (
+        f"这些叶子命令在「真机口径」那一节里没有口径：{sorted(runtime - covered)}"
+    )
+
+
+def test_the_verdict_ruler_sees_a_blanked_command_name(doc_text: str) -> None:
+    """正控：把 `server-test` 的名字从那一节抹干净，判据必须当场报它缺席。
+
+    这不是假想的形状。第 23 轮的普查脚本用 ``line.startswith("tstdx serve")`` 挑要跳过的
+    长驻服务，于是 ``tstdx server-test`` 跟着被吞，一行从没跑过的示例被写进"每一行都跑过"；
+    旧读数里 `server-test` 只在 ``--help`` 那一段露过面。那一节是覆盖率声明唯一的人质，
+    所以它必须逐名点齐。
+    """
+    section = verdict_section(doc_text)
+    named = section_leaves(section)
+    assert "server-test" in named, "基准读数里就没有 server-test，正控失去意义"
+    blinded = section.replace("server-test", "另一支命令")
+    assert section_leaves(blinded) == named - {"server-test"}, "抹掉名字却看不出来"

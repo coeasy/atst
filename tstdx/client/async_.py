@@ -25,7 +25,20 @@ from ..errors import DataError
 from ..protocol.commands import Family
 from ..protocol.registry import ParseResult
 from ._mixin import OutputFormat, _ClientMixin
-from .core import _guard_offline
+from .core import (
+    _emit,
+    _guard_offline,
+    _normalize_symbols,
+    _require_int,
+    _require_output_format,
+)
+from .sync import (
+    _check_fixed_family_kwargs,
+    _persist_standard,
+    _probe_snapshot,
+    _rank_entries,
+    _require_unambiguous_pool_binding,
+)
 
 
 def dispatch(frame: ResponseFrame, **ctx: Any) -> ParseResult:
@@ -51,6 +64,15 @@ class AsyncTdxClient(_ClientMixin):
         pool: Any | None = None,
         **pool_kwargs: Any,
     ) -> None:
+        # --- merged from _pool_binding_hardening: fail closed on ambiguous pool binding ---
+        _require_unambiguous_pool_binding(
+            pool=pool,
+            family=family,
+            hosts=hosts,
+            max_retries=max_retries,
+            pool_kwargs=pool_kwargs,
+        )
+
         if pool is not None:
             self._pool = pool
             self._owns_pool = False
@@ -88,40 +110,32 @@ class AsyncTdxClient(_ClientMixin):
         save_ranking: bool = True,
         keep_failures: bool = True,
     ) -> list[Any]:
-        """异步运行时测速并热更新主站池（镜像同步版；run_in_executor 不阻塞事件循环）。"""
+        """异步运行时测速并热更新主站池（run_in_executor 不阻塞事件循环）。
+
+        merged from _bestip_hardening.py：detached replace 快照 + 两阶段 commit。
+        Executor 只做观测（speedtest），不持久化、不改 pool，避免取消后残留副作用。
+        """
         import asyncio
 
-        from ..transport.speedtest import rank_hosts, speedtest, speedtest_and_save
+        from ..transport.speedtest import speedtest
 
-        hosts = list(self._pool.hosts)
+        hosts = _probe_snapshot(self._pool)
         if not hosts:
             return []
         loop = asyncio.get_running_loop()
-        if save_ranking:
-            results = await loop.run_in_executor(
-                None,
-                lambda: speedtest_and_save(
-                    hosts,
-                    family=self.family,
-                    timeout=timeout,
-                    samples=samples,
-                    max_workers=max_workers,
-                    keep_failures=keep_failures,
-                ),
-            )
-        else:
-            results = await loop.run_in_executor(
-                None,
-                lambda: speedtest(
-                    hosts,
-                    family=self.family,
-                    timeout=timeout,
-                    samples=samples,
-                    max_workers=max_workers,
-                ),
-            )
-        entries = rank_hosts(results if keep_failures else [r for r in results if r.ok])
+        results = await loop.run_in_executor(
+            None,
+            lambda: speedtest(
+                hosts,
+                family=self.family,
+                timeout=timeout,
+                samples=samples,
+                max_workers=max_workers,
+            ),
+        )
+        entries = _rank_entries(results, keep_failures=keep_failures)
         await self._pool.update_hosts(entries)
+        _persist_standard(entries, family=self.family, save_ranking=save_ranking)
         return results
 
     async def close(self) -> None:
@@ -182,28 +196,51 @@ class AsyncTdxClient(_ClientMixin):
         workers: int = 8,
         as_format: OutputFormat = "dict",
     ) -> Any:
-        """并发批量实时行情（E1 异步镜像：asyncio.Semaphore 限并发；异步特有，不上收骨架）。
+        """并发批量实时行情（asyncio.Semaphore 限并发；异步特有）。
 
-        错误收集调用局部化（C3 镜像）：结束前不触碰 ``last_errors``。
+        merged from _async_concurrency_hardening.py：先统一拿 canonical dict 行，
+        最后只做一次 ``_emit`` 转换输出格式。per-symbol 错误收集隔离在 task 内部，
+        主协程汇总后才触碰 ``last_errors``（C3 局部化镜像）。
         """
         import asyncio
 
-        syms = [symbols] if isinstance(symbols, str) else list(symbols)
-        sem = asyncio.Semaphore(max(1, workers))
-        collected: list[tuple[str, BaseException]] = []
+        output_format = _require_output_format(as_format)
+        syms = _normalize_symbols(symbols)
+        worker_count = _require_int("workers", workers, minimum=1, maximum=64)
+        if not syms:
+            self.last_errors = []
+            return _emit([], output_format)
 
-        async def _one(sym: str) -> Any:
-            async with sem:
+        semaphore = asyncio.Semaphore(min(worker_count, len(syms)))
+
+        async def _one(
+            pair: tuple[int, str],
+        ) -> tuple[int, dict[str, Any] | None, list[tuple[str, BaseException]]]:
+            index, symbol = pair
+            local_errors: list[tuple[str, BaseException]] = []
+            async with semaphore:
                 try:
-                    rows = await self.quotes([sym], as_format=as_format, _collect=collected)
-                    return rows[0] if rows else None
-                except Exception as exc:  # noqa: BLE001 - 单只失败不影响其余
-                    collected.append((sym, exc))
-                    return None
+                    rows = await self.quotes(
+                        [symbol],
+                        as_format="dict",
+                        _collect=local_errors,
+                    )
+                    row = rows[0] if rows else None
+                except Exception as exc:  # noqa: BLE001 - 单只失败隔离
+                    local_errors.append((symbol, exc))
+                    row = None
+            return index, row, local_errors
 
-        results = await asyncio.gather(*(_one(s) for s in syms))
+        completed = await asyncio.gather(*(_one(pair) for pair in enumerate(syms)))
+        out: list[dict[str, Any] | None] = [None] * len(syms)
+        collected: list[tuple[str, BaseException]] = []
+        for index, row, local_errors in completed:
+            out[index] = row
+            collected.extend(local_errors)
+
         self.last_errors = collected
-        return [r for r in results if r is not None]
+        canonical = [row for row in out if row is not None]
+        return _emit(canonical, output_format)
 
     # -- 元数据类 / 通用入口 / 更多标准命令（骨架模板壳） ------------------- #
     async def security_count(self, market: int | str = 0) -> int:
@@ -325,6 +362,7 @@ class AsyncTdxClient(_ClientMixin):
 # --------------------------------------------------------------------------- #
 class AsyncGoodsClient(AsyncTdxClient):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        _check_fixed_family_kwargs("AsyncGoodsClient", Family.GOODS, kwargs)
         kwargs["family"] = Family.GOODS
         super().__init__(*args, **kwargs)
 
@@ -357,6 +395,7 @@ class AsyncGoodsClient(AsyncTdxClient):
 
 class AsyncExMarketClient(AsyncTdxClient):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        _check_fixed_family_kwargs("AsyncExMarketClient", Family.EXTENDED, kwargs)
         kwargs["family"] = Family.EXTENDED
         super().__init__(*args, **kwargs)
 
@@ -397,6 +436,7 @@ class AsyncExMarketClient(AsyncTdxClient):
 
 class AsyncMacClient(AsyncTdxClient):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        _check_fixed_family_kwargs("AsyncMacClient", Family.MAC, kwargs)
         kwargs["family"] = Family.MAC
         super().__init__(*args, **kwargs)
 
@@ -415,6 +455,7 @@ class AsyncMacClient(AsyncTdxClient):
 
 class AsyncF10Client(AsyncTdxClient):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        _check_fixed_family_kwargs("AsyncF10Client", Family.F10, kwargs)
         kwargs["family"] = Family.F10
         super().__init__(*args, **kwargs)
 

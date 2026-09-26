@@ -18,6 +18,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from ..errors import ValidationError
 from .constants import (
     CMD_CANCEL_ORDER,
     CMD_HEARTBEAT,
@@ -25,15 +26,19 @@ from .constants import (
     CMD_LOGOUT,
     CMD_QUERY,
     CMD_SEND_ORDER,
+    CMD_SET,
     ORDER_SIDE_BUY,
     ORDER_SIDE_SELL,
     ORDER_STATUS_CANCELLED,
+    ORDER_STATUS_FILLED,
+    ORDER_STATUS_PARTIAL,
     ORDER_STATUS_SUBMITTED,
     PRICE_TYPE_LIMIT,
     PRICE_TYPE_MARKET,
     QUERY_CATEGORY_CANCELABLE_ORDER,
     QUERY_CATEGORY_CASH,
     QUERY_CATEGORY_DEAL_OF_TODAY,
+    QUERY_CATEGORY_NAMES,
     QUERY_CATEGORY_ORDER_OF_TODAY,
     QUERY_CATEGORY_SHAREHOLDERS_CODE,
     QUERY_CATEGORY_STOCKS,
@@ -83,7 +88,7 @@ DEFAULT_ACCOUNTS: dict[str, str] = {"100001": "123456"}
 # --------------------------------------------------------------------------- #
 @dataclass
 class Position:
-    """持仓。价格字段以「分」为单位（``PRICE_SCALE=100``）。"""
+    """持仓。``cost_price`` / ``last_price`` 以「分」为单位的整数记账。"""
 
     code: str
     name: str
@@ -216,8 +221,22 @@ class TradeSimulator:
             return [self._order_record(o) for o in self._orders if o.cancelable]
         if category == QUERY_CATEGORY_SHAREHOLDERS_CODE:
             return [{"code": self._account_no, "name": self._name, "market": 0}]
-        # 融资融券 / 新股等：模拟券商不提供 → 空列表
-        return []
+        #: 第 26 轮 F-83：这里此前对**任何**没写到的类别一律返回空列表，于是
+        #: "融资余额查不了" 与 "今天没有委托" 在调用方看来是同一个答案。
+        if category not in QUERY_CATEGORY_NAMES:
+            raise ValidationError(
+                f"未声明的查询类别 category={category}："
+                f"本模块声明的取值见 QUERY_CATEGORY_NAMES（{sorted(QUERY_CATEGORY_NAMES)}）",
+                context={"category": category, "allowed": sorted(QUERY_CATEGORY_NAMES)},
+            )
+        #: ``TradingUnavailable``（E4030）在本仓只有一个含义：红线，不连真实券商。
+        #: 这里失败的只是"模拟器没建这一类的账"，两者混用会让调用方把范围缺口
+        #: 读成红线（F-83）。
+        raise TradeError(
+            f"模拟券商未实现类别 {category}（{QUERY_CATEGORY_NAMES[category]}）："
+            "显式失败，不用空列表冒充「这一类没有记录」",
+            context={"category": category, "name": QUERY_CATEGORY_NAMES[category]},
+        )
 
     def _cash_record(self) -> dict[str, int]:
         market_value = sum(p.qty * p.last_price for p in self._positions.values())
@@ -348,6 +367,81 @@ class TradeSimulator:
                 return {"status": 1, "error_code": 0, "error_msg": ""}
         raise TradeRejected(f"委托不存在: {order_id}")
 
+    def fill_order(
+        self, *, order_id: int, qty: int, at: str, price: int | None = None
+    ) -> dict[str, Any]:
+        """注入一笔成交回报：委托随之推进，并生成一条当日成交记录。
+
+        撮合发生在交易所，**不在 tstdx 的范围内**（红线：不猜真实券商行为），所以
+        本方法是模拟器里成交的唯一来源 —— 由调用方给出数量、时间与成交价
+        （``price`` 省略时按委托限价计）。:meth:`query` 的
+        ``QUERY_CATEGORY_DEAL_OF_TODAY`` 只可能返回这里注入过的记录。
+
+        账本口径与 :meth:`send_order` / :meth:`cancel_order` 的冻结规则对齐：
+
+        * 买入下单时按限价冻结了 ``price*qty``，成交价更低则退回差额；
+          成交股份计入持仓数量，但当日不可卖（T+1），故不动 ``available_qty``；
+        * 卖出扣减持仓数量，成交金额计入可用资金；
+        * 两侧都把参考价更新为成交价（这笔成交就是该代码最新的价格事实）。
+
+        ``at`` 是自由字符串：帧里 ``time`` 字段是长度前缀 GBK 串，模拟器不持有时钟。
+        """
+        self._require_login()
+        order = next((o for o in self._orders if o.order_id == order_id), None)
+        if order is None:
+            raise TradeRejected(f"委托不存在: {order_id}")
+        remaining = order.qty - order.filled_qty
+        if qty <= 0:
+            raise TradeRejected(f"成交数量必须为正: {qty}")
+        if qty > remaining:
+            raise TradeRejected(f"成交数量 {qty} 超过委托未成交量 {remaining}")
+        deal_price = order.price if price is None else price
+        if deal_price <= 0:
+            raise TradeRejected(f"成交价无效: {deal_price}")
+
+        pos = self._positions.get(order.code)
+        if order.side == ORDER_SIDE_BUY:
+            self._cash_cents += (order.price - deal_price) * qty
+            if pos is None:
+                pos = Position(
+                    code=order.code,
+                    name=order.name,
+                    qty=0,
+                    available_qty=0,
+                    cost_price=deal_price,
+                    last_price=deal_price,
+                )
+                self._positions[order.code] = pos
+            total = pos.qty + qty
+            pos.cost_price = (pos.cost_price * pos.qty + deal_price * qty) // total
+            pos.qty = total
+        else:
+            assert pos is not None
+            pos.qty -= qty
+            self._cash_cents += deal_price * qty
+        pos.last_price = deal_price
+        self._last_prices[order.code] = deal_price
+
+        order.filled_qty += qty
+        order.status = (
+            ORDER_STATUS_FILLED if order.filled_qty == order.qty else ORDER_STATUS_PARTIAL
+        )
+        order.cancelable = order.filled_qty < order.qty
+
+        self._deal_seq += 1
+        deal = Deal(
+            deal_id=self._deal_seq,
+            order_id=order.order_id,
+            code=order.code,
+            name=order.name,
+            side=order.side,
+            price=deal_price,
+            qty=qty,
+            time=at,
+        )
+        self._deals.append(deal)
+        return self._deal_record(deal)
+
     def heartbeat(self) -> bool:
         """心跳：模拟券商恒在线。"""
         return True
@@ -391,6 +485,14 @@ class SimTransport:
         """全链路回路：组请求帧 → 服务端解帧/语义/组响应 → 客户端解帧解析。"""
         if not self.connected:
             raise TradeNotLoggedIn("传输未连接")
+        #: 帧编解码对 cmd 不做任何检查（``build_request`` 接受任意 uint16），
+        #: 于是"发了一个协议里没有的命令"曾经只在服务端那一侧报出来，
+        #: 且要把请求写成帧再读回来才发现。发送侧先拦（F-83）。
+        if cmd not in CMD_SET:
+            raise TradeError(
+                f"未声明的交易命令 0x{cmd:04x}：本模块声明的取值见 CMD_SET（{sorted(CMD_SET)}）",
+                context={"cmd": cmd, "allowed": sorted(CMD_SET)},
+            )
         seq = self._next_seq()
         request = build_request(cmd, seq, body)
         rcmd, rseq, body_in = parse_request(request)

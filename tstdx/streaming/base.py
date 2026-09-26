@@ -349,9 +349,12 @@ class QuoteStream:
             if thread.is_alive():
                 # Keep the thread reference on a join timeout: clearing it would
                 # let a later ``start()`` believe no worker is running and spawn
-                # a second one sharing ``_subs``/``_stop``. ``_stop`` is already
-                # set, so the worker retires after its current poll.
+                # a second one sharing ``_subs``/``_stop``.  But the owned runtime
+                # release must NOT be skipped with it —— 那是这条流的连接池，跳过一次
+                # 超时停机就漏一整个池（第 26 轮 F-91）。关它反而替老线程收尾：在飞的
+                # poll 立刻抛错，被 ``_run`` 的异常分支吃掉后 ``_stop`` 已置位，线程自退。
                 logger.warning("QuoteStream 轮询线程未在 %ss 内退出，等待其自行收尾", timeout)
+                self._close_owned_runtime()
                 return
         self._thread = None
         self._close_owned_runtime()

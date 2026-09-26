@@ -7,7 +7,7 @@ import pytest
 
 from tstdx.client import TdxClient
 from tstdx.client.core import _normalize_symbols
-from tstdx.errors import ParseError, SymbolError
+from tstdx.errors import SymbolError, ValidationError
 
 
 @pytest.mark.parametrize(
@@ -15,13 +15,13 @@ from tstdx.errors import ParseError, SymbolError
     [None, 123, {"600519"}, {"symbol": "600519"}, b"600519", (item for item in ["600519"])],
 )
 def test_symbol_batch_rejects_non_sequence_or_ambiguous_containers(symbols) -> None:
-    with pytest.raises(ParseError, match="字符串或字符串 Sequence"):
+    with pytest.raises(ValidationError, match="字符串或字符串 Sequence"):
         _normalize_symbols(symbols)
 
 
 @pytest.mark.parametrize("symbols", [["600519", 1], ("600519", None)])
 def test_symbol_batch_rejects_non_string_members(symbols: Sequence[object]) -> None:
-    with pytest.raises(ParseError, match=r"symbols\[1\]"):
+    with pytest.raises(ValidationError, match=r"symbols\[1\]"):
         _normalize_symbols(symbols)
 
 
@@ -33,14 +33,14 @@ def test_symbol_batch_keeps_single_string_and_sequence_order() -> None:
 def test_quotes_rejects_invalid_batch_before_pool_io() -> None:
     client = TdxClient(pool=object())
 
-    with pytest.raises(ParseError):
+    with pytest.raises(ValidationError):
         client.quotes(None)  # type: ignore[arg-type]
 
 
 def test_quotes_snapshot_rejects_invalid_member_before_pool_io() -> None:
     client = TdxClient(pool=object())
 
-    with pytest.raises(ParseError, match=r"symbols\[1\]"):
+    with pytest.raises(ValidationError, match=r"symbols\[1\]"):
         client.quotes_snapshot(["600519", 1])  # type: ignore[list-item]
 
 
@@ -59,7 +59,7 @@ def test_quotes_still_isolates_bad_string_content_instead_of_failing_whole_batch
 def test_quotes_concurrent_rejects_invalid_worker_budget_before_pool_io(workers) -> None:
     client = TdxClient(pool=object())
 
-    with pytest.raises(ParseError, match="workers"):
+    with pytest.raises(ValidationError, match="workers"):
         client.quotes_concurrent([], workers=workers)  # type: ignore[arg-type]
 
 
@@ -89,5 +89,5 @@ def test_quotes_concurrent_workers_always_use_canonical_dict_then_convert_once()
 def test_quotes_concurrent_invalid_output_format_fails_before_worker_start() -> None:
     client = TdxClient(pool=object())
 
-    with pytest.raises(ParseError, match="未知输出格式"):
+    with pytest.raises(ValidationError, match="未知输出格式"):
         client.quotes_concurrent(["600519"], workers=1, as_format="yaml")

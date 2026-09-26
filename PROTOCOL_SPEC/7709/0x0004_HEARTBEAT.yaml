@@ -7,7 +7,15 @@
 # 状态:  verified (自采集样本)
 #
 # 描述: 心跳保活命令，用于保持与 TDX 服务端的 TCP 连接。
-#       请求体为空（仅 12 字节帧头），响应体同样为空。
+#       请求体为空（仅 12 字节帧头）。
+#       **响应体不为空**：2026-09-26 真机探针实测 7/7 可达主站各回一帧 10 字节
+#       载荷（`0000000000003c283501`），回显请求的 method 与 seq，末 4 字节按
+#       小端 u32 读为 `20260924`（疑似服务端当前交易日）。字段布局未锁定，
+#       本包不解析它（见下方 `measured` 与 response.notes）。
+#       同一轮量到：本包**没有这条命令的默认发送方**——连接池的探活发的是
+#       `transport/base.py::DEFAULT_HEARTBEAT_CMD`（0x0002，实测回 50 字节），
+#       该编号未登记在标准族账本里（台账 F-20）；0x0004 只可能由调用方经
+#       `tstdx probe 0x0004` 显式发出。
 # =============================================================================
 
 spec_id: "0x0004"
@@ -29,25 +37,50 @@ request:
 # =============================================================================
 # 响应体
 # =============================================================================
+# **实测非空**（2026-09-26 真机探针，7/7 可达主站一致，见下方 measured 块）。
+# ``record_size: 0`` 在这里表达的是"没有记录结构"，不是"字节数为零"；
+# 免解析器的依据是显式声明的 ``parse: false``，不是响应为空。
 response:
   header: []
   fields: []
   record_size: 0
+  parse: false
   encoding: "raw"
-  notes: "Response body is empty. Used solely to detect connection liveness."
+  notes: "本包不解析该响应：既没有记录结构，也没有任何调用方读取它（本包从不发送 0x0004）。"
+
+# =============================================================================
+# 真机实测（F-20 收口：verified 主张的证据格）
+# =============================================================================
+# 探针：向标准族默认主站池逐台建连（含握手），对 0x0002 / 0x0004 / 0x0015 各发
+# 一帧空体请求，读回帧头与载荷。探针的原始日志曾经落在本机
+# ``scratch_v19a28/f20/heartbeat_probe.log``，该目录当天即被外部清理掉，如今下面这份
+# `measured` 块就是这次实测唯一的落点（也正因如此它才写进仓，而不是留在本机）。
+measured:
+  captured: "2026-09-26"
+  hosts_answered: "7/7"          # 另有 3 台 TCP 连接超时，与命令语义无关
+  echo: "method 与 seq 均回显请求值"
+  body_length: 10
+  body_hex: "0000000000003c283501"
+  tail_u32_le: 20260924          # 末 4 字节按小端 u32 读为日期形状整数，语义未锁定
+  rtt_ms: "22.3 – 64.9"
 
 # =============================================================================
 # 上下文
 # =============================================================================
+# 本节是描述性文档（`PROTOCOL_SPEC/SCHEMA.md` 把 context 列为"可选上下文"）。
+# 第 28 轮把它改成只指向真实存在的旋钮：旧版的 `interval_seconds` / `max_missed`
+# / `timeout_seconds` 三格在全仓**零读取点**（实测见台账 V19 §4 P2-E），而后两格
+# 读起来像已实现的政策——本包既没有"连续漏 3 拍判死"的计数器，也没有心跳专用超时，
+# 探测失败一律走连接池的故障转移与熔断。
 context:
-  interval_seconds: 30
-  max_missed: 3
-  timeout_seconds: 10
   notes: |
-    Typical heartbeat interval is 30 seconds. If 3 consecutive heartbeats
-    time out without response, the connection should be considered dead
-    and re-established. The actual interval is configurable in
-    tstdx/transport/base.py.
+    本包的探活节奏由连接池决定，不由本 spec 决定：
+      间隔   [core] heartbeat_interval（默认 30 秒；0 = 不主动探活）——
+             tstdx/config/schema.py，池构造参数同名可覆盖；
+      探测码 ConnectionPool / AsyncConnectionPool 的 heartbeat_cmd，
+             默认 tstdx/transport/base.py::DEFAULT_HEARTBEAT_CMD（0x0002，非本命令）；
+      失败   探测异常交给池的 _mark_failure → 熔断/故障转移，没有"漏拍计数"这一层。
+    心跳帧本身不需要解析：响应没有记录结构，本包也不读它（response.parse: false）。
 
 # =============================================================================
 # 备选命令

@@ -42,33 +42,41 @@ class DirectBinding:
         return (self.provider, self.channel, self.capability)
 
 
-_CORE_BINDINGS: tuple[DirectBinding, ...] = (
-    DirectBinding("tdx", "quotation", "quotes", "_tdx_quotes"),
-    DirectBinding("tdx", "quotation", "bars", "_tdx_bars"),
-    DirectBinding("tdx", "quotation", "snapshot", "_tdx_snapshot"),
-    DirectBinding("tdx", "quotation", "minute", "_tdx_minute"),
-    DirectBinding("tdx", "quotation", "trades", "_tdx_trades"),
-    DirectBinding("tdx", "quotation", "security_count", "_tdx_security_count"),
-    DirectBinding("tdx", "quotation", "security_list", "_tdx_security_list"),
-    DirectBinding("local_vipdoc", "vipdoc", "bars", "_local_bars"),
-    DirectBinding("tencent", "quote", "quotes", "_web_quotes"),
-    DirectBinding("tencent", "kline", "bars", "_tencent_bars"),
-    DirectBinding("tencent", "minute_kline", "bars", "_tencent_bars"),
-    DirectBinding("sina", "quote", "quotes", "_web_quotes"),
-    DirectBinding("sina", "history_kline", "bars", "_sina_bars"),
-    DirectBinding("eastmoney", "quote", "quotes", "_web_quotes"),
-    DirectBinding("eastmoney", "kline", "bars", "_eastmoney_bars"),
-    DirectBinding("baidu", "quote", "quotes", "_web_quotes"),
-    DirectBinding("baidu", "kline", "bars", "_baidu_bars"),
-)
-
-_CORE_EXECUTORS: dict[tuple[str, str, str], str] = {
-    item.key: item.executor_name for item in _CORE_BINDINGS
-}
+#: Dedicated executors follow three stable rules — no hard-coded registry
+#: tuple required. See Phase 2a of the V20 refactor.
+_WEB_DEDICATED_PROVIDERS = frozenset({"tencent", "sina", "eastmoney", "baidu"})
 
 
-def _executor_for(key: tuple[str, str, str]) -> str:
-    return _CORE_EXECUTORS.get(key, "_migrated_capability")
+def _executor_for(provider: str, channel: str, capability: str) -> str:
+    """Determine which executor method handles a (provider, channel, capability) triple.
+
+    Rules cover all 17 dedicated bindings:
+      - ``tdx/quotation`` → ``_tdx_<capability>`` for the 7 dedicated quote-capabilities
+      - ``local_vipdoc/vipdoc/bars`` → ``_local_bars``
+      - web providers' quote channel → ``_web_quotes``
+      - web providers' kline/history_kline/minute_kline channels → ``_<provider>_bars``
+    Everything else falls through to ``_migrated_capability``.
+    """
+    if provider == "tdx" and channel == "quotation":
+        if capability in {
+            "quotes",
+            "bars",
+            "snapshot",
+            "minute",
+            "trades",
+            "security_count",
+            "security_list",
+        }:
+            return f"_tdx_{capability}"
+    elif provider == "local_vipdoc" and channel == "vipdoc":
+        if capability == "bars":
+            return "_local_bars"
+    elif provider in _WEB_DEDICATED_PROVIDERS:
+        if capability == "quotes" and channel == "quote":
+            return "_web_quotes"
+        if capability == "bars" and channel in {"kline", "history_kline", "minute_kline"}:
+            return f"_{provider}_bars"
+    return "_migrated_capability"
 
 
 def _registry_triples() -> tuple[tuple[str, str, str], ...]:
@@ -81,7 +89,7 @@ def _registry_triples() -> tuple[tuple[str, str, str], ...]:
 
 
 DIRECT_BINDINGS = tuple(
-    DirectBinding(provider, channel, capability, _executor_for((provider, channel, capability)))
+    DirectBinding(provider, channel, capability, _executor_for(provider, channel, capability))
     for provider, channel, capability in _registry_triples()
 )
 
@@ -361,13 +369,7 @@ class DirectProviderExecutor:
                     close()
 
         if meta.backend == "web_adapter":
-            return self._web_adapter_call(
-                meta.capability,
-                plan.provider,
-                args,
-                kwargs,
-                timeout=hop,
-            )
+            return self._web_adapter_call(meta, args, kwargs, timeout=hop)
         if meta.backend == "composed":
             return self._composed_call(meta.capability, args, kwargs, timeout=hop)
 
@@ -378,52 +380,41 @@ class DirectProviderExecutor:
 
     def _web_adapter_call(
         self,
-        capability: str,
-        provider: str,
+        meta: Any,
         args: list[Any],
         kwargs: dict[str, Any],
         *,
         timeout: float,
     ) -> Any:
-        symbol = args[0]
-        if capability == "minute_web":
-            from ..web.adapters_ext import MinuteSource
-
-            src = MinuteSource(timeout=timeout)
-            try:
-                return src.fetch_minute(symbol)
-            finally:
-                src.close()
-
-        if capability == "minute_klines":
-            from ..web.adapters_ext import MinuteKlineSource
-            from ..web.history import EastmoneyHistoryKlineSource
-
-            minute_kline_cls: type[Any] = (
-                EastmoneyHistoryKlineSource if provider == "eastmoney" else MinuteKlineSource
+        # Provider-specific adapter selection was moved into catalog binding
+        # metadata (``MigratedCapabilityBinding.factory``). If the factory
+        # path is missing we treat it as a registry gap — every web_adapter
+        # binding above ships one, and this executor no longer hard-codes
+        # eastmoney-vs-sina branching.
+        if not getattr(meta, "factory", ""):
+            raise ValidationError(
+                "web_adapter binding missing factory metadata",
+                context={
+                    "provider": getattr(meta, "provider", None),
+                    "capability": getattr(meta, "capability", None),
+                },
             )
-            minute_src = minute_kline_cls(timeout=timeout)
-            try:
-                return minute_src.fetch_bars(symbol, **kwargs)
-            finally:
-                minute_src.close()
 
-        if capability == "history":
-            from ..web.history import EastmoneyHistoryKlineSource, SinaHistoryKlineSource
+        import importlib
 
-            history_cls: type[Any] = (
-                EastmoneyHistoryKlineSource if provider == "eastmoney" else SinaHistoryKlineSource
-            )
-            history = history_cls(timeout=timeout)
-            try:
-                return history.fetch_bars(symbol, **kwargs)
-            finally:
-                history.close()
+        module_path, _, class_name = meta.factory.partition(":")
+        adapter_cls = getattr(importlib.import_module(module_path), class_name)
 
-        raise ValidationError(
-            "unknown web adapter capability",
-            context={"capability": capability},
-        )
+        adapter = adapter_cls(timeout=timeout)
+        try:
+            symbol = args[0]
+            if meta.capability == "minute_web":
+                return adapter.fetch_minute(symbol)
+            return adapter.fetch_bars(symbol, **kwargs)
+        finally:
+            close = getattr(adapter, "close", None)
+            if callable(close):
+                close()
 
     def _composed_call(
         self,
@@ -676,7 +667,7 @@ class DirectProviderExecutor:
             src.close()
 
     def _sina_bars(self, plan: QueryPlan) -> Any:
-        from ..web.history import SinaHistoryKlineSource
+        from ..web.sina.adapters import SinaHistoryKlineSource
 
         src = SinaHistoryKlineSource(timeout=self._hop_timeout(plan))
         try:
@@ -690,7 +681,7 @@ class DirectProviderExecutor:
             src.close()
 
     def _eastmoney_bars(self, plan: QueryPlan) -> Any:
-        from ..web.history import EastmoneyHistoryKlineSource
+        from ..web.eastmoney.adapters import EastmoneyHistoryKlineSource
 
         src = EastmoneyHistoryKlineSource(timeout=self._hop_timeout(plan))
         try:
@@ -704,7 +695,7 @@ class DirectProviderExecutor:
             src.close()
 
     def _baidu_bars(self, plan: QueryPlan) -> Any:
-        from ..web.adapters_baidu import BaiduSource
+        from ..web.baidu.adapters import BaiduSource
 
         if plan.spec.adjustment:
             raise ValidationError("Baidu Direct bars 不支持复权参数")

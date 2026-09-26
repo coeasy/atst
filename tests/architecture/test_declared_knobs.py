@@ -833,9 +833,9 @@ def test_every_string_typed_market_tool_can_name_every_market() -> None:
 def test_the_market_message_only_advertises_what_the_parser_accepts() -> None:
     """那条消息点名了两组词，两词都必须真能解开——否则它在教用户走一条死路。"""
     from tstdx.client.core import _PREFIX_MARKET, _standard_market_id
-    from tstdx.errors import ParseError
+    from tstdx.errors import ValidationError
 
-    with pytest.raises(ParseError) as raised:
+    with pytest.raises(ValidationError) as raised:
         _standard_market_id("这一格故意不存在")
     message = raised.value.message
     advertised = re.search(r"可选 (\S+) 或 (\S+)", message)
@@ -854,7 +854,7 @@ def test_the_market_message_only_advertises_what_the_parser_accepts() -> None:
     for value in values:
         try:
             _standard_market_id(value)
-        except ParseError:
+        except ValidationError:
             continue
         raise AssertionError(f"{value!r} 本该被市场解析器拒掉，却解开了")
 
@@ -876,3 +876,63 @@ def test_the_market_ruler_sees_a_planted_face_value() -> None:
     from tstdx.client.core import _standard_market_id
 
     assert {_standard_market_id(value) for value in ("0", "sz", "1", "sh", 2, "bj")} == {0, 1, 2}
+
+
+# --------------------------------------------------------------------------- #
+# 判据六：抄袭审计那份"预期外部依赖"名单必须等于真实 import 的外部根（第 23 轮）
+# --------------------------------------------------------------------------- #
+
+
+def _external_import_roots(package: Path) -> set[str]:
+    """``package`` 子树里真实 import 到的外部顶层包名。
+
+    口径与 :func:`tstdx.tools.check_originality._analyze_patterns` 同一层：AST 遍历、
+    相对 import 跳过、顶层名 = 点号前第一段；这里额外滤掉标准库与被审包自身，
+    剩下的才该进"预期外部依赖"白名单。
+    """
+    roots: set[str] = set()
+    for path in package.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+                names = [node.module]
+            else:
+                continue
+            for name in names:
+                root = name.partition(".")[0]
+                if root and root not in sys.stdlib_module_names and root != package.name:
+                    roots.add(root)
+    return roots
+
+
+def test_originality_external_import_whitelist_matches_reality() -> None:
+    """白名单两头都要对账：多出来的是幻影声明，缺进去的是无人登记的真实依赖。
+
+    第 23 轮清幻影 extra 时量的就是这两头：``pydantic`` / ``mcp`` 全仓 0 处 import，
+    而 ``websockets`` / ``zstandard`` / ``tomli`` / ``typing_extensions`` 四处真实
+    import 从未登记——于是 ``check_originality`` 的 ``unknown external import`` 普查
+    长期挂着 5 条噪声，而它恰恰是"发现第六个外部依赖"的那只手。
+    """
+    from tstdx.tools.check_originality import KNOWN_EXTERNAL_IMPORTS
+
+    real = _external_import_roots(PKG)
+    assert real, "外部依赖普查为空，判据本身失效"
+    assert set(KNOWN_EXTERNAL_IMPORTS) == real, (
+        "tstdx/tools/check_originality.py 的预期外部依赖与 tstdx/ 的真实 import 分叉："
+        f"多 {sorted(set(KNOWN_EXTERNAL_IMPORTS) - real)}"
+        f" 缺 {sorted(real - set(KNOWN_EXTERNAL_IMPORTS))}"
+    )
+
+
+def test_the_external_import_ruler_sees_planted_roots(tmp_path: Path) -> None:
+    """正控：普查必须认出植入的外部根，且不许把标准库/自身包算进去。"""
+    pkg = tmp_path / "plantedpkg"
+    (pkg / "sub").mkdir(parents=True)
+    (pkg / "__init__.py").write_text("import json\nfrom .sub import a\n", encoding="utf-8")
+    (pkg / "sub.py").write_text(
+        "import numpy.linalg\nfrom sqlalchemy import Engine\nimport plantedpkg.other\n",
+        encoding="utf-8",
+    )
+    assert _external_import_roots(pkg) == {"numpy", "sqlalchemy"}

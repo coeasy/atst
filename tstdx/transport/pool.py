@@ -47,6 +47,11 @@ from ..errors import (
 )
 from ..observability import metrics
 from ..protocol.commands import Family
+from ._validation import (
+    canonical_family_hosts,
+    validate_common_pool_options,
+    validate_sync_pool_only_options,
+)
 from .base import DEFAULT_HEARTBEAT_CMD, TcpConnection
 from .hosts import (
     HostEntry,
@@ -138,6 +143,35 @@ def _require_request_timeout(value: Any) -> float | None:
     if not math.isfinite(timeout) or timeout <= 0:
         raise ConfigError(f"timeout 必须是正有限数值或 None，收到 {value!r}")
     return timeout
+
+
+#: 换主站退避的单步上限（秒）——与 web 面 :data:`tstdx.web._base_retry.MAX_BACKOFF_SECONDS` 同值。
+#: 流式面的 :class:`~tstdx.streaming.engine.ReconnectPolicy` 不在此列：它等的是
+#: "服务回来"，上限 30 秒是那条链路的语义，不是这里要抄的口径。
+MAX_RETRY_BACKOFF_SECONDS = 8.0
+
+#: ``ConnectionPool.close()`` 等心跳线程退出的上限（秒）。
+#: 睡眠本身由 :attr:`ConnectionPool._hb_wakeup` 兑现，``close()`` 一置位它就醒；
+#: 这 2 秒只留给"醒来时正卡在一次 ``ping`` 上"的情况。等不到不撒谎：日志点名它还在跑。
+_HEARTBEAT_JOIN_SECONDS = 2.0
+
+#: ``close()`` 等后台测速线程退出的上限（秒）。这不是"保证收干净"：一次全表测速的
+#: 真实长度由 :func:`tstdx.transport.speedtest.speedtest` 自己的并发度决定（可达数秒），
+#: 而停机路径不该替它买单。这 0.5 秒只留给"其实早就跑完了"的常见情形，等不到就在日志
+#: 里点名它还在校——它写不回观测（``_run`` 两处都复查 :attr:`ConnectionPool._closed`），
+#: 但在那之前仍会占着套接字拨号（第 26 轮 F-97）。
+_SPEEDTEST_JOIN_SECONDS = 0.5
+
+
+def retry_backoff_delay(base: float, attempt: int) -> float:
+    """指数退避 + 抖动，封顶 :data:`MAX_RETRY_BACKOFF_SECONDS`（同步/异步池共用）。
+
+    为什么必须封顶：``max_attempts`` 会随主站数放大到"每台至少试一次"，于是
+    ``attempt`` 不是重试次数而是**已走过的主站数**。不封顶时 8 台主站的一次失败
+    请求要睡 1+2+4+8+16+32+64 ≈ 127 秒（第 25 轮真机量到 159 秒整次请求），
+    32 台是 ``2**31`` 秒——一次"5 秒超时"的调用方请求实际变成无人可预告的等待。
+    """
+    return min(base * (2**attempt), MAX_RETRY_BACKOFF_SECONDS) * (0.75 + 0.5 * random.random())
 
 
 # --------------------------------------------------------------------------- #
@@ -234,15 +268,41 @@ class ConnectionPool:
         #: 降低修复后 8 主机 × 4 槽的常驻连接数；下次使用惰性重建。
         idle_timeout: float = 300.0,
     ) -> None:
-        if not hosts:
-            raise ValueError("hosts 不能为空")
+        # --- fail-closed contract validation (merged from hardening) --------- #
+        # 1. hosts 归一化 + family 匹配 + 去重（pool 持有快照，隔离外部修改）
+        self.hosts = canonical_family_hosts(hosts, family=family)
         self.family = family
+        # 2. 公共 options 校验
+        validate_common_pool_options(
+            dict(
+                slots_per_host=slots_per_host,
+                timeout=timeout,
+                connect_timeout=connect_timeout,
+                rate_limiter=rate_limiter,
+                heartbeat_interval=heartbeat_interval,
+                heartbeat_cmd=heartbeat_cmd,
+                max_retries=max_retries,
+                use_tls=use_tls,
+                handshake=handshake,
+                handshake_strict=handshake_strict,
+                idle_timeout=idle_timeout,
+            ),
+            async_pool=False,
+        )
+        # 3. sync-only options 校验
+        validate_sync_pool_only_options(
+            dict(
+                keepalive=keepalive,
+                speedtest_threshold=speedtest_threshold,
+                on_host_down=on_host_down,
+            )
+        )
+
         #: 是否握手。``None`` → 按协议族推断（标准族 / MAC 需要，扩展市场不需要）
         self.handshake = (
             family in (Family.STANDARD, Family.MAC) if handshake is None else bool(handshake)
         )
         self.handshake_strict = bool(handshake_strict)
-        self.hosts: list[HostEntry] = list(hosts)
         self.slots_per_host = max(1, int(slots_per_host))
         self.timeout = float(timeout)
         self.connect_timeout = connect_timeout
@@ -266,15 +326,24 @@ class ConnectionPool:
         self._retired_slots: list[Slot] = []
         self._closed = False
         self._hb: threading.Thread | None = None
+        #: 心跳线程的睡眠用 Event 而不是 ``time.sleep``：``close()`` 必须能把一个
+        #: 正在睡 ``heartbeat_interval``（默认 30 秒）的线程当场叫醒并join回来，
+        #: 否则每个已关闭的池都留下一条最长 30 秒的孤儿线程（第 26 轮 F-87）。
+        self._hb_wakeup = threading.Event()
         # R1: 连续连接失败计数与后台测速触发开关（冷启动时无排名文件，
         # 首请求若连续失败到阈值，后台跑一次测速写排名文件，下次启动受益）
         self._connect_failures = 0
         self._speedtest_triggered = False
-        self._speedtest_snapshot: tuple[HostEntry, ...] = ()
+        #: 在跑的后台测速线程句柄（每代最多一条，起跑时顺手清掉已退出的）。
+        #: 早先这一格躺的是 ``_speedtest_snapshot``——写进去再没人读（真快照活在闭包
+        #: 局部），而线程本体连句柄都没留，于是 ``close()`` 追不上它：已关闭的池会留下
+        #: 一条继续向主站拨号的线程（第 26 轮 F-97/F-98）。
+        self._speedtest_threads: list[threading.Thread] = []
         self.speedtest_threshold = max(1, int(speedtest_threshold))
         #: M6 空闲回收阈值（秒）；``<=0`` 表示不回收。
         self.idle_timeout = float(idle_timeout) if idle_timeout else 0.0
-        if self.heartbeat_interval:
+        #: 回收线程与探活线程是同一条，启动条件覆盖两个 knob（见 F-88）。
+        if self.heartbeat_interval or self.idle_timeout > 0:
             self._start_heartbeat()
 
     # -- 槽位选择 ----------------------------------------------------------- #
@@ -347,6 +416,29 @@ class ConnectionPool:
             should_drop = slot.retired and slot.leases == 0
         if should_drop:
             self._drop(slot, expected=conn)
+            self._prune_retired_slots()
+
+    def _prune_retired_slots(self) -> int:
+        """把已经排空的退役槽位从 :attr:`_retired_slots` 里摘掉。
+
+        这张表曾经**只进不出**（第 26 轮 F-99）：每次 bestip 热更新都把上一代槽位挂上去，直到
+        ``close()`` 才整体读一次——长期跑 ``update_hosts`` 的池会攒下整条历史的
+        ``Slot`` 对象（每个自带一把锁），``close()`` 的遍历也跟着变长。异步池同名
+        表一样只进不出（它的 ``_drain_retired_slots(slots)`` 只负责关连接，从不缩短
+        这张表），所以两边在这一刀之后各有一份同判据的 ``_prune_retired_slots``。
+        判据是"零租约 + 连接已放下"：退役槽位不可能再拿到新租约
+        （:meth:`_get_conn_locked` 对 ``retired`` 直接抛 ``ConnectionClosed``），
+        ``slot.conn`` 也只会被 :meth:`_drop` 置空，所以这里不取 ``slot.lock``
+        也不会误判成"还能用"。
+        """
+        with self._lock:
+            if not self._retired_slots:
+                return 0
+            kept = [slot for slot in self._retired_slots if slot.leases or slot.conn is not None]
+            removed = len(self._retired_slots) - len(kept)
+            if removed:
+                self._retired_slots = kept
+            return removed
 
     def _drop(self, slot: Slot, *, expected: TcpConnection | None = None) -> None:
         with slot.lock:
@@ -429,10 +521,10 @@ class ConnectionPool:
 
     def _trigger_background_speedtest(self) -> None:
         """后台测速：只把观测写回它出发时的那一代。"""
-        if self._speedtest_triggered:
+        if self._closed or self._speedtest_triggered:
             return
         with self._lock:
-            if self._speedtest_triggered:
+            if self._closed or self._speedtest_triggered:
                 return
             self._speedtest_triggered = True
             generation = self._generation
@@ -442,6 +534,10 @@ class ConnectionPool:
 
         def _run() -> None:
             try:
+                if self._closed:
+                    # 出发与起跑之间可能已经 close()：那时这条池不再服务任何调用方，
+                    # 照拨整表主站就是"停机不停工"（第 26 轮 F-97）。
+                    return
                 from .speedtest import _apply_probe_observations, rank_hosts, speedtest
 
                 results = speedtest(
@@ -463,11 +559,13 @@ class ConnectionPool:
             except Exception as exc:  # pragma: no cover - 优化路径必须 fail-open
                 _LOG.warning("后台测速失败: %s", exc)
 
-        threading.Thread(
-            target=_run,
-            name="tstdx-speedtest",
-            daemon=True,
-        ).start()
+        thread = threading.Thread(target=_run, name="tstdx-speedtest", daemon=True)
+        # 句柄必须在 start 之前登记：``close()`` 靠它点名还在校的线程，登记时也顺手把
+        # 已退出的旧句柄清掉——一代一条，不留只进不出的线程历史（F-97）。
+        with self._lock:
+            self._speedtest_threads = [t for t in self._speedtest_threads if t.is_alive()]
+            self._speedtest_threads.append(thread)
+        thread.start()
 
     def _mark_success(
         self,
@@ -561,6 +659,7 @@ class ConnectionPool:
         last_exc: BaseException | None = None
         tried_hosts: list[str] = []
         started = time.perf_counter()
+        pending_backoff = 0.0
 
         for attempt in range(max_attempts):
             self._ensure_open()
@@ -571,6 +670,15 @@ class ConnectionPool:
                 self.stats.circuit_skips += 1
                 last_exc = ConnectionFailed("所有候选主站均处于熔断门禁")
                 break
+            # 冷却只对"刚失败过的那台"兑现：选序排除已试主站，所以拿到一台没试过
+            # 的机器时，上一轮的退避已经不该再花调用方的时间——睡 64 秒再去拨一个
+            # 从没拨过的号码，延长的只是等待（第 25 轮真机：8 台主站的一次失败请求
+            # 159.4 秒，日志里七条退避相加 = 121.143 秒纯 sleep，而回退路径首台
+            # 131 毫秒就取回了数据）。
+            if pending_backoff and slot.host.key in tried_hosts:
+                _LOG.debug("回到已试主站 %s，退避 %.3fs", slot.host.key, pending_backoff)
+                time.sleep(pending_backoff)
+            pending_backoff = 0.0
             tried_hosts.append(slot.host.key)
 
             leased_conn: TcpConnection | None = None
@@ -599,9 +707,7 @@ class ConnectionPool:
                     self._rotate_away(slot.host.key)
                 self.stats.retries += 1
                 if advice.backoff:
-                    delay = advice.backoff * (2**attempt) * (0.75 + 0.5 * random.random())
-                    _LOG.debug("退避 %.3fs 后重试（%s）", delay, type(exc).__name__)
-                    time.sleep(delay)
+                    pending_backoff = retry_backoff_delay(advice.backoff, attempt)
                 continue
             except Exception as exc:
                 last_exc = exc
@@ -609,7 +715,7 @@ class ConnectionPool:
                 if attempt + 1 >= max_attempts:
                     break
                 self.stats.retries += 1
-                time.sleep(0.05 * (attempt + 1))
+                pending_backoff = 0.05 * (attempt + 1)
                 continue
             except BaseException:
                 # KeyboardInterrupt/SystemExit 属于控制流：租约已由上下文管理器归还，
@@ -725,6 +831,7 @@ class ConnectionPool:
 
         for slot in to_close:
             self._drop(slot)
+        self._prune_retired_slots()
         return published_hosts
 
     # -- 多帧请求 ----------------------------------------------------------- #
@@ -932,16 +1039,27 @@ class ConnectionPool:
 
     # -- 探活 --------------------------------------------------------------- #
     def _start_heartbeat(self) -> None:
-        """心跳线程同样受 OPEN/HALF_OPEN 放行门禁约束。"""
-        interval = max(1, int(self.heartbeat_interval or 0))
+        """心跳线程同样受 OPEN/HALF_OPEN 放行门禁约束。
+
+        这个线程同时是 **M6 空闲回收** 的唯一执行方，所以它的启动条件不能只看
+        ``heartbeat_interval``：把心跳调成 0（合法取值，意为"不主动探活"）曾经把
+        空闲回收一起关掉，``idle_timeout`` 就此变成一句空话（第 26 轮 F-88）。
+        现在两种 knob 各自成立：只开回收时线程照跑，只是不探活。
+        """
+        probe_interval = max(1, int(self.heartbeat_interval or 0))
+        #: 唤醒节奏：心跳开着跟心跳，只开回收时跟回收阈值的四分之一（不早于 1 秒）。
+        tick = float(probe_interval) if self.heartbeat_interval else max(1.0, self.idle_timeout / 4)
 
         def loop() -> None:
             self._sweep_idle()
             while not self._closed:
-                time.sleep(interval)
+                if self._hb_wakeup.wait(tick):
+                    break
                 if self._closed:
                     break
                 self._sweep_idle()
+                if not self.heartbeat_interval:
+                    continue
                 for slot in list(self._slots):
                     if self._closed:
                         break
@@ -957,7 +1075,7 @@ class ConnectionPool:
                                 self._release_probe_token(slot, generation)
                                 continue
                             idle = time.time() - (conn.stats.last_used or conn.stats.created_at)
-                            if idle < interval:
+                            if idle < probe_interval:
                                 self._release_probe_token(slot, generation)
                                 continue
                             try:
@@ -1020,9 +1138,36 @@ class ConnectionPool:
             for slot in slots:
                 with slot.lock:
                     slot.retired = True
+            heartbeat = self._hb
+            speedtests = list(self._speedtest_threads)
+            self._speedtest_threads.clear()
+        self._hb_wakeup.set()
         _LOG.debug("连接池关闭（slots=%d）", len(slots))
         for slot in slots:
             self._drop(slot)
+        # join 在 ``self._lock`` 之外：心跳线程自己要走 ``_slot_is_current``，
+        # 握着池锁等它就是把锁交给一个正在被我们等的线程——那是死锁，不是慢。
+        if heartbeat is not None and heartbeat is not threading.current_thread():
+            heartbeat.join(timeout=_HEARTBEAT_JOIN_SECONDS)
+            if heartbeat.is_alive():
+                _LOG.warning(
+                    "心跳线程在 %.1fs 内未退出（interval=%ss）：池已标记关闭，"
+                    "该线程只会在下一轮唤醒自检时退出",
+                    _HEARTBEAT_JOIN_SECONDS,
+                    self.heartbeat_interval,
+                )
+        # 后台测速线程：它在池锁外自己拨号，等不到也只说明它还在路上——观测已经作废，
+        # 但套接字还开着，所以这条必须说出来而不是沉默（F-97）。
+        for probe_thread in speedtests:
+            if probe_thread is threading.current_thread():
+                continue
+            probe_thread.join(timeout=_SPEEDTEST_JOIN_SECONDS)
+            if probe_thread.is_alive():
+                _LOG.info(
+                    "后台测速线程在 %.1fs 内未退出：池已关闭，它的观测会被丢弃，"
+                    "但仍会把手上这一轮拨号跑完",
+                    _SPEEDTEST_JOIN_SECONDS,
+                )
 
     def __enter__(self) -> ConnectionPool:
         return self

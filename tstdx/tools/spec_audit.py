@@ -10,8 +10,9 @@
    行情族查 ``commands.py``；交易族查 ``tstdx/trade/constants.py``（常量值与
    ``CMD_NAMES`` 都要对得上）。
 2. **Parser / 编解码检查**：行情数据命令须在 ``PARSERS`` 注册；**无载荷控制帧**
-   按 spec 自声明的空响应判为免注册（判定源自 spec 内容，不是硬编码白名单）；
-   交易族须在 ``tstdx/trade/frames.py`` 有该命令的编解码锚点。
+   须同时显式声明 ``response.parse: false`` 与空响应结构才判为免注册（判定源自
+   spec 内容，不是硬编码白名单）；交易族须在 ``tstdx/trade/frames.py`` 有该命令
+   的编解码锚点。
 3. **Golden 样本检查**：引用的 golden 样本文件是否存在于磁盘？
 4. **覆盖率统计**：``coverage_summary()`` 返回汇总数据，含 ``uncovered`` 明细。
 
@@ -68,7 +69,8 @@ class SpecAuditResult:
     golden_samples_ok: bool = True
     #: 实现所在族："quotation"（commands.py 账本 + PARSERS）或 "trade"
     plane: str = "quotation"
-    #: spec 自声明响应无载荷（控制帧），因此不要求 PARSERS 注册
+    #: spec 显式声明"不解析该响应"（``response.parse: false``）且响应无记录结构，
+    #: 因此不要求 PARSERS 注册
     control_frame: bool = False
     #: 审计备注（问题描述）
     notes: list[str] = field(default_factory=list)
@@ -167,14 +169,21 @@ def _trade_codec_ok(cmd_int: int) -> str | None:
 
 
 def is_payloadless(spec: dict[str, Any]) -> bool:
-    """spec 声明的响应本身就没有载荷字段（控制帧）。
+    """spec 自声明"本包不解析该响应"，且声明的响应确实没有记录结构（控制帧）。
 
-    判定取自 spec 自己的 ``response`` 段，而不是硬编码命令号清单：想让一条
-    数据命令"免解析器"，必须先把它的响应声明改成空——那本身就是伪造样本。
-    **未声明** ``fields`` / ``record_size`` 不等于声明为空，一律按需要解析器处理。
+    判定取自 spec 自己的 ``response`` 段，而不是硬编码命令号清单。两条依据缺一
+    不免：**未声明** ``fields`` / ``record_size`` 不等于声明为空，**没有写下**
+    ``parse: false`` 也不等于免解析。
+
+    ``parse: false`` 不是装饰：2026-09-26 真机探针实测 0x0004 的响应**有字节**
+    （7/7 可达主站各回 10 字节 ``0000000000003c283501``），只是没有记录结构。
+    把依据从"响应看起来为空"换成"spec 主动声明不解析"之后，"响应体为空"这类
+    从未被核对过的主张就再也换不到免注册（台账 F-20）。
     """
     response = spec.get("response")
     if not isinstance(response, dict):
+        return False
+    if response.get("parse") is not False:
         return False
     if "fields" not in response or "record_size" not in response:
         return False
@@ -251,7 +260,9 @@ def audit_spec(spec_path: str) -> SpecAuditResult:
         has_parser = family_str is not None and (family_str, cmd_int) in PARSERS
         if not has_parser:
             if control_frame:
-                notes.append("无载荷控制帧：spec 自声明响应 fields/header/record_size 皆空")
+                notes.append(
+                    "无载荷控制帧：spec 显式声明 parse:false，且响应 fields/header/record_size 皆空"
+                )
             else:
                 notes.append(f"No registered parser for 0x{cmd_int:04X}")
 
@@ -404,7 +415,8 @@ def coverage_summary(
     trade_plane = sum(1 for r in results if r.plane == "trade")
 
     # 覆盖 = 命令号在其族的账本里登记，且实现证据齐备：
-    # 行情数据命令 → PARSERS 注册；无载荷控制帧 → spec 自声明空响应；
+    # 行情数据命令 → PARSERS 注册；无载荷控制帧 → spec 显式声明 parse:false 且
+    # 响应无记录结构；
     # 交易族 → tstdx.trade.frames 的编解码锚点。
     covered_specs = [r for r in results if r.covered]
     covered = len(covered_specs)

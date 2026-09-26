@@ -15,7 +15,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 from tstdx.client import TdxClient  # noqa: E402
-from tstdx.errors import ParseError  # noqa: E402
+from tstdx.errors import ValidationError  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -93,7 +93,7 @@ class TestQuotesConcurrent:
         # 该 fail-closed 契约由 tests/test_client_batch_input_contract.py 与
         # tests/client/test_async_quotes_concurrent_parity.py 共同钉死。
         for bad in (0, -1, 65):
-            with pytest.raises(ParseError, match="workers"):
+            with pytest.raises(ValidationError, match="workers"):
                 client.quotes_concurrent(["sh600000", "sz000001"], workers=bad)
 
 

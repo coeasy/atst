@@ -9,7 +9,7 @@
 不可靠（大量伪造/HMAC/JWT 类说法）。因此本模块提供的是**自洽、可逆、
 确定性的占位混淆**，用于验证协议帧能正确携带非明文口令，并让模拟器完成
 全链路回路。它**不是**真实通达信交易服务器的口令算法 —— 真机样本定标
-后应替换为实测算法（并同步翻转 :data:`STATUS`）。
+后应整体替换本模块的实现。
 
 设计
 ----
@@ -20,14 +20,10 @@
 from __future__ import annotations
 
 __all__ = [
-    "STATUS",
     "OBFUSCATION_KEY",
     "obfuscate_password",
     "deobfuscate_password",
 ]
-
-#: 实现状态：inferred —— 洁净室推断/占位，待真机定标。
-STATUS = "inferred"
 
 #: 固定密钥流（占位；真实算法待真机定标后替换）。
 OBFUSCATION_KEY = b"tstdx-trade-infer"

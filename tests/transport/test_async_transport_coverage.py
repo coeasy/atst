@@ -590,9 +590,15 @@ class TestAsyncPoolUpdateHosts:
                 pool = AsyncConnectionPool([host_a, host_b], slots_per_host=1, handshake=False)
                 await pool.request(ECHO_CMD, b"x")
                 assert pool._slots[0].conn is not None or pool._slots[1].conn is not None
+                removed = next(slot for slot in pool._slots if slot.host.key == host_a.key)
+                assert removed.conn is not None  # 被移除的主站当时确实带着一条连接
                 await pool.update_hosts([host_b])
                 assert [s.host.key for s in pool._slots] == [host_b.key]
-                assert any(s.retired for s in pool._retired_slots)
+                assert removed.retired  # 退役标记落在被移除的那一代槽位上
+                # 排空之后不再被登记表攥着：_retired_slots 过去只进不出，
+                # 每次热更新都攒下一整代 Slot 对象直到 close()（第 26 轮）。
+                assert removed not in pool._retired_slots
+                assert removed.conn is None
                 await pool.close()
 
             run(go())
@@ -840,7 +846,7 @@ class TestAsyncPoolConstruction:
         ex = HostEntry("h", 1, family=Family.EXTENDED)
         assert AsyncConnectionPool([ex], family=Family.EXTENDED).handshake is False
         assert AsyncConnectionPool([HostEntry("h", 1)], handshake=True).handshake is True
-        with pytest.raises(ConfigError, match="max_retries"):
+        with pytest.raises(ConfigError, match="必须满足 >=0"):
             AsyncConnectionPool([HostEntry("h", 1)], max_retries=-3)
 
     def test_real_limiter_attached(self) -> None:

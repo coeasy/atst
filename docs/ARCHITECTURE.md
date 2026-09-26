@@ -1,7 +1,11 @@
 # tstdx 当前架构事实（ARCHITECTURE）
 
-> 快照日期：2026-09-19 · 对应 V17 Phase 3A–6（单内核收口、typed 契约对齐内核、配置面接线）
-> 本文只描述**代码现状**；演进计划见 [REFACTOR_PLAN_V17_CLOSURE.md](REFACTOR_PLAN_V17_CLOSURE.md)。
+> 快照日期：2026-09-26 · 对应 V19 第 28 轮（停机路径有界化、流式层入册、包模块名册门禁）
+> + V20 技术债清偿（hardening 合并回基类、executor 分派规则化、`web/` 按 Provider 归组；
+> 见 [REFACTOR_PLAN_V20_DEBT_SYNTHESIS.md](REFACTOR_PLAN_V20_DEBT_SYNTHESIS.md) §8）
+> 本文只描述**代码现状**；演进计划见 [REFACTOR_PLAN_V18_RESTRUCTURE.md](REFACTOR_PLAN_V18_RESTRUCTURE.md)，
+> 已闭合的 V17 收口案连同它的逐轮读数留在
+> [REFACTOR_PLAN_V17_CLOSURE.md](REFACTOR_PLAN_V17_CLOSURE.md) 里。
 > 历史方案（docs/v1–v16）所述 L1/L2 缓存、UnifiedQuoteAPI 门面、5 级降级路由、
 > sources/sinks 层，以及 v14 信封运行时（`runtime/{runtime,gateway,request,response,typed,stream}.py`、
 > `execution/`、`provider/`）均已物理删除，不再是事实。
@@ -28,7 +32,7 @@ DirectProviderExecutor（runtime/executor.py）
         ▼
 providers/ 注册表（Provider/Channel/Capability 单一事实源）
    ├─ tdx        → protocol/ + client/ + transport/（85 命令、61 解析器、连接池）
-   ├─ tencent/sina/eastmoney/baidu → web/（45+ HTTP 源）
+   ├─ tencent/sina/eastmoney/baidu → web/<provider>/（45+ HTTP 源，按 Provider 归组）
    ├─ local_vipdoc → reader/（本地 .day/.lc1 二进制）
    └─ derived    → 显式聚合能力
         │  QueryResult（result.py：data + meta.provenance 溯源）
@@ -50,11 +54,12 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
 
 | 层 | 模块 | 状态 |
 |---|---|---|
-| 协议层（冻结） | `codec/`（帧/变长数/字符集）、`protocol/`（命令账本+三级解析）、`transport/`（池/心跳/测速）、`client/`（`api.py` 唯一业务入口 Client/AsyncClient + `core.py` 共享纯协议 SSOT + `sync.py`/`async_.py` TdxClient）、`charset/` | 独立完备 |
-| 数据源层 | `providers/`（静态注册表）、`web/`、`reader/`、`profile/`（DataProfile 复权/周期口径） | 活 |
-| 契约层（无执行） | `query.py`、`result.py`、`batch.py`、`typed_query.py`、`stream_contract.py`、`errors.py`、`error_envelope.py`、`catalog/`（capability 目录与调用校验、Provider channel→adapter 绑定表、Provider 隔离契约/守卫/一致性审计） | 活 |
-| 内核层 | `runtime/`（`kernel.py` 唯一内核、`executor.py` 精确绑定执行、`orchestration.py` 显式跨源编排、`audit.py` 启动三方对账、`identity.py`/`provenance.py` 执行身份与溯源守卫） | 活 |
-| 服务面层 | `cli/`、`integration/`（runtime_http/ws/tasks/mcp + serialization）、`output/`（DataFrame/Parquet/DuckDB）、`sink/` | 活，全部 Client-backed |
+| 协议层（冻结） | `codec/`（帧/变长数/字符集）、`protocol/`（命令账本+三级解析）、`transport/`（池/心跳/测速）、`client/`（`api.py` 唯一业务入口 Client/AsyncClient + `core.py` 共享纯协议 SSOT + `sync.py`/`async_.py` TdxClient + `factory.py` 按市场族造客户端的 `get_client`）、`charset/` | 独立完备 |
+| 数据源层 | `providers/`（静态注册表）、`web/`（六个 Provider 子包 `tencent`/`sina`/`eastmoney`/`baidu`/`jsl`/`boc` 各承载一家适配器，跨 Provider 的域模块留包根）、`reader/`、`profile/`（DataProfile 复权/周期口径） | 活 |
+| 契约层（无执行） | `query.py`、`result.py`、`batch.py`、`typed_query.py`、`stream_contract.py`、`errors.py`、`error_envelope.py`、`diagnostics.py`（运行期告警码与"未证实"登记簿）、`catalog/`（capability 目录与调用校验、Provider channel→adapter 绑定表、Provider 隔离契约/守卫/一致性审计） | 活 |
+| 内核层 | `runtime/`（`kernel.py` 唯一内核、`executor.py` 精确绑定执行、`orchestration.py` 显式跨源编排、`audit.py` 启动三方对账、`identity.py`/`provenance.py` 执行身份与溯源守卫、`freshness.py` 当期性证据裁决——`currentness` 声明无人读的 F-44 由它收口） | 活 |
+| 流式层 | `streaming/`（`base.py` 传输与订阅底座、`engine.py` 引擎、`state.py` 状态格、`stateful.py` `StatefulQuoteStream`、`push.py` 推送面） | 活，入参契约在根级 `tstdx.stream_contract` |
+| 服务面层 | `cli/`、`integration/`（`runtime_http.py` HTTP 面、`runtime_ws.py` JSON-RPC 分派、`runtime_ws_server.py` WS 服务器、`serialization.py` 结果序列化、`wire_fields.py` 三面入参白名单、`integration/mcp/` MCP 面）、`output/`（DataFrame/Parquet/DuckDB）、`sink/` | 活，全部 Client-backed |
 | 类型化糖衣 | `typed_query.py`（CapabilityQuery + Domain Record）、`domain/`（records/symbol/日历） | 全量接通：`Client.typed` / `AsyncClient.typed`，字段名与内核方法签名一一对应 |
 | 基础设施 | `config/`、`observability/`、`feedback/` | 活 |
 | 实验模块 | `trade/`（自设模拟红线，未进 README 能力账主链） | 唯一剩余待裁定项，见 V17 决策点 3 |
@@ -143,8 +148,14 @@ providers/ 注册表（Provider/Channel/Capability 单一事实源）
 
 ## 6. 开发环境（重要）
 
-- 本机裸 `python` 是坏掉的 WindowsApps stub：一律用 `.venv/Scripts/python.exe`
-  或 `uv run`（PATH 加 `~/.local/bin`）。
+- 本机裸 `python` 是坏掉的 WindowsApps stub（`python -c` 静默返回，什么都不执行）。
+- 仓库里的 `.venv` 由 uv 创建，它**不是**一个自足的入口面：`Scripts/` 里只有
+  `pythonw.exe`（没有 `python.exe`），`pytest.exe`/`mypy.exe` 两个 trampoline 脚本在
+  Windows 上以「uv trampoline failed to canonicalize script path」失败，
+  `ruff.exe` 正常。把这些路径抄进任何脚本或文档前，先按上面的名单核一遍。
+- 可用路线只有两条：`uv run …`（PATH 加 `~/.local/bin`），或直接调用 uv 管理的解释器
+  跑 `python -m pytest` / `python -m mypy`，并把 `.venv/Lib/site-packages` 与仓库根
+  一起放进 `PYTHONPATH`。
 - 门禁：`pytest`（全量离线）+ `ruff check` + `mypy tstdx/` + 覆盖率（阈值单源：
   `pyproject.toml [tool.coverage.report] fail_under`，Makefile/CI 不再各传
   `--cov-fail-under`）。

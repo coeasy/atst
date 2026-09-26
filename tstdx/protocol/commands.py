@@ -80,16 +80,6 @@ class Command:
     def hex(self) -> str:
         return f"0x{self.cmd:04x}"
 
-    @property
-    def port(self) -> int:
-        return {
-            Family.STANDARD: 7709,
-            Family.EXTENDED: 7727,
-            Family.MAC: 7709,
-            Family.GOODS: 7727,
-            Family.F10: 7709,
-        }.get(self.family, 7709)
-
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Command {self.hex} {self.name} [{self.family}/{self.tier}]>"
 

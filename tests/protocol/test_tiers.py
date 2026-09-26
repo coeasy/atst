@@ -313,3 +313,49 @@ class TestProtocolTiers:
             assert COMMANDS[(fam, cmd)].verified is True, (
                 f"{fam} {hex(cmd)}：账本声称 L1 却 verified=False——先把字段布局判据补上再改这一格"
             )
+
+
+@pytest.mark.unit
+def test_dispatch_reports_the_parse_metrics():
+    """F-118：三层解析指标必须真有人写——改前它们注册即被 ``/metrics`` 渲染，全仓零调用点。
+
+    ``tstdx_protocol_parse_total`` / ``tstdx_protocol_parse_confidence`` 对外声称的是
+    "三级解析分派总次数"与"L1/L2 解析置信度分布"，而请求侧、流侧、错误侧三族指标都有人喂，
+    唯独解析这一族是空缺：抓取方看到的永远是空序列。本判据盯的是**刻度**（单例在整个测试
+    会话里共享，所以计数器取增量、直方图只看序列是否出现），不是绝对值。
+    """
+    from tstdx.observability.metrics import metrics
+
+    labels = {"tier": TIER_L1, "family": "quotation", "command": "0x044e"}
+    before = metrics.parse_total.value(labels=labels)
+
+    meta, payload = _latest_sample("0x044e_security_count_market0")
+    dispatch(_make_frame(0x044E, meta, payload))
+    assert metrics.parse_total.value(labels=labels) == before + 1
+    assert (
+        'tstdx_protocol_parse_confidence_count{family="quotation",command="0x044e"}'
+        in metrics.render_prometheus()
+    ), "L1 的置信度没进直方图——分位数那侧仍是空读数"
+
+    unknown = ResponseFrame(
+        magic=0x0074CBB1,
+        zip_flag=0,
+        seq=0,
+        method=0x9999,
+        zip_size=8,
+        unzip_size=8,
+        payload=b"\x02\x00\x01\x02\x03\x04\x05\x06",
+    )
+    unknown_labels = {"tier": "", "family": "quotation", "command": "0x9999"}
+    before_l2 = metrics.parse_total.value(labels={**unknown_labels, "tier": TIER_L2})
+    before_l3 = metrics.parse_total.value(labels={**unknown_labels, "tier": TIER_L3})
+    fallback = dispatch(unknown)
+    assert fallback.tier in (TIER_L2, TIER_L3)
+    after_l2 = metrics.parse_total.value(labels={**unknown_labels, "tier": TIER_L2})
+    after_l3 = metrics.parse_total.value(labels={**unknown_labels, "tier": TIER_L3})
+    assert (after_l2 - before_l2) + (after_l3 - before_l3) == 1, (
+        "降级路径（未知命令）没计数——那正是抓取方最想看见的一档"
+    )
+    assert (TIER_L2 if after_l2 > before_l2 else TIER_L3) == fallback.tier, (
+        "计数落在了与 result.tier 不同的一档——指标说的和解析器做的不是一件事"
+    )

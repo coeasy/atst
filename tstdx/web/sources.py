@@ -30,8 +30,8 @@ tstdx 全局契约：**volume = 股，amount = 元，price = 元**。
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass
 
 __all__ = [
     "SourceSpec",
@@ -148,11 +148,7 @@ class SourceSpec:
     default_rate: int = 5
     #: 支持的能力
     capabilities: tuple[str, ...] = ("quote",)
-    #: 数据源状态
-    deprecated: bool = False
     notes: str = ""
-    #: 工厂（延迟导入，避免循环依赖）
-    factory: Callable | None = field(default=None, repr=False, compare=False)
 
 
 KNOWN_SOURCES: dict[str, SourceSpec] = {

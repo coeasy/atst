@@ -101,7 +101,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 
 | 特性 | 说明 |
 |---|---|
-| **HTTP Web 45+ 源类** | 东财/新浪/腾讯/集思录/港股/中行等，`httpx` / `urllib` 双栈，28 模块 |
+| **HTTP Web 45+ 源类** | 东财/新浪/腾讯/集思录/港股/中行等，`httpx` / `urllib` 双栈，28 模块；各家适配器按 Provider 归入 `web/<provider>/adapters.py`，跨 Provider 的域模块（资金流/龙虎榜/新闻/问财…）留 `web/` 包根 |
 | **本地 vipdoc 解析** | `reader/` 解析通达信本地 `.day` / `.min` / 板块 / 财务二进制文件 |
 | **Provider 注册表** | `providers/` 声明 11 Provider × 172 capability × channel，是唯一事实源；`catalog/provider_bindings.py` 声明 channel→adapter 绑定 |
 | **流式订阅** | `Client.stream` → `StatefulQuoteStream`（轮询基类 QuoteStream/AsyncQuoteStream；engine 内核：ReconnectPolicy + BackpressureQueue + DeltaMerger + GapFiller + StreamEngine） |
@@ -194,8 +194,8 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 > python -m build                            # 产物在 dist/；make build 走同一套 canonical 校验
 > ```
 >
-> extras 的名字（`config` / `dataframe` / `parquet` / `duckdb` / `web` / `metrics` /
-> `server` / `mcp` / `tools` / `all`）是仓内 `pyproject.toml` 声明的那一套，从源码或
+> extras 的名字（`dataframe` / `parquet` / `duckdb` / `web` / `metrics` /
+> `server` / `tools` / `all`）是仓内 `pyproject.toml` 声明的那一套，从源码或
 > wheel 装时同样可用；本节只在真正上架 PyPI 后才需要改写。
 
 > **P14-D2 起**：`[project.optional-dependencies].dev` 已声明，本地与 CI 使用同一
@@ -206,17 +206,20 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 
 | Extra       | 依赖                        | 功能               |
 |-------------|---------------------------|--------------------|
-| `config`    | pydantic                  | 严格配置校验       |
 | `dataframe` | pandas                    | DataFrame 输出     |
 | `parquet`   | pyarrow                   | Parquet 写出（`to_parquet` / `Sink("parquet")`） |
 | `duckdb`    | duckdb                    | DuckDB 写出（`to_duckdb` / `Sink("duckdb")`） |
 | `web`       | httpx                     | HTTP Web 行情源    |
 | `metrics`   | prometheus-client         | Prometheus 导出    |
 | `server`    | fastapi, uvicorn, websockets | HTTP REST 网关 + WebSocket RPC |
-| `mcp`       | mcp                       | MCP 工具服务       |
-| `tools`     | tzdata (win32 only)       | capture 时区工具链 |
+| `tools`     | tzdata (win32 only), zstandard | capture 工具链（时区 + zstd 编码） |
 | `dev`       | pytest/pytest-cov/pytest-asyncio/ruff/mypy/hatchling | 开发体验 |
-| `all`       | 以上全部                   | 完整功能           |
+| `all`       | 以上非 dev 项的并集        | 完整功能           |
+
+> **MCP 工具服务不需要 extra**（第 23 轮实测）：`tstdx/integration/mcp/` 是纯标准库的
+> JSON-RPC over stdio，全仓对 `pydantic` / `mcp` 两个包的读取次数为 **0**（`tstdx/`、
+> `tests/`、`scripts/` 三处一起 grep 只有 `DESIGN.md` 里的一段示例代码）。过去那两行
+> `config = pydantic` / `mcp = mcp` 是没人按它行动的声明，已随 `pyproject.toml` 一并删除。
 
 ---
 
@@ -361,6 +364,7 @@ tstdx/
 ├── transport/      # base(RLock 租约)/async_/pool(4 槽)/ratelimit/speedtest/hosts/sniff
 ├── client/         # core.py(同步/异步共享纯协议 SSOT) + sync/async_/factory + 5 族客户端
 ├── web/            # 45+ HTTP 源类（惰性导入）+ 域 Mixin 会话 + 共享分页器
+│                   #   tencent/sina/eastmoney/baidu/jsl/boc 六包按 Provider 承载 adapters.py
 ├── reader/         # vipdoc 本地文件解析（day/min/板块/财务）
 ├── profile/        # 数据规格探测（帧/文件双探测器 + presets）
 ├── domain/         # symbol(单一事实源)/models/finance 记录/adjust/calendar
@@ -369,7 +373,7 @@ tstdx/
 ├── sink/           # LocalDaySink：写回 vipdoc .day 二进制
 ├── charset/        # 字符集自动探测（GBK/GB18030/Big5/UTF-8）
 ├── config/         # 6 源合并 + 严格校验 + env 归一
-├── integration/    # runtime_http(10 端点)/runtime_ws/runtime_tasks/mcp(9 工具)/serialization
+├── integration/    # runtime_http(10 端点)/runtime_ws/runtime_ws_server/mcp(9 工具)/serialization
 ├── observability/  # 指标注册表 + Prometheus/StatsD/OTLP 导出器 + start_exporter
 ├── feedback/       # 错误/用量上报 + 遥测 + 使用统计
 ├── tools/          # capture/spec_audit/codegen/golden_audit/golden_expand/check_originality

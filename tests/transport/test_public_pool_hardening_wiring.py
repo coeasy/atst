@@ -47,8 +47,8 @@ def test_dissolved_patch_layers_are_physically_gone() -> None:
 
 
 @pytest.mark.unit
-def test_public_ranking_store_installs_probe_only_hardening_layer() -> None:
-    assert RankingStore.load.__module__ == "tstdx.transport._ranking_hardening"
-    assert RankingStore.save.__module__ == "tstdx.transport._ranking_hardening"
-    assert RankingStore.merge.__module__ == "tstdx.transport._ranking_hardening"
-    assert hosts_module._apply_ranked_observation.__module__ == "tstdx.transport._ranking_hardening"
+def test_public_ranking_store_wiring_is_canonical() -> None:
+    assert RankingStore.load.__module__ == "tstdx.transport.hosts"
+    assert RankingStore.save.__module__ == "tstdx.transport.hosts"
+    assert RankingStore.merge.__module__ == "tstdx.transport.hosts"
+    assert hosts_module._apply_ranked_observation.__module__ == "tstdx.transport.hosts"

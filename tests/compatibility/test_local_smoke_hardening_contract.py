@@ -17,32 +17,25 @@ _SMOKE_SOURCES = (
 )
 
 
-def test_local_wheel_smoke_is_source_isolated_and_checks_all_runtime_hardening() -> None:
+def test_local_wheel_smoke_is_source_isolated_and_checks_canonical_wiring() -> None:
     script = (_ROOT / "scripts" / "build_package.py").read_text(encoding="utf-8")
 
     assert 'work_dir = temp_root / "work"' in script
     assert '[str(python), "-I", "-c", probe]' in script
     assert "package_file.is_relative_to(venv_root)" in script
-    assert "TdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'" in script
-    assert "AsyncTdxClient.__init__.__module__ == 'tstdx.client._pool_binding_hardening'" in script
-    assert "TdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'" in script
-    assert "AsyncTdxClient.bestip.__module__ == 'tstdx.client._bestip_hardening'" in script
-    assert (
-        "AsyncTdxClient.quotes_concurrent.__module__ == 'tstdx.client._async_concurrency_hardening'"
-    ) in script
-    assert (
-        "ConnectionPool.__init__.__module__ == 'tstdx.transport._pool_family_hardening'" in script
-    )
-    assert (
-        "AsyncConnectionPool.__init__.__module__ == 'tstdx.transport._pool_family_hardening'"
-    ) in script
-    # 桩层解散后，冒烟断言改判实现住在池模块自身。
+    assert "TdxClient.__init__.__module__ == 'tstdx.client.sync'" in script
+    assert "AsyncTdxClient.__init__.__module__ == 'tstdx.client.async_'" in script
+    assert "TdxClient.bestip.__module__ == 'tstdx.client.sync'" in script
+    assert "AsyncTdxClient.bestip.__module__ == 'tstdx.client.async_'" in script
+    assert ("AsyncTdxClient.quotes_concurrent.__module__ == 'tstdx.client.async_'") in script
+    assert "ConnectionPool.__init__.__module__ == 'tstdx.transport.pool'" in script
+    assert ("AsyncConnectionPool.__init__.__module__ == 'tstdx.transport.async_'") in script
     assert "ConnectionPool.request.__module__ == 'tstdx.transport.pool'" in script
     assert "ConnectionPool.update_hosts.__module__ == 'tstdx.transport.pool'" in script
     assert "AsyncConnectionPool.request.__module__ == 'tstdx.transport.async_'" in script
     assert ("AsyncConnectionPool.update_hosts.__module__ == 'tstdx.transport.async_'") in script
-    assert "RankingStore.load.__module__ == 'tstdx.transport._ranking_hardening'" in script
-    assert "resolve_hosts.__module__ == 'tstdx.transport._host_selector_hardening'" in script
+    assert "RankingStore.load.__module__ == 'tstdx.transport.hosts'" in script
+    assert "resolve_hosts.__module__ == 'tstdx.transport.hosts'" in script
 
 
 def test_release_smoke_imports_only_symbols_that_still_exist() -> None:

@@ -11,7 +11,6 @@ import pytest
 
 from tstdx.domain.models import Quote
 from tstdx.errors import SourceDeprecated, WebSourceError
-from tstdx.web.adapters import EastmoneySource, SinaSource, TencentSource
 from tstdx.web.base import (
     HttpResponse,
     RateLimiter,
@@ -23,6 +22,9 @@ from tstdx.web.base import (
     to_sina_symbol,
     to_tencent_symbol,
 )
+from tstdx.web.eastmoney.adapters import EastmoneySource
+from tstdx.web.sina.adapters import SinaSource
+from tstdx.web.tencent.adapters import TencentSource
 
 # --------------------------------------------------------------------------- #
 # 罐头响应数据

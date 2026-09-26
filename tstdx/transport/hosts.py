@@ -294,25 +294,18 @@ def _as_family(entries: Iterable[HostEntry], family: str) -> tuple[HostEntry, ..
 
 
 def _apply_ranked_observation(base: HostEntry, ranked: HostEntry) -> HostEntry:
-    """仅叠加 ranking 观测，保留 selector-owned identity 与 live health。"""
+    """仅叠加持久化的 probe 观测（connect_ms / rtt_ms），保留 selector-owned
+    identity 与运行态健康字段。
+
+    merged from _ranking_hardening：进程间不共享 circuit/failures 等 runtime 状态。
+    """
 
     if ranked.family != base.family or ranked.key != base.key:
         raise ConfigError(
             "ranking observation identity mismatch: "
             f"base={base.key}/{base.family!r}, ranked={ranked.key}/{ranked.family!r}"
         )
-    return replace(
-        base,
-        connect_ms=ranked.connect_ms,
-        rtt_ms=ranked.rtt_ms,
-        failures=ranked.failures,
-        biz_failures=ranked.biz_failures,
-        last_ok=ranked.last_ok,
-        last_error=ranked.last_error,
-        circuit=ranked.circuit,
-        consec_weighted=ranked.consec_weighted,
-        circuit_opened_at=ranked.circuit_opened_at,
-    )
+    return replace(base, connect_ms=ranked.connect_ms, rtt_ms=ranked.rtt_ms)
 
 
 DEFAULT_HOST_POOL: tuple[HostEntry, ...] = (
@@ -460,6 +453,97 @@ def _require_max_hosts(max_hosts: Any) -> int:
     return max_hosts
 
 
+# --- Probe-only ranking persistence (merged from _ranking_hardening) ----- #
+# 持久化只允许 5 个字段：身份 (host/port/family) + probe 观测 (connect_ms/rtt_ms)。
+# runtime health（failures / circuit / biz_failures / last_ok / last_error /
+# consec_weighted / circuit_opened_at / verified / name / live_*）永不落盘——
+# 进程间不共享熔断状态；新进程应该从头开始健康观测。
+
+_PERSISTED_FIELDS = frozenset({"host", "port", "family", "connect_ms", "rtt_ms"})
+_LEGACY_RUNTIME_FIELDS = frozenset(
+    {
+        "name",
+        "verified",
+        "failures",
+        "biz_failures",
+        "last_ok",
+        "last_error",
+        "circuit",
+        "consec_weighted",
+        "circuit_opened_at",
+    }
+)
+_REQUIRED_IDENTITY_FIELDS = frozenset({"host", "port", "family"})
+_LEGACY_ALLOWED_FIELDS = _PERSISTED_FIELDS | _LEGACY_RUNTIME_FIELDS | _EPHEMERAL_FIELDS
+
+
+def _probe_only_entry(entry: HostEntry) -> HostEntry:
+    """剥掉所有 process-local runtime 字段，只保留持久化 probe 观测。"""
+
+    validated = _validated_entry(entry, source="RankingStore")
+    return HostEntry(
+        host=validated.host,
+        port=validated.port,
+        family=validated.family,
+        connect_ms=validated.connect_ms,
+        rtt_ms=validated.rtt_ms,
+    )
+
+
+def _probe_payload(entry: HostEntry) -> dict[str, Any]:
+    probe = _probe_only_entry(entry)
+    return {
+        "host": probe.host,
+        "port": probe.port,
+        "family": probe.family,
+        "connect_ms": probe.connect_ms,
+        "rtt_ms": probe.rtt_ms,
+    }
+
+
+def _entry_from_legacy_payload(item: Mapping[str, Any]) -> HostEntry | None:
+    """白名单反序列化：只接受 probe 可持久化字段。"""
+
+    keys = set(item)
+    if _EPHEMERAL_FIELDS.intersection(keys):
+        return None
+    if not _REQUIRED_IDENTITY_FIELDS.issubset(keys):
+        return None
+    if keys - _LEGACY_ALLOWED_FIELDS:
+        return None
+    try:
+        entry = HostEntry(
+            host=item["host"],
+            port=item["port"],
+            family=item["family"],
+            connect_ms=item.get("connect_ms"),
+            rtt_ms=item.get("rtt_ms"),
+        )
+        entry = _validated_entry(entry, source="ranking entry")
+    except (KeyError, TypeError, ValueError, ConfigError):
+        return None
+    if entry.family != Family.STANDARD or entry.rtt_ms is None:
+        return None
+    return entry
+
+
+# --- Host selector isolation (merged from _host_selector_hardening) ----- #
+
+
+def isolated_host_entry_snapshot(resolved: Sequence[HostEntry], *, limit: int) -> list[HostEntry]:
+    """Ensure every caller gets fresh, unique HostEntry snapshots."""
+
+    seen: set[str] = set()
+    for entry in resolved:
+        if entry.key in seen:
+            raise ConfigError(
+                f"resolve_hosts 存在重复 canonical endpoint: {entry.key}",
+                context={"host": entry.key},
+            )
+        seen.add(entry.key)
+    return [replace(entry) for entry in resolved[:limit]]
+
+
 class RankingStore:
     """STANDARD-only ``~/.tstdx/server_ranking.json`` V1 storage。"""
 
@@ -469,6 +553,7 @@ class RankingStore:
         self.path = Path(os.path.expanduser(str(path)))
 
     def load(self) -> dict[str, HostEntry]:
+        # --- merged from _ranking_hardening: probe-only provenance --- #
         if not self.path.exists():
             return {}
         try:
@@ -489,12 +574,8 @@ class RankingStore:
         for persisted_key, item in raw_entries.items():
             if not isinstance(persisted_key, str) or not isinstance(item, Mapping):
                 continue
-            # Runtime-only fields in a disk cache are invalid provenance.
-            if _EPHEMERAL_FIELDS.intersection(item):
-                continue
-            try:
-                entry = HostEntry.from_dict(item)
-            except ConfigError:
+            entry = _entry_from_legacy_payload(item)
+            if entry is None:
                 continue
             if persisted_key != entry.key or entry.key in seen_embedded:
                 return {}
@@ -519,11 +600,12 @@ class RankingStore:
         return items
 
     def save(self, entries: Iterable[HostEntry]) -> None:
-        items = self._require_standard(entries)
+        # --- merged from _ranking_hardening: probe-only serialization --- #
+        items = [entry for entry in self._require_standard(entries) if entry.rtt_ms is not None]
         data = {
             "version": self.VERSION,
             "updated": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "entries": {entry.key: entry.to_dict() for entry in items},
+            "entries": {entry.key: _probe_payload(entry) for entry in items},
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp_path: Path | None = None
@@ -547,37 +629,29 @@ class RankingStore:
                     temp_path.unlink()
 
     def merge(self, entries: Iterable[HostEntry]) -> dict[str, HostEntry]:
-        """合并 STANDARD ranking 观测；ephemeral live health 永不落盘。"""
+        """合并 probe-only ranking 观测；process-local runtime health 永不落盘。
+
+        merged from _ranking_hardening：
+        - 失败 probe（rtt_ms=None 但有 failures/last_error）→ 清除 stale positive latency
+        - 成功 probe → 只更新 rtt_ms / connect_ms，不覆盖 circuit/failures 等 runtime 字段
+        """
 
         items = self._require_standard(entries)
         known = self.load()
         for entry in items:
-            previous = known.get(entry.key)
-            if previous is None or previous.family != Family.STANDARD:
-                # Strip process-local fields even before a subsequent save.
-                previous = replace(
-                    entry,
-                    live_rtt_ms=None,
-                    live_ok_at=None,
-                    circuit_probe_inflight=False,
-                )
-                known[entry.key] = previous
+            if entry.rtt_ms is None:
+                # 失败 probe 清除该主机的 stale positive latency 条目
+                if entry.failures > 0 or bool(entry.last_error):
+                    known.pop(entry.key, None)
                 continue
-            if entry.rtt_ms is not None:
-                previous.rtt_ms = entry.rtt_ms
+
+            previous = known.get(entry.key)
+            if previous is None:
+                known[entry.key] = _probe_only_entry(entry)
+                continue
+            previous.rtt_ms = entry.rtt_ms
             if entry.connect_ms is not None:
                 previous.connect_ms = entry.connect_ms
-            previous.biz_failures = entry.biz_failures
-            previous.circuit = entry.circuit
-            previous.consec_weighted = entry.consec_weighted
-            previous.circuit_opened_at = entry.circuit_opened_at
-            if entry.last_ok:
-                previous.last_ok = entry.last_ok
-                previous.failures = 0
-                previous.last_error = ""
-            else:
-                previous.failures += max(1, entry.failures)
-                previous.last_error = entry.last_error or previous.last_error
         return known
 
     def update(self, entries: Iterable[HostEntry]) -> None:
@@ -654,7 +728,8 @@ def resolve_hosts(
                 entries.extend(entry for key, entry in known.items() if key not in in_pool)
 
     entries.sort(key=lambda entry: entry.score)
-    return entries[:limit]
+    # --- merged from _host_selector_hardening: 去重 + replace 快照隔离 --- #
+    return isolated_host_entry_snapshot(entries, limit=limit)
 
 
 # --------------------------------------------------------------------------- #

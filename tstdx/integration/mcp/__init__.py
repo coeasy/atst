@@ -9,12 +9,10 @@ promoted into the v13 Provider Registry and DirectBinding contract.
 
 Current tool surface:
 
-- get_bars
-- get_quote / get_quotes
-- get_snapshot
-- get_minute_today
-- get_trades
-- get_security_count / get_security_list
+``_tools_spec.TOOLS`` is the single roster, and this docstring deliberately does not
+copy it. The list that used to sit here named seven tools and had been missing
+``query_capability`` -- the generic entry every capability reaches through -- since
+the round that added it. Ask ``tools/list``, or read ``_tools_spec``, not this page.
 
 No legacy facade/TdxClient dual target, `use_facade`, route semantics or
 unpromoted historical helper tools are supported.
@@ -27,7 +25,6 @@ from ._common import (
     SERVER_NAME,
     SERVER_VERSION,
     ToolSpec,
-    clamp_int,
 )
 from ._server import MCPServer, create_mcp_server
 from ._tools_spec import TOOLS
@@ -40,5 +37,4 @@ __all__ = [
     "PROTOCOL_VERSION",
     "TOOLS",
     "ToolSpec",
-    "clamp_int",
 ]

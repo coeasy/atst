@@ -226,7 +226,7 @@ def test_stream_forwards_provider_and_connection_args(monkeypatch: pytest.Monkey
             "--timeout",
             "1.25",
             "--seconds",
-            "0",
+            "0.01",
         ]
     )
     assert runtime_commands.cmd_stream(args) == 0
@@ -260,8 +260,13 @@ def test_stream_command_refuses_a_provider_the_stream_contract_refuses(
     monkeypatch.setattr(socket, "create_connection", _blocked)
 
     assert PROVIDERS.supports("tencent", "quotes")
-    assert main(["stream", "sh600519", "--provider", "tencent", "--seconds", "0"]) == 2
+    # ``--seconds 1`` 而不是 0：0 现在在 CLI 门口就被 :func:`cmd_stream` 判死（E1010），
+    # 那样这条用例测的是"窗口长度不合法"，不是它声称的"Provider 不承载流式"。
+    assert main(["stream", "sh600519", "--provider", "tencent", "--seconds", "1"]) == 2
     assert "只存在 tdx Direct stream binding" in capsys.readouterr().err
+    #: 同一支命令、同一个 ``--seconds``，非法窗口要单独给出它自己的那句话。
+    assert main(["stream", "sh600519", "--provider", "tdx", "--seconds", "0"]) == 2
+    assert "--seconds 必须为正数" in capsys.readouterr().err
 
 
 def test_helpers_keep_explicit_flags_ahead_of_config(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -84,6 +84,9 @@ class WarningCode(str, Enum):
     WEB_TENCENT_AMOUNT_ALL_ZERO = "web_tencent_amount_all_zero"
     #: 东财报表在 ``max_pages`` 内未取尽。
     WEB_EASTMONEY_PAGE_LIMIT = "web_eastmoney_page_limit"
+    #: 基金排行请求的 ``sort_column`` 不在本包声明的常用列词表里：请求原样发出，
+    #: 但调用方应当知道自己要的那一列没被声明过（第 26 轮 F-80）。
+    WEB_FUND_SORT_COLUMN_UNDECLARED = "web_fund_sort_column_undeclared"
     #: 声明的 ``currentness`` 要求当期数据，而执行 channel 给不出可判据的证据（本地文件）。
     #: 见 :mod:`tstdx.runtime.freshness`；``strict=True`` 时它不是告警而是失败。
     CURRENTNESS_UNPROVEN = "currentness_unproven"

@@ -110,10 +110,11 @@ class FrameSpec:
     req_header_fmt: str = "<BIBHHH"
     #: 包长字段相对 body 长度的偏移（TDX 为 +2）
     pkg_len_bias: int = 2
-    resp_header_len: int = 16
-    req_header_len: int = 12
     meta: dict[str, Any] = field(default_factory=dict)
 
+    #: 头长度只有这一个来源：从 struct 格式现算。此前这里还有 `resp_header_len=16` /
+    #: `req_header_len=12` 两个手抄常数，全包零读取点——改 `*_header_fmt` 时它们不会
+    #: 跟着动，于是"同一事实两份口径，紧的那份护不住宽的那份"（V18 第 25 轮 G36）。
     @property
     def resp_header_size(self) -> int:
         return struct.calcsize(self.resp_header_fmt)

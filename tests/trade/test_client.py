@@ -17,6 +17,12 @@ from tstdx.trade import (
     ORDER_SIDE_SELL,
     PRICE_TYPE_LIMIT,
     PRICE_TYPE_MARKET,
+    QUERY_CATEGORY_CANCELABLE_ORDER,
+    QUERY_CATEGORY_CASH,
+    QUERY_CATEGORY_DEAL_OF_TODAY,
+    QUERY_CATEGORY_ORDER_OF_TODAY,
+    QUERY_CATEGORY_SHAREHOLDERS_CODE,
+    QUERY_CATEGORY_STOCKS,
     SocketTransport,
     TradeClient,
     TradeNotLoggedIn,
@@ -108,6 +114,63 @@ class TestClientLifecycle:
                 "600519", ORDER_SIDE_SELL, price_type=PRICE_TYPE_MARKET, price=None, quantity=100
             )
             assert order["error_code"] == 0
+
+
+class TestQueryWrappers:
+    """持仓 / 当日成交 / 股东代码三支查询便捷方法的调用侧证据（第 26 轮 F-113）。
+
+    同族的 `query_cash` / `query_orders` / `query_cancelable` 在
+    :class:`TestClientLifecycle` 里各有一条断言，这三支此前一条都没有：能 import、
+    有 docstring，却没人按名调用过。改坏了不会有任何测试变红。
+    """
+
+    def test_query_stocks_reflects_seeded_positions(self) -> None:
+        with TradeClient() as c:
+            c.login("100001", "123456")
+            assert c.query_stocks() == []
+            c.transport.simulator.seed_position(
+                code="600519",
+                name="贵州茅台",
+                qty=100,
+                available_qty=100,
+                cost_price=1000,
+                last_price=1200,
+            )
+            stocks = c.query_stocks()
+            assert [s["code"] for s in stocks] == ["600519"]
+            assert stocks[0]["profit"] == (1200 - 1000) * 100
+
+    def test_query_deals_is_empty_until_fill_order(self) -> None:
+        with TradeClient() as c:
+            c.login("100001", "123456")
+            order = c.send_order("sh600519", ORDER_SIDE_BUY, price=1000, quantity=100)
+            assert c.query_deals() == []  # 下单不产生成交：撮合不在本库范围内
+            c.transport.simulator.fill_order(order_id=order["order_id"], qty=100, at="09:30:00")
+            deals = c.query_deals()
+            assert [d["order_id"] for d in deals] == [order["order_id"]]
+            assert deals[0]["amount"] == deals[0]["price"] * 100
+
+    def test_query_shareholders_reports_logged_in_account(self) -> None:
+        with TradeClient() as c:
+            c.login("100001", "123456")
+            assert c.query_shareholders() == [{"code": "100001", "name": "模拟券商", "market": 0}]
+
+    def test_all_six_query_wrappers_agree_with_query(self) -> None:
+        with TradeClient() as c:
+            c.login("100001", "123456")
+            c.buy("600519", 1000, quantity=100)
+            pairs = (
+                ("query_cash", QUERY_CATEGORY_CASH),
+                ("query_stocks", QUERY_CATEGORY_STOCKS),
+                ("query_orders", QUERY_CATEGORY_ORDER_OF_TODAY),
+                ("query_deals", QUERY_CATEGORY_DEAL_OF_TODAY),
+                ("query_cancelable", QUERY_CATEGORY_CANCELABLE_ORDER),
+                ("query_shareholders", QUERY_CATEGORY_SHAREHOLDERS_CODE),
+            )
+            for name, category in pairs:
+                wrapper = getattr(c, name)()
+                direct = c.query(category)
+                assert wrapper == (direct[0] if name == "query_cash" else direct), name
 
 
 class TestRedLines:

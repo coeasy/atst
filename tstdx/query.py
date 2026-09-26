@@ -17,8 +17,9 @@ import json
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from dataclasses import fields as dataclass_fields
 from enum import Enum
-from typing import Any
+from typing import Any, Final
 
 from .domain.period import MINUTE_PERIODS, normalize_bar_period
 from .domain.symbol import normalize_symbol
@@ -116,6 +117,33 @@ class ExecutionBudget:
 
 def _norm_text(value: str | None) -> str:
     return "" if value is None else str(value).strip().lower()
+
+
+def _require_int(value: Any, name: str) -> int:
+    """绑定处的整数后闸（第 25 轮 G34）。
+
+    四个入口在这之前的规整口径各不相同，坏值最后都落到 :meth:`QuerySpec.normalized`
+    的 ``self.count < 0`` 一类比较上：库面因此抛出裸 :class:`TypeError`，而它被每一张
+    服务面一致地翻译成 **E9000 内部错误**（HTTP 500）——调用方少写了一个引号，
+    服务器却把故障登记在自己名下。这里只补一条口径：绑定处收到的必须是
+    :class:`int`，否则当场 :class:`ValidationError`（E1010 / 422 / -32602）。
+
+    这里**不**做字符串转换：三张服务面已在各自的入口用
+    :func:`tstdx.integration.wire_fields.as_request_int` 完成传输形状的规整，库面调用方
+    则应当直接传整数。绑定处替人猜一次，就多一处"看起来生效"的口径分歧。
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValidationError(
+            f"{name} 必须是整数：这里收到 {value!r}（{type(value).__name__}）。"
+            "绑定处不把它猜成另一个数，也不让裸 TypeError 冒充服务器故障",
+            context={
+                "phase": "wire_validation",
+                "face": "binder",
+                "field": name,
+                "received": repr(value),
+            },
+        )
+    return value
 
 
 def _canonical_unified_channel(provider: str, capability: str, period: str) -> str | None:
@@ -319,6 +347,8 @@ class QuerySpec:
                     "executed_options": sorted(EXECUTED_OPTIONS),
                 },
             )
+        for field_name in SPEC_INT_FIELDS:
+            _require_int(getattr(self, field_name), field_name)
         if self.count < 0:
             raise ValidationError("count 不能为负数", context={"count": self.count})
         if cap == "bars" and self.count <= 0:
@@ -361,6 +391,13 @@ class QuerySpec:
             currentness=currentness.value,
             options_json=_canonical_options(self.options),
         )
+
+
+#: :meth:`QuerySpec.normalized` 之前必须已经是真整数的字段：**从 dataclass 自己的 ``int``
+#: 注解现扫**，不另抄名单——抄来的名单会在下一个 int 形参上漏掉自己（第 25 轮 G34）。
+SPEC_INT_FIELDS: Final[tuple[str, ...]] = tuple(
+    spec_field.name for spec_field in dataclass_fields(QuerySpec) if spec_field.type == "int"
+)
 
 
 def _secret_digest(value: Any) -> str:
@@ -442,18 +479,6 @@ class QueryFingerprint:
         )
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         return cls(value=f"q{spec.schema_version}:{digest}", canonical=canonical)
-
-    @classmethod
-    def from_spec(
-        cls,
-        spec: QuerySpec,
-        *,
-        channel: str,
-        default_provider: str | None = None,
-    ) -> QueryFingerprint:
-        return cls.from_normalized_spec(
-            spec.normalized(default_provider=default_provider), channel=channel
-        )
 
 
 @dataclass(frozen=True, slots=True)

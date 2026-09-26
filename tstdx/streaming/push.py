@@ -15,9 +15,9 @@ TDX 主站的 ``0x0547 QUOTES_DEPTH_PUSH`` 是**服务端主动推送**的五档
 请求-应答帧在同一 socket 上交错，绕过池级串行化）。满足任一形态即可：
 
 * 真实连接 :class:`~tstdx.transport.base.TcpConnection`：
-  订阅走 ``request(cmd, body)``，收帧走无参 ``read_frame()``（返回
+  订阅走 ``request(cmd, body)``，收帧走 ``read_frame(timeout=…)``（返回
   :class:`~tstdx.codec.framing.ResponseFrame`，本模块自动取 ``.payload``）；
-* 测试 fake：``send_command(cmd, body)`` + ``read_frame(timeout) -> bytes``，
+* 测试 fake：``send_command(cmd, body)`` + ``read_frame(timeout=…) -> bytes``，
   让断线重连、超时、脏帧等路径可完全离线测试。
 
 0x0547 帧为 L2 级布局（启发式），字段以「best-effort」标注：
@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..domain.symbol import parse_symbol as _parse_symbol
-from ..errors import TdxError
+from ..errors import ConnectionClosed, ReadTimeout, TdxError
 
 __all__ = ["PushChannel", "PushFrame", "PUSH_CMD"]
 
@@ -122,9 +122,10 @@ class PushChannel:
     transport:
         **独占**的传输对象：真实连接传
         :class:`~tstdx.transport.base.TcpConnection`（``request`` +
-        无参 ``read_frame``，返回 ``ResponseFrame`` 自动取 ``.payload``），
-        测试可传具备 ``send_command(cmd, body)`` 与
-        ``read_frame(timeout)`` 的 fake。⚠️ 不要传连接池的共享连接：
+        ``read_frame(timeout=…)``，返回 ``ResponseFrame`` 自动取 ``.payload``），
+        测试可传具备 ``send_command(cmd, body)`` 与同名关键字的 fake。
+        两侧都必须接受 ``timeout`` 关键字——本通道把调用方给的截止值透传给
+        它，不再对无参形态做 ``except TypeError`` 退路。⚠️ 不要传连接池的共享连接：
         推送帧与请求-应答帧会在同一 socket 上交错，且绕过池级串行化。
     symbols:
         初始订阅列表（可后续 :meth:`subscribe` 增补）。
@@ -159,14 +160,14 @@ class PushChannel:
         self._transport.request(cmd, body)
 
     def _read_frame(self, timeout: float) -> Any:
-        """读一帧：兼容 ``read_frame(timeout)``（fake）与无参
-        ``read_frame()``（真实连接，超时由连接自身 timeout 控制）。
+        """读一帧，并把调用方给的截止值真的传下去。
+
+        真实连接（:class:`~tstdx.transport.base.TcpConnection` 及其异步对偶）与
+        测试替身都接受 ``read_frame(timeout=…)``；这里不再用
+        ``except TypeError`` 退回无参调用——那条退路会把调用方的截止值静默丢掉，
+        让 ``read(timeout=5.0)`` 在真连接上变成「按连接的 timeout 等、且不限次数」。
         """
-        try:
-            return self._transport.read_frame(timeout)
-        except TypeError:
-            # 真实 Connection.read_frame() 不接受 timeout 参数
-            return self._transport.read_frame()
+        return self._transport.read_frame(timeout=timeout)
 
     # -- 订阅管理 ------------------------------------------------------------ #
     def subscribe(self, symbols: list[str]) -> bool:
@@ -243,9 +244,11 @@ class PushChannel:
             return None, "closed"
         try:
             raw = self._read_frame(timeout)
-        except TimeoutError:
+        except (TimeoutError, ReadTimeout):
+            # 真连接把 socket 超时归类成 ReadTimeout（TdxError 支系，不是 OSError）：
+            # 只接内建 TimeoutError 的话，这张面在真连接上永远走不到「超时」这一格。
             return None, "timeout"
-        except (ConnectionError, OSError) as exc:
+        except (ConnectionError, OSError, ConnectionClosed) as exc:
             self._last_error = exc
             logger.warning("PushChannel 传输断开（连接层错误，可重连）: %s", exc)
             return None, "transport"
@@ -281,7 +284,12 @@ class PushChannel:
             return set(self._subscribed)
 
     def close(self) -> None:
-        """关闭通道（幂等）；已订阅标的将尽力注销。"""
+        """关闭通道（幂等）；已订阅标的尽力注销，并释放**独占**的传输对象。
+
+        构造契约写明 transport 归本通道独占（见类文档），所以这里必须把它关掉：
+        只发注销帧、留下 socket 一直开着，等于每建一条推送通道漏一条连接
+        （第 26 轮 F-93）。
+        """
         with self._lock:
             if self._closed:
                 return
@@ -291,3 +299,15 @@ class PushChannel:
                 self._send(PUSH_CMD, self._build_sub_body(sorted(self._subscribed), on=False))
         except Exception as exc:  # noqa: BLE001 —— 关闭路径尽力而为
             logger.debug("PushChannel 关闭时注销订阅失败: %s", exc)
+        close = getattr(self._transport, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception as exc:  # noqa: BLE001 —— 关闭路径尽力而为
+                logger.debug("PushChannel 关闭传输对象失败: %s", exc)
+
+    def __enter__(self) -> PushChannel:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()

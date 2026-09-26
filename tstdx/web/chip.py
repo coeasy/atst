@@ -41,7 +41,7 @@
       &klt=101&lmt=30&end=20500101
 
 .. note::
-   本模块走 push2 / push2his 主机池（与 :mod:`tstdx.web.adapters`
+   本模块走 push2 / push2his 主机池（与 :mod:`tstdx.web.eastmoney.adapters`
    的 :class:`EastmoneySource` 同源），但响应结构为 ``{rc,data:{klines}}``
    而非 ``{data:{list}}``，故独立实现解析逻辑。
 """

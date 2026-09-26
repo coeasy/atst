@@ -5,7 +5,7 @@
 19 处命中，逐张核对后抓到两类东西——
 
 **① 一格会把请求换成另一个周期（G15，本轮已修）**
-:class:`tstdx.web.history.SinaHistoryKlineSource` 的 ``SCALES`` 里有 ``"1min": 5``：
+:class:`tstdx.web.sina.adapters.SinaHistoryKlineSource` 的 ``SCALES`` 里有 ``"1min": 5``：
 新浪这个端点最细就是 5 分钟，于是"1 分钟"的写法会被拿去请求 5 分钟线还照常返回——
 帧合法、内容是另一个周期，与 G3 同族。它的类 docstring 甚至明写 ``1min(=5min)``。
 Provider 注册表恰好**没有**给 ``sina/history_kline`` 声明 ``1min``，所以走内核的调用方
@@ -39,10 +39,10 @@ from tstdx.protocol.parsers._std7709_common import KlineCategory
 from tstdx.providers import PROVIDERS
 from tstdx.reader.formats import resolve_vipdoc_path
 from tstdx.web._session_market import _KLINE_SERVABLE, KLINES_PERIOD_ALIASES
-from tstdx.web.adapters import KlineSource
-from tstdx.web.adapters_baidu import _KLINE_KTYPES
-from tstdx.web.adapters_ext import _MKLINE_PERIODS
-from tstdx.web.history import EastmoneyHistoryKlineSource, SinaHistoryKlineSource
+from tstdx.web.baidu.adapters import _KLINE_KTYPES
+from tstdx.web.eastmoney.adapters import EastmoneyHistoryKlineSource
+from tstdx.web.sina.adapters import SinaHistoryKlineSource
+from tstdx.web.tencent.adapters import _MKLINE_PERIODS, KlineSource
 
 pytestmark = pytest.mark.unit
 
@@ -66,13 +66,13 @@ LEDGER: dict[tuple[str, str], tuple[str, str, int]] = {
     ("tstdx/client/core.py", "_CANONICAL_TO_CATEGORY"): ("protocol", "规范拼写 → tdx 协议号", 1),
     ("tstdx/providers/__init__.py", "periods"): ("declared", "各 channel 声明的服务档", 7),
     ("tstdx/web/_session_market.py", "_KLINE_SERVABLE"): ("declared", "ifzq 面服务集", 1),
-    ("tstdx/web/adapters.py", "PERIODS"): ("param", "腾讯 fqkline 参数", 1),
-    ("tstdx/web/adapters_baidu.py", "_KLINE_KTYPES"): ("param", "百度 ktype 参数", 1),
-    ("tstdx/web/adapters_ext.py", "_MKLINE_PERIODS"): ("param", "腾讯 mkline 参数", 1),
+    ("tstdx/web/tencent/adapters.py", "PERIODS"): ("param", "腾讯 fqkline 参数", 1),
+    ("tstdx/web/baidu/adapters.py", "_KLINE_KTYPES"): ("param", "百度 ktype 参数", 1),
+    ("tstdx/web/tencent/adapters.py", "_MKLINE_PERIODS"): ("param", "腾讯 mkline 参数", 1),
     ("tstdx/web/efinance_deriv.py", "table"): ("param", "东财 klt 参数", 1),
     ("tstdx/web/fundflow.py", "klt"): ("param", "东财 klt 参数", 1),
-    ("tstdx/web/history.py", "SCALES"): ("param", "新浪 scale 参数", 1),
-    ("tstdx/web/history.py", "KLTS"): ("param", "东财 klt 参数", 1),
+    ("tstdx/web/sina/adapters.py", "SCALES"): ("param", "新浪 scale 参数", 1),
+    ("tstdx/web/eastmoney/adapters.py", "KLTS"): ("param", "东财 klt 参数", 1),
     ("tstdx/protocol/generic.py", "(字面量)"): ("irrelevant", "datetime32 字段名，与周期无关", 1),
 }
 
@@ -169,15 +169,15 @@ def test_no_period_table_appears_off_the_ledger() -> None:
 # --------------------------------------------------------------------------- #
 #: 非分钟档（各上游自己的枚举编码）逐格登记；键不在这里又非 ``Nmin`` 形状 = 新形状，红。
 NON_MINUTE_ENCODINGS: dict[tuple[str, str], dict[str, int | str]] = {
-    ("tstdx/web/history.py", "SCALES"): {"day": 240},
-    ("tstdx/web/history.py", "KLTS"): {"day": 101},
-    ("tstdx/web/adapters.py", "PERIODS"): {
+    ("tstdx/web/sina/adapters.py", "SCALES"): {"day": 240},
+    ("tstdx/web/eastmoney/adapters.py", "KLTS"): {"day": 101},
+    ("tstdx/web/tencent/adapters.py", "PERIODS"): {
         "day": "day",
         "week": "week",
         "month": "month",
     },
-    ("tstdx/web/adapters_baidu.py", "_KLINE_KTYPES"): {"day": 1, "week": 2, "month": 3},
-    ("tstdx/web/adapters_ext.py", "_MKLINE_PERIODS"): {},
+    ("tstdx/web/baidu/adapters.py", "_KLINE_KTYPES"): {"day": 1, "week": 2, "month": 3},
+    ("tstdx/web/tencent/adapters.py", "_MKLINE_PERIODS"): {},
     ("tstdx/web/efinance_deriv.py", "table"): {"day": 101, "week": 102, "month": 103},
     ("tstdx/web/fundflow.py", "klt"): {"day": 101, "week": 102, "month": 103},
 }
@@ -341,11 +341,11 @@ def _served(provider: str, channel: str, period: str) -> bool:
             return False
         return True
     if (provider, channel) == ("tencent", "minute_kline"):
-        from tstdx.web.adapters_ext import _mkline_period
+        from tstdx.web.tencent.adapters import _mkline_period
 
         return period in _MKLINE_PERIODS and _mkline_period(period) is not None
     if (provider, channel) == ("baidu", "kline"):
-        from tstdx.web.adapters_baidu import _ktype
+        from tstdx.web.baidu.adapters import _ktype
 
         return period in _KLINE_KTYPES and _ktype(period) is not None
     table: dict[str, Any] = (

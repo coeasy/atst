@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from tstdx.client import AsyncTdxClient
-from tstdx.errors import ParseError
+from tstdx.errors import ValidationError
 
 
 class _Pool:
@@ -44,9 +44,9 @@ async def test_async_quotes_concurrent_collects_dicts_then_converts_once() -> No
 async def test_async_quotes_concurrent_validates_workers_like_sync() -> None:
     client = AsyncTdxClient(pool=_Pool())
 
-    with pytest.raises(ParseError, match="workers"):
+    with pytest.raises(ValidationError, match="workers"):
         await client.quotes_concurrent(["000001"], workers=False)
-    with pytest.raises(ParseError, match="workers"):
+    with pytest.raises(ValidationError, match="workers"):
         await client.quotes_concurrent(["000001"], workers=65)
 
 

@@ -1,7 +1,14 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""客户端共享核心：同步 / 异步客户端共用的纯协议构造与校验 SSOT。"""
+"""客户端共享核心：同步 / 异步客户端共用的纯协议构造与校验 SSOT。
+
+入参守卫（``_require_*`` / ``_normalize_symbols`` / ``period_to_category`` 等）一律报
+:class:`~tstdx.errors.ValidationError`（E1010 / HTTP 422 / 不可重试）：把参数写错的是调用方，
+不是服务器，也不是协议对端。第 25 轮 G34 之前它们报 :class:`~tstdx.errors.ParseError`，
+对外因此是 502 且 ``RetryAdvice(retryable=True, switch_host=True)``——一个确定会同样失败的
+请求被建议换主机重打。协议事实（命令离线、市场未验证、收到的脏字节）仍归各自的 E2xxx/E3xxx。
+"""
 
 from __future__ import annotations
 
@@ -13,7 +20,12 @@ from ..domain.finance import to_capital_changes
 from ..domain.models import Bar, CapitalChange, Quote
 from ..domain.period import PERIOD_ALIASES
 from ..domain.symbol import to_tdx_market
-from ..errors import CommandOffline, NotImplementedFeature, ParseError
+from ..errors import (
+    CommandOffline,
+    NotImplementedFeature,
+    ParseError,
+    ValidationError,
+)
 from ..protocol.commands import CMD, STATUS_OFFLINE, get_command
 from ..protocol.parsers.std7709 import KlineCategory
 
@@ -50,7 +62,7 @@ _OUTPUT_FORMATS = frozenset({"dict", "tuple", "dataframe"})
 
 def _require_bool(name: str, value: Any) -> bool:
     if not isinstance(value, bool):
-        raise ParseError(
+        raise ValidationError(
             f"{name} 必须是 bool，收到 {type(value).__name__}: {value!r}",
             context={"field": name, "value": value},
         )
@@ -64,18 +76,26 @@ def _require_int(
     minimum: int | None = None,
     maximum: int | None = None,
 ) -> int:
+    """整数实参的域闸：形状或区间不合就是**调用方的错**（E1010 / 422 / 不可重试）。
+
+    第 25 轮 G34：这里过去抛 :class:`ParseError`，而它是 ``ProtocolError`` 的子类，
+    对外带着 ``http_status = 502`` 与 ``RetryAdvice(retryable=True, switch_host=True)``。
+    于是 ``Client.bars(..., start=70000)`` 这一格写错的数字，在 HTTP 面上回 502、
+    在 WS/MCP 面上回 E3040，并且**建议客户端换主机重试**——一个确定会再次失败的请求
+    被登记成服务器/上游故障。域闸本身（``0xFFFF`` 分页地址空间）一直是对的，错的只有归类。
+    """
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ParseError(
+        raise ValidationError(
             f"{name} 必须是整数，收到 {type(value).__name__}: {value!r}",
             context={"field": name, "value": value},
         )
     if minimum is not None and value < minimum:
-        raise ParseError(
+        raise ValidationError(
             f"{name}={value} 小于下限 {minimum}",
             context={"field": name, "value": value, "minimum": minimum},
         )
     if maximum is not None and value > maximum:
-        raise ParseError(
+        raise ValidationError(
             f"{name}={value} 超过上限 {maximum}",
             context={"field": name, "value": value, "maximum": maximum},
         )
@@ -84,7 +104,7 @@ def _require_int(
 
 def _require_output_format(value: Any) -> str:
     if not isinstance(value, str) or value not in _OUTPUT_FORMATS:
-        raise ParseError(
+        raise ValidationError(
             f"未知输出格式 {value!r}；可选 {sorted(_OUTPUT_FORMATS)}",
             context={"as_format": value, "allowed_formats": sorted(_OUTPUT_FORMATS)},
         )
@@ -95,19 +115,19 @@ def _normalize_symbols(symbols: Any, *, field: str = "symbols") -> list[str]:
     if isinstance(symbols, str):
         return [symbols]
     if isinstance(symbols, (bytes, bytearray, memoryview, Mapping)):
-        raise ParseError(
+        raise ValidationError(
             f"{field} 必须是字符串或字符串 Sequence，收到 {type(symbols).__name__}",
             context={"field": field, "value_type": type(symbols).__name__},
         )
     if not isinstance(symbols, Sequence):
-        raise ParseError(
+        raise ValidationError(
             f"{field} 必须是字符串或字符串 Sequence，收到 {type(symbols).__name__}",
             context={"field": field, "value_type": type(symbols).__name__},
         )
     items = list(symbols)
     for index, symbol in enumerate(items):
         if not isinstance(symbol, str):
-            raise ParseError(
+            raise ValidationError(
                 f"{field}[{index}] 必须是字符串，收到 {type(symbol).__name__}",
                 context={"field": field, "index": index, "value_type": type(symbol).__name__},
             )
@@ -120,7 +140,7 @@ def _require_yyyymmdd(name: str, value: Any) -> int:
     try:
         _dt.datetime.strptime(text, "%Y%m%d")
     except ValueError as exc:
-        raise ParseError(
+        raise ValidationError(
             f"{name} 不是合法 YYYYMMDD 日期: {day}",
             context={"field": name, "value": day},
             cause=exc,
@@ -130,19 +150,19 @@ def _require_yyyymmdd(name: str, value: Any) -> int:
 
 def _encode_gbk_field(name: str, value: Any, *, max_bytes: int) -> bytes:
     if not isinstance(value, str) or not value:
-        raise ParseError(f"{name} 必须是非空字符串，收到 {value!r}", context={"field": name})
+        raise ValidationError(f"{name} 必须是非空字符串，收到 {value!r}", context={"field": name})
     if "\x00" in value:
-        raise ParseError(f"{name} 不允许包含 NUL", context={"field": name})
+        raise ValidationError(f"{name} 不允许包含 NUL", context={"field": name})
     try:
         raw = value.encode("gbk", errors="strict")
     except UnicodeEncodeError as exc:
-        raise ParseError(
+        raise ValidationError(
             f"{name} 无法无损编码为 GBK: {value!r}",
             context={"field": name},
             cause=exc,
         ) from exc
     if len(raw) > max_bytes:
-        raise ParseError(
+        raise ValidationError(
             f"{name} GBK 长度 {len(raw)} 超过协议上限 {max_bytes} 字节",
             context={"field": name, "encoded_bytes": len(raw), "maximum": max_bytes},
         )
@@ -156,7 +176,7 @@ def _standard_market_id(market: Any) -> int:
             return _PREFIX_MARKET[key]
         if key in _MARKET_IDS_BY_TEXT:
             return _MARKET_IDS_BY_TEXT[key]
-        raise ParseError(
+        raise ValidationError(
             f"未知标准市场 {market!r}；可选 {'/'.join(sorted(_PREFIX_MARKET))} "
             f"或 {'/'.join(sorted(_MARKET_IDS_BY_TEXT))}",
             context={"market": market},
@@ -200,7 +220,7 @@ _CANONICAL_TO_CATEGORY: dict[str, int] = {
 
 #: 公开拼写 → category：由 :mod:`tstdx.domain.period` 那份唯一词表派生。
 #: 此前这里是 24 个手写字面量，与域内规范表**各抄一份别名**，实测分叉出 15 个拼写
-#: （``Client.bars(period="1y")`` 报 ``ParseError``，而经 ``normalize_bar_period`` 的
+#: （``Client.bars(period="1y")`` 当场被拒，而经 ``normalize_bar_period`` 的
 #: 运行期路径接受同一写法）。派生之后两条路径的接受集必然相同，由
 #: ``tests/architecture/test_period_vocabulary_gates.py`` 钉住。
 _PERIOD_TO_CATEGORY: dict[str, int] = {
@@ -211,18 +231,20 @@ _PERIOD_TO_CATEGORY: dict[str, int] = {
 
 def period_to_category(period: str) -> int:
     if not isinstance(period, str) or not period.strip():
-        raise ParseError(f"period 必须是非空字符串，收到 {period!r}", context={"period": period})
+        raise ValidationError(
+            f"period 必须是非空字符串，收到 {period!r}", context={"period": period}
+        )
     key = period.strip().lower()
     if key.isdigit():
         category = int(key)
         if category not in KlineCategory.NAMES:
-            raise ParseError(
+            raise ValidationError(
                 f"未知 K 线 category={category}；可选 {sorted(KlineCategory.NAMES)}",
                 context={"period": period, "category": category},
             )
         return category
     if key not in _PERIOD_TO_CATEGORY:
-        raise ParseError(
+        raise ValidationError(
             f"未知周期: {period!r}（可选 {sorted(_PERIOD_TO_CATEGORY)}）",
             context={"period": period},
         )

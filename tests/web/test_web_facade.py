@@ -13,7 +13,6 @@ import pytest
 
 from tstdx.domain.models import Quote
 from tstdx.errors import CompatibilityError
-from tstdx.web.adapters import SinaSource, TencentSource
 from tstdx.web.base import HttpResponse, RateLimiter
 from tstdx.web.session import (
     INDEX_SYMBOLS,
@@ -22,7 +21,9 @@ from tstdx.web.session import (
     WebQuoteSession,
     web_session,
 )
+from tstdx.web.sina.adapters import SinaSource
 from tstdx.web.sources import TENCENT
+from tstdx.web.tencent.adapters import TencentSource
 
 # --------------------------------------------------------------------------- #
 # 罐头数据

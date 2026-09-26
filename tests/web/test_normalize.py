@@ -124,8 +124,21 @@ class TestNormalize:
         assert result["volume"] == 300000  # ×100
         assert result["amount"] == 3000000.0 * 10000  # ×10000
 
-    def test_register_custom_normalizer(self):
-        """#14 自定义 normalizer 注册。"""
+    def test_register_custom_normalizer(self, monkeypatch: pytest.MonkeyPatch):
+        """#14 自定义 normalizer 注册。
+
+        注册表是模块级全局，登记进去的 ``test_custom`` 会一直留在里面，而
+        ``tests/architecture/test_dispatch_targets.py`` 的 ⑥ 拿它与 web 源表**双向**对账：
+        同一份测试文件先跑，那条判据就会凭空多出"没人能用上的归一化器"。所以这里在一份
+        副本上注册，monkeypatch 收尾后全局表恢复原样。
+        """
+        from tstdx.web import normalize as normalize_module
+
+        monkeypatch.setattr(
+            normalize_module,
+            "_NORMALIZER_REGISTRY",
+            dict(normalize_module._NORMALIZER_REGISTRY),
+        )
 
         @register_normalizer("test_custom")
         class CustomNormalizer(VolumeNormalizer):

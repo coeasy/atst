@@ -269,11 +269,11 @@ class BaseParser:
         raise NotImplementedError
 
     # -- 便捷工具 ---------------------------------------------------------- #
-    @staticmethod
-    def u16_count(reader: BinaryReader) -> int:
-        """读取 uint16 记录数（多数 TDX 响应的首个字段）。"""
-        return reader.uint16()
-
+    #: F-107：这里曾有 ``u16_count(reader)``，体只有 ``return reader.uint16()``，
+    #: 零调用点、零点名。计数只有两种**真**形状，都各有归口：越域防护走
+    #: :meth:`guarded_count`（约 40 个解析器在用），裸计数直接写 ``reader.uint16()``
+    #: （``_std7709_quote`` / ``_std7709_bars`` / ``std7727`` 与 ``tools/codegen`` 模板
+    #: 生成的都是这一种）。第三种拼法只会让后来人多一次"该用哪个"的判断题，按 D3 删除。
     @staticmethod
     def warn_ctx(ctx: dict[str, Any], message: str) -> None:
         """向当前解析上下文追加一条 warning（呈现在 ``ParseResult.warnings``）。
@@ -345,6 +345,7 @@ def dispatch(
             result = parser_cls().parse(frame, **ctx)
             if cmd_info is not None:
                 result.name = cmd_info.name
+            _record_parse(result, family, cmd)
             return result
         except LowConfidenceParse:
             # 置信度不足 → 落入下方 L2/L3 兜底
@@ -436,4 +437,27 @@ def _generic_or_raw(
         get_sniffer().archive(frame, result, family)
     except Exception:  # noqa: BLE001
         pass
+    _record_parse(result, family, cmd)
     return result
+
+
+def _record_parse(result: ParseResult, family: str, cmd: int) -> None:
+    """把解析分派结果记进指标门面（旁路观测，绝不影响解析结果）。
+
+    F-118：``tstdx_protocol_parse_total`` 与 ``tstdx_protocol_parse_confidence``
+    从注册那天起就被 ``/metrics`` 渲染，可全仓没有任何一处调用 ``record_parse()``
+    ——请求侧、流侧、错误侧三族指标都有人喂，唯独解析这一族是空缺，抓取方看到的
+    "三级解析分派总次数"永远是空序列。指标写入本身吞异常，这里的 import 也一并
+    包住：可观测性不许把一次成功的解析变成失败。
+    """
+    try:
+        from ..observability.metrics import record_parse
+
+        record_parse(
+            tier=result.tier,
+            family=family,
+            command=f"0x{cmd:04x}",
+            confidence=result.confidence,
+        )
+    except Exception:  # noqa: BLE001
+        pass

@@ -20,9 +20,11 @@
 
     with TradeClient() as c:
         c.login("100001", "123456")
-        print(c.query_cash())                          # {'available_cash': ...}
-        c.send_order("sh600519", ORDER_SIDE_BUY, price=150000, quantity=100)
-        c.cancel_order(1)
+        print(c.query_cash())                          # {'available_cash': ...}（分）
+        c.send_order("sh600519", ORDER_SIDE_BUY, price=1000, quantity=200)
+        c.transport.simulator.fill_order(order_id=1, qty=100, at="09:30:00")
+        print(c.query_deals())
+        c.cancel_order(1)  # 只撤未成交的那 100 股
 """
 
 from __future__ import annotations
@@ -118,7 +120,14 @@ class TradeClient:
 
     # --- 查询 ---------------------------------------------------------------- #
     def query(self, category: int) -> list[dict[str, Any]]:
-        """按类别查询（资金 / 持仓 / 当日委托 / 当日成交 / 可撤单 / 股东代码）。"""
+        """按类别查询（资金 / 持仓 / 当日委托 / 当日成交 / 可撤单 / 股东代码）。
+
+        空列表只可能意味着"这一类当前没有记录"。类别号不在
+        :data:`~tstdx.trade.constants.QUERY_CATEGORY_NAMES` 里抛
+        :class:`~tstdx.errors.ValidationError`（入参不成立）；在词表里但模拟器
+        没建这一类账（融资融券、新股申购等）抛
+        :class:`~tstdx.trade.errors.TradeError` —— 不会拿空列表冒充查不到。
+        """
         return self._transport.query(category)
 
     def query_cash(self) -> dict[str, int]:
@@ -135,7 +144,13 @@ class TradeClient:
         return self.query(QUERY_CATEGORY_ORDER_OF_TODAY)
 
     def query_deals(self) -> list[dict[str, Any]]:
-        """查询当日成交列表。"""
+        """查询当日成交列表。
+
+        撮合发生在交易所，**不在 tstdx 的范围内**，所以模拟器不会自动把委托成交：
+        成交记录只能由 :meth:`~tstdx.trade.simulator.TradeSimulator.fill_order`
+        显式注入（``c.transport.simulator.fill_order(order_id=1, qty=100, at="09:30:00")``），
+        注入后本方法、:meth:`query_cancelable` 与资金/持仓账本同步变化。
+        """
         return self.query(QUERY_CATEGORY_DEAL_OF_TODAY)
 
     def query_cancelable(self) -> list[dict[str, Any]]:
@@ -163,12 +178,34 @@ class TradeClient:
         :param price_type: :data:`PRICE_TYPE_LIMIT` 限价 / :data:`PRICE_TYPE_MARKET` 市价
         :param price: 限价（**分**）；市价单可传 ``None``
         :param quantity: 委托数量（股）
+
+        :raises ValidationError: 入参本身不成立（代码位数不足 / ``side``、
+            ``price_type`` 不在声明取值内 / 数量非正 / 限价单缺价格）。
+            这四个判断都是**调用方入参**口径，与"券商拒绝"（:class:`TradeRejected`）
+            分属两类：前者不出网，后者是账本规则不允许。
         """
         code = normalize_code(symbol)
+        if side not in (ORDER_SIDE_BUY, ORDER_SIDE_SELL):
+            raise ValidationError(
+                f"未知委托类别 side={side}：只接受 {ORDER_SIDE_BUY}=买入 / {ORDER_SIDE_SELL}=卖出",
+                context={"side": side},
+            )
+        if price_type not in (PRICE_TYPE_LIMIT, PRICE_TYPE_MARKET):
+            raise ValidationError(
+                f"未知价格类型 price_type={price_type}：只接受 "
+                f"{PRICE_TYPE_LIMIT}=限价 / {PRICE_TYPE_MARKET}=市价",
+                context={"price_type": price_type},
+            )
+        if quantity <= 0:
+            raise ValidationError(
+                f"委托数量必须为正整数（股）: {quantity}", context={"quantity": quantity}
+            )
         if price_type == PRICE_TYPE_MARKET and price is None:
             price = 0
         if price is None:
             raise ValidationError("限价单缺少价格")
+        if price < 0:
+            raise ValidationError(f"价格不能为负（单位分）: {price}", context={"price": price})
         return self._transport.send_order(
             code=code,
             side=side,

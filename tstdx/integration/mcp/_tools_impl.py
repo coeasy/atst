@@ -11,7 +11,7 @@ from ...client.api import Client
 from ...errors import ValidationError
 from ...runtime.orchestration import FallbackPolicy
 from ..serialization import serialize_result
-from ._common import MAX_BARS_COUNT, MAX_PAGE, clamp_int
+from ..wire_fields import as_request_int
 
 __all__ = [
     "_h_get_bars",
@@ -24,6 +24,33 @@ __all__ = [
     "_h_get_security_list",
     "_h_query_capability",
 ]
+
+
+def _int_arg(tool: str, field: str, value: Any) -> int:
+    """整数格由**该工具自己的 ``inputSchema``** 裁定缺省与边界（第 25 轮 G34）。
+
+    此前这里调一个已删除的整数钳位函数，把不合要求的值**静默换成**另一个数：``count="abc"`` 悄悄
+    变 320、``count=0`` 悄悄变 1、``count=99999999`` 悄悄夹到 2000——于是同一张 schema 上
+    声明的 ``minimum``/``maximum`` 成了一张没人按它行事的假告示，而调用方以为自己报的那个数
+    生效了。改成"缺省才用 default，越界/坏类型当场拒"之后，边界只有 schema 这一个来源，
+    不再需要第二份抄来的数，也不可能与对外声明分叉。
+
+    形参收的是**已取出的值**而不是整个 ``args``：调用处必须自己写 ``args.get("count")``，
+    这样 ``test_declared_knobs`` 那份 AST 才看得见"声明的键有人读"——键名一旦变成变量，
+    那道判据就当场失明。
+    """
+    from ._tools_spec import _TOOLS_BY_NAME
+
+    prop = _TOOLS_BY_NAME[tool].inputSchema["properties"][field]
+    return as_request_int(
+        face="mcp_arguments",
+        where=f"MCP tool {tool} arguments",
+        name=field,
+        value=value,
+        default=prop.get("default", 0),
+        lo=prop.get("minimum"),
+        hi=prop.get("maximum"),
+    )
 
 
 def _h_query_capability(client: Client, args: dict[str, Any]) -> dict[str, Any]:
@@ -75,8 +102,8 @@ def _h_get_bars(client: Client, args: dict[str, Any]) -> dict[str, Any]:
             provider=provider,
             policy=policy,
             period=str(args.get("period", "day")),
-            count=clamp_int(args.get("count", 320), 320, 1, MAX_BARS_COUNT),
-            start=clamp_int(args.get("start", 0), 0, 0, MAX_PAGE),
+            count=_int_arg("get_bars", "count", args.get("count")),
+            start=_int_arg("get_bars", "start", args.get("start")),
             adjustment=str(args.get("adjustment", "")),
         )
     )
@@ -109,8 +136,8 @@ def _h_get_trades(client: Client, args: dict[str, Any]) -> dict[str, Any]:
         client.trades(
             args["symbol"],
             provider=args.get("provider") or "tdx",
-            start=clamp_int(args.get("start", 0), 0, 0, MAX_PAGE),
-            count=clamp_int(args.get("count", 0), 0, 0, MAX_BARS_COUNT),
+            start=_int_arg("get_trades", "start", args.get("start")),
+            count=_int_arg("get_trades", "count", args.get("count")),
         )
     )
 
@@ -125,7 +152,7 @@ def _h_get_security_list(client: Client, args: dict[str, Any]) -> dict[str, Any]
     return serialize_result(
         client.security_list(
             market=args.get("market", 0),
-            start=clamp_int(args.get("start", 0), 0, 0, MAX_PAGE),
+            start=_int_arg("get_security_list", "start", args.get("start")),
             provider=args.get("provider") or "tdx",
         )
     )
