@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from tstdx.client import (
+from atst.client import (
     AsyncExMarketClient,
     AsyncF10Client,
     AsyncGoodsClient,

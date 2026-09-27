@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.web.session import WebQuoteSession
-from tstdx.web.sources import KNOWN_SOURCES
+from atst.web.session import WebQuoteSession
+from atst.web.sources import KNOWN_SOURCES
 
 pytestmark = pytest.mark.unit
 
@@ -27,7 +27,7 @@ def _fake_fetch_suggest(self, key: str, *, limit: int = 10) -> list[dict[str, st
 
 @pytest.fixture()
 def patch_suggest(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("tstdx.web.sina.adapters.SuggestSource.fetch_suggest", _fake_fetch_suggest)
+    monkeypatch.setattr("atst.web.sina.adapters.SuggestSource.fetch_suggest", _fake_fetch_suggest)
 
 
 class TestSearchSymbols:
@@ -80,7 +80,7 @@ class TestCorporateActionAlias:
 
     def test_alias_binds_the_same_tdx_method(self) -> None:
         """别名与规范名解析到同一 TDX 后端方法（目录层收敛，无门面转发）。"""
-        from tstdx.catalog.capability import binding_for
+        from atst.catalog.capability import binding_for
 
         alias = binding_for("tdx", "quotation", "corporate_action")
         canonical = binding_for("tdx", "quotation", "capital_changes")
@@ -89,7 +89,7 @@ class TestCorporateActionAlias:
 
     def test_session_is_http_only(self) -> None:
         """corporate_action 只在 capability 目录提供，不再是 HTTP 会话方法。"""
-        from tstdx.catalog.capability import is_migrated_capability
+        from atst.catalog.capability import is_migrated_capability
 
         assert not hasattr(WebQuoteSession, "corporate_action")
         assert is_migrated_capability("corporate_action")
@@ -98,7 +98,7 @@ class TestCorporateActionAlias:
 class TestWencaiFacadeEntry:
     def test_api_entry_delegates(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "tstdx.web.wencai.WencaiSource.fetch_strategy",
+            "atst.web.wencai.WencaiSource.fetch_strategy",
             lambda self, query, *, page=1, limit=50: [{"股票代码": "600519"}],
         )
         assert WebQuoteSession.wencai("连板3板以上", limit=20) == [{"股票代码": "600519"}]

@@ -9,13 +9,13 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-from tstdx.errors import ConnectionFailed, RetryAdvice, TdxError  # noqa: E402
-from tstdx.feedback.reporter import (  # noqa: E402
+from atst.errors import ConnectionFailed, RetryAdvice, TdxError  # noqa: E402
+from atst.feedback.reporter import (  # noqa: E402
     FeedbackReporter,
     _sanitize_value,
 )
-from tstdx.feedback.stats import UserStats  # noqa: E402
-from tstdx.feedback.telemetry import TelemetryCollector  # noqa: E402
+from atst.feedback.stats import UserStats  # noqa: E402
+from atst.feedback.telemetry import TelemetryCollector  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -183,8 +183,8 @@ class TestReporterSanitize:
         assert payload["advice"] == {"retryable": True, "backoff": 1.5}
 
     def test_report_disabled_returns_false_no_send(self, monkeypatch):
-        monkeypatch.delenv("TSTDX_FEEDBACK", raising=False)
-        monkeypatch.delenv("TSTDX_FEEDBACK_ENDPOINT", raising=False)
+        monkeypatch.delenv("ATST_FEEDBACK", raising=False)
+        monkeypatch.delenv("ATST_FEEDBACK_ENDPOINT", raising=False)
         reporter = FeedbackReporter()
         assert reporter.enabled is False
         assert reporter.report_error(RuntimeError("x")) is False

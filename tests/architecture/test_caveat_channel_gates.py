@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """告警通道的结构性门禁：类别表不许虚设，发射口不许旁路，分派点不许丢袋。
@@ -15,11 +15,11 @@ import re
 from pathlib import Path
 
 from tests.support.field_readers import member_reference_sites, members_referenced
-from tstdx.diagnostics import WarningCode
+from atst.diagnostics import WarningCode
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "tstdx"
-CHANNEL = "tstdx/diagnostics.py"
+SOURCE = ROOT / "atst"
+CHANNEL = "atst/diagnostics.py"
 #: 面向使用者的类别表所在文档与小节标题。
 WARN_DOC = ROOT / "docs" / "errors.md"
 WARN_SECTION = "## 一之四、结果侧数据瑕疵：`WarningCode`"
@@ -28,7 +28,7 @@ _PY_IN_CELL = re.compile(r"`([^`]+\.py)`")
 #: 允许直接 ``warnings.warn`` 的文件与理由。豁免的门槛是"这条告警**不是**某个结果的
 #: 事实"——只有通道的发射口自身过这道门槛。执行器的 binding 审计曾在此列（"import 期
 #: 没有 QueryPlan 可以携带它"）：那句话只解释了它为什么不能进通道，没有解释它为什么
-#: 可以不报错——它现在直接 raise。``tstdx/deprecation.py`` 也曾在此列（"API 生命周期
+#: 可以不报错——它现在直接 raise。``atst/deprecation.py`` 也曾在此列（"API 生命周期
 #: 提示"）：那个模块在包内零消费者，V18 第 8 轮按 F-74/D3 删除，豁免随宿主一起撤销。
 BARE_WARN_ALLOWED: dict[str, str] = {
     CHANNEL: "通道的唯一发射口",
@@ -130,8 +130,8 @@ def test_every_forwarded_caveat_is_blamed_on_the_method_that_asked_for_it() -> N
     数据照旧、判断照旧上 wire，只有归属换了个人——所以钉在"标签前缀 == 本模板的
     公共名"这个对应关系上，而不是钉在某一条文案的字样上。
     """
-    from tstdx.client.async_ import AsyncTdxClient
-    from tstdx.client.sync import (
+    from atst.client.async_ import AsyncTdxClient
+    from atst.client.sync import (
         ExMarketClient,
         F10Client,
         GoodsClient,
@@ -268,7 +268,7 @@ def test_the_user_doc_table_is_the_same_closed_set_as_the_enum_and_names_real_em
 
     三个方向一起判：文档漏一行 = 该类别在面向使用者的文档里隐身（调用方在 wire 上见到
     一个没人解释过的键）；文档多一行 = 幻影类别；"发射口"一列与代码引用点不等 = 把一条
-    判断记在了不产出它的模块头上。分母取枚举自身，路径集合取 `tstdx/` 现扫，两处都不抄名单。
+    判断记在了不产出它的模块头上。分母取枚举自身，路径集合取 `atst/` 现扫，两处都不抄名单。
     """
     scanned, sites = member_reference_sites("WarningCode", skip=CHANNEL)
     assert scanned > 30, f"只扫到 {scanned} 个模块，扫描自身失效"

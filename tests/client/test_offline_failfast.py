@@ -2,7 +2,7 @@
 
 覆盖：
 * 账本标记 ``STATUS_OFFLINE`` 且无回退豁免的命令 → ``_req`` 立即抛
-  :class:`~tstdx.errors.CommandOffline`（不发请求、不吃超时链）；
+  :class:`~atst.errors.CommandOffline`（不发请求、不吃超时链）；
 * 豁免命令（0x054C quotes_snapshot，方法内有逐只 0x0530 回退）不触发
   fail-fast，仍正常进连接池；
 * ``CommandOffline`` 为不可重试错误（``default_advice.retryable is False``）；
@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.client import TdxClient
-from tstdx.client.core import (
+from atst.client import TdxClient
+from atst.client.core import (
     _OFFLINE_FALLBACK_OK,
     _UNVERIFIED_STRUCTURED_BLOCK,
 )
-from tstdx.errors import CommandOffline, NotImplementedFeature
-from tstdx.protocol.commands import (
+from atst.errors import CommandOffline, NotImplementedFeature
+from atst.protocol.commands import (
     CMD,
     STATUS_OFFLINE,
     Family,
@@ -110,7 +110,7 @@ class TestBlockedCommandsSpeakTheirOwnLedgerLine:
     每一条拦下它的用例一起红。
 
     判据刻意读 ``ei.value.message`` 而不是 ``str(ei.value)``：``TdxError.__str__``
-    会把 ``context`` 的前六个键拼进字符串（``tstdx/errors.py:135-140``），于是
+    会把 ``context`` 的前六个键拼进字符串（``atst/errors.py:135-140``），于是
     ``summary in str(exc)`` 会被 ``context`` 单独满足——变异 M1（只摘文案、留 context）
     实测以 RC=0 溜过。两句分开断言，才是"人读的那句话"与"机器读的那个键"两件事。
     """

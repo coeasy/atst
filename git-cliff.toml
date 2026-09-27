@@ -1,4 +1,4 @@
-# git-cliff configuration for tstdx
+# git-cliff configuration for atst
 # https://git-cliff.org/configuration.html
 
 [changelog]
@@ -29,7 +29,7 @@ body = """
 footer = """
 ---
 
-Full changelog: [GitHub Releases](https://github.com/coeasy/tstdx/releases)
+Full changelog: [GitHub Releases](https://github.com/coeasy/atst/releases)
 """
 trim = true
 sort_commits = "oldest"

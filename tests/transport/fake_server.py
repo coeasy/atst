@@ -1,9 +1,9 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """罐头 TDX 主站（仅服务 tests/transport）。
 
-线程化 socket server，按 :mod:`tstdx.codec.framing` 的 7709 帧布局工作：
+线程化 socket server，按 :mod:`atst.codec.framing` 的 7709 帧布局工作：
 
 * 请求头 12 字节 ``<BIBHHH``（zip, seq, packet_type, pkg_len1, pkg_len2, method）
 * 响应头 16 字节 ``<IBIBHHH``（magic, zip_flag, seq, reserved, method, zip, unzip）
@@ -29,7 +29,7 @@ import struct
 import threading
 import time
 
-MAGIC = 0x0074CBB1  # DEFAULT_7709_SPEC.magic（复制常量避免 import tstdx）
+MAGIC = 0x0074CBB1  # DEFAULT_7709_SPEC.magic（复制常量避免 import atst）
 
 REQ_HEADER = struct.Struct("<BIBHHH")  # zip, seq, ptype, pkg1, pkg2, method
 RESP_HEADER = struct.Struct("<IBIBHHH")  # magic, zip_flag, seq, reserved, method, zip, unzip

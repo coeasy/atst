@@ -1,13 +1,13 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """模块可达性门禁（工业审计 F5 固化）。
 
-AST 静态扫描 tstdx/ 全部模块的 import 边（含 tstdx/__init__.py 的 _LAZY
+AST 静态扫描 atst/ 全部模块的 import 边（含 atst/__init__.py 的 _LAZY
 字符串边），从进程入口种子出发 BFS，报告**不可达且不在处置白名单**的模块。
 
 已知盲区（由白名单显式收编，不允许新增未登记项）：
-* ``python -m`` 入口（tstdx.tools.* / tstdx.cli）——已作为种子直接可达；
+* ``python -m`` 入口（atst.tools.* / atst.cli）——已作为种子直接可达；
 * 函数体内的惰性 import——脚本识别全部 import 节点（含函数内），无此盲区；
 * ``importlib``/getattr 动态导入——若存在须登记白名单并注明理由。
 
@@ -52,14 +52,14 @@ with contextlib.suppress(Exception):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
 
 ROOT = Path(__file__).resolve().parents[1]
-PKG = ROOT / "tstdx"
+PKG = ROOT / "atst"
 ALLOW = ROOT / "scripts" / "_reach_allow.txt"
 
 #: 一条豁免记录至少要说清"谁消费它 + 为什么生产链路不 import 它"，短于此即视为无效理由。
 MIN_REASON_CHARS = 40
 
 #: 理由里"谁消费它"的可核验指针：形如 ``tests/trade/``、``docs/api/README.md``、
-#: ``tstdx/profile/detect.py`` 的仓内路径。长度门槛只保证理由**像**一句话，
+#: ``atst/profile/detect.py`` 的仓内路径。长度门槛只保证理由**像**一句话，
 #: 不保证它指向的东西还在——一条写着"tests/output/ 消费"而该目录已被改名的记录，
 #: 和没写理由等价（F-67 的同形教训：把已失效的证据读成绿，比缺证据更糟）。
 _CONSUMER_PATH = re.compile(r"[\w.\-]+(?:/[\w.\-]+)+/?")
@@ -83,10 +83,10 @@ def _consumer_pointers(reason: str) -> tuple[list[str], list[str]]:
 
 #: 一条豁免记录里"它到底是什么"的可核验锚点：写成 `` `名字` `` 的反引号格。
 #: 反引号是**刻意的记号**——不加记号就无法区分"公共 API 名"与"它讲的编码名"：
-#: 取证探针按"括号内斜杠分隔的标识符形状"提取时，``tstdx.charset.encoding`` 那条
+#: 取证探针按"括号内斜杠分隔的标识符形状"提取时，``atst.charset.encoding`` 那条
 #: 写着 GB18030/GBK/Big5 的说明被当成三个符号声明而全部判错（3/3 误报）。
 #: 判据也只在静态命名空间上算（定义、导入别名、``__all__``），**不 import 目标模块**：
-#: `tstdx.output` 与 `tstdx.*.web` 一类模块要装 extras 才导得进来，
+#: `atst.output` 与 `atst.*.web` 一类模块要装 extras 才导得进来，
 #: 让门禁去 import 可选依赖等于把"环境没装全"读成"豁免记录有缺陷"。
 _SYMBOL_CLAIM = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)`")
 
@@ -153,7 +153,7 @@ def _claim_defects(
             c
             for c in set(_SYMBOL_CLAIM.findall(records[module]))
             # 反引号里的路径不是符号声明（`tests/trade/…py` 由指针那两格管）；
-            # 带点号的格（`tstdx.profile.detect_profile`）是"别的模块的名字"，本格不判。
+            # 带点号的格（`atst.profile.detect_profile`）是"别的模块的名字"，本格不判。
             if "/" not in c and "." not in c and not c.endswith((".py", ".md"))
         )
         if not claims:
@@ -181,11 +181,11 @@ def _claim_defects(
 # mcp_server 换成了 runtime_*，写死的旧名会被 `if s in modules` 静默丢弃，
 # 使整条服务面在图里消失（漏报为"不可达"的反向风险）。
 SEEDS = {
-    "tstdx",
-    "tstdx.cli",
-    "tstdx.integration.runtime_http",  # uvicorn 直挂 / tstdx serve
-    "tstdx.integration.runtime_ws_server",  # python -m tstdx.integration.runtime_ws_server
-    "tstdx.integration.mcp",  # python -m / stdio 客户端拉起
+    "atst",
+    "atst.cli",
+    "atst.integration.runtime_http",  # uvicorn 直挂 / atst serve
+    "atst.integration.runtime_ws_server",  # python -m atst.integration.runtime_ws_server
+    "atst.integration.mcp",  # python -m / stdio 客户端拉起
 }
 
 
@@ -224,7 +224,7 @@ def _load_allow(path: Path = ALLOW) -> tuple[dict[str, str], list[str]]:
             if not live and not dead:
                 defects.append(
                     f"[no-pointer] {module}：理由没有任何可核验的仓内路径指针"
-                    f"（tests/… · docs/… · tstdx/…），因此无人能证实谁在链外消费它"
+                    f"（tests/… · docs/… · atst/…），因此无人能证实谁在链外消费它"
                 )
         records[module] = reason
     return records, defects
@@ -260,9 +260,9 @@ def _lazy_edges(init_path: Path, pkg: str) -> set[str]:
 
     两种写法都必须识别：``_LAZY = {...}``（Assign）与
     ``_LAZY: dict[str, str] = {...}``（AnnAssign）。只认前者会让根包与
-    ``tstdx.web`` 的惰性导出边整体消失，把纯惰性 façade 子模块误判成孤儿。
+    ``atst.web`` 的惰性导出边整体消失，把纯惰性 façade 子模块误判成孤儿。
 
-    值可以是点号绝对路径（``"tstdx.batch"``、``("tstdx.web.session", "X")``），
+    值可以是点号绝对路径（``"atst.batch"``、``("atst.web.session", "X")``），
     也可以是包内相对名（``"session"``，或带子包的 ``"jsl.adapters"``）；含 ``:``
     的 extras 目标取路径部分。
     """
@@ -293,7 +293,7 @@ def _lazy_edges(init_path: Path, pkg: str) -> set[str]:
             return []
         module = raw.split(":")[0]
         # "含点即绝对"是 V20 Phase 3 之前的旧假设：那时包内相对名都是单段
-        # （``"session"``），带点的只可能是 ``"tstdx.batch"`` 这种绝对路径。按
+        # （``"session"``），带点的只可能是 ``"atst.batch"`` 这种绝对路径。按
         # Provider 归组后包内相对名也能带点（``"jsl.adapters"``），两种都给出候选，
         # 由调用方用"该模块是否存在"这一唯一判据挑出真实的那条边。
         return [module, f"{pkg}.{module}"]
@@ -345,7 +345,7 @@ def _import_edges(tree: ast.Module, pkg: str, is_pkg: bool) -> set[str]:
 def _build_graph(
     modules: dict[str, Path], packages: set[str], allow: set[str]
 ) -> dict[str, set[str]]:
-    """建图：模块 → 依赖模块集合（只保留指向 tstdx 包内或白名单内的边）。"""
+    """建图：模块 → 依赖模块集合（只保留指向 atst 包内或白名单内的边）。"""
     graph: dict[str, set[str]] = {}
     for name, path in modules.items():
         try:
@@ -371,13 +371,13 @@ def _entrypoints(modules: dict[str, Path]) -> set[str]:
 
     ``__main__.py`` 按**文件名**判定而不是抄一份模块名清单：``python -m <包>`` 找的就是
     这个文件名，写死的名单会在每加一个入口时静默漏掉它——第 23 轮给 MCP 面补
-    ``tstdx/integration/mcp/__main__.py`` 时，旧名单正会把新入口报成孤儿。
+    ``atst/integration/mcp/__main__.py`` 时，旧名单正会把新入口报成孤儿。
     """
-    named = {"tstdx.cli"}
+    named = {"atst.cli"}
     return {
         m
         for m, path in modules.items()
-        if m in named or m.startswith("tstdx.tools.") or path.name == "__main__.py"
+        if m in named or m.startswith("atst.tools.") or path.name == "__main__.py"
     }
 
 
@@ -413,7 +413,7 @@ _PY_FILE = re.compile(r"[\w.\-]+(?:/[\w.\-]+)+\.py")
 
 
 def _module_pointers(reason: str) -> list[str]:
-    """理由里点名的**仓内 .py 文件**指针（tests/… 或 tstdx/…），路径归一成斜杠形式。"""
+    """理由里点名的**仓内 .py 文件**指针（tests/… 或 atst/…），路径归一成斜杠形式。"""
     return [t.replace("\\", "/") for t in _PY_FILE.findall(reason)]
 
 
@@ -525,7 +525,7 @@ def main() -> int:
         if m in reach:
             continue
         reach.add(m)
-        # 父包传播：导入 tstdx.a.b 即执行 tstdx.a 的 import 边
+        # 父包传播：导入 atst.a.b 即执行 atst.a 的 import 边
         for anc in _ancestors(m):
             if anc in modules and anc not in reach:
                 reach.add(anc)

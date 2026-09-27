@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.domain.symbol import to_tdx_market
-from tstdx.errors import ParseError
-from tstdx.protocol.parsers.std7709 import (
+from atst.domain.symbol import to_tdx_market
+from atst.errors import ParseError
+from atst.protocol.parsers.std7709 import (
     build_realtime_quote_body,
     infer_market,
     quote_request_market,

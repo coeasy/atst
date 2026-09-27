@@ -19,8 +19,8 @@
 import time
 from typing import Any
 
-from tstdx import Client, FallbackPolicy
-from tstdx.errors import TdxError
+from atst import Client, FallbackPolicy
+from atst.errors import TdxError
 
 WATCHLIST = ["sh600519", "sz000001", "sz300750"]
 ALERT_PCT = 5.0
@@ -61,7 +61,7 @@ if __name__ == "__main__":
 
 `_field()` 那层不是装饰：`quotes` 的行形状按源不同。dict 行的键固定为
 `code / datetime / price / last_close / open / high / low / volume / amount / bid / ask`；
-`change`、`pct_change`、`turnover_rate` 只在 `Quote` 对象（`tstdx.domain.models.Quote`）上是
+`change`、`pct_change`、`turnover_rate` 只在 `Quote` 对象（`atst.domain.models.Quote`）上是
 派生属性，dict 里没有 —— 涨幅要么自己按 `price` 与 `last_close` 算，要么统一转成 `Quote`。
 **7709 实时路径上 `datetime` / `bid` / `ask` 恒空**（口径见 `docs/tdx_status.md`），
 别拿它们当"没有行情"的判据。
@@ -85,8 +85,8 @@ print(result.meta.provider, result.meta.channel)
 
 ## 每源限流
 
-Web Provider 内置令牌桶限流（`tstdx/transport/ratelimit.py`，各源默认频率见
-`tstdx/web/base.py`），被反爬拦截（E7010）时该次尝试记为 `failed` 并继续下一个源。
+Web Provider 内置令牌桶限流（`atst/transport/ratelimit.py`，各源默认频率见
+`atst/web/base.py`），被反爬拦截（E7010）时该次尝试记为 `failed` 并继续下一个源。
 批量轮询建议自行控制节奏：
 
 ```python

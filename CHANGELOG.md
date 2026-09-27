@@ -122,7 +122,7 @@ WS 实时订阅这条**此前断链**的链路（README/接口文档早已宣称
 **收口读数**（2026-09-27，本机 Windows + Python 3.12；三轮全部修完之后的同一棵工作树）：
 `pytest -m "not network"` **4 049 passed / 9 skipped / 0 failed / 0 error**（`tests=4058`，
 `194.7 s`）；`ruff check` `All checks passed!`、`ruff format --check` `477 files already
-formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
+formatted`、`mypy atst/` `Success: no issues found in 189 source files`、
 `scripts/audit_reachability.py --strict` `无未登记孤儿 ✓`、`scripts/check_docs_links.py`
 `docs link check OK (96 files)`，五道均 rc=0。
 
@@ -154,7 +154,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   `BaseHTTPRequestHandler` 按名分派的框架钩子，`# noqa: N802`）；未读参数扫描 3941 个参数，
   294 条候选中 293 条为 `@overload` 桩 / 抽象桩 / 框架回调签名假阳性。
 - **收口读数（2026-09-27 本机 Windows + Python 3.12）**：`pytest -m "not network"`
-  **4041 passed / 9 skipped / 0 failed**；`ruff check`、`ruff format --check`、`mypy tstdx/`
+  **4041 passed / 9 skipped / 0 failed**；`ruff check`、`ruff format --check`、`mypy atst/`
   （189 文件）、`tests/architecture`、`scripts/audit_reachability.py --strict`（无未登记孤儿）、
   `scripts/check_docs_links.py`（96 文件）全部 rc=0。
 
@@ -169,21 +169,21 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   一条构造逻辑跨 3–4 个文件才能读全。现已逐条 merge 回真正的宿主：`transport/base.py`、
   `transport/pool.py`、`transport/hosts.py`、`transport/speedtest.py`、`client/async_.py`、
   `client/sync.py`；8 个 hardening 文件与两处 side-effect import 一并删除，新增
-  `transport/_validation.py` 承载两边共用的校验原语。外部 `from tstdx.transport import TcpConnection`
+  `transport/_validation.py` 承载两边共用的校验原语。外部 `from atst.transport import TcpConnection`
   等导入路径与构造行为不变，`tests/transport/`、`tests/client/` 的守卫判据原样全绿。
 - **Phase 2 —— executor 分派从手抄元组改为规则函数**：`_CORE_BINDINGS` 那 17 条手维护的
   `DirectBinding` 元组删除，改由 `_executor_for()` 规则函数按 capability 派生，`DIRECT_BINDINGS`
   退化为「注册表全量三元组 × 是否专属执行体」的派生结果；`MigratedCapabilityBinding` 新增
-  `factory: str`（`"tstdx.web.tencent.adapters:MinuteSource"` 形状的惰性导入路径，5 条 web_adapter
+  `factory: str`（`"atst.web.tencent.adapters:MinuteSource"` 形状的惰性导入路径，5 条 web_adapter
   绑定已填），executor 里两处按 provider 硬编码的 if 分支随之删除。缺 `factory` 时执行面
   fail-closed 抛 `ValidationError`，不再靠隐式 fallback 猜实现。
 - **Phase 3 —— `web/` 按 Provider 归组**：`web/adapters.py`(884 行)、`web/adapters_ext.py`、
   `web/adapters_baidu.py`、`web/adapters_index.py`、`web/adapters_margin.py`、`web/history.py`
   六个物理文件删除，18 个适配器类按 Provider 分流进 `web/tencent/`(7) `web/sina/`(4)
   `web/eastmoney/`(4) `web/baidu/`(1) `web/jsl/`(1) `web/boc/`(1) 六个包，每个包只有
-  `__init__.py` + `adapters.py`。`tstdx/web/__init__.py` 的 `_LAZY` 惰性导出表与 `_ADAPTER_SPECS`
-  注册表同步改指新路径，**`from tstdx.web import TencentSource` 这类既有导入路径与
-  `tstdx.web.<provider>.adapter` 之外的一切对外入口保持不变**（新路径是复数 `adapters`）。
+  `__init__.py` + `adapters.py`。`atst/web/__init__.py` 的 `_LAZY` 惰性导出表与 `_ADAPTER_SPECS`
+  注册表同步改指新路径，**`from atst.web import TencentSource` 这类既有导入路径与
+  `atst.web.<provider>.adapter` 之外的一切对外入口保持不变**（新路径是复数 `adapters`）。
   域文件（`boards`/`chip`/`corporate`/`fundflow`/`news`/`wencai`/`ticks`/`longhu`/`hot_rank`/`esg`/
   `governance`/`fin_report`/`market_stats`/`global_market`/`adapters_fund`/`efinance_*` 等）按方案
   3f 决策**留在原位**——它们横跨多个 Provider，塞进单个 provider 包只会制造新的错位。
@@ -193,7 +193,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   的全部进度都走 stderr，表现就是打包链无任何输出地失败。显式重定向任一标准流即恢复句柄复制路径。
 - **收口读数（2026-09-26 本机 Windows + Python 3.12）**：`pytest tests -m "not network"`
   **4041 passed / 9 skipped / 15 deselected**；`ruff check`、`ruff format --check`、
-  `mypy --warn-unused-ignores tstdx/`、`audit_reachability --strict`（189 模块 / 174 可达 /
+  `mypy --warn-unused-ignores atst/`、`audit_reachability --strict`（189 模块 / 174 可达 /
   15 白名单 / 无未登记孤儿）、`test_doc_code_consistency.py`、`check_docs_links.py` 全部 rc=0；
   `scripts/build_package.py --smoke` 走通（`runtime_files=190`，`twine check` PASSED，
   临时 venv 装 wheel + CLI 冒烟通过）。三轮逻辑审查的覆盖面与**未达标项**（executor 710 行 vs
@@ -208,7 +208,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   被写进 `client.last_errors` 侧信道，内核不读，于是 HTTP/WS/MCP 三面在断网时看到 200 加空结果；
   CLI 早已自建绕行（读 `last_errors` 才报得出原因），这条不对称就是缺口的位置。
 - **F-73…F-76（新）**：活文档指令调用已删除的 `client.router.last_errors()`（小写点号形状是两条判据的
-  盲区）；`tstdx/deprecation.py` 206 行退役机制包内零消费者；三个恒定抛错能力仍占三面入口且缺响应分类；
+  盲区）；`atst/deprecation.py` 206 行退役机制包内零消费者；三个恒定抛错能力仍占三面入口且缺响应分类；
   167 个能力靠 `__getattr__` 动态出现、`dir()` 与类型检查器都看不见。
 - **新文档**：`docs/REFACTOR_PLAN_V18_REVIEW.md` 记录功能/架构/实现现状、主链贯通判定、五笔新账的三条
   路径与默认建议（D1–D6），并把已裁决未执行的 F-70 (b)、F-71 (c) 排进第 50/51 步。本轮**未新增门禁**。
@@ -216,7 +216,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 ### Changed + Tests（v17 Phase 5 第 48 步 —— 内核的 web 一跳不再借道对外便利入口，并把它该不该存在登记为 F-71）
 
 - **对外行为零变化，改的是内核依赖了谁**：`DirectProviderExecutor._web_quotes` 原先调用公开的
-  `tstdx.web.get_quotes(...)` 并显式传 `source=plan.provider`；现在与兄弟跳 `_tencent_bars` 同形，
+  `atst.web.get_quotes(...)` 并显式传 `source=plan.provider`；现在与兄弟跳 `_tencent_bars` 同形，
   直接 `create_source(plan.provider, timeout=...)` + `normalize_symbol` 取数并 `close()`。两条路径语义等价
   （`get_quotes` 的"指定源"分支就是这三行，省略掉的 `headers`/`cookie` 在 `create_source` 里的缺值正是
   当时传进去的 `None`，而 `plan.provider` 经 `resolve_provider` 恒为已注册非空名，那一支恒被走到），
@@ -236,15 +236,15 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 - **一条如实登记的判据边界**：把执行面那次 `normalize_symbol` 去掉**不会**变红，因为符号在进入内核前
   已由规划器归一化（实测 `plan.spec.symbols == ('sh600519', 'sh600519')`）。执行面这次归一化是为与旧路径
   等价而保留的冗余第二遍，本判据的符号断言只钉"参数原样送达"，不声称钉住归一化。
-- **同轮登记 F-71（待裁决）**：`tstdx.web` 至今仍是一条公开、被 `docs/migration/easyquotation.md` 与
+- **同轮登记 F-71（待裁决）**：`atst.web` 至今仍是一条公开、被 `docs/migration/easyquotation.md` 与
   `docs/configuration.md` 指向、且被根包 docstring 的 Quick start **禁网真实求值**保活的数据入口，
   而 §0.1 与 README 的口径是「`Client` 唯一业务入口」。三条路径（(a) 收口删入口、(b) 承认双入口并开书面
   例外、(c) 留入口但去掉隐式换源）连同实测代价一起写进 §0.3，不代拍板——删除或改写对外入口不是一轮
   内部加固的授权范围。
 - **配套做了一次全仓构造点普查**：本步之后，内核到 web 的取数跳**全部**是单源构造点（`create_source` 两处、
   三家历史 K 线源类直构造、迁移能力跳的 `WebQuoteSession(源名)`）；有序降级的构造点在发行代码里只剩
-  `tstdx/web/__init__.py:498` 与 `:506` 两处缺省分支。普查顺带抓出一条假事实：`tstdx/web/session.py:168`
-  自称会话「底层复用 `tstdx.web` 的零依赖适配器与降级逻辑」，而会话的 `_c` 只 `create_source(self.source_name)`，
+  `atst/web/__init__.py:498` 与 `:506` 两处缺省分支。普查顺带抓出一条假事实：`atst/web/session.py:168`
+  自称会话「底层复用 `atst.web` 的零依赖适配器与降级逻辑」，而会话的 `_c` 只 `create_source(self.source_name)`，
   `session.py` 与 11 个 `_session_*.py` mixin 对降级符号零引用——那句话描述的降级只属于 `WebQuoteClient`。
   它随 F-71 一起处置，本步不改对外文档口径。
 
@@ -281,10 +281,10 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 
 ### Removed（v17 Phase 5 第 46 步 —— 命令账本函数面的两个孤儿：F-65 裁决 (b) 的执行；**BREAKING**）
 
-- **删掉 `tstdx/protocol/commands.py` 的 `stats()` 与 `get_command_by_name()`，不留别名、不留空壳**：
-  `stats()` 是按族聚合的计数字典，`tstdx/` 内零读取点、全仓唯一读者是它自己的测试
+- **删掉 `atst/protocol/commands.py` 的 `stats()` 与 `get_command_by_name()`，不留别名、不留空壳**：
+  `stats()` 是按族聚合的计数字典，`atst/` 内零读取点、全仓唯一读者是它自己的测试
   （`tests/unit/test_commands.py` 里那一句 `st = stats()`）；`get_command_by_name()` 对 85 行做线性名字扫描，
-  零调用、零测试、且从未从 `tstdx.protocol` 再导出——挂在模块 `__all__` 上只是一个没人兑的承诺。
+  零调用、零测试、且从未从 `atst.protocol` 再导出——挂在模块 `__all__` 上只是一个没人兑的承诺。
 - **两条被删能力都有归宿，不是"删了就没了"**：名字 → 整行由 `get_command(cmd(name), family)` 覆盖，
   并有一条用例对 85 行逐行证明两式等价；按状态计数由 `len(by_status(STATUS_OFFLINE))` 这类直接读法取代
   （`offline` 9 / `degraded` 2 / `online` 74，门禁从运行期重算这几个数）。
@@ -292,7 +292,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   `unknown_command_ids`），其中按裁决 (b) 保留为**公开查询面**的是 `by_family` 与 `unknown_command_ids`；
   五个名字逐个写了口径（返回类型、未知输入的语义、`unknown_command_ids` 返回**行**而非裸命令号），
   见 `docs/api/interfaces.md`「命令账本查询面」。
-- **`cmd()` 是同一把尺子量出来的第三个零生产读取点的名，裁决 (b) 没有覆盖它**（`tstdx/` 内对它的调用为 0，
+- **`cmd()` 是同一把尺子量出来的第三个零生产读取点的名，裁决 (b) 没有覆盖它**（`atst/` 内对它的调用为 0，
   消费者只有测试）。本步不擅自扩大删除范围：**保留 + 补文档 + 补用例**，并把它由新门禁的
   "公开名必须被测试真的调用"判据持续把住——它现在满足，将来静默失去读者就会红。
 - **新门禁 `tests/architecture/test_ledger_public_surface.py`（5 项）**：模块函数面名单与 `__all__` 双向锁死、
@@ -303,17 +303,17 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   只有 `unknown_command_ids` 一处；② `by_status` 的 docstring 与文档行原写"客户端 fail-fast 就以它为依据"，
   实测 `_guard_offline` 走的是 `get_command` + 单行 `status` 字段——现已改写为"本函数负责按状态列全部行"。
 - **`docs/archive/OPTIMIZATION_PLAN.md` 那句"`unknown_command_ids` 保留作 `unknown_commands()` 的别名"从未成立**：
-  初始提交里两个名字就在同一模块，而真实的 `unknown_commands` 是 `tstdx/transport/sniff.py` 上
+  初始提交里两个名字就在同一模块，而真实的 `unknown_commands` 是 `atst/transport/sniff.py` 上
   `ProtocolSniffer.unknown_commands()`（观察到的未登记命令号，与账本无关）。归档原文按"不抹史"保留，另加修订注记。
 
 ### Removed（v17 Phase 5 第 45 步 —— 一件造好并测过、却没有任何生产调用点的安全资产：F-18 裁决 (b) 的执行；**BREAKING**）
 
-- **删掉 `tstdx/providers/http.py`（360 行）连同它的 10 项离线测试**：公开名 `PROVIDER_HTTP_HOST_SUFFIXES`、
+- **删掉 `atst/providers/http.py`（360 行）连同它的 10 项离线测试**：公开名 `PROVIDER_HTTP_HOST_SUFFIXES`、
   `host_allowed`、`ProviderBoundHttpClient`（含逐跳 `Location` 校验）一并物理移除，不留别名、不留空壳。
-  判据是可达性扫描而非印象：v16 删除跨源路由层之后它在 `tstdx/` 内的生产调用点为 **0**，只有
+  判据是可达性扫描而非印象：v16 删除跨源路由层之后它在 `atst/` 内的生产调用点为 **0**，只有
   `tests/providers/test_http_boundary.py` 在 import 它——一件没人接的防线不等于一条防线。
 - **给今天想约束"只能碰这一家主机"的调用方的替代路径**：本库不再提供 Provider→主机名的可执行白名单，
-  `tstdx/web/_base_http.py` 的 `build_client(prefer_httpx=…, default_headers=…)` 也从不接受 Provider 身份
+  `atst/web/_base_http.py` 的 `build_client(prefer_httpx=…, default_headers=…)` 也从不接受 Provider 身份
   （第 45 步复核时实测；登记为 (a) 路径当时的接线代价被低估了一格）。单源边界请在自己的 transport 层做，
   或继续用内核那条真实约束：选定的 Provider 不会被悄悄换成别家。
 - **同时撤销 `scripts/_reach_allow.txt` 的对应豁免记录**（17 → 16 条）：模块删掉却不撤记录，正是 F-22
@@ -343,7 +343,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   一直是 `CompatibilityError` E8000 而不曾发过警告。已按 F-68 裁决 (a) 接受「用户写了 `except
   SourceUnavailable` 会失效」这一代价；`docs/errors.md` §一之二 是全仓唯一的退役登记表。
 - **裁决里的第 5 个叶子被取证否掉，没有删**：`BackpressureOverflow`(E6030) 在补上「投递站点」判据后
-  实测有真实站点（`tstdx/streaming/base.py:185-186` 队列溢出时 `sub.on_error(BackpressureOverflow(...))`，
+  实测有真实站点（`atst/streaming/base.py:185-186` 队列溢出时 `sub.on_error(BackpressureOverflow(...))`，
   context 带 `dropped_total`/`max_queue`）。删它等于删一条对外承诺，与裁决意图相反，故保留并新增行为测试
   `tests/streaming/test_backpressure_delivery.py`。
 - **对外文档按实测行为改写，不是把名字抹掉**：6 份 Provider 文档的错误段统一为 `ValidationError`(E1010) +
@@ -357,41 +357,41 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 - **承诺门禁改成双向，并把自己写的表钉回事实**：`tests/architecture/test_error_promises.py` 新增反向判据
   「活文档错误小节点名的 CamelCase 名字必须存在于代码里」与退役登记判据；`tests/errors/test_taxonomy.py` 里
   此前**没有任何测试读取**的 `EXPECTED_HTTP_STATUS` 现按「偏离默认 500 的类」双向核对，`EXPECTED_PARENTS`
-  必须覆盖每个类的直接基类，表与 `tstdx.errors.__all__` 双向对账。三条新判据当场量出既有表的 8 处漂移
+  必须覆盖每个类的直接基类，表与 `atst.errors.__all__` 双向对账。三条新判据当场量出既有表的 8 处漂移
   （`CommandOffline`/`FreshnessViolation`/`TruncatedDataError` 三个真类在四张表里全部缺席等）。
 - **README 不再声明异常类个数**：`40+ 异常类` 这类快照会在下一次删类时静默变谎，故撤下其下界宣称，并换成
   反向判据（任何活文档写回 `NN+ 异常类` 即红）+ 扫描面金丝雀。顺带删掉那条宣称的旧真相源，它数的是
   `errors.py` 全部顶层 `ClassDef`，把 `RetryAdvice` 这个 dataclass 也算成了「异常类」。
 - **取证与复测**：14 发变异逐发点名（含把 `on_error` 投递前缀摘掉时金丝雀确实报警），每发注入→断言该判据红→
-  字节级还原；隔离工作树同一轮复测（py3.13.12、`-m 'not network'`、`--cov=tstdx`、阈值 77 未动）：基线 `9ba2385`
+  字节级还原；隔离工作树同一轮复测（py3.13.12、`-m 'not network'`、`--cov=atst`、阈值 77 未动）：基线 `9ba2385`
   junit 3531 / 0 失败 / 5 跳过、81.26%，本步树 junit 3585 / 0 / 5、81.27%（净增 54 个用例）；九项确定性门禁
   两树逐格相同且全部 rc=0（originality 192/192、spec_audit 100.0%、reachability 无未登记孤儿、docs links 82 files、
   mypy、ruff check、ruff format 473 files）。
 
 ### Fixed（v17 Phase 4 第 43 步 —— 「照本库自己的指引做，就会把自己弄坏」的开关：F-69，同时给配置面文档上机器对账门禁）
 
-- **`TSTDX_WENCAI_COOKIE` 此前是一个自毁开关**：`tstdx/web/wencai.py` 读它取 i问财 cookie，同文件的错误消息直接叫用户「设置 `TSTDX_WENCAI_COOKIE`」——可它没登记进 `config/loader.py` 的 `_RUNTIME_ENV_KEYS`。`TSTDX_` 是 strict 环境扫描的**保留命名空间**，未登记的名字一律按拼写错误 fail closed，所以用户照本库指引做完，下一条 `Client()` 就抛 `ConfigError [E1000] 无法识别环境变量 TSTDX_WENCAI_COOKIE`：不是「这个变量不生效」，而是整条配置链起不来。基线（`7a3bae7` 干净树）实测复现、修复后同一命令构造成功。本轮登记该变量、在 `docs/configuration.md` §4 的 runtime 变量表补一行，并写明「该前缀为保留命名空间，测试与工具不得占用」。
-- **同一族缺陷的第二格在测试中**：`tests/unit/test_golden.py` 的合成样本开关原名 `TSTDX_GOLDEN_SYNTHETIC`——一个仅用于回放基线的测试夹具占了运行时保留前缀，任何设了它的会话会让 5 个配置贯通测试红。改名 `GOLDEN_INCLUDE_SYNTHETIC`（全仓 grep 证明旧名除那两行外零引用，无 CI / Makefile / 文档依赖 ⇒ 对外契约零变化）。
-- **判据从「两份抄本互相印证」升级为「代码读取 ⇒ 必须有归属」**：§4 的表与 loader 的登记表此前只要一起漏同一个名字就完全自洽。新增 `tests/architecture/test_config_doc_contract.py`（18 个用例）扫描 `tstdx/` 与 `scripts/` 全部 .py 里的 `TSTDX_*` 字面量，每一个都必须已登记或本身是 schema 形 `TSTDX_<SECTION>_<KEY>`；`tests/` 刻意排除（那里的错拼是负例夹具）。
+- **`ATST_WENCAI_COOKIE` 此前是一个自毁开关**：`atst/web/wencai.py` 读它取 i问财 cookie，同文件的错误消息直接叫用户「设置 `ATST_WENCAI_COOKIE`」——可它没登记进 `config/loader.py` 的 `_RUNTIME_ENV_KEYS`。`ATST_` 是 strict 环境扫描的**保留命名空间**，未登记的名字一律按拼写错误 fail closed，所以用户照本库指引做完，下一条 `Client()` 就抛 `ConfigError [E1000] 无法识别环境变量 ATST_WENCAI_COOKIE`：不是「这个变量不生效」，而是整条配置链起不来。基线（`7a3bae7` 干净树）实测复现、修复后同一命令构造成功。本轮登记该变量、在 `docs/configuration.md` §4 的 runtime 变量表补一行，并写明「该前缀为保留命名空间，测试与工具不得占用」。
+- **同一族缺陷的第二格在测试中**：`tests/unit/test_golden.py` 的合成样本开关原名 `ATST_GOLDEN_SYNTHETIC`——一个仅用于回放基线的测试夹具占了运行时保留前缀，任何设了它的会话会让 5 个配置贯通测试红。改名 `GOLDEN_INCLUDE_SYNTHETIC`（全仓 grep 证明旧名除那两行外零引用，无 CI / Makefile / 文档依赖 ⇒ 对外契约零变化）。
+- **判据从「两份抄本互相印证」升级为「代码读取 ⇒ 必须有归属」**：§4 的表与 loader 的登记表此前只要一起漏同一个名字就完全自洽。新增 `tests/architecture/test_config_doc_contract.py`（18 个用例）扫描 `atst/` 与 `scripts/` 全部 .py 里的 `ATST_*` 字面量，每一个都必须已登记或本身是 schema 形 `ATST_<SECTION>_<KEY>`；`tests/` 刻意排除（那里的错拼是负例夹具）。
 - **`docs/configuration.md` 的五类抄本一并钉回运行期事实**：段与键**双向**对账（幻影键与漏记的键各自报红）、默认值对上运行期 `DEFAULT_CONFIG`、取值范围改成行为化判据（文档写的边界必须真被 `validate()` 接受、越界一档必须真被拒）、注册表成员声称以 `PROVIDERS`/`KNOWN_SOURCES` 试正反例、§5 的 8 条 fail-closed 场景就地触发并逐个命中文档写出的异常类名与消息片段、§4 命名规则对全部 17 键逐个成立。**测下来这份文档今天全部为真**，需要改的只有上面那一条环境变量——本步的主体是防回潮。
 - **`docs/api/interfaces.md` 的 WS 方法名单第二种写法纳入既有门禁**：`docs/api/README.md` 写的是括号清单，interfaces 写的是顿号分隔的散文清单，此前只有前者对分派器认账。同一轮把 MCP「N 工具」的数钉回 `TOOLS` 注册表。一个名字两种抄法就有一条判据的漏网形状。
-- **顺手撤销一条已失效的豁免**：`tests/runtime/test_kernel_config_wiring.py` 还以「运行期校验器尚不存在」豁免 `QuerySpec.currentness`，而第 41 步的 `tstdx/runtime/freshness.py` 已直接读它 ⇒ 撤销豁免，该字段自此受幻影旋钮判据管。
+- **顺手撤销一条已失效的豁免**：`tests/runtime/test_kernel_config_wiring.py` 还以「运行期校验器尚不存在」豁免 `QuerySpec.currentness`，而第 41 步的 `atst/runtime/freshness.py` 已直接读它 ⇒ 撤销豁免，该字段自此受幻影旋钮判据管。
 - **12 发变异全部被点名抓出**（含取消登记该变量、塞入未登记的环境读取、改一格默认值、放宽一格范围、改一条报错措辞、删一行文档），并在过程中逼出判据自身的两条形状缺陷（幻影键会让成员声称判据报出误导性结论；§5 场景被删时自检用例以 `KeyError` 崩溃而不是一句人话），两条都已修。
-- 隔离工作树复测（`-m 'not network'`，同一解释器）：基线 junit 3511 / 0 失败 / 5 跳过、81.23%，本步 junit 3531 / 0 / 5、81.26%；`ruff check`、`ruff format --check`、`mypy tstdx/`（CI 同参数）均 0 问题，覆盖率阈值 77 未动。
+- 隔离工作树复测（`-m 'not network'`，同一解释器）：基线 junit 3511 / 0 失败 / 5 跳过、81.23%，本步 junit 3531 / 0 / 5、81.26%；`ruff check`、`ruff format --check`、`mypy atst/`（CI 同参数）均 0 问题，覆盖率阈值 77 未动。
 
 ### Fixed（v17 Phase 4 第 42 步 —— 事实文档里的**斜杠死路径**上门禁：F-67 (a) 的清偿，Phase 4「文档统一」的第一格）
 
 - **这一格改的是两份对外文档里的假事实，不是代码**：`docs/errors.md` §四「上层边界约定」把两个
   磁盘上不存在的模块（`facade/api.py`、`integration/http_server.py`）写成今天的边界，第一条 bullet
   还承诺了 `ApiResponse{success=False, ...}` 与 `context["route_errors"]` 聚合整套已随 v12 门面删除的
-  形状；`docs/ARCHITECTURE.md` §3 的分层表把已随 `fcf8e92` 删除的 `tstdx/security/` 标成「活」。
-  §四 整节按实测重写为五条边界事实：`tstdx/client/api.py` 全文没有一处 `except`（异常原样上抛）、
+  形状；`docs/ARCHITECTURE.md` §3 的分层表把已随 `fcf8e92` 删除的 `atst/security/` 标成「活」。
+  §四 整节按实测重写为五条边界事实：`atst/client/api.py` 全文没有一处 `except`（异常原样上抛）、
   越过信任边界的错误只有 `ErrorEnvelope` 一个形状、HTTP 面真身 `runtime_http.py` 取
   `envelope.http_status`、WS 与 MCP 的人读位置不对称、CLI 向 stderr 打一行 JSON 信封并以
   2/1/130 退出；旧文写错的每一处都留了「此前写的是什么」的说明，不静默抹史。表下补的安全口径
   第一稿多声称了一句「凭据一律走环境变量注入」并链向根本不存在的 `docs/security.md`，
   两处都在落笔前删掉/改指根 `SECURITY.md`。
-- **事实型文档门禁为什么一路放行**：判据只认反引号里的**点号**模块路径（`tstdx.a.b.C` 那种形状），
+- **事实型文档门禁为什么一路放行**：判据只认反引号里的**点号**模块路径（`atst.a.b.C` 那种形状），
   而这几处写的是**斜杠**文件名——形状上就不进判据。本节把同一批文档按斜杠形式再扫一遍，并按 F-67
   登记时的要求先做单独一轮全量取证（`step42/probe_slash_paths.log`）：活文档里含斜杠的路径引用共
   **828 处**、磁盘上不存在的 **85 个不同 token**，收窄到 25 份事实文档后真需要改的只有 **3 处**
@@ -399,27 +399,27 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   历史语境里，按设计不参与事实检查。
 - **判据的两条豁免都很窄**：① 同一**逻辑块**（段落 / 列表项 / 表格行）内写明删除史才赦免——块粒度
   是它的全部效力所在，整份文档当一块等于没有判据；② 该目录由代码在运行期自建，判据是推导不是名单
-  （同一个 .py 文件里既调用 `mkdir`、又把这个名字写成路径分量）。落点回退按仓库根 / `tstdx/` /
+  （同一个 .py 文件里既调用 `mkdir`、又把这个名字写成路径分量）。落点回退按仓库根 / `atst/` /
   `docs/` 三个根各试一次，只认仓库根会**虚报 37 处**（文档对同一物件有三种写法）。基线读数：
   **0 违约 / 18 个豁免 token**，18 个逐个核过出处，无一处是现时口径的假事实。
 - **自检与被自检**：另加一条测试，硬要求这套判据**真的看见过** `execution/`、`provider/`、
-  `tstdx/facade/` 三层已删除目录——一套只会说「没问题」的判据与没有判据等价。**变异 9 例、
+  `atst/facade/` 三层已删除目录——一套只会说「没问题」的判据与没有判据等价。**变异 9 例、
   UNEXPECTED 0**（`step42/mutations2.log`）：控制组绿；3 个植入的现时口径死路径（表格行断言、
-  跨段删除史、`tstdx/security/`）全部被抓；把整份文档当一块 ⇒ 跨段那条**逃逸**；豁免退回
-  「目录名在源码里出现过就算」⇒ `tstdx/security/` 被 `/v13/security/count` 这条路由字符串
+  跨段删除史、`atst/security/`）全部被抓；把整份文档当一块 ⇒ 跨段那条**逃逸**；豁免退回
+  「目录名在源码里出现过就算」⇒ `atst/security/` 被 `/v13/security/count` 这条路由字符串
   **白白赦免**（这正是本步第一版的实际错法）；只认仓库根 ⇒ 误报 37 处；摘掉形状排除 ⇒
-  `output://`、`mypy tstdx/`、`docs/providers/<provider>.md` 等 5 处垃圾进名单；扫描面缩到一份
+  `output://`、`mypy atst/`、`docs/providers/<provider>.md` 等 5 处垃圾进名单；扫描面缩到一份
   文档 ⇒ 自检当场报警。
 - **复测（孤立 worktree，同一轮，解释器 cpython-3.13.12）**：基线 `wt_s42base` = 干净 `39a1b30`，
   junit **3509 / 0 失败 / 0 错误 / 5 跳过**、157.414s、**81.23%**（`step42/s42base.suite.log`）；
   本步树 `wt_s42step` = 同一 HEAD + 本步 3 个文件（dirty=3），junit **3511 / 0 / 0 / 5**、155.107s、
   **81.23%**（`step42/s42step.suite.log`），`3509 + 2`（斜杠判据 + 自检）对得上，阈值 77 未下调；
-  覆盖率 TOTAL 与基线逐格相同（`22606 / 3654 / 6050 / 1023`），因为 `--cov=tstdx` 只看包而本步
+  覆盖率 TOTAL 与基线逐格相同（`22606 / 3654 / 6050 / 1023`），因为 `--cov=atst` 只看包而本步
   零生产代码。9 主门禁两树全部 rc=0 且逐项读数逐行相同（originality 192/192、spec_audit 100.0%、
   docs link 82 files、ruff format 471 files）。
   提交内容所在的同一棵树另跑三轮（`s42commit`/`s42commit2`/`s42final`，每轮之间只动文档措辞），
   九项门禁同样全部 rc=0、junit 3511 / 0 / 0 / 5；三轮里只有 `s42commit` 把覆盖率记成 **81.24%**，
-  差异整格在 `tstdx/protocol/generic.py`（缺语句 20↔21、部分分支 9↔10），与第 41 步记录的是
+  差异整格在 `atst/protocol/generic.py`（缺语句 20↔21、部分分支 9↔10），与第 41 步记录的是
   同一格运行间抖动。
 
  —— `currentness` 从声明口径变成运行期判据，"文档点名的错误类 ⇒ 代码里真有站点"上门禁：F-44 裁决 (a) 的执行）
@@ -437,13 +437,13 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   Direct Provider binding"分支的组合数是 0**；而把 Provider 真实失败统一包成 `SourceUnavailable` 要推翻
   `docs/providers/README.md` §12 自己那条"Provider-specific `TdxError` 必须原样保留"的保护——那是另一次
   对外契约决定，不在"接线"授权里，登记为 F-68 待裁决。
-- **校验器的形状**：新增 `tstdx/runtime/freshness.py::verify_currentness(plan, *, strict)`，在
+- **校验器的形状**：新增 `atst/runtime/freshness.py::verify_currentness(plan, *, strict)`，在
   `DirectProviderExecutor.execute()` 里**先于任何 Provider I/O** 调用（也在 `warning_sink()` 块内，所以
   非严格面的瑕疵进得了本次结果的 `meta.warnings`）。判据只读两件事：`ChannelSpec.local`（注册表事实）与
   `_parse_currentness`。`auto`/`historical` 不要求证据；`live`/`business` 要求"当期"，而本地文件 channel
   给不出"文件已覆盖当期"的判据 ⇒ 无法证明。三面分工：规划期 422（`live` 打非 live channel，输入本身不
   可满足）/ 运行期 503（`strict` 且口径无法证明）/ 非严格 200 + 瑕疵（发射口仍只有
-  `tstdx/diagnostics.py::record_warning` 一处）。
+  `atst/diagnostics.py::record_warning` 一处）。
 - **否决了一条看似更聪明的规则**：不做"行内时间戳晚于今天 ⇒ 假数据"判据。行内时间戳在本仓至少有三种
   写法（8 位无分隔、`YYYY-MM-DD HH:MM`、`YYYYMMDD`），全部是无时区的源本地 CST 字面量，而
   `Provenance.observed_at_ns` 是 UTC 墙钟——拿 CST 字面量跟 UTC 墙钟比符号，主机时区不在 +8 时每天误报约
@@ -478,7 +478,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   ruff format 468→471 文件、docs link 两侧同为 82 files，其余六项读数与基线逐格相同）。
 - **落笔后对提交内容所在的同一棵树再跑两轮**：九项门禁两次全部 rc=0；junit 两次同为 **3509 / 0 / 0 / 5**，
   覆盖率一次 **81.24%**（TOTAL 3653 缺语句 / 1022 缺分支）、一次 **81.23%**（3654 / 1023，与首轮相等）。
-  0.01 个百分点的差整格在 `tstdx/protocol/generic.py`（逐文件覆盖率表 diff 只有这一行，本步没碰那个文件），
+  0.01 个百分点的差整格在 `atst/protocol/generic.py`（逐文件覆盖率表 diff 只有这一行，本步没碰那个文件），
   与上一步记录的是同一格运行间抖动——两个读数都记下，而不是只留相等的那个。
 
 ### Fixed（v17 Phase 5 第 40 步 —— 三张 wire 面对未声明的请求字段当场拒绝：F-47 裁决 (a) 的执行）
@@ -488,7 +488,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   (c) 的「GET 查询串维持宽容」未采纳，所以这是一次**对外请求契约的收紧**：此前返回 200 的请求
   现在开始返回 422 / `-32602`，属破坏性变更；`docs/api/interfaces.md` §3 就地写明口径，连客户端
   爱加的缓存穿透参数 `_=…` 同样会被拒这一条一起写。
-- **一条拒绝口 + 四份「声明本身」**：新增 `tstdx/integration/wire_fields.py`（`reject_undeclared`
+- **一条拒绝口 + 四份「声明本身」**：新增 `atst/integration/wire_fields.py`（`reject_undeclared`
   把人读的那句话与机读侧的 `unknown_fields` 一起给出）。HTTP 查询串的白名单就是路由签名
   （`route.dependant.query_params` 运行时现取，结构上没有第二份名单可过期）；body 与 WS `params`
   用本模块的两份名单；MCP 用该工具自己的 `inputSchema.properties`，9 张 schema 同时补上
@@ -510,8 +510,8 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   **81.21%**、RC=0，`3446 + 46 = 3492` 对得上，阈值 77 未下调。覆盖率 +0.30 个百分点不只是新模块
   自己绿：TOTAL `22555 stmts / 3712 缺` → `22580 / 3654 缺`，新增 25 条语句的同时把 58 条原本没执行到
   的服务面语句跑到了；9 主门禁两树全部 rc=0。
-- **落笔后对同一棵树再跑一轮（这一轮读的树就是提交内容）**：`s40final.log` 九项 rc=0、`s40final.suite.log` junit **3492 / 0 / 0 / 5**、**81.21%**、RC=0。两次同树读数的 TOTAL 差一格（缺语句 3654→3653、缺分支 1023→1022，整格在 `tstdx/protocol/generic.py` 87%→88%，本步没碰那个文件），百分比读数相同——两处读数都记下。
-- **提交树再跑第三轮，把那一格抖动归了因**：`s40commit.suite.log` junit **3492 / 0 / 0 / 5**、**81.21%**、TOTAL 3654 缺语句 / 1023 缺分支——回到第一轮的读数，说明第二轮那一格是 `tstdx/protocol/generic.py` 自身测试的抖动，不是本步改出来的。同一轮 `s40commit.log` 九项 rc=0，补完这段文字后同一棵树再跑的 `s40commit2.log` 仍九项 rc=0（两份日志只差这条文档文字）。三轮都记。
+- **落笔后对同一棵树再跑一轮（这一轮读的树就是提交内容）**：`s40final.log` 九项 rc=0、`s40final.suite.log` junit **3492 / 0 / 0 / 5**、**81.21%**、RC=0。两次同树读数的 TOTAL 差一格（缺语句 3654→3653、缺分支 1023→1022，整格在 `atst/protocol/generic.py` 87%→88%，本步没碰那个文件），百分比读数相同——两处读数都记下。
+- **提交树再跑第三轮，把那一格抖动归了因**：`s40commit.suite.log` junit **3492 / 0 / 0 / 5**、**81.21%**、TOTAL 3654 缺语句 / 1023 缺分支——回到第一轮的读数，说明第二轮那一格是 `atst/protocol/generic.py` 自身测试的抖动，不是本步改出来的。同一轮 `s40commit.log` 九项 rc=0，补完这段文字后同一棵树再跑的 `s40commit2.log` 仍九项 rc=0（两份日志只差这条文档文字）。三轮都记。
 - **登记 F-67，不顺手改**：`docs/errors.md` §四 把 `facade/api.py` 与 `integration/http_server.py` 两个已不存在的模块写成今天的边界，还承诺了 `ApiResponse{success=False, ...}` 这套零命中的形状；事实型文档门禁看不见，因为判据只认反引号里的**点号**路径而这儿写的是**斜杠**形式。同轮全扫 7 份活文档只有这一份含死路径；第一次取证自己虚报了两份（按尾串匹配），改整串匹配才对上。属 Phase 4「文档统一」，三条路径与两份读数写进账本。
 
 
@@ -538,16 +538,16 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   `CommandOffline`）。改发现面形状属对外契约，三条路径与判据一并写进 `docs/REFACTOR_PLAN_V17_CLOSURE.md`。
 - **孤立 worktree 同轮复测（本机 Windows + 外部解释器 cpython-3.13.12，非仓内 `.venv`）**：基线
   （干净 `4dd2af9`）junit 3438 / 0 失败 / 5 跳过、80.91%；本步树 junit **3446 / 0 / 0 / 5**、**80.91%**、
-  RC=0，`3438 + 8 = 3446` 对得上，阈值 77 未下调；覆盖率 TOTAL 行与基线逐格相同（本步在 `tstdx/`
+  RC=0，`3438 + 8 = 3446` 对得上，阈值 77 未下调；覆盖率 TOTAL 行与基线逐格相同（本步在 `atst/`
   里没新增可执行语句）。**同轮先前那次读到的是 80.90%**，差的 0.01 个百分点整格在
-  `tstdx/transport/pool.py`（缺 113→111、缺分支 37→36），本步没碰那个文件，是 transport 测试的
+  `atst/transport/pool.py`（缺 113→111、缺分支 37→36），本步没碰那个文件，是 transport 测试的
   运行间抖动，两轮都记下而不是只留相等的那个；9 主门禁两树全部 rc=0（originality 190/190、
   `spec_audit` coverage 100.0%、golden `[GATE] … (OK)`、reachability 无未登记孤儿、`contract_audit --ci`、
   docs links 82 文件、mypy 无输出、`ruff check` 干净、`ruff format --check` 466 / 465 文件）。
 
 ### Fixed（v17 Phase 5 第 38 步 —— 命令账本四个没人读的字段，其中一个还是全账本唯一的描述：F-64 的清偿）
 
-- **量的是账本自己**：`Command` 登记 10 个字段，干净 `bb201b1` 上 AST 扫 `tstdx/` 189 个模块，
+- **量的是账本自己**：`Command` 登记 10 个字段，干净 `bb201b1` 上 AST 扫 `atst/` 189 个模块，
   `request_fields` 0 处、`aliases` 0 处、`spec_file` 1 处而那处属 `spec_audit.AuditResult`（同名不同物）。
   第四个是 `summary`——85 条命令逐条写着中文描述，全包读它 0 处（3 处同名命中属 `domain/records.py` 的
   `NewsRecord`/`ResearchRecord`/`SearchRecord`）。但它跟前三个不同判：85 条里只有 39 条在 `PROTOCOL_SPEC/`
@@ -560,7 +560,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   （8 条被拦 offline + 2 条 inferred-block）逐个钉「文案里有这句话」与「context 里有这个键」、
   生成那一行喂回 `_c` 求值。
 - **判据上线即绿，而绿是假的**：M1 把 `summary` 从文案里摘掉、`context` 留着 → 第一轮 **RC=0**。
-  `TdxError.__str__`（`tstdx/errors.py:135-140`）把 `context` 前六个键拼进字符串，`summary in str(exc)`
+  `TdxError.__str__`（`atst/errors.py:135-140`）把 `context` 前六个键拼进字符串，`summary in str(exc)`
   被机读侧单独满足，"人读的那句话"从没被断言过。改读 `ei.value.message` 后 M1 红 10 项，反向的 M6
   （只摘 `context["summary"]`）红 8 项。本族前五次都是新判据上线即红，这次是上线即**绿**——
   只有真去做变异才现形。六发变异最终各自 rc=1（`s38b_mut.log`）。
@@ -574,14 +574,14 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 - **顺手改掉一句谎**：`test_exactly_seven_offline_commands` 断言的是 9（账本自 2026-09-06 起下线 9 条），
   改名 `test_exactly_nine_offline_commands`。
 - **登记不静默修（F-65，待用户裁决）**：账本函数侧同一批孤儿——`stats()`/`get_command_by_name()`/
-  `unknown_command_ids()`/`by_family()` 零生产调用点，其中两个挂在 `tstdx/protocol/__init__.py` 的
+  `unknown_command_ids()`/`by_family()` 零生产调用点，其中两个挂在 `atst/protocol/__init__.py` 的
   `__all__` 上；`docs/archive/OPTIMIZATION_PLAN.md:32` 还把 `unknown_command_ids` 写成"保留为别名"，
   而被别名掉的 `unknown_commands()` 早已不在模块里。删公开查询面是对外契约收窄（F-44/F-47 同族），
   本步只把 `Command` 的字段面收口，未动这四个函数。
 
 ### Fixed（v17 Phase 5 第 37 步 —— 解码层的判断只有 bars 一条命令能上 wire：F-63① 的清偿）
 
-- **第 26 步 F-51 的"已经接线"只覆盖了一条命令**：`tstdx/client/_mixin.py` 里有 15 处
+- **第 26 步 F-51 的"已经接线"只覆盖了一条命令**：`atst/client/_mixin.py` 里有 15 处
   `_client_pkg.dispatch(...)`，而只有 bars 分页那一处读 `result.warnings`，其余 14 处只取 `result.rows`
   就把袋丢掉。产出侧从没缩水：`guarded_count` 在 8 个解析器模块有 43 个调用点会写「count 失真已钳制」，
   还有「记录截断：声明 N 实收 M」「L1 解析失败→降级」「L2 置信度不足→回落 L3 原始透传」。用户因此会拿到
@@ -591,7 +591,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   一次；bars 的旧 inline 循环删除但文案逐字未动，第 36 步的空桩守卫照旧成立。放大覆盖面的是通用口
   `_t_request_result`：`trade_today` / `block_*` / `goods_*` / `ex_*` / F10 目录等十几个公共方法共用它，
   接一次十几条面同时看得见解码判断。
-- **归属行号按调用栈实测**：`_caller_stacklevel()` 沿栈找"离开 tstdx 的第一帧"。写死常量只对单跳成立，
+- **归属行号按调用栈实测**：`_caller_stacklevel()` 沿栈找"离开 atst 的第一帧"。写死常量只对单跳成立，
   而 `block_list` → `request` → `request_result` 实测三跳，常量把告警记在 `_mixin.py:169`（库里）——
   归属错位的告警等于把缺陷指给一个没做错的人。异步侧只钉「通道 + 标签」，行号落在 `asyncio` 里，不假装修。
 - **判据三条 + 守卫五条，变异四发各自 rc=1**：结构门禁钉住"含 `dispatch` 的函数必须调用转发口"
@@ -614,7 +614,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 - **本步量的是第 34 步自己留下的那句话**：F-59 修好握手帧 3 的产品标识块之后，同一条链路上留下一对互相否证的
   告警。线路实测的 `0x052D` 空桩声明 **800 条**（载荷 `2003` 小端 = `0x0320`），解码侧照实说
   「count 失真已钳制：声明 800 条，按剩余字节 16B/条 只能容纳 0 条」，而 `BARS_EMPTY_FIRST_PAGE` 说的是
-  「服务端声明 **0** 条记录」——后者是 `tstdx/client/_mixin.py` 里一句写死的字符串，把「声明 0」与「声明 N
+  「服务端声明 **0** 条记录」——后者是 `atst/client/_mixin.py` 里一句写死的字符串，把「声明 0」与「声明 N
   却回 0 个记录字节」压成同一件事，而这两件事的处置完全不同（前者是该标的没有这段历史，后者是服务端回了个
   不携带任何记录字节、却仍声明 800 条的桩），区分它们恰是这条告警存在的唯一理由。判据方向对，数字是编的。
 - **为什么 3413 项测试全绿也看不见它**：`tests/client/test_v5_pagination.py` 造空页用的是
@@ -622,12 +622,12 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   该测试还把告警条数钉成「恰 1 条」，等于把「同一个结果上两条互证」这个真实形状排除在射程外。本步把空桩 fake
   换成线路实测的 `2003`（新增 `_StubPayloadPool`），判据随之改为「2 条且两条都含 800、第二条不得出现
   『声明 0 条』」，并给真声明 0 那条补上文案断言——两支各有主。
-- **改法三件**：① `tstdx/protocol/registry.py` 把 `state["declared_count"]` 随 `ParseResult.meta` 暴露
+- **改法三件**：① `atst/protocol/registry.py` 把 `state["declared_count"]` 随 `ParseResult.meta` 暴露
   （走 `meta` 的内部形状接线，不引入对外契约）；② `_mixin.py` 的空首页文案改为按声明数三分支——`N>0` 说
   「声明 N 条却一个记录字节都没回，这是空桩，不是该标的没有历史」，`0` 说「声明 0 条：该标的无此周期历史或
   主站对这条命令只回空桩」，读不到计数头则说「声明数未知」，**不拿未知冒充 0**（那正是本条原罪的镜像），
   `strict` 的 `TruncatedDataError.context` 加 `"declared"` 键让机读侧与文案同数；③ 两处旧注释、
-  `tstdx/diagnostics.py` 的 `WarningCode` 注释与 `docs/errors.md` 的易混对照同批改写。
+  `atst/diagnostics.py` 的 `WarningCode` 注释与 `docs/errors.md` 的易混对照同批改写。
 - **变异四发各自 rc=1**：M1 退回写死 0 → 只红新空桩守卫（证明它咬的是文案不是条数）；M2 撤掉 `meta` 暴露 →
   红三条，含既有那条，说明「声明 0」这句现在也是从线路上读的；M3 让「声明为 0」那一支永不成立 → 只红
   真声明 0 那条（两支确实分家）；M4 删 `context` 的 `"declared"` → 只红 strict 那条。
@@ -684,7 +684,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   而我上一轮刚把"本轮只登记"收进词表，同义词差一个字就当没看见，词表因此补入"本步只登记"。
   第六次就是下面这条 F-62，改错的是我自己。
 - **变异 6 条全部 RC=1 且逐条指名**（CONTROL 与还原后 RC=0）：**M1** §0.1 里把现存路径换成已删
-  模块 → `§0.1 引用了磁盘上不存在的模块：['tstdx/runtime/gateway.py']`；**M2** §0.2 抹掉一行裁决 →
+  模块 → `§0.1 引用了磁盘上不存在的模块：['atst/runtime/gateway.py']`；**M2** §0.2 抹掉一行裁决 →
   `§0.2 这些行没有当前裁决（或缺日期/提交号）：['F-5']`；**M3** §0.1 标题改名 → 三条判据同时报
   "门禁自身失效"；**M4** 把 F-61 原病装回（边界子句不挂任何账）→ `没有 F 号：现网证据只到一次性
   冒烟为止，不是"从未上过现网"：…`；**M5** 边界子句改点已清偿的 F-31 →
@@ -718,7 +718,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   同主机、同一条新建连接、请求体照抄 golden，只换这 30 字节：重放自采集样本（含 GBK 券商名）⇒ `payload=2B rows=0`，
   换成 30 个零字节 ⇒ `payload=180B rows=10`（首根 `2026-09-07 15:00`、`close=9.23`）。7 台可达主机各 2 轮全同向，
   golden 采集主机再交替 3 轮（累计 5 次），7/7 无一例外。
-- **根因是两处"✅ 实测"从未被实测**：`tstdx/protocol/handshake.py` 写着"服务端不校验内容，只校验长度"，证据点名的
+- **根因是两处"✅ 实测"从未被实测**：`atst/protocol/handshake.py` 写着"服务端不校验内容，只校验长度"，证据点名的
   `tests/integration/test_handshake.py`（及 `test_opaque_blob_tolerance`）与 `tests/golden/7709/_handshake/`
   **在仓库任何一次提交里都没有出现过**（`git log --all --diff-filter=A` 空）；同一文件另一句"三帧都得发"同样从未被测
   ——只发帧 1+2 时 7/7 主机照样回数据。而全仓对握手字节的测试数为 **0**（本步之前 `setup_frames` 在 `tests/` 里只命中
@@ -743,16 +743,16 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 - **顺带登记不静默修（F-60）**：第 21 步给空首页立的告警写着"服务端声明 0 条记录"，而本轮的 2 字节空桩声明的恰恰是
   800 条（`2003` 小端 = `0x0320`）。把那个桩原样注入传输层、其余走生产链路实测，同一个结果发出 **2 条互相否证的
   告警**：`decode_caveat` 说"声明 800 条，按剩余字节 16B/条 只能容纳 0 条"，`bars_empty_first_page` 说"服务端声明
-  0 条记录"。第 26 步 F-51 把解码侧真话接进 wire 的那条链是好的，坏的是 `tstdx/client/_mixin.py:254-258` 那句写死
+  0 条记录"。第 26 步 F-51 把解码侧真话接进 wire 的那条链是好的，坏的是 `atst/client/_mixin.py:254-258` 那句写死
   的数字（`:226-227`、`:252-253` 两处注释同错）；而 `tests/client/test_v5_pagination.py` 的 fake 用
   `_bars_payload(0)` 造了个"真声明 0"的假桩，于是这一对在测试里永不出现——本步只登记，修复形状见 §0.3 F-60。
 - **为什么取全零而不是"干脆不发帧 3"**：两条在本轮实测都拿得到数据；取全零保留的是与真实客户端同形的三帧会话形状，
   `setup_frames()` 的帧数契约、两池握手计数与既有测试形状都不动，而"不发帧 3"要新增一项对外协议声称，不属本步。
   **未解释的**：服务端为什么对那 30 个字节回空桩而不是报错——机制未知，本轮只登记可复算的行为。
 - **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = `1be93ea` + 本步 5 个文件，与主树提交前内容逐文件相同）**：
-  基线取干净 `1be93ea` 同轮实测 junit **3404 tests / 0 failures / 0 errors / 5 skipped**、142.1s、`--cov=tstdx`
+  基线取干净 `1be93ea` 同轮实测 junit **3404 tests / 0 failures / 0 errors / 5 skipped**、142.1s、`--cov=atst`
   **80.77%**；本步树 junit **3413 tests / 0 failures / 0 errors / 5 skipped**、135.3s、
-  `--cov=tstdx` **80.82%**、`SUITE_EXIT=0`（对账：`3404 + 本步 9 条线路形状守卫 = 3413`，阈值 77 未下调）。同树 9 道主门禁全部 rc=0（`GATES_RC=0`，`gates_s34b.log`）：originality（Total 190 / Original 190 / Suspicious 0 / External imports 17）、`spec_audit --strict`（coverage 100.0%）、golden 审计（`[GATE] all L1 verified commands have real samples (OK)`、`0x052D real category coverage: [0…11]`）、reachability（189 模块 / 172 可达 / 17 白名单豁免，无未登记孤儿）、`contract_audit --ci`（63 Typed Query 契约 · 155 capability）、docs links（82 文件）、mypy（rc=0，无输出）、`ruff check`（All checks passed!）、`ruff format --check`（464 files already formatted）；`tests/architecture` 9 个文件共 200 项 rc=0。
+  `--cov=atst` **80.82%**、`SUITE_EXIT=0`（对账：`3404 + 本步 9 条线路形状守卫 = 3413`，阈值 77 未下调）。同树 9 道主门禁全部 rc=0（`GATES_RC=0`，`gates_s34b.log`）：originality（Total 190 / Original 190 / Suspicious 0 / External imports 17）、`spec_audit --strict`（coverage 100.0%）、golden 审计（`[GATE] all L1 verified commands have real samples (OK)`、`0x052D real category coverage: [0…11]`）、reachability（189 模块 / 172 可达 / 17 白名单豁免，无未登记孤儿）、`contract_audit --ci`（63 Typed Query 契约 · 155 capability）、docs links（82 文件）、mypy（rc=0，无输出）、`ruff check`（All checks passed!）、`ruff format --check`（464 files already formatted）；`tests/architecture` 9 个文件共 200 项 rc=0。
 
 ### Fixed（v17 Phase 5 第 33 步 —— 方案文档的「现状判定」与磁盘同真，F-58）
 
@@ -760,13 +760,13 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   停在 Phase 3 之前的时态——两行 ❌ 把 v14 编排信封与 registry 三件套写成**现行断链**，而它们
   的证据列点名的 `runtime/gateway.py`、`executor_registry.py`、`provider/router.py`、
   `executor_bindings.py` 早已在 Phase 3A/3B 整层物理删除、磁盘上不存在；服务面那行还写着
-  "全部 import `client_api.Client`"，那个根级模块也在 Phase 3C 并入 `tstdx/client/`。§0.2
+  "全部 import `client_api.Client`"，那个根级模块也在 Phase 3C 并入 `atst/client/`。§0.2
   的八行"遗留不合理点"统一挂在"Phase 3–5 处理对象"下，其中七行在文档别处已记为清偿，却没有
   一行把判决写回表格——于是"还有哪些不合理、链路是否贯通"这个问题按字面读会得到"还有八条待办
   加两条断链"的答案。**编号竞争**：本步产物先按 `0d7fbe1` 写好并测过一轮，期间并发会话把 F-57
   作为第 32 步提交（`85cc43e`），故本步序号让到 **33** 并在其之上整轮重测（变异也重跑）。
 - **为什么既有活文档门禁抓不到**：`test_doc_code_consistency.py` 校验的是反引号里的
-  `tstdx.x.y` **点号**路径与 README 数字；表格里的**带斜杠文件路径**与**时态**都不在射程内。
+  `atst.x.y` **点号**路径与 README 数字；表格里的**带斜杠文件路径**与**时态**都不在射程内。
   这是 F-23/F-34/F-35 同族的第四处，位置在被当作事实源的文档本身。
 - **§0.1 重写为五行现在时**：内核主链 / 四个服务面 / 流式面 / 配置面 / 已删除的旧接缝。原来那两
   行 ❌ 改判为"✅ 已整层物理删除，因此不再可能是断链"并指向 16 项 `unimportable` 防回潮守卫；
@@ -777,7 +777,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   标题也从「Phase 3–5 处理对象」补为「…；第 33 步起逐行现状见最后一列」，否则只看标题仍会
   读成八条待办。
 - **新门禁 `tests/architecture/test_plan_status_gates.py`（4 条测试）**：① §0.1 表体里每个反引号
-  文件路径（可带 `:行号`）必须存在于磁盘，先试仓库相对路径再试 `tstdx/` 下同名路径；② §0.2 每行
+  文件路径（可带 `:行号`）必须存在于磁盘，先试仓库相对路径再试 `atst/` 下同名路径；② §0.2 每行
   的最后一格必须以加粗裁决开头（已清偿/已修/部分处理/待用户决策/维持现状）并含日期或提交号；
   ③④ 两节标题仍在（改名即红），外加"§0.1 ≥4 行且 ≥5 条路径、§0.2 ≥6 行"的防盲断言——解析不
   出行判门禁自身失效，不静默通过。
@@ -786,13 +786,13 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   `**裁决**` 开头"后 M2 转红。同轮还发现自己把八行的判决并进了「证据」格（少写一个 `|`，表格
   列数与表头不符），一并修回五列。
 - **变异验证 3 条全部 RC=1 且各自指名**（CONTROL 与还原后 RC=0）：**M1** 把 §0.1 里现存的
-  `tstdx/runtime/executor.py` 换成已删除的 `tstdx/runtime/gateway.py` → 红并点名该路径；
+  `atst/runtime/executor.py` 换成已删除的 `atst/runtime/gateway.py` → 红并点名该路径；
   **M2** 抹掉 F-5 行的加粗裁决 → 红并点名 `['F-5']`；**M3** 把 §0.1 标题改名 → 三条判据同时红，
   报的是"解析不出节，门禁自身失效"而不是"没问题"。
-- **本步不动生产代码**：`tstdx/` 零改动，因此运行期行为、契约与覆盖率构成都不变；新增的是 4 条
+- **本步不动生产代码**：`atst/` 零改动，因此运行期行为、契约与覆盖率构成都不变；新增的是 4 条
   门禁测试。
 - **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = `85cc43e` + 本步 3 文件）**：离线全量
-  junit **3404 tests / 0 failures / 0 errors / 7 skipped**、`SUITE_RC=0`、143.3s；`--cov=tstdx`
+  junit **3404 tests / 0 failures / 0 errors / 7 skipped**、`SUITE_RC=0`、143.3s；`--cov=atst`
   **80.69%**（阈值 77 未下调）。对账上一步（第 32 步）在其提交树上读到的 **3400** ＋ 本步 4 条新
   门禁 = **3404**；百分比与上一步的 80.77% 同量级，因为本步零改生产代码、覆盖率构成不变。7 条
   skipped 逐条取自同轮 junit：全部落在 `tests/output/test_sinks_dispatch.py` 的 parquet/duckdb
@@ -801,19 +801,19 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   白名单、`无未登记孤儿 ✓`）、`contract_audit --ci`（63 契约 · 155 capability · 92 项 PENDING 不
   阻断）、`spec_audit --strict`（`coverage_pct: 100.0`）、golden 审计、adversarial、bridges、
   `tests/streaming + tests/runtime`、benchmark smoke、docs links（82 文件）。变异 CONTROL 与还原后
-  RC=0，M1/M2/M3 各自 RC=1 并逐条指名（M1 点 `tstdx/runtime/gateway.py`、M2 点 `['F-5']`、M3 报
+  RC=0，M1/M2/M3 各自 RC=1 并逐条指名（M1 点 `atst/runtime/gateway.py`、M2 点 `['F-5']`、M3 报
   "门禁自身失效"）。**口径边界如实登记**：上面的数字取自只差本条复测文字与三处账本散文订正（§1
   序号让位后的 `33.`、§0.2 标题与编号竞争说明、两处换行）的那棵树；写入后在**同一提交树**重跑
   `tests/architecture`（含本步新门禁与既有文档门禁）与 `check_docs_links.py`，两道均 RC=0。
 
 ### Removed（v17 Phase 5 第 32 步 —— 出处词表里那两种不可能出现的出处，F-57；**BREAKING**）
 
-- **`ProvenanceKind` 只剩 `DIRECT`**：`REPLAY`/`SYNTHETIC` 两条成员被物理删除。它们在 `tstdx/` 全部
+- **`ProvenanceKind` 只剩 `DIRECT`**：`REPLAY`/`SYNTHETIC` 两条成员被物理删除。它们在 `atst/` 全部
   189 个模块里的唯一引用是它们自己的判定属性——没有任何代码能造出这两种出处，却有代码在教调用方
   如何判断它。零缓存内核只有一条构造路径（`Provenance.direct()` 写死 `ProvenanceKind.DIRECT`），词表比
   运行期宽，就是给"将来的层"留门。
 - **`Provenance` 上的三条判定属性 `real` / `replay` / `synthetic` 一并删除**：出处由 `kind` 字段本身说明；
-  三条属性对 `tstdx/` 生产代码的读取点为 **0**，全仓唯一读取是 `tests/runtime/test_query_contracts.py` 里
+  三条属性对 `atst/` 生产代码的读取点为 **0**，全仓唯一读取是 `tests/runtime/test_query_contracts.py` 里
   的一条断言，它验证的是规则的抄本而非规则本身。该断言随之删除，同族规则仍由
   `assert direct.kind is ProvenanceKind.DIRECT` 与退役词汇（`cached`/`cache_hit`/`direct_fetch`）循环钉住。
 - **wire 侧词汇如实收窄**：`integration/serialization.py` 发射 `provenance.kind.value`，删除成员即 `kind`
@@ -821,7 +821,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   响应里；`cache_tier` 仍恒为 `null`（第 30 步口径不变）。
 - **新增门禁（`tests/architecture/test_result_shape_gates.py`，两条）**：
   `test_every_declared_provenance_kind_has_a_producer` 以枚举自身为分母（F-43 口径：清单会过期，枚举不会），
-  以 AST 扫 `tstdx/` 得到的 `ProvenanceKind.<MEMBER>` 具名引用为分子，双向差集——声明了没人生产红、引用了
+  以 AST 扫 `atst/` 得到的 `ProvenanceKind.<MEMBER>` 具名引用为分子，双向差集——声明了没人生产红、引用了
   不存在的成员同样红；`test_provenance_exposes_no_judgement_property` 要求 `Provenance` 类体里 property 恒为
   空集，判定翻译层一旦回长即红。防盲三条沿用：`scanned > 30`、引用集合非空、声明集合非空。
 - **尺子补出成员维度，并收掉它的第三份抄件**：`tests/support/field_readers.py` 新增
@@ -837,14 +837,14 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   声称，删成员让它更强，故原文保留。
 - **编号说明**：本步代码先按 `60f6be9` 写好并测过一轮，期间并发会话把 F-56 作为第 31 步提交（`0d7fbe1`），
   故序号让到 32 并在新基线上整轮重测；第一轮数字不入账。
-- **实测**：基线（干净 `0d7fbe1`，同轮）junit **3398 tests / 0 failures / 0 errors / 5 skipped**、139.7s、`--cov=tstdx` **80.77%**；本步树 junit
-  **3400 tests / 0 failures / 0 errors / 5 skipped**、143.2s、`FINAL_RC=0`、`--cov=tstdx` **80.77%**（对账 3398 ＋ 本步 2 条新门禁 = 3400，
+- **实测**：基线（干净 `0d7fbe1`，同轮）junit **3398 tests / 0 failures / 0 errors / 5 skipped**、139.7s、`--cov=atst` **80.77%**；本步树 junit
+  **3400 tests / 0 failures / 0 errors / 5 skipped**、143.2s、`FINAL_RC=0`、`--cov=atst` **80.77%**（对账 3398 ＋ 本步 2 条新门禁 = 3400，
   阈值 77 未下调），同树 9 道主门禁全部 rc=0（`GATES_RC=0`），CI 另三道作业（bridges / adversarial /
   benchmark smoke）在同一棵树上单独复跑：bridges RC=0、adversarial_matrix RC=0、benchmark_smoke RC=0。
 
 ### Changed（v17 Phase 5 第 31 步 —— CLI `stream` 收回 `Client` 面，F-56；**BREAKING**）
 
-- **`tstdx stream` 从此经 `Client.stream` 起流**：`cmd_stream`（`tstdx/cli/runtime_commands.py`）
+- **`atst stream` 从此经 `Client.stream` 起流**：`cmd_stream`（`atst/cli/runtime_commands.py`）
   不再 `from ..streaming import QuoteStream`，改为
   `with Client(**_client_kwargs(args)) as client: client.stream(symbols, provider=…, interval=…,
   diff_only=…, max_queue=…, on_quote=…, on_error=…)`，随后 `start()` / `stop()` 与打印计数留在
@@ -854,15 +854,15 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   `default_provider` 透传，`QuoteStream._get_runtime()` 再惰性 new 出第二个 `UnifiedRuntime`，
   于是 CLI 承诺"注册表支持 `quotes` 轮询的 Provider 都能 stream"（`PROVIDERS.supports("tencent",
   "quotes")` 为真），而库面 `Client.stream(provider="tencent")` 抛 `ValidationError`。现在
-  `tstdx stream --provider tencent` 得到 exit 2 + 错误信封，与库面同一句话。
+  `atst stream --provider tencent` 得到 exit 2 + 错误信封，与库面同一句话。
 - **顺带补上 `stream` 缺的 `--host`**：该命令原先自己声明 `--provider` 而完全没有 `--host`，
   是 Tier-A 数据命令里唯一不能钉主站的一条；旁路时代即便声明也无人消费。现由 `_provider_args()`
   统一声明，与 `snapshot`/`minute`/`trades` 同形。
 - **守卫**：新增结构性门禁 `test_service_faces_never_build_a_stream_themselves`——与 F-29 那条
   共用 `_service_face_imports()`（AST 扫 CLI + HTTP/WS/MCP 全部 import 边，函数体内的 import 同样
-  算），任何解析到 `tstdx.streaming` / `tstdx.stream_contract` 的边即为红，扫描零命中时
+  算），任何解析到 `atst.streaming` / `atst.stream_contract` 的边即为红，扫描零命中时
   "两条门禁同时失明"自曝。`test_stream_forwards_provider_and_connection_args` 从"monkeypatch
-  `tstdx.streaming.QuoteStream` 钉住旁路形状"改写为捕获 `Client` 构造参数与 `Client.stream` 实参
+  `atst.streaming.QuoteStream` 钉住旁路形状"改写为捕获 `Client` 构造参数与 `Client.stream` 实参
   （含 `on_quote` 回调确实被转达、`with` 退出即关客户端）；新增
   `test_stream_command_refuses_a_provider_the_stream_contract_refuses` 用**真实** `Client`
   跑 `main(...)` 并核对信封文案（禁网两拦，见下条）；`tests/unit/test_cli_semantics.py` 两条
@@ -872,7 +872,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   `test_dunder_docstring_quickstart_examples_construct` 的既有做法拦
   `socket.getaddrinfo` / `socket.create_connection`，同一条变异改报 `assert 1 == 2`（拒绝仍成立、
   egress 不再发生）。判据同时收紧到信封文案，任何别的 exit 2 都不算通过。
-- **口径归位**：`tstdx/streaming/__init__.py` 的 docstring 不再声称 `QuoteStream`/`AsyncQuoteStream`
+- **口径归位**：`atst/streaming/__init__.py` 的 docstring 不再声称 `QuoteStream`/`AsyncQuoteStream`
   "已从公开/核心面移除"（它们既在 `__all__` 里、又正是 `Stateful*` 的轮询基类），改写为"唯一入口是
   `Client.stream`，基类不得由服务面直接构造"；`docs/api/interfaces.md` §5 由"QuoteStream /
   AsyncQuoteStream 两个门面"重写为三层（`Client.stream` 唯一入口 → `Stateful*` 生命周期对象 →
@@ -883,13 +883,13 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   旁路——该此前无人把守、也从未成立过。
 - **变异验证 3 条全部 RC=1 且各自指名**（CONTROL 与还原后 RC=0）：**M1** 在 `cmd_stream` 里加回
   `from ..streaming import QuoteStream` → 新守卫红，报
-  `tstdx\cli\runtime_commands.py: import tstdx.streaming`；**M2** 删掉 `provider=args.provider` →
+  `atst\cli\runtime_commands.py: import atst.streaming`；**M2** 删掉 `provider=args.provider` →
   三条同时红：转发用例 `KeyError: 'provider'`、拒绝用例 `assert 1 == 2`、F-28 的选项消费审计报
   `stream: --provider (dest=provider)`（两条判据各看一半，转发与消费互补而非重复）；**M3** 把
   `--host` 声明撤回 `--provider` 独写 → 转发用例在 `parse_args` 处 `SystemExit: 2`。
 - **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = `60f6be9` + 本步 9 文件，与本步提交树
   逐文件同内容）**：离线全量 junit **3398 tests / 0 failures / 0 errors / 7 skipped**、`SUITE_RC=0`、
-  167.3s；`--cov=tstdx` **80.70%**（`Required test coverage of 77.0% reached`，阈值 77 未下调）。
+  167.3s；`--cov=atst` **80.70%**（`Required test coverage of 77.0% reached`，阈值 77 未下调）。
   对账上一步（F-52，`60f6be9`）的同轮 **3396**：本步净增 2 条＝新守卫
   `test_service_faces_never_build_a_stream_themselves` ＋ 新回归
   `test_stream_command_refuses_a_provider_the_stream_contract_refuses`。同树 13 道门禁全部 RC=0：
@@ -905,9 +905,9 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 
 ### Removed（v17 Phase 5 第 30 步 —— 出处里那个从未被填过的源时间戳，F-52 provenance 半边；**BREAKING**）
 
-- **`Provenance` 少了一个公开字段**：`provider_timestamp`。`tstdx/result.py:57` 上它写着
+- **`Provenance` 少了一个公开字段**：`provider_timestamp`。`atst/result.py:57` 上它写着
   `provider_timestamp: str | None = None`，`Provenance.direct()` 把同名形参原样透传，而三重沉默
-  同时成立：AST 扫 `tstdx/` 全部 189 个模块读取点 **0**、没有任何调用方给 `direct()` 传过非默认值
+  同时成立：AST 扫 `atst/` 全部 189 个模块读取点 **0**、没有任何调用方给 `direct()` 传过非默认值
   （即没有 Provider 上报过源侧时刻）、`integration/serialization.py` 按显式键构造 wire 而键集合里
   没有它。按 clean break 物理删除字段与形参，不留 `= None` 兼容位；`Provenance` 现为
   `provider / channel / capability / kind / observed_at_ns / cache_tier / requested_provider / fallback`
@@ -931,20 +931,20 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   集合换成 `zzz_unbound_name` → RC=1 报"扫描一条都没命中，判据自身失效"；**M3** 给 `Provenance`
   新增一个没人读的 `notes: str = ""` → RC=1 点名该字段；**M4** 给 `ResultMeta` 同样加一个没人读的
   `notes` → 读取点判据**假绿**、形状清单红。CONTROL 与还原后 RC=0。
-- **M4 是本步测出来的判据边界，写在这里而不是抹掉**：`tstdx/cli/runtime_commands.py:406` 的
+- **M4 是本步测出来的判据边界，写在这里而不是抹掉**：`atst/cli/runtime_commands.py:406` 的
   `result.notes` 属于探针结果对象、不是 `ResultMeta`，AST 层面同名字段分不出所有者——第 28 步
   登记的"普查不成立"边界的第三个现场（前两个：`self.` 根、实例未绑定具名变量）。修法是补第二层
   判据（形状清单对字段顺序敏感，回长字段必须先改清单），而不是把尺子改宽。
 - **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = `dab85b5` + 本步 4 文件，与本步提交树
   逐文件同内容）**：基线为干净 `dab85b5` 同轮实测 junit **3391 tests / 0 failures / 0 errors /
-  5 skipped**、`--cov=tstdx` **80.77%**；本步树 junit **3396 / 0 / 0 / 5**、`FINAL_RC=0`、148.2s、
+  5 skipped**、`--cov=atst` **80.77%**；本步树 junit **3396 / 0 / 0 / 5**、`FINAL_RC=0`、148.2s、
   **80.77%**（`Required test coverage of 77.0% reached`，阈值 77 未下调），对账 `3391 + 5`
   （本步 5 条新门禁）= **3396**。同树 9 道门禁全部 RC=0：`ruff check`、`ruff format --check`
   （462 文件）、mypy（RC=0）、originality（Total 190 / Suspicious 0）、reachability
   （189 模块 / 172 可达 / 17 白名单）、`contract_audit --ci`（63 契约 · 155 capability）、
   `spec_audit --strict`（coverage 100.0%）、golden 审计、docs links（82 文件）。**第一轮门禁抓到
   本步自己的缺陷**：新测试文件 import 段少一个空行，`ruff check` 当场 rc=1，补空行后重跑，上方
-  每个数字都来自修正后的那一轮。共享树隔离：只提交 `tstdx/result.py`、
+  每个数字都来自修正后的那一轮。共享树隔离：只提交 `atst/result.py`、
   `tests/providers/test_registry.py`、`tests/architecture/test_result_shape_gates.py`、
   `tests/support/field_readers.py` 与本文件、`docs/REFACTOR_PLAN_V17_CLOSURE.md` 的两处账本；
   §0.3 F-52 行就地改判为"已清偿（按 (b)，两半分别第 27/30 步）"并保留三条路径原文。
@@ -956,12 +956,12 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 ### Removed（v17 Phase 5 第 29 步 —— 流计划上两条只写不读的记录，F-55；**BREAKING**）
 
 - **`StreamPlan` 少了两个字段**：`capability`、`channel`。`StreamPlanner.compile()`
-  （`tstdx/stream_contract.py:65`）先对 `capability != "quotes"`、`channel != "quotation"` 逐条
-  fail-closed，再把两个结论原样抄进 plan；而 AST 扫 `tstdx/` 全部 189 个模块，对
+  （`atst/stream_contract.py:65`）先对 `capability != "quotes"`、`channel != "quotation"` 逐条
+  fail-closed，再把两个结论原样抄进 plan；而 AST 扫 `atst/` 全部 189 个模块，对
   `plan.capability`/`plan.channel` 的读取点是 **0**。`StreamPlan` 的唯一消费方是 `Client.stream`
-  （`tstdx/client/api.py:388`）与 `AsyncClient.stream`（`tstdx/client/api.py:512`），两者读走的只有
+  （`atst/client/api.py:388`）与 `AsyncClient.stream`（`atst/client/api.py:512`），两者读走的只有
   `symbols / provider / interval / diff_only / max_queue`——恰好是交给 worker 的实参。
-  `runtime/executor.py`、`tstdx/result.py`、`runtime/identity.py` 里的 `plan.provider`/`plan.channel`/
+  `runtime/executor.py`、`atst/result.py`、`runtime/identity.py` 里的 `plan.provider`/`plan.channel`/
   `plan.spec.capability` 全部属于 `QueryPlan`（同名不同物，逐处人工核对）。全仓对 `plan.channel`
   唯一的"读取"是一条测试断言——它验的是规则的抄本，不是规则；`plan.capability` 连抄本读取都没有。
 - **为什么不接线而是删**：接线要把 `StatefulQuoteStream` 改成收 plan 而非具名参数，等于让公开的
@@ -971,7 +971,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   `StreamSpec.build("sh600519", channel="quote")` 当场 `ValidationError`。
 - **门禁换了更强的判据**：新增 `test_stream_plan_carries_only_the_fields_the_client_reads`——
   不再只问"每个字段有没有读者"，而是要求 `dataclasses.fields(StreamPlan)` 与 AST 扫
-  `tstdx/client/api.py` 得到的 `plan.*` 读取集合**逐字相等**：新增字段没接线是红，消费者读到幻影
+  `atst/client/api.py` 得到的 `plan.*` 读取集合**逐字相等**：新增字段没接线是红，消费者读到幻影
   字段也是红。防盲保险两处：`plan_fields` 非空、`api.py` 至少要读到一条 `plan.*`。变异验证：
   **M1** 把 `capability` 以默认值加回 `StreamPlan` → RC=1 并点名 `['capability']`；**M2** 把扫描的
   owner 名换成不可能命中的 `no_such_plan_var` → RC=1 报"api.py 里读不到任何 plan.*，判据自身失效"；
@@ -982,12 +982,12 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   plan 上那份副本让它看起来像"计划面知道 channel"。
 - **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = `82f9a99` + 本步 4 文件，与本步提交树
   逐文件同内容）**：离线全量 junit **3391 tests / 0 failures / 0 errors / 7 skipped**、
-  `SUITE_RC=0`、142.7s；`--cov=tstdx` **80.69%**（`Required test coverage of 77.0% reached`，
+  `SUITE_RC=0`、142.7s；`--cov=atst` **80.69%**（`Required test coverage of 77.0% reached`，
   阈值 77 未下调）。同树 12 道门禁全部 RC=0：`ruff check`、`ruff format --check`（430 文件）、
   `mypy`（0 error）、originality（Total 190 / Suspicious 0）、reachability（189 模块 / 172 可达 /
   17 白名单）、`contract_audit --ci`（63 契约 · 155 capability）、`spec_audit --strict`
   （44/44、100.0%）、golden 审计、adversarial、bridges、benchmark smoke、docs links（82 文件）。
-  共享树隔离：只提交 `tstdx/stream_contract.py`、`tests/runtime/test_v13_architecture_alignment.py`、
+  共享树隔离：只提交 `atst/stream_contract.py`、`tests/runtime/test_v13_architecture_alignment.py`、
   本文件与 `docs/REFACTOR_PLAN_V17_CLOSURE.md` 的 F-55/F-56 两行；本步测量期间并行会话把第 26 步
   落成了 `82f9a99`（25 文件），提交基因此从 `a944964` 换到它，两者都不含我方未提交的改动。
   **口径边界如实登记**：`142.7s` 与 `80.69%` 取自上面那一轮全量日志（上一轮同树读作 150.2s / 80.70%，
@@ -997,10 +997,10 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 ### Removed（v17 Phase 5 第 28 步 —— 注册表里第二套没人执行的市场词汇，F-54；**BREAKING**）
 
 - **`ChannelSpec` 少了两个公开字段**：`markets`、`notes`。23 个 channel 逐个写着
-  `markets=("cn_a", "hk", "us")` 这类字符串，而 `tstdx/`+`scripts/`+`tests/` 三面对它的读取点
+  `markets=("cn_a", "hk", "us")` 这类字符串，而 `atst/`+`scripts/`+`tests/` 三面对它的读取点
   是 **0**；这套词汇（`cn_a`/`cn_bse`/`hk`/`us`/`future`/`commodity`/`option`/`bond`/`fx`）在代码里
-  没有任何一处与 `tstdx.domain.symbol.Market` 对上。市场正确性实际由 `Symbol.tdx_market`
-  （`tstdx/domain/symbol.py:122`：HK/US 抛 `SymbolError`、`provider_switch_allowed=False`）承担——
+  没有任何一处与 `atst.domain.symbol.Market` 对上。市场正确性实际由 `Symbol.tdx_market`
+  （`atst/domain/symbol.py:122`：HK/US 抛 `SymbolError`、`provider_switch_allowed=False`）承担——
   注册表有 `require()` 管 capability、`require_period()` 管 period，唯独市场没有执行位。
   `notes` 同理：零生产读取，唯一"读到"它的是第 25 步自己钉位置形状的那条测试；它写的那句
   "本地 vipdoc 不替代在线 TDX"在 `docs/providers/tdx.md:92` 本来就有。`ChannelSpec` 现为
@@ -1013,25 +1013,25 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   （清单里 `auth/rate policy`、`production status` 这类条目从来没有代码落点）。
 - **门禁推广**：`test_every_provider_spec_field_has_a_reader` 与新的
   `test_every_channel_spec_field_has_a_reader` 共用同一个 `_unread_fields()` 尺子（分母取自
-  `dataclasses.fields`，读取点由 AST 扫 `tstdx/` 全部模块、owner 名人工核对），三把防盲保险不变；
+  `dataclasses.fields`，读取点由 AST 扫 `atst/` 全部模块、owner 名人工核对），三把防盲保险不变；
   ChannelSpec 额外钉死形状 `fields == {id, capabilities, live, local, periods}`，位置式构造测试
   改写为新形状并断言 `markets`/`notes`/`batch_limits` 作关键字传入当场 `TypeError`。
   变异验证：**M1** 把 `markets` 以默认值加回 → 两条测试红，判据点名 `markets`；**M2** 把 owner
   集合换成不可能命中的名字 → 红并报"ChannelSpec 字段读取扫描一条都没命中"。
 - **测量方法的一条边界（登记，不改）**：曾想把这把尺子推广成 168 个 dataclass 的无人值守普查，
   两条独立证据判它不成立——它把第 27 步刚测过有 14/6/3 个读取点的 `ProviderSpec.id/channels/default`
-  判成零读，也把 `CoreConfig.*` 判成零读而 `tstdx/runtime/kernel.py:66` 真在读 `cfg.core.timeout`。
+  判成零读，也把 `CoreConfig.*` 判成零读而 `atst/runtime/kernel.py:66` 真在读 `cfg.core.timeout`。
   成因：实例未绑定到具名变量（注册表里是元组成员）与 `self.` 根的属性链。所以本账本里每个
   "零读取"结论都是逐类人工核对 owner 之后写下的，普查脚本不进门禁。
 - **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = `463b9ae` + 本步 5 文件，与本步提交树逐文件同内容）**：
   离线全量 junit **3367 tests / 0 failures / 0 errors / 7 skipped**、`SUITE_RC=0`、140.1s；
-  `--cov=tstdx` **80.65%**（`Required test coverage of 77.0% reached`，阈值 77 未下调）。
+  `--cov=atst` **80.65%**（`Required test coverage of 77.0% reached`，阈值 77 未下调）。
   同树 12 道门禁全部 RC=0：`ruff check`、`ruff format --check`、`mypy`（0 error）、originality
   （Total 189 / Suspicious 0）、reachability（188 模块 / 171 可达 / 17 白名单）、
   `contract_audit --ci`（63 契约 · 155 capability）、`spec_audit --strict`（44/44、100.0%）、
   golden 审计、adversarial、bridges、benchmark smoke、docs links（82 文件）。
-  共享树隔离：只提交 `tstdx/providers/__init__.py`、`tests/providers/test_registry.py`、
-  `docs/providers/README.md` 与本文件；并行会话的第 26 步在途改动（`tstdx/diagnostics.py`、
+  共享树隔离：只提交 `atst/providers/__init__.py`、`tests/providers/test_registry.py`、
+  `docs/providers/README.md` 与本文件；并行会话的第 26 步在途改动（`atst/diagnostics.py`、
   `result.py`、`executor.py` 等 22 文件）全部留在工作区未动。
 
 ### Removed（v17 Phase 5 第 27 步 —— 注册表里两个没人读取的字段，F-52 注册表半边；**BREAKING**）
@@ -1040,14 +1040,14 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   `display_name="Tencent Finance"` 与 `role="auxiliary_live"`，而全包对它们的读取点是 **0**——
   与第 25 步的 `QueryPlan.deadline_ms` 同族：一张可被外部 introspect 的注册表里躺着没人兑现的
   声称。按 clean break 口径物理删除，不留 alias/兼容 property（与 F-40/F-50 同口径）；`ProviderSpec`
-  现在只剩 `id / channels / default` 三个执行面真会读到的字段（`tstdx/providers/__init__.py` −24 行）。
+  现在只剩 `id / channels / default` 三个执行面真会读到的字段（`atst/providers/__init__.py` −24 行）。
 - **人类可读的名称与定位改由文档承载**：`docs/providers/README.md` §8 的模板第 1 条从
   "Provider ID / display name / role"改为"Provider ID，名称与定位写在正文"。`docs/adr/ADR-013`
   的 `ProviderSpec` 示例**不动**——它连同 `markets=`/`auth_policy=`/`production=` 这些从未存在的
   字段一起被 `tests/architecture/test_doc_code_consistency.py` 判为历史语境快照（`docs/adr/` 在
   `EXCLUDED_PARTS` 里），不参与活文档门禁；把它当现状改是误读，把它当现状删是篡改。
 - **判据是结构式的，不是逐条断言**：新增 `test_every_provider_spec_field_has_a_reader`——字段
-  分母取自 `dataclasses.fields(ProviderSpec)` 本身，读取点由 AST 扫 `tstdx/` 全部模块的属性访问
+  分母取自 `dataclasses.fields(ProviderSpec)` 本身，读取点由 AST 扫 `atst/` 全部模块的属性访问
   （owner 名过滤）得出，任何字段失去读者即当场变红，新增字段无需改测试。判据自带三把防盲保险：
   `assert fields`（dataclass 空了即自失效）、`assert scanned > 30`（遍历没覆盖到模块即红）、
   `assert reads`（一条读取都没命中说明过滤器写错了）。实测删除后读取点数：`id` 14、`channels` 6、
@@ -1057,7 +1057,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   都没命中"；M3 把扫描根目录指向空处 → RC=1 报"只扫到 0 个模块"。CONTROL（只删不改）RC=0，
   harness 零残留。
 - **`Provenance.provider_timestamp` 本轮不动**（F-52 的 provenance 半边）：它同样零读取、同样
-  不进 wire（`integration/serialization.py` 按显式键构造），但 `tstdx/result.py` 此刻正被并行
+  不进 wire（`integration/serialization.py` 按显式键构造），但 `atst/result.py` 此刻正被并行
   会话按第 26 步改写，同一文件两把刀只会制造假冲突，故把删除推到那一步合树之后；裁决位仍挂在
   方案 §0.3 的 F-52 行。
 - **测量自伤一条，如实登记**：本步第一次孤立复测（12:58）里 `ruff format --check` 是 **RC=1**，
@@ -1066,18 +1066,18 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   一类的行尾归一，不涉及任何语义变更；下方复测数字来自归一之后的重跑。
 - **复测（本机 Windows+py3.13，同一轮日志；孤立 worktree = `15bfb61` + 本步 3 文件）**：
   离线全量 junit **3366 tests / 0 failures / 0 errors / 7 skipped**、`SUITE_RC=0`、130.1s；
-  `--cov=tstdx` **80.64%**（`Required test coverage of 77.0% reached`，阈值 77 未下调）。
+  `--cov=atst` **80.64%**（`Required test coverage of 77.0% reached`，阈值 77 未下调）。
   同树 12 道门禁全部 RC=0：`ruff check`、`ruff format --check`、`mypy`（0 error）、originality
   `Total: 189 / Suspicious: 0`、reachability `188 模块 / 171 可达 / 17 白名单`、`contract_audit --ci`
   （63 契约 · 155 capability）、`spec_audit --strict`（44/44、100.0%）、golden 审计、
   adversarial 与 bridges、benchmark smoke、docs links（82 文件）。
-  工作区隔离：只提交 `tstdx/providers/__init__.py`、`tests/providers/test_registry.py`、
+  工作区隔离：只提交 `atst/providers/__init__.py`、`tests/providers/test_registry.py`、
   `docs/providers/README.md` 与本文件，按 index 级 blob 暂存切出本步内容；并行会话的第 26 步
   在途改动与其 `docs/REFACTOR_PLAN_V17_CLOSURE.md` 改写全部留在工作区未动。
 
 ### Added（v17 Phase 5 第 26 步 —— 结果侧数据瑕疵通道：一条发射口、`meta.warnings`、内核 `strict`，F-45 尾条 + F-51）
 
-- **`tstdx/diagnostics.py` 是数据瑕疵的唯一发射口**：`record_warning(code, message, *,
+- **`atst/diagnostics.py` 是数据瑕疵的唯一发射口**：`record_warning(code, message, *,
   stacklevel=2, stderr=True)` 把同一条事实送到两处——本次查询的收集器（`warning_sink()`，
   `contextvars` 实现，线程/任务隔离）与既有的进程 `UserWarning`。12 个 `WarningCode` 声明为
   枚举，"新增类别却没发射点"和"发射点没声明类别"都由架构门禁双向把守；全仓裸 `warnings.warn`
@@ -1114,7 +1114,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   基线跟着 HEAD 挪过两次（`15bfb61`→`463b9ae`→`a944964`，三个提交都出自并行会话），只记与本步
   提交树同基的那组：同一提交的纯净树以相同参数跑基线 `3367 tests / 0 failures / 0 errors /
   5 skipped`、80.72%；加本步文件后 junit **3390 / 0 / 0 / 5 skipped**、`PYTEST_RC=0`，
-  `--cov=tstdx` **80.76%**（`Required test coverage of 77.0% reached`，阈值 77 未下调，未增删任何 skip 标记，
+  `--cov=atst` **80.76%**（`Required test coverage of 77.0% reached`，阈值 77 未下调，未增删任何 skip 标记，
   5 条 skip 与基线逐名相同）。条数：`3367 + 23`（18 接线 + 3 通道门禁 + 1 方法表对账 + 1 袋
   探针）。同树 9 道 CI 门禁全部 RC=0（originality `Total: 190 / Suspicious: 0`、`contract_audit
   --ci` 63 契约 · 155 capability、docs links 82 文件、`ruff format --check` 460 files、`mypy` 0）。
@@ -1126,7 +1126,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   全部落在 `query.py` 自己体内，其余三个字段连一次属性读取都没有。第 24 步把 `deadline_ms`
   接进 `plan.budget` 之后，这份副本只是第二个真相源。`plan.budget` 从此是 deadline 的唯一载体。
 - **`ExecutionBudget` 只剩墙钟**：`max_attempts`、`attempts`、`begin_attempt()` 物理删除——
-  它们在 `tstdx/` 内零调用点（`begin_attempt` 全包读取 0 次）。第 24 步点亮的是
+  它们在 `atst/` 内零调用点（`begin_attempt` 全包读取 0 次）。第 24 步点亮的是
   `remaining_s` / `ensure_remaining` 那半边，"执行次数预算"仍是一张带着 `threading.Lock` 的
   空支票。对象 docstring 同步改写为"一次 `execute()` 的墙钟上界"，并写明重试归传输池
   （`[core] max_retries`）与 fallback 策略所辖（关闭 F-48 尾条 ⑥）；外部读者为零的
@@ -1134,7 +1134,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 - **注册表不再声称批量上限**：`ChannelSpec.batch_limits`、`batch_limit_for()` 与 tdx quotation
   channel 上的 `{"quotes": 60}` 整链删除。该链唯一读者就是写入它的规划器（`batch_limit_for`
   全包命中 **1** 次），而它声称的 60 与真正生效的分片上限 `_QUOTES_SNAPSHOT_BATCH = 80`
-  （`tstdx/client/_mixin.py:75`）**直接矛盾**。取删除而非"接成执行期校验"：后者会静默把
+  （`atst/client/_mixin.py:75`）**直接矛盾**。取删除而非"接成执行期校验"：后者会静默把
   quotes 分片从 80 改成 60，本步不改任何默认行为。
 - **迁移口径**：`ChannelSpec` 构造不再接受 `batch_limits=`（其余字段位置不变，`notes` 仍是
   第 6 个位置参数，有断言钉住）；`QueryPlan` 的构造点全仓仅规划器一处；deadline 请读
@@ -1155,7 +1155,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   `repr` 扫描仍指名；把读取扫描改瞎 → 自曝"计划面读取扫描一条都没命中，说明它自身失效了"。
   harness 结束后被改文件全部还原，测量过程零残留。
 - **顺带实测、登记待裁决（F-52）**：`ProviderSpec.display_name`/`role` 与
-  `Provenance.provider_timestamp` 同样零读取点（`tstdx/`+`scripts/`+`tests/` 三面对前两者的
+  `Provenance.provider_timestamp` 同样零读取点（`atst/`+`scripts/`+`tests/` 三面对前两者的
   读取均为 0；后者从未被传入非默认值，也不在序列化面的显式键里）。因涉及两个公开 dataclass
   的形状，按 F-44/F-47 口径只钉事实、不代为拍板。
 - **复测以提交树为准，不以拼装树为准**：本步代码提交为 `9fbece0` 后从该提交单开 worktree
@@ -1165,12 +1165,12 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   一个读取面，并被专为防这类事而上线的门禁抓住——`9127d78` 单行改写清零。清零后同一提交树
   实测：**采集 3375 项**（基线 `288e62f` 的 3373 + 本步 2 条计划面门禁，注册表侧 3 换 3），
   `-m "not network"` 选中 **3365** 项、**0 failed / 0 errors / 7 skipped**、139s，
-  `--cov=tstdx` **80.64%**（日志明写 `Required test coverage of 77.0% reached`，阈值 77 未
+  `--cov=atst` **80.64%**（日志明写 `Required test coverage of 77.0% reached`，阈值 77 未
   下调，未新增或删除任何 skip 标记）。**口径更正（F-53 同族）**：本条此前写的是"HEAD + 本步
   7 个文件"拼装树上的 `3375 tests / 0 failures / 8 skipped`——那棵树的 junit `tests=` 计的是
   **采集总数**（含 10 条被 `-m` deselect 的网络用例），且该树与本步提交内容并不逐字节相同
   （每跳超时那条断言在拼装树里仍是旧写法），两个原因叠加使绝对数字不可复用，故以提交树读数为准。
-- **同树门禁逐个 RC=0**：`ruff check`、`ruff format --check`（427 files）、`mypy tstdx/`
+- **同树门禁逐个 RC=0**：`ruff check`、`ruff format --check`（427 files）、`mypy atst/`
   （CI 参数）、originality `--strict`（`Total: 189 Suspicious: 0`）、reachability `--strict`
   （188 模块 / 171 可达 / 17 白名单豁免，`无未登记孤儿 ✓`）、`contract_audit --ci`
   （**63 契约 · 155 capability**，与第 17/19/20/22/24 步逐项相同）、`spec_audit --json --strict`
@@ -1178,7 +1178,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   --require-kline-categories 0,4,9 --require-payloads`、docs links（82 文件）、
   `tests/adversarial` + `tests/test_bridges.py`（28 项）。
 - **一次测量自伤，如实登记**：第一次跑该树离线全量时给子进程传了一个臆造的环境变量
-  `TSTDX_OFFLINE=1`，Phase 6 的 fail-closed 配置装载器当场拒绝未知 `TSTDX_*`，于是 **86 条**
+  `ATST_OFFLINE=1`，Phase 6 的 fail-closed 配置装载器当场拒绝未知 `ATST_*`，于是 **86 条**
   测试红成同一个 `ConfigError`。判据正确、测量者错误；记下是因为"整片同因红"很容易被读成真实
   回归，而判别只需读一条错误消息。
 - 测量期间主树另有并行会话在途（`client/api.py`、`result.py`、`integration/serialization.py`、
@@ -1194,7 +1194,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   改为收形参，7 个 `_tdx_*` 直调执行器与 composed 原始读全部经它）、`WebQuoteSession`、
   `F10Client`、ex/goods/mac 族客户端、`direct_adapter`、`_web_adapter_call`、`_composed_call`
   （签名从此强制要求 `timeout`）与 5 个 Web 直调执行器。此前 `ExecutionBudget` 的
-  `ensure_remaining()` / `remaining_s()` 在 `tstdx/` 内**零调用点**：调用方给 250ms 预算，
+  `ensure_remaining()` / `remaining_s()` 在 `atst/` 内**零调用点**：调用方给 250ms 预算，
   传输层照样拿 5 秒（配置调到 30 秒时更糟）。与已删除的 `max_age` 同形，只是这次连"新鲜度"
   的托词都没有。
 - **默认路径可证明未变**：默认 `deadline_ms=5000` 与默认 `[core] timeout=5.0` 同值，
@@ -1203,7 +1203,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 - **预算耗尽改为 fail-fast**：剩余预算为 0 时在构造客户端之前抛
   `ReadTimeout("查询总 deadline 已耗尽")`，离线回归连"零个客户端实例"都断言。
 - **两条新判据**：① 字段侧把第 20 步的"必须被消费"收紧为"读的人必须在执行面"
-  （`tstdx/query.py` 自身的读取不算），`spec → plan.budget` 的折叠链由 `QueryPlan(...)`
+  （`atst/query.py` 自身的读取不算），`spec → plan.budget` 的折叠链由 `QueryPlan(...)`
   构造处的 AST 推导而非手抄名单；② 结构性守卫——`executor.py` 里 `self.timeout` 只允许
   被 `_hop_timeout` 读一次，任何新直调执行器绕过预算当场红。首轮变异正是从"逐函数写断言"
   的缝里活下来的（`_web_quotes` 退回裸配置值时无人变红），补结构判据后同一变异双红。
@@ -1241,7 +1241,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 ### Changed（v17 Phase 5 第 23 步 —— `options` 袋改为 fail-closed 白名单；**BREAKING**）
 
 - **`QuerySpec.options` 里不被执行面读取的键现在当场被拒**：新增
-  `tstdx.query.EXECUTED_OPTIONS`（`args` / `kwargs` / `market`，即 `runtime/executor.py`
+  `atst.query.EXECUTED_OPTIONS`（`args` / `kwargs` / `market`，即 `runtime/executor.py`
   真实读取的三处），`normalized()` 对名单之外的键抛 `ValidationError` 并在 context 里回显
   `unknown_options` 与白名单本身。这补上了 F-46 当时言过其实的一句：`REJECTED_OPTIONS` 只拦
   名单内的两个策略键、且只在取值为真时命中，因此
@@ -1273,7 +1273,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   的三态结果推导，是**结果事实**而非可放行的策略。因此在 quotes 上设置它的实际效果是
   "什么也不改变"，在非 quotes 上设置它只是提前报错。`Client.quotes_batch()` 本来也不接受该
   参数，它只能经通用构造面到达。这与第 20 步退场的 `max_age` 同族：收下但无人读。
-- **策略键统一进 `tstdx.query.REJECTED_OPTIONS`，命中即当场 `ValidationError` 并说明理由**
+- **策略键统一进 `atst.query.REJECTED_OPTIONS`，命中即当场 `ValidationError` 并说明理由**
   （`allow_stale`：数据始终来自绑定的 Provider，过期容忍没有可作用的对象；`allow_partial`：
   partial 是 `BatchResult` 的结果事实）。袋里的键从此只有两种下场——被执行面消费，或者
   明确拒绝，不存在第三种。
@@ -1290,18 +1290,18 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   （`folded | injected - rejected` 让 `build()` 折叠的键绕开拒绝集），修好后 `allow_stale`
   不再被误报。
 - **复测（同一轮日志；HEAD + 本步 5 个文件的孤立 worktree）**：整仓离线 `-m "not network"`
-  junit **3347 tests / 0 failures / 0 errors / 5 skipped**、`ISO_FULL_RC=0`、`--cov=tstdx`
+  junit **3347 tests / 0 failures / 0 errors / 5 skipped**、`ISO_FULL_RC=0`、`--cov=atst`
   **80.59%**（阈值 77 未下调；3344 − 1 条删除 + 4 条新增 = 3347）；originality `--strict`
   （189 · Suspicious 0）、`spec_audit --json --strict`、`golden_audit --gate --require-markets`、
   reachability `--strict`、`contract_audit --ci`（63 契约 · 155 capability）、docs links
-  （82 文件）、`ruff check` 与 `format --check`（457 files）、`mypy tstdx/`（CI 参数）
+  （82 文件）、`ruff check` 与 `format --check`（457 files）、`mypy atst/`（CI 参数）
   **全部 RC=0**。测量期间主树另有并行会话在途的 `runtime/executor.py`，同轮实测 3 条红
   （`DirectProviderExecutor._tdx_client() missing 1 required positional argument: 'timeout'`），
   与本步无关，故权威数字取孤立树。
 
 ### Fixed（v17 Phase 5 第 21 步 —— 首页空响应不得静默读成成功，F-45）
 
-- **`bars()` 把"服务端声明 0 条"读成"历史已经耗尽"**：`tstdx/client/_mixin.py::_t_bars`
+- **`bars()` 把"服务端声明 0 条"读成"历史已经耗尽"**：`atst/client/_mixin.py::_t_bars`
   的分页循环里，空页出口是一行 `break  # 空页：历史耗尽（正常终止）`——首页空与次页空
   共用同一个出口，而紧随其后的截断判据是 `len(bars) < count and drifted`，只在**锚点漂移**
   时才成立。于是主站对 `0x052D` 只回 2 字节 `count=0` 空桩时（F-37 实测到的现场），
@@ -1323,17 +1323,17 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 - **变异验证 2 条各自 RED**：`empty_first_page = not seen` → `= False`、
   `if not out:` → `if False:`，对应测试各自行列失败——把判据退回静默路径必红。
 - **复测（同一轮日志）**：整仓离线 `-m "not network"` junit **3344 tests / 0 failures /
-  0 errors / 7 skipped**、`COV_FULL_RC=0`、`--cov=tstdx` **80.53%**（日志明写
-  `Required test coverage of 77.0% reached`，阈值 77 未下调）；`mypy tstdx/`（CI 参数）、
-  `audit_reachability --strict`（无未登记孤儿 ✓）、`check_originality --strict tstdx/`
+  0 errors / 7 skipped**、`COV_FULL_RC=0`、`--cov=atst` **80.53%**（日志明写
+  `Required test coverage of 77.0% reached`，阈值 77 未下调）；`mypy atst/`（CI 参数）、
+  `audit_reachability --strict`（无未登记孤儿 ✓）、`check_originality --strict atst/`
   （189 · Suspicious 0）、`spec_audit --json --strict`、`golden_audit --gate --require-markets`、
   `contract_audit --ci`（63 契约 · 155 capability）、docs links（82 文件）、`ruff check` 与
   `format --check`（430 files）**全部 RC=0**。
 - **如实登记两个未闭合点**：① `QueryResult` 没有 warnings 通道，所以这条告警只在调用方
   进程 stderr 上——HTTP/WS/MCP 三面的 wire 里看不见"本次结果为首页空桩"；② 唯一业务
   入口 `Client.bars()` 没有 `strict` 形参（`strict` 只存在于 `TdxClient.bars`），
-  经内核绑定的路径拿不到"必须完整"的语义。两处都要改 `tstdx/client/api.py` 与
-  `tstdx/result.py`，而这两个文件此刻正被并行会话编辑，本步未代为决定。
+  经内核绑定的路径拿不到"必须完整"的语义。两处都要改 `atst/client/api.py` 与
+  `atst/result.py`，而这两个文件此刻正被并行会话编辑，本步未代为决定。
 
 ### Removed（v17 Phase 5 第 20 步 —— `max_age` 幻影旋钮与缓存口径散文，F-43；**BREAKING**）
 
@@ -1355,7 +1355,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   列为可配置面、`result.py`/`__init__.py`/`domain/symbol.py`/`protocol/handshake.py`/
   `runtime/kernel.py` 各一处）：读者照注释理解系统，注释指向不存在的层就是假事实。
 - **两条新门禁把"零缓存"从标识符扩展到散文与字段**：`test_production_prose_never_claims_a_data_cache`
-  扫 `tstdx/` 全部 docstring/注释里的缓存词根（10 条放行形状各自登记口径来源），
+  扫 `atst/` 全部 docstring/注释里的缓存词根（10 条放行形状各自登记口径来源），
   `test_every_query_spec_field_is_consumed` 以 `dataclasses.fields(QuerySpec)` 为分母禁止
   幻影开关（豁免字段由反向核验守卫看住）。两条都带"扫描器零命中即自曝失明"的自我校验。
   变异验证 6 条全部 RC=1 且各自指名；其中幻影门禁的首轮变异先跑成 RC=0，暴露
@@ -1395,26 +1395,26 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 - **复测（同一轮日志）**：主树整仓离线 `-m "not network"` junit `3334 tests / 24 failures /
   0 errors / 7 skipped`、覆盖率 79.42%——**24 条红全部是同一个根因
   `TypeError: QuerySpec.build() got an unexpected keyword argument 'max_age'`**，来自并行会话
-  在途的 `tstdx/query.py` 改动，本步未代为修改。为此按第 18 步的做法在 HEAD
+  在途的 `atst/query.py` 改动，本步未代为修改。为此按第 18 步的做法在 HEAD
   （`867f6d2`）+ 本步 3 个文件单开 worktree 复跑：junit **3337 tests / 0 failures / 0 errors /
-  7 skipped**、`ISO_FULL_RC=0`、`--cov=tstdx` **80.51%**（日志明写
+  7 skipped**、`ISO_FULL_RC=0`、`--cov=atst` **80.51%**（日志明写
   `Required test coverage of 77.0% reached`，阈值 77 未下调）。计数关系可核对：
   `3334 + 3（本步新增的三条绑定宣称行）= 3337`。同一 worktree 内
-  `check_originality --strict tstdx/`（189 文件、Suspicious 0）、`spec_audit --json --strict`
+  `check_originality --strict atst/`（189 文件、Suspicious 0）、`spec_audit --json --strict`
   （`coverage_pct: 100.0`）、`golden_audit --gate --require-markets`、
   `audit_reachability --strict`（无未登记孤儿 ✓）、`contract_audit --ci`
   （63 契约 / 155 capability）、docs links（82 文件）、`ruff check` 与 `format --check`
-  （430 files）、`mypy tstdx/`（CI 参数）**全部 RC=0**。本步只动文档与门禁测试，
-  未触碰 `tstdx/` 任何一行代码。
+  （430 files）、`mypy atst/`（CI 参数）**全部 RC=0**。本步只动文档与门禁测试，
+  未触碰 `atst/` 任何一行代码。
 
 ### Removed（v17 Phase 5 第 18 步 —— 缓存层删除后残留的"缓存形状"，F-40/F-41）
 
-- **`tstdx.domain.finance` 的 `CapitalChangeCache` 整族物理删除**（不留别名）：
+- **`atst.domain.finance` 的 `CapitalChangeCache` 整族物理删除**（不留别名）：
   `CapitalChangeCache` / `get_capital_change_cache` / `default_factor_cache_dir` /
-  `ENV_FACTOR_CACHE_DIR`（`TSTDX_FACTOR_CACHE_DIR`）/ `DEFAULT_FACTOR_TTL_SECONDS` /
+  `ENV_FACTOR_CACHE_DIR`（`ATST_FACTOR_CACHE_DIR`）/ `DEFAULT_FACTOR_TTL_SECONDS` /
   `_FETCHED_AT_KEY` 及其 `__all__` 条目，`finance.py` 301→162 行。它是 Phase 2 删缓存层
-  后留下的孤儿：自带 TTL + `~/.tstdx/factors` 落盘语义，docstring 明写命中即"跳过
-  0x0010/gpcw 网络与解析"，却在 `tstdx/` 内**零调用方**——只有它自己的 8 项单测在维持
+  后留下的孤儿：自带 TTL + `~/.atst/factors` 落盘语义，docstring 明写命中即"跳过
+  0x0010/gpcw 网络与解析"，却在 `atst/` 内**零调用方**——只有它自己的 8 项单测在维持
   "它活着"的假象。运行期"数据请求不需要缓存"由此从口径变成包内事实：不再有形状可以被
   一行 import 接回去。
 - **`Provenance.cached(tier)` / `cache_hit` / `direct_fetch` 删除**（`result.py`
@@ -1427,14 +1427,14 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   改为 "explicit Providers, direct Provider reads, Stateful streaming and canonical
   HTTP/WebSocket/MCP adapters"。对外最显眼的一句话此前是全仓最错的一句，而元数据文件
   从来不在事实门禁的扫描名单里。
-- **三条门禁**：`test_package_defines_no_data_cache_layer`（AST 扫 `tstdx/**` 的
+- **三条门禁**：`test_package_defines_no_data_cache_layer`（AST 扫 `atst/**` 的
   `*Cache*` 类与 `get_*cache*` 函数；`functools.lru_cache` 这类纯函数记忆化明确排除，
   因为它不省掉任何一次网络请求）、`test_pypi_description_claims_no_caching`（描述含
   `cach` 即红）、`test_direct_provenance_carries_no_cache_tier`（`hasattr` 反向钉住三个
   已删词汇）。两条变异验证各自 RC=1 且指名（塞入 `class QuoteCache`、把
   `semantic caching` 写回描述）。
 - **同一轮复测**：整仓离线 `-m "not network"` junit `3313 tests / 0 failures / 0 errors /
-  5 skipped`、`FULL_RC=0`，`--cov=tstdx` **80.58%**（阈值 77 未下调）；`ruff check` /
+  5 skipped`、`FULL_RC=0`，`--cov=atst` **80.58%**（阈值 77 未下调）；`ruff check` /
   `format --check` 干净，`mypy`（CI 参数）对改动的两个模块 Success。
 
 ### Fixed（v17 Phase 5 第 17 步 —— 契约分母改结构判据、领域基类数入门禁，F-39）
@@ -1450,7 +1450,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   删除。`contract_audit --ci` 实测回显 `63 个 Typed Query 契约 / 155 个注册业务
   capability`，与删名单前逐项相同 ⇒ 改判无损。
 - **"11 领域基类"撤回为 10**：该宣称在 README（2 处）、`docs/api/README.md`、
-  `docs/api/interfaces.md` 共 4 份抄本，而按任何自然定义都不成立——`tstdx/typed_query.py`
+  `docs/api/interfaces.md` 共 4 份抄本，而按任何自然定义都不成立——`atst/typed_query.py`
   里被其它契约直接继承的抽象 dataclass 是 10 个，含根 `CapabilityQuery` 才 11 个，根不是
   "领域"。判据（不含根）写进 `_typed_domain_base_names()` 的 docstring 后进入门禁；第 15
   步 F-35 那条"分母含糊所以刻意不钉"的口径就此撤销——含糊的不是事实，是没写判据。同批把
@@ -1468,28 +1468,28 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 - **同一轮复测**：`tests/architecture/` + `tests/v14/` junit `211 tests / 0 failures /
   0 errors`、RC=0；`contract_audit --ci` RC=0；`ruff check` 与 `format --check` 对触及的
   3 个文件干净；整仓离线 `-m "not network"` junit `3313 tests / 0 failures / 0 errors /
-  7 skipped`、`FULL_RC=0`，`--cov=tstdx` **80.52%**（日志明写 `Required test coverage of
+  7 skipped`、`FULL_RC=0`，`--cov=atst` **80.52%**（日志明写 `Required test coverage of
   77.0% reached`，阈值 77 未下调）。**变异验证 8 条全部 RED 且各自指名**：塞回
   `skip = {"MarketDataQuery"}`、自述 155→150、63→62、三处领域基类各改 1、README 的
   Record 族 9→8。
 
 ### Fixed（v17 Phase 5 第 16 步 —— 发布冒烟引用已删除模块，F-36）
 
-- **wheel 安装冒烟不再 import 已不存在的 `tstdx.facade`**：`scripts/build_package.py` 的
-  安装探针里残留 `from tstdx.facade import UnifiedQuoteAPI`，而该模块已随 Phase 1b
+- **wheel 安装冒烟不再 import 已不存在的 `atst.facade`**：`scripts/build_package.py` 的
+  安装探针里残留 `from atst.facade import UnifiedQuoteAPI`，而该模块已随 Phase 1b
   单内核化物理删除。这段 import 住在 `python -I -c "<字符串>"` 里，因此按文件路径对账的
   存在性守卫（F-24 补的那套）结构性扫不到它——`make build --smoke` 与 wheels job 的最后
   一步会 ImportError，发布链路固定为红。
-- 探针改为断言**唯一业务入口的通用面在 wheel 内可用**：`from tstdx import Client` +
+- 探针改为断言**唯一业务入口的通用面在 wheel 内可用**：`from atst import Client` +
   `callable(Client.call)` / `callable(Client.typed)`，而不是删掉了事。
 - **新增防回潮守卫** `tests/compatibility/test_local_smoke_hardening_contract.py::
   test_release_smoke_imports_only_symbols_that_still_exist`：正则抽出 `build_package.py`
-  与 `.github/workflows/wheels.yml` 两处冒烟脚本里的全部 `tstdx` import，逐个过
+  与 `.github/workflows/wheels.yml` 两处冒烟脚本里的全部 `atst` import，逐个过
   `importlib.util.find_spec` 与 `hasattr`，并断言解析结果非空以免守卫自身失明。
   变异验证：把那行 facade import 塞回探针即报
-  `发布冒烟 import 了不存在的模块：['tstdx.facade']`。
+  `发布冒烟 import 了不存在的模块：['atst.facade']`。
 - **本轮把该冒烟真正跑通**（全离线建临时 venv 装 canonical wheel）：`SMOKE_RC=0`、
-  `tstdx --help` 与 `tstdx hosts audit --help` 均退出 0、`pip check` 回
+  `atst --help` 与 `atst hosts audit --help` 均退出 0、`pip check` 回
   `No broken requirements found`；wheel 内零 `facade` 与零已解散的整方法侧车。
 - 同一轮的真实网络/服务面冒烟另立出 **F-37（P0：7709 K 线在当下可达主站返回 2 字节
   空桩却被读成成功）** 与 **F-38（该类缺陷在现有门禁里零 live 判据）**，处置路径待裁决，
@@ -1504,7 +1504,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   **永不执行的死代码**（语句覆盖率 46.2% / 44.7%），而可达性门禁看不见这种遮蔽——
   被覆盖的原方法在静态导入图里依旧"可达"。
 - 实现搬回拥有它的类体；主站代际发布的三条共享原语（`validate_host_updates` /
-  `new_endpoint_entry` / `next_generation_host`）上收到 `tstdx/transport/hosts.py`，
+  `new_endpoint_entry` / `next_generation_host`）上收到 `atst/transport/hosts.py`，
   同步池与异步池共用一套规则，消掉"第二事实源"。
 - **等价性是实证不是目测**：31 个搬迁成员逐个与 `git HEAD` 的侧车原文做归一化
   `ast.dump()` 比对（只归一 `pool`→`self`、`_impl.X`→`X`、`helper(self, …)`→
@@ -1523,14 +1523,14 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 
 ### Changed（v17 Phase 6 —— 配置面接线与死面清偿，F-13/F-16）
 
-- **`tstdx.toml` 从此真的生效**。`UnifiedRuntime` 成为配置面的唯一读者：`Client()` /
-  `AsyncClient()` 缺省经 `tstdx.config.get_config()`（进程级惰性、6 源合并）取配置，
+- **`atst.toml` 从此真的生效**。`UnifiedRuntime` 成为配置面的唯一读者：`Client()` /
+  `AsyncClient()` 缺省经 `atst.config.get_config()`（进程级惰性、6 源合并）取配置，
   `Client(config=...)` 与显式入参仍然优先。贯通的键：`core.default_provider` →
   `QueryPlanner`；`core.timeout / max_retries / heartbeat_interval`、
   `hosts.servers / slots_per_host`、`rate_limit.*`、`security.use_tls` →
   `DirectProviderExecutor → TdxClient → ConnectionPool`；`core.vipdoc_root` →
   `adjusted_bars` / `sync_daily` / `local_vipdoc`；`web.*` → `WebQuoteClient`。
-- 配置 → 传输层参数只有**一个**翻译点：`tstdx.transport.pool.pool_settings_from_config()`。
+- 配置 → 传输层参数只有**一个**翻译点：`atst.transport.pool.pool_settings_from_config()`。
   取代它的是被删除的第二读者 `ConnectionPool.from_config`。
 - 进程级配置语义变更：`get_config()` 首次访问时按全部源解析一次（此前恒返回
   `DEFAULT_CONFIG`）；`reset_config()` 改为清空单例使下次重新读源（此前是把
@@ -1553,21 +1553,21 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 
 ### Changed（v17 Phase 5 第 3 步 —— Web 会话层命名归位，F-11）
 
-`tstdx/web/` 里仍以"门面（facade）"命名的模块，其名字指向的 `UnifiedQuoteAPI` 门面已随
+`atst/web/` 里仍以"门面（facade）"命名的模块，其名字指向的 `UnifiedQuoteAPI` 门面已随
 v16 Phase 2 物理删除；这些模块的真实角色是 `WebQuoteSession` 的**按域方法分组**。全部改名，
 clean-break——旧模块名不保留别名或再导出：
 
 | 旧路径 | 新路径 |
 | --- | --- |
-| `tstdx/web/facade.py`（`tstdx.web.facade`） | `tstdx/web/session.py`（`tstdx.web.session`） |
-| `tstdx/web/_facade_mixin_<域>.py`（11 个：`astock` / `baidu` / `efinance` / `fund_v2` / `fundamental` / `info` / `market` / `news` / `p1` / `p2` / `p3`） | `tstdx/web/_session_<域>.py`（后缀一一对应，不重命名域） |
+| `atst/web/facade.py`（`atst.web.facade`） | `atst/web/session.py`（`atst.web.session`） |
+| `atst/web/_facade_mixin_<域>.py`（11 个：`astock` / `baidu` / `efinance` / `fund_v2` / `fundamental` / `info` / `market` / `news` / `p1` / `p2` / `p3`） | `atst/web/_session_<域>.py`（后缀一一对应，不重命名域） |
 
 - 符号名不变：`WebQuoteSession`、`web_session`、`_SessionBase` 及各 Mixin 类名保持原样；
-  `from tstdx.web import WebQuoteSession` / `web_session` 的根面包入口也不变。
-- 改的是**运行期字符串**，不只是 import：`tstdx/catalog/provider_bindings.py` 里
-  `catalog` 通道的 `("tstdx.web.facade", "WebQuoteSession")` 绑定、
-  `tstdx/web/__init__.py` 的 `_LAZY` 子模块名 `"facade"`，都是按名字解析的键。
-- 文档面同步：`docs/api/README.md` 的 `tstdx.web.session.WebQuoteSession` 事实路径、
+  `from atst.web import WebQuoteSession` / `web_session` 的根面包入口也不变。
+- 改的是**运行期字符串**，不只是 import：`atst/catalog/provider_bindings.py` 里
+  `catalog` 通道的 `("atst.web.facade", "WebQuoteSession")` 绑定、
+  `atst/web/__init__.py` 的 `_LAZY` 子模块名 `"facade"`，都是按名字解析的键。
+- 文档面同步：`docs/api/README.md` 的 `atst.web.session.WebQuoteSession` 事实路径、
   4 份数据源审计文档的路径引用。已发布版本段（`[1.0.0]` 及更早）与 `docs/archive/` 的
   历史叙述保留当时名字。
 
@@ -1576,39 +1576,39 @@ clean-break——旧模块名不保留别名或再导出：
 CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测皆红。逐项区分
 **真缺陷**与**扫描器误报**后清偿，阈值一次都没有放宽：
 
-- 删除 3 项零生产消费者的死面（clean-break，无别名）：`tstdx/observability/planned.py`
+- 删除 3 项零生产消费者的死面（clean-break，无别名）：`atst/observability/planned.py`
   （缓存 / singleflight 时代的指标名，唯一读者是它自己的测试）连同其测试文件、
-  `tstdx/providers/adapter.py`（`ProviderAdapter` / `ProviderMetadata` ABC，全仓含测试
+  `atst/providers/adapter.py`（`ProviderAdapter` / `ProviderMetadata` ABC，全仓含测试
   零引用）、以及符号 `BatchSpec`（见下条）。
-- **删除 `BatchSpec`**（`tstdx/batch.py` 里的 v13 批量请求信封）：它文档化的职责——
+- **删除 `BatchSpec`**（`atst/batch.py` 里的 v13 批量请求信封）：它文档化的职责——
   「`UnifiedRuntime.execute_batch` 把一个 BatchSpec 展开成多个计划」——指向 v16 Phase 2
   已物理删除的方法，且生产代码无一处构造它（只有测试在证明它能构造）。批量展开的唯一
   实现路径是 `UnifiedRuntime.quotes_batch` 那条逐 symbol 直连循环，业务入口是
-  `Client.quotes_batch`。同步移除：`tstdx.__all__` / `tstdx._LAZY` 条目（根面 46 → 45
+  `Client.quotes_batch`。同步移除：`atst.__all__` / `atst._LAZY` 条目（根面 46 → 45
   项）、`docs/api/interfaces.md` 的导入示例、README「下一阶段」里的占位行；符号进入
   `test_single_kernel_guards.py` 的 `DELETED_SYMBOLS`。`BatchItem` / `BatchResult` 的
   三态审计契约测试保留，并补上「重复 symbol 归一后只请求一次」这一原由 BatchSpec 测试
   代管的断言。
-- **交易日历按接线收口，而非豁免**：`tstdx/domain/calendar.py` 原是孤儿，而
-  `tstdx/tools/capture.py` 自带一份只认周末的交易时段副本——法定节假日会被误判成交易
+- **交易日历按接线收口，而非豁免**：`atst/domain/calendar.py` 原是孤儿，而
+  `atst/tools/capture.py` 自带一份只认周末的交易时段副本——法定节假日会被误判成交易
   时段，从而错误中止本应放行的采集。法律自检改为消费 `TradingSession` 常量与
   `is_trading_day`：重复事实消除，日历经 `python -m` 入口自然生产可达 ⇒ 不进白名单。
 - **`scripts/audit_reachability.py` 三处图修正**（都是漏报方向，不是放宽判定）：种子名单
   换成 v16 后的现行模块名（写死的 `http_server` / `ws_server` / `mcp_server` 会被
   `if s in modules` 静默丢弃，使整条服务面从图里消失）；`_LAZY` 边解析支持 `AnnAssign`
   与不带包前缀的子模块名字符串（F-11 后 `"facade"` → `"session"` 这类键此前看不见）；
-  `tstdx.tools.*` 与 `tstdx.cli` 由「整包直接标可达」改为**作为种子参与 BFS**，入口独占
+  `atst.tools.*` 与 `atst.cli` 由「整包直接标可达」改为**作为种子参与 BFS**，入口独占
   的依赖不再被误判为孤儿。
-- 白名单登记 2 项并附评审理由：`tstdx.catalog.provider_contract`（Provider 隔离契约，
+- 白名单登记 2 项并附评审理由：`atst.catalog.provider_contract`（Provider 隔离契约，
   由 `tests/provider_isolation` 与命名空间守卫消费，内核不 import 是其零依赖设计的前提）、
-  `tstdx.providers.http`（Provider 绑定 HTTP 主机边界守卫，离线测试全覆盖；v16 删除跨源
+  `atst.providers.http`（Provider 绑定 HTTP 主机边界守卫，离线测试全覆盖；v16 删除跨源
   路由层后无生产调用点，接线会改变 web 传输的失败语义，属安全面决策待确认）。
-- `check_originality` 的两类红分别是：`tstdx/catalog/provider_contract.py` 与
-  `tstdx/py.typed` 缺许可证头（补头），以及 `tstdx/batch.py` 一段散文被「derived from」
+- `check_originality` 的两类红分别是：`atst/catalog/provider_contract.py` 与
+  `atst/py.typed` 缺许可证头（补头），以及 `atst/batch.py` 一段散文被「derived from」
   模式误命中（改写为不含该措辞的等价表述）。全仓现为
   `Total: 194  Original: 194  License OK: 194  Header OK: 194  Suspicious: 0`。
-- 顺带清掉三处幻影文档：`tstdx/batch.py` 模块 docstring 指向已删除的 `execute_batch`；
-  `tstdx/domain/calendar.py` 声称「ratelimit 消费点在 transport」（实际无此消费方）并把
+- 顺带清掉三处幻影文档：`atst/batch.py` 模块 docstring 指向已删除的 `execute_batch`；
+  `atst/domain/calendar.py` 声称「ratelimit 消费点在 transport」（实际无此消费方）并把
   `update_from_web` 写成可用的在线校准（该方法恒抛 `NotImplementedError`）；README 批量
   执行行宣称「并发走内核」，而内核批量路径是串行逐 symbol 直连。
 - 复测（每条命令先重定向再取 RC，见下条）：originality `Total: 194 / Original: 194 /
@@ -1616,7 +1616,7 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   `模块总数: 193 / 可达: 174 / 白名单豁免: 19 / 无未登记孤儿` RC=0、spec-coverage
   `total 44 / in_ledger 44 / has_parser 42 / control_frames 2 / trade_plane 6 /
   coverage 100.0%` RC=0（**100% 阈值未动**）。格式与类型：`ruff check .` /
-  `ruff format --check .`（433 文件）/ `mypy tstdx/`（CI 参数，193 源文件）均 RC=0，
+  `ruff format --check .`（433 文件）/ `mypy atst/`（CI 参数，193 源文件）均 RC=0，
   golden 门禁与 docs-code 一致性门禁 RC=0。
 - 离线全量套件（WIP 文件入库后的整仓值）：**3227 passed / 7 skipped / 1 xpassed /
   0 failed，coverage 78.79%**，`PYTEST_RC=0`。测量路上读到的三个数都记在这儿，以免日后
@@ -1645,16 +1645,16 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   - `[thin]`：理由短于 `MIN_REASON_CHARS = 40`，说不出「谁消费它 + 为什么生产链路不
     import 它」的记录不可核验。
   - `[dup]`：同模块重复登记，后一条静默覆盖前一条。
-- `tstdx.__main__` 由「豁免」改判为 `_entrypoints()` **种子**，与 `tstdx.cli` /
-  `tstdx.tools.*` 同类：静态 import 图里永不出现对它的边，而 `python -m tstdx` 一定加载
+- `atst.__main__` 由「豁免」改判为 `_entrypoints()` **种子**，与 `atst.cli` /
+  `atst.tools.*` 同类：静态 import 图里永不出现对它的边，而 `python -m atst` 一定加载
   它——用豁免表达这种事入口，等于把工具口径缺陷记成产品决定。
-- `scripts/_reach_allow.txt` 28 → **17** 条：删 9 条死记录（`tstdx.sinks`、`tstdx.native`、
-  `tstdx.feedback*`、`tstdx.domain.adjust`、`tstdx.streaming.{engine,push}`、`tstdx.security`），
-  修正 2 条**编造的理由**（`tstdx.charset`、`tstdx.deprecation` 写着「`_LAZY` 导出」，
+- `scripts/_reach_allow.txt` 28 → **17** 条：删 9 条死记录（`atst.sinks`、`atst.native`、
+  `atst.feedback*`、`atst.domain.adjust`、`atst.streaming.{engine,push}`、`atst.security`），
+  修正 2 条**编造的理由**（`atst.charset`、`atst.deprecation` 写着「`_LAZY` 导出」，
   根包 `_LAZY` 实测 17 个值里没有它们），其余逐条附可核验证据（文档路径 + 具体测试文件）。
   TRADE 族的理由额外写明：`spec_audit` 是**按字符串模块名走 `importlib`** 解析这些模块的，
   AST 静态图看不见这种边，故其「不可达」是工具口径而非死代码。
-- 删除 `pyproject.toml` 中同形状的死配置 2 处：mypy 的 `tstdx.native.*` 覆盖段、
+- 删除 `pyproject.toml` 中同形状的死配置 2 处：mypy 的 `atst.native.*` 覆盖段、
   `keyring.*` 的 ignore-missing-imports 条目。mypy 自己的 `warn_unused_configs` 早已把
   前者报为 note，只是没人把 note 当缺陷处理；现在该 note 消失。
 - 新增守卫回归 `tests/architecture/test_reachability_allowlist.py`（8 项：真实清单干净、
@@ -1664,18 +1664,18 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 
 ### Removed（v17 Phase 5 第 5 步 —— 撤回一条已发布的安全假承诺，F-23）
 
-- **删除空壳包 `tstdx/security/`**：其 `__init__.py` 内容是 `__all__: list[str] = []`，
-  docstring 指向从未存在的 `tstdx/security/capture.py` 与 `origin.py`。它唯一的用途是给
+- **删除空壳包 `atst/security/`**：其 `__init__.py` 内容是 `__all__: list[str] = []`，
+  docstring 指向从未存在的 `atst/security/capture.py` 与 `origin.py`。它唯一的用途是给
   SECURITY.md 里那条自 **v10** 起就过时的历史叙述当证据。
-- **SECURITY.md「凭据保护」改写**：原文宣称「tstdx 使用三级凭据存储：系统 keyring /
-  环境变量 / 加密文件 `~/.tstdx/credentials.enc`」。`CredentialStore` 早在 **v10** 就按
+- **SECURITY.md「凭据保护」改写**：原文宣称「atst 使用三级凭据存储：系统 keyring /
+  环境变量 / 加密文件 `~/.atst/credentials.enc`」。`CredentialStore` 早在 **v10** 就按
   [ADR-007-010](docs/adr/ADR-007-010.md) 判定「全库零调用方、属
   过度工程」而物理删除。现改为「本库**不存储凭据**」+ 四条现状：行情链路不涉及凭据；
   交易侧是纯内存模拟器，`obfuscate_password` 是 clean-room 占位实现；真实券商凭据由调用方
   自管；错误上下文与反馈先脱敏后出口。
 - **README 两处同步**：特性行的「凭据三级存储」换成可核验事实（`security.use_tls` 走
   `ssl.create_default_context()`、关键字脱敏、凭据不在本库职责内），并就地标注
-  `tstdx.providers.http` 的主机边界守卫「已实现但尚未接入 web 链路」（与待决策的 F-18
+  `atst.providers.http` 的主机边界守卫「已实现但尚未接入 web 链路」（与待决策的 F-18
   同一口径）；ASCII 概览框与结构树删去 `security/` 行，补上此前漏列的 `__main__.py`。
 - **补门禁**：`tests/architecture/test_doc_code_consistency.py` 新增 3 项，把 README
   结构树条目与磁盘做双向对账——列出的路径必须存在，磁盘上的顶层包与顶层模块必须都列出。
@@ -1686,13 +1686,13 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 本地按 CI 参数逐条复跑整条确定性门禁链（每条先重定向再取 RC），11 项绿灯里抓到一项
 `RC=4`：`make gates` 的最后一步 `native-compat` 指向
 `tests/compatibility/test_native_fallback_contract.py`，而该文件连同被测模块
-`tstdx/native.py` 已在 `77bc2fe`（v16 Phase 2）物理删除。同一形状的引用还留在
+`atst/native.py` 已在 `77bc2fe`（v16 Phase 2）物理删除。同一形状的引用还留在
 `.github/workflows/native.yml` 的一个 `pull_request` 阻塞 job 里——它的「编译」一步用
-`python -m compileall -q tstdx/native.py`，该命令对不存在的路径**打印 "Can't list" 却
+`python -m compileall -q atst/native.py`，该命令对不存在的路径**打印 "Can't list" 却
 退出 0**（本机实测），于是前一步静默假通过，红只在下一步的 pytest 上才显形。
 
 - 删除 `native.yml` 与 `Makefile` 的 `native-compat` target 及 `gates` 依赖项。取
-  「删除」而非「恢复测试」，因为被测能力本身已随 `tstdx.native` 退役，没有可恢复的对象。
+  「删除」而非「恢复测试」，因为被测能力本身已随 `atst.native` 退役，没有可恢复的对象。
 - **删掉一条反向契约**：`test_ci_workflow_contracts.py` 原有断言「workflow 必须包含那个
   已删除的测试路径」。这类「必须包含某字符串」的守卫若不连带断言字符串所指存在，就会在
   删除之后变成阻止清理僵尸的护栏。
@@ -1702,7 +1702,7 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 ### Fixed（v17 Phase 5 第 6 步 —— 门禁定义与文档口径对账）
 
 - 新增三项存在性守卫，把「门禁自己指向不存在的文件」这类缺陷变成红灯而不是绿等：
-  `.github/workflows/*.yml` 与 `Makefile` 里写死的 `tests/…`、`scripts/…`、`tstdx/…`
+  `.github/workflows/*.yml` 与 `Makefile` 里写死的 `tests/…`、`scripts/…`、`atst/…`
   `.py` 路径必须存在于磁盘；`gates:` 的每个前置 target 必须在 Makefile 里已定义。
 - 新增 README 规模数字对账：`CI：N jobs` 与 `N 步确定性门禁` 必须分别等于 `ci.yml` 的
   job 数与 `gates` 的 target 数。原口径为「9 jobs」「六步门禁」，实际是 11 与 11。
@@ -1758,11 +1758,11 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 
 ### Changed（v17 Phase 5 第 8 步 —— CLI 连接参数与配置面对齐，F-27）
 
-- **`tstdx --host` / `--timeout` 从此真的到达执行面**。改前 7 个行情命令（`quotes`/`bars`/
+- **`atst --host` / `--timeout` 从此真的到达执行面**。改前 7 个行情命令（`quotes`/`bars`/
   `snapshot`/`minute`/`trades`/`security-count`/`security-list`）解析了 `--host` 却构造裸
   `Client()`，参数当场丢弃且命令照常返回数据（fail-open）；15 个命令的 `--timeout` 带
   `default=5.0` 字面值，与 `[core] timeout` 的默认值数值相同，因此只有在用户真去改
-  `tstdx.toml` 时才暴露为"配置不生效"。现 CLI 只有两种合法姿态：**用户显式说过即转下去，
+  `atst.toml` 时才暴露为"配置不生效"。现 CLI 只有两种合法姿态：**用户显式说过即转下去，
   未说过即交 `None` 让内核读配置**。
 - `probe`/`blocks`/`list`/`quotes-snapshot`/`stream` 5 个"内核外自建传输客户端"的命令改为
   经 `_transport_kwargs` 解析 `[hosts] servers`（与内核 `runtime/kernel.py` 同一条优先级
@@ -1793,7 +1793,7 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 
 ### Fixed（v17 Phase 5 第 9 步 —— CLI 全量选项消费审计，F-28）
 
-- **`tstdx stream --max-queue N` 此前是幻影开关**：parser 收下该值（默认 1024）却从不转给
+- **`atst stream --max-queue N` 此前是幻影开关**：parser 收下该值（默认 1024）却从不转给
   `QuoteStream.subscribe()`，于是库侧同名默认接管——与 F-27 同形（CLI 默认与库默认同为
   1024，只有主动调小背压上限以约束内存的用户会被静默忽略）。现补转发。
 - 第 8 步的结构性守卫由"只查 `--host`/`--timeout`"推广为**与选项名无关**的全量消费审计：
@@ -1804,7 +1804,7 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 
 ### Fixed（v17 Phase 5 第 10 步 —— CLI 最后两条旁路命令收口，F-29）
 
-- **`tstdx changes` 与 `tstdx hot` 此前不走内核**：两个 handler 直接调用
+- **`atst changes` 与 `atst hot` 此前不走内核**：两个 handler 直接调用
   `WebQuoteSession.stock_changes()` / `WebQuoteSession.hot_rank()` 静态方法，绕开了
   CLI 承诺的唯一执行链。它们因此拿不到 `QueryResult` 信封与 `Provenance.direct` 指纹，
   不经过能力层的 `validate_call` 参数校验，也享受不到 F-27 刚接线的 `--host`/`--timeout`
@@ -1812,18 +1812,18 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   改为经 `Client` 调用同名 capability，离线对拍显示数据源收到的实参与返回行完全一致。
 - **补两道守卫**（`tests/architecture/test_cli_connection_contract.py`）：一条逐命令断言确认
   两个命令以 capability 名调用 `Client`；另一条是**与命令名无关**的结构性扫描——用 AST 检查
-  四个服务面（`tstdx/cli/`、`tstdx/integration/`）的全部 import，任何指向 `tstdx.web` 的边
+  四个服务面（`atst/cli/`、`atst/integration/`）的全部 import，任何指向 `atst.web` 的边
   即为红。新增命令若复刻旁路，无需为它补测试就会被抓到。
 - 两处单元测试的假 `WebQuoteSession` 换成 fake `Client`，与既有夹具同形。
 - **变异验证**：把 `changes` 改回直接调用 ⇒ 两条守卫同时 exit 1（分别报出
-  `import tstdx.web.session` 与 `recorder.kwargs is None`），还原后复绿。
+  `import atst.web.session` 与 `recorder.kwargs is None`），还原后复绿。
 
 ### Fixed（v17 Phase 5 第 12 步 —— 包 docstring 纳入活文档门禁，F-31）
 
 - **`Client(provider="tdx")` 这个写在包 docstring Quick start 里的例子照抄即 `TypeError`**：
   `Client(**runtime_kwargs)` 的键名以内核形参为准，正确写法是
   `Client(default_provider="tdx")`。**不加入参别名**（v17 clean-break 口径）。
-- **`tstdx/__init__.py` 的「分层（自底向上）」图补齐到 24 个顶层包**（原先只有 14 个，
+- **`atst/__init__.py` 的「分层（自底向上）」图补齐到 24 个顶层包**（原先只有 14 个，
   缺的正是 v17 新增的服务面 `cli`/`integration` 与配置面 `config`/`catalog`），并逐条标注
   职责边界：服务面「只翻译不执行」、`catalog`「无执行」、`trade`「不接入内核」。
   README 结构树里 `cli/` 的「31 子命令，全部委托 Client」同步改为如实口径。
@@ -1838,7 +1838,7 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 
 - **`docs/ARCHITECTURE.md` 里有两条"现状"是假的**：① 防回潮守卫条写
   `test_namespace_layout.py`「根级白名单 **11** 项」，实际是 **10**（`ROOT_WHITELIST` 与
-  磁盘上的 `tstdx/*.py` 同数）；② F-15 门禁基线条仍在宣称「离线实测 76.14% … 低于 77
+  磁盘上的 `atst/*.py` 同数）；② F-15 门禁基线条仍在宣称「离线实测 76.14% … 低于 77
   阈值 ⇒ 门禁在本地为红」，而第 14 步同轮离线全量实测 **80.53%**、日志明写
   `Required test coverage of 77.0% reached`。**阈值 77 一次都没有下调**。
 - **覆盖率陈述不再抄百分比**：F-15 那条改为判据口径（"离线全量已越过阈值 ⇒ 本地为绿"），
@@ -1848,7 +1848,7 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 - **数字门禁由"只读 README"扩展到事实文档全体**（`tests/architecture/test_doc_code_consistency.py`
   新增 9 项）：`test_fact_doc_numbers_match_their_truth_source` 把 README 与 ARCHITECTURE 的
   能力数、命令账本（`protocol.commands.COMMANDS`）、解析器数（`protocol.registry.PARSERS`）、
-  配置段数（`dataclasses.fields(Config)`）、根级白名单（磁盘 `tstdx/*.py` 计数）逐个钉回运行期
+  配置段数（`dataclasses.fields(Config)`）、根级白名单（磁盘 `atst/*.py` 计数）逐个钉回运行期
   真相源；`test_documented_http_source_floor_still_holds` 把「45+ HTTP 源」按下界语义判定
   （实际 73 个 `*Source` 类：加源不必改文档，掉到宣称界下必须改）。
 - **变异验证 10 条全部 RC=1 且各自指名**：172→167、85→84、61→62、5→6、10→11、删白名单宣称、
@@ -1860,15 +1860,15 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   `Client`，不存在第二套执行路径"，而 CLI 另有 6 个传输/诊断命令（`probe`/`goods`/`f10`/
   `blocks`/`list`/`quotes-snapshot`）直连传输层客户端。现按事实改写为"数据命令全部委托
   `Client`，这 6 条属协议诊断面而非第二套能力执行路径"，并指名口径出处
-  （`tstdx/cli/runtime_commands.py` 的模块 docstring）与既有守卫
+  （`atst/cli/runtime_commands.py` 的模块 docstring）与既有守卫
   （`test_service_faces_never_import_the_web_layer`）；`docs/api/README.md` 的 CLI 行同步补
   "6 个传输/诊断命令除外"。**没有为凑口径给这 6 条硬造内核路径**——诊断命令的意义正是绕开
   能力语义看原始协议。
 - **一个公开枚举的类数在 9 处写着错的值**：盘中异动 `CHANGE_TYPES` 有 **20** 项，
   `tests/web/test_hot_rank.py` 也早已断言 `len(et) == 20`，可 `docs/api/README.md` 与
-  `tstdx/web/{fundflow,sources,_session_info}.py` 的 6 处 docstring/注释仍写"16 类"
+  `atst/web/{fundflow,sources,_session_info}.py` 的 6 处 docstring/注释仍写"16 类"
   （枚举扩容时只动了测试那一侧）。数字全部改为 20，并新增
-  `test_code_comments_about_change_types_match_the_enum` 扫 `tstdx/` 里所有含"异动"的行、
+  `test_code_comments_about_change_types_match_the_enum` 扫 `atst/` 里所有含"异动"的行、
   把 `N 类` 钉回该字典——**生产代码的注释第一次进入事实门禁**。
 - **数字表由 2 份文档铺满 6 份**：`_EXACT_CLAIMS` 10 行 → **22 行**，新增 `docs/api/README.md`
   （capability / Provider / 命令账本 / CLI 子命令 / MCP 工具 / WS 方法数 / Record 类数 /
@@ -1878,7 +1878,7 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   （`45+ HTTP 源` 实际 73、`60+ 契约` 实际 63，真相源取 `scripts/contract_audit.py` 的
   `_all_typed_queries()`）。
 - **清单从"数个数"升级为"核名字"**：`test_documented_domain_record_names_match_the_module`
-  比对 `tstdx.domain.records.__all__` 去掉 `Record` 词缀后的集合；
+  比对 `atst.domain.records.__all__` 去掉 `Record` 词缀后的集合；
   `test_documented_ws_method_list_matches_the_dispatcher` 比对 `runtime_ws._dispatch` 的
   AST 提取结果（`method == "x"` 与 `method in {"a","b"}` 两种写法都认——只认前者会数出 9 个，
   把正确的文档判成错的）。文档写了分派器不认的方法名，用户照抄即 `-32601`。
@@ -1888,13 +1888,13 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   方法名 `runtime.ping` 与幽灵 Record 名 `Warrants`、契约下界 60→70），3 条枚举侧（两处生产
   注释 20→16、api/README 20→19）。**复测（同一轮日志）**：`tests/architecture/` 146 passed；
   离线全量 `-m "not network"` junit `3313 tests / 0 failures / 0 errors / 7 skipped`、RC=0；
-  整仓 `--cov=tstdx` 80.54%（阈值 77 未下调）；`ruff check` + `format --check`（430 files）、
+  整仓 `--cov=atst` 80.54%（阈值 77 未下调）；`ruff check` + `format --check`（430 files）、
   `mypy`（CI 参数）、originality `--strict`（`Total: 189 Suspicious: 0`）、`spec_audit`、
   `golden_audit --gate --require-markets`、reachability `--strict`、docs links（82 文件）均 RC=0。
 
 ### Fixed
 
-- **`tstdx.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，
+- **`atst.configure()` 此前调用即无效果**：它合并出 `Config` 后直接丢弃返回值，
   从不写回单例，`get_config()` 因此永远看不到覆盖。现改为
   `load_config(overrides=kwargs, set_global=True)` 并如实记录语义。
 - **`[rate_limit]` 的所有取值曾被静默丢弃**：唯一的读者 `ConnectionPool.from_config`
@@ -1915,11 +1915,11 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 
 - 配置面 12 段 → 5 段（`core` / `hosts` / `rate_limit` / `web` / `security`）。
   `cache`、`output`、`profile`、`sources`、`observability`、`compatibility`、`feedback`
-  七个 dataclass 与其 `_SUBCONFIGS` 条目、`tstdx.config` 再导出一并物理删除
-  （`tstdx/config/schema.py` −320/+45 行）。这些段在内核里零消费者，写了不改变任何
+  七个 dataclass 与其 `_SUBCONFIGS` 条目、`atst.config` 再导出一并物理删除
+  （`atst/config/schema.py` −320/+45 行）。这些段在内核里零消费者，写了不改变任何
   行为，`[cache]` 更与"数据请求零缓存"直接冲突；现在写它们会命中
   `ValidationError: config 含未知配置段`，而不是被忽略。
-- 删除 `ConnectionPool.from_config`、其硬化层 `tstdx/transport/_pool_factory_hardening.py`
+- 删除 `ConnectionPool.from_config`、其硬化层 `atst/transport/_pool_factory_hardening.py`
   （76 行）与 2 个只测幻影键的契约测试；发布 wheel 冒烟改为断言唯一 seam
   `pool_settings_from_config` 存在且 `ConnectionPool.from_config` 不存在。
 - 段内字段同步收缩：`HostsConfig` 留 `servers`/`slots_per_host`（删
@@ -1939,7 +1939,7 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   monkeypatch 掉这个方法，因此全绿从未暴露。现按 `state not in (CALL_AUCTION,
   CONTINUOUS)` 判定，并补 `tests/protocol/test_prober_offline_guard.py`
   逐时段回归（盘前/集合竞价/连续竞价/午休/盘后/周末 + `_guard_offline` 抛错路径）。
-- `mypy tstdx/` 错误 **47 → 0**。除上述真实缺陷外，另有：`runtime/identity.py`
+- `mypy atst/` 错误 **47 → 0**。除上述真实缺陷外，另有：`runtime/identity.py`
   以 `plan: object` 掩盖类型（改为 `QueryPlan`）、`golden_audit`/`speedtest`/
   `streaming.base`/`_pool_provenance_hardening` 的同名变量复用（局部重命名）、
   `config.schema` 的 `getattr` 循环补 `_Validatable` Protocol 锚点、
@@ -1949,9 +1949,9 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   `--warn-unused-ignores` 保证标注失效即红）。
 - 清理缓存时代残留：`runtime/identity.py` 的 `RuntimeCacheIdentity` 与
   `cache_identity_from_plan()` 生产代码零消费者，随 2 个只测自身的文件一并删除；
-  `tstdx/sink/local_day.py`、`tstdx/domain/symbol.py`、`tstdx/web/efinance_*.py`、
-  `tstdx/web/fin_report.py` 的 docstring 示例仍指向已物理删除的
-  `tstdx.facade.UnifiedQuoteAPI`（照抄即 `ImportError`），改为 `Client` /
+  `atst/sink/local_day.py`、`atst/domain/symbol.py`、`atst/web/efinance_*.py`、
+  `atst/web/fin_report.py` 的 docstring 示例仍指向已物理删除的
+  `atst.facade.UnifiedQuoteAPI`（照抄即 `ImportError`），改为 `Client` /
   `WebQuoteSession` 的真实签名。
 
 ### Added
@@ -1959,24 +1959,24 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 > **口径标注（F-14）**：以下 P13/P14/P15 条目写于 `UnifiedQuoteAPI` 门面仍然存在
 > 的时期，其中"门面暴露 X 个方法"是**当时的落地方式**，不是现行入口。该门面已随
 > v16 Phase 2 物理删除，照抄条目里的 `UnifiedQuoteAPI.xxx()` 即 `ImportError`。
-> 条目里的能力本身全部存活：它们注册在 `tstdx/catalog/capability.py`，现行唯一业务
+> 条目里的能力本身全部存活：它们注册在 `atst/catalog/capability.py`，现行唯一业务
 > 入口是 `Client.call("<capability>", ...)` / `AsyncClient` 同名方法（运行期 172 个
-> capability），底层数据源仍是条目点名的 `tstdx/web/*.py` 模块。门面→现行的对照见
+> capability），底层数据源仍是条目点名的 `atst/web/*.py` 模块。门面→现行的对照见
 > 上文 `### Changed（v17 Phase 4 —— 对外文档面对齐代码事实）` 的迁移表。条目里的
-> `tstdx/web/_facade_mixin_*.py` 现已随 F-11 改名为 `tstdx/web/_session_*.py`。
+> `atst/web/_facade_mixin_*.py` 现已随 F-11 改名为 `atst/web/_session_*.py`。
 
-- P14 数据源补全（ESG 评级 / 筹码分布）：新增 `tstdx/web/esg.py`（新浪 ESG 评级，
+- P14 数据源补全（ESG 评级 / 筹码分布）：新增 `atst/web/esg.py`（新浪 ESG 评级，
   覆盖 13 家机构聚合、季度历史、MSCI 全市场 5200+ 只、华证全市场 6300+ 只，
-  含 E/S/G 三维度分项评分），新增 `tstdx/web/chip.py`（东财筹码分布，基于
+  含 E/S/G 三维度分项评分），新增 `atst/web/chip.py`（东财筹码分布，基于
   push2 资金流接口计算 accumulation_ratio 筹码集中度与 concentration_trend
-  吸筹/派发趋势），新增 `tstdx/web/_facade_mixin_p1.py`（当时的挂载点）；这 5 个能力
+  吸筹/派发趋势），新增 `atst/web/_facade_mixin_p1.py`（当时的挂载点）；这 5 个能力
   现经 catalog 可调用（入口 `Client.call(<capability>, ...)`）：`esg_rating` /
   `esg_history` / `esg_ratings_all` / `chip_distribution` / `chip_distributions`；新增
   `tests/web/test_p1_sources.py`（30 例全离线测试）。
 
-- P13 数据源补全：新增 `tstdx/web/fin_report.py`（三大财务报表：资产负债表 / 利润表 /
+- P13 数据源补全：新增 `atst/web/fin_report.py`（三大财务报表：资产负债表 / 利润表 /
   现金流量表，东财 datacenter-web `RPT_F10_FINANCE_GBALANCE/GINCOME/GCASHFLOW`，
-  SECUCODE 过滤），新增 `tstdx/web/governance.py`（治理四报表：董监高持股
+  SECUCODE 过滤），新增 `atst/web/governance.py`（治理四报表：董监高持股
   `RPT_EXECUTIVE_HOLD_DETAILS` / 股东增减持 `RPT_SHARE_HOLDER_INCREASE` /
   公司概况 `RPT_F10_BASIC_ORGINFO` / 券商评级 `RPT_WEB_RESPREDICT`）；这 10 个能力
   现经 catalog 可调用（入口 `Client.call(<capability>, ...)`）：
@@ -1985,8 +1985,8 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   `rating_forecast` / `rating_consensus`；新增
   `tests/web/test_fundamental_sources.py`（37 例全离线测试）。
 
-- Web 源对标 `Micro-sheep/efinance` 全量补齐：新增 `tstdx/web/efinance_fund.py`
-  （天天基金移动端 7 类基金扩展数据）、`tstdx/web/efinance_deriv.py`
+- Web 源对标 `Micro-sheep/efinance` 全量补齐：新增 `atst/web/efinance_fund.py`
+  （天天基金移动端 7 类基金扩展数据）、`atst/web/efinance_deriv.py`
   （东财 push2 期货/债券实时、快照、K 线、逐笔），这 21 个能力现经 catalog 可调用
   （入口 `Client.call(<capability>, ...)`）：
   `stock_base_info` / `stock_all_performance` / `stock_report_dates` / `ipo_review` /
@@ -1995,21 +1995,21 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   `futures_base_info` / `futures_realtime` / `futures_kline` / `futures_trades` /
   `bond_realtime` / `bond_base_info` / `bond_kline` / `bond_history_bill` /
   `bond_today_bill` / `bond_trades`。
-- 对标 `tiantianlaolao/astock-data-toolkit` 新增基本面衍生域：`tstdx/web/astock_toolkit.py`
+- 对标 `tiantianlaolao/astock-data-toolkit` 新增基本面衍生域：`atst/web/astock_toolkit.py`
   （东财 `RPT_SHAREBONUS_DET` / `RPT_VALUEASSESS_DET` / `RPT_CAPITAL_PARTICIPATION_DET` /
   `RPT_F10_FINANCE_MAIN`），暴露 `dividend_history` / `stock_valuation` /
   `holder_changes` / `financial_abstract` / `announcements`。
-- 新增 `tstdx/web/news.py` 机构调研纪要源（东财数据中心 `RPT_ORG_SURVEY`），
+- 新增 `atst/web/news.py` 机构调研纪要源（东财数据中心 `RPT_ORG_SURVEY`），
   暴露 `research_visits`；补齐 niuniu 审计发现的资讯类硬缺口。
 - 补齐 efinance 批量能力：`fund_base_info_multi`（`fund_base_info` 批量别名）与
   `bond_all_base_info`（`bond_base_info` 全市场别名）；并把 `_facade_mixin_info.py`
   已存在但当时未对外的 `free_holders` / `holder_num` 接入 catalog（`Client.call`）。
 - 天天基金深度扩展（对标移动端全端点，补齐排行/快照/经理/公司/搜索 5 大子域）：
-  新增共享工具 `tstdx/web/_mob_fund.py`（设备指纹 + 公共参数 + 多 host 容错 +
-  `apply_fields` 字段归一化），新增三个源：`tstdx/web/fund_rank.py`
+  新增共享工具 `atst/web/_mob_fund.py`（设备指纹 + 公共参数 + 多 host 容错 +
+  `apply_fields` 字段归一化），新增三个源：`atst/web/fund_rank.py`
   （排行/实时快照替代已下线的 `fundgz`/净值/详情/评级/走势 7 方法）、
-  `tstdx/web/fund_manager.py`（基金经理 JSON 版，含夏普/回撤/胜率/波动率打分卡，
-  替代脆弱的 `fundf10` HTML 解析）、`tstdx/web/fund_company.py`
+  `atst/web/fund_manager.py`（基金经理 JSON 版，含夏普/回撤/胜率/波动率打分卡，
+  替代脆弱的 `fundf10` HTML 解析）、`atst/web/fund_company.py`
   （公司档案/旗下基金/规模变动/画像 + `fundts` 搜索），门面暴露
   `fund_rank` / `fund_snapshot` / `fund_nav_history_mob` / `fund_detail` /
   `fund_rating` / `fund_yield_curve` / `fund_rank_trend` / `fund_manager_list` /
@@ -2029,10 +2029,10 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
 → `QueryPlanner.compile(QuerySpec)` → `DirectProviderExecutor`（`DIRECT_BINDINGS` 为唯一
 三元组事实源）。下列 v14 信封层与其支撑 DAG **整体删除**，不提供向后兼容导入路径：
 
-- 模块：`tstdx/runtime/{runtime,gateway,bootstrap,request,response,typed,stream,context}.py`、
-  整个 `tstdx/execution/`（planner/graph/node/plan/semantic）、整个 `tstdx/provider/`
-  （v14 router/base/tdx/web/local）、`tstdx/executor_bindings.py`、
-  `tstdx/executor_binding_registry.py`、`tstdx/executor_registry.py`
+- 模块：`atst/runtime/{runtime,gateway,bootstrap,request,response,typed,stream,context}.py`、
+  整个 `atst/execution/`（planner/graph/node/plan/semantic）、整个 `atst/provider/`
+  （v14 router/base/tdx/web/local）、`atst/executor_bindings.py`、
+  `atst/executor_binding_registry.py`、`atst/executor_registry.py`
 - 符号：`Runtime`、`RuntimeGateway`、`QueryRequest`、`QueryResponse`、`create_runtime`、
   `request_from_typed`、`runtime_subscribe`、`StreamHandle`、`ExecutionPlanner`、
   `SemanticExecutionAdapter`、`ProviderRouter`、`resolve_executor`、`ExecutorBindingRegistry`
@@ -2043,37 +2043,37 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   （需要记录视图时用 `records_from_response(result)`）；
   `create_runtime(tdx=Fake())` 测试注入口 → `UnifiedRuntime(executor=FakeKernelExecutor())`
 - 防回潮守卫：`tests/architecture/test_single_kernel_guards.py`（已删模块不可导入、
-  符号不再出现、`tstdx.runtime.__all__` 仅导出内核、runtime 包不再 import 已删分层）
+  符号不再出现、`atst.runtime.__all__` 仅导出内核、runtime 包不再 import 已删分层）
 
 ### Changed（v17 Phase 3C —— 根级命名空间归位）
 
-`tstdx/` 根级平铺模块从 26 个收敛到 10 个（白名单仅留协议中立契约层：`__init__`、
+`atst/` 根级平铺模块从 26 个收敛到 10 个（白名单仅留协议中立契约层：`__init__`、
 `__main__`、`query`、`result`、`batch`、`typed_query`、`stream_contract`、`errors`、
 `error_envelope`、`deprecation`）。纯移动、无合并、无兼容别名；导入方需按下表更新：
 
 | 旧模块路径 | 新模块路径 |
 | --- | --- |
-| `tstdx.client_api` | `tstdx.client.api` |
-| `tstdx.client_core` | `tstdx.client.core` |
-| `tstdx.direct_provider` | `tstdx.runtime.executor` |
-| `tstdx.orchestration` | `tstdx.runtime.orchestration` |
-| `tstdx.runtime_audit` | `tstdx.runtime.audit` |
-| `tstdx.runtime_identity` | `tstdx.runtime.identity` |
-| `tstdx.runtime_provenance` | `tstdx.runtime.provenance` |
-| `tstdx.capability_catalog` | `tstdx.catalog.capability` |
-| `tstdx.capability_audit` | `tstdx.catalog.capability_audit` |
-| `tstdx.provider_api` | `tstdx.catalog.provider_bindings` |
-| `tstdx.provider_contract` | `tstdx.catalog.provider_contract` |
-| `tstdx.provider_guard` | `tstdx.catalog.provider_guard` |
-| `tstdx.provider_audit` | `tstdx.catalog.provider_audit` |
+| `atst.client_api` | `atst.client.api` |
+| `atst.client_core` | `atst.client.core` |
+| `atst.direct_provider` | `atst.runtime.executor` |
+| `atst.orchestration` | `atst.runtime.orchestration` |
+| `atst.runtime_audit` | `atst.runtime.audit` |
+| `atst.runtime_identity` | `atst.runtime.identity` |
+| `atst.runtime_provenance` | `atst.runtime.provenance` |
+| `atst.capability_catalog` | `atst.catalog.capability` |
+| `atst.capability_audit` | `atst.catalog.capability_audit` |
+| `atst.provider_api` | `atst.catalog.provider_bindings` |
+| `atst.provider_contract` | `atst.catalog.provider_contract` |
+| `atst.provider_guard` | `atst.catalog.provider_guard` |
+| `atst.provider_audit` | `atst.catalog.provider_audit` |
 
-新包 `tstdx/catalog/` 承载"静态声明与一致性审计"（capability 目录与调用校验、Provider
+新包 `atst/catalog/` 承载"静态声明与一致性审计"（capability 目录与调用校验、Provider
 channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方向单向 `runtime → catalog`。
-顶层公开面 `tstdx.Client` / `tstdx.ProviderOrchestrator` / `tstdx.FallbackPolicy` 等**不变**
-（`tstdx/__init__.py` 懒加载表已指向新路径）。守卫：`tests/architecture/test_namespace_layout.py`。
+顶层公开面 `atst.Client` / `atst.ProviderOrchestrator` / `atst.FallbackPolicy` 等**不变**
+（`atst/__init__.py` 懒加载表已指向新路径）。守卫：`tests/architecture/test_namespace_layout.py`。
 
-同批删除全仓零引用的孤儿模块 `tstdx/freshness.py`（427 行）、`tstdx/health.py`（256 行）与仅
-被自身测试引用的 `tstdx/failure.py`（含 `tests/errors/test_failure_policy.py`）；一次性迁移脚本
+同批删除全仓零引用的孤儿模块 `atst/freshness.py`（427 行）、`atst/health.py`（256 行）与仅
+被自身测试引用的 `atst/failure.py`（含 `tests/errors/test_failure_policy.py`）；一次性迁移脚本
 `scripts/_v16_strip_use_cache.py` 一并移除。
 
 ### Changed（v16 Phase 3D —— typed 契约对齐内核真实签名）
@@ -2107,33 +2107,33 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
 
 | 位置 | 曾经的错误宣称 | 更正为 |
 |---|---|---|
-| `README.md` / `docs/quickstart.md` / `docs/FAQ.md` / `docs/cookbook/01` / `docs/migration/*` / `SECURITY.md` / `docs/api/interfaces.md` / `tstdx/observability/metrics.py` docstring | `from tstdx import TdxClient` | `from tstdx.client import TdxClient`（根面自 v15 起不再导出协议客户端）|
-| `ops/smoke_30d.py` | 同上，**运行期 ImportError** | 改为 `tstdx.client` 导入 |
+| `README.md` / `docs/quickstart.md` / `docs/FAQ.md` / `docs/cookbook/01` / `docs/migration/*` / `SECURITY.md` / `docs/api/interfaces.md` / `atst/observability/metrics.py` docstring | `from atst import TdxClient` | `from atst.client import TdxClient`（根面自 v15 起不再导出协议客户端）|
+| `ops/smoke_30d.py` | 同上，**运行期 ImportError** | 改为 `atst.client` 导入 |
 | `README.md` / `docs/api/*` | "32 CLI 子命令 / ~40 HTTP 接口 / 12 MCP 工具 / 167 capability" | 31 子命令 / 10 路由（`/v13/*`）/ 9 工具 / 172 capability / 11 Provider（逐项由门禁核对）|
 | `docs/quickstart.md` §6、`docs/api/interfaces.md` §2–§3、`docs/cookbook/07` | `RuntimeGateway` / `create_runtime` / `QueryRequest` / `SemanticResultCache` / `execute_batch(requests)` | `Client` + `UnifiedRuntime` 单内核；批量为 `quotes_batch → BatchResult`，跨源为 `FallbackPolicy → OrchestratedResult.attempts` |
 | `docs/api/interfaces.md` §3 服务面 | `integration.http_server`（42 端点）/ `ws_server` / `mcp_server`（12 工具）| `runtime_http.create_runtime_app`（10 路由）/ `runtime_ws_server.serve_runtime_ws`（10 方法）/ `integration.mcp.create_mcp_server`（9 工具）|
 | `docs/cookbook/02_realtime_fallback.md` | `DataSourceRouter` 五级自动降级、`q.change_pct` 对象属性 | 默认永不换源 + 显式 `FallbackPolicy`；`QueryResult.data` 为 dict 列表 |
 | `docs/cookbook/07_v14_runtime.md` | 整页 v14 信封运行时 | 重写并更名为 `07_single_kernel_queries.md`（溯源审计 / 批量三态 / 显式跨源 / typed / 流式 / `KernelExecutor` 假执行体）|
-| `docs/api/README.md` | `tstdx.sources.router DataSourceRouter`、门面行 | `tstdx.providers` 注册表 + `catalog/*` + 统一内核层索引 |
+| `docs/api/README.md` | `atst.sources.router DataSourceRouter`、门面行 | `atst.providers` 注册表 + `catalog/*` + 统一内核层索引 |
 | `README.md` / `docs/quickstart.md` / `docs/cookbook/01,05` / `docs/api/interfaces.md` §4 | 落地 URI `output://dataframe`、`parquet://x.parquet`、`duckdb://db?table=t`、`csv://` | 现行 sink 推断：`.csv/.parquet/.pq` 后缀 + `duckdb:<path>@<table>`，DataFrame 走 `to_dataframe()` 或 `fmt="dataframe"` |
 | `docs/api/interfaces.md` §6 | `domain.records` 导出 `Bar/Quote/Level/FinanceInfo/...` | 9 类 `*Record`（`Bar/Quote/Level/CapitalChange` 属 `domain.models`）|
-| `docs/api/interfaces.md` §6 | `from tstdx.domain.adjust import adjust_bars` | `AdjustEngine` / `to_adjusted` / `compute_factors` |
+| `docs/api/interfaces.md` §6 | `from atst.domain.adjust import adjust_bars` | `AdjustEngine` / `to_adjusted` / `compute_factors` |
 | `docs/cookbook/03_offline_vipdoc.md` | `read_lc1_file` / `read_lc5_file`（不存在）| `read_min_file(path, interval=1|5)` |
-| `docs/tiantian_fund_extensions.md` / `docs/migration/easyquotation.md` | `from tstdx import tstdx  # UnifiedQuoteAPI`、`tstdx.facade.quote_api` | `Client.call(capability, **kwargs).data` |
+| `docs/tiantian_fund_extensions.md` / `docs/migration/easyquotation.md` | `from atst import atst  # UnifiedQuoteAPI`、`atst.facade.quote_api` | `Client.call(capability, **kwargs).data` |
 | `docs/adr/README.md` ADR-004、`ADR-012/014/015` | 状态仍为 Accepted（描述 5 级降级 / 语义缓存 / 含缓存节点的执行链）| 标注 Superseded 并指向 ADR-013 与现行单内核链路（历史正文保留）|
 | `docs/{quickstart,api/README,api/interfaces}.md` 交叉链接 | 指向已归档/相对路径错误的 `api/v14-runtime.md`、`api/README.md`、`ARCHITECTURE_AUDIT_v8.md` | 重指向归档位置或正确相对路径；`scripts/check_docs_links.py` 80 文件全绿 |
 
 新增门禁 `tests/architecture/test_doc_code_consistency.py`（9 例）：活文档代码块里的
-`from tstdx… import …` 必须可解析、事实型文档反引号里的 `tstdx.*` 路径必须可解析、
-`tstdx.__all__` 与惰性导入表必须等集、README 宣称的 5 个数字必须等于运行期事实。
+`from atst… import …` 必须可解析、事实型文档反引号里的 `atst.*` 路径必须可解析、
+`atst.__all__` 与惰性导入表必须等集、README 宣称的 5 个数字必须等于运行期事实。
 
 配套清理：
 
-- `tstdx/__init__.py`：移除 7 个只存在于惰性表、既未列入 `__all__` 也无任何调用方的根级
+- `atst/__init__.py`：移除 7 个只存在于惰性表、既未列入 `__all__` 也无任何调用方的根级
   名字（`deprecated`、`DeprecationPolicy`、`FeedbackReporter`、`TelemetryCollector`、
   `UserStats`、`detect_encoding`、`decode_bytes`）。官方面回归单一事实源
   （`__all__` ⇔ `_LAZY`，46 项），需要时按真实模块路径导入。
-- `tstdx/batch.py`：`BatchResult` 文档串不再引用已删除的 `planned_service` 契约。
+- `atst/batch.py`：`BatchResult` 文档串不再引用已删除的 `planned_service` 契约。
 - `tests/runtime/test_runtime_public_api_v12.py` → `test_root_public_surface.py`
   （文件名与被测契约一致；断言内容不变，注释去掉 `RuntimeGateway`）。
 - 30 份被取代的历史方案文档归档至 `docs/archive/plans/`（含 `docs/api/v14-runtime.md`）。
@@ -2147,9 +2147,35 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
   基类，导致真实请求打到 `https://reportapi.eastmoney.com?pageSize=...` 而 404。
   现改为传入 BASE 的路径段部分，主机只拼接一次。
 
+## [1.0.0] - 2026-09-27
+
+v1.0.0 的**重新发布**：本库更名为 `atst`，包名 / 导入名 / 控制台入口 / wheel 与 sdist
+产物统一为 `atst`。这是 `atst` 这一名字下的首次发行。
+
+### Changed
+
+- **包名与导入名**：安装 `pip install atst`、导入 `import atst`、命令行 `atst`（31 个子命令）。
+- **环境变量前缀 `TSTDX_` → `ATST_`**（破坏性）：`ATST_` 仍是保留命名空间——代码从环境
+  读取的每一个非 schema 变量都必须登记，未登记的名字一律按拼写错误 fail closed。
+  `ATST_CORE_TIMEOUT` / `ATST_FEEDBACK` / `ATST_HOSTS` / `ATST_WENCAI_COOKIE` 等逐项对应改名。
+- **指标名前缀 `tstdx_` → `atst_`**（Prometheus 指标族），与接口文档 §8 的指标表同步。
+- 内部属性更名：`server.tstdx_handler` → `server.atst_handler`、`_tstdx_instrumented` →
+  `_atst_instrumented`、配置 sink 名 `tstdx_warning_sink` → `atst_warning_sink`。
+
+### Fixed
+
+- 随本次发布一并收口逻辑审查第 5 轮的全部修复：WebSocket 实时订阅控制面
+  （`subscribe` / `unsubscribe` / `list` + `push` 推送帧）贯通、四面投影门禁与文档
+  一致性门禁复绿、死循环专项复查（trampoline / 令牌桶 / deadline / 翻页上限）。
+
+### Note
+
+- 本包**当前不在 PyPI**：`pip install atst` 暂不可用，安装请走源码路径
+  （`pip install -e .`）。发布到 PyPI 后本条声明会移除。
+
 ## [1.0.0] - 2026-09-09
 
-这是 tstdx 的首个正式稳定版，发布包同时提供 wheel 与源码包，支持 Python 3.10–3.13。
+这是 atst 的首个正式稳定版，发布包同时提供 wheel 与源码包，支持 Python 3.10–3.13。
 
 ### Changed
 
@@ -2172,17 +2198,17 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
 ### Release verification
 
 - 全量 `pytest -q` 通过。
-- `ruff check tstdx tests` 与 `python -m compileall -q tstdx tests` 通过。
+- `ruff check atst tests` 与 `python -m compileall -q atst tests` 通过。
 - 发布脚本完成 wheel/sdist 构建、临时虚拟环境安装与 import 冒烟。
-- 产物名称：`tstdx-1.0.0-py3-none-any.whl`、`tstdx-1.0.0.tar.gz`。
+- 产物名称：`atst-1.0.0-py3-none-any.whl`、`atst-1.0.0.tar.gz`。
 
 ### Deprecation Timeline（P13-F：把 v1.4.0 Deprecated 章节的窗口期落到版本号）
 
-- **v1.5.0（下一个 minor）**：`tstdx.native` 仍可用，行为不变；导入即发
+- **v1.5.0（下一个 minor）**：`atst.native` 仍可用，行为不变；导入即发
   `UserWarning`（P14-D 强告警升级：默认可见，不再走 `DeprecationWarning`
   默认过滤规则）+ `logging.warning` 双通道；此版本为迁移**最后窗口**——
-  所有下游需在 v1.5.0 之前切换到 `tstdx.codec` / `tstdx.io` 对应函数。
-- **v1.6.0**：`tstdx.native` **正式删除**——模块文件移除，导入即
+  所有下游需在 v1.5.0 之前切换到 `atst.codec` / `atst.io` 对应函数。
+- **v1.6.0**：`atst.native` **正式删除**——模块文件移除，导入即
   `ImportError`（不再走纯 Python 回退）。同期移除 v1.4.0 Deprecated 章节
   中列出的兼容垫片；`pyproject.toml` 的 `[project.urls]` 若引用
   native 相关文档链接同步清理。见 P15-A 批次。
@@ -2190,7 +2216,7 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
 ### Changed
 
 - **P14 批次部分落地（2026-09-07）**：
-  * **P14-D**：`tstdx/native.py` 弃用告警从 `DeprecationWarning` 升级为
+  * **P14-D**：`atst/native.py` 弃用告警从 `DeprecationWarning` 升级为
     `UserWarning`（默认显示）+ `logging.warning` 双通道，v1.5.0 强告警。
     迁移指引文案显式指向 `decode_tdx_float / read_day_file /
     parse_kline_payload` 三个 Python 等价函数。
@@ -2209,7 +2235,7 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
     「门禁口径漂移」。同时新增 `[project.optional-dependencies].dev`
     extra（pytest / pytest-cov / pytest-asyncio / ruff / mypy / hatchling），
     开发者可 `pip install -e ".[dev]"` 获得与 CI 一致的本地体验。
-  * **P14-A2 CLI hosts audit 子命令**：`tstdx hosts audit` 接入
+  * **P14-A2 CLI hosts audit 子命令**：`atst hosts audit` 接入
     `scripts/audit_hosts.py`，用户无需调用脚本即可做 5 族巡检；
     参数与脚本一致（`--family / --timeout / --workers / --report /
     --ranking-file / --strict / --quiet / --no-save-ranking / --hosts-file`）。
@@ -2247,15 +2273,15 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
     CLI hosts audit 示例 / 巡检流程 / 文档导航新增
     POTENTIAL_ISSUES_AND_PLAN.md）。
   * `pyproject.toml` `[project.urls]` 修正到实际仓库
-    （`coeasy/tstdx` → 原为 `tstdx/tstdx` 占位）——PyPI 元数据一致。
+    （`coeasy/atst` → 原为 `atst/atst` 占位）——PyPI 元数据一致。
   * `.gitignore` 补充 `.workbuddy/` / `.test_tmp/` / `_cov.txt` /
     `base_orig_tmp.py`，杜绝本地会话产物与临时文件入库。
-  * 项目首个 commit `f73ef61` 已推送至 `github.com:coeasy/tstdx` main
+  * 项目首个 commit `f73ef61` 已推送至 `github.com:coeasy/atst` main
     分支（2061 files, 133,175 insertions）。
 
 - **P12 数据源扩展与实测修复（真实环境验证）**：
   * **板块资金流排行**：新增 `sector_flow(board, sort, limit)`（session/facade
-    双入口 + CLI `tstdx sector-flow [--board industry|concept|region]
+    双入口 + CLI `atst sector-flow [--board industry|concept|region]
     [--sort main_net]`）；实测行业/概念/地域真实取数通过（传媒主力净流入
     61.7 亿、SPD概念净占比 18.56%）。
   * **实测修复排行字段陷阱**：`EastmoneyRankSource.fetch_rows` 按资金流排序
@@ -2276,7 +2302,7 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
     `EastmoneyMarginSource.fetch_margin`（DATE 倒序、days 截断、金额单位元、
     3/5/10 日差分字段入 `extra`）+ 源注册 `margin` + identity normalizer +
     `WebQuoteSession.margin` / `UnifiedQuoteAPI.margin` / CLI
-    `tstdx margin <symbol> [--days N]` + 注册表一致性门禁扩项。
+    `atst margin <symbol> [--days N]` + 注册表一致性门禁扩项。
   * **实测发现并修复**：`fundgz.1234567.com.cn` 实时估值接口已下线
     （返回 404 HTML 页，官方 App 接口需设备签名鉴权）——
     `FundSource.fetch_estimate` 检测死接口后显式抛
@@ -2289,7 +2315,7 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
     不可行——`isIndex=true` 实测无效（000001 恒返回深市个股，前缀/1A0001/
     999999 均空结果，同码歧义无解）；smartbox 联想端点空响应；资金流
     `vapi/v1` 403。百度源现有能力（A 股 K线/分时/逐笔/五档）维持。
-  * 新增 `tstdx/__main__.py`：`python -m tstdx` 与控制台脚本等价。
+  * 新增 `atst/__main__.py`：`python -m atst` 与控制台脚本等价。
   * 新增测试：`tests/web/test_margin.py`（罐头解析/days 截断/空标的/注册表）
     + fund 死接口用例 + session CM 用例；真实取数复验通过。
 
@@ -2324,7 +2350,7 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
 - **v10 重构（REFACTOR_PLAN_v10，全部落地）**：
   * **P10-1** 按 [ADR-007-010](adr/ADR-007-010.md) 删除 `CredentialStore`
     （三级凭据存储，526 行，全库零调用方）：模块/导出/测试/docs/白名单同步清理；
-    `tstdx.security` 包保留并注明重新设计条件。
+    `atst.security` 包保留并注明重新设计条件。
   * **P10-2** facade 路由壳拆分：W11/W12 路由选择与熔断基础设施收口至
     `facade/routing.py`（`RouteSelector`），`api.py` 1297→1129 行；
     实例状态名（`_route_fail_counts`/`_route_cooldown_until`）与全部公开面不变。
@@ -2332,7 +2358,7 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
     `_base_retry`（重试退避+失败双桶）/`_base_http`（HTTP 客户端+限流桶）/
     `_base_em`（`_EastmoneyJson` 主机池）；`web/base.py` 保留为组合 re-export
     门面，导入路径全兼容（`tests/seams` W5/W10 契约测试同步指向新模块）。
-  * **P10-4** 文档清理：`sink/` docstring 改引 `tstdx.output`；README 特性表
+  * **P10-4** 文档清理：`sink/` docstring 改引 `atst.output`；README 特性表
     补 streaming 定位（ADR-011）。
   * **P10-5** route_parity 偶发失败定性：v9 期间代理并发改写 `web/__init__.py`
     时测试运行于半写状态所致（环境性，非测试缺陷）；复跑与终验均未复现，
@@ -2352,9 +2378,9 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
   * **Q4-1** web Source 层收尾：`web/_paginate.py` 共享分页拉取器
     （KlineSource/MinuteKlineSource 复用）；公告/研报源归入 `_EastmoneyJson`
     （主机池 failover 复用）。
-  * **Q4-2** `tstdx/web/__init__` 惰性导入（PEP 562，55 符号 + `_ADAPTERS`
+  * **Q4-2** `atst/web/__init__` 惰性导入（PEP 562，55 符号 + `_ADAPTERS`
     惰性注册表）：首载子模块 24→3（-87.5%）。
-  * **Q4-4** `tstdx/sinks` → `tstdx/output`（消除与 vipdoc 写回包 `tstdx.sink`
+  * **Q4-4** `atst/sinks` → `atst/output`（消除与 vipdoc 写回包 `atst.sink`
     的混淆）；旧名 shim 兼容一版（DeprecationWarning，v10 删除），16 处引用迁移。
   * **Q3/Q4-3** 异步门面紧凑设计文档化并冻结契约测试；[ADR-011](adr/ADR-011-streaming-native-处置决议.md)
     明确 streaming engine/push 与 native 定位（engine 实为 QuoteStream 内核，
@@ -2365,21 +2391,21 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
 ### Added
 
 - **v8 内部重构（REFACTOR_PLAN_v8，行为与公开 API 零变化）**：
-  * 删除已废弃的 `tstdx.i18n` 兼容 shim（v7 起更名 `tstdx.charset` 并告警一版）；
-    相关测试/文档/`_reach_allow.txt` 同步迁移至 `tstdx.charset`。
+  * 删除已废弃的 `atst.i18n` 兼容 shim（v7 起更名 `atst.charset` 并告警一版）；
+    相关测试/文档/`_reach_allow.txt` 同步迁移至 `atst.charset`。
   * `facade/api.py`：新增 `_with` 资源作用域帮助方法，收口 21 处
     「构造客户端/Source → 调用 → close」薄委托模板（-85 行重复）。
-  * `tstdx/cli.py`（1210 行）拆分为 `tstdx/cli/` 包：`_common`（表格输出/公共
+  * `atst/cli.py`（1210 行）拆分为 `atst/cli/` 包：`_common`（表格输出/公共
     参数）+ `cmds_market` / `cmds_web` / `cmds_hosts`（按域命令）+ `parser`
-    （argparse 装配）；`tstdx.cli:main` 控制台入口与 `from tstdx.cli import
+    （argparse 装配）；`atst.cli:main` 控制台入口与 `from atst.cli import
     main/build_parser/_cmd_*` 导入路径全部不变。
-  * `tstdx/client.py`（1715 行）拆分为 `tstdx/client/` 包：`sync.py`（TdxClient
+  * `atst/client.py`（1715 行）拆分为 `atst/client/` 包：`sync.py`（TdxClient
     + 4 同步子类）/ `async_.py`（Async 镜像）/ `factory.py`（get_client）；
     37 个模块级符号逐一 re-export 对齐，`dispatch` 经包属性延迟解析保持
     monkeypatch 语义等价。
-  * `tstdx/web/facade.py`（1336 行）拆为 `facade.py`（135 行）+ 3 个域 Mixin
+  * `atst/web/facade.py`（1336 行）拆为 `facade.py`（135 行）+ 3 个域 Mixin
     （`_facade_mixin_market/info/baidu`）；61 方法 AST 级 diff 为空，导入面不变。
-  * `tstdx/trade/*`（交易协议模拟器）登记可达性白名单并在 README 标注定位
+  * `atst/trade/*`（交易协议模拟器）登记可达性白名单并在 README 标注定位
     （独立可选，不连真实券商）；`audit_reachability.py --strict` 恢复通过。
   * 新增 [docs/ARCHITECTURE_AUDIT_v8.md](ARCHITECTURE_AUDIT_v8.md)：功能完整性/
     链路贯通/不合理项审计结论与 v9 路线。
@@ -2388,19 +2414,19 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
 
 ### Added
 
-- **P0-1 基金净值（G1，东财接口）**：新增 `tstdx/web/adapters_fund.py`
+- **P0-1 基金净值（G1，东财接口）**：新增 `atst/web/adapters_fund.py`
   `FundSource`（数据型源）——`fetch_nav_history`（api.fund.eastmoney.com/f10/lsjz，
   空净值→None 容错）、`fetch_estimate`（fundgz jsonp 解析）、`fetch_fund_list`
   （fundcode_search.js 全量 JS 数组解析，约 1.2 万条）；源注册 `fund`
   capabilities `fund_nav_history / fund_estimate / fund_list`（不参与行情降级）；
   `WebQuoteSession.fund_*` 便捷方法 + `UnifiedQuoteAPI.fund_nav_history /
-  fund_estimate / fund_list` 门面 + CLI ``tstdx fund nav|estimate|list`` 子命令
+  fund_estimate / fund_list` 门面 + CLI ``atst fund nav|estimate|list`` 子命令
   （`--page-size/--page-index` 翻页、`--json`）；补齐三方一致性门禁（`_ADAPTERS`
   注册 + `FundNormalizer` identity 显式登记 + `CAPABILITY_FACADE` 映射）；
   新增 `tests/web/test_fund.py` 9 例 + `tests/facade/test_fund_api.py` 5 例 +
   `tests/unit/test_cli_semantics.py` `TestP01FundSubcommand` 6 例（离线 mock）。
 
-- **P0-2 指数成分股（G2，东财数据中心）**：新增 `tstdx/web/adapters_index.py`
+- **P0-2 指数成分股（G2，东财数据中心）**：新增 `atst/web/adapters_index.py`
   `EastmoneyIndexConstituentsSource`（继承 `EastmoneyDataCenterSource`）——
   `fetch_constituents` 经 datacenter `RPT_INDEX_TS_COMPONENT` 报表拉取，`TYPE`
   指数族过滤（沪深300/上证50/中证500/科创50/中证A50/中证A500/中证1000/深证50/
@@ -2408,7 +2434,7 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
   交叉验证 5 族 jaccard=1.0）、单页 500、中证1000/中证2000 等大指数自动分页拉全量，
   `weight` 仅部分指数族提供；源注册 `index_cons` capability `index_constituents`
   （数据型源，不参与行情降级）；`WebQuoteSession.index_constituents` 便捷方法 +
-  `UnifiedQuoteAPI.index_constituents` 门面 + CLI ``tstdx index constituents <code>``
+  `UnifiedQuoteAPI.index_constituents` 门面 + CLI ``atst index constituents <code>``
   子命令（`--json`）；补齐三方一致性门禁（`_ADAPTERS` 注册 +
   `IndexConstituentsNormalizer` identity 显式登记 + `CAPABILITY_FACADE` 映射）；
   新增 `tests/web/test_index.py` 14 例 + `tests/facade/test_index_api.py` 2 例 +
@@ -2416,12 +2442,12 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
 
 - **B0 百度财经源收口**：`UnifiedQuoteAPI` 新增 `baidu_kline` / `baidu_minute`
   / `baidu_ticks` / `baidu_quote` 门面（转发 `WebQuoteSession` 便捷方法，
-  try/finally 保证 close）；CLI 新增 ``tstdx baidu <symbol> [--kind kline|
+  try/finally 保证 close）；CLI 新增 ``atst baidu <symbol> [--kind kline|
   minute|ticks|quote]`` 子命令（`--period/--count/--end-time` K 线分页游标、
   `--limit` 逐笔、`--json`）；新增 `tests/facade/test_baidu_api.py` 6 例 +
   `tests/unit/test_cli_semantics.py` `TestB0BaiduSubcommand` 6 例（离线 mock）。
 
-- **P2-1 TDX 交易协议探测**：新增可选模块 `tstdx/trade/`——`constants.py`
+- **P2-1 TDX 交易协议探测**：新增可选模块 `atst/trade/`——`constants.py`
   （命令号/查询类别/价格类型/委托状态常量，生态公开约定，inferred 标注）+
   `errors.py`（`TradeError`/`TradeNotLoggedIn`/`TradeRejected`/
   `TradingUnavailable` 红线异常）+ `security.py`（口令 XOR 可逆混淆占位）+
@@ -2440,7 +2466,7 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
   （并行探测候选主站 RTT → 排序 → 热更新主站池）+ `AsyncTdxClient.bestip()`
   与 `open(bestip=True)` 触发；新增 `tests/client/test_bestip.py`。
 
-- **P1-3 本地日线增量落盘**：`tstdx/sink/local_day.py` `LocalDaySink`——
+- **P1-3 本地日线增量落盘**：`atst/sink/local_day.py` `LocalDaySink`——
   断点续传式把网络日 K 线增量写回 vipdoc `.day`（读末日期 → 向后回退
   多窗口拉取 → 已存在日期跳过，幂等；prev_close 链与 reader 语义一致；
   记录编码是 `DayBarReader` 解码的精确逆变换，写入后可直接回读）；
@@ -2455,7 +2481,7 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
 
 - **N1 F10 catalog 服务面接线**：`UnifiedQuoteAPI.f10_catalog`（tdx 路由校验）、
   HTTP `/f10/{symbol}/catalog`（fundamental 组 7→8，端点 42→43）、MCP
-  `get_f10_catalog` 工具（12→13）、CLI `tstdx f10 <symbol> [--file <name>]`
+  `get_f10_catalog` 工具（12→13）、CLI `atst f10 <symbol> [--file <name>]`
   （缺省列栏目目录）；各层均带离线用例（facade 路由校验 / HTTP fake client /
   MCP stub / CLI 语义 / WS）。
 
@@ -2481,7 +2507,7 @@ channel→adapter 绑定表、Provider 隔离契约/守卫/审计），依赖方
   全市场）；`WebQuoteSession.all_market()` 与 `UnifiedQuoteAPI.all_market()`
   均支持 `"tencent"` 源（`node="hs_a"/"cyb"`）。
 
-- **F1 除权除息数据链路**：`tstdx/domain/finance.py`（gpcw 语义字段序 +
+- **F1 除权除息数据链路**：`atst/domain/finance.py`（gpcw 语义字段序 +
   0x0010 语义映射 + `map_finance_values` + `to_capital_changes` 共享转换器）；
   `FinanceReader.read_indicators()` gpcw 语义化解析；`finance_info()` 0x0010
   带字段名输出；`UnifiedQuoteAPI.adjusted_bars()` 复权生产入口（原始 K 线 +
@@ -2532,10 +2558,10 @@ M1/M1b 架构决断落地（用户拍板）+ 低级批次 14 项具名全清 + L
 
 ### Deprecated
 
-- **M1b 废弃决断（用户拍板）**：`tstdx.native` 自 v1.4.0 弃用（§29
+- **M1b 废弃决断（用户拍板）**：`atst.native` 自 v1.4.0 弃用（§29
   DeprecationPolicy，2 个 minor 窗口后 v1.6.0 删除）——Rust 扩展源码已移除、
   模块恒为纯 Python 回退透传无加速实质；导入即发 `DeprecationWarning`，
-  窗口期行为不变。迁移：直接使用 `tstdx.codec` / `tstdx.io` 对应函数。
+  窗口期行为不变。迁移：直接使用 `atst.codec` / `atst.io` 对应函数。
 
 ### Fixed（低级 14 项具名摘要）
 
@@ -2664,13 +2690,13 @@ M1/M1b 架构决断落地（用户拍板）+ 低级批次 14 项具名全清 + L
 
 - **web/base.py（F0-2，实测级）**：`HttpxClient` 补齐 `post()`（签名对齐
   `UrllibClient.post`，httpx 异常统一包装 `WebSourceError`）——按推荐
-  `tstdx[web]` 安装（httpx 可用）时人气榜/CLI/MCP 全链 `NotImplementedError`
+  `atst[web]` 安装（httpx 可用）时人气榜/CLI/MCP 全链 `NotImplementedError`
   必崩的断头路接通。
 
-- **config/loader.py（F0-3，实测级）**：① `TSTDX_RATE_LIMIT_*` 段名按
+- **config/loader.py（F0-3，实测级）**：① `ATST_RATE_LIMIT_*` 段名按
   `Config._SUBCONFIGS` 最长前缀切分（唯一带下划线的段名此前永远无法表达）；
   ② bool 词表收紧为 `true/yes/on` 与 `false/no/off`；③ `config_from_env`
-  未知段 `RuntimeWarning` + 跳过（此前任意未知 `TSTDX_*` 直接崩启动）。
+  未知段 `RuntimeWarning` + 跳过（此前任意未知 `ATST_*` 直接崩启动）。
 
 - **security/credentials.py（§2-26）**：损坏凭据文件不再被 set() 静默以空字典
   覆盖重建——先改名 `credentials.enc.corrupt-<UTC>` 隔离原件备抢救，隔离失败
@@ -2679,8 +2705,8 @@ M1/M1b 架构决断落地（用户拍板）+ 低级批次 14 项具名全清 + L
 
 ### Changed（含契约变更）
 
-- **config env 词义**：`TSTDX_*` 值为 `"1"/"0"` 时解析为 **int**（此前被 bool
-  抢跑，`TSTDX_CORE_MAX_RETRIES=1` 报「必须是数值，收到 bool」）。确属缺陷修正；
+- **config env 词义**：`ATST_*` 值为 `"1"/"0"` 时解析为 **int**（此前被 bool
+  抢跑，`ATST_CORE_MAX_RETRIES=1` 报「必须是数值，收到 bool」）。确属缺陷修正；
   需要 bool 的用 `true/false`。
 
 - **CredentialStore.set 写策略**：keyring 可用且写入成功时**不再**重复落 XOR
@@ -2692,13 +2718,13 @@ M1/M1b 架构决断落地（用户拍板）+ 低级批次 14 项具名全清 + L
 
 ### Removed
 
-- `tstdx/_async_bridge.py`（390 行）：`run()` 对常驻 loop 再 `run_until_complete`
+- `atst/_async_bridge.py`（390 行）：`run()` 对常驻 loop 再 `run_until_complete`
   必抛 `RuntimeError` 且全库零消费——已坏孤儿，删除（§4 决议）。
 
-- `tstdx/protocol/requests.py`：与 `client.py` 内联构包双源漂移（80 只上限等），
+- `atst/protocol/requests.py`：与 `client.py` 内联构包双源漂移（80 只上限等），
   全库含测试零 import——删除（§4 决议）。
 
-- `tstdx/protocol/parsers/_generated.py`：注册链断裂幻影（`parsers/__init__`
+- `atst/protocol/parsers/_generated.py`：注册链断裂幻影（`parsers/__init__`
   不导入、`tier="TIER_L1"` 字符串 bug）——删除；codegen 输出路径另行调整。
 
 ### Added
@@ -2844,7 +2870,7 @@ M1/M1b 架构决断落地（用户拍板）+ 低级批次 14 项具名全清 + L
   `Makefile` 审计行：清除已删模块引用；Web 源规模口径修正为
   14 源模块 / 45 Source 类（按 grep 实数）。
 
-- `tstdx/errors.py`：E6xxx 流式异常四类处置决议入注释（保留为预留公共错误
+- `atst/errors.py`：E6xxx 流式异常四类处置决议入注释（保留为预留公共错误
   分类；兑现背压/补数承诺的批次必须接线本分类）。
 
 ## \[1.1.0] - 2026-09-02
@@ -2853,7 +2879,7 @@ M1/M1b 架构决断落地（用户拍板）+ 低级批次 14 项具名全清 + L
 
 接口面吸收（对照 thsdk / levistock 公开能力面，洁净室实现，见 `docs/archive/ABSORPTION_ANALYSIS.md`）：
 
-- **tstdx/facade/response.py**: 统一响应形态 `ApiResponse{success,error,data,extra,code}`
+- **atst/facade/response.py**: 统一响应形态 `ApiResponse{success,error,data,extra,code}`
 
   - `__bool__` + `to_dict()` + 惰性 `.df`（pandas 可选）；`ok/err/from_result/wrap`
     工厂；`TdxError` 自动转失败响应（保留错误码与 context）。
@@ -2862,9 +2888,9 @@ M1/M1b 架构决断落地（用户拍板）+ 低级批次 14 项具名全清 + L
 - **UnifiedQuoteAPI.query(method, ...)**: 任意门面方法的统一响应化入口
   （永不抛异常边界）；HTTP 网关同步暴露 `POST /query`。
 
-- **tstdx/web/wencai.py**: i问财自然语言选股（`WencaiSource`，注册名 `wencai`，
+- **atst/web/wencai.py**: i问财自然语言选股（`WencaiSource`，注册名 `wencai`，
   capability `wencai`，1 req/s）。cookie 由调用方持有（参数或
-  `TSTDX_WENCAI_COOKIE`），不依赖任何第三方 cookie 中继服务；
+  `ATST_WENCAI_COOKIE`），不依赖任何第三方 cookie 中继服务；
   返回 title+rows zip 后的 `list[dict]`。
 
 - **search\_symbols(pattern, limit=, market=)**: 统一证券搜索（WebQuoteSession
@@ -2887,7 +2913,7 @@ M1/M1b 架构决断落地（用户拍板）+ 低级批次 14 项具名全清 + L
 
 ### Added（信任度批次：Golden origin 分级 + L1 真实样本门禁）
 
-- **tstdx/tools/golden\_audit.py**: Golden 语料 origin 分级审计工具——
+- **atst/tools/golden\_audit.py**: Golden 语料 origin 分级审计工具——
   样本按 meta.source 三级归一（real=self-captured / synthetic / unknown），
   输出分命令 real/syn 统计与维度覆盖（K 线类别、市场、代码数）。
   报告与门禁输出 ASCII 安全（Windows GBK 控制台兼容）。
@@ -2897,9 +2923,9 @@ M1/M1b 架构决断落地（用户拍板）+ 低级批次 14 项具名全清 + L
   「已宣布精确解析却没有真实主站样本」视同回归。
   追加开关：`--require-markets`（市场敏感命令须双市场 real 覆盖）、
   `--require-kline-categories`（K 线类别集合）。缺样本时给出
-  `python -m tstdx.tools.capture --plan <kline|core|quotes>` 补录指引。
+  `python -m atst.tools.capture --plan <kline|core|quotes>` 补录指引。
 
-- **CI**: 新增 `golden-gate` job（`python -m tstdx.tools.golden_audit --gate`）；
+- **CI**: 新增 `golden-gate` job（`python -m atst.tools.golden_audit --gate`）；
   Makefile 新增 `audit-golden` 目标。
 
 - **当前基线**: 500 样本（real 30 / synthetic 470 / unknown 0），
@@ -3011,7 +3037,7 @@ M1/M1b 架构决断落地（用户拍板）+ 低级批次 14 项具名全清 + L
   WS 新增 `stock_changes` JSON-RPC 方法；`docs/api` 全量更新
   （统一门面/异步门面/Web 源矩阵/集成服务面）。
 
-- **批次 D（韧性与体验）**: `tstdx/tools/_console.py` 统一控制台
+- **批次 D（韧性与体验）**: `atst/tools/_console.py` 统一控制台
   UTF-8 出口（capture/spec\_audit/golden\_expand/check\_originality/
   golden\_audit 全部接入，GBK 控制台乱码修复）；
   **`AsyncUnifiedQuoteAPI`**（`facade/async_api.py`）：核心 10 方法
@@ -3057,23 +3083,23 @@ GAP\_ANALYSIS\_v0 全部四档（A/B/C/D）实现完成的首个稳定版。
 
 - **PROTOCOL\_SPEC/**: YAML spec system with 8 core command specs (handshake, heartbeat, kline, realtime\_quote, minute\_today, trade\_today, trade\_today\_alt, security\_count) + UNKNOWN/ 自动草案目录
 
-- **tstdx/integration/**: HTTP 服务（FastAPI，6 组 32 端点 + 后台任务）、WebSocket JSON-RPC 2.0（bars/quotes/订阅/退避错误码）、MCP stdio 服务（10 工具）
+- **atst/integration/**: HTTP 服务（FastAPI，6 组 32 端点 + 后台任务）、WebSocket JSON-RPC 2.0（bars/quotes/订阅/退避错误码）、MCP stdio 服务（10 工具）
 
-- **tstdx/profile/**: 六步数据规格探测（证据链 + 置信度 + ProfileUndetectable）与 9 市场预设（SH/SZ/BJ A股、基金、债券、黄金、期货）
+- **atst/profile/**: 六步数据规格探测（证据链 + 置信度 + ProfileUndetectable）与 9 市场预设（SH/SZ/BJ A股、基金、债券、黄金、期货）
 
-- **tstdx/protocol/prober.py**: 未知命令主动探测（1 req/s 限速、非交易时段门禁、spec DRAFT 归档）
+- **atst/protocol/prober.py**: 未知命令主动探测（1 req/s 限速、非交易时段门禁、spec DRAFT 归档）
 
-- **tstdx/transport/sniff.py**: 被动嗅探（环形样本缓冲、未知命令发现、DRAFT YAML 导出）
+- **atst/transport/sniff.py**: 被动嗅探（环形样本缓冲、未知命令发现、DRAFT YAML 导出）
 
-- **tstdx/\_async\_bridge.py**: run\_sync 主线程/子线程/活动 loop 三态语义 + AsyncBridge 守护线程
+- **atst/\_async\_bridge.py**: run\_sync 主线程/子线程/活动 loop 三态语义 + AsyncBridge 守护线程
 
-- **tstdx/streaming/push.py**: 0x0547 PushChannel 原始字节推送
+- **atst/streaming/push.py**: 0x0547 PushChannel 原始字节推送
 
-- **tstdx/tools/capture.py**: 合规强化（交易时段阻断、zlib/zstd 归档、hex dump、structure.md、schema v2 元数据）
+- **atst/tools/capture.py**: 合规强化（交易时段阻断、zlib/zstd 归档、hex dump、structure.md、schema v2 元数据）
 
-- **tstdx/tools/golden\_expand.py**: Golden 语料合成扩充至 500 案例（幂等、SHA256 去重）
+- **atst/tools/golden\_expand.py**: Golden 语料合成扩充至 500 案例（幂等、SHA256 去重）
 
-- **tstdx/tools/check\_originality.py**: AST 原创性门禁（许可头/拷贝指纹/外部导入审计）+ pre-commit 接入
+- **atst/tools/check\_originality.py**: AST 原创性门禁（许可头/拷贝指纹/外部导入审计）+ pre-commit 接入
 
 - **tests/**: 11 类目测试矩阵（config/errors/web/observability/i18n/sinks/sources/streaming/protocol/client/compatibility）、24 项贯通 bridges 测试、流韧性测试、弃用策略测试、HTTP/WS/MCP 服务测试
 
@@ -3087,7 +3113,7 @@ GAP\_ANALYSIS\_v0 全部四档（A/B/C/D）实现完成的首个稳定版。
 
 ### Changed
 
-- **tstdx/web/adapters.py**: 归一化逻辑集中到 web/normalize.py（7 个 normalizer 注册制）
+- **atst/web/adapters.py**: 归一化逻辑集中到 web/normalize.py（7 个 normalizer 注册制）
 
 - **版本策略**: SemVer 正式版；弃用策略 = 2 个 minor 窗口（DeprecationPolicy.removal\_gap）
 
@@ -3097,23 +3123,23 @@ GAP\_ANALYSIS\_v0 全部四档（A/B/C/D）实现完成的首个稳定版。
 
 - **PROTOCOL\_SPEC/**: YAML spec system with 8 core command specs (handshake, heartbeat, kline, realtime\_quote, minute\_today, trade\_today, trade\_today\_alt, security\_count)
 
-- **tstdx/web/normalize.py**: Centralized volume/amount normalization across 7 HTTP Web sources
+- **atst/web/normalize.py**: Centralized volume/amount normalization across 7 HTTP Web sources
 
-- **tstdx/i18n/encoding.py**: Charset auto-detection (UTF-8/GBK/GB18030/Big5)
+- **atst/i18n/encoding.py**: Charset auto-detection (UTF-8/GBK/GB18030/Big5)
 
-- **tstdx/tools/codegen.py**: YAML spec → parser codegen
+- **atst/tools/codegen.py**: YAML spec → parser codegen
 
-- **tstdx/tools/spec\_audit.py**: Spec↔implementation coverage validation
+- **atst/tools/spec\_audit.py**: Spec↔implementation coverage validation
 
-- **tstdx/feedback/**: Feedback reporter, telemetry collector, user stats (opt-in, 7-step sanitization)
+- **atst/feedback/**: Feedback reporter, telemetry collector, user stats (opt-in, 7-step sanitization)
 
-- **tstdx/security/credentials.py**: 3-tier credential storage (keyring → env → encrypted file)
+- **atst/security/credentials.py**: 3-tier credential storage (keyring → env → encrypted file)
 
-- **tstdx/compat/easy\_tdx.py**: easy\_tdx compatibility shim
+- **atst/compat/easy\_tdx.py**: easy\_tdx compatibility shim
 
-- **tstdx/compat/eltdx.py**: eltdx compatibility shim
+- **atst/compat/eltdx.py**: eltdx compatibility shim
 
-- **tstdx/tools/check\_originality.py**: AST-based originality checker
+- **atst/tools/check\_originality.py**: AST-based originality checker
 
 - **ORIGINALITY/LICENSE\_ALLOWLIST.md**: License allowlist for compliance scanning
 
@@ -3145,7 +3171,7 @@ GAP\_ANALYSIS\_v0 全部四档（A/B/C/D）实现完成的首个稳定版。
 
 ### Changed
 
-- **tstdx/web/adapters.py**: Updated to use centralized normalize module
+- **atst/web/adapters.py**: Updated to use centralized normalize module
 
 ### Fixed
 

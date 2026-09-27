@@ -1,6 +1,6 @@
 """G22：结果侧每一格都得走到 wire 上——出口不许悄悄漏掉新加的字段。
 
-第 21 轮「前后端全部贯通」这一遍量到的形状：:func:`tstdx.integration.serialization._query_result`
+第 21 轮「前后端全部贯通」这一遍量到的形状：:func:`atst.integration.serialization._query_result`
 是一份**手抄的键清单**（``provider``/``channel``/``capability``/``fingerprint``/
 ``provenance``/``warnings``，以及嵌套 ``provenance`` 里的 5 格）。请求侧早在 F-47 就收成了
 "每个字段要么被读走、要么当场被拒"，结果侧却只有读取点扫描把守（``test_result_shape_gates.py``）：
@@ -16,7 +16,7 @@
 清单照旧手抄，判据把清单钉在 ``dataclasses.fields()`` 上。
 
 允许缺席的只有身份三格（``provider``/``channel``/``capability``）：它们在 ``meta`` 一层已经
-出现过，而 :meth:`tstdx.result.ResultMeta.from_plan` 在构造时就断言 ``provenance`` 与
+出现过，而 :meth:`atst.result.ResultMeta.from_plan` 在构造时就断言 ``provenance`` 与
 ``plan`` 的这三格逐字相等——wire 上不重复同一个值两次，是裁决，不是漏抄。
 """
 
@@ -27,9 +27,9 @@ from typing import Any
 
 import pytest
 
-from tstdx.diagnostics import ResultWarning, WarningCode
-from tstdx.integration.serialization import serialize_result
-from tstdx.result import Provenance, ProvenanceKind, QueryResult, ResultMeta
+from atst.diagnostics import ResultWarning, WarningCode
+from atst.integration.serialization import serialize_result
+from atst.result import Provenance, ProvenanceKind, QueryResult, ResultMeta
 
 #: ``meta.provenance`` 里允许缺席的键：值已在 ``meta`` 一层给出，且构造期即断言相等。
 IDENTITY_KEYS = frozenset({"provider", "channel", "capability"})

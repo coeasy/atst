@@ -6,9 +6,9 @@ import time
 
 import pytest
 
-from tstdx.errors import SubscriptionError
-from tstdx.streaming.state import StreamLifecycle, StreamState
-from tstdx.streaming.stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
+from atst.errors import SubscriptionError
+from atst.streaming.state import StreamLifecycle, StreamState
+from atst.streaming.stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
 
 
 def test_lifecycle_is_one_shot_and_fail_closed() -> None:

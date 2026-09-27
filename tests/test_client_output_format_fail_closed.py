@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.client import TdxClient
-from tstdx.client.core import _emit
-from tstdx.errors import ValidationError
+from atst.client import TdxClient
+from atst.client.core import _emit
+from atst.errors import ValidationError
 
 #: 输出格式是**调用方写错的那一格**，不是上游故障。E1010/422/不可重试这条映射由
 #: ``tests/errors/test_error_envelope.py`` 与 ``test_client_parameter_fail_closed.py``

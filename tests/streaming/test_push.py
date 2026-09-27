@@ -11,7 +11,7 @@ import struct
 
 import pytest
 
-from tstdx.streaming.push import PUSH_CMD, PushChannel, PushFrame
+from atst.streaming.push import PUSH_CMD, PushChannel, PushFrame
 
 
 class _FakeTransport:
@@ -130,7 +130,7 @@ class TestPushChannelConnectionAdapter:
 
             def read_frame(self, timeout: float | None = None):
                 self.timeouts.append(timeout)
-                from tstdx.codec.framing import ResponseFrame
+                from atst.codec.framing import ResponseFrame
 
                 return ResponseFrame(
                     magic=0x0074CBB1,

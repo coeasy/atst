@@ -11,17 +11,17 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.client import _row_to_bar, _row_to_quote, period_to_category, split_symbol
-from tstdx.config.schema import Config
-from tstdx.domain.models import Bar, Quote
-from tstdx.errors import DependencyMissingError, ValidationError
-from tstdx.output import Sink, _normalize
+from atst.client import _row_to_bar, _row_to_quote, period_to_category, split_symbol
+from atst.config.schema import Config
+from atst.domain.models import Bar, Quote
+from atst.errors import DependencyMissingError, ValidationError
+from atst.output import Sink, _normalize
 
 GOLDEN = Path(__file__).resolve().parents[2] / "tests" / "golden"
 
 
 def _frame(method, meta, payload):
-    from tstdx.codec.framing import ResponseFrame
+    from atst.codec.framing import ResponseFrame
 
     resp = meta["response"]
     return ResponseFrame(
@@ -71,7 +71,7 @@ def test_period_to_category():
 
 
 def test_client_quote_conversion_from_golden():
-    from tstdx.protocol.registry import dispatch
+    from atst.protocol.registry import dispatch
 
     meta, payload = _latest_sample("0x0530_realtime_quote_600519")
     frame = _frame(0x0530, meta, payload)
@@ -86,7 +86,7 @@ def test_client_quote_conversion_from_golden():
 
 
 def test_client_bar_conversion_from_golden():
-    from tstdx.protocol.registry import dispatch
+    from atst.protocol.registry import dispatch
 
     # 锚定 2026-08-31 实采罐头（9.16）；新补录样本行情值每日变化不可作数值断言
     meta, payload = _pinned_sample("0x052d_security_bars_600000_cat4", "20260831-125353")

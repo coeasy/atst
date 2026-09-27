@@ -1,6 +1,6 @@
 """Golden 样本回归测试。
 
-样本全部由 ``python -m tstdx.tools.capture`` **自采集**（满足洁净室约束），
+样本全部由 ``python -m atst.tools.capture`` **自采集**（满足洁净室约束），
 存放在 ``tests/golden/<family>/0x<cmd>_<name>/<timestamp>/``，
 只保存原始 payload + 元信息，**不保存解析结果**——因此解析器改动不会
 污染样本，样本可以长期作为协议的「事实基准」。
@@ -29,13 +29,13 @@ from typing import Any
 
 import pytest
 
-from tstdx.codec.framing import ResponseFrame
-from tstdx.domain.integrity import FIELD_CHECKERS
-from tstdx.domain.integrity import row_violations as _row_violations
-from tstdx.domain.symbol import Symbol
-from tstdx.protocol.commands import TIER_L1
-from tstdx.protocol.registry import dispatch
-from tstdx.tools.golden_audit import (
+from atst.codec.framing import ResponseFrame
+from atst.domain.integrity import FIELD_CHECKERS
+from atst.domain.integrity import row_violations as _row_violations
+from atst.domain.symbol import Symbol
+from atst.protocol.commands import TIER_L1
+from atst.protocol.registry import dispatch
+from atst.tools.golden_audit import (
     MIN_PAYLOAD_BYTES,
     ORIGIN_REAL,
     _ledger_commands,
@@ -58,9 +58,9 @@ def _iter_samples():
     默认只回放 ``source: self-captured`` 实采样本 —— 它们才是协议「事实基准」。
     合成衍生样本（``source: synthetic``）是解析器回归基线，其请求维度经过
     变异，**不满足** OHLC/回声等实采校验，默认排除；
-    设 ``GOLDEN_INCLUDE_SYNTHETIC=1`` 可显式纳入。刻意不用 ``TSTDX_`` 前缀：
-    那是配置 schema 与环境覆盖的保留命名空间，未登记的 ``TSTDX_*`` 一旦出现在
-    环境里就会让 ``load_config()`` fail closed（见 ``tstdx/config/loader.py``）。
+    设 ``GOLDEN_INCLUDE_SYNTHETIC=1`` 可显式纳入。刻意不用 ``ATST_`` 前缀：
+    那是配置 schema 与环境覆盖的保留命名空间，未登记的 ``ATST_*`` 一旦出现在
+    环境里就会让 ``load_config()`` fail closed（见 ``atst/config/loader.py``）。
 
     .. note::
        这里**不能**调用 ``pytest.skip``——该函数会在 parametrize 收集阶段
@@ -224,9 +224,9 @@ def test_kline_cross_check():
 # 第 5 条判据：L1 + verified 的声明必须能被自己的实采样本证伪
 # ---------------------------------------------------------------------------
 
-#: 字段名的唯一来源：domain SSOT 的 :class:`~tstdx.domain.symbol.Symbol` 有哪几个字段，
+#: 字段名的唯一来源：domain SSOT 的 :class:`~atst.domain.symbol.Symbol` 有哪几个字段，
 #: 那把尺子就管哪几个字段——不另立一份词表（抄一次就过期，F-42）。尺子本身在
-#: :mod:`tstdx.domain.integrity`：同一个判断在出口给调用方看（G7），测试不许各养一份。
+#: :mod:`atst.domain.integrity`：同一个判断在出口给调用方看（G7），测试不许各养一份。
 _SYMBOL_FIELDS = frozenset(f.name for f in dataclass_fields(Symbol))
 
 
@@ -281,7 +281,7 @@ def test_l1_verified_commands_replay_to_domain_legal_rows() -> None:
 
     为什么第 2 条判据（按字节耗尽缓冲区）没抓到它：那条要求挂在手工名单 ``EXACT_COMMANDS``
     上，而名单里没有 0x000F；把名单换成账本推导也不行——实测 0x000F 的解析器用
-    ``reader.rest()`` 取正文，而 ``rest()`` 不推进 ``pos``（``tstdx/codec/primitive.py:145``），
+    ``reader.rest()`` 取正文，而 ``rest()`` 不推进 ``pos``（``atst/codec/primitive.py:145``），
     ``reader_meta`` 永远停在 2，4/4 样本都会假红。那把尺子对"以 ``rest()`` 取正文的解析器"
     结构性失明，本判据因此走语义（值域）而不是走字节数。
 

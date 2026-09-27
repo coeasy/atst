@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """G41 / G40 — ``Client.close()`` 这条释放链的每一格都量一遍：谁关、关什么、关不到什么。
@@ -42,8 +42,8 @@ from typing import Any
 
 import pytest
 
-from tstdx.client.api import AsyncClient, Client
-from tstdx.runtime.kernel import UnifiedRuntime
+from atst.client.api import AsyncClient, Client
+from atst.runtime.kernel import UnifiedRuntime
 
 
 class _RecordingExecutor:
@@ -147,7 +147,7 @@ def test_repeated_async_close_releases_the_built_client_exactly_once(
         def close(self) -> None:
             self.closed += 1
 
-    monkeypatch.setattr("tstdx.client.api.Client", _SpyClient)
+    monkeypatch.setattr("atst.client.api.Client", _SpyClient)
     fresh = AsyncClient()
     assert isinstance(fresh.client, _SpyClient)
     asyncio.run(_close_twice(fresh))

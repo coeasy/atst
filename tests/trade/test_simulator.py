@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """模拟券商语义测试（P2-1）。
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.trade.constants import (
+from atst.trade.constants import (
     ORDER_SIDE_BUY,
     ORDER_SIDE_SELL,
     ORDER_STATUS_CANCELLED,
@@ -20,8 +20,8 @@ from tstdx.trade.constants import (
     QUERY_CATEGORY_ORDER_OF_TODAY,
     QUERY_CATEGORY_STOCKS,
 )
-from tstdx.trade.errors import TradeNotLoggedIn, TradeRejected
-from tstdx.trade.simulator import TradeSimulator
+from atst.trade.errors import TradeNotLoggedIn, TradeRejected
+from atst.trade.simulator import TradeSimulator
 
 pytestmark = pytest.mark.unit
 

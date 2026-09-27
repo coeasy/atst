@@ -1,13 +1,13 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """G50/G40 — 流式订阅的上下文协议必须两面同形：``with`` 与 ``async with`` 都能起止停。
 
-``Client.stream()`` 交回来的 :class:`~tstdx.streaming.stateful.StatefulQuoteStream` 继承了
-:class:`~tstdx.streaming.base.QuoteStream` 的 ``__enter__``/``__exit__``（进 = ``start()``、
+``Client.stream()`` 交回来的 :class:`~atst.streaming.stateful.StatefulQuoteStream` 继承了
+:class:`~atst.streaming.base.QuoteStream` 的 ``__enter__``/``__exit__``（进 = ``start()``、
 出 = ``stop()``），所以 ``with client.stream(...) as s:`` 一直是可用的公开写法。它的异步孪生
-:func:`~tstdx.client.api.AsyncClient.stream` 交回 :class:`AsyncStatefulQuoteStream`，而
-:class:`~tstdx.streaming.base.AsyncQuoteStream` **没有** ``__aenter__``/``__aexit__``——
+:func:`~atst.client.api.AsyncClient.stream` 交回 :class:`AsyncStatefulQuoteStream`，而
+:class:`~atst.streaming.base.AsyncQuoteStream` **没有** ``__aenter__``/``__aexit__``——
 ``async with client.stream(...)`` 当场 :class:`AttributeError`。接口文档写着"`AsyncClient` 是
 同名异步镜像"（§2），这一格两个面给了不同答案；第 31 轮之前全仓也没有一条判据碰过这两对
 dunder（同步那半边同样是零测试的"声明了没人量"）。
@@ -19,7 +19,7 @@ dunder（同步那半边同样是零测试的"声明了没人量"）。
 ③ 异步：同一件事在任务句柄与状态机上成立；
 ④ 块体抛错时出块照样收尾（这是 G41 第四条"own 来的资源不许留在早退分支之后"在流上的形状）。
 
-替身 runtime 的 ``quotes()`` 一律抛 :class:`~tstdx.errors.TdxError`：轮询内核按退避等
+替身 runtime 的 ``quotes()`` 一律抛 :class:`~atst.errors.TdxError`：轮询内核按退避等
 ``stop()`` 叫醒（``_stop.wait`` / ``_sleep_or_stop``），所以 worker 会一直活着而不发任何真请求。
 
 变异台账（G14 改前必须红，见 ``docs/REFACTOR_PLAN_V19_RESTRUCTURE.md`` §11；本轮合成一本
@@ -39,10 +39,10 @@ import threading
 
 import pytest
 
-from tstdx.errors import TdxError
-from tstdx.streaming import AsyncStatefulQuoteStream, StatefulQuoteStream
-from tstdx.streaming.base import AsyncQuoteStream, QuoteStream
-from tstdx.streaming.state import StreamState
+from atst.errors import TdxError
+from atst.streaming import AsyncStatefulQuoteStream, StatefulQuoteStream
+from atst.streaming.base import AsyncQuoteStream, QuoteStream
+from atst.streaming.state import StreamState
 
 
 class _FailingRuntime:

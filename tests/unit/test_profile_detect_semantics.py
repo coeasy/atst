@@ -14,9 +14,9 @@ import struct
 
 import pytest
 
-from tstdx.errors import ProfileUndetectable
-from tstdx.profile.detect import detect
-from tstdx.profile.presets import match_preset
+from atst.errors import ProfileUndetectable
+from atst.profile.detect import detect
+from atst.profile.presets import match_preset
 
 pytestmark = pytest.mark.unit
 
@@ -72,8 +72,8 @@ class TestPriceScaleSanity:
         assert excinfo.value is not None
 
     def test_whitebox_downgrade_factor(self) -> None:
-        from tstdx.profile.detect import PriceEncoding, _price_scale_sanity
-        from tstdx.reader.profile import DataProfile
+        from atst.profile.detect import PriceEncoding, _price_scale_sanity
+        from atst.reader.profile import DataProfile
 
         profile = DataProfile(name="t", record_size=32, price_encoding=PriceEncoding.UINT32)
         new_scale, factor, note = _price_scale_sanity(
@@ -123,11 +123,11 @@ class TestProfileDocCrossRef:
     def test_detect_docstring_points_to_reader_profile(self) -> None:
         import sys
 
-        mod = sys.modules["tstdx.profile.detect"]  # 子模块对象（避开包属性被同名函数遮蔽）
+        mod = sys.modules["atst.profile.detect"]  # 子模块对象（避开包属性被同名函数遮蔽）
         doc = mod.__doc__ or ""
         assert "reader/profile" in doc and "生产文件档案" in doc
 
     def test_reader_profile_docstring_points_back(self) -> None:
-        import tstdx.reader.profile as m
+        import atst.reader.profile as m
 
         assert "profile/detect" in (m.__doc__ or "") or "网络帧档案" in (m.__doc__ or "")

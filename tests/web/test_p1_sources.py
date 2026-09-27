@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """P1 数据源离线测试（ESG 评级 / 筹码分布）——37 个测试。
@@ -13,9 +13,9 @@ from typing import Any
 
 import pytest
 
-from tstdx.web.base import HttpResponse
-from tstdx.web.chip import EastmoneyChipDistributionSource
-from tstdx.web.esg import (
+from atst.web.base import HttpResponse
+from atst.web.chip import EastmoneyChipDistributionSource
+from atst.web.esg import (
     SinaEsgHistorySource,
     SinaEsgHzSource,
     SinaEsgMsciSource,

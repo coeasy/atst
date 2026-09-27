@@ -5,12 +5,12 @@
 ## write() 自动分发
 
 ```python
-from tstdx.output import write
+from atst.output import write
 
 bars = client.bars("sh600519", period="day", count=500)
 
 # DataFrame（内存对象，需 pandas）—— sink 无法从 dest 推断，显式传 fmt
-from tstdx.output import to_dataframe
+from atst.output import to_dataframe
 
 df = to_dataframe(bars)        # 等价于 write(bars, "", fmt="dataframe")
 
@@ -56,11 +56,11 @@ con.execute("""
 
 ## Sink：`write()` 的对象化写法
 
-`tstdx.output.Sink` 不是可继承的策略基类，没有 `scheme` 这类子类协议，也没有注册表可以往
+`atst.output.Sink` 不是可继承的策略基类，没有 `scheme` 这类子类协议，也没有注册表可以往
 `write()` 里插新格式。它就是 `write()` 的对象化写法，且**只收三种 fmt**：
 
 ```python
-from tstdx.output import Sink
+from atst.output import Sink
 
 Sink("dataframe").write(bars)                       # 内存对象
 Sink("parquet", path="out.parquet").write(bars)      # 落盘
@@ -74,4 +74,4 @@ CSV 目前只有 `write()` 那一条路（`Sink("csv")` 会落到"未知 sink �
 ## 缺依赖的报错
 
 未安装对应 extra 时抛 `DependencyMissingError`（E1020, http 503），
-提示安装命令，例如 `pip install "tstdx[parquet]"`。CSV 走标准库，不需要 extra。
+提示安装命令，例如 `pip install "atst[parquet]"`。CSV 走标准库，不需要 extra。

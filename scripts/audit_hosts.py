@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
-"""Source-checkout wrapper for :mod:`tstdx.tools.host_audit`.
+"""Source-checkout wrapper for :mod:`atst.tools.host_audit`.
 
-The implementation lives in the installable package so ``tstdx hosts audit``
+The implementation lives in the installable package so ``atst hosts audit``
 works from a normal wheel. This wrapper exists only for the repository-oriented
 ``python scripts/audit_hosts.py`` operator entrypoint.
 
@@ -22,7 +22,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from tstdx.tools.host_audit import (  # noqa: E402
+from atst.tools.host_audit import (  # noqa: E402
     AuditReport,
     FamilyAudit,
     audit_all,
@@ -32,15 +32,15 @@ from tstdx.tools.host_audit import (  # noqa: E402
     write_markdown_summary,
     write_report,
 )
-from tstdx.tools.host_audit import (  # noqa: E402
+from atst.tools.host_audit import (  # noqa: E402
     _norm_family as _norm_family,  # re-exported for the host-audit test surface
 )
-from tstdx.transport.hosts import (  # noqa: E402
+from atst.transport.hosts import (  # noqa: E402
     DEFAULT_HOST_POOL,
     POOL_BY_FAMILY,
     HostEntry,
 )
-from tstdx.transport.speedtest import ProbeResult, probe  # noqa: E402
+from atst.transport.speedtest import ProbeResult, probe  # noqa: E402
 
 __all__ = [
     "AuditReport",

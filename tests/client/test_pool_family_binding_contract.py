@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from tstdx.client import (
+from atst.client import (
     AsyncExMarketClient,
     AsyncF10Client,
     AsyncGoodsClient,
@@ -18,11 +18,11 @@ from tstdx.client import (
     TdxClient,
     get_client,
 )
-from tstdx.errors import ConfigError
-from tstdx.protocol.commands import Family
-from tstdx.transport.async_ import AsyncConnectionPool
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.pool import ConnectionPool
+from atst.errors import ConfigError
+from atst.protocol.commands import Family
+from atst.transport.async_ import AsyncConnectionPool
+from atst.transport.hosts import HostEntry
+from atst.transport.pool import ConnectionPool
 
 
 def _host(family: str) -> HostEntry:

@@ -5,17 +5,17 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.errors import ConfigError
-from tstdx.protocol.commands import Family
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.speedtest import ProbeResult, rank_hosts, speedtest, speedtest_and_save
+from atst.errors import ConfigError
+from atst.protocol.commands import Family
+from atst.transport.hosts import HostEntry
+from atst.transport.speedtest import ProbeResult, rank_hosts, speedtest, speedtest_and_save
 
-# ``tstdx.transport`` re-exports the ``speedtest`` *function* (it is part of the
-# package's public ``__all__``), so ``import tstdx.transport.speedtest as m``
+# ``atst.transport`` re-exports the ``speedtest`` *function* (it is part of the
+# package's public ``__all__``), so ``import atst.transport.speedtest as m``
 # binds the function, not the submodule.  These tests need the module object
 # itself in order to monkeypatch its globals (``probe``, ``POOL_BY_FAMILY``,
 # ``_apply_probe_observations``), so resolve it explicitly.
-speedtest_module = importlib.import_module("tstdx.transport.speedtest")
+speedtest_module = importlib.import_module("atst.transport.speedtest")
 
 
 def test_speedtest_defaults_to_canonical_family_pool(

@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from tstdx.runtime.identity import RuntimeExecutionIdentity
-from tstdx.runtime.provenance import (
+from atst.runtime.identity import RuntimeExecutionIdentity
+from atst.runtime.provenance import (
     RuntimeProvenanceMismatchError,
     validate_runtime_provenance,
 )

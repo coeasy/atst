@@ -1,4 +1,4 @@
-# tstdx 主体功能梳理与优化改进计划（v3 路线版）
+# atst 主体功能梳理与优化改进计划（v3 路线版）
 
 > **文档性质**：历史路线图快照；当前稳定发布基线为 [v1.0.0](../../releases/v1.0.0.md)。
 > **生成日期**：2026-09-02（v1.2.0 修复波进行中快照）
@@ -14,7 +14,7 @@
 
 | 维度 | 实测值 | 维度 | 实测值 |
 |---|---|---|---|
-| 总代码量 | ≈37.7k 行（tstdx/ 20 子包+顶层） | HTTP 端点 | 42（V 域重构中） |
+| 总代码量 | ≈37.7k 行（atst/ 20 子包+顶层） | HTTP 端点 | 42（V 域重构中） |
 | 协议命令账本 | 85 命令 / 5 协议族 | CLI 子命令 | 19（含新增 probe/feedback） |
 | L1 精确解析器 | 61 注册项 | 门面公开方法 | 46（UnifiedQuoteAPI） |
 | Web 源 | 17 模块 / 45 Source 类 | 测试函数 | ≈997（61 文件，修复波后 >1100） |
@@ -120,7 +120,7 @@
 - **I2 复权能力完整化（E2+E4 合并）**：除权因子库（本地缓存+capital_changes 供给）+ 分红再投口径 + 与 reader 历史段拼接回归。
 - **I3 流式能力裁决落地（M1 决断已执行，v1.4.0 用户拍板「接线」）**：`QuoteStream`/`AsyncQuoteStream` 内核改由 `StreamEngine` 组件构成（DeltaMerger/BackpressureQueue/ReconnectPolicy），E6 错误类（`GapUnfilledError` 等）兑现真实抛点；断线补数仍不自动执行（0x0530 仅回当前快照，缺口以 `GapUnfilledError` 可观测）。
 - **I4 native 接入决策**：三场景基准（10k 串行请求 / 全语料解析 / 300 只快照）Python vs native 对拍，采用、挂开关或删包（-500 行）出数据结论。
-- **I5 可观测开箱**：config `observability.exporter` 段自动装配（消灭「配了不用」）、`tstdx serve --metrics`、随包 Grafana dashboard JSON 样例。
+- **I5 可观测开箱**：config `observability.exporter` 段自动装配（消灭「配了不用」）、`atst serve --metrics`、随包 Grafana dashboard JSON 样例。
 - **I6 性能基线回归**：轻基准套件（ASV 可选）入 CI 非门禁跟踪趋势——1.1.0→1.2.0 的锁/钳制开销需量化可见。
 
 ### 批次 J（生态与交付）

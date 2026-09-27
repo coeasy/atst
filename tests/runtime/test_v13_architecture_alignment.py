@@ -4,14 +4,14 @@ from dataclasses import fields
 
 import pytest
 
-import tstdx
-from tstdx.client.api import AsyncClient, Client
-from tstdx.errors import ValidationError
-from tstdx.integration.mcp._tools_spec import TOOLS
-from tstdx.providers import PROVIDERS
-from tstdx.query import QuerySpec
-from tstdx.runtime.executor import DIRECT_BINDINGS, audit_direct_bindings
-from tstdx.stream_contract import StreamPlanner, StreamSpec
+import atst
+from atst.client.api import AsyncClient, Client
+from atst.errors import ValidationError
+from atst.integration.mcp._tools_spec import TOOLS
+from atst.providers import PROVIDERS
+from atst.query import QuerySpec
+from atst.runtime.executor import DIRECT_BINDINGS, audit_direct_bindings
+from atst.stream_contract import StreamPlanner, StreamSpec
 
 TIER_A = {
     "quotes",
@@ -25,11 +25,11 @@ TIER_A = {
 
 
 def test_v13_has_one_supported_business_client_surface() -> None:
-    assert tstdx.Client is Client
-    assert tstdx.AsyncClient is AsyncClient
-    assert "UnifiedQuoteAPI" not in tstdx.__all__
-    assert "TdxClient" not in tstdx.__all__
-    assert "WebQuoteClient" not in tstdx.__all__
+    assert atst.Client is Client
+    assert atst.AsyncClient is AsyncClient
+    assert "UnifiedQuoteAPI" not in atst.__all__
+    assert "TdxClient" not in atst.__all__
+    assert "WebQuoteClient" not in atst.__all__
 
 
 def test_query_ssot_contains_no_legacy_route_source_or_partial_fields() -> None:
@@ -92,20 +92,20 @@ def test_streaming_is_explicit_and_fails_closed_for_unbound_provider() -> None:
 def test_stream_plan_carries_only_the_fields_the_client_reads() -> None:
     """``StreamPlan`` 的每个字段都必须由唯一消费方真正读取（F-55）。
 
-    旧形状里 ``plan.capability`` 与 ``plan.channel`` 由 ``compile`` 写入，而 ``tstdx/``
+    旧形状里 ``plan.capability`` 与 ``plan.channel`` 由 ``compile`` 写入，而 ``atst/``
     对它们的读取点是 0：唯一的"读取"是一条测试断言，而 compile 本身已经对两者
     fail-closed——一条写给自己看的记录。删掉之后判据钉住剩下的形状：plan 字段清单
-    必须与 ``tstdx/client/api.py`` 里 ``plan.*`` 的读取集合逐字相等，新增字段没有接线
+    必须与 ``atst/client/api.py`` 里 ``plan.*`` 的读取集合逐字相等，新增字段没有接线
     或读取幻影字段都当场变红。
     """
 
     import ast
     from pathlib import Path
 
-    from tstdx.stream_contract import StreamPlan
+    from atst.stream_contract import StreamPlan
 
     root = Path(__file__).resolve().parents[2]
-    source = (root / "tstdx" / "client" / "api.py").read_text(encoding="utf-8")
+    source = (root / "atst" / "client" / "api.py").read_text(encoding="utf-8")
     reads = {
         node.attr
         for node in ast.walk(ast.parse(source))
@@ -147,7 +147,7 @@ def test_binding_audit_fails_closed_instead_of_warning(
     """
     import warnings
 
-    from tstdx.runtime import executor as ex
+    from atst.runtime import executor as ex
 
     target = next(
         item

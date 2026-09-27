@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """Q4 内存峰值基准：tracemalloc 三类场景基线。
@@ -43,7 +43,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-# 保证以仓库根为 cwd 运行时可直接 import tstdx（无需安装）
+# 保证以仓库根为 cwd 运行时可直接 import atst（无需安装）
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
@@ -52,7 +52,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # --------------------------------------------------------------------------- #
 def _synthetic_market_quotes(count: int) -> list[Any]:
     """生成 ``count`` 只 A 股 Quote 对象（模拟 fetch_all 驻留）。"""
-    from tstdx.domain.models import Level, Quote
+    from atst.domain.models import Level, Quote
 
     out: list[Quote] = []
     for i in range(count):
@@ -118,7 +118,7 @@ def scenario_market(synthetic: bool = True) -> dict[str, Any]:
     if synthetic:
         rows = _synthetic_market_quotes(5400)
     else:
-        from tstdx.web import create_source
+        from atst.web import create_source
 
         src = create_source("sina")
         try:
@@ -132,7 +132,7 @@ def scenario_kline(synthetic: bool = True, *, count: int = 1000) -> dict[str, An
     """1000 标的 K 线驻留：每标的 320 根 Bar。"""
     rows: list[Any] = []
     if synthetic:
-        from tstdx.domain.models import Bar
+        from atst.domain.models import Bar
 
         for i in range(count):
             for j in range(320):
@@ -148,7 +148,7 @@ def scenario_kline(synthetic: bool = True, *, count: int = 1000) -> dict[str, An
                     )
                 )
     else:
-        from tstdx.client import TdxClient
+        from atst.client import TdxClient
 
         client = TdxClient()
         try:
@@ -162,7 +162,7 @@ def scenario_kline(synthetic: bool = True, *, count: int = 1000) -> dict[str, An
 
 def scenario_vipdoc(synthetic: bool = True, *, root: str | None = None) -> dict[str, Any]:
     """vipdoc 全目录扫描：读取全部 .day 记录并驻留。"""
-    from tstdx.reader.formats import DayBarReader
+    from atst.reader.formats import DayBarReader
 
     rows: list[Any] = []
     scan_root = Path(root) if (not synthetic and root) else None
@@ -170,7 +170,7 @@ def scenario_vipdoc(synthetic: bool = True, *, root: str | None = None) -> dict[
         files = list(scan_root.rglob("*.day"))
     else:
         # 合成：临时目录建 200 个文件 × 400 行 = 8 万条记录
-        tmp = tempfile.mkdtemp(prefix="tstdx_bench_vipdoc_")
+        tmp = tempfile.mkdtemp(prefix="atst_bench_vipdoc_")
         _synthetic_vipdoc_tree(Path(tmp), files=200, rows=400)
         files = list(Path(tmp).rglob("*.day"))
 
@@ -235,7 +235,7 @@ def report(results: dict[str, dict[str, Any]]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="tstdx Q4 内存峰值基准（tracemalloc）")
+    ap = argparse.ArgumentParser(description="atst Q4 内存峰值基准（tracemalloc）")
     ap.add_argument("--scenario", choices=list(SCENARIOS) + ["all"], default="all")
     ap.add_argument("--all", action="store_true", help="跑全部场景（等价 --scenario all）")
     ap.add_argument(
@@ -256,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
         results[name] = run_one(name, synthetic=args.synthetic, vipdoc_root=args.vipdoc_root)
 
     mode = "synthetic" if args.synthetic else "live"
-    print(f"tstdx Q4 内存基准（{mode}，python {sys.version.split()[0]}）")
+    print(f"atst Q4 内存基准（{mode}，python {sys.version.split()[0]}）")
     report(results)
 
     if args.json:

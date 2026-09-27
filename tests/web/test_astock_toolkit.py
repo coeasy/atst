@@ -9,14 +9,14 @@ import json
 
 import pytest
 
-from tstdx.web.astock_toolkit import (
+from atst.web.astock_toolkit import (
     EastmoneyAnnouncementSource,
     EastmoneyDividendSource,
     EastmoneyFinanceMainSource,
     EastmoneyHolderChangeSource,
     EastmoneyValuationSource,
 )
-from tstdx.web.base import HttpResponse
+from atst.web.base import HttpResponse
 
 _J = "https://datacenter-web.eastmoney.com"
 
@@ -239,7 +239,7 @@ class TestFacadeMixin:
     """整链离线验证：monkeypatch 共享 HTTP 客户端，驱动 AstockToolkitMixin。"""
 
     def test_all_methods(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import tstdx.web._session_astock as mix
+        import atst.web._session_astock as mix
 
         bodies = {
             "RPT_SHAREBONUS_DET": DIVIDEND,

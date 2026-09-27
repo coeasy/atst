@@ -51,7 +51,7 @@ def test_runtime_installs_exact_tested_wheel_without_source_rebuild() -> None:
     assert "python -m twine check dist/*.whl" in dockerfile
     assert "COPY --from=builder /build/dist/*.whl /tmp/" in runtime
     assert "python -m pip install --no-cache-dir --no-deps /tmp/*.whl" in runtime
-    assert "COPY tstdx/" not in runtime
+    assert "COPY atst/" not in runtime
     assert ".[all]" not in runtime
     assert "python -m pip check" in runtime
 
@@ -62,7 +62,7 @@ def test_release_image_has_no_build_stage_and_consumes_only_downloaded_wheel() -
     assert dockerfile.count("FROM ") == 1
     assert "COPY release-dist/*.whl /tmp/" in dockerfile
     assert "python -m build" not in dockerfile
-    assert "COPY tstdx/" not in dockerfile
+    assert "COPY atst/" not in dockerfile
     assert "python -m pip install --no-cache-dir --no-deps /tmp/*.whl" in dockerfile
     assert 'test "$count" -eq 1' in dockerfile
     assert "python -m pip check" in dockerfile
@@ -92,5 +92,5 @@ def test_release_docker_context_contains_only_dockerfile_and_canonical_wheel() -
     assert "!Dockerfile.release" in patterns
     assert "!release-dist/" in patterns
     assert "!release-dist/*.whl" in patterns
-    assert all("tstdx/" not in pattern for pattern in patterns)
+    assert all("atst/" not in pattern for pattern in patterns)
     assert all("tests/" not in pattern for pattern in patterns)

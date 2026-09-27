@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-import tstdx.transport.hosts as hosts_module
-from tstdx.protocol.commands import Family
-from tstdx.transport import resolve_hosts
-from tstdx.transport.hosts import POOL_BY_FAMILY, HostEntry
+import atst.transport.hosts as hosts_module
+from atst.protocol.commands import Family
+from atst.transport import resolve_hosts
+from atst.transport.hosts import POOL_BY_FAMILY, HostEntry
 
 
 @pytest.mark.unit
@@ -62,5 +62,5 @@ def test_explicit_selector_host_is_copied_before_runtime_ownership() -> None:
 
 @pytest.mark.unit
 def test_public_and_module_resolver_both_are_canonical() -> None:
-    assert resolve_hosts.__module__ == "tstdx.transport.hosts"
-    assert hosts_module.resolve_hosts.__module__ == "tstdx.transport.hosts"
+    assert resolve_hosts.__module__ == "atst.transport.hosts"
+    assert hosts_module.resolve_hosts.__module__ == "atst.transport.hosts"

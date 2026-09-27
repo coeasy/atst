@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """帧编解码回路测试（P2-1）。
@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.errors import ProtocolError
-from tstdx.trade.constants import (
+from atst.errors import ProtocolError
+from atst.trade.constants import (
     QUERY_CATEGORY_CANCELABLE_ORDER,
     QUERY_CATEGORY_CASH,
     QUERY_CATEGORY_DEAL_OF_TODAY,
@@ -20,8 +20,8 @@ from tstdx.trade.constants import (
     QUERY_CATEGORY_SHAREHOLDERS_CODE,
     QUERY_CATEGORY_STOCKS,
 )
-from tstdx.trade.errors import TradeError
-from tstdx.trade.frames import (
+from atst.trade.errors import TradeError
+from atst.trade.frames import (
     build_cancel_body,
     build_cancel_response,
     build_heartbeat_response,

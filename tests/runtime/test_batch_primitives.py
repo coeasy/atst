@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """契约测试：canonical batch 审计原语（BatchItem / BatchResult）。
@@ -9,8 +9,8 @@ batch 只做请求展开与逐项审计，不含请求信封（v13 ``BatchSpec``
 
 from __future__ import annotations
 
-import tstdx.batch as batch_module
-from tstdx.batch import BatchItem, BatchResult
+import atst.batch as batch_module
+from atst.batch import BatchItem, BatchResult
 
 
 # --------------------------------------------------------------------------- #
@@ -77,7 +77,7 @@ def test_batch_module_exposes_no_coalescing_or_negative_cache() -> None:
 
 def test_batch_spec_envelope_does_not_return() -> None:
     """v13 请求信封不复活：批量展开只有内核一条实现路径。"""
-    import tstdx
+    import atst
 
     assert not hasattr(batch_module, "BatchSpec")
-    assert not hasattr(tstdx, "BatchSpec")
+    assert not hasattr(atst, "BatchSpec")

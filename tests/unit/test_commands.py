@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """命令账本校准测试：tier/verified 状态、status 字段与查询助手、字段形状（F-64）。"""
@@ -9,7 +9,7 @@ from dataclasses import fields
 
 import pytest
 
-from tstdx.protocol.commands import (
+from atst.protocol.commands import (
     CMD,
     COMMANDS,
     STATUS_OFFLINE,
@@ -25,12 +25,12 @@ from tstdx.protocol.commands import (
 
 pytestmark = pytest.mark.unit
 
-#: 账本形状。F-64 量过：``spec_file``/``request_fields``/``aliases`` 三个字段在 ``tstdx/``
+#: 账本形状。F-64 量过：``spec_file``/``request_fields``/``aliases`` 三个字段在 ``atst/``
 #: 里零读取点（``spec_file`` 唯一的同名命中属于 ``spec_audit.AuditResult``，另一个类），
 #: ``summary`` 曾同样无人读——它因此不是"留下的幸存者"，而是本步才被接进
 #: ``_guard_offline`` 报错文案的（到达判据见 ``tests/client/test_offline_failfast.py``）。
 #: 刻意不套 :func:`tests.support.field_readers.unread_fields`：``name``/``status``/``tier``
-#: 这类名字在 ``tstdx/`` 里到处都是，按 owner 变量名扫只会量出假读取点。
+#: 这类名字在 ``atst/`` 里到处都是，按 owner 变量名扫只会量出假读取点。
 #: 于是这里的判据是"形状逐字相等 + 读取点由行为判据证明"。
 LEDGER_SHAPE = ("cmd", "name", "family", "tier", "verified", "status", "summary")
 
@@ -50,7 +50,7 @@ class TestLedgerFieldShape:
 class TestLedgerQuerySurface:
     """F-65 裁决 (b)：保留的公开查询面必须逐条有用例，而不是"挂在 ``__all__`` 上就算存在"。
 
-    裁决前 ``by_family``/``unknown_command_ids`` 在 ``tstdx/`` 与 ``tests/`` 里的调用点
+    裁决前 ``by_family``/``unknown_command_ids`` 在 ``atst/`` 与 ``tests/`` 里的调用点
     都是 0（``by_family`` 只被 ``unknown_command_ids`` 自己调一次）。一个既没人调、用例
     也不调的名字挂在对外名单上，读者只能靠猜它做什么。
     """
@@ -192,7 +192,7 @@ class TestLedgerCalibration:
         assert all(c.family == "quotation" for c in by_status(STATUS_OFFLINE, "quotation"))
 
     def test_status_and_verified_counts_read_off_the_ledger(self) -> None:
-        """账本三类计数的事实。F-65 删掉了 ``stats()``：那张按族聚合的字典在 ``tstdx/``
+        """账本三类计数的事实。F-65 删掉了 ``stats()``：那张按族聚合的字典在 ``atst/``
         里零读取点，只有本测试是它的读者——于是这些数字改由**执行面真在用的读法**给出
         （``by_status`` 是 fail-fast 的依据、``by_family`` 是保留的公开查询面），
         而不是由一个只为测试存在的聚合器代读。
@@ -209,17 +209,17 @@ class TestLedgerCalibration:
         """防回归：client 注释命令号必须与实际请求一致（批次 A1）。
 
         v15 拆包后，请求实现与命令号 docstring 位于 :class:`_ClientMixin`
-        （``TdxClient`` 的基类，``tstdx/client/_mixin.py``），故合并其 MRO 上
-        全部 ``tstdx.client`` 类的源码一起校验。
+        （``TdxClient`` 的基类，``atst/client/_mixin.py``），故合并其 MRO 上
+        全部 ``atst.client`` 类的源码一起校验。
         """
         import inspect
 
-        from tstdx.client import TdxClient
+        from atst.client import TdxClient
 
         src = "\n".join(
             inspect.getsource(klass)
             for klass in reversed(TdxClient.__mro__)
-            if klass.__module__.startswith("tstdx.client")
+            if klass.__module__.startswith("atst.client")
         )
         assert "0x07E5" in src and "0x051A" in src and "0x056A" in src
         # 漂移命令号不得回潜（0x02CF/0x02EE 为其它实现的习惯号）

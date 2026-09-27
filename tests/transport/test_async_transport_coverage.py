@@ -1,9 +1,9 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """异步传输层回归（v17 Phase 5 覆盖率收口）。
 
-``tstdx/transport/async_.py`` 此前只有 C5/C6/T5 三个并发语义专项测试，
+``atst/transport/async_.py`` 此前只有 C5/C6/T5 三个并发语义专项测试，
 连接生命周期、错误归类、池请求主流程、bestip 热更新、多帧与心跳循环
 均无覆盖。本文件用 :mod:`tests.transport.fake_server` 的罐头主站 +
 一个可控的「罐头 asyncio server」把这些路径逐条打通（全离线 loopback）。
@@ -24,8 +24,8 @@ from typing import Any
 
 import pytest
 
-from tstdx.codec.framing import DEFAULT_7709_SPEC
-from tstdx.errors import (
+from atst.codec.framing import DEFAULT_7709_SPEC
+from atst.errors import (
     AllHostsUnreachable,
     ConfigError,
     ConnectionClosed,
@@ -36,10 +36,10 @@ from tstdx.errors import (
     ReadTimeout,
     TdxError,
 )
-from tstdx.protocol.commands import Family
-from tstdx.transport.async_ import AsyncConnectionPool, AsyncTcpConnection
-from tstdx.transport.hosts import HostEntry, next_generation_host
-from tstdx.transport.ratelimit import SessionRateLimiter
+from atst.protocol.commands import Family
+from atst.transport.async_ import AsyncConnectionPool, AsyncTcpConnection
+from atst.transport.hosts import HostEntry, next_generation_host
+from atst.transport.ratelimit import SessionRateLimiter
 
 sys.path.insert(0, str(Path(__file__).parent))
 from fake_server import (  # noqa: E402
@@ -607,7 +607,7 @@ class TestAsyncPoolUpdateHosts:
         """代际发布沿用池自身的运行期健康；在飞探测标记必须重开熔断。
 
         原 ``AsyncConnectionPool._inherit_runtime_health`` 是桩层里的第二份事实源，
-        解散后与同步池共用 :func:`tstdx.transport.hosts.next_generation_host`。
+        解散后与同步池共用 :func:`atst.transport.hosts.next_generation_host`。
         """
         old = HostEntry("h", 1, rtt_ms=30.0)
         old.live_rtt_ms = 12.0

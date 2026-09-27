@@ -7,7 +7,7 @@
 
 ## 1. 定位
 
-TDX 是 tstdx 默认主 Provider。用户未显式指定 Provider 且 capability 支持 TDX 时，`default_provider=tdx`。
+TDX 是 atst 默认主 Provider。用户未显式指定 Provider 且 capability 支持 TDX 时，`default_provider=tdx`。
 
 TDX 内部允许在同一 Channel 的主站池/等价 endpoint 中容错，但不得因为 TDX 失败跨 Provider 到腾讯、新浪、东财。
 
@@ -152,7 +152,7 @@ received_at
 age
 ```
 
-运行期对 `currentness` 的判据只有一处，落在 `tstdx/runtime/freshness.py`：
+运行期对 `currentness` 的判据只有一处，落在 `atst/runtime/freshness.py`：
 执行 channel 读本地文件（`ChannelSpec.local`）却被要求当期口径（`live`/`business`）时，
 运行期没有证据证明文件已覆盖当期——`strict=True` 当场返回 `FreshnessViolation`，
 非严格模式把它作为 `currentness_unproven` 瑕疵随结果出发（不静默）。

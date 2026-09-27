@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """C7 回归：TokenBucket 死等消除（tokens > burst 入口报错）+ SessionRateLimiter 行为保持。"""
@@ -9,8 +9,8 @@ import time
 
 import pytest
 
-from tstdx.errors import RateLimitedLocal
-from tstdx.transport.ratelimit import SessionRateLimiter, SessionState, TokenBucket
+from atst.errors import RateLimitedLocal
+from atst.transport.ratelimit import SessionRateLimiter, SessionState, TokenBucket
 
 
 def test_acquire_over_burst_raises_instead_of_dead_wait():

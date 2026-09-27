@@ -1,4 +1,4 @@
-# tstdx 开发计划
+# atst 开发计划
 
 > **基线方案**：`DESIGN.md` v3.0（32 章，28 周 5 阶段）
 > **审计索引**：`AUDIT_AND_BRIDGES.md`（24 断链点 → 10 贯通工程 → 24 项验收）
@@ -52,7 +52,7 @@ P3-Low      → 可推迟到下一阶段
 | 类型 | 说明 | 示例 |
 |---|---|---|
 | **SPEC** | 协议规格说明书（Markdown + YAML） | `PROTOCOL_SPEC/7709/052d_kline.yaml` |
-| **CODE** | 生产代码（含单元测试） | `tstdx/protocol/quotation/kline.py` |
+| **CODE** | 生产代码（含单元测试） | `atst/protocol/quotation/kline.py` |
 | **TEST** | 集成/e2e/parity/贯通测试 | `tests/test_protocol_tiers.py` |
 | **TOOL** | 开发工具 / CI 脚本 | `tools/check_originality.py` |
 | **DOC** | 文档（README/Cookbook/ADR/Changelog） | `docs/cookbook/01_notebook_kline.md` |
@@ -77,7 +77,7 @@ P3-Low      → 可推迟到下一阶段
 
 | 里程碑 | 周 | 版本 | 核心交付 | 验收锚点（§32） |
 |---|---|---|---|---|
-| **M0** | W2 | 0.1.0 | Spec 体系 + Codegen + Golden 工具 + tstdx.toml schema | 12, 13, 14（基础） |
+| **M0** | W2 | 0.1.0 | Spec 体系 + Codegen + Golden 工具 + atst.toml schema | 12, 13, 14（基础） |
 | **M1** | W7 | 0.2.0 | 8 命令 MVP + 配置 + 错误 + i18n + 报文层 | 04, 05, 09, 10, 11 |
 | **M2** | W15 | 0.4.0 | 36 命令全 + 7727 + MAC + F10 + Streaming + 异步桥 + 互操作 + **HTTP Web 源 7 Adapter + 归一化** + 反馈 | 01, 02, 06, 07, 08, 20, **23, 24** |
 | **M3** | W22 | 0.7.0 | Rust 内核 + HTTP 32 接口 + WS + MCP + 文档 + 治理 + Docker | 15, 17, 18, 19, 21, 22 |
@@ -96,7 +96,7 @@ P3-Low      → 可推迟到下一阶段
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P0-W1-01 | 初始化项目骨架 | CODE | P0 | `pyproject.toml` / `tstdx/__init__.py` / `tstdx/errors.py` / `tstdx/types.py` / `tstdx/constants.py` | `pip install -e .` 成功 + `import tstdx` 可用 | — |
+| P0-W1-01 | 初始化项目骨架 | CODE | P0 | `pyproject.toml` / `atst/__init__.py` / `atst/errors.py` / `atst/types.py` / `atst/constants.py` | `pip install -e .` 成功 + `import atst` 可用 | — |
 | P0-W1-02 | 创建 `PROTOCOL_SPEC/` 目录结构 | SPEC | P0 | `PROTOCOL_SPEC/wire_format.md` / `INDEX.yaml`（36 命令占位） | 36 个 spec_id 全部占位（status=draft） | 01 |
 | P0-W1-03 | 编写报文格式 Spec | SPEC | P0 | `PROTOCOL_SPEC/wire_format.md` | 请求头 12B + 响应头 16B 字段表完整 + 示例 hex | 02 |
 | P0-W1-04 | 创建 `ORIGINALITY/` 合规档案 | GOV | P0 | `LICENSE_ALLOWLIST.md` / `CLEANROOM_PROCESS.md` | 白名单含 pyo3/maturin/encoding_rs/bytes/thiserror/tokio + 禁止清单含 eltdx | 01 |
@@ -108,11 +108,11 @@ P3-Low      → 可推迟到下一阶段
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P0-W2-01 | 实现 Spec → Codegen 模板引擎 | TOOL | P0 | `tstdx/tools/codegen.py` | `python -m tstdx.tools.codegen --regen-all` 能从 YAML spec 生成 parser 骨架代码 + `--verify-all` 校验一致 | P0-W1-07 |
-| P0-W2-02 | 实现 Golden 数据采集工具 | TOOL | P0 | `tools/collect_golden.py` + `tstdx` CLI `protocol capture` 子命令 | 能在非交易时段连接公共主站、抓取指定命令的原始报文、zstd 压缩存储 + 元数据 YAML 含 `source: self-captured` | 06 |
+| P0-W2-01 | 实现 Spec → Codegen 模板引擎 | TOOL | P0 | `atst/tools/codegen.py` | `python -m atst.tools.codegen --regen-all` 能从 YAML spec 生成 parser 骨架代码 + `--verify-all` 校验一致 | P0-W1-07 |
+| P0-W2-02 | 实现 Golden 数据采集工具 | TOOL | P0 | `tools/collect_golden.py` + `atst` CLI `protocol capture` 子命令 | 能在非交易时段连接公共主站、抓取指定命令的原始报文、zstd 压缩存储 + 元数据 YAML 含 `source: self-captured` | 06 |
 | P0-W2-03 | 采集首批 Golden 数据（8 命令） | TEST | P0 | `tests/golden/raw/7709/{000d,052d,054c,0fdb,0fc5,0fc6,000f,0010}/*.zst` | 每命令 ≥ 3 个样本，含不同市场/品种，元数据完整 | 02 |
-| P0-W2-04 | 设计 tstdx.toml Schema | CODE | P0 | `tstdx/config.py`（pydantic v2 模型） | 所有 §21.2 配置项建模 + strict 校验 + 未知字段报错 | P0-W1-01 |
-| P0-W2-05 | 实现 6 源配置加载器 | CODE | P0 | `tstdx/config.py` `ConfigLoader` 类 | 函数入参 > env > project > user > system > default 优先级合并 + deep-merge + 12 case 测试 | 04 |
+| P0-W2-04 | 设计 atst.toml Schema | CODE | P0 | `atst/config.py`（pydantic v2 模型） | 所有 §21.2 配置项建模 + strict 校验 + 未知字段报错 | P0-W1-01 |
+| P0-W2-05 | 实现 6 源配置加载器 | CODE | P0 | `atst/config.py` `ConfigLoader` 类 | 函数入参 > env > project > user > system > default 优先级合并 + deep-merge + 12 case 测试 | 04 |
 | P0-W2-06 | Spec ↔ Codegen ↔ Contract 闭环验证 | TEST | P0 | `tests/test_spec_coverage.py` | 所有 spec 有对应 parser + 所有 parser 有对应 spec + spec 字段偏移完全覆盖报文 | P0-W2-01 |
 | P0-W2-07 | 编写 README + CONTRIBUTING | DOC | P1 | `README.md` / `CONTRIBUTING.md` | README 含安装/快速开始/5 行代码示例 + CONTRIBUTING 含洁净室流程说明 | 04 |
 | P0-W2-08 | Tag v0.1.0 | GOV | P0 | git tag `v0.1.0` | CI 全绿 + 8 个 Golden 样本可 replay + Codegen 闭环通过 | 全部 |
@@ -121,7 +121,7 @@ P3-Low      → 可推迟到下一阶段
 - [ ] 36 个 spec_id 全部占位（≥ 3 个已完整编写）
 - [ ] Codegen `--regen-all` + `--verify-all` 通过
 - [ ] Golden 采集工具可在非交易时段工作，产出 ≥ 8 命令的样本
-- [ ] `tstdx.toml` 6 源合并 12 case 测试通过
+- [ ] `atst.toml` 6 源合并 12 case 测试通过
 - [ ] `tools/check_originality.py` 可执行
 - [ ] CI 4 job 全绿
 
@@ -138,51 +138,51 @@ P3-Low      → 可推迟到下一阶段
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P1-W3-01 | 实现报文头编解码 | CODE | P0 | `tstdx/protocol/wire.py` | 请求头 12B 编码/解码 + 响应头 16B 编码/解码 + 与 Golden 数据 round-trip 一致 | P0-W2-01 |
-| P2-W3-02 | 实现 VarintCodec | CODE | P0 | `tstdx/protocol/varint.py` | TDX 变长价格/成交量编码 + 解码 + 边界测试（0 / 最大值 / 截断报文） | 01 |
-| P1-W3-03 | 实现 BaseParser + 注册表 | CODE | P0 | `tstdx/protocol/base.py` / `registry.py` | `@register_parser(msg_id, protocol)` 装饰器 + 注册表查询 + BaseParser 接口定义 | P0-W1-01 |
+| P1-W3-01 | 实现报文头编解码 | CODE | P0 | `atst/protocol/wire.py` | 请求头 12B 编码/解码 + 响应头 16B 编码/解码 + 与 Golden 数据 round-trip 一致 | P0-W2-01 |
+| P2-W3-02 | 实现 VarintCodec | CODE | P0 | `atst/protocol/varint.py` | TDX 变长价格/成交量编码 + 解码 + 边界测试（0 / 最大值 / 截断报文） | 01 |
+| P1-W3-03 | 实现 BaseParser + 注册表 | CODE | P0 | `atst/protocol/base.py` / `registry.py` | `@register_parser(msg_id, protocol)` 装饰器 + 注册表查询 + BaseParser 接口定义 | P0-W1-01 |
 | P1-W3-04 | 报文层 Contract 测试 | TEST | P0 | `tests/protocol/test_wire_format.py` | 12B/16B 头编解码 round-trip + varint 边界 + 报文分片重组 | 01, 02 |
-| P1-W3-05 | 实现 GBK/zlib 编解码 | CODE | P0 | `tstdx/transport/codec.py` | GBK 解码 + GB18030 兼容 + zlib 压缩/解压 + 与 Golden 数据一致 | 01 |
+| P1-W3-05 | 实现 GBK/zlib 编解码 | CODE | P0 | `atst/transport/codec.py` | GBK 解码 + GB18030 兼容 + zlib 压缩/解压 + 与 Golden 数据一致 | 01 |
 
 ### W4：Spec/Codegen 闭环全量跑通
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
 | P1-W4-01 | 补全 8 核心命令 Spec | SPEC | P0 | `PROTOCOL_SPEC/7709/{000d,0004,052d,054c,0fdb,0fc5,0fc6,000f}.yaml` | 8 份 YAML spec 全部 status=accepted | P0-W1-07 |
-| P1-W4-02 | Codegen 生成 8 个 parser 骨架 | CODE | P0 | `tstdx/protocol/quotation/{login,heartbeat,kline,batch_quote,history_minute,trade_detail,history_trade,gbbq}.py` | `--regen-all` + `--verify-all` 全过 | P1-W3-03 + P1-W4-01 |
+| P1-W4-02 | Codegen 生成 8 个 parser 骨架 | CODE | P0 | `atst/protocol/quotation/{login,heartbeat,kline,batch_quote,history_minute,trade_detail,history_trade,gbbq}.py` | `--regen-all` + `--verify-all` 全过 | P1-W3-03 + P1-W4-01 |
 | P1-W4-03 | 实现 8 个 L1 精确解析器 | CODE | P0 | 同上 8 个 `.py` 文件（完整实现） | 每个解析器与 Golden 数据 round-trip 一致 + spec 字段 100% 覆盖 | 02 |
 | P1-W4-04 | Spec ↔ 实现反向校验脚本 | TOOL | P0 | `tools/spec_audit.py` | 扫描所有 parser 与 spec：1) 每个 parser 有 spec 2) 每个 spec 有 parser 3) 字段偏移全覆盖报文 | 03 |
-| P1-W4-05 | L2 通用解析器骨架 | CODE | P1 | `tstdx/protocol/generic.py` | 记录数前缀识别 + 定长推测 + 字段类型打分 + 返回带置信度的 `ParsedResult` | P1-W3-03 |
-| P1-W4-06 | L3 原始透传 | CODE | P1 | `tstdx/protocol/generic.py` `RawPassthrough` 类 | L2 推测失败也返回 raw bytes + `ParsedResult(tier="L3")` | 05 |
+| P1-W4-05 | L2 通用解析器骨架 | CODE | P1 | `atst/protocol/generic.py` | 记录数前缀识别 + 定长推测 + 字段类型打分 + 返回带置信度的 `ParsedResult` | P1-W3-03 |
+| P1-W4-06 | L3 原始透传 | CODE | P1 | `atst/protocol/generic.py` `RawPassthrough` 类 | L2 推测失败也返回 raw bytes + `ParsedResult(tier="L3")` | 05 |
 
 ### W5：配置中心完整落地
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P1-W5-01 | 完善配置 pydantic 模型 | CODE | P0 | `tstdx/config.py` 全部子模型（Network/RateLimit/Memory/Streaming/I18n/Observability/Security/Compatibility） | strict 校验 + 未知字段报错 + 环境变量自动类型转换 | P0-W2-04 |
-| P1-W5-02 | 运行时配置热更新 | CODE | P1 | `tstdx/config.py` `TstdxConfig.hot_update()` | 限流器/内存预算/push 队列大小可运行时修改 + 立即生效 | 01 |
-| P1-W5-03 | 配置持久化 | CODE | P2 | `tstdx/config.py` `save_to()` | 用户主动调用写盘 + 不自动写 + 原子写入（tmp + rename） | 01 |
+| P1-W5-01 | 完善配置 pydantic 模型 | CODE | P0 | `atst/config.py` 全部子模型（Network/RateLimit/Memory/Streaming/I18n/Observability/Security/Compatibility） | strict 校验 + 未知字段报错 + 环境变量自动类型转换 | P0-W2-04 |
+| P1-W5-02 | 运行时配置热更新 | CODE | P1 | `atst/config.py` `TstdxConfig.hot_update()` | 限流器/内存预算/push 队列大小可运行时修改 + 立即生效 | 01 |
+| P1-W5-03 | 配置持久化 | CODE | P2 | `atst/config.py` `save_to()` | 用户主动调用写盘 + 不自动写 + 原子写入（tmp + rename） | 01 |
 | P1-W5-04 | 12 case 合并测试 | TEST | P0 | `tests/config/test_merge.py` | §21.5 全部 12 case 通过 | 01 |
-| P1-W5-05 | XDG 路径规范 | CODE | P1 | `tstdx/config.py` 路径解析 | Linux: `~/.config/tstdx/` / macOS: `~/Library/Application Support/tstdx/` / Windows: `%APPDATA%/tstdx/` | 01 |
+| P1-W5-05 | XDG 路径规范 | CODE | P1 | `atst/config.py` 路径解析 | Linux: `~/.config/atst/` / macOS: `~/Library/Application Support/atst/` / Windows: `%APPDATA%/atst/` | 01 |
 
 ### W6：错误体系 + 重试 failover
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P1-W6-01 | 实现 24 类异常分类树 | CODE | P0 | `tstdx/errors.py` | §24.1 全部 24 个异常类 + 所有继承自 `TstdxError` + 每类有 `retry_advice` 属性 | P0-W1-01 |
-| P1-W6-02 | 实现 RetryAdvice 表 | CODE | P0 | `tstdx/errors.py` `RETRY_TABLE` | §24.2 所有异常类型映射到 retryable/backoff/max_retries/switch_host/fallback_to_offline | 01 |
-| P1-W6-03 | 实现重试 failover 引擎 | CODE | P0 | `tstdx/services/retry.py` | 指数退避 + 切主站 + 重试预算 + 用户可 catch `TstdxError` 统一处理 | 02 |
+| P1-W6-01 | 实现 24 类异常分类树 | CODE | P0 | `atst/errors.py` | §24.1 全部 24 个异常类 + 所有继承自 `TstdxError` + 每类有 `retry_advice` 属性 | P0-W1-01 |
+| P1-W6-02 | 实现 RetryAdvice 表 | CODE | P0 | `atst/errors.py` `RETRY_TABLE` | §24.2 所有异常类型映射到 retryable/backoff/max_retries/switch_host/fallback_to_offline | 01 |
+| P1-W6-03 | 实现重试 failover 引擎 | CODE | P0 | `atst/services/retry.py` | 指数退避 + 切主站 + 重试预算 + 用户可 catch `TstdxError` 统一处理 | 02 |
 | P1-W6-04 | 错误体系测试 | TEST | P0 | `tests/errors/test_taxonomy.py` | §24.4 全部子测试通过（异常继承/retry_advice 完整/catch-all/退避秒数） | 01, 02 |
-| P1-W6-05 | Transport 层错误映射 | CODE | P1 | `tstdx/transport/connection.py` | TCP 超时→ConnectTimeout / RST→ConnectionReset / 全主站不可达→AllHostsUnreachable | P1-W3-01 |
+| P1-W6-05 | Transport 层错误映射 | CODE | P1 | `atst/transport/connection.py` | TCP 超时→ConnectTimeout / RST→ConnectionReset / 全主站不可达→AllHostsUnreachable | P1-W3-01 |
 
 ### W7：i18n + 时区 + 交易日历 + MVP 集成
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P1-W7-01 | 实现字符集编解码 | CODE | P0 | `tstdx/i18n/encoding.py` | GBK/GB18030/Big5/Shift-JIS/EUC-KR/UTF-8 + auto_detect + errors=replace 不抛 | P1-W3-05 |
-| P1-W7-02 | 实现时区处理 | CODE | P0 | `tstdx/i18n/timezone.py` `MarketTime` 类 | UTC 内部 + 本地输出 + ISO 8601 带偏移序列化 + 美股夏令时无歧义 | 01 |
-| P1-W7-03 | 实现 A 股交易日历 | CODE | P0 | `tstdx/i18n/calendar.py` `ChinaSseCalendar` | 2024-2026 节假日表 + 调休 + `is_trading_day` / `is_trading_session` / `previous/next_trading_day` | 02 |
-| P1-W7-04 | 交易日历联网更新 | CODE | P2 | `tstdx/i18n/calendar.py` `update_from_url()` | 启动时尝试下载上交所最新节假日 JSON + 失败 fallback 内置 | 03 |
+| P1-W7-01 | 实现字符集编解码 | CODE | P0 | `atst/i18n/encoding.py` | GBK/GB18030/Big5/Shift-JIS/EUC-KR/UTF-8 + auto_detect + errors=replace 不抛 | P1-W3-05 |
+| P1-W7-02 | 实现时区处理 | CODE | P0 | `atst/i18n/timezone.py` `MarketTime` 类 | UTC 内部 + 本地输出 + ISO 8601 带偏移序列化 + 美股夏令时无歧义 | 01 |
+| P1-W7-03 | 实现 A 股交易日历 | CODE | P0 | `atst/i18n/calendar.py` `ChinaSseCalendar` | 2024-2026 节假日表 + 调休 + `is_trading_day` / `is_trading_session` / `previous/next_trading_day` | 02 |
+| P1-W7-04 | 交易日历联网更新 | CODE | P2 | `atst/i18n/calendar.py` `update_from_url()` | 启动时尝试下载上交所最新节假日 JSON + 失败 fallback 内置 | 03 |
 | P1-W7-05 | i18n 测试矩阵 | TEST | P0 | `tests/i18n/test_encoding.py` / `test_tz.py` / `test_calendar.py` | §23.4 全部 10 case 通过 | 01, 02, 03 |
 | P1-W7-06 | 8 命令 MVP 集成测试 | TEST | P0 | `tests/integration/test_mvp.py` | 登录→心跳→K线→批量行情→历史分时→成交明细 全链路跑通 + 输出 dict/tuple | P1-W4-03 |
 | P1-W7-07 | 编写 Quickstart 文档 | DOC | P1 | `docs/quickstart.md` | 安装 + 5 行代码取 K 线 + 输出示例 | 06 |
@@ -191,7 +191,7 @@ P3-Low      → 可推迟到下一阶段
 **Phase 1 退出条件**：
 - [ ] 8 个核心命令 L1 精确解析器全部实现 + Golden round-trip 一致
 - [ ] L2 通用解析器 + L3 原始透传可用
-- [ ] tstdx.toml 6 源合并 12 case 全过
+- [ ] atst.toml 6 源合并 12 case 全过
 - [ ] 24 类异常 + RetryAdvice 表完整
 - [ ] 字符集 4 编码探测 + 时区 + A 股日历 10 case 全过
 - [ ] 8 命令 MVP 集成测试通过
@@ -210,7 +210,7 @@ P3-Low      → 可推迟到下一阶段
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
 | P2-W8-01 | 补全剩余 28 命令 Spec | SPEC | P0 | `PROTOCOL_SPEC/7709/*.yaml`（28 份新增） | 36 份 YAML spec 全部 status=accepted + 每份含完整字段表 | P1-W4-01 |
-| P2-W8-02 | Codegen + 实现 28 个 parser | CODE | P0 | `tstdx/protocol/quotation/*.py`（28 个新增） | `--regen-all` + `--verify-all` 全过 + 每个与 Golden round-trip 一致 | 01 |
+| P2-W8-02 | Codegen + 实现 28 个 parser | CODE | P0 | `atst/protocol/quotation/*.py`（28 个新增） | `--regen-all` + `--verify-all` 全过 + 每个与 Golden round-trip 一致 | 01 |
 | P2-W8-03 | 补充 Golden 数据（28 命令） | TEST | P0 | `tests/golden/raw/7709/*.zst`（28 组） | 每命令 ≥ 2 个样本 + 元数据含 `source: self-captured` | 02 |
 | P2-W8-04 | Spec 覆盖率检查 | TEST | P0 | `tools/spec_audit.py` + `tests/test_spec_coverage.py` | 36 个 spec 全有 parser + 全有 Golden + 字段全覆盖 | 02, 03 |
 | P2-W8-05 | 三层覆盖测试 | TEST | P0 | `tests/test_protocol_tiers.py` | L1 精确 / L2 通用（给未知命令） / L3 透传 全部有测试 + 永不丢包断言 | P1-W4-05, 06 |
@@ -220,18 +220,18 @@ P3-Low      → 可推迟到下一阶段
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
 | P2-W9-01 | 7727 协议 Spec | SPEC | P0 | `PROTOCOL_SPEC/7727/*.yaml`（17+ 份） | 扩展市场全命令 spec 完整 + 含港股/美股/期货字段差异 | P0-W1-02 |
-| P2-W9-02 | 7727 解析器实现 | CODE | P0 | `tstdx/protocol/ex_quotation/*.py` | 17+ 个 L1 解析器 + Golden round-trip | 01 |
+| P2-W9-02 | 7727 解析器实现 | CODE | P0 | `atst/protocol/ex_quotation/*.py` | 17+ 个 L1 解析器 + Golden round-trip | 01 |
 | P2-W9-03 | 商品语义协议 Spec | SPEC | P0 | `PROTOCOL_SPEC/goods/*.yaml`（11+ 份） | GoodsCount/CategoryList/Varieties/Quote/Quotes/KLine/TickChart/ChartSampling/HistoryTransaction 全覆盖 | P0-W1-02 |
-| P2-W9-04 | GoodsClient 实现 | CODE | P0 | `tstdx/client/goods.py` | CFFEX/SHFE/DCE/CZCE/INE/GFEX 期货 + 期权 + 外汇 接口可用 | 03 |
-| P2-W9-05 | ExtendedClient 实现 | CODE | P0 | `tstdx/client/extended.py` | 港股/美股/期货扩展市场行情可取 | 02 |
+| P2-W9-04 | GoodsClient 实现 | CODE | P0 | `atst/client/goods.py` | CFFEX/SHFE/DCE/CZCE/INE/GFEX 期货 + 期权 + 外汇 接口可用 | 03 |
+| P2-W9-05 | ExtendedClient 实现 | CODE | P0 | `atst/client/extended.py` | 港股/美股/期货扩展市场行情可取 | 02 |
 
 ### W10：MAC 专属协议
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
 | P2-W10-01 | MAC 协议 Spec | SPEC | P0 | `PROTOCOL_SPEC/mac/*.yaml`（16+ 份） | 0x120F–0x2562 全命令 spec + 含板块/资金流向/统一K线/统一报价等 | P0-W1-02 |
-| P2-W10-02 | MAC 解析器实现 | CODE | P0 | `tstdx/protocol/mac_quotation/*.py` | 16+ 个 L1 解析器 + Golden round-trip | 01 |
-| P2-W10-03 | MacClient 实现 | CODE | P0 | `tstdx/client/mac.py` | 板块列表/成分股/资金流向/主力监控 可用 + 本地 QFQ 重算 | 02 |
+| P2-W10-02 | MAC 解析器实现 | CODE | P0 | `atst/protocol/mac_quotation/*.py` | 16+ 个 L1 解析器 + Golden round-trip | 01 |
+| P2-W10-03 | MacClient 实现 | CODE | P0 | `atst/client/mac.py` | 板块列表/成分股/资金流向/主力监控 可用 + 本地 QFQ 重算 | 02 |
 | P2-W10-04 | MAC Golden 数据采集 | TEST | P0 | `tests/golden/raw/mac/*.zst` | MAC 主站少（3 台），非交易时段采集 ≥ 16 命令各 1 样本 | 02 |
 
 ### W11：F10 资料协议 + TQLEX 网关
@@ -239,49 +239,49 @@ P3-Low      → 可推迟到下一阶段
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
 | P2-W11-01 | F10 Entry Spec | SPEC | P0 | `PROTOCOL_SPEC/f10/*.yaml`（18+ 份） | 20+ Entry 全覆盖（公司概况/主营构成/股东增减持/分红融资/财务报表/财务诊断/个股总评/盈利预测/热点题材/沪深股通/资讯研报 等） | P0-W1-02 |
-| P2-W11-02 | F10 解析器实现 | CODE | P0 | `tstdx/protocol/f10/*.py` | 18+ 个 L1 解析器 + Golden round-trip | 01 |
-| P2-W11-03 | F10Client 实现 | CODE | P0 | `tstdx/client/f10.py`（或 `tstdx/client/standard.py` 扩展） | `client.f10.company_overview("sh600519")` 可用 + 返回结构化 dict | 02 |
-| P2-W11-04 | TQLEX 网关适配 | CODE | P1 | `tstdx/protocol/f10/tqlex.py` | 7615 端口 TQLEX 网关连接 + Entry 请求/响应格式 | 02 |
+| P2-W11-02 | F10 解析器实现 | CODE | P0 | `atst/protocol/f10/*.py` | 18+ 个 L1 解析器 + Golden round-trip | 01 |
+| P2-W11-03 | F10Client 实现 | CODE | P0 | `atst/client/f10.py`（或 `atst/client/standard.py` 扩展） | `client.f10.company_overview("sh600519")` 可用 + 返回结构化 dict | 02 |
+| P2-W11-04 | TQLEX 网关适配 | CODE | P1 | `atst/protocol/f10/tqlex.py` | 7615 端口 TQLEX 网关连接 + Entry 请求/响应格式 | 02 |
 
 ### W12：Streaming 全特性
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P2-W12-01 | 订阅管理器 | CODE | P0 | `tstdx/streaming/subscription.py` `SubscriptionRegistry` | 订阅/取消订阅/重订阅 + 级别（五档/逐笔/全量） + 60 只/批限制 | P1-W4-03 |
-| P2-W12-02 | PushChannel（0x0547） | CODE | P0 | `tstdx/streaming/push.py` | 加密推送队列 + 1024 帧/64MiB 预算 + 实时解码五档 | P1-W4-03 |
-| P2-W12-03 | PollChannel + HybridChannel | CODE | P1 | `tstdx/streaming/poll.py` / `hybrid.py` | 轮询兜底 + 推送优先混合 + 自动切换策略 | 02 |
-| P2-W12-04 | DeltaMerger 增量合并 | CODE | P0 | `tstdx/streaming/merger.py` | 乱序窗口 0.5s + 去重 + 版本跳跃检测 + 合并后输出完整快照 | 02 |
-| P2-W12-05 | GapFiller 断线补数 | CODE | P0 | `tstdx/streaming/gapfill.py` | 断线期间数据 100% 补全 + 重连后自动补 + 补数失败抛 `GapNotFillable` | 04 |
-| P2-W12-06 | BackpressureController | CODE | P1 | `tstdx/streaming/backpressure.py` | 消费者慢 → 丢旧帧/降采样/通知用户 + raw 预算 85% 触发淘汰 | 02 |
-| P2-W12-07 | ReconnectPolicy | CODE | P0 | `tstdx/streaming/reconnect.py` | 1→30s 指数退避 + 3 次失败换主站 + 重连后恢复订阅 + 自动补数 | 05 |
+| P2-W12-01 | 订阅管理器 | CODE | P0 | `atst/streaming/subscription.py` `SubscriptionRegistry` | 订阅/取消订阅/重订阅 + 级别（五档/逐笔/全量） + 60 只/批限制 | P1-W4-03 |
+| P2-W12-02 | PushChannel（0x0547） | CODE | P0 | `atst/streaming/push.py` | 加密推送队列 + 1024 帧/64MiB 预算 + 实时解码五档 | P1-W4-03 |
+| P2-W12-03 | PollChannel + HybridChannel | CODE | P1 | `atst/streaming/poll.py` / `hybrid.py` | 轮询兜底 + 推送优先混合 + 自动切换策略 | 02 |
+| P2-W12-04 | DeltaMerger 增量合并 | CODE | P0 | `atst/streaming/merger.py` | 乱序窗口 0.5s + 去重 + 版本跳跃检测 + 合并后输出完整快照 | 02 |
+| P2-W12-05 | GapFiller 断线补数 | CODE | P0 | `atst/streaming/gapfill.py` | 断线期间数据 100% 补全 + 重连后自动补 + 补数失败抛 `GapNotFillable` | 04 |
+| P2-W12-06 | BackpressureController | CODE | P1 | `atst/streaming/backpressure.py` | 消费者慢 → 丢旧帧/降采样/通知用户 + raw 预算 85% 触发淘汰 | 02 |
+| P2-W12-07 | ReconnectPolicy | CODE | P0 | `atst/streaming/reconnect.py` | 1→30s 指数退避 + 3 次失败换主站 + 重连后恢复订阅 + 自动补数 | 05 |
 | P2-W12-08 | Streaming 测试 | TEST | P0 | `tests/test_stream_resilience.py` | 断网 30s 后流 0 丢失 + 重连 < 3s + 增量合并正确 | 04, 05, 07 |
 
 ### W13：异步/同步双轨桥
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P2-W13-01 | 实现 run_sync 桥 | CODE | P0 | `tstdx/_async_bridge.py` | 主线程已有 loop 检测 + 守护线程独立 loop + 线程安全 + 不泄漏 | P1-W4-03 |
-| P2-W13-02 | AsyncTdxClient | CODE | P0 | `tstdx/client/async_client.py` | 异步 API 签名与同步一致 + `async with` + `async for` 流式 | 01 |
-| P2-W13-03 | 线程安全保证 | CODE | P0 | `tstdx/client/base.py` Slot 管理 | per-thread Slot + Streaming one-per-thread + 跨线程显式抛错 | 01 |
+| P2-W13-01 | 实现 run_sync 桥 | CODE | P0 | `atst/_async_bridge.py` | 主线程已有 loop 检测 + 守护线程独立 loop + 线程安全 + 不泄漏 | P1-W4-03 |
+| P2-W13-02 | AsyncTdxClient | CODE | P0 | `atst/client/async_client.py` | 异步 API 签名与同步一致 + `async with` + `async for` 流式 | 01 |
+| P2-W13-03 | 线程安全保证 | CODE | P0 | `atst/client/base.py` Slot 管理 | per-thread Slot + Streaming one-per-thread + 跨线程显式抛错 | 01 |
 | P2-W13-04 | 同步/异步 Parity 测试 | TEST | P0 | `tests/test_sync_async_parity.py` | §25.5 全部 case 通过：sync_in_async_raises / async_in_thread / concurrent_sync / result_parity / no_loop_leak | 01, 02 |
 
 ### W14：互操作层 + HTTP Web 行情源
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P2-W14-01 | mootdx 兼容垫片 | CODE | P1 | `tstdx/compat/mootdx.py` `Reader`/`Quotes`/`Affair` | 覆盖 ≥ 80% mootdx 高频 API + 不一致部分抛 `CompatibilityWarning` | P2-W8-02 |
-| P2-W14-02 | DataFrameSink | CODE | P0 | `tstdx/sinks/dataframe.py` | list[Bar] → DataFrame + 内存 | P1-W4-03 |
-| P2-W14-03 | ParquetSink | CODE | P0 | `tstdx/sinks/parquet.py` | 按日分区 + zstd 压缩 + 可续写 | 02 |
-| P2-W14-04 | DuckDBSink | CODE | P1 | `tstdx/sinks/duckdb.py` | 内嵌分析 + SQL 查询 + 流式 INSERT | 02 |
-| **P2-W14-08** | **HTTP Web 源基类 + 统一接口** | CODE | **P0** | `tstdx/web/base.py` `WebQuoteSource` Protocol + `WebQuoteClient` | `WebQuoteClient(source="sina")` 可用 + `real()` / `market_snapshot()` / `kline()` 接口定义 | P1-W7-01 |
-| **P2-W14-09** | **SinaAdapter 实现** | CODE | **P0** | `tstdx/web/sina.py` | 33 字段正则解析 + GBK 解码 + Referer 注入 + 800 只/批 + Golden round-trip | 08 |
-| **P2-W14-10** | **TencentAdapter 实现** | CODE | **P0** | `tstdx/web/tencent.py` | 53 字段 ~ 分割解析 + GBK + 60 只/批 + volume ×100 归一化 + amount ×10000 归一化 | 08 |
-| **P2-W14-11** | **EastmoneyAdapter 实现** | CODE | **P1** | `tstdx/web/eastmoney.py` | JSON 解析 + 串行 1s 限流 + UA+Referer + push2 端点 + 价格 ×100→浮点 | 08 |
-| **P2-W14-12** | **JslAdapter + HkquoteAdapter + DayKlineAdapter + BocAdapter** | CODE | **P2** | `tstdx/web/{jsl,hkquote,daykline,boc}.py` | 4 个专用源各自实现 + Cookie/港股/K线/汇率 | 08 |
-| **P2-W14-13** | **volume/amount 归一化模块** | CODE | **P0** | `tstdx/web/normalize.py` | 新浪 ×1 / 腾讯 ×100+×10000 / 东财 ×100+×1 全部归一化到 `volume=股、amount=元` + 4 case 测试 | 09, 10, 11 |
-| **P2-W14-14** | **HTTP 源限流** | CODE | **P0** | `tstdx/web/ratelimit.py` | 按源×时段限流（东财 1 req/s 串行）+ 空响应检测降级 | 09, 10, 11 |
-| **P2-W14-15** | **easyquotation 兼容垫片** | CODE | **P1** | `tstdx/compat/easyquotation.py` `use()` 工厂 | `easyquotation.use('sina')` 签名兼容 + `real()` / `market_snapshot()` 行为一致 | 08 |
-| P2-W14-05 | DataSourceRouter | CODE | P1 | `tstdx/sources/router.py` | 多源路由（failover/merge/race） + 6 种降级路径（含 HTTP Web fallback） | 01, 08 |
+| P2-W14-01 | mootdx 兼容垫片 | CODE | P1 | `atst/compat/mootdx.py` `Reader`/`Quotes`/`Affair` | 覆盖 ≥ 80% mootdx 高频 API + 不一致部分抛 `CompatibilityWarning` | P2-W8-02 |
+| P2-W14-02 | DataFrameSink | CODE | P0 | `atst/sinks/dataframe.py` | list[Bar] → DataFrame + 内存 | P1-W4-03 |
+| P2-W14-03 | ParquetSink | CODE | P0 | `atst/sinks/parquet.py` | 按日分区 + zstd 压缩 + 可续写 | 02 |
+| P2-W14-04 | DuckDBSink | CODE | P1 | `atst/sinks/duckdb.py` | 内嵌分析 + SQL 查询 + 流式 INSERT | 02 |
+| **P2-W14-08** | **HTTP Web 源基类 + 统一接口** | CODE | **P0** | `atst/web/base.py` `WebQuoteSource` Protocol + `WebQuoteClient` | `WebQuoteClient(source="sina")` 可用 + `real()` / `market_snapshot()` / `kline()` 接口定义 | P1-W7-01 |
+| **P2-W14-09** | **SinaAdapter 实现** | CODE | **P0** | `atst/web/sina.py` | 33 字段正则解析 + GBK 解码 + Referer 注入 + 800 只/批 + Golden round-trip | 08 |
+| **P2-W14-10** | **TencentAdapter 实现** | CODE | **P0** | `atst/web/tencent.py` | 53 字段 ~ 分割解析 + GBK + 60 只/批 + volume ×100 归一化 + amount ×10000 归一化 | 08 |
+| **P2-W14-11** | **EastmoneyAdapter 实现** | CODE | **P1** | `atst/web/eastmoney.py` | JSON 解析 + 串行 1s 限流 + UA+Referer + push2 端点 + 价格 ×100→浮点 | 08 |
+| **P2-W14-12** | **JslAdapter + HkquoteAdapter + DayKlineAdapter + BocAdapter** | CODE | **P2** | `atst/web/{jsl,hkquote,daykline,boc}.py` | 4 个专用源各自实现 + Cookie/港股/K线/汇率 | 08 |
+| **P2-W14-13** | **volume/amount 归一化模块** | CODE | **P0** | `atst/web/normalize.py` | 新浪 ×1 / 腾讯 ×100+×10000 / 东财 ×100+×1 全部归一化到 `volume=股、amount=元` + 4 case 测试 | 09, 10, 11 |
+| **P2-W14-14** | **HTTP 源限流** | CODE | **P0** | `atst/web/ratelimit.py` | 按源×时段限流（东财 1 req/s 串行）+ 空响应检测降级 | 09, 10, 11 |
+| **P2-W14-15** | **easyquotation 兼容垫片** | CODE | **P1** | `atst/compat/easyquotation.py` `use()` 工厂 | `easyquotation.use('sina')` 签名兼容 + `real()` / `market_snapshot()` 行为一致 | 08 |
+| P2-W14-05 | DataSourceRouter | CODE | P1 | `atst/sources/router.py` | 多源路由（failover/merge/race） + 6 种降级路径（含 HTTP Web fallback） | 01, 08 |
 | P2-W14-06 | 降级路径测试 | TEST | P0 | `tests/test_fallbacks.py` | 6 种降级场景全过（含 TDX→HTTP Web 降级） + `AllSourcesExhausted` 正确抛出 | 05, 13, 14 |
 | P2-W14-07 | Sink 测试 | TEST | P0 | `tests/test_sinks.py` | DataFrame/Parquet/DuckDB 三种 sink 写入 + 读回 + 一致性校验 | 02, 03, 04 |
 | **P2-W14-16** | **HTTP Web 源测试矩阵** | TEST | **P0** | `tests/web/test_web_sources.py` | §33.10 全 12 case 通过（正则/~ 分割/JSON/归一化/Referer/限流/降级/兼容） | 09-15 |
@@ -290,9 +290,9 @@ P3-Low      → 可推迟到下一阶段
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P2-W15-01 | 协议差异上报通道 | CODE | P1 | `tstdx/feedback/reporter.py` `report_protocol_observation()` | 写入本地 JSON + opt-in 上传 + `source: self-captured` 校验 | P2-W8-04 |
-| P2-W15-02 | Telemetry 上报 | CODE | P1 | `tstdx/feedback/telemetry.py` | 默认 opt-out + 7 步脱敏 + 不含用户数据 + 失败吞 | 01 |
-| P2-W15-03 | 调优建议回收 | CODE | P2 | `tstdx/feedback/stats.py` + CLI `tstdx feedback stats` | 本地汇总 + apply all 改配置 | 02 |
+| P2-W15-01 | 协议差异上报通道 | CODE | P1 | `atst/feedback/reporter.py` `report_protocol_observation()` | 写入本地 JSON + opt-in 上传 + `source: self-captured` 校验 | P2-W8-04 |
+| P2-W15-02 | Telemetry 上报 | CODE | P1 | `atst/feedback/telemetry.py` | 默认 opt-out + 7 步脱敏 + 不含用户数据 + 失败吞 | 01 |
+| P2-W15-03 | 调优建议回收 | CODE | P2 | `atst/feedback/stats.py` + CLI `atst feedback stats` | 本地汇总 + apply all 改配置 | 02 |
 | P2-W15-04 | 24 断链闭环测试 | TEST | P0 | `tests/test_bridges.py` | §AUDIT_AND_BRIDGES 24 个断链点（21 基线 + A5/A6/A7 增量）全部有对应处理 + 测试覆盖 | 全 Phase 2 |
 | P2-W15-05 | Phase 2 集成测试 | TEST | P0 | `tests/integration/test_phase2.py` | 36 命令 + 7727 + MAC + F10 + Goods + Streaming + 异步 + sink 全链路 | 全 Phase 2 |
 | P2-W15-06 | 编写 6 篇 Cookbook | DOC | P1 | `docs/cookbook/01-06.md` | §28.2 前 6 个选题 | 全 Phase 2 |
@@ -324,11 +324,11 @@ P3-Low      → 可推迟到下一阶段
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P3-W16-01 | Rust crate 初始化 | CODE | P0 | `tstdx_native/Cargo.toml` / `src/lib.rs` | pyo3 + maturin 初始化 + `maturin develop` 可 import | P2-W15-07 |
-| P3-W16-02 | Reader 层 Rust 移植 | CODE | P0 | `tstdx_native/src/reader.rs` | DailyBarReader / MinBarReader / LcMinBarReader / BlockReader / FinancialReader | P2-W8-02 |
-| P3-W16-03 | Parser 层 Rust 移植 | CODE | P0 | `tstdx_native/src/protocol.rs` | 36 命令 L1 解析器 Rust 版 + 编解码 | P2-W8-02 |
-| P3-W16-04 | PyO3 绑定 | CODE | P0 | `tstdx_native/src/python.rs` | Python 可调 Rust 解析器 + 结果与纯 Python 一致 | 02, 03 |
-| P3-W16-05 | perf extra | CODE | P1 | `pyproject.toml` `[project.optional-dependencies] perf` | `pip install tstdx[perf]` 可用 + 无 perf 时 fallback 纯 Python | 04 |
+| P3-W16-01 | Rust crate 初始化 | CODE | P0 | `atst_native/Cargo.toml` / `src/lib.rs` | pyo3 + maturin 初始化 + `maturin develop` 可 import | P2-W15-07 |
+| P3-W16-02 | Reader 层 Rust 移植 | CODE | P0 | `atst_native/src/reader.rs` | DailyBarReader / MinBarReader / LcMinBarReader / BlockReader / FinancialReader | P2-W8-02 |
+| P3-W16-03 | Parser 层 Rust 移植 | CODE | P0 | `atst_native/src/protocol.rs` | 36 命令 L1 解析器 Rust 版 + 编解码 | P2-W8-02 |
+| P3-W16-04 | PyO3 绑定 | CODE | P0 | `atst_native/src/python.rs` | Python 可调 Rust 解析器 + 结果与纯 Python 一致 | 02, 03 |
+| P3-W16-05 | perf extra | CODE | P1 | `pyproject.toml` `[project.optional-dependencies] perf` | `pip install atst[perf]` 可用 + 无 perf 时 fallback 纯 Python | 04 |
 
 ### W17：Parity 测试 100%
 
@@ -343,22 +343,22 @@ P3-Low      → 可推迟到下一阶段
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P3-W18-01 | FastAPI 服务骨架 | CODE | P0 | `tstdx/integration/http_server.py` | uvicorn + 路由 + 中间件 + 健康检查 + OpenAPI 自动文档 | P2-W15-07 |
+| P3-W18-01 | FastAPI 服务骨架 | CODE | P0 | `atst/integration/http_server.py` | uvicorn + 路由 + 中间件 + 健康检查 + OpenAPI 自动文档 | P2-W15-07 |
 | P3-W18-02 | 行情类接口（8） | CODE | P0 | `/api/quote` / `/api/kline` / `/api/minute` / `/api/trade` / `/api/batch-quote` / `/api/kline-all` / `/api/index` / `/api/market-stats` | 8 接口全部可用 + 输出三态（dict/JSON/DataFrame→JSON） | 01 |
 | P3-W18-03 | 基本面接口（6） | CODE | P0 | `/api/workday` / `/api/income` / `/api/f10/*` / `/api/gbbq` | F10 + 财务 + 除权除息 + 工作日 | 01 |
 | P3-W18-04 | 商品接口（4） | CODE | P0 | `/api/goods/quote` / `/api/goods/kline` / `/api/goods/variety` / `/api/goods/list` | 期货/期权/外汇行情 | 01 |
 | P3-W18-05 | 板块接口（4） | CODE | P1 | `/api/block/list` / `/api/block/members` / `/api/block/flow` / `/api/block/rank` | MAC 协议板块相关 | 01 |
 | P3-W18-06 | 系统接口（4） | CODE | P1 | `/api/server-status` / `/api/health` / `/api/tasks/*` / `/api/search` | 主站状态 + 异步任务 + 搜索 | 01 |
-| P3-W18-07 | 异步任务 | CODE | P1 | `tstdx/integration/http_server.py` task 模块 | 下载/批量回补异步执行 + 进度查询 | 01 |
+| P3-W18-07 | 异步任务 | CODE | P1 | `atst/integration/http_server.py` task 模块 | 下载/批量回补异步执行 + 进度查询 | 01 |
 | P3-W18-08 | HTTP 契约测试 | TEST | P0 | `tests/test_http_api.py` | 32 接口全部契约测试 + 错误码 ↔ HTTP 状态映射 | 全部 |
 
 ### W19：WebSocket RPC + MCP 工具
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P3-W19-01 | WebSocket 网关 | CODE | P0 | `tstdx/integration/ws_server.py` | 流式 K 线/五档/逐笔推送 + 订阅/取消 JSON 协议 + 多客户端广播 | P2-W12-02 |
-| P3-W19-02 | MCP stdio 服务 | CODE | P0 | `tstdx/integration/mcp_server.py` | stdio JSON-RPC + 10 工具 schema 注册 | P2-W15-07 |
-| P3-W19-03 | MCP 10 工具实现 | CODE | P0 | `tstdx/integration/mcp_server.py` 工具定义 | get_quote / get_kline / get_minute / search_stock / get_f10 / get_gbbq / get_block / subscribe / get_calendar / get_server_status | 02 |
+| P3-W19-01 | WebSocket 网关 | CODE | P0 | `atst/integration/ws_server.py` | 流式 K 线/五档/逐笔推送 + 订阅/取消 JSON 协议 + 多客户端广播 | P2-W12-02 |
+| P3-W19-02 | MCP stdio 服务 | CODE | P0 | `atst/integration/mcp_server.py` | stdio JSON-RPC + 10 工具 schema 注册 | P2-W15-07 |
+| P3-W19-03 | MCP 10 工具实现 | CODE | P0 | `atst/integration/mcp_server.py` 工具定义 | get_quote / get_kline / get_minute / search_stock / get_f10 / get_gbbq / get_block / subscribe / get_calendar / get_server_status | 02 |
 | P3-W19-04 | MCP 契约测试 | TEST | P0 | `tests/test_mcp_contracts.py` | 10 工具 schema 与实现一致 + 输入/输出验证 | 03 |
 
 ### W20：文档体系
@@ -387,10 +387,10 @@ P3-Low      → 可推迟到下一阶段
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P3-W22-01 | Docker 镜像 | CODE | P1 | `docker/Dockerfile.python` | `docker run -p 8000:8000 tstdx:0.7.0` 可用 + weekly 重建 | P3-W18-01 |
+| P3-W22-01 | Docker 镜像 | CODE | P1 | `docker/Dockerfile.python` | `docker run -p 8000:8000 atst:0.7.0` 可用 + weekly 重建 | P3-W18-01 |
 | P3-W22-02 | wheel 矩阵 CI | TOOL | P0 | `.github/workflows/wheels.yml` | 4 Python × 3 OS + 2 ARM64 = 12 组合 + smoke test install | P3-W16-04 |
 | P3-W22-03 | wheel smoke 测试 | TEST | P0 | `scripts/wheel_smoke.sh` | 12 组合 wheel 均能 install + import + 8 命令 MVP smoke | 02 |
-| P3-W22-04 | 可观测性 zero-dep | CODE | P1 | `tstdx/observability/` + 3 exporter | prometheus/statsd/opentelemetry + 不安装则 no-op | P2-W15-07 |
+| P3-W22-04 | 可观测性 zero-dep | CODE | P1 | `atst/observability/` + 3 exporter | prometheus/statsd/opentelemetry + 不安装则 no-op | P2-W15-07 |
 | P3-W22-05 | 可观测性测试 | TEST | P0 | `tests/test_observability.py` | zero-dep 可启用 + 3 exporter 全部可输出 | 04 |
 | P3-W22-06 | Changelog 自动化 | TOOL | P1 | `git-cliff.toml` | `git-cliff --tag 0.7.0` 生成 changelog + spec 变更单列 | — |
 | P3-W22-07 | Tag v0.7.0 | GOV | P0 | git tag `v0.7.0` | CI 全绿 + 19 项验收通过 | 全部 |
@@ -418,16 +418,16 @@ P3-Low      → 可推迟到下一阶段
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P4-W23-01 | ProtocolProber 实现 | CODE | P1 | `tstdx/protocol/prober.py` | 限速 1 req/s + 仅非交易时段 + 单次上限 100 + 自动归档未知命令 | P2-W8-05 |
-| P4-W23-02 | ProtocolSniffer 完善 | CODE | P1 | `tstdx/transport/sniff.py` | 运行时自动归档未知命令 + 生成 spec 草案 + 写入 `PROTOCOL_SPEC/UNKNOWN/` | P1-W4-06 |
+| P4-W23-01 | ProtocolProber 实现 | CODE | P1 | `atst/protocol/prober.py` | 限速 1 req/s + 仅非交易时段 + 单次上限 100 + 自动归档未知命令 | P2-W8-05 |
+| P4-W23-02 | ProtocolSniffer 完善 | CODE | P1 | `atst/transport/sniff.py` | 运行时自动归档未知命令 + 生成 spec 草案 + 写入 `PROTOCOL_SPEC/UNKNOWN/` | P1-W4-06 |
 | P4-W23-03 | Spec 补全（基于 Prober 产出） | SPEC | P2 | `PROTOCOL_SPEC/7709/` 补充 | 所有 Prober 发现的新命令升级为 L1 spec + status=accepted | 01, 02 |
 
 ### W24：Profile 自动探测 + 性能基准
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P4-W24-01 | ProfileDetector 六步探测 | CODE | P0 | `tstdx/profile/detect.py` | 记录长度→价格缩放→编码类型→成交量单位→时间编码→字符编码 + 置信度分级 | P2-W8-02 |
-| P4-W24-02 | 预设 Profile 库 | CODE | P0 | `tstdx/profile/presets.py` | A 股/港股/美股/期货/期权/外汇/指数/基金/债券/北交所 预设全 | 01 |
+| P4-W24-01 | ProfileDetector 六步探测 | CODE | P0 | `atst/profile/detect.py` | 记录长度→价格缩放→编码类型→成交量单位→时间编码→字符编码 + 置信度分级 | P2-W8-02 |
+| P4-W24-02 | 预设 Profile 库 | CODE | P0 | `atst/profile/presets.py` | A 股/港股/美股/期货/期权/外汇/指数/基金/债券/北交所 预设全 | 01 |
 | P4-W24-03 | 兼容性矩阵测试 | TEST | P0 | `tests/compatibility/test_matrix.py` | 12 市场 × 10 品种 × 12 周期 + 自动探测准确率 ≥ 99% | 01, 02 |
 | P4-W24-04 | 性能基准回归 | TEST | P1 | `benches/` 全量 | Rust 日线 ≥ 200K 条/秒 + 网络编解码 < 1ms + 与 v0.7 基准不退化 | P3-W17-03 |
 
@@ -435,11 +435,11 @@ P3-Low      → 可推迟到下一阶段
 
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
-| P4-W25-01 | 凭据存储后端 | CODE | P1 | `tstdx/security/credentials.py` | system keyring → env → encrypted file 三级 + 自动选择 | P2-W15-07 |
+| P4-W25-01 | 凭据存储后端 | CODE | P1 | `atst/security/credentials.py` | system keyring → env → encrypted file 三级 + 自动选择 | P2-W15-07 |
 | P4-W25-02 | 抓包法律自检 | CODE | P0 | `tools/capture.py` `_legal_self_check()` | 交易时段阻断 + CLA 签署 + 只抓自有流量 | P0-W2-02 |
-| P4-W25-03 | 数据来源声明嵌入 | CODE | P1 | `tstdx/types.py` Bar/Quote dataclass | 所有市场数据 model 自动带 `source` + `license` + `__copyright_notice__` | — |
-| P4-W25-04 | 数据导出版权注入 | TOOL | P1 | `tstdx data stamp` CLI | 导出 CSV/Parquet 自动附带 `LICENSE_HEADER.txt` | 03 |
-| P4-W25-05 | Telemetry 脱敏 | CODE | P0 | `tstdx/feedback/telemetry.py` 7 步脱敏 | IP/主机名/用户名/路径/内网段/数据样本/stack 变量名 全脱 | P2-W15-02 |
+| P4-W25-03 | 数据来源声明嵌入 | CODE | P1 | `atst/types.py` Bar/Quote dataclass | 所有市场数据 model 自动带 `source` + `license` + `__copyright_notice__` | — |
+| P4-W25-04 | 数据导出版权注入 | TOOL | P1 | `atst data stamp` CLI | 导出 CSV/Parquet 自动附带 `LICENSE_HEADER.txt` | 03 |
+| P4-W25-05 | Telemetry 脱敏 | CODE | P0 | `atst/feedback/telemetry.py` 7 步脱敏 | IP/主机名/用户名/路径/内网段/数据样本/stack 变量名 全脱 | P2-W15-02 |
 
 ### W26：文档完善 + 真实环境冒烟
 
@@ -465,8 +465,8 @@ P3-Low      → 可推迟到下一阶段
 | ID | 任务 | 类型 | 优先级 | 产出物 | 验收标准 | 依赖 |
 |---|---|---|---|---|---|---|
 | P4-W28-01 | 发版硬门槛检查 | GOV | P0 | 发版 checklist | §32.3 全 7 项满足：24 项验收 / Golden ≥ 500 / 冒烟 30 天 / 治理 / LICENSE_HEADER / README+Quickstart+Cookbook 6 / Migration mootdx | P4-W27-02 |
-| P4-W28-02 | PyPI stable 发布 | CODE | P0 | `twine upload tstdx-1.0.0-*` | 12 组合 wheel + GPG 签名 + `--require-hashes` 可校验 | 01 |
-| P4-W28-03 | Docker Hub 发布 | CODE | P0 | `docker push tstdx:1.0.0` | 多标签（1.0/1.0.0/latest） + README 自动同步 | 02 |
+| P4-W28-02 | PyPI stable 发布 | CODE | P0 | `twine upload atst-1.0.0-*` | 12 组合 wheel + GPG 签名 + `--require-hashes` 可校验 | 01 |
+| P4-W28-03 | Docker Hub 发布 | CODE | P0 | `docker push atst:1.0.0` | 多标签（1.0/1.0.0/latest） + README 自动同步 | 02 |
 | P4-W28-04 | 发布公告 | DOC | P0 | GitHub Release + Blog | Changelog + 迁移指南 + 亮点 + 已知限制 | 02, 03 |
 | P4-W28-05 | Tag v1.0.0 | GOV | P0 | git tag `v1.0.0` | — | 全部 |
 

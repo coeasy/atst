@@ -4,10 +4,10 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
-import tstdx.cli as cli
-from tstdx.errors import WebSourceError
-from tstdx.integration.mcp import MCPServer
-from tstdx.integration.runtime_ws import RuntimeJsonRpcHandler as JsonRpcHandler
+import atst.cli as cli
+from atst.errors import WebSourceError
+from atst.integration.mcp import MCPServer
+from atst.integration.runtime_ws import RuntimeJsonRpcHandler as JsonRpcHandler
 
 
 def _assert_fail_closed_envelope(data: dict[str, Any], *, code: str) -> None:
@@ -170,6 +170,6 @@ def test_ws_protocol_failures_carry_the_same_envelope_as_mcp() -> None:
 
 
 def test_integration_package_exports_canonical_ws_handler() -> None:
-    from tstdx.integration.runtime_ws import RuntimeJsonRpcHandler as CanonicalHandler
+    from atst.integration.runtime_ws import RuntimeJsonRpcHandler as CanonicalHandler
 
     assert JsonRpcHandler is CanonicalHandler

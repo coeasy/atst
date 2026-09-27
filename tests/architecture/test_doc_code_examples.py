@@ -5,8 +5,8 @@
 写成 ``queue_size=``（真名 ``max_queue``）、把 ``ReconnectPolicy`` 写成
 ``max_retries/backoff_base/backoff_max``（真名 ``base/cap/max_attempts``），
 ``docs/cookbook/01_bulk_kline.md`` 能 ``TdxClient(pool_size=4)``。照抄即 ``TypeError``，
-而 14 轮门禁一路绿灯。这一格把这些块当代码对待：块里从 ``tstdx`` 导入的名字、
-由 ``tstdx`` 构造出来的对象，其**属性存在性**与**入参形状**一律现读 ``inspect``。
+而 14 轮门禁一路绿灯。这一格把这些块当代码对待：块里从 ``atst`` 导入的名字、
+由 ``atst`` 构造出来的对象，其**属性存在性**与**入参形状**一律现读 ``inspect``。
 
 与兄弟判据的分工：``test_doc_code_consistency`` 管 import 是否解析、点号链是否落位、
 CLI 示例是否跑得起来；本文件管**已经解析得到的名字被怎么用**。
@@ -34,7 +34,7 @@ from typing import Any
 
 from tests.architecture.test_doc_code_consistency import ROOT, active_docs
 
-TSTDX_ROOT = ROOT / "tstdx"
+ATST_ROOT = ROOT / "atst"
 
 #: 围栏语言标记 → 按 python 处理。兄弟判据的 ``fenced_code()`` 只回代码体、拿不到
 #: 语言标记，而这里必须区分 ````` python 与 ````` bash/yaml`````，故自开一个带语言的扫描器。
@@ -48,14 +48,14 @@ def _module_of(node: ast.Import | ast.ImportFrom) -> str | None:
 
 
 def _python_blocks(path: Path) -> list[tuple[int, str, ast.Module | None]]:
-    """``[(块首行, 原文, 解析树)]``：只收声明为 python（或裸围栏）且含 tstdx 的块。"""
+    """``[(块首行, 原文, 解析树)]``：只收声明为 python（或裸围栏）且含 atst 的块。"""
     text = path.read_text(encoding="utf-8")
     out: list[tuple[int, str, ast.Module | None]] = []
     for match in _FENCE.finditer(text):
         lang, body = match.group(1).lower(), match.group(2)
         if lang not in {"", "python", "py", "python3"}:
             continue
-        if "tstdx" not in body:
+        if "atst" not in body:
             continue
         start = text[: match.start()].count("\n") + 2  # 跳过围栏行
         try:
@@ -110,7 +110,7 @@ class _Env:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    if not alias.name.startswith("tstdx"):
+                    if not alias.name.startswith("atst"):
                         continue
                     key = alias.asname or alias.name
                     try:
@@ -119,7 +119,7 @@ class _Env:
                         continue
             elif isinstance(node, ast.ImportFrom):
                 module = _module_of(node)
-                if module is None or not module.startswith("tstdx"):
+                if module is None or not module.startswith("atst"):
                     continue
                 for alias in node.names:
                     key = alias.asname or alias.name
@@ -183,14 +183,14 @@ def _violations() -> list[str]:
     return sorted(set(rows))
 
 
-_TSTDX_ROOT = TSTDX_ROOT
+_ATST_ROOT = ATST_ROOT
 #: 客户端构造口的 ``**pool_kwargs`` 原样交给连接池，签名层看不见下游——于是
 #: ``TdxClient(pool_size=4)``（真名 ``slots_per_host``）能从尺子下走过去，
 #: 第 15 轮变异 M3 量的正是这一格（红=0）。这里把那一跳的下游点名，入参形状按
 #: 下游真签名判；配对关系不靠注释维持，由下面的现读源码判据守着。
 _FORWARDED_KWARGS: dict[str, str] = {
-    "TdxClient": "tstdx.transport.pool.ConnectionPool",
-    "AsyncTdxClient": "tstdx.transport.async_.AsyncConnectionPool",
+    "TdxClient": "atst.transport.pool.ConnectionPool",
+    "AsyncTdxClient": "atst.transport.async_.AsyncConnectionPool",
 }
 
 
@@ -263,12 +263,12 @@ def _call_violations(relative: str, start: int, node: ast.Call, env: _Env) -> li
 
 
 def test_live_doc_code_blocks_reference_real_api() -> None:
-    """活文档 python 块里，从 tstdx 拿到的名字其属性与入参必须是真的。"""
+    """活文档 python 块里，从 atst 拿到的名字其属性与入参必须是真的。"""
     assert not _violations(), "活文档代码块引用了不存在的 API：\n" + "\n".join(_violations())
 
 
 def test_gate_scans_a_meaningful_number_of_blocks() -> None:
-    """自洁：扫描面不能空转——至少量到 20 个含 tstdx 绑定的代码块。"""
+    """自洁：扫描面不能空转——至少量到 20 个含 atst 绑定的代码块。"""
     scanned = 0
     for path in active_docs():
         for _start, _block, tree in _python_blocks(path):
@@ -279,9 +279,9 @@ def test_gate_scans_a_meaningful_number_of_blocks() -> None:
 
 #: 当年漏掉的那四类写法，原样塞回来当正控（模块 docstring 记着它们的出处）。
 _PLANTED = """
-from tstdx.streaming.engine import StreamEngine
-from tstdx.streaming.base import ReconnectPolicy
-from tstdx.client import TdxClient
+from atst.streaming.engine import StreamEngine
+from atst.streaming.base import ReconnectPolicy
+from atst.client import TdxClient
 engine = StreamEngine(queue_size=10)
 policy = ReconnectPolicy(max_retries=3)
 client = TdxClient()
@@ -331,7 +331,7 @@ def test_the_pool_forwarding_pairing_still_holds() -> None:
     """
     for qualname, target in _FORWARDED_KWARGS.items():
         callsite = target.rpartition(".")[2]
-        origin = inspect.getsourcefile(_resolve("tstdx.client", qualname))
+        origin = inspect.getsourcefile(_resolve("atst.client", qualname))
         assert origin is not None, f"{qualname} 的源码文件都定位不到，配对无从可验"
         source = Path(origin).resolve()
         relative = source.relative_to(ROOT).as_posix()

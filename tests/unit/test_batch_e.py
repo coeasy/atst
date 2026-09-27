@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """批次 E 可即启项测试：E1 并发批采 / E3 代码表导出。
@@ -14,8 +14,8 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-from tstdx.client import TdxClient  # noqa: E402
-from tstdx.errors import ValidationError  # noqa: E402
+from atst.client import TdxClient  # noqa: E402
+from atst.errors import ValidationError  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -58,7 +58,7 @@ class TestQuotesConcurrent:
     def test_concurrent_errors_not_evaporated(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """C3 回归：并发两只坏一只好，last_errors 恰含两条错误（不再被
         并发 quotes() 的每调用重置蒸发）。"""
-        from tstdx.errors import ConnectionFailed
+        from atst.errors import ConnectionFailed
 
         client = TdxClient()
         bad = {"sh600001", "sh600002"}
@@ -99,7 +99,7 @@ class TestQuotesConcurrent:
 
 class TestAsyncQuotesConcurrent:
     def test_async_mirror(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from tstdx.client import AsyncTdxClient
+        from atst.client import AsyncTdxClient
 
         client = AsyncTdxClient()
 
@@ -118,8 +118,8 @@ class TestAsyncQuotesConcurrent:
 
     def test_async_errors_not_evaporated(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """C3 异步镜像：并发失败标的的错误一次性落入 last_errors。"""
-        from tstdx.client import AsyncTdxClient
-        from tstdx.errors import ConnectionFailed
+        from atst.client import AsyncTdxClient
+        from atst.errors import ConnectionFailed
 
         client = AsyncTdxClient()
         bad = {"sh600001", "sh600002"}

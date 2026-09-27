@@ -1,4 +1,4 @@
-from tstdx.catalog.provider_guard import (
+from atst.catalog.provider_guard import (
     ProviderExecutionIdentity,
     validate_execution_identity,
 )

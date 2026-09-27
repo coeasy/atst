@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """同步池 ↔ 异步池的熔断行为对拍（第 27 轮 A4，V19 §3 B-2 / §6 D-4）。
@@ -33,11 +33,11 @@ from typing import Any
 
 import pytest
 
-from tstdx.errors import ConnectionFailed
-from tstdx.protocol.commands import Family
-from tstdx.transport import async_ as async_module
-from tstdx.transport import pool as sync_module
-from tstdx.transport.hosts import HostEntry
+from atst.errors import ConnectionFailed
+from atst.protocol.commands import Family
+from atst.transport import async_ as async_module
+from atst.transport import pool as sync_module
+from atst.transport.hosts import HostEntry
 
 #: 阈值与冷却从同步池读；异步池那几个常数是否同一份，由本文件最后一条判据钉住。
 COOLDOWN = sync_module.CIRCUIT_COOLDOWN_SECONDS
@@ -299,10 +299,10 @@ def test_generation_attribution_cannot_be_omitted(module: Any) -> None:
     ``_mark_failure`` / ``_mark_success`` 的形参是 ``generation: int | None = None``，
     同步 :meth:`ConnectionPool._slot_is_current` 开头一句 ``if generation is None:
     return True``，异步两处用 ``generation is None or ...`` / ``generation is not None
-    and not ...``，:meth:`~tstdx.transport.pool.ConnectionPool._release_probe_token`
+    and not ...``，:meth:`~atst.transport.pool.ConnectionPool._release_probe_token`
     同一形状。漏传一次，HALF_OPEN 探测令牌与熔断计数就会照常推进一个已经退役的槽位。
 
-    分母现读（AST 扫全仓 ``tstdx/`` 与 ``tests/``）：四件套在生产链路上共 **45** 处
+    分母现读（AST 扫全仓 ``atst/`` 与 ``tests/``）：四件套在生产链路上共 **45** 处
     调用点（``_mark_failure`` 14 + ``_mark_success`` 8 + ``_release_probe_token`` 17 +
     ``_slot_is_current`` 6）。其中 mypy 现报 **18** 处传的是类型上可为 ``None`` 的局部量，
     且它们全都落在"租约没有建立起来"的那两个 ``except`` 分支上——赋值那一行没走完，那里

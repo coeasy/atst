@@ -1,14 +1,14 @@
 # astock-data-toolkit 对标补全 — 覆盖与缺口分析
 
-> **归档说明（2026-09-23）**：本文是当时的对标/审计快照，**不是现行契约**。文中以现在时出现的 `UnifiedQuoteAPI` 统一门面（包括「新增 N 个门面方法」一类清单与给下游的校验指令）已随 v16 Phase 2 物理删除；今天的对外接口面是 `tstdx.client.TdxClient` / `Client` 与 capability 目录，口径见 [interfaces.md](../../api/interfaces.md) 与 [ARCHITECTURE.md](../../ARCHITECTURE.md)。本文的点位数、方法名与端点清单按原文留存而不逐条订正 —— 归档负责说明当时为什么这么做，不负责说明现在怎么用。
+> **归档说明（2026-09-23）**：本文是当时的对标/审计快照，**不是现行契约**。文中以现在时出现的 `UnifiedQuoteAPI` 统一门面（包括「新增 N 个门面方法」一类清单与给下游的校验指令）已随 v16 Phase 2 物理删除；今天的对外接口面是 `atst.client.TdxClient` / `Client` 与 capability 目录，口径见 [interfaces.md](../../api/interfaces.md) 与 [ARCHITECTURE.md](../../ARCHITECTURE.md)。本文的点位数、方法名与端点清单按原文留存而不逐条订正 —— 归档负责说明当时为什么这么做，不负责说明现在怎么用。
 
 > 对标对象：<https://github.com/tiantianlaolao/astock-data-toolkit>
 > （A 股全市场数据本地化工具箱：行情 / 估值 / 财务 / 分红 / 公告 / 增减持）
-> 目标：延续 efinance 对标工作，补齐 tstdx 此前缺失的「基本面衍生」数据接口。
+> 目标：延续 efinance 对标工作，补齐 atst 此前缺失的「基本面衍生」数据接口。
 
-## 一、工具箱数据域 → tstdx 状态总览
+## 一、工具箱数据域 → atst 状态总览
 
-| 工具箱数据域 | 工具箱后端 | tstdx 对应接口 | 状态 |
+| 工具箱数据域 | 工具箱后端 | atst 对应接口 | 状态 |
 |---|---|---|---|
 | 全 A 股名单 (`stock_list`) | akshare | `security_list` / `security_list_all` | ✅ 已覆盖 |
 | 指数日线 (`index_daily`) | akshare | `klines(index)` | ✅ 已覆盖 |
@@ -46,16 +46,16 @@
 ## 四、与工具箱实现的差异（已知取舍）
 
 1. **估值粒度**：工具箱为 baostock+巨潮日频序列（`total_mv = close × total_share`，
-   逐日）；tstdx 东财版为**季度报表快照**（取首项即最新估值）。如需日频序列，
+   逐日）；atst 东财版为**季度报表快照**（取首项即最新估值）。如需日频序列，
    需另接 baostock 后端（非东财体系），可后续扩展。
 2. **增减持源**：工具箱直连**三所官方披露 API**（上交所/深交所/北交所，最权威、
-   含北交所）；tstdx 用东财聚合接口（单入口、免反爬），字段以「股东/董监高增减持」
+   含北交所）；atst 用东财聚合接口（单入口、免反爬），字段以「股东/董监高增减持」
    为主。如需三所原始明细（含 `actor`/`relation` 等），可后续补交易所 scraper。
-3. **财务摘要**：工具箱为**新浪 28 指标**（经 akshare）；tstdx 用东财**主要指标**
+3. **财务摘要**：工具箱为**新浪 28 指标**（经 akshare）；atst 用东财**主要指标**
    精简版（字段略少但稳定）。如需完整 28 指标，可后续接新浪 `getFinanceReport2022`
    端点（需 UA + 限速，参考工具箱踩坑实录 #06）。
 4. **公告**：工具箱落巨潮全量库（约 630 万条，需翻页终止判定 `hasMore` 恒 true）；
-   tstdx 提供按股票查询的便捷接口，未做全量回填。
+   atst 提供按股票查询的便捷接口，未做全量回填。
 
 ## 五、测试
 

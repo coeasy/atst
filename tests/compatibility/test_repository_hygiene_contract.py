@@ -40,5 +40,5 @@ def test_tracked_benchmark_baselines_are_not_hidden_by_broad_ignore() -> None:
 def test_retired_native_source_tree_is_not_documented_as_build_output() -> None:
     text = (_ROOT / ".gitignore").read_text(encoding="utf-8")
 
-    assert "tstdx_native/target" not in text
-    assert "tstdx_native/Cargo.lock" not in text
+    assert "atst_native/target" not in text
+    assert "atst_native/Cargo.lock" not in text

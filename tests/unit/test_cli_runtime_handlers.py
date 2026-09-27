@@ -1,6 +1,6 @@
 """CLI 处理器接线测试（v17 Phase 5 收口）。
 
-覆盖 :mod:`tstdx.cli.runtime_commands` 中此前无测试的分支：
+覆盖 :mod:`atst.cli.runtime_commands` 中此前无测试的分支：
 
 * ``cmd_*``：唯一业务入口 ``Client`` 的选择器透传（provider/channel/policy/currentness）
   与结果信封序列化，以及连接释放；
@@ -20,9 +20,9 @@ from typing import Any
 
 import pytest
 
-from tstdx.cli import runtime_commands as rc
-from tstdx.errors import TdxError, ValidationError
-from tstdx.result import Provenance, ProvenanceKind, QueryResult, ResultMeta
+from atst.cli import runtime_commands as rc
+from atst.errors import TdxError, ValidationError
+from atst.result import Provenance, ProvenanceKind, QueryResult, ResultMeta
 
 pytestmark = pytest.mark.unit
 
@@ -102,7 +102,7 @@ class FakeClient:
 
 @pytest.fixture()
 def fake_client(monkeypatch: pytest.MonkeyPatch) -> type[FakeClient]:
-    import tstdx.client.api as client_api_mod
+    import atst.client.api as client_api_mod
 
     FakeClient.calls = []
     FakeClient.instances = []
@@ -125,7 +125,7 @@ class TestV13QueryHandlers:
     """``cmd_*`` 只经唯一入口 Client，选择器逐项透传。"""
 
     def test_version(self, capsys: pytest.CaptureFixture[str]) -> None:
-        from tstdx import __version__
+        from atst import __version__
 
         assert rc.cmd_version(_ns()) == 0
         assert capsys.readouterr().out.strip() == __version__
@@ -260,13 +260,13 @@ class TestHostsHandlers:
 
     @staticmethod
     def _speedtest_mod() -> Any:
-        """``tstdx.transport.speedtest`` 属性被同名函数遮蔽，只能走 sys.modules。"""
+        """``atst.transport.speedtest`` 属性被同名函数遮蔽，只能走 sys.modules。"""
         import importlib
 
-        return importlib.import_module("tstdx.transport.speedtest")
+        return importlib.import_module("atst.transport.speedtest")
 
     def test_hosts_audit_assembles_argv(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import tstdx.tools.host_audit as host_audit_mod
+        import atst.tools.host_audit as host_audit_mod
 
         captured: dict[str, Any] = {}
 
@@ -307,7 +307,7 @@ class TestHostsHandlers:
         ]
 
     def test_hosts_audit_skips_absent_flags(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import tstdx.tools.host_audit as host_audit_mod
+        import atst.tools.host_audit as host_audit_mod
 
         captured: dict[str, Any] = {}
 
@@ -324,7 +324,7 @@ class TestHostsHandlers:
     def test_hosts_scan_prints_table(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        import tstdx.transport.hosts as hosts_mod
+        import atst.transport.hosts as hosts_mod
 
         speedtest_mod = self._speedtest_mod()
         monkeypatch.setattr(hosts_mod, "resolve_hosts", lambda *a, **kw: [self._entry("a")])
@@ -346,7 +346,7 @@ class TestHostsHandlers:
     def test_hosts_list_prints_table(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        import tstdx.transport.hosts as hosts_mod
+        import atst.transport.hosts as hosts_mod
 
         monkeypatch.setattr(
             hosts_mod,
@@ -360,7 +360,7 @@ class TestHostsHandlers:
     def test_server_test_prints_table(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        import tstdx.transport.hosts as hosts_mod
+        import atst.transport.hosts as hosts_mod
 
         speedtest_mod = self._speedtest_mod()
         monkeypatch.setattr(hosts_mod, "resolve_hosts", lambda *a, **kw: [self._entry("a")])
@@ -411,10 +411,10 @@ class TestProbeHandler:
         prober: Any = None,
         client: Any = None,
     ) -> None:
-        import tstdx.client.factory as factory_mod
-        import tstdx.protocol.prober as prober_mod
+        import atst.client.factory as factory_mod
+        import atst.protocol.prober as prober_mod
 
-        #: 直连命令的构造口是工厂注册表，不是 ``tstdx.client.TdxClient`` 这个名字——
+        #: 直连命令的构造口是工厂注册表，不是 ``atst.client.TdxClient`` 这个名字——
         #: 改名字拦不住构造，改注册表才拦得住（判据见 test_cli_connection_contract.py）。
         monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "stock", client or FakeTdxSession)
         monkeypatch.setattr(prober_mod, "Prober", prober)
@@ -426,7 +426,7 @@ class TestProbeHandler:
         assert "非法命令号" in err and "用法" in err
 
     def test_client_error_exit_2(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        import tstdx.client.factory as factory_mod
+        import atst.client.factory as factory_mod
 
         def boom(*a: Any, **kw: Any) -> None:
             raise TdxError("no host reachable")
@@ -543,7 +543,7 @@ class TestProbeHandler:
 class FakeTdxSession:
     """``TdxClient`` 替身：只提供 CLI 用到的方法。
 
-    直连命令现在只经 ``tstdx.cli._common.family_client`` 交出，收尾动作只有 ``close()``
+    直连命令现在只经 ``atst.cli._common.family_client`` 交出，收尾动作只有 ``close()``
     —— ``__enter__``/``__exit__`` 不再是这条链上的一件事，所以替身也不装它们。
     """
 
@@ -579,7 +579,7 @@ class FakeTdxSession:
 
 @pytest.fixture()
 def fake_tdx(monkeypatch: pytest.MonkeyPatch) -> type[FakeTdxSession]:
-    import tstdx.client.factory as factory_mod
+    import atst.client.factory as factory_mod
 
     FakeTdxSession.behavior = {}
     FakeTdxSession.closes = []
@@ -611,7 +611,7 @@ class TestTransportHandlers:
         assert fake_tdx.behavior["block_calls"] == [(1, 0), (1, 1000)]
 
     def test_blocks_error_exit_2(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        import tstdx.client.factory as factory_mod
+        import atst.client.factory as factory_mod
 
         def boom(*a: Any, **kw: Any) -> None:
             raise RuntimeError("socket down")
@@ -623,7 +623,7 @@ class TestTransportHandlers:
     def test_list_market_alias_and_table(
         self, fake_tdx: type[FakeTdxSession], capsys: pytest.CaptureFixture[str]
     ) -> None:
-        from tstdx.client import _PREFIX_MARKET
+        from atst.client import _PREFIX_MARKET
 
         fake_tdx.behavior = {"rows": [{"code": "600000"}]}
         assert rc._cmd_list(_ns(market="sh", start=0, count=100, json=False)) == 0
@@ -641,7 +641,7 @@ class TestTransportHandlers:
         assert rc._cmd_list(_ns(market="1", start=0, count=10, json=False)) == 0
         assert "无代码表返回" in capsys.readouterr().out
 
-        import tstdx.client.factory as factory_mod
+        import atst.client.factory as factory_mod
 
         def boom(*a: Any, **kw: Any) -> None:
             raise RuntimeError("registry down")
@@ -675,7 +675,7 @@ class TestTransportHandlers:
     def test_goods_quote_bars_and_empty(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        import tstdx.client.factory as factory_mod
+        import atst.client.factory as factory_mod
 
         built: list[dict[str, Any]] = []
 
@@ -725,7 +725,7 @@ class TestTransportHandlers:
         assert "无商品数据返回" in capsys.readouterr().out
 
     def test_goods_error_exit_2(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        import tstdx.client.factory as factory_mod
+        import atst.client.factory as factory_mod
 
         def boom(**kw: Any) -> None:
             raise RuntimeError("goods offline")
@@ -738,7 +738,7 @@ class TestTransportHandlers:
     def test_f10_catalog_sections_and_empty(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        import tstdx.client.factory as factory_mod
+        import atst.client.factory as factory_mod
 
         class Section:
             def __init__(self, title: str, text: str) -> None:
@@ -780,7 +780,7 @@ class TestTransportHandlers:
         assert "【财务分析】" in capsys.readouterr().out
 
     def test_f10_error_exit_2(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        import tstdx.client.factory as factory_mod
+        import atst.client.factory as factory_mod
 
         def boom(**kw: Any) -> None:
             raise RuntimeError("f10 unavailable")
@@ -1039,7 +1039,7 @@ class TestFeedbackHandler:
     """feedback 薄壳：提交成功分支与统计表格（不依赖真实环境变量）。"""
 
     def test_submit_success(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        import tstdx.feedback as feedback_mod
+        import atst.feedback as feedback_mod
 
         recorded: dict[str, Any] = {}
 
@@ -1060,7 +1060,7 @@ class TestFeedbackHandler:
         assert recorded["context"] == {"source": "cli"}
 
     def test_stats_table(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        import tstdx.feedback as feedback_mod
+        import atst.feedback as feedback_mod
 
         class FakeStats:
             def snapshot(self) -> dict[str, Any]:

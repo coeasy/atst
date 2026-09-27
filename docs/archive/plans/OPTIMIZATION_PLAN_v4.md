@@ -1,7 +1,7 @@
-# tstdx 文档-代码一致性治理与工具链改进计划 v4
+# atst 文档-代码一致性治理与工具链改进计划 v4
 
 > 版本：v4 · 2026-09-04
-> 基线：1.4.0（`pyproject.toml:7` / `tstdx/__init__.py:50`），工作副本 `P:\github_public\tstdx`
+> 基线：1.4.0（`pyproject.toml:7` / `atst/__init__.py:50`），工作副本 `P:\github_public\atst`
 > 上一版：v3（对标竞品功能扩展；其批次前缀为 B0 / P0-x / P1-x / P2-x，其中 v3-B0、v3-P0-1、v3-P0-2、v3-P1-2、v3-P1-3、v3-P2-1 已收口，v3-P0-3、v3-P0-4、v3-P1-1、v3-P2-2、v3-P2-3 待实现）
 > **本版范围声明**：v4 与 v3 **正交** —— v3 谈"加什么能力"，v4 只谈**文档陈述与代码事实的偏差、以及偏差背后的工具链缺陷**。不新增业务功能，不动单位/时区/降级契约（DESIGN 生命线）。
 
@@ -11,7 +11,7 @@
 
 ### 0.1 问题来源
 
-对 `P:\github_public\tstdx` 全量 Markdown **41 份**（仓库根 8 + `docs/` 28〔含 `archive/` 5〕 + `PROTOCOL_SPEC/` 2 + `ORIGINALITY/` 3）逐份通读，并对其中出现的**每一个量化陈述**在仓库内实跑复核（`spec_audit`、`pytest --collect-only`、AST/正则静态计数、`import` 实测）。
+对 `P:\github_public\atst` 全量 Markdown **41 份**（仓库根 8 + `docs/` 28〔含 `archive/` 5〕 + `PROTOCOL_SPEC/` 2 + `ORIGINALITY/` 3）逐份通读，并对其中出现的**每一个量化陈述**在仓库内实跑复核（`spec_audit`、`pytest --collect-only`、AST/正则静态计数、`import` 实测）。
 
 ### 0.0 编号约定（先自证不与既有体系撞号）
 
@@ -33,7 +33,7 @@
 | M1 | 协议命令账本                  | 85                          | **85** ✅                      | `len(COMMANDS)`                               |
 | M2 | L1 解析器注册项               | 61（README:9,107）            | **62**                        | `@register_parser` 计数                         |
 | M3 | PROTOCOL_SPEC YAML      | 「7709 族 8 条 + UNKNOWN」（README:148） | **44 份文件 / 42 个唯一 spec_id** | glob + `spec_audit` summary                   |
-| M4 | spec 覆盖率                | 94.7%（OPTIMIZATION_PLAN_v2）  | **81.0%**                     | `python -m tstdx.tools.spec_audit`            |
+| M4 | spec 覆盖率                | 94.7%（OPTIMIZATION_PLAN_v2）  | **81.0%**                     | `python -m atst.tools.spec_audit`            |
 | M5 | HTTP 端点                 | 42                          | **42** ✅                     | 路由装饰器计数                                       |
 | M6 | WS JSON-RPC 方法          | 19                          | **19** ✅                     | `JsonRpcHandler.METHODS`                      |
 | M7 | MCP 工具                  | 12（README:17）               | **23**                        | `mcp_server.py` 工具声明                           |
@@ -43,7 +43,7 @@
 | M11 | 测试规模                    | 76 文件（README:169）/ 1100+（v3） | **105 文件 / 2,004 用例**       | `pytest --collect-only`                       |
 | M12 | Golden 语料               | 530 payload                 | **530 JSON** ✅               | `tests/golden/**` glob                        |
 | M13 | 异常类 / 错误码               | 40+ / E1-E9                 | **42 类 / 39 码 / E1-E9** ✅   | `errors.py` AST                               |
-| M14 | Web 源模块 / 源类            | 17 模块 / 45 类（README:12, api/ADR-004） | **20 模块 / 48 类** | `tstdx/web/*.py`、`^class \w+Source` |
+| M14 | Web 源模块 / 源类            | 17 模块 / 45 类（README:12, api/ADR-004） | **20 模块 / 48 类** | `atst/web/*.py`、`^class \w+Source` |
 | M15 | CI job 数                | README:170 记「六步门禁」（✅ 与 `make gates` 一致），但未说明 CI 实际 job 数 | **ci.yml 10 job** + wheels + native | workflow 结构                 |
 | M16 | 对抗矩阵规模                  | 9 payload × 85 命令           | 命令账本 85，实际注册解析 62（INDUSTRIAL 文档记 610 组合） | 口径待统一                     |
 
@@ -86,13 +86,13 @@
 
 **改进方案（三选一，推荐 A）**：
 
-- **A. 主键改为 `(family, spec_id)`**：`load_all_specs`（**定义在 `tstdx/tools/codegen.py:76`，由 `spec_audit.py:35` 导入**）返回类型改为 `dict[tuple[str,str], dict]`；`SpecAuditResult` 增 `family` 字段；输出表增列；`--json` 保持向后兼容（只增键）。**改动面比想象大，涉及 4 个调用点**：`codegen.py:444`、`codegen.py:479`、`spec_audit.py:182`、`tests/test_spec_coverage.py:28`，以及 `tstdx/tools/__init__.py:12,24` 的再导出。
+- **A. 主键改为 `(family, spec_id)`**：`load_all_specs`（**定义在 `atst/tools/codegen.py:76`，由 `spec_audit.py:35` 导入**）返回类型改为 `dict[tuple[str,str], dict]`；`SpecAuditResult` 增 `family` 字段；输出表增列；`--json` 保持向后兼容（只增键）。**改动面比想象大，涉及 4 个调用点**：`codegen.py:444`、`codegen.py:479`、`spec_audit.py:182`、`tests/test_spec_coverage.py:28`，以及 `atst/tools/__init__.py:12,24` 的再导出。
 - B. 给 TRADE 族迁号段（如 `0x0F00+`）：改 6 份 draft spec + `tests/trade/`，但**只是绕过，不解决"未来新族还会撞"的结构问题**，且与"命令号即事实"的协议语义不符（真实 TDX 交易通道命令号本就是 0x0001 级）。
 - C. 仅加冲突检测：`load_all_specs` 遇到重复 spec_id 时 warn/fail。最小改动，但覆盖率仍按去重后统计。
 
 **验收**：
 ```bash
-python -m tstdx.tools.spec_audit --json | python -c "
+python -m atst.tools.spec_audit --json | python -c "
 import json,sys; d=json.load(sys.stdin)
 assert d['summary']['total_specs'] == 44, d['summary']['total_specs']
 assert sum(1 for r in d['results'] if r['spec_id']=='0x0001')==2
@@ -114,23 +114,23 @@ print('ISS-01 OK')"
 | 111 | UnifiedQuoteAPI(46 方法…) | **58 方法** |
 | 148 | `PROTOCOL_SPEC/`（当前 7709 族 8 条 + UNKNOWN 归档） | **6 族 44 份**（7709 8 / 7727 15 / GOODS 11 / MAC 3 / F10 1 / TRADE 6）+ UNKNOWN 归档区 |
 | 169 | 全量测试（76 文件） | **105 文件 / 2004 用例** |
-| 163 | 降级链 `HTTP Web 源(45)` | **源(48 类)**，或按 ISS-07 改为指向 `tstdx list` |
+| 163 | 降级链 `HTTP Web 源(45)` | **源(48 类)**，或按 ISS-07 改为指向 `atst list` |
 
 > 行号基于 1.4.0 工作副本，落地时以 `grep -n` 重新定位，勿盲改。
 
 ### ISS-03 [P0] 两个新包在 README 架构图中缺席，`sinks` vs `sink` 混淆 【根因 R2】
 
-`tstdx/sinks/`（DataFrame/Parquet/DuckDB/CSV **输出层**）与 `tstdx/sink/`（**写回 vipdoc `.day` 二进制**，v3 P1-3 新增，编码为 `DayBarReader` 解码的精确逆变换）是两个方向相反的包。README:105-127 代码地图（`tstdx/` 树：105 起、127 止）只有 `sinks`（117 行）；`trade/`（协议探测，带实盘红线）同样未收录。
+`atst/sinks/`（DataFrame/Parquet/DuckDB/CSV **输出层**）与 `atst/sink/`（**写回 vipdoc `.day` 二进制**，v3 P1-3 新增，编码为 `DayBarReader` 解码的精确逆变换）是两个方向相反的包。README:105-127 代码地图（`atst/` 树：105 起、127 止）只有 `sinks`（117 行）；`trade/`（协议探测，带实盘红线）同样未收录。
 
 **风险具体化**：读者按 README 找"写 .day"会去改 `sinks/csv.py`，实际要改 `sink/local_day.py`；找不到 `trade/` 会重复实现交易探测。
 
-**改进**：README 代码地图补两行 + 新增一段 `> sink vs sinks` 辨析（各一句 + 指向各自 `__init__.py`）；`tstdx/sink/__init__.py` 与 `tstdx/sinks/__init__.py` 各自 docstring 首行**显式声明"本包非彼包"并交叉引用**（这是唯一能在 IDE 悬浮提示里救到读者的位置）。
+**改进**：README 代码地图补两行 + 新增一段 `> sink vs sinks` 辨析（各一句 + 指向各自 `__init__.py`）；`atst/sink/__init__.py` 与 `atst/sinks/__init__.py` 各自 docstring 首行**显式声明"本包非彼包"并交叉引用**（这是唯一能在 IDE 悬浮提示里救到读者的位置）。
 
 ### ISS-04 [P1] `DESIGN.md` 头部元信息与实际形态脱节 【根因 R2】
 
-现文（`DESIGN.md:1-6`）：标题「完整设计方案 v2.0」、文档状态「v2.0（重大升级）」、工作区 `D:\workspace\tstdx`、历史版本只指 `archive/DESIGN_v1.0.md`。
+现文（`DESIGN.md:1-6`）：标题「完整设计方案 v2.0」、文档状态「v2.0（重大升级）」、工作区 `D:\workspace\atst`、历史版本只指 `archive/DESIGN_v1.0.md`。
 
-实际：正文含 **33 章**，其中 20-32 章是 v3.0 补链、33 章是 v3.1 HTTP Web 源子系统；仓库现位于 `P:\github_public\tstdx`。v2.0 设计目标表中的命令数（36+）与实测（85/62）差 2.3 倍。
+实际：正文含 **33 章**，其中 20-32 章是 v3.0 补链、33 章是 v3.1 HTTP Web 源子系统；仓库现位于 `P:\github_public\atst`。v2.0 设计目标表中的命令数（36+）与实测（85/62）差 2.3 倍。
 
 **改进（不重写正文，只处理元信息与漂移表）**：
 1. 标题改「完整设计方案（当前 v3.1）」，头部增**版本分层表**：明确「第 1-19 章 = v2.0 基线 / 第 20-32 章 = v3.0 补链 / 第 33 章 = v3.1 增量」，避免读者以为 4102 行文档只服务 v2.0。
@@ -139,7 +139,7 @@ print('ISS-01 OK')"
 
 ### ISS-05 [P1] `ORIGINALITY/AUDIT_REPORT.md` 陈旧，且报告"已不存在的缺陷" 【根因 R4】
 
-现文：日期 2026-08-31、范围 84 文件、疑似抄袭 0、许可头 84/84、外部导入 17 条；"轻微问题"表仍列 `tstdx/compat/mootdx.py`（**已随 v1.2.0 移除**）。实际代码 114 文件。
+现文：日期 2026-08-31、范围 84 文件、疑似抄袭 0、许可头 84/84、外部导入 17 条；"轻微问题"表仍列 `atst/compat/mootdx.py`（**已随 v1.2.0 移除**）。实际代码 114 文件。
 
 **风险**：合规档案是"能不能安全分发"的凭据，一份引用了已删除文件的报告，会被评审者解读为**报告造假或从未复核**。
 
@@ -160,7 +160,7 @@ print('ISS-01 OK')"
 
 **后果（用户可感知）**：按文档排障的人会以为降级链只有 7 跳，在 `auto` 路由下反复等超时；实际源数已 48 类，`source_health` 端点返回的源列表长度都对不上文档描述。
 
-**改进**：排障文档**不写死源数量**，改为「执行 `tstdx list`（或 `GET /sources`）查看当前实际源清单」；数量类陈述统一指向 DC-2 生成的事实源。
+**改进**：排障文档**不写死源数量**，改为「执行 `atst list`（或 `GET /sources`）查看当前实际源清单」；数量类陈述统一指向 DC-2 生成的事实源。
 
 ### ISS-08 [P1] `docs/cookbook/README.md` 自相矛盾
 
@@ -182,9 +182,9 @@ ADR-001~005 塞在 `docs/adr/README.md` 里，006~010 在 `ADR-006-010.md`。后
 
 ### ISS-11 [P2] 文档内部事实冲突：`native.yml` 是否存在
 
-`docs/POTENTIAL_ISSUES_AND_PLAN.md` 归档记录称「该 workflow 实际不存在」，但仓库内 `.github/workflows/native.yml` 确实存在（`continue-on-error: true`）。`tstdx_native/` 源码目录确已删除，与 v1.4.0 M1b 弃用决议一致。
+`docs/POTENTIAL_ISSUES_AND_PLAN.md` 归档记录称「该 workflow 实际不存在」，但仓库内 `.github/workflows/native.yml` 确实存在（`continue-on-error: true`）。`atst_native/` 源码目录确已删除，与 v1.4.0 M1b 弃用决议一致。
 
-**改进**：更正该句为「`native.yml` 存在但为不阻塞的软门禁；`tstdx_native/` 源码已随 M1b 移除，workflow 保留是为 v1.6.0 若重启 Rust 内核留位」——并在 `native.yml` 顶部注释写明"为何保留"（否则下一个人还会误删或误报）。
+**改进**：更正该句为「`native.yml` 存在但为不阻塞的软门禁；`atst_native/` 源码已随 M1b 移除，workflow 保留是为 v1.6.0 若重启 Rust 内核留位」——并在 `native.yml` 顶部注释写明"为何保留"（否则下一个人还会误删或误报）。
 
 ---
 
@@ -192,7 +192,7 @@ ADR-001~005 塞在 `docs/adr/README.md` 里，006~010 在 `ADR-006-010.md`。后
 
 | 批次 | 名称 | 内容 | 规模 | 覆盖问题 | 前置 |
 |---|---|---|---|---|---|
-| **DC-1** | 数字事实源与一致性门禁 | 新建 `docs/FACTS.json`（机器生成）+ `tstdx/tools/doc_facts.py`（生成器）+ `--check` 模式 + CI job | M | ISS-02、ISS-07、ISS-10、根因 R1/R3 | — |
+| **DC-1** | 数字事实源与一致性门禁 | 新建 `docs/FACTS.json`（机器生成）+ `atst/tools/doc_facts.py`（生成器）+ `--check` 模式 + CI job | M | ISS-02、ISS-07、ISS-10、根因 R1/R3 | — |
 | **DC-2** | 顶层文档对齐 | README 11 处数字/版本、sink vs sinks、trade 包、门禁数量；DESIGN 元信息与版本分层 | S | ISS-02、ISS-03、ISS-04 | DC-1 |
 | **DC-3** | 合规档案自动化 | AUDIT_REPORT 改由 `check_originality --json` 渲染；旧手工正文降级为结论段；compat 残留清除 | S | ISS-05、根因 R4 | — |
 | **DC-4** | spec 工具链与门禁修复 | spec 主键加 family 命名空间 + 分组覆盖率 + CI 阈值断言 + 口径文档 | M | ISS-01、ISS-06、根因 R5/R6 | — |
@@ -212,16 +212,16 @@ ADR-001~005 塞在 `docs/adr/README.md` 里，006~010 在 `ADR-006-010.md`。后
 **设计（零新依赖，符合 ADR-001）**：
 
 ```
-tstdx/tools/doc_facts.py
+atst/tools/doc_facts.py
   collect_facts()      # 从代码/目录实测：命令数、解析器数、端点数、WS 方法数、
                        # MCP 工具数、CLI 子命令数、门面方法数、web 源类/模块数、
                        # YAML 数、golden 数、异常类/错误码数、源码行数、测试用例数
   render_json(path)    # 写 docs/FACTS.json
   check(docs_glob)     # 扫描文档中「数字 + 名词」模式，与 FACTS 比对，不一致 exit 1
 CLI:
-  python -m tstdx.tools.doc_facts            # 生成/刷新 docs/FACTS.json
-  python -m tstdx.tools.doc_facts --check    # 校验文档（CI 用）
-  python -m tstdx.tools.doc_facts --print    # 只看不落盘
+  python -m atst.tools.doc_facts            # 生成/刷新 docs/FACTS.json
+  python -m atst.tools.doc_facts --check    # 校验文档（CI 用）
+  python -m atst.tools.doc_facts --print    # 只看不落盘
 ```
 
 **`docs/FACTS.json` 结构（草案）**：
@@ -229,7 +229,7 @@ CLI:
 ```json
 {
   "generated_at": "2026-09-04T12:00:00Z",
-  "source": "python -m tstdx.tools.doc_facts",
+  "source": "python -m atst.tools.doc_facts",
   "version": "1.4.0",
   "facts": {
     "commands_ledger": 85, "l1_parsers": 62, "protocol_spec_yaml": 44,
@@ -260,10 +260,10 @@ CLI:
 ### DC-3 合规档案自动化
 
 `check_originality` 已支持 `--json`，本批次只需：
-1. 新增 `--report ORIGINALITY/AUDIT_REPORT.md` 输出 Markdown（或外部小模板脚本渲染，放 `tstdx/tools/`，勿新增第三方依赖）；
+1. 新增 `--report ORIGINALITY/AUDIT_REPORT.md` 输出 Markdown（或外部小模板脚本渲染，放 `atst/tools/`，勿新增第三方依赖）；
 2. 报告头部固定三行：生成命令、生成时间、代码基线版本；
 3. "人工结论"与"机器数据"分栏，机器数据段禁止手工编辑（加 HTML 注释标记起止）；
-4. 清除 `tstdx/compat/mootdx.py` 残留条目；
+4. 清除 `atst/compat/mootdx.py` 残留条目；
 5. `CONTRIBUTING.md` 写明"改完代码需重跑并连同报告一起提交"。
 
 ### DC-4 spec 工具链修复（对 ISS-01 推荐方案 A 的展开）
@@ -281,7 +281,7 @@ tests/test_spec_coverage.py:28  SPECS 取值方式适配新键类型；并新增
 ```
 
 配套：
-- `ci.yml:95` → `python -m tstdx.tools.spec_audit --json --min-coverage 80 --require-stable-full`；
+- `ci.yml:95` → `python -m atst.tools.spec_audit --json --min-coverage 80 --require-stable-full`；
 - `Makefile:148` `spec-coverage` target 同步加参；
 - `PROTOCOL_SPEC/README.md` 新增「§覆盖率口径」小节（分子=Has Parser、分母=唯一 (family,spec_id) 数、draft 是否计入，两条曲线都给）；
 - 回归测试：`tests/tools/test_spec_audit.py` 加断言 ①`total == 44` ②`0x0001` 出现 2 次（login + f10_catalog）③`0x0100` 出现 2 次（query + ex_market_count）④`coverage_non_draft_pct >= 80`；
@@ -291,7 +291,7 @@ tests/test_spec_coverage.py:28  SPECS 取值方式适配新键类型；并新增
 
 ### DC-5 发版清单固化
 
-`CONTRIBUTING.md` 增一节「发版必改清单（版本号 X.Y.Z）」，勾选项：CHANGELOG 落笔 + README 版本行 + `pyproject.toml`/`__init__.py`（已由 S4 收敛，交叉引用）+ `python -m tstdx.tools.doc_facts` 重生成 + `make audit-bridges` 24 项 + `make gates` 七步 + `ORIGINALITY/AUDIT_REPORT.md` 重跑。**PR 模板**（`.github/pull_request_template.md`）同步加 checklist 块，让"忘记改文档"在评审时可见。
+`CONTRIBUTING.md` 增一节「发版必改清单（版本号 X.Y.Z）」，勾选项：CHANGELOG 落笔 + README 版本行 + `pyproject.toml`/`__init__.py`（已由 S4 收敛，交叉引用）+ `python -m atst.tools.doc_facts` 重生成 + `make audit-bridges` 24 项 + `make gates` 七步 + `ORIGINALITY/AUDIT_REPORT.md` 重跑。**PR 模板**（`.github/pull_request_template.md`）同步加 checklist 块，让"忘记改文档"在评审时可见。
 
 ### DC-6 文档导航与体例
 
@@ -306,9 +306,9 @@ tests/test_spec_coverage.py:28  SPECS 取值方式适配新键类型；并新增
 
 ```bash
 # 1. 数字一致性：文档无过时数字
-python -m tstdx.tools.doc_facts --check                       # exit 0
+python -m atst.tools.doc_facts --check                       # exit 0
 # 2. spec 账本无静默遮蔽
-python -m tstdx.tools.spec_audit --json | python -c "
+python -m atst.tools.spec_audit --json | python -c "
 import json,sys;d=json.load(sys.stdin)['summary']
 assert d['total_specs']==44 and d['coverage_non_draft_pct']>=80"
 # 3. README 版本与代码同源
@@ -320,7 +320,7 @@ assert rv in open('README.md',encoding='utf-8').read(), rv
 print("version line OK:",rv)
 EOF
 # 4. 合规档案为新生成
-python -m tstdx.tools.check_originality --json tstdx/ > /tmp/o.json && grep -q "compat/mootdx" ORIGINALITY/AUDIT_REPORT.md && echo "FAIL: 残留" || echo "OK"
+python -m atst.tools.check_originality --json atst/ > /tmp/o.json && grep -q "compat/mootdx" ORIGINALITY/AUDIT_REPORT.md && echo "FAIL: 残留" || echo "OK"
 # 5. 既有门禁不回归
 make gates && make audit-bridges
 ```
@@ -342,7 +342,7 @@ make gates && make audit-bridges
 |---|---|
 | 改 `spec_audit` JSON 结构影响外部消费方 | 只增键不改名；`--min-coverage` 默认关闭 |
 | `doc_facts --check` 误报导致门禁被随手关掉 | 首月 `continue-on-error: true`（先观察），同时白名单化历史陈述；稳定后转硬门禁 |
-| README 数字改成"活的"后仍会漂 | 数字改为「以 `python -m tstdx.tools.doc_facts --print` 为准」的表述 + 门禁双保险 |
+| README 数字改成"活的"后仍会漂 | 数字改为「以 `python -m atst.tools.doc_facts --print` 为准」的表述 + 门禁双保险 |
 | ADR 拆分丢历史 | 用 `git mv` + 纯切分，不改内容；拆分 PR 单独提，不与内容修订混在一个 commit |
 | 与 v3 未收口批次（v3 P0-3/P0-4/P1-1/P2-2/P2-3）冲突 | v4 不新增业务代码；若 v3 期间 web 源/命令数变化，DC-1 生成器自动反映，无需协调 |
 

@@ -145,7 +145,7 @@ Offset  Size  Field         Description
 ```
 
 The 12-byte frame header is NOT part of `request.fields` — it is handled by
-the framing layer (`tstdx/codec/framing.py`).
+the framing layer (`atst/codec/framing.py`).
 
 ---
 
@@ -256,7 +256,7 @@ error_codes:
 ```
 
 If omitted, the command follows the protocol-family default error mapping
-(defined in `tstdx/errors.py`).
+(defined in `atst/errors.py`).
 
 ---
 

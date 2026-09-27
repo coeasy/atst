@@ -17,21 +17,21 @@ from typing import Any
 
 import pytest
 
-from tstdx.errors import SourceDeprecated, WebSourceError
-from tstdx.web.base import HttpResponse
-from tstdx.web.corporate import VALID_REPORTS
-from tstdx.web.fin_report import (
+from atst.errors import SourceDeprecated, WebSourceError
+from atst.web.base import HttpResponse
+from atst.web.corporate import VALID_REPORTS
+from atst.web.fin_report import (
     F10_REPORTS,
     EastmoneyF10ReportSource,
     to_eastmoney_secucode,
 )
-from tstdx.web.governance import (
+from atst.web.governance import (
     EastmoneyExecutiveHoldSource,
     EastmoneyOrgProfileSource,
     EastmoneyRatingForecastSource,
     EastmoneyShareholderChangeSource,
 )
-from tstdx.web.session import WebQuoteSession
+from atst.web.session import WebQuoteSession
 
 pytestmark = pytest.mark.unit
 
@@ -39,7 +39,7 @@ pytestmark = pytest.mark.unit
 @pytest.fixture(autouse=True)
 def _reset_em_blacklist():
     """跨测试隔离：清空东财主机池黑名单（R3 进程级状态）。"""
-    from tstdx.web._base_em import reset_em_blacklist
+    from atst.web._base_em import reset_em_blacklist
 
     reset_em_blacklist()
     yield
@@ -784,13 +784,13 @@ class TestWhitelistExtension:
             assert VALID_REPORTS[alias] == report
 
     def test_symbol_filter_keys_cover_new_reports(self) -> None:
-        from tstdx.web._session_info import CorporateSessionMixin
+        from atst.web._session_info import CorporateSessionMixin
 
         for alias in ("executive_hold", "shareholder_change", "org_profile", "rating_forecast"):
             assert CorporateSessionMixin._DC_SYMBOL_FILTER_KEYS[alias] == "SECURITY_CODE"
 
     def test_dc_reports_exposes_new_aliases(self) -> None:
-        from tstdx.web._session_info import CorporateSessionMixin
+        from atst.web._session_info import CorporateSessionMixin
 
         reports = CorporateSessionMixin.dc_reports()
         assert reports == VALID_REPORTS
@@ -813,7 +813,7 @@ class TestFundamentalMixinChain:
         }
 
     def test_all_methods(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import tstdx.web._session_fundamental as mix
+        import atst.web._session_fundamental as mix
 
         monkeypatch.setattr(mix, "_shared_http", lambda: FakeHttpClient(**self._bodies()))
 
@@ -831,7 +831,7 @@ class TestFundamentalMixinChain:
 
     def test_session_class_exposes_methods(self) -> None:
         """WebQuoteSession 组合后应具备全部新方法（防 Mixin 注册遗漏）。"""
-        from tstdx.web.session import WebQuoteSession
+        from atst.web.session import WebQuoteSession
 
         for name in (
             "balance_sheet",

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.client import TdxClient
-from tstdx.client.core import _standard_market_id, split_symbol
-from tstdx.domain.symbol import to_tdx_market
-from tstdx.errors import ParseError
+from atst.client import TdxClient
+from atst.client.core import _standard_market_id, split_symbol
+from atst.domain.symbol import to_tdx_market
+from atst.errors import ParseError
 
 
 class _NoIoPool:

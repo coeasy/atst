@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """交易面词表判据（第 26 轮 F-83 / G40）。
@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.errors import ValidationError
-from tstdx.trade import ORDER_SIDE_BUY, ORDER_SIDE_SELL, SimTransport, TradeClient
-from tstdx.trade.constants import (
+from atst.errors import ValidationError
+from atst.trade import ORDER_SIDE_BUY, ORDER_SIDE_SELL, SimTransport, TradeClient
+from atst.trade.constants import (
     CMD_NAMES,
     CMD_SET,
     ORDER_STATUS_CANCELLED,
@@ -37,9 +37,9 @@ from tstdx.trade.constants import (
     QUERY_CATEGORY_STOCK_LOAN_BALANCE,
     QUERY_CATEGORY_STOCKS,
 )
-from tstdx.trade.errors import TradeError, TradingUnavailable
-from tstdx.trade.frames import _QUERY_RECORD_FIELDS, query_record_fields
-from tstdx.trade.simulator import TradeSimulator
+from atst.trade.errors import TradeError, TradingUnavailable
+from atst.trade.frames import _QUERY_RECORD_FIELDS, query_record_fields
+from atst.trade.simulator import TradeSimulator
 
 pytestmark = pytest.mark.unit
 

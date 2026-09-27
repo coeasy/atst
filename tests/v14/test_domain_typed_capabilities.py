@@ -13,13 +13,13 @@ from typing import Any
 
 import pytest
 
-from tstdx.catalog.capability import default_provider_for
-from tstdx.client.api import Client
-from tstdx.errors import ValidationError
-from tstdx.query import QueryPlan, QueryPlanner, QuerySpec
-from tstdx.result import Provenance, QueryResult
-from tstdx.runtime import UnifiedRuntime
-from tstdx.typed_query import (
+from atst.catalog.capability import default_provider_for
+from atst.client.api import Client
+from atst.errors import ValidationError
+from atst.query import QueryPlan, QueryPlanner, QuerySpec
+from atst.result import Provenance, QueryResult
+from atst.runtime import UnifiedRuntime
+from atst.typed_query import (
     AnnouncementsQuery,
     BoardListQuery,
     BoardMemberQuery,
@@ -154,7 +154,7 @@ def _typed(query: Any, data: Any = None) -> tuple[QueryPlan, Any]:
 
 class TestDomainTypedCapabilities:
     def test_all_domain_capabilities_semantic_ready(self) -> None:
-        from tstdx.providers import PROVIDERS
+        from atst.providers import PROVIDERS
 
         ready = set()
         for pid in PROVIDERS.ids():
@@ -191,7 +191,7 @@ class TestDomainTypedCapabilities:
 
     def test_domain_capability_matches_registry_channel(self) -> None:
         """验证每个领域 capability 在注册表中存在实际数据通道。"""
-        from tstdx.providers import PROVIDERS
+        from atst.providers import PROVIDERS
 
         for capability in DOMAIN_CAPABILITIES:
             channels = [pid for pid in PROVIDERS.ids() if PROVIDERS.supports(pid, capability)]
@@ -249,7 +249,7 @@ class TestDomainQueryExecution:
 
         assert (plan.provider, plan.channel) == ("eastmoney", "fund")
         assert plan.spec.options["kwargs"] == {"code": "000001"}
-        from tstdx.domain.records import FundRecord
+        from atst.domain.records import FundRecord
 
         assert isinstance(result.data[0], FundRecord)
 

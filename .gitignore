@@ -58,7 +58,7 @@ data/
 !tests/golden/**/*.bin
 
 # Runtime and operational outputs
-.tstdx/
+.atst/
 logs/
 *.log
 ops/smoke_results.jsonl
@@ -73,7 +73,7 @@ tests/golden/**/tmp_*/
 tests/_tmp_golden_test/
 
 # Codegen draft area (auto-generated, not part of the package)
-tstdx/tools/generated_draft/
+atst/tools/generated_draft/
 
 # Local verification worktrees created by refactor sessions (git worktree add)
 wt_*/

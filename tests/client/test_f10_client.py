@@ -14,9 +14,9 @@ import struct
 
 import pytest
 
-from tstdx.client import AsyncF10Client, F10Client, TdxClient, get_client
-from tstdx.codec.framing import ResponseFrame
-from tstdx.errors import DataError
+from atst.client import AsyncF10Client, F10Client, TdxClient, get_client
+from atst.codec.framing import ResponseFrame
+from atst.errors import DataError
 
 
 def _catalog_payload() -> bytes:

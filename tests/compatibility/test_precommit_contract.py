@@ -8,13 +8,13 @@ _ROOT = Path(__file__).resolve().parents[2]
 def test_precommit_fast_gates_match_blocking_static_contracts() -> None:
     config = (_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
 
-    assert "python -m ruff check tstdx/ tests/ scripts/" in config
-    assert "python -m ruff format --check tstdx/ tests/ scripts/" in config
+    assert "python -m ruff check atst/ tests/ scripts/" in config
+    assert "python -m ruff format --check atst/ tests/ scripts/" in config
     assert (
-        "python -m mypy tstdx/ --ignore-missing-imports --no-error-summary --warn-unused-ignores"
+        "python -m mypy atst/ --ignore-missing-imports --no-error-summary --warn-unused-ignores"
     ) in config
-    assert "python -m tstdx.tools.check_originality --strict tstdx/" in config
-    assert "python -m tstdx.tools.spec_audit --json --strict" in config
+    assert "python -m atst.tools.check_originality --strict atst/" in config
+    assert "python -m atst.tools.spec_audit --json --strict" in config
     assert "python scripts/check_docs_links.py" in config
 
 

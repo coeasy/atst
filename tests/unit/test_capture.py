@@ -21,9 +21,9 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from tstdx.codec.framing import ResponseFrame
-from tstdx.errors import TdxError
-from tstdx.tools.capture import (
+from atst.codec.framing import ResponseFrame
+from atst.errors import TdxError
+from atst.tools.capture import (
     CaptureOptions,
     CaptureSpec,
     _compress_payload,

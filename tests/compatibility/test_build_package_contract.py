@@ -13,7 +13,7 @@ _SCRIPT = _ROOT / "scripts" / "build_package.py"
 
 
 def _load_build_script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("tstdx_build_package_contract", _SCRIPT)
+    spec = importlib.util.spec_from_file_location("atst_build_package_contract", _SCRIPT)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -31,14 +31,14 @@ def _write_minimal_wheel(
     import zipfile
 
     with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr("tstdx/__init__.py", "")
+        archive.writestr("atst/__init__.py", "")
         if include_typed:
-            archive.writestr("tstdx/py.typed", "")
+            archive.writestr("atst/py.typed", "")
         for name in extra_members:
             archive.writestr(name, "")
         archive.writestr(
-            f"tstdx-{version}.dist-info/METADATA",
-            f"Metadata-Version: 2.1\nName: tstdx\nVersion: {version}\n\n",
+            f"atst-{version}.dist-info/METADATA",
+            f"Metadata-Version: 2.1\nName: atst\nVersion: {version}\n\n",
         )
 
 
@@ -50,17 +50,17 @@ def _write_minimal_sdist(
     extra_member: str | None = None,
     extra_runtime_members: tuple[str, ...] = (),
 ) -> None:
-    root = f"tstdx-{version}"
+    root = f"atst-{version}"
     files = {
-        f"{root}/PKG-INFO": f"Metadata-Version: 2.1\nName: tstdx\nVersion: {version}\n\n",
-        f"{root}/pyproject.toml": "[project]\nname='tstdx'\n",
-        f"{root}/tstdx/__init__.py": f'__version__ = "{version}"\n',
+        f"{root}/PKG-INFO": f"Metadata-Version: 2.1\nName: atst\nVersion: {version}\n\n",
+        f"{root}/pyproject.toml": "[project]\nname='atst'\n",
+        f"{root}/atst/__init__.py": f'__version__ = "{version}"\n',
         f"{root}/README.md": "readme\n",
         f"{root}/CHANGELOG.md": "changes\n",
         f"{root}/LICENSE": "MIT\n",
     }
     if include_typed:
-        files[f"{root}/tstdx/py.typed"] = ""
+        files[f"{root}/atst/py.typed"] = ""
     for member in extra_runtime_members:
         files[f"{root}/{member}"] = ""
     if extra_member is not None:
@@ -80,11 +80,11 @@ def _write_fake_project(
     project_version: str = "1.4.0",
     source_version: str | None = None,
 ) -> None:
-    package = root / "tstdx"
+    package = root / "atst"
     package.mkdir(parents=True)
     source_version = project_version if source_version is None else source_version
     (root / "pyproject.toml").write_text(
-        f'[project]\nname = "tstdx"\nversion = "{project_version}"\n',
+        f'[project]\nname = "atst"\nversion = "{project_version}"\n',
         encoding="utf-8",
     )
     (package / "__init__.py").write_text(
@@ -106,7 +106,7 @@ def test_build_script_rejects_repository_root_and_ancestor_outputs() -> None:
 def test_build_script_rejects_outputs_inside_protected_source_trees() -> None:
     build = _load_build_script()
 
-    for relative in ("tstdx/build-out", "tests/build-out", "docs/build-out"):
+    for relative in ("atst/build-out", "tests/build-out", "docs/build-out"):
         with pytest.raises(SystemExit, match="受保护源码树"):
             build._validate_dist_out(build.ROOT / relative)
 
@@ -125,7 +125,7 @@ def test_build_script_rejects_symlink_output(tmp_path: Path) -> None:
         build._validate_dist_out(link)
 
 
-def test_build_cleanup_removes_only_tstdx_artifacts_from_custom_output(
+def test_build_cleanup_removes_only_atst_artifacts_from_custom_output(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -136,8 +136,8 @@ def test_build_cleanup_removes_only_tstdx_artifacts_from_custom_output(
 
     output = tmp_path / "output"
     output.mkdir()
-    wheel = output / "tstdx-1.4.0-py3-none-any.whl"
-    sdist = output / "tstdx-1.4.0.tar.gz"
+    wheel = output / "atst-1.4.0-py3-none-any.whl"
+    sdist = output / "atst-1.4.0.tar.gz"
     unrelated = output / "keep-me.txt"
     wheel.write_bytes(b"wheel")
     sdist.write_bytes(b"sdist")
@@ -204,8 +204,8 @@ def test_distribution_verifier_rejects_source_project_version_drift(
     dist = fake_root / "dist"
     _write_fake_project(fake_root, project_version="1.4.0", source_version="1.4.1")
     dist.mkdir()
-    _write_minimal_wheel(dist / "tstdx-1.4.0-py3-none-any.whl")
-    _write_minimal_sdist(dist / "tstdx-1.4.0.tar.gz")
+    _write_minimal_wheel(dist / "atst-1.4.0-py3-none-any.whl")
+    _write_minimal_sdist(dist / "atst-1.4.0.tar.gz")
     monkeypatch.setattr(build, "ROOT", fake_root)
 
     with pytest.raises(SystemExit, match="source version"):
@@ -221,11 +221,11 @@ def test_wheel_verifier_requires_universal_pep561_artifact(
     dist = fake_root / "dist"
     _write_fake_project(fake_root)
     dist.mkdir()
-    _write_minimal_wheel(dist / "tstdx-1.4.0-py3-none-any.whl", include_typed=False)
-    _write_minimal_sdist(dist / "tstdx-1.4.0.tar.gz")
+    _write_minimal_wheel(dist / "atst-1.4.0-py3-none-any.whl", include_typed=False)
+    _write_minimal_sdist(dist / "atst-1.4.0.tar.gz")
     monkeypatch.setattr(build, "ROOT", fake_root)
 
-    with pytest.raises(SystemExit, match="wheel 缺少 .*tstdx/py.typed"):
+    with pytest.raises(SystemExit, match="wheel 缺少 .*atst/py.typed"):
         build._verify(dist)
 
 
@@ -238,11 +238,11 @@ def test_sdist_verifier_requires_typed_source_and_metadata(
     dist = fake_root / "dist"
     _write_fake_project(fake_root)
     dist.mkdir()
-    _write_minimal_wheel(dist / "tstdx-1.4.0-py3-none-any.whl")
-    _write_minimal_sdist(dist / "tstdx-1.4.0.tar.gz", include_typed=False)
+    _write_minimal_wheel(dist / "atst-1.4.0-py3-none-any.whl")
+    _write_minimal_sdist(dist / "atst-1.4.0.tar.gz", include_typed=False)
     monkeypatch.setattr(build, "ROOT", fake_root)
 
-    with pytest.raises(SystemExit, match="sdist 缺少 .*tstdx/py.typed"):
+    with pytest.raises(SystemExit, match="sdist 缺少 .*atst/py.typed"):
         build._verify(dist)
 
 
@@ -254,12 +254,12 @@ def test_wheel_verifier_requires_every_source_runtime_module(
     fake_root = tmp_path / "repo"
     dist = fake_root / "dist"
     _write_fake_project(fake_root)
-    (fake_root / "tstdx" / "_runtime_hardening.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (fake_root / "atst" / "_runtime_hardening.py").write_text("VALUE = 1\n", encoding="utf-8")
     dist.mkdir()
-    _write_minimal_wheel(dist / "tstdx-1.4.0-py3-none-any.whl")
+    _write_minimal_wheel(dist / "atst-1.4.0-py3-none-any.whl")
     _write_minimal_sdist(
-        dist / "tstdx-1.4.0.tar.gz",
-        extra_runtime_members=("tstdx/_runtime_hardening.py",),
+        dist / "atst-1.4.0.tar.gz",
+        extra_runtime_members=("atst/_runtime_hardening.py",),
     )
     monkeypatch.setattr(build, "ROOT", fake_root)
 
@@ -275,15 +275,15 @@ def test_sdist_verifier_requires_every_source_runtime_module(
     fake_root = tmp_path / "repo"
     dist = fake_root / "dist"
     _write_fake_project(fake_root)
-    nested = fake_root / "tstdx" / "client"
+    nested = fake_root / "atst" / "client"
     nested.mkdir()
     (nested / "_runtime_hardening.py").write_text("VALUE = 1\n", encoding="utf-8")
     dist.mkdir()
     _write_minimal_wheel(
-        dist / "tstdx-1.4.0-py3-none-any.whl",
-        extra_members=("tstdx/client/_runtime_hardening.py",),
+        dist / "atst-1.4.0-py3-none-any.whl",
+        extra_members=("atst/client/_runtime_hardening.py",),
     )
-    _write_minimal_sdist(dist / "tstdx-1.4.0.tar.gz")
+    _write_minimal_sdist(dist / "atst-1.4.0.tar.gz")
     monkeypatch.setattr(build, "ROOT", fake_root)
 
     with pytest.raises(SystemExit, match="sdist 缺少 .*_runtime_hardening.py"):
@@ -298,17 +298,17 @@ def test_distribution_verifier_accepts_complete_nested_runtime_closure(
     fake_root = tmp_path / "repo"
     dist = fake_root / "dist"
     _write_fake_project(fake_root)
-    nested = fake_root / "tstdx" / "client"
+    nested = fake_root / "atst" / "client"
     nested.mkdir()
     (nested / "_runtime_hardening.py").write_text("VALUE = 1\n", encoding="utf-8")
     dist.mkdir()
-    runtime_member = "tstdx/client/_runtime_hardening.py"
+    runtime_member = "atst/client/_runtime_hardening.py"
     _write_minimal_wheel(
-        dist / "tstdx-1.4.0-py3-none-any.whl",
+        dist / "atst-1.4.0-py3-none-any.whl",
         extra_members=(runtime_member,),
     )
     _write_minimal_sdist(
-        dist / "tstdx-1.4.0.tar.gz",
+        dist / "atst-1.4.0.tar.gz",
         extra_runtime_members=(runtime_member,),
     )
     monkeypatch.setattr(build, "ROOT", fake_root)
@@ -316,8 +316,8 @@ def test_distribution_verifier_accepts_complete_nested_runtime_closure(
     artifacts = build._verify(dist)
 
     assert [path.name for path in artifacts] == [
-        "tstdx-1.4.0.tar.gz",
-        "tstdx-1.4.0-py3-none-any.whl",
+        "atst-1.4.0.tar.gz",
+        "atst-1.4.0-py3-none-any.whl",
     ]
 
 
@@ -330,9 +330,9 @@ def test_sdist_verifier_rejects_repository_escape_member(
     dist = fake_root / "dist"
     _write_fake_project(fake_root)
     dist.mkdir()
-    _write_minimal_wheel(dist / "tstdx-1.4.0-py3-none-any.whl")
+    _write_minimal_wheel(dist / "atst-1.4.0-py3-none-any.whl")
     _write_minimal_sdist(
-        dist / "tstdx-1.4.0.tar.gz",
+        dist / "atst-1.4.0.tar.gz",
         extra_member="../outside.txt",
     )
     monkeypatch.setattr(build, "ROOT", fake_root)
@@ -347,7 +347,7 @@ def test_local_smoke_never_imports_package_from_source_checkout(
 ) -> None:
     build = _load_build_script()
     calls: list[tuple[list[str], Path | None]] = []
-    wheel = tmp_path / "tstdx-1.4.0-py3-none-any.whl"
+    wheel = tmp_path / "atst-1.4.0-py3-none-any.whl"
     wheel.touch()
 
     monkeypatch.setattr(build.venv, "create", lambda *args, **kwargs: None)
@@ -364,8 +364,8 @@ def test_local_smoke_never_imports_package_from_source_checkout(
     assert "-I" in probe_cmd
     probe_text = probe_cmd[probe_cmd.index("-c") + 1]
     assert "package_file.is_relative_to(venv_root)" in probe_text
-    assert "TdxClient.bestip.__module__ == 'tstdx.client.sync'" in probe_text
-    assert "AsyncTdxClient.bestip.__module__ == 'tstdx.client.async_'" in probe_text
+    assert "TdxClient.bestip.__module__ == 'atst.client.sync'" in probe_text
+    assert "AsyncTdxClient.bestip.__module__ == 'atst.client.async_'" in probe_text
 
 
 def test_twine_check_runs_on_the_exact_verified_artifacts(
@@ -375,8 +375,8 @@ def test_twine_check_runs_on_the_exact_verified_artifacts(
     build = _load_build_script()
     commands: list[list[str]] = []
     artifacts = [
-        tmp_path / "tstdx-1.4.0.tar.gz",
-        tmp_path / "tstdx-1.4.0-py3-none-any.whl",
+        tmp_path / "atst-1.4.0.tar.gz",
+        tmp_path / "atst-1.4.0-py3-none-any.whl",
     ]
 
     def capture(cmd: list[str], *, cwd: Path | None = None) -> None:

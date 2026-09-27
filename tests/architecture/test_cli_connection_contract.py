@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """CLI 连接参数契约：``--host`` / ``--timeout`` 必须真的到达执行面。
@@ -8,8 +8,8 @@ CLI 因此只有两种合法姿态：把用户显式说的转下去，或者保�
 第三种——解析了却不消费（幻影开关）、或自带字面默认值（遮蔽配置）——由本门禁挡住。
 最后一条守卫不限于连接参数：parser 声明的任何选项都必须被 handler（或三个助手）读到。
 另有三条结构性守卫：Web 数据命令须经 ``Client`` 执行，且服务面源码不得直接 import
-``tstdx.web``（F-29）、不得自建流（F-56，import ``tstdx.streaming`` /
-``tstdx.stream_contract`` 即为红）——服务面只翻译，执行入口只有内核一个。
+``atst.web``（F-29）、不得自建流（F-56，import ``atst.streaming`` /
+``atst.stream_contract`` 即为红）——服务面只翻译，执行入口只有内核一个。
 """
 
 from __future__ import annotations
@@ -24,13 +24,13 @@ from typing import Any
 
 import pytest
 
-from tstdx.cli import main, runtime_commands
-from tstdx.cli._common import _client_kwargs, _transport_kwargs, _transport_timeout
-from tstdx.cli.parser import build_parser
-from tstdx.config.schema import Config, CoreConfig, HostsConfig
-from tstdx.providers import PROVIDERS
-from tstdx.result import ResultMeta
-from tstdx.transport.pool import pool_settings_from_config
+from atst.cli import main, runtime_commands
+from atst.cli._common import _client_kwargs, _transport_kwargs, _transport_timeout
+from atst.cli.parser import build_parser
+from atst.config.schema import Config, CoreConfig, HostsConfig
+from atst.providers import PROVIDERS
+from atst.result import ResultMeta
+from atst.transport.pool import pool_settings_from_config
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -109,7 +109,7 @@ def _run(monkeypatch: pytest.MonkeyPatch, argv: list[str], *, data: Any = None) 
     recorder.data = data
     # ``cmd_*`` 用模块全局的 Client，``_ClientRows`` 在函数内从 api 模块取——两处都要换。
     monkeypatch.setattr(runtime_commands, "Client", recorder.factory)
-    monkeypatch.setattr("tstdx.client.api.Client", recorder.factory)
+    monkeypatch.setattr("atst.client.api.Client", recorder.factory)
     args = build_parser().parse_args(argv)
     assert args.func(args) == 0
     assert recorder.kwargs is not None
@@ -158,12 +158,12 @@ def test_raw_transport_command_reads_hosts_and_timeout_from_config(
 
     31-C4 之前这一格断的是 ``captured == {"hosts": …, "timeout": …}``——那把 CLI 自己
     手抄的两键当成了契约，正好盖住"五个 TOML 键在这支命令上蒸发"。现在断的是
-    "键集合 == 那条翻译的键集合 + ``hosts``"，并把注入点从 ``tstdx.client.TdxClient``
-    换到工厂注册表（直连命令经 :func:`~tstdx.cli._common.family_client` 构造，
+    "键集合 == 那条翻译的键集合 + ``hosts``"，并把注入点从 ``atst.client.TdxClient``
+    换到工厂注册表（直连命令经 :func:`~atst.cli._common.family_client` 构造，
     ``with client`` 那一形状已不在）。
     """
     cfg = Config(core=CoreConfig(timeout=2.5), hosts=HostsConfig(servers=[["10.0.0.1", 7709]]))
-    monkeypatch.setattr("tstdx.config.get_config", lambda: cfg)
+    monkeypatch.setattr("atst.config.get_config", lambda: cfg)
     captured: dict[str, Any] = {}
     built: list[Any] = []
 
@@ -179,7 +179,7 @@ def test_raw_transport_command_reads_hosts_and_timeout_from_config(
         def block_quotes(self, *_: Any, **__: Any) -> list[dict[str, Any]]:
             return []
 
-    from tstdx.client import factory
+    from atst.client import factory
 
     monkeypatch.setitem(factory._CLIENT_REGISTRY, "stock", _Raw)
     args = build_parser().parse_args(["blocks", "0"])
@@ -283,7 +283,7 @@ def test_stream_command_refuses_a_provider_the_stream_contract_refuses(
 
 def test_helpers_keep_explicit_flags_ahead_of_config(monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = Config(core=CoreConfig(timeout=9.0), hosts=HostsConfig(servers=[["10.0.0.1", 7709]]))
-    monkeypatch.setattr("tstdx.config.get_config", lambda: cfg)
+    monkeypatch.setattr("atst.config.get_config", lambda: cfg)
     args = argparse.Namespace(host=["1.2.3.4:5555"], timeout=1.0)
 
     assert [(e.host, e.port) for e in _transport_kwargs(args)["hosts"]] == [("1.2.3.4", 5555)]
@@ -309,7 +309,7 @@ def test_direct_transport_commands_take_the_kernels_translation(
     heartbeat_interval`` / ``[rate_limit]`` / ``[security] use_tls`` 在五支命令
     （``probe`` / ``blocks`` / ``list`` / ``goods`` / ``f10`` / ``quotes-snapshot``）上
     当场蒸发，而同一个键在行情主链路上是生效的——与 G46 在执行器量到的是同一条断链，
-    只是换了张面。而 :func:`~tstdx.transport.pool.pool_settings_from_config` 自己的
+    只是换了张面。而 :func:`~atst.transport.pool.pool_settings_from_config` 自己的
     docstring 那时就写着"任何手工建池的调用方都走这里"，那句话在 CLI 面上是假的。
 
     这里把翻译换成一个可辨认的哨兵字典：只要 CLI 侧任何一处绕过它自己拼旋钮，
@@ -326,9 +326,9 @@ def test_direct_transport_commands_take_the_kernels_translation(
         "use_tls": False,
     }
     cfg = Config(core=CoreConfig(timeout=9.0), hosts=HostsConfig(servers=[["10.0.0.1", 7709]]))
-    monkeypatch.setattr("tstdx.config.get_config", lambda: cfg)
+    monkeypatch.setattr("atst.config.get_config", lambda: cfg)
     monkeypatch.setattr(
-        "tstdx.transport.pool.pool_settings_from_config", lambda _cfg: dict(translated)
+        "atst.transport.pool.pool_settings_from_config", lambda _cfg: dict(translated)
     )
 
     got = _transport_kwargs(argparse.Namespace(host=[], timeout=None))
@@ -359,7 +359,7 @@ def _dead_cli_options() -> list[str]:
     """返回"声明了却没有任何源码读取"的 ``<command> --<option>`` 清单。"""
     import inspect
 
-    from tstdx.cli import _common
+    from atst.cli import _common
 
     # 只有这四个助手被允许"代 handler 消费参数"，且逐个点名——把整模块源码当作
     # 豁免面会让任意一个 `args.x` 为所有命令开绿灯。
@@ -416,13 +416,13 @@ def test_service_faces_never_import_the_web_layer() -> None:
     offenders = [
         f"{path}: import {module}"
         for path, module in _service_face_imports()
-        if _under(module, "tstdx.web")
+        if _under(module, "atst.web")
     ]
     assert offenders == []
 
 
 def test_service_faces_never_build_a_stream_themselves() -> None:
-    """F-56：流式的第二条执行路径不在 web 层，在 ``tstdx.streaming``。
+    """F-56：流式的第二条执行路径不在 web 层，在 ``atst.streaming``。
 
     服务面一旦自己构造 ``QuoteStream``，就绕开了 ``Client.stream`` 里那次
     ``StreamPlanner.compile``——tdx-only 的 fail-closed 判定、Provider 注册表的
@@ -432,7 +432,7 @@ def test_service_faces_never_build_a_stream_themselves() -> None:
     offenders = [
         f"{path}: import {module}"
         for path, module in edges
-        if _under(module, "tstdx.streaming") or _under(module, "tstdx.stream_contract")
+        if _under(module, "atst.streaming") or _under(module, "atst.stream_contract")
     ]
     assert offenders == []
 
@@ -443,7 +443,7 @@ def _under(module: str, prefix: str) -> bool:
 
 def _service_face_imports() -> list[tuple[str, str]]:
     """四个服务面源码里的每一条 import 边，形如 ``(相对路径, 绝对模块名)``。"""
-    faces = (ROOT / "tstdx" / "cli", ROOT / "tstdx" / "integration")
+    faces = (ROOT / "atst" / "cli", ROOT / "atst" / "integration")
     edges: list[tuple[str, str]] = []
     for face in faces:
         for path in sorted(face.rglob("*.py")):

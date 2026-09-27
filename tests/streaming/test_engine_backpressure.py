@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """T#1 回归：BackpressureQueue 溢出回调必须在锁外执行。
@@ -14,7 +14,7 @@ import threading
 
 import pytest
 
-from tstdx.streaming.engine import BackpressureQueue, QuoteChannel
+from atst.streaming.engine import BackpressureQueue, QuoteChannel
 
 
 @pytest.mark.unit

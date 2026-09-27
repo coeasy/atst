@@ -9,9 +9,9 @@ import json
 
 import pytest
 
-from tstdx.errors import TdxError
-from tstdx.web.fundflow import SinaFundFlowSource
-from tstdx.web.session import WebQuoteSession
+from atst.errors import TdxError
+from atst.web.fundflow import SinaFundFlowSource
+from atst.web.session import WebQuoteSession
 
 pytestmark = pytest.mark.unit
 
@@ -158,7 +158,7 @@ def test_error_payload_raises_deprecated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """新浪错误体 ``{"__ERROR":1,...}`` 视为接口下线——与基类策略一致。"""
-    from tstdx.errors import SourceDeprecated
+    from atst.errors import SourceDeprecated
 
     src = _src_with(monkeypatch, '{"__ERROR":1,"__ERRORMSG":"Input error"}')
     with pytest.raises(SourceDeprecated):

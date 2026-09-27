@@ -9,14 +9,14 @@
 ## 1. 配置如何进入执行链
 
 ```
-tstdx.toml / 环境变量 / 入参
+atst.toml / 环境变量 / 入参
         │  load_config()：6 源合并 → Config.validate()
         ▼
-tstdx.get_config()（进程级单例，首次访问时惰性解析一次）
+atst.get_config()（进程级单例，首次访问时惰性解析一次）
         ▼
 UnifiedRuntime ──► QueryPlanner(default_provider)
         │           DirectProviderExecutor(timeout / hosts / vipdoc_root / config)
-        │                └─► tstdx.transport.pool.pool_settings_from_config(cfg)
+        │                └─► atst.transport.pool.pool_settings_from_config(cfg)
         │                     —— 配置面到传输面的**唯一**翻译点 ——
         │                     └─► TdxClient → ConnectionPool（槽位/心跳/重试/限流/TLS）
         ▼
@@ -26,9 +26,9 @@ WebQuoteClient（独立读取 web.* 段：源清单/超时/重试/按源限流�
 `Client()` / `AsyncClient()` 无参构造即走这条链；显式入参优先于配置：
 
 ```python
-from tstdx import Client
+from atst import Client
 
-with Client() as c:  # 读 tstdx.toml + 环境变量
+with Client() as c:  # 读 atst.toml + 环境变量
     ...
 
 with Client(timeout=12.0, hosts=["119.147.212.81:443"]) as c:  # 入参覆盖配置
@@ -40,18 +40,18 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 
 ## 2. 六个来源与优先级
 
-优先级高 → 低（`tstdx.config.load_config`）：
+优先级高 → 低（`atst.config.load_config`）：
 
 | # | 来源 | 形态 |
 |---|---|---|
-| 1 | 函数入参 | `load_config(overrides={"core": {"timeout": 5}})`、`tstdx.configure(core={"timeout": 5})` |
-| 2 | 环境变量 | `TSTDX_CORE_TIMEOUT=5`、`TSTDX_WEB_ENABLED_SOURCES=tencent,sina` |
-| 3 | 项目配置 | `./tstdx.toml` 或 `./.tstdx.toml`（自 CWD 向上最多 5 层，只取最近一层） |
-| 4 | 用户配置 | `~/.tstdx/config.toml` |
-| 5 | 系统配置 | `/etc/tstdx/config.toml`；Windows `%PROGRAMDATA%\tstdx\config.toml` |
-| 6 | 内置默认 | `tstdx.config.DEFAULT_CONFIG` |
+| 1 | 函数入参 | `load_config(overrides={"core": {"timeout": 5}})`、`atst.configure(core={"timeout": 5})` |
+| 2 | 环境变量 | `ATST_CORE_TIMEOUT=5`、`ATST_WEB_ENABLED_SOURCES=tencent,sina` |
+| 3 | 项目配置 | `./atst.toml` 或 `./.atst.toml`（自 CWD 向上最多 5 层，只取最近一层） |
+| 4 | 用户配置 | `~/.atst/config.toml` |
+| 5 | 系统配置 | `/etc/atst/config.toml`；Windows `%PROGRAMDATA%\atst\config.toml` |
+| 6 | 内置默认 | `atst.config.DEFAULT_CONFIG` |
 
-`TSTDX_CONFIG_FILE=<path>` 显式指定文件源路径，是文件源内的最高优先级；指向不存在
+`ATST_CONFIG_FILE=<path>` 显式指定文件源路径，是文件源内的最高优先级；指向不存在
 的路径或目录时**立即抛 `ConfigError`**，不静默回退到其余文件源。
 
 段内嵌套字典（如 `web.rate_limit`）按**深合并**：高优先级层的键胜出，未覆盖的键保留。
@@ -72,12 +72,12 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 
 | 键 | 默认 | 取值范围 | 读取方 / 效果 |
 |---|---|---|---|
-| `servers` | `[]` | `[["host", port], …]`，每项须能被 `tstdx.transport.hosts.parse_server` 解析 | 空 = 使用内置候选池；非空 = 只用这些主站 |
+| `servers` | `[]` | `[["host", port], …]`，每项须能被 `atst.transport.hosts.parse_server` 解析 | 空 = 使用内置候选池；非空 = 只用这些主站 |
 | `slots_per_host` | `4` | 1 – 64 | 每台主站的 TCP 连接数（池大小 = hosts × slots_per_host） |
 
 ### `[rate_limit]` — 本地请求限流（req/s，按交易状态分档）
 
-字段名与 `tstdx.transport.ratelimit.SessionState` 一一对应。
+字段名与 `atst.transport.ratelimit.SessionState` 一一对应。
 
 | 键 | 默认 | 交易状态 |
 |---|---|---|
@@ -93,7 +93,7 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 
 | 键 | 默认 | 读取方 / 效果 |
 |---|---|---|
-| `enabled_sources` | `["tencent", "sina", "eastmoney"]` | `WebQuoteClient` 缺省源顺序。每项须属于 `tstdx.web.sources.KNOWN_SOURCES` |
+| `enabled_sources` | `["tencent", "sina", "eastmoney"]` | `WebQuoteClient` 缺省源顺序。每项须属于 `atst.web.sources.KNOWN_SOURCES` |
 | `timeout` | `5.0` | 0.5 – 120，HTTP 超时 |
 | `max_retries` | `2` | 0 – 10 |
 | `rate_limit` | `{}` | 按源名区分的 req/s；键须属于 `KNOWN_SOURCES`，值 1 – 1000；未列出的源沿用各适配器默认 |
@@ -122,7 +122,7 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 | `hosts` | 调用方 | 主站清单来自 `[hosts] servers`（空则内置候选池），但作为位置参数按次传入，不是池自己读配置 |
 | `family` | 公开 API | `get_client(family=...)` / `TdxClient(family=...)` 按次选择协议族 |
 | `connect_timeout` | 手工建池 | 建连超时与读写超时分离（默认 2s，故障转移时快速跳下一台） |
-| `heartbeat_cmd` | 手工建池 | 心跳探测用的命令号，缺省 `DEFAULT_HEARTBEAT_CMD = 0x0002`。该码**不在** 7709 账本内，而账本里的 `0x0004 HEARTBEAT` 本包没有默认发送方（只有 `tstdx probe 0x0004` 会显式发出）。2026-09-26 真机实测两条都答（0x0002 回 50 字节、0x0004 回 10 字节无结构载荷），探活只判通畅、不解析响应，故刻意保持 0x0002 不动（台账 F-20 已清偿；字节证据见 `PROTOCOL_SPEC/7709/0x0004_HEARTBEAT.yaml` 的 `measured` 块，对账判据见 `tests/protocol/test_heartbeat_claim_evidence.py`） |
+| `heartbeat_cmd` | 手工建池 | 心跳探测用的命令号，缺省 `DEFAULT_HEARTBEAT_CMD = 0x0002`。该码**不在** 7709 账本内，而账本里的 `0x0004 HEARTBEAT` 本包没有默认发送方（只有 `atst probe 0x0004` 会显式发出）。2026-09-26 真机实测两条都答（0x0002 回 50 字节、0x0004 回 10 字节无结构载荷），探活只判通畅、不解析响应，故刻意保持 0x0002 不动（台账 F-20 已清偿；字节证据见 `PROTOCOL_SPEC/7709/0x0004_HEARTBEAT.yaml` 的 `measured` 块，对账判据见 `tests/protocol/test_heartbeat_claim_evidence.py`） |
 | `spec` | 手工建池 | 帧头长度规格；缺省由 `codec/framing.py` 的单一 `FrameSpec` 推断 |
 | `keepalive` | 手工建池 | 是否发送 TCP keepalive |
 | `handshake` | 手工建池 | `None` 时按协议族推断（标准族/MAC 需要握手，扩展市场不需要） |
@@ -137,26 +137,26 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 
 ## 4. 环境变量规则
 
-命名：`TSTDX_<SECTION>_<KEY>`，全大写。段名按最长前缀切分，因此
-`TSTDX_RATE_LIMIT_CONTINUOUS` 指向 `rate_limit.continuous` 而不是不存在的 `rate` 段。
+命名：`ATST_<SECTION>_<KEY>`，全大写。段名按最长前缀切分，因此
+`ATST_RATE_LIMIT_CONTINUOUS` 指向 `rate_limit.continuous` 而不是不存在的 `rate` 段。
 
 值解析顺序：JSON（`[`/`{` 开头）→ bool（`true/false/yes/no/on/off`，不区分大小写）
 → int → float → 逗号分隔列表 → 字符串。`"1"`/`"0"` 解析为**整数**而非 bool，
-否则 `TSTDX_CORE_MAX_RETRIES=1` 会撞.bool 校验。
+否则 `ATST_CORE_MAX_RETRIES=1` 会撞.bool 校验。
 
 专用 runtime 变量**不属于** schema 命名空间，不参与 strict 扫描：
 
 | 变量 | 消费者 | 作用 |
 |---|---|---|
-| `TSTDX_CONFIG_FILE` | `find_config_files` | 显式配置文件路径 |
-| `TSTDX_HOSTS` | `tstdx.transport.hosts` | 直接给主站列表（`host:port,host:port`） |
-| `TSTDX_FEEDBACK` / `TSTDX_FEEDBACK_ENDPOINT` / `TSTDX_FEEDBACK_STORE_DIR` | `tstdx.feedback` | 反馈数据的传输开关与落点 |
-| `TSTDX_WENCAI_COOKIE` | `tstdx.web.wencai` | i问财 `hexin-v` cookie（值写成 `v=<token>` 头）；本库不存储它 |
+| `ATST_CONFIG_FILE` | `find_config_files` | 显式配置文件路径 |
+| `ATST_HOSTS` | `atst.transport.hosts` | 直接给主站列表（`host:port,host:port`） |
+| `ATST_FEEDBACK` / `ATST_FEEDBACK_ENDPOINT` / `ATST_FEEDBACK_STORE_DIR` | `atst.feedback` | 反馈数据的传输开关与落点 |
+| `ATST_WENCAI_COOKIE` | `atst.web.wencai` | i问财 `hexin-v` cookie（值写成 `v=<token>` 头）；本库不存储它 |
 
-`TSTDX_` 前缀是**保留命名空间**：库内代码从环境读取的每一个非 schema 变量都必须登记在
-`tstdx/config/loader.py` 的 `_RUNTIME_ENV_KEYS`，否则用户一旦设置它，strict 扫描就把整条
-配置加载判成拼写错误而 fail closed。`TSTDX_WENCAI_COOKIE` 曾漏登记：问财缺 cookie 时的
-错误消息让用户"设置 `TSTDX_WENCAI_COOKIE`"，而照做之后 `Client()` 直接抛
+`ATST_` 前缀是**保留命名空间**：库内代码从环境读取的每一个非 schema 变量都必须登记在
+`atst/config/loader.py` 的 `_RUNTIME_ENV_KEYS`，否则用户一旦设置它，strict 扫描就把整条
+配置加载判成拼写错误而 fail closed。`ATST_WENCAI_COOKIE` 曾漏登记：问财缺 cookie 时的
+错误消息让用户"设置 `ATST_WENCAI_COOKIE`"，而照做之后 `Client()` 直接抛
 `ConfigError`——按自己的指引修自己修不好的错（V17 第 43 步，F-69）。测试与工具用的开关
 因此**不得**占用该前缀。
 
@@ -166,7 +166,7 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 |---|---|
 | 未知配置段（`[cache]`） | `ValidationError: config 含未知配置段: ['cache']；可选: ['core', 'hosts', 'rate_limit', 'web', 'security']` |
 | 段内未知字段 | `ValidationError`，消息给出该段可选字段 |
-| 未知 `TSTDX_*` 变量 | `ConfigError: 无法识别环境变量 …` |
+| 未知 `ATST_*` 变量 | `ConfigError: 无法识别环境变量 …` |
 | bool 位置写 `1`/`0` | `ValidationError: … 必须是 bool`（数值不算 bool） |
 | 整数位置写 `1.5` | `ValidationError: … 必须是整数` |
 | `timeout=nan/inf` | `ValidationError: … 必须是有限数值` |
@@ -175,26 +175,26 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 
 已删除、**写了会立即报错**的段：`cache`、`output`、`profile`、`sources`、
 `observability`、`compatibility`、`feedback`。理由：内核数据请求零缓存、
-零跨 Provider 静默降级，输出格式由调用点决定，可观测性由 `tstdx.observability`
-与 `tstdx.feedback` 的显式 API 驱动——这些键放在配置面里不会改变任何行为。
+零跨 Provider 静默降级，输出格式由调用点决定，可观测性由 `atst.observability`
+与 `atst.feedback` 的显式 API 驱动——这些键放在配置面里不会改变任何行为。
 
 ## 6. 编程接口
 
 ```python
-import tstdx
-from tstdx.config import Config, get_config, load_config, reset_config, set_config
+import atst
+from atst.config import Config, get_config, load_config, reset_config, set_config
 
 cfg = load_config(verbose=True)  # 打印各层来源（调试）
 print(cfg.core.timeout, cfg.hosts.slots_per_host)
 
-tstdx.configure(core={"timeout": 8})  # 覆盖并写回进程级单例
+atst.configure(core={"timeout": 8})  # 覆盖并写回进程级单例
 get_config().core.timeout              # 8.0
 
 set_config(Config())                   # 注入整份配置（会先 validate）
 reset_config()                         # 清空单例：下一次 get_config() 重新读全部源
 ```
 
-`tstdx.configure()` 的返回值就是合并后的 `Config`，同时已写回单例——
+`atst.configure()` 的返回值就是合并后的 `Config`，同时已写回单例——
 后续 `Client()` 与 `WebQuoteClient()` 都会读到它，显式构造参数仍然优先。
 
 ## 7. 回归锁定
@@ -202,7 +202,7 @@ reset_config()                         # 清空单例：下一次 get_config() �
 | 事实 | 测试 |
 |---|---|
 | 本文 §3 的键清单/默认值/取值范围、§4 的环境变量命名与专用变量表、§5 的报错消息，逐项对上 schema 与 loader | `tests/architecture/test_config_doc_contract.py` |
-| 写 `./tstdx.toml` ⇒ `Client()`/内核/传输层参数与文件一致 | `tests/runtime/test_kernel_config_wiring.py` |
+| 写 `./atst.toml` ⇒ `Client()`/内核/传输层参数与文件一致 | `tests/runtime/test_kernel_config_wiring.py` |
 | `Config` 只有 5 段、阈值数字单源 | `tests/config/test_merge.py`、`tests/compatibility/test_local_gate_contract.py` |
 | 配置 → 池构造参数只有一个翻译点 | `tests/transport/test_pool_settings_from_config_contract.py` |
 | 限流字段名与 `SessionState` 对齐（幻影键名报错） | `tests/transport/test_ratelimit_contract.py` |

@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.errors import WebSourceError
-from tstdx.web.eastmoney.adapters import (
+from atst.errors import WebSourceError
+from atst.web.eastmoney.adapters import (
     INDEX_TYPE_MAP,
     EastmoneyIndexConstituentsSource,
     _resolve_index_code,
 )
-from tstdx.web.sources import INDEX_CONS, get_source, list_sources
+from atst.web.sources import INDEX_CONS, get_source, list_sources
 
 pytestmark = pytest.mark.unit
 

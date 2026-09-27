@@ -7,20 +7,20 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.config.loader import (
+from atst.config.loader import (
     config_from_env,
     find_config_files,
     load_config,
     parse_env_value,
 )
-from tstdx.config.schema import Config, config_from_dict, merge_config
-from tstdx.errors import ConfigError, ValidationError
+from atst.config.schema import Config, config_from_dict, merge_config
+from atst.errors import ConfigError, ValidationError
 
 
 @pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch: pytest.MonkeyPatch):
     for k in list(os.environ):
-        if k.startswith("TSTDX_"):
+        if k.startswith("ATST_"):
             monkeypatch.delenv(k, raising=False)
 
 
@@ -41,12 +41,12 @@ class TestConfigMerge:
         assert Config._SUBCONFIGS == ("core", "hosts", "rate_limit", "web", "security")
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("TSTDX_CORE_TIMEOUT", "7")
+        monkeypatch.setenv("ATST_CORE_TIMEOUT", "7")
         cfg = load_config(overrides=None, use_env=True, use_files=False)
         assert cfg.core.timeout == 7.0
 
     def test_env_default_provider_override(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("TSTDX_CORE_DEFAULT_PROVIDER", "tencent")
+        monkeypatch.setenv("ATST_CORE_DEFAULT_PROVIDER", "tencent")
         cfg = load_config(overrides=None, use_env=True, use_files=False)
         assert cfg.core.default_provider == "tencent"
 
@@ -56,9 +56,9 @@ class TestConfigMerge:
 timeout = 7.0
 max_retries = 1
 """
-        p = tmp_path / "tstdx.toml"
+        p = tmp_path / "atst.toml"
         p.write_bytes(toml_content)
-        monkeypatch.setenv("TSTDX_CONFIG_FILE", str(p))
+        monkeypatch.setenv("ATST_CONFIG_FILE", str(p))
         cfg = load_config(overrides=None, use_env=False, use_files=True)
         assert cfg.core.timeout == 7.0
         assert cfg.core.max_retries == 1
@@ -73,10 +73,10 @@ max_retries = 1
 
     def test_precedence_order(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         toml_content = b"[core]\ntimeout = 1.0\n"
-        p = tmp_path / "tstdx.toml"
+        p = tmp_path / "atst.toml"
         p.write_bytes(toml_content)
-        monkeypatch.setenv("TSTDX_CONFIG_FILE", str(p))
-        monkeypatch.setenv("TSTDX_CORE_TIMEOUT", "2.0")
+        monkeypatch.setenv("ATST_CONFIG_FILE", str(p))
+        monkeypatch.setenv("ATST_CORE_TIMEOUT", "2.0")
 
         cfg = load_config(
             overrides={"core": {"timeout": 3.0}},
@@ -88,7 +88,7 @@ max_retries = 1
         cfg2 = load_config(overrides=None, use_env=True, use_files=True)
         assert cfg2.core.timeout == 2.0
 
-        monkeypatch.setenv("TSTDX_CONFIG_FILE", "")
+        monkeypatch.setenv("ATST_CONFIG_FILE", "")
         cfg3 = load_config(overrides=None, use_env=True, use_files=False)
         assert cfg3.core.timeout == 2.0
 
@@ -98,7 +98,7 @@ max_retries = 1
         monkeypatch: pytest.MonkeyPatch,
     ):
         missing = tmp_path / "missing.toml"
-        monkeypatch.setenv("TSTDX_CONFIG_FILE", str(missing))
+        monkeypatch.setenv("ATST_CONFIG_FILE", str(missing))
 
         with pytest.raises(ConfigError, match="不存在"):
             load_config(overrides=None, use_env=False, use_files=True)
@@ -108,7 +108,7 @@ max_retries = 1
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ):
-        monkeypatch.setenv("TSTDX_CONFIG_FILE", str(tmp_path))
+        monkeypatch.setenv("ATST_CONFIG_FILE", str(tmp_path))
 
         with pytest.raises(ConfigError, match="不是普通文件"):
             find_config_files()
@@ -118,10 +118,10 @@ max_retries = 1
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ):
-        project = tmp_path / "tstdx.toml"
+        project = tmp_path / "atst.toml"
         project.write_text("[core]\ntimeout = 4.0\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("TSTDX_CONFIG_FILE", str(project))
+        monkeypatch.setenv("ATST_CONFIG_FILE", str(project))
 
         files = find_config_files()
 
@@ -130,11 +130,11 @@ max_retries = 1
     def test_runtime_environment_keys_do_not_enter_schema_namespace(self):
         result = config_from_env(
             {
-                "TSTDX_HOSTS": "1.2.3.4:7709",
-                "TSTDX_CONFIG_FILE": "/tmp/example.toml",
-                "TSTDX_FEEDBACK": "dry-run",
-                "TSTDX_FEEDBACK_ENDPOINT": "https://feedback.example.com/api",
-                "TSTDX_FEEDBACK_STORE_DIR": "/tmp/tstdx-feedback",
+                "ATST_HOSTS": "1.2.3.4:7709",
+                "ATST_CONFIG_FILE": "/tmp/example.toml",
+                "ATST_FEEDBACK": "dry-run",
+                "ATST_FEEDBACK_ENDPOINT": "https://feedback.example.com/api",
+                "ATST_FEEDBACK_STORE_DIR": "/tmp/atst-feedback",
             }
         )
 
@@ -142,17 +142,17 @@ max_retries = 1
 
     def test_unknown_environment_section_fails_closed(self):
         with pytest.raises(ConfigError, match="无法识别环境变量"):
-            config_from_env({"TSTDX_COER_TIMEOUT": "5"})
+            config_from_env({"ATST_COER_TIMEOUT": "5"})
 
     def test_removed_section_environment_fails_closed(self):
         """``[cache]`` 等装饰段删除后，其环境变量不得再被当作有效覆盖。"""
 
         with pytest.raises(ConfigError, match="无法识别环境变量"):
-            config_from_env({"TSTDX_CACHE_ENABLED": "false"})
+            config_from_env({"ATST_CACHE_ENABLED": "false"})
 
     def test_unknown_environment_field_fails_closed(self):
         with pytest.raises(ConfigError, match="字段无法识别"):
-            config_from_env({"TSTDX_CORE_TIMOUT": "5"})
+            config_from_env({"ATST_CORE_TIMOUT": "5"})
 
     def test_unknown_key_tolerance(self):
         with pytest.raises(ValidationError):
@@ -182,7 +182,7 @@ max_retries = 1
         assert cfg.core.max_retries == 5
 
     def test_list_extension(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("TSTDX_WEB_ENABLED_SOURCES", "tencent,sina,eastmoney")
+        monkeypatch.setenv("ATST_WEB_ENABLED_SOURCES", "tencent,sina,eastmoney")
         cfg = load_config(overrides=None, use_env=True, use_files=False)
         assert isinstance(cfg.web.enabled_sources, list)
         assert "tencent" in cfg.web.enabled_sources
@@ -197,7 +197,7 @@ max_retries = 1
         assert parse_env_value("off") is False
 
     def test_tls_flag_is_the_only_security_switch(self):
-        assert config_from_env({"TSTDX_SECURITY_USE_TLS": "true"}) == {
+        assert config_from_env({"ATST_SECURITY_USE_TLS": "true"}) == {
             "security": {"use_tls": True}
         }
 

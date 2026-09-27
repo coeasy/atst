@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from tstdx.client import AsyncTdxClient
-from tstdx.errors import ValidationError
+from atst.client import AsyncTdxClient
+from atst.errors import ValidationError
 
 
 class _Pool:

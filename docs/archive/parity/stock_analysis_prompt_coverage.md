@@ -1,9 +1,9 @@
-# 股票深度分析提示词模板 — tstdx 接口覆盖度审计与扩展方案
+# 股票深度分析提示词模板 — atst 接口覆盖度审计与扩展方案
 
-> **归档说明（2026-09-23）**：本文是当时的对标/审计快照，**不是现行契约**。文中以现在时出现的 `UnifiedQuoteAPI` 统一门面（包括「新增 N 个门面方法」一类清单与给下游的校验指令）已随 v16 Phase 2 物理删除；今天的对外接口面是 `tstdx.client.TdxClient` / `Client` 与 capability 目录，口径见 [interfaces.md](../../api/interfaces.md) 与 [ARCHITECTURE.md](../../ARCHITECTURE.md)。本文的点位数、方法名与端点清单按原文留存而不逐条订正 —— 归档负责说明当时为什么这么做，不负责说明现在怎么用。
+> **归档说明（2026-09-23）**：本文是当时的对标/审计快照，**不是现行契约**。文中以现在时出现的 `UnifiedQuoteAPI` 统一门面（包括「新增 N 个门面方法」一类清单与给下游的校验指令）已随 v16 Phase 2 物理删除；今天的对外接口面是 `atst.client.TdxClient` / `Client` 与 capability 目录，口径见 [interfaces.md](../../api/interfaces.md) 与 [ARCHITECTURE.md](../../ARCHITECTURE.md)。本文的点位数、方法名与端点清单按原文留存而不逐条订正 —— 归档负责说明当时为什么这么做，不负责说明现在怎么用。
 
 > 审计对象：`P:\yanbao\股票深度分析提示词模板.docx`（10 大分析维度 + 4 项工具调用建议）
-> 审计基线：tstdx @ `main`（commit `43b8182`，2026-09-10）
+> 审计基线：atst @ `main`（commit `43b8182`，2026-09-10）
 > 结论：**38 个子项中 14 项完全覆盖（37%）、10 项部分覆盖（26%）、14 项存在缺口（37%）**。缺口可分为「东财报表直补」「新数据源接入」「本地计算」三类，其中 **P0 类可用现有 `dc_query` 零新依赖补齐 4 项缺口（新增 7 个门面方法）**。
 
 ---
@@ -35,9 +35,9 @@
 
 **三个系统性缺口**（非个别接口问题，而是能力层次缺失）：
 
-1. **tstdx 无技术指标计算层** — 全库 grep 无 `macd/rsi/boll/kdj/pandas_ta`，是纯数据获取库。提示词第 3 维度的 MACD/RSI/均线与第 6 维度 DCF 全部落在库外。
-2. **tstdx 无报告导出能力** — `tstdx/output/` 仅是数据输出 writer，没有研报/Word 生成。提示词末尾「调用文档导出工具」无着落。
-3. **tstdx 无定性/宏观数据源** — 行业周期、政策动态、地缘政治、护城河叙事均属定性内容，无任何免费接口。
+1. **atst 无技术指标计算层** — 全库 grep 无 `macd/rsi/boll/kdj/pandas_ta`，是纯数据获取库。提示词第 3 维度的 MACD/RSI/均线与第 6 维度 DCF 全部落在库外。
+2. **atst 无报告导出能力** — `atst/output/` 仅是数据输出 writer，没有研报/Word 生成。提示词末尾「调用文档导出工具」无着落。
+3. **atst 无定性/宏观数据源** — 行业周期、政策动态、地缘政治、护城河叙事均属定性内容，无任何免费接口。
 
 ---
 
@@ -45,7 +45,7 @@
 
 ### 维度 1 · 公司概况与护城河
 
-| 子项 | tstdx 接口 | 状态 |
+| 子项 | atst 接口 | 状态 |
 |---|---|---|
 | 主营业务模式及盈利来源 | `web().profile(sym)`、`stock_base_info([sym])` | ✅ |
 | 当前总市值及所属板块 | `quotes(sym)`、`snapshot(sym)`（`Quote.total_mv`）；`web().stock_boards(sym)`、`web().industry_boards()` | ✅ |
@@ -54,7 +54,7 @@
 
 ### 维度 2 · 财务健康度与排雷
 
-| 子项 | tstdx 接口 | 状态 |
+| 子项 | atst 接口 | 状态 |
 |---|---|---|
 | 近 3 年营收与净利润趋势、成长性 | `financial_abstract(sym)`（含 `revenue/net_profit/revenue_yoy/net_profit_yoy`）、`web().performance()`、`stock_all_performance(report_date)` | ✅ |
 | **应收账款、长期应收款变化（坏账风险）** | 无。需三大报表明细 `RPT_F10_FINANCE_GBALANCE` | ❌ **P0** |
@@ -65,15 +65,15 @@
 
 ### 维度 3 · 技术面走势分析
 
-| 子项 | tstdx 接口 | 状态 |
+| 子项 | atst 接口 | 状态 |
 |---|---|---|
 | 价格运行趋势（上升/盘整/下降） | `web().klines(sym, period=…)` 多周期 + `quotes` | ✅ |
-| **MACD / RSI / 均线系统多空信号** | ❌ tstdx 无指标计算 | ❌ **本地计算** |
+| **MACD / RSI / 均线系统多空信号** | ❌ atst 无指标计算 | ❌ **本地计算** |
 | **强支撑位与重阻力位** | ❌ 无 | ❌ **本地计算** |
 
 ### 维度 4 · 市场情绪与舆情
 
-| 子项 | tstdx 接口 | 状态 |
+| 子项 | atst 接口 | 状态 |
 |---|---|---|
 | **主流券商最新评级与目标价** | 无。东财 `RPT_WEB_RESPREDICT` 含评级机构数/EPS 预测/目标价 | ❌ **P0** |
 | 近期重大新闻、公告 | `web().news()`、`web().notices(syms)`、`news_financial()`、`web().research_reports()` | ✅ |
@@ -82,7 +82,7 @@
 
 ### 维度 5 · 竞品对比与行业周期
 
-| 子项 | tstdx 接口 | 状态 |
+| 子项 | atst 接口 | 状态 |
 |---|---|---|
 | **行业周期阶段、政策动态** | ❌ 无宏观/政策接口 | ❌ 定性 |
 | 竞争对手毛利率、营收增速对比 | `financial_abstract`（含 `gross_margin`/同比）、`stock_all_performance(report_date)` 全市场截面 | ⚠️ |
@@ -90,7 +90,7 @@
 
 ### 维度 6 · 估值合理性评估
 
-| 子项 | tstdx 接口 | 状态 |
+| 子项 | atst 接口 | 状态 |
 |---|---|---|
 | PE / PB 相对估值 | `stock_valuation(sym)`（`RPT_VALUEASSESS_DET`，含历史分位） | ✅ |
 | 高估 / 低估 / 合理区间判断 | `stock_valuation` 历史分位可直接判读 | ✅ |
@@ -98,14 +98,14 @@
 
 ### 维度 7 · 核心风险揭示
 
-| 子项 | tstdx 接口 | 状态 |
+| 子项 | atst 接口 | 状态 |
 |---|---|---|
 | 行业竞争加剧 | ⚠️ 可用 `board_rank` 集中度间接推断 | ⚠️ |
 | 宏观政策变动、地缘政治 | ❌ 无 | ❌ 定性 |
 
 ### 维度 8 · 资金面与筹码分布
 
-| 子项 | tstdx 接口 | 状态 |
+| 子项 | atst 接口 | 状态 |
 |---|---|---|
 | 机构持仓（公募） | `web().fund_holdings()`、`web().shareholders(sym)` | ✅ |
 | 社保 / QFII | `web().shareholders(sym)` 十大股东名称匹配 | ⚠️ |
@@ -116,7 +116,7 @@
 
 ### 维度 9 · 补充维度：治理与供应链
 
-| 子项 | tstdx 接口 | 状态 |
+| 子项 | atst 接口 | 状态 |
 |---|---|---|
 | **公司治理结构、管理层能力** | 无。东财 `RPT_EXECUTIVE_HOLD_DETAILS`（董监高持股变动）+ F10 高管表可补 | ❌ **P0** |
 | **ESG 表现** | ❌ 无。新浪财经有 11 家机构免费评级 | ❌ **P1** |
@@ -127,12 +127,12 @@
 
 ### 工具调用建议
 
-| 提示词需求 | tstdx 现状 | 状态 |
+| 提示词需求 | atst 现状 | 状态 |
 |---|---|---|
 | 实时行情数据 | `quotes` / `quotes_concurrent` / `snapshot` / `ex_quotes` / `goods_quotes`（含期货/商品/汇率） | ✅ |
 | 最新财务数据 | `financial_abstract`（主要指标）；三大报表明细 ❌ | ⚠️ |
 | 行业对比数据 | `industry_boards` / `board_members` / `stock_all_performance` 部分 | ⚠️ |
-| **文档导出工具** | ❌ `tstdx/output/` 仅数据 writer，无研报生成 | ❌ |
+| **文档导出工具** | ❌ `atst/output/` 仅数据 writer，无研报生成 | ❌ |
 
 ---
 
@@ -140,7 +140,7 @@
 
 ### P0 — 东财 datacenter 报表直补（零新依赖，`dc_query` 已具备通用查询能力）
 
-tstdx 已有 `web().dc_query(report, symbol=…, filters=…, all_pages=True)` 通用入口与
+atst 已有 `web().dc_query(report, symbol=…, filters=…, all_pages=True)` 通用入口与
 `corporate.VALID_REPORTS` 白名单（当前 9 项）。以下报表名经外部实现交叉验证，可直接注册进白名单：
 
 | 报表名 | 内容 | 补的缺口 | 备注 |
@@ -154,15 +154,15 @@ tstdx 已有 `web().dc_query(report, symbol=…, filters=…, all_pages=True)` �
 | `RPT_F10_INFO_ORGPROFILE` | 公司概况（主营/成立日期/员工数/董事长/注册地） | 维度1/9 | 美股为 `RPT_USF10_INFO_ORGPROFILE` |
 
 **实施要点**（沿用既有工程约定）：
-- 新增 `tstdx/web/fin_report.py`：一个 `EastmoneyDataCenterSource` 子类 + `fetch_balance_sheet` /
+- 新增 `atst/web/fin_report.py`：一个 `EastmoneyDataCenterSource` 子类 + `fetch_balance_sheet` /
   `fetch_income_sheet` / `fetch_cash_flow` / `fetch_rating_forecast` 四个方法
-- 新增 `tstdx/web/governance.py`：高管持股 + 公司概况 + 股东增减持
+- 新增 `atst/web/governance.py`：高管持股 + 公司概况 + 股东增减持
 - 在 `corporate.VALID_REPORTS` 注册 7 个新报表名（注释标注验证日期，沿用
   `# 分红送配（2026-09-06 实测可用）` 的写法）
 - 新增 `_session_fundamental.py`，门面暴露 `balance_sheet` / `income_sheet` /
   `cash_flow_sheet` / `rating_forecast` / `executive_holds` / `org_profile` /
   `shareholder_changes` 共 7 个方法
-- **合规**：tstdx 硬约束「禁止复制开源代码」，报表名与参数从抓包独立实现，不抄 akshare
+- **合规**：atst 硬约束「禁止复制开源代码」，报表名与参数从抓包独立实现，不抄 akshare
 
 ### P1 — 新增外部数据源
 
@@ -171,14 +171,14 @@ tstdx 已有 `web().dc_query(report, symbol=…, filters=…, all_pages=True)` �
 | **新浪财经 ESG 评级平台**（免费，11 家机构） | MSCI / 路孚特 / 华证 / 秩鼎 / 商道融绿 等评级与分项评分 | 维度9 ESG | 高。免费公开页面，季度更新，覆盖全部 A 股；`stock_esg_rate_sina` 聚合表可直接作为起点 |
 | 华证指数官网 `chindices.com` | 华证 ESG 九档评级 + 尾部风险四档 + 历史评级 | 维度9 ESG（权威源） | 高。A 股全覆盖，追溯至 2009 年 |
 | 商道融绿 `syntaogf.com` | A+/A/…/D 十档 + 行业调整分 | 维度9 ESG | 中。官网可查，季度更新 |
-| **同花顺 iwencai 自然语言查询** | 「护城河」「行业地位」「政策影响」等定性问答 | 维度1/5/7 定性缺口 | **高 — tstdx 已有 `web().wencai()` Mixin 方法**，零新增即可作兜底 |
+| **同花顺 iwencai 自然语言查询** | 「护城河」「行业地位」「政策影响」等定性问答 | 维度1/5/7 定性缺口 | **高 — atst 已有 `web().wencai()` Mixin 方法**，零新增即可作兜底 |
 | 数库 A 股新闻情绪指数 | 市场/个股情绪量化 | 维度4 散户情绪 | 中 |
 | 东财筹码分布 | CYQ 筹码分布（收集/发散判定） | 维度8 筹码 | 高 |
 
 ### P2 — 本地计算层（非接口范畴，建议独立模块）
 
-提示词中有 4 类需求本质是**计算**而非**取数**，tstdx 作为行情数据库不宜承担，建议独立成
-`tstdx/analysis/` 子包或拆为独立包，输入统一来自 `web().klines()` / `financial_abstract()`：
+提示词中有 4 类需求本质是**计算**而非**取数**，atst 作为行情数据库不宜承担，建议独立成
+`atst/analysis/` 子包或拆为独立包，输入统一来自 `web().klines()` / `financial_abstract()`：
 
 | 计算项 | 输入 | 算法参考 |
 |---|---|---|
@@ -209,7 +209,7 @@ tstdx 已有 `web().dc_query(report, symbol=…, filters=…, all_pages=True)` �
 | **P0-B** | `governance.py` 治理与供应链 | `executive_holds` / `org_profile` / `shareholder_changes`（3） | 补齐维度 9 治理缺口 |
 | **P1-A** | 新浪 ESG 数据源 | `esg_rating` / `esg_ratings_all`（2） | 补齐维度 9 ESG |
 | **P1-B** | 筹码分布 | `chip_distribution`（1） | 补齐维度 8 筹码分布 |
-| **P2** | `tstdx/analysis/` 本地计算层 | `technical_indicators` / `support_resistance` / `dcf_valuation`（3） | 补齐维度 3 技术指标 + 维度 6 DCF |
+| **P2** | `atst/analysis/` 本地计算层 | `technical_indicators` / `support_resistance` / `dcf_valuation`（3） | 补齐维度 3 技术指标 + 维度 6 DCF |
 
 **总收益预估**：全部落地后 38 子项中约 **26 项可自动取数**（覆盖度 37% → 68%）。
 剩余约 12 项属**定性判断**（护城河叙事、行业周期判定、政策与地缘政治、管理层能力）与
@@ -224,14 +224,14 @@ tstdx 已有 `web().dc_query(report, symbol=…, filters=…, all_pages=True)` �
 
 ## 五、审计方法与已验证事实
 
-- **接口面枚举**：`tstdx/facade/api.py`（76 个门面方法）+ `tstdx/web/_session_*.py`
+- **接口面枚举**：`atst/facade/api.py`（76 个门面方法）+ `atst/web/_session_*.py`
   六个 Mixin（约 110 个会话方法），合计约 180 个公开数据接口。
 - **能力边界确认**：全库正则扫描 `macd|rsi|boll|kdj|pandas_ta|ta\.lib` 零命中 →
-  确认无技术指标计算；`tstdx/output/` 仅 `__init__.py` 且无报告生成 → 确认无文档导出。
+  确认无技术指标计算；`atst/output/` 仅 `__init__.py` 且无报告生成 → 确认无文档导出。
 - **现有字段确认**：`EastmoneyFinanceMainSource.FIELD_MAP` 实测含
   `revenue / net_profit / revenue_yoy / net_profit_yoy / gross_margin / debt_ratio / eps / roe / bps`，
   维度 2 成长性与偿债能力已覆盖，缺口仅在**三大报表明细**。
 - **报表名验证**：三大报表与评级预测报表名均经独立第三方实现交叉验证；东财报表名偶发变动，
   落地时按既有 best-effort 约定（服务端返回「报表配置不存在 code=9501」时重新抓包校准）。
-- **合规提示**：tstdx 硬约束禁止复制开源代码，P0/P1 所有报表名、参数与解析逻辑需自行抓包
+- **合规提示**：atst 硬约束禁止复制开源代码，P0/P1 所有报表名、参数与解析逻辑需自行抓包
   实现，参考实现仅用于确认端点与字段存在性。

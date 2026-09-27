@@ -7,7 +7,7 @@ RUFF = $(PYTHON) -m ruff
 MYPY = $(PYTHON) -m mypy
 
 help:
-	@echo "tstdx project commands"
+	@echo "atst project commands"
 	@echo ""
 	@echo "Development:"
 	@echo "  make install         Install the CI-equivalent dev/test environment"
@@ -34,7 +34,7 @@ pre-commit:
 
 test:
 	$(PYTEST) tests/ -v --tb=short -m "not network" \
-		--cov=tstdx \
+		--cov=atst \
 		--cov-report=term-missing \
 		--cov-report=xml:coverage.xml
 
@@ -57,25 +57,25 @@ test-slow:
 	$(PYTEST) tests/ -v --tb=short -m "slow"
 
 lint:
-	$(RUFF) check tstdx/ tests/ scripts/
-	$(RUFF) format --check tstdx/ tests/ scripts/
+	$(RUFF) check atst/ tests/ scripts/
+	$(RUFF) format --check atst/ tests/ scripts/
 
 lint-fix:
-	$(RUFF) check --fix tstdx/ tests/ scripts/
-	$(RUFF) format tstdx/ tests/ scripts/
+	$(RUFF) check --fix atst/ tests/ scripts/
+	$(RUFF) format atst/ tests/ scripts/
 
 type-check:
-	$(MYPY) tstdx/ --ignore-missing-imports --no-error-summary --warn-unused-ignores
+	$(MYPY) atst/ --ignore-missing-imports --no-error-summary --warn-unused-ignores
 
 audit-originality:
-	$(PYTHON) -m tstdx.tools.check_originality --strict tstdx/
+	$(PYTHON) -m atst.tools.check_originality --strict atst/
 
 audit-golden:
-	$(PYTHON) -m tstdx.tools.golden_audit --gate --require-markets \
+	$(PYTHON) -m atst.tools.golden_audit --gate --require-markets \
 		--require-kline-categories 0,4,9 --require-payloads
 
 audit-spec:
-	$(PYTHON) -m tstdx.tools.spec_audit --json --strict
+	$(PYTHON) -m atst.tools.spec_audit --json --strict
 
 audit-reachability:
 	$(PYTHON) scripts/audit_reachability.py --strict
@@ -96,7 +96,7 @@ host-audit:
 # Deterministic PR merge gates only. Network probes remain separate by design.
 # This mirrors the blocking CI jobs without weakening thresholds or strict flags.
 # Every step must resolve on disk; tests/compatibility/test_local_gate_contract.py
-# enforces it. v16 Phase 2 deleted tstdx.native but left native-compat in this
+# enforces it. v16 Phase 2 deleted atst.native but left native-compat in this
 # chain pointing at the removed test file, so `make gates` failed for contributors.
 gates: lint type-check test test-bridges audit-golden audit-spec audit-adversarial audit-reachability audit-originality benchmark-smoke audit-docs
 	@echo "ALL DETERMINISTIC GATES PASSED"
@@ -112,13 +112,13 @@ publish:
 	@exit 2
 
 docker-build:
-	docker build -t tstdx:latest .
+	docker build -t atst:latest .
 
 docker-run:
-	docker run --rm tstdx:latest tstdx --help
+	docker run --rm atst:latest atst --help
 
 clean:
-	rm -rf __pycache__/ tstdx/__pycache__/ tstdx/*/__pycache__/
+	rm -rf __pycache__/ atst/__pycache__/ atst/*/__pycache__/
 	rm -rf .pytest_cache/ .mypy_cache/ .ruff_cache/
 	rm -rf build/ dist/ release-dist/ *.egg-info/
 	rm -rf .coverage htmlcov/ reports/

@@ -7,8 +7,8 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
 
-_FROM_IMPORT = re.compile(r"from\s+(tstdx[\w.]*)\s+import\s+([A-Za-z_][\w, ]*)")
-_PLAIN_IMPORT = re.compile(r"import\s+(tstdx[\w.]*)")
+_FROM_IMPORT = re.compile(r"from\s+(atst[\w.]*)\s+import\s+([A-Za-z_][\w, ]*)")
+_PLAIN_IMPORT = re.compile(r"import\s+(atst[\w.]*)")
 
 #: 发布链上会执行 import 的两处冒烟（本地 wheel 冒烟 + CI artifact 冒烟）
 _SMOKE_SOURCES = (
@@ -23,25 +23,25 @@ def test_local_wheel_smoke_is_source_isolated_and_checks_canonical_wiring() -> N
     assert 'work_dir = temp_root / "work"' in script
     assert '[str(python), "-I", "-c", probe]' in script
     assert "package_file.is_relative_to(venv_root)" in script
-    assert "TdxClient.__init__.__module__ == 'tstdx.client.sync'" in script
-    assert "AsyncTdxClient.__init__.__module__ == 'tstdx.client.async_'" in script
-    assert "TdxClient.bestip.__module__ == 'tstdx.client.sync'" in script
-    assert "AsyncTdxClient.bestip.__module__ == 'tstdx.client.async_'" in script
-    assert ("AsyncTdxClient.quotes_concurrent.__module__ == 'tstdx.client.async_'") in script
-    assert "ConnectionPool.__init__.__module__ == 'tstdx.transport.pool'" in script
-    assert ("AsyncConnectionPool.__init__.__module__ == 'tstdx.transport.async_'") in script
-    assert "ConnectionPool.request.__module__ == 'tstdx.transport.pool'" in script
-    assert "ConnectionPool.update_hosts.__module__ == 'tstdx.transport.pool'" in script
-    assert "AsyncConnectionPool.request.__module__ == 'tstdx.transport.async_'" in script
-    assert ("AsyncConnectionPool.update_hosts.__module__ == 'tstdx.transport.async_'") in script
-    assert "RankingStore.load.__module__ == 'tstdx.transport.hosts'" in script
-    assert "resolve_hosts.__module__ == 'tstdx.transport.hosts'" in script
+    assert "TdxClient.__init__.__module__ == 'atst.client.sync'" in script
+    assert "AsyncTdxClient.__init__.__module__ == 'atst.client.async_'" in script
+    assert "TdxClient.bestip.__module__ == 'atst.client.sync'" in script
+    assert "AsyncTdxClient.bestip.__module__ == 'atst.client.async_'" in script
+    assert ("AsyncTdxClient.quotes_concurrent.__module__ == 'atst.client.async_'") in script
+    assert "ConnectionPool.__init__.__module__ == 'atst.transport.pool'" in script
+    assert ("AsyncConnectionPool.__init__.__module__ == 'atst.transport.async_'") in script
+    assert "ConnectionPool.request.__module__ == 'atst.transport.pool'" in script
+    assert "ConnectionPool.update_hosts.__module__ == 'atst.transport.pool'" in script
+    assert "AsyncConnectionPool.request.__module__ == 'atst.transport.async_'" in script
+    assert ("AsyncConnectionPool.update_hosts.__module__ == 'atst.transport.async_'") in script
+    assert "RankingStore.load.__module__ == 'atst.transport.hosts'" in script
+    assert "resolve_hosts.__module__ == 'atst.transport.hosts'" in script
 
 
 def test_release_smoke_imports_only_symbols_that_still_exist() -> None:
     """发布冒烟里的 import 写在字符串里，路径类守卫看不见它指向已删除的模块。
 
-    `tstdx.facade.UnifiedQuoteAPI` 就是靠这条缝隙在 wheel 冒烟里活了整个 v16：
+    `atst.facade.UnifiedQuoteAPI` 就是靠这条缝隙在 wheel 冒烟里活了整个 v16：
     磁盘路径守卫只查 `tests/…py` 之类的文件路径，不查 `python -c` 里的模块名。
     """
 
@@ -55,7 +55,7 @@ def test_release_smoke_imports_only_symbols_that_still_exist() -> None:
             )
         plain_modules.update(_PLAIN_IMPORT.findall(text))
 
-    assert from_symbols and plain_modules, "冒烟脚本里的 tstdx import 解析为空，守卫本身失效"
+    assert from_symbols and plain_modules, "冒烟脚本里的 atst import 解析为空，守卫本身失效"
     unresolved = sorted(
         module
         for module in {*from_symbols, *plain_modules}

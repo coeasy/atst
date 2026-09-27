@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """异步传输回归：C5 ping 互斥 / C6 续帧锁与弃连 / T5 心跳旧引用与 get_running_loop。
@@ -18,9 +18,9 @@ from typing import Any
 
 import pytest
 
-from tstdx.errors import ConnectionClosed
-from tstdx.transport.async_ import AsyncConnectionPool, AsyncTcpConnection
-from tstdx.transport.hosts import HostEntry
+from atst.errors import ConnectionClosed
+from atst.transport.async_ import AsyncConnectionPool, AsyncTcpConnection
+from atst.transport.hosts import HostEntry
 
 sys.path.insert(0, str(Path(__file__).parent))
 from fake_server import (  # noqa: E402

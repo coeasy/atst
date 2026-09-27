@@ -26,7 +26,7 @@ assignees: ''
 
 ## 环境信息
 
-- tstdx 版本：
+- atst 版本：
 - Python 版本：
 - 操作系统：
 - 相关配置（如有）：

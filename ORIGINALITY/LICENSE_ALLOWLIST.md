@@ -1,11 +1,11 @@
 # 许可白名单（License Allowlist）
 
-> 本文档定义 tstdx 项目接受的第三方许可类型及其与项目自有许可（**MIT**）的兼容性分析。
-> 检查工具 `tstdx.tools.check_originality` 依据此白名单判断 `license_ok` 字段。
+> 本文档定义 atst 项目接受的第三方许可类型及其与项目自有许可（**MIT**）的兼容性分析。
+> 检查工具 `atst.tools.check_originality` 依据此白名单判断 `license_ok` 字段。
 
 ## 项目自有许可
 
-tstdx 以 **MIT License** 发布（见项目根目录 `LICENSE` 文件）。
+atst 以 **MIT License** 发布（见项目根目录 `LICENSE` 文件）。
 
 MIT 是最宽松的开源许可之一，允许商业使用、修改、分发、私用，唯一要求是
 保留版权声明与许可声明。
@@ -39,20 +39,20 @@ MIT 是最宽松的开源许可之一，允许商业使用、修改、分发、�
 ## GPL 兼容说明
 
 GPL 系列许可采用"传染性 copyleft"模型——链接 GPL 代码后，整体作品必须
-以 GPL 发布。这对 tstdx（MIT 许可）的影响取决于使用方式：
+以 GPL 发布。这对 atst（MIT 许可）的影响取决于使用方式：
 
 ### 推荐做法
 
 - **仅通过动态链接（`.py` 模块 import）使用 GPL/LGPL 库**：LGPL 允许
   这种使用方式，MIT 代码不受传染
-- **避免在 tstdx 核心包内直接 import GPL 库**：这会触发 GPL 传染
+- **避免在 atst 核心包内直接 import GPL 库**：这会触发 GPL 传染
 - **将 GPL/LGPL 依赖列为 optional extra**：`pyproject.toml` 中的
   `[project.optional-dependencies]` 已是这种模式
 
 ### 不推荐做法
 
-- 将 GPL 库的代码复制进 tstdx 源码树
-- 在 `tstdx/` 包内直接 `import` GPL 库（除非声明为 optional extra 且
+- 将 GPL 库的代码复制进 atst 源码树
+- 在 `atst/` 包内直接 `import` GPL 库（除非声明为 optional extra 且
   运行时隔离）
 
 ### 审计建议
@@ -72,13 +72,13 @@ Mozilla Public License 2.0 是**文件级 copyleft**：
 - 修改 MPL 文件后，修改部分必须保持 MPL 许可
 - 新增文件可以选择任何兼容许可（含 MIT）
 
-因此，tstdx 可以安全地**消费** MPL-2.0 许可的库（通过动态链接），
-但不应将 tstdx 源码修改后以 MPL 发布。
+因此，atst 可以安全地**消费** MPL-2.0 许可的库（通过动态链接），
+但不应将 atst 源码修改后以 MPL 发布。
 
 ## 更新流程
 
 1. 确认新许可的 SPDX id（参考 [SPDX License List](https://spdx.org/licenses/)）
 2. 评估与 MIT 的兼容性
 3. 更新本文件的白名单表格
-4. 同步更新 `tstdx/tools/check_originality.py` 中的 `ALLOWED_LICENSES` 常量
+4. 同步更新 `atst/tools/check_originality.py` 中的 `ALLOWED_LICENSES` 常量
 5. 在 `AUDIT_REPORT.md` 中记录变更

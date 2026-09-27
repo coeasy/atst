@@ -15,15 +15,15 @@ import importlib
 
 import pytest
 
-# 注意：tstdx.transport.speedtest 被包 __init__ 的同名函数遮蔽，
-# `import tstdx.transport.speedtest as X` 会绑到函数而非子模块，
+# 注意：atst.transport.speedtest 被包 __init__ 的同名函数遮蔽，
+# `import atst.transport.speedtest as X` 会绑到函数而非子模块，
 # 必须用 importlib.import_module 取真实模块对象再 monkeypatch。
-speedtest_mod = importlib.import_module("tstdx.transport.speedtest")
-hosts_mod = importlib.import_module("tstdx.transport.hosts")
-from tstdx.client import AsyncTdxClient, TdxClient  # noqa: E402
-from tstdx.transport.hosts import HostEntry  # noqa: E402
-from tstdx.transport.pool import ConnectionPool  # noqa: E402
-from tstdx.transport.speedtest import ProbeResult  # noqa: E402
+speedtest_mod = importlib.import_module("atst.transport.speedtest")
+hosts_mod = importlib.import_module("atst.transport.hosts")
+from atst.client import AsyncTdxClient, TdxClient  # noqa: E402
+from atst.transport.hosts import HostEntry  # noqa: E402
+from atst.transport.pool import ConnectionPool  # noqa: E402
+from atst.transport.speedtest import ProbeResult  # noqa: E402
 
 
 def _h(host: str, port: int = 7709) -> HostEntry:
@@ -249,7 +249,7 @@ class TestBestipAsync:
         monkeypatch.setattr(speedtest_mod, "speedtest", lambda *a, **k: results)
 
         async def _run():
-            from tstdx.transport.async_ import AsyncConnectionPool
+            from atst.transport.async_ import AsyncConnectionPool
 
             pool = AsyncConnectionPool(
                 [_h("1.1.1.1"), _h("2.2.2.2"), _h("3.3.3.3")],
@@ -266,7 +266,7 @@ class TestBestipAsync:
 
     def test_async_probe_uses_detached_host_snapshots(self, monkeypatch):
         async def _run():
-            from tstdx.transport.async_ import AsyncConnectionPool
+            from atst.transport.async_ import AsyncConnectionPool
 
             pool = AsyncConnectionPool(
                 [_h("1.1.1.1"), _h("2.2.2.2")],

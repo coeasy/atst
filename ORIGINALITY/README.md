@@ -1,6 +1,6 @@
 # ORIGINALITY — 原创性与许可合规检查
 
-本目录存放 tstdx 项目的**原创性审计材料**与**许可合规清单**。
+本目录存放 atst 项目的**原创性审计材料**与**许可合规清单**。
 
 ## 目录结构
 
@@ -12,7 +12,7 @@
 
 ## 检查工具
 
-`python -m tstdx.tools.check_originality` — 基于 AST 的原创性检查器，
+`python -m atst.tools.check_originality` — 基于 AST 的原创性检查器，
 零外部依赖，仅使用 Python 标准库。
 
 ### 检查内容
@@ -21,28 +21,28 @@
 2. **SPDX 许可识别** — 从文件内容中识别 SPDX 许可 id，并与白名单比对
 3. **样板 docstring** — 函数/类的 docstring 是否为常见占位符（`pass` / `TODO` / 空串 / 与函数名相同等）
 4. **已知项目指纹** — 注释或字符串中提及的外部项目名（mootdx / pytdx / tdxpy 等）及移植声明
-5. **外部导入审计** — 识别非标准库、非 tstdx 内部的第三方导入，列出供人工审阅
+5. **外部导入审计** — 识别非标准库、非 atst 内部的第三方导入，列出供人工审阅
 
 ### 用法
 
 ```bash
 # 检查整个源码树
-python -m tstdx.tools.check_originality tstdx/
+python -m atst.tools.check_originality atst/
 
 # CI 模式：任一问题返回非零退出码
-python -m tstdx.tools.check_originality --strict tstdx/
+python -m atst.tools.check_originality --strict atst/
 
 # JSON 输出（供自动化流水线消费）
-python -m tstdx.tools.check_originality --json tstdx/
+python -m atst.tools.check_originality --json atst/
 
 # 自动补上缺失的许可头（仅 .py / .pyi）
-python -m tstdx.tools.check_originality --fix tstdx/
+python -m atst.tools.check_originality --fix atst/
 
 # 检查单个文件
-python -m tstdx.tools.check_originality tstdx/codec/framing.py
+python -m atst.tools.check_originality atst/codec/framing.py
 
 # 直接运行脚本（无需安装）
-python tstdx/tools/check_originality.py --strict tstdx/
+python atst/tools/check_originality.py --strict atst/
 ```
 
 ### 结果结构
@@ -56,7 +56,7 @@ python tstdx/tools/check_originality.py --strict tstdx/
 | `license_ok` | 检出许可是否在 `LICENSE_ALLOWLIST.md` 白名单内 |
 | `license_header` | 文件首部是否含预期的版权/许可头注释 |
 | `suspicious_patterns` | 触发的启发式指纹描述列表 |
-| `external_imports` | 非标准库、非 tstdx 内部的第三方导入列表 |
+| `external_imports` | 非标准库、非 atst 内部的第三方导入列表 |
 | `is_original` | 综合判断：`suspicious_patterns` 为空即为 `True` |
 
 ### 许可头格式
@@ -64,7 +64,7 @@ python tstdx/tools/check_originality.py --strict tstdx/
 默认检查以下模式（任一命中即视为有头）：
 
 ```python
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 ```
 
@@ -72,7 +72,7 @@ python tstdx/tools/check_originality.py --strict tstdx/
 
 - `# SPDX-License-Identifier: MIT`
 - `# Licensed under the Apache License, Version 2.0`
-- `# Copyright ... tstdx ...` + `# Licensed under ...`
+- `# Copyright ... atst ...` + `# Licensed under ...`
 
 `--fix` 模式将自动在文件首部插入默认许可头（保留 shebang 行位置）。
 

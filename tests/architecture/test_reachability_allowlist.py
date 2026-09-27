@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """可达性白名单自身的契约（审计 F-22）。
@@ -76,40 +76,40 @@ def test_strict_gate_passes_on_current_tree() -> None:
 def test_process_entrypoints_are_seeded_not_exempted() -> None:
     modules, _ = ar._collect_modules()
     entry = ar._entrypoints(modules)
-    assert {"tstdx.cli", "tstdx.__main__", "tstdx.tools.spec_audit"} <= entry
-    assert "tstdx.runtime.kernel" not in entry
+    assert {"atst.cli", "atst.__main__", "atst.tools.spec_audit"} <= entry
+    assert "atst.runtime.kernel" not in entry
     records, _ = ar._load_allow()
-    assert not ({"tstdx.cli", "tstdx.__main__"} & set(records))
+    assert not ({"atst.cli", "atst.__main__"} & set(records))
 
 
 # --------------------------------------------------------------------------- #
 # 六类记录缺陷各自都被抓住
 # --------------------------------------------------------------------------- #
 def test_thin_reason_is_a_defect(tmp_path: Path) -> None:
-    path = _write(tmp_path, "tstdx.batch  # 太短")
+    path = _write(tmp_path, "atst.batch  # 太短")
     records, defects = ar._load_allow(path)
-    assert list(records) == ["tstdx.batch"]
+    assert list(records) == ["atst.batch"]
     assert len(defects) == 1 and defects[0].startswith("[thin]")
 
 
 def test_duplicate_entry_is_a_defect(tmp_path: Path) -> None:
-    path = _write(tmp_path, f"tstdx.batch  # {LONG_REASON}", f"tstdx.batch  # {LONG_REASON}")
+    path = _write(tmp_path, f"atst.batch  # {LONG_REASON}", f"atst.batch  # {LONG_REASON}")
     _, defects = ar._load_allow(path)
     assert [d.split("]")[0] for d in defects] == ["[dup"]
 
 
 def test_dead_entry_is_a_defect(tmp_path: Path) -> None:
-    path = _write(tmp_path, f"tstdx.nope  # {LONG_REASON}")
+    path = _write(tmp_path, f"atst.nope  # {LONG_REASON}")
     records, parse_defects = ar._load_allow(path)
     assert parse_defects == []
-    defects = ar._allowlist_defects(records, {"tstdx.batch"}, set())
+    defects = ar._allowlist_defects(records, {"atst.batch"}, set())
     assert [d.split("]")[0] for d in defects] == ["[dead"]
 
 
 def test_stale_entry_is_a_defect(tmp_path: Path) -> None:
-    path = _write(tmp_path, f"tstdx.batch  # {LONG_REASON}")
+    path = _write(tmp_path, f"atst.batch  # {LONG_REASON}")
     records, _ = ar._load_allow(path)
-    defects = ar._allowlist_defects(records, {"tstdx.batch"}, {"tstdx.batch"})
+    defects = ar._allowlist_defects(records, {"atst.batch"}, {"atst.batch"})
     assert [d.split("]")[0] for d in defects] == ["[stale"]
 
 
@@ -120,7 +120,7 @@ def test_reason_pointing_at_a_removed_path_is_a_defect(tmp_path: Path) -> None:
     """豁免理由引用的目录被改名/删除后，这条证据就已经不成立，必须当场判红。"""
     path = _write(
         tmp_path,
-        "tstdx.batch  # 由 tests/this_directory_was_renamed_long_ago/ 与它的测试消费，"
+        "atst.batch  # 由 tests/this_directory_was_renamed_long_ago/ 与它的测试消费，"
         "内核不 import 属预期，理由本身够长不会被 thin 抢先",
     )
     _, defects = ar._load_allow(path)
@@ -130,7 +130,7 @@ def test_reason_pointing_at_a_removed_path_is_a_defect(tmp_path: Path) -> None:
 def test_reason_without_any_verifiable_pointer_is_a_defect(tmp_path: Path) -> None:
     path = _write(
         tmp_path,
-        "tstdx.batch  # 这是一段说得很长很圆、却一个文件都举不出来的自由文本理由，"
+        "atst.batch  # 这是一段说得很长很圆、却一个文件都举不出来的自由文本理由，"
         "读的人无法反驳，因此也无法信任",
     )
     _, defects = ar._load_allow(path)
@@ -170,9 +170,9 @@ def test_a_pointer_at_an_unrelated_file_is_a_defect(tmp_path: Path) -> None:
     """
     unrelated = tmp_path / "tests" / "unrelated.py"
     unrelated.parent.mkdir(parents=True)
-    unrelated.write_text("import tstdx.charset\n", encoding="utf-8")
+    unrelated.write_text("import atst.charset\n", encoding="utf-8")
     found = ar._pointer_defects(
-        {"tstdx.batch": f"由 tests/unrelated.py{REASON_TAIL}"}, {}, {}, root=tmp_path
+        {"atst.batch": f"由 tests/unrelated.py{REASON_TAIL}"}, {}, {}, root=tmp_path
     )
     assert [d.split("]")[0] for d in found] == ["[weak-pointer"], found
 
@@ -181,18 +181,18 @@ def test_a_pointer_that_really_touches_the_module_is_accepted(tmp_path: Path) ->
     """正控的正面：同一形状，只要文件真的 import 到该模块就不该报。"""
     consumer = tmp_path / "tests" / "real.py"
     consumer.parent.mkdir(parents=True)
-    consumer.write_text("from tstdx.batch import __version__\n", encoding="utf-8")
-    records = {"tstdx.batch": f"由 tests/real.py{REASON_TAIL}"}
+    consumer.write_text("from atst.batch import __version__\n", encoding="utf-8")
+    records = {"atst.batch": f"由 tests/real.py{REASON_TAIL}"}
     assert ar._pointer_defects(records, {}, {}, root=tmp_path) == []
 
 
 def test_a_pointer_via_a_parent_package_export_is_accepted(tmp_path: Path) -> None:
-    """``from tstdx.trade import X`` 也算触达 ``tstdx.trade.client``——只要父包真的导出它。"""
+    """``from atst.trade import X`` 也算触达 ``atst.trade.client``——只要父包真的导出它。"""
     consumer = tmp_path / "tests" / "pkg.py"
     consumer.parent.mkdir(parents=True)
-    consumer.write_text("from tstdx.trade import TradeClient\n", encoding="utf-8")
-    graph = {"tstdx.trade": {"tstdx.trade.client"}, "tstdx.trade.client": set()}
-    records = {"tstdx.trade.client": f"由 tests/pkg.py{REASON_TAIL}"}
+    consumer.write_text("from atst.trade import TradeClient\n", encoding="utf-8")
+    graph = {"atst.trade": {"atst.trade.client"}, "atst.trade.client": set()}
+    records = {"atst.trade.client": f"由 tests/pkg.py{REASON_TAIL}"}
     assert ar._pointer_defects(records, {}, graph, root=tmp_path) == []
 
 
@@ -206,9 +206,9 @@ def test_every_seed_names_a_real_module() -> None:
 
 
 def test_a_stale_seed_is_a_defect() -> None:
-    defects = ar._seed_defects({"tstdx"}, seeds={"tstdx", "tstdx.integration.http_server"})
+    defects = ar._seed_defects({"atst"}, seeds={"atst", "atst.integration.http_server"})
     assert [d.split("]")[0] for d in defects] == ["[dead-seed"]
-    assert "tstdx.integration.http_server" in defects[0]
+    assert "atst.integration.http_server" in defects[0]
 
 
 # --------------------------------------------------------------------------- #
@@ -217,11 +217,11 @@ def test_a_stale_seed_is_a_defect() -> None:
 
 
 def _fake_module(tmp_path: Path, stem: str, source: str) -> tuple[dict[str, Path], str]:
-    """造一个 ``tstdx/<stem>.py`` 的假模块，返回 ``(modules 映射, 点号模块名)``。"""
-    module = tmp_path / "tstdx" / f"{stem}.py"
+    """造一个 ``atst/<stem>.py`` 的假模块，返回 ``(modules 映射, 点号模块名)``。"""
+    module = tmp_path / "atst" / f"{stem}.py"
     module.parent.mkdir(parents=True, exist_ok=True)
     module.write_text(source, encoding="utf-8")
-    dotted = f"tstdx.{stem}"
+    dotted = f"atst.{stem}"
     return {dotted: module}, dotted
 
 

@@ -5,15 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.errors import ConfigError
-from tstdx.feedback import FeedbackReporter
-from tstdx.feedback.reporter import _sanitize_value
+from atst.errors import ConfigError
+from atst.feedback import FeedbackReporter
+from atst.feedback.reporter import _sanitize_value
 
 
 def test_feedback_store_directory_expands_user_home_without_writing() -> None:
-    reporter = FeedbackReporter(store_dir="~/.tstdx/feedback")
+    reporter = FeedbackReporter(store_dir="~/.atst/feedback")
 
-    assert reporter._store_dir == Path("~/.tstdx/feedback").expanduser()
+    assert reporter._store_dir == Path("~/.atst/feedback").expanduser()
     assert "~" not in reporter._store_dir.parts
 
 
@@ -58,7 +58,7 @@ def test_feedback_file_storage_never_overwrites_rapid_successive_reports(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("TSTDX_FEEDBACK", "1")
+    monkeypatch.setenv("ATST_FEEDBACK", "1")
     reporter = FeedbackReporter(store_dir=tmp_path)
 
     assert reporter.report_usage("bars", 1.0, "ok") is True
@@ -75,7 +75,7 @@ def test_feedback_dry_run_does_not_create_store_directory(
     tmp_path: Path,
 ) -> None:
     store = tmp_path / "not-created"
-    monkeypatch.setenv("TSTDX_FEEDBACK", "dry-run")
+    monkeypatch.setenv("ATST_FEEDBACK", "dry-run")
     reporter = FeedbackReporter(store_dir=store)
 
     assert reporter.report_usage("bars", 1.0, "ok") is True
@@ -87,7 +87,7 @@ def test_feedback_disabled_does_not_create_store_directory(
     tmp_path: Path,
 ) -> None:
     store = tmp_path / "not-created"
-    monkeypatch.delenv("TSTDX_FEEDBACK", raising=False)
+    monkeypatch.delenv("ATST_FEEDBACK", raising=False)
     reporter = FeedbackReporter(store_dir=store)
 
     assert reporter.report_usage("bars", 1.0, "ok") is False

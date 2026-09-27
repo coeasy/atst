@@ -7,7 +7,7 @@ asyncio 协议的 ``connection_lost`` 回调 —— 而 ``writer.close()`` 之�
 一、:meth:`AsyncConnectionPool.close` 经 ``_cleanup_committed_close`` **逐个槽位**排空，
    所以"关不掉"的代价按槽位数乘上去；
 二、读帧失败路径 ``_recv_exact`` 是 ``await self.close()`` 之后才抛
-   :class:`~tstdx.errors.ConnectionClosed` —— 读超时的墙钟已经到点，调用方却仍然回不来。
+   :class:`~atst.errors.ConnectionClosed` —— 读超时的墙钟已经到点，调用方却仍然回不来。
 
 下面的用例按这两条各钉一格：挂死的 writer 必须在上界内被放手（并且不吞掉取消），
 健康的 writer 不被上界拖慢；池关停的总耗时按 ``槽位数 × CLOSE_WAIT_SECONDS`` 收口。
@@ -20,8 +20,8 @@ import time
 
 import pytest
 
-from tstdx.transport.async_ import CLOSE_WAIT_SECONDS, AsyncConnectionPool, AsyncTcpConnection
-from tstdx.transport.hosts import HostEntry
+from atst.transport.async_ import CLOSE_WAIT_SECONDS, AsyncConnectionPool, AsyncTcpConnection
+from atst.transport.hosts import HostEntry
 
 
 class _Writer:

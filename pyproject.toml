@@ -3,13 +3,13 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tstdx"
-version = "1.1.0"
+name = "atst"
+version = "1.0.0"
 description = "Provider-first market-data runtime and TDX protocol toolkit with explicit Providers, direct Provider reads, Stateful streaming and canonical HTTP/WebSocket/MCP adapters"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "tstdx contributors" }]
+authors = [{ name = "atst contributors" }]
 keywords = [
     "tdx", "通达信", "quotation", "stock", "a-share", "kline",
     "market-data", "protocol", "vipdoc", "realtime",
@@ -38,13 +38,13 @@ duckdb    = ["duckdb>=0.10"]
 # Concrete HTTP Provider adapters (Tencent/Sina/Eastmoney/Baidu etc.).
 web       = ["httpx>=0.26"]
 # capture 的两件可选依赖：Windows 上 zoneinfo 要有 tzdata 才认得住名时区，
-# zstd 编码要有 zstandard（``tstdx/tools/capture.py`` 里 import 失败才回退 zlib）。
+# zstd 编码要有 zstandard（``atst/tools/capture.py`` 里 import 失败才回退 zlib）。
 tools     = ["tzdata>=2024.1; sys_platform == 'win32'", "zstandard>=0.22"]
 metrics   = ["prometheus-client>=0.19"]
 # Canonical /v13 HTTP + /v13/ws transports. The asyncio.server API used by the
 # canonical WS transport is part of the modern websockets API.
 server    = ["fastapi>=0.110", "uvicorn>=0.27", "websockets>=13.0"]
-# MCP stdio 面是纯标准库的 JSON-RPC over stdio（``tstdx/integration/mcp/`` 不 import
+# MCP stdio 面是纯标准库的 JSON-RPC over stdio（``atst/integration/mcp/`` 不 import
 # 任何第三方包），所以它**没有** extra：过去那份 ``mcp = ["mcp>=1.0"]`` 全仓 0 处读取。
 dev       = [
     "pytest>=8.0",
@@ -80,14 +80,14 @@ Changelog     = "https://github.com/coeasy/tstdx/blob/main/CHANGELOG.md"
 Releases      = "https://github.com/coeasy/tstdx/releases"
 
 [project.scripts]
-tstdx = "tstdx.cli:main"
+atst = "atst.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["tstdx"]
+packages = ["atst"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "tstdx",
+    "atst",
     "PROTOCOL_SPEC",
     "tests",
     "README.md",
@@ -114,7 +114,7 @@ filterwarnings = ["ignore::DeprecationWarning"]
 line-length = 100
 target-version = "py310"
 # 代码生成草稿区（auto-generated，不进包内），不纳入 lint
-extend-exclude = ["tstdx/tools/generated_draft"]
+extend-exclude = ["atst/tools/generated_draft"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
@@ -122,11 +122,11 @@ ignore = ["E501", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
-"tstdx/protocol/parsers/*" = ["E501"]
+"atst/protocol/parsers/*" = ["E501"]
 # Package __init__ modules intentionally define lazy/re-export API surfaces.
-"tstdx/cli/__init__.py" = ["F401"]
-"tstdx/client/__init__.py" = ["F401"]
-"tstdx/web/base.py" = ["F401"]
+"atst/cli/__init__.py" = ["F401"]
+"atst/client/__init__.py" = ["F401"]
+"atst/web/base.py" = ["F401"]
 
 [tool.mypy]
 python_version = "3.10"
@@ -157,7 +157,7 @@ module = [
 ignore_missing_imports = true
 
 [tool.coverage.run]
-source = ["tstdx"]
+source = ["atst"]
 branch = true
 
 [tool.coverage.report]

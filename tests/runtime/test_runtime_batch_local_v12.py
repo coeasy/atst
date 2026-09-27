@@ -3,13 +3,13 @@ from __future__ import annotations
 from dataclasses import fields
 from pathlib import Path
 
-from tstdx.batch import BatchResult
-from tstdx.domain.models import Bar, Quote
-from tstdx.errors import ValidationError
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.result import Provenance, QueryResult
-from tstdx.runtime.executor import DirectProviderExecutor
-from tstdx.runtime.kernel import UnifiedRuntime
+from atst.batch import BatchResult
+from atst.domain.models import Bar, Quote
+from atst.errors import ValidationError
+from atst.query import QueryPlanner, QuerySpec
+from atst.result import Provenance, QueryResult
+from atst.runtime.executor import DirectProviderExecutor
+from atst.runtime.kernel import UnifiedRuntime
 
 
 def _local_plan(period: str):
@@ -120,7 +120,7 @@ def test_local_5min_uses_minute_reader_and_fzline_path(monkeypatch, tmp_path) ->
             seen["output"] = output
             return [Bar(datetime="a"), Bar(datetime="b"), Bar(datetime="c")]
 
-    monkeypatch.setattr("tstdx.reader.MinBarReader", FakeMinReader)
+    monkeypatch.setattr("atst.reader.MinBarReader", FakeMinReader)
     executor = DirectProviderExecutor(vipdoc_root=str(tmp_path))
     rows = executor._local_bars(_local_plan("5min"))
     assert seen["interval"] == 5
@@ -142,7 +142,7 @@ def test_local_1min_uses_minute_reader_and_minline_path(monkeypatch, tmp_path) -
             seen["path"] = Path(path)
             return [Bar(datetime="a")]
 
-    monkeypatch.setattr("tstdx.reader.MinBarReader", FakeMinReader)
+    monkeypatch.setattr("atst.reader.MinBarReader", FakeMinReader)
     executor = DirectProviderExecutor(vipdoc_root=str(tmp_path))
     rows = executor._local_bars(_local_plan("1min"))
     assert seen["interval"] == 1

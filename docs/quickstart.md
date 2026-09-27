@@ -1,29 +1,29 @@
-# tstdx 快速开始
+# atst 快速开始
 
-本文对应当前 `1.1.0` Draft 开发线；最新已发布稳定版是 `v1.0.0`。要求 Python 3.10 或更高版本。
+本文对应当前 `1.0.0` Draft 开发线；最新已发布稳定版是 `v1.0.0`。要求 Python 3.10 或更高版本。
 
 ## 安装
 
 ```bash
 # 从源码（当前唯一可直接执行的路径）
-git clone https://github.com/coeasy/tstdx.git && cd tstdx
+git clone https://github.com/coeasy/atst.git && cd atst
 pip install ".[all]"
 
 # 开发体验（跑门禁用）
 pip install -e ".[dev]"
 ```
 
-> **为什么不是 `pip install tstdx`**：本包当前不在 PyPI 上（实测 2026-09-22，
-> `https://pypi.org/pypi/tstdx/json` 与 `/simple/tstdx/` 均 404）。extras 的名字
+> **为什么不是 `pip install atst`**：本包当前不在 PyPI 上（实测 2026-09-22，
+> `https://pypi.org/pypi/atst/json` 与 `/simple/atst/` 均 404）。extras 的名字
 > （`[all]`、`[web]`、`[server]` …）在源码安装下同样可用；上架之后本节改写为
-> `pip install "tstdx[all]"`。
+> `pip install "atst[all]"`。
 
 ## 5 分钟上手
 
 ### 1. 获取 K 线数据
 
 ```python
-from tstdx.client import TdxClient
+from atst.client import TdxClient
 
 client = TdxClient()
 
@@ -57,7 +57,7 @@ bid / ask`；`change` / `pct_change` 只是 `Quote` 对象的派生属性，dict
 
 ```python
 import asyncio
-from tstdx.client import AsyncTdxClient
+from atst.client import AsyncTdxClient
 
 
 async def main():
@@ -75,12 +75,12 @@ asyncio.run(main())
 ### 4. 数据落地
 
 ```python
-from tstdx.output import write
+from atst.output import write
 
 bars = client.bars("sh600519", period="day", count=250)
 
 # DataFrame（需 pandas；sink 由扩展名/前缀推断，内存对象显式传 fmt）
-from tstdx.output import to_dataframe
+from atst.output import to_dataframe
 
 df = to_dataframe(bars)
 
@@ -94,10 +94,10 @@ write(bars, "duckdb:market.db@kline")
 ### 5. CLI
 
 ```bash
-tstdx bars sh600519 --period day --count 20
-tstdx quotes sh600519 sz000001
-tstdx server-test          # 主站测速
-tstdx stream sh600519      # 流式订阅：默认保持 10 秒后自停，中途按 Ctrl+C 也可停
+atst bars sh600519 --period day --count 20
+atst quotes sh600519 sz000001
+atst server-test          # 主站测速
+atst stream sh600519      # 流式订阅：默认保持 10 秒后自停，中途按 Ctrl+C 也可停
 ```
 
 ### 6. 统一查询内核（`Client`，172 项 capability）
@@ -106,8 +106,8 @@ tstdx stream sh600519      # 流式订阅：默认保持 10 秒后自停，中�
 `QueryPlan`，零缓存直调绑定实现，并在结果里携带 provenance。
 
 ```python
-from tstdx import Client, FallbackPolicy, QuerySpec
-from tstdx.typed_query import FundHoldingsQuery
+from atst import Client, FallbackPolicy, QuerySpec
+from atst.typed_query import FundHoldingsQuery
 
 client = Client()
 
@@ -170,7 +170,7 @@ client.bars("sh600519", as_format="dataframe")  # pandas.DataFrame（需装 extr
 ### 错误处理
 
 ```python
-from tstdx.errors import TdxError, advice_for
+from atst.errors import TdxError, advice_for
 
 try:
     bars = client.bars("sh600519")

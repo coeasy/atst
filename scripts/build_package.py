@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """Safe local/release distribution verifier and package builder.
@@ -48,7 +48,7 @@ os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_DIST = ROOT / "dist"
-PROJECT_NAME = "tstdx"
+PROJECT_NAME = "atst"
 REQUIRED_PYTHON = (3, 10)
 _PROTECTED_OUTPUT_ROOTS = {
     ".github",
@@ -58,7 +58,7 @@ _PROTECTED_OUTPUT_ROOTS = {
     "docs",
     "scripts",
     "tests",
-    "tstdx",
+    "atst",
 }
 _PROJECT_SECTION_RE = re.compile(
     r"^\[project\]\s*$\n(?P<body>.*?)(?=^\[|\Z)",
@@ -267,14 +267,14 @@ def _project_version_from_text(text: str) -> str:
 
 
 def _declared_versions() -> tuple[str, str]:
-    """Return ``(project_metadata_version, source_version)`` without importing tstdx."""
+    """Return ``(project_metadata_version, source_version)`` without importing atst."""
 
     project_text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    source_text = (ROOT / "tstdx" / "__init__.py").read_text(encoding="utf-8")
+    source_text = (ROOT / "atst" / "__init__.py").read_text(encoding="utf-8")
     project_version = _project_version_from_text(project_text)
     source_match = _SOURCE_VERSION_RE.search(source_text)
     if source_match is None:
-        raise SystemExit("[校验失败] tstdx.__version__ 声明缺失")
+        raise SystemExit("[校验失败] atst.__version__ 声明缺失")
     return project_version, source_match.group(1)
 
 
@@ -350,7 +350,7 @@ def _source_runtime_members() -> set[str]:
 
     marker = package_root / "py.typed"
     if marker.is_symlink() or not marker.is_file():
-        raise SystemExit("[校验失败] source package 缺少普通文件 tstdx/py.typed")
+        raise SystemExit("[校验失败] source package 缺少普通文件 atst/py.typed")
     members.add(marker.relative_to(ROOT).as_posix())
 
     init_member = f"{PROJECT_NAME}/__init__.py"
@@ -465,7 +465,7 @@ def _smoke(wheel: pathlib.Path) -> None:
 
     wheel = wheel.resolve()
     print("[冒烟] 创建临时 venv 并安装 canonical wheel ...")
-    with tempfile.TemporaryDirectory(prefix="tstdx-smoke-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="atst-smoke-") as tmp:
         temp_root = pathlib.Path(tmp)
         venv_dir = temp_root / "venv"
         work_dir = temp_root / "work"
@@ -473,10 +473,10 @@ def _smoke(wheel: pathlib.Path) -> None:
         venv.create(venv_dir, with_pip=True)
         if sys.platform == "win32":
             python = venv_dir / "Scripts" / "python.exe"
-            cli = venv_dir / "Scripts" / "tstdx.exe"
+            cli = venv_dir / "Scripts" / "atst.exe"
         else:
             python = venv_dir / "bin" / "python"
-            cli = venv_dir / "bin" / "tstdx"
+            cli = venv_dir / "bin" / "atst"
 
         _run(
             [
@@ -493,33 +493,33 @@ def _smoke(wheel: pathlib.Path) -> None:
         probe = (
             "import importlib.metadata as m, pathlib, sys; "
             "from importlib.resources import files; "
-            "import tstdx; "
-            "from tstdx.client import AsyncTdxClient, TdxClient; "
-            "from tstdx import Client; "
+            "import atst; "
+            "from atst.client import AsyncTdxClient, TdxClient; "
+            "from atst import Client; "
             "assert callable(Client.call) and callable(Client.typed); "
-            "from tstdx.tools.host_audit import audit_all; "
-            "from tstdx.transport import ConnectionPool, RankingStore, resolve_hosts; "
-            "from tstdx.transport.async_ import AsyncConnectionPool; "
-            "package_file = pathlib.Path(tstdx.__file__).resolve(); "
+            "from atst.tools.host_audit import audit_all; "
+            "from atst.transport import ConnectionPool, RankingStore, resolve_hosts; "
+            "from atst.transport.async_ import AsyncConnectionPool; "
+            "package_file = pathlib.Path(atst.__file__).resolve(); "
             "venv_root = pathlib.Path(sys.prefix).resolve(); "
             "assert package_file.is_relative_to(venv_root), (package_file, venv_root); "
-            "assert tstdx.__version__ == m.version('tstdx'); "
-            "assert files('tstdx').joinpath('py.typed').is_file(); "
+            "assert atst.__version__ == m.version('atst'); "
+            "assert files('atst').joinpath('py.typed').is_file(); "
             "assert callable(audit_all); "
-            "assert TdxClient.__init__.__module__ == 'tstdx.client.sync'; "
-            "assert AsyncTdxClient.__init__.__module__ == 'tstdx.client.async_'; "
-            "assert TdxClient.bestip.__module__ == 'tstdx.client.sync'; "
-            "assert AsyncTdxClient.bestip.__module__ == 'tstdx.client.async_'; "
-            "assert AsyncTdxClient.quotes_concurrent.__module__ == 'tstdx.client.async_'; "
-            "assert ConnectionPool.__init__.__module__ == 'tstdx.transport.pool'; "
-            "assert ConnectionPool.request.__module__ == 'tstdx.transport.pool'; "
-            "assert ConnectionPool.update_hosts.__module__ == 'tstdx.transport.pool'; "
-            "assert AsyncConnectionPool.__init__.__module__ == 'tstdx.transport.async_'; "
-            "assert AsyncConnectionPool.request.__module__ == 'tstdx.transport.async_'; "
-            "assert AsyncConnectionPool.update_hosts.__module__ == 'tstdx.transport.async_'; "
-            "assert RankingStore.load.__module__ == 'tstdx.transport.hosts'; "
-            "assert resolve_hosts.__module__ == 'tstdx.transport.hosts'; "
-            "print('tstdx', tstdx.__version__, package_file, 'wheel smoke OK')"
+            "assert TdxClient.__init__.__module__ == 'atst.client.sync'; "
+            "assert AsyncTdxClient.__init__.__module__ == 'atst.client.async_'; "
+            "assert TdxClient.bestip.__module__ == 'atst.client.sync'; "
+            "assert AsyncTdxClient.bestip.__module__ == 'atst.client.async_'; "
+            "assert AsyncTdxClient.quotes_concurrent.__module__ == 'atst.client.async_'; "
+            "assert ConnectionPool.__init__.__module__ == 'atst.transport.pool'; "
+            "assert ConnectionPool.request.__module__ == 'atst.transport.pool'; "
+            "assert ConnectionPool.update_hosts.__module__ == 'atst.transport.pool'; "
+            "assert AsyncConnectionPool.__init__.__module__ == 'atst.transport.async_'; "
+            "assert AsyncConnectionPool.request.__module__ == 'atst.transport.async_'; "
+            "assert AsyncConnectionPool.update_hosts.__module__ == 'atst.transport.async_'; "
+            "assert RankingStore.load.__module__ == 'atst.transport.hosts'; "
+            "assert resolve_hosts.__module__ == 'atst.transport.hosts'; "
+            "print('atst', atst.__version__, package_file, 'wheel smoke OK')"
         )
         _run([str(python), "-I", "-c", probe], cwd=work_dir)
         _run([str(cli), "--help"], cwd=work_dir)
@@ -529,7 +529,7 @@ def _smoke(wheel: pathlib.Path) -> None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="tstdx 安全构建/分发校验脚本")
+    parser = argparse.ArgumentParser(description="atst 安全构建/分发校验脚本")
     parser.add_argument(
         "--no-clean",
         action="store_true",

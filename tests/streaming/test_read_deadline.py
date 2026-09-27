@@ -1,12 +1,12 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """读帧截止值的贯通判据（第 28 轮第 1 遍）。
 
 起因：``PushChannel.read(timeout=5.0)`` 的截止值在真实连接上从未生效——
 ``_read_frame`` 用 ``except TypeError`` 退回到无参 ``read_frame()``，把调用方
-给的数丢掉；而真连接抛的是 :class:`~tstdx.errors.ReadTimeout` /
-:class:`~tstdx.errors.ConnectionClosed`（``TdxError`` 支系，不是 ``OSError``），
+给的数丢掉；而真连接抛的是 :class:`~atst.errors.ReadTimeout` /
+:class:`~atst.errors.ConnectionClosed`（``TdxError`` 支系，不是 ``OSError``），
 ``_read_with_reason`` 的 ``except TimeoutError`` / ``except OSError`` 两格在真
 连接上永远进不去——「超时返回 None」和「断线记 last_error」只剩测试替身版本。
 
@@ -27,10 +27,10 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.errors import ConnectionClosed, FramingError, ReadTimeout
-from tstdx.streaming.push import PushChannel
-from tstdx.transport.async_ import AsyncTcpConnection
-from tstdx.transport.base import TcpConnection
+from atst.errors import ConnectionClosed, FramingError, ReadTimeout
+from atst.streaming.push import PushChannel
+from atst.transport.async_ import AsyncTcpConnection
+from atst.transport.base import TcpConnection
 
 
 def _timeout_param(fn: object) -> inspect.Parameter:

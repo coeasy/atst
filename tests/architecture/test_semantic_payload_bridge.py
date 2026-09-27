@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """语义路径的入参必须真的抵达实现（第 30 轮 30-B，G45）。
@@ -8,7 +8,7 @@
 ``Client.minute("000001", provider="tencent")`` 在规划通过之后、任何 I/O 之前撞上
 ``[E1010] capability 'minute' 参数不符合 v13 contract：missing a required argument:
 'symbol'``。原因不是参数写错，而是**根本没人生成参数**：核心能力的便捷方法把请求写在
-:attr:`tstdx.query.QuerySpec.symbols` 这类语义字段里，而 ``_migrated_capability`` 只认
+:attr:`atst.query.QuerySpec.symbols` 这类语义字段里，而 ``_migrated_capability`` 只认
 ``options["args"] / options["kwargs"]`` 那套 raw payload 约定。两套约定各自成立，中间
 那一格没人接。
 
@@ -17,14 +17,14 @@ QuerySpec 的语义字段派生出的入参，能不能绑定到它自己的实�
 无论断在哪一侧。
 
 变异台账（第 30 轮 30-B 在同一个 0.2s 的跑批里逐条演示，改前必须红）：
-- **M1** 从 :data:`tstdx.runtime.executor._SEMANTIC_CALL_FIELDS` 去掉 ``symbols`` →
+- **M1** 从 :data:`atst.runtime.executor._SEMANTIC_CALL_FIELDS` 去掉 ``symbols`` →
   5 个格子的绑定判据 + 字段表判据 + 批量代码判据全红；
 - **M2** 把 ``_SEMANTIC_FIELD_RENAMES`` 的目标从 ``symbol`` 改成 ``code`` → 绑定判据红；
 - **M3** 让 ``MinuteSource.fetch_minute`` 多收一个必填形参 ``date`` →
   ``[tencent-minute-minute]`` 红（报 ``missing a required argument: 'date'``）；
 - **M4** 把"无落脚点字段"的闸放宽成静默丢掉 → 幻影旋钮判据红；
 - **M5** 让批量代码静默取第一只 → 批量判据红；
-- **M6** 让 :func:`~tstdx.catalog.capability.implementation_for` 不认识 ``direct_adapter``
+- **M6** 让 :func:`~atst.catalog.capability.implementation_for` 不认识 ``direct_adapter``
   （即宿主类再被抄第二份的形状）→ 绑定与交叉核对判据红。
 
 """
@@ -36,11 +36,11 @@ from typing import Any
 
 import pytest
 
-from tstdx.catalog.capability import binding_for, implementation_for, validate_call
-from tstdx.client.api import _CORE_CAPABILITIES
-from tstdx.errors import ValidationError
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.runtime.executor import (
+from atst.catalog.capability import binding_for, implementation_for, validate_call
+from atst.client.api import _CORE_CAPABILITIES
+from atst.errors import ValidationError
+from atst.query import QueryPlanner, QuerySpec
+from atst.runtime.executor import (
     _SEMANTIC_CALL_FIELDS,
     _SEMANTIC_FIELD_RENAMES,
     DIRECT_BINDINGS,
@@ -62,7 +62,7 @@ def _semantic_cells() -> list[tuple[str, str, str]]:
     """注册表里「执行体是 ``_migrated_capability``、能力却归核心集」的三元组。
 
     这些格子正是两套约定交界的地方。``quotes`` / ``bars`` 的非 canonical channel 会被
-    :func:`tstdx.query._reject_core_channel_mismatch` 在规划期挡掉（它们由 v14 Direct
+    :func:`atst.query._reject_core_channel_mismatch` 在规划期挡掉（它们由 v14 Direct
     API 面服务），所以这里按**真实编译**筛，而不是抄一份可达名单——抄来的名单本身就是
     本文件所指控的那种第二份表。
     """

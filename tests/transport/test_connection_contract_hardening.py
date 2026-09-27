@@ -6,10 +6,10 @@ from typing import Any
 
 import pytest
 
-from tstdx.errors import ConfigError
-from tstdx.protocol.commands import Family
-from tstdx.transport.async_ import AsyncTcpConnection
-from tstdx.transport.base import TcpConnection
+from atst.errors import ConfigError
+from atst.protocol.commands import Family
+from atst.transport.async_ import AsyncTcpConnection
+from atst.transport.base import TcpConnection
 
 
 @pytest.mark.parametrize("connection_cls", [TcpConnection, AsyncTcpConnection])
@@ -111,7 +111,7 @@ def test_async_direct_request_rejects_invalid_options_before_connect() -> None:
 
 
 def test_direct_connection_public_wiring_is_canonical() -> None:
-    assert TcpConnection.__init__.__module__ == "tstdx.transport.base"
-    assert AsyncTcpConnection.__init__.__module__ == "tstdx.transport.async_"
-    assert TcpConnection.request.__module__ == "tstdx.transport.base"
-    assert AsyncTcpConnection.request.__module__ == "tstdx.transport.async_"
+    assert TcpConnection.__init__.__module__ == "atst.transport.base"
+    assert AsyncTcpConnection.__init__.__module__ == "atst.transport.async_"
+    assert TcpConnection.request.__module__ == "atst.transport.base"
+    assert AsyncTcpConnection.request.__module__ == "atst.transport.async_"

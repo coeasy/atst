@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """三张 wire 面对"未声明的请求字段"必须当场拒绝，而不是收下后无人读（F-47 裁决 (a)）。
@@ -37,19 +37,19 @@ from typing import Any, get_args
 
 import pytest
 
-from tstdx.integration.mcp._common import ERR_INVALID_PARAMS
-from tstdx.integration.mcp._server import MCPServer
-from tstdx.integration.mcp._tools_spec import TOOLS
-from tstdx.integration.runtime_http import create_runtime_app
-from tstdx.integration.runtime_ws import RuntimeJsonRpcHandler
-from tstdx.integration.wire_fields import QUERY_BODY_FIELDS, WS_PARAMS_FIELDS
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.result import Provenance, QueryResult
+from atst.integration.mcp._common import ERR_INVALID_PARAMS
+from atst.integration.mcp._server import MCPServer
+from atst.integration.mcp._tools_spec import TOOLS
+from atst.integration.runtime_http import create_runtime_app
+from atst.integration.runtime_ws import RuntimeJsonRpcHandler
+from atst.integration.wire_fields import QUERY_BODY_FIELDS, WS_PARAMS_FIELDS
+from atst.query import QueryPlanner, QuerySpec
+from atst.result import Provenance, QueryResult
 
 _ROOT = Path(__file__).resolve().parents[2]
 #: 本步的探针就是那个刚被删掉的旋钮：它在构造面已经会 ``TypeError``，wire 面必须同口径。
 UNKNOWN = "max_age"
-HTTP = "tstdx/integration/runtime_http.py"
+HTTP = "atst/integration/runtime_http.py"
 
 
 def _tree_of(obj: Any) -> ast.Module:
@@ -204,7 +204,7 @@ def test_the_wire_field_lists_have_exactly_one_definition_site() -> None:
     names = ("QUERY_BODY_FIELDS", "WS_PARAMS_FIELDS")
     owners: dict[str, list[str]] = {name: [] for name in names}
     scanned = 0
-    for path in (_ROOT / "tstdx").rglob("*.py"):
+    for path in (_ROOT / "atst").rglob("*.py"):
         scanned += 1
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
@@ -215,7 +215,7 @@ def test_the_wire_field_lists_have_exactly_one_definition_site() -> None:
                 if isinstance(target, ast.Name) and target.id in owners:
                     owners[target.id].append(str(path.relative_to(_ROOT)))
     assert scanned >= 150, f"只扫到 {scanned} 个模块，判据自身失效"
-    expected = str(Path("tstdx") / "integration" / "wire_fields.py")
+    expected = str(Path("atst") / "integration" / "wire_fields.py")
     copied = {name: sites for name, sites in owners.items() if sites != [expected]}
     assert copied == {}, f"这些名单出现了第二份定义点：{copied}"
 
@@ -451,11 +451,11 @@ def test_every_wire_face_refuses_routing_fields_smuggled_inside_kwargs() -> None
 
 
 def test_cli_query_refuses_routing_fields_smuggled_inside_kwargs() -> None:
-    """CLI 面（``tstdx query --kwargs``）与三张 wire 面同口径、同一个拒绝原因。"""
+    """CLI 面（``atst query --kwargs``）与三张 wire 面同口径、同一个拒绝原因。"""
     from argparse import Namespace
 
-    from tstdx.cli.runtime_commands import cmd_query
-    from tstdx.errors import ValidationError
+    from atst.cli.runtime_commands import cmd_query
+    from atst.errors import ValidationError
 
     args = Namespace(
         capability="rates",

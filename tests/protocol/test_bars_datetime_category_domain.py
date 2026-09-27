@@ -3,7 +3,7 @@
 `_read_datetime` 此前只判分钟族，其余一律按 uint32 当 YYYYMMDD——于是任何一个不在
 已证逆向布局里的 category 会读掉 4 个字节并把整行后续字段全部错位，调用方拿到的
 是"看起来成功"的脏数据。本文件钉住两件事：声明过的每个周期都有已证布局，且越域
-当场抛 :class:`~tstdx.errors.ProtocolError`。
+当场抛 :class:`~atst.errors.ProtocolError`。
 """
 
 from __future__ import annotations
@@ -12,10 +12,10 @@ import struct
 
 import pytest
 
-from tstdx.codec.primitive import BinaryReader
-from tstdx.errors import ProtocolError
-from tstdx.protocol.parsers._std7709_bars import SecurityBarsParser
-from tstdx.protocol.parsers._std7709_common import (
+from atst.codec.primitive import BinaryReader
+from atst.errors import ProtocolError
+from atst.protocol.parsers._std7709_bars import SecurityBarsParser
+from atst.protocol.parsers._std7709_common import (
     DAYLIKE_CATEGORIES,
     MINUTELIKE_CATEGORIES,
     KlineCategory,

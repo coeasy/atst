@@ -1,9 +1,9 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """值域尺子自身的判据：它说"越域"时必须真的越域，且不许把手伸到别人的域里。
 
-第 14 轮（G7）把这把尺子从测试挪进 :mod:`tstdx.domain.integrity`，因为同一条判断
+第 14 轮（G7）把这把尺子从测试挪进 :mod:`atst.domain.integrity`，因为同一条判断
 此前只有读源码的人才知道，wire 上的形状与一条干净结果一字不差。挪进生产侧之后，
 误伤的代价也跟着升级：一条落在合法行上的告警会把信号淹成噪声，所以正控与负控都要判。
 """
@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.client.core import _standard_market_id
-from tstdx.domain.integrity import illegal_code, illegal_market, row_violations, tdx_market_ids
+from atst.client.core import _standard_market_id
+from atst.domain.integrity import illegal_code, illegal_market, row_violations, tdx_market_ids
 
 pytestmark = pytest.mark.unit
 

@@ -16,10 +16,10 @@ from collections.abc import Iterable
 
 import pytest
 
-from tstdx.errors import AllHostsUnreachable, ConnectionFailed, ReadTimeout
-from tstdx.protocol.commands import Family
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.pool import ConnectionPool
+from atst.errors import AllHostsUnreachable, ConnectionFailed, ReadTimeout
+from atst.protocol.commands import Family
+from atst.transport.hosts import HostEntry
+from atst.transport.pool import ConnectionPool
 
 
 class _Frame:
@@ -105,7 +105,7 @@ class TestConnectionPoolFailover:
     """连接池故障转移测试。"""
 
     def test_first_host_up_ok(self, monkeypatch):
-        monkeypatch.setattr("tstdx.transport.pool.TcpConnection", _FakeConn)
+        monkeypatch.setattr("atst.transport.pool.TcpConnection", _FakeConn)
         pool = _pool(["1.1.1.1", "2.2.2.2"])
         frame = pool.request(0x0530, b"x")
         assert isinstance(frame, _Frame)
@@ -113,7 +113,7 @@ class TestConnectionPoolFailover:
 
     def test_failover_reaches_second_host(self, monkeypatch):
         _FakeConn.down_hosts = {"1.1.1.1"}
-        monkeypatch.setattr("tstdx.transport.pool.TcpConnection", _FakeConn)
+        monkeypatch.setattr("atst.transport.pool.TcpConnection", _FakeConn)
         pool = _pool(["1.1.1.1", "2.2.2.2"], max_retries=1)
         with monkeypatch.context() as m:
             m.setattr("time.sleep", lambda *a: None)  # 跳过退避 sleep
@@ -125,7 +125,7 @@ class TestConnectionPoolFailover:
         """即使 max_retries 很小，尝试次数也要覆盖池内每台主站一次。"""
         down = {"1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4"}
         _FakeConn.down_hosts = down
-        monkeypatch.setattr("tstdx.transport.pool.TcpConnection", _FakeConn)
+        monkeypatch.setattr("atst.transport.pool.TcpConnection", _FakeConn)
         pool = _pool(list(down), max_retries=0)
         with monkeypatch.context() as m:
             m.setattr("time.sleep", lambda *a: None)
@@ -136,7 +136,7 @@ class TestConnectionPoolFailover:
 
     def test_success_resets_host_failures(self, monkeypatch):
         _FakeConn.down_hosts = {"1.1.1.1"}
-        monkeypatch.setattr("tstdx.transport.pool.TcpConnection", _FakeConn)
+        monkeypatch.setattr("atst.transport.pool.TcpConnection", _FakeConn)
         pool = _pool(["1.1.1.1", "2.2.2.2"], max_retries=2)
         with monkeypatch.context() as m:
             m.setattr("time.sleep", lambda *a: None)
@@ -148,7 +148,7 @@ class TestConnectionPoolFailover:
 
     def test_all_hosts_unreachable_when_everything_down(self, monkeypatch):
         _FakeConn.down_hosts = {"1.1.1.1", "2.2.2.2"}
-        monkeypatch.setattr("tstdx.transport.pool.TcpConnection", _FakeConn)
+        monkeypatch.setattr("atst.transport.pool.TcpConnection", _FakeConn)
         pool = _pool(["1.1.1.1", "2.2.2.2"], max_retries=0)
         with monkeypatch.context() as m:
             m.setattr("time.sleep", lambda *a: None)
@@ -159,7 +159,7 @@ class TestConnectionPoolFailover:
         """R1：连接失败达阈值触发后台测速，且防抖只触发一次。"""
         down = {"1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4"}
         _FakeConn.down_hosts = down
-        monkeypatch.setattr("tstdx.transport.pool.TcpConnection", _FakeConn)
+        monkeypatch.setattr("atst.transport.pool.TcpConnection", _FakeConn)
         calls: list[int] = []
 
         def _fake_speedtest(*a, **k):
@@ -170,8 +170,8 @@ class TestConnectionPoolFailover:
         # ``speedtest`` and then commits observations, so patch that entry point
         # (not the bypassed ``speedtest_and_save``) and stub the ranking store so
         # the worker never writes the user's real ranking file.
-        speedtest_mod = importlib.import_module("tstdx.transport.speedtest")
-        pool_mod = importlib.import_module("tstdx.transport.pool")
+        speedtest_mod = importlib.import_module("atst.transport.speedtest")
+        pool_mod = importlib.import_module("atst.transport.pool")
         monkeypatch.setattr(speedtest_mod, "speedtest", _fake_speedtest)
         monkeypatch.setattr(
             pool_mod,
@@ -194,7 +194,7 @@ class TestConnectionPoolFailover:
     def test_biz_failure_counts_and_degrades(self, monkeypatch):
         """R2：连接正常但业务帧失败 → 单独记 biz_failures 并降权。"""
         _FakeConn.request_fail_hosts = {"1.1.1.1"}
-        monkeypatch.setattr("tstdx.transport.pool.TcpConnection", _FakeConn)
+        monkeypatch.setattr("atst.transport.pool.TcpConnection", _FakeConn)
         pool = _pool(["1.1.1.1", "2.2.2.2"], max_retries=2)
         with monkeypatch.context() as m:
             m.setattr("time.sleep", lambda *a: None)
@@ -210,7 +210,7 @@ class TestConnectionPoolFailover:
 
     def test_idle_sweep_reclaims_unused_connections(self, monkeypatch):
         """M6：闲置连接被回收（idle_timeout 到期后 slot.conn 置空）。"""
-        monkeypatch.setattr("tstdx.transport.pool.TcpConnection", _FakeConn)
+        monkeypatch.setattr("atst.transport.pool.TcpConnection", _FakeConn)
         pool = _pool(["1.1.1.1"], idle_timeout=0.1)
         # 建连
         frame = pool.request(0x0530, b"x")
@@ -224,7 +224,7 @@ class TestConnectionPoolFailover:
 
     def test_idle_sweep_respects_active_connection(self, monkeypatch):
         """M6：最近使用的连接不被回收。"""
-        monkeypatch.setattr("tstdx.transport.pool.TcpConnection", _FakeConn)
+        monkeypatch.setattr("atst.transport.pool.TcpConnection", _FakeConn)
         pool = _pool(["1.1.1.1"], idle_timeout=60)
         frame = pool.request(0x0530, b"x")
         assert isinstance(frame, _Frame)
@@ -233,7 +233,7 @@ class TestConnectionPoolFailover:
 
     def test_idle_sweep_disabled_when_zero(self, monkeypatch):
         """M6：idle_timeout<=0 时不做回收。"""
-        monkeypatch.setattr("tstdx.transport.pool.TcpConnection", _FakeConn)
+        monkeypatch.setattr("atst.transport.pool.TcpConnection", _FakeConn)
         pool = _pool(["1.1.1.1"], idle_timeout=0)
         frame = pool.request(0x0530, b"x")
         assert isinstance(frame, _Frame)

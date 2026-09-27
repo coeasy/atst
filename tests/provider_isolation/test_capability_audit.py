@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """Provider 声明面 ↔ 执行器绑定面的贯通审计。
@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.catalog.capability_audit import CapabilityAuditError, audit_capability_bindings
+from atst.catalog.capability_audit import CapabilityAuditError, audit_capability_bindings
 
 
 def _declared() -> set[tuple[str, str, str]]:
-    from tstdx.providers import PROVIDERS
+    from atst.providers import PROVIDERS
 
     return {
         (provider, channel.id, capability)
@@ -27,7 +27,7 @@ def _declared() -> set[tuple[str, str, str]]:
 
 
 def test_report_counts_three_surfaces() -> None:
-    from tstdx.runtime.executor import DIRECT_BINDINGS
+    from atst.runtime.executor import DIRECT_BINDINGS
 
     report = audit_capability_bindings()
 
@@ -38,13 +38,13 @@ def test_report_counts_three_surfaces() -> None:
 
 def test_registry_declaration_matches_public_surface() -> None:
     """注册表声明的能力集合必须正好等于 Client 对外承诺的能力集合。"""
-    from tstdx.client.api import Client
+    from atst.client.api import Client
 
     assert {key[2] for key in _declared()} == set(Client.capabilities())
 
 
 def test_audit_rejects_empty_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
-    import tstdx.catalog.capability as capability_module
+    import atst.catalog.capability as capability_module
 
     monkeypatch.setattr(capability_module, "MIGRATED_BINDINGS", ())
 
@@ -67,8 +67,8 @@ def test_audit_has_teeth_on_both_directions(
     审计必须逐一失败——否则上面的绿灯只是巧合。"""
     from types import SimpleNamespace
 
-    import tstdx.runtime.executor as executor_module
-    from tstdx.catalog.capability import MIGRATED_BINDINGS
+    import atst.runtime.executor as executor_module
+    from atst.catalog.capability import MIGRATED_BINDINGS
 
     real = executor_module.DIRECT_BINDINGS
     keys = {binding.key for binding in real}

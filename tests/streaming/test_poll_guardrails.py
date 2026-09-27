@@ -1,19 +1,19 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """轮询侧的终止护栏（V18 第 22 轮，G28）。
 
 第 1 遍「不存在死循环」查出三类形状，都在这里钉住：
 
-* **interval 没人校验**：:class:`~tstdx.streaming.base.QuoteStream` /
-  :class:`~tstdx.streaming.base.AsyncQuoteStream` 的轮询线程按 ``sub.interval`` sleep，
+* **interval 没人校验**：:class:`~atst.streaming.base.QuoteStream` /
+  :class:`~atst.streaming.base.AsyncQuoteStream` 的轮询线程按 ``sub.interval`` sleep，
   ``interval=0`` 就是一个不打烊的请求循环。带状态机的门面
-  （:mod:`tstdx.streaming.stateful`）早就校验了，基类却没有——两份口径，紧的那份
-  护不住走宽口的人。现在校验只剩一处（:func:`tstdx.streaming.base.validate_subscription`），
-  门面复用同一份。:class:`~tstdx.streaming.engine.StreamEngine` 同理。
+  （:mod:`atst.streaming.stateful`）早就校验了，基类却没有——两份口径，紧的那份
+  护不住走宽口的人。现在校验只剩一处（:func:`atst.streaming.base.validate_subscription`），
+  门面复用同一份。:class:`~atst.streaming.engine.StreamEngine` 同理。
 * **失败轮不按策略退避、``max_attempts`` 没人读**：``StreamEngine._run`` 原先失败轮也
-  按 ``interval`` 立即重试，而 :class:`~tstdx.streaming.engine.ReconnectPolicy` 的
-  ``max_attempts`` / :meth:`~tstdx.streaming.engine.ReconnectPolicy.should_give_up` 全包
+  按 ``interval`` 立即重试，而 :class:`~atst.streaming.engine.ReconnectPolicy` 的
+  ``max_attempts`` / :meth:`~atst.streaming.engine.ReconnectPolicy.should_give_up` 全包
   零调用点——一个文档写着「超过则放弃」的旋钮其实没人拧。现在失败轮走退避、达上限即停。
 * **``iter_messages`` 把超时当终态**：它的 docstring 说「通道关闭或传输耗尽时停止」，
   实现却在任何一次 ``read()`` 返回 ``None`` 时收口，而超时也返回 ``None``。于是外层
@@ -34,11 +34,11 @@ from typing import Any
 
 import pytest
 
-from tstdx.errors import SubscriptionError
-from tstdx.streaming.base import AsyncQuoteStream, QuoteStream, Subscription
-from tstdx.streaming.engine import QuoteChannel, ReconnectPolicy, StreamEngine, StreamEvent
-from tstdx.streaming.push import PushChannel
-from tstdx.streaming.stateful import StatefulQuoteStream
+from atst.errors import SubscriptionError
+from atst.streaming.base import AsyncQuoteStream, QuoteStream, Subscription
+from atst.streaming.engine import QuoteChannel, ReconnectPolicy, StreamEngine, StreamEvent
+from atst.streaming.push import PushChannel
+from atst.streaming.stateful import StatefulQuoteStream
 
 # --------------------------------------------------------------------------- #
 # 护栏 1：interval 必须大于 0——四个入口同一份口径
@@ -73,8 +73,8 @@ def test_subscription_itself_carries_the_guard() -> None:
 
 def test_the_stateful_facade_shares_the_one_validator() -> None:
     """门面与基类必须查同一份口径（此前是两份手抄的校验）。"""
-    from tstdx.streaming import base as base_mod
-    from tstdx.streaming import stateful
+    from atst.streaming import base as base_mod
+    from atst.streaming import stateful
 
     assert stateful.validate_subscription is base_mod.validate_subscription, (
         "门面又抄了一份校验器——两份里就会有一份漏掉某条规则"
@@ -236,12 +236,12 @@ def test_the_catch_up_pull_happens_once_per_recovery() -> None:
 
 
 def test_a_recovery_tick_is_counted_in_the_reconnect_metric() -> None:
-    """F-117：``tstdx_stream_reconnects_total`` 改前注册即被 ``/metrics`` 渲染、全仓零写入点。
+    """F-117：``atst_stream_reconnects_total`` 改前注册即被 ``/metrics`` 渲染、全仓零写入点。
 
     同一族的 drop 事件与背压 gauge 都在上报，唯独断线恢复对抓取方不可见。补上的落点必须与
     ``kind="reconnect"`` 事件同一次 tick：失败轮什么都不恢复、不计数，恢复轮恰多加一。
     """
-    from tstdx.observability.metrics import metrics
+    from atst.observability.metrics import metrics
 
     channel = QuoteChannel(_FailsOnceThenRecovers(), ["sh600519"])
     kinds: list[str] = []

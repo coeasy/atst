@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tstdx.protocol.commands import Family
-from tstdx.transport.hosts import RankingStore
+from atst.protocol.commands import Family
+from atst.transport.hosts import RankingStore
 
 
 def _row(host: str, *, port: int = 7709) -> dict[str, object]:

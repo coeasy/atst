@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.cli import build_parser
-from tstdx.errors import (
+from atst.cli import build_parser
+from atst.errors import (
     ALL_HOSTS_UNREACHABLE_NEXT_STEPS,
 )
 
@@ -22,7 +22,7 @@ class TestCliHosts:
             assert parser.parse_args(cmd.split()).func is not None
 
     def test_hosts_list_returns_zero(self, capsys):
-        from tstdx.cli import main
+        from atst.cli import main
 
         assert main(["hosts", "list"]) == 0
         out = capsys.readouterr().out
@@ -35,6 +35,6 @@ class TestCliHosts:
 
     def test_raise_site_appends_hint(self):
         """pool 抛出的 AllHostsUnreachable 消息应带「下一步」建议。"""
-        from tstdx.transport.pool import ALL_HOSTS_UNREACHABLE_NEXT_STEPS as pool_hint
+        from atst.transport.pool import ALL_HOSTS_UNREACHABLE_NEXT_STEPS as pool_hint
 
         assert pool_hint == ALL_HOSTS_UNREACHABLE_NEXT_STEPS

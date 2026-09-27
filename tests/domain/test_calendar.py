@@ -14,7 +14,7 @@ from datetime import date
 
 import pytest
 
-from tstdx.domain.calendar import (
+from atst.domain.calendar import (
     BUILTIN_CALENDARS,
     TradingCalendar,
     get_calendar,

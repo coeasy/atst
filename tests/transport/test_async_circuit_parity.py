@@ -5,10 +5,10 @@ import time
 
 import pytest
 
-from tstdx.errors import ConnectionFailed
-from tstdx.transport.async_ import AsyncConnectionPool
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.pool import CIRCUIT_COOLDOWN_SECONDS
+from atst.errors import ConnectionFailed
+from atst.transport.async_ import AsyncConnectionPool
+from atst.transport.hosts import HostEntry
+from atst.transport.pool import CIRCUIT_COOLDOWN_SECONDS
 
 
 def _pool(host: HostEntry) -> AsyncConnectionPool:

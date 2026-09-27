@@ -1,11 +1,11 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """G46 — 执行器握着的 ``hosts`` 与 ``config`` 必须抵达每一个 ``TdxClient`` 家族的低层客户端。
 
-第 31 轮第 1 遍实测到的断链形状：:class:`tstdx.runtime.executor.DirectProviderExecutor`
+第 31 轮第 1 遍实测到的断链形状：:class:`atst.runtime.executor.DirectProviderExecutor`
 的构造处收 ``hosts`` 与 ``config``，``_tdx_client()`` 把两者都交出去（``self.hosts`` 作位置参
-+ :func:`~tstdx.transport.pool.pool_settings_from_config` 的六键）；而
++ :func:`~atst.transport.pool.pool_settings_from_config` 的六键）；而
 ``f10_client`` / ``ex_client`` / ``goods_client`` / ``mac_client`` 四个分支构造的是同一个类的
 **子类**，却只传 ``timeout=hop``。于是调用方钉住的主站列表、``[hosts] slots_per_host``、
 ``[core] max_retries``、``[core] heartbeat_interval``、``[rate_limit]``、``[security] use_tls``
@@ -13,7 +13,7 @@
 同一个 ``Client`` 实例、同一份配置，两条路的口径不同。主站钉不住还有安全含义：
 显式 ``hosts`` 是本仓库唯一的"只碰我指定的站"手段。
 
-修复后的口径：家族构造只有一处 :meth:`~tstdx.runtime.executor.DirectProviderExecutor._pool_client`，
+修复后的口径：家族构造只有一处 :meth:`~atst.runtime.executor.DirectProviderExecutor._pool_client`，
 ``_tdx_client()`` 是它在行情族上的调用点，四条分支全部改走它。
 
 第 27 轮的 ``test_pool_knob_reachability.py`` 量的是 ``Config → ConnectionPool`` 那一格翻译
@@ -24,7 +24,7 @@
 
 1. 把一份真实 ``Config`` 与一个显式 ``hosts`` 交给执行器，驱动绑定表里每一个"实现类是
    ``TdxClient`` 子类"的格子，**在构造处把那个类截住**，检查它实际收到了什么；
-2. 家族类在执行器里**只许被 :meth:`~tstdx.runtime.executor.DirectProviderExecutor._pool_client`
+2. 家族类在执行器里**只许被 :meth:`~atst.runtime.executor.DirectProviderExecutor._pool_client`
    一处构造**——本轮这条断链的形状就是"分支各自 new 一个"，所以除了量读数，还要量构造点数量；
 3. 每一格用完必须**恰好显式 ``close()`` 一次**，正常路径与实现抛错路径各量一遍——
    收得对不对不看分支写法，看动作序列（第 31 轮 31-B 那一格 ``tdx_client`` 分支用 ``with``，
@@ -33,7 +33,7 @@
    31-B4 那次只收了迁移分支三条，核心链路还留着九处 ``with self._tdx_client(...) as client:``——
    同一份文件对同一个风险给两种答案。这条量的是形状本身：``with`` 直接包住构造出口即红，
    无论块体怎么写；保护区自己另有一判，``yield`` 在 try 里、``close()`` 在 finally 里且只一次。
-5. 第 4 件事的射程是**整个 ``tstdx/``**，不是只有执行器（31-C4）。执行器的 13 处收进
+5. 第 4 件事的射程是**整个 ``atst/``**，不是只有执行器（31-C4）。执行器的 13 处收进
    :meth:`_client_session` 之后再按族扫全包，同一形状在 CLI 面还剩 6 处：``probe`` /
    ``blocks`` / ``list`` / ``quotes-snapshot`` 四处 ``with TdxClient(**conn)``、``goods`` /
    ``f10`` 两处 ``with get_client(...)``。一把只读 ``executor.py`` 的尺子看不见换了一张面的
@@ -50,7 +50,7 @@
 - **M3** ``ex/goods/mac`` 分支同样绕开构造处 → **15 红 / 89 绿**；
 - **M4** 构造处把翻译结果收缩成只剩 ``timeout`` → **19 红 / 85 绿**，翻译层尺子仍 4 绿（与 M1
   同形：两把尺子射程不重叠）；
-- **M5**（对照条）翻译层 :func:`~tstdx.transport.pool.pool_settings_from_config` 删一个键 →
+- **M5**（对照条）翻译层 :func:`~atst.transport.pool.pool_settings_from_config` 删一个键 →
   **本尺子 104 全绿**，红的是翻译层那把尺子（2 红）：本尺子量的是"执行器有没有把翻译结果
   交出去"，不重复量翻译本身——两把尺子的功劳不许记串；
 - **M6** 家族集合派生改成永远为空（本尺子自身失明）→ 2 红 / 7 绿 / 5 跳过：分母闭合格红，
@@ -77,20 +77,20 @@ from unittest.mock import patch
 
 import pytest
 
-import tstdx.client as client_face
-from tstdx.catalog.capability import MIGRATED_BINDINGS, implementation_for
-from tstdx.client import TdxClient
-from tstdx.config.schema import Config, CoreConfig, HostsConfig, RateLimitConfig, SecurityConfig
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.runtime.executor import DirectProviderExecutor
-from tstdx.transport.pool import pool_settings_from_config
+import atst.client as client_face
+from atst.catalog.capability import MIGRATED_BINDINGS, implementation_for
+from atst.client import TdxClient
+from atst.config.schema import Config, CoreConfig, HostsConfig, RateLimitConfig, SecurityConfig
+from atst.query import QueryPlanner, QuerySpec
+from atst.runtime.executor import DirectProviderExecutor
+from atst.transport.pool import pool_settings_from_config
 
 EXECUTOR_SOURCE = (
-    Path(__file__).resolve().parents[2] / "tstdx" / "runtime" / "executor.py"
+    Path(__file__).resolve().parents[2] / "atst" / "runtime" / "executor.py"
 ).read_text(encoding="utf-8")
 
 #: 第 5 件事的射程：整个运行期包，不只执行器。
-_PKG_ROOT = Path(__file__).resolve().parents[2] / "tstdx"
+_PKG_ROOT = Path(__file__).resolve().parents[2] / "atst"
 
 #: 调用方钉住的主站：执行器必须原样交到构造处，不能替换成内置候选池。
 PINNED_HOSTS: tuple[tuple[str, int], ...] = (("PINNED-HOST", 7709),)
@@ -192,7 +192,7 @@ def _recorder(name: str) -> type:
 
 
 def _executor_family_classes() -> dict[str, type]:
-    """执行器从 ``tstdx.client`` 引进来、且是 ``TdxClient`` 子类的那些类。
+    """执行器从 ``atst.client`` 引进来、且是 ``TdxClient`` 子类的那些类。
 
     这是**派生**的家族集合，不是抄的名单：新增一个家族低层客户端，它自己会进射程。
     """
@@ -458,7 +458,7 @@ _GUARD = "_client_session"
 #: 保护区与两个构造出口自身的实现体不算"使用点"。
 _HOME_FUNCS = frozenset({_GUARD, *_CLIENT_HOMES})
 
-#: 不import 自 ``tstdx.client``、因此不在派生家族集合里，但同样按跳构造并需收尾的那一个。
+#: 不import 自 ``atst.client``、因此不在派生家族集合里，但同样按跳构造并需收尾的那一个。
 _SESSION_CLASSES = frozenset({"WebQuoteSession"})
 
 

@@ -2,7 +2,7 @@
 
 Builds **synthetic** .day-file payloads for a 4-market × 3-category grid
 (12 combinations), parses each with the reader path, and asserts bar-field
-sanity.  A separate auto-detect accuracy check runs ``tstdx.profile.detect``
+sanity.  A separate auto-detect accuracy check runs ``atst.profile.detect``
 on the same bytes and asserts the detected record size matches the built
 layout for ≥ 11 / 12 combos (one miss tolerated per the plan's ≥ 99 % target).
 
@@ -19,14 +19,14 @@ from typing import Any
 
 import pytest
 
-from tstdx.reader.formats import read_day_file
-from tstdx.reader.profile import Market as ProfileMarket
+from atst.reader.formats import read_day_file
+from atst.reader.profile import Market as ProfileMarket
 
 # --------------------------------------------------------------------------- #
-# Optional: tstdx.profile.detect (D3, may be written by a concurrent subagent)
+# Optional: atst.profile.detect (D3, may be written by a concurrent subagent)
 # --------------------------------------------------------------------------- #
 try:
-    from tstdx.profile.detect import detect as _profile_detect
+    from atst.profile.detect import detect as _profile_detect
 
     _HAS_PROFILE_DETECT = True
 except ImportError:
@@ -240,10 +240,10 @@ class TestDayFileMatrix:
 
     @pytest.mark.skipif(
         not _HAS_PROFILE_DETECT,
-        reason="tstdx.profile.detect not available (D3 module not yet written)",
+        reason="atst.profile.detect not available (D3 module not yet written)",
     )
     def test_auto_detect_record_size(self, combo: dict[str, Any]) -> None:
-        """Run tstdx.profile.detect → assert detected record_size == 32."""
+        """Run atst.profile.detect → assert detected record_size == 32."""
         raw = _build_day_payload(combo)
         result = _profile_detect(raw, hint_period="day")
         detected = result.profile.record_size
@@ -260,7 +260,7 @@ class TestDayFileMatrix:
 @pytest.mark.unit
 @pytest.mark.skipif(
     not _HAS_PROFILE_DETECT,
-    reason="tstdx.profile.detect not available (D3 module not yet written)",
+    reason="atst.profile.detect not available (D3 module not yet written)",
 )
 def test_auto_detect_grid_accuracy() -> None:
     """Assert ≥ 11 / 12 combos have correct auto-detected record size."""

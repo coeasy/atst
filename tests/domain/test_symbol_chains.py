@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.domain.symbol import parse_symbol, to_tdx_market
-from tstdx.reader.formats import _guess_market, resolve_vipdoc_path
+from atst.domain.symbol import parse_symbol, to_tdx_market
+from atst.reader.formats import _guess_market, resolve_vipdoc_path
 
 pytestmark = pytest.mark.unit
 
@@ -78,7 +78,7 @@ class TestShIndexWhitelistBoundary:
         assert parse_symbol("000001", market="sh").canonical == "sh000001"
 
     def test_whitelist_members_are_sh(self) -> None:
-        from tstdx.domain.symbol import _SH_INDEX_BARE_CODES
+        from atst.domain.symbol import _SH_INDEX_BARE_CODES
 
         for code in sorted(_SH_INDEX_BARE_CODES):
             assert parse_symbol(code).market == "sh", code
@@ -89,6 +89,6 @@ class TestShIndexWhitelistBoundary:
 
 
 def test_protocol_chain_agrees_on_000300() -> None:
-    from tstdx.protocol.parsers.std7709 import infer_market
+    from atst.protocol.parsers.std7709 import infer_market
 
     assert infer_market("000300") == 1

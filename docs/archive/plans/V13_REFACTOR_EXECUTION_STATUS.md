@@ -1,4 +1,4 @@
-# tstdx v13 Clean-Break Refactor Execution Status
+# atst v13 Clean-Break Refactor Execution Status
 
 > Source status only. Release verification still requires exact-head real CI execution.
 
@@ -20,7 +20,7 @@
 
 The previous Tier-A-only limitation has been removed at source level.
 
-- [x] `tstdx.capability_catalog` is the migration SSOT.
+- [x] `atst.capability_catalog` is the migration SSOT.
 - [x] all known historical business capability families are represented in `MIGRATED_CAPABILITIES`.
 - [x] migrated bindings declare explicit Provider + Channel + backend.
 - [x] known single-source abilities retain actual Provider identity.
@@ -57,7 +57,7 @@ And are reachable through:
 - HTTP: `POST /v13/query/{capability}`, discovery via `GET /v13/capabilities`;
 - WebSocket JSON-RPC: `query`, discovery via `runtime.capabilities`;
 - MCP: `query_capability` plus Tier-A tools;
-- CLI: `tstdx query`, discovery via `tstdx capabilities`.
+- CLI: `atst query`, discovery via `atst capabilities`.
 
 Tier-A keeps dedicated ergonomic methods/endpoints in addition to the generic capability path.
 

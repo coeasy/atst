@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("tstdx.web.normalize")
+pytest.importorskip("atst.web.normalize")
 
-from tstdx.web.normalize import (
+from atst.web.normalize import (
     BOC,
     EASTMONEY,
     HK,
@@ -132,7 +132,7 @@ class TestNormalize:
         同一份测试文件先跑，那条判据就会凭空多出"没人能用上的归一化器"。所以这里在一份
         副本上注册，monkeypatch 收尾后全局表恢复原样。
         """
-        from tstdx.web import normalize as normalize_module
+        from atst.web import normalize as normalize_module
 
         monkeypatch.setattr(
             normalize_module,

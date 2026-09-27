@@ -7,7 +7,7 @@
 
 ## 1. Goal
 
-V14 moves tstdx toward one orchestration runtime **without replacing the mature semantic contracts already present in the repository**.
+V14 moves atst toward one orchestration runtime **without replacing the mature semantic contracts already present in the repository**.
 
 The architecture source of truth is now:
 
@@ -45,12 +45,12 @@ SemanticResultCache  dynamic Provider adapter
 
 Key distinction:
 
-- `tstdx.query.QueryPlanner` owns deterministic semantic planning for **one Provider + Channel**.
-- `tstdx.execution.ExecutionPlanner` owns cross-provider fallback and DAG orchestration.
-- `tstdx.result.Provenance` owns data origin.
-- `tstdx.cache_semantic.SemanticResultCache` owns semantic caching.
-- `tstdx.provider` contains dynamic execution adapters only; it is **not** a second provider registry.
-- `tstdx.providers` remains the canonical Provider/Channel/Capability registry.
+- `atst.query.QueryPlanner` owns deterministic semantic planning for **one Provider + Channel**.
+- `atst.execution.ExecutionPlanner` owns cross-provider fallback and DAG orchestration.
+- `atst.result.Provenance` owns data origin.
+- `atst.cache_semantic.SemanticResultCache` owns semantic caching.
+- `atst.provider` contains dynamic execution adapters only; it is **not** a second provider registry.
+- `atst.providers` remains the canonical Provider/Channel/Capability registry.
 
 ## 2. Hard constraints
 
@@ -59,7 +59,7 @@ Key distinction:
 3. Protocol parser behaviour is not rewritten as part of Runtime Phase 1.
 4. New runtime paths require contract tests before replacing legacy routing.
 5. No merge until the final same SHA executes the required CI steps and is green.
-6. `tstdx.providers`, `tstdx.query`, `tstdx.result` and `tstdx.cache_semantic` remain semantic single sources of truth.
+6. `atst.providers`, `atst.query`, `atst.result` and `atst.cache_semantic` remain semantic single sources of truth.
 7. `web` is not a Provider identity; concrete Providers such as `eastmoney`, `tencent`, `sina` are separate trust boundaries.
 8. Cache is not a Provider. A cache hit preserves original Provider provenance and only adds `cache_tier`.
 9. Execution graphs reject duplicate nodes, missing dependencies and cycles.
@@ -71,7 +71,7 @@ The first V14 skeleton accidentally introduced three parallel concepts:
 
 - `Planner` alongside the existing `QueryPlanner`;
 - a runtime `cache_key` alongside canonical `QueryFingerprint`;
-- `CacheProvider` / generic `web` / generic `local` identities alongside `tstdx.providers` and canonical `Provenance`.
+- `CacheProvider` / generic `web` / generic `local` identities alongside `atst.providers` and canonical `Provenance`.
 
 The branch has been corrected:
 
@@ -90,7 +90,7 @@ This correction is deliberate: V14 extends orchestration and does not create a s
 ### 4.1 Runtime boundary — IMPLEMENTED
 
 ```text
-tstdx/runtime/
+atst/runtime/
   __init__.py
   bootstrap.py
   context.py
@@ -114,7 +114,7 @@ Implemented contracts:
 ### 4.2 Execution DAG — IMPLEMENTED
 
 ```text
-tstdx/execution/
+atst/execution/
   __init__.py
   node.py
   graph.py
@@ -150,7 +150,7 @@ No new CacheEntry/Provenance model is introduced.
 ### 4.4 Dynamic Provider execution — IMPLEMENTED (Phase 1)
 
 ```text
-tstdx/provider/
+atst/provider/
   __init__.py
   base.py
   router.py
@@ -161,8 +161,8 @@ tstdx/provider/
 
 Rules:
 
-- `tstdx.providers` is the static Provider/Channel/Capability source of truth.
-- `tstdx.provider` only holds runtime execution objects.
+- `atst.providers` is the static Provider/Channel/Capability source of truth.
+- `atst.provider` only holds runtime execution objects.
 - TDX adapter id is `tdx`.
 - local adapter id is `local_vipdoc`.
 - web adapters require explicit canonical ids such as `eastmoney`, `tencent`, `sina`.
@@ -173,7 +173,7 @@ Rules:
 ### 4.5 Facade Runtime Adapter — IMPLEMENTED, NOT DEFAULT
 
 ```text
-tstdx/facade/runtime_adapter.py
+atst/facade/runtime_adapter.py
 ```
 
 Rules:
@@ -267,11 +267,11 @@ Next provider orchestration work:
 - failure attempt provenance/metrics;
 - deterministic policy tests.
 
-Static capability truth remains in `tstdx.providers`.
+Static capability truth remains in `atst.providers`.
 
 ## 9. Phase 4 — Canonical Domain
 
-Extend existing `tstdx.domain`; do not create a parallel domain hierarchy.
+Extend existing `atst.domain`; do not create a parallel domain hierarchy.
 
 Priority:
 
@@ -337,9 +337,9 @@ Required gates:
 
 ## 14. Explicit non-goals
 
-- replacing `tstdx.query.QueryPlanner` with the DAG planner;
-- replacing `tstdx.result.Provenance`;
-- replacing `tstdx.cache_semantic` with a new cache model;
+- replacing `atst.query.QueryPlanner` with the DAG planner;
+- replacing `atst.result.Provenance`;
+- replacing `atst.cache_semantic` with a new cache model;
 - treating cache as a Provider;
 - treating `web` as one Provider;
 - creating a second symbol/domain single source of truth;

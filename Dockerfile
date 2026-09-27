@@ -17,7 +17,7 @@ COPY . .
 # them explicit here instead of inflating the dev extra used by every CI cell.
 RUN python -m pip install --no-cache-dir -e ".[all,dev]" build twine \
     && python -m pytest tests/ -m "not network" --tb=short -q -p no:warnings \
-    && tstdx --help >/dev/null \
+    && atst --help >/dev/null \
     && python -m build --wheel \
     && python -m twine check dist/*.whl
 
@@ -27,19 +27,19 @@ FROM python:3.11-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN addgroup --system tstdx && adduser --system --ingroup tstdx tstdx
+RUN addgroup --system atst && adduser --system --ingroup atst atst
 
 WORKDIR /app
 
-# Core tstdx has zero mandatory third-party runtime dependencies. Install the
+# Core atst has zero mandatory third-party runtime dependencies. Install the
 # exact wheel that passed the builder tests; optional extras remain opt-in for
 # downstream images instead of being ambiguously requested with --no-deps.
 COPY --from=builder /build/dist/*.whl /tmp/
 RUN python -m pip install --no-cache-dir --no-deps /tmp/*.whl \
     && rm -f /tmp/*.whl \
-    && tstdx --help >/dev/null \
+    && atst --help >/dev/null \
     && python -m pip check
 
-USER tstdx
+USER atst
 
-CMD ["tstdx", "--help"]
+CMD ["atst", "--help"]

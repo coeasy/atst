@@ -4,8 +4,8 @@ import math
 
 import pytest
 
-from tstdx.config.schema import Config, config_from_dict, merge_config
-from tstdx.errors import ValidationError
+from atst.config.schema import Config, config_from_dict, merge_config
+from atst.errors import ValidationError
 
 pytestmark = pytest.mark.unit
 

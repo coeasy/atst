@@ -19,7 +19,7 @@
     当时是本模块关停路径上唯一没有截止期的 await，而它等的是 asyncio 的 ``connection_lost``
     回调——``close()`` 之后那个回调不一定到来。它挂在两处会要命的地方：池关停逐个槽位
     排空（N 个槽位乘 N 次），以及读帧失败路径上 ``await self.close()`` 之后才抛
-    :class:`~tstdx.errors.ConnectionClosed`（读超时到点之后，调用方仍然回不来）。
+    :class:`~atst.errors.ConnectionClosed`（读超时到点之后，调用方仍然回不来）。
 
 **这把尺子证不到什么，写清楚**：判据一只证明"句柄接到了 join"，不证明那条 join 一定
 被执行（走不走得到由运行时决定，那一半由 ``tests/transport/test_pool_generation_provenance.py``
@@ -30,7 +30,7 @@
 后一条不是推演：变异台账第 3 格先挑的是 ``_request_locked()``（持锁方是 ``request()``），
 判据三当时纹丝不动，换成 ``ping()`` 才红，所以那一段的账由 ``_locked`` 命名约定与并发
 用例来付；判据四只在类里确实有 ``_owns_*`` 开关时生效，纯函数式的卸下路径
-（:func:`tstdx.transport.sniff.detach`）由判据六管；判据七**不含锁等待**——``async with
+（:func:`atst.transport.sniff.detach`）由判据六管；判据七**不含锁等待**——``async with
 self._lock`` 在 AST 里根本不产生 ``Await`` 节点，把它算成"无界等待"要给整包补一张锁表，
 而锁的上界来自持锁方，那正是判据三与判据七其余四格合起来管的事。它同样只覆盖名单里的
 收尾动词：第 29 轮把 ``stop`` 收进名单，``AsyncQuoteStream.stop()`` 的
@@ -46,7 +46,7 @@ from pathlib import Path
 
 from tests.support.field_readers import REPO_ROOT
 
-PACKAGE_ROOT = REPO_ROOT / "tstdx"
+PACKAGE_ROOT = REPO_ROOT / "atst"
 
 # --------------------------------------------------------------------------- #
 # 共享的 AST 小工具
@@ -141,18 +141,18 @@ def _thread_call(node: ast.AST) -> bool:
 #: ``spawn 现场 -> (句柄落点, 收尸函数)``。现场清单由判据一现扫，表与清单**双向一致**；
 #: 句柄与收尸两处都还要被机器复核（见该判据体内注释），所以登记表抄不得现值。
 SPAWN_OWNERSHIP: dict[str, tuple[str, str]] = {
-    "tstdx/observability/statsd_exporter.py::StatsdExporter.start_pushing": (
+    "atst/observability/statsd_exporter.py::StatsdExporter.start_pushing": (
         "self._push_thread",
         "stop_pushing",
     ),
-    "tstdx/streaming/base.py::QuoteStream.start": ("self._thread", "stop"),
-    "tstdx/streaming/engine.py::StreamEngine.start": ("self._thread", "stop"),
-    "tstdx/transport/pool.py::ConnectionPool._start_heartbeat": ("self._hb", "close"),
-    "tstdx/transport/pool.py::ConnectionPool._trigger_background_speedtest": (
+    "atst/streaming/base.py::QuoteStream.start": ("self._thread", "stop"),
+    "atst/streaming/engine.py::StreamEngine.start": ("self._thread", "stop"),
+    "atst/transport/pool.py::ConnectionPool._start_heartbeat": ("self._hb", "close"),
+    "atst/transport/pool.py::ConnectionPool._trigger_background_speedtest": (
         "self._speedtest_threads",
         "close",
     ),
-    "tstdx/web/sina/adapters.py::SinaSource.fetch_all": ("local:threads", "fetch_all"),
+    "atst/web/sina/adapters.py::SinaSource.fetch_all": ("local:threads", "fetch_all"),
 }
 
 
@@ -292,9 +292,9 @@ def test_every_thread_spawn_is_wired_to_a_handle_and_a_reaper() -> None:
 
 #: 不带超时的 ``join``：键为 ``模块::类.方法``，值为"凭什么等得起"。双向一致。
 UNBOUNDED_JOIN_SITES: dict[str, str] = {
-    "tstdx/web/sina/adapters.py::SinaSource.fetch_all": (
+    "atst/web/sina/adapters.py::SinaSource.fetch_all": (
         "这几条分页 worker 的寿命由**分页**而不是由网络决定：每轮要么 return，要么把 "
-        "``next_page`` 往前推，推到 ``max_pages`` 即退；单次 HTTP 又有 :mod:`tstdx.web` "
+        "``next_page`` 往前推，推到 ``max_pages`` 即退；单次 HTTP 又有 :mod:`atst.web` "
         "自己的请求超时兜着。给它加 join 超时反而是假绿——超时会把没跑完的页当已跑完，"
         "把截断结果当全量交出去（``web_eastmoney_page_limit`` 那一族告警就是这么来的）。"
     ),
@@ -517,8 +517,8 @@ def _guarded_by_idempotency(if_node: ast.If, fn: ast.AST) -> bool:
 #: ``类 -> (起跑函数, 线程体读的那个 sweeper)``。起跑函数由门点名，所以"门读了哪些 knob"
 #: 与"线程会读哪些 knob"两边都能现扫。新加一条 knob 线程要登记，抽掉一条要删。
 SHARED_SWEEPER_SITES: dict[str, str] = {
-    "tstdx/transport/pool.py::ConnectionPool": "_start_heartbeat",
-    "tstdx/transport/async_.py::AsyncConnectionPool": "start_heartbeat",
+    "atst/transport/pool.py::ConnectionPool": "_start_heartbeat",
+    "atst/transport/async_.py::AsyncConnectionPool": "start_heartbeat",
 }
 
 
@@ -743,25 +743,25 @@ _LOCK_CALLS = frozenset({"acquire", "release"})
 #: 双向一致——多一条（等待已经转成带截止期，登记表忘了收）与少一条（收尾路径上新增一次
 #: 无界等待）都当场红。
 UNBOUNDED_SHUTDOWN_AWAITS: dict[str, str] = {
-    "tstdx/client/api.py::AsyncClient.close": (
+    "atst/client/api.py::AsyncClient.close": (
         "``asyncio.to_thread(self.client.close)``：把**同步**池的收尾挪去线程，等的是那条"
         "线程跑完 ``ConnectionPool.close()``。它的上界由判据二给：那函数里两次 join 各带"
         "``_HEARTBEAT_JOIN_SECONDS`` / ``_SPEEDTEST_JOIN_SECONDS``，逐槽位 ``_drop`` 走的是"
         "同步套接字 close（本地系统调用，不等对端）。所以这一格等的是自己人的收尾，"
         "不是网络。"
     ),
-    "tstdx/transport/async_.py::AsyncConnectionPool._cleanup_committed_close": (
+    "atst/transport/async_.py::AsyncConnectionPool._cleanup_committed_close": (
         "``await heartbeat`` 的前一行就是 ``heartbeat.cancel()``：等的是那台心跳/回收循环"
         "自己退到下一个 await 边界，不等网络。它体内的等待只有三种——``asyncio.sleep`` 的"
         "节奏、``conn.ping()`` 那条 wait_for 读帧链、以及本判据逐格核对过的 ``_drop`` / "
         "``_release_*`` / ``_mark_*`` 收尾。"
     ),
-    "tstdx/transport/async_.py::_await_cleanup_before_cancellation": (
+    "atst/transport/async_.py::_await_cleanup_before_cancellation": (
         "``await asyncio.shield(cleanup_task)``：被 shield 的正是上一条那个 "
         "``_cleanup_committed_close`` 任务，它的等待由本判据核对；shield 改变的是"
         "「谁先被取消」（调用方取消不打断清理），不新增一次等待。"
     ),
-    "tstdx/streaming/base.py::AsyncQuoteStream.stop": (
+    "atst/streaming/base.py::AsyncQuoteStream.stop": (
         "``await asyncio.shield(task)``（``while not task.done()`` 里那一格）：等的是 poll "
         "worker 收尾。第 31 轮把 worker 的四处睡眠腿全改走 :func:`_sleep_or_stop`（轮询 "
         "``_stop``，``_STOP_POLL_SECONDS = 0.05``），于是这一格的上界既写得出刻度也写得出"

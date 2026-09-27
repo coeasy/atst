@@ -4,9 +4,9 @@ import asyncio
 
 import pytest
 
-from tstdx.protocol.commands import Family
-from tstdx.transport import AsyncConnectionPool
-from tstdx.transport.hosts import HostEntry
+from atst.protocol.commands import Family
+from atst.transport import AsyncConnectionPool
+from atst.transport.hosts import HostEntry
 
 
 @pytest.mark.asyncio

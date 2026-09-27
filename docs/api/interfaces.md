@@ -1,6 +1,6 @@
 # 项目接口文档
 
-> 本文件汇总 tstdx 的全部公开接口面（Public API Surface），按层次组织。
+> 本文件汇总 atst 的全部公开接口面（Public API Surface），按层次组织。
 > 每个接口标注了导入路径、签名摘要与使用示例。
 
 ## 目录
@@ -21,10 +21,10 @@
 ### TdxClient（同步）
 
 ```python
-from tstdx.client import TdxClient
+from atst.client import TdxClient
 ```
 
-> 下表「已下线」不是编辑判断，而是命令账本（`tstdx/protocol/commands.py`）与
+> 下表「已下线」不是编辑判断，而是命令账本（`atst/protocol/commands.py`）与
 > `core._UNVERIFIED_STRUCTURED_BLOCK` 的现值：这些方法在客户端**主动不发**那条帧。
 > 由 `tests/architecture/test_offline_capability_honesty.py` 逐行核对，改状态请改账本。
 
@@ -60,7 +60,7 @@ pool=None, **pool_kwargs)`。`pool_kwargs` 直通 `ConnectionPool`，所以并�
 ### AsyncTdxClient（异步）
 
 ```python
-from tstdx.client import AsyncTdxClient
+from atst.client import AsyncTdxClient
 ```
 
 与 TdxClient 签名镜像，所有方法为 `async def`。
@@ -75,15 +75,15 @@ socket 时（`_get_conn_locked`）武装那条线程，`AsyncTdxClient.open()` �
 
 | 类 | 导入路径 | 协议族 | 说明 |
 |----|----------|--------|------|
-| `GoodsClient` | `tstdx.client.sync` | GOODS (7727) | 商品/期货/期权/外汇 |
-| `ExMarketClient` | `tstdx.client.sync` | EXTENDED (7727) | 港股/美股/期货/外汇 |
-| `MacClient` | `tstdx.client.sync` | MAC | MAC 专属 |
-| `F10Client` | `tstdx.client.sync` | F10 | F10 资料 |
+| `GoodsClient` | `atst.client.sync` | GOODS (7727) | 商品/期货/期权/外汇 |
+| `ExMarketClient` | `atst.client.sync` | EXTENDED (7727) | 港股/美股/期货/外汇 |
+| `MacClient` | `atst.client.sync` | MAC | MAC 专属 |
+| `F10Client` | `atst.client.sync` | F10 | F10 资料 |
 
 ### 命令账本查询面
 
 ```python
-from tstdx.protocol.commands import (
+from atst.protocol.commands import (
     COMMANDS,
     CMD,
     by_family,
@@ -94,7 +94,7 @@ from tstdx.protocol.commands import (
 )
 ```
 
-账本（`tstdx/protocol/commands.py`）是「协议全覆盖」的登记表：85 行、5 协议族
+账本（`atst/protocol/commands.py`）是「协议全覆盖」的登记表：85 行、5 协议族
 （`quotation 39 / ex_quotation 17 / mac_quotation 16 / goods 11 / f10 2`）。它对外只有
 这几个函数——**名单、规模数字、以及「每个名字都有用例真的在调」**这三件事由
 `tests/architecture/test_ledger_public_surface.py` 与本表双向核对。
@@ -104,10 +104,10 @@ from tstdx.protocol.commands import (
 | `cmd` | `(name)` | `int` | 命令名 → 命令号。85 行的名字全局唯一，所以不需要族上下文；未登记名抛 `KeyError`，消息里带账本规模 |
 | `get_command` | `(cmd, family=Family.STANDARD)` | `Command \| None` | `(族, 号)` → 账本行；未登记号返回 `None`，照旧交 L2 通用解析 + L3 原始透传，不丢包 |
 | `by_family` | `(family)` | `Iterator[Command]` | 一族全部行，按命令号升序；未知族名得到空序列，不报错 |
-| `by_status` | `(status, family=None)` | `list[Command]` | 按实测状态列全部行：`online` 74 / `offline` 9 / `degraded` 2。发包前的 fail-fast 读的是**单行的** `status`（`tstdx/client/core.py` 的 `_guard_offline` 走 `get_command`），本函数是"按状态列全部行"那一侧 |
+| `by_status` | `(status, family=None)` | `list[Command]` | 按实测状态列全部行：`online` 74 / `offline` 9 / `degraded` 2。发包前的 fail-fast 读的是**单行的** `status`（`atst/client/core.py` 的 `_guard_offline` 走 `get_command`），本函数是"按状态列全部行"那一侧 |
 | `unknown_command_ids` | `(family=Family.STANDARD)` | `list[Command]` | 语义未经 golden 校正（`verified=False`）的行：默认族 32 条、全账本 78 条。**返回行而不是裸命令号**，「unknown」也不等于「命令不存在」 |
 
-F-65 裁决 (b) 删掉了两个查询函数，不留别名：`stats()`（按族聚合的计数字典，`tstdx/` 内
+F-65 裁决 (b) 删掉了两个查询函数，不留别名：`stats()`（按族聚合的计数字典，`atst/` 内
 零读取点，唯一的读者是它自己的测试）、`get_command_by_name()`（对 85 行做线性名字扫描，
 全包零调用、零测试）。名字 → 整行的需求由 `get_command(cmd(name), family)` 覆盖，用例
 逐行验证它给的是同一个对象，所以删除不削能力。
@@ -115,7 +115,7 @@ F-65 裁决 (b) 删掉了两个查询函数，不留别名：`stats()`（按族�
 ### 工厂
 
 ```python
-from tstdx.client import get_client
+from atst.client import get_client
 
 client = get_client("stock")  # TdxClient（缺省 kind，可不传）
 client = get_client("goods")  # GoodsClient
@@ -127,19 +127,19 @@ client = get_client("f10")    # F10Client
 `get_client` 只认这 5 个 kind——判据是运行期读 `_CLIENT_REGISTRY`，不是抄一份名单：未知
 kind 显式抛 `ValueError`（消息里带合法值全集），既不做大小写/空白归一，也不静默回落到
 `TdxClient`，所以把 `"std"` 或 `"async"` 写进调用点会当场炸而不是拿到一个能用的对象。
-**异步面不在这张表里**：异步传输客户端 `AsyncTdxClient` 由 `tstdx.client` 直接导出，
-`tstdx.AsyncClient` 则是 `Client` 那套语义/运行时契约的异步门面（它内部持有一份 `Client`），
+**异步面不在这张表里**：异步传输客户端 `AsyncTdxClient` 由 `atst.client` 直接导出，
+`atst.AsyncClient` 则是 `Client` 那套语义/运行时契约的异步门面（它内部持有一份 `Client`），
 两者都不经本工厂构造。其余 kwargs 原样透传给对应类的 `__init__`。
 
 ### 交易面（TradeClient，只有库面且仅模拟）
 
-`tstdx.trade` 是 0x1000 交易协议的独立面：帧编解码、密码混淆、查询类别词表和一台模拟券商
+`atst.trade` 是 0x1000 交易协议的独立面：帧编解码、密码混淆、查询类别词表和一台模拟券商
 都在库里，但**只有库面**——CLI 的 31 支子命令、HTTP 的 10 路由、WS 的 10 方法、MCP 的 9 工具
 都不挂它。这不是漏接线，是红线：本库不接真实券商，`SocketTransport.connect()` 一律抛
 `TradingUnavailable` `[E4030]`。
 
 ```python
-from tstdx.trade import TradeClient
+from atst.trade import TradeClient
 
 with TradeClient() as c:                # 缺省 transport 是 SimTransport
     c.login("100001", "123456")         # DEFAULT_ACCOUNTS 里的演示账密
@@ -168,7 +168,7 @@ with TradeClient() as c:                # 缺省 transport 是 SimTransport
 ### Client（唯一业务入口，同步）
 
 ```python
-from tstdx import Client, AsyncClient
+from atst import Client, AsyncClient
 ```
 
 | 方法 | 签名摘要 | 说明 |
@@ -220,7 +220,7 @@ WS `query`、MCP `query_capability`、CLI `query`）缺省都是 `business`，�
 ### 能力发现面：只有名字，没有可用性
 
 ```python
-from tstdx import Client
+from atst import Client
 
 Client.capabilities()   # 172 项 capability 名，按字典序排好
 ```
@@ -267,8 +267,8 @@ request/parser 仍是 inferred 的结构化拦截挡在发包前。下表由
 ### UnifiedRuntime（唯一执行内核）
 
 ```python
-from tstdx import UnifiedRuntime
-from tstdx.runtime import KernelExecutor   # 执行面 Protocol（测试接缝）
+from atst import UnifiedRuntime
+from atst.runtime import KernelExecutor   # 执行面 Protocol（测试接缝）
 
 runtime = UnifiedRuntime(
     default_provider="tdx", timeout=5.0, hosts=None, vipdoc_root=None,
@@ -280,7 +280,7 @@ runtime = UnifiedRuntime(
 executor.execute → QueryResult`。内核零缓存、不自动换源；`QueryResult.meta`
 （`provider / channel / capability / fingerprint / provenance / warnings`）即审计凭据。
 `warnings` 是本次结果携带的数据瑕疵清单（`WarningCode` + 一句人话，发射口只有
-`tstdx/diagnostics.py` 一个）：空元组是"干净"这一判断的证据，三张服务面把它逐条写进
+`atst/diagnostics.py` 一个）：空元组是"干净"这一判断的证据，三张服务面把它逐条写进
 `meta.warnings`；`strict=True` 时内核改为在返回前抛 `TruncatedDataError`。
 
 `quotes` 的失败形状与同族便捷方法共用一条判据：**全部**标的都失败即抛（断网时就是
@@ -291,7 +291,7 @@ executor.execute → QueryResult`。内核零缓存、不自动换源；`QueryRe
 ### QuerySpec / QueryPlan
 
 ```python
-from tstdx import QuerySpec, QueryPlan
+from atst import QuerySpec, QueryPlan
 
 spec = QuerySpec.build(
     "bars", symbols="sh600519", period="day", count=80,
@@ -318,8 +318,8 @@ Provider 实现的**真实签名**校验，不合法即 `ValidationError` 且不
 ### FallbackPolicy / ProviderOrchestrator
 
 ```python
-from tstdx import FallbackPolicy
-from tstdx.runtime.orchestration import OrchestratedResult, ProviderAttempt
+from atst import FallbackPolicy
+from atst.runtime.orchestration import OrchestratedResult, ProviderAttempt
 
 policy = FallbackPolicy(providers=("tdx", "tencent"))   # 或 FallbackPolicy.build("tdx", "tencent")
 out = client.quotes("sh600519", policy=policy)
@@ -332,7 +332,7 @@ out.attempts    # tuple[ProviderAttempt(provider, status, code), ...]
 ### BatchItem / BatchResult
 
 ```python
-from tstdx import BatchItem, BatchResult
+from atst import BatchItem, BatchResult
 ```
 
 批量入口只有一个：`client.quotes_batch(symbols, ...)`（内核逐 symbol 直连同一
@@ -353,8 +353,8 @@ Provider，串行下发、无隐藏换源）。`BatchResult.items` 为 `{symbol:
 ### CapabilityQuery 与 Domain Records
 
 ```python
-from tstdx.typed_query import FundHoldingsQuery          # 60+ 冻结契约，10 领域基类
-from tstdx.domain.records import FinancialRecord, FundRecord, BondRecord, NewsRecord
+from atst.typed_query import FundHoldingsQuery          # 60+ 冻结契约，10 领域基类
+from atst.domain.records import FinancialRecord, FundRecord, BondRecord, NewsRecord
 ```
 
 `client.typed(FundHoldingsQuery(code="000001"))` → `TypedQueryResult(data, capability)`。
@@ -363,9 +363,9 @@ Domain Record 族共 9 类：`Financial/Fund/Bond/News/Research/Option/MarketDat
 ### 溯源守卫与启动对账
 
 ```python
-from tstdx.runtime.provenance import validate_runtime_provenance   # (identity, result) -> None
-from tstdx.runtime.audit import audit_runtime                      # () -> RuntimeAuditReport
-from tstdx import Provenance, ProvenanceKind                       # 结果溯源载荷
+from atst.runtime.provenance import validate_runtime_provenance   # (identity, result) -> None
+from atst.runtime.audit import audit_runtime                      # () -> RuntimeAuditReport
+from atst import Provenance, ProvenanceKind                       # 结果溯源载荷
 ```
 
 `validate_runtime_provenance` 在结果 provenance 与请求身份不一致时抛错（换源即抛）；
@@ -373,23 +373,23 @@ from tstdx import Provenance, ProvenanceKind                       # 结果溯�
 
 `ProvenanceKind` 只有一个成员 `DIRECT`：运行期不做结果缓存，也不回放、不合成，因此不存在
 第二种出处可标。这不是注释而是门禁——`test_every_declared_provenance_kind_has_a_producer`
-拿枚举成员名当分母、拿 `tstdx/` 里的具名构造点当分子做双向差集，加一个没有生产点的成员
+拿枚举成员名当分母、拿 `atst/` 里的具名构造点当分子做双向差集，加一个没有生产点的成员
 当场变红。公开构造入口也只有 `Provenance.direct(plan)` 一个：它写死 `kind=DIRECT`、
 `requested_provider=plan.provider`、`fallback=False`，而 `cache_tier` 停在 `None`
 （8 个字段里唯一无生产者的一位，wire 上照原样输出，正因为调用方断言它恒为 `None`）。
 `fallback=True` 是另一件事：它只可能由显式 `FallbackPolicy` 走到
 `ProviderOrchestrator`（§ 上文）之后 `replace` 出来，与出处种类无关。
 
-### Web 源登记（`tstdx.web.sources.KNOWN_SOURCES`，31 个）
+### Web 源登记（`atst.web.sources.KNOWN_SOURCES`，31 个）
 
 ```python
-from tstdx.web.sources import KNOWN_SOURCES, SourceSpec   # 源名 → SourceSpec
+from atst.web.sources import KNOWN_SOURCES, SourceSpec   # 源名 → SourceSpec
 ```
 
 这一张表是内核之外那张 **HTTP 适配器命名面**的唯一读者可见登记。三个地方吃的源名以它为准：
 `docs/configuration.md` 的 `[web] enabled_sources` 与 `[web] rate_limit` 都要求键属于
 `KNOWN_SOURCES`（文档过去只写了这句约束、从没列出合法取值），`WebQuoteSession` 的方法按
-`summary` 那一列对应到源名，`tstdx.web.normalize` 按 `SourceSpec` 的三个 scale 字段换算单位。
+`summary` 那一列对应到源名，`atst.web.normalize` 按 `SourceSpec` 的三个 scale 字段换算单位。
 
 「接口告诫」一列是 `SourceSpec.notes` 原文，逐格对齐，不做二次抄写：单位坑（哪些源要 ×100、
 哪些量是手/万元）、鉴权要求（Referer / cookie）、以及**已下线的端点**。下表与运行期登记表由
@@ -411,7 +411,7 @@ from tstdx.web.sources import KNOWN_SOURCES, SourceSpec   # 源名 → SourceSpe
 | `minute_kline` | 分钟 K 线（腾讯 ifzq.gtimg.cn mkline） | `kline` / `minute_kline` | 1/5/15/30/60 分钟 K 线，**仅 A 股**（港股/美股 mkline 返回空，直连会抛错）。港股/美股分钟 K 线走东财 push2his（EastmoneyHistoryKlineSource），WebQuoteSession.klines/minute_klines 已按市场自动路由。 |
 | `minute` | 当日分时（腾讯 web.ifzq.gtimg.cn minute/query） | `minute` | 当日 1 分钟分时（价格/均价/成交量）。接口累计量为「手」，解析层 MinuteSource 已 ×100 到股；量口径统一由解析层内联处理，normalizer 为 identity（不二次缩放）。 |
 | `suggest` | 证券代码联想搜索（新浪 smartbox） | `suggest` | 输入拼音/汉字/代码片段 → 候选证券列表 |
-| `ticks` | 逐笔成交明细（腾讯 stock.gtimg.cn detail） | `tick` | 每页条数以 tstdx.web.ticks.TICKS_PER_PAGE 为单一事实源（勿在此复写具体数字）；p 为页码（0 起）。量单位手、额单位元 |
+| `ticks` | 逐笔成交明细（腾讯 stock.gtimg.cn detail） | `tick` | 每页条数以 atst.web.ticks.TICKS_PER_PAGE 为单一事实源（勿在此复写具体数字）；p 为页码（0 起）。量单位手、额单位元 |
 | `trends` | 当日分时成交（东财 push2his trends2） | `tick` / `minute` | 1 分钟粒度，含均价；iscr=0 不复权、ndays=1 当日 |
 | `global` | 外盘期货 / 外汇（腾讯 qt.gtimg.cn hf_ 前缀） | `quote` / `global` | 纽约原油/黄金、伦铜、布伦特原油等；字段为定长 14 列 |
 | `market_stat` | 大盘统计（腾讯 qt.gtimg.cn s_ 前缀） | `quote` / `stat` | s_sh000001 形式；返回点数、涨跌额、涨跌幅、成交量(手)、成交额(万元) |
@@ -422,7 +422,7 @@ from tstdx.web.sources import KNOWN_SOURCES, SourceSpec   # 源名 → SourceSpe
 | `corporate` | 基本面与公司行为（东财 datacenter-web 报表族） | `corporate` / `ipo` | F10/公告/研报/股东/大宗/解禁/业绩/IPO 申购日历；报表名错误返回 code=9501 |
 | `longhu` | 龙虎榜每日个股榜（东财 datacenter-web RPT_DMSK_TS_STOCKNEW） | `longhu` | 主力净流入=超大单净+大单净(元)；TRADE_DATE 过滤须用完整'YYYY-MM-DD 00:00:00' 字面值，否则 9201 空数据；机构席位/营业部买卖子报表名已失效(9501)，本源仅取每日上榜个股汇总 |
 | `sina_fund_flow` | 新浪资金流历史（个股 ssl_qsfx_zjlrqs / 板块 ssl_bkzj_zjlrqs） | `fund_flow` / `history` | 净额(元)/换手率(%)等均为原生单位，normalizer 为 identity；必须带 page/num/sort 三参数，缺省会返回全历史(约 1MB)；板块代码用 SinaIndustryBoardSource 的 new_xxx 体系（旧 hangye_ZLxx 体系已停更，最新数据停留在 2020 年） |
-| `wencai` | i问财自然语言选股（www.iwencai.com load-data） | `wencai` | 自然语言选股（如“连板3板以上”）；hexin-v cookie 由调用方注入（参数 cookie= 或环境变量 TSTDX_WENCAI_COOKIE），tstdx 不依赖任何第三方 cookie 中继服务；缺 cookie 时在 fetch 阶段抛 WebSourceError（构造不拦截，便于罐头测试）；返回 title+rows zip 后的 list[dict] |
+| `wencai` | i问财自然语言选股（www.iwencai.com load-data） | `wencai` | 自然语言选股（如“连板3板以上”）；hexin-v cookie 由调用方注入（参数 cookie= 或环境变量 ATST_WENCAI_COOKIE），atst 不依赖任何第三方 cookie 中继服务；缺 cookie 时在 fetch 阶段抛 WebSourceError（构造不拦截，便于罐头测试）；返回 title+rows zip 后的 list[dict] |
 | `stock_changes` | 盘中异动池（东财 push2ex getAllStockChanges） | `stock_changes` | 20 类异动枚举（火箭发射/大笔买入/60日新高…，2026-09 实测验证）；输出为 dict 列表（time/code/name/change_type/metrics），metrics 为异动指标数值列表（含义随类型不同，不强行归一）；非交易时段返回空 allstock 为合法状态 |
 | `hot_rank` | 股吧个股人气榜（东财 emappdata stockrank，POST JSON） | `hot_rank` | 人气排名榜（rk 当前名次 + rc 较上期变动）；榜单仅含排名与代码，不含行情字段，如需行情请以返回 symbol 回查 quotes；globalId 由本库生成（uuid4），appId 沿用页面公开参数 |
 | `baidu` | 百度财经（finance.pae.baidu.com selfselect） | `kline` / `minute` / `tick` / `quote` | 仅 A 股（stockType=ab）。坑：K 线 kline.volume 实为成交额(元)、kline.amount 实为成交量(手)，解析层须交换映射（volume=amount×100, amount=volume）；分时 amount 为含'万'字符串，优先用 oriAmount(元)。非官方接口，随时可能改版/下线；不提供 fund_flow（2026-05 起下线）。 |
@@ -436,30 +436,30 @@ from tstdx.web.sources import KNOWN_SOURCES, SourceSpec   # 源名 → SourceSpe
 
 四个服务面的数据命令全部委托同一个 `Client`（含 `stream`：CLI 不自己构造流）。CLI 另有
 6 个直连传输层命令（`probe`/`goods`/`f10`/`blocks`/`list`/`quotes-snapshot`，落点口径见 §3 CLI 表），
-不经内核——它们是协议诊断面，不是第二套能力执行路径（口径见 `tstdx/cli/runtime_commands.py`
+不经内核——它们是协议诊断面，不是第二套能力执行路径（口径见 `atst/cli/runtime_commands.py`
 的模块 docstring，守卫是 `test_service_faces_never_import_the_web_layer` 与
 `test_service_faces_never_build_a_stream_themselves`）。
 
 "不经内核"不等于"不看配置"：这 6 支命令的连接参数出自
-`tstdx.cli._common._transport_kwargs`，而它调的就是内核那一条
-`tstdx.transport.pool.pool_settings_from_config`，所以 `[hosts] servers` / `[hosts]
+`atst.cli._common._transport_kwargs`，而它调的就是内核那一条
+`atst.transport.pool.pool_settings_from_config`，所以 `[hosts] servers` / `[hosts]
 slots_per_host` / `[core] timeout` / `[core] max_retries` / `[core]
 heartbeat_interval` / `[rate_limit]` / `[security] use_tls` 在直连命令与主链路上是同一套
 读数；显式 `--host` / `--timeout` 只赢它自己那一格（第 31 轮 31-C4 之前，这里只手抄了
 `hosts` 与 `timeout` 两键，其余五个键在直连命令上当场蒸发）。六支直连命令一律用
-`get_client(...)` 构造、再把客户端整体交进 `tstdx.cli._common.family_client` 那道保护区：
+`get_client(...)` 构造、再把客户端整体交进 `atst.cli._common.family_client` 那道保护区：
 客户端交进去时池与心跳线程已经起跑，块体无论正常返回还是抛错都 `close()` 一次。保护区只
 管释放、不管构造，为的是让 `with family_client(get_client("goods", …)) as c` 之后的 `c`
 仍是 `GoodsClient`——把 kind 传进保护区里再查注册表，返回类型就塌成 `Any`，工厂那五道
 `@overload` 在 CLI 面等于白设。两格判据分别是
 `tests/architecture/test_cli_connection_contract.py` 与
-`tests/architecture/test_client_family_transport.py` 的第 5 件事（射程是整个 `tstdx/`，
+`tests/architecture/test_client_family_transport.py` 的第 5 件事（射程是整个 `atst/`，
 不只执行器）。
 
 三张 wire 面（HTTP REST、WebSocket JSON-RPC、MCP stdio）对**未声明的请求字段**口径一致：
 一律当场拒绝，不存在「收下但无人读」的第三种下场（F-47 裁决 (a)，Phase 5 第 40 步落地，2026-09-19）。
 白名单就是各面自己那份声明，不是第二份抄件——HTTP 查询串 = 路由签名本身，HTTP body 与 WS `params`
-= `tstdx/integration/wire_fields.py` 里的两份名单，MCP `arguments` = 该工具的 `inputSchema`
+= `atst/integration/wire_fields.py` 里的两份名单，MCP `arguments` = 该工具的 `inputSchema`
 （9 张 schema 都写着 `additionalProperties: false`，且这条声明被真实执行）。拒绝的落点是 HTTP
 `422`（`E1010` / `ValidationError`）与 JSON-RPC `-32602`；人读的那句话与机读侧的
 `context.unknown_fields` 都点名被拒的那个键。判据见 `tests/runtime/test_wire_declared_fields.py`
@@ -482,8 +482,8 @@ retryable=True`，把调用方写错的数字登记成上游故障并建议换�
   `-32602`（MCP 同）、`retryable=False`。既不替换成别的数，也不报成内部错误。
 * 真整数原样通过；纯数字串按整数解析（查询串与 JSON 都天然承载字符串）；`bool` / `float` /
   列表 / 非数字串一律拒——注意 `count=1.5` 现在是**拒**，不是截断。
-* 唯一实现是 `tstdx/integration/wire_fields.py::as_request_int`；两张机器面不再自己转换
-  （判据用 AST 扫源码钉住这一点）。库面那侧是 `tstdx/client/core.py::_require_int`，
+* 唯一实现是 `atst/integration/wire_fields.py::as_request_int`；两张机器面不再自己转换
+  （判据用 AST 扫源码钉住这一点）。库面那侧是 `atst/client/core.py::_require_int`，
   绑定处 `QuerySpec.normalized` 前另有真整数闸，其字段名单从 `dataclass` 的 `int` 注解现扫。
 
 各面的**边界仍然不同**，这是有意的，而且从本轮起每一张都真的按自己的声明执行（下表与代码现值
@@ -500,14 +500,14 @@ retryable=True`，把调用方写错的数字登记成上游故障并建议换�
 MCP 的 `count` 上限（2000）比 HTTP（10000）小，是给 LLM 上下文预算留的；两个数现在都是
 各自声明的真边界，不再由一份抄件决定。**协议事实仍是协议错误**，不因本轮归位：离线指令、
 未核验市场、脏字节、`split_symbol` 的 BJ 边界保留 `E2xxx`/`E3xxx`——那条分界线写在
-`tstdx/client/core.py::_require_int` 的 docstring 里。判据见
+`atst/client/core.py::_require_int` 的 docstring 里。判据见
 `tests/architecture/test_wire_numeric_domain.py`（8 项：AST 禁自己转换、MCP 按 schema 边界拒并含
 "改 schema 数字断言跟着翻"的正控、HTTP 越界在 handler 前 422、内核整数格全表、分页上限四面同口径）。
 
 ### HTTP REST 网关（10 路由）
 
 ```python
-from tstdx.integration.runtime_http import create_runtime_app
+from atst.integration.runtime_http import create_runtime_app
 app = create_runtime_app()          # FastAPI 实例，交由 uvicorn 承载
 ```
 
@@ -534,7 +534,7 @@ app = create_runtime_app()          # FastAPI 实例，交由 uvicorn 承载
 | 面 | 造出 `Client` 的一方 | 收尾的地方 |
 |----|--------------------|-----------|
 | HTTP `create_runtime_app(client=None)` | 不传时工厂按 `owns_client` 自己造一份 | `_lifespan` 把 `yield` 包进 `try`，在 `finally` 里按 `owns_client` 调 `api.close()`——写在 `yield` 之后不算收尾，生命周期体一抛错那两行就永远走不到（第 31 轮 31-C；判据 `tests/runtime/test_runtime_http_client_release.py`）|
-| WS `serve_runtime_ws(handler=None)` | 不传时函数按 `owns_handler` 自己造，登记在 `server.tstdx_handler` | 宿主的 `finally` 调 `RuntimeJsonRpcHandler.close()`；`__main__` 入口即如此 |
+| WS `serve_runtime_ws(handler=None)` | 不传时函数按 `owns_handler` 自己造，登记在 `server.atst_handler` | 宿主的 `finally` 调 `RuntimeJsonRpcHandler.close()`；`__main__` 入口即如此 |
 | MCP `MCPServer(client=None)` | 不传时构造器自己造（`_owns_client`）| `stop()` 幂等：`_stopped` 事件 + 关掉后置回 `_owns_client`，`shutdown` 与 `serve` 收尾抢着停也只关一次 |
 
 三处都遵守同一句话：**传进来的那份归调用方，本库不关**；只有自己造的那份才由自己收尾。
@@ -548,7 +548,7 @@ app = create_runtime_app()          # FastAPI 实例，交由 uvicorn 承载
 ### WebSocket JSON-RPC（13 方法）
 
 ```python
-from tstdx.integration.runtime_ws_server import serve_runtime_ws
+from atst.integration.runtime_ws_server import serve_runtime_ws
 ```
 
 方法：`quotes`、`bars`、`snapshot`、`minute`、`trades`、`security.count`、`security.list`、
@@ -556,8 +556,8 @@ from tstdx.integration.runtime_ws_server import serve_runtime_ws
 
 监听地址与路径由 `RuntimeWsConfig` 决定，默认 127.0.0.1:8765 上的 `/v13/ws`；连到别的路径
 会被以 1008 状态码关闭（reason 为 "unsupported path"）。`serve_runtime_ws` 是协程，返回 websockets
-库的 server 对象；要一条命令拉起来就用它的包入口 `python -m tstdx.integration.runtime_ws_server`
-（第 23 轮补：在那之前这条命令只会静默导入后退出，什么都不监听）。它仍然没有 tstdx 子命令
+库的 server 对象；要一条命令拉起来就用它的包入口 `python -m atst.integration.runtime_ws_server`
+（第 23 轮补：在那之前这条命令只会静默导入后退出，什么都不监听）。它仍然没有 atst 子命令
 （§3 CLI 表那一格里没有它）。
 
 **并发与所有权**（第 26 轮补，两条都是宿主必须知道的）：
@@ -567,9 +567,9 @@ from tstdx.integration.runtime_ws_server import serve_runtime_ws
   拖死同一进程里其他连接；同一连接上的请求仍按到达顺序逐条应答。宿主自己实现连接循环时
   要付同样的代价，直接把 `handle_message` 在协程里调用就是退回那个形状。
 * 谁负责收尾由**是否传入 handler** 决定。**传入**的那份归调用方，`serve_runtime_ws` 不碰它的
-  生命周期；**不传**时函数自己造一份，并把它登记在返回对象的 `server.tstdx_handler` 上。那条
+  生命周期；**不传**时函数自己造一份，并把它登记在返回对象的 `server.atst_handler` 上。那条
   `Client` 由 `RuntimeJsonRpcHandler.close()` 收尾，宿主停机时不调它就把这条所有权链断在
-  自己手里（`python -m tstdx.integration.runtime_ws_server` 这个入口就是在 finally
+  自己手里（`python -m atst.integration.runtime_ws_server` 这个入口就是在 finally
   收尾块里做了这件事的）。它今天释放的是所有权而非连接池，见 §2「`close()` 到底释放什么」。
 
 `runtime.capabilities` 与 HTTP 同一份两份纯名字列表，同样**只有名字、没有可用性**
@@ -585,7 +585,7 @@ from tstdx.integration.runtime_ws_server import serve_runtime_ws
 （`serve_runtime_ws` 为每条连接造一份 handler），两条连接不会串台；连接断开时本连接拥有的流被
 `stop_all_subscriptions` 收掉，不泄漏。
 
-控制方法（白名单字段见 `tstdx.integration.wire_fields.WS_PARAMS_FIELDS`）：
+控制方法（白名单字段见 `atst.integration.wire_fields.WS_PARAMS_FIELDS`）：
 
 * `subscribe`：`{"symbols":[...], "provider":"tdx", "interval":1, "diff_only":false, "max_queue":1024}`。
   回 `{"subscription_id":"subN","status":"subscribed"}`；随后连接收到 `push` 帧：
@@ -600,7 +600,7 @@ from tstdx.integration.runtime_ws_server import serve_runtime_ws
 ```python
 import asyncio, json
 from websockets.asyncio.client import connect
-from tstdx.integration.runtime_ws_server import RuntimeWsConfig, serve_runtime_ws
+from atst.integration.runtime_ws_server import RuntimeWsConfig, serve_runtime_ws
 
 async def main() -> None:
     server = await serve_runtime_ws(config=RuntimeWsConfig(port=8765))
@@ -623,22 +623,22 @@ asyncio.run(main())
 ### MCP stdio（9 工具）
 
 ```python
-from tstdx.integration.mcp import create_mcp_server, TOOLS
+from atst.integration.mcp import create_mcp_server, TOOLS
 ```
 
 工具：`query_capability`（通用入口）+ `get_bars`、`get_quote`、`get_quotes`、
 `get_snapshot`、`get_minute_today`、`get_trades`、`get_security_count`、
 `get_security_list`。
 
-拉起方式是包入口（第 23 轮补；在那之前 `python -m tstdx.integration.mcp` 当场
+拉起方式是包入口（第 23 轮补；在那之前 `python -m atst.integration.mcp` 当场
 `No module named ...mcp.__main__`，能跑的只有私有模块 `...mcp._server`，而文档一处都没写）：
 
 ```bash
-python -m tstdx.integration.mcp
+python -m atst.integration.mcp
 ```
 
-MCP 客户端的配置就按这一条拼：`{"command": "python", "args": ["-m", "tstdx.integration.mcp"]}`。
-这张面**不需要任何 extra**——`tstdx/integration/mcp/` 只 import 标准库（见 README「Optional
+MCP 客户端的配置就按这一条拼：`{"command": "python", "args": ["-m", "atst.integration.mcp"]}`。
+这张面**不需要任何 extra**——`atst/integration/mcp/` 只 import 标准库（见 README「Optional
 Extras」那一节里被删掉的 `mcp` 假 extra）。它在 stdin/stdout 上说 JSON-RPC：`initialize` →
 初始化通知 → `tools/list` → `tools/call`，未声明的入参回 `-32602`，不认识的方法名回 `-32601`。
 这四格加两条反向口径在装好的包上逐条量过（`scratch_v18b22/probe23/mcp_ship23.log`，7 项全过）：
@@ -650,7 +650,7 @@ Extras」那一节里被删掉的 `mcp` 假 extra）。它在 stdin/stdout 上�
 ### CLI（31 子命令 / 36 个叶子命令）
 
 ```bash
-tstdx --help
+atst --help
 ```
 
 下表是 CLI 的**接口面本身**，不是一句"见 `--help`"：命令名、位置参数、旗标集合与落点全部
@@ -662,11 +662,11 @@ tstdx --help
 | 落点 | 含义 |
 |------|------|
 | 内核·typed | `Client` 的类型化方法或 `client.call`，stdout 打 `serialize_result` 信封（带 `provenance`/`currentness`） |
-| 内核·rows | 同一内核，经 `tstdx/cli/runtime_commands.py::_ClientRows` 把信封拆成裸行；`--json` 决定行数组还是人读表格 |
-| 直连传输层 | 不经内核，经 `tstdx.cli._common.family_client` → `get_client(...)`——协议诊断面，不是第二套能力执行路径 |
+| 内核·rows | 同一内核，经 `atst/cli/runtime_commands.py::_ClientRows` 把信封拆成裸行；`--json` 决定行数组还是人读表格 |
+| 直连传输层 | 不经内核，经 `atst.cli._common.family_client` → `get_client(...)`——协议诊断面，不是第二套能力执行路径 |
 | 服务面宿主 | 拉起 HTTP 应用本身 |
-| 传输·诊断 | 主站解析与测速（`tstdx.transport.*` / `tstdx.tools.host_audit`） |
-| 反馈 | `tstdx.feedback`，不发行情请求 |
+| 传输·诊断 | 主站解析与测速（`atst.transport.*` / `atst.tools.host_audit`） |
+| 反馈 | `atst.feedback`，不发行情请求 |
 | 元信息 | 只打印随包发布的静态信息（包版本、`Client.capabilities()` 那份能力名清单），不构造 `Client`、不发请求也不建连接 |
 
 | 命令 | 位置参数 | 旗标 | 落点 |
@@ -717,53 +717,53 @@ tstdx --help
 `test_every_leaf_command_has_an_example` 再要求 36 支叶子一支不缺。
 
 ```bash
-tstdx version                                              # 包版本
-tstdx capabilities                                         # 内核能力名清单（只有名字，无可用性）
-tstdx query stock_changes --args '[[8201]]' --kwargs '{"size": 5}'   # 任意能力的通用入口
-tstdx quotes sh600519 sz000001                            # 实时行情
-tstdx bars sh600519 --period day --count 80               # 日 K 线
-tstdx snapshot sh600519                                    # 规范快照
-tstdx minute sh600519 --provider tencent                     # 今日分时（tdx 面已下线，见下表）
-tstdx trades sh600519 --provider tencent                     # 逐笔成交（同上；--count 在 Web 源不服务）
-tstdx security-count --market 0                             # 某市场的代码总数
-tstdx security-list --market 0 --start 0                   # 分页代码表
-tstdx stream sh600519 --interval 3 --diff-only --seconds 30    # 流式订阅
-tstdx hosts audit --family quotation --timeout 3           # 主站巡检（5 族）
-tstdx hosts list                                            # 当前生效的主站池
-tstdx hosts scan                                            # 并发测速并写排名文件
-tstdx server-test                                           # 主站连通性测速
-tstdx serve --bind 127.0.0.1 --port 8000                   # HTTP 网关（上面那 10 路由）
-tstdx feedback submit --message "这里写问题描述"            # 反馈上报
-tstdx feedback stats --json                                 # 本地反馈统计
-tstdx probe 0x052D --market 0 --code sh600000              # 未知命令主动探测
-tstdx changes --types 8201,8193 --size 10                   # 盘中异动池
-tstdx hot --page 1 --size 10                                # 股吧人气榜
-tstdx margin sh600519 --days 10                             # 融资融券明细
-tstdx sector-flow --board industry --sort main_net --limit 10    # 板块资金流
-tstdx adjusted-bars sh600519 --method qfq --count 100       # 复权 K 线
-tstdx all-market --node hs_a --source sina --max-pages 1    # 全市场行情摘要
-tstdx minute-klines sh600519 --period 5min --count 48       # 分钟 K 线
-tstdx baidu sh600519 --kind kline --period day --count 40   # 百度财经源
-tstdx fund nav 000001 --page-size 20                        # 基金历史净值
-tstdx fund estimate 000001                                  # 基金盘中估值
-tstdx fund list --json                                      # 基金代码列表
-tstdx index constituents 000300                             # 指数成分股
-tstdx blocks 1 --count 50                                   # 板块行情：不服务（0x07E5 多主站无响应，客户端 fail-fast）
-tstdx goods AU2412 --kind quote                             # 商品行情：不服务（符号语法只认 5–6 位数字代码）
-tstdx f10 sh600519                                          # F10 栏目目录
-tstdx f10 sh600519 --file 公司概况                          # F10 正文下载并解析
-tstdx list 0 --count 100                                    # 代码表（直连传输层）
-tstdx quotes-snapshot sh600519 sz000001 --json              # 批量快照（直连传输层）
+atst version                                              # 包版本
+atst capabilities                                         # 内核能力名清单（只有名字，无可用性）
+atst query stock_changes --args '[[8201]]' --kwargs '{"size": 5}'   # 任意能力的通用入口
+atst quotes sh600519 sz000001                            # 实时行情
+atst bars sh600519 --period day --count 80               # 日 K 线
+atst snapshot sh600519                                    # 规范快照
+atst minute sh600519 --provider tencent                     # 今日分时（tdx 面已下线，见下表）
+atst trades sh600519 --provider tencent                     # 逐笔成交（同上；--count 在 Web 源不服务）
+atst security-count --market 0                             # 某市场的代码总数
+atst security-list --market 0 --start 0                   # 分页代码表
+atst stream sh600519 --interval 3 --diff-only --seconds 30    # 流式订阅
+atst hosts audit --family quotation --timeout 3           # 主站巡检（5 族）
+atst hosts list                                            # 当前生效的主站池
+atst hosts scan                                            # 并发测速并写排名文件
+atst server-test                                           # 主站连通性测速
+atst serve --bind 127.0.0.1 --port 8000                   # HTTP 网关（上面那 10 路由）
+atst feedback submit --message "这里写问题描述"            # 反馈上报
+atst feedback stats --json                                 # 本地反馈统计
+atst probe 0x052D --market 0 --code sh600000              # 未知命令主动探测
+atst changes --types 8201,8193 --size 10                   # 盘中异动池
+atst hot --page 1 --size 10                                # 股吧人气榜
+atst margin sh600519 --days 10                             # 融资融券明细
+atst sector-flow --board industry --sort main_net --limit 10    # 板块资金流
+atst adjusted-bars sh600519 --method qfq --count 100       # 复权 K 线
+atst all-market --node hs_a --source sina --max-pages 1    # 全市场行情摘要
+atst minute-klines sh600519 --period 5min --count 48       # 分钟 K 线
+atst baidu sh600519 --kind kline --period day --count 40   # 百度财经源
+atst fund nav 000001 --page-size 20                        # 基金历史净值
+atst fund estimate 000001                                  # 基金盘中估值
+atst fund list --json                                      # 基金代码列表
+atst index constituents 000300                             # 指数成分股
+atst blocks 1 --count 50                                   # 板块行情：不服务（0x07E5 多主站无响应，客户端 fail-fast）
+atst goods AU2412 --kind quote                             # 商品行情：不服务（符号语法只认 5–6 位数字代码）
+atst f10 sh600519                                          # F10 栏目目录
+atst f10 sh600519 --file 公司概况                          # F10 正文下载并解析
+atst list 0 --count 100                                    # 代码表（直连传输层）
+atst quotes-snapshot sh600519 sz000001 --json              # 批量快照（直连传输层）
 ```
 
 ### 36 支叶子、37 行示例的真机口径（第 23 轮装好的包，第 25 轮同面重跑过一遍）
 
 跑法先说清楚，因为它自己就是一只坑。清单不是手抄的，是本轮的普查脚本从上面那段围栏里**现读**的
-（取"命令行数最多"那个围栏块，绕开 §3 的 `tstdx --help` 与 §7 的巡检示例；脚本与逐行日志都在
+（取"命令行数最多"那个围栏块，绕开 §3 的 `atst --help` 与 §7 的巡检示例；脚本与逐行日志都在
 `scratch_v18b22` 下面，完整路径记在方案台账第 23 轮），一行一条进程打在装进独立环境的控制台脚本
 上——不是仓库源码树。跳过条件**只精确匹配 `serve` 这一支子命令**：上一版普查
-（`scratch_v18b22/cli_face23.log`）写的是"整行以 `tstdx serve` 开头就跳过"，
-于是 `tstdx server-test` 跟着长驻服务一起被吞——一行从没跑过的示例被记进"每一行都跑过"，那份旧日志
+（`scratch_v18b22/cli_face23.log`）写的是"整行以 `atst serve` 开头就跳过"，
+于是 `atst server-test` 跟着长驻服务一起被吞——一行从没跑过的示例被记进"每一行都跑过"，那份旧日志
 里 `server-test` 一次都没出现（它只在 PHASE A 的 `--help` 里露过面）。
 
 37 行 = 36 支叶子命令（`f10` 有两条示例）；`serve` 长驻，由本节末那一段单独量，
@@ -780,9 +780,9 @@ tstdx quotes-snapshot sh600519 sz000001 --json              # 批量快照（直
 |------|----------|------|
 | `probe 0x052D …` | rc=1，171.5s，12 行完整探测报告；`E2030`×8 读超时收口成 `E2040` 所有主站不可达 | **是缺陷并已修**：`--archive-dir` 不给时把库默认值覆盖成 `None`，`Prober` 无条件 `Path(None)` 当场 `TypeError`。这支命令的默认用法从未通过。那 171.5 秒的构成同 `quotes-snapshot`（8 台 × 读超时 + 梯子 sleep，G38 已修） |
 | `blocks 1` | rc=2，`E3035`（改前是 rc=2 `E3040 block_type 必须是整数`） | 半修：`type=int` 补上后才会走到真判据——`0x07E5` 多主站实测无响应，客户端 fail-fast，**本库不发板块行情** |
-| `goods AU2412` | rc=2，`E4040 无法解析证券代码` | **不服务**：符号语法（`tstdx/domain/symbol.py::SYMBOL_PATTERN`）只认 5–6 位数字，任何真实商品代码都进不去；商品族没有 live golden，不扩语法去猜字节 |
-| `minute` / `trades` | rc=2，`E9010` | **tdx 面不服务**：`0x0537` / `0x0FC5` 是 inferred 命令，真实记录布局仍待 golden。出路是显式换 Web 源（第 30 轮接通并实测）：`tstdx minute 000001 --provider tencent` 与 `tstdx trades 000001 --provider tencent` 均 rc=0 出数据；`--provider baidu` 撞 `E7010`（上游 403 反爬）、`--provider eastmoney` 撞 `E7000`（上游断连）——链路通、上游可用性另计。给 `trades` 写 `--count` 在 Web 源上是 `E1010`，因为那一格没有落脚点（见本文 §2 的 `Client` 方法表中 `trades` 一行的 caveat） |
-| `security-list` / `list` | rc=2，`E3035` | **不服务**：`0x044D` 已下线；要一张带代码的清单改用 `tstdx all-market`（Web 侧全市场快照）|
+| `goods AU2412` | rc=2，`E4040 无法解析证券代码` | **不服务**：符号语法（`atst/domain/symbol.py::SYMBOL_PATTERN`）只认 5–6 位数字，任何真实商品代码都进不去；商品族没有 live golden，不扩语法去猜字节 |
+| `minute` / `trades` | rc=2，`E9010` | **tdx 面不服务**：`0x0537` / `0x0FC5` 是 inferred 命令，真实记录布局仍待 golden。出路是显式换 Web 源（第 30 轮接通并实测）：`atst minute 000001 --provider tencent` 与 `atst trades 000001 --provider tencent` 均 rc=0 出数据；`--provider baidu` 撞 `E7010`（上游 403 反爬）、`--provider eastmoney` 撞 `E7000`（上游断连）——链路通、上游可用性另计。给 `trades` 写 `--count` 在 Web 源上是 `E1010`，因为那一格没有落脚点（见本文 §2 的 `Client` 方法表中 `trades` 一行的 caveat） |
+| `security-list` / `list` | rc=2，`E3035` | **不服务**：`0x044D` 已下线；要一张带代码的清单改用 `atst all-market`（Web 侧全市场快照）|
 | `f10 sh600519`（目录） | rc=2，159.0s，`E2030`→`E2040` | **不服务**：远端已停止 F10 内容分发（2026-09 实测）。那 159 秒原先记作"慢在主站"，第 25 轮按时间戳改判：**约 121 秒是重试梯子的 sleep**（见本节末 `--timeout` 那段，已修） |
 | `f10 … --file 公司概况` | rc=2，`E4000` 下载结果为空 | 同上，那一格的判据是显式写的"远端已停止 F10 内容分发" |
 | `adjusted-bars` | rc=2，`E1010 … requires vipdoc_root` | 前置条件：复权要有本地 vipdoc 原始 K 线，指到 `vipdoc_root` 才有数据 |
@@ -790,7 +790,7 @@ tstdx quotes-snapshot sh600519 sz000001 --json              # 批量快照（直
 | `sector-flow` | rc=2，`E7000 Server disconnected` | 上游可用性：东财端当晚断连，本库判据正确（不假装成功） |
 | `minute-klines` | rc=2，`E7000`（同一支东财端点；改前给 51 行） | 上游可用性抖动，跨两遍普查的唯一两处读数翻转之一 |
 | `baidu` | rc=2，`E7010` 403 疑似反爬（改前给 43 行） | 同上：本库把 403 译成可读的 `E7010` 而不是回空表 |
-| `feedback submit` | rc=1，"默认禁用" | 需要 `TSTDX_FEEDBACK=1`（或 `dry-run`），设计如此 |
+| `feedback submit` | rc=1，"默认禁用" | 需要 `ATST_FEEDBACK=1`（或 `dry-run`），设计如此 |
 
 另有两条改前失败、本轮出数据的，单独记（它们不在上面那 15 行里）：`query stock_changes --args …`
 给 88 行（文档示例原先**没加引号**，粘进 shell 会被拆成两个词、当场 exit 2；现已整体加引号，并被门禁
@@ -830,7 +830,7 @@ rc=2、零 traceback"，看起来像"全部失败但都可读"，实际是探针
 后者是并发测速）。
 
 `feedback submit` / `fund estimate` / `index constituents` 的 `--timeout` 现在两种位置都吃：
-`tstdx fund estimate 000001 --timeout 5` 与 `tstdx fund --timeout 5 estimate 000001` 等价
+`atst fund estimate 000001 --timeout 5` 与 `atst fund --timeout 5 estimate 000001` 等价
 （第 22 轮 G26 之前只有后一种能解析，前一种当场 exit 2）。
 
 `--timeout` 约束的是**单次尝试**的套接字超时，不是整条命令的墙钟：一次请求失败时连接池会换主站
@@ -838,13 +838,13 @@ rc=2、零 traceback"，看起来像"全部失败但都可读"，实际是探针
 推翻——8 台主站那次 159.4 秒里有 **121.143 秒是纯 `time.sleep`**（同一份日志里七条
 `退避 …s` 逐条相加；退避梯子按 `2**已试主站数` 放大，`attempt` 在换主站时也增长），
 而批量帧放弃之后回退路径首台 131 毫秒就取回了数据。本轮把它改成
-两条口径：退避只兑现给"回到刚失败过的那台"，且单步封顶 8 秒（`tstdx/transport/pool.py` 的
+两条口径：退避只兑现给"回到刚失败过的那台"，且单步封顶 8 秒（`atst/transport/pool.py` 的
 `MAX_RETRY_BACKOFF_SECONDS` 与 `retry_backoff_delay`，同步与异步池共用同一处声明）。同一台机器、
 同一份围栏、同一条 `quotes-snapshot --timeout 5` 的源码树对照：改前 158.0 秒 / 改后 38.1 秒
 （`scratch_v18b25/probe25/timing25_snapshot.log` 与 `timing25_snapshot_postfix.log`，逐次请求的
 毫秒时间戳在每行行首）。判据 `tests/transport/test_retry_backoff_cap.py`（30 项；两条变异各自
 当场红：去掉封顶 16 红、把 sleep 装回每次换主站 1 红）。**因此这条命令的墙钟上界是
-`主站数 × timeout`**——要压它就把 `--timeout` 调小，或先用 `tstdx hosts scan` 把可达主站排到前面。
+`主站数 × timeout`**——要压它就把 `--timeout` 调小，或先用 `atst hosts scan` 把可达主站排到前面。
 
 那句"上界 = 主站数 × timeout"在第 31 轮之前只是**声明**：同步传输的 `timeout` 量的是单次
 recv 的**空档**，每收到一个字节就重新武装，于是逐字节吐数据的对端永远撞不到它——而一帧要读
@@ -865,8 +865,8 @@ CLI 那三行同一判据、同一形状（发不出去就明说不发，不给�
 记为**并发污染**而不是网关卡死，判据本身没有为此改动。
 
 `serve` 只承载上面那张 HTTP 表（10 路由），**不承载 WebSocket**：`create_runtime_app()` 里没有任何
-`websocket` 路由，JSON-RPC 面要另外跑 `python -m tstdx.integration.runtime_ws_server`（或在自己的
-程序里 `await serve_runtime_ws()`；`tstdx/integration/runtime_ws_server.py`，默认 `127.0.0.1:8765`、
+`websocket` 路由，JSON-RPC 面要另外跑 `python -m atst.integration.runtime_ws_server`（或在自己的
+程序里 `await serve_runtime_ws()`；`atst/integration/runtime_ws_server.py`，默认 `127.0.0.1:8765`、
 路径 `/v13/ws`，见 `RuntimeWsConfig`）。二者不是同一个端口上的两个协议。两张面都是**同步取数、当场
 应答**：服务面不驻留后台任务，也没有任务句柄可查——要并发就在调用方自己起了算。
 
@@ -875,7 +875,7 @@ CLI 那三行同一判据、同一形状（发不出去就明说不发，不给�
 ## 4. 数据落地（Output）
 
 ```python
-from tstdx.output import write
+from atst.output import write
 ```
 
 | Sink | URI 格式 | 依赖 |
@@ -887,8 +887,8 @@ from tstdx.output import write
 
 ### 本地文件读取面（vipdoc 落地文件）
 
-网络协议之外，`tstdx` 还直接读通达信客户端的落地文件。这一族挂在包的顶层出口上，下表第一列
-**不是手抄名单**：它是 `tstdx._LAZY`（顶层惰性导入表）里落在 `tstdx.reader` 的那些名字，判据
+网络协议之外，`atst` 还直接读通达信客户端的落地文件。这一族挂在包的顶层出口上，下表第一列
+**不是手抄名单**：它是 `atst._LAZY`（顶层惰性导入表）里落在 `atst.reader` 的那些名字，判据
 `test_reader_surface_table_matches_the_lazy_map` 把它与代码锁死，`test_every_root_export_is_named`
 再反向保证顶层 45 个名字没有一个在用户文档里查不到（第 25 轮第 2 遍登记：当时 `FinanceReader`
 是唯一一个"包上挂着、测试在用、文档一个字没提"的名字）。
@@ -902,7 +902,7 @@ from tstdx.output import write
 | `DataProfile` | 一份数据规格档案：影响数值正确性的差异在此显式声明 | 由 `detect_profile` / `get_profile` 产出 |
 
 `read_day_file`、`read_min_file`、`resolve_vipdoc_path`、`Period`、`Market` 等名字只在
-`tstdx.reader` 模块面上，不经顶层导出（顶层这一族就上面 5 个）。档案词表本身的门禁见
+`atst.reader` 模块面上，不经顶层导出（顶层这一族就上面 5 个）。档案词表本身的门禁见
 `tests/architecture/test_profile_vocabulary_gates.py`（第 17 轮 G12：一张没人查的词表比没有更坏）。
 
 ---
@@ -912,7 +912,7 @@ from tstdx.output import write
 ### Client.stream（唯一入口）
 
 ```python
-from tstdx import Client
+from atst import Client
 
 with Client() as client:
     stream = client.stream(
@@ -926,13 +926,13 @@ with Client() as client:
     stream.stop()
 ```
 
-`client.stream` 先用 `tstdx.stream_contract.StreamPlanner` 编译出一张精确计划：当前只有
+`client.stream` 先用 `atst.stream_contract.StreamPlanner` 编译出一张精确计划：当前只有
 `quotes` 能力与 `tdx` Provider 存在 Direct 流式绑定，偏离即抛 `ValidationError`（CLI 的
-`tstdx stream sh600519` 走同一条路、同一个判据）。参数见 §2 的 `stream` 行。
+`atst stream sh600519` 走同一条路、同一个判据）。参数见 §2 的 `stream` 行。
 
 CLI 那一支的订阅窗口是 `--seconds`，**默认 10 秒**：起流后跑满这个时长就自停（要中途停按
 Ctrl+C，`stop()` 一定执行）。给 0 或负数在 CLI 门口就判死（`E1010` / 退出码 2）——过去它的
-默认值是 `0.0`，于是文档里 `tstdx stream sh600519` 这种照抄写法必然以"0.0s 内未收到任何行情"
+默认值是 `0.0`，于是文档里 `atst stream sh600519` 这种照抄写法必然以"0.0s 内未收到任何行情"
 收场，窗口长度本身就没给过任何数据机会（第 24 轮 G33）。
 
 `interval` 只挡下界（`validate_subscription` 判 `<= 0`），**没有上界**，所以异步流的
@@ -944,7 +944,7 @@ Ctrl+C，`stop()` 一定执行）。给 0 或负数在 CLI 门口就判死（`E1
 ### StatefulQuoteStream / AsyncStatefulQuoteStream（生命周期对象）
 
 ```python
-from tstdx.streaming import AsyncStatefulQuoteStream, StatefulQuoteStream
+from atst.streaming import AsyncStatefulQuoteStream, StatefulQuoteStream
 ```
 
 `Client.stream` / `AsyncClient.stream` 返回的对象，轮询走调用方的 `UnifiedRuntime`；
@@ -960,7 +960,7 @@ from tstdx.streaming import AsyncStatefulQuoteStream, StatefulQuoteStream
 ### QuoteStream / AsyncQuoteStream（轮询基类）
 
 ```python
-from tstdx.streaming import AsyncQuoteStream, QuoteStream
+from atst.streaming import AsyncQuoteStream, QuoteStream
 ```
 
 上面两者的轮询基类，属包内组合件：服务面与业务代码不应直接构造它们，否则会绕开
@@ -970,7 +970,7 @@ from tstdx.streaming import AsyncQuoteStream, QuoteStream
 ### StreamEngine（内核）
 
 ```python
-from tstdx.streaming.engine import StreamEngine
+from atst.streaming.engine import StreamEngine
 ```
 
 组件：`ReconnectPolicy` + `BackpressureQueue` + `DeltaMerger` + `GapFiller` + `StreamEngine`。
@@ -978,7 +978,7 @@ from tstdx.streaming.engine import StreamEngine
 ### PushChannel
 
 ```python
-from tstdx.streaming.push import PushChannel
+from atst.streaming.push import PushChannel
 ```
 
 0x0547 原始推送通道（可选高级 API）。
@@ -990,7 +990,7 @@ from tstdx.streaming.push import PushChannel
 ### Domain Records
 
 ```python
-from tstdx.domain.records import (
+from atst.domain.records import (
     FinancialRecord, FundRecord, BondRecord, NewsRecord, ResearchRecord,
     OptionRecord, MarketDataRecord, SearchRecord, MacroRecord,
 )
@@ -999,10 +999,10 @@ from tstdx.domain.records import (
 ### 数据模型
 
 ```python
-from tstdx.domain.models import Bar, Quote, Level, to_dataframe
-from tstdx.domain.symbol import normalize_symbol, split_symbol
-from tstdx.domain.adjust import AdjustEngine, to_adjusted, compute_factors
-from tstdx.domain.calendar import is_trading_day
+from atst.domain.models import Bar, Quote, Level, to_dataframe
+from atst.domain.symbol import normalize_symbol, split_symbol
+from atst.domain.adjust import AdjustEngine, to_adjusted, compute_factors
+from atst.domain.calendar import is_trading_day
 ```
 
 `Quote` 的三格在 7709 实时面上没有来源，别按『可能有值』写代码：`datetime` 恒为 `None`、
@@ -1019,7 +1019,7 @@ from tstdx.domain.calendar import is_trading_day
 `TradingCalendar(years=[2025])` 给自选年度的私有实例。
 
 ```python
-from tstdx.domain.calendar import get_calendar
+from atst.domain.calendar import get_calendar
 
 cal = get_calendar()
 cal.is_trading_day("2026-10-01")                       # False
@@ -1052,12 +1052,12 @@ cal.trading_days_between("2026-09-28", "2026-10-09")  # 同一区间的日期列
 `ParseError`（"尚未验证 market=2"），不是静默按沪市发。
 
 ```python
-from tstdx.domain.integrity import tdx_market_ids  # 协议侧认得的市场 id，现读
+from atst.domain.integrity import tdx_market_ids  # 协议侧认得的市场 id，现读
 ```
 
 ### K 线周期拼写（`period=` 收哪些写法）
 
-周期词表只有 `tstdx/domain/period.py` 一处声明：规范档 `CANONICAL_PERIODS` 11 个
+周期词表只有 `atst/domain/period.py` 一处声明：规范档 `CANONICAL_PERIODS` 11 个
 （`tick`/`1min`/`5min`/`15min`/`30min`/`60min`/`day`/`week`/`month`/`season`/`year`），
 公开别名 `PERIOD_ALIASES` 29 个，合起来 40 种写法。空白与大小写不敏感
 （`normalize_bar_period` 先 `strip().lower()` 再查别名），`"  5M "` 与 `"5min"` 同答案。
@@ -1066,7 +1066,7 @@ from tstdx.domain.integrity import tdx_market_ids  # 协议侧认得的市场 id
 先 `normalize_bar_period` 再把规范拼写交所选源，而上游裸源只认规范拼写。
 
 ```python
-from tstdx.domain.period import CANONICAL_PERIODS, PERIOD_ALIASES, normalize_bar_period
+from atst.domain.period import CANONICAL_PERIODS, PERIOD_ALIASES, normalize_bar_period
 ```
 
 各面的实际接受集（第 19 轮离线实测，HEAD `2ae022b`）。"接受写法数"是这一入口能认下的
@@ -1097,12 +1097,12 @@ from tstdx.domain.period import CANONICAL_PERIODS, PERIOD_ALIASES, normalize_bar
   `1m` 是 1 分钟，即 1 分钟在百度面会被解成月线。两格都已删掉，换成了上面那一列的
   `ValueError`。
 
-### 出口处的域尺子（`tstdx.domain.integrity`）
+### 出口处的域尺子（`atst.domain.integrity`）
 
 解码越域值在结果里看得见，靠的是这四个名字：
 
 ```python
-from tstdx.domain.integrity import (
+from atst.domain.integrity import (
     FIELD_CHECKERS,
     illegal_code,
     illegal_market,
@@ -1125,18 +1125,18 @@ from tstdx.domain.integrity import (
 ### 主站巡检
 
 ```bash
-tstdx hosts audit --family quotation --family ex_quotation --timeout 3 --workers 20
+atst hosts audit --family quotation --family ex_quotation --timeout 3 --workers 20
 python scripts/audit_hosts.py --report audit.json
 python scripts/contract_audit.py --ci
 ```
 
 ### 未知命令探测（Prober）
 
-CLI 的 `probe` 子命令（§3 表里那支直连传输层命令）背后是 `tstdx.protocol.prober.Prober`：单条命令
+CLI 的 `probe` 子命令（§3 表里那支直连传输层命令）背后是 `atst.protocol.prober.Prober`：单条命令
 走 `probe_command`，一段区间走 `probe_range`，把结构分析结论落成 YAML 草稿走 `archive`。
 
 ```python
-from tstdx.protocol.prober import Prober
+from atst.protocol.prober import Prober
 
 prober = Prober(client, rate_limit=1.0, archive_dir="probe_out")
 result = prober.probe_command(0x052D, market=0, code="sh600000")
@@ -1156,10 +1156,10 @@ F-116 把这条口径写在这里：这两个名字此前用户文档一个字�
 ### 协议规范工具
 
 ```bash
-python -m tstdx.tools.capture        # 合规采集
-python -m tstdx.tools.codegen        # 从 YAML 生成骨架
-python -m tstdx.tools.spec_audit     # 双向漂移检查
-python -m tstdx.tools.golden_audit   # Golden 门禁
+python -m atst.tools.capture        # 合规采集
+python -m atst.tools.codegen        # 从 YAML 生成骨架
+python -m atst.tools.spec_audit     # 双向漂移检查
+python -m atst.tools.golden_audit   # Golden 门禁
 ```
 
 ### 可达性检查
@@ -1173,11 +1173,11 @@ python scripts/audit_reachability.py --strict
 ## 8. 可观测性与反馈（Observability / Feedback）
 
 **这一族只有库面，而且是部署方自选的接入面**：CLI、HTTP 网关、WS、MCP 四张面都不挂载导出器，
-`tstdx serve` 起来之后不会有人来抓 `/metrics`，指标写入只发生在库内部那几处埋点。第 26 轮
+`atst serve` 起来之后不会有人来抓 `/metrics`，指标写入只发生在库内部那几处埋点。第 26 轮
 F-115 把整族写进接口文档，是因为四个导出器与指标门面此前只出现在模块 docstring 和 FAQ 里，
 `docs/api/` 一个字没提——能被 import 却读不到说明的对外面，正是 G37 那一串裁决的靶子。
 
-### 指标门面（`tstdx.observability.metrics`）
+### 指标门面（`atst.observability.metrics`）
 
 指标门面上的每一格都由模块级单例 `metrics` 持有，`render()` / `render_prometheus()` 出文本、
 `snapshot()` 出 dict。下表第一列与注册表现值双向锁死
@@ -1186,21 +1186,21 @@ F-115 把整族写进接口文档，是因为四个导出器与指标门面此�
 
 | 序列 | 类型（标签） | 写入方 |
 |---|---|---|
-| `tstdx_protocol_parse_total` | counter（tier / family / command） | 三层解析分派出口 `tstdx/protocol/registry.py`（F-118 接上，此前恒为空序列） |
-| `tstdx_protocol_parse_confidence` | histogram（family / command） | 同上，只记 L1/L2 两档 |
-| `tstdx_request_total` | counter（command / status） | 传输层两条路径（同步池 + 异步客户端） |
-| `tstdx_request_duration_seconds` | histogram（command） | 同上 |
-| `tstdx_stream_events_total` | counter（kind） | 流式背压丢弃钩子 `tstdx/streaming/engine.py` |
-| `tstdx_stream_reconnects_total` | counter | 断线恢复那一轮 tick（F-117 接上） |
-| `tstdx_stream_backpressure` | gauge | 同上，取丢弃时的队列长度 |
-| `tstdx_errors_total` | counter（error_type） | 传输层两条路径的异常出口 |
+| `atst_protocol_parse_total` | counter（tier / family / command） | 三层解析分派出口 `atst/protocol/registry.py`（F-118 接上，此前恒为空序列） |
+| `atst_protocol_parse_confidence` | histogram（family / command） | 同上，只记 L1/L2 两档 |
+| `atst_request_total` | counter（command / status） | 传输层两条路径（同步池 + 异步客户端） |
+| `atst_request_duration_seconds` | histogram（command） | 同上 |
+| `atst_stream_events_total` | counter（kind） | 流式背压丢弃钩子 `atst/streaming/engine.py` |
+| `atst_stream_reconnects_total` | counter | 断线恢复那一轮 tick（F-117 接上） |
+| `atst_stream_backpressure` | gauge | 同上，取丢弃时的队列长度 |
+| `atst_errors_total` | counter（error_type） | 传输层两条路径的异常出口 |
 
 便捷函数 `record_parse` / `record_request` / `record_stream_event` / `record_reconnect` /
 `record_error` 与 `set_backpressure` 都写到这个单例上，全部**吞掉自身异常**：指标失败绝不许把
 一次成功的请求变成失败。`instrument_client(client)` 给调用方自己的客户端套一层上报壳，
 不需要改业务代码。
 
-F-112 撤下了一格：`tstdx_active_connections`。它曾被注册、被 `/metrics` 渲染（HELP/TYPE 两行
+F-112 撤下了一格：`atst_active_connections`。它曾被注册、被 `/metrics` 渲染（HELP/TYPE 两行
 就是一次声称）、还被 statsd 的线格式示例当示范用过，可全仓没有任何连接生命周期事件写它。
 一根恒为初值的对外仪表会把"运行时没有活连接"说成实测值，而池里此刻可能正挂着好几条——
 按「宁跳不假绿」撤下仪表连同它的 setter。要这个数，得先在 transport 层补一条与 retire/drain
@@ -1209,7 +1209,7 @@ F-112 撤下了一格：`tstdx_active_connections`。它曾被注册、被 `/met
 ### 导出器
 
 ```python
-from tstdx.observability import PrometheusExporter, StatsdExporter, OtelExporter, start_exporter
+from atst.observability import PrometheusExporter, StatsdExporter, OtelExporter, start_exporter
 ```
 
 | 导出器 | 公开出口 | 落点与口径 |
@@ -1224,11 +1224,11 @@ from tstdx.observability import PrometheusExporter, StatsdExporter, OtelExporter
 这一条由 `tests/architecture/test_resource_lifecycle_gates.py` 的 G41 判据盯住
 （`StatsdExporter.start_pushing` 在它的归属表里）。
 
-### 反馈上报（`tstdx.feedback`）
+### 反馈上报（`atst.feedback`）
 
 | 名字 | 出口 | 口径 |
 |---|---|---|
-| `FeedbackReporter` | `report_error`、`report_usage`、`report_profile`、`enabled`、`dry_run` | 开关是环境变量而不是构造参数：`TSTDX_FEEDBACK=1` 才真发、取 dry-run 值才只构造不发送，两者都不是时三支 report 直接返回 `False`。上报前经过 7 步脱敏，`store_dir=` 可改成本地落盘 |
+| `FeedbackReporter` | `report_error`、`report_usage`、`report_profile`、`enabled`、`dry_run` | 开关是环境变量而不是构造参数：`ATST_FEEDBACK=1` 才真发、取 dry-run 值才只构造不发送，两者都不是时三支 report 直接返回 `False`。上报前经过 7 步脱敏，`store_dir=` 可改成本地落盘 |
 | `TelemetryCollector` | `enable`、`disable`、`record_event`、`flush`、`events`、`count`、`clear` | 独立的事件缓冲，opt-in：`enable()` 之后 `record_event` 才写入，`disable()` 之后的调用静默忽略。本库运行时不会自己 enable 它——它是给调用方攒自己那侧事件用的 |
 | `UserStats` | `record_command`、`record_error`、`total_commands`、`total_errors`、`average_latency`、`latency_stddev`、`commands_per_second`、`errors_by_type`、`snapshot`、`reset` | 纯本地统计，不发网络 |
 

@@ -1,43 +1,43 @@
 version: '3.8'
 
 services:
-  tstdx:
+  atst:
     build: .
-    container_name: tstdx
+    container_name: atst
     ports:
       - "8000:8000"
     environment:
-      - TSTDX_LOG_LEVEL=INFO
-      - TSTDX_CACHE_DIR=/app/cache
+      - ATST_LOG_LEVEL=INFO
+      - ATST_CACHE_DIR=/app/cache
     volumes:
-      - tstdx-cache:/app/cache
-      - tstdx-data:/app/data
-    command: ["tstdx", "serve", "--bind", "0.0.0.0", "--port", "8000"]
+      - atst-cache:/app/cache
+      - atst-data:/app/data
+    command: ["atst", "serve", "--bind", "0.0.0.0", "--port", "8000"]
     restart: unless-stopped
 
-  tstdx-dev:
+  atst-dev:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: tstdx-dev
+    container_name: atst-dev
     ports:
       - "8000:8000"
-      # WS JSON-RPC 面是另一个进程：`python -m tstdx.integration.runtime_ws_server`
-      # 默认监听 127.0.0.1:8765 上的 /v13/ws（`tstdx serve` 不启动 WS）。要在容器里
+      # WS JSON-RPC 面是另一个进程：`python -m atst.integration.runtime_ws_server`
+      # 默认监听 127.0.0.1:8765 上的 /v13/ws（`atst serve` 不启动 WS）。要在容器里
       # 暴露它，先把 RuntimeWsConfig 的 host 改成 0.0.0.0，再放行同一个端口号：
       # - "8765:8765"
     environment:
-      - TSTDX_LOG_LEVEL=DEBUG
-      - TSTDX_FEEDBACK=0
+      - ATST_LOG_LEVEL=DEBUG
+      - ATST_FEEDBACK=0
     volumes:
       - .:/app
-    # `python -m tstdx.cli` 跑不起来（第 23 轮实测 rc=1：No module named tstdx.cli.__main__）；
-    # `python -m tstdx` 才是与控制台脚本等价的那一条。
-    command: ["python", "-m", "tstdx", "serve", "--bind", "0.0.0.0", "--port", "8000"]
+    # `python -m atst.cli` 跑不起来（第 23 轮实测 rc=1：No module named atst.cli.__main__）；
+    # `python -m atst` 才是与控制台脚本等价的那一条。
+    command: ["python", "-m", "atst", "serve", "--bind", "0.0.0.0", "--port", "8000"]
     restart: on-failure
 
 volumes:
-  tstdx-cache:
+  atst-cache:
     driver: local
-  tstdx-data:
+  atst-data:
     driver: local

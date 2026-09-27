@@ -10,9 +10,9 @@ import importlib
 import threading
 import time
 
-from tstdx.errors import ConnectionFailed
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.pool import CIRCUIT_COOLDOWN_SECONDS, ConnectionPool
+from atst.errors import ConnectionFailed
+from atst.transport.hosts import HostEntry
+from atst.transport.pool import CIRCUIT_COOLDOWN_SECONDS, ConnectionPool
 
 
 class _Frame:
@@ -49,7 +49,7 @@ def test_update_hosts_retires_active_generation_without_closing_its_lease(monkey
     """热更新不得切断活动请求，且旧请求完成不得改写新 generation。"""
     _BlockingConn.gate.clear()
     _BlockingConn.started.clear()
-    monkeypatch.setattr("tstdx.transport.pool.TcpConnection", _BlockingConn)
+    monkeypatch.setattr("atst.transport.pool.TcpConnection", _BlockingConn)
     old = HostEntry("127.0.0.1", 7709, rtt_ms=100.0)
     pool = ConnectionPool([old], slots_per_host=1, heartbeat_interval=None, max_retries=0)
     outcome: dict[str, object] = {}
@@ -128,8 +128,8 @@ def test_background_speedtest_cannot_overwrite_live_health(monkeypatch, seed_poo
         def update(self, entries) -> None:
             store_commits.append(entries)
 
-    speedtest_mod = importlib.import_module("tstdx.transport.speedtest")
-    pool_mod = importlib.import_module("tstdx.transport.pool")
+    speedtest_mod = importlib.import_module("atst.transport.speedtest")
+    pool_mod = importlib.import_module("atst.transport.pool")
     monkeypatch.setattr(speedtest_mod, "speedtest", fake_speedtest)
     monkeypatch.setattr(pool_mod, "RankingStore", _RecordingStore)
 

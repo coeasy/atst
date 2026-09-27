@@ -1,6 +1,6 @@
 # v14 Runtime API 参考
 
-> v14 Runtime 是 tstdx 的编排内核层，提供统一的查询执行、批量处理、流式订阅
+> v14 Runtime 是 atst 的编排内核层，提供统一的查询执行、批量处理、流式订阅
 > 与语义缓存去重能力。所有网关（Python API / CLI / REST / WS / MCP）均可委托
 > Runtime 执行，禁止实现独立的 Provider 选择、回退、缓存或 provenance 逻辑。
 
@@ -45,7 +45,7 @@ SemanticResultCache  dynamic Provider adapter
 v14 编排内核入口点。管理 Provider 路由、执行计划编译、语义缓存与流式订阅。
 
 ```python
-from tstdx.runtime import Runtime, create_runtime
+from atst.runtime import Runtime, create_runtime
 
 # 空 Runtime（需手动注册 handler）
 runtime = Runtime()
@@ -81,7 +81,7 @@ CLI / HTTP / WS 的统一适配层。通过 RuntimeFacadeAdapter 桥接到 Runti
 禁止实现独立 Provider 选择/回退/缓存/provenance 逻辑。
 
 ```python
-from tstdx.runtime import RuntimeGateway, create_runtime
+from atst.runtime import RuntimeGateway, create_runtime
 
 gateway = RuntimeGateway()
 
@@ -98,7 +98,7 @@ resp = gateway.bars("sh600519", route="tdx")
 resp = gateway.bars("sh600519", providers=("eastmoney", "tencent"))
 
 # 批量执行
-from tstdx.runtime import QueryRequest
+from atst.runtime import QueryRequest
 reqs = [
     QueryRequest(operation="bars", args=("sh600000",), params={"count": 30}),
     QueryRequest(operation="bars", args=("sh600519",), params={"count": 30}),
@@ -132,7 +132,7 @@ print(gateway.subscriptions())        # 活跃订阅
 Runtime 边界调用信封。携带操作名、位置参数、关键字参数与运行时元数据。
 
 ```python
-from tstdx.runtime import QueryRequest
+from atst.runtime import QueryRequest
 
 # 基本用法
 req = QueryRequest(
@@ -143,7 +143,7 @@ req = QueryRequest(
 )
 
 # 从 Typed Query 转换
-from tstdx.runtime import request_from_typed
+from atst.runtime import request_from_typed
 req = request_from_typed(capability_query, metadata={"timeout": 5.0})
 ```
 
@@ -180,7 +180,7 @@ Runtime 执行结果信封。
 流式订阅句柄。持有编译后的 StreamPlan 与生命周期状态机。
 
 ```python
-from tstdx.runtime import create_runtime
+from atst.runtime import create_runtime
 
 runtime = create_runtime()
 handle = runtime.subscribe(
@@ -219,8 +219,8 @@ runtime.unsubscribe("main-watchlist")
 Runtime 工厂函数。
 
 ```python
-from tstdx.runtime import create_runtime
-from tstdx.cache_semantic import SemanticResultCache
+from atst.runtime import create_runtime
+from atst.cache_semantic import SemanticResultCache
 
 runtime = create_runtime(
     router=provider_router,          # 可选：自定义 Provider 路由器
@@ -252,8 +252,8 @@ Pass 2: 并发执行
 ### 示例
 
 ```python
-from tstdx.runtime import Runtime, QueryRequest, create_runtime
-from tstdx.cache_semantic import SemanticResultCache
+from atst.runtime import Runtime, QueryRequest, create_runtime
+from atst.cache_semantic import SemanticResultCache
 
 runtime = create_runtime(semantic_cache=SemanticResultCache())
 
@@ -280,8 +280,8 @@ v14 提供 60+ 类型化查询契约，覆盖 9 个领域。每个契约通过
 `request_from_typed()` 转换为 QueryRequest 后由 Runtime 执行。
 
 ```python
-from tstdx.runtime import create_runtime, request_from_typed
-from tstdx.typed_query import CapabilityQuery
+from atst.runtime import create_runtime, request_from_typed
+from atst.typed_query import CapabilityQuery
 
 runtime = create_runtime()
 
@@ -309,7 +309,7 @@ resp = runtime.execute_typed(query, metadata={"cache_ttl": 60.0})
 v14 提供 9 个类型化 Domain Record 族，替代 list[dict] 的原始输出。
 
 ```python
-from tstdx.domain.records import (
+from atst.domain.records import (
     Bar,
     Quote,
     Level,
@@ -340,7 +340,7 @@ from tstdx.domain.records import (
 仅添加 `cache_tier` 元数据。
 
 ```python
-from tstdx.cache_semantic import SemanticResultCache
+from atst.cache_semantic import SemanticResultCache
 
 cache = SemanticResultCache()
 
@@ -349,7 +349,7 @@ cache.put(plan, result, ttl=60.0)
 hit = cache.get(plan)
 
 # L2（持久化）缓存
-from tstdx.cache_persistent import PersistentSemanticCache
+from atst.cache_persistent import PersistentSemanticCache
 cache = PersistentSemanticCache(directory="./.cache")
 ```
 
@@ -362,25 +362,25 @@ cache = PersistentSemanticCache(directory="./.cache")
 
 | 模块 | 说明 |
 |------|------|
-| `tstdx.runtime` | Runtime 包入口（Runtime/RuntimeGateway/QueryRequest/QueryResponse/create_runtime） |
-| `tstdx.runtime.runtime` | Runtime 编排内核 |
-| `tstdx.runtime.gateway` | RuntimeGateway 网关适配器 |
-| `tstdx.runtime.request` | QueryRequest 边界信封 |
-| `tstdx.runtime.response` | QueryResponse 结果信封 |
-| `tstdx.runtime.context` | ExecutionContext 执行上下文 |
-| `tstdx.runtime.bootstrap` | create_runtime 工厂 |
-| `tstdx.runtime.stream` | StreamHandle 流式订阅管理 |
-| `tstdx.runtime.typed` | request_from_typed 类型化查询转换 |
-| `tstdx.execution` | ExecutionPlanner / ExecutionGraph / ExecutionNode |
-| `tstdx.execution.semantic` | SemanticExecutionAdapter（语义执行桥接） |
-| `tstdx.execution.planner` | ExecutionPlanner DAG 编译器 |
-| `tstdx.execution.graph` | ExecutionGraph（DAG + 拓扑排序 + 执行） |
-| `tstdx.execution.node` | ExecutionNode（节点 + 依赖 + handler） |
-| `tstdx.execution.plan` | ExecutionPlan（编译结果） |
-| `tstdx.cache_semantic` | SemanticResultCache（语义缓存 L1/L2） |
-| `tstdx.cache_persistent` | PersistentSemanticCache（持久化缓存） |
-| `tstdx.stream_contract` | StreamPlanner（流计划编译） |
-| `tstdx.streaming.state` | StreamLifecycle（流生命周期状态机） |
-| `tstdx.typed_query` | CapabilityQuery + 60 契约 + QueryResult[T] |
-| `tstdx.domain.records` | 9 Domain Record 族 |
-| `tstdx.facade.runtime_adapter` | RuntimeFacadeAdapter（门面桥接） |
+| `atst.runtime` | Runtime 包入口（Runtime/RuntimeGateway/QueryRequest/QueryResponse/create_runtime） |
+| `atst.runtime.runtime` | Runtime 编排内核 |
+| `atst.runtime.gateway` | RuntimeGateway 网关适配器 |
+| `atst.runtime.request` | QueryRequest 边界信封 |
+| `atst.runtime.response` | QueryResponse 结果信封 |
+| `atst.runtime.context` | ExecutionContext 执行上下文 |
+| `atst.runtime.bootstrap` | create_runtime 工厂 |
+| `atst.runtime.stream` | StreamHandle 流式订阅管理 |
+| `atst.runtime.typed` | request_from_typed 类型化查询转换 |
+| `atst.execution` | ExecutionPlanner / ExecutionGraph / ExecutionNode |
+| `atst.execution.semantic` | SemanticExecutionAdapter（语义执行桥接） |
+| `atst.execution.planner` | ExecutionPlanner DAG 编译器 |
+| `atst.execution.graph` | ExecutionGraph（DAG + 拓扑排序 + 执行） |
+| `atst.execution.node` | ExecutionNode（节点 + 依赖 + handler） |
+| `atst.execution.plan` | ExecutionPlan（编译结果） |
+| `atst.cache_semantic` | SemanticResultCache（语义缓存 L1/L2） |
+| `atst.cache_persistent` | PersistentSemanticCache（持久化缓存） |
+| `atst.stream_contract` | StreamPlanner（流计划编译） |
+| `atst.streaming.state` | StreamLifecycle（流生命周期状态机） |
+| `atst.typed_query` | CapabilityQuery + 60 契约 + QueryResult[T] |
+| `atst.domain.records` | 9 Domain Record 族 |
+| `atst.facade.runtime_adapter` | RuntimeFacadeAdapter（门面桥接） |

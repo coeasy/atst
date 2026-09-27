@@ -11,18 +11,18 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.codec.framing import ResponseFrame
-from tstdx.codec.primitive import encode_leb128
-from tstdx.errors import TdxError
-from tstdx.protocol import parsers as parsers_pkg
-from tstdx.protocol.parsers.std7709 import (
+from atst.codec.framing import ResponseFrame
+from atst.codec.primitive import encode_leb128
+from atst.errors import TdxError
+from atst.protocol import parsers as parsers_pkg
+from atst.protocol.parsers.std7709 import (
     build_realtime_quote_body,
     infer_market,
     quote_request_market,
 )
-from tstdx.protocol.parsers.std7709_extra import TradeTodayAltParser, TradeTodayParser
-from tstdx.protocol.prober import Prober
-from tstdx.protocol.registry import PARSERS, BaseParser, dispatch, register_parser
+from atst.protocol.parsers.std7709_extra import TradeTodayAltParser, TradeTodayParser
+from atst.protocol.prober import Prober
+from atst.protocol.registry import PARSERS, BaseParser, dispatch, register_parser
 
 MAGIC = 0x0074CBB1
 GOLDEN_ROOT = Path(__file__).resolve().parents[1] / "golden"
@@ -215,7 +215,7 @@ class TestRegistryMisc:
     """registry 杂项：降级告警常量 / 幂等顶替 debug log / 解析器告警缓冲。"""
 
     def test_degrade_notice_constant(self):
-        from tstdx.protocol.registry import DEGRADE_NOTICE
+        from atst.protocol.registry import DEGRADE_NOTICE
 
         assert DEGRADE_NOTICE == "精确解析失败已降级启发式，字段映射可能不完整"
 
@@ -249,14 +249,14 @@ class TestRegistryMisc:
             first = PARSERS[key]
 
             duplicate = type("SameNameTempParser", (BaseParser,), {})
-            duplicate.__module__ = "tstdx.protocol.parsers.from_another_module"
+            duplicate.__module__ = "atst.protocol.parsers.from_another_module"
             decorated = register_parser(0x7F11, family="quotation", name="SAME_NAME_TEMP")(
                 duplicate
             )
             assert decorated is duplicate
             assert PARSERS[key] is first  # 保留先注册者
 
-            with caplog.at_level(logging.DEBUG, logger="tstdx.protocol.registry"):
+            with caplog.at_level(logging.DEBUG, logger="atst.protocol.registry"):
                 register_parser(0x7F11, family="quotation", name="SAME_NAME_TEMP")(duplicate)
 
             assert "幂等顶替" in caplog.text, caplog.text
@@ -367,7 +367,7 @@ class TestP2DeadCodeCleanup:
     MacHeartbeat 恒真定性）。"""
 
     def test_get_datetime_from_lc_single_param_contract(self):
-        from tstdx.codec.primitive import get_datetime_from_lc
+        from atst.codec.primitive import get_datetime_from_lc
 
         # 公式原样：num=0 → (2004, 0, 0)（不做月日归一，语义与消费点一致）
         assert get_datetime_from_lc(0) == (2004, 0, 0)
@@ -383,7 +383,7 @@ class TestP2DeadCodeCleanup:
         assert result.rows == [{"alive": True}]
 
     def test_mac_count_records_helper_removed(self):
-        import tstdx.protocol.parsers.mac as mac_mod
+        import atst.protocol.parsers.mac as mac_mod
 
         # 与各解析器循环体重复实现且全库零引用的死代码，F2 已收敛删除
         assert not hasattr(mac_mod, "_count_records")

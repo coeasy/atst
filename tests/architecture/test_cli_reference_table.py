@@ -2,12 +2,12 @@
 
 第 22 轮回答"具体接口文档是否全部更新"时先把四面各数了一遍：HTTP 10 路由、WS 10 方法、
 MCP 9 工具三张表在 ``docs/api/interfaces.md`` 里逐名列出，且与运行时一致；**CLI 那格是空的**
-——§3 只写 ``tstdx --help`` 加一句"全部子命令委托 `Client`"。两件事都是假的：
+——§3 只写 ``atst --help`` 加一句"全部子命令委托 `Client`"。两件事都是假的：
 
 * 36 个叶子命令里有 **11 支在 46 份活文档里逐名查不到**（``adjusted-bars`` / ``all-market`` /
   ``feedback submit`` / ``fund estimate`` / ``fund list`` / ``fund nav`` / ``hosts list`` /
   ``hosts scan`` / ``index constituents`` / ``minute-klines`` / ``sector-flow``；
-  口径与现场见 ``scratch_v18b22/census_docs22.log``——按"示例行 ``tstdx <命令>`` 或反引号里的
+  口径与现场见 ``scratch_v18b22/census_docs22.log``——按"示例行 ``atst <命令>`` 或反引号里的
   名字"算点到，HEAD 的 blob 用 ``git show`` 读，所以本轮改完文档之后这一格仍可重跑对账）；
 * "全部委托 `Client`"不成立——36 个叶子里 **15 支碰不到内核**：6 支直连传输层、
   1 支拉起 HTTP 应用、4 支主站诊断、2 支反馈、2 支元信息（``version`` 打包版本、
@@ -15,14 +15,14 @@ MCP 9 工具三张表在 ``docs/api/interfaces.md`` 里逐名列出，且与运�
   ``内核·typed`` 改判到这里：处理器连 ``Client`` 都没构造，就谈不上 ``runtime.execute``）。
   这一格的分母由 :func:`_landing` 现读处理器源码派生，判据 ④ 管它，所以这里的分类改不动。
   同一句话还掩盖了 ``serve`` 不承载 WebSocket
-  这件事（:func:`tstdx.cli.runtime_commands._cmd_serve` 的 docstring 当时写着"40+ 端点 +
+  这件事（:func:`atst.cli.runtime_commands._cmd_serve` 的 docstring 当时写着"40+ 端点 +
   WebSocket"，而 ``create_runtime_app()`` 是 10 支路由、零条 websocket 路由）。
 
 处置不是补一段散文，而是把这张表变成**从 argparse 与处理器源码派生**的接口面：命令名、位置
 参数、旗标顺序、落点四格全部现扫，改一格就要改文档，否则这里红。"尺子自己能看见漂移"由
 :func:`test_the_ruler_itself_sees_a_planted_drift` 四处单点篡改守着（改名 / 删旗标 / 改落点 /
 篡分母，每处都必须只抓出那一格）；真文件一侧的四处变异（给 `changes` 加一支旗标、改命令名、
-把 `_cmd_changes` 从 rows 挪到 typed、删一条 `tstdx bars` 示例）逐格跑过并记在
+把 `_cmd_changes` 从 rows 挪到 typed、删一条 `atst bars` 示例）逐格跑过并记在
 ``scratch_v18b22/cli_mutate22.log``。
 """
 
@@ -36,7 +36,7 @@ from typing import Any
 import pytest
 
 from tests.support.field_readers import REPO_ROOT
-from tstdx.cli.parser import build_parser
+from atst.cli.parser import build_parser
 
 pytestmark = pytest.mark.unit
 
@@ -294,7 +294,7 @@ def test_the_four_group_commands_never_appear_as_a_row(doc_text: str) -> None:
 
 
 def _handler_source() -> str:
-    import tstdx.cli.runtime_commands as rc
+    import atst.cli.runtime_commands as rc
 
     return inspect.getsource(rc)
 
@@ -326,8 +326,8 @@ def test_every_rows_command_forwards_a_real_capability(doc_text: str) -> None:
 
     分母不硬抄：它与文档表里 ``内核·rows`` 那几行必须是同一个集合，两边任一处变化都会在这里红。
     """
-    from tstdx.catalog.capability import is_migrated_capability
-    from tstdx.client.api import Client
+    from atst.catalog.capability import is_migrated_capability
+    from atst.client.api import Client
 
     forwarding = rows_command_calls()
     documented = {name for name, row in doc_rows(doc_text).items() if row["landing"] == "内核·rows"}
@@ -346,7 +346,7 @@ def test_every_rows_command_forwards_a_real_capability(doc_text: str) -> None:
 
 
 def test_the_capability_ruler_sees_a_planted_typo() -> None:
-    from tstdx.catalog.capability import is_migrated_capability
+    from atst.catalog.capability import is_migrated_capability
 
     planted = rows_command_calls(
         source=_handler_source().replace("api.stock_changes(", "api.stock_changesd(", 1)
@@ -365,7 +365,7 @@ def test_the_landing_ruler_sees_a_handler_that_only_borrows_the_name() -> None:
     """
     import linecache
 
-    from tstdx.client.api import Client
+    from atst.client.api import Client
 
     def landing_of(body: str) -> str:
         source = f"def planted(args):\n{body}\n"
@@ -430,7 +430,7 @@ def test_the_ruler_itself_sees_a_planted_drift(doc_text: str) -> None:
 # ⑧ 使用说明：36 支叶子命令各要有一条能照抄的示例
 # ---------------------------------------------------------------------------
 
-_EXAMPLE = re.compile(r"^\s*tstdx\s+(\S+)(?:\s+(\S+))?")
+_EXAMPLE = re.compile(r"^\s*atst\s+(\S+)(?:\s+(\S+))?")
 
 
 def example_leaves(text: str) -> set[str]:
@@ -473,7 +473,7 @@ def test_the_example_ruler_sees_a_removed_example(doc_text: str) -> None:
     stripped = "\n".join(
         line
         for line in doc_text.splitlines()
-        if not re.match(rf"^\s*tstdx\s+{re.escape(victim)}\s", line)
+        if not re.match(rf"^\s*atst\s+{re.escape(victim)}\s", line)
     )
     assert example_leaves(stripped) == runtime - {victim}, "删掉一条示例却看不出来"
 
@@ -506,7 +506,7 @@ def section_leaves(section: str) -> set[str]:
     found: set[str] = set()
     for token in _TICKED.findall(section):
         words = token.split()
-        if words[:1] == ["tstdx"]:
+        if words[:1] == ["atst"]:
             words = words[1:]
         if not words:
             continue
@@ -531,8 +531,8 @@ def test_every_leaf_command_has_a_real_machine_verdict(doc_text: str) -> None:
 def test_the_verdict_ruler_sees_a_blanked_command_name(doc_text: str) -> None:
     """正控：把 `server-test` 的名字从那一节抹干净，判据必须当场报它缺席。
 
-    这不是假想的形状。第 23 轮的普查脚本用 ``line.startswith("tstdx serve")`` 挑要跳过的
-    长驻服务，于是 ``tstdx server-test`` 跟着被吞，一行从没跑过的示例被写进"每一行都跑过"；
+    这不是假想的形状。第 23 轮的普查脚本用 ``line.startswith("atst serve")`` 挑要跳过的
+    长驻服务，于是 ``atst server-test`` 跟着被吞，一行从没跑过的示例被写进"每一行都跑过"；
     旧读数里 `server-test` 只在 ``--help`` 那一段露过面。那一节是覆盖率声明唯一的人质，
     所以它必须逐名点齐。
     """

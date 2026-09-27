@@ -4,7 +4,7 @@ import io
 import json
 from typing import Any
 
-from tstdx.integration.mcp import MCPServer
+from atst.integration.mcp import MCPServer
 
 
 def test_malformed_stdio_json_uses_canonical_error_envelope(monkeypatch) -> None:  # noqa: ANN001

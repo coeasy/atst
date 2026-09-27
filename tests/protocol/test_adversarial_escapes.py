@@ -9,7 +9,7 @@
 本模块用同一批畸形 payload 直接复刻审计锚点，断言：
 
 1. **无原生异常逃逸**：dispatch 边界只允许 ``TdxError`` 子类抛出
-   （原生异常必须被包装为 :class:`~tstdx.errors.ParseError`，保留 cause 与
+   （原生异常必须被包装为 :class:`~atst.errors.ParseError`，保留 cause 与
    ``cmd/family/异常类型`` 上下文）；
 2. **fatal IntegrityViolation 原样上抛**（「致命不降级」契约不被旁路）；
 3. L1 失败降级 L2 时 warnings 必须携带降级告警（全 0 Bar 类静默可观测）；
@@ -24,11 +24,11 @@ import time
 
 import pytest
 
-from tstdx.codec.framing import ResponseFrame
-from tstdx.errors import IntegrityViolation, ParseError, TdxError
-from tstdx.protocol import parsers  # noqa: F401  触发全部解析器注册
-from tstdx.protocol.commands import Family
-from tstdx.protocol.registry import DEGRADE_NOTICE, PARSERS, BaseParser, dispatch, register_parser
+from atst.codec.framing import ResponseFrame
+from atst.errors import IntegrityViolation, ParseError, TdxError
+from atst.protocol import parsers  # noqa: F401  触发全部解析器注册
+from atst.protocol.commands import Family
+from atst.protocol.registry import DEGRADE_NOTICE, PARSERS, BaseParser, dispatch, register_parser
 
 MAGIC = 0x0074CBB1
 
@@ -67,7 +67,7 @@ class TestAdversarialNoNativeEscape:
     """对抗矩阵：畸形 payload 经 dispatch 只允许 TdxError 或正常 ParseResult。"""
 
     def test_matrix_no_native_escape(self):
-        from tstdx.protocol.registry import registered_ids
+        from atst.protocol.registry import registered_ids
 
         escapes: list[str] = []
         checked = 0
@@ -86,7 +86,7 @@ class TestAdversarialNoNativeEscape:
 
     def test_goods_legacy_type_error_anchors_now_parse_error(self):
         """审计锚点复测：goods 族 7 个历史 TypeError 命令不再逃逸原生异常。"""
-        from tstdx.protocol.registry import registered_ids
+        from atst.protocol.registry import registered_ids
 
         goods_cmds = [cmd for _fam, cmd in registered_ids(Family.GOODS)]
         assert len(goods_cmds) >= 7
@@ -151,7 +151,7 @@ class TestDispatchBoundaryWrap:
         def _boom(frame, *, family):
             raise struct.error("unpack requires a buffer of 4 bytes")
 
-        monkeypatch.setattr("tstdx.protocol.generic.parse_generic", _boom)
+        monkeypatch.setattr("atst.protocol.generic.parse_generic", _boom)
         # 0x9999 无 L1 解析器 → 走 L2 通用解析
         with pytest.raises(ParseError) as ei:
             dispatch(_frame(0x9999, b"\x00" * 8))

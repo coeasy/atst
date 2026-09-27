@@ -17,12 +17,12 @@ import json
 
 import pytest
 
-import tstdx.web._session_info as mixin_info
-import tstdx.web._session_news as mixin_news
-from tstdx.web.base import HttpResponse
-from tstdx.web.corporate import EastmoneyResearchSource
-from tstdx.web.news import EastmoneyNewsSource, EastmoneyResearchVisitSource
-from tstdx.web.session import WebQuoteSession
+import atst.web._session_info as mixin_info
+import atst.web._session_news as mixin_news
+from atst.web.base import HttpResponse
+from atst.web.corporate import EastmoneyResearchSource
+from atst.web.news import EastmoneyNewsSource, EastmoneyResearchVisitSource
+from atst.web.session import WebQuoteSession
 
 
 class FakeHttpClient:

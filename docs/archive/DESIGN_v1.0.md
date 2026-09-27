@@ -2,7 +2,7 @@
 
 > **文档状态**：v1.0 完整规划稿
 > **创建日期**：2026-08-31
-> **工作区**：`D:\workspace\tstdx`
+> **工作区**：`D:\workspace\atst`
 > **参考项目**：mootdx / easy_tdx / tdx-api / tdxrs / eltdx / bebopze/tdx
 
 ---
@@ -35,9 +35,9 @@
 
 ### 1.1 项目名称
 
-**tstdx** — TongDaXin Standard Data eXchange（通达信标准数据交换库）
+**atst** — TongDaXin Standard Data eXchange（通达信标准数据交换库）
 
-> 命名释义：工作区目录名 `tstdx`，即 "TongDaXin" 的缩写，同时隐含 "Standard" 定位。
+> 命名释义：工作区目录名 `atst`，即 "TongDaXin" 的缩写，同时隐含 "Standard" 定位。
 
 ### 1.2 核心定位
 
@@ -64,7 +64,7 @@
 ### 1.4 与参考项目的关系
 
 ```
-tstdx = 取各家之长，做协议级通用基础设施
+atst = 取各家之长，做协议级通用基础设施
 
   mootdx    →  Reader 本地文件解析的简洁设计 + CLI 体验
   easy_tdx  →  四层客户端架构 + 健康评分 failover + MAC 协议覆盖
@@ -94,10 +94,10 @@ tstdx = 取各家之长，做协议级通用基础设施
 **定位**：**可选加速**，非强制依赖。
 
 ```
-tstdx
-├── tstdx              # 纯 Python 实现（默认，零编译安装）
+atst
+├── atst              # 纯 Python 实现（默认，零编译安装）
 │   └── _native        # Rust 扩展（有则加速，无则 fallback）
-└── tstdx-native       # 独立 wheel，提供 Rust 内核
+└── atst-native       # 独立 wheel，提供 Rust 内核
 ```
 
 **加速目标**（参考 tdxrs 基准）：
@@ -143,14 +143,14 @@ tstdx
 ### 2.5 目录结构
 
 ```
-tstdx/
+atst/
 ├── DESIGN.md                    # 本文档
 ├── PLAN.md                      # 实施路线图（从本文档拆出）
 ├── pyproject.toml
 ├── README.md
 ├── LICENSE
 │
-├── tstdx/                       # 主包（纯 Python）
+├── atst/                       # 主包（纯 Python）
 │   ├── __init__.py
 │   ├── _version.py
 │   ├── errors.py                # 统一错误码体系
@@ -228,7 +228,7 @@ tstdx/
 │       ├── ws_server.py         # WebSocket RPC
 │       └── mcp_server.py        # MCP 工具服务
 │
-├── tstdx_native/                 # Rust 内核（可选）
+├── atst_native/                 # Rust 内核（可选）
 │   ├── Cargo.toml
 │   ├── src/
 │   │   ├── lib.rs                # PyO3 入口
@@ -403,7 +403,7 @@ MAC_HOSTS_7709 = [
 1. 对每台主站发起 TCP connect（超时 3s）
 2. 记录连接延迟（ms）
 3. 按延迟排序，取 Top N
-4. 持久化到 ~/.tstdx/server_ranking.json
+4. 持久化到 ~/.atst/server_ranking.json
 5. 后续连接优先使用排名最高的主站
 ```
 
@@ -413,7 +413,7 @@ class ServerRanking:
 
     def __init__(self, hosts: list[tuple[str, int]], cache_path: Path | None = None):
         self.hosts = hosts
-        self.cache_path = cache_path or Path.home() / ".tstdx" / "server_ranking.json"
+        self.cache_path = cache_path or Path.home() / ".atst" / "server_ranking.json"
         self._scores: dict[str, float] = {}  # host:health_score
 
     async def benchmark(self, top_n: int = 5, timeout: float = 3.0) -> list[tuple[str, int, float]]:
@@ -1276,25 +1276,25 @@ class Helpers:
 # 用法示例
 """
 # 获取行情
-tstdx quotes 600519 000001
+atst quotes 600519 000001
 
 # 获取 K 线
-tstdx kline 600519 --period daily --count 100 --output dataframe
+atst kline 600519 --period daily --count 100 --output dataframe
 
 # 读取本地文件
-tstdx read-day 600519 --vipdoc /path/to/vipdoc
+atst read-day 600519 --vipdoc /path/to/vipdoc
 
 # 复权
-tstdx adjust 600519 --mode qfq
+atst adjust 600519 --mode qfq
 
 # 主站测速
-tstdx benchmark --top 5
+atst benchmark --top 5
 
 # 启动 HTTP 服务
-tstdx serve --port 8000
+atst serve --port 8000
 
 # 启动 MCP 服务
-tstdx mcp
+atst mcp
 """
 ```
 
@@ -1350,7 +1350,7 @@ WS 连接后订阅：
 # MCP 工具定义（供 AI Agent 调用）
 MCP_TOOLS = [
     {
-        "name": "tstdx_quotes",
+        "name": "atst_quotes",
         "description": "获取A股/港股/美股实时行情",
         "inputSchema": {
             "type": "object",
@@ -1362,7 +1362,7 @@ MCP_TOOLS = [
         }
     },
     {
-        "name": "tstdx_kline",
+        "name": "atst_kline",
         "description": "获取K线数据",
         "inputSchema": {
             "type": "object",
@@ -1376,22 +1376,22 @@ MCP_TOOLS = [
         }
     },
     {
-        "name": "tstdx_blocks",
+        "name": "atst_blocks",
         "description": "获取板块列表和成分股",
         ...
     },
     {
-        "name": "tstdx_capital_flow",
+        "name": "atst_capital_flow",
         "description": "获取资金流向数据",
         ...
     },
     {
-        "name": "tstdx_f10",
+        "name": "atst_f10",
         "description": "获取F10公司资料",
         ...
     },
     {
-        "name": "tstdx_read_local",
+        "name": "atst_read_local",
         "description": "读取本地通达信文件(.day/.lc1/.lc5)",
         ...
     }
@@ -1834,7 +1834,7 @@ class CapitalFlow(TypedDict):
 
 
 class TstdxError(Exception):
-    """tstdx 统一错误基类"""
+    """atst 统一错误基类"""
 
     code: str
     message: str
@@ -2009,7 +2009,7 @@ class TestNativeParity:
     @pytest.fixture(params=["python", "native"])
     def reader(self, request):
         if request.param == "native":
-            pytest.importorskip("tstdx._native")
+            pytest.importorskip("atst._native")
             return DailyBarReaderNative(...)
         return DailyBarReader(...)
 
@@ -2074,7 +2074,7 @@ class TestNativeParity:
   □ E2E smoke tests (5+)
 
 □ CLI
-  □ tstdx quotes / kline / read-day / benchmark
+  □ atst quotes / kline / read-day / benchmark
 ```
 
 ### Phase 2：协议完善（4 周）
@@ -2215,7 +2215,7 @@ Phase 4: Rust+生态   ░░░░░░░░░░░░░░░░░░░
 
 ## 18. 参考项目能力对照表
 
-| 能力维度 | mootdx | easy_tdx | tdx-api | tdxrs | eltdx | bebopze | **tstdx (目标)** |
+| 能力维度 | mootdx | easy_tdx | tdx-api | tdxrs | eltdx | bebopze | **atst (目标)** |
 |---|---|---|---|---|---|---|---|
 | **语言** | Python | Python | Go | Rust+PyO3 | Py+Rust | TDX公式 | **Python+Rust** |
 | **7709 标准协议** | 部分 | ✅ | ✅ | ✅ | ✅(21命令) | — | **✅(21命令)** |
@@ -2236,7 +2236,7 @@ Phase 4: Rust+生态   ░░░░░░░░░░░░░░░░░░░
 | **Rust 内核加速** | — | — | — | ✅(9-11×) | ✅(3.0起) | — | **✅(可选)** |
 | **License** | MIT | 学习研究 | MIT | MIT | **禁止商用** | — | **MIT** |
 
-### tstdx 的独有优势
+### atst 的独有优势
 
 1. **三协议族全覆盖**：唯一同时覆盖 7709 标准 + 7727 扩展 + MAC 专属的库
 2. **F10 完整覆盖**：18+ Entry，比多数库只有部分 F10 更完整

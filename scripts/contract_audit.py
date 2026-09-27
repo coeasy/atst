@@ -41,7 +41,7 @@ _ROOTS = (
     Path.cwd(),
 )
 for _root in _ROOTS:
-    if (_root / "tstdx").is_dir() and str(_root) not in sys.path:
+    if (_root / "atst").is_dir() and str(_root) not in sys.path:
         sys.path.insert(0, str(_root))
         break
 
@@ -51,7 +51,7 @@ for _root in _ROOTS:
 # --------------------------------------------------------------------------- #
 def registered_capabilities() -> set[str]:
     """PROVIDERS 注册表声明的全部 capability 名。"""
-    from tstdx.providers import PROVIDERS
+    from atst.providers import PROVIDERS
 
     out: set[str] = set()
     for pid in PROVIDERS.ids():
@@ -69,8 +69,8 @@ def gateway_capabilities() -> set[str]:
     本就不必抄。旧名单的规模与重复比例记在重构方案里（那里有取证日志可回查），不写进散文——
     抄下来的计数没人能自查，写下的那一刻就开始腐烂。
     """
-    from tstdx.catalog.capability import MIGRATED_CAPABILITIES
-    from tstdx.runtime.executor import DIRECT_BINDINGS
+    from atst.catalog.capability import MIGRATED_CAPABILITIES
+    from atst.runtime.executor import DIRECT_BINDINGS
 
     dedicated = {
         binding.capability
@@ -101,7 +101,7 @@ def _all_typed_queries() -> list[type]:
     """
     import dataclasses as dc
 
-    import tstdx.typed_query as tq
+    import atst.typed_query as tq
 
     out: list[type] = []
     for name in dir(tq):
@@ -131,7 +131,7 @@ def _typed_capabilities() -> set[str]:
 
 def _minimal_instance(cls: type) -> Any:
     """为带必填字段的领域 Query 构造最小合法实例。"""
-    from tstdx.typed_query import (
+    from atst.typed_query import (
         BoardMemberQuery,
         FundBaseInfoMultiQuery,
         IndexConstituentsQuery,
@@ -216,9 +216,9 @@ def audit_semantic_ready() -> list[str]:
 
 def audit_typed_kernel_compilation() -> list[str]:
     """全部 Typed Query 可经 call_payload_from_typed + QueryPlanner 编译为 QueryPlan。"""
-    from tstdx.catalog.capability import default_provider_for
-    from tstdx.query import QueryPlanner, QuerySpec
-    from tstdx.typed_query import call_payload_from_typed
+    from atst.catalog.capability import default_provider_for
+    from atst.query import QueryPlanner, QuerySpec
+    from atst.typed_query import call_payload_from_typed
 
     planner = QueryPlanner()
     problems: list[str] = []
@@ -247,7 +247,7 @@ def audit_typed_kernel_compilation() -> list[str]:
 
 def audit_domain_records() -> list[str]:
     """每个 Typed Query capability 有 Domain Record 映射。"""
-    from tstdx.typed_query import record_type_for
+    from atst.typed_query import record_type_for
 
     problems: list[str] = []
     for cap in _typed_capabilities():
@@ -258,7 +258,7 @@ def audit_domain_records() -> list[str]:
 
 def audit_record_roundtrip() -> list[str]:
     """每个 Domain Record to_dict -> from_dict 往返无损。"""
-    from tstdx.domain.records import (
+    from atst.domain.records import (
         BondRecord,
         FinancialRecord,
         FundRecord,

@@ -1,4 +1,4 @@
-# tstdx 功能梳理与优化改进方案 v1（已归档）
+# atst 功能梳理与优化改进方案 v1（已归档）
 
 > **状态：Archived / 已归档**  
 > 初版日期：2026-09-02  
@@ -25,7 +25,7 @@ v1 文档中的部分架构描述已经被 v12 明确废弃，尤其包括旧的
 新代码应优先使用：
 
 ```python
-from tstdx import UnifiedMarketDataService
+from atst import UnifiedMarketDataService
 
 with UnifiedMarketDataService() as md:
     quotes = md.quotes(["sh600519"], provider="tdx")
@@ -39,7 +39,7 @@ with UnifiedMarketDataService() as md:
     result = md.eastmoney.fund_flow("sh600519")
 ```
 
-低层 TDX 协议客户端仍保留在 [`tstdx/client/`](../../../tstdx/client/) 中，供需要直接协议控制的调用方使用。
+低层 TDX 协议客户端仍保留在 [`atst/client/`](../../../atst/client/) 中，供需要直接协议控制的调用方使用。
 
 ## 当前唯一执行原则
 

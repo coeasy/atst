@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.domain.models import Bar, Quote
-from tstdx.errors import DependencyMissingError
-from tstdx.output import Sink, _normalize, to_duckdb, to_parquet, write
+from atst.domain.models import Bar, Quote
+from atst.errors import DependencyMissingError
+from atst.output import Sink, _normalize, to_duckdb, to_parquet, write
 
 
 @pytest.fixture
@@ -156,7 +156,7 @@ class TestSinks:
 
         class JsonSink:
             def write(self, items):
-                from tstdx.output import _normalize
+                from atst.output import _normalize
 
                 rows = _normalize(items)
                 custom_output.append(rows)
@@ -201,13 +201,13 @@ class TestSinks:
 
     def test_parquet_writer_alias(self):
         """#18 parquet_writer 是 to_parquet 的别名。"""
-        from tstdx.output import parquet_writer
+        from atst.output import parquet_writer
 
         assert parquet_writer is to_parquet
 
     def test_duckdb_writer_alias(self):
         """#19 duckdb_writer 是 to_duckdb 的别名。"""
-        from tstdx.output import duckdb_writer
+        from atst.output import duckdb_writer
 
         assert duckdb_writer is to_duckdb
 

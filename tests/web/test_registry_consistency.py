@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.web import _ADAPTERS, create_source
-from tstdx.web.normalize import _NORMALIZER_REGISTRY
-from tstdx.web.session import WebQuoteSession
-from tstdx.web.sources import KNOWN_SOURCES
+from atst.web import _ADAPTERS, create_source
+from atst.web.normalize import _NORMALIZER_REGISTRY
+from atst.web.session import WebQuoteSession
+from atst.web.sources import KNOWN_SOURCES
 
 pytestmark = pytest.mark.unit
 

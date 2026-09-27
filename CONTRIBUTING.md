@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢你对 tstdx 项目的关注。本指南只描述当前仓库实际执行的开发、测试与发布门禁；本地流程应能复现 GitHub CI，而不是维护一套更宽松的替代流程。
+感谢你对 atst 项目的关注。本指南只描述当前仓库实际执行的开发、测试与发布门禁；本地流程应能复现 GitHub CI，而不是维护一套更宽松的替代流程。
 
 ## 行为准则
 
@@ -25,8 +25,8 @@
 #### 开发环境设置
 
 ```bash
-git clone https://github.com/coeasy/tstdx.git
-cd tstdx
+git clone https://github.com/coeasy/atst.git
+cd atst
 
 python -m venv .venv
 source .venv/bin/activate      # Linux/macOS
@@ -36,7 +36,7 @@ source .venv/bin/activate      # Linux/macOS
 make install
 pre-commit install
 
-python -c "import tstdx; print(tstdx.__version__)"
+python -c "import atst; print(atst.__version__)"
 ```
 
 `make install` 是开发依赖的推荐入口。不要单独手工拼装 pytest/ruff/mypy 版本后把结果当作正式门禁结论。
@@ -47,7 +47,7 @@ python -c "import tstdx; print(tstdx.__version__)"
 uv sync --all-extras --dev                 # 生成 .venv，与 CI 依赖一致
 .venv\Scripts\python.exe -X utf8 -m pytest # Windows 下用 venv 解释器，别用裸 python
 .venv\Scripts\python.exe -X utf8 scripts/contract_audit.py --ci
-uvx ruff@latest check tstdx tests scripts   # 与 CI 同版本更佳
+uvx ruff@latest check atst tests scripts   # 与 CI 同版本更佳
 ```
 
 `-X utf8` 在 Windows 上是必需的：文档、golden 样本与协议注释含中文，默认 GBK 代码页会让
@@ -112,7 +112,7 @@ uvx ruff@latest check tstdx tests scripts   # 与 CI 同版本更佳
    先重定向再取 RC，要么显式取管道首段：
 
    ```bash
-   python -m tstdx.tools.spec_audit --json --strict > /tmp/spec.log 2>&1; echo "RC=$?"
+   python -m atst.tools.spec_audit --json --strict > /tmp/spec.log 2>&1; echo "RC=$?"
    make audit-reachability 2>&1 | tail -20; echo "RC=${PIPESTATUS[0]}"
    ```
 
@@ -136,7 +136,7 @@ uvx ruff@latest check tstdx tests scripts   # 与 CI 同版本更佳
 #### 代码风格
 
 - **Lint / format**：Ruff（配置在 `pyproject.toml`）。
-- **类型**：mypy；包声明为 PEP 561 typed package，`tstdx/py.typed` 必须随 wheel 发布。
+- **类型**：mypy；包声明为 PEP 561 typed package，`atst/py.typed` 必须随 wheel 发布。
 - **测试**：pytest；网络测试使用 `network` marker 并与离线主矩阵分离。
 
 #### 测试要求
@@ -173,8 +173,8 @@ make publish
 如果要添加新的协议命令：
 
 1. 在 `PROTOCOL_SPEC/` 下创建或更新 YAML spec。
-2. 实现解析器（`tstdx/protocol/parsers/`）。
-3. 注册到命令账本（`tstdx/protocol/commands.py`）。
+2. 实现解析器（`atst/protocol/parsers/`）。
+3. 注册到命令账本（`atst/protocol/commands.py`）。
 4. 添加/更新 Golden 数据样本。
 5. 运行 strict spec、Golden、adversarial 和相关单元测试。
 

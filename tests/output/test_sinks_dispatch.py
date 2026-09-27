@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.output import to_csv, to_parquet, write
-from tstdx.output import to_duckdb as _to_duckdb
+from atst.output import to_csv, to_parquet, write
+from atst.output import to_duckdb as _to_duckdb
 
 pytestmark = pytest.mark.unit
 
@@ -73,7 +73,7 @@ class TestParquetAtomic:
 
     @pytest.fixture(autouse=True)
     def _require_pyarrow(self) -> None:
-        # 与 TestDuckdbTableName 同约定：parquet 是可选 extra（``tstdx[parquet]``），
+        # 与 TestDuckdbTableName 同约定：parquet 是可选 extra（``atst[parquet]``），
         # 未安装时跳过而非失败。
         pytest.importorskip("pyarrow", reason="本机未装 pyarrow；有则连库验证")
 

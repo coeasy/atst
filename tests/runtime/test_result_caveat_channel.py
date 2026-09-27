@@ -1,11 +1,11 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """F-45 的收口判据：结果携带的数据完整性瑕疵必须逐面到达调用方。
 
 三条链各自把守一段：
 
-1. :mod:`tstdx.diagnostics` 是唯一发射口，一次查询一份收集器；
+1. :mod:`atst.diagnostics` 是唯一发射口，一次查询一份收集器；
 2. 执行器把收集器装进 ``QueryResult.meta.warnings``，``strict`` 决定它是告警还是失败；
 3. ``serialize_result`` 把它送上 HTTP / WS / MCP 的 wire。
 
@@ -22,12 +22,12 @@ from typing import Any
 
 import pytest
 
-from tstdx.diagnostics import ResultWarning, WarningCode, record_warning, warning_sink
-from tstdx.errors import TruncatedDataError, ValidationError
-from tstdx.integration.serialization import serialize_result
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.result import Provenance, QueryResult, ResultMeta
-from tstdx.runtime.executor import DirectProviderExecutor
+from atst.diagnostics import ResultWarning, WarningCode, record_warning, warning_sink
+from atst.errors import TruncatedDataError, ValidationError
+from atst.integration.serialization import serialize_result
+from atst.query import QueryPlanner, QuerySpec
+from atst.result import Provenance, QueryResult, ResultMeta
+from atst.runtime.executor import DirectProviderExecutor
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -196,10 +196,10 @@ class TestWireReachesEveryFace:
     @pytest.mark.parametrize(
         "module",
         [
-            "tstdx/integration/runtime_http.py",
-            "tstdx/integration/runtime_ws.py",
-            "tstdx/integration/mcp/_tools_impl.py",
-            "tstdx/cli/runtime_commands.py",
+            "atst/integration/runtime_http.py",
+            "atst/integration/runtime_ws.py",
+            "atst/integration/mcp/_tools_impl.py",
+            "atst/cli/runtime_commands.py",
         ],
     )
     def test_every_exit_uses_the_shared_serializer(self, module: str) -> None:

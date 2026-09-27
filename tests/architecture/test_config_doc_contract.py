@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """配置面文档 ⇄ schema / loader 的双向对账（V17 Phase 4 第 43 步，F-69）。
@@ -16,11 +16,11 @@
 * 注册表成员声称：以 ``PROVIDERS`` / ``KNOWN_SOURCES`` 两个真相源逐个试正反例；
 * fail-closed 场景表：就地触发，异常类型与文档写出的消息片段逐个命中；
 * 环境变量：命名规则对**全部** 17 键成立；§4 的"专用 runtime 变量"表与 loader 的登记表
-  双向对上；并且发行代码里出现的每个 ``TSTDX_*`` 名字都必须有归属——最后这条就是 F-69
-  要防的那件事（``TSTDX_WENCAI_COOKIE`` 未登记，用户照错误消息设置后 ``Client()`` 反而抛
+  双向对上；并且发行代码里出现的每个 ``ATST_*`` 名字都必须有归属——最后这条就是 F-69
+  要防的那件事（``ATST_WENCAI_COOKIE`` 未登记，用户照错误消息设置后 ``Client()`` 反而抛
   ``ConfigError``）。
 
-``tests/`` 不参与 ``TSTDX_*`` 对账：那里的 ``TSTDX_CORE_TIMOUT`` 一类是刻意的负例夹具。
+``tests/`` 不参与 ``ATST_*`` 对账：那里的 ``ATST_CORE_TIMOUT`` 一类是刻意的负例夹具。
 """
 
 from __future__ import annotations
@@ -36,17 +36,17 @@ from typing import Any
 
 import pytest
 
-from tstdx.config import loader
-from tstdx.config.schema import DEFAULT_CONFIG, Config, validate_keys
-from tstdx.errors import ConfigError, ValidationError
+from atst.config import loader
+from atst.config.schema import DEFAULT_CONFIG, Config, validate_keys
+from atst.errors import ConfigError, ValidationError
 
 ROOT = Path(__file__).resolve().parents[2]
 DOC_REL = "docs/configuration.md"
 
 SECTIONS: tuple[str, ...] = tuple(Config._SUBCONFIGS)
-_ENV_NAME = re.compile(r"TSTDX_[A-Z][A-Z0-9_]*")
-#: 以 ``TSTDX_RATE_LIMIT_*`` 这种写法出现的是前缀示意，不是完整变量名。
-_TRUNCATED_NAME = re.compile(r"TSTDX_[A-Z0-9_]*_$")
+_ENV_NAME = re.compile(r"ATST_[A-Z][A-Z0-9_]*")
+#: 以 ``ATST_RATE_LIMIT_*`` 这种写法出现的是前缀示意，不是完整变量名。
+_TRUNCATED_NAME = re.compile(r"ATST_[A-Z0-9_]*_$")
 _RANGE = re.compile(r"(\d+(?:\.\d+)?)\s*[–—-]\s*(\d+(?:\.\d+)?)")
 
 
@@ -262,8 +262,8 @@ _MEMBERSHIP_SHAPES: dict[tuple[str, str], Any] = {
 
 
 def _registries() -> dict[str, set[str]]:
-    from tstdx.providers import PROVIDERS
-    from tstdx.web.sources import KNOWN_SOURCES
+    from atst.providers import PROVIDERS
+    from atst.web.sources import KNOWN_SOURCES
 
     return {"PROVIDERS": set(PROVIDERS.ids()), "KNOWN_SOURCES": set(KNOWN_SOURCES)}
 
@@ -328,7 +328,7 @@ def test_membership_claims_match_the_registries() -> None:
 _HANDLED_SCENARIOS = (
     "未知配置段（`[cache]`）",
     "段内未知字段",
-    "未知 `TSTDX_*` 变量",
+    "未知 `ATST_*` 变量",
     "bool 位置写 `1`/`0`",
     "整数位置写 `1.5`",
     "`timeout=nan/inf`",
@@ -378,8 +378,8 @@ def _raise_for(scenario: str) -> tuple[str, str]:
         return _capture(lambda: validate_keys({dead.group(1): {}}))
     if scenario == "段内未知字段":
         return _capture(lambda: Config().with_overrides(core={"__no_such_field__": 1}))
-    if scenario.startswith("未知 TSTDX_"):
-        return _capture(lambda: loader.config_from_env({"TSTDX_NOT_A_SECTION_X": "1"}))
+    if scenario.startswith("未知 ATST_"):
+        return _capture(lambda: loader.config_from_env({"ATST_NOT_A_SECTION_X": "1"}))
     if scenario.startswith("bool 位置写"):
         numbers = [int(n) for n in re.findall(r"\d+", scenario)]
         flags = _keys_of_type(bool)
@@ -485,21 +485,21 @@ def test_env_naming_rule_reaches_every_documented_key() -> None:
     for section, keys in _key_tables().items():
         for key in sorted(keys):
             total += 1
-            name = f"TSTDX_{section.upper()}_{key.upper()}"
+            name = f"ATST_{section.upper()}_{key.upper()}"
             parsed = loader.config_from_env({name: "1"})
             if parsed.get(section, {}).get(key) != 1:
                 failures.append(f"{name} → {parsed!r}")
     assert total >= 15, f"命名规则只量了 {total} 个键，说明判据自身失效"
-    assert not failures, f"§4 的 TSTDX_<SECTION>_<KEY> 规则对部分键不成立：{failures}"
+    assert not failures, f"§4 的 ATST_<SECTION>_<KEY> 规则对部分键不成立：{failures}"
 
 
 def _runtime_table_names() -> set[str]:
-    """§4「专用 runtime 变量」表里出现的全部 ``TSTDX_*``（一行可写三个）。"""
+    """§4「专用 runtime 变量」表里出现的全部 ``ATST_*``（一行可写三个）。"""
     assert "## 4. 环境变量规则" in _doc(), f"{DOC_REL} 不再有 §4，门禁失效"
     section = _doc().split("## 4. 环境变量规则", 1)[1].split("\n## ", 1)[0]
     names: set[str] = set()
     for line in section.splitlines():
-        if line.startswith("| `TSTDX_"):
+        if line.startswith("| `ATST_"):
             names.update(_ENV_NAME.findall(line))
     assert names, "§4 的专用 runtime 变量表解析不出变量名，门禁失效"
     return names
@@ -518,7 +518,7 @@ def test_runtime_env_table_is_the_loader_registration() -> None:
 
 def _env_names_in_shipped_code() -> dict[str, set[str]]:
     found: dict[str, set[str]] = {}
-    for base in (ROOT / "tstdx", ROOT / "scripts"):
+    for base in (ROOT / "atst", ROOT / "scripts"):
         for path in sorted(base.rglob("*.py")):
             if "__pycache__" in path.parts:
                 continue
@@ -539,9 +539,9 @@ def _is_schema_env(name: str) -> bool:
 
 
 def test_every_env_var_the_library_reads_is_registered_or_schema() -> None:
-    """F-69 的防回潮判据：发行代码用到的每个 ``TSTDX_*`` 都必须有归属。
+    """F-69 的防回潮判据：发行代码用到的每个 ``ATST_*`` 都必须有归属。
 
-    ``TSTDX_`` 是保留命名空间：未登记的变量会被 strict 扫描判成拼写错误并让整条配置
+    ``ATST_`` 是保留命名空间：未登记的变量会被 strict 扫描判成拼写错误并让整条配置
     加载 fail closed。所以"代码读它"与"扫描器认它"必须同时成立，缺一即用户按错误消息
     操作后反而构造不出 ``Client()``。
     """
@@ -557,7 +557,7 @@ def test_every_env_var_the_library_reads_is_registered_or_schema() -> None:
         f"代码使用却未登记进 `loader._RUNTIME_ENV_KEYS` 的 {loader.ENV_PREFIX} 变量"
         f"（用户设置后 load_config 会 fail closed）：{unowned}"
     )
-    assert "TSTDX_WENCAI_COOKIE" in registered, "F-69 的那一格必须由 loader 登记"
+    assert "ATST_WENCAI_COOKIE" in registered, "F-69 的那一格必须由 loader 登记"
 
 
 # --------------------------------------------------------------------------- #
@@ -568,9 +568,9 @@ def test_every_env_var_the_library_reads_is_registered_or_schema() -> None:
 def test_setting_a_registered_runtime_var_does_not_break_the_client(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from tstdx import Client
+    from atst import Client
 
-    monkeypatch.setenv("TSTDX_WENCAI_COOKIE", "a-token")
+    monkeypatch.setenv("ATST_WENCAI_COOKIE", "a-token")
     monkeypatch.chdir(tmp_path)
     client = Client()
     try:
@@ -580,9 +580,9 @@ def test_setting_a_registered_runtime_var_does_not_break_the_client(
 
 
 def test_the_wencai_consumer_reads_the_registered_var(monkeypatch: pytest.MonkeyPatch) -> None:
-    from tstdx.web.wencai import WencaiSource
+    from atst.web.wencai import WencaiSource
 
-    monkeypatch.setenv("TSTDX_WENCAI_COOKIE", "token-from-env")
+    monkeypatch.setenv("ATST_WENCAI_COOKIE", "token-from-env")
     assert WencaiSource().cookie == "token-from-env"
     assert WencaiSource(cookie="explicit").cookie == "explicit"
 
@@ -608,7 +608,7 @@ def test_registration_cannot_shrink_in_silence() -> None:
     assert len(loader._RUNTIME_ENV_KEYS) >= 6, (
         f"专用 runtime 变量登记表缩到 {len(loader._RUNTIME_ENV_KEYS)} 条"
     )
-    tree = ast.parse((ROOT / "tstdx" / "config" / "loader.py").read_text(encoding="utf-8"))
+    tree = ast.parse((ROOT / "atst" / "config" / "loader.py").read_text(encoding="utf-8"))
     literals = {
         node.value
         for node in ast.walk(tree)

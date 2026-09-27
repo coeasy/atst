@@ -7,13 +7,13 @@ from typing import Any
 
 import pytest
 
-from tstdx.client import AsyncTdxClient
-from tstdx.protocol.commands import Family
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.speedtest import ProbeResult
+from atst.client import AsyncTdxClient
+from atst.protocol.commands import Family
+from atst.transport.hosts import HostEntry
+from atst.transport.speedtest import ProbeResult
 
-speedtest_mod = importlib.import_module("tstdx.transport.speedtest")
-hosts_mod = importlib.import_module("tstdx.transport.hosts")
+speedtest_mod = importlib.import_module("atst.transport.speedtest")
+hosts_mod = importlib.import_module("atst.transport.hosts")
 
 
 def test_cancelled_async_bestip_cannot_commit_after_probe_thread_finishes(

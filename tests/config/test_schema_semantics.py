@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.config.schema import (
+from atst.config.schema import (
     DEFAULT_CONFIG,
     RateLimitConfig,
     config_from_dict,
@@ -25,19 +25,19 @@ class TestConfigFromDictValidates:
     """构建即校验。"""
 
     def test_invalid_core_timeout_raises(self) -> None:
-        from tstdx.errors import ValidationError
+        from atst.errors import ValidationError
 
         with pytest.raises(ValidationError, match="timeout"):
             config_from_dict({"core": {"timeout": 99999}})
 
     def test_unknown_default_provider_raises(self) -> None:
-        from tstdx.errors import ValidationError
+        from atst.errors import ValidationError
 
         with pytest.raises(ValidationError):
             config_from_dict({"core": {"default_provider": "not-a-provider"}})
 
     def test_blank_vipdoc_root_raises(self) -> None:
-        from tstdx.errors import ValidationError
+        from atst.errors import ValidationError
 
         with pytest.raises(ValidationError, match="vipdoc_root"):
             config_from_dict({"core": {"vipdoc_root": "   "}})
@@ -48,7 +48,7 @@ class TestConfigFromDictValidates:
         assert cfg.core.default_provider == "tdx"  # 未覆盖字段保持默认
 
     def test_merge_config_still_validates(self) -> None:
-        from tstdx.errors import ValidationError
+        from atst.errors import ValidationError
 
         with pytest.raises(ValidationError):
             merge_config({"core": {"max_retries": -1}})
@@ -63,13 +63,13 @@ class TestConfigFromDictValidates:
         ],
     )
     def test_invalid_host_endpoints_fail_during_config_build(self, servers) -> None:
-        from tstdx.errors import ValidationError
+        from atst.errors import ValidationError
 
         with pytest.raises(ValidationError, match="hosts.servers"):
             config_from_dict({"hosts": {"servers": servers}})
 
     def test_host_config_rejects_non_list_servers(self) -> None:
-        from tstdx.errors import ValidationError
+        from atst.errors import ValidationError
 
         with pytest.raises(ValidationError, match="hosts.servers"):
             config_from_dict({"hosts": {"servers": "1.2.3.4:7709"}})
@@ -85,13 +85,13 @@ class TestConfigFromDictValidates:
         ],
     )
     def test_integer_fields_reject_fractional_values(self, section: str, field: str) -> None:
-        from tstdx.errors import ValidationError
+        from atst.errors import ValidationError
 
         with pytest.raises(ValidationError, match="必须是整数"):
             config_from_dict({section: {field: 1.5}})
 
     def test_rate_limit_strict_must_be_bool(self) -> None:
-        from tstdx.errors import ValidationError
+        from atst.errors import ValidationError
 
         with pytest.raises(ValidationError, match="rate_limit.strict"):
             config_from_dict({"rate_limit": {"strict": 1}})
@@ -115,7 +115,7 @@ class TestWithOverridesDeepMerge:
         assert cfg.core.max_retries == 3
 
     def test_unknown_section_still_rejected(self) -> None:
-        from tstdx.errors import ValidationError
+        from atst.errors import ValidationError
 
         with pytest.raises(ValidationError, match="未知配置段"):
             DEFAULT_CONFIG.with_overrides(nonexist={"a": 1})
@@ -125,7 +125,7 @@ class TestRateLimitDefaults:
     """限流段字段名必须与 :class:`SessionState` 对齐，否则配置被静默丢弃。"""
 
     def test_field_names_match_limiter_states(self) -> None:
-        from tstdx.transport.ratelimit import DEFAULT_RATES, SessionState
+        from atst.transport.ratelimit import DEFAULT_RATES, SessionState
 
         limiter_rates = RateLimitConfig()
         for state, default in DEFAULT_RATES.items():
@@ -138,7 +138,7 @@ class TestRateLimitDefaults:
             assert float(field) == default
 
     def test_limiter_reads_real_values(self) -> None:
-        from tstdx.transport.ratelimit import SessionRateLimiter, SessionState
+        from atst.transport.ratelimit import SessionRateLimiter, SessionState
 
         limiter = SessionRateLimiter.from_config(
             RateLimitConfig(continuous=7, strict=True),

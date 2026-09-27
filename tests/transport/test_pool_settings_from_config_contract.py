@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.config.schema import DEFAULT_CONFIG, Config
-from tstdx.errors import ConfigError
-from tstdx.transport.pool import pool_settings_from_config
+from atst.config.schema import DEFAULT_CONFIG, Config
+from atst.errors import ConfigError
+from atst.transport.pool import pool_settings_from_config
 
 
 def test_no_config_yields_pool_defaults():
@@ -38,7 +38,7 @@ def test_settings_mirror_every_wired_execution_key():
 def test_configured_rate_limits_reach_the_limiter():
     """回归：旧工厂读 ``rate_continuous`` 这类不存在的键，配置值全部蒸发。"""
 
-    from tstdx.transport.ratelimit import SessionState
+    from atst.transport.ratelimit import SessionState
 
     cfg = DEFAULT_CONFIG.with_overrides(rate_limit={"continuous": 3})
     limiter = pool_settings_from_config(cfg)["rate_limiter"]

@@ -2,29 +2,29 @@
 
 ## 安装与依赖
 
-### Q: tstdx 需要安装哪些依赖？
+### Q: atst 需要安装哪些依赖？
 
 核心运行时**零硬依赖**。按需安装 extras：
 
 > **当前安装路径**（G9，2026-09-22 实测）：本包不在 PyPI 上
-> （`https://pypi.org/pypi/tstdx/json` 回 404），所以下表这些写法要等上架后才能直接
-> 执行。现在请在本仓库根目录用 `pip install ".[extra]"`（把 `tstdx` 换成 `.`），
+> （`https://pypi.org/pypi/atst/json` 回 404），所以下表这些写法要等上架后才能直接
+> 执行。现在请在本仓库根目录用 `pip install ".[extra]"`（把 `atst` 换成 `.`），
 > extras 的名字完全相同；README「安装」一节给的是同一口径。
 
 | 需求 | 安装 |
 |---|---|
-| DataFrame 输出 | `pip install "tstdx[dataframe]"` |
-| Parquet 落地 | `pip install "tstdx[parquet]"` |
-| DuckDB 落地 | `pip install "tstdx[duckdb]"` |
-| HTTP Web 源降级 | `pip install "tstdx[web]"` |
-| Prometheus 指标 | `pip install "tstdx[metrics]"` |
-| HTTP REST 网关 / WebSocket RPC | `pip install "tstdx[server]"` |
-| capture 工具链（时区 + zstd） | `pip install "tstdx[tools]"` |
-| MCP 工具服务 | 无需 extras：`tstdx/integration/mcp/` 是纯标准库的 JSON-RPC over stdio |
-| 全部 | `pip install "tstdx[all]"` |
+| DataFrame 输出 | `pip install "atst[dataframe]"` |
+| Parquet 落地 | `pip install "atst[parquet]"` |
+| DuckDB 落地 | `pip install "atst[duckdb]"` |
+| HTTP Web 源降级 | `pip install "atst[web]"` |
+| Prometheus 指标 | `pip install "atst[metrics]"` |
+| HTTP REST 网关 / WebSocket RPC | `pip install "atst[server]"` |
+| capture 工具链（时区 + zstd） | `pip install "atst[tools]"` |
+| MCP 工具服务 | 无需 extras：`atst/integration/mcp/` 是纯标准库的 JSON-RPC over stdio |
+| 全部 | `pip install "atst[all]"` |
 
 > **为什么 MCP 没有 extra**（第 23 轮实测）：全仓对 `mcp` / `pydantic` 两个第三方包的
-> 读取次数为 0（`tstdx/`、`scripts/`、`tests/` 一起按 `import` 普查，只有 `DESIGN.md`
+> 读取次数为 0（`atst/`、`scripts/`、`tests/` 一起按 `import` 普查，只有 `DESIGN.md`
 > 的一段示例代码提到 pydantic）。过去 `pyproject.toml` 里那两份 extra 是没人按它行动的
 > 声明，已经删除；照它装包只会多装两个用不上的包。
 
@@ -36,18 +36,18 @@
 
 ### Q: 连接主站超时怎么办？
 
-1. 运行 `tstdx server-test` 测速，选择最快主站
+1. 运行 `atst server-test` 测速，选择最快主站
 2. 检查防火墙是否放行 TDX 端口（默认 7709）
 3. 库内置多主站自动切换（`AllHostsUnreachable` 时自动降级）
 
 ### Q: 被主站封 IP 了怎么办？
 
-- 库内置令牌桶限速（`tstdx/transport/ratelimit.py`）避免触发封禁；超限的行为由
+- 库内置令牌桶限速（`atst/transport/ratelimit.py`）避免触发封禁；超限的行为由
   `[rate_limit]` 段的 `strict` 决定——`false`（默认）阻塞等令牌，`true` 立即抛
   `RateLimitedLocal`
 - **不会**自动改走 HTTP Web 源：跨源的形状只有一种，调用方显式给
   `Client().quotes(symbols, policy=FallbackPolicy(providers=("tdx", "tencent")))`
-  （v16 删除了 `SourcesRouter` 那条自动降级链；`tstdx.web` 便捷入口的按序尝试是 web 层自己的事，
+  （v16 删除了 `SourcesRouter` 那条自动降级链；`atst.web` 便捷入口的按序尝试是 web 层自己的事，
   与内核无关）
 - 降低请求频率，避免高峰期大批量拉取
 
@@ -59,7 +59,7 @@
 
 ### Q: 成交量单位是什么？
 
-全局契约：**volume=股（shares）、amount=元（CNY）、price=元**。各 HTTP Web 源的原始口径（手/万元/百元）已由 `tstdx.web.normalize` 统一归一化。
+全局契约：**volume=股（shares）、amount=元（CNY）、price=元**。各 HTTP Web 源的原始口径（手/万元/百元）已由 `atst.web.normalize` 统一归一化。
 
 ### Q: 时间戳是什么时区？
 
@@ -70,7 +70,7 @@
 
 ### Q: 复权因子在哪里？
 
-`tstdx.domain.adjust` 提供复权计算；除权除息事件可以来自 `0x000F`（股本变迁）命令，也可以由调用方自带 `events=`。
+`atst.domain.adjust` 提供复权计算；除权除息事件可以来自 `0x000F`（股本变迁）命令，也可以由调用方自带 `events=`。
 
 **线上那一路今天只有条数能采信**：`0x000F` 的记录布局尚未由 golden 样本锁定（F-37，账本 `verified=False`），
 四份实采样本重放出的 910 行里 1587 个字段值落在域外。后果分两种，都不静默——落在调整类别上的事件
@@ -86,26 +86,26 @@
 可以直接使用原生 API，字段口径对齐，迁移成本低：
 
 ```python
-# mootdx 风格 → tstdx 原生
-from tstdx.client import TdxClient
+# mootdx 风格 → atst 原生
+from atst.client import TdxClient
 
 client = TdxClient()
 bars = client.bars("sh600036", period="day", count=100)
 
-# easyquotation 风格 → tstdx Web 源
-from tstdx.web import get_quotes
+# easyquotation 风格 → atst Web 源
+from atst.web import get_quotes
 
 quotes = get_quotes(["sh600519"], source="sina")
 ```
 
-> **垫片状态**：v1.0 时代的 `tstdx.compat.*` / `tstdx.web.easyquotation` 兼容垫片已随
+> **垫片状态**：v1.0 时代的 `atst.compat.*` / `atst.web.easyquotation` 兼容垫片已随
 > v1.2.0 清理移除（与已删除的 `_async_bridge` 同类归并）。
 
 详见 [迁移指南](migration/README.md)。
 
 ### Q: 从 easy_tdx / eltdx 迁移？
 
-使用原生 API：`tstdx.compat.*` 垫片已随 v1.2.0 移除，对照表见 [easy_tdx 迁移指南](migration/easy_tdx.md)。
+使用原生 API：`atst.compat.*` 垫片已随 v1.2.0 移除，对照表见 [easy_tdx 迁移指南](migration/easy_tdx.md)。
 
 ## 协议与扩展
 
@@ -117,7 +117,7 @@ quotes = get_quotes(["sh600519"], source="sina")
 
 1. 在 `PROTOCOL_SPEC/<family>/` 添加 YAML spec
 2. 实现/注册解析器
-3. 运行 `python -m tstdx.tools.spec_audit` 验证
+3. 运行 `python -m atst.tools.spec_audit` 验证
 4. 附上 golden 样本（`tests/golden/`）
 
 详见 [PROTOCOL_SPEC/README.md](../PROTOCOL_SPEC/README.md)。
@@ -127,12 +127,12 @@ quotes = get_quotes(["sh600519"], source="sina")
 ### Q: 有 Docker 镜像吗？
 
 ```bash
-docker build -t tstdx .
-docker run --rm tstdx tstdx --help
+docker build -t atst .
+docker run --rm atst atst --help
 # HTTP 行情网关（镜像的 CMD 是 --help，起服务要显式给命令）
-docker run -p 8000:8000 --rm tstdx tstdx serve --bind 0.0.0.0 --port 8000
-# 等价写法：把 app 直接交给 uvicorn（需 `pip install "tstdx[server]"`）
-docker run -p 8000:8000 --rm tstdx python -m uvicorn tstdx.integration.runtime_http:create_runtime_app --factory --host 0.0.0.0
+docker run -p 8000:8000 --rm atst atst serve --bind 0.0.0.0 --port 8000
+# 等价写法：把 app 直接交给 uvicorn（需 `pip install "atst[server]"`）
+docker run -p 8000:8000 --rm atst python -m uvicorn atst.integration.runtime_http:create_runtime_app --factory --host 0.0.0.0
 ```
 
 ### Q: 如何监控？

@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.errors import SourceDeprecated
-from tstdx.web import _ADAPTERS
-from tstdx.web.eastmoney.adapters import EastmoneyMarginSource
-from tstdx.web.sources import KNOWN_SOURCES
+from atst.errors import SourceDeprecated
+from atst.web import _ADAPTERS
+from atst.web.eastmoney.adapters import EastmoneyMarginSource
+from atst.web.sources import KNOWN_SOURCES
 
 pytestmark = pytest.mark.unit
 

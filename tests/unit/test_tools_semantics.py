@@ -18,12 +18,12 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.protocol.commands import TIER_DECLARED, TIER_L1, TIER_L2, Command, _c
-from tstdx.tools import capture as capture_mod
-from tstdx.tools import codegen as codegen_mod
-from tstdx.tools import golden_expand as ge_mod
-from tstdx.tools import spec_audit as sa_mod
-from tstdx.tools._yaml_min import dump_yaml, load_yaml
+from atst.protocol.commands import TIER_DECLARED, TIER_L1, TIER_L2, Command, _c
+from atst.tools import capture as capture_mod
+from atst.tools import codegen as codegen_mod
+from atst.tools import golden_expand as ge_mod
+from atst.tools import spec_audit as sa_mod
+from atst.tools._yaml_min import dump_yaml, load_yaml
 
 pytestmark = pytest.mark.unit
 
@@ -150,7 +150,7 @@ class TestCaptureCli:
         assert len(listed) <= 1000
 
     def test_tdx_error_exits_2(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from tstdx.errors import TdxError
+        from atst.errors import TdxError
 
         def _boom(**kw):  # type: ignore[no-untyped-def]
             raise TdxError("法律自检未通过")
@@ -222,7 +222,7 @@ class TestGoldenExpandMeta:
 # --------------------------------------------------------------------------- #
 class TestCheckOriginalityFixGate:
     def test_fix_adds_header_only_for_unknown_license(self, tmp_path: Path) -> None:
-        from tstdx.tools.check_originality import main
+        from atst.tools.check_originality import main
 
         no_license = tmp_path / "no_license.py"
         no_license.write_text("x = 1\n", encoding="utf-8")
@@ -238,7 +238,7 @@ class TestCheckOriginalityFixGate:
         assert gpl_file.read_text(encoding="utf-8") == gpl_orig
 
     def test_fix_skips_allowed_license_without_header(self, tmp_path: Path) -> None:
-        from tstdx.tools.check_originality import main
+        from atst.tools.check_originality import main
 
         bsd_file = tmp_path / "bsd.py"
         bsd_orig = "# SPDX-License-Identifier: BSD-3-Clause\nx = 1\n"
@@ -254,7 +254,7 @@ class TestCheckOriginalityFixGate:
 # --------------------------------------------------------------------------- #
 class TestSpecAuditCaching:
     def test_coverage_summary_reuses_results(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from tstdx.tools.spec_audit import SpecAuditResult
+        from atst.tools.spec_audit import SpecAuditResult
 
         results = [
             SpecAuditResult(
@@ -276,7 +276,7 @@ class TestSpecAuditCaching:
         assert summary["covered"] == 1
 
     def test_print_table_accepts_cached_summary(self, capsys) -> None:  # type: ignore[no-untyped-def]
-        from tstdx.tools.spec_audit import SpecAuditResult, _print_table, coverage_summary
+        from atst.tools.spec_audit import SpecAuditResult, _print_table, coverage_summary
 
         results = [
             SpecAuditResult(

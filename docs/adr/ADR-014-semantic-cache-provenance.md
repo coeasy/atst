@@ -1,6 +1,6 @@
 # ADR-014: Semantic cache identity and provenance
 
-Status: Partially superseded — 语义缓存层（`SemanticResultCache`/L1/L2/`cache_ttl`）与遗留的 `QuoteCache`/`KlineCache` 已随 v16 Phase 2 物理删除，数据请求零缓存；本 ADR 的 **identity/provenance 不可伪造**结论保留为现行契约，落在 `tstdx/runtime/identity.py` 与 `tstdx/runtime/provenance.py`。
+Status: Partially superseded — 语义缓存层（`SemanticResultCache`/L1/L2/`cache_ttl`）与遗留的 `QuoteCache`/`KlineCache` 已随 v16 Phase 2 物理删除，数据请求零缓存；本 ADR 的 **identity/provenance 不可伪造**结论保留为现行契约，落在 `atst/runtime/identity.py` 与 `atst/runtime/provenance.py`。
 
 ## Context
 

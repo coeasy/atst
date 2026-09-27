@@ -6,17 +6,17 @@ import json
 
 import pytest
 
-from tstdx.domain.models import Bar
-from tstdx.errors import SourceDeprecated
-from tstdx.web.base import HttpResponse, RateLimiter
-from tstdx.web.boards import (
+from atst.domain.models import Bar
+from atst.errors import SourceDeprecated
+from atst.web.base import HttpResponse, RateLimiter
+from atst.web.boards import (
     EastmoneyBoardSource,
     SinaBoardListSource,
     SinaIndustryBoardSource,
     TencentBoardRankSource,
 )
-from tstdx.web.eastmoney.adapters import EastmoneyHistoryKlineSource
-from tstdx.web.sina.adapters import SinaHistoryKlineSource
+from atst.web.eastmoney.adapters import EastmoneyHistoryKlineSource
+from atst.web.sina.adapters import SinaHistoryKlineSource
 
 
 class FakeHttp:

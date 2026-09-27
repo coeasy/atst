@@ -1,4 +1,4 @@
-# tstdx 架构审计与重构方案 v11（2026-09-12）
+# atst 架构审计与重构方案 v11（2026-09-12）
 
 > 状态：**审计完成 / 待按批次实施**
 >
@@ -976,12 +976,12 @@ PR #1 迁移期间，建立一份 latest-main capability manifest，至少覆盖
 - `docs/FEATURE_MAP_AND_ROADMAP.md`：历史九层架构与功能地图；
 - `docs/POTENTIAL_ISSUES_AND_PLAN.md`：真机定标/Windows/性能等未完成项；
 - `docs/REFACTOR_PLAN_v10.md`：上一轮结构治理完成记录；
-- `tstdx/facade/api.py`：当前大型 UnifiedQuoteAPI 与 DataSourceRouter 委托；
-- `tstdx/facade/routing.py`：auto/local/tdx/web 路由与熔断；
-- `tstdx/sources/__init__.py`：五级 fallback 与 cache/source 编排；
-- `tstdx/cache.py`：当前结构缓存；
-- `tstdx/streaming/__init__.py` / `engine.py`：当前流式实现；
-- `tstdx/errors.py`：E1-E9 + RetryAdvice；
+- `atst/facade/api.py`：当前大型 UnifiedQuoteAPI 与 DataSourceRouter 委托；
+- `atst/facade/routing.py`：auto/local/tdx/web 路由与熔断；
+- `atst/sources/__init__.py`：五级 fallback 与 cache/source 编排；
+- `atst/cache.py`：当前结构缓存；
+- `atst/streaming/__init__.py` / `engine.py`：当前流式实现；
+- `atst/errors.py`：E1-E9 + RetryAdvice；
 - PR #1：Provider-first runtime、StreamState、semantic cache、ErrorEnvelope、Batch/SingleFlight/negative cache 以及严格 merge gate；
 - `main@7720c049` 最新 Actions run `34664281919`：当前远端 CI 基线尚未获得真实 source-step 绿色证据；
 - PR #1 与 main compare：共同祖先 `66734fb` 后已 diverged（PR 分支大量 runtime 变更，main 继续增加 7 个业务功能提交）。

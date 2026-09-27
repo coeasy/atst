@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.domain.symbol import normalize_symbol, parse_symbol, to_tdx_market
-from tstdx.errors import SymbolError
+from atst.domain.symbol import normalize_symbol, parse_symbol, to_tdx_market
+from atst.errors import SymbolError
 
 
 @pytest.mark.parametrize(

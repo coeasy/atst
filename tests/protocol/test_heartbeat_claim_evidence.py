@@ -25,12 +25,12 @@ import inspect
 
 import pytest
 
-from tstdx.protocol.commands import TIER_L2, Family, by_family, get_command
-from tstdx.protocol.registry import PARSERS
-from tstdx.tools.codegen import load_spec
-from tstdx.transport.async_ import AsyncConnectionPool, AsyncTcpConnection
-from tstdx.transport.base import DEFAULT_HEARTBEAT_CMD, TcpConnection
-from tstdx.transport.pool import ConnectionPool
+from atst.protocol.commands import TIER_L2, Family, by_family, get_command
+from atst.protocol.registry import PARSERS
+from atst.tools.codegen import load_spec
+from atst.transport.async_ import AsyncConnectionPool, AsyncTcpConnection
+from atst.transport.base import DEFAULT_HEARTBEAT_CMD, TcpConnection
+from atst.transport.pool import ConnectionPool
 
 pytestmark = pytest.mark.unit
 
@@ -57,7 +57,7 @@ def test_probe_code_has_a_single_source_of_truth() -> None:
 
 def test_wire_code_and_ledger_heartbeat_are_two_different_commands() -> None:
     """F-20 记录的是**刻意分叉**，不是遗漏：探活码 0x0002 在标准族无登记行，
-    账本里的 HEARTBEAT 行 0x0004 没有默认发送方（只有 ``tstdx probe 0x0004`` 会显式发出）。
+    账本里的 HEARTBEAT 行 0x0004 没有默认发送方（只有 ``atst probe 0x0004`` 会显式发出）。
     """
     heartbeat = get_command(_LEDGER_HEARTBEAT, Family.STANDARD)
     assert heartbeat is not None

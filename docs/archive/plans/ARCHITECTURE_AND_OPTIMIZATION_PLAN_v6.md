@@ -1,4 +1,4 @@
-# tstdx 架构综述与优化改进方案 v6
+# atst 架构综述与优化改进方案 v6
 
 > **范围**：项目全量（25 个顶层模块 / 116 个 `.py` / client.py 1823 行 / web 层 10516 行 / 107 个测试文件 / 530 组 golden 样本）。
 > **版本轴**：v1（协议正确性）→ v2（功能扩展）→ v3（能力扩展）→ v4（文档一致性）→ v5（分页与完整性）→ **v6（本文件：架构全景 + 工程治理）**。
@@ -167,7 +167,7 @@
 | 维度 | 现状 |
 |---|---|
 | 打包 | hatchling，**零硬依赖**，全部 optional extras（`config`/`dataframe`/`parquet`/`duckdb`/`web`/`tools`/`metrics`/`server`/`mcp`/`all`） |
-| Python | `>=3.10`，classifiers 3.10–3.13；主包纯 Python，编译加速由独立 Rust `tstdx_native` 承担 |
+| Python | `>=3.10`，classifiers 3.10–3.13；主包纯 Python，编译加速由独立 Rust `atst_native` 承担 |
 | CI | lint(ruff) + type-check(mypy) + test(3.10–3.13 + win3.12) + originality + spec-coverage + bridges + golden-gate + adversarial-matrix + reachability + benchmark-smoke |
 | 测试 | 107 个 `test_*.py`，按 unit/client/web/streaming/sinks/domain/protocol/facade/transport/... 切分 |
 | Golden | `tests/golden/quotation/<0x命令_名称_代码>/<时间戳>/`，530 组 `payload.bin`（配 `.json` + `.yaml`），`golden_audit` 三旗标门禁 |
@@ -216,7 +216,7 @@
 | # | 问题 | 位置 |
 |---|---|---|
 | C1 | CLI docstring 写「32 端点」，`http_server.py` 自述 43，文档漂移 | `cli.py:14,340` vs `http_server.py:4` |
-| C2 | `i18n` 名不副实：仅字符集探测（`encoding.py`），无任何用户字符串本地化 | `tstdx/i18n/` |
+| C2 | `i18n` 名不副实：仅字符集探测（`encoding.py`），无任何用户字符串本地化 | `atst/i18n/` |
 | C3 | `native.py` 原生加速已废（`NATIVE_AVAILABLE = native is not None`，扩展源码已移除），仍携带完整 parity 自检与 DeprecationWarning | `native.py` |
 | C4 | `_f` 对 NaN/Inf 处理不一：`history.py:66` 用 `math.isfinite`，`adapters.py:77` 用普通 `float()`，JSON `NaN` 可伪装合法值 | web 层 |
 | C5 | `KlineCache` 仅覆盖 K 线，行情/分时无缓存，重复全量拉取 | `cache.py` |
@@ -235,7 +235,7 @@
 ### 第一批 · 正确性封堵（P0，可离线验收）
 
 #### G1 · 覆盖率门禁（对应 A6）
-- **方案**：`pyproject.toml` 加 `[tool.coverage]` + `fail_under`；CI test job 加 `--cov=tstdx --cov-report=term-missing`。**分两阶段**：先设 60% 基线并记录 `integration`/`facade` 缺口，稳定后逐季提至 75%。为 `integration/http_server.py` 的 43 端点补**端点级参数化单测**（注入 fake client），为 MCP 23 工具补工具级用例。
+- **方案**：`pyproject.toml` 加 `[tool.coverage]` + `fail_under`；CI test job 加 `--cov=atst --cov-report=term-missing`。**分两阶段**：先设 60% 基线并记录 `integration`/`facade` 缺口，稳定后逐季提至 75%。为 `integration/http_server.py` 的 43 端点补**端点级参数化单测**（注入 fake client），为 MCP 23 工具补工具级用例。
 - **验收**：`pytest --cov-fail-under=60` 通过；新增端点测试使 `integration/` 覆盖率从当前单文件级升至 ≥70%；故意删一个端点 → CI 红。
 
 #### G2 · 网络测试隔离（对应 A7）
@@ -274,7 +274,7 @@
 
 #### B3 · 命令号单一事实源
 - **方案**：client.py 中约 20 处字面量命令号改为 `commands.COMMANDS` 的枚举常量引用（如 `CMD.security_bars()`），让账本成为唯一来源。
-- **验收**：`grep -c "0x05" tstdx/client.py` 显著下降；改 spec 中某命令号 → 实现编译期/测试期即报错。
+- **验收**：`grep -c "0x05" atst/client.py` 显著下降；改 spec 中某命令号 → 实现编译期/测试期即报错。
 
 #### B4 · 熔断状态机
 - **方案**：在 `ConnectionPool` 引入基于**连续失败率 + 连续失败次数**的熔断状态（`HEALTHY → DEGRADED → OPEN → HALF_OPEN`），`OPEN` 期间该 host 直接跳过（不走 3s 超时），`HALF_OPEN` 用单次探测恢复。`biz_failures` 纳入判定。
@@ -290,7 +290,7 @@
 
 #### B7 · Web 辅助函数上提
 - **方案**：`_f`/`_i` 及近似工具上提到 `web/base.py`（统一 NaN/Inf 处理为 `math.isfinite` 校验，对齐 C4），12 个文件删除本地副本改为导入。
-- **验收**：`grep -rn "^def _f" tstdx/web/` 仅剩 `base.py` 1 处；JSON `NaN` 输入不再伪装合法值。
+- **验收**：`grep -rn "^def _f" atst/web/` 仅剩 `base.py` 1 处；JSON `NaN` 输入不再伪装合法值。
 
 #### B8 · 缩放口径单一化
 - **方案**：以 `normalize.py` 为唯一缩放事实源，`SourceSpec.scales` 仅声明元数据（供文档与校验），解析层内联缩放逐步迁移到 `VolumeNormalizer`。
@@ -305,7 +305,7 @@
 - **验收**：要么有实际调用方与测试，要么有 ADR + deprecation 标记（不留「死能力」）。
 
 #### B11 · Docker 多阶段
-- **方案**：构建阶段装 dev 依赖跑测试，运行镜像仅含 `tstdx/` + 运行 extras，剔除 `tests/`、`PROTOCOL_SPEC/`、`docs/`。
+- **方案**：构建阶段装 dev 依赖跑测试，运行镜像仅含 `atst/` + 运行 extras，剔除 `tests/`、`PROTOCOL_SPEC/`、`docs/`。
 - **验收**：镜像体积显著下降；`docker run` 内 `ls tests/` 不存在。
 
 #### B12 · manylinux wheels
@@ -321,7 +321,7 @@
 | 项 | 方案 | 验收 |
 |---|---|---|
 | C1 | 统一端点数表述为 43，CLI docstring 与 `http_server.py` 对齐（或直接改为「动态统计」） | `grep 端点` 无矛盾数字 |
-| C2 | `tstdx/i18n` 更名 `charset`（或补齐真正 l10n）；若更名需同步导出与文档 | 包名与内容语义一致 |
+| C2 | `atst/i18n` 更名 `charset`（或补齐真正 l10n）；若更名需同步导出与文档 | 包名与内容语义一致 |
 | C3 | `native.py` 按 deprecation 计划删除或降为 1 页说明；Rust 包独立发布 | 主包无废代码 |
 | C4 | 随 B7 一并统一 NaN 处理 | JSON `NaN` 被拒绝 |
 | C5 | 缓存层扩展：`QuoteCache` / `MinuteCache`（带 TTL），或明确文档说明缓存仅覆盖 K 线 | 缓存覆盖面与文档一致 |
@@ -352,7 +352,7 @@
 
 | 不做 | 理由 |
 |---|---|
-| 不引入 pyo3/cython 到主包 | 现有 Rust `tstdx_native` 独立发布 + parity 对拍已是更干净的解耦；主包零硬依赖是分发优势 |
+| 不引入 pyo3/cython 到主包 | 现有 Rust `atst_native` 独立发布 + parity 对拍已是更干净的解耦；主包零硬依赖是分发优势 |
 | 不实现真实实盘交易 | `trade/` 红线明确（`SocketTransport` 抛 `TradingUnavailable`），实盘涉及合规与资金风险，与行情库定位分离 |
 | 不把 codegen 产物自动应用 | 当前「草稿 + 人工合入」保留了审核点，自动应用会让协议变更失去人工校验 |
 | 不重写 golden 体系 | 530 组真实样本是三旗标门禁的基础，按时间戳组织虽膨胀但**真实性优先**；改为「按命令号索引」需重写门禁 |
@@ -371,8 +371,8 @@
 
 | 指标 | 数值 | 来源 |
 |---|---|---|
-| 顶层模块数 | 25 | `ls tstdx/` |
-| `tstdx/` 内 `.py` | 116 | `find tstdx -name "*.py"` |
+| 顶层模块数 | 25 | `ls atst/` |
+| `atst/` 内 `.py` | 116 | `find atst -name "*.py"` |
 | `client.py` 行数 | 1823 | `wc -l` |
 | `web/` 行数 | 10516（22 文件） | 审计统计 |
 | 协议族 / 命令 / 解析器 | 5 族 / 85 命令 / ~80 解析器 | `commands.py` / `registry.py` |

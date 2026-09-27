@@ -7,12 +7,12 @@ from typing import Any
 
 import pytest
 
-from tstdx.codec.framing import ResponseFrame
-from tstdx.errors import ConfigError, FramingError
-from tstdx.transport.async_ import AsyncConnectionPool
-from tstdx.transport.hosts import HostEntry
+from atst.codec.framing import ResponseFrame
+from atst.errors import ConfigError, FramingError
+from atst.transport.async_ import AsyncConnectionPool
+from atst.transport.hosts import HostEntry
 
-async_module = importlib.import_module("tstdx.transport.async_")
+async_module = importlib.import_module("atst.transport.async_")
 
 
 def _frame(payload: bytes, method: int = 0x0530) -> ResponseFrame:

@@ -14,13 +14,13 @@ import warnings
 
 import pytest
 
-from tstdx.domain.adjust import (
+from atst.domain.adjust import (
     AdjustEngine,
     AdjustError,
     compute_factors,
     to_adjusted,
 )
-from tstdx.domain.models import Bar, CapitalChange
+from atst.domain.models import Bar, CapitalChange
 
 pytestmark = pytest.mark.unit
 
@@ -47,7 +47,7 @@ class TestMissingPrevCloseWarning:
     """缺 prev_close：忽略现金红利 + 一次性告警。"""
 
     def test_warns_once_per_module(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import tstdx.domain.adjust as adj
+        import atst.domain.adjust as adj
 
         monkeypatch.setattr(adj, "_warned_missing_prev_close", False)
         bars = [_bar("2026-06-02", volume=100)]
@@ -61,7 +61,7 @@ class TestMissingPrevCloseWarning:
         assert [w for w in caught if "现金红利" in str(w.message)] == []
 
     def test_volume_factor_ignores_dividend(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import tstdx.domain.adjust as adj
+        import atst.domain.adjust as adj
 
         monkeypatch.setattr(adj, "_warned_missing_prev_close", True)  # 静音告警
         bars = [_bar("2026-06-02")]
@@ -75,7 +75,7 @@ class TestExtraNoneDefense:
     """bar.extra 为 None 时不再 AttributeError。"""
 
     def test_extra_none_bar(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import tstdx.domain.adjust as adj
+        import atst.domain.adjust as adj
 
         monkeypatch.setattr(adj, "_warned_missing_prev_close", True)
 
@@ -109,7 +109,7 @@ class TestDenomNonPositiveRaises:
             compute_factors(bars, events)
 
     def test_volume_chain_raises_consistently(self) -> None:
-        import tstdx.domain.adjust as adj
+        import atst.domain.adjust as adj
 
         ev = _ev("2026-06-01", bonus_ratio=-10.0)
         with pytest.raises(AdjustError, match="成交量因子分母非正"):

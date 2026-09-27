@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """P2 数据源离线测试（行业指数 / 概念指数 / 宏观经济 / 可转债）——25 个测试。
@@ -13,8 +13,8 @@ from typing import Any
 
 import pytest
 
-from tstdx.web.base import HttpResponse
-from tstdx.web.corporate import EastmoneyDataCenterSource
+from atst.web.base import HttpResponse
+from atst.web.corporate import EastmoneyDataCenterSource
 
 
 # --------------------------------------------------------------------------- #
@@ -450,7 +450,7 @@ class TestP2FacadeIntegration:
 
     @pytest.fixture()
     def session(self) -> Any:
-        from tstdx.web.session import WebQuoteSession
+        from atst.web.session import WebQuoteSession
 
         return WebQuoteSession("eastmoney")
 

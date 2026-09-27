@@ -1,7 +1,7 @@
 """F-84：Web 源登记表必须逐格等于运行期 ``KNOWN_SOURCES``，因为它是那张登记表的唯一读者。
 
 第 26 轮第 1 遍把"声明了却没人行动"这条尺子（G39 家族）从协议面泛化到文档面时，量到的最大一块
-缺口不在代码里，而在文档里：``tstdx.web.sources.KNOWN_SOURCES`` 登记了 31 个 HTTP 适配器，
+缺口不在代码里，而在文档里：``atst.web.sources.KNOWN_SOURCES`` 登记了 31 个 HTTP 适配器，
 每个 ``SourceSpec`` 写着 ``summary`` / ``capabilities`` / ``notes``，而**全仓没有一个读者读这三格**
 （普查读数见 ``scratch_v18b26/probe26/census26a_afterfix.log``，``SourceSpec`` 一行把三者列为
 NO-READ）。更直接的用户侧后果是 ``docs/configuration.md`` 那两行——
@@ -24,14 +24,14 @@ import re
 import pytest
 
 from tests.support.field_readers import REPO_ROOT
-from tstdx.web.sources import KNOWN_SOURCES
+from atst.web.sources import KNOWN_SOURCES
 
 pytestmark = pytest.mark.unit
 
 DOC = REPO_ROOT / "docs" / "api" / "interfaces.md"
 
 HEADING = re.compile(
-    r"^### Web 源登记（`tstdx\.web\.sources\.KNOWN_SOURCES`，(?P<count>\d+) 个）$", re.M
+    r"^### Web 源登记（`atst\.web\.sources\.KNOWN_SOURCES`，(?P<count>\d+) 个）$", re.M
 )
 TABLE_HEADER = "| 源名 | 摘要 | 能力 | 接口告诫（`SourceSpec.notes`） |"
 
@@ -187,7 +187,7 @@ def test_no_registered_text_can_break_the_table_shape() -> None:
 def test_every_source_name_the_config_docs_accept_is_registered() -> None:
     """``docs/configuration.md`` 用 ``KNOWN_SOURCES`` 约束 ``enabled_sources`` / ``rate_limit``：
     那份约束的默认值必须真在这张表里，否则文档给的示例配置会被运行期拒绝。"""
-    from tstdx.config.loader import DEFAULT_CONFIG
+    from atst.config.loader import DEFAULT_CONFIG
 
     defaults = list(DEFAULT_CONFIG.web.enabled_sources)
     assert set(defaults) <= set(KNOWN_SOURCES), f"缺省源顺序点了未登记的名字：{defaults}"

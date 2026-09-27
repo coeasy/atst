@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """登录口令混淆测试（P2-1）。
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.trade.security import (
+from atst.trade.security import (
     OBFUSCATION_KEY,
     deobfuscate_password,
     obfuscate_password,

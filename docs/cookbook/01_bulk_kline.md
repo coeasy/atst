@@ -37,9 +37,9 @@ def symbols_from_vipdoc(market: str = "sh") -> list[str]:
 import time
 from pathlib import Path
 
-from tstdx.client import TdxClient
-from tstdx.errors import TdxError, advice_for
-from tstdx.output import write
+from atst.client import TdxClient
+from atst.errors import TdxError, advice_for
+from atst.output import write
 
 OUT = Path("data/kline/day")
 OUT.mkdir(parents=True, exist_ok=True)

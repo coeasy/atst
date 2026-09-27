@@ -4,43 +4,43 @@
 repos:
   - repo: local
     hooks:
-      - id: tstdx-ruff-check
-        name: tstdx ruff check
-        entry: python -m ruff check tstdx/ tests/ scripts/
+      - id: atst-ruff-check
+        name: atst ruff check
+        entry: python -m ruff check atst/ tests/ scripts/
         language: system
         pass_filenames: false
         types: [python]
 
-      - id: tstdx-ruff-format
-        name: tstdx ruff format check
-        entry: python -m ruff format --check tstdx/ tests/ scripts/
+      - id: atst-ruff-format
+        name: atst ruff format check
+        entry: python -m ruff format --check atst/ tests/ scripts/
         language: system
         pass_filenames: false
         types: [python]
 
-      - id: tstdx-mypy
-        name: tstdx mypy contract
-        entry: python -m mypy tstdx/ --ignore-missing-imports --no-error-summary --warn-unused-ignores
+      - id: atst-mypy
+        name: atst mypy contract
+        entry: python -m mypy atst/ --ignore-missing-imports --no-error-summary --warn-unused-ignores
         language: system
         pass_filenames: false
         types: [python]
 
-      - id: tstdx-originality
-        name: tstdx originality gate
-        entry: python -m tstdx.tools.check_originality --strict tstdx/
+      - id: atst-originality
+        name: atst originality gate
+        entry: python -m atst.tools.check_originality --strict atst/
         language: system
         pass_filenames: false
         types: [python]
 
-      - id: tstdx-spec-audit
-        name: tstdx strict spec-to-implementation audit
-        entry: python -m tstdx.tools.spec_audit --json --strict
+      - id: atst-spec-audit
+        name: atst strict spec-to-implementation audit
+        entry: python -m atst.tools.spec_audit --json --strict
         language: system
         pass_filenames: false
-        files: ^(tstdx/protocol|PROTOCOL_SPEC)/
+        files: ^(atst/protocol|PROTOCOL_SPEC)/
 
-      - id: tstdx-doc-links
-        name: tstdx repository-bounded docs links
+      - id: atst-doc-links
+        name: atst repository-bounded docs links
         entry: python scripts/check_docs_links.py
         language: system
         pass_filenames: false

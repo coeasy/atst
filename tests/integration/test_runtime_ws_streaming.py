@@ -22,8 +22,8 @@ from typing import Any
 import pytest
 from websockets.asyncio.client import connect
 
-import tstdx.integration.runtime_ws as ws_module
-from tstdx.integration.runtime_ws_server import RuntimeWsConfig, serve_runtime_ws
+import atst.integration.runtime_ws as ws_module
+from atst.integration.runtime_ws_server import RuntimeWsConfig, serve_runtime_ws
 
 BOUND = 5.0
 

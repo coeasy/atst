@@ -1,10 +1,10 @@
-# tstdx
+# atst
 
 > **TongDaXin Standard Data eXchange** — 通达信行情数据通用协议基础设施
 >
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
-- 当前 Draft 开发版本：`1.1.0`
+- 当前 Draft 开发版本：`1.0.0`
 - 最新已发布稳定版：`v1.0.0`（2026-09-09 发布） · [发布说明](docs/releases/v1.0.0.md) · [v1.1.0 版本说明](docs/releases/v1.1.0.md) · [CHANGELOG](CHANGELOG.md)
 
 ---
@@ -13,11 +13,11 @@
 
 ### 是什么
 
-tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。它完整覆盖 TDX 的 5 套协议族，提供从原始二进制帧解析到统一查询内核（`Client`）的全链路数据接入能力。
+atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。它完整覆盖 TDX 的 5 套协议族，提供从原始二进制帧解析到统一查询内核（`Client`）的全链路数据接入能力。
 
 ### 解决什么问题
 
-| 痛点 | tstdx 的解法 |
+| 痛点 | atst 的解法 |
 |---|---|
 | TDX 协议封闭、逆向工程门槛高 | 85 命令账本 + 61 精确解析器 + 三级分派 + YAML 协议规范 |
 | 单一数据源不可靠 | 11 个 Provider 注册表 + 172 capability 声明；**provider-first**：一次请求绑定一个 Provider，跨源只在显式 `FallbackPolicy` 下发生 |
@@ -87,7 +87,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | **5 套协议族** | 7709 标准 / 7727 扩展市场 / MAC 专属 / F10 资料 / 商品语义 |
 | **85 命令账本 · 61 精确解析器** | L1 精确 → L2 通用启发 → L3 原始透传 三级分派；解析器逃逸原生异常统一收口为 `ParseError` |
 | **YAML 协议规范** | `PROTOCOL_SPEC/` 规范驱动 + `codegen` 自动生成 + `spec_audit` 双向漂移检查 |
-| **协议探测** | `tstdx probe 0x052D` 探测未知命令的二进制帧结构 |
+| **协议探测** | `atst probe 0x052D` 探测未知命令的二进制帧结构 |
 
 ### 客户端层
 
@@ -110,13 +110,13 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 
 | 特性 | 说明 |
 |---|---|
-| **数据出口（`tstdx/output/`）** | `write()` 认 4 种格式：DataFrame / Parquet / CSV / DuckDB；`Sink` 3 种格式（不含 CSV，CSV 只走 `write()` 或 `to_csv()`），全部原子写 |
+| **数据出口（`atst/output/`）** | `write()` 认 4 种格式：DataFrame / Parquet / CSV / DuckDB；`Sink` 3 种格式（不含 CSV，CSV 只走 `write()` 或 `to_csv()`），全部原子写 |
 | **统一业务入口** | `Client` / `AsyncClient`（15 便捷方法 + `execute`/`typed`/`call` 通用面），永不隐式换源、永不缓存 |
 | **HTTP REST 网关** | 10 端点（capability 白名单 + TaskStore 钳制），只翻译为 `Client` 调用 |
 | **WebSocket JSON-RPC** | 长连接实时推送 |
 | **MCP 工具服务** | 9 工具，AI Agent 可直接调用 |
 
-### 单一执行内核（`tstdx/runtime/`）
+### 单一执行内核（`atst/runtime/`）
 
 | 特性 | 说明 |
 |---|---|
@@ -135,7 +135,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | 特性 | 说明 |
 |---|---|
 | **零硬依赖** | 所有第三方库均为可选 extra |
-| **错误分类树** | 九域 code 段（E1–E9）+ 每个异常自带 `RetryAdvice`；类清单以 `tstdx.errors` 现读为准，文档不抄录会过期的数字（`docs/errors.md`） |
+| **错误分类树** | 九域 code 段（E1–E9）+ 每个异常自带 `RetryAdvice`；类清单以 `atst.errors` 现读为准，文档不抄录会过期的数字（`docs/errors.md`） |
 | **可观测性** | zero-dep 指标注册表 + Prometheus/StatsD/OTLP 三导出器 |
 | **传输与错误卫生** | TDX 连接可按 `security.use_tls` 走 TLS（默认关，`ssl.create_default_context()` 校验主机名）；错误上下文按关键字脱敏后才可外发。凭据存储**不在本库范围内**（ADR-007-010 已删除三级 CredentialStore）；HTTP 传输层同样**不做** Provider 主机白名单——那条守卫从未接入任何生产链路，已按 F-18 裁决 (b) 删除（`docs/REFACTOR_PLAN_V17_CLOSURE.md`），单源边界由调用方自证，内核侧的跨源约束只有一条：选定的 Provider 不会被悄悄换成别家 |
 | **原创合规** | 洁净室工程规范：规格驱动 + License 隔离 + AST 相似度审计 + Golden 数据自采集 |
@@ -158,7 +158,7 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 
 ## 功能对比
 
-| 能力 | tstdx | mootdx | easy_tdx | easyquotation |
+| 能力 | atst | mootdx | easy_tdx | easyquotation |
 |---|---|---|---|---|
 | TDX 协议覆盖 | 85 命令 / 61 精确解析器 / 5 协议族 | ~20 命令 | ~15 命令 | ❌（HTTP only） |
 | 三级分派 | L1 精确 → L2 启发 → L3 透传 | 仅 L1 | 仅 L1 | ❌ |
@@ -179,18 +179,18 @@ tstdx 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 ## 安装
 
 ```bash
-pip install "tstdx[all]"             # ← 尚不可用：本包目前不在 PyPI 上（见下）
+pip install "atst[all]"             # ← 尚不可用：本包目前不在 PyPI 上（见下）
 pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-asyncio/hatchling）
 ```
 
-> **装包的实际口径**（G9，2026-09-22 实测）：`https://pypi.org/pypi/tstdx/json` 返回
-> `{"message": "Not Found"}`——PyPI 上没有 `tstdx` 这个名字，所以 `pip install tstdx`
+> **装包的实际口径**（G9，2026-09-22 实测）：`https://pypi.org/pypi/atst/json` 返回
+> `{"message": "Not Found"}`——PyPI 上没有 `atst` 这个名字，所以 `pip install atst`
 > 与上面第一行的 extras 安装今天都装不到东西。可用的安装路径只有两条：
 >
 > ```bash
-> git clone https://github.com/coeasy/tstdx.git && cd tstdx
+> git clone https://github.com/coeasy/atst.git && cd atst
 > pip install ".[all]"                       # 从源码
-> pip install "tstdx[all] @ file:///绝对路径/tstdx-<版本>-py3-none-any.whl"   # 从构建产物
+> pip install "atst[all] @ file:///绝对路径/atst-<版本>-py3-none-any.whl"   # 从构建产物
 > python -m build                            # 产物在 dist/；make build 走同一套 canonical 校验
 > ```
 >
@@ -216,8 +216,8 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 | `dev`       | pytest/pytest-cov/pytest-asyncio/ruff/mypy/hatchling | 开发体验 |
 | `all`       | 以上非 dev 项的并集        | 完整功能           |
 
-> **MCP 工具服务不需要 extra**（第 23 轮实测）：`tstdx/integration/mcp/` 是纯标准库的
-> JSON-RPC over stdio，全仓对 `pydantic` / `mcp` 两个包的读取次数为 **0**（`tstdx/`、
+> **MCP 工具服务不需要 extra**（第 23 轮实测）：`atst/integration/mcp/` 是纯标准库的
+> JSON-RPC over stdio，全仓对 `pydantic` / `mcp` 两个包的读取次数为 **0**（`atst/`、
 > `tests/`、`scripts/` 三处一起 grep 只有 `DESIGN.md` 里的一段示例代码）。过去那两行
 > `config = pydantic` / `mcp = mcp` 是没人按它行动的声明，已随 `pyproject.toml` 一并删除。
 
@@ -231,7 +231,7 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 | **操作系统** | Windows 10/11 · macOS 12+ · Linux（主流发行版） |
 | **CI 矩阵** | Ubuntu 3.10/3.11/3.12/3.13 + Windows 3.11/3.12 |
 | **网络** | TCP 7709/7727（TDX 主站）+ HTTPS（Web 源） |
-| **存储** | 文件系统（`~/.tstdx/` 配置/主站排名/反馈）+ Parquet/DuckDB |
+| **存储** | 文件系统（`~/.atst/` 配置/主站排名/反馈）+ Parquet/DuckDB |
 
 ---
 
@@ -240,7 +240,7 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 ### 协议层直连（`TdxClient`，可脱离内核使用）
 
 ```python
-from tstdx.client import TdxClient
+from atst.client import TdxClient
 
 client = TdxClient()
 
@@ -253,7 +253,7 @@ count = client.security_count(market=1)  # 1=上海, 0=深圳
 
 ```python
 import asyncio
-from tstdx.client import AsyncTdxClient
+from atst.client import AsyncTdxClient
 
 
 async def main():
@@ -271,8 +271,8 @@ asyncio.run(main())
 ### 统一查询内核（`Client`，172 项 capability）
 
 ```python
-from tstdx import Client, FallbackPolicy, QuerySpec
-from tstdx.typed_query import FundHoldingsQuery
+from atst import Client, FallbackPolicy, QuerySpec
+from atst.typed_query import FundHoldingsQuery
 
 client = Client()
 
@@ -303,7 +303,7 @@ client.close()
 
 ```python
 import asyncio
-from tstdx import AsyncClient
+from atst import AsyncClient
 
 
 async def main():
@@ -318,24 +318,24 @@ async def main():
 asyncio.run(main())
 ```
 
-> `TdxClient` / `AsyncTdxClient`（`tstdx.client`）是协议层客户端，可脱离内核单独使用；
+> `TdxClient` / `AsyncTdxClient`（`atst.client`）是协议层客户端，可脱离内核单独使用；
 > 服务面（CLI/HTTP/WS/MCP）全部只翻译为 `Client` 调用，不自行选源、不缓存。
 
 ### CLI（31 子命令）
 
 ```bash
-tstdx bars sh600519 --period day --count 80     # K 线
-tstdx quotes sh600519 sz000001                  # 实时行情
-tstdx server-test                               # 主站测速
-tstdx serve --bind 0.0.0.0 --port 8000           # HTTP 服务
-tstdx probe 0x052D                              # 协议探测
-tstdx feedback stats                            # 使用统计
+atst bars sh600519 --period day --count 80     # K 线
+atst quotes sh600519 sz000001                  # 实时行情
+atst server-test                               # 主站测速
+atst serve --bind 0.0.0.0 --port 8000           # HTTP 服务
+atst probe 0x052D                              # 协议探测
+atst feedback stats                            # 使用统计
 
 # 主站池巡检
-tstdx hosts audit --family quotation            # 仅 7709 标准族
-tstdx hosts audit                               # 全 5 族并发巡检
-tstdx hosts --hosts-file extra_hosts.json audit  # 注入社区贡献主站候选
-tstdx hosts audit --report /tmp/audit.json --markdown /tmp/audit.md
+atst hosts audit --family quotation            # 仅 7709 标准族
+atst hosts audit                               # 全 5 族并发巡检
+atst hosts --hosts-file extra_hosts.json audit  # 注入社区贡献主站候选
+atst hosts audit --report /tmp/audit.json --markdown /tmp/audit.md
 ```
 
 ---
@@ -343,7 +343,7 @@ tstdx hosts audit --report /tmp/audit.json --markdown /tmp/audit.md
 ## 核心代码文件地图
 
 ```
-tstdx/
+atst/
 ├── client/         # api.py —— Client / AsyncClient 唯一业务入口（15 便捷方法 + execute/typed/call）
 │                   # core/sync/async_/factory —— TdxClient 传输层与共享纯协议 SSOT
 ├── runtime/        # 唯一执行内核：kernel(零缓存)/executor(251 绑定)/orchestration(显式跨源)
@@ -378,7 +378,7 @@ tstdx/
 ├── feedback/       # 错误/用量上报 + 遥测 + 使用统计
 ├── tools/          # capture/spec_audit/codegen/golden_audit/golden_expand/check_originality
 ├── trade/          # 交易协议模拟器（实验性可选模块：SimTransport 纯内存模拟，不接入内核）
-├── __main__.py     # python -m tstdx 入口（与 tstdx 控制台脚本等价）
+├── __main__.py     # python -m atst 入口（与 atst 控制台脚本等价）
 └── cli/            # CLI 入口（31 子命令；数据命令全部经 Client，6 个传输/诊断命令除外，见 runtime_commands.py）
 ```
 
@@ -400,8 +400,8 @@ QuerySpec(capability, provider=None|显式)
 - 需要跨源时由调用方显式声明顺序：`client.quotes(symbols, policy=FallbackPolicy(providers=("tdx","tencent")))`
   → `ProviderOrchestrator` 按序尝试，返回 `OrchestratedResult`（逐步记录成败与最终来源）。
 - 时效性：`currentness`（`CurrentnessMode`）声明口径，`deadline_ms` 只是执行预算；
-  `options` 袋里只有 `tstdx.query.EXECUTED_OPTIONS` 列出的键会被执行面读取，其余键——包括
-  `tstdx.query.REJECTED_OPTIONS` 里的策略键（过期容忍、部分放行）——一律当场拒绝：
+  `options` 袋里只有 `atst.query.EXECUTED_OPTIONS` 列出的键会被执行面读取，其余键——包括
+  `atst.query.REJECTED_OPTIONS` 里的策略键（过期容忍、部分放行）——一律当场拒绝：
   每次请求都回源，不存在可容忍的过期副本，partial 也始终是结果事实。
 
 ---
@@ -409,11 +409,11 @@ QuerySpec(capability, provider=None|显式)
 ## 主站池治理与巡检
 
 主站池由 `DEFAULT_HOST_POOL` / `POOL_BY_FAMILY` 定义，运行时通过 `RankingStore`
-（`~/.tstdx/server_ranking.json`）落盘延迟样本并驱动三级路由降级。巡检工具：
+（`~/.atst/server_ranking.json`）落盘延迟样本并驱动三级路由降级。巡检工具：
 
 ```bash
 # 通过 CLI（推荐）
-tstdx hosts audit --family quotation --timeout 3 --workers 20 --samples 3
+atst hosts audit --family quotation --timeout 3 --workers 20 --samples 3
 
 # 或调用脚本（支持 --report / --markdown / --strict / --no-save-ranking）
 python scripts/audit_hosts.py --family all --report audit.json
@@ -429,11 +429,11 @@ cat > extra_hosts.json <<'JSON'
   ]
 }
 JSON
-tstdx hosts --hosts-file extra_hosts.json audit
+atst hosts --hosts-file extra_hosts.json audit
 ```
 
 输出：每族 healthy/degraded/offline 三态 + JSON/Markdown 报告；候选延迟样本写
-`~/.tstdx/server_ranking.json`（可 `--no-save-ranking` 关闭）。CI 中已配置
+`~/.atst/server_ranking.json`（可 `--no-save-ranking` 关闭）。CI 中已配置
 周三 09:00 UTC 定期巡检（`host-audit` job，非硬门禁）。
 
 ---
@@ -443,11 +443,11 @@ tstdx hosts --hosts-file extra_hosts.json audit
 ```bash
 pytest tests/                                   # 全量测试（离线，无网络）
 make gates                                      # 11 步确定性门禁：lint+format→mypy→全量→bridges→golden→spec→对抗→可达性→originality→benchmark→docs
-python -m tstdx.tools.golden_audit --gate       # Golden L1 真实样本门禁（530 payload）
+python -m atst.tools.golden_audit --gate       # Golden L1 真实样本门禁（530 payload）
 python -m pytest tests/adversarial -q           # 对抗矩阵（9 payload × 85 命令，逃逸=0）
 python scripts/audit_reachability.py --strict   # 可达性门禁（孤儿=0）
 python scripts/contract_audit.py --ci           # Typed 契约↔注册表↔Domain Record 五段对账 + 内核编译审计（注册能力缺声明形状即 ERROR 阻断；Domain Record 待映射项按 PENDING 报告）
-python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproject fail_under=77）
+python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproject fail_under=77）
 ```
 
 - CI：11 jobs；测试矩阵 Ubuntu 3.10–3.13 加 Windows 3.11/3.12；周三 09:00 UTC 定期 `host-audit`
@@ -455,7 +455,7 @@ python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproj
   已删层不可复活）+ `tests/provider_isolation/`（Provider 隔离与溯源）
 - Ruff：`ruff check` 与 `ruff format --check` 均 0 错（待重排文件已在 V17 Phase 5 第 2 步
   以一次纯格式提交清零，dev 依赖钉版 `ruff==0.15.2`）
-- mypy：`mypy tstdx/` 0 错（含 `--warn-unused-ignores`；V17 Phase 5 从 47 项清零）
+- mypy：`mypy atst/` 0 错（含 `--warn-unused-ignores`；V17 Phase 5 从 47 项清零）
 - Pre-commit hooks：`ruff check --fix` + `ruff format --check`
 
 ---
@@ -483,7 +483,7 @@ python -m pytest --cov=tstdx           # 覆盖率门禁（阈值单源：pyproj
 | **发布硬化** | 已做：mypy 既有告警清零、覆盖率基线按有效代码重校（本机 80.84%，阈值 77 未下调）、wheel 安装冒烟 `SMOKE_RC=0`（第 16 步）、预发布 tag `v1.1.0-dev.1` 已推送、**`v1.1.0` tag 已在提交树 `ef3b97e` 上打好并推送**（该树的十项门禁 + 离线全量 + canonical 构建各复测过一遍，读数见 `docs/releases/v1.1.0.md`）。未做：按 CI（ubuntu+py3.11）数字重钉 `fail_under`；把 `v1.1.0` 从一个 tag 变成真正可安装的发布（PyPI/GitHub Release 只能人工点，且本包至今不在 PyPI 上——见「安装」一节 G9） |
 | **Live Smoke** | 已做：七格真实网络/服务面冒烟逐格执行（tdx/web 直连、K 线、stream、CLI/HTTP/MCP 各一发）＝6 PASS / 1 FAIL（第 16 步，那次落在周六休市）。**工作日盘中复跑**已在 V18 第 13 轮做掉（北京时间 10:42–11:18 逐格真取）。**7709 核心链的 live 判据已进流水线**（V18 第 14 轮，G4）：`tests/live/test_tdx_core_chain.py` 那五格由 live-smoke 的盘中调度（工作日 02:30 UTC = 北京 10:30）执行，主链接不上时它红而不是 skip。已定：F-37 按裁决 (c) 落地——`0x000F`/`0x0010` 的能力口径已下调为「条数可用、字段语义不保证」，本发布不声称 7709 历史族字段级 live 正确；那次口径降级在 V18 第 9 轮补齐了**账本那半边**（`0x000F` 的 `tier=L1, verified=True` 实为 `register_parser` 的缺省值，已撤回，改由 `tests/unit/test_golden.py` 的「实采样本重放后字段值必须落在域内」判据把守），第 14 轮又把这条判断搬到了 wire 上（G7：值落在库自己声明的域外时发 `field_out_of_domain` 告警）。仍未做：那两条命令的字段布局判据（不猜协议字节，要真机 golden） |
 | **Streaming 增量执行** | 流式数据增量合并 + 补数完整性保证 |
-| **可达性收口** | 孤儿=0，且每条豁免记录都被门禁盯着：指向不存在模块的死记录、已接线却未撤销的过期记录、理由过短、重复条目都会让 `--strict` 失败。豁免清单里已无待裁决项：曾挂在该清单上的 `tstdx/providers/http.py`（Provider 绑定的 HTTP 主机白名单守卫）已按 F-18 裁决 (b) 物理删除——v16 删除跨源路由层后它没有任何生产调用点，一件没人接的防线不等于一条防线 |
+| **可达性收口** | 孤儿=0，且每条豁免记录都被门禁盯着：指向不存在模块的死记录、已接线却未撤销的过期记录、理由过短、重复条目都会让 `--strict` 失败。豁免清单里已无待裁决项：曾挂在该清单上的 `atst/providers/http.py`（Provider 绑定的 HTTP 主机白名单守卫）已按 F-18 裁决 (b) 物理删除——v16 删除跨源路由层后它没有任何生产调用点，一件没人接的防线不等于一条防线 |
 
 ---
 

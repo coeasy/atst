@@ -9,8 +9,8 @@ from datetime import datetime
 
 import pytest
 
-from tstdx.errors import TdxError
-from tstdx.protocol.prober import Prober
+from atst.errors import TdxError
+from atst.protocol.prober import Prober
 
 # 2026-09-14 is a Monday, 2026-09-19 is a Saturday.
 TRADING_DAY = datetime(2026, 9, 14)

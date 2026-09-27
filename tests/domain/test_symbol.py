@@ -1,4 +1,4 @@
-"""统一符号引擎测试（tstdx.domain.symbol）。
+"""统一符号引擎测试（atst.domain.symbol）。
 
 覆盖全部书写变种、大小写、分隔符、市场推断、歧义处理与非法输入。
 """
@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.domain.symbol import (
+from atst.domain.symbol import (
     Market,
     normalize_symbol,
     parse_symbol,
@@ -16,7 +16,7 @@ from tstdx.domain.symbol import (
     to_suffix_dot,
     to_tdx_market,
 )
-from tstdx.errors import SymbolError
+from atst.errors import SymbolError
 
 
 class TestVariants:
@@ -75,7 +75,7 @@ class TestUsMarket:
         assert s.canonical == "usBRK.B"
 
     def test_us_via_tencent_helper(self):
-        from tstdx.web.base import to_tencent_symbol
+        from atst.web.base import to_tencent_symbol
 
         assert to_tencent_symbol("usAAPL") == "usAAPL"
         assert to_tencent_symbol("hk00700") == "hk00700"

@@ -6,11 +6,11 @@ from typing import Any
 
 import pytest
 
-from tstdx.errors import ConfigError
-from tstdx.protocol.commands import Family
-from tstdx.transport.async_ import AsyncConnectionPool
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.pool import ConnectionPool
+from atst.errors import ConfigError
+from atst.protocol.commands import Family
+from atst.transport.async_ import AsyncConnectionPool
+from atst.transport.hosts import HostEntry
+from atst.transport.pool import ConnectionPool
 
 
 def _host(family: str) -> HostEntry:
@@ -141,8 +141,8 @@ def test_sync_async_constructor_signatures_and_wiring_are_canonical() -> None:
     assert "family" in sync.parameters
     assert "hosts" in async_.parameters
     assert "family" in async_.parameters
-    assert ConnectionPool.__init__.__module__ == "tstdx.transport.pool"
-    assert AsyncConnectionPool.__init__.__module__ == "tstdx.transport.async_"
+    assert ConnectionPool.__init__.__module__ == "atst.transport.pool"
+    assert AsyncConnectionPool.__init__.__module__ == "atst.transport.async_"
 
 
 def test_valid_same_family_pool_still_constructs() -> None:

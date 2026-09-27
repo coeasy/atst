@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.client import TdxClient
-from tstdx.domain.symbol import normalize_symbol, parse_symbol, to_tdx_market
-from tstdx.errors import SymbolError
+from atst.client import TdxClient
+from atst.domain.symbol import normalize_symbol, parse_symbol, to_tdx_market
+from atst.errors import SymbolError
 
 
 def test_hk_and_us_remain_valid_canonical_symbols() -> None:

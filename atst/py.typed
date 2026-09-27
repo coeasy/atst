@@ -1,0 +1,4 @@
+# Copyright (c) 2026 atst contributors
+# Licensed under the MIT License
+
+# Marker file for PEP 561: atst ships inline type information.

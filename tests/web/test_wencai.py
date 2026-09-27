@@ -10,10 +10,10 @@ import json
 
 import pytest
 
-from tstdx.errors import WebSourceError
-from tstdx.web.base import HttpResponse, RateLimiter
-from tstdx.web.sources import KNOWN_SOURCES
-from tstdx.web.wencai import WencaiSource
+from atst.errors import WebSourceError
+from atst.web.base import HttpResponse, RateLimiter
+from atst.web.sources import KNOWN_SOURCES
+from atst.web.wencai import WencaiSource
 
 pytestmark = pytest.mark.unit
 
@@ -120,7 +120,7 @@ class TestFetchStrategy:
             _src().fetch_strategy("")
 
     def test_http_403_maps_to_anti_spider(self) -> None:
-        from tstdx.errors import AntiSpiderBlocked
+        from atst.errors import AntiSpiderBlocked
 
         with pytest.raises(AntiSpiderBlocked):
             _src(status=403).fetch_strategy("连板")

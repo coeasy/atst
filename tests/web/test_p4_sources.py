@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """P4 期权行情离线测试（ETF / 股指期权，东财 push2 后端）。
@@ -14,9 +14,9 @@ from typing import Any
 
 import pytest
 
-from tstdx.web.base import HttpResponse
-from tstdx.web.efinance_options import OPTIONS_MARKETS, EastmoneyOptionsSource
-from tstdx.web.session import WebQuoteSession
+from atst.web.base import HttpResponse
+from atst.web.efinance_options import OPTIONS_MARKETS, EastmoneyOptionsSource
+from atst.web.session import WebQuoteSession
 
 pytestmark = [pytest.mark.unit]
 
@@ -318,7 +318,7 @@ class TestOptionsSnapshot:
 
     def test_snapshot_empty_raises(self) -> None:
         """空快照抛出 SourceDeprecated。"""
-        from tstdx.errors import SourceDeprecated
+        from atst.errors import SourceDeprecated
 
         src = EastmoneyOptionsSource(client=FakeHttpClient({"stock/get": _j({"data": {}})}))
         with pytest.raises(SourceDeprecated):
@@ -384,14 +384,14 @@ class TestOptionsMarkets:
 class TestP4FacadeIntegration:
     def test_derivative_mixin_has_options(self) -> None:
         """DerivativeSessionMixin 包含期权方法。"""
-        from tstdx.web._session_efinance import DerivativeSessionMixin
+        from atst.web._session_efinance import DerivativeSessionMixin
 
         for name in ["options_list", "options_snapshot", "options_trends"]:
             assert hasattr(DerivativeSessionMixin, name), f"缺少方法: {name}"
 
     def test_web_session_has_options(self) -> None:
         """WebQuoteSession 继承链包含期权方法。"""
-        from tstdx.web.session import WebQuoteSession
+        from atst.web.session import WebQuoteSession
 
         for name in ["options_list", "options_snapshot", "options_trends"]:
             assert hasattr(WebQuoteSession, name), f"缺少方法: {name}"

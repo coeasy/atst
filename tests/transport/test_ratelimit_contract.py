@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from tstdx.transport.async_ import AsyncConnectionPool
-from tstdx.transport.ratelimit import SessionRateLimiter, SessionState, TokenBucket
+from atst.transport.async_ import AsyncConnectionPool
+from atst.transport.ratelimit import SessionRateLimiter, SessionState, TokenBucket
 
 
 @pytest.mark.parametrize("rate", [0, -1, True, "10", float("nan"), float("inf")])
@@ -165,7 +165,7 @@ def test_set_rates_rejects_unknown_state_without_partial_update() -> None:
 
 
 def test_from_config_does_not_coerce_string_rates_or_truthy_strict() -> None:
-    from tstdx.config.schema import RateLimitConfig
+    from atst.config.schema import RateLimitConfig
 
     with pytest.raises(ValueError, match="rates"):
         SessionRateLimiter.from_config(RateLimitConfig(call_auction="80"))

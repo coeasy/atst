@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """解码原语的离线确定性契约：读写器对称性、变长编码、字符集探测。
@@ -13,7 +13,7 @@ import struct
 
 import pytest
 
-from tstdx.codec.primitive import (
+from atst.codec.primitive import (
     BinaryReader,
     BinaryWriter,
     count_guard,
@@ -28,7 +28,7 @@ from tstdx.codec.primitive import (
     get_datetime_from_lc,
     minutes_to_hhmm,
 )
-from tstdx.errors import ParseError
+from atst.errors import ParseError
 
 pytestmark = pytest.mark.unit
 

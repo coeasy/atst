@@ -4,8 +4,8 @@
 
 1. **合**：坏形状永不静默转换（``"1"`` 不是 1、``True`` 不是 1、``1.0`` 不是 1），越界与
    非法编码当场拒——这份一直是本文件的射程。
-2. **归类**：拒的时候必须是 :class:`~tstdx.errors.ValidationError`（E1010 / HTTP 422 /
-   ``retryable=False``）。第 25 轮之前这些守卫报 :class:`~tstdx.errors.ParseError`，
+2. **归类**：拒的时候必须是 :class:`~atst.errors.ValidationError`（E1010 / HTTP 422 /
+   ``retryable=False``）。第 25 轮之前这些守卫报 :class:`~atst.errors.ParseError`，
    对外因此是 **502** 且带 ``RetryAdvice(retryable=True, switch_host=True)``——调用方把
    ``start`` 写成 70000，服务器回答"上游故障，建议换主机重试"，而换到哪台都会同样失败。
    :func:`_assert_client_side_rejection` 就是为此存在：谁把守卫的异常类换回协议侧，
@@ -18,8 +18,8 @@ from contextlib import contextmanager
 
 import pytest
 
-from tstdx.client import TdxClient
-from tstdx.client.core import (
+from atst.client import TdxClient
+from atst.client.core import (
     _encode_gbk_field,
     _require_bool,
     _require_int,
@@ -27,8 +27,8 @@ from tstdx.client.core import (
     _standard_market_id,
     period_to_category,
 )
-from tstdx.error_envelope import to_error_envelope
-from tstdx.errors import ValidationError
+from atst.error_envelope import to_error_envelope
+from atst.errors import ValidationError
 
 
 def _client_without_io() -> TdxClient:
@@ -64,7 +64,7 @@ def test_standard_market_parser_accepts_only_canonical_names_and_ids() -> None:
     assert [_standard_market_id(value) for value in (0, 1, 2)] == [0, 1, 2]
     #: CLI/HTTP/MCP 把 market 声明成字符串（`--market` 的缺省就是 `"0"`），所以数字写法
     #: 是同一份契约的另一半，不是对脏输入的宽容。2026-09-22 盘中只认前缀时
-    #: `tstdx security-count` 与 `GET /v13/security/count` 都当场被拒。
+    #: `atst security-count` 与 `GET /v13/security/count` 都当场被拒。
     assert [_standard_market_id(value) for value in ("0", "1", "2")] == [0, 1, 2]
 
 

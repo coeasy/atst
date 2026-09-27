@@ -3,7 +3,7 @@
 把 scripts/contract_audit.py 的审计逻辑以 pytest 形态固化，防止
 Typed Query / Registry / Domain Record 三者在后续迭代中漂移。
 
-**判据只有一份实现**：这里不再自己遍历 `tstdx.typed_query` 猜"哪些是具体契约"，而是加载
+**判据只有一份实现**：这里不再自己遍历 `atst.typed_query` 猜"哪些是具体契约"，而是加载
 脚本、复用它的派生口径。同一件事在本文件里曾抄过 4 份，其中 2 份各带一份手抄的"必填参数怎么填"
 名单（`{"index_code": "000300"}` 这类）——契约类一改构造函数，副本会各自静默地少算几个。
 "具体契约"仍按结构判据识别（可构造 + `capability` 为字符串），所以没有任何基类名单：抽象基类
@@ -103,8 +103,8 @@ class TestContractAutomation:
 
     def test_coverage_sources_agree_with_production_tables(self, ca) -> None:
         """派发面确实来自生产表，而不是脚本自己另算了一份。"""
-        from tstdx.catalog.capability import MIGRATED_CAPABILITIES
-        from tstdx.runtime.executor import DIRECT_BINDINGS
+        from atst.catalog.capability import MIGRATED_CAPABILITIES
+        from atst.runtime.executor import DIRECT_BINDINGS
 
         gateway = ca.gateway_capabilities()
         dedicated = {

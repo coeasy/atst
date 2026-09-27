@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """Fail-closed relative-link integrity check for repository documentation.

@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.codec.framing import ResponseFrame
-from tstdx.errors import IntegrityViolation, ParseError
-from tstdx.protocol.generic import infer_record_layout, parse_generic
-from tstdx.protocol.registry import (
+from atst.codec.framing import ResponseFrame
+from atst.errors import IntegrityViolation, ParseError
+from atst.protocol.generic import infer_record_layout, parse_generic
+from atst.protocol.registry import (
     PARSERS,
     TIER_L1,
     TIER_L2,
@@ -249,13 +249,13 @@ class TestProtocolTiers:
 
     def test_protocol_family_standard(self):
         """#14 Family.STANDARD 常量。"""
-        from tstdx.protocol.commands import Family
+        from atst.protocol.commands import Family
 
         assert Family.STANDARD == "quotation"
 
     def test_generic_candidate_spec(self):
         """#15 CandidateSpec 数据结构。"""
-        from tstdx.protocol.generic import CandidateSpec
+        from atst.protocol.generic import CandidateSpec
 
         spec = CandidateSpec(
             has_count_prefix=True,
@@ -291,7 +291,7 @@ class TestProtocolTiers:
         条也声称 L1 且 ``verified=True`` ⇒ 账本的 L1+verified 又要过
         ``tests/unit/test_golden.py`` 的实采样本重放（字段值必须落在 domain 合法域内）。
         """
-        from tstdx.protocol.commands import COMMANDS
+        from atst.protocol.commands import COMMANDS
 
         ledger_l1 = {(fam, cmd) for (fam, cmd), row in COMMANDS.items() if row.tier == TIER_L1}
         parser_l1 = {
@@ -319,12 +319,12 @@ class TestProtocolTiers:
 def test_dispatch_reports_the_parse_metrics():
     """F-118：三层解析指标必须真有人写——改前它们注册即被 ``/metrics`` 渲染，全仓零调用点。
 
-    ``tstdx_protocol_parse_total`` / ``tstdx_protocol_parse_confidence`` 对外声称的是
+    ``atst_protocol_parse_total`` / ``atst_protocol_parse_confidence`` 对外声称的是
     "三级解析分派总次数"与"L1/L2 解析置信度分布"，而请求侧、流侧、错误侧三族指标都有人喂，
     唯独解析这一族是空缺：抓取方看到的永远是空序列。本判据盯的是**刻度**（单例在整个测试
     会话里共享，所以计数器取增量、直方图只看序列是否出现），不是绝对值。
     """
-    from tstdx.observability.metrics import metrics
+    from atst.observability.metrics import metrics
 
     labels = {"tier": TIER_L1, "family": "quotation", "command": "0x044e"}
     before = metrics.parse_total.value(labels=labels)
@@ -333,7 +333,7 @@ def test_dispatch_reports_the_parse_metrics():
     dispatch(_make_frame(0x044E, meta, payload))
     assert metrics.parse_total.value(labels=labels) == before + 1
     assert (
-        'tstdx_protocol_parse_confidence_count{family="quotation",command="0x044e"}'
+        'atst_protocol_parse_confidence_count{family="quotation",command="0x044e"}'
         in metrics.render_prometheus()
     ), "L1 的置信度没进直方图——分位数那侧仍是空读数"
 

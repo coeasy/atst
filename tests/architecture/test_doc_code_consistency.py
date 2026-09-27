@@ -1,17 +1,17 @@
 """文档-代码一致性门禁（V17 Phase 4）。
 
-活文档里的每一条 ``from tstdx... import X``、每一个 ``tstdx.a.b`` 引用、README
+活文档里的每一条 ``from atst... import X``、每一个 ``atst.a.b`` 引用、README
 宣称的每个数字以及项目结构树里的每个 ``name/`` 与 ``name.py`` 条目，都必须与运行期
-事实一致；``tstdx/__init__.py`` 的包 docstring 同样按活文档对待——分层图双向对上磁盘
+事实一致；``atst/__init__.py`` 的包 docstring 同样按活文档对待——分层图双向对上磁盘
 布局，Quick start 的入口调用在禁网下真的构造得起来。README 与
 ``docs/ARCHITECTURE.md``、``docs/api/``、``docs/quickstart.md`` 等事实文档的规模数字
 （命令账本 / 解析器 / 配置段 / 根级白名单 / 服务面方法数 / HTTP 源与契约下界）一律钉回
 运行期真相源，WS 方法与 Domain Record 的**名单**也要逐个对上分派器与 ``__all__``——
 WS 名单有两种形状（``docs/api/README.md`` 的括号清单、``docs/api/interfaces.md`` 的散文顿号
 清单），两种都在射程内——抄一次就失真的数字与清单不再有藏身处。异常类计数走**反向**判据：
-活文档不许写回 ``NN+ 异常类`` 这种快照（方案/台账文档除外），类数以 ``tstdx.errors`` 现读为准。
+活文档不许写回 ``NN+ 异常类`` 这种快照（方案/台账文档除外），类数以 ``atst.errors`` 现读为准。
 事实文档里反引号写出的**斜杠**路径（``facade/api.py`` 那种文件名形状）同样要落位——
-按仓库根 / ``tstdx/`` / ``docs/`` 三个根各试一次；只有同一逻辑块（段落 / 列表项 / 表格行）
+按仓库根 / ``atst/`` / ``docs/`` 三个根各试一次；只有同一逻辑块（段落 / 列表项 / 表格行）
 里写明删除史、或该目录由代码在运行期自建的，才允许以死路径出现。F-67 那整节虚构的
 "门面层边界"正是被"只认点号形状"漏掉的。调用链之外的最后一格是**参数槽**：文档里写出的
 ``get_client("...")`` kind 必须与工厂注册表的键集合双向相等——幻影 kind 与漏写的真 kind
@@ -55,7 +55,7 @@ def fenced_code(path: Path) -> list[str]:
     return re.findall(r"```[^\n]*\n(.*?)```", text, flags=re.S)
 
 
-#: 只描述"当前事实"的文档：反引号里的 ``tstdx.*`` 必须是可解析的真实路径。
+#: 只描述"当前事实"的文档：反引号里的 ``atst.*`` 必须是可解析的真实路径。
 #: 迁移指南/发布说明/规划案里出现已删除路径是刻意的历史语境，不参与该检查。
 FACT_DOC_PATHS = (
     "README.md",
@@ -98,19 +98,19 @@ def import_nodes(source: str) -> list[ast.stmt]:
 
 def test_root_export_map_and_dunder_all_agree() -> None:
     """``__all__`` 与惰性导入表必须是同一份事实，不得各有超集。"""
-    import tstdx
+    import atst
 
-    declared = set(tstdx.__all__) - NON_EXPORTS
-    lazy = set(tstdx._LAZY)
+    declared = set(atst.__all__) - NON_EXPORTS
+    lazy = set(atst._LAZY)
     assert declared - lazy == set(), f"__all__ 有名字无法从根解析: {sorted(declared - lazy)}"
     assert lazy - declared == set(), f"惰性表偷偷扩大了公开面: {sorted(lazy - declared)}"
 
 
 def test_every_documented_root_name_resolves() -> None:
-    import tstdx
+    import atst
 
-    for name in tstdx.__all__:
-        assert hasattr(tstdx, name), f"tstdx.{name} 在 __all__ 里却不可解析"
+    for name in atst.__all__:
+        assert hasattr(atst, name), f"atst.{name} 在 __all__ 里却不可解析"
 
 
 # --------------------------------------------------------------------------
@@ -130,7 +130,7 @@ def test_markdown_import_statements_resolve() -> None:
         for block in fenced_code(path):
             for node in import_nodes(block):
                 if isinstance(node, ast.ImportFrom):
-                    if node.level or not node.module or not node.module.startswith("tstdx"):
+                    if node.level or not node.module or not node.module.startswith("atst"):
                         continue
                     for alias in node.names:
                         if alias.name == "*":
@@ -144,7 +144,7 @@ def test_markdown_import_statements_resolve() -> None:
                             )
                 else:
                     for alias in node.names:
-                        if not alias.name.startswith("tstdx"):
+                        if not alias.name.startswith("atst"):
                             continue
                         try:
                             _resolve(alias.name, None)
@@ -156,9 +156,9 @@ def test_markdown_import_statements_resolve() -> None:
     assert offenders == [], "\n".join(offenders)
 
 
-def test_backticked_tstdx_paths_are_importable() -> None:
+def test_backticked_atst_paths_are_importable() -> None:
     offenders: list[str] = []
-    pattern = re.compile(r"`(tstdx(?:\.[A-Za-z_][A-Za-z0-9_]*)+)`")
+    pattern = re.compile(r"`(atst(?:\.[A-Za-z_][A-Za-z0-9_]*)+)`")
     for path in fact_docs():
         text = path.read_text(encoding="utf-8")
         for ref in sorted(set(pattern.findall(text))):
@@ -172,7 +172,7 @@ def test_backticked_tstdx_paths_are_importable() -> None:
 # 斜杠形式的死路径（F-67）
 # --------------------------------------------------------------------------
 
-#: 上面的点号判据只认 ``tstdx.a.b.C`` 那种形状，而 ``docs/errors.md`` §四 写的是
+#: 上面的点号判据只认 ``atst.a.b.C`` 那种形状，而 ``docs/errors.md`` §四 写的是
 #: ``facade/api.py`` 这种**斜杠形式**——形状上就不进判据，于是整段虚构的"门面层边界"
 #: 一路绿灯。本节把同一批文档按斜杠形式再扫一遍。
 _BACKTICK = re.compile(r"`([^`\n]+)`")
@@ -196,7 +196,7 @@ _PATH_DOC_DIRS = ("docs/providers",)
 _LIST_OR_ROW = re.compile(r"\s*(?:[-*+]\s|\d+\.\s|\|)")
 
 #: 受体名单：迁移对照表的左列写的是**别家库**的 API（easyquotation 的 `hq`），
-#: 那些链不是对 tstdx 的断言，按成员存在性判它们等于让文档不能提第三方接口。
+#: 那些链不是对 atst 的断言，按成员存在性判它们等于让文档不能提第三方接口。
 #: 与 `BARE_WARN_ALLOWED` 同一条纪律：理由不再成立时判据即红，不许留空豁免。
 FOREIGN_RECEIVERS: dict[str, str] = {
     "hq": "docs/migration/easyquotation.md 的对照表左列是 easyquotation 自己的 API",
@@ -247,13 +247,13 @@ def _looks_like_repo_path(token: str) -> bool:
 
 
 def _path_exists(token: str) -> bool:
-    """相对仓库根 / ``tstdx/`` / ``docs/`` 任一处能落位，就算活路径。
+    """相对仓库根 / ``atst/`` / ``docs/`` 任一处能落位，就算活路径。
 
     文档里同一个东西有三种写法（``docs/providers/tdx.md``、``facade/api.py`` 指
-    ``tstdx/facade/api.py``、``archive/plans/…`` 指 ``docs/archive/plans/…``），
+    ``atst/facade/api.py``、``archive/plans/…`` 指 ``docs/archive/plans/…``），
     只按一种根匹配会虚报——探针虚报比漏报更难查（F-67/F-44 的同形教训）。
     """
-    return any((root / token).exists() for root in (ROOT, ROOT / "tstdx", ROOT / "docs"))
+    return any((root / token).exists() for root in (ROOT, ROOT / "atst", ROOT / "docs"))
 
 
 @functools.cache
@@ -262,11 +262,11 @@ def _runtime_dir_names() -> frozenset[str]:
 
     判据是推导而不是一份名单：同一个 .py 文件里既调用 ``mkdir``，又把这个名字作为
     路径分量写出来（``... / "generated_draft" / "_generated.py"``）。刻意不用
-    "代码里出现过这个字符串"当判据——``tstdx/security/`` 那类死目录会被
+    "代码里出现过这个字符串"当判据——``atst/security/`` 那类死目录会被
     ``/v13/security/count`` 这种 HTTP 路由字符串白白赦免。
     """
     names: set[str] = set()
-    sources = list((ROOT / "tstdx").rglob("*.py")) + list((ROOT / "scripts").glob("*.py"))
+    sources = list((ROOT / "atst").rglob("*.py")) + list((ROOT / "scripts").glob("*.py"))
     for path in sources:
         text = path.read_text(encoding="utf-8")
         if "mkdir" not in text:
@@ -305,7 +305,7 @@ def test_the_slash_ruler_itself_sees_the_deleted_layers() -> None:
     """自检：这套判据必须真的"看见"过删除史里的死路径，否则它可能只是在空转。"""
     _, waived = _dead_path_findings()
     seen = set(waived)
-    assert {"execution/", "provider/", "tstdx/facade/"} <= seen, sorted(seen)
+    assert {"execution/", "provider/", "atst/facade/"} <= seen, sorted(seen)
     assert len(seen) >= 5, sorted(seen)
 
 
@@ -321,12 +321,12 @@ _MODULE_TOKEN = re.compile(r"^[A-Za-z0-9_]+\.py$")
 
 
 def _package_dir(token: str) -> Path | None:
-    """把 ``name/`` 落成一个**Python 包**目录（按仓库根 / ``tstdx/`` / ``docs/`` 三根）。
+    """把 ``name/`` 落成一个**Python 包**目录（按仓库根 / ``atst/`` / ``docs/`` 三根）。
 
     只认包：判据断言的是"这个包的模块名册"，非包目录（``docs/api/``）里躺着什么
     不由它负责。
     """
-    for root in (ROOT, ROOT / "tstdx", ROOT / "docs"):
+    for root in (ROOT, ROOT / "atst", ROOT / "docs"):
         candidate = root / token
         if candidate.is_dir() and (candidate / "__init__.py").is_file():
             return candidate
@@ -404,14 +404,14 @@ def test_the_roster_ruler_itself_sees_a_phantom_and_an_omission() -> None:
     assert [(name, named) for package, name, named in groups] == [
         ("runtime", {"kernel", "executor", "deleted"})
     ]
-    live = _module_roster(ROOT / "tstdx" / "runtime")
+    live = _module_roster(ROOT / "atst" / "runtime")
     assert live - {"kernel", "executor", "deleted"}, "判据在这格上其实是空转"
     assert "freshness" in live - {"kernel", "executor", "deleted"}
     assert {"kernel", "executor", "deleted"} - live == {"deleted"}
     # 完整名册必须不报（否则判据只是无条件红，没有判出任何东西）
     full = (
         "| x | `runtime/`（"
-        + "、".join(f"`{stem}.py`" for stem in sorted(_module_roster(ROOT / "tstdx" / "runtime")))
+        + "、".join(f"`{stem}.py`" for stem in sorted(_module_roster(ROOT / "atst" / "runtime")))
         + "） | 活 |"
     )
     assert _roster_groups(full)[0][2] == live
@@ -420,7 +420,7 @@ def test_the_roster_ruler_itself_sees_a_phantom_and_an_omission() -> None:
 
 
 def _resolves(dotted: str) -> bool:
-    """``tstdx.a.b.C`` 可以是模块、类或属性——逐段回退解析即可。"""
+    """``atst.a.b.C`` 可以是模块、类或属性——逐段回退解析即可。"""
     parts = dotted.split(".")
     for cut in range(len(parts), 0, -1):
         module = ".".join(parts[:cut])
@@ -441,7 +441,7 @@ def _resolves(dotted: str) -> bool:
 # 点号调用链与小写成员（R-9 的两种新形状）
 # --------------------------------------------------------------------------
 
-#: 前两节各管一种形状：反引号里的 ``tstdx.a.b`` 点号路径、``facade/api.py`` 斜杠路径。
+#: 前两节各管一种形状：反引号里的 ``atst.a.b`` 点号路径、``facade/api.py`` 斜杠路径。
 #: ``docs/troubleshooting.md`` 教用户调 ``client.router.last_errors()`` 时两种都不是——
 #: 首段是一个变量名，其余全小写，判据按形状就收不进去，于是"照着做必然 AttributeError"
 #: 的指令在活文档里存活了一整轮。这里把尺子从"路径"换成"成员"：调用链上除受体以外的
@@ -461,7 +461,7 @@ def chain_docs() -> list[Path]:
 @functools.lru_cache(maxsize=1)
 def _production_members() -> frozenset[str]:
     names: set[str] = set()
-    for path in sorted((ROOT / "tstdx").rglob("*.py")):
+    for path in sorted((ROOT / "atst").rglob("*.py")):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.Attribute):
                 names.add(node.attr)
@@ -528,7 +528,7 @@ _DOC_FACTORY_KIND = re.compile(r"get_client\(\s*[\"']([A-Za-z0-9_\-]+)[\"']")
 
 @functools.lru_cache(maxsize=1)
 def _factory_kinds() -> frozenset[str]:
-    from tstdx.client.factory import _CLIENT_REGISTRY
+    from atst.client.factory import _CLIENT_REGISTRY
 
     return frozenset(_CLIENT_REGISTRY)
 
@@ -577,16 +577,16 @@ def test_the_factory_kind_ruler_itself_sees_a_phantom() -> None:
 # --------------------------------------------------------------------------
 
 #: 点号判据的覆盖面是**文档**，于是包内的模块 docstring 成了一条空档：
-#: ``tstdx/web/sources.py`` 曾用现在时语气写"在 :mod:`tstdx.sources.router` 中统一路由"，
+#: ``atst/web/sources.py`` 曾用现在时语气写"在 :mod:`atst.sources.router` 中统一路由"，
 #: 指向 v16 就物理删除的模块。它比文档里的假指令更糟——读代码的人正是写代码的人，
 #: 而 :mod: 角色在任何 Sphinx 构建里都会直接报错。
-_ROLE = re.compile(r":(?:mod|class|func|attr|meth|data):`(~?tstdx(?:\.[A-Za-z_][A-Za-z0-9_]*)+)`")
+_ROLE = re.compile(r":(?:mod|class|func|attr|meth|data):`(~?atst(?:\.[A-Za-z_][A-Za-z0-9_]*)+)`")
 
 
 def test_sphinx_roles_in_package_docstrings_resolve() -> None:
     refs = 0
     offenders: list[str] = []
-    for path in sorted((ROOT / "tstdx").rglob("*.py")):
+    for path in sorted((ROOT / "atst").rglob("*.py")):
         for target in _ROLE.findall(path.read_text(encoding="utf-8")):
             refs += 1
             dotted = target.removeprefix("~")
@@ -608,11 +608,11 @@ def _readme() -> str:
 @functools.lru_cache(maxsize=1)
 def _actual_facts() -> dict[str, int]:
     """运行期规模事实：构造一次 Client + HTTP app 就够全组门禁读（缓存避免重复对账）。"""
-    from tstdx import Client
-    from tstdx.cli import build_parser
-    from tstdx.integration.mcp import TOOLS
-    from tstdx.integration.runtime_http import create_runtime_app
-    from tstdx.providers import PROVIDERS
+    from atst import Client
+    from atst.cli import build_parser
+    from atst.integration.mcp import TOOLS
+    from atst.integration.runtime_http import create_runtime_app
+    from atst.providers import PROVIDERS
 
     parser = build_parser()
     commands: dict[str, object] = {}
@@ -697,13 +697,13 @@ def _doc_text(rel: str) -> str:
 
 
 def _protocol_commands() -> int:
-    from tstdx.protocol.commands import COMMANDS
+    from atst.protocol.commands import COMMANDS
 
     return len(COMMANDS)
 
 
 def _protocol_parsers() -> int:
-    from tstdx.protocol.registry import PARSERS
+    from atst.protocol.registry import PARSERS
 
     return len(PARSERS)
 
@@ -711,13 +711,13 @@ def _protocol_parsers() -> int:
 def _config_sections() -> int:
     import dataclasses
 
-    from tstdx.config.schema import Config
+    from atst.config.schema import Config
 
     return len(dataclasses.fields(Config))
 
 
 def _root_modules() -> int:
-    return len(list((ROOT / "tstdx").glob("*.py")))
+    return len(list((ROOT / "atst").glob("*.py")))
 
 
 def _capabilities() -> int:
@@ -730,7 +730,7 @@ def _providers() -> int:
 
 def _direct_bindings() -> int:
     """`DIRECT_BINDINGS` 条数：每次加/删绑定都变，README 三处抄本最容易静默过期。"""
-    from tstdx.runtime.executor import DIRECT_BINDINGS
+    from atst.runtime.executor import DIRECT_BINDINGS
 
     return len(DIRECT_BINDINGS)
 
@@ -748,20 +748,20 @@ def _mcp_tools() -> int:
 
 
 def _domain_record_classes() -> int:
-    from tstdx.domain import records
+    from atst.domain import records
 
     return len(records.__all__)
 
 
 def _domain_record_stems() -> set[str]:
-    from tstdx.domain import records
+    from atst.domain import records
 
     return {name[: -len("Record")] for name in records.__all__ if name.endswith("Record")}
 
 
 def _ws_methods() -> set[str]:
     """WS 分派器真正认账的方法名（`if method == ...` 与 `method in {...}` 两种写法）。"""
-    source = (ROOT / "tstdx" / "integration" / "runtime_ws.py").read_text(encoding="utf-8")
+    source = (ROOT / "atst" / "integration" / "runtime_ws.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     dispatch = next(
         node
@@ -807,14 +807,14 @@ def _typed_contracts() -> int:
 
 
 def _change_types() -> int:
-    from tstdx.web.fundflow import EastmoneyStockChangesSource
+    from atst.web.fundflow import EastmoneyStockChangesSource
 
     return len(EastmoneyStockChangesSource.CHANGE_TYPES)
 
 
 def _protocol_family_names() -> set[str]:
     """``Family`` 声明的协议族键集合（文档"5 协议族"与覆盖矩阵行标签的真相源）。"""
-    from tstdx.protocol.commands import Family
+    from atst.protocol.commands import Family
 
     return {
         value
@@ -829,7 +829,7 @@ def _protocol_families() -> int:
 
 def _parser_family_counts() -> dict[str, int]:
     """L1 精确解析器按族分布：``PARSERS`` 的键就是 ``(family, code)``。"""
-    from tstdx.protocol.registry import PARSERS
+    from atst.protocol.registry import PARSERS
 
     counts: dict[str, int] = {}
     for family, _code in PARSERS:
@@ -839,7 +839,7 @@ def _parser_family_counts() -> dict[str, int]:
 
 def _command_family_counts() -> dict[str, int]:
     """命令账本按族分布（覆盖矩阵"命令账本"列的真相源）。"""
-    from tstdx.protocol.commands import COMMANDS
+    from atst.protocol.commands import COMMANDS
 
     counts: dict[str, int] = {}
     for command in COMMANDS.values():
@@ -850,11 +850,11 @@ def _command_family_counts() -> dict[str, int]:
 def _family_port(family: str) -> int:
     """族 → 端口：内置主站池里该族唯一的那个端口。
 
-    这张映射此前挂在 ``Command.port`` 上，而它在 ``tstdx/`` 生产树里没有任何读取点
+    这张映射此前挂在 ``Command.port`` 上，而它在 ``atst/`` 生产树里没有任何读取点
     （连接池连的是 `HostEntry.port`，不是命令对象）——第 27 轮（V19 §4 P1-A2）把它删了，
     真相源随之换成池本身：文档宣称的端口必须就是代码真的拿去建连的那个端口。
     """
-    from tstdx.transport.hosts import POOL_BY_FAMILY
+    from atst.transport.hosts import POOL_BY_FAMILY
 
     ports = {entry.port for entry in POOL_BY_FAMILY[family]}
     if len(ports) != 1:
@@ -863,14 +863,14 @@ def _family_port(family: str) -> int:
 
 
 def _web_source_modules() -> int:
-    """定义了至少一个顶层 ``*Source`` 类的 ``tstdx/web/`` 模块数（文档"28 模块"的真相源）。
+    """定义了至少一个顶层 ``*Source`` 类的 ``atst/web/`` 模块数（文档"28 模块"的真相源）。
 
     V20 Phase 3 之后各家 HTTP 适配器按 Provider 归入 ``web/<provider>/adapters.py``，
     所以这里与 :func:`_web_source_classes` 同口径走递归扫描——"HTTP 源模块"数的是
     定义源类的文件，不是它们的目录深度。
     """
     modules = 0
-    for path in sorted((ROOT / "tstdx" / "web").rglob("*.py")):
+    for path in sorted((ROOT / "atst" / "web").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         if any(
             isinstance(node, ast.ClassDef) and node.name.endswith("Source") for node in tree.body
@@ -883,7 +883,7 @@ def _client_methods() -> int:
     """`Client` 的公开方法数（文档"15 便捷方法"的真相源）。"""
     import inspect
 
-    from tstdx import Client
+    from atst import Client
 
     return sum(
         1
@@ -897,20 +897,20 @@ _MERGE_ITEM = re.compile(r"^\s+\d+\.\s", re.M)
 
 
 def _config_merge_layers() -> int:
-    import tstdx.config.loader as loader
+    import atst.config.loader as loader
 
     return len(_MERGE_ITEM.findall(loader.__doc__ or ""))
 
 
 def _typed_domain_base_names() -> set[str]:
-    """``tstdx.typed_query`` 里的领域基类名（文档宣称的"10 领域基类"的真相源）。
+    """``atst.typed_query`` 里的领域基类名（文档宣称的"10 领域基类"的真相源）。
 
     判据与 ``contract_audit`` 同源：抽象基类因缺必填参数构造不出来，所以"被其它契约直接
     继承的类"即基类；根 ``CapabilityQuery`` 本身是全部基类的父类，不算一个领域。
     """
     import dataclasses
 
-    import tstdx.typed_query as tq
+    import atst.typed_query as tq
 
     classes = {
         name: value
@@ -929,9 +929,9 @@ def _typed_domain_bases() -> int:
 
 
 def _web_source_classes() -> int:
-    """``tstdx/web/`` 里定义的 ``*Source`` 类个数（按 AST 数，不触发导入副作用）。"""
+    """``atst/web/`` 里定义的 ``*Source`` 类个数（按 AST 数，不触发导入副作用）。"""
     total = 0
-    for path in (ROOT / "tstdx" / "web").rglob("*.py"):
+    for path in (ROOT / "atst" / "web").rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         total += sum(
             1
@@ -943,12 +943,12 @@ def _web_source_classes() -> int:
 
 @functools.cache
 def _output_fmt_choices() -> dict[str, frozenset[str]]:
-    """``tstdx/output`` 两处 fmt 分派真正认识的取值：按 AST 数，不读错误文案。
+    """``atst/output`` 两处 fmt 分派真正认识的取值：按 AST 数，不读错误文案。
 
     ``write()`` 与 ``Sink.write()`` 的可选格式各写一份 ``if fmt == ...`` 链，两串的
     成员并不相同（CSV 只在前者）。README 把这两个数分开写，就必须分开钉。
     """
-    tree = ast.parse((ROOT / "tstdx" / "output" / "__init__.py").read_text(encoding="utf-8"))
+    tree = ast.parse((ROOT / "atst" / "output" / "__init__.py").read_text(encoding="utf-8"))
     found: dict[str, set[str]] = {}
 
     def is_fmt(node: ast.expr) -> bool:
@@ -967,7 +967,7 @@ def _output_fmt_choices() -> dict[str, frozenset[str]]:
             and isinstance(sub.comparators[0], ast.Constant)
             and isinstance((right := sub.comparators[0]).value, str)
         }
-        assert values, f"tstdx/output 里 {key} 的 fmt 分派形状变了，判据读不出来"
+        assert values, f"atst/output 里 {key} 的 fmt 分派形状变了，判据读不出来"
         found[key] = values
 
     for node in tree.body:
@@ -991,7 +991,7 @@ def _sink_class_fmts() -> int:
 
 def _market_presets() -> int:
     """``PRESETS`` 的行数（文档"9 市场预设"的真相源）。"""
-    from tstdx.profile.presets import PRESETS
+    from atst.profile.presets import PRESETS
 
     return len(PRESETS)
 
@@ -1118,7 +1118,7 @@ def test_documented_floors_still_hold(
 
 
 #: 异常类计数是**反向**判据：第 44 步按 F-68 (a) 删掉 4 个从不发射的叶子之后，
-#: "NN+ 异常类"这类快照当场过期。类数以 ``tstdx.errors`` 现读为准，活文档不得写回数字。
+#: "NN+ 异常类"这类快照当场过期。类数以 ``atst.errors`` 现读为准，活文档不得写回数字。
 _ERROR_CLASS_COUNT = re.compile(r"\d+\s*\+?\s*(?:个)?\s*(?:异常|错误)\s*类")
 
 #: 方案/台账文档记录的正是"某一步当时是多少"，它是工作日志而非对外宣称，不参与本判据。
@@ -1145,7 +1145,7 @@ def test_no_live_doc_states_an_error_class_count(path: Path) -> None:
     hits = [m.group(0) for m in _ERROR_CLASS_COUNT.finditer(text)]
     assert not hits, (
         f"{path.relative_to(ROOT).as_posix()} 写回了异常类计数快照 {hits}："
-        f"类数请以 `tstdx.errors` 现读为准（见 `docs/errors.md` 头部条款）"
+        f"类数请以 `atst.errors` 现读为准（见 `docs/errors.md` 头部条款）"
     )
 
 
@@ -1164,7 +1164,7 @@ def test_documented_domain_record_names_match_the_module(source: str) -> None:
             f"{source} 声称 {count} 类，清单 {len(listed)} 项，模块实际 {len(real)} 项"
         )
         assert listed == real, (
-            f"{source} 的 Record 清单与 `tstdx.domain.records.__all__` 不符："
+            f"{source} 的 Record 清单与 `atst.domain.records.__all__` 不符："
             f"多 {sorted(listed - real)} 缺 {sorted(real - listed)}"
         )
 
@@ -1218,7 +1218,7 @@ _INTERFACE_MCP_COUNT = re.compile(r"### MCP stdio（(\d+) 工具）")
 
 
 def test_interfaces_mcp_tool_count_matches_the_registry() -> None:
-    from tstdx.integration.mcp import TOOLS
+    from atst.integration.mcp import TOOLS
 
     source = "docs/api/interfaces.md"
     claimed = _INTERFACE_MCP_COUNT.findall(_doc_text(source))
@@ -1233,12 +1233,12 @@ def test_interfaces_mcp_tool_count_matches_the_registry() -> None:
 #: 或者把 ``get_minute_today`` 改名，条数不变、判据不响，用户照抄即 404 / tool not found。
 #: WS 那一格的名单早已有双向判据（上面两条），这里补齐同族的另外两格。
 _FACE_CELL = re.compile(
-    r"^\|\s*`tstdx\.integration\.(?P<face>runtime_http|mcp)`\s*\|(?P<cell>[^|\n]*)", re.M
+    r"^\|\s*`atst\.integration\.(?P<face>runtime_http|mcp)`\s*\|(?P<cell>[^|\n]*)", re.M
 )
 
 
 def _app_route_paths() -> set[str]:
-    from tstdx.integration.runtime_http import create_runtime_app
+    from atst.integration.runtime_http import create_runtime_app
 
     return {
         str(route.path)
@@ -1248,7 +1248,7 @@ def _app_route_paths() -> set[str]:
 
 
 def _mcp_tool_names() -> set[str]:
-    from tstdx.integration.mcp import TOOLS
+    from atst.integration.mcp import TOOLS
 
     return {tool.name for tool in TOOLS}
 
@@ -1339,7 +1339,7 @@ _CHANGE_TYPE_COUNT = re.compile(r"(\d+)\s*类")
 
 def test_code_comments_about_change_types_match_the_enum() -> None:
     claims: list[tuple[str, int]] = []
-    for path in sorted((ROOT / "tstdx").rglob("*.py")):
+    for path in sorted((ROOT / "atst").rglob("*.py")):
         for line in path.read_text(encoding="utf-8").splitlines():
             if "异动" not in line:
                 continue
@@ -1431,8 +1431,8 @@ def test_readme_tree_lists_existing_paths() -> None:
     missing = [
         name
         for name in names
-        if not (ROOT / "tstdx" / name.rstrip("/")).exists()
-        and not (ROOT / "tstdx" / name.rstrip("/") / "__init__.py").exists()
+        if not (ROOT / "atst" / name.rstrip("/")).exists()
+        and not (ROOT / "atst" / name.rstrip("/") / "__init__.py").exists()
     ]
     assert not missing, f"README 结构树指向磁盘不存在的路径：{missing}"
 
@@ -1440,7 +1440,7 @@ def test_readme_tree_lists_existing_paths() -> None:
 def test_readme_tree_covers_every_top_level_package() -> None:
     on_disk = {
         path.name + "/"
-        for path in (ROOT / "tstdx").iterdir()
+        for path in (ROOT / "atst").iterdir()
         if path.is_dir() and path.name != "__pycache__"
     }
     unlisted = sorted(on_disk - set(_readme_tree_names()))
@@ -1450,7 +1450,7 @@ def test_readme_tree_covers_every_top_level_package() -> None:
 def test_readme_tree_lists_every_top_level_module() -> None:
     on_disk = {
         path.name
-        for path in (ROOT / "tstdx").glob("*.py")
+        for path in (ROOT / "atst").glob("*.py")
         if path.name == "__main__.py" or not path.name.startswith("_")
     }
     listed = set(_readme_tree_names())
@@ -1479,17 +1479,17 @@ def test_every_root_export_is_named_by_user_docs() -> None:
     """包上挂着的名字，读者必须查得到（第 25 轮第 2 遍登记）。
 
     与 :func:`test_root_export_map_and_dunder_all_agree` 的分工：那条管"声明的名字解析得出"，
-    这一条管"解析得出的名字说得出用途"。分母是运行期的 ``tstdx.__all__``，不是文档里的
+    这一条管"解析得出的名字说得出用途"。分母是运行期的 ``atst.__all__``，不是文档里的
     一份抄件——加一个顶层导出不写文档，当场红。第一版量出 45 个名字里恰缺 1 个
     （`FinanceReader`：包上挂着、`tests/reader/` 在用、用户文档一个字没提）。
     """
-    import tstdx
+    import atst
 
-    missing = _undocumented_exports(tstdx.__all__)
+    missing = _undocumented_exports(atst.__all__)
     assert not missing, f"顶层导出没有用户文档可查：{missing}"
     #: 正控：尺子必须认得一个它从没见过的名字。
     planted = "PlantedSurfaceName25"
-    assert _undocumented_exports([*tstdx.__all__, planted]) == [planted], (
+    assert _undocumented_exports([*atst.__all__, planted]) == [planted], (
         "凭空加的顶层导出没被抓到——本判据对新增名字是瞎的"
     )
 
@@ -1507,15 +1507,15 @@ def _reader_surface_rows() -> list[str]:
 
 
 def test_reader_surface_table_matches_the_lazy_map() -> None:
-    """读取面表格 = 顶层惰性导入表落在 `tstdx.reader` 的那一批，双向相等。
+    """读取面表格 = 顶层惰性导入表落在 `atst.reader` 的那一批，双向相等。
 
-    这一族的"公开面"由 `tstdx._LAZY` 决定（它就是 `tstdx.<name>` 的来源），所以文档表格的
+    这一族的"公开面"由 `atst._LAZY` 决定（它就是 `atst.<name>` 的来源），所以文档表格的
     分母从那里现取：往 `_LAZY` 里加一个 reader 名字而文档没跟上，或从表格里抹掉一行，都红。
     """
-    import tstdx
+    import atst
 
     derived = sorted(
-        name for name, (module, _attr) in tstdx._LAZY.items() if module == "tstdx.reader"
+        name for name, (module, _attr) in atst._LAZY.items() if module == "atst.reader"
     )
     assert sorted(_reader_surface_rows()) == derived, (
         f"读取面表格 {sorted(_reader_surface_rows())} ≠ _LAZY 派生的 {derived}"
@@ -1566,7 +1566,7 @@ def test_client_method_table_matches_the_real_signatures() -> None:
     """
     import inspect
 
-    from tstdx import Client
+    from atst import Client
 
     rows = _client_face_rows()
     public = {
@@ -1599,7 +1599,7 @@ def test_tdx_client_method_table_matches_the_real_signatures() -> None:
     """
     import inspect
 
-    from tstdx.client import TdxClient
+    from atst.client import TdxClient
 
     rows = _tdx_face_rows()
     public = {
@@ -1635,21 +1635,21 @@ _LAYER_LINE = re.compile(r"^    (\w+)\s\s+\S", flags=re.M)
 _QUICKSTART_BLOCK = re.compile(r"Quick start[^:\n]*::\n\n((?:    .+\n)+)")
 
 
-def _tstdx_root() -> Path:
-    import tstdx
+def _atst_root() -> Path:
+    import atst
 
-    return Path(tstdx.__file__).parent
+    return Path(atst.__file__).parent
 
 
 def test_dunder_docstring_layer_map_matches_the_package_layout() -> None:
     """分层图是包自己对该库的第一张地图：漏一层或指向已删除的一层都是矛盾。"""
-    import tstdx
+    import atst
 
-    matched = _LAYER_BLOCK.search(tstdx.__doc__ or "")
-    assert matched, "tstdx/__init__.py 不再有「分层（自底向上）」图，门禁失效"
+    matched = _LAYER_BLOCK.search(atst.__doc__ or "")
+    assert matched, "atst/__init__.py 不再有「分层（自底向上）」图，门禁失效"
     documented = set(_LAYER_LINE.findall(matched.group(1)))
 
-    root = _tstdx_root()
+    root = _atst_root()
     packages = {
         path.name for path in root.iterdir() if path.is_dir() and path.name != "__pycache__"
     }
@@ -1682,10 +1682,10 @@ def test_dunder_docstring_quickstart_examples_construct(monkeypatch: pytest.Monk
     monkeypatch.setattr(socket, "getaddrinfo", _blocked)
     monkeypatch.setattr(socket, "create_connection", _blocked)
 
-    import tstdx
+    import atst
 
     offenders: list[str] = []
-    blocks = _QUICKSTART_BLOCK.findall(tstdx.__doc__ or "")
+    blocks = _QUICKSTART_BLOCK.findall(atst.__doc__ or "")
     assert blocks, "包 docstring 不再有 Quick start 段，门禁失效"
     for raw in blocks:
         source = "\n".join(line[4:] for line in raw.splitlines())
@@ -1714,7 +1714,7 @@ def test_dunder_docstring_quickstart_examples_construct(monkeypatch: pytest.Monk
 # 文档里的 CLI 示例必须是真实可解析的命令行（审计 F-27）
 # --------------------------------------------------------------------------
 
-_CMD_LINE = re.compile(r"^\s*(?:\$ )?tstdx(?:\.exe)?\s+(\S+)(.*)$")
+_CMD_LINE = re.compile(r"^\s*(?:\$ )?atst(?:\.exe)?\s+(\S+)(.*)$")
 #: "用法语法"而非可执行示例的形状：可选旗标 ``[--start N]``、尖括号占位符 ``<market>``、
 #: 竖线分支 ``day|week``、省略号。旧口径还额外把**任何**裸 ``[`` 算进来，于是
 #: ``--args [[8201]]`` 这类真实示例整行免检——第 23 轮文档里那条坏示例正是这样全绿的。
@@ -1723,7 +1723,7 @@ _INLINE_CODE = re.compile(r"`([^`\n]+)`")
 
 
 def _cli_examples() -> list[tuple[str, str, list[str] | None]]:
-    """活文档中所有形如 ``tstdx <sub> …`` 的可执行示例（围栏块 + 行内代码）。
+    """活文档中所有形如 ``atst <sub> …`` 的可执行示例（围栏块 + 行内代码）。
 
     返回 ``(相对路径, 原始行, token 列表)``；token 按 :func:`shlex.split`（POSIX shell 的
     引号/分词规则——示例的交付口径就是用户在 shell 里照抄）切，引号不闭合（这行本来就
@@ -1761,7 +1761,7 @@ def test_every_documented_cli_example_parses() -> None:
     examples = _cli_examples()
     assert examples, "活文档里找不到任何 CLI 示例，门禁失效"
 
-    from tstdx.cli.parser import build_parser
+    from atst.cli.parser import build_parser
 
     broken: list[str] = []
     for rel, raw, tokens in examples:
@@ -1785,7 +1785,7 @@ def test_cli_example_usage_filter_lets_quoted_json_through() -> None:
     示例整行判成"用法语法"而永不解析——这正是第 23 轮它坏了却全绿的机制；②新口径必须
     解析它；③新口径仍然放过真的用法语法（``[--start N]`` / ``<market>`` / ``day|week``）。
     """
-    example = "tstdx query stock_changes --args '[[8201]]' --kwargs '{\"size\": 5}'"
+    example = "atst query stock_changes --args '[[8201]]' --kwargs '{\"size\": 5}'"
     matched = _CMD_LINE.match(example)
     assert matched is not None
     rest = matched.group(2)
@@ -1793,17 +1793,17 @@ def test_cli_example_usage_filter_lets_quoted_json_through() -> None:
     assert not _USAGE_SYNTAX.search(rest), "新口径把加了引号的 JSON 示例整行放走了"
 
     for usage in (
-        "tstdx list <market>",
-        "tstdx list 0 [--start N]",
-        "tstdx bars sh600519 --period day|week",
-        "tstdx query …",
+        "atst list <market>",
+        "atst list 0 [--start N]",
+        "atst bars sh600519 --period day|week",
+        "atst query …",
     ):
         matched_usage = _CMD_LINE.match(usage)
         assert matched_usage is not None
         assert _USAGE_SYNTAX.search(matched_usage.group(2)), f"真用法语法被当成可执行示例：{usage}"
 
     #: 引号不闭合的行必须进清单并被标成 ``None``，而不是被静默跳过。
-    broken_line = "tstdx query stock_changes --args '[[8201]]"
+    broken_line = "atst query stock_changes --args '[[8201]]"
     matched_broken = _CMD_LINE.match(broken_line)
     assert matched_broken is not None
     assert not _USAGE_SYNTAX.search(matched_broken.group(2))
@@ -1815,22 +1815,22 @@ def test_cli_example_usage_filter_lets_quoted_json_through() -> None:
 # 文档里的**命令形状**点名的模块/对象必须可解析（V18 第 5 轮）
 # --------------------------------------------------------------------------
 
-#: 上一节钉的是 `tstdx <子命令>` 这一类 CLI 示例；这一节钉"把 tstdx 的某个模块交给外部
-#: 解释器"的写法：`python -m tstdx.x.y`、`uvicorn tstdx.x.y:attr`、`from/import tstdx.x`。
+#: 上一节钉的是 `atst <子命令>` 这一类 CLI 示例；这一节钉"把 atst 的某个模块交给外部
+#: 解释器"的写法：`python -m atst.x.y`、`uvicorn atst.x.y:attr`、`from/import atst.x`。
 #: 反引号点号判据看不见它们——那条正则要求**整格反引号恰好是一个点号路径**，而命令行里的
 #: 引用后面跟着 `:attr` 与参数，还多半躺在代码围栏里。`docs/FAQ.md` 的部署段就因此教了
-#: 用户一条当场 `ModuleNotFoundError` 的命令（`tstdx.integration.http_server` 早已不存在，
+#: 用户一条当场 `ModuleNotFoundError` 的命令（`atst.integration.http_server` 早已不存在，
 #: 真身是 `runtime_http.create_runtime_app`），本轮全量扫描 101 处里唯一的一处。
 #:
 #: **为什么不扩成"所有点号引用都扫"**：取证探针按那个口径扫全部活文档得到 20 处命中，19 处是
-#: `tstdx.git`（URL 尾巴）、`tstdx.toml`（文件名）与迁移/发布说明里的**否定句**（"不再有
-#: `tstdx.compat`"）——第 4 轮探针 C 那条"散文里对否定是瞎的"在这里原形重现。命令形状没有
+#: `atst.git`（URL 尾巴）、`atst.toml`（文件名）与迁移/发布说明里的**否定句**（"不再有
+#: `atst.compat`"）——第 4 轮探针 C 那条"散文里对否定是瞎的"在这里原形重现。命令形状没有
 #: 叙述语境（用户照着敲），所以这一格不需要任何豁免名单。
 _CMD_TARGET = re.compile(
     r"(?:python(?:\d\.\d+)?|uvicorn)\s+(?:-m\s+)?[\"']?"
-    r"(tstdx(?:\.[A-Za-z_][A-Za-z0-9_]*)+)(?::([A-Za-z_][A-Za-z0-9_]*))?"
+    r"(atst(?:\.[A-Za-z_][A-Za-z0-9_]*)+)(?::([A-Za-z_][A-Za-z0-9_]*))?"
 )
-_IMPORT_TARGET = re.compile(r"\b(?:from|import)\s+(tstdx(?:\.[A-Za-z_][A-Za-z0-9_]*)*)")
+_IMPORT_TARGET = re.compile(r"\b(?:from|import)\s+(atst(?:\.[A-Za-z_][A-Za-z0-9_]*)*)")
 
 
 def _command_targets(text: str) -> list[tuple[str, str | None]]:
@@ -1872,18 +1872,18 @@ def test_the_command_target_ruler_sees_a_planted_dead_target() -> None:
     """正控：形状必须是"命令里的模块引用"，且 `:attr` 那一半也在射程内。"""
     planted = (
         "```bash\n"
-        "docker run -p 8000:8000 tstdx python -m uvicorn "
-        "tstdx.integration.http_server:create_app --factory\n"
+        "docker run -p 8000:8000 atst python -m uvicorn "
+        "atst.integration.http_server:create_app --factory\n"
         "```\n"
     )
     targets = _command_targets(planted)
-    assert targets == [("tstdx.integration.http_server", "create_app")], targets
+    assert targets == [("atst.integration.http_server", "create_app")], targets
     offense = _target_offense(*targets[0])
     assert offense is not None and "http_server" in offense, offense
     # 反面对照：写对了就不许报，否则"零缺陷"是恒报报出来的
-    assert _target_offense("tstdx.integration.runtime_http", "create_runtime_app") is None
+    assert _target_offense("atst.integration.runtime_http", "create_runtime_app") is None
     # 模块存在但对象名是抄错的，同样必须报
-    assert _target_offense("tstdx.integration.runtime_http", "no_such_app") is not None
+    assert _target_offense("atst.integration.runtime_http", "no_such_app") is not None
 
 
 # --------------------------------------------------------------------------
@@ -1900,9 +1900,9 @@ def _doc_citations_in(text: str) -> list[str]:
 
 
 def _code_doc_citations() -> list[tuple[str, str]]:
-    """``[(文件:行, 所引 docs 路径)]``：``tstdx/``、``scripts/``、``tests/`` 全量。"""
+    """``[(文件:行, 所引 docs 路径)]``：``atst/``、``scripts/``、``tests/`` 全量。"""
     found: list[tuple[str, str]] = []
-    for sub in ("tstdx", "scripts", "tests"):
+    for sub in ("atst", "scripts", "tests"):
         for path in sorted((ROOT / sub).rglob("*.py")):
             rel = path.relative_to(ROOT).as_posix()
             for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
@@ -1914,7 +1914,7 @@ def test_code_cites_only_docs_paths_that_exist() -> None:
     """代码把文档路径写进注释当证据出处，文档一归档这个出处就指空。
 
     第 15 轮把 5 份对标文档移入 ``docs/archive/parity/`` 时，实测有 4 处这样的断指路牌
-    （``tstdx/web/limits.py`` 引 v5 计划、两处测试引已归档计划、一处引刚移动的对标件）——
+    （``atst/web/limits.py`` 引 v5 计划、两处测试引已归档计划、一处引刚移动的对标件）——
     文档侧的路径判据是"文档 → 磁盘"，从来没有人反向量过"代码 → 文档"。
     """
     cited = _code_doc_citations()
@@ -2039,11 +2039,11 @@ def test_the_table_shape_ruler_itself_sees_a_merged_row() -> None:
 def _interfaces_metric_series_rows() -> list[tuple[str, str, tuple[str, ...], str]]:
     """``docs/api/interfaces.md`` §8 指标表：``[(序列名, 类型, 标签, 写入方), ...]``。"""
     doc = (ROOT / "docs" / "api" / "interfaces.md").read_text(encoding="utf-8")
-    parts = doc.split("### 指标门面（`tstdx.observability.metrics`）", 1)
+    parts = doc.split("### 指标门面（`atst.observability.metrics`）", 1)
     assert len(parts) == 2, "interfaces.md 不再有指标门面那一节，门禁失效"
     #: 窗口收在本节之内，别把下一节导出器表格的第一列吃进来。
     body = re.split(r"^### |^## ", parts[1], maxsplit=1, flags=re.M)[0]
-    rows = re.findall(r"^\| `(tstdx_\w+)` \| (\w+)(?:（([^（）]*)）)? \|([^|\n]*)\|", body, re.M)
+    rows = re.findall(r"^\| `(atst_\w+)` \| (\w+)(?:（([^（）]*)）)? \|([^|\n]*)\|", body, re.M)
     assert rows, "指标表格解析不出任何一行，门禁失效"
     return [
         (
@@ -2073,12 +2073,12 @@ def test_interfaces_metric_series_table_matches_the_registry() -> None:
 
     分母是 ``metrics.registry.snapshot_metrics()`` 的现值，不是文档里的抄件：往门面里注册一格
     新指标而文档没跟上，或从表格里抹掉一行，都当场红。第三列「写入方」非空是这条判据的
-    真正目的——F-112 撤下的 ``tstdx_active_connections`` 就是这么一根仪表：注册了、被
+    真正目的——F-112 撤下的 ``atst_active_connections`` 就是这么一根仪表：注册了、被
     ``/metrics`` 渲染了、还被 statsd 的线格式示例引用过，却全仓没人写它。表格不许再给
     这种"没人写的对外声称"留位置。
     """
-    from tstdx.observability import Counter, Gauge, Histogram, Summary  # noqa: F401
-    from tstdx.observability.metrics import metrics
+    from atst.observability import Counter, Gauge, Histogram, Summary  # noqa: F401
+    from atst.observability.metrics import metrics
 
     kinds = {"Counter": "counter", "Gauge": "gauge", "Histogram": "histogram", "Summary": "summary"}
     live = {
@@ -2093,14 +2093,14 @@ def test_interfaces_metric_series_table_matches_the_registry() -> None:
     )
     for name, _kind, _labels, writer in rows:
         assert writer, f"{name} 这一格没写「谁在写」——没人写的对外声称按 F-112 撤下，不许留表位"
-    assert "tstdx_active_connections" not in live, "F-112 撤下的恒初值仪表又回来了"
+    assert "atst_active_connections" not in live, "F-112 撤下的恒初值仪表又回来了"
 
     #: 正控：三型分歧各自必须抓得住，否则这条判据对新增/漏写/抄错是瞎的。
     assert _metric_series_diff(rows[:-1], live)[0] == [rows[-1][0]]
     planted = (*rows[:-1], (rows[-1][0], rows[-1][1], ("planted",), "没人写"))
     assert _metric_series_diff(planted, live)[2] == [planted[-1][0]]
-    phantom = [*rows, ("tstdx_planted_series", "counter", (), "凭空造的一格")]
-    assert _metric_series_diff(phantom, live)[1] == ["tstdx_planted_series"]
+    phantom = [*rows, ("atst_planted_series", "counter", (), "凭空造的一格")]
+    assert _metric_series_diff(phantom, live)[1] == ["atst_planted_series"]
 
 
 # --------------------------------------------------------------------------- #
@@ -2116,12 +2116,12 @@ _OWNERSHIP_ROW = re.compile(r"^\|\s*(HTTP|WS|MCP)\s+`(\w+)\((\w+)=None\)`")
 #: 每一面量哪个模块：文档只说"造出 `Client` 的一方"和"收尾的地方"，判据按面去现读实现，
 #: 不认文档里抄的文件名（那一格写错也没人红）。
 _OWNERSHIP_FACE: dict[str, tuple[str, str]] = {
-    "HTTP": ("tstdx.integration.runtime_http", "tstdx/integration/runtime_http.py"),
-    "WS": ("tstdx.integration.runtime_ws_server", "tstdx/integration/runtime_ws_server.py"),
-    "MCP": ("tstdx.integration.mcp._server", "tstdx/integration/mcp/_server.py"),
+    "HTTP": ("atst.integration.runtime_http", "atst/integration/runtime_http.py"),
+    "WS": ("atst.integration.runtime_ws_server", "atst/integration/runtime_ws_server.py"),
+    "MCP": ("atst.integration.mcp._server", "atst/integration/mcp/_server.py"),
 }
 
-#: 反引号里写出的名字：允许点号尾段（`server.tstdx_handler`）与可调用括号（`stop()`）。
+#: 反引号里写出的名字：允许点号尾段（`server.atst_handler`）与可调用括号（`stop()`）。
 #: 带斜杠的是路径不是符号，含 `=` 的是签名，两者都不进判据。
 _OWNERSHIP_TOKEN = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)*(?:\(\))?)`")
 
@@ -2271,9 +2271,9 @@ def test_service_plane_client_ownership_table_matches_the_code() -> None:
         assert not flag_missing, f"{face} 行没说出谁造的那份：{flag_missing}"
 
     #: 正控：凭空造的钩子与撤掉 flag 点名，两型都必须当场抓得住。
-    bogus = "| WS `serve_runtime_ws(handler=None)` | 造一份 | 收尾时读 `server.tstdx_bogus_hook` |"
+    bogus = "| WS `serve_runtime_ws(handler=None)` | 造一份 | 收尾时读 `server.atst_bogus_hook` |"
     unresolved, _flag_missing = _ownership_offenders("WS", "handler", bogus)
-    assert unresolved == ["tstdx_bogus_hook"], f"凭空钩子没被量到（{unresolved}），尺子失效"
+    assert unresolved == ["atst_bogus_hook"], f"凭空钩子没被量到（{unresolved}），尺子失效"
     silent = "| HTTP `create_runtime_app(client=None)` | 造一份 | 收尾时调 `api.close()` |"
     _unresolved, flag_missing = _ownership_offenders("HTTP", "client", silent)
     assert flag_missing, "漏写所有权 flag 没被量到，尺子失效"

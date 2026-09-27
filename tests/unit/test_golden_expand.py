@@ -1,4 +1,4 @@
-"""tstdx.tools.golden_expand 单元测试（D7 工具自身）。
+"""atst.tools.golden_expand 单元测试（D7 工具自身）。
 
 全部离线：在本目录下构造微型语料后调用 manifest/expand/verify。
 不用 pytest 的 tmp_path（本环境沙箱禁止扫描点前缀临时目录），
@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import pytest
 
-from tstdx.tools.golden_expand import _synthetic_payload, expand, manifest, verify
+from atst.tools.golden_expand import _synthetic_payload, expand, manifest, verify
 
 pytestmark = pytest.mark.unit
 

@@ -7,7 +7,7 @@ F-64 量的是账本的**字段**侧（10 个字段里 4 个无人读），F-65 
 ——"补"与"删"都得有人看着，否则下一次漂移是同一件事重演：
 
 * 名单侧：函数面形状锁死，改名或再登记一个没人读的聚合器当场红；
-* 两面一致性：包面（`tstdx.protocol.__all__`）不得宣称模块面（`commands.__all__`）
+* 两面一致性：包面（`atst.protocol.__all__`）不得宣称模块面（`commands.__all__`）
   没声明的名字——被删的 `stats` 正是这样：它从未进过 `commands.__all__`，却挂在包面上；
 * 文档侧：`docs/api/interfaces.md` 的表与声明名单**双向**相等，文档里的规模数字全部由
   运行期重算后再回查原文，抄本一旦过期就红（不是靠人记得去改）；
@@ -24,9 +24,9 @@ import dataclasses
 import re
 from pathlib import Path
 
-import tstdx.protocol
-from tstdx.protocol import commands as ledger
-from tstdx.protocol.commands import (
+import atst.protocol
+from atst.protocol import commands as ledger
+from atst.protocol.commands import (
     COMMANDS,
     STATUS_OFFLINE,
     STATUS_ONLINE,
@@ -83,7 +83,7 @@ def _functions_in_face() -> set[str]:
 
 def _module_level_functions() -> set[str]:
     tree = ast.parse(
-        (ROOT / "tstdx" / "protocol" / "commands.py").read_text(encoding="utf-8"),
+        (ROOT / "atst" / "protocol" / "commands.py").read_text(encoding="utf-8"),
         filename="commands.py",
     )
     return {
@@ -112,16 +112,16 @@ def test_ledger_function_face_is_exactly_the_read_helpers() -> None:
 
 
 def test_package_face_declares_nothing_the_module_denies() -> None:
-    """包面（`tstdx.protocol`）宣称的账本名字，必须也是模块面（`commands.__all__`）的。
+    """包面（`atst.protocol`）宣称的账本名字，必须也是模块面（`commands.__all__`）的。
 
     被删的 `stats` 恰好相反：`commands.__all__` 从未列它，包面却 import 它并挂进
-    `__all__`——两个名单各说各话，读者按包面写的 `from tstdx.protocol import stats`
+    `__all__`——两个名单各说各话，读者按包面写的 `from atst.protocol import stats`
     确实能用，于是这条假承诺没有暴露面。
     """
     package_ledger_names = {
         name
-        for name in tstdx.protocol.__all__
-        if getattr(tstdx.protocol, name, None) is getattr(ledger, name, object())
+        for name in atst.protocol.__all__
+        if getattr(atst.protocol, name, None) is getattr(ledger, name, object())
     }
     assert package_ledger_names, "包面一个账本名字都没对上，说明本判据自身失效"
     undeclared = sorted(package_ledger_names - set(ledger.__all__))
@@ -217,7 +217,7 @@ def _ledger_call_sites() -> dict[str, set[str]]:
         for node in ast.walk(tree):
             if not (isinstance(node, ast.ImportFrom) and node.module):
                 continue
-            if not re.fullmatch(r"tstdx\.protocol(\.commands)?", node.module):
+            if not re.fullmatch(r"atst\.protocol(\.commands)?", node.module):
                 continue
             imported.update(alias.asname or alias.name for alias in node.names)
         for node in ast.walk(tree):
@@ -246,18 +246,18 @@ def test_every_declared_function_is_reached_by_a_test() -> None:
 def test_deleted_aggregators_stay_deleted() -> None:
     """裁决 (b) 删掉的两个函数不得回来，也不得以别名形式回来。
 
-    模块面与包面两边都要断言"取不到"：把函数搬去别的模块、再从 `tstdx.protocol` 再导出
+    模块面与包面两边都要断言"取不到"：把函数搬去别的模块、再从 `atst.protocol` 再导出
     同一个名字，正是这仓历史上"兼容层靠别名续命"的走法，只看一边测不出来。
     """
     for name in ("stats", "get_command_by_name"):
-        assert not hasattr(ledger, name), f"tstdx.protocol.commands.{name} 又回来了"
-        assert not hasattr(tstdx.protocol, name), f"tstdx.protocol.{name} 以别名的方式回来了"
+        assert not hasattr(ledger, name), f"atst.protocol.commands.{name} 又回来了"
+        assert not hasattr(atst.protocol, name), f"atst.protocol.{name} 以别名的方式回来了"
 
 
 def test_command_member_face_has_no_transport_mapping() -> None:
     """`Command` 除字段外的成员账只剩 「hex」，「port」 那种假承诺不得回来。
 
-    「port」 的病与 「stats」 同形：挂在公开类上像是账本对外口径，实际全 「tstdx/」 零读取点——
+    「port」 的病与 「stats」 同形：挂在公开类上像是账本对外口径，实际全 「atst/」 零读取点——
     连接池按 「HostEntry.port」 建连，族→端口的真相源在主站池里。文档的协议覆盖矩阵曾按这条成员
     核对端口，于是「只有门禁读它」的孤儿被一份文档判据供成了事实源；第 27 轮（V19 §4 P1-A2）
     先把端口真相源换成池本身（「test_doc_code_consistency.py::_family_port」），再删掉它。
@@ -276,7 +276,7 @@ def test_command_member_face_has_no_transport_mapping() -> None:
     )
     assert not hasattr(ledger.Command, "port"), "Command.port 回来了：族→端口只该由主站池给出"
 
-    from tstdx.transport.hosts import POOL_BY_FAMILY
+    from atst.transport.hosts import POOL_BY_FAMILY
 
     ports = {
         family: {entry.port for entry in entries} for family, entries in POOL_BY_FAMILY.items()

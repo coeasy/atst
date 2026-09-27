@@ -1,21 +1,21 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 from __future__ import annotations
 
 import pytest
 
-import tstdx
-from tstdx.catalog.capability import (
+import atst
+from atst.catalog.capability import (
     MIGRATED_BINDINGS,
     MIGRATED_CAPABILITIES,
     default_provider_for,
 )
-from tstdx.client.api import Client
-from tstdx.errors import ValidationError
-from tstdx.providers import PROVIDERS
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.runtime.executor import (
+from atst.client.api import Client
+from atst.errors import ValidationError
+from atst.providers import PROVIDERS
+from atst.query import QueryPlanner, QuerySpec
+from atst.runtime.executor import (
     DIRECT_BINDINGS,
     DirectProviderExecutor,
     audit_direct_bindings,
@@ -196,7 +196,7 @@ def test_migrated_signature_validation_is_fail_closed_before_provider_io() -> No
     同一个迁移能力有两条一等调用路径：
 
     * **raw payload 约定**：``options={"args": [...], "kwargs": {...}}``；
-    * **v14 typed 路径**（:class:`~tstdx.execution.semantic.SemanticExecutionAdapter`）：
+    * **v14 typed 路径**（:class:`~atst.execution.semantic.SemanticExecutionAdapter`）：
       从语义字段（``symbols`` / ``period`` …）编译，**不带** raw payload。
 
     因此 planning 只在调用方提供了 payload 时校验它；硬保证落在两条路径共享的
@@ -262,8 +262,8 @@ def test_composite_capabilities_are_honestly_derived() -> None:
 
 
 def test_retired_facade_is_not_reintroduced() -> None:
-    assert not hasattr(tstdx, "UnifiedQuoteAPI")
-    assert not hasattr(tstdx, "AsyncUnifiedQuoteAPI")
+    assert not hasattr(atst, "UnifiedQuoteAPI")
+    assert not hasattr(atst, "AsyncUnifiedQuoteAPI")
     assert hasattr(Client, "call")
 
 

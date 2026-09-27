@@ -5,10 +5,10 @@ import threading
 
 import pytest
 
-from tstdx.errors import SubscriptionError
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.result import Provenance, QueryResult
-from tstdx.streaming import (
+from atst.errors import SubscriptionError
+from atst.query import QueryPlanner, QuerySpec
+from atst.result import Provenance, QueryResult
+from atst.streaming import (
     AsyncStatefulQuoteStream,
     BackpressureQueue,
     DeltaMerger,

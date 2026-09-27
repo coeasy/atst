@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.errors import ConfigError
-from tstdx.feedback import FeedbackReporter
+from atst.errors import ConfigError
+from atst.feedback import FeedbackReporter
 
 
 @pytest.mark.parametrize(
@@ -27,7 +27,7 @@ def test_enabled_usage_feedback_rejects_invalid_payload_fields(
     duration_ms,
     result,
 ) -> None:
-    monkeypatch.setenv("TSTDX_FEEDBACK", "1")
+    monkeypatch.setenv("ATST_FEEDBACK", "1")
     reporter = FeedbackReporter(store_dir=tmp_path)
 
     with pytest.raises(ConfigError):
@@ -40,7 +40,7 @@ def test_disabled_usage_feedback_remains_noop_before_payload_validation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.delenv("TSTDX_FEEDBACK", raising=False)
+    monkeypatch.delenv("ATST_FEEDBACK", raising=False)
     # ``tmp_path`` itself already exists (pytest pre-creates it), so the store
     # must be a *child* that only ever appears if the disabled reporter actually
     # writes. ``FeedbackReporter`` never creates ``store_dir`` at construction —
@@ -56,7 +56,7 @@ def test_non_finite_nested_profile_never_emits_nonstandard_json(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("TSTDX_FEEDBACK", "1")
+    monkeypatch.setenv("ATST_FEEDBACK", "1")
     reporter = FeedbackReporter(store_dir=tmp_path)
 
     assert reporter.report_profile({"latency": math.nan}) is False
@@ -67,7 +67,7 @@ def test_non_finite_error_context_never_emits_nonstandard_json(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("TSTDX_FEEDBACK", "1")
+    monkeypatch.setenv("ATST_FEEDBACK", "1")
     reporter = FeedbackReporter(store_dir=tmp_path)
 
     assert reporter.report_error(ValueError("boom"), {"metric": math.inf}) is False

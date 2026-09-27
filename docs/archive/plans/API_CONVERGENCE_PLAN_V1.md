@@ -1,13 +1,13 @@
-# tstdx Public API Convergence Plan V1
+# atst Public API Convergence Plan V1
 
 ## 目标
 
-将 tstdx 当前多入口 API 收敛为稳定、清晰、可长期维护的公共接口体系。
+将 atst 当前多入口 API 收敛为稳定、清晰、可长期维护的公共接口体系。
 
 目标用户入口：
 
 ```python
-from tstdx import Client, AsyncClient
+from atst import Client, AsyncClient
 ```
 
 Client 作为普通用户、量化应用、Agent、数据服务的统一入口。
@@ -61,7 +61,7 @@ Protocol / Transport
 ## 同步
 
 ```python
-from tstdx import Client
+from atst import Client
 
 with Client() as client:
     result = client.bars("sh600519", count=100)
@@ -83,7 +83,7 @@ with Client() as client:
 ## 异步
 
 ```python
-from tstdx import AsyncClient
+from atst import AsyncClient
 
 async with AsyncClient() as client:
     result = await client.quotes([

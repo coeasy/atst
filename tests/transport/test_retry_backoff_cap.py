@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """G38：主站失败转移那把退避梯子的上界与归属。
@@ -23,14 +23,14 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.errors import ReadTimeout
-from tstdx.transport import ConnectionPool
-from tstdx.transport.async_ import AsyncConnectionPool
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.pool import MAX_RETRY_BACKOFF_SECONDS, retry_backoff_delay
+from atst.errors import ReadTimeout
+from atst.transport import ConnectionPool
+from atst.transport.async_ import AsyncConnectionPool
+from atst.transport.hosts import HostEntry
+from atst.transport.pool import MAX_RETRY_BACKOFF_SECONDS, retry_backoff_delay
 
 BULK_SNAPSHOT_CMD = 0x054C
-TRANSPORT_DIR = Path(__file__).resolve().parents[2] / "tstdx" / "transport"
+TRANSPORT_DIR = Path(__file__).resolve().parents[2] / "atst" / "transport"
 #: retry_backoff_delay 的抖动因子区间（0.75 ~ 1.25）
 JITTER = (0.75, 1.25)
 
@@ -149,8 +149,8 @@ def test_uncapped_shape_would_be_unbounded_for_a_large_pool() -> None:
 def test_a_full_walk_over_distinct_hosts_pays_no_backoff(monkeypatch) -> None:
     """8 台主站每台试一次：一次失败请求不该睡任何一秒。"""
     recorder = _TimeRecorder()
-    monkeypatch.setattr("tstdx.transport.pool.time", recorder)
-    monkeypatch.setattr("tstdx.transport.pool.TcpConnection", _StubConn)
+    monkeypatch.setattr("atst.transport.pool.time", recorder)
+    monkeypatch.setattr("atst.transport.pool.TcpConnection", _StubConn)
     pool = ConnectionPool(_hosts(8), slots_per_host=1, heartbeat_interval=0, max_retries=3)
 
     with pytest.raises(Exception) as exc:
@@ -162,8 +162,8 @@ def test_a_full_walk_over_distinct_hosts_pays_no_backoff(monkeypatch) -> None:
 def test_returning_to_a_tried_host_still_cools_down(monkeypatch) -> None:
     """主站数少于尝试次数时必然回到已试过的机器——那时冷却仍然要付。"""
     recorder = _TimeRecorder()
-    monkeypatch.setattr("tstdx.transport.pool.time", recorder)
-    monkeypatch.setattr("tstdx.transport.pool.TcpConnection", _StubConn)
+    monkeypatch.setattr("atst.transport.pool.time", recorder)
+    monkeypatch.setattr("atst.transport.pool.TcpConnection", _StubConn)
     pool = ConnectionPool(_hosts(1), slots_per_host=1, heartbeat_interval=0, max_retries=3)
 
     with pytest.raises(Exception) as exc:
@@ -178,8 +178,8 @@ def test_returning_to_a_tried_host_still_cools_down(monkeypatch) -> None:
 # --------------------------------------------------------------------------- #
 def test_async_walk_over_distinct_hosts_pays_no_backoff(monkeypatch) -> None:
     recorder = _AsyncioRecorder()
-    monkeypatch.setattr("tstdx.transport.async_.asyncio", recorder)
-    monkeypatch.setattr("tstdx.transport.async_.AsyncTcpConnection", _AsyncStubConn)
+    monkeypatch.setattr("atst.transport.async_.asyncio", recorder)
+    monkeypatch.setattr("atst.transport.async_.AsyncTcpConnection", _AsyncStubConn)
     #: ``idle_timeout=0`` 是把 31-B1 起真的武装起来的心跳/回收线程关掉的：那个线程每轮
     #: ``await asyncio.sleep(tick)``（默认阈值下 tick=75.0），与退避梯子共用同一个 recorder。
     #: 本条断言的对象是"请求路径换主站时睡不睡"，所以要让被记数的只有它自己。

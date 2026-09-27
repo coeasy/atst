@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from tests.support.field_readers import unread_fields
-from tstdx.errors import ValidationError
-from tstdx.providers import PROVIDERS, ChannelSpec, resolve_provider
+from atst.errors import ValidationError
+from atst.providers import PROVIDERS, ChannelSpec, resolve_provider
 
 
 def test_tdx_is_only_default_provider() -> None:
@@ -32,7 +32,7 @@ def test_vipdoc_is_standalone_local_provider_not_tdx_channel() -> None:
 def test_jsl_registry_exposes_only_verified_convertible_bond_channel() -> None:
     jsl = PROVIDERS.get("jsl")
     assert {channel.id for channel in jsl.channels} == {"bond"}
-    # canonical capability 名为 convertible_bond（见 tstdx/typed_query.py），
+    # canonical capability 名为 convertible_bond（见 atst/typed_query.py），
     # 早期测试使用的 "bond" 是历史别名残留。
     assert jsl.channel("bond").capabilities == frozenset({"convertible_bond"})
     with pytest.raises(ValidationError):
@@ -63,7 +63,7 @@ def test_the_registry_declares_no_batch_quota() -> None:
 
     旧形状是 ``ChannelSpec.batch_limits={"quotes": 60}`` → ``batch_limit_for()`` →
     ``plan.batch_limit`` → **无人读取**：一条完整的死链，而且那个 60 与真正生效的
-    分片上限 ``tstdx/client/_mixin.py`` 的 ``_QUOTES_SNAPSHOT_BATCH = 80`` 直接矛盾。
+    分片上限 ``atst/client/_mixin.py`` 的 ``_QUOTES_SNAPSHOT_BATCH = 80`` 直接矛盾。
     按"无理由孤儿一律接线或删除"，声称数字而无人执行的一侧删除，数字只留在执行它
     的那处代码里。
     """
@@ -71,7 +71,7 @@ def test_the_registry_declares_no_batch_quota() -> None:
     import dataclasses
     import inspect
 
-    from tstdx.client._mixin import _QUOTES_SNAPSHOT_BATCH
+    from atst.client._mixin import _QUOTES_SNAPSHOT_BATCH
 
     fields = {item.name for item in dataclasses.fields(ChannelSpec)}
     assert "batch_limits" not in fields
@@ -121,7 +121,7 @@ def test_every_channel_spec_field_has_a_reader() -> None:
     """``ChannelSpec`` 的每个字段都必须有人按它行动（F-54）。
 
     ``markets`` 曾在 23 个 channel 上声称支持哪些市场，读取点是 0——而且它的词汇（``cn_a``
-    /``hk``/``us``/``option``…）在代码里没有任何一侧与 ``tstdx.domain.symbol.Market`` 对接：
+    /``hk``/``us``/``option``…）在代码里没有任何一侧与 ``atst.domain.symbol.Market`` 对接：
     市场正确性实际由 ``Symbol.tdx_market`` 对 HK/US fail-closed 兜住，注册表这套是第二份没人执行
     的词汇表。
     ``notes`` 是写在代码里的注释，全仓唯一的"读取"来自测试本身。两者按 clean break 删除
@@ -149,7 +149,7 @@ def test_every_provider_spec_field_has_a_reader() -> None:
     没人兑现的声称。字段清单取自 dataclass 本身，新增字段没有读取点即当场变红。
     """
 
-    from tstdx.providers import ProviderSpec
+    from atst.providers import ProviderSpec
 
     fields, scanned, reads = unread_fields(
         ProviderSpec, {"self", "spec", "provider", "pspec", "provider_spec", "item", "value"}

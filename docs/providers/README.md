@@ -1,4 +1,4 @@
-# tstdx Provider 接口目录
+# atst Provider 接口目录
 
 > Status: v12 target contract  
 > Terminology: `docs/adr/ADR-013-provider-source-terminology.md`  
@@ -6,7 +6,7 @@
 
 ## 1. 核心术语
 
-`tstdx` 只把“谁提供数据”建模成 **Provider**。
+`atst` 只把“谁提供数据”建模成 **Provider**。
 
 - **Provider**：`tdx / tencent / sina / eastmoney / baidu / jsl / boc / iwencai`。
 - **source**：API/兼容语义中的 Provider selector，值就是 Provider ID，不是第二层对象。
@@ -287,14 +287,14 @@ v17 运行期不做结果缓存：每一次公开查询都编译为一个 `Query
 - replay/synthetic 或跨 Provider 的 payload 不能冒充当前 Provider 的真实数据；
 - 新鲜度只有 `currentness`（`auto`/`live`/`historical`/`business`）这一套口径：它是调用方的声明，运行期只对能判据的那一面（本地文件 channel 被要求当期口径）兑现，其余口径差异不产出 per-result 的 freshness 标签（`historical_closed`/`current_series` 这类模式名从未存在于代码，F-68 登记）；
 - 调用方要控制的是新鲜度**口径**（`currentness`）与执行**预算**（`deadline_ms`），不是过期容忍度
-  或部分放行——`options` 袋里只有 `tstdx.query.EXECUTED_OPTIONS` 的键会被执行面读取，
-  其余键（含 `tstdx.query.REJECTED_OPTIONS` 的策略键）在直连执行面上恒被当场拒绝。
+  或部分放行——`options` 袋里只有 `atst.query.EXECUTED_OPTIONS` 的键会被执行面读取，
+  其余键（含 `atst.query.REJECTED_OPTIONS` 的策略键）在直连执行面上恒被当场拒绝。
 
 ## 12. Error
 
-错误树只有一棵：`tstdx/errors.py`，不创建第二棵。
+错误树只有一棵：`atst/errors.py`，不创建第二棵。
 
-v17 没有"选定 Provider 不可用"的统一异常类：F-68 裁决把 E7050 那个占位叶子连同声明一起删了（退役记录只在 `docs/errors.md` §一之二登记，本节不重复点名），"Provider 真实不可用"由下面的传输层原异常承担。新增 Provider 也不许再立一个统一的"不可用"类来替代真实失败原因。本文点名的错误名与 `tstdx/errors.py` 的树之间由 `tests/architecture/test_error_promises.py` 双向核对：树里的类被文档点名却无运行期站点是幻影异常，文档点名的名字不在树里是幻影名，两边都红。
+v17 没有"选定 Provider 不可用"的统一异常类：F-68 裁决把 E7050 那个占位叶子连同声明一起删了（退役记录只在 `docs/errors.md` §一之二登记，本节不重复点名），"Provider 真实不可用"由下面的传输层原异常承担。新增 Provider 也不许再立一个统一的"不可用"类来替代真实失败原因。本文点名的错误名与 `atst/errors.py` 的树之间由 `tests/architecture/test_error_promises.py` 双向核对：树里的类被文档点名却无运行期站点是幻影异常，文档点名的名字不在树里是幻影名，两边都红。
 
 选定 Provider 无法满足请求时，用户实际拿到的是：
 

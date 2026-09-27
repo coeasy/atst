@@ -1,11 +1,11 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """投递口错误必须真的能投递：为 ``BackpressureOverflow`` 补上行为判据。
 
 第 44 步执行 F-68 裁决 (a) 时，``BackpressureOverflow`` 是五个"删除名额"里唯一被取证否掉
 的那个——``tests/architecture/test_error_promises.py`` 的后缀过滤把它在
-``tstdx/streaming/base.py`` 的 ``on_error(BackpressureOverflow(...))`` 整条看不见，于是台账
+``atst/streaming/base.py`` 的 ``on_error(BackpressureOverflow(...))`` 整条看不见，于是台账
 把它和四个真幻影一起记成了"运行期永不发生"。AST 站点只是"这行代码在"，本模块要的是
 **这条溢出信号确实会走到用户回调**：订阅两个标的、队列容量 1，一轮内必然丢最旧一条，
 丢弃计数一旦上升就必须发出该异常。
@@ -19,10 +19,10 @@ from __future__ import annotations
 
 import threading
 
-from tstdx.errors import BackpressureOverflow
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.result import Provenance, QueryResult
-from tstdx.streaming import StatefulQuoteStream
+from atst.errors import BackpressureOverflow
+from atst.query import QueryPlanner, QuerySpec
+from atst.result import Provenance, QueryResult
+from atst.streaming import StatefulQuoteStream
 
 
 class TwoSymbolRuntime:

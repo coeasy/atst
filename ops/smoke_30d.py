@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """30 天真实环境冒烟（R5）。
@@ -39,7 +39,7 @@ def _iso_now() -> str:
 
 def _probe_tdx() -> float:
     """TDX 原生协议独立调用：quotes_concurrent 单只（返回 dict）。"""
-    from tstdx.client import TdxClient
+    from atst.client import TdxClient
 
     with TdxClient(timeout=5.0, max_retries=2) as client:
         quotes = client.quotes_concurrent([_SYMBOL])
@@ -57,7 +57,7 @@ def _probe_tdx() -> float:
 
 def _probe_web(source: str) -> float:
     """HTTP Web 源独立调用（新浪 / 腾讯 / 东财）。"""
-    from tstdx.web.session import web_session
+    from atst.web.session import web_session
 
     sess = web_session(source)
     try:
@@ -89,9 +89,9 @@ def run_one_round() -> int:
         "duration_ms": 0.0,
     }
     try:
-        import tstdx
+        import atst
 
-        row["version"] = tstdx.__version__
+        row["version"] = atst.__version__
     except Exception:  # pragma: no cover - 版本读取失败不致命
         row["version"] = "unknown"
 
@@ -160,7 +160,7 @@ def summarize() -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="tstdx 30 天真实环境冒烟")
+    parser = argparse.ArgumentParser(description="atst 30 天真实环境冒烟")
     parser.add_argument("--summarize", action="store_true", help="聚合历史结果")
     args = parser.parse_args()
     if args.summarize:

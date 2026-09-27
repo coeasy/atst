@@ -33,7 +33,7 @@ Thumbs.db
 .idea/
 .vscode/
 .workbuddy/
-.tstdx/
+.atst/
 logs/
 reports/
 *.log

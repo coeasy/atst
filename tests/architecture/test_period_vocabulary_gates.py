@@ -1,16 +1,16 @@
-"""周期词表的派生门禁：``tstdx/domain/period.py`` 是唯一声明处，其余各面只许派生。
+"""周期词表的派生门禁：``atst/domain/period.py`` 是唯一声明处，其余各面只许派生。
 
 第 18 轮第一次把"用户打字的那串周期拼写"上分母，量到的是**同一份库、同一个旋钮、
 两张面给不同答案**：
 
-* ``tstdx/client/core.py::_PERIOD_TO_CATEGORY`` 曾是 24 个手写字面量键，与
-  ``tstdx/domain/period.py::PERIOD_ALIASES``（29 键）各抄一份别名，两份的交集只有 14 格；
+* ``atst/client/core.py::_PERIOD_TO_CATEGORY`` 曾是 24 个手写字面量键，与
+  ``atst/domain/period.py::PERIOD_ALIASES``（29 键）各抄一份别名，两份的交集只有 14 格；
 * 于是 15 个拼写经运行期规范路径能取到数据、经 ``Client.bars(period=...)`` 直接报
   ``ParseError``：``1d`` ``1mo`` ``1w`` ``1y`` ``m1`` ``m5`` ``m15`` ``m30`` ``m60``
   ``monthly`` ``q`` ``quarterly`` ``weekly`` ``y`` ``yearly``（本轮实测，见行动记录）；
-* ``tstdx/web/_session_market.py::KLINES_PERIOD_ALIASES`` 是第三份手抄的 19 键，
+* ``atst/web/_session_market.py::KLINES_PERIOD_ALIASES`` 是第三份手抄的 19 键，
   与上面两份又不相同；
-* ``tstdx/query.py::_MINUTE_PERIODS`` 是第四份（决定 ``minute_kline`` 还是 ``kline`` 通道）；
+* ``atst/query.py::_MINUTE_PERIODS`` 是第四份（决定 ``minute_kline`` 还是 ``kline`` 通道）；
 * ``Period.QUARTER = "quarter"`` 则是把 :attr:`Period.SEASON` 的一个**别名**登记成了
   平级成员——域内规范表明写 ``"quarter" -> "season"``。
 
@@ -29,17 +29,17 @@ import ast
 import re
 
 from tests.support.field_readers import REPO_ROOT, module_assignment, string_keys_of_table
-from tstdx.client.core import _CANONICAL_TO_CATEGORY, _PERIOD_TO_CATEGORY, period_to_category
-from tstdx.domain.period import (
+from atst.client.core import _CANONICAL_TO_CATEGORY, _PERIOD_TO_CATEGORY, period_to_category
+from atst.domain.period import (
     CANONICAL_PERIODS,
     MINUTE_PERIODS,
     PERIOD_ALIASES,
     normalize_bar_period,
 )
-from tstdx.query import _canonical_unified_channel
-from tstdx.reader.profile import Period
-from tstdx.web._session_market import _KLINE_SERVABLE, KLINES_PERIOD_ALIASES
-from tstdx.web.tencent.adapters import KlineSource
+from atst.query import _canonical_unified_channel
+from atst.reader.profile import Period
+from atst.web._session_market import _KLINE_SERVABLE, KLINES_PERIOD_ALIASES
+from atst.web.tencent.adapters import KlineSource
 
 #: 第 18 轮实测那 15 个"一面能查、另一面报错"的拼写。它们是本轮的来路，
 #: 留着是为了让"派生"这一步不许悄悄退回去。
@@ -185,13 +185,13 @@ def test_the_category_and_web_tables_are_derived_not_recopied() -> None:
     """AST 现读：这两张表的赋值右侧必须引用域内那份词表，字面量别名键一回来就红。"""
 
     for relative, table in (
-        ("tstdx/client/core.py", "_PERIOD_TO_CATEGORY"),
-        ("tstdx/web/_session_market.py", "KLINES_PERIOD_ALIASES"),
+        ("atst/client/core.py", "_PERIOD_TO_CATEGORY"),
+        ("atst/web/_session_market.py", "KLINES_PERIOD_ALIASES"),
     ):
         node = module_assignment(relative, table)
         assert any(
             isinstance(item, ast.Name) and item.id == "PERIOD_ALIASES" for item in ast.walk(node)
-        ), f"{table} 不再从 tstdx.domain.period.PERIOD_ALIASES 派生：又成了手抄件"
+        ), f"{table} 不再从 atst.domain.period.PERIOD_ALIASES 派生：又成了手抄件"
         recopied = _literal_alias_keys(node)
         assert not recopied, f"{table} 里出现了手抄的别名字面量键：{sorted(recopied)}"
 
@@ -199,10 +199,10 @@ def test_the_category_and_web_tables_are_derived_not_recopied() -> None:
 def test_the_hand_written_part_holds_only_protocol_numbers() -> None:
     """手写的只剩「规范拼写 → 协议号」这一张表，且除 ``tick`` 外每档都要有编号。"""
 
-    assert string_keys_of_table("tstdx/client/core.py", "_CANONICAL_TO_CATEGORY") == set(
+    assert string_keys_of_table("atst/client/core.py", "_CANONICAL_TO_CATEGORY") == set(
         _CANONICAL_TO_CATEGORY
     ), "category 表混进了非字面量键：手写部分与派生部分的边界变了"
-    assert string_keys_of_table("tstdx/client/core.py", "_PERIOD_TO_CATEGORY") == set(), (
+    assert string_keys_of_table("atst/client/core.py", "_PERIOD_TO_CATEGORY") == set(), (
         "派生表里又出现了字面量键：那张表只许由域内词表派生"
     )
     missing = sorted(set(CANONICAL_PERIODS) - {"tick"} - set(_CANONICAL_TO_CATEGORY))
@@ -249,11 +249,11 @@ def _accepted_by_normalizer(served: set[str]) -> set[str]:
 def _runtime_surface() -> dict[str, tuple[int, int]]:
     """每一行文档 → ``(服务档数, 接受写法数)``，全部现读运行期表。"""
 
-    from tstdx.web._session_market import _KLINE_SERVABLE, KLINES_PERIOD_ALIASES
-    from tstdx.web.baidu.adapters import _KLINE_KTYPES
-    from tstdx.web.eastmoney.adapters import EastmoneyHistoryKlineSource
-    from tstdx.web.sina.adapters import SinaHistoryKlineSource
-    from tstdx.web.tencent.adapters import _MKLINE_PERIODS, KlineSource
+    from atst.web._session_market import _KLINE_SERVABLE, KLINES_PERIOD_ALIASES
+    from atst.web.baidu.adapters import _KLINE_KTYPES
+    from atst.web.eastmoney.adapters import EastmoneyHistoryKlineSource
+    from atst.web.sina.adapters import SinaHistoryKlineSource
+    from atst.web.tencent.adapters import _MKLINE_PERIODS, KlineSource
 
     def row(served: set[str], accepted: set[str]) -> tuple[int, int]:
         return (len(served), len(accepted))

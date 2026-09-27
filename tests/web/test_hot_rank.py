@@ -10,12 +10,12 @@ import json
 
 import pytest
 
-from tstdx.errors import SourceDeprecated, WebSourceError
-from tstdx.web.base import HttpResponse, RateLimiter
-from tstdx.web.fundflow import EastmoneyStockChangesSource
-from tstdx.web.hot_rank import EastmoneyHotRankSource
-from tstdx.web.session import WebQuoteSession
-from tstdx.web.sources import KNOWN_SOURCES
+from atst.errors import SourceDeprecated, WebSourceError
+from atst.web.base import HttpResponse, RateLimiter
+from atst.web.fundflow import EastmoneyStockChangesSource
+from atst.web.hot_rank import EastmoneyHotRankSource
+from atst.web.session import WebQuoteSession
+from atst.web.sources import KNOWN_SOURCES
 
 pytestmark = pytest.mark.unit
 
@@ -142,7 +142,7 @@ class TestStockChanges:
 
     def test_facade_entries(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "tstdx.web.fundflow.EastmoneyStockChangesSource.fetch_changes",
+            "atst.web.fundflow.EastmoneyStockChangesSource.fetch_changes",
             lambda self, types=(), *, page=1, size=50: [{"change_type": 8201}],
         )
         assert WebQuoteSession.stock_changes((8201,))[0]["change_type"] == 8201
@@ -233,7 +233,7 @@ class TestHotRank:
 
     def test_facade_entries(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "tstdx.web.hot_rank.EastmoneyHotRankSource.fetch_hot_rank",
+            "atst.web.hot_rank.EastmoneyHotRankSource.fetch_hot_rank",
             lambda self, *, page=1, size=100: [{"rank": 1, "symbol": "sh600127"}],
         )
         assert WebQuoteSession.hot_rank()[0]["rank"] == 1
@@ -249,7 +249,7 @@ class TestHotRank:
 @pytest.mark.network
 class TestLiveSmoke:
     def _guarded(self, fn):
-        from tstdx.errors import TdxError
+        from atst.errors import TdxError
 
         try:
             return fn()

@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-`PROTOCOL_SPEC/` 是 **tstdx 项目的协议规范权威源**，以人可读的 YAML 文件形式
+`PROTOCOL_SPEC/` 是 **atst 项目的协议规范权威源**，以人可读的 YAML 文件形式
 精确描述每一个 TDX 协议命令的二进制帧结构——请求体、响应头、响应记录布局、
 字段类型、偏移量、编码格式。
 
@@ -86,7 +86,7 @@ PROTOCOL_SPEC/
 > 真机 golden 样本到位后逐个翻转 `stable` 并补 `golden_samples`。
 >
 > **TRADE 交易族**：帧布局为洁净室推断占位（**`status: draft`**），独立于
-> 行情族（8 字节帧头、价格以分、长度前缀 GBK 串），由 `tstdx/trade/`
+> 行情族（8 字节帧头、价格以分、长度前缀 GBK 串），由 `atst/trade/`
 > 模拟器回路验证；**红线**——绝不连接真实券商通道。真机抓包定标前
 > 不得将布局当作协议事实，相关命令也未登记入 `commands.py` 账本。
 
@@ -101,7 +101,7 @@ PROTOCOL_SPEC/
 PROTOCOL_SPEC/7709/0x052D_SECURITY_BARS.yaml
         │
         ▼
-tools/codegen.py  ──→  tstdx/protocol/parsers/std7709.py
+tools/codegen.py  ──→  atst/protocol/parsers/std7709.py
                            class SecurityBarsParser(BaseParser): ...
         │                              │
         │                              ▼
@@ -131,10 +131,10 @@ tools/spec_audit.py  ──────────────────┘
 $ $EDITOR PROTOCOL_SPEC/7709/0x052D_SECURITY_BARS.yaml
 
 # 2. 生成解析器
-$ python -m tstdx.tools.codegen PROTOCOL_SPEC/7709/0x052D_SECURITY_BARS.yaml
+$ python -m atst.tools.codegen PROTOCOL_SPEC/7709/0x052D_SECURITY_BARS.yaml
 
 # 3. 验证 spec 与实现的契约一致性
-$ python -m tstdx.tools.spec_audit
+$ python -m atst.tools.spec_audit
 
 # 4. 运行 golden 回归
 $ pytest tests/unit/test_golden.py -k "0x052D"
@@ -202,7 +202,7 @@ CI 门禁：`spec_audit` 任一检查失败则 pipeline 红灯。
 5. 如有 golden 样本，填入 `golden_samples` 路径
 6. 运行 `codegen.py` 生成解析器
 7. 运行 `spec_audit.py` 验证一致性
-8. 在 `tstdx/protocol/commands.py` 中注册命令（如尚未注册）
+8. 在 `atst/protocol/commands.py` 中注册命令（如尚未注册）
 
 ***
 

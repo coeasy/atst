@@ -8,7 +8,7 @@
 
 > **文档状态**：v2.0（重大升级）
 > **创建日期**：2026-08-31
-> **工作区**：`D:\workspace\tstdx`
+> **工作区**：`D:\workspace\atst`
 > **历史版本**：`docs/archive/DESIGN_v1.0.md`
 
 ---
@@ -52,7 +52,7 @@
 
 ## 1. 项目定位与目标
 
-**tstdx** — TongDaXin Standard Data eXchange
+**atst** — TongDaXin Standard Data eXchange
 
 通达信行情数据的**通用底层协议基础设施**。类比 HTTP 世界的 `requests` —— 稳定、标准、可组合，不做应用层业务。
 
@@ -114,7 +114,7 @@ tokio              — 异步运行时（MIT）
 ### 2.3 目录结构（v2.0 新增部分标 ★）
 
 ```
-tstdx/
+atst/
 ├── DESIGN.md
 ├── PLAN.md
 │
@@ -131,7 +131,7 @@ tstdx/
 │   ├── AUDIT_REPORT.md
 │   └── CLEANROOM_PROCESS.md
 │
-├── tstdx/
+├── atst/
 │   ├── errors.py / types.py / constants.py
 │   │
 │   ├── transport/
@@ -174,7 +174,7 @@ tstdx/
 │   ├── observability/            ★ metrics.py / logging.py / tracing.py
 │   └── integration/cli.py / http_server.py / ws_server.py / mcp_server.py
 │
-├── tstdx_native/                  # Rust 内核（可选）
+├── atst_native/                  # Rust 内核（可选）
 │   └── src/{transport,reader,protocol,streaming}.rs
 │
 ├── tools/
@@ -276,7 +276,7 @@ tstdx/
 │  B 组：实现（只读 A 组规格，不接触参考项目源码）          │
 │  · 依据 spec 独立编写解析代码                            │
 │  · 用自采集 golden 数据验证正确性                        │
-│  ↓ 产出：tstdx/protocol/**.py                           │
+│  ↓ 产出：atst/protocol/**.py                           │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -659,7 +659,7 @@ class ProtocolSniffer:
 
     动作：
       1. 记录完整请求/响应字节
-         → ~/.tstdx/sniffer/<date>/<msg_id>_<seq>.bin
+         → ~/.atst/sniffer/<date>/<msg_id>_<seq>.bin
       2. 记录上下文：主站地址、时间戳、请求 payload、会话状态
       3. 生成 spec 草案
          → PROTOCOL_SPEC/UNKNOWN/<date>_<msg_id>.md
@@ -725,11 +725,11 @@ class ProtocolProber:
 ### 5.10 覆盖度度量与 CLI
 
 ```bash
-tstdx protocol coverage              # 覆盖度报告
-tstdx protocol list                  # 列出所有已注册命令
-tstdx protocol unknown               # 列出 Sniffer 捕获的未知命令
-tstdx protocol draft 0x1234          # 生成/查看 spec 草案
-tstdx protocol probe --range 0x1000-0x1100 --rate-limit 1
+atst protocol coverage              # 覆盖度报告
+atst protocol list                  # 列出所有已注册命令
+atst protocol unknown               # 列出 Sniffer 捕获的未知命令
+atst protocol draft 0x1234          # 生成/查看 spec 草案
+atst protocol probe --range 0x1000-0x1100 --rate-limit 1
 ```
 
 ```python
@@ -1078,7 +1078,7 @@ MAC_HOSTS_7709     = [...]   # 3 台专属
 
 class ServerRanking:
     async def benchmark(self, top_n: int = 5, timeout: float = 3.0)
-    def save(self)   # → ~/.tstdx/server_ranking.json
+    def save(self)   # → ~/.atst/server_ranking.json
     def load(self)
 ```
 
@@ -1560,7 +1560,7 @@ class ResyncEvent(StreamEvent):
 
 ```python
 import asyncio
-from tstdx import create_client, Channel, StreamMode, EventType
+from atst import create_client, Channel, StreamMode, EventType
 
 
 async def main():
@@ -1654,7 +1654,7 @@ class AdjustEngine:
 
 ```python
 class Cache:
-    """多级缓存：内存 LRU（256 MiB）+ 磁盘（1 GiB，~/.tstdx/cache）
+    """多级缓存：内存 LRU（256 MiB）+ 磁盘（1 GiB，~/.atst/cache）
 
     TTL 分级：
       静态数据（证券列表/Spec）  24h
@@ -1775,31 +1775,31 @@ class Helpers:
 
 ```bash
 # 行情
-tstdx quotes 600519 000001
-tstdx kline 600519 --period daily --count 100 --adjust qfq --output dataframe
-tstdx minute 600519
-tstdx tick 600519
+atst quotes 600519 000001
+atst kline 600519 --period daily --count 100 --adjust qfq --output dataframe
+atst minute 600519
+atst tick 600519
 
 # 本地文件
-tstdx read-day 600519 --vipdoc /path/to/vipdoc --profile a_share_equity_daily
-tstdx read-min 600519 --period 1min
+atst read-day 600519 --vipdoc /path/to/vipdoc --profile a_share_equity_daily
+atst read-min 600519 --period 1min
 
 # 实时流
-tstdx stream 600519 000001 --channels quote,tick
-tstdx stream --top 100 --channels quote
+atst stream 600519 000001 --channels quote,tick
+atst stream --top 100 --channels quote
 
 # 协议工具
-tstdx protocol coverage
-tstdx protocol list
-tstdx protocol unknown
-tstdx protocol draft 0x1234
-tstdx protocol probe --range 0x1000-0x1100 --rate-limit 1
+atst protocol coverage
+atst protocol list
+atst protocol unknown
+atst protocol draft 0x1234
+atst protocol probe --range 0x1000-0x1100 --rate-limit 1
 
 # 主站 / 服务
-tstdx benchmark --top 5
-tstdx server-status
-tstdx serve --port 8000
-tstdx mcp
+atst benchmark --top 5
+atst server-status
+atst serve --port 8000
+atst mcp
 ```
 
 ### 13.2 HTTP REST API
@@ -1858,16 +1858,16 @@ WS /ws/stream
 
 ```python
 MCP_TOOLS = [
-    "tstdx_quotes",  # 实时行情（A股/港股/美股/期货）
-    "tstdx_kline",  # K线（含复权）
-    "tstdx_minute",  # 分时
-    "tstdx_tick",  # 逐笔
-    "tstdx_blocks",  # 板块
-    "tstdx_capital_flow",  # 资金流向
-    "tstdx_f10",  # F10 资料
-    "tstdx_read_local",  # 本地文件解析
-    "tstdx_subscribe_stream",  # ★ 实时订阅
-    "tstdx_protocol_probe",  # ★ 协议探测
+    "atst_quotes",  # 实时行情（A股/港股/美股/期货）
+    "atst_kline",  # K线（含复权）
+    "atst_minute",  # 分时
+    "atst_tick",  # 逐笔
+    "atst_blocks",  # 板块
+    "atst_capital_flow",  # 资金流向
+    "atst_f10",  # F10 资料
+    "atst_read_local",  # 本地文件解析
+    "atst_subscribe_stream",  # ★ 实时订阅
+    "atst_protocol_probe",  # ★ 协议探测
 ]
 ```
 
@@ -1879,34 +1879,34 @@ MCP_TOOLS = [
 
 ```python
 # 连接
-tstdx_connection_active          Gauge
-tstdx_connection_errors_total    Counter
-tstdx_connection_latency_seconds Histogram
+atst_connection_active          Gauge
+atst_connection_errors_total    Counter
+atst_connection_latency_seconds Histogram
 
 # 请求
-tstdx_requests_total             Counter{command, market, status}
-tstdx_request_duration_seconds   Histogram{command}
-tstdx_request_errors_total       Counter{command, error_code}
+atst_requests_total             Counter{command, market, status}
+atst_request_duration_seconds   Histogram{command}
+atst_request_errors_total       Counter{command, error_code}
 
 # 协议（★ 覆盖度监控）
-tstdx_protocol_parse_tier        Counter{tier}        # L1/L2/L3
-tstdx_protocol_unknown_commands  Counter{msg_id}
-tstdx_protocol_confidence        Histogram            # L2 置信度分布
+atst_protocol_parse_tier        Counter{tier}        # L1/L2/L3
+atst_protocol_unknown_commands  Counter{msg_id}
+atst_protocol_confidence        Histogram            # L2 置信度分布
 
 # Streaming
-tstdx_stream_events_total        Counter{channel, type}
-tstdx_stream_queue_depth         Gauge
-tstdx_stream_dropped_total       Counter{reason}
-tstdx_stream_latency_seconds     Histogram            # 端到端延迟
-tstdx_stream_gapfill_total       Counter{status}
-tstdx_stream_reconnect_total     Counter
+atst_stream_events_total        Counter{channel, type}
+atst_stream_queue_depth         Gauge
+atst_stream_dropped_total       Counter{reason}
+atst_stream_latency_seconds     Histogram            # 端到端延迟
+atst_stream_gapfill_total       Counter{status}
+atst_stream_reconnect_total     Counter
 
 # Profile
-tstdx_profile_detect_confidence  Histogram
-tstdx_profile_detect_fallback    Counter
+atst_profile_detect_confidence  Histogram
+atst_profile_detect_fallback    Counter
 
 # 数据质量
-tstdx_validation_issues_total    Counter{severity, rule}
+atst_validation_issues_total    Counter{severity, rule}
 ```
 
 ### 14.2 结构化日志
@@ -1915,7 +1915,7 @@ tstdx_validation_issues_total    Counter{severity, rule}
 {
   "ts": "2026-08-31T10:15:32.123+08:00",
   "level": "WARNING",
-  "logger": "tstdx.protocol",
+  "logger": "atst.protocol",
   "trace_id": "a1b2c3d4",
   "event": "unknown_command",
   "msg_id": "0x1234",
@@ -2110,7 +2110,7 @@ class GoldenCollector:
 @pytest.fixture(params=["python", "native"])
 def reader(request, vipdoc_path):
     if request.param == "native":
-        pytest.importorskip("tstdx._native")
+        pytest.importorskip("atst._native")
         return DailyBarReaderNative(vipdoc_path)
     return DailyBarReader(vipdoc_path)
 
@@ -2263,7 +2263,7 @@ Phase 4  补全+打磨       ░░░░░░░░░░░░░░░░░
 
 ## 18. 参考项目能力对照表
 
-| 能力维度 | mootdx | easy_tdx | tdx-api | tdxrs | eltdx | **tstdx v2.0** |
+| 能力维度 | mootdx | easy_tdx | tdx-api | tdxrs | eltdx | **atst v2.0** |
 |---|---|---|---|---|---|---|
 | 标准协议命令数 | 部分 | 部分 | 部分 | 部分 | 21 | **36+ 全量** |
 | 未知命令兜底 | ✗ | ✗ | ✗ | ✗ | ✗ | **✓ L2通用+L3透传** |
@@ -2295,7 +2295,7 @@ Phase 4  补全+打磨       ░░░░░░░░░░░░░░░░░
 | **原创性保障** | — | — | — | — | — | **✓ 洁净室 + CI 审计** |
 | License | MIT | 学习研究 | MIT | MIT | **禁止商用** | **MIT** |
 
-### tstdx v2.0 独有优势
+### atst v2.0 独有优势
 
 1. **协议三层覆盖** — 已知精确解析 + 未知通用解析 + 原始透传，永不丢包；独有 Sniffer/Prober 持续补全协议
 2. **商品语义协议** — 期货/期权/外汇/贵金属的 `Goods*` 协议族，多数库完全缺失
@@ -2318,7 +2318,7 @@ Phase 4  补全+打磨       ░░░░░░░░░░░░░░░░░
 ### 19.2 原创性声明
 
 ```
-tstdx 全部代码为原创实现。
+atst 全部代码为原创实现。
 
 协议格式的获取途径：
   · 自有环境网络抓包（连接公开 TDX 主站）
@@ -2386,7 +2386,7 @@ tstdx 全部代码为原创实现。
         ▼                    ▼                    ▼                    ▼
 ┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐
 │ ⑤测试验证        │──▶│ ⑥Library 分发   │──▶│ ⑦用户应用       │──▶│ ⑧反馈回路        │
-│  golden/golden │   │  PyPI wheel    │   │  tstdx.toml    │   │  opt-in        │
+│  golden/golden │   │  PyPI wheel    │   │  atst.toml    │   │  opt-in        │
 │  fuzz/property │   │  conda-forge   │   │  user code     │   │  privacy-filtered│
 │  bench/regress │   │  docker        │   │  SDK/HTTP/MCP  │   │  → git/issue   │
 └────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘
@@ -2406,7 +2406,7 @@ tstdx 全部代码为原创实现。
 # PROTOCOL_SPEC/7709/052d_kline.yaml（不是 md，是 YAML，便于校验）
 spec_id: 7709/0x052d/kline
 version: "1.3.0"
-tstdx_version_required: ">=0.6.0,<1.0"   # 这个 spec 要求 tstdx 至少 0.6.0
+atst_version_required: ">=0.6.0,<1.0"   # 这个 spec 要求 atst 至少 0.6.0
 fields:
   - { offset: 0,  size: 4, type: uint32_date, name: date,        unit: YYYYMMDD }
   - { offset: 4,  size: 4, type: uint32,       name: open,        scale: 0.01, encoding: little }
@@ -2418,7 +2418,7 @@ known_hosts: ["main_hosts"]
 #### 20.2.2 Spec → 实现生成的代码模板
 
 ```python
-# src/tstdx/protocol/parsers/auto_generated/7709_052d_kline.py
+# src/atst/protocol/parsers/auto_generated/7709_052d_kline.py
 # 这一行是机器生成的，不要手改（CI 会还原）
 # @generated from PROTOCOL_SPEC/7709/052d_kline.yaml @ 2026-09-02T10:00:00Z
 @register_parser(msg_id=0x052D, protocol="7709")
@@ -2429,16 +2429,16 @@ def parse_kline(raw: bytes, profile: DataProfile) -> ParsedResult:
 
 ```bash
 # 重新生成所有解析器
-$ python -m tstdx.tools.codegen --regen-all
+$ python -m atst.tools.codegen --regen-all
 # 校验所有生成代码与 spec 一致
-$ python -m tstdx.tools.codegen --verify-all  # 阻断 CI
+$ python -m atst.tools.codegen --verify-all  # 阻断 CI
 ```
 
 #### 20.2.3 实现 → Spec 的反向校验
 
 ```python
 # tools/spec_audit.py
-# 扫 src/tstdx/protocol/parsers/ 与 PROTOCOL_SPEC/
+# 扫 src/atst/protocol/parsers/ 与 PROTOCOL_SPEC/
 # 1. 每个 parser 文件首行的 @register_parser() 必须能在某 spec 中找到匹配
 # 2. 每个 spec 必须有对应 parser；缺失则阻断 CI
 # 3. spec 中 field 的 offset+size 必须能完全覆盖响应报文（不允许 parse 后还有未消费字节）
@@ -2461,7 +2461,7 @@ def test_spec_parse_roundtrip(spec_id, protocol, host):
 ### 20.3 捕获闭环：捕获 → 归档 → 二次分析
 
 ```python
-# CLI: tstdx protocol capture 0x052d sh600519 1d 30
+# CLI: atst protocol capture 0x052d sh600519 1d 30
 # → 在 tests/golden/raw/7709/0x052d/sh600519_1d_<timestamp>.zst 存 zstd 压缩的原始报文
 # → 在 tests/golden/meta/7709/0x052d/sh600519_1d_<timestamp>.yaml 存元数据
 ---
@@ -2480,9 +2480,9 @@ legal_basis: "see §22.3"
 **归档后二次分析**：
 
 ```python
-# CLI: tstdx protocol replay <file.zst>
+# CLI: atst protocol replay <file.zst>
 # 输出与原始抓取完全一致的解析结果（双向校验）
-$ tstdx protocol replay tests/golden/raw/7709/0x052d/*.zst
+$ atst protocol replay tests/golden/raw/7709/0x052d/*.zst
 ```
 
 ### 20.4 10 大贯通工程清单（详见 §21–§30 + §33）
@@ -2509,19 +2509,19 @@ $ tstdx protocol replay tests/golden/raw/7709/0x052d/*.zst
 ```
 优先级（高 → 低）：
   ① 函数入参      client = TdxClient(config_overrides={"rate_limit": 50})
-  ② 环境变量       TSTDX_RATE_LIMIT=50
-  ③ 项目级配置     ./tstdx.toml （或 ./pyproject.toml [tool.tstdx]）
-  ④ 用户级配置     ~/.config/tstdx/config.toml （XDG 规范）
-  ⑤ 系统级配置     /etc/tstdx/config.toml （可选，存在需 root）
-  ⑥ 内置默认       src/tstdx/_defaults.py
+  ② 环境变量       ATST_RATE_LIMIT=50
+  ③ 项目级配置     ./atst.toml （或 ./pyproject.toml [tool.atst]）
+  ④ 用户级配置     ~/.config/atst/config.toml （XDG 规范）
+  ⑤ 系统级配置     /etc/atst/config.toml （可选，存在需 root）
+  ⑥ 内置默认       src/atst/_defaults.py
 ```
 
 **合并语义**：deep-merge；列表拼接（不去重）；标量覆盖。
 
-### 21.2 tstdx.toml Schema（pydantic v2）
+### 21.2 atst.toml Schema（pydantic v2）
 
 ```toml
-# ~/.config/tstdx/config.toml
+# ~/.config/atst/config.toml
 [network]
 connect_timeout_ms = 5000
 read_timeout_ms = 30000
@@ -2531,7 +2531,7 @@ host_strategy = "adaptive"         # "adaptive" | "round_robin" | "manual"
 
 [main_hosts]                       # 用户可自定义主站
 override_urls = ["..."]
-ranking_cache_path = "~/.cache/tstdx/server_ranking.json"
+ranking_cache_path = "~/.cache/atst/server_ranking.json"
 
 [rate_limit]
 session_open   = 15                # 集合竞价 req/s
@@ -2563,7 +2563,7 @@ tracing = { enabled = false, exporter = "otel" }
 [security]
 use_tls             = false        # TDX 协议本身非加密；默认 false
 credential_backend  = "keyring"    # "keyring" | "env" | "file:~/..."
-user_agent          = "tstdx/0.x"
+user_agent          = "atst/0.x"
 
 # ────────────────────────────────────────────────────────────────
 # ★ v3.1 新增：HTTP Web 行情源配置（对应 §33）
@@ -2607,7 +2607,7 @@ easyquotation_layer = false        # ★ v3.1 启用时导入 easyquotation 兼�
 ### 21.3 配置加载与合并（实现要点）
 
 ```python
-# src/tstdx/config.py
+# src/atst/config.py
 from pydantic import BaseModel
 from pathlib import Path
 import os, sys
@@ -2638,10 +2638,10 @@ class ConfigLoader:
     def _load_layer(self, name):
         return {
             "callable": self._callable_overrides,
-            "env": {k: parse_env(v) for k, v in os.environ.items() if k.startswith("TSTDX_")},
-            "project": self._read_toml("./tstdx.toml"),
-            "user": self._read_toml("~/.config/tstdx/config.toml"),
-            "system": self._read_toml("/etc/tstdx/config.toml"),
+            "env": {k: parse_env(v) for k, v in os.environ.items() if k.startswith("ATST_")},
+            "project": self._read_toml("./atst.toml"),
+            "user": self._read_toml("~/.config/atst/config.toml"),
+            "system": self._read_toml("/etc/atst/config.toml"),
             "default": _defaults.DEFAULT_CONFIG_DICT,
         }[name]
 ```
@@ -2657,7 +2657,7 @@ with TdxClient() as c:
     c.config.streaming.push_queue_size = 2048
 
 # 持久化（用户主动调用，不自动写）
-c.config.save_to("~/.config/tstdx/config.toml")
+c.config.save_to("~/.config/atst/config.toml")
 ```
 
 ### 21.5 测试矩阵（12 case）
@@ -2687,7 +2687,7 @@ c.config.save_to("~/.config/tstdx/config.toml")
 ### 22.1 凭据存储（TDX 协议本身无认证，但部署相关账号体系存在）
 
 ```python
-# src/tstdx/security/credentials.py
+# src/atst/security/credentials.py
 class CredentialBackend(Protocol):
     def get(self, key: str) -> str | None: ...
     def set(self, key: str, value: str) -> None: ...
@@ -2695,15 +2695,15 @@ class CredentialBackend(Protocol):
 
 class KeyringBackend:  # 优先：系统 keyring（macOS Keychain / Win Credential / Linux Secret Service）
     def get(self, key):
-        return keyring.get_password("tstdx", key)
+        return keyring.get_password("atst", key)
 
     def set(self, key, value):
-        keyring.set_password("tstdx", key, value)
+        keyring.set_password("atst", key, value)
 
 
 class EnvBackend:  # 回退：环境变量
     def get(self, key):
-        return os.environ.get(f"TSTDX_CRED_{key.upper()}")
+        return os.environ.get(f"ATST_CRED_{key.upper()}")
 
 
 class FileBackend:  # 仅当显式启用 `file:/encrypted/path` 才用
@@ -2760,7 +2760,7 @@ class Bar:
     )
 ```
 
-**用户导出 CSV/Parquet 时**强制要求附带 `LICENSE_HEADER.txt`，提供工具 `tstdx data stamp` 注入。
+**用户导出 CSV/Parquet 时**强制要求附带 `LICENSE_HEADER.txt`，提供工具 `atst data stamp` 注入。
 
 ---
 
@@ -2769,7 +2769,7 @@ class Bar:
 ### 23.1 字符集处理
 
 ```python
-# src/tstdx/i18n/encoding.py
+# src/atst/i18n/encoding.py
 ENCODING_TABLE = {
     "gbk": codec("gbk"),  # 默认
     "gb18030": codec("gb18030"),  # 中文扩展
@@ -2801,7 +2801,7 @@ def decode(raw: bytes, *, prefer: str = "auto") -> str:
 ### 23.2 时区（UTC 内部 + 输出本地化）
 
 ```python
-# src/tstdx/i18n/timezone.py
+# src/atst/i18n/timezone.py
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -2833,7 +2833,7 @@ class MarketTime:
 ### 23.3 A 股交易日历
 
 ```python
-# src/tstdx/i18n/calendar.py
+# src/atst/i18n/calendar.py
 class ChinaSseCalendar:
     """上交所 + 深交所 + 北交所合并交易日历（含节假日、调休、临时休市）"""
     HOLIDAYS_2024_2026 = [
@@ -2891,7 +2891,7 @@ class ChinaSseCalendar:
 ### 24.1 错误分类树
 
 ```
-TstdxError (基类，所有 tstdx 抛出的异常都继承自此，用户可统一捕获)
+TstdxError (基类，所有 atst 抛出的异常都继承自此，用户可统一捕获)
 │
 ├── ConfigError                # 配置相关
 │   ├── ConfigNotFound         # 未找到配置项（用 default 时不抛，显式 strict=True 才抛）
@@ -2991,7 +2991,7 @@ RETRY_TABLE: dict[type, RetryAdvice] = {
 **用户范式**（catch-all 后看建议表）：
 
 ```python
-from tstdx import TstdxError, RetryAdvice
+from atst import TstdxError, RetryAdvice
 
 try:
     bars = client.get_bars("sh600519", period="1d", count=100)
@@ -3026,7 +3026,7 @@ except TstdxError as e:
 
 ```python
 # tests/errors/test_taxonomy.py
-def test_every_exception_subclasses_tstdx_error(): ...
+def test_every_exception_subclasses_atst_error(): ...
 def test_retry_advice_table_complete(): ...  # 每种类型必须有 advice
 def test_user_can_catch_all_with_TstdxError(): ...
 def test_retry_after_includes_backoff_seconds(): ...
@@ -3055,7 +3055,7 @@ class TdxClient:
 ### 25.2 同步桥实现
 
 ```python
-# src/tstdx/_async_bridge.py
+# src/atst/_async_bridge.py
 def run_sync(coro):
     """在独立守护线程中跑事件循环（同步上下文用）"""
     if threading.current_thread() is threading.main_thread():
@@ -3143,20 +3143,20 @@ async def test_no_event_loop_leak_after_run_sync(): ...
 #### 26.1.1 兼容垫片：mootdx API（**已废弃，v1.4.0 决议删除**）
 
 > **状态注记（v1.4.0，P13-D/G 文档漂移清理）**：mootdx 兼容垫片在 v1.4.0
-> 决议中已**不实现**——设计时曾规划 `tstdx.compat.mootdx` 提供 mootdx 风格
+> 决议中已**不实现**——设计时曾规划 `atst.compat.mootdx` 提供 mootdx 风格
 > API（`Quotes.get_security_quotes` / `get_k_data` / `Reader` 等），实际工程
 > 中未落地。§26 相关章节保留为**规划归档**，不作为当前实现承诺。
 >
 > 用户如需迁移 mootdx 代码：请按 ``UnifiedQuoteAPI`` / ``TdxClient`` 的原生
 > 接口重写（详见 ``README.md`` 快速上手与 ``docs/quickstart.md``）；或
-> 继续使用 mootdx 原库并通过数据管线对接 tstdx。
+> 继续使用 mootdx 原库并通过数据管线对接 atst。
 
 ```python
 # 历史规划（未实现，仅供参考）：
-# src/tstdx/compat/mootdx.py
+# src/atst/compat/mootdx.py
 # 提供与 mootdx 相同的接口，让原有 mootdx 用户零成本切换
-from tstdx import TdxClient as _Real
-from tstdx.compat.mootdx import Reader, Quotes, Affair  # 兼容类
+from atst import TdxClient as _Real
+from atst.compat.mootdx import Reader, Quotes, Affair  # 兼容类
 
 
 class Quotes:  # 类似 mootdx.Quotes
@@ -3179,7 +3179,7 @@ class Quotes:  # 类似 mootdx.Quotes
 #### 26.1.2 互转桥：DataFrame / Parquet / DuckDB sink
 
 ```python
-# src/tstdx/output/
+# src/atst/output/
 class BarSink(Protocol):
     def write(self, bars: list[Bar]) -> None: ...
 
@@ -3221,11 +3221,11 @@ with TdxClient() as c, ParquetSink("/data/tdx") as sink:
 #### 26.1.3 数据源路由：多源合并（未来扩展锚点）
 
 ```python
-# src/tstdx/sources/router.py
+# src/atst/sources/router.py
 class DataSourceRouter:
-    """定义 tstdx 在线源 + 可插拔第三方源（akshare/efinance/未来的新浪/腾讯）的统一路由"""
+    """定义 atst 在线源 + 可插拔第三方源（akshare/efinance/未来的新浪/腾讯）的统一路由"""
 
-    def __init__(self, *, primary="tstdx", fallbacks=("akshare",), policy="failover"):
+    def __init__(self, *, primary="atst", fallbacks=("akshare",), policy="failover"):
         self.primary = primary
         self.fallbacks = fallbacks
         self.policy = policy  # "failover" | "merge" | "race"
@@ -3245,7 +3245,7 @@ class DataSourceRouter:
 ### 26.2 数据质量校验（OHLC 自洽 + 异常跳变）
 
 ```python
-# src/tstdx/services/validator.py
+# src/atst/services/validator.py
 class DataQualityValidator:
     def check_bar(self, bar: Bar) -> list[QualityIssue]:
         issues = []
@@ -3279,14 +3279,14 @@ class DataQualityValidator:
 ### 27.1 用户协议差异上报（opt-in）
 
 ```python
-# 用户在自己代码里发现 tstdx 没解析某字段
+# 用户在自己代码里发现 atst 没解析某字段
 client.report_protocol_observation(
     spec_id="7709/0x052d",
     observed_field={"offset": 100, "size": 8, "interpretation": "可能是新的成交笔数字段"},
     captured_raw=bytes,  # 自动附加 source="self-captured"
 )
-# → 写入 ~/.local/share/tstdx/observations/<hash>.json
-# → 用户后续运行 `tstdx feedback submit` 时匿名上传
+# → 写入 ~/.local/share/atst/observations/<hash>.json
+# → 用户后续运行 `atst feedback submit` 时匿名上传
 ```
 
 ### 27.2 错误指标自动上报（默认 opt-out）
@@ -3295,7 +3295,7 @@ client.report_protocol_observation(
 # [observability]
 # telemetry = { enabled = false, endpoint = null, include_stack = false }
 # 启用后上传字段：
-#   - tstdx_version
+#   - atst_version
 #   - protocol / parse_tier 命中分布
 #   - 错误码 + 去敏感化 hash
 #   - 不含：用户数据、symbol、time、amount
@@ -3310,25 +3310,25 @@ class TelemetryReporter:
         if self._noop:
             return
         payload = self._scrub(event)
-        # HTTPS POST 到 tstdx.io/v1/telemetry，失败也吞，不影响本地功能
+        # HTTPS POST 到 atst.io/v1/telemetry，失败也吞，不影响本地功能
 ```
 
 ### 27.3 用户调优建议回收（opt-in）
 
 ```python
 # 本地汇总用户的实际使用模式，帮助优化默认参数
-$ tstdx feedback stats
+$ atst feedback stats
 # 显示：
 #   - 你过去 30 天用了 4.2 TB 流量（建议把 raw_budget 调到 1GiB）
 #   - 70% 请求是 1d K 线（建议默认 cache TTL 改为 24h）
 #   - 你命中了 12 次 AllHostsUnreachable（建议启动时启用 failover）
-# → 用户点击 "apply all" 自动改 tstdx.toml
+# → 用户点击 "apply all" 自动改 atst.toml
 ```
 
 ### 27.4 隐私边界（强制）
 
 - 上报前 7 步脱敏：去掉 IP / 主机名 / 用户名 / 路径前缀 / 内网段 / 数据样本 / stack trace 中的变量名
-- 上报文件可被用户在 `~/.local/share/tstdx/observations/` 完全审视
+- 上报文件可被用户在 `~/.local/share/atst/observations/` 完全审视
 - 上报通道支持本地导出 `.jsonl`，用户自决是否外发
 
 ---
@@ -3367,18 +3367,18 @@ $ tstdx feedback stats
 8. 如何在 WebSocket 服务里推 K 线给前端？
 9. 如何处理交易日历外的历史回放？
 10. 如何用 Rust 内核加速大规模日线回补？
-11. 如何把 tstdx 嵌入到一个已有的 Flask 服务？
+11. 如何把 atst 嵌入到一个已有的 Flask 服务？
 12. 如何用 MCP 工具让 AI Agent 查行情？
 13. 如何检测到抓回来的 K 线数据异常？
 14. 如何同时连 3 个主站做负载分担？
 15. 如何在一台机器内复现"主站全挂"的故障演练？
-16. 如何把 tstdx 数据对接到 backtrader？
+16. 如何把 atst 数据对接到 backtrader？
 17. 如何用 Plotly 画一个跨标的的对比图？
 18. 如何处理分钟线和日线之间的复权差异？
 19. 如何对收到的协议命令做手动调试？
 20. 如何贡献一个新协议的解析器给上游？
 21. ★ 如何在 TDX 主站全不可达时自动降级到新浪/腾讯 HTTP 源？（§33.6）
-22. ★ 如何从 easyquotation 零成本迁移到 tstdx？（§33.7）
+22. ★ 如何从 easyquotation 零成本迁移到 atst？（§33.7）
 
 ### 28.3 ADR 模板（每次架构决策都写）
 
@@ -3423,7 +3423,7 @@ include:
 ```toml
 # pyproject.toml
 [project]
-name = "tstdx"
+name = "atst"
 dependencies = [                   # 核心零依赖
     "pydantic>=2.5",
 ]
@@ -3435,7 +3435,7 @@ observability = ["prometheus-client>=0.20", "opentelemetry-api>=1.24"]
 i18n = ["opencc-python-reimplemented>=0.1"]            # 繁简转换
 perf = ["polars>=0.20"]                                # DataFrame 后端
 mo = ["mootdx>=0.6"]                                   # mootdx 兼容垫片
-all = ["tstdx[api,streaming,mcp,observability,i18n,perf,mo]"]
+all = ["atst[api,streaming,mcp,observability,i18n,perf,mo]"]
 ```
 
 ### 29.3 签名与校验
@@ -3443,11 +3443,11 @@ all = ["tstdx[api,streaming,mcp,observability,i18n,perf,mo]"]
 ```bash
 # 维护者本地
 $ python -m build --wheel
-$ gpg --detach-sign --armor dist/tstdx-0.6.0-py3-none-any.whl
-$ twine upload dist/tstdx-0.6.0* dist/tstdx-0.6.0-py3-none-any.whl.asc
+$ gpg --detach-sign --armor dist/atst-0.6.0-py3-none-any.whl
+$ twine upload dist/atst-0.6.0* dist/atst-0.6.0-py3-none-any.whl.asc
 
 # 用户安装可校验（CI 强制）
-$ pip install tstdx==0.6.0 \
+$ pip install atst==0.6.0 \
     --require-hashes \
     --trusted-host pypi.org
 ```
@@ -3457,10 +3457,10 @@ $ pip install tstdx==0.6.0 \
 ```dockerfile
 # docker/Dockerfile.python
 FROM python:3.13-slim
-RUN pip install --no-cache-dir tstdx[api,streaming,observability]
+RUN pip install --no-cache-dir atst[api,streaming,observability]
 EXPOSE 8000
-ENTRYPOINT ["tstdx", "serve", "--host", "0.0.0.0"]
-# → docker run -p 8000:8000 tstdx:0.6.0
+ENTRYPOINT ["atst", "serve", "--host", "0.0.0.0"]
+# → docker run -p 8000:8000 atst:0.6.0
 ```
 
 镜像 weekly 重建 + 自动重新跑冒烟测试。
@@ -3516,13 +3516,13 @@ $ git-cliff --tag 0.6.0 --output CHANGELOG.md
 
 | 类型 | 模板字段 |
 |---|---|
-| Bug Report | tstdx 版本 / OS / Python / 复现代码 / 实际 vs 期望 / 抓包 hex |
+| Bug Report | atst 版本 / OS / Python / 复现代码 / 实际 vs 期望 / 抓包 hex |
 | Feature Request | 动机 / 设计建议 / 备选方案 / 影响面 |
 | Spec Gap（协议新增） | 抓包文件、Spec 草案、影响哪些客户端 |
 | Question | 简短问题 |
 
 **Bug Report 中的抓包字段**强制引导用户：
-- 自动识别并提示"请用 `tstdx protocol capture <cmd>` 抓包"
+- 自动识别并提示"请用 `atst protocol capture <cmd>` 抓包"
 - 校验上传附件的金色签名
 
 ### 30.4 PR 模板（强制要求）
@@ -3548,7 +3548,7 @@ $ git-cliff --tag 0.6.0 --output CHANGELOG.md
 ## 31. 路线图修订（v3.0：28 周 5 阶段 + v3.1 W14b 增量）
 
 ### Phase 0：奠基（2 周）—— 同 v2.0
-产出 `PROTOCOL_SPEC` 体系、Golden 采集工具、CodeGen 模板、tstdx.toml schema。
+产出 `PROTOCOL_SPEC` 体系、Golden 采集工具、CodeGen 模板、atst.toml schema。
 
 ### Phase 1：核心协议 + 贯通底座（5 周）—— 在 v2.0 基础上增加配置中心、错误体系、国际化、Codec
 
@@ -3556,7 +3556,7 @@ $ git-cliff --tag 0.6.0 --output CHANGELOG.md
 |---|---|---|
 | W3 | Wire Codec | 把 §7.2 varint、§7.1 报文都变成有 spec、有 contract test 的实现 |
 | W4 | Spec/Codegen 闭环 | §20.2 全部跑通 |
-| W5 | tstdx.toml + 多源合并 + 12 case 测试 | §21 完整 |
+| W5 | atst.toml + 多源合并 + 12 case 测试 | §21 完整 |
 | W6 | 错误分类树 + retry advice + 用户范式 | §24 完整 |
 | W7 | i18n codec + 时区 + A 股交易日历 | §23 完整 |
 
@@ -3629,7 +3629,7 @@ Phase 0 (W1-2)    Phase 1 (W3-7)    Phase 2 (W8-15)   Phase 3 (W16-22)   Phase 4
 | # | 项 | 见 § |
 |---|---|---|
 | 01-03 | 协议覆盖 + spec 100% + **24 断链全闭环** | §20 + **§33** |
-| 04 | tstdx.toml 12 case 合并测试 | §21.5 |
+| 04 | atst.toml 12 case 合并测试 | §21.5 |
 | 05 | 错误分类 100% + 可重试性 | §24.4 |
 | 06 | 同步/异步一致 | §25.5 |
 | 07 | 离线/在线/兜底 6 降级 | §26.3 |
@@ -3684,7 +3684,7 @@ audit-bridges:
     @echo "OK 24/24 audit-bridges passed"
 
 audit-report:
-    python -m tstdx.tools.compliance_report --output ORIGINALITY/AUDIT_REPORT.md
+    python -m atst.tools.compliance_report --output ORIGINALITY/AUDIT_REPORT.md
 ```
 
 ### 32.3 发版硬门槛
@@ -3709,13 +3709,13 @@ v0.x 预发版（每个 minor）：
 
 ## 33. HTTP Web 行情源子系统（easyquotation 兼容层）★ v3.1 新增
 
-> **触发**：用户要求参考 `https://github.com/shidenggui/easyquotation` 项目，开发类似功能并加入 tstdx。
+> **触发**：用户要求参考 `https://github.com/shidenggui/easyquotation` 项目，开发类似功能并加入 atst。
 >
-> **调研结论**：easyquotation 是基于 HTTP 网页行情接口的轻量库（MIT），与 tstdx 的 TDX 二进制协议是**完全不同的协议族**，但获取的数据类型高度重叠（实时报价、五档、K 线）。二者形成天然互补：
+> **调研结论**：easyquotation 是基于 HTTP 网页行情接口的轻量库（MIT），与 atst 的 TDX 二进制协议是**完全不同的协议族**，但获取的数据类型高度重叠（实时报价、五档、K 线）。二者形成天然互补：
 > - **TDX 协议**：二进制 TCP、低延迟、高吞吐、主站可 failover → **主路径**
 > - **HTTP Web 源**：零门槛、无认证、但有反爬/限流/不稳定 → **fallback 降级路径**
 >
-> **定位**：HTTP Web 源不是 tstdx 的替代主路径，而是 §26 `DataSourceRouter` 中预留的 HTTP fallback 适配器，当 TDX 主站全不可达时自动降级。同时提供独立使用的 `WebQuoteClient`，让只需要简单网页行情、不想连 TDX 主站的用户也能用。
+> **定位**：HTTP Web 源不是 atst 的替代主路径，而是 §26 `DataSourceRouter` 中预留的 HTTP fallback 适配器，当 TDX 主站全不可达时自动降级。同时提供独立使用的 `WebQuoteClient`，让只需要简单网页行情、不想连 TDX 主站的用户也能用。
 
 ### 33.1 架构定位
 
@@ -3752,7 +3752,7 @@ v0.x 预发版（每个 minor）：
 
 **字段映射**（33 字段）：
 
-| # | 字段名 | 类型 | 说明 | tstdx 统一字段 |
+| # | 字段名 | 类型 | 说明 | atst 统一字段 |
 |---|---|---|---|---|
 | 1 | name | str | 股票名 | symbol_name |
 | 2 | open | float | 开盘价 | open |
@@ -3769,7 +3769,7 @@ v0.x 预发版（每个 minor）：
 | 31 | date | str | 日期 | date |
 | 32 | time | str | 时间 | time |
 
-> **口径注意**：新浪 `turnover` = 成交股数（股），`volume` = 成交金额（元）——**与 tstdx 统一契约中 `volume`=股、`amount`=元 一致**，无需转换。
+> **口径注意**：新浪 `turnover` = 成交股数（股），`volume` = 成交金额（元）——**与 atst 统一契约中 `volume`=股、`amount`=元 一致**，无需转换。
 
 #### 33.2.2 腾讯财经（TencentAdapter）
 
@@ -3781,9 +3781,9 @@ v0.x 预发版（每个 minor）：
 | 响应格式 | 文本，`~` 分隔，按索引取值 |
 | 特殊 | 字段数 > 50（含 PE/PB/市值/涨跌停/量比/委差/均价/市盈动/市盈静） |
 
-**字段映射**（索引 → tstdx）：
+**字段映射**（索引 → atst）：
 
-| 索引 | 字段 | 类型 | 说明 | tstdx 统一字段 |
+| 索引 | 字段 | 类型 | 说明 | atst 统一字段 |
 |---|---|---|---|---|
 | 1 | name | str | 股票名 | symbol_name |
 | 2 | code | str | 代码 | symbol |
@@ -3815,7 +3815,7 @@ v0.x 预发版（每个 minor）：
 | 52 | 市盈(动) | float | | pe_dynamic |
 | 53 | 市盈(静) | float | | pe_static |
 
-> **口径注意**：腾讯的 volume/amount 都是"手"或"万元"单位，必须做 ×100 / ×10000 归一化到 tstdx 契约（**volume=股、amount=元**）。这与 niuniu 项目中腾讯源已有的 `_norm_volume` 逻辑一致。
+> **口径注意**：腾讯的 volume/amount 都是"手"或"万元"单位，必须做 ×100 / ×10000 归一化到 atst 契约（**volume=股、amount=元**）。这与 niuniu 项目中腾讯源已有的 `_norm_volume` 逻辑一致。
 
 #### 33.2.3 东方财富（EastmoneyAdapter）★ v3.1 新增
 
@@ -3827,9 +3827,9 @@ v0.x 预发版（每个 minor）：
 | 响应格式 | JSON |
 | 特殊 | 需 UA + Referer；高频会被 IP 级封禁 20h+；串行 + 1s 间隔 |
 
-**字段映射**（JSON key → tstdx）：
+**字段映射**（JSON key → atst）：
 
-| JSON key | tstdx 字段 | 说明 |
+| JSON key | atst 字段 | 说明 |
 |---|---|---|
 | `f43` | last | 最新价（需 ×100 → 元） |
 | `f44` | high | 最高（×100） |
@@ -3884,7 +3884,7 @@ v0.x 预发版（每个 minor）：
 ### 33.3 统一接口设计
 
 ```python
-# tstdx/web/base.py
+# atst/web/base.py
 class WebQuoteSource(Protocol):
     """所有 HTTP Web 行情源的统一接口"""
 
@@ -3941,7 +3941,7 @@ class WebQuoteClient:
 **限流策略**（自动适配交易时段）：
 
 ```python
-# tstdx/web/ratelimit.py
+# atst/web/ratelimit.py
 WEB_RATE_LIMITS = {
     "sina": {"closed": 60, "intraday": 15, "pre_close": 30},
     "tencent": {"closed": 60, "intraday": 15, "pre_close": 30},
@@ -3952,7 +3952,7 @@ WEB_RATE_LIMITS = {
 
 ### 33.5 volume 归一化契约
 
-> **核心原则**：tstdx 全局契约 `volume=股`、`amount=元`，所有 HTTP 源的原始数据必须归一化。
+> **核心原则**：atst 全局契约 `volume=股`、`amount=元`，所有 HTTP 源的原始数据必须归一化。
 
 | 数据源 | 原始 volume 单位 | 归一化系数 | 原始 amount 单位 | 归一化系数 |
 |---|---|---|---|---|
@@ -3964,9 +3964,9 @@ WEB_RATE_LIMITS = {
 **实现**：每个 Adapter 在 `format_response_data` 后强制调用 `_normalize_volume()`。
 
 ```python
-# tstdx/web/normalize.py
+# atst/web/normalize.py
 def normalize_volume(raw_volume: int, source: str, *, is_amount: bool = False) -> int | float:
-    """归一化到 tstdx 全局契约：volume=股、amount=元"""
+    """归一化到 atst 全局契约：volume=股、amount=元"""
     COEFF = {
         "sina": {"volume": 1, "amount": 1},
         "tencent": {"volume": 100, "amount": 10000},
@@ -4016,10 +4016,10 @@ class Quote:
 ### 33.7 easyquotation 兼容垫片
 
 ```python
-# tstdx/compat/easyquotation.py
+# atst/compat/easyquotation.py
 """提供与 easyquotation 相同的 API，让原用户零成本切换"""
 
-from tstdx.web import WebQuoteClient
+from atst.web import WebQuoteClient
 
 
 def use(source: str):
@@ -4033,7 +4033,7 @@ def use(source: str):
 #   quotation.stocks(['000001', '162411']) → WebQuoteClient.real() (别名)
 ```
 
-**启用**：`pip install tstdx[easyquotation]` 或 `[compatibility] easyquotation_layer = true`
+**启用**：`pip install atst[easyquotation]` 或 `[compatibility] easyquotation_layer = true`
 
 ### 33.8 限定用途声明
 
@@ -4049,7 +4049,7 @@ HTTP Web 行情源为非官方公开接口，本库仅提供协议读取能力�
 ### 33.9 目录结构新增
 
 ```
-tstdx/
+atst/
 ├── web/                           ★ v3.1 新增
 │   ├── base.py                    # WebQuoteSource Protocol + WebQuoteClient
 │   ├── sina.py                    # SinaAdapter

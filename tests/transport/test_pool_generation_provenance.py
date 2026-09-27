@@ -8,18 +8,18 @@ from typing import Any
 
 import pytest
 
-import tstdx.transport.pool as pool_module
-from tstdx.errors import ConfigError
-from tstdx.protocol.commands import Family
-from tstdx.transport.async_ import AsyncConnectionPool
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.pool import ConnectionPool
-from tstdx.transport.speedtest import ProbeResult
+import atst.transport.pool as pool_module
+from atst.errors import ConfigError
+from atst.protocol.commands import Family
+from atst.transport.async_ import AsyncConnectionPool
+from atst.transport.hosts import HostEntry
+from atst.transport.pool import ConnectionPool
+from atst.transport.speedtest import ProbeResult
 
-# ``tstdx.transport.speedtest`` is shadowed by a same-named re-exported function
-# in ``tstdx.transport.__init__``, so ``import ... as`` would bind the function.
+# ``atst.transport.speedtest`` is shadowed by a same-named re-exported function
+# in ``atst.transport.__init__``, so ``import ... as`` would bind the function.
 # Provenance patches must target the real submodule object.
-speedtest_module = importlib.import_module("tstdx.transport.speedtest")
+speedtest_module = importlib.import_module("atst.transport.speedtest")
 
 
 @pytest.mark.asyncio
@@ -125,7 +125,7 @@ def test_stale_background_probe_cannot_commit_after_generation_change(
             name: str,
             daemon: bool,
         ) -> None:
-            assert name == "tstdx-speedtest"
+            assert name == "atst-speedtest"
             assert daemon is True
             super().__init__(target=target, name=name, daemon=daemon)
 

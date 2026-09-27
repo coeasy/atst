@@ -21,10 +21,10 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.client.core import _quote_body, split_symbol
-from tstdx.domain.symbol import to_tdx_market
-from tstdx.errors import NotImplementedFeature, ParseError
-from tstdx.protocol.parsers.std7709 import build_realtime_quote_body
+from atst.client.core import _quote_body, split_symbol
+from atst.domain.symbol import to_tdx_market
+from atst.errors import NotImplementedFeature, ParseError
+from atst.protocol.parsers.std7709 import build_realtime_quote_body
 
 
 def test_quote_body_fails_closed_instead_of_emitting_inferred_reverse_bytes() -> None:

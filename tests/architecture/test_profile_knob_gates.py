@@ -2,7 +2,7 @@
 
 这一族判据此前量过 `QueryPlan`（F-50）、`Provenance`/`ResultMeta`（F-52）、
 `ProviderSpec`/`ChannelSpec`（F-54）、`StreamPlan`（F-55）、`ProvenanceKind`（F-57）、
-`Command`（F-64），漏了 `tstdx/reader/profile.py` 与 `tstdx/profile/presets.py`：
+`Command`（F-64），漏了 `atst/reader/profile.py` 与 `atst/profile/presets.py`：
 本地文件解码链的规格档案从来没进过分母。第一次上分母量出的就是两格——
 
 * **G10 `DataProfile.timezone`**：探测链声明了"时区"，运行期零读取点，却被
@@ -24,7 +24,7 @@
 添了两件此前没有的保险：
 
 1. **读取者白名单**：owner 名单里的 ``p`` 会同时命中别的类的 ``p.name``——实测
-   ``tstdx/trade/simulator.py`` 就给 `DataProfile.name` 记过一块不存在的水牌。于是只认
+   ``atst/trade/simulator.py`` 就给 `DataProfile.name` 记过一块不存在的水牌。于是只认
    白名单模块里的站点，而白名单每一条都必须在磁盘上存在：名单自身腐烂当场红。
 2. **``holders`` 持有点**：``self.profile.amount_unit`` 的链条塌到 ``self``，而
    ``self`` 按名单纪律不能进 owners——不补这一维就会把有人读的 `amount_unit` 量成孤儿。
@@ -37,8 +37,8 @@ from __future__ import annotations
 import dataclasses
 
 from tests.support.field_readers import REPO_ROOT, unread_field_sites
-from tstdx.profile.presets import PRESETS, MarketPreset
-from tstdx.reader.profile import BUILTIN_PROFILES, DataProfile
+from atst.profile.presets import PRESETS, MarketPreset
+from atst.reader.profile import BUILTIN_PROFILES, DataProfile
 
 #: 手工核对过：这些名字在生产代码里确实绑定到 DataProfile 实例
 #: （``reader/formats.py`` 的 ``profile``/``p``/``prof``/``detected``、
@@ -51,16 +51,16 @@ _DATA_PROFILE_HOLDERS = {"profile"}
 
 #: 允许按 DataProfile 字段行动的模块：定义它的解码层 + 两个真实消费者。
 _DATA_PROFILE_READERS = {
-    "tstdx/reader/profile.py",
-    "tstdx/reader/formats.py",
-    "tstdx/sink/local_day.py",
-    "tstdx/profile/detect.py",
+    "atst/reader/profile.py",
+    "atst/reader/formats.py",
+    "atst/sink/local_day.py",
+    "atst/profile/detect.py",
 }
 
 _PRESET_OWNERS = {"p", "preset"}
 
 #: 允许按 MarketPreset 字段行动的模块：表自身（``match_preset``）与探测层的加权点。
-_PRESET_READERS = {"tstdx/profile/presets.py", "tstdx/profile/detect.py"}
+_PRESET_READERS = {"atst/profile/presets.py", "atst/profile/detect.py"}
 
 #: 只登记身份、不参与解码的字段。豁免不是"允许空白"：它们必须仍然存在于档案形状里
 #: （``test_identity_exemptions_still_name_real_fields``），必须真的出现在序列化产物里

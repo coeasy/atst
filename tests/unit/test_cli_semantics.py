@@ -17,8 +17,8 @@ from typing import Any
 
 import pytest
 
-import tstdx.cli as cli
-from tstdx.cli import _cmd_changes, _cmd_list, _cmd_quotes_snapshot, _cmd_serve, main
+import atst.cli as cli
+from atst.cli import _cmd_changes, _cmd_list, _cmd_quotes_snapshot, _cmd_serve, main
 
 pytestmark = pytest.mark.unit
 
@@ -51,10 +51,10 @@ class FakeTdxClient:
 
 @pytest.fixture()
 def fake_client(monkeypatch: pytest.MonkeyPatch) -> type[FakeTdxClient]:
-    from tstdx.client import factory
+    from atst.client import factory
 
-    #: 注入点是工厂注册表，不是 ``tstdx.client.TdxClient`` 那个名字：直连命令在调用点经
-    #: ``get_client`` → 注册表构造，再交进 :func:`~tstdx.cli._common.family_client` 收尾，
+    #: 注入点是工厂注册表，不是 ``atst.client.TdxClient`` 那个名字：直连命令在调用点经
+    #: ``get_client`` → 注册表构造，再交进 :func:`~atst.cli._common.family_client` 收尾，
     #: 换名字上的绑定拦不住它（31-C4）。
     monkeypatch.setitem(factory._CLIENT_REGISTRY, "stock", FakeTdxClient)
     FakeTdxClient.behavior = {}
@@ -124,7 +124,7 @@ class TestChangesTypesParsing:
                 calls["size"] = size
                 return argparse.Namespace(data=[{"code": "600000"}])
 
-        monkeypatch.setattr("tstdx.client.api.Client", FakeClient)
+        monkeypatch.setattr("atst.client.api.Client", FakeClient)
         rc = _cmd_changes(_ns(types="8201,8193", page=1, size=30, json=True))
         assert rc == 0
         assert calls["types"] == (8201, 8193)
@@ -134,7 +134,7 @@ class TestChangesTypesParsing:
 class TestStreamExitCode:
     """stream 零数据 → exit 1（与 quotes-snapshot 同步）。
 
-    替身换在 ``Client`` 上而非 ``tstdx.streaming`` 上：F-56 之后 CLI 不再自建流，
+    替身换在 ``Client`` 上而非 ``atst.streaming`` 上：F-56 之后 CLI 不再自建流，
     ``cmd_stream`` 唯一的执行入口就是 ``Client.stream``。
     """
 
@@ -168,7 +168,7 @@ class TestStreamExitCode:
     def test_zero_quotes_exits_1(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
         seen: dict[str, Any] = {}
         monkeypatch.setattr(
-            "tstdx.cli.runtime_commands.Client", self._fake_client(seen, emit=False)
+            "atst.cli.runtime_commands.Client", self._fake_client(seen, emit=False)
         )
         rc = cli._cmd_stream(
             _ns(symbols=["600000"], interval=1.0, seconds=0.01, diff=False, max_queue=1024)
@@ -180,7 +180,7 @@ class TestStreamExitCode:
 
     def test_data_received_exits_0(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
         seen: dict[str, Any] = {}
-        monkeypatch.setattr("tstdx.cli.runtime_commands.Client", self._fake_client(seen, emit=True))
+        monkeypatch.setattr("atst.cli.runtime_commands.Client", self._fake_client(seen, emit=True))
         rc = cli._cmd_stream(
             _ns(symbols=["600000"], interval=1.0, seconds=0.01, diff=False, max_queue=32)
         )
@@ -243,13 +243,13 @@ class TestFeedbackSubcommand:
     """feedback submit / stats 接线。"""
 
     def test_submit_disabled_exits_1(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        monkeypatch.delenv("TSTDX_FEEDBACK", raising=False)
+        monkeypatch.delenv("ATST_FEEDBACK", raising=False)
         rc = main(["feedback", "submit", "--message", "x"])
         assert rc == 1
-        assert "TSTDX_FEEDBACK" in capsys.readouterr().err
+        assert "ATST_FEEDBACK" in capsys.readouterr().err
 
     def test_submit_dryrun_exits_0(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
-        monkeypatch.setenv("TSTDX_FEEDBACK", "dry-run")
+        monkeypatch.setenv("ATST_FEEDBACK", "dry-run")
         rc = main(["feedback", "submit", "--message", "x", "--store-dir", str(tmp_path)])
         assert rc == 0
 
@@ -271,7 +271,7 @@ class TestF10Subcommand:
                 self.closed = 0
 
             def close(self) -> None:
-                #: 直连命令现在经 :func:`~tstdx.cli._common.family_client` 交出，
+                #: 直连命令现在经 :func:`~atst.cli._common.family_client` 交出，
                 #: 收尾是那条保护区唯一的动作（31-C4）；没有这个方法 CLI 直接 exit 2。
                 self.closed += 1
 
@@ -284,13 +284,13 @@ class TestF10Subcommand:
                 return "【财务分析】净利润增长\n".encode("gbk")
 
             def parse_text(self, raw: bytes) -> list[Any]:
-                from tstdx.protocol.parsers.f10 import parse_f10_text
+                from atst.protocol.parsers.f10 import parse_f10_text
 
                 return parse_f10_text(raw)
 
-        from tstdx.client import factory
+        from atst.client import factory
 
-        #: 注入点在注册表那一格，不在 ``tstdx.client.get_client``：构造发生在调用点，
+        #: 注入点在注册表那一格，不在 ``atst.client.get_client``：构造发生在调用点，
         #: patch 包命名空间里那个名字拦不住已经绑定好的引用。
         monkeypatch.setitem(factory._CLIENT_REGISTRY, "f10", FakeF10)
         FakeF10.calls = []
@@ -343,9 +343,9 @@ class TestN5ClientSubcommands:
             def all_market(self, *, node="hs_a", page_size=80, max_pages=None, provider=None):
                 # 门面签名按真实那一侧抄过一遍就会把 bug 钉成事实：这里原先写的是
                 # ``source=``，而 ``Client.<capability>`` 动态门面只吃 ``provider`` /
-                # ``channel`` / ``currentness`` 三个路由关键字（``tstdx/client/api.py::
+                # ``channel`` / ``currentness`` 三个路由关键字（``atst/client/api.py::
                 # Client.__getattr__``），``--source`` 选的正是 Provider。第 23 轮真机
-                # 装包实测 ``tstdx all-market --source sina`` 当场 E1010，修完才出数据。
+                # 装包实测 ``atst all-market --source sina`` 当场 E1010，修完才出数据。
                 self.calls.append(
                     (
                         "all_market",
@@ -361,7 +361,7 @@ class TestN5ClientSubcommands:
                 self.calls.append(("minute_klines", (symbol,), dict(period=period, count=count)))
                 return [{"symbol": symbol, "period": period, "count": count}]
 
-        import tstdx.client.api as client_api_mod
+        import atst.client.api as client_api_mod
 
         monkeypatch.setattr(client_api_mod, "Client", FakeApi)
         FakeApi.calls = []
@@ -463,7 +463,7 @@ class TestB0BaiduSubcommand:
                 self.calls.append(("baidu_quote", (symbol,), {}))
                 return {"symbol": symbol}
 
-        import tstdx.client.api as client_api_mod
+        import atst.client.api as client_api_mod
 
         monkeypatch.setattr(client_api_mod, "Client", FakeApi)
         FakeApi.calls = []
@@ -559,7 +559,7 @@ class TestP01FundSubcommand:
                 self.calls.append(("fund_list", (), {}))
                 return [{"code": "161725", "name": "招商中证白酒指数(LOF)A"}]
 
-        import tstdx.client.api as client_api_mod
+        import atst.client.api as client_api_mod
 
         monkeypatch.setattr(client_api_mod, "Client", FakeApi)
         FakeApi.calls = []
@@ -627,7 +627,7 @@ class TestP02IndexSubcommand:
                 self.calls.append(("index_constituents", (index,), {}))
                 return [{"code": "000001", "name": "平安银行", "weight": 0.45}]
 
-        import tstdx.client.api as client_api_mod
+        import atst.client.api as client_api_mod
 
         monkeypatch.setattr(client_api_mod, "Client", FakeApi)
         FakeApi.calls = []
@@ -662,8 +662,8 @@ class TestProbeSubcommand:
         assert "0x053e" in capsys.readouterr().err  # usage 提示
 
     def test_probe_wiring_and_archive(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
-        import tstdx.protocol.prober as prober_mod
-        from tstdx.client import factory
+        import atst.protocol.prober as prober_mod
+        from atst.client import factory
 
         FakeTdxClient.behavior = {}
         monkeypatch.setitem(factory._CLIENT_REGISTRY, "stock", FakeTdxClient)
@@ -707,8 +707,8 @@ class TestProbeSubcommand:
         assert created["archived"] is True  # ok → 归档 DRAFT
 
     def test_probe_not_ok_exits_1(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
-        import tstdx.protocol.prober as prober_mod
-        from tstdx.client import factory
+        import atst.protocol.prober as prober_mod
+        from atst.client import factory
 
         monkeypatch.setitem(factory._CLIENT_REGISTRY, "stock", FakeTdxClient)
 

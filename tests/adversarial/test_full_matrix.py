@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """对抗 payload 全矩阵门禁（工业审计 F5 固化）。
@@ -24,10 +24,10 @@ import struct
 import time
 from typing import Any
 
-from tstdx.codec.framing import ResponseFrame
-from tstdx.errors import TdxError
-from tstdx.protocol.commands import COMMANDS
-from tstdx.protocol.registry import dispatch
+from atst.codec.framing import ResponseFrame
+from atst.errors import TdxError
+from atst.protocol.commands import COMMANDS
+from atst.protocol.registry import dispatch
 
 _MAGIC = 0x12566312  # 与 codec/framing 默认 magic 一致（仅用于让 ok 判定不干扰解析）
 
@@ -46,8 +46,8 @@ def test_gate_has_teeth_canary() -> None:
 
     import pytest
 
-    from tstdx.errors import ParseError
-    from tstdx.protocol.registry import PARSERS, BaseParser, register_parser
+    from atst.errors import ParseError
+    from atst.protocol.registry import PARSERS, BaseParser, register_parser
 
     @register_parser(0x7FE0, family="quotation")
     class _Boom(BaseParser):

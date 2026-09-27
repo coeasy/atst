@@ -2,13 +2,13 @@
 
 ``RuntimeJsonRpcHandler`` 有三道判据守着（方法表 ⇄ 分派分支 ⇄ 入参白名单），HTTP/MCP/CLI
 各有自己的投影表；偏偏这张**承载**它们的 WS 服务器一条都没有——它是
-``tstdx.integration.__all__`` 里的公开出口、``docs/api/interfaces.md`` 里的托管入口，
+``atst.integration.__all__`` 里的公开出口、``docs/api/interfaces.md`` 里的托管入口，
 从建好到本轮为止没有被任何测试连接过一次。射程外的四件事，每一件都在第 26 轮被认真改过：
 
 一 业务调用必须离开事件循环线程（``asyncio.to_thread``）——否则一个慢请求拖死全部连接；
 二 非规范路径必须被 1008 拒掉，而不是"顺手服务一下"；
 三 通知（没有 ``id``）不得回帧；
-四 自建的 handler 要登记在 ``server.tstdx_handler`` 上，宿主收尾时才关得到它；
+四 自建的 handler 要登记在 ``server.atst_handler`` 上，宿主收尾时才关得到它；
   调用方传进来的那份不许登记（谁的所有权归谁，与 HTTP/MCP 面同一口径）。
 
 这里全部走 127.0.0.1 上的临时端口：默认 8765 可能已被真实宿主占着，绑上去的判据
@@ -28,8 +28,8 @@ import pytest
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
-import tstdx.integration.runtime_ws_server as ws_server
-from tstdx.integration.runtime_ws_server import RuntimeWsConfig, serve_runtime_ws
+import atst.integration.runtime_ws_server as ws_server
+from atst.integration.runtime_ws_server import RuntimeWsConfig, serve_runtime_ws
 
 #: 每个 await 的墙钟上界：判据宁可超时红，也不许把测试会话挂死。
 BOUND = 5.0
@@ -191,7 +191,7 @@ async def test_a_notification_gets_no_frame_back() -> None:
 
 @pytest.mark.asyncio
 async def test_handler_ownership_is_visible_to_the_host(monkeypatch: pytest.MonkeyPatch) -> None:
-    """判据四：自建的那份登记在 ``server.tstdx_handler``，传进来的那份不登记。
+    """判据四：自建的那份登记在 ``server.atst_handler``，传进来的那份不登记。
 
     ``__main__`` 宿主的 ``finally`` 就是按这个属性收尾的；属性名一旦改而登记没跟上，
     托管进程退出时会把那份 ``Client`` 的 socket 与心跳线程原地留下（第 26 轮 F-100）。
@@ -202,10 +202,10 @@ async def test_handler_ownership_is_visible_to_the_host(monkeypatch: pytest.Monk
     owned = await serve_runtime_ws(config=RuntimeWsConfig(port=port))
     borrowed = await _serve(StubHandler(), _free_port())
     try:
-        assert getattr(owned, "tstdx_handler", None) is mine, (
+        assert getattr(owned, "atst_handler", None) is mine, (
             "自建的 handler 没登记：宿主收尾时关不到它"
         )
-        assert not hasattr(borrowed, "tstdx_handler"), (
+        assert not hasattr(borrowed, "atst_handler"), (
             "调用方交进来的 handler 被登记了：服务器会去关一份不归它所有的东西"
         )
     finally:

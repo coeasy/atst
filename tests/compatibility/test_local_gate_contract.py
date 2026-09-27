@@ -14,7 +14,7 @@ from tests.support.gate_inventory import (
 _ROOT = Path(__file__).resolve().parents[2]
 
 #: 门禁脚本里写死的仓内路径（Makefile 与 workflow 共用同一判定）。
-_REPO_PATH_TOKENS = re.compile(r"(?:tests|scripts|tstdx)/[A-Za-z0-9_/]+\.py")
+_REPO_PATH_TOKENS = re.compile(r"(?:tests|scripts|atst)/[A-Za-z0-9_/]+\.py")
 
 
 def _makefile() -> str:
@@ -95,7 +95,7 @@ def test_every_gates_prerequisite_is_a_defined_target() -> None:
 def test_makefile_gate_commands_reference_existing_paths() -> None:
     """门禁命令里写死的仓内路径必须存在。
 
-    v16 Phase 2 删掉 `tstdx/native.py` 与其契约测试后，`native-compat` target 仍指向
+    v16 Phase 2 删掉 `atst/native.py` 与其契约测试后，`native-compat` target 仍指向
     已删除的测试文件，`make gates` 因此在最后一步固定失败——而 CI 里对应的 native.yml
     用 `python -m compileall -q <不存在的路径>`，该命令**打印告警却退出 0**，于是
     "编译"一步静默通过、真正跑测试的下一步才红。
@@ -122,7 +122,7 @@ def test_local_build_uses_safe_smoke_enabled_builder() -> None:
     assert "scripts/build_package.py --smoke" in makefile
 
 
-#: `[tool.ruff.lint.per-file-ignores]` 的键：形如 `"tstdx/cli/__init__.py" = ["F401"]`。
+#: `[tool.ruff.lint.per-file-ignores]` 的键：形如 `"atst/cli/__init__.py" = ["F401"]`。
 _PER_FILE_IGNORE = re.compile(r'^"(?P<path>[^"]+)"\s*=\s*\[', re.MULTILINE)
 
 
@@ -130,8 +130,8 @@ def test_ruff_per_file_ignores_still_point_at_existing_paths() -> None:
     """每一条 lint 豁免必须落在磁盘上真实存在的路径上。
 
     豁免指向已删除的文件不是无害的冗余：它让那条规则对**下一个**占用该路径的文件
-    静默失效，而没人会想到去看一份不存在的对象的配置。`tstdx/integration/mcp_server.py`
-    就是 MCP 面迁进 `tstdx/integration/mcp/` 之后留下的死键。
+    静默失效，而没人会想到去看一份不存在的对象的配置。`atst/integration/mcp_server.py`
+    就是 MCP 面迁进 `atst/integration/mcp/` 之后留下的死键。
     """
     text = _pyproject()
     section = text.split("[tool.ruff.lint.per-file-ignores]", 1)

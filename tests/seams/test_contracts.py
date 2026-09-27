@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """跨域契约缝钉（编排者门禁）。
@@ -15,7 +15,7 @@ import inspect
 
 def test_seam_client_bars_accepts_index_ctx() -> None:
     """S↔P 缝：TdxClient.bars 必须暴露 index 关键字并透传 dispatch ctx。"""
-    from tstdx.client import TdxClient
+    from atst.client import TdxClient
 
     sig = inspect.signature(TdxClient.bars)
     assert "index" in sig.parameters, (
@@ -28,7 +28,7 @@ def test_seam_client_bars_accepts_index_ctx() -> None:
 
 def test_seam_symbol_split_shape_stable() -> None:
     """S/G↔G 缝：domain.symbol.split_symbol 返回形态是流式归一化的依赖底座。"""
-    from tstdx.domain.symbol import split_symbol
+    from atst.domain.symbol import split_symbol
 
     out = split_symbol("sh600519")
     assert isinstance(out, tuple) and len(out) == 2, (
@@ -38,7 +38,7 @@ def test_seam_symbol_split_shape_stable() -> None:
     assert str(market).lower() in {"sh", "sz", "bj"}, f"市场位形态漂移: {out!r}"
     assert code == "600519"
     # 中证指数裸码裁决（G 任务 1 / §2-3）：协议层市场号 000300→沪(1)、000001→深(0)
-    from tstdx.domain.symbol import to_tdx_market
+    from atst.domain.symbol import to_tdx_market
 
     assert to_tdx_market("000300")[0] == 1, "000300 中证指数仍被误判深市（§2-3）"
     assert to_tdx_market("000001")[0] == 0, "000001 平安银行必须仍归深市"
@@ -46,7 +46,7 @@ def test_seam_symbol_split_shape_stable() -> None:
 
 def test_seam_metrics_public_api_intact() -> None:
     """T↔V 缝：observability 导出的 metrics 单例具备 T 埋点依赖的公共方法。"""
-    from tstdx.observability import metrics
+    from atst.observability import metrics
 
     for name in ("record_reconnect", "record_request", "record_parse"):
         assert callable(getattr(metrics, name, None)), (
@@ -58,7 +58,7 @@ def test_seam_pool_uses_connection_lock_or_busy_removed() -> None:
     """C2 缝：Slot.busy 死字段不得作为『假实现』存活（T 已删除，注释提及豁免）。"""
     import threading
 
-    import tstdx.transport.pool as pool_mod
+    import atst.transport.pool as pool_mod
 
     slot = getattr(pool_mod, "Slot", None)
     fields = set(getattr(slot, "__dataclass_fields__", {}) or {})
@@ -68,7 +68,7 @@ def test_seam_pool_uses_connection_lock_or_busy_removed() -> None:
     # 连接级租约锁应作为实例属性在构造时建立。此处按**行为**断言而非源码
     # 文本：构造实现已内联到 transport.base 的 TcpConnection 中，源码检索
     # 随实现形态漂移而误红，实例属性检查才是稳定的跨实现契约。
-    from tstdx.transport.base import TcpConnection
+    from atst.transport.base import TcpConnection
 
     conn = TcpConnection("127.0.0.1", 7709)
     lock = getattr(conn, "_lock", None)
@@ -87,7 +87,7 @@ def test_seam_pool_uses_connection_lock_or_busy_removed() -> None:
 
 def test_seam_async_client_method_parity() -> None:
     """A↔F0 缝：AsyncClient 协程方法集必须在同步 Client 上存在（防重命名漂移）。"""
-    from tstdx.client.api import AsyncClient, Client
+    from atst.client.api import AsyncClient, Client
 
     bridged = {
         n
@@ -101,7 +101,7 @@ def test_seam_async_client_method_parity() -> None:
 
 def test_seam_web_source_encoding_hook() -> None:
     """W 缝：BaseWebSource 声明按源编码（W10），且默认 gbk 向后兼容。"""
-    from tstdx.web.base import BaseWebSource
+    from atst.web.base import BaseWebSource
 
     assert getattr(BaseWebSource, "encoding", None) == "gbk", (
         "BaseWebSource.encoding 类属性缺失或非默认 gbk（W10 契约）"
@@ -110,7 +110,7 @@ def test_seam_web_source_encoding_hook() -> None:
 
 def test_seam_ratelimit_process_bucket() -> None:
     """W5 缝：跨实例共享限流桶（进程级按源名注册）。"""
-    import tstdx.web._base_http as web_http
+    import atst.web._base_http as web_http
 
     src = inspect.getsource(web_http)
     # 结构性弱断言：模块级注册表存在（实现命名不限；P10-3 自 base.py 拆至 _base_http）

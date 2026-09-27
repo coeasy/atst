@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """v5 优化批次 Web 域回归（PG3 东财翻页 / PG4 腾讯钳制 / PG7 新浪 worker 收口）。
@@ -13,10 +13,10 @@ import logging
 
 import pytest
 
-from tstdx.web.corporate import EastmoneyShareholderSource
-from tstdx.web.limits import TENCENT_KLINE_MAX
-from tstdx.web.sina.adapters import SinaSource
-from tstdx.web.tencent.adapters import KlineSource, MinuteKlineSource
+from atst.web.corporate import EastmoneyShareholderSource
+from atst.web.limits import TENCENT_KLINE_MAX
+from atst.web.sina.adapters import SinaSource
+from atst.web.tencent.adapters import KlineSource, MinuteKlineSource
 
 pytestmark = pytest.mark.unit
 
@@ -28,7 +28,7 @@ pytestmark = pytest.mark.unit
 class TestTencentKlineClamp:
     def test_kline_url_clamped(self, caplog):
         src = KlineSource()
-        with caplog.at_level(logging.WARNING, logger="tstdx.web.tencent.adapters"):
+        with caplog.at_level(logging.WARNING, logger="atst.web.tencent.adapters"):
             url = src.build_url(["sh600519"], period="day", count=2000)
         assert f",,,{TENCENT_KLINE_MAX}," in url
         assert "已钳制" in caplog.text
@@ -40,7 +40,7 @@ class TestTencentKlineClamp:
 
     def test_mkline_url_clamped(self, caplog):
         src = MinuteKlineSource()
-        with caplog.at_level(logging.WARNING, logger="tstdx.web.tencent.adapters"):
+        with caplog.at_level(logging.WARNING, logger="atst.web.tencent.adapters"):
             url = src.build_url(["sh600519"], period="5min", count=3000)
         assert f",,,{TENCENT_KLINE_MAX}" in url
         assert "已钳制" in caplog.text
@@ -153,7 +153,7 @@ class TestSinaFetchAllHardening:
         src = SinaSource(max_retries=0)
         monkeypatch.setattr(src, "_request_text", responder)
         monkeypatch.setattr(src.rate_limiter, "acquire", lambda source: True)
-        monkeypatch.setattr("tstdx.web.sina.adapters.time.sleep", lambda s: None)
+        monkeypatch.setattr("atst.web.sina.adapters.time.sleep", lambda s: None)
         return src
 
     def test_retry_recovers_transient_failure(self, monkeypatch):
@@ -166,7 +166,7 @@ class TestSinaFetchAllHardening:
             if "page=2&" in url:
                 attempts["page2"] += 1
                 if attempts["page2"] <= 2:  # 首次+第 1 次重试失败
-                    from tstdx.errors import WebRateLimited
+                    from atst.errors import WebRateLimited
 
                     raise WebRateLimited("simulated 429", context={"source": "sina"})
                 return _sina_page_rows("b", 2)
@@ -186,7 +186,7 @@ class TestSinaFetchAllHardening:
             if "page=1&" in url:
                 return _sina_page_rows("a", 2)
             if "page=2&" in url:
-                from tstdx.errors import WebRateLimited
+                from atst.errors import WebRateLimited
 
                 raise WebRateLimited("simulated persistent 429", context={"source": "sina"})
             if "page=3&" in url:
@@ -206,7 +206,7 @@ class TestSinaFetchAllHardening:
         def responder(url: str, encoding: str = "gbk") -> str:
             if "page=1&" in url:
                 return _sina_page_rows("a", 2)
-            from tstdx.errors import WebRateLimited
+            from atst.errors import WebRateLimited
 
             raise WebRateLimited("every page fails", context={"source": "sina"})
 

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.errors import ConfigError
-from tstdx.protocol.commands import Family
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.pool import ConnectionPool
+from atst.errors import ConfigError
+from atst.protocol.commands import Family
+from atst.transport.hosts import HostEntry
+from atst.transport.pool import ConnectionPool
 
 
 def test_update_hosts_publishes_fresh_generation_with_old_identity_and_new_latency(

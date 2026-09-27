@@ -1,4 +1,4 @@
-# tstdx v18 复评方案：主链复核、静默失败面与收口次序
+# atst v18 复评方案：主链复核、静默失败面与收口次序
 
 > **文档状态**：待用户裁决（§5 的六个决策点）。本轮**不改任何代码**，只做一次全盘复评：
 > 把磁盘上现存的东西重新量一遍，量出的新账登记进 v17 台账（F-72…F-76），并把剩下的活按
@@ -17,37 +17,37 @@
 | 离线全量测试 | **3598 项 / 0 失败 / 0 错误 / 5 跳过**，170.416s，`SUITE_RC=0` | `offline.xml`、`offline.log` |
 | 覆盖率 | **81.50%**（TOTAL 22406 语句 / 3569 未命中 / 5982 分支 / 1006 部分；阈值 77 未下调，`Required test coverage of 77.0% reached`） | `offline.log` |
 | 注册表面 | **11 Provider × 56 channel**、`DIRECT_BINDINGS` 251 条、内核直绑三元组 17 条、能力发现面 172 个名字（内核直绑 7 ∪ 目录迁移 165） | `probe_counts.log` |
-| 公开出口规模 | `tstdx.__all__` 45、`tstdx.web.__all__` 69、`WebQuoteSession` 公开方法 140、`Client` 类体公开名 15 | `probe_counts.log`、`probe_surface.log` |
+| 公开出口规模 | `atst.__all__` 45、`atst.web.__all__` 69、`WebQuoteSession` 公开方法 140、`Client` 类体公开名 15 | `probe_counts.log`、`probe_surface.log` |
 | 构造开销（禁网） | `Client()` 5.3 ms、`UnifiedRuntime()` 0.6 ms、`audit_runtime()` 0.2 ms —— 每次构造都跑的注册表审计**不是**热点 | `probe_surface.log` |
 
 ## 1. 主要功能：一个入口、一条主链、四个服务面
 
 | 出口 | 载体 | 规模（现算） | 谁钉住它 |
 |---|---|---|---|
-| 库面 | `Client` / `AsyncClient` → `tstdx/client/api.py` | 类体 15 个公开名 + 167 个能力经 `__getattr__` 动态出现 | `tests/architecture`、`tests/client` |
+| 库面 | `Client` / `AsyncClient` → `atst/client/api.py` | 类体 15 个公开名 + 167 个能力经 `__getattr__` 动态出现 | `tests/architecture`、`tests/client` |
 | 执行内核 | `UnifiedRuntime` → `QueryPlanner` → `DirectProviderExecutor` | 17 条内核直绑三元组、251 条直绑 | `tests/runtime`、`tests/query` |
-| 会话面 | `tstdx.web.session` 的 Web Provider 会话组合层 | 140 个公开方法 | `tests/web` |
+| 会话面 | `atst.web.session` 的 Web Provider 会话组合层 | 140 个公开方法 | `tests/web` |
 | 服务面 | CLI / HTTP（10 路由）/ WS（10 方法）/ MCP（9 工具） | 四面只翻译不执行 | 两条 AST 结构门禁（F-29 / F-56） |
 | 流式面 | `Client.stream` → `StreamPlanner` → `StatefulQuoteStream` | tdx-only | F-55/F-56 判据 |
 | 配置面 | `[core]`/`[hosts]`/`[rate_limit]`/`[web]`/`[security]` 五段 | 每键都有读者（ADR-016） | `tests/runtime/test_kernel_config_wiring.py`、F-43 袋级门禁 |
-| 工程面 | 协议账本 44 项规格、golden 样本、`tstdx/tools/` 门禁工具 | spec_audit 覆盖 100.0% | G2/G3 |
+| 工程面 | 协议账本 44 项规格、golden 样本、`atst/tools/` 门禁工具 | spec_audit 覆盖 100.0% | G2/G3 |
 
 ## 2. 架构与实现细节（模块规模，`scale.log`）
 
 | 子包 | 行数 | 文件 | 角色 |
 |---|---|---|---|
-| `tstdx/web/` | 17913 | 51 | Web Provider 适配器 + 会话组合层（占包体近三成） |
-| `tstdx/transport/` | 5425 | 12 | 7709 同步/异步池、主机选择、限速 |
-| `tstdx/protocol/` | 5066 | 16 | 命令编解码 + 协议账本 |
-| `tstdx/tools/` | 4798 | 10 | 仓内门禁工具（originality / spec_audit / golden_audit） |
-| `tstdx/client/` | 3406 | 11 | 唯一入口 + tdx 子客户端族（`_mixin.py` 955 行为模板层） |
+| `atst/web/` | 17913 | 51 | Web Provider 适配器 + 会话组合层（占包体近三成） |
+| `atst/transport/` | 5425 | 12 | 7709 同步/异步池、主机选择、限速 |
+| `atst/protocol/` | 5066 | 16 | 命令编解码 + 协议账本 |
+| `atst/tools/` | 4798 | 10 | 仓内门禁工具（originality / spec_audit / golden_audit） |
+| `atst/client/` | 3406 | 11 | 唯一入口 + tdx 子客户端族（`_mixin.py` 955 行为模板层） |
 | 根级模块 | 3122 | 10 | `typed_query` / `query` / `errors` / `result` 等契约文件 |
 | 其余 16 个子包 | ~14000 | 66 | runtime、catalog、config、domain、streaming、integration、observability、trade（实验性模拟器）等 |
 
 主链每一步都在同一轮里被读到：`UnifiedRuntime.execute()` 就四行——编译计划、执行、校验出处、返回
-（`tstdx/runtime/kernel.py:83-87`）；内核是配置的**唯一**消费者（`tstdx/runtime/kernel.py:10-14`）；
+（`atst/runtime/kernel.py:83-87`）；内核是配置的**唯一**消费者（`atst/runtime/kernel.py:10-14`）；
 执行器按 `(provider, channel, capability)` 三元组精确派发，未命中直绑表即回落
-`_migrated_capability`（`tstdx/runtime/executor.py:70-71`）。零缓存承诺在代码里是"没有对象可读"：
+`_migrated_capability`（`atst/runtime/executor.py:70-71`）。零缓存承诺在代码里是"没有对象可读"：
 缓存模块已在 Phase 2 物理删除，`ResultMeta` 也不存在缓存命中位。
 
 ## 3. 主体链路贯通判定：7 个内核直绑便捷方法逐格下场
@@ -77,7 +77,7 @@
 1. **F-70 裁决 (b)**：4 份对标/审计文档仍把已删除的门面写成今天的对外接口。已取证到名字落点
    （`Temp/step49/probe_doc_names.log`：反引号方法名命中会话面/能力面的比例，逐份 33/34、9/12、6/6、
    18/23），改写尚未落盘。
-2. **F-71 裁决 (c)**：`tstdx.web` 的第二条数据入口保留，但 `WebQuoteClient` 的**有序降级**必须改成
+2. **F-71 裁决 (c)**：`atst.web` 的第二条数据入口保留，但 `WebQuoteClient` 的**有序降级**必须改成
    显式单源。第 48 步只把内核自己那一跳钉住（`_web_quotes`），公开便捷入口 `get_quotes` 在
    `source` 缺省时仍会按 `[web] enabled_sources` 顺序换源——本轮再次实测：同一符号
    `provider=tencent` 与 `provider=sina` 各抛各的 `WebSourceError [E7000]`，而缺省路径不指名（`probe_quotes.log`）。
@@ -88,20 +88,20 @@
 |---|---|---|
 | F-72 | **P0** | tdx `quotes` 把"全部主机失败"写成"成功且没有数据"：逐只失败被塞进 `client.last_errors` 私有侧信道，内核不读，于是 `data=[]` + `warnings=()` + HTTP 200 |
 | F-73 | P1 | 活文档 `docs/troubleshooting.md:97` 让人去调一个**已删除对象**上的方法（`client.router.last_errors()`）；代码里 `.router` 零命中 |
-| F-74 | P1 | `tstdx/deprecation.py` 206 行兼容机制在 `tstdx/` 包内**零消费者**，只被测试钉着；它服务的门面层早已物理删除 |
+| F-74 | P1 | `atst/deprecation.py` 206 行兼容机制在 `atst/` 包内**零消费者**，只被测试钉着；它服务的门面层早已物理删除 |
 | F-75 | P2 | 3 个恒定抛错的能力仍占着 HTTP 路由 / WS 方法 / MCP 工具三面入口（§3 表），调用方只能靠读文档预知 |
 | F-76 | P2 | 167 个能力靠 `__getattr__` 动态出现：`dir()` 看不见、类型检查器看不见，只有 `capabilities()` 给一份 172 个名字的扁平元组 |
 
 #### F-72 详述（本轮最重要的发现）
 
 - **事实**：`_t_quotes` 对每只符号单独捕获 `TdxError`，写进 `errors` 列表；调用方没传 `_collect`
-  时，收尾走 `self._set_last_errors(errors)` 后**照常返回已集到的行**（`tstdx/client/_mixin.py:326-364`）。
-  内核 `_tdx_quotes` 正是那个"没传 `_collect`"的调用方（`tstdx/runtime/executor.py:503-505`）。
+  时，收尾走 `self._set_last_errors(errors)` 后**照常返回已集到的行**（`atst/client/_mixin.py:326-364`）。
+  内核 `_tdx_quotes` 正是那个"没传 `_collect`"的调用方（`atst/runtime/executor.py:503-505`）。
   8 台主机 × 2 轮全失败 ⇒ 返回值是空列表，`ResultMeta.warnings` 是空元组，`degraded` 是 None。
 - **为什么既有判据看不见**：F-45 的 `strict` 开关读的就是 `warnings`，而这条路径压根不往里写；
   F-52/F-65/F-66 的门禁都是"声明面 ↔ 执行面"对账，不看失败投递方向；离线全量测试用假客户端，
   假客户端不会同时让所有主机失败，所以 3598 项全绿也照不到它。
-- **旁证（这不是我一家之言）**：CLI 早就绕过了它——`tstdx/cli/runtime_commands.py:847-856` 在打印
+- **旁证（这不是我一家之言）**：CLI 早就绕过了它——`atst/cli/runtime_commands.py:847-856` 在打印
   "0 条"之前专门去读 `c.last_errors` 才拿得到真实原因。库面与 CLI 面共用一个内核，却只有 CLI
   知道失败原因，这就是不对称的落点。
 - **代价**：任何拿 `Client.quotes()` 做健康检查的下游（HTTP `/v13/quotes`、WS `quotes`、MCP
@@ -118,8 +118,8 @@
 - **F-73**：(a) 该行改成指向今天真实存在的观察点；(b) 连同 `last_errors` 一起处置（见 F-74/72）；
   (c) 删掉该行。**默认 (a)**：判据侧顺带扩形——把「反引号里的 `obj.attr` 点号调用」也纳入死路径判据，
   否则同类指令还会再长出来（小写点号形状是现有两条门禁的盲区，与 F-70 是同族不同格）。
-- **F-74**：(a) 物理删除 `tstdx/deprecation.py` 与其测试（与 F-18/F-65/F-68 同法：造好但无生产调用点）；
-  (b) 保留并接进某个真实退役流程；(c) 移进 `tstdx/tools/` 当工程脚本。**默认 (a)**：包内零消费者 +
+- **F-74**：(a) 物理删除 `atst/deprecation.py` 与其测试（与 F-18/F-65/F-68 同法：造好但无生产调用点）；
+  (b) 保留并接进某个真实退役流程；(c) 移进 `atst/tools/` 当工程脚本。**默认 (a)**：包内零消费者 +
   门面层已删 ⇒ 它是为一条已经不存在的桥留的支架。
 - **F-75**：(a) 三面继续保留但在响应里显式区分"该能力在本仓被结构化拦截"与"Provider 故障"；
   (b) 从 HTTP/WS/MCP 三面摘掉这 3 格，只留库面 + 发现面；(c) 保持现状（文档已写明）。

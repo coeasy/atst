@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """「发不出去的命令」必须在**调用方读得到的那一面**写着它是发不出去的。
@@ -35,22 +35,22 @@ import ast
 import re
 from pathlib import Path
 
-import tstdx.client.core as client_core
-from tstdx.catalog.capability import MIGRATED_BINDINGS
-from tstdx.client.api import Client
-from tstdx.diagnostics import WarningCode
-from tstdx.integration.mcp._tools_spec import TOOLS
-from tstdx.protocol.commands import CMD, COMMANDS, STATUS_OFFLINE, TIER_L1, Family
-from tstdx.providers import PROVIDERS
-from tstdx.runtime.executor import DIRECT_BINDINGS
+import atst.client.core as client_core
+from atst.catalog.capability import MIGRATED_BINDINGS
+from atst.client.api import Client
+from atst.diagnostics import WarningCode
+from atst.integration.mcp._tools_spec import TOOLS
+from atst.protocol.commands import CMD, COMMANDS, STATUS_OFFLINE, TIER_L1, Family
+from atst.providers import PROVIDERS
+from atst.runtime.executor import DIRECT_BINDINGS
 
 ROOT = Path(__file__).resolve().parents[2]
-MIXIN = ROOT / "tstdx" / "client" / "_mixin.py"
-EXECUTOR = ROOT / "tstdx" / "runtime" / "executor.py"
-SYNC_CLIENT = ROOT / "tstdx" / "client" / "sync.py"
-MCP_IMPL = ROOT / "tstdx" / "integration" / "mcp" / "_tools_impl.py"
-HTTP_IMPL = ROOT / "tstdx" / "integration" / "runtime_http.py"
-WS_IMPL = ROOT / "tstdx" / "integration" / "runtime_ws.py"
+MIXIN = ROOT / "atst" / "client" / "_mixin.py"
+EXECUTOR = ROOT / "atst" / "runtime" / "executor.py"
+SYNC_CLIENT = ROOT / "atst" / "client" / "sync.py"
+MCP_IMPL = ROOT / "atst" / "integration" / "mcp" / "_tools_impl.py"
+HTTP_IMPL = ROOT / "atst" / "integration" / "runtime_http.py"
+WS_IMPL = ROOT / "atst" / "integration" / "runtime_ws.py"
 PROVIDER_DOC = ROOT / "docs" / "providers" / "tdx.md"
 
 #: 账本对 ``offline`` 这个状态自身的定义；面上的说明不许换成别的口径。
@@ -294,7 +294,7 @@ def test_a_template_that_cannot_send_says_so_where_the_caller_reads_it() -> None
 
 def test_the_business_entry_face_names_the_exception_it_always_raises() -> None:
     """``Client`` 是唯一业务入口：注定失败的能力面不许留一句光秃秃的签名。"""
-    tree = _tree(ROOT / "tstdx" / "client" / "api.py")
+    tree = _tree(ROOT / "atst" / "client" / "api.py")
     client_class = next(
         node for node in ast.walk(tree) if isinstance(node, ast.ClassDef) and node.name == "Client"
     )

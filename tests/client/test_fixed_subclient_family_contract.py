@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from tstdx.client import (
+from atst.client import (
     AsyncExMarketClient,
     AsyncF10Client,
     AsyncGoodsClient,
@@ -15,8 +15,8 @@ from tstdx.client import (
     MacClient,
     get_client,
 )
-from tstdx.errors import ConfigError
-from tstdx.protocol.commands import Family
+from atst.errors import ConfigError
+from atst.protocol.commands import Family
 
 
 class OpaquePool:
@@ -56,8 +56,8 @@ def test_fixed_subclients_accept_matching_explicit_family(
 
     assert sync_client.family == required_family
     assert async_client.family == required_family
-    assert sync_cls.__init__.__module__ == "tstdx.client.sync"
-    assert async_cls.__init__.__module__ == "tstdx.client.async_"
+    assert sync_cls.__init__.__module__ == "atst.client.sync"
+    assert async_cls.__init__.__module__ == "atst.client.async_"
 
 
 def test_factory_rejects_conflicting_fixed_family_override() -> None:

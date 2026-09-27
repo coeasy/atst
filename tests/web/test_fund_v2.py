@@ -1,7 +1,7 @@
 """天天基金扩展源（排行 / 经理 / 公司 / 搜索）离线测试。
 
-覆盖 :mod:`tstdx.web._mob_fund` 共享工具、:mod:`tstdx.web.fund_rank`、
-:mod:`tstdx.web.fund_manager`、:mod:`tstdx.web.fund_company` 三个源，
+覆盖 :mod:`atst.web._mob_fund` 共享工具、:mod:`atst.web.fund_rank`、
+:mod:`atst.web.fund_manager`、:mod:`atst.web.fund_company` 三个源，
 以及 :class:`WebQuoteSession` → 源 的门面端到端链路。
 全部用罐头 JSON，不发起真实 HTTP。
 """
@@ -12,13 +12,13 @@ import json
 
 import pytest
 
-from tstdx.errors import SourceDeprecated, ValidationError
-from tstdx.web._mob_fund import apply_fields, mob_get_json, mob_rows, mob_rows_any
-from tstdx.web.base import HttpResponse
-from tstdx.web.fund_company import FundCompanySource
-from tstdx.web.fund_manager import FundManagerSource
-from tstdx.web.fund_rank import SORT_COLUMNS, FundMobRankSource
-from tstdx.web.session import WebQuoteSession
+from atst.errors import SourceDeprecated, ValidationError
+from atst.web._mob_fund import apply_fields, mob_get_json, mob_rows, mob_rows_any
+from atst.web.base import HttpResponse
+from atst.web.fund_company import FundCompanySource
+from atst.web.fund_manager import FundManagerSource
+from atst.web.fund_rank import SORT_COLUMNS, FundMobRankSource
+from atst.web.session import WebQuoteSession
 
 
 class FakeHttpClient:
@@ -856,7 +856,7 @@ class TestFundCompanySource:
 
 
 # -- 门面端到端链路（monkeypatch _shared_http） --------------------------- #
-import tstdx.web._session_fund_v2 as mixin_mod  # noqa: E402
+import atst.web._session_fund_v2 as mixin_mod  # noqa: E402
 
 _ALL = {
     "FundMNRank?": RANK,

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.charset.encoding import (
+from atst.charset.encoding import (
     CANDIDATE_ENCODINGS,
     decode_bytes,
     detect_encoding,

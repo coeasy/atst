@@ -10,9 +10,9 @@ from urllib.parse import unquote
 
 import pytest
 
-from tstdx.errors import SourceDeprecated, WebSourceError
-from tstdx.web.base import HttpResponse
-from tstdx.web.corporate import (
+from atst.errors import SourceDeprecated, WebSourceError
+from atst.web.base import HttpResponse
+from atst.web.corporate import (
     EastmoneyBlockTradeSource,
     EastmoneyNoticeSource,
     EastmoneyPerformanceSource,
@@ -21,7 +21,7 @@ from tstdx.web.corporate import (
     EastmoneyShareholderSource,
     EastmoneyUnlockSource,
 )
-from tstdx.web.fundflow import (
+from atst.web.fundflow import (
     EastmoneyFundFlowSource,
     EastmoneyLimitPoolSource,
     EastmoneyNorthboundSource,
@@ -29,12 +29,12 @@ from tstdx.web.fundflow import (
     _hhmmss,
     _symbol_from_market,
 )
-from tstdx.web.global_market import TencentGlobalSource, TencentMarketStatSource
-from tstdx.web.longhu import EastmoneyTopListSource, parse_lhb_row
-from tstdx.web.news import SinaNewsSource, _clean
-from tstdx.web.sina.adapters import SinaHkSource
-from tstdx.web.tencent.adapters import HkSource, KlineSource, UsSource
-from tstdx.web.ticks import TICKS_PER_PAGE, EastmoneyTrendsSource, TencentTickSource
+from atst.web.global_market import TencentGlobalSource, TencentMarketStatSource
+from atst.web.longhu import EastmoneyTopListSource, parse_lhb_row
+from atst.web.news import SinaNewsSource, _clean
+from atst.web.sina.adapters import SinaHkSource
+from atst.web.tencent.adapters import HkSource, KlineSource, UsSource
+from atst.web.ticks import TICKS_PER_PAGE, EastmoneyTrendsSource, TencentTickSource
 
 
 class FakeHttp:
@@ -566,7 +566,7 @@ class TestTencentTickSource:
         复写具体数字）"；散文里的字面量同样是声明，改常量时它必须跟着红。
         """
         root = Path(__file__).resolve().parents[2]
-        for relative in ("tstdx/web/ticks.py", "tstdx/web/_session_market.py"):
+        for relative in ("atst/web/ticks.py", "atst/web/_session_market.py"):
             text = (root / relative).read_text(encoding="utf-8")
             for claimed in re.findall(r"每页\s*(\d+)\s*条", text):
                 assert int(claimed) == TICKS_PER_PAGE, (
@@ -1044,8 +1044,8 @@ class TestEastmoneyTopListSource:
         assert rows[0]["code"] == "000001"
 
     def test_session_longhu(self, monkeypatch):
-        import tstdx.web.longhu as _longhu
-        from tstdx.web import session
+        import atst.web.longhu as _longhu
+        from atst.web import session
 
         class _Fake(EastmoneyTopListSource):
             def fetch_lhb(self, date=None, *, symbol=None, page=1, size=50):
@@ -1144,8 +1144,8 @@ class TestExternalQuotes:
         assert "hk00700" in url
 
     def test_session_hk_us(self, monkeypatch):
-        import tstdx.web.tencent.adapters as _adapters
-        from tstdx.web import session
+        import atst.web.tencent.adapters as _adapters
+        from atst.web import session
 
         class _FakeHk(HkSource):
             def fetch(self, symbols, **kw):
@@ -1208,8 +1208,8 @@ class TestSinaNewsSource:
         assert _clean("&nbsp;<font>研报</font>&nbsp;") == "研报"
 
     def test_session_news(self, monkeypatch):
-        import tstdx.web.news as _news
-        from tstdx.web import session
+        import atst.web.news as _news
+        from atst.web import session
 
         class _Fake(SinaNewsSource):
             def fetch_news(self, symbol, *, page=1, num=20, tag=None):
@@ -1245,8 +1245,8 @@ class TestSinaNewsSource:
 
     def test_session_news_pages_aggregation(self, monkeypatch):
         """pages>1 跨页聚合去重：3 条新闻分 2 页（num=2）拼接为 3 条。"""
-        import tstdx.web.news as _news
-        from tstdx.web import session
+        import atst.web.news as _news
+        from atst.web import session
 
         class _Fake(SinaNewsSource):
             def fetch_news(self, symbol, *, page=1, num=20, tag=None):
@@ -1304,8 +1304,8 @@ class TestKlineExternal:
         assert bars[0].amount == 4242440861.0
 
     def test_session_klines_hk_us(self, monkeypatch):
-        import tstdx.web.tencent.adapters as _adapters
-        from tstdx.web import session
+        import atst.web.tencent.adapters as _adapters
+        from atst.web import session
 
         store = {"hk00700": KLINE_HK_JSON, "usAAPL": KLINE_US_JSON}
 

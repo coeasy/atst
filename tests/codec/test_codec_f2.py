@@ -13,7 +13,7 @@ import zlib
 
 import pytest
 
-from tstdx.codec.framing import (
+from atst.codec.framing import (
     DEFAULT_7709_SPEC,
     MAX_FRAME_BYTES,
     FrameSpec,
@@ -21,8 +21,8 @@ from tstdx.codec.framing import (
     iter_frames,
     parse_response_header,
 )
-from tstdx.codec.primitive import BinaryReader, count_guard, zlib_compress, zlib_decompress
-from tstdx.errors import FramingError
+from atst.codec.primitive import BinaryReader, count_guard, zlib_compress, zlib_decompress
+from atst.errors import FramingError
 
 
 def _resp_header(

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """错误契约的诚实门禁：文档点名的错误类，运行期必须真有其站点；反方向同理。
@@ -21,7 +21,7 @@ F-44 的原始形状是"错误码树里有从未发生的叶子"：幻影开关�
 
 **构造点的识别按错误树成员判定，不按类名后缀**（第 44 步的教训）：第一版把非 ``raise``
 位置的构造过滤成 ``Error|Warning|Violation`` 结尾的名字，于是
-``on_error(BackpressureOverflow(...))``（``tstdx/streaming/base.py``）这样的真实投递
+``on_error(BackpressureOverflow(...))``（``atst/streaming/base.py``）这样的真实投递
 站点被整类看不见——台账据这条盲区把 `BackpressureOverflow` 记成"既无抛点也无投递"，
 并让它占了 F-68 五个删除名额里的一个。
 """
@@ -35,7 +35,7 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "tstdx"
+SOURCE = ROOT / "atst"
 DOCS = ROOT / "docs"
 LEDGER = "docs/REFACTOR_PLAN_V17_CLOSURE.md"
 
@@ -103,7 +103,7 @@ def _relative(path: Path) -> str:
 
 @functools.cache
 def _not_error_class_names() -> frozenset[str]:
-    """合法的非错误 CamelCase 名：Python 内建 + 全仓 ``tstdx/`` 真实定义过的类。
+    """合法的非错误 CamelCase 名：Python 内建 + 全仓 ``atst/`` 真实定义过的类。
 
     这一层是从代码现推的，不是手抄名单：``docs/errors.md`` 在错误小节里提到
     ``WarningCode``（``diagnostics.py`` 的枚举）不算说谎。反过来，第三方服务的
@@ -344,7 +344,7 @@ class TestPromiseGate:
         #: 只靠投递给用户的类必须被算成站点：它们不 ``raise``，名字也不以 ``Error`` 结尾，
         #: 是后缀判据唯一会漏掉的那一类——F-68 的误计数正是从这里来的。
         assert "BackpressureOverflow" in wired, (
-            "tstdx/streaming/base.py 的 on_error(BackpressureOverflow(...)) 没被算成站点，"
+            "atst/streaming/base.py 的 on_error(BackpressureOverflow(...)) 没被算成站点，"
             "投递口扫描又失效了"
         )
         promised = _documented_classes()

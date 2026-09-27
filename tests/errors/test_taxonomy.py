@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.errors import (
+from atst.errors import (
     RETRY_ADVICE,
     AdjustError,
     AllHostsUnreachable,
@@ -364,12 +364,12 @@ class TestErrorTaxonomy:
             assert issubclass(cls, TdxError), f"{cls.__name__} 不是 TdxError 子类"
 
     def test_the_table_is_the_module_surface(self):
-        """本表必须正好覆盖 ``tstdx.errors`` 对外的异常类，双向都不许多。
+        """本表必须正好覆盖 ``atst.errors`` 对外的异常类，双向都不许多。
 
         删类与删表是两次独立动作：多删一行会红（名字不存在），少删一行在既有判据里
         完全静默——表就会变成一份没人核对的历史清单。
         """
-        import tstdx.errors as errors
+        import atst.errors as errors
 
         public = {
             name

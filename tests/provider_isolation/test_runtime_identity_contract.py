@@ -1,7 +1,7 @@
 import pytest
 
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.runtime.identity import RuntimeExecutionIdentity, execution_identity_from_plan
+from atst.query import QueryPlanner, QuerySpec
+from atst.runtime.identity import RuntimeExecutionIdentity, execution_identity_from_plan
 
 
 def test_runtime_execution_identity_is_provider_specific() -> None:

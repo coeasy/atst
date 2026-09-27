@@ -9,10 +9,10 @@ import json
 
 import pytest
 
-from tstdx.diagnostics import WarningCode, warning_sink
-from tstdx.domain.models import Quote
-from tstdx.errors import SourceDeprecated, WebSourceError
-from tstdx.web.base import (
+from atst.diagnostics import WarningCode, warning_sink
+from atst.domain.models import Quote
+from atst.errors import SourceDeprecated, WebSourceError
+from atst.web.base import (
     HttpResponse,
     RateLimiter,
     TokenBucket,
@@ -23,9 +23,9 @@ from tstdx.web.base import (
     to_sina_symbol,
     to_tencent_symbol,
 )
-from tstdx.web.eastmoney.adapters import EastmoneySource
-from tstdx.web.sina.adapters import SinaSource
-from tstdx.web.tencent.adapters import TencentSource
+from atst.web.eastmoney.adapters import EastmoneySource
+from atst.web.sina.adapters import SinaSource
+from atst.web.tencent.adapters import TencentSource
 
 # --------------------------------------------------------------------------- #
 # 罐头响应数据
@@ -186,7 +186,7 @@ class TestWebSources:
         src.DEPRECATE_AFTER_FAILURES = 3
         # 模拟连续失败
         src._failures = 3
-        from tstdx.web.base import HttpResponse
+        from atst.web.base import HttpResponse
 
         class FailingClient:
             def get(self, url, **kw):
@@ -493,7 +493,7 @@ class TestEastmoneyHostBlacklist:
 
     @pytest.fixture(autouse=True)
     def _clean_blacklist(self):
-        from tstdx.web.base import reset_em_blacklist
+        from atst.web.base import reset_em_blacklist
 
         reset_em_blacklist()
         yield
@@ -530,7 +530,7 @@ class TestEastmoneyHostBlacklist:
 
     def test_ttl_expiry_restores_priority(self):
         """黑名单 TTL 到期后回到首站优先（不会永久降权）。"""
-        from tstdx.web.base import _EM_HOST_BLACKLIST, _em_blacklist_add
+        from atst.web.base import _EM_HOST_BLACKLIST, _em_blacklist_add
 
         src, _ = self._make(fail_hosts={"https://h1.test"})
         _em_blacklist_add("https://h1.test")
@@ -550,7 +550,7 @@ class TestEastmoneyHostBlacklist:
 
     def test_all_hosts_blacklisted_falls_back_to_full_pool(self):
         """全部主机被拉黑时回退完整池（避免死路）。"""
-        from tstdx.web.base import _em_blacklist_add
+        from atst.web.base import _em_blacklist_add
 
         src, _ = self._make(fail_hosts={"https://h1.test"})
         for h in src.HOSTS:

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """F1 批次「流式与客户端」域回归：C3 错误收集 / P1a 指数 ctx / P1 项。
@@ -17,11 +17,11 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-import tstdx.client as client_mod  # noqa: E402
-from tstdx.client import TdxClient, _quote_body  # noqa: E402
-from tstdx.codec.framing import ResponseFrame  # noqa: E402
-from tstdx.codec.primitive import encode_leb128  # noqa: E402
-from tstdx.errors import ConnectionFailed, NotImplementedFeature, SymbolError  # noqa: E402
+import atst.client as client_mod  # noqa: E402
+from atst.client import TdxClient, _quote_body  # noqa: E402
+from atst.codec.framing import ResponseFrame  # noqa: E402
+from atst.codec.primitive import encode_leb128  # noqa: E402
+from atst.errors import ConnectionFailed, NotImplementedFeature, SymbolError  # noqa: E402
 
 _MAGIC = 0x0074CBB1
 
@@ -168,7 +168,7 @@ class TestLastErrors:
 
     def test_async_concurrent_exact_errors(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """C3 异步镜像：错误收进调用局部列表，结束一次性赋值。"""
-        from tstdx.client import AsyncTdxClient
+        from atst.client import AsyncTdxClient
 
         aclient = AsyncTdxClient()
 

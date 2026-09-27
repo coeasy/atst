@@ -1,10 +1,10 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """G47 — 异步池的心跳 / 空闲回收者必须在**真实客户端路径**上起跑，而且只有一处起跑点。
 
-第 31 轮第 2 遍实测到的断链形状：:class:`~tstdx.transport.pool.ConnectionPool` 在
-``__init__`` 末尾自己起跑心跳线程，而 :class:`~tstdx.transport.async_.AsyncConnectionPool`
+第 31 轮第 2 遍实测到的断链形状：:class:`~atst.transport.pool.ConnectionPool` 在
+``__init__`` 末尾自己起跑心跳线程，而 :class:`~atst.transport.async_.AsyncConnectionPool`
 把起跑写在 ``start_heartbeat()`` 里、只有 ``__aenter__`` 调它。``AsyncTdxClient`` 家族走的
 是 ``open()``（构造池 → 惰性建连），从不进池的 ``async with``——于是** shipped 路径上
 从来没有那条循环**：``idle_timeout`` 与 ``heartbeat_interval`` 两个旋钮在异步面是幻影旋钮，
@@ -43,13 +43,13 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.client.async_ import AsyncTdxClient
-from tstdx.transport.async_ import AsyncConnectionPool
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.pool import ConnectionPool
+from atst.client.async_ import AsyncTdxClient
+from atst.transport.async_ import AsyncConnectionPool
+from atst.transport.hosts import HostEntry
+from atst.transport.pool import ConnectionPool
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PACKAGE_ROOT = REPO_ROOT / "tstdx"
+PACKAGE_ROOT = REPO_ROOT / "atst"
 
 sys.path.insert(0, str(Path(__file__).parent))
 from fake_server import ECHO_CMD, FakeTdxServer  # noqa: E402
@@ -61,8 +61,8 @@ ARM_FUNCTIONS = frozenset({"_start_heartbeat", "start_heartbeat"})
 #: 同步池落在 ``__init__``（构造即持有槽位），异步池落在 ``_get_conn_locked``
 #: （第一次握住真 socket 时武装）。
 EXPECTED_ARM_SITES = {
-    "_start_heartbeat": {"tstdx/transport/pool.py::ConnectionPool.__init__"},
-    "start_heartbeat": {"tstdx/transport/async_.py::AsyncConnectionPool._get_conn_locked"},
+    "_start_heartbeat": {"atst/transport/pool.py::ConnectionPool.__init__"},
+    "start_heartbeat": {"atst/transport/async_.py::AsyncConnectionPool._get_conn_locked"},
 }
 
 
@@ -208,8 +208,8 @@ def test_planted_second_arm_site_is_caught() -> None:
     两个桩都是第 31 轮真实存在过的形状——前者是修复前的唯一起跑点，后者是"搬到热路径顺手
     在客户端也补一刀"的直觉写法。
     """
-    rel = "tstdx/transport/async_.py"
-    real = (REPO_ROOT / "tstdx" / "transport" / "async_.py").read_text(encoding="utf-8")
+    rel = "atst/transport/async_.py"
+    real = (REPO_ROOT / "atst" / "transport" / "async_.py").read_text(encoding="utf-8")
     assert _arm_sites(real, rel) == {
         "start_heartbeat": {f"{rel}::AsyncConnectionPool._get_conn_locked"}
     }, "对照基准就不对，这一格自证失败"
@@ -222,8 +222,8 @@ def test_planted_second_arm_site_is_caught() -> None:
         f"{rel}::AsyncConnectionPool.__aenter__",
     }, "旧门种回去之后判据没看见第二个起跑点"
 
-    client_rel = "tstdx/client/async_.py"
-    client_src = (REPO_ROOT / "tstdx" / "client" / "async_.py").read_text(encoding="utf-8")
+    client_rel = "atst/client/async_.py"
+    client_src = (REPO_ROOT / "atst" / "client" / "async_.py").read_text(encoding="utf-8")
     anchor = "        if bestip:\n"
     copied = client_src.replace(anchor, "        self._pool.start_heartbeat()\n" + anchor, 1)
     assert copied != client_src, "客户端种桩锚点没命中"
@@ -249,9 +249,9 @@ def test_sync_face_still_arms_in_its_constructor() -> None:
         )
         try:
             assert pool._hb is not None and pool._hb.is_alive(), "同步面的起跑点被搬走了"
-            source = (REPO_ROOT / "tstdx" / "transport" / "pool.py").read_text(encoding="utf-8")
-            assert _arm_sites(source, "tstdx/transport/pool.py") == {
-                "_start_heartbeat": {"tstdx/transport/pool.py::ConnectionPool.__init__"}
+            source = (REPO_ROOT / "atst" / "transport" / "pool.py").read_text(encoding="utf-8")
+            assert _arm_sites(source, "atst/transport/pool.py") == {
+                "_start_heartbeat": {"atst/transport/pool.py::ConnectionPool.__init__"}
             }, "同步池的起跑点不再唯一落在构造里"
         finally:
             pool.close()

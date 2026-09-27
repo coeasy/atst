@@ -8,7 +8,7 @@ from typing import Any, NoReturn
 
 import pytest
 
-from tstdx.query import EXECUTED_OPTIONS, REJECTED_OPTIONS, QuerySpec
+from atst.query import EXECUTED_OPTIONS, REJECTED_OPTIONS, QuerySpec
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -17,24 +17,24 @@ ROOT = Path(__file__).resolve().parents[2]
 #: sources / cache) cannot appear here; the invariant is that the canonical
 #: runtime never routes through an aggregate web fallback engine.
 OFFICIAL_RUNTIME = [
-    ROOT / "tstdx" / "client" / "api.py",
-    ROOT / "tstdx" / "runtime" / "kernel.py",
-    ROOT / "tstdx" / "query.py",
-    ROOT / "tstdx" / "runtime" / "executor.py",
-    ROOT / "tstdx" / "runtime" / "orchestration.py",
-    ROOT / "tstdx" / "catalog" / "provider_bindings.py",
-    ROOT / "tstdx" / "catalog" / "capability.py",
-    ROOT / "tstdx" / "batch.py",
-    ROOT / "tstdx" / "streaming" / "base.py",
-    ROOT / "tstdx" / "providers" / "__init__.py",
-    ROOT / "tstdx" / "integration" / "__init__.py",
-    ROOT / "tstdx" / "integration" / "runtime_http.py",
-    ROOT / "tstdx" / "integration" / "runtime_ws.py",
-    ROOT / "tstdx" / "integration" / "runtime_ws_server.py",
-    ROOT / "tstdx" / "integration" / "serialization.py",
-    ROOT / "tstdx" / "integration" / "mcp" / "_server.py",
-    ROOT / "tstdx" / "cli" / "__init__.py",
-    ROOT / "tstdx" / "cli" / "runtime_commands.py",
+    ROOT / "atst" / "client" / "api.py",
+    ROOT / "atst" / "runtime" / "kernel.py",
+    ROOT / "atst" / "query.py",
+    ROOT / "atst" / "runtime" / "executor.py",
+    ROOT / "atst" / "runtime" / "orchestration.py",
+    ROOT / "atst" / "catalog" / "provider_bindings.py",
+    ROOT / "atst" / "catalog" / "capability.py",
+    ROOT / "atst" / "batch.py",
+    ROOT / "atst" / "streaming" / "base.py",
+    ROOT / "atst" / "providers" / "__init__.py",
+    ROOT / "atst" / "integration" / "__init__.py",
+    ROOT / "atst" / "integration" / "runtime_http.py",
+    ROOT / "atst" / "integration" / "runtime_ws.py",
+    ROOT / "atst" / "integration" / "runtime_ws_server.py",
+    ROOT / "atst" / "integration" / "serialization.py",
+    ROOT / "atst" / "integration" / "mcp" / "_server.py",
+    ROOT / "atst" / "cli" / "__init__.py",
+    ROOT / "atst" / "cli" / "runtime_commands.py",
 ]
 
 #: The aggregate web router and its fallback-order literal must never be reachable
@@ -71,7 +71,7 @@ def _imported_names(tree: ast.AST) -> set[str]:
 def test_official_runtime_inventory_points_at_real_files() -> None:
     """``OFFICIAL_RUNTIME`` 是手抄清单，所以它会与磁盘脱节——本步就是被这件事发现的。
 
-    第 45 步按 F-18 裁决 (b) 删除 ``tstdx/providers/http.py`` 之前，这张清单里躺着它的
+    第 45 步按 F-18 裁决 (b) 删除 ``atst/providers/http.py`` 之前，这张清单里躺着它的
     一行，而三条判据都以 ``FileNotFoundError`` 崩在 ``read_text`` 里：读者看到的是
     "测试环境坏了"，不是"一份清单过期了"。清单里每一个死路径都等于把那格判据悄悄
     停摆，所以漂移必须先以一条人读的消息暴露，而不是以异常形式撞进来。
@@ -112,7 +112,7 @@ def test_official_runtime_has_no_cross_provider_fallback_literal() -> None:
 
 
 def test_official_runtime_never_calls_legacy_aggregate_web_client() -> None:
-    """Exact Provider adapters may live in tstdx.web; aggregate routing may not."""
+    """Exact Provider adapters may live in atst.web; aggregate routing may not."""
     suspicious: list[str] = []
     for path in OFFICIAL_RUNTIME:
         text = path.read_text(encoding="utf-8")
@@ -128,15 +128,15 @@ def test_kernels_web_hop_uses_exactly_the_source_the_plan_named(
     """内核的 web 一跳必须恰好构造 `plan.provider` 一个源，且绝不碰有序降级客户端。
 
     上一条判据读的是字面量：`executor.py` 里没有 `WebQuoteClient(` 就通过。它看不见
-    改道——`tstdx.web.get_quotes` 这个公开便捷函数在 `source` 缺省时会 new 一个
+    改道——`atst.web.get_quotes` 这个公开便捷函数在 `source` 缺省时会 new 一个
     `WebQuoteClient`，按 `web.enabled_sources` 顺序换源直到有一家成功，而调用它不需要
     任何被禁的字面量（第 48 步之前内核正是走这条路）。所以本判据用真实求值封住两条路：
     把那个多源客户端换成"一被构造就抛"，再拿 binding 表里每一个派发 `_web_quotes` 的
     Provider 各跑一跳，要求构造的源名 == `plan.provider`、符号归一化后原样送达。
     """
-    import tstdx.web
-    from tstdx.query import QueryPlanner, QuerySpec
-    from tstdx.runtime.executor import DIRECT_BINDINGS, DirectProviderExecutor
+    import atst.web
+    from atst.query import QueryPlanner, QuerySpec
+    from atst.runtime.executor import DIRECT_BINDINGS, DirectProviderExecutor
 
     def _never_a_fallback_chain(*args: object, **kwargs: object) -> NoReturn:
         raise AssertionError("内核的 web 一跳落进了有序多源降级链")
@@ -157,8 +157,8 @@ def test_kernels_web_hop_uses_exactly_the_source_the_plan_named(
     def fake_create_source(name: str, **kwargs: Any) -> _RecordingSource:
         return _RecordingSource(name)
 
-    monkeypatch.setattr(tstdx.web, "WebQuoteClient", _never_a_fallback_chain)
-    monkeypatch.setattr(tstdx.web, "create_source", fake_create_source)
+    monkeypatch.setattr(atst.web, "WebQuoteClient", _never_a_fallback_chain)
+    monkeypatch.setattr(atst.web, "create_source", fake_create_source)
 
     web_quote_providers = sorted(
         {b.provider for b in DIRECT_BINDINGS if b.executor_name == "_web_quotes"}
@@ -182,12 +182,12 @@ def test_package_defines_no_data_cache_layer() -> None:
     """「零缓存」是运行期事实，所以它必须可门禁，而不是只写在 README 与 docstring 里。
 
     ``CapitalChangeCache`` 是 Phase 2 删缓存层后留下的孤儿：它自带"命中即跳过
-    0x0010 网络与解析"的 TTL + 落盘语义，却在 ``tstdx/`` 里没有任何调用方，
+    0x0010 网络与解析"的 TTL + 落盘语义，却在 ``atst/`` 里没有任何调用方，
     只有它自己的单测在测它——一个能跳过数据源的形状留在包里，下次接线只需一行。
     纯函数记忆化（``functools.lru_cache``）不在此列：它不省掉任何一次网络请求。
     """
     offenders: list[str] = []
-    for path in sorted((ROOT / "tstdx").rglob("*.py")):
+    for path in sorted((ROOT / "atst").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             name = getattr(node, "name", None) or ""
@@ -233,7 +233,7 @@ def _production_prose_hits() -> list[tuple[str, str]]:
     """Every cache-shaped phrase in production docstrings and comments."""
 
     hits: set[tuple[str, str]] = set()
-    for path in sorted((ROOT / "tstdx").rglob("*.py")):
+    for path in sorted((ROOT / "atst").rglob("*.py")):
         relative = str(path.relative_to(ROOT)).replace("\\", "/")
         text = path.read_text(encoding="utf-8")
         for line in text.splitlines():
@@ -307,7 +307,7 @@ def test_query_spec_store_only_fields_are_still_reached() -> None:
     ``options_json`` 是存储形态，执行面读的是解码后的 ``spec.options``；豁免它的前提
     是那条链仍在，属性一旦改名本门禁立刻红。
     """
-    source = (ROOT / "tstdx" / "query.py").read_text(encoding="utf-8")
+    source = (ROOT / "atst" / "query.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     decoded = {
         node.attr
@@ -322,7 +322,7 @@ def test_query_spec_store_only_fields_are_still_reached() -> None:
     for field in _QUERY_SPEC_STORE_ONLY_FIELDS:
         assert field in decoded, f"{field} 已不再被 json.loads 解码，豁免不再成立"
         assert f"self.{field}" in source, f"{field} 没有被任何属性读取"
-    assert "plan.spec.options" in (ROOT / "tstdx" / "runtime" / "executor.py").read_text(
+    assert "plan.spec.options" in (ROOT / "atst" / "runtime" / "executor.py").read_text(
         encoding="utf-8"
     ), "options 袋不再是执行面输入"
 
@@ -361,7 +361,7 @@ def test_option_bag_keys_are_executed_or_rejected() -> None:
 def _build_option_folds() -> tuple[set[str], set[str]]:
     """Keys ``QuerySpec.build`` folds into the bag, plus its ``allow_*`` parameters."""
 
-    tree = ast.parse((ROOT / "tstdx" / "query.py").read_text(encoding="utf-8"))
+    tree = ast.parse((ROOT / "atst" / "query.py").read_text(encoding="utf-8"))
     build = next(
         node
         for node in ast.walk(tree)
@@ -387,7 +387,7 @@ def _injected_option_keys() -> tuple[set[str], int]:
 
     keys: set[str] = set()
     sites = 0
-    for path in sorted((ROOT / "tstdx").rglob("*.py")):
+    for path in sorted((ROOT / "atst").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
@@ -410,7 +410,7 @@ def _executed_option_keys() -> set[str]:
     """Keys the execution surface actually reads out of an ``options`` mapping."""
 
     keys: set[str] = set()
-    for path in sorted((ROOT / "tstdx").rglob("*.py")):
+    for path in sorted((ROOT / "atst").rglob("*.py")):
         if path.name == "query.py":
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -435,7 +435,7 @@ def _query_spec_non_self_readers() -> dict[str, set[str]]:
     """Map each QuerySpec field to the production files that read it off an object."""
 
     readers = {field.name: set[str]() for field in dataclasses.fields(QuerySpec)}
-    for path in sorted((ROOT / "tstdx").rglob("*.py")):
+    for path in sorted((ROOT / "atst").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Attribute) or node.attr not in readers:

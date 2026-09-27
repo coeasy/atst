@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 
-from tstdx.errors import ValidationError
-from tstdx.integration.mcp._server import MCPServer
-from tstdx.integration.runtime_ws import RuntimeJsonRpcHandler
+from atst.errors import ValidationError
+from atst.integration.mcp._server import MCPServer
+from atst.integration.runtime_ws import RuntimeJsonRpcHandler
 
 
 class _FailingPlanner:

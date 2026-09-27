@@ -4,10 +4,10 @@ import asyncio
 
 import pytest
 
-from tstdx.errors import ConnectionClosed
-from tstdx.transport.async_ import AsyncConnectionPool
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.pool import ConnectionPool
+from atst.errors import ConnectionClosed
+from atst.transport.async_ import AsyncConnectionPool
+from atst.transport.hosts import HostEntry
+from atst.transport.pool import ConnectionPool
 
 
 def _host(address: str = "127.0.0.1") -> HostEntry:

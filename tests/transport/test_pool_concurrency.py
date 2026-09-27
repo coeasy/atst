@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """C2 回归：连接级租约锁下，同 socket 帧交织不可达。
@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.transport import ConnectionPool
-from tstdx.transport.hosts import HostEntry
+from atst.transport import ConnectionPool
+from atst.transport.hosts import HostEntry
 
 sys.path.insert(0, str(Path(__file__).parent))
 from fake_server import ECHO_CMD, HB_CMD, FakeTdxServer  # noqa: E402

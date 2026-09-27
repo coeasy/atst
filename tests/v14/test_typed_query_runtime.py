@@ -12,12 +12,12 @@ from typing import Any
 
 import pytest
 
-from tstdx.client.api import Client
-from tstdx.errors import ValidationError
-from tstdx.query import QueryPlan, QueryPlanner, QuerySpec
-from tstdx.result import Provenance, QueryResult
-from tstdx.runtime import UnifiedRuntime
-from tstdx.typed_query import (
+from atst.client.api import Client
+from atst.errors import ValidationError
+from atst.query import QueryPlan, QueryPlanner, QuerySpec
+from atst.result import Provenance, QueryResult
+from atst.runtime import UnifiedRuntime
+from atst.typed_query import (
     BalanceSheetQuery,
     CashFlowQuery,
     F10Query,
@@ -196,7 +196,7 @@ def test_typed_provider_aliases_normalize_before_planning() -> None:
 
 
 def test_typed_rejects_capability_missing_from_registry_before_execution() -> None:
-    from tstdx.typed_query import CapabilityQuery
+    from atst.typed_query import CapabilityQuery
 
     client, executor = _client({})
 

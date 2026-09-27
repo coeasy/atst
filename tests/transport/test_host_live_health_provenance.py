@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tstdx.protocol.commands import Family
-from tstdx.transport.hosts import HostEntry, RankingStore, resolve_hosts
+from atst.protocol.commands import Family
+from atst.transport.hosts import HostEntry, RankingStore, resolve_hosts
 
 
 def test_persisted_ranking_excludes_process_local_live_health(tmp_path: Path) -> None:

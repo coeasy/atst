@@ -7,7 +7,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[2]
 
 #: workflow 命令行里写死的仓内路径（与 Makefile 侧同一判定）。
-_REPO_PATH_TOKENS = re.compile(r"(?:tests|scripts|tstdx)/[A-Za-z0-9_/]+\.py")
+_REPO_PATH_TOKENS = re.compile(r"(?:tests|scripts|atst)/[A-Za-z0-9_/]+\.py")
 
 
 def _workflow(name: str) -> str:
@@ -17,7 +17,7 @@ def _workflow(name: str) -> str:
 def test_no_workflow_references_a_nonexistent_repository_path() -> None:
     """workflow 里写死的仓内路径必须存在。
 
-    旧版只查 `--manifest-path`，于是 native.yml 在 v16 Phase 2 删掉 `tstdx/native.py`
+    旧版只查 `--manifest-path`，于是 native.yml 在 v16 Phase 2 删掉 `atst/native.py`
     与它的契约测试之后仍然"合法"。该 job 是 PR 阻塞项：`compileall -q <不存在的路径>`
     **打印 "Can't list" 却退出 0**，静默通过后才由 pytest 以退出码 4 固定失败。
     """
@@ -127,10 +127,10 @@ def test_release_builds_once_then_uses_shared_verifier_and_same_wheel_matrix() -
     assert "import zipfile" not in workflow
     assert "os: [ubuntu-latest, macos-latest, windows-latest]" in workflow
     assert "python-version: ['3.10', '3.11', '3.12', '3.13']" in workflow
-    assert "--only-binary=:all: tstdx" in workflow
+    assert "--only-binary=:all: atst" in workflow
     assert "joinpath('py.typed').is_file()" in workflow
-    assert "ConnectionPool.request.__module__ == 'tstdx.transport.pool'" in workflow
-    assert "AsyncConnectionPool.request.__module__ == 'tstdx.transport.async_'" in workflow
+    assert "ConnectionPool.request.__module__ == 'atst.transport.pool'" in workflow
+    assert "AsyncConnectionPool.request.__module__ == 'atst.transport.async_'" in workflow
 
 
 def test_artifact_only_smoke_does_not_enable_setup_python_dependency_cache() -> None:

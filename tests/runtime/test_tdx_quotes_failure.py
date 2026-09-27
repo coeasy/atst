@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """内核 ``quotes`` 一跳的失败形状（F-72 / V18-B1）。
@@ -20,10 +20,10 @@ from typing import Any
 
 import pytest
 
-from tstdx.diagnostics import WarningCode
-from tstdx.errors import AllHostsUnreachable, ParseError, TruncatedDataError
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.runtime.executor import DirectProviderExecutor
+from atst.diagnostics import WarningCode
+from atst.errors import AllHostsUnreachable, ParseError, TruncatedDataError
+from atst.query import QueryPlanner, QuerySpec
+from atst.runtime.executor import DirectProviderExecutor
 
 SYMBOLS = ["sh600519", "sz000001"]
 
@@ -83,7 +83,7 @@ def stub(monkeypatch: pytest.MonkeyPatch) -> Any:
         failures: dict[str, BaseException] | None = None,
     ) -> _StubTdxClient:
         client = _StubTdxClient(rows or [], failures or {})
-        monkeypatch.setattr("tstdx.client.TdxClient", lambda *a, **k: client)
+        monkeypatch.setattr("atst.client.TdxClient", lambda *a, **k: client)
         return client
 
     return _factory

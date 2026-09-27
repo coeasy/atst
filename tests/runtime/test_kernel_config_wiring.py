@@ -1,6 +1,6 @@
 """v17 Phase 6：配置面必须真实贯通到单一内核执行链（F-16）。
 
-回归的是"写了 TOML 不生效"这一 P0 谎话：``tstdx.toml`` / 环境变量里的执行
+回归的是"写了 TOML 不生效"这一 P0 谎话：``atst.toml`` / 环境变量里的执行
 参数必须原样出现在 ``Client()`` 的规划器与执行器上；显式构造参数优先于配置；
 配置里的键必须一路到达传输层构造参数。
 
@@ -18,11 +18,11 @@ from typing import Any
 
 import pytest
 
-from tstdx import Client
-from tstdx.config.loader import reset_config
-from tstdx.config.schema import DEFAULT_CONFIG
-from tstdx.runtime.executor import DirectProviderExecutor
-from tstdx.transport.pool import pool_settings_from_config
+from atst import Client
+from atst.config.loader import reset_config
+from atst.config.schema import DEFAULT_CONFIG
+from atst.runtime.executor import DirectProviderExecutor
+from atst.transport.pool import pool_settings_from_config
 
 _TOML = """
 [core]
@@ -48,14 +48,14 @@ def _isolated_process_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     """每个用例前后清空进程级配置，并隔离项目/用户/系统配置发现。"""
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("TSTDX_CONFIG_FILE", raising=False)
+    monkeypatch.delenv("ATST_CONFIG_FILE", raising=False)
     reset_config()
     yield
     reset_config()
 
 
 def _write_project_config(tmp_path: Path) -> None:
-    (tmp_path / "tstdx.toml").write_text(_TOML, encoding="utf-8")
+    (tmp_path / "atst.toml").write_text(_TOML, encoding="utf-8")
 
 
 def test_project_toml_drives_the_kernel() -> None:
@@ -88,7 +88,7 @@ def test_wired_config_reaches_the_transport_layer() -> None:
 
 def test_environment_variable_overrides_the_file(monkeypatch: pytest.MonkeyPatch) -> None:
     _write_project_config(Path.cwd())
-    monkeypatch.setenv("TSTDX_CORE_TIMEOUT", "2.5")
+    monkeypatch.setenv("ATST_CORE_TIMEOUT", "2.5")
 
     client = Client()
     try:
@@ -101,7 +101,7 @@ def test_explicit_constructor_arguments_win_over_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _write_project_config(Path.cwd())
-    monkeypatch.setenv("TSTDX_CONFIG_FILE", str(Path.cwd() / "tstdx.toml"))
+    monkeypatch.setenv("ATST_CONFIG_FILE", str(Path.cwd() / "atst.toml"))
 
     client = Client(timeout=1.25, default_provider="sina", vipdoc_root="E:/other")
     try:
@@ -122,7 +122,7 @@ def test_executor_forwards_configured_pool_settings_to_the_client(
         captured.update(kwargs)
         return object()
 
-    monkeypatch.setattr("tstdx.client.TdxClient", fake_client)
+    monkeypatch.setattr("atst.client.TdxClient", fake_client)
     cfg = DEFAULT_CONFIG.with_overrides(
         hosts={"slots_per_host": 5},
         security={"use_tls": True},
@@ -191,12 +191,12 @@ class _RecordingTdxClient:
 @pytest.fixture
 def fake_tdx_client(monkeypatch: pytest.MonkeyPatch) -> type[_RecordingTdxClient]:
     _RecordingTdxClient.instances.clear()
-    monkeypatch.setattr("tstdx.client.TdxClient", _RecordingTdxClient)
+    monkeypatch.setattr("atst.client.TdxClient", _RecordingTdxClient)
     return _RecordingTdxClient
 
 
 def _bars_plan(deadline_ms: int) -> Any:
-    from tstdx.query import QueryPlanner, QuerySpec
+    from atst.query import QueryPlanner, QuerySpec
 
     return QueryPlanner().compile(
         QuerySpec.build("bars", symbols="sh600519", count=10, deadline_ms=deadline_ms)
@@ -251,9 +251,9 @@ def test_web_route_also_gets_the_bounded_timeout(monkeypatch: pytest.MonkeyPatch
         def fetch_bars(self, symbol: str, **kwargs: Any) -> list[Any]:  # noqa: ARG002
             return []
 
-    import tstdx.web
+    import atst.web
 
-    monkeypatch.setattr(tstdx.web, "create_source", _FakeSource)
+    monkeypatch.setattr(atst.web, "create_source", _FakeSource)
     executor = DirectProviderExecutor(timeout=30.0)
     executor._tencent_bars(_bars_plan(250))
     executor._web_quotes(_bars_plan(250))  # quotes 走同一预算读数
@@ -273,7 +273,7 @@ def test_the_configured_timeout_is_bounded_in_exactly_one_place() -> None:
     import ast
 
     root = Path(__file__).resolve().parents[2]
-    tree = ast.parse((root / "tstdx" / "runtime" / "executor.py").read_text(encoding="utf-8"))
+    tree = ast.parse((root / "atst" / "runtime" / "executor.py").read_text(encoding="utf-8"))
 
     def raw_reads(func: ast.FunctionDef) -> list[ast.Attribute]:
         return [
@@ -303,7 +303,7 @@ def test_the_configured_timeout_is_bounded_in_exactly_one_place() -> None:
 def test_exhausted_deadline_fails_before_any_io(fake_tdx_client: Any) -> None:
     """预算已耗尽：当场 ReadTimeout，且一条连接都不许建立。"""
 
-    from tstdx.errors import ReadTimeout
+    from atst.errors import ReadTimeout
 
     plan = _bars_plan(50)
     plan.budget.deadline_ns = time.monotonic_ns() - 1
@@ -321,7 +321,7 @@ def test_exhausted_deadline_fails_before_any_io(fake_tdx_client: Any) -> None:
 #: 不进执行面的字段与其**可核验**的理由；每条都由下面的反向核验撑着，
 #: 理由失效即红——豁免表不是免检通道（``_QUERY_SPEC_STORE_ONLY_FIELDS`` 同形）。
 #: ``currentness`` 曾在此列（"运行期校验器尚不存在"），第 41 步接线后它已由
-#: ``tstdx/runtime/freshness.py`` 直接读取，豁免因此撤销：字段该受判据管。
+#: ``atst/runtime/freshness.py`` 直接读取，豁免因此撤销：字段该受判据管。
 _FIELD_EXEMPTIONS = {
     "options_json": "存储形态：执行面读的是解码后的 ``spec.options`` 袋",
     "schema_version": "契约版本戳：进 fingerprint 与 wire，不是执行输入",
@@ -329,7 +329,7 @@ _FIELD_EXEMPTIONS = {
 
 
 def _execution_face_reads() -> tuple[dict[str, set[str]], set[str]]:
-    """``QuerySpec`` 字段与 ``QueryPlan`` 字段在 ``tstdx/query.py`` **之外**的读取处。
+    """``QuerySpec`` 字段与 ``QueryPlan`` 字段在 ``atst/query.py`` **之外**的读取处。
 
     规划器自身的读取不算：它把值折进 plan/fingerprint 只是搬运，没人按这个值行动。
     """
@@ -337,14 +337,14 @@ def _execution_face_reads() -> tuple[dict[str, set[str]], set[str]]:
     import ast
     import dataclasses
 
-    from tstdx.query import QueryPlan, QuerySpec
+    from atst.query import QueryPlan, QuerySpec
 
     spec_fields = {item.name for item in dataclasses.fields(QuerySpec)}
     plan_fields = {item.name for item in dataclasses.fields(QueryPlan)}
     root = Path(__file__).resolve().parents[2]
     spec_reads: dict[str, set[str]] = {name: set() for name in spec_fields}
     plan_reads: set[str] = set()
-    for path in sorted((root / "tstdx").rglob("*.py")):
+    for path in sorted((root / "atst").rglob("*.py")):
         if path.name == "query.py":
             continue  # 规划器把值折进 plan/fingerprint 不等于有人按它行动
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -370,7 +370,7 @@ def _spec_field_carriers() -> dict[str, set[str]]:
     import ast
 
     root = Path(__file__).resolve().parents[2]
-    tree = ast.parse((root / "tstdx" / "query.py").read_text(encoding="utf-8"))
+    tree = ast.parse((root / "atst" / "query.py").read_text(encoding="utf-8"))
     construction = next(
         (
             node
@@ -440,7 +440,7 @@ def test_query_spec_field_exemptions_still_hold() -> None:
     import ast
 
     root = Path(__file__).resolve().parents[2]
-    tree = ast.parse((root / "tstdx" / "query.py").read_text(encoding="utf-8"))
+    tree = ast.parse((root / "atst" / "query.py").read_text(encoding="utf-8"))
     assert _FIELD_EXEMPTIONS, "豁免表为空，本用例失去意义"
 
     def read_inside(target: str) -> set[str]:
@@ -477,7 +477,7 @@ def test_every_query_plan_field_is_read_by_the_execution_face() -> None:
 
     import dataclasses
 
-    from tstdx.query import QueryPlan
+    from atst.query import QueryPlan
 
     _, plan_reads = _execution_face_reads()
     fields = {item.name for item in dataclasses.fields(QueryPlan)}
@@ -498,11 +498,11 @@ def test_execution_budget_has_no_unexercised_member() -> None:
     import ast
     import inspect
 
-    from tstdx.query import ExecutionBudget
+    from atst.query import ExecutionBudget
 
     root = Path(__file__).resolve().parents[2]
     reads: set[str] = set()
-    for path in sorted((root / "tstdx").rglob("*.py")):
+    for path in sorted((root / "atst").rglob("*.py")):
         if path.name == "query.py":
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -541,13 +541,13 @@ def test_security_list_all_is_not_a_second_pagination_implementation() -> None:
 
     import ast
 
-    from tstdx.catalog.capability import binding_for
+    from atst.catalog.capability import binding_for
 
     meta = binding_for("tdx", "quotation", "security_list_all")
     assert (meta.backend, meta.method) == ("tdx_client", "export_security_list")
 
     root = Path(__file__).resolve().parents[2]
-    tree = ast.parse((root / "tstdx" / "runtime" / "executor.py").read_text(encoding="utf-8"))
+    tree = ast.parse((root / "atst" / "runtime" / "executor.py").read_text(encoding="utf-8"))
     composed = next(
         node
         for node in ast.walk(tree)

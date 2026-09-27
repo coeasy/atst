@@ -1,22 +1,22 @@
 """G15/G16：「周期 → 上游参数」的每张表都必须真的服务它键上写的那个周期。
 
-第 18 轮把周期词表收成一处声明（:mod:`tstdx.domain.period`），量的是**公开面之间**
+第 18 轮把周期词表收成一处声明（:mod:`atst.domain.period`），量的是**公开面之间**
 的分叉。第 19 轮把同一把尺子伸到执行侧：全仓 AST 现扫「以周期拼写为键」的字面量表，
 19 处命中，逐张核对后抓到两类东西——
 
 **① 一格会把请求换成另一个周期（G15，本轮已修）**
-:class:`tstdx.web.sina.adapters.SinaHistoryKlineSource` 的 ``SCALES`` 里有 ``"1min": 5``：
+:class:`atst.web.sina.adapters.SinaHistoryKlineSource` 的 ``SCALES`` 里有 ``"1min": 5``：
 新浪这个端点最细就是 5 分钟，于是"1 分钟"的写法会被拿去请求 5 分钟线还照常返回——
 帧合法、内容是另一个周期，与 G3 同族。它的类 docstring 甚至明写 ``1min(=5min)``。
 Provider 注册表恰好**没有**给 ``sina/history_kline`` 声明 ``1min``，所以走内核的调用方
-吃不到这一格；但 ``tstdx.web.SinaHistoryKlineSource`` 是导出符号，直接用源的人吃得到。
+吃不到这一格；但 ``atst.web.SinaHistoryKlineSource`` 是导出符号，直接用源的人吃得到。
 处置：删行，让"这一面不服务"成为显式报错（第 18 轮 G13 那条裁决的同一句式）。
 
 **② 两处还在手抄别名（G16，本轮已修）**
 ``_KLINE_KTYPES``（百度）与 ``_MKLINE_PERIODS``（腾讯 mkline）把自己的别名键各抄了
 6 个和 5 个。百度那份抄错了：它写着 ``"1m": 3``，而域内词表里 ``1m`` 是 **1 分钟**——
 即"1 分钟"在百度这一面会被解成**月线**。两张表现在只收规范拼写，别名由公开面经
-:func:`~tstdx.domain.period.normalize_bar_period` 一次解掉（会话层 ``baidu_kline`` /
+:func:`~atst.domain.period.normalize_bar_period` 一次解掉（会话层 ``baidu_kline`` /
 ``WebQuoteSession.history`` 各加这一手）。
 
 其余 15 张表核对通过：``Nmin`` 键的请求参数就是 N 分钟（``5`` / ``m5`` 两种编码），
@@ -33,21 +33,21 @@ from typing import Any
 import pytest
 
 from tests.support.field_readers import REPO_ROOT
-from tstdx.client.core import _CANONICAL_TO_CATEGORY
-from tstdx.domain.period import CANONICAL_PERIODS, PERIOD_ALIASES, normalize_bar_period
-from tstdx.protocol.parsers._std7709_common import KlineCategory
-from tstdx.providers import PROVIDERS
-from tstdx.reader.formats import resolve_vipdoc_path
-from tstdx.web._session_market import _KLINE_SERVABLE, KLINES_PERIOD_ALIASES
-from tstdx.web.baidu.adapters import _KLINE_KTYPES
-from tstdx.web.eastmoney.adapters import EastmoneyHistoryKlineSource
-from tstdx.web.sina.adapters import SinaHistoryKlineSource
-from tstdx.web.tencent.adapters import _MKLINE_PERIODS, KlineSource
+from atst.client.core import _CANONICAL_TO_CATEGORY
+from atst.domain.period import CANONICAL_PERIODS, PERIOD_ALIASES, normalize_bar_period
+from atst.protocol.parsers._std7709_common import KlineCategory
+from atst.providers import PROVIDERS
+from atst.reader.formats import resolve_vipdoc_path
+from atst.web._session_market import _KLINE_SERVABLE, KLINES_PERIOD_ALIASES
+from atst.web.baidu.adapters import _KLINE_KTYPES
+from atst.web.eastmoney.adapters import EastmoneyHistoryKlineSource
+from atst.web.sina.adapters import SinaHistoryKlineSource
+from atst.web.tencent.adapters import _MKLINE_PERIODS, KlineSource
 
 pytestmark = pytest.mark.unit
 
 #: 上游有、域内词表没有的两档：新浪独有的 2 小时/20 小时粒度。它们**故意**不进
-#: :data:`~tstdx.domain.period.CANONICAL_PERIODS`——tdx 协议没有对应 category，
+#: :data:`~atst.domain.period.CANONICAL_PERIODS`——tdx 协议没有对应 category，
 #: 进了规范集合就要伪造一个协议号（不猜协议字节）。
 PROVIDER_SCOPED = frozenset({"120min", "1200min"})
 
@@ -61,19 +61,19 @@ _MINUTE_KEY = re.compile(r"^(\d+)min$")
 #: 是扫描的形状误报（在此登记理由，否则下次改动没人知道它为什么在账上）。
 #: 新增一张表、或某张表份数变了，都要先在账上写理由。
 LEDGER: dict[tuple[str, str], tuple[str, str, int]] = {
-    ("tstdx/domain/period.py", "CANONICAL_PERIODS"): ("vocabulary", "唯一的规范词表", 1),
-    ("tstdx/domain/period.py", "PERIOD_ALIASES"): ("vocabulary", "唯一的别名词表", 1),
-    ("tstdx/client/core.py", "_CANONICAL_TO_CATEGORY"): ("protocol", "规范拼写 → tdx 协议号", 1),
-    ("tstdx/providers/__init__.py", "periods"): ("declared", "各 channel 声明的服务档", 7),
-    ("tstdx/web/_session_market.py", "_KLINE_SERVABLE"): ("declared", "ifzq 面服务集", 1),
-    ("tstdx/web/tencent/adapters.py", "PERIODS"): ("param", "腾讯 fqkline 参数", 1),
-    ("tstdx/web/baidu/adapters.py", "_KLINE_KTYPES"): ("param", "百度 ktype 参数", 1),
-    ("tstdx/web/tencent/adapters.py", "_MKLINE_PERIODS"): ("param", "腾讯 mkline 参数", 1),
-    ("tstdx/web/efinance_deriv.py", "table"): ("param", "东财 klt 参数", 1),
-    ("tstdx/web/fundflow.py", "klt"): ("param", "东财 klt 参数", 1),
-    ("tstdx/web/sina/adapters.py", "SCALES"): ("param", "新浪 scale 参数", 1),
-    ("tstdx/web/eastmoney/adapters.py", "KLTS"): ("param", "东财 klt 参数", 1),
-    ("tstdx/protocol/generic.py", "(字面量)"): ("irrelevant", "datetime32 字段名，与周期无关", 1),
+    ("atst/domain/period.py", "CANONICAL_PERIODS"): ("vocabulary", "唯一的规范词表", 1),
+    ("atst/domain/period.py", "PERIOD_ALIASES"): ("vocabulary", "唯一的别名词表", 1),
+    ("atst/client/core.py", "_CANONICAL_TO_CATEGORY"): ("protocol", "规范拼写 → tdx 协议号", 1),
+    ("atst/providers/__init__.py", "periods"): ("declared", "各 channel 声明的服务档", 7),
+    ("atst/web/_session_market.py", "_KLINE_SERVABLE"): ("declared", "ifzq 面服务集", 1),
+    ("atst/web/tencent/adapters.py", "PERIODS"): ("param", "腾讯 fqkline 参数", 1),
+    ("atst/web/baidu/adapters.py", "_KLINE_KTYPES"): ("param", "百度 ktype 参数", 1),
+    ("atst/web/tencent/adapters.py", "_MKLINE_PERIODS"): ("param", "腾讯 mkline 参数", 1),
+    ("atst/web/efinance_deriv.py", "table"): ("param", "东财 klt 参数", 1),
+    ("atst/web/fundflow.py", "klt"): ("param", "东财 klt 参数", 1),
+    ("atst/web/sina/adapters.py", "SCALES"): ("param", "新浪 scale 参数", 1),
+    ("atst/web/eastmoney/adapters.py", "KLTS"): ("param", "东财 klt 参数", 1),
+    ("atst/protocol/generic.py", "(字面量)"): ("irrelevant", "datetime32 字段名，与周期无关", 1),
 }
 
 ROLES = ("vocabulary", "protocol", "declared", "param", "irrelevant")
@@ -97,14 +97,14 @@ def _assignment_name(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> str:
 
 
 def _literal_period_tables() -> list[tuple[str, str, dict[str, Any]]]:
-    """扫 ``tstdx/`` 全部字面量 dict/tuple/list/set，取出"以周期拼写为键/成员"的表。
+    """扫 ``atst/`` 全部字面量 dict/tuple/list/set，取出"以周期拼写为键/成员"的表。
 
     派生表（``{**a, **b}``、推导式）没有字面量周期键，自然不落进这张账——这正是
     第 18 轮之后我们要的形状：只有手抄件需要被登记。
     """
 
     found: list[tuple[str, str, dict[str, Any]]] = []
-    for path in sorted((REPO_ROOT / "tstdx").rglob("*.py")):
+    for path in sorted((REPO_ROOT / "atst").rglob("*.py")):
         relative = path.relative_to(REPO_ROOT).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"))
         parents: dict[ast.AST, ast.AST] = {}
@@ -169,17 +169,17 @@ def test_no_period_table_appears_off_the_ledger() -> None:
 # --------------------------------------------------------------------------- #
 #: 非分钟档（各上游自己的枚举编码）逐格登记；键不在这里又非 ``Nmin`` 形状 = 新形状，红。
 NON_MINUTE_ENCODINGS: dict[tuple[str, str], dict[str, int | str]] = {
-    ("tstdx/web/sina/adapters.py", "SCALES"): {"day": 240},
-    ("tstdx/web/eastmoney/adapters.py", "KLTS"): {"day": 101},
-    ("tstdx/web/tencent/adapters.py", "PERIODS"): {
+    ("atst/web/sina/adapters.py", "SCALES"): {"day": 240},
+    ("atst/web/eastmoney/adapters.py", "KLTS"): {"day": 101},
+    ("atst/web/tencent/adapters.py", "PERIODS"): {
         "day": "day",
         "week": "week",
         "month": "month",
     },
-    ("tstdx/web/baidu/adapters.py", "_KLINE_KTYPES"): {"day": 1, "week": 2, "month": 3},
-    ("tstdx/web/tencent/adapters.py", "_MKLINE_PERIODS"): {},
-    ("tstdx/web/efinance_deriv.py", "table"): {"day": 101, "week": 102, "month": 103},
-    ("tstdx/web/fundflow.py", "klt"): {"day": 101, "week": 102, "month": 103},
+    ("atst/web/baidu/adapters.py", "_KLINE_KTYPES"): {"day": 1, "week": 2, "month": 3},
+    ("atst/web/tencent/adapters.py", "_MKLINE_PERIODS"): {},
+    ("atst/web/efinance_deriv.py", "table"): {"day": 101, "week": 102, "month": 103},
+    ("atst/web/fundflow.py", "klt"): {"day": 101, "week": 102, "month": 103},
 }
 
 
@@ -290,7 +290,7 @@ def test_only_the_domain_vocabulary_hands_copies_period_aliases() -> None:
 
     offenders = {}
     for relative, name, table in _literal_period_tables():
-        if relative == "tstdx/domain/period.py":
+        if relative == "atst/domain/period.py":
             continue
         aliases = sorted(k for k in table if k in set(PERIOD_ALIASES))
         if aliases:
@@ -303,7 +303,7 @@ def test_the_alias_ruler_is_not_blind() -> None:
 
     scanned = {(relative, name): table for relative, name, table in _literal_period_tables()}
     assert any(
-        k in set(PERIOD_ALIASES) for k in scanned[("tstdx/domain/period.py", "PERIOD_ALIASES")]
+        k in set(PERIOD_ALIASES) for k in scanned[("atst/domain/period.py", "PERIOD_ALIASES")]
     ), "域内别名表扫不出别名：本判据失去对象"
     assert set(_KLINE_KTYPES) == {"day", "week", "month"}
     assert set(_MKLINE_PERIODS) == {p for p in CANONICAL_PERIODS if p.endswith("min")}
@@ -341,11 +341,11 @@ def _served(provider: str, channel: str, period: str) -> bool:
             return False
         return True
     if (provider, channel) == ("tencent", "minute_kline"):
-        from tstdx.web.tencent.adapters import _mkline_period
+        from atst.web.tencent.adapters import _mkline_period
 
         return period in _MKLINE_PERIODS and _mkline_period(period) is not None
     if (provider, channel) == ("baidu", "kline"):
-        from tstdx.web.baidu.adapters import _ktype
+        from atst.web.baidu.adapters import _ktype
 
         return period in _KLINE_KTYPES and _ktype(period) is not None
     table: dict[str, Any] = (

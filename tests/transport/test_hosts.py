@@ -2,16 +2,16 @@
 
 覆盖：resolve_hosts 排序与合并、max_hosts 截断、servers 覆盖内置池、
 RankingStore 持久化往返、排名文件优先生效、实测可达主站前置（U1）、
-TSTDX_HOSTS 环境变量注入（U3）。
+ATST_HOSTS 环境变量注入（U3）。
 """
 
 from __future__ import annotations
 
 import pytest
 
-from tstdx.errors import ConfigError
-from tstdx.protocol.commands import Family
-from tstdx.transport.hosts import (
+from atst.errors import ConfigError
+from atst.protocol.commands import Family
+from atst.transport.hosts import (
     DEFAULT_HOST_POOL,
     HostEntry,
     RankingStore,
@@ -80,29 +80,29 @@ class TestResolveHosts:
         hosts = resolve_hosts(None, ranking_file=ranking_file, use_ranking=False, max_hosts=8)
         assert hosts[0].key != "9.9.9.9:7709"
 
-    # -- U3：TSTDX_HOSTS 环境变量注入 -------------------------------------- #
+    # -- U3：ATST_HOSTS 环境变量注入 -------------------------------------- #
     def test_env_hosts_injected(self, monkeypatch):
-        """TSTDX_HOSTS 设置时优先于内置候选池。"""
-        monkeypatch.setenv("TSTDX_HOSTS", "180.153.18.170:7709,60.191.117.167")
+        """ATST_HOSTS 设置时优先于内置候选池。"""
+        monkeypatch.setenv("ATST_HOSTS", "180.153.18.170:7709,60.191.117.167")
         hosts = resolve_hosts(None, max_hosts=8)
         assert hosts[0].key == "180.153.18.170:7709"
         assert hosts[1].key == "60.191.117.167:7709"
         assert len(hosts) == 2
 
     def test_env_hosts_unset_falls_back_to_pool(self, monkeypatch):
-        monkeypatch.delenv("TSTDX_HOSTS", raising=False)
+        monkeypatch.delenv("ATST_HOSTS", raising=False)
         hosts = resolve_hosts(None, max_hosts=8)
         assert len(hosts) >= 1
         assert all(e.family == Family.STANDARD for e in hosts)
 
     def test_env_hosts_rejects_garbage_instead_of_falling_back(self, monkeypatch):
-        monkeypatch.setenv("TSTDX_HOSTS", "not a host:port,,1.2.3.4:99999")
+        monkeypatch.setenv("ATST_HOSTS", "not a host:port,,1.2.3.4:99999")
 
-        with pytest.raises(ConfigError, match="TSTDX_HOSTS 条目无效"):
+        with pytest.raises(ConfigError, match="ATST_HOSTS 条目无效"):
             resolve_hosts(None, max_hosts=8)
 
     def test_servers_still_beat_env(self, monkeypatch):
         """显式 servers 参数仍优先于环境变量。"""
-        monkeypatch.setenv("TSTDX_HOSTS", "9.9.9.9:7709")
+        monkeypatch.setenv("ATST_HOSTS", "9.9.9.9:7709")
         hosts = resolve_hosts(["1.2.3.4:7709"], max_hosts=8)
         assert hosts[0].key == "1.2.3.4:7709"

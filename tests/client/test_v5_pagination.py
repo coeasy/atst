@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """v5 优化批次客户端域回归（PG1 bars 分页 / PG2 file_download 多包 / DC1 bj 市场号）。
@@ -17,17 +17,17 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-from tstdx.client import (  # noqa: E402
+from atst.client import (  # noqa: E402
     _PREFIX_MARKET,
     MAX_BARS_PER_REQUEST,
     AsyncTdxClient,
     TdxClient,
 )
-from tstdx.codec.framing import ResponseFrame  # noqa: E402
-from tstdx.codec.primitive import encode_leb128  # noqa: E402
-from tstdx.diagnostics import WarningCode, warning_sink  # noqa: E402
-from tstdx.domain.symbol import to_tdx_market  # noqa: E402
-from tstdx.errors import ParseError, TruncatedDataError  # noqa: E402
+from atst.codec.framing import ResponseFrame  # noqa: E402
+from atst.codec.primitive import encode_leb128  # noqa: E402
+from atst.diagnostics import WarningCode, warning_sink  # noqa: E402
+from atst.domain.symbol import to_tdx_market  # noqa: E402
+from atst.errors import ParseError, TruncatedDataError  # noqa: E402
 
 _MAGIC = 0x0074CBB1
 
@@ -367,7 +367,7 @@ class TestBjMarketNumber:
         assert to_tdx_market("833171") == (2, "833171")  # 裸码推断北交所
 
     def test_quote_request_market_mapping(self) -> None:
-        from tstdx.protocol.parsers.std7709 import Market, quote_request_market
+        from atst.protocol.parsers.std7709 import Market, quote_request_market
 
         assert quote_request_market(Market.SZ) == 1
         assert quote_request_market(Market.SH) == 0
@@ -381,7 +381,7 @@ class TestBjMarketNumber:
             quote_request_market(3)
 
     def test_infer_market_bj(self) -> None:
-        from tstdx.protocol.parsers.std7709 import Market, infer_market
+        from atst.protocol.parsers.std7709 import Market, infer_market
 
         assert infer_market("430047") == Market.BJ
         assert infer_market("833171") == Market.BJ

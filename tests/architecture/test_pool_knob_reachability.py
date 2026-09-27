@@ -1,7 +1,7 @@
 """传输池参数可达性账（第 27 轮 A1，G40「声明⇄行动」家族的新格）。
 
 `docs/ARCHITECTURE.md` 把"配置面即执行面契约"写成核心不变量，而本轮现读发现它只覆盖
-`ConnectionPool.__init__` 的 **6/17** 个参数：其余 11 个在 `tstdx/` 生产树里没有任何构造点，
+`ConnectionPool.__init__` 的 **6/17** 个参数：其余 11 个在 `atst/` 生产树里没有任何构造点，
 `docs/configuration.md` 的键账也不含它们。这类缺口的病不是"参数没用"，而是**读者无从知道
 自己够不够得到**——旧口径下它既不进配置面、也不进任何表，改了没人红。
 
@@ -24,9 +24,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from tstdx.client.sync import TdxClient
-from tstdx.config.schema import Config
-from tstdx.transport.pool import ConnectionPool, pool_settings_from_config
+from atst.client.sync import TdxClient
+from atst.config.schema import Config
+from atst.transport.pool import ConnectionPool, pool_settings_from_config
 
 ROOT = Path(__file__).resolve().parents[2]
 DOC_REL = "docs/configuration.md"
@@ -126,9 +126,9 @@ def test_the_account_catches_every_planted_divergence() -> None:
     ] == {planted_param}
 
     # ② 文档表里写一个池根本没有的名字 ⇒ 必须进"已不在签名里"
-    assert _diff(params, config_keys, doc_names | {"tstdx_bogus_knob"})[
+    assert _diff(params, config_keys, doc_names | {"atst_bogus_knob"})[
         "文档点名的参数已不在池签名里"
-    ] == {"tstdx_bogus_knob"}
+    ] == {"atst_bogus_knob"}
 
     # ③ 同一个参数既说配得到又说配不到 ⇒ 必须进"被文档误列"
     stolen = sorted(config_keys)[0]

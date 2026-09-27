@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """G51 — HTTP 服务面自己造的 ``Client`` 必须被释放，而且异常路径上也要释放。
@@ -26,7 +26,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from tstdx.integration.runtime_http import create_runtime_app
+from atst.integration.runtime_http import create_runtime_app
 
 
 class _SpyClient:
@@ -57,7 +57,7 @@ def test_the_app_closes_the_client_it_built(monkeypatch: pytest.MonkeyPatch) -> 
     """① 工厂自己造的东西归它收尾：退出一次，关一次。"""
 
     _SpyClient.instances = []
-    monkeypatch.setattr("tstdx.integration.runtime_http.Client", _SpyClient)
+    monkeypatch.setattr("atst.integration.runtime_http.Client", _SpyClient)
     app = create_runtime_app()
     built = _SpyClient.instances[0]
     with TestClient(app):
@@ -70,7 +70,7 @@ def test_a_caller_supplied_client_is_left_alone(monkeypatch: pytest.MonkeyPatch)
     """② 传入的那份归调用方所有：服务面不许替它关。"""
 
     _SpyClient.instances = []
-    monkeypatch.setattr("tstdx.integration.runtime_http.Client", _SpyClient)
+    monkeypatch.setattr("atst.integration.runtime_http.Client", _SpyClient)
     mine = _SpyClient()
     with TestClient(create_runtime_app(mine)):  # type: ignore[arg-type]
         pass
@@ -88,7 +88,7 @@ def test_the_release_happens_even_when_the_lifespan_body_raises(
     """
 
     _SpyClient.instances = []
-    monkeypatch.setattr("tstdx.integration.runtime_http.Client", _SpyClient)
+    monkeypatch.setattr("atst.integration.runtime_http.Client", _SpyClient)
     app = create_runtime_app()
     built = _SpyClient.instances[0]
 

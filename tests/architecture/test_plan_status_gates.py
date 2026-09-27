@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """方案文档的「现状判定」必须与磁盘同真（F-58）。
@@ -6,10 +6,10 @@
 `docs/REFACTOR_PLAN_V17_CLOSURE.md` §0.1 用的是现在时：它说某条链路"贯通"还是"断链"，读者
 （包括问"主体链路是否全部贯通"的人）就按现在时接受。第 33 步之前它一直没跟上代码——两条
 ❌ 行把 v14 编排信封与 registry 三件套写成现行断链，而那两个层在 Phase 3A/3B 就整层物理
-删除了，其"证据"列指向的 `tstdx/runtime/gateway.py`、`tstdx/executor_registry.py`、
-`tstdx/provider/router.py` 早在磁盘上不存在；§0.2 的八行"遗留不合理点"则停在"Phase 3–5
+删除了，其"证据"列指向的 `atst/runtime/gateway.py`、`atst/executor_registry.py`、
+`atst/provider/router.py` 早在磁盘上不存在；§0.2 的八行"遗留不合理点"则停在"Phase 3–5
 处理对象"，八条里已清偿的七条一行判决都没写，读起来像还有八条待办。同族的教训是：既有活
-文档门禁只校验反引号里的 `tstdx.x.y` 点号路径与 README 数字，**带斜杠的文件路径与表格里的
+文档门禁只校验反引号里的 `atst.x.y` 点号路径与 README 数字，**带斜杠的文件路径与表格里的
 时态都不在射程内**。
 
 两条判据各管一半：
@@ -41,7 +41,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PLAN = ROOT / "docs" / "REFACTOR_PLAN_V17_CLOSURE.md"
 
 #: 反引号里的文件路径，允许尾随 ``:行号``；只认带斜杠的形状——点号路径由
-#: ``test_doc_code_consistency.py`` 的 `tstdx.*` 判据覆盖。
+#: ``test_doc_code_consistency.py`` 的 `atst.*` 判据覆盖。
 _CITED_PATH = re.compile(r"`([A-Za-z0-9_./-]+\.py)(?::\d+)?`")
 #: 裁决必须是格子的**开头加粗标记**，不是行文里出现的任意"已删除/已修"字样——变异 M2 实测：
 #: 放宽到子串时，一句"不再依赖已删除的信封线"就能把判据糊过去。
@@ -111,7 +111,7 @@ def test_status_section_only_cites_paths_that_exist() -> None:
     offenders: list[str] = []
     for raw in sorted(set(cited)):
         rel = raw.split(":", 1)[0]
-        candidates = [ROOT / rel, ROOT / "tstdx" / rel]
+        candidates = [ROOT / rel, ROOT / "atst" / rel]
         if not any(candidate.exists() for candidate in candidates):
             offenders.append(rel)
     assert offenders == [], f"§0.1 引用了磁盘上不存在的模块：{offenders}"

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """F1 传输域回归（同步池）：T5 生命周期 / P1 选序与 ping 上限 / T1 超时归类 /
@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.errors import (
+from atst.errors import (
     AllHostsUnreachable,
     ConnectionClosed,
     ConnectionFailed,
@@ -29,10 +29,10 @@ from tstdx.errors import (
     TransportError,
     WriteTimeout,
 )
-from tstdx.observability import metrics
-from tstdx.transport import ConnectionPool
-from tstdx.transport.base import TcpConnection
-from tstdx.transport.hosts import HostEntry
+from atst.observability import metrics
+from atst.transport import ConnectionPool
+from atst.transport.base import TcpConnection
+from atst.transport.hosts import HostEntry
 
 sys.path.insert(0, str(Path(__file__).parent))
 from fake_server import (  # noqa: E402
@@ -120,7 +120,7 @@ def test_tried_hosts_preferred_away_in_retry_order(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setattr("tstdx.transport.pool.TcpConnection", StubConn)
+    monkeypatch.setattr("atst.transport.pool.TcpConnection", StubConn)
     fast = HostEntry("10.0.0.1", 1, rtt_ms=1.0)  # score=1，失败后 score=4 仍居首
     slow = HostEntry("10.0.0.2", 2, rtt_ms=None)  # score=1e6
     pool = ConnectionPool([fast, slow], slots_per_host=1, heartbeat_interval=0, max_retries=2)
@@ -278,18 +278,18 @@ def test_metrics_wired_on_request_paths():
 # 零日志：库侧只 getLogger 不配置 handler
 # --------------------------------------------------------------------------- #
 def test_transport_logger_has_no_handler_and_logs_failures(caplog):
-    logger = logging.getLogger("tstdx.transport")
+    logger = logging.getLogger("atst.transport")
     assert logger.handlers == [], "transport 不得自行配置 handler"
     assert logger.propagate, "应交给宿主应用的 handler 体系"
     with FakeTdxServer() as server:
         server.close_on.add(ECHO_CMD)
         pool = _make_pool(server, max_retries=0)
         with (
-            caplog.at_level(logging.WARNING, logger="tstdx.transport"),
+            caplog.at_level(logging.WARNING, logger="atst.transport"),
             pytest.raises(TdxError),
         ):
             pool.request(ECHO_CMD, b"\x01")
         pool.close()
-    records = [r for r in caplog.records if r.name == "tstdx.transport"]
+    records = [r for r in caplog.records if r.name == "atst.transport"]
     assert records, "连接失败路径应有日志"
     assert any(r.levelno >= logging.WARNING for r in records)

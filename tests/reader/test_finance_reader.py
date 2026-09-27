@@ -1,9 +1,9 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """F1：``FinanceReader`` gpcw 语义化读取测试。
 
-覆盖 :meth:`tstdx.reader.formats.FinanceReader.read_indicators`：
+覆盖 :meth:`atst.reader.formats.FinanceReader.read_indicators`：
 合成 gpcw 文件（float32 扁平数组，28/30 字段/记录）→ 带字段名财务指标。
 """
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.reader import FinanceReader
+from atst.reader import FinanceReader
 
 pytestmark = pytest.mark.unit
 

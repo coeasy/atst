@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """G4 探针的时钟判据（离线）。
@@ -15,7 +15,7 @@ from datetime import date, datetime
 import pytest
 
 from tests.live.test_tdx_core_chain import expected_daily_bar_date, in_trading_session
-from tstdx.domain.calendar import CALENDAR_2026, get_calendar, is_trading_day
+from atst.domain.calendar import CALENDAR_2026, get_calendar, is_trading_day
 
 
 def _at(day: date, hhmm: str) -> datetime:

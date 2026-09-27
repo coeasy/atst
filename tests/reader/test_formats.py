@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """本地 vipdoc 解析器的离线契约：单位换算、时间编码、截断语义、目录规则。
@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.errors import DataFileNotFound, TruncatedRecordError
-from tstdx.reader.formats import (
+from atst.errors import DataFileNotFound, TruncatedRecordError
+from atst.reader.formats import (
     BaseFileReader,
     BlockReader,
     DayBarReader,
@@ -26,7 +26,7 @@ from tstdx.reader.formats import (
     read_min_file,
     resolve_vipdoc_path,
 )
-from tstdx.reader.profile import (
+from atst.reader.profile import (
     AmountUnit,
     DataProfile,
     Period,
@@ -194,7 +194,7 @@ class TestDayBarReader:
                 confidence=0.5,
             )
 
-        import tstdx.reader.formats as formats
+        import atst.reader.formats as formats
 
         monkeypatch.setattr(formats, "detect_profile", fake_detect)
         reader = DayBarReader()
@@ -204,7 +204,7 @@ class TestDayBarReader:
         assert any("置信度偏低" in warning for warning in reader.warnings)
 
     def test_auto_detect_failure_degrades_to_the_given_profile(self, monkeypatch) -> None:
-        import tstdx.reader.formats as formats
+        import atst.reader.formats as formats
 
         def boom(raw: bytes, hint: DataProfile | None = None) -> DataProfile:
             raise RuntimeError("无法探测")

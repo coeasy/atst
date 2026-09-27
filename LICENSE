@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 tstdx contributors
+Copyright (c) 2026 atst contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,7 +25,7 @@ SOFTWARE.
 原创性声明
 ==========
 
-tstdx 全部代码为原创实现。
+atst 全部代码为原创实现。
 
 协议格式的获取途径：
   · 自有环境网络抓包（连接公开 TDX 主站）

@@ -20,10 +20,10 @@ import struct
 
 import pytest
 
-from tstdx.codec.framing import ResponseFrame
-from tstdx.codec.primitive import encode_leb128
-from tstdx.protocol.commands import Family
-from tstdx.protocol.registry import dispatch
+from atst.codec.framing import ResponseFrame
+from atst.codec.primitive import encode_leb128
+from atst.protocol.commands import Family
+from atst.protocol.registry import dispatch
 
 pytestmark = pytest.mark.unit
 
@@ -361,7 +361,7 @@ class TestClientWiring:
     """新增 client 方法 → 命令号/family → 解析器 通路（不触网）。"""
 
     def test_mac_block_list_wiring(self):
-        from tstdx.client import MacClient
+        from atst.client import MacClient
 
         pool = _FakePool(_payload_for)
         client = MacClient(pool=pool)
@@ -371,7 +371,7 @@ class TestClientWiring:
         assert rows[0]["block_id"] == 1
 
     def test_mac_block_members_wiring(self):
-        from tstdx.client import MacClient
+        from atst.client import MacClient
 
         pool = _FakePool(_payload_for)
         client = MacClient(pool=pool)
@@ -380,7 +380,7 @@ class TestClientWiring:
         assert rows == [{"code": "600519"}]
 
     def test_ex_instrument_count_list_wiring(self):
-        from tstdx.client import ExMarketClient
+        from atst.client import ExMarketClient
 
         pool = _FakePool(_payload_for)
         client = ExMarketClient(pool=pool)
@@ -393,7 +393,7 @@ class TestClientWiring:
         assert rows[0]["code"] == "00700"
 
     def test_ex_market_count_list_wiring(self):
-        from tstdx.client import ExMarketClient
+        from atst.client import ExMarketClient
 
         pool = _FakePool(_payload_for)
         client = ExMarketClient(pool=pool)
@@ -406,7 +406,7 @@ class TestClientWiring:
         assert rows[0]["market_id"] == 1
 
     def test_goods_count_list_wiring(self):
-        from tstdx.client import GoodsClient
+        from atst.client import GoodsClient
 
         pool = _FakePool(_payload_for)
         client = GoodsClient(pool=pool)
@@ -419,7 +419,7 @@ class TestClientWiring:
         assert rows[0]["name"] == "螺纹钢"
 
     def test_async_mirrors_exist_and_dispatch(self):
-        from tstdx.client import AsyncExMarketClient, AsyncGoodsClient, AsyncMacClient
+        from atst.client import AsyncExMarketClient, AsyncGoodsClient, AsyncMacClient
 
         async def run() -> None:
             pool = _AsyncFakePool(_payload_for)
@@ -448,7 +448,7 @@ class TestClientWiring:
 
     def test_empty_ex_list_no_body_error(self):
         """ex_instrument_list 空/缺失参数不抛 struct 异常（对齐 block 语义）。"""
-        from tstdx.client import ExMarketClient
+        from atst.client import ExMarketClient
 
         pool = _FakePool(_payload_for)
         client = ExMarketClient(pool=pool)

@@ -8,9 +8,9 @@
 
 v17 Phase 5 的实测证据（不是推断）：
 
-1. `load_config()` 在 `tstdx/` 包内**零调用者**。CLI / HTTP / WS / MCP / `Client`
+1. `load_config()` 在 `atst/` 包内**零调用者**。CLI / HTTP / WS / MCP / `Client`
    全都不读配置文件，`Client.__init__` 也没有 `config=` 入口 —— 而
-   `docs/troubleshooting.md` 长期指导用户"改 `tstdx.toml` 换主站"。写配置文件
+   `docs/troubleshooting.md` 长期指导用户"改 `atst.toml` 换主站"。写配置文件
    不改变任何行为。
 2. `Config` 唯一进入运行期的路径是调用方自己构造后传给 `ConnectionPool.from_config`。
    而那个第二读者读的键名（`rate_call_auction`/`rate_continuous`/…）与
@@ -32,15 +32,15 @@ v17 Phase 5 的实测证据（不是推断）：
 由此推出五条实现规则：
 
 1. **唯一读者**：`UnifiedRuntime` 是配置面的唯一消费者（`Client()` 缺省经
-   `tstdx.config.get_config()` 惰性取进程级单例）；`WebQuoteClient` 作为独立
+   `atst.config.get_config()` 惰性取进程级单例）；`WebQuoteClient` 作为独立
    legacy 入口读 `[web]` 段。显式构造参数永远优先于配置。
 2. **唯一翻译点**：配置 → 传输层构造参数只在
-   `tstdx.transport.pool.pool_settings_from_config()` 一处完成；
+   `atst.transport.pool.pool_settings_from_config()` 一处完成；
    `ConnectionPool.from_config` 已删除，不允许第二个读者存在。
 3. **键名对齐事实**：`[rate_limit]` 字段名与 `SessionState` 成员一一对应，
    `SessionRateLimiter.from_config` 用直接属性访问而非 `getattr(..., 默认)` ——
    读不到的键名必须是 `AttributeError`，不是静默默认值。
-4. **fail-closed**：未知段、未知字段、未知 `TSTDX_*` 变量、类型不符（bool 位写 `1`、
+4. **fail-closed**：未知段、未知字段、未知 `ATST_*` 变量、类型不符（bool 位写 `1`、
    int 位写 `1.5`、非有限浮点）一律立即抛错，绝不降级为默认值。删除的七段现在
    会命中"未知配置段"错误，而不是被忽略。
 5. **主站解析单点**：`hosts.servers` 只在 `UnifiedRuntime` 解释一次，再作为已解析
@@ -50,12 +50,12 @@ v17 Phase 5 的实测证据（不是推断）：
 
 ## 后果
 
-- ✅ "写 `tstdx.toml` 不生效"这一 P0 口径缺陷消除，文档可以如实描述配置行为
+- ✅ "写 `atst.toml` 不生效"这一 P0 口径缺陷消除，文档可以如实描述配置行为
   （见 [docs/configuration.md](../configuration.md)）。
-- ✅ 配置面收缩 12 段 → 5 段：`tstdx/config/schema.py` −320/+45 行；连同第二个配置
+- ✅ 配置面收缩 12 段 → 5 段：`atst/config/schema.py` −320/+45 行；连同第二个配置
   读者（`ConnectionPool.from_config` 及其 76 行硬化层
-  `tstdx/transport/_pool_factory_hardening.py`）与 2 个只测幻影键的契约测试一并
-  物理删除，`tstdx/` 包整体净减 355 行。
+  `atst/transport/_pool_factory_hardening.py`）与 2 个只测幻影键的契约测试一并
+  物理删除，`atst/` 包整体净减 355 行。
 - ✅ 幻影键静默丢弃的整类缺陷有了回归锁（限流字段改名后旧键名必然抛）。
 - ❌ 进程级惰性单例意味着"改文件后需 `reset_config()` 或重启进程"，配置不再是
   每请求重读。这是刻意取舍：六源合并含文件系统与网络盘探测，按请求重读会
@@ -67,7 +67,7 @@ v17 Phase 5 的实测证据（不是推断）：
 
 | 方案 | 否决理由 |
 |---|---|
-| (b) 把配置降级为 `transport` 内部结构、`configure`/`load_config` 退出公开导出面 | `tstdx.toml`/`TSTDX_*` 已是公开面并写在文档里，撤退同样是口径破坏；且执行参数确有需要外部配置 |
+| (b) 把配置降级为 `transport` 内部结构、`configure`/`load_config` 退出公开导出面 | `atst.toml`/`ATST_*` 已是公开面并写在文档里，撤退同样是口径破坏；且执行参数确有需要外部配置 |
 | 执行器改为注入 `ConnectionPool.from_config(...)` 构造的池 | `TdxClient(pool=...)` 设 `_owns_pool=False` ⇒ 心跳线程生命周期外泄给调用方 |
 | `_tdx_client` 改成上下文管理器 | 破坏 `tests/sink/test_local_day.py` 既有的打桩接缝，且每请求构造成本不因此改变 |
 | 把已解析的 `HostEntry` 列表透传进 `TdxClient(hosts=...)` | 会二次 `resolve_hosts`，并被默认 `max_hosts` 静默截断 |

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """声明出来的旋钮必须真的被拧动（V18 第 3–5 轮）。
@@ -31,7 +31,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-PKG = ROOT / "tstdx"
+PKG = ROOT / "atst"
 
 # --------------------------------------------------------------------------- #
 # 判据一：文档承诺的入参，函数体必须读它
@@ -208,7 +208,7 @@ def _lazy_singleton_defects(source: str) -> list[str]:
 
 @pytest.mark.parametrize(
     "rel",
-    ["tstdx/web/_session_market.py", "tstdx/web/_base_http.py", "tstdx/transport/sniff.py"],
+    ["atst/web/_session_market.py", "atst/web/_base_http.py", "atst/transport/sniff.py"],
 )
 def test_process_level_singletons_that_claim_thread_safety_are_locked(rel: str) -> None:
     source = (ROOT / rel).read_text(encoding="utf-8")
@@ -252,8 +252,8 @@ def test_shared_http_builds_exactly_one_client_under_concurrency() -> None:
     判据用 barrier 逼出交错：无锁实现下 N 个线程能同时穿过 ``if not _SHARED_HTTP``，
     barrier 凑齐 ⇒ 造出 N 个 client；持锁实现里后到的线程必须等，barrier 超时。
     """
-    from tstdx.web import _session_market
-    from tstdx.web import base as web_base
+    from atst.web import _session_market
+    from atst.web import base as web_base
 
     threads = 4
     barrier = threading.Barrier(threads)
@@ -381,11 +381,11 @@ def test_an_uncheckable_count_claim_is_a_defect_not_a_pass() -> None:
     门禁仍然绿——这正是本轮要根除的"读起来像断言、实则无法反驳"的形状。
     """
     source = "实测可用品种共 99 个（见 :data:`CODES`）。\n"
-    findings, checked = _count_findings("tstdx.no_such_module_anywhere", source)
+    findings, checked = _count_findings("atst.no_such_module_anywhere", source)
     assert checked == 0
     assert len(findings) == 1 and "无法复核" in findings[0], findings
     # 反面对照：没有计数声明的文件确实该静默通过，否则整包会被噪声淹没
-    assert _count_findings("tstdx.no_such_module_anywhere", "一句话，没有指针。\n") == ([], 0)
+    assert _count_findings("atst.no_such_module_anywhere", "一句话，没有指针。\n") == ([], 0)
 
 
 # --------------------------------------------------------------------------- #
@@ -605,7 +605,7 @@ def test_every_http_route_param_is_read_by_the_handler() -> None:
 
 def test_every_mcp_declared_property_is_read_by_its_handler() -> None:
     """MCP 的 ``inputSchema`` 既对外声明又是拒绝白名单：声明的属性必须真的进执行链路。"""
-    from tstdx.integration.mcp._tools_spec import TOOLS
+    from atst.integration.mcp._tools_spec import TOOLS
 
     assert len(TOOLS) >= 5, f"MCP 工具清单只读到 {len(TOOLS)} 张，判据自身失明"
     declared = {t.name: set(t.inputSchema.get("properties", {})) for t in TOOLS}
@@ -635,7 +635,7 @@ def test_the_wire_ruler_sees_planted_unread_fields() -> None:
 # --------------------------------------------------------------------------- #
 
 #: 2026-09-22（周二，A 股上午盘中）实测：`Client.security_count(market=0)` 给出 24296，
-#: 而 `tstdx security-count`（`--market` 声明成字符串、缺省 `"0"`）与
+#: 而 `atst security-count`（`--market` 声明成字符串、缺省 `"0"`）与
 #: `GET /v13/security/count`（路由签名 `market: str = "0"`）当场
 #: `E3040 未知标准市场 '0'；可选 sz/sh/bj 或 0/1/2`——**消息点名的写法正是代码拒绝的写法**，
 #: 三张面连自己声明的缺省值都解不开。前五格判据全都看不见它：字段被声明了（判据三）、
@@ -654,7 +654,7 @@ def _unacceptable_market_values() -> list[object]:
     越界值是**算出来**的而不是抄来的：抄一个 `3` 进名单，等市场表真长出 id 3 时这条
     判据就会把合法值当成缺陷。
     """
-    from tstdx.client.core import _PREFIX_MARKET
+    from atst.client.core import _PREFIX_MARKET
 
     beyond = max(_PREFIX_MARKET.values()) + 1
     return [*_SHAPE_DEAD_MARKET_TEXTS, str(beyond), beyond]
@@ -743,7 +743,7 @@ def _library_market_values() -> dict[str, object]:
     """库面：``Client`` 上那两个公开方法的声明缺省。"""
     from inspect import signature
 
-    from tstdx import Client
+    from atst import Client
 
     out: dict[str, object] = {}
     for name in ("security_count", "security_list"):
@@ -765,7 +765,7 @@ def _market_face_values() -> dict[str, object]:
 
 def _mcp_market_schemas() -> dict[str, str]:
     """MCP 面：每张工具的 ``inputSchema`` 里 ``market`` 声明的 JSON 类型。"""
-    from tstdx.integration.mcp._tools_spec import TOOLS
+    from atst.integration.mcp._tools_spec import TOOLS
 
     out: dict[str, str] = {}
     for tool in TOOLS:
@@ -777,7 +777,7 @@ def _mcp_market_schemas() -> dict[str, str]:
 
 def test_every_market_face_hands_the_parser_a_value_it_accepts() -> None:
     """同一份声明表派生出来的面，不许在同一个旋钮上给出四种不同下场。"""
-    from tstdx.client.core import _standard_market_id
+    from atst.client.core import _standard_market_id
 
     sites = _market_face_values()
     assert len(sites) >= 6, f"市场旋钮只解析出 {len(sites)} 处声明，判据自身失明：{sorted(sites)}"
@@ -796,7 +796,7 @@ def test_every_market_face_hands_the_parser_a_value_it_accepts() -> None:
 
 def test_a_string_declared_market_face_can_name_every_market() -> None:
     """凡把这个旋钮声明成字符串的面，都必须能表达每一个市场——否则它只在拒自己的用户。"""
-    from tstdx.client.core import _PREFIX_MARKET, _standard_market_id
+    from atst.client.core import _PREFIX_MARKET, _standard_market_id
 
     string_sites = sorted(
         label for label, value in _market_face_values().items() if isinstance(value, str)
@@ -817,7 +817,7 @@ def test_a_string_declared_market_face_can_name_every_market() -> None:
 
 def test_every_string_typed_market_tool_can_name_every_market() -> None:
     """MCP 的 schema 声明 ``string`` 就是"按字符串给我"的承诺：那数字写法必须是活的。"""
-    from tstdx.client.core import _PREFIX_MARKET, _standard_market_id
+    from atst.client.core import _PREFIX_MARKET, _standard_market_id
 
     schemas = _mcp_market_schemas()
     assert schemas, "MCP 面没有解析出任何 market 声明，判据自身失明"
@@ -832,8 +832,8 @@ def test_every_string_typed_market_tool_can_name_every_market() -> None:
 
 def test_the_market_message_only_advertises_what_the_parser_accepts() -> None:
     """那条消息点名了两组词，两词都必须真能解开——否则它在教用户走一条死路。"""
-    from tstdx.client.core import _PREFIX_MARKET, _standard_market_id
-    from tstdx.errors import ValidationError
+    from atst.client.core import _PREFIX_MARKET, _standard_market_id
+    from atst.errors import ValidationError
 
     with pytest.raises(ValidationError) as raised:
         _standard_market_id("这一格故意不存在")
@@ -873,7 +873,7 @@ def test_the_market_ruler_sees_a_planted_face_value() -> None:
     )
     assert _cli_market_values(planted_cli) == {"cli:--market@1": "0", "cli:--market@2": 0}
     assert _ws_market_values('market = params.get("market", 0)\n') == {"ws:default@1": 0}
-    from tstdx.client.core import _standard_market_id
+    from atst.client.core import _standard_market_id
 
     assert {_standard_market_id(value) for value in ("0", "sz", "1", "sh", 2, "bj")} == {0, 1, 2}
 
@@ -886,7 +886,7 @@ def test_the_market_ruler_sees_a_planted_face_value() -> None:
 def _external_import_roots(package: Path) -> set[str]:
     """``package`` 子树里真实 import 到的外部顶层包名。
 
-    口径与 :func:`tstdx.tools.check_originality._analyze_patterns` 同一层：AST 遍历、
+    口径与 :func:`atst.tools.check_originality._analyze_patterns` 同一层：AST 遍历、
     相对 import 跳过、顶层名 = 点号前第一段；这里额外滤掉标准库与被审包自身，
     剩下的才该进"预期外部依赖"白名单。
     """
@@ -915,12 +915,12 @@ def test_originality_external_import_whitelist_matches_reality() -> None:
     import 从未登记——于是 ``check_originality`` 的 ``unknown external import`` 普查
     长期挂着 5 条噪声，而它恰恰是"发现第六个外部依赖"的那只手。
     """
-    from tstdx.tools.check_originality import KNOWN_EXTERNAL_IMPORTS
+    from atst.tools.check_originality import KNOWN_EXTERNAL_IMPORTS
 
     real = _external_import_roots(PKG)
     assert real, "外部依赖普查为空，判据本身失效"
     assert set(KNOWN_EXTERNAL_IMPORTS) == real, (
-        "tstdx/tools/check_originality.py 的预期外部依赖与 tstdx/ 的真实 import 分叉："
+        "atst/tools/check_originality.py 的预期外部依赖与 atst/ 的真实 import 分叉："
         f"多 {sorted(set(KNOWN_EXTERNAL_IMPORTS) - real)}"
         f" 缺 {sorted(real - set(KNOWN_EXTERNAL_IMPORTS))}"
     )

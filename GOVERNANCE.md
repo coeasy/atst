@@ -1,11 +1,11 @@
-# tstdx 项目治理
+# atst 项目治理
 
-> 本文档定义了 tstdx 项目的治理结构、决策流程和贡献规范。
+> 本文档定义了 atst 项目的治理结构、决策流程和贡献规范。
 > 所有维护者和贡献者都应阅读并遵循本治理文件。
 
 ## 1. 项目使命
 
-tstdx 是一个**通达信（TDX）行情数据通用协议库**，目标是：
+atst 是一个**通达信（TDX）行情数据通用协议库**，目标是：
 
 - 提供统一的 TDX 协议解析接口（7709 标准 / 7727 扩展 / MAC / F10 / 商品五套协议族）
 - 支持同步/异步双 API、多协议族客户端、HTTP Web 源降级
@@ -69,21 +69,21 @@ ADR-XXX: 决策标题
 ### 4.2 弃用策略
 
 - 弃用标记：用标准库告警 `warnings.warn(..., DeprecationWarning, stacklevel=2)`；本包不自带
-  `@deprecated` 装饰器（`tstdx/deprecation.py` 206 行在包内零消费者，V18 第 8 轮按 F-74/D3 删除；
+  `@deprecated` 装饰器（`atst/deprecation.py` 206 行在包内零消费者，V18 第 8 轮按 F-74/D3 删除；
   `warnings.deprecated` 需 Python 3.13，而本包下限是 3.10，故不作为机制）
 - 保留周期：至少 2 个 minor 版本
 - 迁移指南：每个弃用功能需在 `docs/migration/` 中提供迁移指南
 
 ### 4.3 发布流程
 
-1. 确认 `pyproject.toml`、`tstdx.__version__`、README 和 CHANGELOG 版本一致；
+1. 确认 `pyproject.toml`、`atst.__version__`、README 和 CHANGELOG 版本一致；
 2. 更新 `docs/releases/vX.Y.Z.md`，记录变更、兼容性和验证结果；
 3. 运行 `python scripts/build_package.py --smoke` 和完整测试套件；
 4. 创建发布提交并打 `vX.Y.Z` 标签；
 5. 创建 GitHub Release，发布说明引用对应的 CHANGELOG/发布文档；`wheels.yml` 会自动将
    wheel/sdist 附加到 Release 资产栏；
 6. 由 `wheels.yml` 的 Trusted Publishing 工作流发布 wheel 和 sdist 到 PyPI；
-7. 发布后检查 PyPI 安装、`import tstdx` 版本和 GitHub Release 资产。
+7. 发布后检查 PyPI 安装、`import atst` 版本和 GitHub Release 资产。
 
 v1.0.0 的具体发布记录见 [v1.0.0 发布说明](docs/releases/v1.0.0.md)。
 

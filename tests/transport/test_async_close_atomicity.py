@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from tstdx.transport.async_ import AsyncConnectionPool
-from tstdx.transport.hosts import HostEntry
+from atst.transport.async_ import AsyncConnectionPool
+from atst.transport.hosts import HostEntry
 
 
 def _pool() -> AsyncConnectionPool:
@@ -146,4 +146,4 @@ def test_repeated_close_redrains_already_closed_pool(
 
 
 def test_async_close_public_wiring_uses_atomic_hardening() -> None:
-    assert AsyncConnectionPool.close.__module__ == "tstdx.transport.async_"
+    assert AsyncConnectionPool.close.__module__ == "atst.transport.async_"

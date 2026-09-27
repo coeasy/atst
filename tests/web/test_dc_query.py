@@ -10,9 +10,9 @@ import json
 
 import pytest
 
-from tstdx.web._session_info import CorporateSessionMixin
-from tstdx.web.corporate import VALID_REPORTS, EastmoneyDataCenterSource
-from tstdx.web.eastmoney.adapters import EastmoneyMarginSource  # noqa: F401
+from atst.web._session_info import CorporateSessionMixin
+from atst.web.corporate import VALID_REPORTS, EastmoneyDataCenterSource
+from atst.web.eastmoney.adapters import EastmoneyMarginSource  # noqa: F401
 
 pytestmark = pytest.mark.unit
 

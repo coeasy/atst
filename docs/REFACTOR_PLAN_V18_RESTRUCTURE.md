@@ -1,4 +1,4 @@
-# tstdx v18 结构收口与对外契约重设方案
+# atst v18 结构收口与对外契约重设方案
 
 > **文档状态**：**执行中**——§5 的 V18-A3、V18-B1、V18-B4 已落地（第 1 轮，提交 `94b97d6`，
 > 读数见 §9），B5 与 G1 前半截经实测作废/已满足（更正就地写在 §5）；第 2 轮把"证据本身"
@@ -14,7 +14,7 @@
 > 改由三个派生来源对账，"既无契约也不在任何派发面"从 PENDING 升为 ERROR），撤掉一份 17 个名字的
 > 手抄豁免名单与一条 63 项的死名单，并就地更正 §2 的诊断——所谓"92 项缺契约"里有 92 项其实
 > 全在通用派发面上，真·无声明形状的是 0 项（代码 `a98755d`+`e26300e`+`c7db30b`，读数见 §16）；
-> 第 8 轮收掉 C4 的后半截（V18-D3）：包内零消费者的 206 行退役机制 `tstdx/deprecation.py` 物理删除，
+> 第 8 轮收掉 C4 的后半截（V18-D3）：包内零消费者的 206 行退役机制 `atst/deprecation.py` 物理删除，
 > 防回潮不新建判据、由四道既有尺子分头盯住（根级白名单 / 可达性 `[ORPHAN]` / 事实文档可解析 /
 > 换形后的贯通第 16 项），并顺手把治理文档教的 `@deprecated` 与审计索引教的死 make 目标改成实话
 > （代码 `f92d827` + 文档 `cb92bc0`，读数见 §17）；
@@ -41,19 +41,19 @@
 
 | 项 | 读数 | 取证方式 |
 |---|---|---|
-| 离线全量测试 | 进度走到 `[100%]`，**`PYTEST_RC=0`**；日志无 `N passed` 汇总行，故不引用该数 | `pytest tests/ -q -m "not network" --cov=tstdx` |
+| 离线全量测试 | 进度走到 `[100%]`，**`PYTEST_RC=0`**；日志无 `N passed` 汇总行，故不引用该数 | `pytest tests/ -q -m "not network" --cov=atst` |
 | 覆盖率 | **81.42%**（TOTAL 22406 stmt / 3588 miss / 5982 branch / 1004 partial），`Required test coverage of 77.0% reached`，**阈值未动**；49 个模块覆盖率已满 | 同上 |
 | 离线判据规模 | `--collect-only` 实得 **3598 项 / 228 个含测试文件**；仓内 `def test_` **2432 个** | `pytest --collect-only` 逐文件计数求和 |
 | ruff | `check` RC=0；`format --check` **442 files already formatted** RC=0 | 隔离树 |
 | mypy（CI 参数） | **RC=0，输出 0 行** | 隔离树 |
 | reachability `--strict` | **190 模块 / 174 可达 / 16 豁免 / 记录缺陷 0**，RC=0 | `scripts/audit_reachability.py` |
-| originality | `Total: 191 / Original: 191 / License OK: 191 / Header OK: 191 / Suspicious: 0`，RC=0 | `tstdx.tools.check_originality` |
-| spec_audit `--strict` | RC=0 | `tstdx.tools.spec_audit --json --strict` |
+| originality | `Total: 191 / Original: 191 / License OK: 191 / Header OK: 191 / Suspicious: 0`，RC=0 | `atst.tools.check_originality` |
+| spec_audit `--strict` | RC=0 | `atst.tools.spec_audit --json --strict` |
 | docs links | 82 文件 OK | `scripts/check_docs_links.py` |
 | 契约对账 `contract_audit` | **63 个 Typed 契约 / 155 个注册业务 capability / 92 项 PENDING / 0 ERROR**，RC=0（PENDING 不阻断）。⚠️ 该读数已被第 7 轮更正为**口径产物**：92 项全部在通用派发面上，真缺口 0 项，见 §16 | `scripts/contract_audit.py` |
 | 注册表面 | `Client().capabilities()` = **172**；`DIRECT_BINDINGS` = **251**；**11 Provider × 56 (provider,channel)** | 运行期内省 |
 | 绑定的执行方式 | **234/251（93.2%）走同一条泛化派发 `_migrated_capability`，仅 17 条有专属执行器**；按 Provider 分：derived 114 / eastmoney 59 / sina 17 / tencent 15 / tdx 30 / builtin 2 / baidu 8 / iwencai 2 / boc 2 / jsl 1 / local_vipdoc 1 | `Counter(b.executor_name for b in DIRECT_BINDINGS)` |
-| 代码规模 | `tstdx/` **59 073 行 / 190 py**；`tests/` **74 307 行**；`docs/` **22 284 行 / 83 篇**；`PROTOCOL_SPEC/` 5 182 行 | `wc -l` 求和 |
+| 代码规模 | `atst/` **59 073 行 / 190 py**；`tests/` **74 307 行**；`docs/` **22 284 行 / 83 篇**；`PROTOCOL_SPEC/` 5 182 行 | `wc -l` 求和 |
 | 子包体量 | web **17 913 / 51 文件（占包 30.3%）** · transport 5 425 · protocol 5 066 · tools 4 798 · client 3 406 · 其余 16 包 ~14 000 | 同上 |
 | web 层注释占比 | 17 913 行里 **4 270 行是 docstring（23.8%）**，`corporate.py` 227 行、`fundflow.py` 206 行 | AST 逐文件统计 |
 | 架构判据 | `tests/architecture/` **13 文件 / 4 983 行 / 126 个 test 函数** | `wc -l` + `grep -c "def test_"` |
@@ -69,13 +69,13 @@
 
 | 功能族 | 载体 | 实测规模 | 对外出口 |
 |---|---|---|---|
-| TDX 7709/7727/F10/MAC/goods 协议直连 | `tstdx/protocol/` + `codec/` + `transport/` + `client/{core,sync,async_}` | 12 887 行 / 85 条命令账本 / 10 个解析器模块 / 44 项 YAML 规格（非 draft） | `TdxClient` / `AsyncTdxClient`（README 明确"可脱离内核使用"） |
+| TDX 7709/7727/F10/MAC/goods 协议直连 | `atst/protocol/` + `codec/` + `transport/` + `client/{core,sync,async_}` | 12 887 行 / 85 条命令账本 / 10 个解析器模块 / 44 项 YAML 规格（非 draft） | `TdxClient` / `AsyncTdxClient`（README 明确"可脱离内核使用"） |
 | 统一查询内核 | `runtime/` + `catalog/` + `query.py` | 2 908 行；`UnifiedRuntime.execute()` 4 行；17 条专属执行器 + 1 条泛化派发 | `Client.execute/typed/call/bars/quotes/…` |
-| 多源 Web 抓取 | `web/`（7 源适配器 + 18 Mixin 会话 + 40+ 特性模块） | 17 913 行；`WebQuoteSession` 公开方法 140；`tstdx.web.__all__` 69 | 内核绑定（104 条 web Provider 绑定）**＋** 直连会话门面（第二条入口，F-71 裁决保留） |
+| 多源 Web 抓取 | `web/`（7 源适配器 + 18 Mixin 会话 + 40+ 特性模块） | 17 913 行；`WebQuoteSession` 公开方法 140；`atst.web.__all__` 69 | 内核绑定（104 条 web Provider 绑定）**＋** 直连会话门面（第二条入口，F-71 裁决保留） |
 | 流式 | `streaming/` + `stream_contract.py` | 1 711 行；tdx-only 判据单点 | `Client.stream` / CLI `stream` |
 | 本地 vipdoc 读盘 | `reader/` + `sink/` + `profile/` | 2 884 行 | `local_vipdoc` provider 的 1 条绑定 + 公共 API |
 | 服务面 | `cli/` `integration/{runtime_http,runtime_ws,mcp/}` | CLI 31 子命令 · HTTP 10 路由 · WS 10 方法 · MCP 9 工具 | 只翻译不执行（两条 AST 门禁 F-29/F-56） |
-| 配置面 | `config/` | 719 行 / 5 段，每键有读者 | `tstdx.toml` + `TSTDX_*`，内核唯一读者 |
+| 配置面 | `config/` | 719 行 / 5 段，每键有读者 | `atst.toml` + `ATST_*`，内核唯一读者 |
 | 交易协议模拟 | `trade/` | 1 535 行，纯内存模拟器，**内核与 CLI 都不 import** | 实验性可选模块 |
 | 工程面 | `tools/` + `scripts/` + `benches/` | 4 798 + 1 523 行；抓包/codegen/spec/golden/originality 审计 | 九项门禁 + 开发期工具 |
 
@@ -91,73 +91,73 @@
 `catalog/capability_audit.py` 的注册表↔绑定双向对账，172 个能力名与绑定面闭合；
 ② 251 条绑定全部有 `executor_name`，其中 17 条走专属实现、234 条走 `_migrated_capability`，
 **没有任何一格指向不存在的执行体**；
-③ 四个服务面对 `tstdx.web` / `tstdx.streaming` 的 import 边被 AST 门禁清零（本轮实测 RC=0）。
+③ 四个服务面对 `atst.web` / `atst.streaming` 的 import 边被 AST 门禁清零（本轮实测 RC=0）。
 
 **核心功能全部实现：否。** 缺口逐格都可量化，不是感觉（第 3 轮又量出一格，故不写死份数）：
 
 | # | 缺口 | 实测证据 | 严重度 |
 |---|---|---|---|
-| G1 | **三格能力在任何 Provider 上都不可能给数**，但仍占着 HTTP/WS/MCP 三面入口 | `minute`(0x0537)/`trades`(0x0FC5) 在 `tstdx/client/core.py:288,314,326` 恒定 `raise NotImplementedFeature`；`security_list`(0x044D) 在 `core.py:300` 恒定 `raise CommandOffline` | P1（对外承诺形状） |
+| G1 | **三格能力在任何 Provider 上都不可能给数**，但仍占着 HTTP/WS/MCP 三面入口 | `minute`(0x0537)/`trades`(0x0FC5) 在 `atst/client/core.py:288,314,326` 恒定 `raise NotImplementedFeature`；`security_list`(0x044D) 在 `core.py:300` 恒定 `raise CommandOffline` | P1（对外承诺形状） |
 | G2 | **typed 面只覆盖 40%**：155 个业务 capability 里 92 个无契约，`contract_audit` 判 PENDING 且 RC=0 不阻断。<br>**更正（第 7 轮实测，见 §16）**：这一格诊断错了一半——92 个"无契约"**全部**在通用派发面上（迁移网关或内核专属执行体），真·无任何声明形状的是 **0 个**。所以"缺 92 份契约"不是功能缺口而是口径产物；已按 D10(b) 把判据换成派生三来源 + 规模下限，缺形状改 ERROR 阻断 | 本轮 `scripts/contract_audit.py`：`63 契约 / 155 capability / WARN: 92 个待办`；更正读数：`172 注册 / 63 专属契约 / 172 在派发面 / 0 无形状` | P1（功能账，非缺陷）→ **口径账，已改** |
 | G3 | **`0x000F` 资本变动 / `0x0010` 财务在新握手下仍解错**，F-37 余条未裁决；本轮离线日志里就能看到 `[E3040] 股权信息记录数异常: count=300, body=30, size=0` 的解码告警。<br>**第 13 轮盘中复现（2026-09-22 10:45/10:54，见 §22）**：换标的也是同一形状——`600519` 与 `000001` 各回 250 条，首条 `CapitalChange(code='519\x01', market=48, date='00104524' / '00000000')`、`finance` 回 `market=48, code='519\x01', eps=1235.0, profit_per_share=-40714.76`；`market` 读到 48 就是 ASCII `'0'` 的字节值，与第 9 轮离线穷举的错位域完全同形 | 离线：`v18rev_test.log` warnings 段（`tests/client/test_decode_caveat_wiring.py`）；盘中：`wt_v18b13step/live/L2_client_intraday.log`、`L2b_extra.log` | P0（数据正确性） |
 | G4 | **7709 数据面从未在交易时段被验证过**：CI 的 live-smoke 是 `cron '0 1 * * *'` UTC = 北京 09:00，注释自己写着 "before A-share trading"（9:30 开盘），host-audit 是周三 09:00 UTC = 北京 17:00（收盘后）。<br>**部分清偿（第 13 轮，2026-09-22 周二盘中 10:42–11:18 手工一轮）**：8 主站里 7 个可达（`119.147.212.81` 连接超时 E2010），`quotes`/`bars 日线`/`bars 1m`（拿到北京时间 10:37 的当根）/`snapshot`/`security_count`（SZ 24296 / SH 27472）五格真实给数，`-m network` 的 web 侧 10 项真取通过。**剩下的**：这一格靠人记得跑，不靠流水线——cron 仍在开盘前与收盘后，"盘中"依然是验证盲区，V18-F 的排期不动 | `.github/workflows/live-smoke.yml:9`、`.github/workflows/host-audit.yml:5`；盘中读数 `wt_v18b13step/live/L1_server_test.log`、`L2_client_intraday.log`、`L3_network_web.log` | P1（验证盲区，F-38 的真正根因）→ **手工已见过一次，常态化仍缺** → **已清偿（第 14 轮）**：`tests/live/test_tdx_core_chain.py` 五格 7709 判据进 `-m network`，live-smoke 增加工作日 02:30 UTC（北京 10:30，上午时段）那次调度；主链接不上时红而不是 skip（N1 反证：5 格全红、0 skip） |
-| G5 | **`fund_estimate` 是 G1 的同族、Provider 侧的那一格**（第 3 轮登记、第 4 轮按代码更正口径）：能力面仍声明它，而实现只在"站点回 404/页面未找到 HTML"这一实测形状上抛 `SourceDeprecated`——它**仍会先发一次真实请求**，端点复活就会重新返回 dict。调用方要读源码才知道这一格现网不给数 | `tstdx/web/sources.py:449` 与 `tstdx/providers/__init__.py:570` 仍列该能力，`tstdx/cli/runtime_commands.py:681` 仍可从 CLI 抵达，实现链是 `tstdx/web/_session_baidu.py:108` → `tstdx/web/adapters_fund.py:188`（该函数先 `_request_text`，命中 404 页才抛，其余响应走 `_parse_jsonp` 返回 dict） | P2（对外承诺形状，与 F-66/F-75 同批裁决） |
-| G6 | **三张机器面对外声明的缺省值，库自己解不开**（第 13 轮盘中实测并已清偿）：`market` 这个旋钮在 CLI/HTTP/MCP 三面被声明成字符串（`--market` 的缺省就是 `"0"`、HTTP 查询串与 MCP `inputSchema` 同为 `string`），而解析器只认 `sz/sh/bj` 前缀——**连自己声明的缺省都拒**，`tstdx security-count` 与 `GET /v13/security/count` 当场 `E3040`，五张面里只有库面和 WS（缺省走 int 分支）能用。更糟的是错误消息自己写着"可选 sz/sh/bj **或 0/1/2**"，即消息在教用户走一条死路 | 改前/改后各一轮：`wt_v18b13step/live/L5_before.log`（`"0"` 五面三红）↔ `L5_after.log`（`"0"`/`"sz"` 同解 24296，`"1"`/`"sh"` 同解 27472，`"3"` 五面一致仍拒）；判据 `tests/architecture/test_declared_knobs.py` 判据六 5 项 + 变异 M1/M2/M3（`mutate13.log`） | **已清偿（第 13 轮）**：值域按表派生，六张面同答案 |
-| G7 | **G3 的"调用方看得见"那半边还空着**（第 13 轮登记，第 9 轮的账本半边不覆盖它）：第 9 轮把 `0x000F`/`0x0010` 的 `tier`/`verified` 与四处文档口径一起下调了，可是**线上传回来的形状一字未变**——盘中 `capital_changes`/`finance` 仍是 `provenance.kind=DIRECT`、`degraded=None`、`warnings=0` 的 250 条错值，调用方只有读源码 docstring 才知道字段不可信。这与 G5、≈F-72 是同一族：判断写在文档里，不写在结果里 | `wt_v18b13step/live/L2b_extra.log`（三条 G3 格 meta 逐字）；机制现成但无生产者：`_forward_decode_caveats`（`tstdx/client/_mixin.py:104`）只转发解码层自己记下的告警，而这两个解析器不记；`ProvenanceKind` 只有 `DIRECT` 一个成员，其 docstring 明写" declaring a second member without anything that produces it 正是本族要删的形状"，所以加等级必须同时给生产者 | P1（对外可见性，非数据正确性本身）→ **已清偿（第 14 轮）**：出口处的值域尺子（`tstdx/domain/integrity.py`）挂进唯一转发口 `_forward_decode_caveats`，错值行随结果带一条 `field_out_of_domain` 上 wire，五张面与 `strict` 同口径；布局本身仍按 G3 的"不猜字节"留在真机 golden 之后 |
-| G8 | **`Quote` 的三个公开字段在 tdx 实时路径上恒空，而对外文档一字未提**（第 13 轮盘中量到）：`quotes`/`snapshot` 回来的记录里 `datetime=null`、`bid=[]`、`ask=[]`，价格/量/额都是真的（12:01 从已装 wheel 里读到 1255.6 / 1 581 000 手）。这是**诚实的形状**——解析器 docstring 明写"绝不臆造 bid/ask 价格，以免把未经验证的布局当成事实输出"，未识别的末段原样留在 `extra['tail_leb128']`／`extra['_u4']`——缺口不在解析器，在**读者**：`docs/api/interfaces.md` 与 `docs/tdx_status.md` 里 `datetime`/`bid`/`ask` 零命中，调用方只能靠撞上看 null 才知道这三格在 7709 实时面上没有来源 | 盘中：`live/L2_client_intraday.log`（`_hdr=8205`、`bid/ask=[]`）、`wt_wheelcheck/wheel_probe.log`（已装 wheel 的 `snapshot` 同形状）；文档侧：全 `docs/` grep `datetime` 在 `interfaces.md`/`tdx_status.md` 0 命中；源码侧：`tstdx/protocol/parsers/_std7709_quote.py:185-197`（`u4` 语义未识别）、`:370-389`（不臆造 bid/ask、末段原样保留） | P2（对外字段口径，G7/F-75 同族：形状真、说法缺）→ **已清偿（第 14 轮）**：`docs/tdx_status.md` §一之二 + `docs/api/interfaces.md` 的 `Quote` 段写明三格恒空与其来源；新增 `tests/architecture/test_tdx_status_matrix.py` 把整张状态表钉回命令账本与分派拦截表（幻影命令号、给被拦命令盖 ✅、⛔ 行写错异常都当场红） |
-| G9 | **两份用户文档教用户 `pip install tstdx`，而这个名字在 PyPI 上不存在**（第 14 轮为"发布新版本"取证时量到）：`https://pypi.org/pypi/tstdx/json` 与 `/simple/tstdx/` 都回 404，即名字从未被领取；而 `README.md` 的"安装"第一行与 `docs/quickstart.md:9` 都把 `pip install tstdx` 写成可直接执行的指令。`docs/releases/v1.0.0.md:57` 自己写着产物"在安装矩阵通过并完成 PyPI Trusted Publishing 后"才附加——发布链的这一步从来没走过，读者的安装指令却一直在替它背书 | 本轮实测：`reports/g9_pypi_probe.log`（两个端点的 404 与 JSON 原文逐字、`grep -rn "pip install tstdx" README.md docs/` 的命中清单）；判据：`tests/compatibility/test_release_history_contract.py::test_no_user_doc_presents_an_unpublished_install_path_as_available` | P2（对外可安装性口径；文档侧已按实测改写，真正关闭它要的是发布动作） |
+| G5 | **`fund_estimate` 是 G1 的同族、Provider 侧的那一格**（第 3 轮登记、第 4 轮按代码更正口径）：能力面仍声明它，而实现只在"站点回 404/页面未找到 HTML"这一实测形状上抛 `SourceDeprecated`——它**仍会先发一次真实请求**，端点复活就会重新返回 dict。调用方要读源码才知道这一格现网不给数 | `atst/web/sources.py:449` 与 `atst/providers/__init__.py:570` 仍列该能力，`atst/cli/runtime_commands.py:681` 仍可从 CLI 抵达，实现链是 `atst/web/_session_baidu.py:108` → `atst/web/adapters_fund.py:188`（该函数先 `_request_text`，命中 404 页才抛，其余响应走 `_parse_jsonp` 返回 dict） | P2（对外承诺形状，与 F-66/F-75 同批裁决） |
+| G6 | **三张机器面对外声明的缺省值，库自己解不开**（第 13 轮盘中实测并已清偿）：`market` 这个旋钮在 CLI/HTTP/MCP 三面被声明成字符串（`--market` 的缺省就是 `"0"`、HTTP 查询串与 MCP `inputSchema` 同为 `string`），而解析器只认 `sz/sh/bj` 前缀——**连自己声明的缺省都拒**，`atst security-count` 与 `GET /v13/security/count` 当场 `E3040`，五张面里只有库面和 WS（缺省走 int 分支）能用。更糟的是错误消息自己写着"可选 sz/sh/bj **或 0/1/2**"，即消息在教用户走一条死路 | 改前/改后各一轮：`wt_v18b13step/live/L5_before.log`（`"0"` 五面三红）↔ `L5_after.log`（`"0"`/`"sz"` 同解 24296，`"1"`/`"sh"` 同解 27472，`"3"` 五面一致仍拒）；判据 `tests/architecture/test_declared_knobs.py` 判据六 5 项 + 变异 M1/M2/M3（`mutate13.log`） | **已清偿（第 13 轮）**：值域按表派生，六张面同答案 |
+| G7 | **G3 的"调用方看得见"那半边还空着**（第 13 轮登记，第 9 轮的账本半边不覆盖它）：第 9 轮把 `0x000F`/`0x0010` 的 `tier`/`verified` 与四处文档口径一起下调了，可是**线上传回来的形状一字未变**——盘中 `capital_changes`/`finance` 仍是 `provenance.kind=DIRECT`、`degraded=None`、`warnings=0` 的 250 条错值，调用方只有读源码 docstring 才知道字段不可信。这与 G5、≈F-72 是同一族：判断写在文档里，不写在结果里 | `wt_v18b13step/live/L2b_extra.log`（三条 G3 格 meta 逐字）；机制现成但无生产者：`_forward_decode_caveats`（`atst/client/_mixin.py:104`）只转发解码层自己记下的告警，而这两个解析器不记；`ProvenanceKind` 只有 `DIRECT` 一个成员，其 docstring 明写" declaring a second member without anything that produces it 正是本族要删的形状"，所以加等级必须同时给生产者 | P1（对外可见性，非数据正确性本身）→ **已清偿（第 14 轮）**：出口处的值域尺子（`atst/domain/integrity.py`）挂进唯一转发口 `_forward_decode_caveats`，错值行随结果带一条 `field_out_of_domain` 上 wire，五张面与 `strict` 同口径；布局本身仍按 G3 的"不猜字节"留在真机 golden 之后 |
+| G8 | **`Quote` 的三个公开字段在 tdx 实时路径上恒空，而对外文档一字未提**（第 13 轮盘中量到）：`quotes`/`snapshot` 回来的记录里 `datetime=null`、`bid=[]`、`ask=[]`，价格/量/额都是真的（12:01 从已装 wheel 里读到 1255.6 / 1 581 000 手）。这是**诚实的形状**——解析器 docstring 明写"绝不臆造 bid/ask 价格，以免把未经验证的布局当成事实输出"，未识别的末段原样留在 `extra['tail_leb128']`／`extra['_u4']`——缺口不在解析器，在**读者**：`docs/api/interfaces.md` 与 `docs/tdx_status.md` 里 `datetime`/`bid`/`ask` 零命中，调用方只能靠撞上看 null 才知道这三格在 7709 实时面上没有来源 | 盘中：`live/L2_client_intraday.log`（`_hdr=8205`、`bid/ask=[]`）、`wt_wheelcheck/wheel_probe.log`（已装 wheel 的 `snapshot` 同形状）；文档侧：全 `docs/` grep `datetime` 在 `interfaces.md`/`tdx_status.md` 0 命中；源码侧：`atst/protocol/parsers/_std7709_quote.py:185-197`（`u4` 语义未识别）、`:370-389`（不臆造 bid/ask、末段原样保留） | P2（对外字段口径，G7/F-75 同族：形状真、说法缺）→ **已清偿（第 14 轮）**：`docs/tdx_status.md` §一之二 + `docs/api/interfaces.md` 的 `Quote` 段写明三格恒空与其来源；新增 `tests/architecture/test_tdx_status_matrix.py` 把整张状态表钉回命令账本与分派拦截表（幻影命令号、给被拦命令盖 ✅、⛔ 行写错异常都当场红） |
+| G9 | **两份用户文档教用户 `pip install atst`，而这个名字在 PyPI 上不存在**（第 14 轮为"发布新版本"取证时量到）：`https://pypi.org/pypi/atst/json` 与 `/simple/atst/` 都回 404，即名字从未被领取；而 `README.md` 的"安装"第一行与 `docs/quickstart.md:9` 都把 `pip install atst` 写成可直接执行的指令。`docs/releases/v1.0.0.md:57` 自己写着产物"在安装矩阵通过并完成 PyPI Trusted Publishing 后"才附加——发布链的这一步从来没走过，读者的安装指令却一直在替它背书 | 本轮实测：`reports/g9_pypi_probe.log`（两个端点的 404 与 JSON 原文逐字、`grep -rn "pip install atst" README.md docs/` 的命中清单）；判据：`tests/compatibility/test_release_history_contract.py::test_no_user_doc_presents_an_unpublished_install_path_as_available` | P2（对外可安装性口径；文档侧已按实测改写，真正关闭它要的是发布动作） |
 | G10 | **`DataProfile.timezone` 是一格从未有人拧过的旋钮，而它暗示的换算产品并不做**（第 15 轮 §七 量到、只改了文档那半边；第 16 轮登记并清偿）：档案把 `timezone="Asia/Shanghai"` 当成第 15 个维度登记，全仓 190 个模块里**零读取点**，`docs/FAQ.md` 却拿"档案层有这个字段"作为时区问答的凭据。日线/分钟线交的是交易所本地时间字符串、出口不做换算，于是这个字段唯一的作用是让探测报告看起来像做过时区裁决 | 本轮实测：`tests/support/field_readers.py` 的 AST 扫描（DataProfile 14 字段 / 扫面 190 模块，读取点只落在 4 份真读取者上，见 §25 第一节），`timezone` 不在任何一格的命中字段里；判据：`tests/architecture/test_profile_knob_gates.py::test_profile_timezone_knob_stays_deleted`（含"不许把时区塞进豁免清单蒙过上一条"的反洞正控）；变异 M1 量出装回旋钮即 3 项红 | P2（形状卫生 + 一句文档谎）→ **已清偿（第 16 轮）**：字段删除，`docs/FAQ.md` 的时区问答改写成"规格档案层不带任何时区入参"的实测口径；`from_dict` 按 `__dataclass_fields__` 过滤，旧序列化 dict 带 `timezone` 仍能加载，不留兼容垫 |
-| G11 | **`MarketPreset` 这张表 12 列里只有 3 列有人按它行动，其余 9 列是"预设能解码"的谎**（第 16 轮登记并清偿）：`market_name`/`asset_class`/`typical_categories`/`quote_scale`/`volume_unit`/`price_encoding`/`time_encoding`/`default_period`/`notes` 九列加一座 `data_profile_kwargs()` 桥，把**行情快照**口径的缩放原样填进 K 线解码器的 `price_scale`——两套口径之间没有任何换算（快照对 EX_GOLD/EX_FUTURES 记 1000，日线档案 `future_day` 却记 100，接线即差一个数量级）。生产链路上真正被咨询的只有 `code_prefixes` 与 `market_id` 两列，加 `name` 当报告标识 | 本轮实测：MarketPreset 改前 12 字段、改后 3 字段，读取扫描命中的模块只有 `tstdx/profile/presets.py` 与 `tstdx/profile/detect.py`（第三份 `tstdx/trade/simulator.py` 是外来的 `p.name`，正是读取者白名单要挡的那类假绿）；判据：`test_every_market_preset_field_has_a_reader`（零豁免）+ `test_market_preset_shape_is_pinned` + `test_preset_table_has_no_road_into_the_decoder`；变异 M2/M3/M8 各当场红 | P1（错数来源，与 G3 同族但这一格在档案层）→ **已清偿（第 16 轮）**：表收缩到身份三列、桥整体删除；两条单位口径（ETF/LOF 记「股」、债券记「张」）从被删的 `notes` 迁进模块 docstring，因为它们是读者核对发行文件时真正要用的信息 |
-| G12 | **档案层那七座"枚举常量类"是一整张没人查的第二手词表**（第 17 轮登记并当场清偿）：`tstdx/reader/profile.py` 在 48 个成员、7 张类级表里登记了 12 个市场与 10 个品种，可是符号引擎只认 5 个市场（`parse_symbol(code, market="cffex")` 当场 `SymbolError: 未知市场 'cffex'；可选: ('sh','sz','bj','hk','us')`），探测层也只会产出 `STOCK` 一个品种。更糟的是三张表**与线上口径矛盾或只抄一半**：`Period.CMD_CATEGORY` 把 `quarter` 记成 10，而 `KlineCategory.NAMES[10]` 是 `season`（`season` 自己反倒没登记），它还拿 `"day_alt"` 当键——那根本不是 `Period` 的成员；`Period.FILE_EXT` 与 `Market.DIRS` 各是 `resolve_vipdoc_path` 的一半手抄件（前者只有扩展名、丢了目录名，后者把"市场 token 即目录名"这条又写了一遍） | 本轮实测：`scratch_v18b17/head_shape.log`（改前 48 成员/7 表逐格名单）↔ `scratch_v18b17/census17.log`（改后 34 成员/1 表，190 模块解析式扫描，35 格里"解析不出"全为 0）；判据：`tests/architecture/test_profile_vocabulary_gates.py`（11 项，含"每个成员都要有人读/是有人查的表的键/取值有人按"、"每张表都要有人查"、"docstring 份数由成员数现推"）；变异 M1/M2/M6/M8 各当场红（`scratch_v18b17/mutate17.log`） | P2（形状卫生 + 一处会指错路的表）→ **已清偿（第 17 轮）**：删 14 个成员与 6 张表，只留 `Market.CODES`；每格删除理由写在该类 docstring 里，判据把"复活"变成一次有意识的动作 |
-| G13 | **同一份周期词表在五处各自声明、互不派生**（第 17 轮登记，第 18 轮清偿）：改前 `Period` 12 档、`tstdx/client/core.py::_PERIOD_TO_CATEGORY` 24 个手写字符串键、`tstdx/web/_session_market.py::KLINES_PERIOD_ALIASES` 19 个手写键、`tstdx/query.py::_MINUTE_PERIODS` 5 个字面量、`tstdx/domain/period.py` 的 29 键规范化表，五处之间没有派生关系，`KlineCategory` 的 12 个协议号是唯一的真口径。第 17 轮只记了"三档零读取点"，第 18 轮量到的是**用户头上的一笔账**：同一个 `period=` 入参在两条库内路径上答案不同——`1y`/`m5`/`weekly`/`1mo` 等 **15 个拼写**走`QuerySpec.normalized() -> normalize_bar_period -> 查表` 给数，走`Client.bars() -> period_to_category` 直查那张 24 键手写表当场 `ParseError`；`Period.QUARTER` 更是把一个别名当平级周期登记（实测 `normalize("quarter")` 给 `"season"`，即该成员不等于自己） | 本轮实测：`scratch_v18b18/census18.log`（改前两路径结论不同的拼写 15 格，逐格列着 A 给 category、B 给 `ParseError`）↔ `census18_after.log`（改后 **0 格**、派生表 39 键）；判据：`tests/architecture/test_period_vocabulary_gates.py` 10 项（唯一声明处、别名不许指向别名、两条公开路径同解、那 15 个写法能走回库面、web 面接受集 == 域内词表 ∩ 本面服务集、分钟通道由规范分钟档决定、AST 现读两张表必须引用 `PERIOD_ALIASES` 且字面量别名键为 0）；第 17 轮那条 G13 盯梢判据已按现场改写成"派生成立"的正断言；本轮 12 条变异账本里占 M1–M9，`bad=0`（`scratch_v18b18/mutate18.log`） | P2（口径卫生，且这一格是对外入参的行为分叉）→ **已清偿（第 18 轮）**：`tstdx/domain/period.py` 成为周期的唯一声明处，客户端 category 表、web 面别名表、`minute_kline` 分钟档集合三处全部由它派生；`Period` 收缩到 11 档（删成员、留 `"quarter"` 这个公开别名）；`KlineCategory` 那 12 个协议号仍手写——它是唯一无处派生的真口径 |
+| G11 | **`MarketPreset` 这张表 12 列里只有 3 列有人按它行动，其余 9 列是"预设能解码"的谎**（第 16 轮登记并清偿）：`market_name`/`asset_class`/`typical_categories`/`quote_scale`/`volume_unit`/`price_encoding`/`time_encoding`/`default_period`/`notes` 九列加一座 `data_profile_kwargs()` 桥，把**行情快照**口径的缩放原样填进 K 线解码器的 `price_scale`——两套口径之间没有任何换算（快照对 EX_GOLD/EX_FUTURES 记 1000，日线档案 `future_day` 却记 100，接线即差一个数量级）。生产链路上真正被咨询的只有 `code_prefixes` 与 `market_id` 两列，加 `name` 当报告标识 | 本轮实测：MarketPreset 改前 12 字段、改后 3 字段，读取扫描命中的模块只有 `atst/profile/presets.py` 与 `atst/profile/detect.py`（第三份 `atst/trade/simulator.py` 是外来的 `p.name`，正是读取者白名单要挡的那类假绿）；判据：`test_every_market_preset_field_has_a_reader`（零豁免）+ `test_market_preset_shape_is_pinned` + `test_preset_table_has_no_road_into_the_decoder`；变异 M2/M3/M8 各当场红 | P1（错数来源，与 G3 同族但这一格在档案层）→ **已清偿（第 16 轮）**：表收缩到身份三列、桥整体删除；两条单位口径（ETF/LOF 记「股」、债券记「张」）从被删的 `notes` 迁进模块 docstring，因为它们是读者核对发行文件时真正要用的信息 |
+| G12 | **档案层那七座"枚举常量类"是一整张没人查的第二手词表**（第 17 轮登记并当场清偿）：`atst/reader/profile.py` 在 48 个成员、7 张类级表里登记了 12 个市场与 10 个品种，可是符号引擎只认 5 个市场（`parse_symbol(code, market="cffex")` 当场 `SymbolError: 未知市场 'cffex'；可选: ('sh','sz','bj','hk','us')`），探测层也只会产出 `STOCK` 一个品种。更糟的是三张表**与线上口径矛盾或只抄一半**：`Period.CMD_CATEGORY` 把 `quarter` 记成 10，而 `KlineCategory.NAMES[10]` 是 `season`（`season` 自己反倒没登记），它还拿 `"day_alt"` 当键——那根本不是 `Period` 的成员；`Period.FILE_EXT` 与 `Market.DIRS` 各是 `resolve_vipdoc_path` 的一半手抄件（前者只有扩展名、丢了目录名，后者把"市场 token 即目录名"这条又写了一遍） | 本轮实测：`scratch_v18b17/head_shape.log`（改前 48 成员/7 表逐格名单）↔ `scratch_v18b17/census17.log`（改后 34 成员/1 表，190 模块解析式扫描，35 格里"解析不出"全为 0）；判据：`tests/architecture/test_profile_vocabulary_gates.py`（11 项，含"每个成员都要有人读/是有人查的表的键/取值有人按"、"每张表都要有人查"、"docstring 份数由成员数现推"）；变异 M1/M2/M6/M8 各当场红（`scratch_v18b17/mutate17.log`） | P2（形状卫生 + 一处会指错路的表）→ **已清偿（第 17 轮）**：删 14 个成员与 6 张表，只留 `Market.CODES`；每格删除理由写在该类 docstring 里，判据把"复活"变成一次有意识的动作 |
+| G13 | **同一份周期词表在五处各自声明、互不派生**（第 17 轮登记，第 18 轮清偿）：改前 `Period` 12 档、`atst/client/core.py::_PERIOD_TO_CATEGORY` 24 个手写字符串键、`atst/web/_session_market.py::KLINES_PERIOD_ALIASES` 19 个手写键、`atst/query.py::_MINUTE_PERIODS` 5 个字面量、`atst/domain/period.py` 的 29 键规范化表，五处之间没有派生关系，`KlineCategory` 的 12 个协议号是唯一的真口径。第 17 轮只记了"三档零读取点"，第 18 轮量到的是**用户头上的一笔账**：同一个 `period=` 入参在两条库内路径上答案不同——`1y`/`m5`/`weekly`/`1mo` 等 **15 个拼写**走`QuerySpec.normalized() -> normalize_bar_period -> 查表` 给数，走`Client.bars() -> period_to_category` 直查那张 24 键手写表当场 `ParseError`；`Period.QUARTER` 更是把一个别名当平级周期登记（实测 `normalize("quarter")` 给 `"season"`，即该成员不等于自己） | 本轮实测：`scratch_v18b18/census18.log`（改前两路径结论不同的拼写 15 格，逐格列着 A 给 category、B 给 `ParseError`）↔ `census18_after.log`（改后 **0 格**、派生表 39 键）；判据：`tests/architecture/test_period_vocabulary_gates.py` 10 项（唯一声明处、别名不许指向别名、两条公开路径同解、那 15 个写法能走回库面、web 面接受集 == 域内词表 ∩ 本面服务集、分钟通道由规范分钟档决定、AST 现读两张表必须引用 `PERIOD_ALIASES` 且字面量别名键为 0）；第 17 轮那条 G13 盯梢判据已按现场改写成"派生成立"的正断言；本轮 12 条变异账本里占 M1–M9，`bad=0`（`scratch_v18b18/mutate18.log`） | P2（口径卫生，且这一格是对外入参的行为分叉）→ **已清偿（第 18 轮）**：`atst/domain/period.py` 成为周期的唯一声明处，客户端 category 表、web 面别名表、`minute_kline` 分钟档集合三处全部由它派生；`Period` 收缩到 11 档（删成员、留 `"quarter"` 这个公开别名）；`KlineCategory` 那 12 个协议号仍手写——它是唯一无处派生的真口径 |
 | G14 | **一道 strict 门禁把某一次本地跑包的现场写进了断言**（第 18 轮登记并清偿）：`tests/test_spec_coverage.py::test_audit_covers_every_non_probe_yaml` 拿"被排除的自动探测 draft"作精确清单比对，而 `.gitignore:85` 明明把 `PROTOCOL_SPEC/_sniffer/**/DRAFT.yaml` 排除在版本库之外——谁在本地跑一次探测，谁就多出一批不该被门禁认识的临时文件。实测：同一份代码在主工作树里`2 failed, 3783 passed, 7 skipped`，在干净候选树里 `3787 passed, 7 skipped` 且 12 道门禁 rc=0（`scratch_v18b18/gates_20260923_123326.log`）。一条会因环境而红的判据，等于给"跳过门禁"提供理由 | 本轮实测：主树与候选树各一份全量离线跑（§27 第九节）；判据换成形状裁决——排除项必须长成 `/_sniffer/` 或 `/UNKNOWN/` 下的 `DRAFT.yaml`，且已入库那一份必须在名单里；变异 M10 往探测目录混进一张 `NOT_A_DRAFT.yaml` → 当场红 1 条（`scratch_v18b18/mutate18.log`） | P2（门禁自身可信度）→ **已清偿（第 18 轮）**：钉死的清单换成形状裁决，44 这个分母与其余 strict 旗标、`fail_under = 77` 一律未动 |
 
-| G15 | **一张「周期 → 上游参数」表里有一格会把请求换成另一个周期**（第 19 轮登记并清偿）：`tstdx/web/history.py::SinaHistoryKlineSource.SCALES` 写着 `"1min": 5`——新浪这个端点最细就是 5 分钟，于是"1 分钟"的写法被拿去请求 **5 分钟线**还照常返回：帧合法、内容是另一档，与 G3 同族；它的类 docstring 甚至明写 `1min(=5min)`。走内核的调用方吃不到这一格（注册表没给 `sina/history_kline` 声明 `1min`），但 `SinaHistoryKlineSource` 是导出符号，直接用源的人吃得到 | 本轮实测：`scratch_v18b19/census19d.log`（全仓 AST 现扫出 19 处"以周期拼写为键"的字面量表并逐张核对；各入口的接受写法数 39/31/20/22/13/7/6/8/5 与 `probe19f.log` 逐行一致）；判据：`tests/architecture/test_provider_period_tables.py`（AST 账本必须与现扫一致、`Nmin` 键的参数就是 N 分钟、非分钟档逐格登记、协议号行用 `KlineCategory.NAMES` 反查、注册表声明的每一档必须真被它绑定的执行体接得住）；变异 M1/M3/M4 各自当场红（`scratch_v18b19/mutate19.log`） | P2（对外入参的行为分叉，G3 在 web 面的对应物）→ **已清偿（第 19 轮）**：删掉那一格，`1min` 在新浪面显式报错"这一面不服务"——沿用第 18 轮 G13 那条裁决的同一句式 |
-| G16 | **执行侧还留着两处手抄的周期别名表，抄错的那格把 1 分钟解成了月线**（第 19 轮登记并清偿）：`_KLINE_KTYPES`（百度）与 `_MKLINE_PERIODS`（腾讯 mkline）各抄了 6 个、5 个别名键。百度那份写着 `"1m": 3`，而域内词表里 `1m` 是 **1 分钟**、`3` 是百度的**月线**编码——即 `baidu_kline(period="1m")` 取回的是月 K；它同时是第 18 轮刚关掉的"第二手词表"那一族的最后一处 | 本轮实测与判据：同上，`test_only_the_domain_vocabulary_hands_copies_period_aliases`（除域内词表外任何字面量表都不许出现别名键）+ `test_the_alias_ruler_is_not_blind`（两张表现在只收规范拼写）；变异 M2 把 `"1m": 3` 装回去当场红 | P2（口径卫生 + 一格会指错路的表）→ **已清偿（第 19 轮）**：两张表收缩为"只收规范拼写"，别名在公开会话面经 `tstdx/domain/period.py::normalize_bar_period` 一次解掉（`baidu_kline`、`WebQuoteSession.history` 各加这一手）；`tests/web/test_adapters_ext.py` 里 5 处 `period="m5"/"m15"` 的调用点随之改回规范拼写 |
+| G15 | **一张「周期 → 上游参数」表里有一格会把请求换成另一个周期**（第 19 轮登记并清偿）：`atst/web/history.py::SinaHistoryKlineSource.SCALES` 写着 `"1min": 5`——新浪这个端点最细就是 5 分钟，于是"1 分钟"的写法被拿去请求 **5 分钟线**还照常返回：帧合法、内容是另一档，与 G3 同族；它的类 docstring 甚至明写 `1min(=5min)`。走内核的调用方吃不到这一格（注册表没给 `sina/history_kline` 声明 `1min`），但 `SinaHistoryKlineSource` 是导出符号，直接用源的人吃得到 | 本轮实测：`scratch_v18b19/census19d.log`（全仓 AST 现扫出 19 处"以周期拼写为键"的字面量表并逐张核对；各入口的接受写法数 39/31/20/22/13/7/6/8/5 与 `probe19f.log` 逐行一致）；判据：`tests/architecture/test_provider_period_tables.py`（AST 账本必须与现扫一致、`Nmin` 键的参数就是 N 分钟、非分钟档逐格登记、协议号行用 `KlineCategory.NAMES` 反查、注册表声明的每一档必须真被它绑定的执行体接得住）；变异 M1/M3/M4 各自当场红（`scratch_v18b19/mutate19.log`） | P2（对外入参的行为分叉，G3 在 web 面的对应物）→ **已清偿（第 19 轮）**：删掉那一格，`1min` 在新浪面显式报错"这一面不服务"——沿用第 18 轮 G13 那条裁决的同一句式 |
+| G16 | **执行侧还留着两处手抄的周期别名表，抄错的那格把 1 分钟解成了月线**（第 19 轮登记并清偿）：`_KLINE_KTYPES`（百度）与 `_MKLINE_PERIODS`（腾讯 mkline）各抄了 6 个、5 个别名键。百度那份写着 `"1m": 3`，而域内词表里 `1m` 是 **1 分钟**、`3` 是百度的**月线**编码——即 `baidu_kline(period="1m")` 取回的是月 K；它同时是第 18 轮刚关掉的"第二手词表"那一族的最后一处 | 本轮实测与判据：同上，`test_only_the_domain_vocabulary_hands_copies_period_aliases`（除域内词表外任何字面量表都不许出现别名键）+ `test_the_alias_ruler_is_not_blind`（两张表现在只收规范拼写）；变异 M2 把 `"1m": 3` 装回去当场红 | P2（口径卫生 + 一格会指错路的表）→ **已清偿（第 19 轮）**：两张表收缩为"只收规范拼写"，别名在公开会话面经 `atst/domain/period.py::normalize_bar_period` 一次解掉（`baidu_kline`、`WebQuoteSession.history` 各加这一手）；`tests/web/test_adapters_ext.py` 里 5 处 `period="m5"/"m15"` 的调用点随之改回规范拼写 |
 
-| G17 | **ADR 目录没有索引，目录页的正文其实就是五条决策自己；状态行与仓库事实分叉**（第 20 轮登记并清偿）：本轮实测 `docs/adr/README.md` 的前 134 行就是 ADR-001~005 的正文，目录页没有索引可读——这条缺陷在 `docs/archive/plans/OPTIMIZATION_PLAN_v4.md:173`（2026-09-03）就写下过，之后没人行动。三处具体失效：① 编号重复声明两处（`ADR-013` 两份文件同号，台账里「ADR-013 §11」只能靠人记住落在哪一份；`ADR-007-010` 是一个**复合编号**，占住 007~010 四个号，与 `ADR-006-010.md` 同号的四条逐条撞号）；② `ADR-009` 状态行写 `Accepted`，而它描述的 `tstdx_native/` 已不在仓库——2026-09-23 实测 `git ls-files` 里含 `native` 的路径只有 ADR-011 的文件名本身，`pyproject.toml` 也没有 maturin/pyo3 条目；③ `ADR-007-010` 要处置的 `CredentialStore` 在 `tstdx/` 里零命中，决议早就执行完了却仍写成待办 | 判据：`tests/architecture/test_adr_index.py` 9 项——索引与声明按 `(编号, 文件)` 双向配对、链接目标存在且链接文字与文件名同名（CJK 文件名先 `unquote`）、索引的状态格必须以文件自己状态行的关键词开头、撞号要在索引行备注与承载文件的「编号警示」两处同时登记（复合编号按**覆盖范围**算撞号，所以受影响的是 7 行而不是 2 行）、「当前最大为 016，下一个是 017」按现量核销；防盲断言「状态行总数 == 声明数」（本轮 18==18）；四条正控各造一次失效（状态改回 Accepted／新增决策漏登记／死链／抹掉撞号登记），每条只点出那一处 | P2（读者照死口径行动的那类）→ **已清偿（第 20 轮）**：ADR-001~005 搬进新建的 `ADR-001-005-baseline.md`，README 改写成 18 行索引；`ADR-009` 改判 `Superseded` 并写明兑现的是 ADR-011 自己设下的那条移除条件；两处撞号**一律不改号**——号被在写的台账按文件名整段引用，改号会把活引用变成死指针，冲突登记在索引与四份文件的「编号警示」行里 |
+| G17 | **ADR 目录没有索引，目录页的正文其实就是五条决策自己；状态行与仓库事实分叉**（第 20 轮登记并清偿）：本轮实测 `docs/adr/README.md` 的前 134 行就是 ADR-001~005 的正文，目录页没有索引可读——这条缺陷在 `docs/archive/plans/OPTIMIZATION_PLAN_v4.md:173`（2026-09-03）就写下过，之后没人行动。三处具体失效：① 编号重复声明两处（`ADR-013` 两份文件同号，台账里「ADR-013 §11」只能靠人记住落在哪一份；`ADR-007-010` 是一个**复合编号**，占住 007~010 四个号，与 `ADR-006-010.md` 同号的四条逐条撞号）；② `ADR-009` 状态行写 `Accepted`，而它描述的 `atst_native/` 已不在仓库——2026-09-23 实测 `git ls-files` 里含 `native` 的路径只有 ADR-011 的文件名本身，`pyproject.toml` 也没有 maturin/pyo3 条目；③ `ADR-007-010` 要处置的 `CredentialStore` 在 `atst/` 里零命中，决议早就执行完了却仍写成待办 | 判据：`tests/architecture/test_adr_index.py` 9 项——索引与声明按 `(编号, 文件)` 双向配对、链接目标存在且链接文字与文件名同名（CJK 文件名先 `unquote`）、索引的状态格必须以文件自己状态行的关键词开头、撞号要在索引行备注与承载文件的「编号警示」两处同时登记（复合编号按**覆盖范围**算撞号，所以受影响的是 7 行而不是 2 行）、「当前最大为 016，下一个是 017」按现量核销；防盲断言「状态行总数 == 声明数」（本轮 18==18）；四条正控各造一次失效（状态改回 Accepted／新增决策漏登记／死链／抹掉撞号登记），每条只点出那一处 | P2（读者照死口径行动的那类）→ **已清偿（第 20 轮）**：ADR-001~005 搬进新建的 `ADR-001-005-baseline.md`，README 改写成 18 行索引；`ADR-009` 改判 `Superseded` 并写明兑现的是 ADR-011 自己设下的那条移除条件；两处撞号**一律不改号**——号被在写的台账按文件名整段引用，改号会把活引用变成死指针，冲突登记在索引与四份文件的「编号警示」行里 |
 | G18 | **台账把证据钉在本机可回收的工作树里**（第 20 轮登记，判据已建）：本轮为「删除历史无效文件」做普查，量到的第一件事是**删不动**——三份活台账按名字引用 67 棵树、201 处指针对象，约 1.58 GiB 的本机工作树因此是**证据存储**；一次性 bulk 删除会造出第 17/18 轮刚让死指针开始赔钱的那类失真。普查同时抓到本台账 6 处指向已经不存在的树的指针（`wt_v18review`、`wt_v18b16head/ship/step`、`wt_v18b17step`、`wt_v18b18step`） | 本轮实测：`scratch_v18b20/deletable_trees.log`（一棵树可删＝它的非噪声文件 blob 全部在 `git rev-list --objects --all` 的 9323 个可达对象里 **且** 不被任何活文档按名字引用；磁盘上 48 棵 `wt_*` 里只有 4 棵通过）、`wt_census.log`（1130 个独有文件）、`probe_delete_guard.log`；判据：`tests/architecture/test_evidence_pointers.py`（① 台账声明的证据规模现扫对账；② 指向已不在盘的树的指针必须同块写明「已回收」，磁盘上一棵树都没有时整条跳过）；正控各造一次 | P2（证据可复核性）→ **部分清偿（第 20 轮）**：本台账那 6 处就地改写成「已回收 + 留存锚（提交号）」（写台账的人当时都留了提交锚——**提交走得到任何一台机器，工作树走不到**）；删掉 2 棵双判据通过的树（`wt_v18b15head`、`wt_v18b15base`，各 23 MB，`git worktree list` 59→57），另 2 棵分别被 git 自己的「树内有未提交改动」守卫（`wt_v18b2docs`）与「归并行会话所有」（`wt_s49step`）拦下——不 `--force`、不动别人的树 |
 | G19 | **并行会话的台账里另有 16 处指向已消失工作树的指针，且一处是命名模板而非树**（第 20 轮登记，本会话不清偿）：现扫三本活台账后，16 棵已不存在于本机的树名全部落在 `docs/REFACTOR_PLAN_V17_CLOSURE.md` 里，另有 `docs/REFACTOR_PLAN_V18_REVIEW.md` 的一处 `wt_` 形状串其实是**命名模板**（按「树名是否存在」判它会误报） | 本轮实测：`scratch_v18b20/pointer_census2.py` 的现扫（逐棵树核对磁盘是否存在；本会话台账 0 处违约、上述两本 16+1 处） | P3（他人台账的口径账）→ **开放**：按「不改他人台账、不替他人裁决 G/F 账」的纪律留给其所有者；`test_evidence_pointers.py` 的判据对象因此限本会话台账一份，这个边界写在判据的文件 docstring 里 |
 | G20 | **台账自己写下了没发生过的门禁读数**（第 20 轮登记并清偿）：§28 第 19 轮那张候选树读数表把 `ruff check .` 与 `ruff format --check .` 两格写成 `RC=0 / RC=0`，正文再补一句「12 道门禁 RC 全 0」——而它引用的**同一份日志**第 86/93 行就是两格 `rc=1`（5 处 `I001`/`SIM300` 加 2 个待格式化文件，全在第 19 轮新写的两个判据文件里），末尾重跑摘要第 1348/1350 行同样 `rc=1`：一次都没绿过。这与 G14/G15 同族，只是这次长在台账自己身上——一张没人能对账的读数表，和一条把本机现场写进断言的门禁，递给读者的都是假的「已经核过」 | 第 20 轮把同一套门禁跑在候选树上时那两格当场 `rc=1`；`--fix` 加 `ruff format` 后就地复跑绿：同范围 `All checks passed!` 与 `458 files already formatted`，`.` 范围 `461 files already formatted`。**改前两格在** `scratch_v18b20/gates_round20.log` **第 82/87 行，改后两格出自本轮末在候选树的单独复跑、没有回写进那份 runner 日志**——引用时得分清是哪一次。随后逐格回读第 19 轮日志：其余十格读数与日志逐字相同，只有这两格是抄印象抄出来的 | P1（读者照死口径行动的那类，且是本会话自己的账）→ **已清偿（第 20 轮）**：§28 那一格与「12 道」那句按日志就地校正，原误读法保留在括号里可追溯；措辞纪律补一条——**读数表每一格逐字抄自本轮那份日志的 `rc=` 行，抄不到就不写**。这类缺陷**不可门禁化**：仓库里的判据读不到仓外的 scratch 日志，能钉的只有写表的那只手 |
 
-| G21 | **「不存在死循环」这一格量到一处可达的永久停等，而且它形状完全合格**（第 21 轮登记并清偿）：:meth:`tstdx.transport.ratelimit.TokenBucket.acquire` 的容量守卫（`requested > burst` 就报错）写在 `while True` **之前**，读的还是**锁外**的一次性快照；:meth:`TokenBucket.set_rate` 却会在等待期间把 `burst` 收缩到 `max(1.0, rate)`——已经过了入口检查的调用方从此没人复查它的需求还可不可满足：令牌永远补不到 50，而 `blocking=True, timeout=None` 是本类的缺省语义，于是既不报错也不返回。这个 `while` 有 `return`、形状尺子与人都判它"有守卫"，**唯一能证它的是行为** | 复现两栏对照：`scratch_v18b21/hang_repro21.log`（改前 `burst_after_shrink = 1.0 tokens = 1.0` / `WAITER_RETURNED = False`；改后同一脚本下一轮循环即 `ValueError: 请求 tokens=50 超过桶容量 burst=1`）；判据改前当场红：`scratch_v18b21/mutate21.log` 末两行 `2 failed, 33 passed in 7.14s` + `----- rc=1 : pytest pre-fix (contract + loop gates) -----`；全包普查：`scratch_v18b21/census21.log` [1]（50 条 `while`：escape 30 / progress 12 / stop-flag 4 / trampoline 2 / 命名豁免 2，**未归类 0**）；可达性口径：包内 5 处限流调用点（`tstdx/transport/pool.py:568,749,874`、`tstdx/transport/async_.py:711,713`）全部只取 1 枚令牌、`burst` 有 1.0 下限，所以线上要 `tokens > 1` 才落得到——本轮**没有**在线上观察到停等，被抓的是导出符号 `TokenBucket` 自己的阻塞契约 | P1（限流器把调用方挂死＝主链上的断链）→ **已清偿（第 21 轮）**：守卫移进循环、锁内每轮重做（`tstdx/transport/ratelimit.py:152-159`）；行为判据 1 项 + 形状判据 1 项 + 复现测试 1 项，另把"每个 `while` 都要当场说得出自己凭什么停"收成 `tests/architecture/test_loop_termination_gates.py`（5 项，豁免表双向核对） |
-| G22 | **结果侧那份手抄的 wire 键清单没有对账人**（第 21 轮登记，本轮建判据、不改出口形状）：`tstdx/integration/serialization.py::_query_result` 逐字段手抄（`meta` 6 格 + 嵌套 `provenance` 5 格 + `warnings`）。请求侧早在 F-47 收成"每一格要么被读走、要么当场被拒"，结果侧却只有读取点扫描把守——它管"有字段没人读"，管不到"有人读的字段在三面出口被丢掉"。后果不对等：读点缺一个，调用方只是拿不到；wire 少一格，调用方**不知道自己少拿了** | 判据：`tests/architecture/test_wire_field_completeness.py`（8 项：`ResultMeta`/`Provenance`/`ResultWarning` 三张 dataclass 逐字段对账、身份三格的去重裁决、4 条正控——删 `fingerprint`/`kind`/`message` 各一次 + 凭空多一格 `invented_field`）；被否决的改法实测过：把出口换成 `jsonable(meta)`（`asdict` 整张摊平）后 `scratch_v18b21/g22_asdict_experiment.log` 第 95/96 行 `2 failed, 38 passed in 2.42s` + `----- rc=1 : pytest with asdict-flattened exit -----`——全仓唯一的读取点尺子 `tests/support/field_readers.py` 按**字段名**找人读它，摊平后 `Provenance` 掉出 4 格、`ResultMeta` 2 格"无人读"；复原后同文件第 101/102 行回到 `40 passed` + `rc=0` | P2（对外可见性，G7/F-47 同族）→ **判据已建（第 21 轮）**：清单从此钉在 `dataclasses.fields()` 上，加字段不接出口即红；本轮 wire 一字未改，所以这一格对外的答案与第 20 轮相同 |
-| G23 | **同一个 `1.1.0` 版本号对应两份不同的产物，发布说明只钉了其中一份**（第 21 轮登记）：`docs/releases/v1.1.0.md:82-85` 写明 wheel 747 287 字节 / `sha256:905e5a77…`、sdist 1 572 632 字节 / `sha256:58452fce…`，并说这两份"只在本地构建目录里"。本轮把 tag `v1.1.0`（`ef3b97e`）单独开成一棵树、用 `--dist-out` 指到 scratch 重构建，两格字节数与 sha256 **逐字复现**——构建是确定性的，发布说明那格声称站得住。站不住的是本地：`dist/tstdx-1.1.0-py3-none-any.whl` 现在是 751 907 字节 / `sha256:f809b43a…`，即第 19 轮那次没带 `--dist-out` 的重构建**覆盖**了发布说明所指的那一份。同目录另有 `tstdx-1.4.0-*`（2026-09-07）：那是 `cf74b31 release: publish v1.0.0` 把版本线从 1.4.0 收回 1.0.0 **之前**的编号，无 tag、从未发布，而 §29 上一版把它写成"第 19 轮构建、是发布动作的输入"——本轮就地改正 | 取证：`scratch_v18b21/artifact_chain21.log`（四行 `bytes=`/`sha256=` 逐字，加 `ls -l --time-style=long-iso dist/` 的六个时间戳）；`scratch_v18b21/dist_tag/`（tag 树重构建产物，即复现那两格哈希的来源，树已回收）；`scratch_v18b21/build_final21.log`（候选树最终构建 + 干净 venv 安装冒烟，末两行 `sha256: 6edc376b…`/`76db9f2b…`，`BUILD_RC=0`）——**同一个 `1.1.0` 于是有第三份产物**，三份里只有 tag 那一份与发布说明对得上 | P2（产物身份＝"读者照哪一份校验"的口径账，G9 同族）→ **量清并就地改正台账（第 21 轮）**：此后凡重构建一律 `--dist-out` 指到 scratch，不覆盖已记录的产物。这一类**不可门禁化**（同 G20 的道理：判据跑在仓库里，产物在仓库外）。同轮第二次构建把"确定性"的量词逼出来了：**wheel 逐字相同，sdist 却换哈希**——sdist 里 `tests/` 有 1914 个条目、`tstdx/` 只有 191 个，所以任何只改测试的提交都会让发布说明的 sdist 那一格过期（现扫见 §30 第四节）。版本线要不要往前走（HEAD 上的 V18 改动——含本轮 G21 的限流修复——**不在 `v1.1.0` 里**）是发布决定，本会话不动 tag、不点发布 |
-| G24 | **证据尺子自己被补宽的那一刀，同时制造了假绿与假红**（第 21 轮登记并清偿）：这件缺陷有两半。前半在第 21 轮之前就在——`tests/architecture/test_evidence_pointers.py` 的树名正则只认仓库内的 `wt_*` 形状，而本轮起候选工作树落在仓库**外面**、目录名带 `tstdx_` 前缀，旧正则对这种形状一处都数不到（`\bwt_` 在 `x_w` 之间不成立），台账写满这类指针也不会红。后半是补前缀时新增的：`evidence_trees()` 加上仓外扫描之后，**在候选树里跑判据会把正在量的那棵树数成"本机持有证据"**，于是"磁盘上一棵证据树都没有就跳过"的那个条件不再成立——一台只有候选树自己的机器，被当成持有证据的机器，47 棵已回收的树当场报成违约。假绿与假红出自同一次修改，而且只有把同一套门禁搬到候选树上重跑才露得出来 | 前半的现场是本轮那次红之前的所有跑动（无法回溯引用，只能指出正则那一行当时不含前缀支路）；后半当场红：`scratch_v18b21/gates_round21b.log` 第 1160/1161 行 `1 failed, 485 passed in 51.44s` + `--- rc=1 : architecture ---`，唯一红格正是 `test_pointers_at_recycled_trees_say_so`，其正文里"已不在磁盘上"那行重复 **187** 次。修法的正控：`scratch_v18b21/g21b_selfexcl_mutation.log` 第 239/240 行——把"排掉 ROOT 自身"那一行删掉即 `2 failed, 3 passed in 0.28s` + `--- rc=1 : pre-fix ---`，复原后第 256/257 行回到 `47 passed, 1 skipped in 2.01s` + `--- rc=0 : after restore ---`；修后全量：`scratch_v18b21/gates_round21c.log` 第 967/968 行 `486 passed, 1 skipped in 50.38s` / `rc=0`（+1 正是新加的那条正控）。同一份日志第 235/236 行还顺手量出台账抄错了一格：`payload clones` 那行是 `[INFO]` 而不是 `WARN`，§30 上一版把它写成了"两处既有 WARN"——G20 那一族的第二次现身，就地改正 | P2（判据自身的账：假红会把 47 棵"已登记回收"的树重新变成待办，假绿让新形状指针无限累积）→ **已清偿（第 21 轮）**：`_trees_under()` 把"正在量的这棵树"从磁盘清单里排掉，并加集合等式正控 `test_the_measuring_tree_is_not_its_own_evidence`（退化成"仓外那一支永远为空"也会红）。口径教训一条：**扩大任何扫描范围，必须同时复查以该范围为对象的跳过/豁免条件**——一条判据的"没有对象可量"和"对象全体违约"读的是同一份清单，两者互换比假绿更醒目，但同样是错 |
-| G25 | **「具体接口文档是否全部更新」这一问，量到 CLI 那一格是空的**（第 22 轮登记并清偿）：`docs/api/interfaces.md` 的 HTTP/WS/MCP 三张表在 HEAD 上就与运行时逐名对齐，§3 的 CLI 却只有 `tstdx --help` 加一句"全部子命令委托 `Client`"。两半都是假的：36 个叶子命令里 **11 支在 46 份活文档中逐名查不到**；"全部委托 `Client`"不成立——**14 支碰不到内核**（6 直连传输层 + 1 服务面宿主 + 4 主站诊断 + 2 反馈 + 1 元信息）。那句伪概括还盖住了 `serve` 不承载 WebSocket：`_cmd_serve` 的 docstring 当时写着"40+ 端点 + WebSocket"，而 `create_runtime_app()` 是 10 支 `/v13/*` 路由、零条 websocket 路由（WebSocket 由 `runtime_ws_server.serve_runtime_ws` 单独托管） | 分母与差集：`scratch_v18b22/census_docs22.log`（HEAD 的 blob 用 `git show` 读，所以文档改完之后这一格仍可重跑对账：CLI `cited @HEAD 25/36 → @worktree 36/36`，HTTP/WS/MCP 三面 @HEAD 就是 10/10/9 全点名——**缺口是单面的，不是普遍的**）；判据：`tests/architecture/test_cli_reference_table.py`（12 项：命令集合、位置参数、旗标全序、落点、词汇表双向闭合、标题分母、组命令不得当可执行命令写、rows 命令转发的方法名必须是真能力、每支叶子要有一条能照抄的示例，另有四处表内单点篡改正控）；真文件变异台账：`scratch_v18b22/cli_mutate22.log`（基准 `12 passed` → 给 `changes` 加一支没进文档的旗标 `2 failed` → 改一支命令名 `6 failed` → 把 `_cmd_changes` 从 rows 挪到 typed `3 failed` → 删掉示例块里 `bars` 那一行 `2 failed`，四格 `rc=1`，复原后基准复绿）；逐格行号在该日志第 8~10 行（`@HEAD cited=25 missing=11` → `@worktree cited=36 missing=0`）| P1（读者照文档行动的那一面，六面里唯一没有接口面的）→ **已清偿（第 22 轮）**：§3 的表改为**从 argparse 与处理器源码派生**（36 行 = 27 支单命令 + 4 个组的 9 支叶子），36 条示例逐支配上，`_cmd_serve` 的 docstring 同步改成"那 10 支业务路由，不含 WebSocket"。这张表现在也是漂移探测器：`--timeout` 只覆盖 21/36，缺的 15 支里 9 支是 typed 命令——那是"不消费、让内核读 `[core] timeout`"的合法姿态（`test_cli_connection_contract.py` 管着第三种），表格把它变成看得见的事实而不是猜测 |
-| G26 | **组命令的叶子级 `--timeout` 解析不到，叶子的 `--help` 也没有名字描述**（第 22 轮登记并清偿）：`fund`/`index` 的组级 `--timeout` 只有写在组名之后才生效，`tstdx fund nav 000001 --timeout 5` 这种自然拼法当场 `SystemExit(2)`（`tstdx: error: unrecognized arguments: --timeout 5`），组前写法 `tstdx fund --timeout 5 nav 000001` 才生效；`add_parser("nav")` 又没给 `help=`，于是组页只把叶子列成 `{nav,estimate,list}` 三个裸名字，叶子自己的页里连 `--timeout` 这一行都不出现（本轮现扫 `tstdx_wt_v18b21step @ 582f5e9`——那棵树第 23 轮已回收，锚在提交 `582f5e9`；更早几版台账把这半格写成"叶子没有 `--help` 说明"，含混——**组页的 `--timeout` 在，缺的是叶子的名字说明与叶子页里的 `--timeout`**） | 改前复现（HEAD 树 `tstdx_wt_v18b21step @ 582f5e9`，本会话未改过一个字节、`PYTHONDONTWRITEBYTECODE=1` 只读跑动）：`scratch_v18b22/g26_prefix22.log` 第 9/16 行两格 `unrecognized arguments: --timeout 5`、第 10/17 行对应 `----- rc=2 -----`，同文件第 28/38 行证明 HEAD 的组页确实有 `--timeout TIMEOUT`、第 24~31 行证明叶子页没有它；四种拼法解析对照 `scratch_v18b22/g26_parse22.log` 第 14~17 行（`PARSE-OK fund --timeout 5 nav 000001 -> timeout=5.0` 对 `PARSE-EXIT fund nav 000001 --timeout 5 -> SystemExit(2)`，`index` 同形）与第 21~24 行（改后四格全部 `PARSE-OK ... -> timeout=5.0`）；判据：G25 的旗标全序格（`_flags` 把叶子自己的旗标逐名列出，少一格即红）+ `test_cli_connection_contract.py` 的"parser 声明的每个选项都必须被读到"（`argparse.SUPPRESS` 的再声明不覆盖组值，所以不会造出第二个读者都不认的旋钮） | P2（入参面：用户显式说了超时，CLI 却拒绝执行）→ **已清偿（第 22 轮）**：`fund nav/estimate/list`、`index constituents` 各补一支 `default=argparse.SUPPRESS` 的 `--timeout`（`tstdx/cli/parser.py:305-327`），四支叶子补 `help=` 文本 |
-| G27 | **220 条动态绑定的 `method` 字符串没有对账人**（第 22 轮登记并清偿）：`MIGRATED_BINDINGS` 229 行分给 9 个后端，其中 220 行走"按方法名 `getattr`"的后端（`web_session` 192 / `direct_adapter` 11 / `tdx_client` 10 / `ex_client` 4 / `goods_client` 2 / `mac_client` 1），9 行走按 capability 标签派发的后端（`web_adapter` 5 / `f10_client` 2 / `composed` 2）。方法名是**字符串**，拼错或实现改名都不在编译期红：调用方看到的是 HTTP 500 / `E9000`，而不是"这一格没实现"。同源的第二格：`_semantic_web_bindings` 用 `_SOURCE_FOR_PROVIDER.get(provider, "sina")` 兜底，一个新 Provider 的能力会悄悄以别家的量纲单位上线 | 判据：`tests/architecture/test_dispatch_targets.py`（9 项）——①~③ 三张分母表双向闭合、220 行方法逐个 `getattr` 得到可调用对象、9 行标签不得伪装成方法后端；④ 契约错误形状：把一条真绑定的 `method` 换成 `no_such_impl`（`dataclasses.replace` + monkeypatch），`validate_call` 必须给 `ValidationError` 且 `context["phase"] == "binding_resolution"`；⑤⑥ 单位语义两格：抽掉 `_SOURCE_FOR_PROVIDER` 的一个键必须 `KeyError`（不是回落到 sina），`SOURCES` 与 `_NORMALIZER_REGISTRY` 各植一名都要被点出。改前当场红：`scratch_v18b22/pre_fix_red22.log` 第 86/87 行 `2 failed, 7 passed in 0.15s` / `rc=1`（红格 = ④ 与 ⑤，正是本轮两处实现改动），复原后第 93/94 行 `9 passed` / `rc=0`。现量：`unresolved=[] mislabeled=[] unit_findings=[]`，`SOURCES` 与归一化器注册表同为 31 且集合相同 | P1（分派表与代码分叉＝主链上的断链，且对调用方伪装成内部故障）→ **已清偿（第 22 轮）**：`tstdx/catalog/capability.py` 的查表去掉默认值（:279）、`validate_call` 把 `AttributeError` 收成带 `phase` 的 `ValidationError`（:484-497）。**两格按裁决不动**：`f10_client` 那 2 行的 `method="f10"` 是标签后端上的幻影方法名，已有豁免判据按名钉住（`test_offline_capability_honesty.py:583`），改成真方法会让它变成可调用而不解决任何事；`hasattr` 跳过支路（:269）同理，文档写明并由诚实性门禁管辖 |
-| G28 | **轮询面四处"声明了但没人执行"，其中两处是能永久空转的形状**（第 22 轮登记并清偿）：① `ReconnectPolicy.max_attempts` / `should_give_up` 在 `tstdx/` 里**零调用点**（`git grep should_give_up HEAD` 只命中定义与它自己的 docstring）——连续失败到上限后策略说"该放弃了"，`StreamEngine` 的轮询线程照旧每秒重拉一次，这是 G10/G11 那一族（声明值没人按它行动）；② 失败轮按 `interval` 而不是按退避等待，`base=3600` 的策略实际从未生效过一步；③ `QuoteStream`/`AsyncQuoteStream`/`Subscription` 三处 `interval` 没有正数守卫，`interval=0` 就是贴着上限的请求忙等，而 `stateful.py` 里另有一份**同名不同严**的 `_validate_subscription`（两份对 `interval<=0` 的措辞不同、只有一份真的拒）；④ `PushChannel.iter_messages` 把"这一轮超时"和"通道已关/传输耗尽"混成同一个 `None`，于是安静的下一秒**静默结束**迭代，而它的 docstring 写的是"通道关闭或传输耗尽时停止" | 判据：`tests/streaming/test_poll_guardrails.py`（16 项：同步/异步两份 `subscribe` 与 `Subscription.__post_init__` 各按三种非正 `interval` 参数化、门面共用同一个校验器、`StreamEngine` 拒绝非正间隔、失败轮按策略退避（`base=3600` 时 0.2 秒内只轮询一次）、`max_attempts` 到限后线程真的结束、`current_delay()` 不重复计数、终止原因集合、外加一条"把 `timeout` 塞进终态集合"的回归正控）。**改前当场红**：`scratch_v18b22/pre_fix_red22.log` 第 61/62 行 `14 failed, 2 passed in 2.32s` / `rc=1`（四份实现换回 HEAD，其余文件不动），复原后第 71/72 行 `16 passed` / `rc=0`。第 21 轮那把循环形状尺子同步复扫：50 条 `while` = escape 31 / progress 12 / stop-flag 3 / trampoline 2 / 命名豁免 2，**未归类 0**（`escape` 30→31、`stop-flag` 4→3 是本轮把 `StreamEngine._run` 与 `iter_messages` 各补了 `return` 的结果——形状变化要能被数出来，否则尺子就是瞎的） | P1（限流/退避/订阅是主链上唯一会长期跑着的面；④ 那一格还是"少给数据而不声明"的对外失真）→ **已清偿（第 22 轮）**：`StreamEngine._run` 按 `last_failed` 走 `policy.current_delay()` 并在 `should_give_up()` 时一次告警收尾（`tstdx/streaming/engine.py:497-513`，新增 `:107-116` 的 `current_delay`、`:344-352` 的两个驱动侧读口）；`validate_subscription` 收成一处并被 `stateful.py` 复用（`tstdx/streaming/base.py:56-82`，删掉 :26-47 那份副本）；`iter_messages` 改用 `_read_with_reason`，终止集合 `_TERMINAL_READ = {closed, eof, transport}`，超时与空载荷继续等（`tstdx/streaming/push.py:229-275`）。**可达性说满**：`iter_messages` 在包内无生产调用方（现扫只有两处测试），被抓的是它对外的迭代契约 |
-| G29 | **两把令牌桶都没有排队，也没有截止**（第 22 轮登记，未清偿）：`TokenBucket.acquire`（同步，`blocking=True, timeout=None` 是缺省）与 `_acquire_rate`（异步 `strict=False` 支路，`while not limiter.try_acquire(): await asyncio.sleep(0.05)`）都是**抢锁式轮询**——先到者不一定先拿令牌，等待时长没有上界声明，也没有任何文档说过"不保证先到先得"。第 21 轮的 G21 已经证明这类桶能在容量收缩时把调用方挂死，修法补的是**容量**那一半；公平性与截止期是另一半，仍只有代码形状可看 | 现场：`tstdx/transport/ratelimit.py:136-169`（`while True` + 锁内 `available` 判定 + `time.sleep(min(wait_for, 0.05))`）、`tstdx/transport/async_.py:700-713`（异步轮询支路，其终止理由登记在 `test_loop_termination_gates.py` 的命名豁免表里）；本轮**没有**在线上观察到饿死，也没有量到等待时长分布——所以这一格只有形状证据，没有读数 | P3（对外契约的措辞与实现选择，不是断链）→ **已清偿（第 24 轮，走出路 (a)「写契约」，由真实并发测量决定）**：`scratch_v18b22/probe24/census24c_g29_concurrency.py` 让 24 个**错开 3 ms 到达**的等待者争 `rate=100/burst=1` 的同一把真桶，读数 `census24c_g29_run1.log` / `.json`——A 同步无界：24 全部放行、**121 对**服务次序反转、`max_position_shift=17`（先到确实会后拿）；B 带 `timeout=0.03`：仅 7 放行、17 超时离开、饿死者中位白等 **31 ms**（证明 deadline 生效）；C 异步轮询形状副本：**136 对**反转、中位等待 **508 ms > 理想末位 230 ms**（0.05 粒度使其更慢）。判读：无死循环（A/C 全放行）、非 FIFO 是令牌桶本征、有界等待只能靠显式 `timeout`、异步 `_acquire_rate` **无 timeout 形参**故不计入调用方 `request_timeout`。测量说明今天没有一处时序错到需要 (b) 重写 shipped 并发原语（六面回归风险不划算），故选 (a)：把契约写进 `tstdx/transport/ratelimit.py::TokenBucket.acquire` 与 `tstdx/transport/async_.py::_acquire_rate` 两段 docstring（用户读代码即读到「不保证先到先得／`timeout=None` 即无界等待／异步等待不覆盖 `request_timeout`」）。**可判定的那两条边界**由 `tests/transport/test_ratelimit_contract.py` 两条新判据钉住：`inspect.signature(_acquire_rate)==["self"]`（正控：同一把尺在相邻 `request` 上看得见 `timeout`）、`TokenBucket.__init__` 里不出现队列容器（正控：种入 `self._waiters = deque()` 必须被抓、`self._lock = threading.Lock()` 必须放过）。非 FIFO 本身是**减**承诺、无稳定断言，不硬造成时序测试。既有覆盖不动：同步 deadline／strict 抛错／over-burst 三项与异步 strict 拒绝、非 strict 轮询放行、G21 终止豁免均已绿 |
+| G21 | **「不存在死循环」这一格量到一处可达的永久停等，而且它形状完全合格**（第 21 轮登记并清偿）：:meth:`atst.transport.ratelimit.TokenBucket.acquire` 的容量守卫（`requested > burst` 就报错）写在 `while True` **之前**，读的还是**锁外**的一次性快照；:meth:`TokenBucket.set_rate` 却会在等待期间把 `burst` 收缩到 `max(1.0, rate)`——已经过了入口检查的调用方从此没人复查它的需求还可不可满足：令牌永远补不到 50，而 `blocking=True, timeout=None` 是本类的缺省语义，于是既不报错也不返回。这个 `while` 有 `return`、形状尺子与人都判它"有守卫"，**唯一能证它的是行为** | 复现两栏对照：`scratch_v18b21/hang_repro21.log`（改前 `burst_after_shrink = 1.0 tokens = 1.0` / `WAITER_RETURNED = False`；改后同一脚本下一轮循环即 `ValueError: 请求 tokens=50 超过桶容量 burst=1`）；判据改前当场红：`scratch_v18b21/mutate21.log` 末两行 `2 failed, 33 passed in 7.14s` + `----- rc=1 : pytest pre-fix (contract + loop gates) -----`；全包普查：`scratch_v18b21/census21.log` [1]（50 条 `while`：escape 30 / progress 12 / stop-flag 4 / trampoline 2 / 命名豁免 2，**未归类 0**）；可达性口径：包内 5 处限流调用点（`atst/transport/pool.py:568,749,874`、`atst/transport/async_.py:711,713`）全部只取 1 枚令牌、`burst` 有 1.0 下限，所以线上要 `tokens > 1` 才落得到——本轮**没有**在线上观察到停等，被抓的是导出符号 `TokenBucket` 自己的阻塞契约 | P1（限流器把调用方挂死＝主链上的断链）→ **已清偿（第 21 轮）**：守卫移进循环、锁内每轮重做（`atst/transport/ratelimit.py:152-159`）；行为判据 1 项 + 形状判据 1 项 + 复现测试 1 项，另把"每个 `while` 都要当场说得出自己凭什么停"收成 `tests/architecture/test_loop_termination_gates.py`（5 项，豁免表双向核对） |
+| G22 | **结果侧那份手抄的 wire 键清单没有对账人**（第 21 轮登记，本轮建判据、不改出口形状）：`atst/integration/serialization.py::_query_result` 逐字段手抄（`meta` 6 格 + 嵌套 `provenance` 5 格 + `warnings`）。请求侧早在 F-47 收成"每一格要么被读走、要么当场被拒"，结果侧却只有读取点扫描把守——它管"有字段没人读"，管不到"有人读的字段在三面出口被丢掉"。后果不对等：读点缺一个，调用方只是拿不到；wire 少一格，调用方**不知道自己少拿了** | 判据：`tests/architecture/test_wire_field_completeness.py`（8 项：`ResultMeta`/`Provenance`/`ResultWarning` 三张 dataclass 逐字段对账、身份三格的去重裁决、4 条正控——删 `fingerprint`/`kind`/`message` 各一次 + 凭空多一格 `invented_field`）；被否决的改法实测过：把出口换成 `jsonable(meta)`（`asdict` 整张摊平）后 `scratch_v18b21/g22_asdict_experiment.log` 第 95/96 行 `2 failed, 38 passed in 2.42s` + `----- rc=1 : pytest with asdict-flattened exit -----`——全仓唯一的读取点尺子 `tests/support/field_readers.py` 按**字段名**找人读它，摊平后 `Provenance` 掉出 4 格、`ResultMeta` 2 格"无人读"；复原后同文件第 101/102 行回到 `40 passed` + `rc=0` | P2（对外可见性，G7/F-47 同族）→ **判据已建（第 21 轮）**：清单从此钉在 `dataclasses.fields()` 上，加字段不接出口即红；本轮 wire 一字未改，所以这一格对外的答案与第 20 轮相同 |
+| G23 | **同一个 `1.1.0` 版本号对应两份不同的产物，发布说明只钉了其中一份**（第 21 轮登记）：`docs/releases/v1.1.0.md:82-85` 写明 wheel 747 287 字节 / `sha256:905e5a77…`、sdist 1 572 632 字节 / `sha256:58452fce…`，并说这两份"只在本地构建目录里"。本轮把 tag `v1.1.0`（`ef3b97e`）单独开成一棵树、用 `--dist-out` 指到 scratch 重构建，两格字节数与 sha256 **逐字复现**——构建是确定性的，发布说明那格声称站得住。站不住的是本地：`dist/atst-1.1.0-py3-none-any.whl` 现在是 751 907 字节 / `sha256:f809b43a…`，即第 19 轮那次没带 `--dist-out` 的重构建**覆盖**了发布说明所指的那一份。同目录另有 `atst-1.4.0-*`（2026-09-07）：那是 `cf74b31 release: publish v1.0.0` 把版本线从 1.4.0 收回 1.0.0 **之前**的编号，无 tag、从未发布，而 §29 上一版把它写成"第 19 轮构建、是发布动作的输入"——本轮就地改正 | 取证：`scratch_v18b21/artifact_chain21.log`（四行 `bytes=`/`sha256=` 逐字，加 `ls -l --time-style=long-iso dist/` 的六个时间戳）；`scratch_v18b21/dist_tag/`（tag 树重构建产物，即复现那两格哈希的来源，树已回收）；`scratch_v18b21/build_final21.log`（候选树最终构建 + 干净 venv 安装冒烟，末两行 `sha256: 6edc376b…`/`76db9f2b…`，`BUILD_RC=0`）——**同一个 `1.1.0` 于是有第三份产物**，三份里只有 tag 那一份与发布说明对得上 | P2（产物身份＝"读者照哪一份校验"的口径账，G9 同族）→ **量清并就地改正台账（第 21 轮）**：此后凡重构建一律 `--dist-out` 指到 scratch，不覆盖已记录的产物。这一类**不可门禁化**（同 G20 的道理：判据跑在仓库里，产物在仓库外）。同轮第二次构建把"确定性"的量词逼出来了：**wheel 逐字相同，sdist 却换哈希**——sdist 里 `tests/` 有 1914 个条目、`atst/` 只有 191 个，所以任何只改测试的提交都会让发布说明的 sdist 那一格过期（现扫见 §30 第四节）。版本线要不要往前走（HEAD 上的 V18 改动——含本轮 G21 的限流修复——**不在 `v1.1.0` 里**）是发布决定，本会话不动 tag、不点发布 |
+| G24 | **证据尺子自己被补宽的那一刀，同时制造了假绿与假红**（第 21 轮登记并清偿）：这件缺陷有两半。前半在第 21 轮之前就在——`tests/architecture/test_evidence_pointers.py` 的树名正则只认仓库内的 `wt_*` 形状，而本轮起候选工作树落在仓库**外面**、目录名带 `atst_` 前缀，旧正则对这种形状一处都数不到（`\bwt_` 在 `x_w` 之间不成立），台账写满这类指针也不会红。后半是补前缀时新增的：`evidence_trees()` 加上仓外扫描之后，**在候选树里跑判据会把正在量的那棵树数成"本机持有证据"**，于是"磁盘上一棵证据树都没有就跳过"的那个条件不再成立——一台只有候选树自己的机器，被当成持有证据的机器，47 棵已回收的树当场报成违约。假绿与假红出自同一次修改，而且只有把同一套门禁搬到候选树上重跑才露得出来 | 前半的现场是本轮那次红之前的所有跑动（无法回溯引用，只能指出正则那一行当时不含前缀支路）；后半当场红：`scratch_v18b21/gates_round21b.log` 第 1160/1161 行 `1 failed, 485 passed in 51.44s` + `--- rc=1 : architecture ---`，唯一红格正是 `test_pointers_at_recycled_trees_say_so`，其正文里"已不在磁盘上"那行重复 **187** 次。修法的正控：`scratch_v18b21/g21b_selfexcl_mutation.log` 第 239/240 行——把"排掉 ROOT 自身"那一行删掉即 `2 failed, 3 passed in 0.28s` + `--- rc=1 : pre-fix ---`，复原后第 256/257 行回到 `47 passed, 1 skipped in 2.01s` + `--- rc=0 : after restore ---`；修后全量：`scratch_v18b21/gates_round21c.log` 第 967/968 行 `486 passed, 1 skipped in 50.38s` / `rc=0`（+1 正是新加的那条正控）。同一份日志第 235/236 行还顺手量出台账抄错了一格：`payload clones` 那行是 `[INFO]` 而不是 `WARN`，§30 上一版把它写成了"两处既有 WARN"——G20 那一族的第二次现身，就地改正 | P2（判据自身的账：假红会把 47 棵"已登记回收"的树重新变成待办，假绿让新形状指针无限累积）→ **已清偿（第 21 轮）**：`_trees_under()` 把"正在量的这棵树"从磁盘清单里排掉，并加集合等式正控 `test_the_measuring_tree_is_not_its_own_evidence`（退化成"仓外那一支永远为空"也会红）。口径教训一条：**扩大任何扫描范围，必须同时复查以该范围为对象的跳过/豁免条件**——一条判据的"没有对象可量"和"对象全体违约"读的是同一份清单，两者互换比假绿更醒目，但同样是错 |
+| G25 | **「具体接口文档是否全部更新」这一问，量到 CLI 那一格是空的**（第 22 轮登记并清偿）：`docs/api/interfaces.md` 的 HTTP/WS/MCP 三张表在 HEAD 上就与运行时逐名对齐，§3 的 CLI 却只有 `atst --help` 加一句"全部子命令委托 `Client`"。两半都是假的：36 个叶子命令里 **11 支在 46 份活文档中逐名查不到**；"全部委托 `Client`"不成立——**14 支碰不到内核**（6 直连传输层 + 1 服务面宿主 + 4 主站诊断 + 2 反馈 + 1 元信息）。那句伪概括还盖住了 `serve` 不承载 WebSocket：`_cmd_serve` 的 docstring 当时写着"40+ 端点 + WebSocket"，而 `create_runtime_app()` 是 10 支 `/v13/*` 路由、零条 websocket 路由（WebSocket 由 `runtime_ws_server.serve_runtime_ws` 单独托管） | 分母与差集：`scratch_v18b22/census_docs22.log`（HEAD 的 blob 用 `git show` 读，所以文档改完之后这一格仍可重跑对账：CLI `cited @HEAD 25/36 → @worktree 36/36`，HTTP/WS/MCP 三面 @HEAD 就是 10/10/9 全点名——**缺口是单面的，不是普遍的**）；判据：`tests/architecture/test_cli_reference_table.py`（12 项：命令集合、位置参数、旗标全序、落点、词汇表双向闭合、标题分母、组命令不得当可执行命令写、rows 命令转发的方法名必须是真能力、每支叶子要有一条能照抄的示例，另有四处表内单点篡改正控）；真文件变异台账：`scratch_v18b22/cli_mutate22.log`（基准 `12 passed` → 给 `changes` 加一支没进文档的旗标 `2 failed` → 改一支命令名 `6 failed` → 把 `_cmd_changes` 从 rows 挪到 typed `3 failed` → 删掉示例块里 `bars` 那一行 `2 failed`，四格 `rc=1`，复原后基准复绿）；逐格行号在该日志第 8~10 行（`@HEAD cited=25 missing=11` → `@worktree cited=36 missing=0`）| P1（读者照文档行动的那一面，六面里唯一没有接口面的）→ **已清偿（第 22 轮）**：§3 的表改为**从 argparse 与处理器源码派生**（36 行 = 27 支单命令 + 4 个组的 9 支叶子），36 条示例逐支配上，`_cmd_serve` 的 docstring 同步改成"那 10 支业务路由，不含 WebSocket"。这张表现在也是漂移探测器：`--timeout` 只覆盖 21/36，缺的 15 支里 9 支是 typed 命令——那是"不消费、让内核读 `[core] timeout`"的合法姿态（`test_cli_connection_contract.py` 管着第三种），表格把它变成看得见的事实而不是猜测 |
+| G26 | **组命令的叶子级 `--timeout` 解析不到，叶子的 `--help` 也没有名字描述**（第 22 轮登记并清偿）：`fund`/`index` 的组级 `--timeout` 只有写在组名之后才生效，`atst fund nav 000001 --timeout 5` 这种自然拼法当场 `SystemExit(2)`（`atst: error: unrecognized arguments: --timeout 5`），组前写法 `atst fund --timeout 5 nav 000001` 才生效；`add_parser("nav")` 又没给 `help=`，于是组页只把叶子列成 `{nav,estimate,list}` 三个裸名字，叶子自己的页里连 `--timeout` 这一行都不出现（本轮现扫 `atst_wt_v18b21step @ 582f5e9`——那棵树第 23 轮已回收，锚在提交 `582f5e9`；更早几版台账把这半格写成"叶子没有 `--help` 说明"，含混——**组页的 `--timeout` 在，缺的是叶子的名字说明与叶子页里的 `--timeout`**） | 改前复现（HEAD 树 `atst_wt_v18b21step @ 582f5e9`，本会话未改过一个字节、`PYTHONDONTWRITEBYTECODE=1` 只读跑动）：`scratch_v18b22/g26_prefix22.log` 第 9/16 行两格 `unrecognized arguments: --timeout 5`、第 10/17 行对应 `----- rc=2 -----`，同文件第 28/38 行证明 HEAD 的组页确实有 `--timeout TIMEOUT`、第 24~31 行证明叶子页没有它；四种拼法解析对照 `scratch_v18b22/g26_parse22.log` 第 14~17 行（`PARSE-OK fund --timeout 5 nav 000001 -> timeout=5.0` 对 `PARSE-EXIT fund nav 000001 --timeout 5 -> SystemExit(2)`，`index` 同形）与第 21~24 行（改后四格全部 `PARSE-OK ... -> timeout=5.0`）；判据：G25 的旗标全序格（`_flags` 把叶子自己的旗标逐名列出，少一格即红）+ `test_cli_connection_contract.py` 的"parser 声明的每个选项都必须被读到"（`argparse.SUPPRESS` 的再声明不覆盖组值，所以不会造出第二个读者都不认的旋钮） | P2（入参面：用户显式说了超时，CLI 却拒绝执行）→ **已清偿（第 22 轮）**：`fund nav/estimate/list`、`index constituents` 各补一支 `default=argparse.SUPPRESS` 的 `--timeout`（`atst/cli/parser.py:305-327`），四支叶子补 `help=` 文本 |
+| G27 | **220 条动态绑定的 `method` 字符串没有对账人**（第 22 轮登记并清偿）：`MIGRATED_BINDINGS` 229 行分给 9 个后端，其中 220 行走"按方法名 `getattr`"的后端（`web_session` 192 / `direct_adapter` 11 / `tdx_client` 10 / `ex_client` 4 / `goods_client` 2 / `mac_client` 1），9 行走按 capability 标签派发的后端（`web_adapter` 5 / `f10_client` 2 / `composed` 2）。方法名是**字符串**，拼错或实现改名都不在编译期红：调用方看到的是 HTTP 500 / `E9000`，而不是"这一格没实现"。同源的第二格：`_semantic_web_bindings` 用 `_SOURCE_FOR_PROVIDER.get(provider, "sina")` 兜底，一个新 Provider 的能力会悄悄以别家的量纲单位上线 | 判据：`tests/architecture/test_dispatch_targets.py`（9 项）——①~③ 三张分母表双向闭合、220 行方法逐个 `getattr` 得到可调用对象、9 行标签不得伪装成方法后端；④ 契约错误形状：把一条真绑定的 `method` 换成 `no_such_impl`（`dataclasses.replace` + monkeypatch），`validate_call` 必须给 `ValidationError` 且 `context["phase"] == "binding_resolution"`；⑤⑥ 单位语义两格：抽掉 `_SOURCE_FOR_PROVIDER` 的一个键必须 `KeyError`（不是回落到 sina），`SOURCES` 与 `_NORMALIZER_REGISTRY` 各植一名都要被点出。改前当场红：`scratch_v18b22/pre_fix_red22.log` 第 86/87 行 `2 failed, 7 passed in 0.15s` / `rc=1`（红格 = ④ 与 ⑤，正是本轮两处实现改动），复原后第 93/94 行 `9 passed` / `rc=0`。现量：`unresolved=[] mislabeled=[] unit_findings=[]`，`SOURCES` 与归一化器注册表同为 31 且集合相同 | P1（分派表与代码分叉＝主链上的断链，且对调用方伪装成内部故障）→ **已清偿（第 22 轮）**：`atst/catalog/capability.py` 的查表去掉默认值（:279）、`validate_call` 把 `AttributeError` 收成带 `phase` 的 `ValidationError`（:484-497）。**两格按裁决不动**：`f10_client` 那 2 行的 `method="f10"` 是标签后端上的幻影方法名，已有豁免判据按名钉住（`test_offline_capability_honesty.py:583`），改成真方法会让它变成可调用而不解决任何事；`hasattr` 跳过支路（:269）同理，文档写明并由诚实性门禁管辖 |
+| G28 | **轮询面四处"声明了但没人执行"，其中两处是能永久空转的形状**（第 22 轮登记并清偿）：① `ReconnectPolicy.max_attempts` / `should_give_up` 在 `atst/` 里**零调用点**（`git grep should_give_up HEAD` 只命中定义与它自己的 docstring）——连续失败到上限后策略说"该放弃了"，`StreamEngine` 的轮询线程照旧每秒重拉一次，这是 G10/G11 那一族（声明值没人按它行动）；② 失败轮按 `interval` 而不是按退避等待，`base=3600` 的策略实际从未生效过一步；③ `QuoteStream`/`AsyncQuoteStream`/`Subscription` 三处 `interval` 没有正数守卫，`interval=0` 就是贴着上限的请求忙等，而 `stateful.py` 里另有一份**同名不同严**的 `_validate_subscription`（两份对 `interval<=0` 的措辞不同、只有一份真的拒）；④ `PushChannel.iter_messages` 把"这一轮超时"和"通道已关/传输耗尽"混成同一个 `None`，于是安静的下一秒**静默结束**迭代，而它的 docstring 写的是"通道关闭或传输耗尽时停止" | 判据：`tests/streaming/test_poll_guardrails.py`（16 项：同步/异步两份 `subscribe` 与 `Subscription.__post_init__` 各按三种非正 `interval` 参数化、门面共用同一个校验器、`StreamEngine` 拒绝非正间隔、失败轮按策略退避（`base=3600` 时 0.2 秒内只轮询一次）、`max_attempts` 到限后线程真的结束、`current_delay()` 不重复计数、终止原因集合、外加一条"把 `timeout` 塞进终态集合"的回归正控）。**改前当场红**：`scratch_v18b22/pre_fix_red22.log` 第 61/62 行 `14 failed, 2 passed in 2.32s` / `rc=1`（四份实现换回 HEAD，其余文件不动），复原后第 71/72 行 `16 passed` / `rc=0`。第 21 轮那把循环形状尺子同步复扫：50 条 `while` = escape 31 / progress 12 / stop-flag 3 / trampoline 2 / 命名豁免 2，**未归类 0**（`escape` 30→31、`stop-flag` 4→3 是本轮把 `StreamEngine._run` 与 `iter_messages` 各补了 `return` 的结果——形状变化要能被数出来，否则尺子就是瞎的） | P1（限流/退避/订阅是主链上唯一会长期跑着的面；④ 那一格还是"少给数据而不声明"的对外失真）→ **已清偿（第 22 轮）**：`StreamEngine._run` 按 `last_failed` 走 `policy.current_delay()` 并在 `should_give_up()` 时一次告警收尾（`atst/streaming/engine.py:497-513`，新增 `:107-116` 的 `current_delay`、`:344-352` 的两个驱动侧读口）；`validate_subscription` 收成一处并被 `stateful.py` 复用（`atst/streaming/base.py:56-82`，删掉 :26-47 那份副本）；`iter_messages` 改用 `_read_with_reason`，终止集合 `_TERMINAL_READ = {closed, eof, transport}`，超时与空载荷继续等（`atst/streaming/push.py:229-275`）。**可达性说满**：`iter_messages` 在包内无生产调用方（现扫只有两处测试），被抓的是它对外的迭代契约 |
+| G29 | **两把令牌桶都没有排队，也没有截止**（第 22 轮登记，未清偿）：`TokenBucket.acquire`（同步，`blocking=True, timeout=None` 是缺省）与 `_acquire_rate`（异步 `strict=False` 支路，`while not limiter.try_acquire(): await asyncio.sleep(0.05)`）都是**抢锁式轮询**——先到者不一定先拿令牌，等待时长没有上界声明，也没有任何文档说过"不保证先到先得"。第 21 轮的 G21 已经证明这类桶能在容量收缩时把调用方挂死，修法补的是**容量**那一半；公平性与截止期是另一半，仍只有代码形状可看 | 现场：`atst/transport/ratelimit.py:136-169`（`while True` + 锁内 `available` 判定 + `time.sleep(min(wait_for, 0.05))`）、`atst/transport/async_.py:700-713`（异步轮询支路，其终止理由登记在 `test_loop_termination_gates.py` 的命名豁免表里）；本轮**没有**在线上观察到饿死，也没有量到等待时长分布——所以这一格只有形状证据，没有读数 | P3（对外契约的措辞与实现选择，不是断链）→ **已清偿（第 24 轮，走出路 (a)「写契约」，由真实并发测量决定）**：`scratch_v18b22/probe24/census24c_g29_concurrency.py` 让 24 个**错开 3 ms 到达**的等待者争 `rate=100/burst=1` 的同一把真桶，读数 `census24c_g29_run1.log` / `.json`——A 同步无界：24 全部放行、**121 对**服务次序反转、`max_position_shift=17`（先到确实会后拿）；B 带 `timeout=0.03`：仅 7 放行、17 超时离开、饿死者中位白等 **31 ms**（证明 deadline 生效）；C 异步轮询形状副本：**136 对**反转、中位等待 **508 ms > 理想末位 230 ms**（0.05 粒度使其更慢）。判读：无死循环（A/C 全放行）、非 FIFO 是令牌桶本征、有界等待只能靠显式 `timeout`、异步 `_acquire_rate` **无 timeout 形参**故不计入调用方 `request_timeout`。测量说明今天没有一处时序错到需要 (b) 重写 shipped 并发原语（六面回归风险不划算），故选 (a)：把契约写进 `atst/transport/ratelimit.py::TokenBucket.acquire` 与 `atst/transport/async_.py::_acquire_rate` 两段 docstring（用户读代码即读到「不保证先到先得／`timeout=None` 即无界等待／异步等待不覆盖 `request_timeout`」）。**可判定的那两条边界**由 `tests/transport/test_ratelimit_contract.py` 两条新判据钉住：`inspect.signature(_acquire_rate)==["self"]`（正控：同一把尺在相邻 `request` 上看得见 `timeout`）、`TokenBucket.__init__` 里不出现队列容器（正控：种入 `self._waiters = deque()` 必须被抓、`self._lock = threading.Lock()` 必须放过）。非 FIFO 本身是**减**承诺、无稳定断言，不硬造成时序测试。既有覆盖不动：同步 deadline／strict 抛错／over-burst 三项与异步 strict 拒绝、非 strict 轮询放行、G21 终止豁免均已绿 |
 | G30 | **CLI 递给内核的那一段入参没有静态对账人**（第 23 轮登记，未清偿）：`Client.__getattr__` 只摘掉 `provider`/`channel`/`currentness` 三个关键字，其余旗标原样进 `call()`，于是"一支 CLI 旗标到底是 capability 的可见参数、还是传输层与 Provider 选择器"这件事只存在于处理器函数体的写法里，仓库内没有任何判据核得动它。本轮在同一形状上踩到三次：`all-market --source sina` 把 Provider 选择器当 capability 入参递下去，装好的包当场 `E1010`；`probe --archive-dir` 不给值时 CLI 用 `None` 覆盖库默认值，`Prober` 无条件 `Path(None)` → 对外 `E9000` 且 context 全空；`blocks` 的位置参数缺 `type=int`，`"1"` 以 str 落进内核才被判成 `E3040`，走不到真判据（`E3035`：`0x07E5` 多主站实测无响应，本库不发板块行情）。与缺陷同形、但更阴的一格在测试里：手抄的 `FakeApi.all_market(source=...)` 跟着**文档**写而不跟真签名，于是全量绿、线上红 | 三处读数来自两种互不相干的测量：线上普查 `scratch_v18b22/probe23/census_ship23.log`（第〇节 CLI 那一格，21 行出数据 / 15 行按下表口径失败）、离线全量与装好包复跑（第一版 `signature(Prober)` 反查默认值的改法被单元测试当场打回：桩类换成 `**kwargs` 时 `KeyError: 'archive_dir'`；改后 `gates_round23_run4.log` 17 道门禁逐格 `rc=0`）。本轮三处修复由两种完全不同的测量各自暴露，说明现存判据谁都管不到另一边的形状 | P1（入参面接缝断裂＝对外可见的错误，而且测试会主动把它固化）→ **已清偿（第 24 轮）**：出路 (b)「收成可对账的表」已建——`tests/architecture/test_cli_kernel_seam.py`（6 项判据）。做法不是再造一个手抄假对象（那玩意的毛病不是抄错，是**永远不会不同意**），而是让真实调用链穿过**真调和器** `QueryPlanner.compile → _validate_migrated_call → capability.validate_call`：把文档围栏里每一行内核落点示例喂进被 `KernelExecutor` 接缝包住的 `Client`，量「记录到的 `runtime.execute` 调用数、被拒清单、traceback、是否碰 socket」。现量（`census24b_seam_measure.json`）：35 行内核示例 / 19 项 capability 抵达真 binder，**0 拒绝、0 traceback、0 socket 触达**；元信息类（`version`/`capabilities`）反向判据要求**零**内核调用。三形种入正控（`all_market(source="sina")`、`adjusted_bars()` 缺位置参、`hot_rank(pge=1)`）都被真 binder 抓到（`mutate24_seam.json`：4 处变异全红、字节复原）。旁路（处理器偷偷丢掉 Client 构造）由姊妹门 `test_cli_reference_table` 的落点标签翻转兜住——这一对被写进判据② 的 docstring。附带清偿 `capabilities` 的落点被诚实化（它其实构造不出内核，旧表把它记成 `内核·typed`；`_landing` 的「借名 ≠ 构造」修正 + `test_the_landing_ruler_sees_a_handler_that_only_borrows_the_name` 正控）。mypy 边界写清：`Client.__getattr__` 返回 `Any`，静态看不见 per-capability 键名，故这条接缝只能动态量 |
-| G31 | **`pyproject.toml` 的两个 extra 是幻影，而删它会把原创性尺子一起带偏**（第 23 轮登记并清偿）：extra 声明了 `config`（`pydantic`）与 `mcp`（`mcp`），README 与 FAQ 各有一份配套表格；现扫 `tstdx/` 全树这两名的读取点 **0 处**——MCP 面只 import 标准库，配置面走 `tomli` 与 `dataclasses`。后果不对等：`pip install "tstdx[mcp]"` 装了一个没人读的重依赖，而不装任何 extra 的用户本来就跑得动 MCP 面（这一格只有装好才看得见，源码树里跑什么都一样）。同一改动的反作用力也量了出来：`tstdx/tools/check_originality.py` 的 `KNOWN_EXTERNAL_IMPORTS` 是一份手抄名单，删 extra 之后两头同时过期——留着 `pydantic`/`mcp` 是登记幻影，漏掉 `zstandard`、`tomli`、`typing_extensions` 等真根是漏登记 | 改后当场红：`scratch_v18b22/gates_round23_run1_red.log` 的 originality 一道报 5 条 `unknown external import`；收成现扫的 11 个根之后归零，run3/run4 同读数（`gates_round23_run4.log`：`Total: 192  Original: 192  Suspicious: 0  External imports: 17`）。判据：`tests/architecture/test_declared_knobs.py` 判据六——AST 普查 `tstdx/` 内所有非相对、非标准库、非自包的 import 根，与那份白名单**集合相等**，另加"普查为空即判据自盲"的守卫和一条种入 `numpy`/`sqlalchemy` 的正控；变异台账 `scratch_v18b22/probe23/mutate_external_whitelist23.log`（造 phantom 加漏登记 → `1 failed`，复原 → `1 passed`，并断言字节级复原 `bytes-restored=True`） | P2（对外安装口径 + 判据自身的账，G10/G11 同族）→ **已清偿（第 23 轮）**：删掉两个 extra，`all` 收缩成其余 extras 的精确并集并留一行注释记下"被删的两项各有 0 个读取点"；README、FAQ、`docs/quickstart.md` 那处列 extra 名的句子随之改；白名单从此由判据六钉在现扫结果上，加一个真外部根而不上名单即红 |
-| G32 | **"每一行都跑过"这类线上覆盖率声明没有能长期跑的判据**（第 23 轮登记，判据已建一半）：上一版那 36 行 CLI 普查（`scratch_v18b22/cli_face23.log`）的跳过条件写的是**前缀**匹配 `tstdx serve`，于是 `tstdx server-test` 跟着长驻服务一起被吞——那一行从没跑过，而 `docs/api/interfaces.md` 写的是"上面每一行都照着跑过一遍"。缺陷有两半：前半是 harness 自己吞行（本轮复跑收成"子命令精确等于 `serve`"，清单改从文档围栏现读，取命令行数最多那个块，绕开 §3 的 `tstdx --help` 与 §7 的巡检行——旧版按 `startswith` 扫全文，把两处非示例行也算进了分母，所以旧日志 `usable=22` 与文档那句"20 条出数据"是同一份读数减掉两条非示例行之后的数）；后半是**仓库里的判据读不到仓外的一次性日志** | 真机读数：`scratch_v18b22/probe23/census_ship23.log`（37 行 = 36 支叶子 + `f10` 的第二条示例；`serve` 由 HTTP 段单独量 ⇒ 真跑 36 行 = 21 出数据 / 15 按下表口径失败 / 0 traceback）。判据：`tests/architecture/test_cli_reference_table.py` 判据 ⑨——「真机口径」那一节必须逐名点到全部 36 支叶子，按**词首**匹配（`minute` 不许靠 `minute-klines` 蒙过去），正控是把 `server-test` 的名字整节抹净后判据必须报它缺席；改前基准 14 项全绿，run4 architecture 一格 `514 passed, 1 skipped` | P2（对外可复核性：读者无法分辨"跑过"与"点名过"）→ **判据已建（第 23 轮），后半登记未清偿**：那一格管得住"名字不许漏"，管不住"到底跑没跑"——日志会删、harness 会像本轮这样自己吞行。关闭出路是给 CI 一条 CLI 全行覆盖的线上探针（G4 已有日内核心链探针的形状，这一格是它的推广） |
-| G33 | **`stream --seconds` 的缺省值是幻影：文档教的那条 `tstdx stream <symbol>` 按构造收不到任何行情**（第 24 轮登记并清偿）：`tstdx/cli/parser.py` 的 `--seconds` 旧值 `default=0.0` 且无 help 文本，而 `cmd_stream` 把 `seconds<=0` 当成"立即停"——于是文档与 `--help` 里那条最自然的裸形状（`stream` 子命令 + 一个证券代码、用户不带任何旗标）起来即停、一帧行情都拿不到，却不报任何错。这是 G10/G11 那一族（声明值没人按它行动）长在 CLI 缺省值上的一格：旗标存在、能解析、被读到，读到的那个 `0.0` 恰好让功能静默失效 | 判据：`tests/architecture/test_cli_connection_contract.py` 三条——① 转发契约用 `--seconds 0.01`（真起流、非零窗口），② 提供器被拒那格把 `--seconds 0` 从"CLI 门口放行"改判为"CLI 门口拒绝"，③ 新增：`--seconds 0` 必须 `rc=2` 且 stderr 命中 `--seconds 必须为正数`；装好包的复现（第 24 轮 dist24_pass3 → venv24 冒烟）：把 `--seconds` 显式给 `0` 起 `stream` 回 `E1010` 信封、`--help` 显示"默认 10" | P2（对外默认值即承诺：不报错的静默失效比报错更坏）→ **已清偿（第 24 轮）**：`--seconds` 改 `default=10.0` 并补 help「默认 10」；`cmd_stream` 开头对 `float(args.seconds) <= 0` 抛 `ValidationError`（`context={"phase":"wire_validation"}`），经 `main()` 落成 `E1010`+退出码 2（由构造失败改为 fail-fast）；`docs/quickstart.md`、`docs/api/interfaces.md` §5 随之写清 10 秒默认、Ctrl+C 可停、非正值当场拒 |
-| G34 | **同一个坏整数在四张面上有四种下场，最坏的一种是"服务端怪自己"**（第 25 轮登记并清偿）：分两半。(a) 整数请求字段没有共同的处理口，各面自己来：绑定处 `QuerySpec.normalized` 收到字符串形状的 `count='5'` 抛**裸** `TypeError`，对外信封把它记成 **E9000/500**（内部错误）；WS `_dispatch` 用 `int(params.get(...))`，`count='abc'` 抛的 `ValueError` 落进兜底 `except Exception` ⇒ **-32603 / E9000**——客户端打错一个字，服务端把责任揽到自己身上还把细节清空；更要命的是 `count=1.5` 被**静默截断成 1** 并且真的按截断后的值发出了请求、取回了行情（改前日志第 7 行有数据）；MCP 那侧已删除的 `clamp_int` 干脆**换值**：`'abc'`→320、`1.5`→1、`0`→1、`99999999`→2000，于是工具自己 `inputSchema` 声明的 `minimum: 1 / maximum: 2000` 成了一张没人按它行事的假告示（F-47 那一族）；HTTP 靠 FastAPI 的 `Query(ge/le)` 已经全对 ⇒ 四张面四种下场，只有一张说了真话。(b) 更深的一道闸——16-bit 分页地址空间（`count > 0xFFFF`、`start + count > 0x10000`）——抛的是 `ParseError`，对外即 **E3040 / 502 / retryable=True**：调用方写错参数被回答成"上游故障、可以重试"，一个带重试策略的客户端会真的去重试一次注定失败的请求 | 两栏对照，同一支脚本跑在两棵树上（`tstdx.__file__` 那行就是各自的现场身份）：改前 `scratch_v18b25/probe25/pre_fix_g34_head.log`（HEAD 检出，逐字为 `binder -> RAISED TypeError code=E9000 http=500`、`library bars(count=70000) -> ParseError code=E3040 http=502 retryable=True`、`ws count='abc' -> rpc=-32603 env=E9000`、`ws count=1.5 -> rpc=None result={'data': [{'datetime': '2026-09-24 15:00', ...`、`mcp clamp_int('abc',320,1,2000) -> 320`）↔ 改后 `g34_crossface_at_worktree.log`（binder 与库面两格 `ValidationError code=E1010 http=422 retryable=False`；WS 三格 `-32602 / E1010 / result=None`；MCP `_int_arg` 四种坏形各 E1010、`320`→320、`None`→320；HTTP 三格 `422 / E1010`——这一面改前改后同值）。判据：`tests/architecture/test_wire_numeric_domain.py`（8 项，分母全部现取）——AST 扫两张机器面的源码，`params.get(...)`/`args[...]` 取出来的字段不许再有人自己 `int()`/`float()`（正控两种形状各种进去必须被抓，`int(exc.status_code)` 这种非请求字段不许误报）；MCP 逐项按**自己的** `inputSchema` 边界拒（正控：把 schema 的 `maximum` 改成 7 与 9000，断言跟着翻，钉住"边界来自声明而非硬编码"）；HTTP 三条越界查询串在 handler 之前 422；内核 `SPEC_INT_FIELDS` 全表逐格；分页上限四面同口径。分类清扫的改前基线：`pass25_1_suite.log` 末行 `29 failed, 3861 passed, 7 skipped, 15 deselected`——27 处是测试把旧分类写死在期望里（跟着换类即绿），另 2 处是证据指针（G18 口径，处置见 §2 末与 §34） | P1（对外错误语义错位＝调用方据以决策的那一格，且含一处静默改值）→ **已清偿（第 25 轮）**：整数格收成唯一拒绝口 `as_request_int` / `_bad_int`（`tstdx/integration/wire_fields.py`），WS `_int_param` 与 MCP `_int_arg` 只留一层薄封装，`clamp_int` 物理删除（D3 口径：兼容层删掉而不是改名）；分类线一次定死并写进 `tstdx/client/core.py` 的 docstring——**调用方入参闸 → `ValidationError`（E1010/422/不可重试），协议事实 → 保留 E2xxx/E3xxx**（离线指令、未核验市场、脏字节、`split_symbol` 的 BJ 边界都不算调用方的错），`core.py` 19 处与 `_mixin.py` 随之归位；绑定处的整数名单 `SPEC_INT_FIELDS` 从 `dataclass_fields(QuerySpec)` 的 `int` 注解**现扫**，不另抄名单。**各面边界仍然不同，但从这一轮起是真的按各自声明执行**：`get_bars.count` 1..2000（MCP，给 LLM 的上下文预算）对 HTTP 的 1..10000，`null`/缺席在 WS 与 MCP 意为"用缺省"、在 HTTP 查询串当场拒（查询串里没有 null 这个 token）——这两种差别都写进了 `docs/api/interfaces.md` 的整数入参小节，不再只存在于代码里。**授权口径**：改前那一跑**打过外网**（`ws count=1.5` 截成 1 之后取回 2026-09-24 15:00 的真机 K 线），脚本 docstring 里"全程不打外网"那句对这一格不成立，就地登记；改后同一脚本 WS 三格全部门口拒绝、`result=None`，未发出任何请求 |
-| G35 | **断线恢复的"立即补拉"是一面没人读的旗**（第 25 轮登记并清偿）：:meth:`tstdx.streaming.engine.QuoteChannel.take_reconnect` 在第 22 轮随 G28 一起建出来，`tick()` 的注释和它自己的 docstring 都写着"恢复后的下一轮要立刻补拉，不等轮询间隔"，而全包**没有任何调用点**——:meth:`StreamEngine._run` 只读 `last_failed` 那一格，于是失败轮之后的第一个成功轮把恢复位辛辛苦苦置起来，驱动侧照旧 `self._stop.wait(self._interval)` 干等一整个周期。这是 G10/G11 那一族（声明值没人按它行动）长在**标志位**上的一格：不是旋钮的缺省值是假的，是"这个位置被人取走"这件事是假的 | 改前当场红：`scratch_v18b25/probe25/prefix25_g35.log` 第 22/29/30 行 `AssertionError: 恢复后仍按 interval 干等：只轮询了 2 次（1=失败轮，2=恢复轮）` → `1 failed, 23 passed in 3.05s` → `----- rc=1 : pre-fix -----`。做法是把 `_run` 里"取恢复位即补拉"那一步（185 字节）从源文件删掉再跑，跑完逐字节复原，同文件第 31/34/35 行是 `字节级复原 = True` / `24 passed in 2.48s` / `rc=0`。判据：`tests/streaming/test_poll_guardrails.py` 护栏 4 三条（恢复后 0.5 秒窗口内 ≥3 轮、把 `take_reconnect` 打成恒 `False` 恰好掉回 2 轮、标志取后即清所以每次恢复只多跑一轮不忙等）；普查出处 `scratch_v18b25/probe25/census25c_orphans_postfix.log` 第 [5] 支 | P2（对外的时机承诺：文档与注释说"立即"，实现给的是"下个周期"）→ **已清偿（第 25 轮）**：`_run` 在 `tick()` 之后第一件事就是取恢复位、置位即 `continue`（`tstdx/streaming/engine.py:500-503`）。补拉是**有界**的——位只在"失败轮之后的第一个成功轮"出现且读后即清，所以每次恢复至多多跑一轮 |
-| G36 | **同一帧头长度在同一个 dataclass 里有两个来源，手抄那一份全包零读取点**（第 25 轮登记并清偿）：`tstdx/codec/framing.py::FrameSpec` 一边用 `struct.calcsize` 从 `resp_header_fmt`/`req_header_fmt` 现算出 `resp_header_size`/`req_header_size`（这是真口径，解析与切帧的 7 处读取者全走它），一边又手写挂着 `resp_header_len: int = 16` 与 `req_header_len: int = 12` 两个带类型注解的字段——HEAD 上这两个名字在整个仓库里**只出现 2 次，就是它们自己的定义行**。后果与 G10 同族而不是与"多余字段"同族：它们是 `FrameSpec` 的成员，于是 `dataclasses.fields()` 数得出、文档列得出、读者以为"换协议时改这一格"，可改完之后 `struct.calcsize` 那一份不会跟着动，动嘴的人以为拧了旋钮 | 逐字对照：`scratch_v18b25/probe25/g36_header_len.log` 第三节 `git grep -n "resp_header_len\|req_header_len" HEAD` 只有两行（`HEAD:tstdx/codec/framing.py:113` 与 `:114`，即定义），同一文件第四节现量改后 `fields =` 只剩 8 格、`derived req/resp header_size = 12 16` 与被删的两个手抄值逐格相同——**所以这一刀不改任何行为**，删的是第二手来源。判据：`tests/codec/test_request_frame_contract.py::test_the_default_frame_header_sizes_come_from_the_struct_formats`，两断言成对：派生值必须是 `(12, 16)`，且 `__dataclass_fields__` 里**不许再出现任何以 `_header_len` 结尾的名字**（正控即"手抄长度字段又长回来了"那句话） | P3（协议规格层的形状卫生，无对外读数变化）→ **已清偿（第 25 轮）**：两个手抄字段删除，`*_header_fmt` 成为唯一入参、`*_header_size` 成为唯一出口；"为什么这里只有一份"写在 `tstdx/codec/framing.py:115-117` 的注释里，理由引用本行编号 |
-| G37 | **公开方法面「零调用点 / 零按名分派 / 文档未点名」的清单，第 26 轮逐条裁决完毕**（第 25 轮登记 14 条并留给所有者；第 26 轮第 3 遍先证伪清单本身、再处置全部成员）：第 25 轮那份 14 条**两头都不准**——① 其中 2 条是假阳性（`WebQuoteSession.chip_distributions`、`FundFlowSessionMixin.fund_flow_history`：执行体由 `inspect.getmembers(门面)` 自动派生成绑定，仓里一个字都不必提它们的名字，尺子看不见这一支分派）；② 登记本身把清单写进了台账，而台账文字被算进了"用户文档点名"，于是**同一把尺子改前读 0 条、拆掉自指后读 17 条**——变的不是代码，是分母口径。补掉两处自指（① 文档分母排掉 `docs/REFACTOR_PLAN_*` 与 `docs/archive/**`；② `tests/` 里的登记表键不再算"按名分派"）后，真候选是 **17 条**，处置全部落地：**8 条按 D3 删除**（`QuoteChannel.poll_delay` F-104、`Symbol.bare` F-105、`KlineCategory.name_of` F-106、`BaseParser.u16_count` F-107、`BaiduSource.parse_quote` F-108、`TradingCalendar.mark_workday` F-109、`TradingCalendar.update_from_web` F-110、`Metrics.set_active_connections` 连同恒初值的 `tstdx_active_connections` gauge F-112），**9 条升格为公开面并写进读者会读的页**（`TradeClient.query_stocks`/`query_deals`/`query_shareholders` F-113、`TradingCalendar.count_trading_days` 等 7 格日历查询面 F-114、`TelemetryCollector.disable`/`OtelExporter.export_spans`/`StatsdExporter.start_pushing`/`PrometheusExporter.write_to_file` F-115、`Prober.total_failures` F-116）。同族另两格**没有走"文档化"这条出路**，因为那等于把洞固定成承诺：`tstdx_stream_reconnects_total`（F-117）与 `tstdx_protocol_parse_total`/`_confidence`（F-118）改为在唯一落点接线——恢复轮与三级分派各补一处旁路上报，指标从此有读数 | 尺子与现扫（本轮，仓外取证目录 `scratch_v18b26/probe26/`）：`census26_orphans_v5.log` 第 [5] 支＝17 条逐行（含定义位置与"源码文字提及"计数）↔ `census26_orphans_v9.log`＝**0 条**，分母 562 个公开方法名，五桶成员本轮起逐条印出（`⑤`：v1 只印计数，13→9、2→0 的跳动无从追溯）；删除侧逐格留锚：`tstdx/streaming/engine.py:522`、`tstdx/domain/symbol.py:100`、`tstdx/protocol/parsers/_std7709_common.py:34`、`tstdx/protocol/registry.py:272`、`tstdx/web/adapters_baidu.py:370`、`tstdx/domain/calendar.py:192,267,342`、`tstdx/observability/metrics.py:452,517`；升格侧落点：`docs/api/interfaces.md` §1 交易面 / §6 交易日历 / §7 `Prober` / §8 可观测性与反馈，用例 `tests/trade/test_client.py:120`（4 条查询面用例）；接线侧：`tstdx/observability/metrics.py` 的两根指标由 `tstdx/protocol/registry.py:447`、`tstdx/streaming/engine.py:341` 喂，判据 `tests/protocol/test_tiers.py`、`tests/streaming/test_poll_guardrails.py`、表格↔注册表门禁 `tests/architecture/test_doc_code_consistency.py::test_interfaces_metric_series_table_matches_the_registry`，变异账 `mutation26_metrics.log`（把两处接线静音 ⇒ 恰那 2 条判据红，RC=1）；六面规模现取 `sixface26.log`（库 45 出口 / CLI 31 命令 36 叶子 / HTTP 10 路由 / WS 10 方法 / MCP 9 工具 / web 31 源，RC=0）；全量离线 `full26_pass3c_rs.log` 4009 passed / 10 skipped / RC=0（那 10 格逐条带原因：1 格不在交易时段、4+3 格本机未装 pyarrow/duckdb、2 格东财不可达——skip 数随网络浮动，同一棵树上一遍读到过 9） | P2（对外可见面：留着的每一格都是"能被 import 却没人保证它工作"，删错了则是删能力）→ **已清偿（第 26 轮）**：三种出路逐条选定并落地，代价不对等这一判断成立——`active_connections` 那一格要在 transport 两条池路径上加生命周期钩子才能接线，本轮按「宁跳不假绿」撤下恒 0 仪表；`TradeClient` 那三支是模拟盘对外查询能力，判"有别的会话在用"的凭据是它们有专属文档段与用例而**没有**任何生产调用点。清单不再留给所有者，留给下一遍的是"这把尺子自己也会被喂胖"这一条：登记即豁免已就地拆掉 |
+| G31 | **`pyproject.toml` 的两个 extra 是幻影，而删它会把原创性尺子一起带偏**（第 23 轮登记并清偿）：extra 声明了 `config`（`pydantic`）与 `mcp`（`mcp`），README 与 FAQ 各有一份配套表格；现扫 `atst/` 全树这两名的读取点 **0 处**——MCP 面只 import 标准库，配置面走 `tomli` 与 `dataclasses`。后果不对等：`pip install "atst[mcp]"` 装了一个没人读的重依赖，而不装任何 extra 的用户本来就跑得动 MCP 面（这一格只有装好才看得见，源码树里跑什么都一样）。同一改动的反作用力也量了出来：`atst/tools/check_originality.py` 的 `KNOWN_EXTERNAL_IMPORTS` 是一份手抄名单，删 extra 之后两头同时过期——留着 `pydantic`/`mcp` 是登记幻影，漏掉 `zstandard`、`tomli`、`typing_extensions` 等真根是漏登记 | 改后当场红：`scratch_v18b22/gates_round23_run1_red.log` 的 originality 一道报 5 条 `unknown external import`；收成现扫的 11 个根之后归零，run3/run4 同读数（`gates_round23_run4.log`：`Total: 192  Original: 192  Suspicious: 0  External imports: 17`）。判据：`tests/architecture/test_declared_knobs.py` 判据六——AST 普查 `atst/` 内所有非相对、非标准库、非自包的 import 根，与那份白名单**集合相等**，另加"普查为空即判据自盲"的守卫和一条种入 `numpy`/`sqlalchemy` 的正控；变异台账 `scratch_v18b22/probe23/mutate_external_whitelist23.log`（造 phantom 加漏登记 → `1 failed`，复原 → `1 passed`，并断言字节级复原 `bytes-restored=True`） | P2（对外安装口径 + 判据自身的账，G10/G11 同族）→ **已清偿（第 23 轮）**：删掉两个 extra，`all` 收缩成其余 extras 的精确并集并留一行注释记下"被删的两项各有 0 个读取点"；README、FAQ、`docs/quickstart.md` 那处列 extra 名的句子随之改；白名单从此由判据六钉在现扫结果上，加一个真外部根而不上名单即红 |
+| G32 | **"每一行都跑过"这类线上覆盖率声明没有能长期跑的判据**（第 23 轮登记，判据已建一半）：上一版那 36 行 CLI 普查（`scratch_v18b22/cli_face23.log`）的跳过条件写的是**前缀**匹配 `atst serve`，于是 `atst server-test` 跟着长驻服务一起被吞——那一行从没跑过，而 `docs/api/interfaces.md` 写的是"上面每一行都照着跑过一遍"。缺陷有两半：前半是 harness 自己吞行（本轮复跑收成"子命令精确等于 `serve`"，清单改从文档围栏现读，取命令行数最多那个块，绕开 §3 的 `atst --help` 与 §7 的巡检行——旧版按 `startswith` 扫全文，把两处非示例行也算进了分母，所以旧日志 `usable=22` 与文档那句"20 条出数据"是同一份读数减掉两条非示例行之后的数）；后半是**仓库里的判据读不到仓外的一次性日志** | 真机读数：`scratch_v18b22/probe23/census_ship23.log`（37 行 = 36 支叶子 + `f10` 的第二条示例；`serve` 由 HTTP 段单独量 ⇒ 真跑 36 行 = 21 出数据 / 15 按下表口径失败 / 0 traceback）。判据：`tests/architecture/test_cli_reference_table.py` 判据 ⑨——「真机口径」那一节必须逐名点到全部 36 支叶子，按**词首**匹配（`minute` 不许靠 `minute-klines` 蒙过去），正控是把 `server-test` 的名字整节抹净后判据必须报它缺席；改前基准 14 项全绿，run4 architecture 一格 `514 passed, 1 skipped` | P2（对外可复核性：读者无法分辨"跑过"与"点名过"）→ **判据已建（第 23 轮），后半登记未清偿**：那一格管得住"名字不许漏"，管不住"到底跑没跑"——日志会删、harness 会像本轮这样自己吞行。关闭出路是给 CI 一条 CLI 全行覆盖的线上探针（G4 已有日内核心链探针的形状，这一格是它的推广） |
+| G33 | **`stream --seconds` 的缺省值是幻影：文档教的那条 `atst stream <symbol>` 按构造收不到任何行情**（第 24 轮登记并清偿）：`atst/cli/parser.py` 的 `--seconds` 旧值 `default=0.0` 且无 help 文本，而 `cmd_stream` 把 `seconds<=0` 当成"立即停"——于是文档与 `--help` 里那条最自然的裸形状（`stream` 子命令 + 一个证券代码、用户不带任何旗标）起来即停、一帧行情都拿不到，却不报任何错。这是 G10/G11 那一族（声明值没人按它行动）长在 CLI 缺省值上的一格：旗标存在、能解析、被读到，读到的那个 `0.0` 恰好让功能静默失效 | 判据：`tests/architecture/test_cli_connection_contract.py` 三条——① 转发契约用 `--seconds 0.01`（真起流、非零窗口），② 提供器被拒那格把 `--seconds 0` 从"CLI 门口放行"改判为"CLI 门口拒绝"，③ 新增：`--seconds 0` 必须 `rc=2` 且 stderr 命中 `--seconds 必须为正数`；装好包的复现（第 24 轮 dist24_pass3 → venv24 冒烟）：把 `--seconds` 显式给 `0` 起 `stream` 回 `E1010` 信封、`--help` 显示"默认 10" | P2（对外默认值即承诺：不报错的静默失效比报错更坏）→ **已清偿（第 24 轮）**：`--seconds` 改 `default=10.0` 并补 help「默认 10」；`cmd_stream` 开头对 `float(args.seconds) <= 0` 抛 `ValidationError`（`context={"phase":"wire_validation"}`），经 `main()` 落成 `E1010`+退出码 2（由构造失败改为 fail-fast）；`docs/quickstart.md`、`docs/api/interfaces.md` §5 随之写清 10 秒默认、Ctrl+C 可停、非正值当场拒 |
+| G34 | **同一个坏整数在四张面上有四种下场，最坏的一种是"服务端怪自己"**（第 25 轮登记并清偿）：分两半。(a) 整数请求字段没有共同的处理口，各面自己来：绑定处 `QuerySpec.normalized` 收到字符串形状的 `count='5'` 抛**裸** `TypeError`，对外信封把它记成 **E9000/500**（内部错误）；WS `_dispatch` 用 `int(params.get(...))`，`count='abc'` 抛的 `ValueError` 落进兜底 `except Exception` ⇒ **-32603 / E9000**——客户端打错一个字，服务端把责任揽到自己身上还把细节清空；更要命的是 `count=1.5` 被**静默截断成 1** 并且真的按截断后的值发出了请求、取回了行情（改前日志第 7 行有数据）；MCP 那侧已删除的 `clamp_int` 干脆**换值**：`'abc'`→320、`1.5`→1、`0`→1、`99999999`→2000，于是工具自己 `inputSchema` 声明的 `minimum: 1 / maximum: 2000` 成了一张没人按它行事的假告示（F-47 那一族）；HTTP 靠 FastAPI 的 `Query(ge/le)` 已经全对 ⇒ 四张面四种下场，只有一张说了真话。(b) 更深的一道闸——16-bit 分页地址空间（`count > 0xFFFF`、`start + count > 0x10000`）——抛的是 `ParseError`，对外即 **E3040 / 502 / retryable=True**：调用方写错参数被回答成"上游故障、可以重试"，一个带重试策略的客户端会真的去重试一次注定失败的请求 | 两栏对照，同一支脚本跑在两棵树上（`atst.__file__` 那行就是各自的现场身份）：改前 `scratch_v18b25/probe25/pre_fix_g34_head.log`（HEAD 检出，逐字为 `binder -> RAISED TypeError code=E9000 http=500`、`library bars(count=70000) -> ParseError code=E3040 http=502 retryable=True`、`ws count='abc' -> rpc=-32603 env=E9000`、`ws count=1.5 -> rpc=None result={'data': [{'datetime': '2026-09-24 15:00', ...`、`mcp clamp_int('abc',320,1,2000) -> 320`）↔ 改后 `g34_crossface_at_worktree.log`（binder 与库面两格 `ValidationError code=E1010 http=422 retryable=False`；WS 三格 `-32602 / E1010 / result=None`；MCP `_int_arg` 四种坏形各 E1010、`320`→320、`None`→320；HTTP 三格 `422 / E1010`——这一面改前改后同值）。判据：`tests/architecture/test_wire_numeric_domain.py`（8 项，分母全部现取）——AST 扫两张机器面的源码，`params.get(...)`/`args[...]` 取出来的字段不许再有人自己 `int()`/`float()`（正控两种形状各种进去必须被抓，`int(exc.status_code)` 这种非请求字段不许误报）；MCP 逐项按**自己的** `inputSchema` 边界拒（正控：把 schema 的 `maximum` 改成 7 与 9000，断言跟着翻，钉住"边界来自声明而非硬编码"）；HTTP 三条越界查询串在 handler 之前 422；内核 `SPEC_INT_FIELDS` 全表逐格；分页上限四面同口径。分类清扫的改前基线：`pass25_1_suite.log` 末行 `29 failed, 3861 passed, 7 skipped, 15 deselected`——27 处是测试把旧分类写死在期望里（跟着换类即绿），另 2 处是证据指针（G18 口径，处置见 §2 末与 §34） | P1（对外错误语义错位＝调用方据以决策的那一格，且含一处静默改值）→ **已清偿（第 25 轮）**：整数格收成唯一拒绝口 `as_request_int` / `_bad_int`（`atst/integration/wire_fields.py`），WS `_int_param` 与 MCP `_int_arg` 只留一层薄封装，`clamp_int` 物理删除（D3 口径：兼容层删掉而不是改名）；分类线一次定死并写进 `atst/client/core.py` 的 docstring——**调用方入参闸 → `ValidationError`（E1010/422/不可重试），协议事实 → 保留 E2xxx/E3xxx**（离线指令、未核验市场、脏字节、`split_symbol` 的 BJ 边界都不算调用方的错），`core.py` 19 处与 `_mixin.py` 随之归位；绑定处的整数名单 `SPEC_INT_FIELDS` 从 `dataclass_fields(QuerySpec)` 的 `int` 注解**现扫**，不另抄名单。**各面边界仍然不同，但从这一轮起是真的按各自声明执行**：`get_bars.count` 1..2000（MCP，给 LLM 的上下文预算）对 HTTP 的 1..10000，`null`/缺席在 WS 与 MCP 意为"用缺省"、在 HTTP 查询串当场拒（查询串里没有 null 这个 token）——这两种差别都写进了 `docs/api/interfaces.md` 的整数入参小节，不再只存在于代码里。**授权口径**：改前那一跑**打过外网**（`ws count=1.5` 截成 1 之后取回 2026-09-24 15:00 的真机 K 线），脚本 docstring 里"全程不打外网"那句对这一格不成立，就地登记；改后同一脚本 WS 三格全部门口拒绝、`result=None`，未发出任何请求 |
+| G35 | **断线恢复的"立即补拉"是一面没人读的旗**（第 25 轮登记并清偿）：:meth:`atst.streaming.engine.QuoteChannel.take_reconnect` 在第 22 轮随 G28 一起建出来，`tick()` 的注释和它自己的 docstring 都写着"恢复后的下一轮要立刻补拉，不等轮询间隔"，而全包**没有任何调用点**——:meth:`StreamEngine._run` 只读 `last_failed` 那一格，于是失败轮之后的第一个成功轮把恢复位辛辛苦苦置起来，驱动侧照旧 `self._stop.wait(self._interval)` 干等一整个周期。这是 G10/G11 那一族（声明值没人按它行动）长在**标志位**上的一格：不是旋钮的缺省值是假的，是"这个位置被人取走"这件事是假的 | 改前当场红：`scratch_v18b25/probe25/prefix25_g35.log` 第 22/29/30 行 `AssertionError: 恢复后仍按 interval 干等：只轮询了 2 次（1=失败轮，2=恢复轮）` → `1 failed, 23 passed in 3.05s` → `----- rc=1 : pre-fix -----`。做法是把 `_run` 里"取恢复位即补拉"那一步（185 字节）从源文件删掉再跑，跑完逐字节复原，同文件第 31/34/35 行是 `字节级复原 = True` / `24 passed in 2.48s` / `rc=0`。判据：`tests/streaming/test_poll_guardrails.py` 护栏 4 三条（恢复后 0.5 秒窗口内 ≥3 轮、把 `take_reconnect` 打成恒 `False` 恰好掉回 2 轮、标志取后即清所以每次恢复只多跑一轮不忙等）；普查出处 `scratch_v18b25/probe25/census25c_orphans_postfix.log` 第 [5] 支 | P2（对外的时机承诺：文档与注释说"立即"，实现给的是"下个周期"）→ **已清偿（第 25 轮）**：`_run` 在 `tick()` 之后第一件事就是取恢复位、置位即 `continue`（`atst/streaming/engine.py:500-503`）。补拉是**有界**的——位只在"失败轮之后的第一个成功轮"出现且读后即清，所以每次恢复至多多跑一轮 |
+| G36 | **同一帧头长度在同一个 dataclass 里有两个来源，手抄那一份全包零读取点**（第 25 轮登记并清偿）：`atst/codec/framing.py::FrameSpec` 一边用 `struct.calcsize` 从 `resp_header_fmt`/`req_header_fmt` 现算出 `resp_header_size`/`req_header_size`（这是真口径，解析与切帧的 7 处读取者全走它），一边又手写挂着 `resp_header_len: int = 16` 与 `req_header_len: int = 12` 两个带类型注解的字段——HEAD 上这两个名字在整个仓库里**只出现 2 次，就是它们自己的定义行**。后果与 G10 同族而不是与"多余字段"同族：它们是 `FrameSpec` 的成员，于是 `dataclasses.fields()` 数得出、文档列得出、读者以为"换协议时改这一格"，可改完之后 `struct.calcsize` 那一份不会跟着动，动嘴的人以为拧了旋钮 | 逐字对照：`scratch_v18b25/probe25/g36_header_len.log` 第三节 `git grep -n "resp_header_len\|req_header_len" HEAD` 只有两行（`HEAD:atst/codec/framing.py:113` 与 `:114`，即定义），同一文件第四节现量改后 `fields =` 只剩 8 格、`derived req/resp header_size = 12 16` 与被删的两个手抄值逐格相同——**所以这一刀不改任何行为**，删的是第二手来源。判据：`tests/codec/test_request_frame_contract.py::test_the_default_frame_header_sizes_come_from_the_struct_formats`，两断言成对：派生值必须是 `(12, 16)`，且 `__dataclass_fields__` 里**不许再出现任何以 `_header_len` 结尾的名字**（正控即"手抄长度字段又长回来了"那句话） | P3（协议规格层的形状卫生，无对外读数变化）→ **已清偿（第 25 轮）**：两个手抄字段删除，`*_header_fmt` 成为唯一入参、`*_header_size` 成为唯一出口；"为什么这里只有一份"写在 `atst/codec/framing.py:115-117` 的注释里，理由引用本行编号 |
+| G37 | **公开方法面「零调用点 / 零按名分派 / 文档未点名」的清单，第 26 轮逐条裁决完毕**（第 25 轮登记 14 条并留给所有者；第 26 轮第 3 遍先证伪清单本身、再处置全部成员）：第 25 轮那份 14 条**两头都不准**——① 其中 2 条是假阳性（`WebQuoteSession.chip_distributions`、`FundFlowSessionMixin.fund_flow_history`：执行体由 `inspect.getmembers(门面)` 自动派生成绑定，仓里一个字都不必提它们的名字，尺子看不见这一支分派）；② 登记本身把清单写进了台账，而台账文字被算进了"用户文档点名"，于是**同一把尺子改前读 0 条、拆掉自指后读 17 条**——变的不是代码，是分母口径。补掉两处自指（① 文档分母排掉 `docs/REFACTOR_PLAN_*` 与 `docs/archive/**`；② `tests/` 里的登记表键不再算"按名分派"）后，真候选是 **17 条**，处置全部落地：**8 条按 D3 删除**（`QuoteChannel.poll_delay` F-104、`Symbol.bare` F-105、`KlineCategory.name_of` F-106、`BaseParser.u16_count` F-107、`BaiduSource.parse_quote` F-108、`TradingCalendar.mark_workday` F-109、`TradingCalendar.update_from_web` F-110、`Metrics.set_active_connections` 连同恒初值的 `atst_active_connections` gauge F-112），**9 条升格为公开面并写进读者会读的页**（`TradeClient.query_stocks`/`query_deals`/`query_shareholders` F-113、`TradingCalendar.count_trading_days` 等 7 格日历查询面 F-114、`TelemetryCollector.disable`/`OtelExporter.export_spans`/`StatsdExporter.start_pushing`/`PrometheusExporter.write_to_file` F-115、`Prober.total_failures` F-116）。同族另两格**没有走"文档化"这条出路**，因为那等于把洞固定成承诺：`atst_stream_reconnects_total`（F-117）与 `atst_protocol_parse_total`/`_confidence`（F-118）改为在唯一落点接线——恢复轮与三级分派各补一处旁路上报，指标从此有读数 | 尺子与现扫（本轮，仓外取证目录 `scratch_v18b26/probe26/`）：`census26_orphans_v5.log` 第 [5] 支＝17 条逐行（含定义位置与"源码文字提及"计数）↔ `census26_orphans_v9.log`＝**0 条**，分母 562 个公开方法名，五桶成员本轮起逐条印出（`⑤`：v1 只印计数，13→9、2→0 的跳动无从追溯）；删除侧逐格留锚：`atst/streaming/engine.py:522`、`atst/domain/symbol.py:100`、`atst/protocol/parsers/_std7709_common.py:34`、`atst/protocol/registry.py:272`、`atst/web/adapters_baidu.py:370`、`atst/domain/calendar.py:192,267,342`、`atst/observability/metrics.py:452,517`；升格侧落点：`docs/api/interfaces.md` §1 交易面 / §6 交易日历 / §7 `Prober` / §8 可观测性与反馈，用例 `tests/trade/test_client.py:120`（4 条查询面用例）；接线侧：`atst/observability/metrics.py` 的两根指标由 `atst/protocol/registry.py:447`、`atst/streaming/engine.py:341` 喂，判据 `tests/protocol/test_tiers.py`、`tests/streaming/test_poll_guardrails.py`、表格↔注册表门禁 `tests/architecture/test_doc_code_consistency.py::test_interfaces_metric_series_table_matches_the_registry`，变异账 `mutation26_metrics.log`（把两处接线静音 ⇒ 恰那 2 条判据红，RC=1）；六面规模现取 `sixface26.log`（库 45 出口 / CLI 31 命令 36 叶子 / HTTP 10 路由 / WS 10 方法 / MCP 9 工具 / web 31 源，RC=0）；全量离线 `full26_pass3c_rs.log` 4009 passed / 10 skipped / RC=0（那 10 格逐条带原因：1 格不在交易时段、4+3 格本机未装 pyarrow/duckdb、2 格东财不可达——skip 数随网络浮动，同一棵树上一遍读到过 9） | P2（对外可见面：留着的每一格都是"能被 import 却没人保证它工作"，删错了则是删能力）→ **已清偿（第 26 轮）**：三种出路逐条选定并落地，代价不对等这一判断成立——`active_connections` 那一格要在 transport 两条池路径上加生命周期钩子才能接线，本轮按「宁跳不假绿」撤下恒 0 仪表；`TradeClient` 那三支是模拟盘对外查询能力，判"有别的会话在用"的凭据是它们有专属文档段与用例而**没有**任何生产调用点。清单不再留给所有者，留给下一遍的是"这把尺子自己也会被喂胖"这一条：登记即豁免已就地拆掉 |
 
-| G38 | **换主站那把退避梯子既没有上界，也不看它等的是谁——"不存在死循环"在传输层的那一格**（第 25 轮登记并清偿）：三件事叠在同一段循环里。(a) **无上界**：`max_attempts = max(max_retries + 1, 不同主站数)`，而 `2**attempt` 里的 `attempt` 在换主站时同样增长——它不是"重试次数"而是**已走过的主站数**，于是退避总时长只由主站数量决定：8 台一次失败请求要睡 `1+2+4+8+16+32+64 ≈ 127` 秒，32 台是 `2**31` 秒量级。用户给的 `--timeout 5` 约束的是**单次套接字超时**，对整条命令的墙钟当时没有任何承诺，`docs/api/interfaces.md` 也没说过。(b) **不看对象**：那份 sleep 花在这一轮**新拨的那台**主站身上（选序本来就排除了已试主机），冷却的不是刚失败的连接，而是等待本身——换一台从没拨过的号码之前睡 64 秒，延长的只是调用方的墙钟。(c) **同一把梯子有两份手写实现**：同步池与异步池各抄一遍指数+抖动，要封顶就得记两处，异步那份还自带第二个 `random` 形状 | 改前 `scratch_v18b25/probe25/timing25_snapshot.log`：七条 `退避 …s` 逐字为 `0.769 / 2.334 / 3.287 / 7.355 / 15.912 / 28.558 / 62.928`（相加 = **121.143 秒**），末行 `TOTAL elapsed = 159.4s`；同一次批量帧 `0x054C` 放弃之后 `REQUEST 0x0530 returned in 131ms`——**数据其实 131 毫秒就拿到了**，159 秒全花在"决定下一台要不要等"。↔ 改后 `timing25_snapshot_postfix.log`（同一台机器、同一份围栏、同一条命令）：`TOTAL elapsed = 38.1s`，整份日志**零条**退避行。判据 `tests/transport/test_retry_backoff_cap.py`（30 项）钉四件事：梯子逐档不越上界（4 种基准 × 6 档参数化）、封顶前仍在增长（"压成常数"不算修好）、32 台池的旧形状确实无界、走完全部未试主站的请求 `sleeps == []`（同步与异步各一格）而回到已试主站仍恰好冷却 3 次；另有一条 AST 格——`2**attempt` 只许出现在 `pool.py::retry_backoff_delay` 体内，`async_.py` 必须引用该 helper（把第二份实现留在仓库里即红）。变异台账 `prefix25_g38b.log`：M1 去封顶 `16 failed, 14 passed`、M2 把 sleep 装回"每次换主站" `1 failed, 29 passed`、复原后基准 `30 passed`，两格各带 `字节级复原 = True`。**一处本轮自查的台账先于日志**：这一格草记时写的是"159 秒里有 119 秒是纯 sleep"，那是背出来的数——逐条相加是 121.143 秒，源码注释、判据 docstring 与 `interfaces.md` 的两处随之改正（G20 口径；本轮第二起，第一起是 G34 那句"全程不打外网"） | P1（口令「不存在死循环」那一问的直接对象：调用方声明 5 秒的一次请求在墙上跑 159 秒，且**没有任何一格预告过这个数**；同一缺陷还有两份实现）→ **已清偿（第 25 轮）**：一处声明 `MAX_RETRY_BACKOFF_SECONDS = 8.0` 与 `retry_backoff_delay(base, attempt)`（`tstdx/transport/pool.py`），同步与异步池共用；退避只在"选序回到已试主站"时兑现（`pending_backoff` + `slot.host.key in tried` 两行，换到新机器即清零）；上界写进读者会读的那一页——`docs/api/interfaces.md` §3 的 `--timeout` 段现在给出可核对的承诺「**墙钟上界 = 主站数 × timeout**」，要压它就把 `--timeout` 调小或先做一次主站测速排序。**流式面的 30 秒重连上界不抄这一格**：`ReconnectPolicy(cap=30.0)` 等的是"服务回来"，与"下一台机器"是两种语义，这条差别写在常量注释里，避免下一轮把它当第 10 份手抄名单 |
-| G39 | **`RetryAdvice.max_retries` 是一张没人执行的告示**（第 25 轮登记，**开放，待裁决**）：`_register_all()` 给 20 余条异常逐条填了 `max_retries=1..10`，而全仓对它的读取点**只有两处序列化**——`errors.py:148`（`TdxError.to_dict`）与 `feedback/reporter.py:211`（反馈载荷的 `advice` 那一格）；两条池都不看它，重试次数由 `max_attempts` 决定，那里的 `max_retries` 是**连接池自己的构造参数**，与异常自带那一格同名不同源。后果是 G10/G11 那一族（声明值没人按它行动）长在错误契约上的一格，而且比旋钮更绕：`docs/errors.md` 的字段表在这一轮之前把它写成"pool 重试上限"，读者照它推断"这类错误最多重试 3 次"，而实现给的是"至少每台主站拨一次"。同轮顺手量到该文档指的实现行号 `pool.py:423` 在 HEAD 上就已指错（真实读取点 :621），一并改成按符号引用 | 现扫 `tstdx/` 内 `advice.<字段>` 的全部读取：`retryable`（`pool.py:621`、`async_.py:764`、`error_envelope.py:222`）、`switch_host`（`pool.py:623`、`async_.py:766`）、`backoff`（`pool.py:628-629`、`async_.py:769-770`）——**`max_retries` 之外无一执行字段**（`note` 的用途是进日志，文档已如此声明），而 `max_retries` 的两处读取就是上面那两行序列化。文档改动本身即本轮证据（`docs/errors.md` 第二节字段表的 `backoff`/`max_retries` 两行）；**这一格没有新增判据**，理由登记在这里而不是含糊过去：`test_declared_knobs.py` 那一族管的是 dataclass 字段与 CLI/HTTP 旋钮的读取点，读不到文档表格里的散文，而把"异常自带的 max_retries 必须被池执行"写成判据就等于**先替所有者裁了出路 (a)**——那是下面三种代价不对等的选择之一 | P2（对外错误契约的形状：删一格会断已发布的 JSON 字段，执行它会改动每次故障转移的次数上限）→ **开放，本会话不擅自裁决**：三条出路——(a) 让池把它当上界真执行（`min(max_attempts, advice.max_retries + 1)` 一类，牵动 G21/G38 两条**已清偿**的循环判据与 `test_loop_termination_gates.py` 的命名豁免表，"每台至少试一次"这条现有承诺随之收缩）；(b) 从 `RetryAdvice` 删掉、只留池旋钮（`to_dict` 与反馈载荷的 `advice` 形状随之改，D3 口径：兼容层删掉而不是改名）；(c) 保留但明确"只随错误序列化给人和反馈管道读"，把它挪进 `docs/errors.md` 那张"历史兼容字段/无消费方"表，与 `fallback_to_offline`/`fallback_to_web`（F-68 已登记同族）同栏。本轮只把文档改成与实现一致（已做），出路留给所有者逐条圈定 |
-| G40 | **「声明了没人行动」这把尺子当时只量得到 dataclass 字段与 CLI/HTTP 旋钮，量不到模块级常量和文档表格**（第 26 轮第 1 遍登记并清偿）：G39 那一格第 25 轮之所以只能留在"开放"，理由写在它自己的处置栏里——`test_declared_knobs.py` 那一族读不到文档表格里的散文。本轮把"射程不够"本身当成对象，先造尺再量：普查脚本 `census26a_declared_exec.py` 三支尺子，① 模块级常量/词表按名字现扫"全包读取点 / 测试 / 脚本 / 文档提及"，② dataclass 字段分母取 `dataclasses.fields()` 且读取点**按类名锚定**（174 个类、69 行有格子），③ 文档表格列 ↔ 运行期登记表逐格对账。改前读数（`census26a_declared_exec2.log`，末行 `CENSUS DONE zero_read=11 test_only=1 dc_rows=69`）：真死常量 **11 格** + 只有测试读 **1 格**；`SourceSpec` 的 `summary`/`capabilities`/`notes` 三格**全仓零读取**，而 `docs/configuration.md` 的 `[web] enabled_sources` 一行写着"须属于 `KNOWN_SOURCES`"却从没给出合法取值名单——声明面把选择权交给读者，读者面给不出答案 | 处置分两类。**5 格按 D3 删除**：`DEFAULT_EVENT_TYPES`（F-81，连本包自己上报的事件类型都不在它里面）、`SYNTHETIC_CATEGORIES`（F-82，从没按它展开过一格）、`DEFAULT_TRADE_PORT` 与 `Family`/`TRADE_FAMILY`、`PRICE_SCALE`（随交易面词表同批撤下，`tstdx/trade/constants.py` 的 `__all__` 少了 4 个名字）、`trade/security.STATUS`（它的 docstring 承诺"真机定标后同步翻转 `STATUS`"，而全仓没有第二个人读过它——承诺本身没有读取方）。**7 格接到真决策点**：`DAYLIKE_CATEGORIES` → `tstdx/protocol/parsers/_std7709_bars.py:221` 的越域 fail-closed（F-78）、`CMD_SET`/`ORDER_STATUS_FILLED`/`ORDER_STATUS_PARTIAL`/`QUERY_CATEGORY_NAMES` → 交易面词表（F-83）、`SORT_COLUMNS` → `tstdx/diagnostics.py:88` 的未声明列告警（F-80）、`TICKS_PER_PAGE` → `tstdx/web/ticks.py:135` 的短页即末页（F-79，此前只有测试读它）。改后同一把尺子读 **真死 0 / 只有测试读 0**（`census26a_afterfix.log` 末行 `CENSUS DONE zero_read=0 test_only=0 dc_rows=68`；另有"只在本文件用过"50 格，口径写明不算缺陷——那是封装不是死码）。文档那三格的出路不是"给它造一个虚构的内部读取方"，而是交给它唯一的读者：`docs/api/interfaces.md`「Web 源登记（`tstdx.web.sources.KNOWN_SOURCES`，31 个）」逐格列出源名/摘要/能力/接口告诫，`tests/architecture/test_web_source_table.py`（10 项，F-84）把四列钉回运行期登记表。三族判据各付了一次变异账（本轮现场，全部"改前红 / 还原绿"）：`mutate26c_webtable.log` M2 文档编一条告诫、M4 标题分母改小、M5 整张表删掉、M6 改代码 summary 不动文档、M7 清空 `notes`、M8 代码加一档能力 → 各红，还原 `10 passed in 0.20s`；`mutate26b_trade.log` M1–M7（拆掉发送侧 `CMD_SET` 闸、未声明类别回到静默空列表、范围缺口借红线异常、撤单分支掉出分派、成交不落账、T+1 口径改坏、入参闸消失）→ 各红，还原 `13 passed in 0.15s`；`mutate26a_advice.log` M1–M5 → 各红，还原 `6 passed in 2.21s`。**G39 的三种出路仍然归所有者**，本轮只让"把 `max_retries` 写成 pool 重试上限"那一类话当场变红（M3 格） | P2（读者照文档行动的那一类：常量是假告示、文档表格缺答案）→ **已清偿（第 26 轮）**：三支尺子成为常驻判据（`tests/architecture/test_web_source_table.py`、`tests/trade/test_trade_plane_vocabulary.py`、`tests/architecture/test_advice_field_actors.py`），11+1 格逐条选定删/接并留在体锚 |
-| G41 | **链路跑完之后归不归零：资源生命周期与停机路径当时没有任何形状判据**（第 26 轮第 2 遍登记并清偿）：口令的"主体流程全部联通"由前 25 轮的六面与接缝量过了，"不存在死循环"由 G21/G38 量过了，但**收尾**这一族断得安静——功能面全绿、离线全量全绿，只有长跑的进程慢慢多出几条没人收的线程、几张再没人看的退役槽位、一个关不掉的端口。本轮先造尺（普查 `lifecycle_census.py`，读数 `lifecycle_census_v3.log` 五支），再按量到的形状写成六条常驻判据（`tests/architecture/test_resource_lifecycle_gates.py`，整包 AST 现扫，不按名单放行）：① 每条线程 spawn 必须落到句柄、句柄必须接到一次 `join`；② 每次 `join` 自带截止时间，不带的要就地写明凭什么等得起；③ 不可重入锁的临界区里不许再进取同一把锁的方法；④ own 来的资源不许留在早退分支之后；⑤ 探活与空闲回收共用一条线程时，启动门必须读到这条线程会读的每个 knob；⑥ 往别人对象上打钩子标记的模块必须导出逆操作 | 改后现扫（`lifecycle_census_v3.log`，五支逐字）：A 线程 spawn/join 配对 = **空**、B 无超时 join = **1 处**（`tstdx\web\adapters.py:289`）、C 非重入锁临界区内自嵌套 = **空**、D 停机早退不放 own 资源 = **空**、E 换钩子的逆操作 = `tstdx\transport\sniff.py: 打戳=1 还原=0 导出=['CommandStats', 'Sniffer', 'attach', 'detach']`。B 与 E 这两格是**留下来的登记**而不是漏网：前者是判据二的双向登记表（分页 worker 的寿命由分页而非网络决定，加超时反而把没跑完的页当已跑完、把截断结果当全量交出去），后者被 F-95 补上 `detach` 之后由判据六转成"逆操作必须进公开面"。改前的逐格形状**没有留下改前日志**（普查脚本 v3 是在处置之后跑的），所以这一族的改前账只由两处承担：代码里的 17 个在体锚（每条都写着"这里此前是什么"），以及下面那份变异台账——它把每一格改回旧形状，六条判据各自当场红。`g41_mutation26.log`（跑在真树的**副本**上，真树全程只读）逐格给出红的第一行，例如判据五 `tstdx/transport/pool.py::ConnectionPool 的启动门只读到 ['heartbeat_interval']，而它起的 _start_heartbeat() 还会读 ['idle_timeout']——把没读到的那个 knob 调成关闭值会顺手关掉整条线程（第 26 轮 F-88 的形状）`，末行 `MUTATION LEDGER DONE rc=0（六条判据各自对应变异全部变红）`。17 项处置（F-87…F-103）的落点：`tstdx/transport/pool.py`（F-87 心跳句柄可 join、F-88 启动门读到 `idle_timeout`、F-97/F-98 已关闭的池不再拨号且每代最多一条句柄、F-99 退役槽位表从此有界）、`tstdx/transport/async_.py`（F-89 异步池补上空闲回收、F-94 异步 `connect` 的 TOCTOU 与自嵌套持锁）、`tstdx/transport/sniff.py`（F-95 `detach` 与 `attach` 同进 `__all__`、F-96 打戳历史有界）、`tstdx/streaming/{base,engine,push}.py`（F-91 超时停机也释放 own 的 runtime、F-92 线程复活、F-93 传输释放）、`tstdx/integration/` 三面与 `tstdx/observability/` 两 exporter（F-100 lifespan 所有权、F-101 statsd 复活路径、F-102 收尾只关自己那台）、`tstdx/web/_session_market.py`（F-103 进程级共享 HTTP 客户端可提前收尾）、`tstdx/integration/runtime_tasks.py` 整支删除（F-90，D3） | P1（长跑进程的资源泄漏与停机语义，直接对应口令的"主体流程全部联通"和"不存在死循环"两问没覆盖的那一半）→ **已清偿（第 26 轮）**：六条形状判据常驻，两处射程盲区按 G14 口径写在判据 docstring 里而不是抹平 |
-| G42 | **证据尺只认树名，于是台账里那一类"仓外绝对路径"指针完全在射程之外；同一轮还量到 `git worktree` 自己标 prunable 的树**（第 26 轮第 4 遍登记并清偿）：`test_evidence_pointers.py` 的判据对象从第 21 轮起就写成"树名形状"（`wt_*` 与 `tstdx_wt_*`），而取证现场不只躺在工作树里——runner 目录与日志目录是 `P:/github_public/` 下的**绝对路径**（第 15/16/22 轮的 `ship15_logs`、`scratch_v18b16`、`export_v18b22_ship`）。后果与 G24 同族：判据 ② 对这类指针**一处都读不到**，所以"台账在现时语气里引用一个本机已不存在的目录"改了三轮没人红；同时 §2 声明只数树，磁盘上的仓外现场目录消失（第 25 轮那句"scratch 目录不在树名正则的对象里，判据量不到它，能钉的只有写台账的这只手"）就是这条缺口的自述 | 现扫（`ruler26.py` 扩到绝对路径支路后 `absdir26_prefix.log`，**改前**）：`1 failed, 8 passed`，6 处违约逐条点名——`ship15_logs` ×1 块、`scratch_v18b16` ×4 块、`export_v18b22_ship` ×1 块，全部就地补「本机已无 + 解得开的锚」（锚分别取 `2398305` / `3dd14a3` / `b66e771`），改后同一判据 `9 passed in 0.87s`。新格与工作树那格共用同一个跳过条件 `holds_evidence_store()`：全新克隆与 CI 里 `P:/github_public` 这一层根本不存在，让它运行就是把每一条绝对路径指针报成违约——**扩大扫描范围必须同时复查跳过条件**，这条口径是 G24 付过代价之后写进 docstring 的。`git worktree list --porcelain` 现量 prunable 4 棵（`ruler26.log` 第 [6] 支），其中 3 棵（`wt_v18b21step`/`wt_v18b22step`/`wt_v18b23step`）台账已按 G18 写明回收，第 4 棵 `export_v18b22_ship` 是**交付面导出目录**、只有绝对路径形状，正是这一格新判据抓到的那条 | P3（只影响台账与证据的可核对性，不影响运行时）→ **已清偿（第 26 轮）**：判据覆盖两类指针形状（树名 + 仓外绝对路径目录），六处历史裸指针就地补锚，防盲正控各造一次 |
+| G38 | **换主站那把退避梯子既没有上界，也不看它等的是谁——"不存在死循环"在传输层的那一格**（第 25 轮登记并清偿）：三件事叠在同一段循环里。(a) **无上界**：`max_attempts = max(max_retries + 1, 不同主站数)`，而 `2**attempt` 里的 `attempt` 在换主站时同样增长——它不是"重试次数"而是**已走过的主站数**，于是退避总时长只由主站数量决定：8 台一次失败请求要睡 `1+2+4+8+16+32+64 ≈ 127` 秒，32 台是 `2**31` 秒量级。用户给的 `--timeout 5` 约束的是**单次套接字超时**，对整条命令的墙钟当时没有任何承诺，`docs/api/interfaces.md` 也没说过。(b) **不看对象**：那份 sleep 花在这一轮**新拨的那台**主站身上（选序本来就排除了已试主机），冷却的不是刚失败的连接，而是等待本身——换一台从没拨过的号码之前睡 64 秒，延长的只是调用方的墙钟。(c) **同一把梯子有两份手写实现**：同步池与异步池各抄一遍指数+抖动，要封顶就得记两处，异步那份还自带第二个 `random` 形状 | 改前 `scratch_v18b25/probe25/timing25_snapshot.log`：七条 `退避 …s` 逐字为 `0.769 / 2.334 / 3.287 / 7.355 / 15.912 / 28.558 / 62.928`（相加 = **121.143 秒**），末行 `TOTAL elapsed = 159.4s`；同一次批量帧 `0x054C` 放弃之后 `REQUEST 0x0530 returned in 131ms`——**数据其实 131 毫秒就拿到了**，159 秒全花在"决定下一台要不要等"。↔ 改后 `timing25_snapshot_postfix.log`（同一台机器、同一份围栏、同一条命令）：`TOTAL elapsed = 38.1s`，整份日志**零条**退避行。判据 `tests/transport/test_retry_backoff_cap.py`（30 项）钉四件事：梯子逐档不越上界（4 种基准 × 6 档参数化）、封顶前仍在增长（"压成常数"不算修好）、32 台池的旧形状确实无界、走完全部未试主站的请求 `sleeps == []`（同步与异步各一格）而回到已试主站仍恰好冷却 3 次；另有一条 AST 格——`2**attempt` 只许出现在 `pool.py::retry_backoff_delay` 体内，`async_.py` 必须引用该 helper（把第二份实现留在仓库里即红）。变异台账 `prefix25_g38b.log`：M1 去封顶 `16 failed, 14 passed`、M2 把 sleep 装回"每次换主站" `1 failed, 29 passed`、复原后基准 `30 passed`，两格各带 `字节级复原 = True`。**一处本轮自查的台账先于日志**：这一格草记时写的是"159 秒里有 119 秒是纯 sleep"，那是背出来的数——逐条相加是 121.143 秒，源码注释、判据 docstring 与 `interfaces.md` 的两处随之改正（G20 口径；本轮第二起，第一起是 G34 那句"全程不打外网"） | P1（口令「不存在死循环」那一问的直接对象：调用方声明 5 秒的一次请求在墙上跑 159 秒，且**没有任何一格预告过这个数**；同一缺陷还有两份实现）→ **已清偿（第 25 轮）**：一处声明 `MAX_RETRY_BACKOFF_SECONDS = 8.0` 与 `retry_backoff_delay(base, attempt)`（`atst/transport/pool.py`），同步与异步池共用；退避只在"选序回到已试主站"时兑现（`pending_backoff` + `slot.host.key in tried` 两行，换到新机器即清零）；上界写进读者会读的那一页——`docs/api/interfaces.md` §3 的 `--timeout` 段现在给出可核对的承诺「**墙钟上界 = 主站数 × timeout**」，要压它就把 `--timeout` 调小或先做一次主站测速排序。**流式面的 30 秒重连上界不抄这一格**：`ReconnectPolicy(cap=30.0)` 等的是"服务回来"，与"下一台机器"是两种语义，这条差别写在常量注释里，避免下一轮把它当第 10 份手抄名单 |
+| G39 | **`RetryAdvice.max_retries` 是一张没人执行的告示**（第 25 轮登记，**开放，待裁决**）：`_register_all()` 给 20 余条异常逐条填了 `max_retries=1..10`，而全仓对它的读取点**只有两处序列化**——`errors.py:148`（`TdxError.to_dict`）与 `feedback/reporter.py:211`（反馈载荷的 `advice` 那一格）；两条池都不看它，重试次数由 `max_attempts` 决定，那里的 `max_retries` 是**连接池自己的构造参数**，与异常自带那一格同名不同源。后果是 G10/G11 那一族（声明值没人按它行动）长在错误契约上的一格，而且比旋钮更绕：`docs/errors.md` 的字段表在这一轮之前把它写成"pool 重试上限"，读者照它推断"这类错误最多重试 3 次"，而实现给的是"至少每台主站拨一次"。同轮顺手量到该文档指的实现行号 `pool.py:423` 在 HEAD 上就已指错（真实读取点 :621），一并改成按符号引用 | 现扫 `atst/` 内 `advice.<字段>` 的全部读取：`retryable`（`pool.py:621`、`async_.py:764`、`error_envelope.py:222`）、`switch_host`（`pool.py:623`、`async_.py:766`）、`backoff`（`pool.py:628-629`、`async_.py:769-770`）——**`max_retries` 之外无一执行字段**（`note` 的用途是进日志，文档已如此声明），而 `max_retries` 的两处读取就是上面那两行序列化。文档改动本身即本轮证据（`docs/errors.md` 第二节字段表的 `backoff`/`max_retries` 两行）；**这一格没有新增判据**，理由登记在这里而不是含糊过去：`test_declared_knobs.py` 那一族管的是 dataclass 字段与 CLI/HTTP 旋钮的读取点，读不到文档表格里的散文，而把"异常自带的 max_retries 必须被池执行"写成判据就等于**先替所有者裁了出路 (a)**——那是下面三种代价不对等的选择之一 | P2（对外错误契约的形状：删一格会断已发布的 JSON 字段，执行它会改动每次故障转移的次数上限）→ **开放，本会话不擅自裁决**：三条出路——(a) 让池把它当上界真执行（`min(max_attempts, advice.max_retries + 1)` 一类，牵动 G21/G38 两条**已清偿**的循环判据与 `test_loop_termination_gates.py` 的命名豁免表，"每台至少试一次"这条现有承诺随之收缩）；(b) 从 `RetryAdvice` 删掉、只留池旋钮（`to_dict` 与反馈载荷的 `advice` 形状随之改，D3 口径：兼容层删掉而不是改名）；(c) 保留但明确"只随错误序列化给人和反馈管道读"，把它挪进 `docs/errors.md` 那张"历史兼容字段/无消费方"表，与 `fallback_to_offline`/`fallback_to_web`（F-68 已登记同族）同栏。本轮只把文档改成与实现一致（已做），出路留给所有者逐条圈定 |
+| G40 | **「声明了没人行动」这把尺子当时只量得到 dataclass 字段与 CLI/HTTP 旋钮，量不到模块级常量和文档表格**（第 26 轮第 1 遍登记并清偿）：G39 那一格第 25 轮之所以只能留在"开放"，理由写在它自己的处置栏里——`test_declared_knobs.py` 那一族读不到文档表格里的散文。本轮把"射程不够"本身当成对象，先造尺再量：普查脚本 `census26a_declared_exec.py` 三支尺子，① 模块级常量/词表按名字现扫"全包读取点 / 测试 / 脚本 / 文档提及"，② dataclass 字段分母取 `dataclasses.fields()` 且读取点**按类名锚定**（174 个类、69 行有格子），③ 文档表格列 ↔ 运行期登记表逐格对账。改前读数（`census26a_declared_exec2.log`，末行 `CENSUS DONE zero_read=11 test_only=1 dc_rows=69`）：真死常量 **11 格** + 只有测试读 **1 格**；`SourceSpec` 的 `summary`/`capabilities`/`notes` 三格**全仓零读取**，而 `docs/configuration.md` 的 `[web] enabled_sources` 一行写着"须属于 `KNOWN_SOURCES`"却从没给出合法取值名单——声明面把选择权交给读者，读者面给不出答案 | 处置分两类。**5 格按 D3 删除**：`DEFAULT_EVENT_TYPES`（F-81，连本包自己上报的事件类型都不在它里面）、`SYNTHETIC_CATEGORIES`（F-82，从没按它展开过一格）、`DEFAULT_TRADE_PORT` 与 `Family`/`TRADE_FAMILY`、`PRICE_SCALE`（随交易面词表同批撤下，`atst/trade/constants.py` 的 `__all__` 少了 4 个名字）、`trade/security.STATUS`（它的 docstring 承诺"真机定标后同步翻转 `STATUS`"，而全仓没有第二个人读过它——承诺本身没有读取方）。**7 格接到真决策点**：`DAYLIKE_CATEGORIES` → `atst/protocol/parsers/_std7709_bars.py:221` 的越域 fail-closed（F-78）、`CMD_SET`/`ORDER_STATUS_FILLED`/`ORDER_STATUS_PARTIAL`/`QUERY_CATEGORY_NAMES` → 交易面词表（F-83）、`SORT_COLUMNS` → `atst/diagnostics.py:88` 的未声明列告警（F-80）、`TICKS_PER_PAGE` → `atst/web/ticks.py:135` 的短页即末页（F-79，此前只有测试读它）。改后同一把尺子读 **真死 0 / 只有测试读 0**（`census26a_afterfix.log` 末行 `CENSUS DONE zero_read=0 test_only=0 dc_rows=68`；另有"只在本文件用过"50 格，口径写明不算缺陷——那是封装不是死码）。文档那三格的出路不是"给它造一个虚构的内部读取方"，而是交给它唯一的读者：`docs/api/interfaces.md`「Web 源登记（`atst.web.sources.KNOWN_SOURCES`，31 个）」逐格列出源名/摘要/能力/接口告诫，`tests/architecture/test_web_source_table.py`（10 项，F-84）把四列钉回运行期登记表。三族判据各付了一次变异账（本轮现场，全部"改前红 / 还原绿"）：`mutate26c_webtable.log` M2 文档编一条告诫、M4 标题分母改小、M5 整张表删掉、M6 改代码 summary 不动文档、M7 清空 `notes`、M8 代码加一档能力 → 各红，还原 `10 passed in 0.20s`；`mutate26b_trade.log` M1–M7（拆掉发送侧 `CMD_SET` 闸、未声明类别回到静默空列表、范围缺口借红线异常、撤单分支掉出分派、成交不落账、T+1 口径改坏、入参闸消失）→ 各红，还原 `13 passed in 0.15s`；`mutate26a_advice.log` M1–M5 → 各红，还原 `6 passed in 2.21s`。**G39 的三种出路仍然归所有者**，本轮只让"把 `max_retries` 写成 pool 重试上限"那一类话当场变红（M3 格） | P2（读者照文档行动的那一类：常量是假告示、文档表格缺答案）→ **已清偿（第 26 轮）**：三支尺子成为常驻判据（`tests/architecture/test_web_source_table.py`、`tests/trade/test_trade_plane_vocabulary.py`、`tests/architecture/test_advice_field_actors.py`），11+1 格逐条选定删/接并留在体锚 |
+| G41 | **链路跑完之后归不归零：资源生命周期与停机路径当时没有任何形状判据**（第 26 轮第 2 遍登记并清偿）：口令的"主体流程全部联通"由前 25 轮的六面与接缝量过了，"不存在死循环"由 G21/G38 量过了，但**收尾**这一族断得安静——功能面全绿、离线全量全绿，只有长跑的进程慢慢多出几条没人收的线程、几张再没人看的退役槽位、一个关不掉的端口。本轮先造尺（普查 `lifecycle_census.py`，读数 `lifecycle_census_v3.log` 五支），再按量到的形状写成六条常驻判据（`tests/architecture/test_resource_lifecycle_gates.py`，整包 AST 现扫，不按名单放行）：① 每条线程 spawn 必须落到句柄、句柄必须接到一次 `join`；② 每次 `join` 自带截止时间，不带的要就地写明凭什么等得起；③ 不可重入锁的临界区里不许再进取同一把锁的方法；④ own 来的资源不许留在早退分支之后；⑤ 探活与空闲回收共用一条线程时，启动门必须读到这条线程会读的每个 knob；⑥ 往别人对象上打钩子标记的模块必须导出逆操作 | 改后现扫（`lifecycle_census_v3.log`，五支逐字）：A 线程 spawn/join 配对 = **空**、B 无超时 join = **1 处**（`atst\web\adapters.py:289`）、C 非重入锁临界区内自嵌套 = **空**、D 停机早退不放 own 资源 = **空**、E 换钩子的逆操作 = `atst\transport\sniff.py: 打戳=1 还原=0 导出=['CommandStats', 'Sniffer', 'attach', 'detach']`。B 与 E 这两格是**留下来的登记**而不是漏网：前者是判据二的双向登记表（分页 worker 的寿命由分页而非网络决定，加超时反而把没跑完的页当已跑完、把截断结果当全量交出去），后者被 F-95 补上 `detach` 之后由判据六转成"逆操作必须进公开面"。改前的逐格形状**没有留下改前日志**（普查脚本 v3 是在处置之后跑的），所以这一族的改前账只由两处承担：代码里的 17 个在体锚（每条都写着"这里此前是什么"），以及下面那份变异台账——它把每一格改回旧形状，六条判据各自当场红。`g41_mutation26.log`（跑在真树的**副本**上，真树全程只读）逐格给出红的第一行，例如判据五 `atst/transport/pool.py::ConnectionPool 的启动门只读到 ['heartbeat_interval']，而它起的 _start_heartbeat() 还会读 ['idle_timeout']——把没读到的那个 knob 调成关闭值会顺手关掉整条线程（第 26 轮 F-88 的形状）`，末行 `MUTATION LEDGER DONE rc=0（六条判据各自对应变异全部变红）`。17 项处置（F-87…F-103）的落点：`atst/transport/pool.py`（F-87 心跳句柄可 join、F-88 启动门读到 `idle_timeout`、F-97/F-98 已关闭的池不再拨号且每代最多一条句柄、F-99 退役槽位表从此有界）、`atst/transport/async_.py`（F-89 异步池补上空闲回收、F-94 异步 `connect` 的 TOCTOU 与自嵌套持锁）、`atst/transport/sniff.py`（F-95 `detach` 与 `attach` 同进 `__all__`、F-96 打戳历史有界）、`atst/streaming/{base,engine,push}.py`（F-91 超时停机也释放 own 的 runtime、F-92 线程复活、F-93 传输释放）、`atst/integration/` 三面与 `atst/observability/` 两 exporter（F-100 lifespan 所有权、F-101 statsd 复活路径、F-102 收尾只关自己那台）、`atst/web/_session_market.py`（F-103 进程级共享 HTTP 客户端可提前收尾）、`atst/integration/runtime_tasks.py` 整支删除（F-90，D3） | P1（长跑进程的资源泄漏与停机语义，直接对应口令的"主体流程全部联通"和"不存在死循环"两问没覆盖的那一半）→ **已清偿（第 26 轮）**：六条形状判据常驻，两处射程盲区按 G14 口径写在判据 docstring 里而不是抹平 |
+| G42 | **证据尺只认树名，于是台账里那一类"仓外绝对路径"指针完全在射程之外；同一轮还量到 `git worktree` 自己标 prunable 的树**（第 26 轮第 4 遍登记并清偿）：`test_evidence_pointers.py` 的判据对象从第 21 轮起就写成"树名形状"（`wt_*` 与 `atst_wt_*`），而取证现场不只躺在工作树里——runner 目录与日志目录是 `P:/github_public/` 下的**绝对路径**（第 15/16/22 轮的 `ship15_logs`、`scratch_v18b16`、`export_v18b22_ship`）。后果与 G24 同族：判据 ② 对这类指针**一处都读不到**，所以"台账在现时语气里引用一个本机已不存在的目录"改了三轮没人红；同时 §2 声明只数树，磁盘上的仓外现场目录消失（第 25 轮那句"scratch 目录不在树名正则的对象里，判据量不到它，能钉的只有写台账的这只手"）就是这条缺口的自述 | 现扫（`ruler26.py` 扩到绝对路径支路后 `absdir26_prefix.log`，**改前**）：`1 failed, 8 passed`，6 处违约逐条点名——`ship15_logs` ×1 块、`scratch_v18b16` ×4 块、`export_v18b22_ship` ×1 块，全部就地补「本机已无 + 解得开的锚」（锚分别取 `2398305` / `3dd14a3` / `b66e771`），改后同一判据 `9 passed in 0.87s`。新格与工作树那格共用同一个跳过条件 `holds_evidence_store()`：全新克隆与 CI 里 `P:/github_public` 这一层根本不存在，让它运行就是把每一条绝对路径指针报成违约——**扩大扫描范围必须同时复查跳过条件**，这条口径是 G24 付过代价之后写进 docstring 的。`git worktree list --porcelain` 现量 prunable 4 棵（`ruler26.log` 第 [6] 支），其中 3 棵（`wt_v18b21step`/`wt_v18b22step`/`wt_v18b23step`）台账已按 G18 写明回收，第 4 棵 `export_v18b22_ship` 是**交付面导出目录**、只有绝对路径形状，正是这一格新判据抓到的那条 | P3（只影响台账与证据的可核对性，不影响运行时）→ **已清偿（第 26 轮）**：判据覆盖两类指针形状（树名 + 仓外绝对路径目录），六处历史裸指针就地补锚，防盲正控各造一次 |
 
 > **证据尺账（第 26 轮现扫，由 `tests/architecture/test_evidence_pointers.py` 逐格对账，读数 =
 > `scratch_v18b26/probe26/ruler26d.log`、`ruler26e.log` 与 `ruler26d_worktrees.log`，均本轮现场）**：
 > 本台账按名字引用 51 棵 `wt_*` 工作树，共 247 处指针。磁盘上现存 50 棵：仓内 48 棵合计
 > 1.58 GiB（`du -sk wt_*` 现量 48 棵 1654373 KiB，与第 21/22/23/25 轮逐 KiB 相同——一棵也没增删），
-> 仓外 2 棵 = 第 25 轮候选树 `tstdx_wt_v18b25step` 与本轮候选树 `tstdx_wt_v18b26step`（都从 HEAD
+> 仓外 2 棵 = 第 25 轮候选树 `atst_wt_v18b25step` 与本轮候选树 `atst_wt_v18b26step`（都从 HEAD
 > `07477e8` 检出；本轮的 17 格门禁、三份变异台账与 G41 五支持查全在后者里面跑）。
-> 第 23 轮那格写的是"仓外 1 棵 = 本轮候选树 `tstdx_wt_v18b23step`（现量 37665 KiB）"，这一棵在第 25
+> 第 23 轮那格写的是"仓外 1 棵 = 本轮候选树 `atst_wt_v18b23step`（现量 37665 KiB）"，这一棵在第 25
 > 轮中途变成 prunable（管理元数据还在、目录已不在盘上）；本轮按 G18 早就写下的口径在 §33 第六节就地补记
 > 「已回收 + 锚 = 提交 `07477e8`」，**那张 17 格读数表本身一字不改**——**提交走得到任何一台机器，工作树
 > 走不到**。同一次消失的还有 `scratch_v18b22/`（第 22/23/24 轮 runner 与日志的所在，第 25 轮的普查脚本与
 > 日志一并没了；那轮**没有**做任何删除动作，成因不明）。
 >
-> 第 23 轮那半句"遗留树现在也回收不了"被它自己推翻的账照旧成立：`tstdx_wt_v18b21step`（锚 = 提交
-> `582f5e9`）与 `tstdx_wt_v18b22step`（锚 = 提交 `d3aaeee`）当时各付了一次改写代价（判据 ② 报出 9 处
+> 第 23 轮那半句"遗留树现在也回收不了"被它自己推翻的账照旧成立：`atst_wt_v18b21step`（锚 = 提交
+> `582f5e9`）与 `atst_wt_v18b22step`（锚 = 提交 `d3aaeee`）当时各付了一次改写代价（判据 ② 报出 9 处
 > 死指针、落在 7 个逻辑块里，逐块补「已回收 + 锚」）。相对 HEAD（`07477e8`）现扫的 48 棵 / 225 处
 > ⇒ 本工作树为 +3 棵 / +22 处（51 棵 / 247 处），多出的三棵是 23step／25step／26step 三代候选树
 > （`git show HEAD:` 版与现版的树名差集现扫，一条也没被抹掉）：23step 已在上一段登记回收，25step 与
@@ -172,13 +172,13 @@
 > `P:/github_public/` 下的**绝对路径**目录名，与树名不是一种形状。现扫（`ruler26d.log` 第 [6] 支）
 > = 4 个目录名 / 8 处指针：`ship15_logs` ×1、`scratch_v18b16` ×4、`export_v18b22_ship` ×1 三个已不在
 > 磁盘上，且各自所在的每一格都写明「本机已无 + 解得开的锚」（锚分别取 `2398305` / `3dd14a3` /
-> `b66e771`），第四个 `tstdx` 就是主工作树自己（在盘，2 处）。同一份清单的 git 侧读数在
+> `b66e771`），第四个 `atst` 就是主工作树自己（在盘，2 处）。同一份清单的 git 侧读数在
 > `ruler26d_worktrees.log`：`git worktree list --porcelain` 现量 63 条注册记录，
-> `git worktree prune --dry-run --verbose` 现量 prunable **4 棵**（`tstdx_wt_v18b21step`／`22step`／
+> `git worktree prune --dry-run --verbose` 现量 prunable **4 棵**（`atst_wt_v18b21step`／`22step`／
 > `23step` 加 `export_v18b22_ship`）——与第 25 轮 `ruler26.log` 第 [6] 支同一份、一棵也没少，本轮只列
 > 不删：回收哪一棵归所有者点头（G18）。这条腿**仍不覆盖相对路径形态**的取证指针
 > （`scratch_v18b26/probe26/…` 这类仓外相对写法，两种尺子都读不到），能钉的照旧是写台账的这只手
-> （G20 同一口径）；第四个名字 `tstdx` 是主工作树自己，它被算进分母是这条正则的形状使然，不是缺陷。
+> （G20 同一口径）；第四个名字 `atst` 是主工作树自己，它被算进分母是这条正则的形状使然，不是缺陷。
 
 **结论口径建议统一成这句**（写进 README 与 F-37 裁决记录，避免每轮重新解释）：> 链是通的，声明与执行是闭合的；G1/G5 是"实现了但选择不给数/不给类型"的登记账，
 > G2 经第 7 轮更正后是**口径账**（已改判据，无待补契约），
@@ -192,7 +192,7 @@
 > ——错值现在随结果带 `field_out_of_domain` 上 wire，`strict=True` 直接拒；
 > G4 不再是验证盲区：7709 核心链有五条盘中判据跑在 live-smoke 的工作日 02:30 UTC 调度上，
 > 主站不通时它红而不 skip；G8 的空字段口径已写在读者会读的两页上，并由矩阵判据钉住；
-> 本轮新登记 G9（文档教用户 `pip install tstdx` 而 PyPI 上没有这个名字），文档侧已按实测改写，
+> 本轮新登记 G9（文档教用户 `pip install atst` 而 PyPI 上没有这个名字），文档侧已按实测改写，
 > 关闭它需要的是发布动作本身。
 
 **第 16 轮之后的同一句话（只补两格，其余不变）**：
@@ -212,7 +212,7 @@
 > 一句话里的账不变：线上仍在给错数的还是只有 G3 那一格。
 
 **第 18 轮之后的同一句话（只补三格，其余不变）**：
-> G13 本轮清偿——周期词表从此只有一处声明（`tstdx/domain/period.py`），category 表、
+> G13 本轮清偿——周期词表从此只有一处声明（`atst/domain/period.py`），category 表、
 > web 面接受集、分钟通道判定三处由它派生；改前那 15 个「一条路径给数、另一条 `ParseError`」
 > 的用户写法现在两条路径同解（实测 0 格不一致）。
 > G14 是同族的另一头：这次不是代码替不存在的东西说话，而是**门禁替一次本地跑包的现场说话**。
@@ -244,7 +244,7 @@
 > G21/G22 是「至少检查 3 遍」这一口令量出来的两格，都不属于"给错数"那一列：G21 是**限流器可以把
 > 调用方永久挂住**的行为缺陷（本轮改实现，并用改前当场红的复现兜住），G22 是**结果侧 wire 出口
 > 没人对账**的口径缺陷（本轮只建判据，三面出口一字未改）。同一遍普查还补上证据尺子自己的两个
-> 瞎点：① 第 21 轮起候选树落在仓库外面（目录名带 `tstdx_` 前缀），旧正则对这种形状**一处都数不到**，
+> 瞎点：① 第 21 轮起候选树落在仓库外面（目录名带 `atst_` 前缀），旧正则对这种形状**一处都数不到**，
 > 台账写满这类指针也不会红；② 但把前缀补上之后，这把尺子在候选树里**把正在量的那棵树数成了证据**，
 > 于是"本机一棵树都没有"的跳过条件不再成立，47 棵已回收的树被一次性报成 187 行违约——**假绿与假红
 > 出自同一次修改**，登记为 G24，当场清偿。G23 是这一轮唯一"量清但不归代码管"的一格：同一个 `1.1.0`
@@ -273,7 +273,7 @@
 同处还有硬编码特例 `capability == "bars" and provider == "tencent"`（`:92`）——
 审计逻辑里嵌了业务事实，是 F-27/F-49 那一族"影子规则"的现存样本。
 
-**R-3｜P1｜`tstdx/client/` 一名两职，对外口径自相矛盾。**
+**R-3｜P1｜`atst/client/` 一名两职，对外口径自相矛盾。**
 同一个包里既有"唯一业务入口"（`api.py` 的 `Client`/`AsyncClient`），又有可脱离内核的
 协议客户端（`core.py`/`sync.py`/`async_.py`/`_mixin.py` 955 行）。README §架构总览写
 "唯一执行路径"，§快速开始第一格却教 `TdxClient` 直连。**这不是文档错，是产品双身份没有边界表达**：
@@ -299,7 +299,7 @@ CLI parser · HTTP 路由 · WS `METHODS` · MCP `inputSchema` —— 八处事�
 适配器 + `_session_*.py` mixin + `sources.py` 注册 + catalog 绑定。
 
 **R-7｜P2｜16 项可达性豁免把约 5 500 行"公共 API 名义资产"永久停在静态图外。**
-`deprecation.py` 206 行在 `tstdx/` 包内**零引用**（本轮独立复核：`grep -rn deprecation --include=*.py tstdx/`
+`deprecation.py` 206 行在 `atst/` 包内**零引用**（本轮独立复核：`grep -rn deprecation --include=*.py atst/`
 除自身外 0 命中，也不在 `__all__` 45 个名字里，≈F-74；**第 8 轮已按 D3(a) 删除，见 §17**）；`profile/`(1 262) `output/`(305)
 `charset/`(510) `trade/`(1 535) 各有豁免理由且理由可核验。**问题不在单个豁免，
 在于"公共 API"这个豁免类别本身没有价值判据**：一个 206 行的机制可以凭"docs 里记着"长期存活。
@@ -314,9 +314,9 @@ CLI parser · HTTP 路由 · WS `METHODS` · MCP `inputSchema` —— 八处事�
 现有三条各管一种形状：反引号里的 `.py` 路径（F-67）、CamelCase 类名、README 结构树行。
 本轮实测出两个**新形状**，都不在射程内：
 ① 活文档 `docs/troubleshooting.md:97` 教用户调 `client.router.last_errors()`，
-而 `.router` 在 `tstdx/` 里零命中（≈F-73，小写点号形状）；
-② **生产代码 docstring** `tstdx/web/sources.py:11` 用 Sphinx 角色写着
-`:mod:`tstdx.sources.router` 中统一路由`，指向 v16 已删除的模块，且是**现在时语气**——
+而 `.router` 在 `atst/` 里零命中（≈F-73，小写点号形状）；
+② **生产代码 docstring** `atst/web/sources.py:11` 用 Sphinx 角色写着
+`:mod:`atst.sources.router` 中统一路由`，指向 v16 已删除的模块，且是**现在时语气**——
 它比 F-73 更糟：库作者读代码时被误导，而 `:mod:` 角色本身在 Sphinx 构建期会直接报错。
 （这条是本方案新账，登记时领新 F 号。）
 
@@ -376,7 +376,7 @@ G4（无盘中 live 判据）+ R-13（无 CI 读数）合起来意味着：**这
 |---|---|---|
 A1 | 执行 F-70 (b)：4 份 parity/audit 文档按 v17 事实改写（反引号方法名逐份回查落点） | 无 |
 A2 | 执行 F-71 (c)：`WebQuoteClient` 缺省单源、显式指名；顺带修 `web/session.py` 的假事实句 | 低（缺省换源行为消失＝行为变化） |
-A3 | 修 R-9 的两处幻影：`docs/troubleshooting.md:97` 与 **`tstdx/web/sources.py:11` 的 `:mod:` 死引用**（新账） | 无 |
+A3 | 修 R-9 的两处幻影：`docs/troubleshooting.md:97` 与 **`atst/web/sources.py:11` 的 `:mod:` 死引用**（新账） | 无 |
 A4 | 把 §2 的"贯通≠全部实现"口径写进 README §核心特性 与 F-37 裁决行，四格缺口 G1–G4 各引一处证据 | 无 |
 
 **验收**：九门禁 rc=0 不变；离线全量与覆盖率与基线同量级（记录读数）；新增一条判据能抓出
@@ -396,7 +396,7 @@ B2 **三面入参 fail-closed**（F-47 收口）：HTTP query/body、WS `params`
 一律拒（MCP 的 `additionalProperties: False` 已在 `_tools_spec.py` 声明 9 处，改为**强制**并被判据扫得到）。
 > **作废更正（V18 第 2 轮复核）**：这条在本方案写就之前**已经整体落地**——提交 `b52a122`
 > "refuse undeclared request fields on all three wire faces (F-47)"。当前磁盘事实：
-> 拒绝口只有一处（`tstdx/integration/wire_fields.py:59` `reject_undeclared`），
+> 拒绝口只有一处（`atst/integration/wire_fields.py:59` `reject_undeclared`），
 > HTTP 查询串用路由签名当白名单（`runtime_http.py:41-52`）、HTTP body 与 WS `params` 用
 > `QUERY_BODY_FIELDS`/`WS_PARAMS_FIELDS`（`wire_fields.py:34,40`）、MCP 用它自己的
 > `inputSchema.properties`（`mcp/_server.py:228`，注释就写着"只写进 schema 而不执行＝承诺一个不会发生的行为"）。
@@ -469,8 +469,8 @@ C2 **`Client` 发现面收口**（按 D5）：三选一并落实——
 　(a) 恰是那条判据判红的形状——重做已裁决格属越权，见 §12 撤回段；
 (b) 生成显式方法桩（+167 个 `def`，与 v17 命名空间收敛方向相反）；
 (c) 缩小动态面，只暴露 typed 契约覆盖的能力。
-C3 **`tstdx/client/` 分包**（R-3）：内核侧入口留 `tstdx/client/`，协议族客户端迁 `tstdx/tdx/`（或
-`tstdx/protocol/client/`），并在 README/门禁里**正面表达**双身份："TDX 协议库可独立使用；
+C3 **`atst/client/` 分包**（R-3）：内核侧入口留 `atst/client/`，协议族客户端迁 `atst/tdx/`（或
+`atst/protocol/client/`），并在 README/门禁里**正面表达**双身份："TDX 协议库可独立使用；
 经内核的调用一律走 `Client`"——把现在这句话只写在散文里的状态变成结构（新路径 + unimportable 守卫
 + 服务面只 import `Client`）。
 C4 **豁免类别加价值判据**（R-7）：`_reach_allow.txt` 每条豁免必须写"谁在链外使用它"（真实调用方：
@@ -483,7 +483,7 @@ C4 **豁免类别加价值判据**（R-7）：`_reach_allow.txt` 每条豁免必
 > "消费它的文件"那一维早就由 `[dead-pointer]`/`[weak-pointer]` 盯住（路径存在且真触达），不重复建。
 > 读数与 5 处过期写法的修正见 §15；`deprecation.py` 的 D3 处置在第 8 轮按默认 (a) 落地，见 §17。
 
-**验收**：八张面与派生源的一致性由**一条**框架判据守；`tstdx/` 根级与 `client/` 包内命名空间由白名单
+**验收**：八张面与派生源的一致性由**一条**框架判据守；`atst/` 根级与 `client/` 包内命名空间由白名单
 钉住（沿用 F-4 的机制）；删除的 curated 清单逐条列名并给"覆盖面不减"证明。
 
 ### 阶段 V18-D｜web 层收敛（体量最大，4–6 轮）—— 对应 R-5/R-6
@@ -556,8 +556,8 @@ F5（tag）与 F3/F4 保持在后。
 | # | 问题 | 选项 | 默认 |
 |---|---|---|---|
 | D7 | V18-B 的破坏性幅度 | (甲) 只补失败语义、不动入口 (乙) 同时把 G1 三格从三面摘除 | **(甲)**：先让失败显形，摘面留到 C1 派生表上线后一起决策 |
-| D8 | web 门面（140 方法 + `tstdx.web.__all__` 69）去留 | ~~(b) 收缩到内核实际绑定的 104 条能力~~ **(已撤回，见 §10)**：内核触达 140 里的 137 个方法，"收缩"买不到减行只会破坏绑定 | 剩下的真实选项：(a) 保留并单源化、(c) 只留 Provider 客户端删会话门面、或 (d) 保留门面但把 137 个方法与 Provider 的对应关系**做成表**（与 D1 的单位口径外移同一批）。默认改为**待重设**，不沿用 (b) |
-| D9 | 协议库与运行时的产品身份 | (a) 一仓双身份、README 明说边界（现状+结构） (b) 拆两个发布单元（`tstdx-tdx` 协议库 / `tstdx` 运行时） | **(a)**：拆包成本高于收益，先用 C3 的分包把边界变成结构 |
+| D8 | web 门面（140 方法 + `atst.web.__all__` 69）去留 | ~~(b) 收缩到内核实际绑定的 104 条能力~~ **(已撤回，见 §10)**：内核触达 140 里的 137 个方法，"收缩"买不到减行只会破坏绑定 | 剩下的真实选项：(a) 保留并单源化、(c) 只留 Provider 客户端删会话门面、或 (d) 保留门面但把 137 个方法与 Provider 的对应关系**做成表**（与 D1 的单位口径外移同一批）。默认改为**待重设**，不沿用 (b) |
+| D9 | 协议库与运行时的产品身份 | (a) 一仓双身份、README 明说边界（现状+结构） (b) 拆两个发布单元（`atst-tdx` 协议库 / `atst` 运行时） | **(a)**：拆包成本高于收益，先用 C3 的分包把边界变成结构 |
 | D10 | 92 项 typed 契约缺口（G2） | (a) 按业务族分 3 批补齐（约 90 份契约） (b) 承认 typed 面只覆盖核心族，把口径与判据一起改 (c) 维持 PENDING 不阻断 | **(b)**：(a) 是为覆盖率买代码，(c) 是把已知缺口藏成噪声。**第 7 轮已按 (b) 落地**（派生三来源 + 下限 + 缺形状 ERROR，见 §16）；"要不要为核心族之外补专属契约"从此是产品选择，不再是门禁里的 92 行噪声 |
 | D11 | 判据收缩的量化目标 | (a) 无目标，只按 §4 三类逐条处置 (b) 定"架构判据 126→≤60、`tests/` 行数 −20%" | **(a)**：定数字就会为凑数字删有价值的判据 |
 | D12 | V18 是否沿用 F 号/步骤号 | (a) 本方案 R-# 自编号，落地时领号 (b) 立刻在 v17 台账为 R-9② 等新账开 F 号 | **(a)**：并行会话正在写台账，争号必撞 |
@@ -619,7 +619,7 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b8step/mutate_v18b8.py` + `.log` | 第 8 轮 9 格反证（C0 对照 + P1–P8 回潮形状）：每格至少一道门禁红、每格按字节还原；harness `rc=0` |
 | `wt_v18b8step/_base_deprecation.py`、`_base_test_deprecation.py` | 提交前版本（`0bf2994`）的两个被删文件快照——P1/P2/P8 三格的取证对象，只在步骤树内，不入库 |
 | `wt_v18b8ship/run_gates.sh`、`gates_ship8.log` | **提交树**（`cb92bc0`，被跟踪文件 0 改动）十次调用复测 |
-| `wt_v18b8ship/fulltest_ship8.log` + `.xml` | 提交树离线全量与 junit 计数；与步骤轮的 `tstdx/` 覆盖表逐行相同 |
+| `wt_v18b8ship/fulltest_ship8.log` + `.xml` | 提交树离线全量与 junit 计数；与步骤轮的 `atst/` 覆盖表逐行相同 |
 | `wt_v18b9step/run_gates.sh`、`gates_v18b9.log` | 第 9 轮步骤轮（`02b7973` + 本步 10 文件）环境与十次调用逐条 RC 与摘要行 |
 | `wt_v18b9step/gates_v18b9_first_ruff_red.log` | 同一次步骤轮里**第一次**跑的原始日志：`ruff check` rc=1（`I001`，本轮往 `test_offline_capability_honesty` 的导入行加了 `TIER_L1` 导致成员序变了）。留着是为了说明"绿"不是重跑出来的巧合 |
 | `wt_v18b9step/fulltest_v18b9.log` + `.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数 |
@@ -628,7 +628,7 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b9step/probe9b.py`、`probe9b_readings.log` | 0x000F 喂进复权链路的后果计数：调整类别事件数、其中日期解不开数（FAQ 那句话的数字来源） |
 | `wt_v18b9step/probe9c.py`、`probe9c_readings.log` | 布局为什么锁不上：声明条数 vs 正文长度、`offset × stride` 全组合的最好命中率 |
 | `wt_v18b9ship/run_gates.sh`、`gates_v18b9.log` | **提交树**（`2e4e6bb`，`checkout-index` 直出）十次调用复测 |
-| `wt_v18b9ship/fulltest_v18b9.log` + `.xml` | 提交树离线全量与 junit 计数；`tstdx/` 覆盖表与步骤轮逐行相同 |
+| `wt_v18b9ship/fulltest_v18b9.log` + `.xml` | 提交树离线全量与 junit 计数；`atst/` 覆盖表与步骤轮逐行相同 |
 | `wt_v18b10step/run_gates10.sh`、`gates_v18b10.log` | 第 10 轮步骤轮（`5fa2713` + 本步 10 文件）环境与十次调用逐条 RC 与摘要行 |
 | `wt_v18b10step/gates_v18b10_first_ruff_red.log` | 步骤轮第一次跑时 ruff 两格 rc=1 的**复现件**（原始日志在改名归档时被删；复现方法与差异见 §19 步骤轮段） |
 | `wt_v18b10step/fulltest_v18b10.log` + `.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数 |
@@ -639,7 +639,7 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b10step/probe10e_catalog.log` | catalog 那份手抄名单与本轮派生集的逐格对照：`WebQuoteSession` 的可调用成员数、名单里真正命中成员的条目数、两份 capability 名单的双向差 |
 | `wt_v18b10step/mutate10.py`、`mutate_v18b10.log` + `mut10_out_1..9.log` | 第 10 轮 10 格反证（C0 对照 + M1–M9）：每格变红数与红名单在 `.log`，每格 pytest 原文分格存 `mut10_out_N.log`，每格跑完按字节还原 |
 | `wt_v18b10ship/run_gates.sh`、`gates_v18b10.log` | **提交树**（`27d2a11`，2 285 个被跟踪文件与 HEAD 逐字节相同）十次调用复测 |
-| `wt_v18b10ship/fulltest_v18b10.log` + `.xml` | 提交树离线全量与 junit 计数；`tstdx/` 覆盖表 141 行（含 TOTAL），与步骤轮**2 行不同**：TOTAL 与 `transport\pool.py`（miss 111↔113、partial 36↔37，两边都仍是 80%）——原先这行写的是"逐行相同"，与 §19 步骤轮段自相矛盾，第 11 轮按两份日志重量后更正 |
+| `wt_v18b10ship/fulltest_v18b10.log` + `.xml` | 提交树离线全量与 junit 计数；`atst/` 覆盖表 141 行（含 TOTAL），与步骤轮**2 行不同**：TOTAL 与 `transport\pool.py`（miss 111↔113、partial 36↔37，两边都仍是 80%）——原先这行写的是"逐行相同"，与 §19 步骤轮段自相矛盾，第 11 轮按两份日志重量后更正 |
 | `wt_v18b11step/run_gates11.sh`、`gates11_step.log` | 第 11 轮步骤轮（`4b66552` + 本步 4 文件）环境与十次调用逐条 RC 与摘要行 |
 | `wt_v18b11step/fulltest_v18b11.log` + `.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数 |
 | `wt_v18b11step/covdiff11.py` | 覆盖表逐行比对器（行数、文件名双向差、差异行）；本轮用它量了三对：step↔ship11、ship11↔ship10、step10↔ship10 |
@@ -651,7 +651,7 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b11step/mutate11.py`、`mutate_v18b11.log` + `mut11_out_1..8.log` | 第 11 轮 9 格反证（C0 对照 + M1–M8）：每格变红数与红名单在 `.log`，pytest 原文分格存 `mut11_out_N.log`，每格跑完按字节还原 |
 | `wt_v18b11ship/run_gates.sh`、`gates_v18b11.log` | **提交树**（`20d32a9`）十次调用复测 |
 | `wt_v18b11ship/verify_tree.py` | 提交树 ↔ HEAD 的内容核对（2 285 个被跟踪文件、换行归一后逐字节比；同时打印落盘带 CRLF 的文件数，用来说明为什么必须先归一化） |
-| `wt_v18b11ship/fulltest_v18b11.log` + `.xml` | 提交树离线全量与 junit 计数；`tstdx/` 覆盖表 141 行与步骤轮**2 行不同**（TOTAL 与 `transport\ratelimit.py`） |
+| `wt_v18b11ship/fulltest_v18b11.log` + `.xml` | 提交树离线全量与 junit 计数；`atst/` 覆盖表 141 行与步骤轮**2 行不同**（TOTAL 与 `transport\ratelimit.py`） |
 | `wt_v18b12step/run_gates12.sh`、`run_gates12.log` | 第 12 轮步骤轮（`84ba378` + 本步 2 文件）环境与十次调用逐条 RC 与摘要行；格式化后重跑过一次，两份读数一致 |
 | `wt_v18b12step/fulltest_v18b12.log` + `junit_v18b12.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数 |
 | `wt_v18b12step/covdiff12.py` | 覆盖表逐行比对器（沿用第 11 轮那份）；本轮用它量了两对：step12↔ship11、step12↔step11，并把第 10–12 轮五份日志里 `pool.py`/`ratelimit.py`/TOTAL 三格并排（§21 规模账的表） |
@@ -671,21 +671,21 @@ F5（tag）与 F3/F4 保持在后。
 | `wt_v18b13ship/run_gates_ship.sh`、`gates_ship.log` | **提交树**（`c1532d8`，`git checkout-index` 直出）十次调用复测：10/10 `rc=0` |
 | `wt_v18b13ship/fulltest_ship.log` + `junit_ship.xml` | 提交树离线全量：3 723 / 0 失败 / 0 错误 / 7 跳过、180.438 s、`TOTAL 22 367 / 3 464 / 5 962 / 1 002`、**82.02%**——与步骤轮逐格相同（只有用时不同） |
 | `wt_v18b13ship/build_smoke.log` | 提交树上的 canonical 构建 + 校验 + 干净 venv 冒烟：`BUILD_RC=0`、`runtime_files=190`、`twine check` 通过、`[冒烟] 通过 ✓`，两份产物的 sha256 逐字在末尾 |
-| `wt_wheelcheck/probe_wheel.py`、`wheel_probe.log` | **交付物本身的**盘中/午间真取：临时干净 venv 只装 `dist/tstdx-1.0.0-py3-none-any.whl`，`quotes`/`bars`/`snapshot`/`security-count` 四格给数、`--market 0` 与 `--market sz` 同答案 24 296、`--market 3` 仍 rc=2 E3040。第一版探针因该 venv 无 `tzdata` 而 `ZoneInfoNotFoundError`（G8 那格的旁证：库自己在这条坑上有兜底，见 `tstdx/tools/capture.py:84-92`） |
+| `wt_wheelcheck/probe_wheel.py`、`wheel_probe.log` | **交付物本身的**盘中/午间真取：临时干净 venv 只装 `dist/atst-1.0.0-py3-none-any.whl`，`quotes`/`bars`/`snapshot`/`security-count` 四格给数、`--market 0` 与 `--market sz` 同答案 24 296、`--market 3` 仍 rc=2 E3040。第一版探针因该 venv 无 `tzdata` 而 `ZoneInfoNotFoundError`（G8 那格的旁证：库自己在这条坑上有兜底，见 `atst/tools/capture.py:84-92`） |
 | `wt_v18b14step/run_gates14.log` | 第 14 轮步骤轮十次调用（树由 `git -c core.quotepath=false ls-files -co --exclude-standard` 生成：HEAD + 本轮未提交改动，**不含** `.gitignore` 遮蔽的本机产物）：10/10 `rc=0` |
 | `wt_v18b14step/fulltest_v18b14.log` + `wt_v18b14step/reports/fulltest_v18b14.xml` | 步骤轮离线全量（带 `--cov`）与 junit 计数：3 751 / 0 失败 / 0 错误 / 7 跳过、173.480 s、82.12% |
 | `wt_v18m14mut/_mut14.py`、`mutate14.log` | 第 14 轮 8 格反证（M1–M3 打出口尺子、M4a–M4b 打文档表门禁、M5a–M5c 打状态矩阵门禁）+ 还原后 27 项复测；四份被改文件另与主工作树做 sha256 逐字节核对 |
 | `wt_v18m14mut/_mut14live.py`、`live14_negative_controls.log` | G4 的 5 格反证（N1–N5）：每格跑完 `restored clean=True`；N4 第一版锚点未命中（workflow 那行带尾注释），修锚点后重跑的那次才是读数 |
 | `reports/live14_probe_run1.log`、`reports/live14_probe_run2.log` | G4 探针盘中真取两次（13:15:28 / 13:15:55）：第一次 4 过 1 红——红在**探针自己**把 `snapshot` 猜成平铺 `price`；第二次 5/5。两份抬头各写一行只读授权来源 |
-| `reports/g9_pypi_probe.log` | G9 取证：`pypi.org/pypi/tstdx/json` 与 `/simple/tstdx/` 的 404 原文逐字 + `grep -rn "pip install tstdx" README.md docs/` 的命中清单 |
+| `reports/g9_pypi_probe.log` | G9 取证：`pypi.org/pypi/atst/json` 与 `/simple/atst/` 的 404 原文逐字 + `grep -rn "pip install atst" README.md docs/` 的命中清单 |
 | `wt_v18b14step/_g9mut.py`、`g9_negative_controls.log` | G9 判据两格反证（C1 抹掉 README 的口径声明、C2 往干净页塞一条裸指令）：各自点名该点名的那份文件，还原后 `rc=0` |
 | `wt_v18b14final/run_gates14final.sh`、`run_gates14final.log` | **最终候选树**（内容 = 本次提交：`ls-files -co` + `CHANGELOG.md` 换回 HEAD 版 + 删掉并行会话那份未跟踪计划的副本）十次调用：10/10 `rc=0` |
 | `wt_v18b14final/fulltest_v18b14final.log` + `reports/fulltest_v18b14final.xml` | 候选树离线全量：3 752 / 0 / 0 / 7、182.710 s、`TOTAL 22 428 / 3 455 / 5 992 / 1 003`、82.11%；告警摘要里 `field_out_of_domain` 只剩 2 行（G7 判据自己重放实采样本那两行） |
-| `wt_v18b14step/fulltest_v18b14_rerun.log` | 步骤树原样重跑第三次全量：用来把 `tstdx/protocol/generic.py` 那一行的 ±1 钉成抖动还是退化 |
+| `wt_v18b14step/fulltest_v18b14_rerun.log` | 步骤树原样重跑第三次全量：用来把 `atst/protocol/generic.py` 那一行的 ±1 钉成抖动还是退化 |
 | `wt_v18b14final/fulltest_v18b14final_rerun.log` + `reports/fulltest_v18b14final_rerun.xml` | **同一棵候选树**的第二次全量（14:12 起，176.358 s）：3 752 / 0 / 0 / 7、`TOTAL 22 428 / 3 454 / 5 992 / 1 002`、82.12%。与上一行合起来是"同一棵树自身给两个覆盖读数"的直接证据（差的正是 `generic.py` 那一行） |
-| `wt_v18b14ship/run_gates14ship.sh`、`run_gates14ship.log` | **提交树**（`ef3b97e`，`git checkout-index` 直出）十次调用复测：10/10 `rc=0`；抬头第一行是 `tstdx 1.1.0 …wt_v18b14ship\tstdx\__init__.py` |
+| `wt_v18b14ship/run_gates14ship.sh`、`run_gates14ship.log` | **提交树**（`ef3b97e`，`git checkout-index` 直出）十次调用复测：10/10 `rc=0`；抬头第一行是 `atst 1.1.0 …wt_v18b14ship\atst\__init__.py` |
 | `wt_v18b14ship/fulltest_v18b14ship.log` + `reports/fulltest_v18b14ship.xml` | 提交树离线全量：junit **3 752 / 0 / 0 / 7**、180.359 s、`TOTAL 22 428 / 3 455 / 5 992 / 1 003`、**82.11%**；`field_out_of_domain` 只余 2 行（G7 判据重放实采样本） |
-| `wt_v18b14ship/build_v18b14_ship.log` | 提交树上的 canonical 构建 + 校验 + 干净 venv 冒烟：`BUILD_RC=0`、`runtime_files=191`（第 13 轮是 190，多的正是本轮新增的 `tstdx/domain/integrity.py`）、`twine check` 通过、`[冒烟] 通过 ✓`，两份产物的字节数与 sha256 逐字在末尾 |
+| `wt_v18b14ship/build_v18b14_ship.log` | 提交树上的 canonical 构建 + 校验 + 干净 venv 冒烟：`BUILD_RC=0`、`runtime_files=191`（第 13 轮是 190，多的正是本轮新增的 `atst/domain/integrity.py`）、`twine check` 通过、`[冒烟] 通过 ✓`，两份产物的字节数与 sha256 逐字在末尾 |
 
 ## 8. 本方案不做什么（避免被读成"又要一轮无限重构"）
 
@@ -741,10 +741,10 @@ M4/M8 还各带一条**正向对照自检**（`test_the_provider_fact_ruler_sees
 用来防"判据在空转"这一族（F-26/F-27/F-28/F-63① 的老根）。
 
 **顺带清掉的幻影引用**（新尺子上线当轮即抓出，全部实测不存在）：
-`tstdx/web/sources.py` 的 `:mod:`tstdx.sources.router``（该模块早在 v16 前置决策里被路由删除取代）、
-`tstdx/error_envelope.py` 的 `tstdx.failure.FailureDisposition`、`tstdx/web/fund_rank.py:38` 的
+`atst/web/sources.py` 的 `:mod:`atst.sources.router``（该模块早在 v16 前置决策里被路由删除取代）、
+`atst/error_envelope.py` 的 `atst.failure.FailureDisposition`、`atst/web/fund_rank.py:38` 的
 `EastmoneyIpoAuditSource`（真名 `EastmoneyIpoSource`）、`docs/migration/README.md` 的
-`tstdx.facade.quote_api()`、`docs/troubleshooting.md` §3 的 `client.router.last_errors()` 与
+`atst.facade.quote_api()`、`docs/troubleshooting.md` §3 的 `client.router.last_errors()` 与
 "7 个 Web 源 / 触发限流后自动切换下一源 / 连续失败达阈值抛 `SourceDeprecated`"三处假事实。
 
 **本轮明确未做**（是排期不是遗漏）：B2 三面入参 fail-closed、B3 的摘面决策（D7）、
@@ -762,22 +762,22 @@ A1/A2（= 并行会话步骤 50/51 的 F-70(b)/F-71(c)）、C/D/E/F 全部阶段
 | 条目 | 复核结论 | 本轮实测 | 对方案的影响 |
 |---|---|---|---|
 | R-1 派发形状 | **仍成立，但机制描述错了** | `DIRECT_BINDINGS` 251 条 = 234 `_migrated_capability` + 17 专属（`Counter` 当场数）；但绑定表**由注册表三元组推导**，不是手抄清单 | "93.2% 走反射派发"照旧；"八张表手工同步"里内核侧那两张其实已经派生 |
-| R-2 审计 fail-open | **已清偿** | `audit_direct_bindings` 现在 raise（`executor.py:110-137`）；`tstdx/runtime/` 剩下的 warn 只有两格且都是用户数据瑕疵（`freshness.py:78` 的 `CURRENTNESS_UNPROVEN`、`executor.py:533` 的 `QUOTES_PARTIAL_FAILURE`） | 第 1 轮已做，工程缺陷方向再无软失败 |
+| R-2 审计 fail-open | **已清偿** | `audit_direct_bindings` 现在 raise（`executor.py:110-137`）；`atst/runtime/` 剩下的 warn 只有两格且都是用户数据瑕疵（`freshness.py:78` 的 `CURRENTNESS_UNPROVEN`、`executor.py:533` 的 `QUOTES_PARTIAL_FAILURE`） | 第 1 轮已做，工程缺陷方向再无软失败 |
 | R-3 `client/` 一名两职 | **成立，但行数抄错一个量级** | `core.py` 332 + `sync.py` 541 + `async_.py` 440 + `_mixin.py` 955 = **2 268 行**（原文的"955 行"只是 `_mixin.py` 一个文件）；"协议客户端可脱离内核"这一边界**没有任何守卫或文档判据**，只有 `tests/client/*` 事实上这么用 | C3 的诉求更强（边界连事实描述都没有），但预算要按 2 268 行算 |
 | R-4 八张表 | **夸大：实际是四张外表面** | 注册表 `channel.capabilities` / typed 契约 / CLI parser / HTTP 路由 / WS `METHODS` / MCP `inputSchema` 六处仍手写；`DIRECT_BINDINGS` 与 capability catalog 已由注册表派生 | C1 的靶子从"八合一"收窄成"四面投影自一份契约"，工作量下降一半以上 |
 | R-5/R-6 web 体量 | **docstring 数字低估；"改一处动多文件"不成立** | `web/` 17 915 行 / 51 文件 / 占包 30.3%；docstring **4 606 行 = 25.7%**（原文 4 270/23.8%），全包 docstring 占比 17.8% 作对照；实测改一个查询参数（东财 `fields`、新浪资金流 `page/num/sort`）只动 **1 处代码**，重复的是**单位口径的散文**（`sources.py:181-191`、`normalize.py:13`、`adapters.py:20`） | D1 从"消灭多文件同步"改写成"单位口径外移成表，散文改引用"；D2 的"表驱动重写 4 000–6 000 行"失去依据 |
-| R-6 会话门面 140 方法 | **数字成立，结论反了** | `WebQuoteSession` 公开方法确为 140、`tstdx.web.__all__` 确为 69；但内核经 `MIGRATED_BINDINGS` 的 `backend="web_session"` 共 192 格，实际触达 **140 个方法里的 137 个**（只有 `close`/`minute`/`quotes` 不触） | **D8 默认 (b)"收缩到内核绑定的 104 条"作废**——按现证据门面几乎全量在用，收缩买不到减行，只会破坏绑定 |
+| R-6 会话门面 140 方法 | **数字成立，结论反了** | `WebQuoteSession` 公开方法确为 140、`atst.web.__all__` 确为 69；但内核经 `MIGRATED_BINDINGS` 的 `backend="web_session"` 共 192 格，实际触达 **140 个方法里的 137 个**（只有 `close`/`minute`/`quotes` 不触） | **D8 默认 (b)"收缩到内核绑定的 104 条"作废**——按现证据门面几乎全量在用，收缩买不到减行，只会破坏绑定 |
 | R-7 豁免面 | **已受门禁，只差指针核验** | `audit_reachability.py` 已强制 ≥40 字符理由、死记录、过期记录、重复条目；**未**校验理由里点名的消费者是否存在 | 本轮补 `[dead-pointer]`/`[no-pointer]` 两格（§11 第 2 轮）；C4 剩下的"每条豁免写清调用方"其实早就写了 |
 | A1 / E2 README 数字 | **前提不成立：五个数字全对，且已有生成式判据** | 当场对账：`172` = `len(Client().capabilities())`、`251` = `len(DIRECT_BINDINGS)`、CLI `31`、HTTP `10`、MCP `9` —— 与 README:23/45/53 一致，零差异；`test_doc_code_consistency.py:467-480` 已经是"从运行期再生成一遍再比"的形状 | E2 从"要生成"降级为"把再生成的覆盖面从 README 数字扩到结构树与 `docs/` 散文数字"；DESIGN.md（161 548 B，无史料声明）与 CHANGELOG（263 627 B，无史料声明）那半仍成立 |
 | G2 typed 缺口 | **仍成立** | `contract_audit`：63 契约 / 155 capability / 92 PENDING / 0 ERROR，RC=0 不阻断 | D10 的三选一仍待裁决 |
 | G3 两把未锁的钥匙 | **0x0010 结构可锁、语义不可；0x000F 连结构都锁不上** | 0x0010 四份实采都是 `count=100` + body 14 300 B = **每条 143 B 整除**（4/4，跨两只标的两天）；0x000F 三份实采给出 9.000 / 54.820 / 164.569 三种互斥步长，且 26 333 B 那份里能数出 11 个不同股票代码，请求的 600000/000001 反而各出现 0 次 | §8"不猜协议字节"要补一句：**仓库里现有样本不足以锁定它们**，F4 的"有 `.bin` 就不必再猜"是过度承诺 |
 | 语料库健康度（新增一格） | **§0 从没量过** | `tests/golden/` 530 份 `payload.bin`（60 real / 470 synthetic）里只有 **216 份不同字节**：54 组逐字节相同，克隆多出 **314 份**（最大一组 24 份同为 0x052D）；11 组成员横跨 real 与 synthetic，即"十几个不同代码的 `_syn_` 目录共用同一条实采字节" | 已在 `golden_audit` 里补成公开读数（只报不判，L1 门槛一字未动）；"我们有 530 份样本"这句话现在自带它的对照读法 |
 
-> 附带清掉的一处假事实：`tstdx/web/session.py` 的会话 docstring 自称"底层复用 `tstdx.web` 的
+> 附带清掉的一处假事实：`atst/web/session.py` 的会话 docstring 自称"底层复用 `atst.web` 的
 > 零依赖适配器**与降级逻辑**"，而按并行台账 F-71 第 48 步自己的构造点普查，会话按构造就是单源
 > （`_c` 只 `create_source(self.source_name)`，11 个 `_session_*.py` 对三个换源符号零引用）。
 > 本轮把那句半真话改成与模块头一致的口径。它原本"没有任何判据在看"（F-71 ⑤ 语），
-> 把判据扩到 `tstdx/web/__init__.py` 的 docstring 属于 F-71 (a)/(b)/(c) 裁决的一部分，留给那一格，不在此抢。
+> 把判据扩到 `atst/web/__init__.py` 的 docstring 属于 F-71 (a)/(b)/(c) 裁决的一部分，留给那一格，不在此抢。
 
 ---
 
@@ -791,9 +791,9 @@ A1/A2（= 并行会话步骤 50/51 的 F-70(b)/F-71(c)）、C/D/E/F 全部阶段
 |---|---|
 | `scripts/audit_reachability.py` | 豁免理由里的仓内路径指针变成被校验的声明：`[dead-pointer]`（点名的 tests/docs 已经不存在）与 `[no-pointer]`（整条理由举不出一个路径）都算记录缺陷，与孤儿同权重在 `--strict` 下失败。此前只查长度（≥40 字符），于是"tests/output_was_renamed/ 消费"这种句子可以一直绿着 |
 | `tests/architecture/test_reachability_allowlist.py` | 两格新缺陷各自的反证用例 + 一格**自检**：真实清单的 16 条理由必须每条拿得出至少一个活指针（否则上面两判据可能在空转）。`LONG_REASON` 样本改为带真实路径，避免邻格被新规则顺带判红 |
-| `tstdx/tools/golden_audit.py` | 新增 `payload_clones`（sha256 分组，`_payload_clones()`）与报告的 `[INFO] payload clones` 行。**只报不判**：L1 门槛、`suspect_short`、market/kline 追加门禁一字未动，克隆再多门禁照旧只看"有没有有效 real 样本" |
+| `atst/tools/golden_audit.py` | 新增 `payload_clones`（sha256 分组，`_payload_clones()`）与报告的 `[INFO] payload clones` 行。**只报不判**：L1 门槛、`suspect_short`、market/kline 追加门禁一字未动，克隆再多门禁照旧只看"有没有有效 real 样本" |
 | `tests/unit/test_golden_audit.py` | `TestPayloadClones` 三格：同字节分组并按 origin 分堆、九份克隆不改门禁退出码、全异字节不成组 |
-| `tstdx/web/session.py` | 会话 docstring 的"与降级逻辑"半真话删除，改为与模块头同口径（单源、源不可用即失败），并点名多源切换只在内核显式 `FallbackPolicy` 那一层 |
+| `atst/web/session.py` | 会话 docstring 的"与降级逻辑"半真话删除，改为与模块头同口径（单源、源不可用即失败），并点名多源切换只在内核显式 `FallbackPolicy` 那一层 |
 
 **步骤轮**（`wt_v18b2step`，detached @ `0a13d9f` + 本步 5 文件，md5 与工作树逐格相同）：
 九项确定性门禁 **G1–G9 全部 rc=0**（`gates_v18b2.log`）；离线全量 `PYTEST_RC=0`、
@@ -838,13 +838,13 @@ docs links 83 files、mypy 0 行、ruff check `All checks passed!`、ruff format
 
 | 改动 | 内容 |
 |---|---|
-| `tstdx/transport/sniff.py` | `known()` / `unknown_commands()` 此前把判定域写死成单一族 `Family.STANDARD`（实测其值 `"quotation"`），而 `families` 是构造函数文档承诺的入参：一条登记在 `mac_quotation`/`goods`/`f10` 的命令号被读成"未知"，`export_drafts` 再拿错的账本给它生成草稿。现在两处都按 `self.families` 取域（显式 `family=` 仍可收窄），`attach(families=…)` 也真正改写作用域——`attach` 原文自己写着"仅影响未知命令判定、实际记录仍按 cmd_id 存"，等于承认旋钮只拧了一半 |
-| `tstdx/web/_session_market.py` | ① `shared_http()` 自称"线程安全惰性单例"却做无锁 check-then-append（它的兄弟 `shared_bucket` 在 `_base_http.py:101` 是持锁的），并发首建会造出多个 `HttpClient`，多出来的连同各自 keep-alive 连接池一起泄漏（进程级列表，永不关闭）；整段"取或建"移进 `_SHARED_HTTP_LOCK`。② 删掉 `quotes()` 上从未被函数体读取的 `prefix: bool = True` 形参（仓内与 docs 零调用点，属纯幻影入参） |
-| `tstdx/web/{global_market,session,__init__,limits,_session_baidu,adapters_fund}.py` | 手抄数字改成"点名事实源"或当场改对：外盘品种 14→**13**（`GLOBAL_CODES` 真值，且与 `_session_market.globals` 原有口径对齐）、`web/__init__` 的"其余 18 个 Source/会话子模块"删除（真实是 `_LAZY` 67 键 / 22 个目标模块——写成新数字同样会烂，故改为指向 `_LAZY`）、`session` 的"7 个零依赖适配器"改为指向 `_ADAPTER_SPECS`；`all_market` 的 `max_pages=None` 不再承诺"拉到底"（缺省 `DEFAULT_MAX_PAGES`=100 页，实测 `adapters.py:86,197,451`）；`TENCENT_KLINE_MAX` 上方"分段请求（尚未封装，见 v5 PG8）"改成 C9 已落地路径 `fetch_bars_paged(…, paging=True)`；`fund_estimate` 的 Returns 段改成"端点已下线，本方法永不返回"+`Raises SourceDeprecated`（**这句本身是过度承诺，第 4 轮按代码更正，见 §13**），`FundSource` 类文档不再把它列为能力 |
+| `atst/transport/sniff.py` | `known()` / `unknown_commands()` 此前把判定域写死成单一族 `Family.STANDARD`（实测其值 `"quotation"`），而 `families` 是构造函数文档承诺的入参：一条登记在 `mac_quotation`/`goods`/`f10` 的命令号被读成"未知"，`export_drafts` 再拿错的账本给它生成草稿。现在两处都按 `self.families` 取域（显式 `family=` 仍可收窄），`attach(families=…)` 也真正改写作用域——`attach` 原文自己写着"仅影响未知命令判定、实际记录仍按 cmd_id 存"，等于承认旋钮只拧了一半 |
+| `atst/web/_session_market.py` | ① `shared_http()` 自称"线程安全惰性单例"却做无锁 check-then-append（它的兄弟 `shared_bucket` 在 `_base_http.py:101` 是持锁的），并发首建会造出多个 `HttpClient`，多出来的连同各自 keep-alive 连接池一起泄漏（进程级列表，永不关闭）；整段"取或建"移进 `_SHARED_HTTP_LOCK`。② 删掉 `quotes()` 上从未被函数体读取的 `prefix: bool = True` 形参（仓内与 docs 零调用点，属纯幻影入参） |
+| `atst/web/{global_market,session,__init__,limits,_session_baidu,adapters_fund}.py` | 手抄数字改成"点名事实源"或当场改对：外盘品种 14→**13**（`GLOBAL_CODES` 真值，且与 `_session_market.globals` 原有口径对齐）、`web/__init__` 的"其余 18 个 Source/会话子模块"删除（真实是 `_LAZY` 67 键 / 22 个目标模块——写成新数字同样会烂，故改为指向 `_LAZY`）、`session` 的"7 个零依赖适配器"改为指向 `_ADAPTER_SPECS`；`all_market` 的 `max_pages=None` 不再承诺"拉到底"（缺省 `DEFAULT_MAX_PAGES`=100 页，实测 `adapters.py:86,197,451`）；`TENCENT_KLINE_MAX` 上方"分段请求（尚未封装，见 v5 PG8）"改成 C9 已落地路径 `fetch_bars_paged(…, paging=True)`；`fund_estimate` 的 Returns 段改成"端点已下线，本方法永不返回"+`Raises SourceDeprecated`（**这句本身是过度承诺，第 4 轮按代码更正，见 §13**），`FundSource` 类文档不再把它列为能力 |
 | `scripts/audit_reachability.py` | 两类新缺陷，与孤儿同权重在 `--strict` 下失败：`[weak-pointer]`——豁免理由点名的 `.py` 文件必须真的**触达**它豁免的模块（直接 import、沿图走父包导出这一跳、或按点号全名提及），"某某测试覆盖它"从此必须真的覆盖它；`[dead-seed]`——`SEEDS` 里改了名的条目不再被 BFS 的 `if s in modules` 静默丢弃。图构建抽成 `_build_graph()` 供判据复用 |
 | `tests/architecture/test_declared_knobs.py`（新） | 三把尺子，每把都带**下限 +  planted 正控**：① numpydoc `Parameters` 里承诺的入参必须被函数体读取（全量现扫 **130** 个带参数文档的函数，修复后 `offenders=[]`；本轮抓到并修掉的真实幻影 2 处 = `attach(families=…)` 与 `quotes(prefix=…)`）；② 自称"线程安全"且动到进程级 `_SHARED_*` 的函数必须拿得出锁证据（全量 `defects=[]`）；③ 写成"共 N 个（见 :data:`X`）"的计数在导入期现算回查，**模块导不进来时报缺陷而不是跳过**——"无法复核"不许读成绿 |
 | `tests/transport/test_sniffer_passive.py`（新） | 被动采集族 10 格行为判据：默认判定域、显式 `family=` 收窄、`unknown_commands` 随作用域、`attach` 的记录/幂等/空转三条、环形缓冲与上限、两个零值入参 `ValueError` |
-| `scripts/_reach_allow.txt` + `tests/architecture/test_reachability_allowlist.py` | 新格当场抓到一条真实假证据：`tstdx.transport.sniff` 的豁免理由点名 `tests/protocol/test_sniffer_loop.py`，那个文件覆盖的是 `tstdx.protocol.generic` 的**同名不同族**观察器——被豁免模块当时**零测试覆盖**。改为点名本轮新写的 `tests/transport/test_sniffer_passive.py`；另补 6 格契约用例覆盖 `[weak-pointer]` 与 `[dead-seed]`（含正反两向 + 真实清单全量复核） |
+| `scripts/_reach_allow.txt` + `tests/architecture/test_reachability_allowlist.py` | 新格当场抓到一条真实假证据：`atst.transport.sniff` 的豁免理由点名 `tests/protocol/test_sniffer_loop.py`，那个文件覆盖的是 `atst.protocol.generic` 的**同名不同族**观察器——被豁免模块当时**零测试覆盖**。改为点名本轮新写的 `tests/transport/test_sniffer_passive.py`；另补 6 格契约用例覆盖 `[weak-pointer]` 与 `[dead-seed]`（含正反两向 + 真实清单全量复核） |
 
 **步骤轮**（`wt_v18b3step`，detached @ `66a7b13` + 本步 13 文件，md5 与工作树逐格相同）：
 九项确定性门禁 **G1–G9 全部 rc=0**（`gates_v18b3.log`）；离线全量 `PYTEST_RC=0`、
@@ -909,7 +909,7 @@ CHANGELOG `[Unreleased]` 的两条破坏性登记（`quotes` 失败语义、移�
 
 同时用本轮新写的探针回头复核第 3 轮自己的文档改动。**抓到的正是我**：为了改掉 `fund_estimate`
 的假 Returns 段，我在第 3 轮把它写成"端点已下线，本方法永不返回"，而实现
-（`tstdx/web/_session_baidu.py:108` → `tstdx/web/adapters_fund.py:188`）是**先发一次真实请求**、
+（`atst/web/_session_baidu.py:108` → `atst/web/adapters_fund.py:188`）是**先发一次真实请求**、
 只在命中"404 / 页面未找到 HTML"这一形状时才抛 `SourceDeprecated`，其余响应照样 `_parse_jsonp`
 返回 dict。"永不返回"与 §2 G5 原来那句"恒抛"是同一种病：**把 2026 年的实测结果写成了结构性质**。
 本轮把这两处口径改成实话（代码 docstring + §2 G5 + §12 就地标注，改动见提交与该两节）。
@@ -917,7 +917,7 @@ CHANGELOG `[Unreleased]` 的两条破坏性登记（`quotes` 失败语义、移�
 | 改动 | 内容 |
 |---|---|
 | `tests/architecture/test_declared_knobs.py`（新判据四：CLI 面） | `_dests_of()` 从 CLI 源文件的 `add_argument(...)` 现算 dest→flags 表（`dest=` 优先，否则取长选项名 dashes→underscores），`_reads_of()` 只认**两种严格读取形状**：`<像命名空间的名字>.<dest>` 属性访问、`getattr(<像命名空间的名字>, "<dest>")`。命名空间宿主必须叫 `args/ns/namespace/parsed/opts` 或以 `args` 结尾，因此**注册语句本身不可能自证为已读**。全量普查 `test_every_registered_cli_flag_is_read_by_the_runtime` 带**下限 `len(dests) >= 40`**（尺子解析不出东西时必须自己先红，不许把"扫不到"读成绿），planted 正控 `test_the_cli_ruler_sees_a_planted_unread_flag` 保证规则不是恒真 |
-| `tstdx/web/_session_baidu.py::fund_estimate` | docstring 从"永不返回"改成实测形状：一句话交代端点已下线并指向 `fund_nav_history`、明示**仍会发出一次真实请求**、`Raises SourceDeprecated`（410 语义，按 `FundSource` 记录的实测形状）与 `Raises WebSourceError`（不可达/超时等非下线形状）分开，末尾留一句"解析层随端点一起留着，接口复活本方法会重新返回 dict——『现网只抛』不是它的结构性质"。**没动声明面**（G5 与 F-66/F-75 同批裁决） |
+| `atst/web/_session_baidu.py::fund_estimate` | docstring 从"永不返回"改成实测形状：一句话交代端点已下线并指向 `fund_nav_history`、明示**仍会发出一次真实请求**、`Raises SourceDeprecated`（410 语义，按 `FundSource` 记录的实测形状）与 `Raises WebSourceError`（不可达/超时等非下线形状）分开，末尾留一句"解析层随端点一起留着，接口复活本方法会重新返回 dict——『现网只抛』不是它的结构性质"。**没动声明面**（G5 与 F-66/F-75 同批裁决） |
 
 **四个"量过、按数字不立"的判据候选**（探针与计数见 `wt_v18b4step/probe_rerun.log`，本轮同轮在
 main 工作树上重跑；不立的判据不留代码，只留这段读数）：
@@ -925,7 +925,7 @@ main 工作树上重跑；不立的判据不留代码，只留这段读数）：
 | 候选 | 实测 | 不立的理由 |
 |---|---|---|
 | A：能力恒不可用（函数体任何路径都只抛）却仍挂在声明面 | `hits=0` | 这一格形状当前**零实例**（`fund_estimate` 按代码看并不属于它）。为零样本建尺子只能靠 planted 正控撑着，收益不抵一条恒真空判据的维护成本；G5 已在 §2 登记成人读得懂的账 |
-| B：docstring 同句写"尚未/未实现"且点名符号，而符号已存在 | `hits=2`，**2/2 误报** | 两条都判错：`tstdx/domain/calendar.py:18` 说 `TradingCalendar.update_from_web` "尚未实现，调用即抛 `NotImplementedError`"——该函数在 `calendar.py:335` 确实**只有**一句 `raise NotImplementedError`，文档是实话；`tstdx/web/_session_efinance.py:6` 的"尚未被 tstdx 覆盖"讲的是能力覆盖面而非某个符号。"符号存在"≠"能力已实现"，这条谓词根本盯不住它想盯的东西 |
+| B：docstring 同句写"尚未/未实现"且点名符号，而符号已存在 | `hits=2`，**2/2 误报** | 两条都判错：`atst/domain/calendar.py:18` 说 `TradingCalendar.update_from_web` "尚未实现，调用即抛 `NotImplementedError`"——该函数在 `calendar.py:335` 确实**只有**一句 `raise NotImplementedError`，文档是实话；`atst/web/_session_efinance.py:6` 的"尚未被 atst 覆盖"讲的是能力覆盖面而非某个符号。"符号存在"≠"能力已实现"，这条谓词根本盯不住它想盯的东西 |
 | C：散文式"永不返回/恒抛"↔ 控制流是否真的无返回路径 | 修复前 `claims=1 unfounded=1`，修复后 `claims=0 unfounded=0` | 全包活样本只有 1 个，而且**就是我上一轮亲手写的那句**；更糟的是**它对否定是瞎的**——把"『永不返回』不是它的结构性质"这句**更正**写回 docstring，token 扫描仍把它读成"声称永不返回"（K5 复现的就是这个形状）。散文里的 token 匹配做不成判据：要么换成控制流分析（为零样本付这个代价不值），要么留下 K5 那种自证式噪声 |
 | D：numpydoc `Raises` 段点名的异常是否在该函数可达 raise 集合里 | 全包**只有 2 个**函数带 `Raises` 段；D1 严格口径 `hits=2`，D2 全包范围 `hits=0` | 那 2 条命中全在 `fund_estimate`，且两条都是**真承诺**（`raise` 站点在单跳之外的 `FundSource.fetch_estimate` 里，严格口径把真话读成缺陷）。为 2 格样本、首跑就 100% 误报的判据入门禁，等于给判据集加一条必须写豁免的形状 |
 
@@ -949,7 +949,7 @@ reached`，**阈值未动**。判据规模 3643 → **3645（+2）**，无删除
 | K1 | `_dests_of` 解析不出任何 dest（尺子失明） | 下限与正控**同时**红——证明 `>= 40` 那条兜底真的在兜 |
 | K2 | 命名空间读取集恒空（所有 flag 都被误判成没人读） | 全量普查与正控同时红 |
 | K3 | 改成"文本里搜到名字就算读取" | **只有正控红、全量普查仍绿** ⇒ 严格 AST 口径是必要的：宽松口径下注册语句会自证为已读 |
-| K4 | 真实 CLI 里把 `tstdx/cli/parser.py:207` 的 `--port` dest 改名（制造无人读取的 flag） | 全量普查红 ⇒ 判据对真实面有效，不只是对 planted 样本有效 |
+| K4 | 真实 CLI 里把 `atst/cli/parser.py:207` 的 `--port` dest 改名（制造无人读取的 flag） | 全量普查红 ⇒ 判据对真实面有效，不只是对 planted 样本有效 |
 | K5 | 把第 3 轮那句"本方法永不返回"写回去 | 探针 C `claims=1 unfounded=1` ⇒ 本轮的口径更正确实盯住了它要盯的东西 |
 
 **ship 轮（提交树复测，同一解释器与工作树参数）**：`7fe7e54` 落到 main 后另起隔离工作树
@@ -959,7 +959,7 @@ reached`，**阈值未动**。判据规模 3643 → **3645（+2）**，无删除
 ruff check `All checks passed!`、ruff format 445 files）；离线全量 junit
 **3645 / 0 失败 / 0 错误 / 7 跳过**、159.689s、覆盖率 **81.73%**
 （TOTAL 22 440 / 3 523 / 5 996 / 1 001，`Required 77.0% reached`）——与被测步骤轮**逐格相同**。
-两棵树的 `tstdx/`、`tests/`、`scripts/` 逐文件比对（`diff -r --strip-trailing-cr`）除 `__pycache__`
+两棵树的 `atst/`、`tests/`、`scripts/` 逐文件比对（`diff -r --strip-trailing-cr`）除 `__pycache__`
 外**内容一致**，仅工作树检出为 CRLF、提交树为 LF：提交内容与被测内容一致。
 
 **本轮明确未做**：候选 A/B/C/D 四把尺子（读数见上表，量过而不立）；§2 G5 的**声明面**改动
@@ -984,7 +984,7 @@ ruff check `All checks passed!`、ruff format 445 files）；离线全量 junit
 | 改动 | 内容 |
 |---|---|
 | `tests/architecture/test_declared_knobs.py`（新判据五：wire 面） | HTTP 侧 `_http_scan()` 从 `runtime_http.py` 的 AST 现算 `app.get/post/put/delete` 装饰过的 handler 形参表（`self/cls` 除外），`_body_reads()` 只认函数体里 **Load 语境**的名字；MCP 侧从 `_tools_spec.TOOLS` 的 `inputSchema.properties` 现算声明属性，读取集 `_dict_keys()` 只认 `<请求体字典>.get("K")` / `<body-dict>["K"]` 两种形状，字典名必须叫 `args/params/payload/data/options`——**声明自身的字面量不是这两种形状，注册无法自证为被读取**（沿用判据四的口径）。两面共用谓词 `_wire_unread()`；三张下限 `HTTP total >= 20`、`len(TOOLS) >= 5` 且 `MCP total >= 20`；planted 正控 `test_the_wire_ruler_sees_planted_unread_fields` 用一段含"注册了没人读"形状的假路由源码，同时验正反两向 |
-| `tests/architecture/test_doc_code_consistency.py`（新判据：文档命令形状） | `_CMD_TARGET` 抽 `python [-3.x] -m …` / `uvicorn …` 里点名的 `tstdx.x.y` 与可选 `:attr`，`_IMPORT_TARGET` 抽 `from/import tstdx.x`；`_target_offense()` 真的 `importlib.import_module()` 并对 `:attr` 做 `hasattr`——判据落在"这条命令敲下去起不起来"，不是"字符串像不像个模块"。作用域沿用同文件的 `chain_docs()`（活文档），下限 `checked >= 60`；正控三格：planted 死模块红、写对的 `runtime_http:create_runtime_app` 绿、模块在而对象名抄错红 |
+| `tests/architecture/test_doc_code_consistency.py`（新判据：文档命令形状） | `_CMD_TARGET` 抽 `python [-3.x] -m …` / `uvicorn …` 里点名的 `atst.x.y` 与可选 `:attr`，`_IMPORT_TARGET` 抽 `from/import atst.x`；`_target_offense()` 真的 `importlib.import_module()` 并对 `:attr` 做 `hasattr`——判据落在"这条命令敲下去起不起来"，不是"字符串像不像个模块"。作用域沿用同文件的 `chain_docs()`（活文档），下限 `checked >= 60`；正控三格：planted 死模块红、写对的 `runtime_http:create_runtime_app` 绿、模块在而对象名抄错红 |
 | `docs/FAQ.md` 部署段 + 监控段 | 见下段 |
 
 **与 F-47 的分工**（避免被读成重复建设）：`tests/runtime/test_wire_declared_fields.py` 管**反方向**——
@@ -992,11 +992,11 @@ ruff check `All checks passed!`、ruff format 445 files）；离线全量 junit
 前者是运行期行为、后者是静态 AST，两面合起来才是那句"wire 面上每个字段要么被读走、要么被拒"。
 
 **新尺子第一件事抓到的唯一真实缺陷**：`docs/FAQ.md` 部署段教用户
-`python -m uvicorn tstdx.integration.http_server:create_app --factory`，而 `tstdx/integration/http_server.py`
+`python -m uvicorn atst.integration.http_server:create_app --factory`，而 `atst/integration/http_server.py`
 早已被物理删除（真身是 `runtime_http.create_runtime_app`）——照抄文档的人第一步就吃 `ModuleNotFoundError`；
 101 处命令/导入形状里唯一的一处。同段另两处也按代码钉实：镜像 CMD 是 `--help`，起服务要么走
-`tstdx serve --bind 0.0.0.0 --port 8000`（`cli/parser.py:206-209` 确有这两个 flag），要么把 app 交给 uvicorn
-（需 `tstdx[server]`，`pyproject.toml:45` 确有该 extra）；监控段原来那句 `GET /api/v1/system/metrics`
+`atst serve --bind 0.0.0.0 --port 8000`（`cli/parser.py:206-209` 确有这两个 flag），要么把 app 交给 uvicorn
+（需 `atst[server]`，`pyproject.toml:45` 确有该 extra）；监控段原来那句 `GET /api/v1/system/metrics`
 在网关里根本不存在（全树 grep `system/metrics` 现已 0 命中），改成代码里真有的 `PrometheusExporter.serve()`
 ——`host="127.0.0.1", port=9090` 缺省、暴露 `GET /metrics`（`prometheus_exporter.py:166`）。
 **第 4 轮的教训在这一格起了作用**：我一度把 `OtelExporter` 写成"缺省端点 `http://localhost:4318/v1/metrics`"，
@@ -1008,8 +1008,8 @@ ruff check `All checks passed!`、ruff format 445 files）；离线全量 junit
 | 候选 | 实测 | 不立的理由 |
 |---|---|---|
 | H1：文档点名的 wire 查询键必须存在于声明面 | 声明并集 13 个路由形参 / 17 个 wire 键（并集口径，与判据五的逐路由 25 格不同），文档命中 1 个未知键：`max_age`，来自并行会话**在途未提交**的台账 `docs/REFACTOR_PLAN_V17_CLOSURE.md`（F-43 正是在记这个旋钮的账） | 唯一命中是对方会话写给自己的缺陷描述，不是"文档教错"。要立它就得把别人的活文档纳入我的判据域，并解决"叙述语境 vs 指令语境"的区分——这条区分本轮没有可推导的口径 |
-| H2：文档点名的 `--flag` 必须已注册 | CLI 声明面 70 个 dest/flag 写法，文档命中 38 个未注册 | 38 个几乎全是**别的工具的**旗标（`--cov`、`--rm`、`--stat`、`--ignore-missing-imports`、`--strip-trailing-cr`）与归档计划里的设想命令（`--regen-all`、`--require-hashes`）。立它等于维护一份"哪些命令行不属于 tstdx"的豁免名单——正是第 4 轮否掉的那种形状 |
-| I：文档里所有反引号点号引用必须可解析 | 39 份活文档、点号引用 214 次 / 去重 121 个，19 次解析不出（分布在 9 份文档） | 19 处**全是误报**：`tstdx.git`（URL 尾巴）、`tstdx.toml`（文件名）、迁移/发布说明里的**否定句**（"不再有 `tstdx.compat`"）——第 4 轮探针 C 那条"散文里对否定是瞎的"在这里原形重现。更能说明问题的是：本轮真正的缺陷（`http_server:create_app`）**不在**这 19 处里，反引号口径看不见命令，命令口径才看得见 |
+| H2：文档点名的 `--flag` 必须已注册 | CLI 声明面 70 个 dest/flag 写法，文档命中 38 个未注册 | 38 个几乎全是**别的工具的**旗标（`--cov`、`--rm`、`--stat`、`--ignore-missing-imports`、`--strip-trailing-cr`）与归档计划里的设想命令（`--regen-all`、`--require-hashes`）。立它等于维护一份"哪些命令行不属于 atst"的豁免名单——正是第 4 轮否掉的那种形状 |
+| I：文档里所有反引号点号引用必须可解析 | 39 份活文档、点号引用 214 次 / 去重 121 个，19 次解析不出（分布在 9 份文档） | 19 处**全是误报**：`atst.git`（URL 尾巴）、`atst.toml`（文件名）、迁移/发布说明里的**否定句**（"不再有 `atst.compat`"）——第 4 轮探针 C 那条"散文里对否定是瞎的"在这里原形重现。更能说明问题的是：本轮真正的缺陷（`http_server:create_app`）**不在**这 19 处里，反引号口径看不见命令，命令口径才看得见 |
 
 **步骤轮**（`wt_v18b5step`，detached @ `9384796` + 本步 3 文件，三文件 md5 与 main 工作树逐格相同：
 `test_declared_knobs.py` = `f08ef8f4…`、`test_doc_code_consistency.py` = `0cf2c0e9…`、`FAQ.md` = `b707432e…`）：
@@ -1042,16 +1042,16 @@ ruff check `All checks passed!`、ruff format `445 files already formatted`）�
 `模块总数: 190 / 可达: 174 / 白名单豁免: 16 / 无未登记孤儿 ✓`、`63 个 Typed Query 契约`、docs links 83 files、
 mypy 0 行、ruff check `All checks passed!`、ruff format 445 files）；离线全量 junit
 **3650 / 0 失败 / 0 错误 / 7 跳过**、166.899s、覆盖率 **81.72%**（TOTAL 22 440 / 3 525 / 5 996 / 1 002，
-`Required 77.0% reached`）——与被测步骤轮**逐格相同**。两棵树的 `tstdx/`、`tests/`、`scripts/` 逐文件比对
+`Required 77.0% reached`）——与被测步骤轮**逐格相同**。两棵树的 `atst/`、`tests/`、`scripts/` 逐文件比对
 （`diff -r --strip-trailing-cr`）除 `__pycache__` 外**内容一致**，仅工作树检出为 CRLF、提交树为 LF：
 提交内容与被测内容一致。
 
 **−0.01pp 的来历（量清楚了才写进这份文档）**：上一轮 81.73% → 本轮 81.72%，而本轮**没碰任何运行时代码**
-（改动全在 `tests/architecture/` 与 `docs/FAQ.md`，`--cov=tstdx` 的总语句数四次运行恒为 22 440，分母没动）。
-逐文件比对：两轮之间的差异集中在 `tstdx/transport/pool.py`（607 stmt，未覆盖 111→113、partial branch 36→37）。
+（改动全在 `tests/architecture/` 与 `docs/FAQ.md`，`--cov=atst` 的总语句数四次运行恒为 22 440，分母没动）。
+逐文件比对：两轮之间的差异集中在 `atst/transport/pool.py`（607 stmt，未覆盖 111→113、partial branch 36→37）。
 为了把它钉成"计时抖动"而不是"本轮造成的退化"，同一棵步骤树、同一批文件又跑了第三次全量
 （`fulltest_v18b5_rerun.log`，`PYTEST_RC=0`）：`pool.py` 这次稳定在 113/37，动的换成了
-`tstdx/protocol/generic.py`（20/9 → 21/10），TOTAL 随之 3 525/1 002 → 3 526/1 003。也就是说这两个并发/计时
+`atst/protocol/generic.py`（20/9 → 21/10），TOTAL 随之 3 525/1 002 → 3 526/1 003。也就是说这两个并发/计时
 相关文件的未覆盖行集**逐次运行本身就会抖 ±1～2 行**，"两次独立读数相同"不能作为零退化的证据。按实测口径
 写结论：**本轮 −0.01pp 落在计时抖动行上，与本轮改动无因果**；覆盖率真值仍以 CI（ubuntu + py3.11、同一提交树）
 为准，本轮不据此重钉基线。
@@ -1073,8 +1073,8 @@ CHANGELOG `[Unreleased]` 三条登记仍因并行会话该文件未提交而押�
 **没钉的只剩理由里那些符号名**：每条理由都在说"这个模块的公共入口是 `X`/`Y`"，而这些名字一格都不核。
 它比代码过期得慢、也比代码隐蔽：类拆并或改名之后，路径还在、理由够长、指针也还触达，
 白名单其余各类缺陷全绿，
-而照着台账那句话去 `from tstdx.catalog.provider_contract import CapabilityContract` 的人拿不到任何东西——
-本轮实测这个名字**在本仓今天的代码里根本不存在**（`grep -E "(^|[^A-Za-z_])CapabilityContract"` 在 `tstdx/` 下
+而照着台账那句话去 `from atst.catalog.provider_contract import CapabilityContract` 的人拿不到任何东西——
+本轮实测这个名字**在本仓今天的代码里根本不存在**（`grep -E "(^|[^A-Za-z_])CapabilityContract"` 在 `atst/` 下
 只命中 `ProviderCapabilityContract` 这个真名的子串）。
 
 | 改动 | 内容 |
@@ -1088,26 +1088,26 @@ CHANGELOG `[Unreleased]` 三条登记仍因并行会话该文件未提交而押�
 
 | 记录 | 原写法 | 现写法（实测） |
 |---|---|---|
-| `tstdx.catalog.provider_contract` | `ProviderIdentity`/**`CapabilityContract`** | `ProviderIdentity`/`ProviderCapabilityContract`/`ProviderExecutionContract`；消费方从"三个文件"改成点名的两份真实测试，并补 `test_namespace_layout.py` 钉迁移后位置 |
-| `tstdx.profile.detect` | `detect_profile`/`BUILTIN_PROFILES` | `detect`/`BUILTIN_PROFILES`，并写明探测入口 `tstdx.profile.detect_profile` 的真身在 `tstdx/reader/profile.py:670`、由包 `__init__` 再导出 |
-| `tstdx.trade.errors` | "tests/trade/ **两个文件**断言其语义" | 点名 `tests/trade/test_frames.py` 与 `tests/trade/test_simulator.py`（指针口径要求可核文件名，"两个文件"核不了） |
-| `tstdx.charset` / `tstdx.profile` | "… 等 11 项" / "… 等 14 个测试文件引用" | 改成"完整清单见 charset 包 `__init__` 的 `__all__`" / 只留可核的那一份测试——**"等 N 个"这类手抄计数正是第 3 轮 R-10 的口径**，本轮在自己台账上把它清掉 |
+| `atst.catalog.provider_contract` | `ProviderIdentity`/**`CapabilityContract`** | `ProviderIdentity`/`ProviderCapabilityContract`/`ProviderExecutionContract`；消费方从"三个文件"改成点名的两份真实测试，并补 `test_namespace_layout.py` 钉迁移后位置 |
+| `atst.profile.detect` | `detect_profile`/`BUILTIN_PROFILES` | `detect`/`BUILTIN_PROFILES`，并写明探测入口 `atst.profile.detect_profile` 的真身在 `atst/reader/profile.py:670`、由包 `__init__` 再导出 |
+| `atst.trade.errors` | "tests/trade/ **两个文件**断言其语义" | 点名 `tests/trade/test_frames.py` 与 `tests/trade/test_simulator.py`（指针口径要求可核文件名，"两个文件"核不了） |
+| `atst.charset` / `atst.profile` | "… 等 11 项" / "… 等 14 个测试文件引用" | 改成"完整清单见 charset 包 `__init__` 的 `__all__`" / 只留可核的那一份测试——**"等 N 个"这类手抄计数正是第 3 轮 R-10 的口径**，本轮在自己台账上把它清掉 |
 
 **为什么是"反引号 + 静态 AST"而不是"括号里的名字 + `importlib` 真导入"**：另一把探针（`probe_m.py`）按后一种口径
 在 pre-fix 清单上能认出 14/16 条记录、43 个名字，并 flag 出 3 条记录 5 个"不存在"的名字——其中
-`tstdx.charset.encoding` 那条点名的 `GB18030`/`GBK`/`Big5` **3/3 全是误报**（那句散文讲的是"优先级表里含哪些
+`atst.charset.encoding` 那条点名的 `GB18030`/`GBK`/`Big5` **3/3 全是误报**（那句散文讲的是"优先级表里含哪些
 编码名"，不是"本模块导出什么"，`hasattr` 必然为假），另外 2 个才是本轮真修的 `detect_profile` 与
 `CapabilityContract`。两种口径因此**互盲**：修完之后同一把括号探针只剩 1 条记录 2 个名字（16 条里的 15 条它再也看不见），
 而反引号口径在 pre-fix 清单上同样什么都抽不出来。选反引号是因为它能把"导出什么"与"在讲什么"分开——
 这正是括号口径做不到的那件事。改成静态命名空间还有一条硬理由：CI（ubuntu + py3.11）不装
-`[server]`/`output` 的 extras，`importlib.import_module("tstdx.output")` 在那里直接抛，基于导入的尺子在 CI 上是瞎的
+`[server]`/`output` 的 extras，`importlib.import_module("atst.output")` 在那里直接抛，基于导入的尺子在 CI 上是瞎的
 （本地能跑是因为工作树装了全套 extras，这正是 §14 记下的环境标签不可混用问题）。
 
 **两把"量过、按数字不立"的配置面候选**（步骤树内读数，`wt_v18b6step/probe_readings_step.log`）：
 
 | 候选 | 实测 | 不立的理由 |
 |---|---|---|
-| K：`tstdx/config/schema.py` 声明的字段必须在包内被读到 | 声明面 6 段 / 22 字段；K1 严格（schema 外的受体属性读取）、K2（+字符串键）、K3（含 schema 自身）**三档 unread 全为 0** | 读取集是**按名字**在全包属性名并集里查的，`timeout` 这种名字分不清 `cfg.timeout` 与 `sock.timeout` ⇒ "0 未读"是口径必然，不是事实断言。零发现＋零分量的判据就是 §4 第二类要删的形状 |
+| K：`atst/config/schema.py` 声明的字段必须在包内被读到 | 声明面 6 段 / 22 字段；K1 严格（schema 外的受体属性读取）、K2（+字符串键）、K3（含 schema 自身）**三档 unread 全为 0** | 读取集是**按名字**在全包属性名并集里查的，`timeout` 这种名字分不清 `cfg.timeout` 与 `sock.timeout` ⇒ "0 未读"是口径必然，不是事实断言。零发现＋零分量的判据就是 §4 第二类要删的形状 |
 | L：把配置对象按"段 → 字段"的链式读取来核 | 5 段 / 17 字段，包内属性链只读到 8 对；`rate_limit` 5/5、`web` 4/4 报"未见" ⇒ **9 格全部误报** | 误报来源是两种真实写法，都能指到行：整段对象原样传出去（`transport/pool.py:93` 把 `cfg.rate_limit` 交给 `SessionRateLimiter.from_config`，字段在形参名上读，`ratelimit.py:285-290`），以及先落到别名（`web/__init__.py:391` 的 `cfg.enabled_sources`）。要修就得维护"哪些受体算同一个对象"的跨函数别名图——那是第 4 轮否掉的形状，不是派生判据 |
 
 **步骤轮**（`wt_v18b6step`，detached @ `7420d9d` + 本步 3 文件；`audit_reachability.py` md5 `65eccf6e…`、
@@ -1133,7 +1133,7 @@ docs links `83 files`、mypy 0 行、ruff check `All checks passed!`、ruff form
 | C4 | 真实清单里把一个点名的公共 API 改成不存在的名字 | 普查红 |
 | C5 | 把本轮刚改对的那格退回改错前的形状（`CapabilityContract`） | 普查红 ⇒ **本轮修的那一格现在有了门禁**，改回去就红 |
 | C6 | 改**代码**：把被点名的契约类连它的 `__all__` 条目一起改名，清单不动 | 普查红 ⇒ 判据读的是当前模块，不是清单自证 |
-| C7 | CI 路径：同一格缺陷交给 `--strict` | `rc=1` + `[ALLOW-DEFECT] [dead-claim] tstdx.profile.presets：…` ⇒ 门禁与测试是同一套口径 |
+| C7 | CI 路径：同一格缺陷交给 `--strict` | `rc=1` + `[ALLOW-DEFECT] [dead-claim] atst.profile.presets：…` ⇒ 门禁与测试是同一套口径 |
 
 **C6 的来历值得记一句**：最初只改 `class ProviderIdentity` 那一行时它是**绿的**——`__all__` 里那串
 `"ProviderIdentity",` 还留着，按命名空间口径这一格仍然"有这个名字"。这不是判据漏了本轮要的账
@@ -1147,14 +1147,14 @@ docs links `83 files`、mypy 0 行、ruff check `All checks passed!`、ruff form
 ruff format 445 files）；离线全量 junit **3655 / 0 失败 / 0 错误 / 7 跳过**、160.737s、覆盖率 **81.72%**
 （TOTAL 22 440 / 3 525 / 5 996 / 1 002，`Required 77.0% reached`）。两棵树的 `scripts/`、`tests/architecture/`
 逐文件比对（`diff -r --strip-trailing-cr`）**内容一致**（仅工作树检出 CRLF、提交树 LF）。
-两轮之间 0.01pp 的差**只有 `tstdx/transport/pool.py` 一行**：步骤轮 111 miss/36 partial，提交轮 113/37，
+两轮之间 0.01pp 的差**只有 `atst/transport/pool.py` 一行**：步骤轮 111 miss/36 partial，提交轮 113/37，
 TOTAL miss 3 523→3 525、partial 1 001→1 002——这正是 §14 末段第三次全量亲自量到的那个计时抖动文件
-（同树连跑就会在 ±1～2 行之间跳）。本轮改动全在 `scripts/` 与 `tests/architecture/`，`tstdx/` 一行未动，
+（同树连跑就会在 ±1～2 行之间跳）。本轮改动全在 `scripts/` 与 `tests/architecture/`，`atst/` 一行未动，
 分母恒为 22 440。结论按 §14 已确立的口径写：**该差值落在 pool 的抖动行上，与本轮改动无因果**，
 覆盖率真值仍以 CI 为准，本轮不据此重钉基线。
 
-**本轮明确未做**：C4 的后半截——`tstdx/deprecation.py` 按 D3 的处置（默认删除 + 防回潮守卫）当时没做，
-本轮只把它的台账格子说清楚（**第 8 轮已落地，见 §17**）；配置面 K/L 两把尺子（读数见上表，量过而不立）；`tstdx.trade` 那条记录
+**本轮明确未做**：C4 的后半截——`atst/deprecation.py` 按 D3 的处置（默认删除 + 防回潮守卫）当时没做，
+本轮只把它的台账格子说清楚（**第 8 轮已落地，见 §17**）；配置面 K/L 两把尺子（读数见上表，量过而不立）；`atst.trade` 那条记录
 仍是"包级理由 + 零反引号点名"（下限有余量：49 ≫ 30，所以它绿得有依据，但也确实没被符号口径盯住）；
 `_module_namespace()` 不核"名字在但形状/语义与理由描述不符"（比如理由说是类、实为函数）；
 §2 G5 的声明面改动（与 F-66/F-75 同批裁决）；C1/C2/C3、D1–D4、E1–E4、F2、F3、F4/G3、G2 的 D10 裁决；
@@ -1215,7 +1215,7 @@ docs links `83 files`、mypy 0 行、ruff check、ruff format）。
 离线全量 junit **3661 项 / 0 失败 / 0 错误 / 7 跳过**、160.572s；覆盖率 **81.72%**
 （TOTAL 22 440 stmt / 3 525 miss / 5 996 branch / 1 002 partial），`Required 77.0% reached`，
 **阈值未动**。判据规模 3655 → **3661（+6，全部在 `tests/v14`：5 → 11）**，零删除、零 skip。
-本轮改动全在 `scripts/` 与 `tests/`，`tstdx/` 一行未动，分母恒为 22 440。
+本轮改动全在 `scripts/` 与 `tests/`，`atst/` 一行未动，分母恒为 22 440。
 注：这一轮的 `contract_audit` 一格改用 `--ci` 调用（第 6 轮跑的是裸脚本），是收紧不是放松。
 
 **反证证据**（`wt_v18b7step/mutate_v18b7.log`，harness `rc=0`；10 格全部按预期变色，每格跑完即按 md5 还原）：
@@ -1251,9 +1251,9 @@ docs links `83 files`、mypy 0 行、ruff check、ruff format）。
 `模块总数: 190 / 可达: 174 / 白名单豁免: 16 / 无未登记孤儿 ✓`、`形状来源：63 / 172 / 0`、
 `PASS: 172 个注册 capability 全部落在声明形状之内`、docs links 83 files）。离线全量 junit
 **3661 / 0 / 0 / 7**、159.363s、覆盖率 **81.72%**（TOTAL 22 440 / 3 525 / 5 996 / 1 002）。
-**本轮两棵树的 `tstdx/` 覆盖表逐行相同**（`diff` 空输出），连 §14、§15 各见过一次的那行
+**本轮两棵树的 `atst/` 覆盖表逐行相同**（`diff` 空输出），连 §14、§15 各见过一次的那行
 `transport/pool.py` 这次也同为 113 miss / 37 partial——它仍是抖动行，只是这一轮两棵树抖到了同一格，
-所以本轮没有需要归因的差值；改动全在 `scripts/` 与 `tests/`，`tstdx/` 一行未动，分母恒为 22 440，
+所以本轮没有需要归因的差值；改动全在 `scripts/` 与 `tests/`，`atst/` 一行未动，分母恒为 22 440，
 覆盖率真值仍以 CI 为准，本轮不重钉基线。提交内容与实测内容按 md5 双向核对：步骤树原始 md5 与主树
 逐字节相同，去掉 CR 后与 `c7db30b` 提交版逐文件相同（`18e59495…` / `1810d535…` / `ab9c17c0…`）。
 
@@ -1272,19 +1272,19 @@ F2、F3、F4/G3、§2 G5 的声明面改动；CHANGELOG `[Unreleased]` 仍因并
 ### 第 8 轮｜轴的第六次延伸：登记越齐全，死机制越像活的（代码 `f92d827` + `cb92bc0`，11 个文件 `39 insertions / 354 deletions`）—— C4 后半按 D3 默认 (a) 落地
 
 前七轮的轴都是同一个方向：**声明了就得兑现**（旋钮、入参、字段、符号、名单）。这一轮把轴翻过来——
-`tstdx/deprecation.py` 在磁盘上、在四处登记（根级白名单、可达性豁免、裸告警豁免、公共 API 表）里
+`atst/deprecation.py` 在磁盘上、在四处登记（根级白名单、可达性豁免、裸告警豁免、公共 API 表）里
 全都活着，登记越齐全，门禁看它就越健康；而它服务的对象一个都没有。这是那条轴的**反向失效模式**：
 "被登记" 不等于 "被使用"，一份越写越全的豁免台账完全可以给零消费者的代码发持续供养费。
 D3 给的默认处置是物理删除 + 防回潮守卫，本轮按 (a) 落地。
 
-**取证**（本轮现测，`git grep -i deprecat 0bf2994 -- tstdx/`）：该模块 206 行、`__all__` 五项
+**取证**（本轮现测，`git grep -i deprecat 0bf2994 -- atst/`）：该模块 206 行、`__all__` 五项
 （`DeprecationPolicy` / `deprecated` / `DeprecationInfo` / `get_deprecation_count` /
 `reset_deprecation_count`）外加一个不进 `__all__` 的 `DeprecationError`，
 包内**除自身外零引用**——上面那次全库 grep 的每一条命中都是另一条路径上的 `SourceDeprecated`
 或 `_check_deprecated`，没有一处 `from .deprecation import`。真正在跑的生命周期信号是
-`tstdx/errors.py:471` 的 `SourceDeprecated`，由 `tstdx/web/_base_core.py:349`、
-`tstdx/web/_base_em.py:136`、`tstdx/web/adapters.py:156,209,216,225` 发射，
-加 `tstdx/diagnostics.WarningCode` 的告警信封。所以删掉它不是"扔掉一个还没人用的正确机制"，
+`atst/errors.py:471` 的 `SourceDeprecated`，由 `atst/web/_base_core.py:349`、
+`atst/web/_base_em.py:136`、`atst/web/adapters.py:156,209,216,225` 发射，
+加 `atst/diagnostics.WarningCode` 的告警信封。所以删掉它不是"扔掉一个还没人用的正确机制"，
 而是**同一件事的第二套写法且没人走**；`tests/test_deprecation.py` 那 9 项（`--collect-only` 实测，
 台账里写的 13 项是抄本）全部只在给自己写的模块计数。
 
@@ -1292,13 +1292,13 @@ D3 给的默认处置是物理删除 + 防回潮守卫，本轮按 (a) 落地。
 
 | 文件 | 动作 |
 |---|---|
-| `tstdx/deprecation.py` | 整文件删除（206 行） |
-| `tests/test_deprecation.py` | 整文件删除（130 行 / 9 项）。"删测试要有凭据"这一格本轮的凭据是文件本身：9 项断言的对象全部来自开头那一行 `from tstdx.deprecation import …`，包内其它代码零涉及；P1/P2 两格另证没有任何一条**别的**判据以"这个模块存在"为条件 |
+| `atst/deprecation.py` | 整文件删除（206 行） |
+| `tests/test_deprecation.py` | 整文件删除（130 行 / 9 项）。"删测试要有凭据"这一格本轮的凭据是文件本身：9 项断言的对象全部来自开头那一行 `from atst.deprecation import …`，包内其它代码零涉及；P1/P2 两格另证没有任何一条**别的**判据以"这个模块存在"为条件 |
 | `tests/test_bridges.py` | #16 **换形**而不是取消：从"弃用策略从 deprecate 到 remove 至少 2 个 minor"改成"包内不留自建退役机制"，三面各一条断言——磁盘上没有这个文件、`importlib.import_module` 抛 `ImportError`、根包公共面（`__all__` 与属性）不重新导出那三个名字。套件仍为 24 项，三份写着"24 项"的文档因此不用改 |
 | `tests/architecture/test_namespace_layout.py` | 根级白名单去掉 `deprecation.py`（11 → 10；该判据是**集合相等**，多一项少一项都红） |
 | `tests/architecture/test_caveat_channel_gates.py` | 撤回裸告警豁免，`BARE_WARN_ALLOWED` 只剩 `CHANNEL` 一项。讽刺的是逼着撤回它的正是第 6 轮那条"豁免不能过期"的判据：模块没了，豁免就成了它自己禁止的 stale exemption |
 | `scripts/_reach_allow.txt` | 删掉该模块的豁免记录（16 → 15 条；反引号符号声明 51 → 48 处，仍高于 `MIN_SYMBOL_CLAIMS = 30`） |
-| `docs/api/README.md` | 删掉公共 API 表那一行——第 6 轮那道"免费守卫" `test_backticked_tstdx_paths_are_importable` 正盯这张表，写回去就是红 |
+| `docs/api/README.md` | 删掉公共 API 表那一行——第 6 轮那道"免费守卫" `test_backticked_atst_paths_are_importable` 正盯这张表，写回去就是红 |
 | `README.md` / `docs/ARCHITECTURE.md` | 目录树一行去掉该文件名；"根级白名单 11 项" → 10 项（后者是被 `_root_modules()` 现算钉住的事实数字，不是可自由改的文案） |
 | `AUDIT_AND_BRIDGES.md` | 验收项 16 改写为新语义；两处 `make audit-bridges` → `make test-bridges`（pickaxe：`f73ef61` 加入该目标时命令就带着 `\|\| echo "⚠ bridges test 未就绪"`，失败被吞成成功；`340624c` 已删除该目标，文档还在教人跑它） |
 | `GOVERNANCE.md` §4.2 | 弃用策略改为直接 `warnings.warn(..., DeprecationWarning, stacklevel=2)`；不建包内装饰器；`warnings.deprecated`（3.13）在 `requires-python = ">=3.10"` 下不可用，这一句写进政策而不是留给下个人重新发现 |
@@ -1310,7 +1310,7 @@ D3 给的默认处置是物理删除 + 防回潮守卫，本轮按 (a) 落地。
 |---|---|
 | 模块文件回到包根（登记一概不动） | `test_root_namespace_matches_whitelist`（集合相等）＋ 可达性审计 `[ORPHAN]`（它不在豁免里了）＋ #16 |
 | 模块回来且四处登记全部补回 | 只有 #16（见 P2 那一格） |
-| 只在公共 API 表写回一行 | `test_backticked_tstdx_paths_are_importable` |
+| 只在公共 API 表写回一行 | `test_backticked_atst_paths_are_importable` |
 | 只在豁免台账写回一行 | 可达性审计的 `[ALLOW-DEFECT] [dead]`（第 6 轮的战果） |
 | 只把裸告警豁免写回 | `test_bare_warn_calls_stay_inside_the_channel_and_one_justified_site` |
 | 只把根包 `__all__` 写回 | #16 第三面 |
@@ -1319,8 +1319,8 @@ D3 给的默认处置是物理删除 + 防回潮守卫，本轮按 (a) 落地。
 **规模账（−9 与"覆盖不降"证明）**：判据 3661 → **3652**，差值 9 项全在被删的
 `tests/test_deprecation.py`；#16 换形 1 条、新增 0、被删判据 0（没有任何一条判据以"这个模块存在"
 为条件，P1/P2 两格就是查这一点的）、新增 skip 0、阈值 77.0% 未动。删测试文件必须配覆盖证明，
-本轮是**逐行等式**而非"大概没降"：与 `wt_v18b7ship` 的 `tstdx/` 覆盖表按（文件名 + 四个计数列）
-归一后 `diff`，唯一差异是 `tstdx\deprecation.py 77 2 14 3 95%` 整行消失，其余 **140 行逐字节相同**；
+本轮是**逐行等式**而非"大概没降"：与 `wt_v18b7ship` 的 `atst/` 覆盖表按（文件名 + 四个计数列）
+归一后 `diff`，唯一差异是 `atst\deprecation.py 77 2 14 3 95%` 整行消失，其余 **140 行逐字节相同**；
 TOTAL 差值 22 440−22 363 = 77 stmt、3 525−3 523 = 2 miss、5 996−5 982 = 14 branch、
 1 002−999 = 3 partial，恰好就是那一行。**81.72% → 81.68% 不是回潮**：删掉一个 95% 的、
 高于均值的文件，加权结果必然往下挪，而"留存代码的覆盖"两个方向都没变差。基线仍只由
@@ -1349,14 +1349,14 @@ reached`。
 | 格 | 动了什么 | 结果 |
 |---|---|---|
 | C0 | 不改动（对照） | 4 道相关门禁全绿 ⇒ 下面每一格的红都不是恒报出来的 |
-| P1 | 只把模块文件放回包根（四处登记不动） | 变红 **4/5**：白名单集合、#16、裸告警豁免、可达性 `[ORPHAN] tstdx.deprecation`；docs 那格按设计仍绿（没写回表） |
+| P1 | 只把模块文件放回包根（四处登记不动） | 变红 **4/5**：白名单集合、#16、裸告警豁免、可达性 `[ORPHAN] atst.deprecation`；docs 那格按设计仍绿（没写回表） |
 | P2 | 模块回来 + 四处登记全部补回（一个"复活后处处自洽"的死机制） | 只有 #16 红 ⇒ 泛化的四把尺子都会点头，防回潮靠的是那三条专门断言，这一点记在这里而不是补一把泛尺子 |
-| P3 | 只把公共 API 表那一行写回去 | `test_backticked_tstdx_paths_are_importable` 红 |
-| P4 | 只把可达性豁免记录写回去 | `audit_reachability --strict` 红：`[ALLOW-DEFECT] [dead] tstdx.deprecation：模块不存在，豁免记录已失效（应删除该行）` |
+| P3 | 只把公共 API 表那一行写回去 | `test_backticked_atst_paths_are_importable` 红 |
+| P4 | 只把可达性豁免记录写回去 | `audit_reachability --strict` 红：`[ALLOW-DEFECT] [dead] atst.deprecation：模块不存在，豁免记录已失效（应删除该行）` |
 | P5 | 只把裸告警豁免写回去 | `test_bare_warn_calls_stay_inside_the_channel_and_one_justified_site` 红 |
 | P6 | 只把根级白名单写回去 | `test_root_namespace_matches_whitelist` 红 |
 | P7 | 根包公共面重新导出 `deprecated` | #16 第三面红 |
-| P8 | 把删掉的 9 项测试整包搬回来（模块不回来） | 收集期 `ModuleNotFoundError: No module named 'tstdx.deprecation'`，rc=2 |
+| P8 | 把删掉的 9 项测试整包搬回来（模块不回来） | 收集期 `ModuleNotFoundError: No module named 'atst.deprecation'`，rc=2 |
 
 **harness 自己的两格缺陷值得记一句**（因为它对所有后续取证脚本都成立）：主树工作副本是 CRLF，
 `Path.read_text()/write_text()` 会把换行归一化，于是"按 md5 还原"必然假失败、而"锚点字符串"
@@ -1368,7 +1368,7 @@ reached`。
 摘要行与步骤轮逐字相同（`gates_ship8.log`：`Total: 190 / Suspicious: 0`、`"coverage_pct": 100.0`、
 `模块总数: 189 / 可达: 174 / 白名单豁免: 15`、`形状来源：63 / 172 / 0` + `PASS: 172 …`、
 docs links 83 files、ruff format 443 files）。离线全量 junit **3652 / 0 / 0 / 7**、171.100s、
-覆盖率 **81.68%**（TOTAL 22 363 / 3 523 / 5 982 / 999）。**两棵树的 `tstdx/` 覆盖表逐行相同**
+覆盖率 **81.68%**（TOTAL 22 363 / 3 523 / 5 982 / 999）。**两棵树的 `atst/` 覆盖表逐行相同**
 （归一后 `diff` 空输出，140 行），本轮不需要归因差值。
 
 **本轮明确未做**：P2 那一格说明"复活且处处自洽"只有 #16 认得，而 #16 是**手抄的三条断言**
@@ -1386,9 +1386,9 @@ A1/A2/A4（README 半截）、C1/C2/C3、D1–D4、E1–E4、F2、F3、F4/G3、�
 ### 第 9 轮｜轴的第七次延伸：等级声称也要有代价，缺省值不是判断（提交 `2e4e6bb`，10 个文件 `297 insertions / 33 deletions`）—— F-37② 的账本半边，V18-F4 / G3
 
 前八轮把"声明了就得兑现"从旋钮、入参、字段、符号一路推到名单，第 8 轮翻面看到"被登记不等于被使用"。
-这一轮落在同一条轴的第三种形态：**等级本身的声称**。`tstdx/protocol/commands.py` 里 `0x000F` 长期写着
+这一轮落在同一条轴的第三种形态：**等级本身的声称**。`atst/protocol/commands.py` 里 `0x000F` 长期写着
 `tier=TIER_L1, verified=True`——对外话术是"精确解析、已验证"。那个 L1 不是谁判断出来的：
-`register_parser` 的 `tier` 缺省值就是 `TIER_L1`（`tstdx/protocol/registry.py:113`），写解析器的人没填
+`register_parser` 的 `tier` 缺省值就是 `TIER_L1`（`atst/protocol/registry.py:113`），写解析器的人没填
 这一格，账本又照着缺省升了级。v17 的 F-37 裁决 (c) 把口径下调为"条数可用、字段语义不保证"，但那一步
 **只落在文档那半边**；于是同一件事在两个文件里互相矛盾而无人报红——读文档的人看到"不保证"，读账本的
 人看到"已验证"，而 `0x0010` 的 `verified=True` 也是同一类回声。
@@ -1416,7 +1416,7 @@ A1/A2/A4（README 半截）、C1/C2/C3、D1–D4、E1–E4、F2、F3、F4/G3、�
 
 | 尺子 | 为什么看不见 |
 |---|---|
-| 字节耗尽判据（手抄名单 `EXACT_COMMANDS` + "缓冲区必须恰好用完"） | `0x000F` 不在名单里；把名单换成账本推导也**假红**——它的解析器用 `reader.rest()` 取正文，而 `rest()` 不推进 `pos`（`tstdx/codec/primitive.py:145`），`reader_meta` 恒停在 2。那把尺子对"以 `rest()` 取正文的解析器"结构性失明，所以新判据走语义值域而不是字节数 |
+| 字节耗尽判据（手抄名单 `EXACT_COMMANDS` + "缓冲区必须恰好用完"） | `0x000F` 不在名单里；把名单换成账本推导也**假红**——它的解析器用 `reader.rest()` 取正文，而 `rest()` 不推进 `pos`（`atst/codec/primitive.py:145`），`reader_meta` 恒停在 2。那把尺子对"以 `rest()` 取正文的解析器"结构性失明，所以新判据走语义值域而不是字节数 |
 | yaml 状态对齐（`test_registry_spec_verification_alignment`） | 这两条命令根本没有 `PROTOCOL_SPEC` yaml，无对象可比 |
 | `golden_audit` 的 `[GATE] all L1 verified commands have real samples` | 只问"有没有实采样本"，不问"样本解出来对不对"。`0x000F` 恰恰有 4 份 ⇒ 它一直 OK，而且**样本越多越像健康** |
 
@@ -1424,8 +1424,8 @@ A1/A2/A4（README 半截）、C1/C2/C3、D1–D4、E1–E4、F2、F3、F4/G3、�
 
 | 文件 | 动作 |
 |---|---|
-| `tstdx/protocol/commands.py` | `0x000F`：`tier` L1→L2、`verified` True→False；`0x0010`：`verified` True→False。两条 summary 补 "inferred；…尚未由 golden 锁定"——照抄同文件 `0x0FC5` 已有的诚实写法，不发明新话术 |
-| `tstdx/protocol/parsers/_std7709_bars.py` | 两个解析器**显式** `tier=TIER_L2`（不再吃缺省值）；docstring 里 `0x000F` 那段"一旦取得 golden 样本即改为定长解析并置 verified=True"的许诺换成本轮实测数字 + `offset × stride` 穷举结论（见 `probe9c`），并写下"缺布局判据时不猜"（与 `parsers/mac.py` 同政策） |
+| `atst/protocol/commands.py` | `0x000F`：`tier` L1→L2、`verified` True→False；`0x0010`：`verified` True→False。两条 summary 补 "inferred；…尚未由 golden 锁定"——照抄同文件 `0x0FC5` 已有的诚实写法，不发明新话术 |
+| `atst/protocol/parsers/_std7709_bars.py` | 两个解析器**显式** `tier=TIER_L2`（不再吃缺省值）；docstring 里 `0x000F` 那段"一旦取得 golden 样本即改为定长解析并置 verified=True"的许诺换成本轮实测数字 + `offset × stride` 穷举结论（见 `probe9c`），并写下"缺布局判据时不猜"（与 `parsers/mac.py` 同政策） |
 | `tests/unit/test_golden.py` | +3 项：`L1 ∧ verified` 的命令重放实采样本后 `market`/`code` 必须落在 domain 合法域、日期形状必须是真日历日；尺子覆盖 `Symbol` 全字段（`set(_CHECKERS) == 字段集`，新增字段免检即红）；正控把 F-37 实测到的那四类错位值种进去，四条全认得、合法行不误伤；in-scope 规模下限 ≥3 |
 | `tests/protocol/test_tiers.py` | +1 项（#16）：**L1 是双向声称**——注册表 L1 集必须等于账本 L1 集，账本 L1 行必须同时 `verified=True`，两边同时抹空由规模下限自报 |
 | `tests/architecture/test_offline_capability_honesty.py` | 那道口径门禁从"只看 docstring"接到"也看账本行"：`verified is False` 且 `tier != TIER_L1`，各带一句"先把布局判据补上再改这一格" |
@@ -1479,10 +1479,10 @@ contract_audit `63 / 172 / 0` + `PASS: 172 个注册 capability 全部落在声�
 **ship 轮（提交树复测）**：`2e4e6bb` 落到 main 并推送后，`wt_v18b9ship` 由 `git checkout-index` 从该头寸
 直出（不叠加任何文件），十次调用**全部 rc=0**，摘要行与步骤轮逐字相同（`gates_v18b9.log` 里
 `L1 verified: 0x44e, 0x52d, 0x530` 这一行由门禁自己复述了本轮的口径变化）。离线全量 junit
-**3 656 / 0 / 0 / 7**、162.491s、覆盖率 **81.70%**，`tstdx/` 覆盖表与步骤轮逐行相同。
+**3 656 / 0 / 0 / 7**、162.491s、覆盖率 **81.70%**，`atst/` 覆盖表与步骤轮逐行相同。
 
 **两处副作用，都不粉饰**：
-① 归档闸口重新开了一条：`tstdx/protocol/generic.py:314` 的跳过条件是 `info.verified ∧ result.tier == "L1"`，
+① 归档闸口重新开了一条：`atst/protocol/generic.py:314` 的跳过条件是 `info.verified ∧ result.tier == "L1"`，
 `0x000F` 撤回后不再被跳过，真机抓包可以来锁布局；`0x0010` 本来就不跳过（它的解析器一直是显式 L2），
 所以"开闸"的只有 `0x000F` 一条。
 ② `0x0010` 那一格 `verified` 的撤回**没有运行时读取点**——包内读 `CommandInfo.verified` 的只有
@@ -1555,7 +1555,7 @@ contract_audit `63 / 172 / 0` + `PASS: 172 个注册 capability 全部落在声�
 同一个根：**归类发生在抛出点**，面只是转述它，所以一次选错类型的 `raise` 让每张面**一致地**把
 调用方写错的键说成服务器故障——`message` 被统一改写成 `internal error`、`context` 清空。
 内核层那一列顺带量出自家判据的不自洽：同一族四种写错方式，三种抛裸 `ValueError`（重复、空、冲突）、
-一种抛 `ValidationError`（未知 Provider）。CLI 那一格最刺眼：`tstdx/cli/__init__.py:57-64` 白纸黑字
+一种抛 `ValidationError`（未知 Provider）。CLI 那一格最刺眼：`atst/cli/__init__.py:57-64` 白纸黑字
 写着「领域错误（TdxError 家族）走规范化信封 + 专用退出码 2，与原生未捕获异常（E9000 / 退出码 1）
 区分，便于脚本判定失败类别」，而脚本拿到的是 rc=1、stdout 连信封都不是——面把自己模块 docstring
 里的承诺反过来说了。修复后面上的三格全部 `422 / -32602 / E1010 / rc=2`、内核层四格全部
@@ -1573,11 +1573,11 @@ contract_audit `63 / 172 / 0` + `PASS: 172 个注册 capability 全部落在声�
 
 | 文件 | 动作 |
 |---|---|
-| `tstdx/runtime/executor.py` | 新增 `DEDICATED_CAPABILITIES`，由 `DIRECT_BINDINGS` 派生（`executor_name != "_migrated_capability"`）——"这条能力走专用路径"从此只有一处判据 |
-| `tstdx/client/api.py` | `Client` 的便捷方法面与 `Client.call` 的核心分派改用它；`_call_core` 末尾的 `else`（实测会把没分支的能力拿去跑 `security_list`）改成当场拒并附 `known_core`；`provider` 与 `fallback` 互斥改由新函数 `_reject_provider_with_policy` 抛 `ValidationError` |
-| `tstdx/runtime/orchestration.py` | 新增 `FallbackPolicy.from_wire`：线面 `fallback` 的唯一解法（没给→`None`；字符串与数组都认；形状不对或只剩分隔符→`ValidationError`）；`build` 的空名单与重复项从裸 `ValueError` 改判 `ValidationError` |
-| `tstdx/cli/runtime_commands.py`、`tstdx/integration/runtime_http.py`、`tstdx/integration/runtime_ws.py` | 三份手抄的 `_policy` 收成一个转调 `from_wire`（HTTP 那份整体删除）。量的时候三份并不等价：WS 那份多认列表，另两份只认字符串 |
-| `tstdx/integration/mcp/_tools_spec.py`、`_tools_impl.py` | 补 MCP 缺的那三格 `fallback`；新增 `_policy_and_provider`——递了名单时 MCP 自己的 `provider` 缺省必须让位，否则每一个用 `fallback` 的 MCP 调用都撞在内核的互斥判据上 |
+| `atst/runtime/executor.py` | 新增 `DEDICATED_CAPABILITIES`，由 `DIRECT_BINDINGS` 派生（`executor_name != "_migrated_capability"`）——"这条能力走专用路径"从此只有一处判据 |
+| `atst/client/api.py` | `Client` 的便捷方法面与 `Client.call` 的核心分派改用它；`_call_core` 末尾的 `else`（实测会把没分支的能力拿去跑 `security_list`）改成当场拒并附 `known_core`；`provider` 与 `fallback` 互斥改由新函数 `_reject_provider_with_policy` 抛 `ValidationError` |
+| `atst/runtime/orchestration.py` | 新增 `FallbackPolicy.from_wire`：线面 `fallback` 的唯一解法（没给→`None`；字符串与数组都认；形状不对或只剩分隔符→`ValidationError`）；`build` 的空名单与重复项从裸 `ValueError` 改判 `ValidationError` |
+| `atst/cli/runtime_commands.py`、`atst/integration/runtime_http.py`、`atst/integration/runtime_ws.py` | 三份手抄的 `_policy` 收成一个转调 `from_wire`（HTTP 那份整体删除）。量的时候三份并不等价：WS 那份多认列表，另两份只认字符串 |
+| `atst/integration/mcp/_tools_spec.py`、`_tools_impl.py` | 补 MCP 缺的那三格 `fallback`；新增 `_policy_and_provider`——递了名单时 MCP 自己的 `provider` 缺省必须让位，否则每一个用 `fallback` 的 MCP 调用都撞在内核的互斥判据上 |
 | `tests/runtime/test_orchestration_v12.py` | 那三格 `pytest.raises(ValueError)` 改判 `ValidationError`。**这条旧断言正是缺陷的存档**：同一族里"未知 Provider"那一格早就写的是 `ValidationError`，四种形状两套类别，判据自己就不自洽。改的是类别，一格没删 |
 | `tests/architecture/test_face_exposure_projection.py` | 新文件 20 项，五格规则见下 |
 
@@ -1593,7 +1593,7 @@ contract_audit `63 / 172 / 0` + `PASS: 172 个注册 capability 全部落在声�
 
 **规模账（+20 与"覆盖不降"证明）**：判据 3 656 → **3 676**（20 项全在新文件：派生集 1、面↔派生集 4、
 声明⇒推动 4、同进同退 1、核心分派 2、入参归类 4、解析唯一 1、MCP 缺省让位 3），新增 skip 0，
-删除判据 0，阈值 `fail_under = 77.0` 未动。`tstdx/` 覆盖表 140 行，与 `wt_v18b9ship` 按
+删除判据 0，阈值 `fail_under = 77.0` 未动。`atst/` 覆盖表 140 行，与 `wt_v18b9ship` 按
 （文件名 + 四个计数列）逐行比，**8 行不同**、文件名集合双向差 0：
 `client\api.py` 44→65（miss 99→68）、`mcp\_server.py` 80→81（miss 24→21）、
 `mcp\_tools_impl.py` 85→88（**miss 3→3**、stmts 34→43、branch 6→8：分母涨了，一格没多漏）、
@@ -1621,7 +1621,7 @@ spec_audit `"coverage_pct": 100.0`、golden_audit `L1 verified: 0x44e, 0x52d, 0x
 contract_audit `63 / 172 / 0` + `PASS: 172 个注册 capability 全部落在声明形状之内`、docs links
 `83 files`、mypy 无输出、ruff check `All checks passed!`、ruff format `444 files already formatted`）。
 离线全量 junit **3 676 / 0 / 0 / 7**、170.486s、覆盖率 **81.94%**（TOTAL `22 375 / 3 483 / 5 982 / 1 008`）。
-`tstdx/` 覆盖表 140 行与步骤轮比**只有 1 行不同**：`transport\pool.py` miss 113→111、
+`atst/` 覆盖表 140 行与步骤轮比**只有 1 行不同**：`transport\pool.py` miss 113→111、
 partial-branch 37→36，两边都仍是 80%——就是第 7、8 两轮各记过一次的那条时间敏感抖动行，本轮又抖了
 一次。步骤轮因此读 **81.93%**（TOTAL `22 375 / 3 485 / 5 982 / 1 009`）、ship 轮 **81.94%**；差值
 全部落在这一行，不写成"两棵树零抖动"。
@@ -1666,7 +1666,7 @@ partial-branch 37→36，两边都仍是 80%——就是第 7、8 两轮各记�
 - **MCP 与 HTTP 的 `provider` 缺省不一致**：`get_quote`/`get_quotes` 钉 `"tdx"`，而 HTTP
   `/v13/quotes` 与 CLI `quotes` 把缺省交回内核选。本轮只让 MCP 那份缺省在 `fallback` 在场时让位
   （M9 那一格），缺省本身没统一——统一会动 `requested_provider` 的 provenance 读数，属对外口径改动。
-- **`tstdx/catalog/capability.py` 的 `_CORE_CAPABILITIES` 与 `_SKIP_WEB_METHODS`**。量过
+- **`atst/catalog/capability.py` 的 `_CORE_CAPABILITIES` 与 `_SKIP_WEB_METHODS`**。量过
   （`probe10e_catalog.log`）：那份 9 条的跳过名单里只有 **3 条**命中 `WebQuoteSession` 的 166 个可调用
   成员（`close`、`quotes`、`minute`），其余 **6 条根本不是成员**（`mro` 加五条 capability 名——
   原句写的是"`mro` 与六个 capability 名"，把 6 条数成了 6+1，第 12 轮按 `probe12_readings.log` 更正）；
@@ -1722,7 +1722,7 @@ partial-branch 37→36，两边都仍是 80%——就是第 7、8 两轮各记�
 **为什么本轮的改动不是"把表换成另一份表"**：绑定交回 `inspect.signature(method).bind(...)`，
 缺省交回方法自己的签名。`_call_core` 现在只剩三件事——核心集的闭合点、"入参不合签名"归
 `ValidationError`、`OrchestratedResult` 不许从这条路出来。核心集那份派生别名
-（`from ..runtime.executor import DEDICATED_CAPABILITIES as _CORE_CAPABILITIES`，`tstdx/client/api.py:25`）
+（`from ..runtime.executor import DEDICATED_CAPABILITIES as _CORE_CAPABILITIES`，`atst/client/api.py:25`）
 是第 10 轮就接上的，本轮没有新接东西，只是把它在分支里抄走的那七个名字收了回去：`Client.call` 与
 `_call_core` 的源码里现在字面上不出现任何能力名或 Provider 名（六b 那把 AST 尺子量的就是这一句）。
 
@@ -1730,8 +1730,8 @@ partial-branch 37→36，两边都仍是 80%——就是第 7、8 两轮各记�
 
 | 文件 | 动作 |
 |---|---|
-| `tstdx/client/api.py` `125 行` | 七段 `if capability == ...` 删掉，换成 `inspect.signature` 绑定（核心集那份派生别名是第 10 轮接的，本轮只是不再往分支里抄名字）；五条便捷方法面补上 `currentness` 形参并逐层转发（缺省与 `UnifiedRuntime.<cap>` 相同：`snapshot`/`minute`/`trades`→`live`、`security_count`/`security_list`→`business`）；删掉 `provider or "tdx"` 那五处硬写与 `str(args[0])` 那四处校正 |
-| `tstdx/query.py` `19 行` | `QuerySpec.build` 对 `symbols` 的形状当场归类：不是字符串又不是可迭代的→`ValidationError` 并点名"整数不是合法写法、前导零在到达这里之前已经丢了"；不替调用方把整数 `str()` 成代码 |
+| `atst/client/api.py` `125 行` | 七段 `if capability == ...` 删掉，换成 `inspect.signature` 绑定（核心集那份派生别名是第 10 轮接的，本轮只是不再往分支里抄名字）；五条便捷方法面补上 `currentness` 形参并逐层转发（缺省与 `UnifiedRuntime.<cap>` 相同：`snapshot`/`minute`/`trades`→`live`、`security_count`/`security_list`→`business`）；删掉 `provider or "tdx"` 那五处硬写与 `str(args[0])` 那四处校正 |
+| `atst/query.py` `19 行` | `QuerySpec.build` 对 `symbols` 的形状当场归类：不是字符串又不是可迭代的→`ValidationError` 并点名"整数不是合法写法、前导零在到达这里之前已经丢了"；不替调用方把整数 `str()` 成代码 |
 | `tests/architecture/test_face_exposure_projection.py` `+317 行` | 新段落四格规则（见下），该文件 20 项 → **55 项** |
 | `docs/api/interfaces.md` `18 行` | `Client` 方法表五行加上 `currentness="…"`；表后加一段说明缺省只在 `Client.<method>` 一处、与 `UnifiedRuntime.<method>` 逐字节相同，以及 `business` 在四张服务面上是"调用方没表态"的哨兵 |
 
@@ -1745,7 +1745,7 @@ partial-branch 37→36，两边都仍是 80%——就是第 7、8 两轮各记�
 | 分母自检 | 判据六/七不许被读空当绿：面 × 能力 × 口径 ≥ 140 格、入参形状 ≥ 5 种、每个缺省必须 ∈ `CurrentnessMode` | 1 |
 
 **规模账（+35 与"覆盖不降"证明）**：判据 3 676 → **3 711**（新增 35 项全在上面那四格里），
-新增 skip 0，删除判据 0，阈值 `fail_under = 77.0` 未动。`tstdx/` 覆盖表 141 行（含 TOTAL），
+新增 skip 0，删除判据 0，阈值 `fail_under = 77.0` 未动。`atst/` 覆盖表 141 行（含 TOTAL），
 与 `wt_v18b10ship` 按（文件名 + 四个计数列 + 百分比）逐行比，**5 行不同**、文件名集合双向差 0：
 TOTAL `22 375 / 3 483 / 5 982 / 1 008` → `22 363 / 3 461 / 5 960 / 1 000`、
 `client\api.py` 65%→69%（stmts 207→190、**miss 68→53**——删掉那张表让分母和漏数一起小了 15）、
@@ -1815,7 +1815,7 @@ M1 与 M5/M6 的红名单互不重叠，说明这轮装的是三件不同的事�
 - **`Client.<cap>` 的 `provider="tdx"` 与 `UnifiedRuntime.<cap>` 的 `provider=None` 仍不一致**
   （`probe11b_readings.log` 第三段逐条列了哪五格有 `'tdx'`）。本轮删的是 `_call_core` 里那份硬写，
   便捷方法自己签名里那份还在；统一它会动 `requested_provider` 的 provenance 读数，属对外口径改动。
-- **`tstdx/catalog/capability.py:94` 的 `_CORE_CAPABILITIES` 仍是第 9 份手抄**，此刻与派生集
+- **`atst/catalog/capability.py:94` 的 `_CORE_CAPABILITIES` 仍是第 9 份手抄**，此刻与派生集
   双向差 0（七个名字逐字相同），而"恰好"没有尺子守着。导入环没解，同 §19 那条。
   **# 上一句第 12 轮作废：那份名单拆成两份各管一种说法，"恰好"由判据八钉住，见 §21。**
 - **泛型面上 `strict` 与 `channel` 仍推不动**，`symbols={...}`（集合）仍被接受且顺序不定
@@ -1831,7 +1831,7 @@ M1 与 M5/M6 的红名单互不重叠，说明这轮装的是三件不同的事�
 ### 第 12 轮｜轴的第十次延伸：一份名单混着三种说法（提交 `f6c4a0c`，2 个文件 `218 insertions / 10 deletions`）—— V18-C1 后半第一段
 
 第 11 轮删掉的是分派表里"能力的名字"，本轮的靶子是它旁边那份**关于一个类的名单**：
-`tstdx/catalog/capability.py` 的 `_SKIP_WEB_METHODS = {"close", "mro", *_CORE_CAPABILITIES}`。
+`atst/catalog/capability.py` 的 `_SKIP_WEB_METHODS = {"close", "mro", *_CORE_CAPABILITIES}`。
 §19 第 10 轮量过它、§20 末尾把它列为"第 9 份手抄，此刻恰好抄对了，而恰好没有尺子守着"，本轮动手。
 
 **先量（`probe12_readings.log` / `probe12b_readings.log`，全部离线，只做类内省与绑定表组合）**：
@@ -1847,7 +1847,7 @@ M1 与 M5/M6 的红名单互不重叠，说明这轮装的是三件不同的事�
 读的人分不出哪条是哪条。代价本轮就采到一条：§19 把"6 条不是成员"写成了"`mro` 与六个 capability 名"
 （6 = `mro` 加**五**条 capability 名），已按上面的读数更正。
 
-**为什么不能派生**：`tstdx/runtime/executor.py` 在模块顶层就 `from ..catalog.capability import
+**为什么不能派生**：`atst/runtime/executor.py` 在模块顶层就 `from ..catalog.capability import
 binding_for, validate_call`，而 catalog 在**模块导入期**必须跑完 `_build_bindings()`
 （`MIGRATED_BINDINGS = _build_bindings()` 那一行）。方向反过来无论写成顶层 import 还是函数体内延迟
 import，都是在一个只初始化了一半的模块上取属性。所以第 11 轮押的那句"要接先得定那份名单归谁"，
@@ -1857,7 +1857,7 @@ import，都是在一个只初始化了一半的模块上取属性。所以第 1
 
 | 文件 | 改动 |
 |---|---|
-| `tstdx/catalog/capability.py` | `_SKIP_WEB_METHODS` 拆成 `_RESERVED_CORE_CAPABILITIES`（保留名，权威是 `DEDICATED_CAPABILITIES`）与 `_NOT_A_QUERY_MEMBER`（成员黑名单，每一条必须真的命中一个可调用成员），删掉幽灵条目 `mro`；注释写明导入环、归属与"今天只有两格真的在挡" |
+| `atst/catalog/capability.py` | `_SKIP_WEB_METHODS` 拆成 `_RESERVED_CORE_CAPABILITIES`（保留名，权威是 `DEDICATED_CAPABILITIES`）与 `_NOT_A_QUERY_MEMBER`（成员黑名单，每一条必须真的命中一个可调用成员），删掉幽灵条目 `mro`；注释写明导入环、归属与"今天只有两格真的在挡" |
 | `tests/architecture/test_catalog_reserved_names.py`（新） | 5 项：八、八b、八c 前半、八c 后半、口径自检 |
 
 **新判据各自守什么**
@@ -1882,10 +1882,10 @@ import，都是在一个只初始化了一半的模块上取属性。所以第 1
 `(tdx,mac,quotes)`，两份表本来就允许这个方向的差。本轮只按逐格读数写，不采任何笼统说法。
 
 **规模账（+5 与"覆盖不降"证明）**：判据 3 711 → **3 716**（新增 5 项全在新文件里），
-新增 skip 0，删除判据 0，阈值 `fail_under = 77.0` 未动。`tstdx/` 覆盖表 141 行（含 TOTAL），
-文件名双向差 0。与第 11 轮 **ship** 树比 **3 行不同**：TOTAL、`tstdx\catalog\capability.py`
+新增 skip 0，删除判据 0，阈值 `fail_under = 77.0` 未动。`atst/` 覆盖表 141 行（含 TOTAL），
+文件名双向差 0。与第 11 轮 **ship** 树比 **3 行不同**：TOTAL、`atst\catalog\capability.py`
 （stmts 145→**146**、miss 20 未变、84% 未变——新加的那一行并集就是本轮唯一的确定性分母变化）、
-`tstdx\transport\ratelimit.py`（miss 10→12、partial 1→2，94%→92%）。与第 11 轮 **step** 树比只差
+`atst\transport\ratelimit.py`（miss 10→12、partial 1→2，94%→92%）。与第 11 轮 **step** 树比只差
 **2 行**：TOTAL 与同一格 `capability.py`，且 TOTAL 的 miss/partial **逐字相同**（3 463 / 1 001），
 差额只在 stmts 的 +1。时间敏感那一族的六份日志一并列出，不硬编成因：
 
@@ -1964,7 +1964,7 @@ M7 指到"名单不再挡任何东西"。M7 那条尤其值：`close` 变成一�
 
 **本轮明确未做**：
 - **catalog 那份保留名仍是第二份表**，只是从"没人管"变成"判据钉住"。要真派生得解环：把这七个名字的
-  家搬到第三处（例如 `tstdx/catalog/core.py`）让 `executor` 与 `capability` 都 import 它——那会动公共
+  家搬到第三处（例如 `atst/catalog/core.py`）让 `executor` 与 `capability` 都 import 它——那会动公共
   导入路径，是 §19 那条"要接先得定那份名单归谁"里没答完的后半，本轮没拍板。
 - **`_PROVIDER_OVERRIDES` / `_CHANNEL_OVERRIDES` / `_SEMANTIC_WEB_CHANNELS` 三张目录内部表仍是手抄**，
   本轮只量了它们没有正在说谎（第 6 段：137 条发现项全部落在 `MIGRATED_CAPABILITIES` 内、无基础设施味道的
@@ -1993,14 +1993,14 @@ M7 指到"名单不再挡任何东西"。M7 那条尤其值：`close` 变成一�
 
 | 探针 | 读数 |
 |---|---|
-| L1 `tstdx server-test` | 8 主站 **7 可达**（22.8–32.3 ms），`119.147.212.81:7709` 连接超时 E2010；rc=0 |
+| L1 `atst server-test` | 8 主站 **7 可达**（22.8–32.3 ms），`119.147.212.81:7709` 连接超时 E2010；rc=0 |
 | L2 盘中逐格真实取数 | `quotes` 2 行、`bars` 日线 10 根、**`bars` 1m 拿到北京时间 10:37 那一根**、`snapshot` 有数；`minute`/`trades` E9010、`security_list` E3035——G1 三格在真实网络下确实是 fail-fast 而不是回空 |
 | L2b 补测 | `security_count` SZ=24 296 / SH=27 472；G3 两格的盘中形状写进 §2 的 G3 行 |
 | L3 `-m network` 子集 | **10 passed / 61.40 s**（web 侧真取），2 条东财分页截断告警（`RPT_PUBLIC_OP_NEWPREDICT` 150 行、`RPTA_APP_IPOAPPLY` 250 行仍在满页 ⇒ 这是告警机制正常工作，不是失败） |
 | L4 五张面盘中真取 | CLI 五格 rc=0；`security-count` 因 G6 当场 rc=2 E3040；未声明字段闸在真实链路上生效（HTTP 与 MCP 各一次 E1010 点名 `max_age`，与第 5 轮判据同口径） |
 | L5 同一旋钮 × 五张面（**改前**） | `"0"`：库面/CLI/HTTP 三面 E3040，只有 WS 与 MCP 因缺省走 int 分支而幸免 |
 
-**改了什么**（生产代码一个函数 + 一张派生表）：`tstdx/client/core.py` 新增
+**改了什么**（生产代码一个函数 + 一张派生表）：`atst/client/core.py` 新增
 `_MARKET_IDS_BY_TEXT = {str(v): v for v in _PREFIX_MARKET.values()}`（数字写法**从同一张表派生**，不是第二
 份表），`_standard_market_id` 改成"先查前缀、再查数字写法文本、否则点名报错"，报错消息里两组可选值由
 `sorted(...)` 从表生成，int 分支的上下限取 `min/max(_PREFIX_MARKET.values())` 而不是抄死的 0/2。对外契约
@@ -2040,7 +2040,7 @@ M3 那格要说清一件容易吹过头的事：把派生式换成**今天恰好
 iterable`——探针把 `data` 当列表，L2b 按类型如实读出 24 296/27 472。② L2 里 `c.typed.quotes(...)` 报
 `'function' object has no attribute 'quotes'`——`Client.typed` 是接 Typed Query 对象的方法
 （`typed(query, **kwargs)`），探针用错了形状。③ 我曾把 L5 的 `WS 面: error -32603 request failed` 读成
-"WS 吞掉了错误消息"，读 `tstdx/integration/runtime_ws.py:220-240` 才知道 `_error` 把完整 envelope 挂在
+"WS 吞掉了错误消息"，读 `atst/integration/runtime_ws.py:220-240` 才知道 `_error` 把完整 envelope 挂在
 `error.data` 里，是探针只打印了 `code`/`message` 两个键。**这三条若在第 13 轮直接写进账本就是三条假事实**，
 与前几轮"探针的解读不能盖过实测"那条方法论同族（§19、§21 各记过一笔）。
 
@@ -2067,9 +2067,9 @@ imports: 17`、spec_audit `"coverage_pct": 100.0`、golden_audit `L1 verified: 0
 
 **交付物（用户本轮要求的最后一步）**：提交树 `c1532d8` 上跑 `python scripts/build_package.py --smoke`
 （`wt_v18b13ship/build_smoke.log`）——PEP 517 隔离构建、canonical 校验、`twine check`、干净 venv 安装与
-CLI 冒烟全通过，`rc=0`：`dist/tstdx-1.0.0-py3-none-any.whl` 725.6 KB（sha256 `b16aeff5…1214890`）、
-`dist/tstdx-1.0.0.tar.gz` 1516.3 KB（sha256 `8c4379bd…3b7c93c62ebfb26`），`runtime_files=190`。
-**再往下一格**：另起一个只装了这个 wheel 的干净 venv，用 `python -m tstdx` 真取（`wt_wheelcheck/wheel_probe.log`，
+CLI 冒烟全通过，`rc=0`：`dist/atst-1.0.0-py3-none-any.whl` 725.6 KB（sha256 `b16aeff5…1214890`）、
+`dist/atst-1.0.0.tar.gz` 1516.3 KB（sha256 `8c4379bd…3b7c93c62ebfb26`），`runtime_files=190`。
+**再往下一格**：另起一个只装了这个 wheel 的干净 venv，用 `python -m atst` 真取（`wt_wheelcheck/wheel_probe.log`，
 北京 12:01）——`quotes`/`bars`/`snapshot` 给出 600519 的真实价格 1255.6，`security-count --market 0` 与
 `--market sz` 同答案 24 296（本轮那一格在**已交付物**上成立，不只是在源码树里），`--market 3` 仍 rc=2 E3040。
 版本仍是 `1.0.0`：本轮没有动版本号，也没有打 tag（发布链路由 `wheels.yml` 的 *published release* 触发，
@@ -2100,7 +2100,7 @@ G5 等的是裁决。本轮对它们只做了一件事：把"仍然如此"量出
 #### 一、G7：出口处那把尺子（生产代码两个文件）
 
 第 13 轮登记这一格时列了三条候选落点，本轮选的是**出口统一量**而不是"让每个解析器自己记账"：
-新增 `tstdx/domain/integrity.py`（106 行），在 `_forward_decode_caveats` 这个唯一转发口里对
+新增 `atst/domain/integrity.py`（106 行），在 `_forward_decode_caveats` 这个唯一转发口里对
 `result.rows` 逐行跑 `row_violations`，越域行 ≥ 1 就记一条新的 `WarningCode.FIELD_OUT_OF_DOMAIN`
 （`WarningCode` 因此 14 → **15** 个成员），告警随 `ResultMeta.warnings` 上五张面，`strict=True` 把它
 升级成 `TruncatedDataError`。三处设计取舍写进了模块自己的注释：
@@ -2113,7 +2113,7 @@ G5 等的是裁决。本轮对它们只做了一件事：把"仍然如此"量出
 | 一条告警最多带 3 条例子（`_DOMAIN_CAVEAT_SAMPLES`） | 910 行的错位页能产出上千条理由；计数始终全文，例子截前几条 |
 
 **同一轮把测试那半边也合并了**：`tests/unit/test_golden.py` 里第 9 轮那套 `_illegal_market` /
-`_illegal_code` / `_row_violations`（19 行）删掉，改为 `from tstdx.domain.integrity import ...`——
+`_illegal_code` / `_row_violations`（19 行）删掉，改为 `from atst.domain.integrity import ...`——
 同一个判断在出口给调用方看，测试不许各养一份（`tests/support/field_readers.py` 的
 `member_reference_sites()` 是那套抽取的公共件）。新增判据
 `test_the_ruler_stays_silent_on_every_other_captured_command`：尺子在其余实采命令上必须**不响**，
@@ -2161,17 +2161,17 @@ G5 等的是裁决。本轮对它们只做了一件事：把"仍然如此"量出
 
 #### 四、G9：一条没人走过的发布链（登记 + 文档侧清偿）
 
-为"发布新版本"取证时第一次去量 PyPI：`https://pypi.org/pypi/tstdx/json` 与
-`https://pypi.org/simple/tstdx/` **都回 404**（`reports/g9_pypi_probe.log`，13:28 实测），即这个名字从未
+为"发布新版本"取证时第一次去量 PyPI：`https://pypi.org/pypi/atst/json` 与
+`https://pypi.org/simple/atst/` **都回 404**（`reports/g9_pypi_probe.log`，13:28 实测），即这个名字从未
 被领取；而 `README.md` 的安装首行、`docs/quickstart.md`、`docs/FAQ.md`、`docs/releases/v1.0.0.md` 四处
-把 `pip install tstdx` 写成可直接执行的指令。同一份日志里 `grep -rni pypi docs/ README.md pyproject.toml`
+把 `pip install atst` 写成可直接执行的指令。同一份日志里 `grep -rni pypi docs/ README.md pyproject.toml`
 （除 archive 与本轮新写的段落）零命中——**没有任何一条判据对过这件事**。这是 G8 的镜像：形状对、说法缺，
 只是这次代价落在新读者第一次 `pip install` 上。
 
 本轮改的是文档不是发布链：四处改为可执行的两条路径（clone 后 `pip install ".[all]"`、或装构建产物
 wheel），`docs/releases/v1.0.0.md` 以**追加日期化说明**的方式更正而不改写历史。新增判据
 `test_no_user_doc_presents_an_unpublished_install_path_as_available`：名单上的安装文档若出现
-`pip install [—-upgrade] tstdx[...]` 而页面上没有"不在 PyPI"这句口径声明即红，并带
+`pip install [—-upgrade] atst[...]` 而页面上没有"不在 PyPI"这句口径声明即红，并带
 `scanned == len(_INSTALL_DOCS)` 的自瞄检查。**判据第一次跑就抓到第 4 名 offender**（`docs/FAQ.md`），
 即它不是为已改好的三份文档补的票。两格反证（`g9_negative_controls.log`）：C1 抹掉 README 的口径声明
 ⇒ 点名 `README.md`；C2 往一份干净页塞裸指令 ⇒ 点名 `docs/api/README.md`；还原后 `rc=0`。
@@ -2180,7 +2180,7 @@ wheel），`docs/releases/v1.0.0.md` 以**追加日期化说明**的方式更正
 
 #### 五、版本身份：`1.0.0 → 1.1.0`
 
-`pyproject.toml` 的 `version` 与 `tstdx/__init__.py` 的 `__version__` 同步改为 `1.1.0`，README /
+`pyproject.toml` 的 `version` 与 `atst/__init__.py` 的 `__version__` 同步改为 `1.1.0`，README /
 `docs/api/README.md` / `docs/quickstart.md` 三处的"当前 Draft 开发版本"随之改写；这三处由既有判据
 `test_general_docs_distinguish_stable_release_from_development_identity` 绑定，它同时要求
 "最新已发布稳定版 `v1.0.0`"这句话留着——本轮不抹掉它，因为下面这条实测事实：
@@ -2234,7 +2234,7 @@ reachability `无未登记孤儿 ✓`、contract_audit
 
 删除 0 项。本轮一共跑了**四次**全量：步骤树两次（3 751 / 82.12%、82.12%）与候选树两次
 （3 752 / 82.11%、3 752 / 82.12%）。两次步骤树读数逐格相同，两次候选树也只差
-`tstdx/protocol/generic.py` 一行（miss 20↔21、partial branch 9↔10，同一棵树两种读数都出现过）
+`atst/protocol/generic.py` 一行（miss 20↔21、partial branch 9↔10，同一棵树两种读数都出现过）
 ——**同一棵树自身就会给两个答案**，所以那 1 行是执行时序造成的覆盖抖动，不是本轮改动造成的退化；
 第 8/11/12 轮并排过同一种现象，当时落在 `pool.py`/`ratelimit.py`。判据规模那 +1 项则与它无关，
 是上表倒数第二行说的那件确定事实。
@@ -2263,15 +2263,15 @@ benchmark smoke OK。离线全量（`fulltest_v18b14ship.log` + `reports/fulltes
 
 提交树上跑 canonical 构建（`build_v18b14_ship.log`，`python scripts/build_package.py --smoke`，
 `BUILD_RC=0`）：PEP 517 隔离构建 → 产物形状校验
-`tstdx-1.1.0-py3-none-any.whl` + `tstdx-1.1.0.tar.gz`、`version=1.1.0`、`runtime_files=191`
-（第 13 轮 190，多的那一个正是本轮新增的 `tstdx/domain/integrity.py`）→ `twine check` 两份都过 →
-临时干净 venv 装 wheel 冒烟（导入闭包 + `py.typed` + 五处补丁落点断言 + `tstdx --help` + `pip check`）
+`atst-1.1.0-py3-none-any.whl` + `atst-1.1.0.tar.gz`、`version=1.1.0`、`runtime_files=191`
+（第 13 轮 190，多的那一个正是本轮新增的 `atst/domain/integrity.py`）→ `twine check` 两份都过 →
+临时干净 venv 装 wheel 冒烟（导入闭包 + `py.typed` + 五处补丁落点断言 + `atst --help` + `pip check`）
 → `[冒烟] 通过 ✓`。产物指纹：
 
 | 产物 | 字节 | sha256 |
 |---|---|---|
-| `dist/tstdx-1.1.0-py3-none-any.whl` | 747 287 | `905e5a773be5b1709eca4b1ebec8ad8d972d77ab35a0361faa4f6b47f17fc1f7` |
-| `dist/tstdx-1.1.0.tar.gz` | 1 572 632 | `58452fceff98c7a5fc485bb865f039c19693b72804c636f78e3e5ebd5798ae03` |
+| `dist/atst-1.1.0-py3-none-any.whl` | 747 287 | `905e5a773be5b1709eca4b1ebec8ad8d972d77ab35a0361faa4f6b47f17fc1f7` |
+| `dist/atst-1.1.0.tar.gz` | 1 572 632 | `58452fceff98c7a5fc485bb865f039c19693b72804c636f78e3e5ebd5798ae03` |
 
 这一段与第七段是**两次独立的十次调用 + 两次独立的全量**，不是一个数抄两遍；两次的判据规模同为
 3 752，覆盖差的正是上面说过的那一行抖动。
@@ -2294,7 +2294,7 @@ benchmark smoke OK。离线全量（`fulltest_v18b14ship.log` + `reports/fulltes
 ### 第 15 轮｜"删除历史无效文档"量出来是 0 份该删、5 条指错路的出处，另起一把把代码块当代码读的尺子（文档面收口）
 
 **本轮授权**：用户请求「提交最新代码，删除历史无效文档，更新最新接口使用文档，更新项目说明文档」。
-四格里第二格在动手前先量（第一节），量完结论反转；其余三格照做。本轮**不动生产行为**：`tstdx/` 里
+四格里第二格在动手前先量（第一节），量完结论反转；其余三格照做。本轮**不动生产行为**：`atst/` 里
 改的六处全是注释/文档串（5 条死出处 + 1 条说错的时区口径），§2 的 G-家族一格未清也一格未脏——
 G1/G3/G5/G9 的账原样留着（末段）。
 
@@ -2302,17 +2302,17 @@ G1/G3/G5/G9 的账原样留着（末段）。
 
 请求写的是"删除历史无效文档"。能落地的判据只有一条：**有没有活代码还在引用它**。本轮真去数了——
 `docs/archive/**` 下 40 份归档件（不含归档区自己的 README），拿文件名与完整路径两种写法在
-`tstdx/` `scripts/` `tests/` 的全部 `.py` 里搜引用（带词界，`INDUSTRIAL_OPTIMIZATION_PLAN.md`
+`atst/` `scripts/` `tests/` 的全部 `.py` 里搜引用（带词界，`INDUSTRIAL_OPTIMIZATION_PLAN.md`
 不计入 `OPTIMIZATION_PLAN.md` 的账）：**34 份零入站**，有入站的那 6 份是——
 
 | 入站 | 归档件 | 引用方 |
 |---|---|---|
 | 2 | `docs/archive/plans/INDUSTRIAL_OPTIMIZATION_PLAN.md` | `tests/protocol/test_adversarial_escapes.py`、`tests/web/test_f3_web_fixes.py` |
-| 1 | `docs/archive/plans/OPTIMIZATION_PLAN_v5.md` | `tstdx/web/limits.py` |
+| 1 | `docs/archive/plans/OPTIMIZATION_PLAN_v5.md` | `atst/web/limits.py` |
 | 1 | `docs/archive/plans/ARCHITECTURE_SEMANTIC_ALIGNMENT_v13.md` | `tests/providers/test_registry.py` |
 | 1 | `docs/archive/parity/tiantian_fund_extensions.md` | `tests/architecture/test_error_promises.py`（本轮新挂的归档说明本身） |
 | 1 | `docs/archive/OPTIMIZATION_PLAN.md` | `tests/unit/test_commands.py` |
-| 1 | `docs/archive/GAP_ANALYSIS_v0.md` | `tstdx/charset/__init__.py` |
+| 1 | `docs/archive/GAP_ANALYSIS_v0.md` | `atst/charset/__init__.py` |
 
 于是这一格反转：**"零入站"不是无效的证据，是归档区的常态**——计划文档写完就不再被代码点名，
 按这条判删等于一轮删掉 34 份、把台账的来路全抹掉。反过来，真正会误导今天读者的那 5 份**根本不在
@@ -2337,12 +2337,12 @@ G1/G3/G5/G9 的账原样留着（末段）。
 #### 三、5 条代码→文档的死出处，与一把反着走的尺子
 
 按第一节的表逐条核，代码里指着的归档路径**有一半是断的**：文件早被搬进 `plans/` 或 `parity/`，
-注释里的路径还停在原地。修掉的 5 处——`tstdx/web/limits.py:11`、`tests/providers/test_registry.py:20`、
-`tests/web/test_f3_web_fixes.py:4`、`tstdx/web/_session_p1.py` 与 `_session_fundamental.py`
+注释里的路径还停在原地。修掉的 5 处——`atst/web/limits.py:11`、`tests/providers/test_registry.py:20`、
+`tests/web/test_f3_web_fixes.py:4`、`atst/web/_session_p1.py` 与 `_session_fundamental.py`
 的两条 `:doc:` 角色（指向已归档的 `stock_analysis_prompt_coverage`）。
 
 只修不钉等于下轮再烂一遍，于是 `tests/architecture/test_doc_code_consistency.py` 里加了本轴第一次
-**反向**尺子：`_DOCS_CITE` 扫 `tstdx/` `scripts/` `tests/` 全部源码里的 `docs/….md` 字样，
+**反向**尺子：`_DOCS_CITE` 扫 `atst/` `scripts/` `tests/` 全部源码里的 `docs/….md` 字样，
 逐条 `Path.exists()`。本轮实测扫面 **101 处引用 / 23 个不同目标**，判据自带下限
 （`assert len(cited) >= 25`，扫描面萎缩即红）与一条种下的死路径正控
 （`test_the_docs_citation_ruler_sees_a_planted_dead_path`，路径运行期拼接，源码里不留死链）。
@@ -2356,15 +2356,15 @@ G1/G3/G5/G9 的账原样留着（末段）。
 `docs/cookbook/04_streaming.md` 能把 `StreamEngine` 写成 `queue_size=`（真名 `max_queue`）、
 把 `ReconnectPolicy` 写成 `max_retries/backoff_base/backoff_max`（真名 `base/cap/max_attempts`），
 `docs/cookbook/01_bulk_kline.md` 能 `TdxClient(pool_size=4)`。照抄即 `TypeError`，门禁一路绿灯。
-本轮新尺子把块里的 `tstdx` 名字当对象：属性存在性与入参形状一律现读 `inspect`。
-实测扫描面：38 份活文档 / 73 个含 `tstdx` 的 pythonish 块 / **68 个真建立起绑定的块** / 修完后
+本轮新尺子把块里的 `atst` 名字当对象：属性存在性与入参形状一律现读 `inspect`。
+实测扫描面：38 份活文档 / 73 个含 `atst` 的 pythonish 块 / **68 个真建立起绑定的块** / 修完后
 0 违规；判据自带 `scanned >= 20` 的萎缩下限与一条 `_PLANTED` 正控（把当年那四类写法原样塞回去，
 量到 3 处幻影 kwarg + 1 处缺失方法 + 1 处缺失属性，同时确认两处合法构造不误报）。
 
 `inspect.signature` 看不见 `**kwargs` 转发，`TdxClient(**pool_kwargs)` 正是第一版尺子的射程外——
 变异 M3 当场量出这一格**红=0**。本轮不放过它：`_FORWARDED_KWARGS` 点名那一跳的下游
 （`ConnectionPool` / `AsyncConnectionPool`，两者签名都不开放），入参形状按下游真签名判；
-配对关系由 `test_the_pool_forwarding_pairing_still_holds` 现读 `tstdx/client/sync.py` 与
+配对关系由 `test_the_pool_forwarding_pairing_still_holds` 现读 `atst/client/sync.py` 与
 `async_.py` 源码守住（`ConnectionPool(` 与 `**pool_kwargs` 两个 token 都要在，下游一旦换成开放签名
 即红——那正是"规则无声失效"的形状）。修完后 M3 红=1。
 
@@ -2396,7 +2396,7 @@ README 六处：架构框图 `输出(DataFrame/Parquet/DuckDB)` 补上 CSV；"3 
 "2026-08-31 的 v2.0 立项稿"并在文件顶部自己写明。
 
 `_EXACT_CLAIMS` 里 README 那两个格式数字**不手抄真值**：`_output_write_fmts()` 与 `_sink_class_fmts()`
-用 AST 现读 `tstdx/output/__init__.py` 里 `write()` 与 `Sink.write` 各自比较的 `fmt` 字面量，
+用 AST 现读 `atst/output/__init__.py` 里 `write()` 与 `Sink.write` 各自比较的 `fmt` 字面量，
 外加一条 `test_csv_reaches_only_the_module_level_write()` 把"CSV 只在上层函数"这件事钉住（4 种 ⊋ 3 种）。
 
 #### 七、随之失效的豁免与补注
@@ -2406,7 +2406,7 @@ README 六处：架构框图 `输出(DataFrame/Parquet/DuckDB)` 补上 CSV；"3 
 `docs/ARCHITECTURE.md` 契约层那一行删掉 `deprecation.py`（第 8 轮就物理删了的模块）。
 `docs/adr/ADR-006-010.md` 给 `make audit-bridges` 补一条后续修订：那个 target 在 `340624c` 被删，
 因为它 `|| echo` 吞失败，今天是 `make test-bridges`，golden 语料 530 份。
-`tstdx/domain/models.py` 的时区口径改对：日线/分钟线交的是**交易所本地时间字符串**，出口不做换算——
+`atst/domain/models.py` 的时区口径改对：日线/分钟线交的是**交易所本地时间字符串**，出口不做换算——
 这句是说给自己看的：`DataProfile.timezone` 至今是"声明了没人读"的旋钮，本轮只把文档里那句谎改掉，
 旋钮本身没登记成 G 项。
 
@@ -2430,7 +2430,7 @@ README 六处：架构框图 `输出(DataFrame/Parquet/DuckDB)` 补上 CSV；"3 
 先对账候选树与主工作树：本轮改到的 32 个路径 sha256 前 16 位逐格相同，5 条旧路径在候选树里确认不存在。
 十一次门禁调用 `rc=0` 逐条在 `reports/run_gates15step2.log`：`ruff check` All checks passed、
 `ruff format --check` 全部已格式化、`mypy` `Success: no issues found in 190 source files`、
-`check_originality --strict tstdx/` `Total: 191 / Original: 191 / Suspicious: 0 / External imports: 17`、
+`check_originality --strict atst/` `Total: 191 / Original: 191 / Suspicious: 0 / External imports: 17`、
 `spec_audit --json --strict` `"total_specs": 44 / "coverage_pct": 100.0`、
 `golden_audit --gate` `L1 verified: 0x44e, 0x52d, 0x530` + `[GATE] all L1 verified commands have real samples (OK)`、
 `audit_reachability --strict` `模块总数: 190 可达: 175 白名单豁免: 15 / 无未登记孤儿 ✓`、
@@ -2442,7 +2442,7 @@ README 六处：架构框图 `输出(DataFrame/Parquet/DuckDB)` 补上 CSV；"3 
 `fail_under = 77.0` 一字未动。
 
 本轮第一次跑（`run_gates15step.log`，03:23 那份）有两处不干净，都记着：`check_originality` 我漏传了
-位置参数 `tstdx/` 而 `rc=2`（工具要求路径，`--strict` 不给 path 就是用法错），以及后来 `ruff check .`
+位置参数 `atst/` 而 `rc=2`（工具要求路径，`--strict` 不给 path 就是用法错），以及后来 `ruff check .`
 抓到候选树里我自己的两份临时脚本（`mutate15.py` 未格式化、`run_gates15.py` 一个 F541 空 f-string）。
 两处都是本轮的账，不是判据的账；修完后重跑得上面那份全 `rc=0` 的读数。
 
@@ -2468,7 +2468,7 @@ M3 那一格本轮最有价值：它是**唯一一条首跑没红的**，而"没
 
 `2398305` 落盘后用 `git checkout-index` 直出一棵干净的**提交树**——五处抽查（`README.md`、
 `tests/architecture/test_doc_code_examples.py`、`scripts/check_docs_links.py`、
-`docs/archive/parity/tiantian_fund_extensions.md`、`tstdx/web/limits.py`）的 blob 哈希与 HEAD 逐格相同，
+`docs/archive/parity/tiantian_fund_extensions.md`、`atst/web/limits.py`）的 blob 哈希与 HEAD 逐格相同，
 旧路径 `docs/tiantian_fund_extensions.md` 在这棵树里确认不存在，顶层也没有任何临时 `.py`
 （runner 脚本刻意放在树外，`ruff check .` 才不会被它脏——第九节那两次 `rc=1` 就是这么来的）。
 十一次调用 `rc=0` 逐条在 `P:/github_public/ship15_logs/run_gates15ship.log`，读数与第九节候选树逐项相同
@@ -2509,20 +2509,20 @@ benchmark smoke OK、bridges 24 passed。离线全量（`fulltest_v18b15ship.xml
 #### 一、G10：`DataProfile.timezone` 是删，不是豁免
 
 第 15 轮改文档时留了一句话：`DataProfile.timezone` "声明了没人读"。本轮先按同一把尺子把它量实：
-`tstdx/` 全部 **190** 个模块做 AST 读取扫描，`timezone` 的读取点是 **0**。留着它的代价不是内存，
+`atst/` 全部 **190** 个模块做 AST 读取扫描，`timezone` 的读取点是 **0**。留着它的代价不是内存，
 是它在探测报告里替一桩从未发生的换算背书——日线/分钟线交的是**交易所本地时间字符串**、出口不做
-换算，这是 `docs/FAQ.md` 与 `tstdx/domain/models.py` 现行的对外口径，而 `timezone="Asia/Shanghai"`
+换算，这是 `docs/FAQ.md` 与 `atst/domain/models.py` 现行的对外口径，而 `timezone="Asia/Shanghai"`
 恰好是这句口径的反面。所以本轮删字段，并把 FAQ 那条时区问答的最后一句从"档案层有这个元数据字段"
 改写成"规格档案层因此也不带任何时区入参：`DataProfile` 的字段全是解码器真正按它行动的差异维度"。
 
-不留兼容垫不等于会断：`from_dict`（`tstdx/reader/profile.py:226`）本来就是按
+不留兼容垫不等于会断：`from_dict`（`atst/reader/profile.py:226`）本来就是按
 `cls.__dataclass_fields__` 过滤入参字典的，旧的序列化档案里带着 `timezone` 依旧加载得动，
 多余键被丢弃——这条形状现读自代码，不是推测。
 
 #### 二、G11：预设表 12 列收缩到 3 列，以及一处**不对称**的裁决
 
 `MarketPreset` 改前 12 列，生产链路上真正被咨询的只有三列：`code_prefixes`（`match_preset` 的唯一
-匹配依据）、`market_id`（`tstdx/profile/detect.py:505` 拿 `hint_market` 反查）、`name`（同一处返回，
+匹配依据）、`market_id`（`atst/profile/detect.py:505` 拿 `hint_market` 反查）、`name`（同一处返回，
 进探测报告）。其余九列（`market_name`/`asset_class`/`typical_categories`/`quote_scale`/`volume_unit`/
 `price_encoding`/`time_encoding`/`default_period`/`notes`）加一座 `data_profile_kwargs()` 桥全部删除。
 桥删得最不含糊：它把**行情快照**口径的缩放原样填进 K 线解码器的 `price_scale`，两套口径之间没有任何
@@ -2531,7 +2531,7 @@ G3 那一族"给了错数"的形状，只是它长在档案层。
 
 同一轮里 `DataProfile` 的 `market`/`asset_class`/`period` 三列**保留并豁免**，而 `MarketPreset` 的
 同名列删除。这条不对称不是手抖，是量出来的：前者经 `DetectionResult.to_dict()` 的 `profile` 格
-到达用户，生产者就在 `tstdx/profile/detect.py:149`；后者的 `to_dict()` 在全仓**零调用点**，
+到达用户，生产者就在 `atst/profile/detect.py:149`；后者的 `to_dict()` 在全仓**零调用点**，
 "用户看得到"这条豁免理由对它不成立。豁免清单因此在判据里也要兑现——
 `test_identity_labels_reach_the_user` 直接构造 `DataProfile().to_dict()` 并要求三个豁免名都在产物里，
 `test_identity_exemptions_still_name_real_fields` 反着钉（清单里不许留已不存在的字段）。
@@ -2545,19 +2545,19 @@ docstring，并写明这张表**不声明任何解码口径**。
 本轮第一次把 `tests/support/field_readers.py` 交给档案层用，就量出这把尺子的两个盲区，
 一个是假孤立、一个是假通过：
 
-- **假孤立**：`amount_unit` 唯一的读取点在 `tstdx/sink/local_day.py:246`，写作 `self.profile.amount_unit`。
+- **假孤立**：`amount_unit` 唯一的读取点在 `atst/sink/local_day.py:246`，写作 `self.profile.amount_unit`。
   属性链回溯到根是 `Name('self')`，而 owner 名单里放 `self` 会让任何类的任何字段都算被读——所以
   旧版尺子把 `amount_unit` 报成孤儿。补法不是往 owner 里塞 `self`，是给尺子加一格 `holders`：
   链上出现"实例挂在自己身上"的属性名即认定命中。这一格由
   `test_the_holder_path_is_what_buys_amount_unit_a_reader` 正控守住（同一字段：不带 `holders` 扫不到、
   带 `holders` 扫得到），变异 M4 抽掉它当场 2 红。
-- **假通过**：`tstdx/trade/simulator.py` 里有个别类的 `p.name`，按 owner 名单它同时被记成 `DataProfile`
-  与 `MarketPreset` 的读取点。第一版 mitigation 是"模块正文提到类名才算"，结果把 `tstdx/profile/detect.py`
+- **假通过**：`atst/trade/simulator.py` 里有个别类的 `p.name`，按 owner 名单它同时被记成 `DataProfile`
+  与 `MarketPreset` 的读取点。第一版 mitigation 是"模块正文提到类名才算"，结果把 `atst/profile/detect.py`
   的合法 `name` 读取一起误杀（它只 `import PRESETS`，从不写 `MarketPreset` 这个 token），
   判据当众红成 `orphans == ['name']`。最终换成**显式读取者白名单**，并且白名单每一格都 `is_file()` 自检
   ——名单烂掉本身要当账，不是当沉默（变异 M5 把一个模块名改成不存在的，1 红）。
   实测扫描面：`DataProfile` 的字段读取命中 5 个模块（白名单承认其中 4 个），`MarketPreset` 命中 3 个
-  （承认 2 个）；两边被拒的那一格都是 `tstdx/trade/simulator.py` 的 `name`。
+  （承认 2 个）；两边被拒的那一格都是 `atst/trade/simulator.py` 的 `name`。
 
 #### 四、"9 个市场预设"从两处手抄变成一处派生
 
@@ -2582,7 +2582,7 @@ M8 真删一个预设 → 判据与文档一起红）。
 #### 六、候选树复测（`wt_v18b16step` @ `dbe7652`，08:40–08:51，时刻一律北京时；该树已回收）
 
 先对账：本轮改到的 6 个路径（`docs/FAQ.md`、`tests/architecture/test_doc_code_consistency.py`、
-`tests/support/field_readers.py`、`tstdx/profile/presets.py`、`tstdx/reader/profile.py`、
+`tests/support/field_readers.py`、`atst/profile/presets.py`、`atst/reader/profile.py`、
 `tests/architecture/test_profile_knob_gates.py`）sha256 前 16 位主工作树与候选树**逐格相同**。
 runner 与变异脚本都放在被测树之外（`P:/github_public/scratch_v18b16/`；该目录本机已无，
 锚 = 提交 `3dd14a3`，第六、七节抄出的读数都来自那里那几份日志的字节）——第 15 轮 §九 那两次
@@ -2592,8 +2592,8 @@ runner 与变异脚本都放在被测树之外（`P:/github_public/scratch_v18b1
 十一次门禁调用 `rc=0` 逐条在 `P:/github_public/scratch_v18b16/gates_20260923_084050.log`
 （该目录本机已无，锚 = 提交 `3dd14a3`）：
 `ruff check` `All checks passed!`、`ruff format --check` `456 files already formatted`、
-`mypy tstdx/` `Success: no issues found in 190 source files`、
-`check_originality --strict tstdx/` `Total: 191 / Original: 191 / License OK: 191 / Header OK: 191 /
+`mypy atst/` `Success: no issues found in 190 source files`、
+`check_originality --strict atst/` `Total: 191 / Original: 191 / License OK: 191 / Header OK: 191 /
 Suspicious: 0 / External imports: 17`、`spec_audit --json --strict` `"total_specs": 44` /
 `"coverage_pct": 100.0`、`golden_audit --gate` `L1 verified: 0x44e, 0x52d, 0x530` +
 `[GATE] all L1 verified commands have real samples (OK)`、`audit_reachability --strict`
@@ -2629,7 +2629,7 @@ Suspicious: 0 / External imports: 17`、`spec_audit --json --strict` `"total_spe
 #### 八、提交树复测（`wt_v18b16ship` @ `3dd14a3`，08:56–09:03；该树已回收）
 
 `3dd14a3`（7 个文件 `+464 / −194`）落盘后另开一棵干净的**提交树**，三处抽查
-（`tstdx/profile/presets.py`、`tests/architecture/test_profile_knob_gates.py`、
+（`atst/profile/presets.py`、`tests/architecture/test_profile_knob_gates.py`、
 `docs/REFACTOR_PLAN_V18_RESTRUCTURE.md`）的 blob 哈希与工作树逐格相同，树内 `dirty=0`，
 顶层没有任何临时 `.py`（runner 与变异脚本都在 `P:/github_public/scratch_v18b16/`，该目录本机已无）。
 十一次调用 `rc=0` 逐条在 `gates_v18b16ship.log`，读数与第六节**逐项相同**：`All checks passed!`、
@@ -2655,7 +2655,7 @@ Suspicious: 0 / External imports: 17`、`spec_audit --json --strict` `"total_spe
   （见 profile/presets.py）"。两个独立理由让它留在射程外：文件自己第 7 行写明"本文按原文留存，
   不随代码订正"；而 `test_doc_code_consistency.active_docs()` 的射程是 README/SECURITY/CONTRIBUTING +
   `docs/**.md`，仓库根的 `DESIGN.md` 本来就不在活文档尺子之内。
-- **一处只记不猜的标签观察**：`tstdx/runtime/executor.py:623,628` 的 1min 与 5min 两条本地 vipdoc
+- **一处只记不猜的标签观察**：`atst/runtime/executor.py:623,628` 的 1min 与 5min 两条本地 vipdoc
   路径都用 `MinBarReader(profile="a_share_min", ...)`，真正的间隔由 `interval=` 决定——档案名读起来
   像"只管 1 分钟"。它没让任何一格给错数，所以本轮不动它；改名属"标签与用途不符"那一族，
   下一轮按同一把尺子量过再定。
@@ -2683,7 +2683,7 @@ Suspicious: 0 / External imports: 17`、`spec_audit --json --strict` `"total_spe
 
 #### 二、`Market` 12→6：六格词表是"档案层登记了、主链解不开"
 
-`CFFEX`/`DCE`/`CZCE`/`INE`/`GFEX`/`FX` 六个成员在 `tstdx/` 里既没有 `Market.X` 读取点，
+`CFFEX`/`DCE`/`CZCE`/`INE`/`GFEX`/`FX` 六个成员在 `atst/` 里既没有 `Market.X` 读取点，
 取值字符串也没有落点（`"cffex"` 等只出现在自己的声明行）。当场探针打的是符号引擎：
 `parse_symbol(code, market="cffex")` → `SymbolError: 未知市场 'cffex'；可选: ('sh','sz','bj','hk','us')`。
 即这六个不是"暂时无数据"，而是**词表比主链宽**。留下的六格里 `SHFE` 是特殊的一格：
@@ -2696,7 +2696,7 @@ Suspicious: 0 / External imports: 17`、`spec_audit --json --strict` `"total_spe
 #### 三、本轮真正的收获：`Market.ALL` 那 8 个"读取点"全是别人的
 
 第一次按名统计时，`Market.ALL` 得到 8 处命中，看起来"有人查"。逐条解析后 8 处
-**全部**落在 `tstdx/domain/symbol.py` 与 `tstdx/protocol/parsers/_std7709_common.py` 的
+**全部**落在 `atst/domain/symbol.py` 与 `atst/protocol/parsers/_std7709_common.py` 的
 同名类上——本仓有**两处 `class Market`、三处**（含协议层的 `KlineCategory` 邻居）。
 也就是说：G10/G11 用的那把尺子（以及它之前几轮的同类扫描）在**重名**这一格上是会张冠李戴的。
 处理分三步：
@@ -2726,8 +2726,8 @@ Suspicious: 0 / External imports: 17`、`spec_audit --json --strict` `"total_spe
   `SEASON` 也没有 `TICK`；它的 `"day_alt"` 键是 `DAY + "_alt"` 拼出来的，
   **根本不是 `Period` 的任何一个成员**（值 9 恰好对上 `KlineCategory.DAY_ALT`，
   可一张没人查的表里的巧合从未被核对过）。一份会指错路的表留在词表里，比没有表更糟。
-* `QUARTER`/`YEAR`/`SEASON` 三档**成员**留下：它们在 `tstdx/` 里零 `Period.X` 读取点，
-  可取值字符串确实被 `tstdx/client/core.py::_PERIOD_TO_CATEGORY` 按键收着——
+* `QUARTER`/`YEAR`/`SEASON` 三档**成员**留下：它们在 `atst/` 里零 `Period.X` 读取点，
+  可取值字符串确实被 `atst/client/core.py::_PERIOD_TO_CATEGORY` 按键收着——
   删掉三档等于把"线上年金线可查"这句真话抹掉。于是登记 **G13**（同一份周期词表在
   `Period`/`_PERIOD_TO_CATEGORY`/`KlineCategory` 三处各自声明、互不派生），
   并让 `test_g13_period_vocabulary_is_still_declared_three_times` 盯着现场：
@@ -2737,11 +2737,11 @@ Suspicious: 0 / External imports: 17`、`spec_audit --json --strict` `"total_spe
 
 `AssetClass` 的 `ETF`/`LOF`/`BOND`/`WARRANT`/`FX`/`OTHER` 六格零生产者零读取者；全仓命中的
 `"etf"`/`"bond"` 字面量属于**别的词表**（Web capability 名、资金流板块码、基金资产配置键），
-本轮逐条看过才敢这么写。基金/债券在本产品里是按 `tstdx/profile/presets.py` 的预设名与代码段
+本轮逐条看过才敢这么写。基金/债券在本产品里是按 `atst/profile/presets.py` 的预设名与代码段
 行动的，不是按档案品种。
 
 `PriceEncoding.INT32` 的注释写着"有符号，可能为负，如 MAC 协议返回"——那是**一格意图**而不是
-一格兑现：`"int32"` 的两处字面量属于 `tstdx.tools.codegen` 的字段类型词表，没有任何档案声明它、
+一格兑现：`"int32"` 的两处字面量属于 `atst.tools.codegen` 的字段类型词表，没有任何档案声明它、
 没有任何解码分支比较它。`TimeEncoding.EPOCH` 同形（取值 `"epoch"` 全仓零落点）。
 
 反过来两格**没删**：`VolumeUnit.CONTRACT` 是两份期货/期权档案写的值；`AmountUnit.WAN`/`YI`
@@ -2772,7 +2772,7 @@ Suspicious: 0 / External imports: 17`、`spec_audit --json --strict` `"total_spe
 M1 装回 `Market.CFFEX` → **4 红**（形状/已删清单/无人行动/份数）；M2 补一张没人查的 `Period.ALL`
 → 2 红；M3 手抄份数 → 1 红；M4 尺子退回按名记账 → 1 红（**只有**重名正控红，其余十条绿，
 即假绿确实只有这条抓得住）；M5 抽掉线上 `"season"` 键 → 2 红；M6 一名两值 → 4 红；
-M7 扫描范围收缩到 `tstdx/reader/` → 6 红且 0.81s 就跑完（分母塌了）；M8 类体新形态 → 1 红；
+M7 扫描范围收缩到 `atst/reader/` → 6 红且 0.81s 就跑完（分母塌了）；M8 类体新形态 → 1 红；
 M9 预设多写一个未登记市场号 → 1 红；M10 同名局部遮蔽 → 1 红（防盲断言）。
 还原后十条全部 11 passed。
 
@@ -2781,7 +2781,7 @@ M9 预设多写一个未登记市场号 → 1 红；M10 同名局部遮蔽 → 1
 `scratch_v18b17/gates_20260923_190628.log`（隔离树 `wt_v18b17step @ 2f1ceba` + 本轮三个文件，该树已回收；
 日志头 `captured: 2026-09-23 11:06:28 GMT` = 北京 19:06）：
 `ruff check` `All checks passed!`、`ruff format --check` `457 files already formatted`、
-`mypy tstdx/` `Success: no issues found in 190 source files`，
+`mypy atst/` `Success: no issues found in 190 source files`，
 `check_originality --strict` / `spec_audit --strict` / `golden_audit --gate` /
 `audit_reachability --strict` / `contract_audit --ci` / `check_docs_links` /
 `run_benchmark_smoke` / `tests/test_bridges.py`（24 passed）逐条 `----- rc=0`；
@@ -2816,13 +2816,13 @@ catalog 名单上，第 17 轮用它量档案层的词表；这一轮轮到 G13�
 
 `HEAD = 2ae022b` 逐格数出来是：
 
-* `tstdx/reader/profile.py::Period` —— 12 个成员；
-* `tstdx/client/core.py::_PERIOD_TO_CATEGORY` —— 24 个手写字符串键，里面躺着 `d`/`m5`/`daily`/
+* `atst/reader/profile.py::Period` —— 12 个成员；
+* `atst/client/core.py::_PERIOD_TO_CATEGORY` —— 24 个手写字符串键，里面躺着 `d`/`m5`/`daily`/
   `1hour` 这些 `Period` 根本没有的别名；
-* `tstdx/web/_session_market.py::KLINES_PERIOD_ALIASES` —— 19 个手写键，第三份别名手抄件；
-* `tstdx/query.py::_MINUTE_PERIODS` —— `frozenset({"1min", "5min", "15min", "30min", "60min"})`，
+* `atst/web/_session_market.py::KLINES_PERIOD_ALIASES` —— 19 个手写键，第三份别名手抄件；
+* `atst/query.py::_MINUTE_PERIODS` —— `frozenset({"1min", "5min", "15min", "30min", "60min"})`，
   第四份（这一份抄得对，但仍是抄）；
-* `tstdx/domain/period.py::_PERIOD_ALIASES` —— 29 键规范化表，唯一真正做归一化的那份。
+* `atst/domain/period.py::_PERIOD_ALIASES` —— 29 键规范化表，唯一真正做归一化的那份。
 
 只有 `KlineCategory` 那 12 个协议号是**无处派生**的真口径：它是线上字节，不是我们定的名字。
 
@@ -2841,7 +2841,7 @@ catalog 名单上，第 17 轮用它量档案层的词表；这一轮轮到 G13�
 
 #### 三、改后的形状：一处声明 + 三处派生
 
-`tstdx/domain/period.py` 现在只此一份：`CANONICAL_PERIODS` 11 档规范拼写、
+`atst/domain/period.py` 现在只此一份：`CANONICAL_PERIODS` 11 档规范拼写、
 `PERIOD_ALIASES` 29 个"用户可能怎么打字" → 规范拼写（一步到位，不许 `a -> b -> c`）、
 `MINUTE_PERIODS` 由规范拼写的 `min` 后缀派生、`normalize_bar_period()` 查它。往下三处全部派生：
 
@@ -2907,7 +2907,7 @@ M3/M5/M8/M9 读到"还原后仍红"、M6/M7 读到"锚点找不到"。处置不�
 
 #### 七、本轮被自己的门禁当众挡住两次
 
-第一次是**我自己新写的注释**：`tstdx/domain/period.py` 里那行
+第一次是**我自己新写的注释**：`atst/domain/period.py` 里那行
 `#: 规范周期拼写：库内比较、档案声明、缓存键与指纹都只用这些写法。` 被
 `test_production_prose_never_claims_a_data_cache` 判红——缓存层在更早那一步就删干净了，而本轮
 新写的注释又在替它说话。改成"与下游每张派生表"（这句是本轮实测成立的）。
@@ -2938,7 +2938,7 @@ MSYS 缺 tzdata，`TZ=Asia/Shanghai` 未生效，按日志原样引用；折算�
 | 门禁 | 读数 |
 |---|---|
 | `ruff check .` / `ruff format --check .` | RC=0 / RC=0 |
-| `mypy tstdx/` | `Success: no issues found in 190 source files` |
+| `mypy atst/` | `Success: no issues found in 190 source files` |
 | `check_originality --strict` | `Total: 191  Original: 191  Suspicious: 0  External imports: 17` |
 | `spec_audit --json --strict` / `golden_audit --gate` | RC=0 / RC=0 |
 | `audit_reachability --strict` / `contract_audit --ci` | RC=0 / RC=0 |
@@ -2953,7 +2953,7 @@ MSYS 缺 tzdata，`TZ=Asia/Shanghai` 未生效，按日志原样引用；折算�
 
 * **G13 已清偿**、**G14 已清偿**，账本表格形状自此有判据看着。
 * 仍开放：**G1**（期货/期权档案的真缺口）、**G3**（`0x000F`/`0x0010` 的字节布局——不猜协议字节，
-  等真机 golden）、**G5**（`fund_estimate` 不给数）、**G9**（`pip install tstdx` 要的是发布动作，
+  等真机 golden）、**G5**（`fund_estimate` 不给数）、**G9**（`pip install atst` 要的是发布动作，
   那一格只能由人点）。
 * 新挂待裁：`docs/REFACTOR_PLAN_V17_CLOSURE.md` 那两行缺收尾竖线的账本行（并行会话的文件，
   本轮只以豁免形式登记）。
@@ -2978,13 +2978,13 @@ MSYS 缺 tzdata，`TZ=Asia/Shanghai` 未生效，按日志原样引用；折算�
 
 #### 二、抓到的两格，都是"帧合法、内容是另一档"
 
-**G15 —— `tstdx/web/history.py::SinaHistoryKlineSource.SCALES` 的 `"1min": 5`。**
+**G15 —— `atst/web/history.py::SinaHistoryKlineSource.SCALES` 的 `"1min": 5`。**
 新浪这个端点最细就是 5 分钟，于是"1 分钟"的写法被拿去请求 5 分钟线并照常返回；该类的
 docstring 甚至明写 `1min(=5min)`，即这格不是笔误，是被当成feature写着。走内核的调用方吃不到
 （注册表没给 `sina/history_kline` 声明 `1min`），但 `SinaHistoryKlineSource` 是导出符号，
 直接用源的人吃得到——与 G3 同族，只是这一格在 web 面。
 
-**G16 —— `tstdx/web/adapters_baidu.py::_KLINE_KTYPES` 的 `"1m": 3`。**
+**G16 —— `atst/web/adapters_baidu.py::_KLINE_KTYPES` 的 `"1m": 3`。**
 它是第 18 轮那一族（第二手词表）的最后一处：百度与腾讯 mkline 各抄了 6 个、5 个别名键。
 抄错的那格要命：域内词表里 `1m` 是 **1 分钟**，而 `3` 是百度的**月线**编码，即
 `baidu_kline(period="1m")` 取回的是月 K。同一张表里的 `1h`/`30m` 之类也各自把腾讯/百度的
@@ -3034,7 +3034,7 @@ docstring 甚至明写 `1min(=5min)`，即这格不是笔误，是被当成featu
 ② `Nmin` 键的参数就是 N 分钟（`5`/`m5`/`5min` 三种编码都合法），非分钟档逐格登记为"谁的枚举"，
 协议号行用 `KlineCategory.NAMES` 反查兑现（AST 看不见枚举值，这条只能运行时问）；
 ③ 除域内词表外，任何字面量表都不许出现别名键；④ 注册表声明的每一档，必须由它**绑定的执行体**
-接得住（`tstdx/catalog/provider_bindings.py::resolve_channel_adapter` 给出 (provider, channel) →
+接得住（`atst/catalog/provider_bindings.py::resolve_channel_adapter` 给出 (provider, channel) →
 适配器类的机器可读映射，7 个声明档位的 channel 各配一种"问执行体"的真代码，缺一红）。
 
 #### 七、变异账本（`scratch_v18b19/mutate19.log`，`mutations=8 bad=0`）
@@ -3051,7 +3051,7 @@ docstring 甚至明写 `1min(=5min)`，即这格不是笔误，是被当成featu
 | M8 腾讯 mkline 的 `15min` 请求 `m5` | 1 条红（分钟尺） |
 
 八步全部"还原后 sha256 逐位相同、复跑绿"。本轮另修一处脚手架自身的前提：跨树哈希比对对
-`core.autocrlf=true` 的 checkout 不稳定（`tstdx/providers/__init__.py` 在两棵树里字节不同而正文相同），
+`core.autocrlf=true` 的 checkout 不稳定（`atst/providers/__init__.py` 在两棵树里字节不同而正文相同），
 预飞改用 LF 化正文——上一轮那条"候选树不干净就拒跑"的规矩本身没变。
 
 #### 八、候选树复测读数（本轮唯一引用的一组数）
@@ -3066,7 +3066,7 @@ MSYS 缺 tzdata，`TZ=Asia/Shanghai` 未生效，按日志原样引用；折算�
 | 门禁 | 读数 |
 |---|---|
 | `ruff check .` / `ruff format --check .` | **RC=1 / RC=1**（第 20 轮按日志校正本节，原文此处写的是 `RC=0 / RC=0`）：同一份日志第 86/93 行就是两格 rc=1——5 处 `I001` 与 `SIM300` 加 2 个文件待格式化，全在第 19 轮新写的两个判据文件里。写表时抄了印象、没抄 `rc=` 行，缺陷与修法见 §29 第六节 |
-| `mypy tstdx/` | `Success: no issues found in 190 source files` |
+| `mypy atst/` | `Success: no issues found in 190 source files` |
 | `check_originality --strict` | `Total: 191  Original: 191  Suspicious: 0  External imports: 17` |
 | `spec_audit --json --strict` / `golden_audit --gate` | RC=0 / RC=0 |
 | `audit_reachability --strict` / `contract_audit --ci` | RC=0 / RC=0 |
@@ -3080,8 +3080,8 @@ MSYS 缺 tzdata，`TZ=Asia/Shanghai` 未生效，按日志原样引用；折算�
 
 #### 九、装好的包里口径一致（`scripts/build_package.py --smoke`）
 
-同一棵候选树构建：`dist/tstdx-1.1.0-py3-none-any.whl`（734.3 KB，sha256 前缀 `f809b43a41661ad8`）
-+ `dist/tstdx-1.1.0.tar.gz`（1577.4 KB），`twine check` 与临时 venv 冒烟全过
+同一棵候选树构建：`dist/atst-1.1.0-py3-none-any.whl`（734.3 KB，sha256 前缀 `f809b43a41661ad8`）
++ `dist/atst-1.1.0.tar.gz`（1577.4 KB），`twine check` 与临时 venv 冒烟全过
 （`scratch_v18b19/build19.log`，rc=0）。再在**装进去的那份代码**里离线复量本轮改的三处
 （`scratch_v18b19/wheel_probe19.log`）：
 
@@ -3101,7 +3101,7 @@ MSYS 缺 tzdata，`TZ=Asia/Shanghai` 未生效，按日志原样引用；折算�
   别名解在公开面）。周期词表这一族至此两处收口：**声明**只有一处（第 18 轮），
   **执行**每一格都对得上键（第 19 轮）。
 * 仍开放：**G1**（期货/期权档案的真缺口）、**G3**（`0x000F`/`0x0010` 的字节布局——不猜协议字节，
-  等真机 golden）、**G5**（`fund_estimate` 不给数）、**G9**（`pip install tstdx` 要的是发布动作，
+  等真机 golden）、**G5**（`fund_estimate` 不给数）、**G9**（`pip install atst` 要的是发布动作，
   那一格只能由人点）。
 * 一句话里的账不变：线上仍在给错数的还是只有 G3 那一格。
 
@@ -3157,10 +3157,10 @@ MSYS 缺 tzdata，`TZ=Asia/Shanghai` 未生效，按日志原样引用；折算�
   2026-09-03 的 `docs/archive/plans/OPTIMIZATION_PLAN_v4.md:173` 就写下过，之后没人行动。
 * 两处编号冲突：`ADR-013` 两份文件同号（台账里「ADR-013 §11」的引用只能靠人记住落在哪份）；
   `ADR-007-010` 是一个复合编号占住 007~010 四个号，与 `ADR-006-010.md` 同号的四条**逐条**撞号。
-* `ADR-009` 状态行写 `Accepted`，可它描述的 `tstdx_native/` 早不在仓库：2026-09-23 实测
+* `ADR-009` 状态行写 `Accepted`，可它描述的 `atst_native/` 早不在仓库：2026-09-23 实测
   `git ls-files` 里含 `native` 的路径只有 ADR-011 的文件名本身，`pyproject.toml` 无 maturin/pyo3
   条目——ADR-011 自己设的"连续两个大版本无热路径接线与 benchmark 证据则整体移除"已经兑现。
-* `ADR-007-010` 要处置的 `CredentialStore` 在 `tstdx/` 里零命中（同一时刻实测），第 8 轮删废弃
+* `ADR-007-010` 要处置的 `CredentialStore` 在 `atst/` 里零命中（同一时刻实测），第 8 轮删废弃
   桥接层时移走的就是它，决议却仍写成待办语气。
 
 处置：ADR-001~005 搬进新建的 `docs/adr/ADR-001-005-baseline.md`（134 行原文照搬），README 改写
@@ -3195,7 +3195,7 @@ MSYS 缺 tzdata，`TZ=Asia/Shanghai` 未生效，按日志原样引用；折算�
   树本身按判据只删得掉 2 棵）、**G19 开放**（并行会话台账里另有 16 处死指针与 1 处命名模板，
   按"不改他人台账"留给其所有者）。
 * 仍开放：**G1**（期货/期权档案的真缺口）、**G3**（`0x000F`/`0x0010` 的字节布局——不猜协议字节，
-  等真机 golden）、**G5**（`fund_estimate` 不给数）、**G9**（`pip install tstdx` 要的是发布动作，
+  等真机 golden）、**G5**（`fund_estimate` 不给数）、**G9**（`pip install atst` 要的是发布动作，
   那一格只能由人点）。
 * **落号（写完后改写本条）**：第 18/19/20 三轮合成一个提交 `d733e2d`（28 个路径，
   +2383/−285），已推到 `origin/main`。并行会话的 `CHANGELOG.md`、
@@ -3234,9 +3234,9 @@ MSYS 缺 tzdata，`TZ=Asia/Shanghai` 未生效，按日志原样引用；折算�
 
 | 门禁 | 读数 |
 |---|---|
-| `ruff check tstdx/ tests/ scripts/` / `ruff format --check` 同范围 | 改前 `rc=1 / rc=1`（§28 那 5 处）→ 改后 `rc=0 / rc=0`（同范围复跑：`All checks passed!` 与 `458 files already formatted`）；本会话另在候选树跑 `ruff check .` 与 `ruff format --check .`：`All checks passed!` / `461 files already formatted` |
-| `mypy tstdx/ --no-error-summary` | `rc=0`（该旗标下无输出是预期） |
-| `check_originality --strict tstdx/` | `rc=0`，`Total: 191  Original: 191  Suspicious: 0  External imports: 17` |
+| `ruff check atst/ tests/ scripts/` / `ruff format --check` 同范围 | 改前 `rc=1 / rc=1`（§28 那 5 处）→ 改后 `rc=0 / rc=0`（同范围复跑：`All checks passed!` 与 `458 files already formatted`）；本会话另在候选树跑 `ruff check .` 与 `ruff format --check .`：`All checks passed!` / `461 files already formatted` |
+| `mypy atst/ --no-error-summary` | `rc=0`（该旗标下无输出是预期） |
+| `check_originality --strict atst/` | `rc=0`，`Total: 191  Original: 191  Suspicious: 0  External imports: 17` |
 | `golden_audit --gate` / `spec_audit --json --strict` | `rc=0 / rc=0`，0x052D 的克隆账与 `suspect_short 0x537` 两处 WARN 口径未变 |
 | `audit_reachability --strict` | `rc=0`，`模块总数 190  可达 175  白名单豁免 15`，`无未登记孤儿 ✓` |
 | `run_benchmark_smoke` / `check_docs_links` | `rc=0 / rc=0`，`docs link check OK (93 files)`（候选树少一份：并行会话的 `REFACTOR_PLAN_V18_REVIEW.md` 未进候选） |
@@ -3270,7 +3270,7 @@ MSYS 缺 tzdata，`TZ=Asia/Shanghai` 未生效，按日志原样引用；折算�
 
 #### 一、第 1 遍｜不存在死循环：50 条 `while` 全部要当场说出自己凭什么停
 
-人肉读循环这一遍不做——它数不过 50 条，也记不住哪条没守卫。做法是把全包 `tstdx/` 的 `while`
+人肉读循环这一遍不做——它数不过 50 条，也记不住哪条没守卫。做法是把全包 `atst/` 的 `while`
 现扫出来按**形状**归类（`tests/architecture/test_loop_termination_gates.py`，AST，5 项判据）：
 
 | 形状 | 凭什么停 | 本轮计数 |
@@ -3279,14 +3279,14 @@ MSYS 缺 tzdata，`TZ=Asia/Shanghai` 未生效，按日志原样引用；折算�
 | `progress` | 循环条件读到的名字/属性在本循环体内被重新赋值（条件有人拧） | 12 |
 | `stop-flag` | 条件是 `not flag` / `not flag.is_set()` / `not flag.wait(超时)`，且该 flag 在本文件里被赋值过或被 `.set()`/`.clear()` 动过 | 4 |
 | `trampoline` | 外层是 `try/except StopIteration` 的生成器驱动循环（`gen.send` 回来的值喂下一轮，耗尽即 `StopIteration`） | 2 |
-| 命名豁免 | 归不进四类、但写在豁免表里并附终止论证（`tstdx/transport/async_.py` 的 `_acquire_rate` 与 `_await_cleanup_before_cancellation`） | 2 |
+| 命名豁免 | 归不进四类、但写在豁免表里并附终止论证（`atst/transport/async_.py` 的 `_acquire_rate` 与 `_await_cleanup_before_cancellation`） | 2 |
 | **未归类** | —— | **0** |
 
 分母与逐格名单在 `scratch_v18b21/census21.log` 第一节；另有 `while True` 字面量 9 处
-（`grep -rn "while True" --include=*.py tstdx/` 现量，最集中的是 `tstdx/codec/primitive.py` 3 处），
+（`grep -rn "while True" --include=*.py atst/` 现量，最集中的是 `atst/codec/primitive.py` 3 处），
 都落进上面五类里。豁免表是**双向**核对的：表里多一条（对象已不存在）与循环外漏一条都当场红。
 
-**这一遍真正抓到的一格，形状完全合格**：:meth:`tstdx.transport.ratelimit.TokenBucket.acquire` 的
+**这一遍真正抓到的一格，形状完全合格**：:meth:`atst.transport.ratelimit.TokenBucket.acquire` 的
 `while True` 里有 `return`，无论人读还是形状尺子都判它"有守卫"。问题在守卫的**位置**——容量守卫
 （`requested > burst` 就报错）写在循环**之前**，读的是**锁外**的一次性快照，而
 :meth:`TokenBucket.set_rate` 会在等待期间把 `burst` 收缩到 `max(1.0, rate)`。于是已经通过入口检查的
@@ -3294,18 +3294,18 @@ MSYS 缺 tzdata，`TZ=Asia/Shanghai` 未生效，按日志原样引用；折算�
 而 `blocking=True, timeout=None` 恰是本类缺省语义——既不报错也不返回。两线程复现，逐字：
 
 ```
-=== [pre-fix] tree=tstdx_wt_v18b21mut (ratelimit.py @ HEAD 582f5e9) ===
+=== [pre-fix] tree=atst_wt_v18b21mut (ratelimit.py @ HEAD 582f5e9) ===
 burst_after_shrink = 1.0 tokens = 1.0
 WAITER_RETURNED = False
-=== [fixed] tree=tstdx_wt_v18b21step ===
-  File "P:\github_public\tstdx_wt_v18b21step\tstdx\transport\ratelimit.py", line 159, in acquire
+=== [fixed] tree=atst_wt_v18b21step ===
+  File "P:\github_public\atst_wt_v18b21step\atst\transport\ratelimit.py", line 159, in acquire
     raise ValueError(f"请求 tokens={requested:g} 超过桶容量 burst={self.burst:g}")
 ValueError: 请求 tokens=50 超过桶容量 burst=1
 ```
-（`scratch_v18b21/hang_repro21.log`；改前那棵树是把 `tstdx/transport/ratelimit.py` 换回 HEAD 版本、
+（`scratch_v18b21/hang_repro21.log`；改前那棵树是把 `atst/transport/ratelimit.py` 换回 HEAD 版本、
 其余文件不动，取证后**已回收**，留存锚 `582f5e9`。）
 
-修法是把守卫移进循环、锁内每轮重做（`tstdx/transport/ratelimit.py:152-159`），并加两重兜底：
+修法是把守卫移进循环、锁内每轮重做（`atst/transport/ratelimit.py:152-159`），并加两重兜底：
 行为判据 `tests/transport/test_ratelimit_contract.py::test_capacity_shrink_cannot_park_a_waiter_forever`
 （真起一个等待线程、`entered` 事件证明它已进过循环，再收缩容量），与形状判据
 `test_bucket_capacity_guard_lives_inside_the_wait_loop`（AST：守卫必须落在那个唯一的 `while` 里，
@@ -3316,15 +3316,15 @@ ValueError: 请求 tokens=50 超过桶容量 burst=1
 **这一格档案层早就登记过，登记的修法恰恰是没用的那一半**：`docs/archive/plans/INDUSTRIAL_OPTIMIZATION_PLAN.md:52`
 的 C7 行把缺陷写成"`TokenBucket` `tokens>burst` 同样永等（当前调用点未触发，公共 API 面）"，处置列给的是
 "deadline 兜底；**入口校验** `tokens<=burst`；`rate≤0` 显式报错"。本轮实测：`rate≤0` 那格确实已经关掉了
-（`__init__`/`set_rate` 都过 `_require_positive_number`，`tstdx/transport/ratelimit.py:121,178`），入口校验也确实
+（`__init__`/`set_rate` 都过 `_require_positive_number`，`atst/transport/ratelimit.py:121,178`），入口校验也确实
 照着档案写了——但**入口校验在会收缩的容量面前不构成守卫**，永等原样保留。档案层归档而不删的用处就在这里：
 它给出的是同一问题的第二次现场，而不是"已经修过"的凭据。
 
-**可达性要说满，不能借复现夸大**：包内五处限流调用点（`tstdx/transport/pool.py:568,749,874`、
-`tstdx/transport/async_.py:711,713`）全部只取 1 枚令牌，而 `burst` 有 `max(1.0, rate)` 下限——
+**可达性要说满，不能借复现夸大**：包内五处限流调用点（`atst/transport/pool.py:568,749,874`、
+`atst/transport/async_.py:711,713`）全部只取 1 枚令牌，而 `burst` 有 `max(1.0, rate)` 下限——
 这一格要 `tokens > 1` 才落得到 shipped 路径，本轮**没有**在任何线上路径观察到停等。被抓的是
-`TokenBucket` 这个**导出符号**（`tstdx/transport/__init__.py:67`，`__all__` 在册）自己的阻塞契约。
-同名不同实现的另一把桶（`tstdx/web/_base_http.py:514`）不受影响：它的阻塞路径受
+`TokenBucket` 这个**导出符号**（`atst/transport/__init__.py:67`，`__all__` 在册）自己的阻塞契约。
+同名不同实现的另一把桶（`atst/web/_base_http.py:514`）不受影响：它的阻塞路径受
 `DEFAULT_ACQUIRE_TIMEOUT` 约束，超时由 `RateLimiter` 抛 `WebRateLimited`（带可重试 advice）。
 
 #### 二、第 2 遍｜主链连通、无孤儿：四张分母不同的账本，先把"差在哪一个对象"说清
@@ -3335,9 +3335,9 @@ ValueError: 请求 tokens=50 超过桶容量 burst=1
 | 模块面（可达性口径） | `模块总数: 190  可达: 175  白名单豁免: 15`，`无未登记孤儿 ✓` | `gates_round21.log` |
 | 模块面（可导入口径） | `walk_packages` 出 189 个模块名，**导入失败 0** | `census21.log` [3] |
 | 导出面 | `__all__` 里 1310 个名字全部指得到对象，死导出 0 | `census21.log` [3] |
-| 版本面 | `tstdx.__version__ = 1.1.0`，与 `pyproject.toml:7` 一致 | `census21.log` [4] |
+| 版本面 | `atst.__version__ = 1.1.0`，与 `pyproject.toml:7` 一致 | `census21.log` [4] |
 
-189 与 190 不是矛盾，本轮专门对账（`scratch_v18b21/module_denominators.log`）：差的恰好是 `tstdx`
+189 与 190 不是矛盾，本轮专门对账（`scratch_v18b21/module_denominators.log`）：差的恰好是 `atst`
 **自己**——`walk_packages` 只产子模块名，文件口径把包根算一条。两个分母各自成立，台账不把它们
 硬抹平成同一个数（第 17 轮那条"按名记账把同名不同定义混成一格"的教训反过来用：分母不同就要写两次）。
 
@@ -3345,7 +3345,7 @@ ValueError: 请求 tokens=50 超过桶容量 burst=1
 
 入参那一侧第 3/4/5 轮就收成了"每一格要么被读走、要么当场被拒"（F-47 的 `wire_fields.py`）。
 这一遍问反方向：**执行体交回来的每一格，三面出口是否都带上了**。答案是一份没人对账的手抄清单
-（`tstdx/integration/serialization.py::_query_result` 逐字段列 `meta` 6 格 + 嵌套 `provenance` 5 格
+（`atst/integration/serialization.py::_query_result` 逐字段列 `meta` 6 格 + 嵌套 `provenance` 5 格
 + `warnings`）。现有的读取点扫描管不到它：那把尺子管"有字段没人读"，不管"有人读的字段在出口被丢掉"。
 两者后果不对等——读点缺一个，调用方只是拿不到；wire 少一格，调用方**不知道自己少拿了**。
 
@@ -3374,9 +3374,9 @@ ValueError: 请求 tokens=50 超过桶容量 burst=1
 
 **这一格把"构建是确定性的"那句的量词逼出来了**（同一棵树、两次跑动、`--dist-out` 全指 scratch）：
 两次 wheel 的 sha256 完全相同，sdist 却换了一个哈希。`tarfile` 现扫两份的条目表**逐字相同**（2188 个
-条目，差在那 1430 字节的内容里），而条目构成是 `tests 1914 / tstdx 191 / PROTOCOL_SPEC 69 / docs 7`——
+条目，差在那 1430 字节的内容里），而条目构成是 `tests 1914 / atst 191 / PROTOCOL_SPEC 69 / docs 7`——
 **sdist 打的测试文件比运行文件多一个数量级**，两次构建之间改的恰恰只有 `tests/`（G24 的判据文件）。
-所以"确定性"必须说清楚是哪一侧：wheel 只跟 `tstdx/` 走，sdist 跟测试与文档走；本台账定稿之后 `docs/`
+所以"确定性"必须说清楚是哪一侧：wheel 只跟 `atst/` 走，sdist 跟测试与文档走；本台账定稿之后 `docs/`
 只进 7 个文件、台账本身不在其中（现扫 `has ledger: False`）。发布说明同时钉了 wheel 与 sdist 两格哈希，
 那么**任何一次只改测试的提交都会让 sdist 那一格过期**——这是 G23 关掉时必须一并裁决的口径
 （要么 sdist 不收 `tests/`，要么发布说明只钉 wheel）。
@@ -3387,7 +3387,7 @@ ValueError: 请求 tokens=50 超过桶容量 burst=1
 PyPI/Docker，公开且不可逆）是人的决定；要不要往前走一个版本号同样是；本会话做的只有"此后重构建一律
 `--dist-out` 指到 scratch，不再覆盖已记录的产物"，加上把这一格登记成 G23。
 
-同一次还抓到 §29 的一处假声称：上一版把 `dist/` 里 `tstdx-1.4.0-*` 写成"第 19 轮构建、冒烟过、
+同一次还抓到 §29 的一处假声称：上一版把 `dist/` 里 `atst-1.4.0-*` 写成"第 19 轮构建、冒烟过、
 是发布动作的输入"。现量时间戳是 **2026-09-07 22:55/22:56**，早于 `cf74b31 release: publish v1.0.0`
 把版本线从 1.4.0 收回 1.0.0 那一次；第 19 轮构建的是 `1.1.0` 那一对（2026-09-23 22:01）。就地改正、
 原句留在括号里可追溯（改法与 G20 同一口径）。
@@ -3400,7 +3400,7 @@ PyPI/Docker，公开且不可逆）是人的决定；要不要往前走一个版
 * `tests/architecture/test_wire_field_completeness.py`（8 项）：三张 dataclass 对 wire 逐格配对，
   身份三格按裁决豁免，多键也算违约，4 条正控。
 * `tests/architecture/test_evidence_pointers.py` 补第二种树名形状：第 21 轮起候选树落在**仓库外面**
-  （目录名前缀 `tstdx_`），而旧正则要的是 `\bwt_`——`x_w` 之间不构成词边界，这种指针**一处都数不到**，
+  （目录名前缀 `atst_`），而旧正则要的是 `\bwt_`——`x_w` 之间不构成词边界，这种指针**一处都数不到**，
   台账写满它也不会红。现在两种形状归一化（剥掉那层前缀）后一起入账，磁盘侧与台账侧走同一条路，
   并加一条不看台账内容的形状正控（两种形状各造一个临时名字，都要被认出来并归一化）。
   这是本族第二次因**名字形状**给假绿（第一次是第 17 轮的重名类）。
@@ -3413,7 +3413,7 @@ PyPI/Docker，公开且不可逆）是人的决定；要不要往前走一个版
 #### 六、候选树读数表（逐格抄自本轮那几份日志；抄不到的不写）
 
 日志首行：`gates_ship21.log` 的 `captured: 2026-09-23 22:40:22 GMT`（北京时间 2026-09-24 06:40）。
-候选树 = `tstdx_wt_v18b21step` @ `582f5e9` + 本轮 6 个文件（`ratelimit.py`、`test_ratelimit_contract.py`、
+候选树 = `atst_wt_v18b21step` @ `582f5e9` + 本轮 6 个文件（`ratelimit.py`、`test_ratelimit_contract.py`、
 `test_evidence_pointers.py`、本台账、两份新判据；那棵树第 23 轮已回收，锚 = 提交 `582f5e9`，树内改动已落在 main 的历史里），**且是本节文字全部落完之后重跑的那一套**：
 这张表里 15 道门禁的每一格都出自这一份日志，离线全量那一格出自同树的 `fulltest_v18b21_run6.log`。
 本轮此前还有三次跑动（`gates_round21.log` / `_b` / `_c` 与 `fulltest run2~run5`），读数一律作废——
@@ -3426,10 +3426,10 @@ PyPI/Docker，公开且不可逆）是人的决定；要不要往前走一个版
 
 | 门禁 | 读数 |
 |---|---|
-| `ruff check tstdx/ tests/ scripts/` / `ruff format --check` 同范围 | `rc=0 / rc=0`，`All checks passed!` 与 `460 files already formatted` |
+| `ruff check atst/ tests/ scripts/` / `ruff format --check` 同范围 | `rc=0 / rc=0`，`All checks passed!` 与 `460 files already formatted` |
 | 同两条跑在 `.` 范围 | `rc=0 / rc=0`，`All checks passed!` / `463 files already formatted` |
-| `mypy tstdx/ --ignore-missing-imports --no-error-summary --warn-unused-ignores` | `rc=0`（该旗标下无输出是预期） |
-| `check_originality --strict tstdx/` | `rc=0`，`Total: 191  Original: 191  License OK: 191  Header OK: 191  Suspicious: 0  External imports: 17` |
+| `mypy atst/ --ignore-missing-imports --no-error-summary --warn-unused-ignores` | `rc=0`（该旗标下无输出是预期） |
+| `check_originality --strict atst/` | `rc=0`，`Total: 191  Original: 191  License OK: 191  Header OK: 191  Suspicious: 0  External imports: 17` |
 | `golden_audit --gate --require-markets --require-kline-categories 0,4,9 --require-payloads` | `rc=0`，`[GATE] all L1 verified commands have real samples (OK)`；既有两行口径未变（第 235 行 `[WARN] suspect_short real samples (below per-command floor): 0x537 4B<12B x3`、第 236 行 `[INFO] payload clones: 54 byte-identical group(s), 314 extra copy(ies)`）。**这一格本轮抄错过一次**：上一版把 `[INFO]` 那行写成"两处既有 WARN"，按日志改回（G24 的取证段） |
 | `spec_audit --json --strict` | `rc=0`，`"uncovered": []`、`"coverage_pct": 100.0` |
 | `audit_reachability --strict` | `rc=0`，`模块总数: 190  可达: 175  白名单豁免: 15`，`无未登记孤儿 ✓` |
@@ -3441,8 +3441,8 @@ PyPI/Docker，公开且不可逆）是人的决定；要不要往前走一个版
 | 离线全量（带覆盖率） | `3830 passed, 8 skipped, 15 deselected, 23 warnings in 226.88s (0:03:46)`（`fulltest_v18b21_run6.log` 第 524~526 行），`Required test coverage of 77.0% reached. Total coverage: 82.17%`，`PYTEST_RC=0`。`fail_under = 77` 与所有 strict 旗标一律未动。这一格与上面 15 道门禁同树同刻：那次跑动之前本节文字已经定稿，所以台账本身也是被测对象 |
 | 改前红（候选树换回 HEAD 版 `ratelimit.py`，其余不动） | `2 failed, 33 passed in 7.14s`，`----- rc=1 : pytest pre-fix (contract + loop gates) -----` |
 | G24 的当场红（同一套门禁，本轮中间那次跑） | `gates_round21b.log` 第 1160/1161 行 `1 failed, 485 passed in 51.44s` / `--- rc=1 : architecture ---`，唯一红格 `test_pointers_at_recycled_trees_say_so`，正文"已不在磁盘上"重复 187 次；修法正控见 `g21b_selfexcl_mutation.log` 第 239/240 行（删掉排除自身那一行 → `2 failed, 3 passed in 0.28s` / `rc=1`）与第 256/257 行（复原 → `47 passed, 1 skipped in 2.01s` / `rc=0`） |
-| G22 的派生实验 | patch 后 `2 failed, 38 passed in 2.42s` / `----- rc=1 :`；`git checkout -- tstdx/integration/serialization.py` 复原后 `40 passed` / `----- rc=0 : pytest after restore -----` |
-| canonical 构建 + 干净 venv 安装冒烟（候选树，`--dist-out` 指到 scratch，定稿后重跑：`build_ship21.log`） | `BUILD_RC=0`，`[校验] canonical typed distribution ✓ (tstdx-1.1.0-py3-none-any.whl, tstdx-1.1.0.tar.gz, version=1.1.0, runtime_files=191)`，`[冒烟] 通过 ✓`，末两格 `sha256: ea26ed5c…`（sdist，日志印 `1596.6 KB`、`ls` 实测 1634879 字节——那一栏的单位是 KiB）与 `sha256=6edc376b…`（wheel，`734.6 KB` = 752182 字节）。注意这正是要登记 G23 的那一格：**构建与冒烟全绿，也不代表这份 `1.1.0` 就是 tag 上的 `1.1.0`**；而 wheel 与本轮更早那次构建逐字相同、sdist 不同，原因写在第四节 |
+| G22 的派生实验 | patch 后 `2 failed, 38 passed in 2.42s` / `----- rc=1 :`；`git checkout -- atst/integration/serialization.py` 复原后 `40 passed` / `----- rc=0 : pytest after restore -----` |
+| canonical 构建 + 干净 venv 安装冒烟（候选树，`--dist-out` 指到 scratch，定稿后重跑：`build_ship21.log`） | `BUILD_RC=0`，`[校验] canonical typed distribution ✓ (atst-1.1.0-py3-none-any.whl, atst-1.1.0.tar.gz, version=1.1.0, runtime_files=191)`，`[冒烟] 通过 ✓`，末两格 `sha256: ea26ed5c…`（sdist，日志印 `1596.6 KB`、`ls` 实测 1634879 字节——那一栏的单位是 KiB）与 `sha256=6edc376b…`（wheel，`734.6 KB` = 752182 字节）。注意这正是要登记 G23 的那一格：**构建与冒烟全绿，也不代表这份 `1.1.0` 就是 tag 上的 `1.1.0`**；而 wheel 与本轮更早那次构建逐字相同、sdist 不同，原因写在第四节 |
 | tag `v1.1.0` 树重构建 | wheel `747287` / `sha256=905e5a77…`、sdist `1572632` / `sha256=58452fce…`，与 `docs/releases/v1.1.0.md:82-85` 逐字相同（该树取证后已回收，锚点 `ef3b97e`） |
 
 #### 七、本轮之后仍然开放的账
@@ -3460,7 +3460,7 @@ PyPI/Docker，公开且不可逆）是人的决定；要不要往前走一个版
   这一格是本轮自己造出来的：补宽证据尺子的扫描范围时把候选树数成了本机持有的证据，187 行假违约，
   改回来只需一行排除 + 一条集合等式正控，但**没有那次候选树重跑就看不见它**。
 * 老账不变：**G1**（三格能力在任何 Provider 上都不可能给数）、**G3**（`0x000F`/`0x0010` 的字节
-  布局——不猜协议字节，等真机 golden）、**G5**（`fund_estimate` 不给数）、**G9**（`pip install tstdx`
+  布局——不猜协议字节，等真机 golden）、**G5**（`fund_estimate` 不给数）、**G9**（`pip install atst`
   要的是发布动作本身，那一格只能由人点）、**G18** 的剩余部分与 **G19**（他人台账的指针）。
 * **发布条件的一句话结论**：离线全量与 15 道门禁在候选树上全绿（含构建与安装冒烟），核心链没有断链、
   没有孤儿、没有形状之外还查不出守卫的循环；线上仍在给错数的还是只有 G3 那一格。剩下的一格不在
@@ -3491,7 +3491,7 @@ PyPI/Docker，公开且不可逆）是人的决定；要不要往前走一个版
 
 （`scratch_v18b22/census_docs22.log` 第 1~19 行：逐名列表与两侧计数都在里面。）所以对第一句的回答是
 **部分更新**：三面早就对齐，缺口是单面的、不是普遍的；而缺的那一格不是"少写了几支"，是**整格没有**
-——`docs/api/interfaces.md` §3 的 CLI 只有一句"全部子命令委托 `Client`"加 `tstdx --help`。
+——`docs/api/interfaces.md` §3 的 CLI 只有一句"全部子命令委托 `Client`"加 `atst --help`。
 11 支查不到名字的叶子逐字是：`adjusted-bars` / `all-market` / `feedback submit` / `fund estimate` /
 `fund list` / `fund nav` / `hosts list` / `hosts scan` / `index constituents` / `minute-klines` /
 `sector-flow`。
@@ -3518,14 +3518,14 @@ PyPI/Docker，公开且不可逆）是人的决定；要不要往前走一个版
 结果——形状变化必须能被数出来，否则尺子就是瞎的。
 
 **但 `while True` 的字面量计数本轮不能用了**：同一次普查里它是 11 处，第 21 轮记的是 9 处。差的 2 处
-全在 `tstdx/streaming/push.py`，而 `grep -n` 现扫显示那三行命中里 **240 与 268 是 docstring 里的散文**，
+全在 `atst/streaming/push.py`，而 `grep -n` 现扫显示那三行命中里 **240 与 268 是 docstring 里的散文**，
 只有 270 是语句。也就是说这个字面量计数量的是"代码里有多少句话说到了 `while True`"，本轮往文档串里
 写了两遍它，分母就 +2。AST 的 50 才是分母。这与 G20/G24 同族（尺子数到自己的措辞），本轮把它写在读数里
 而不是去改正则——`grep` 那一句本来就是辅助口径，判据里没有它。
 
 真正抓到的是四条，全部在轮询面（G28）：
 
-1. `ReconnectPolicy.max_attempts` / `should_give_up` 在 `tstdx/` 里**零调用点**——策略说"该放弃了"，
+1. `ReconnectPolicy.max_attempts` / `should_give_up` 在 `atst/` 里**零调用点**——策略说"该放弃了"，
    驱动侧没人问它；这是 G10/G11 那一族（声明值没人按它行动）长在流式面上。
 2. 失败轮按 `interval` 而不是按退避等待，配好的 `base=3600` 从未生效过一步。
 3. `QuoteStream` / `AsyncQuoteStream` / `Subscription` 三处 `interval` 没有正数守卫，`interval=0`
@@ -3570,9 +3570,9 @@ max_attempts=3 后退出（已轮询 132 次）——「超过则放弃」又变
 #### 三、第 3 遍｜前后端贯通：入参面的叶子级 `--timeout` 解析不到（G26）
 
 前后端（六面 ↔ 执行体）本轮走到 CLI 入参侧。`fund` / `index` 的组级 `--timeout` 只有写在组名**之前**
-才生效，而自然拼法是写在叶子之后——`tstdx fund nav 000001 --timeout 5` 与
-`tstdx index constituents 000300 --timeout 5` 在 HEAD 上都是 `SystemExit(2)`。取证只用读的方式做
-（`PYTHONDONTWRITEBYTECODE=1` 在 `tstdx_wt_v18b21step @ 582f5e9` 里跑，跑完 `git status` 仍是它自己的
+才生效，而自然拼法是写在叶子之后——`atst fund nav 000001 --timeout 5` 与
+`atst index constituents 000300 --timeout 5` 在 HEAD 上都是 `SystemExit(2)`。取证只用读的方式做
+（`PYTHONDONTWRITEBYTECODE=1` 在 `atst_wt_v18b21step @ 582f5e9` 里跑，跑完 `git status` 仍是它自己的
 6 个文件、本会话未落一个字节；那棵树第 23 轮已回收，锚 = 提交 `582f5e9`）：
 
 ```
@@ -3595,7 +3595,7 @@ argparse 的组级旗标只能出现在组名之前，挪不动；`SUPPRESS` 的
 #### 四、第 4 遍｜发布条件：G23 那一格的量词又收了一次，这次收到文档交付面上
 
 候选树重构建 + 干净 venv 安装冒烟（`--dist-out` 指到 scratch，未覆盖任何已记录产物）：
-`[校验] canonical typed distribution ✓ (tstdx-1.1.0-py3-none-any.whl, tstdx-1.1.0.tar.gz, version=1.1.0,
+`[校验] canonical typed distribution ✓ (atst-1.1.0-py3-none-any.whl, atst-1.1.0.tar.gz, version=1.1.0,
 runtime_files=191)`、`[冒烟] 通过 ✓`，wheel `754007` 字节 / `sha256=44c5a544…`、sdist `1650907` 字节 /
 `sha256=730634c4…`（`scratch_v18b22/build22.log`）。两者都**不等于** tag `v1.1.0` 那两份（发布说明钉的
 `747287` / `905e5a77…`）——G23 的"同一个 `1.1.0` 对应多份产物"这一格因此又添一份，不移动 tag、
@@ -3603,7 +3603,7 @@ runtime_files=191)`、`[冒烟] 通过 ✓`，wheel `754007` 字节 / `sha256=44
 
 本轮把 sdist 的构成现扫到文件级（同日志末段追加的台账段），量出了两件事：
 
-* 条目构成 `tests 1917 / tstdx 191 / PROTOCOL_SPEC 69 / docs 7`，共 2191 个文件——第 21 轮那句
+* 条目构成 `tests 1917 / atst 191 / PROTOCOL_SPEC 69 / docs 7`，共 2191 个文件——第 21 轮那句
   "测试文件比运行文件多一个数量级"成立，且**两次构建之间改的正是 `tests/`**，这就是 wheel 换不了哈希、
   sdist 换得掉的原因。
 * `docs` 那 7 格不是"白名单收了 7 份文档"，而是 `pyproject.toml:88-96` 的 sdist `include` 里写了
@@ -3641,9 +3641,9 @@ runtime_files=191)`、`[冒烟] 通过 ✓`，wheel `754007` 字节 / `sha256=44
 
 #### 六、候选树读数表（逐格抄自本轮那几份日志；抄不到的不写）
 
-日志首行 `captured: 2026-09-24 00:56:55 GMT`（北京时间 09:56 前后）。候选树 = `tstdx_wt_v18b22step`
-@ `d3aaeee` + **12 个本会话文件**（`docs/api/interfaces.md` / `tstdx/cli/parser.py` /
-`tstdx/cli/runtime_commands.py` / `tstdx/catalog/capability.py` / `tstdx/streaming/{base,engine,push,
+日志首行 `captured: 2026-09-24 00:56:55 GMT`（北京时间 09:56 前后）。候选树 = `atst_wt_v18b22step`
+@ `d3aaeee` + **12 个本会话文件**（`docs/api/interfaces.md` / `atst/cli/parser.py` /
+`atst/cli/runtime_commands.py` / `atst/catalog/capability.py` / `atst/streaming/{base,engine,push,
 stateful}.py` / `tests/architecture/{test_cli_reference_table,test_dispatch_targets,
 test_evidence_pointers}.py` / `tests/streaming/test_poll_guardrails.py`），runner 里 17 道门禁
 （`run_gates22.sh`，本轮新增 `streaming` 与 `runtime` 两道）。那棵候选树第 23 轮已回收，锚 = 提交 `d3aaeee`，
@@ -3653,10 +3653,10 @@ test_evidence_pointers}.py` / `tests/streaming/test_poll_guardrails.py`），run
 
 | 门禁 | 读数 |
 |---|---|
-| `ruff check tstdx/ tests/ scripts/` / `ruff format --check` 同范围 | `rc=0 / rc=0`（第 6/9 行），`All checks passed!` 与 `463 files already formatted` |
+| `ruff check atst/ tests/ scripts/` / `ruff format --check` 同范围 | `rc=0 / rc=0`（第 6/9 行），`All checks passed!` 与 `463 files already formatted` |
 | 同两条跑在 `.` 范围 | `rc=0 / rc=0`（第 12/15 行），`All checks passed!` / `466 files already formatted`（第 21 轮同格是 460/463，+3 正是本轮三份新判据） |
-| `mypy tstdx/ --ignore-missing-imports --no-error-summary --warn-unused-ignores` | `rc=0`（第 17 行；该旗标下无输出是预期） |
-| `check_originality --strict tstdx/` | `rc=0`（第 219 行），`Total: 191  Original: 191  License OK: 191  Header OK: 191  Suspicious: 0  External imports: 17` |
+| `mypy atst/ --ignore-missing-imports --no-error-summary --warn-unused-ignores` | `rc=0`（第 17 行；该旗标下无输出是预期） |
+| `check_originality --strict atst/` | `rc=0`（第 219 行），`Total: 191  Original: 191  License OK: 191  Header OK: 191  Suspicious: 0  External imports: 17` |
 | `golden_audit --gate --require-markets --require-kline-categories 0,4,9 --require-payloads` | `rc=0`（第 238 行），`[GATE] all L1 verified commands have real samples (OK)`；既有两行口径未变（第 235 行 `[WARN] suspect_short …`、第 236 行 `[INFO] payload clones: 54 byte-identical group(s), 314 extra copy(ies)`，第 237 行 `[INFO] 0x052D real category coverage: [0..11]`） |
 | `spec_audit --json --strict` | `rc=0`（第 868 行），`"uncovered": []`、`"coverage_pct": 100.0`（第 864/865 行） |
 | `audit_reachability --strict` | `rc=0`（第 887 行），`模块总数: 190  可达: 175  白名单豁免: 15`（第 870 行），`无未登记孤儿 ✓`（第 886 行） |
@@ -3672,7 +3672,7 @@ test_evidence_pointers}.py` / `tests/streaming/test_poll_guardrails.py`），run
 | G25 的真文件变异台账 | `cli_mutate22.log`：基准 `12 passed` / `rc=0` → 四处单点篡改分别 `2 failed` / `6 failed` / `3 failed` / `2 failed`，四格 `rc=1`（行号见第〇节） |
 | G26 的改前复现 | `g26_prefix22.log` 第 10/17 行两格 `rc=2`；`g26_parse22.log` 第 14~17 行两组 `PARSE-OK`/`PARSE-EXIT` 对照 |
 | 跳过条件缺陷的当场红（两次同因） | `gates_round22_run1_presync.log` 第 1163/1164 行、`gates_round22_run2_stalejump.log` 第 1162/1163 行，各 `1 failed` + `rc=1 : architecture`，"已不在磁盘上"重复 187 次；全量侧 `fulltest_v18b22_run2_stalejump.log` 第 727/728 行 `1 failed, 3867 passed, 7 skipped` + `PYTEST_RC=1` |
-| canonical 构建 + 干净 venv 安装冒烟（`--dist-out` 指到 scratch） | `[校验] canonical typed distribution ✓ (…, version=1.1.0, runtime_files=191)`、`[冒烟] 通过 ✓`，wheel `754007` 字节 / `sha256=44c5a544…`、sdist `1650907` 字节 / `sha256=730634c4…`（`build22.log`）。同日志末段追加的现扫给出 sdist 条目构成 `tests 1917 / tstdx 191 / PROTOCOL_SPEC 69 / docs 7`，且 `docs/api/interfaces.md` 与本台账**都不在其中**（第四节） |
+| canonical 构建 + 干净 venv 安装冒烟（`--dist-out` 指到 scratch） | `[校验] canonical typed distribution ✓ (…, version=1.1.0, runtime_files=191)`、`[冒烟] 通过 ✓`，wheel `754007` 字节 / `sha256=44c5a544…`、sdist `1650907` 字节 / `sha256=730634c4…`（`build22.log`）。同日志末段追加的现扫给出 sdist 条目构成 `tests 1917 / atst 191 / PROTOCOL_SPEC 69 / docs 7`，且 `docs/api/interfaces.md` 与本台账**都不在其中**（第四节） |
 
 **这张表本身也是台账文字**，改它就会动到读台账的那几格判据（证据尺账、文档链接、CLI 示例三种），所以
 定稿后要把台账同步进候选树、单跑一次只对账。本轮为此跑了两遍，而**第一遍那份红当时没能留下来**：两次跑动
@@ -3721,13 +3721,13 @@ architecture `509 passed, 1 skipped in 53.32s`、streaming `38 passed`，两棵�
   * canonical 构建 + 干净 venv 安装冒烟：`build_ship22.log`（`BUILD_RC=0`），wheel `754101` 字节 /
     `sha256:4cc00cc65c666213…`、sdist `1651370` 字节 / `sha256:d0ef6a898f14efb5…`，`runtime_files=191`。
     这是**同一个 `1.1.0` 版本号下的又一份产物**（G23 那一族的第五次构建），sdist 条目 2191（`tests 1917 /
-    tstdx 191 / PROTOCOL_SPEC 69 / docs 7`），而 `docs/api/interfaces.md` 与本台账**都不在其中**——本轮新造的
+    atst 191 / PROTOCOL_SPEC 69 / docs 7`），而 `docs/api/interfaces.md` 与本台账**都不在其中**——本轮新造的
     那张 CLI 接口表不随 sdist 交付，与第四节量的是同一套 include 机制。
   * 离线全量（run3 同一套旗标，跑在落地后的导出树上）：`fulltest_v18b22_ship.log` 第 527/528/529 行
     `Required test coverage of 77.0% reached. Total coverage: 82.41%` / `=== 3869 passed, 8 skipped,
     15 deselected, 23 warnings in 282.64s (0:04:42) ===` / `PYTEST_RC=0`。条数与 `run5` 那格逐字相同
     （同一棵树的内容）。82.42% → 82.41% 那一格差异是**可对账的**：两份逐文件表格 diff 只有一行移动——
-    `tstdx/transport/pool.py` 的 Missed `111 → 113`、BrPart `36 → 37`（TOTAL 随之 `3388 → 3390`、
+    `atst/transport/pool.py` 的 Missed `111 → 113`、BrPart `36 → 37`（TOTAL 随之 `3388 → 3390`、
     `1006 → 1007`），也就是第 12 轮记录过的那族计时抖动行，不是回归；`fail_under = 77` 未动。
   * **装出来的包自己兑现本轮四处修复**（不是只在源码树里绿）：`wheel_probe22c.log` 第 8~10 行三种 `--timeout`
     拼法都给出 `timeout = 5.0`（G26）、第 17~22 行逐字抄出 `_cmd_serve` 的新 docstring 并派生出
@@ -3760,46 +3760,46 @@ architecture `509 passed, 1 skipped in 53.32s`、streaming `38 passed`，两棵�
 
 独立环境 `scratch_v18b22/venv_faces23`；被测 wheel 由 `scripts/build_package.py --dist-out` 产出在
 `scratch_v18b22/dist_ship23/`（构建与哈希读数在第六节），装法是 `uv pip install --no-deps
---reinstall-package tstdx <那枚 whl>`，跑任何一条之前先确认 `import tstdx` 解析到 `site-packages`、
+--reinstall-package atst <那枚 whl>`，跑任何一条之前先确认 `import atst` 解析到 `site-packages`、
 探针脚本自身不往 `sys.path` 塞源码树。
 
 | 面 | 入口（装好的那一份） | 读数 | 日志 |
 |---|---|---|---|
 | 库 | `importlib` 逐模块 | 190/190 模块导入、`__all__` 45 名解析、`Client` 的 10 个文档方法可取、离线 `Client()` 172 项能力 | `scratch_v18b22/lib_ship23.log` |
 | CLI | 控制台脚本打文档围栏那 37 行 | 36 行真跑 = **21 行出数据 / 15 行按下表口径失败 / 0 行 traceback**（`serve` 精确跳过） | `scratch_v18b22/probe23/census_ship23.log` |
-| HTTP | `python -m tstdx serve`（回环） | 11/11 有应答、零超时：200×7、**501×3**（`E9010`×2 + `E3035`×1）、422×2（未声明入参 `E1010`）；每条请求后再打健康路由都 200、进程始终活着 | `scratch_v18b22/probe23/http_ship23.log` |
-| WS | `python -m tstdx.integration.runtime_ws_server` | 5/5：打印监听行、不静默退出、回环拿到 `api=v13` 与 172 项能力 | `scratch_v18b22/probe23/entries_ship23.log` |
-| MCP | `python -m tstdx.integration.mcp` | 7/7：9 项工具、`get_quote` 真回数据、未声明入参 `-32602`、不存在的工具名回 `isError=True` 的 result、不认识的方法名 `-32601`、**不带 id 的通知不得到任何回应** | `scratch_v18b22/probe23/mcp_ship23.log` |
+| HTTP | `python -m atst serve`（回环） | 11/11 有应答、零超时：200×7、**501×3**（`E9010`×2 + `E3035`×1）、422×2（未声明入参 `E1010`）；每条请求后再打健康路由都 200、进程始终活着 | `scratch_v18b22/probe23/http_ship23.log` |
+| WS | `python -m atst.integration.runtime_ws_server` | 5/5：打印监听行、不静默退出、回环拿到 `api=v13` 与 172 项能力 | `scratch_v18b22/probe23/entries_ship23.log` |
+| MCP | `python -m atst.integration.mcp` | 7/7：9 项工具、`get_quote` 真回数据、未声明入参 `-32602`、不存在的工具名回 `isError=True` 的 result、不认识的方法名 `-32601`、**不带 id 的通知不得到任何回应** | `scratch_v18b22/probe23/mcp_ship23.log` |
 | Web 源 | 走 CLI 那 14 支（11 支出数据、3 支当晚上游失败） | 失败三格全是可读错误而不是空表：`sector-flow`/`minute-klines` `E7000`、`baidu` `E7010` | `census_ship23.log` 同一次 |
 
 库面那个 190 比改前那遍（`scratch_v18b22/lib_face23.log`，189）多 1——多的正是本轮补上的
-`tstdx/integration/mcp/__main__.py`。**"包里有这个文件"与"这条入口跑得通"是两件事**，所以第一确那五行
+`atst/integration/mcp/__main__.py`。**"包里有这个文件"与"这条入口跑得通"是两件事**，所以第一确那五行
 每行都是一次真进程、真握手，没有一格用 `--help` 顶。
 
 #### 一、第一处只有装好才看得见：extras 是幻影，而且它把原创性尺子一起带偏（G31）
 
 `pyproject.toml` 声明了 `config`（`pydantic`）与 `mcp`（`mcp`）两个 extra，README 与 FAQ 各有一份配套
-表格。现扫 `tstdx/` 全树：这两名的读取点 **0 处**——MCP 面只 import 标准库，配置面走 `tomli` 与
-`dataclasses`。于是 `pip install "tstdx[mcp]"` 装了一个没人读的重依赖，而不装任何 extra 的用户其实
+表格。现扫 `atst/` 全树：这两名的读取点 **0 处**——MCP 面只 import 标准库，配置面走 `tomli` 与
+`dataclasses`。于是 `pip install "atst[mcp]"` 装了一个没人读的重依赖，而不装任何 extra 的用户其实
 **本来就跑得动 MCP 面**。处置：删这两个 extra，`all` 收缩成其余 extras 的精确并集并留一行注释记下"被删
 的两项各有 0 个读取点"；README、FAQ、`docs/quickstart.md` 那处列 extra 名的句子随之改。
 
-同一改动的反作用力量了出来：`tstdx/tools/check_originality.py` 的 `KNOWN_EXTERNAL_IMPORTS` 是一份
+同一改动的反作用力量了出来：`atst/tools/check_originality.py` 的 `KNOWN_EXTERNAL_IMPORTS` 是一份
 **手抄**名单，删 extra 之后它两头同时过期——留着 `pydantic`/`mcp` 是登记幻影，漏掉 `zstandard`、`tomli`、
 `typing_extensions` 等真根是漏登记。`gates_round23_run1_red.log` 里 originality 那一道当场报 5 条
 `unknown external import`；收成现扫的 11 个根之后归零（run3/run4 同读数：`Total: 192 / Original: 192 /
 Suspicious: 0 / External imports: 17`）。判据补在 `tests/architecture/test_declared_knobs.py` 判据六：
-AST 普查 `tstdx/` 内所有非相对、非标准库、非自包的 import 根，与那份白名单**集合相等**，另加"普查为空即
+AST 普查 `atst/` 内所有非相对、非标准库、非自包的 import 根，与那份白名单**集合相等**，另加"普查为空即
 判据自盲"的守卫和一条种入 `numpy`/`sqlalchemy` 的正控。变异台账
 `scratch_v18b22/probe23/mutate_external_whitelist23.log`：造 phantom+漏登记 → `1 failed`，复原 →
 `1 passed`，并断言字节级复原（`bytes-restored=True`）。
 
 #### 二、第二处：MCP 面在装出来的包里根本没有一条命令能拉起，而可达性尺子替它撒了谎
 
-`python -m tstdx.integration.mcp` 在装好的包上当场 `No module named tstdx.integration.mcp.__main__`：
+`python -m atst.integration.mcp` 在装好的包上当场 `No module named atst.integration.mcp.__main__`：
 `mcp` 是**包**，包要有 `__main__.py` 才吃 `-m`，而那份实现里的 `if __name__ == "__main__"` 挂在
-`_server.py` 上——`-m tstdx.integration.mcp._server` 跑得通，可那是一条私有模块路径，文档一处都没写。
-处置：新增 `tstdx/integration/mcp/__main__.py`（只做 `create_mcp_server().serve()`，`_server.py` 里那段
+`_server.py` 上——`-m atst.integration.mcp._server` 跑得通，可那是一条私有模块路径，文档一处都没写。
+处置：新增 `atst/integration/mcp/__main__.py`（只做 `create_mcp_server().serve()`，`_server.py` 里那段
 重复的入口块删掉），并把一键命令写进 `docs/api/README.md` 的集成行与 `docs/api/interfaces.md` 的 MCP 段。
 WS 那侧 `-m` 本来就通（它是模块不是包），本轮补的是同一份文档口径与一处 ruff SIM105 红（新写的
 `try/except KeyboardInterrupt: pass` 改成 `contextlib.suppress`）。
@@ -3821,7 +3821,7 @@ ws 映射随之改。改完的可达性读数：`191 模块 / 176 可达 / 15 �
 `Path(None)` 当场 `TypeError` → 对外 `E9000` 且 context 全空。第一版修法是在 CLI 里用 `signature(Prober)`
 反查默认值——离线全量当场把它打回：单元测试把 `Prober` 换成 `**kwargs` 桩类时 `KeyError: 'archive_dir'`。
 默认值的所有者该是 callee，于是 `Prober` 自己导出 `DEFAULT_ARCHIVE_DIR`，CLI 只透传 `None`；顺带把
-`E9000` 那条吞掉的 cause 写进 `context["reason"]`（`tstdx/catalog/capability.py`）。第三处 `blocks 1`：
+`E9000` 那条吞掉的 cause 写进 `context["reason"]`（`atst/catalog/capability.py`）。第三处 `blocks 1`：
 位置参数没写 `type=int`，`"1"` 以 str 落进内核才被判成 `E3040`——补上之后才走到真判据（`E3035`：
 `0x07E5` 多主站实测无响应，**本库不发板块行情**），所以这一格是"半修"：错的不是结论，是它到不了结论。
 
@@ -3840,15 +3840,15 @@ ws 映射随之改。改完的可达性读数：`191 模块 / 176 可达 / 15 �
 exit 2（`probe23/mutate_cli_gate23.log` 量的就是这一格：`error: unrecognized arguments: 5}`）。文档改成
 整体加引号（现在那行照抄可用，本轮真跑给 88 行），同时把"示例可解析"那把尺子的**用法语法豁免**收窄：
 旧口径 `[\[<>|…]|\.\.\.` 会让这一行整行免检，新口径只免真用法语法。分母变化现扫
-（`probe23/cli_gate_denominator23.log`）：全仓活文档 82 条 `tstdx` 命令行，旧口径纳入 78、新口径纳入
+（`probe23/cli_gate_denominator23.log`）：全仓活文档 82 条 `atst` 命令行，旧口径纳入 78、新口径纳入
 **79**，新纳入 1 条（正是 `query` 那一行）、新豁免 **0** 条。变异台账：去掉示例引号 → 门禁 `1 failed` /
 `rc=1`；还原 → `1 passed` / `rc=0`。
 
 第二只难看，因为它就写在本台账自己的读数里。上一版的 36 行 CLI 普查（`scratch_v18b22/cli_face23.log`）
-跳过条件写的是**前缀**匹配 `tstdx serve`，于是 `tstdx server-test` 跟着长驻服务一起被吞：那一行从没跑过，
+跳过条件写的是**前缀**匹配 `atst serve`，于是 `atst server-test` 跟着长驻服务一起被吞：那一行从没跑过，
 而 `docs/api/interfaces.md` 写的是"上面每一行都照着跑过一遍"。本轮复跑（`probe23/census_ship23.py` →
 `census_ship23.log`）做两件事：跳过条件收成"子命令精确等于 `serve`"，清单改成**从围栏现读**（取"命令行数
-最多"那个围栏块，绕开 §3 的 `tstdx --help` 与 §7 的巡检行——旧版按 `startswith` 扫全文，把这两处非示例行
+最多"那个围栏块，绕开 §3 的 `atst --help` 与 §7 的巡检行——旧版按 `startswith` 扫全文，把这两处非示例行
 也算进了分母，所以旧日志的 usable=22 与文档那句"20 条出数据"是同一份读数减掉两条非示例行之后的数）。
 真机口径那一节随之重写：37 行 = 36 支叶子命令（`f10` 有目录与正文两条示例），`serve` 由 HTTP 段单独量
 ⇒ 真跑 36 行 = **21 出数据 / 15 按下表口径失败**。跨两遍普查的读数翻转只有两行，且都在上游：
@@ -3877,14 +3877,14 @@ exit 2（`probe23/mutate_cli_gate23.log` 量的就是这一格：`error: unrecog
 
 另有一格要写在读数旁边，因为它决定"装好的包"和"改完的树"是否同一份东西：wheel 构建于 21:59，之后本轮
 只改过文档与测试（`docs/api/README.md` 22:00、`interfaces.md` 22:26、`test_cli_reference_table.py` 22:28），
-`tstdx/**` 全部源码的 mtime 都早于构建时刻 ⇒ 第〇节那五份线上日志量的就是这枚 wheel，文档与测试的改动
+`atst/**` 全部源码的 mtime 都早于构建时刻 ⇒ 第〇节那五份线上日志量的就是这枚 wheel，文档与测试的改动
 不进产物、无需重建。这条时间戳本身就是 G23（同一个 `1.1.0` 下多份产物）的一部分。
 
 #### 六、发布测量（候选树，17 道离线门禁 + 离线全量 + 构建）
 
-runner `scratch_v18b22/run_gates23d.sh`，跑在 `tstdx_wt_v18b23step @ 07477e8` + **21 个本会话文件**
+runner `scratch_v18b22/run_gates23d.sh`，跑在 `atst_wt_v18b23step @ 07477e8` + **21 个本会话文件**
 （日志第 2 行逐名列出），全程离线、不打外网——第〇节那些线上读数已在装好的包上单独取过。
-**第 25 轮就地补记（G18 口径）**：上面那句里的两个现场都不在本机了——候选树 `tstdx_wt_v18b23step`
+**第 25 轮就地补记（G18 口径）**：上面那句里的两个现场都不在本机了——候选树 `atst_wt_v18b23step`
 已回收（`git worktree list` 现量仍标 prunable，锚 = 提交 `07477e8`），装载 runner 与那 17 格日志的
 `scratch_v18b22/` 整个目录也在第 25 轮中途从盘上消失（本轮未做任何删除动作，成因不明）。下表读数
 **不改写**：它们当时逐字抄自那份日志，只是今天在这台机器上无法再逐行回读，可复核的部分退回到
@@ -3892,7 +3892,7 @@ runner `scratch_v18b22/run_gates23d.sh`，跑在 `tstdx_wt_v18b23step @ 07477e8`
 
 | 门禁 | 读数（逐格抄自 `gates_round23_run4.log`） |
 |---|---|
-| `ruff check tstdx/ tests/ scripts/` | `All checks passed!` ⇒ `rc=0` |
+| `ruff check atst/ tests/ scripts/` | `All checks passed!` ⇒ `rc=0` |
 | `ruff format --check`（同范围） | `464 files already formatted` ⇒ `rc=0` |
 | `ruff check .` | `All checks passed!` ⇒ `rc=0` |
 | `ruff format --check .` | `467 files already formatted` ⇒ `rc=0` |
@@ -3922,11 +3922,11 @@ G18 判据 ②：候选树不持有仓内那 48 棵证据目录，`holds_evidenc
 （旧放宽会把 `query` 那行整行免检、新口径必须解析它且仍放过真用法语法）。`fail_under = 77` 一字未动。
 
 构建：`build_ship23.log`，PEP 517 隔离模式、`--dist-out` 指到 `scratch_v18b22/dist_ship23/`（不覆盖任何
-已记录产物）⇒ `Successfully built tstdx-1.1.0.tar.gz and tstdx-1.1.0-py3-none-any.whl`，两格 `twine check`
-都 `PASSED`，`[校验] canonical typed distribution ✓ (tstdx-1.1.0-py3-none-any.whl, tstdx-1.1.0.tar.gz,
-version=1.1.0, runtime_files=192)`（191 → 192 是本轮新增的 `tstdx/integration/mcp/__main__.py`），产物
-`tstdx-1.1.0-py3-none-any.whl (737.8 KB) sha256: 5cca7d0a40162b886d0891e97171f738a40a0ef9926fa13fc21ff6374e0a8715`
-与 `tstdx-1.1.0.tar.gz (1621.9 KB) sha256: 9e3ad6a83634fab3bddce99a993048fb63942d87d2d9e8db502f92818b50a6f3`。
+已记录产物）⇒ `Successfully built atst-1.1.0.tar.gz and atst-1.1.0-py3-none-any.whl`，两格 `twine check`
+都 `PASSED`，`[校验] canonical typed distribution ✓ (atst-1.1.0-py3-none-any.whl, atst-1.1.0.tar.gz,
+version=1.1.0, runtime_files=192)`（191 → 192 是本轮新增的 `atst/integration/mcp/__main__.py`），产物
+`atst-1.1.0-py3-none-any.whl (737.8 KB) sha256: 5cca7d0a40162b886d0891e97171f738a40a0ef9926fa13fc21ff6374e0a8715`
+与 `atst-1.1.0.tar.gz (1621.9 KB) sha256: 9e3ad6a83634fab3bddce99a993048fb63942d87d2d9e8db502f92818b50a6f3`。
 **这是 `1.1.0` 名下第六次构建**（第 22 轮记到第五次），G23 那一族的账照旧：只有 tag `v1.1.0` 那一份与
 `docs/releases/v1.1.0.md` 对得上。第〇节那五份线上日志装的正是这一枚。
 
@@ -3959,7 +3959,7 @@ version=1.1.0, runtime_files=192)`（191 → 192 是本轮新增的 `tstdx/integ
   `run_ledger23.sh` ⇒ `gates_ledger23.log`：`docs link check OK (93 files)` 与 architecture 两格 `rc=0`
   （`514 passed, 1 skipped in 60.54s`，skip 那格同样是 G18 判据 ②），四本读台账的判据单跑
   `158 passed, 1 skipped` / `rc=0`，两棵树的该文件 `cmp` 相同 / `rc=0`。**判据 ② 的绿灯在主线树上拿**：
-  本轮改完台账后在 `P:/github_public/tstdx`（持有仓内 48 棵证据目录那一支）单跑，`7 passed` **零 skip**，
+  本轮改完台账后在 `P:/github_public/atst`（持有仓内 48 棵证据目录那一支）单跑，`7 passed` **零 skip**，
   也就是"9 处死指针已全部登记为已回收 + 声明==现扫 49 棵 / 229 处 + 新指针合法"三格同时绿——候选树那一份
   量的不是这一格，别把两棵树的读数混着引。
 * **发布条件的一句话结论**：17 道门禁与离线全量在候选树绿了一遍（读数即第六节那两张表）；装出来的那一份
@@ -3976,14 +3976,14 @@ version=1.1.0, runtime_files=192)`（191 → 192 是本轮新增的 `tstdx/integ
 
 #### 〇、本轮与前三轮的一处差别：测量跑在**主线工作树**上，没有另开候选树
 
-第 21~23 轮的重跑与构建都在仓外 `tstdx_wt_*` 候选树里做，为的是不被并行会话中途提交换掉地基。本轮没有另开树：跑动前 `git log -1` 复核 HEAD 仍是 `07477e8`（第 22 轮那次推送后的落点），且整个第 24 轮期间没有并行提交落进来（`git status` 里属于并行会话的 `CHANGELOG.md`／`docs/REFACTOR_PLAN_V17_CLOSURE.md`／`docs/REFACTOR_PLAN_V18_REVIEW.md` 始终是它们自己的改动，本会话一字未动）。因此 §二 证据尺账（49 棵 / 229 处）**本轮不动**——第 24 轮的产物全在 `scratch_v18b22/probe24/`、`dist24_pass3/`、`venv24/` 这些非树名路径下，不引入任何 `wt_*`/`tstdx_wt_*` 树指针，把台账同步进去后单跑 `test_evidence_pointers.py` 仍应与 HEAD 同读数。**这一节写清楚"没开隔离树"而不是含糊带过，是因为台账前几轮把"在候选树上重跑"当作了默认取证姿势；本轮偏离了它，偏离本身要留痕。**
+第 21~23 轮的重跑与构建都在仓外 `atst_wt_*` 候选树里做，为的是不被并行会话中途提交换掉地基。本轮没有另开树：跑动前 `git log -1` 复核 HEAD 仍是 `07477e8`（第 22 轮那次推送后的落点），且整个第 24 轮期间没有并行提交落进来（`git status` 里属于并行会话的 `CHANGELOG.md`／`docs/REFACTOR_PLAN_V17_CLOSURE.md`／`docs/REFACTOR_PLAN_V18_REVIEW.md` 始终是它们自己的改动，本会话一字未动）。因此 §二 证据尺账（49 棵 / 229 处）**本轮不动**——第 24 轮的产物全在 `scratch_v18b22/probe24/`、`dist24_pass3/`、`venv24/` 这些非树名路径下，不引入任何 `wt_*`/`atst_wt_*` 树指针，把台账同步进去后单跑 `test_evidence_pointers.py` 仍应与 HEAD 同读数。**这一节写清楚"没开隔离树"而不是含糊带过，是因为台账前几轮把"在候选树上重跑"当作了默认取证姿势；本轮偏离了它，偏离本身要留痕。**
 
 #### 一、第 1 遍｜CLI 递给内核的那段入参接缝收成表：36 行示例 / 35 次真调用 / 19 项能力，0 拒绝 0 崩溃 0 触网（G30 清偿，顺带把 `capabilities` 的落点记诚实，并修掉 `stream --seconds` 的幻影默认值 G33）
 
 - **G30 的关闭不是再造一个手抄假对象**。手抄假对象的毛病不是"抄错了"，是**它永远不会不同意**——本轮在同一接缝上栽过的正是这个形状（`FakeApi.all_market(source=...)` 跟着文档写、不跟真签名，全量绿线上红）。新判据 `tests/architecture/test_cli_kernel_seam.py`（6 项）反过来做：让文档围栏里每一行内核落点示例穿过被 `KernelExecutor` 接缝包住的 `Client`，抵达**真调和器** `QueryPlanner.compile → _validate_migrated_call → capability.validate_call`，量记录到的 `runtime.execute`、被拒清单、traceback、是否碰 socket。读数 `census24b_seam_measure.json`：`documented_kernel_lines=36`、`total_kernel_calls=35`（多的那一行是元信息示例，反向判据要求它**零**内核调用）、`capability_count=19`、`rejections=[]`、`tracebacks=[]`、socket 触达 0。三形种入正控（`all_market(source="sina")` 把 Provider 选择器当入参、`adjusted_bars()` 缺位置参、`hot_rank(pge=1)` 拼错键）全被真 binder 挡下；变异台账 `mutate24_seam.json` 四处变异逐一转红、`bytes-restored=True`。mypy 边界写死：`Client.__getattr__` 返回 `Any`，静态看不见 per-capability 键名，所以这条接缝**只能动态量**，这一点连同"旁路由姊妹门 `test_cli_reference_table` 的落点翻转兜住"一起写进判据② 的 docstring。
 - **落点诚实化**：`test_cli_reference_table.py` 的 `_landing` 旧版把 `capabilities` 记成 `内核·typed`，只因为它提到 `Client.capabilities()` 这个类级方法——但"提到 `Client`"不等于"构造 `Client`"，没有构造点就没有 `runtime.execute`。改为 `内核·typed` 要求确有构造、否则落 `元信息`，并加正控 `test_the_landing_ruler_sees_a_handler_that_only_borrows_the_name`（借名→元信息、构造→内核·typed）。这不只修一格：它让 §3 表头那句"15 支碰不到内核 / 2 支元信息"第一次名副其实。
-- **本台账自己是一处 census 源，写反例要按形状量**：G33 那格第一次草拟时把失败示例写成行内码 `` `tstdx stream sh600519 --seconds 0` ``，`test_doc_code_consistency._cli_examples()`（第 23 轮起把本台账也扫进去）就把它读成一条可执行示例喂给 G30 接缝——而 `--seconds 0` 经本轮修复后**在 CLI 门口 fail-fast、走不到内核**，判据② "每行内核示例至少 carry 一次调用" 当场红。这不是判据过敏：它正确地指出"一条能照抄进 shell 的命令行不该静默空跑"。修法是把**反例**写成旗标口径（`--seconds 0`）或带尖括号占位的用法语法（`<symbol>` 被 `_USAGE_SYNTAX` 跳过），而不是写成可粘贴的 `tstdx …` 正例形状——**在这本台账里，一条行内 `tstdx` 命令就是一个被执行、被量的承诺**。
-- **G33（登记并当场清偿）**：`tstdx stream <symbol>` 这条文档里最自然的裸形状，因 `--seconds` 旧 `default=0.0` 而起即停、一帧行情拿不到且不报错——G10/G11 那一族长在 CLI 默认值上的一格。修：`default=10.0` + help「默认 10」，`cmd_stream` 对 `<=0` 抛 `ValidationError`（经 `main()` 落 `E1010`/退出码 2，由构造失败改 fail-fast），`quickstart.md`/`interfaces.md` §5 随之写清。`test_cli_connection_contract.py` 三条判据把住（转发用 0.01、`--seconds 0` 必须 rc=2 且 stderr 命中「必须为正数」）。
+- **本台账自己是一处 census 源，写反例要按形状量**：G33 那格第一次草拟时把失败示例写成行内码 `` `atst stream sh600519 --seconds 0` ``，`test_doc_code_consistency._cli_examples()`（第 23 轮起把本台账也扫进去）就把它读成一条可执行示例喂给 G30 接缝——而 `--seconds 0` 经本轮修复后**在 CLI 门口 fail-fast、走不到内核**，判据② "每行内核示例至少 carry 一次调用" 当场红。这不是判据过敏：它正确地指出"一条能照抄进 shell 的命令行不该静默空跑"。修法是把**反例**写成旗标口径（`--seconds 0`）或带尖括号占位的用法语法（`<symbol>` 被 `_USAGE_SYNTAX` 跳过），而不是写成可粘贴的 `atst …` 正例形状——**在这本台账里，一条行内 `atst` 命令就是一个被执行、被量的承诺**。
+- **G33（登记并当场清偿）**：`atst stream <symbol>` 这条文档里最自然的裸形状，因 `--seconds` 旧 `default=0.0` 而起即停、一帧行情拿不到且不报错——G10/G11 那一族长在 CLI 默认值上的一格。修：`default=10.0` + help「默认 10」，`cmd_stream` 对 `<=0` 抛 `ValidationError`（经 `main()` 落 `E1010`/退出码 2，由构造失败改 fail-fast），`quickstart.md`/`interfaces.md` §5 随之写清。`test_cli_connection_contract.py` 三条判据把住（转发用 0.01、`--seconds 0` 必须 rc=2 且 stderr 命中「必须为正数」）。
 - 第 1 遍修复复跑：`gate24_pass1_after_fixes.log` = **616 passed**（architecture + CLI 接缝 + 落点 + 连接契约），`full24_pass1_fixes.log` = **3895 passed, 9 skipped**。
 
 #### 二、第 2 遍｜两把令牌桶的并发公平性：一次真实测量决定 G29 走「写契约」而非「重排队列」
@@ -4003,9 +4003,9 @@ version=1.1.0, runtime_files=192)`（191 → 192 是本轮新增的 `tstdx/integ
 | 离线全量（三遍修复后） | `3896 passed, 9 skipped, 25 warnings` | `full24_pass3_final.log` |
 | ruff check（全仓） | `All checks passed!` | 本轮同跑 |
 | ruff format --check（全仓） | `468 files already formatted` | 本轮同跑 |
-| mypy（`tstdx` 包） | `Success: no issues found in 191 source files` | 本轮同跑 |
+| mypy（`atst` 包） | `Success: no issues found in 191 source files` | 本轮同跑 |
 | 重新构建（`--dist-out` 指到 scratch，不覆盖已记录产物，G23） | wheel 756 705 B / sdist 1 672 599 B；wheel `sha256:05f740b1…` | `scratch_v18b22/dist24_pass3/` |
-| 干净 venv 装好那份 + 冒烟 | 导入解析到 `venv24\Lib\site-packages\tstdx`；`version=1.1.0`；`stream --seconds 0` 回 `E1010`+rc=2；`--help` 显示"默认 10"；`capabilities` rc=0 全清单 | venv24 冒烟（本轮） |
+| 干净 venv 装好那份 + 冒烟 | 导入解析到 `venv24\Lib\site-packages\atst`；`version=1.1.0`；`stream --seconds 0` 回 `E1010`+rc=2；`--help` 显示"默认 10"；`capabilities` rc=0 全清单 | venv24 冒烟（本轮） |
 
 #### 五、本轮收口状态与待办
 
@@ -4021,12 +4021,12 @@ version=1.1.0, runtime_files=192)`（191 → 192 是本轮新增的 `tstdx/integ
 
 #### 〇、取证姿势：改前读数跑在仓外候选树，改动落在主线工作树
 
-本轮另开了一棵候选树 `tstdx_wt_v18b25step`（HEAD `07477e8` 检出，第 22 轮那次推送的落点），只用于跑"改前"那一格——G34 的四张面读数必须在**没有被本会话碰过的字节**上取，否则"改前"就是假的。两跑的现场身份各自记在两份日志的第 2 行：`pre_fix_g34_head.log` 那行解析到 `tstdx_wt_v18b25step\tstdx\__init__.py`（候选树），`g34_crossface_at_worktree.log` 那行解析到主线工作树的 `tstdx\tstdx\__init__.py`——**同一支脚本、两个现场，各打印自己那份包的落点**，这就是"改前/改后"两栏能并排读的依据。（这两行在本台账里都不写成以那两个字母开头的可粘贴形状：§33 已定下口径——**在这本台账里，一条行内 `tstdx` 命令就是一个被执行、被量的承诺**，而现场身份行不是命令。）三遍之后的 17 道门禁与离线全量重跑都在这棵候选树里做（benchmark 那格写出的结果路径 `tstdx_wt_v18b25step\benches\results\…` 就是现场证明），构建的仓库根同样是它。§2 末的证据尺账因此从第 24 轮的 49 棵 / 229 处走到本轮的 50 棵 / 235 处（本轮自己写的 G38/G39 两行与这一节都算进那 235），其中一条旧指针（`tstdx_wt_v18b23step`）在本轮中途变成 prunable，按 G18 口径在 §33 补「已回收 + 锚」而**不改那张 17 格读数表**。
+本轮另开了一棵候选树 `atst_wt_v18b25step`（HEAD `07477e8` 检出，第 22 轮那次推送的落点），只用于跑"改前"那一格——G34 的四张面读数必须在**没有被本会话碰过的字节**上取，否则"改前"就是假的。两跑的现场身份各自记在两份日志的第 2 行：`pre_fix_g34_head.log` 那行解析到 `atst_wt_v18b25step\atst\__init__.py`（候选树），`g34_crossface_at_worktree.log` 那行解析到主线工作树的 `atst\atst\__init__.py`——**同一支脚本、两个现场，各打印自己那份包的落点**，这就是"改前/改后"两栏能并排读的依据。（这两行在本台账里都不写成以那两个字母开头的可粘贴形状：§33 已定下口径——**在这本台账里，一条行内 `atst` 命令就是一个被执行、被量的承诺**，而现场身份行不是命令。）三遍之后的 17 道门禁与离线全量重跑都在这棵候选树里做（benchmark 那格写出的结果路径 `atst_wt_v18b25step\benches\results\…` 就是现场证明），构建的仓库根同样是它。§2 末的证据尺账因此从第 24 轮的 49 棵 / 229 处走到本轮的 50 棵 / 235 处（本轮自己写的 G38/G39 两行与这一节都算进那 235），其中一条旧指针（`atst_wt_v18b23step`）在本轮中途变成 prunable，按 G18 口径在 §33 补「已回收 + 锚」而**不改那张 17 格读数表**。
 
 #### 一、第 1 遍｜三面入参与内核整数闸对账：同一个坏整数在四张面上有四种下场（G34 登记并清偿）
 
 - **量出来的形状**（`pre_fix_g34_head.log`，逐字）：绑定处 `count='5'` 抛**裸** `TypeError` → 对外 `E9000 / http=500`；库面 `count=70000` 抛 `ParseError` → `E3040 / 502 / retryable=True`（调用方写错参数被回答成"上游故障、可以重试"）；WS `count='abc'` 落进兜底 `except Exception` → `-32603 / E9000`；WS `count=1.5` **静默截断成 1 并真的发出了请求**，日志第 7 行带着取回来的真机 K 线；MCP 的 `clamp_int` 干脆换值（`'abc'`→320、`1.5`→1、`0`→1、`99999999`→2000），工具自己 `inputSchema` 声明的 `minimum: 1 / maximum: 2000` 成了一张没人按它行事的假告示；只有 HTTP 那一面靠 FastAPI 的 `Query(ge/le)` 全对。
-- **修法收成一处**：整数格唯一的拒绝口 `as_request_int` / `_bad_int`（`tstdx/integration/wire_fields.py`），WS `_int_param` 与 MCP `_int_arg` 只留一层薄封装，`clamp_int` 物理删除（D3：兼容层删掉而不是改名）。分类线一次定死并写进 `tstdx/client/core.py` 的 docstring——**调用方入参闸 → `ValidationError`（E1010/422/不可重试），协议事实 → 保留 E2xxx/E3xxx**；`core.py` 19 处与 `_mixin.py` 随之归位。绑定处的整数名单 `SPEC_INT_FIELDS` 从 `dataclass_fields(QuerySpec)` 的 `int` 注解**现扫**，不另抄第 10 份名单。
+- **修法收成一处**：整数格唯一的拒绝口 `as_request_int` / `_bad_int`（`atst/integration/wire_fields.py`），WS `_int_param` 与 MCP `_int_arg` 只留一层薄封装，`clamp_int` 物理删除（D3：兼容层删掉而不是改名）。分类线一次定死并写进 `atst/client/core.py` 的 docstring——**调用方入参闸 → `ValidationError`（E1010/422/不可重试），协议事实 → 保留 E2xxx/E3xxx**；`core.py` 19 处与 `_mixin.py` 随之归位。绑定处的整数名单 `SPEC_INT_FIELDS` 从 `dataclass_fields(QuerySpec)` 的 `int` 注解**现扫**，不另抄第 10 份名单。
 - **改后同形对照**（`g34_crossface_at_worktree.log`）：binder 与库面两格 `ValidationError code=E1010 http=422 retryable=False`；WS 三格 `-32602 / E1010 / result=None`；MCP 四种坏形各 `E1010`，`320`→320、`None`→320（"缺席即用缺省"仍是 WS 与 MCP 的语义）；HTTP 三格 `422 / E1010`——这一面改前改后同值。
 - **各面边界仍然不同，但从这一轮起是真的按各自声明执行**：`int_bounds_declared.log` 现量 HTTP 的 `count` 是 `ge=1 le=10000`、MCP 的是 `minimum=1 maximum=2000`，两种数都来自各面自己的声明而不是硬编码，且判据用"把 schema 的 `maximum` 改成 7 与 9000、断言跟着翻"的正控钉住这一点。差别连同理由写进 `docs/api/interfaces.md` 的整数入参小节。
 - **判据**：`tests/architecture/test_wire_numeric_domain.py`（8 项，分母全部现取）——AST 扫两张机器面的源码，`params.get(...)` / `args[...]` 取出来的字段不许再有人自己 `int()`/`float()`（两种形状的正控各种进去必须被抓，`int(exc.status_code)` 这种非请求字段不许误报）；HTTP 三条越界查询串必须在 handler 之前 422；内核 `SPEC_INT_FIELDS` 全表逐格；分页上限四面同口径。
@@ -4046,7 +4046,7 @@ version=1.1.0, runtime_files=192)`（191 → 192 是本轮新增的 `tstdx/integ
 7. **裸名只记 `ast.Load`**——`X = 1` 的目标也是 `ast.Name`，把它算成"有人用了这个名字"等于让定义点给自己的成员投票，第 2 支会永远量出"死成员 0"（假绿）。
 8. **出口引用的四种代码形状都要算**——裸名读取、`from x import NAME`、`mod.NAME`、容器字面量里的重导出名单（`_LAZY` / 上层 `__all__`）。第一版只认裸名，`[4]` 因此虚报 60 行"零引用出口"；同时口径要分清"出口被上一层重新导出"**算**引用、"某个 docstring 提了一下这个名字"不算。
 
-补完之后的读数（`census25c_orphans_postfix.log`，五支）：错误树 45 个成员，整棵子树零站点 **0**、对外文档点名却零站点的幻影异常 **0**（抽象基类 3 个按子树计数）；4 个枚举类真死成员 **0**；`tstdx/__init__.py` 的 45 个出口与 24 份子包 `__all__` 的名**零缺口**（`configure`/`streaming`/`get_kline` 三个在代码侧零引用，但文档都点名，属"公开面未被内部消费"而不是幻影）；公开方法名分母 572 个，其中"活着但不被外部按名调用"三类=类内模板 15 / 按名分派 4 / 框架钩子 3（本轮不记孤儿，它们的调用点在这把尺子的射程之外），真候选 **14 条**——那 14 条就是 §2 的 G37，登记为**开放**，本会话不替所有者裁决接线/删除/升格。改前一份 `census25b_orphans.log` 是 15 条，差的那一条正是本轮删掉的 `QueryFingerprint.from_spec`（D3：不留兼容垫）。
+补完之后的读数（`census25c_orphans_postfix.log`，五支）：错误树 45 个成员，整棵子树零站点 **0**、对外文档点名却零站点的幻影异常 **0**（抽象基类 3 个按子树计数）；4 个枚举类真死成员 **0**；`atst/__init__.py` 的 45 个出口与 24 份子包 `__all__` 的名**零缺口**（`configure`/`streaming`/`get_kline` 三个在代码侧零引用，但文档都点名，属"公开面未被内部消费"而不是幻影）；公开方法名分母 572 个，其中"活着但不被外部按名调用"三类=类内模板 15 / 按名分派 4 / 框架钩子 3（本轮不记孤儿，它们的调用点在这把尺子的射程之外），真候选 **14 条**——那 14 条就是 §2 的 G37，登记为**开放**，本会话不替所有者裁决接线/删除/升格。改前一份 `census25b_orphans.log` 是 15 条，差的那一条正是本轮删掉的 `QueryFingerprint.from_spec`（D3：不留兼容垫）。
 
 同一遍还抓到两处"声明了没人兑现"，都当场清偿：
 
@@ -4059,7 +4059,7 @@ version=1.1.0, runtime_files=192)`（191 → 192 是本轮新增的 `tstdx/integ
 
 改前那遍的时间花名册里，两行的秒数大得离谱——`f10`（目录）159.0s 与 `quotes-snapshot` 158.0s。第 21 轮把循环终止条件逐处量过、第 23 轮据此写下"三条慢的是主站而不是循环"，本轮按毫秒时间戳复查发现那一句对 `quotes-snapshot` 是错的（`timing25_snapshot.log`）：七条 `退避 …s` 相加 = **121.143 秒**，整次 159.4 秒，而批量帧 `0x054C` 放弃之后回退路径首台 **131 毫秒**就取回了数据。这就是 G38——口令「不存在死循环」在这一层不是"有没有 `while True`"，而是"**一次调用方声明 5 秒的请求，墙钟上有没有人给过它上界**"：
 
-- 修一处、两处共用：`MAX_RETRY_BACKOFF_SECONDS = 8.0` 与 `retry_backoff_delay(base, attempt)` 落在 `tstdx/transport/pool.py`，异步池删掉自己那份 `random` 与指数形状、改为引用 helper（判据里有一条 AST 格专门钉这件事：`2**attempt` 只许出现在那个函数体内）。
+- 修一处、两处共用：`MAX_RETRY_BACKOFF_SECONDS = 8.0` 与 `retry_backoff_delay(base, attempt)` 落在 `atst/transport/pool.py`，异步池删掉自己那份 `random` 与指数形状、改为引用 helper（判据里有一条 AST 格专门钉这件事：`2**attempt` 只许出现在那个函数体内）。
 - 退避只兑现给"回到刚失败过的那台"：`pending_backoff` 在选序之后按 `slot.host.key in tried_hosts` 决定睡不睡，换到新机器即清零。同一台机器同一份围栏的复测（`timing25_snapshot_postfix.log`）：**38.1 秒，日志里零条退避行**——38.1 秒正是 8 台主站各拨一次的纯 I/O 时间。
 - 判据 `tests/transport/test_retry_backoff_cap.py` 30 项 + 变异台账 `prefix25_g38b.log`（M1 去封顶 `16 failed, 14 passed`；M2 把 sleep 装回每次换主站 `1 failed, 29 passed`；复原后 `30 passed`，两格各带 `字节级复原 = True`）。
 - 用户读到的那一页随之改：`docs/api/interfaces.md` §3 现在写「`--timeout` 约束单次尝试，墙钟上界 = 主站数 × timeout」，并把第 23 轮那句"慢的是主站而不是循环"标注为**在本轮被自己的时间戳推翻**（`stream` 与 `hosts audit` 两行的归因不受影响）。
@@ -4068,9 +4068,9 @@ version=1.1.0, runtime_files=192)`（191 → 192 是本轮新增的 `tstdx/integ
 
 #### 四、WS 那一格本轮重测过一次：端口被上一遍遗留的服务占着，那份读数不配写进"装好的包"
 
-`face25_ship25d.log` 第 [4] 格看起来是干净的（`GOOD id=1 result_keys=['data','meta']` / `BAD … -32602 E1010 422 retryable=False phase=wire_validation`），但同一时刻的服务端 stderr（`ws25_face.log`）逐字是 `OSError: [Errno 10048] … ('127.0.0.1', 8765)`——**探针自己起的那个服务根本没起来**，客户端连上的是别人在 8765 上早就起着的进程（`netstat` 现量：8765 由 PID 20372 持有，进程创建时间 11:00:38，早于本轮那两遍装包冒烟）。处置不是回头改那份日志，而是换端口重跑并**把现场身份钉进同一份输出**：`ws25_port.py` 在 18826 上起服务，服务端第一行自己打印 `SERVER tstdx.__file__ = P:\github_public\scratch_v18b25\venv25c\Lib\site-packages\tstdx\__init__.py`，客户端两格读数为 `GOOD rows= 1 price= 1237.0` / `BAD rpc= -32602 envelope= E1010 http= 422 retryable= False phase= wire_validation`，末行 `WS PORT PROBE DONE rc=0`。
+`face25_ship25d.log` 第 [4] 格看起来是干净的（`GOOD id=1 result_keys=['data','meta']` / `BAD … -32602 E1010 422 retryable=False phase=wire_validation`），但同一时刻的服务端 stderr（`ws25_face.log`）逐字是 `OSError: [Errno 10048] … ('127.0.0.1', 8765)`——**探针自己起的那个服务根本没起来**，客户端连上的是别人在 8765 上早就起着的进程（`netstat` 现量：8765 由 PID 20372 持有，进程创建时间 11:00:38，早于本轮那两遍装包冒烟）。处置不是回头改那份日志，而是换端口重跑并**把现场身份钉进同一份输出**：`ws25_port.py` 在 18826 上起服务，服务端第一行自己打印 `SERVER atst.__file__ = P:\github_public\scratch_v18b25\venv25c\Lib\site-packages\atst\__init__.py`，客户端两格读数为 `GOOD rows= 1 price= 1237.0` / `BAD rpc= -32602 envelope= E1010 http= 422 retryable= False phase= wire_validation`，末行 `WS PORT PROBE DONE rc=0`。
 
-这一格同时是判据缺口而不是环境噪声，登记在这里：**探针用固定端口起服务、再用同一个端口判"起没起"，端口被别人占着时它会连到别人起的服务而仍然读到答案**——读数是另一个现场的。它与 G32 后半（CLI 全行线上探针）同族，关闭条件是"探针必须钉住应答来自自己拉起的那个进程"。本轮收尾时这条钉法已经装进探针本身：`face25_shipb.py` 的 WS 段改为向 OS 要一个空闲端口、服务端在启动行打印自己加载的 `tstdx.__file__`，所以最终那遍装包读数（`face25_ship25e.log` 第 [4] 格 + 同一批的 `ws25_face.log`）不需要再借一支单独脚本自证身份；`ws25_port.py` 与它的日志留在原处，是这条缺口被量出来的现场。至于那个还占着 8765 的遗留进程，本轮**仍然没有回收**：不在未询问的情况下杀进程是既有纪律，下一轮若要复用固定端口仍需换端口或由所有者处置。
+这一格同时是判据缺口而不是环境噪声，登记在这里：**探针用固定端口起服务、再用同一个端口判"起没起"，端口被别人占着时它会连到别人起的服务而仍然读到答案**——读数是另一个现场的。它与 G32 后半（CLI 全行线上探针）同族，关闭条件是"探针必须钉住应答来自自己拉起的那个进程"。本轮收尾时这条钉法已经装进探针本身：`face25_shipb.py` 的 WS 段改为向 OS 要一个空闲端口、服务端在启动行打印自己加载的 `atst.__file__`，所以最终那遍装包读数（`face25_ship25e.log` 第 [4] 格 + 同一批的 `ws25_face.log`）不需要再借一支单独脚本自证身份；`ws25_port.py` 与它的日志留在原处，是这条缺口被量出来的现场。至于那个还占着 8765 的遗留进程，本轮**仍然没有回收**：不在未询问的情况下杀进程是既有纪律，下一轮若要复用固定端口仍需换端口或由所有者处置。
 
 #### 五、三遍之后的候选树复测与安装包（口令末段：更新文档、重构建安装包）
 
@@ -4089,13 +4089,13 @@ version=1.1.0, runtime_files=192)`（191 → 192 是本轮新增的 `tstdx/integ
 | 分域测试 | adversarial 4 / architecture `531 passed, 1 skipped` / streaming 41 / runtime 254 / transport `406 passed` / bridges 24 | 同上第 328~371 行 |
 | 离线全量（候选树，最终字节，带覆盖） | `3933 passed, 8 skipped, 15 deselected, 23 warnings in 252.78s (0:04:12)`，`Required test coverage of 77.0% reached. Total coverage: 82.63%`（`fail_under = 77` 一字未动）；与三遍修复后第一跑 `fulltest_round25d.log`（主线工作树，`in 279.89s`）通过/跳过格数相同 | `fulltest_round25f.log` |
 | 重新构建（候选树为仓库根，`--dist-out` 指到 scratch，G23） | 最终那份：`runtime_files=192`；wheel 744.6 KB `sha256: ff095b4fde1255f46ed8b2312de3b44c14896c40b0abd25788d9abfbb5330508`；sdist 1646.4 KB `sha256: 5e70fd2b4151a06c146c98a0d3f08e4ddae9b553b4c3a337e0c5afaa0759dba0`；`twine check` 两份均 `PASSED`。写完本节之后再构建一次（`build25_pass3d.log`）**两份指纹逐字符不变**——原因不是本轮新量出来的，第 22 轮 §30 第四节已经把它写死过：**文档不进发行物**（`pyproject.toml` 的 sdist `include` 里那支不带斜杠的 `"README.md"` 按文件名匹配，收进来的只有 7 份 README 加 `docs/releases/v1.0.0.md`；`docs/api/interfaces.md` 与本台账都不在产物里）。本轮在同一批条目上复现了一次：wheel 197 个条目 `docs/` 零个，sdist 2195 个条目里 `REFACTOR` 零个 | `build25_pass3c.log`、`build25_pass3d.log`。同一轮更早两份没被覆盖，也没被这份顶替记账：`dist25_pass3/`、`dist25_pass3b/`（wheel `d9d7b97c…`、sdist `48e142ea…`）——为什么必须再构建一次见下面那段 |
-| 装好包的六面（`venv25d`，装 `tstdx[server,web,metrics]`，装的就是上一行那份 wheel） | 库面 `MODULE …venv25d\Lib\site-packages\tstdx\__init__.py` / `ROWS 3 / KIND DIRECT / FALLBACK False`；HTTP 4×200 + 越界 422 `E1010` + `/health` 404（服务面按声明只有 `/v13/*`）；WS `GOOD id=1 rows= 1 price= 1237.0` / `BAD … -32602 E1010 422 retryable=False phase=wire_validation`，且服务端在同一份日志里自印 `SERVER tstdx.__file__ = …venv25d…`（第四节的钉法已装进探针）；MCP `tools/list = 9` 且坏入参 `-32602`；CLI **22 出数据 / 14 可读错误 / 0 traceback**，37 行逐行判类与 `venv25c` 那遍**一行不差** | `face25_ship25e.log`、`ws25_face.log`、`serve25_face.log`；对照的前一遍是 `face25_ship25d.log`（装 `dist25_pass3b`） |
+| 装好包的六面（`venv25d`，装 `atst[server,web,metrics]`，装的就是上一行那份 wheel） | 库面 `MODULE …venv25d\Lib\site-packages\atst\__init__.py` / `ROWS 3 / KIND DIRECT / FALLBACK False`；HTTP 4×200 + 越界 422 `E1010` + `/health` 404（服务面按声明只有 `/v13/*`）；WS `GOOD id=1 rows= 1 price= 1237.0` / `BAD … -32602 E1010 422 retryable=False phase=wire_validation`，且服务端在同一份日志里自印 `SERVER atst.__file__ = …venv25d…`（第四节的钉法已装进探针）；MCP `tools/list = 9` 且坏入参 `-32602`；CLI **22 出数据 / 14 可读错误 / 0 traceback**，37 行逐行判类与 `venv25c` 那遍**一行不差** | `face25_ship25e.log`、`ws25_face.log`、`serve25_face.log`；对照的前一遍是 `face25_ship25d.log`（装 `dist25_pass3b`） |
 
-表里"重新构建"与"装好包的六面"那两格是**本轮第二次**取的，理由完全在第五节之外的那两小段改动上：改正"119 秒 → 121.143 秒"时动的是 `tstdx/transport/pool.py` 的一条注释与 `tests/transport/test_retry_backoff_cap.py` 的 docstring。两处都会换指纹，但换的不是同一格——注释所在的那支源文件在 wheel 的 192 个运行文件里，所以 wheel 的 sha256 跟着变；docstring 只在 `tests/` 里，只动 sdist。于是 `dist25_pass3b` 记下的两个 sha256 已经不是最终字节的指纹。按 G20 的口径，"用户读到的秒数"与"发行物里写的秒数"必须出自同一份字节，于是重新构建到 `dist25_pass3c/`（旧那两份一字未动、不覆盖），新建 `venv25d` 只装这一份，再把六面冒烟整批重跑。重跑不是走过场：它同时把第四节那条钉法落了地——`face25_shipb.py` 的 WS 段现在自己向 OS 要空闲端口、服务端把加载的包落点打进同一份日志，所以最终那遍的 WS 格不再需要单独一支脚本自证身份。CLI 那 37 行的逐行判类在新旧两遍之间一行不差（22/14/0 也一样），说明那两行注释确实没带动任何行为。
+表里"重新构建"与"装好包的六面"那两格是**本轮第二次**取的，理由完全在第五节之外的那两小段改动上：改正"119 秒 → 121.143 秒"时动的是 `atst/transport/pool.py` 的一条注释与 `tests/transport/test_retry_backoff_cap.py` 的 docstring。两处都会换指纹，但换的不是同一格——注释所在的那支源文件在 wheel 的 192 个运行文件里，所以 wheel 的 sha256 跟着变；docstring 只在 `tests/` 里，只动 sdist。于是 `dist25_pass3b` 记下的两个 sha256 已经不是最终字节的指纹。按 G20 的口径，"用户读到的秒数"与"发行物里写的秒数"必须出自同一份字节，于是重新构建到 `dist25_pass3c/`（旧那两份一字未动、不覆盖），新建 `venv25d` 只装这一份，再把六面冒烟整批重跑。重跑不是走过场：它同时把第四节那条钉法落了地——`face25_shipb.py` 的 WS 段现在自己向 OS 要空闲端口、服务端把加载的包落点打进同一份日志，所以最终那遍的 WS 格不再需要单独一支脚本自证身份。CLI 那 37 行的逐行判类在新旧两遍之间一行不差（22/14/0 也一样），说明那两行注释确实没带动任何行为。
 
 写完这一节之后台账文字本身又变了，而门禁里恰好有三支专门读它（文档一致性、CLI 参考表、证据指针），所以按最终那份文字再跑一遍对账：那三支单跑的格数恒为 **`156 passed, 1 skipped`**（末跑整份输出留在 `docgates_round25final.log`，秒数记在文件里，不在这里抄——抄进台账的那一行本身又会让下一次跑动它）。更早一次两个分域的完整版（`tests/architecture` + `tests/transport`，**`937 passed, 1 skipped`** = 17 格里那两行的 531 + 406）。证据尺现扫仍是 50 棵 / 235 处、`声明对账 findings = []`、`判据 ② 死指针 findings = []`（`ruler25.py` 的同轮输出）。
 
-候选树第一次跑门禁时红过一道，而且红在**文档一致性**上：`gates_round25b.log` 第 361~363 行 `FAILED …/test_doc_code_consistency.py::test_sphinx_roles_in_package_docstrings_resolve` → `1 failed, 530 passed, 1 skipped` → `rc=1`。被抓的是本会话刚写进 `pool.py` 那条注释里的 `:data:`tstdx.web.MAX_BACKOFF_SECONDS``——路径少写了一层模块，Sphinx 角色解不开，正是历史台账里那一族"幻影引用"在新写代码上的再现。补成 `tstdx.web._base_retry.MAX_BACKOFF_SECONDS` 之后同一格 `531 passed`（+1 是本轮新增的 transport 判据在 architecture 分域里的邻居，不是这条）。**这道红的价值在于它不区分新旧**：注释里一个解不开的名字照样让门禁当场失败。
+候选树第一次跑门禁时红过一道，而且红在**文档一致性**上：`gates_round25b.log` 第 361~363 行 `FAILED …/test_doc_code_consistency.py::test_sphinx_roles_in_package_docstrings_resolve` → `1 failed, 530 passed, 1 skipped` → `rc=1`。被抓的是本会话刚写进 `pool.py` 那条注释里的 `:data:`atst.web.MAX_BACKOFF_SECONDS``——路径少写了一层模块，Sphinx 角色解不开，正是历史台账里那一族"幻影引用"在新写代码上的再现。补成 `atst.web._base_retry.MAX_BACKOFF_SECONDS` 之后同一格 `531 passed`（+1 是本轮新增的 transport 判据在 architecture 分域里的邻居，不是这条）。**这道红的价值在于它不区分新旧**：注释里一个解不开的名字照样让门禁当场失败。
 
 #### 六、本轮收口状态与待办
 
@@ -4103,7 +4103,7 @@ version=1.1.0, runtime_files=192)`（191 → 192 是本轮新增的 `tstdx/integ
 - **本轮登记、开放待裁决**：**G37**（14 条公开面：接线/删除/升格三种出路代价不对等）、**G39**（`RetryAdvice.max_retries` 无执行方：执行/删除/明确为纯序列化）。两格都是"清单是真的，处置归所有者"。
 - **本轮两处台账先于日志，已就地改正并留痕**：G34 的"全程不打外网"（那一格确实打过）、G38 的"119 秒纯 sleep"（逐条相加是 121.143 秒，源码注释、判据 docstring、`interfaces.md` 两处一并改）。另有一处**上一轮**的归因被本轮推翻：第 23 轮那句"三条慢的是主站而不是循环"对 `quotes-snapshot` 不成立——`interfaces.md` 里没有抹掉那句原文，而是在其后加了改判段，读者能看到两版口径的先后。
 - **老账不变**（时态仍成立）：**G1**/**G5**/**G3**（不猜协议字节、等真机 golden）/**G9**（发布只能人点）/**G18** 剩余 + **G19**（他人台账指针）/**G22** 判据已建/**G23**（同一 `1.1.0` 下产物继续累积，本轮又添 `dist25_pass3`、`dist25_pass3b`、`dist25_pass3c`、`dist25_pass3d` 四份，关闭它是发布决定）/**G32** 后半（CLI 全行线上探针）——第四节给这一格添了同族的新缺口：**线上探针必须钉住"应答来自我起的那个进程"**。
-- **本地环境现状（谁的读数属于哪个环境，这是 G20 的账）**：`venv25` 在本轮一次 `--force-reinstall` 里撞上 `WinError 32`（控制台脚本被上一遍仍在运行的进程锁住），处于半装状态、`import tstdx` 不可用；本轮**没有**为它杀掉任何进程，改为新建 `venv25c` 装 `dist25_pass3b` 的那份 wheel 完成装包复测，`venv25b` 是同一次尝试的中间物。改正秒数之后字节变了，于是又新建 `venv25d` 只装 `dist25_pass3c` 那份 wheel，表里"装好包的六面"那格属于它——`venv25c` 那遍（`face25_ship25d.log`）留在原地作为对照，两遍的 37 行判类逐行相同。8765 端口仍被遗留服务占用（第四节）。这些环境都留在磁盘上，不做静音清理。
+- **本地环境现状（谁的读数属于哪个环境，这是 G20 的账）**：`venv25` 在本轮一次 `--force-reinstall` 里撞上 `WinError 32`（控制台脚本被上一遍仍在运行的进程锁住），处于半装状态、`import atst` 不可用；本轮**没有**为它杀掉任何进程，改为新建 `venv25c` 装 `dist25_pass3b` 的那份 wheel 完成装包复测，`venv25b` 是同一次尝试的中间物。改正秒数之后字节变了，于是又新建 `venv25d` 只装 `dist25_pass3c` 那份 wheel，表里"装好包的六面"那格属于它——`venv25c` 那遍（`face25_ship25d.log`）留在原地作为对照，两遍的 37 行判类逐行相同。8765 端口仍被遗留服务占用（第四节）。这些环境都留在磁盘上，不做静音清理。
 - **落地边界**：三遍代码 + 候选树 17 道门禁 + 离线全量 + 重新构建 + 装好包的六面复测全部收口，发布用的安装包在 `scratch_v18b25/dist25_pass3c/`（`venv25d` 装的就是它，六面读数属于这份字节）；`dist25_pass3d/` 是写完本节之后的再构建，两份指纹逐字符相同，`dist25_pass3b/` 与 `dist25_pass3/` 是同一轮改注释之前的旧指纹，都没被覆盖。用户文档这一轮动了 `docs/api/interfaces.md`（整数入参小节、`--timeout` 墙钟口径、第 23 轮归因的改判）与 `docs/errors.md`（`RetryAdvice` 字段表的 `backoff`/`max_retries` 两行、实现指针按符号引用）。**提交仍卡在用户暂存**——本会话按纪律不执行 `git add`；第 23、24、25 轮累计的改动与新增测试（含 `tests/architecture/test_wire_numeric_domain.py`、`tests/transport/test_retry_backoff_cap.py`）一并列在下面供分拣，推送需要额外明确授权。
 
 #### 七、分拣清单（现扫 `git status --porcelain`：53 条 = 47 改 + 6 未跟踪）
@@ -4111,10 +4111,10 @@ version=1.1.0, runtime_files=192)`（191 → 192 是本轮新增的 `tstdx/integ
 HEAD 仍是第 22 轮那两笔（`07477e8`），第 23、24、25 轮一次都没提交，所以这 53 条**在本会话里分不出"哪一条属于哪一轮"**——三轮反复动过同一批文件，逐轮归因要跨会话的账，本会话不代做。能机械分清的只有一层：**哪几条不是本会话写的**（第一组；判据是 `git diff --stat` 现量到的增删行内容，不是记忆）。
 
 - **不是本会话写的**：`CHANGELOG.md`（+14 行，写的是 v17 第 49 步复评与 F-72…F-76 那笔账）、`docs/REFACTOR_PLAN_V17_CLOSURE.md`（+45 行，同一支配的台账）、`docs/REFACTOR_PLAN_V18_REVIEW.md`（未跟踪，同一次复评产的新文档）、`docker-compose.yml`、`docs/FAQ.md`、`docs/api/README.md`。另有 `scratch_measure24b.err`（一次性 stderr，未跟踪，同步脚本一直把它排除在候选树之外）。
-- **本轮（第 25 轮）代码面**：`tstdx/integration/wire_fields.py`（G34 那个唯一拒绝口）、`tstdx/client/core.py` 与 `tstdx/client/_mixin.py`（错误分类线归位）、`tstdx/integration/runtime_ws.py` 与 `tstdx/integration/mcp/` 那四支（两面入参闸、`clamp_int` 物理删除）、`tstdx/transport/pool.py` 与 `tstdx/transport/async_.py`（G38：一把上界 + 两处共用）、`tstdx/streaming/engine.py`（G35 的补拉旗第一次被驱动侧读走）、`tstdx/codec/framing.py`（G36 删第二手帧头长度）、`tstdx/query.py`（删 `QueryFingerprint.from_spec`）。
-- **本轮新增判据（未跟踪）**：`tests/architecture/test_wire_numeric_domain.py`（G34，8 项）、`tests/transport/test_retry_backoff_cap.py`（G38，30 项）。同批未跟踪的还有第 24 轮的 `tests/architecture/test_cli_kernel_seam.py` 与第 23 轮的 `tstdx/integration/mcp/__main__.py`——**它们必须与上面的代码改动同批走**，否则判据覆盖不到被改的那一面。
+- **本轮（第 25 轮）代码面**：`atst/integration/wire_fields.py`（G34 那个唯一拒绝口）、`atst/client/core.py` 与 `atst/client/_mixin.py`（错误分类线归位）、`atst/integration/runtime_ws.py` 与 `atst/integration/mcp/` 那四支（两面入参闸、`clamp_int` 物理删除）、`atst/transport/pool.py` 与 `atst/transport/async_.py`（G38：一把上界 + 两处共用）、`atst/streaming/engine.py`（G35 的补拉旗第一次被驱动侧读走）、`atst/codec/framing.py`（G36 删第二手帧头长度）、`atst/query.py`（删 `QueryFingerprint.from_spec`）。
+- **本轮新增判据（未跟踪）**：`tests/architecture/test_wire_numeric_domain.py`（G34，8 项）、`tests/transport/test_retry_backoff_cap.py`（G38，30 项）。同批未跟踪的还有第 24 轮的 `tests/architecture/test_cli_kernel_seam.py` 与第 23 轮的 `atst/integration/mcp/__main__.py`——**它们必须与上面的代码改动同批走**，否则判据覆盖不到被改的那一面。
 - **本轮改过期望的既有判据**（分类线换类时点名，属"跟着改判"而不是"放宽"）：`tests/test_client_parameter_fail_closed.py`、`tests/test_client_output_format_fail_closed.py`、`tests/test_client_batch_input_contract.py`、`tests/client/test_async_quotes_concurrent_parity.py`、`tests/codec/test_request_frame_contract.py`、`tests/unit/test_batch_e.py`、`tests/unit/test_cli_semantics.py`、`tests/streaming/test_poll_guardrails.py`、`tests/architecture/{test_doc_code_consistency,test_evidence_pointers,test_cli_reference_table,test_cli_connection_contract,test_declared_knobs}.py`、`tests/transport/test_ratelimit_contract.py`。
-- **本轮动过的文档与工具面**：`docs/api/interfaces.md`、`docs/errors.md`、`docs/quickstart.md`、`README.md`、本台账；`pyproject.toml`、`scripts/audit_reachability.py`、`scripts/_reach_allow.txt`、`tstdx/cli/{parser,runtime_commands}.py`、`tstdx/catalog/capability.py`、`tstdx/integration/runtime_ws_server.py`、`tstdx/protocol/prober.py`、`tstdx/tools/check_originality.py`、`tstdx/transport/ratelimit.py`——这几支第 23/24 轮各自记过名，本轮一并还脏着，逐轮归属同上面第一组的办法处理。
+- **本轮动过的文档与工具面**：`docs/api/interfaces.md`、`docs/errors.md`、`docs/quickstart.md`、`README.md`、本台账；`pyproject.toml`、`scripts/audit_reachability.py`、`scripts/_reach_allow.txt`、`atst/cli/{parser,runtime_commands}.py`、`atst/catalog/capability.py`、`atst/integration/runtime_ws_server.py`、`atst/protocol/prober.py`、`atst/tools/check_originality.py`、`atst/transport/ratelimit.py`——这几支第 23/24 轮各自记过名，本轮一并还脏着，逐轮归属同上面第一组的办法处理。
 
 ## 35. 执行记录（续）
 
@@ -4124,10 +4124,10 @@ HEAD 仍是第 22 轮那两笔（`07477e8`），第 23、24、25 轮一次都没
 
 #### 〇、取证姿势：三遍的改场在主线工作树，复测与构建在候选树，解释器本轮换了人
 
-- **改场**＝`P:/github_public/tstdx`（HEAD 仍是 `07477e8`，第 23/24/25 轮一次都没提交）。三遍的"改前读数 → 修复 → 变异台账"全部在这棵树上做，因为并行会话随时可能提交，只有当前工作树能代表"本轮要落地的字节"。
-- **复测与构建场**＝候选树 `tstdx_wt_v18b26step`（仓外，同一 HEAD 检出），由 `sync26_candidate.py` 镜像主树的 dirty 名单，并**镜像删除**（本轮那一支是 `tstdx/integration/runtime_tasks.py`，F-90，D3）。同步脚本自带对账：候选树的 `git status --porcelain` 名单与主树逐名比，`主树有而候选树没有的路径 = 无` 才算同步完成。**该候选树已于本轮收口后回收（本机已无），留存锚 = 提交 `07477e8`（其检出点即此 HEAD）。**
+- **改场**＝`P:/github_public/atst`（HEAD 仍是 `07477e8`，第 23/24/25 轮一次都没提交）。三遍的"改前读数 → 修复 → 变异台账"全部在这棵树上做，因为并行会话随时可能提交，只有当前工作树能代表"本轮要落地的字节"。
+- **复测与构建场**＝候选树 `atst_wt_v18b26step`（仓外，同一 HEAD 检出），由 `sync26_candidate.py` 镜像主树的 dirty 名单，并**镜像删除**（本轮那一支是 `atst/integration/runtime_tasks.py`，F-90，D3）。同步脚本自带对账：候选树的 `git status --porcelain` 名单与主树逐名比，`主树有而候选树没有的路径 = 无` 才算同步完成。**该候选树已于本轮收口后回收（本机已无），留存锚 = 提交 `07477e8`（其检出点即此 HEAD）。**
 - **解释器换人（这条环境标签属于本轮所有读数）**：本轮开工时 `.venv/Scripts/python.exe` 不在（并行会话的 churn 留下的现场，本会话没有去修它），全部读数改跑在 uv 的 CPython 3.12 上，并用 `PYTHONPATH` 指回 `.venv/Lib/site-packages`。这条 substitution 写进了 17 道门禁 runner 的 docstring；它的代价本轮当场付过一次——**漏掉 `PYTHONPATH` 的命令会缺 `build` 与 `fastapi`**（`build26_pass3.log` 之前那一遍 RC=1 就是这么来的）。因此本轮的"3996 passed / 82.78%"与第 25 轮台账里的"4009 passed"不是同一个解释器现场，读数表里分栏写清。
-- **装包现场**＝新建的 `venv26`；六面复跑读的是 `venv26\Lib\site-packages\tstdx\__init__.py`（`sixface26_installed.log` 第 1 行的现场身份），探针脚本里有一条硬断言：`sys.path` 上任何一项都不许指回仓库源码树。
+- **装包现场**＝新建的 `venv26`；六面复跑读的是 `venv26\Lib\site-packages\atst\__init__.py`（`sixface26_installed.log` 第 1 行的现场身份），探针脚本里有一条硬断言：`sys.path` 上任何一项都不许指回仓库源码树。
 
 #### 一、第 1 遍｜把"声明了没人行动"泛化到常量面与文档面：11+1 格假告示，和一张 31 行没人读的登记表（G40 登记并清偿，F-78…F-86）
 
@@ -4135,7 +4135,7 @@ HEAD 仍是第 22 轮那两笔（`07477e8`），第 23、24、25 轮一次都没
 
 - **尺子 1｜模块级常量**（按名字现扫全包读取点 / 测试 / 脚本 / 文档提及）：11 格零读取 + 1 格只有测试读。逐格处置见 §2 的 G40 行——**5 格按 D3 删除**（`DEFAULT_EVENT_TYPES` F-81、`SYNTHETIC_CATEGORIES` F-82、`Family`/`TRADE_FAMILY`/`DEFAULT_TRADE_PORT`/`PRICE_SCALE`、`trade/security.STATUS`），**7 格接到真决策点**（`DAYLIKE_CATEGORIES`→K 线越域 fail-closed F-78、`CMD_SET` 与两份 `ORDER_STATUS_*` 与 `QUERY_CATEGORY_NAMES`→交易面词表 F-83、`SORT_COLUMNS`→未声明列告警 F-80、`TICKS_PER_PAGE`→短页即末页 F-79）。改后同一把尺子读 `census26a_afterfix.log` 末行 **`CENSUS DONE zero_read=0 test_only=0 dc_rows=68`**（另有"只在本文件用过"50 格，口径写明不算缺陷：那是封装）。
 - **尺子 2｜dataclass 字段**（分母取 `dataclasses.fields()`，读取点按类名锚定）：这一支沿用第 25 轮口径，本轮只多要求一件事——NO-READ 与 CARRY-ONLY 分开算，否则"只搬运"会被读成"死了"。68 行有格子的类里，本轮真正动手的是 `SourceSpec`。
-- **尺子 3｜文档表格列 ↔ 运行期登记表**：量到的是本轮最大的一块缺口，**不在代码里而在文档里**——`tstdx.web.sources.KNOWN_SOURCES` 登记 31 个 HTTP 适配器，每格的 `summary`/`capabilities`/`notes` **全仓零读取**；而 `docs/configuration.md` 的 `[web] enabled_sources` 一行写着"须属于 `KNOWN_SOURCES`"，**从没列出合法取值到底是哪些名字**。处置不是给三格造一个虚构的内部读取方，而是把这张表交给它唯一的读者：`docs/api/interfaces.md`「Web 源登记（`tstdx.web.sources.KNOWN_SOURCES`，31 个）」逐格列出源名/摘要/能力/接口告诫（生成现场 `web_source_table.md`），再由 `tests/architecture/test_web_source_table.py`（10 项，F-84）把四列钉回运行期登记表。
+- **尺子 3｜文档表格列 ↔ 运行期登记表**：量到的是本轮最大的一块缺口，**不在代码里而在文档里**——`atst.web.sources.KNOWN_SOURCES` 登记 31 个 HTTP 适配器，每格的 `summary`/`capabilities`/`notes` **全仓零读取**；而 `docs/configuration.md` 的 `[web] enabled_sources` 一行写着"须属于 `KNOWN_SOURCES`"，**从没列出合法取值到底是哪些名字**。处置不是给三格造一个虚构的内部读取方，而是把这张表交给它唯一的读者：`docs/api/interfaces.md`「Web 源登记（`atst.web.sources.KNOWN_SOURCES`，31 个）」逐格列出源名/摘要/能力/接口告诫（生成现场 `web_source_table.md`），再由 `tests/architecture/test_web_source_table.py`（10 项，F-84）把四列钉回运行期登记表。
 
 **F-83 那一族是本轮唯一"词表⇄行为⇄帧表"三面都要对上的**：交易面此前对任何没写到的查询类别一律返回空列表（G10 家族的形状），范围缺口又借红线异常 `TradingUnavailable`（E4030）回答，而成交记录只有读方没有产方。判据 `tests/trade/test_trade_plane_vocabulary.py`（13 项）钉住发送侧 `CMD_SET` 闸、未声明类别=调用方入参错、声明过的每条命令都有服务端分支、成交必须有显式产方且保帧形、T+1 可用量口径、以及客户端在券商之前先拒不可能入参。
 
@@ -4164,9 +4164,9 @@ HEAD 仍是第 22 轮那两笔（`07477e8`），第 23、24、25 轮一次都没
 
 第 25 轮登记的 G37 是"14 条公开面，留给所有者裁决"。本轮第 3 遍的第一步不是裁决而是**量那把尺子**，结果两头都不准（详见 §2 的 G37 行）：① 其中 2 条是假阳性——执行体由 `inspect.getmembers(门面)` 自动派生成绑定，仓里一个字都不必提它们的名字，尺子看不见这一支分派；② **登记本身污染了分母**——清单写进台账，而台账文字被算进"用户文档点名"，同一把尺子改前读 0 条、拆掉自指后读 **17 条**。补掉两处自指后（文档分母排掉 `docs/REFACTOR_PLAN_*` 与 `docs/archive/**`；`tests/` 里的登记表键不再算"按名分派"），17 条逐条选定出路：
 
-- **8 条按 D3 删除**（F-104 `QuoteChannel.poll_delay`——退避公式的第二手抄本，真路径是 `_run → policy.current_delay()`；F-105 `Symbol.bare`；F-106 `KlineCategory.name_of`；F-107 `BaseParser.u16_count`；F-108 `BaiduSource.parse_quote`；F-109 `TradingCalendar.mark_workday`（写 `_workdays` 而全仓无人读）；F-110 `TradingCalendar.update_from_web`——签名收任意入参、体只有一句 `raise`，而 `warnings_for` 的文案把这条幻影补救写给用户当校准办法；F-112 `Metrics.set_active_connections` 连同恒初值的 `tstdx_active_connections` gauge）。每一格都留了"这里曾有什么、为什么删"的在体锚。
+- **8 条按 D3 删除**（F-104 `QuoteChannel.poll_delay`——退避公式的第二手抄本，真路径是 `_run → policy.current_delay()`；F-105 `Symbol.bare`；F-106 `KlineCategory.name_of`；F-107 `BaseParser.u16_count`；F-108 `BaiduSource.parse_quote`；F-109 `TradingCalendar.mark_workday`（写 `_workdays` 而全仓无人读）；F-110 `TradingCalendar.update_from_web`——签名收任意入参、体只有一句 `raise`，而 `warnings_for` 的文案把这条幻影补救写给用户当校准办法；F-112 `Metrics.set_active_connections` 连同恒初值的 `atst_active_connections` gauge）。每一格都留了"这里曾有什么、为什么删"的在体锚。
 - **9 条升格为公开面并写进读者会读的页**（F-113 `TradeClient.query_stocks`/`query_deals`/`query_shareholders` 补 4 条调用侧用例；F-114 日历 7 格查询面的 docstring；F-115 `disable`/`export_spans`/`start_pushing`/`write_to_file` 连同整个可观测性/反馈门面写进 `docs/api/interfaces.md` §8；F-116 `Prober.total_probes`/`total_failures` 的口径与不变式写进 §7）。F-111 一度按 D3 记成"删除 `PrometheusExporter.write_to_file`"，量完发现它是渲染出口的一种**用户用法**，翻成 keep+document（并入 F-115 那一节）——号留着不 reused，改判写在下面第六节。
-- **2 条改为接线而不是文档化**（F-117 `tstdx_stream_reconnects_total`：恢复轮计数；F-118 `tstdx_protocol_parse_total`/`_confidence`：三级分派各补一处旁路上报）。把它们从"升格成公开面"里挑出来是因为那等于把洞固定成承诺——两根指标此前**注册了却恒初值**，写进文档只会让读者多一个永远为零的数。变异账 `mutation26_metrics.log`：把两处接线各静音一次 ⇒ 恰那 2 条判据红（`tests/protocol/test_tiers.py::test_dispatch_reports_the_parse_metrics`、`tests/streaming/test_poll_guardrails.py::test_a_recovery_tick_is_counted_in_the_reconnect_metric`，末行 `2 failed in 0.25s`）；表格↔注册表门禁 `tests/architecture/test_doc_code_consistency.py`（本轮起把 §8 那两节纳入双向核对）。
+- **2 条改为接线而不是文档化**（F-117 `atst_stream_reconnects_total`：恢复轮计数；F-118 `atst_protocol_parse_total`/`_confidence`：三级分派各补一处旁路上报）。把它们从"升格成公开面"里挑出来是因为那等于把洞固定成承诺——两根指标此前**注册了却恒初值**，写进文档只会让读者多一个永远为零的数。变异账 `mutation26_metrics.log`：把两处接线各静音一次 ⇒ 恰那 2 条判据红（`tests/protocol/test_tiers.py::test_dispatch_reports_the_parse_metrics`、`tests/streaming/test_poll_guardrails.py::test_a_recovery_tick_is_counted_in_the_reconnect_metric`，末行 `2 failed in 0.25s`）；表格↔注册表门禁 `tests/architecture/test_doc_code_consistency.py`（本轮起把 §8 那两节纳入双向核对）。
 
 裁决完的复扫：`census26_orphans_v5.log` 第 [5] 支 17 条 ↔ `census26_orphans_v9.log` **真候选 0 条**，公开方法名分母 **562** 个（第 25 轮 572，少的正是本轮删掉的那些），"活着但不被外部按名调用"五桶本轮起**逐条印出成员**（v1 只印计数，13→9、2→0 这类跳动无从追溯，故改）：类内模板 9 / 容器名单 0 / 登记表实参 1 / 内省派生 26 / 框架钩子 3，另点名内省派生类 `WebQuoteSession`（其上 140 个公开方法名天生按名可达）。模块级可达性另跑一次：`scripts/audit_reachability.py` 无未登记孤儿。
 
@@ -4174,17 +4174,17 @@ HEAD 仍是第 22 轮那两笔（`07477e8`），第 23、24、25 轮一次都没
 
 #### 四、第 4 遍收口｜候选树 17 道门禁、离线覆盖率、重新构建与装包六面，外加证据尺自己对绝对路径失明（G42）
 
-同步到候选树后第一跑 `gates26_round26.log` 是 **`GATES DONE bad=3`**：三格红都在本轮新写的字节上——`ruff format --check` 两格（`4 files would be reformatted`：`tests/architecture/test_doc_code_consistency.py`、`tests/observability/test_metrics.py`、`tests/trade/test_client.py`、`tstdx/domain/calendar.py`）与 `mypy` 一格（`tstdx/transport/async_.py:1177: "suppress" has no attribute "__aenter__"`——判据五修复时把同步 `contextlib.suppress` 当异步上下文管理器用了；`runtime_ws_server.py:74` 那条 `type: ignore` 在 `tstdx_handler` 变成真属性后已多余）。格式化那三格是 `ruff format` 一次到位；mypy 两格各改实质（`async with conn._lock:` 里套 `with contextlib.suppress(...)`；删掉已无用的 ignore），**没有加 `# noqa`/`# type: ignore` 糊过去**。修完两遍重跑：`gates26_round26b.log` 与 `gates26_round26c.log`（扩尺之后）各 **`17` 次 `--- rc=0`、`GATES DONE bad=0`、`RC=0`**。
+同步到候选树后第一跑 `gates26_round26.log` 是 **`GATES DONE bad=3`**：三格红都在本轮新写的字节上——`ruff format --check` 两格（`4 files would be reformatted`：`tests/architecture/test_doc_code_consistency.py`、`tests/observability/test_metrics.py`、`tests/trade/test_client.py`、`atst/domain/calendar.py`）与 `mypy` 一格（`atst/transport/async_.py:1177: "suppress" has no attribute "__aenter__"`——判据五修复时把同步 `contextlib.suppress` 当异步上下文管理器用了；`runtime_ws_server.py:74` 那条 `type: ignore` 在 `atst_handler` 变成真属性后已多余）。格式化那三格是 `ruff format` 一次到位；mypy 两格各改实质（`async with conn._lock:` 里套 `with contextlib.suppress(...)`；删掉已无用的 ignore），**没有加 `# noqa`/`# type: ignore` 糊过去**。修完两遍重跑：`gates26_round26b.log` 与 `gates26_round26c.log`（扩尺之后）各 **`17` 次 `--- rc=0`、`GATES DONE bad=0`、`RC=0`**。
 
 **`bad=0` 不是这一节的最后一格**：写完 §35 与 `interfaces.md` 那两块所有权文字之后，按 G20 的口径在**最终字节**上再跑一遍，`gates26_round26e.log` 的前身 `gates26_round26d.log` 当场 **`GATES DONE bad=1`**（`4 failed, 551 passed, 2 skipped in 88.76s`，全在 `tests/architecture/`）。两条成因都值得留在账上，因为它们都是"本轮写的字"付的价：① `test_interfaces_ws_method_prose_matches_the_dispatcher` 报 `多 ['finally', 'handler', 'json.dumps'] 缺 []`——那把尺子把 §「WebSocket JSON-RPC」整节 body 里**所有反引号包住的纯小写点分词**都当成方法名清单，于是新写的"并发与所有权"两条 bullet 里三个普通代码词被读成三面公示的方法名。处置是改文字而不是改尺子（`json.dumps()` 带括号、`handler` 改为不带反引号的"是否传入 handler"、`finally` 同理），因为那条口径本身就是给读者的保护：写进这一节的每一个这种形状的词，用户都会照抄成 JSON-RPC 方法名。② `test_evidence_pointers.py` 的判据 ① 报 `台账声明引用 50 棵树，现扫是 51 棵` + `台账声明 235 处指针，现扫是 242 处`——§2 那张声明是第 25 轮的读数，本轮 §35 与 G40/G41/G42 三格一边写证据一边往证据库里加树名，**改声明的时机晚于改指针**。本轮另起一支 `ruler26d.py`（直接复用判据自己的函数，不重写尺子）现扫到不动点：先按读数改成 51/244，`ruler26d_c.log` 二次现扫仍 `51 棵 / 244 处` ⇒ 自指闭合。两处都改完再跑，`gates26_round26e.log` **`17` 次 `--- rc=0`、`GATES DONE bad=0`、`RC=0`**——最终字节那一份是这一遍，不是前面那两份 `bad=0`。
 
-**读数器自己那一格（`bad=0` 之后又付的第三次价，形状与 G20 同族）**：e 那遍之后仍然有人往文档里写字，而本轮最后写下的那块字不是散文——是一张**接口文档表格**。`docs/api/interfaces.md` 里「三份服务面的 `Client` 所有权是同一口径」那三行，此前只有 §35 的一句话声称它"钉着实现"，而全仓 grep 得到 `tstdx_handler` / `owns_client` / `_lifespan` 三个符号出现在**零**条判据里。也就是说：本轮把 F-100 的修复写成了用户会照抄的表格，却没有任何人核对过表格里那几个名字。补的判据是 `tests/architecture/test_doc_code_consistency.py::test_service_plane_client_ownership_table_matches_the_code`（口径写在它的 docstring 与那张表的编辑里：入口签名 `inspect` 现读、格内反引号点到的符号要在该面模块的 AST 里读得到、实现里 `flag = <入参> is None` 那个所有权标志必须被文档点名，两型违约各有正控）。**代码一字未动**——三个入口本来就是那个形状，判据只是第一次把它们读进分母。于是 e 那份"最终字节"读数作废为"倒数第二遍"，本轮真正的最终字节复测是：门禁 `gates26_round26f.log`（`17` 次 `--- rc=0`、`bad=0`）、离线全量 `full26_cov_cand_gfinal.log`（**`3998 passed, 9 skipped, 15 deselected, 23 warnings`** / `82.77%` / `RC=0`，比 e 那份多出的**恰好一格**就是这条新判据）、构建 `build26_pass3c.log`（wheel 与 `dist26_pass3b` 逐字节相同、sdist 换指纹，见第 17 格）。**还有一格读数器的坑要留在账上**：`-q` 叠在项目自带 `addopts = "-q …"` 之上等于 `-qq`，verbosity 0 下 pytest **不打末行统计**——`full26_cov_cand_g.log` 与 `full26_cov_cand_gs.log` 两份就是这么"跑完了却没有末行"的（进度行逐字符清点给出 `.` 3998 / `s` 9，`RC=0`；同一清点法在 `full26_cov_cand_final.log` 上复现出它自己那行 `3997 passed, 9 skipped` ⇒ 清点法成立）。第三份 `-o "addopts=…"` 把双 `-q` 收成单份，末行才落纸。**读数抄不到就不写**这条口径，这一次逼出来的不是改判据也不是放宽，而是换一条命令行。**这三份读数的归属要说清**：`gates26_round26f.log` 量的是代码与判据的最终字节，其后动过的只有台账自己的文字（第 13/14/15/17 格那几处读数与本轮这段）——那部分先由**候选树同步后**的 `cand26_arch26g.log` 复跑一遍架构判据，再由主树收尾那一遍（持有证据库、`test_evidence_pointers.py` 不跳过的环境）覆盖；台账末段永远是"写完它的那只手"之后没有读数的一格（G20 的自指边界，写在 §31 而不是假装闭上）。
+**读数器自己那一格（`bad=0` 之后又付的第三次价，形状与 G20 同族）**：e 那遍之后仍然有人往文档里写字，而本轮最后写下的那块字不是散文——是一张**接口文档表格**。`docs/api/interfaces.md` 里「三份服务面的 `Client` 所有权是同一口径」那三行，此前只有 §35 的一句话声称它"钉着实现"，而全仓 grep 得到 `atst_handler` / `owns_client` / `_lifespan` 三个符号出现在**零**条判据里。也就是说：本轮把 F-100 的修复写成了用户会照抄的表格，却没有任何人核对过表格里那几个名字。补的判据是 `tests/architecture/test_doc_code_consistency.py::test_service_plane_client_ownership_table_matches_the_code`（口径写在它的 docstring 与那张表的编辑里：入口签名 `inspect` 现读、格内反引号点到的符号要在该面模块的 AST 里读得到、实现里 `flag = <入参> is None` 那个所有权标志必须被文档点名，两型违约各有正控）。**代码一字未动**——三个入口本来就是那个形状，判据只是第一次把它们读进分母。于是 e 那份"最终字节"读数作废为"倒数第二遍"，本轮真正的最终字节复测是：门禁 `gates26_round26f.log`（`17` 次 `--- rc=0`、`bad=0`）、离线全量 `full26_cov_cand_gfinal.log`（**`3998 passed, 9 skipped, 15 deselected, 23 warnings`** / `82.77%` / `RC=0`，比 e 那份多出的**恰好一格**就是这条新判据）、构建 `build26_pass3c.log`（wheel 与 `dist26_pass3b` 逐字节相同、sdist 换指纹，见第 17 格）。**还有一格读数器的坑要留在账上**：`-q` 叠在项目自带 `addopts = "-q …"` 之上等于 `-qq`，verbosity 0 下 pytest **不打末行统计**——`full26_cov_cand_g.log` 与 `full26_cov_cand_gs.log` 两份就是这么"跑完了却没有末行"的（进度行逐字符清点给出 `.` 3998 / `s` 9，`RC=0`；同一清点法在 `full26_cov_cand_final.log` 上复现出它自己那行 `3997 passed, 9 skipped` ⇒ 清点法成立）。第三份 `-o "addopts=…"` 把双 `-q` 收成单份，末行才落纸。**读数抄不到就不写**这条口径，这一次逼出来的不是改判据也不是放宽，而是换一条命令行。**这三份读数的归属要说清**：`gates26_round26f.log` 量的是代码与判据的最终字节，其后动过的只有台账自己的文字（第 13/14/15/17 格那几处读数与本轮这段）——那部分先由**候选树同步后**的 `cand26_arch26g.log` 复跑一遍架构判据，再由主树收尾那一遍（持有证据库、`test_evidence_pointers.py` 不跳过的环境）覆盖；台账末段永远是"写完它的那只手"之后没有读数的一格（G20 的自指边界，写在 §31 而不是假装闭上）。
 
 离线覆盖率全量（候选树，`-m "not network"` 口径，**最终字节**）：`full26_cov_cand_final.log` 末三行 `Required test coverage of 77.0% reached. Total coverage: 82.77%` / **`3997 passed, 9 skipped, 15 deselected, 23 warnings in 300.39s (0:05:00)`** / `RC=0`。中间字节那一遍是 `full26_cov_cand_rs.log` 的 `3996 passed, 8 skipped` / `82.78%` / `316.95s`——两遍差的**一格 passed** 与**一格 skip** 是同一件事：G42 新写的绝对路径判据（`tests/architecture/test_evidence_pointers.py:242`）进了分母，而它在候选树里按 `holds_evidence_store()` 跳过（候选树没有仓内证据库，G24 的跳过条件正是这样设计的）。9 格 skip 逐因抄自同一份日志的 `-rs` 段：`test_evidence_pointers.py` 两格（`:236` 树账、`:242` 仓外现场目录）、4 格 `本机未装 pyarrow；有则连库验证`、3 格 `本机未装 duckdb；有则连库验证`。这一格的**不可比性**写在第六节：它与主树那几遍（4009/4010 passed）不是同一分母，15 条 deselected 是网络格，不能混抄成一个数。`fail_under = 77` 一字未动，82.77% 是读数而不是被调过的线。
 
-构建与装包（**最终字节两遍**）：第一遍 `build26_pass3.log` 现场 `仓库根: P:\github_public\tstdx_wt_v18b26step`（隔离构建；该现场已于收口后回收，本机已无，留存锚 = 提交 `07477e8`），`[校验] canonical typed distribution ✓（version=1.1.0，runtime_files=191）`、`[冒烟] 通过 ✓`，产物进**新建**的 `dist26_pass3/`（G23：不覆盖任何已记录的产物），指纹逐字为 wheel 757.7 KB `sha256: 39d6500357bac2fc86d2582b60b3215e4ad2c08300c34ee6b1a709afa8d9f529`、sdist 1687.8 KB `sha256: b4a3aa85696601acb703a0bbf42f328dae64f7fca98896de17c5dab7a60b4610`。上面那两格红改完（只动 `interfaces.md` 与台账文字）之后重构建到**另一个新目录** `dist26_pass3b/`：`build26_pass3b.log` 同一 `runtime_files=191`、`[冒烟] 通过 ✓`、`RC=0`，wheel 指纹 **`39d6500357bac2fc86d2582b60b3215e4ad2c08300c34ee6b1a709afa8d9f529` 与上一份逐字节相同**、sdist 变成 1688.7 KB `sha256: e2b2c7ae37aeed3d3390d35138d1b6c663fc1466963e9df7e3aa7f4198a42dbc`。这两个指纹合起来就是本轮收口形状的证据：** wheel 里那 191 个运行期文件一个都没动，变的只有打进 sdist 的文档**——本轮第 4 遍之后没有再碰过 `tstdx/` 下任何字节。装包两步：先 `--no-deps` 单装 wheel（`install26.log`）当场判定不足以量 HTTP 面（`fastapi` 属于 extra），随即在同一个 `venv26` 全量重装 `whl[server,web,metrics]` 并跑 `pip check`（`install26_full.log`：`pip rc=0` / `No broken requirements found.` / `check rc=0` / `imports ok …venv26\Lib\site-packages\tstdx\__init__.py`）；最终 wheel 再 `--force-reinstall --no-deps` 一次并复核解释器落点（`install26d.log`：`pip rc=0` / `No broken requirements found.` / `check rc=0` / `import P:\github_public\scratch_v18b26\venv26\Lib\site-packages\tstdx\__init__.py` / `version 1.1.0 1.1.0`）。装好包上的六面 `sixface26_installed.log` 与最终包上的 `sixface26_installed_d.log` 各 **`RC=0`、38 项 `OK` 且无一条失败**，末行 **`六面贯通复查：全部通过`**；第 [0] 行是现场身份（`import tstdx` 只能落到 site-packages，脚本开头就把仓库源码树从 `sys.path` 里判掉），F-117/F-118 两根指标在真正渲染出的 Prometheus 文本里 `0.0 -> 1.0`（F-118 那格带 `tier=L1`），F-117 另有一格证明它在**驱动线程**里也走通（`calls=3`）；已安装的控制台脚本单跑 `cli_installed26.log`（`RC=0`）。
+构建与装包（**最终字节两遍**）：第一遍 `build26_pass3.log` 现场 `仓库根: P:\github_public\atst_wt_v18b26step`（隔离构建；该现场已于收口后回收，本机已无，留存锚 = 提交 `07477e8`），`[校验] canonical typed distribution ✓（version=1.1.0，runtime_files=191）`、`[冒烟] 通过 ✓`，产物进**新建**的 `dist26_pass3/`（G23：不覆盖任何已记录的产物），指纹逐字为 wheel 757.7 KB `sha256: 39d6500357bac2fc86d2582b60b3215e4ad2c08300c34ee6b1a709afa8d9f529`、sdist 1687.8 KB `sha256: b4a3aa85696601acb703a0bbf42f328dae64f7fca98896de17c5dab7a60b4610`。上面那两格红改完（只动 `interfaces.md` 与台账文字）之后重构建到**另一个新目录** `dist26_pass3b/`：`build26_pass3b.log` 同一 `runtime_files=191`、`[冒烟] 通过 ✓`、`RC=0`，wheel 指纹 **`39d6500357bac2fc86d2582b60b3215e4ad2c08300c34ee6b1a709afa8d9f529` 与上一份逐字节相同**、sdist 变成 1688.7 KB `sha256: e2b2c7ae37aeed3d3390d35138d1b6c663fc1466963e9df7e3aa7f4198a42dbc`。这两个指纹合起来就是本轮收口形状的证据：** wheel 里那 191 个运行期文件一个都没动，变的只有打进 sdist 的文档**——本轮第 4 遍之后没有再碰过 `atst/` 下任何字节。装包两步：先 `--no-deps` 单装 wheel（`install26.log`）当场判定不足以量 HTTP 面（`fastapi` 属于 extra），随即在同一个 `venv26` 全量重装 `whl[server,web,metrics]` 并跑 `pip check`（`install26_full.log`：`pip rc=0` / `No broken requirements found.` / `check rc=0` / `imports ok …venv26\Lib\site-packages\atst\__init__.py`）；最终 wheel 再 `--force-reinstall --no-deps` 一次并复核解释器落点（`install26d.log`：`pip rc=0` / `No broken requirements found.` / `check rc=0` / `import P:\github_public\scratch_v18b26\venv26\Lib\site-packages\atst\__init__.py` / `version 1.1.0 1.1.0`）。装好包上的六面 `sixface26_installed.log` 与最终包上的 `sixface26_installed_d.log` 各 **`RC=0`、38 项 `OK` 且无一条失败**，末行 **`六面贯通复查：全部通过`**；第 [0] 行是现场身份（`import atst` 只能落到 site-packages，脚本开头就把仓库源码树从 `sys.path` 里判掉），F-117/F-118 两根指标在真正渲染出的 Prometheus 文本里 `0.0 -> 1.0`（F-118 那格带 `tier=L1`），F-117 另有一格证明它在**驱动线程**里也走通（`calls=3`）；已安装的控制台脚本单跑 `cli_installed26.log`（`RC=0`）。
 
-**收口时量到证据尺自己的洞（G42）**：`test_evidence_pointers.py` 从第 21 轮起只认树名形状，而台账里还有一整类**仓外绝对路径**指针（`ship15_logs`、`scratch_v18b16`、`export_v18b22_ship`）——它们指向的目录本机早已不在，判据一处都读不到，所以"以现时语气引用一个已消失的取证现场"改了三轮没人红。本轮先把尺子扩到绝对路径支路，改前现场 `absdir26_prefix.log`：**`1 failed, 8 passed`**，6 处违约逐条点名（`scratch_v18b16` ×4 块、`ship15_logs` ×1、`export_v18b22_ship` ×1）；六处就地补「本机已无 + 解得开的锚」（分别 `2398305` / `3dd14a3` / `b66e771`），补完 **`9 passed in 0.87s`**。新格与工作树那格共用同一个跳过条件 `holds_evidence_store()`：CI 与全新克隆里 `P:/github_public` 这一层根本不存在，不设跳过就会把每一条绝对路径指针报成违约——**扩大扫描范围必须同时复查自己的跳过条件**，这条是 G24 付过代价之后写进 docstring 的。尺子扩完顺手把 `git worktree list --porcelain` 拉进普查（`ruler26.py` 第 [6] 支）：prunable 4 棵，其中 3 棵台账早已按 G18 写明回收，第 4 棵 `export_v18b22_ship` 只有绝对路径形状——正是新判据抓到的那条，两侧互相钉住。本轮末的证据尺读数（最终一份 = `ruler26d.log` → `ruler26d_b.log` → `ruler26d_c.log`，三支是"改声明→重测→到不动点"的先后两遍；`ruler26.log` 是本轮中途那一版）：磁盘 50 棵 = 仓内 48 棵（`du -sk wt_*` 现量 1654373 KiB，与第 21/22/23/24/25 轮逐 KiB 相同）+ 仓外 2 棵（`wt_v18b25step`、`wt_v18b26step`），台账引用 **51 棵 / 244 处**（HEAD `07477e8` 那一份是 48 / 225，树名差集 `+wt_v18b23step/+wt_v18b25step/+wt_v18b26step`、`−0` 条，判据 ③ 的单调棘轮因此同时成立），引用的树名里 13 棵已不在盘上、磁盘上 12 棵台账一个字未提（G19 那座并行会话的现场）。绝对路径那条腿单独一格：4 个目录名 / 8 处指针，其中 `ship15_logs`×1、`scratch_v18b16`×4、`export_v18b22_ship`×1 已不在磁盘上且每一格都写明「本机已无 + 解得开的锚」，第 4 个名字 `tstdx` 是主工作树自己（在盘）。`git worktree list --porcelain` 现量 63 条注册记录、`git worktree prune --dry-run --verbose` 现量 prunable 4 棵（`ruler26d_worktrees.log`，**只列不删**）——与第 25 轮 `ruler26.log` 第 [6] 支同一份清单，一棵也没少：回收哪一棵归所有者点头（G18）。
+**收口时量到证据尺自己的洞（G42）**：`test_evidence_pointers.py` 从第 21 轮起只认树名形状，而台账里还有一整类**仓外绝对路径**指针（`ship15_logs`、`scratch_v18b16`、`export_v18b22_ship`）——它们指向的目录本机早已不在，判据一处都读不到，所以"以现时语气引用一个已消失的取证现场"改了三轮没人红。本轮先把尺子扩到绝对路径支路，改前现场 `absdir26_prefix.log`：**`1 failed, 8 passed`**，6 处违约逐条点名（`scratch_v18b16` ×4 块、`ship15_logs` ×1、`export_v18b22_ship` ×1）；六处就地补「本机已无 + 解得开的锚」（分别 `2398305` / `3dd14a3` / `b66e771`），补完 **`9 passed in 0.87s`**。新格与工作树那格共用同一个跳过条件 `holds_evidence_store()`：CI 与全新克隆里 `P:/github_public` 这一层根本不存在，不设跳过就会把每一条绝对路径指针报成违约——**扩大扫描范围必须同时复查自己的跳过条件**，这条是 G24 付过代价之后写进 docstring 的。尺子扩完顺手把 `git worktree list --porcelain` 拉进普查（`ruler26.py` 第 [6] 支）：prunable 4 棵，其中 3 棵台账早已按 G18 写明回收，第 4 棵 `export_v18b22_ship` 只有绝对路径形状——正是新判据抓到的那条，两侧互相钉住。本轮末的证据尺读数（最终一份 = `ruler26d.log` → `ruler26d_b.log` → `ruler26d_c.log`，三支是"改声明→重测→到不动点"的先后两遍；`ruler26.log` 是本轮中途那一版）：磁盘 50 棵 = 仓内 48 棵（`du -sk wt_*` 现量 1654373 KiB，与第 21/22/23/24/25 轮逐 KiB 相同）+ 仓外 2 棵（`wt_v18b25step`、`wt_v18b26step`），台账引用 **51 棵 / 244 处**（HEAD `07477e8` 那一份是 48 / 225，树名差集 `+wt_v18b23step/+wt_v18b25step/+wt_v18b26step`、`−0` 条，判据 ③ 的单调棘轮因此同时成立），引用的树名里 13 棵已不在盘上、磁盘上 12 棵台账一个字未提（G19 那座并行会话的现场）。绝对路径那条腿单独一格：4 个目录名 / 8 处指针，其中 `ship15_logs`×1、`scratch_v18b16`×4、`export_v18b22_ship`×1 已不在磁盘上且每一格都写明「本机已无 + 解得开的锚」，第 4 个名字 `atst` 是主工作树自己（在盘）。`git worktree list --porcelain` 现量 63 条注册记录、`git worktree prune --dry-run --verbose` 现量 prunable 4 棵（`ruler26d_worktrees.log`，**只列不删**）——与第 25 轮 `ruler26.log` 第 [6] 支同一份清单，一棵也没少：回收哪一棵归所有者点头（G18）。
 
 #### 五、本轮读数表（每一格逐字抄自本轮那份日志；抄不到的不写）
 
@@ -4206,14 +4206,14 @@ HEAD 仍是第 22 轮那两笔（`07477e8`），第 23、24、25 轮一次都没
 | 14 | 离线覆盖率全量（候选树，`not network`） | — | 三遍同分母的递进：`3996 passed, 8 skipped, 15 deselected` / `82.78%` / `316.95s`（G42 判据进分母前）→ `3997 passed, 9 skipped` / `82.77%` / `300.39s`（G42 扩尺后）→ **所有权判据落地后 `3998 passed, 9 skipped, 15 deselected, 23 warnings in 307.80s (0:05:07)`、`Total coverage: 82.77%`、`RC=0`**（阈值 77.0 一字未动；末行截断的成因见本节末「读数器自己那一格」） | `full26_cov_cand_rs.log`（`full26_cov_cand.log` 是同遍无 `-rs`）↔ `full26_cov_cand_final.log` ↔ `full26_cov_cand_gfinal.log` |
 | 15 | 证据尺（树名 + 绝对路径两种形状） | HEAD 48 棵 / 225 处；第 25 轮声明 50 棵 / 235 处 | 本工作树 **51 棵 / 247 处**：`bad=0`（e 那遍）之后本轮又改过台账文字，于是本轮第一次跑判据就红在声明这一格——`3 failed`，报的都是同一句 `台账声明 244 处指针，现扫是 247 处`；改声明后 `ruler26e.log` 与收尾再扫的 `ruler26f.log` 两次现扫同为 `51 棵 / 247 处` ⇒ 自指重新闭合。磁盘 50 棵（仓内 48 = 1654373 KiB + 仓外 2）；树名差集 +3/−0；绝对路径 4 名 / 8 处，其中 3 名已无且逐格登记锚；`git worktree list` 63 条注册、prunable 4 棵 | `ruler26d.log` → `ruler26d_b.log` → `ruler26d_c.log` → `ruler26e.log` → `ruler26f.log` / `ruler26d_worktrees.log` |
 | 16 | 绝对路径指针判据（G42，新格） | `1 failed, 8 passed`（6 处违约逐条点名） | `9 passed in 0.87s` | `absdir26_prefix.log` |
-| 17 | 安装包重建（`--dist-out` 新目录，三遍） | 中间字节 `dist26_pass3/`：wheel `39d65003…`、sdist `b4a3aa85…` | 最终字节 `dist26_pass3b/`：wheel `sha256: 39d6500357bac2fc86d2582b60b3215e4ad2c08300c34ee6b1a709afa8d9f529`（757.7 KB）、sdist `sha256: e2b2c7ae37aeed3d3390d35138d1b6c663fc1466963e9df7e3aa7f4198a42dbc`（1688.7 KB）；**所有权判据之后再一遍 `dist26_pass3c/`：wheel 与上一份逐字节相同（同一个 `39d65003…`），sdist 变成 `sha256: 993130579ae2cffccc9a24385e481de19116522fa45fa5483c510e9d295a4632`（1691.5 KB）**；`runtime_files=191`、`[冒烟] 通过 ✓`、`RC=0`。**wheel 不动而 sdist 动**正是本轮要的那种自证：判据与文档进了 sdist，`tstdx/**` 一根字节没改，所以第 18 格那套装包读数归属的字节仍然成立 | `build26_pass3.log` ↔ `build26_pass3b.log` ↔ `build26_pass3c.log` |
-| 18 | 装包六面（`venv26`） | 首装带 `--no-deps` ⇒ HTTP 面 extra 缺席 | `pip rc=0` / `check rc=0` / 六面 `全部通过` `RC=0`；最终 wheel 再 `--force-reinstall` 一遍：`import …venv26\Lib\site-packages\tstdx\__init__.py` / `version 1.1.0 1.1.0`，六面 **38 项 `OK`、`RC=0`**（与上一遍同一分母）；控制台脚本 `cli_installed26.log` `RC=0` | `install26.log` / `install26_full.log` / `sixface26_installed.log` ↔ `install26d.log` / `sixface26_installed_d.log` / `cli_installed26.log` |
+| 17 | 安装包重建（`--dist-out` 新目录，三遍） | 中间字节 `dist26_pass3/`：wheel `39d65003…`、sdist `b4a3aa85…` | 最终字节 `dist26_pass3b/`：wheel `sha256: 39d6500357bac2fc86d2582b60b3215e4ad2c08300c34ee6b1a709afa8d9f529`（757.7 KB）、sdist `sha256: e2b2c7ae37aeed3d3390d35138d1b6c663fc1466963e9df7e3aa7f4198a42dbc`（1688.7 KB）；**所有权判据之后再一遍 `dist26_pass3c/`：wheel 与上一份逐字节相同（同一个 `39d65003…`），sdist 变成 `sha256: 993130579ae2cffccc9a24385e481de19116522fa45fa5483c510e9d295a4632`（1691.5 KB）**；`runtime_files=191`、`[冒烟] 通过 ✓`、`RC=0`。**wheel 不动而 sdist 动**正是本轮要的那种自证：判据与文档进了 sdist，`atst/**` 一根字节没改，所以第 18 格那套装包读数归属的字节仍然成立 | `build26_pass3.log` ↔ `build26_pass3b.log` ↔ `build26_pass3c.log` |
+| 18 | 装包六面（`venv26`） | 首装带 `--no-deps` ⇒ HTTP 面 extra 缺席 | `pip rc=0` / `check rc=0` / 六面 `全部通过` `RC=0`；最终 wheel 再 `--force-reinstall` 一遍：`import …venv26\Lib\site-packages\atst\__init__.py` / `version 1.1.0 1.1.0`，六面 **38 项 `OK`、`RC=0`**（与上一遍同一分母）；控制台脚本 `cli_installed26.log` `RC=0` | `install26.log` / `install26_full.log` / `sixface26_installed.log` ↔ `install26d.log` / `sixface26_installed_d.log` / `cli_installed26.log` |
 | 19 | 交易面文档示例真跑 | — | `[结果] 失败 0 个` | `run_trade_doc_examples26.log` |
 
 #### 六、这把尺子证不到什么：本轮五处尺子缺陷、两处改判与一笔不写之账
 
-- **尺子缺陷（本轮自己写错、量出来是假象的，逐条）**：① 判据三第一版接收者识别恒 `None` ⇒ 整支恒真（第五节已述，两层盲区写进 docstring）；② 生命周期普查 v1 的 C 支同一个形状错，报出 3 处假违约；③ `ruler26.py` 首版把 prunable 的**目录基名**（带 `tstdx_` 前缀）直接和台账里的**归一化树名**相比，读出"台账引用且 prunable = 空"——**这是一个假绿**，补上 `removeprefix` 后才看到那三棵；④ 同一版还漏掉了 [4]/[5] 两行死指针读数，等于把上一轮已建立的账目从现场里删掉；⑤ 孤儿普查 v1 只印五桶计数不印成员，13→9 这类跳动无从追溯（v9 起逐条印出）。这一族全部按 G20 口径记账：**能钉的只有写尺子的那只手**，判据读不到仓外 scratch。
-- **两处改判（写在台账之前是错的，就地留下先后）**：① **F-111 由"删除"翻成"保留并文档化"**——`PrometheusExporter.write_to_file` 在按 D3 走删除流程时被量出是渲染出口的用户用法，号不 reused，出路并入 F-115 那一节；② **`sync26_candidate.py` 那句归因写反了**——本轮写脚本时把 `tstdx/integration/runtime_tasks.py` 的删除记成"不带本轮任何 F 号，归并行会话所有"，而这一支正是 F-90（`RuntimeTaskStore` 孤儿 + 模块 docstring 那句"bounded task infrastructure"假告示；判据现扫：主树里 `RuntimeTaskStore` 只在两处**归档文档**里出现，`git status` 读作 `D tstdx/integration/runtime_tasks.py`）。本轮已在脚本注释就地改回 F-90，并在 §2 的 G41 行登记这笔归属。
+- **尺子缺陷（本轮自己写错、量出来是假象的，逐条）**：① 判据三第一版接收者识别恒 `None` ⇒ 整支恒真（第五节已述，两层盲区写进 docstring）；② 生命周期普查 v1 的 C 支同一个形状错，报出 3 处假违约；③ `ruler26.py` 首版把 prunable 的**目录基名**（带 `atst_` 前缀）直接和台账里的**归一化树名**相比，读出"台账引用且 prunable = 空"——**这是一个假绿**，补上 `removeprefix` 后才看到那三棵；④ 同一版还漏掉了 [4]/[5] 两行死指针读数，等于把上一轮已建立的账目从现场里删掉；⑤ 孤儿普查 v1 只印五桶计数不印成员，13→9 这类跳动无从追溯（v9 起逐条印出）。这一族全部按 G20 口径记账：**能钉的只有写尺子的那只手**，判据读不到仓外 scratch。
+- **两处改判（写在台账之前是错的，就地留下先后）**：① **F-111 由"删除"翻成"保留并文档化"**——`PrometheusExporter.write_to_file` 在按 D3 走删除流程时被量出是渲染出口的用户用法，号不 reused，出路并入 F-115 那一节；② **`sync26_candidate.py` 那句归因写反了**——本轮写脚本时把 `atst/integration/runtime_tasks.py` 的删除记成"不带本轮任何 F 号，归并行会话所有"，而这一支正是 F-90（`RuntimeTaskStore` 孤儿 + 模块 docstring 那句"bounded task infrastructure"假告示；判据现扫：主树里 `RuntimeTaskStore` 只在两处**归档文档**里出现，`git status` 读作 `D atst/integration/runtime_tasks.py`）。本轮已在脚本注释就地改回 F-90，并在 §2 的 G41 行登记这笔归属。
 - **不写之账**：F-77 与 F-86 两个号本轮**没有落地对象**（普查过程中预留、处置改道后未再使用），不写任何读数；F-90 与 F-114 没有**在体锚**（前者整支模块已删，后者的落点是文档节 + 探针的 docstring 非空断言），账只记在本节与 §2。
 - **环境读数的归属（G20 的另一半）**：本轮主树读数（第 5/7/8/10/11/12 行）跑在 uv CPython 3.12 + `PYTHONPATH` 指回 `.venv/Lib/site-packages` 的解释器上，候选树读数（13/14/15/17 行）同一环境；`.venv/Scripts/python.exe` 的缺失本会话**没有修**，也不替并行会话猜成因。
 - **口径边界（不混抄）**：`3996 passed / 8 skipped / 15 deselected`（候选树，`not network`）与 `4009 passed / 10 skipped`（主树，含网络格）**不是同一分母**，两个数各属各的现场；覆盖率 82.78% 只在前者口径下成立。`fail_under = 77` 与所有 `--strict` 本轮一字未动。
@@ -4224,9 +4224,9 @@ HEAD 仍是第 22 轮那两笔（`07477e8`），第 23、24、25 轮一次都没
 三遍代码 + 候选树 17 道门禁 + 离线覆盖率全量 + 重新构建 + 装好包的六面复测全部收口；HEAD 仍是第 22 轮的 `07477e8`，第 23/24/25/26 轮**一次都没提交**，所以 dirty 名单里**分不出"哪一条属于哪一轮"**（四轮反复动过同一批文件），能机械分清的只有"哪几条不是本会话写的"这一层。**发布用的安装包在 `scratch_v18b26/dist26_pass3b/`**（wheel `39d65003…`、sdist `e2b2c7ae…`；`venv26` 装的就是这一份，`install26d.log` ↔ `sixface26_installed_d.log` 的读数属于这份字节）——`dist26_pass3/` 是同一批代码的**前一版文档字节**，按 G23 保留、不覆盖，它的 wheel 指纹与 `pass3b` 逐字节相同，只有打进 sdist 的文档不同。若写完本节还有字节变动，按同一口径另起新目录重构建。
 
 - **不是本会话写的**（判据是 `git diff --stat` 现量到的增删内容，不是记忆）：`CHANGELOG.md`、`docs/REFACTOR_PLAN_V17_CLOSURE.md`、`docs/REFACTOR_PLAN_V18_REVIEW.md`（未跟踪）、`docker-compose.yml`、`docs/FAQ.md`、`docs/api/README.md`、`scratch_measure24b.err`（未跟踪，同步脚本一直把它排除在候选树之外）。
-- **本轮（第 26 轮）新增判据（未跟踪）**：`tests/architecture/test_resource_lifecycle_gates.py`（G41 六条形状判据，700 行）、`tests/architecture/test_web_source_table.py`（F-84）、`tests/trade/test_trade_plane_vocabulary.py`（F-83 / G40）、`tests/architecture/test_advice_field_actors.py`（G39 同族，advice 四字段⇄文档）、`tests/protocol/test_bars_datetime_category_domain.py`（F-78）。第 23–25 轮新增的 `test_cli_kernel_seam.py`、`test_wire_numeric_domain.py`、`test_retry_backoff_cap.py` 与 `tstdx/integration/mcp/__main__.py` 仍一并未跟踪，**必须与代码改动同批走**。
-- **本轮删除**：`tstdx/integration/runtime_tasks.py`（F-90，D3：不留兼容垫，`tstdx/integration/__init__.py` 的 `__all__` 随之收缩到 4 个名字，对应用例 `tests/runtime/test_runtime_surfaces_v12.py` 里那一格同步撤下）。
-- **本轮改动的代码面**（判据是"`git diff -U0` 里带着本轮 F 号/`第 26 轮` 字样"，不是记忆；逐格处置见 §2 的 G40/G41/G37 三行）：`tstdx/transport/{pool,async_,sniff,_pool_family_hardening}.py`、`tstdx/streaming/{base,engine,push}.py`、`tstdx/integration/{runtime_http,runtime_ws,runtime_ws_server}.py`、`tstdx/observability/{metrics,prometheus_exporter,statsd_exporter}.py`、`tstdx/web/{_session_market,ticks,adapters_baidu,fund_rank}.py`、`tstdx/{diagnostics}.py`、`tstdx/domain/{calendar,symbol}.py`、`tstdx/protocol/{registry,_std7709_bars,_std7709_common 两支 parsers}.py`、`tstdx/trade/simulator.py`、`tstdx/feedback/telemetry.py`、`tstdx/tools/golden_expand.py`。**同一批 dirty 里还有第 23/24/25 轮与并行会话动过的文件**（`tstdx/errors.py`、`tstdx/query.py`、`tstdx/codec/framing.py`、`tstdx/catalog/capability.py`、`tstdx/web/sources.py`、`tstdx/trade/{__init__,client,frames,security,constants}.py`、`tstdx/integration/{__init__,wire_fields,mcp/}`、`tstdx/client/{core,_mixin}.py`、`tstdx/cli/`、`tstdx/protocol/prober.py`、`tstdx/transport/ratelimit.py`、`tstdx/tools/check_originality.py` 等）——它们的 diff 里**读不到本轮任何 F 号**，逐轮归属按上面第一组的办法处理，本轮不替它们署名。
+- **本轮（第 26 轮）新增判据（未跟踪）**：`tests/architecture/test_resource_lifecycle_gates.py`（G41 六条形状判据，700 行）、`tests/architecture/test_web_source_table.py`（F-84）、`tests/trade/test_trade_plane_vocabulary.py`（F-83 / G40）、`tests/architecture/test_advice_field_actors.py`（G39 同族，advice 四字段⇄文档）、`tests/protocol/test_bars_datetime_category_domain.py`（F-78）。第 23–25 轮新增的 `test_cli_kernel_seam.py`、`test_wire_numeric_domain.py`、`test_retry_backoff_cap.py` 与 `atst/integration/mcp/__main__.py` 仍一并未跟踪，**必须与代码改动同批走**。
+- **本轮删除**：`atst/integration/runtime_tasks.py`（F-90，D3：不留兼容垫，`atst/integration/__init__.py` 的 `__all__` 随之收缩到 4 个名字，对应用例 `tests/runtime/test_runtime_surfaces_v12.py` 里那一格同步撤下）。
+- **本轮改动的代码面**（判据是"`git diff -U0` 里带着本轮 F 号/`第 26 轮` 字样"，不是记忆；逐格处置见 §2 的 G40/G41/G37 三行）：`atst/transport/{pool,async_,sniff,_pool_family_hardening}.py`、`atst/streaming/{base,engine,push}.py`、`atst/integration/{runtime_http,runtime_ws,runtime_ws_server}.py`、`atst/observability/{metrics,prometheus_exporter,statsd_exporter}.py`、`atst/web/{_session_market,ticks,adapters_baidu,fund_rank}.py`、`atst/{diagnostics}.py`、`atst/domain/{calendar,symbol}.py`、`atst/protocol/{registry,_std7709_bars,_std7709_common 两支 parsers}.py`、`atst/trade/simulator.py`、`atst/feedback/telemetry.py`、`atst/tools/golden_expand.py`。**同一批 dirty 里还有第 23/24/25 轮与并行会话动过的文件**（`atst/errors.py`、`atst/query.py`、`atst/codec/framing.py`、`atst/catalog/capability.py`、`atst/web/sources.py`、`atst/trade/{__init__,client,frames,security,constants}.py`、`atst/integration/{__init__,wire_fields,mcp/}`、`atst/client/{core,_mixin}.py`、`atst/cli/`、`atst/protocol/prober.py`、`atst/transport/ratelimit.py`、`atst/tools/check_originality.py` 等）——它们的 diff 里**读不到本轮任何 F 号**，逐轮归属按上面第一组的办法处理，本轮不替它们署名。
 - **本轮改过期望的既有判据**（跟着改判而不是放宽）：`tests/architecture/test_doc_code_consistency.py`（§8 两节表格↔注册表，F-112/F-115/F-117/F-118）、`tests/architecture/test_evidence_pointers.py`（G42 扩尺）、`tests/observability/test_metrics.py`、`tests/protocol/test_tiers.py`、`tests/streaming/test_poll_guardrails.py`、`tests/transport/{test_pool_generation_provenance,test_async_transport_coverage,test_sniffer_passive}.py`、`tests/trade/test_client.py`、`tests/web/{test_normalize,test_fund_v2,test_extended_sources}.py`、`tests/runtime/test_runtime_surfaces_v12.py`。
-- **本轮动过的文档与工具面**：`docs/api/interfaces.md`（Web 源登记 31 行表、可观测性与反馈 §8、交易面查询、日历校准口径、三张服务面的 `Client` 所有权表、WS 并发与 `tstdx_handler` 收尾）、`docs/errors.md`（advice 字段表按读取点核对，`note` 那句假告示改口）、`docs/quickstart.md`、`README.md`、本台账；`scripts/_reach_allow.txt`、`pyproject.toml`。**那张所有权表的三行有判据钉着**（第 26 轮补，`tests/architecture/test_doc_code_consistency.py::test_service_plane_client_ownership_table_matches_the_code`）：按面现读三个入口的签名（`create_runtime_app(client=None)` / `serve_runtime_ws(handler=None)` / `MCPServer(client=None)`，`inspect` 取默认值），要求每一格反引号点到的符号在该面模块的 AST 里读得到，并要求实现里那个 `flag = <入参> is None` 形状的所有权标志（`owns_client` / `owns_handler` / `_owns_client`）被文档点名——两型违约各造一次正控（凭空钩子 `tstdx_bogus_hook`、把 `owns_client` 那半句抹掉），所以它不是"写完没人对的散文"。
+- **本轮动过的文档与工具面**：`docs/api/interfaces.md`（Web 源登记 31 行表、可观测性与反馈 §8、交易面查询、日历校准口径、三张服务面的 `Client` 所有权表、WS 并发与 `atst_handler` 收尾）、`docs/errors.md`（advice 字段表按读取点核对，`note` 那句假告示改口）、`docs/quickstart.md`、`README.md`、本台账；`scripts/_reach_allow.txt`、`pyproject.toml`。**那张所有权表的三行有判据钉着**（第 26 轮补，`tests/architecture/test_doc_code_consistency.py::test_service_plane_client_ownership_table_matches_the_code`）：按面现读三个入口的签名（`create_runtime_app(client=None)` / `serve_runtime_ws(handler=None)` / `MCPServer(client=None)`，`inspect` 取默认值），要求每一格反引号点到的符号在该面模块的 AST 里读得到，并要求实现里那个 `flag = <入参> is None` 形状的所有权标志（`owns_client` / `owns_handler` / `_owns_client`）被文档点名——两型违约各造一次正控（凭空钩子 `atst_bogus_hook`、把 `owns_client` 那半句抹掉），所以它不是"写完没人对的散文"。
 

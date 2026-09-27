@@ -2,9 +2,9 @@
 
 两格同一族的病：**一个身份靠手抄维持，一个身份靠读者自己猜**。
 
-第一格是包的身份。`pyproject.toml` 的 `version`、`tstdx/__init__.py` 的 `__version__`
-和 `docs/releases/v<版本>.md` 是三处独立手抄：装进环境后 `pip show tstdx` 读第一处、
-`python -c "tstdx.__version__"` 读第二处、想知道"这一版收口了什么"读第三处。前两条
+第一格是包的身份。`pyproject.toml` 的 `version`、`atst/__init__.py` 的 `__version__`
+和 `docs/releases/v<版本>.md` 是三处独立手抄：装进环境后 `pip show atst` 读第一处、
+`python -c "atst.__version__"` 读第二处、想知道"这一版收口了什么"读第三处。前两条
 今天相等，但没有任何判据钉着——而本轮现场就撞见第三处的缺口：`v1.1.0` 的 tag 已经在
 origin 上，`docs/releases/v1.1.0.md` 也确实存在，将来推进版本号时漏掉第三处不会有人红。
 
@@ -21,7 +21,7 @@ origin 上，`docs/releases/v1.1.0.md` 也确实存在，将来推进版本号�
 
 本判据因此钉四条，全部现读、不做全仓推断：
 
-1. `pyproject.toml` 的 `version` 与 `tstdx.__version__` 相等；
+1. `pyproject.toml` 的 `version` 与 `atst.__version__` 相等；
 2. `docs/releases/v<version>.md` 存在，且其首个标题含同一版本号；
 3. 根级 `*.md` 去掉活文档集合与政策/日志白名单后剩下的每一份，前 12 行内必须出现
    史料标记（`不是现行`/`按原文留存`/`史料`/`快照`）；
@@ -37,7 +37,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import tstdx
+import atst
 from tests.architecture.test_doc_code_consistency import EXCLUDED_PARTS, active_docs
 from tests.architecture.test_error_promises import AUDIT_DOC_PREFIXES
 
@@ -113,20 +113,20 @@ def _archive_contract_rows() -> list[tuple[str, str | None]]:
 
 def test_declared_package_version_is_the_same_number_in_two_places() -> None:
     text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert _pyproject_version(text) == tstdx.__version__
+    assert _pyproject_version(text) == atst.__version__
 
 
 def test_declared_version_has_a_reader_facing_release_page() -> None:
-    page = ROOT / "docs" / "releases" / f"v{tstdx.__version__}.md"
+    page = ROOT / "docs" / "releases" / f"v{atst.__version__}.md"
     assert page.is_file(), (
-        f"包版本 {tstdx.__version__} 在 docs/releases/ 没有对应发布说明——"
+        f"包版本 {atst.__version__} 在 docs/releases/ 没有对应发布说明——"
         "读到的 wheel 与读到的『这一版收口什么』脱钩"
     )
     title = next(
         (line for line in page.read_text(encoding="utf-8").splitlines() if line.startswith("# ")),
         "",
     )
-    assert tstdx.__version__ in title, f"{page.name} 的首个标题不含版本号：{title!r}"
+    assert atst.__version__ in title, f"{page.name} 的首个标题不含版本号：{title!r}"
 
 
 def test_root_docs_outside_the_gate_face_declare_their_status() -> None:

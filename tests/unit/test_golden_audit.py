@@ -1,4 +1,4 @@
-"""tstdx.tools.golden_audit 单元测试（origin 分级 + L1 真实样本门禁）。
+"""atst.tools.golden_audit 单元测试（origin 分级 + L1 真实样本门禁）。
 
 全部离线：仓库内 ``_tmp_golden_test/`` 下构造微型语料（不用 pytest
 tmp_path——本环境沙箱禁止扫描点前缀临时目录，惯例同 test_golden_expand）。
@@ -20,7 +20,7 @@ from uuid import uuid4
 
 import pytest
 
-from tstdx.tools.golden_audit import (
+from atst.tools.golden_audit import (
     ORIGIN_REAL,
     ORIGIN_SYNTHETIC,
     ORIGIN_UNKNOWN,

@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-import tstdx.transport.hosts as hosts_module
-from tstdx.errors import ConfigError
-from tstdx.protocol.commands import Family
-from tstdx.transport.hosts import POOL_BY_FAMILY, HostEntry, RankingStore, resolve_hosts
+import atst.transport.hosts as hosts_module
+from atst.errors import ConfigError
+from atst.protocol.commands import Family
+from atst.transport.hosts import POOL_BY_FAMILY, HostEntry, RankingStore, resolve_hosts
 
 
 def test_shared_endpoint_pools_rebind_family_and_reset_verification_provenance() -> None:
@@ -60,7 +60,7 @@ def test_environment_hosts_cannot_be_expanded_by_requested_ranking_file(
             )
         ]
     )
-    monkeypatch.setenv("TSTDX_HOSTS", "1.2.3.4:7709")
+    monkeypatch.setenv("ATST_HOSTS", "1.2.3.4:7709")
 
     resolved = resolve_hosts(
         None,

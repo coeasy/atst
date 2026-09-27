@@ -1,4 +1,4 @@
-"""档案层词表门禁：`tstdx/reader/profile.py` 的七个常量类只登记有人按它行动的词。
+"""档案层词表门禁：`atst/reader/profile.py` 的七个常量类只登记有人按它行动的词。
 
 本族判据此前量过 `QueryPlan`（F-50）、`Provenance`（F-52）、`ProviderSpec`/`ChannelSpec`
 （F-54）、`StreamPlan`（F-55）、`ProvenanceKind`（F-57）、`Command`（F-64）、
@@ -13,18 +13,18 @@
   ``Period`` 的成员。``Period.FILE_EXT`` 是 ``resolve_vipdoc_path`` 缺了一半（只有扩展名、
   没有目录名）的第二份手抄件。
 * ``AssetClass`` 的 6 个成员、``PriceEncoding.INT32``、``TimeEncoding.EPOCH`` 同样零兑现：
-  ``"int32"`` 的两处字面量属于 :mod:`tstdx.tools.codegen` 的**字段类型**词表，全仓没有任何
+  ``"int32"`` 的两处字面量属于 :mod:`atst.tools.codegen` 的**字段类型**词表，全仓没有任何
   地方把 ``"epoch"`` 写进档案或按它分支。
 
 **本轮真正的收获是那格假绿**：按名统计 ``Market.ALL`` 时量到 8 个读取点，逐条解析后全部
-落在 :class:`tstdx.domain.symbol.Market`（与本类的 ``Market`` **重名而不同定义**）。于是尺子
+落在 :class:`atst.domain.symbol.Market`（与本类的 ``Market`` **重名而不同定义**）。于是尺子
 升级成先解析导入再记账（`tests/support/field_readers.constant_class_vocabulary`），而
 ``test_the_name_collision_is_what_the_by_name_ruler_cannot_see`` 把这格陷阱钉成正控：尺子
 一旦退回按名扫描，它当众红。
 
 三档周期 ``QUARTER``/``YEAR``/``SEASON`` 第 17 轮留下来了，因为它们的**取值**确实有人按。
-第 18 轮把那句话落实成派生：周期词表只有 :mod:`tstdx.domain.period` 一处声明，
-``tstdx/client/core.py`` 的 category 表由它派生，``QUARTER`` 则被量出是 :attr:`Period.SEASON`
+第 18 轮把那句话落实成派生：周期词表只有 :mod:`atst.domain.period` 一处声明，
+``atst/client/core.py`` 的 category 表由它派生，``QUARTER`` 则被量出是 :attr:`Period.SEASON`
 的**别名**（``"quarter" -> "season"``）却被登记成平级成员，已删。**G13 随之关闭**，
 跨面一致性由 `tests/architecture/test_period_vocabulary_gates.py` 守着。
 """
@@ -41,8 +41,8 @@ from tests.support.field_readers import (
     member_reference_sites,
     string_keys_of_table,
 )
-from tstdx.domain.period import CANONICAL_PERIODS
-from tstdx.reader.profile import (
+from atst.domain.period import CANONICAL_PERIODS
+from atst.reader.profile import (
     AmountUnit,
     AssetClass,
     Market,
@@ -52,7 +52,7 @@ from tstdx.reader.profile import (
     VolumeUnit,
 )
 
-TARGET = "tstdx/reader/profile.py"
+TARGET = "atst/reader/profile.py"
 CLASSES = (
     "Market",
     "AssetClass",
@@ -75,8 +75,8 @@ DELETED: dict[str, list[str]] = {
 #: 零 ``Class.MEMBER`` 读取点、只以**取值字符串**被消费的成员：``类.成员`` → 兑现它的键表。
 #: 第 18 轮起那张表是"规范拼写 → 协议 category"的十行手写表，别名一律派生。
 _BY_VALUE_CONSUMERS = {
-    "Period.YEAR": ("tstdx/client/core.py", "_CANONICAL_TO_CATEGORY"),
-    "Period.SEASON": ("tstdx/client/core.py", "_CANONICAL_TO_CATEGORY"),
+    "Period.YEAR": ("atst/client/core.py", "_CANONICAL_TO_CATEGORY"),
+    "Period.SEASON": ("atst/client/core.py", "_CANONICAL_TO_CATEGORY"),
 }
 
 #: ``presets.py`` 允许直接写数字的市场号：TDX 扩展市场号，确实不在 ``Market.CODES`` 五段内
@@ -232,7 +232,7 @@ def test_docstring_declares_the_derived_member_count() -> None:
 # 正控：重名陷阱、G13 现场、市场号的单一来源
 # --------------------------------------------------------------------------- #
 def test_the_name_collision_is_what_the_by_name_ruler_cannot_see() -> None:
-    """``tstdx/domain/symbol.py`` 与本文件**都有** ``class Market``：命中要记对人家。
+    """``atst/domain/symbol.py`` 与本文件**都有** ``class Market``：命中要记对人家。
 
     本轮真实踩过的格子——按名统计给档案层的 ``Market.ALL`` 记了 8 个读取点，解析导入后
     全部属于符号引擎。这条同时按住两种退化：尺子退回按名扫描，或符号层不再暴露
@@ -243,7 +243,7 @@ def test_the_name_collision_is_what_the_by_name_ruler_cannot_see() -> None:
     assert "ALL" not in vocab.members["Market"], "档案层的 ALL 回来了，本判据的前提已变"
     assert vocab.sites("Market", "ALL") == set(), "档案层 Market.ALL 竟有读取点，解析逻辑待复核"
     assert any(
-        item.startswith("tstdx/domain/symbol.py") for item in vocab.foreign.get("Market.ALL", set())
+        item.startswith("atst/domain/symbol.py") for item in vocab.foreign.get("Market.ALL", set())
     ), "符号层 Market.ALL 的命中没被记成『他定义』：尺子不再区分同名两处定义"
     _, by_name = member_reference_sites("Market")
     assert "ALL" in by_name, "按名尺子已看不到 Market.ALL——它是否还会张冠李戴需要重新评估"
@@ -259,7 +259,7 @@ def test_g13_is_closed_the_period_category_table_is_derived() -> None:
     """
 
     vocab = _vocab()
-    keys = string_keys_of_table("tstdx/client/core.py", "_CANONICAL_TO_CATEGORY")
+    keys = string_keys_of_table("atst/client/core.py", "_CANONICAL_TO_CATEGORY")
     by_value = {
         member: vocab.values["Period"][member]
         for member in vocab.members["Period"]
@@ -280,10 +280,10 @@ def test_market_codes_table_is_the_single_source_for_market_numbers() -> None:
 
     vocab = _vocab()
     assert vocab.sites("Market", "CODES") >= {
-        "tstdx/profile/presets.py",
-        "tstdx/profile/detect.py",
+        "atst/profile/presets.py",
+        "atst/profile/detect.py",
     }, f"市场号消费者已变：{sorted(vocab.sites('Market', 'CODES'))}"
-    source = Path(REPO_ROOT / "tstdx/profile/presets.py").read_text(encoding="utf-8")
+    source = Path(REPO_ROOT / "atst/profile/presets.py").read_text(encoding="utf-8")
     hardcoded = {int(num) for num in re.findall(r"market_id=(\d+)", source)}
     undeclared = sorted(hardcoded - _TDX_EXTENSION_MARKET_IDS)
     assert not undeclared, f"预设里出现了未登记的市场号：{undeclared}"

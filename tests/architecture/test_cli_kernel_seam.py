@@ -3,7 +3,7 @@
 射程：文档里的每一条可执行 CLI 示例，凡落点是 ``内核·typed`` / ``内核·rows`` 的，都在**真实
 调用链**上跑一遍——真实 ``Client``、真实 ``QueryPlanner.compile``（``normalized`` →
 ``_select_channel`` → ``validate_call`` 全部按生产口径执行），唯一被换掉的是内核自己声明的
-注入缝 :class:`~tstdx.runtime.kernel.KernelExecutor`（它的 docstring 就写着 "Injection seam
+注入缝 :class:`~atst.runtime.kernel.KernelExecutor`（它的 docstring 就写着 "Injection seam
 for tests"）。因此 ``Client.__getattr__`` 那条"除了 provider/channel/currentness，其余关键字
 参数一律塞进 options 袋"的转发路，被逐格量到了它自己的终点。落点是 ``元信息`` 的那两条
 （``version`` / ``capabilities``）也在射程里，判据反着量：它们按构造碰不到内核，所以一格的
@@ -18,7 +18,7 @@ for tests"）。因此 ``Client.__getattr__`` 那条"除了 provider/channel/cur
 与兄弟判据的分工：``test_cli_reference_table`` 管命令名 / 旗标 / 落点三格与 argparse 现值
 一致（旗标名对不对），``test_dispatch_targets`` 管 capability → 实现体的绑定表对不对，
 本文件管**这两者之间那段没人管的路上，实参能不能落到实现体的签名上**。落点是
-``直连传输层`` 的六支命令不在这里——它们经 :func:`tstdx.client.get_client` 的
+``直连传输层`` 的六支命令不在这里——它们经 :func:`atst.client.get_client` 的
 ``@overload`` 回到具体类型，参数名与类型由 ``mypy``（``check_untyped_defs = true``）钉住，
 本文件用 :func:`test_the_transport_leaves_are_the_ones_mypy_can_see` 把这条分工本身量出来，
 而不是默认它成立。
@@ -44,10 +44,10 @@ from tests.architecture.test_cli_reference_table import (  # noqa: E402
     runtime_leaves,
 )
 from tests.architecture.test_doc_code_consistency import _cli_examples  # noqa: E402
-from tstdx.client.api import Client  # noqa: E402
-from tstdx.query import QueryPlan, QuerySpec  # noqa: E402
-from tstdx.result import Provenance, QueryResult, ResultMeta  # noqa: E402
-from tstdx.runtime.kernel import UnifiedRuntime  # noqa: E402
+from atst.client.api import Client  # noqa: E402
+from atst.query import QueryPlan, QuerySpec  # noqa: E402
+from atst.result import Provenance, QueryResult, ResultMeta  # noqa: E402
+from atst.runtime.kernel import UnifiedRuntime  # noqa: E402
 
 #: 落点里经过内核的两类：``Client`` / ``_ClientRows`` 构造点由 ``test_cli_reference_table``
 #: 的 ``_landing`` 现读处理器源码判定，这里只消费那份词汇表，不另抄一份名单。
@@ -134,7 +134,7 @@ _ACTIVE: list[_Recorder] = []
 
 def _leaf_of(tokens: list[str]) -> str | None:
     """按 parser 自己的口径还原叶子命令键（旗标插在中间也认得）。"""
-    from tstdx.cli.parser import build_parser
+    from atst.cli.parser import build_parser
 
     try:
         args = build_parser().parse_args(tokens)
@@ -171,18 +171,18 @@ def kernel_examples() -> list[tuple[str, str, list[str], str, str]]:
 
 def run_through_seam(monkeypatch: pytest.MonkeyPatch, tokens: list[str]) -> dict[str, Any]:
     """在真实调用链上跑一行示例，返回留痕与异常。"""
-    import tstdx.cli.runtime_commands as rc
+    import atst.cli.runtime_commands as rc
 
     recorder = _Recorder()
 
     monkeypatch.setattr(rc, "Client", _SeamedClient)
-    monkeypatch.setattr("tstdx.client.api.Client", _SeamedClient)
+    monkeypatch.setattr("atst.client.api.Client", _SeamedClient)
     monkeypatch.setattr(rc, "_ClientRows", _rows_with_seam())
     sleeps: list[float] = []
     monkeypatch.setattr(rc.time, "sleep", lambda seconds: sleeps.append(seconds))
     monkeypatch.setattr(socket, "socket", _no_socket)
 
-    from tstdx.cli.parser import build_parser
+    from atst.cli.parser import build_parser
 
     out, err = io.StringIO(), io.StringIO()
     rc_code: Any = None
@@ -210,7 +210,7 @@ def run_through_seam(monkeypatch: pytest.MonkeyPatch, tokens: list[str]) -> dict
 
 def _rows_with_seam() -> type:
     """``_ClientRows`` 在自己内部 import ``Client``，所以给它同一个缝。"""
-    import tstdx.cli.runtime_commands as rc
+    import atst.cli.runtime_commands as rc
 
     class Rows(rc._ClientRows):  # type: ignore[misc, valid-type,no-untyped-def]
         def __init__(self, *, timeout: float | None = None, hosts: Any = None) -> None:
@@ -306,8 +306,8 @@ def test_the_battery_never_touches_a_socket(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_a_planted_wrong_keyword_is_caught_by_the_real_reconciler() -> None:
     """三种形状各自都要红，否则判据一只是"恰好没坏"的观测。"""
-    from tstdx.catalog.capability import default_provider_for
-    from tstdx.query import QueryPlanner
+    from atst.catalog.capability import default_provider_for
+    from atst.query import QueryPlanner
 
     planner = QueryPlanner()
 
@@ -362,7 +362,7 @@ def test_the_transport_leaves_are_the_ones_mypy_can_see() -> None:
        它经 ``__getattr__`` 以 :class:`Any` 转发，所以 ``mypy`` 看不见键名——第 23 轮那次
        ``source=`` 正是这样在全绿的离线套件里装进包的。哪天有人把它们写成显式方法，这个
        前提变了，本判据先红，再决定这段射程要不要搬进类型层。
-    ②``直连传输层`` 那六支交给 ``mypy`` 的理由：:func:`tstdx.client.get_client` 的每个
+    ②``直连传输层`` 那六支交给 ``mypy`` 的理由：:func:`atst.client.get_client` 的每个
        ``kind`` 都有 ``@overload`` 回到具体类（不是 ``Any``），参数名与类型因此可静态检查。
        重载名单与注册表必须逐 ``kind`` 配对，多一个 ``kind`` 少一条重载都会在这里红。
     """
@@ -377,7 +377,7 @@ def test_the_transport_leaves_are_the_ones_mypy_can_see() -> None:
         f"本门禁的射程要重新判定：{declared}"
     )
 
-    from tstdx.client import factory
+    from atst.client import factory
 
     source = inspect.getsource(factory)
     registry_kinds = set(factory._CLIENT_REGISTRY)  # type: ignore[attr-defined]

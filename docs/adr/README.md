@@ -28,10 +28,10 @@
 | ADR-005 | PROTOCOL_SPEC YAML 规范 | 同上 | Accepted | `spec_audit` 验证 spec ↔ 实现 |
 | ADR-006 | 流式背压与零丢失语义 | [`ADR-006-010.md`](ADR-006-010.md) | Accepted | `BackpressureOverflow` 有真实投递站点 |
 | ADR-007 | Golden 自采集 + 合成衍生双轨 | [`ADR-006-010.md`](ADR-006-010.md) | Accepted | **与下面那份复合编号 `ADR-007-010` 撞号** |
-| ADR-008 | 反馈与遥测默认关闭 | [`ADR-006-010.md`](ADR-006-010.md) | Accepted | `tstdx/feedback/`、`tstdx/observability/`；**另与复合编号 `ADR-007-010` 撞号** |
-| ADR-009 | Rust 内核可选化 | [`ADR-006-010.md`](ADR-006-010.md) | Superseded | 状态行本轮修正：`tstdx_native/` 已不在仓库，第 20 轮实测全仓 `git ls-files` 里含 `native` 的路径只有 ADR-011 的文件名本身；移除由 ADR-011 设定的条件触发。另与复合编号 `ADR-007-010` 撞号 |
+| ADR-008 | 反馈与遥测默认关闭 | [`ADR-006-010.md`](ADR-006-010.md) | Accepted | `atst/feedback/`、`atst/observability/`；**另与复合编号 `ADR-007-010` 撞号** |
+| ADR-009 | Rust 内核可选化 | [`ADR-006-010.md`](ADR-006-010.md) | Superseded | 状态行本轮修正：`atst_native/` 已不在仓库，第 20 轮实测全仓 `git ls-files` 里含 `native` 的路径只有 ADR-011 的文件名本身；移除由 ADR-011 设定的条件触发。另与复合编号 `ADR-007-010` 撞号 |
 | ADR-010 | Spec 驱动的协议开发流程 | [`ADR-006-010.md`](ADR-006-010.md) | Accepted | draft → candidate → stable；**另与复合编号 `ADR-007-010` 撞号** |
-| ADR-007-010 | CredentialStore 处置决议（deprecate 而非接线） | [`ADR-007-010.md`](ADR-007-010.md) | 已接受，对象已消失 | 标题里的 `007-010` 是**一个复合编号**，不四条决策；它与上一行的 ADR-007 撞号。`CredentialStore` 在 `tstdx/` 里已无实现（第 20 轮实测），本文件的引用见 `README.md`/`SECURITY.md` 的口径段 |
+| ADR-007-010 | CredentialStore 处置决议（deprecate 而非接线） | [`ADR-007-010.md`](ADR-007-010.md) | 已接受，对象已消失 | 标题里的 `007-010` 是**一个复合编号**，不四条决策；它与上一行的 ADR-007 撞号。`CredentialStore` 在 `atst/` 里已无实现（第 20 轮实测），本文件的引用见 `README.md`/`SECURITY.md` 的口径段 |
 | ADR-011 | streaming 平行实现与 native 实验层处置决议 | [`ADR-011-streaming-native-处置决议.md`](ADR-011-streaming-native-%E5%A4%84%E7%BD%AE%E5%86%B3%E8%AE%AE.md) | 已接受 | native 那一半的移除条件已兑现（见 ADR-009 行） |
 | ADR-012 | facade 路由链 vs DataSourceRouter 五级链口径对拍 | [`ADR-012-路由链合并口径对拍.md`](ADR-012-%E8%B7%AF%E7%94%B1%E9%93%BE%E5%90%88%E5%B9%B6%E5%8F%A3%E5%BE%84%E5%AF%B9%E6%8B%8D.md) | 已取代 | 对拍的两个对象均已删除 |
 | ADR-013 | Provider-first Runtime Contract | [`ADR-013-provider-first-runtime-contract.md`](ADR-013-provider-first-runtime-contract.md) | Accepted | **与下面那份撞号**。章节不带编号；引用它的人通常写"契约""§Decision" |

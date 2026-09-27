@@ -7,7 +7,7 @@ FROM python:3.11-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN addgroup --system tstdx && adduser --system --ingroup tstdx tstdx
+RUN addgroup --system atst && adduser --system --ingroup atst atst
 
 WORKDIR /app
 
@@ -17,9 +17,9 @@ RUN set -eu; \
     test "$count" -eq 1; \
     python -m pip install --no-cache-dir --no-deps /tmp/*.whl; \
     rm -f /tmp/*.whl; \
-    tstdx --help >/dev/null; \
+    atst --help >/dev/null; \
     python -m pip check
 
-USER tstdx
+USER atst
 
-CMD ["tstdx", "--help"]
+CMD ["atst", "--help"]

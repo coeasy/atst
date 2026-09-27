@@ -14,7 +14,7 @@
 结果自带 provenance；没有任何缓存会替你回答第二次。
 
 ```python
-from tstdx import Client, QuerySpec
+from atst import Client, QuerySpec
 
 client = Client()
 
@@ -34,7 +34,7 @@ print(result.meta.provenance)      # 直连来源；与请求 Provider 不一致
 ## 2. 批量：逐 symbol 三态，绝不部分静默
 
 ```python
-from tstdx import Client
+from atst import Client
 
 client = Client()
 batch = client.quotes_batch(["sh600519", "sz000001", "sz399999"])
@@ -55,7 +55,7 @@ print(batch.partial, list(batch.errors))   # 有缺口时 errors 必非空
 默认路径**永不**换源。要跨 Provider 容错，必须显式给出有序策略：
 
 ```python
-from tstdx import Client, FallbackPolicy, QuerySpec
+from atst import Client, FallbackPolicy, QuerySpec
 
 client = Client()
 policy = FallbackPolicy(providers=("tdx", "tencent"))
@@ -75,8 +75,8 @@ print([(a.provider, a.status, a.code) for a in out.attempts])   # 逐源尝试�
 冻结 dataclass 契约 → 内核 → 强类型记录，避免 `list[dict]` 口径漂移。
 
 ```python
-from tstdx import Client
-from tstdx.typed_query import FundHoldingsQuery, records_from_response
+from atst import Client
+from atst.typed_query import FundHoldingsQuery, records_from_response
 
 client = Client()
 typed = client.typed(FundHoldingsQuery(code="000001"))
@@ -87,14 +87,14 @@ result = client.call("fund_holdings", code="000001")
 records = records_from_response(FundHoldingsQuery(code="000001"), result)
 ```
 
-Domain Record 族共 9 类（`tstdx.domain.records`）：`FinancialRecord`、
+Domain Record 族共 9 类（`atst.domain.records`）：`FinancialRecord`、
 `FundRecord`、`BondRecord`、`NewsRecord`、`ResearchRecord`、`OptionRecord`、
 `MarketDataRecord`、`SearchRecord`、`MacroRecord`。
 
 ## 5. 流式订阅：显式生命周期
 
 ```python
-from tstdx import Client
+from atst import Client
 
 client = Client()
 stream = client.stream(
@@ -124,10 +124,10 @@ stream.close()
 `Client` 之上的全部契约。
 
 ```python
-from tstdx import Client, QuerySpec
-from tstdx.query import QueryPlan
-from tstdx.result import QueryResult, Provenance
-from tstdx.runtime.kernel import UnifiedRuntime
+from atst import Client, QuerySpec
+from atst.query import QueryPlan
+from atst.result import QueryResult, Provenance
+from atst.runtime.kernel import UnifiedRuntime
 
 
 class FakeExecutor:
@@ -151,7 +151,7 @@ assert result.data[0]["price"] == 10.0
 漂移即报错，而不是等到线上第一次调用才发现某个 capability 没接线。
 
 ```python
-from tstdx.runtime.audit import audit_runtime
+from atst.runtime.audit import audit_runtime
 
 report = audit_runtime()
 print(report)

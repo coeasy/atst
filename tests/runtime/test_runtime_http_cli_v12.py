@@ -5,10 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from tstdx.cli import main as cli_main
-from tstdx.errors import ValidationError
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.runtime.executor import DirectProviderExecutor
+from atst.cli import main as cli_main
+from atst.errors import ValidationError
+from atst.query import QueryPlanner, QuerySpec
+from atst.runtime.executor import DirectProviderExecutor
 
 
 def _bars_plan(provider: str, adjustment: str = "qfq"):
@@ -45,7 +45,7 @@ def test_cli_normal_exception_is_safe_envelope(monkeypatch, capsys) -> None:
 
             return SimpleNamespace(func=fail)
 
-    monkeypatch.setattr("tstdx.cli.build_parser", lambda: Parser())
+    monkeypatch.setattr("atst.cli.build_parser", lambda: Parser())
     assert cli_main([]) == 1
     payload = json.loads(capsys.readouterr().err)
     assert payload["error"]["code"] == "E9000"
@@ -61,7 +61,7 @@ def test_cli_keyboard_interrupt_keeps_process_control_semantics(monkeypatch) -> 
 
             return SimpleNamespace(func=stop)
 
-    monkeypatch.setattr("tstdx.cli.build_parser", lambda: Parser())
+    monkeypatch.setattr("atst.cli.build_parser", lambda: Parser())
     assert cli_main([]) == 130
 
 
@@ -70,7 +70,7 @@ def test_runtime_http_validation_and_native_failures_use_envelopes() -> None:
     pytest.importorskip("httpx")
     from fastapi.testclient import TestClient
 
-    from tstdx.integration.runtime_http import create_runtime_app
+    from atst.integration.runtime_http import create_runtime_app
 
     class Runtime:
         class Planner:

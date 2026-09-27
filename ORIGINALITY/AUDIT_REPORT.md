@@ -1,8 +1,8 @@
 # 原创性审计报告
 
-> 检查工具：`python -m tstdx.tools.check_originality`
+> 检查工具：`python -m atst.tools.check_originality`
 > 许可白名单：`ORIGINALITY/LICENSE_ALLOWLIST.md`
-> 复现：`python -m tstdx.tools.check_originality --json --strict tstdx`
+> 复现：`python -m atst.tools.check_originality --json --strict atst`
 
 ---
 
@@ -11,8 +11,8 @@
 | 字段 | 值 |
 |------|------|
 | 审计日期 | 2026-08-31 |
-| 审计范围 | `tstdx/` 全部 Python 源码（含子包） |
-| 审计工具 | `tstdx.tools.check_originality`（AST 级静态扫描，零依赖） |
+| 审计范围 | `atst/` 全部 Python 源码（含子包） |
+| 审计工具 | `atst.tools.check_originality`（AST 级静态扫描，零依赖） |
 | 许可白名单 | MIT、BSD-2/3、Apache-2.0、GPL-2/3、LGPL-2.1/3、MPL-2.0 |
 | 项目许可 | MIT（`LICENSE`） |
 
@@ -34,7 +34,7 @@
 ## 检查方法
 
 ```bash
-python -m tstdx.tools.check_originality --strict tstdx
+python -m atst.tools.check_originality --strict atst
 ```
 
 ### 检查维度
@@ -66,8 +66,8 @@ python -m tstdx.tools.check_originality --strict tstdx
 
 | 文件 | 问题类型 | 描述 | 修复状态 |
 |------|----------|------|----------|
-| tstdx/compat/mootdx.py 等 | 项目引用（信息性） | 兼容垫片中提到 mootdx API 名称，属预期兼容行为 | 已确认为设计意图 |
-| tstdx/config/loader.py | 未知外部导入 tomli | Python<3.11 的 stdlib 回退（pyproject 已声明条件依赖） | 已确认 |
+| atst/compat/mootdx.py 等 | 项目引用（信息性） | 兼容垫片中提到 mootdx API 名称，属预期兼容行为 | 已确认为设计意图 |
+| atst/config/loader.py | 未知外部导入 tomli | Python<3.11 的 stdlib 回退（pyproject 已声明条件依赖） | 已确认 |
 
 ---
 
@@ -96,7 +96,7 @@ python -m tstdx.tools.check_originality --strict tstdx
 
 1. **保持 CI 门禁**：pre-commit（`.pre-commit-config.yaml`）与 GitHub Actions
    均接入 `check_originality --strict`，新增文件无许可头即拦截。
-2. **兼容垫片隔离**：`tstdx/compat/` 是唯一允许出现外部项目 API 名称的目录，
+2. **兼容垫片隔离**：`atst/compat/` 是唯一允许出现外部项目 API 名称的目录，
    后续新垫片一律放此目录并在 docstring 注明「接口形状参考，实现原创」。
 3. **白名单变更须评审**：向 `LICENSE_ALLOWLIST.md` 添加新许可需经 GOVERNANCE
    流程，并复核与 MIT 的单向兼容性。
@@ -107,5 +107,5 @@ python -m tstdx.tools.check_originality --strict tstdx
 
 | 角色 | 姓名 | 签名 | 日期 |
 |------|------|------|------|
-| 审计人 | tstdx 维护组（自动扫描 + 人工复核） | — | 2026-08-31 |
+| 审计人 | atst 维护组（自动扫描 + 人工复核） | — | 2026-08-31 |
 | 审批人 | （发版前由 GOVERNANCE 指定维护者签署） | — | — |

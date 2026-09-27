@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.tools.codegen import load_all_specs, load_spec
-from tstdx.tools.spec_audit import (
+from atst.tools.codegen import load_all_specs, load_spec
+from atst.tools.spec_audit import (
     audit_all,
     coverage_summary,
     draft_spec_files,
@@ -62,7 +62,7 @@ def test_required_fields_present(field: str) -> None:
 
 def test_specs_in_ledger() -> None:
     """每个 spec 的命令号都必须在 85 命令账本中。"""
-    from tstdx.protocol.commands import get_command
+    from atst.protocol.commands import get_command
 
     for spec_id, spec in SPECS.items():
         family_map = {
@@ -137,7 +137,7 @@ def test_control_frame_exemption_is_derived_from_spec() -> None:
     真机实测 0x0004 的响应**有 10 字节**，可它照样该免注册——因为它没有记录结构，
     而且本包不解析它。旧口径下"响应体为空"这句从未核对过的主张就能换来绿灯；
     现在想让一条命令免注册，必须写下"不解析"这三个字，而这句话有读取点
-    （:func:`tstdx.tools.spec_audit.is_payloadless`）。
+    （:func:`atst.tools.spec_audit.is_payloadless`）。
     """
     declared = {"header": [], "fields": [], "record_size": 0, "parse": False}
     assert is_payloadless({"response": dict(declared)})
@@ -184,7 +184,7 @@ def test_measured_evidence_blocks_are_internally_consistent() -> None:
 
 def test_trade_plane_specs_are_audited_against_trade_anchors() -> None:
     """交易族查自己的账本与帧层，而不是被当成 7709 命令误报"未登记"。"""
-    from tstdx.tools.spec_audit import _TRADE_IMPLEMENTATION, _attr_exists
+    from atst.tools.spec_audit import _TRADE_IMPLEMENTATION, _attr_exists
 
     trade = [r for r in ALL_RESULTS if r.plane == "trade"]
     assert {r.spec_id for r in trade} == {
@@ -199,13 +199,13 @@ def test_trade_plane_specs_are_audited_against_trade_anchors() -> None:
     for cmd in range(0x1002, 0x1010):  # 锚点表不得凭空多出无 spec 的命令号
         assert (cmd in _TRADE_IMPLEMENTATION) is False
     for const, codec in _TRADE_IMPLEMENTATION.values():
-        assert _attr_exists("tstdx.trade.constants", const)
-        assert _attr_exists("tstdx.trade.frames", codec)
+        assert _attr_exists("atst.trade.constants", const)
+        assert _attr_exists("atst.trade.frames", codec)
 
 
 def test_strict_still_demands_hundred_percent() -> None:
     """阈值一次都没放宽：少一条覆盖，strict 必须红。"""
-    from tstdx.tools.spec_audit import main
+    from atst.tools.spec_audit import main
 
     assert coverage_summary(ALL_RESULTS)["coverage_pct"] == 100.0
     assert main(["--strict"]) == 0

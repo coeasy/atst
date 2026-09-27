@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """G48 — 同步 :meth:`TcpConnection._recv_exact` 的读预算必须有墙钟截止，与异步孪生同强。
@@ -19,7 +19,7 @@
 
 修复口径：进循环前算一次 ``deadline = monotonic() + self.timeout``，每轮按剩余预算收紧
 socket 超时（``min(self.timeout, left)``，默认路径逐字节不变），预算见底即 ``close()`` 并抛
-:class:`~tstdx.errors.ReadTimeout`；三条出口各自把 socket 超时还回 ``self.timeout``——读满时
+:class:`~atst.errors.ReadTimeout`；三条出口各自把 socket 超时还回 ``self.timeout``——读满时
 一次、单帧上限那一格由"不丢连接"的空档超时分支还一次，因为这条连接接下来会被复用，
 不复原就是把上一帧的几十毫秒残余当成下一帧的读预算。
 
@@ -43,10 +43,10 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.errors import AllHostsUnreachable, ReadTimeout
-from tstdx.transport.base import TcpConnection
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.pool import ConnectionPool
+from atst.errors import AllHostsUnreachable, ReadTimeout
+from atst.transport.base import TcpConnection
+from atst.transport.hosts import HostEntry
+from atst.transport.pool import ConnectionPool
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -280,7 +280,7 @@ def test_the_async_twin_still_wraps_its_read_in_one_wall_clock() -> None:
 
     这一格量的就是"两张面一样强"的对照面——B-3 那族的根因正是只有一张面有墙钟。
     """
-    tree = ast.parse((REPO_ROOT / "tstdx" / "transport" / "async_.py").read_text(encoding="utf-8"))
+    tree = ast.parse((REPO_ROOT / "atst" / "transport" / "async_.py").read_text(encoding="utf-8"))
     fn = next(
         n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef) and n.name == "_recv_exact"
     )
@@ -302,7 +302,7 @@ def test_the_read_budget_is_read_once_outside_the_loop_and_spent_inside_it() -> 
     这一格量的就是修复前那个形状——整个函数里没有一处"总预算"读数，只有逐次
     ``settimeout``：空档超时永远量不到"对端每 50 ms 吐 1 字节"。
     """
-    tree = ast.parse((REPO_ROOT / "tstdx" / "transport" / "base.py").read_text(encoding="utf-8"))
+    tree = ast.parse((REPO_ROOT / "atst" / "transport" / "base.py").read_text(encoding="utf-8"))
     fn = next(
         node
         for node in ast.walk(tree)

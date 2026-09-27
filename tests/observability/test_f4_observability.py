@@ -17,13 +17,13 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-from tstdx.observability import (  # noqa: E402
+from atst.observability import (  # noqa: E402
     OtelExporter,
     PrometheusExporter,
     StatsdExporter,
     start_exporter,
 )
-from tstdx.observability.metrics import (  # noqa: E402
+from atst.observability.metrics import (  # noqa: E402
     Counter,
     Gauge,
     Histogram,
@@ -277,7 +277,7 @@ class _FakeSocket:
 def _counter_values(sent: list[str], name: str, tag: str) -> list[float]:
     vals = []
     for s in sent:
-        if s.startswith(f"tstdx_{name}:") and tag in s:
+        if s.startswith(f"atst_{name}:") and tag in s:
             vals.append(float(s.split(":")[1].split("|")[0]))
     return vals
 
@@ -327,7 +327,7 @@ def test_statsd_parse_labels_real_parsing():
 
 
 def test_statsd_port_zero_disabled_logs_once(caplog):
-    with caplog.at_level("INFO", logger="tstdx.observability.statsd_exporter"):
+    with caplog.at_level("INFO", logger="atst.observability.statsd_exporter"):
         exp = StatsdExporter(port=0)
         exp.push("x", 1)
         exp.push_all()
@@ -345,11 +345,11 @@ def test_statsd_histogram_structure_not_double_pushed():
     m.request_duration.observe(0.5, labels={"command": "0x0530"})
     exp.push_all(metrics=m)
     names = {s.split(":")[0].split("|")[0] for s in sock.sent if s}
-    assert "tstdx_request_duration_seconds_bucket" in names
-    assert "tstdx_request_duration_seconds_count" in names
-    assert "tstdx_request_duration_seconds_sum" in names
+    assert "atst_request_duration_seconds_bucket" in names
+    assert "atst_request_duration_seconds_count" in names
+    assert "atst_request_duration_seconds_sum" in names
     # 不应出现以裸指标名推送的 count 值
-    raw = [s for s in sock.sent if s.startswith("tstdx_request_duration_seconds:")]
+    raw = [s for s in sock.sent if s.startswith("atst_request_duration_seconds:")]
     assert raw == []
 
 
@@ -357,7 +357,7 @@ def test_statsd_histogram_structure_not_double_pushed():
 # otel docstring 修正
 # --------------------------------------------------------------------------- #
 def test_otel_time_nanos_docstring_says_19_digits():
-    from tstdx.observability.otel_exporter import _time_nanos_to_str
+    from atst.observability.otel_exporter import _time_nanos_to_str
 
     assert "19" in _time_nanos_to_str.__doc__
     assert _time_nanos_to_str(1_735_689_600_000_000_000) == "1735689600000000000"
@@ -369,7 +369,7 @@ def test_otel_export_uses_registry_snapshot():
     exp = OtelExporter(metrics=m)
     payload = exp.export_metrics()
     names = [x["name"] for x in payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]]
-    assert "tstdx_request_total" in names
+    assert "atst_request_total" in names
 
 
 # --------------------------------------------------------------------------- #
@@ -403,4 +403,4 @@ def test_metrics_snapshot_json_serializable():
     m.record_request(command="0x0530", ok=True, duration=0.1)
     snap = m.snapshot()
     json.dumps(snap)  # 不抛
-    assert "tstdx_request_total" in snap
+    assert "atst_request_total" in snap

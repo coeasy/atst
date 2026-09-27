@@ -10,7 +10,7 @@ import threading
 
 import pytest
 
-from tstdx.observability.metrics import (
+from atst.observability.metrics import (
     Counter,
     Gauge,
     Histogram,
@@ -19,7 +19,7 @@ from tstdx.observability.metrics import (
     Summary,
     instrument_client,
 )
-from tstdx.observability.metrics import (
+from atst.observability.metrics import (
     metrics as global_metrics,
 )
 
@@ -179,7 +179,7 @@ class TestMetrics:
         instrument_client(client)
         instrument_client(client)  # 第二次不应报错
         # 验证 request 方法只被包装一次
-        assert getattr(client.request, "_tstdx_instrumented", False) is True
+        assert getattr(client.request, "_atst_instrumented", False) is True
 
     def test_thread_safety(self):
         """#15 线程安全：10 线程 × 100 次递增。"""
@@ -207,7 +207,7 @@ class TestMetrics:
         # 确认 registry 可以渲染
         output = global_metrics.render()
         assert isinstance(output, str)
-        assert "tstdx_protocol_parse_total" in output
+        assert "atst_protocol_parse_total" in output
 
     def test_record_parse(self):
         """#17 record_parse 便捷方法。"""
@@ -238,10 +238,10 @@ class TestMetrics:
         """#20 完整渲染包含所有预置指标。"""
         output = global_metrics.render()
         # 应包含所有内置指标名
-        assert "tstdx_protocol_parse_total" in output
-        assert "tstdx_request_total" in output
+        assert "atst_protocol_parse_total" in output
+        assert "atst_request_total" in output
         assert (
-            "tstdx_stream_backpressure" in output
+            "atst_stream_backpressure" in output
         )  # F-112：原先这一格盯的是恒 0 的 active_connections
-        assert "tstdx_stream_events_total" in output
-        assert "tstdx_errors_total" in output
+        assert "atst_stream_events_total" in output
+        assert "atst_errors_total" in output

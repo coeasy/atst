@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.web import normalize as norm
-from tstdx.web.normalize import _NORMALIZER_REGISTRY
-from tstdx.web.sources import KNOWN_SOURCES
+from atst.web import normalize as norm
+from atst.web.normalize import _NORMALIZER_REGISTRY
+from atst.web.sources import KNOWN_SOURCES
 
 #: 已知例外 A：normalizer 刻意 identity（解析层按市场分支缩放，见
 #: normalize.py KlineNormalizer 注释——A 股 ×100、港美 ×1，spec 的

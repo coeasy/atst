@@ -1,4 +1,4 @@
-# tstdx Refactor Plan v13 — Clean-Break Unified Runtime
+# atst Refactor Plan v13 — Clean-Break Unified Runtime
 
 > Status: design baseline for the next implementation phase
 >
@@ -147,40 +147,40 @@ These are hard rules, not recommendations.
 
 The following assets remain authoritative and are expanded rather than replaced:
 
-- `tstdx/query.py`
+- `atst/query.py`
   - `QuerySpec`
   - `QueryFingerprint`
   - `QueryPlan`
   - `QueryPlanner`
-- `tstdx/providers/`
+- `atst/providers/`
   - `ProviderSpec`
   - `ChannelSpec`
   - `ProviderRegistry`
   - provider aliases and capability declaration
-- `tstdx/result.py`
+- `atst/result.py`
   - `ProvenanceKind`
   - `Provenance`
   - `ResultMeta`
   - `QueryResult`
-- `tstdx/runtime.py`
+- `atst/runtime.py`
   - `UnifiedRuntime`
-- `tstdx/direct_provider.py`
+- `atst/direct_provider.py`
   - exact provider/channel/capability bindings
   - binding audit
-- `tstdx/cache_semantic.py`
+- `atst/cache_semantic.py`
   - in-memory L1 semantic cache
-- `tstdx/cache_persistent.py`
+- `atst/cache_persistent.py`
   - safe persistent L2 semantic cache
-- `tstdx/batch.py`
+- `atst/batch.py`
   - `BatchResult`
   - `SingleFlight`
   - `NegativeCache`
-- `tstdx/error_envelope.py`
-- `tstdx/orchestration.py`
+- `atst/error_envelope.py`
+- `atst/orchestration.py`
   - `FallbackPolicy`
   - `ProviderOrchestrator`
-- `tstdx/streaming/state.py`
-- `tstdx/streaming/stateful.py`
+- `atst/streaming/state.py`
+- `atst/streaming/stateful.py`
 - protocol parser / codec / reader / provider-specific adapter implementations that do not duplicate runtime orchestration.
 
 ---
@@ -202,7 +202,7 @@ The modern Python API should expose runtime-native methods directly.
 Target public style:
 
 ```python
-from tstdx import Client
+from atst import Client
 
 client = Client()
 result = client.quotes(["sh600519"], provider="tdx")
@@ -278,7 +278,7 @@ If a storage engine is still useful, adapt it behind the semantic-cache interfac
 Introduce:
 
 ```text
-tstdx/client_api.py
+atst/client_api.py
   Client
   AsyncClient
 ```
@@ -658,12 +658,12 @@ Redesign around Provider-first concepts.
 Examples:
 
 ```text
-tstdx providers
-tstdx capabilities --provider eastmoney
-tstdx quotes sh600519 --provider tdx
-tstdx bars sh600519 --provider eastmoney --period day
-tstdx quotes sh600519 --fallback tdx,tencent,sina
-tstdx query --file query.json
+atst providers
+atst capabilities --provider eastmoney
+atst quotes sh600519 --provider tdx
+atst bars sh600519 --provider eastmoney --period day
+atst quotes sh600519 --fallback tdx,tencent,sina
+atst query --file query.json
 ```
 
 Remove CLI options whose only purpose is legacy route/source compatibility.
@@ -675,7 +675,7 @@ Remove CLI options whose only purpose is legacy route/source compatibility.
 Target package shape:
 
 ```text
-tstdx/
+atst/
   query.py
   result.py
   errors.py

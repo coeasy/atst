@@ -9,8 +9,8 @@ import json
 
 import pytest
 
-from tstdx.web.base import HttpResponse
-from tstdx.web.efinance_fund import FundMobSource
+from atst.web.base import HttpResponse
+from atst.web.efinance_fund import FundMobSource
 
 
 class FakeHttpClient:

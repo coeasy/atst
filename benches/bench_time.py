@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """P6 解析/请求热路径耗时基准（合成数据，离线可跑）。
@@ -41,7 +41,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-# 保证以仓库根为 cwd 运行时可直接 import tstdx（无需安装）
+# 保证以仓库根为 cwd 运行时可直接 import atst（无需安装）
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
@@ -107,7 +107,7 @@ def _synthetic_day_bytes(rows: int, *, seed: int = 1) -> bytes:
 def scenario_parse_quotes(synthetic: bool = True) -> dict[str, Any]:
     """新浪文本行情解析：原始 ``hq_str_*`` 文本 → list[Quote]。"""
     if synthetic:
-        from tstdx.web.sina.adapters import SinaSource
+        from atst.web.sina.adapters import SinaSource
 
         text = _synthetic_sina_payload(1000)
         symbols = [f"sh{600000 + i:06d}" for i in range(1000)]
@@ -117,7 +117,7 @@ def scenario_parse_quotes(synthetic: bool = True) -> dict[str, Any]:
         finally:
             src.close()
     else:
-        from tstdx.web import create_source
+        from atst.web import create_source
 
         src = create_source("sina")
         try:
@@ -129,14 +129,14 @@ def scenario_parse_quotes(synthetic: bool = True) -> dict[str, Any]:
 
 def scenario_parse_kline(synthetic: bool = True, *, root: str | None = None) -> dict[str, Any]:
     """二进制日线解析：.day 原始字节 → list[Bar]（DayBarReader 热路径）。"""
-    from tstdx.reader.formats import DayBarReader
+    from atst.reader.formats import DayBarReader
 
     rows: list[Any] = []
     if not synthetic and root:
         p = Path(root)
         files = list(p.rglob("*.day")) if p.exists() else []
     else:
-        tmp = Path(tempfile.mkdtemp(prefix="tstdx_bench_time_kline_"))
+        tmp = Path(tempfile.mkdtemp(prefix="atst_bench_time_kline_"))
         (tmp / "lday").mkdir(parents=True, exist_ok=True)
         (tmp / "lday" / "sh600519.day").write_bytes(_synthetic_day_bytes(80_000))
         files = [tmp / "lday" / "sh600519.day"]
@@ -149,7 +149,7 @@ def scenario_parse_kline(synthetic: bool = True, *, root: str | None = None) -> 
 
 def scenario_serialize(synthetic: bool = True) -> dict[str, Any]:
     """门面输出序列化：Quote → to_dicts（HTTP/MCP/CLI 共享热路径）。"""
-    from tstdx.domain.models import Quote, to_dicts
+    from atst.domain.models import Quote, to_dicts
 
     quotes: list[Quote] = []
     for i in range(5400):
@@ -208,7 +208,7 @@ def report(results: dict[str, dict[str, Any]]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="tstdx P6 解析/请求热路径耗时基准")
+    ap = argparse.ArgumentParser(description="atst P6 解析/请求热路径耗时基准")
     ap.add_argument("--scenario", choices=list(SCENARIOS) + ["all"], default="all")
     ap.add_argument("--all", action="store_true", help="跑全部场景（等价 --scenario all）")
     ap.add_argument(
@@ -229,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
         results[name] = run_one(name, synthetic=args.synthetic, vipdoc_root=args.vipdoc_root)
 
     mode = "synthetic" if args.synthetic else "live"
-    print(f"tstdx P6 耗时基准（{mode}，python {sys.version.split()[0]}）")
+    print(f"atst P6 耗时基准（{mode}，python {sys.version.split()[0]}）")
     report(results)
 
     if args.json:

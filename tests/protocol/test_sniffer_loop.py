@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """P#1/P#8 回归：ProtocolSniffer 归档闭环接线 + 并发防覆盖。
@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.codec.framing import ResponseFrame
-from tstdx.protocol.generic import ProtocolSniffer, get_sniffer
-from tstdx.protocol.registry import ParseResult, dispatch
+from atst.codec.framing import ResponseFrame
+from atst.protocol.generic import ProtocolSniffer, get_sniffer
+from atst.protocol.registry import ParseResult, dispatch
 
 
 def _frame(method: int, payload: bytes) -> ResponseFrame:
@@ -104,7 +104,7 @@ class TestDispatchSnifferWiring:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """无解析器命令走 L3 透传时，样本进入 sniffer。"""
-        from tstdx.protocol import generic as generic_mod
+        from atst.protocol import generic as generic_mod
 
         sniffer = _make_sniffer(tmp_path)
         monkeypatch.setattr(generic_mod, "_default_sniffer", sniffer)
@@ -116,7 +116,7 @@ class TestDispatchSnifferWiring:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """归档落盘失败（如只读目录）不影响解析结果。"""
-        from tstdx.protocol import generic as generic_mod
+        from atst.protocol import generic as generic_mod
 
         sniffer = _make_sniffer(tmp_path)
 

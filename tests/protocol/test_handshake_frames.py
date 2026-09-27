@@ -1,9 +1,9 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """握手三帧的线路形状（F-59）。
 
-此前 ``tstdx/protocol/handshake.py`` 没有任何测试，而它帧 3 的默认内容恰好是
+此前 ``atst/protocol/handshake.py`` 没有任何测试，而它帧 3 的默认内容恰好是
 F-37 的成因：主站对"重放自采集产品标识块"的会话只回 2 字节空 K 线，对全零块
 回真实数据（``b"A\"*30"`` / ``b"\\xff\"*30"`` 也回真实数据，所以关键不是零本身，
 而是别把抓包样本当默认值重放）。默认值因此是承重决策，必须钉住线路形状，
@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.protocol.commands import Family
-from tstdx.protocol.handshake import SETUP_FRAMES, setup_frames
+from atst.protocol.commands import Family
+from atst.protocol.handshake import SETUP_FRAMES, setup_frames
 
 FRAME3_LEN = 30
 

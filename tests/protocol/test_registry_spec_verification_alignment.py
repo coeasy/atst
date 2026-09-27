@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.client import TdxClient
-from tstdx.errors import NotImplementedFeature
-from tstdx.protocol.commands import CMD, COMMANDS, Family
+from atst.client import TdxClient
+from atst.errors import NotImplementedFeature
+from atst.protocol.commands import CMD, COMMANDS, Family
 
 _ROOT = Path(__file__).resolve().parents[2]
 _FAMILY_BY_SPEC_DIR = {

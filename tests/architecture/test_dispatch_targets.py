@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """分派目标的判据（V18 第 22 轮，G27）。
@@ -6,7 +6,7 @@
 第 2 遍「核心链路连通性」查出的一类形状：绑定表里写着 ``method``，运行时用
 ``getattr(目标, meta.method)`` 去取实现。取不到时**没有**任何测试会先红——
 ``validate_call`` 原先只把 ``KeyError/TypeError/ValueError`` 收敛成
-:class:`~tstdx.errors.ValidationError`，``AttributeError`` 直接穿出去，
+:class:`~atst.errors.ValidationError`，``AttributeError`` 直接穿出去，
 HTTP/WS 两张面把它报成 E9000/500：一条过期的表项长得像内部故障，不像契约问题。
 
 本文件钉住八件事：
@@ -34,7 +34,7 @@ HTTP/WS 两张面把它报成 E9000/500：一条过期的表项长得像内部�
    此前字段上的注释写着"空值表示执行器走自己的兜底逻辑"，而执行器收到空值是**报错**——
    一句过期散文（G40 同族）。
 ⑧ （第 31 轮）``hk_quotes`` 的 Provider 注入规则只有一处：校验与执行都读
-   :func:`tstdx.catalog.capability.call_kwargs_for`，且驱动执行器能看见实现真的收到了
+   :func:`atst.catalog.capability.call_kwargs_for`，且驱动执行器能看见实现真的收到了
    ``provider=<绑定的 Provider>``。此前这条规则在 ``validate_call`` 与执行器各抄一遍，
    执行器那份还多一个 ``provider in {sina, tencent}`` 守卫——两处口径已经不同。
 
@@ -51,14 +51,14 @@ from typing import Any
 
 import pytest
 
-from tstdx.catalog import capability as cap
-from tstdx.catalog.capability import MIGRATED_BINDINGS, MigratedCapabilityBinding
-from tstdx.catalog.provider_bindings import resolve_channel_adapter
-from tstdx.client import ExMarketClient, GoodsClient, MacClient, TdxClient
-from tstdx.errors import ValidationError
-from tstdx.web.normalize import _NORMALIZER_REGISTRY
-from tstdx.web.session import WebQuoteSession
-from tstdx.web.sources import SOURCES
+from atst.catalog import capability as cap
+from atst.catalog.capability import MIGRATED_BINDINGS, MigratedCapabilityBinding
+from atst.catalog.provider_bindings import resolve_channel_adapter
+from atst.client import ExMarketClient, GoodsClient, MacClient, TdxClient
+from atst.errors import ValidationError
+from atst.web.normalize import _NORMALIZER_REGISTRY
+from atst.web.session import WebQuoteSession
+from atst.web.sources import SOURCES
 
 #: 按 ``meta.method`` 派发的后端 → 它的派发目标（与 ``validate_call`` /
 #: ``DirectProviderExecutor`` 里各自的 getattr 表达式同一口径）。
@@ -287,8 +287,8 @@ def hk_quotes_provider_kwargs(provider: str) -> dict[str, Any]:
     """⑧：驱动执行器的 web_session 分支，取实现真正收到的关键字入参。"""
     from unittest.mock import patch
 
-    from tstdx.query import QueryPlanner, QuerySpec
-    from tstdx.runtime.executor import DirectProviderExecutor
+    from atst.query import QueryPlanner, QuerySpec
+    from atst.runtime.executor import DirectProviderExecutor
 
     #: 先按真签名规划+校验（``implementation_for`` 读的是真类），再换替身执行。
     plan = QueryPlanner().compile(
@@ -312,7 +312,7 @@ def hk_quotes_provider_kwargs(provider: str) -> dict[str, Any]:
         def close(self) -> None:
             pass
 
-    with patch("tstdx.web.session.WebQuoteSession", _Session):
+    with patch("atst.web.session.WebQuoteSession", _Session):
         DirectProviderExecutor()._migrated_capability(plan)
     return seen
 

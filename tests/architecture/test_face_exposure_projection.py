@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """四张服务面必须是同一张声明表的投影——**并且要一致地正确**（V18-C1 第一段）。
@@ -72,18 +72,18 @@ from typing import Any
 
 import pytest
 
-import tstdx.cli.runtime_commands as cli_runtime
-from tstdx.cli.parser import build_parser
-from tstdx.client.api import Client
-from tstdx.errors import ValidationError
-from tstdx.integration.mcp._server import MCPServer
-from tstdx.integration.mcp._tools_spec import TOOLS
-from tstdx.integration.runtime_http import create_runtime_app
-from tstdx.integration.runtime_ws import RuntimeJsonRpcHandler
-from tstdx.integration.wire_fields import WS_PARAMS_FIELDS
-from tstdx.query import CurrentnessMode
-from tstdx.runtime.executor import DEDICATED_CAPABILITIES
-from tstdx.runtime.orchestration import FallbackPolicy
+import atst.cli.runtime_commands as cli_runtime
+from atst.cli.parser import build_parser
+from atst.client.api import Client
+from atst.errors import ValidationError
+from atst.integration.mcp._server import MCPServer
+from atst.integration.mcp._tools_spec import TOOLS
+from atst.integration.runtime_http import create_runtime_app
+from atst.integration.runtime_ws import RuntimeJsonRpcHandler
+from atst.integration.wire_fields import WS_PARAMS_FIELDS
+from atst.query import CurrentnessMode
+from atst.runtime.executor import DEDICATED_CAPABILITIES
+from atst.runtime.orchestration import FallbackPolicy
 
 #: 探针替身的执行面泄漏码：任何"值合法到足以开始查询"的形状都会以它显形，而不是变成一次
 #: 真实请求。本文件里凡出现 E0000，含义都是"这一格根本没有被入参判据挡住"。
@@ -112,8 +112,8 @@ class Recorder:
     """内核替身：只记账——哪个方法、什么位置参数、什么关键字参数。"""
 
     def __init__(self) -> None:
-        from tstdx.query import QueryPlanner, QuerySpec
-        from tstdx.result import Provenance, QueryResult
+        from atst.query import QueryPlanner, QuerySpec
+        from atst.result import Provenance, QueryResult
 
         plan = QueryPlanner().compile(QuerySpec.build("rates", provider="boc"))
         self.result = QueryResult.from_plan(
@@ -353,7 +353,7 @@ def _kernel_method(face: str, entry: str, fields: dict[str, Any]) -> tuple[str, 
 # ------------------------------------------------------------------ 判据
 def test_dedicated_set_is_what_the_executor_table_says() -> None:
     """``DEDICATED_CAPABILITIES`` 就是"有专属执行体的绑定"，不是第四份同名清单。"""
-    from tstdx.runtime.executor import DIRECT_BINDINGS
+    from atst.runtime.executor import DIRECT_BINDINGS
 
     derived = {
         binding.capability
@@ -550,7 +550,7 @@ def test_unknown_core_capability_is_refused_not_borrowed(
     """五的后半：派生集里凭空多出一个名字时，必须当场拒，而不是借用邻格。"""
     rec = Recorder()
     inflated = frozenset(set(DEDICATED_CAPABILITIES) | {"snapshot_v2"})
-    monkeypatch.setattr("tstdx.client.api._CORE_CAPABILITIES", inflated)
+    monkeypatch.setattr("atst.client.api._CORE_CAPABILITIES", inflated)
     monkeypatch.setattr(kernel, "security_list", _spy(rec, "security_list"), raising=False)
     with pytest.raises(ValidationError) as caught:
         kernel.call("snapshot_v2", "600519")
@@ -588,15 +588,15 @@ def _firewall(monkeypatch: pytest.MonkeyPatch) -> None:
     def _blocked(*args: Any, **kwargs: Any) -> Any:
         raise ValidationError("探针防火墙：这一格已经走到执行面", code=FIREWALL_CODE)
 
-    from tstdx.runtime.kernel import UnifiedRuntime
-    from tstdx.runtime.orchestration import ProviderOrchestrator
+    from atst.runtime.kernel import UnifiedRuntime
+    from atst.runtime.orchestration import ProviderOrchestrator
 
     monkeypatch.setattr(UnifiedRuntime, "execute", _blocked)
     monkeypatch.setattr(ProviderOrchestrator, "execute", _blocked)
 
 
 def _envelope_of(exc: BaseException) -> dict[str, Any]:
-    from tstdx.error_envelope import to_error_envelope
+    from atst.error_envelope import to_error_envelope
 
     return to_error_envelope(exc).to_dict()
 
@@ -652,7 +652,7 @@ def _bad_fallback_cases() -> dict[str, list[tuple[str, Callable[[], dict[str, An
 
     def cli_case(argv: list[str]) -> Callable[[], dict[str, Any]]:
         def _run() -> dict[str, Any]:
-            from tstdx.cli import main
+            from atst.cli import main
 
             err = io.StringIO()
             with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
@@ -754,7 +754,7 @@ def _kernel_specs(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     记账点选在 :meth:`UnifiedRuntime.execute` 而不是任何中间层：旋钮到底转没转出去，
     看的是内核收到的那一份 spec。替身 ``Client`` 看不见这一点——第 10 轮已经栽过一次。
     """
-    from tstdx.runtime.kernel import UnifiedRuntime
+    from atst.runtime.kernel import UnifiedRuntime
 
     specs: list[Any] = []
 
@@ -836,7 +836,7 @@ def _drive_generic(
         assert data, f"MCP 没有把这一格报成错误：{reply}"
         return dict(data)
     if face == "cli":
-        from tstdx.cli import main
+        from atst.cli import main
 
         argv = [
             "query",
@@ -914,8 +914,8 @@ def test_core_dispatch_is_derived_not_recopied() -> None:
     import ast
     import textwrap
 
-    from tstdx.providers import PROVIDERS
-    from tstdx.runtime.kernel import UnifiedRuntime
+    from atst.providers import PROVIDERS
+    from atst.runtime.kernel import UnifiedRuntime
 
     problems: list[str] = []
     for capability in sorted(DEDICATED_CAPABILITIES):

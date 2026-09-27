@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """G49 — :class:`AsyncQuoteStream` 的每条睡眠腿都必须能被 ``stop()`` 叫醒。
@@ -7,7 +7,7 @@
 ``await asyncio.sleep(...)``，而停机信号 ``self._stop`` 是一个 :class:`threading.Event`
 ——异步侧没法 ``await`` 它，于是没有任何一条腿会因它提前结束。后果落在 ``stop()`` 上：
 
-* ``interval`` 只要 ``> 0`` 就合法（:func:`~tstdx.streaming.base.validate_subscription`
+* ``interval`` 只要 ``> 0`` 就合法（:func:`~atst.streaming.base.validate_subscription`
   挡的是下界，没有上界），所以一次 ``interval=3600`` 的订阅把停机拖成 3600 秒；
 * ``stop()`` 里那圈 ``await asyncio.shield(task)`` 会把调用方的取消记一笔再吞掉，所以
   ``asyncio.wait_for(stop(), 1.0)`` 也管不住它——超时被吞，等的人继续等。
@@ -22,7 +22,7 @@
 * 修复后 ``stop() returned after 0.031s wall / 0.000s cpu`` 且
   ``worker task still alive: False`` / ``owned handle cleared: True``。
 
-修复口径：新增 :func:`~tstdx.streaming.base._sleep_or_stop`（按 ``_STOP_POLL_SECONDS``
+修复口径：新增 :func:`~atst.streaming.base._sleep_or_stop`（按 ``_STOP_POLL_SECONDS``
 轮询 ``_stop``，形状对齐同步侧的 ``Event.wait``），四处睡眠全走它。``stop()`` 的墙上界就此
 变成"在飞的那一次 ``to_thread`` 取数 + 最多一个轮询节拍"，与同步侧
 ``stop(timeout=2.0)`` 量的是同一段时间。
@@ -43,14 +43,14 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.errors import TdxError
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.result import Provenance, QueryResult
-from tstdx.streaming.base import AsyncQuoteStream, QuoteStream
-from tstdx.streaming.engine import ReconnectPolicy
+from atst.errors import TdxError
+from atst.query import QueryPlanner, QuerySpec
+from atst.result import Provenance, QueryResult
+from atst.streaming.base import AsyncQuoteStream, QuoteStream
+from atst.streaming.engine import ReconnectPolicy
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SOURCE = REPO_ROOT / "tstdx" / "streaming" / "base.py"
+SOURCE = REPO_ROOT / "atst" / "streaming" / "base.py"
 
 #: 一次停机的允许上界。修复前两条腿分别要 3600 秒与 600 秒，这个数只需远小于它们。
 STOP_BOUND_SECONDS = 1.0

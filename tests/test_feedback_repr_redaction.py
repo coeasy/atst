@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tstdx.feedback import FeedbackReporter
+from atst.feedback import FeedbackReporter
 
 
 def test_feedback_repr_only_exposes_endpoint_origin() -> None:

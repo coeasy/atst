@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from tstdx.domain.models import Bar, Quote
+from atst.domain.models import Bar, Quote
 
 
 @pytest.mark.unit

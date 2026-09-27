@@ -1,9 +1,9 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """F1：财务 / 除权除息语义层测试。
 
-覆盖 :mod:`tstdx.domain.finance`：
+覆盖 :mod:`atst.domain.finance`：
 * ``map_finance_values``：数值数组 → 带字段名字典（含未知索引 f{n} 兜底、drop_zero）；
 * ``to_capital_changes``：0x000F 解析行 → :class:`CapitalChange`（缺字段容忍）；
 * 客户端/解析器复用：``client._row_to_capital`` 委托同一转换器。
@@ -13,14 +13,14 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.client import _row_to_capital
-from tstdx.domain.finance import (
+from atst.client import _row_to_capital
+from atst.domain.finance import (
     FINANCE_INFO_FIELDS,
     GPCW_FIELD_NAMES,
     map_finance_values,
     to_capital_changes,
 )
-from tstdx.domain.models import CapitalChange
+from atst.domain.models import CapitalChange
 
 pytestmark = pytest.mark.unit
 

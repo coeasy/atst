@@ -11,7 +11,7 @@
 
 ## 1. 决策
 
-`tstdx` 只保留一个正式的“数据提供方”领域实体：**Provider**。
+`atst` 只保留一个正式的“数据提供方”领域实体：**Provider**。
 
 `tdx`、`tencent`、`sina`、`eastmoney`、`baidu`、`jsl`、`boc`、`iwencai` 都是 Provider。
 
@@ -327,7 +327,7 @@ ResultMeta(
 > 不同实现的"Provider 不可用"错误类**——v17 的答案是根本不要这类统一包装，真实失败以传输层
 > 原异常呈现。
 
-现有 `tstdx.errors.SourceUnavailable` / E7050 是稳定公共资产，不为了术语统一破坏兼容。
+现有 `atst.errors.SourceUnavailable` / E7050 是稳定公共资产，不为了术语统一破坏兼容。
 
 规范解释改为：
 

@@ -24,11 +24,11 @@ import dataclasses
 import re
 
 from tests.support.field_readers import REPO_ROOT
-from tstdx.error_envelope import to_error_envelope
-from tstdx.errors import RetryAdvice, TdxError, ValidationError
+from atst.error_envelope import to_error_envelope
+from atst.errors import RetryAdvice, TdxError, ValidationError
 
 #: 定义文件自身：`to_dict()` 与 `default_advice=` 都在那里，不算执行方。
-DEFINITION_FILE = "tstdx/errors.py"
+DEFINITION_FILE = "atst/errors.py"
 
 #: 文档里表示"没有人按它行动"的措辞（`docs/errors.md` §二表格）。
 NO_ACTOR_MARKS = ("无执行方", "无消费方")
@@ -41,7 +41,7 @@ _DECISION_NODES = (ast.If, ast.While, ast.Compare, ast.BoolOp, ast.BinOp, ast.Un
 
 
 def _advice_field_reads() -> tuple[int, dict[str, list[tuple[str, int, bool]]]]:
-    """扫 ``tstdx/``：返回 (扫过的模块数, 相对路径 → [(字段, 行号, 是否参与决策)])。
+    """扫 ``atst/``：返回 (扫过的模块数, 相对路径 → [(字段, 行号, 是否参与决策)])。
 
     只认链条里出现 `.advice.` 的属性读取；决策位置指该读取落在条件/比较/算术/取反/返回里，
     纯字典值（序列化）不在其中。
@@ -50,7 +50,7 @@ def _advice_field_reads() -> tuple[int, dict[str, list[tuple[str, int, bool]]]]:
     fields = {item.name for item in dataclasses.fields(RetryAdvice)}
     per_file: dict[str, list[tuple[str, int, bool]]] = {}
     scanned = 0
-    for path in sorted((REPO_ROOT / "tstdx").rglob("*.py")):
+    for path in sorted((REPO_ROOT / "atst").rglob("*.py")):
         scanned += 1
         tree = ast.parse(path.read_text(encoding="utf-8"))
         decisions: set[tuple[int, int]] = set()
@@ -132,7 +132,7 @@ def test_scanned_surface_is_not_blind():
     assert scanned >= 150, f"只扫了 {scanned} 个模块，尺子在失明状态"
     hits = [item for sites in per_file.values() for item in sites]
     assert hits, "全包零 advice 锚定读取点：锚定规则或包结构变了，本判据失去意义"
-    assert "tstdx/transport/pool.py" in per_file, (
+    assert "atst/transport/pool.py" in per_file, (
         f"传输层执行方不在命中名单里（尺子失明），命中：{sorted(per_file)}"
     )
 
@@ -181,7 +181,7 @@ def test_to_dict_serializes_every_advice_field():
 def test_reporter_payload_keys_match_doc_claim():
     """文档写"反馈上报只带两格"，实测必须就是那两格。"""
 
-    tree = ast.parse((REPO_ROOT / "tstdx" / "feedback" / "reporter.py").read_text(encoding="utf-8"))
+    tree = ast.parse((REPO_ROOT / "atst" / "feedback" / "reporter.py").read_text(encoding="utf-8"))
     keys: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and any(

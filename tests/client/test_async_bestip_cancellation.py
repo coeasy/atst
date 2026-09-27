@@ -6,14 +6,14 @@ import threading
 
 import pytest
 
-import tstdx.transport.hosts as hosts_module
-from tstdx.client import AsyncTdxClient
-from tstdx.protocol.commands import Family
-from tstdx.transport.async_ import AsyncConnectionPool
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.speedtest import ProbeResult
+import atst.transport.hosts as hosts_module
+from atst.client import AsyncTdxClient
+from atst.protocol.commands import Family
+from atst.transport.async_ import AsyncConnectionPool
+from atst.transport.hosts import HostEntry
+from atst.transport.speedtest import ProbeResult
 
-speedtest_module = importlib.import_module("tstdx.transport.speedtest")
+speedtest_module = importlib.import_module("atst.transport.speedtest")
 
 
 @pytest.mark.asyncio

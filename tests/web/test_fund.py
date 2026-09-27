@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.errors import SourceDeprecated
-from tstdx.web.adapters_fund import FundSource
-from tstdx.web.base import HttpResponse
-from tstdx.web.sources import FUND, get_source, list_sources
+from atst.errors import SourceDeprecated
+from atst.web.adapters_fund import FundSource
+from atst.web.base import HttpResponse
+from atst.web.sources import FUND, get_source, list_sources
 
 
 class FakeHttp:

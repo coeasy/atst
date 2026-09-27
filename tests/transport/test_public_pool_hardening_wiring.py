@@ -4,29 +4,29 @@ import importlib.util
 
 import pytest
 
-import tstdx.transport.hosts as hosts_module
-from tstdx.transport import ConnectionPool, RankingStore
-from tstdx.transport.async_ import AsyncConnectionPool
+import atst.transport.hosts as hosts_module
+from atst.transport import ConnectionPool, RankingStore
+from atst.transport.async_ import AsyncConnectionPool
 
 #: 曾被侧车桩层整方法替换的实现。它们必须住在公开类自己的模块里，
 #: 否则模块里的原实现就是永远执行不到的死代码，而覆盖率会把它读成「已测」。
 POOL_IMPLEMENTATIONS = {
     ConnectionPool: (
-        "tstdx.transport.pool",
+        "atst.transport.pool",
         ("request", "request_multi", "iter_frames", "update_hosts", "_start_heartbeat"),
     ),
     AsyncConnectionPool: (
-        "tstdx.transport.async_",
+        "atst.transport.async_",
         ("request", "request_multi", "iter_frames", "update_hosts", "close", "_heartbeat_loop"),
     ),
 }
 
 #: 已解散的整方法替换桩层：模块文件本身必须不存在。
 DISSOLVED_PATCH_LAYERS = (
-    "tstdx.transport._pool_hardening",
-    "tstdx.transport._async_pool_hardening",
-    "tstdx.transport._async_close_hardening",
-    "tstdx.transport._pool_provenance_hardening",
+    "atst.transport._pool_hardening",
+    "atst.transport._async_pool_hardening",
+    "atst.transport._async_close_hardening",
+    "atst.transport._pool_provenance_hardening",
 )
 
 
@@ -48,7 +48,7 @@ def test_dissolved_patch_layers_are_physically_gone() -> None:
 
 @pytest.mark.unit
 def test_public_ranking_store_wiring_is_canonical() -> None:
-    assert RankingStore.load.__module__ == "tstdx.transport.hosts"
-    assert RankingStore.save.__module__ == "tstdx.transport.hosts"
-    assert RankingStore.merge.__module__ == "tstdx.transport.hosts"
-    assert hosts_module._apply_ranked_observation.__module__ == "tstdx.transport.hosts"
+    assert RankingStore.load.__module__ == "atst.transport.hosts"
+    assert RankingStore.save.__module__ == "atst.transport.hosts"
+    assert RankingStore.merge.__module__ == "atst.transport.hosts"
+    assert hosts_module._apply_ranked_observation.__module__ == "atst.transport.hosts"

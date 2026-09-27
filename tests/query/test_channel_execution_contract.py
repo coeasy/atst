@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from tstdx.errors import ValidationError
-from tstdx.query import QueryPlanner, QuerySpec
+from atst.errors import ValidationError
+from atst.query import QueryPlanner, QuerySpec
 
 
 @pytest.mark.parametrize(
@@ -93,7 +93,7 @@ class NoIoExecutor:
 
 
 def test_kernel_rejects_channel_mismatch_before_any_io() -> None:
-    from tstdx.runtime.kernel import UnifiedRuntime
+    from atst.runtime.kernel import UnifiedRuntime
 
     runtime = UnifiedRuntime()
     runtime.executor = NoIoExecutor()

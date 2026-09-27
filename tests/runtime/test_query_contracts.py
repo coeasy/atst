@@ -4,11 +4,11 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-import tstdx
-from tstdx.errors import ValidationError
-from tstdx.providers import PROVIDERS, resolve_provider
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.result import Provenance, ProvenanceKind, QueryResult
+import atst
+from atst.errors import ValidationError
+from atst.providers import PROVIDERS, resolve_provider
+from atst.query import QueryPlanner, QuerySpec
+from atst.result import Provenance, ProvenanceKind, QueryResult
 
 
 def test_registry_has_one_default_and_local_is_not_tdx() -> None:
@@ -44,10 +44,10 @@ def test_latest_main_capabilities_are_retained_in_registry() -> None:
 
 
 def test_public_runtime_contracts_are_lazy_exported() -> None:
-    assert tstdx.QuerySpec is QuerySpec
-    assert tstdx.QueryPlanner is QueryPlanner
-    assert tstdx.PROVIDERS is PROVIDERS
-    assert tstdx.QueryResult is QueryResult
+    assert atst.QuerySpec is QuerySpec
+    assert atst.QueryPlanner is QueryPlanner
+    assert atst.PROVIDERS is PROVIDERS
+    assert atst.QueryResult is QueryResult
 
 
 def test_default_quotes_plan_is_tdx_quotation() -> None:
@@ -87,7 +87,7 @@ def test_options_order_does_not_change_query_identity() -> None:
 
 def test_provider_source_conflict_is_rejected_before_io() -> None:
     # v13 SSOT：QuerySpec 不再持有 ``source``；provider/source 冲突改为在
-    # provider 解析边界 fail-fast（tstdx.providers.resolve_provider）。
+    # provider 解析边界 fail-fast（atst.providers.resolve_provider）。
     with pytest.raises(ValidationError):
         resolve_provider(provider="tdx", source="tencent")
 

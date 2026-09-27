@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.client import TdxClient, get_client
+from atst.client import TdxClient, get_client
 
 
 class _OpaquePool:

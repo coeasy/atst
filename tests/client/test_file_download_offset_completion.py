@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.client import TdxClient
-from tstdx.errors import TruncatedDataError
+from atst.client import TdxClient
+from atst.errors import TruncatedDataError
 
 
 def test_full_download_from_nonzero_offset_stops_at_absolute_total(

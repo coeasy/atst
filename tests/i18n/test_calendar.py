@@ -10,7 +10,7 @@ from datetime import date
 
 import pytest
 
-from tstdx.domain.calendar import (
+from atst.domain.calendar import (
     BUILTIN_CALENDARS,
     CALENDAR_2024,
     ESTIMATED_YEARS,
@@ -20,7 +20,7 @@ from tstdx.domain.calendar import (
     next_trading_day,
     prev_trading_day,
 )
-from tstdx.errors import CalendarError
+from atst.errors import CalendarError
 
 
 @pytest.mark.unit

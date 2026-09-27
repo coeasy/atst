@@ -13,7 +13,7 @@
    自己接一个 `poll(symbols) -> Sequence[Mapping]`
 3. 事件统一是 `StreamEvent(kind, key, payload, ts)`，`kind` 取
    `quote` / `diff` / `reconnect` / `gap` / `error`
-4. 背压：`BackpressureQueue` 溢出丢**最旧**并回调 `on_drop`；`tstdx.streaming.base` 的
+4. 背压：`BackpressureQueue` 溢出丢**最旧**并回调 `on_drop`；`atst.streaming.base` 的
    `QuoteStream` 路径溢出的那一次会抛 `BackpressureOverflow`（可恢复）
 
 ## 完整示例（推荐入口）
@@ -21,7 +21,7 @@
 ```python
 import time
 
-from tstdx import Client
+from atst import Client
 
 WATCHLIST = ["sh600519", "sz000001"]
 
@@ -47,8 +47,8 @@ with Client() as client:
 ```python
 import time
 
-from tstdx import Client
-from tstdx.streaming import ReconnectPolicy, StreamEngine
+from atst import Client
+from atst.streaming import ReconnectPolicy, StreamEngine
 
 WATCHLIST = ["sh600519", "sz000001"]
 client = Client()
@@ -94,7 +94,7 @@ finally:
 `GapFiller` 只对**单调键**（自增 `seq`、或按周期步进的 `datetime`）判断连续性：
 
 ```python
-from tstdx.streaming import GapFiller
+from atst.streaming import GapFiller
 
 gf = GapFiller()
 gf.observe("sh600519", 41)

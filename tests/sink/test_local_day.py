@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """LocalDaySink 增量落盘测试（P1-3 §4）。
@@ -19,12 +19,12 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.client.api import Client
-from tstdx.domain.models import Bar
-from tstdx.errors import TdxError
-from tstdx.reader.formats import DayBarReader
-from tstdx.runtime.kernel import UnifiedRuntime
-from tstdx.sink.local_day import LocalDaySink
+from atst.client.api import Client
+from atst.domain.models import Bar
+from atst.errors import TdxError
+from atst.reader.formats import DayBarReader
+from atst.runtime.kernel import UnifiedRuntime
+from atst.sink.local_day import LocalDaySink
 
 _SCALE = 100
 
@@ -199,7 +199,7 @@ class _FakeTdx:
     """最小 fake TDX 客户端：bars() 按内存中的日线应答，close() 记下被收尾的次数。
 
     ``_tdx_client`` 交出的就是**客户端本身**——31-C3 之后释放动作只发生在执行器那道
-    :meth:`~tstdx.runtime.executor.DirectProviderExecutor._client_session` 保护区里，
+    :meth:`~atst.runtime.executor.DirectProviderExecutor._client_session` 保护区里，
     所以这里不再自带 ``__enter__``/``__exit__``，只留一个被 ``finally`` 调到的 ``close``。
     """
 

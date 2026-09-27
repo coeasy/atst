@@ -3,7 +3,7 @@
 尺子取自 F-50/F-52/F-54 那一份实现（`tests/support/field_readers.py`，全仓唯一一把），
 分母取 `dataclasses.fields()`。两层判据各补对方的洞：读取点扫描管"有字段没人读"，
 顺序敏感的形状清单管"扫描会假绿的那一类"——变异 M4 实测：给 `ResultMeta` 加一个没人读的
-`notes`，扫描仍然绿，因为 `tstdx/cli/runtime_commands.py` 里另一对象的 `result.notes` 被算成
+`notes`，扫描仍然绿，因为 `atst/cli/runtime_commands.py` 里另一对象的 `result.notes` 被算成
 了读取点；形状清单当场红。
 
 本文件登记的正是 F-52 剩下的那一半：`Provenance.provider_timestamp` 被 `direct()` 的形参一路
@@ -23,7 +23,7 @@ import inspect
 import pytest
 
 from tests.support.field_readers import members_referenced, unread_fields
-from tstdx.result import Provenance, ProvenanceKind, ResultMeta
+from atst.result import Provenance, ProvenanceKind, ResultMeta
 
 # 手工核对过的 owner：只认调用方真把这两个数据面对象绑定到的变量名。
 # 不放 `self`——`self.capability` 属于 catalog/records 里的别的类，放进去就是假绿。
@@ -53,7 +53,7 @@ def test_result_meta_field_order_is_pinned() -> None:
     """`ResultMeta` 的形状逐位钉死。
 
     读取点扫描有一类已实测的假绿：字段名与别的类同名时，`result.notes` 这种命中也算数
-    （`tstdx/cli/runtime_commands.py:406` 的 `result` 是探针结果，不是 `ResultMeta`）。
+    （`atst/cli/runtime_commands.py:406` 的 `result` 是探针结果，不是 `ResultMeta`）。
     位置敏感的形状清单补上这个洞——新字段必须先把形状改一次，改动就落到纸面上。
     """
 

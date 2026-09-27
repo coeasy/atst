@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.errors import TdxError
-from tstdx.web.corporate import EastmoneyForecastSource
-from tstdx.web.session import WebQuoteSession
+from atst.errors import TdxError
+from atst.web.corporate import EastmoneyForecastSource
+from atst.web.session import WebQuoteSession
 
 pytestmark = pytest.mark.unit
 

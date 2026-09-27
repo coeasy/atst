@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """M5 / M7 测试：零依赖连接复用后端 + 响应体零拷贝解析。
@@ -18,8 +18,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from tstdx.errors import ReadTimeout, WebSourceError
-from tstdx.web.base import HttpResponse, StdlibPooledClient
+from atst.errors import ReadTimeout, WebSourceError
+from atst.web.base import HttpResponse, StdlibPooledClient
 
 # --------------------------------------------------------------------------- #
 # 本地可控 HTTP 服务

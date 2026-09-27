@@ -1,6 +1,6 @@
 """Registry ↔ channel-binding parity gates（导入期契约，离线）。
 
-``tstdx/catalog/provider_bindings.py`` 只做一件事：声明 ``(provider, channel) -> adapter``。
+``atst/catalog/provider_bindings.py`` 只做一件事：声明 ``(provider, channel) -> adapter``。
 本文件锁定它与 Provider 注册表的一一对应关系，并锁定 v16 clean break——
 Direct API 对象层（依赖已删除的 v12 service）不再存在。
 """
@@ -11,9 +11,9 @@ import importlib
 
 import pytest
 
-import tstdx.catalog.provider_bindings as provider_api
-from tstdx.catalog.provider_bindings import TdxProviderAPI, resolve_channel_adapter
-from tstdx.providers import PROVIDERS
+import atst.catalog.provider_bindings as provider_api
+from atst.catalog.provider_bindings import TdxProviderAPI, resolve_channel_adapter
+from atst.providers import PROVIDERS
 
 #: Composite Providers (``derived`` / ``builtin``) expose their capabilities only
 #: through the unified QuerySpec path and deliberately own **no** channel

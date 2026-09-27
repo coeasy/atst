@@ -2,7 +2,7 @@
 
 ## 报告漏洞
 
-我们感谢您致力于帮助我们保护 tstdx。如果您发现安全问题，请**不要**通过公开的 GitHub Issue 报告。
+我们感谢您致力于帮助我们保护 atst。如果您发现安全问题，请**不要**通过公开的 GitHub Issue 报告。
 
 **报告方式**：
 - 邮件联系项目维护者（见 GOVERNANCE.md）
@@ -66,7 +66,7 @@
 ### 配置安全
 
 ```python
-from tstdx.client import TdxClient
+from atst.client import TdxClient
 
 # 限制并发：每台主站开几条连接（连接池没有 pool_size 这个参数）
 client = TdxClient(slots_per_host=4)
@@ -84,13 +84,13 @@ client = TdxClient(timeout=10.0)
 ### 凭据保护
 
 本库**不存储凭据**。历史上有过 `CredentialStore`（系统 keyring → 环境变量 → 加密文件
-`~/.tstdx/credentials.enc` 三级回退），它自引入以来全库零调用方，已按
+`~/.atst/credentials.enc` 三级回退），它自引入以来全库零调用方，已按
 [ADR-007-010](docs/adr/ADR-007-010.md) 于 v10 决议删除。v17 收尾时把当时残留的空壳
-包 `tstdx/security/`（只有 docstring、`__all__ = []`）一并物理删除——一份"看起来存在
+包 `atst/security/`（只有 docstring、`__all__ = []`）一并物理删除——一份"看起来存在
 凭据管理"的文档比没有文档更危险，因此本节现在只描述事实：
 
 - 行情链路（TDX 协议 / web 源 / 流式）不需要任何凭据。
-- 交易侧只有 `tstdx/trade/` 的**纯内存模拟器**，其中的口令混淆
+- 交易侧只有 `atst/trade/` 的**纯内存模拟器**，其中的口令混淆
   （`obfuscate_password`）是洁净室协议推断产物，不连真实券商。
 - 若接入真实券商：凭据由调用方在自己的密钥管理体系内解决；本库若将来需要内置凭据面，
   按该 ADR 重新设计（env → file 两级起步），不要从 git 历史整体找回旧实现。
@@ -98,7 +98,7 @@ client = TdxClient(timeout=10.0)
 
 ### 反馈脱敏
 
-启用 `TSTDX_FEEDBACK=1` 后，反馈数据经过 7 步脱敏：
+启用 `ATST_FEEDBACK=1` 后，反馈数据经过 7 步脱敏：
 1. IP 地址替换为 [REDACTED_IP]
 2. 主机名替换为 [REDACTED_HOST]
 3. 账户代码/股票代码 PII 处理

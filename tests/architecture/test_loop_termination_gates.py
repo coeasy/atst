@@ -1,7 +1,7 @@
 """G21：每个 ``while`` 都要能当场说出它凭什么停下来。
 
 第 21 轮「主体流程全部联通 / 不存在死循环」这一遍的做法：不逐个人肉读，而是把
-全仓 :mod:`tstdx` 的每个 ``while`` 语句现扫出来，按**形状**给它归类一个终止守卫；
+全仓 :mod:`atst` 的每个 ``while`` 语句现扫出来，按**形状**给它归类一个终止守卫；
 归不出类的必须落在下面的命名豁免表里并写明理由，否则当场红。
 
 四条形状守卫（第 1~3 条判据逐条核对：先证明尺子认得四种形状，再证明它会对没形状的循环
@@ -20,14 +20,14 @@
     且该 flag 在本文件里被赋值过或被 ``.set()`` / ``.clear()`` 动过——即"退出键确实存在"。
 
 **这把尺子证不到什么，写清楚**：形状有守卫 ≠ 一定向前推进。本轮真正抓到的那格
-停不下来，恰恰是形状完全合格的那一格（:meth:`tstdx.transport.ratelimit.TokenBucket.acquire`
+停不下来，恰恰是形状完全合格的那一格（:meth:`atst.transport.ratelimit.TokenBucket.acquire`
 的 ``while True`` 有 ``return``）：入口处的 ``requested > burst`` 容量守卫读的是**锁外**
 的一次性快照，而 ``set_rate`` 会在等待期间把容量收缩到再也补不满，于是已入站的调用方
 永久停在那里。这条由最后一条判据单独钉住（守卫必须在锁内、每轮重做），
 并由 ``tests/transport/test_ratelimit_contract.py`` 里那两线程的真实复现兜底。
 
-**这一格有多可达，也写清楚**：包内五处限流调用点（``tstdx/transport/pool.py`` 三处、
-``tstdx/transport/async_.py`` 两处）全部只取 1 枚令牌，而 ``burst`` 有 ``max(1.0, rate)``
+**这一格有多可达，也写清楚**：包内五处限流调用点（``atst/transport/pool.py`` 三处、
+``atst/transport/async_.py`` 两处）全部只取 1 枚令牌，而 ``burst`` 有 ``max(1.0, rate)``
 的下限，所以这条要 ``tokens > 1`` 才会落到 shipped 路径上——本轮没有在线上观察到停等，
 被抓的是 :class:`TokenBucket` 这个**导出符号**自己的阻塞契约：``acquire(tokens=50)``
 配一次并发的 ``set_rate(1.0)``，旧实现既不报错也不返回。
@@ -40,7 +40,7 @@ from pathlib import Path
 
 from tests.support.field_readers import REPO_ROOT
 
-PACKAGE_ROOT = REPO_ROOT / "tstdx"
+PACKAGE_ROOT = REPO_ROOT / "atst"
 
 #: 条件形状属于 ``stop-flag`` 的调用名：Event 的两个动词，语义就是"有人在别处拧它"。
 _FLAG_METHODS = frozenset({"is_set", "wait", "set", "clear", "store"})
@@ -49,19 +49,19 @@ _FLAG_METHODS = frozenset({"is_set", "wait", "set", "clear", "store"})
 #: 表必须与现扫结果**双向一致**——多一条（守卫已经不需要豁免了）与少一条（新出现的
 #: 无形状守卫循环）都当场红，所以这张表不会悄悄长大。
 TERMINATION_EXEMPTIONS: dict[str, str] = {
-    "tstdx/transport/async_.py::_acquire_rate": (
+    "atst/transport/async_.py::_acquire_rate": (
         "``while not limiter.try_acquire()``：条件不是 flag 而是令牌桶。它一定翻转，"
         "因为令牌按 ``rate > 0`` 单调回填，而唯一的入参 ``tokens=1.0`` 恒不超过 "
         "``burst = max(1.0, rate)``；``strict=True`` 时这一格根本不走轮询，直接 "
         "``limiter.acquire()`` 抛 :class:`RateLimitedLocal`。容量收缩会把这一格变成"
         "显式 ``ValueError`` 而不是永久等待——见第 6 条判据。"
     ),
-    "tstdx/transport/async_.py::_await_cleanup_before_cancellation": (
+    "atst/transport/async_.py::_await_cleanup_before_cancellation": (
         "``while not cleanup_task.done()``：条件读的是一个 :class:`asyncio.Task` 的"
         "完成位，循环体只有 ``await asyncio.shield(...)``——它挂起而不是忙转，"
         "被取消时记一笔再回到同一个 await。终止由那个任务自己完成，不由本循环推进。"
     ),
-    "tstdx/streaming/base.py::stop": (
+    "atst/streaming/base.py::stop": (
         "``while task is not None and not task.done()``（第 29 轮补入）：与上一条同形同理由"
         "——条件读的是 poll worker 那条 :class:`asyncio.Task` 的完成位，循环体只有 "
         "``await asyncio.shield(task)``；被取消时记一笔再回到同一个 await，终止由 worker "

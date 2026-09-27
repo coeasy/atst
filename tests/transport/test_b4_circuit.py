@@ -14,10 +14,10 @@ import time
 
 import pytest
 
-from tstdx.errors import ConnectionFailed, ReadTimeout
-from tstdx.transport import pool as pool_mod
-from tstdx.transport.hosts import HostEntry
-from tstdx.transport.pool import (
+from atst.errors import ConnectionFailed, ReadTimeout
+from atst.transport import pool as pool_mod
+from atst.transport.hosts import HostEntry
+from atst.transport.pool import (
     BIZ_FAILURE_WEIGHT,
     CIRCUIT_DEGRADED_AT,
     CIRCUIT_OPEN_AT,

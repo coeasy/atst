@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from tstdx.protocol.commands import Family
-from tstdx.transport.sniff import Sniffer, attach, detach
+from atst.protocol.commands import Family
+from atst.transport.sniff import Sniffer, attach, detach
 
 #: 账本里只登记在 ``mac_quotation`` 族的命令号：它在 ``quotation`` 族查不到。
 #: 用作"判定域是否真被 families 左右"的探针。

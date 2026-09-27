@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.catalog.capability import is_migrated_capability
-from tstdx.web.session import WebQuoteSession
+from atst.catalog.capability import is_migrated_capability
+from atst.web.session import WebQuoteSession
 
 # These capabilities were added to main after PR #1 diverged. The v11 runtime
 # migration must never overwrite them with the older long-lived branch surface.

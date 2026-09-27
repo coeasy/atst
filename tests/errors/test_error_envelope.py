@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.error_envelope import to_error_envelope
-from tstdx.errors import ValidationError, WebSourceError
+from atst.error_envelope import to_error_envelope
+from atst.errors import ValidationError, WebSourceError
 
 
 def test_tdx_error_envelope_preserves_contract_and_redacts_sensitive_context() -> None:
@@ -52,7 +52,7 @@ def test_native_exception_is_generic_public_internal_error() -> None:
 
 def test_kernel_propagates_execution_error_without_fallback() -> None:
     """A failing Provider surfaces its own envelope identity; the kernel never retries."""
-    from tstdx.runtime.kernel import UnifiedRuntime
+    from atst.runtime.kernel import UnifiedRuntime
 
     calls: list[str] = []
 
@@ -82,8 +82,8 @@ def test_exhausted_query_deadline_is_never_advertised_as_retryable() -> None:
     """
     import time
 
-    from tstdx.errors import ReadTimeout
-    from tstdx.query import ExecutionBudget
+    from atst.errors import ReadTimeout
+    from atst.query import ExecutionBudget
 
     with pytest.raises(ReadTimeout) as caught:
         ExecutionBudget(deadline_ns=time.monotonic_ns() - 1).ensure_remaining("provider_request")

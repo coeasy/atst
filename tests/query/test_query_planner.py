@@ -5,9 +5,9 @@ from typing import Any
 
 import pytest
 
-from tstdx.errors import ValidationError
-from tstdx.providers import resolve_provider
-from tstdx.query import EXECUTED_OPTIONS, REJECTED_OPTIONS, QueryPlanner, QuerySpec
+from atst.errors import ValidationError
+from atst.providers import resolve_provider
+from atst.query import EXECUTED_OPTIONS, REJECTED_OPTIONS, QueryPlanner, QuerySpec
 
 
 def test_default_provider_is_tdx_and_quotes_bind_quotation() -> None:
@@ -54,7 +54,7 @@ def test_tencent_minute_bars_bind_minute_kline_channel() -> None:
 
 def test_provider_and_compat_source_conflict_is_rejected() -> None:
     # v13 SSOT：QuerySpec 不再持有 ``source`` 字段；provider/source 选择器冲突
-    # 在 provider 解析边界统一 fail-fast（见 tstdx.providers.resolve_provider）。
+    # 在 provider 解析边界统一 fail-fast（见 atst.providers.resolve_provider）。
     with pytest.raises(ValidationError):
         resolve_provider(provider="tdx", source="tencent")
 

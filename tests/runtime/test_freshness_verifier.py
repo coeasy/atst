@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """F-44 (a) 的判据面：``currentness`` 从声明口径变成可判据的运行期校验。
@@ -21,12 +21,12 @@ from typing import Any
 
 import pytest
 
-from tstdx.diagnostics import WarningCode, warning_sink
-from tstdx.errors import FreshnessViolation, ValidationError
-from tstdx.providers import PROVIDERS
-from tstdx.query import CurrentnessMode, QueryPlanner, QuerySpec
-from tstdx.runtime.executor import DirectProviderExecutor
-from tstdx.runtime.freshness import _REQUIRES_PROOF, verify_currentness
+from atst.diagnostics import WarningCode, warning_sink
+from atst.errors import FreshnessViolation, ValidationError
+from atst.providers import PROVIDERS
+from atst.query import CurrentnessMode, QueryPlanner, QuerySpec
+from atst.runtime.executor import DirectProviderExecutor
+from atst.runtime.freshness import _REQUIRES_PROOF, verify_currentness
 
 ALL_MODES = ("auto", "historical", "business", "live")
 
@@ -84,7 +84,7 @@ class TestRuleDerivation:
 
 
 def _parse(mode: str) -> CurrentnessMode:
-    from tstdx.query import _parse_currentness
+    from atst.query import _parse_currentness
 
     return _parse_currentness(mode)
 

@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from tstdx.web.fundflow import EastmoneyRankSource
+from atst.web.fundflow import EastmoneyRankSource
 
 pytestmark = pytest.mark.unit
 
@@ -85,15 +85,15 @@ class TestSectorFlowWiring:
             return [{"name": "传媒"}]
 
         monkeypatch.setattr(EastmoneyRankSource, "fetch_rows", fake_fetch_rows)
-        from tstdx.web.session import WebQuoteSession
+        from atst.web.session import WebQuoteSession
 
         rows = WebQuoteSession.sector_flow("concept", sort="main_net", limit=5)
         assert rows == [{"name": "传媒"}]
         assert captured == {"market": "concept", "sort": "main_net", "limit": 5}
 
     def test_client_capability_delegates(self, monkeypatch):
-        from tstdx.client.api import Client
-        from tstdx.web.session import WebQuoteSession
+        from atst.client.api import Client
+        from atst.web.session import WebQuoteSession
 
         def fake_sector_flow(board="industry", *, sort="main_net", limit=20, page=1):
             return [{"board": board}]

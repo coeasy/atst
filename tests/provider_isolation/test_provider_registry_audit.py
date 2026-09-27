@@ -1,4 +1,4 @@
-from tstdx.catalog.provider_audit import audit_provider_registry
+from atst.catalog.provider_audit import audit_provider_registry
 
 
 def test_provider_registry_audit_has_bindings() -> None:

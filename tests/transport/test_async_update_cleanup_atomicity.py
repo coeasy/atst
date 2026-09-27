@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from tstdx.transport.async_ import AsyncConnectionPool
-from tstdx.transport.hosts import HostEntry
+from atst.transport.async_ import AsyncConnectionPool
+from atst.transport.hosts import HostEntry
 
 
 def _host(address: str) -> HostEntry:

@@ -1,7 +1,7 @@
 # 从 easyquotation 迁移
 
-> **垫片状态**：早期版本提供过 `tstdx.web.easyquotation.use()` 兼容垫片，已在 v1.2.0
-> 清理批次中移除；v1.2 的门面 API（`tstdx.facade.*`）亦已随 v16 Phase 2 物理删除。
+> **垫片状态**：早期版本提供过 `atst.web.easyquotation.use()` 兼容垫片，已在 v1.2.0
+> 清理批次中移除；v1.2 的门面 API（`atst.facade.*`）亦已随 v16 Phase 2 物理删除。
 > 迁移请直接使用 `Client`（唯一业务入口）或原生 Web 源，字段口径与 easyquotation
 > 兼容（见下）。
 
@@ -10,15 +10,15 @@
 ### 统一内核（推荐）
 
 ```python
-from tstdx import Client
+from atst import Client
 
 client = Client()
 result = client.quotes(["sh600519", "sz000001"], provider="tencent")
 print(result.data, result.meta.provider)      # meta 即溯源审计
-df = to_dataframe(result.data)                # 可选：from tstdx.output import to_dataframe
+df = to_dataframe(result.data)                # 可选：from atst.output import to_dataframe
 
 # 需要按策略换源时显式声明（默认永不换源）
-from tstdx import FallbackPolicy
+from atst import FallbackPolicy
 
 out = client.quotes(["sh600519"], policy=FallbackPolicy(providers=("tencent", "sina")))
 print(out.result.meta.provider, [(a.provider, a.status) for a in out.attempts])
@@ -27,7 +27,7 @@ print(out.result.meta.provider, [(a.provider, a.status) for a in out.attempts])
 ### Web 多源会话（`WebQuoteClient`）
 
 ```python
-from tstdx.web import WebQuoteClient
+from atst.web import WebQuoteClient
 
 client = WebQuoteClient()
 quotes = client.quotes(["sh600519"])  # 东财/新浪/腾讯等多源互为备份
@@ -36,7 +36,7 @@ quotes = client.quotes(["sh600519"])  # 东财/新浪/腾讯等多源互为备�
 ### 单源直连（等价 easyquotation 的 use("sina")）
 
 ```python
-from tstdx.web import get_quotes, get_kline, create_source
+from atst.web import get_quotes, get_kline, create_source
 
 quotes = get_quotes(["sh600519"], source="sina")  # 指定单源（sina|tencent|eastmoney|jsl|hk|boc）
 all_market = create_source("sina").fetch_all(node="hs_a")  # 新浪全市场
@@ -45,9 +45,9 @@ kline = get_kline("sh600519", period="day")  # K 线
 
 字段名与 easyquotation 保持一致（`name/open/prev_close/price/high/low/...`）。
 
-## easyquotation API → tstdx 对照
+## easyquotation API → atst 对照
 
-| easyquotation | tstdx | 说明 |
+| easyquotation | atst | 说明 |
 |---|---|---|
 | `hq.real(codes)` | `WebQuoteClient.quotes(codes)` / `get_quotes(codes)` | 实时行情（含五档），全源 |
 | `hq.all(node="hs_a")` | `create_source("sina").fetch_all(node="hs_a")` | 全市场（新浪 `Market_Center.getHQNodeData` 同接口） |
@@ -59,7 +59,7 @@ Web 多源会话（`WebQuoteClient`）内部互为备份；内核路径（`Clien
 
 ## 行为差异
 
-| 差异点 | easyquotation | tstdx |
+| 差异点 | easyquotation | atst |
 |---|---|---|
 | 成交量单位 | 源原始口径 | **统一为股** |
 | 成交额单位 | 源原始口径 | **统一为元** |

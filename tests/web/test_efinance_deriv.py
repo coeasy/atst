@@ -9,8 +9,8 @@ import json
 
 import pytest
 
-from tstdx.web.base import HttpResponse
-from tstdx.web.efinance_deriv import EastmoneyBondSource, EastmoneyFuturesSource
+from atst.web.base import HttpResponse
+from atst.web.efinance_deriv import EastmoneyBondSource, EastmoneyFuturesSource
 
 _KLINES = ["2021-08-17,755.0,770.8,776.0,750.6,82373,6288335376.0"]
 

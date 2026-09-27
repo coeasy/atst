@@ -1,4 +1,4 @@
-# tstdx V20 技术债清偿与收敛方案
+# atst V20 技术债清偿与收敛方案
 
 > **定位**：本文是 V19（架构复核 + 判据对账）之后的**技术债专项清偿方案**。V18/V19 已经解决了
 > "文档承诺 ↔ 代码兑现"的对账、"判据手抄副本"的重复、"配置面 ↔ 执行面"的对账——这些是**横向**
@@ -18,10 +18,10 @@
 
 | 项 | 读数 | 口径 |
 |---|---|---|
-| tstdx/ 源文件 | 190 | `Get-ChildItem -Recurse -Filter *.py tstdx\` |
-| tstdx/ 行数 | 51,416 | 排除 `__pycache__` |
+| atst/ 源文件 | 190 | `Get-ChildItem -Recurse -Filter *.py atst\` |
+| atst/ 行数 | 51,416 | 排除 `__pycache__` |
 | tests/ 源文件 | 282 | 同上 |
-| DIRECT_BINDINGS | 251 | `len(tstdx.runtime.executor.DIRECT_BINDINGS)` |
+| DIRECT_BINDINGS | 251 | `len(atst.runtime.executor.DIRECT_BINDINGS)` |
 | DEDICATED_CAPABILITIES | 7 | 有专用执行体的 capability 名（quotes/bars/snapshot/minute/trades/security_count/security_list） |
 | MIGRATED_CAPABILITIES | 167 | `len(MIGRATED_CAPABILITIES)` |
 | MIGRATED_BINDINGS | 229 | `len(MIGRATED_BINDINGS)` |
@@ -59,7 +59,7 @@
 | 流式订阅 | `Client.stream` → `StatefulQuoteStream` | streaming/ + stream_contract | ✅ 贯通 |
 | 复权合成 | `Client.call("adjusted_bars", ...)` | executor._composed_call + domain/adjust | ✅ 贯通 |
 | 回写本地 | `Client.call("sync_daily", ...)` | sink/local_day + executor._composed_call | ✅ 贯通 |
-| CLI 31 子命令 | `tstdx capabilities` | cli/ | ✅ 贯通 |
+| CLI 31 子命令 | `atst capabilities` | cli/ | ✅ 贯通 |
 | HTTP 10 端点 | `/v13/*` | integration/runtime_http | ✅ 贯通 |
 | WS JSON-RPC | 10 方法 | integration/runtime_ws | ✅ 贯通 |
 | MCP 9 工具 | stdio JSON-RPC | integration/mcp | ✅ 贯通 |
@@ -194,7 +194,7 @@ ConnectionPool family / BestIP / Subclient family / RankingStore 等类安装构
 - `transport/__init__.py`：删除 side-effect import + del hardening 模块引用
 - `client/__init__.py`：同上
 
-**不变量保持**：外部 `from tstdx.transport import TcpConnection`、`TdxClient(...)`、
+**不变量保持**：外部 `from atst.transport import TcpConnection`、`TdxClient(...)`、
 `ConnectionPool(...)` 行为不变。guard 测试（`tests/transport/test_connection_contract_hardening.py`、
 `test_pool_family_binding_contract.py`、`test_bestip.py` 等）继续锁原始构造行为——
 hardening 文件**本身**没有测试，真正的判据在 `tests/transport/` 和 `tests/client/` 里。
@@ -241,7 +241,7 @@ a. **`_CORE_BINDINGS` 派生化**：改成 `DEDICATED_CAPABILITY_NAMES = frozens
 
 b. **`_migrated_capability` 的第二轮分派搬进元数据**：
    - 在 `catalog/capability.py::MigratedCapabilityBinding` 上加一个可选 `factory: str | None`
-     字段，格式 `"tstdx.web.history:SinaHistoryKlineSource"` 这种 lazy import 路径。
+     字段，格式 `"atst.web.history:SinaHistoryKlineSource"` 这种 lazy import 路径。
    - `web_adapter` 分支的 MinuteKlineSource/EastmoneyHistoryKlineSource/SinaHistoryKlineSource
      选择，把**按 provider 决定选哪个 Source 类**搬进 catalog 里 migrated binding 的元数据。
    - `composed` 分支的 adjusted_bars 和 sync_daily 这两个 capability，它们的执行逻辑
@@ -348,8 +348,8 @@ c. **executor.py 行数目标**：从 719 行降到 ~400 行——元数据驱�
    └── sources.py               # KNOWN_SOURCES 注册表 + create_source() 工厂
    ```
 
-3. **import 路径重写**：从 `from tstdx.web.adapters import TencentSource` 变成
-   `from tstdx.web.tencent.adapter import TencentSource`。改 catalog/provider_bindings.py
+3. **import 路径重写**：从 `from atst.web.adapters import TencentSource` 变成
+   `from atst.web.tencent.adapter import TencentSource`。改 catalog/provider_bindings.py
    的 ChannelBindings 元组（AdapterRef = `(module_path, class_name)`），以及
    executor/_migrated_capability 里动态 import 的路径。
 4. **不改能力域文件的物理位置**：`corporate.py` / `chip.py` / `boards.py` 等按域拆的独立
@@ -435,7 +435,7 @@ provider 特化 if-elif。把 executor 元数据驱动路径补齐。
 | # | 动作 | 涉及文件 | 验收判据 |
 |---|---|---|---|
 | 2a | 把 executor.py 里的 `_CORE_BINDINGS` 硬编码元组删除，改为 `DEDICATED_CAPABILITY_NAMES = frozenset({"quotes","bars",...})` 派生 DIRECT_BINDINGS。direct_binding_factory 用集合 membership 判定 | runtime/executor.py | DIRECT_BINDINGS 数量不变（仍是 251），DIRECT_BINDINGS for-each 里每条的 executor_name 不变 |
-| 2b | `catalog/capability.py::MigratedCapabilityBinding` 加一个可选 `factory` 字段（lazy import 路径 `"tstdx.web.history:EastmoneyHistoryKlineSource"`），以及一个 `kwargs` 字段（adapter 构造时的额外参数，比如 `interval=1`） | catalog/capability.py | 不填 factory 时默认行为不变 |
+| 2b | `catalog/capability.py::MigratedCapabilityBinding` 加一个可选 `factory` 字段（lazy import 路径 `"atst.web.history:EastmoneyHistoryKlineSource"`），以及一个 `kwargs` 字段（adapter 构造时的额外参数，比如 `interval=1`） | catalog/capability.py | 不填 factory 时默认行为不变 |
 | 2c | executor.py `_migrated_capability` 的 `web_adapter` 分支**删除**第二轮 if-elif（minute_klines/history 的 provider 抉择）。改为统一读 `binding.factory`，有 factory 就按 factory 路径 import，没有就按 binding.capability 走通用路径 | runtime/executor.py | minute_klines 和 history 这两个 capability 在 catalog 里 migrated binding 补上 factory 元数据；executor 不再硬编码 `if provider == "eastmoney"` |
 | 2d | executor.py 里 `_composed_call` 分支的 adjusted_bars + sync_daily 保留，但重命名为 executor 的 dedicated 方法（不再藏在 `_migrated_capability` 里），capability 名加入 `DEDICATED_CAPABILITY_NAMES` | runtime/executor.py | adjusted_bars / sync_daily 在 DIRECT_BINDINGS 里 executor_name 变成 `_tdx_bars` 风格的 dedicated；不再走 `_migrated_capability` 的 composed 分支 |
 | 2e | dedicated 方法风格统一：全部复用 `_hop_timeout`，有参数校验，finally 里 close 连接 | runtime/executor.py | `_tdx_bars` / `_tdx_quotes` / `_tdx_snapshot` / `_tdx_minute` / `_tdx_trades` / `_tdx_security_count` / `_tdx_security_list` / `_adjusted_bars` / `_sync_daily` 共 9 个 dedicated |
@@ -455,14 +455,14 @@ provider 特化 if-elif。把 executor 元数据驱动路径补齐。
 | # | 动作 | 涉及文件 | 验收判据 |
 |---|---|---|---|
 | 3a | 在 `web/tencent/`、`web/sina/`、`web/eastmoney/`、`web/baidu/`、`web/jsl/`、`web/boc/` 下各自建 `adapters.py`（原方案写的 `web/iwencai/` 未建，见 P1-A 落地结果） | web/* | 每个 adapters.py 只含该 Provider 的 HTTP Source 类 |
-| 3b | 把 `adapters.py` 里 TencentSource/KlineSource 迁到 `tencent/adapters.py`，SinaSource 迁到 `sina/adapters.py`，EastmoneySource 迁到 `eastmoney/adapters.py`，BocSource 迁到 `boc/adapters.py`，JslSource 迁到 `jsl/adapters.py` | web/adapters.py → web/tencent/adapters.py 等 | 旧 adapters.py 删掉后，所有 `from tstdx.web.adapters import TencentSource` 的引用改成新路径 |
+| 3b | 把 `adapters.py` 里 TencentSource/KlineSource 迁到 `tencent/adapters.py`，SinaSource 迁到 `sina/adapters.py`，EastmoneySource 迁到 `eastmoney/adapters.py`，BocSource 迁到 `boc/adapters.py`，JslSource 迁到 `jsl/adapters.py` | web/adapters.py → web/tencent/adapters.py 等 | 旧 adapters.py 删掉后，所有 `from atst.web.adapters import TencentSource` 的引用改成新路径 |
 | 3c | `history.py` 拆到各自目录：SinaHistoryKlineSource → `sina/adapters.py`，EastmoneyHistoryKlineSource → `eastmoney/adapters.py` | web/history.py → web/sina/ + web/eastmoney/ | 同上 |
 | 3d | `adapters_baidu.py` → `baidu/adapters.py`，`adapters_margin.py` 的东财类 → `eastmoney/adapters.py` | web/adapters_*.py | 同上 |
 | 3e | `adapters_ext.py` 里 MinuteKlineSource 迁到 `tencent/adapters.py`（它是腾讯专用），MinuteSource 迁到 `tencent/adapters.py`，SuggestSource 迁到 `sina/adapters.py` | web/adapters_ext.py | 同上 |
 | 3f | `efinance_options.py` / `efinance_deriv.py` / `fundflow.py` / `longhu.py` / `hot_rank.py` / `news.py`（EastmoneyNewsSource 部分）迁到 `eastmoney/` 下 | 各独立文件 | 同上（**未执行**：按域切的文件留 `web/` 根，见执行结果） |
 | 3g | catalog/provider_bindings.py 的 AdapterRef 元组全部更新为新模块路径 | catalog/provider_bindings.py | `resolve_channel_adapter("tencent", "quote")` 返回的仍是 TencentSource 类，import 路径变但行为不变 |
 | 3h | executor/_migrated_capability 的 `web_session` / `direct_adapter` / `web_adapter` 分支里动态 import 路径更新 | runtime/executor.py | 同上 |
-| 3i | web/__init__.py 的 `_LAZY` 子模块名 + `sources.py::create_source()` 里的工厂路径更新 | web/__init__.py | `from tstdx.web import create_source; create_source("quote")` 行为不变 |
+| 3i | web/__init__.py 的 `_LAZY` 子模块名 + `sources.py::create_source()` 里的工厂路径更新 | web/__init__.py | `from atst.web import create_source; create_source("quote")` 行为不变 |
 | 3j | `_session_*.py` mixin 文件暂不迁——它们被 WebQuoteSession import，迁代价大。 | - | 本次不迁 session mixin |
 | 3k | 全量跑离线测试 + ruff + mypy | - | 0 red / ruff 0 / mypy 0 |
 
@@ -489,7 +489,7 @@ provider 特化 if-elif。把 executor 元数据驱动路径补齐。
 "每个 Provider 一个 adapter" 相冲突——最终按 3a 的口径收口：**一个 Provider 一个 `adapters.py`，
 域文件留原位**。
 
-**风险**：import 路径重写量大（`tstdx.web.*` 出现在 tests/、catalog/、executor/、cli/、integration/ 里），任何漏改都会导致 ImportError。**判据**：`test_doc_code_consistency.py` 的事实路径格会自动检测所有 import 路径是否可解析。
+**风险**：import 路径重写量大（`atst.web.*` 出现在 tests/、catalog/、executor/、cli/、integration/ 里），任何漏改都会导致 ImportError。**判据**：`test_doc_code_consistency.py` 的事实路径格会自动检测所有 import 路径是否可解析。
 
 **回滚**：按 Provider 分 7 步（3a-3e + 3f + 3g-3h + 3i），每步改完 catalog 和 executor 后跑全量测试。任何一步回归 revert 该 Provider 相关改动。
 
@@ -524,19 +524,19 @@ Phase 1-3 全部完成时，满足以下条件（下表"实测"列的读数为 2
 
 | # | 判据 | 实测 | 结论 |
 |---|---|---|---|
-| 1 | hardening 物理清空：`Get-ChildItem -Recurse -Filter "*hardening*.py" tstdx\` 返回空 | 空 | ✅ |
+| 1 | hardening 物理清空：`Get-ChildItem -Recurse -Filter "*hardening*.py" atst\` 返回空 | 空 | ✅ |
 | 2 | executor 行数 ≤ 420 | **710**（HEAD 719 → 710，`numstat` +63/−72） | ❌ **未达标**，见 §8 |
 | 3 | DIRECT_BINDINGS 仍是 251 | 251 | ✅ |
 | 4 | DEDICATED_CAPABILITIES = 9 | **7**（quotes / bars / snapshot / minute / trades / security_count / security_list） | ⚠️ 口径差异，见 §8 |
-| 5 | `grep -r "from tstdx.web.adapters import"` 返回空（新路径 `tstdx.web.<provider>.adapters`） | 代码与现行文档 0 命中；仅历史台账/CHANGELOG/archive 有 | ✅ |
+| 5 | `grep -r "from atst.web.adapters import"` 返回空（新路径 `atst.web.<provider>.adapters`） | 代码与现行文档 0 命中；仅历史台账/CHANGELOG/archive 有 | ✅ |
 | 6 | 离线全量测试 0 red | **4041 passed / 9 skipped / 15 deselected**，G43 也已随本轮修复转绿 | ✅ |
 | 7 | ruff + mypy 0 错 | ruff check 0 / ruff format 0 / mypy 0（`--warn-unused-ignores`） | ✅ |
 | 8 | 单内核不变量：`tests/architecture/test_single_kernel_guards.py` 全绿 | 全绿 | ✅ |
 | 9 | provider isolation：`tests/provider_isolation/` 全绿 | 全绿 | ✅ |
 | 10 | 装包六面：wheel/SHA256 变化只来自删除的 hardening 文件 | `build_package.py --smoke` 走通，`runtime_files=190`；相位二/三同时改了模块布局，变化面不止 hardening | ⚠️ 见 §8 |
 
-**新路径口径更正**：判据 5 里写的 `tstdx.web.<provider>.adapter`（单数）是方案初稿的笔误，
-实际落地为 **`tstdx.web.<provider>.adapters`**（复数，与仓库既有 `adapters.py` 命名习惯一致）。
+**新路径口径更正**：判据 5 里写的 `atst.web.<provider>.adapter`（单数）是方案初稿的笔误，
+实际落地为 **`atst.web.<provider>.adapters`**（复数，与仓库既有 `adapters.py` 命名习惯一致）。
 
 ---
 
@@ -574,13 +574,13 @@ Phase 1-3 全部完成时，满足以下条件（下表"实测"列的读数为 2
 
 | Phase | 目标 | 落地 |
 |---|---|---|
-| Phase 1 hardening merge-back | 8 个 `*hardening*.py` 的守卫物理合并回基类并删除文件 | ✅ 完成；新增共享校验模块 `transport/_validation.py`；`tstdx/` 下 `*hardening*.py` 现为空 |
+| Phase 1 hardening merge-back | 8 个 `*hardening*.py` 的守卫物理合并回基类并删除文件 | ✅ 完成；新增共享校验模块 `transport/_validation.py`；`atst/` 下 `*hardening*.py` 现为空 |
 | Phase 2 executor 化简 | 去掉 `_CORE_BINDINGS` 硬编码分支，改由 catalog 元数据驱动 | ✅ 完成；17 条绑定的执行体由 `_executor_for` 规则函数派生，`MigratedCapabilityBinding` 新增 `factory: str` 字段承载 web_adapter 的 5 条惰性导入路径，executor 里 2 处 provider-specific if 分支删除 |
 | Phase 3 web/ 按 Provider 归组 | 见 §3 Phase 3 | ✅ 完成（3f 除外）；18 个类分流到 6 个 Provider 包，6 个旧模块删除 |
 
 ### 8.2 删除清单
 
-`tstdx/` 下 6 个 web 模块：`web/adapters.py`、`web/adapters_ext.py`、`web/adapters_baidu.py`、
+`atst/` 下 6 个 web 模块：`web/adapters.py`、`web/adapters_ext.py`、`web/adapters_baidu.py`、
 `web/adapters_index.py`、`web/adapters_margin.py`、`web/history.py`；
 以及 8 个 `*hardening*.py`（Phase 1）。
 本轮另外清掉了两个开发期杂散产物：仓库根的 pytest 转储 `test_output.txt`（约 10 MB）与
@@ -588,8 +588,8 @@ Phase 1-3 全部完成时，满足以下条件（下表"实测"列的读数为 2
 
 ### 8.3 新增清单
 
-`tstdx/web/{tencent,sina,eastmoney,baidu,jsl,boc}/` 6 个包 × (`__init__.py` + `adapters.py`)；
-`tstdx/transport/_validation.py`；`.gitignore` 补 `.workbuddy-ai/`。
+`atst/web/{tencent,sina,eastmoney,baidu,jsl,boc}/` 6 个包 × (`__init__.py` + `adapters.py`)；
+`atst/transport/_validation.py`；`.gitignore` 补 `.workbuddy-ai/`。
 
 ### 8.4 未达标的验收项（诚实登记）
 
@@ -610,7 +610,7 @@ Phase 1-3 全部完成时，满足以下条件（下表"实测"列的读数为 2
 ### 8.6 收口读数（全部离线可复现）
 
 - `pytest tests -m "not network"` → **4041 passed / 9 skipped / 15 deselected**
-- `ruff check .` → 0；`ruff format --check .` → 0；`mypy tstdx/ --warn-unused-ignores` → 0
+- `ruff check .` → 0；`ruff format --check .` → 0；`mypy atst/ --warn-unused-ignores` → 0
 - `scripts/audit_reachability.py --strict` → 模块 189 / 可达 174 / 白名单豁免 15 / 无未登记孤儿
 - `scripts/check_docs_links.py` → 96 个文档全通过
 - `scripts/contract_audit.py --ci` → 172 条 capability 全部落在声明形状内

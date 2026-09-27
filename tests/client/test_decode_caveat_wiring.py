@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """解码告警的通用接线：``bars`` 之外的分派点也必须把判断送上 wire（F-63①）。
@@ -22,10 +22,10 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-from tstdx.client import AsyncTdxClient  # noqa: E402
-from tstdx.client.sync import MacClient, TdxClient  # noqa: E402
-from tstdx.codec.framing import ResponseFrame  # noqa: E402
-from tstdx.diagnostics import WarningCode, warning_sink  # noqa: E402
+from atst.client import AsyncTdxClient  # noqa: E402
+from atst.client.sync import MacClient, TdxClient  # noqa: E402
+from atst.codec.framing import ResponseFrame  # noqa: E402
+from atst.diagnostics import WarningCode, warning_sink  # noqa: E402
 
 _MAGIC = 0x0074CBB1
 
@@ -159,7 +159,7 @@ def _real_payload(sample_dir: str) -> tuple[int, bytes]:
     证据等于让被告给原告作证——这条越域告警的两端（该响的要响、不该响的不响）都必须
     由真机样本说话。
     """
-    from tstdx.tools.golden_audit import ORIGIN_REAL, classify_origin
+    from atst.tools.golden_audit import ORIGIN_REAL, classify_origin
 
     for meta_path in sorted((_GOLDEN_QUOTATION / sample_dir).glob("*/meta.json")):
         meta = json.loads(meta_path.read_text(encoding="utf-8"))

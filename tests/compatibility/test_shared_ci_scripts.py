@@ -11,7 +11,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 
 def _load_script(name: str) -> ModuleType:
     path = _ROOT / "scripts" / name
-    spec = importlib.util.spec_from_file_location(f"tstdx_contract_{path.stem}", path)
+    spec = importlib.util.spec_from_file_location(f"atst_contract_{path.stem}", path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

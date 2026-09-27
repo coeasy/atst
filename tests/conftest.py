@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """全局测试夹具。
@@ -19,7 +19,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _disable_default_sniffer():
     """禁用全局 sniffer，防止 dispatch 测试向仓库目录写归档样本。"""
-    from tstdx.protocol.generic import get_sniffer
+    from atst.protocol.generic import get_sniffer
 
     sniffer = get_sniffer()
     original = sniffer.enabled

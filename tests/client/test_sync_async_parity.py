@@ -10,8 +10,8 @@ import inspect
 
 import pytest
 
-from tstdx.client import AsyncTdxClient, TdxClient
-from tstdx.codec.primitive import encode_leb128
+from atst.client import AsyncTdxClient, TdxClient
+from atst.codec.primitive import encode_leb128
 
 
 def _quote_response(code: str = "600000", market: int = 1) -> bytes:
@@ -141,7 +141,7 @@ class TestSyncAsyncParity:
 
     def test_sync_bars_with_fake_pool(self):
         """#11 TdxClient.bars 使用 fake pool。"""
-        from tstdx.codec.framing import ResponseFrame
+        from atst.codec.framing import ResponseFrame
 
         class FakePool:
             def request(self, cmd, body, timeout=5.0):
@@ -165,7 +165,7 @@ class TestSyncAsyncParity:
 
     def test_async_bars_with_fake_pool(self):
         """#12 AsyncTdxClient.bars 使用 fake pool。"""
-        from tstdx.codec.framing import ResponseFrame
+        from atst.codec.framing import ResponseFrame
 
         class AsyncFakePool:
             async def request(self, cmd, body, timeout=5.0):
@@ -193,7 +193,7 @@ class TestSyncAsyncParity:
 
     def test_sync_quotes_with_fake_pool(self):
         """#13 TdxClient.quotes 使用 fake pool。"""
-        from tstdx.codec.framing import ResponseFrame
+        from atst.codec.framing import ResponseFrame
 
         class FakePool:
             def request(self, cmd, body, timeout=5.0):
@@ -215,7 +215,7 @@ class TestSyncAsyncParity:
 
     def test_async_quotes_with_fake_pool(self):
         """#14 AsyncTdxClient.quotes 使用 fake pool。"""
-        from tstdx.codec.framing import ResponseFrame
+        from atst.codec.framing import ResponseFrame
 
         class AsyncFakePool:
             async def request(self, cmd, body, timeout=5.0):

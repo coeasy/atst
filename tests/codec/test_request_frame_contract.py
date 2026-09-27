@@ -4,8 +4,8 @@ import struct
 
 import pytest
 
-from tstdx.codec.framing import RequestFrame, build_request
-from tstdx.errors import FramingError
+from atst.codec.framing import RequestFrame, build_request
+from atst.errors import FramingError
 
 
 def test_valid_request_frame_bytes_remain_canonical() -> None:
@@ -23,7 +23,7 @@ def test_the_default_frame_header_sizes_come_from_the_struct_formats() -> None:
     手抄常数（第 25 轮 G36 删除）。它们与格式串之间没有任何约束，改了格式串不会有人发现
     ——所以这一格判据要的是"现算的值仍是这两个数"，不是"名单里还有这两个字段"。
     """
-    from tstdx.codec.framing import DEFAULT_7709_SPEC
+    from atst.codec.framing import DEFAULT_7709_SPEC
 
     assert (DEFAULT_7709_SPEC.req_header_size, DEFAULT_7709_SPEC.resp_header_size) == (12, 16)
     assert not any(
@@ -58,7 +58,7 @@ def test_build_request_rejects_invalid_identity_before_compression(
         compressed.append(body)
         return body
 
-    monkeypatch.setattr("tstdx.codec.framing.zlib_compress", unexpected_compress)
+    monkeypatch.setattr("atst.codec.framing.zlib_compress", unexpected_compress)
 
     with pytest.raises(FramingError, match="method"):
         build_request(-1, b"payload", compress=True)

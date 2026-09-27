@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 from __future__ import annotations
@@ -10,12 +10,12 @@ from typing import Any
 
 import pytest
 
-from tstdx.cli.parser import build_parser
-from tstdx.integration.mcp._tools_impl import _h_query_capability
-from tstdx.integration.mcp._tools_spec import TOOLS
-from tstdx.integration.runtime_ws import RuntimeJsonRpcHandler
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.result import Provenance, QueryResult
+from atst.cli.parser import build_parser
+from atst.integration.mcp._tools_impl import _h_query_capability
+from atst.integration.mcp._tools_spec import TOOLS
+from atst.integration.runtime_ws import RuntimeJsonRpcHandler
+from atst.query import QueryPlanner, QuerySpec
+from atst.result import Provenance, QueryResult
 
 _ROOT = Path(__file__).resolve().parents[2]
 
@@ -119,7 +119,7 @@ def test_http_query_and_capability_discovery_delegate_to_client() -> None:
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
-    from tstdx.integration.runtime_http import create_runtime_app
+    from atst.integration.runtime_http import create_runtime_app
 
     fake = _FakeClient()
     app = create_runtime_app(fake)  # type: ignore[arg-type]
@@ -149,7 +149,7 @@ def test_http_route_parameters_all_reach_the_execution_path() -> None:
     同一条判据已在 CLI（F-27/F-28）、``QuerySpec`` 字段（F-43）与 ``options`` 袋
     （F-46）上各自成立，路由签名是它在 HTTP 面上的对应物。
     """
-    tree = _source_ast("tstdx/integration/runtime_http.py")
+    tree = _source_ast("atst/integration/runtime_http.py")
     routes = [
         node
         for node in ast.walk(tree)
@@ -175,7 +175,7 @@ def test_http_route_parameters_all_reach_the_execution_path() -> None:
 
 def test_mcp_input_schema_and_handler_agree_in_both_directions() -> None:
     """``inputSchema`` 是对外契约的全部：多一个键是幻影开关，少一个键是未声明输入。"""
-    tree = _source_ast("tstdx/integration/mcp/_tools_impl.py")
+    tree = _source_ast("atst/integration/mcp/_tools_impl.py")
     handlers = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
     assert len(TOOLS) >= 5, "MCP 工具清单为空，说明门禁自身失效"
     for tool in TOOLS:
@@ -192,7 +192,7 @@ def test_mcp_input_schema_and_handler_agree_in_both_directions() -> None:
 
 def test_ws_declared_methods_are_all_dispatched() -> None:
     """JSON-RPC 的 ``METHODS`` 名单与实际分派分支必须一一对应，两个方向都不许有差。"""
-    tree = _source_ast("tstdx/integration/runtime_ws.py")
+    tree = _source_ast("atst/integration/runtime_ws.py")
     dispatched: set[str] = set()
     for node in ast.walk(tree):
         if (

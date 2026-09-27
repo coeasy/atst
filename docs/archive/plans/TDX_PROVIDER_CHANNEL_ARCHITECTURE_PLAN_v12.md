@@ -1,4 +1,4 @@
-# tstdx：TDX 主 Provider + 多 Provider 独立数据通道架构与优化方案 v12
+# atst：TDX 主 Provider + 多 Provider 独立数据通道架构与优化方案 v12
 
 > Branch: `refactor/industry-benchmark-v12`  
 > Main baseline: `main@f927e7faf49e77352b531addc49ecc6e44abcf81` (`v1.4.0`)  
@@ -11,7 +11,7 @@
 
 # 0. 产品定位
 
-`tstdx` 面向量化研究与交易决策，核心是：
+`atst` 面向量化研究与交易决策，核心是：
 
 > **以 TDX 为默认主 Provider，同时完整暴露腾讯、新浪、东财、百度、集思录、中行、i问财等独立 Provider 的真实数据能力。每个 Provider 都有自己的 Channel、特色数据和 Direct API。用户可以明确选择 Provider；选定 Provider 不可用时直接报错，不允许跨 Provider 静默替代。实时/决策数据必须最新、真实、可追溯。**
 

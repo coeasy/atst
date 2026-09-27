@@ -18,14 +18,14 @@ import urllib.request
 
 import pytest
 
-from tstdx.domain.models import Quote
-from tstdx.errors import (
+from atst.domain.models import Quote
+from atst.errors import (
     SourceDeprecated,
     WebRateLimited,
     WebSourceError,
 )
-from tstdx.web import WebQuoteClient, get_quotes, get_rates
-from tstdx.web.base import (
+from atst.web import WebQuoteClient, get_quotes, get_rates
+from atst.web.base import (
     DEFAULT_ACQUIRE_TIMEOUT,
     MAX_BACKOFF_SECONDS,
     MAX_RETRIES_CAP,
@@ -38,29 +38,29 @@ from tstdx.web.base import (
     reset_shared_buckets,
     shared_bucket,
 )
-from tstdx.web.boards import EastmoneyBoardSource
-from tstdx.web.boc.adapters import BocSource
-from tstdx.web.corporate import (
+from atst.web.boards import EastmoneyBoardSource
+from atst.web.boc.adapters import BocSource
+from atst.web.corporate import (
     VALID_REPORTS,
     EastmoneyDataCenterSource,
     EastmoneyForecastSource,
     EastmoneyProfileSource,
     EastmoneyShareholderSource,
 )
-from tstdx.web.eastmoney.adapters import EastmoneyHistoryKlineSource, EastmoneySource
-from tstdx.web.fundflow import (
+from atst.web.eastmoney.adapters import EastmoneyHistoryKlineSource, EastmoneySource
+from atst.web.fundflow import (
     EastmoneyFundFlowSource,
     EastmoneyRankSource,
     _symbol_from_market,
 )
-from tstdx.web.hot_rank import EastmoneyHotRankSource
-from tstdx.web.longhu import parse_lhb_row
-from tstdx.web.market_stats import aggregate_breadth, aggregate_limit_pool
-from tstdx.web.session import WebQuoteSession
-from tstdx.web.sina.adapters import SinaHistoryKlineSource, SinaSource
-from tstdx.web.tencent.adapters import KlineSource, MinuteKlineSource, MinuteSource, TencentSource
-from tstdx.web.ticks import MAX_TICK_PAGES, EastmoneyTrendsSource, TencentTickSource
-from tstdx.web.wencai import WencaiSource
+from atst.web.hot_rank import EastmoneyHotRankSource
+from atst.web.longhu import parse_lhb_row
+from atst.web.market_stats import aggregate_breadth, aggregate_limit_pool
+from atst.web.session import WebQuoteSession
+from atst.web.sina.adapters import SinaHistoryKlineSource, SinaSource
+from atst.web.tencent.adapters import KlineSource, MinuteKlineSource, MinuteSource, TencentSource
+from atst.web.ticks import MAX_TICK_PAGES, EastmoneyTrendsSource, TencentTickSource
+from atst.web.wencai import WencaiSource
 
 pytestmark = pytest.mark.unit
 
@@ -226,7 +226,7 @@ class TestW3TransportRetry:
 
     def test_request_text_retries_on_read_timeout(self, monkeypatch):
         """超时（ReadTimeout）在 _request_text 中同样重试。"""
-        from tstdx.errors import ReadTimeout
+        from atst.errors import ReadTimeout
 
         _no_sleep(monkeypatch)
         src = SinaSource(max_retries=2)
@@ -481,7 +481,7 @@ class TestW6MinuteGuard:
 
         client = WebQuoteClient(sources=["sina", "tencent"])
         client._instances = {"sina": _Boom(), "tencent": _Ok()}
-        with caplog.at_level("WARNING", logger="tstdx.web"):
+        with caplog.at_level("WARNING", logger="atst.web"):
             quotes = client.quotes(["sh600519"])
         assert len(quotes) == 1
         assert [n for n, _ in client.errors] == ["sina"]
@@ -508,7 +508,7 @@ class TestW7LonghuStatic:
             def close(self) -> None:
                 pass
 
-        monkeypatch.setattr("tstdx.web.longhu.EastmoneyTopListSource", _Fake)
+        monkeypatch.setattr("atst.web.longhu.EastmoneyTopListSource", _Fake)
         rows = WebQuoteSession().longhu(date="2026-09-01", size=7)
         assert rows == [{"date": "2026-09-01", "size": 7}]
 
@@ -840,7 +840,7 @@ class TestResourceRelease:
             def close(self) -> None:
                 closed.append(True)
 
-        monkeypatch.setattr("tstdx.web.create_source", lambda name, **kw: _Fake())
+        monkeypatch.setattr("atst.web.create_source", lambda name, **kw: _Fake())
         get_quotes(["600519"], source="sina")
         assert closed == [True]
 
@@ -855,7 +855,7 @@ class TestResourceRelease:
             def close(self) -> None:
                 closed.append(True)
 
-        monkeypatch.setattr("tstdx.web.BocSource", _FakeBoc)
+        monkeypatch.setattr("atst.web.BocSource", _FakeBoc)
         assert get_rates()[0]["currency"] == "USD"
         assert closed == [True]
 

@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tstdx.protocol.commands import Family
-from tstdx.transport.hosts import HostEntry, RankingStore
+from atst.protocol.commands import Family
+from atst.transport.hosts import HostEntry, RankingStore
 
 
 def test_failed_probe_removes_stale_success_without_persisting_failure_state(

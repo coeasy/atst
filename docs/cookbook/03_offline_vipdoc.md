@@ -17,11 +17,11 @@
 ```python
 from pathlib import Path
 
-from tstdx.reader.formats import (
+from atst.reader.formats import (
     read_day_file,
     read_min_file,
 )
-from tstdx.errors import DataFileNotFound
+from atst.errors import DataFileNotFound
 
 TDX_HOME = Path("C:/new_tdx")  # 你的通达信安装目录
 
@@ -47,7 +47,7 @@ if __name__ == "__main__":
 不确定文件格式/字节序/记录长度时，用 profile 探测：
 
 ```python
-from tstdx.profile.detect import detect
+from atst.profile.detect import detect
 
 data = path.read_bytes()
 result = detect(data, hint_market=1, hint_period="day")
@@ -59,7 +59,7 @@ print(f"置信度 {result.confidence:.2f}, 候选记录长 {result.candidates}")
 `profile/presets.py` 内置 9 个市场预设（SH_A/SZ_A/BJ_A/基金/债券/黄金/期货等），按代码前缀自动匹配：
 
 ```python
-from tstdx.profile.presets import match_preset
+from atst.profile.presets import match_preset
 
 preset = match_preset("600036", market=1)  # SH_A
 ```
@@ -68,4 +68,4 @@ preset = match_preset("600036", market=1)  # SH_A
 
 - **快**：本地解析比在线拉取快百倍，适合全市场历史回测
 - **不实时**：vipdoc 收盘后才更新当天数据；盘中请用在线源
-- **编码**：F10/财务文件是 GBK/GB18030，用 `tstdx.charset.encoding.decode_bytes` 解码
+- **编码**：F10/财务文件是 GBK/GB18030，用 `atst.charset.encoding.decode_bytes` 解码

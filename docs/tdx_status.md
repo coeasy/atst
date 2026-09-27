@@ -19,13 +19,13 @@
 ## 一、7709 标准行情族（逐格按命令账本判定）
 
 > **本表的"实测"列与代码同源**：命令号、`status`、`tier`、`verified` 取自
-> `tstdx/protocol/commands.py` 的账本，发包前拦截取自 `tstdx/client/core.py` 的
+> `atst/protocol/commands.py` 的账本，发包前拦截取自 `atst/client/core.py` 的
 > `_OFFLINE_FALLBACK_OK` / `_UNVERIFIED_STRUCTURED_BLOCK`。判据是
 > `tests/architecture/test_tdx_status_matrix.py`：写一个账本里没有的命令号、给一条
 > offline/拦截命令标 ✅、或漏登记一条 offline/`degraded` 的 quotation 命令，都当场红。
 > 三档含义——**✅**：账本 `online` 且 `verified=True`（真机 golden 锁过），结构化 API 给数；
 > **⚠️**：账本上这条命令给不出可采信的内容（offline，或 `verified=False` 布局未锁定）；
-> **⛔**：这条接口在 tstdx 的结构化入口上一次都发不出去（账本 offline 且 fail-fast，或被
+> **⛔**：这条接口在 atst 的结构化入口上一次都发不出去（账本 offline 且 fail-fast，或被
 > inferred 拦截），调用方拿到的是异常而不是数据。
 
 | 接口 | 命令 | 实测 | 说明 |
@@ -54,7 +54,7 @@
 7709 实时行情给得出价格，给不出**时间戳与盘口深度**。`Client.quotes()` / `Client.snapshot()`
 返回的记录里 `datetime` 恒为 `null`、`bid` 与 `ask` 恒为空列表，而 `price`/`volume`/`amount`
 都是真数。这不是丢字段，是解析器按"不臆造未锁定布局"的契约主动留空
-（`tstdx/protocol/parsers/_std7709_quote.py`：五档尾段 73~99 字节长短随标的而变，精确布局尚未
+（`atst/protocol/parsers/_std7709_quote.py`：五档尾段 73~99 字节长短随标的而变，精确布局尚未
 锁定，于是整段按 LEB128 原样收进 `extra['tail_leb128']`、未识别的 `u4` 收进 `extra['_u4']`，
 **绝不**把它们当价格或时间输出）。
 

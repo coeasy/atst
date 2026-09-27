@@ -7,7 +7,7 @@
 owner 名单的校准纪律（本仓登记过的判据边界）：
 
 * 分母永远取自 `dataclasses.fields(cls)`，不抄清单——新增字段没有读取点即当场变红。
-* 名单里**不放 `self`**：`self.capability` 可能是任何类的属性（`tstdx/catalog/capability.py`
+* 名单里**不放 `self`**：`self.capability` 可能是任何类的属性（`atst/catalog/capability.py`
   就有），放进去等于给假绿开门。数据面类（`Provenance`/`ResultMeta`）因此只认调用方真正
   绑定到的变量名。
 * 三把防盲保险由调用方负责：字段非空、扫过的模块数足够大、读取集合非空——扫描自身失明时
@@ -28,7 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 def unread_fields(
     cls: type[Any], owners: set[str], *, holders: set[str] | None = None
 ) -> tuple[set[str], int, set[str]]:
-    """扫 ``tstdx/`` 找 ``cls`` 各字段的读取点：返回 (全部字段, 扫过的模块数, 命中的字段)。
+    """扫 ``atst/`` 找 ``cls`` 各字段的读取点：返回 (全部字段, 扫过的模块数, 命中的字段)。
 
     本函数是 :func:`unread_field_sites` 的投影；需要知道"这个读取点是谁"时直接量那个。
     """
@@ -57,7 +57,7 @@ def unread_field_sites(
     held = holders or set()
     sites: dict[str, set[str]] = {}
     scanned = 0
-    for path in sorted((REPO_ROOT / "tstdx").rglob("*.py")):
+    for path in sorted((REPO_ROOT / "atst").rglob("*.py")):
         scanned += 1
         relative = str(path.relative_to(REPO_ROOT)).replace("\\", "/")
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -79,12 +79,12 @@ def unread_field_sites(
 
 
 def members_referenced(owner: str, *, skip: str = "") -> tuple[int, set[str]]:
-    """扫 ``tstdx/`` 找 ``<owner>.<MEMBER>`` 的引用点：返回 (扫过的模块数, 命中的成员名)。
+    """扫 ``atst/`` 找 ``<owner>.<MEMBER>`` 的引用点：返回 (扫过的模块数, 命中的成员名)。
 
     与 :func:`unread_fields` 同族：分母取枚举自身（`{item.name for item in SomeEnum}`），
     名单由本函数产出，于是"声明了一个没人生产的成员"当场红，而不是靠注释保证。成员名按
     全大写识别——本仓两个数据面枚举（``WarningCode``/``ProvenanceKind``）都是这个形状。
-    ``skip`` 传文件相对路径（如 ``tstdx/diagnostics.py``）以排除声明处自身。
+    ``skip`` 传文件相对路径（如 ``atst/diagnostics.py``）以排除声明处自身。
     """
 
     scanned, sites = member_reference_sites(owner, skip=skip)
@@ -132,11 +132,11 @@ def constant_class_vocabulary(target: str, classes: tuple[str, ...]) -> Constant
 
     与 :func:`member_reference_sites` 的**按名**走查不同，本函数先解析导入，再决定一次
     ``Class.MEMBER`` 命中该记在**哪个定义**头上。理由是本仓真实踩过的那格假绿：
-    ``tstdx/reader/profile.py`` 与 ``tstdx/domain/symbol.py`` **都叫 ``Market``**，按名统计
+    ``atst/reader/profile.py`` 与 ``atst/domain/symbol.py`` **都叫 ``Market``**，按名统计
     时 ``symbol`` 的 8 处 ``Market.ALL`` 会被记到档案层那同名成员上，把一张零读取点的表量成
     "有人查"。字段含义：
 
-    * ``scanned``：解析过的 ``tstdx/`` 模块数（防盲分母）
+    * ``scanned``：解析过的 ``atst/`` 模块数（防盲分母）
     * ``members``：类名 → 成员名（按源码顺序）
     * ``values``：类名 → 成员名 → 取值（只收字符串常量，判据用它核对"按值被行动"）
     * ``tables``：类名 → 类级表名
@@ -151,7 +151,7 @@ def constant_class_vocabulary(target: str, classes: tuple[str, ...]) -> Constant
     """
 
     repo_root = REPO_ROOT
-    files = sorted((repo_root / "tstdx").rglob("*.py"))
+    files = sorted((repo_root / "atst").rglob("*.py"))
     trees = {path: ast.parse(path.read_text(encoding="utf-8")) for path in files}
     rel_of = {path: path.relative_to(repo_root).as_posix() for path in files}
 
@@ -159,7 +159,7 @@ def constant_class_vocabulary(target: str, classes: tuple[str, ...]) -> Constant
     imports: dict[tuple[str, str], str] = {}  # (引用文件, 绑定名) → 被导入模块相对路径
 
     def package_root() -> Path:
-        return repo_root / "tstdx"
+        return repo_root / "atst"
 
     def module_path(node: ast.ImportFrom, current: Path) -> str | None:
         """把一条 ``from`` 解析成被导入模块的仓内相对路径（目录取 ``__init__.py``）。"""
@@ -169,8 +169,8 @@ def constant_class_vocabulary(target: str, classes: tuple[str, ...]) -> Constant
             for _ in range(node.level - 1):
                 base = base.parent
             found: Path | None = base if not node.module else base.joinpath(*node.module.split("."))
-        elif node.module == "tstdx" or node.module.startswith("tstdx."):
-            tail = node.module[len("tstdx") :].lstrip(".")
+        elif node.module == "atst" or node.module.startswith("atst."):
+            tail = node.module[len("atst") :].lstrip(".")
             found = package_root() if not tail else package_root().joinpath(*tail.split("."))
         else:
             return None
@@ -190,7 +190,7 @@ def constant_class_vocabulary(target: str, classes: tuple[str, ...]) -> Constant
     for path, tree in trees.items():
         rel = rel_of[path]
         defined[rel] = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
-        # 函数体内的 import 也算：tstdx/web/fundflow.py 就在函数里 `from ..domain.symbol import Market`，
+        # 函数体内的 import 也算：atst/web/fundflow.py 就在函数里 `from ..domain.symbol import Market`，
         # 只摸模块级会把那处 ``Market.BJ`` 记成"解析不出"而不是"解析到别处"。
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
@@ -298,7 +298,7 @@ def member_reference_sites(owner: str, *, skip: str = "") -> tuple[int, dict[str
 
     refs: dict[str, set[str]] = {}
     scanned = 0
-    for path in sorted((REPO_ROOT / "tstdx").rglob("*.py")):
+    for path in sorted((REPO_ROOT / "atst").rglob("*.py")):
         relative = str(path.relative_to(REPO_ROOT)).replace("\\", "/")
         if relative == skip:
             continue

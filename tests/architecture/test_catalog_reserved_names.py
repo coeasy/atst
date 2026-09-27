@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """自动发现的跳过名单得说清它在为哪件事负责（V18-C1 后半第一段，第 12 轮）。
@@ -35,8 +35,8 @@ import inspect
 
 import pytest
 
-from tstdx.catalog import capability as catalog
-from tstdx.runtime.executor import DEDICATED_CAPABILITIES
+from atst.catalog import capability as catalog
+from atst.runtime.executor import DEDICATED_CAPABILITIES
 
 #: 低于这个规模就说明读的是空集合，"零违例"就没意义了。
 _MIN_MEMBERS = 100
@@ -49,7 +49,7 @@ def _discovery_members() -> set[str]:
     口径必须由 :func:`test_the_discovery_loop_and_the_ruler_share_one_lens` 自己核对，
     否则八b 量的是另一个类。
     """
-    from tstdx.web.session import WebQuoteSession
+    from atst.web.session import WebQuoteSession
 
     return {
         name
@@ -121,7 +121,7 @@ def test_the_skip_list_is_what_keeps_those_homes_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """八c 后半（正控）：名单一摘就长家，留着就一颗都不长——五格保留名也一样。"""
-    from tstdx.web.session import WebQuoteSession
+    from atst.web.session import WebQuoteSession
 
     full = catalog._SKIP_WEB_METHODS
 

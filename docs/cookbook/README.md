@@ -50,7 +50,7 @@
 换源只能显式指定 `provider=` 或 `FallbackPolicy`，不会自动发生。
 
 ```python
-from tstdx import Client
+from atst import Client
 
 with Client() as client:
     # 当日分时只能走 Web Provider：tdx 的 0x0537 仍是 inferred 命令，发包前即拦下。

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.domain.models import Quote
-from tstdx.errors import AllSourcesExhausted, ValidationError
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.result import Provenance, QueryResult
-from tstdx.runtime.orchestration import FallbackPolicy, ProviderOrchestrator
+from atst.domain.models import Quote
+from atst.errors import AllSourcesExhausted, ValidationError
+from atst.query import QueryPlanner, QuerySpec
+from atst.result import Provenance, QueryResult
+from atst.runtime.orchestration import FallbackPolicy, ProviderOrchestrator
 
 
 def _result(provider: str) -> QueryResult[list[Quote]]:

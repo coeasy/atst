@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """G4：7709 核心链的真取探针——仓里唯一会在流水线里真发 7709 包的判据。
@@ -10,7 +10,7 @@
 STANDARD 族零健康主机时退 1 是同一条口径（同一批 CI runner、同一批主机）。
 
 唯一被允许的 skip 是"这条断言此刻不适用"：盘中分钟 K 线只在交易时段存在，休市时
-跳过它不是链路坏了。日期判据从 :mod:`tstdx.domain.calendar` 现推，所以节假日不会
+跳过它不是链路坏了。日期判据从 :mod:`atst.domain.calendar` 现推，所以节假日不会
 制造假红。
 """
 
@@ -21,8 +21,8 @@ from typing import Any
 
 import pytest
 
-from tstdx import Client
-from tstdx.domain.calendar import TradingSession, get_calendar, is_trading_day
+from atst import Client
+from atst.domain.calendar import TradingSession, get_calendar, is_trading_day
 
 pytestmark = pytest.mark.network
 

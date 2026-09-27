@@ -1,9 +1,9 @@
-# tstdx 行情数据分页与完整性审计及优化方案（v5，2026-09-04）
+# atst 行情数据分页与完整性审计及优化方案（v5，2026-09-04）
 
 > **定位**：本文档是「数据分页与完整性」专项审计方案，与既有版本轴不重叠——
 > v1=性能/可靠性/易用性优化、v2=功能扩展（N 批次）、v3=能力扩展（对标竞品）、v4=文档一致性治理。v5 聚焦回答两个问题：**① TDX 获取行情数据是否存在分页问题？② 还有哪些潜在问题？**
 >
-> **审计方法**：3 路并行代码审计（K 线分页 / 列表·逐笔·文件分页 / Web 源·路由·流式分页）+ 全部关键发现人工源码复核（文件:行号级）。审计范围：`tstdx/client.py`、`tstdx/protocol/parsers/`、`tstdx/web/`、`tstdx/sources/`、`tstdx/streaming/`、`tstdx/facade/`、`tstdx/integration/`。
+> **审计方法**：3 路并行代码审计（K 线分页 / 列表·逐笔·文件分页 / Web 源·路由·流式分页）+ 全部关键发现人工源码复核（文件:行号级）。审计范围：`atst/client.py`、`atst/protocol/parsers/`、`atst/web/`、`atst/sources/`、`atst/streaming/`、`atst/facade/`、`atst/integration/`。
 
 ***
 

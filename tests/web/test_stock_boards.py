@@ -10,11 +10,11 @@ import json
 
 import pytest
 
-from tstdx.errors import SourceDeprecated, WebSourceError
-from tstdx.web.base import HttpResponse, RateLimiter
-from tstdx.web.corporate import EastmoneyIpoSource
-from tstdx.web.session import WebQuoteSession
-from tstdx.web.sources import KNOWN_SOURCES
+from atst.errors import SourceDeprecated, WebSourceError
+from atst.web.base import HttpResponse, RateLimiter
+from atst.web.corporate import EastmoneyIpoSource
+from atst.web.session import WebQuoteSession
+from atst.web.sources import KNOWN_SOURCES
 
 pytestmark = pytest.mark.unit
 
@@ -60,7 +60,7 @@ SLIST_CANNED = json.dumps(
 
 
 def _boards_src(body: bytes = SLIST_CANNED, status: int = 200):
-    from tstdx.web.boards import EastmoneyBoardSource
+    from atst.web.boards import EastmoneyBoardSource
 
     src = EastmoneyBoardSource(max_retries=0)
     src.client = FakeHttp(body, status=status)
@@ -100,7 +100,7 @@ class TestStockBoards:
 
     def test_facade_entries(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "tstdx.web.boards.EastmoneyBoardSource.fetch_stock_boards",
+            "atst.web.boards.EastmoneyBoardSource.fetch_stock_boards",
             lambda self, symbol: [{"code": "BK0456", "name": "家用电器"}],
         )
         assert WebQuoteSession.stock_boards("000651")[0]["code"] == "BK0456"
@@ -194,7 +194,7 @@ class TestIpoCalendar:
 
     def test_facade_entry(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "tstdx.web.corporate.EastmoneyIpoSource.fetch_ipo",
+            "atst.web.corporate.EastmoneyIpoSource.fetch_ipo",
             lambda self, **kw: [{"code": "301686", "apply_date": "2026-09-10"}],
         )
         rows = WebQuoteSession.ipo_calendar(apply_date="2026-09-10")
@@ -216,7 +216,7 @@ class TestBigOrderFlow:
             captured["symbols"] = list(symbols)
             return [{"code": "000651", "main_net": 1.2e8, "main_net_ratio": 5.2}]
 
-        monkeypatch.setattr("tstdx.web.fundflow.EastmoneyFundFlowSource.fetch_flow", fake_flow)
+        monkeypatch.setattr("atst.web.fundflow.EastmoneyFundFlowSource.fetch_flow", fake_flow)
         row = WebQuoteSession.big_order_flow("000651")
         assert captured["symbols"] == ["000651"]
         assert row is not None and row["main_net_ratio"] == 5.2
@@ -224,7 +224,7 @@ class TestBigOrderFlow:
 
     def test_none_when_no_data(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "tstdx.web.fundflow.EastmoneyFundFlowSource.fetch_flow",
+            "atst.web.fundflow.EastmoneyFundFlowSource.fetch_flow",
             lambda self, symbols: [],
         )
         assert WebQuoteSession.big_order_flow("999999") is None
@@ -236,7 +236,7 @@ class TestBigOrderFlow:
 @pytest.mark.network
 class TestLiveSmoke:
     def _guarded(self, fn):
-        from tstdx.errors import TdxError
+        from atst.errors import TdxError
 
         try:
             return fn()

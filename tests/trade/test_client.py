@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """TradeClient API 与红线测试（P2-1）。
@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.errors import ValidationError
-from tstdx.trade import (
+from atst.errors import ValidationError
+from atst.trade import (
     ORDER_SIDE_BUY,
     ORDER_SIDE_SELL,
     PRICE_TYPE_LIMIT,

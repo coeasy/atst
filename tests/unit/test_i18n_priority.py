@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-import tstdx.charset.encoding as i18n_enc
-from tstdx.codec.primitive import detect_encoding as primitive_detect
+import atst.charset.encoding as i18n_enc
+from atst.codec.primitive import detect_encoding as primitive_detect
 
 pytestmark = pytest.mark.unit
 

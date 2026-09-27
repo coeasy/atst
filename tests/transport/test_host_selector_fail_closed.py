@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.errors import ConfigError
-from tstdx.protocol.commands import Family
-from tstdx.transport.hosts import HostEntry, RankingStore, parse_server, resolve_hosts
+from atst.errors import ConfigError
+from atst.protocol.commands import Family
+from atst.transport.hosts import HostEntry, RankingStore, parse_server, resolve_hosts
 
 
 def test_explicit_empty_server_selector_does_not_restore_default_pool() -> None:
@@ -19,7 +19,7 @@ def test_config_shaped_empty_servers_preserve_unset_semantics(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("TSTDX_HOSTS", "1.2.3.4:7709")
+    monkeypatch.setenv("ATST_HOSTS", "1.2.3.4:7709")
 
     resolved = resolve_hosts(
         [],
@@ -34,16 +34,16 @@ def test_config_shaped_empty_servers_preserve_unset_semantics(
 def test_invalid_environment_selector_does_not_fall_back_to_builtin_pool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("TSTDX_HOSTS", "1.2.3.4:not-a-port")
+    monkeypatch.setenv("ATST_HOSTS", "1.2.3.4:not-a-port")
 
-    with pytest.raises(ConfigError, match="TSTDX_HOSTS 条目无效"):
+    with pytest.raises(ConfigError, match="ATST_HOSTS 条目无效"):
         resolve_hosts(None, family=Family.STANDARD)
 
 
 def test_environment_selector_rejects_one_bad_token_in_mixed_input(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("TSTDX_HOSTS", "1.2.3.4:7709 bad:not-a-port")
+    monkeypatch.setenv("ATST_HOSTS", "1.2.3.4:7709 bad:not-a-port")
 
     with pytest.raises(ConfigError, match="bad:not-a-port"):
         resolve_hosts(None, family=Family.STANDARD)
@@ -52,7 +52,7 @@ def test_environment_selector_rejects_one_bad_token_in_mixed_input(
 def test_environment_selector_rejects_empty_host(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("TSTDX_HOSTS", ":7709")
+    monkeypatch.setenv("ATST_HOSTS", ":7709")
 
     with pytest.raises(ConfigError, match="host 为空"):
         resolve_hosts(None, family=Family.STANDARD)
@@ -61,7 +61,7 @@ def test_environment_selector_rejects_empty_host(
 def test_blank_environment_value_remains_equivalent_to_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("TSTDX_HOSTS", "   ")
+    monkeypatch.setenv("ATST_HOSTS", "   ")
 
     resolved = resolve_hosts(None, family=Family.F10, use_ranking=False)
 
@@ -82,7 +82,7 @@ def test_explicit_selector_rejects_duplicate_canonical_endpoint_before_truncatio
 def test_environment_selector_rejects_duplicate_endpoint_before_truncation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("TSTDX_HOSTS", "1.2.3.4:7709 1.2.3.4:7709")
+    monkeypatch.setenv("ATST_HOSTS", "1.2.3.4:7709 1.2.3.4:7709")
 
     with pytest.raises(ConfigError, match="重复 canonical endpoint"):
         resolve_hosts(

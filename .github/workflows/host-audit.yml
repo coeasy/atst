@@ -36,7 +36,7 @@ jobs:
             --strict \
             --report audit_report.json \
             --markdown audit_summary.md \
-            --ranking-file /tmp/tstdx_ranking_ci.json
+            --ranking-file /tmp/atst_ranking_ci.json
       - name: Upload audit artifacts
         if: always()
         uses: actions/upload-artifact@v4

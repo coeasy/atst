@@ -1,7 +1,7 @@
-# tstdx 分支合并优化方案
+# atst 分支合并优化方案
 
 > 日期: 2026-09-13
-> 仓库: coeasy/tstdx
+> 仓库: coeasy/atst
 > 基线: main @ `a125e3f` (docs: add v14 deep upgrade progress tracking)
 > 范围: PR#1 / PR#6 / PR#7 及全部历史分支
 > **执行状态**: ✅ 已全部执行（见第八节执行记录）
@@ -35,7 +35,7 @@
 
 ### 2.1 PR#7 `v14-runtime-phase1` — v14 运行时内核
 
-**定位**: v14 第一阶段，为 tstdx 建立完整的执行编排运行时骨架。
+**定位**: v14 第一阶段，为 atst 建立完整的执行编排运行时骨架。
 
 **规模**: 78 文件 / +3,231 / −637，111 个 commit
 
@@ -50,10 +50,10 @@
 
 | 包 | 文件 | 职责 |
 |----|------|------|
-| `tstdx/runtime/` | `__init__.py`, `bootstrap.py`, `context.py`, `request.py`, `response.py`, `runtime.py`, `typed.py` | 运行时内核：引导工厂、执行上下文、请求/响应模型、Runtime 入口、Typed 适配器 |
-| `tstdx/execution/` | `__init__.py`, `graph.py`, `node.py`, `plan.py`, `planner.py`, `semantic.py` | 执行编排：DAG 图、节点原语、执行计划、ExecutionPlanner、语义桥接 |
-| `tstdx/provider/` | `__init__.py`, `base.py`, `local.py`, `router.py`, `tdx.py`, `web.py` | Provider 运行时适配器：基础契约、本地/Web/TDX 适配器、路由 |
-| `tstdx/facade/` | `runtime_adapter.py` | Facade → Runtime 兼容适配器 |
+| `atst/runtime/` | `__init__.py`, `bootstrap.py`, `context.py`, `request.py`, `response.py`, `runtime.py`, `typed.py` | 运行时内核：引导工厂、执行上下文、请求/响应模型、Runtime 入口、Typed 适配器 |
+| `atst/execution/` | `__init__.py`, `graph.py`, `node.py`, `plan.py`, `planner.py`, `semantic.py` | 执行编排：DAG 图、节点原语、执行计划、ExecutionPlanner、语义桥接 |
+| `atst/provider/` | `__init__.py`, `base.py`, `local.py`, `router.py`, `tdx.py`, `web.py` | Provider 运行时适配器：基础契约、本地/Web/TDX 适配器、路由 |
+| `atst/facade/` | `runtime_adapter.py` | Facade → Runtime 兼容适配器 |
 | `tests/v14/` | 5 个测试文件 | 契约测试：bootstrap、execution、semantic、typed_query、facade adapter |
 | `docs/` | `REFACTOR_PLAN_v14_FULL_UPGRADE.md` | v14 完整升级方案 |
 
@@ -111,14 +111,14 @@ SemanticResultCache  Provider adapter (tdx/local/web)
 
 | 类别 | 关键文件 | 职责 |
 |------|---------|------|
-| 运行时核心 | `tstdx/runtime.py`, `tstdx/orchestration.py`, `tstdx/direct_provider.py` | 统一运行时、跨 Provider 编排策略、直连 Provider 绑定 |
-| 缓存 | `tstdx/cache_persistent.py`, `tstdx/stream_contract.py` | 持久化语义缓存 L2、流契约 |
-| 客户端 | `tstdx/client_api.py` | v13 Client/AsyncClient |
-| 能力目录 | `tstdx/capability_catalog.py`, `tstdx/typed_query.py` | 能力目录、Typed Query 合约 |
-| 批处理 | `tstdx/batch.py` | BatchSpec + 可审计批量报价 |
-| 错误 | `tstdx/error_envelope.py` | 规范化安全错误信封 |
-| 集成 | `tstdx/integration/runtime_*.py` (4 文件) | HTTP/WS/Task 运行时传输层 |
-| CLI | `tstdx/cli/runtime_commands.py` | v13 客户端命令 |
+| 运行时核心 | `atst/runtime.py`, `atst/orchestration.py`, `atst/direct_provider.py` | 统一运行时、跨 Provider 编排策略、直连 Provider 绑定 |
+| 缓存 | `atst/cache_persistent.py`, `atst/stream_contract.py` | 持久化语义缓存 L2、流契约 |
+| 客户端 | `atst/client_api.py` | v13 Client/AsyncClient |
+| 能力目录 | `atst/capability_catalog.py`, `atst/typed_query.py` | 能力目录、Typed Query 合约 |
+| 批处理 | `atst/batch.py` | BatchSpec + 可审计批量报价 |
+| 错误 | `atst/error_envelope.py` | 规范化安全错误信封 |
+| 集成 | `atst/integration/runtime_*.py` (4 文件) | HTTP/WS/Task 运行时传输层 |
+| CLI | `atst/cli/runtime_commands.py` | v13 客户端命令 |
 | 文档 | 6 个文档 | v13 方案、语义对齐矩阵、能力矩阵、执行状态 |
 
 **删除的文件** (29 个):
@@ -140,7 +140,7 @@ SemanticResultCache  Provider adapter (tdx/local/web)
 9. **完整 Legacy 能力迁移**：全部 legacy 能力迁移到 v13 运行时，通过 Direct Binding 执行
 10. **v14 前瞻**：尾部 2 个 feat commit 引入了 `typed_query.py` 和 `provider adapter contract foundation`
 
-**冲突**: 1 个 — `tstdx/typed_query.py` (add/add)
+**冲突**: 1 个 — `atst/typed_query.py` (add/add)
 - main 版本 100 行（15 个 Typed Query 类，包含 `IncomeStatementQuery` / `CashFlowQuery` / `FundHoldingsQuery` / `BondKlineQuery` / `FuturesKlineQuery` / `NewsQuery` / `ResearchReportQuery` / `F10Query`）
 - PR#6 版本 75 行（7 个 Typed Query 类，仅基础集合）
 - **解决方案**: 采用 main 版本（更完整），PR#6 只是缺少了后续扩展的类
@@ -165,15 +165,15 @@ SemanticResultCache  Provider adapter (tdx/local/web)
 
 | 类别 | 关键文件 | 职责 |
 |------|---------|------|
-| 服务层 | `tstdx/service.py`, `tstdx/planned_service.py`, `tstdx/async_service.py` | Planned Service 架构 |
-| Provider API | `tstdx/provider_api.py` | Provider Direct API |
-| 缓存 | `tstdx/cache_v2.py`, `tstdx/semantic_cache.py` | 缓存 v2 + 语义缓存 |
-| 健康检查 | `tstdx/health.py`, `tstdx/freshness.py`, `tstdx/failure.py` | 熔断/新鲜度/失败策略 |
-| 传输硬化 | `tstdx/transport/_*.py` (10 文件) | 连接/池/主机/限流/排序 硬化模块 |
-| Facade | `tstdx/facade/planned.py`, `tstdx/facade/strict.py`, `tstdx/facade/strict_async.py` | Planned/Strict Facade |
-| 集成 | `tstdx/integration/http_app.py`, `ws_app.py`, `mcp_app.py`, `tasks.py` | 应用层集成 |
-| 执行 | `tstdx/execution.py` | 执行引擎 |
-| 工具 | `tstdx/tools/host_audit.py` | 主机审计 |
+| 服务层 | `atst/service.py`, `atst/planned_service.py`, `atst/async_service.py` | Planned Service 架构 |
+| Provider API | `atst/provider_api.py` | Provider Direct API |
+| 缓存 | `atst/cache_v2.py`, `atst/semantic_cache.py` | 缓存 v2 + 语义缓存 |
+| 健康检查 | `atst/health.py`, `atst/freshness.py`, `atst/failure.py` | 熔断/新鲜度/失败策略 |
+| 传输硬化 | `atst/transport/_*.py` (10 文件) | 连接/池/主机/限流/排序 硬化模块 |
+| Facade | `atst/facade/planned.py`, `atst/facade/strict.py`, `atst/facade/strict_async.py` | Planned/Strict Facade |
+| 集成 | `atst/integration/http_app.py`, `ws_app.py`, `mcp_app.py`, `tasks.py` | 应用层集成 |
+| 执行 | `atst/execution.py` | 执行引擎 |
+| 工具 | `atst/tools/host_audit.py` | 主机审计 |
 | Provider 文档 | `docs/providers/*.md` (8 文件) | TDX/腾讯/新浪/东财/百度/集思录/中行/i问财 通道文档 |
 | 架构文档 | `docs/TDX_PROVIDER_CHANNEL_ARCHITECTURE_PLAN_v12.md` (1127 行) | v12 完整架构方案 |
 | 契约测试 | ~100 个测试文件 | 覆盖 client/transport/service/codec/domain/provider/facade/streaming/integration |
@@ -210,9 +210,9 @@ SemanticResultCache  Provider adapter (tdx/local/web)
 
 | 文件 | PR#1 改动 | PR#6 改动 | PR#7 改动 | main 当前 |
 |------|----------|----------|----------|----------|
-| `tstdx/facade/__init__.py` | 重构 | 删除 legacy + 新建 | 适配器导出 | legacy facade |
-| `tstdx/providers/__init__.py` | Provider 术语重构 | 删除 legacy + 新建 | — | 521 行 |
-| `tstdx/query.py` | Channel 语义重构 | — | — | 376 行 |
+| `atst/facade/__init__.py` | 重构 | 删除 legacy + 新建 | 适配器导出 | legacy facade |
+| `atst/providers/__init__.py` | Provider 术语重构 | 删除 legacy + 新建 | — | 521 行 |
+| `atst/query.py` | Channel 语义重构 | — | — | 376 行 |
 | `tests/facade/test_w11_w12_w13.py` | 重写测试 | 删除 legacy 测试 | — | legacy 测试 |
 
 ### 3.2 架构演进关系
@@ -266,16 +266,16 @@ git push origin main
 ```
 
 **验证点**:
-- [ ] `tstdx/runtime/` 包完整导入
-- [ ] `tstdx/execution/` 包完整导入
-- [ ] `tstdx/provider/` 包完整导入
+- [ ] `atst/runtime/` 包完整导入
+- [ ] `atst/execution/` 包完整导入
+- [ ] `atst/provider/` 包完整导入
 - [ ] `tests/v14/` 5 个测试套件全部通过
 - [ ] `Runtime.execute_typed()` 可调用
 - [ ] 语义缓存注入正常
 
 ### 4.3 Phase 2: 解决 PR#6 冲突后合并
 
-**冲突文件**: `tstdx/typed_query.py` (add/add)
+**冲突文件**: `atst/typed_query.py` (add/add)
 
 **冲突根因**: main 已有 15 个 Typed Query 类（含 `IncomeStatementQuery` / `CashFlowQuery` / `FundHoldingsQuery` / `BondKlineQuery` / `FuturesKlineQuery` / `NewsQuery` / `ResearchReportQuery` / `F10Query`），PR#6 只有 7 个基础类。
 
@@ -291,8 +291,8 @@ git fetch origin
 git rebase origin/main
 
 # 3. 冲突解决：typed_query.py 采用 main 版本
-git checkout --theirs tstdx/typed_query.py
-git add tstdx/typed_query.py
+git checkout --theirs atst/typed_query.py
+git add atst/typed_query.py
 git rebase --continue
 
 # 4. 验证测试
@@ -305,8 +305,8 @@ git push --force-with-lease origin refactor/runtime-integration-v12
 ```
 
 **验证点**:
-- [ ] `tstdx/runtime.py` 导入正常
-- [ ] `tstdx/client_api.py` Client/AsyncClient 可用
+- [ ] `atst/runtime.py` 导入正常
+- [ ] `atst/client_api.py` Client/AsyncClient 可用
 - [ ] legacy facade 全部删除，无残留导入
 - [ ] `tests/runtime/` 全部通过
 - [ ] HTTP/WS/MCP/CLI 传输层正常
@@ -321,10 +321,10 @@ PR#1 有 737 个 commit、234 个文件，落后 main 42 个 commit，5 个冲�
 | 子分支 | 来源 commit 范围 | 内容 | 预期冲突 | 合并顺序 |
 |--------|-----------------|------|---------|---------|
 | `split/v12-provider-docs` | docs/providers/*.md + ADR-013 | Provider 通道文档 + 术语 ADR | 0 | 第 1 批 |
-| `split/v12-transport-hardening` | `tstdx/transport/_*.py` (10 文件) | 传输层硬化模块 | 0 | 第 2 批 |
+| `split/v12-transport-hardening` | `atst/transport/_*.py` (10 文件) | 传输层硬化模块 | 0 | 第 2 批 |
 | `split/v12-contract-tests` | tests/ 下新增测试 | 契约测试套件 | 低 | 第 3 批 |
-| `split/v12-service-layer` | `tstdx/service.py` / `planned_service.py` / `health.py` / `freshness.py` | 服务层架构 | 中 | 第 4 批 |
-| `split/v12-facade-strict` | `tstdx/facade/strict*.py` / `planned.py` | Strict Facade | 高（与 PR#6 删除的 legacy 冲突） | 待 PR#6 合并后评估 |
+| `split/v12-service-layer` | `atst/service.py` / `planned_service.py` / `health.py` / `freshness.py` | 服务层架构 | 中 | 第 4 批 |
+| `split/v12-facade-strict` | `atst/facade/strict*.py` / `planned.py` | Strict Facade | 高（与 PR#6 删除的 legacy 冲突） | 待 PR#6 合并后评估 |
 | `split/v12-core-refactor` | `query.py` / `providers/__init__.py` / `sources/__init__.py` | 核心语义重构 | 高 | 最后评估，可能需重做 |
 
 **操作**:
@@ -339,15 +339,15 @@ git push origin split/v12-provider-docs
 # 2. Cherry-pick 传输硬化模块
 git checkout -b split/v12-transport-hardening main
 # 使用 git checkout 从 PR#1 分支提取特定文件
-git checkout refs/pull/1/head -- tstdx/transport/_async_close_hardening.py \
-  tstdx/transport/_async_pool_hardening.py \
-  tstdx/transport/_connection_contract_hardening.py \
-  tstdx/transport/_host_selector_hardening.py \
-  tstdx/transport/_pool_factory_hardening.py \
-  tstdx/transport/_pool_family_hardening.py \
-  tstdx/transport/_pool_hardening.py \
-  tstdx/transport/_pool_provenance_hardening.py \
-  tstdx/transport/_ranking_hardening.py
+git checkout refs/pull/1/head -- atst/transport/_async_close_hardening.py \
+  atst/transport/_async_pool_hardening.py \
+  atst/transport/_connection_contract_hardening.py \
+  atst/transport/_host_selector_hardening.py \
+  atst/transport/_pool_factory_hardening.py \
+  atst/transport/_pool_family_hardening.py \
+  atst/transport/_pool_hardening.py \
+  atst/transport/_pool_provenance_hardening.py \
+  atst/transport/_ranking_hardening.py
 git add -A
 git commit -m "feat(transport): add hardening modules from v12 industry benchmark"
 git push origin split/v12-transport-hardening
@@ -386,9 +386,9 @@ git push origin --delete refactor/industry-benchmark-v11
 ```
 Python API / CLI / REST / WS / MCP
           ↓
-    tstdx.client_api.Client / AsyncClient
+    atst.client_api.Client / AsyncClient
           ↓
-    tstdx.runtime.Runtime
+    atst.runtime.Runtime
     (QueryRequest → ExecutionPlanner → Provider Router)
           ↓
   ┌───────┴───────┐
@@ -406,7 +406,7 @@ SemanticResultCache  Provider Adapter
 ### 5.2 合并后包结构
 
 ```
-tstdx/
+atst/
 ├── __init__.py              # 公共 API 导出
 ├── runtime/                 # [PR#7] v14 运行时内核
 │   ├── __init__.py
@@ -497,7 +497,7 @@ tstdx/
 
 ### 6.4 架构收敛验收清单
 
-合并全部 PR 后，tstdx 应满足以下验收标准：
+合并全部 PR 后，atst 应满足以下验收标准：
 
 - [ ] **单一运行时**: 所有业务能力通过 `Runtime.execute()` / `Runtime.execute_typed()` 执行
 - [ ] **单一客户端**: `Client` / `AsyncClient` 是唯一执行入口
@@ -555,18 +555,18 @@ tstdx/
 ### Phase 2 ⚠️ PR#6 部分合并（组件提取，非 full clean-break）
 
 **架构冲突发现**: PR#6 的 v13 clean-break（删除全部 facade/server）与已合入 PR#7 的 v14 生态（保留 facade + runtime_adapter）方向相反:
-- `tstdx/runtime.py`(模块) vs `tstdx/runtime/`(包) 命名冲突不可共存
+- `atst/runtime.py`(模块) vs `atst/runtime/`(包) 命名冲突不可共存
 - PR#6 删除 `facade/api.py`/`response.py` 会破坏 PR#7 的 `RuntimeFacadeAdapter` 依赖
 - 机械执行 clean-break 会破坏已稳定合入的 v14 场景
 
 **执行决策**: 提取 PR#6 的 6 个独立工程原语（不依赖 v13 UnifiedRuntime、与 v14 无同名冲突）:
-- `tstdx/batch.py` — BatchSpec/SingleFlight/NegativeCache
-- `tstdx/error_envelope.py` — 规范化错误信封
-- `tstdx/stream_contract.py` — 流规划契约
-- `tstdx/cache_persistent.py` — 持久化语义缓存 L2
-- `tstdx/capability_catalog.py` — migrated capability 绑定
-- `tstdx/direct_provider.py` — 直连 Provider 执行器
-- `tstdx/providers/adapter.py` — Provider 适配器 ABC
+- `atst/batch.py` — BatchSpec/SingleFlight/NegativeCache
+- `atst/error_envelope.py` — 规范化错误信封
+- `atst/stream_contract.py` — 流规划契约
+- `atst/cache_persistent.py` — 持久化语义缓存 L2
+- `atst/capability_catalog.py` — migrated capability 绑定
+- `atst/direct_provider.py` — 直连 Provider 执行器
+- `atst/providers/adapter.py` — Provider 适配器 ABC
 - 6 个文档 + ADR-015
 
 - commit `0034297` + merge `e0307c6`
@@ -581,7 +581,7 @@ tstdx/
 - 10 文件 / +1343
 
 **Split 2 ✅ 工具 + CI** (commit `0309191` + merge `a709593`)
-- `tstdx/tools/host_audit.py` — 5 协议族主机审计（依赖 main 已有公开 API）
+- `atst/tools/host_audit.py` — 5 协议族主机审计（依赖 main 已有公开 API）
 - `scripts/check_docs_links.py` — 文档链接完整性检查（纯 stdlib）
 - `scripts/run_benchmark_smoke.py` — 基准冒烟
 - `.github/workflows/host-audit.yml` — 定时运维探测 CI

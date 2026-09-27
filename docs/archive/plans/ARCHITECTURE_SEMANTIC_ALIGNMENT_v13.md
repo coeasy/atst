@@ -1,4 +1,4 @@
-# tstdx v13 Semantic & Core Alignment Specification
+# atst v13 Semantic & Core Alignment Specification
 
 > Status: **authoritative architecture contract**
 >
@@ -472,7 +472,7 @@ Rules:
 The final supported Python API is centered on:
 
 ```python
-from tstdx import Client, AsyncClient, QuerySpec, FallbackPolicy
+from atst import Client, AsyncClient, QuerySpec, FallbackPolicy
 ```
 
 Canonical surface:
@@ -845,7 +845,7 @@ Therefore the implementation strategy from this point is **convergence and delet
 
 ## 22. Final architecture statement
 
-The final tstdx architecture has one semantic center:
+The final atst architecture has one semantic center:
 
 ```text
 Typed Intent

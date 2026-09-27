@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import tstdx
+import atst
 
 _ROOT = Path(__file__).resolve().parents[2]
 
@@ -17,19 +17,19 @@ _INSTALL_DOCS = (
     "docs/releases/v1.0.0.md",
 )
 
-#: `pip install tstdx` / `pip install "tstdx[all]"` / `pip install --upgrade tstdx==1.0.0`
+#: `pip install atst` / `pip install "atst[all]"` / `pip install --upgrade atst==1.0.0`
 #: 三种写法同一个形状；`-e ".[dev]"` 与 `".[all]"` 这种从源码装的写法不在其内。
-_PYPI_INSTALL = re.compile(r"pip install (?:--upgrade )?[\"']?tstdx")
+_PYPI_INSTALL = re.compile(r"pip install (?:--upgrade )?[\"']?atst")
 
 #: 页面上必须出现的口径声明（写明本包当前不在 PyPI 上，见各页 G9 段）。
 _UNPUBLISHED_MARKER = "不在 PyPI"
 
 
 def test_no_user_doc_presents_an_unpublished_install_path_as_available() -> None:
-    """G9：`pip install tstdx` 在 PyPI 上没有对应物，文档不能把它写成可用指令。
+    """G9：`pip install atst` 在 PyPI 上没有对应物，文档不能把它写成可用指令。
 
     实测口径来自 ``reports/g9_pypi_probe.log``（2026-09-22）：
-    ``https://pypi.org/pypi/tstdx/json`` 与 ``/simple/tstdx/`` 均回 404。一条装不通
+    ``https://pypi.org/pypi/atst/json`` 与 ``/simple/atst/`` 均回 404。一条装不通
     的命令与一条会给出错数的命令是同一类缺陷——差别只在于受害的是新读者。
     真正关闭这一格的是发布动作；本判据保证的是『在发布之前，文档不再替它背书』。
     """
@@ -53,8 +53,8 @@ def test_published_v1_release_history_is_preserved() -> None:
     assert release.is_file()
     release_text = release.read_text(encoding="utf-8")
     assert "v1.0.0" in release_text
-    assert "tstdx-1.0.0-py3-none-any.whl" in release_text
-    assert "tstdx-1.0.0.tar.gz" in release_text
+    assert "atst-1.0.0-py3-none-any.whl" in release_text
+    assert "atst-1.0.0.tar.gz" in release_text
 
 
 def test_general_docs_distinguish_stable_release_from_development_identity() -> None:
@@ -62,11 +62,11 @@ def test_general_docs_distinguish_stable_release_from_development_identity() -> 
     quickstart = (_ROOT / "docs" / "quickstart.md").read_text(encoding="utf-8")
     api_index = (_ROOT / "docs" / "api" / "README.md").read_text(encoding="utf-8")
 
-    assert f"当前 Draft 开发版本：`{tstdx.__version__}`" in readme
+    assert f"当前 Draft 开发版本：`{atst.__version__}`" in readme
     assert "最新已发布稳定版：`v1.0.0`" in readme
-    assert f"当前 `{tstdx.__version__}` Draft 开发线" in quickstart
+    assert f"当前 `{atst.__version__}` Draft 开发线" in quickstart
     assert "最新已发布稳定版是 `v1.0.0`" in quickstart
-    assert f"当前 `{tstdx.__version__}` Draft 开发线" in api_index
+    assert f"当前 `{atst.__version__}` Draft 开发线" in api_index
     assert "最新已发布稳定版是 `v1.0.0`" in api_index
 
 

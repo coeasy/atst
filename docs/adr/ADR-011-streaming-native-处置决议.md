@@ -8,14 +8,14 @@
 
 可达性审计（v8）确认「有实现但主链路零引用」的模块，其中两个属 streaming 域：
 
-1. `tstdx/streaming/engine.py` —— 白名单注释称「QuoteStream 平行实现」，但
+1. `atst/streaming/engine.py` —— 白名单注释称「QuoteStream 平行实现」，但
    复核其 docstring（M1 决断，v1.4.0 用户拍板「接线」）：DeltaMerger/
    BackpressureQueue/ReconnectPolicy **已构成 QuoteStream 生产内核**，
    白名单注释过时，属扫描器可见性问题而非真孤儿；
-2. `tstdx/streaming/push.py` —— 0x0547 推送通道组件（传输解耦设计：
+2. `atst/streaming/push.py` —— 0x0547 推送通道组件（传输解耦设计：
    独占连接 + fake 可离线测试，L2 布局 best-effort 有 L3 兜底），文档完备、
    有测试，属**可选高级 API**而非半成品；
-3. `tstdx/native/` —— Rust 加速实验层（自测对拍，非热路径）。
+3. `atst/native/` —— Rust 加速实验层（自测对拍，非热路径）。
 
 三者均已在 `scripts/_reach_allow.txt` 白名单登记。v9 需要给出收敛决议，避免「半成品无限期悬置」。
 

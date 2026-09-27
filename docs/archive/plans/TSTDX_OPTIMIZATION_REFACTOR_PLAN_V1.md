@@ -1,8 +1,8 @@
-# tstdx 优化重构方案 V1
+# atst 优化重构方案 V1
 
 ## 1. 背景与目标
 
-`tstdx` 当前已经具备 TDX 协议解析、Provider 管理、Runtime 编排、缓存、批量执行、流式订阅和多服务入口能力。下一阶段重点不是继续堆叠功能，而是进行架构收敛：
+`atst` 当前已经具备 TDX 协议解析、Provider 管理、Runtime 编排、缓存、批量执行、流式订阅和多服务入口能力。下一阶段重点不是继续堆叠功能，而是进行架构收敛：
 
 - 统一用户 API 入口
 - 收敛 Runtime 分层职责
@@ -51,8 +51,8 @@ Application / Agent / Quant Platform
 最终公开 API：
 
 ```
-tstdx.Client
- tstdx.AsyncClient
+atst.Client
+ atst.AsyncClient
 ```
 
 其它接口按照层级隐藏：
@@ -70,7 +70,7 @@ tstdx.Client
 统一：
 
 ```python
-from tstdx import Client
+from atst import Client
 
 with Client() as client:
     result = client.bars("sh600519", count=100)
@@ -441,7 +441,7 @@ Client / Runtime / HTTP / WS / MCP
 
 # 15. 最终目标
 
-`tstdx` 最终成为：
+`atst` 最终成为：
 
 > 高性能、可扩展、Provider-first 的金融市场数据基础设施。
 

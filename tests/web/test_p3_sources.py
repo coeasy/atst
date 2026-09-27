@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from tstdx.web._session_p3 import P3SessionMixin
-from tstdx.web.base import HttpResponse
-from tstdx.web.corporate import EastmoneyDataCenterSource
-from tstdx.web.session import WebQuoteSession
+from atst.web._session_p3 import P3SessionMixin
+from atst.web.base import HttpResponse
+from atst.web.corporate import EastmoneyDataCenterSource
+from atst.web.session import WebQuoteSession
 
 pytestmark = [pytest.mark.unit]
 
@@ -462,7 +462,7 @@ class TestP3FacadeIntegration:
 
     def test_valid_reports_contains_p3(self):
         """VALID_REPORTS 白名单包含 4 个 P3 报表。"""
-        from tstdx.web.corporate import VALID_REPORTS
+        from atst.web.corporate import VALID_REPORTS
 
         assert "northbound_hold" in VALID_REPORTS
         assert VALID_REPORTS["northbound_hold"] == "RPT_MUTUAL_HOLD"

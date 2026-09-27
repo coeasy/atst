@@ -4,12 +4,12 @@
 
 ## 第一步：先拿到原始字节，看清分派落在哪一级
 
-三级分派的口径是 L1 精确解析器 → L2 通用启发式 → L3 原始透传（`tstdx.protocol.registry.dispatch`）。
+三级分派的口径是 L1 精确解析器 → L2 通用启发式 → L3 原始透传（`atst.protocol.registry.dispatch`）。
 账本里没有的命令既没有 L1 解析器，L2 多半也给不出可信结构，最终落在 L3。要观察这一格，
 用语义客户端上那个"任意命令"入口，而不是自己拼帧：
 
 ```python
-from tstdx.client import TdxClient
+from atst.client import TdxClient
 
 client = TdxClient()
 body = b"\x00\x00" + b"000001".ljust(6, b"\x00")  # 请求体自己按猜的结构拼
@@ -27,8 +27,8 @@ print(result.warnings)  # 为什么降级，写在这里
 ## 第二步：用 Prober 探测 + 生成 spec 草稿
 
 ```python
-from tstdx.client import TdxClient
-from tstdx.protocol.prober import Prober
+from atst.client import TdxClient
+from atst.protocol.prober import Prober
 
 prober = Prober(TdxClient(timeout=3.0), rate_limit=1.0)  # 限速 1 req/s
 
@@ -70,10 +70,10 @@ response:
 ## 第四步：codegen 生成解析器骨架
 
 ```bash
-python -m tstdx.tools.codegen PROTOCOL_SPEC/7709/0x1234_my_command.yaml --write
+python -m atst.tools.codegen PROTOCOL_SPEC/7709/0x1234_my_command.yaml --write
 ```
 
-`--write` 落到 `tstdx/tools/generated_draft/` 下的草稿（目录由命令自己建，不进版本库）；
+`--write` 落到 `atst/tools/generated_draft/` 下的草稿（目录由命令自己建，不进版本库）；
 省略 spec 位置参则处理 `--spec-dir`（默认 `PROTOCOL_SPEC`）下的全部 spec，`--list` 只列 spec。
 
 补全业务逻辑后注册进分派表。`register_parser()` 是**装饰器工厂**，第一个参数只有命令号，
@@ -81,8 +81,8 @@ python -m tstdx.tools.codegen PROTOCOL_SPEC/7709/0x1234_my_command.yaml --write
 `ParseResult` 包装都由框架做）：
 
 ```python
-from tstdx.protocol.commands import Family
-from tstdx.protocol.registry import BaseParser, register_parser
+from atst.protocol.commands import Family
+from atst.protocol.registry import BaseParser, register_parser
 
 
 @register_parser(0x1234, family=Family.STANDARD, name="MY_COMMAND", head=2)
@@ -100,7 +100,7 @@ class MyCommandParser(BaseParser):
 ## 第五步：spec_audit 验证契约
 
 ```bash
-python -m tstdx.tools.spec_audit --json --strict   # spec ↔ 实现双向校验
+python -m atst.tools.spec_audit --json --strict   # spec ↔ 实现双向校验
 pytest tests/test_spec_coverage.py                 # CI 门禁
 ```
 
@@ -109,7 +109,7 @@ pytest tests/test_spec_coverage.py                 # CI 门禁
 不想发探测请求？挂在现有流量上被动收集：
 
 ```python
-from tstdx.transport.sniff import Sniffer, attach
+from atst.transport.sniff import Sniffer, attach
 
 sniffer = Sniffer(ring_size=16)
 attach(sniffer, client)  # 就地包装 client 的 request：每个响应自动进环形缓冲

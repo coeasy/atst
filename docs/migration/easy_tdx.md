@@ -1,15 +1,15 @@
 # 从 easy_tdx / eltdx 迁移
 
-> **垫片状态**：早期版本提供过 `tstdx.compat.easy_tdx` / `tstdx.compat.eltdx` 兼容垫片，
+> **垫片状态**：早期版本提供过 `atst.compat.easy_tdx` / `atst.compat.eltdx` 兼容垫片，
 > 已在 v1.2.0 清理批次中移除（与已删除的 `_async_bridge` 同类归并）。迁移请直接使用
 > 原生 `TdxClient` / `AsyncTdxClient` API。
 
-## easy_tdx → tstdx
+## easy_tdx → atst
 
 ### 原生 API（推荐）
 
 ```python
-from tstdx.client import TdxClient, AsyncTdxClient
+from atst.client import TdxClient, AsyncTdxClient
 
 client = TdxClient()
 bars = client.bars("sh600519", period="day", count=80)
@@ -26,7 +26,7 @@ async def main():
 
 ### category 对照表
 
-| easy_tdx category | 含义 | tstdx period |
+| easy_tdx category | 含义 | atst period |
 |---|---|---|
 | 0 | 5 分钟 | `"5m"` |
 | 1 | 15 分钟 | `"15m"` |
@@ -41,16 +41,16 @@ async def main():
 | 10 | 季线 | `"quarter"` |
 | 11 | 年线 | `"year"` |
 
-垫片删除后这张表只剩历史语境：`period` 现在只认字符串别名（`tstdx/domain/period.py` 的
+垫片删除后这张表只剩历史语境：`period` 现在只认字符串别名（`atst/domain/period.py` 的
 `normalize_bar_period` 对未知值原样透传），整数 category 会被当成未知 period，最终由所选
 Provider 的 `supported_periods` 判据当场拒绝——`ValidationError`（E1010），context 带
 `supported_periods`。不存在"告警后回退 `"day"`"的行为。
 
-## eltdx → tstdx
+## eltdx → atst
 
 ### frequency 对照表
 
-| eltdx frequency | tstdx period |
+| eltdx frequency | atst period |
 |---|---|
 | `"1m"` / `"1min"` | `"1m"` |
 | `"5m"` / `"5min"` | `"5m"` |
@@ -63,6 +63,6 @@ Provider 的 `supported_periods` 判据当场拒绝——`ValidationError`（E10
 
 ## 行为差异
 
-- 返回结构统一为 tstdx 全局契约（量=股/额=元）
+- 返回结构统一为 atst 全局契约（量=股/额=元）
 - 连接失败抛 `TdxError`（而非裸 `ConnectionError`），`.advice` 字段给出重试建议
 - 不显式 `connect()` 也可直接调用（懒初始化）

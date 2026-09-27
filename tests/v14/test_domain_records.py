@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tstdx.domain.records import (
+from atst.domain.records import (
     BondRecord,
     FinancialRecord,
     FundRecord,
@@ -14,9 +14,9 @@ from tstdx.domain.records import (
     normalize_to_records,
     record_to_dicts,
 )
-from tstdx.query import QueryPlanner, QuerySpec
-from tstdx.result import Provenance, QueryResult
-from tstdx.typed_query import (
+from atst.query import QueryPlanner, QuerySpec
+from atst.result import Provenance, QueryResult
+from atst.typed_query import (
     FundManagerQuery,
     record_type_for,
     records_from_data,

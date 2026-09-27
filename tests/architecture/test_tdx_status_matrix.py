@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """连通性矩阵（:file:`docs/tdx_status.md`）的每个格子都要由代码现推。
@@ -21,9 +21,9 @@ import dataclasses
 import re
 from pathlib import Path
 
-from tstdx.client import core as client_core
-from tstdx.domain.models import Quote
-from tstdx.protocol.commands import COMMANDS, STATUS_DEGRADED, STATUS_OFFLINE
+from atst.client import core as client_core
+from atst.domain.models import Quote
+from atst.protocol.commands import COMMANDS, STATUS_DEGRADED, STATUS_OFFLINE
 
 ROOT = Path(__file__).resolve().parents[2]
 DOC = ROOT / "docs" / "tdx_status.md"

@@ -65,8 +65,8 @@ Fixes #____
 
 ## 构建 / 发布影响（如适用）
 
-- [ ] wheel 仍为 canonical `py3-none-any` 并包含 `tstdx/py.typed`
-- [ ] Release tag / `pyproject.toml` / `tstdx.__version__` 身份一致
+- [ ] wheel 仍为 canonical `py3-none-any` 并包含 `atst/py.typed`
+- [ ] Release tag / `pyproject.toml` / `atst.__version__` 身份一致
 - [ ] PyPI 仍只通过 GitHub Release + OIDC Trusted Publishing 发布
 - [ ] Docker Release 镜像复用已通过矩阵验证的同一个 canonical wheel，不二次构建
 

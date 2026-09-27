@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tstdx contributors
+# Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
 """P14-A2/A3 回归：``hosts audit`` CLI 子命令 + ``--hosts-file`` 外部候选注入。
@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from tstdx.cli import build_parser
-from tstdx.protocol.commands import Family
+from atst.cli import build_parser
+from atst.protocol.commands import Family
 
 
 # --------------------------------------------------------------------------- #
@@ -38,10 +38,10 @@ def _import_audit_hosts():
 audit_hosts_mod = _import_audit_hosts()
 
 #: ``probe`` is dispatched from the implementation module
-#: (:mod:`tstdx.tools.host_audit`); ``scripts/audit_hosts.py`` only re-exports
+#: (:mod:`atst.tools.host_audit`); ``scripts/audit_hosts.py`` only re-exports
 #: it. Patching the implementation module is what actually suppresses network
 #: I/O — patching the wrapper would silently be a no-op.
-from tstdx.tools import host_audit as host_audit_impl  # noqa: E402
+from atst.tools import host_audit as host_audit_impl  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -73,7 +73,7 @@ class TestCliHostsAudit:
         ns = parser.parse_args(["hosts", "audit"])
         assert ns.timeout == 5.0
         assert ns.workers == 16
-        assert ns.ranking_file == "~/.tstdx/server_ranking.json"
+        assert ns.ranking_file == "~/.atst/server_ranking.json"
         assert ns.report == "./host_audit_report.json"
         assert ns.strict is False
         assert ns.quiet is False
@@ -252,7 +252,7 @@ class TestLoadExternalHosts:
 class TestAuditFamilyWithExternalHosts:
     def test_additional_hosts_are_deduplicated(self, tmp_path: Path):
         """内置池已有的主站 + additional_hosts 中重复条目 → 只算一次。"""
-        from tstdx.transport.hosts import HostEntry
+        from atst.transport.hosts import HostEntry
 
         # 从内置 STANDARD 池取第一台主站，故意重复注入
         built_in = next(e for e in audit_hosts_mod.DEFAULT_HOST_POOL if e.family == Family.STANDARD)
