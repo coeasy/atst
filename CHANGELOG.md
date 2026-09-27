@@ -74,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **收口读数**（2026-09-27，本机 Windows + Python 3.12；三轮全部修完之后的同一棵工作树）：
 `pytest -m "not network"` **4 049 passed / 9 skipped / 0 failed / 0 error**（`tests=4058`，
-`194.7 s`）；`ruff check` `All checks passed!`、`ruff format --check` `471 files already
+`194.7 s`）；`ruff check` `All checks passed!`、`ruff format --check` `477 files already
 formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
 `scripts/audit_reachability.py --strict` `无未登记孤儿 ✓`、`scripts/check_docs_links.py`
 `docs link check OK (96 files)`，五道均 rc=0。
