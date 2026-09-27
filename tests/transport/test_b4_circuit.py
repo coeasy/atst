@@ -53,16 +53,16 @@ class TestCircuitTransitions:
         s = _slot()
         p = _pool_with([s])
         # 2 次连接失败 → 仍 healthy（<3）
-        p._mark_failure(s, ConnectionFailed("x1"))
-        p._mark_failure(s, ConnectionFailed("x2"))
+        p._mark_failure(s, ConnectionFailed("x1"), generation=s.generation)
+        p._mark_failure(s, ConnectionFailed("x2"), generation=s.generation)
         assert s.host.circuit == "healthy"
         # 第 3 次 → degraded
-        p._mark_failure(s, ConnectionFailed("x3"))
+        p._mark_failure(s, ConnectionFailed("x3"), generation=s.generation)
         assert s.host.circuit == "degraded"
         assert s.host.consec_weighted == pytest.approx(3.0)
         # 累计到 8 → open
         for i in range(4, 9):
-            p._mark_failure(s, ConnectionFailed(f"x{i}"))
+            p._mark_failure(s, ConnectionFailed(f"x{i}"), generation=s.generation)
         assert s.host.circuit == "open"
         assert s.host.consec_weighted == pytest.approx(CIRCUIT_OPEN_AT)
         assert s.host.circuit_opened_at > 0
@@ -71,7 +71,7 @@ class TestCircuitTransitions:
         s = _slot()
         p = _pool_with([s])
         for i in range(6):  # 业务失败 0.5×6=3.0 → degraded
-            p._mark_failure(s, ReadTimeout(f"t{i}"))
+            p._mark_failure(s, ReadTimeout(f"t{i}"), generation=s.generation)
         assert s.host.biz_failures == 6
         assert s.host.circuit == "degraded"
         assert s.host.consec_weighted == pytest.approx(6 * BIZ_FAILURE_WEIGHT)
@@ -81,9 +81,9 @@ class TestCircuitTransitions:
         s = _slot()
         p = _pool_with([s])
         for i in range(10):
-            p._mark_failure(s, ConnectionFailed(f"x{i}"))
+            p._mark_failure(s, ConnectionFailed(f"x{i}"), generation=s.generation)
         assert s.host.circuit == "open"
-        p._mark_success(s)
+        p._mark_success(s, generation=s.generation)
         assert s.host.circuit == "healthy"
         assert s.host.consec_weighted == 0.0
         assert s.host.circuit_opened_at == 0.0
@@ -113,7 +113,7 @@ class TestCircuitAllows:
         s.host.circuit = "half_open"
         s.host.consec_weighted = CIRCUIT_OPEN_AT  # 探测失败仍高于阈值
         s.host.circuit_opened_at = 0.0
-        p._mark_failure(s, ConnectionFailed("probe-fail"))
+        p._mark_failure(s, ConnectionFailed("probe-fail"), generation=s.generation)
         assert s.host.circuit == "open"
         assert s.host.circuit_opened_at > 0  # 冷却重新计时
 

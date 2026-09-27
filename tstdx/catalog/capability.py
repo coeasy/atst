@@ -23,8 +23,10 @@ __all__ = [
     "MIGRATED_BINDINGS",
     "MIGRATED_CAPABILITIES",
     "binding_for",
+    "call_kwargs_for",
     "bindings_for_provider",
     "default_provider_for",
+    "implementation_for",
     "is_migrated_capability",
     "validate_call",
 ]
@@ -38,8 +40,10 @@ class MigratedCapabilityBinding:
     backend: str
     method: str
     source: str = ""
-    #: Lazy import path for web_adapter backends: `"tstdx.web.tencent.adapters:MinuteSource"`.
-    #: Empty means the executor must resolve the adapter via its own fallback logic.
+    #: Lazy import path for the ``web_adapter`` backends, e.g.
+    #: ``"tstdx.web.tencent.adapters:MinuteSource"``. Only that backend reads it,
+    #: and all five of its bindings ship one — a ``web_adapter`` binding without it
+    #: is a registry gap the executor reports instead of papering over.
     factory: str = ""
 
     @property
@@ -405,6 +409,69 @@ def is_migrated_capability(capability: str) -> bool:
     return str(capability).strip().lower() in MIGRATED_CAPABILITIES
 
 
+#: Backends that pick the method *by capability* inside the executor, so no single
+#: signature exists to bind against and the contract stays a manual check.
+_MANUAL_BACKENDS = frozenset({"web_adapter", "composed"})
+
+
+def implementation_for(provider: str, channel: str, capability: str) -> Any | None:
+    """Return the callable that executes a migrated binding, or ``None``.
+
+    ``None`` means the binding uses a :data:`_MANUAL_BACKENDS` backend. Both the
+    argument check (:func:`validate_call`) and the semantic-payload derivation in
+    :class:`~tstdx.runtime.executor.DirectProviderExecutor` read the host class
+    from here, so "which implementation owns this capability's parameters" can
+    never be answered twice with two different results.
+    """
+    meta = binding_for(provider, channel, capability)
+    backend = meta.backend
+    if backend == "web_session":
+        from ..web.session import WebQuoteSession
+
+        return getattr(WebQuoteSession, meta.method)
+    if backend == "tdx_client":
+        from ..client import TdxClient
+
+        return getattr(TdxClient, meta.method)
+    if backend == "f10_client":
+        from ..client import F10Client
+
+        return getattr(F10Client, "download" if capability == "f10" else "catalog")
+    if backend in {"ex_client", "goods_client", "mac_client"}:
+        from ..client import ExMarketClient, GoodsClient, MacClient
+
+        cls = {
+            "ex_client": ExMarketClient,
+            "goods_client": GoodsClient,
+            "mac_client": MacClient,
+        }[backend]
+        return getattr(cls, meta.method)
+    if backend == "direct_adapter":
+        from .provider_bindings import resolve_channel_adapter
+
+        return getattr(resolve_channel_adapter(provider, meta.channel), meta.method)
+    if backend in _MANUAL_BACKENDS:
+        return None
+    raise TypeError(f"unknown migrated backend {backend!r}")
+
+
+def call_kwargs_for(
+    meta: MigratedCapabilityBinding, provider: str, kwargs: dict[str, Any]
+) -> dict[str, Any]:
+    """真正递交给实现的关键字入参——Provider 注入规则只有这一处。
+
+    ``WebQuoteSession.hk_quotes`` 的 ``provider`` 缺省是 sina，让这一格"意味着 tencent"
+    的是**绑定的 Provider**，所以它必须由同时认识后端与 Provider 的目录层填进去。校验
+    （:func:`validate_call`）与执行（``DirectProviderExecutor._migrated_capability``）读的
+    是同一份规则：在此之前两处各抄一遍，改一处即分叉。
+    """
+
+    call_kwargs = dict(kwargs)
+    if meta.backend == "web_session" and meta.capability == "hk_quotes":
+        call_kwargs.setdefault("provider", provider)
+    return call_kwargs
+
+
 def _bind_signature(target: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
     signature = inspect.signature(target)
     parameters = tuple(signature.parameters.values())
@@ -473,48 +540,15 @@ def validate_call(
     """
     try:
         meta = binding_for(provider, channel, capability)
-        if meta.backend == "web_session":
-            from ..web.session import WebQuoteSession
-
-            call_kwargs = dict(kwargs)
-            if capability == "hk_quotes" and provider in {"sina", "tencent"}:
-                call_kwargs.setdefault("provider", provider)
-            _bind_signature(getattr(WebQuoteSession, meta.method), args, call_kwargs)
-            return
-        if meta.backend == "tdx_client":
-            from ..client import TdxClient
-
-            _bind_signature(getattr(TdxClient, meta.method), args, kwargs)
-            return
-        if meta.backend == "f10_client":
-            from ..client import F10Client
-
-            method = "download" if capability == "f10" else "catalog"
-            _bind_signature(getattr(F10Client, method), args, kwargs)
-            return
-        if meta.backend in {"ex_client", "goods_client", "mac_client"}:
-            from ..client import ExMarketClient, GoodsClient, MacClient
-
-            cls = {
-                "ex_client": ExMarketClient,
-                "goods_client": GoodsClient,
-                "mac_client": MacClient,
-            }[meta.backend]
-            _bind_signature(getattr(cls, meta.method), args, kwargs)
-            return
-        if meta.backend == "direct_adapter":
-            from .provider_bindings import resolve_channel_adapter
-
-            adapter = resolve_channel_adapter(provider, meta.channel)
-            _bind_signature(getattr(adapter, meta.method), args, kwargs)
-            return
-        if meta.backend == "web_adapter":
-            _validate_web_adapter(capability, args, kwargs)
-            return
-        if meta.backend == "composed":
+        impl = implementation_for(provider, channel, capability)
+        if impl is None:
+            if meta.backend == "web_adapter":
+                _validate_web_adapter(capability, args, kwargs)
+                return
             _validate_composed(capability, args, kwargs)
             return
-        raise TypeError(f"unknown migrated backend {meta.backend!r}")
+        call_kwargs = call_kwargs_for(meta, provider, kwargs)
+        _bind_signature(impl, args, call_kwargs)
     except AttributeError as exc:
         # 绑定表指向的实现取不到：这是表与代码分叉，不是调用方的参数错了。
         # 让它穿过这里，HTTP/WS 两张面会把内部漂移报成 E9000/500——一张过期条目

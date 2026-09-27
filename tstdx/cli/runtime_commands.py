@@ -7,9 +7,11 @@ Data commands go through :class:`~tstdx.client.api.Client`. Six commands stay
 on the transport client on purpose: ``probe`` drives the protocol prober,
 ``goods`` / ``f10`` use family-specific clients with multi-step flows, and
 ``blocks`` / ``list`` / ``quotes-snapshot`` page over raw calls and report raw
-per-symbol failures. All of them resolve the config surface through
-:func:`~tstdx.cli._common._transport_kwargs` so ``tstdx.toml`` stays true there
-too.
+per-symbol failures. All six take their connection kwargs from
+:func:`~tstdx.cli._common._transport_kwargs` (the same config→transport
+translation the kernel's executor uses, so one TOML key cannot mean two things)
+and all six hand their ``get_client(...)`` result to
+:func:`~tstdx.cli._common.family_client`, the CLI's one protected release region.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ import time
 from typing import Any
 
 from .. import __version__
+from ..client import get_client
 from ..client.api import Client
 from ..errors import ValidationError
 from ..integration.serialization import jsonable, serialize_result
@@ -33,9 +36,8 @@ from ._common import (
     _print_bars_table,
     _print_rows,
     _print_table,
-    _resolve_hosts,
     _transport_kwargs,
-    _transport_timeout,
+    family_client,
 )
 
 
@@ -374,7 +376,6 @@ def _cmd_feedback(args: Any) -> int:
 
 def _cmd_probe(args: Any) -> int:
     """未知命令主动探测（薄壳接线 :mod:`tstdx.protocol.prober`）。"""
-    from ..client import TdxClient
     from ..errors import TdxError
     from ..protocol.prober import Prober
 
@@ -396,7 +397,7 @@ def _cmd_probe(args: Any) -> int:
     #: —— introspection 读的是"这一秒被绑到名字上的那个类"，默认值的所有者该是 callee。
 
     try:
-        with TdxClient(**conn) as client:
+        with family_client(get_client("stock", **conn)) as client:
             prober = Prober(
                 client=client,
                 rate_limit=rate,
@@ -746,10 +747,8 @@ def _cmd_index(args: Any) -> int:
 
 def _cmd_blocks(args: Any) -> int:
     """板块行情：``tstdx blocks <block_type> [--count N]``。"""
-    from ..client import TdxClient
-
     try:
-        with TdxClient(**_transport_kwargs(args)) as c:
+        with family_client(get_client("stock", **_transport_kwargs(args))) as c:
             rows: list[dict[str, Any]] = []
             for start in range(0, args.count, 1000):
                 page = c.block_quotes(args.block_type, start=start)
@@ -771,10 +770,8 @@ def _cmd_blocks(args: Any) -> int:
 
 def _cmd_goods(args: Any) -> int:
     """商品行情：``tstdx goods <symbol> [--kind quote|bars]``。"""
-    from ..client import get_client
-
     try:
-        with get_client("goods", hosts=_resolve_hosts(args), timeout=_transport_timeout(args)) as c:
+        with family_client(get_client("goods", **_transport_kwargs(args))) as c:
             if args.kind == "quote":
                 data = c.goods_quote(args.symbol, as_format="dict")
             else:
@@ -811,10 +808,8 @@ def _cmd_goods(args: Any) -> int:
 
 def _cmd_f10(args: Any) -> int:
     """F10 资料：``tstdx f10 <symbol>`` 列栏目目录；``--file <name>`` 下载并解析正文。"""
-    from ..client import get_client
-
     try:
-        with get_client("f10", hosts=_resolve_hosts(args), timeout=_transport_timeout(args)) as c:
+        with family_client(get_client("f10", **_transport_kwargs(args))) as c:
             if args.file:
                 sections = c.parse_text(c.download(args.symbol, args.file))
                 data = [{"title": s.title, "text": s.text} for s in sections]
@@ -840,13 +835,13 @@ def _cmd_f10(args: Any) -> int:
 
 def _cmd_list(args: Any) -> int:
     """代码表：``tstdx list <market> [--start N] [--count N]``（分页起始偏移）。"""
-    from ..client import _PREFIX_MARKET, TdxClient
+    from ..client import _PREFIX_MARKET
 
     market = args.market
     if market in ("sh", "sz", "bj"):
         market = _PREFIX_MARKET[market]
     try:
-        with TdxClient(**_transport_kwargs(args)) as c:
+        with family_client(get_client("stock", **_transport_kwargs(args))) as c:
             rows: list[dict[str, Any]] = []
             for start in range(int(args.start), int(args.start) + int(args.count), 1000):
                 page = c.security_list(int(market), start=start)
@@ -869,11 +864,9 @@ def _cmd_list(args: Any) -> int:
 
 def _cmd_quotes_snapshot(args: Any) -> int:
     """批量快照：``tstdx quotes-snapshot <symbols...>``（全失败 → exit 1）。"""
-    from ..client import TdxClient
-
     last_errors: list[tuple[str, BaseException]] = []
     try:
-        with TdxClient(**_transport_kwargs(args)) as c:
+        with family_client(get_client("stock", **_transport_kwargs(args))) as c:
             quotes = c.quotes_snapshot(args.symbols)
             last_errors = list(getattr(c, "last_errors", []))
     except Exception as exc:  # noqa: BLE001

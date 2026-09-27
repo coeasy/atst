@@ -187,10 +187,14 @@ def _http_paths() -> dict[str, str]:
     return mapping
 
 
-#: WS 面上不属于任何专属能力的入口：一张泛型通道加两个元信息方法。
-#: 它是"这张面还剩什么"的差集，不是能力名单——加进来的第四条专属方法若不在这三格里，
-#: :func:`_ws_methods` 就报它。
-_WS_GENERIC_METHODS = frozenset({"query", "runtime.capabilities", "runtime.health"})
+#: WS 面上不属于任何专属能力的入口：一张泛型通道、两个元信息方法，加三个实时订阅控制方法。
+#: 它是"这张面还剩什么"的差集，不是能力名单——加进来的专属/控制方法若不在这几格里，
+#: :func:`_ws_methods` 就报它。``subscribe`` / ``unsubscribe`` / ``list`` 是流式控制面
+#: （把进程内 ``StatefulQuoteStream`` 桥接到这条连接），不是 capability 投影，故与
+#: ``query`` / ``runtime.*`` 同列：它们都不在四张面的"专属能力投影"比对边里。
+_WS_GENERIC_METHODS = frozenset(
+    {"query", "runtime.capabilities", "runtime.health", "subscribe", "unsubscribe", "list"}
+)
 
 
 def _ws_methods() -> dict[str, str]:

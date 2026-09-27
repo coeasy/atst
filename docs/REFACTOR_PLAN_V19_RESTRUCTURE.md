@@ -141,6 +141,12 @@ QueryResult + meta.provenance + meta.warnings（诊断出口 diagnostics 发射�
   ⇒ 归属清楚：这是 V18 台账那一轮自己的收尾账，处置动作 = 由该台账的所有者在那 4 格里补登记
   （或恢复现场）。本轮把它写成 §9 教训 2 与这条 G43，**并在收口报告里按"发布条件未达成"报**，
   不用"其余 11 步都绿"把它糊过去。
+  **⇒ 第 30 轮复测：阻塞已解除，但不是本轮解除的。** 处置动作落在并行会话那批提交里
+  （`docs/REFACTOR_PLAN_V18_RESTRUCTURE.md` 的引用格现在写着「该候选树已于本轮收口后回收
+  （本机已无），留存锚 = 提交 `07477e8`」），本轮只是把它复测到绿：候选树 `test` 步
+  **4064 passed / 0 failed**、主树同轮单跑 `tests/architecture/test_evidence_pointers.py`
+  **7 passed, 2 skipped**（`Temp/gates30_candidate.log` 与本轮控制台）。本条从"发布阻断"
+  降级为"已清偿待归档"，`make gates` 的 11 个目标本轮全绿（见 §10 的 30-D 行）。
 - **trade 面**：内核零消费者（本轮确证：`tstdx/**` 里除 `tstdx/trade/` 自己以外无 importer；
   `scripts/_reach_allow.txt:24-30` 登记 7 条；`tests/trade/` 6 文件 976 行消费它）。
   `docs/ARCHITECTURE.md:60` 已把它写成"唯一剩余待裁定项"。它与协议账本的 id 重叠是**跨族**、
@@ -291,3 +297,159 @@ A5 留下的是本轮最贵的一条：一套全绿的门禁读数里，"红"可
    `tstdx/integration/runtime_ws_server.py` 在本机检出是 **CRLF** 而 `async_.py` 与文档是 LF，
    多行锚点必须按目标文件自己的行尾重写，否则命中 0 次、整格被静默跳过（M8/M9/M10 第一遍
    就是这么漏掉的）。
+
+## 10. 第 30 轮执行记录
+
+> 读数环境：候选树 `P:/github_public/tstdx_wt_v19a30step`（`git worktree add --detach` 自
+> HEAD `715bb79`，再由本会话把这一轮的 9 条改动逐文件覆盖进去、并镜像那处根级删除；覆盖之后
+> 候选树的 `git status --porcelain` 与主树**逐条同名**，这是本轮唯一可信的"读的是同一份字节"
+> 自证）。日志一律落 `C:/Users/Administrator/AppData/Local/Temp/`、名字带 `30`。§8/§9 那三条
+> 口径照用（候选树必须在 `P:/github_public/` 这一层、ruff 走主树 `.venv/Scripts/ruff.exe`、
+> `test`/`test-bridges` 用 `-v`）。**本轮新学两条**，写在节末教训 1/2：变异脚本必须按字节读写，
+> `Path.replace()` 不是 `str.replace`。本节每个数字都出自本会话同轮落在盘上的日志。
+
+| 步 | 判据 | 同轮读数 | 正控（改前必须红） |
+|---|---|---|---|
+| 30-A | 第 1 遍（历史归档 + 发行身份）：`AUDIT_AND_BRIDGES.md` 是**唯一**可安全归档的历史文档（现扫：0 条 markdown 链接、只被冻结文件里的散文提到、链接判据不受影响），已 `mv` 进 `docs/archive/` 并按归档阅读规则加顶部归档说明；四本大台账（V17 收口 / V18 评审 / V18 重构 / V20 债）被门禁按**路径**钉住，移动即红 ⇒ 判定不动。普查里露出的不变量成为新判据 `tests/architecture/test_release_identity_and_snapshot_docs.py`（**G44**）四格：`pyproject.toml` 的 `version` ⇄ `tstdx.__version__` 相等、现版本必须有 `docs/releases/v<version>.md` 且其首个标题含同一版本号、活文档门禁射程外的每份根级 `*.md` 必须在前 12 行内自带史料标记、`docs/archive/README.md` 门禁口径表点名的判据文件与常量必须现读解得开 | 该文件 5 格（四判据 + 一格自我更正）随候选树 `test` 步进全量（见 30-D 行的 4064）；发行身份三处现读同一号码 `1.1.0`，`docs/releases/` 在盘上是 `v1.0.0.md` + `v1.1.0.md` | `Temp/mut30g44.out`：**8 格全红、`CELLS=8 bad=0`、每格还原后 sha 与原件一致**，并逐格记下是哪一格接住的 —— M1/M2（两处版本手抄各自分叉）⇒ `test_declared_package_version_is_the_same_number_in_two_places`；M3（删发布页）/M4（标题不含版本号）⇒ `test_declared_version_has_a_reader_facing_release_page`；M5（`DESIGN.md` 头里两处史料标记一起删）/M6（新造一份无标记的根级文档）⇒ `test_root_docs_outside_the_gate_face_declare_their_status`；M7（归档表指向不存在的常量）/M8（把 `archive` 从 `EXCLUDED_PARTS` 摘掉）⇒ `test_archive_readme_contract_names_judges_that_exist`。**M5 第一遍是绿的**：它只替换了第 3 行那句"不是现行方案"，而第 8 行还有"本文按原文留存"——同一判据有两个锚，只打掉一个不算打掉；这一格现在必须两处一起删才算数（与 §9 教训 3 同族：无效变异比没有变异更坏，它会让下一个人以为量过） |
+| 30-B | 第 2 遍（断链）：修掉一条**六类判据全都看不见**的库面断链。`QuerySpec` 有两条入参约定——原始载荷（`options["args"]/["kwargs"]`）与语义字段（`symbols`/`period`/`count`/`start`/`adjustment`）——而 migrated capability 的 `_call_payload` 只读前者，两个键都不在时交出去的是 `([], {})`：于是"文档承诺、门面有方法、registry 有绑定、实现有签名"四样齐了的 `client.minute("000001", provider="tencent")` 在**最后一跳**把参数全丢掉。修复落在接缝而不是五个调用点：`tstdx/catalog/capability.py` 新增 `implementation_for()`（一个 binding → 一个实现 callable；`validate_call` 里那八段手抄分支同时换成读它），`tstdx/runtime/executor.py` 新增 `_semantic_call_payload()`（语义字段 → 实现自己的关键字形参，`symbols→symbol` 是唯一一处改名）+ 两条诚实闸（批量代码打到单只实现 ⇒ 拒；语义字段在该实现上没有落脚点 ⇒ 拒，即"幻影旋钮"的反方向）。新判据 `tests/architecture/test_semantic_payload_bridge.py`（**G45**）10 格，其名单不是手抄可达清单：`_semantic_cells()` 从 `audit_direct_bindings()` 筛出真的走 `_migrated_capability` 的三元组，再要求它经 `QueryPlanner` 真编译到同一 key | 受影响面实测恰好 **5 格**（`minute`×{tencent, eastmoney, baidu} + `trades`×{tencent, baidu}），第一格钉这个分母不许缩。真机三源：`tencent` 通，`baidu`/`eastmoney` 撞上游反爬（`AntiSpiderBlocked`/`WebSourceError`），那是外部事实不是本地断链。离线全量（主树，改完后跑）：**4044 passed, 9 skipped, 15 deselected in 187.62s**（`tests/integration` 不在内）⇒ `validate_call` 那八段的收敛没有回归 | `Temp/mut30b_g45.out`（本轮重取）：**M1–M6 全红** —— 语义字段表去掉 `symbols`、改名表指向实现不收的名字、给实现加一个必填形参、把幻影旋钮闸放宽成静默丢字段、让批量代码静默取第一只、让 `implementation_for` 不再认识 `direct_adapter`（宿主类手抄回潮的形状）；每格还原后 sha 一致 |
+| 30-C | 第 3 遍（六面贯通 + 用户文档）：把 30-B 修好的那条链在六张面各跑一遍，并把它**此前在文档里就是错的**那些口径改对 | 改动落点：`docs/api/interfaces.md`（§2 `Client` 表里 `minute`/`trades` 两行点名可用源、688 行那条真机口径整句重写、两条可粘贴示例换成 `tstdx minute sh600519 --provider tencent` / `trades sh600519 --provider tencent`）、`docs/cookbook/README.md`（N6 选型表把 tdx 标成"声明但**已下线**"，并补一段"一格 = 一次 HTTP = 一只代码、批量绝不静默降级、Web 源上 `count`/`start` 没有落脚点会 `ValidationError`、上游反爬抛错误类而不是空数组"）、`tstdx/client/api.py`（`minute` docstring 同步，三个错误类名现读自 `tstdx/errors.py`）。两条被改写的示例按原样在**装好的 wheel** 上真跑（`Temp/cli30c_examples.out`）：`rc=0 / 41,681 B`、`rc=0 / 9,477 B`。安装/使用文档的口径普查：README 与 `docs/quickstart.md` 已经写明"本包不在 PyPI 上"与两条真正可用的安装路径，extras 名单与 `pyproject.toml` 同一套（该一致性由第 23 轮的 extras 判据钉着）——剩下的"证明它们真装得动"就是 30-D 那 11 格 | 这一遍不引入新判据，它的正控就是 30-A/30-B 那两本变异台账（合计 14 格全红）+ 30-D 在装好的包上对同一条链的复跑 |
+| 30-D | 收口：候选树把 `make gates` 的 11 个目标（本会话脚本展开成 12 步，`lint` 两条）全跑；从**同一棵**候选树构建安装包（G23：全新 `dist30_pass1/`），逐条按文档口径真装进各自全新的 venv，再在装好的包上跑六面；最后现量规模与文档指针 | **门禁**（`Temp/gates30_candidate.log`，12:15–12:20）：末行 **`STEPS=12 bad=0`** —— 11 个目标**本轮全绿**，§4 的 G43 已不在阻塞位。逐步读数：`All checks passed!` / `479 files already formatted` / mypy 空输出 / **`4064 passed, 9 skipped, 15 deselected, 25 warnings in 294.12s`** 且覆盖率行现取 `Required test coverage of 77.0% reached. Total coverage: 83.58%`（阈值 77 一字未动）/ bridges `24 passed in 0.70s` / golden（`0x537 4B<12B x3` 那条 WARN 与第 28 轮同形）/ spec `rc=0` / adversarial `rc=0` / reachability `无未登记孤儿 ✓`（两格 `[allow]` 是登记过的 `trade.simulator` 与 `transport.sniff`）/ originality `Total: 190 Original: 190 Suspicious: 0 External imports: 17` / benchmark `OK: kline, market, vipdoc` / `docs link check OK (96 files)`（比第 28 轮的 95 多一份，正是本轮新落进 `docs/archive/` 的那本）。**构件**（`Temp/build30_pass1.out`，现场 `仓库根: P:\github_public\tstdx_wt_v19a30step`、PEP 517 隔离、`[校验] canonical typed distribution ✓ version=1.1.0, runtime_files=190`、`[冒烟] 通过 ✓`、`twine check` 过）：wheel `tstdx-1.1.0-py3-none-any.whl` **774,739 B** sha256 `6367ade280b3525c5f43e1c93051e2f3753292b8d042d3a1b6bf7fee7293d1fc`、sdist `tstdx-1.1.0.tar.gz` **1,774,929 B** sha256 `db8a5949695d55eeb1e2f3fccdac8f74821f890fd4cbdc6e05306c1833b38ec4`。**装包六面**（`Temp/inst30_faces.out`，**`CHECKS=11 bad=0`**）：身份格现读 `import tstdx` → `Temp\venv30\Lib\site-packages\tstdx\__init__.py`、`tstdx.__version__` ⇄ `importlib.metadata` 同为 `1.1.0`；README 那条 `pip install "tstdx[all] @ file:///…whl"` 与 quickstart 那条 `pip install -e ".[dev]"` 各自 `rc=0`，且可编辑安装**没在候选树留下第 10 条改动**（跑完仍是那 9 条）；库面 `minute=267 / trades=70 / call(minute)=267 / execute(QuerySpec)=267 / async minute=267 / quotes(tdx native)=1`，`trades(count=50)` 在库面是 `ValidationError`；CLI 面 `--help` 2,132 B、`minute 000001 --provider tencent` 38,730 B、`trades …` 8,934 B，三条 `rc=0`；HTTP 面两条 `200`（`267` / `70`）、`count=50` 是 `422 E1010`；WS 面 `minute ok n=267`、`trades ok n=70`；MCP 面 `tools=9`、`get_minute_today n=267`。**规模**（主树现量）：`tstdx/` **189 个 `.py` / 59,559 行**、`tests/` **284 / 59,955 行**；两个 190 与 189 不是矛盾——`scripts/build_package.py:337` 的 `runtime_files` 与 originality 的 `Total` 都把 `tstdx/py.typed` 记作运行期成员，189 `.py` + 1 marker = 190。**终字节复测**（本节写完之后再跑一遍，读的是已落盘的字节）：`Temp/gates30_final.log`（12:44–12:49）末行仍 **`STEPS=12 bad=0`**，全量格 `4064 passed, 9 skipped, 15 deselected, 25 warnings in 298.58s (0:04:58)` + `Total coverage: 83.58%`、`479 files already formatted`、bridges `24 passed in 0.67s`、`docs link check OK (96 files)`——与 12:15 那次只在秒数上不同（294.12 → 298.58，同一棵树、同一套字节）。同轮从**同一棵**候选树重建成全新 `Temp/dist30_pass2/`（`Temp/build30_pass2.out`：`[校验] canonical typed distribution ✓ version=1.1.0, runtime_files=190`、`[冒烟] 通过 ✓`、`twine check` 过），两份构件 sha256 与 `dist30_pass1` **逐字节相同**。这不是"没重构建"：现读 sdist 成员清单，`docs/` 只有 **7** 项（`docs/{adr,api,archive,cookbook,migration,providers}/README.md` + `docs/releases/v1.0.0.md`），本规划案不进任何构件 ⇒ 台账正文的字改动不会动到安装包指纹。再把 `dist30_pass2` 的 wheel 装进全新 `Temp/venv30pass2` 复跑六面（`Temp/inst30_pass2.out`，**`CHECKS=9 bad=0`**；比 30-A/C 那 11 格少两格，是因为这次把"装包命令本身"移出探针、换成一格**候选树脏名集合 == 主树脏名集合**，两边各 10 条、差集为空）：导入落在 `venv30pass2\Lib\site-packages\tstdx\__init__.py`、`tstdx.__version__` ⇄ `importlib.metadata` 同为 `1.1.0`；库面 `minute=267 / trades=70 / call(minute)=267 / execute(QuerySpec)=267 / async minute=267 / quotes(tdx native)=1`，`trades(count=50)` 仍 `ValidationError`；CLI `--help 2132 B` / `minute 38730 B` / `trades 8934 B` 三条 `rc=0`；HTTP `200 267` / `200 70` / `count=50 → 422 E1010`；WS `minute ok n=267` / `trades ok n=70`；MCP `tools=9` / `get_minute_today n=267`——**这一整串数字与 pass1 那次全等** | 本行不新增判据；它的正控是本轮在两棵树上各跑一遍的那 14 格变异，加一条**就地复测**：把 30-B 的语义载荷桥按 M4/M5 的形状"放宽"一次，G45 与全量都拦得住（主树全量 4044 → 候选树 4064，多出的 20 条正是 G44 的 5 + G45 的 10 + 并行会话那 5 条）。**最后一次核对**（读的是台账自己的字节）：文档侧五判据在候选树单跑（`Temp/docs30_close.out`）= `collected 178 items` / **`178 passed in 7.34s`**，射程是 `test_doc_code_consistency.py` + `test_doc_code_examples.py` + `test_config_doc_contract.py` + 本轮的 G44/G45 两本；链接判据（`Temp/docs30_links.out`）= `docs link check OK (96 files)`。这两格在本段落盘并同步进候选树之后又原样复跑了一次，读数不变（改的是散文、不是任何一条被点名的代码事实） |
+
+### 10-1. 文档行号指针订正（本轮现量，不改写别人那一轮的正文）
+
+读者面（`README.md`、`docs/api/*`、`docs/cookbook/*`、`docs/ARCHITECTURE.md`、
+`docs/FAQ.md`、`docs/quickstart.md`、`docs/troubleshooting.md`、`docs/errors.md`）里的
+`xxx.py:NNN` 形状行号引用 = **0 处**（`Temp/cites30.py` 现扫，19 份现行面文档、13 处裸基名
+不计），所以这类漂移不会外泄到用户读到的页面上。本规划案自己（V19）有 16 处解得开的行号
+引用，其中 4 处已漂到别处，逐条给出真值；**§2/§4/§9 是别人那一轮写下的正文，本轮一个字不改，
+只在这里订正**（同一手法见 §5 与 §9 末的"引用别人台账前先 `wc -l` 现量"）：
+
+| 引用位置 | 它想指的东西 | 本轮现量真值 |
+|---|---|---|
+| §2 `runtime/executor.py:45` | `DirectProviderExecutor` | 类在 **`:246`**（HEAD `715bb79` 上就已是 `:174`，`:45` 早漂了；本轮 30-B 在同文件加语义载荷桥，把它推到 `:246`） |
+| §4 P1-A `transport/pool.py:71-94`（6 键） | `pool_settings_from_config` 的六键 | 函数在 **`:76`**、六个键在 **`:88-93`**（现读名单 = `slots_per_host` / `timeout` / `heartbeat_interval` / `max_retries` / `rate_limiter` / `use_tls`，**"6 键"这个主张本身仍成立**） |
+| §4 P1-A `transport/pool.py:241-265`（17 参） | `ConnectionPool.__init__` | 签名在 **`:246`**，`inspect.signature` 现读 **17 个参数**（不含 `self`），主张成立、指针漂了 5 行 |
+| §9 28-B `tstdx/transport/async_.py:249` | `CLOSE_WAIT_SECONDS = 1.0` | 常量在 **`:99`**，唯一使用点 `await asyncio.wait_for(writer.wait_closed(), timeout=CLOSE_WAIT_SECONDS)` 在 **`:274`**；`:249` 的现值是 `_connect` 里的一句 `return`。该文件自 `68389b5` 起未再改动 ⇒ 这一格从写下那天起就指错 |
+
+一条口径随之立起来：**写现状的正文可以带行号，带行号就必须能被现读复核**——本轮没有为此
+新建判据，因为"指到空行/超出文件行数"可判、"指到的那一行是不是它说的那件事"不可判，
+一套只能判前一半的尺子会给人"行号引用已被看着"的错觉（G40 的"不许有没人按它行动的名册"
+同一族）。要真治这一类，方向是**符号锚**（`tstdx.runtime.executor.DirectProviderExecutor`）
+而不是更细的行号尺；本轮先把话写在这里，登记为开放项（见 §10-2）。
+
+### 10-2. 本轮之后仍开着的事
+
+- **P2-A / P2-E / G32 / B-4 / V20 §5 判据 2**（执行器 ≤420 行 vs 现值）：一字未动，归属与
+  处置口径沿用 §4。本轮给 `tstdx/runtime/executor.py` 加了语义载荷桥，这条"该文件太大"的
+  账因此**更长了一截**（+72 行），不遮掩。
+- **行号锚 vs 符号锚**：上面 10-1 的四处是本轮量到的全部；如果以后要把它做成尺子，
+  射程只能是"指针必须解得开且不指到空行"，并且必须先解决裸基名（`pool.py:557` 这种从模块
+  上下文写的写法，13 处）到底算不算合法引用。
+- **发行身份的下一步**：G44 现在钉的是"三处手抄必须相等"，还没钉"版本要不要往前推"。
+  `1.1.0` 这个数字在 web 子包换 import 路径（`68389b5`）之后被复用，而 CHANGELOG 的
+  `[Unreleased]` 段落里 1.2.0–1.4.0 那把梯子还挂着——**这是所有者的发布决策，不是断链**，
+  本轮按 D 系列默认什么都不改。
+
+三条教训：
+
+1. **变异脚本自己就是一种写操作**：本轮第一版把原件按文本读进内存、改完再按文本写回，
+   于是仓库的 CRLF 被归一成 LF。内容 diff 是空的、`git diff` 只留一句
+   `LF will be replaced by CRLF`，可 `git status` 会把两份**本轮根本没打算碰**的文件报成脏——
+   对"由用户决定暂存什么"的口径，这就是往他们的清单里塞噪声。修法已进脚本：二进制读、
+   二进制写、逐字节 `sha` 比对，跑完再 `git status --porcelain` 数一遍条数（本轮跑完仍是
+   那 9 条）。这与 §9 教训 3 是同一族：**测量工具的副作用必须被工具自己核对**。
+2. **`Path.replace()` 不是 `str.replace`**：`p.replace("\\", "/")` 在 `pathlib` 里是"改名"，
+   报的是 `TypeError: takes 2 positional arguments but 3 were given`；本轮的尺子第一遍就死在
+   这一格。要字符串替换请写 `p.as_posix()` 或 `str(p).replace(...)`。
+3. **"文档承诺、代码齐备"仍然可以是断链**：30-B 那条链上，registry 有绑定、门面有方法、
+   实现有签名、文档有例子，六类判据全绿了 20 多轮——因为参数是在执行器最后一跳被丢掉的，
+   而那一跳两侧各自都有"自己的判据"（`validate_call` 量的是显式入参，可达性判据量的是
+   三元组能不能路由）。**判据要量接缝，不是量接缝两侧**。G45 就是这条教训的形状化落点。
+
+## 11. 第 31 轮执行记录
+
+> 读数环境：候选树 `P:/github_public/tstdx_wt_v19a31step`（`git worktree add --detach` 自
+> HEAD `715bb79`，再由本会话把本轮改动逐文件覆盖进去；两棵树的 `git status --porcelain`
+> **43 条同名**，`diff` 差集为空，见 `Temp/r31/dirty_main.txt` 与 `dirty_cand.txt`）。
+> §8/§9/§10 那三条口径照用（候选树必须在 `P:/github_public/` 这一层、ruff 走主树
+> `.venv/Scripts/ruff.exe`、`test`/`test-bridges` 用 `-v`）。**本轮新学两条**写在节末教训 1/2：
+> 收口探针自己的口径也要有正控，`@contextmanager` 的记账必须放 `finally`。日志一律落
+> `Temp/r31/`、名字带 `31`（31-B 那四份取证早于建目录，落在 `Temp/` 根、名字带 `g47`，
+> 本节按盘上真名引用）。**本节每个数字都出自本会话落在盘上的日志。**
+
+| 步 | 判据 | 同轮读数 | 正控（改前必须红） |
+|---|---|---|---|
+| 31-A | 第 1 遍（断链 + 没人行动的声明）：三处"声明与行动分叉"，全部落在**执行器与目录的接缝**上。① `DirectProviderExecutor` 的 `f10_client` / `ex_client` / `goods_client` / `mac_client` 四条分支构造的是 `TdxClient` 的**子类**，却只传 `timeout=hop`，于是调用方钉住的主站列表与 `[hosts] slots_per_host` / `[core] max_retries` / `[core] heartbeat_interval` / `[rate_limit]` / `[security] use_tls` 在这四条路上当场蒸发（同一个 `Client` 实例、同一份配置，行情主链路生效）；修复后家族构造只有一处 `_pool_client()`。② `MigratedCapabilityBinding.factory` 字段注释写着"空值表示执行器走自己的兜底逻辑"，而执行器收到空值是**报错**（G40 同族的过期散文）。③ `hk_quotes` 的 Provider 注入规则在 `validate_call` 与执行器**各抄一遍**，执行器那份还多一个 `provider in {sina, tencent}` 守卫——两处口径已经不同；现在校验与执行都读 `tstdx.catalog.capability.call_kwargs_for()` | 新尺子 `tests/architecture/test_client_family_transport.py`（**G46**）在候选树 **104 格全绿**（`Temp/r31/mut31d_all.out` 的 baseline 行），分母不是手抄：家族集合从绑定表现扫，`test_client_family_transport.py` 的判据 1–3 逐族量"构造处收到了什么"。`tests/architecture/test_dispatch_targets.py`（G27）加两件（⑦ factory 的三条承诺、⑧ 注入规则唯一处）→ 该文件 **12 格全绿**（同一 baseline 行）。翻译层那把第 27 轮的尺子 `test_pool_knob_reachability.py` 同时复跑 **4 格全绿** | `Temp/r31/mut31d_all.out`（本轮把散在三个脚本里的编号并成**一本**：19 条、候选树落锚、按字节回滚复核 sha256，末行 **`CASES=19 BAD=0`**，每条 `restored=True`）：**M1** 主站位置参换 `None` → G46 `19 failed, 85 passed`、翻译层 4 绿；**M2** f10 分支绕开构造处自己 new → `5 failed, 99 passed`（该族两格读数 + 两格旋钮 + 一格形状，名字逐格可点，见该文件 docstring）；**M3** ex/goods/mac 同形 → `15 failed, 89 passed`；**M4** 构造处收缩成只剩 `timeout` → `19 failed, 85 passed` 且翻译层仍 4 绿（两把尺子射程不重叠）；**M5**（对照条）翻译层删一个键 → **G46 `104 passed` 保持绿**、红的是翻译层（`2 failed, 2 passed`）：这条要求"本尺子不许红"，否则两把尺子的功劳记串；**M6** 家族集合派生永远为空（尺子自身失明）→ `2 failed, 7 passed, 5 skipped`，分母闭合格红；**D1** 执行器再抄一遍注入规则 → dispatch `1 failed, 11 passed`；**D2** 目录层抽掉注入规则 → `2 failed, 10 passed`；**D3** factory 指向不存在的类 → `1 failed, 11 passed`；**D4** 非 `web_adapter` 的行也开始带 factory → `1 failed, 11 passed` |
+| 31-B | 第 2 遍（无界等待 / 资源生命周期）：四处"同一份契约两张面一张生效一张不生效"（B-3 族），逐条**先量后改**。**B1**：`ConnectionPool.__init__` 自己起心跳线程，而 `AsyncConnectionPool` 把起跑写在 `start_heartbeat()` 里、只有 `__aenter__` 调它——`AsyncTdxClient` 家族走 `open()`，**shipped 路径上从来没有那条循环**，`idle_timeout` / `heartbeat_interval` 在异步面是幻影旋钮；起跑点搬到池第一次握住真 socket 的地方（`_get_conn_locked`），`async with` 那道门删掉（没有连接就没有可回收的东西，留着只会多出第二个起跑点）。**B2**：`AsyncQuoteStream` 的四处等待是裸 `await asyncio.sleep(...)`，停机信号 `_stop` 是 `threading.Event`（异步侧没法 await），而 `interval>0` 就合法 ⇒ 一次 `interval=3600` 的订阅把 `stop()` 拖成 3600 秒，`stop()` 里那圈 `asyncio.shield` 还把调用方的取消吞掉；新增 `streaming/base.py::_sleep_or_stop`，四条腿全走它，形状对齐同步侧的 `Event.wait`。**B3**：同步 `TcpConnection._recv_exact` 只在每次 recv **之前** `settimeout(self.timeout)`，那是**空档**超时（每 1 字节重新武装），一个逐字节吐数据的对端永远撞不到它，而 32768 是单帧上限、帧内字节数由**对端**写；进循环前算一次 `deadline`、每轮按剩余预算收紧、见底即 `close()` 抛 `ReadTimeout`，三条出口各自把 socket 超时还回去。**B4**：执行器 `tdx_client` 分支用 `with self._tdx_client(hop)`，`__enter__` 落在 `try` 之外 ⇒ 异常路径上构造出来的池和心跳线程没人收尾；新增唯一保护区 `DirectProviderExecutor._client_session()`（构造留在 `with` 表达式里，保护区只管释放） | 取证四份：`Temp/g47_before.out` → `ARMED after a request: False`、`conn reclaimed by sweeper: False`、`HUNG: stop() outlived a 15s wall guard (caller's 1s timeout never honoured)`、`declared timeout=0.4s -> got 24 bytes after 1.166s`、无限滴流那遍 `HUNG: _recv_exact never returned`；`Temp/g47_before2.out` → 修复前后中间态 `ReadTimeout after 0.398s` 与池面 `pool.request -> AllHostsUnreachable after 0.412s`；`Temp/g47_after.out` → `ARMED after a request: True`、`conn reclaimed by sweeper: True`、`stop() returned after 0.031s wall / 0.000s cpu` + `worker task still alive: False` + `owned handle cleared: True`；池面对照 `AllHostsUnreachable after 0.781s/0.786s`（修复前，声明 0.4s ⇒ 预算被越过约 2 倍）。新判据三本：`tests/transport/test_async_sweeper_arm.py`（**G47**，含"起跑调用点全包按函数名现扫、每个起跑函数恰好一处且住在池自己的类里"）、`tests/streaming/test_async_stop_wake.py`（**G49**）、`tests/transport/test_recv_wall_clock_deadline.py`（**G48**，五格：切断跟着声明值走、无限滴流自己收口、两条确定分支各自还回预算、池面生效、正常往返没被误伤、结构上墙钟读数只算一次且算在循环之前）。B4 的形状判据并进了 G46 的第 3 件事（每格用完恰好显式 `close()` 一次，正常路径与抛错路径各量一遍） | B1 的判据自带桩格（"把旧门种回去"当场红）；B4 = 电池 **M7**：`tdx_client` 分支回到 `with self._tdx_client(hop) as client:` → **G46 `22 failed, 82 passed`**（该族 10 格 `released_exactly_once` + 10 格 `raising_still_releases` + 形状格 + 全包射程格一起红——一次改坏把四把尺子全撞翻）。B2/B3 的改前红就是上面 `g47_before.out` 的 `HUNG` 与"预算被越过"两行原文（离线假服务器，不依赖上游） |
+| 31-C | 第 3 遍（六面贯通 + 用户/接口文档）：把 G41 的"谁造谁关"口径在**每一张面**上复查，并修掉本轮之前六类判据都看不见的四处。**C2**：`AsyncQuoteStream` **没有** `__aenter__`/`__aexit__`，而它的同步孪生有 ⇒ `async with client.stream(...)` 当场 `AttributeError`，接口文档"AsyncClient 是同名异步镜像"那句在这一格两个面给了不同答案（第 31 轮之前全仓没有一条判据碰过这两对 dunder，同步那半边同样是"声明了没人量"）。**C3**：B4 那次只收了迁移分支三条，核心链路还留着 **9 处** `with self._tdx_client(self._hop_timeout(plan)) as client:` ⇒ 同一份文件对同一个风险给两种答案，全部收进 `_client_session`（执行器现扫 **13 处交接**）。**C4**：按"构造出口 / 保护区"的名字在**整个 `tstdx/`** 的 AST 上重扫，同一形状在 CLI 面还剩 **6 处**（`probe` / `blocks` / `list` / `quotes-snapshot` 四处 `with TdxClient(**conn)`、`goods` / `f10` 两处 `with get_client(...)`）；新增 `tstdx/cli/_common.py::family_client()`，同执行器那道形同协议（只管释放，构造留在 `with` 表达式里——把 kind 传进保护区里再查注册表，返回类型就塌成 `Any`，工厂那五道 `@overload` 等于白设）。**同一遍还露出 CLI 的第二条断链**：`_transport_kwargs` 只手抄 `hosts` 与 `timeout` 两键，其余五个 TOML 键在六支直连命令上蒸发（与 31-A 的 G46 是同一条断链换了张面），而 `pool_settings_from_config` 自己的 docstring 那时就写着"任何手工建池的调用方都走这里"——那句话在 CLI 面上是假的；现在它调的就是内核那一份翻译。**C5**：B1 真的武装起来的心跳/回收线程把两条既有判据撞翻——`test_async_transport_coverage.py` 的 sleep 替身立刻返回、永不被调度，`asyncio.run` 收尾时既切不断它也回不了事件循环（实测整格挂死在 `_heartbeat_loop`），`test_retry_backoff_cap.py` 则把心跳那一轮 `sleep(75.0)` 记成了退避梯子的一格。**C6**：两张池把"这个槽位还是不是当代"的检查写成可跳过（`generation: int \| None = None`，`None` 即放行），而每个调用点手里都握着 `slot.generation` ⇒ 静默放行是默认路径。**C7**：`make type-check` 在装了 `.[all,dev]` 的环境里被 numpy 2.5 的 PEP 695 stub 崩掉（整道门禁以 `[syntax]` 死掉）——CI 的 type-check 作业只装 `.[dev]`，所以这个坑从没在 CI 露过面；`pyproject.toml` 的 `[tool.mypy]` 加 `no_site_packages = true`（写在这一处而不是 Makefile/CI 命令行，是为了让三个入口读同一个口径）。**文档面**：`Client.close()` 那句"释放内核连接"是**过头主张**（实测 `Client()` 之后进程线程数增量 0、内置执行器根本没有 `close()`），改成如实口径并写明它**不**关你传进来的 `runtime`、**不**停止已 `start()` 的 `stream()`；`get_client("std")` 与 `get_client("async")` 两条**照抄即 `ValueError`** 的示例活着使用接口文档里（判据全在调用链上，参数槽不在射程内）；HTTP 面 lifespan 的收尾写在 `yield` 之后而不是 `finally` 里 | 新判据四本 + 两处扩尺：`tests/streaming/test_stream_context_parity.py`（**G50**/G40，8 格）、`tests/runtime/test_runtime_http_client_release.py`（**G51**，3 格：自建客户端关恰好一次、借来的不关、生命周期体抛错仍关）、`tests/runtime/test_close_chain_ownership.py`（G41/G40，**7 格**，把"这条释放链在默认内核上是空转"钉成读数）、`tests/architecture/test_doc_code_consistency.py` 加"文档里出现的 `get_client` kind 集合 ⇄ `_CLIENT_REGISTRY` 键集合**双向相等**"（哨兵字典比键集合，`rate_limiter` 用身份比而不是比属性）。G46 加第 4、5 件事 → 该文件在收口时是 **104 格**；`test_cli_connection_contract.py` 的连接参数格从"断 CLI 手抄的两键"换成"断键集合 == 内核那一份翻译 + `hosts`"，并加六支直连命令的哨兵格。文档落点：`docs/api/interfaces.md`（异步池起跑时刻、`get_client` 五 kind 真值表、`close()` 到底释放什么、`deadline_ms` 不是硬取消、六支直连命令的连接参数与保护区口径）、`docs/cookbook/README.md`、`docs/configuration.md`（`with Client(config=…)` 那句）、`tstdx/client/api.py` 的 `minute` docstring。回归面：`Temp/r31/pass3_aexit.log` **490 passed in 22.43s**、`Temp/r31/aexit_gates.log` **87 passed in 11.05s**、`Temp/r31/pass3_closechain.log` / `pass3_clientsession.log`（执行器与门面全绿）| C2 = 电池 **M12/M13**：去掉 `__aexit__` 的 `await self.stop()` → `2 failed, 6 passed`（`test_the_async_stream_starts_on_enter_and_stops_on_exit` + `test_a_raising_block_still_stops_the_async_stream`）；`__aenter__` 改成 `return self` → `1 failed, 7 passed`（"进块"这件事只剩形状）。C3 = **M15**：核心链路任意一处回到 `with self._tdx_client(...)` → 只红两格（`test_every_client_handoff_sits_behind_the_guarded_session` + 全包射程格，实测报出 `runtime/executor.py:630`），其余 **102 格仍绿**。C4 = **M16**：CLI `blocks` 分支回到 `with get_client(...)` → 只红全包判据 `test_no_family_client_is_handed_to_a_with_anywhere_in_the_package`（实测报出 `cli/runtime_commands.py:751`），其余 **103 格仍绿**：换面即换尺子，这条量的是射程。G41 那四格 = **M9a/M9b/M10/M11** → `2 failed, 5 passed` / `1 failed, 6 passed` / `1 failed, 6 passed` / `1 failed, 6 passed`，红名逐条点名见 `test_close_chain_ownership.py` docstring。G51 的改前红 = `Temp/g47_http_before.out`：`test_the_release_happens_even_when_the_lifespan_body_raises` **1 failed, 2 passed**，`assert 0 == 1 where 0 = <..._SpyClient object>.closes`。C5 没有产品侧变异可种（改的是测试替身），它的正控是"把替身改回立刻返回 → 整格挂死"这一条本轮实测过 |
+| 31-D | 收口：候选树跑 `make gates` 的 11 个目标（本会话脚本展开成 12 步，`lint` 两条）；把本轮散在三处的变异编号并成一本电池并跑满；从**同一棵**候选树构建安装包（G23：全新 `Temp/dist31_pass1/`），逐条按文档口径真装进全新 venv，再在装好的包上跑六张面 + 两条保护区；最后现读两棵树的脏名集合 | **门禁**（`Temp/r31/gates31_candidate.log`，18:42:47–18:48:24）末行 **`STEPS=12 bad=0`**、`dirty-after-gates=43`。逐步：`All checks passed!` / `486 files already formatted` / mypy 空输出 / **`4219 passed, 6 skipped, 15 deselected, 26 warnings in 312.43s (0:05:12)`** 且覆盖率行现取 `TOTAL 22392 3060 6070 1004 84%`（阈值 77 一字未动）/ bridges `24 passed in 0.70s` / golden `[GATE] all L1 verified commands have real samples (OK)` / spec `rc=0` / adversarial `rc=0` / reachability `无未登记孤儿 ✓` / originality `Total: 190  Original: 190  License OK: 190  Header OK: 190  Suspicious: 0  External imports: 17` / benchmark `benchmark smoke OK: kline, market, vipdoc` / `docs link check OK (96 files)`。相对第 30 轮：**4064 → 4219（+155）**、格式文件数 479 → 486、覆盖率 83.58% → 84%。**构件**（`Temp/r31/build31_pass1.out`，18:52，现场 `仓库根: P:\github_public\tstdx_wt_v19a31step`）：`[校验] canonical typed distribution ✓ (tstdx-1.1.0-py3-none-any.whl, tstdx-1.1.0.tar.gz, version=1.1.0, runtime_files=190)`、`[冒烟] 通过 ✓`、`[环境] twine 7.0.0 ✓` + `twine check` 过；wheel **781,111 B** sha256 `c64fd5f11267ab2d0db9cb2172a86f176ab36d058305f3be14794be3ccd0c2cf`、sdist **1,820,210 B** sha256 `308c523a4b999b1cc8be978c524d7f44f6dfa171501519c5c048c0c96f9f4c47`（两枚 sha 由 `sha256sum` 现读，不是抄构建日志的行序）。**装包六面**（`Temp/r31/inst31_faces.out`，19:07，**`CHECKS=20 bad=0`**）：`uv venv` 全新 `venv31w` → README 那条 `pip install "tstdx[all] @ file:///…whl"` `rc=0`（Resolved 27 packages）→ 导入落在 `venv31w\Lib\site-packages\tstdx\__init__.py`、`tstdx.__version__` ⇄ `importlib.metadata` 同为 `1.1.0`；库面 `minute=267 / trades=70 / call(minute)=267 / execute(QuerySpec)=267 / quotes(tdx native)=1 / async minute=267`、`trades(count=)` 仍是 `ValidationError`；**CLI 保护区在装好的包上**：块体炸掉之后 `"pool_closed": true`；CLI `--help 2132 B` / `minute 38730 B` / `trades 8934 B` 三条 `rc=0`；HTTP `/v13/minute/… 200 267`、`/v13/trades/… 200 70`、`count=50 -> 422 E1010`；WS `minute ok n=267` / `trades ok n=70`；MCP `tools=9 get_minute_today n=267`；流式面 `sync_running_on_enter / sync_closed_on_exit / sync_thread_gone / async_running_on_enter / async_closed_on_exit` 五真；quickstart 那条 `pip install -e ".[dev]"` `rc=0` 且**没在候选树多出改动**（前=43 后=43 差集为空）。**终字节复测**（本节写完之后再跑一遍，读的是已落盘的字节）：门禁 `Temp/r31/gates31_final.log`（19:52:38–19:58:28）末行仍 **`STEPS=12 bad=0`**、`dirty-after-gates=43`，全量格 `4219 passed, 6 skipped, 15 deselected, 26 warnings in 326.99s (0:05:26)` + `TOTAL 22392 3060 6070 1004 84%`、`486 files already formatted`、bridges `24 passed in 0.73s`、`docs link check OK (96 files)`——与 18:42 那次只在秒数上不同（312.43 → 326.99），覆盖率的六列读数一字不差。**构件**（`Temp/r31/build31_pass2.out`，20:03，现场 `仓库根: P:\github_public\tstdx_wt_v19a31step`）：`[校验] canonical typed distribution ✓ (tstdx-1.1.0-py3-none-any.whl, tstdx-1.1.0.tar.gz, version=1.1.0, runtime_files=190)`、`[冒烟] 通过 ✓`、`twine check` 过。两份构件与 `dist31_pass1` **分开比**：wheel `781,111 B` / sha256 `c64fd5f11267ab2d0db9cb2172a86f176ab36d058305f3be14794be3ccd0c2cf` **逐字节相同**；sdist `1,820,210 → 1,821,099 B`（+889 B）、sha256 `308c523a… → b6ffd238456b32684596be921106233169cc94f597f0e535e4e781634067d716` **不同**。差异不是猜的：把两份 sdist 各自解开 `diff -rq`，成员差异恰好 **6 个文件、全部在 `tests/`**（`architecture/test_client_family_transport.py`、`runtime/test_close_chain_ownership.py`、`runtime/test_runtime_http_client_release.py`、`streaming/test_async_stop_wake.py`、`streaming/test_stream_context_parity.py`、`transport/test_recv_wall_clock_deadline.py`），即 §11-2 那本台账给四把尺子改号 + 拆开 G47 撞号之后同步进去的标题行；`tstdx/`、`docs/`、`pyproject.toml` 一条差异都没有（现读成员清单：`tests` 1941、`tstdx` 190、`PROTOCOL_SPEC` 69、`docs` 7、根文件 7，合计 2214）。再把 pass2 的 wheel 解开做三向 `diff -rq`（忽略 `__pycache__`）：wheel 的 `tstdx/` ↔ sdist 的 `tstdx/` ↔ 候选树的 `tstdx/` 两边都是 **0 行差异**，wheel 内 189 个 `.py`。装包六面**没有**再重装一遍全新 venv 复跑：pass2 的 wheel 与 pass1 是同一枚字节，重装量到的是同一件事，那 20 格 + 补的 5 格已经跑在它身上。这段"终字节"叙述落盘之后，19:52 那 12 步里唯一还可能被纯散文动到的两格又在候选树单独跑了一遍：`check_docs_links.py` `rc=0` + `docs link check OK (96 files)`，文档侧 architecture 判据（`test_doc_code_consistency.py` + `test_release_identity_and_snapshot_docs.py`）`rc=0`、点阵 72+72+4 全过 | 本行不新增判据。它的正控是三样：① 上面那本 19 条电池（`CASES=19 BAD=0`，含 M5 那条要求"本尺子保持绿"的对照条）；② **收口探针自己也被复测了一遍**——第一遍 `inst31_faces.py` 的"六支直连命令"里有两格打的是**不存在的命令形状**（`hosts speedtest`、`list --market sh`），它们在 argparse 就退场，而「`rc in (0,2)`」把这种用法错误和"走完保护区后的 rc=2"混为一谈，于是那两格是**零覆盖**；补格脚本 `Temp/r31/inst31_cli_fix.py` 先把两个旧形状原样复现（`rc=2 bytes=0` 且输出里有 `usage`），再按 `tstdx/cli/parser.py` 现读的入参重打：`tstdx list sh --count 100` → `rc=2 stdout=0B merged=263B 0.4s`（E3035：`0x044D SECURITY_LIST` 已登记下线，客户端发包前 fail-fast）、`tstdx probe 0x052D --timeout 5` → `rc=1 stdout=1339B 38.8s`（`rc=1` 是"探测没成"的既定出口，第 23 轮台账同一口径），最后把 `family_client` 换成 `finally` 记账的 spy 现量**四支**直连命令（`list` / `probe` / `blocks` / `quotes-snapshot`）：每支 `region_entries: 1` 且退出保护区后 `pool_closed: true`（`blocks` `rc=2`、E3035 `0x07E5 BLOCK_QUOTES`；`quotes-snapshot 000001` `rc=0`）⇒ `CHECKS=5 bad=0`；③ 构建环境这一遍**换了**：主 `.venv` 已不含 `build`（第一遍以 rc=1 `[环境] 缺少 build` 收口失败，见 18:52 之前的那次尝试），于是新建专用 `Temp/venv31build`（build + twine 7.0.0）跑构建器，**没有**动共享环境——顺带记一条：本会话那层包装脚本末尾的 `echo`/`tail` 把 rc 吃掉了，后台任务的"exit code 0"不等于工具的 rc |
+
+### 11-1. 登记不修（每条带实测口径与推翻成本）
+
+本轮量到、但**不修**的东西。判断标准沿用 §4 的分级：改它需要业主裁决（语义会变）、或者它是
+上游/外部事实（不是本地断链）、或者修它要新写一把尺子而本轮射程已满。
+
+| # | 事实（本轮现读） | 为什么不修 |
+|---|---|---|
+| R-1 | `deadline_ms` 不是硬取消：它约束的是**每一跳建立时**的超时上界，一跳已发出后只能等它自己的 socket 超时回来，而 `[core] max_retries` 的重试在传输池内不再重读预算 ⇒ 总墙钟上界是"deadline + 最后一跳的容忍" | 要改成硬取消就得在池里持有跨重试的预算并在每次发包前 `wait_for`，那是语义变更（现在的错误类是 `ReadTimeout`，改完可能是 `DeadlineExceeded`）。本轮做的是**把口径写进 `docs/api/interfaces.md`** 而不是改行为 |
+| R-2 | 限流器在 `strict=False`（配置缺省）时走**无界**阻塞：`pool.py:665 / 854 / 980` 与 `async_.py:833` 四处同步点调 `limiter.acquire()`，而 `ratelimit.py:250` 那一行把它翻成 `bucket.acquire(tokens, blocking=not self.strict, timeout=0.0 if self.strict else None)` ⇒ `strict=False` 时 `timeout=None`，令牌长期不回来时声明的 `timeout` 与 `deadline_ms` 都管不住这一等（异步孪生另有 `while not try_acquire(): await asyncio.sleep(0.05)` 的轮询路径，同样无界） | 改默认值会让"按配置节拍排队"的既有调用方当场拿到异常；这是策略选择。真实缺口是**没有一条判据量过"限流耗尽时多久把控制权还给调用方"**，登记为下一步的尺子候选 |
+| R-3 | CLI 的 `blocks` / `list` 两支命令打到的是**已登记下线**的命令（`0x07E5` / `0x044D`，fail-fast E3035），而 §3 的 CLI 表把它们列在"直连传输层"里、读起来像可用命令；`--count` 在这两支上没有上界守卫，唯一的收口是"服务端返回短页就 break" | 错误消息本身是诚实且可行动的（带 `cmd=` / `name=` / 建议改查 `PROTOCOL_SPEC`），所以这不是断链而是**文档标注不足**；给 §3 表加一列"当前必然失败"是排版活，与 `test_cli_reference_table.py` 的分母口径要一起动，本轮排不进 |
+| R-4 | `_cmd_quotes_snapshot`（`cli/runtime_commands.py:867-876`）在 `c.quotes_snapshot(args.symbols)` 之后读 `getattr(c, "last_errors", [])`——但 `TdxClient.quotes_snapshot`（`client/sync.py:546`）根本不写 `last_errors`，只有并发批量那条路（`sync.py:434/458`）写 ⇒ "全部失败"那行的 detail 在这支命令上恒为 `"未知原因"`，而 `getattr` 的缺省把这个静默再包一层 | 修法有两个方向（改走会收集错误的方法，或让 `_t_quotes_snapshot` 自己按只收集），语义不同；本轮先把事实钉在这里，并把"默认值把静默包起来"这一形状登记为 G40 家族的下一格 |
+| R-5 | `Client.close()` 这条链在**默认内核**上是空转（构造 `Client()` 后线程增量 0、内置执行器没有 `close()`），而且它**不**停止由本客户端 `stream()` 出来并已 `start()` 的流——那条 worker 线程归持有流的人 | 本轮做的是把文档的过头主张改成如实口径 + 用 `test_close_chain_ownership.py` 7 格钉住"谁关、关什么、关不到什么"。要不要让 `close()` 连带停流是**契约变更**（会让"关门面继续用流"的写法失效），交业主 |
+| R-6 | 31-C6 之后，`_slot_is_current` / `_mark_failure` / `_mark_success` / `_release_probe_token` 的 `generation` 形参在**每个调用点都传 `slot.generation`** ⇒ 它现在是一个恒等于槽位自身字段的参数，"必填"这件事由类型系统与两张池的 AST 尺子共同保证 | 下一步该问的是"这个参数还要不要存在"（收掉它，四个方法直接读 `slot.generation`，判据的分母同时收缩）。本轮不动：刚把静默放行改成必填，同一轮里又把它删掉会让 M/D 台账的因果读不出来 |
+| R-7 | `baidu` / `eastmoney` 两个 Web 源在真机上撞上游反爬（`AntiTradeBlocked` / `WebSourceError`）；本机 7709 主站在收口这一遍多支直连命令上不可达（`f10` 那格报"所有主站均不可达"） | 外部事实，不是本地断链。第 30 轮已把"上游反爬抛错误类而不是空数组"写进 cookbook 选型表；本轮的装包探针因此把六面里数据依赖上游的格子按"错误可读 + rc 在上界内"判，而不是按"必须取到数据"判 |
+
+### 11-2. 编号台账（本轮新登记 + 一次改号）
+
+* **新登记**：**G46** 家族客户端的构造与释放（`tests/architecture/test_client_family_transport.py`，
+  5 件事 / 104 格，射程是整个 `tstdx/`）；**G47** 异步池心跳与空闲回收者的起跑点
+  （`tests/transport/test_async_sweeper_arm.py`）；**G48** 同步 `_recv_exact` 的墙钟读预算
+  （`tests/transport/test_recv_wall_clock_deadline.py`）；**G49** 异步流每条睡眠腿可被 `stop()`
+  叫醒（`tests/streaming/test_async_stop_wake.py`）；**G50** 流式订阅上下文协议两面同形
+  （`tests/streaming/test_stream_context_parity.py`，与 G40 同格）；**G51** HTTP 服务面自建
+  `Client` 的释放含异常路径（`tests/runtime/test_runtime_http_client_release.py`）。
+  沿用登记：**G41/G40**（`tests/runtime/test_close_chain_ownership.py` 把"释放链"这一格从
+  散文变成读数）、**G27** 的两件新增（⑦⑧）、第 30 轮的 **G44/G45** 一字未动。
+* **一次改号（撞号的代价：同一个编号在两处指两件事，读者无法复核任何一处）**：
+  本轮中途有四本判据的标题都写着 G47、两本写着 G46 ⇒ 除"异步池回收者起跑"那本保留
+  **G47**（`tstdx/client/async_.py:101` 与 `tstdx/transport/async_.py:1391` 两处生产注释、
+  以及 `test_async_transport_coverage.py:804` 的引用都指它，一起读得通）之外，另三本改成
+  **G48 / G49 / G51**、流式上下文那本从 `G46/G40` 改成 **`G50/G40`**。
+  变异编号同理：分派表那四条本轮早前用 `M7`–`M10` 命名，与家族尺子的 `M7` 和释放链的
+  `M9`/`M10` 撞号 ⇒ 并入电池时改叫 **D1–D4**（`Temp/mut31d_all.py` 的脚本头就写着这次改号）。
+  本轮之后**唯一编号**的口径：一个 M/D 号 = 一条变异，一个 G 号 = 一把尺子。
+
+### 11-3. 本轮之后仍开着的事
+
+- **R-2 的那把尺子**（限流耗尽时多久把控制权还给调用方）与 **R-6 的参数收缩**是本轮量出来、
+  下一步最该做的两格。
+- **P2-A / P2-E / G32 / B-4 / V20 §5 判据 2**（执行器 ≤420 行 vs 现值）：一字未动，归属与
+  处置口径沿用 §4。本轮又给 `tstdx/runtime/executor.py` 加了 `_client_session` 保护区与
+  家族构造处收敛（`git diff --numstat` 现值 **137 增 / 36 删**，文件 **710 → 811 行**），
+  这条"该文件太大"的账因此**继续变长**，不遮掩。
+- **`--count` 上界（R-3）** 与 **§3 表里"当前必然失败"的标注**：同一支笔的活，等 §3 表下一轮
+  重排时一起做。
+- **发行身份**：`1.1.0` 本轮一字未动（G44 钉的是"三处手抄相等"，不是"版本要往前推"），
+  CHANGELOG `[Unreleased]` 里 1.2.0–1.4.0 那把梯子仍在等业主裁决（§10-2 同条）。
+
+四条教训：
+
+1. **收口探针自己也需要正控**：那两格"六支直连命令"打的是不存在的命令形状，`rc=2` 恰好
+   落在允许集合里，于是**零覆盖被记成了全覆盖**。判据如果量的是退出码，它就分不清"argparse
+   挡在门口"和"走完保护区之后失败"。修法不是多加几支命令，而是改量**进没进保护区、出来时
+   关没关**（补格脚本现读 `region_entries` 与 `pool_closed`）。这与 §10 教训 1 同族：
+   **测量工具的口径必须由工具自己核对**。
+2. **`@contextmanager` 的记账要放 `finally`**：第一版 spy 把记录写在 `with` 之后，块体抛错时
+   `@contextmanager` 会在 `yield` 处重抛，那段记录根本不执行 ⇒ `list` 那格（E3035 从保护区里
+   炸出来）被记成"这支命令没进保护区"。**一条探针缺陷长得就像一条产品缺陷**；本轮它是靠
+   "读数与已知事实矛盾"才被抓出来的。
+3. **同轮并号比没号更坏**：四个 G47 与两个 M7 分别指两件事，读者无法复核任何一处，
+   台账里"见 §11"的指针全部悬空。本轮把三本变异脚本并成一本（19 条）并一次性改号
+   （§11-2）。以后写判据的顺序反过来：**先查号有没有被占，再落标题行**。
+4. **"安装包指纹"是两个数，不是一个**：sdist 带 `tests/`（1941 个成员），wheel 只带 `tstdx/`
+   （189 个 `.py`）。于是"只改测试标题行"这一遍是 wheel 逐字节相同、sdist 差 889 B——如果
+   只比一句"构件 sha 相同/不同"，就会得出"改动进了 runtime"或"复测没真跑"两种错话。终字节
+   复测比指纹要**分开比，并把差异落到成员清单**（本轮 `diff -rq` 两份解开的 sdist：6 个文件、
+   全在 `tests/`，`tstdx/` 零差异）。
+
+

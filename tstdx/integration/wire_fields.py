@@ -61,6 +61,10 @@ WS_PARAMS_FIELDS: Final[dict[str, frozenset[str]]] = {
     "query": frozenset({"capability", "args", "kwargs", "provider", "channel", "currentness"}),
     "runtime.capabilities": frozenset(),
     "runtime.health": frozenset(),
+    # 流式控制面：把进程内实时流桥接到这条连接。
+    "subscribe": frozenset({"symbols", "provider", "interval", "diff_only", "max_queue"}),
+    "unsubscribe": frozenset({"id"}),
+    "list": frozenset(),
 }
 
 

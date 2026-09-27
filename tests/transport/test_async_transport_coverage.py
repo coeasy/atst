@@ -801,6 +801,9 @@ class TestAsyncPoolHeartbeat:
             async def go() -> None:
                 pool = _pool(server, heartbeat_interval=60)
                 async with pool as opened:
+                    #: G47：起跑点只有 ``_get_conn_locked`` 一处，所以这一格要先发一次
+                    #: 真请求才拿得到任务——量的仍是"创建 ↔ close 取消"这一对。
+                    await opened.request(ECHO_CMD, b"\x01")
                     assert opened._hb is not None
                 assert pool._hb is None
                 assert pool._closed

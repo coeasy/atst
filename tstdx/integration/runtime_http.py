@@ -50,15 +50,24 @@ def create_runtime_app(client: Client | None = None) -> Any:
     async def _lifespan(_app: Any) -> Any:
         """应用生命周期收尾：关掉本工厂自己造的那份 ``Client``。
 
-        ``Client`` 背后是整条传输连接池。``tstdx serve`` 与 uvicorn 退出时过去没有
-        任何释放路径（``create_runtime_app`` 只是 ``return app``），于是每起停一次
-        服务就留下一批 socket 与心跳线程（第 26 轮 F-100）。传入的那份归调用方所有，
-        这里不关——与 MCP 面 ``_owns_client`` 同一口径。
+        ``create_runtime_app`` 过去只是 ``return app``，自己造的那份内核没有任何释放
+        入口（第 26 轮 F-100）。这条链今天**不**释放 socket 或线程：``Client`` 跨调用不
+        持有连接，内置执行器连 ``close()`` 都没有（实测口径见
+        :file:`tests/runtime/test_close_chain_ownership.py`）。它兑现的是所有权协议——
+        传入的那份归调用方所有，这里不关（与 MCP 面 ``_owns_client`` 同一口径）——以及
+        注入执行器（自带池、心跳线程或别的外设）那条形同协议的口子。
+
+        收尾写在 ``finally`` 而不是 ``yield`` 后面：生命周期体里任何一次抛错都会从
+        ``yield`` 处穿出这个生成器，写在后面的那两行根本不会被执行——和执行器那条
+        ``with`` 同一族（第 31 轮 31-C，判据
+        :file:`tests/runtime/test_runtime_http_client_release.py`）。
         """
-        yield
-        if owns_client:
-            with suppress(Exception):
-                api.close()
+        try:
+            yield
+        finally:
+            if owns_client:
+                with suppress(Exception):
+                    api.close()
 
     app = FastAPI(
         title="tstdx v13 Runtime",

@@ -9,7 +9,7 @@
 :class:`~tstdx.errors.ValidationError`，``AttributeError`` 直接穿出去，
 HTTP/WS 两张面把它报成 E9000/500：一条过期的表项长得像内部故障，不像契约问题。
 
-本文件钉住六件事：
+本文件钉住八件事：
 
 ① 后端的词表是闭合的：每张面按 ``method`` 派发的后端（``METHOD_BACKENDS``）与
    只把 ``method`` 当标签、按 capability 分岔的后端（``TAG_BACKENDS``）加起来必须
@@ -29,6 +29,14 @@ HTTP/WS 两张面把它报成 E9000/500：一条过期的表项长得像内部�
 ⑤ 来源查表不许带默认值：``_SOURCE_FOR_PROVIDER`` 必须覆盖语义主里出现的每个 Provider。
 ⑥ web 源表与音量归一化器表双向闭合：``_get_normalizer`` 对没登记的源返回 identity，
    而 identity 就是「这列已经是 股 / 元」这个论断本身。
+⑦ （第 31 轮）``MigratedCapabilityBinding.factory`` 的三条承诺逐条量：带它的行恰是
+   ``web_adapter`` 那五行、每一行都解析得到一个类、整个包里读它的文件只有执行器那一个。
+   此前字段上的注释写着"空值表示执行器走自己的兜底逻辑"，而执行器收到空值是**报错**——
+   一句过期散文（G40 同族）。
+⑧ （第 31 轮）``hk_quotes`` 的 Provider 注入规则只有一处：校验与执行都读
+   :func:`tstdx.catalog.capability.call_kwargs_for`，且驱动执行器能看见实现真的收到了
+   ``provider=<绑定的 Provider>``。此前这条规则在 ``validate_call`` 与执行器各抄一遍，
+   执行器那份还多一个 ``provider in {sina, tencent}`` 守卫——两处口径已经不同。
 
 判据本身也要被测：植入的失效（改坏一行 ``method``、删掉一个来源登记、凭空加一个源）
 必须只让对应那条红。
@@ -36,7 +44,9 @@ HTTP/WS 两张面把它报成 E9000/500：一条过期的表项长得像内部�
 
 from __future__ import annotations
 
+import ast
 import dataclasses
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -214,3 +224,143 @@ def test_the_unit_ruler_sees_a_planted_source(monkeypatch: pytest.MonkeyPatch) -
     assert len(findings) == 1 and "planted-source" in findings[0], (
         f"注册了一个没有归一化器的源却没被 ⑥ 抓到：{findings}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# ⑦⑧ 第 31 轮 31-A：binding 上另外两个"声明了却没人按它行动"的字段
+# --------------------------------------------------------------------------- #
+
+
+def _factory_readers(root: Path) -> list[str]:
+    """读了 ``binding.factory`` 这个字段的文件（AST 口径，字符串 ``.factory`` 会撞上同名模块）。"""
+    out: list[str] = []
+    for path in sorted(root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        reads = any(
+            (isinstance(n, ast.Attribute) and n.attr == "factory")
+            or (
+                isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Name)
+                and n.func.id == "getattr"
+                and any(isinstance(a, ast.Constant) and a.value == "factory" for a in n.args)
+            )
+            for n in ast.walk(tree)
+        )
+        if reads:
+            out.append(path.relative_to(root).as_posix())
+    return out
+
+
+def factory_field_findings() -> list[str]:
+    """⑦：``factory`` 的声明面与读取面必须同口径（docstring 里的三句承诺）。"""
+    import importlib
+
+    root = Path(cap.__file__).resolve().parents[1]
+    out: list[str] = []
+    web = [b for b in MIGRATED_BINDINGS if b.backend == "web_adapter"]
+    carriers = [b for b in MIGRATED_BINDINGS if b.factory]
+    if {b.key for b in web} != {b.key for b in carriers}:
+        out.append(
+            "带 factory 的行与 web_adapter 的行不再是同一批："
+            f"只有 factory={sorted(b.key for b in carriers if b.backend != 'web_adapter')}"
+        )
+    for binding in web:
+        module_path, _, class_name = binding.factory.partition(":")
+        if not module_path or not class_name:
+            out.append(f"{binding.key} 的 factory {binding.factory!r} 不是 module:Class 形状")
+            continue
+        try:
+            obj = getattr(importlib.import_module(module_path), class_name)
+        except (ImportError, AttributeError) as exc:
+            out.append(f"{binding.key} 的 factory 解析不到实现：{exc}")
+            continue
+        if not isinstance(obj, type):
+            out.append(f"{binding.key} 的 factory 指向的不是类：{obj!r}")
+    #: 读取点：整个包里只有执行器的 web_adapter 分支读它。
+    readers = _factory_readers(root)
+    if readers != ["runtime/executor.py"]:
+        out.append(f"读 factory 的文件不是唯一那一个：{readers}")
+    return out
+
+
+def hk_quotes_provider_kwargs(provider: str) -> dict[str, Any]:
+    """⑧：驱动执行器的 web_session 分支，取实现真正收到的关键字入参。"""
+    from unittest.mock import patch
+
+    from tstdx.query import QueryPlanner, QuerySpec
+    from tstdx.runtime.executor import DirectProviderExecutor
+
+    #: 先按真签名规划+校验（``implementation_for`` 读的是真类），再换替身执行。
+    plan = QueryPlanner().compile(
+        QuerySpec.build(
+            "hk_quotes",
+            provider=provider,
+            channel="catalog",
+            options={"args": ["00700"], "kwargs": {}},
+        )
+    )
+    seen: dict[str, Any] = {}
+
+    class _Session:
+        def __init__(self, source: str, *, timeout: float) -> None:
+            seen["source"] = source
+
+        def hk_quotes(self, symbol: str, **kwargs: Any) -> list[Any]:
+            seen.update(kwargs)
+            return []
+
+        def close(self) -> None:
+            pass
+
+    with patch("tstdx.web.session.WebQuoteSession", _Session):
+        DirectProviderExecutor()._migrated_capability(plan)
+    return seen
+
+
+def test_the_factory_field_is_declared_read_and_resolvable() -> None:
+    findings = factory_field_findings()
+    assert not findings, "\n".join(findings)
+
+
+def test_the_hk_quotes_provider_reaches_the_implementation() -> None:
+    """⑧：绑定表里的 Provider 必须真的落到实现入参上，否则 tencent 会以 sina 的量纲上线。"""
+    assert hk_quotes_provider_kwargs("tencent").get("provider") == "tencent"
+    assert hk_quotes_provider_kwargs("sina").get("provider") == "sina"
+
+
+def _provider_injection_sites(path: Path) -> int:
+    """``…kwargs.setdefault("provider", …)`` 这一形状的个数（AST 口径）。
+
+    不能按字符串数：``exc.context.setdefault("provider", plan.provider)`` 是错误信封在补
+    context，与"替实现填 Provider"无关。
+    """
+
+    def is_injection(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "setdefault"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id.endswith("kwargs")
+            and bool(node.args)
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value == "provider"
+        )
+
+    return sum(
+        1 for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))) if is_injection(node)
+    )
+
+
+def test_the_provider_injection_rule_has_one_home() -> None:
+    """⑧ 的另一半：这条规则只许写在目录层一处。
+
+    第 31 轮之前它抄了两遍（``validate_call`` 与执行器各一份，且执行器那份多一个
+    ``provider in {sina, tencent}`` 守卫），改一处即分叉。
+    """
+
+    package = Path(cap.__file__).resolve().parents[1]
+    assert _provider_injection_sites(package / "runtime" / "executor.py") == 0, (
+        "执行器又自己抄了一遍 Provider 注入规则——改用 catalog.call_kwargs_for()"
+    )
+    assert _provider_injection_sites(Path(cap.__file__)) == 1, "目录层里这条规则不止一处了"

@@ -65,6 +65,12 @@ from tstdx.client import AsyncTdxClient
 
 与 TdxClient 签名镜像，所有方法为 `async def`。
 
+心跳与空闲回收在异步面**不是"构造即起跑"**：`AsyncConnectionPool` 只在第一次真正握住一条
+socket 时（`_get_conn_locked`）武装那条线程，`AsyncTdxClient.open()` 与 `async with pool`
+都不武装它；同步池则在构造器里就武装。两边因此"从什么时候开始回收空闲槽位"差这一刻。
+第 31 轮之前异步面**从未起跑过**——`heartbeat_interval` / `idle_timeout` 传进去也只是被存
+起来，是幻影旋钮；全包武装点唯一由 `tests/transport/test_async_sweeper_arm.py` 现扫核对。
+
 ### 多协议族客户端
 
 | 类 | 导入路径 | 协议族 | 说明 |
@@ -110,10 +116,20 @@ F-65 裁决 (b) 删掉了两个查询函数，不留别名：`stats()`（按族�
 
 ```python
 from tstdx.client import get_client
-client = get_client("std")     # TdxClient
-client = get_client("goods")   # GoodsClient
-client = get_client("async")   # AsyncTdxClient
+
+client = get_client("stock")  # TdxClient（缺省 kind，可不传）
+client = get_client("goods")  # GoodsClient
+client = get_client("ex")     # ExMarketClient
+client = get_client("mac")    # MacClient
+client = get_client("f10")    # F10Client
 ```
+
+`get_client` 只认这 5 个 kind——判据是运行期读 `_CLIENT_REGISTRY`，不是抄一份名单：未知
+kind 显式抛 `ValueError`（消息里带合法值全集），既不做大小写/空白归一，也不静默回落到
+`TdxClient`，所以把 `"std"` 或 `"async"` 写进调用点会当场炸而不是拿到一个能用的对象。
+**异步面不在这张表里**：异步传输客户端 `AsyncTdxClient` 由 `tstdx.client` 直接导出，
+`tstdx.AsyncClient` 则是 `Client` 那套语义/运行时契约的异步门面（它内部持有一份 `Client`），
+两者都不经本工厂构造。其余 kwargs 原样透传给对应类的 `__init__`。
 
 ### 交易面（TradeClient，只有库面且仅模拟）
 
@@ -161,8 +177,8 @@ from tstdx import Client, AsyncClient
 | `quotes` | `(symbols, *, provider=None, policy=None, currentness="live")` | 实时行情 |
 | `quotes_batch` | `(symbols, *, provider=None, currentness="live") -> BatchResult` | 逐 symbol 三态审计 |
 | `snapshot` | `(symbol, *, provider="tdx", currentness="live")` | 盘口快照 |
-| `minute` | `(symbol, *, provider="tdx", currentness="live")` | 当日分时（**默认 tdx 已下线**，抛 `NotImplementedFeature`；分时改用声明该能力的 Web Provider） |
-| `trades` | `(symbol, *, provider="tdx", start=0, count=0, currentness="live")` | 逐笔成交（**默认 tdx 已下线**，抛 `NotImplementedFeature`） |
+| `minute` | `(symbol, *, provider="tdx", currentness="live")` | 当日分时（**默认 tdx 已下线**，抛 `NotImplementedFeature`；分时改用声明该能力的 Web Provider：`tencent` / `eastmoney` / `baidu`） |
+| `trades` | `(symbol, *, provider="tdx", start=0, count=0, currentness="live")` | 逐笔成交（**默认 tdx 已下线**，抛 `NotImplementedFeature`；Web 出路 `tencent` / `baidu` 按页取，写 `start` / `count` 会当场 `ValidationError` 而不是被丢掉） |
 | `security_count` | `(*, market=0, provider="tdx", currentness="business")` | 证券数量 |
 | `security_list` | `(*, market=0, start=0, provider="tdx", currentness="business")` | 证券列表分页：**已下线**，总是抛 `CommandOffline` |
 | `stream` | `(symbols, *, provider="tdx", interval=1.0, diff_only=False, max_queue=1024, on_quote=None, on_error=None) -> StatefulQuoteStream` | 流式订阅 |
@@ -171,10 +187,20 @@ from tstdx import Client, AsyncClient
 | `execute_with_policy` | `(spec, *, policy: FallbackPolicy) -> OrchestratedResult` | 显式跨源编排 |
 | `typed` | `(query: CapabilityQuery, **kwargs) -> TypedQueryResult` | 冻结 dataclass 契约 → 强类型记录 |
 | `capabilities` | `() -> tuple[str, ...]` | 能力发现面：**只有名字、没有可用性**，172 项的构成与发不出去的那几个见下节「能力发现面：只有名字，没有可用性」 |
-| `close` | `()` | 释放内核连接 |
+| `close` | `()` | 收尾**本实例自建**的内核（`runtime=` 传进来的那份不碰）。默认内核跨调用不持有连接，所以它关的是"借来的东西"这一格所有权，不是连接池——见下节 |
 
 `AsyncClient` 是同名异步镜像（`async with AsyncClient() as client: ...`）；
 传 `policy=` 时 `bars/quotes` 返回 `OrchestratedResult` 而非 `QueryResult`。
+
+**`close()` 到底释放什么**（第 31 轮实测，判据 `tests/runtime/test_close_chain_ownership.py`）：
+构造一个 `Client()` 之后进程的线程数增量为 0，它手里的执行器只有 `timeout` / `hosts` /
+`vipdoc_root` / `config` / `_bindings` 五个值，内置执行器甚至没有 `close()` 这个方法——每次
+取数都是现场构造家族客户端、`finally` 释放（第 31 轮 31-B4 让四条分支收成同一形状）。因此
+`close()` 真正兑现的是两件事：**注入执行器**（自带池或外设的那份）的收尾口子，以及
+「谁造谁关」这条协议在 HTTP/WS/MCP 三张服务面上的统一落点。两件它**不**做的事：
+不关你传进来的 `runtime`，也**不停止由本客户端 `stream()` 出来并已 `start()` 的流**——那条
+worker 线程归持有流的人管，`stream.stop()` 才是它的收尾（实测：`close()` 之后线程照跑，
+`stop()` 毫秒级返回；它是 daemon 线程，不会挂住进程退出，但订阅会在你看不见的地方继续跑）。
 
 `currentness` 的缺省只有上表这一处：`Client.<方法>` 的签名与 `UnifiedRuntime.<方法>` 的缺省
 逐字相等，`call`/`_call_core` 不再另立一份"谁能转、谁不能转"的名单（判据见
@@ -282,6 +308,12 @@ adjustment, currentness, deadline_ms, schema_version, options_json`。
 （`ExecutionBudget`）是 `deadline_ms` 的唯一载体，逐跳约束传输层超时；plan 上不再
 另存 deadline、批量上限或 channel 布尔位，那些字段曾经无人读取。参数在规划期按
 Provider 实现的**真实签名**校验，不合法即 `ValidationError` 且不发请求。
+
+`deadline_ms` 不是硬取消：它约束的是**每一跳建立时**的超时上界（取配置值与剩余预算的
+小者，预算见底则在建连之前抛 `ReadTimeout`），一跳已经发出请求后只能等它自己的 socket
+超时回来，而 `[core] max_retries` 的重试在传输池内不再重读预算。所以总墙钟的上界是
+"deadline + 最后一跳的容忍"，不是 deadline 本身。预算的作用域是**一次 `execute()`**：
+`stream` 的每一拍轮询是一次独立请求，各拿各的预算，不共用一条总墙钟。
 
 ### FallbackPolicy / ProviderOrchestrator
 
@@ -408,6 +440,22 @@ from tstdx.web.sources import KNOWN_SOURCES, SourceSpec   # 源名 → SourceSpe
 的模块 docstring，守卫是 `test_service_faces_never_import_the_web_layer` 与
 `test_service_faces_never_build_a_stream_themselves`）。
 
+"不经内核"不等于"不看配置"：这 6 支命令的连接参数出自
+`tstdx.cli._common._transport_kwargs`，而它调的就是内核那一条
+`tstdx.transport.pool.pool_settings_from_config`，所以 `[hosts] servers` / `[hosts]
+slots_per_host` / `[core] timeout` / `[core] max_retries` / `[core]
+heartbeat_interval` / `[rate_limit]` / `[security] use_tls` 在直连命令与主链路上是同一套
+读数；显式 `--host` / `--timeout` 只赢它自己那一格（第 31 轮 31-C4 之前，这里只手抄了
+`hosts` 与 `timeout` 两键，其余五个键在直连命令上当场蒸发）。六支直连命令一律用
+`get_client(...)` 构造、再把客户端整体交进 `tstdx.cli._common.family_client` 那道保护区：
+客户端交进去时池与心跳线程已经起跑，块体无论正常返回还是抛错都 `close()` 一次。保护区只
+管释放、不管构造，为的是让 `with family_client(get_client("goods", …)) as c` 之后的 `c`
+仍是 `GoodsClient`——把 kind 传进保护区里再查注册表，返回类型就塌成 `Any`，工厂那五道
+`@overload` 在 CLI 面等于白设。两格判据分别是
+`tests/architecture/test_cli_connection_contract.py` 与
+`tests/architecture/test_client_family_transport.py` 的第 5 件事（射程是整个 `tstdx/`，
+不只执行器）。
+
 三张 wire 面（HTTP REST、WebSocket JSON-RPC、MCP stdio）对**未声明的请求字段**口径一致：
 一律当场拒绝，不存在「收下但无人读」的第三种下场（F-47 裁决 (a)，Phase 5 第 40 步落地，2026-09-19）。
 白名单就是各面自己那份声明，不是第二份抄件——HTTP 查询串 = 路由签名本身，HTTP body 与 WS `params`
@@ -481,27 +529,30 @@ app = create_runtime_app()          # FastAPI 实例，交由 uvicorn 承载
 行情、也不受上面的未声明字段口径管辖。
 
 **三份服务面的 `Client` 所有权是同一口径**（第 26 轮补；在那之前 HTTP 面只是 `return app`，
-每起停一次服务就在进程里留下一批 socket 与心跳线程）：
+自己造的那份内核没有任何收尾入口）：
 
 | 面 | 造出 `Client` 的一方 | 收尾的地方 |
 |----|--------------------|-----------|
-| HTTP `create_runtime_app(client=None)` | 不传时工厂按 `owns_client` 自己造一份 | `_lifespan` 在 `yield` 之后按 `owns_client` 调 `api.close()`（`tstdx/integration/runtime_http.py`）|
+| HTTP `create_runtime_app(client=None)` | 不传时工厂按 `owns_client` 自己造一份 | `_lifespan` 把 `yield` 包进 `try`，在 `finally` 里按 `owns_client` 调 `api.close()`——写在 `yield` 之后不算收尾，生命周期体一抛错那两行就永远走不到（第 31 轮 31-C；判据 `tests/runtime/test_runtime_http_client_release.py`）|
 | WS `serve_runtime_ws(handler=None)` | 不传时函数按 `owns_handler` 自己造，登记在 `server.tstdx_handler` | 宿主的 `finally` 调 `RuntimeJsonRpcHandler.close()`；`__main__` 入口即如此 |
 | MCP `MCPServer(client=None)` | 不传时构造器自己造（`_owns_client`）| `stop()` 幂等：`_stopped` 事件 + 关掉后置回 `_owns_client`，`shutdown` 与 `serve` 收尾抢着停也只关一次 |
 
 三处都遵守同一句话：**传进来的那份归调用方，本库不关**；只有自己造的那份才由自己收尾。
+这条收尾在默认内核上目前**不释放任何 socket 或线程**（§2「`close()` 到底释放什么」量过：
+`Client` 跨调用不持有连接，内置执行器连 `close()` 都没有），它兑现的是所有权协议与注入执行器
+的口子——第 31 轮之前本节把这条链写成"释放连接池"，那是一句没人量过的过头主张。
 
 `/v13/capabilities` 交付两份纯名字列表，没有状态字段：口径与那些发不出去的名字见
 §2「能力发现面：只有名字，没有可用性」。
 
-### WebSocket JSON-RPC（10 方法）
+### WebSocket JSON-RPC（13 方法）
 
 ```python
 from tstdx.integration.runtime_ws_server import serve_runtime_ws
 ```
 
-方法：`quotes`、`bars`、`snapshot`、`minute`、`trades`、`security.count`、
-`security.list`、`query`、`runtime.capabilities`、`runtime.health`。
+方法：`quotes`、`bars`、`snapshot`、`minute`、`trades`、`security.count`、`security.list`、
+`query`、`runtime.capabilities`、`runtime.health`、`subscribe`、`unsubscribe`、`list`。
 
 监听地址与路径由 `RuntimeWsConfig` 决定，默认 127.0.0.1:8765 上的 `/v13/ws`；连到别的路径
 会被以 1008 状态码关闭（reason 为 "unsupported path"）。`serve_runtime_ws` 是协程，返回 websockets
@@ -517,12 +568,57 @@ from tstdx.integration.runtime_ws_server import serve_runtime_ws
   要付同样的代价，直接把 `handle_message` 在协程里调用就是退回那个形状。
 * 谁负责收尾由**是否传入 handler** 决定。**传入**的那份归调用方，`serve_runtime_ws` 不碰它的
   生命周期；**不传**时函数自己造一份，并把它登记在返回对象的 `server.tstdx_handler` 上。那条
-  `Client` 背后是连接池与心跳线程，宿主停机时不调 `RuntimeJsonRpcHandler.close()` 就会把它们
-  留在进程里（`python -m tstdx.integration.runtime_ws_server` 这个入口就是在 finally
-  收尾块里做了这件事的）。
+  `Client` 由 `RuntimeJsonRpcHandler.close()` 收尾，宿主停机时不调它就把这条所有权链断在
+  自己手里（`python -m tstdx.integration.runtime_ws_server` 这个入口就是在 finally
+  收尾块里做了这件事的）。它今天释放的是所有权而非连接池，见 §2「`close()` 到底释放什么」。
 
 `runtime.capabilities` 与 HTTP 同一份两份纯名字列表，同样**只有名字、没有可用性**
-（§2「能力发现面：只有名字，没有可用性」）。
+（§2「能力发现面：只有名字，没有可用性」）。`query` 是泛型查询入口
+（`{"method":"query","params":{"capability":..., "args":[...], "kwargs":{...}}}`），与 HTTP
+`POST /v13/query/{capability}` 同义。`subscribe` / `unsubscribe` / `list` 不是 capability 投影，
+而是实时订阅控制面，见下一节「WebSocket 实时订阅」。
+
+### WebSocket 实时订阅（subscribe / unsubscribe / list + push）
+
+第 31 轮补齐：WS 面此前只有 req/res，实时行情只能靠客户端轮询。现在本连接可以订阅一条
+进程内实时流，由服务端主动推送 `snapshot` / `tick` / `error` 帧，不用轮询。订阅表**每条连接私有**
+（`serve_runtime_ws` 为每条连接造一份 handler），两条连接不会串台；连接断开时本连接拥有的流被
+`stop_all_subscriptions` 收掉，不泄漏。
+
+控制方法（白名单字段见 `tstdx.integration.wire_fields.WS_PARAMS_FIELDS`）：
+
+* `subscribe`：`{"symbols":[...], "provider":"tdx", "interval":1, "diff_only":false, "max_queue":1024}`。
+  回 `{"subscription_id":"subN","status":"subscribed"}`；随后连接收到 `push` 帧：
+  `{"method":"push","params":{"type":"snapshot","code":...,"data":{...}}}`。未声明字段当场 `-32602`。
+* `unsubscribe`：`{"id":"subN"}` → `{"status":"unsubscribed","id":"subN","found":true}`；停掉对应流。
+* `list`：`{}` → `{"subscriptions":[{"id":"subN","state":"running"}]}`，只读本连接的订阅与状态。
+
+推送帧的 `params.type` 取值：`snapshot`（首帧/每次轮询快照）、`tick`（增量，需 `diff_only:true`）、
+`error`（`params.error` 为规范化错误信封）。订阅/查询共用同一套错误信封挂在 `error.data`，
+客户端读法与其它三面一致。
+
+```python
+import asyncio, json
+from websockets.asyncio.client import connect
+from tstdx.integration.runtime_ws_server import RuntimeWsConfig, serve_runtime_ws
+
+async def main() -> None:
+    server = await serve_runtime_ws(config=RuntimeWsConfig(port=8765))
+    try:
+        async with connect("ws://127.0.0.1:8765/v13/ws") as ws:
+            await ws.send(json.dumps({"jsonrpc":"2.0","id":1,"method":"subscribe",
+                "params":{"symbols":["600519"],"provider":"tdx","interval":1}}))
+            ack = json.loads(await ws.recv())
+            assert ack["result"]["status"] == "subscribed"
+            # 推送帧没有 id，是通知而非请求/响应。
+            frame = json.loads(await ws.recv())
+            assert frame["method"] == "push" and frame["params"]["type"] == "snapshot"
+    finally:
+        server.close()
+        await server.wait_closed()
+
+asyncio.run(main())
+```
 
 ### MCP stdio（9 工具）
 
@@ -567,7 +663,7 @@ tstdx --help
 |------|------|
 | 内核·typed | `Client` 的类型化方法或 `client.call`，stdout 打 `serialize_result` 信封（带 `provenance`/`currentness`） |
 | 内核·rows | 同一内核，经 `tstdx/cli/runtime_commands.py::_ClientRows` 把信封拆成裸行；`--json` 决定行数组还是人读表格 |
-| 直连传输层 | 不经内核，直接 `TdxClient` / `get_client(...)`——协议诊断面，不是第二套能力执行路径 |
+| 直连传输层 | 不经内核，经 `tstdx.cli._common.family_client` → `get_client(...)`——协议诊断面，不是第二套能力执行路径 |
 | 服务面宿主 | 拉起 HTTP 应用本身 |
 | 传输·诊断 | 主站解析与测速（`tstdx.transport.*` / `tstdx.tools.host_audit`） |
 | 反馈 | `tstdx.feedback`，不发行情请求 |
@@ -627,8 +723,8 @@ tstdx query stock_changes --args '[[8201]]' --kwargs '{"size": 5}'   # 任意能
 tstdx quotes sh600519 sz000001                            # 实时行情
 tstdx bars sh600519 --period day --count 80               # 日 K 线
 tstdx snapshot sh600519                                    # 规范快照
-tstdx minute sh600519                                      # 今日分时
-tstdx trades sh600519 --count 100                          # 逐笔成交
+tstdx minute sh600519 --provider tencent                     # 今日分时（tdx 面已下线，见下表）
+tstdx trades sh600519 --provider tencent                     # 逐笔成交（同上；--count 在 Web 源不服务）
 tstdx security-count --market 0                             # 某市场的代码总数
 tstdx security-list --market 0 --start 0                   # 分页代码表
 tstdx stream sh600519 --interval 3 --diff-only --seconds 30    # 流式订阅
@@ -685,7 +781,7 @@ tstdx quotes-snapshot sh600519 sz000001 --json              # 批量快照（直
 | `probe 0x052D …` | rc=1，171.5s，12 行完整探测报告；`E2030`×8 读超时收口成 `E2040` 所有主站不可达 | **是缺陷并已修**：`--archive-dir` 不给时把库默认值覆盖成 `None`，`Prober` 无条件 `Path(None)` 当场 `TypeError`。这支命令的默认用法从未通过。那 171.5 秒的构成同 `quotes-snapshot`（8 台 × 读超时 + 梯子 sleep，G38 已修） |
 | `blocks 1` | rc=2，`E3035`（改前是 rc=2 `E3040 block_type 必须是整数`） | 半修：`type=int` 补上后才会走到真判据——`0x07E5` 多主站实测无响应，客户端 fail-fast，**本库不发板块行情** |
 | `goods AU2412` | rc=2，`E4040 无法解析证券代码` | **不服务**：符号语法（`tstdx/domain/symbol.py::SYMBOL_PATTERN`）只认 5–6 位数字，任何真实商品代码都进不去；商品族没有 live golden，不扩语法去猜字节 |
-| `minute` / `trades` | rc=2，`E9010` | **不服务**：`0x0537` / `0x0FC5` 是 inferred 命令，真实记录布局仍待 golden |
+| `minute` / `trades` | rc=2，`E9010` | **tdx 面不服务**：`0x0537` / `0x0FC5` 是 inferred 命令，真实记录布局仍待 golden。出路是显式换 Web 源（第 30 轮接通并实测）：`tstdx minute 000001 --provider tencent` 与 `tstdx trades 000001 --provider tencent` 均 rc=0 出数据；`--provider baidu` 撞 `E7010`（上游 403 反爬）、`--provider eastmoney` 撞 `E7000`（上游断连）——链路通、上游可用性另计。给 `trades` 写 `--count` 在 Web 源上是 `E1010`，因为那一格没有落脚点（见本文 §2 的 `Client` 方法表中 `trades` 一行的 caveat） |
 | `security-list` / `list` | rc=2，`E3035` | **不服务**：`0x044D` 已下线；要一张带代码的清单改用 `tstdx all-market`（Web 侧全市场快照）|
 | `f10 sh600519`（目录） | rc=2，159.0s，`E2030`→`E2040` | **不服务**：远端已停止 F10 内容分发（2026-09 实测）。那 159 秒原先记作"慢在主站"，第 25 轮按时间戳改判：**约 121 秒是重试梯子的 sleep**（见本节末 `--timeout` 那段，已修） |
 | `f10 … --file 公司概况` | rc=2，`E4000` 下载结果为空 | 同上，那一格的判据是显式写的"远端已停止 F10 内容分发" |
@@ -749,6 +845,14 @@ rc=2、零 traceback"，看起来像"全部失败但都可读"，实际是探针
 毫秒时间戳在每行行首）。判据 `tests/transport/test_retry_backoff_cap.py`（30 项；两条变异各自
 当场红：去掉封顶 16 红、把 sleep 装回每次换主站 1 红）。**因此这条命令的墙钟上界是
 `主站数 × timeout`**——要压它就把 `--timeout` 调小，或先用 `tstdx hosts scan` 把可达主站排到前面。
+
+那句"上界 = 主站数 × timeout"在第 31 轮之前只是**声明**：同步传输的 `timeout` 量的是单次
+recv 的**空档**，每收到一个字节就重新武装，于是逐字节吐数据的对端永远撞不到它——而一帧要读
+多少字节是**对端**在响应头里写的（`zip_size`，单帧上限 32768）。现在一次读帧按墙钟算：进循环
+前算一次截止，每轮按剩余预算收紧 socket 超时，见底即 `ReadTimeout`，读满或抛错后把 socket
+超时还回声明值（连接接下来还要复用）——与异步孪生同强，判据
+`tests/transport/test_recv_wall_clock_deadline.py`（三条变异：拆掉收紧、拆掉抛错前的复原、
+拆掉读满后的复原，各自当场红）。
 
 `serve` 那一行的读法与读数：用装好的包在回环上起一份服务，按 11 个请求逐条打（上面 10 支业务路由
 各一次，外加一支带未声明字段 `_=170` 的 `/v13/quotes`、一次带多余 key 的 POST），11/11 有应答、
@@ -831,6 +935,12 @@ Ctrl+C，`stop()` 一定执行）。给 0 或负数在 CLI 门口就判死（`E1
 默认值是 `0.0`，于是文档里 `tstdx stream sh600519` 这种照抄写法必然以"0.0s 内未收到任何行情"
 收场，窗口长度本身就没给过任何数据机会（第 24 轮 G33）。
 
+`interval` 只挡下界（`validate_subscription` 判 `<= 0`），**没有上界**，所以异步流的
+`stop()` 不能靠"等这一次睡眠走完"收口：`AsyncQuoteStream` 的四处睡眠腿都按
+`_STOP_POLL_SECONDS`（0.05 秒）轮询停机位，`stop()` 的上界因此是"在飞的那一次取数 + 0.05 秒"，
+与 `interval` 无关。第 31 轮之前写成裸 `asyncio.sleep`，`interval=3600` 能把一次停机拖成
+一个小时（判据 `tests/streaming/test_async_stop_wake.py`，同步孪生核对同一张睡眠腿表）。
+
 ### StatefulQuoteStream / AsyncStatefulQuoteStream（生命周期对象）
 
 ```python
@@ -839,6 +949,13 @@ from tstdx.streaming import AsyncStatefulQuoteStream, StatefulQuoteStream
 
 `Client.stream` / `AsyncClient.stream` 返回的对象，轮询走调用方的 `UnifiedRuntime`；
 `state` 与 `failure_reason` 给出显式生命周期状态（`StreamState`）。
+
+两张面都支持上下文写法，进出各对应一次 `start()` / `stop()`：同步
+`with client.stream(...) as s:`，异步 `async with aclient.stream(...) as s:`。异步那半边
+是第 31 轮补上的——`AsyncQuoteStream` 此前没有 `__aenter__`/`__aexit__`，而同步孪生一直有，
+于是"同名异步镜像"在起止停这一格不同答案（判据
+`tests/streaming/test_stream_context_parity.py`，含块体抛错时照样收尾那一格）。块体抛错
+不会跳过收尾。
 
 ### QuoteStream / AsyncQuoteStream（轮询基类）
 

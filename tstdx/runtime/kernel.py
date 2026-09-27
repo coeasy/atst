@@ -71,6 +71,13 @@ class UnifiedRuntime:
         )
 
     def close(self) -> None:
+        """把收尾递给执行器——**只有它自己定义了** ``close()`` 的时候。
+
+        内置的 ``DirectProviderExecutor`` 不定义这个方法：家族客户端不在它身上，每一跳
+        都是构造 → ``try`` → ``finally: client.close()``。所以默认内核上这里是一次空转，
+        它服务的是注入执行器（自带连接池、心跳线程或别的外设）那条口子。判据
+        ``tests/runtime/test_close_chain_ownership.py``。
+        """
         close = getattr(self.executor, "close", None)
         if callable(close):
             close()

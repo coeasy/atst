@@ -93,7 +93,19 @@ class Client:
         self._owns_runtime = runtime is None
 
     def close(self) -> None:
+        """收尾本实例**自建**的内核；``runtime=`` 借来的那份归调用方。
+
+        它关不掉"连接池"，因为默认内核根本不跨调用持有连接（每次取数现场构造家族客户端、
+        ``finally`` 释放）。这条链今天兑现的是所有权口径与注入执行器的收尾口子，三张服务面
+        （HTTP lifespan、WS ``RuntimeJsonRpcHandler.close()``、MCP ``stop()``）都落在这里。
+        实测口径与判据见 ``tests/runtime/test_close_chain_ownership.py``。
+
+        关过一次就把所有权让出去（``_owns_runtime`` 置回 ``False``）：注入的执行器不必
+        自己防重复释放，``with`` 出口和显式 ``close()`` 抢着关也只关一次——与 MCP
+        ``stop()``、WS ``RuntimeJsonRpcHandler.close()`` 同一写法。
+        """
         if self._owns_runtime:
+            self._owns_runtime = False
             self.runtime.close()
 
     def __enter__(self) -> Client:
@@ -339,7 +351,9 @@ class Client:
 
         **默认的 ``provider="tdx"`` 已下线**：tdx 的 ``0x0537`` request/parser 仍为 inferred，
         客户端在发包前抛 :class:`NotImplementedFeature`（真机 golden 锁定前不通过结构化 API
-        发包）。需要当日分时请显式选一个声明了该能力的 Web Provider。
+        发包）。当日分时因此只能显式选一个声明该能力的 Web Provider：``tencent`` /
+        ``eastmoney`` / ``baidu``。一格 = 一次 HTTP 请求、一只代码；上游反爬时抛
+        :class:`AntiSpiderBlocked` 或 :class:`WebSourceError`，不会返回空序列冒充成功。
         """
         return self.runtime.minute(symbol, provider=provider, currentness=currentness)
 
@@ -443,7 +457,9 @@ class AsyncClient:
         self.stream_planner = StreamPlanner()
 
     async def close(self) -> None:
+        """与 :meth:`Client.close` 同一条口径：只关自己造的那份，而且只关一次。"""
         if self._owns_client:
+            self._owns_client = False
             await asyncio.to_thread(self.client.close)
 
     async def __aenter__(self) -> AsyncClient:

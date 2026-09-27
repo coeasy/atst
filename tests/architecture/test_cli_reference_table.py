@@ -112,7 +112,7 @@ def _landing(fn: Any) -> str:
         return "服务面宿主"
     if "_ClientRows" in names:
         return "内核·rows"
-    if {"TdxClient", "get_client"} & names:
+    if {"TdxClient", "get_client", "family_client"} & names:
         return "直连传输层"
     if {"FeedbackReporter", "UserStats"} & names:
         return "反馈"

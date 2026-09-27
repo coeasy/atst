@@ -196,10 +196,19 @@ class TestSync:
 # sync_daily capability（Client → DirectProviderExecutor）
 # --------------------------------------------------------------------------- #
 class _FakeTdx:
-    """最小 fake TDX 客户端：bars() 按 start 返回内存中的日线。"""
+    """最小 fake TDX 客户端：bars() 按内存中的日线应答，close() 记下被收尾的次数。
+
+    ``_tdx_client`` 交出的就是**客户端本身**——31-C3 之后释放动作只发生在执行器那道
+    :meth:`~tstdx.runtime.executor.DirectProviderExecutor._client_session` 保护区里，
+    所以这里不再自带 ``__enter__``/``__exit__``，只留一个被 ``finally`` 调到的 ``close``。
+    """
 
     def __init__(self, bars_by_symbol: dict[str, list[Bar]]) -> None:
         self._data = bars_by_symbol
+        self.closes = 0
+
+    def close(self) -> None:
+        self.closes += 1
 
     def bars(
         self,
@@ -228,23 +237,23 @@ class _FakeTdx:
         return window
 
 
-class _FakeTdxContext:
-    """``DirectProviderExecutor._tdx_client`` 替身：返回可 ``with`` 的 fake 客户端。"""
-
-    def __init__(self, client: _FakeTdx) -> None:
-        self._client = client
-
-    def __enter__(self) -> _FakeTdx:
-        return self._client
-
-    def __exit__(self, *exc: object) -> bool:
-        return False
-
-
-def _client(bars_by_symbol: dict[str, list[Bar]], *, root: Path | None) -> Client:
+def _client(
+    bars_by_symbol: dict[str, list[Bar]],
+    *,
+    root: Path | None,
+    fakes: list[_FakeTdx] | None = None,
+) -> Client:
     runtime = UnifiedRuntime(vipdoc_root=None if root is None else str(root))
-    # `_tdx_client` 现在收"这一跳的超时上界"（配置值与 deadline 剩余预算取小）。
-    runtime.executor._tdx_client = lambda _timeout: _FakeTdxContext(_FakeTdx(bars_by_symbol))
+
+    def _fake_tdx_client(_timeout: float) -> _FakeTdx:
+        # `_tdx_client` 现在收"这一跳的超时上界"（配置值与 deadline 剩余预算取小），
+        # 交出的是客户端本身；释放由执行器的保护区在 finally 里做。
+        fake = _FakeTdx(bars_by_symbol)
+        if fakes is not None:
+            fakes.append(fake)
+        return fake
+
+    runtime.executor._tdx_client = _fake_tdx_client
     return Client(runtime)
 
 
@@ -276,3 +285,16 @@ class TestSyncDailyCapability:
         assert out["600519"]["existed"] == 1
         read = _read_back(path)
         assert [b.datetime[:10] for b in read] == ["2026-01-02", "2026-01-05"]
+
+    def test_sync_daily_releases_its_client_once(self, vipdoc: Path) -> None:
+        """一只客户端服务整次批量落盘，用完**恰好**收尾一次——释放只在执行器那道保护区里。
+
+        ``sync_daily`` 会为每个 symbol 调一次 ``fetch``，但客户端是一次一建：若哪天有人
+        把它改成逐只建池，这里会先报出构造次数，而不是留下没人收尾的池。
+        """
+        bars = [_bar("2026-01-02", 10.0)]
+        fakes: list[_FakeTdx] = []
+        client = _client({"sh600519": bars, "sh600000": bars}, root=vipdoc, fakes=fakes)
+        client.call("sync_daily", ["600519", "600000"], root=str(vipdoc))
+        assert len(fakes) == 1, f"一次能力调用应当只建一份客户端：{len(fakes)}"
+        assert [fake.closes for fake in fakes] == [1], fakes

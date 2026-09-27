@@ -25,9 +25,13 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import time as _wall_clock
+from pathlib import Path
 from typing import Any
+
+import pytest
 
 from tstdx.errors import ConnectionFailed
 from tstdx.protocol.commands import Family
@@ -149,11 +153,11 @@ async def _drive_async(events: list[tuple[str, Any]]) -> list[tuple[str, Any]]:
                 clock.advance(payload)
                 continue
             if label == "fail":
-                await pool._mark_failure(slot, payload)
+                await pool._mark_failure(slot, payload, generation=slot.generation)
             elif label == "success":
-                await pool._mark_success(slot)
+                await pool._mark_success(slot, generation=slot.generation)
             elif label == "release":
-                await pool._release_probe_token(slot, None)
+                await pool._release_probe_token(slot, slot.generation)
             elif label == "allows":
                 allowed = await pool._circuit_allows(slot.host)
                 trace.append(("allows", allowed, _snapshot(slot.host, clock)))
@@ -188,11 +192,11 @@ def _drive_sync(events: list[tuple[str, Any]]) -> list[tuple[str, Any]]:
                 clock.advance(payload)
                 continue
             if label == "fail":
-                pool._mark_failure(slot, payload)
+                pool._mark_failure(slot, payload, generation=slot.generation)
             elif label == "success":
-                pool._mark_success(slot)
+                pool._mark_success(slot, generation=slot.generation)
             elif label == "release":
-                pool._release_probe_token(slot, None)
+                pool._release_probe_token(slot, slot.generation)
             elif label == "allows":
                 allowed = pool._circuit_allows(slot.host)
                 trace.append(("allows", allowed, _snapshot(slot.host, clock)))
@@ -239,3 +243,88 @@ def test_the_async_pool_shares_the_circuit_constants() -> None:
     assert async_module.CIRCUIT_OPEN_AT == OPEN_AT
     assert async_module.CIRCUIT_DEGRADED_AT == DEGRADED_AT
     assert async_module.BIZ_FAILURE_WEIGHT == sync_module.BIZ_FAILURE_WEIGHT
+
+
+#: 代际归属的四件套：两张池各一份，签名与函数体一起量。
+_ATTRIBUTION_METHODS = (
+    "_slot_is_current",
+    "_mark_failure",
+    "_mark_success",
+    "_release_probe_token",
+)
+
+
+def _attribution_defs(module: Any) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    """取一个传输模块里那三个代际归属方法的函数体（按名字，不按行号）。"""
+    path = Path(module.__file__)
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    found: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and node.name in _ATTRIBUTION_METHODS
+        ):
+            found[node.name] = node
+    missing = sorted(set(_ATTRIBUTION_METHODS) - set(found))
+    assert not missing, f"{path.name} 里找不到 {missing}——判据的射程已经对不上代码了"
+    return [found[name] for name in _ATTRIBUTION_METHODS]
+
+
+def _generation_default(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+    """``generation`` 这个形参的默认值现读：无默认 ⇒ 空字符串。"""
+    args = fn.args
+    positional = [*args.posonlyargs, *args.args]
+    positional_defaults = args.defaults
+    keyword_names = [a.arg for a in args.kwonlyargs]
+    for index, arg in enumerate(positional):
+        if arg.arg != "generation":
+            continue
+        offset = index - (len(positional) - len(positional_defaults))
+        return "" if offset < 0 else ast.unparse(positional_defaults[offset])
+    if "generation" in keyword_names:
+        defaults = args.kw_defaults
+        if defaults is None:
+            return ""
+        node = defaults[keyword_names.index("generation")]
+        return "" if node is None else ast.unparse(node)
+    raise AssertionError(f"{fn.name} 没有 generation 形参")
+
+
+@pytest.mark.parametrize("module", [sync_module, async_module], ids=["sync", "async"])
+def test_generation_attribution_cannot_be_omitted(module: Any) -> None:
+    """代际归属不许"不声明就放行"：``generation`` 必须是必填形参，且函数体里
+    不得出现任何把它与 ``None`` 比较的分支。
+
+    第 31 轮第 3 遍量到：两张池把"这个槽位还是不是当代"的检查写成了可跳过——
+    ``_mark_failure`` / ``_mark_success`` 的形参是 ``generation: int | None = None``，
+    同步 :meth:`ConnectionPool._slot_is_current` 开头一句 ``if generation is None:
+    return True``，异步两处用 ``generation is None or ...`` / ``generation is not None
+    and not ...``，:meth:`~tstdx.transport.pool.ConnectionPool._release_probe_token`
+    同一形状。漏传一次，HALF_OPEN 探测令牌与熔断计数就会照常推进一个已经退役的槽位。
+
+    分母现读（AST 扫全仓 ``tstdx/`` 与 ``tests/``）：四件套在生产链路上共 **45** 处
+    调用点（``_mark_failure`` 14 + ``_mark_success`` 8 + ``_release_probe_token`` 17 +
+    ``_slot_is_current`` 6）。其中 mypy 现报 **18** 处传的是类型上可为 ``None`` 的局部量，
+    且它们全都落在"租约没有建立起来"的那两个 ``except`` 分支上——赋值那一行没走完，那里
+    的 ``generation`` **必然是 ``None``**。也就是说这条宽松分支不是测试的简写，而是生产
+    链路在"取租约就失败"时的必经之路，而那恰恰是最该推进熔断的时刻。另有 15 处测试调用点
+    （13 处漏传 + 2 处显式 ``None``）靠这条默认活着。修法：形参必填，18 处按手边的
+    ``slot.generation`` 归属（槽位在租约存续期间不会被原地改写代际，见 ``pool.py`` 热更新
+    那段 ``old.leases == 0`` 的门），15 处测试随之改成显式。
+    """
+    offenders: list[str] = []
+    for fn in _attribution_defs(module):
+        label = f"{module.__name__.rsplit('.', 1)[-1]}::{fn.name}"
+        default = _generation_default(fn)
+        if default:
+            offenders.append(f"{label} 的 generation 仍有默认值 {default!r}：漏传即静默放行")
+        offenders += [
+            f"{label} 仍在把 generation 与 None 比较：{ast.unparse(node)}"
+            for node in ast.walk(fn)
+            if isinstance(node, ast.Compare)
+            and isinstance(node.left, ast.Name)
+            and node.left.id == "generation"
+            and any(isinstance(op, ast.Is | ast.IsNot) for op in node.ops)
+            and any(isinstance(c, ast.Constant) and c.value is None for c in node.comparators)
+        ]
+    assert offenders == [], "\n".join(offenders)

@@ -24,9 +24,10 @@ pytestmark = pytest.mark.unit
 
 
 class FakeTdxClient:
-    """可编程假 client（模拟 TdxClient 上下文管理器语义）。"""
+    """可编程假 client：直连命令现在只经 ``family_client`` 交出，收尾动作只有 ``close()``。"""
 
     behavior: dict[str, Any] = {}
+    closes: list[int] = []
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.init_kwargs = kwargs
@@ -34,11 +35,8 @@ class FakeTdxClient:
             FakeTdxClient.behavior.get("last_errors", [])
         )
 
-    def __enter__(self) -> FakeTdxClient:
-        return self
-
-    def __exit__(self, *exc: Any) -> bool:
-        return False
+    def close(self) -> None:
+        FakeTdxClient.closes.append(1)
 
     def quotes_snapshot(self, symbols: list[str]) -> list[dict[str, Any]]:
         return list(FakeTdxClient.behavior.get("quotes_snapshot", []))
@@ -53,10 +51,14 @@ class FakeTdxClient:
 
 @pytest.fixture()
 def fake_client(monkeypatch: pytest.MonkeyPatch) -> type[FakeTdxClient]:
-    import tstdx.client as client_mod
+    from tstdx.client import factory
 
-    monkeypatch.setattr(client_mod, "TdxClient", FakeTdxClient)
+    #: 注入点是工厂注册表，不是 ``tstdx.client.TdxClient`` 那个名字：直连命令在调用点经
+    #: ``get_client`` → 注册表构造，再交进 :func:`~tstdx.cli._common.family_client` 收尾，
+    #: 换名字上的绑定拦不住它（31-C4）。
+    monkeypatch.setitem(factory._CLIENT_REGISTRY, "stock", FakeTdxClient)
     FakeTdxClient.behavior = {}
+    FakeTdxClient.closes = []
     return FakeTdxClient
 
 
@@ -223,6 +225,8 @@ class TestListStartWired:
         assert rc == 0
         calls = fake_client.behavior["security_list_calls"]
         assert calls == [2500, 3500]  # start..start+count 步长 1000，末页不足即停
+        #: 两页共用一个客户端，用完由 ``family_client`` 收尾**恰好一次**（31-C4）。
+        assert len(fake_client.closes) == 1
 
     def test_short_first_page_stops(self, fake_client: type[FakeTdxClient]) -> None:
         fake_client.behavior = {"security_list": [{"code": "600000"}]}
@@ -257,20 +261,19 @@ class TestFeedbackSubcommand:
 
 
 class TestF10Subcommand:
-    """f10 子命令接线：默认列栏目目录；--file 下载并解析正文（mock get_client）。"""
+    """f10 子命令接线：默认列栏目目录；--file 下载并解析正文（假客户端注入注册表那一格）。"""
 
-    def _patch_get_client(self, monkeypatch: pytest.MonkeyPatch) -> type:
+    def _patch_f10_client(self, monkeypatch: pytest.MonkeyPatch) -> type:
         class FakeF10:
             calls: list[tuple[str, str | None]] = []
 
             def __init__(self, *a: Any, **kw: Any) -> None:
-                pass
+                self.closed = 0
 
-            def __enter__(self) -> FakeF10:
-                return self
-
-            def __exit__(self, *exc: Any) -> bool:
-                return False
+            def close(self) -> None:
+                #: 直连命令现在经 :func:`~tstdx.cli._common.family_client` 交出，
+                #: 收尾是那条保护区唯一的动作（31-C4）；没有这个方法 CLI 直接 exit 2。
+                self.closed += 1
 
             def catalog(self, symbol: str) -> list[dict[str, Any]]:
                 self.calls.append((symbol, None))
@@ -285,14 +288,16 @@ class TestF10Subcommand:
 
                 return parse_f10_text(raw)
 
-        import tstdx.client as client_mod
+        from tstdx.client import factory
 
-        monkeypatch.setattr(client_mod, "get_client", lambda kind, **kw: FakeF10())
+        #: 注入点在注册表那一格，不在 ``tstdx.client.get_client``：构造发生在调用点，
+        #: patch 包命名空间里那个名字拦不住已经绑定好的引用。
+        monkeypatch.setitem(factory._CLIENT_REGISTRY, "f10", FakeF10)
         FakeF10.calls = []
         return FakeF10
 
     def test_catalog_default(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeF10 = self._patch_get_client(monkeypatch)
+        FakeF10 = self._patch_f10_client(monkeypatch)
         rc = cli.main(["f10", "sh600519", "--json"])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
@@ -301,7 +306,7 @@ class TestF10Subcommand:
         assert FakeF10.calls == [("sh600519", None)]
 
     def test_file_download_and_parse(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        FakeF10 = self._patch_get_client(monkeypatch)
+        FakeF10 = self._patch_f10_client(monkeypatch)
         rc = cli.main(["f10", "sh600519", "--file", "cwbj.dat", "--json"])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
@@ -657,11 +662,11 @@ class TestProbeSubcommand:
         assert "0x053e" in capsys.readouterr().err  # usage 提示
 
     def test_probe_wiring_and_archive(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
-        import tstdx.client as client_mod
         import tstdx.protocol.prober as prober_mod
+        from tstdx.client import factory
 
         FakeTdxClient.behavior = {}
-        monkeypatch.setattr(client_mod, "TdxClient", FakeTdxClient)
+        monkeypatch.setitem(factory._CLIENT_REGISTRY, "stock", FakeTdxClient)
 
         created: dict[str, Any] = {}
 
@@ -702,10 +707,10 @@ class TestProbeSubcommand:
         assert created["archived"] is True  # ok → 归档 DRAFT
 
     def test_probe_not_ok_exits_1(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
-        import tstdx.client as client_mod
         import tstdx.protocol.prober as prober_mod
+        from tstdx.client import factory
 
-        monkeypatch.setattr(client_mod, "TdxClient", FakeTdxClient)
+        monkeypatch.setitem(factory._CLIENT_REGISTRY, "stock", FakeTdxClient)
 
         class FakeResult:
             ok = False

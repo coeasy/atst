@@ -647,6 +647,13 @@ class AsyncConnectionPool:
                 slot.conn.spec = self.spec
         if not slot.conn.connected:
             await slot.conn.connect()
+        #: 心跳/空闲回收者的唯一起跑点：池里第一次握住一条真 socket 就必须把它武装起来。
+        #: 同步池在 ``__init__`` 里起跑；异步池过去只在 ``__aenter__`` 起跑，而
+        #: ``AsyncTdxClient`` 家族走的是 ``open()``，从不进池的 ``async with``——于是
+        #: ``idle_timeout`` / ``heartbeat_interval`` 在真实客户端路径上是幻影旋钮
+        #: （第 31 轮第 2 遍实测：跑完一次请求 ``_hb is None``，``idle_timeout=0.2`` 也
+        #: 不回收）。判据 tests/transport/test_async_sweeper_arm.py。
+        self.start_heartbeat()
         slot.uses += 1
         return slot.conn
 
@@ -736,9 +743,9 @@ class AsyncConnectionPool:
                 return candidate
         return None
 
-    async def _release_probe_token(self, slot: AsyncSlot, generation: int | None) -> None:
+    async def _release_probe_token(self, slot: AsyncSlot, generation: int) -> None:
         """归还 HALF_OPEN 令牌，但不伪造任何主站健康证据。"""
-        if generation is not None and not await self._slot_is_current(slot, generation):
+        if not await self._slot_is_current(slot, generation):
             return
         async with self._lock:
             if slot.host.circuit == "half_open":
@@ -749,11 +756,11 @@ class AsyncConnectionPool:
         slot: AsyncSlot,
         exc: BaseException,
         *,
-        generation: int | None = None,
+        generation: int,
         conn: AsyncTcpConnection | None = None,
     ) -> None:
         """仅当产出该失败的代际仍是当代时才推进运行期健康。"""
-        current = generation is None or await self._slot_is_current(slot, generation)
+        current = await self._slot_is_current(slot, generation)
         if current:
             async with self._lock:
                 host = slot.host
@@ -779,11 +786,11 @@ class AsyncConnectionPool:
         self,
         slot: AsyncSlot,
         *,
-        generation: int | None = None,
+        generation: int,
         rtt_ms: float | None = None,
     ) -> None:
         """仅当代际仍有效时才清零运行期健康与熔断状态。"""
-        if generation is not None and not await self._slot_is_current(slot, generation):
+        if not await self._slot_is_current(slot, generation):
             return
         async with self._lock:
             host = slot.host
@@ -867,7 +874,7 @@ class AsyncConnectionPool:
                     await self._release_lease(slot, conn)
             except TdxError as exc:
                 last_exc = exc
-                await self._mark_failure(slot, exc, generation=generation, conn=conn)
+                await self._mark_failure(slot, exc, generation=slot.generation, conn=conn)
                 advice = exc.advice
                 if attempt + 1 >= max_attempts or not advice.retryable:
                     break
@@ -878,17 +885,17 @@ class AsyncConnectionPool:
                     pending_backoff = retry_backoff_delay(advice.backoff, attempt)
                 continue
             except asyncio.CancelledError:
-                await self._release_probe_token(slot, generation)
+                await self._release_probe_token(slot, slot.generation)
                 raise
             except Exception as exc:
                 last_exc = exc
-                await self._mark_failure(slot, exc, generation=generation, conn=conn)
+                await self._mark_failure(slot, exc, generation=slot.generation, conn=conn)
                 if attempt + 1 >= max_attempts:
                     break
                 pending_backoff = 0.05 * (attempt + 1)
                 continue
             except BaseException:
-                await self._release_probe_token(slot, generation)
+                await self._release_probe_token(slot, slot.generation)
                 raise
 
             await self._mark_success(
@@ -1114,11 +1121,11 @@ class AsyncConnectionPool:
             finally:
                 await self._release_lease(slot, conn)
         except asyncio.CancelledError:
-            await self._release_probe_token(slot, generation)
+            await self._release_probe_token(slot, slot.generation)
             await self._drop(slot, expected=conn)
             raise
         except BaseException:
-            await self._release_probe_token(slot, generation)
+            await self._release_probe_token(slot, slot.generation)
             await self._drop(slot, expected=conn)
             raise
 
@@ -1209,11 +1216,11 @@ class AsyncConnectionPool:
             finally:
                 await self._release_lease(slot, conn)
         except asyncio.CancelledError:
-            await self._release_probe_token(slot, generation)
+            await self._release_probe_token(slot, slot.generation)
             await self._drop(slot, expected=conn)
             raise
         except BaseException:
-            await self._release_probe_token(slot, generation)
+            await self._release_probe_token(slot, slot.generation)
             await self._drop(slot, expected=conn)
             raise
 
@@ -1291,19 +1298,19 @@ class AsyncConnectionPool:
                     idle = time.time() - (conn.stats.last_used or conn.stats.created_at)
                     if idle < probe_interval:
                         await self._release_lease(slot, conn)
-                        await self._release_probe_token(slot, generation)
+                        await self._release_probe_token(slot, slot.generation)
                         continue
                     try:
                         rtt = await conn.ping(self.heartbeat_cmd)
                     finally:
                         await self._release_lease(slot, conn)
                 except asyncio.CancelledError:
-                    await self._release_probe_token(slot, generation)
+                    await self._release_probe_token(slot, slot.generation)
                     raise
                 except Exception as exc:
-                    await self._mark_failure(slot, exc, generation=generation, conn=conn)
+                    await self._mark_failure(slot, exc, generation=slot.generation, conn=conn)
                 except BaseException:
-                    await self._release_probe_token(slot, generation)
+                    await self._release_probe_token(slot, slot.generation)
                     raise
                 else:
                     await self._mark_success(slot, generation=generation, rtt_ms=rtt)
@@ -1378,7 +1385,10 @@ class AsyncConnectionPool:
         await _await_cleanup_before_cancellation(cleanup_task)
 
     async def __aenter__(self) -> AsyncConnectionPool:
-        self.start_heartbeat()
+        #: 起跑点不在这里：唯一一处住在 ``_get_conn_locked``（第一次握住真 socket 时武装）。
+        #: 从 ``__aenter__`` 搬走是因为 ``AsyncTdxClient`` 家族走 ``open()``，从不进这道门，
+        #: 于是 ``idle_timeout`` / ``heartbeat_interval`` 在 shipped 异步面上是幻影旋钮
+        #: （G47，判据 tests/transport/test_async_sweeper_arm.py）。
         return self
 
     async def __aexit__(self, *exc: object) -> None:

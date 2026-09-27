@@ -21,6 +21,7 @@ import asyncio
 import contextlib
 import logging
 import threading
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -425,6 +426,28 @@ class QuoteStream:
 # AsyncQuoteStream (async base)
 # ---------------------------------------------------------------------------
 
+#: 停机唤醒的节奏（秒）。``_stop`` 是 :class:`threading.Event`，异步侧不能直接 await 它，
+#: 所以按这个粒度轮询它。它只决定 ``stop()`` 最多多等一小段，不是那条等待的上界。
+_STOP_POLL_SECONDS = 0.05
+
+
+async def _sleep_or_stop(stop: threading.Event, delay: float) -> None:
+    """可被 :meth:`AsyncQuoteStream.stop` 唤醒的异步睡眠。
+
+    形状对齐同步侧的 ``self._stop.wait(delay)``（:meth:`QuoteStream._poll_once`）：写
+    ``await asyncio.sleep(delay)`` 的话，``stop()`` 只能等这次睡眠自己走完，而
+    ``interval`` 只要 ``> 0`` 就合法（:func:`validate_subscription` 挡的是下界），于是一次
+    长间隔订阅会把停机拖成那个间隔那么久，调用方的取消也被 ``stop()`` 的 shield 循环记一笔
+    再吞掉。第 31 轮第 2 遍实测：``interval=3600`` 时 ``asyncio.wait_for(stop(), 1.0)``
+    连 15 秒守卫都顶穿。
+    """
+    deadline = time.monotonic() + max(0.0, float(delay))
+    while not stop.is_set():
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return
+        await asyncio.sleep(min(left, _STOP_POLL_SECONDS))
+
 
 class AsyncQuoteStream:
     """Async quote stream mirroring :class:`QuoteStream` on one event loop."""
@@ -520,6 +543,12 @@ class AsyncQuoteStream:
         它正在用的那份 owned runtime，而 ``_stop`` 已置位又让下一次 ``start()`` 起第二条
         worker 共享同一份 ``_subs``——与同步侧第 26 轮 F-91/F-92 要挡住的是同一件事。
         现在句柄只在 worker 确实跑完之后才清空，取消也不再被吞。
+
+        这一段到底要等多久，取决于 worker 剩下的那几条睡眠腿会不会被 ``_stop`` 叫醒：
+        四处睡眠全部走 :func:`_sleep_or_stop`，所以本方法的上界就是"在飞的那一次
+        ``to_thread`` 取数 + 最多一个轮询节拍"，与同步侧 ``stop(timeout=2.0)`` 量的是
+        同一段时间。写成裸 ``asyncio.sleep`` 时 ``interval`` 直接把停机时长顶到订阅参数
+        上（判据 tests/streaming/test_async_stop_wake.py；G41 判据七登记的刻度）。
         """
         self._stop.set()
         task = self._task
@@ -545,6 +574,12 @@ class AsyncQuoteStream:
             with contextlib.suppress(Exception):
                 runtime.close()
 
+    async def __aenter__(self) -> AsyncQuoteStream:
+        return await self.start()
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.stop()
+
     async def _run(self) -> None:
         while not self._stop.is_set():
             try:
@@ -554,12 +589,12 @@ class AsyncQuoteStream:
             except Exception as exc:  # noqa: BLE001 - never let the worker die silently
                 logger.exception("AsyncQuoteStream 轮询循环未预期异常（任务继续运行）")
                 self._dispatch_error(exc)
-                await asyncio.sleep(self._reconnect.next_delay())
+                await _sleep_or_stop(self._stop, self._reconnect.next_delay())
 
     async def _poll_once(self) -> None:
         subs = list(self._subs.values())
         if not subs:
-            await asyncio.sleep(0.2)
+            await _sleep_or_stop(self._stop, 0.2)
             return
         all_syms = [sym for sub in subs for sym in sub.symbols]
         try:
@@ -572,12 +607,15 @@ class AsyncQuoteStream:
             self._reconnect.success()
         except TdxError as exc:
             self._dispatch_error(exc)
-            await asyncio.sleep(self._reconnect.next_delay())
+            await _sleep_or_stop(self._stop, self._reconnect.next_delay())
             return
 
         qmap = {str(row.get("code", "")): row for row in _quote_rows(result)}
         _dispatch_round(subs, qmap, self._warned_bad_symbols)
-        await asyncio.sleep(min((sub.interval for sub in subs), default=1.0))
+        #: 只按最快的那条订阅打点；这一格必须是 stop 可唤醒的——``interval`` 没有上界
+        #: （``validate_subscription`` 只挡 ``<= 0``），写成裸 sleep 就等于把停机时间交给
+        #: 订阅参数，第 31 轮第 2 遍实测 ``interval=3600`` 时 ``stop()`` 顶穿 15 秒守卫。
+        await _sleep_or_stop(self._stop, min((sub.interval for sub in subs), default=1.0))
 
     def _dispatch_error(self, exc: Exception) -> None:
         for sub in list(self._subs.values()):

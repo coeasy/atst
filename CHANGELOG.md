@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（逻辑审查第 5 轮：WebSocket 实时订阅控制面贯通 + 四面投影 / 文档一致性门禁对齐）
+
+同一组判据：主体流程全部联通 / 核心链路无断链 / 无孤儿逻辑 / 无死循环 / 前后端贯通。本轮补齐
+WS 实时订阅这条**此前断链**的链路（README/接口文档早已宣称 WS 有 subscribe/unsubscribe/list 控制面
+与 snapshot/tick/error 推送，但 `runtime_ws.py` 只有 req/res、从未实现），并顺带把因此变红的门禁
+重新拉绿；对外契约零变化（capability 名称、`Client`/`AsyncClient` 签名、三面路由形状、
+`DIRECT_BINDINGS` 数量、`providers` 注册表均不动）。
+
+**第 1 轮 · WebSocket 实时订阅控制面（subscribe / unsubscribe / list + push）**
+
+- `integration/runtime_ws.py` 的 `RuntimeJsonRpcHandler` 新增流式控制面：`subscribe`（白名单
+  `symbols/provider/interval/diff_only/max_queue`）起一条进程内 `AsyncStatefulQuoteStream`，
+  回 `{"subscription_id","status":"subscribed"}` 并向本连接推送 `push` 帧（`type=snapshot/tick/
+  error`）；`unsubscribe`（`id`）停流；`list`（`{}`）只读本连接订阅与状态。订阅表**每条连接私有**
+  （`serve_runtime_ws` 为每条连接造一份 handler），连接断开经 `stop_all_subscriptions` 收掉，不泄漏。
+- `integration/runtime_ws_server.py`：`bind_connection` 改用 `asyncio.get_running_loop()`（原
+  `get_event_loop()` 在 3.12 已弃用且可能造出不属于本连接的循环，使推送帧石沉大海）；每条连接
+  造独立 handler，`finally` 调 `stop_all_subscriptions` 收尾（均以 `getattr` 守卫，避免替身 handler
+  缺方法时 `AttributeError`）。
+- `_list_subscriptions` 对实时流状态形状容错：真实 `stream.state` 是 `StreamState` 枚举（取 `.value`），
+  但也容忍裸字符串 / 缺属性，不再因状态形状差异把只读的 `list` 吞成 `E9000`。错误推送帧去掉顶层无
+  意义的 `"code": None`，错误码以 `error.data.code` 为准（与其它三面同口径）。
+- 判据：`tests/integration/test_runtime_ws_streaming.py`（新，假流不触网，端到端验 subscribe→
+  snapshot 推送 / list / unsubscribe 生命周期 / 未知字段 `-32602`）；`tests/integration/
+  test_runtime_ws_server_transport.py` 相关传输判据；`tests/runtime/test_wire_declared_fields.py`
+  样本补齐 `id/interval/diff_only/max_queue`；`wire_fields.WS_PARAMS_FIELDS` 新增三格白名单。
+
+**第 2 轮 · 四面投影门禁 + 文档一致性门禁复绿**
+
+- `tests/architecture/test_face_exposure_projection.py` 的 `_WS_GENERIC_METHODS` 纳入
+  `subscribe`/`unsubscribe`/`list`：它们与 `query`/`runtime.*` 同属「非 capability 投影」入口，
+  `_ws_methods()` 的差集判据原本因多出的三个方法抛 `AssertionError`，连带拖红 http/mcp/cli 的
+  投影 / 字段移动 / 旋钮同进同退 / 派生命名等判据；纳入后整文件复绿。
+- `tests/architecture/test_doc_code_consistency.py` 的 `_ws_methods()` 直接 AST 解析 `_dispatch`
+  取**全部分派方法名（13 个）**，故 `docs/api/README.md` 与 `docs/api/interfaces.md` 的 WS 方法
+  清单必须枚举完整的 13 个方法（含 subscribe/unsubscribe/list）：`docs/api/README.md` 模块表
+  改写为「13 方法」完整清单；`docs/api/interfaces.md` 的「WebSocket JSON-RPC（N 方法）」小节改为
+  13 方法、正文补 `query`/`runtime.*` 说明，并**新增「WebSocket 实时订阅」小节**（控制方法白名单、
+  `push` 帧 `params.type` 取值、一段可运行订阅示例）。
+- 死循环专项复查：`client/_mixin.py` 的 trampoline 驱动器以 `StopIteration` 收口（有限模板，非死
+  循环）；`transport/ratelimit.py` 令牌桶在循环内重做「`requested > burst` 即抛」的容量守卫（旧实现
+  可在 `set_rate` 收缩期间永久停住，已修）；`web/_base_http.py` 按 `deadline` 截断、`web/eastmoney/
+  adapters.py` 按 `_MAX_PAGES`/空批收口。四面均无真正不收敛循环。
+
+**收口读数**（本机 Windows + Python 3.12；第 1/2 轮全部修完之后的同一棵工作树）：`tests/architecture`
+全套门禁复绿、`tests/integration` WS 流式与传输判据全绿；新增/修改判据随上述条目落地；对外契约未变。
+
 ### Fixed（逻辑审查第 4 轮：换三个新角度各查一遍 —— 资源生命周期 / 错误信封各面 / 四面入口保留键）
 
 同一组判据：主体流程全部联通 / 核心链路无断链 / 无孤儿逻辑 / 无死循环 / 前后端贯通。本轮**换

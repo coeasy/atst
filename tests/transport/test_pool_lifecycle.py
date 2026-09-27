@@ -146,7 +146,7 @@ def test_background_speedtest_cannot_overwrite_live_health(monkeypatch, seed_poo
     monkeypatch.setattr(pool_mod.threading, "Thread", _RecordingThread)
 
     slot = pool._slots[0]
-    pool._mark_failure(slot, ConnectionFailed("trigger"))
+    pool._mark_failure(slot, ConnectionFailed("trigger"), generation=slot.generation)
     assert entered.wait(timeout=2)
     assert len(workers) == 1
 

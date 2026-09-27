@@ -30,6 +30,7 @@ from tstdx.cli.parser import build_parser
 from tstdx.config.schema import Config, CoreConfig, HostsConfig
 from tstdx.providers import PROVIDERS
 from tstdx.result import ResultMeta
+from tstdx.transport.pool import pool_settings_from_config
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -153,29 +154,40 @@ def test_no_business_command_defaults_its_timeout_to_a_literal() -> None:
 def test_raw_transport_command_reads_hosts_and_timeout_from_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """直连命令的连接参数：内核那一份翻译 + 显式标志优先，且用完必须 ``close()`` 一次。
+
+    31-C4 之前这一格断的是 ``captured == {"hosts": …, "timeout": …}``——那把 CLI 自己
+    手抄的两键当成了契约，正好盖住"五个 TOML 键在这支命令上蒸发"。现在断的是
+    "键集合 == 那条翻译的键集合 + ``hosts``"，并把注入点从 ``tstdx.client.TdxClient``
+    换到工厂注册表（直连命令经 :func:`~tstdx.cli._common.family_client` 构造，
+    ``with client`` 那一形状已不在）。
+    """
     cfg = Config(core=CoreConfig(timeout=2.5), hosts=HostsConfig(servers=[["10.0.0.1", 7709]]))
     monkeypatch.setattr("tstdx.config.get_config", lambda: cfg)
     captured: dict[str, Any] = {}
+    built: list[Any] = []
 
     class _Raw:
         def __init__(self, **kwargs: Any) -> None:
             captured.update(kwargs)
+            self.closed = 0
+            built.append(self)
 
-        def __enter__(self) -> _Raw:
-            return self
-
-        def __exit__(self, *exc: Any) -> bool:
-            return False
+        def close(self) -> None:
+            self.closed += 1
 
         def block_quotes(self, *_: Any, **__: Any) -> list[dict[str, Any]]:
             return []
 
-    import tstdx.client as client_pkg
+    from tstdx.client import factory
 
-    monkeypatch.setattr(client_pkg, "TdxClient", _Raw)
+    monkeypatch.setitem(factory._CLIENT_REGISTRY, "stock", _Raw)
     args = build_parser().parse_args(["blocks", "0"])
     assert runtime_commands._cmd_blocks(args) == 0
-    assert captured == {"hosts": [["10.0.0.1", 7709]], "timeout": 2.5}
+    assert captured["hosts"] == [["10.0.0.1", 7709]]
+    assert captured["timeout"] == 2.5
+    assert set(captured) == set(pool_settings_from_config(cfg)) | {"hosts"}
+    assert [c.closed for c in built] == [1], "CLI 保护区没收尾，或收尾了不止一次"
 
 
 def test_stream_forwards_provider_and_connection_args(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -281,8 +293,55 @@ def test_helpers_keep_explicit_flags_ahead_of_config(monkeypatch: pytest.MonkeyP
     assert _client_kwargs(args)["timeout"] == 1.0
 
     empty = argparse.Namespace(host=[], timeout=None)
-    assert _transport_kwargs(empty) == {"hosts": [["10.0.0.1", 7709]], "timeout": 9.0}
+    settings = _transport_kwargs(empty)
+    assert settings["hosts"] == [["10.0.0.1", 7709]]
+    assert settings["timeout"] == 9.0
     assert _client_kwargs(empty) == {"hosts": None, "timeout": None}
+
+
+def test_direct_transport_commands_take_the_kernels_translation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CLI 那六支直连命令必须用**内核那一份** config→transport 翻译，不是自己抄两键。
+
+    第 31 轮 31-C4 实测到的形状：``_transport_kwargs`` 只点名 ``hosts`` 与 ``timeout``，
+    于是 ``[hosts] slots_per_host`` / ``[core] max_retries`` / ``[core]
+    heartbeat_interval`` / ``[rate_limit]`` / ``[security] use_tls`` 在五支命令
+    （``probe`` / ``blocks`` / ``list`` / ``goods`` / ``f10`` / ``quotes-snapshot``）上
+    当场蒸发，而同一个键在行情主链路上是生效的——与 G46 在执行器量到的是同一条断链，
+    只是换了张面。而 :func:`~tstdx.transport.pool.pool_settings_from_config` 自己的
+    docstring 那时就写着"任何手工建池的调用方都走这里"，那句话在 CLI 面上是假的。
+
+    这里把翻译换成一个可辨认的哨兵字典：只要 CLI 侧任何一处绕过它自己拼旋钮，
+    哨兵就少一格、断言即红。标量键逐字比对，``rate_limiter`` 用哨兵身份比对——
+    限流器没有 ``__eq__``，比它的属性会把"同一条翻译"重新退化成"两个手抄清单"。
+    """
+    sentinel = object()
+    translated = {
+        "slots_per_host": 4,
+        "timeout": 9.0,
+        "heartbeat_interval": 11.0,
+        "max_retries": 3,
+        "rate_limiter": sentinel,
+        "use_tls": False,
+    }
+    cfg = Config(core=CoreConfig(timeout=9.0), hosts=HostsConfig(servers=[["10.0.0.1", 7709]]))
+    monkeypatch.setattr("tstdx.config.get_config", lambda: cfg)
+    monkeypatch.setattr(
+        "tstdx.transport.pool.pool_settings_from_config", lambda _cfg: dict(translated)
+    )
+
+    got = _transport_kwargs(argparse.Namespace(host=[], timeout=None))
+    assert got == {**translated, "hosts": [["10.0.0.1", 7709]]}
+    assert got["rate_limiter"] is sentinel, "CLI 自己造了限流器，没有用那一条翻译"
+
+    #: 显式 ``--host`` / ``--timeout`` 仍然赢，且只赢它自己那一格。
+    over = _transport_kwargs(argparse.Namespace(host=["1.2.3.4:5555"], timeout=1.0))
+    assert [(e.host, e.port) for e in over["hosts"]] == [("1.2.3.4", 5555)]
+    assert over["timeout"] == 1.0
+    assert {k: v for k, v in over.items() if k not in {"hosts", "timeout"}} == {
+        k: v for k, v in translated.items() if k not in {"timeout"}
+    }
 
 
 def test_no_command_declares_an_option_it_does_not_consume() -> None:

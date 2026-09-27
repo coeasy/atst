@@ -333,7 +333,23 @@ class TcpConnection:
         sock = self._require()
         chunks: list[bytes] = []
         remaining = size
+        #: 墙钟截止。``sock.settimeout`` 量的是**单次 recv 的空档**，每收到 1 字节就重新
+        #: 武装，所以逐字节吐数据的对端永远撞不到它：声明 ``timeout=0.4s`` 的调用方在
+        #: 第 31 轮第 2 遍实测里读 ``_recv_exact(32768)``（32768 = 单帧上限，由对端的
+        #: zip_size 决定）始终没有返回。池的重试上界按 attempt 计，每个 attempt 本身
+        #: 无界，兜不住这一格。异步孪生用一条 ``wait_for`` 包住整个 ``readexactly``，
+        #: 本来就有墙钟——同步面在这一刀之前严格更弱。
+        deadline = time.monotonic() + self.timeout
         while remaining > 0:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                self.close()
+                raise ReadTimeout(
+                    f"读取超时({self.timeout}s): 还需 {remaining} 字节",
+                    context={"host": self.host, "port": self.port, "remaining": remaining},
+                )
+            #: 只在预算比声明超时更窄时收紧，默认路径逐字节不变。
+            sock.settimeout(min(self.timeout, left))
             try:
                 chunk = sock.recv(min(_RECV_CHUNK, remaining))
             except (TimeoutError, socket.timeout) as exc:  # noqa: UP041 - 显式双分支保 3.9+ 兼容（T1）
@@ -341,6 +357,10 @@ class TcpConnection:
                 # 3.9- 两者不同且 socket.timeout 是 OSError 子类，显式列出
                 # 保证归类为 ReadTimeout（而非误入 OSError 分支变成
                 # ConnectionClosed），ReadTimeout 的 advice 才能被消费。
+                #: 这一分支不 close（与异步孪生同形：调用方自己决定丢不丢这条连接），
+                #: 所以循环里为墙钟收紧出来的 ``min(self.timeout, left)`` 必须由这里复原——
+                #: 否则残留的那点余量会交给下一条帧读取，读预算凭空变成几十毫秒。
+                sock.settimeout(self.timeout)
                 raise ReadTimeout(
                     f"读取超时({self.timeout}s): 还需 {remaining} 字节",
                     context={"host": self.host, "port": self.port, "remaining": remaining},
@@ -361,6 +381,11 @@ class TcpConnection:
                 )
             chunks.append(chunk)
             remaining -= len(chunk)
+        #: 读满即复原：循环里为了墙钟截止可能把 socket 调得比 ``self.timeout`` 更紧，
+        #: 而这条连接接下来会被复用（下一帧、下一个请求），不复原就把一次成功读取的
+        #: 残余预算留给后来者。剩下的三条失败路径里，``close()`` 掉连接的两格不必复原，
+        #: 唯一留着连接的那格（逐次空档超时）在抛错前自己复原了。
+        sock.settimeout(self.timeout)
         data = b"".join(chunks)
         self.stats.bytes_recv += len(data)
         return data

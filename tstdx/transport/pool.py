@@ -458,9 +458,7 @@ class ConnectionPool:
             if slot.conn is conn:
                 slot.conn = None
 
-    def _slot_is_current(self, slot: Slot, generation: int | None) -> bool:
-        if generation is None:
-            return True
+    def _slot_is_current(self, slot: Slot, generation: int) -> bool:
         with self._lock:
             return (
                 not slot.retired
@@ -474,7 +472,7 @@ class ConnectionPool:
         slot: Slot,
         exc: BaseException,
         *,
-        generation: int | None = None,
+        generation: int,
         conn: TcpConnection | None = None,
     ) -> None:
         current = self._slot_is_current(slot, generation)
@@ -571,7 +569,7 @@ class ConnectionPool:
         self,
         slot: Slot,
         *,
-        generation: int | None = None,
+        generation: int,
         rtt_ms: float | None = None,
     ) -> None:
         if not self._slot_is_current(slot, generation):
@@ -629,9 +627,9 @@ class ConnectionPool:
                 return candidate
         return None
 
-    def _release_probe_token(self, slot: Slot, generation: int | None) -> None:
+    def _release_probe_token(self, slot: Slot, generation: int) -> None:
         """归还 HALF_OPEN 令牌，不伪造任何主站健康证据。"""
-        if generation is not None and not self._slot_is_current(slot, generation):
+        if not self._slot_is_current(slot, generation):
             return
         with self._lock:
             if slot.host.circuit == "half_open":
@@ -697,7 +695,7 @@ class ConnectionPool:
             except TdxError as exc:
                 last_exc = exc
                 self.stats.failures += 1
-                self._mark_failure(slot, exc, generation=leased_generation, conn=leased_conn)
+                self._mark_failure(slot, exc, generation=slot.generation, conn=leased_conn)
                 advice = exc.advice
                 if attempt + 1 >= max_attempts or not advice.retryable:
                     break
@@ -711,7 +709,7 @@ class ConnectionPool:
                 continue
             except Exception as exc:
                 last_exc = exc
-                self._mark_failure(slot, exc, generation=leased_generation, conn=leased_conn)
+                self._mark_failure(slot, exc, generation=slot.generation, conn=leased_conn)
                 if attempt + 1 >= max_attempts:
                     break
                 self.stats.retries += 1
@@ -720,7 +718,7 @@ class ConnectionPool:
             except BaseException:
                 # KeyboardInterrupt/SystemExit 属于控制流：租约已由上下文管理器归还，
                 # 只释放本请求的 HALF_OPEN 令牌，原样传播。
-                self._release_probe_token(slot, leased_generation)
+                self._release_probe_token(slot, slot.generation)
                 raise
 
             self.stats.requests += 1
@@ -868,10 +866,11 @@ class ConnectionPool:
         try:
             conn, generation = self._acquire_lease(slot)
         except TdxError as exc:
-            self._mark_failure(slot, exc, generation=generation, conn=conn)
+            #: 租约没建立起来，就没有"租约代际"可归属；槽位对象在手，按它自己的代际推进。
+            self._mark_failure(slot, exc, generation=slot.generation, conn=conn)
             raise
         except BaseException:
-            self._release_probe_token(slot, generation)
+            self._release_probe_token(slot, slot.generation)
             raise
 
         first_exc: TdxError | None = None
@@ -993,10 +992,11 @@ class ConnectionPool:
         try:
             conn, generation = self._acquire_lease(slot)
         except TdxError as exc:
-            self._mark_failure(slot, exc, generation=generation, conn=conn)
+            #: 租约没建立起来，就没有"租约代际"可归属；槽位对象在手，按它自己的代际推进。
+            self._mark_failure(slot, exc, generation=slot.generation, conn=conn)
             raise
         except BaseException:
-            self._release_probe_token(slot, generation)
+            self._release_probe_token(slot, slot.generation)
             raise
 
         failed: TdxError | None = None

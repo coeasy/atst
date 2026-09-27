@@ -133,6 +133,12 @@ python_version = "3.10"
 warn_unused_configs = true
 ignore_missing_imports = false
 check_untyped_defs = true
+# 这道门禁看的是本包自己的注解，不看第三方 stub：CI 的 type-check 作业只装 ``.[dev]``
+# （无 pandas/numpy/fastapi），而 ``make install`` 推荐的 ``.[all,dev]`` 会把 numpy 2.5 的
+# stub 装进来——它用 PEP 695 的 ``type`` 语句写，在 ``python_version = "3.10"`` 下 mypy
+# 连解析都过不去，直接以 ``[syntax]`` 崩掉整道门禁（第三方错误，本仓库无处可注解）。
+# 写在这一处而不是 Makefile/CI 的命令行里，是为了让三个入口读同一个口径。
+no_site_packages = true
 
 [[tool.mypy.overrides]]
 module = [

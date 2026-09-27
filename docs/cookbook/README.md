@@ -42,9 +42,24 @@
 
 | capability | 返回 | 可用 Provider | 适用 |
 |---|---|---|---|
-| `minute` | 当日 1 分钟分时快照 | tdx / tencent / eastmoney / baidu | 盘中盯当日分时 |
+| `minute` | 当日 1 分钟分时快照 | tencent / eastmoney / baidu（tdx 声明但**已下线**，一调即抛 `NotImplementedFeature`） | 盘中盯当日分时 |
 | `minute_web` | 当日分时（同源，不经 TDX）| tencent | 明确只要 HTTP 源 |
 | `minute_klines` | 跨日分钟 **K 线**（Bar 序列）| tencent / eastmoney | 历史多日分钟 K 线 |
 
 一句话：**要 K 线用 `minute_klines`，要当日分时用 `minute`，要强制 HTTP 分时用 `minute_web`**；
 换源只能显式指定 `provider=` 或 `FallbackPolicy`，不会自动发生。
+
+```python
+from tstdx import Client
+
+with Client() as client:
+    # 当日分时只能走 Web Provider：tdx 的 0x0537 仍是 inferred 命令，发包前即拦下。
+    points = client.minute("000001", provider="tencent").data
+    ticks = client.trades("000001", provider="tencent").data
+```
+
+`minute` / `trades` 在 Web Provider 上是**单只代码一次请求**：`Client` 的语义字段会按实现
+自己的形参绑定，一批代码不会被悄悄拆成第一只，实现不收的字段（例如 `trades` 的
+`count` / `start`——腾讯逐笔按 `max_pages` 分页）会当场报 `ValidationError` 而不是被丢掉。
+分时与逐笔都属"盘中才有意义"的 Web 源，上游反爬时抛 `AntiSpiderBlocked`（`E7010`）或
+`WebSourceError`（`E7000`），不会伪装成空数组。

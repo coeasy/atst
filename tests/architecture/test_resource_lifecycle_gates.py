@@ -763,14 +763,19 @@ UNBOUNDED_SHUTDOWN_AWAITS: dict[str, str] = {
     ),
     "tstdx/streaming/base.py::AsyncQuoteStream.stop": (
         "``await asyncio.shield(task)``（``while not task.done()`` 里那一格）：等的是 poll "
-        "worker 自己跑到循环顶读到已置位的 ``_stop``。它**有**上界，但刻度写得出、数字写不出："
-        "① worker 最多还有一次在飞的 ``asyncio.to_thread(runtime.quotes, ...)``，``to_thread`` "
-        "不可取消，它的上界由池的 socket 超时与逐台故障转移给（池那一侧由判据二与本判据其余格"
-        "收住）；② 那一轮若以 ``TdxError`` 收场，``_poll_once`` 还要 "
-        "``await asyncio.sleep(self._reconnect.next_delay())``，``ReconnectPolicy`` 现读 "
-        "``cap=30.0``（:file:`tstdx/streaming/base.py` 构造处）。取消不打断这段排空——"
-        "按 ``_await_cleanup_before_cancellation`` 同一条口径记一笔再回到同一个 await，排空后"
-        "把取消原样抛回。填一个更小的数字就得同时替 ① 伪造一个上界，那正是本仓拒绝的写法。"
+        "worker 收尾。第 31 轮把 worker 的四处睡眠腿全改走 :func:`_sleep_or_stop`（轮询 "
+        "``_stop``，``_STOP_POLL_SECONDS = 0.05``），于是这一格的上界既写得出刻度也写得出"
+        "数字：① worker 最多还有一次在飞的 ``asyncio.to_thread(runtime.quotes, ...)``，"
+        "``to_thread`` 不可取消，它的上界由池的 socket 超时与逐台故障转移给（那一侧由判据二"
+        "与本判据其余格收住）；② 之后最多 ``_STOP_POLL_SECONDS``（现读 0.05s）睡眠腿自己醒。"
+        "行为刻度见 :file:`tests/streaming/test_async_stop_wake.py`（``STOP_BOUND_SECONDS = "
+        "1.0``，含 ① 用脚本化 runtime 排除掉的那一格）。修复前这里还要多记两条：``_poll_once``"
+        "失败退避睡的是 ``asyncio.sleep(self._reconnect.next_delay())``（``ReconnectPolicy`` "
+        "现读 ``base=1.0, cap=30.0``），``_run`` 按订阅 ``interval`` 睡觉而 "
+        "``validate_subscription`` 只挡 ``interval <= 0``、没有上界——实测 ``interval=3600`` "
+        "时 ``stop()`` 顶穿 15 秒墙钟守卫（``Temp/g47_before.out``）。这两条现在都落在 ①② 里。"
+        "取消不打断这段排空——按 ``_await_cleanup_before_cancellation`` 同一条口径记一笔再回到"
+        "同一个 await，排空后把取消原样抛回。"
     ),
 }
 

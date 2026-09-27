@@ -13,7 +13,9 @@ WS 名单有两种形状（``docs/api/README.md`` 的括号清单、``docs/api/i
 事实文档里反引号写出的**斜杠**路径（``facade/api.py`` 那种文件名形状）同样要落位——
 按仓库根 / ``tstdx/`` / ``docs/`` 三个根各试一次；只有同一逻辑块（段落 / 列表项 / 表格行）
 里写明删除史、或该目录由代码在运行期自建的，才允许以死路径出现。F-67 那整节虚构的
-"门面层边界"正是被"只认点号形状"漏掉的。
+"门面层边界"正是被"只认点号形状"漏掉的。调用链之外的最后一格是**参数槽**：文档里写出的
+``get_client("...")`` kind 必须与工厂注册表的键集合双向相等——幻影 kind 与漏写的真 kind
+都红。
 历史快照（``docs/archive/``、``docs/adr/``、``DESIGN.md``）记录的是当时
 语境，不参与门禁。
 """
@@ -510,6 +512,64 @@ def test_the_member_ruler_itself_sees_the_router_chain() -> None:
     phantom, real = hit[0].split(".")[1:]
     assert phantom not in _production_members(), f"{phantom} 已经复活，正控失效"
     assert real in _production_members(), f"{real} 不在生产代码里，正控抓不到区分度"
+
+
+# --------------------------------------------------------------------------
+# 工厂 kind 字面量（调用链之外的那一格：参数槽）
+# --------------------------------------------------------------------------
+
+#: 上一条尺子管的是调用链上的**成员名**；`get_client("std")` 那种 bug 全在**参数槽**里，
+#: 成员名 `get_client` 真实存在，链的形状也不符合要求，于是"照抄即 ValueError"的示例在
+#: 使用接口文档里活了下来。工厂的 kind 是唯一一张真值表（`_CLIENT_REGISTRY`），所以这里
+#: 连"写了的必须真存在"都不必单独判——直接双向对上：文档里出现的 kind 集合必须与注册表
+#: 的键集合**相等**，多一个幻影少一个新 kind 都红。
+_DOC_FACTORY_KIND = re.compile(r"get_client\(\s*[\"']([A-Za-z0-9_\-]+)[\"']")
+
+
+@functools.lru_cache(maxsize=1)
+def _factory_kinds() -> frozenset[str]:
+    from tstdx.client.factory import _CLIENT_REGISTRY
+
+    return frozenset(_CLIENT_REGISTRY)
+
+
+def _factory_kind_findings() -> tuple[list[str], int]:
+    """返回 ``(违约清单, 扫到的 kind 字面量条数)``。"""
+    documented: set[str] = set()
+    found: list[tuple[str, str]] = []
+    scanned = 0
+    for path in chain_docs():
+        rel = path.relative_to(ROOT).as_posix()
+        for block in logical_blocks(path.read_text(encoding="utf-8")):
+            for kind in _DOC_FACTORY_KIND.findall(block):
+                scanned += 1
+                documented.add(kind)
+                found.append((rel, kind))
+    offenders = [
+        f"{rel}: `get_client({kind!r})` 不是工厂认得的 kind"
+        for rel, kind in found
+        if kind not in _factory_kinds()
+    ]
+    undocumented = sorted(_factory_kinds() - documented)
+    if undocumented:
+        offenders.append(f"工厂有 kind 没写进文档: {undocumented}")
+    return offenders, scanned
+
+
+def test_documented_factory_kinds_match_the_registry() -> None:
+    offenders, scanned = _factory_kind_findings()
+    assert scanned > 0, '活文档里一条 get_client("...") 都没扫到，说明扫描自身失效了'
+    assert _factory_kinds(), "注册表为空——判据失去分母"
+    assert offenders == [], "\n".join(offenders)
+
+
+def test_the_factory_kind_ruler_itself_sees_a_phantom() -> None:
+    """正控：这套判据必须真的认得它要抓的那一格，否则它可能只是在空转。"""
+    hit = _DOC_FACTORY_KIND.findall('`get_client("std")` 与 `get_client("async")`')
+    assert hit == ["std", "async"], hit
+    registry = _factory_kinds()
+    assert "std" not in registry and "async" not in registry, "幻影 kind 已复活，正控失效"
+    assert hit[0] not in registry and len(registry) >= 5, registry
 
 
 # --------------------------------------------------------------------------

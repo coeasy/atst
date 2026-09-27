@@ -5,12 +5,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import inspect
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
-from ..catalog.capability import binding_for, validate_call
+from ..catalog.capability import binding_for, call_kwargs_for, implementation_for, validate_call
 from ..config import Config
 from ..diagnostics import WarningCode, record_warning, warning_sink
 from ..domain.symbol import normalize_symbol
@@ -171,6 +174,76 @@ def _strict_requested(plan: QueryPlan) -> bool:
     return strict
 
 
+#: 语义字段 → 实现形参的唯一改名表。``QuerySpec`` 用复数存"一批代码"，单次实现的
+#: 形参按单数收；除这一格外两边同名，所以这座桥只需要一条改名。加一格之前必须先有
+#: 实现真的收那个名字，否则 ``tests/architecture/test_semantic_payload_bridge.py`` 即红。
+_SEMANTIC_FIELD_RENAMES: Mapping[str, str] = MappingProxyType({"symbols": "symbol"})
+
+#: 会替调用方说话、因而必须抵达实现的 spec 字段。其余字段（``capability`` /
+#: ``provider`` / ``channel`` / ``currentness`` / ``deadline_ms`` /
+#: ``schema_version`` / ``options``）是**规划**输入，不是实现入参。
+_SEMANTIC_CALL_FIELDS: tuple[str, ...] = ("symbols", "period", "count", "start", "adjustment")
+
+
+def _semantic_call_payload(plan: QueryPlan, meta: Any) -> tuple[list[Any], dict[str, Any]]:
+    """把 QuerySpec 的语义字段绑定成实现自己的关键字入参。
+
+    核心能力的便捷路径不做 raw payload 约定：``Client.minute("000001",
+    provider="tencent")`` 把代码写在 ``spec.symbols`` 里，执行器在这里同时握着执行
+    元数据与实现签名，一绑就是调用方的入参。缺了这一步，声明了该能力的 Web Provider
+    格子会在规划通过之后、任何 I/O 之前撞上 ``missing a required argument:
+    'symbol'``——契约写在文档里、链路却是断的（第 30 轮实测）。
+    """
+    impl = implementation_for(plan.provider, plan.channel, plan.spec.capability)
+    if impl is None:
+        #: ``web_adapter`` / ``composed`` 按 capability 在执行体内部岔开，没有一份签名
+        #: 可绑，所以只认 raw payload。空 payload 会由 ``validate_call`` 报成契约错误，
+        #: 不会静默执行。
+        return [], {}
+    params = inspect.signature(impl).parameters
+    accepts_kwargs = any(item.kind is inspect.Parameter.VAR_KEYWORD for item in params.values())
+    kwargs: dict[str, Any] = {}
+    for name in _SEMANTIC_CALL_FIELDS:
+        value = getattr(plan.spec, name)
+        if not value:
+            #: 留空与写默认值在这一层不可区分，两者都不进 kwargs：实现自己的默认值
+            #: 才是默认值，这里替调用方抄一份就是第二份口径。
+            continue
+        target = _SEMANTIC_FIELD_RENAMES.get(name, name)
+        if name == "symbols" and target == "symbol":
+            if len(value) != 1:
+                raise ValidationError(
+                    f"provider {plan.provider!r} channel {plan.channel!r} 的 "
+                    f"{plan.spec.capability!r} 按单只代码执行，本次查询给了 {len(value)} 只",
+                    context={
+                        "provider": plan.provider,
+                        "channel": plan.channel,
+                        "capability": plan.spec.capability,
+                        "phase": "semantic_payload",
+                        "symbols": len(value),
+                    },
+                )
+            kwargs[target] = str(value[0])
+            continue
+        if target not in params and not accepts_kwargs:
+            #: 设了却没有落脚点的字段必须当场失败：一个"看起来生效"的开关比没有开关
+            #: 更糟（``max_age`` 的同一条判据，见 ``REJECTED_OPTIONS``）。
+            raise ValidationError(
+                f"语义字段 {name!r} 在 {plan.provider!r}/{plan.channel!r} 的 "
+                f"{plan.spec.capability!r} 实现里没有落脚点",
+                context={
+                    "provider": plan.provider,
+                    "channel": plan.channel,
+                    "capability": plan.spec.capability,
+                    "phase": "semantic_payload",
+                    "implementation": getattr(impl, "__qualname__", repr(impl)),
+                    "accepted": sorted(params),
+                },
+            )
+        kwargs[target] = list(value) if name == "symbols" else value
+    return [], kwargs
+
+
 class DirectProviderExecutor:
     def __init__(
         self,
@@ -270,19 +343,56 @@ class DirectProviderExecutor:
         budget.ensure_remaining("provider_request")
         return min(self.timeout, budget.remaining_s())
 
-    def _tdx_client(self, timeout: float) -> Any:
-        from ..client import TdxClient
+    def _pool_client(self, cls: Any, timeout: float) -> Any:
+        """``TdxClient`` 家族的唯一构造处：主站与传输旋钮同源。
+
+        执行器手里的 ``hosts`` 是本仓库唯一的「只碰调用方点名的主站」手段，``config`` 是
+        ``[hosts] / [core] / [rate_limit] / [security]`` 翻译成传输层的唯一一份读数。两者都
+        必须抵达家族里的**每一个**客户端：第 31 轮之前 F10 / 商品 / 扩展行情 / MAC 四条分支
+        只传 ``timeout``，同一份配置在行情主链路生效、在那四条路上不存在（判据
+        ``tests/architecture/test_client_family_transport.py``）。
+        """
+
         from ..transport.pool import pool_settings_from_config
 
         #: 主站选择已由内核解析完毕；配置在此只提供传输层构造参数，
         #: 避免同一个键在两处解释。
         settings = pool_settings_from_config(self.config)
         settings["timeout"] = timeout
-        return TdxClient(self.hosts, **settings)
+        return cls(self.hosts, **settings)
+
+    def _tdx_client(self, timeout: float) -> Any:
+        from ..client import TdxClient
+
+        return self._pool_client(TdxClient, timeout)
+
+    @contextmanager
+    def _client_session(self, client: Any) -> Iterator[Any]:
+        """执行器交出可关闭对象时唯一那道保护区：块体怎么下场都 ``close()``。
+
+        31-B4 把 ``with client`` 换成 try/finally 时只收了四条迁移分支，核心链路当时还留着
+        九处 ``with self._tdx_client(...) as client:``——同一份文件对同一个风险给两种答案，
+        本轮第 3 遍按族清点后一次收口（外加 ``web_session`` 那条本就在保护区里的分支，一并
+        折进来，全执行器 13 处使用点只剩一种形状）。区别只在 ``__enter__`` 落在哪里：
+        ``_pool_client`` 交回来的对象**已经**带着连接池与心跳线程（同步池在 ``__init__``
+        起跑），``with client`` 还要再走一次 ``client.__enter__()``（即 ``open()``），而那一步
+        不归 try 管。今天 ``open()`` 在 ``bestip=False`` 下只 ``return self``，所以那九处并非
+        当场在漏；但一个叫"建连"的方法哪天真握手一次，九处就同时变成九个漏点。判据：
+        ``tests/architecture/test_client_family_transport.py`` 的结构尺——执行器里 ``with``
+        直接包 ``_tdx_client``/``_pool_client``/``WebQuoteSession`` 即为红，保护区只有这一处。
+        """
+        try:
+            yield client
+        finally:
+            client.close()
 
     @staticmethod
-    def _call_payload(plan: QueryPlan) -> tuple[list[Any], dict[str, Any]]:
+    def _call_payload(plan: QueryPlan, meta: Any) -> tuple[list[Any], dict[str, Any]]:
         options = plan.spec.options
+        if "args" not in options and "kwargs" not in options:
+            #: 没有 raw payload 约定 = 这条查询走的是语义路径（``Client.minute`` 一类
+            #: 便捷方法、typed query），请求写在 spec 的语义字段里。
+            return _semantic_call_payload(plan, meta)
         args = options.get("args", [])
         kwargs = options.get("kwargs", {})
         if not isinstance(args, list) or not isinstance(kwargs, dict):
@@ -291,7 +401,7 @@ class DirectProviderExecutor:
 
     def _migrated_capability(self, plan: QueryPlan) -> Any:
         meta = binding_for(plan.provider, plan.channel, plan.spec.capability)
-        args, kwargs = self._call_payload(plan)
+        args, kwargs = self._call_payload(plan, meta)
         validate_call(
             plan.provider,
             plan.channel,
@@ -305,19 +415,15 @@ class DirectProviderExecutor:
         if meta.backend == "web_session":
             from ..web.session import WebQuoteSession
 
-            session = WebQuoteSession(meta.source or "sina", timeout=hop)
-            try:
-                if meta.capability == "hk_quotes" and plan.provider in {
-                    "sina",
-                    "tencent",
-                }:
-                    kwargs.setdefault("provider", plan.provider)
-                return getattr(session, meta.method)(*args, **kwargs)
-            finally:
-                session.close()
+            with self._client_session(
+                WebQuoteSession(meta.source or "sina", timeout=hop)
+            ) as session:
+                return getattr(session, meta.method)(
+                    *args, **call_kwargs_for(meta, plan.provider, kwargs)
+                )
 
         if meta.backend == "tdx_client":
-            with self._tdx_client(hop) as client:
+            with self._client_session(self._tdx_client(hop)) as client:
                 if meta.capability == "quotes_concurrent":
                     kwargs.setdefault("as_format", "obj")
                 return getattr(client, meta.method)(*args, **kwargs)
@@ -325,23 +431,20 @@ class DirectProviderExecutor:
         if meta.backend == "f10_client":
             from ..client import F10Client
 
-            client = F10Client(timeout=hop)
-            try:
+            with self._client_session(self._pool_client(F10Client, hop)) as client:
                 if meta.capability == "f10":
                     return client.parse_text(client.download(*args, **kwargs))
                 return list(client.catalog(*args, **kwargs))
-            finally:
-                client.close()
 
         if meta.backend in {"ex_client", "goods_client", "mac_client"}:
             from ..client import ExMarketClient, GoodsClient, MacClient
 
-            client = {
+            family_cls = {
                 "ex_client": ExMarketClient,
                 "goods_client": GoodsClient,
                 "mac_client": MacClient,
-            }[meta.backend](timeout=hop)
-            try:
+            }[meta.backend]
+            with self._client_session(self._pool_client(family_cls, hop)) as client:
                 if meta.capability in {
                     "ex_bars",
                     "ex_quotes",
@@ -351,8 +454,6 @@ class DirectProviderExecutor:
                 }:
                     kwargs.setdefault("as_format", "dict")
                 return getattr(client, meta.method)(*args, **kwargs)
-            finally:
-                client.close()
 
         if meta.backend == "direct_adapter":
             # The adapter class comes from the v14 ``CHANNELS`` table (single
@@ -454,7 +555,7 @@ class DirectProviderExecutor:
             bars = bars[begin:end]
 
             if not events:
-                with self._tdx_client(timeout) as client:
+                with self._client_session(self._tdx_client(timeout)) as client:
                     events = list(client.capital_changes(symbol))
             event_list = list(events)
             if event_list and not isinstance(event_list[0], CapitalChange):
@@ -478,7 +579,7 @@ class DirectProviderExecutor:
                 raise ValidationError("sync_daily requires root or vipdoc_root")
             sink = LocalDaySink(root, profile=profile)
             out: dict[str, Any] = {}
-            with self._tdx_client(timeout) as client:
+            with self._client_session(self._tdx_client(timeout)) as client:
                 for symbol in symbols:
                     requested = str(symbol)
                     normalized = normalize_symbol(requested)
@@ -526,7 +627,7 @@ class DirectProviderExecutor:
         """
         symbols = list(plan.spec.symbols)
         errors: list[tuple[str, BaseException]] = []
-        with self._tdx_client(self._hop_timeout(plan)) as client:
+        with self._client_session(self._tdx_client(self._hop_timeout(plan))) as client:
             rows = client.quotes(symbols, _collect=errors)
         if errors and not rows:
             raise errors[0][1]
@@ -548,7 +649,7 @@ class DirectProviderExecutor:
                     "adjustment": plan.spec.adjustment,
                 },
             )
-        with self._tdx_client(self._hop_timeout(plan)) as client:
+        with self._client_session(self._tdx_client(self._hop_timeout(plan))) as client:
             return client.bars(
                 plan.spec.symbols[0],
                 period=plan.spec.period,
@@ -557,15 +658,15 @@ class DirectProviderExecutor:
             )
 
     def _tdx_snapshot(self, plan: QueryPlan) -> Any:
-        with self._tdx_client(self._hop_timeout(plan)) as client:
+        with self._client_session(self._tdx_client(self._hop_timeout(plan))) as client:
             return client.snapshot(plan.spec.symbols[0], as_format="dict")
 
     def _tdx_minute(self, plan: QueryPlan) -> Any:
-        with self._tdx_client(self._hop_timeout(plan)) as client:
+        with self._client_session(self._tdx_client(self._hop_timeout(plan))) as client:
             return client.minute_today(plan.spec.symbols[0])
 
     def _tdx_trades(self, plan: QueryPlan) -> Any:
-        with self._tdx_client(self._hop_timeout(plan)) as client:
+        with self._client_session(self._tdx_client(self._hop_timeout(plan))) as client:
             return client.trade_today(
                 plan.spec.symbols[0],
                 start=plan.spec.start,
@@ -573,11 +674,11 @@ class DirectProviderExecutor:
             )
 
     def _tdx_security_count(self, plan: QueryPlan) -> Any:
-        with self._tdx_client(self._hop_timeout(plan)) as client:
+        with self._client_session(self._tdx_client(self._hop_timeout(plan))) as client:
             return client.security_count(plan.spec.options.get("market", 0))
 
     def _tdx_security_list(self, plan: QueryPlan) -> Any:
-        with self._tdx_client(self._hop_timeout(plan)) as client:
+        with self._client_session(self._tdx_client(self._hop_timeout(plan))) as client:
             return client.security_list(plan.spec.options.get("market", 0), plan.spec.start)
 
     def _local_bars(self, plan: QueryPlan) -> Any:

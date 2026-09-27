@@ -49,13 +49,20 @@ class _TimeRecorder:
 
 
 class _AsyncioRecorder:
-    """替掉 ``asyncio`` 命名空间里的 ``sleep``，其余原样转发。"""
+    """替掉 ``asyncio`` 命名空间里的 ``sleep``，其余原样转发。
+
+    替身必须仍然是一个**会让出控制权的 await**：异步池的心跳/空闲回收线程（31-B1 起真的
+    武装了）在 ``while not self._closed`` 里 await 这一句，若替身立刻返回就永远没有调度
+    点，``asyncio.run`` 收尾时既切不断它也回不了事件循环——实测整个测试挂死在
+    ``_heartbeat_loop``。记账照旧，让出照旧。
+    """
 
     def __init__(self) -> None:
         self.sleeps: list[float] = []
 
     async def sleep(self, seconds: float) -> None:
         self.sleeps.append(seconds)
+        await asyncio.sleep(0)
 
     def __getattr__(self, name: str):  # noqa: ANN201 - 转发
         return getattr(asyncio, name)
@@ -173,7 +180,10 @@ def test_async_walk_over_distinct_hosts_pays_no_backoff(monkeypatch) -> None:
     recorder = _AsyncioRecorder()
     monkeypatch.setattr("tstdx.transport.async_.asyncio", recorder)
     monkeypatch.setattr("tstdx.transport.async_.AsyncTcpConnection", _AsyncStubConn)
-    pool = AsyncConnectionPool(_hosts(8), slots_per_host=1, heartbeat_interval=0)
+    #: ``idle_timeout=0`` 是把 31-B1 起真的武装起来的心跳/回收线程关掉的：那个线程每轮
+    #: ``await asyncio.sleep(tick)``（默认阈值下 tick=75.0），与退避梯子共用同一个 recorder。
+    #: 本条断言的对象是"请求路径换主站时睡不睡"，所以要让被记数的只有它自己。
+    pool = AsyncConnectionPool(_hosts(8), slots_per_host=1, heartbeat_interval=0, idle_timeout=0)
 
     async def main() -> str:
         try:

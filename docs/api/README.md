@@ -119,7 +119,7 @@
 | 模块 | 说明 |
 |---|---|
 | `tstdx.integration.runtime_http` | FastAPI 网关工厂（10 路由：`/v13/quotes` `/v13/bars/{symbol}` `/v13/snapshot/{symbol}` `/v13/minute/{symbol}` `/v13/trades/{symbol}` `/v13/security/count` `/v13/security/list` `/v13/query/{capability}` `/v13/capabilities` `/v13/runtime/health`）|
-| `tstdx.integration.runtime_ws` | WebSocket JSON-RPC（10 方法：quotes/bars/snapshot/minute/trades/security.count/security.list/query/runtime.capabilities/runtime.health）|
+| `tstdx.integration.runtime_ws` | WebSocket JSON-RPC（13 方法：quotes/bars/snapshot/minute/trades/security.count/security.list/query/runtime.capabilities/runtime.health/subscribe/unsubscribe/list）；其中 `subscribe`/`unsubscribe`/`list` 为实时订阅控制面（配合服务端 `push` 推送帧），见 `docs/api/interfaces.md`「WebSocket 实时订阅」|
 | `tstdx.integration.runtime_ws_server` | WS 服务宿主（`serve_runtime_ws`；一键拉起 `python -m tstdx.integration.runtime_ws_server`）|
 | `tstdx.integration.mcp` | MCP stdio 工具（9 项：`query_capability`/`get_bars`/`get_quote`/`get_quotes`/`get_snapshot`/`get_minute_today`/`get_trades`/`get_security_count`/`get_security_list`；一键拉起 `python -m tstdx.integration.mcp`，不需要 extra）|
 | `tstdx.integration.serialization` | `QueryResult → JSON-safe` 统一序列化 |

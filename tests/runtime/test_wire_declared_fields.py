@@ -324,6 +324,10 @@ def _ws_sample(key: str) -> Any:
         "kwargs": {},
         "channel": "quotation",
         "currentness": "business",
+        "id": "sub1",
+        "interval": 1,
+        "diff_only": False,
+        "max_queue": 1024,
     }
     assert key in samples, f"WS 字段表里的 {key} 没有测试样本，判据会被架空"
     return samples[key]

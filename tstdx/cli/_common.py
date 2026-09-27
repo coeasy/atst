@@ -1,13 +1,18 @@
 # Copyright (c) 2026 tstdx contributors
 # Licensed under the MIT License
 
-"""CLI 公共工具：表格输出与主站参数解析（零依赖，仅标准库）。"""
+"""CLI 公共工具：表格输出、主站参数解析与直连家族客户端的保护区。
+
+模块级只 import 标准库；伸向包内的 import 无一例外写在函数体内（延迟导入），
+这样本模块仍可被裸环境脚本直接引入。
+"""
 
 from __future__ import annotations
 
 import argparse
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from typing import Any, Protocol, TypeVar
 
 __all__ = [
     "_client_kwargs",
@@ -19,6 +24,7 @@ __all__ = [
     "_resolve_hosts",
     "_transport_kwargs",
     "_transport_timeout",
+    "family_client",
 ]
 
 
@@ -86,19 +92,57 @@ def _transport_timeout(args: argparse.Namespace) -> float:
 
 
 def _transport_kwargs(args: argparse.Namespace) -> dict[str, Any]:
-    """Connection kwargs for raw **TDX-family** commands (``probe`` / ``blocks`` / …).
+    """Connection kwargs for raw **TDX-family** commands (``probe`` / ``blocks`` / ``goods`` / ``f10`` …).
 
     These build a transport client outside the kernel, so nothing else applies
-    the config surface for them; resolving it here is what keeps
-    ``[hosts] servers`` and ``[core] timeout`` true on every command.
+    the config surface for them.  That is exactly why they go through
+    :func:`~tstdx.transport.pool.pool_settings_from_config` — the same single
+    config→transport translation the kernel's executor uses.  Hand-listing two
+    of the six keys here (第 31 轮之前的形状) made one TOML key mean one thing on
+    the quotes path and another thing on the CLI path: ``[hosts]
+    slots_per_host``、``[core] max_retries``、``[core] heartbeat_interval``、
+    ``[rate_limit]``、``[security] use_tls`` 在这六支命令上当场蒸发。
+    显式 ``--timeout`` 仍然赢过配置值，与内核给跳超时同一条口径。
     """
     from ..config import get_config
+    from ..transport.pool import pool_settings_from_config
 
+    cfg = get_config()
+    settings = pool_settings_from_config(cfg)
     hosts = _resolve_hosts(args)
-    return {
-        "hosts": hosts if hosts is not None else (list(get_config().hosts.servers) or None),
-        "timeout": _transport_timeout(args),
-    }
+    settings["hosts"] = hosts if hosts is not None else (list(cfg.hosts.servers) or None)
+    settings["timeout"] = _transport_timeout(args)
+    return settings
+
+
+class _Closable(Protocol):
+    def close(self) -> None: ...
+
+
+_C = TypeVar("_C", bound=_Closable)
+
+
+@contextmanager
+def family_client(client: _C) -> Iterator[_C]:
+    """CLI 直连家族客户端唯一那道保护区：交进来就接管，块体怎么下场都 ``close()``。
+
+    与执行器的
+    :meth:`~tstdx.runtime.executor.DirectProviderExecutor._client_session` 同一条口径
+    （第 31 轮 31-B4 → 31-C3 → 本条），连形状也一样：**构造在调用点，保护区只管释放**。
+    入参写成对象而不是 ``kind: str``，是为了让 ``with family_client(get_client("goods", …))
+    as c`` 之后的 ``c`` 仍是 ``GoodsClient``——把 kind 传进保护区再查注册表，返回类型就塌成
+    ``Any``，工厂那五道 ``@overload`` 在 CLI 面等于白设（``c.block_quotes`` 一类家族专有方法
+    不再被 mypy 看见）。风险只在 ``__enter__`` 落在哪里：``get_client`` 交回来的对象**已经**
+    带着连接池与心跳线程，``with client`` 还要再走一次 ``client.__enter__()``（即 ``open()``），
+    而那一步不归 try 管。今天 ``open()`` 在 ``bestip=False`` 下只 ``return self``，所以这六处
+    并非当场在漏；但一个叫"建连"的方法哪天真握手一次，六处就同时变成六个漏点。判据：
+    ``tests/architecture/test_client_family_transport.py`` 的第 5 件事——包内任何 ``with``
+    直接包住家族构造出口（``get_client(...)`` / 家族类 / ``_pool_client(...)``）即为红。
+    """
+    try:
+        yield client
+    finally:
+        client.close()
 
 
 # --------------------------------------------------------------------------- #

@@ -411,10 +411,12 @@ class TestProbeHandler:
         prober: Any = None,
         client: Any = None,
     ) -> None:
-        import tstdx.client as client_mod
+        import tstdx.client.factory as factory_mod
         import tstdx.protocol.prober as prober_mod
 
-        monkeypatch.setattr(client_mod, "TdxClient", client or FakeTdxSession)
+        #: 直连命令的构造口是工厂注册表，不是 ``tstdx.client.TdxClient`` 这个名字——
+        #: 改名字拦不住构造，改注册表才拦得住（判据见 test_cli_connection_contract.py）。
+        monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "stock", client or FakeTdxSession)
         monkeypatch.setattr(prober_mod, "Prober", prober)
 
     def test_illegal_cmd_number_exit_2(self, capsys: pytest.CaptureFixture[str]) -> None:
@@ -424,12 +426,12 @@ class TestProbeHandler:
         assert "非法命令号" in err and "用法" in err
 
     def test_client_error_exit_2(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        import tstdx.client as client_mod
+        import tstdx.client.factory as factory_mod
 
         def boom(*a: Any, **kw: Any) -> None:
             raise TdxError("no host reachable")
 
-        monkeypatch.setattr(client_mod, "TdxClient", boom)
+        monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "stock", boom)
         args = _ns(
             cmd="0x053e",
             market=1,
@@ -539,19 +541,22 @@ class TestProbeHandler:
 
 
 class FakeTdxSession:
-    """``TdxClient`` 替身：只提供 CLI 用到的方法。"""
+    """``TdxClient`` 替身：只提供 CLI 用到的方法。
+
+    直连命令现在只经 ``tstdx.cli._common.family_client`` 交出，收尾动作只有 ``close()``
+    —— ``__enter__``/``__exit__`` 不再是这条链上的一件事，所以替身也不装它们。
+    """
 
     behavior: dict[str, Any] = {}
+    closes: list[int] = []
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.init_args = args
         self.init_kwargs = kwargs
+        type(self).closes.append(0)
 
-    def __enter__(self) -> FakeTdxSession:
-        return self
-
-    def __exit__(self, *exc: Any) -> bool:
-        return False
+    def close(self) -> None:
+        type(self).closes[-1] += 1
 
     def _page(self) -> list[dict[str, Any]]:
         pages = type(self).behavior.get("pages")
@@ -574,10 +579,11 @@ class FakeTdxSession:
 
 @pytest.fixture()
 def fake_tdx(monkeypatch: pytest.MonkeyPatch) -> type[FakeTdxSession]:
-    import tstdx.client as client_mod
+    import tstdx.client.factory as factory_mod
 
     FakeTdxSession.behavior = {}
-    monkeypatch.setattr(client_mod, "TdxClient", FakeTdxSession)
+    FakeTdxSession.closes = []
+    monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "stock", FakeTdxSession)
     return FakeTdxSession
 
 
@@ -595,6 +601,8 @@ class TestTransportHandlers:
         fake_tdx.behavior = {"rows": []}
         assert rc._cmd_blocks(_ns(block_type=0, count=10, json=False)) == 0
         assert "无板块行情返回" in capsys.readouterr().out
+        #: 两次调用、两份客户端，各自被保护区收尾恰好一次。
+        assert fake_tdx.closes == [1, 1], fake_tdx.closes
 
     def test_blocks_paging_stops_on_short_page(self, fake_tdx: type[FakeTdxSession]) -> None:
         full = [{"code": str(i)} for i in range(1000)]
@@ -603,12 +611,12 @@ class TestTransportHandlers:
         assert fake_tdx.behavior["block_calls"] == [(1, 0), (1, 1000)]
 
     def test_blocks_error_exit_2(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        import tstdx.client as client_mod
+        import tstdx.client.factory as factory_mod
 
         def boom(*a: Any, **kw: Any) -> None:
             raise RuntimeError("socket down")
 
-        monkeypatch.setattr(client_mod, "TdxClient", boom)
+        monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "stock", boom)
         assert rc._cmd_blocks(_ns(block_type=0, count=10, json=False)) == 2
         assert "socket down" in capsys.readouterr().err
 
@@ -633,12 +641,12 @@ class TestTransportHandlers:
         assert rc._cmd_list(_ns(market="1", start=0, count=10, json=False)) == 0
         assert "无代码表返回" in capsys.readouterr().out
 
-        import tstdx.client as client_mod
+        import tstdx.client.factory as factory_mod
 
         def boom(*a: Any, **kw: Any) -> None:
             raise RuntimeError("registry down")
 
-        monkeypatch.setattr(client_mod, "TdxClient", boom)
+        monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "stock", boom)
         assert rc._cmd_list(_ns(market="1", start=0, count=10, json=False)) == 2
         assert "registry down" in capsys.readouterr().err
 
@@ -667,19 +675,20 @@ class TestTransportHandlers:
     def test_goods_quote_bars_and_empty(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        import tstdx.client as client_mod
+        import tstdx.client.factory as factory_mod
 
-        kinds: list[str] = []
+        built: list[dict[str, Any]] = []
 
         class FakeGoods:
             calls: list[tuple[str, dict[str, Any]]] = []
             rows: Any = []
+            closes: list[int] = []
 
-            def __enter__(self) -> FakeGoods:
-                return self
+            def __init__(self, **kwargs: Any) -> None:
+                built.append(kwargs)
 
-            def __exit__(self, *exc: Any) -> bool:
-                return False
+            def close(self) -> None:
+                type(self).closes.append(1)
 
             def goods_quote(self, symbol: str, *, as_format: str) -> dict[str, Any]:
                 type(self).calls.append(("quote", {"symbol": symbol, "as_format": as_format}))
@@ -691,16 +700,16 @@ class TestTransportHandlers:
                 type(self).calls.append(("bars", {"symbol": symbol, "period": period}))
                 return list(type(self).rows)
 
-        def factory(kind: str, **kwargs: Any) -> FakeGoods:
-            kinds.append(kind)
-            return FakeGoods()
-
-        monkeypatch.setattr(client_mod, "get_client", factory)
+        #: 注册表那一格就是构造出口：CLI 问 ``get_client`` 要 "goods"，建出来的必是这只假
+        #: 客户端（``__init__`` 记下它拿到的连接参数）；问别的 kind 建不出它，下面那些
+        #: ``calls`` 断言当场落空。
+        monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "goods", FakeGoods)
         FakeGoods.calls = []
         FakeGoods.rows = {"symbol": "AU2412", "price": 500.5}
         args = _ns(symbol="AU2412", kind="quote", period="day", count=10, json=False)
         assert rc._cmd_goods(args) == 0
-        assert kinds == ["goods"]
+        assert len(built) == 1, "goods 命令没有向工厂要客户端"
+        assert "hosts" in built[0] and "timeout" in built[0]
         assert FakeGoods.calls[0] == ("quote", {"symbol": "AU2412", "as_format": "dict"})
         assert "AU2412" in capsys.readouterr().out
 
@@ -716,12 +725,12 @@ class TestTransportHandlers:
         assert "无商品数据返回" in capsys.readouterr().out
 
     def test_goods_error_exit_2(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        import tstdx.client as client_mod
+        import tstdx.client.factory as factory_mod
 
-        def boom(*a: Any, **kw: Any) -> None:
+        def boom(**kw: Any) -> None:
             raise RuntimeError("goods offline")
 
-        monkeypatch.setattr(client_mod, "get_client", boom)
+        monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "goods", boom)
         args = _ns(symbol="AU2412", kind="quote", period="day", count=10, json=False)
         assert rc._cmd_goods(args) == 2
         assert "goods offline" in capsys.readouterr().err
@@ -729,7 +738,7 @@ class TestTransportHandlers:
     def test_f10_catalog_sections_and_empty(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        import tstdx.client as client_mod
+        import tstdx.client.factory as factory_mod
 
         class Section:
             def __init__(self, title: str, text: str) -> None:
@@ -738,13 +747,14 @@ class TestTransportHandlers:
 
         class FakeF10:
             rows: Any = []
-            kinds: list[str] = []
+            built: list[dict[str, Any]] = []
+            closes: list[int] = []
 
-            def __enter__(self) -> FakeF10:
-                return self
+            def __init__(self, **kwargs: Any) -> None:
+                type(self).built.append(kwargs)
 
-            def __exit__(self, *exc: Any) -> bool:
-                return False
+            def close(self) -> None:
+                type(self).closes.append(1)
 
             def catalog(self, symbol: str) -> list[dict[str, Any]]:
                 return list(type(self).rows)
@@ -755,16 +765,12 @@ class TestTransportHandlers:
             def parse_text(self, raw: bytes) -> list[Section]:
                 return [Section("财务分析", "净利润增长")]
 
-        def factory(kind: str, **kwargs: Any) -> FakeF10:
-            FakeF10.kinds.append(kind)
-            return FakeF10()
-
-        monkeypatch.setattr(client_mod, "get_client", factory)
+        monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "f10", FakeF10)
         FakeF10.rows = [{"title": "公司概况", "filename": "gsgk.dat"}]
         assert rc._cmd_f10(_ns(symbol="sh600519", file=None, json=False)) == 0
         out = capsys.readouterr().out
         assert "公司概况" in out and "gsgk.dat" in out
-        assert FakeF10.kinds == ["f10"]
+        assert len(FakeF10.built) == 1, "f10 命令没有向工厂要客户端"
 
         # 无目录 → 「无 F10 数据返回」，但 --file 走解析分支
         FakeF10.rows = []
@@ -774,12 +780,12 @@ class TestTransportHandlers:
         assert "【财务分析】" in capsys.readouterr().out
 
     def test_f10_error_exit_2(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
-        import tstdx.client as client_mod
+        import tstdx.client.factory as factory_mod
 
-        def boom(*a: Any, **kw: Any) -> None:
+        def boom(**kw: Any) -> None:
             raise RuntimeError("f10 unavailable")
 
-        monkeypatch.setattr(client_mod, "get_client", boom)
+        monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "f10", boom)
         assert rc._cmd_f10(_ns(symbol="sh600519", file=None, json=False)) == 2
         assert "f10 unavailable" in capsys.readouterr().err
 

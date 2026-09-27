@@ -95,10 +95,13 @@ class AsyncTdxClient(_ClientMixin):
         self.last_errors: list[tuple[str, BaseException]] = []
 
     async def open(self, *, bestip: bool = False, **speedtest_kwargs: Any) -> AsyncTdxClient:
-        """打开客户端；``bestip=True`` 时先做一轮运行时测速（镜像同步版）。"""
+        """打开客户端；``bestip=True`` 时先做一轮运行时测速（镜像同步版）。
+
+        这里不触发心跳：连接与回收者都由池自己武装（第一次握住真 socket 时起跑，
+        见 :meth:`AsyncConnectionPool._get_conn_locked`），G47。
+        """
         if bestip:
             await self.bestip(**speedtest_kwargs)
-        # 连接池惰性建立；心跳为可选后台任务，按需由 start_heartbeat 触发。
         return self
 
     async def bestip(

@@ -63,8 +63,8 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 | 键 | 默认 | 取值范围 | 读取方 / 效果 |
 |---|---|---|---|
 | `default_provider` | `"tdx"` | 必须是 `PROVIDERS` 注册表已登记 id | `QueryPlanner`：查询未显式传 provider 时选谁 |
-| `timeout` | `5.0` | 0.1 – 300 | `DirectProviderExecutor` → `TdxClient` 请求超时（秒） |
-| `heartbeat_interval` | `30` | 0 – 3600（`0` = 不启心跳） | `ConnectionPool` 心跳间隔（秒） |
+| `timeout` | `5.0` | 0.1 – 300 | `DirectProviderExecutor` → `TdxClient` 请求超时（秒）。它是**一次读写的墙钟**，不是"两次收包之间的空档"：同步池与异步池在同一份声明上口径一致（第 31 轮之前同步面只有逐次空档超时，滴流对端能量不到它） |
+| `heartbeat_interval` | `30` | 0 – 3600（`0` = 不启心跳） | 心跳 + 空闲槽位回收那一条线程的节奏（秒）。同步 `ConnectionPool` 在构造器里武装；异步 `AsyncConnectionPool` 在第一次握住真 socket 时武装（`_get_conn_locked`），构造与 `open()` 都不武装 |
 | `max_retries` | `3` | 0 – 20 | **同一 Provider 内** host/endpoint 的重试预算，不是切换 Provider 的次数 |
 | `vipdoc_root` | `None` | 非空字符串或 `None` | `local_vipdoc` Provider 与 `adjusted_bars`/`sync_daily` 的本地数据根目录；缺失时相关 capability 直接抛 `ValidationError` |
 
