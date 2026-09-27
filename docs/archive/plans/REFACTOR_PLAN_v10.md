@@ -1,4 +1,4 @@
-# atst 重构方案 v10（2026-09，✅ 已全部落地）
+# tstdx 重构方案 v10（2026-09，✅ 已全部落地）
 
 > 承接 v8（结构治理，已落地）与 v9（路由合并 + client 共享骨架，已落地）。
 > 本文基于 v9 终验后的**增量审计**：四道门禁全绿（全量 pytest / 对抗矩阵 /
@@ -23,7 +23,7 @@
 - 该 ADR 已裁定「v8 删除」但未执行：`security/credentials.py`（526 行）全库
   零调用方，仅 `security/__init__.py` 与顶层 `_LAZY` 导出。
 - 删除：模块文件 + 两处导出 + `tests/security` 对应用例 + docs/api 行 +
-  `_reach_allow.txt` 的 `atst.security.credentials` 条目；`atst/security`
+  `_reach_allow.txt` 的 `tstdx.security.credentials` 条目；`tstdx/security`
   包保留（ADR 复审注释）。
 - 若未来 trade/CLI 出现真实凭据需求，按 ADR 重新设计（env→file 两级起步）。
 
@@ -34,7 +34,7 @@
   `reset_circuit`/`_attach_route_errors`/`_require_tdx_route`/
   `_ROUTE_FAIL_LIMIT`/`_ROUTE_COOLDOWN_SECONDS` 收口为
   `RouteSelector`（或 Mixin），`UnifiedQuoteAPI` 组合使用。
-- 公开面不变：`from atst.facade.api import UnifiedQuoteAPI, quote_api`；
+- 公开面不变：`from tstdx.facade.api import UnifiedQuoteAPI, quote_api`；
   熔断状态仍在实例上（`_route_fail_counts` 等属性名不变，W11 测试守护）。
 - 风险：低。验收：`tests/facade`（含 test_w11_w12_w13 熔断语义）全绿。
 
@@ -46,14 +46,14 @@
     _check_deprecated` 失败双桶计数；
   - `web/_base_em.py`：`_EastmoneyJson`（主机池 failover/黑名单，corporate/
     fundflow/adapters 多处继承）。
-- 单文件 <600 行；`from atst.web.base import BaseWebSource, _EastmoneyJson`
+- 单文件 <600 行；`from tstdx.web.base import BaseWebSource, _EastmoneyJson`
   等全部现有导入路径不变（`web/base.py` 保留为 re-export 门面或直接承载
   组合类）。
 - 风险：低-中。验收：`tests/web` 423 例全绿。
 
 ### P10-4 文档与遗留清理
-- `atst/sink/__init__.py` docstring 中 `atst.sinks` 旧名引用改为
-  `atst.output`（sinks shim 文案保持）。
+- `tstdx/sink/__init__.py` docstring 中 `tstdx.sinks` 旧名引用改为
+  `tstdx.output`（sinks shim 文案保持）。
 - `scripts/_reach_allow.txt` 条目与 ADR-007-010 状态对齐（P10-1 后）。
 - README 特性表补一行 streaming/native 定位（ADR-011 结论）。
 

@@ -62,7 +62,7 @@
 │   F5 版本号嵌入 spec（spec 引用库版本号，确保引用不可过期）                                              │
 │                                                                                       │
 │  ❼ 用户应用（5 断链）                                                                          │
-│   G1 配置中心（atst.toml + 环境变量 + 函数入参 + 默认值；优先级与合并语义）                              │
+│   G1 配置中心（tstdx.toml + 环境变量 + 函数入参 + 默认值；优先级与合并语义）                              │
 │   G2 统一错误体系（错误分类树 / 可重试性 / 重试预算 / 用户 try-except 范式）                              │
 │   G3 可观测性开关（指标、日志、追踪；不默认开启 0 依赖，但提供官方 exporter）                              │
 │   G4 实时流订阅与取消（async iterator / callback / unsubscribe）                                    │
@@ -86,7 +86,7 @@
 |---|---|---|---|---|
 | **A5** | ❶ 协议/数据源 | **HTTP Web 源字段口径归一化** | 新浪 `turnover`=股 / 腾讯 volume=**手** / 东财价格=**×100 整数**，三家口径互不一致，直接混用会产生 100 倍级错误数据 | **§33.5** |
 | **A6** | ❶ 协议/数据源 | **HTTP 源反爬与限流韧性** | 新浪无 Referer 直接 403；东财高频触发 20h+ IP 封禁；腾讯连续请求返回空；接口随时可能改版下线 | **§33.4** |
-| **A7** | ❼ 用户应用 | **easyquotation 兼容迁移路径** | 已有 easyquotation 用户迁移到 atst 的 API 差异与迁移成本未定义 | **§33.7** |
+| **A7** | ❼ 用户应用 | **easyquotation 兼容迁移路径** | 已有 easyquotation 用户迁移到 tstdx 的 API 差异与迁移成本未定义 | **§33.7** |
 
 > **说明**：A5/A6/A7 不属于"v3.0 遗漏"，而是 v3.1 **新增能力面**带来的新链路。若不识别，HTTP 源会成为"能跑但数据可能是错的"的隐性缺陷区。
 
@@ -149,7 +149,7 @@
 | 01 | 所有协议命令 L1+L2+L3 三层可解析，无丢包 | §5 + §20 | `test_protocol_tiers.py` |
 | 02 | 36 个已知命令 spec 覆盖率 100% | §4 + §20 | `test_spec_coverage.py` |
 | 03 | 24 个断链点全部有对应处理（21 基线 + A5/A6/A7 增量） | §20（本文）+ **§33.5/§33.4/§33.7** | `test_bridges.py` |
-| 04 | atst.toml 配置优先级 + 合并语义 12 case | §21 | `test_config_merge.py` |
+| 04 | tstdx.toml 配置优先级 + 合并语义 12 case | §21 | `test_config_merge.py` |
 | 05 | 错误分类树覆盖 100% 异常路径，可重试性正确 | §24 | `test_errors.py` |
 | 06 | 同步/异步双 API 结果一致 | §25 | `test_sync_async_parity.py` |
 | 07 | 离线/在线/兜底源降级路径 6 种 | §26 | `test_fallbacks.py` |
@@ -158,7 +158,7 @@
 | 10 | A 股交易日历：节假日/停牌/临时休市 | §23 | `test_calendar.py` |
 | 11 | 时区：UTC 内部 / 本地输出正确 | §23 | `test_tz.py` |
 | 12 | Golden 数据来源审计：100% `self-captured` | §4 + §16 | `test_golden_source.py` |
-| 13 | AST 相似度门禁：atst 内部任意 2 文件 > 0.95 报警 / 与参考项目 > 0.30 阻断 | §4 | `test_originality.py` |
+| 13 | AST 相似度门禁：tstdx 内部任意 2 文件 > 0.95 报警 / 与参考项目 > 0.30 阻断 | §4 | `test_originality.py` |
 | 14 | License 白名单扫描全过 | §4 | `test_licenses.py` |
 | 15 | wheel 矩阵（12 组合）均能装且 smoke 通过 | §29 | `ci_wheel_matrix.yml` |
 | 16 | 弃用机制不自建：包内不留退役支架，生命周期信号只走告警信封与 `SourceDeprecated` | §29 | `test_bridges.py` |

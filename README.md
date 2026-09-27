@@ -5,7 +5,7 @@
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
 - 当前 Draft 开发版本：`1.0.0`
-- 最新已发布稳定版：`v1.0.0`（2026-09-09 发布） · [发布说明](docs/releases/v1.0.0.md) · [v1.1.0 版本说明](docs/releases/v1.1.0.md) · [CHANGELOG](CHANGELOG.md)
+- 最新已发布稳定版：`v1.0.0`（2026-09-27 重新发布，更名为 `atst`） · [发布说明](docs/releases/v1.0.0.md) · [v1.1.0 版本说明](docs/releases/v1.1.0.md) · [CHANGELOG](CHANGELOG.md)
 
 ---
 

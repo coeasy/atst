@@ -1,7 +1,7 @@
-# atst 功能梳理与优化改进方案（v2，2026-09-03）
+# tstdx 功能梳理与优化改进方案（v2，2026-09-03）
 
 > **基线**：v1.4.0（K1 版本落笔已完成；P0/P1/P2 三批 24 项全落地，含 M5/M7、U5、F1/F2/F3/F4、Q2/Q4）。
-> **本文档**：基于对 `atst/` 全部模块的**新一轮实测梳理**（2026-09-03），定位 **v1.4.0 之后**的功能扩展机会与潜在问题。
+> **本文档**：基于对 `tstdx/` 全部模块的**新一轮实测梳理**（2026-09-03），定位 **v1.4.0 之后**的功能扩展机会与潜在问题。
 > **文档谱系**：v1 `docs/OPTIMIZATION_PLAN_v1.md`（P0-P2 批次，已收口）→ 本文（N 批次，新提案）。
 
 ---
@@ -65,7 +65,7 @@ L0 协议      protocol: commands(85) / registry(62 L1 注册, L1/L2/L3 三级 d
 - `F10Client.catalog(symbol) -> list[dict]`（同步）+ `AsyncF10Client.catalog`（异步镜像），
   解析 0x0001 栏目目录，输出 `[{file_index, filename, ...}]`；
 - 门面 `UnifiedQuoteAPI.f10_catalog(symbol)`；
-- HTTP `/f10/{symbol}/catalog` 端点 + MCP `get_f10_catalog` 工具 + CLI `atst f10 <symbol>`;
+- HTTP `/f10/{symbol}/catalog` 端点 + MCP `get_f10_catalog` 工具 + CLI `tstdx f10 <symbol>`;
 - 补齐 F10Client docstring（修 P1）。
 
 **验收**：`F10Client.catalog` 有离线合成载荷测试；服务面三处接线各 ≥1 用例；`make gates` 绿。
@@ -107,7 +107,7 @@ _facade_obj()`，与 WS 同一模式），板块行情与证券列表复用客�
 
 **建议**：
 - `domain/finance.py` 增加**除权事件 TTL 缓存**（按 symbol，默认 24h，进程级）；
-- 可选落盘缓存（~/.atst/factors/{symbol}.json），离线复用；
+- 可选落盘缓存（~/.tstdx/factors/{symbol}.json），离线复用；
 - 缓存命中时跳过 0x0010/gpcw 网络与解析。
 
 **验收**：同一 symbol 连续两次 `adjusted_bars`，第二次不打网络（fake 计数断言）；
@@ -122,11 +122,11 @@ _facade_obj()`，与 WS 同一模式），板块行情与证券列表复用客�
 **现状**：CLI 缺 `adjusted-bars`、`f10`、`all-market`、`minute-klines`、
 `ex`/`goods` 深层子命令（仅 `goods` 一个）。
 
-**建议**：新增 `atst adjusted-bars <symbol> [--method qfq|hfq|fixed|none]`、
-`atst f10 <symbol> [--file <name>]`、`atst all-market [--node hs_a] [--source sina|tencent]`、
-`atst minute-klines <symbol> [--period 5min]`。
+**建议**：新增 `tstdx adjusted-bars <symbol> [--method qfq|hfq|fixed|none]`、
+`tstdx f10 <symbol> [--file <name>]`、`tstdx all-market [--node hs_a] [--source sina|tencent]`、
+`tstdx minute-klines <symbol> [--period 5min]`。
 
-**验收**：各命令带离线/合成数据用例；`atst --help` 分组正确。
+**验收**：各命令带离线/合成数据用例；`tstdx --help` 分组正确。
 **落地记录**：`f10` 随 N1 落地；本轮 N5 补 `adjusted-bars`（门面 F1 链路，
 `--method` 四项）、`all-market`（sina/tencent + node/page-size/max-pages）、
 `minute-klines`（A 股腾讯 mkline / 港美东财 push2his）。三者统一走
@@ -168,7 +168,7 @@ _facade_obj()`，与 WS 同一模式），板块行情与证券列表复用客�
 | # | 严重度 | 问题 | 证据 | 建议 |
 |---|---|---|---|---|
 | P1 | **高**（文档漂移） | ~~`F10Client` docstring 引用不存在的 `catalog` 方法；0x0001 解析器存在但无客户端入口~~ ✅ 已修复（随 N1 落地） | client.py:1316 vs f10.py:92 | 随 N1 补方法并修 docstring |
-| P2 | 中 | ~~FEATURE_MAP §1.1/§1.2 架构图仍列 `compat.easy_tdx / eltdx / mootdx + web.easyquotation` 层~~ ✅ 已校正（实测无 `atst/compat/`、无 `web/easyquotation.py`，架构图已是 v1.2.0 清理后形态；迁移文档 `get_index()` 指向不存在的 `fetch_index()` 已修为 `WebQuoteSession.index()`）；**easyquotation 全功能覆盖硬约束无自动化验证** ✅ 已补 | FEATURE_MAP_AND_ROADMAP.md vs 实际无 compat 层；docs/migration/easyquotation.md:51 假目标 | 校正架构图 + 新增**能力对齐测试**：`tests/facade/test_easyquotation_alignment.py` 断言 `all_market`/`bars`/`index_list`/`quotes` 与 easyquotation 四入口（`all`/`get_klines`/`get_index`/`get_stock_market`）语义对齐 + 迁移文档目标真实存在 |
+| P2 | 中 | ~~FEATURE_MAP §1.1/§1.2 架构图仍列 `compat.easy_tdx / eltdx / mootdx + web.easyquotation` 层~~ ✅ 已校正（实测无 `tstdx/compat/`、无 `web/easyquotation.py`，架构图已是 v1.2.0 清理后形态；迁移文档 `get_index()` 指向不存在的 `fetch_index()` 已修为 `WebQuoteSession.index()`）；**easyquotation 全功能覆盖硬约束无自动化验证** ✅ 已补 | FEATURE_MAP_AND_ROADMAP.md vs 实际无 compat 层；docs/migration/easyquotation.md:51 假目标 | 校正架构图 + 新增**能力对齐测试**：`tests/facade/test_easyquotation_alignment.py` 断言 `all_market`/`bars`/`index_list`/`quotes` 与 easyquotation 四入口（`all`/`get_klines`/`get_index`/`get_stock_market`）语义对齐 + 迁移文档目标真实存在 |
 | P3 | 中 | ~~CI 9 job 全 `ubuntu-latest`，不验证 Windows~~ ✅ 已修复 | ci.yml（全 ubuntu） | test job 增 `windows-latest`（3.12 单版本）——已在矩阵 include 中实装 |
 | P4 | 低 | ~~`ruff format --check` 不含 `scripts/`~~ ✅ 已修复 | ci.yml format job | format 范围补 `scripts/`——已实装 |
 | P5 | **高**（数据正确性） | 0x0FC5 逐笔 15B 消费与 golden 74B 不整除——真实布局含未识别字段；0x0530 反转族 / 0x0547 bj / 0x1300 diff base / std7727 base / 指数 4 字节尾 全部待真机定标 | std7709_extra.py:161-167 ⚠️ 自述 | 真机定标周（v1 I1 落地）；**当前状态：受阻于真机样本（合规非交易时段采集前置项），无法离线臆造布局——已审查并维持 `guarded_count` 15B 守卫红线（IntegrityViolation 降级），`TestP1eTradeTodayAlignment` 锁定声明/守卫/消费三者一致；状态见 §4 批次 N2** |

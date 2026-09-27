@@ -1,4 +1,4 @@
-# atst 重构升级方案 v7 —— v6 收官与结构收敛
+# tstdx 重构升级方案 v7 —— v6 收官与结构收敛
 
 > 日期：2026-09-05/06
 > 定位：本文是 **v6（ARCHITECTURE_AND_OPTIMIZATION_PLAN_v6.md）的执行收官方案**。
@@ -31,7 +31,7 @@
 
 | 指标 | 值 |
 |---|---|
-| `atst/` Python 文件 | 115 |
+| `tstdx/` Python 文件 | 115 |
 | client.py 行数 | 1857（同步/异步全镜像所致） |
 | web/facade.py 行数 | 1320（WebQuoteSession god-class） |
 | 测试 | **2014 passed / 8 skipped / 1 xfailed**（`-m "not network"`） |
@@ -65,7 +65,7 @@
   1. `web/base.py` 新增 `num_f(value, default=0.0)` / `num_i(value, default=0)`，内部用 `math.isfinite` 校验——JSON `NaN`/`Inf` 一律回落 default，不再伪装合法值；
   2. 13 个文件的本地 `_f`/`_i` 删除，改为 `from .base import num_f, num_i`（保持模块内调用名不变的用 `num_f as _f` 别名导入，最小化 diff）；
   3. `history.py` 原 `math.isfinite` 版本语义并入 `num_f`（其余文件由此获得 NaN 防御）。
-- **验收**：`grep -rn "^def _f\b" atst/web/` 仅剩 base.py（或 0 处）；注入 `NaN` 的 JSON 解析测试通过。
+- **验收**：`grep -rn "^def _f\b" tstdx/web/` 仅剩 base.py（或 0 处）；注入 `NaN` 的 JSON 解析测试通过。
 
 ### 2.2 B5 · offline 命令 fail-fast（P1，高价值低成本）
 
@@ -89,8 +89,8 @@
 
 ### 2.5 C2 · i18n 更名 charset（P2）
 
-- **方案**：`atst/i18n/` 更名 `atst/charset/`（内容本就是字符集探测）；`atst/i18n` 保留**兼容 shim**（`from .charset import *` + DeprecationWarning），外部导出同步更新。
-- **验收**：`import atst.charset` 可用；`import atst.i18n` 仍可用但告警。
+- **方案**：`tstdx/i18n/` 更名 `tstdx/charset/`（内容本就是字符集探测）；`tstdx/i18n` 保留**兼容 shim**（`from .charset import *` + DeprecationWarning），外部导出同步更新。
+- **验收**：`import tstdx.charset` 可用；`import tstdx.i18n` 仍可用但告警。
 
 ### 2.6 C5 · 缓存覆盖面（P2）
 
@@ -99,8 +99,8 @@
 
 ### 2.7 C7 · mypy 分拆配置（P2，配置）
 
-- **方案**：`[tool.mypy]` 基础配置保持核心严格（`ignore_missing_imports=false`），对可选依赖模块（`atst.native`、web 可选 httpx/fastapi 相关）加 `[[tool.mypy.overrides]] module=... ignore_missing_imports=true`。
-- **验收**：`mypy atst/` 通过且核心模块不再被全局宽松掩盖。
+- **方案**：`[tool.mypy]` 基础配置保持核心严格（`ignore_missing_imports=false`），对可选依赖模块（`tstdx.native`、web 可选 httpx/fastapi 相关）加 `[[tool.mypy.overrides]] module=... ignore_missing_imports=true`。
+- **验收**：`mypy tstdx/` 通过且核心模块不再被全局宽松掩盖。
 
 ### 2.8 B10 · CredentialStore 处置（P1）
 
@@ -150,7 +150,7 @@ B7+C4 → B5 → C9 → C1/C3/C6/C8 → C2 → C5 → C7 → B10 → B11/B12/B13
 ```
 
 **全程门禁**：每批完成后跑
-`pytest tests/ -m "not network" --cov=atst --cov-fail-under=75` + `ruff check atst/`。
+`pytest tests/ -m "not network" --cov=tstdx --cov-fail-under=75` + `ruff check tstdx/`。
 最终交付前跑全量回归 + spec_audit --strict。
 
 ## 4. 风险与回滚
@@ -179,7 +179,7 @@ B7+C4 → B5 → C9 → C1/C3/C6/C8 → C2 → C5 → C7 → B10 → B11/B12/B13
 | C3 | ✅（既有） | `native.py` 已带 v1.4.0 deprecation 计划（v1.6.0 删除），无需改动 |
 | C6 | ✅ | `request_multi` docstring 书面说明「同连接多帧」取舍与上层并发替代方案 |
 | C8 | ✅ | `BinaryClient`/`BridgeClient`/`HqClient`/`AsyncUnifiedQuoteAPI` 标注 `.. deprecated:: v7` 与替代方案 |
-| C2 | ✅ | `atst/i18n` → `atst/charset`（名实一致）；旧路径保留 shim + DeprecationWarning + `i18n.encoding` 子模块别名 |
+| C2 | ✅ | `tstdx/i18n` → `tstdx/charset`（名实一致）；旧路径保留 shim + DeprecationWarning + `i18n.encoding` 子模块别名 |
 | C5 | ✅ | `cache.QuoteCache`（TTL 3s，线程安全，命中返回拷贝）；接入 `DataSourceRouter.quotes` 读穿/回写；分时「不缓存」写入文档（覆盖面与文档一致）；新增 2 用例 |
 | C7 | ✅ | mypy 核心严格化（`ignore_missing_imports=false` + `check_untyped_defs`），可选依赖/native 单独 override |
 | B10 | ✅ | `CredentialStore` 标注 deprecated（v8 无调用方则删除）；新增 `docs/adr/ADR-007-010.md` |
@@ -188,7 +188,7 @@ B7+C4 → B5 → C9 → C1/C3/C6/C8 → C2 → C5 → C7 → B10 → B11/B12/B13
 | B13 | ✅ | ci.yml 新增 docs-links job（markdown 相对链接完整性）；本地已清出 1 条真实断链（v1 计划中未实施项） |
 | B8 | ✅ | 新增 `tests/web/test_b8_scale_consistency.py`（7 用例）：spec↔normalizer 全量比对 + 3 源锚点 + 解析层内联实证（minute/ticks/trends/limit_pool 例外清单）+ identity 防二次缩放 |
 | B4 | ✅ | `HostEntry` 熔断字段（circuit/consec_weighted/circuit_opened_at）；连接失败 1.0 / 业务失败 0.5 加权；DEGRADED≥3 / OPEN≥8 / 冷却 30s→HALF_OPEN；选主站跳过 OPEN（全 OPEN 兜底原序，零回归）；`PoolStats.circuit_skips`；新增 9 用例。**异步池镜像列为 v8**（async_.py 失败标记分散，需先集中） |
-| B1 | ✅（第一步） | 抽出 `atst/client_core.py`（231 行：符号解析、行→模型、`_emit`、offline 守卫、请求体拼装——纯协议构造零 I/O）；client.py 1857→1714 行；方法体合并（第二步）留 v8 |
+| B1 | ✅（第一步） | 抽出 `tstdx/client_core.py`（231 行：符号解析、行→模型、`_emit`、offline 守卫、请求体拼装——纯协议构造零 I/O）；client.py 1857→1714 行；方法体合并（第二步）留 v8 |
 | B2 | ✅（第一步） | `facade/api.py` 书面澄清与 DataSourceRouter 的关系/差异/对拍 TODO；完整收窄留 v8 |
 | B6 | ✅（第一步） | `web/facade.py` 进程级共享 HttpClient（`_shared_http()`）+ `BaseWebSource._owns_client` 所有权语义；54 处按调用新建注入共享池；子会话拆分留 v8 |
 
@@ -205,4 +205,4 @@ B7+C4 → B5 → C9 → C1/C3/C6/C8 → C2 → C5 → C7 → B10 → B11/B12/B13
   tomli；`tomllib` 因 `python_version=3.10` 被 mypy 视作缺失）→ pyproject
   overrides 补齐，同时移除未使用的 `cryptography.*` 段（`warn_unused_configs`）；
 - 1 处：`facade.py` `_client` 惰性客户端 None 起步无注解 → `Any`。
-最终 `mypy atst/`：**Success: no issues found in 117 source files**。
+最终 `mypy tstdx/`：**Success: no issues found in 117 source files**。

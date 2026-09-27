@@ -1,6 +1,6 @@
-# atst 重构方案 v8（2026-09）
+# tstdx 重构方案 v8（2026-09）
 
-> 基于对全仓 43,836 行 Python 代码（atst/ 29 个子包 + 100+ 模块）的静态梳理与依赖分析制定。
+> 基于对全仓 43,836 行 Python 代码（tstdx/ 29 个子包 + 100+ 模块）的静态梳理与依赖分析制定。
 > 原则：**行为不变、公开 API 不变、测试先行**。每一项完成后立即跑全量 pytest + 可达性门禁，绿灯才进入下一项。
 
 ## 一、项目功能与架构现状梳理
@@ -32,20 +32,20 @@
 
 | # | 问题 | 证据 | 风险 |
 |---|---|---|---|
-| P1 | `atst/i18n/` 是已废弃 shim（原 charset 更名遗留），带 DeprecationWarning，生产代码零引用，仅 3 个测试仍走旧路径 | `atst/i18n/__init__.py:4-52`；`tests/i18n/test_encoding.py:11`、`tests/test_bridges.py:154`、`tests/unit/test_i18n_priority.py:13`；`scripts/_reach_allow.txt:10-11` | 低 |
+| P1 | `tstdx/i18n/` 是已废弃 shim（原 charset 更名遗留），带 DeprecationWarning，生产代码零引用，仅 3 个测试仍走旧路径 | `tstdx/i18n/__init__.py:4-52`；`tests/i18n/test_encoding.py:11`、`tests/test_bridges.py:154`、`tests/unit/test_i18n_priority.py:13`；`scripts/_reach_allow.txt:10-11` | 低 |
 | P2 | `facade/api.py` 内 17 处「新建 WebQuoteSession→调用→close」复制粘贴模板 | baidu_kline 865 / baidu_minute 875 / baidu_ticks 885 / baidu_quote 895 / fund_nav_history 913 … 约 865–1260 行 | 低 |
-| P3 | `cli.py` 1210 行单文件 ~40 个 `_cmd_*` 函数 + 210 行 argparse 长函数 | `atst/cli.py` | 低 |
-| P4 | `web/facade.py` 1336 行单类 63 方法，全部 Web 域能力堆在一个 `WebQuoteSession` | `atst/web/facade.py:124` 起；v7 计划 B6 已预留 | 低-中 |
-| P5 | `client.py` 1715 行 9 个类：sync/async 镜像 + 8 个子客户端 + 工厂 | `atst/client.py` | 中（`tests/facade/test_compat_layer.py` monkeypatch `atst.client` 内部符号） |
+| P3 | `cli.py` 1210 行单文件 ~40 个 `_cmd_*` 函数 + 210 行 argparse 长函数 | `tstdx/cli.py` | 低 |
+| P4 | `web/facade.py` 1336 行单类 63 方法，全部 Web 域能力堆在一个 `WebQuoteSession` | `tstdx/web/facade.py:124` 起；v7 计划 B6 已预留 | 低-中 |
+| P5 | `client.py` 1715 行 9 个类：sync/async 镜像 + 8 个子客户端 + 工厂 | `tstdx/client.py` | 中（`tests/facade/test_compat_layer.py` monkeypatch `tstdx.client` 内部符号） |
 | P6 | README 代码地图缺 `sink/`（vipdoc 写回）与 `charset/` 条目，易被误判为与 `sinks/`/`i18n` 重复 | README「核心代码文件地图」 | 低 |
-| 明确不做 | `sink/` 与 `sinks/` **不合并**（职责不同：输出 Sink vs vipdoc .day 写回，两包 docstring 已交叉声明）；web/ Source 层模板抽象已达标，仅留两个小优化（KlineSource 分页器复用、corporate 两处 BaseWebSource 归入 _EastmoneyJson），本期不动 | `atst/sink/__init__.py:4-7`、`atst/sinks/__init__.py` | — |
+| 明确不做 | `sink/` 与 `sinks/` **不合并**（职责不同：输出 Sink vs vipdoc .day 写回，两包 docstring 已交叉声明）；web/ Source 层模板抽象已达标，仅留两个小优化（KlineSource 分页器复用、corporate 两处 BaseWebSource 归入 _EastmoneyJson），本期不动 | `tstdx/sink/__init__.py:4-7`、`tstdx/sinks/__init__.py` | — |
 
 ## 三、改造步骤
 
-### P1 删除 `atst/i18n/` 废弃 shim（预计 -54 行）
-1. 三个测试文件改 `from atst.charset import …`（或 `atst.charset.encoding`）。
-2. 删除 `atst/i18n/` 目录；`scripts/_reach_allow.txt` 删除 i18n 两行。
-3. 更新 `docs/api/README.md`、`docs/cookbook/03_offline_vipdoc.md` 中的 `atst.i18n` 引用。
+### P1 删除 `tstdx/i18n/` 废弃 shim（预计 -54 行）
+1. 三个测试文件改 `from tstdx.charset import …`（或 `tstdx.charset.encoding`）。
+2. 删除 `tstdx/i18n/` 目录；`scripts/_reach_allow.txt` 删除 i18n 两行。
+3. 更新 `docs/api/README.md`、`docs/cookbook/03_offline_vipdoc.md` 中的 `tstdx.i18n` 引用。
 4. 验证：全量 pytest + `python scripts/audit_reachability.py --strict`。
 
 ### P2 `facade/api.py` 提取 `_with_web_session`（消除 17 段重复，预计 -150 行）
@@ -56,8 +56,8 @@
 
 ### P3 `cli.py` 拆分为 `cli/` 包（行为不变，公开入口仅 `build_parser`/`main`）
 1. 布局：`cli/__init__.py`（re-export build_parser/main 兼容旧 import）、`cli/_table.py`（输出工具）、`cli/cmds_market.py`（bars/quotes/count/info…）、`cli/cmds_web.py`（baidu/fund/index/changes/hot…）、`cli/cmds_hosts.py`（hosts_scan/serve/probe/server-test…）、`cli/parser.py`（build_parser，改 (name, add_args, handler) 注册表驱动）。
-2. 顶层 `atst/cli.py` 若被 `import atst.cli` 引用，保留一个 shim 模块 re-export（grep 确认引用面后再定）。
-3. 验证：`pytest tests/test_cli_hosts.py tests/unit/test_cli_semantics.py -q` + 手动 `atst --help`。
+2. 顶层 `tstdx/cli.py` 若被 `import tstdx.cli` 引用，保留一个 shim 模块 re-export（grep 确认引用面后再定）。
+3. 验证：`pytest tests/test_cli_hosts.py tests/unit/test_cli_semantics.py -q` + 手动 `tstdx --help`。
 
 ### P4 `web/facade.py` 拆域 Mixin（v7 B6 兑现，公开面 `web_session()/WebQuoteSession` 不变）
 1. 按域拆为 Mixin（方法纯搬移，无逻辑改动）：
@@ -71,8 +71,8 @@
 3. 验证：`pytest tests/web -q`（重点 `test_web_facade.py`、`test_registry_consistency.py`）+ 全量。
 
 ### P5 `client.py` 拆 sync/async 文件（纯文件搬移，最后做）
-1. 布局：`client/__init__.py`（re-export 全部 9 类 + `get_client`，保持 `from atst.client import TdxClient` 等所有现有 import 路径不变）、`client/sync.py`（TdxClient + 4 子类）、`client/async_.py`（Async* 4 类）、`client/factory.py`（get_client）。
-2. **先 grep `tests/facade/test_compat_layer.py` 的 monkeypatch 目标**，同步把 patch 路径指到新模块；其余 `import atst.client as …` 引用逐一核对。
+1. 布局：`client/__init__.py`（re-export 全部 9 类 + `get_client`，保持 `from tstdx.client import TdxClient` 等所有现有 import 路径不变）、`client/sync.py`（TdxClient + 4 子类）、`client/async_.py`（Async* 4 类）、`client/factory.py`（get_client）。
+2. **先 grep `tests/facade/test_compat_layer.py` 的 monkeypatch 目标**，同步把 patch 路径指到新模块；其余 `import tstdx.client as …` 引用逐一核对。
 3. sync/async 抽象合并（mixin 化去镜像）**本期不做**——重载密集，风险中高，留待 v9。
 4. 验证：全量 pytest + `test_sync_async_parity.py` 奇偶门禁。
 

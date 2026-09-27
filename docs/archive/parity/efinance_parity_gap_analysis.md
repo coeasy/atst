@@ -1,10 +1,10 @@
-# atst ↔ efinance 接口能力对标与补全报告
+# tstdx ↔ efinance 接口能力对标与补全报告
 
-> **归档说明（2026-09-23）**：本文是当时的对标/审计快照，**不是现行契约**。文中以现在时出现的 `UnifiedQuoteAPI` 统一门面（包括「新增 N 个门面方法」一类清单与给下游的校验指令）已随 v16 Phase 2 物理删除；今天的对外接口面是 `atst.client.TdxClient` / `Client` 与 capability 目录，口径见 [interfaces.md](../../api/interfaces.md) 与 [ARCHITECTURE.md](../../ARCHITECTURE.md)。本文的点位数、方法名与端点清单按原文留存而不逐条订正 —— 归档负责说明当时为什么这么做，不负责说明现在怎么用。
+> **归档说明（2026-09-23）**：本文是当时的对标/审计快照，**不是现行契约**。文中以现在时出现的 `UnifiedQuoteAPI` 统一门面（包括「新增 N 个门面方法」一类清单与给下游的校验指令）已随 v16 Phase 2 物理删除；今天的对外接口面是 `tstdx.client.TdxClient` / `Client` 与 capability 目录，口径见 [interfaces.md](../../api/interfaces.md) 与 [ARCHITECTURE.md](../../ARCHITECTURE.md)。本文的点位数、方法名与端点清单按原文留存而不逐条订正 —— 归档负责说明当时为什么这么做，不负责说明现在怎么用。
 
 > 目标：对标开源库 [`Micro-sheep/efinance`](https://github.com/Micro-sheep/efinance) 的
-> **stock / fund / futures / bond** 四大模块全部公开函数，补全 atst 缺失的数据接口，
-> 使 atst 在「数据接口能力」层面对齐并覆盖 efinance。
+> **stock / fund / futures / bond** 四大模块全部公开函数，补全 tstdx 缺失的数据接口，
+> 使 tstdx 在「数据接口能力」层面对齐并覆盖 efinance。
 >
 > 生成时间：2026-09-09
 > 新增门面方法：`UnifiedQuoteAPI` 上新增 **21** 个 efinance 对标方法（详见下文）。
@@ -13,7 +13,7 @@
 
 ## 1. 结论速览
 
-| 模块 | efinance 公开函数数 | 此前 atst 已覆盖 | 本次新增 | 剩余未覆盖（说明） |
+| 模块 | efinance 公开函数数 | 此前 tstdx 已覆盖 | 本次新增 | 剩余未覆盖（说明） |
 |------|------------------|----------------|----------|------------------|
 | stock | 18 | 14 | **4** | 0（全部覆盖） |
 | fund | 14 | 7 | **7** | 2（见 §6 备注） |
@@ -22,11 +22,11 @@
 | **合计** | **46** | 21 | **21** | 3（1 项超出数据接口范畴） |
 
 新增代码文件：
-- `atst/web/efinance_fund.py` —— 天天基金移动端源（`FundMobSource`）
-- `atst/web/efinance_deriv.py` —— 期货 / 债券 push2 源（`EastmoneyFuturesSource` / `EastmoneyBondSource`）
-- `atst/web/_session_efinance.py` —— 三个门面 Mixin
-- `atst/facade/api.py` —— 新增 21 个 `UnifiedQuoteAPI` 方法
-- `atst/web/session.py` —— `WebQuoteSession` 继承三个 Mixin
+- `tstdx/web/efinance_fund.py` —— 天天基金移动端源（`FundMobSource`）
+- `tstdx/web/efinance_deriv.py` —— 期货 / 债券 push2 源（`EastmoneyFuturesSource` / `EastmoneyBondSource`）
+- `tstdx/web/_session_efinance.py` —— 三个门面 Mixin
+- `tstdx/facade/api.py` —— 新增 21 个 `UnifiedQuoteAPI` 方法
+- `tstdx/web/session.py` —— `WebQuoteSession` 继承三个 Mixin
 
 新增测试：
 - `tests/web/test_efinance_fund.py`（7 用例）
@@ -38,7 +38,7 @@
 
 ## 2. 股票模块（stock，18）
 
-| efinance 函数 | atst 对应 | 状态 |
+| efinance 函数 | tstdx 对应 | 状态 |
 |---------------|-----------|------|
 | `get_base_info` / `_single` / `_muliti` | **`stock_base_info(codes)`**（新增，批量） | ✅ 新增 |
 | `get_quote_history` | `history(symbol, period, count, adjust)` | ✅ 已有 |
@@ -64,7 +64,7 @@
 
 ## 3. 基金模块（fund，14）
 
-| efinance 函数 | atst 对应 | 状态 |
+| efinance 函数 | tstdx 对应 | 状态 |
 |---------------|-----------|------|
 | `get_quote_history` | `fund_nav_history(code, ...)` | ✅ 已有 |
 | `get_quote_history_multi` | `fund_nav_history`（多只循环） | ✅ 已有 |
@@ -92,7 +92,7 @@
 > 后端说明：TDX 7727 扩展行情服务（期货/商品期权）在 2026-09 实测主站池整体不可达，
 > 本模块改用**东财 push2 / push2his** 作为 Web 降级通路。
 
-| efinance 函数 | atst 对应 | 状态 |
+| efinance 函数 | tstdx 对应 | 状态 |
 |---------------|-----------|------|
 | `get_futures_base_info` | **`futures_base_info()`**（新增，全市场） | ✅ 新增 |
 | `get_realtime_quotes` | **`futures_realtime(quote_id)`**（新增，单合约） | ✅ 新增 |
@@ -109,7 +109,7 @@
 
 > 债券与 A 股同处沪/深市场，secid 沿用 `1.代码` / `0.代码`；资金流复用 `EastmoneyFundFlowSource`。
 
-| efinance 函数 | atst 对应 | 状态 |
+| efinance 函数 | tstdx 对应 | 状态 |
 |---------------|-----------|------|
 | `get_base_info` / `_single` / `_multi` | **`bond_base_info(codes)`**（新增，批量） | ✅ 新增 |
 | `get_realtime_quotes` | **`bond_realtime(codes)`**（新增） | ✅ 新增 |
@@ -131,12 +131,12 @@
 | fund `get_base_info_muliti` | 批量基金基础信息。当前 `fund_base_info` 仅单数；批量可由调用方循环，或后续补 `fund_base_info_multi`。 | 低优先，按需补充 |
 | bond `get_all_base_info` | 全市场债券基础信息枚举。可通过东财 `clist` 债券板块（`m:90` 类）拉全量，代价较高。 | 低优先，按需补充 |
 | fund `get_pdf_reports` | 将基金 PDF 研报下载到本地文件系统。**非数据接口**，属文件 IO 能力，超出行情数据库范畴。 | 不实现（范畴外） |
-| stock `get_history_bill` / `get_today_bill` | efinance 为个股「大单分档」分时流；atst 以 `big_order_flow`（日级大单净额）近似覆盖，粒度不同。 | 如需逐分钟大单明细，可后续扩展 |
+| stock `get_history_bill` / `get_today_bill` | efinance 为个股「大单分档」分时流；tstdx 以 `big_order_flow`（日级大单净额）近似覆盖，粒度不同。 | 如需逐分钟大单明细，可后续扩展 |
 | futures `get_realtime_quotes`（全市场） | 本次 `futures_realtime` 为单合约；全市场实时快照可由 `futures_base_info` 枚举后逐只拉取。 | 等价覆盖，可接受 |
 
 ---
 
-## 7. 关键设计约定（与既有 atst 一致）
+## 7. 关键设计约定（与既有 tstdx 一致）
 
 - **归一化契约**：价格字段 ×100（东财 push2 口径）统一 ÷100 还原到「元」；成交量统一「股」；金额「元」。
 - **容错**：解析失败 / 接口下线统一抛 `SourceDeprecated`，便于上层降级与「接口已下线」检测（复用 `_EastmoneyJson._get_json` 的主机池 failover + 黑名单）。

@@ -73,11 +73,11 @@ all       = [
 ]
 
 [project.urls]
-Homepage      = "https://github.com/coeasy/tstdx"
-Documentation = "https://github.com/coeasy/tstdx/tree/main/docs"
-Issues        = "https://github.com/coeasy/tstdx/issues"
-Changelog     = "https://github.com/coeasy/tstdx/blob/main/CHANGELOG.md"
-Releases      = "https://github.com/coeasy/tstdx/releases"
+Homepage      = "https://github.com/coeasy/atst"
+Documentation = "https://github.com/coeasy/atst/tree/main/docs"
+Issues        = "https://github.com/coeasy/atst/issues"
+Changelog     = "https://github.com/coeasy/atst/blob/main/CHANGELOG.md"
+Releases      = "https://github.com/coeasy/atst/releases"
 
 [project.scripts]
 atst = "atst.cli:main"

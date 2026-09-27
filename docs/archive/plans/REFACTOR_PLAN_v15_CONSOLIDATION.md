@@ -1,4 +1,4 @@
-# atst v15 重构方案：三代架构统一（三审修订版）
+# tstdx v15 重构方案：三代架构统一（三审修订版）
 
 > **文档状态**：待执行（三遍审查修订）
 > **创建日期**：2026-09-14
@@ -18,8 +18,8 @@
 
 ### Round 2 发现：当前代码库已处于大规模断裂状态
 
-- **execution/ 包遮蔽 execution.py 文件**：`from atst.execution import SingleFlight` 已经 `ImportError`，影响 6 个文件
-- **streaming/ 循环导入**：`import atst.runtime` 完全失败（streaming/__init__.py → stateful.py → `from . import AsyncQuoteStream` → 包未初始化完成）
+- **execution/ 包遮蔽 execution.py 文件**：`from tstdx.execution import SingleFlight` 已经 `ImportError`，影响 6 个文件
+- **streaming/ 循环导入**：`import tstdx.runtime` 完全失败（streaming/__init__.py → stateful.py → `from . import AsyncQuoteStream` → 包未初始化完成）
 - `service.py` 的 `manager.tdx` 接口无法简单委托 v14 Runtime
 - `cache.py` 的 `KlineCache` 是原始数据层缓存，不可被 `SemanticResultCache` 替代
 - 25 个测试文件 + 13 个非测试文件的导入链已断裂
@@ -60,8 +60,8 @@
 
 | # | 问题 | 根因 | 影响范围 |
 |---|---|---|---|
-| P0-1 | `import atst.runtime` 完全失败 | `runtime/__init__.py` → `stream.py` → `streaming.state` → `streaming/__init__.py` → `stateful.py` → `from . import AsyncQuoteStream`（已删除的类） | v14 Runtime/RuntimeGateway/StreamHandle 全部不可导入 |
-| P0-2 | `from atst.execution import SingleFlight` 失败 | `execution/` 包遮蔽 `execution.py` 文件，包 `__init__.py` 不导出 `SingleFlight` | `planned_service.py`、`failure.py`、4 个测试文件断裂 |
+| P0-1 | `import tstdx.runtime` 完全失败 | `runtime/__init__.py` → `stream.py` → `streaming.state` → `streaming/__init__.py` → `stateful.py` → `from . import AsyncQuoteStream`（已删除的类） | v14 Runtime/RuntimeGateway/StreamHandle 全部不可导入 |
+| P0-2 | `from tstdx.execution import SingleFlight` 失败 | `execution/` 包遮蔽 `execution.py` 文件，包 `__init__.py` 不导出 `SingleFlight` | `planned_service.py`、`failure.py`、4 个测试文件断裂 |
 
 ### 2.2 严重问题：v14 功能不完整
 
@@ -138,7 +138,7 @@ Bridge: RuntimeGateway 持有 UnifiedRuntime 实例
 ### 3.2 目标包结构
 
 ```
-atst/
+tstdx/
 ├── __init__.py              # 包入口（惰性导入）
 ├── __main__.py              # CLI 入口
 ├── errors.py                # 错误分类树（保留）
@@ -248,32 +248,32 @@ atst/
 
 | 原文件名 | 新文件名 | 理由 |
 |---|---|---|
-| `atst/runtime.py` | `atst/runtime_v13.py` | 避免与 `runtime/` 包遮蔽 |
-| `atst/execution.py` | `atst/execution_primitives.py` | 避免与 `execution/` 包遮蔽 |
+| `tstdx/runtime.py` | `tstdx/runtime_v13.py` | 避免与 `runtime/` 包遮蔽 |
+| `tstdx/execution.py` | `tstdx/execution_primitives.py` | 避免与 `execution/` 包遮蔽 |
 
 ### 3.4 新增文件清单
 
 | 文件 | 用途 |
 |---|---|
-| `atst/execution/primitives.py` | 从 `execution_primitives.py` 导入并 re-export v13 执行原语 |
-| `atst/runtime/legacy_bridge.py` | 桥接 `UnifiedRuntime` 作为 v14 执行引擎 |
-| `atst/facade/legacy_service_adapter.py` | 提供 `manager.tdx` 兼容接口 |
+| `tstdx/execution/primitives.py` | 从 `execution_primitives.py` 导入并 re-export v13 执行原语 |
+| `tstdx/runtime/legacy_bridge.py` | 桥接 `UnifiedRuntime` 作为 v14 执行引擎 |
+| `tstdx/facade/legacy_service_adapter.py` | 提供 `manager.tdx` 兼容接口 |
 
 ### 3.5 修改清单（不删除任何文件）
 
 | 文件 | 修改内容 |
 |---|---|
-| `atst/execution/__init__.py` | 添加 `from .primitives import ExecutionBudget, SingleFlight, BatchPlan, BatchPlanner` |
-| `atst/streaming/__init__.py` | 修复幽灵导入（移除 `from .stateful import` 或改为延迟导入） |
-| `atst/streaming/stateful.py:14` | 修复 `from . import AsyncQuoteStream` → 从正确模块导入或定义 stub |
-| `atst/planned_service.py:34` | `from .execution import` → `from .execution_primitives import` |
-| `atst/failure.py:24` | `from .execution import` → `from .execution_primitives import` |
-| `atst/client_api.py:25` | `from .runtime import UnifiedRuntime` → `from .runtime_v13 import UnifiedRuntime` |
-| `atst/orchestration.py:16` | `from .runtime import UnifiedRuntime` → `from .runtime_v13 import UnifiedRuntime` |
-| `atst/runtime.py` (重命名后) | 无修改，仅文件名变更 |
-| `atst/execution.py` (重命名后) | 无修改，仅文件名变更 |
-| 测试文件（6 个） | 更新导入路径：`from atst.execution import` → `from atst.execution_primitives import` |
-| 测试文件（3 个） | 更新导入路径：`from atst.runtime import UnifiedRuntime` → `from atst.runtime_v13 import UnifiedRuntime` |
+| `tstdx/execution/__init__.py` | 添加 `from .primitives import ExecutionBudget, SingleFlight, BatchPlan, BatchPlanner` |
+| `tstdx/streaming/__init__.py` | 修复幽灵导入（移除 `from .stateful import` 或改为延迟导入） |
+| `tstdx/streaming/stateful.py:14` | 修复 `from . import AsyncQuoteStream` → 从正确模块导入或定义 stub |
+| `tstdx/planned_service.py:34` | `from .execution import` → `from .execution_primitives import` |
+| `tstdx/failure.py:24` | `from .execution import` → `from .execution_primitives import` |
+| `tstdx/client_api.py:25` | `from .runtime import UnifiedRuntime` → `from .runtime_v13 import UnifiedRuntime` |
+| `tstdx/orchestration.py:16` | `from .runtime import UnifiedRuntime` → `from .runtime_v13 import UnifiedRuntime` |
+| `tstdx/runtime.py` (重命名后) | 无修改，仅文件名变更 |
+| `tstdx/execution.py` (重命名后) | 无修改，仅文件名变更 |
+| 测试文件（6 个） | 更新导入路径：`from tstdx.execution import` → `from tstdx.execution_primitives import` |
+| 测试文件（3 个） | 更新导入路径：`from tstdx.runtime import UnifiedRuntime` → `from tstdx.runtime_v13 import UnifiedRuntime` |
 
 ---
 
@@ -281,7 +281,7 @@ atst/
 
 ### Phase 0：修复导入断裂（P0 紧急）
 
-**目标**：修复循环导入和模块遮蔽，使 `import atst.runtime` 和 `from atst.execution import SingleFlight` 恢复工作
+**目标**：修复循环导入和模块遮蔽，使 `import tstdx.runtime` 和 `from tstdx.execution import SingleFlight` 恢复工作
 
 **步骤**：
 
@@ -290,26 +290,26 @@ atst/
    - `streaming/__init__.py:28`：如果 `stateful.py` 依赖的基类已删除，需在 `__init__.py` 中提供 stub 或从 `planned.py` 别名导出
 
 2. **重命名 execution.py 消除遮蔽**
-   - `atst/execution.py` → `atst/execution_primitives.py`
-   - 新建 `atst/execution/primitives.py`：`from ..execution_primitives import ExecutionBudget, SingleFlight, BatchPlan, BatchPlanner`
-   - `atst/execution/__init__.py`：添加 `from .primitives import ExecutionBudget, SingleFlight, BatchPlan, BatchPlanner`
+   - `tstdx/execution.py` → `tstdx/execution_primitives.py`
+   - 新建 `tstdx/execution/primitives.py`：`from ..execution_primitives import ExecutionBudget, SingleFlight, BatchPlan, BatchPlanner`
+   - `tstdx/execution/__init__.py`：添加 `from .primitives import ExecutionBudget, SingleFlight, BatchPlan, BatchPlanner`
    - 更新 `planned_service.py:34` 和 `failure.py:24` 的导入
 
 3. **重命名 runtime.py 消除遮蔽**
-   - `atst/runtime.py` → `atst/runtime_v13.py`
+   - `tstdx/runtime.py` → `tstdx/runtime_v13.py`
    - 更新 `client_api.py:25` 和 `orchestration.py:16` 的导入
 
 4. **更新测试文件导入路径**
-   - 6 个测试文件：`from atst.execution import SingleFlight` → `from atst.execution_primitives import SingleFlight`
-   - 3 个测试文件：`from atst.runtime import UnifiedRuntime` → `from atst.runtime_v13 import UnifiedRuntime`
+   - 6 个测试文件：`from tstdx.execution import SingleFlight` → `from tstdx.execution_primitives import SingleFlight`
+   - 3 个测试文件：`from tstdx.runtime import UnifiedRuntime` → `from tstdx.runtime_v13 import UnifiedRuntime`
 
 5. **验证**
    ```bash
-   python -c "import atst; print('OK')"
-   python -c "from atst.runtime import Runtime, RuntimeGateway; print('OK')"
-   python -c "from atst.execution import ExecutionPlanner, SingleFlight; print('OK')"
-   python -c "from atst.runtime_v13 import UnifiedRuntime; print('OK')"
-   python -c "from atst.execution_primitives import SingleFlight, ExecutionBudget; print('OK')"
+   python -c "import tstdx; print('OK')"
+   python -c "from tstdx.runtime import Runtime, RuntimeGateway; print('OK')"
+   python -c "from tstdx.execution import ExecutionPlanner, SingleFlight; print('OK')"
+   python -c "from tstdx.runtime_v13 import UnifiedRuntime; print('OK')"
+   python -c "from tstdx.execution_primitives import SingleFlight, ExecutionBudget; print('OK')"
    ```
 
 **预计变更**：~15 个文件（2 重命名 + 5 修改 + 2 新建 + 6 测试修改）
@@ -342,8 +342,8 @@ atst/
 
 5. **验证**
    ```bash
-   python -c "from atst.runtime import RuntimeGateway; gw = RuntimeGateway.create(); print(gw.call('bars', 'sh600519', count=30))"
-   python -c "from atst.client_api import Client; c = Client(); print(c.bars('sh600519', count=30))"
+   python -c "from tstdx.runtime import RuntimeGateway; gw = RuntimeGateway.create(); print(gw.call('bars', 'sh600519', count=30))"
+   python -c "from tstdx.client_api import Client; c = Client(); print(c.bars('sh600519', count=30))"
    ```
 
 **预计变更**：~5 个文件（2 新建 + 3 修改）
@@ -416,19 +416,19 @@ atst/
 
 1. **全量导入验证**
    ```bash
-   python -c "import atst; print('OK')"
-   python -c "from atst import TdxClient; print('OK')"
-   python -c "from atst.runtime import Runtime, RuntimeGateway; print('OK')"
-   python -c "from atst.execution import ExecutionPlanner, SingleFlight; print('OK')"
-   python -c "from atst.runtime_v13 import UnifiedRuntime; print('OK')"
-   python -c "from atst.client_api import Client; print('OK')"
-   python -c "from atst.facade import UnifiedQuoteAPI; print('OK')"
+   python -c "import tstdx; print('OK')"
+   python -c "from tstdx import TdxClient; print('OK')"
+   python -c "from tstdx.runtime import Runtime, RuntimeGateway; print('OK')"
+   python -c "from tstdx.execution import ExecutionPlanner, SingleFlight; print('OK')"
+   python -c "from tstdx.runtime_v13 import UnifiedRuntime; print('OK')"
+   python -c "from tstdx.client_api import Client; print('OK')"
+   python -c "from tstdx.facade import UnifiedQuoteAPI; print('OK')"
    ```
 
 2. **Ruff + mypy 清洁**
    ```bash
-   ruff check atst/
-   python -m mypy atst/ --ignore-missing-imports
+   ruff check tstdx/
+   python -m mypy tstdx/ --ignore-missing-imports
    ```
 
 3. **测试运行**
@@ -438,7 +438,7 @@ atst/
 
 4. **覆盖率门禁**
    ```bash
-   python -m pytest --cov=atst --cov-fail-under=77
+   python -m pytest --cov=tstdx --cov-fail-under=77
    ```
 
 ---
@@ -472,18 +472,18 @@ atst/
 
 ## 7. 验收标准
 
-- [ ] `python -c "import atst"` 无错误
-- [ ] `python -c "from atst.runtime import Runtime, RuntimeGateway"` 无错误
-- [ ] `python -c "from atst.execution import ExecutionPlanner, SingleFlight"` 无错误
-- [ ] `python -c "from atst.runtime_v13 import UnifiedRuntime"` 无错误
-- [ ] `python -c "from atst.client_api import Client"` 无错误
-- [ ] `python -c "from atst.facade import UnifiedQuoteAPI"` 无错误
+- [ ] `python -c "import tstdx"` 无错误
+- [ ] `python -c "from tstdx.runtime import Runtime, RuntimeGateway"` 无错误
+- [ ] `python -c "from tstdx.execution import ExecutionPlanner, SingleFlight"` 无错误
+- [ ] `python -c "from tstdx.runtime_v13 import UnifiedRuntime"` 无错误
+- [ ] `python -c "from tstdx.client_api import Client"` 无错误
+- [ ] `python -c "from tstdx.facade import UnifiedQuoteAPI"` 无错误
 - [ ] 无模块遮蔽冲突（`runtime.py` / `execution.py` 已重命名）
 - [ ] 无循环导入（`streaming/` 幽灵导入已修复）
-- [ ] `ruff check atst/` 0 violations
-- [ ] `mypy atst/` 0 errors
+- [ ] `ruff check tstdx/` 0 violations
+- [ ] `mypy tstdx/` 0 errors
 - [ ] `pytest tests/ -x -q` 全部通过
-- [ ] `pytest --cov=atst --cov-fail-under=77` 通过
+- [ ] `pytest --cov=tstdx --cov-fail-under=77` 通过
 - [ ] `integration/` 文件数从 14 降到 ~6
 - [ ] `cli/` 文件数从 7 降到 3-4
 - [ ] v14 RuntimeGateway 支持 `call()` / `execute_with_policy()` / `AsyncClient`

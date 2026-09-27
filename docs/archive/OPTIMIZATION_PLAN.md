@@ -1,4 +1,4 @@
-# atst 优化计划（合并版）
+# tstdx 优化计划（合并版）
 
 > 合并来源：① 项目全景梳理（服务面 / 发布卫生 / 长期队列）；② TDX 接口深度梳理（账本校准 / 门禁增强 / 协议扩展）。
 > 基线快照（2026-09-02，v1.0.0）：核心 30,013 行 / 20 子包；测试 43 文件 **1075 用例**全绿；Golden 语料 **520**（real 50）；命令账本 **85 条**（L1=4 / 精确解析器 60 / client 在用 18）；Web 源 **14**；HTTP 端点 ~40 / MCP 10 工具 / WS 6 方法；lint 存量 **417** 项（ruff 最新规则）。
@@ -32,7 +32,7 @@
 - 新增 `by_status()` / `unknown_commands()` 查询助手（`unknown_command_ids` 保留为别名）。
   - **修订（2026-09-19，v17 第 46 步 / F-65）**：这句里的"别名"关系从未成立。账本侧自初始提交
     （`f73ef61` 的 `commands.py`）就只有 `unknown_command_ids()`，没有过 `unknown_commands()`。
-    仓里确实有这个名字，但它是 `Sniffer.unknown_commands()`（`atst/transport/sniff.py`）——
+    仓里确实有这个名字，但它是 `Sniffer.unknown_commands()`（`tstdx/transport/sniff.py`）——
     采集器给出"观察到但**未登记**"的裸命令号，与账本函数给出"已登记但**语义未经 golden 校正**"
     的 `Command` 行，是两件不同的事，名字撞车属巧合。归档原文按史保留、不回溯改写；当前口径见
     `docs/api/interfaces.md`「命令账本查询面」：`unknown_command_ids()` 与 `by_family()` 一起被
@@ -63,7 +63,7 @@
 **问题根因**：facade 能力（~40 方法）与 CLI（0 web 能力）/ MCP（10 工具）/ WS（6 方法）/ docs/api（新能力 0 提及）四端不对齐。
 
 ### C1 CLI 新增 web 能力子命令 ✅
-- `atst changes`（盘中异动：`--types/--page/--size/--json`）、`atst hot`（人气榜：`--page/--size/--json`）。
+- `tstdx changes`（盘中异动：`--types/--page/--size/--json`）、`tstdx hot`（人气榜：`--page/--size/--json`）。
 
 ### C2 MCP 工具扩容 ✅
 - 新增 `get_stock_changes` / `get_hot_rank` 工具（inputSchema 与既有工具一致）。
@@ -80,7 +80,7 @@
 
 ### D1 工具 CLI 控制台编码统一 ✅
 - **问题实证**：`capture.py` 在 GBK 控制台输出乱码（golden_audit 已修，其余工具未修）。
-- 新增 `atst/tools/_console.py` 统一助手（stdout/stderr reconfigure UTF-8 + errors=replace），`capture.py` / `spec_audit.py` / `golden_expand.py` / `check_originality.py` 全部接入。
+- 新增 `tstdx/tools/_console.py` 统一助手（stdout/stderr reconfigure UTF-8 + errors=replace），`capture.py` / `spec_audit.py` / `golden_expand.py` / `check_originality.py` 全部接入。
 
 ### D2 异步门面（紧凑版）✅
 - 新增 `facade/async_api.py` **`AsyncUnifiedQuoteAPI`**：核心 10 方法
@@ -90,7 +90,7 @@
   `UnifiedQuoteAPI` 公开方法；`aquery()` 永不抛异常边界与同步版对齐。
 
 ### D3 版本一致性自检 ✅
-- `atst/__init__.py` 版本常量与 pyproject 对齐 1.1.0；`CLI version` 子命令输出同步。
+- `tstdx/__init__.py` 版本常量与 pyproject 对齐 1.1.0；`CLI version` 子命令输出同步。
 
 ---
 

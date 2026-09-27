@@ -1,8 +1,8 @@
 # 天天基金扩展接口：排行 / 快照 / 经理 / 公司 / 搜索
 
-> **归档说明（2026-09-23）**：本文是当时的对标/审计快照，**不是现行契约**。文中以现在时出现的 `UnifiedQuoteAPI` 统一门面（包括「新增 N 个门面方法」一类清单与给下游的校验指令）已随 v16 Phase 2 物理删除；今天的对外接口面是 `atst.client.TdxClient` / `Client` 与 capability 目录，口径见 [interfaces.md](../../api/interfaces.md) 与 [ARCHITECTURE.md](../../ARCHITECTURE.md)。本文的点位数、方法名与端点清单按原文留存而不逐条订正 —— 归档负责说明当时为什么这么做，不负责说明现在怎么用。
+> **归档说明（2026-09-23）**：本文是当时的对标/审计快照，**不是现行契约**。文中以现在时出现的 `UnifiedQuoteAPI` 统一门面（包括「新增 N 个门面方法」一类清单与给下游的校验指令）已随 v16 Phase 2 物理删除；今天的对外接口面是 `tstdx.client.TdxClient` / `Client` 与 capability 目录，口径见 [interfaces.md](../../api/interfaces.md) 与 [ARCHITECTURE.md](../../ARCHITECTURE.md)。本文的点位数、方法名与端点清单按原文留存而不逐条订正 —— 归档负责说明当时为什么这么做，不负责说明现在怎么用。
 
-> 本文件记录 atst 在基金域的**第二轮扩展**：补齐 efinance 对标（7 端点）与
+> 本文件记录 tstdx 在基金域的**第二轮扩展**：补齐 efinance 对标（7 端点）与
 > `adapters_fund`（净值 / 估值 / 列表）之外的所有基金数据接口。
 > 上一轮对标见 `docs/efinance_parity_gap_analysis.md`。
 
@@ -49,7 +49,7 @@
 ## 三、代码结构
 
 ```
-atst/web/
+tstdx/web/
 ├── _mob_fund.py             # 新增：移动端共享工具（设备指纹 / 公共参数 / 归一化）
 ├── fund_rank.py             # 新增：排行 / 快照 / 净值 / 详情 / 评级 / 走势（7 方法）
 ├── fund_manager.py          # 新增：基金经理（5 方法）
@@ -57,7 +57,7 @@ atst/web/
 ├── _session_fund_v2.py # 新增：3 个 Session Mixin
 ├── facade.py                # 修改：WebQuoteSession 追加 3 个 Mixin
 └── efinance_fund.py         # 未改：efinance 对标 7 端点保持原样
-atst/facade/api.py          # 修改：+18 门面方法
+tstdx/facade/api.py          # 修改：+18 门面方法
 tests/web/test_fund_v2.py    # 新增：50 例离线测试
 ```
 
@@ -100,7 +100,7 @@ tests/web/test_fund_v2.py    # 新增：50 例离线测试
 ## 五、量化场景串联
 
 ```python
-from atst import Client
+from tstdx import Client
 
 client = Client()
 call = lambda capability, **kw: client.call(capability, **kw).data   # noqa: E731
@@ -130,7 +130,7 @@ funds = call("fund_company_funds", company_id=zs["company_id"], sort_field="SYL_
 scale = call("fund_company_scale", company_id=zs["company_id"])
 ```
 
-以上均为内核 capability（`atst.Client.call`），每次绑定单一 Provider 并在
+以上均为内核 capability（`tstdx.Client.call`），每次绑定单一 Provider 并在
 `QueryResult.meta` 留下溯源；旧的 `UnifiedQuoteAPI` 门面入口已随 v16 Phase 2 删除。
 
 ## 六、best-effort 边界与失败约定
@@ -168,4 +168,4 @@ scale = call("fund_company_scale", company_id=zs["company_id"])
 | `fundMNStopWatch`（基金简介） | 与 `fund_detail` 字段高度重叠（`FundMNDetailInformation` 是超集） |
 | `fundVPageDiagram`（净值走势图） | 与 `fund_nav_history` / `fund_nav_history_mob` 数据同源，只是图表抽样 |
 | `fundVarietieValuationDetail`（盘中估值曲线） | 需与 `fund_snapshot` 合并设计（估值曲线属高频轮询域，暂不做） |
-| 股票域 `stockTrends2` / `stockKline` / `stockDetails` / `stockGet` | 属股票行情域，atst 已有独立 push2 实现，不应由基金源重复 |
+| 股票域 `stockTrends2` / `stockKline` / `stockDetails` / `stockGet` | 属股票行情域，tstdx 已有独立 push2 实现，不应由基金源重复 |

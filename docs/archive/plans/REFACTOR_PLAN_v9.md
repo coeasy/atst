@@ -1,4 +1,4 @@
-# atst 重构方案 v9（2026-09，决策已确认，✅ 已全部落地）
+# tstdx 重构方案 v9（2026-09，决策已确认，✅ 已全部落地）
 
 > 承接 [REFACTOR_PLAN_v8.md](REFACTOR_PLAN_v8.md)（已全部落地）与
 > [ARCHITECTURE_AUDIT_v8.md](ARCHITECTURE_AUDIT_v8.md)（审计结论）。
@@ -71,9 +71,9 @@
 | 项 | 内容 | 风险 |
 |---|---|---|
 | Q4-1 web Source 层收尾 | `MinuteKlineSource`/`KlineSource` 抽共用分页拉取器；`EastmoneyNoticeSource`/`EastmoneyResearchSource` 归入 `_EastmoneyJson`（复用主机池 failover） | 低（`source_name`/capability 常量与 `_ADAPTERS` 注册表不变） |
-| Q4-2 web 包惰性导入 | `atst/web/__init__.py` 18 子模块全量 re-export 改 `__getattr__` + `_LAZY` 映射（对齐顶层 `atst/__init__` 模式）；`_ADAPTERS` 注册表改为惰性填充；注意 `tests/web/test_registry_consistency.py` 的注册表一致性门禁适配 | 低-中 |
-| Q4-3 半成品收敛决策 | `streaming/engine.py` 与 `QuoteStream` 平行实现：评估合并或明确降级为「高级组件库」并文档定位；`streaming/push.py` 同理；`atst/native`（Rust 实验层）去留（批次 H）——产出 ADR 后同步清理/更新 `_reach_allow.txt` 注释 | 决策项 |
-| Q4-4 `sinks/` 包改名 | `atst/sinks`（DataFrame/Parquet/DuckDB 输出）→ `atst/output`：新包 + `atst/sinks` 保留一个版本的兼容 shim（DeprecationWarning），README/docs/cookbook/tests 8 处 import 同步迁移；`_reach_allow.txt` 条目同步 | 低（有 shim 过渡） |
+| Q4-2 web 包惰性导入 | `tstdx/web/__init__.py` 18 子模块全量 re-export 改 `__getattr__` + `_LAZY` 映射（对齐顶层 `tstdx/__init__` 模式）；`_ADAPTERS` 注册表改为惰性填充；注意 `tests/web/test_registry_consistency.py` 的注册表一致性门禁适配 | 低-中 |
+| Q4-3 半成品收敛决策 | `streaming/engine.py` 与 `QuoteStream` 平行实现：评估合并或明确降级为「高级组件库」并文档定位；`streaming/push.py` 同理；`tstdx/native`（Rust 实验层）去留（批次 H）——产出 ADR 后同步清理/更新 `_reach_allow.txt` 注释 | 决策项 |
+| Q4-4 `sinks/` 包改名 | `tstdx/sinks`（DataFrame/Parquet/DuckDB 输出）→ `tstdx/output`：新包 + `tstdx/sinks` 保留一个版本的兼容 shim（DeprecationWarning），README/docs/cookbook/tests 8 处 import 同步迁移；`_reach_allow.txt` 条目同步 | 低（有 shim 过渡） |
 
 ## 执行顺序与里程碑
 

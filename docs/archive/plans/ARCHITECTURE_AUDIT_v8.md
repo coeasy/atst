@@ -1,4 +1,4 @@
-# atst 架构审计与重构报告 v8（2026-09）
+# tstdx 架构审计与重构报告 v8（2026-09）
 
 > 回答三个核心问题：**功能/架构/实现有哪些不合理？核心功能是否全部实现？主体链路是否全部贯通？**
 > 配套执行记录见 [REFACTOR_PLAN_v8.md](REFACTOR_PLAN_v8.md)；本文档同时给出审计结论与后续（v9）路线。
@@ -25,11 +25,11 @@
 
 | 项 | 前 | 后 |
 |---|---|---|
-| `atst/cli.py` 1210 行单文件 | ~40 个 `_cmd_*` + 210 行 argparse | `cli/` 包：`_common`/`cmds_market`/`cmds_web`/`cmds_hosts`/`parser` |
-| `atst/client.py` 1715 行 9 类 | 单文件 sync/async/工厂混杂 | `client/` 包：`sync.py`(1035)/`async_.py`(681)/`factory.py`(66)，37 个模块级符号逐一 re-export 对齐，monkeypatch 语义等价（`dispatch` 经包属性延迟解析） |
-| `atst/web/facade.py` 1336 行 63 方法 | 单类堆全部 Web 域能力 | `facade.py`(135) + 3 个 Mixin 文件（market 586/info 486/baidu 265），61 方法 AST 级 diff 为空 |
+| `tstdx/cli.py` 1210 行单文件 | ~40 个 `_cmd_*` + 210 行 argparse | `cli/` 包：`_common`/`cmds_market`/`cmds_web`/`cmds_hosts`/`parser` |
+| `tstdx/client.py` 1715 行 9 类 | 单文件 sync/async/工厂混杂 | `client/` 包：`sync.py`(1035)/`async_.py`(681)/`factory.py`(66)，37 个模块级符号逐一 re-export 对齐，monkeypatch 语义等价（`dispatch` 经包属性延迟解析） |
+| `tstdx/web/facade.py` 1336 行 63 方法 | 单类堆全部 Web 域能力 | `facade.py`(135) + 3 个 Mixin 文件（market 586/info 486/baidu 265），61 方法 AST 级 diff 为空 |
 | `facade/api.py` 21 段资源模板 | 「构造→try→close」复制粘贴 | 统一 `_with` 帮助方法，-85 行 |
-| `atst/i18n` 废弃 shim | 与 `charset` 双包并存 | 已删除，3 测试/文档/白名单同步迁移 |
+| `tstdx/i18n` 废弃 shim | 与 `charset` 双包并存 | 已删除，3 测试/文档/白名单同步迁移 |
 
 ## 二、架构与实现的不合理之处（按严重度）
 
@@ -47,7 +47,7 @@
 
 4. **web Source 层残余重复**：`adapters_ext.MinuteKlineSource` 与 `adapters.KlineSource` 的分页拉取逻辑雷同（`adapters_ext.py:124-203` vs `adapters.py:825-932`）；`corporate.py` 的 Notice/Research 两源退回 `BaseWebSource` 手写取数，应归入 `_EastmoneyJson`（主机池 failover 复用）。
 5. **`sink/` 与 `sinks/` 包名易混淆**：职责确实不同（输出 Sink vs vipdoc `.day` 写回），README 已补注；长期可考虑 `sinks/` 更名 `output/`（有 import 面成本，本期不做）。
-6. **web/__init__.py 导入面大**：18 个子模块、50 Source 全量 re-export；`import atst.web` 首次加载偏重，可评估惰性 `__getattr__`（对齐顶层 `atst/__init__` 的 `_LAZY` 模式）。
+6. **web/__init__.py 导入面大**：18 个子模块、50 Source 全量 re-export；`import tstdx.web` 首次加载偏重，可评估惰性 `__getattr__`（对齐顶层 `tstdx/__init__` 的 `_LAZY` 模式）。
 7. **pytest-cov 5.0.0 与 pytest 9.1.1 组合吞掉终端 summary 行**（既有环境问题，测试本身正常；日志需 `-p no:cov` 获取汇总）。
 
 ## 三、核心功能完整性核查（宣称 vs 实现）
@@ -60,10 +60,10 @@
 | 4 | 复权 K 线 | `adjusted_bars` 仅 `route="local"` 提供原始 K 线 + 在线 0x000F 事件（`facade/api.py:717-753`）；period≠day 或无 vipdoc 需调用方自取 events | ⚠️ 能力受限但口径守卫明确（W13），文档已声明 |
 | 5 | 全市场快照 | 仅 A 股节点；港/美股整市场枚举**显式 ValueError**（N7 能力边界），按代码的 hk/us quotes 有 | ⚠️ 有意收窄，非缺陷 |
 | 6 | 流式订阅 | QuoteStream（轮询+diff）可用；`streaming/push.py`（推送通道）与 `engine.py` 平行实现**未接入主链路**，登记白名单待 G2 决策 | ⚠️ 半成品未接线 |
-| 7 | 交易面 | `atst.trade/*`（1535 行）为洁净室推断**模拟器**：`SocketTransport.connect` 显式抛 `TradingUnavailable`，不连真实券商；主链路零引用（可达性孤儿） | ⚠️ 有意独立（范围红线写入 docstring），v8 已登记白名单并在 README 标注定位 |
+| 7 | 交易面 | `tstdx.trade/*`（1535 行）为洁净室推断**模拟器**：`SocketTransport.connect` 显式抛 `TradingUnavailable`，不连真实券商；主链路零引用（可达性孤儿） | ⚠️ 有意独立（范围红线写入 docstring），v8 已登记白名单并在 README 标注定位 |
 | 8 | 可观测性 | 指标注册表 + 三导出器 + `start_exporter` 均实现并有测试；属「装配式 API」，需使用方显式开启，非自动接线 | ✅（手动 API 定位） |
 | 9 | 凭据/反馈/安全 | `security/credentials`、`feedback`（reporter/telemetry/stats）均实现、白名单登记为手动公开 API，CLI 有 `feedback` 子命令接线 | ✅ |
-| 10 | Rust 加速层 | `atst/native` 自测对拍、非热路径、白名单登记，批次 H 待决策 | ⚠️ 实验性，保留 |
+| 10 | Rust 加速层 | `tstdx/native` 自测对拍、非热路径、白名单登记，批次 H 待决策 | ⚠️ 实验性，保留 |
 
 **总评**：README 宣称的数据/门面/服务面能力**全部落地**；「不完整」项均为**有意收窄并文档声明的能力边界**（复权 local-only、全市场不含港美、交易面模拟器、异步门面紧凑设计），未发现「宣称了但悄悄没实现」的情况。
 

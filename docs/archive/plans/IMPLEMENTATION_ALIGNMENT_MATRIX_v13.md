@@ -1,4 +1,4 @@
-# atst v13 Implementation Alignment Matrix
+# tstdx v13 Implementation Alignment Matrix
 
 > Companion to `ARCHITECTURE_SEMANTIC_ALIGNMENT_v13.md`, `REFACTOR_PLAN_v13_CLEAN_BREAK.md`, and `PROVIDER_CAPABILITY_MATRIX_v13.md`.
 >
@@ -59,8 +59,8 @@ Covered families include:
 | Contract | Python | Async | CLI | HTTP | WS | MCP |
 |---|---:|---:|---:|---:|---:|---:|
 | Tier-A ergonomic methods | yes | yes | yes | yes | yes | yes |
-| all migrated capabilities | `Client.call` + same-name methods | `AsyncClient.call` + same-name async methods | `atst query` | `POST /v13/query/{capability}` | JSON-RPC `query` | `query_capability` |
-| capability discovery | `Client.capabilities()` | yes | `atst capabilities` | `GET /v13/capabilities` | `runtime.capabilities` | tool manifest + query tool |
+| all migrated capabilities | `Client.call` + same-name methods | `AsyncClient.call` + same-name async methods | `tstdx query` | `POST /v13/query/{capability}` | JSON-RPC `query` | `query_capability` |
+| capability discovery | `Client.capabilities()` | yes | `tstdx capabilities` | `GET /v13/capabilities` | `runtime.capabilities` | tool manifest + query tool |
 | explicit Provider | yes | yes | yes | yes | yes | yes |
 | shared result serialization | object | object | yes | yes | yes | yes |
 | canonical ErrorEnvelope | domain boundary | same | stderr JSON | HTTP JSON | JSON-RPC | JSON-RPC/tool |

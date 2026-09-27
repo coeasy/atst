@@ -22,7 +22,7 @@ GAP 首版列出的「缺失项」已**全部实现**，本次复核仅需修正
 * ✅ **feedback/{reporter,telemetry,stats}** + **security/credentials**（B1/B2）
 * ✅ **compat/{easy_tdx,eltdx}** + **_async_bridge** + **streaming/push**（B5/B6/B8）
 * ✅ **integration/{http_server,ws_server,mcp_server}**：HTTP 32 端点 / WS RPC / MCP 10 工具（C1-C3）
-* ✅ **atst_native/** Rust 内核源码 + **加载/回退层 + maturin + CI parity 门控**（C4）
+* ✅ **tstdx_native/** Rust 内核源码 + **加载/回退层 + maturin + CI parity 门控**（C4）
 * ✅ **observability/{prometheus,statsd,otel}_exporter**（C5）
 * ✅ **docs/** 14 类文档（quickstart / cookbook×6 / migration×3 / adr / api / FAQ / troubleshooting）（C6）
 * ✅ **.github/** CI + wheels.yml + Issue×4 + PR 模板（C7）
@@ -58,10 +58,10 @@ GAP 首版列出的「缺失项」已**全部实现**，本次复核仅需修正
 
 | 里程碑 | 版本 | 计划交付 | 当前实现 | 进度 |
 |---|---|---|---|---|
-| **M0** | 0.1.0 | Spec 体系 + Codegen + Golden + atst.toml schema | ✅ 配置 schema/loader + PROTOCOL_SPEC 8 YAML + codegen + Golden 500 样本 | **100%** |
+| **M0** | 0.1.0 | Spec 体系 + Codegen + Golden + tstdx.toml schema | ✅ 配置 schema/loader + PROTOCOL_SPEC 8 YAML + codegen + Golden 500 样本 | **100%** |
 | **M1** | 0.2.0 | 8 命令 MVP + 配置 + 错误 + i18n + 报文层 | ✅ 报文层、40+ 异常类、配置 6 源合并、calendar、i18n/encoding | **100%** |
 | **M2** | 0.4.0 | 36 命令全 + 7727/MAC/F10 + Streaming + 异步 + HTTP Web 7 Adapter + 互操作 | ✅ 61 处解析器注册（85 条命令账本，71.8%；心跳/握手走传输层）、5 协议族客户端、HTTP Web 7 Adapter、easyquotation 垫片、3 sink、SourcesRouter、Streaming 引擎、feedback/security | **100%** |
-| **M3** | 0.7.0 | Rust 内核 + HTTP 32 接口 + WS + MCP + 文档 + 治理 + Docker | ✅ atst_native/、integration 3 服务、docs 14 类、.github、Docker、治理 5 份 | **100%** |
+| **M3** | 0.7.0 | Rust 内核 + HTTP 32 接口 + WS + MCP + 文档 + 治理 + Docker | ✅ tstdx_native/、integration 3 服务、docs 14 类、.github、Docker、治理 5 份 | **100%** |
 | **M4** | 1.0.0 | Prober + Profile + 安全 + 30 天冒烟 + 24 项贯通 | ✅ prober/profile/sniff、security/credentials、bench、Golden 500、24 项贯通测试 | **100%** |
 
 ---
@@ -75,27 +75,27 @@ GAP 首版列出的「缺失项」已**全部实现**，本次复核仅需修正
 | 01 | 协议命令 L1+L2+L3 三层可解析 | §5 §20 | ✅ | `tests/protocol/test_tiers.py` |
 | 02 | 命令三层可解析 + spec 覆盖率门禁 | §4 §20 | ✅ 8 份核心 spec、6/8 解析器（0x0004/0x000D 心跳握手走传输层模块）、85 命令账本 | `PROTOCOL_SPEC/` + `tests/test_spec_coverage.py` |
 | 03 | 24 断链点全部有处理 | §20 §33 | ✅ | `tests/test_bridges.py` |
-| 04 | atst.toml 12 case 合并 | §21 | ✅ | `tests/config/test_merge.py` |
+| 04 | tstdx.toml 12 case 合并 | §21 | ✅ | `tests/config/test_merge.py` |
 | 05 | 错误分类树 100% + RetryAdvice | §24 | ✅ | `tests/errors/test_taxonomy.py` |
 | 06 | 同步/异步双 API 一致 | §25 | ✅ | `tests/client/test_sync_async_parity.py` |
 | 07 | 6 种降级路径 | §26 | ✅ | `tests/sources/test_sources.py` |
 | 08 | 流：订阅-断网-重连-补数 | §10 §27 | ✅ | `tests/streaming/test_stream_resilience.py` |
-| 09 | 字符集探测 | §23 | ✅ 独立模块 | `atst/i18n/encoding.py` + `tests/i18n/test_encoding.py` |
+| 09 | 字符集探测 | §23 | ✅ 独立模块 | `tstdx/i18n/encoding.py` + `tests/i18n/test_encoding.py` |
 | 10 | A 股交易日历 | §23 | ✅ | `tests/i18n/test_calendar.py` |
 | 11 | 时区 UTC 内部/本地输出 | §23 | ✅ | `tests/i18n/test_tz.py` |
 | 12 | Golden 数据来源 100% self-captured | §4 §16 | ✅ **500 样本** | `tests/golden/`（35 命令级目录） |
-| 13 | AST 相似度门禁 | §4 | ✅ | `atst/tools/check_originality.py` |
+| 13 | AST 相似度门禁 | §4 | ✅ | `tstdx/tools/check_originality.py` |
 | 14 | License 白名单扫描 | §4 | ✅ | `ORIGINALITY/LICENSE_ALLOWLIST.md` |
 | 15 | wheel 矩阵 12 组合 | §29 | ✅ | `.github/workflows/wheels.yml` |
-| 16 | 弃用策略 2 minor | §29 | ✅ | `atst/deprecation.py` + `tests/test_deprecation.py` |
-| 17 | HTTP API 32 接口 | §13 | ✅ 32 端点 | `atst/integration/http_server.py` + `tests/unit/test_http_server.py` |
-| 18 | MCP 10 工具 | §13 | ✅ 10 工具 | `atst/integration/mcp_server.py` + `tests/unit/test_mcp_server.py` |
-| 19 | 可观测性 zero-dep + 3 exporter | §14 | ✅ 3 exporter | `atst/observability/` + `tests/observability/test_metrics.py` |
-| 20 | DataFrame/Parquet/DuckDB 三 sink | §26 | ✅ | `atst/sinks/` + `tests/sinks/test_sinks.py` |
+| 16 | 弃用策略 2 minor | §29 | ✅ | `tstdx/deprecation.py` + `tests/test_deprecation.py` |
+| 17 | HTTP API 32 接口 | §13 | ✅ 32 端点 | `tstdx/integration/http_server.py` + `tests/unit/test_http_server.py` |
+| 18 | MCP 10 工具 | §13 | ✅ 10 工具 | `tstdx/integration/mcp_server.py` + `tests/unit/test_mcp_server.py` |
+| 19 | 可观测性 zero-dep + 3 exporter | §14 | ✅ 3 exporter | `tstdx/observability/` + `tests/observability/test_metrics.py` |
+| 20 | DataFrame/Parquet/DuckDB 三 sink | §26 | ✅ | `tstdx/sinks/` + `tests/sinks/test_sinks.py` |
 | 21 | 文档矩阵 14 类 | §28 | ✅ 18 篇 .md | `docs/` |
 | 22 | 治理文件 5 份 | §30 | ✅ | 根目录 5 份 |
 | 23 | HTTP Web 源 7 Adapter + 12 case + easyquotation 兼容 | §33 | ✅ | `tests/web/test_web_sources.py` |
-| 24 | volume/amount 归一化 4 case | §33 | ✅ 独立模块 | `atst/web/normalize.py` + `tests/web/test_normalize.py` |
+| 24 | volume/amount 归一化 4 case | §33 | ✅ 独立模块 | `tstdx/web/normalize.py` + `tests/web/test_normalize.py` |
 
 **24 项统计**：✅ **24/24 全部通过**（`tests/test_bridges.py` 统一执行）。
 
@@ -119,9 +119,9 @@ GAP 首版列出的「缺失项」已**全部实现**，本次复核仅需修正
 | **C2** 评审流程 | ✅ CI + 双人复核（.github + docs） | — |
 | **C3** Spec 版本演进 | ✅ spec_audit 反向校验 | — |
 | **D1** Spec↔实现契约测试 | ✅ `tests/test_spec_coverage.py` + `tools/spec_audit.py` | — |
-| **D2** codegen 模板 | ✅ `atst/tools/codegen.py` | — |
+| **D2** codegen 模板 | ✅ `tstdx/tools/codegen.py` | — |
 | **D3** PR 模板 | ✅ `.github/PULL_REQUEST_TEMPLATE.md` | — |
-| **E1** Golden 数据采集工具链 | ✅ `atst/tools/golden_expand.py` + capture | 500 样本 |
+| **E1** Golden 数据采集工具链 | ✅ `tstdx/tools/golden_expand.py` + capture | 500 样本 |
 | **E2** 模糊测试 | ✅ hypothesis（tests/unit） | — |
 | **E3** 性能基准回归 | ✅ `benches/` + pytest-benchmark | — |
 | **F1** PyPI wheel 矩阵 | ✅ cibuildwheel（wheels.yml） | — |
@@ -151,30 +151,30 @@ GAP 首版列出的「缺失项」已**全部实现**，本次复核仅需修正
 
 ### 4.1 代码（已实装）
 
-* `atst/codec/` — framing（zlib 透明）+ primitive（varint、tdx_float、LEB128 等）
-* `atst/config/` — schema（10 个子配置 dataclass）+ loader（6 源合并，env > 文件 > 默认）
-* `atst/domain/` — models（Bar/Quote/Level + to_dataframe）+ adjust + calendar（2024-2026）
-* `atst/errors.py` — 40+ 异常分类树 + RetryAdvice + http_status_for
-* `atst/protocol/` — commands（85 命令账本 5 协议族）+ registry（L1/L2/L3 dispatch）+ generic（启发式 + ProtocolSniffer）+ prober + handshake + parsers 6 族（69 处注册）
-* `atst/reader/` — formats（vipdoc .day/.lc1/.lc5/.dat/.gpcw）+ profile（探测）
-* `atst/transport/` — base/hosts/pool/ratelimit/speedtest/sniff + async_
-* `atst/client.py` — TdxClient + AsyncTdxClient + 多族客户端 + 同步/异步镜像 + get_client 工厂
-* `atst/streaming/` — QuoteStream + engine（ReconnectPolicy/DeltaMerger/GapFiller/BackpressureQueue）+ push（0x0547）
-* `atst/sinks/` — DataFrame/Parquet/DuckDB + Sink 策略 + write() 分发
-* `atst/sources/` — DataSourceRouter 5 源降级
-* `atst/web/` — base + adapters（7 源）+ sources + normalize + easyquotation
-* `atst/compat/` — mootdx / easy_tdx / eltdx 垫片
-* `atst/observability/` — metrics（zero-dep）+ prometheus/statsd/otel exporter + instrument_client
-* `atst/i18n/` — encoding 自动探测
-* `atst/integration/` — http_server（32 端点）/ ws_server / mcp_server（10 工具）
-* `atst/feedback/` — reporter / telemetry / stats（7 步脱敏 + opt-in）
-* `atst/security/` — credentials（keyring→env→encrypted file）
-* `atst/profile/` — detect / presets（9 市场预设）
-* `atst/tools/` — capture / codegen / spec_audit / check_originality / golden_expand
-* `atst/deprecation.py` — DeprecationPolicy
-* `atst/cli.py` — 12 子命令
-* `atst/native.py` — Rust 内核加载层（导入 + 能力自检 + 透明回退）
-* `atst_native/` — Rust 内核源码（codec + reader）
+* `tstdx/codec/` — framing（zlib 透明）+ primitive（varint、tdx_float、LEB128 等）
+* `tstdx/config/` — schema（10 个子配置 dataclass）+ loader（6 源合并，env > 文件 > 默认）
+* `tstdx/domain/` — models（Bar/Quote/Level + to_dataframe）+ adjust + calendar（2024-2026）
+* `tstdx/errors.py` — 40+ 异常分类树 + RetryAdvice + http_status_for
+* `tstdx/protocol/` — commands（85 命令账本 5 协议族）+ registry（L1/L2/L3 dispatch）+ generic（启发式 + ProtocolSniffer）+ prober + handshake + parsers 6 族（69 处注册）
+* `tstdx/reader/` — formats（vipdoc .day/.lc1/.lc5/.dat/.gpcw）+ profile（探测）
+* `tstdx/transport/` — base/hosts/pool/ratelimit/speedtest/sniff + async_
+* `tstdx/client.py` — TdxClient + AsyncTdxClient + 多族客户端 + 同步/异步镜像 + get_client 工厂
+* `tstdx/streaming/` — QuoteStream + engine（ReconnectPolicy/DeltaMerger/GapFiller/BackpressureQueue）+ push（0x0547）
+* `tstdx/sinks/` — DataFrame/Parquet/DuckDB + Sink 策略 + write() 分发
+* `tstdx/sources/` — DataSourceRouter 5 源降级
+* `tstdx/web/` — base + adapters（7 源）+ sources + normalize + easyquotation
+* `tstdx/compat/` — mootdx / easy_tdx / eltdx 垫片
+* `tstdx/observability/` — metrics（zero-dep）+ prometheus/statsd/otel exporter + instrument_client
+* `tstdx/i18n/` — encoding 自动探测
+* `tstdx/integration/` — http_server（32 端点）/ ws_server / mcp_server（10 工具）
+* `tstdx/feedback/` — reporter / telemetry / stats（7 步脱敏 + opt-in）
+* `tstdx/security/` — credentials（keyring→env→encrypted file）
+* `tstdx/profile/` — detect / presets（9 市场预设）
+* `tstdx/tools/` — capture / codegen / spec_audit / check_originality / golden_expand
+* `tstdx/deprecation.py` — DeprecationPolicy
+* `tstdx/cli.py` — 12 子命令
+* `tstdx/native.py` — Rust 内核加载层（导入 + 能力自检 + 透明回退）
+* `tstdx_native/` — Rust 内核源码（codec + reader）
 
 ### 4.2 测试（26 个文件，728 passed / 5 skipped）
 
@@ -210,9 +210,9 @@ GAP 首版四档动作已全部完成。以下「持续运营」项的最新状�
 | Golden 扩容 | ✅ 已达目标 500（30 实采 + 470 合成） | 可按需用 `golden_expand` 继续采集/衍生更多市场/品种/周期 |
 | 真实环境冒烟 30 天 | ✅ 脚本就绪且 dry-run 验证通过（5/5） | `ops/smoke_30d.py` 需长期运行；可配 `Schedule` 每日执行，结果写入 `ops/smoke_results.jsonl`（已加入 .gitignore） |
 | PyPI / Docker Hub 发布 | ✅ 构建链路验证通过 | `python -m build --wheel` 成功且 wheel 在全新 venv 可安装导入；`Dockerfile` 已修正为非 editable 安装并加构建期冒烟；发版上传需 PyPI/Docker 凭据，动作待执行 |
-| Rust 内核（atst_native） | ✅ **绑定、语义对齐与 CI 集成已落地** | `atst/native.py` 加载层（导入 + 能力自检 + 回退门控）、`atst_native/src/`（codec tdx_float/LEB128、reader .day、0x052D K 线热路径）、`atst_native/pyproject.toml`（maturin）、`.github/workflows/native.yml`（构建 + parity 对拍）、`tests/unit/test_native.py`、`benches/bench_parser.py` / `bench_reader.py`（原生加速对比） |
+| Rust 内核（tstdx_native） | ✅ **绑定、语义对齐与 CI 集成已落地** | `tstdx/native.py` 加载层（导入 + 能力自检 + 回退门控）、`tstdx_native/src/`（codec tdx_float/LEB128、reader .day、0x052D K 线热路径）、`tstdx_native/pyproject.toml`（maturin）、`.github/workflows/native.yml`（构建 + parity 对拍）、`tests/unit/test_native.py`、`benches/bench_parser.py` / `bench_reader.py`（原生加速对比） |
 
-> **✅ Rust 对拍结论（2026-08-31 更新）**：`atst_native` 解析逻辑已与 Golden 锁定的 Python 语义**逐字段对齐** ——
+> **✅ Rust 对拍结论（2026-08-31 更新）**：`tstdx_native` 解析逻辑已与 Golden 锁定的 Python 语义**逐字段对齐** ——
 > `read_day_file` 采用 u32 YYYYMMDD + `price_scale` 缩放换算（A 股 100），`parse_kline_payload` 采用与
 > `SecurityBarsParser` 完全一致的 LEB128 差分价格 + tdx_float 量/额 + 指数模式涨跌家数布局，
 > `decode_tdx_float` 采用与 Python `logpoint/hleax` 一致的二进制浮点算法。

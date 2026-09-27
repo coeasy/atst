@@ -1,4 +1,4 @@
-# atst 功能梳理与优化改进方案 v1（已归档）
+# tstdx 功能梳理与优化改进方案 v1（已归档）
 
 > **状态：Archived / 已归档**  
 > 初版日期：2026-09-02  
@@ -25,7 +25,7 @@ v1 文档中的部分架构描述已经被 v12 明确废弃，尤其包括旧的
 新代码应优先使用：
 
 ```python
-from atst import UnifiedMarketDataService
+from tstdx import UnifiedMarketDataService
 
 with UnifiedMarketDataService() as md:
     quotes = md.quotes(["sh600519"], provider="tdx")

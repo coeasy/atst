@@ -1,4 +1,4 @@
-# atst v14 深度升级进度
+# tstdx v14 深度升级进度
 
 > 更新: 2026-09-14
 > 说明: 已合并 PR #7 (v14-runtime-phase1)、PR #6 的独立工程原语提取；已完成 Typed Capability 扩展与 Domain Model Phase 2。
@@ -29,22 +29,22 @@ Typed Query
 - DirectBinding
 - Capability Catalog
 - Provenance
-- ErrorEnvelope（`atst.error_envelope`，自 PR #6 提取）
-- Semantic Cache（L1: `atst.cache_semantic`）
-- SingleFlight（`atst.batch.SingleFlight`，自 PR #6 提取）
-- Negative Cache（`atst.batch.NegativeCache`，自 PR #6 提取）
+- ErrorEnvelope（`tstdx.error_envelope`，自 PR #6 提取）
+- Semantic Cache（L1: `tstdx.cache_semantic`）
+- SingleFlight（`tstdx.batch.SingleFlight`，自 PR #6 提取）
+- Negative Cache（`tstdx.batch.NegativeCache`，自 PR #6 提取）
 - BatchSpec / BatchItem / BatchResult（自 PR #6 提取）
-- PersistentSemanticCache L2（`atst.cache_persistent`，自 PR #6 提取）
-- StreamSpec / StreamPlanner（`atst.stream_contract`，自 PR #6 提取）
+- PersistentSemanticCache L2（`tstdx.cache_persistent`，自 PR #6 提取）
+- StreamSpec / StreamPlanner（`tstdx.stream_contract`，自 PR #6 提取）
 
 ### v14 Runtime 内核（PR #7 已合并）
 
 已建立：
 
-- `atst.runtime/` 包：`Runtime` / `QueryRequest` / `QueryResponse` / `create_runtime` / `request_from_typed`
-- `atst.execution/` 包：`ExecutionPlanner` / `ExecutionGraph` / `ExecutionNode` / `ExecutionPlan` / `SemanticExecutionAdapter`
-- `atst.provider/` 包：Provider 基础契约 / `ProviderRouter` / TDX / Local / Web 适配器
-- `atst.facade.runtime_adapter`：Facade → Runtime 兼容适配器
+- `tstdx.runtime/` 包：`Runtime` / `QueryRequest` / `QueryResponse` / `create_runtime` / `request_from_typed`
+- `tstdx.execution/` 包：`ExecutionPlanner` / `ExecutionGraph` / `ExecutionNode` / `ExecutionPlan` / `SemanticExecutionAdapter`
+- `tstdx.provider/` 包：Provider 基础契约 / `ProviderRouter` / TDX / Local / Web 适配器
+- `tstdx.facade.runtime_adapter`：Facade → Runtime 兼容适配器
 - `tests/v14/`：5 个契约测试套件（bootstrap / execution / semantic / typed_query / facade adapter）
 
 ### Typed Query 第一阶段
@@ -61,7 +61,7 @@ Typed Query
 - IncomeStatementQuery / CashFlowQuery / FundHoldingsQuery / BondKlineQuery
 - FuturesKlineQuery / NewsQuery / ResearchReportQuery / F10Query
 
-（扩展类在 main 的 `atst/typed_query.py`，共 15 个类）
+（扩展类在 main 的 `tstdx/typed_query.py`，共 15 个类）
 
 ### Typed Capability 扩展（2026-09-14 完成）
 
@@ -88,7 +88,7 @@ Runtime 语义执行（含语义缓存身份区分）。必填业务字段 fail-
 
 ### Domain Model（2026-09-14 完成）
 
-`atst/domain/records.py` 提供 9 个类型化 Domain Record 族：
+`tstdx/domain/records.py` 提供 9 个类型化 Domain Record 族：
 
 - FinancialRecord / FundRecord / BondRecord / NewsRecord / ResearchRecord /
   OptionRecord / MarketDataRecord / SearchRecord / MacroRecord
@@ -98,12 +98,12 @@ Runtime 语义执行（含语义缓存身份区分）。必填业务字段 fail-
 
 ### Streaming v14 集成（2026-09-14 完成）
 
-把 canonical `StreamPlanner`（`atst.stream_contract`，fail-closed 编译
+把 canonical `StreamPlanner`（`tstdx.stream_contract`，fail-closed 编译
 Provider 专属流计划）与 fail-closed 生命周期状态机
-`StreamLifecycle`（`atst.streaming.state`，CREATED/RUNNING/STOPPING/
+`StreamLifecycle`（`tstdx.streaming.state`，CREATED/RUNNING/STOPPING/
 CLOSED/FAILED）桥接到 v14 Runtime 编排层：
 
-- `atst/runtime/stream.py`：`StreamHandle`（plan + lifecycle + id）+
+- `tstdx/runtime/stream.py`：`StreamHandle`（plan + lifecycle + id）+
   `runtime_subscribe()` + `runtime_has_provider()`。
 - `Runtime.subscribe()` / `unsubscribe()` / `get_subscription()` /
   `subscriptions()`：句柄集合管理与幂等清理。
@@ -112,7 +112,7 @@ CLOSED/FAILED）桥接到 v14 Runtime 编排层：
 - 契约测试 `tests/v14/test_stream_integration.py`（24 测试）覆盖：
   Planner 校验传播、Provider 预检、状态迁移、幂等、快照独立性、
   多订阅隔离。
-- `atst.runtime` 公共 API 导出 `StreamHandle` 与 `runtime_subscribe`。
+- `tstdx.runtime` 公共 API 导出 `StreamHandle` 与 `runtime_subscribe`。
 
 约束：Runtime 层只做编排（编译 + 注册 + 生命周期管理），不驱动回源
 Worker；回源由外部 StatefulQuoteStream 按 `handle.plan` 执行，避免
@@ -140,7 +140,7 @@ REST / WebSocket / MCP / CLI 翻译边界请求并委托 Runtime 执行。
 网关禁止实现独立的 Provider 选择、回退、缓存或 provenance 逻辑。
 
 当前状态：CLI 和 Client 仍走 legacy dispatch 路径；RuntimeFacadeAdapter
-已存在但非默认。**2026-09-14 新增** `RuntimeGateway`（`atst/runtime/gateway.py`）
+已存在但非默认。**2026-09-14 新增** `RuntimeGateway`（`tstdx/runtime/gateway.py`）
 作为 CLI/HTTP/WS 的统一适配层，通过 RuntimeFacadeAdapter 桥接到 Runtime
 执行，禁止实现独立 Provider 选择/回退/缓存/provenance 逻辑。
 下一步：评估 CLI 从 TdxClient 迁移到 RuntimeGateway 的成本并制定迁移方案。
@@ -163,7 +163,7 @@ REST / WebSocket / MCP / CLI 翻译边界请求并委托 Runtime 执行。
 必须通过的门禁：
 
 - Ruff check + format ✅（2026-09-14 完成）
-- mypy ✅（atst/ 全包清洁，0 errors）
+- mypy ✅（tstdx/ 全包清洁，0 errors）
 - 全量非网络 pytest 矩阵 ✅（632 v14 测试通过）
 - 覆盖率 ≥ 仓库基线 ⏳ 待测量
 - AST 模块可达性（零意外孤儿）⏳ 待验证
