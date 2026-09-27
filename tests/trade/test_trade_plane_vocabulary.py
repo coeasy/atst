@@ -257,6 +257,26 @@ def test_cancel_after_partial_fill_only_releases_the_unfilled_part() -> None:
     assert transport.query(QUERY_CATEGORY_STOCKS)[0]["qty"] == 100
 
 
+def test_fill_after_cancel_is_rejected_and_does_not_double_release() -> None:
+    """撤单释放冻结之后，同一张委托不能再被注入成交。
+
+    撤单把冻结原样退回（买：``price*qty``），而 ``fill_order`` 的 ``remaining`` 只按数量算、
+    看不出撤单——少了终态守卫，撤单后仍能成交：买侧白送 ``(委托价-成交价)*qty`` 并凭空建仓。
+    判据把钱、仓、成交记录三笔账都钉住。
+    """
+    transport = _connected_transport()
+    cash_before = transport.query(QUERY_CATEGORY_CASH)[0]["available_cash"]
+    order_id = _buy(transport, code="600519", price=1000, quantity=300)
+    transport.cancel_order(order_id=order_id)
+
+    with pytest.raises(TradeError):
+        transport.simulator.fill_order(order_id=order_id, qty=300, at="09:30:00", price=900)
+
+    assert transport.query(QUERY_CATEGORY_CASH)[0]["available_cash"] == cash_before
+    assert transport.query(QUERY_CATEGORY_STOCKS) == []
+    assert transport.query(QUERY_CATEGORY_DEAL_OF_TODAY) == []
+
+
 def test_fill_rejects_impossible_executions() -> None:
     """成交注入也是语义边界：超量/非正/未知委托/零价都要显式拒绝。"""
 

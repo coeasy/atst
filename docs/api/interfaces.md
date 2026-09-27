@@ -184,6 +184,13 @@ WS `query`、MCP `query_capability`、CLI `query`）缺省都是 `business`，�
 此时内核看到的是这条能力自己的缺省口径（`bars`→`historical`、`security_*`→`business`、
 其余→`live`）；要指定口径就直接点名它——显式写 `business` 与不写，在核心集上是同一个值。
 
+`provider` / `channel` / `currentness` 是 `call` 自己的**关键字形参**（路由字段），不是能力入参。
+四张泛型入口都把它们从各自的顶层位置取出后显式递交，因此它们**不允许**再出现在 `kwargs` 里：
+同一个键两处都出现时 Python 会在调用表达式求值处抛裸 `TypeError`，四张面统一在这一步之前判死
+（E1010 / HTTP 422 / JSON-RPC -32602），错误 `context.reserved_fields` 点出冲突的键名。要在泛型
+入口上指定路由，写顶层字段（HTTP body 的 `provider`/`channel`/`currentness`、WS `params` 与 MCP
+`arguments` 的同名键、CLI 的 `--provider`/`--channel`/`--currentness`）。
+
 ### 能力发现面：只有名字，没有可用性
 
 ```python
@@ -301,6 +308,12 @@ Provider，串行下发、无隐藏换源）。`BatchResult.items` 为 `{symbol:
 `BatchItem.status ∈ {ok, missing, failed, not_attempted}`；另有 `errors`
 （`ErrorEnvelope` 映射）、`requested`、`partial`、`status_counts`、`success`、
 `failed`、`missing`。
+
+三样都由内核那条循环**当场喂满**（第 29 轮）：`errors[symbol]` 取自逐只失败的原异常
+（`to_error_envelope`），`requested` 是本次去重后的符号元组（含失败与缺失的那些），
+`partial` 因此能表达"要了 3 只、只成 2 只"。此前那条循环只递 `items` 一样，于是
+`errors` 恒 `{}`、`requested` 恒 `()`、`partial` 恒 `False`——声明在 `BatchResult` 上、
+真源却不存在。
 
 > v13 的 `BatchSpec` 请求信封已在 v17 Phase 5 的可达性收口中**删除**（clean
 > break，无别名）：它从来没有生产消费者，批量展开事实只存在于内核那条循环里。

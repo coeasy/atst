@@ -113,7 +113,12 @@ class TestDecodeCaveatWiring:
             client.block_list(0, 0)
         decode = [w for w in caught if str(w.message).startswith("[decode_caveat]")]
         assert len(decode) == 1
-        assert decode[0].filename == __file__, (
+        #: 归属判据比的是**同一个文件**，不是同一个字符串：``w.filename`` 取自
+        #: ``warnings.warn`` 读到的帧对象的 ``co_filename``，而它由 pytest 断言重写
+        #: 编译模块时的那个拼法决定；``__file__`` 由导入机制写入。两者在 Windows 上
+        #: 可以只差盘符大小写（实测 ``P:\...`` vs ``p:\...``，同一文件、同一行），
+        #: 字符串相等会把正确的归属判成错位——判据要盯的是归属错位，不是拼法。
+        assert Path(decode[0].filename).samefile(__file__), (
             f"告警归属到了 {decode[0].filename}:{decode[0].lineno}，公共 API 的调用方看不到自己该看的那行"
         )
         assert decode[0].lineno == marker_line + 1

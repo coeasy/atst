@@ -78,6 +78,10 @@ class WarningCode(str, Enum):
     CALENDAR_YEAR_UNCOVERED = "calendar_year_uncovered"
     #: 新浪全市场分页重试后仍缺页。
     WEB_SINA_PAGES_MISSING = "web_sina_pages_missing"
+    #: 腾讯全市场**代码枚举**阶段某页失败即停：返回的是被截断的代码表，全市场不完整。
+    #: 与 ``WEB_TENCENT_BATCH_FAILED`` 的分工是阶段不同——这条管"枚举出了多少只"，
+    #: 那条管"枚举到的这批行情取回来没有"。
+    WEB_TENCENT_PAGES_MISSING = "web_tencent_pages_missing"
     #: 腾讯全市场单批重试后仍失败，结果不完整。
     WEB_TENCENT_BATCH_FAILED = "web_tencent_batch_failed"
     #: 腾讯 K 线整批 ``amount`` 恒为 0：该字段不可用于计算。

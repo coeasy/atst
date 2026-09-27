@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from collections.abc import Sequence
 from typing import Any
 
@@ -201,8 +200,13 @@ class AsyncStatefulQuoteStream(AsyncQuoteStream):
     async def stop(self) -> None:
         if not self._lifecycle.begin_stop():
             return
-        await super().stop()
-        self._lifecycle.close()
+        try:
+            await super().stop()
+        finally:
+            #: 基类只在 worker 确实排空之后才返回/抛回（取消也不例外），所以状态机
+            #: 这一步在两种下场里都成立：正常停机 → CLOSED，调用方取消 → 收尾同样
+            #: 已做完，只是随后把取消原样抛回去。
+            self._lifecycle.close()
 
     close = stop
 
@@ -226,10 +230,8 @@ class AsyncStatefulQuoteStream(AsyncQuoteStream):
                 )
                 self._lifecycle.fail(reason)
                 self._stop.set()
-            with contextlib.suppress(Exception):
-                if (
-                    self._task is not None
-                    and self._task.done()
-                    and self.state is StreamState.STOPPING
-                ):
-                    self._lifecycle.close()
+            #: 这里原本还有一格"``self._task.done()`` 且 STOPPING ⇒ ``_lifecycle.close()``"，
+            #: 已按死码删除：``_run`` 只作为 ``self._task`` 自己那条任务运行，而任务在
+            #: 自己的 ``finally`` 里读自己的 ``done()`` 恒为 False（``done()`` 在协程返回
+            #: 之后才置位），所以那个条件不可满足。CLOSED 这一步的真源是
+            #: :meth:`AsyncStatefulQuoteStream.stop`——它在 worker 排空之后显式推进状态机。

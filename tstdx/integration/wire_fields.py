@@ -23,18 +23,25 @@ F-43/F-46 把 ``max_age``/``allow_partial`` 从构造面清掉之后，同一个
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any, Final
 
 from ..errors import ValidationError
 
 __all__ = [
     "QUERY_BODY_FIELDS",
+    "QUERY_ROUTING_FIELDS",
     "WS_PARAMS_FIELDS",
     "as_request_int",
+    "reject_reserved_kwargs",
     "reject_undeclared",
     "undeclared_fields",
 ]
+
+#: ``Client.call`` 自己的关键字形参（第 29 轮）：``provider`` / ``channel`` / ``currentness``
+#: 是**路由字段**，不是能力入参。四张 query 面都把它们从各自的顶层位置取出来显式递交，
+#: 因此它们绝不能同时出现在 ``kwargs`` 里。
+QUERY_ROUTING_FIELDS: Final[frozenset[str]] = frozenset({"provider", "channel", "currentness"})
 
 #: ``POST /v13/query/{capability}`` 的 body 顶层键。
 QUERY_BODY_FIELDS: Final[frozenset[str]] = frozenset(
@@ -80,6 +87,39 @@ def reject_undeclared(
         f"{where} 收到了未声明的请求字段 {', '.join(unknown)}："
         "它们不会改变任何行为，所以当场拒绝而不是静默收下",
         context=_context(face, unknown, declared),
+    )
+
+
+def reject_reserved_kwargs(
+    *,
+    face: str,
+    where: str,
+    kwargs: Mapping[str, Any],
+) -> None:
+    """``kwargs`` 里混进了路由字段时唯一的拒绝口（第 29 轮）。
+
+    四张 query 面都写成 ``client.call(cap, *args, provider=<顶层值>, channel=<顶层值>,
+    currentness=<顶层值>, **kwargs)``。路由字段在**顶层**（HTTP body / WS ``params`` /
+    MCP ``arguments`` / CLI 旋钮）才有决策权，``kwargs`` 是能力入参的口袋。同一个键两处都
+    出现时，Python 在**调用表达式求值处**就抛裸 ``TypeError: got multiple values for
+    keyword argument``——发生在进入 :meth:`Client.call` 之前，因此那层把入参不合签名
+    翻译成 ``ValidationError`` 的包装根本接不到，四张面一致把它落到 E9000 / HTTP 500，
+    而契约要求的是 E1010 / 422。
+
+    这里就地判死，并且把话说清楚：路由字段该写在顶层，不是塞进 ``kwargs``。
+    """
+    conflicting = sorted(set(kwargs) & QUERY_ROUTING_FIELDS)
+    if not conflicting:
+        return
+    raise ValidationError(
+        f"{where} 的 kwargs 里出现了路由字段 {', '.join(conflicting)}："
+        "它们只有顶层声明才有决策权，塞进 kwargs 会被当成重复关键字而落到 E9000；"
+        "请改用顶层字段",
+        context={
+            "phase": "wire_validation",
+            "face": face,
+            "reserved_fields": conflicting,
+        },
     )
 
 

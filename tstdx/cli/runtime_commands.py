@@ -24,6 +24,7 @@ from .. import __version__
 from ..client.api import Client
 from ..errors import ValidationError
 from ..integration.serialization import jsonable, serialize_result
+from ..integration.wire_fields import reject_reserved_kwargs
 from ..runtime.orchestration import FallbackPolicy
 from ._common import (
     _client_kwargs,
@@ -69,6 +70,11 @@ def cmd_query(args: Any) -> int:
         raise ValidationError("--args must decode to a JSON array")
     if not isinstance(call_kwargs, dict):
         raise ValidationError("--kwargs must decode to a JSON object")
+    reject_reserved_kwargs(
+        face="cli_query",
+        where="tstdx query 的 --kwargs",
+        kwargs=call_kwargs,
+    )
     with Client(**_client_kwargs(args)) as client:
         _print(
             serialize_result(

@@ -15,7 +15,12 @@ from ..errors import ValidationError
 from ..providers import PROVIDERS
 from ..runtime.orchestration import FallbackPolicy
 from .serialization import serialize_result
-from .wire_fields import WS_PARAMS_FIELDS, as_request_int, reject_undeclared
+from .wire_fields import (
+    WS_PARAMS_FIELDS,
+    as_request_int,
+    reject_reserved_kwargs,
+    reject_undeclared,
+)
 
 __all__ = ["RuntimeJsonRpcHandler"]
 
@@ -65,19 +70,12 @@ class RuntimeJsonRpcHandler:
                 raw = raw.decode("utf-8")
             message = json.loads(raw)
         except (UnicodeDecodeError, json.JSONDecodeError):
-            return json.dumps(
-                self._error(None, ERR_PARSE, "parse error", ValidationError("invalid JSON")),
-                ensure_ascii=False,
-            )
+            return self._protocol_error(None, ERR_PARSE, "parse error")
         if not isinstance(message, dict) or message.get("jsonrpc") != JSONRPC_VERSION:
-            return json.dumps(
-                self._error(
-                    message.get("id") if isinstance(message, dict) else None,
-                    ERR_INVALID_REQUEST,
-                    "invalid request",
-                    ValidationError("invalid JSON-RPC request"),
-                ),
-                ensure_ascii=False,
+            return self._protocol_error(
+                message.get("id") if isinstance(message, dict) else None,
+                ERR_INVALID_REQUEST,
+                "invalid request",
             )
         request_id = message.get("id")
         method = str(message.get("method", ""))
@@ -87,10 +85,7 @@ class RuntimeJsonRpcHandler:
                 self._dispatch(method, params if isinstance(params, dict) else {})
             return None
         if method not in self.METHODS:
-            return json.dumps(
-                self._error(request_id, ERR_METHOD_NOT_FOUND, "method not found"),
-                ensure_ascii=False,
-            )
+            return self._protocol_error(request_id, ERR_METHOD_NOT_FOUND, "method not found")
         if not isinstance(params, dict):
             return json.dumps(
                 self._error(
@@ -175,6 +170,11 @@ class RuntimeJsonRpcHandler:
                 raise ValidationError("args must be an array")
             if not isinstance(kwargs, dict):
                 raise ValidationError("kwargs must be an object")
+            reject_reserved_kwargs(
+                face="ws_params",
+                where='WS method "query" 的 kwargs',
+                kwargs=kwargs,
+            )
             return serialize_result(
                 self.client.call(
                     capability,
@@ -247,6 +247,37 @@ class RuntimeJsonRpcHandler:
                 )
             )
         raise RuntimeError("unreachable")
+
+    @staticmethod
+    def _protocol_error(request_id: Any, rpc_code: int, message: str) -> str:
+        """协议层失败（解析 / 请求形状 / 方法派发）：同样挂上规范化信封。
+
+        与 MCP 面 ``MCPServer._protocol_error`` 同口径。第 30 轮修前，WS 面的协议层失败
+        只回 ``{"code", "message"}``、没有 ``error.data``——``_error`` 自己的 docstring 与
+        ``docs/errors.md`` §四 都写着"两面都把信封挂在 JSON-RPC ``error.data``"，而一个
+        照文档读 ``data.phase`` / ``data.request_id`` 的客户端，恰好在"方法名写错"这种最
+        该自查的一格上读到 ``None``。``message`` 也与人读理由分开：这里的 ``message`` 是
+        通用 RPC 文案，信封里的 ``message`` 才是这条失败的具体理由（与业务失败一致）。
+        """
+
+        return json.dumps(
+            RuntimeJsonRpcHandler._error(
+                request_id,
+                rpc_code,
+                message,
+                ValidationError(
+                    message,
+                    context={
+                        "phase": "ws_protocol",
+                        # 与 MCP 面 ``_protocol_error`` 同一组 legacy 许可字段：两面协议层
+                        # 失败的 ``error.data`` 逐格同形，客户端读法不必按面分叉。
+                        "fallback": False,
+                        "provider_switch_allowed": False,
+                    },
+                ),
+            ),
+            ensure_ascii=False,
+        )
 
     @staticmethod
     def _error(

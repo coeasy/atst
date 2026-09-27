@@ -33,8 +33,9 @@
 （:func:`tstdx.transport.sniff.detach`）由判据六管；判据七**不含锁等待**——``async with
 self._lock`` 在 AST 里根本不产生 ``Await`` 节点，把它算成"无界等待"要给整包补一张锁表，
 而锁的上界来自持锁方，那正是判据三与判据七其余四格合起来管的事。它同样只覆盖名单里的
-收尾动词：``AsyncQuoteStream.stop()`` 的 ``await asyncio.shield(task)`` 不在射程内，
-那一条按第 28 轮 P2-F 登记在方案文档里，不在这里偷偷放行也不在这里假装管到。
+收尾动词：第 29 轮把 ``stop`` 收进名单，``AsyncQuoteStream.stop()`` 的
+``await asyncio.shield(task)`` 从"按 P2-F 登记在方案文档里"变成逐格核对（它等的是 poll
+worker 排空，上界写在登记表里，不是猜的）。
 """
 
 from __future__ import annotations
@@ -726,6 +727,9 @@ _SHUTDOWN_FUNCS = frozenset(
         "_sweep_idle",
         "_cleanup_committed_close",
         "_await_cleanup_before_cancellation",
+        #: 第 29 轮补入：``AsyncQuoteStream.stop()`` 此前是唯一"没人量"的停机等待
+        #: （P2-F 的落点）。``stop`` 在包里只有两个异步定义，两个都在流式面。
+        "stop",
     }
 )
 
@@ -756,6 +760,17 @@ UNBOUNDED_SHUTDOWN_AWAITS: dict[str, str] = {
         "``await asyncio.shield(cleanup_task)``：被 shield 的正是上一条那个 "
         "``_cleanup_committed_close`` 任务，它的等待由本判据核对；shield 改变的是"
         "「谁先被取消」（调用方取消不打断清理），不新增一次等待。"
+    ),
+    "tstdx/streaming/base.py::AsyncQuoteStream.stop": (
+        "``await asyncio.shield(task)``（``while not task.done()`` 里那一格）：等的是 poll "
+        "worker 自己跑到循环顶读到已置位的 ``_stop``。它**有**上界，但刻度写得出、数字写不出："
+        "① worker 最多还有一次在飞的 ``asyncio.to_thread(runtime.quotes, ...)``，``to_thread`` "
+        "不可取消，它的上界由池的 socket 超时与逐台故障转移给（池那一侧由判据二与本判据其余格"
+        "收住）；② 那一轮若以 ``TdxError`` 收场，``_poll_once`` 还要 "
+        "``await asyncio.sleep(self._reconnect.next_delay())``，``ReconnectPolicy`` 现读 "
+        "``cap=30.0``（:file:`tstdx/streaming/base.py` 构造处）。取消不打断这段排空——"
+        "按 ``_await_cleanup_before_cancellation`` 同一条口径记一笔再回到同一个 await，排空后"
+        "把取消原样抛回。填一个更小的数字就得同时替 ① 伪造一个上界，那正是本仓拒绝的写法。"
     ),
 }
 

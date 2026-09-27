@@ -390,6 +390,11 @@ class TradeSimulator:
         order = next((o for o in self._orders if o.order_id == order_id), None)
         if order is None:
             raise TradeRejected(f"委托不存在: {order_id}")
+        if order.status == ORDER_STATUS_CANCELLED:
+            # 撤单已把冻结原样退回（买：退回 ``price*qty``；卖：退回可用持仓），而
+            # ``remaining`` 只按数量算、看不出撤单。少了这一格，撤单后仍能注入成交：
+            # 买侧白送 ``(委托价-成交价)*qty`` 并凭空建仓，卖侧与撤单释放重复扣减。
+            raise TradeRejected(f"委托已撤销，不能成交: {order_id}")
         remaining = order.qty - order.filled_qty
         if qty <= 0:
             raise TradeRejected(f"成交数量必须为正: {qty}")

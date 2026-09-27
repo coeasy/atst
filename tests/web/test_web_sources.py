@@ -9,6 +9,7 @@ import json
 
 import pytest
 
+from tstdx.diagnostics import WarningCode, warning_sink
 from tstdx.domain.models import Quote
 from tstdx.errors import SourceDeprecated, WebSourceError
 from tstdx.web.base import (
@@ -375,6 +376,27 @@ class TestTencentFetchAll:
         monkeypatch.setattr(src, "_request_text", fake_request)
         codes = src._fetch_codes("aStock", page_size=4, max_pages=10)
         assert codes == [f"sh{600000 + i:06d}" for i in range(4)]
+
+    def test_fetch_codes_truncation_warns(self, monkeypatch):
+        """枚举阶段某页失败即停 → 必须留下 signal，不能静默返回"部分全市场"。
+
+        新浪缺页时发 ``WEB_SINA_PAGES_MISSING``；腾讯过去只在**批量行情**阶段发告警，
+        枚举阶段的截断一声不吭（第 29 轮）。两条路径各管一个阶段，缺一即调用方拿到
+        被截断的代码表却以为它是全市场。
+        """
+        src = TencentSource(max_retries=0)
+
+        def fake_request(url, **kw):
+            if self._offset_of(url) == 0:
+                return _rank_page(0, 4)
+            raise WebSourceError("boom", context={})
+
+        monkeypatch.setattr(src, "_request_text", fake_request)
+        with warning_sink() as caveats:
+            codes = src._fetch_codes("aStock", page_size=4, max_pages=10)
+        assert codes == [f"sh{600000 + i:06d}" for i in range(4)]
+        assert [item.code for item in caveats] == [WarningCode.WEB_TENCENT_PAGES_MISSING]
+        assert "被截断" in caveats[0].message
 
     def test_fetch_all_batches_and_orders(self, monkeypatch):
         """枚举 → 批量行情：结果按代码序、分批正确（5/5/2）。"""

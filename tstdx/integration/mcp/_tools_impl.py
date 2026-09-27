@@ -11,7 +11,7 @@ from ...client.api import Client
 from ...errors import ValidationError
 from ...runtime.orchestration import FallbackPolicy
 from ..serialization import serialize_result
-from ..wire_fields import as_request_int
+from ..wire_fields import as_request_int, reject_reserved_kwargs
 
 __all__ = [
     "_h_get_bars",
@@ -63,6 +63,11 @@ def _h_query_capability(client: Client, args: dict[str, Any]) -> dict[str, Any]:
         raise ValidationError("args must be an array")
     if not isinstance(call_kwargs, dict):
         raise ValidationError("kwargs must be an object")
+    reject_reserved_kwargs(
+        face="mcp_arguments",
+        where="MCP tool query_capability 的 kwargs",
+        kwargs=call_kwargs,
+    )
     return serialize_result(
         client.call(
             capability,

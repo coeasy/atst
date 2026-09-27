@@ -91,6 +91,7 @@ CLI 每张面（序列化后是 `{"code", "message"}`），同时以 `UserWarnin
 | `adjust_prev_close_missing` | 复权事件缺前收盘价：每股现金红利被忽略，价格因子是按 1/(1+S+R) 算的近似值 | `tstdx/domain/adjust.py` |
 | `calendar_year_uncovered` | 交易日历未覆盖所请求的年份：该年节假日按"无节假日"处理 | `tstdx/domain/calendar.py` |
 | `web_sina_pages_missing` | 新浪全市场分页在重试与补拉之后仍缺页：拿到的是缺页结果，不是全市场 | `tstdx/web/sina/adapters.py` |
+| `web_tencent_pages_missing` | 腾讯全市场**代码枚举**阶段某页失败即停：返回的是被截断的代码表，全市场不完整（与 `web_tencent_batch_failed` 分属枚举 / 批量两个阶段） | `tstdx/web/tencent/adapters.py` |
 | `web_tencent_batch_failed` | 腾讯全市场单批重试后仍失败：结果不完整，缺的那批不会以空行占位 | `tstdx/web/tencent/adapters.py` |
 | `web_tencent_amount_all_zero` | 腾讯 K 线整批 `amount` 恒为 0（该源本周期不返回成交额字段），该字段不可用于计算 | `tstdx/web/_paginate.py` |
 | `web_eastmoney_page_limit` | 东财报表在 `max_pages` 内未取尽（最后一页仍满页），结果可能截断 | `tstdx/web/corporate.py` |
@@ -193,7 +194,11 @@ class MyDomainError(TdxError):
 - **WS 与 MCP 两面的人读位置不对称（实测）**：两面都把信封挂在 JSON-RPC `error.data`，但
   `tstdx/integration/runtime_ws.py` 的 `error.message` 是通用 RPC 文案（理由句在
   `data.message`），而 `tstdx/integration/mcp/_server.py` 把 `envelope.message` 直接平铺进
-  `error.message`。写客户端时别照抄另一面的读法。
+  `error.message`。写客户端时别照抄另一面的读法。WS 面**连协议层失败也挂同一个信封**（第 29
+  轮）：解析失败 / 非法请求 / 未知方法这三条过去只回裸 RPC code（`-32700`/`-32600`/`-32601`）
+  而没有 `error.data`，现在都由 `RuntimeJsonRpcHandler._protocol_error` 统一补上信封，
+  `context.phase == "ws_protocol"`、`fallback_allowed` 与 `provider_switch_allowed` 同样恒为
+  `false`；解析失败那一格没有 `request_id` 可填（报文本身没解出来）。
 - **CLI**（`tstdx/cli/__init__.py::main`）捕获 `TdxError` 时向 stderr 打印一行
   `{"error": <envelope>}` JSON 并以退出码 **2** 结束；非领域异常同样走信封但退出码 **1**，
   `KeyboardInterrupt` 保留原生语义返回 **130**。本节此前写的是"打印 `str(exc)`（含 `[code]`

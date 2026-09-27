@@ -62,6 +62,51 @@ def test_quotes_batch_reports_ok_missing_and_failed(monkeypatch) -> None:
     assert result.missing == ("sz000001",)
 
 
+def test_quotes_batch_feeds_requested_errors_and_partial(monkeypatch) -> None:
+    """``requested`` / ``errors`` / ``partial`` 的生产真源就是这条批量循环。
+
+    第 30 轮修前它只喂 ``items``：``to_dict()["requested"]`` 恒为 ``[]``、``errors``
+    恒为 ``{}``，于是 ``partial`` 在一个确有符号失败的批次上仍恒为 ``False``——
+    ``BatchResult`` 那份公开审计契约在本包**唯一**的批量生产者手里一直是空的。
+    """
+
+    runtime = UnifiedRuntime()
+
+    def fake_quotes(symbol, **kwargs):
+        plan = QueryPlanner().compile(
+            QuerySpec.build(
+                "quotes",
+                symbols=symbol,
+                provider="tdx",
+                currentness="live",
+            )
+        )
+        if symbol == "sh600519":
+            return QueryResult.from_plan(
+                [Quote(code="600519", price=1.0)],
+                plan=plan,
+                provenance=Provenance.direct(plan),
+            )
+        raise ValidationError("bad symbol")
+
+    monkeypatch.setattr(runtime, "quotes", fake_quotes)
+    result = runtime.quotes_batch(["sh600519", "bj430047", "bj430047"])
+
+    #: ``requested`` 是归一 + 去重之后真正发出去的那份名单，不是调用方的原始入参。
+    assert result.requested == ("sh600519", "bj430047")
+    #: ``errors`` 只挂失败项，且必须是 ``requested`` 的子集（``__post_init__`` 的另一半）。
+    assert set(result.errors) == {"bj430047"}
+    assert set(result.errors) <= set(result.requested)
+    assert result.errors["bj430047"].code == "E1010"
+    assert result.partial is True
+    assert result.status_for("bj430047") == "failed"
+
+    payload = result.to_dict()
+    assert payload["requested"] == ["sh600519", "bj430047"]
+    assert payload["partial"] is True
+    assert payload["errors"]["bj430047"]["fallback_allowed"] is False
+
+
 def test_local_5min_uses_minute_reader_and_fzline_path(monkeypatch, tmp_path) -> None:
     seen: dict[str, object] = {}
 

@@ -61,6 +61,13 @@ TERMINATION_EXEMPTIONS: dict[str, str] = {
         "完成位，循环体只有 ``await asyncio.shield(...)``——它挂起而不是忙转，"
         "被取消时记一笔再回到同一个 await。终止由那个任务自己完成，不由本循环推进。"
     ),
+    "tstdx/streaming/base.py::stop": (
+        "``while task is not None and not task.done()``（第 29 轮补入）：与上一条同形同理由"
+        "——条件读的是 poll worker 那条 :class:`asyncio.Task` 的完成位，循环体只有 "
+        "``await asyncio.shield(task)``；被取消时记一笔再回到同一个 await，终止由 worker "
+        "自己在下一轮循环顶读到 ``_stop`` 完成。它等得起多久写在 G41 判据七的登记表里"
+        "（``AsyncQuoteStream.stop`` 那一格），这里只负责「它不是忙等」。"
+    ),
 }
 
 

@@ -252,8 +252,19 @@ class TencentSource(BaseWebSource):
             try:
                 text = self._request_text(url, encoding="utf-8")
                 rows = self._parse_rank_codes(text)
-            except (WebSourceError, ReadTimeout):
-                # 单页失败（瞬断/结构变更）→ 停止枚举，返回已收代码（同新浪 fetch_all 语义）
+            except (WebSourceError, ReadTimeout) as exc:
+                # 单页失败（瞬断/限速/结构变更）→ 停止枚举，返回已收代码（同新浪 fetch_all
+                # 语义）。但"返回已收代码"不能是无声的：调用方拿到的是**被截断的**代码表，
+                # 少了这一格信号就与 ``docs/errors.md`` §一之四 的口径相悖——新浪缺页时发
+                # ``WEB_SINA_PAGES_MISSING``，而腾讯过去只在**批量行情**阶段发告警，
+                # 枚举阶段截断一声不吭（第 29 轮）。
+                record_warning(
+                    WarningCode.WEB_TENCENT_PAGES_MISSING,
+                    f"腾讯全市场代码枚举在 offset={offset} 处分页失败"
+                    f"（board={board}，已收 {len(codes)} 条，原因 {exc}）："
+                    "代码表被截断，本次全市场不完整",
+                    stacklevel=2,
+                )
                 break
             for c in rows:
                 if c not in seen:

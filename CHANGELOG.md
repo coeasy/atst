@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed（逻辑审查第 4 轮：换三个新角度各查一遍 —— 资源生命周期 / 错误信封各面 / 四面入口保留键）
+
+同一组判据：主体流程全部联通 / 核心链路无断链 / 无孤儿逻辑 / 无死循环 / 前后端贯通。本轮**换
+角度**各查一遍（上一轮查的是死码、孤儿与未读参数），每轮修完全部问题再进下一轮；对外契约零变化
+（capability 名称、`Client`/`AsyncClient` 签名、三面路由形状、`DIRECT_BINDINGS` 数量 251、
+`providers` 注册表均不动）。
+
+**第 1 轮 · 资源生命周期与停机/取消路径**
+
+- `streaming/base.py::AsyncQuoteStream.stop` 原为 `with contextlib.suppress(asyncio.CancelledError):
+  await asyncio.shield(task)`，两处问题：调用方的取消被吞掉（`stop()` 之后那次取消再也传不下去），
+  且 worker 仍活着时就清句柄、并关掉它正在用的 owned runtime。现改为与
+  `transport/async_.py::_await_cleanup_before_cancellation` 同一口径的**先排空、再原样抛回取消**。
+- `streaming/stateful.py::AsyncStatefulQuoteStream.stop` 加 `try/finally`，使取消传播时状态机照常
+  推进到 `CLOSED`；删除 `_run` 的 `finally` 里"任务在自己的 finally 里读自己的 `done()`"这个
+  恒不成立的死分支（该分支的 CLOSED 真源本就是 `stop`）。
+- 判据：`tests/architecture/test_resource_lifecycle_gates.py`（G41）的 `_SHUTDOWN_FUNCS` 补 `stop`，
+  `UNBOUNDED_SHUTDOWN_AWAITS` 新增该条并**逐刻度写明上界**（socket 超时 × 候选主站数 +
+  `ReconnectPolicy.next_delay()` 的 `cap=30.0`），`docs/REFACTOR_PLAN_V19_RESTRUCTURE.md` §4 的
+  P2-F 由"只登记不修"改为**第 29 轮已清偿**；`tests/architecture/test_loop_termination_gates.py`
+  （G21）的 `TERMINATION_EXEMPTIONS` 收录 `stop`；`tests/runtime/test_stream_state.py` 新增两条
+  真实行为判据（收尾次序 `poll`→`poll_done`→`closed`、取消不被吞 + 终止态幂等）。
+- 基线唯一红格：`tests/client/test_decode_caveat_wiring.py` 的盘符大小写比较（`P:` vs `p:`）改为
+  `Path(...).samefile(__file__)`。
+
+**第 2 轮 · 错误信封在各面收口 + 批量保序契约**
+
+- WS 面协议层三条失败路径（解析失败 / 非法请求 / 未知方法）过去只回裸 RPC code
+  （`-32700`/`-32600`/`-32601`）、**没有 `error.data`**，与 MCP 面不一致；现由
+  `RuntimeJsonRpcHandler._protocol_error` 统一挂上同一个 fail-closed 信封
+  （`context.phase == "ws_protocol"`、`fallback_allowed` 与 `provider_switch_allowed` 恒 `false`；
+  解析失败那格没有可填的 `request_id`）。
+- `runtime/kernel.py::quotes_batch` 过去只往 `BatchResult` 递 `items` 一样，于是 `errors` 恒 `{}`、
+  `requested` 恒 `()`、`partial` 恒 `False`——三个成员在 `batch.py` 上声明齐全、真源却不存在。
+  现逐只把失败原异常经 `to_error_envelope` 填进 `errors`，并用去重后的符号元组填 `requested`。
+- 判据：`tests/integration/test_error_envelope_boundaries_v12.py` 新增三格协议失败信封断言（RPC
+  code、fail-closed 信封、`phase`、`request_id` 的有无）；`tests/runtime/test_runtime_batch_local_v12.py`
+  新增 `requested`/`errors`/`partial` 三样齐备的判据。
+
+**第 3 轮 · 四面入口调用侧 + 两处终态/告警缺口**
+
+- **路由字段混进 `kwargs` 会在调用表达式求值处抛裸 `TypeError`**（`got multiple values for keyword
+  argument`）：四张 query 面都写成 `client.call(cap, *args, provider=<顶层值>, ..., **kwargs)`，而
+  `provider`/`channel`/`currentness` 是 `Client.call` 自己的关键字形参；报错发生在**进入
+  `Client.call` 之前**，那层把入参不合签名翻成 `ValidationError` 的包装根本接不到 → 四面一致落
+  E9000 / HTTP 500，而契约要求 E1010 / 422 / `-32602`。现设
+  `wire_fields.QUERY_ROUTING_FIELDS` + `reject_reserved_kwargs` 作唯一拒绝口，HTTP（body）、WS
+  （`params`）、MCP（`arguments`）、CLI（`--kwargs`）四面就地判死，冲突键写进
+  `context.reserved_fields`。
+- `trade/simulator.py::fill_order` 缺终态守卫：`cancel_order` 已把冻结原样退回（买：`price*qty`；
+  卖：可用持仓），而 `fill_order` 的 `remaining` 只按数量算、看不出撤单 → 撤单后仍能注入成交：
+  买侧白送 `(委托价-成交价)*qty` 并凭空建仓，卖侧与撤单释放重复扣减。现补
+  `ORDER_STATUS_CANCELLED` 判死。
+- `web/tencent/adapters.py::_fetch_codes` 单页失败即停却一声不吭：调用方拿到的是**被截断的**代码
+  表，却以为它是全市场（新浪缺页时发 `WEB_SINA_PAGES_MISSING`，腾讯只在**批量行情**阶段发
+  `WEB_TENCENT_BATCH_FAILED`）。现新增 `WarningCode.WEB_TENCENT_PAGES_MISSING` 并在枚举阶段发射，
+  `docs/errors.md` §一之四 的类别表同步一行（漏一行会被 `test_caveat_channel_gates.py` 当场判红）。
+- 判据：`tests/runtime/test_wire_declared_fields.py` 新增四面同口径拒绝（HTTP 422 / WS `-32602` /
+  MCP `-32602` / CLI E1010，并断言 HTTP 面在拒绝前一次都没把请求递给 `Client`）；
+  `tests/trade/test_trade_plane_vocabulary.py` 新增"撤单后成交被拒且账本不重复释放"（钱、仓、成交
+  记录三笔账）；`tests/web/test_web_sources.py` 新增枚举截断告警。
+- 文档：`docs/api/interfaces.md`（路由字段的归属与 `kwargs` 禁止区、`BatchResult` 三样真源、
+  WS 协议层信封读法）、`docs/errors.md` §一之四 与 §四、`docs/REFACTOR_PLAN_V19_RESTRUCTURE.md`
+  §4 P2-F。
+
+**收口读数**（2026-09-27，本机 Windows + Python 3.12；三轮全部修完之后的同一棵工作树）：
+`pytest -m "not network"` **4 049 passed / 9 skipped / 0 failed / 0 error**（`tests=4058`，
+`194.7 s`）；`ruff check` `All checks passed!`、`ruff format --check` `471 files already
+formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
+`scripts/audit_reachability.py --strict` `无未登记孤儿 ✓`、`scripts/check_docs_links.py`
+`docs link check OK (96 files)`，五道均 rc=0。
+
 ### Fixed（逻辑审查第 3 轮：孤儿符号清零 + 参数转发断裂修复）
 
 判据五条：主体流程全部联通 / 核心链路无断链 / 无孤儿逻辑 / 无死循环 / 前后端贯通。

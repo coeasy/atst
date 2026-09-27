@@ -1,6 +1,9 @@
 # tstdx 当前架构事实（ARCHITECTURE）
 
-> 快照日期：2026-09-26 · 对应 V19 第 28 轮（停机路径有界化、流式层入册、包模块名册门禁）
+> 快照日期：2026-09-27 · 对应 V19 第 29 轮（流式 `stop` 纳入 G41 停机名单并改为"先排空再原样抛回
+> 取消"、WS 协议层失败也挂同一个错误信封、四面 query 入口拒绝 `kwargs` 里的路由字段、
+> `quotes_batch` 的 `requested`/`errors`/`partial` 真源补齐、撤单后成交判死、腾讯枚举截断发告警）
+> （第 28 轮：停机路径有界化、流式层入册、包模块名册门禁）
 > + V20 技术债清偿（hardening 合并回基类、executor 分派规则化、`web/` 按 Provider 归组；
 > 见 [REFACTOR_PLAN_V20_DEBT_SYNTHESIS.md](REFACTOR_PLAN_V20_DEBT_SYNTHESIS.md) §8）
 > 本文只描述**代码现状**；演进计划见 [REFACTOR_PLAN_V18_RESTRUCTURE.md](REFACTOR_PLAN_V18_RESTRUCTURE.md)，

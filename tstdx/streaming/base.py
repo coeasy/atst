@@ -508,14 +508,34 @@ class AsyncQuoteStream:
         return self
 
     async def stop(self) -> None:
-        """Signal the task to stop, await it, then release an owned runtime."""
+        """Signal the task to stop, await it, then release an owned runtime.
+
+        收尾与调用方取消解耦，口径与 ``transport/async_.py`` 的
+        :func:`~tstdx.transport.async_._await_cleanup_before_cancellation` 逐条相同：
+        被 shield 的 worker 排空之前不放手（``to_thread`` 取数不可取消，半途丢下它就是
+        让它在池已关的情况下继续跑），排空之后把取消**原样抛回**。
+
+        这一格原先写的是 ``with contextlib.suppress(asyncio.CancelledError)``，那不只是
+        少抛一次取消：吞掉之后 ``_task = None`` 会在 worker 仍活着时清空句柄、并顺手关掉
+        它正在用的那份 owned runtime，而 ``_stop`` 已置位又让下一次 ``start()`` 起第二条
+        worker 共享同一份 ``_subs``——与同步侧第 26 轮 F-91/F-92 要挡住的是同一件事。
+        现在句柄只在 worker 确实跑完之后才清空，取消也不再被吞。
+        """
         self._stop.set()
         task = self._task
-        if task is not None and not task.done():
-            with contextlib.suppress(asyncio.CancelledError):
+        cancelled = False
+        while task is not None and not task.done():
+            try:
                 await asyncio.shield(task)
+            except asyncio.CancelledError:
+                cancelled = True
+                continue
+        #: 句柄到这里才清空：上面的循环只在 worker 跑完之后才退出（取消不打断这段），
+        #: 所以"清句柄"与"worker 已死"是同一件事。
         self._task = None
         self._close_owned_runtime()
+        if cancelled:
+            raise asyncio.CancelledError
 
     def _close_owned_runtime(self) -> None:
         if not self._owns_runtime:

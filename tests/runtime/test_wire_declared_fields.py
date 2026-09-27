@@ -398,3 +398,71 @@ def test_mcp_tool_rejects_and_accepts_by_its_schema(tool: Any) -> None:
     assert error["code"] == ERR_INVALID_PARAMS
     assert UNKNOWN in error["message"]
     assert error["data"]["context"]["unknown_fields"] == [UNKNOWN]
+
+
+# --------------------------------------------------------------------------
+# 行为类：路由字段不许混进 kwargs（第 29 轮）
+# --------------------------------------------------------------------------
+
+
+def test_every_wire_face_refuses_routing_fields_smuggled_inside_kwargs() -> None:
+    """``provider`` / ``channel`` / ``currentness`` 只有顶层声明才有决策权。
+
+    三张 query 面都写成 ``client.call(cap, *args, provider=<顶层值>, ..., **kwargs)``。
+    同一个键两处都出现时，Python 在**调用表达式求值处**就抛裸 ``TypeError: got multiple
+    values for keyword argument``——发生在进入 ``Client.call`` 之前，那层把入参不合签名翻成
+    ``ValidationError`` 的包装根本接不到，三张面一致把它落成 E9000 / 500，而契约要的是
+    E1010 / 422 / -32602。下面三格各按自己那面真实公开的读法断言。
+    """
+    smuggled = {"provider": "tdx"}
+
+    recorder = _Recorder()
+    with _test_client(recorder) as test_client:
+        http = test_client.post("/v13/query/rates", json={"args": [], "kwargs": smuggled})
+    assert http.status_code == 422, f"HTTP 把 kwargs 里的路由字段漏成了 {http.status_code}"
+    http_body = http.json()["error"]
+    assert http_body["context"]["reserved_fields"] == ["provider"]
+    assert recorder.calls == [], "HTTP 面在拒绝之前就已经把请求递给了 Client"
+
+    ws_error = _ws_reply("query", {"capability": "rates", "kwargs": smuggled})["error"]
+    assert ws_error["code"] == ERR_INVALID_PARAMS
+    assert ws_error["data"]["context"]["reserved_fields"] == ["provider"]
+
+    server = MCPServer(_Recorder())  # type: ignore[arg-type]
+    mcp = server.handle_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "query_capability",
+                "arguments": {"capability": "rates", "kwargs": smuggled},
+            },
+        }
+    )
+    assert mcp is not None
+    mcp_error = mcp["error"]
+    assert mcp_error["code"] == ERR_INVALID_PARAMS
+    assert mcp_error["data"]["context"]["reserved_fields"] == ["provider"]
+
+
+def test_cli_query_refuses_routing_fields_smuggled_inside_kwargs() -> None:
+    """CLI 面（``tstdx query --kwargs``）与三张 wire 面同口径、同一个拒绝原因。"""
+    from argparse import Namespace
+
+    from tstdx.cli.runtime_commands import cmd_query
+    from tstdx.errors import ValidationError
+
+    args = Namespace(
+        capability="rates",
+        args_json="[]",
+        kwargs_json='{"channel": "quotation"}',
+        provider=None,
+        channel=None,
+        currentness="business",
+    )
+    with pytest.raises(ValidationError) as caught:
+        cmd_query(args)
+    assert caught.value.code == "E1010"
+    assert caught.value.context["face"] == "cli_query"
+    assert caught.value.context["reserved_fields"] == ["channel"]

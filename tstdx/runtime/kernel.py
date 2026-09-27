@@ -22,6 +22,7 @@ from typing import Any, Protocol
 from ..batch import BatchItem, BatchResult
 from ..config import Config, get_config
 from ..domain.symbol import normalize_symbol
+from ..error_envelope import ErrorEnvelope, to_error_envelope
 from ..query import QueryPlan, QueryPlanner, QuerySpec
 from ..result import QueryResult
 from .audit import audit_runtime
@@ -109,8 +110,19 @@ class UnifiedRuntime:
         provider: str | None = None,
         currentness: str = "live",
     ) -> BatchResult[QueryResult[Any]]:
-        """Execute independently auditable quote requests without hidden fallback."""
+        """Execute independently auditable quote requests without hidden fallback.
+
+        ``items`` 与 ``errors`` 是同一批符号的两种视角：``items`` 逐项带状态
+        （``ok`` / ``missing`` / ``failed``），``errors`` 只给失败的符号挂上可越界的
+        :class:`~tstdx.error_envelope.ErrorEnvelope`；``requested`` 是归一、去重之后
+        真正向 Provider 发出的那份名单。三者齐了，``partial`` / ``status_for`` /
+        ``to_dict()`` 才有真源——此前这条生产路径只喂 ``items``，于是
+        ``to_dict()["requested"]`` 恒为 ``[]``、``errors`` 恒为 ``{}``，而 ``partial``
+        在一个确有符号失败的批次上仍然恒为 ``False``（``requested`` 还兼作
+        ``errors ⊆ requested`` 那条不变量的一半）。
+        """
         items: dict[str, BatchItem[QueryResult[Any]]] = {}
+        errors: dict[str, ErrorEnvelope] = {}
         for raw_symbol in symbols:
             symbol = normalize_symbol(raw_symbol)
             if symbol in items:
@@ -123,11 +135,12 @@ class UnifiedRuntime:
                 )
             except Exception as exc:
                 items[symbol] = BatchItem("failed", error=exc)
+                errors[symbol] = to_error_envelope(exc)
                 continue
             items[symbol] = (
                 BatchItem("missing") if not result.data else BatchItem("ok", value=result)
             )
-        return BatchResult.build(items)
+        return BatchResult.build(items, errors=errors, requested=tuple(items))
 
     def bars(
         self,
