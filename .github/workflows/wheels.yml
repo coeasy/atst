@@ -132,8 +132,6 @@ jobs:
               "version": os.environ["RELEASE_VERSION"],
               "source_date_epoch": os.environ["SOURCE_DATE_EPOCH"],
               "workflow": os.environ["GITHUB_WORKFLOW"],
-              "run_id": os.environ["GITHUB_RUN_ID"],
-              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
           }
           Path("dist/RELEASE-METADATA.json").write_text(
               json.dumps(payload, indent=2, sort_keys=True) + "\n",
