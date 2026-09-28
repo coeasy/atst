@@ -25,7 +25,7 @@ from .domain.period import MINUTE_PERIODS, normalize_bar_period
 from .domain.symbol import normalize_symbol
 from .error_envelope import is_sensitive_key
 from .errors import ReadTimeout, ValidationError
-from .providers import PROVIDERS, ChannelSpec, resolve_capability_provider
+from .providers import PROVIDERS, ChannelSpec, resolve_capability_provider, resolve_provider
 
 __all__ = [
     "CurrentnessMode",
