@@ -119,19 +119,14 @@ class Client:
     def capabilities() -> tuple[str, ...]:
         return tuple(sorted(_CORE_CAPABILITIES | MIGRATED_CAPABILITIES))
 
-    @staticmethod
-    def core_capability_statuses(
-        *,
-        default_provider: str | None = None,
-    ) -> dict[str, dict[str, Any]]:
-        """Return operational status for the canonical core capability surface.
+    def core_capability_statuses(self) -> dict[str, dict[str, Any]]:
+        """Return operational status for this Client's canonical core surface.
 
-        Pass the effective planner default to keep status metadata on the same
-        provider-selection rule as QueryPlanner. An explicit request Provider is
-        still never replaced; this method only describes omitted-provider behavior.
+        Omitted-provider routing is evaluated against this instance's effective
+        planner default, so health metadata cannot diverge from real execution.
         """
 
-        configured_default = default_provider or PROVIDERS.default_provider
+        configured_default = self.runtime.planner.default_provider
         values: dict[str, dict[str, Any]] = {}
         for capability in sorted(_CORE_CAPABILITIES):
             declared = tuple(
@@ -156,6 +151,7 @@ class Client:
                 "default_provider": effective_default,
             }
         return values
+
     def execute(self, spec: QuerySpec) -> QueryResult[Any]:
         return self.runtime.execute(spec)
 
@@ -517,12 +513,9 @@ class AsyncClient:
     def capabilities() -> tuple[str, ...]:
         return Client.capabilities()
 
-    @staticmethod
-    def core_capability_statuses(
-        *,
-        default_provider: str | None = None,
-    ) -> dict[str, dict[str, Any]]:
-        return Client.core_capability_statuses(default_provider=default_provider)
+    def core_capability_statuses(self) -> dict[str, dict[str, Any]]:
+        return self.client.core_capability_statuses()
+
     async def execute(
         self,
         spec: QuerySpec,
