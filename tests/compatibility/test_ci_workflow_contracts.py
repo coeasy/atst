@@ -138,15 +138,15 @@ def test_artifact_only_smoke_does_not_enable_setup_python_dependency_cache() -> 
     smoke = workflow.split("  smoke-install:", 1)[1].split("  publish-pypi:", 1)[0]
 
     assert "actions/checkout" not in smoke
-    assert "actions/download-artifact@v4" in smoke
-    assert "actions/setup-python@v5" in smoke
+    assert "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093" in smoke
+    assert "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065" in smoke
     assert "cache: 'pip'" not in smoke
 
 
 def test_release_publishes_once_only_after_draft_release_is_ready() -> None:
     workflow = _workflow("wheels.yml")
 
-    assert workflow.count("pypa/gh-action-pypi-publish@release/v1") == 1
+    assert workflow.count("pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33") == 1
     assert "needs: [build-dist, prepare-release]" in workflow
     assert "if: vars.PUBLIC_RELEASE == 'true'" in workflow
     assert "environment: pypi" in workflow
@@ -190,7 +190,7 @@ def test_release_docker_reuses_artifact_only_after_pypi_succeeds() -> None:
     assert "name: python-dist" in docker
     assert "path: release-dist" in docker
     assert "file: Dockerfile.release" in docker
-    assert "docker/build-push-action@v6" in docker
+    assert "docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8" in docker
 
 
 def test_release_identity_uses_tag_push_and_canonical_version_source() -> None:
@@ -336,3 +336,40 @@ def test_prerelease_detection_uses_pep440_not_tag_punctuation() -> None:
     assert "parsed.is_prerelease or parsed.is_devrelease" in build
     assert "contains(github.ref_name, '-')" not in workflow
     assert "needs.build-dist.outputs.is_prerelease == 'false'" in workflow
+
+
+def test_release_source_must_be_main_reachable_and_repasses_deterministic_gates() -> None:
+    workflow = _workflow("wheels.yml")
+    source = workflow.split("  release-source:", 1)[1].split("  build-dist:", 1)[0]
+    build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
+
+    assert "fetch-depth: 0" in source
+    assert 'git fetch --no-tags origin main:refs/remotes/origin/main' in source
+    assert 'git merge-base --is-ancestor "$GITHUB_SHA" origin/main' in source
+    assert 'python -m pip install -e ".[all,dev]"' in source
+    assert "run: make gates" in source
+    assert "needs: release-source" in build
+
+
+def test_release_actions_are_immutable_sha_pinned() -> None:
+    workflow = _workflow("wheels.yml")
+    forbidden = (
+        "actions/checkout@v",
+        "actions/setup-python@v",
+        "actions/upload-artifact@v",
+        "actions/download-artifact@v",
+        "pypa/gh-action-pypi-publish@release/",
+        "docker/setup-qemu-action@v",
+        "docker/setup-buildx-action@v",
+        "docker/login-action@v",
+        "docker/metadata-action@v",
+        "docker/build-push-action@v",
+    )
+    assert all(token not in workflow for token in forbidden)
+
+
+def test_sdist_release_docs_are_not_version_hardcoded() -> None:
+    pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert '"docs/releases/*.md"' in pyproject
+    assert '"docs/releases/v1.0.0.md"' not in pyproject
