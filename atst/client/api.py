@@ -506,6 +506,10 @@ class AsyncClient:
     def capabilities() -> tuple[str, ...]:
         return Client.capabilities()
 
+    @staticmethod
+    def core_capability_statuses() -> dict[str, dict[str, Any]]:
+        return Client.core_capability_statuses()
+
     async def execute(
         self,
         spec: QuerySpec,
