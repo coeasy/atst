@@ -213,15 +213,20 @@ class RuntimeJsonRpcHandler:
             received=params.keys(),
         )
         if method == "runtime.health":
+            core = Client.core_capability_statuses()
             return {
                 "status": "ok",
                 "api": "v13",
                 "default_provider": self.client.runtime.planner.default_provider,
                 "migrated_capabilities": len(self.client.capabilities()),
+                "core_unavailable": sorted(
+                    capability for capability, state in core.items() if not state["available"]
+                ),
             }
         if method == "runtime.capabilities":
             return {
                 "capabilities": list(self.client.capabilities()),
+                "core": Client.core_capability_statuses(),
                 "providers": {
                     provider: {
                         channel.id: sorted(channel.capabilities)
