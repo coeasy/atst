@@ -93,6 +93,18 @@ def test_release_candidate_has_a_closed_changelog_identity() -> None:
     assert "暂无。" in unreleased
 
 
+def test_v1_release_python_floor_matches_package_metadata_and_ci() -> None:
+    pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    release = (_ROOT / "docs" / "releases" / "v1.0.0.md").read_text(encoding="utf-8")
+    workflow = (_ROOT / ".github" / "workflows" / "wheels.yml").read_text(encoding="utf-8")
+
+    assert 'requires-python = ">=3.10"' in pyproject
+    assert "Python 3.6–3.9 不在此版本的支持范围内" in release
+    assert "Python 3.10、3.11、3.12、3.13、3.14" in release
+    for version in ("3.10", "3.11", "3.12", "3.13", "3.14"):
+        assert f"'{version}'" in workflow
+
+
 def test_unpublished_release_candidate_does_not_claim_stable_trove_status() -> None:
     pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
