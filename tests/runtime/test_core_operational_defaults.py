@@ -241,3 +241,14 @@ def test_ws_health_reports_unavailable_core_capabilities() -> None:
     assert "security_list" in payload["core_unavailable"]
     assert "minute" not in payload["core_unavailable"]
     assert "trades" not in payload["core_unavailable"]
+
+
+def test_core_capability_status_uses_effective_runtime_default() -> None:
+    core = Client.core_capability_statuses(default_provider="eastmoney")
+
+    assert core["minute"]["available"] is True
+    assert core["minute"]["default_provider"] == "eastmoney"
+    assert core["trades"]["available"] is True
+    assert core["trades"]["default_provider"] == "tencent"
+    assert core["security_list"]["available"] is False
+    assert core["security_list"]["default_provider"] is None
