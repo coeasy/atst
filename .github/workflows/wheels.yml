@@ -78,6 +78,12 @@ jobs:
               or parsed.is_postrelease
               or parsed.local is not None
           )
+          release_note = Path(f"docs/releases/v{version}.md")
+          if not release_note.is_file():
+              raise SystemExit(f"missing release note: {release_note}")
+          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          if f"## [{version}]" not in changelog:
+              raise SystemExit(f"CHANGELOG.md missing version heading: {version}")
           if os.environ.get("GITHUB_EVENT_NAME") == "push":
               expected = f"v{version}"
               actual = os.environ["RELEASE_TAG"]
@@ -105,10 +111,35 @@ jobs:
           test "$(find dist-repro -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
           cmp dist/*.whl dist-repro/*.whl
           cmp dist/*.tar.gz dist-repro/*.tar.gz
-      - name: Generate SHA-256 manifest
+      - name: Generate release metadata and SHA-256 manifest
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+          RELEASE_TAG: ${{ github.ref_name }}
         shell: bash
         run: |
           set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = {
+              "schema_version": 1,
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "commit": os.environ["GITHUB_SHA"],
+              "ref": os.environ["GITHUB_REF"],
+              "tag": os.environ["RELEASE_TAG"],
+              "version": os.environ["RELEASE_VERSION"],
+              "source_date_epoch": os.environ["SOURCE_DATE_EPOCH"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+          }
+          Path("dist/RELEASE-METADATA.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
           cd dist
           sha256sum *.whl *.tar.gz > SHA256SUMS.txt
       - name: Upload canonical distributions
@@ -225,6 +256,7 @@ jobs:
           test "$(find dist -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 1
           test "$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
           test "$(find dist -maxdepth 1 -type f -name 'SHA256SUMS.txt' | wc -l | tr -d ' ')" = 1
+          test "$(find dist -maxdepth 1 -type f -name 'RELEASE-METADATA.json' | wc -l | tr -d ' ')" = 1
       - name: Create, resume, or verify release state
         id: release-state
         env:
@@ -236,12 +268,17 @@ jobs:
           if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > release-state.txt 2>/dev/null; then
             if [[ "$(cat release-state.txt)" == "false" ]]; then
               mkdir -p published
-              gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --dir published                 --pattern '*.whl' --pattern '*.tar.gz' --pattern 'SHA256SUMS.txt'
+              test "$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')" = 4
+              gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --dir published \
+                --pattern '*.whl' --pattern '*.tar.gz' --pattern 'SHA256SUMS.txt' \
+                --pattern 'RELEASE-METADATA.json'
               test "$(find published -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 1
               test "$(find published -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
               test "$(find published -maxdepth 1 -type f -name 'SHA256SUMS.txt' | wc -l | tr -d ' ')" = 1
+              test "$(find published -maxdepth 1 -type f -name 'RELEASE-METADATA.json' | wc -l | tr -d ' ')" = 1
               (cd published && sha256sum -c SHA256SUMS.txt)
               cmp dist/SHA256SUMS.txt published/SHA256SUMS.txt
+              cmp dist/RELEASE-METADATA.json published/RELEASE-METADATA.json
               echo "already_published=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -276,15 +313,33 @@ jobs:
           --version "$RELEASE_VERSION"
           --dist dist
           --github-output "$GITHUB_OUTPUT"
-      - name: Remove non-distribution manifest before PyPI upload
+      - name: Remove non-distribution release metadata before PyPI upload
         if: steps.pypi-state.outputs.exists != 'true'
         shell: bash
-        run: rm dist/SHA256SUMS.txt
+        run: rm dist/SHA256SUMS.txt dist/RELEASE-METADATA.json
       - name: Publish once with trusted publishing
         if: steps.pypi-state.outputs.exists != 'true'
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           attestations: true
+      - name: Verify final PyPI state
+        env:
+          RELEASE_VERSION: ${{ needs.build-dist.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if python scripts/check_pypi_release.py \
+              --version "$RELEASE_VERSION" \
+              --dist dist \
+              --require-existing; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 5 ]]; then
+              exit 1
+            fi
+            sleep $((attempt * 2))
+          done
 
   publish-docker:
     name: Publish Docker image to Docker Hub
