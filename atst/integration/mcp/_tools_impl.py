@@ -133,14 +133,14 @@ def _h_get_snapshot(client: Client, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _h_get_minute_today(client: Client, args: dict[str, Any]) -> dict[str, Any]:
-    return serialize_result(client.minute(args["symbol"], provider=args.get("provider") or "tdx"))
+    return serialize_result(client.minute(args["symbol"], provider=args.get("provider")))
 
 
 def _h_get_trades(client: Client, args: dict[str, Any]) -> dict[str, Any]:
     return serialize_result(
         client.trades(
             args["symbol"],
-            provider=args.get("provider") or "tdx",
+            provider=args.get("provider"),
             start=_int_arg("get_trades", "start", args.get("start")),
             count=_int_arg("get_trades", "count", args.get("count")),
         )
