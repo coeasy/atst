@@ -150,6 +150,7 @@ class Client:
                     effective_default = selected
             values[capability] = {
                 "available": bool(available),
+                "default_available": effective_default is not None,
                 "declared_providers": list(declared),
                 "operational_providers": list(available),
                 "default_provider": effective_default,
