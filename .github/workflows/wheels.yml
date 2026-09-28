@@ -119,7 +119,7 @@ jobs:
       - name: Verify optional dependency closure
         run: |
           python -c "import pandas, pyarrow, duckdb, httpx, prometheus_client, fastapi, uvicorn, websockets, zstandard"
-          python -c "import sys; import tzdata if sys.platform == 'win32' else pathlib"
+          python -c "import importlib.util, sys; assert sys.platform != 'win32' or importlib.util.find_spec('tzdata') is not None"
           python -m pip check
 
   sdist-rebuild:
