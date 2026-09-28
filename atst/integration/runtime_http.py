@@ -193,12 +193,15 @@ def create_runtime_app(client: Client | None = None) -> Any:
         return serialize_result(api.snapshot(symbol, provider=provider))
 
     @app.get("/v13/minute/{symbol}")
-    def minute(symbol: str, provider: str = "tdx") -> dict[str, Any]:
+    def minute(symbol: str, provider: str | None = None) -> dict[str, Any]:
         return serialize_result(api.minute(symbol, provider=provider))
 
     @app.get("/v13/trades/{symbol}")
     def trades(
-        symbol: str, provider: str = "tdx", start: int = Query(0, ge=0), count: int = Query(0, ge=0)
+        symbol: str,
+        provider: str | None = None,
+        start: int = Query(0, ge=0),
+        count: int = Query(0, ge=0),
     ) -> dict[str, Any]:
         return serialize_result(api.trades(symbol, provider=provider, start=start, count=count))
 
