@@ -434,3 +434,25 @@ def test_release_requires_versioned_docs_and_post_publish_pypi_readback() -> Non
     assert "--require-existing" in pypi
     assert "for attempt in 1 2 3 4 5" in pypi
     assert "sleep $((attempt * 2))" in pypi
+
+
+def test_all_workflow_actions_are_immutable_sha_pinned() -> None:
+    pattern = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)", re.MULTILINE)
+    offenders: list[str] = []
+
+    for path in sorted((_ROOT / ".github" / "workflows").glob("*.yml")):
+        workflow = path.read_text(encoding="utf-8")
+        for action in pattern.findall(workflow):
+            if action.startswith("./"):
+                continue
+            if "@" not in action:
+                offenders.append(f"{path.name}: {action} (missing ref)")
+                continue
+            ref = action.rsplit("@", 1)[1]
+            if re.fullmatch(r"[0-9a-f]{40}", ref) is None:
+                offenders.append(f"{path.name}: {action}")
+
+    assert offenders == [], (
+        "workflow third-party actions must use immutable 40-char commit SHAs: "
+        + "; ".join(offenders)
+    )
