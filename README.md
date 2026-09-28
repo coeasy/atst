@@ -6,7 +6,7 @@
 
 - 当前 Draft 开发版本：`1.0.0`
 - 最新已发布稳定版：`v1.0.0`（2026-09-27 重新发布，更名为 `atst`） · [发布说明](docs/releases/v1.0.0.md) · [v1.1.0 版本说明](docs/releases/v1.1.0.md) · [CHANGELOG](CHANGELOG.md)
-- 发布工程：[Industrial Python Release Architecture V2](docs/ATST-Industrial-Python-Release-Architecture-V2.md)
+- 发布工程：[Industrial Python Release Architecture V3](docs/ATST-Industrial-Python-Release-Architecture-V3.md)
 
 ---
 
