@@ -13,56 +13,28 @@ from atst.cli.parser import build_parser
 from atst.integration.mcp._tools_impl import _h_get_minute_today, _h_get_trades
 from atst.integration.runtime_ws import RuntimeJsonRpcHandler
 from atst.providers import PROVIDERS, resolve_capability_provider
-from atst.query import QueryPlanner, QuerySpec
+from atst.query import QueryPlan, QueryPlanner, QuerySpec
+from atst.runtime.kernel import UnifiedRuntime
 from atst.result import Provenance, QueryResult
 
 
-class _RecordingRuntime:
+class _RecordingExecutor:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str | None]] = []
+        self.plans: list[QueryPlan] = []
 
-    @staticmethod
-    def _result(capability: str, provider: str) -> QueryResult[Any]:
-        plan = QueryPlanner().compile(
-            QuerySpec.build(
-                capability,
-                symbols="sh600519",
-                provider=provider,
-                currentness="live",
-            )
-        )
+    def execute(self, plan: QueryPlan) -> QueryResult[Any]:
+        self.plans.append(plan)
         return QueryResult.from_plan(
-            [{"code": "sh600519", "provider": provider}],
+            [{"code": "sh600519", "provider": plan.provider}],
             plan=plan,
             provenance=Provenance.direct(plan),
         )
 
-    def minute(
-        self, symbol: str, *, provider: str | None = None, currentness: str = "live"
-    ) -> QueryResult[Any]:
-        del symbol, currentness
-        self.calls.append(("minute", provider))
-        assert provider is not None
-        return self._result("minute", provider)
 
-    def trades(
-        self,
-        symbol: str,
-        *,
-        provider: str | None = None,
-        start: int = 0,
-        count: int = 0,
-        currentness: str = "live",
-    ) -> QueryResult[Any]:
-        del symbol, start, count, currentness
-        self.calls.append(("trades", provider))
-        assert provider is not None
-        return self._result("trades", provider)
-
-
-def _client() -> tuple[Client, _RecordingRuntime]:
-    runtime = _RecordingRuntime()
-    return Client(runtime=runtime), runtime  # type: ignore[arg-type]
+def _client() -> tuple[Client, _RecordingExecutor]:
+    executor = _RecordingExecutor()
+    runtime = UnifiedRuntime(executor=executor)
+    return Client(runtime=runtime), executor
 
 
 def test_registry_separates_declared_from_operational_support() -> None:
@@ -86,12 +58,15 @@ def test_explicit_provider_is_never_replaced_by_operational_default() -> None:
 
 
 def test_client_minute_and_trades_have_working_omitted_provider_defaults() -> None:
-    client, runtime = _client()
+    client, executor = _client()
 
     client.minute("sh600519")
     client.trades("sh600519")
 
-    assert runtime.calls == [("minute", "tencent"), ("trades", "tencent")]
+    assert [(plan.spec.capability, plan.provider) for plan in executor.plans] == [
+        ("minute", "tencent"),
+        ("trades", "tencent"),
+    ]
 
 
 def test_cli_minute_and_trades_do_not_force_tdx() -> None:
@@ -104,18 +79,21 @@ def test_cli_minute_and_trades_do_not_force_tdx() -> None:
 
 
 def test_mcp_minute_and_trades_reach_client_operational_default() -> None:
-    client, runtime = _client()
+    client, executor = _client()
 
     minute = _h_get_minute_today(client, {"symbol": "sh600519"})
     trades = _h_get_trades(client, {"symbol": "sh600519"})
 
     assert minute["meta"]["provider"] == "tencent"
     assert trades["meta"]["provider"] == "tencent"
-    assert runtime.calls == [("minute", "tencent"), ("trades", "tencent")]
+    assert [(plan.spec.capability, plan.provider) for plan in executor.plans] == [
+        ("minute", "tencent"),
+        ("trades", "tencent"),
+    ]
 
 
 def test_ws_minute_and_trades_reach_client_operational_default() -> None:
-    client, runtime = _client()
+    client, executor = _client()
     handler = RuntimeJsonRpcHandler(client)
 
     for request_id, method in ((1, "minute"), (2, "trades")):
@@ -133,7 +111,10 @@ def test_ws_minute_and_trades_reach_client_operational_default() -> None:
         payload = json.loads(raw)
         assert payload["result"]["meta"]["provider"] == "tencent"
 
-    assert runtime.calls == [("minute", "tencent"), ("trades", "tencent")]
+    assert [(plan.spec.capability, plan.provider) for plan in executor.plans] == [
+        ("minute", "tencent"),
+        ("trades", "tencent"),
+    ]
 
 
 def test_http_minute_and_trades_reach_client_operational_default() -> None:
@@ -142,7 +123,7 @@ def test_http_minute_and_trades_reach_client_operational_default() -> None:
 
     from atst.integration.runtime_http import create_runtime_app
 
-    client, runtime = _client()
+    client, executor = _client()
     app = create_runtime_app(client)
     with TestClient(app) as http:
         minute = http.get("/v13/minute/sh600519")
@@ -152,7 +133,10 @@ def test_http_minute_and_trades_reach_client_operational_default() -> None:
     assert trades.status_code == 200
     assert minute.json()["meta"]["provider"] == "tencent"
     assert trades.json()["meta"]["provider"] == "tencent"
-    assert runtime.calls == [("minute", "tencent"), ("trades", "tencent")]
+    assert [(plan.spec.capability, plan.provider) for plan in executor.plans] == [
+        ("minute", "tencent"),
+        ("trades", "tencent"),
+    ]
 
 
 def test_core_capability_discovery_distinguishes_declared_and_available() -> None:
@@ -173,3 +157,20 @@ def test_core_capability_discovery_distinguishes_declared_and_available() -> Non
     for capability in ("quotes", "bars", "snapshot", "security_count"):
         assert core[capability]["available"] is True
         assert core[capability]["default_provider"] == "tdx"
+
+
+def test_unified_runtime_and_generic_query_share_operational_defaults() -> None:
+    executor = _RecordingExecutor()
+    runtime = UnifiedRuntime(executor=executor)
+
+    runtime.minute("sh600519")
+    runtime.trades("sh600519")
+    runtime.execute(
+        QuerySpec.build("minute", symbols="sh600519", currentness="live")
+    )
+
+    assert [(plan.spec.capability, plan.provider) for plan in executor.plans] == [
+        ("minute", "tencent"),
+        ("trades", "tencent"),
+        ("minute", "tencent"),
+    ]
