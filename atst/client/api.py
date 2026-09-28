@@ -21,7 +21,7 @@ from ..catalog.capability import (
 )
 from ..errors import ValidationError
 from ..query import QuerySpec
-from ..providers import resolve_capability_provider
+from ..providers import PROVIDERS, resolve_capability_provider
 from ..result import QueryResult
 from ..runtime.executor import DEDICATED_CAPABILITIES as _CORE_CAPABILITIES
 from ..runtime.kernel import UnifiedRuntime
@@ -118,6 +118,32 @@ class Client:
     @staticmethod
     def capabilities() -> tuple[str, ...]:
         return tuple(sorted(_CORE_CAPABILITIES | MIGRATED_CAPABILITIES))
+
+    @staticmethod
+    def core_capability_statuses() -> dict[str, dict[str, Any]]:
+        """Return operational status for the canonical core capability surface.
+
+        Declaration and operational availability are deliberately separate:
+        explicit TDX minute/trades/security-list calls still preserve their
+        protocol-specific fail-fast errors, while omitted-provider calls may use
+        another Provider only when the caller did not pin a Provider.
+        """
+
+        values: dict[str, dict[str, Any]] = {}
+        for capability in sorted(_CORE_CAPABILITIES):
+            declared = tuple(
+                provider
+                for provider in PROVIDERS.ids()
+                if PROVIDERS.get(provider).supports(capability)
+            )
+            available = PROVIDERS.available_providers(capability)
+            values[capability] = {
+                "available": bool(available),
+                "declared_providers": list(declared),
+                "operational_providers": list(available),
+                "default_provider": PROVIDERS.default_available_provider(capability),
+            }
+        return values
 
     def execute(self, spec: QuerySpec) -> QueryResult[Any]:
         return self.runtime.execute(spec)
