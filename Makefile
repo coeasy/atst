@@ -27,7 +27,7 @@ help:
 	@echo "  make publish         Disabled locally; publish via GitHub Release/OIDC"
 
 install:
-	$(PIP) install -e ".[all,dev]" build twine "pre-commit==4.6.2"
+	$(PIP) install -e ".[all,dev]" "pre-commit==4.6.2"
 
 pre-commit:
 	$(PYTHON) -m pre_commit run --all-files
@@ -105,10 +105,10 @@ build:
 	$(PYTHON) scripts/build_package.py --smoke
 
 # PyPI publishing is intentionally centralized in .github/workflows/wheels.yml,
-# where tag/version identity, 12-cell wheel smoke and OIDC trusted publishing are
-# enforced. A local twine shortcut would bypass those provenance gates.
+# where tag/version identity, 15-cell wheel smoke, extras/sdist verification and OIDC
+# trusted publishing are enforced. A local twine shortcut would bypass those gates.
 publish:
-	@echo "Direct local publishing is disabled. Publish a matching GitHub Release tag to use the OIDC release workflow."
+	@echo "Direct local publishing is disabled. Push a matching vX.Y.Z tag to use the release workflow."
 	@exit 2
 
 docker-build:

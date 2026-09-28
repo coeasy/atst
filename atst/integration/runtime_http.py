@@ -193,12 +193,15 @@ def create_runtime_app(client: Client | None = None) -> Any:
         return serialize_result(api.snapshot(symbol, provider=provider))
 
     @app.get("/v13/minute/{symbol}")
-    def minute(symbol: str, provider: str = "tdx") -> dict[str, Any]:
+    def minute(symbol: str, provider: str | None = None) -> dict[str, Any]:
         return serialize_result(api.minute(symbol, provider=provider))
 
     @app.get("/v13/trades/{symbol}")
     def trades(
-        symbol: str, provider: str = "tdx", start: int = Query(0, ge=0), count: int = Query(0, ge=0)
+        symbol: str,
+        provider: str | None = None,
+        start: int = Query(0, ge=0),
+        count: int = Query(0, ge=0),
     ) -> dict[str, Any]:
         return serialize_result(api.trades(symbol, provider=provider, start=start, count=count))
 
@@ -215,12 +218,16 @@ def create_runtime_app(client: Client | None = None) -> Any:
     @app.get("/v13/runtime/health")
     def health() -> dict[str, Any]:
         rt = api.runtime
+        core = Client.core_capability_statuses()
         return {
             "status": "ok",
             "api": "v13",
             "default_provider": rt.planner.default_provider,
             "direct_bindings": len(DIRECT_BINDINGS),
             "migrated_capabilities": len(api.capabilities()),
+            "core_unavailable": sorted(
+                capability for capability, state in core.items() if not state["available"]
+            ),
         }
 
     return app

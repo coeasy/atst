@@ -7,7 +7,7 @@
 
 ## 1. 定位
 
-TDX 是 atst 默认主 Provider。用户未显式指定 Provider 且 capability 支持 TDX 时，`default_provider=tdx`。
+TDX 是 atst 默认主 Provider。用户未显式指定 Provider 且 capability 在 TDX 上处于 operational 状态时，`default_provider=tdx`；如果 TDX 只声明了该能力但已被标记为 operationally unavailable（当前核心面为 `minute` / `trades` / `security_list`），Planner 只对“未点名 Provider”的请求选择 Registry 中的 operational provider。调用方显式指定 `provider="tdx"` 时绝不替换数据源，仍返回 TDX 自身的 fail-fast 协议异常。
 
 TDX 内部允许在同一 Channel 的主站池/等价 endpoint 中容错，但不得因为 TDX 失败跨 Provider 到腾讯、新浪、东财。
 
@@ -127,8 +127,15 @@ tdx/bars -> tencent/bars
 ```python
 md.quotes(symbols, provider="tdx")
 md.bars(symbol, provider="tdx")
-md.minute(symbol, provider="tdx")
-md.trades(symbol, provider="tdx")
+
+# minute/trades 的 TDX 结构化命令当前被 fail-fast 拦截；
+# 省略 provider 会从 Provider Registry 选择 operational provider（当前 tencent）。
+md.minute(symbol)
+md.trades(symbol)
+
+# 如需固定 Web Provider，可显式指定：
+md.minute(symbol, provider="eastmoney")
+md.trades(symbol, provider="baidu")
 ```
 
 兼容期：

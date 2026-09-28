@@ -105,7 +105,7 @@ TOOLS: list[ToolSpec] = [
     ),
     ToolSpec(
         name="get_snapshot",
-        description="Fetch canonical TDX market snapshot/orderbook data.",
+        description="Fetch the canonical TDX snapshot composed from live quote plus bar context; it does not claim orderbook depth.",
         inputSchema={
             "type": "object",
             "additionalProperties": False,
@@ -117,9 +117,9 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="get_minute_today",
         description=(
-            "Unavailable on the tdx provider: its 0x0537 request/parser is still inferred, "
-            "so the structured client refuses to send it (NotImplementedFeature). "
-            "Only web providers (e.g. tencent) declare this capability today."
+            "Defaults to an operational web provider (currently tencent). Explicit tdx remains "
+            "unavailable because its 0x0537 request/parser is still inferred, so the structured "
+            "client refuses to send it (NotImplementedFeature)."
         ),
         inputSchema={
             "type": "object",
@@ -132,9 +132,9 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="get_trades",
         description=(
-            "Unavailable on the tdx provider: its 0x0FC5 request/parser is still inferred, "
-            "so the structured client refuses to send it (NotImplementedFeature). "
-            "Intraday ticks are only declared by web providers (e.g. baidu/tencent)."
+            "Defaults to an operational web provider (currently tencent). Explicit tdx remains "
+            "unavailable because its 0x0FC5 request/parser is still inferred, so the structured "
+            "client refuses to send it (NotImplementedFeature); baidu/tencent provide ticks."
         ),
         inputSchema={
             "type": "object",

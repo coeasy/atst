@@ -28,6 +28,7 @@ __all__ = [
     "PROVIDERS",
     "normalize_provider_id",
     "resolve_provider",
+    "resolve_capability_provider",
 ]
 
 
@@ -46,6 +47,7 @@ class ChannelSpec:
     live: bool = False
     local: bool = False
     periods: frozenset[str] = frozenset()
+    unavailable_capabilities: frozenset[str] = frozenset()
 
     @classmethod
     def build(
@@ -56,6 +58,7 @@ class ChannelSpec:
         live: bool = False,
         local: bool = False,
         periods: Iterable[str] = (),
+        unavailable: Iterable[str] = (),
     ) -> ChannelSpec:
         channel_id = str(id).strip().lower()
         if not channel_id:
@@ -67,6 +70,15 @@ class ChannelSpec:
         normalized_periods = frozenset(str(x).strip().lower() for x in periods if str(x).strip())
         if normalized_periods and "bars" not in caps:
             raise ValueError(f"periods declared on non-bars channel {channel_id!r}")
+        unavailable_caps = frozenset(
+            str(x).strip().lower() for x in unavailable if str(x).strip()
+        )
+        unknown_unavailable = unavailable_caps - caps
+        if unknown_unavailable:
+            raise ValueError(
+                f"channel {channel_id!r} marks undeclared capabilities unavailable: "
+                f"{sorted(unknown_unavailable)}"
+            )
 
         return cls(
             id=channel_id,
@@ -74,10 +86,15 @@ class ChannelSpec:
             live=bool(live),
             local=bool(local),
             periods=normalized_periods,
+            unavailable_capabilities=unavailable_caps,
         )
 
     def supports_period(self, period: str) -> bool:
         return not self.periods or str(period).strip().lower() in self.periods
+
+    def operationally_supports(self, capability: str) -> bool:
+        cap = str(capability).strip().lower()
+        return cap in self.capabilities and cap not in self.unavailable_capabilities
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +129,12 @@ class ProviderSpec:
     def channels_for(self, capability: str) -> tuple[ChannelSpec, ...]:
         cap = str(capability).strip().lower()
         return tuple(item for item in self.channels if cap in item.capabilities)
+
+    def available_channels_for(self, capability: str) -> tuple[ChannelSpec, ...]:
+        return tuple(item for item in self.channels if item.operationally_supports(capability))
+
+    def operationally_supports(self, capability: str) -> bool:
+        return bool(self.available_channels_for(capability))
 
     def capabilities(self) -> frozenset[str]:
         return frozenset(cap for channel in self.channels for cap in channel.capabilities)
@@ -175,6 +198,20 @@ class ProviderRegistry:
                 },
             )
         return spec
+
+    def available_providers(self, capability: str) -> tuple[str, ...]:
+        cap = str(capability).strip().lower()
+        return tuple(
+            provider_id
+            for provider_id, spec in self._providers.items()
+            if spec.operationally_supports(cap)
+        )
+
+    def default_available_provider(self, capability: str) -> str | None:
+        available = self.available_providers(capability)
+        if self._default in available:
+            return self._default
+        return available[0] if available else None
 
     def require_period(self, provider: str, channel: str, period: str) -> ChannelSpec:
         spec = self.get(provider).channel(channel)
@@ -242,12 +279,39 @@ def resolve_provider(
     return selected
 
 
+def resolve_capability_provider(
+    capability: str,
+    provider: str | None = None,
+    *,
+    default: str | None = None,
+) -> str:
+    """Resolve omitted providers away from a declared-but-unavailable default.
+
+    An explicit per-request provider is never replaced. For an omitted provider,
+    the configured/default Provider keeps ownership when it is operational. Only
+    when that Provider declares the capability but marks it operationally
+    unavailable do we select the registry's operational default. If no operational
+    Provider exists, the original default remains selected so its canonical
+    fail-fast domain exception stays observable.
+    """
+
+    if provider is not None:
+        return resolve_provider(provider=provider)
+    candidate = resolve_provider(default=default or PROVIDERS.default_provider)
+    spec = PROVIDERS.get(candidate)
+    cap = str(capability).strip().lower()
+    if not spec.supports(cap) or spec.operationally_supports(cap):
+        return candidate
+    selected = PROVIDERS.default_available_provider(cap)
+    return selected or candidate
+
 def _c(
     id: str,
     *capabilities: str,
     live: bool = False,
     local: bool = False,
     periods: Iterable[str] = (),
+    unavailable: Iterable[str] = (),
 ) -> ChannelSpec:
     return ChannelSpec.build(
         id,
@@ -255,6 +319,7 @@ def _c(
         live=live,
         local=local,
         periods=periods,
+        unavailable=unavailable,
     )
 
 
@@ -283,6 +348,7 @@ PROVIDERS = ProviderRegistry(
                     "security_list_all",
                     "volume_price",
                     live=True,
+                    unavailable=("minute", "trades", "security_list", "security_list_all"),
                     periods=(
                         "1min",
                         "5min",

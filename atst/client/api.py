@@ -20,6 +20,7 @@ from ..catalog.capability import (
     is_migrated_capability,
 )
 from ..errors import ValidationError
+from ..providers import PROVIDERS
 from ..query import QuerySpec
 from ..result import QueryResult
 from ..runtime.executor import DEDICATED_CAPABILITIES as _CORE_CAPABILITIES
@@ -117,6 +118,32 @@ class Client:
     @staticmethod
     def capabilities() -> tuple[str, ...]:
         return tuple(sorted(_CORE_CAPABILITIES | MIGRATED_CAPABILITIES))
+
+    @staticmethod
+    def core_capability_statuses() -> dict[str, dict[str, Any]]:
+        """Return operational status for the canonical core capability surface.
+
+        Declaration and operational availability are deliberately separate:
+        explicit TDX minute/trades/security-list calls still preserve their
+        protocol-specific fail-fast errors, while omitted-provider calls may use
+        another Provider only when the caller did not pin a Provider.
+        """
+
+        values: dict[str, dict[str, Any]] = {}
+        for capability in sorted(_CORE_CAPABILITIES):
+            declared = tuple(
+                provider
+                for provider in PROVIDERS.ids()
+                if PROVIDERS.get(provider).supports(capability)
+            )
+            available = PROVIDERS.available_providers(capability)
+            values[capability] = {
+                "available": bool(available),
+                "declared_providers": list(declared),
+                "operational_providers": list(available),
+                "default_provider": PROVIDERS.default_available_provider(capability),
+            }
+        return values
 
     def execute(self, spec: QuerySpec) -> QueryResult[Any]:
         return self.runtime.execute(spec)
@@ -344,32 +371,39 @@ class Client:
         self,
         symbol: str,
         *,
-        provider: str = "tdx",
+        provider: str | None = None,
         currentness: str = "live",
     ) -> QueryResult[Any]:
         """当日分时。
 
-        **默认的 ``provider="tdx"`` 已下线**：tdx 的 ``0x0537`` request/parser 仍为 inferred，
-        客户端在发包前抛 :class:`NotImplementedFeature`（真机 golden 锁定前不通过结构化 API
-        发包）。当日分时因此只能显式选一个声明该能力的 Web Provider：``tencent`` /
+        未指定 Provider 时由 Provider Registry 选择 operational provider（当前首选
+        ``tencent``）。显式指定 ``provider="tdx"`` 仍保持协议事实：TDX 的 ``0x0537``
+        request/parser 仍为 inferred，客户端在发包前抛 :class:`NotImplementedFeature`
+        （真机 golden 锁定前不通过结构化 API 发包）。可用 Web Provider 为 ``tencent`` /
         ``eastmoney`` / ``baidu``。一格 = 一次 HTTP 请求、一只代码；上游反爬时抛
         :class:`AntiSpiderBlocked` 或 :class:`WebSourceError`，不会返回空序列冒充成功。
         """
-        return self.runtime.minute(symbol, provider=provider, currentness=currentness)
+        return self.runtime.minute(
+            symbol,
+            provider=provider,
+            currentness=currentness,
+        )
 
     def trades(
         self,
         symbol: str,
         *,
-        provider: str = "tdx",
+        provider: str | None = None,
         start: int = 0,
         count: int = 0,
         currentness: str = "live",
     ) -> QueryResult[Any]:
         """当日逐笔成交。
 
-        与 :meth:`minute` 同一条拦截：默认的 ``provider="tdx"`` 走 ``0x0FC5``，其 request/parser
-        仍为 inferred，发包前即抛 :class:`NotImplementedFeature`。
+        未指定 Provider 时由 Provider Registry 选择 operational provider（当前首选
+        ``tencent``）。显式 ``provider="tdx"`` 仍走 ``0x0FC5``，其 request/parser
+        仍为 inferred，发包前即抛 :class:`NotImplementedFeature`；可用 Web Provider
+        包括 ``tencent`` / ``baidu``。
         """
         return self.runtime.trades(
             symbol,
@@ -471,6 +505,10 @@ class AsyncClient:
     @staticmethod
     def capabilities() -> tuple[str, ...]:
         return Client.capabilities()
+
+    @staticmethod
+    def core_capability_statuses() -> dict[str, dict[str, Any]]:
+        return Client.core_capability_statuses()
 
     async def execute(
         self,

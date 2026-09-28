@@ -126,7 +126,7 @@ def test_release_builds_once_then_uses_shared_verifier_and_same_wheel_matrix() -
     assert "python -m twine check dist/*" not in workflow
     assert "import zipfile" not in workflow
     assert "os: [ubuntu-latest, macos-latest, windows-latest]" in workflow
-    assert "python-version: ['3.10', '3.11', '3.12', '3.13']" in workflow
+    assert "python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']" in workflow
     assert "--only-binary=:all: atst" in workflow
     assert "joinpath('py.typed').is_file()" in workflow
     assert "ConnectionPool.request.__module__ == 'atst.transport.pool'" in workflow
@@ -138,34 +138,33 @@ def test_artifact_only_smoke_does_not_enable_setup_python_dependency_cache() -> 
     smoke = workflow.split("  smoke-install:", 1)[1].split("  publish-pypi:", 1)[0]
 
     assert "actions/checkout" not in smoke
-    assert "actions/download-artifact@v4" in smoke
-    assert "actions/setup-python@v5" in smoke
+    assert "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093" in smoke
+    assert "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065" in smoke
     assert "cache: 'pip'" not in smoke
 
 
-def test_release_publishes_once_only_after_artifact_matrix_passes() -> None:
+def test_release_publishes_once_only_after_draft_release_is_ready() -> None:
     workflow = _workflow("wheels.yml")
 
-    assert workflow.count("pypa/gh-action-pypi-publish@release/v1") == 1
-    assert "needs: [build-dist, smoke-install]" in workflow
-    assert "if: github.event_name == 'release' && github.event.action == 'published'" in workflow
+    assert workflow.count("pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33") == 1
+    assert "needs: [build-dist, prepare-release]" in workflow
+    assert "if: vars.PUBLIC_RELEASE == 'true'" in workflow
     assert "environment: pypi" in workflow
     assert "id-token: write" in workflow
 
 
-def test_release_assets_reuse_same_canonical_distribution_after_pypi() -> None:
+def test_release_assets_are_attached_to_a_draft_before_publication() -> None:
     workflow = _workflow("wheels.yml")
-    release_assets = workflow.split("  publish-release-assets:", 1)[1].split(
-        "  publish-docker:", 1
+    release_assets = workflow.split("  prepare-release:", 1)[1].split(
+        "  publish-pypi:", 1
     )[0]
 
-    assert "needs: [build-dist, smoke-install, publish-pypi]" in release_assets
+    assert "needs: [build-dist, smoke-install, extras-install, sdist-rebuild]" in release_assets
     assert "name: python-dist" in release_assets
     assert "contents: write" in release_assets
-    assert "wheel_count=" in release_assets
-    assert "sdist_count=" in release_assets
-    assert 'test "$wheel_count" = 1' in release_assets
-    assert 'test "$sdist_count" = 1' in release_assets
+    assert "SHA256SUMS.txt" in release_assets
+    assert "gh release create" in release_assets
+    assert "--draft" in release_assets
     assert "gh release upload" in release_assets
     assert "--clobber" in release_assets
     assert "python -m build" not in release_assets
@@ -174,7 +173,7 @@ def test_release_assets_reuse_same_canonical_distribution_after_pypi() -> None:
 def test_release_is_serialized_and_all_external_jobs_are_time_bounded() -> None:
     workflow = _workflow("wheels.yml")
 
-    assert "group: wheels-${{ github.ref }}" in workflow
+    assert "group: python-release-${{ github.ref }}" in workflow
     assert "cancel-in-progress: false" in workflow
     assert "timeout-minutes: 20" in workflow
     assert "timeout-minutes: 10" in workflow
@@ -182,30 +181,32 @@ def test_release_is_serialized_and_all_external_jobs_are_time_bounded() -> None:
     assert "retention-days: 14" in workflow
 
 
-def test_release_docker_reuses_artifact_only_after_publication_surfaces_succeed() -> None:
+def test_release_docker_reuses_artifact_only_after_pypi_succeeds() -> None:
     workflow = _workflow("wheels.yml")
-    docker = workflow.split("  publish-docker:", 1)[1]
+    docker = workflow.split("  publish-docker:", 1)[1].split("  publish-release:", 1)[0]
 
-    assert "needs: [build-dist, smoke-install, publish-pypi, publish-release-assets]" in docker
+    assert "needs: [build-dist, prepare-release, publish-pypi]" in docker
+    assert "vars.PUBLIC_RELEASE == 'true'" in docker
     assert "name: python-dist" in docker
     assert "path: release-dist" in docker
     assert "file: Dockerfile.release" in docker
-    assert "docker/build-push-action@v6" in docker
+    assert "docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8" in docker
 
 
-def test_release_identity_reuses_shared_source_parser_before_build() -> None:
+def test_release_identity_uses_tag_push_and_canonical_version_source() -> None:
     workflow = _workflow("wheels.yml")
     build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
 
-    assert "Verify release tag matches canonical source identity" in build
-    assert "RELEASE_TAG: ${{ github.event.release.tag_name }}" in build
-    assert "from scripts.build_package import _declared_versions" in build
-    assert "project_version, source_version = _declared_versions()" in build
-    assert "assert source_version == project_version" in build
-    assert 'expected = f"v{project_version}"' in build
-    assert "import re" not in build
+    assert "push:" in workflow
+    assert "tags:" in workflow
+    assert "- 'v*'" in workflow
+    assert "Resolve and verify canonical release identity" in build
+    assert "RELEASE_TAG: ${{ github.ref_name }}" in build
+    assert "from scripts.build_package import _declared_version" in build
+    assert "version = _declared_version()" in build
+    assert 'expected = f"v{version}"' in build
     assert "python scripts/build_package.py --verify-only --dist-out dist" in build
-    assert "github.event.release.prerelease == false" in workflow
+    assert "release:" not in workflow.split("on:", 1)[1].split("permissions:", 1)[0]
 
 
 def test_scheduled_live_smoke_is_bounded_truthful_and_always_emits_junit() -> None:
@@ -292,3 +293,144 @@ def test_the_7709_probe_fails_instead_of_skipping_when_the_chain_is_down() -> No
     assert skipped_from_handlers == [], (
         f"探针把网络失败吞成了 skip（行 {skipped_from_handlers}）——主站下线时这条流水线必须红"
     )
+
+
+
+def test_release_verifies_all_extras_and_sdist_rebuild_before_draft_release() -> None:
+    workflow = _workflow("wheels.yml")
+
+    assert "  extras-install:" in workflow
+    assert "atst[all]" in workflow
+    assert "python -m pip check" in workflow
+    assert "  sdist-rebuild:" in workflow
+    assert "python -m pip wheel --no-deps --wheel-dir rebuilt dist/*.tar.gz" in workflow
+    assert "SHA256SUMS.txt" in workflow
+
+
+def test_release_is_public_only_after_external_surfaces_finish() -> None:
+    workflow = _workflow("wheels.yml")
+    publish = workflow.split("  publish-release:", 1)[1]
+
+    assert "needs: [build-dist, prepare-release, publish-pypi, publish-docker]" in publish
+    assert "always()" in publish
+    assert "gh release edit" in publish
+    assert "--draft=false" in publish
+
+
+def test_release_retry_is_idempotent_and_hash_verified() -> None:
+    workflow = _workflow("wheels.yml")
+
+    assert "scripts/check_pypi_release.py" in workflow
+    assert "already_published" in workflow
+    assert "gh release download" in workflow
+    assert "sha256sum -c SHA256SUMS.txt" in workflow
+    assert "cmp dist/SHA256SUMS.txt published/SHA256SUMS.txt" in workflow
+    assert "steps.pypi-state.outputs.exists != 'true'" in workflow
+
+
+def test_prerelease_detection_uses_pep440_not_tag_punctuation() -> None:
+    workflow = _workflow("wheels.yml")
+    build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
+
+    assert "from packaging.version import Version" in build
+    assert "parsed.is_prerelease" in build
+    assert "parsed.is_devrelease" in build
+    assert "parsed.is_postrelease" in build
+    assert "parsed.local is not None" in build
+    assert "contains(github.ref_name, '-')" not in workflow
+    assert "needs.build-dist.outputs.is_prerelease == 'false'" in workflow
+
+
+def test_release_source_must_be_main_reachable_and_repasses_deterministic_gates() -> None:
+    workflow = _workflow("wheels.yml")
+    source = workflow.split("  release-source:", 1)[1].split("  build-dist:", 1)[0]
+    build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
+
+    assert "fetch-depth: 0" in source
+    assert 'git fetch --no-tags origin main:refs/remotes/origin/main' in source
+    assert 'git merge-base --is-ancestor "$GITHUB_SHA" origin/main' in source
+    assert 'python -m pip install -e ".[all,dev]"' in source
+    assert "run: make gates" in source
+    assert "needs: release-source" in build
+
+
+def test_release_actions_are_immutable_sha_pinned() -> None:
+    workflow = _workflow("wheels.yml")
+    forbidden = (
+        "actions/checkout@v",
+        "actions/setup-python@v",
+        "actions/upload-artifact@v",
+        "actions/download-artifact@v",
+        "pypa/gh-action-pypi-publish@release/",
+        "docker/setup-qemu-action@v",
+        "docker/setup-buildx-action@v",
+        "docker/login-action@v",
+        "docker/metadata-action@v",
+        "docker/build-push-action@v",
+    )
+    assert all(token not in workflow for token in forbidden)
+
+
+def test_sdist_release_docs_are_not_version_hardcoded() -> None:
+    pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert '"docs/releases/*.md"' in pyproject
+    assert '"docs/releases/v1.0.0.md"' not in pyproject
+
+
+def test_docker_publication_is_explicitly_optional() -> None:
+    workflow = _workflow("wheels.yml")
+    docker = workflow.split("  publish-docker:", 1)[1].split("  publish-release:", 1)[0]
+    publish = workflow.split("  publish-release:", 1)[1]
+
+    assert "vars.PUBLIC_RELEASE == 'true'" in docker
+    assert "vars.PUBLISH_DOCKER == 'true'" in docker
+    assert "needs.publish-docker.result == 'skipped'" in publish
+
+
+def test_release_build_is_byte_reproducible_and_uses_commit_epoch() -> None:
+    workflow = _workflow("wheels.yml")
+    build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
+
+    assert "SOURCE_DATE_EPOCH" in build
+    assert 'git log -1 --format=%ct "$GITHUB_SHA"' in build
+    assert "python -m build --outdir dist-repro" in build
+    assert "cmp dist/*.whl dist-repro/*.whl" in build
+    assert "cmp dist/*.tar.gz dist-repro/*.tar.gz" in build
+
+
+def test_publications_require_supply_chain_attestations() -> None:
+    workflow = _workflow("wheels.yml")
+
+    assert "attestations: true" in workflow
+    assert "provenance: mode=max" in workflow
+    assert "sbom: true" in workflow
+
+
+def test_release_metadata_is_stable_auditable_and_checked_on_retry() -> None:
+    workflow = _workflow("wheels.yml")
+    build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
+    prepare = workflow.split("  prepare-release:", 1)[1].split("  publish-pypi:", 1)[0]
+
+    assert "RELEASE-METADATA.json" in build
+    assert '"repository": os.environ["GITHUB_REPOSITORY"]' in build
+    assert '"commit": os.environ["GITHUB_SHA"]' in build
+    assert '"version": os.environ["RELEASE_VERSION"]' in build
+    assert '"source_date_epoch": os.environ["SOURCE_DATE_EPOCH"]' in build
+    assert '"run_id"' not in build
+    assert '"run_attempt"' not in build
+    assert "RELEASE-METADATA.json" in prepare
+    assert "cmp dist/RELEASE-METADATA.json published/RELEASE-METADATA.json" in prepare
+    assert ".assets | length" in prepare
+
+
+def test_release_requires_versioned_docs_and_post_publish_pypi_readback() -> None:
+    workflow = _workflow("wheels.yml")
+    build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
+    pypi = workflow.split("  publish-pypi:", 1)[1].split("  publish-docker:", 1)[0]
+
+    assert 'Path(f"docs/releases/v{version}.md")' in build
+    assert 'f"## [{version}]"' in build
+    assert "--require-existing" in pypi
+    assert "for attempt in 1 2 3 4 5" in pypi
+    assert "sleep $((attempt * 2))" in pypi

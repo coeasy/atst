@@ -1,60 +1,147 @@
-name: Wheels
+name: Python Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
-# Never run two release pipelines for the same ref concurrently. Do not cancel an
-# in-flight publication: a newer invocation must wait rather than interrupting a
-# potentially irreversible external publish operation.
+# Serialize one publication per ref. Never cancel an in-flight release because
+# PyPI/Docker writes are irreversible once they succeed.
 concurrency:
-  group: wheels-${{ github.ref }}
+  group: python-release-${{ github.ref }}
   cancel-in-progress: false
 
-# Pure-Python release workflow. Build one canonical universal wheel/sdist, then
-# install that exact artifact across the supported OS/Python matrix before a
-# single trusted-publishing step. Manual dispatch is build/verification only.
 permissions:
   contents: read
 
 jobs:
+  release-source:
+    name: Verify release source and deterministic gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+      - name: Require tagged commit to be reachable from main
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Install deterministic release gate dependencies
+        run: python -m pip install -e ".[all,dev]"
+      - name: Run deterministic merge gates on the exact release source
+        run: make gates
+
   build-dist:
     name: Build canonical wheel + sdist
+    needs: release-source
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      is_prerelease: ${{ steps.identity.outputs.is_prerelease }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: '3.11'
+          python-version: '3.14'
           cache: 'pip'
-      - name: Verify release tag matches canonical source identity
-        if: github.event_name == 'release'
+      - name: Install pinned packaging validators
+        run: python -m pip install "build==1.6.1" "twine==7.0.0" "packaging==26.3"
+      - name: Set reproducible build epoch from exact source commit
+        shell: bash
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct "$GITHUB_SHA")" >> "$GITHUB_ENV"
+      - name: Resolve and verify canonical release identity
+        id: identity
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           python - <<'PY'
           import os
-          from scripts.build_package import _declared_versions
+          from pathlib import Path
+          from packaging.version import Version
+          from scripts.build_package import _declared_version
 
-          project_version, source_version = _declared_versions()
-          assert source_version == project_version, (
-              f"source version {source_version!r} != project version {project_version!r}"
+          version = _declared_version()
+          parsed = Version(version)
+          is_prerelease = (
+              parsed.is_prerelease
+              or parsed.is_devrelease
+              or parsed.is_postrelease
+              or parsed.local is not None
           )
-          expected = f"v{project_version}"
-          actual = os.environ["RELEASE_TAG"]
-          assert actual == expected, f"release tag {actual!r} != package {expected!r}"
-          print("release source/tag identity OK:", actual)
+          release_note = Path(f"docs/releases/v{version}.md")
+          if not release_note.is_file():
+              raise SystemExit(f"missing release note: {release_note}")
+          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          if f"## [{version}]" not in changelog:
+              raise SystemExit(f"CHANGELOG.md missing version heading: {version}")
+          if os.environ.get("GITHUB_EVENT_NAME") == "push":
+              expected = f"v{version}"
+              actual = os.environ["RELEASE_TAG"]
+              assert actual == expected, f"release tag {actual!r} != package {expected!r}"
+              print("release source/tag identity OK:", actual)
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          with output.open("a", encoding="utf-8") as stream:
+              stream.write(f"version={version}\n")
+              stream.write(f"is_prerelease={str(is_prerelease).lower()}\n")
+          print(f"version={version}, prerelease={is_prerelease}")
           PY
-      - name: Install packaging validators
-        run: python -m pip install build twine
       - name: Build canonical distributions
         run: python -m build
       - name: Verify source, wheel, sdist, PEP 561 and Twine metadata
         run: python scripts/build_package.py --verify-only --dist-out dist
+      - name: Prove byte-for-byte reproducibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m build --outdir dist-repro
+          python scripts/build_package.py --verify-only --dist-out dist-repro
+          test "$(find dist -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 1
+          test "$(find dist-repro -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 1
+          test "$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
+          test "$(find dist-repro -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
+          cmp dist/*.whl dist-repro/*.whl
+          cmp dist/*.tar.gz dist-repro/*.tar.gz
+      - name: Generate release metadata and SHA-256 manifest
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = {
+              "schema_version": 1,
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "commit": os.environ["GITHUB_SHA"],
+              "ref": os.environ["GITHUB_REF"],
+              "tag": os.environ["RELEASE_TAG"],
+              "version": os.environ["RELEASE_VERSION"],
+              "source_date_epoch": os.environ["SOURCE_DATE_EPOCH"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+          }
+          Path("dist/RELEASE-METADATA.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          cd dist
+          sha256sum *.whl *.tar.gz > SHA256SUMS.txt
       - name: Upload canonical distributions
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: python-dist
           path: dist/*
@@ -70,16 +157,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ['3.10', '3.11', '3.12', '3.13']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
     steps:
-      # Artifact-only job: intentionally no source checkout. setup-python pip
-      # caching is also intentionally disabled because v5 requires a repository
-      # dependency file for the cache key and would fail before wheel install.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: python-dist
           path: dist
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install the exact built wheel
@@ -91,44 +175,75 @@ jobs:
           python -c "import importlib.metadata as m, atst; assert atst.__version__ == m.version('atst'); print(atst.__version__)"
           python -c "from importlib.resources import files; assert files('atst').joinpath('py.typed').is_file()"
           python -c "from atst.tools.host_audit import AuditReport, audit_all; assert callable(audit_all); print(AuditReport.__name__)"
-          python -c "from atst.client import AsyncF10Client, AsyncTdxClient, F10Client, TdxClient; assert TdxClient.__init__.__module__ == 'atst.client.sync'; assert AsyncTdxClient.__init__.__module__ == 'atst.client.async_'; assert F10Client.__init__.__module__ == 'atst.client.sync'; assert AsyncF10Client.__init__.__module__ == 'atst.client.async_'; assert TdxClient.bestip.__module__ == 'atst.client.sync'; assert AsyncTdxClient.bestip.__module__ == 'atst.client.async_'; assert AsyncTdxClient.quotes_concurrent.__module__ == 'atst.client.async_'"
-          python -c "from atst.transport import TcpConnection; from atst.transport.async_ import AsyncTcpConnection; assert TcpConnection.__init__.__module__ == 'atst.transport.base'; assert AsyncTcpConnection.__init__.__module__ == 'atst.transport.async_'; assert TcpConnection.request.__module__ == 'atst.transport.base'; assert AsyncTcpConnection.request.__module__ == 'atst.transport.async_'"
-          python -c "from atst.transport import ConnectionPool; assert ConnectionPool.__init__.__module__ == 'atst.transport.pool'; assert ConnectionPool.request.__module__ == 'atst.transport.pool'; assert ConnectionPool.request_multi.__module__ == 'atst.transport.pool'; assert ConnectionPool.update_hosts.__module__ == 'atst.transport.pool'; assert ConnectionPool._trigger_background_speedtest.__module__ == 'atst.transport.pool'"
-          python -c "from atst.transport.pool import pool_settings_from_config; from atst.transport import ConnectionPool; assert pool_settings_from_config(None) == {}; assert not hasattr(ConnectionPool, 'from_config')"
-          python -c "from atst.transport import RankingStore, resolve_hosts; assert RankingStore.load.__module__ == 'atst.transport.hosts'; assert RankingStore.save.__module__ == 'atst.transport.hosts'; assert resolve_hosts.__module__ == 'atst.transport.hosts'"
-          python -c "from atst.transport.async_ import AsyncConnectionPool; assert AsyncConnectionPool.__init__.__module__ == 'atst.transport.async_'; assert AsyncConnectionPool.request.__module__ == 'atst.transport.async_'; assert AsyncConnectionPool.close.__module__ == 'atst.transport.async_'; assert AsyncConnectionPool.update_hosts.__module__ == 'atst.transport.async_'; assert callable(getattr(AsyncConnectionPool, '_circuit_allows', None)); assert callable(getattr(AsyncConnectionPool, '_release_probe_token', None))"
+          python -c "from atst.client import AsyncF10Client, AsyncTdxClient, F10Client, TdxClient; assert TdxClient.__init__.__module__ == 'atst.client.sync'; assert AsyncTdxClient.__init__.__module__ == 'atst.client.async_'; assert F10Client.__init__.__module__ == 'atst.client.sync'; assert AsyncF10Client.__init__.__module__ == 'atst.client.async_'"
+          python -c "from atst.transport import ConnectionPool; from atst.transport.async_ import AsyncConnectionPool; assert ConnectionPool.request.__module__ == 'atst.transport.pool'; assert AsyncConnectionPool.request.__module__ == 'atst.transport.async_'"
           atst --help
           atst hosts audit --help
           python -m pip check
 
-  publish-pypi:
-    name: Publish canonical distributions to PyPI
-    needs: [build-dist, smoke-install]
-    if: github.event_name == 'release' && github.event.action == 'published'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment: pypi
-    permissions:
-      contents: read
-      id-token: write
+  extras-install:
+    name: Install all extras (${{ matrix.os }}, Python 3.14)
+    needs: build-dist
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: python-dist
           path: dist
-      - name: Publish once with trusted publishing
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.14'
+      - name: Install all extras from the exact wheel
+        run: >-
+          python -c "import pathlib, subprocess, sys;
+          w=next(pathlib.Path('dist').glob('*.whl')).resolve();
+          subprocess.check_call([sys.executable, '-m', 'pip', 'install', f'atst[all] @ {w.as_uri()}'])"
+      - name: Verify optional dependency closure
+        run: |
+          python -c "import pandas, pyarrow, duckdb, httpx, prometheus_client, fastapi, uvicorn, websockets, zstandard"
+          python -c "import importlib.util, sys; assert sys.platform != 'win32' or importlib.util.find_spec('tzdata') is not None"
+          python -m pip check
 
-  publish-release-assets:
-    name: Attach canonical packages to GitHub Release
-    needs: [build-dist, smoke-install, publish-pypi]
-    if: github.event_name == 'release' && github.event.action == 'published'
+  sdist-rebuild:
+    name: Rebuild wheel from canonical sdist
+    needs: build-dist
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: python-dist
+          path: dist
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.14'
+      - name: Rebuild wheel from sdist
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install "build==1.6.1"
+          python -m pip wheel --no-deps --wheel-dir rebuilt dist/*.tar.gz
+          test "$(find rebuilt -maxdepth 1 -name '*.whl' | wc -l | tr -d ' ')" = 1
+          python -m pip install --no-index --find-links rebuilt --only-binary=:all: atst
+          python -c "import atst; from importlib.resources import files; assert files('atst').joinpath('py.typed').is_file(); print(atst.__version__)"
+
+  prepare-release:
+    name: Create draft GitHub Release and attach packages
+    needs: [build-dist, smoke-install, extras-install, sdist-rebuild]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      already_published: ${{ steps.release-state.outputs.already_published }}
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: python-dist
           path: dist
@@ -136,55 +251,133 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          wheel_count="$(find dist -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')"
-          sdist_count="$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')"
-          test "$wheel_count" = 1
-          test "$sdist_count" = 1
-      - name: Upload canonical packages to GitHub Release
+          test "$(find dist -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 1
+          test "$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
+          test "$(find dist -maxdepth 1 -type f -name 'SHA256SUMS.txt' | wc -l | tr -d ' ')" = 1
+          test "$(find dist -maxdepth 1 -type f -name 'RELEASE-METADATA.json' | wc -l | tr -d ' ')" = 1
+      - name: Create, resume, or verify release state
+        id: release-state
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          TAG_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > release-state.txt 2>/dev/null; then
+            if [[ "$(cat release-state.txt)" == "false" ]]; then
+              mkdir -p published
+              test "$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')" = 4
+              gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --dir published \
+                --pattern '*.whl' --pattern '*.tar.gz' --pattern 'SHA256SUMS.txt' \
+                --pattern 'RELEASE-METADATA.json'
+              test "$(find published -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 1
+              test "$(find published -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
+              test "$(find published -maxdepth 1 -type f -name 'SHA256SUMS.txt' | wc -l | tr -d ' ')" = 1
+              test "$(find published -maxdepth 1 -type f -name 'RELEASE-METADATA.json' | wc -l | tr -d ' ')" = 1
+              (cd published && sha256sum -c SHA256SUMS.txt)
+              cmp dist/SHA256SUMS.txt published/SHA256SUMS.txt
+              cmp dist/RELEASE-METADATA.json published/RELEASE-METADATA.json
+              echo "already_published=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          else
+            gh release create "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --generate-notes --title "$TAG_NAME"
+          fi
+          gh release upload "$TAG_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          echo "already_published=false" >> "$GITHUB_OUTPUT"
+
+  publish-pypi:
+    name: Publish canonical distributions to PyPI
+    needs: [build-dist, prepare-release]
+    if: vars.PUBLIC_RELEASE == 'true' && needs.prepare-release.outputs.already_published != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: python-dist
+          path: dist
+      - name: Check whether this exact release already exists on PyPI
+        id: pypi-state
+        env:
+          RELEASE_VERSION: ${{ needs.build-dist.outputs.version }}
+        run: >-
+          python scripts/check_pypi_release.py
+          --version "$RELEASE_VERSION"
+          --dist dist
+          --github-output "$GITHUB_OUTPUT"
+      - name: Remove non-distribution release metadata before PyPI upload
+        if: steps.pypi-state.outputs.exists != 'true'
+        shell: bash
+        run: rm dist/SHA256SUMS.txt dist/RELEASE-METADATA.json
+      - name: Publish once with trusted publishing
+        if: steps.pypi-state.outputs.exists != 'true'
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          attestations: true
+      - name: Verify final PyPI state
+        env:
+          RELEASE_VERSION: ${{ needs.build-dist.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if python scripts/check_pypi_release.py \
+              --version "$RELEASE_VERSION" \
+              --dist dist \
+              --require-existing; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 5 ]]; then
+              exit 1
+            fi
+            sleep $((attempt * 2))
+          done
 
   publish-docker:
     name: Publish Docker image to Docker Hub
-    # Prevent Docker publication when either PyPI or the GitHub Release asset
-    # surface failed. All external surfaces consume the same canonical artifact.
-    needs: [build-dist, smoke-install, publish-pypi, publish-release-assets]
+    needs: [build-dist, prepare-release, publish-pypi]
+    if: >-
+      vars.PUBLIC_RELEASE == 'true' &&
+      vars.PUBLISH_DOCKER == 'true' &&
+      needs.prepare-release.outputs.already_published != 'true' &&
+      needs.publish-pypi.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    if: github.event_name == 'release' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      # Reuse the exact wheel that passed the 12-cell install matrix. The release
-      # image must not rebuild a second wheel from source and accidentally diverge
-      # from the artifact published to PyPI.
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: python-dist
           path: release-dist
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Extract metadata (tags, labels)
+      - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/atst
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ github.event.release.prerelease == false }}
+            type=raw,value=${{ github.ref_name }}
+            type=semver,pattern={{version}},enable=${{ needs.build-dist.outputs.is_prerelease == 'false' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ needs.build-dist.outputs.is_prerelease == 'false' }}
+            type=raw,value=latest,enable=${{ needs.build-dist.outputs.is_prerelease == 'false' }}
       - name: Build and push canonical-artifact image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: Dockerfile.release
@@ -192,3 +385,37 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-dist, prepare-release, publish-pypi, publish-docker]
+    if: >-
+      always() &&
+      needs.prepare-release.result == 'success' &&
+      (needs.publish-pypi.result == 'success' || needs.publish-pypi.result == 'skipped') &&
+      (needs.publish-docker.result == 'success' || needs.publish-docker.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Publish verified draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          IS_PRERELEASE: ${{ needs.build-dist.outputs.is_prerelease }}
+          ALREADY_PUBLISHED: ${{ needs.prepare-release.outputs.already_published }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$ALREADY_PUBLISHED" == "true" ]]; then
+            echo "Release $TAG_NAME is already published with identical canonical artifacts."
+            exit 0
+          fi
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
+          else
+            gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest
+          fi

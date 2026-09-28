@@ -60,13 +60,8 @@ _PROTECTED_OUTPUT_ROOTS = {
     "tests",
     "atst",
 }
-_PROJECT_SECTION_RE = re.compile(
-    r"^\[project\]\s*$\n(?P<body>.*?)(?=^\[|\Z)",
-    re.MULTILINE | re.DOTALL,
-)
-_VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
 _SOURCE_VERSION_RE = re.compile(r'^__version__\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
-_HATCHLING_FLOOR_RE = re.compile(r'"hatchling>=(\d+(?:\.\d+)*)"')
+_HATCHLING_PIN_RE = re.compile(r'"hatchling==(\d+(?:\.\d+)*)"')
 
 
 def _display_path(path: pathlib.Path) -> str:
@@ -155,21 +150,13 @@ def _require_packaging_tools(*, need_build: bool) -> None:
     print(f"[环境] twine {twine_version} ✓")
 
 
-def _stable_version_tuple(raw: str, *, label: str) -> tuple[int, ...]:
-    """Parse a stable dotted numeric version used by build-tool floor checks."""
-
-    if re.fullmatch(r"\d+(?:\.\d+)*", raw) is None:
-        raise SystemExit(f"[环境] {label} 版本无法进行稳定下限比较: {raw!r}")
-    return tuple(int(part) for part in raw.split("."))
-
-
-def _hatchling_floor() -> str:
-    """Read the Hatchling lower bound from the repository build-system contract."""
+def _hatchling_pin() -> str:
+    """Read the exact Hatchling version from the repository build-system contract."""
 
     text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    match = _HATCHLING_FLOOR_RE.search(text)
+    match = _HATCHLING_PIN_RE.search(text)
     if match is None:
-        raise SystemExit("[环境] pyproject.toml 缺少 hatchling build-system 下限")
+        raise SystemExit("[环境] pyproject.toml 缺少 hatchling build-system 精确版本")
     return match.group(1)
 
 
@@ -187,16 +174,13 @@ def _require_local_backend_for_no_isolation() -> None:
     except PackageNotFoundError as exc:
         raise SystemExit("[环境] 无法确定本地 hatchling 版本") from exc
 
-    floor = _hatchling_floor()
-    if _stable_version_tuple(version, label="hatchling") < _stable_version_tuple(
-        floor,
-        label="hatchling build-system floor",
-    ):
+    expected = _hatchling_pin()
+    if version != expected:
         raise SystemExit(
-            f"[环境] hatchling {version} 低于项目 build-system 要求 {floor}; "
-            "请运行 `make install` 更新本地构建后端"
+            f"[环境] hatchling {version} 与项目 build-system 固定版本 {expected} 不一致; "
+            "请运行 `make install` 对齐本地构建后端"
         )
-    print(f"[环境] hatchling {version} ✓ (--no-isolation, floor={floor})")
+    print(f"[环境] hatchling {version} ✓ (--no-isolation, pinned={expected})")
 
 
 def _remove_tree(path: pathlib.Path, *, label: str) -> None:
@@ -254,28 +238,14 @@ def _build(dist_out: pathlib.Path, *, isolated: bool) -> None:
     _run(cmd)
 
 
-def _project_version_from_text(text: str) -> str:
-    """Read only ``[project].version`` rather than matching unrelated TOML keys."""
+def _declared_version() -> str:
+    """Return the canonical package version without importing :mod:`atst`."""
 
-    project_match = _PROJECT_SECTION_RE.search(text)
-    if project_match is None:
-        raise SystemExit("[校验失败] pyproject.toml 缺少 [project] section")
-    version_match = _VERSION_RE.search(project_match.group("body"))
-    if version_match is None:
-        raise SystemExit("[校验失败] pyproject.toml 缺少 [project] version")
-    return version_match.group(1)
-
-
-def _declared_versions() -> tuple[str, str]:
-    """Return ``(project_metadata_version, source_version)`` without importing atst."""
-
-    project_text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    source_text = (ROOT / "atst" / "__init__.py").read_text(encoding="utf-8")
-    project_version = _project_version_from_text(project_text)
+    source_text = (ROOT / "atst" / "_version.py").read_text(encoding="utf-8")
     source_match = _SOURCE_VERSION_RE.search(source_text)
     if source_match is None:
-        raise SystemExit("[校验失败] atst.__version__ 声明缺失")
-    return project_version, source_match.group(1)
+        raise SystemExit("[校验失败] atst/_version.py 缺少 __version__ 声明")
+    return source_match.group(1)
 
 
 def _normalized_distribution_name(raw: str) -> str:
@@ -385,11 +355,7 @@ def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
             f"[校验失败] 需要恰好 1 wheel + 1 sdist：wheel={len(wheels)} sdist={len(sdists)}"
         )
 
-    project_version, source_version = _declared_versions()
-    if source_version != project_version:
-        raise SystemExit(
-            f"[校验失败] source version {source_version!r} != project version {project_version!r}"
-        )
+    project_version = _declared_version()
 
     wheel = wheels[0]
     sdist = sdists[0]

@@ -213,11 +213,15 @@ class RuntimeJsonRpcHandler:
             received=params.keys(),
         )
         if method == "runtime.health":
+            core = Client.core_capability_statuses()
             return {
                 "status": "ok",
                 "api": "v13",
                 "default_provider": self.client.runtime.planner.default_provider,
                 "migrated_capabilities": len(self.client.capabilities()),
+                "core_unavailable": sorted(
+                    capability for capability, state in core.items() if not state["available"]
+                ),
             }
         if method == "runtime.capabilities":
             return {
@@ -306,15 +310,14 @@ class RuntimeJsonRpcHandler:
         if method in {"snapshot", "minute", "trades"}:
             if not isinstance(symbol, str) or not symbol:
                 raise ValidationError("symbol is required")
-            chosen = str(provider or "tdx")
             if method == "snapshot":
-                return serialize_result(self.client.snapshot(symbol, provider=chosen))
+                return serialize_result(self.client.snapshot(symbol, provider=str(provider or "tdx")))
             if method == "minute":
-                return serialize_result(self.client.minute(symbol, provider=chosen))
+                return serialize_result(self.client.minute(symbol, provider=provider))
             return serialize_result(
                 self.client.trades(
                     symbol,
-                    provider=chosen,
+                    provider=provider,
                     start=self._int_param(method, "start", params.get("start"), 0),
                     count=self._int_param(method, "count", params.get("count"), 0),
                 )

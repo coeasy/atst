@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling>=1.25"]
+requires = ["hatchling==1.32.4"]
 build-backend = "hatchling.build"
 
 [project]
 name = "atst"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Provider-first market-data runtime and TDX protocol toolkit with explicit Providers, direct Provider reads, Stateful streaming and canonical HTTP/WebSocket/MCP adapters"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,6 +25,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Office/Business :: Financial :: Investment",
     "Typing :: Typed",
@@ -55,7 +56,10 @@ dev       = [
     # drift reports (V17 F-15). Upgrade deliberately, in its own commit.
     "ruff==0.15.2",
     "mypy==2.3.1",
-    "hatchling>=1.25",
+    "hatchling==1.32.4",
+    "build==1.6.1",
+    "twine==7.0.0",
+    "packaging==26.3",
 ]
 # ``all`` 是上面每个 extra 的并集，逐条对应，不额外塞东西：过去这里多出的
 # ``pydantic`` / ``mcp`` 全仓 0 处读取，已经随 extra 一起删掉。
@@ -82,6 +86,12 @@ Releases      = "https://github.com/coeasy/atst/releases"
 [project.scripts]
 atst = "atst.cli:main"
 
+[tool.hatch.version]
+path = "atst/_version.py"
+
+[tool.hatch.build]
+reproducible = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["atst"]
 
@@ -93,7 +103,7 @@ include = [
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
-    "docs/releases/v1.0.0.md",
+    "docs/releases/*.md",
 ]
 
 [tool.pytest.ini_options]

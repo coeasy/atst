@@ -64,8 +64,13 @@ _AUDIT_FAMILIES = (
 )
 
 
-def _provider_args(parser: argparse.ArgumentParser, *, fallback: bool = False) -> None:
-    parser.add_argument("--provider", default=None if fallback else "tdx")
+def _provider_args(
+    parser: argparse.ArgumentParser,
+    *,
+    fallback: bool = False,
+    default_provider: str | None = "tdx",
+) -> None:
+    parser.add_argument("--provider", default=None if fallback else default_provider)
     if fallback:
         parser.add_argument(
             "--fallback", help="explicit comma-separated Provider order, e.g. tdx,tencent,sina"
@@ -125,12 +130,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("minute", help="query intraday minute data")
     p.add_argument("symbol")
-    _provider_args(p)
+    _provider_args(p, default_provider=None)
     p.set_defaults(func=cmd_minute)
 
     p = sub.add_parser("trades", help="query intraday trades/ticks")
     p.add_argument("symbol")
-    _provider_args(p)
+    _provider_args(p, default_provider=None)
     p.add_argument("--start", type=int, default=0)
     p.add_argument("--count", type=int, default=0)
     p.set_defaults(func=cmd_trades)
