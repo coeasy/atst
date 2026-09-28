@@ -92,3 +92,16 @@ def test_verifier_requires_exactly_one_wheel_and_sdist(tmp_path: Path) -> None:
 
     with pytest.raises(SystemExit, match="恰好包含一个"):
         checker._canonical_artifacts(dist)
+
+
+def test_existing_version_with_extra_remote_artifact_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    checker = _load()
+    dist, hashes = _dist(tmp_path)
+    remote = dict(hashes)
+    remote["atst-1.2.3-py2.py3-none-any.whl"] = "1" * 64
+    monkeypatch.setattr(checker, "_fetch_release", lambda version: _payload(remote))
+
+    with pytest.raises(SystemExit, match="制品集合/摘要不一致"):
+        checker.check("1.2.3", dist)
