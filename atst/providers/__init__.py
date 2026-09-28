@@ -279,21 +279,31 @@ def resolve_provider(
     return selected
 
 
-def resolve_capability_provider(capability: str, provider: str | None = None) -> str:
-    """Resolve a provider without overriding an explicit caller choice.
+def resolve_capability_provider(
+    capability: str,
+    provider: str | None = None,
+    *,
+    default: str | None = None,
+) -> str:
+    """Resolve omitted providers away from a declared-but-unavailable default.
 
-    Explicit providers are always honored, including providers that are known to
-    fail-fast for a declared-but-unavailable capability. When the caller omits
-    the provider, choose the registry's first operational provider; if none is
-    operational, fall back to the registry default so the capability's canonical
-    domain exception remains observable instead of inventing a substitute source.
+    An explicit per-request provider is never replaced. For an omitted provider,
+    the configured/default Provider keeps ownership when it is operational. Only
+    when that Provider declares the capability but marks it operationally
+    unavailable do we select the registry's operational default. If no operational
+    Provider exists, the original default remains selected so its canonical
+    fail-fast domain exception stays observable.
     """
 
     if provider is not None:
         return resolve_provider(provider=provider)
-    selected = PROVIDERS.default_available_provider(capability)
-    return selected or PROVIDERS.default_provider
-
+    candidate = resolve_provider(default=default or PROVIDERS.default_provider)
+    spec = PROVIDERS.get(candidate)
+    cap = str(capability).strip().lower()
+    if not spec.supports(cap) or spec.operationally_supports(cap):
+        return candidate
+    selected = PROVIDERS.default_available_provider(cap)
+    return selected or candidate
 
 def _c(
     id: str,
