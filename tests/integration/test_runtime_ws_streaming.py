@@ -117,9 +117,7 @@ async def _send_recv(
         push_buffer.append(frame)
 
 
-async def _wait_for_push(
-    websocket: Any, push_buffer: list[dict[str, Any]]
-) -> dict[str, Any]:
+async def _wait_for_push(websocket: Any, push_buffer: list[dict[str, Any]]) -> dict[str, Any]:
     """从缓冲区或连接上取下一帧推送帧（带墙钟上界）。"""
     if push_buffer:
         return push_buffer.pop(0)
@@ -144,7 +142,12 @@ async def test_subscribe_pushes_a_snapshot_frame(fake_async_client: None) -> Non
                     "jsonrpc": "2.0",
                     "id": 1,
                     "method": "subscribe",
-                    "params": {"symbols": ["600519"], "provider": "tdx", "interval": 1, "max_queue": 64},
+                    "params": {
+                        "symbols": ["600519"],
+                        "provider": "tdx",
+                        "interval": 1,
+                        "max_queue": 64,
+                    },
                 },
                 pushes,
             )
@@ -171,17 +174,29 @@ async def test_list_and_unsubscribe_lifecycle(fake_async_client: None) -> None:
             pushes: list[dict[str, Any]] = []
             await _send_recv(
                 websocket,
-                {"jsonrpc": "2.0", "id": 1, "method": "subscribe", "params": {"symbols": ["600519"]}},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "subscribe",
+                    "params": {"symbols": ["600519"]},
+                },
                 pushes,
             )
-            listed = await _send_recv(websocket, {"jsonrpc": "2.0", "id": 2, "method": "list", "params": {}}, pushes)
+            listed = await _send_recv(
+                websocket, {"jsonrpc": "2.0", "id": 2, "method": "list", "params": {}}, pushes
+            )
             assert listed is not None and "error" not in listed, f"list 被拒：{listed}"
             subs = listed["result"]["subscriptions"]  # type: ignore[index]
             assert len(subs) == 1 and subs[0]["id"].startswith("sub")
 
             unsub = await _send_recv(
                 websocket,
-                {"jsonrpc": "2.0", "id": 3, "method": "unsubscribe", "params": {"id": subs[0]["id"]}},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "unsubscribe",
+                    "params": {"id": subs[0]["id"]},
+                },
                 pushes,
             )
             assert unsub is not None and unsub["result"]["found"] is True  # type: ignore[index]

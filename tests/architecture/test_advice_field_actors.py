@@ -23,9 +23,9 @@ import ast
 import dataclasses
 import re
 
-from tests.support.field_readers import REPO_ROOT
 from atst.error_envelope import to_error_envelope
 from atst.errors import RetryAdvice, TdxError, ValidationError
+from tests.support.field_readers import REPO_ROOT
 
 #: 定义文件自身：`to_dict()` 与 `default_advice=` 都在那里，不算执行方。
 DEFINITION_FILE = "atst/errors.py"

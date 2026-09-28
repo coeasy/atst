@@ -34,13 +34,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from tests.support.field_readers import (
-    REPO_ROOT,
-    ConstantVocabulary,
-    constant_class_vocabulary,
-    member_reference_sites,
-    string_keys_of_table,
-)
 from atst.domain.period import CANONICAL_PERIODS
 from atst.reader.profile import (
     AmountUnit,
@@ -50,6 +43,13 @@ from atst.reader.profile import (
     PriceEncoding,
     TimeEncoding,
     VolumeUnit,
+)
+from tests.support.field_readers import (
+    REPO_ROOT,
+    ConstantVocabulary,
+    constant_class_vocabulary,
+    member_reference_sites,
+    string_keys_of_table,
 )
 
 TARGET = "atst/reader/profile.py"

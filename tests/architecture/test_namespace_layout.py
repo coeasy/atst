@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ROOT_WHITELIST = {
     "__init__.py",
     "__main__.py",
+    "_version.py",
     "query.py",
     "result.py",
     "batch.py",

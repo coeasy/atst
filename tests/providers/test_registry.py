@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from tests.support.field_readers import unread_fields
 from atst.errors import ValidationError
 from atst.providers import PROVIDERS, ChannelSpec, resolve_provider
+from tests.support.field_readers import unread_fields
 
 
 def test_tdx_is_only_default_provider() -> None:
@@ -136,9 +136,14 @@ def test_every_channel_spec_field_has_a_reader() -> None:
     assert reads, "ChannelSpec 字段读取扫描一条都没命中，说明它自身失效了"
     orphans = sorted(fields - reads)
     assert orphans == [], f"ChannelSpec 字段没有任何读取点（无人兑现的声称）：{orphans}"
-    assert fields == {"id", "capabilities", "live", "local", "periods"}, (
-        f"注册表声称的形状变了：{sorted(fields)}"
-    )
+    assert fields == {
+        "id",
+        "capabilities",
+        "live",
+        "local",
+        "periods",
+        "unavailable_capabilities",
+    }, f"注册表声称的形状变了：{sorted(fields)}"
 
 
 def test_every_provider_spec_field_has_a_reader() -> None:

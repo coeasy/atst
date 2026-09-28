@@ -36,9 +36,9 @@ from __future__ import annotations
 
 import dataclasses
 
-from tests.support.field_readers import REPO_ROOT, unread_field_sites
 from atst.profile.presets import PRESETS, MarketPreset
 from atst.reader.profile import BUILTIN_PROFILES, DataProfile
+from tests.support.field_readers import REPO_ROOT, unread_field_sites
 
 #: 手工核对过：这些名字在生产代码里确实绑定到 DataProfile 实例
 #: （``reader/formats.py`` 的 ``profile``/``p``/``prof``/``detected``、

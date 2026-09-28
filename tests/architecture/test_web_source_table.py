@@ -23,8 +23,8 @@ import re
 
 import pytest
 
-from tests.support.field_readers import REPO_ROOT
 from atst.web.sources import KNOWN_SOURCES
+from tests.support.field_readers import REPO_ROOT
 
 pytestmark = pytest.mark.unit
 

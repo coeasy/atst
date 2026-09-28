@@ -13,7 +13,7 @@ def test_source_version_has_one_canonical_file() -> None:
     init_source = (_ROOT / "atst" / "__init__.py").read_text(encoding="utf-8")
 
     assert 'dynamic = ["version"]' in pyproject
-    assert '[tool.hatch.version]' in pyproject
+    assert "[tool.hatch.version]" in pyproject
     assert 'path = "atst/_version.py"' in pyproject
     assert f'__version__ = "{atst.__version__}"' in version_source
     assert "from ._version import __version__" in init_source

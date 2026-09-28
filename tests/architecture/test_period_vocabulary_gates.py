@@ -28,7 +28,6 @@ from __future__ import annotations
 import ast
 import re
 
-from tests.support.field_readers import REPO_ROOT, module_assignment, string_keys_of_table
 from atst.client.core import _CANONICAL_TO_CATEGORY, _PERIOD_TO_CATEGORY, period_to_category
 from atst.domain.period import (
     CANONICAL_PERIODS,
@@ -40,6 +39,7 @@ from atst.query import _canonical_unified_channel
 from atst.reader.profile import Period
 from atst.web._session_market import _KLINE_SERVABLE, KLINES_PERIOD_ALIASES
 from atst.web.tencent.adapters import KlineSource
+from tests.support.field_readers import REPO_ROOT, module_assignment, string_keys_of_table
 
 #: 第 18 轮实测那 15 个"一面能查、另一面报错"的拼写。它们是本轮的来路，
 #: 留着是为了让"派生"这一步不许悄悄退回去。

@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from atst.client.api import AsyncClient, Client
 from atst.cli.parser import build_parser
+from atst.client.api import AsyncClient, Client
 from atst.errors import ValidationError
 from atst.integration.mcp._tools_impl import _h_get_minute_today, _h_get_trades
 from atst.integration.runtime_ws import RuntimeJsonRpcHandler
@@ -171,9 +171,7 @@ def test_unified_runtime_and_generic_query_share_operational_defaults() -> None:
 
     runtime.minute("sh600519")
     runtime.trades("sh600519")
-    runtime.execute(
-        QuerySpec.build("minute", symbols="sh600519", currentness="live")
-    )
+    runtime.execute(QuerySpec.build("minute", symbols="sh600519", currentness="live"))
 
     assert [(plan.spec.capability, plan.provider) for plan in executor.plans] == [
         ("minute", "tencent"),
@@ -185,9 +183,7 @@ def test_unified_runtime_and_generic_query_share_operational_defaults() -> None:
 def test_planner_only_replaces_omitted_unavailable_default() -> None:
     default_tdx = QueryPlanner(default_provider="tdx")
 
-    minute = default_tdx.compile(
-        QuerySpec.build("minute", symbols="sh600519", currentness="live")
-    )
+    minute = default_tdx.compile(QuerySpec.build("minute", symbols="sh600519", currentness="live"))
     explicit_tdx = default_tdx.compile(
         QuerySpec.build("minute", symbols="sh600519", provider="tdx", currentness="live")
     )
@@ -296,15 +292,11 @@ def test_ws_health_uses_effective_configured_default() -> None:
 def test_configured_default_provider_does_not_silently_cross_provider() -> None:
     planner = QueryPlanner(default_provider="eastmoney")
 
-    minute = planner.compile(
-        QuerySpec.build("minute", symbols="sh600519", currentness="live")
-    )
+    minute = planner.compile(QuerySpec.build("minute", symbols="sh600519", currentness="live"))
     assert minute.provider == "eastmoney"
 
     with pytest.raises(ValidationError):
-        planner.compile(
-            QuerySpec.build("trades", symbols="sh600519", currentness="live")
-        )
+        planner.compile(QuerySpec.build("trades", symbols="sh600519", currentness="live"))
 
 
 def test_async_client_reports_the_same_effective_core_status() -> None:

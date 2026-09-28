@@ -47,7 +47,7 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 │  CLI 31 子命令 · HTTP REST 10 端点 · WebSocket JSON-RPC · MCP 9 工具   │
 ├─────────────────────────────────────────────────────────────────────┤
 │                  Client / AsyncClient（唯一业务入口）                  │
-│  15 便捷方法（bars/quotes/snapshot/minute/trades/stream/call…）        │
+│  16 便捷方法（bars/quotes/snapshot/minute/trades/stream/call…）        │
 │  execute(QuerySpec) · typed(CapabilityQuery) · execute_with_policy    │
 ├─────────────────────────────────────────────────────────────────────┤
 │              UnifiedRuntime（唯一执行内核，零缓存）                     │
@@ -113,7 +113,7 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | 特性 | 说明 |
 |---|---|
 | **数据出口（`atst/output/`）** | `write()` 认 4 种格式：DataFrame / Parquet / CSV / DuckDB；`Sink` 3 种格式（不含 CSV，CSV 只走 `write()` 或 `to_csv()`），全部原子写 |
-| **统一业务入口** | `Client` / `AsyncClient`（15 便捷方法 + `execute`/`typed`/`call` 通用面），永不隐式换源、永不缓存 |
+| **统一业务入口** | `Client` / `AsyncClient`（16 便捷方法 + `execute`/`typed`/`call` 通用面），永不隐式换源、永不缓存 |
 | **HTTP REST 网关** | 10 端点（capability 白名单 + TaskStore 钳制），只翻译为 `Client` 调用 |
 | **WebSocket JSON-RPC** | 长连接实时推送 |
 | **MCP 工具服务** | 9 工具，AI Agent 可直接调用 |
@@ -169,7 +169,7 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | 本地 vipdoc 解析 | ✅ 多格式 | ❌ | ❌ | ❌ |
 | 流式订阅 | ✅ engine 内核 | ❌ | ❌ | ❌ |
 | 主站池治理 | ✅ 多主站 + 测速 + 社区注入 | 基础 | 基础 | ❌ |
-| 统一业务入口 | ✅ `Client` 15 方法 + 通用 `execute`/`typed` | ❌ | ❌ | ✅（仅行情） |
+| 统一业务入口 | ✅ `Client` 16 方法 + 通用 `execute`/`typed` | ❌ | ❌ | ✅（仅行情） |
 | HTTP/WS/MCP 服务 | ✅ 三模式 | ❌ | ❌ | ❌ |
 | 溯源与 provider-first | ✅ Provenance 强制 + 显式 FallbackPolicy | ❌ | ❌ | ❌ |
 | 可观测性 | ✅ Prometheus/StatsD/OTLP | ❌ | ❌ | ❌ |
@@ -346,7 +346,7 @@ atst hosts audit --report /tmp/audit.json --markdown /tmp/audit.md
 
 ```
 atst/
-├── client/         # api.py —— Client / AsyncClient 唯一业务入口（15 便捷方法 + execute/typed/call）
+├── client/         # api.py —— Client / AsyncClient 唯一业务入口（16 便捷方法 + execute/typed/call）
 │                   # core/sync/async_/factory —— TdxClient 传输层与共享纯协议 SSOT
 ├── runtime/        # 唯一执行内核：kernel(零缓存)/executor(251 绑定)/orchestration(显式跨源)
 │                   #   /audit(启动三方对账)/identity/provenance(溯源守卫)

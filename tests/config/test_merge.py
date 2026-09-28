@@ -197,9 +197,7 @@ max_retries = 1
         assert parse_env_value("off") is False
 
     def test_tls_flag_is_the_only_security_switch(self):
-        assert config_from_env({"ATST_SECURITY_USE_TLS": "true"}) == {
-            "security": {"use_tls": True}
-        }
+        assert config_from_env({"ATST_SECURITY_USE_TLS": "true"}) == {"security": {"use_tls": True}}
 
     def test_default_provider_is_registry_validated(self):
         cfg = config_from_dict({"core": {"default_provider": "tencent"}})

@@ -22,8 +22,8 @@ import inspect
 
 import pytest
 
-from tests.support.field_readers import members_referenced, unread_fields
 from atst.result import Provenance, ProvenanceKind, ResultMeta
+from tests.support.field_readers import members_referenced, unread_fields
 
 # 手工核对过的 owner：只认调用方真把这两个数据面对象绑定到的变量名。
 # 不放 `self`——`self.capability` 属于 catalog/records 里的别的类，放进去就是假绿。

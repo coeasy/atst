@@ -36,8 +36,7 @@ def _dist(tmp_path: Path) -> tuple[Path, dict[str, str]]:
 def _payload(hashes: dict[str, str]) -> dict[str, object]:
     return {
         "urls": [
-            {"filename": name, "digests": {"sha256": digest}}
-            for name, digest in hashes.items()
+            {"filename": name, "digests": {"sha256": digest}} for name, digest in hashes.items()
         ]
     }
 

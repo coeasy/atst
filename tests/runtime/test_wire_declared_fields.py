@@ -106,6 +106,18 @@ class _Recorder:
     def capabilities() -> tuple[str, ...]:
         return ("rates", "balance_sheet")
 
+    @staticmethod
+    def core_capability_statuses() -> dict[str, dict[str, Any]]:
+        """``Client.core_capability_statuses()`` 的替身：``runtime.health`` 现读它。
+
+        真身逐内核方法给出 ``default_available`` / ``any_provider_available`` 真值表；
+        本面的判据只关心 wire 字段拒绝，故给一份最小但不空的形状即可。
+        """
+        return {
+            "rates": {"default_available": True, "any_provider_available": True},
+            "security_list": {"default_available": False, "any_provider_available": True},
+        }
+
     @property
     def runtime(self) -> Any:
         return type("R", (), {"planner": type("P", (), {"default_provider": "tdx"})()})()

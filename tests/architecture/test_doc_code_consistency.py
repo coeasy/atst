@@ -1957,12 +1957,26 @@ def _table_cells(line: str) -> int:
 
 
 def _markdown_table_blocks(text: str) -> list[list[tuple[int, str]]]:
-    """按连续行切出表格块（至少表头 + 分隔行 + 一行内容）。"""
+    """按连续行切出表格块（至少表头 + 分隔行 + 一行内容）。
+
+    围栏代码块内的行即使以 ``|`` 开头也不是表格：ATST 架构文档把发布流程图
+    画成 ASCII 框线（``| - wheel |``），只按行首字符读会把示意图误判成坏表格。
+    """
 
     blocks: list[list[tuple[int, str]]] = []
     current: list[tuple[int, str]] = []
+    in_fence = False
     for number, line in enumerate(text.replace("\r\n", "\n").split("\n"), start=1):
-        if line.lstrip().startswith("|"):
+        stripped = line.lstrip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            if len(current) >= 3:
+                blocks.append(current)
+            current = []
+            continue
+        if in_fence:
+            continue
+        if stripped.startswith("|"):
             current.append((number, line))
         else:
             if len(current) >= 3:

@@ -70,9 +70,7 @@ class ChannelSpec:
         normalized_periods = frozenset(str(x).strip().lower() for x in periods if str(x).strip())
         if normalized_periods and "bars" not in caps:
             raise ValueError(f"periods declared on non-bars channel {channel_id!r}")
-        unavailable_caps = frozenset(
-            str(x).strip().lower() for x in unavailable if str(x).strip()
-        )
+        unavailable_caps = frozenset(str(x).strip().lower() for x in unavailable if str(x).strip())
         unknown_unavailable = unavailable_caps - caps
         if unknown_unavailable:
             raise ValueError(
@@ -304,6 +302,7 @@ def resolve_capability_provider(
         return candidate
     selected = PROVIDERS.default_available_provider(cap)
     return selected or candidate
+
 
 def _c(
     id: str,

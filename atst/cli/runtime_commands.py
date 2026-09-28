@@ -357,8 +357,7 @@ def _cmd_feedback(args: Any) -> int:
             print("反馈已提交（已脱敏）。")
             return 0
         print(
-            "反馈未发送：默认禁用。设置 ATST_FEEDBACK=1 启用，"
-            "或 ATST_FEEDBACK=dry-run 调试预览。",
+            "反馈未发送：默认禁用。设置 ATST_FEEDBACK=1 启用，或 ATST_FEEDBACK=dry-run 调试预览。",
             file=sys.stderr,
         )
         return 1

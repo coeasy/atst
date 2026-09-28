@@ -14,8 +14,8 @@ import ast
 import re
 from pathlib import Path
 
-from tests.support.field_readers import member_reference_sites, members_referenced
 from atst.diagnostics import WarningCode
+from tests.support.field_readers import member_reference_sites, members_referenced
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "atst"

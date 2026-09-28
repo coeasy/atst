@@ -146,7 +146,9 @@ def test_artifact_only_smoke_does_not_enable_setup_python_dependency_cache() -> 
 def test_release_publishes_once_only_after_draft_release_is_ready() -> None:
     workflow = _workflow("wheels.yml")
 
-    assert workflow.count("pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33") == 1
+    assert (
+        workflow.count("pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33") == 1
+    )
     assert "needs: [build-dist, prepare-release]" in workflow
     assert "if: vars.PUBLIC_RELEASE == 'true'" in workflow
     assert "environment: pypi" in workflow
@@ -155,9 +157,7 @@ def test_release_publishes_once_only_after_draft_release_is_ready() -> None:
 
 def test_release_assets_are_attached_to_a_draft_before_publication() -> None:
     workflow = _workflow("wheels.yml")
-    release_assets = workflow.split("  prepare-release:", 1)[1].split(
-        "  publish-pypi:", 1
-    )[0]
+    release_assets = workflow.split("  prepare-release:", 1)[1].split("  publish-pypi:", 1)[0]
 
     assert "needs: [build-dist, smoke-install, extras-install, sdist-rebuild]" in release_assets
     assert "name: python-dist" in release_assets
@@ -295,7 +295,6 @@ def test_the_7709_probe_fails_instead_of_skipping_when_the_chain_is_down() -> No
     )
 
 
-
 def test_release_verifies_all_extras_and_sdist_rebuild_before_draft_release() -> None:
     workflow = _workflow("wheels.yml")
 
@@ -347,7 +346,7 @@ def test_release_source_must_be_main_reachable_and_repasses_deterministic_gates(
     build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
 
     assert "fetch-depth: 0" in source
-    assert 'git fetch --no-tags origin main:refs/remotes/origin/main' in source
+    assert "git fetch --no-tags origin main:refs/remotes/origin/main" in source
     assert 'git merge-base --is-ancestor "$GITHUB_SHA" origin/main' in source
     assert 'python -m pip install -e ".[all,dev]"' in source
     assert "run: make gates" in source

@@ -35,8 +35,8 @@ from typing import Any
 
 import pytest
 
-from tests.support.field_readers import REPO_ROOT
 from atst.cli.parser import build_parser
+from tests.support.field_readers import REPO_ROOT
 
 pytestmark = pytest.mark.unit
 

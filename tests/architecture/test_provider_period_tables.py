@@ -32,7 +32,6 @@ from typing import Any
 
 import pytest
 
-from tests.support.field_readers import REPO_ROOT
 from atst.client.core import _CANONICAL_TO_CATEGORY
 from atst.domain.period import CANONICAL_PERIODS, PERIOD_ALIASES, normalize_bar_period
 from atst.protocol.parsers._std7709_common import KlineCategory
@@ -43,6 +42,7 @@ from atst.web.baidu.adapters import _KLINE_KTYPES
 from atst.web.eastmoney.adapters import EastmoneyHistoryKlineSource
 from atst.web.sina.adapters import SinaHistoryKlineSource
 from atst.web.tencent.adapters import _MKLINE_PERIODS, KlineSource
+from tests.support.field_readers import REPO_ROOT
 
 pytestmark = pytest.mark.unit
 

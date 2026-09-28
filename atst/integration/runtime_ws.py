@@ -123,9 +123,9 @@ class RuntimeJsonRpcHandler:
         if self._loop is not None and self._subs:
             # 尽力而为：连接侧通常已经 stop_all_subscriptions，这里只是兜底。
             with contextlib.suppress(Exception):
-                asyncio.run_coroutine_threadsafe(
-                    self.stop_all_subscriptions(), self._loop
-                ).result(timeout=5)
+                asyncio.run_coroutine_threadsafe(self.stop_all_subscriptions(), self._loop).result(
+                    timeout=5
+                )
         if self._owns_client:
             self._owns_client = False
             self.client.close()
@@ -313,7 +313,9 @@ class RuntimeJsonRpcHandler:
             if not isinstance(symbol, str) or not symbol:
                 raise ValidationError("symbol is required")
             if method == "snapshot":
-                return serialize_result(self.client.snapshot(symbol, provider=str(provider or "tdx")))
+                return serialize_result(
+                    self.client.snapshot(symbol, provider=str(provider or "tdx"))
+                )
             if method == "minute":
                 return serialize_result(self.client.minute(symbol, provider=provider))
             return serialize_result(
@@ -401,9 +403,9 @@ class RuntimeJsonRpcHandler:
         if found:
             stream = self._subs.pop(sub_id)
             if self._loop is not None:
-                asyncio.run_coroutine_threadsafe(
-                    self._safe_stop(stream), self._loop
-                ).result(timeout=10)
+                asyncio.run_coroutine_threadsafe(self._safe_stop(stream), self._loop).result(
+                    timeout=10
+                )
         return {"status": "unsubscribed", "id": sub_id, "found": found}
 
     async def _safe_stop(self, stream: Any) -> None:

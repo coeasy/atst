@@ -11,6 +11,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0] - 2026-09-28
 
+### Fixed（逻辑审查第 6 轮：并入上游 126 个提交后的门禁 / 文档漂移收口与 lint 工具链对齐）
+
+同一组判据：主体流程全部联通 / 核心链路无断链 / 无孤儿逻辑 / 无死循环 / 前后端贯通。本轮起点是
+**把本地与远端重新对齐**：更名提交之后 `origin/main` 又前进了 126 个提交（client-bound 能力可用性、
+release-candidate 元数据、CI 硬化等），本地是其**祖先**（`merge-base == HEAD`），故先快进合并再复审——
+不复审就等于对着一份已过期的树做发布判定。
+
+**并入上游 126 提交（`16773bc..1ceb26b`，38 文件 +3638/−279）**
+
+- `Client.core_capability_statuses()` 成为内核能力可用性的真值表（区分「任意 Provider 可用」与
+  「默认路径可用」）；`runtime.health` 三面（HTTP `/v13/runtime/health`、WS `runtime.health`）
+  改为读它并给出 `core_unavailable`。
+- `ChannelSpec` 新增 `unavailable_capabilities`，`operationally_supports()` 据此判「声明了但已下线」。
+- 版本收成单一事实源 `atst/_version.py`，`pyproject` 以 `dynamic = ["version"]` 委托 hatch；
+  新增发布前置脚本 `scripts/check_pypi_release.py`（重发安全：逐制品比对 PyPI 摘要）。
+
+**四类漂移（都在上游提交里留下，本轮全部收口）**
+
+- **门禁 ↔ 文档数字**：`docs/ARCHITECTURE.md` 根级模块白名单 `10 → 11`（新增 `_version.py`）；
+  `README.md` 的 `Client` 便捷方法数/方法数 `15 → 16`（四处抄本）。真相源分别是磁盘 `atst/*.py`
+  计数与 `Client` 的公开方法数，均对着**上游既有门禁**复绿。
+- **门禁 ↔ 代码（断链）**：`tests/architecture/test_namespace_layout.py` 的 `ROOT_WHITELIST`
+  漏 `_version.py`；`tests/architecture/test_release_identity_and_snapshot_docs.py` 的
+  `_pyproject_version` 只认静态 `version`，动态版本下判据自身失效——改为解析
+  `[tool.hatch.version].path` 指向的单一事实源（保留静态分支与变异自测）。
+- **门禁自伤（假阳性）**：`test_markdown_table_rows_match_their_header` 把围栏代码块里的 ASCII
+  发布流程图（`| - wheel |`）误判成坏表格——`_markdown_table_blocks` 改为**跳过 ``` / ~~~ 围栏**。
+- **测试替身 ↔ 真身**：`tests/runtime/test_wire_declared_fields.py` 的 `_Recorder` 未实现
+  `core_capability_statuses()`，`runtime.health` 现读它 → 替身缺方法把整条 health 打成 E9000；
+  `tests/providers/test_registry.py` 的 `ChannelSpec` 形状钉补上 `unavailable_capabilities`。
+
+**CI lint 工具链对齐（合入后 `ruff==0.15.2` 口径下重跑）**
+
+- `ruff check`：12 处 `I001`（新增测试文件的导入未排序）——机械修正，`atst tests scripts` 全绿。
+- `ruff format --check`：12 文件因工具链换代（旧 ruff 落盘的换行风格）而落伍——`ruff format` 重排，
+  492 文件全绿。
+
+**本轮验证（全部 RC=0）**：`tests/architecture` + `tests/compatibility`（含 2 skip）；离线全量
+`pytest -m "not network"`；`ruff check` / `ruff format --check`（`atst tests scripts`）；`mypy atst/`
+（CI 参数）；originality `--strict`（191/191）；`scripts/contract_audit.py`（172 capability）；
+`scripts/check_docs_links.py`（100 文件）；四面接口可用性探针 **38 PASS / 1 WIRED / 0 FAIL**
+（Library / CLI 31 子命令 / HTTP 10 路由 / WS 13 方法 / MCP 9 工具）；`scripts/build_package.py
+--no-isolation --smoke`（wheel + sdist + 冒烟安装/CLI/`pip check`）。
+
 ### Fixed（逻辑审查第 5 轮：WebSocket 实时订阅控制面贯通 + 四面投影 / 文档一致性门禁对齐）
 
 同一组判据：主体流程全部联通 / 核心链路无断链 / 无孤儿逻辑 / 无死循环 / 前后端贯通。本轮补齐

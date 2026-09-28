@@ -21,7 +21,8 @@ origin 上，`docs/releases/v1.1.0.md` 也确实存在，将来推进版本号�
 
 本判据因此钉四条，全部现读、不做全仓推断：
 
-1. `pyproject.toml` 的 `version` 与 `atst.__version__` 相等；
+1. `pyproject.toml` 声明的 `version`（静态字面量；`dynamic` 时取
+   `[tool.hatch.version].path` 指向的单一事实源）与 `atst.__version__` 相等；
 2. `docs/releases/v<version>.md` 存在，且其首个标题含同一版本号；
 3. 根级 `*.md` 去掉活文档集合与政策/日志白名单后剩下的每一份，前 12 行内必须出现
    史料标记（`不是现行`/`按原文留存`/`史料`/`快照`）；
@@ -57,9 +58,22 @@ _RELEASE_TABLE_ROWS = 3
 
 
 def _pyproject_version(text: str) -> str:
+    """pyproject 声明的发行版本号：静态 ``version`` 或 ``[tool.hatch.version]`` 指向的单一事实源。
+
+    工程已把版本收成一处（``atst/_version.py``），pyproject 以 ``dynamic = ["version"]``
+    委托给 hatch——所以"pyproject 声明的版本"要从它配置的来源现读，而不是只认字面量。
+    """
     match = re.search(r'(?m)^version\s*=\s*"([^"]+)"', text)
-    assert match is not None, "pyproject.toml 里没有可解析的 version，判据自身失效"
-    return match.group(1)
+    if match is not None:
+        return match.group(1)
+    source = re.search(r'(?m)^\[tool\.hatch\.version\]\s*\n[^[]*?path\s*=\s*"([^"]+)"', text)
+    assert source is not None, (
+        "pyproject.toml 里既没有可解析的静态 version，也没有 [tool.hatch.version] 的 path"
+    )
+    body = (ROOT / source.group(1)).read_text(encoding="utf-8")
+    declared = re.search(r'(?m)^__version__\s*=\s*"([^"]+)"', body)
+    assert declared is not None, f"{source.group(1)} 里没有 __version__，判据自身失效"
+    return declared.group(1)
 
 
 def _banner_present(text: str) -> bool:
