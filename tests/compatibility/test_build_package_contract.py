@@ -31,7 +31,8 @@ def _write_minimal_wheel(
     import zipfile
 
     with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr("atst/__init__.py", "")
+        archive.writestr("atst/__init__.py", "from ._version import __version__\n")
+        archive.writestr("atst/_version.py", f'__version__ = "{version}"\n')
         if include_typed:
             archive.writestr("atst/py.typed", "")
         for name in extra_members:
@@ -53,8 +54,12 @@ def _write_minimal_sdist(
     root = f"atst-{version}"
     files = {
         f"{root}/PKG-INFO": f"Metadata-Version: 2.1\nName: atst\nVersion: {version}\n\n",
-        f"{root}/pyproject.toml": "[project]\nname='atst'\n",
-        f"{root}/atst/__init__.py": f'__version__ = "{version}"\n',
+        f"{root}/pyproject.toml": (
+            "[project]\nname='atst'\ndynamic=['version']\n"
+            "[tool.hatch.version]\npath='atst/_version.py'\n"
+        ),
+        f"{root}/atst/__init__.py": "from ._version import __version__\n",
+        f"{root}/atst/_version.py": f'__version__ = "{version}"\n',
         f"{root}/README.md": "readme\n",
         f"{root}/CHANGELOG.md": "changes\n",
         f"{root}/LICENSE": "MIT\n",
@@ -77,17 +82,20 @@ def _write_minimal_sdist(
 def _write_fake_project(
     root: Path,
     *,
-    project_version: str = "1.4.0",
-    source_version: str | None = None,
+    source_version: str = "1.4.0",
 ) -> None:
     package = root / "atst"
     package.mkdir(parents=True)
-    source_version = project_version if source_version is None else source_version
     (root / "pyproject.toml").write_text(
-        f'[project]\nname = "atst"\nversion = "{project_version}"\n',
+        '[project]\nname = "atst"\ndynamic = ["version"]\n'
+        '[tool.hatch.version]\npath = "atst/_version.py"\n',
         encoding="utf-8",
     )
     (package / "__init__.py").write_text(
+        "from ._version import __version__\n",
+        encoding="utf-8",
+    )
+    (package / "_version.py").write_text(
         f'__version__ = "{source_version}"\n',
         encoding="utf-8",
     )
@@ -195,20 +203,20 @@ def test_no_isolation_is_an_explicit_build_escape_hatch(
     assert "--no-isolation" in commands[0]
 
 
-def test_distribution_verifier_rejects_source_project_version_drift(
+def test_distribution_verifier_rejects_artifact_version_drift(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     build = _load_build_script()
     fake_root = tmp_path / "repo"
     dist = fake_root / "dist"
-    _write_fake_project(fake_root, project_version="1.4.0", source_version="1.4.1")
+    _write_fake_project(fake_root, source_version="1.4.1")
     dist.mkdir()
     _write_minimal_wheel(dist / "atst-1.4.0-py3-none-any.whl")
     _write_minimal_sdist(dist / "atst-1.4.0.tar.gz")
     monkeypatch.setattr(build, "ROOT", fake_root)
 
-    with pytest.raises(SystemExit, match="source version"):
+    with pytest.raises(SystemExit, match="canonical wheel"):
         build._verify(dist)
 
 
