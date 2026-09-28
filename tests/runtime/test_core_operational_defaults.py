@@ -11,6 +11,7 @@ import pytest
 from atst.client.api import Client
 from atst.cli.parser import build_parser
 from atst.integration.mcp._tools_impl import _h_get_minute_today, _h_get_trades
+from atst.errors import ValidationError
 from atst.integration.runtime_ws import RuntimeJsonRpcHandler
 from atst.providers import PROVIDERS, resolve_capability_provider
 from atst.query import QueryPlan, QueryPlanner, QuerySpec
@@ -302,7 +303,7 @@ def test_configured_default_provider_does_not_silently_cross_provider() -> None:
     )
     assert minute.provider == "eastmoney"
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         planner.compile(
             QuerySpec.build("trades", symbols="sh600519", currentness="live")
         )
