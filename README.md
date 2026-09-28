@@ -4,8 +4,8 @@
 >
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
-- 当前 Draft 开发版本：`1.0.0`
-- 最新已发布稳定版：`v1.0.0`（2026-09-27 重新发布，更名为 `atst`） · [发布说明](docs/releases/v1.0.0.md) · [v1.1.0 版本说明](docs/releases/v1.1.0.md) · [CHANGELOG](CHANGELOG.md)
+- 当前 Release Candidate：`1.0.0`
+- 当前发布状态：**尚无 GitHub Release，且尚未发布到 PyPI**；`v1.0.0` 是待发布的首个 `atst` 稳定版本 · [发布候选说明](docs/releases/v1.0.0.md) · [v1.1.0 历史说明](docs/releases/v1.1.0.md) · [CHANGELOG](CHANGELOG.md)
 - 发布工程：[Industrial Python Release Architecture V3](docs/ATST-Industrial-Python-Release-Architecture-V3.md)
 - 核心功能验收：[Core Functionality Readiness V1](docs/ATST-Core-Functionality-Readiness-V1.md)
 
