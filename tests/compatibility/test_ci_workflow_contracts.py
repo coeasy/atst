@@ -467,3 +467,16 @@ def test_published_github_release_can_be_promoted_idempotently_to_public_surface
     assert "already_published != 'true'" not in pypi
     assert "needs.prepare-release.outputs.already_published != 'true'" not in docker
     assert "steps.pypi-state.outputs.exists != 'true'" in pypi
+
+
+def test_live_smoke_covers_operational_web_core_defaults() -> None:
+    probe = _ROOT / "tests" / "live" / "test_web_core_defaults.py"
+
+    assert probe.is_file(), "minute/trades operational default live probe was removed"
+    text = probe.read_text(encoding="utf-8")
+    assert "pytestmark = pytest.mark.network" in text
+    assert 'Client(default_provider="tdx")' in text
+    assert 'result.meta.provider == "tencent"' in text
+    assert "test_minute_omitted_provider_reaches_live_operational_default" in text
+    assert "test_trades_omitted_provider_reaches_live_operational_default" in text
+    assert "pytest.skip" in text and "_in_trading_session" in text
