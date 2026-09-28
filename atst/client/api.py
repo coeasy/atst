@@ -20,8 +20,8 @@ from ..catalog.capability import (
     is_migrated_capability,
 )
 from ..errors import ValidationError
-from ..query import QuerySpec
 from ..providers import PROVIDERS
+from ..query import QuerySpec
 from ..result import QueryResult
 from ..runtime.executor import DEDICATED_CAPABILITIES as _CORE_CAPABILITIES
 from ..runtime.kernel import UnifiedRuntime
