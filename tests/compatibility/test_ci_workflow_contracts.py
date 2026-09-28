@@ -456,3 +456,14 @@ def test_all_workflow_actions_are_immutable_sha_pinned() -> None:
         "workflow third-party actions must use immutable 40-char commit SHAs: "
         + "; ".join(offenders)
     )
+
+
+def test_published_github_release_can_be_promoted_idempotently_to_public_surfaces() -> None:
+    workflow = _workflow("wheels.yml")
+    pypi = workflow.split("  publish-pypi:", 1)[1].split("  publish-docker:", 1)[0]
+    docker = workflow.split("  publish-docker:", 1)[1].split("  publish-release:", 1)[0]
+
+    assert "if: vars.PUBLIC_RELEASE == 'true'" in pypi
+    assert "already_published != 'true'" not in pypi
+    assert "needs.prepare-release.outputs.already_published != 'true'" not in docker
+    assert "steps.pypi-state.outputs.exists != 'true'" in pypi
