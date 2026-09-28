@@ -14,8 +14,8 @@ from atst.integration.mcp._tools_impl import _h_get_minute_today, _h_get_trades
 from atst.integration.runtime_ws import RuntimeJsonRpcHandler
 from atst.providers import PROVIDERS, resolve_capability_provider
 from atst.query import QueryPlan, QueryPlanner, QuerySpec
-from atst.runtime.kernel import UnifiedRuntime
 from atst.result import Provenance, QueryResult
+from atst.runtime.kernel import UnifiedRuntime
 
 
 class _RecordingExecutor:
