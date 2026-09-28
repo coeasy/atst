@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from atst.client.api import Client
+from atst.client.api import AsyncClient, Client
 from atst.cli.parser import build_parser
 from atst.errors import ValidationError
 from atst.integration.mcp._tools_impl import _h_get_minute_today, _h_get_trades
@@ -305,3 +305,16 @@ def test_configured_default_provider_does_not_silently_cross_provider() -> None:
         planner.compile(
             QuerySpec.build("trades", symbols="sh600519", currentness="live")
         )
+
+
+def test_async_client_reports_the_same_effective_core_status() -> None:
+    client, _executor = _client(default_provider="eastmoney")
+    async_client = AsyncClient(client=client)
+
+    core = async_client.core_capability_statuses()
+
+    assert core["minute"]["default_available"] is True
+    assert core["minute"]["default_provider"] == "eastmoney"
+    assert core["trades"]["available"] is True
+    assert core["trades"]["default_available"] is False
+    assert core["trades"]["default_provider"] is None
