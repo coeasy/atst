@@ -225,6 +225,47 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 
 ---
 
+## 发布流程（GitHub Release 后自动构建安装包）
+
+本仓的发布由 `.github/workflows/wheels.yml` 自动化：**推送一个 `vX.Y.Z` 标签即触发**，CI 会
+构建 canonical wheel + sdist、校验字节级可复现性、生成 `SHA256SUMS.txt` 与
+`RELEASE-METADATA.json`，创建**草稿** GitHub Release 并附带产物，最后在草稿通过后自动发布。
+这就是"GitHub 发布之后自动构建安装包"的入口——你只需要在 GitHub 上发布一个 `vX.Y.Z` 标签，
+其余由流水线完成。
+
+> 流水线刻意以**标签推送**为唯一发布触发器（CI 契约 `test_release_identity_uses_tag_push...`
+> 强制），以保证版本身份永远来自标签 + `atst/_version.py` 单一事实源，避免重复构建与
+> 版本漂移。`release:` 事件触发器被同一契约排除，因此不要改成 `on: release`。
+
+### 切一个发布
+
+1. 改版本号：编辑 `atst/_version.py` 的 `__version__`（单一事实源；`pyproject.toml` 通过
+   `[tool.hatch.version]` 动态读取，不要写死静态 `version=`）。
+2. 补版本文档：在 `CHANGELOG.md` 加 `## [X.Y.Z] - YYYY-MM-DD` 小节，并在 `docs/releases/`
+   目录下新增以版本号命名的发布说明（已有范例见 `docs/releases/v1.0.0.md`）。
+3. 提交并打标签：
+   ```bash
+   git add -A && git commit -m "release: vX.Y.Z"
+   git tag vX.Y.Z && git push origin vX.Y.Z
+   ```
+4. 流水线自动：构建 → 复现性校验 → 草稿 Release + 产物 → 发布。
+   - PyPI 发布是**显式 opt-in**：仅当仓库变量 `PUBLIC_RELEASE=true` 时，
+     `publish-pypi` 才用 OIDC trusted publishing 上传（重复版本会被
+     `scripts/check_pypi_release.py` 安全跳过）。默认不发布到 PyPI。
+   - Docker 镜像同理，需 `PUBLIC_RELEASE=true` 且 `PUBLISH_DOCKER=true`。
+
+### 本地构建与冒烟（不发布）
+
+```bash
+python scripts/build_package.py --smoke               # PEP 517 隔离构建 + 校验 + 临时 venv 冒烟安装
+python scripts/build_package.py --verify-only --dist-out dist   # 只校验已有产物
+```
+
+校验要求恰好 **1 个 wheel + 1 个 sdist**，二者携带完整运行时源码闭包与 `py.typed`，
+并通过 `twine check`。
+
+---
+
 ## 兼容性
 
 | 维度 | 支持范围 |

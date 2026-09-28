@@ -55,6 +55,40 @@ release-candidate 元数据、CI 硬化等），本地是其**祖先**（`merge-
 （Library / CLI 31 子命令 / HTTP 10 路由 / WS 13 方法 / MCP 9 工具）；`scripts/build_package.py
 --no-isolation --smoke`（wheel + sdist + 冒烟安装/CLI/`pip check`）。
 
+### Fixed（逻辑审查第 7 轮：发布自动化收口 + ≥3 轮门禁全绿）
+
+同一组判据：主体流程全部联通 / 核心链路无断链 / 无孤儿逻辑 / 无死循环 / 前后端贯通。本轮起点是
+**把"GitHub 发布后自动构建安装包"这条能力落到可发布状态**，并再跑 ≥3 轮确定性门禁确认无回归。
+
+**发布自动化（`.github/workflows/wheels.yml` 已具备，本轮收口为文档）**
+
+- 唯一发布触发器是**标签推送** `push: tags: ['v*']`：推送 `vX.Y.Z` → 构建 canonical wheel
+  + sdist → 字节级可复现性校验（`SOURCE_DATE_EPOCH` 取自提交、与 `dist-repro` 逐字节 `cmp`）
+  → 生成 `SHA256SUMS.txt` 与 `RELEASE-METADATA.json` → 创建**草稿** GitHub Release 并附带产物
+  → 草稿通过后自动发布。这就是"GitHub 发布之后自动构建安装包"的入口。
+- PyPI / Docker 发布均为**显式 opt-in**：仅当仓库变量 `PUBLIC_RELEASE=true` 时
+  `publish-pypi` 才用 OIDC trusted publishing 上传（重复版本由 `scripts/check_pypi_release.py`
+  安全跳过）；Docker 另需 `PUBLISH_DOCKER=true`。默认不发布到 PyPI。
+
+**一轮修订（被 CI 契约拦下，已还原）**
+
+- 草稿 `wheels.yml` 曾尝试新增 `release: published` 触发器并简化 `prepare-release` 的幂等校验，
+  被 3 项 CI 契约判据当场拦下：`test_release_identity_uses_tag_push_and_canonical_version_source`
+  （`on:` 段禁止出现 `release:`，版本身份必须来自标签 + `atst/_version.py` 单一事实源）、
+  `test_release_retry_is_idempotent_and_hash_verified` 与 `test_release_metadata_is_stable...`
+  （重试时必须 `gh release download` + `sha256sum -c` + `cmp` 已发布产物，删除即丢幂等校验）。
+  已 `git checkout` 还原为标签推送单一触发器，3 项契约复绿。
+
+**README 新增「发布流程」一节**：说明打 `vX.Y.Z` 标签即触发自动构建 / 本地
+`scripts/build_package.py --smoke` 构建与冒烟口径，使该能力可被用户发现。
+
+**≥3 轮门禁（全部 RC=0）**：第 1 轮全部门禁 + 离线全量 `pytest -m "not network"`
+（抓到上面那次草稿 `wheels.yml` 的 3 项契约红，已还原）；第 2 轮离线全量重跑
+`FULLTEST_RC=0`；第 3 轮确定性合并门禁（`ruff check` / `ruff format --check` /
+`mypy atst/` / `audit_reachability --strict` / originality `--strict` 191/191 /
+`spec_audit --strict` / `golden_audit` / `check_docs_links` / `test_bridges` /
+`adversarial` / `run_benchmark_smoke` / `tests/compatibility`）全绿。
+
 ### Fixed（逻辑审查第 5 轮：WebSocket 实时订阅控制面贯通 + 四面投影 / 文档一致性门禁对齐）
 
 同一组判据：主体流程全部联通 / 核心链路无断链 / 无孤儿逻辑 / 无死循环 / 前后端贯通。本轮补齐
