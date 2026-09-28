@@ -1,8 +1,8 @@
 # API 参考
 
-当前 `1.0.0` Draft 开发线；最新已发布稳定版是 `v1.0.0`（2026-09-09 发布）· [发布说明](../releases/v1.0.0.md) · [v1.1.0 版本说明](../releases/v1.1.0.md)
+当前 `1.0.0` Release Candidate；当前尚无 GitHub Release / PyPI 发布 · [v1.0.0 发布候选说明](../releases/v1.0.0.md) · [v1.1.0 历史说明](../releases/v1.1.0.md)
 
-> 本页对应 v1.0.0 稳定发布版 + **v13/v17 单一执行内核**。完整 docstring 驱动文档
+> 本页对应 v1.0.0 发布候选 + **v13/v17 单一执行内核**。完整 docstring 驱动文档
 > 由 `pdoc`/`mkdocstrings` 生成；此处提供稳定入口和模块索引。
 >
 > **Provider 契约**：每次请求绑定恰好一个 Provider/channel，禁止跨 Provider silent fallback。
