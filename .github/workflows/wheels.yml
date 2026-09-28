@@ -274,6 +274,7 @@ jobs:
     needs: [build-dist, prepare-release, publish-pypi]
     if: >-
       vars.PUBLIC_RELEASE == 'true' &&
+      vars.PUBLISH_DOCKER == 'true' &&
       needs.prepare-release.outputs.already_published != 'true' &&
       needs.publish-pypi.result == 'success'
     runs-on: ubuntu-latest
