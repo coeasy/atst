@@ -226,7 +226,6 @@ class RuntimeJsonRpcHandler:
         if method == "runtime.capabilities":
             return {
                 "capabilities": list(self.client.capabilities()),
-                "core": Client.core_capability_statuses(),
                 "providers": {
                     provider: {
                         channel.id: sorted(channel.capabilities)
