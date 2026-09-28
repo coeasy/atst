@@ -59,6 +59,7 @@ dev       = [
     "hatchling==1.32.4",
     "build==1.6.1",
     "twine==7.0.0",
+    "packaging==26.3",
 ]
 # ``all`` 是上面每个 extra 的并集，逐条对应，不额外塞东西：过去这里多出的
 # ``pydantic`` / ``mcp`` 全仓 0 处读取，已经随 extra 一起删掉。
@@ -87,6 +88,9 @@ atst = "atst.cli:main"
 
 [tool.hatch.version]
 path = "atst/_version.py"
+
+[tool.hatch.build]
+reproducible = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["atst"]
