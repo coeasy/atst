@@ -10,8 +10,8 @@ import pytest
 
 from atst.client.api import Client
 from atst.cli.parser import build_parser
-from atst.integration.mcp._tools_impl import _h_get_minute_today, _h_get_trades
 from atst.errors import ValidationError
+from atst.integration.mcp._tools_impl import _h_get_minute_today, _h_get_trades
 from atst.integration.runtime_ws import RuntimeJsonRpcHandler
 from atst.providers import PROVIDERS, resolve_capability_provider
 from atst.query import QueryPlan, QueryPlanner, QuerySpec
@@ -32,9 +32,7 @@ class _RecordingExecutor:
         )
 
 
-def _client(
-    *, default_provider: str = "tdx"
-) -> tuple[Client, _RecordingExecutor]:
+def _client(*, default_provider: str = "tdx") -> tuple[Client, _RecordingExecutor]:
     executor = _RecordingExecutor()
     runtime = UnifiedRuntime(executor=executor, default_provider=default_provider)
     return Client(runtime=runtime), executor
