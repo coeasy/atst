@@ -222,7 +222,9 @@ class RuntimeJsonRpcHandler:
                 "default_provider": self.client.runtime.planner.default_provider,
                 "migrated_capabilities": len(self.client.capabilities()),
                 "core_unavailable": sorted(
-                    capability for capability, state in core.items() if not state["available"]
+                    capability
+                    for capability, state in core.items()
+                    if not state["default_available"]
                 ),
             }
         if method == "runtime.capabilities":
