@@ -306,15 +306,14 @@ class RuntimeJsonRpcHandler:
         if method in {"snapshot", "minute", "trades"}:
             if not isinstance(symbol, str) or not symbol:
                 raise ValidationError("symbol is required")
-            chosen = str(provider or "tdx")
             if method == "snapshot":
-                return serialize_result(self.client.snapshot(symbol, provider=chosen))
+                return serialize_result(self.client.snapshot(symbol, provider=str(provider or "tdx")))
             if method == "minute":
-                return serialize_result(self.client.minute(symbol, provider=chosen))
+                return serialize_result(self.client.minute(symbol, provider=provider))
             return serialize_result(
                 self.client.trades(
                     symbol,
-                    provider=chosen,
+                    provider=provider,
                     start=self._int_param(method, "start", params.get("start"), 0),
                     count=self._int_param(method, "count", params.get("count"), 0),
                 )
