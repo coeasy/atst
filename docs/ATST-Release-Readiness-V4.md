@@ -1,16 +1,17 @@
 # ATST Release Readiness V4
 
-> Branch: `fix/release-readiness-v4`  
-> Draft PR: #9  
-> Base: main @ `5fd936d9e9a0afc281f1eb4254c42069fb18ab54`  
+> Source branch: `fix/release-readiness-v4`  
+> Merged PR: #9  
+> Merge commit: `f712a0aad54f246bace7a6289c998295dfa46d09`  
 > Date: 2026-09-28  
-> Scope: post-PR-#8 release-readiness audit and remediation.
+> Scope: post-PR-#8 release-readiness audit, remediation, and post-merge verification.
 
 ## 1. Executive conclusion
 
 PR #8 materially improved the release architecture, but merging it exposed additional regressions that
 would have made a real runner fail even though GitHub Actions was already failing before runner
-assignment.
+assignment. Those source-level fixes were completed in PR #9 and merged to `main` as
+`f712a0aad54f246bace7a6289c998295dfa46d09`.
 
 V4 performs three complete review/fix rounds:
 
@@ -413,16 +414,16 @@ Required external evidence before release:
 
 ## 10. Final decision rule
 
-ATST should be called **source-ready but not release-certified** until the external checklist above
+ATST is now **merged/source-ready but not release-certified** until the external checklist above
 is satisfied.
 
 The correct transition is:
 
 ```text
-PR #9 source fixes complete
-  -> real exact-head CI execution
-  -> merge through protected main
+PR #9 merged to main
+  -> restore real GitHub runner execution
   -> real main CI execution
+  -> configure protected-main required checks
   -> intraday live evidence
   -> tag v1.0.0
   -> release workflow exact-source gates
