@@ -376,3 +376,13 @@ def test_sdist_release_docs_are_not_version_hardcoded() -> None:
 
     assert '"docs/releases/*.md"' in pyproject
     assert '"docs/releases/v1.0.0.md"' not in pyproject
+
+
+def test_docker_publication_is_explicitly_optional() -> None:
+    workflow = _workflow("wheels.yml")
+    docker = workflow.split("  publish-docker:", 1)[1].split("  publish-release:", 1)[0]
+    publish = workflow.split("  publish-release:", 1)[1]
+
+    assert "vars.PUBLIC_RELEASE == 'true'" in docker
+    assert "vars.PUBLISH_DOCKER == 'true'" in docker
+    assert "needs.publish-docker.result == 'skipped'" in publish
