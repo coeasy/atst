@@ -25,7 +25,7 @@ from .domain.period import MINUTE_PERIODS, normalize_bar_period
 from .domain.symbol import normalize_symbol
 from .error_envelope import is_sensitive_key
 from .errors import ReadTimeout, ValidationError
-from .providers import PROVIDERS, ChannelSpec, resolve_provider
+from .providers import PROVIDERS, ChannelSpec, resolve_capability_provider
 
 __all__ = [
     "CurrentnessMode",
@@ -363,8 +363,9 @@ class QuerySpec:
             raise ValidationError("schema_version 必须大于 0")
 
         currentness = _parse_currentness(self.currentness)
-        selected = resolve_provider(
-            provider=self.provider,
+        selected = resolve_capability_provider(
+            cap,
+            self.provider,
             default=default_provider or PROVIDERS.default_provider,
         )
         channel = _norm_text(self.channel) or None
