@@ -58,7 +58,12 @@ def cmd_version(args: Any) -> int:
 
 def cmd_capabilities(args: Any) -> int:
     del args
-    _print({"capabilities": list(Client.capabilities())})
+    _print(
+        {
+            "capabilities": list(Client.capabilities()),
+            "core": Client.core_capability_statuses(),
+        }
+    )
     return 0
 
 
