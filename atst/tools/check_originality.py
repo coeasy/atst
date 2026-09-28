@@ -90,6 +90,8 @@ DEFAULT_LICENSE_HEADER: str = (
 #: 的普查里长期挂着 5 条噪声。等式由
 #: ``tests/architecture/test_declared_knobs.py::test_originality_external_import_whitelist_matches_reality``
 #: 逐名核对，改一处 import 或加一个 extra 都要在这里同步，否则门禁先红。
+#: 注意 ``tomllib`` **不在此列**：它是 3.11+ 的标准库、PyPI 上无可装发行版（见
+#: :data:`STDLIB_EQUIVALENT_ROOTS`），3.10 上由其回退 ``tomli`` 承担，故永远不算外部依赖。
 KNOWN_EXTERNAL_IMPORTS: frozenset[str] = frozenset(
     {
         "pandas",
@@ -105,6 +107,30 @@ KNOWN_EXTERNAL_IMPORTS: frozenset[str] = frozenset(
         "typing_extensions",
     }
 )
+
+#: 标准库等价名：在**部分**受支持解释器上属于标准库，且**不存在可独立安装的同名发行版**，
+#: 因此永不构成「外部依赖」。
+#:
+#: ``tomllib`` 自 CPython 3.11 起进入标准库（本包支持 3.10+），PyPI 上也没有名为
+#: ``tomllib`` 的包可装；``atst/config/loader.py`` 以
+#: ``try: import tomllib / except ModuleNotFoundError: import tomli as tomllib``
+#: 在 3.10 上回退到 ``tomli``——真正的外部依赖是 ``tomli``（已登记在
+#: :data:`KNOWN_EXTERNAL_IMPORTS`）。
+#:
+#: 若只按**当前**解释器的 ``sys.stdlib_module_names`` 判定，同一份源码在 3.10 上会把
+#: ``tomllib`` 记成"未知外部依赖"，使白名单对账在 3.10 上假红（3.11+ 全绿）——那是判据的
+#: 环境依赖缺陷，不是仓库的依赖缺陷。故显式登记为"标准库等价"，与跑在哪个解释器上无关。
+STDLIB_EQUIVALENT_ROOTS: frozenset[str] = frozenset({"tomllib"})
+
+
+def is_stdlib_root(root: str) -> bool:
+    """``root`` 是否可视为标准库：当前解释器的 stdlib，或跨受支持版本的标准库等价名。
+
+    这是「外部依赖」判定的唯一口径，:func:`_extract_imports` 与
+    ``tests/architecture/test_declared_knobs.py`` 的对账判据共用它，避免两处判定漂移。
+    """
+    return root in sys.stdlib_module_names or root in STDLIB_EQUIVALENT_ROOTS
+
 
 #: 预期许可头检测模式（任一命中即视为有头）。
 _HEADER_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -355,7 +381,7 @@ def _extract_imports(tree: ast.AST) -> tuple[list[str], list[str]]:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 root = alias.name.split(".")[0]
-                if root in sys.stdlib_module_names or root == "atst":
+                if is_stdlib_root(root) or root == "atst":
                     internal.append(alias.name)
                 else:
                     external.append(alias.name)
@@ -364,7 +390,7 @@ def _extract_imports(tree: ast.AST) -> tuple[list[str], list[str]]:
                 internal.append(f".{'.' * (node.level - 1)}{node.module or ''}")
             elif node.module:
                 root = node.module.split(".")[0]
-                if root in sys.stdlib_module_names or root == "atst":
+                if is_stdlib_root(root) or root == "atst":
                     internal.append(node.module)
                 else:
                     external.append(node.module)

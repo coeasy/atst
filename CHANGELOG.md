@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0] - 2026-09-28
 
-### Fixed（逻辑审查第 8 轮：真实 CI 首跑暴露的 CPython 3.13/3.14 缺陷 + 文档陈旧数字）
+### Fixed（逻辑审查第 8 轮：真实 CI 首跑暴露的 CPython 3.10/3.13/3.14 缺陷 + 文档陈旧数字）
 
 同一组判据：主体流程全部联通 / 核心链路无断链 / 无孤儿逻辑 / 无死循环 / 前后端贯通。本轮起点是
 **仓库转为 public 后让发布流水线真正跑起来**——此前每一次运行（含全部 `CI`）的 job 都是
@@ -39,6 +39,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `................F.......`，且确实只有这一项失败）。修：该 job 在 `.[dev]` 之后显式补装
   `.[server]`；`.[dev]` 那一行原样保留，以继续满足 `test_ci_workflow_contracts` 对声明式
   工具链的计数判据。新增 `test_bridge_audit_installs_the_optional_face_it_exercises` 钉住这一格。
+- **`test_originality_external_import_whitelist_matches_reality` 在 ubuntu × Python 3.10 上假红
+  （矩阵最旧一格，`70 passed` 之外的唯一失败）**：`atst/config/loader.py` 以带回退的守卫式导入
+  `try: import tomllib / except ModuleNotFoundError: import tomli as tomllib` 兼容 3.10；
+  `tomllib` 自 CPython 3.11 起进入标准库（PyPI 上也没有可装发行版），而**判据与工具**都按
+  **当前解释器**的 `sys.stdlib_module_names` 现算"外部根"——于是同一份源码在 3.10 上凭空多出
+  `tomllib` 这个外部根，与静态白名单分叉报「多 `[]` 缺 `['tomllib']`」，而 3.11+ 全绿。这是**判据
+  自身与解释器绑定的缺陷**，不是仓库的依赖缺陷。修：在 `atst/tools/check_originality.py` 引入
+  `STDLIB_EQUIVALENT_ROOTS = {"tomllib"}` 与共享判定 `is_stdlib_root(root)`，`_extract_imports`
+  与测试对账判据**共用同一实现**（此前两处各写一遍口径，正是漂移来源）；`KNOWN_EXTERNAL_IMPORTS`
+  保持不含 `tomllib`（3.10 的外部依赖由回退 `tomli` 承担，已在册）。本地以"把当前解释器的 stdlib
+  集挖掉 `tomllib`"模拟 3.10，修前复现出与 CI **逐字相同**的失败，修后 23 项全过；并新增
+  `test_stdlib_equivalent_roots_survive_interpreter_difference` 用 monkeypatch 模拟旧解释器，
+  钉住"判据必须与解释器解耦"——把等价名集合清空制造回归时两条判据一起变红（已实测）。
 
 **新增门禁 `tests/compatibility/test_interpreter_hazards.py`**（按 AST 扫 `atst/`、`tests/`、
 `scripts/`）：① 凡 `add_argument`/`ArgumentParser`/`add_parser` 的
@@ -69,11 +82,14 @@ README / `docs/quickstart.md` / `docs/api/README.md` 的「发布候选 / 尚无
 正是以该串为未发布标记，两处事实必须同时为真。
 
 **本轮验证**：修复后本地 `ruff check` / `ruff format --check`（493 文件）、`mypy atst/`（CI 参数）、
-`tests/compatibility`（156 项，含两条新门禁）、`tests/streaming/test_read_deadline.py`、
-`tests/test_spec_coverage.py` 全 RC=0；离线全量 `pytest -m "not network"` RC=0。`bridges` 所需的
-`server` extra 由"屏蔽全部可选依赖后跑该审计"的探针实测确定（只有 #17 受影响）。文档状态翻转后
-复跑 `tests/compatibility/test_release_history_contract.py` 与 `tests/architecture/test_doc_code_consistency.py`
-及 `scripts/check_docs_links.py`，全绿——确保新口径与 Release 事实、路径可解析性三者一致。
+`tests/compatibility`（156 项，含两条新门禁）、`tests/architecture`、`tests/test_spec_coverage.py`、
+`tests/test_bridges.py`、`tests/streaming/test_read_deadline.py` 全 RC=0；离线全量
+`pytest -m "not network"` RC=0。3.10 那一格以"把当前解释器的 stdlib 集挖掉 `tomllib`"的探针模拟：
+修前复现 CI 原始失败图样、修后全绿，并人为清空等价名集合制造回归再次复现（证明判据承重）。
+`bridges` 所需的 `server` extra 由"屏蔽全部可选依赖后跑该审计"的探针实测确定（只有 #17 受影响）。
+文档状态翻转后复跑 `tests/compatibility/test_release_history_contract.py` 与
+`tests/architecture/test_doc_code_consistency.py` 及 `scripts/check_docs_links.py`，全绿——确保新口径
+与 Release 事实、路径可解析性三者一致。
 
 ### Fixed（逻辑审查第 6 轮：并入上游 126 个提交后的门禁 / 文档漂移收口与 lint 工具链对齐）
 

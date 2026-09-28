@@ -886,10 +886,16 @@ def test_the_market_ruler_sees_a_planted_face_value() -> None:
 def _external_import_roots(package: Path) -> set[str]:
     """``package`` 子树里真实 import 到的外部顶层包名。
 
-    口径与 :func:`atst.tools.check_originality._analyze_patterns` 同一层：AST 遍历、
-    相对 import 跳过、顶层名 = 点号前第一段；这里额外滤掉标准库与被审包自身，
-    剩下的才该进"预期外部依赖"白名单。
+    口径与 :func:`atst.tools.check_originality._extract_imports` **同一实现**（共用
+    ``is_stdlib_root``）：AST 遍历、相对 import 跳过、顶层名 = 点号前第一段；这里额外滤掉
+    标准库（含跨版本标准库等价名）与被审包自身，剩下的才该进"预期外部依赖"白名单。
+
+    共用同一判定是刻意的：此前两份口径各写一遍``root in sys.stdlib_module_names``，于是
+    ``tomllib``（3.11+ 才是标准库）在 3.10 上让白名单对账假红——判据自身必须与解释器解耦，
+    这条约束由 ``test_stdlib_equivalent_roots_survive_interpreter_difference`` 钉住。
     """
+    from atst.tools.check_originality import is_stdlib_root
+
     roots: set[str] = set()
     for path in package.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -902,9 +908,48 @@ def _external_import_roots(package: Path) -> set[str]:
                 continue
             for name in names:
                 root = name.partition(".")[0]
-                if root and root not in sys.stdlib_module_names and root != package.name:
+                if root and not is_stdlib_root(root) and root != package.name:
                     roots.add(root)
     return roots
+
+
+def test_stdlib_equivalent_roots_survive_interpreter_difference(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """判据必须与运行解释器解耦：跨版本标准库等价名不能因解释器而变。
+
+    真实缺陷（CI run 36439988787，ubuntu × Python 3.10）：``atst/config/loader.py`` 的
+    ``try: import tomllib / except: import tomli as tomllib`` 是带回退的守卫式导入。
+    ``tomllib`` 自 3.11 起是标准库（PyPI 上也没有可装发行版），但在 3.10 上不是——于是
+    按 ``sys.stdlib_module_names`` 现算的口径在 3.10 上凭空多出 ``tomllib`` 这个"外部根"，
+    与静态白名单分叉，`make gates` 在 3.10 上假红（3.11+ 全绿，故障只在矩阵最旧一格）。
+
+    这里把当前解释器的 stdlib 集**改成模拟 3.10**（挖掉 ``tomllib``），断言:
+    ① ``is_stdlib_root('tomllib')`` 仍为真（等价名兜底，与解释器无关）；
+    ② 对账判据 ``_external_import_roots`` 对含 ``import tomllib`` 的包不再产出该根。
+    """
+    import atst.tools.check_originality as co
+
+    monkeypatch.setattr(
+        sys,
+        "stdlib_module_names",
+        frozenset({"json", "os", "sys"}),  # 模拟一个"不认识 tomllib"的旧解释器
+        raising=False,
+    )
+    assert co.is_stdlib_root("tomllib") is True, "跨版本标准库等价名未生效"
+    assert co.is_stdlib_root("json") is True
+    assert co.is_stdlib_root("tomli") is False, "真实外部依赖被误判为标准库"
+
+    pkg = tmp_path / "sim310pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text(
+        "try:\n    import tomllib\nexcept ModuleNotFoundError:\n"
+        "    import tomli as tomllib\nimport json\nimport totally_fake_pkg_xyz\n",
+        encoding="utf-8",
+    )
+    assert _external_import_roots(pkg) == {"tomli", "totally_fake_pkg_xyz"}, (
+        "模拟 3.10 的解释器下，tomllib 仍被算成外部依赖——判据与解释器绑定的缺陷复现"
+    )
 
 
 def test_originality_external_import_whitelist_matches_reality() -> None:
