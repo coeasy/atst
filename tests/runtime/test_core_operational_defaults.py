@@ -174,3 +174,40 @@ def test_unified_runtime_and_generic_query_share_operational_defaults() -> None:
         ("trades", "tencent"),
         ("minute", "tencent"),
     ]
+
+
+def test_planner_only_replaces_omitted_unavailable_default() -> None:
+    default_tdx = QueryPlanner(default_provider="tdx")
+
+    minute = default_tdx.compile(
+        QuerySpec.build("minute", symbols="sh600519", currentness="live")
+    )
+    explicit_tdx = default_tdx.compile(
+        QuerySpec.build("minute", symbols="sh600519", provider="tdx", currentness="live")
+    )
+    security_list = default_tdx.compile(
+        QuerySpec.build(
+            "security_list",
+            provider=None,
+            currentness="business",
+            options={"market": 0},
+        )
+    )
+
+    assert minute.provider == "tencent"
+    assert explicit_tdx.provider == "tdx"
+    assert security_list.provider == "tdx"
+
+
+def test_generic_client_call_uses_same_core_operational_default() -> None:
+    client, executor = _client()
+
+    minute = client.call("minute", "sh600519")
+    trades = client.call("trades", "sh600519")
+
+    assert minute.meta.provider == "tencent"
+    assert trades.meta.provider == "tencent"
+    assert [(plan.spec.capability, plan.provider) for plan in executor.plans] == [
+        ("minute", "tencent"),
+        ("trades", "tencent"),
+    ]
