@@ -21,7 +21,7 @@ from ..catalog.capability import (
 )
 from ..errors import ValidationError
 from ..query import QuerySpec
-from ..providers import PROVIDERS, resolve_capability_provider
+from ..providers import PROVIDERS
 from ..result import QueryResult
 from ..runtime.executor import DEDICATED_CAPABILITIES as _CORE_CAPABILITIES
 from ..runtime.kernel import UnifiedRuntime
@@ -385,7 +385,7 @@ class Client:
         """
         return self.runtime.minute(
             symbol,
-            provider=resolve_capability_provider("minute", provider),
+            provider=provider,
             currentness=currentness,
         )
 
@@ -407,7 +407,7 @@ class Client:
         """
         return self.runtime.trades(
             symbol,
-            provider=resolve_capability_provider("trades", provider),
+            provider=provider,
             start=start,
             count=count,
             currentness=currentness,
