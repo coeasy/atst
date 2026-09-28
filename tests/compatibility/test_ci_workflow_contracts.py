@@ -200,7 +200,7 @@ def test_release_identity_uses_tag_push_and_canonical_version_source() -> None:
     assert "push:" in workflow
     assert "tags:" in workflow
     assert "- 'v*'" in workflow
-    assert "Verify tag matches canonical package version" in build
+    assert "Resolve and verify canonical release identity" in build
     assert "RELEASE_TAG: ${{ github.ref_name }}" in build
     assert "from scripts.build_package import _declared_version" in build
     assert "version = _declared_version()" in build
@@ -405,3 +405,32 @@ def test_publications_require_supply_chain_attestations() -> None:
     assert "attestations: true" in workflow
     assert "provenance: mode=max" in workflow
     assert "sbom: true" in workflow
+
+
+def test_release_metadata_is_stable_auditable_and_checked_on_retry() -> None:
+    workflow = _workflow("wheels.yml")
+    build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
+    prepare = workflow.split("  prepare-release:", 1)[1].split("  publish-pypi:", 1)[0]
+
+    assert "RELEASE-METADATA.json" in build
+    assert '"repository": os.environ["GITHUB_REPOSITORY"]' in build
+    assert '"commit": os.environ["GITHUB_SHA"]' in build
+    assert '"version": os.environ["RELEASE_VERSION"]' in build
+    assert '"source_date_epoch": os.environ["SOURCE_DATE_EPOCH"]' in build
+    assert '"run_id"' not in build
+    assert '"run_attempt"' not in build
+    assert "RELEASE-METADATA.json" in prepare
+    assert "cmp dist/RELEASE-METADATA.json published/RELEASE-METADATA.json" in prepare
+    assert ".assets | length" in prepare
+
+
+def test_release_requires_versioned_docs_and_post_publish_pypi_readback() -> None:
+    workflow = _workflow("wheels.yml")
+    build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
+    pypi = workflow.split("  publish-pypi:", 1)[1].split("  publish-docker:", 1)[0]
+
+    assert 'Path(f"docs/releases/v{version}.md")' in build
+    assert 'f"## [{version}]"' in build
+    assert "--require-existing" in pypi
+    assert "for attempt in 1 2 3 4 5" in pypi
+    assert "sleep $((attempt * 2))" in pypi
