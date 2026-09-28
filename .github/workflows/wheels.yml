@@ -293,7 +293,7 @@ jobs:
   publish-pypi:
     name: Publish canonical distributions to PyPI
     needs: [build-dist, prepare-release]
-    if: vars.PUBLIC_RELEASE == 'true' && needs.prepare-release.outputs.already_published != 'true'
+    if: vars.PUBLIC_RELEASE == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: pypi
@@ -349,7 +349,6 @@ jobs:
     if: >-
       vars.PUBLIC_RELEASE == 'true' &&
       vars.PUBLISH_DOCKER == 'true' &&
-      needs.prepare-release.outputs.already_published != 'true' &&
       needs.publish-pypi.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 45
