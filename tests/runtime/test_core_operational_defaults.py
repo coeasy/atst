@@ -148,7 +148,8 @@ def test_core_capability_discovery_distinguishes_declared_and_available() -> Non
     assert "tdx" not in core["minute"]["operational_providers"]
 
     assert core["trades"]["available"] is True
-    assert core["trades"]["default_provider"] == "tencent"
+    assert core["trades"]["default_provider"] is None
+    assert "tencent" in core["trades"]["operational_providers"]
 
     assert core["security_list"]["available"] is False
     assert core["security_list"]["default_provider"] is None
