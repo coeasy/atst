@@ -153,3 +153,23 @@ def test_http_minute_and_trades_reach_client_operational_default() -> None:
     assert minute.json()["meta"]["provider"] == "tencent"
     assert trades.json()["meta"]["provider"] == "tencent"
     assert runtime.calls == [("minute", "tencent"), ("trades", "tencent")]
+
+
+def test_core_capability_discovery_distinguishes_declared_and_available() -> None:
+    core = Client.core_capability_statuses()
+
+    assert core["minute"]["available"] is True
+    assert core["minute"]["default_provider"] == "tencent"
+    assert "tdx" in core["minute"]["declared_providers"]
+    assert "tdx" not in core["minute"]["operational_providers"]
+
+    assert core["trades"]["available"] is True
+    assert core["trades"]["default_provider"] == "tencent"
+
+    assert core["security_list"]["available"] is False
+    assert core["security_list"]["default_provider"] is None
+    assert core["security_list"]["operational_providers"] == []
+
+    for capability in ("quotes", "bars", "snapshot", "security_count"):
+        assert core[capability]["available"] is True
+        assert core[capability]["default_provider"] == "tdx"
