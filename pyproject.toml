@@ -99,7 +99,7 @@ include = [
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
-    "docs/releases/v1.0.0.md",
+    "docs/releases/*.md",
 ]
 
 [tool.pytest.ini_options]
