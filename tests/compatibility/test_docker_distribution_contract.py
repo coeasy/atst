@@ -94,3 +94,11 @@ def test_release_docker_context_contains_only_dockerfile_and_canonical_wheel() -
     assert "!release-dist/*.whl" in patterns
     assert all("atst/" not in pattern for pattern in patterns)
     assert all("tests/" not in pattern for pattern in patterns)
+
+
+def test_release_image_base_is_digest_pinned() -> None:
+    dockerfile = _release_dockerfile()
+    first_from = next(line for line in dockerfile.splitlines() if line.startswith("FROM "))
+
+    assert "python:3.11-slim@sha256:" in first_from
+    assert first_from.endswith(" AS runtime")
