@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+暂无。
+
+## [1.0.0] - 2026-09-28
+
 ### Fixed（逻辑审查第 5 轮：WebSocket 实时订阅控制面贯通 + 四面投影 / 文档一致性门禁对齐）
 
 同一组判据：主体流程全部联通 / 核心链路无断链 / 无孤儿逻辑 / 无死循环 / 前后端贯通。本轮补齐
@@ -2176,7 +2180,7 @@ v1.0.0 的**重新发布**：本库更名为 `atst`，包名 / 导入名 / 控�
 - 本包**当前不在 PyPI**：`pip install atst` 暂不可用，安装请走源码路径
   （`pip install -e .`）。发布到 PyPI 后本条声明会移除。
 
-## [1.0.0] - 2026-09-09
+## Historical tstdx baseline - 2026-09-09
 
 这是 tstdx 的首个正式稳定版，发布包同时提供 wheel 与源码包，支持 Python 3.10–3.13。
 
