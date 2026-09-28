@@ -55,7 +55,10 @@ jobs:
           python-version: '3.14'
           cache: 'pip'
       - name: Install pinned packaging validators
-        run: python -m pip install "build==1.6.1" "twine==7.0.0"
+        run: python -m pip install "build==1.6.1" "twine==7.0.0" "packaging==26.3"
+      - name: Set reproducible build epoch from exact source commit
+        shell: bash
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct "$GITHUB_SHA")" >> "$GITHUB_ENV"
       - name: Resolve and verify canonical release identity
         id: identity
         env:
@@ -90,6 +93,18 @@ jobs:
         run: python -m build
       - name: Verify source, wheel, sdist, PEP 561 and Twine metadata
         run: python scripts/build_package.py --verify-only --dist-out dist
+      - name: Prove byte-for-byte reproducibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m build --outdir dist-repro
+          python scripts/build_package.py --verify-only --dist-out dist-repro
+          test "$(find dist -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 1
+          test "$(find dist-repro -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 1
+          test "$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
+          test "$(find dist-repro -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
+          cmp dist/*.whl dist-repro/*.whl
+          cmp dist/*.tar.gz dist-repro/*.tar.gz
       - name: Generate SHA-256 manifest
         shell: bash
         run: |
