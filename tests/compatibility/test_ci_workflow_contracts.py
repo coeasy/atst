@@ -147,7 +147,7 @@ def test_release_publishes_once_only_after_draft_release_is_ready() -> None:
     workflow = _workflow("wheels.yml")
 
     assert workflow.count("pypa/gh-action-pypi-publish@release/v1") == 1
-    assert "needs: prepare-release" in workflow
+    assert "needs: [build-dist, prepare-release]" in workflow
     assert "if: vars.PUBLIC_RELEASE == 'true'" in workflow
     assert "environment: pypi" in workflow
     assert "id-token: write" in workflow
@@ -185,7 +185,7 @@ def test_release_docker_reuses_artifact_only_after_pypi_succeeds() -> None:
     workflow = _workflow("wheels.yml")
     docker = workflow.split("  publish-docker:", 1)[1].split("  publish-release:", 1)[0]
 
-    assert "needs: [prepare-release, publish-pypi]" in docker
+    assert "needs: [build-dist, prepare-release, publish-pypi]" in docker
     assert "vars.PUBLIC_RELEASE == 'true'" in docker
     assert "name: python-dist" in docker
     assert "path: release-dist" in docker
@@ -311,7 +311,28 @@ def test_release_is_public_only_after_external_surfaces_finish() -> None:
     workflow = _workflow("wheels.yml")
     publish = workflow.split("  publish-release:", 1)[1]
 
-    assert "needs: [prepare-release, publish-pypi, publish-docker]" in publish
+    assert "needs: [build-dist, prepare-release, publish-pypi, publish-docker]" in publish
     assert "always()" in publish
     assert "gh release edit" in publish
     assert "--draft=false" in publish
+
+
+def test_release_retry_is_idempotent_and_hash_verified() -> None:
+    workflow = _workflow("wheels.yml")
+
+    assert "scripts/check_pypi_release.py" in workflow
+    assert "already_published" in workflow
+    assert "gh release download" in workflow
+    assert "sha256sum -c SHA256SUMS.txt" in workflow
+    assert "cmp dist/SHA256SUMS.txt published/SHA256SUMS.txt" in workflow
+    assert "steps.pypi-state.outputs.exists != 'true'" in workflow
+
+
+def test_prerelease_detection_uses_pep440_not_tag_punctuation() -> None:
+    workflow = _workflow("wheels.yml")
+    build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
+
+    assert "from packaging.version import Version" in build
+    assert "parsed.is_prerelease or parsed.is_devrelease" in build
+    assert "contains(github.ref_name, '-')" not in workflow
+    assert "needs.build-dist.outputs.is_prerelease == 'false'" in workflow
