@@ -45,7 +45,14 @@ def test_no_user_doc_presents_an_unpublished_install_path_as_available() -> None
     assert offenders == [], f"这些文档把未上架的安装路径写成可用：{offenders}"
 
 
-def test_v1_release_candidate_identity_is_preserved() -> None:
+def test_v1_release_identity_is_preserved() -> None:
+    """v1.0.0 的发行身份：CHANGELOG 章节 + 发布说明 + canonical 产物名。
+
+    2026-09-28 之前这里断言的是「发布候选」「尚未实际发布」——因为那时 GitHub Release
+    真的还不存在（此前每一次运行都被 GitHub Actions 计费拦在"job 未启动"）。标签触发的
+    流水线跑通并发布 `v1.0.0` 之后，这一格随事实翻到「已发布」；判据与文档必须**一起**动，
+    否则门禁就是在替一句已经过时的话背书。
+    """
     changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     release = _ROOT / "docs" / "releases" / "v1.0.0.md"
 
@@ -54,23 +61,29 @@ def test_v1_release_candidate_identity_is_preserved() -> None:
     assert release.is_file()
     release_text = release.read_text(encoding="utf-8")
     assert "v1.0.0" in release_text
-    assert "发布候选" in release_text
-    assert "尚未实际发布" in release_text
+    assert "已发布" in release_text
+    assert "PyPI 尚未发布" in release_text
     assert "atst-1.0.0-py3-none-any.whl" in release_text
     assert "atst-1.0.0.tar.gz" in release_text
 
 
-def test_general_docs_report_the_actual_unpublished_release_candidate() -> None:
+def test_general_docs_report_the_actual_released_state() -> None:
+    """三处读者入口对「发布到哪了」的口径必须与事实一致。
+
+    事实（2026-09-28）：GitHub Release `v1.0.0` 已发布、产物可下载；PyPI **仍未**发布
+    （上传是显式 opt-in）。所以三页都要**同时**出现「已发布」与「不在 PyPI」——
+    只写其一就是另一种形式的不如实。
+    """
     readme = (_ROOT / "README.md").read_text(encoding="utf-8")
     quickstart = (_ROOT / "docs" / "quickstart.md").read_text(encoding="utf-8")
     api_index = (_ROOT / "docs" / "api" / "README.md").read_text(encoding="utf-8")
 
-    assert f"当前 Release Candidate：`{atst.__version__}`" in readme
-    assert "尚无 GitHub Release" in readme and "尚未发布到 PyPI" in readme
-    assert f"当前 `{atst.__version__}` Release Candidate" in quickstart
-    assert "尚无可下载的 GitHub Release" in quickstart
-    assert f"当前 `{atst.__version__}` Release Candidate" in api_index
-    assert "尚无 GitHub Release / PyPI 发布" in api_index
+    assert f"当前版本：`{atst.__version__}`" in readme
+    assert "已发布" in readme and "不在 PyPI" in readme
+    assert f"当前 `{atst.__version__}`" in quickstart
+    assert "已发布" in quickstart and "不在 PyPI" in quickstart
+    assert f"当前 `{atst.__version__}`" in api_index
+    assert "已发布" in api_index and "不在 PyPI" in api_index
 
 
 def test_current_docs_do_not_reintroduce_cross_provider_fallback_as_default() -> None:

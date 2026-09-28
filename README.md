@@ -4,8 +4,8 @@
 >
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
-- 当前 Release Candidate：`1.0.0`
-- 当前发布状态：**尚无 GitHub Release，且尚未发布到 PyPI**；`v1.0.0` 是待发布的首个 `atst` 稳定版本 · [发布候选说明](docs/releases/v1.0.0.md) · [v1.1.0 历史说明](docs/releases/v1.1.0.md) · [CHANGELOG](CHANGELOG.md)
+- 当前版本：`1.0.0`
+- 当前发布状态：**GitHub Release [`v1.0.0`](https://github.com/coeasy/atst/releases/tag/v1.0.0) 已发布**（canonical wheel + sdist，附 `SHA256SUMS.txt` 与 `RELEASE-METADATA.json`）；**本包不在 PyPI 上**——PyPI 上传是显式 opt-in（需仓库变量 `PUBLIC_RELEASE=true`）· [发布说明](docs/releases/v1.0.0.md) · [v1.1.0 历史说明](docs/releases/v1.1.0.md) · [CHANGELOG](CHANGELOG.md)
 - 发布工程：[Release Readiness V4](docs/ATST-Release-Readiness-V4.md)
 - 核心功能验收：[Core Functionality Readiness V1](docs/ATST-Core-Functionality-Readiness-V1.md)
 

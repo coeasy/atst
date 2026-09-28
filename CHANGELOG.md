@@ -54,18 +54,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 （job 不启动 / `steps=0` / runner 为空）与两条解法（转 public 或修 billing），并说明
 `build-dist` 的身份步对 `docs/releases/v<version>.md` 与 `CHANGELOG.md` 标题的硬校验。
 
-**刻意未做的改动**：`docs/releases/v1.0.0.md` 与 README / `docs/quickstart.md` /
-`docs/api/README.md` 的「发布候选 / 尚无 GitHub Release」口径**保持原样**。这一状态被
-`test_v1_release_candidate_identity_is_preserved` 与
-`test_general_docs_report_the_actual_unpublished_release_candidate` 钉死，而在提交时刻
-GitHub Release **确实还不存在**（此前的运行全被计费拦下）。提前把它改成"已发布"等于让门禁替
-一句尚未成立的话背书，也会让本轮 `make gates` 自己变红。正确顺序是：本次标签触发的流水线**真正
-产出 Release 之后**，再以一次专门提交把文档与那两条判据一起翻到"已发布"状态。
+**文档发布状态翻转（在 Release 真正产出之后单独一步完成）**：`docs/releases/v1.0.0.md` 与
+README / `docs/quickstart.md` / `docs/api/README.md` 的「发布候选 / 尚无 GitHub Release」口径，
+在上一提交（`43c601c`）里被**刻意保留**——当时 GitHub Release 确实还不存在（此前运行全被计费拦下），
+而该状态被 `test_v1_release_identity_is_preserved` 与
+`test_general_docs_report_the_actual_released_state` 钉死；提前改成"已发布"等于让门禁替一句尚未
+成立的话背书，也会让本轮 `make gates` 自己变红。
+
+顺序严格照此执行：转 public 后的标签流水线真正**产出 Release**（运行 #5，24 job 全绿，
+`tag=v1.0.0`、`draft=False`、`prerelease=False`，资产 4 件：`atst-1.0.0-py3-none-any.whl` 783308 B、
+`atst-1.0.0.tar.gz` 1839851 B、`RELEASE-METADATA.json`、`SHA256SUMS.txt`）**之后**，才以本次提交
+把文档口径翻到"已发布"，并同步翻转那两条判据。翻转后的口径仍保留"**不在 PyPI 上**"这一关键限定
+（PyPI 上传是显式 opt-in、尚未执行），因为 `test_no_user_doc_presents_an_unpublished_install_path_as_available`
+正是以该串为未发布标记，两处事实必须同时为真。
 
 **本轮验证**：修复后本地 `ruff check` / `ruff format --check`（493 文件）、`mypy atst/`（CI 参数）、
 `tests/compatibility`（156 项，含两条新门禁）、`tests/streaming/test_read_deadline.py`、
 `tests/test_spec_coverage.py` 全 RC=0；离线全量 `pytest -m "not network"` RC=0。`bridges` 所需的
-`server` extra 由"屏蔽全部可选依赖后跑该审计"的探针实测确定（只有 #17 受影响）。
+`server` extra 由"屏蔽全部可选依赖后跑该审计"的探针实测确定（只有 #17 受影响）。文档状态翻转后
+复跑 `tests/compatibility/test_release_history_contract.py` 与 `tests/architecture/test_doc_code_consistency.py`
+及 `scripts/check_docs_links.py`，全绿——确保新口径与 Release 事实、路径可解析性三者一致。
 
 ### Fixed（逻辑审查第 6 轮：并入上游 126 个提交后的门禁 / 文档漂移收口与 lint 工具链对齐）
 
