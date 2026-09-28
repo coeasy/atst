@@ -82,3 +82,12 @@ def test_current_docs_do_not_reintroduce_cross_provider_fallback_as_default() ->
     assert "禁止跨 Provider silent fallback" in quickstart
     assert "禁止跨 Provider silent fallback" in api_index
     assert "legacy compatibility router" in api_index
+
+
+def test_release_candidate_has_a_closed_changelog_identity() -> None:
+    changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert changelog.count("## [1.0.0] - 2026-09-28") == 1
+    assert changelog.count("## [Unreleased]") == 1
+    unreleased = changelog.split("## [Unreleased]", 1)[1].split("## [1.0.0] - 2026-09-28", 1)[0]
+    assert "暂无。" in unreleased
