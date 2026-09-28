@@ -489,6 +489,5 @@ def test_cross_platform_test_command_is_shell_neutral() -> None:
 
     assert "windows-latest" in test_job
     assert "run: >-" in run_tests
-    assert "\\
-" not in run_tests
+    assert re.search(r"\\\s*\n", run_tests) is None
     assert "--cov=atst" in run_tests
