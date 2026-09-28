@@ -60,13 +60,534 @@ _PROTECTED_OUTPUT_ROOTS = {
     "tests",
     "atst",
 }
-_PROJECT_SECTION_RE = re.compile(
-    r"^\[project\]\s*$\n(?P<body>.*?)(?=^\[|\Z)",
-    re.MULTILINE | re.DOTALL,
-)
-_VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
-_SOURCE_VERSION_RE = re.compile(r'^__version__\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
-_HATCHLING_FLOOR_RE = re.compile(r'"hatchling>=(\d+(?:\.\d+)*)"')
+_SOURCE_VERSION_RE = re.compile(r'^__version__\s*=\s*"([^"]+)"\s*
+
+def _display_path(path: pathlib.Path) -> str:
+    """Render paths without assuming a custom output directory is under ROOT."""
+
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _validate_dist_out(path: pathlib.Path) -> pathlib.Path:
+    """Return a safe resolved output directory for artifact cleanup/build output."""
+
+    expanded = path.expanduser()
+    if expanded.is_symlink():
+        raise SystemExit(f"[安全] --dist-out 不能是符号链接: {expanded}")
+
+    resolved = expanded.resolve()
+    if resolved == ROOT or ROOT.is_relative_to(resolved):
+        raise SystemExit(f"[安全] --dist-out 不能是仓库根目录或其祖先目录: {resolved}")
+
+    if resolved.is_relative_to(ROOT):
+        relative = resolved.relative_to(ROOT)
+        if relative.parts and relative.parts[0] in _PROTECTED_OUTPUT_ROOTS:
+            raise SystemExit(f"[安全] --dist-out 不能位于受保护源码树: {relative}")
+
+    if resolved.exists() and not resolved.is_dir():
+        raise SystemExit(f"[安全] --dist-out 必须是目录: {resolved}")
+    return resolved
+
+
+def _run(cmd: list[str], *, cwd: pathlib.Path | None = None) -> None:
+    """Run one subprocess and fail closed on any non-zero exit.
+
+    ``stdin`` 显式接 :data:`subprocess.DEVNULL` 而不是让它继承：本机 venv 里
+    只有 ``pythonw.exe``（GUI 子系统、无控制台），此时父进程的 stdin 是个换不成
+    真实句柄的占位值；CPython 在"三个标准流都不需要重定向"时会把裸句柄原样塞进
+    ``STARTUPINFO``，子进程拿到的 stderr 于是写不出去——而 `python -m build` 的
+    全部进度都走 stderr，表现就是子进程**静默**退出码 1（本机实测：任何写 stderr
+    的子进程都 RC=1，只写 stdout 的正常）。一旦有任一标准流被显式重定向，CPython
+    改走句柄复制路径，三个流才都可用。
+    这里选 stdin 是因为构建链上的命令（build / twine / pip / CLI --help）都不读
+    标准输入，而 stdout/stderr 必须保持继承以便实时看到构建日志。
+    """
+    print(f"  $ {' '.join(cmd)}")
+    proc = subprocess.run(cmd, cwd=cwd or ROOT, stdin=subprocess.DEVNULL)
+    if proc.returncode != 0:
+        raise SystemExit(f"[构建失败] 命令退出码 {proc.returncode}: {' '.join(cmd)}")
+
+
+def _check_python() -> None:
+    if sys.version_info[:2] < REQUIRED_PYTHON:
+        raise SystemExit(
+            f"[环境] 需要 Python >= {REQUIRED_PYTHON[0]}.{REQUIRED_PYTHON[1]}，"
+            f"当前 {sys.version_info.major}.{sys.version_info.minor}"
+        )
+    print(
+        f"[环境] Python {sys.version_info.major}.{sys.version_info.minor}."
+        f"{sys.version_info.micro} ✓"
+    )
+
+
+def _require_packaging_tools(*, need_build: bool) -> None:
+    """Require build/Twine explicitly instead of mutating the environment."""
+
+    if need_build:
+        try:
+            import build
+        except ImportError as exc:
+            raise SystemExit(
+                "[环境] 缺少 build；请先运行 `python -m pip install build` 或 `make install`"
+            ) from exc
+        print(f"[环境] build {build.__version__} ✓")
+
+    try:
+        import twine  # noqa: F401
+    except ImportError as exc:
+        raise SystemExit(
+            "[环境] 缺少 twine；请先运行 `python -m pip install twine` 或 `make install`"
+        ) from exc
+    try:
+        twine_version = _pkg_version("twine")
+    except PackageNotFoundError:
+        twine_version = "?"
+    print(f"[环境] twine {twine_version} ✓")
+
+
+def _stable_version_tuple(raw: str, *, label: str) -> tuple[int, ...]:
+    """Parse a stable dotted numeric version used by build-tool floor checks."""
+
+    if re.fullmatch(r"\d+(?:\.\d+)*", raw) is None:
+        raise SystemExit(f"[环境] {label} 版本无法进行稳定下限比较: {raw!r}")
+    return tuple(int(part) for part in raw.split("."))
+
+
+def _hatchling_pin() -> str:
+    """Read the exact Hatchling version from the repository build-system contract."""
+
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    match = _HATCHLING_PIN_RE.search(text)
+    if match is None:
+        raise SystemExit("[环境] pyproject.toml 缺少 hatchling build-system 精确版本")
+    return match.group(1)
+
+
+def _require_local_backend_for_no_isolation() -> None:
+    """Require a compliant Hatchling for the explicit non-isolated build path."""
+
+    try:
+        import hatchling  # noqa: F401
+    except ImportError as exc:
+        raise SystemExit(
+            "[环境] --no-isolation 需要本地 hatchling；请先运行 `make install`"
+        ) from exc
+    try:
+        version = _pkg_version("hatchling")
+    except PackageNotFoundError as exc:
+        raise SystemExit("[环境] 无法确定本地 hatchling 版本") from exc
+
+    expected = _hatchling_pin()
+    if version != expected:
+        raise SystemExit(
+            f"[环境] hatchling {version} 与项目 build-system 固定版本 {expected} 不一致; "
+            "请运行 `make install` 对齐本地构建后端"
+        )
+    print(f"[环境] hatchling {version} ✓ (--no-isolation, pinned={expected})")
+
+
+def _remove_tree(path: pathlib.Path, *, label: str) -> None:
+    """Remove one known repository build tree without following symlinks."""
+
+    if path.is_symlink():
+        raise SystemExit(f"[清理失败] {label} 不能是符号链接: {path}")
+    if not path.exists():
+        return
+
+    resolved = path.resolve()
+    if not resolved.is_relative_to(ROOT) or resolved == ROOT:
+        raise SystemExit(f"[清理失败] {label} 越过仓库边界: {resolved}")
+    if not resolved.is_dir():
+        raise SystemExit(f"[清理失败] {label} 期望目录但发现文件: {resolved}")
+
+    shutil.rmtree(resolved)
+    print(f"[清理] 删除 {_display_path(resolved)}")
+
+
+def _clean(dist_out: pathlib.Path) -> None:
+    """Remove only known artifacts plus repository-owned build metadata."""
+
+    dist_out = _validate_dist_out(dist_out)
+    dist_out.mkdir(parents=True, exist_ok=True)
+    for pattern in (f"{PROJECT_NAME}-*.whl", f"{PROJECT_NAME}-*.tar.gz"):
+        for artifact in dist_out.glob(pattern):
+            if artifact.is_symlink() or not artifact.is_file():
+                raise SystemExit(f"[清理失败] 非普通构建产物: {artifact}")
+            artifact.unlink()
+            print(f"[清理] 删除 {_display_path(artifact)}")
+
+    _remove_tree(ROOT / "build", label="build")
+    for egg_info in ROOT.glob("*.egg-info"):
+        _remove_tree(egg_info, label="egg-info")
+
+
+def _build(dist_out: pathlib.Path, *, isolated: bool) -> None:
+    """Build one sdist and wheel into the exact requested output directory."""
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "build",
+        "--sdist",
+        "--wheel",
+        "--outdir",
+        str(dist_out),
+    ]
+    if not isolated:
+        cmd.append("--no-isolation")
+        print("[构建] 显式使用 --no-isolation 兼容模式")
+    else:
+        print("[构建] 使用 PEP 517 隔离模式（与 release workflow 一致）")
+    _run(cmd)
+
+
+def _declared_version() -> str:
+    """Return the canonical package version without importing :mod:`atst`."""
+
+    source_text = (ROOT / "atst" / "_version.py").read_text(encoding="utf-8")
+    source_match = _SOURCE_VERSION_RE.search(source_text)
+    if source_match is None:
+        raise SystemExit("[校验失败] atst/_version.py 缺少 __version__ 声明")
+    return source_match.group(1)
+
+
+def _normalized_distribution_name(raw: str) -> str:
+    return re.sub(r"[-_.]+", "-", raw.strip().lower())
+
+
+def _wheel_metadata(wheel: pathlib.Path) -> tuple[str, str, set[str]]:
+    """Return normalized wheel name/version plus archive member names."""
+
+    with zipfile.ZipFile(wheel) as archive:
+        names = set(archive.namelist())
+        metadata_files = [name for name in names if name.endswith(".dist-info/METADATA")]
+        if len(metadata_files) != 1:
+            raise SystemExit(f"[校验失败] wheel METADATA 数量异常: {len(metadata_files)}")
+        message = email.message_from_bytes(archive.read(metadata_files[0]))
+
+    name = _normalized_distribution_name(str(message.get("Name", "")))
+    version = str(message.get("Version", "")).strip()
+    return name, version, names
+
+
+def _sdist_metadata(sdist: pathlib.Path, *, version: str) -> tuple[str, str, set[str]]:
+    """Verify sdist archive boundaries and return normalized PKG-INFO identity."""
+
+    root = f"{PROJECT_NAME}-{version}"
+    with tarfile.open(sdist, mode="r:gz") as archive:
+        members = archive.getmembers()
+        if not members:
+            raise SystemExit("[校验失败] sdist 为空")
+
+        names: set[str] = set()
+        for member in members:
+            path = pathlib.PurePosixPath(member.name)
+            if path.is_absolute() or ".." in path.parts:
+                raise SystemExit(f"[校验失败] sdist 存在越界路径: {member.name}")
+            if not path.parts or path.parts[0] != root:
+                raise SystemExit(
+                    f"[校验失败] sdist 成员不在 canonical 根目录 {root}/: {member.name}"
+                )
+            if member.issym() or member.islnk():
+                raise SystemExit(f"[校验失败] sdist 不允许符号/硬链接成员: {member.name}")
+            names.add(member.name.rstrip("/"))
+
+        pkg_info_name = f"{root}/PKG-INFO"
+        try:
+            pkg_info_member = archive.getmember(pkg_info_name)
+        except KeyError as exc:
+            raise SystemExit("[校验失败] sdist 缺少 PKG-INFO") from exc
+        stream = archive.extractfile(pkg_info_member)
+        if stream is None:
+            raise SystemExit("[校验失败] sdist PKG-INFO 不是普通文件")
+        message = email.message_from_bytes(stream.read())
+
+    name = _normalized_distribution_name(str(message.get("Name", "")))
+    metadata_version = str(message.get("Version", "")).strip()
+    return name, metadata_version, names
+
+
+def _source_runtime_members() -> set[str]:
+    """Return every repository-owned Python runtime member that artifacts must ship."""
+
+    package_root = ROOT / PROJECT_NAME
+    if not package_root.is_dir() or package_root.is_symlink():
+        raise SystemExit(f"[校验失败] package source tree 无效: {package_root}")
+
+    members: set[str] = set()
+    for path in package_root.rglob("*.py"):
+        if path.is_symlink():
+            raise SystemExit(f"[校验失败] package runtime 不允许符号链接源码: {path}")
+        if path.is_file():
+            members.add(path.relative_to(ROOT).as_posix())
+
+    marker = package_root / "py.typed"
+    if marker.is_symlink() or not marker.is_file():
+        raise SystemExit("[校验失败] source package 缺少普通文件 atst/py.typed")
+    members.add(marker.relative_to(ROOT).as_posix())
+
+    init_member = f"{PROJECT_NAME}/__init__.py"
+    if init_member not in members:
+        raise SystemExit(f"[校验失败] source runtime 缺少 {init_member}")
+    return members
+
+
+def _require_archive_runtime_members(
+    *,
+    archive_label: str,
+    actual: set[str],
+    required: set[str],
+) -> None:
+    missing = sorted(required - actual)
+    if not missing:
+        return
+    preview = ", ".join(missing[:8])
+    suffix = " ..." if len(missing) > 8 else ""
+    raise SystemExit(
+        f"[校验失败] {archive_label} 缺少 {len(missing)} 个运行时源码文件: {preview}{suffix}"
+    )
+
+
+def _verify(dist_out: pathlib.Path) -> list[pathlib.Path]:
+    """Verify source, artifacts, complete runtime closure and distribution identity."""
+
+    wheels = sorted(dist_out.glob("*.whl"))
+    sdists = sorted(dist_out.glob("*.tar.gz"))
+    if len(wheels) != 1 or len(sdists) != 1:
+        raise SystemExit(
+            f"[校验失败] 需要恰好 1 wheel + 1 sdist：wheel={len(wheels)} sdist={len(sdists)}"
+        )
+
+    project_version = _declared_version()
+
+    wheel = wheels[0]
+    sdist = sdists[0]
+    expected_wheel = f"{PROJECT_NAME}-{project_version}-py3-none-any.whl"
+    expected_sdist = f"{PROJECT_NAME}-{project_version}.tar.gz"
+    if wheel.name != expected_wheel:
+        raise SystemExit(f"[校验失败] 预期 canonical wheel {expected_wheel}，实际 {wheel.name}")
+    if sdist.name != expected_sdist:
+        raise SystemExit(f"[校验失败] 预期 canonical sdist {expected_sdist}，实际 {sdist.name}")
+
+    source_runtime = _source_runtime_members()
+    wheel_name, wheel_version, wheel_members = _wheel_metadata(wheel)
+    if wheel_name != PROJECT_NAME or wheel_version != project_version:
+        raise SystemExit(
+            "[校验失败] wheel metadata identity mismatch: "
+            f"name={wheel_name!r} version={wheel_version!r}"
+        )
+    _require_archive_runtime_members(
+        archive_label="wheel",
+        actual=wheel_members,
+        required=source_runtime,
+    )
+
+    sdist_name, sdist_version, sdist_members = _sdist_metadata(
+        sdist,
+        version=project_version,
+    )
+    if sdist_name != PROJECT_NAME or sdist_version != project_version:
+        raise SystemExit(
+            "[校验失败] sdist metadata identity mismatch: "
+            f"name={sdist_name!r} version={sdist_version!r}"
+        )
+
+    sdist_root = f"{PROJECT_NAME}-{project_version}"
+    _require_archive_runtime_members(
+        archive_label="sdist",
+        actual=sdist_members,
+        required={f"{sdist_root}/{member}" for member in source_runtime},
+    )
+    for required in (
+        f"{sdist_root}/pyproject.toml",
+        f"{sdist_root}/README.md",
+        f"{sdist_root}/CHANGELOG.md",
+        f"{sdist_root}/LICENSE",
+    ):
+        if required not in sdist_members:
+            raise SystemExit(f"[校验失败] sdist 缺少文件 {required}")
+
+    print(
+        f"[校验] canonical typed distribution ✓ "
+        f"({wheel.name}, {sdist.name}, version={project_version}, "
+        f"runtime_files={len(source_runtime)})"
+    )
+    return [sdist, wheel]
+
+
+def _twine_check(artifacts: list[pathlib.Path]) -> None:
+    """Run Twine metadata/rendering validation on the exact verified artifacts."""
+
+    _run([sys.executable, "-m", "twine", "check", *map(str, artifacts)])
+
+
+def _sha256(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _smoke(wheel: pathlib.Path) -> None:
+    """Install and verify the exact wheel without letting the source checkout shadow it."""
+
+    wheel = wheel.resolve()
+    print("[冒烟] 创建临时 venv 并安装 canonical wheel ...")
+    with tempfile.TemporaryDirectory(prefix="atst-smoke-") as tmp:
+        temp_root = pathlib.Path(tmp)
+        venv_dir = temp_root / "venv"
+        work_dir = temp_root / "work"
+        work_dir.mkdir()
+        venv.create(venv_dir, with_pip=True)
+        if sys.platform == "win32":
+            python = venv_dir / "Scripts" / "python.exe"
+            cli = venv_dir / "Scripts" / "atst.exe"
+        else:
+            python = venv_dir / "bin" / "python"
+            cli = venv_dir / "bin" / "atst"
+
+        _run(
+            [
+                str(python),
+                "-m",
+                "pip",
+                "install",
+                "--quiet",
+                "--no-deps",
+                str(wheel),
+            ],
+            cwd=work_dir,
+        )
+        probe = (
+            "import importlib.metadata as m, pathlib, sys; "
+            "from importlib.resources import files; "
+            "import atst; "
+            "from atst.client import AsyncTdxClient, TdxClient; "
+            "from atst import Client; "
+            "assert callable(Client.call) and callable(Client.typed); "
+            "from atst.tools.host_audit import audit_all; "
+            "from atst.transport import ConnectionPool, RankingStore, resolve_hosts; "
+            "from atst.transport.async_ import AsyncConnectionPool; "
+            "package_file = pathlib.Path(atst.__file__).resolve(); "
+            "venv_root = pathlib.Path(sys.prefix).resolve(); "
+            "assert package_file.is_relative_to(venv_root), (package_file, venv_root); "
+            "assert atst.__version__ == m.version('atst'); "
+            "assert files('atst').joinpath('py.typed').is_file(); "
+            "assert callable(audit_all); "
+            "assert TdxClient.__init__.__module__ == 'atst.client.sync'; "
+            "assert AsyncTdxClient.__init__.__module__ == 'atst.client.async_'; "
+            "assert TdxClient.bestip.__module__ == 'atst.client.sync'; "
+            "assert AsyncTdxClient.bestip.__module__ == 'atst.client.async_'; "
+            "assert AsyncTdxClient.quotes_concurrent.__module__ == 'atst.client.async_'; "
+            "assert ConnectionPool.__init__.__module__ == 'atst.transport.pool'; "
+            "assert ConnectionPool.request.__module__ == 'atst.transport.pool'; "
+            "assert ConnectionPool.update_hosts.__module__ == 'atst.transport.pool'; "
+            "assert AsyncConnectionPool.__init__.__module__ == 'atst.transport.async_'; "
+            "assert AsyncConnectionPool.request.__module__ == 'atst.transport.async_'; "
+            "assert AsyncConnectionPool.update_hosts.__module__ == 'atst.transport.async_'; "
+            "assert RankingStore.load.__module__ == 'atst.transport.hosts'; "
+            "assert resolve_hosts.__module__ == 'atst.transport.hosts'; "
+            "print('atst', atst.__version__, package_file, 'wheel smoke OK')"
+        )
+        _run([str(python), "-I", "-c", probe], cwd=work_dir)
+        _run([str(cli), "--help"], cwd=work_dir)
+        _run([str(cli), "hosts", "audit", "--help"], cwd=work_dir)
+        _run([str(python), "-I", "-m", "pip", "check"], cwd=work_dir)
+    print("[冒烟] 通过 ✓")
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="atst 安全构建/分发校验脚本")
+    parser.add_argument(
+        "--no-clean",
+        action="store_true",
+        help="跳过历史构建产物清理（增量构建）",
+    )
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="在临时 venv 安装 canonical wheel 并验证",
+    )
+    parser.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="不构建，只校验 wheel/sdist provenance + Twine metadata",
+    )
+    isolation = parser.add_mutually_exclusive_group()
+    isolation.add_argument(
+        "--isolated",
+        dest="isolated",
+        action="store_true",
+        help="使用 PEP 517 隔离构建（默认，与 release 一致）",
+    )
+    isolation.add_argument(
+        "--no-isolation",
+        dest="isolated",
+        action="store_false",
+        help="显式使用当前环境 hatchling（仅兼容特殊本地环境）",
+    )
+    parser.set_defaults(isolated=True)
+    parser.add_argument(
+        "--dist-out",
+        default=str(DEFAULT_DIST),
+        help="产物目录（默认 dist/；禁止仓库根/祖先、受保护源码树和 symlink）",
+    )
+    return parser
+
+
+def main() -> int:
+    args = _parser().parse_args()
+    dist_out = _validate_dist_out(pathlib.Path(args.dist_out))
+
+    if args.verify_only and not args.isolated:
+        raise SystemExit("[参数] --verify-only 与 --no-isolation 无关，请移除后者")
+    if args.verify_only and args.no_clean:
+        raise SystemExit("[参数] --verify-only 不接受 --no-clean")
+
+    print("=" * 60)
+    print(f"{PROJECT_NAME} {'分发校验' if args.verify_only else '安全一键构建'}")
+    print(f"  仓库根: {ROOT}")
+    print(f"  产物目录: {_display_path(dist_out)}")
+    if not args.verify_only:
+        print(f"  隔离构建: {'yes' if args.isolated else 'NO (explicit escape hatch)'}")
+    print("=" * 60)
+
+    _check_python()
+    _require_packaging_tools(need_build=not args.verify_only)
+
+    if not args.verify_only:
+        if not args.isolated:
+            _require_local_backend_for_no_isolation()
+        if not args.no_clean:
+            _clean(dist_out)
+        else:
+            dist_out.mkdir(parents=True, exist_ok=True)
+        _build(dist_out, isolated=args.isolated)
+
+    artifacts = _verify(dist_out)
+    _twine_check(artifacts)
+
+    if args.smoke:
+        wheel = next(path for path in artifacts if path.suffix == ".whl")
+        _smoke(wheel)
+
+    print("=" * 60)
+    print("校验完成，产物：")
+    for path in artifacts:
+        print(f"  {_display_path(path)}  ({path.stat().st_size / 1024:.1f} KB)")
+        print(f"    sha256: {_sha256(path)}")
+    print("=" * 60)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+, re.MULTILINE)
+_HATCHLING_PIN_RE = re.compile(r'"hatchling==(\d+(?:\.\d+)*)"')
 
 
 def _display_path(path: pathlib.Path) -> str:
