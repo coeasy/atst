@@ -148,14 +148,6 @@ def _require_packaging_tools(*, need_build: bool) -> None:
     print(f"[环境] twine {twine_version} ✓")
 
 
-def _stable_version_tuple(raw: str, *, label: str) -> tuple[int, ...]:
-    """Parse a stable dotted numeric version used by build-tool floor checks."""
-
-    if re.fullmatch(r"\d+(?:\.\d+)*", raw) is None:
-        raise SystemExit(f"[环境] {label} 版本无法进行稳定下限比较: {raw!r}")
-    return tuple(int(part) for part in raw.split("."))
-
-
 def _hatchling_pin() -> str:
     """Read the exact Hatchling version from the repository build-system contract."""
 
