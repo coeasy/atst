@@ -1,6 +1,6 @@
 # atst 快速开始
 
-本文对应当前 `1.0.0` Draft 开发线；最新已发布稳定版是 `v1.0.0`。要求 Python 3.10 或更高版本。
+本文对应当前 `1.0.0` Release Candidate；当前尚无可下载的 GitHub Release，且尚未发布到 PyPI。要求 Python 3.10 或更高版本。
 
 ## 安装
 
