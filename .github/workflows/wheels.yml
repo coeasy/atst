@@ -164,6 +164,8 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      already_published: ${{ steps.release-state.outputs.already_published }}
     permissions:
       contents: write
     steps:
@@ -178,7 +180,8 @@ jobs:
           test "$(find dist -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 1
           test "$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
           test "$(find dist -maxdepth 1 -type f -name 'SHA256SUMS.txt' | wc -l | tr -d ' ')" = 1
-      - name: Create or verify draft release
+      - name: Create, resume, or verify release state
+        id: release-state
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.ref_name }}
@@ -186,16 +189,27 @@ jobs:
         run: |
           set -euo pipefail
           if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > release-state.txt 2>/dev/null; then
-            test "$(cat release-state.txt)" = "true"
+            if [[ "$(cat release-state.txt)" == "false" ]]; then
+              mkdir -p published
+              gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --dir published                 --pattern '*.whl' --pattern '*.tar.gz' --pattern 'SHA256SUMS.txt'
+              test "$(find published -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 1
+              test "$(find published -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
+              test "$(find published -maxdepth 1 -type f -name 'SHA256SUMS.txt' | wc -l | tr -d ' ')" = 1
+              (cd published && sha256sum -c SHA256SUMS.txt)
+              cmp dist/SHA256SUMS.txt published/SHA256SUMS.txt
+              echo "already_published=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           else
             gh release create "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --generate-notes --title "$TAG_NAME"
           fi
           gh release upload "$TAG_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          echo "already_published=false" >> "$GITHUB_OUTPUT"
 
   publish-pypi:
     name: Publish canonical distributions to PyPI
     needs: [build-dist, prepare-release]
-    if: vars.PUBLIC_RELEASE == 'true'
+    if: vars.PUBLIC_RELEASE == 'true' && needs.prepare-release.outputs.already_published != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: pypi
@@ -228,7 +242,10 @@ jobs:
   publish-docker:
     name: Publish Docker image to Docker Hub
     needs: [build-dist, prepare-release, publish-pypi]
-    if: vars.PUBLIC_RELEASE == 'true' && needs.publish-pypi.result == 'success'
+    if: >-
+      vars.PUBLIC_RELEASE == 'true' &&
+      needs.prepare-release.outputs.already_published != 'true' &&
+      needs.publish-pypi.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -286,9 +303,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.ref_name }}
           IS_PRERELEASE: ${{ needs.build-dist.outputs.is_prerelease }}
+          ALREADY_PUBLISHED: ${{ needs.prepare-release.outputs.already_published }}
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "$ALREADY_PUBLISHED" == "true" ]]; then
+            echo "Release $TAG_NAME is already published with identical canonical artifacts."
+            exit 0
+          fi
           if [[ "$IS_PRERELEASE" == "true" ]]; then
             gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
           else
