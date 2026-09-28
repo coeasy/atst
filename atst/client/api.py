@@ -20,7 +20,7 @@ from ..catalog.capability import (
     is_migrated_capability,
 )
 from ..errors import ValidationError
-from ..providers import PROVIDERS
+from ..providers import PROVIDERS, resolve_capability_provider
 from ..query import QuerySpec
 from ..result import QueryResult
 from ..runtime.executor import DEDICATED_CAPABILITIES as _CORE_CAPABILITIES
@@ -119,16 +119,14 @@ class Client:
     def capabilities() -> tuple[str, ...]:
         return tuple(sorted(_CORE_CAPABILITIES | MIGRATED_CAPABILITIES))
 
-    @staticmethod
-    def core_capability_statuses() -> dict[str, dict[str, Any]]:
-        """Return operational status for the canonical core capability surface.
+    def core_capability_statuses(self) -> dict[str, dict[str, Any]]:
+        """Return operational status for this Client's canonical core surface.
 
-        Declaration and operational availability are deliberately separate:
-        explicit TDX minute/trades/security-list calls still preserve their
-        protocol-specific fail-fast errors, while omitted-provider calls may use
-        another Provider only when the caller did not pin a Provider.
+        Omitted-provider routing is evaluated against this instance's effective
+        planner default, so health metadata cannot diverge from real execution.
         """
 
+        configured_default = self.runtime.planner.default_provider
         values: dict[str, dict[str, Any]] = {}
         for capability in sorted(_CORE_CAPABILITIES):
             declared = tuple(
@@ -137,11 +135,20 @@ class Client:
                 if PROVIDERS.get(provider).supports(capability)
             )
             available = PROVIDERS.available_providers(capability)
+            effective_default: str | None = None
+            if available:
+                selected = resolve_capability_provider(
+                    capability,
+                    default=configured_default,
+                )
+                if selected in available:
+                    effective_default = selected
             values[capability] = {
                 "available": bool(available),
+                "default_available": effective_default is not None,
                 "declared_providers": list(declared),
                 "operational_providers": list(available),
-                "default_provider": PROVIDERS.default_available_provider(capability),
+                "default_provider": effective_default,
             }
         return values
 
@@ -506,9 +513,8 @@ class AsyncClient:
     def capabilities() -> tuple[str, ...]:
         return Client.capabilities()
 
-    @staticmethod
-    def core_capability_statuses() -> dict[str, dict[str, Any]]:
-        return Client.core_capability_statuses()
+    def core_capability_statuses(self) -> dict[str, dict[str, Any]]:
+        return self.client.core_capability_statuses()
 
     async def execute(
         self,

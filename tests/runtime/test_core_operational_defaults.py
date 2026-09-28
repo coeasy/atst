@@ -8,8 +8,9 @@ from typing import Any
 
 import pytest
 
-from atst.client.api import Client
+from atst.client.api import AsyncClient, Client
 from atst.cli.parser import build_parser
+from atst.errors import ValidationError
 from atst.integration.mcp._tools_impl import _h_get_minute_today, _h_get_trades
 from atst.integration.runtime_ws import RuntimeJsonRpcHandler
 from atst.providers import PROVIDERS, resolve_capability_provider
@@ -31,9 +32,9 @@ class _RecordingExecutor:
         )
 
 
-def _client() -> tuple[Client, _RecordingExecutor]:
+def _client(*, default_provider: str = "tdx") -> tuple[Client, _RecordingExecutor]:
     executor = _RecordingExecutor()
-    runtime = UnifiedRuntime(executor=executor)
+    runtime = UnifiedRuntime(executor=executor, default_provider=default_provider)
     return Client(runtime=runtime), executor
 
 
@@ -140,17 +141,22 @@ def test_http_minute_and_trades_reach_client_operational_default() -> None:
 
 
 def test_core_capability_discovery_distinguishes_declared_and_available() -> None:
-    core = Client.core_capability_statuses()
+    client, _executor = _client()
+    core = client.core_capability_statuses()
 
     assert core["minute"]["available"] is True
+    assert core["minute"]["default_available"] is True
     assert core["minute"]["default_provider"] == "tencent"
     assert "tdx" in core["minute"]["declared_providers"]
     assert "tdx" not in core["minute"]["operational_providers"]
 
     assert core["trades"]["available"] is True
+    assert core["trades"]["default_available"] is True
     assert core["trades"]["default_provider"] == "tencent"
+    assert "tencent" in core["trades"]["operational_providers"]
 
     assert core["security_list"]["available"] is False
+    assert core["security_list"]["default_available"] is False
     assert core["security_list"]["default_provider"] is None
     assert core["security_list"]["operational_providers"] == []
 
@@ -161,7 +167,7 @@ def test_core_capability_discovery_distinguishes_declared_and_available() -> Non
 
 def test_unified_runtime_and_generic_query_share_operational_defaults() -> None:
     executor = _RecordingExecutor()
-    runtime = UnifiedRuntime(executor=executor)
+    runtime = UnifiedRuntime(executor=executor, default_provider="tdx")
 
     runtime.minute("sh600519")
     runtime.trades("sh600519")
@@ -241,3 +247,74 @@ def test_ws_health_reports_unavailable_core_capabilities() -> None:
     assert "security_list" in payload["core_unavailable"]
     assert "minute" not in payload["core_unavailable"]
     assert "trades" not in payload["core_unavailable"]
+
+
+def test_core_capability_status_uses_effective_runtime_default() -> None:
+    client, _executor = _client(default_provider="eastmoney")
+    core = client.core_capability_statuses()
+
+    assert core["minute"]["available"] is True
+    assert core["minute"]["default_provider"] == "eastmoney"
+    assert core["trades"]["available"] is True
+    assert core["trades"]["default_available"] is False
+    assert core["trades"]["default_provider"] is None
+    assert core["security_list"]["available"] is False
+    assert core["security_list"]["default_provider"] is None
+
+
+def test_http_health_uses_effective_configured_default() -> None:
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from atst.integration.runtime_http import create_runtime_app
+
+    client, _executor = _client(default_provider="eastmoney")
+    with TestClient(create_runtime_app(client)) as http:
+        response = http.get("/v13/runtime/health")
+
+    assert response.status_code == 200
+    unavailable = response.json()["core_unavailable"]
+    assert "trades" in unavailable
+    assert "security_list" in unavailable
+    assert "minute" not in unavailable
+
+
+def test_ws_health_uses_effective_configured_default() -> None:
+    client, _executor = _client(default_provider="eastmoney")
+    handler = RuntimeJsonRpcHandler(client)
+    raw = handler.handle_message(
+        json.dumps({"jsonrpc": "2.0", "id": 10, "method": "runtime.health", "params": {}})
+    )
+
+    assert raw is not None
+    unavailable = json.loads(raw)["result"]["core_unavailable"]
+    assert "trades" in unavailable
+    assert "security_list" in unavailable
+    assert "minute" not in unavailable
+
+
+def test_configured_default_provider_does_not_silently_cross_provider() -> None:
+    planner = QueryPlanner(default_provider="eastmoney")
+
+    minute = planner.compile(
+        QuerySpec.build("minute", symbols="sh600519", currentness="live")
+    )
+    assert minute.provider == "eastmoney"
+
+    with pytest.raises(ValidationError):
+        planner.compile(
+            QuerySpec.build("trades", symbols="sh600519", currentness="live")
+        )
+
+
+def test_async_client_reports_the_same_effective_core_status() -> None:
+    client, _executor = _client(default_provider="eastmoney")
+    async_client = AsyncClient(client=client)
+
+    core = async_client.core_capability_statuses()
+
+    assert core["minute"]["default_available"] is True
+    assert core["minute"]["default_provider"] == "eastmoney"
+    assert core["trades"]["available"] is True
+    assert core["trades"]["default_available"] is False
+    assert core["trades"]["default_provider"] is None

@@ -45,29 +45,32 @@ def test_no_user_doc_presents_an_unpublished_install_path_as_available() -> None
     assert offenders == [], f"这些文档把未上架的安装路径写成可用：{offenders}"
 
 
-def test_published_v1_release_history_is_preserved() -> None:
+def test_v1_release_candidate_identity_is_preserved() -> None:
     changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     release = _ROOT / "docs" / "releases" / "v1.0.0.md"
 
-    assert "## [1.0.0] - 2026-09-09" in changelog
+    assert "## [1.0.0] - 2026-09-28" in changelog
+    assert "## Historical tstdx baseline - 2026-09-09" in changelog
     assert release.is_file()
     release_text = release.read_text(encoding="utf-8")
     assert "v1.0.0" in release_text
+    assert "发布候选" in release_text
+    assert "尚未实际发布" in release_text
     assert "atst-1.0.0-py3-none-any.whl" in release_text
     assert "atst-1.0.0.tar.gz" in release_text
 
 
-def test_general_docs_distinguish_stable_release_from_development_identity() -> None:
+def test_general_docs_report_the_actual_unpublished_release_candidate() -> None:
     readme = (_ROOT / "README.md").read_text(encoding="utf-8")
     quickstart = (_ROOT / "docs" / "quickstart.md").read_text(encoding="utf-8")
     api_index = (_ROOT / "docs" / "api" / "README.md").read_text(encoding="utf-8")
 
-    assert f"当前 Draft 开发版本：`{atst.__version__}`" in readme
-    assert "最新已发布稳定版：`v1.0.0`" in readme
-    assert f"当前 `{atst.__version__}` Draft 开发线" in quickstart
-    assert "最新已发布稳定版是 `v1.0.0`" in quickstart
-    assert f"当前 `{atst.__version__}` Draft 开发线" in api_index
-    assert "最新已发布稳定版是 `v1.0.0`" in api_index
+    assert f"当前 Release Candidate：`{atst.__version__}`" in readme
+    assert "尚无 GitHub Release" in readme and "尚未发布到 PyPI" in readme
+    assert f"当前 `{atst.__version__}` Release Candidate" in quickstart
+    assert "尚无可下载的 GitHub Release" in quickstart
+    assert f"当前 `{atst.__version__}` Release Candidate" in api_index
+    assert "尚无 GitHub Release / PyPI 发布" in api_index
 
 
 def test_current_docs_do_not_reintroduce_cross_provider_fallback_as_default() -> None:
@@ -79,3 +82,12 @@ def test_current_docs_do_not_reintroduce_cross_provider_fallback_as_default() ->
     assert "禁止跨 Provider silent fallback" in quickstart
     assert "禁止跨 Provider silent fallback" in api_index
     assert "legacy compatibility router" in api_index
+
+
+def test_release_candidate_has_a_closed_changelog_identity() -> None:
+    changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert changelog.count("## [1.0.0] - 2026-09-28") == 1
+    assert changelog.count("## [Unreleased]") == 1
+    unreleased = changelog.split("## [Unreleased]", 1)[1].split("## [1.0.0] - 2026-09-28", 1)[0]
+    assert "暂无。" in unreleased

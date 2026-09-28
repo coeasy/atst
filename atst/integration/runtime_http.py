@@ -218,7 +218,7 @@ def create_runtime_app(client: Client | None = None) -> Any:
     @app.get("/v13/runtime/health")
     def health() -> dict[str, Any]:
         rt = api.runtime
-        core = Client.core_capability_statuses()
+        core = api.core_capability_statuses()
         return {
             "status": "ok",
             "api": "v13",
@@ -226,7 +226,9 @@ def create_runtime_app(client: Client | None = None) -> Any:
             "direct_bindings": len(DIRECT_BINDINGS),
             "migrated_capabilities": len(api.capabilities()),
             "core_unavailable": sorted(
-                capability for capability, state in core.items() if not state["available"]
+                capability
+                for capability, state in core.items()
+                if not state["default_available"]
             ),
         }
 

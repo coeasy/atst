@@ -434,3 +434,49 @@ def test_release_requires_versioned_docs_and_post_publish_pypi_readback() -> Non
     assert "--require-existing" in pypi
     assert "for attempt in 1 2 3 4 5" in pypi
     assert "sleep $((attempt * 2))" in pypi
+
+
+def test_all_workflow_actions_are_immutable_sha_pinned() -> None:
+    pattern = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)", re.MULTILINE)
+    offenders: list[str] = []
+
+    for path in sorted((_ROOT / ".github" / "workflows").glob("*.yml")):
+        workflow = path.read_text(encoding="utf-8")
+        for action in pattern.findall(workflow):
+            if action.startswith("./"):
+                continue
+            if "@" not in action:
+                offenders.append(f"{path.name}: {action} (missing ref)")
+                continue
+            ref = action.rsplit("@", 1)[1]
+            if re.fullmatch(r"[0-9a-f]{40}", ref) is None:
+                offenders.append(f"{path.name}: {action}")
+
+    assert offenders == [], (
+        "workflow third-party actions must use immutable 40-char commit SHAs: "
+        + "; ".join(offenders)
+    )
+
+
+def test_published_github_release_can_be_promoted_idempotently_to_public_surfaces() -> None:
+    workflow = _workflow("wheels.yml")
+    pypi = workflow.split("  publish-pypi:", 1)[1].split("  publish-docker:", 1)[0]
+    docker = workflow.split("  publish-docker:", 1)[1].split("  publish-release:", 1)[0]
+
+    assert "if: vars.PUBLIC_RELEASE == 'true'" in pypi
+    assert "already_published != 'true'" not in pypi
+    assert "needs.prepare-release.outputs.already_published != 'true'" not in docker
+    assert "steps.pypi-state.outputs.exists != 'true'" in pypi
+
+
+def test_live_smoke_covers_operational_web_core_defaults() -> None:
+    probe = _ROOT / "tests" / "live" / "test_web_core_defaults.py"
+
+    assert probe.is_file(), "minute/trades operational default live probe was removed"
+    text = probe.read_text(encoding="utf-8")
+    assert "pytestmark = pytest.mark.network" in text
+    assert 'Client(default_provider="tdx")' in text
+    assert 'result.meta.provider == "tencent"' in text
+    assert "test_minute_omitted_provider_reaches_live_operational_default" in text
+    assert "test_trades_omitted_provider_reaches_live_operational_default" in text
+    assert "pytest.skip" in text and "_in_trading_session" in text

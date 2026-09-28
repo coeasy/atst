@@ -28,7 +28,7 @@ def _pyproject() -> str:
 def test_install_uses_ci_equivalent_dependency_ssot() -> None:
     makefile = _makefile()
 
-    assert '$(PIP) install -e ".[all,dev]" build twine' in makefile
+    assert '$(PIP) install -e ".[all,dev]" "pre-commit==4.6.2"' in makefile
     assert 'pip install -e ".[all]"' not in makefile
     assert "pip install pytest pytest-cov ruff mypy build" not in makefile
 
@@ -171,7 +171,7 @@ def test_make_gates_and_ci_jobs_are_the_same_check_set() -> None:
 
 
 def test_the_documented_gate_denominators_are_computed_not_copied() -> None:
-    """三个分母必须能由 `tests/support/gate_inventory.py` 现算：11 / 11 / 16。
+    """三个分母必须能由 `tests/support/gate_inventory.py` 现算：11 / 11 / 17。
 
     这条看着像在钉数字，实际钉的是"数字有没有唯一算处"：矩阵加一格、CI 加一个作业，
     这里报的是现算值，改的人顺势把口径一起改；而手抄的"17"没有任何地方能重算它，
@@ -181,5 +181,5 @@ def test_the_documented_gate_denominators_are_computed_not_copied() -> None:
         f"发布口径的三处计数不再相等：gates {len(gates_targets())}、"
         f"CI 作业 {len(ci_job_keys())}、映射表 {len(GATES_TO_CI_JOBS)}"
     )
-    assert ci_test_matrix_cells() == 6, f"test 矩阵现算为 {ci_test_matrix_cells()} 格"
-    assert ci_check_cells() == 16, f"CI check 格现算为 {ci_check_cells()}"
+    assert ci_test_matrix_cells() == 7, f"test 矩阵现算为 {ci_test_matrix_cells()} 格"
+    assert ci_check_cells() == 17, f"CI check 格现算为 {ci_check_cells()}"
