@@ -127,8 +127,15 @@ tdx/bars -> tencent/bars
 ```python
 md.quotes(symbols, provider="tdx")
 md.bars(symbol, provider="tdx")
-md.minute(symbol, provider="tdx")
-md.trades(symbol, provider="tdx")
+
+# minute/trades 的 TDX 结构化命令当前被 fail-fast 拦截；
+# 省略 provider 会从 Provider Registry 选择 operational provider（当前 tencent）。
+md.minute(symbol)
+md.trades(symbol)
+
+# 如需固定 Web Provider，可显式指定：
+md.minute(symbol, provider="eastmoney")
+md.trades(symbol, provider="baidu")
 ```
 
 兼容期：
