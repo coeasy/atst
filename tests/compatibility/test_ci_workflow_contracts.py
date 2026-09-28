@@ -386,3 +386,22 @@ def test_docker_publication_is_explicitly_optional() -> None:
     assert "vars.PUBLIC_RELEASE == 'true'" in docker
     assert "vars.PUBLISH_DOCKER == 'true'" in docker
     assert "needs.publish-docker.result == 'skipped'" in publish
+
+
+def test_release_build_is_byte_reproducible_and_uses_commit_epoch() -> None:
+    workflow = _workflow("wheels.yml")
+    build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
+
+    assert "SOURCE_DATE_EPOCH" in build
+    assert 'git log -1 --format=%ct "$GITHUB_SHA"' in build
+    assert "python -m build --outdir dist-repro" in build
+    assert "cmp dist/*.whl dist-repro/*.whl" in build
+    assert "cmp dist/*.tar.gz dist-repro/*.tar.gz" in build
+
+
+def test_publications_require_supply_chain_attestations() -> None:
+    workflow = _workflow("wheels.yml")
+
+    assert "attestations: true" in workflow
+    assert "provenance: mode=max" in workflow
+    assert "sbom: true" in workflow
