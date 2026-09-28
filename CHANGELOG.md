@@ -31,6 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   （3.12 不关），"接受但沉默"的服务端替身退化成"接受即断开"，判据以
   `ConnectionClosed [E2020]` 假红。改用与同步判据同源的 `_SilentServer`（阻塞 socket + 后台
   线程），3.13 上复测得 `ReadTimeout`（0.063s）且 `conn.timeout` 正确复原为 30.0。
+- **`ci.yml` 的 `bridges` job 依赖集不足（同一轮 CI 首跑暴露的第三处）**：该 job 只装
+  `.[dev]`，却要跑 `tests/test_bridges.py` 的 24 项贯通审计；其中 #17 验收
+  `runtime_http.create_runtime_app()` 的路由表，而 `fastapi` 是**惰性**导入的可选依赖（住在
+  `server` extra 里）——于是以 `ModuleNotFoundError -> RuntimeError: HTTP 服务需要安装可选依赖`
+  失败（屏蔽全部可选依赖的本地探针复现出与 CI **逐字相同**的失败图样
+  `................F.......`，且确实只有这一项失败）。修：该 job 在 `.[dev]` 之后显式补装
+  `.[server]`；`.[dev]` 那一行原样保留，以继续满足 `test_ci_workflow_contracts` 对声明式
+  工具链的计数判据。新增 `test_bridge_audit_installs_the_optional_face_it_exercises` 钉住这一格。
 
 **新增门禁 `tests/compatibility/test_interpreter_hazards.py`**（按 AST 扫 `atst/`、`tests/`、
 `scripts/`）：① 凡 `add_argument`/`ArgumentParser`/`add_parser` 的
@@ -55,8 +63,9 @@ GitHub Release **确实还不存在**（此前的运行全被计费拦下）。�
 产出 Release 之后**，再以一次专门提交把文档与那两条判据一起翻到"已发布"状态。
 
 **本轮验证**：修复后本地 `ruff check` / `ruff format --check`（493 文件）、`mypy atst/`（CI 参数）、
-`tests/compatibility`（含新门禁）、`tests/streaming/test_read_deadline.py`、
-`tests/test_spec_coverage.py` 全 RC=0；离线全量 `pytest -m "not network"` RC=0。
+`tests/compatibility`（156 项，含两条新门禁）、`tests/streaming/test_read_deadline.py`、
+`tests/test_spec_coverage.py` 全 RC=0；离线全量 `pytest -m "not network"` RC=0。`bridges` 所需的
+`server` extra 由"屏蔽全部可选依赖后跑该审计"的探针实测确定（只有 #17 受影响）。
 
 ### Fixed（逻辑审查第 6 轮：并入上游 126 个提交后的门禁 / 文档漂移收口与 lint 工具链对齐）
 

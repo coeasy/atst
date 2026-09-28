@@ -124,6 +124,12 @@ jobs:
           cache: 'pip'
       - name: Install canonical test dependencies
         run: python -m pip install -e ".[dev]"
+      # #17 验收 `atst.integration.runtime_http.create_runtime_app()` 的路由表，
+      # 而 fastapi 是**惰性**导入的可选依赖（在 `server` extra 里）——只装 `.[dev]`
+      # 时该用例会以 ModuleNotFoundError -> RuntimeError 直接失败。`.[dev]` 保持原样
+      # 是为了继续满足 test_ci_workflow_contracts 对声明式工具链的计数判据。
+      - name: Install the optional faces this audit exercises
+        run: python -m pip install -e ".[server]"
       - name: Run bridges test
         run: python -m pytest tests/test_bridges.py -v --tb=short
 

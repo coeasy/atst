@@ -65,6 +65,24 @@ def test_static_and_auxiliary_test_jobs_use_declared_dev_toolchain() -> None:
     assert "run: python -m pytest tests/test_bridges.py" in workflow
 
 
+def test_bridge_audit_installs_the_optional_face_it_exercises() -> None:
+    """贯通审计必须装上它要验收的可选面。
+
+    ``tests/test_bridges.py::test_17_http_server`` 验收
+    ``atst.integration.runtime_http.create_runtime_app()`` 的路由表，而 ``fastapi`` 是
+    **惰性**导入的可选依赖（住在 ``server`` extra 里）：只装 ``.[dev]`` 时该用例以
+    ``ModuleNotFoundError -> RuntimeError`` 直接失败。2026-09-28 的 CI 首跑就是这么红的
+    （此前每一次运行都被 GitHub Actions 计费拦在"job 未启动"，这一格从未被真跑到）。
+    ``.[dev]`` 那一行必须原样保留——上面那条计数判据钉着它。
+    """
+    workflow = _workflow("ci.yml")
+    bridges = workflow.split("  bridges:", 1)[1].split("  golden-gate:", 1)[0]
+
+    assert 'python -m pip install -e ".[dev]"' in bridges
+    assert 'python -m pip install -e ".[server]"' in bridges
+    assert "tests/test_bridges.py" in bridges
+
+
 def test_blocking_workflows_cancel_only_obsolete_same_event_heads() -> None:
     ci = _workflow("ci.yml")
 
