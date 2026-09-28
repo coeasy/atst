@@ -118,12 +118,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", required=True)
     parser.add_argument("--dist", type=pathlib.Path, required=True)
     parser.add_argument("--github-output", type=pathlib.Path)
+    parser.add_argument("--require-existing", action="store_true")
     return parser
 
 
 def main() -> int:
     args = _parser().parse_args()
     exists = check(args.version, args.dist)
+    if args.require_existing and not exists:
+        raise SystemExit(
+            f"[PyPI校验失败] 期望 {PROJECT} {args.version} 已发布，但 PyPI 尚不可见"
+        )
     if args.github_output is not None:
         with args.github_output.open("a", encoding="utf-8") as stream:
             stream.write(f"exists={str(exists).lower()}\n")
