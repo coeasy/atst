@@ -28,6 +28,7 @@ __all__ = [
     "PROVIDERS",
     "normalize_provider_id",
     "resolve_provider",
+    "resolve_capability_provider",
 ]
 
 
@@ -276,6 +277,22 @@ def resolve_provider(
             context={"provider": selected, "ambiguous": True},
         )
     return selected
+
+
+def resolve_capability_provider(capability: str, provider: str | None = None) -> str:
+    """Resolve a provider without overriding an explicit caller choice.
+
+    Explicit providers are always honored, including providers that are known to
+    fail-fast for a declared-but-unavailable capability. When the caller omits
+    the provider, choose the registry's first operational provider; if none is
+    operational, fall back to the registry default so the capability's canonical
+    domain exception remains observable instead of inventing a substitute source.
+    """
+
+    if provider is not None:
+        return resolve_provider(provider=provider)
+    selected = PROVIDERS.default_available_provider(capability)
+    return selected or PROVIDERS.default_provider
 
 
 def _c(
