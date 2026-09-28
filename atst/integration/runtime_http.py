@@ -218,7 +218,9 @@ def create_runtime_app(client: Client | None = None) -> Any:
     @app.get("/v13/runtime/health")
     def health() -> dict[str, Any]:
         rt = api.runtime
-        core = Client.core_capability_statuses()
+        core = Client.core_capability_statuses(
+            default_provider=rt.planner.default_provider
+        )
         return {
             "status": "ok",
             "api": "v13",
