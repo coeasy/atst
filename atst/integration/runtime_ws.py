@@ -213,9 +213,7 @@ class RuntimeJsonRpcHandler:
             received=params.keys(),
         )
         if method == "runtime.health":
-            core = Client.core_capability_statuses(
-                default_provider=self.client.runtime.planner.default_provider
-            )
+            core = self.client.core_capability_statuses()
             return {
                 "status": "ok",
                 "api": "v13",
