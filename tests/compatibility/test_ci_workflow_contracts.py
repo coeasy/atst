@@ -333,7 +333,10 @@ def test_prerelease_detection_uses_pep440_not_tag_punctuation() -> None:
     build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
 
     assert "from packaging.version import Version" in build
-    assert "parsed.is_prerelease or parsed.is_devrelease" in build
+    assert "parsed.is_prerelease" in build
+    assert "parsed.is_devrelease" in build
+    assert "parsed.is_postrelease" in build
+    assert "parsed.local is not None" in build
     assert "contains(github.ref_name, '-')" not in workflow
     assert "needs.build-dist.outputs.is_prerelease == 'false'" in workflow
 
