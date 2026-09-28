@@ -91,3 +91,10 @@ def test_release_candidate_has_a_closed_changelog_identity() -> None:
     assert changelog.count("## [Unreleased]") == 1
     unreleased = changelog.split("## [Unreleased]", 1)[1].split("## [1.0.0] - 2026-09-28", 1)[0]
     assert "暂无。" in unreleased
+
+
+def test_unpublished_release_candidate_does_not_claim_stable_trove_status() -> None:
+    pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert '"Development Status :: 4 - Beta"' in pyproject
+    assert '"Development Status :: 5 - Production/Stable"' not in pyproject

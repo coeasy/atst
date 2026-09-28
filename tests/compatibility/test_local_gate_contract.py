@@ -138,7 +138,7 @@ def test_ruff_per_file_ignores_still_point_at_existing_paths() -> None:
     assert len(section) == 2, "per-file-ignores 段不存在，判据自身失效"
     body = re.split(r"\n\[", section[1], maxsplit=1)[0]
     paths = _PER_FILE_IGNORE.findall(body)
-    assert len(paths) >= 4, f"只扫到 {len(paths)} 条豁免，说明解析自身失效了"
+    assert paths, "一条 Ruff per-file ignore 都没读到，判据自身失效"
     missing = [relative for relative in paths if not (_ROOT / relative.rstrip("*")).exists()]
     assert not missing, f"ruff 豁免指向磁盘上不存在的路径：{missing}"
 

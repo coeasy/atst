@@ -480,3 +480,14 @@ def test_live_smoke_covers_operational_web_core_defaults() -> None:
     assert "test_minute_omitted_provider_reaches_live_operational_default" in text
     assert "test_trades_omitted_provider_reaches_live_operational_default" in text
     assert "pytest.skip" in text and "_in_trading_session" in text
+
+
+def test_cross_platform_test_command_is_shell_neutral() -> None:
+    workflow = _workflow("ci.yml")
+    test_job = workflow.split("\n  test:", 1)[1].split("\n  originality:", 1)[0]
+    run_tests = test_job.split("- name: Run tests", 1)[1].split("- name: Upload coverage", 1)[0]
+
+    assert "windows-latest" in test_job
+    assert "run: >-" in run_tests
+    assert re.search(r"\\\s*\n", run_tests) is None
+    assert "--cov=atst" in run_tests
