@@ -21,6 +21,7 @@ from ..catalog.capability import (
 )
 from ..errors import ValidationError
 from ..query import QuerySpec
+from ..providers import resolve_capability_provider
 from ..result import QueryResult
 from ..runtime.executor import DEDICATED_CAPABILITIES as _CORE_CAPABILITIES
 from ..runtime.kernel import UnifiedRuntime
@@ -344,7 +345,7 @@ class Client:
         self,
         symbol: str,
         *,
-        provider: str = "tdx",
+        provider: str | None = None,
         currentness: str = "live",
     ) -> QueryResult[Any]:
         """当日分时。
@@ -355,13 +356,17 @@ class Client:
         ``eastmoney`` / ``baidu``。一格 = 一次 HTTP 请求、一只代码；上游反爬时抛
         :class:`AntiSpiderBlocked` 或 :class:`WebSourceError`，不会返回空序列冒充成功。
         """
-        return self.runtime.minute(symbol, provider=provider, currentness=currentness)
+        return self.runtime.minute(
+            symbol,
+            provider=resolve_capability_provider("minute", provider),
+            currentness=currentness,
+        )
 
     def trades(
         self,
         symbol: str,
         *,
-        provider: str = "tdx",
+        provider: str | None = None,
         start: int = 0,
         count: int = 0,
         currentness: str = "live",
@@ -373,7 +378,7 @@ class Client:
         """
         return self.runtime.trades(
             symbol,
-            provider=provider,
+            provider=resolve_capability_provider("trades", provider),
             start=start,
             count=count,
             currentness=currentness,
