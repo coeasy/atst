@@ -42,3 +42,6 @@ def test_release_toolchain_is_exactly_pinned() -> None:
     assert pyproject.count('"hatchling==1.32.4"') == 2
     assert '"build==1.6.1"' in pyproject
     assert '"twine==7.0.0"' in pyproject
+    assert '"packaging==26.3"' in pyproject
+    assert "[tool.hatch.build]" in pyproject
+    assert "reproducible = true" in pyproject
