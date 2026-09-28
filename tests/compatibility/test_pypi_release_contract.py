@@ -69,7 +69,7 @@ def test_existing_version_with_mismatched_hash_fails_closed(
     remote["atst-1.2.3-py3-none-any.whl"] = "0" * 64
     monkeypatch.setattr(checker, "_fetch_release", lambda version: _payload(remote))
 
-    with pytest.raises(SystemExit, match="制品不一致"):
+    with pytest.raises(SystemExit, match="制品集合/摘要不一致"):
         checker.check("1.2.3", dist)
 
 
@@ -81,7 +81,7 @@ def test_existing_version_with_missing_canonical_file_fails_closed(
     hashes.pop("atst-1.2.3.tar.gz")
     monkeypatch.setattr(checker, "_fetch_release", lambda version: _payload(hashes))
 
-    with pytest.raises(SystemExit, match="制品不一致"):
+    with pytest.raises(SystemExit, match="制品集合/摘要不一致"):
         checker.check("1.2.3", dist)
 
 
@@ -105,3 +105,29 @@ def test_existing_version_with_extra_remote_artifact_fails_closed(
 
     with pytest.raises(SystemExit, match="制品集合/摘要不一致"):
         checker.check("1.2.3", dist)
+
+
+def test_require_existing_mode_rejects_missing_release(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    checker = _load()
+    dist, _ = _dist(tmp_path)
+    output = tmp_path / "github-output.txt"
+    monkeypatch.setattr(checker, "_fetch_release", lambda version: None)
+    monkeypatch.setattr(
+        checker.sys,
+        "argv",
+        [
+            "check_pypi_release.py",
+            "--version",
+            "1.2.3",
+            "--dist",
+            str(dist),
+            "--github-output",
+            str(output),
+            "--require-existing",
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="尚不可见"):
+        checker.main()
