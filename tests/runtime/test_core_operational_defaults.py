@@ -211,3 +211,33 @@ def test_generic_client_call_uses_same_core_operational_default() -> None:
         ("minute", "tencent"),
         ("trades", "tencent"),
     ]
+
+
+def test_http_health_reports_unavailable_core_capabilities() -> None:
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from atst.integration.runtime_http import create_runtime_app
+
+    client, _executor = _client()
+    with TestClient(create_runtime_app(client)) as http:
+        response = http.get("/v13/runtime/health")
+
+    assert response.status_code == 200
+    assert "security_list" in response.json()["core_unavailable"]
+    assert "minute" not in response.json()["core_unavailable"]
+    assert "trades" not in response.json()["core_unavailable"]
+
+
+def test_ws_health_reports_unavailable_core_capabilities() -> None:
+    client, _executor = _client()
+    handler = RuntimeJsonRpcHandler(client)
+    raw = handler.handle_message(
+        json.dumps({"jsonrpc": "2.0", "id": 9, "method": "runtime.health", "params": {}})
+    )
+
+    assert raw is not None
+    payload = json.loads(raw)["result"]
+    assert "security_list" in payload["core_unavailable"]
+    assert "minute" not in payload["core_unavailable"]
+    assert "trades" not in payload["core_unavailable"]
