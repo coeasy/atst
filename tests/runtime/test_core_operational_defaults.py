@@ -142,7 +142,8 @@ def test_http_minute_and_trades_reach_client_operational_default() -> None:
 
 
 def test_core_capability_discovery_distinguishes_declared_and_available() -> None:
-    core = Client.core_capability_statuses()
+    client, _executor = _client()
+    core = client.core_capability_statuses()
 
     assert core["minute"]["available"] is True
     assert core["minute"]["default_available"] is True
@@ -250,7 +251,8 @@ def test_ws_health_reports_unavailable_core_capabilities() -> None:
 
 
 def test_core_capability_status_uses_effective_runtime_default() -> None:
-    core = Client.core_capability_statuses(default_provider="eastmoney")
+    client, _executor = _client(default_provider="eastmoney")
+    core = client.core_capability_statuses()
 
     assert core["minute"]["available"] is True
     assert core["minute"]["default_provider"] == "eastmoney"
