@@ -32,7 +32,7 @@ class _RecordingExecutor:
 
 
 def _client(
-    *, default_provider: str | None = None
+    *, default_provider: str = "tdx"
 ) -> tuple[Client, _RecordingExecutor]:
     executor = _RecordingExecutor()
     runtime = UnifiedRuntime(executor=executor, default_provider=default_provider)
@@ -168,7 +168,7 @@ def test_core_capability_discovery_distinguishes_declared_and_available() -> Non
 
 def test_unified_runtime_and_generic_query_share_operational_defaults() -> None:
     executor = _RecordingExecutor()
-    runtime = UnifiedRuntime(executor=executor)
+    runtime = UnifiedRuntime(executor=executor, default_provider="tdx")
 
     runtime.minute("sh600519")
     runtime.trades("sh600519")
@@ -292,3 +292,17 @@ def test_ws_health_uses_effective_configured_default() -> None:
     assert "trades" in unavailable
     assert "security_list" in unavailable
     assert "minute" not in unavailable
+
+
+def test_configured_default_provider_does_not_silently_cross_provider() -> None:
+    planner = QueryPlanner(default_provider="eastmoney")
+
+    minute = planner.compile(
+        QuerySpec.build("minute", symbols="sh600519", currentness="live")
+    )
+    assert minute.provider == "eastmoney"
+
+    with pytest.raises(Exception):
+        planner.compile(
+            QuerySpec.build("trades", symbols="sh600519", currentness="live")
+        )
