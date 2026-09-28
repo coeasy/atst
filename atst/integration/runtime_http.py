@@ -107,7 +107,6 @@ def create_runtime_app(client: Client | None = None) -> Any:
     def capabilities() -> dict[str, Any]:
         return {
             "capabilities": list(api.capabilities()),
-            "core": Client.core_capability_statuses(),
             "providers": {
                 provider: {
                     channel.id: sorted(channel.capabilities)
