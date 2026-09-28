@@ -69,7 +69,12 @@ jobs:
 
           version = _declared_version()
           parsed = Version(version)
-          is_prerelease = parsed.is_prerelease or parsed.is_devrelease
+          is_prerelease = (
+              parsed.is_prerelease
+              or parsed.is_devrelease
+              or parsed.is_postrelease
+              or parsed.local is not None
+          )
           if os.environ.get("GITHUB_EVENT_NAME") == "push":
               expected = f"v{version}"
               actual = os.environ["RELEASE_TAG"]
