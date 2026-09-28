@@ -99,13 +99,14 @@ def check(version: str, dist: pathlib.Path) -> bool:
 
     remote = _remote_hashes(payload)
     missing = sorted(set(local) - set(remote))
+    extra = sorted(set(remote) - set(local))
     mismatched = sorted(
         name for name, digest in local.items() if remote.get(name) not in (None, digest)
     )
-    if missing or mismatched:
+    if missing or extra or mismatched:
         raise SystemExit(
-            "[PyPI校验失败] 同版本已存在但制品不一致；禁止覆盖/伪装成功: "
-            f"missing={missing}, mismatched={mismatched}"
+            "[PyPI校验失败] 同版本已存在但制品集合/摘要不一致；禁止覆盖/伪装成功: "
+            f"missing={missing}, extra={extra}, mismatched={mismatched}"
         )
 
     print(f"[PyPI] {PROJECT} {version} 已存在，且 canonical 制品 SHA256 完全一致")
