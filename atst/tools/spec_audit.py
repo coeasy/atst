@@ -524,7 +524,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="CI 模式：覆盖率 < 100% 时返回非零退出码",
+        help="CI 模式：覆盖率 < 100%% 时返回非零退出码",
     )
     args = parser.parse_args(list(argv) if argv is not None else None)
 

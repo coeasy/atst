@@ -11,6 +11,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0] - 2026-09-28
 
+### Fixed（逻辑审查第 8 轮：真实 CI 首跑暴露的 CPython 3.13/3.14 缺陷 + 文档陈旧数字）
+
+同一组判据：主体流程全部联通 / 核心链路无断链 / 无孤儿逻辑 / 无死循环 / 前后端贯通。本轮起点是
+**仓库转为 public 后让发布流水线真正跑起来**——此前每一次运行（含全部 `CI`）的 job 都是
+`steps=0`、runner 名为空、2–4 秒即 `failure`，即 **GitHub Actions 计费拦截**（私有仓库消耗付费
+分钟），与仓库代码无关；本地 `make gates` 全绿也照样如此。
+
+**首跑在 ubuntu × CPython 3.14 上暴露 2 处真实缺陷**（本地 py3.12 全绿，属"环境特有"伪装的
+真缺陷，`2 failed, 4271 passed, 6 skipped`，覆盖率 83.93% ≥ 77）：
+
+- **`atst/tools/spec_audit.py` 的 argparse help 含裸 `%`**：`"覆盖率 < 100% 时返回非零退出码"`
+  会被 argparse 当作 `%`-格式串（`%(default)s` 之类占位是合法用法）。旧解释器只在**渲染** help
+  时报错，**CPython 3.14 在 `add_argument` 阶段就急切校验**并抛
+  `ValueError: badly formed help string`——3.14 上该工具直接不可用。改为 `100%%`，argparse 渲染
+  回 `100%`（已在 3.12/3.13 双解释器实测确认）。
+- **`tests/streaming/test_read_deadline.py` 的异步夹具随 3.13 失效**：`asyncio.start_server` 的
+  **同步回调**（`lambda reader, writer: None`）自 **3.13 起在返回时就关闭已接受的连接**
+  （3.12 不关），"接受但沉默"的服务端替身退化成"接受即断开"，判据以
+  `ConnectionClosed [E2020]` 假红。改用与同步判据同源的 `_SilentServer`（阻塞 socket + 后台
+  线程），3.13 上复测得 `ReadTimeout`（0.063s）且 `conn.timeout` 正确复原为 30.0。
+
+**新增门禁 `tests/compatibility/test_interpreter_hazards.py`**（按 AST 扫 `atst/`、`tests/`、
+`scripts/`）：① 凡 `add_argument`/`ArgumentParser`/`add_parser` 的
+`help`/`description`/`epilog`/`usage` 字面量，以运行时同一条 `literal % {}` 语义判定裸 `%`；
+② 凡 `asyncio.start_server`/`start_unix_server` 的回调是 lambda 或同模块普通 `def`（必然不是
+协程函数）即判红。两条判据各自带变异自测，并已用"注入违规代码"验证确实会红。
+
+**文档陈旧数字收口**：`README.md` 两处 CI 矩阵仍写 `Ubuntu 3.10–3.13`（实为 **3.10–3.14**；
+这两个数字没有任何门禁钉住 —— 活文档门禁只查路径与导入名 —— 只能靠人对着
+`.github/workflows/ci.yml` 复核）；`docs/releases/v1.0.0.md` 的
+兼容性列表漏 3.14，与同文第 14 行的"支持 Python 3.10–3.14"自相矛盾——均已订正。另外把
+「运行前提：Actions 必须真的能把 job 跑起来」写进 README 发布流程节，记录计费拦截的识别特征
+（job 不启动 / `steps=0` / runner 为空）与两条解法（转 public 或修 billing），并说明
+`build-dist` 的身份步对 `docs/releases/v<version>.md` 与 `CHANGELOG.md` 标题的硬校验。
+
+**刻意未做的改动**：`docs/releases/v1.0.0.md` 与 README / `docs/quickstart.md` /
+`docs/api/README.md` 的「发布候选 / 尚无 GitHub Release」口径**保持原样**。这一状态被
+`test_v1_release_candidate_identity_is_preserved` 与
+`test_general_docs_report_the_actual_unpublished_release_candidate` 钉死，而在提交时刻
+GitHub Release **确实还不存在**（此前的运行全被计费拦下）。提前把它改成"已发布"等于让门禁替
+一句尚未成立的话背书，也会让本轮 `make gates` 自己变红。正确顺序是：本次标签触发的流水线**真正
+产出 Release 之后**，再以一次专门提交把文档与那两条判据一起翻到"已发布"状态。
+
+**本轮验证**：修复后本地 `ruff check` / `ruff format --check`（493 文件）、`mypy atst/`（CI 参数）、
+`tests/compatibility`（含新门禁）、`tests/streaming/test_read_deadline.py`、
+`tests/test_spec_coverage.py` 全 RC=0；离线全量 `pytest -m "not network"` RC=0。
+
 ### Fixed（逻辑审查第 6 轮：并入上游 126 个提交后的门禁 / 文档漂移收口与 lint 工具链对齐）
 
 同一组判据：主体流程全部联通 / 核心链路无断链 / 无孤儿逻辑 / 无死循环 / 前后端贯通。本轮起点是

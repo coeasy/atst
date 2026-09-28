@@ -145,11 +145,12 @@ class TestAsyncChainGetsTheSameDeadline:
         import asyncio
 
         async def scenario() -> tuple[float, float]:
-            # 只接受、永不回帧的本机监听 socket；wait_closed 在 3.12 上会等到
-            # 在飞连接结束，这里不依赖它，只 close 监听口。
-            server = await asyncio.start_server(lambda reader, writer: None, "127.0.0.1", 0)
-            port = server.sockets[0].getsockname()[1]
-            conn = AsyncTcpConnection("127.0.0.1", port, timeout=30.0, handshake=False)
+            # 「只接受、永不回帧」的本机监听口用 _SilentServer（阻塞 socket + 后台线程），
+            # 与同步那两条判据同一实现。刻意不用 asyncio.start_server：3.13 起它的
+            # **同步回调**一返回就会关闭连接（3.12 不会），"接受但沉默"的语义随之消失，
+            # 判据会退化成在测"对端已断"，在 3.13/3.14 上以 ConnectionClosed 假红。
+            server = _SilentServer()
+            conn = AsyncTcpConnection("127.0.0.1", server.port, timeout=30.0, handshake=False)
             started = time.monotonic()
             try:
                 await asyncio.wait_for(conn.connect(), 5.0)

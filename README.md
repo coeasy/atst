@@ -242,7 +242,9 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 1. 改版本号：编辑 `atst/_version.py` 的 `__version__`（单一事实源；`pyproject.toml` 通过
    `[tool.hatch.version]` 动态读取，不要写死静态 `version=`）。
 2. 补版本文档：在 `CHANGELOG.md` 加 `## [X.Y.Z] - YYYY-MM-DD` 小节，并在 `docs/releases/`
-   目录下新增以版本号命名的发布说明（已有范例见 `docs/releases/v1.0.0.md`）。
+   目录下新增以版本号命名的发布说明（已有范例见 `docs/releases/v1.0.0.md`）。**这两处是硬门禁**：
+   `build-dist` 的身份步会断言 `docs/releases/v<version>.md` 存在、且 `CHANGELOG.md` 含
+   `## [<version>]` 标题，缺一即以 `SystemExit` 让流水线直接变红。
 3. 提交并打标签：
    ```bash
    git add -A && git commit -m "release: vX.Y.Z"
@@ -253,6 +255,18 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
      `publish-pypi` 才用 OIDC trusted publishing 上传（重复版本会被
      `scripts/check_pypi_release.py` 安全跳过）。默认不发布到 PyPI。
    - Docker 镜像同理，需 `PUBLIC_RELEASE=true` 且 `PUBLISH_DOCKER=true`。
+
+### 运行前提：Actions 必须真的能把 job 跑起来
+
+流水线依赖 GitHub Actions 实际调度 runner。**私有仓库**的 Actions 消耗账号付费分钟——当免费
+额度用尽、没有有效付款方式、或 spending limit 不足时，job **根本不会启动**：每个 job 会在几秒内
+`failure`，步骤数为 0、runner 名为空，页面提示
+`The job was not started because recent account payments have failed or your spending limit needs to be increased.`。
+这**与仓库代码无关**（本地 `make gates` 全绿也照样如此）。
+
+处理方式（任一）：把仓库设为 **public**（公开仓库的 Actions 分钟免费）；或到
+`Settings → Billing and plans` 补付款方式并提高 Actions spending limit；额度重置后重推 `vX.Y.Z`
+标签即可重新触发。runner 镜像迁移预告（`ubuntu-latest will migrate to Ubuntu 26 ...`）只是提示，不是失败原因。
 
 ### 本地构建与冒烟（不发布）
 
@@ -272,7 +286,7 @@ python scripts/build_package.py --verify-only --dist-out dist   # 只校验已�
 |---|---|
 | **Python** | 3.10+（使用了 `X \| Y` 类型语法与 `zoneinfo`） |
 | **操作系统** | Windows 10/11 · macOS 12+ · Linux（主流发行版） |
-| **CI 矩阵** | Ubuntu 3.10/3.11/3.12/3.13 + Windows 3.11/3.12 |
+| **CI 矩阵** | Ubuntu 3.10/3.11/3.12/3.13/3.14 + Windows 3.11/3.12 |
 | **网络** | TCP 7709/7727（TDX 主站）+ HTTPS（Web 源） |
 | **存储** | 文件系统（`~/.atst/` 配置/主站排名/反馈）+ Parquet/DuckDB |
 
@@ -493,7 +507,8 @@ python scripts/contract_audit.py --ci           # Typed 契约↔注册表↔Dom
 python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproject fail_under=77）
 ```
 
-- CI：11 jobs；测试矩阵 Ubuntu 3.10–3.13 加 Windows 3.11/3.12；周三 09:00 UTC 定期 `host-audit`
+- CI：11 jobs；测试矩阵 Ubuntu 3.10–3.14 加 Windows 3.11/3.12；周一 08:00 UTC 全量确定性门禁，
+  周三 09:00 UTC 定期 `host-audit`
 - 架构守卫：`tests/architecture/`（唯一内核、零缓存、无聚合降级路由、根级命名空间白名单、
   已删层不可复活）+ `tests/provider_isolation/`（Provider 隔离与溯源）
 - Ruff：`ruff check` 与 `ruff format --check` 均 0 错（待重排文件已在 V17 Phase 5 第 2 步
