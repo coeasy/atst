@@ -49,7 +49,8 @@ def test_v1_release_candidate_identity_is_preserved() -> None:
     changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     release = _ROOT / "docs" / "releases" / "v1.0.0.md"
 
-    assert "## [1.0.0] - 2026-09-09" in changelog
+    assert "## [1.0.0] - 2026-09-28" in changelog
+    assert "## Historical tstdx baseline - 2026-09-09" in changelog
     assert release.is_file()
     release_text = release.read_text(encoding="utf-8")
     assert "v1.0.0" in release_text
