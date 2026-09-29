@@ -32,6 +32,7 @@ from ..runtime.orchestration import FallbackPolicy
 from .serialization import serialize_result
 from .wire_fields import (
     WS_PARAMS_FIELDS,
+    as_request_bool,
     as_request_int,
     reject_reserved_kwargs,
     reject_undeclared,
@@ -42,6 +43,13 @@ __all__ = ["RuntimeJsonRpcHandler"]
 logger = logging.getLogger(__name__)
 
 JSONRPC_VERSION = "2.0"
+
+#: 单条 WS 连接上允许"已投递但未发完"的推送帧上限。见 :meth:`_schedule_push`：
+#: 慢客户端反压时丢旧帧，而不是让待发协程与内存无界上涨。
+MAX_PENDING_PUSH_FRAMES: int = 64
+
+#: 单条连接上"标的 → Provider"出处表的容量上限（FIFO 淘汰）。
+MAX_TRACKED_SUB_PROVIDERS: int = 1024
 ERR_PARSE = -32700
 ERR_INVALID_REQUEST = -32600
 ERR_METHOD_NOT_FOUND = -32601
@@ -85,6 +93,10 @@ class RuntimeJsonRpcHandler:
         self._async_client: AsyncClient | None = None
         self._subs: dict[str, Any] = {}
         self._seq = 0
+        #: 已投出去、还没跑完的推送帧（:meth:`_schedule_push` 的背压窗口）。
+        self._pending_pushes: list[Any] = []
+        #: 标的 → 订阅时选中的 Provider（推送帧的 ``meta.provider`` 出处）。
+        self._sub_providers: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # 连接生命周期（由 ``serve_runtime_ws`` 的每条连接调用一次）
@@ -203,6 +215,17 @@ class RuntimeJsonRpcHandler:
             default=default,
         )
 
+    @staticmethod
+    def _bool_param(method: str, name: str, value: Any, default: bool = False) -> bool:
+        """布尔格走 :func:`as_request_bool`：``"false"`` 不再被真值规则读成 ``True``。"""
+        return as_request_bool(
+            face="ws_params",
+            where=f"WS {method} params",
+            name=name,
+            value=value,
+            default=default,
+        )
+
     def _dispatch(self, method: str, params: dict[str, Any]) -> Any:
         # params 的白名单按方法给出（``wire_fields.WS_PARAMS_FIELDS``）：过去未知键经
         # ``params.get(...)`` 蒸发，同一个调用在 ``Client`` 面上会 ``TypeError``（F-47）。
@@ -304,10 +327,12 @@ class RuntimeJsonRpcHandler:
                     count=self._int_param(method, "count", params.get("count"), 320),
                     start=self._int_param(method, "start", params.get("start"), 0),
                     adjustment=str(params.get("adjustment", "")),
-                    currentness="historical",
+                    currentness=str(params.get("currentness", "historical")),
+                    strict=self._bool_param(method, "strict", params.get("strict", False)),
+                    start_date=str(params.get("start_date", "")),
+                    end_date=str(params.get("end_date", "")),
                 )
             )
-
         symbol = params.get("symbol")
         if method in {"snapshot", "minute", "trades"}:
             if not isinstance(symbol, str) or not symbol:
@@ -394,6 +419,10 @@ class RuntimeJsonRpcHandler:
         self._seq += 1
         sub_id = f"sub{self._seq}"
         self._subs[sub_id] = stream
+        #: 记住这条订阅用的 Provider：推送帧要把出处带上，否则消费方分不清这一帧
+        #: 是 TDX 还是别家（请求-响应路径的 ``meta.provider`` 是同一件事）。
+        for symbol in symbols:
+            self._sub_providers[str(symbol)] = str(provider) if provider else "tdx"
         return sub_id
 
     def _unsubscribe_from_params(self, sub_id: Any) -> dict[str, Any]:
@@ -402,6 +431,15 @@ class RuntimeJsonRpcHandler:
         found = sub_id in self._subs
         if found:
             stream = self._subs.pop(sub_id)
+            #: 出处表跟着订阅一起回收：没有活跃订阅时整表清空；表本身也有容量上限，
+            #: 长期反复换标的不会把它撑成慢泄漏。
+            if not self._subs:
+                self._sub_providers.clear()
+            elif len(self._sub_providers) > MAX_TRACKED_SUB_PROVIDERS:
+                for symbol in list(self._sub_providers)[
+                    : len(self._sub_providers) - MAX_TRACKED_SUB_PROVIDERS
+                ]:
+                    del self._sub_providers[symbol]
             if self._loop is not None:
                 asyncio.run_coroutine_threadsafe(self._safe_stop(stream), self._loop).result(
                     timeout=10
@@ -435,15 +473,23 @@ class RuntimeJsonRpcHandler:
         """
         if self._loop is None or self._send is None:
             return
+        #: 推送帧带上 ``provider`` / ``observed_at_ns`` / ``warnings``：请求-响应路径上的
+        #: 结果都带 ``meta``（``serialization.serialize_result``），推送帧却只有裸 data，
+        #: 消费方因此拿不到"这条数据有瑕疵"的任何信号——与同一份声明直接冲突。形状对齐
+        #: 请求-响应的 ``meta``，流式与一次性查询才不会因为入口不同而丢信息。
+        meta: dict[str, Any] = {"provider": self._push_provider(symbol)}
+        warnings = self._drain_warnings()
+        if warnings:
+            meta["warnings"] = warnings
+        observed = data.get("observed_at_ns") if isinstance(data, dict) else None
+        if observed is not None:
+            meta["observed_at_ns"] = observed
         frame = {
             "jsonrpc": JSONRPC_VERSION,
             "method": PUSH_METHOD,
-            "params": {"type": "snapshot", "code": symbol, "data": data},
+            "params": {"type": "snapshot", "code": symbol, "data": data, "meta": meta},
         }
-        try:
-            asyncio.run_coroutine_threadsafe(self._emit(frame), self._loop)
-        except Exception:  # pragma: no cover - 连接已断等情况
-            logger.exception("WS 推送帧调度失败")
+        self._schedule_push(frame)
 
     def _on_error(self, exc: Exception) -> None:
         if self._loop is None or self._send is None:
@@ -455,15 +501,56 @@ class RuntimeJsonRpcHandler:
             "method": PUSH_METHOD,
             "params": {"type": "error", "error": envelope.to_dict()},
         }
-        try:
-            asyncio.run_coroutine_threadsafe(self._emit(frame), self._loop)
-        except Exception:  # pragma: no cover
-            logger.exception("WS 错误帧调度失败")
+        self._schedule_push(frame)
 
     async def _emit(self, frame: dict[str, Any]) -> None:
         if self._send is None:
             return
         await self._send(json.dumps(frame, ensure_ascii=False, default=str))
+
+    def _push_provider(self, symbol: str) -> str:
+        return self._sub_providers.get(str(symbol), "tdx")
+
+    @staticmethod
+    def _drain_warnings() -> list[dict[str, str]]:
+        """当前上下文里积着的瑕疵，按请求-响应面同样的形状带出去。"""
+        from ..diagnostics import current_warnings
+
+        return [
+            {"code": str(item.code.value), "message": item.message} for item in current_warnings()
+        ]
+
+    def _schedule_push(self, frame: dict[str, Any]) -> None:
+        """把推送帧丢给连接循环，但**不许无限堆积**。
+
+        过去这是纯 fire-and-forget：``run_coroutine_threadsafe`` 返回的 Future 被丢弃，
+        ``_emit`` 里的 ``send`` 没有超时。慢客户端 / TCP 反压下，每个轮询节拍（默认 1s）
+        都往事件循环塞一个待发协程，而流式 worker 线程不会因此减速——待发任务与内存单调
+        增长，没有丢弃、没有背压，与流式侧自己的 ``BackpressureQueue`` 口径完全不一致。
+
+        现在在飞帧数有上限：超阈值就丢最旧的一帧并记日志（推送是连续的实时快照，丢一帧
+        远好过让整条连接的内存无界上涨）。
+        """
+        if self._loop is None or self._send is None:
+            return
+        try:
+            future = asyncio.run_coroutine_threadsafe(self._emit(frame), self._loop)
+        except Exception:  # pragma: no cover - 连接已断等情况
+            logger.exception("WS 推送帧调度失败")
+            return
+        pending = self._pending_pushes
+        #: 先摘掉已经跑完的，否则计数把"早就发完的帧"也算成积压。
+        if len(pending) >= MAX_PENDING_PUSH_FRAMES:
+            pending[:] = [item for item in pending if not item.done()]
+        pending.append(future)
+        overflow = len(pending) - MAX_PENDING_PUSH_FRAMES
+        if overflow > 0:
+            del pending[:overflow]
+            logger.warning(
+                "WS 推送积压超过 %d 帧，丢弃最旧的 %d 帧（慢客户端反压）",
+                MAX_PENDING_PUSH_FRAMES,
+                overflow,
+            )
 
     # ------------------------------------------------------------------
     # 协议层错误

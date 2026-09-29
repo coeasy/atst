@@ -12,7 +12,9 @@
     E5xxx  本地文件        vipdoc / block / finance
     E6xxx  流式订阅        subscription / gap / backpressure
     E7xxx  HTTP Web Provider anti-spider / rate-limit / deprecated
-    E8xxx  门面层          facade / bridge shim
+    E8xxx  兼容层          Web 语义兼容 / 桥接 shim（``E8xxx`` 旧称"门面层"，
+                           ``atst.facade`` 已随 v16 Phase 2 物理删除；今天
+                           ``CompatibilityError`` 的 raise 站点全在 Web 层）
     E9xxx  内部与依赖      internal / missing-dependency
 
 v12 保留已有错误码、继承关系与公共诊断信息。唯一收敛的执行语义是：

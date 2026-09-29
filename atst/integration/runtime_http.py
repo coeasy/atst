@@ -174,6 +174,10 @@ def create_runtime_app(client: Client | None = None) -> Any:
         count: int = Query(320, ge=1, le=10000),
         start: int = Query(0, ge=0),
         adjustment: str = "",
+        currentness: str = "historical",
+        strict: bool = False,
+        start_date: str = "",
+        end_date: str = "",
     ) -> dict[str, Any]:
         return serialize_result(
             api.bars(
@@ -184,7 +188,10 @@ def create_runtime_app(client: Client | None = None) -> Any:
                 count=count,
                 start=start,
                 adjustment=adjustment,
-                currentness="historical",
+                currentness=currentness,
+                strict=strict,
+                start_date=start_date,
+                end_date=end_date,
             )
         )
 

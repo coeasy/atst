@@ -68,6 +68,24 @@ TOOLS: list[ToolSpec] = [
                 ),
                 "start": _int_prop("Pagination offset.", default=0, minimum=0, maximum=MAX_PAGE),
                 "adjustment": _str_prop("Adjustment mode when supported."),
+                "currentness": _str_prop(
+                    "Freshness contract: live / historical / business / auto."
+                ),
+                "strict": {
+                    "type": "boolean",
+                    "description": (
+                        "Fail the call when the result carries any data-integrity "
+                        "warning instead of returning it for the caller to self-check."
+                    ),
+                    "default": False,
+                },
+                "start_date": _str_prop(
+                    "Inclusive range start (YYYY-MM-DD). The wire protocol only walks "
+                    "backwards by count, so the range is cut from the fetched page: if "
+                    "that page does not reach back to start_date the result carries a "
+                    "bars_range_uncovered caveat (a failure under strict)."
+                ),
+                "end_date": _str_prop("Inclusive range end (YYYY-MM-DD)."),
             },
             "required": ["symbol"],
         },

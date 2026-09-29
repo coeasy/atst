@@ -35,6 +35,8 @@ __all__ = [
     "FINANCE_INFO_FIELDS",
     "map_finance_values",
     "to_capital_changes",
+    "capital_changes_from_dividends",
+    "reject_implausible_changes",
 ]
 
 # --------------------------------------------------------------------------- #
@@ -160,3 +162,139 @@ def to_capital_changes(rows: Iterable[Mapping[str, Any]]) -> list[CapitalChange]
             )
         )
     return out
+
+
+def capital_changes_from_dividends(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    code: str = "",
+    market: int = 0,
+) -> list[CapitalChange]:
+    """把东财 ``dividend_history`` 行（:class:`EastmoneyDividendSource` 的形状）
+
+    转成 :class:`~atst.domain.models.CapitalChange`，供复权引擎消费。
+
+    为什么需要第二条入口：``0x000F``（TDX 除权除息）的记录布局**至今没有真机 golden
+    锁定**（``atst/protocol/parsers/std7709.py`` 标 ``待样本锁定``），实测解码出来的
+    ``market``/``code``/``date`` 是错位值，直接喂给复权引擎会得到一条
+    ``无法解析日期`` 的错误、或者更糟——一组碰巧能解析但完全错误的因子。东财
+    ``RPT_SHAREBONUS_DET`` 是已实测可用的源，字段名与语义都对拍过，因此它才是复权的
+    **默认事件源**。
+
+    口径对齐（关键）：东财三项比例都是**每 10 股**，与 :class:`CapitalChange` 的
+    ``dividend`` / ``bonus_ratio`` 约定一致（复权引擎内部再除 10）。送股与转增都扩张
+    股本、在除权价公式里同处 ``S`` 的位置，故合并进 ``bonus_ratio``；配股在东财这张
+    表里没有对应列，置 0。
+
+    没有除权除息日（``ex_dividend_date``）的记录**丢弃**：复权因子必须挂在日历日上，
+    拿报告期（``report_date``）当事件日会把因子提前整整一个季度。
+    """
+    out: list[CapitalChange] = []
+    for row in rows:
+        date = _first_text(row, "ex_dividend_date", "EX_DIVIDEND_DATE")
+        if not date:
+            continue
+        bonus = _as_float(_first(row, "bonus_shares_per_10", "BONUS_RATIO"))
+        transfer = _as_float(_first(row, "transfer_shares_per_10", "IT_RATIO"))
+        cash = _as_float(_first(row, "cash_dividend_per_10", "PRETAX_BONUS_RMB"))
+        out.append(
+            CapitalChange(
+                code=str(row.get("code") or code),
+                market=market,
+                #: 1 = 除权除息：只有这一类参与价格因子计算（见 ``ADJUST_CATEGORIES``）
+                category=1,
+                category_name="除权除息",
+                date=_normalize_day(date),
+                dividend=cash,
+                rights_price=0.0,
+                bonus_ratio=bonus + transfer,
+                rights_ratio=0.0,
+            )
+        )
+    return out
+
+
+def reject_implausible_changes(events: Sequence[Any]) -> None:
+    """复权事件的硬闸：布局错位的记录不许进入复权引擎。
+
+    ``0x000F`` 解码错位时的形状是稳定的：``market`` 落在 TDX 二进制市场编号
+    ``[0, 1, 2]`` 之外、``code`` 带控制字符或为空、``date`` 不是 ``YYYY-MM-DD``
+    而是某个被当成整数读过的大数（如 ``'1082130432'``）。这些值即使碰巧能被
+    :func:`~atst.domain.adjust` 的日期解析吞下，也只会算出一组错误的因子——
+    **错位的复权比不复权更危险**，因为它长得完全正常。
+
+    所以这里就地判死，并且把话说清楚：布局未锁定的命令不要拿来复权，改用东财源。
+    """
+    from ..errors import ValidationError
+
+    bad: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        reasons: list[str] = []
+        if int(getattr(event, "market", 0)) not in (0, 1, 2):
+            reasons.append(f"market={getattr(event, 'market', None)} 不是 TDX 市场编号 [0,1,2]")
+        code = str(getattr(event, "code", "") or "")
+        if not code or not code.isprintable() or not code.isascii():
+            reasons.append(f"code={code!r} 不是可见 ASCII 代码")
+        date = str(getattr(event, "date", "") or "")
+        if not _is_day(date):
+            reasons.append(f"date={date!r} 不是 YYYY-MM-DD")
+        if reasons:
+            bad.append({"index": index, "reasons": reasons})
+    if not bad:
+        return
+    raise ValidationError(
+        "除权除息记录布局不可信：TDX 0x000F 的记录布局尚未由真机 golden 锁定，"
+        f"{len(bad)}/{len(events)} 条记录的字段值落在库自己声明的取值域之外。"
+        "用它们复权会得到错误的因子，因此当场拒绝而不是算出一个看起来正常的结果。"
+        "请改用 event_source='eastmoney'（默认），或直接传 events=",
+        context={
+            "phase": "adjust_event_validation",
+            "command": "0x000F",
+            "bad_records": bad[:5],
+            "bad_count": len(bad),
+        },
+    )
+
+
+def _first(row: Mapping[str, Any], *names: str) -> Any:
+    for name in names:
+        if name in row and row[name] is not None:
+            return row[name]
+    return None
+
+
+def _first_text(row: Mapping[str, Any], *names: str) -> str:
+    value = _first(row, *names)
+    return str(value).strip() if value is not None else ""
+
+
+def _as_float(value: Any) -> float:
+    if value is None:
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _normalize_day(value: str) -> str:
+    """``'2026-06-26 00:00:00'`` → ``'2026-06-26'``（东财日期带时间尾巴）。"""
+    return value.split(" ")[0].split("T")[0]
+
+
+def _is_day(value: str) -> bool:
+    """只认 ``YYYY-MM-DD``，且必须是个真实存在的日期。
+    ``_normalize_day`` 已经把时间尾巴切掉了，所以这里不需要再容忍 ``'... 00:00:00'``。
+    """
+    if len(value) != 10 or value[4] != "-" or value[7] != "-":
+        return False
+    head, mid, tail = value[:4], value[5:7], value[8:10]
+    if not (head.isdigit() and mid.isdigit() and tail.isdigit()):
+        return False
+    from datetime import date
+
+    try:
+        date(int(head), int(mid), int(tail))
+    except ValueError:
+        return False
+    return True

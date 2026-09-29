@@ -3,8 +3,15 @@
 
 """复权引擎（§11）：前复权 / 后复权 / 定点复权。
 
-**定位：公共 API，生产接线排期批次 G4**——当前无生产链路消费本模块
-（1.1.0 未接入 client/facade 降级链），仅供离线复权计算使用。
+**定位：生产已接线。** 消费方是 ``derived`` Provider ``adjustment`` channel 的
+``adjusted_bars`` 能力——经 :meth:`DirectProviderExecutor._composed_call` 走到
+:class:`AdjustEngine`，``Client.call("adjusted_bars", ...)`` 与 ``atst adjusted-bars``
+子命令都落在这条链上。
+
+.. note::
+   本模块 docstring 曾经写着"无生产链路消费（未接入 client/facade 降级链）"，那是
+   v16 之前的史实：``atst.facade`` 已随 v16 Phase 2 物理删除，v13 契约本身也禁止降级
+   链。文档与代码分叉会让"能不能用"这个问题只能靠读源码回答，故在此更正。
 
 除权除息数学
 ------------
@@ -141,7 +148,10 @@ def compute_factors(
         # （除权日当天开盘价已反映除权，故事件日及之后的 bar 乘以因子）
         while ev_idx < n_ev and ev_dates[ev_idx] <= d:
             ev = ev_list[ev_idx]
-            price_factor *= _price_adjust_ratio(ev, bar)
+            #: 前收盘价 = 上一根 bar 的收盘价（连续交易日的定义），K 线序列自己就有。
+            #: 这样现金红利能进价格因子，而不是每次都走"忽略派息"的降级口径。
+            prev_close = bars[i - 1].close if i > 0 else None
+            price_factor *= _price_adjust_ratio(ev, bar, fallback_prev_close=prev_close)
             vol_factor *= _volume_adjust_ratio(ev)
             ev_idx += 1
         factors.append(
@@ -155,13 +165,24 @@ def compute_factors(
 _warned_missing_prev_close = False
 
 
-def _price_adjust_ratio(ev: CapitalChange, bar: Bar) -> float:
+def _price_adjust_ratio(
+    ev: CapitalChange,
+    bar: Bar,
+    fallback_prev_close: float | None = None,
+) -> float:
     """返回 :math:`1/k`（后复权方向的价格放大系数）。
 
-    缺前收盘价（``extra["prev_close"]``）时退化为 ``1/(1+S+R)``：
-    现金红利被忽略，误差 = D/P 量级。首次命中时发一次性
-    :class:`UserWarning` 提示（docstring 契约与实际行为此前不一致，
-    审计 §3-7）。
+    前收盘价的取值顺序：
+
+    1. ``bar.extra["prev_close"]``——数据自带，最准；
+    2. ``fallback_prev_close``——**上一根 bar 的收盘价**。连续交易日里"前收盘价"按
+       定义就是上一交易日的收盘价，所以 K 线序列本身就能提供它。过去只用第 1 条，
+       而 TDX / 东财的 K 线都不带这个字段，于是**每一次复权都在走降级口径**：现金
+       红利被整项忽略，价格因子退化成 ``1/(1+S+R)``。对 10 送 8 转 12 派 39.74 这种
+       事件，跌幅里属于派息的那部分被当成了股本扩张，因子偏大。
+    3. 都没有 → 退化为 ``1/(1+S+R)``，现金红利被忽略，误差 = D/P 量级。首次命中时发
+       一次性 :class:`UserWarning` 提示（docstring 契约与实际行为此前不一致，审计
+       §3-7）。
     """
     global _warned_missing_prev_close
     d = ev.dividend / 10.0  # 每股现金红利
@@ -180,6 +201,8 @@ def _price_adjust_ratio(ev: CapitalChange, bar: Bar) -> float:
     extra = getattr(bar, "extra", None) or {}
     prev_close = extra.get("prev_close")
     prev_close = float(prev_close) if prev_close else None
+    if prev_close is None and fallback_prev_close and fallback_prev_close > 0:
+        prev_close = float(fallback_prev_close)
 
     if prev_close and prev_close > 0:
         ref_price = (prev_close - d + pr * r) / denom

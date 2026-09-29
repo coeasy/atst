@@ -266,12 +266,32 @@ def _fill(path: str) -> str:
     return path.replace("{symbol}", "600519").replace("{capability}", "rates")
 
 
+#: 少数字段的合法样本值不能靠类型推出去：``currentness`` 是闭集枚举，填 ``tdx`` 会被
+#: 内核当场拒（那正是它该做的），于是这条"带满已声明字段必须通"的用例自己被挡在门外。
+_SAMPLE_BY_NAME: dict[str, str] = {
+    "currentness": "historical",
+    "adjustment": "",
+    "start_date": "2024-01-02",
+    "end_date": "2024-12-31",
+}
+
+
 def _query_values(app: Any, path: str) -> dict[str, str]:
-    """已声明查询参数的样本值，按注记类型现推（int → ``1``，其余 → ``tdx``）。"""
+    """已声明查询参数的样本值，按注记类型现推（bool → ``true``，int → ``1``，其余
+    → ``tdx``）；闭集字段走 :data:`_SAMPLE_BY_NAME`。"""
     values: dict[str, str] = {}
     for param in _route(app, path).dependant.query_params:
+        if param.name in _SAMPLE_BY_NAME:
+            values[param.name] = _SAMPLE_BY_NAME[param.name]
+            continue
         annotation = param.field_info.annotation
-        values[param.name] = "1" if annotation is int or int in get_args(annotation) else "tdx"
+        args = get_args(annotation)
+        if annotation is bool or bool in args:
+            values[param.name] = "true"
+        elif annotation is int or int in args:
+            values[param.name] = "1"
+        else:
+            values[param.name] = "tdx"
     return values
 
 
@@ -340,6 +360,9 @@ def _ws_sample(key: str) -> Any:
         "interval": 1,
         "diff_only": False,
         "max_queue": 1024,
+        "strict": False,
+        "start_date": "2024-01-02",
+        "end_date": "2024-12-31",
     }
     assert key in samples, f"WS 字段表里的 {key} 没有测试样本，判据会被架空"
     return samples[key]

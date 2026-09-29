@@ -500,6 +500,8 @@ def _validate_composed(
             "start",
             "events",
             "anchor_date",
+            "provider",
+            "event_source",
         },
         "sync_daily": {"root", "profile", "chunk", "max_windows"},
     }[capability]

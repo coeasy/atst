@@ -184,6 +184,26 @@ _SEMANTIC_FIELD_RENAMES: Mapping[str, str] = MappingProxyType({"symbols": "symbo
 #: ``schema_version`` / ``options``）是**规划**输入，不是实现入参。
 _SEMANTIC_CALL_FIELDS: tuple[str, ...] = ("symbols", "period", "count", "start", "adjustment")
 
+#: 复权因子是按**事件日**定位的（:mod:`atst.domain.adjust` 的累乘链以日期为索引），
+#: 所以只有"每根 bar 都能落到一个明确日历日"的周期才有复权语义。分钟级周期在同一天里
+#: 有多根 bar、无法区分事件前后，因此不支持——宁可当场拒绝，也不返回看起来复过权的假数据。
+_ADJUSTABLE_PERIODS: frozenset[str] = frozenset({"day", "week", "month"})
+
+#: 复权事件的两个来源。**默认走东财**：``0x000F``（TDX 除权除息）的记录布局至今没有
+#: 真机 golden 锁定，用它复权只会得到错位因子；它是显式 opt-in，且要过
+#: :func:`atst.domain.finance.reject_implausible_changes` 那道闸。
+_ADJUST_EVENT_SOURCES: frozenset[str] = frozenset({"eastmoney", "tdx"})
+
+
+def _day_in_range(day: str, start_date: str, end_date: str) -> bool:
+    """闭区间判定。``day`` 取不到时**保留**该行：裁不掉的行宁可留着让调用方看见，
+    也不要静默丢掉一条它没法解释的数据。"""
+    if not day:
+        return True
+    if start_date and day < start_date:
+        return False
+    return not (end_date and day > end_date)
+
 
 def _semantic_call_payload(plan: QueryPlan, meta: Any) -> tuple[list[Any], dict[str, Any]]:
     """把 QuerySpec 的语义字段绑定成实现自己的关键字入参。
@@ -288,6 +308,8 @@ class DirectProviderExecutor:
             verify_currentness(plan, strict=strict)
             try:
                 data = fn(plan)
+                #: 日期区间在取回的那一页上做过滤，并当场回答"这一页盖不盖得住区间"。
+                data = self._apply_bar_range(plan, data)
             except TdxError as exc:
                 exc.context.setdefault("provider", plan.provider)
                 exc.context.setdefault("channel", plan.channel)
@@ -472,7 +494,7 @@ class DirectProviderExecutor:
         if meta.backend == "web_adapter":
             return self._web_adapter_call(meta, args, kwargs, timeout=hop)
         if meta.backend == "composed":
-            return self._composed_call(meta.capability, args, kwargs, timeout=hop)
+            return self._composed_call(plan, meta.capability, args, kwargs, timeout=hop)
 
         raise ValidationError(
             "unknown migrated backend",
@@ -517,8 +539,136 @@ class DirectProviderExecutor:
             if callable(close):
                 close()
 
+    def _apply_bar_range(self, plan: QueryPlan, data: Any) -> Any:
+        """按 ``start_date``/``end_date`` 裁一段 K 线，并说清楚这一页盖不盖得住区间。
+
+        协议侧只有"从最新往回数 ``count`` 根"这一种游标，没有服务端日期区间参数。所以
+        区间是在结果上裁的：请求了 ``start_date`` 而取回的最早一根仍晚于它，说明**区间
+        的更早那一段根本没被取回来**——此时结果是一段被截断的区间，而不是"这些日期没有
+        行情"。这两种说法对调用方完全是两回事，因此记一条
+        :data:`~atst.diagnostics.WarningCode.BARS_RANGE_UNCOVERED`（``strict=True`` 时它
+        是一次失败），让"看起来正常的部分结果"不再能冒充完整区间。
+        """
+        start_date = plan.spec.start_date
+        end_date = plan.spec.end_date
+        if not start_date and not end_date:
+            return data
+        if not isinstance(data, list) or not data:
+            return data
+
+        def day_of(row: Any) -> str:
+            if isinstance(row, dict):
+                return str(row.get("date") or row.get("datetime") or "")[:10]
+            for name in ("date", "datetime"):
+                value = getattr(row, name, None)
+                if value:
+                    return str(value)[:10]
+            return ""
+
+        kept = [row for row in data if _day_in_range(day_of(row), start_date, end_date)]
+        if start_date and kept:
+            days = [day for day in (day_of(r) for r in data) if day]
+            #: 判据是"这一页有没有取到区间起点**之前**的 bar"，不是"最早一根是否等于
+            #: 起点"——后者会把起点落在休市日上的正常请求误报成截断（2026-01-01 没有
+            #: bar，但 2025-12-31 有，区间就是完整的）。
+            reached_before_start = any(day < start_date for day in days)
+            if not reached_before_start:
+                record_warning(
+                    WarningCode.BARS_RANGE_UNCOVERED,
+                    f"请求区间自 {start_date} 起，但本次取回的 {len(data)} 根 K 线最早只到 "
+                    f"{min(days) if days else '（无日期）'}，没有触及区间起点之前："
+                    "结果是区间的一段而不是全部。请加大 count 或用 start 偏移继续往回取。",
+                    stacklevel=2,
+                )
+        return kept
+
+    def _adjusted_raw_bars(
+        self,
+        symbol: str,
+        *,
+        period: str,
+        count: int,
+        start: int,
+        raw_provider: str,
+        timeout: float,
+    ) -> list[Any]:
+        """取复权用的**未复权**原始 K 线：本地 vipdoc 优先，没有就走 Provider。
+
+        过去的 ``adjusted_bars`` 只认 ``vipdoc_root``，没配本地数据的调用方拿到的就是一句
+        ``requires vipdoc_root``——复权因此事实上只是个离线功能，TDX 在线用户用不了。
+        这里把"原始 bar 从哪来"变成一次正常的单内核查询：
+
+        * 日线且本地 vipdoc 有这份文件 → 读本地（不产生网络 I/O，口径与离线一致）；
+        * 其余情况 → 用 :class:`~atst.query.QueryPlanner` 编一条 ``bars`` 计划并交给
+          :meth:`execute`。**复用同一条主链路**而不是在这里另写一份 Provider 分支，
+          于是复权自动跟随 Provider 的能力面（TDX 的 10 个周期、Web 三家的 ``adjust``…
+          这里刻意不传），也不会出现"复权能取、bars 取不到"的分叉。
+        """
+        from ..domain.models import Bar
+        from ..domain.symbol import split_symbol
+        from ..query import QueryPlanner, QuerySpec
+        from ..reader import DayBarReader
+
+        if period == "day" and self.vipdoc_root:
+            market, code = split_symbol(symbol)
+            path = Path(self.vipdoc_root) / market / "lday" / f"{market}{code}.day"
+            if path.exists():
+                bars = DayBarReader().read(path, output="model")
+                end = max(0, len(bars) - start)
+                begin = max(0, end - count)
+                return list(bars[begin:end])
+
+        spec = QuerySpec.build(
+            "bars",
+            symbols=symbol,
+            provider=raw_provider,
+            period=period,
+            count=count,
+            start=start,
+            currentness="historical",
+        )
+        rows = self.execute(QueryPlanner().compile(spec)).data
+        return [row if isinstance(row, Bar) else Bar.from_dict(row) for row in rows]
+
+    def _adjusted_events(
+        self,
+        symbol: str,
+        event_source: str,
+        *,
+        timeout: float,
+    ) -> list[Any]:
+        """取复权事件。默认东财（已对拍），``tdx`` 需显式点名并过布局闸。"""
+        from ..domain.finance import (
+            capital_changes_from_dividends,
+            reject_implausible_changes,
+            to_capital_changes,
+        )
+
+        if event_source == "eastmoney":
+            from ..query import QueryPlanner, QuerySpec
+
+            rows = self.execute(
+                QueryPlanner().compile(
+                    QuerySpec.build(
+                        "dividend_history",
+                        symbols=symbol,
+                        provider="eastmoney",
+                        currentness="historical",
+                    )
+                )
+            ).data
+            return capital_changes_from_dividends(rows, code=str(symbol))
+
+        with self._client_session(self._tdx_client(timeout)) as client:
+            raw = list(client.capital_changes(symbol))
+        events = to_capital_changes(raw)
+        #: 布局未锁定 → 错位记录不许进引擎（错位的复权比不复权危险得多）。
+        reject_implausible_changes(events)
+        return events
+
     def _composed_call(
         self,
+        plan: QueryPlan,
         capability: str,
         args: list[Any],
         kwargs: dict[str, Any],
@@ -529,8 +679,6 @@ class DirectProviderExecutor:
             from ..domain.adjust import AdjustEngine
             from ..domain.finance import to_capital_changes
             from ..domain.models import CapitalChange
-            from ..domain.symbol import split_symbol
-            from ..reader import DayBarReader
 
             symbol = str(args[0])
             method = str(kwargs.pop("method", "qfq"))
@@ -539,24 +687,33 @@ class DirectProviderExecutor:
             start = int(kwargs.pop("start", 0))
             events = kwargs.pop("events", None)
             anchor_date = kwargs.pop("anchor_date", None)
-            if period != "day":
+            raw_provider = str(kwargs.pop("provider", "") or "").strip().lower() or "tdx"
+            event_source = str(kwargs.pop("event_source", "") or "").strip().lower() or "eastmoney"
+            if event_source not in _ADJUST_EVENT_SOURCES:
                 raise ValidationError(
-                    "adjusted_bars canonical local raw path currently supports day only",
-                    context={"period": period},
+                    "adjusted_bars 不认识的 event_source",
+                    context={
+                        "event_source": event_source,
+                        "supported": sorted(_ADJUST_EVENT_SOURCES),
+                    },
                 )
-            if not self.vipdoc_root:
-                raise ValidationError("adjusted_bars requires vipdoc_root for canonical raw bars")
+            if period not in _ADJUSTABLE_PERIODS:
+                raise ValidationError(
+                    "adjusted_bars 只支持按日期定位复权因子的周期",
+                    context={"period": period, "supported": sorted(_ADJUSTABLE_PERIODS)},
+                )
 
-            market, code = split_symbol(symbol)
-            path = Path(self.vipdoc_root) / market / "lday" / f"{market}{code}.day"
-            bars = DayBarReader().read(path, output="model")
-            end = max(0, len(bars) - start)
-            begin = max(0, end - count)
-            bars = bars[begin:end]
+            bars = self._adjusted_raw_bars(
+                symbol,
+                period=period,
+                count=count,
+                start=start,
+                raw_provider=raw_provider,
+                timeout=timeout,
+            )
 
             if not events:
-                with self._client_session(self._tdx_client(timeout)) as client:
-                    events = list(client.capital_changes(symbol))
+                events = self._adjusted_events(symbol, event_source, timeout=timeout)
             event_list = list(events)
             if event_list and not isinstance(event_list[0], CapitalChange):
                 event_list = to_capital_changes(event_list)
@@ -573,8 +730,12 @@ class DirectProviderExecutor:
             symbols = args[0]
             root = kwargs.pop("root", None) or self.vipdoc_root
             profile = kwargs.pop("profile", "a_share_day")
-            chunk = int(kwargs.pop("chunk", 800))
-            max_windows = int(kwargs.pop("max_windows", 64))
+            #: 默认值取自 sink 自己的常量，不在这里抄第二份字面量——"同一事实只存在
+            #: 一处"，否则改常量不改执行体，两处口径会静默分叉。
+            from ..sink.local_day import MAX_CHUNK, MAX_WINDOWS
+
+            chunk = int(kwargs.pop("chunk", MAX_CHUNK))
+            max_windows = int(kwargs.pop("max_windows", MAX_WINDOWS))
             if not root:
                 raise ValidationError("sync_daily requires root or vipdoc_root")
             sink = LocalDaySink(root, profile=profile)

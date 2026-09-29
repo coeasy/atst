@@ -38,6 +38,7 @@ from typing import Any
 __all__ = [
     "WarningCode",
     "ResultWarning",
+    "current_warnings",
     "record_warning",
     "warning_sink",
 ]
@@ -94,6 +95,10 @@ class WarningCode(str, Enum):
     #: 声明的 ``currentness`` 要求当期数据，而执行 channel 给不出可判据的证据（本地文件）。
     #: 见 :mod:`atst.runtime.freshness`；``strict=True`` 时它不是告警而是失败。
     CURRENTNESS_UNPROVEN = "currentness_unproven"
+    #: ``bars`` 请求了日期区间，但取回的那一页并没有盖住区间起点——协议是"从最新往回
+    #: 数 ``count`` 根"，区间起点比这更早时只能拿到区间的一段。这不静默：它记进
+    #: ``warnings``，``strict=True`` 时直接失败。
+    BARS_RANGE_UNCOVERED = "bars_range_uncovered"
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +154,17 @@ def record_warning(
     if stderr:
         # +2：跳过 record_warning 与 _emit 这两层转发帧，保持发射点原有的指向。
         _emit(code, message, stacklevel=stacklevel)
+
+
+def current_warnings() -> tuple[ResultWarning, ...]:
+    """当前线程/任务上已收集、但还没随结果出发的瑕疵（只读快照）。
+
+    请求-响应路径不需要它——那里整段包在 :func:`warning_sink` 里，收集器就握在调用方
+    手上。需要它的是**推送**路径：流式回调（``on_quote``）拿不到那层上下文管理器，
+    但它同样要把"这一帧带瑕疵"说出去，否则流式消费方就成了唯一看不到告警的入口。
+    """
+    sink = _WARN_SINK.get()
+    return tuple(sink) if sink else ()
 
 
 @contextlib.contextmanager

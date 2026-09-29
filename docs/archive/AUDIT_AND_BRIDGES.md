@@ -4,7 +4,7 @@
 > 也不是今天的断链账。文中「24 个断链点（21 基线 + 3 增量）」指向的横切链此后由 v13–v20 各轮
 > 逐条收口，今天的主链状态读 [../ARCHITECTURE.md](../ARCHITECTURE.md)，接口读
 > [../api/interfaces.md](../api/interfaces.md)，未决项读
-> [../REFACTOR_PLAN_V19_RESTRUCTURE.md](../REFACTOR_PLAN_V19_RESTRUCTURE.md)。
+> [../REFACTOR_PLAN_V19_RESTRUCTURE.md](plans/REFACTOR_PLAN_V19_RESTRUCTURE.md)。
 > 本文按原文留存，不随代码订正。
 
 > **审计范围**：以 `DESIGN.md` v2.0 为基线，覆盖从"协议/数据源"到"用户应用"再回到"反馈回路"的完整链路。

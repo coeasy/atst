@@ -204,6 +204,12 @@ class TestV13QueryHandlers:
             count=320,
             start="2024-01-01",
             adjustment="qfq",
+            #: ``--currentness`` / ``--strict``：bars 专用入口现在把这两格也交给内核
+            #: （过去只有 Python API 与 query 逃生通道能传）。
+            currentness="historical",
+            strict=False,
+            start_date="",
+            end_date="",
         )
         assert rc.cmd_bars(args) == 0
         call_args, call_kwargs = _last(fake_client, "bars")
@@ -213,6 +219,8 @@ class TestV13QueryHandlers:
         assert call_kwargs["start"] == "2024-01-01"
         assert call_kwargs["period"] == "day"
         assert call_kwargs["count"] == 320
+        assert call_kwargs["currentness"] == "historical"
+        assert call_kwargs["strict"] is False
 
     def test_snapshot_and_minute(self, fake_client: type[FakeClient]) -> None:
         fake_client.data = {"code": "600000", "price": 10.0}

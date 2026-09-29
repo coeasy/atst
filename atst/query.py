@@ -208,6 +208,68 @@ def _canonical_options(options: Mapping[str, Any] | None) -> str:
         ) from exc
 
 
+def _normalized_date_range(start_date: str, end_date: str, *, cap: str) -> tuple[str, str]:
+    """日期区间的唯一校验口：形状、闭区间次序，以及"只有 K 线才有日期区间"这件事。
+
+    为什么不接受 ``2024-01`` 或 ``20240101`` 这类写法：区间要在字符串上比较（ISO 日期的
+    字典序与时间序一致），形状放宽一格就得在比较处再放宽一次，届时
+    ``"2024-1-1" < "2024-10-01"`` 会静默成立。宁可当场把格式说清楚。
+
+    ``start_date``/``end_date`` 只对**按时间成序列**的能力有意义；给 ``quotes`` 传它们是
+    调用方写错了地方，收下也不会改变任何行为——按同一条 fail-closed 口径拒绝。
+    """
+    if not start_date and not end_date:
+        return "", ""
+    if cap not in _RANGE_CAPABILITIES:
+        raise ValidationError(
+            f"{cap} 不支持日期区间：只有 K 线类能力按时间成序列，"
+            "实时快照要的是 currentness 不是日期",
+            context={
+                "capability": cap,
+                "start_date": start_date,
+                "end_date": end_date,
+                "range_capabilities": sorted(_RANGE_CAPABILITIES),
+            },
+        )
+    for name, value in (("start_date", start_date), ("end_date", end_date)):
+        if not value:
+            continue
+        if not _is_iso_day(value):
+            raise ValidationError(
+                f"{name}={value!r} 不是 YYYY-MM-DD：日期区间按 ISO 字符串比较，"
+                "别的写法无法保证排序正确",
+                context={"field": name, "received": value},
+            )
+    if start_date and end_date and start_date > end_date:
+        raise ValidationError(
+            "start_date 晚于 end_date：区间是闭区间，次序反了只会拿到空结果",
+            context={"start_date": start_date, "end_date": end_date},
+        )
+    return start_date, end_date
+
+
+#: 哪些能力上日期区间是有意义的（"按时间成序列"这一条判据）。
+_RANGE_CAPABILITIES: Final[frozenset[str]] = frozenset(
+    {"bars", "adjusted_bars", "history", "minute_klines", "klines"}
+)
+
+
+def _is_iso_day(value: str) -> bool:
+    """``YYYY-MM-DD``，且必须是个真实存在的日期（``2024-02-31`` 不算）。"""
+    from datetime import date
+
+    if len(value) != 10 or value[4] != "-" or value[7] != "-":
+        return False
+    head, mid, tail = value[:4], value[5:7], value[8:10]
+    if not (head.isdigit() and mid.isdigit() and tail.isdigit()):
+        return False
+    try:
+        date(int(head), int(mid), int(tail))
+    except ValueError:
+        return False
+    return True
+
+
 def _parse_currentness(value: str | CurrentnessMode) -> CurrentnessMode:
     if isinstance(value, CurrentnessMode):
         return value
@@ -233,6 +295,12 @@ class QuerySpec:
     count: int = 0
     start: int = 0
     adjustment: str = ""
+    #: 日期区间（``YYYY-MM-DD``，闭区间）。协议侧只有"从最新往回数 ``count`` 根"这一种
+    #: 游标，所以区间是在取回的那一页上做过滤——取回的页盖不住区间起点时会记
+    #: :data:`~atst.diagnostics.WarningCode.BARS_RANGE_UNCOVERED`（``strict=True`` 即失败），
+    #: 而不是假装区间就是全部历史。
+    start_date: str = ""
+    end_date: str = ""
     currentness: str = CurrentnessMode.AUTO.value
     deadline_ms: int = 5000
     schema_version: int = 1
@@ -250,6 +318,8 @@ class QuerySpec:
         count: int = 0,
         start: int = 0,
         adjustment: str = "",
+        start_date: str = "",
+        end_date: str = "",
         allow_stale: bool = False,
         currentness: str | CurrentnessMode = CurrentnessMode.AUTO,
         deadline_ms: int = 5000,
@@ -289,6 +359,8 @@ class QuerySpec:
             count=count,
             start=start,
             adjustment=adjustment,
+            start_date=_norm_text(start_date),
+            end_date=_norm_text(end_date),
             currentness=current.value,
             deadline_ms=deadline_ms,
             schema_version=schema_version,
@@ -355,6 +427,7 @@ class QuerySpec:
             raise ValidationError("bars.count 必须大于 0", context={"count": self.count})
         if self.start < 0:
             raise ValidationError("start 不能为负数", context={"start": self.start})
+        start_date, end_date = _normalized_date_range(self.start_date, self.end_date, cap=cap)
         if self.deadline_ms <= 0:
             raise ValidationError(
                 "deadline_ms 必须大于 0", context={"deadline_ms": self.deadline_ms}
@@ -389,6 +462,8 @@ class QuerySpec:
             channel=channel,
             period=period,
             adjustment=_norm_text(self.adjustment),
+            start_date=start_date,
+            end_date=end_date,
             currentness=currentness.value,
             options_json=_canonical_options(self.options),
         )

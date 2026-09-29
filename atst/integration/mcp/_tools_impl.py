@@ -110,6 +110,10 @@ def _h_get_bars(client: Client, args: dict[str, Any]) -> dict[str, Any]:
             count=_int_arg("get_bars", "count", args.get("count")),
             start=_int_arg("get_bars", "start", args.get("start")),
             adjustment=str(args.get("adjustment", "")),
+            currentness=str(args.get("currentness", "historical")),
+            strict=bool(args.get("strict", False)),
+            start_date=str(args.get("start_date", "")),
+            end_date=str(args.get("end_date", "")),
         )
     )
 

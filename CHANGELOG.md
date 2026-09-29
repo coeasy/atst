@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.0.1] - 2026-09-30
+
+### Added
+
+- **复权 K 线（`adjusted_bars`）真正可用**：原始 K 线缺省走 Provider 在线取数（本地 vipdoc 有文件时优先读本地），除权除息事件缺省取东财 `dividend_history`（列名 `BONUS_RATIO` 送股 / `IT_RATIO` 转增 / `PRETAX_BONUS_RMB` 每 10 股派息已对拍），`AdjustEngine` 合成因子——无本地 vipdoc 数据也能复权。
+- **行情接口灵活性**：`QuerySpec` / `Client.bars()` / HTTP `GET /v13/bars/{symbol}` / WS `bars` / MCP `get_bars` / CLI 全部支持 `start_date` / `end_date` 日期区间查询；区间起始端落在数据之外时记 `bars_range_uncovered` 告警（WarningCode 新增）。
+- 复权因子的现金红利项需要的前收盘价改由复权序列**前一根 bar 的收盘**推导；孤立 bar 退化处理并记 `adjust_prev_close_missing` 告警。
+- `atst.domain.finance.capital_changes_from_dividends`：东财分红行 → `CapitalChange` 的直接换算入口。
+
+### Fixed
+
+- **strict / currentness 参数贯通全部五面**（HTTP / WS / MCP / CLI / Python）：此前四面只有 Python 通道生效。
+- **东财分红字段映射失效**：web.astock_toolkit `FIELD_MAP` 修正为实测有效列名，复权事件不再拿空数据。
+- **TDX `0x000F`（除权除息）解码错位确认**：结构化布局与真机记录不符（日期/市场/代码全乱），`event_source="tdx"` 降级为显式 opt-in 且过合理性闸，不再作为默认事件源。
+- **无界等待消除**：限流 `acquire`、连接池三处获取点、异步清理等待全部加超时上界（`DEFAULT_ACQUIRE_TIMEOUT` 等），卡死的上游不再拖死调用方。
+- **无界循环/内存消除**：交易日扫描、流式停止屏蔽、WS 推送背压（`MAX_PENDING_PUSH_FRAMES` 丢最旧）、诊断告警 sink 全部加上界。
+- `bars(adjustment=…)` 显式拒绝（不允许静默复权），复权必须走 `adjusted_bars` 能力。
+
 ## [1.0.0] - 2026-09-28
 
 ### Fixed（逻辑审查第 8 轮：真实 CI 首跑暴露的 CPython 3.10/3.13/3.14 缺陷 + 文档陈旧数字）

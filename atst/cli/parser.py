@@ -121,6 +121,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--count", type=int, default=320)
     p.add_argument("--start", type=int, default=0)
     p.add_argument("--adjustment", default="")
+    #: 日期区间（闭区间，YYYY-MM-DD）：协议只有"往回数 count 根"这一种游标，
+    #: 区间在取回的那一页上裁；盖不住起点时会带一条 bars_range_uncovered 告警。
+    p.add_argument("--start-date", default="")
+    p.add_argument("--end-date", default="")
+    p.add_argument("--currentness", default="historical")
+    p.add_argument(
+        "--strict",
+        action="store_true",
+        help="结果带任何数据完整性瑕疵时直接失败，而不是返回后靠调用方自查",
+    )
     p.set_defaults(func=cmd_bars)
 
     p = sub.add_parser("snapshot", help="query canonical market snapshot")

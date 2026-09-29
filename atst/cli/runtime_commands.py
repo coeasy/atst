@@ -119,6 +119,10 @@ def cmd_bars(args: Any) -> int:
                     count=args.count,
                     start=args.start,
                     adjustment=args.adjustment,
+                    currentness=args.currentness,
+                    strict=args.strict,
+                    start_date=args.start_date,
+                    end_date=args.end_date,
                 )
             )
         )

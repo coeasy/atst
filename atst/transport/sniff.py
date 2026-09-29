@@ -48,6 +48,11 @@ __all__ = [
 #: ``ring_size`` 同值）；由 Sniffer 创建时会改用调用方拧的那个 knob。
 _SIZES_WINDOW = 16
 
+#: 同时保留多少个命令号的观察桶（FIFO 淘汰）。每个桶自己有 ``ring_size`` 的窗口，
+#: 但**桶的张数**没有上限时，长期嗅探会为每个新命令号永久留一份 payload 原文。
+#: 256 远大于任何单次嗅探真正关心的命令数（协议命令账本 85 条）。
+MAX_RING_BUCKETS = 256
+
 
 # --------------------------------------------------------------------------- #
 # 结构体
@@ -146,6 +151,11 @@ class Sniffer:
         with self._lock:
             stats = self._stats.get(cmd_id)
             if stats is None:
+                #: 每命令一张表是**有界的**，但表的张数过去没有上限：cmd_id 理论上
+                #: 0..0xFFFF，长期挂在真实连接上嗅探时每遇一个新命令号就新建一份
+                #: ``ring_size`` 份 payload 原文并永久保留——与同文件上面已经修好的
+                #: "list 永不清理"是同一类缺陷，只是换了个容器。这里按 FIFO 淘汰。
+                self._evict_oldest_buckets()
                 stats = CommandStats(
                     cmd_id=cmd_id, first_seen=now, sizes=deque(maxlen=self.ring_size)
                 )
@@ -156,6 +166,16 @@ class Sniffer:
             stats.last_seen = now
             stats.last_payload_size = size
             self._rings[cmd_id].append(store)
+
+    def _evict_oldest_buckets(self) -> None:
+        """把命令桶的**张数**压到 :data:`MAX_RING_BUCKETS` 以内（调用方须持锁）。``dict``
+        的插入序就是观察序，因此弹最前面的即"最久没再出现"的命令。"""
+        overflow = len(self._stats) - MAX_RING_BUCKETS
+        if overflow <= 0:
+            return
+        for cmd_id in list(self._stats)[:overflow]:
+            self._stats.pop(cmd_id, None)
+            self._rings.pop(cmd_id, None)
 
     def reset(self) -> None:
         """清空所有统计与环形缓冲。"""

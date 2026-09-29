@@ -32,6 +32,7 @@ __all__ = [
     "QUERY_BODY_FIELDS",
     "QUERY_ROUTING_FIELDS",
     "WS_PARAMS_FIELDS",
+    "as_request_bool",
     "as_request_int",
     "reject_reserved_kwargs",
     "reject_undeclared",
@@ -52,7 +53,21 @@ QUERY_BODY_FIELDS: Final[frozenset[str]] = frozenset(
 #: 两个方向都不许有差（同一个测试文件把守）。
 WS_PARAMS_FIELDS: Final[dict[str, frozenset[str]]] = {
     "quotes": frozenset({"symbols", "provider", "fallback"}),
-    "bars": frozenset({"symbol", "provider", "fallback", "period", "count", "start", "adjustment"}),
+    "bars": frozenset(
+        {
+            "symbol",
+            "provider",
+            "fallback",
+            "period",
+            "count",
+            "start",
+            "adjustment",
+            "currentness",
+            "strict",
+            "start_date",
+            "end_date",
+        }
+    ),
     "snapshot": frozenset({"symbol", "provider"}),
     "minute": frozenset({"symbol", "provider"}),
     "trades": frozenset({"symbol", "provider", "start", "count"}),
@@ -172,6 +187,44 @@ def as_request_int(
     if (lo is not None and parsed < lo) or (hi is not None and parsed > hi):
         raise _bad_int(face, where, name, value, lo, hi)
     return parsed
+
+
+def as_request_bool(
+    *,
+    face: str,
+    where: str,
+    name: str,
+    value: Any,
+    default: bool = False,
+) -> bool:
+    """布尔请求字段唯一的规整/拒绝口（与 :func:`as_request_int` 同一条口径）。
+
+    布尔格在 wire 上最容易出的错是"任何值都算真"：``strict=0``、``strict="false"``、
+    ``strict="no"`` 被 Python 的真值规则一律读成 ``True``，调用方以为自己关掉了瑕疵严格
+    模式，实际拿到的是最严的那一档。所以这里**只接受** :class:`bool` 与两族字面串
+    （``true/false``、``1/0``），其它形状一律 :class:`ValidationError`——同样是当场拒绝，
+    不静默替换。
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in {"true", "1", "yes", "on"}:
+            return True
+        if token in {"false", "0", "no", "off"}:
+            return False
+    raise ValidationError(
+        f"{where} 的 {name}={value!r} 不是一个布尔：当场拒绝，"
+        "而不是按 Python 真值规则静默当成 True",
+        context={
+            "phase": "wire_validation",
+            "face": face,
+            "field": name,
+            "received": repr(value),
+        },
+    )
 
 
 def _bad_int(

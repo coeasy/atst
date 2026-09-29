@@ -2551,12 +2551,12 @@ job 钉成固定红）、92 项注册能力尚无 Typed Query 契约（F-25 的 
    **2026-09-19 追记**：76.14% 的实测缺口已由后续真实离线测试填平，本机 Windows+py3.12
    整仓现为 **78.79%**（`PYTEST_RC=0`，见 Phase 5 第 4 步）；阈值 77 全程未动，重钉仍需
    CI 侧数字。
-4. ✅ **文档同步**：新增用户面 [docs/configuration.md](configuration.md)（5 段全键清单 +
+4. ✅ **文档同步**：新增用户面 [docs/configuration.md](../../configuration.md)（5 段全键清单 +
    读取方 + 取值范围 + fail-closed 语义 + 环境变量规则），已纳入事实型文档门禁
    （`FACT_DOC_PATHS`）；`docs/troubleshooting.md` 的"配置文件尚未接入"改写为可用指令；
    `docs/ARCHITECTURE.md` §4 第 7 条转"已清偿"、§5 真相源补两行、§2 不变量加一条；
    README 门禁口径两行更正（并顺手把 mypy 行从"47 项待清零"改回既成事实）；
-   新增 [ADR-016](adr/ADR-016-config-surface-covers-execution-only.md)
+   新增 [ADR-016](../../adr/ADR-016-config-surface-covers-execution-only.md)
    「配置面只覆盖执行参数」。
    **2026-09-19 第 43 步追记**：这份文档的五类抄本（键清单 / 默认值 / 取值范围 / fail-closed 消息 /
    环境变量规则）已从「人读」升级为与 `schema.py` + `loader.py` 的**机器双向对账**，判据在

@@ -82,6 +82,7 @@ CLI 每张面（序列化后是 `{"code", "message"}`），同时以 `UserWarnin
 |---|---|---|
 | `bars_anchor_drift` | `bars` 分页中途锚点漂移而提前终止：实取根数少于请求根数，且不是"更早的历史已取完"（历史耗尽只表现为短页） | `atst/client/_mixin.py` |
 | `bars_empty_first_page` | `bars` 首页即空响应。判据取服务端当次声明数：声明 0 是该标的无此周期历史，声明 N 却回 0 个记录字节是空桩；两者都不是历史耗尽 | `atst/client/_mixin.py` |
+| `bars_range_uncovered` | 请求了 `start_date` 日期区间，但取回的那一页没有触及区间起点之前（协议只支持"从最新往回数 `count` 根"）：结果是区间的一段而不是全部。加大 `count` 或用 `start` 继续往回翻页 | `atst/runtime/executor.py` |
 | `quotes_partial_failure` | 批量 `quotes` 只取回部分标的的行情：逐只失败被隔离，结果不完整。全部失败不走这条，而是抛 `AllHostsUnreachable` | `atst/runtime/executor.py` |
 | `decode_caveat` | 解码层对自己解出的这一页的判断：实收记录数少于声明数、字段布局哨兵异常、精确解析失败后降级为启发式 | `atst/client/_mixin.py` |
 | `field_out_of_domain` | 解出来的行里有字段落在库自己声明的取值域之外——`market` 既不是 TDX 二进制市场编号也不是 canonical token、`code` 不是非空可见 ASCII、日期字段不是 ISO 形状。与上一条的区别在发射者：`decode_caveat` 是解码层自认的瑕疵，这一条是出口处拿 `atst/domain/integrity.py` 的尺子重新量出来的。记录布局尚未经真机 golden 锁定的命令页内字节数对得上，解码层因此一个字都不记，值却已经错位 | `atst/client/_mixin.py` |

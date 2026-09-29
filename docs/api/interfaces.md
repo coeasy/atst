@@ -134,7 +134,7 @@ kind 显式抛 `ValueError`（消息里带合法值全集），既不做大小�
 ### 交易面（TradeClient，只有库面且仅模拟）
 
 `atst.trade` 是 0x1000 交易协议的独立面：帧编解码、密码混淆、查询类别词表和一台模拟券商
-都在库里，但**只有库面**——CLI 的 31 支子命令、HTTP 的 10 路由、WS 的 10 方法、MCP 的 9 工具
+都在库里，但**只有库面**——CLI 的 31 支子命令、HTTP 的 10 路由、WS 的 13 方法、MCP 的 9 工具
 都不挂它。这不是漏接线，是红线：本库不接真实券商，`SocketTransport.connect()` 一律抛
 `TradingUnavailable` `[E4030]`。
 
@@ -173,7 +173,7 @@ from atst import Client, AsyncClient
 
 | 方法 | 签名摘要 | 说明 |
 |------|----------|------|
-| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", strict=False)` | K 线；`strict=True` 时结果携带任何数据瑕疵即抛 `TruncatedDataError`；`period=` 收哪些写法见本文 §6「K 线周期拼写」一表 |
+| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", strict=False, start_date="", end_date="")` | K 线；`strict=True` 时结果携带任何数据瑕疵即抛 `TruncatedDataError`；`start_date`/`end_date` 是闭区间日期（见本节「日期区间」）；`period=` 收哪些写法见本文 §6「K 线周期拼写」一表 |
 | `quotes` | `(symbols, *, provider=None, policy=None, currentness="live")` | 实时行情 |
 | `quotes_batch` | `(symbols, *, provider=None, currentness="live") -> BatchResult` | 逐 symbol 三态审计 |
 | `snapshot` | `(symbol, *, provider="tdx", currentness="live")` | 盘口快照 |
@@ -217,6 +217,63 @@ WS `query`、MCP `query_capability`、CLI `query`）缺省都是 `business`，�
 （E1010 / HTTP 422 / JSON-RPC -32602），错误 `context.reserved_fields` 点出冲突的键名。要在泛型
 入口上指定路由，写顶层字段（HTTP body 的 `provider`/`channel`/`currentness`、WS `params` 与 MCP
 `arguments` 的同名键、CLI 的 `--provider`/`--channel`/`--currentness`）。
+
+### 日期区间（`start_date` / `end_date`）
+
+`bars` 的 `start_date` / `end_date` 是**闭区间**（`YYYY-MM-DD`），四张面同名同义：
+
+```python
+from atst import Client
+
+with Client() as c:
+    rows = c.bars("600519", count=400, start_date="2026-01-01", end_date="2026-03-31").data
+```
+
+协议侧只有"从最新往回数 `count` 根"这一种游标，没有服务端日期区间参数，所以区间是在取回的那一页
+上裁的。请求了 `start_date` 而这一页最早的一根**仍晚于它**，说明区间更早的那一段根本没被取回来——此
+时结果是一段被截断的区间，而不是"这些日期没有行情"。这两种说法对调用方是两回事，因此会记一条
+`bars_range_uncovered` 告警（见 `docs/errors.md`）；`strict=True` 时它是一次失败。
+
+四个面都能传：`Client.bars(..., start_date=, end_date=)`、CLI
+`atst bars sh600519 --start-date 2026-01-01 --end-date 2026-03-31`、HTTP
+`GET /v13/bars/600519?start_date=2026-01-01&end_date=2026-03-31`、WS `bars` 与 MCP `get_bars`
+的同名字段。
+
+### 复权 K 线（`adjusted_bars`）
+
+`adjusted_bars` 是**组合能力**（`composed`）：原始 K 线走选定的行情 Provider，除权除息事件单独取，
+两份在 `atst/domain/adjust.py` 的 `AdjustEngine` 里合成因子。它是 167 个 catalog 迁移能力之一，因此
+走**通用入口**而不是某张面的专属路由：
+
+```python
+from atst import Client
+
+with Client() as c:
+    qfq = c.call("adjusted_bars", "600519", method="qfq", count=320).data
+    hfq = c.call("adjusted_bars", "600519", method="hfq", count=320).data
+```
+
+| 面 | 调用形状 |
+|----|----------|
+| Python | `Client.call("adjusted_bars", symbol, method="qfq", …)` 或 `Client.adjusted_bars(...)` |
+| CLI | `atst adjusted-bars sh600519 --method qfq --count 100` |
+| HTTP | `POST /v13/query/adjusted_bars`，body `{"args":["600519"],"kwargs":{"method":"qfq","count":100}}` |
+| WS | `{"method":"query","params":{"capability":"adjusted_bars","args":["600519"],"kwargs":{…}}}` |
+| MCP | `query_capability`，`arguments={"capability":"adjusted_bars","args":["600519"],"kwargs":{…}}` |
+
+入参：`method`（`qfq` 前复权 / `hfq` 后复权 / `fixed` 定点，须配 `anchor_date` / `none` 不复权）、
+`period`（`day` / `week` / `month`——复权按日期定位因子，分钟级没有对应事件）、`count` / `start`
+（游标）、`provider`（原始 K 线来源，缺省 `tdx`；**没有** `vipdoc_root` 时走 Provider 在线取数）、
+`event_source`（缺省 `eastmoney`）。
+
+**事件源为什么默认东财**：TDX `0x000F`（除权除息）的结构化记录布局还没有真机 golden 锁定，拿它当
+复权事件会得到错位的因子（`market` / `code` / 日期全乱）。`event_source="tdx"` 是显式 opt-in，且要过
+`atst.domain.finance.reject_implausible_changes` 那道闸。东财 `dividend_history` 的列名（`BONUS_RATIO`
+送股 / `IT_RATIO` 转增 / `PRETAX_BONUS_RMB` 每 10 股派息）已对拍。
+
+**前收盘价**：复权因子的现金红利项需要前收盘价（`(P−D)/(1+S+R)` 那一支）。`AdjustEngine` 从复权序列
+里**前一根 bar 的收盘**推出它，所以跨除权日的结果会计入派息；单根孤立 bar（没有前一根）退化为
+`1/(1+S+R)` 并记一条 `adjust_prev_close_missing` 告警。
 
 ### 能力发现面：只有名字，没有可用性
 
@@ -675,7 +732,7 @@ atst --help
 | `adjusted-bars` | `symbol` | `--method` `--period` `--count` `--timeout` `--json` | 内核·rows |
 | `all-market` | — | `--node` `--source` `--page-size` `--max-pages` `--timeout` `--json` | 内核·rows |
 | `baidu` | `symbol` | `--kind` `--period` `--count` `--end-time` `--limit` `--timeout` `--json` | 内核·rows |
-| `bars` | `symbol` | `--provider` `--fallback` `--host` `--period` `--count` `--start` `--adjustment` | 内核·typed |
+| `bars` | `symbol` | `--provider` `--fallback` `--host` `--period` `--count` `--start` `--adjustment` `--start-date` `--end-date` `--currentness` `--strict` | 内核·typed |
 | `blocks` | `block_type` | `--count` `--timeout` `--json` | 直连传输层 |
 | `capabilities` | — | — | 元信息 |
 | `changes` | — | `--types` `--page` `--size` `--json` | 内核·rows |
@@ -786,7 +843,7 @@ atst quotes-snapshot sh600519 sz000001 --json              # 批量快照（直�
 | `security-list` / `list` | rc=2，`E3035` | **不服务**：`0x044D` 已下线；要一张带代码的清单改用 `atst all-market`（Web 侧全市场快照）|
 | `f10 sh600519`（目录） | rc=2，159.0s，`E2030`→`E2040` | **不服务**：远端已停止 F10 内容分发（2026-09 实测）。那 159 秒原先记作"慢在主站"，第 25 轮按时间戳改判：**约 121 秒是重试梯子的 sleep**（见本节末 `--timeout` 那段，已修） |
 | `f10 … --file 公司概况` | rc=2，`E4000` 下载结果为空 | 同上，那一格的判据是显式写的"远端已停止 F10 内容分发" |
-| `adjusted-bars` | rc=2，`E1010 … requires vipdoc_root` | 前置条件：复权要有本地 vipdoc 原始 K 线，指到 `vipdoc_root` 才有数据 |
+| `adjusted-bars` | rc=0，出复权 K 线 | **已修**：过去复权只认本地 `vipdoc_root`，没配本地数据的调用方拿到 `E1010 … requires vipdoc_root`，复权事实上只是个离线功能。现在原始 K 线走 Provider（缺省 TDX 在线取数，本地 vipdoc 有文件时优先读本地），事件源缺省东财 `dividend_history`（列名已对拍），无本地数据也能复权 |
 | `fund estimate` | rc=2，`E7030` | 上游已下线（`fundgz` 返回 404）；改取 `fund nav` 历史净值 |
 | `sector-flow` | rc=2，`E7000 Server disconnected` | 上游可用性：东财端当晚断连，本库判据正确（不假装成功） |
 | `minute-klines` | rc=2，`E7000`（同一支东财端点；改前给 51 行） | 上游可用性抖动，跨两遍普查的唯一两处读数翻转之一 |

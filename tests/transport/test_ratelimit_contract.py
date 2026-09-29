@@ -10,7 +10,12 @@ from types import SimpleNamespace
 import pytest
 
 from atst.transport.async_ import AsyncConnectionPool
-from atst.transport.ratelimit import SessionRateLimiter, SessionState, TokenBucket
+from atst.transport.ratelimit import (
+    DEFAULT_ACQUIRE_TIMEOUT,
+    SessionRateLimiter,
+    SessionState,
+    TokenBucket,
+)
 
 
 @pytest.mark.parametrize("rate", [0, -1, True, "10", float("nan"), float("inf")])
@@ -235,17 +240,36 @@ def _self_attrs_assigned_a_queue(init_src: str) -> list[str]:
     return flagged
 
 
-def test_the_async_rate_wait_takes_no_deadline_so_escapes_request_timeout() -> None:
-    """异步限流等待**没有超时形参**：它发生在 I/O 之前，不计入调用方的 ``request_timeout``。
+def test_the_async_rate_wait_is_bounded_by_a_deadline() -> None:
+    """异步限流等待**有超时形参**，且池把调用方预算递给了它。
 
-    反洞正控用同一把尺：``request`` 的确带 ``timeout`` 形参。同一 ``inspect.signature``
-    在相邻两个方法上一眼看得到"有超时"、一眼看不到"异步等待有超时"——所以 ``== ["self"]``
-    是真信号，不是尺子瞎了。
+    这里钉的是一条修掉的形状（2026-09-29）：过去 ``_acquire_rate`` 只有 ``self``，
+    ``while not try_acquire(): await sleep(0.05)`` 是纯无界轮询，而它发生在
+    ``conn.request(timeout=...)`` **之前**——调用方声明的 5 秒预算完全覆盖不到限流等待，
+    速率档位配得低时一个协程可以永久挂住、且无法中断。
+
+    判据两半各自都是真信号：签名上必须有 ``timeout``；源码里必须有 deadline 判定
+    （只加形参不判，形同虚设）。
     """
     rate_params = list(inspect.signature(AsyncConnectionPool._acquire_rate).parameters)
-    assert rate_params == ["self"], f"异步限流等待出现了新的超时形参，需回写契约：{rate_params}"
-    # 正控：真正被超时覆盖的是 I/O 那一步，它的签名里必须能看到 timeout。
+    assert "timeout" in rate_params, f"异步限流等待丢了超时形参（回到无界等待）：{rate_params}"
+    source = inspect.getsource(AsyncConnectionPool._acquire_rate)
+    assert "deadline" in source, "有 timeout 形参却不判 deadline：等待仍然无界"
+    assert "RateLimitedLocal" in source, "到点必须抛 RateLimitedLocal，而不是静默继续"
+    # 正控：真正被超时覆盖的 I/O 那一步，它的签名里也必须能看到 timeout。
     assert "timeout" in inspect.signature(AsyncConnectionPool.request).parameters
+
+
+def test_the_sync_rate_wait_is_bounded_by_a_deadline() -> None:
+    """同步侧同一条口径：``SessionRateLimiter.acquire`` 必须能接超时，且有兜底上限。
+
+    调用点（``ConnectionPool.request`` / ``iter_frames``）过去一律 ``acquire()`` 不传
+    超时，而 :meth:`TokenBucket.acquire` 在 ``timeout=None`` 时就是"回填到取到为止"。
+    """
+    assert "timeout" in inspect.signature(SessionRateLimiter.acquire).parameters
+    assert DEFAULT_ACQUIRE_TIMEOUT > 0, "兜底上限必须为正，否则又回到无界等待"
+    source = inspect.getsource(SessionRateLimiter.acquire)
+    assert "DEFAULT_ACQUIRE_TIMEOUT" in source, "timeout=None 时必须落到兜底上限"
 
 
 def test_the_bucket_holds_its_wait_state_as_a_scalar_not_a_waiter_queue() -> None:

@@ -48,27 +48,15 @@ _FLAG_METHODS = frozenset({"is_set", "wait", "set", "clear", "store"})
 #: 命名豁免：形状归不出类、但终止理由写得出来的循环。键为 ``模块相对路径::函数名``。
 #: 表必须与现扫结果**双向一致**——多一条（守卫已经不需要豁免了）与少一条（新出现的
 #: 无形状守卫循环）都当场红，所以这张表不会悄悄长大。
-TERMINATION_EXEMPTIONS: dict[str, str] = {
-    "atst/transport/async_.py::_acquire_rate": (
-        "``while not limiter.try_acquire()``：条件不是 flag 而是令牌桶。它一定翻转，"
-        "因为令牌按 ``rate > 0`` 单调回填，而唯一的入参 ``tokens=1.0`` 恒不超过 "
-        "``burst = max(1.0, rate)``；``strict=True`` 时这一格根本不走轮询，直接 "
-        "``limiter.acquire()`` 抛 :class:`RateLimitedLocal`。容量收缩会把这一格变成"
-        "显式 ``ValueError`` 而不是永久等待——见第 6 条判据。"
-    ),
-    "atst/transport/async_.py::_await_cleanup_before_cancellation": (
-        "``while not cleanup_task.done()``：条件读的是一个 :class:`asyncio.Task` 的"
-        "完成位，循环体只有 ``await asyncio.shield(...)``——它挂起而不是忙转，"
-        "被取消时记一笔再回到同一个 await。终止由那个任务自己完成，不由本循环推进。"
-    ),
-    "atst/streaming/base.py::stop": (
-        "``while task is not None and not task.done()``（第 29 轮补入）：与上一条同形同理由"
-        "——条件读的是 poll worker 那条 :class:`asyncio.Task` 的完成位，循环体只有 "
-        "``await asyncio.shield(task)``；被取消时记一笔再回到同一个 await，终止由 worker "
-        "自己在下一轮循环顶读到 ``_stop`` 完成。它等得起多久写在 G41 判据七的登记表里"
-        "（``AsyncQuoteStream.stop`` 那一格），这里只负责「它不是忙等」。"
-    ),
-}
+#: 2026-09-29 清空：下面三格原先靠"被等的对象自己会结束"来终止，等的对象一旦卡住
+#: （不可取消的 ``to_thread`` 取数、令牌桶速率被配得极低、清理任务自己挂住）就是永久
+#: 停机或满速空转。现在它们各自带上了墙钟 deadline
+#: （``_STOP_SHIELD_TIMEOUT`` / ``_CLEANUP_SHIELD_TIMEOUT`` / ``DEFAULT_ACQUIRE_TIMEOUT``），
+#: 形状判据已经认得出终止理由，豁免因此全部作废。
+#:
+#: 留着这张空表是有意的：判据 ``test_the_termination_exemption_table_is_not_stale``
+#: 会抓"登记了但已不需要"的条目，空表意味着**任何**新豁免都必须写明理由才能进来。
+TERMINATION_EXEMPTIONS: dict[str, str] = {}
 
 
 class _LoopGuard(ast.NodeVisitor):

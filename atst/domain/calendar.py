@@ -162,6 +162,11 @@ CALENDAR_2026: tuple[str, ...] = (
     "2026-10-08",
 )
 
+#: 找相邻交易日时最多往前/往后扫多少天。A 股最长的连续休市是春节那一段（含周末通常
+#: 不超过 11 天），400 天足够覆盖任何真实情况，同时把"日历被标成全年休市"这类
+#: 病态输入从"卡死几百万次迭代"变成一条 :class:`CalendarError`。
+MAX_DAY_SCAN_DAYS: int = 400
+
 BUILTIN_CALENDARS: dict[int, tuple[str, ...]] = {
     2024: CALENDAR_2024,
     2025: CALENDAR_2025,
@@ -285,22 +290,38 @@ class TradingCalendar:
             return d not in self._holidays
 
     def next_trading_day(self, d: date | str, *, inclusive: bool = False) -> date:
-        """``d`` 之后的第一个交易日；``inclusive=True`` 时 ``d`` 本身可入选。"""
+        """``d`` 之后的第一个交易日；``inclusive=True`` 时 ``d`` 本身可入选。
+
+        扫描有个硬上界 :data:`MAX_DAY_SCAN_DAYS`：终止性过去完全押在"未来一定存在
+        工作日"这个外部事实上，而 :meth:`add_holiday` 允许调用方把任意一天标成休市
+        ——极端但合法的用法（把整段区间标满）会让循环一路推进到 ``date.max`` 才以
+        ``OverflowError`` 收场，期间表现为卡死。越界即 :class:`CalendarError`。
+        """
         d = _to_date(d)
         if not inclusive:
             d += timedelta(days=1)
-        while not self.is_trading_day(d):
+        for _ in range(MAX_DAY_SCAN_DAYS):
+            if self.is_trading_day(d):
+                return d
             d += timedelta(days=1)
-        return d
+        raise CalendarError(
+            f"从 {d - timedelta(days=MAX_DAY_SCAN_DAYS)} 起 {MAX_DAY_SCAN_DAYS} 天内没有交易日",
+            context={"origin": str(d), "max_scan_days": MAX_DAY_SCAN_DAYS},
+        )
 
     def prev_trading_day(self, d: date | str, *, inclusive: bool = False) -> date:
-        """``d`` 之前的第一个交易日；``inclusive=True`` 时 ``d`` 本身可入选。"""
+        """``d`` 之前的第一个交易日；``inclusive=True`` 时 ``d`` 本身可入选（上界同前）。"""
         d = _to_date(d)
         if not inclusive:
             d -= timedelta(days=1)
-        while not self.is_trading_day(d):
+        for _ in range(MAX_DAY_SCAN_DAYS):
+            if self.is_trading_day(d):
+                return d
             d -= timedelta(days=1)
-        return d
+        raise CalendarError(
+            f"从 {d + timedelta(days=MAX_DAY_SCAN_DAYS)} 往前 {MAX_DAY_SCAN_DAYS} 天内没有交易日",
+            context={"origin": str(d), "max_scan_days": MAX_DAY_SCAN_DAYS},
+        )
 
     def trading_days_between(self, start: date | str, end: date | str) -> list[date]:
         """闭区间 ``[start, end]`` 内的交易日列表（升序）。``start > end`` 抛 :class:`CalendarError`。"""

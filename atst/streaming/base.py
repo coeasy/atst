@@ -22,6 +22,7 @@ import contextlib
 import logging
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -36,6 +37,43 @@ from ..errors import (
 from .engine import BackpressureQueue, DeltaMerger, ReconnectPolicy
 
 logger = logging.getLogger(__name__)
+
+#: ``stop()`` 等待 worker 收尾的硬上界（秒）。见 :meth:`AsyncQuoteStream.stop` 里那段
+#: deadline：上界过去完全依赖"worker 自己会醒"，卡在不可取消的取数上就是永久停机。
+_STOP_SHIELD_TIMEOUT: float = 30.0
+
+#: "已告警过的坏符号"去重集合的容量（LRU）。
+_WARNED_SYMBOLS_CAPACITY: int = 1024
+
+
+class _BoundedSymbolSet:
+    """只记最近 N 个符号的「已告警」集合。
+
+    语义是"同一个坏符号只告警一次"，但过去是个裸 ``set``：**只增不减**。长跑流上订阅
+    标的动态变化时（换标的、错代码被反复注入）它就单调增长，属慢性泄漏。容量满时淘汰
+    最久没再出现的那个——代价是极端情况下会重复告警一次，换来的是内存有界。
+    """
+
+    __slots__ = ("_capacity", "_items")
+
+    def __init__(self, capacity: int = _WARNED_SYMBOLS_CAPACITY) -> None:
+        self._capacity = max(1, int(capacity))
+        self._items: OrderedDict[str, None] = OrderedDict()
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._items
+
+    def add(self, key: str) -> None:
+        if key in self._items:
+            self._items.move_to_end(key)
+            return
+        self._items[key] = None
+        if len(self._items) > self._capacity:
+            self._items.popitem(last=False)
+
+    def __len__(self) -> int:
+        return len(self._items)
+
 
 # ---------------------------------------------------------------------------
 # Type aliases
@@ -156,7 +194,7 @@ def _resolve_payload(
     sub: Subscription,
     sym: str,
     qmap: dict[str, dict[str, Any]],
-    warned_bad_symbols: set[str],
+    warned_bad_symbols: _BoundedSymbolSet,
 ) -> dict[str, Any] | None:
     """Per-symbol "parse -> missing detection -> merge". ``None`` = no payload this round.
 
@@ -202,7 +240,7 @@ def _resolve_payload(
 def _dispatch_round(
     subs: Sequence[Subscription],
     qmap: dict[str, dict[str, Any]],
-    warned_bad_symbols: set[str],
+    warned_bad_symbols: _BoundedSymbolSet,
 ) -> None:
     """Fan one fetched round out to every subscription (queue or direct callback)."""
     for sub in subs:
@@ -272,7 +310,7 @@ class QuoteStream:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._reconnect = ReconnectPolicy(base=1.0, cap=30.0)
-        self._warned_bad_symbols: set[str] = set()
+        self._warned_bad_symbols = _BoundedSymbolSet()
 
     # -- runtime ---------------------------------------------------------- #
     def _get_runtime(self) -> Any:
@@ -469,7 +507,7 @@ class AsyncQuoteStream:
         self._stop = threading.Event()
         self._task: asyncio.Task[None] | None = None
         self._reconnect = ReconnectPolicy(base=1.0, cap=30.0)
-        self._warned_bad_symbols: set[str] = set()
+        self._warned_bad_symbols = _BoundedSymbolSet()
 
     def _get_runtime(self) -> Any:
         if self._runtime is None:
@@ -553,7 +591,17 @@ class AsyncQuoteStream:
         self._stop.set()
         task = self._task
         cancelled = False
+        #: 循环自带 deadline：上界不再只是"靠 worker 自己会醒"。若 worker 卡在一次不可
+        #: 取消的 ``to_thread`` 取数上，或者监督方每轮重复投递取消（``wait_for`` 反复
+        #: 超时），裸 ``while`` 会退化成"永不返回"或"满速空转"两种死形状。到点改为主动
+        #: cancel + 收尾，保证 ``stop()`` 一定返回。
+        deadline = time.monotonic() + _STOP_SHIELD_TIMEOUT
         while task is not None and not task.done():
+            if time.monotonic() >= deadline:
+                task.cancel()
+                with contextlib.suppress(BaseException):
+                    await asyncio.shield(task)
+                break
             try:
                 await asyncio.shield(task)
             except asyncio.CancelledError:

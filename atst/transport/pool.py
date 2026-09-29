@@ -662,7 +662,8 @@ class ConnectionPool:
         for attempt in range(max_attempts):
             self._ensure_open()
             if self.rate_limiter is not None:
-                self.rate_limiter.acquire()
+                #: 同 request()：限流等待吃调用方预算，不留给无界等待的余地。
+                self.rate_limiter.acquire(timeout=request_timeout)
             slot = self._select_allowed_slot(exclude_hosts=set(tried_hosts))
             if slot is None:
                 self.stats.circuit_skips += 1
@@ -851,7 +852,8 @@ class ConnectionPool:
         request_timeout = _require_request_timeout(timeout)
         self._ensure_open()
         if self.rate_limiter is not None:
-            self.rate_limiter.acquire()
+            #: 限流等待吃调用方预算：它发生在 socket 收发之前，不吃就绕过了 timeout。
+            self.rate_limiter.acquire(timeout=request_timeout)
         slot = self._select_allowed_slot()
         if slot is None:
             self.stats.circuit_skips += 1

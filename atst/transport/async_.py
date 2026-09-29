@@ -39,6 +39,7 @@ from ..errors import (
     ConnectionFailed,
     FramingError,
     ProtocolError,
+    RateLimitedLocal,
     ReadTimeout,
     TdxError,
     WriteTimeout,
@@ -69,7 +70,7 @@ from .pool import (
     _require_request_timeout,
     retry_backoff_delay,
 )
-from .ratelimit import SessionRateLimiter
+from .ratelimit import DEFAULT_ACQUIRE_TIMEOUT, SessionRateLimiter
 
 __all__ = [
     "AsyncTcpConnection",
@@ -81,6 +82,10 @@ __all__ = [
 _LOG = logging.getLogger("atst.transport")
 
 _RECV_CHUNK = 65536
+
+#: :func:`_await_cleanup_before_cancellation` 等待清理任务的硬上界（秒）。
+#: 没有它时，反复投递取消会把那段 ``shield`` 循环变成满速空转。
+_CLEANUP_SHIELD_TIMEOUT: float = 30.0
 
 #: :meth:`AsyncTcpConnection.close` 等待传输收尾的墙钟上限（秒）。
 #:
@@ -528,9 +533,20 @@ def _unique_slots(pool: AsyncConnectionPool) -> list[AsyncSlot]:
 
 
 async def _await_cleanup_before_cancellation(cleanup_task: asyncio.Task) -> None:
-    """把清理与调用方取消解耦：先排空，再决定是否传播取消。"""
+    """把清理与调用方取消解耦：先排空，再决定是否传播取消。
+
+    循环自带 deadline（与 :class:`AsyncQuoteStream.stop` 同一条口径）：监督方若反复
+    投递取消，``await`` 每次立刻抛 ``CancelledError``，裸 ``while`` 就退化成满速空转；
+    清理任务本身卡住时则反过来变成永不返回。到点主动 cancel 后收尾。
+    """
     cancelled = False
+    deadline = time.monotonic() + _CLEANUP_SHIELD_TIMEOUT
     while not cleanup_task.done():
+        if time.monotonic() >= deadline:
+            cleanup_task.cancel()
+            with contextlib.suppress(BaseException):
+                await asyncio.shield(cleanup_task)
+            break
         try:
             await asyncio.shield(cleanup_task)
         except asyncio.CancelledError:
@@ -811,7 +827,7 @@ class AsyncConnectionPool:
         if self._closed:
             raise ConnectionClosed("连接池已关闭")
 
-    async def _acquire_rate(self) -> None:
+    async def _acquire_rate(self, timeout: float | None = None) -> None:
         """异步友好的限流取令牌。
 
         深审 M3：旧实现三处缺口——request 的 sleep 后**忽略**第二次
@@ -819,12 +835,15 @@ class AsyncConnectionPool:
         iter_frames 则完全绕过限流器。统一收口于此：strict 模式超速直接抛
         RateLimitedLocal（对齐同步池语义）；否则异步等待令牌，不阻塞事件循环。
 
-        **并发契约（第 24 轮 G29 实测）**：非 strict 这一支是
-        ``while not try_acquire(): await asyncio.sleep(0.05)`` 的轮询——与同步
+        **并发契约（第 24 轮 G29 实测）**：非 strict 这一支是轮询——与同步
         :meth:`TokenBucket.acquire` 同为共享令牌池，**不保证先到先得**（异步形状副本实测
-        136 对次序反转、中位等待 508 ms > 理想末位 230 ms，0.05 粒度使其更慢）；且本方法
-        **不接受超时参数**，等待发生在真正 I/O 之前，因此**不计入调用方的 ``request_timeout``**
-        ——``timeout=None`` 语义上等于回填到取到为止的无界等待。要"超速即失败"须配 strict。
+        136 对次序反转、中位等待 508 ms > 理想末位 230 ms，0.05 粒度使其更慢）。
+
+        **等待必须有上界（2026-09-29 修）**：过去这里没有超时参数，等待发生在真正 I/O
+        之前，因此完全不计入调用方的 ``request_timeout``——语义上等于"回填到取到为止"，
+        速率档位被配得极低时一个协程可以永久挂住，且没有任何中断手段。现在它吃
+        ``timeout``（缺省 :data:`DEFAULT_ACQUIRE_TIMEOUT`）：到点抛
+        :class:`RateLimitedLocal`，与同步池同一条口径。要"超速即失败"仍配 strict。
         """
         limiter = self.rate_limiter
         if limiter is None:
@@ -832,7 +851,19 @@ class AsyncConnectionPool:
         if limiter.strict:
             limiter.acquire()
             return
+        budget = DEFAULT_ACQUIRE_TIMEOUT if timeout is None else float(timeout)
+        deadline = time.monotonic() + budget
         while not limiter.try_acquire():
+            if time.monotonic() >= deadline:
+                raise RateLimitedLocal(
+                    f"本地限流：{limiter.state} 时段等待令牌超过 {budget:g}s"
+                    f"（速率 {limiter.rate:.0f}/s）——放弃而不是无界等待",
+                    context={
+                        "state": limiter.state,
+                        "rate": limiter.rate,
+                        "timeout": budget,
+                    },
+                )
             await asyncio.sleep(0.05)
 
     async def request(
@@ -851,7 +882,7 @@ class AsyncConnectionPool:
 
         for attempt in range(max_attempts):
             self._ensure_open()
-            await self._acquire_rate()
+            await self._acquire_rate(request_timeout)
             slot = await self._select_allowed_slot(exclude_hosts=set(tried))
             if slot is None:
                 last_exc = ConnectionFailed("所有候选主站均处于熔断门禁")
@@ -1046,7 +1077,7 @@ class AsyncConnectionPool:
         expect_count_enabled = _require_bool_option(expect_count, field="expect_count")
         request_timeout = _require_request_timeout(timeout)
         self._ensure_open()
-        await self._acquire_rate()
+        await self._acquire_rate(request_timeout)
         slot = await self._select_allowed_slot()
         if slot is None:
             raise _circuit_unreachable(method)

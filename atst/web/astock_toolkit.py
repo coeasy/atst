@@ -86,15 +86,26 @@ class EastmoneyDividendSource(EastmoneyDataCenterSource):
     JSON_LABEL = "分红送转"
 
     #: 列名 → 归一化键（含别名容错）
+    #:
+    #: 三个比例列的真机列名在 2026-09-29 对拍过一次：报表实际返回的是
+    #: ``BONUS_RATIO``（送股）/ ``IT_RATIO``（转增）/ ``PRETAX_BONUS_RMB``（税前派息），
+    #: **不是**这张表原来写的 ``*_SHARES_RATIO`` / ``CASH_DIVIDEND_RATIO``。旧列名一个都
+    #: 命中不了，于是三项比例恒为 ``None``——表面"查到了分红记录"，实际送转与派息全丢，
+    #: 拿它去复权会得到一组因子恒为 1 的"假复权"结果。旧名保留为别名（列偶尔改名时不至于
+    #: 全丢），但真机列名必须排在前面。
+    #: 对拍样本（``IMPL_PLAN_PROFILE`` 是同一行的可读口径，用来钉语义）：
+    #: ``002594`` → ``10送8股转12股派39.74元`` = ``BONUS_RATIO=8`` / ``IT_RATIO=12``
+    #: / ``BONUS_IT_RATIO=20`` / ``PRETAX_BONUS_RMB=39.74``。
     FIELD_MAP: dict[str, tuple[str, ...]] = {
         "report_date": ("REPORT_DATE", "END_DATE"),
-        "bonus_shares_per_10": ("BONUS_SHARES_RATIO", "SGBL"),
-        "transfer_shares_per_10": ("TRANSFER_SHARES_RATIO", "ZGBL"),
-        "cash_dividend_per_10": ("CASH_DIVIDEND_RATIO", "XJFH"),
+        "bonus_shares_per_10": ("BONUS_RATIO", "BONUS_SHARES_RATIO", "SGBL"),
+        "transfer_shares_per_10": ("IT_RATIO", "TRANSFER_SHARES_RATIO", "ZGBL"),
+        "cash_dividend_per_10": ("PRETAX_BONUS_RMB", "CASH_DIVIDEND_RATIO", "XJFH"),
         "ex_dividend_date": ("EX_DIVIDEND_DATE", "CQCXR"),
-        "record_date": ("RECORD_DATE", "GQDJR"),
+        "record_date": ("EQUITY_RECORD_DATE", "RECORD_DATE", "GQDJR"),
         "dividend_date": ("DIVIDEND_DATE", "FXRQ"),
-        "progress": ("PROGRESS", "IMPL_PLAN_PROGRESS", "IS_OPEN"),
+        "progress": ("ASSIGN_PROGRESS", "PROGRESS", "IMPL_PLAN_PROGRESS", "IS_OPEN"),
+        "plan_profile": ("IMPL_PLAN_PROFILE",),
     }
     #: 数值化字段（每 10 股比例），其余保留字符串
     _NUM_FIELDS = frozenset(

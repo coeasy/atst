@@ -342,12 +342,20 @@ class Client:
         adjustment: str = "",
         currentness: str = "historical",
         strict: bool = False,
+        start_date: str = "",
+        end_date: str = "",
     ) -> QueryResult[Any] | OrchestratedResult:
         """K 线。``strict=True`` 时"结果带瑕疵"直接失败，而不是返回后靠调用方自查。
 
         执行器把一次查询里记录的全部数据完整性瑕疵装进
         :attr:`~atst.result.ResultMeta.warnings`（空桩首页、锚点漂移截断等）；
         ``strict`` 就是那份名单的开关，任何 Provider、任何瑕疵类别同一条判据。
+
+        ``start_date`` / ``end_date``（``YYYY-MM-DD``，闭区间）给"取哪一段"一个比
+        ``count``/``start`` 更自然的说法。协议侧只有"从最新往回数 ``count`` 根"这一种
+        游标，所以区间是在取回的那一页上裁出来的——**那一页盖不住区间起点时会记一条
+        ``bars_range_uncovered`` 告警**而不是假装完整，``strict=True`` 时它是一次失败。
+        要更早的历史就加大 ``count``（或用 ``start`` 继续往回翻页）。
         """
         spec = QuerySpec.build(
             "bars",
@@ -358,6 +366,8 @@ class Client:
             start=start,
             adjustment=adjustment,
             currentness=currentness,
+            start_date=start_date,
+            end_date=end_date,
             options={"strict": True} if strict else None,
         )
         if policy is not None:

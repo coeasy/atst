@@ -24,6 +24,7 @@ from typing import Any
 from ..errors import RateLimitedLocal
 
 __all__ = [
+    "DEFAULT_ACQUIRE_TIMEOUT",
     "SessionState",
     "TokenBucket",
     "SessionRateLimiter",
@@ -37,6 +38,12 @@ class SessionState:
     NOON_BREAK = "noon_break"
     CLOSED = "closed"
 
+
+#: 限流等待的兜底上限（秒）。取不到 token 时最多等这么久就抛
+#: :class:`RateLimitedLocal`，而不是把调用线程永久停在池外——调用方声明的
+#: ``request_timeout`` 覆盖不到限流等待（它发生在 socket 收发之前），所以这条兜底是
+#: 唯一能让"5 秒超时的请求"真的在有限时间内返回的机制。
+DEFAULT_ACQUIRE_TIMEOUT: float = 30.0
 
 _SESSION_STATES = frozenset(
     {
@@ -243,11 +250,25 @@ class SessionRateLimiter:
     def rate(self) -> float:
         return self._rates[self.state]
 
-    def acquire(self, tokens: float = 1.0) -> RateSnapshot:
+    def acquire(self, tokens: float = 1.0, *, timeout: float | None = None) -> RateSnapshot:
+        """取一个 token；``timeout`` 是**调用方预算**，不是可选项。
+
+        为什么必须有上限：``TokenBucket.acquire`` 在 ``timeout=None`` 时是"回填到取到
+        为止"的无界循环，而连接池的三个调用点都把限流放在 ``conn.request(timeout=...)``
+        **之前**——于是调用方声明的 5 秒预算只覆盖了真正的 socket 收发，限流等待整段裸
+        奔。速率档位被配得极低时（``closed`` 档 0.05/s），一次请求可以把线程永久停在
+        这里，且没有任何中断手段。
+
+        所以这里给一条兜底：``timeout=None`` 时取 :data:`DEFAULT_ACQUIRE_TIMEOUT`，
+        ``strict=True`` 仍然是不等待（0.0）的语义不变。
+        """
         state = self.state
         bucket = self._buckets[state]
         started = time.perf_counter()
-        ok = bucket.acquire(tokens, blocking=not self.strict, timeout=0.0 if self.strict else None)
+        wait_timeout = DEFAULT_ACQUIRE_TIMEOUT if timeout is None else timeout
+        ok = bucket.acquire(
+            tokens, blocking=not self.strict, timeout=0.0 if self.strict else wait_timeout
+        )
         waited = time.perf_counter() - started
         if not ok:
             raise RateLimitedLocal(

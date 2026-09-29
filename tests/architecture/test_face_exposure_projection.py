@@ -100,6 +100,13 @@ SAMPLES: dict[str, tuple[Any, Any]] = {
     "start": (1, 3),
     "adjustment": ("qfq", "hfq"),
     "market": ("1", "0"),
+    #: ``currentness`` / ``strict``：2026-09-29 补进四面的 bars 专用入口。
+    #: 它们此前只在 Python API 与通用 query 逃生通道上可达——专用 K 线入口拿不到
+    #: ``strict``，等于 HTTP/WS/MCP 的调用方永远无法拒绝带瑕疵的数据。
+    "currentness": ("historical", "live"),
+    "strict": (True, False),
+    "start_date": ("2024-01-02", "2024-01-03"),
+    "end_date": ("2024-12-31", "2025-12-30"),
     # 连接旋钮：它不该改内核收到的那一次调用，它改的是内核**怎么被构造出来**——
     # 所以判据二比的是「调用 + 构造」两个槽位，两头都不动的才是幻影旋钮。
     "host": ("127.0.0.1:1", "127.0.0.1:2"),
@@ -279,6 +286,19 @@ def _cli_fields(command: str) -> list[str]:
     return [action.dest for action in _cli_actions(command)]
 
 
+def _cli_option_tokens(action: Any, value: Any) -> list[str]:
+    """把一个样本值拼成命令行片段——``store_true`` 旗标**不带值**。
+
+    ``strict`` 是 ``action="store_true"``：写成 ``["--strict", "True"]`` 会被 argparse
+    当成两个 token，第二个成了位置参数并触发 ``unrecognized arguments``。布尔旗标的
+    命令行形状是"出现即真、不出现即假"，所以只有 ``True`` 才输出旗标本身。
+    """
+    flag = action.option_strings[-1]
+    if action.nargs == 0:
+        return [flag] if value else []
+    return [flag, str(value)]
+
+
 def _drive_cli(entry: str, fields: dict[str, Any]) -> tuple[str, tuple, dict, dict]:
     rec = Recorder()
     positional: list[str] = []
@@ -292,7 +312,7 @@ def _drive_cli(entry: str, fields: dict[str, Any]) -> tuple[str, tuple, dict, di
         elif isinstance(value, list):
             options += [action.option_strings[-1], *[str(item) for item in value]]
         else:
-            options += [action.option_strings[-1], str(value)]
+            options += _cli_option_tokens(action, value)
     args = _parser.parse_args([entry, *positional, *options])
     real = cli_runtime.Client
     ctx = _Ctx(rec)
@@ -847,7 +867,10 @@ def _drive_generic(
             json.dumps(kwargs),
         ]
         for key, value in knobs.items():
-            argv += [f"--{key}", str(value)]
+            if isinstance(value, bool):
+                argv += [f"--{key}"] if value else []
+            else:
+                argv += [f"--{key}", str(value)]
         err = io.StringIO()
         with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
             rc = main(argv)

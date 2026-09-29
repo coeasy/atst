@@ -74,6 +74,13 @@ LEDGER: dict[tuple[str, str], tuple[str, str, int]] = {
     ("atst/web/sina/adapters.py", "SCALES"): ("param", "新浪 scale 参数", 1),
     ("atst/web/eastmoney/adapters.py", "KLTS"): ("param", "东财 klt 参数", 1),
     ("atst/protocol/generic.py", "(字面量)"): ("irrelevant", "datetime32 字段名，与周期无关", 1),
+    #: 复权只认"每根 bar 能落到一个明确日历日"的周期（因子按事件日定位）。它不是
+    #: 第二份周期词表——成员全部取自 CANONICAL_PERIODS，只是把分钟级挡在外面。
+    ("atst/runtime/executor.py", "_ADJUSTABLE_PERIODS"): (
+        "declared",
+        "复权能力可用的周期子集",
+        1,
+    ),
 }
 
 ROLES = ("vocabulary", "protocol", "declared", "param", "irrelevant")
