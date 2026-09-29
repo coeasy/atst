@@ -26,7 +26,7 @@ minute（0x0537 的 request/parser 仍为 inferred，结构化 API 在发包前�
 trades（0x0FC5 同上：tdx 面的当日逐笔没有可用结构化入口，逐笔改走 Web Provider）
 security_count
 security_list（0x044D 多主站实测无响应，已下线：发包前抛 CommandOffline）
-finance（字段口径未闭合，见 REFACTOR_PLAN_V17_CLOSURE F-37：结构与条数可用，逐字段语义不保证）
+finance（字段口径未闭合，见 docs/archive/plans/REFACTOR_PLAN_V17_CLOSURE.md §0.3 F-37：结构与条数可用，逐字段语义不保证）
 capital_changes（同 finance，F-37）
 snapshot
 ```

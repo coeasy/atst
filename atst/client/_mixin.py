@@ -407,7 +407,7 @@ class _ClientMixin:
     def _t_capital_changes(self, symbol: str) -> list[CapitalChange]:  # type: ignore[misc]
         """除权除息 / 股本变迁（命令 ``0x000F``）。
 
-        .. warning:: **字段口径未闭合（§REFACTOR_PLAN_V17_CLOSURE F-37）**：2026-09-19 在
+        .. warning:: **字段口径未闭合（docs/archive/plans/REFACTOR_PLAN_V17_CLOSURE.md §0.3 F-37）**：2026-09-19 在
            可达主站上实测本命令能回整批记录，但解出的 ``market``/``code``/``date`` 逐字段
            错位（如 ``market`` 读到 ASCII ``'0'``），且不带任何解码告警；离线 golden 只钉住
            长度与条数、不校验字段值，所以全绿门禁看不见它。当前口径是**条数可用、字段语义
@@ -425,7 +425,7 @@ class _ClientMixin:
     def _t_finance_info(self, symbol: str) -> dict[str, Any]:  # type: ignore[misc]
         """财务基础信息（命令 ``0x0010``，F1 语义化字段）。
 
-        .. warning:: 与 :meth:`capital_changes` 同一条未闭合口径（§REFACTOR_PLAN_V17_CLOSURE
+        .. warning:: 与 :meth:`capital_changes` 同一条未闭合口径（docs/archive/plans/REFACTOR_PLAN_V17_CLOSURE.md §0.3
            F-37）：真机回包长度与 golden 同形，实测解出的 ``market``/``code``/``values``
            却是空值/错位，且不触发解码告警 ⇒ 字段语义不保证，条数与结构可用。
         """

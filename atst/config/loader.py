@@ -19,7 +19,7 @@
 ``ATST_`` 前缀是本库的保留命名空间：**代码从环境读取的每一个非 schema 变量都必须
 登记在 :data:`_RUNTIME_ENV_KEYS`**，否则用户一旦设置它，整条配置加载就会 fail closed
 （``Client()`` 直接抛 ``ConfigError``）——问财 cookie 曾这样自毁过一条官方指引，
-见 ``docs/REFACTOR_PLAN_V17_CLOSURE.md`` §0.3 F-69；漏登记由
+见 ``docs/archive/plans/REFACTOR_PLAN_V17_CLOSURE.md`` §0.3 F-69；漏登记由
 ``tests/architecture/test_config_doc_contract.py`` 的派生判据当场报红。
 """
 

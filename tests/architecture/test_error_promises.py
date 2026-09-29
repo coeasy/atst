@@ -37,7 +37,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "atst"
 DOCS = ROOT / "docs"
-LEDGER = "docs/REFACTOR_PLAN_V17_CLOSURE.md"
+LEDGER = "docs/archive/plans/REFACTOR_PLAN_V17_CLOSURE.md"
 
 #: 审计文档不是对外承诺：台账、变更日志与归档本来就负责讨论"未接线"这件事本身。
 AUDIT_DOC_PREFIXES = ("docs/REFACTOR", "CHANGELOG", "docs/archive")

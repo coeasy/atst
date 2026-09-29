@@ -19,7 +19,7 @@
 （借来的 runtime 不许被借走的人关掉），和注入执行器那条形同协议的口子。文档里"释放连接池"
 那句是过头主张，本轮改成如实口径；本文件把上面三条钉住，谁把口径改回去它就红。
 
-变异台账（G14 改前必须红，见 ``docs/REFACTOR_PLAN_V19_RESTRUCTURE.md`` §11；本轮合成一本
+变异台账（G14 改前必须红，见 ``docs/archive/plans/REFACTOR_PLAN_V19_RESTRUCTURE.md`` §11；本轮合成一本
 ``Temp/mut31d_all.py``，候选树落锚、按字节回滚复核 sha256，该电池读数 **19 条 / BAD=0**，
 本文件基线 7 格全绿）：
 ``M9a`` 把 ``UnifiedRuntime.close`` 的探测换成 ``close = None``（永远不调）→ **2 红 / 5 绿**：

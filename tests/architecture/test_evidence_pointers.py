@@ -40,7 +40,7 @@ import pytest
 from tests.architecture.test_doc_code_consistency import logical_blocks
 
 ROOT = Path(__file__).resolve().parents[2]
-LEDGER = ROOT / "docs" / "REFACTOR_PLAN_V18_RESTRUCTURE.md"
+LEDGER = ROOT / "docs" / "archive" / "plans" / "REFACTOR_PLAN_V18_RESTRUCTURE.md"
 
 #: 工作树名。`wt_` 之后允许下划线分段（`wt_v18b16head`、`wt_s40base`）。
 #: 尾部的负向预查是给普查脚本自己的日志名留的：`wt_census.log` 长得像树名，但它是一行
@@ -367,7 +367,7 @@ def test_new_pointers_must_be_lawful_additions_not_pre_declared_exemptions(
     """
 
     before = subprocess.run(
-        ["git", "show", "HEAD:docs/REFACTOR_PLAN_V18_RESTRUCTURE.md"],
+        ["git", "show", "HEAD:docs/archive/plans/REFACTOR_PLAN_V18_RESTRUCTURE.md"],
         cwd=ROOT,
         capture_output=True,
         text=True,

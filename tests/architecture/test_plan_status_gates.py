@@ -3,7 +3,7 @@
 
 """方案文档的「现状判定」必须与磁盘同真（F-58）。
 
-`docs/REFACTOR_PLAN_V17_CLOSURE.md` §0.1 用的是现在时：它说某条链路"贯通"还是"断链"，读者
+`docs/archive/plans/REFACTOR_PLAN_V17_CLOSURE.md` §0.1 用的是现在时：它说某条链路"贯通"还是"断链"，读者
 （包括问"主体链路是否全部贯通"的人）就按现在时接受。第 33 步之前它一直没跟上代码——两条
 ❌ 行把 v14 编排信封与 registry 三件套写成现行断链，而那两个层在 Phase 3A/3B 就整层物理
 删除了，其"证据"列指向的 `atst/runtime/gateway.py`、`atst/executor_registry.py`、
@@ -38,7 +38,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-PLAN = ROOT / "docs" / "REFACTOR_PLAN_V17_CLOSURE.md"
+PLAN = ROOT / "docs" / "archive" / "plans" / "REFACTOR_PLAN_V17_CLOSURE.md"
 
 #: 反引号里的文件路径，允许尾随 ``:行号``；只认带斜杠的形状——点号路径由
 #: ``test_doc_code_consistency.py`` 的 `atst.*` 判据覆盖。

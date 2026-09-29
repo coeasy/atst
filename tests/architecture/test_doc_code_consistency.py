@@ -1941,13 +1941,7 @@ def test_the_docs_citation_ruler_sees_a_planted_dead_path() -> None:
 #: 第 18 轮由自己踩出来：往 §2 账本插 G13 那一行时，插入手法把上一行（G11）的 814 字符尾巴
 #: 粘进了新行——一行 8 个竖线而表头是 5 个，读者看到的是"一条行里装着两条账"。
 #: 本文件其余判据都按**内容**读文档（路径、数字、代码块），没有一把尺量过表格行的形状。
-_TABLE_EXEMPT: dict[str, str] = {
-    "docs/REFACTOR_PLAN_V17_CLOSURE.md#F-46": (
-        "并行会话的账本行缺收尾竖线（4 竖线 / 表头 5）。本轮不代改别人的账本，"
-        "见 V18 方案 §27 第七节"
-    ),
-    "docs/REFACTOR_PLAN_V17_CLOSURE.md#F-67": "同上",
-}
+_TABLE_EXEMPT: dict[str, str] = {}
 
 
 def _table_cells(line: str) -> int:

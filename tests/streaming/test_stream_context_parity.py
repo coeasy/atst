@@ -22,7 +22,7 @@ dunder（同步那半边同样是零测试的"声明了没人量"）。
 替身 runtime 的 ``quotes()`` 一律抛 :class:`~atst.errors.TdxError`：轮询内核按退避等
 ``stop()`` 叫醒（``_stop.wait`` / ``_sleep_or_stop``），所以 worker 会一直活着而不发任何真请求。
 
-变异台账（G14 改前必须红，见 ``docs/REFACTOR_PLAN_V19_RESTRUCTURE.md`` §11；本轮合成一本
+变异台账（G14 改前必须红，见 ``docs/archive/plans/REFACTOR_PLAN_V19_RESTRUCTURE.md`` §11；本轮合成一本
 ``Temp/mut31d_all.py``，候选树落锚、按字节回滚复核 sha256，该电池读数 **19 条 / BAD=0**，
 本文件基线 8 格全绿）：
 ``M12`` 把 ``AsyncQuoteStream.__aexit__`` 的 ``await self.stop()`` 去掉 → **2 红 / 6 绿**：

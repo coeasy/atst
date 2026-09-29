@@ -775,7 +775,7 @@ atst quotes-snapshot sh600519 sz000001 --json              # 批量快照（直�
 `push2delay` 断连）与 `baidu`（`E7010`，403 疑似反爬），改前它们各给 51/43 行，两遍隔着 67 分钟、
 本库判据没碰过，按上游可用性抖动记（下表最后两行），不替上游圆场。失败到底是"环境/上游"还是
 "本库不服务"，逐条记在这里——读的人不必自己踩。取证日志与逐条 rc 记在
-``docs/REFACTOR_PLAN_V18_RESTRUCTURE.md`` 第 23 轮的执行记录里。
+``docs/archive/plans/REFACTOR_PLAN_V18_RESTRUCTURE.md`` 第 23 轮的执行记录里。
 
 | 命令 | 装好包那次真机结果 | 口径 |
 |------|----------|------|

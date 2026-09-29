@@ -58,7 +58,7 @@ def _reject_provider_with_policy(provider: str | None, policy: FallbackPolicy) -
     这里必须是 :class:`ValidationError`（E1010 / HTTP 422 / JSON-RPC -32602 / CLI 退出码 2），
     而不是原来那个裸 ``ValueError``：入参冲突的归类发生在**抛出点**，四面只是转述它，所以
     一次选错类型的 raise 会让四张面**一致地**把它说成 ``E9000`` 服务器故障、把调用方写错的
-    那两个键从消息里抹掉（实测四面同读数，见 ``docs/REFACTOR_PLAN_V18_RESTRUCTURE.md``
+    那两个键从消息里抹掉（实测四面同读数，见 ``docs/archive/plans/REFACTOR_PLAN_V18_RESTRUCTURE.md``
     第 19 节）。四面各自加转换只会把这第七份抄件再抄四遍。
     """
     if provider is None:
