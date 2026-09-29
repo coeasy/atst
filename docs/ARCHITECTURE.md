@@ -2,7 +2,8 @@
 
 > 本文只描述**当前代码事实**（v1.0.0，v13/v17 单一执行内核）。演进历史与逐轮重构台账见
 > [`docs/archive/plans/`](archive/plans/)；历史方案（v1–v16）的 L1/L2 缓存、UnifiedQuoteAPI
-> 门面、五级降级路由、sources/sinks 层、v14 信封运行时均已物理删除，不再是事实。
+> 门面、五级降级路由、sources/sinks 层、v14 信封运行时、`execution/` DAG 与 `provider/`
+> 路由件均已物理删除，不再是事实。
 
 ## 1. 项目定位
 

@@ -6,8 +6,6 @@
 
 - 当前版本：`1.0.0`
 - 当前发布状态：**GitHub Release [`v1.0.0`](https://github.com/coeasy/atst/releases/tag/v1.0.0) 已发布**（canonical wheel + sdist，附 `SHA256SUMS.txt` 与 `RELEASE-METADATA.json`）；**本包不在 PyPI 上**——PyPI 上传是显式 opt-in（需仓库变量 `PUBLIC_RELEASE=true`）· [发布说明](docs/releases/v1.0.0.md) · [v1.1.0 历史说明](docs/releases/v1.1.0.md) · [CHANGELOG](CHANGELOG.md)
-- 发布工程：[Release Readiness V4](docs/ATST-Release-Readiness-V4.md)
-- 核心功能验收：[Core Functionality Readiness V1](docs/ATST-Core-Functionality-Readiness-V1.md)
 
 ---
 
@@ -36,6 +34,19 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 ### 不是
 
 回测引擎、选股系统、交易终端、Web 可视化平台 —— 专注协议层与数据接入层，向上可组合到任意应用。
+
+---
+
+## 为什么选择 atst
+
+- **协议全覆盖**：5 套 TDX 协议族、85 命令、61 精确解析器，YAML 规范驱动 + codegen 自动生成，未知命令可探测、可自采集、可验证闭环。
+- **数据可追溯、不静默换源**：每个结果携带 `Provenance`（provider/channel/capability/命令），provider-first 不变量保证一次请求绑定一个 Provider，跨源只在显式 `FallbackPolicy` 下发生。
+- **零缓存、单一执行内核**：请求直达绑定 Provider，无聚合降级路由、无隐式缓存层——结果永远最新、来源永远可解释。
+- **同步/异步 + 四套服务面**：签名镜像双客户端，CLI / HTTP REST / WebSocket / MCP 全部只翻译为同一 `Client` 调用，AI Agent 可直接接入。
+- **零硬依赖**：所有第三方库均为可选 extra，核心可在纯净环境运行。
+- **洁净室原创**：规格驱动 + License 隔离 + AST 相似度审计，原创合规。
+
+> 类比 HTTP 世界的 `requests`：稳定、标准、可组合，专注协议层，不做应用层业务。
 
 ---
 
@@ -139,7 +150,7 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | **零硬依赖** | 所有第三方库均为可选 extra |
 | **错误分类树** | 九域 code 段（E1–E9）+ 每个异常自带 `RetryAdvice`；类清单以 `atst.errors` 现读为准，文档不抄录会过期的数字（`docs/errors.md`） |
 | **可观测性** | zero-dep 指标注册表 + Prometheus/StatsD/OTLP 三导出器 |
-| **传输与错误卫生** | TDX 连接可按 `security.use_tls` 走 TLS（默认关，`ssl.create_default_context()` 校验主机名）；错误上下文按关键字脱敏后才可外发。凭据存储**不在本库范围内**（ADR-007-010 已删除三级 CredentialStore）；HTTP 传输层同样**不做** Provider 主机白名单——那条守卫从未接入任何生产链路，已按 F-18 裁决 (b) 删除（`docs/REFACTOR_PLAN_V17_CLOSURE.md`），单源边界由调用方自证，内核侧的跨源约束只有一条：选定的 Provider 不会被悄悄换成别家 |
+| **传输与错误卫生** | TDX 连接可按 `security.use_tls` 走 TLS（默认关，`ssl.create_default_context()` 校验主机名）；错误上下文按关键字脱敏后才可外发。凭据存储**不在本库范围内**（ADR-007-010 已删除三级 CredentialStore）；HTTP 传输层同样**不做** Provider 主机白名单——该守卫从未接入任何生产链路，已在单内核收敛时移除，单源边界由调用方自证，内核侧的跨源约束只有一条：选定的 Provider 不会被悄悄换成别家 |
 | **原创合规** | 洁净室工程规范：规格驱动 + License 隔离 + AST 相似度审计 + Golden 数据自采集 |
 
 ---
@@ -185,7 +196,7 @@ pip install "atst[all]"             # ← 尚不可用：本包目前不在 PyPI
 pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-asyncio/hatchling）
 ```
 
-> **装包的实际口径**（G9，2026-09-22 实测）：`https://pypi.org/pypi/atst/json` 返回
+> **装包的实际口径**（实测）：`https://pypi.org/pypi/atst/json` 返回
 > `{"message": "Not Found"}`——PyPI 上没有 `atst` 这个名字，所以 `pip install atst`
 > 与上面第一行的 extras 安装今天都装不到东西。可用的安装路径只有两条：
 >
@@ -200,7 +211,7 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 > `server` / `tools` / `all`）是仓内 `pyproject.toml` 声明的那一套，从源码或
 > wheel 装时同样可用；本节只在真正上架 PyPI 后才需要改写。
 
-> **P14-D2 起**：`[project.optional-dependencies].dev` 已声明，本地与 CI 使用同一
+> `[project.optional-dependencies].dev` 已声明，本地与 CI 使用同一
 > 门禁口径（覆盖率阈值只在 `pyproject.toml [tool.coverage.report] fail_under` 写一次，
 > Makefile/CI 不再各传 `--cov-fail-under`），不再有「装了依赖却跑不出 `--cov`」的漂移。
 
@@ -218,10 +229,8 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 | `dev`       | pytest/pytest-cov/pytest-asyncio/ruff/mypy/hatchling | 开发体验 |
 | `all`       | 以上非 dev 项的并集        | 完整功能           |
 
-> **MCP 工具服务不需要 extra**（第 23 轮实测）：`atst/integration/mcp/` 是纯标准库的
-> JSON-RPC over stdio，全仓对 `pydantic` / `mcp` 两个包的读取次数为 **0**（`atst/`、
-> `tests/`、`scripts/` 三处一起 grep 只有 `DESIGN.md` 里的一段示例代码）。过去那两行
-> `config = pydantic` / `mcp = mcp` 是没人按它行动的声明，已随 `pyproject.toml` 一并删除。
+> **MCP 工具服务不需要 extra**：`atst/integration/mcp/` 是纯标准库的
+> JSON-RPC over stdio，全仓对 `pydantic` / `mcp` 两个包没有运行期依赖。
 
 ---
 
@@ -511,37 +520,38 @@ python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproje
   周三 09:00 UTC 定期 `host-audit`
 - 架构守卫：`tests/architecture/`（唯一内核、零缓存、无聚合降级路由、根级命名空间白名单、
   已删层不可复活）+ `tests/provider_isolation/`（Provider 隔离与溯源）
-- Ruff：`ruff check` 与 `ruff format --check` 均 0 错（待重排文件已在 V17 Phase 5 第 2 步
-  以一次纯格式提交清零，dev 依赖钉版 `ruff==0.15.2`）
-- mypy：`mypy atst/` 0 错（含 `--warn-unused-ignores`；V17 Phase 5 从 47 项清零）
+- Ruff：`ruff check` 与 `ruff format --check` 均 0 错（dev 依赖钉版 `ruff==0.15.2`）
+- mypy：`mypy atst/` 0 错（含 `--warn-unused-ignores`）
 - Pre-commit hooks：`ruff check --fix` + `ruff format --check`
 
 ---
 
 ## 路线图
 
-### 当前阶段：v1.0.0 稳定版 + v1.x 单内核收口
+### 当前阶段：v1.0.0 稳定版
 
-| 里程碑 | 状态 | 说明 |
-|---|---|---|
-| Typed Capability 契约 | ✅ | 60+ 契约（10 领域基类），字段名与内核方法签名一一对应 |
-| Domain Model | ✅ | 9 Domain Record 族 + 记录归一化 |
-| Contract Automation | ✅ | `scripts/contract_audit.py --ci`：Registry/语义/内核编译/Domain Record/往返五段对账，ERROR 级缺口阻断（注册能力既无 Typed 契约也不在任何派发面即 ERROR；Domain Record 待映射面按 PENDING 报告） |
-| Streaming | ✅ | StreamSpec/StreamPlanner + StatefulQuoteStream |
-| 单内核收敛（v16） | ✅ | 零缓存直调路径；v12 门面/service/sources/全部缓存层物理删除 |
-| 断链清偿（v17 Phase 3A/3B/3D） | ✅ | v14 信封运行时 + `execution/` DAG + `provider/` router + registry 三件套删除；typed 全线接通 |
-| 命名空间归位（v17 Phase 3C） | ✅ | 根级模块 26→11；`runtime/` `catalog/` `client/` 分层 |
-| 文档与对外面统一（v17 Phase 4） | ✅ | README/ARCHITECTURE 已刷新；30 份历史方案入 `docs/archive/plans`；文档-代码一致性门禁上线（导入语句/点号路径/README 数字/结构树/门禁规模逐项对账） |
-| 发布硬化（v17 Phase 5） | ◐ | mypy 47→0、ruff format 65 文件清零、三项 strict 门禁转绿、豁免清单与 ghost 门禁审计完成、离线整仓覆盖率 80.84%（本机 Windows+py3.12 仓内 `.venv`，阈值 77 未动）、七格真实网络/服务面冒烟与 wheel 安装冒烟均已执行（6 PASS / 1 FAIL；K 线那一格已在第 34 步归因为本端握手字节并修复）。F-37 已按用户裁决 (c) 执行：下调能力声称，预发布 tag `v1.1.0-dev.1` 已打并推送。仍待：`0x000F`/`0x0010` 字段错位的真机布局判据（V18 第 14 轮已把「值落在自己声明的域外」这条判断接到 wire 上，见 G7；布局本身仍要真机 golden，不猜字节）、按 CI 环境数字重钉覆盖率。已清：一次工作日盘中复跑（V18 第 13 轮）、7709 核心链 live 判据进流水线（V18 第 14 轮，G4） |
+atst 已发布 `v1.0.0`（GitHub Release，不在 PyPI）。当前内核为单执行路径、零缓存、provider-first：
+85 命令 / 61 精确解析器 / 5 协议族 / 11 Provider / 172 capability / 251 条精确绑定全部到位，并通过全量确定性门禁。
 
-### 下一阶段
-
-| 计划 | 方向 |
+| 里程碑 | 状态 |
 |---|---|
-| **发布硬化** | 已做：mypy 既有告警清零、覆盖率基线按有效代码重校（本机 80.84%，阈值 77 未下调）、wheel 安装冒烟 `SMOKE_RC=0`（第 16 步）、预发布 tag `v1.1.0-dev.1` 已推送、**`v1.1.0` tag 已在提交树 `ef3b97e` 上打好并推送**（该树的十项门禁 + 离线全量 + canonical 构建各复测过一遍，读数见 `docs/releases/v1.1.0.md`）。未做：按 CI（ubuntu+py3.11）数字重钉 `fail_under`；把 `v1.1.0` 从一个 tag 变成真正可安装的发布（PyPI/GitHub Release 只能人工点，且本包至今不在 PyPI 上——见「安装」一节 G9） |
-| **Live Smoke** | 已做：七格真实网络/服务面冒烟逐格执行（tdx/web 直连、K 线、stream、CLI/HTTP/MCP 各一发）＝6 PASS / 1 FAIL（第 16 步，那次落在周六休市）。**工作日盘中复跑**已在 V18 第 13 轮做掉（北京时间 10:42–11:18 逐格真取）。**7709 核心链的 live 判据已进流水线**（V18 第 14 轮，G4）：`tests/live/test_tdx_core_chain.py` 那五格由 live-smoke 的盘中调度（工作日 02:30 UTC = 北京 10:30）执行，主链接不上时它红而不是 skip。已定：F-37 按裁决 (c) 落地——`0x000F`/`0x0010` 的能力口径已下调为「条数可用、字段语义不保证」，本发布不声称 7709 历史族字段级 live 正确；那次口径降级在 V18 第 9 轮补齐了**账本那半边**（`0x000F` 的 `tier=L1, verified=True` 实为 `register_parser` 的缺省值，已撤回，改由 `tests/unit/test_golden.py` 的「实采样本重放后字段值必须落在域内」判据把守），第 14 轮又把这条判断搬到了 wire 上（G7：值落在库自己声明的域外时发 `field_out_of_domain` 告警）。仍未做：那两条命令的字段布局判据（不猜协议字节，要真机 golden） |
-| **Streaming 增量执行** | 流式数据增量合并 + 补数完整性保证 |
-| **可达性收口** | 孤儿=0，且每条豁免记录都被门禁盯着：指向不存在模块的死记录、已接线却未撤销的过期记录、理由过短、重复条目都会让 `--strict` 失败。豁免清单里已无待裁决项：曾挂在该清单上的 `atst/providers/http.py`（Provider 绑定的 HTTP 主机白名单守卫）已按 F-18 裁决 (b) 物理删除——v16 删除跨源路由层后它没有任何生产调用点，一件没人接的防线不等于一条防线 |
+| 协议层：命令账本 + 解析器 + YAML 规范 + codegen 闭环 | ✅ |
+| 单内核收敛：零缓存直调、无隐式跨源 | ✅ |
+| Typed Capability 契约 + Domain Record 归一 | ✅ |
+| 流式订阅：StreamSpec / StreamPlanner + StatefulQuoteStream | ✅ |
+| 服务面：CLI / HTTP REST / WebSocket / MCP | ✅ |
+| 文档-代码一致性门禁 | ✅ |
+
+### 后续规划
+
+| 方向 | 说明 |
+|---|---|
+| 发布硬化 | 按 CI 环境数字重钉覆盖率阈值；PyPI 上架为显式 opt-in（仓库变量 `PUBLIC_RELEASE=true`） |
+| 流式增量执行 | 流式数据增量合并 + 补数完整性保证 |
+| 协议探测扩展 | 更多未知命令的自动采集 → codegen → spec_audit 闭环 |
+| 多市场深化 | 港股/美股/期货/外汇/期权覆盖的字段级实测补齐 |
+| 可达性收口 | 孤儿=0，每条豁免记录都被门禁盯着（死记录/过期记录/重复条目即红） |
+| 对外面增强 | 扩充 MCP 工具与 HTTP 端点，覆盖高频使用场景 |
 
 ---
 
@@ -566,11 +576,7 @@ python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproje
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录（含 native 弃用时间线 v1.5.0/v1.6.0）|
 | [docs/releases/v1.0.0.md](docs/releases/v1.0.0.md) | v1.0.0 正式发布说明、兼容性与验证结果 |
 | [docs/releases/v1.1.0.md](docs/releases/v1.1.0.md) | v1.1.0 版本说明：这一版收口了什么、发布链走到哪一格 |
-| [docs/REFACTOR_PLAN_V18_RESTRUCTURE.md](docs/REFACTOR_PLAN_V18_RESTRUCTURE.md) | 当前重构轴的计划与执行台账 |
-| [docs/archive/](docs/archive/README.md) | 历史计划、对标审计与设计快照（**都不是现行契约**，含 FEATURE_MAP/POTENTIAL_ISSUES 两份旧规划表）|
-
-> [DESIGN.md](DESIGN.md) 是 2026-08-31 的 v2.0 立项设计稿，架构判断仍成立，规模数字（命令/解析器
-> 账本）早已过期，因此**不作现行方案卖**：今天的架构读 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+| [docs/archive/](docs/archive/README.md) | 历史计划、对标审计与设计快照（**都不是现行契约**）|
 
 ---
 
