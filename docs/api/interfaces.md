@@ -612,6 +612,10 @@ from atst.integration.runtime_ws_server import serve_runtime_ws
 方法：`quotes`、`bars`、`snapshot`、`minute`、`trades`、`security.count`、`security.list`、
 `query`、`runtime.capabilities`、`runtime.health`、`subscribe`、`unsubscribe`、`list`。
 
+`runtime.health` 与 HTTP `/v13/runtime/health` 同一读数：status 与 api 两面同值之外，
+`default_provider`、`direct_bindings`（执行绑定数）、`migrated_capabilities`、`core_unavailable`
+四个字段名与取值完全一致——运维判断「这条部署面铺开了多少直连绑定」不需要换口径。
+
 监听地址与路径由 `RuntimeWsConfig` 决定，默认 127.0.0.1:8765 上的 `/v13/ws`；连到别的路径
 会被以 1008 状态码关闭（reason 为 "unsupported path"）。`serve_runtime_ws` 是协程，返回 websockets
 库的 server 对象；要一条命令拉起来就用它的包入口 `python -m atst.integration.runtime_ws_server`
@@ -649,11 +653,16 @@ from atst.integration.runtime_ws_server import serve_runtime_ws
   回 `{"subscription_id":"subN","status":"subscribed"}`；随后连接收到 `push` 帧：
   `{"method":"push","params":{"type":"snapshot","code":...,"data":{...}}}`。未声明字段当场 `-32602`。
 * `unsubscribe`：`{"id":"subN"}` → `{"status":"unsubscribed","id":"subN","found":true}`；停掉对应流。
-* `list`：`{}` → `{"subscriptions":[{"id":"subN","state":"running"}]}`，只读本连接的订阅与状态。
+* `list`：`{}` → `{"subscriptions":[{"id":"subN","state":"running","symbols":["600519"],"provider":"tdx"}]}`，
+  只读本连接的订阅。每条订阅带**标的列表与出处 Provider**——客户端不依赖建立订阅时的请求
+  历史就能对账、按标的定位 `sub_id` 退订（`provider` 是订阅时选中的 Provider，
+  与推送帧 `meta.provider` 同一口径）。
 
 推送帧的 `params.type` 取值：`snapshot`（首帧/每次轮询快照）、`tick`（增量，需 `diff_only:true`）、
 `error`（`params.error` 为规范化错误信封）。订阅/查询共用同一套错误信封挂在 `error.data`，
-客户端读法与其它三面一致。
+客户端读法与其它三面一致。`snapshot`/`tick` 帧带 `meta`：`provider`（出处 Provider）、
+`observed_at_ns`（观测时间戳，可用时）与 `warnings`（本次推送收集到的数据完整性告警，如有）——
+与请求-响应路径的 `meta` 同一形状，流式与一次性查询不因入口不同而丢信息。
 
 ```python
 import asyncio, json

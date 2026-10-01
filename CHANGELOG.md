@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **行情接口灵活性**：`QuerySpec` / `Client.bars()` / HTTP `GET /v13/bars/{symbol}` / WS `bars` / MCP `get_bars` / CLI 全部支持 `start_date` / `end_date` 日期区间查询；区间起始端落在数据之外时记 `bars_range_uncovered` 告警（WarningCode 新增）。
 - 复权因子的现金红利项需要的前收盘价改由复权序列**前一根 bar 的收盘**推导；孤立 bar 退化处理并记 `adjust_prev_close_missing` 告警。
 - `atst.domain.finance.capital_changes_from_dividends`：东财分红行 → `CapitalChange` 的直接换算入口。
+- **WS `runtime.health` 补齐 `direct_bindings` 字段**：与 HTTP `/v13/runtime/health` 同一读数，两面运维口径一致。
 
 ### Fixed
 
@@ -26,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **无界等待消除**：限流 `acquire`、连接池三处获取点、异步清理等待全部加超时上界（`DEFAULT_ACQUIRE_TIMEOUT` 等），卡死的上游不再拖死调用方。
 - **无界循环/内存消除**：交易日扫描、流式停止屏蔽、WS 推送背压（`MAX_PENDING_PUSH_FRAMES` 丢最旧）、诊断告警 sink 全部加上界。
 - `bars(adjustment=…)` 显式拒绝（不允许静默复权），复权必须走 `adjusted_bars` 能力。
+- **WS `list` 补齐 `symbols` / `provider` 字段**：此前订阅表只回 `id` + `state`，客户端无法把标的对应到订阅、也无法按标的退订；现在每条订阅带回标的列表与出处 Provider（退订与连接关闭时同步回收）。
 
 ## [1.0.0] - 2026-09-28
 

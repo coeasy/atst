@@ -28,6 +28,7 @@ from ..client.api import AsyncClient, Client
 from ..error_envelope import to_error_envelope
 from ..errors import ValidationError
 from ..providers import PROVIDERS
+from ..runtime.executor import DIRECT_BINDINGS
 from ..runtime.orchestration import FallbackPolicy
 from .serialization import serialize_result
 from .wire_fields import (
@@ -97,6 +98,8 @@ class RuntimeJsonRpcHandler:
         self._pending_pushes: list[Any] = []
         #: 标的 → 订阅时选中的 Provider（推送帧的 ``meta.provider`` 出处）。
         self._sub_providers: dict[str, str] = {}
+        #: 订阅 id → 标的表（``list`` 面向消费方的对账口径，``_subscribe`` 登记）。
+        self._sub_symbols: dict[str, list[str]] = {}
 
     # ------------------------------------------------------------------
     # 连接生命周期（由 ``serve_runtime_ws`` 的每条连接调用一次）
@@ -120,6 +123,7 @@ class RuntimeJsonRpcHandler:
         """
         streams = list(self._subs.values())
         self._subs.clear()
+        self._sub_symbols.clear()
         for stream in streams:
             with contextlib.suppress(Exception):
                 await stream.stop()
@@ -241,6 +245,9 @@ class RuntimeJsonRpcHandler:
                 "status": "ok",
                 "api": "v13",
                 "default_provider": self.client.runtime.planner.default_provider,
+                #: 与 HTTP 面 ``/v13/runtime/health`` 同一读数：执行绑定数是
+                #: 运维判断「这条部署面铺开了多少直连绑定」的口径，两面必须一致。
+                "direct_bindings": len(DIRECT_BINDINGS),
                 "migrated_capabilities": len(self.client.capabilities()),
                 "core_unavailable": sorted(
                     capability
@@ -423,6 +430,9 @@ class RuntimeJsonRpcHandler:
         #: 是 TDX 还是别家（请求-响应路径的 ``meta.provider`` 是同一件事）。
         for symbol in symbols:
             self._sub_providers[str(symbol)] = str(provider) if provider else "tdx"
+        #: 订阅 → 标的表：``list`` 要把每条订阅订了什么暴露给消费方，否则客户端
+        #: 没法把标的对应到 ``sub_id``（退订/对账都无从下手）。
+        self._sub_symbols[sub_id] = list(symbols)
         return sub_id
 
     def _unsubscribe_from_params(self, sub_id: Any) -> dict[str, Any]:
@@ -431,6 +441,7 @@ class RuntimeJsonRpcHandler:
         found = sub_id in self._subs
         if found:
             stream = self._subs.pop(sub_id)
+            self._sub_symbols.pop(sub_id, None)
             #: 出处表跟着订阅一起回收：没有活跃订阅时整表清空；表本身也有容量上限，
             #: 长期反复换标的不会把它撑成慢泄漏。
             if not self._subs:
@@ -462,7 +473,17 @@ class RuntimeJsonRpcHandler:
                 state_value: Any = "running"
             else:
                 state_value = getattr(state, "value", state)
-            items.append({"id": sub_id, "state": state_value})
+            symbols = self._sub_symbols.get(sub_id, [])
+            item: dict[str, Any] = {
+                "id": sub_id,
+                "state": state_value,
+                #: 每条订阅的标的与出处 Provider：让消费方不依赖建立时的请求
+                #: 历史就能对账、退订（与 ``_sub_providers`` 同一出处口径）。
+                "symbols": list(symbols),
+            }
+            if symbols:
+                item["provider"] = self._sub_providers.get(symbols[0], "tdx")
+            items.append(item)
         return {"subscriptions": items}
 
     def _on_quote(self, symbol: str, data: dict[str, Any]) -> None:
