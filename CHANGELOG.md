@@ -9,6 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.2.1] - 2026-10-02
+
+本地安装实测（干净 venv 装 wheel + 全量 194 能力逐个真实调用）暴露问题的收口发布。
+
+### Fixed
+
+- **`interactive_qa` 断链**：`cninfo` provider 的会话源映射为非法值 `'cninfo'`，
+  executor 以它构造 `WebQuoteSession` 时直接 `CompatibilityError`（E8000）。
+  改按 `baidu`/`iwencai`/`builtin` 同款惯例映射到名义源 `'sina'`
+  （该系能力是无源 `@staticmethod`，会话源只是名义值）。
+- **10 项缺口能力端点真机验证后修正**（本地实测发现 14 个报表名 9501 不存在，
+  对照 akshare 源码与实时抓取找到真名/真端点）：
+  `macro_lpr`→`RPTA_WEB_RATE`、`macro_bond_yield`→`RPTA_WEB_TREASURYYIELD`、
+  `equity_pledge`→`RPT_CSDC_LIST`、`valuation_history`→`RPT_VALUEANALYSIS_DET`、
+  `risk_scan`→`RPT_GOODWILL_STOCKDETAILS`+`RPT_CSDC_LIST` 复合、
+  `st_list`→push2 风险警示板（BK0511）成分、
+  `etf_shares`→push2 ETF 现货列表 `f38`（最新份额，逐页拉全）、
+  `macro_social_financing`→商务部数据中心 `shrzgmQuery`、
+  `macro_repo_rate`→外汇交易中心 chinamoney `frr/fdr-chrt.csv`。
+  上述能力在 `capability_statuses()` 中由 `needs_verify` 转 `alive`（实测出数）。
+- `macro_social_financing` / `macro_repo_rate` 去掉错误的逆序（上游本就最新在前）；
+  回购定盘 CSV 空列剔除（akshare `dropna(axis=1)` 同款语义），修值位错位。
+- `st_list` 签名按真实端点收敛为 `(*, limit, page)`（风险警示板为实时快照，
+  无历史基准日参数）；`etf_shares` 去掉无对应的 `date` 参数。
+- `_em_clist_rows` 补 `rate_limiter.acquire`（此前绕过了源层限流纪律）。
+
+### Changed
+
+- 剩余 7 项缺口能力保持诚实 `needs_verify`：`interactive_qa` / `news_broadcast`
+  （端点主机在沙箱不可达）、`sw_industry` / `sw_industry_history` /
+  `index_valuation` / `futures_position_rank` / `options_position_rank`
+  （东财无公开对应报表；期货/期权持仓排名走 futsseapi 面板，需新适配器）。
+
+### Verification
+
+- 干净 venv（Python 3.13）装 wheel：`atst version` / `capabilities` / `query` 正常。
+- 全量 194 能力逐个真实调用归因：126 直接可用或干净降级、其余为缺必填参数的
+  校验性失败（预期行为）或探针参数启发式的假阳性；修复后 18 项缺口能力中
+  11 项真机出数（含 `trade_calendar` 离线）。
+- `ruff check` / `ruff format` / `mypy` 全绿；架构 + web + providers +
+  compatibility 套件全绿。
+
 ## [1.2.0] - 2026-10-02
 
 ### Added

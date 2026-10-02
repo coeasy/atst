@@ -9,8 +9,10 @@
 * 每个方法都是 ``@staticmethod``，经 :func:`atst.catalog.capability._discover_web_bindings`
   自动登记为能力，天然在 CLI / HTTP / WS / MCP 四面通用分发（不存在漏暴露断链）。
 * 东财 datacenter-web 类统一走 :class:`atst.web.corporate.EastmoneyDataCenterSource`；
-  巨潮 / 同花顺类走各自已验证基座。
-* **诚实性**：标 ``needs_verify`` 的能力其在线端点需真机抓包校准；端点若失效，
+  push2 板块/ETF 行情走 :class:`atst.web.boards.EastmoneyBoardSource` 与共享 HTTP 池；
+  巨潮 / 央视 / 外汇交易中心 / 商务部走各自已验证基座。
+* **诚实性**：仍标 ``needs_verify`` 的能力（互动易 / 新闻联播 / 申万分类 /
+  指数估值 / 期货期权持仓排名）其在线端点尚未真机抓包校准；端点若失效，
   基座会抛 :class:`~atst.errors.SourceDeprecated` / :class:`~atst.errors.WebSourceError`
   （干净失败，绝不崩溃或静默返回空），与其余能力同源降级语义。
 
@@ -56,6 +58,42 @@ def _eastmoney_rows(
         )
     finally:
         src.close()
+
+
+def _em_clist_rows(
+    fs: str,
+    fields: str,
+    *,
+    page: int = 1,
+    size: int = 200,
+    fid: str = "f12",
+    host: str = "https://push2.eastmoney.com",
+) -> list[dict[str, str | float]]:
+    """东财 push2 ``clist`` 通用行查询（板块成分 / ETF 现货等）。
+
+    失败统一抛 :class:`~atst.errors.WebSourceError`（干净失败语义与其余
+    web 源一致），绝不静默返回空。
+    """
+    from urllib.parse import urlencode
+
+    from .boards import EastmoneyBoardSource
+
+    src = EastmoneyBoardSource(client=_shared_http())
+    try:
+        src.rate_limiter.acquire(src.source_name)
+        payload = src._get_json(  # noqa: SLF001 —— 同包内复用已验证的取数/报错链
+            f"/api/qt/clist/get?{urlencode({'pn': max(1, page), 'pz': max(1, min(size, 500)), 'po': 1, 'np': 1, 'fltt': 2, 'invt': 2, 'fid': fid, 'fs': fs, 'fields': fields})}"
+        )
+    finally:
+        src.close()
+    rows = EastmoneyBoardSource._diff(payload)  # noqa: SLF001
+    return [dict(r) for r in rows]
+
+
+def _pager(rows: list[dict[str, Any]], *, size: int, page: int) -> list[dict[str, Any]]:
+    """对上游不分页的全量行做客户端分页（最新在前）。"""
+    start = (max(1, page) - 1) * max(1, size)
+    return rows[start : start + max(1, size)]
 
 
 class GapsSessionMixin:
@@ -122,22 +160,52 @@ class GapsSessionMixin:
             )
         return out
 
-    # -- G-03 宏观补全（社融 / PMI / LPR / 中债曲线 / 回购定盘） ---------- #
-    # 以下报表名 best-effort，需真机抓包校准（needs_verify）。
+    # -- G-03 宏观补全（社融 / PMI / LPR / 国债收益率 / 回购定盘） -------- #
+    # LPR / 国债收益率为东财 datacenter 已验证报表；社融走商务部数据中心、
+    # 回购定盘走外汇交易中心 CSV，均已真机验证（alive）。
     @staticmethod
     def macro_social_financing(*, size: int = 50, page: int = 1) -> list[dict[str, Any]]:
-        """社融存量 / 增量（人民银行口径，best-effort 端点）。"""
-        return _eastmoney_rows(
-            "RPT_ECONOMY_SFS",
-            sort_columns="REPORT_DATE",
-            sort_types="-1",
-            page=page,
-            size=size,
-        )
+        """社会融资规模增量（人民银行口径，商务部数据中心月度）。
+
+        Returns
+        -------
+        ``[{"month","sfs_increment","rmb_loans","forex_loans","entrust_loans",
+        "trust_loans","undiscounted_bankers","corporate_bonds","equity_financing"}, ...]``
+        （单位：亿元；上游按月全量返回，这里客户端分页、最新在前。）
+        """
+        from ..errors import WebSourceError
+
+        url = "https://data.mofcom.gov.cn/datamofcom/front/gnmy/shrzgmQuery"
+        resp = _shared_http().post(url, body=b"", content_type="application/x-www-form-urlencoded")
+        if not resp.ok:
+            raise WebSourceError(f"商务部社融数据请求失败 HTTP {resp.status} (source='mofcom')")
+        try:
+            raw = resp.json()
+        except Exception as exc:  # noqa: BLE001
+            raise WebSourceError("商务部社融数据解析失败 (source='mofcom')") from exc
+        if not isinstance(raw, list):
+            raise WebSourceError("商务部社融数据返回结构异常 (source='mofcom')")
+        rows = [
+            {
+                "month": str(r.get("date", "")),
+                "sfs_increment": r.get("tiosfs"),
+                "rmb_loans": r.get("rmblaon"),
+                "forex_loans": r.get("forcloan"),
+                "entrust_loans": r.get("entrustloan"),
+                "trust_loans": r.get("trustloan"),
+                "undiscounted_bankers": r.get("ndbab"),
+                "corporate_bonds": r.get("bibae"),
+                "equity_financing": r.get("sfinfe"),
+            }
+            for r in raw
+            if isinstance(r, dict)
+        ]
+        # mofcom 上游即最新在前（实测 202604 行首），直接分页
+        return _pager(rows, size=size, page=page)
 
     @staticmethod
     def macro_pmi(*, size: int = 50, page: int = 1) -> list[dict[str, Any]]:
-        """制造业 / 非制造业 PMI（国家统计局口径，best-effort 端点）。"""
+        """制造业 / 非制造业 PMI（国家统计局口径，东财 ``RPT_ECONOMY_PMI``）。"""
         return _eastmoney_rows(
             "RPT_ECONOMY_PMI",
             sort_columns="REPORT_DATE",
@@ -148,67 +216,141 @@ class GapsSessionMixin:
 
     @staticmethod
     def macro_lpr(*, size: int = 50, page: int = 1) -> list[dict[str, Any]]:
-        """LPR 贷款市场报价利率（1 年 / 5 年，best-effort 端点）。"""
+        """LPR 贷款市场报价利率（1 年 / 5 年，东财 ``RPTA_WEB_RATE``，已验证）。"""
         return _eastmoney_rows(
-            "RPT_ECONOMY_LPR",
-            sort_columns="REPORT_DATE",
+            "RPTA_WEB_RATE",
+            sort_columns="TRADE_DATE",
             sort_types="-1",
             page=page,
             size=size,
         )
+
+    #: 国债收益率报表字段 → 期限（akshare ``bond_zh_us_rate`` 同源映射）。
+    _TREASURY_FIELDS: dict[str, str] = {
+        "EMM00588704": "cn_2y",
+        "EMM00166462": "cn_5y",
+        "EMM00166466": "cn_10y",
+        "EMM00166469": "cn_30y",
+        "EMM01276014": "cn_10y_2y",
+        "EMG00001306": "us_2y",
+        "EMG00001308": "us_5y",
+        "EMG00001310": "us_10y",
+        "EMG00001312": "us_30y",
+        "EMG01339436": "us_10y_2y",
+        "EMM00000024": "cn_gdp_yoy",
+        "EMG00159635": "us_gdp_yoy",
+    }
 
     @staticmethod
     def macro_bond_yield(*, term: str = "", size: int = 50, page: int = 1) -> list[dict[str, Any]]:
-        """中债国债收益率曲线（多期限，best-effort 端点）。
+        """中/美国债收益率日频序列（东财 ``RPTA_WEB_TREASURYYIELD``，已验证）。
 
-        term: 期限过滤（如 ``"10Y"``）；空串=全期限。
+        term:
+            期限选择：``""``（全字段）/ ``cn_2y`` / ``cn_5y`` / ``cn_10y`` /
+            ``cn_30y`` / ``us_2y`` / ``us_5y`` / ``us_10y`` / ``us_30y`` 等
+            （取值即返回行的键名）。给定单个期限时只返回
+            ``[{"date","term","yield"}, ...]``。
         """
-        filters = [f'TERM="{term}"'] if term else ()
-        return _eastmoney_rows(
-            "RPT_BOND_YIELD_CURVE",
-            filters=filters,
-            sort_columns="REPORT_DATE",
+        rows = _eastmoney_rows(
+            "RPTA_WEB_TREASURYYIELD",
+            sort_columns="SOLAR_DATE",
             sort_types="-1",
             page=page,
             size=size,
         )
+        term_norm = (term or "").strip().lower()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            date = str(r.get("SOLAR_DATE", ""))[:10]
+            renamed = {
+                "date": date,
+                **{
+                    GapsSessionMixin._TREASURY_FIELDS[k]: v
+                    for k, v in r.items()
+                    if k in GapsSessionMixin._TREASURY_FIELDS
+                },
+            }
+            if term_norm:
+                if term_norm not in renamed:
+                    raise ValueError(
+                        f"macro_bond_yield term 只接受 {sorted(GapsSessionMixin._TREASURY_FIELDS.values())}，"
+                        f"收到 {term!r}"
+                    )
+                out.append({"date": date, "term": term_norm, "yield": renamed[term_norm]})
+            else:
+                out.append(renamed)
+        return out
 
     @staticmethod
-    def macro_repo_rate(*, size: int = 50, page: int = 1) -> list[dict[str, Any]]:
-        """回购定盘利率（DR007 / FR007 等，best-effort 端点）。"""
-        return _eastmoney_rows(
-            "RPT_REPO_FIXING_RATE",
-            sort_columns="REPORT_DATE",
-            sort_types="-1",
-            page=page,
-            size=size,
+    def macro_repo_rate(
+        *, kind: str = "frr", size: int = 50, page: int = 1
+    ) -> list[dict[str, Any]]:
+        """回购定盘利率（外汇交易中心 chinamoney CSV，已验证）。
+
+        kind:
+            ``"frr"``（回购定盘利率 FR001/FR007/FR014）或 ``"fdr"``
+            （银银间回购定盘利率 FDR001/FDR007/FDR014）。
+        """
+        from urllib.parse import quote
+
+        from ..errors import WebSourceError
+
+        kind_norm = (kind or "frr").strip().lower()
+        if kind_norm not in ("frr", "fdr"):
+            raise ValueError(f"macro_repo_rate kind 只接受 'frr'/'fdr'，收到 {kind!r}")
+        url = "https://www.chinamoney.com.cn/r/cms/www/chinamoney/data/currency/" + (
+            "frr-chrt.csv" if kind_norm == "frr" else "fdr-chrt.csv"
         )
+        cols = ("FR001", "FR007", "FR014") if kind_norm == "frr" else ("FDR001", "FDR007", "FDR014")
+        resp = _shared_http().get(quote(url, safe=":/?=&"))
+        if not resp.ok:
+            raise WebSourceError(
+                f"chinamoney 回购定盘利率请求失败 HTTP {resp.status} (source='chinamoney')"
+            )
+        rows: list[dict[str, Any]] = []
+        for line in resp.text().splitlines():
+            parts = [p.strip() for p in line.split(",") if p.strip()]
+            # CSV 混有空列（akshare 同款 dropna(axis=1) 语义）：先剔除空段再映射
+            if len(parts) < 4 or not parts[0][:4].isdigit():
+                continue  # 表头/空行
+            row: dict[str, Any] = {"date": parts[0]}
+            row.update({cols[i]: parts[i + 1] or None for i in range(len(cols))})
+            rows.append(row)
+        if not rows:
+            raise WebSourceError("chinamoney 回购定盘利率返回为空 (source='chinamoney')")
+        # chinamoney CSV 上游即最新在前（实测首行 2026-09-30），直接分页
+        return _pager(rows, size=size, page=page)
 
     # -- G-05 ST / *ST 名单 ------------------------------------------------ #
     @staticmethod
-    def st_list(*, date: str = "", size: int = 200, page: int = 1) -> list[dict[str, Any]]:
-        """ST / *ST 风险警示股名单（含现价，best-effort 端点）。
+    def st_list(*, limit: int = 200, page: int = 1) -> list[dict[str, Any]]:
+        """ST / *ST 风险警示股名单（东财风险警示板 BK0511 实时成分，已验证）。
 
-        date: 基准日（``YYYY-MM-DD``）；空串=最新。
+        Returns
+        -------
+        ``[{"code","name","price","pct_change"}, ...]``（最新快照，无历史基准日）。
         """
-        filters = [f'TRADE_DATE="{date}"'] if date else ()
-        return _eastmoney_rows(
-            "RPT_STOCK_ST_LIST",
-            filters=filters,
-            sort_columns="SECURITY_CODE",
-            sort_types="1",
-            page=page,
-            size=size,
-        )
+        from .boards import EastmoneyBoardSource
+
+        src = EastmoneyBoardSource(client=_shared_http())
+        try:
+            return src.fetch_members("BK0511", limit=limit, page=page)
+        finally:
+            src.close()
 
     # -- G-06 股权质押 ------------------------------------------------------ #
     @staticmethod
     def equity_pledge(
         *, symbol: str = "", date: str = "", size: int = 50, page: int = 1
     ) -> list[dict[str, Any]]:
-        """股权质押明细（质押股数 / 比例 / 到期日，best-effort 端点）。
+        """股权质押比例明细（中证登口径，东财 ``RPT_CSDC_LIST``，已验证）。
 
-        symbol: 6 位代码或带前缀；空串=全市场。date: 基准日过滤。
+        symbol: 6 位代码或带前缀；空串=全市场。date: 基准日（``YYYY-MM-DD``）过滤。
+
+        Returns
+        -------
+        ``[{"security_code","security_name_abbr","pledge_ratio","pledge_market_cap",
+        "trade_date", ...}, ...]``（字段名为报表原始键）。
         """
         filters: list[str] = []
         if symbol:
@@ -217,11 +359,11 @@ class GapsSessionMixin:
             _, code = split_symbol(symbol)
             filters.append(f'SECURITY_CODE="{code}"')
         if date:
-            filters.append(f'PLEDGE_DATE="{date}"')
+            filters.append(f'TRADE_DATE="{date}"')
         return _eastmoney_rows(
-            "RPT_EQUITY_PLEDGE",
+            "RPT_CSDC_LIST",
             filters=filters,
-            sort_columns="PLEDGE_DATE",
+            sort_columns="TRADE_DATE",
             sort_types="-1",
             page=page,
             size=size,
@@ -258,13 +400,17 @@ class GapsSessionMixin:
     # -- G-08 估值历史日频序列 -------------------------------------------- #
     @staticmethod
     def valuation_history(symbol: str, *, count: int = 120) -> list[dict[str, Any]]:
-        """估值历史序列（PE-TTM / PB / PS-TTM 日频，回溯多年，best-effort 端点）。
+        """估值历史序列（PE-TTM / PB / PS-TTM 日频，东财 ``RPT_VALUEANALYSIS_DET``，已验证）。
 
-        区别于快照式 ``stock_valuation``，本方法返回按交易日降序的多期序列。
+        区别于快照式 ``stock_valuation``，本方法返回按交易日降序的多期序列
+        （PE_TTM / PB_MRQ / PS_TTM / PCF_OCF_TTM / 股息率等字段随报表给出）。
         """
+        from ..domain.symbol import split_symbol
+
+        _, code = split_symbol(symbol)
         return _eastmoney_rows(
-            "RPT_VALUEASSESS_HIS",
-            filters=[f'SECURITY_CODE="{symbol}"'],
+            "RPT_VALUEANALYSIS_DET",
+            filters=[f'SECURITY_CODE="{code}"'],
             sort_columns="TRADE_DATE",
             sort_types="-1",
             page=1,
@@ -274,7 +420,7 @@ class GapsSessionMixin:
     # -- G-09 申万行业 + 行业变迁史 --------------------------------------- #
     @staticmethod
     def sw_industry(*, symbol: str = "", size: int = 200, page: int = 1) -> list[dict[str, Any]]:
-        """申万一级/二级行业分类（best-effort 端点）。
+        """申万一级/二级行业分类（best-effort 端点，东财无公开申万分类报表，待校准）。
 
         symbol: 6 位代码；空串=全市场行业映射。
         """
@@ -310,45 +456,79 @@ class GapsSessionMixin:
 
     # -- G-10 ETF 份额 ----------------------------------------------------- #
     @staticmethod
-    def etf_shares(
-        *, symbol: str = "", date: str = "", size: int = 200, page: int = 1
-    ) -> list[dict[str, Any]]:
-        """ETF 场内份额（万份，日频，best-effort 端点）。
+    def etf_shares(*, symbol: str = "", size: int = 200, page: int = 1) -> list[dict[str, Any]]:
+        """ETF 场内最新份额（东财 push2 ETF 现货列表 ``f38``，已验证）。
 
-        symbol: 6 位代码；date: 基准日；空串=最新。
+        symbol: 6 位代码（客户端过滤）；空串=全市场 ETF。
+
+        Returns
+        -------
+        ``[{"code","market","name","price","pct_change","shares"}, ...]``
+        （``shares`` 单位：万份，与东财行情页「最新份额」一致。）
         """
-        filters: list[str] = []
+        rows: list[dict[str, str | float]] = []
+        # 全市场 ETF ~1400 只 > 单页 500：逐页拉全（fid=f12 升序保证稳定覆盖）
+        for page_no in (1, 2, 3, 4):
+            page_rows = _em_clist_rows(
+                "b:MK0021,b:MK0022,b:MK0023,b:MK0024,b:MK0827",
+                "f12,f13,f14,f2,f3,f38",
+                page=page_no,
+                size=500,
+            )
+            if not page_rows:
+                break
+            rows.extend(page_rows)
+        out: list[dict[str, Any]] = [
+            {
+                "code": r.get("f12", ""),
+                "market": r.get("f13", ""),
+                "name": r.get("f14", ""),
+                "price": r.get("f2"),
+                "pct_change": r.get("f3"),
+                "shares": r.get("f38"),
+            }
+            for r in rows
+            if isinstance(r, dict)
+        ]
         if symbol:
             from ..domain.symbol import split_symbol
 
             _, code = split_symbol(symbol)
-            filters.append(f'SECURITY_CODE="{code}"')
-        if date:
-            filters.append(f'END_DATE="{date}"')
-        return _eastmoney_rows(
-            "RPT_FUND_ETF_SHARES",
-            filters=filters,
-            sort_columns="END_DATE",
-            sort_types="-1",
-            page=page,
-            size=size,
-        )
+            out = [r for r in out if str(r.get("code", "")) == code]
+            if not out:
+                raise ValueError(f"未找到 ETF {code!r}（etf_shares 仅覆盖场内基金）")
+        return _pager(out, size=size, page=page)
 
     # -- G-11 扫雷 / 风险扫描 --------------------------------------------- #
     @staticmethod
     def risk_scan(symbol: str, *, size: int = 50, page: int = 1) -> list[dict[str, Any]]:
-        """个股风险扫描（诉讼 / 违规 / 质押 / 商誉等雷点，best-effort 端点）。"""
+        """个股风险扫描（已验证报表复合：商誉明细 + 股权质押比例）。
+
+        聚合东财 ``RPT_GOODWILL_STOCKDETAILS``（商誉）与 ``RPT_CSDC_LIST``
+        （质押比例）两类已验证报表，按 ``kind`` 区分风险条目；后续雷点
+        （诉讼 / 违规处罚）待对应端点校准后追加。
+        """
         from ..domain.symbol import split_symbol
 
         _, code = split_symbol(symbol)
-        return _eastmoney_rows(
-            "RPT_STOCK_RISK_SCAN",
-            filters=[f'SECURITY_CODE="{code}"'],
-            sort_columns="NOTICE_DATE",
-            sort_types="-1",
-            page=page,
-            size=size,
-        )
+        items: list[dict[str, Any]] = []
+        for kind, report, sort_col in (
+            ("goodwill", "RPT_GOODWILL_STOCKDETAILS", "NOTICE_DATE"),
+            ("pledge", "RPT_CSDC_LIST", "TRADE_DATE"),
+        ):
+            try:
+                rows = _eastmoney_rows(
+                    report,
+                    filters=[f'SECURITY_CODE="{code}"'],
+                    sort_columns=sort_col,
+                    sort_types="-1",
+                    page=page,
+                    size=size,
+                )
+            except Exception:  # noqa: BLE001 —— 单类雷点失败不拖垮整体扫描
+                rows = []
+            items.extend({"kind": kind, **r} for r in rows)
+        return items
 
     # -- G-13 指数估值 PE / 股息率 ---------------------------------------- #
     @staticmethod

@@ -106,7 +106,11 @@ _SOURCE_FOR_PROVIDER = {
     "baidu": "sina",
     "boc": "boc",
     "iwencai": "sina",
-    "cninfo": "cninfo",
+    # cninfo 同 baidu/iwencai/builtin 惯例：该系能力（interactive_qa）是
+    # web_session 后端的**无源 @staticmethod**（内部直连 irm.cninfo.com.cn），
+    # 会话源只是名义值，必须落在 SOURCE_ALIASES 之内，否则 executor 以
+    # source='cninfo' 构造 WebQuoteSession 时直接 CompatibilityError（E8000）。
+    "cninfo": "sina",
     "builtin": "sina",
 }
 #: Capabilities whose canonical registry channel is *not* the generic ``catalog``
@@ -469,25 +473,28 @@ MIGRATED_CAPABILITY_STATUS: dict[str, str] = {
     "volume_price": "offline",
     "block_quotes": "offline",
     "minute_history": "offline",
-    # G-02~G-13 缺口能力：在线端点待真机抓包校准（端点失效时基座统一抛
-    # SourceDeprecated / WebSourceError，干净失败，不崩溃、不静默返回空）
-    "st_list": "needs_verify",
-    "equity_pledge": "needs_verify",
-    "interactive_qa": "needs_verify",
-    "news_broadcast": "needs_verify",
-    "valuation_history": "needs_verify",
-    "sw_industry": "needs_verify",
+    # G-02~G-13 缺口能力：端点已真机验证的标 alive；仍未抓包校准的标
+    # needs_verify（端点失效时基座统一抛 SourceDeprecated / WebSourceError，
+    # 干净失败，不崩溃、不静默返回空）。
+    # -- 已验证（2026-10-02 真机请求实测出数）：
+    "st_list": "alive",  # push2 clist b:BK0511（风险警示板成分）
+    "equity_pledge": "alive",  # RPT_CSDC_LIST（中证登质押比例明细）
+    "valuation_history": "alive",  # RPT_VALUEANALYSIS_DET（个股估值历史）
+    "etf_shares": "alive",  # push2 clist f38（ETF 最新份额）
+    "risk_scan": "alive",  # RPT_GOODWILL_STOCKDETAILS + RPT_CSDC_LIST 复合
+    "macro_pmi": "alive",  # RPT_ECONOMY_PMI
+    "macro_lpr": "alive",  # RPTA_WEB_RATE
+    "macro_bond_yield": "alive",  # RPTA_WEB_TREASURYYIELD（中/美国债收益率）
+    "macro_social_financing": "alive",  # data.mofcom.gov.cn 社融月度
+    "macro_repo_rate": "alive",  # chinamoney frr/fdr CSV（回购定盘利率）
+    # -- 待校准（端点未找到公开真名或真机不可达，needs_verify）：
+    "interactive_qa": "needs_verify",  # irm.cninfo.com.cn（沙箱不可达）
+    "news_broadcast": "needs_verify",  # content-api.cctv.com（沙箱不可达）
+    "sw_industry": "needs_verify",  # 东财无公开申万分类报表
     "sw_industry_history": "needs_verify",
-    "etf_shares": "needs_verify",
-    "risk_scan": "needs_verify",
-    "index_valuation": "needs_verify",
-    "futures_position_rank": "needs_verify",
+    "index_valuation": "needs_verify",  # RPT_VALUEANALYSIS_DET 不含指数
+    "futures_position_rank": "needs_verify",  # 走 futsseapi 面板，需新适配器
     "options_position_rank": "needs_verify",
-    "macro_social_financing": "needs_verify",
-    "macro_pmi": "needs_verify",
-    "macro_lpr": "needs_verify",
-    "macro_bond_yield": "needs_verify",
-    "macro_repo_rate": "needs_verify",
 }
 
 #: 状态枚举（用于校验与文档生成）。
