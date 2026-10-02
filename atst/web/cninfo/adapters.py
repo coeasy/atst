@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import time
 import urllib.parse
+from collections.abc import Mapping
 from typing import Any
 
 from ...errors import WebSourceError
@@ -51,6 +52,10 @@ _SEARCH_URL = "http://www.cninfo.com.cn/new/information/topSearch/query"
 #: 它只记 orgId 这一项元数据，**不存任何行情/公告结果**——复用的是「代码查 orgId」
 #: 这一步的往返，不是把响应留下来。
 _ORG_ID_CACHE: dict[str, str] = {}
+
+
+def _s(value: Any) -> str:
+    return "" if value is None else str(value)
 
 
 class CninfoSource(BaseWebSource):
@@ -118,6 +123,87 @@ class CninfoSource(BaseWebSource):
         return self._query(
             "hke", symbol=symbol, limit=limit, start_date=start_date, end_date=end_date
         )
+
+    # -- 互动易 / e 互动问答（G-07，best-effort，needs_verify） ------------ #
+    _IRM_URL = "http://irm.cninfo.com.cn/ircs/question/getQuestionList"
+
+    def fetch_interactive_qa(
+        self,
+        *,
+        symbol: str = "",
+        keyword: str = "",
+        page: int = 1,
+        size: int = 50,
+    ) -> list[dict[str, Any]]:
+        """互动易 / e 互动投资者问答（巨潮 IRM 平台，best-effort 端点）。
+
+        Parameters
+        ----------
+        symbol:
+            6 位代码或带前缀；为空则按 ``keyword`` 全局搜索。
+        keyword:
+            问题关键词；二者可任选其一或同时给。
+        page, size:
+            分页（巨潮 IRM 单页上限约 50）。
+
+        Returns
+        -------
+        ``[{"symbol","question","answer","ask_time","reply_time","org_id"}, ...]``
+
+        .. note::
+            巨潮 IRM 端点为 best-effort，待真机抓包校准（``needs_verify``）；
+            端点失效时抛 :class:`~atst.errors.WebSourceError`（干净失败）。
+        """
+        self._check_deprecated()
+        self.rate_limiter.acquire(self.source_name)
+        org_id = ""
+        if symbol:
+            param = self._stock_param(symbol)
+            org_id = param.split(",")[-1] if "," in param else ""
+        form: dict[str, str] = {
+            "pageNo": str(max(1, page)),
+            "pageSize": str(max(1, min(int(size), 50))),
+        }
+        if org_id:
+            form["orgId"] = org_id
+        if keyword:
+            form["keyWord"] = keyword
+        try:
+            text = self._request_post(
+                self._IRM_URL,
+                urllib.parse.urlencode(form).encode("utf-8"),
+                content_type="application/x-www-form-urlencoded",
+                encoding="utf-8",
+                err_msg="巨潮互动易请求失败",
+            )
+            payload = json.loads(text)
+        except (ValueError, WebSourceError) as exc:
+            raise WebSourceError(
+                "巨潮互动易端点未校准或不可达（needs_verify）",
+                context={"source": CNINFO, "symbol": symbol},
+                cause=exc,
+            ) from exc
+        return self._parse_qa(payload)
+
+    @staticmethod
+    def _parse_qa(payload: dict[str, Any]) -> list[dict[str, Any]]:
+        rows = (payload.get("data") or {}).get("questionList") or payload.get("questionList") or []
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            if not isinstance(r, Mapping):
+                continue
+            out.append(
+                {
+                    "symbol": _s(r.get("secCode") or r.get("stockCode") or ""),
+                    "question": _s(r.get("questionContent") or r.get("question")),
+                    "answer": _s(r.get("answerContent") or r.get("answer")),
+                    "ask_time": _s(r.get("createDate") or r.get("askTime")),
+                    "reply_time": _s(r.get("replyDate") or r.get("replyTime")),
+                    "org_id": _s(r.get("orgId")),
+                    "source": "cninfo_irm",
+                }
+            )
+        return out
 
     # -- 内部 -------------------------------------------------------------- #
 

@@ -41,12 +41,16 @@
 
 from __future__ import annotations
 
+import json
 import re
 import time
+import urllib.parse
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from ..errors import WebSourceError
 from ._base_em import _EastmoneyJson
+from ._session_market import _shared_http
 from .base import BaseWebSource
 from .corporate import EastmoneyDataCenterSource
 from .sources import NEWS
@@ -319,3 +323,94 @@ class EastmoneyResearchVisitSource(EastmoneyDataCenterSource):
                 }
             )
         return out
+
+
+# --------------------------------------------------------------------------- #
+# 新闻联播文字稿（央视网，G-04，best-effort，needs_verify）
+# --------------------------------------------------------------------------- #
+class CctvNewsSource(BaseWebSource):
+    """央视网《新闻联播》文字稿（best-effort 端点，needs_verify）。
+
+    走央视内容 API；端点失效时抛 :class:`~atst.errors.WebSourceError`（干净失败），
+    绝不崩溃或静默返回空。字段待真机校准。
+    """
+
+    BASE = "https://content-api.cctv.com/content/index"
+
+    @property
+    def source_name(self) -> str:
+        return NEWS
+
+    def build_url(self, symbols: Sequence[str], **kwargs: Any) -> str:  # pragma: no cover
+        return self.BASE
+
+    def parse(self, text: str, symbols: Sequence[str], **kwargs: Any) -> list:  # pragma: no cover
+        return []
+
+    def fetch_broadcast(
+        self, *, date: str = "", page: int = 1, size: int = 20
+    ) -> list[dict[str, Any]]:
+        """拉取《新闻联播》文字稿列表。
+
+        Parameters
+        ----------
+        date:
+            日期（``YYYY-MM-DD``）；空串=最新一期。
+        page, size:
+            分页参数。
+
+        Returns
+        -------
+        ``[{"date","title","content","url","source"}, ...]``
+        """
+        self._check_deprecated()
+        self.rate_limiter.acquire(self.source_name)
+        params: dict[str, str] = {
+            "t": "json",
+            "u": "https://tv.cctv.com/lm/xwl/",
+            "p": str(max(1, page)),
+            "n": str(max(1, min(int(size), 50))),
+        }
+        if date:
+            params["d"] = date
+        url = self.BASE + "?" + urllib.parse.urlencode(params)
+        try:
+            text = self._request_text(url, encoding="utf-8")
+            payload = json.loads(text)
+        except (ValueError, WebSourceError) as exc:
+            raise WebSourceError(
+                "央视新闻联播端点未校准或不可达（needs_verify）",
+                context={"source": NEWS, "date": date},
+                cause=exc,
+            ) from exc
+        return self._parse_broadcast(payload)
+
+    @staticmethod
+    def _parse_broadcast(payload: dict[str, Any]) -> list[dict[str, Any]]:
+        data = payload.get("data") or {}
+        rows = data.get("list") or data.get("content") or []
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            if not isinstance(r, Mapping):
+                continue
+            out.append(
+                {
+                    "date": _s(r.get("date") or r.get("pubDate")),
+                    "title": _s(r.get("title")),
+                    "content": _s(r.get("content") or r.get("digest")),
+                    "url": _s(r.get("url")),
+                    "source": "cctv",
+                }
+            )
+        return out
+
+
+def fetch_cctv_news_broadcast(
+    *, date: str = "", page: int = 1, size: int = 20
+) -> list[dict[str, Any]]:
+    """模块级便捷入口：央视《新闻联播》文字稿（best-effort，needs_verify）。"""
+    src = CctvNewsSource(client=_shared_http())
+    try:
+        return src.fetch_broadcast(date=date, page=page, size=size)
+    finally:
+        src.close()

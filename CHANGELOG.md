@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.2.0] - 2026-10-02
+
+### Added
+
+- **对标 5 个开源行情项目补齐 18 项缺口能力**（`docs/archive/plans/atst_覆盖与补全方案_对比5项目.md` 的 G-01~G-13）：交易日历 `trade_calendar`、ST 名单 `st_list`、股权质押 `equity_pledge`、互动易 `interactive_qa`、新闻联播 `news_broadcast`、估值历史 `valuation_history`、申万行业 `sw_industry` / `sw_industry_history`、ETF 份额 `etf_shares`、风险扫描 `risk_scan`、指数估值 `index_valuation`、期货/期权会员持仓排名 `futures_position_rank` / `options_position_rank`、宏观补全 `macro_social_financing` / `macro_pmi` / `macro_lpr` / `macro_bond_yield` / `macro_repo_rate`。四张服务面（Python / CLI / HTTP / WS / MCP）经通用分派自动贯通，无漏暴露断链。
+- **能力健康度面（`Client.capability_statuses()` / `AsyncClient.capability_statuses()`）**：返回 `{capability: status}`，取值 `alive` / `degraded` / `offline` / `needs_verify`。单一事实源在 `catalog/capability.py`——显式叠加 ∪ 注册表 `ChannelSpec.unavailable_capabilities` 派生（一个能力只有其**每个**归属 channel 都下线才判 `offline`）。发现面（`Client.capabilities()` / `GET /v13/capabilities` / WS `runtime.capabilities`）**保持只有名字**（F-66(c) 冻结形状），状态走独立方法。
+- 缺口能力在线端点统一标 `needs_verify`（待真机抓包校准）；端点失效时基座抛 `SourceDeprecated` / `WebSourceError`（干净失败，不崩溃、不静默返回空）。
+
+### Changed
+
+- 能力规模 **189 个 catalog 迁移能力 / 194 项总能力**（原 171 / 176），Provider 注册表同步登记新能力（`DIRECT_BINDINGS` 262 → 280）；`docs/ARCHITECTURE.md` / `README.md` / `docs/api/*` / `docs/quickstart.md` 的钉死数字同步对齐。
+
+### Fixed
+
+- **互动易 `_parse_qa` 断链修复**：`CninfoSource._parse_qa` 此前引用未定义的 `_s` 帮助函数与未导入的 `Mapping`（`NameError`），补齐后正常。
+- **新闻联播端点导入修复**：`atst/web/news.py` 的 `CctvNewsSource` 缺少 `WebSourceError` 导入，补齐。
+- 移除未被引用的 `available_capabilities()`（孤儿 API）；`capability_status()` 收口为状态查询唯一入口。
+
 ## [1.1.0] - 2026-10-02
 
 ### Added

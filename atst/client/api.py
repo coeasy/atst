@@ -152,6 +152,18 @@ class Client:
             }
         return values
 
+    @staticmethod
+    def capability_statuses() -> dict[str, str]:
+        """迁移能力状态映射（``{capability: status}``，G-16）。
+
+        ``status`` 取值见 :data:`atst.catalog.capability.CAPABILITY_STATUSES`；
+        未显式标注的能力默认为 ``"alive"``。四面出口（CLI/HTTP/WS/MCP）据此
+        渲染能力健康度，``offline`` 不进可用集。
+        """
+        from ..catalog.capability import capability_statuses
+
+        return capability_statuses()
+
     def execute(self, spec: QuerySpec) -> QueryResult[Any]:
         return self.runtime.execute(spec)
 
@@ -525,6 +537,10 @@ class AsyncClient:
 
     def core_capability_statuses(self) -> dict[str, dict[str, Any]]:
         return self.client.core_capability_statuses()
+
+    @staticmethod
+    def capability_statuses() -> dict[str, str]:
+        return Client.capability_statuses()
 
     async def execute(
         self,

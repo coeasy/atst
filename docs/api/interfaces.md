@@ -186,7 +186,8 @@ from atst import Client, AsyncClient
 | `call` | `(capability, *args, provider=None, channel=None, currentness="business", **kwargs)` | 便捷通用入口 |
 | `execute_with_policy` | `(spec, *, policy: FallbackPolicy) -> OrchestratedResult` | 显式跨源编排 |
 | `typed` | `(query: CapabilityQuery, **kwargs) -> TypedQueryResult` | 冻结 dataclass 契约 → 强类型记录 |
-| `capabilities` | `() -> tuple[str, ...]` | 能力发现面：**只有名字、没有可用性**，176 项的构成与发不出去的那几个见下节「能力发现面：只有名字，没有可用性」 |
+| `capabilities` | `() -> tuple[str, ...]` | 能力发现面：**只有名字、没有可用性**，194 项的构成与发不出去的那几个见下节「能力发现面：只有名字，没有可用性」 |
+| `capability_statuses` | `() -> dict[str, str]` | 全部迁移能力的 `{name: status}` 真值表（`alive`/`degraded`/`offline`/`needs_verify`）；与只覆盖内核集的 `core_capability_statuses` 互补，状态取自 `catalog/capability.py` 的单一事实源 |
 | `core_capability_statuses` | `() -> dict[str, dict[str, Any]]` | **本实例内核**的能力可用性真值表：逐内核方法区分「任意 Provider 可用」与「默认路径可用」（未注入执行器时默认路径为不可用），据此判断某能力今天是否真的发得出去 |
 | `close` | `()` | 收尾**本实例自建**的内核（`runtime=` 传进来的那份不碰）。默认内核跨调用不持有连接，所以它关的是"借来的东西"这一格所有权，不是连接池——见下节 |
 
@@ -242,7 +243,7 @@ with Client() as c:
 ### 复权 K 线（`adjusted_bars`）
 
 `adjusted_bars` 是**组合能力**（`composed`）：原始 K 线走选定的行情 Provider，除权除息事件单独取，
-两份在 `atst/domain/adjust.py` 的 `AdjustEngine` 里合成因子。它是 171 个 catalog 迁移能力之一，因此
+两份在 `atst/domain/adjust.py` 的 `AdjustEngine` 里合成因子。它是 189 个 catalog 迁移能力之一，因此
 走**通用入口**而不是某张面的专属路由：
 
 ```python
@@ -280,22 +281,29 @@ with Client() as c:
 ```python
 from atst import Client
 
-Client.capabilities()   # 176 项 capability 名，按字典序排好
+Client.capabilities()   # 194 项 capability 名，按字典序排好
 ```
 
 发现面有三处出口，交付的都是**纯名字**：
 
 | 出口 | 形状 | 状态字段 |
 |------|------|----------|
-| `Client.capabilities()` / `AsyncClient.capabilities()` | `tuple[str, ...]`，176 项 | 无 |
+| `Client.capabilities()` / `AsyncClient.capabilities()` | `tuple[str, ...]`，194 项 | 无 |
 | `GET /v13/capabilities` | `{"capabilities": [...], "providers": {provider: {channel: [...]}}}` | 无 |
 | WS `runtime.capabilities` | 同上，两份名单 | 无 |
 
-名单的构成是一个可复算的恒等式：176 = 7 个内核直绑能力 ∪ 171 个 catalog 迁移能力，并且与
+名单的构成是一个可复算的恒等式：194 = 7 个内核直绑能力 ∪ 189 个 catalog 迁移能力，并且与
 `PROVIDERS` 注册表（14 Provider × 59 channel）里出现过的能力名集合逐字相等。三处出口在形状上
 就没有放 `available`/`offline` 的位置——条目类型清一色是 `str`（F-66 裁决 (c)：发现面的形状
 不动，把这条口径写清）。于是**「名字在名单里」只承诺"这条能力有实现、参数契约可校验"，不承诺
 "调用会拿到数据"**。
+
+能力健康度因此走**独立面** `Client.capability_statuses()`（`AsyncClient` 同名静态方法）：
+返回 `{capability: status}`，取值 `alive` / `degraded` / `offline` / `needs_verify`。
+它的单一事实源是 `catalog/capability.py`：显式叠加（tdx 账本死名字标 `offline`、缺口补全能力标
+`needs_verify`）∪ 注册表 `ChannelSpec.unavailable_capabilities` 派生的 `offline`（一个能力只有
+**每个**归属 channel 都下线才判死）。`offline` 名字仍留在发现面（F-66(c) 不动形状），但调用方
+据 `capability_statuses()` 即可避开它们——这正是"名字 ≠ 可用性"那条口径的机器可读版本。
 
 tdx 这条链上有 8 个名字一调就必然失败：6 个名字踩在被账本判 `offline` 的命令上、2 个名字被
 request/parser 仍是 inferred 的结构化拦截挡在发包前。下表由
@@ -315,7 +323,7 @@ request/parser 仍是 inferred 的结构化拦截挡在发包前。下表由
 | `volume_price` | `volume_price_dist` | `0x051A` | 账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
 
 这张表只覆盖 tdx 命令账本管得到的 25 个名字（7 个内核直绑 + 18 个 tdx 客户端族 catalog 绑定）；
-其余 151 个名字走 web 会话 / web adapter / channel adapter / composed 四类后端，不经过命令账本，
+其余 169 个名字走 web 会话 / web adapter / channel adapter / composed 四类后端，不经过命令账本，
 也就无从在这里判生死——它们的可用性由各自的 Provider 契约与 `tests/` 冒烟负责。一处显式登记的
 解析盲区是 `f10`：`f10_client` 的分派按 capability 分岔（`runtime/executor.py` 里 `f10` 走
 `client.download`、其余走 `client.catalog`），绑定表的 `method` 只是标签，所以这一格对不上实现；

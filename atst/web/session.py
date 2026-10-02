@@ -56,6 +56,7 @@ from ._session_fund_v2 import (
     FundRankSessionMixin,
 )
 from ._session_fundamental import FundamentalSessionMixin
+from ._session_gaps import GapsSessionMixin
 from ._session_info import CorporateSessionMixin, FundFlowSessionMixin
 from ._session_market import (
     INDEX_SYMBOLS,
@@ -163,6 +164,7 @@ class WebQuoteSession(
     DerivativeSessionMixin,
     AstockToolkitMixin,
     NewsSessionMixin,
+    GapsSessionMixin,
     FundRankSessionMixin,
     FundManagerSessionMixin,
     FundCompanySessionMixin,

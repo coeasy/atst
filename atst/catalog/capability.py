@@ -11,6 +11,7 @@ honestly represented by the explicit ``derived`` Provider.
 
 from __future__ import annotations
 
+import functools
 import inspect
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -29,6 +30,10 @@ __all__ = [
     "implementation_for",
     "is_migrated_capability",
     "validate_call",
+    "capability_status",
+    "capability_statuses",
+    "MIGRATED_CAPABILITY_STATUS",
+    "CAPABILITY_STATUSES",
 ]
 
 
@@ -60,6 +65,25 @@ _PROVIDER_OVERRIDES: dict[str, str] = {
     "esg_rating": "sina",
     "esg_history": "sina",
     "esg_ratings_all": "sina",
+    # 缺口补全能力（G-01~G-13）的 Provider 归属
+    "trade_calendar": "builtin",
+    "st_list": "eastmoney",
+    "equity_pledge": "eastmoney",
+    "interactive_qa": "cninfo",
+    "news_broadcast": "eastmoney",
+    "valuation_history": "eastmoney",
+    "sw_industry": "eastmoney",
+    "sw_industry_history": "eastmoney",
+    "etf_shares": "eastmoney",
+    "risk_scan": "eastmoney",
+    "index_valuation": "eastmoney",
+    "futures_position_rank": "eastmoney",
+    "options_position_rank": "eastmoney",
+    "macro_social_financing": "eastmoney",
+    "macro_pmi": "eastmoney",
+    "macro_lpr": "eastmoney",
+    "macro_bond_yield": "eastmoney",
+    "macro_repo_rate": "eastmoney",
     "board_rank": "tencent",
     "us_quotes": "tencent",
     "globals": "tencent",
@@ -82,6 +106,7 @@ _SOURCE_FOR_PROVIDER = {
     "baidu": "sina",
     "boc": "boc",
     "iwencai": "sina",
+    "cninfo": "cninfo",
     "builtin": "sina",
 }
 #: Capabilities whose canonical registry channel is *not* the generic ``catalog``
@@ -426,6 +451,93 @@ _BINDINGS_BY_CAPABILITY = {
     capability: tuple(item for item in MIGRATED_BINDINGS if item.capability == capability)
     for capability in sorted(MIGRATED_CAPABILITIES)
 }
+
+#: 能力健康度的**显式叠加**（G-16）。只登记注册表表达不出的健康度：
+#:
+#: * ``offline``：tdx 命令账本判定的死名字（``auction`` / ``block_quotes`` /
+#:   ``minute_history`` / ``volume_price``，见 ``docs/api/interfaces.md``
+#:   「能力发现面」）。注册表的 ``unavailable_capabilities`` 只标了
+#:   ``security_list_all``，覆盖不到这四个，故在此显式登记。
+#: * ``needs_verify``：缺口补全能力（G-01~G-13）的在线端点待真机抓包校准。
+#:
+#: 「声明了、但每个归属 channel 都下线」的能力由
+#: :func:`_registry_offline_capabilities` **派生**（不在此重复登记）；其余默认 ``alive``。
+#: 状态取值见 :data:`CAPABILITY_STATUSES`。
+MIGRATED_CAPABILITY_STATUS: dict[str, str] = {
+    # G-15：tdx 账本 offline 的 4 个死名字（一调即抛 CommandOffline）
+    "auction": "offline",
+    "volume_price": "offline",
+    "block_quotes": "offline",
+    "minute_history": "offline",
+    # G-02~G-13 缺口能力：在线端点待真机抓包校准（端点失效时基座统一抛
+    # SourceDeprecated / WebSourceError，干净失败，不崩溃、不静默返回空）
+    "st_list": "needs_verify",
+    "equity_pledge": "needs_verify",
+    "interactive_qa": "needs_verify",
+    "news_broadcast": "needs_verify",
+    "valuation_history": "needs_verify",
+    "sw_industry": "needs_verify",
+    "sw_industry_history": "needs_verify",
+    "etf_shares": "needs_verify",
+    "risk_scan": "needs_verify",
+    "index_valuation": "needs_verify",
+    "futures_position_rank": "needs_verify",
+    "options_position_rank": "needs_verify",
+    "macro_social_financing": "needs_verify",
+    "macro_pmi": "needs_verify",
+    "macro_lpr": "needs_verify",
+    "macro_bond_yield": "needs_verify",
+    "macro_repo_rate": "needs_verify",
+}
+
+#: 状态枚举（用于校验与文档生成）。
+CAPABILITY_STATUSES = ("alive", "degraded", "offline", "needs_verify")
+
+
+@functools.lru_cache(maxsize=1)
+def _registry_offline_capabilities() -> frozenset[str]:
+    """注册表派生：声明了、但**每个**归属 channel 都标 ``unavailable`` 的能力。
+
+    ``ChannelSpec.unavailable_capabilities`` 是「声明了但已下线」的既有事实源
+    （``operationally_supports()`` 读它做路由）。能力健康度不另立第二份下线名单，
+    而是从这里派生——``minute`` 只在 tdx 下线、在腾讯/百度/东财仍在线，故不是
+    ``offline``；``security_list_all`` 只归属 tdx，故判 ``offline``。
+    """
+    from ..providers import PROVIDERS
+
+    unavailable_by_cap: dict[str, list[bool]] = {}
+    for pid in PROVIDERS.ids():
+        for channel in PROVIDERS.get(pid).channels:
+            for cap in channel.capabilities:
+                unavailable_by_cap.setdefault(cap, []).append(
+                    cap in channel.unavailable_capabilities
+                )
+    return frozenset(cap for cap, flags in unavailable_by_cap.items() if flags and all(flags))
+
+
+def capability_status(capability: str) -> str:
+    """返回单个迁移能力的状态；能力不存在抛 ``KeyError``。
+
+    优先级：显式叠加（:data:`MIGRATED_CAPABILITY_STATUS`）→ 注册表派生的
+    ``offline``（:func:`_registry_offline_capabilities`）→ ``"alive"``。
+    标注值必须落在 :data:`CAPABILITY_STATUSES` 之内（写错状态串在这里当场报，
+    而不是把一句错话一路发到四面出口）。
+    """
+    cap = str(capability).strip().lower()
+    if cap not in MIGRATED_CAPABILITIES:
+        raise KeyError(capability)
+    status = MIGRATED_CAPABILITY_STATUS.get(cap)
+    if status is None:
+        status = "offline" if cap in _registry_offline_capabilities() else "alive"
+    if status not in CAPABILITY_STATUSES:
+        raise ValueError(f"迁移能力 {cap!r} 的状态 {status!r} 不在 {CAPABILITY_STATUSES} 之内")
+    return status
+
+
+def capability_statuses() -> dict[str, str]:
+    """返回 ``{capability: status}``，覆盖全部迁移能力（默认 ``alive``）。"""
+    return {cap: capability_status(cap) for cap in sorted(MIGRATED_CAPABILITIES)}
+
 
 _DEFAULT_PROVIDER = {
     "all_market": "derived",

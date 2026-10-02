@@ -31,7 +31,7 @@ CLI / HTTP / WS / MCP 服务面。同步交付物为 `atst` Python 包，**协�
 CLI / HTTP(runtime_http) / WS(runtime_ws) / MCP(integration/mcp)
         │  （四个服务面全部只翻译，委托 Client，禁止任何执行逻辑）
         ▼
-atst.Client / AsyncClient（client/api.py，唯一业务入口，176 capabilities）
+atst.Client / AsyncClient（client/api.py，唯一业务入口，194 capabilities）
         │  QuerySpec（query.py：capability + symbols + provider + currentness …）
         ▼
 UnifiedRuntime（runtime/kernel.py，唯一内核，零缓存）
