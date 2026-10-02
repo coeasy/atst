@@ -583,6 +583,35 @@ PROVIDERS = ProviderRegistry(
                 ),
             ),
         ),
+        # V6 L3 新增 3 个 Web Provider。
+        # 交易所（sse/szse）与中债（chinamoney）在 2026-10 实测全部不可达
+        # （404 / 500 / pageHelp.data=null），按「不留死能力」纪律未登记。
+        ProviderSpec(
+            id="cninfo",
+            channels=(
+                _c(
+                    "catalog",
+                    "announcements",
+                    "hk_announcements",
+                ),
+            ),
+        ),
+        ProviderSpec(
+            id="ths",
+            channels=(
+                _c(
+                    "catalog",
+                    "limit_pool",
+                    "theme_attribution",
+                    "concept_members",
+                    "hot_rank",
+                ),
+            ),
+        ),
+        ProviderSpec(
+            id="wallstreet",
+            channels=(_c("catalog", "breaking_news"),),
+        ),
         # ``derived`` / ``builtin`` are *composite* Providers: their capabilities
         # are honest aggregates / static built-ins rather than one first-party
         # transport. They are declared in the registry so the migrated-capability
@@ -610,10 +639,12 @@ PROVIDERS = ProviderRegistry(
                     "bond_realtime",
                     "bond_today_bill",
                     "bond_trades",
+                    "breaking_news",
                     "cash_flow",
                     "chip_distribution",
                     "chip_distributions",
                     "concept_index",
+                    "concept_members",
                     "convertible_bonds",
                     "dc_query",
                     "dividend_history",
@@ -659,6 +690,7 @@ PROVIDERS = ProviderRegistry(
                     "futures_realtime",
                     "futures_trades",
                     "history",
+                    "hk_announcements",
                     "hk_quotes",
                     "holder_changes",
                     "holder_num",
@@ -707,6 +739,7 @@ PROVIDERS = ProviderRegistry(
                     "stock_changes",
                     "stock_report_dates",
                     "stock_valuation",
+                    "theme_attribution",
                     "top_holders",
                     "unlock_stocks",
                     "unlocks",

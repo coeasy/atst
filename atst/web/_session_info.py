@@ -590,3 +590,76 @@ class CorporateSessionMixin:
             )
         finally:
             src.close()
+
+    # -- V6 L3 新增源（2026-10 真机验证）----------------------------------- #
+    #
+    # 方法名与 capability 同名：能力发现面（``Client.capabilities()``）与
+    # ``WebQuoteSession`` 的 facade 出口是同一份名单的两处出口，
+    # tests/architecture/test_offline_capability_honesty.py 盯着它们不许分叉。
+    # 因此这里不写 ``cninfo_announcements`` / ``ths_hot_rank`` 这类带源前缀的别名。
+
+    @staticmethod
+    def breaking_news(*, limit: int = 20, channel: str = "global-channel") -> list[dict[str, Any]]:
+        """华尔街见闻全球快讯（最近 N 条）。
+
+        快讯是全市场口径，没有「某只股票的快讯」这一说，因此不收 ``symbol``。
+        """
+        from .wallstreet.adapters import WallstreetSource
+
+        src = WallstreetSource(client=_shared_http())
+        try:
+            return src.fetch_breaking_news(limit=limit, channel=channel)
+        finally:
+            src.close()
+
+    @staticmethod
+    def theme_attribution(
+        symbol: str = "", *, date: str = "", limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """同花顺涨停板块归属（板块维度聚合，含成分股）。
+
+        Parameters
+        ----------
+        symbol:
+            板块代码；为空返回全部板块。
+        date:
+            ``YYYYMMDD``；空串取最新交易日。
+        """
+        from .ths.adapters import ThsSource
+
+        src = ThsSource(client=_shared_http())
+        try:
+            return src.fetch_theme_attribution(symbol or None, date=date or None, limit=limit)
+        finally:
+            src.close()
+
+    @staticmethod
+    def concept_members(
+        symbol: str = "", *, date: str = "", limit: int = 50
+    ) -> list[dict[str, Any]]:
+        """同花顺概念成分股（把板块归属里的成分摊平成个股清单）。"""
+        from .ths.adapters import ThsSource
+
+        src = ThsSource(client=_shared_http())
+        try:
+            return src.fetch_concept_members(symbol or None, date=date or None, limit=limit)
+        finally:
+            src.close()
+
+    @staticmethod
+    def hk_announcements(
+        symbol: str = "", *, limit: int = 30, start_date: str = "", end_date: str = ""
+    ) -> list[dict[str, Any]]:
+        """巨潮港交所披露公告（``symbol`` 为空取全部港股）。"""
+        from .cninfo.adapters import CninfoSource
+
+        src = CninfoSource(client=_shared_http())
+        try:
+            return src.fetch_hk_announcements(
+                symbol or None,
+                limit=limit,
+                start_date=start_date or None,
+                end_date=end_date or None,
+            )
+        finally:
+            src.close()

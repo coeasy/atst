@@ -188,7 +188,7 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
         "tencent",
         "catalog",
         "web_adapter",
-        "minute_web",
+        "fetch_minute",
         factory="atst.web.tencent.adapters:MinuteSource",
     ),
     MigratedCapabilityBinding(
@@ -196,7 +196,7 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
         "tencent",
         "catalog",
         "web_adapter",
-        "minute_klines",
+        "fetch_bars",
         factory="atst.web.tencent.adapters:MinuteKlineSource",
     ),
     MigratedCapabilityBinding(
@@ -204,7 +204,7 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
         "eastmoney",
         "catalog",
         "web_adapter",
-        "minute_klines",
+        "fetch_bars",
         factory="atst.web.eastmoney.adapters:EastmoneyHistoryKlineSource",
     ),
     MigratedCapabilityBinding(
@@ -212,7 +212,7 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
         "sina",
         "catalog",
         "web_adapter",
-        "history",
+        "fetch_bars",
         factory="atst.web.sina.adapters:SinaHistoryKlineSource",
     ),
     MigratedCapabilityBinding(
@@ -220,7 +220,7 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
         "eastmoney",
         "catalog",
         "web_adapter",
-        "history",
+        "fetch_bars",
         factory="atst.web.eastmoney.adapters:EastmoneyHistoryKlineSource",
     ),
     MigratedCapabilityBinding("all_market", "sina", "catalog", "web_session", "all_market", "sina"),
@@ -241,6 +241,70 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
     # 一个不存在的东财资源。
     MigratedCapabilityBinding(
         "corporate_action", "eastmoney", "corporate", "tdx_client", "capital_changes"
+    ),
+    # V6 L3 新增 3 个 Web Provider（cninfo / ths / wallstreet）
+    #
+    # 收录纪律：这里每一条都必须是**真机抓包验证过**的端点。交易所（sse/szse）与
+    # 中债（chinamoney）两个源在 2026-10 实测全部不可达（404 / 500 / data=null），
+    # 因此**没有**登记——宁可少一个 Provider，也不留「有名字、发不出数据」的死能力。
+    # cninfo 巨潮：法定披露公告（POST 表单，column 决定板块）
+    MigratedCapabilityBinding(
+        "announcements",
+        "cninfo",
+        "catalog",
+        "web_adapter",
+        "fetch_announcements",
+        factory="atst.web.cninfo.adapters:CninfoSource",
+    ),
+    MigratedCapabilityBinding(
+        "hk_announcements",
+        "cninfo",
+        "catalog",
+        "web_adapter",
+        "fetch_hk_announcements",
+        factory="atst.web.cninfo.adapters:CninfoSource",
+    ),
+    # ths 同花顺：涨停池 / 板块归属 / 概念成分 / 人气榜
+    MigratedCapabilityBinding(
+        "limit_pool",
+        "ths",
+        "catalog",
+        "web_adapter",
+        "fetch_limit_pool",
+        factory="atst.web.ths.adapters:ThsSource",
+    ),
+    MigratedCapabilityBinding(
+        "theme_attribution",
+        "ths",
+        "catalog",
+        "web_adapter",
+        "fetch_theme_attribution",
+        factory="atst.web.ths.adapters:ThsSource",
+    ),
+    MigratedCapabilityBinding(
+        "concept_members",
+        "ths",
+        "catalog",
+        "web_adapter",
+        "fetch_concept_members",
+        factory="atst.web.ths.adapters:ThsSource",
+    ),
+    MigratedCapabilityBinding(
+        "hot_rank",
+        "ths",
+        "catalog",
+        "web_adapter",
+        "fetch_hot_rank",
+        factory="atst.web.ths.adapters:ThsSource",
+    ),
+    # wallstreet 华尔街见闻：全球快讯流（仅 global-channel 稳定返回）
+    MigratedCapabilityBinding(
+        "breaking_news",
+        "wallstreet",
+        "catalog",
+        "web_adapter",
+        "fetch_breaking_news",
+        factory="atst.web.wallstreet.adapters:WallstreetSource",
     ),
 )
 
@@ -510,17 +574,49 @@ def _validate_composed(
         raise TypeError(f"unexpected keyword argument(s): {', '.join(unknown)}")
 
 
+#: 全市场口径的 web_adapter 能力：**不接受**标的。快讯这类数据上游根本没有按标的
+#: 分流的频道，传 symbol 只能是调用方误解，在契约层就拒绝而不是静默忽略。
+_MARKET_WIDE_WEB_ADAPTER_CAPS = frozenset({"breaking_news"})
+#: 标的可选：给了就按标的过滤（本地筛，不是服务端过滤），不给就取全市场。
+_SYMBOL_OPTIONAL_WEB_ADAPTER_CAPS = frozenset(
+    {
+        "announcements",
+        "hk_announcements",
+        "theme_attribution",
+        "concept_members",
+        "limit_pool",
+        "hot_rank",
+    }
+)
+
+
 def _validate_web_adapter(
     capability: str,
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
 ) -> None:
-    if len(args) != 1:
+    if capability in _MARKET_WIDE_WEB_ADAPTER_CAPS:
+        if args:
+            raise TypeError(
+                f"{capability} 是全市场能力，不接受 symbol 参数（它按市场整体返回，"
+                f"传标的只会误导；请用 limit/date 控制返回量）"
+            )
+    elif capability in _SYMBOL_OPTIONAL_WEB_ADAPTER_CAPS:
+        if len(args) > 1:
+            raise TypeError(f"{capability} 最多接受一个 symbol 参数")
+    elif len(args) != 1:
         raise TypeError(f"{capability} requires exactly one symbol argument")
     allowed = {
         "minute_web": set(),
         "minute_klines": {"period", "count", "adjust"},
         "history": {"period", "count", "adjust"},
+        "limit_pool": {"date", "limit"},
+        "hot_rank": {"limit"},
+        "breaking_news": {"limit", "channel"},
+        "announcements": {"limit", "start_date", "end_date"},
+        "hk_announcements": {"limit", "start_date", "end_date"},
+        "theme_attribution": {"date", "limit"},
+        "concept_members": {"date", "limit"},
     }[capability]
     unknown = sorted(set(kwargs) - allowed)
     if unknown:

@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.1.0] - 2026-10-02
+
+### Added
+
+- **V6 L3 三源正式落地**：新增 `cninfo`（巨潮资讯法定披露公告 `announcements` / `hk_announcements`）、`ths`（同花顺涨停池 / 板块归属 / 人气榜 `limit_pool` / `theme_attribution` / `concept_members` / `hot_rank`）、`wallstreet`（华尔街见闻全球快讯 `breaking_news`）三个 Provider，共 7 个数据型能力。返回均为 `dict` 列表，不套 `Quote`/`Bar` 行情模型。
+- **执行器分派泛化**：`runtime/executor.py` 的 `_web_adapter_call` 不再写死 `fetch_bars`，改按 `MigratedCapabilityBinding.method` 动态分派（`meta.method` 缺省回落 `fetch_bars`）；四张服务面（CLI `atst query` / HTTP `POST /v13/query/{cap}` / WS `query` / Python `Client.call`）统一把 `args`/`kwargs` 透传进内核，web_adapter 源的 `symbol` 走 `args[0]` 或 `symbol=` 关键字，契约层 `_validate_web_adapter` 对「不接受标的」的能力（如 `breaking_news`）显式拒绝而非静默忽略。
+
+### Fixed
+
+- **`ths.concept_members` 断链修复**：此前按 `symbol` 取板块成分股时，先按 `block_code` 过滤、紧接着又按股票 `code` 二次过滤，导致传入**板块代码**必然返回 `[]`（核心链路断链）。现改为互斥分支：板块代码 → 按 `block_code` 过滤、股票代码 → 按 `code` 过滤、不给 symbol → 取全市场并按 `limit` 截断（上游 `block_top` 忽略 `limit`，本地兜底）。新增回归测试 `tests/web/test_v6_new_sources.py` 锁定此口径。
+- **`ths._parse_hot_rank` 孤儿变量清理**：移除冗余未用的 `code2`，消除孤儿逻辑。
+
+### Changed
+
+- `docs/releases/v1.1.0.md` 由「开发线说明」改写为正式发布说明；接口文档 `docs/api/interfaces.md` 的 V6 L3 调用口径、Provider 表、CLAUDE/CLI/HTTP/WS 四面契约同步对齐。
+
 ## [1.0.1] - 2026-09-30
 
 ### Added

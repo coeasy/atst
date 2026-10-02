@@ -68,6 +68,7 @@ from .base import BaseWebSource, RateLimiter, build_client, normalize_symbol
 from .sources import (
     BAIDU,
     BOC,
+    CNINFO,
     CORPORATE,
     DEFAULT_FALLBACK_ORDER,
     EASTMONEY,
@@ -94,9 +95,11 @@ from .sources import (
     STOCK_CHANGES,
     SUGGEST,
     TENCENT,
+    THS,
     TICKS,
     TRENDS,
     US,
+    WALLSTREET,
     WENCAI,
     get_source,
     list_sources,
@@ -329,6 +332,10 @@ _ADAPTER_SPECS: dict[str, tuple[str, str]] = {
     FUND: ("adapters_fund", "FundSource"),
     MARGIN: ("eastmoney.adapters", "EastmoneyMarginSource"),
     INDEX_CONS: ("eastmoney.adapters", "EastmoneyIndexConstituentsSource"),
+    #: —— V6 L3 新增（2026-10 真机验证的公开端点）——
+    CNINFO: ("cninfo.adapters", "CninfoSource"),
+    THS: ("ths.adapters", "ThsSource"),
+    WALLSTREET: ("wallstreet.adapters", "WallstreetSource"),
 }
 
 

@@ -60,6 +60,19 @@ from atst.web.normalize import _NORMALIZER_REGISTRY
 from atst.web.session import WebQuoteSession
 from atst.web.sources import SOURCES
 
+
+def _web_adapter_cls(binding: Any) -> Any:
+    """``web_adapter`` 的派发目标：``binding.factory`` 指向的那个适配器类。
+
+    与 ``DirectProviderExecutor._web_adapter_call`` 的解析式同一口径（不在这里
+    抄类名，也不抄一份 provider→类的映射表）。
+    """
+    import importlib
+
+    module_path, _, class_name = binding.factory.partition(":")
+    return getattr(importlib.import_module(module_path), class_name)
+
+
 #: 按 ``meta.method`` 派发的后端 → 它的派发目标（与 ``validate_call`` /
 #: ``DirectProviderExecutor`` 里各自的 getattr 表达式同一口径）。
 METHOD_BACKENDS: dict[str, Any] = {
@@ -69,10 +82,15 @@ METHOD_BACKENDS: dict[str, Any] = {
     "goods_client": lambda binding: GoodsClient,
     "mac_client": lambda binding: MacClient,
     "direct_adapter": lambda binding: resolve_channel_adapter(binding.provider, binding.channel),
+    #: 2026-10 V6：``web_adapter`` 从「标签桶」移到「按 method 派发桶」。此前执行器
+    #: 硬编码 ``fetch_bars``，``method`` 字段写了也没人读——绑定表里写着入口、执行面
+    #: 却不去看，任何非 K 线语义的绑定（公告 / 快讯 / 人气榜）一调就 AttributeError。
+    #: 现在两边都读 ``meta.method``，② 这条判据也就覆盖到了它们：改坏方法名会当场红。
+    "web_adapter": _web_adapter_cls,
 }
 
 #: ``method`` 只是标签、按 capability 分岔的后端。
-TAG_BACKENDS = frozenset({"f10_client", "web_adapter", "composed"})
+TAG_BACKENDS = frozenset({"f10_client", "composed"})
 
 #: ③ 的唯一例外，连同它实际复读的实现名。理由见模块 docstring。
 TAG_EXEMPTIONS: dict[tuple[str, str, str], str] = {("tdx", "f10", "f10_catalog"): "catalog"}

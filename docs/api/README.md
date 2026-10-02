@@ -1,6 +1,6 @@
 # API 参考
 
-当前 `1.0.1`；GitHub Release [`v1.0.0`](https://github.com/coeasy/atst/releases/tag/v1.0.0) 已发布，但本包**不在 PyPI 上** · [v1.0.0 发布说明](../releases/v1.0.0.md) · [v1.1.0 历史说明](../releases/v1.1.0.md)
+当前 `1.1.0`；GitHub Release [`v1.1.0`](https://github.com/coeasy/atst/releases/tag/v1.1.0) 已发布，但本包**不在 PyPI 上** · [v1.0.0 发布说明](../releases/v1.0.0.md) · [v1.1.0 发布说明](../releases/v1.1.0.md)
 
 > 本页对应 v1.0.0 + **v13/v17 单一执行内核**。完整 docstring 驱动文档
 > 由 `pdoc`/`mkdocstrings` 生成；此处提供稳定入口和模块索引。
@@ -33,7 +33,7 @@
 | `atst.catalog.capability` | capability 目录 + 规划期真实签名校验（`validate_call`）|
 | `atst.catalog.provider_bindings` | Provider `channel → adapter` 绑定表 |
 | `atst.catalog.provider_contract` / `provider_guard` / `*_audit` | Provider 隔离契约、运行时守卫与一致性审计 |
-| `atst.providers.PROVIDERS` | 11 Provider × 56 channel × 172 capability 唯一事实源；能力发现面只声明名字、不声明可用性，见 [interfaces.md](interfaces.md)「能力发现面」 |
+| `atst.providers.PROVIDERS` | 14 Provider × 59 channel × 176 capability 唯一事实源；能力发现面只声明名字、不声明可用性，见 [interfaces.md](interfaces.md)「能力发现面」 |
 
 ## 核心入口
 
@@ -87,7 +87,7 @@
 
 | 模块 | 说明 |
 |---|---|
-| `atst.providers` | Provider 注册表（11 Provider × channel），内核唯一可调用实现体 |
+| `atst.providers` | Provider 注册表（14 Provider × channel），内核唯一可调用实现体 |
 | `atst.web.tencent.adapters` | 腾讯系 HTTP 源（实时行情 / K 线 / 分钟线 / 分时 / 港股 / 美股）|
 | `atst.web.sina.adapters` | 新浪系 HTTP 源（实时行情 / 港股 / 历史 K 线 / 代码联想）|
 | `atst.web.eastmoney.adapters` | 东财系 HTTP 源（实时行情 / push2his 历史 K 线 / 融资融券 / 指数成分）|

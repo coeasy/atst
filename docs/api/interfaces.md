@@ -186,7 +186,7 @@ from atst import Client, AsyncClient
 | `call` | `(capability, *args, provider=None, channel=None, currentness="business", **kwargs)` | 便捷通用入口 |
 | `execute_with_policy` | `(spec, *, policy: FallbackPolicy) -> OrchestratedResult` | 显式跨源编排 |
 | `typed` | `(query: CapabilityQuery, **kwargs) -> TypedQueryResult` | 冻结 dataclass 契约 → 强类型记录 |
-| `capabilities` | `() -> tuple[str, ...]` | 能力发现面：**只有名字、没有可用性**，172 项的构成与发不出去的那几个见下节「能力发现面：只有名字，没有可用性」 |
+| `capabilities` | `() -> tuple[str, ...]` | 能力发现面：**只有名字、没有可用性**，176 项的构成与发不出去的那几个见下节「能力发现面：只有名字，没有可用性」 |
 | `core_capability_statuses` | `() -> dict[str, dict[str, Any]]` | **本实例内核**的能力可用性真值表：逐内核方法区分「任意 Provider 可用」与「默认路径可用」（未注入执行器时默认路径为不可用），据此判断某能力今天是否真的发得出去 |
 | `close` | `()` | 收尾**本实例自建**的内核（`runtime=` 传进来的那份不碰）。默认内核跨调用不持有连接，所以它关的是"借来的东西"这一格所有权，不是连接池——见下节 |
 
@@ -242,7 +242,7 @@ with Client() as c:
 ### 复权 K 线（`adjusted_bars`）
 
 `adjusted_bars` 是**组合能力**（`composed`）：原始 K 线走选定的行情 Provider，除权除息事件单独取，
-两份在 `atst/domain/adjust.py` 的 `AdjustEngine` 里合成因子。它是 167 个 catalog 迁移能力之一，因此
+两份在 `atst/domain/adjust.py` 的 `AdjustEngine` 里合成因子。它是 171 个 catalog 迁移能力之一，因此
 走**通用入口**而不是某张面的专属路由：
 
 ```python
@@ -280,19 +280,19 @@ with Client() as c:
 ```python
 from atst import Client
 
-Client.capabilities()   # 172 项 capability 名，按字典序排好
+Client.capabilities()   # 176 项 capability 名，按字典序排好
 ```
 
 发现面有三处出口，交付的都是**纯名字**：
 
 | 出口 | 形状 | 状态字段 |
 |------|------|----------|
-| `Client.capabilities()` / `AsyncClient.capabilities()` | `tuple[str, ...]`，172 项 | 无 |
+| `Client.capabilities()` / `AsyncClient.capabilities()` | `tuple[str, ...]`，176 项 | 无 |
 | `GET /v13/capabilities` | `{"capabilities": [...], "providers": {provider: {channel: [...]}}}` | 无 |
 | WS `runtime.capabilities` | 同上，两份名单 | 无 |
 
-名单的构成是一个可复算的恒等式：172 = 7 个内核直绑能力 ∪ 167 个 catalog 迁移能力，并且与
-`PROVIDERS` 注册表（11 Provider × 56 channel）里出现过的能力名集合逐字相等。三处出口在形状上
+名单的构成是一个可复算的恒等式：176 = 7 个内核直绑能力 ∪ 171 个 catalog 迁移能力，并且与
+`PROVIDERS` 注册表（14 Provider × 59 channel）里出现过的能力名集合逐字相等。三处出口在形状上
 就没有放 `available`/`offline` 的位置——条目类型清一色是 `str`（F-66 裁决 (c)：发现面的形状
 不动，把这条口径写清）。于是**「名字在名单里」只承诺"这条能力有实现、参数契约可校验"，不承诺
 "调用会拿到数据"**。
@@ -315,7 +315,7 @@ request/parser 仍是 inferred 的结构化拦截挡在发包前。下表由
 | `volume_price` | `volume_price_dist` | `0x051A` | 账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
 
 这张表只覆盖 tdx 命令账本管得到的 25 个名字（7 个内核直绑 + 18 个 tdx 客户端族 catalog 绑定）；
-其余 147 个名字走 web 会话 / web adapter / channel adapter / composed 四类后端，不经过命令账本，
+其余 151 个名字走 web 会话 / web adapter / channel adapter / composed 四类后端，不经过命令账本，
 也就无从在这里判生死——它们的可用性由各自的 Provider 契约与 `tests/` 冒烟负责。一处显式登记的
 解析盲区是 `f10`：`f10_client` 的分派按 capability 分岔（`runtime/executor.py` 里 `f10` 走
 `client.download`、其余走 `client.catalog`），绑定表的 `method` 只是标签，所以这一格对不上实现；
@@ -438,7 +438,7 @@ from atst import Provenance, ProvenanceKind                       # 结果溯源
 `fallback=True` 是另一件事：它只可能由显式 `FallbackPolicy` 走到
 `ProviderOrchestrator`（§ 上文）之后 `replace` 出来，与出处种类无关。
 
-### Web 源登记（`atst.web.sources.KNOWN_SOURCES`，31 个）
+### Web 源登记（`atst.web.sources.KNOWN_SOURCES`，34 个）
 
 ```python
 from atst.web.sources import KNOWN_SOURCES, SourceSpec   # 源名 → SourceSpec
@@ -487,6 +487,83 @@ from atst.web.sources import KNOWN_SOURCES, SourceSpec   # 源名 → SourceSpec
 | `fund` | 东财基金（天天基金：历史净值 / 实时估值 / 基金列表） | `fund_nav_history` / `fund_estimate` / `fund_list` | 数据型源（list[dict]/dict），不参与行情降级链；历史净值需 Referer http://fundf10.eastmoney.com/（适配器内置）；基金列表为全量 js 数组（约 2.7 万条，数 MB）。**实时估值已下线**：fundgz jsonp 接口 2026 年实测返回 404 页面，fetch_estimate 显式抛 SourceDeprecated。 |
 | `margin` | 东财融资融券个股明细（datacenter-web RPTA_WEB_RZRQ_GGMX） | `margin` | 数据型源（list[dict]），不参与行情降级链；仅两融标的（非标的个股空列表）；DATE 倒序单页/翻页均可；金额单位元（RZYE 融资余额/RZMRE 融资买入/RZJME 融资净买/RQYE 融券余额/RZRQYE 两融余额），RZYEZB 为融资余额占流通市值比(%)。 |
 | `index_cons` | 东财指数成分股（datacenter-web RPT_INDEX_TS_COMPONENT） | `index_constituents` | 数据型源（list[dict]），不参与行情降级链；TYPE 为指数族过滤（2026-09 与中证官网 XLS 交叉验证 5 族 jaccard=1.0）；单页上限 500，中证1000/中证2000 等大指数自动分页拉全量；weight 仅部分指数族提供（沪深300/上证50/中证500/科创50 有值）。 |
+| `cninfo` | 巨潮资讯网法定披露公告（www.cninfo.com.cn） | `announcements` | POST 表单到 /new/hisAnnouncement/query；column 决定板块（szse 深主板+创业板 / sse 沪市 / hke 港交所）。webapi.cninfo.com.cn 那套（p_info3015 等）需 token，未采用。 |
+| `ths` | 同花顺涨停池 / 板块归属 / 人气榜（10jqka） | `limit_pool` `theme_attribution` `concept_members` `hot_rank` | data.10jqka.com.cn/dataapi/limit_up/{limit_up_pool,block_top}（涨停池/板块归属）；dq.10jqka.com.cn/fuyao/hot_list_data（人气榜）。需 Referer。 |
+| `wallstreet` | 华尔街见闻快讯（api-one.wallstcn.com） | `breaking_news` | GET /apiv1/content/lives?channel=global-channel；仅该频道稳定返回，macro-channel 实测为空，故只挂 breaking_news 一个能力。 |
+
+---
+
+### V6 L3 新增源的调用口径（cninfo / ths / wallstreet）
+
+2026-10-02 真机验证后新增的 7 个能力。它们与 `quotes`/`bars` 这类核心能力的关键差别
+是：**返回的是 `dict` 列表，不是 `Quote`/`Bar` 对象**——公告、快讯、板块归属没有
+「开盘价/成交量」可言，硬套行情模型只会把语义挤没。调用前先看这一节，别按行情的
+形状去接。
+
+| 能力 | 默认 Provider | 入参 | 返回 | 标的是否必填 |
+| --- | --- | --- | --- | --- |
+| `announcements` | `derived` | `symbol?`, `limit`, `start_date`, `end_date` | 公告列表（含 PDF 直链） | 可选（不给取深市全市场） |
+| `hk_announcements` | `cninfo` | `symbol?`, `limit`, `start_date`, `end_date` | 港交所公告列表 | 可选 |
+| `limit_pool` | `derived` | `symbol?`, `date`, `limit` | 涨停池个股 | 可选（给了只留该股） |
+| `theme_attribution` | `ths` | `symbol?`, `date`, `limit` | 涨停板块聚合（含成分股） | 可选（给板块代码只留该板块） |
+| `concept_members` | `ths` | `symbol?`, `date`, `limit` | 板块成分股（摊平）（板块代码→该板块成分股；股票代码→该股所属板块；不给→全市场截断） | 可选 |
+| `hot_rank` | `derived` | `symbol?`, `limit` | 人气榜（热度值/排名） | 可选 |
+| `breaking_news` | `wallstreet` | `limit`, `channel` | 全球快讯 | **不接受**（见下） |
+
+四条容易踩的口径：
+
+1. **`breaking_news` 不接受标的。** 快讯没有「某只股票的快讯」这一说，上游也没有按
+   标的分流的频道。传 `symbol` 会在契约层被拒（`E1010`），而不是被静默忽略——静默忽略
+   会让调用方以为自己筛过了。
+2. **`limit_pool` / `hot_rank` / `theme_attribution` / `concept_members` 的 `symbol`
+   是本地筛，不是服务端过滤。** 上游没有按标的过滤的参数，实现是先取回全量再按代码比对。
+   语义正确，但**不要**指望它省流量；想省就自己缓存结果。`symbol` 以位置参数首参
+   （`c.call("concept_members", "885431", ...)`）或 `symbol=` 关键字
+   （`c.call("concept_members", symbol="885431", ...)`）传入，CLI/HTTP/WS/Python 四面同义——
+   统一经内核 `options["args"/"kwargs"]` 落到适配器，不以语义载荷另走一套。
+3. **`announcements` 带标的时，巨潮要求 `stock=代码,orgId`。** 适配器会先打一次代码联想
+   拿 `orgId`（进程内记住这个映射，只记这一项元数据）；查不到就直接报错，而不是发一个
+   「注定返回 0 条」的请求——那会把「查不到这家公司」伪装成「这家公司没有公告」。
+4. **`concept_members` 的 `symbol` 分三种语义（ths 板块归属源独有）。** 传**板块代码**
+   （如 `885431`）→ 返回该板块的成分股（按 `block_code` 过滤）；传**股票代码**（如 `600519`）
+   → 返回该股所属的所有板块（按 `code` 过滤）；**不传** → 全市场板块成分股，并按 `limit`
+   截断（上游 `block_top` 忽略 `limit`，本地兜底）。此前传板块代码会返回空列表属断链，
+   已在 v1.1.0 修复，回归测试见 `tests/web/test_v6_new_sources.py`。
+
+```python
+from atst import Client
+
+c = Client()
+
+# 公告：带标的 / 全市场 / 港交所
+c.call("announcements", "600519", provider="cninfo", limit=5)
+c.call("announcements", provider="cninfo", limit=5)
+c.call("hk_announcements", limit=5)
+
+# 涨停池：全市场，或只问一只股今天涨停了吗
+c.call("limit_pool", provider="ths", limit=10)
+c.call("limit_pool", "600131", provider="ths")
+
+# 板块归属与成分股
+c.call("theme_attribution", provider="ths", limit=5)
+c.call("concept_members", "885431", provider="ths", limit=20)
+
+# 人气榜与快讯
+c.call("hot_rank", provider="ths", limit=10)
+c.call("breaking_news", limit=5)
+```
+
+CLI 与 HTTP 面走同一个能力名，无需另记命令：
+
+```bash
+atst query breaking_news              # 通用能力执行口
+atst capabilities | grep breaking     # 确认它在发现面里
+```
+
+```
+GET /v13/query/breaking_news
+GET /v13/capabilities
+```
 
 ---
 

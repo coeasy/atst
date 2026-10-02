@@ -111,6 +111,11 @@ class EastmoneySource(_EastmoneyJson):
                 "total_market_cap": _f(data.get("f117")),
                 "pe": _f(data.get("f162")) / 100,
                 "pb": _f(data.get("f167")) / 100,
+                #: 涨跌停价（V6 D15）：f51/f52 早就在 FIELDS 里请求，但没进 extra。
+                #: 单位与 f43/f44/f45/f46/f60 这一族价格格同源（本 payload 里
+                #: 只有 f169/f170/f162/f167 那类比率格才 /100），故不另做换算。
+                "limit_up": _f(data.get("f51")),
+                "limit_down": _f(data.get("f52")),
             },
         )
         return [self.normalize_quote(q)]

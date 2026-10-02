@@ -68,6 +68,9 @@ __all__ = [
     "FUND",
     "MARGIN",
     "INDEX_CONS",
+    "CNINFO",
+    "THS",
+    "WALLSTREET",
 ]
 
 SINA = "sina"
@@ -125,6 +128,12 @@ FUND = "fund"
 MARGIN = "margin"
 #: 东财指数成分股（datacenter-web RPT_INDEX_TS_COMPONENT；数据型源，不参与行情降级）
 INDEX_CONS = "index_cons"
+#: 巨潮资讯网（cninfo）法定披露公告（www.cninfo.com.cn/new/hisAnnouncement/query，POST 表单）
+CNINFO = "cninfo"
+#: 同花顺（10jqka）涨停池 / 板块归属 / 人气榜（data.10jqka.com.cn + dq.10jqka.com.cn）
+THS = "ths"
+#: 华尔街见闻（wallstreetcn）快讯流（api-one.wallstcn.com/apiv1/content/lives）
+WALLSTREET = "wallstreet"
 
 
 @dataclass(frozen=True)
@@ -466,6 +475,31 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
         "（2026-09 与中证官网 XLS 交叉验证 5 族 jaccard=1.0）；单页上限 "
         "500，中证1000/中证2000 等大指数自动分页拉全量；weight 仅部分指数"
         "族提供（沪深300/上证50/中证500/科创50 有值）。",
+    ),
+    CNINFO: SourceSpec(
+        name=CNINFO,
+        summary="巨潮资讯网法定披露公告（www.cninfo.com.cn）",
+        default_rate=2,
+        capabilities=("announcements",),
+        notes="POST 表单到 /new/hisAnnouncement/query；column 决定板块"
+        "（szse 深主板+创业板 / sse 沪市 / hke 港交所）。"
+        "webapi.cninfo.com.cn 那套（p_info3015 等）需 token，未采用。",
+    ),
+    THS: SourceSpec(
+        name=THS,
+        summary="同花顺涨停池 / 板块归属 / 人气榜（10jqka）",
+        default_rate=2,
+        capabilities=("limit_pool", "theme_attribution", "concept_members", "hot_rank"),
+        notes="data.10jqka.com.cn/dataapi/limit_up/{limit_up_pool,block_top}（涨停池/板块归属）；"
+        "dq.10jqka.com.cn/fuyao/hot_list_data（人气榜）。需 Referer。",
+    ),
+    WALLSTREET: SourceSpec(
+        name=WALLSTREET,
+        summary="华尔街见闻快讯（api-one.wallstcn.com）",
+        default_rate=2,
+        capabilities=("breaking_news",),
+        notes="GET /apiv1/content/lives?channel=global-channel；仅该频道稳定返回，"
+        "macro-channel 实测为空，故只挂 breaking_news 一个能力。",
     ),
 }
 

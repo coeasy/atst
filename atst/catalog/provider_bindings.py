@@ -37,6 +37,9 @@ __all__ = [
     "JslProviderAPI",
     "BocProviderAPI",
     "IwencaiProviderAPI",
+    "CninfoProviderAPI",
+    "ThsProviderAPI",
+    "WallstreetProviderAPI",
     "CompositeProviderAPI",
     "DerivedProviderAPI",
     "BuiltinProviderAPI",
@@ -174,6 +177,27 @@ class IwencaiProviderAPI(ChannelBindings):
     }
 
 
+class CninfoProviderAPI(ChannelBindings):
+    provider_id = "cninfo"
+    CHANNELS: ClassVar[dict[str, AdapterRef]] = {
+        "catalog": ("atst.web.cninfo.adapters", "CninfoSource"),
+    }
+
+
+class ThsProviderAPI(ChannelBindings):
+    provider_id = "ths"
+    CHANNELS: ClassVar[dict[str, AdapterRef]] = {
+        "catalog": ("atst.web.ths.adapters", "ThsSource"),
+    }
+
+
+class WallstreetProviderAPI(ChannelBindings):
+    provider_id = "wallstreet"
+    CHANNELS: ClassVar[dict[str, AdapterRef]] = {
+        "catalog": ("atst.web.wallstreet.adapters", "WallstreetSource"),
+    }
+
+
 class CompositeProviderAPI(ChannelBindings):
     """Composite Providers reached only through the unified QuerySpec path.
 
@@ -204,6 +228,9 @@ _BINDING_TYPES: tuple[type[ChannelBindings], ...] = (
     JslProviderAPI,
     BocProviderAPI,
     IwencaiProviderAPI,
+    CninfoProviderAPI,
+    ThsProviderAPI,
+    WallstreetProviderAPI,
     DerivedProviderAPI,
     BuiltinProviderAPI,
 )

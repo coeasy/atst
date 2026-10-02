@@ -528,12 +528,32 @@ class DirectProviderExecutor:
         module_path, _, class_name = meta.factory.partition(":")
         adapter_cls = getattr(importlib.import_module(module_path), class_name)
 
+        # 分派口径：``MigratedCapabilityBinding.method`` 对 ``web_adapter`` 后端
+        # 就是**要调用的适配器方法名**（与 ``web_session`` / ``tdx_client`` 后端
+        # 同一语义）。旧实现在此硬编码 ``fetch_bars``，导致任何非 K 线语义的
+        # web_adapter 绑定（公告 / 快讯 / 人气榜）一调就 AttributeError——
+        # 绑定表里明明写了入口，执行面却不去读它，是典型的「声明与执行分叉」。
+        method_name = getattr(meta, "method", "") or "fetch_bars"
         adapter = adapter_cls(timeout=timeout)
         try:
-            symbol = args[0]
-            if meta.capability == "minute_web":
-                return adapter.fetch_minute(symbol)
-            return adapter.fetch_bars(symbol, **kwargs)
+            entry = getattr(adapter, method_name, None)
+            if entry is None or not callable(entry):
+                raise ValidationError(
+                    "web_adapter 绑定指向的适配器方法不存在",
+                    context={
+                        "provider": getattr(meta, "provider", None),
+                        "capability": getattr(meta, "capability", None),
+                        "factory": getattr(meta, "factory", None),
+                        "method": method_name,
+                    },
+                )
+            #: 全市场类能力（快讯等）不传标的；旧实现裸取 ``args[0]`` 在无参调用时
+            #: IndexError。``symbol`` 为空时整个位置参数都不传——那些方法的签名上
+            #: 根本没有 ``symbol`` 形参（快讯无从按标的过滤），传 None 会 TypeError。
+            symbol = args[0] if args else None
+            if symbol is None:
+                return entry(**kwargs)
+            return entry(symbol, **kwargs)
         finally:
             close = getattr(adapter, "close", None)
             if callable(close):

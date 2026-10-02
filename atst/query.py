@@ -22,7 +22,7 @@ from enum import Enum
 from typing import Any, Final
 
 from .domain.period import MINUTE_PERIODS, normalize_bar_period
-from .domain.symbol import normalize_symbol
+from .domain.symbol import normalize_symbol, parse_symbol
 from .error_envelope import is_sensitive_key
 from .errors import ReadTimeout, ValidationError
 from .providers import PROVIDERS, ChannelSpec, resolve_capability_provider, resolve_provider
@@ -399,6 +399,23 @@ class QuerySpec:
                 )
         else:
             symbols = tuple(normalize_symbol(item) for item in self.symbols)
+        # Market-aware capability translation: when "quotes" is called with
+        # only HK or US symbols and no explicit provider, translate to the
+        # migrated capability (hk_quotes / us_quotes).  TDX binary protocol
+        # cannot serve HK/US markets (no tdx_market mapping); these migrated
+        # capabilities route through web/derived providers instead.
+        _translated = False
+        if cap == "quotes" and self.provider is None:
+            try:
+                markets = {parse_symbol(s).market for s in symbols}
+            except Exception:
+                markets = set()
+            if markets == {"hk"}:
+                cap = "hk_quotes"
+                _translated = True
+            elif markets == {"us"}:
+                cap = "us_quotes"
+                _translated = True
         if cap in {"quotes", "bars"} and not symbols:
             raise ValidationError(f"{cap} 至少需要一个 symbol", context={"capability": cap})
         if cap == "bars" and len(symbols) != 1:
@@ -436,10 +453,22 @@ class QuerySpec:
             raise ValidationError("schema_version 必须大于 0")
 
         currentness = _parse_currentness(self.currentness)
+        # For translated capabilities (hk_quotes/us_quotes), the default
+        # provider comes from the capability catalog.  Core capabilities
+        # keep their original default (e.g. "tdx" for quotes/bars/minute).
+        if _translated:
+            from .catalog.capability import default_provider_for as _dpf
+
+            try:
+                fb_default = _dpf(cap)
+            except KeyError:
+                fb_default = default_provider or PROVIDERS.default_provider
+        else:
+            fb_default = default_provider or PROVIDERS.default_provider
         selected = resolve_capability_provider(
             cap,
             self.provider,
-            default=default_provider or PROVIDERS.default_provider,
+            default=fb_default,
         )
         channel = _norm_text(self.channel) or None
         period = normalize_bar_period(self.period) if cap == "bars" else _norm_text(self.period)

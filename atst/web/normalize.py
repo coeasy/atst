@@ -42,6 +42,7 @@ from typing import Any, TypeVar
 from .sources import (
     BAIDU,
     BOC,
+    CNINFO,
     CORPORATE,
     EASTMONEY,
     FUND,
@@ -67,9 +68,11 @@ from .sources import (
     STOCK_CHANGES,
     SUGGEST,
     TENCENT,
+    THS,
     TICKS,
     TRENDS,
     US,
+    WALLSTREET,
     WENCAI,
 )
 
@@ -421,6 +424,22 @@ class StockChangesNormalizer(VolumeNormalizer):
 @register_normalizer(HOT_RANK)
 class HotRankNormalizer(VolumeNormalizer):
     """股吧人气榜: 非行情语义（rank/symbol 的 dict 列表），identity。"""
+
+
+# --- V6 L3 新增源：三者皆为「非行情语义」的 dict 列表，量纲恒等 -------------- #
+@register_normalizer(CNINFO)
+class CninfoNormalizer(VolumeNormalizer):
+    """巨潮公告: 非行情语义（symbol/title/url 的 dict 列表），identity。"""
+
+
+@register_normalizer(THS)
+class ThsNormalizer(VolumeNormalizer):
+    """同花顺涨停池/板块/人气榜: 非行情语义的 dict 列表，identity。"""
+
+
+@register_normalizer(WALLSTREET)
+class WallstreetNormalizer(VolumeNormalizer):
+    """华尔街见闻快讯: 非行情语义（id/text/publish_time 的 dict 列表），identity。"""
 
 
 # --------------------------------------------------------------------------- #
