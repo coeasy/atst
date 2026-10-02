@@ -32,6 +32,7 @@ GATES_TO_CI_JOBS: dict[str, str] = {
     "audit-reachability": "reachability",
     "audit-originality": "originality",
     "benchmark-smoke": "benchmark-smoke",
+    "interface-probe": "interface-surface",
     "audit-docs": "docs-links",
 }
 

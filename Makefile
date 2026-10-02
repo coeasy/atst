@@ -1,4 +1,4 @@
-.PHONY: help install pre-commit test test-live test-unit test-integration test-bridges test-golden test-slow lint lint-fix type-check clean gates audit-originality audit-golden audit-spec audit-reachability audit-adversarial audit-docs benchmark-smoke host-audit build publish docker-build docker-run
+.PHONY: help install pre-commit test test-live test-unit test-integration test-bridges test-golden test-slow lint lint-fix type-check clean gates audit-originality audit-golden audit-spec audit-reachability audit-adversarial audit-docs benchmark-smoke interface-probe host-audit build publish docker-build docker-run
 
 PYTHON ?= python
 PIP = $(PYTHON) -m pip
@@ -93,12 +93,19 @@ host-audit:
 	$(PYTHON) scripts/audit_hosts.py --timeout 2 --workers 24 --strict \
 		--report audit_report.json --markdown audit_summary.md
 
+# Offline half of the interface surface check. `--help` on every subcommand and
+# nested subaction needs no socket, so it can sit inside the deterministic merge
+# gate; the call-level probe (scripts/verify_interfaces.py --mode core) lives in
+# live-smoke.yml, which tolerates a flaky network but not a broken envelope.
+interface-probe:
+	$(PYTHON) scripts/verify_interfaces.py --mode argparse
+
 # Deterministic PR merge gates only. Network probes remain separate by design.
 # This mirrors the blocking CI jobs without weakening thresholds or strict flags.
 # Every step must resolve on disk; tests/compatibility/test_local_gate_contract.py
 # enforces it. v16 Phase 2 deleted atst.native but left native-compat in this
 # chain pointing at the removed test file, so `make gates` failed for contributors.
-gates: lint type-check test test-bridges audit-golden audit-spec audit-adversarial audit-reachability audit-originality benchmark-smoke audit-docs
+gates: lint type-check test test-bridges audit-golden audit-spec audit-adversarial audit-reachability audit-originality benchmark-smoke interface-probe audit-docs
 	@echo "ALL DETERMINISTIC GATES PASSED"
 
 build:

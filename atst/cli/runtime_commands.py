@@ -38,6 +38,7 @@ from ._common import (
     _print_table,
     _transport_kwargs,
     family_client,
+    validate_period,
 )
 
 
@@ -645,16 +646,24 @@ def _cmd_minute_klines(args: Any) -> int:
     """分钟 K 线：``atst minute-klines <symbol> [--period 5min] [--count 240]``。"""
     from ..domain.models import to_dicts
 
+    # 周期在入口收口：裸数字（--period 5）补成 5min，不认识的直接报可选值，
+    # 不再让适配器里的裸 ValueError 穿成一句 E9000「未处理异常」。
+    try:
+        period = validate_period(args.period)
+    except ValueError as exc:
+        print(f"错误：{exc}", file=sys.stderr)
+        return 2
+
     try:
         with _ClientRows(**_client_kwargs(args)) as api:
-            data = to_dicts(api.minute_klines(args.symbol, period=args.period, count=args.count))
+            data = to_dicts(api.minute_klines(args.symbol, period=period, count=args.count))
     except Exception as exc:  # noqa: BLE001 - Web 源异常统一出口
         print(f"错误：分钟 K 线获取失败 —— {exc}", file=sys.stderr)
         return 2
     if args.json:
         print(json.dumps(data, ensure_ascii=False, default=str))
         return 0
-    print(f"# {args.symbol} {args.period} 共 {len(data)} 根")
+    print(f"# {args.symbol} {period} 共 {len(data)} 根")
     _print_bars_table(data)
     return 0
 

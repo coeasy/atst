@@ -42,11 +42,24 @@ jobs:
           mkdir -p reports
           python -m pytest tests/ -v --tb=short -m "network" \
             --junitxml=reports/live-smoke.xml
+      # Live interface probe. Only BROKEN/MALFORMED exit non-zero: OFFLINE
+      # (command ledger says the layout is unverified) and NETWORK (public
+      # endpoints throttling us) are reported, not treated as failures.
+      - name: Probe live interfaces
+        run: python scripts/verify_interfaces.py --mode core --out reports/interface_matrix.json
       - name: Upload live report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: live-smoke-report-${{ github.run_number }}
           path: reports/live-smoke.xml
+      - name: Upload live interface matrix
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: live-interface-matrix-${{ github.run_number }}
+          path: reports/interface_matrix.json
+          if-no-files-found: warn
+          retention-days: 14
           if-no-files-found: warn
           retention-days: 14

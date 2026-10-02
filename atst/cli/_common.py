@@ -59,6 +59,48 @@ def _pct(q: Mapping[str, Any]) -> float:
     return 0.0
 
 
+#: K 线周期白名单。适配器（东财/新浪/腾讯）只认 ``1min``/``5min``/.../``day``
+#: 这种带单位串，裸数字（``--period 5``）在链路深处会变成
+#: ``ValueError: 未知 K 线周期 '5'``——一层没接住的裸异常，到调用方只剩一句
+#: ``E9000 未处理异常``。于是周期口径在**入口**收一次：裸数字补上 ``min``，
+#: 真正不认识的在入口就报清楚可选值，不再让裸 ValueError 往下游穿。
+KLINE_PERIODS: tuple[str, ...] = ("1min", "5min", "15min", "30min", "60min", "day")
+_KLINE_PERIOD_ALIASES: dict[str, str] = {
+    "1": "1min",
+    "5": "5min",
+    "15": "15min",
+    "30": "30min",
+    "60": "60min",
+    "d": "day",
+    "1d": "day",
+    "1day": "day",
+}
+
+
+def normalize_period(value: str) -> str:
+    """把 CLI 传进来的周期归一化成适配器的口径；不认识的原样返回。
+
+    ``"5"`` → ``"5min"``、``"d"``/``"1d"``/``"1day"`` → ``"day"``；
+    ``"quarterly"`` 这类未知值原样返回，由调用方自己报错——这里不替调用方
+    决定「该不该放行」。
+    """
+    token = str(value).strip()
+    if token in KLINE_PERIODS:
+        return token
+    return _KLINE_PERIOD_ALIASES.get(token.lower(), token)
+
+
+def validate_period(value: str) -> str:
+    """归一化后校验：不在白名单里就抛 :class:`ValueError`（调用方负责打印）。"""
+    normalized = normalize_period(value)
+    if normalized not in KLINE_PERIODS:
+        raise ValueError(
+            f"未知 K 线周期 {value!r}；可选: {'/'.join(KLINE_PERIODS)}"
+            "（裸数字 1/5/15/30/60 就是对应分钟周期）"
+        )
+    return normalized
+
+
 def _resolve_hosts(args: argparse.Namespace):
     from ..transport.hosts import parse_server
 

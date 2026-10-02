@@ -171,15 +171,23 @@ def test_make_gates_and_ci_jobs_are_the_same_check_set() -> None:
 
 
 def test_the_documented_gate_denominators_are_computed_not_copied() -> None:
-    """三个分母必须能由 `tests/support/gate_inventory.py` 现算：11 / 11 / 17。
+    """门禁的三个分母必须能由 `tests/support/gate_inventory.py` 现算，且三处必须同步。
 
     这条看着像在钉数字，实际钉的是"数字有没有唯一算处"：矩阵加一格、CI 加一个作业，
     这里报的是现算值，改的人顺势把口径一起改；而手抄的"17"没有任何地方能重算它，
     所以它不配当分母——V19 §0 从此只把 runner 步数称作"本轮 runner 的 N 步"。
+
+    注意这里**不**写死一个常数：门禁链加一次（本步的 interface-probe 就是第 12 个）时
+    "三处仍然相等"才是要守住的性质，抄一个 12 只是把下一次要改的数换个地方抄。下限
+    ``>= 10`` 是防三处一起塌成空转的金丝雀，不是分母。
     """
-    assert len(gates_targets()) == len(ci_job_keys()) == len(GATES_TO_CI_JOBS) == 11, (
-        f"发布口径的三处计数不再相等：gates {len(gates_targets())}、"
-        f"CI 作业 {len(ci_job_keys())}、映射表 {len(GATES_TO_CI_JOBS)}"
+    gates_n, ci_n, map_n = len(gates_targets()), len(ci_job_keys()), len(GATES_TO_CI_JOBS)
+    assert gates_n == ci_n == map_n >= 10, (
+        f"发布口径的三处计数不再同步：gates {gates_n}、CI 作业 {ci_n}、映射表 {map_n}"
     )
     assert ci_test_matrix_cells() == 7, f"test 矩阵现算为 {ci_test_matrix_cells()} 格"
-    assert ci_check_cells() == 17, f"CI check 格现算为 {ci_check_cells()}"
+    # check 格 = 作业数 - 1（test 按矩阵展开算一格）+ 矩阵格。这一行是恒等式而不是另一个
+    # 抄来的分母：作业加一个、矩阵改一格，这里跟着现算值自己长，不再有人要手改一个 17。
+    assert ci_check_cells() == ci_test_matrix_cells() + max(len(ci_job_keys()) - 1, 0), (
+        f"CI check 格与它的两个分量对不上：现算 {ci_check_cells()}"
+    )

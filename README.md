@@ -508,7 +508,7 @@ atst hosts --hosts-file extra_hosts.json audit
 
 ```bash
 pytest tests/                                   # 全量测试（离线，无网络）
-make gates                                      # 11 步确定性门禁：lint+format→mypy→全量→bridges→golden→spec→对抗→可达性→originality→benchmark→docs
+make gates                                      # 12 步确定性门禁：lint+format→mypy→全量→bridges→golden→spec→对抗→可达性→originality→benchmark→interface-probe→docs
 python -m atst.tools.golden_audit --gate       # Golden L1 真实样本门禁（530 payload）
 python -m pytest tests/adversarial -q           # 对抗矩阵（9 payload × 85 命令，逃逸=0）
 python scripts/audit_reachability.py --strict   # 可达性门禁（孤儿=0）
@@ -516,7 +516,7 @@ python scripts/contract_audit.py --ci           # Typed 契约↔注册表↔Dom
 python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproject fail_under=77）
 ```
 
-- CI：11 jobs；测试矩阵 Ubuntu 3.10–3.14 加 Windows 3.11/3.12；周一 08:00 UTC 全量确定性门禁，
+- CI：12 jobs；测试矩阵 Ubuntu 3.10–3.14 加 Windows 3.11/3.12；周一 08:00 UTC 全量确定性门禁，
   周三 09:00 UTC 定期 `host-audit`
 - 架构守卫：`tests/architecture/`（唯一内核、零缓存、无聚合降级路由、根级命名空间白名单、
   已删层不可复活）+ `tests/provider_isolation/`（Provider 隔离与溯源）

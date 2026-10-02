@@ -7,7 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-暂无。
+### Added
+
+- **接口有效性探针** `scripts/verify_interfaces.py`：逐条真调 `python -m atst` 各入口，
+  按 **OK / EMPTY / OFFLINE / NETWORK / BROKEN / MALFORMED** 六档出有效性矩阵，
+  `--mode all|argparse|core` 三档。关键是把「命令账本登记 offline（布局未锁定）」与
+  「环境级网络失败」和「接口自爆/返回体坏」分开——只有 BROKEN/MALFORMED 让退出码为 1，
+  否则东财 push2 抖动、本地出口不通都会被误报成代码缺陷。
+  解析面（`--mode argparse`）纯离线，进确定性门禁；调用面（core）进 `live-smoke.yml`。
+- **TDX 每日全量历史同步示例** `scripts/sync_daily_history.py`：每天把 A 股日线增量/全量
+  同步到本地目录（每支一个 parquet + `state.json` 断点），原子改名落地、按日期键去重合并、
+  OHLC 口径自检不达标就不落盘、限速退避。配套
+  `docs/cookbook/08_daily_history_sync.md`。
+- `ops/smoke_ashare.py` / `ops/round3_http_e2e.py`：从临时目录回收的两份有价值冒烟脚本。
+
+### Fixed
+
+- **CLI K 线周期入口收口**：`--period 5` 这类裸数字此前一路传到东财适配器才炸成
+  `ValueError: 未知 K 线周期 '5'`，再被包成 `E9000` 未处理异常。`atst/cli/_common.py`
+  新增 `normalize_period()` / `validate_period()`（`KLINE_PERIODS` 六档 + 裸数字别名表），
+  `minute-klines` 入口先校验再发请求，未知周期直接给出「可选：1min/5min/…/day」的可行动错误。
+
+### Changed
+
+- **CI 新增确定性作业 `interface-surface`**（argparse 全表面 `--help` 扫描，40/40），
+  `live-smoke.yml` 加实时接口矩阵探针并把两份报告都留下。
+  发布口径三处计数随之 11 → 12（`make gates` 目标 ↔ `ci.yml` 作业 ↔ 映射表）；
+  顺带把 `test_the_documented_gate_denominators_are_computed_not_copied` 里写死的两个数
+  换掉：三处改为「彼此相等 + 下限金丝雀」，check 格改为与它的两个现算分量相等的恒等式。
+
+### Removed
+
+- 归档区 6 份零引用的历史草稿（4 份 `docs/archive/ATST-*` 发布架构稿、
+  `API_CONVERGENCE_PLAN_V1.md`、`TSTDX_OPTIMIZATION_REFACTOR_PLAN_V1.md`）与
+  `.test_tmp/`（21MB 测试捕获垃圾）。删前按「代码/文档引用计数」逐份核对，
+  `scripts/check_docs_links.py` 删后 101 文件仍全通。
 
 ## [1.2.2] - 2026-10-02
 
