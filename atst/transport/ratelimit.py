@@ -104,9 +104,23 @@ def _validated_rates(rates: Mapping[str, Any] | None) -> dict[str, float]:
 
 
 def session_state(now: _dt.datetime | None = None) -> str:
-    """返回中国 A 股当前交易状态（仅按本地时间段，不判断节假日）。"""
+    """返回中国 A 股当前交易状态（按**市场时区**判断，不判断节假日）。
 
-    now = now or _dt.datetime.now()
+    ``now`` 省略时取**市场时区**（Asia/Shanghai）的当前时间，而不是机器本地
+    时间：交易时段是市场事实，同一时刻在 UTC 机器与 UTC+8 机器上必须判出
+    同一个状态，否则限流分档会随部署环境漂移（CI 在 UTC 上会把开盘时段
+    判成 CLOSED）。
+    """
+
+    if now is None:
+        from ..domain.calendar import market_now
+
+        now = market_now()
+    elif now.tzinfo is not None:
+        #: 传进来的 aware 时间统一换算到市场时区，避免调用方各写各的时区。
+        from ..domain.calendar import to_market_tz
+
+        now = to_market_tz(now).replace(tzinfo=None)
     if now.weekday() >= 5:
         return SessionState.CLOSED
     t = now.time()

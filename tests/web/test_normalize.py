@@ -19,6 +19,7 @@ from atst.web.normalize import (
     SINA,
     TENCENT,
     VolumeNormalizer,
+    market_timestamp,
     normalize_amount,
     normalize_bar,
     normalize_price,
@@ -161,3 +162,41 @@ class TestNormalize:
         raw = {"volume": 100, "amount": 200, "custom_field": "hello"}
         result = normalize_quote(SINA, raw)
         assert result["custom_field"] == "hello"
+
+
+class TestMarketTimestamp:
+    """市场时区渲染（v1.2.1 CI 红的一手根因）。
+
+    时间戳必须按 ``Asia/Shanghai`` 渲染，**与运行机器的本地时区无关**——
+    早先两个解析器用 ``time.localtime()``，同一份 golden 样本在本地（UTC+8）
+    通过、在 CI（UTC）偏 8 小时，测试与数据双双漂移。
+    """
+
+    def test_renders_market_localtime(self):
+        # 取自 tests/golden/v6/cninfo_announcements.json 的真机样本：
+        # 1790697600 == 2026-09-29T16:00:00Z == 2026-09-30 00:00:00 +08:00
+        assert market_timestamp(1_790_697_600, unit="s") == "2026-09-30 00:00:00"
+        assert market_timestamp(1_790_697_600_000, unit="ms") == "2026-09-30 00:00:00"
+
+    def test_result_is_independent_of_machine_timezone(self, monkeypatch):
+        import os
+        import time as _time
+
+        original = os.environ.get("TZ")
+        seen = set()
+        for tz in ("UTC", "Asia/Shanghai", "America/New_York", "Pacific/Kiritimati"):
+            monkeypatch.setenv("TZ", tz)
+            if hasattr(_time, "tzset"):
+                _time.tzset()
+            seen.add(market_timestamp(1_790_697_600, unit="s"))
+        monkeypatch.setenv("TZ", original or "UTC")
+        if hasattr(_time, "tzset"):
+            _time.tzset()
+        assert seen == {"2026-09-30 00:00:00"}, f"渲染随机器时区漂移：{seen}"
+
+    def test_rejects_non_numeric_and_non_positive(self):
+        assert market_timestamp(None) == ""
+        assert market_timestamp("2026-09-30") == ""
+        assert market_timestamp(True) == ""  # bool 是 int 的子类，显式拒绝
+        assert market_timestamp(0) == ""
+        assert market_timestamp(-1) == ""

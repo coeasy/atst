@@ -67,3 +67,40 @@ def test_session_limiter_over_burst_tokens_raise():
     )
     with pytest.raises(ValueError):
         limiter.acquire(tokens=2.0)  # burst=1 < 2
+
+
+class TestSessionStateUsesMarketTimezone:
+    """交易时段必须按**市场时区**判断，不看机器本地时区（v1.2.1 CI 红的一手根因）。
+
+    同一时刻在 UTC 机器与 UTC+8 机器上必须判出同一个交易状态——否则限流分档
+    会随部署环境漂移（CI 在 UTC 上会把北京时间开盘时段判成休市）。
+    """
+
+    def test_aware_utc_input_is_converted_to_market_time(self):
+        from datetime import datetime, timezone
+
+        from atst.transport.ratelimit import session_state
+
+        # 2026-10-02（周五）01:45 UTC == 09:45 +08:00 → 集合竞价后的连续交易
+        utc_morning = datetime(2026, 10, 2, 1, 45, tzinfo=timezone.utc)
+        naive_morning = datetime(2026, 10, 2, 9, 45)
+        assert session_state(utc_morning) == session_state(naive_morning)
+        assert session_state(utc_morning) == SessionState.CONTINUOUS
+
+    def test_utc_evening_maps_to_after_close(self):
+        from datetime import datetime, timezone
+
+        from atst.transport.ratelimit import session_state
+
+        # 16:00 UTC == 24:00 +08:00 → 次日休市
+        assert session_state(datetime(2026, 10, 2, 16, 0, tzinfo=timezone.utc)) == (
+            SessionState.CLOSED
+        )
+
+    def test_default_now_uses_market_timezone(self):
+        """不传 now 时取市场时区的现在（不是机器本地 now）。"""
+        from atst.domain.calendar import market_now
+        from atst.transport.ratelimit import session_state
+
+        assert isinstance(session_state(), str)
+        assert market_now().tzinfo is None

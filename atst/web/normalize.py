@@ -39,6 +39,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, TypeVar
 
+#: A 股/港股时间戳一律按市场时区渲染。**单一事实源在** :mod:`atst.domain.calendar`
+#: （§23 交易日历与时区同属一处），这里只做转出别名：解析器历史上各自写
+#: ``time.localtime()``，导致同一份 golden 样本在 CI（UTC）与本地（UTC+8）渲染出
+#: 差 8 小时的字符串——时区是市场事实，不该由机器本地时区决定。
+from ..domain.calendar import MARKET_TZ_NAME, market_timestamp
 from .sources import (
     BAIDU,
     BOC,
@@ -91,7 +96,10 @@ __all__ = [
     "normalize_price",
     "normalize_quote",
     "normalize_bar",
+    "market_timestamp",
+    "MARKET_TZ_NAME",
 ]
+
 
 # --------------------------------------------------------------------------- #
 # Registry

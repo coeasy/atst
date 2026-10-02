@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.2.2] - 2026-10-02
+
+修复 v1.2.1 发布流水线失败的根因：代码把市场时刻绑在了运行机器的本地时区上。
+
+### Fixed
+
+- **时间戳渲染改按市场时区**（v1.2.1 CI 门禁红的根因）：`cninfo` / `wallstreet` 两个
+  解析器用 `time.localtime()` 渲染 `publish_time`，同一份 golden 样本在本地（UTC+8）
+  通过、在 CI（UTC）偏 8 小时，`tests/web/test_v6_new_sources.py` 两红并让整条
+  `wheels.yml` 门禁 job 失败（`2 failed, 4304 passed`）。这不是测试脆弱而是数据缺陷：
+  A 股发布时刻是市场事实，部署在非中国时区的用户会拿到错 8 小时的值。
+  现统一走新增的 `atst.domain.calendar.market_timestamp()`
+  （`MARKET_TZ_NAME = "Asia/Shanghai"`，缺 tzdata 回退固定 +08:00）；
+  `atst/web/normalize.py` 只做转出别名，单一事实源在 §23 日历与时区同属一处。
+- **交易时段判断同样改为市场时区**：`transport.ratelimit.session_state()` 此前用
+  naive `datetime.now()`，CI（UTC）会把北京时间开盘时段判成 `CLOSED`、限流分档
+  随部署环境漂移；现默认取 `market_now()`，传入 aware 时间则统一换算到市场时区。
+
+### Added
+
+- 时区工具（`atst/domain/calendar.py`）：`MARKET_TZ_NAME` / `market_tz()` /
+  `to_market_tz()` / `market_now()` / `market_timestamp(value, unit=...)`。
+  `market_tz()` 惰性构造 `ZoneInfo`（Windows 纯 pip 缺 tzdata 时回退固定 +08:00，
+  不在模块顶层建以免炸 import）。
+- 回归测试：`tests/web/test_normalize.py::TestMarketTimestamp`（真机样本 epoch 渲染
+  + 四时区一致性 + 非数值/`bool` 拒绝）与
+  `tests/transport/test_ratelimit.py::TestSessionStateUsesMarketTimezone`
+  （aware UTC 与 naive 本地输入判出同一交易状态）。
+
+### Verification
+
+- `TZ=UTC`（模拟 CI）与 `TZ=Asia/Shanghai`（本地）双环境全量 pytest 一致通过；
+  `ruff check` / `ruff format --check` / `mypy` 全绿。
+
 ## [1.2.1] - 2026-10-02
 
 本地安装实测（干净 venv 装 wheel + 全量 194 能力逐个真实调用）暴露问题的收口发布。

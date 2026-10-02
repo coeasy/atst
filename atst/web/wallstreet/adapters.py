@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import re
-import time
 from typing import Any
 
 from ..base import BaseWebSource
@@ -87,6 +86,7 @@ def _strip_tags(html: str) -> str:
 
 
 def _ts_to_iso(ts: Any) -> str:
-    if not isinstance(ts, (int, float)) or ts <= 0:
-        return ""
-    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+    """秒级时间戳 → 市场本地时间串（时区固定 Asia/Shanghai，不跟机器走）。"""
+    from ..normalize import market_timestamp
+
+    return market_timestamp(ts, unit="s")

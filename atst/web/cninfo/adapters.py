@@ -24,7 +24,6 @@
 from __future__ import annotations
 
 import json
-import time
 import urllib.parse
 from collections.abc import Mapping
 from typing import Any
@@ -327,6 +326,7 @@ def _strip_prefix(symbol: str) -> str:
 
 
 def _ms_to_iso(ms: Any) -> str:
-    if not isinstance(ms, (int, float)) or ms <= 0:
-        return ""
-    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ms / 1000))
+    """毫秒时间戳 → 市场本地时间串（时区固定 Asia/Shanghai，不跟机器走）。"""
+    from ..normalize import market_timestamp
+
+    return market_timestamp(ms, unit="ms")

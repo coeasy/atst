@@ -27,7 +27,8 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Iterable
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from typing import Any
 
 from ..diagnostics import WarningCode, record_warning
 from ..errors import CalendarError
@@ -44,7 +45,71 @@ __all__ = [
     "next_trading_day",
     "prev_trading_day",
     "trading_days_between",
+    "MARKET_TZ_NAME",
+    "market_tz",
+    "to_market_tz",
+    "market_now",
+    "market_timestamp",
 ]
+
+#: A 股 / 港股的市场时区名。**凡是"把时刻当市场事实"的地方都必须用它**，
+#: 不能用 ``datetime.now()`` / ``time.localtime()``——那让同一时刻在 UTC 机器
+#: 与 UTC+8 机器上判出不同的交易时段与时间戳（CI 上 golden 样本偏 8 小时、
+#: 开盘时段被判成休市，都是这个坑）。
+MARKET_TZ_NAME = "Asia/Shanghai"
+
+
+def market_tz() -> Any:
+    """返回市场时区（``ZoneInfo``；缺 tzdata 时回退固定 +08:00）。
+
+    惰性构造：Windows 纯 pip 环境默认缺 tzdata，模块顶层建 ``ZoneInfo``
+    会把 import 炸掉（同 :func:`atst.tools.capture._shanghai_tz` 的教训）。
+    中国自 1991 年起全境统一东八区且无夏令时，固定偏移兜底语义等价。
+    """
+    from datetime import timezone
+
+    try:
+        from zoneinfo import ZoneInfo
+
+        return ZoneInfo(MARKET_TZ_NAME)
+    except Exception:  # noqa: BLE001 —— ImportError / ZoneInfoNotFoundError
+        return timezone(timedelta(hours=8))
+
+
+def to_market_tz(moment: datetime) -> datetime:
+    """把任意时刻换算到市场时区（naive 视为已是市场本地时间，原样返回）。"""
+    if moment.tzinfo is None:
+        return moment
+    return moment.astimezone(market_tz())
+
+
+def market_now() -> datetime:
+    """市场时区的当前时间（naive，直接可与交易时段表比较）。"""
+    return datetime.now(tz=market_tz()).replace(tzinfo=None)
+
+
+def market_timestamp(value: Any, *, unit: str = "s") -> str:
+    """把上游时间戳渲染成市场本地时间字符串（``%Y-%m-%d %H:%M:%S``）。
+
+    Parameters
+    ----------
+    value:
+        数值时间戳；非数值（含 ``bool``）/ 非正数返回空串——调用方拿不到时间
+        就诚实留空，而不是把原始毫秒丢出去。
+    unit:
+        ``"s"``（秒）或 ``"ms"``（毫秒）。
+
+    Notes
+    -----
+    结果**只取决于输入值**，与运行机器的本地时区无关。这正是 golden 样本能在
+    CI（UTC）与本地（UTC+8）产出同一字符串的唯一前提。
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return ""
+    seconds = float(value) / 1000.0 if unit == "ms" else float(value)
+    if seconds <= 0:
+        return ""
+    return datetime.fromtimestamp(seconds, tz=market_tz()).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class TradingSession:
