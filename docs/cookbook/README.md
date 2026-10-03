@@ -18,7 +18,7 @@
 | # | 食谱 | 场景 |
 |---|---|---|
 | 07 | [单内核实战](07_single_kernel_queries.md) | 溯源审计 / 批量三态 / 显式跨源 / Typed Query / Domain Record / 假执行体测试 |
-| 08 | [每天全量同步历史日线](08_daily_history_sync.md) | 盘后增量续拉 / 本地 parquet 落地 |
+| 08 | [每天全量同步历史日线](08_daily_history_sync.md) | 零参数启动 / 增量续拉 / 全市场代码表自探 / 本地 parquet 落地 |
 
 ## 规划中（v0.7.0）
 

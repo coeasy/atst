@@ -1,4 +1,4 @@
-.PHONY: help install pre-commit test test-live test-unit test-integration test-bridges test-golden test-slow lint lint-fix type-check clean gates audit-originality audit-golden audit-spec audit-reachability audit-adversarial audit-docs benchmark-smoke interface-probe host-audit build publish docker-build docker-run
+.PHONY: help install pre-commit test test-live test-unit test-integration test-bridges test-golden test-slow lint lint-fix type-check clean gates sync audit-originality audit-golden audit-spec audit-reachability audit-adversarial audit-docs benchmark-smoke interface-probe host-audit build publish docker-build docker-run
 
 PYTHON ?= python
 PIP = $(PYTHON) -m pip
@@ -99,6 +99,12 @@ host-audit:
 # live-smoke.yml, which tolerates a flaky network but not a broken envelope.
 interface-probe:
 	$(PYTHON) scripts/verify_interfaces.py --mode argparse
+
+# Local daily cache sync. Deliberately NOT part of `gates`: it opens sockets to
+# the TDX hosts and its exit code means "reached the host", not "library sane".
+# `--scan` is the separate one-shot path that derivates the code table first.
+sync:
+	$(PYTHON) scripts/sync_daily_history.py
 
 # Deterministic PR merge gates only. Network probes remain separate by design.
 # This mirrors the blocking CI jobs without weakening thresholds or strict flags.
