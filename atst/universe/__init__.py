@@ -1,3 +1,6 @@
+# Copyright (c) 2026 atst contributors
+# Licensed under the MIT License
+
 """标的清单（universe）：按类别取"全市场有哪些标的"。
 
 这是 ``0x044D SECURITY_LIST``（``atst list``）死掉之后的**替代路径**——

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 atst contributors
+# Licensed under the MIT License
+
 """段表 → 候选代码的枚举。
 
 段是"代码前缀"，``sh600`` 段代表 ``sh600000`` … ``sh600999`` 这 1000 个候选。

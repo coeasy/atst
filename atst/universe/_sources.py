@@ -1,3 +1,6 @@
+# Copyright (c) 2026 atst contributors
+# Licensed under the MIT License
+
 """标的清单的三个取数源：磁盘代码表 / 新浪节点 / tdx 段表探测。
 
 三个源都返回 ``list[Security]``，**空列表代表"这一源没拿下、继续降级"**——

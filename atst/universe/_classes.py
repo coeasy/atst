@@ -1,3 +1,6 @@
+# Copyright (c) 2026 atst contributors
+# Licensed under the MIT License
+
 """标的类别表 —— ``atst.universe`` 的单一事实源。
 
 这一层回答三个问题：
