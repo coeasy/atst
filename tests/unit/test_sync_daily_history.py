@@ -357,6 +357,91 @@ def test_scan_enumerates_every_code_in_a_segment(sync: ModuleType) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 开场白：规模、预算、以及"你其实只跑了一点点"的提醒
+# ---------------------------------------------------------------------------
+
+
+def test_bar_budget_counts_requests_by_page_not_by_bar(sync: ModuleType) -> None:
+    """成本项是请求次数：每只全历史要 8000/800 = 10 页，不是 8000 次请求。"""
+    bars_full, requests_full = sync._bar_budget(28, full=True, lookback=320)
+    assert (bars_full, requests_full) == (28 * sync.MAX_WINDOW, 28 * 10)
+
+    bars_inc, requests_inc = sync._bar_budget(8385, full=False, lookback=320)
+    assert bars_inc == 8385 * sync.BASELINE_WINDOW
+    assert requests_inc == 8385  # 单页就够，一次请求一支
+
+    #: 全市场铺底 → 全市场 --full，请求数涨一个数量级（8385 → 83850），
+    #: 这个落差得让用户在开跑前就看到，而不是跑完才发现。
+    _, wide_full = sync._bar_budget(8385, full=True, lookback=320)
+    assert wide_full == 8385 * 10
+    assert wide_full > requests_inc * 9
+
+
+def test_plan_lines_warns_when_the_builtin_sample_universe_is_used(sync: ModuleType) -> None:
+    """回落到内置样例宇宙必须点名「--full 不管拉多少只」，并给下一步命令。"""
+    targets, source = sync._all_targets(), f"内置默认宇宙（{len(sync._all_targets())} 只）"
+    lines = sync._plan_lines(
+        targets, source, Path("data/kline/day"), full=True, lookback=320, universe_size=28
+    )
+    text = "\n".join(lines)
+    assert "内置样例宇宙" in text
+    assert "--full`` 只管每只拉多深，不管拉多少只" in text
+    # 下一步命令要带上 root（原样拼回去，别让用户手打），且用正斜杠：命令行里
+    # 反斜杠是转义符。只盯提示段——首行那个 root= 是按本机写法原样回显 Path 的。
+    hint = text.split("注意：")[1]
+    assert "--root data/kline/day --scan" in hint
+    assert hint.rstrip().endswith("--root data/kline/day")
+    # 两步命令都得拼上同一个 root：让用户直接整段复制，别自己手打。
+    assert hint.count("--root data/kline/day") == 2
+    assert "\\" not in hint
+    # 预算行要落在开跑前，不是事后才补。
+    assert any("预算：" in line for line in lines[:2])
+
+
+def test_plan_lines_does_not_overclaim_when_limit_trimmed(sync: ModuleType) -> None:
+    """``--limit 3`` 之后开场白不能跟着说"内置样例宇宙（3 只）"。"""
+    targets, source = sync._all_targets(), "内置默认宇宙（28 只）"
+    lines = sync._plan_lines(
+        targets[:3], source, Path("data"), full=False, lookback=320, universe_size=28
+    )
+    assert "内置样例宇宙（28 只）" in "\n".join(lines)
+    assert "内置样例宇宙（3 只）" not in "\n".join(lines)
+
+
+def test_plan_lines_keeps_quiet_for_real_universes(sync: ModuleType) -> None:
+    """真宇宙（清单 / 缓存表）不该被塞一句"你只跑了样例"的噪音。"""
+    for source in ("清单 data/universe.csv（8385 只）", "缓存代码表 data/universe.csv（8385 只）"):
+        lines = sync._plan_lines(
+            sync._all_targets(), source, Path("data"), full=False, lookback=320, universe_size=8385
+        )
+        assert not any("内置样例宇宙" in line for line in lines)
+
+
+def test_plan_lines_flags_market_wide_full_runs(sync: ModuleType) -> None:
+    """全市场 + --full 是把代价摊开讲的场合，28 只样例不该触发。"""
+    targets = sync._all_targets()
+    quiet = sync._plan_lines(
+        targets, "内置默认宇宙（28 只）", Path("data"), full=True, lookback=320, universe_size=28
+    )
+    assert not any("提醒：" in line for line in quiet)
+
+    #: 护栏看的是**宇宙规模**，所以这里得真的喂进一个全市场规模的列表——
+    #: 光把 universe_size 写成 8385 而 targets 仍只有 28 只，护栏数的是 len(targets)。
+    wide_targets = targets * (sync.FULL_WIDE_TARGETS // len(targets) + 1)
+    wide = sync._plan_lines(
+        wide_targets,
+        "清单 data/u.csv（8385 只）",
+        Path("data"),
+        full=True,
+        lookback=320,
+        universe_size=len(wide_targets),
+    )
+    assert len(wide_targets) > sync.FULL_WIDE_TARGETS
+    assert any(line.startswith("提醒：") for line in wide)
+    assert any("次主站请求" in line for line in wide)
+
+
+# ---------------------------------------------------------------------------
 # 默认宇宙
 # ---------------------------------------------------------------------------
 

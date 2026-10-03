@@ -73,6 +73,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import random
 import re
@@ -217,6 +218,14 @@ RESUME_OVERLAP = 30
 #: 首次铺底多少根（没有断点时）。320 根 ≈ 1.5 年日线，一天一根的话够用大半年；
 #: 要完整历史就跑 ``--full``。
 BASELINE_WINDOW = 320
+
+#: 服务端单页返回多少根。``count`` 超过它客户端自动翻页，所以"这一轮要打多少
+#: 次请求"是按页数算的，不是按根数——全市场 ``--full`` 的代价全藏在页数里。
+PAGE_BARS = 800
+
+#: 超过这个只数还上 ``--full``，就在开跑前把代价摊开讲一句。铺底通常没必要
+#: 全历史：先按增量铺一层、再对缺历史的个别标的补，比一次莽 8 万次请求温和。
+FULL_WIDE_TARGETS = 500
 
 BAR_KEYS = ("datetime", "open", "high", "low", "close", "volume", "amount")
 
@@ -588,6 +597,67 @@ def _resume_bar_count(
     if not last:
         return max(lookback, BASELINE_WINDOW)
     return lookback + RESUME_OVERLAP
+
+
+def _bar_budget(n_targets: int, full: bool, lookback: int) -> tuple[int, int]:
+    """这一轮要拿多少根、打多少次主站请求，返回 ``(根数, 请求数)``。
+
+    请求数才是成本项：``bars`` 没有翻页游标，``count`` 超过 :data:`PAGE_BARS`
+    客户端就自己翻页。28 只 ``--full`` 是 280 次请求（几秒），8385 只 ``--full``
+    是 8 万+ 次——量级差三个数，光看"拉多少根"是感觉不出来的。
+    """
+    per_symbol = MAX_WINDOW if full else max(lookback, BASELINE_WINDOW)
+    pages = math.ceil(per_symbol / PAGE_BARS)
+    return n_targets * per_symbol, n_targets * pages
+
+
+def _plan_lines(
+    targets: Sequence[Target],
+    source: str,
+    root: Path,
+    full: bool,
+    lookback: int,
+    universe_size: int | None = None,
+) -> list[str]:
+    """开跑前要打印的开场白：规模、预算、以及"你现在其实只跑了一点点"的提醒。
+
+    把提示摊成几行而不是塞进一行摘要里，是因为它回答的正是最容易踩的那一个问题：
+    用户传了 ``--full`` 就以为"全量"了，结果跑出来还是内置那 28 只样例。
+    """
+    by_kind: dict[str, int] = {}
+    for target in targets:
+        by_kind[target.kind] = by_kind.get(target.kind, 0) + 1
+    kinds = sum(1 for t in targets if t.index)
+    mode = "全历史" if full else f"最近 {lookback} 根 + 合并"
+    breakdown = " / ".join(f"{k} {v}" for k, v in sorted(by_kind.items()))
+    bars, requests = _bar_budget(len(targets), full, lookback)
+    lines = [
+        f"universe：{source}；root={root}；模式={mode}；{breakdown}；指数位 {kinds} 只",
+        f"预算：{bars} 根 ≈ {requests} 次主站请求（单页 {PAGE_BARS} 根，"
+        f"每只 {math.ceil((MAX_WINDOW if full else max(lookback, BASELINE_WINDOW)) / PAGE_BARS)} 页）",
+    ]
+    where = root.as_posix()
+    #: 提示里的只数要用**宇宙原始规模**：``--limit N`` 是在这一步之后才截的，
+    #: 拿截断后的数字说"内置样例宇宙（3 只）"等于把用户骗进同一个坑。
+    size = len(targets) if universe_size is None else universe_size
+    if source.startswith("内置默认宇宙"):
+        lines += [
+            "",
+            f"注意：这一轮是内置样例宇宙（{size} 只），不是全市场——"
+            "``--full`` 只管每只拉多深，不管拉多少只。全市场要先落一张代码表：",
+            "  # 1) 探测全市场代码表（首轮约 18 分钟）→ <root>/universe.csv",
+            f"  python scripts/sync_daily_history.py --root {where} --scan",
+            "  # 2) 用它增量同步（之后每轮只要几秒）",
+            f"  python scripts/sync_daily_history.py --root {where}",
+        ]
+    elif full and len(targets) > FULL_WIDE_TARGETS:
+        lines += [
+            "",
+            f"提醒：{len(targets)} 只 × 全历史 ≈ {requests} 次主站请求，"
+            "铺底通常不必一上来就 ``--full``；先按默认增量铺一层，"
+            "再对缺历史的标的单独补，比一次莽这么多次更不容易撞主站的软限流。",
+        ]
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -1028,15 +1098,17 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    universe_size = len(targets)
     if args.limit:
         targets = targets[: args.limit]
-    by_kind: dict[str, int] = {}
-    for target in targets:
-        by_kind[target.kind] = by_kind.get(target.kind, 0) + 1
-    kinds = sum(1 for t in targets if t.index)
-    mode = "全历史" if args.full else f"最近 {args.lookback} 根 + 合并"
-    breakdown = " / ".join(f"{k} {v}" for k, v in sorted(by_kind.items()))
-    print(f"universe：{source}；root={root}；模式={mode}；{breakdown}；指数位 {kinds} 只")
+        # 截断必须自己说一句，否则开场白会自相矛盾：首行报"清单 600 只"、
+        # 预算行却按剩下那 1 只算。用户会以为脚本把清单数算错了。
+        print(
+            f"--limit：宇宙共 {universe_size} 只，这一轮只跑前 {len(targets)} 只"
+            "（下面的预算按这个数算）"
+        )
+    for line in _plan_lines(targets, source, root, args.full, args.lookback, universe_size):
+        print(line)
 
     gap = _effective_gap(args.gap_sleep, len(targets))
     if gap != args.gap_sleep:
