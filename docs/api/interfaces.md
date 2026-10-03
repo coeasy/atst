@@ -134,7 +134,7 @@ kind 显式抛 `ValueError`（消息里带合法值全集），既不做大小�
 ### 交易面（TradeClient，只有库面且仅模拟）
 
 `atst.trade` 是 0x1000 交易协议的独立面：帧编解码、密码混淆、查询类别词表和一台模拟券商
-都在库里，但**只有库面**——CLI 的 31 支子命令、HTTP 的 10 路由、WS 的 13 方法、MCP 的 9 工具
+都在库里，但**只有库面**——CLI 的 32 支子命令、HTTP 的 12 路由、WS 的 13 方法、MCP 的 9 工具
 都不挂它。这不是漏接线，是红线：本库不接真实券商，`SocketTransport.connect()` 一律抛
 `TradingUnavailable` `[E4030]`。
 
@@ -647,7 +647,7 @@ MCP 的 `count` 上限（2000）比 HTTP（10000）小，是给 LLM 上下文预
 `tests/architecture/test_wire_numeric_domain.py`（8 项：AST 禁自己转换、MCP 按 schema 边界拒并含
 "改 schema 数字断言跟着翻"的正控、HTTP 越界在 handler 前 422、内核整数格全表、分页上限四面同口径）。
 
-### HTTP REST 网关（10 路由）
+### HTTP REST 网关（12 路由）
 
 ```python
 from atst.integration.runtime_http import create_runtime_app
@@ -665,9 +665,11 @@ app = create_runtime_app()          # FastAPI 实例，交由 uvicorn 承载
 | `/v13/security/list` | GET |
 | `/v13/query/{capability}` | POST（任意 capability 的通用入口）|
 | `/v13/capabilities` | GET |
+| `/v13/universe` | GET（标的类别表，非 capability：见 §「按类别取标的清单」）|
+| `/v13/universe/{kind}` | GET（某一类或 `all` 的全部标的；`dry_run=true` 只报代价）|
 | `/v13/runtime/health` | GET |
 
-标题里的"10 路由"只数上表这 10 支业务端点；`create_runtime_app()` 返回的 FastAPI 实例还会自带
+标题里的"12 路由"只数上表这 12 支业务端点；`create_runtime_app()` 返回的 FastAPI 实例还会自带
 `/openapi.json`、`/docs`、`/docs/oauth2-redirect`、`/redoc` 四支文档页与三份异常处理器，它们不发
 行情、也不受上面的未声明字段口径管辖。
 
@@ -799,7 +801,75 @@ Extras」那一节里被删掉的 `mcp` 假 extra）。它在 stdin/stdout 上�
 `bogus/method` 得 `-32601`，而**不带 id 的通知不配得到任何回应**——这条最容易写反：把初始化通知当
 请求发（带 id）就会真的收到 `-32601`，那不是缺陷。
 
-### CLI（31 子命令 / 36 个叶子命令）
+### 按类别取标的清单（`atst.universe` / CLI / HTTP）
+
+"全市场有哪些标的"是**工具方法**，不是 capability：capability 表走
+`Client → QuerySpec → QueryPlan → runtime` 那条行情读取链路，登记一条要动整套能力口径
+（194 个能力的分母、provider 侧显式声明、`CapabilityAuditError` 对账），而"有哪些标的"
+不发行情请求也不走那条链路，所以它只做编排，见 `atst/universe/` 的模块 docstring。
+
+**三个源按序降级**（`source=auto` 的默认路径），先拿到哪个用哪个：
+
+| 源 | 怎么拿 | 量级 | 覆盖 |
+|----|--------|------|------|
+| `table` | 读 `<root>/universe.csv`（同步脚本产出的代码表） | 毫秒 | 表里有什么就有什么 |
+| `sina` | `SinaSource.fetch_all` 走新浪行情中心节点（`hs_a` / `hs_b`） | 秒级 | `stock` / `bse` / `bshare`，**带名称** |
+| `tdx` | 枚举代码段 + 每只 `bars(count=1)` 探 | 分钟级 | 全部七类（ETF/LOF/可转债/指数只有它）|
+
+显式指定 `source` 时**不降级**：那一源给不出来就抛（HTTP 面翻成 `E1010`），
+因为"悄悄换了源"会让这次数据到底哪来的变得无法解释。
+
+**七类标的**（类别决定落盘目录、决定 `0x052D` 走不走指数位）：
+
+| 类别 | 代码段 / 节点 | 目录 | 指数位 |
+|------|--------------|------|--------|
+| `stock` | `sh600/601/603/605/688/689`、`sz000/001/002/003/300/301/302`；节点 `hs_a` | `data/day/stock/` | 否 |
+| `bse` | `bj920`；**只能从 `hs_a` 里按前缀拆**（tdx 协议层拒 `bj*`）| `data/day/bse/` | 否 |
+| `etf` | 沪 510-589、深 158/159 | `data/day/etf/` | 否 |
+| `lof` | 沪 501/502、深 160-165 | `data/day/lof/` | 否 |
+| `bond` | 沪 110/111/113/118、深 121/123/127/131 | `data/day/bond/` | 否 |
+| `index` | `sh000`、`sz399` | `data/day/index/` | **是** |
+| `bshare` | `sh900`、`sz200`；节点 `hs_b` | `data/day/bshare/` | 否 |
+
+缺口是如实登记的，不是猜的：东财 clist 的 `fs` 映射（`b:MK0021` 一类）尚未真机校准，
+所以它**没有**被写进源表，而是记在 `atst.universe.TBD_SOURCES` 里等校准后再登记。
+
+```python
+from atst.universe import list_universe, universe_report
+
+list_universe("stock")                    # 全部 A 股（含北交所，按 classify 拆开）
+list_universe("etf")                      # 全部 ETF（走 tdx 探测）
+list_universe("all")                      # 七类全量
+list_universe("stock", source="sina")     # 显式指定源；拿不到会抛，不会悄悄换源
+
+for row in universe_report(("etf", "bond"), probe=False):
+    print(row["kind"], row["source"], row["count"], row.get("estimate"))
+```
+
+```bash
+atst universe --list-class     # 七类 + 节点参考表（不联网）
+atst universe etf --dry-run    # 只报各源代价，不真拉 tdx
+atst universe etf --show 5     # 打印前 5 条
+atst universe stock --json     # 机器可读
+```
+
+```bash
+curl 'http://127.0.0.1:8000/v13/universe'                 # 类别表（静态，不读盘）
+curl 'http://127.0.0.1:8000/v13/universe/etf'             # 本地代码表里的全部 ETF
+curl 'http://127.0.0.1:8000/v13/universe/all?limit=50'    # 七类各取前 50 条
+```
+
+HTTP 面这条路由**只读本地代码表**（`root` 默认 `data/`），不提供 `source` 旋钮：
+新浪那一级是外呼、tdx 那一级是分钟级批作业，把任一级塞进请求路径都会占住网关。
+要刷新清单就跑批任务 `--fetch-list`，网关只负责把已落好的表发出去（表不存在时回
+`200` + `count: 0` + `hint`，"还没跑过同步"是部署常态而非请求错误）。
+
+同步脚本侧是同一条链路的落盘入口：`--fetch-list` 把清单写进 `<root>/universe.csv`
+（七类、秒级），`--scan` 是它的相反面（自己枚举段逐只探，分钟级，**不含北交所**），
+`--doctor` 则不联网体检"清单 vs `data/day/` 的缺口 / 空文件 / 落伍 / 断点漂移"。
+详见 `docs/cookbook/08_daily_history_sync.md`。
+
+### CLI（32 子命令 / 37 个叶子命令）
 
 ```bash
 atst --help
@@ -809,7 +879,7 @@ atst --help
 由 `tests/architecture/test_cli_reference_table.py` 从 `argparse` 现值与处理器源码重新派生，
 逐格核对。改一个旗标、加一支命令、或把一支命令从内核挪到直连传输层而不改这张表，门禁就红。
 
-**落点**只有七种，含义是"这条命令的数据从哪儿来"：
+**落点**只有八种，含义是"这条命令的数据从哪儿来"：
 
 | 落点 | 含义 |
 |------|------|
@@ -819,6 +889,7 @@ atst --help
 | 服务面宿主 | 拉起 HTTP 应用本身 |
 | 传输·诊断 | 主站解析与测速（`atst.transport.*` / `atst.tools.host_audit`） |
 | 反馈 | `atst.feedback`，不发行情请求 |
+| 本地清单 | 读本地代码表，或走 `atst.universe`（新浪节点 / tdx 段表）拿某一类的全部标的；不发行情请求 |
 | 元信息 | 只打印随包发布的静态信息（包版本、`Client.capabilities()` 那份能力名清单），不构造 `Client`、不发请求也不建连接 |
 
 | 命令 | 位置参数 | 旗标 | 落点 |
@@ -859,14 +930,15 @@ atst --help
 | `stream` | `symbols` | `--provider` `--host` `--interval` `--diff-only` `--max-queue` `--timeout` `--seconds` | 内核·typed |
 | `trades` | `symbol` | `--provider` `--host` `--start` `--count` | 内核·typed |
 | `version` | — | — | 元信息 |
+| `universe` | `kind` | `--source` `--root` `--limit` `--workers` `--show` `--list-class` `--dry-run` `--json` | 本地清单 |
 
 四条组命令（`feedback` / `fund` / `hosts` / `index`）必须给出叶子命令才能执行，所以上表的
-36 行 = 27 支单命令 + 9 支叶子命令。`--json` 只出现在 rows 与直连传输层那两支落点上：
+37 行 = 28 支单命令 + 9 支叶子命令。`--json` 只出现在 rows 与直连传输层那两支落点上：
 内核·typed 那九支**只发 JSON 信封，没有 `--json` 可关**。
 
-下面那 37 行是上表 36 支叶子命令各一条可直接照抄的示例（`f10` 有目录与正文两条）：示例里的每一个
+下面那 38 行是上表 37 支叶子命令各一条可直接照抄的示例（`f10` 有目录与正文两条）：示例里的每一个
 参数都会被真实 parser 解析（`test_every_documented_cli_example_parses`），
-`test_every_leaf_command_has_an_example` 再要求 36 支叶子一支不缺。
+`test_every_leaf_command_has_an_example` 再要求 37 支叶子一支不缺。
 
 ```bash
 atst version                                              # 包版本
@@ -884,7 +956,7 @@ atst hosts audit --family quotation --timeout 3           # 主站巡检（5 族
 atst hosts list                                            # 当前生效的主站池
 atst hosts scan                                            # 并发测速并写排名文件
 atst server-test                                           # 主站连通性测速
-atst serve --bind 127.0.0.1 --port 8000                   # HTTP 网关（上面那 10 路由）
+atst serve --bind 127.0.0.1 --port 8000                   # HTTP 网关（上面那 12 路由）
 atst feedback submit --message "这里写问题描述"            # 反馈上报
 atst feedback stats --json                                 # 本地反馈统计
 atst probe 0x052D --market 0 --code sh600000              # 未知命令主动探测
@@ -905,10 +977,11 @@ atst goods AU2412 --kind quote                             # 商品行情：不�
 atst f10 sh600519                                          # F10 栏目目录
 atst f10 sh600519 --file 公司概况                          # F10 正文下载并解析
 atst list 0 --count 100                                    # 代码表（直连传输层）
+atst universe etf --show 5                                 # 某类标的清单（本地清单）
 atst quotes-snapshot sh600519 sz000001 --json              # 批量快照（直连传输层）
 ```
 
-### 36 支叶子、37 行示例的真机口径（第 23 轮装好的包，第 25 轮同面重跑过一遍）
+### 37 支叶子、38 行示例的真机口径（第 23 轮装好的包，第 25 轮同面重跑过一遍）
 
 跑法先说清楚，因为它自己就是一只坑。清单不是手抄的，是本轮的普查脚本从上面那段围栏里**现读**的
 （取"命令行数最多"那个围栏块，绕开 §3 的 `atst --help` 与 §7 的巡检示例；脚本与逐行日志都在
@@ -943,6 +1016,7 @@ atst quotes-snapshot sh600519 sz000001 --json              # 批量快照（直�
 | `minute-klines` | rc=2，`E7000`（同一支东财端点；改前给 51 行） | 上游可用性抖动，跨两遍普查的唯一两处读数翻转之一 |
 | `baidu` | rc=2，`E7010` 403 疑似反爬（改前给 43 行） | 同上：本库把 403 译成可读的 `E7010` 而不是回空表 |
 | `feedback submit` | rc=1，"默认禁用" | 需要 `ATST_FEEDBACK=1`（或 `dry-run`），设计如此 |
+| `universe etf` | 不真跑（清单命令，发不出行情） | 本地清单落点：读 `<root>/universe.csv` 代码表，没表则走新浪 `hs_a` 节点（秒级）或 tdx 段表探测（分钟级），不经 `Client`、不发行情请求 |
 
 另有两条改前失败、本轮出数据的，单独记（它们不在上面那 15 行里）：`query stock_changes --args …`
 给 88 行（文档示例原先**没加引号**，粘进 shell 会被拆成两个词、当场 exit 2；现已整体加引号，并被门禁
@@ -1016,7 +1090,7 @@ CLI 那三行同一判据、同一形状（发不出去就明说不发，不给�
 `ReadTimeout`——那一遍同时还有另一套外部探针在打主站池；本轮把两套改成串行后 11/11 干净，所以那 8 次
 记为**并发污染**而不是网关卡死，判据本身没有为此改动。
 
-`serve` 只承载上面那张 HTTP 表（10 路由），**不承载 WebSocket**：`create_runtime_app()` 里没有任何
+`serve` 只承载上面那张 HTTP 表（12 路由），**不承载 WebSocket**：`create_runtime_app()` 里没有任何
 `websocket` 路由，JSON-RPC 面要另外跑 `python -m atst.integration.runtime_ws_server`（或在自己的
 程序里 `await serve_runtime_ws()`；`atst/integration/runtime_ws_server.py`，默认 `127.0.0.1:8765`、
 路径 `/v13/ws`，见 `RuntimeWsConfig`）。二者不是同一个端口上的两个协议。两张面都是**同步取数、当场
@@ -1036,6 +1110,31 @@ from atst.output import write
 | Parquet | `path/file.parquet`（`.parquet`/`.pq` 后缀）| pyarrow |
 | DuckDB | `duckdb:<db 路径>@<表名>`，省略路径即内存库 | duckdb |
 | CSV | `path/file.csv`（`.csv` 后缀）| 无 |
+
+### 读回：`from_parquet`
+
+落盘是这条链路的**前半段**。`scripts/sync_daily_history.py` 把全市场日线写成
+`data/day/<类别>/<代码>.parquet` 之后，要读回来做研究/回测就得知道 pyarrow 怎么用、
+日期列叫什么；`from_parquet` 把这半段补上，与 `to_parquet` 是同一条契约的两面。
+
+```python
+from atst.output import from_parquet
+
+rows = from_parquet("data/day/stock/sh600519.parquet")             # list[dict]
+dates = from_parquet("data/day/stock/sh600519.parquet", columns=["date"])
+```
+
+| 情况 | 行为 |
+|------|------|
+| 文件存在且有数据 | `list[dict]`，键即列名；`columns=` 只投影需要的列 |
+| 文件存在但 0 行 | `[]` |
+| 路径不存在 | 抛 `FileNotFoundError`（打错路径不该看起来像"库里没数据"） |
+| 未装 pyarrow | 抛 `DependencyMissingError`（与写出侧同一条契约，不静默降级） |
+
+`to_parquet` 是经 DataFrame 写的，`datetime` / `date` 这类列名会被解析成时间类型，
+读回来是 `datetime.datetime` 而不是原字符串——按 `YYYY-MM-DD` 比日期的调用方要自己
+归一一次（脚本侧 `_last_date_on_disk` 就是这么做的）。CSV 读回用标准库即可，
+DuckDB 那侧用它自己的查询接口，因此读回面只补了 Parquet 这一支。
 
 ### 本地文件读取面（vipdoc 落地文件）
 

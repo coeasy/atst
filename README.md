@@ -4,8 +4,8 @@
 >
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
-- 当前版本：`1.2.2`
-- 当前发布状态：**GitHub Release [`v1.2.2`](https://github.com/coeasy/atst/releases/tag/v1.2.2) 已发布**（canonical wheel + sdist，附 `SHA256SUMS.txt` 与 `RELEASE-METADATA.json`）；**本包不在 PyPI 上**——PyPI 上传是显式 opt-in（需仓库变量 `PUBLIC_RELEASE=true`）· [v1.0.0 发布说明](docs/releases/v1.0.0.md) · [v1.1.0 发布说明](docs/releases/v1.1.0.md) · [v1.2.0 发布说明](docs/releases/v1.2.0.md) · [v1.2.1 发布说明](docs/releases/v1.2.1.md) · [v1.2.2 发布说明](docs/releases/v1.2.2.md) · [CHANGELOG](CHANGELOG.md)
+- 当前版本：`1.3.0`
+- 当前发布状态：**GitHub Release [`v1.3.0`](https://github.com/coeasy/atst/releases/tag/v1.3.0) 已发布**（canonical wheel + sdist，附 `SHA256SUMS.txt` 与 `RELEASE-METADATA.json`）；**本包不在 PyPI 上**——PyPI 上传是显式 opt-in（需仓库变量 `PUBLIC_RELEASE=true`）· [v1.0.0 发布说明](docs/releases/v1.0.0.md) · [v1.1.0 发布说明](docs/releases/v1.1.0.md) · [v1.2.0 发布说明](docs/releases/v1.2.0.md) · [v1.2.1 发布说明](docs/releases/v1.2.1.md) · [v1.2.2 发布说明](docs/releases/v1.2.2.md) · [v1.3.0 发布说明](docs/releases/v1.3.0.md) · [CHANGELOG](CHANGELOG.md)
 
 ---
 
@@ -55,7 +55,7 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      服务面（可选部署，只翻译不执行）                   │
-│  CLI 31 子命令 · HTTP REST 10 端点 · WebSocket JSON-RPC · MCP 9 工具   │
+│  CLI 32 子命令 · HTTP REST 12 端点 · WebSocket JSON-RPC · MCP 9 工具   │
 ├─────────────────────────────────────────────────────────────────────┤
 │                  Client / AsyncClient（唯一业务入口）                  │
 │  17 便捷方法（bars/quotes/snapshot/minute/trades/stream/call…）        │
@@ -123,9 +123,9 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 
 | 特性 | 说明 |
 |---|---|
-| **数据出口（`atst/output/`）** | `write()` 认 4 种格式：DataFrame / Parquet / CSV / DuckDB；`Sink` 3 种格式（不含 CSV，CSV 只走 `write()` 或 `to_csv()`），全部原子写 |
+| **数据出口（`atst/output/`）** | `write()` 认 4 种格式：DataFrame / Parquet / CSV / DuckDB；`Sink` 3 种格式（不含 CSV，CSV 只走 `write()` 或 `to_csv()`），全部原子写；`from_parquet()` 是与 `to_parquet()` 对称的读回面（落盘的 `data/day/<类别>/<代码>.parquet` 直接读成 `list[dict]`）|
 | **统一业务入口** | `Client` / `AsyncClient`（17 便捷方法 + `execute`/`typed`/`call` 通用面），永不隐式换源、永不缓存 |
-| **HTTP REST 网关** | 10 端点（capability 白名单 + TaskStore 钳制），只翻译为 `Client` 调用 |
+| **HTTP REST 网关** | 12 端点（capability 白名单 + TaskStore 钳制），只翻译为 `Client` 调用；另有 2 支**只读本地代码表**的清单端点（不发外呼）|
 | **WebSocket JSON-RPC** | 长连接实时推送 |
 | **MCP 工具服务** | 9 工具，AI Agent 可直接调用 |
 
@@ -387,7 +387,7 @@ asyncio.run(main())
 > `TdxClient` / `AsyncTdxClient`（`atst.client`）是协议层客户端，可脱离内核单独使用；
 > 服务面（CLI/HTTP/WS/MCP）全部只翻译为 `Client` 调用，不自行选源、不缓存。
 
-### CLI（31 子命令）
+### CLI（32 子命令）
 
 ```bash
 atst bars sh600519 --period day --count 80     # K 线
@@ -439,13 +439,14 @@ atst/
 ├── sink/           # LocalDaySink：写回 vipdoc .day 二进制
 ├── charset/        # 字符集自动探测（GBK/GB18030/Big5/UTF-8）
 ├── config/         # 6 源合并 + 严格校验 + env 归一
-├── integration/    # runtime_http(10 端点)/runtime_ws/runtime_ws_server/mcp(9 工具)/serialization
+├── integration/    # runtime_http(12 端点)/runtime_ws/runtime_ws_server/mcp(9 工具)/serialization
 ├── observability/  # 指标注册表 + Prometheus/StatsD/OTLP 导出器 + start_exporter
 ├── feedback/       # 错误/用量上报 + 遥测 + 使用统计
 ├── tools/          # capture/spec_audit/codegen/golden_audit/golden_expand/check_originality
 ├── trade/          # 交易协议模拟器（实验性可选模块：SimTransport 纯内存模拟，不接入内核）
 ├── __main__.py     # python -m atst 入口（与 atst 控制台脚本等价）
-└── cli/            # CLI 入口（31 子命令；数据命令全部经 Client，6 个传输/诊断命令除外，见 runtime_commands.py）
+├── universe/      # 标的清单（按类别取全部标的：代码表/新浪节点/tdx 段表三级降级）
+└── cli/            # CLI 入口（32 子命令；数据命令全部经 Client，6 个传输/诊断命令除外，见 runtime_commands.py）
 ```
 
 ---
@@ -528,9 +529,9 @@ python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproje
 
 ## 路线图
 
-### 当前阶段：v1.2.2 稳定版
+### 当前阶段：v1.3.0 稳定版
 
-atst 已发布 `v1.2.2`（GitHub Release，不在 PyPI）。当前内核为单执行路径、零缓存、provider-first：
+atst 已发布 `v1.3.0`（GitHub Release，不在 PyPI）。当前内核为单执行路径、零缓存、provider-first：
 85 命令 / 61 精确解析器 / 5 协议族 / 14 Provider / 194 capability / 280 条精确绑定全部到位，并通过全量确定性门禁。
 
 | 里程碑 | 状态 |
@@ -579,6 +580,7 @@ atst 已发布 `v1.2.2`（GitHub Release，不在 PyPI）。当前内核为单�
 | [docs/releases/v1.2.0.md](docs/releases/v1.2.0.md) | v1.2.0 正式发布说明（对标 5 项目补齐 18 项缺口能力 + 能力状态面 + 文档对齐） |
 | [docs/releases/v1.2.1.md](docs/releases/v1.2.1.md) | v1.2.1 正式发布说明（本地安装实测收口：10 项缺口能力端点真机验证转 alive + cninfo 源断链修复） |
 | [docs/releases/v1.2.2.md](docs/releases/v1.2.2.md) | v1.2.2 正式发布说明（时区依赖机器本地时区的根因修复：时间戳与交易时段统一按市场时区 Asia/Shanghai） |
+| [docs/releases/v1.3.0.md](docs/releases/v1.3.0.md) | v1.3.0 正式发布说明（按类别取标的清单：`atst.universe` 三级降级源 + CLI/HTTP 两面 + 同步脚本 `--fetch-list` / `--doctor`） |
 | [docs/archive/](docs/archive/README.md) | 历史计划、对标审计与设计快照（**都不是现行契约**）|
 
 ---

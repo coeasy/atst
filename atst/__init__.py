@@ -41,9 +41,10 @@
     output         DataFrame / Parquet / DuckDB 输出层
     observability  Prometheus 风格指标 / 埋点（零硬依赖）
     feedback       错误 / 用量上报 + 使用统计
+    universe       标的清单（按类别取全部标的：代码表 / 新浪节点 / tdx 段表三级降级）
     tools          协议账本审计 / 代码生成 / 原创性检查
     trade          交易协议模拟器（实验性：纯内存模拟，不接入内核）
-    cli            命令行面（31 子命令，只翻译不执行）
+    cli            命令行面（32 子命令，只翻译不执行）
     integration    HTTP / WS / MCP 服务面（只翻译不执行）
 
 Quick start（离线，读取本地通达信数据）::

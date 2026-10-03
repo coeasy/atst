@@ -37,6 +37,7 @@ from .runtime_commands import (
     _cmd_sector_flow,
     _cmd_serve,
     _cmd_server_test,
+    _cmd_universe,
     cmd_bars,
     cmd_capabilities,
     cmd_minute,
@@ -378,6 +379,31 @@ def build_parser() -> argparse.ArgumentParser:
     list_p.add_argument("--timeout", type=float, default=None)
     list_p.add_argument("--json", action="store_true")
     list_p.set_defaults(func=_cmd_list)
+
+    uni_p = sub.add_parser("universe", help="标的清单（按类别取全部标的：stock/etf/bond/...）")
+    # kind 可选：``--list-class`` / ``--dry-run`` 这两支用法本就不需要先点名类别，
+    # 硬要一个位置参数会让"看一眼有哪些类别"变成非得先猜一个类别名。
+    uni_p.add_argument(
+        "kind",
+        nargs="?",
+        default="all",
+        help="类别：stock / bse / etf / lof / bond / index / bshare / all（默认 all）",
+    )
+    uni_p.add_argument(
+        "--source",
+        default="auto",
+        help="取数源：auto（依次试 table / sina / tdx）/ table / sina / tdx",
+    )
+    uni_p.add_argument(
+        "--root", default="data", help="本地代码表根（默认 data，即 data/universe.csv）"
+    )
+    uni_p.add_argument("--limit", type=int, default=None, help="每类最多返回多少条（试水）")
+    uni_p.add_argument("--workers", type=int, default=8, help="tdx 探测并发")
+    uni_p.add_argument("--show", type=int, default=10, help="终端打印前 N 条（--json 不受影响）")
+    uni_p.add_argument("--list-class", action="store_true", help="只列类别表")
+    uni_p.add_argument("--dry-run", action="store_true", help="只看各源代价，不真拉全量")
+    uni_p.add_argument("--json", action="store_true")
+    uni_p.set_defaults(func=_cmd_universe)
 
     qs_p = sub.add_parser("quotes-snapshot", help="批量快照")
     qs_p.add_argument("symbols", nargs="+")

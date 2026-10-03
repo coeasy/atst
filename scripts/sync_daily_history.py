@@ -57,6 +57,8 @@
     python scripts/sync_daily_history.py --symbols sh600519 sz000001
     python scripts/sync_daily_history.py --universe-file data/universe.csv
     python scripts/sync_daily_history.py --root data --limit 200
+    python scripts/sync_daily_history.py --fetch-list         # 秒级拿全市场代码表（七类）
+    python scripts/sync_daily_history.py --doctor             # 不联网体检：清单 vs 落盘
     python scripts/sync_daily_history.py --list-class         # 看类别与段表
     python scripts/sync_daily_history.py --scan               # 探测全市场代码表
     python scripts/sync_daily_history.py --scan --exclude-class etf lof bond
@@ -144,53 +146,26 @@ DEFAULT_UNIVERSE: tuple[tuple[str, str], ...] = (
 #: 都真能拉到日线——所以有货的段一律保留，只删抽样确定为空的段。
 #:
 #: 顺序有意义：匹配到第一个就停，所以更"特殊"的段放前面。
-CLASS_SEGMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("index", ("sh000", "sz399")),
-    (
-        "etf",
-        (
-            "sh510",
-            "sh511",
-            "sh512",
-            "sh513",
-            "sh515",
-            "sh516",
-            "sh519",
-            "sh520",
-            "sh530",
-            "sh560",
-            "sh561",
-            "sh562",
-            "sh563",
-            "sh588",
-            "sh589",
-            "sz158",
-            "sz159",
-        ),
-    ),
-    ("lof", ("sh501", "sh502", "sz160", "sz161", "sz163", "sz164", "sz165")),
-    (
-        "bond",
-        ("sh110", "sh111", "sh113", "sh118", "sz121", "sz123", "sz127", "sz131"),
-    ),
-    ("bshare", ("sh900", "sz200")),
-    (
-        "stock",
-        (
-            "sh600",
-            "sh601",
-            "sh603",
-            "sh605",
-            "sh688",
-            "sh689",
-            "sz000",
-            "sz001",
-            "sz002",
-            "sz003",
-            "sz300",
-            "sz301",
-        ),
-    ),
+#:
+#: 类别 → 可探测的代码段。**段表单一事实源在 ``atst.universe._classes``**：
+#: 原先脚本自己抄一份，结果真实世界开出 ``sz302`` 段而这份没有，``--scan``
+#: 永远扫不到那一段里的新股。现在段内容从 atst 侧取，脚本只决定探测顺序。
+from atst.universe._classes import ASSET_CLASSES  # noqa: E402
+from atst.universe._classes import class_of_directory as _class_of_directory  # noqa: E402
+from atst.universe._classes import classify as _universe_classify  # noqa: E402
+from atst.universe._classes import (  # noqa: E402
+    classify_with_index as _universe_classify_with_index,
+)
+
+#: 首轮探测顺序（指数/ETF 那些段小、先探完有反馈；stock 段最大放最后）
+_SCAN_ORDER: tuple[str, ...] = ("index", "etf", "lof", "bond", "bshare", "stock")
+
+_SEGMENTS_BY_CLASS: dict[str, tuple[str, ...]] = {
+    item.name: item.tdx_segments for item in ASSET_CLASSES
+}
+
+CLASS_SEGMENTS: tuple[tuple[str, tuple[str, ...]], ...] = tuple(
+    (name, _SEGMENTS_BY_CLASS[name]) for name in _SCAN_ORDER
 )
 
 #: 默认扫哪些段 = 全类别。``--scan`` 用这张表，不必再单独维护一份。
@@ -206,7 +181,11 @@ UNSUPPORTED_CLASSES: dict[str, str] = {
 #: 指数位自动判定的前缀。``sh000*``（上证系列指数）与 ``sz399*``（深证/中证
 #: 系列指数）走 ``bars(index=True)``；B 股（``sh900*``/``sz200*``）、ETF、LOF、
 #: 可转债都走普通个股路径。
-INDEX_PREFIXES: tuple[str, ...] = tuple(CLASS_SEGMENTS[0][1])
+#:
+#: 按**类别名**取段（``_SEGMENTS_BY_CLASS["index"]``），不写 ``CLASS_SEGMENTS[0]``：
+#: 后者把"index 恰好排在扫描顺序第一个"当成事实，哪天为了先探大段而调
+#: ``_SCAN_ORDER``，这里会静默换成别人的段。类别名是稳定的。
+INDEX_PREFIXES: tuple[str, ...] = tuple(_SEGMENTS_BY_CLASS["index"])
 
 #: 单只一次最多要多少根。协议给的分页上限是 0xFFFF，且 ``start + count > 0x10000``
 #: 直接抛 ParseError；800 是服务端单页上限，超了客户端自动翻页。
@@ -286,23 +265,24 @@ class State:
 
 
 def classify(symbol: str) -> str:
-    """代码 → 类别。``sh600519`` → ``"stock"``、``sh510300`` → ``"etf"``。"""
-    token = symbol.strip().lower()
-    for kind, segments in CLASS_SEGMENTS:
-        if any(token.startswith(segment) for segment in segments):
-            return kind
-    return "stock"
+    """代码 → 类别。``sh600519`` → ``"stock"``、``sh510300`` → ``"etf"``。
+
+    判定本身在 :func:`atst.universe.classify`（单一事实源），这里只做转发：
+    脚本早先自己遍历 ``CLASS_SEGMENTS``，而那张表按 ``_SCAN_ORDER`` 建、里面
+    **没有 bse**，于是 ``bj920000`` 一路落到 ``return "stock"``——同一个事实
+    两处实现，``day/stock/`` 里混进北交所就是这么来的。
+    """
+    return _universe_classify(symbol)
 
 
 def classify_with_index(symbol: str) -> tuple[str, bool]:
     """代码 → ``(类别, 是否走指数位)``。``bars(index=...)`` 的取数参数由此而来。"""
-    kind = classify(symbol)
-    return kind, kind == "index"
+    return _universe_classify_with_index(symbol)
 
 
 def class_dir(kind: str) -> str:
     """类别 → 落盘子目录名（与类别同名，见模块 docstring 的那张表）。"""
-    return kind
+    return _class_of_directory(kind)
 
 
 # ---------------------------------------------------------------------------
@@ -581,6 +561,22 @@ def _last_date_on_disk(path: Path) -> str:
         if key:
             return key
     return ""
+
+
+def _count_rows(path: Path) -> int:
+    """已落盘文件有多少行（读元数据，不把整张表拉进内存）。
+
+    体检要区分"文件在"和"文件里有数据"——空 parquet 是最像成功的那种失败。
+    读不出来（坏文件、没装 pyarrow）就返回 0，让它在体检里跟空文件同样显眼。
+    """
+    if not path.exists():
+        return 0
+    try:
+        import pyarrow.parquet as pq  # type: ignore[import-not-found]
+
+        return int(pq.read_metadata(path).num_rows)
+    except Exception:  # noqa: BLE001 - 坏文件按"读不出内容"处理
+        return 0
 
 
 def _resume_bar_count(
@@ -894,7 +890,7 @@ def resolve_universe(
     """按优先级定宇宙，返回 ``(目标列表, 来源说明)``。
 
     优先级：显式 ``--symbols`` > ``--universe-file`` > 本地 vipdoc > ``root``
-    下缓存的 ``universe.csv`` > 内置默认宇宙。最后一级是"零参数可跑"的保证。
+    下落的 ``universe.csv``（代码表）> 内置默认宇宙。最后一级是"零参数可跑"的保证。
     """
     force_index = args.index
 
@@ -921,7 +917,7 @@ def resolve_universe(
         if codes:
             kept = [t for t in codes if t.kind in {kind for kind, _ in picked}]
             if kept:
-                return kept, f"缓存代码表 {cached}（{len(kept)} 只）"
+                return kept, f"代码表 {cached}（{len(kept)} 只）"
 
     # 内置宇宙也要过一遍类别裁剪——否则 `make sync --exclude-class stock`
     # 会 sync 出一堆 --symbols 之外根本没被选中的股票。
@@ -931,9 +927,15 @@ def resolve_universe(
 
 
 def _dump_universe(root: Path, found: dict[str, str]) -> Path:
+    """``--scan`` 的产出。
+
+    走**与 ``--fetch-list`` 同一个写手**（``write_universe_csv``）：两种拿表方式
+    落出来的文件形状必须一样（三列 + 表头），否则"下游只认一种形状"的分支迟早
+    冒出来。段表探测拿不到名称，第三列空着——空名称是允许的（见
+    :class:`Security` 的 docstring），不是"写漏了"。
+    """
     path = root / "universe.csv"
-    lines = [f"{symbol},{kind}" for symbol, kind in sorted(found.items())]
-    _atomic_write_text(path, "".join(f"{line}\n" for line in lines))
+    write_universe_csv([(symbol, kind, "") for symbol, kind in sorted(found.items())], path)
     return path
 
 
@@ -945,7 +947,7 @@ def build_parser() -> argparse.ArgumentParser:
             "默认落盘：\n"
             "  data/day/<类别>/<代码>.parquet   每支日线（合并去重后的完整历史）\n"
             "  data/state.json                  断点与失败/被拦记录\n"
-            "  data/universe.csv                代码表（--scan 生成，两列 代码,类别）\n"
+            "  data/universe.csv                代码表（--fetch-list / --scan 生成，三列 代码,类别,名称）\n"
             "类别：stock / index / etf / lof / bond / bshare（见 --list-class）\n"
         ),
     )
@@ -984,9 +986,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="不同步这些类别（例如 etf lof bond）",
     )
     p.add_argument(
+        "--fetch-list",
+        action="store_true",
+        help="只拉全市场代码表并写入 <root>/universe.csv（不落行情）——走 atst.universe 的"
+        "现成清单端点，秒级；拿不到再降回段表探测",
+    )
+    p.add_argument(
+        "--fetch-class",
+        default="all",
+        metavar="KIND[,KIND...]",
+        help="--fetch-list 要取的类别（默认 all）",
+    )
+    p.add_argument(
+        "--fetch-source",
+        default="auto",
+        metavar="auto|table|sina|tdx",
+        help="--fetch-list 的取数源（默认 auto：代码表 → 新浪节点 → 段表探测）",
+    )
+    p.add_argument(
+        "--fetch-dry-run",
+        action="store_true",
+        help="--fetch-list 只看各源代价，不真拉",
+    )
+    p.add_argument(
         "--scan",
         action="store_true",
-        help="只探测全市场代码表并写入 <root>/universe.csv（不落行情）",
+        help="只探测全市场代码表并写入 <root>/universe.csv（不落行情）——走段表逐只探，"
+        "首轮约 18 分钟；要快就用 --fetch-list",
     )
     p.add_argument(
         "--scan-class",
@@ -1001,9 +1027,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="--scan 时连已知代码也重探一遍（默认跳过，已入库的不重复探）",
     )
     p.add_argument(
+        "--doctor",
+        action="store_true",
+        help="不联网体检：代码表 vs day/ 的缺口 / 空文件 / 落伍 / 断点漂移（有缺口退出码 2）",
+    )
+    p.add_argument(
         "--list-class",
         action="store_true",
         help="打印类别 / 代码段 / 落盘目录 / 候选规模后退出",
+    )
+    p.add_argument(
+        "--json",
+        action="store_true",
+        help="只影响 --doctor 的输出格式（机器可读）",
     )
     return p
 
@@ -1050,6 +1086,204 @@ def _effective_gap(requested: float, targets: int) -> float:
     return max(0.01, requested * 200 / targets)
 
 
+#: 代码表列头（两列也能读——名称是可选的第三列，段表探测出来的标的没名字）
+UNIVERSE_HEADER = "代码,类别,名称"
+
+
+def write_universe_csv(rows: Sequence[tuple[str, str, str]], path: Path) -> None:
+    """写代码表（``代码,类别,名称``）。写满就换，不攒在内存里拖尾。"""
+    body = "".join(f"{code},{kind},{name}\n" for code, kind, name in rows)
+    _atomic_write_text(path, f"{UNIVERSE_HEADER}\n{body}")
+
+
+def run_fetch_list(args: Any, root: Path) -> int:
+    """``--fetch-list``：用 :mod:`atst.universe` 拉代码表，秒级落 ``<root>/universe.csv``。
+
+    与 ``--scan`` 的区别不是"快一点"：
+
+    * ``--scan`` 是**自己枚举段 + 逐只 ``bars`` 探**——北交所被协议层拒
+      （E3040）、ETF/LOF/可转债又没有权威清单接口，只能拿"非空 + 日期键是真
+      日历日期"两道判据去筛，所以首轮 18 分钟起步；
+    * ``--fetch-list`` 是**让 atst 按类别去问现成的清单端点**（新浪节点最优先，
+      秒级），拿不到再降回段表探测。北交所也顺带有了——新浪 ``hs_a`` 里带
+      ``bj*``。
+
+    所以推荐顺序是：``--fetch-list`` 打底 → 日常增量同步；``--scan`` 留给
+    ``--fetch-list`` 漏掉的东西（例如只在新浪侧没有、只有 tdx 才认的代码）。
+    """
+    from atst.universe import ASSET_CLASSES, universe_report
+
+    wanted = set(args.fetch_class.split(","))
+    # 候选取 atst 侧的全部类别（含 ``bse``），再由 --fetch-class 过滤：
+    # 这里刻意**不**拿脚本的探测顺序表（``picked``）当候选——那个表没有 bse
+    # （客户端 E3040 探不出来），但新浪 ``hs_a`` 里有 ``bj*``，清单端点比探测
+    # 拿到的更全；用 atst 的表当唯一候选面，北交所才不会被静默漏掉。
+    # ``all`` 是"全部类别"的哨兵，不是一只叫 all 的标的。
+    selected = [item.name for item in ASSET_CLASSES]
+    kinds = [name for name in selected if "all" in wanted or name in wanted]
+    if not kinds:
+        print(
+            "没有可取的代码类别（--include-class / --exclude-class 与 --fetch-class 冲突）",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.fetch_dry_run:
+        for row in universe_report(
+            tuple(kinds),
+            source=args.fetch_source,
+            root=root,
+            workers=args.workers,
+            probe=False,  # 纯估算：不真跑 tdx 探测（那正是 dry-run 要避开的代价）
+        ):
+            estimate = row.get("estimate")
+            if row.get("error"):
+                tail = row["error"]  # 例如"ETF 没有新浪入口"：得直说，别只丢个 0
+            elif estimate:
+                tail = f"约 {estimate} 候选待探测"
+            else:
+                tail = f"{row['seconds']}s"
+            print(
+                f"  {row['kind']:7s} 源={row['source']:6s} 条数={row['count'] or '未知'}（{tail}）"
+                f"｜新浪节点={row['sina_node']}｜段={row['segments']}"
+            )
+        return 0
+
+    from atst.universe import list_universe
+
+    collected: list[tuple[str, str, str]] = []
+    for index, kind in enumerate(kinds):
+        if index:
+            print()
+        try:
+            rows = list_universe(
+                kind,
+                source=args.fetch_source,
+                root=root,
+                workers=args.workers,
+                timeout=args.timeout,
+            )
+        except LookupError as exc:
+            # 显式源拿不到某一类（例如只读代码表却要 ETF）：告一句，别让整张代码表
+            # 废在最后一类上——前面已经拿到的类别照样落盘。
+            print(f"{kind:7s} ! {exc}")
+            continue
+        collected += [(row.code, row.kind, row.name) for row in rows]
+        print(f"{kind:7s} ← {len(rows)} 条")
+    path = root / "universe.csv"
+    write_universe_csv(collected, path)
+    print(f"\n已写入 {path.as_posix()}（{len(collected)} 条）")
+    print("接下来自用同步读这张表：直接跑不带参数的同步命令即可。")
+    return 0
+
+
+def run_doctor(args: Any, root: Path) -> int:
+    """``--doctor``：不联网，只回答"落的盘和代码表对不对得上"。
+
+    这是同步链路的**验收读数**，也是"哪些逻辑断了"的第一现场：
+
+    * **缺口**：代码表里有、``day/<类别>/`` 里没有对应 parquet 的标的——同步
+      从来没成功过，或者被 ``--include-class`` 裁掉了却忘了；
+    * **空文件**：parquet 在但 0 行——最像"成功了"的失败；
+    * **落伍**：最后日期落后于全市场最新交易日——单只停牌是正常，成片的落伍
+      说明某一类根本没被同步；
+    * **断点漂移**：``state.json`` 记的最后日期与磁盘实际不符——换过 ``--root``、
+      或磁盘被手工改过。脚本自己的断点第一事实源是磁盘，这里把两者摊开对比。
+
+    退出码：有缺口 / 空文件 → ``2``；只有落伍或断点漂移 → ``0``（它们是"要知道"
+    而不是"要修"）。不联网，所以它在断网、盘前、无主站时都能跑。
+    """
+    table = root / "universe.csv"
+    if table.exists():
+        targets = symbols_from_csv(table)
+        source = f"代码表 {table}（{len(targets)} 只）"
+    else:
+        targets = _all_targets(args.index)
+        source = f"内置默认宇宙（{len(targets)} 只，没有 {table}）"
+    if not targets:
+        # 表在、却一只都读不出来（空文件 / 只有表头 / 列名不对）：这不是"体检通过"，
+        # 是"这次体检什么都没检"。报 2 而不是静默给一个全 0 的报告。
+        print(f"代码表 {table} 里一只标的都没读出来——先跑 --fetch-list 或 --scan 生成它")
+        return 2
+
+    day_dir = root / "day"
+    state = State.load(args.state if args.state else (root / "state.json"))
+
+    rows: list[dict[str, Any]] = []
+    latest = ""
+    for target in targets:
+        path = day_dir / class_dir(target.kind) / f"{target.symbol}.parquet"
+        flat = day_dir / f"{target.symbol}.parquet"
+        actual = path if path.exists() else (flat if flat.exists() else path)
+        last = _last_date_on_disk(actual) if actual.exists() else ""
+        bars = _count_rows(actual) if actual.exists() else 0
+        rows.append(
+            {
+                "symbol": target.symbol,
+                "kind": target.kind,
+                "file": actual.exists(),
+                "rows": bars,
+                "last_date": last,
+                "state_date": state.last_date.get(target.symbol, ""),
+            }
+        )
+        if last > latest:
+            latest = last
+
+    missing = [r for r in rows if not r["file"]]
+    empty = [r for r in rows if r["file"] and not r["rows"]]
+    stale = [r for r in rows if r["last_date"] and latest and r["last_date"] < latest]
+    drift = [
+        r for r in rows if r["state_date"] and r["last_date"] and r["state_date"] != r["last_date"]
+    ]
+    by_kind: dict[str, int] = {}
+    for row in rows:
+        if row["file"]:
+            by_kind[row["kind"]] = by_kind.get(row["kind"], 0) + 1
+
+    report = {
+        "root": root.as_posix(),
+        "universe": source,
+        "expected": len(targets),
+        "on_disk": len(targets) - len(missing),
+        "by_kind": by_kind,
+        "latest_day": latest,
+        "missing": [r["symbol"] for r in missing],
+        "empty": [r["symbol"] for r in empty],
+        "stale": [r["symbol"] for r in stale],
+        "state_drift": [r["symbol"] for r in drift],
+        "rejected": dict(state.rejected),
+        "failed": dict(state.failed),
+    }
+
+    if getattr(args, "json", False):
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        print(f"体检 {root.as_posix()}")
+        print(f"  清单：{source}")
+        print(
+            f"  落盘：{report['on_disk']}/{report['expected']}（"
+            + (" / ".join(f"{k} {v}" for k, v in sorted(by_kind.items())) or "空")
+            + "）"
+        )
+        print(f"  最新交易日：{latest or '（没有任何一根日线）'}")
+        for label, key in (("缺口", "missing"), ("空文件", "empty"), ("落伍", "stale")):
+            items = report[key]
+            print(f"  {label}：{len(items)}" + (f"  例：{' '.join(items[:8])}" if items else ""))
+        if report["state_drift"]:
+            print(
+                f"  断点与磁盘不符：{len(report['state_drift'])}"
+                f"  例：{' '.join(report['state_drift'][:8])}"
+            )
+        if state.rejected:
+            print(f"  口径自检拦下：{len(state.rejected)}（见 state.json 的 rejected）")
+        if missing:
+            print("  下一步：python scripts/sync_daily_history.py --root " + root.as_posix())
+            print("          （缺口会按代码表逐只重试；只补某一类加 --include-class）")
+
+    return 2 if (missing or empty) else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     root: Path = args.root
@@ -1060,6 +1294,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.list_class:
         print_class_table(picked)
         return 0
+
+    if args.doctor:
+        return run_doctor(args, root)
+
+    if args.fetch_list:
+        return run_fetch_list(args, root)
 
     if args.scan:
         segments_by_class = [

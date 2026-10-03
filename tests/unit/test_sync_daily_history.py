@@ -14,7 +14,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -134,6 +134,37 @@ def test_every_scanned_segment_is_classifiable(sync: ModuleType) -> None:
     for kind, segments in sync.CLASS_SEGMENTS:
         for segment in segments:
             assert sync.classify(f"{segment}123") == kind, f"{segment} 落到了别处"
+
+
+def test_classify_delegates_to_the_shared_class_table(sync: ModuleType) -> None:
+    """脚本的类别判定必须与 ``atst.universe`` 同源，不能是第二份实现。
+
+    脚本原先自己遍历 ``CLASS_SEGMENTS``，而那张表按 ``_SCAN_ORDER`` 建、
+    **里面没有 bse**，于是 ``bj920000`` 一路落到 ``return "stock"``——北交所
+    就这样被写进 ``day/stock/``。同一个事实两处实现，迟早有一处是错的；现在
+    脚本只留一个转发口，这条判据盯的就是"它还是不是同一个答案"。
+    """
+    from atst.universe import classify as shared
+    from atst.universe import classify_with_index as shared_with_index
+
+    probes = (
+        "sh600519",
+        "sz302132",
+        "sh000001",
+        "sz399006",
+        "sh510300",
+        "sh501018",
+        "sh113050",
+        "sh900932",
+        "sz200011",
+        "bj920000",
+        "bj430047",  # 段表里没有的 bj 段：错的那一份会把它判成 stock
+    )
+    for symbol in probes:
+        assert sync.classify(symbol) == shared(symbol), symbol
+        assert sync.classify_with_index(symbol) == shared_with_index(symbol), symbol
+    assert sync.classify("bj920000") == "bse"
+    assert sync.class_dir("bse") == "bse"
 
 
 # ---------------------------------------------------------------------------
@@ -409,8 +440,8 @@ def test_plan_lines_does_not_overclaim_when_limit_trimmed(sync: ModuleType) -> N
 
 
 def test_plan_lines_keeps_quiet_for_real_universes(sync: ModuleType) -> None:
-    """真宇宙（清单 / 缓存表）不该被塞一句"你只跑了样例"的噪音。"""
-    for source in ("清单 data/universe.csv（8385 只）", "缓存代码表 data/universe.csv（8385 只）"):
+    """真宇宙（清单 / 代码表）不该被塞一句"你跑了样例"的噪音。"""
+    for source in ("清单 data/universe.csv（8385 只）", "代码表 data/universe.csv（8385 只）"):
         lines = sync._plan_lines(
             sync._all_targets(), source, Path("data"), full=False, lookback=320, universe_size=8385
         )
@@ -498,3 +529,258 @@ def test_default_universe_is_real_and_mixture_of_stocks_and_indices(sync: Module
     for target in targets:
         assert target.symbol.startswith(("sh", "sz")), target.symbol
         assert target.index == target.symbol.startswith(sync.INDEX_PREFIXES)
+
+
+# ---------------------------------------------------------------------------
+# --fetch-list：代码表从哪来
+# ---------------------------------------------------------------------------
+
+
+def test_write_universe_csv_roundtrips_through_atst_universe(
+    sync: ModuleType, tmp_path: Path
+) -> None:
+    """脚本写的代码表必须能被 atst.universe 直接读回（同一张表，两个入口）。"""
+    from atst.universe import from_table
+
+    root = tmp_path / "root"
+    root.mkdir()
+    rows = [("sh600519", "stock", "贵州茅台"), ("bj920000", "bse", "XD安徽凤")]
+    sync.write_universe_csv(rows, root / "universe.csv")
+
+    assert [item.code for item in from_table(root, "stock")] == ["sh600519"]
+    assert [item.name for item in from_table(root, "bse")] == ["XD安徽凤"]
+
+
+def test_fetch_list_picks_up_bse_even_though_the_scan_order_table_does_not_have_it(
+    sync: ModuleType, tmp_path: Path, capsys
+) -> None:
+    """**回归**：``--fetch-list`` 曾漏掉北交所。
+
+    代码取自脚本的扫描顺序表（``_SCAN_ORDER`` 里没有 bse——客户端 E3040 探不出来
+    ），而 ``run_fetch_list`` 当时拿这张表当类别候选面，``bse`` 因此永远进不了
+    ``kinds``，新浪 ``hs_a`` 里的 ``bj*`` 也就没人去收。类别候选面改成只有
+    atst 的类别表，北交所才回到清单里。
+    """
+    from atst.universe import ASSET_CLASSES, from_table
+
+    assert "bse" not in {name for name, _ in sync.CLASS_SEGMENTS}, "扫描顺序表变了吗？"
+    assert "bse" in {item.name for item in ASSET_CLASSES}, "atst 类别表不该丢 bse"
+
+    root = tmp_path / "root"
+    root.mkdir()
+    # 预置一份带 bj 行的代码表（等价于"新浪/缓存已经给过 bj*"），走 cache 源离线复现。
+    sync.write_universe_csv(
+        [("sh600519", "stock", "贵州茅台"), ("bj920000", "bse", "XD安徽凤")],
+        root / "universe.csv",
+    )
+
+    args = SimpleNamespace(
+        fetch_class="all", fetch_source="table", fetch_dry_run=False, workers=2, timeout=5.0
+    )
+    assert sync.run_fetch_list(args, root) == 0
+
+    written = from_table(root, "bse")
+    assert [item.code for item in written] == ["bj920000"], "北交所丢了——就是当年那个 bug"
+    assert "bse" in capsys.readouterr().out
+
+
+def test_fetch_list_reports_a_missing_explicit_source_instead_of_aborting(
+    sync: ModuleType, tmp_path: Path, capsys
+) -> None:
+    """显式 ``--source table`` 要 ETF：这一源给不出来就该说清楚，且不许废掉整张表。"""
+    from atst.universe import from_table
+
+    root = tmp_path / "root"
+    root.mkdir()
+    sync.write_universe_csv([("sh600519", "stock", "贵州茅台")], root / "universe.csv")
+
+    args = SimpleNamespace(
+        fetch_class="all", fetch_source="table", fetch_dry_run=False, workers=2, timeout=5.0
+    )
+    assert sync.run_fetch_list(args, root) == 0
+
+    out = capsys.readouterr().out
+    assert "没有 etf 的标的" in out, out
+    assert [item.code for item in from_table(root, "stock")] == ["sh600519"], "前几类也该落盘"
+
+
+# ---------------------------------------------------------------------------
+# --doctor：不联网的体检（同步链路的验收读数）
+# ---------------------------------------------------------------------------
+
+
+def _doctor_args(sync: ModuleType, **overrides: object) -> SimpleNamespace:
+    base: dict[str, object] = {"index": None, "state": None, "json": False}
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def _write_day(sync: ModuleType, day_dir: Path, kind: str, symbol: str, days: list[str]) -> None:
+    """按脚本自己的落盘口径写一支日线（走真 sink，别手搓 parquet）。"""
+    path = day_dir / kind / f"{symbol}.parquet"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "date": day,
+            "open": 10.0,
+            "high": 11.0,
+            "low": 9.0,
+            "close": 10.5,
+            "volume": 1000,
+            "amount": 10500.0,
+        }
+        for day in days
+    ]
+    sync._atomic_write_parquet(rows, path)
+
+
+def test_doctor_is_quiet_when_the_table_and_the_disk_agree(
+    sync: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """清单里的每一只都落了盘 → 退出码 0，且不报缺口。"""
+    root = tmp_path / "data"
+    (root / "day").mkdir(parents=True)
+    (root / "universe.csv").write_text(
+        "代码,类别\nsh600519,stock\nbj920000,bse\n", encoding="utf-8"
+    )
+    _write_day(sync, root / "day", "stock", "sh600519", ["2026-09-30", "2026-10-01"])
+    _write_day(sync, root / "day", "bse", "bj920000", ["2026-09-30", "2026-10-01"])
+
+    assert sync.run_doctor(_doctor_args(sync), root) == 0
+    out = capsys.readouterr().out
+    assert "落盘：2/2" in out
+    assert "最新交易日：2026-10-01" in out
+    assert "缺口：0" in out
+
+
+def test_doctor_reports_a_gap_that_never_landed(
+    sync: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """清单里有、day/ 里没有 → 缺口 + 退出码 2 + 给出下一步命令。"""
+    root = tmp_path / "data"
+    (root / "day").mkdir(parents=True)
+    (root / "universe.csv").write_text(
+        "代码,类别\nsh600519,stock\nsz300750,stock\n", encoding="utf-8"
+    )
+    _write_day(sync, root / "day", "stock", "sh600519", ["2026-10-01"])
+
+    assert sync.run_doctor(_doctor_args(sync), root) == 2
+    out = capsys.readouterr().out
+    assert "缺口：1" in out
+    assert "sz300750" in out
+    assert "--root" in out, "有缺口就得给出下一步，而不是只报一个数"
+
+
+def test_doctor_flags_an_empty_file(
+    sync: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """文件在、0 行 —— 最像成功的那种失败，必须单独一格。"""
+    root = tmp_path / "data"
+    (root / "day").mkdir(parents=True)
+    (root / "universe.csv").write_text("代码,类别\nsh600519,stock\n", encoding="utf-8")
+    _write_day(sync, root / "day", "stock", "sh600519", [])
+
+    assert sync.run_doctor(_doctor_args(sync), root) == 2
+    assert "空文件：1" in capsys.readouterr().out
+
+
+def test_doctor_separates_stale_from_a_gap(
+    sync: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """落伍是"要知道"，不是"要修"：它不该把退出码抬成 2。"""
+    root = tmp_path / "data"
+    (root / "day").mkdir(parents=True)
+    (root / "universe.csv").write_text(
+        "代码,类别\nsh600519,stock\nsz300750,stock\n", encoding="utf-8"
+    )
+    _write_day(sync, root / "day", "stock", "sh600519", ["2026-10-01"])
+    _write_day(sync, root / "day", "stock", "sz300750", ["2026-09-01"])
+
+    assert sync.run_doctor(_doctor_args(sync), root) == 0
+    out = capsys.readouterr().out
+    assert "落伍：1" in out
+    assert "sz300750" in out
+
+
+def test_doctor_state_drift_is_visible_in_the_report(
+    sync: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """断点漂移要出现在报告里（且不抬退出码——磁盘才是断点第一事实源）。"""
+    root = tmp_path / "data"
+    (root / "day").mkdir(parents=True)
+    (root / "universe.csv").write_text("代码,类别\nsh600519,stock\n", encoding="utf-8")
+    _write_day(sync, root / "day", "stock", "sh600519", ["2026-10-01"])
+    sync.State(last_date={"sh600519": "2026-09-01"}).dump(root / "state.json")
+
+    assert sync.run_doctor(_doctor_args(sync), root) == 0
+    assert "断点与磁盘不符：1" in capsys.readouterr().out
+
+
+def test_doctor_json_is_machine_readable(
+    sync: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--json`` 给的是同一份读数，键集合稳定。"""
+    import json as _json
+
+    root = tmp_path / "data"
+    (root / "day").mkdir(parents=True)
+    (root / "universe.csv").write_text("代码,类别\nsh600519,stock\n", encoding="utf-8")
+    _write_day(sync, root / "day", "stock", "sh600519", ["2026-10-01"])
+
+    assert sync.run_doctor(_doctor_args(sync, json=True), root) == 0
+    payload = _json.loads(capsys.readouterr().out)
+    assert {
+        "root",
+        "universe",
+        "expected",
+        "on_disk",
+        "by_kind",
+        "latest_day",
+        "missing",
+        "empty",
+        "stale",
+        "state_drift",
+    } <= set(payload)
+    assert payload["on_disk"] == 1
+
+
+def test_doctor_falls_back_to_the_builtin_universe(
+    sync: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """没有代码表时看内置宇宙，并在报告里说明——别让人以为"体检了全市场"。"""
+    root = tmp_path / "data"
+    (root / "day").mkdir(parents=True)
+    assert sync.run_doctor(_doctor_args(sync), root) == 2
+    out = capsys.readouterr().out
+    assert "内置默认宇宙" in out
+    assert "缺口：" in out
+
+
+def test_scan_and_fetch_list_write_the_same_table_shape(sync: ModuleType, tmp_path: Path) -> None:
+    """``--scan`` 与 ``--fetch-list`` 落的代码表必须同形状（同写手 / 同表头 / 三列）。
+
+    两个生产者各写各的格式，下游就迟早长出"先看是两列还是三列"的分支——那正是
+    "同一件事在几处各说一遍"的开端。
+    """
+    scanned = sync._dump_universe(tmp_path, {"sh600519": "stock", "bj920000": "bse"})
+    text = scanned.read_text(encoding="utf-8")
+    assert text.splitlines()[0] == sync.UNIVERSE_HEADER
+    assert text.splitlines()[1:] == ["bj920000,bse,", "sh600519,stock,"]
+
+    fetched = tmp_path / "other.csv"
+    sync.write_universe_csv([("bj920000", "bse", ""), ("sh600519", "stock", "")], fetched)
+    assert fetched.read_text(encoding="utf-8") == text
+
+    #: 两种形状都要能被同一个读手吃回来（含表头行）。
+    assert [t.symbol for t in sync.symbols_from_csv(scanned)] == ["bj920000", "sh600519"]
+
+
+def test_doctor_says_so_when_the_table_is_empty(
+    sync: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """表在、却一只都读不出来 = 这次体检什么都没检，必须报 2 而不是给全 0 报告。"""
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "universe.csv").write_text("代码,类别,名称\n", encoding="utf-8")
+    assert sync.run_doctor(_doctor_args(sync), root) == 2
+    assert "一只标的都没读出来" in capsys.readouterr().out

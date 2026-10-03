@@ -56,6 +56,7 @@ LANDINGS = (
     "传输·诊断",
     "反馈",
     "元信息",
+    "本地清单",
 )
 
 
@@ -118,6 +119,10 @@ def _landing(fn: Any) -> str:
         return "反馈"
     if {"resolve_hosts", "speedtest", "speedtest_and_save", "host_audit_main"} & names:
         return "传输·诊断"
+    if {"list_universe", "universe_report", "asset_class_names"} & names:
+        # ``atst universe``：数据来自本地代码表 / 新浪节点 / tdx 段表探测——
+        # ``atst.universe`` 是工具方法层，既不经过 ``Client`` 也不碰传输层。
+        return "本地清单"
     if "__version__" in idents:
         return "元信息"
     if "Client" in seen:

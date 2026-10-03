@@ -262,8 +262,20 @@ _REQUESTS = [("get", path) for path in _GET_ROUTES] + [
 ]
 
 
+#: 路径占位符 → 样本值。每加一条带路径参数的路由就要在这里给它一个**合法**样本，
+#: 否则"带满已声明字段必须通"那一格会拿字面量 ``{kind}`` 去请求，被 E1010 挡下——
+#: 而那是判据自己喂错了值，不是路由的问题。
+_PATH_SAMPLE: dict[str, str] = {
+    "{symbol}": "600519",
+    "{capability}": "rates",
+    "{kind}": "stock",
+}
+
+
 def _fill(path: str) -> str:
-    return path.replace("{symbol}", "600519").replace("{capability}", "rates")
+    for placeholder, sample in _PATH_SAMPLE.items():
+        path = path.replace(placeholder, sample)
+    return path
 
 
 #: 少数字段的合法样本值不能靠类型推出去：``currentness`` 是闭集枚举，填 ``tdx`` 会被

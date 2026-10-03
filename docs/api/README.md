@@ -1,6 +1,6 @@
 # API 参考
 
-当前 `1.2.2`；GitHub Release [`v1.2.2`](https://github.com/coeasy/atst/releases/tag/v1.2.2) 已发布，但本包**不在 PyPI 上** · [v1.0.0 发布说明](../releases/v1.0.0.md) · [v1.1.0 发布说明](../releases/v1.1.0.md) · [v1.2.0 发布说明](../releases/v1.2.0.md) · [v1.2.1 发布说明](../releases/v1.2.1.md) · [v1.2.2 发布说明](../releases/v1.2.2.md)
+当前 `1.3.0`；GitHub Release [`v1.3.0`](https://github.com/coeasy/atst/releases/tag/v1.3.0) 已发布，但本包**不在 PyPI 上** · [v1.0.0 发布说明](../releases/v1.0.0.md) · [v1.1.0 发布说明](../releases/v1.1.0.md) · [v1.2.0 发布说明](../releases/v1.2.0.md) · [v1.2.1 发布说明](../releases/v1.2.1.md) · [v1.2.2 发布说明](../releases/v1.2.2.md) · [v1.3.0 发布说明](../releases/v1.3.0.md)
 
 > 本页对应 v1.0.0 + **v13/v17 单一执行内核**。完整 docstring 驱动文档
 > 由 `pdoc`/`mkdocstrings` 生成；此处提供稳定入口和模块索引。
@@ -118,12 +118,12 @@
 
 | 模块 | 说明 |
 |---|---|
-| `atst.integration.runtime_http` | FastAPI 网关工厂（10 路由：`/v13/quotes` `/v13/bars/{symbol}` `/v13/snapshot/{symbol}` `/v13/minute/{symbol}` `/v13/trades/{symbol}` `/v13/security/count` `/v13/security/list` `/v13/query/{capability}` `/v13/capabilities` `/v13/runtime/health`）；复权 K 线走通用入口 POST `/v13/query/{capability}`（capability=adjusted_bars）|
+| `atst.integration.runtime_http` | FastAPI 网关工厂（12 路由：`/v13/quotes` `/v13/bars/{symbol}` `/v13/snapshot/{symbol}` `/v13/minute/{symbol}` `/v13/trades/{symbol}` `/v13/security/count` `/v13/security/list` `/v13/query/{capability}` `/v13/capabilities` `/v13/universe` `/v13/universe/{kind}` `/v13/runtime/health`）；复权 K 线走通用入口 POST `/v13/query/{capability}`（capability=adjusted_bars）|
 | `atst.integration.runtime_ws` | WebSocket JSON-RPC（13 方法：quotes/bars/snapshot/minute/trades/security.count/security.list/query/runtime.capabilities/runtime.health/subscribe/unsubscribe/list）；其中 `subscribe`/`unsubscribe`/`list` 为实时订阅控制面（配合服务端 `push` 推送帧），复权走 `query`（`capability=adjusted_bars`），见 `docs/api/interfaces.md`「WebSocket 实时订阅」|
 | `atst.integration.runtime_ws_server` | WS 服务宿主（`serve_runtime_ws`；一键拉起 `python -m atst.integration.runtime_ws_server`）|
 | `atst.integration.mcp` | MCP stdio 工具（9 项：`query_capability`/`get_bars`/`get_quote`/`get_quotes`/`get_snapshot`/`get_minute_today`/`get_trades`/`get_security_count`/`get_security_list`；一键拉起 `python -m atst.integration.mcp`，不需要 extra。复权 K 线走 query_capability 通用入口）|
 | `atst.integration.serialization` | `QueryResult → JSON-safe` 统一序列化 |
-| `atst.cli` | CLI 子命令（31 项；数据命令全部经 `Client`，6 个传输/诊断命令除外，见 `runtime_commands.py`）|
+| `atst.cli` | CLI 子命令（32 项；数据命令全部经 `Client`，6 个传输/诊断命令除外，见 `runtime_commands.py`）|
 
 ## 迁移指南
 

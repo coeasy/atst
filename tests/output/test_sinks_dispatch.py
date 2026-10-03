@@ -105,6 +105,58 @@ class TestParquetAtomic:
         assert dest.exists()
 
 
+class TestParquetReadBack:
+    """``from_parquet``：写出面必须有一个对称的读回面。
+
+    "同步落盘 → 读回研究"是这条链路的经典场景：``to_parquet`` 是单向漏斗时，
+    ``scripts/sync_daily_history.py`` 落下的 ``data/day/<类别>/<代码>.parquet``
+    读回来还得自己知道 pyarrow 怎么用、日期列叫什么。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _require_pyarrow(self) -> None:
+        pytest.importorskip("pyarrow", reason="本机未装 pyarrow；有则连库验证")
+
+    def test_round_trip_preserves_rows(self, tmp_path: Path) -> None:
+        """``to_parquet`` → ``from_parquet`` 值不丢；日期列回来是 datetime 对象。
+
+        ``to_parquet`` 走的是 DataFrame，``datetime`` / ``date`` 这类列名会被解析
+        成时间类型，读回来是 ``datetime.datetime`` 而不是原字符串——这正是脚本侧
+        ``_last_date_on_disk`` 拿到值后还要按字符串归一一次的原因（那里的断点比较
+        是按 ``YYYY-MM-DD`` 做的）。
+        """
+        from atst.output import from_parquet
+
+        dest = tmp_path / "bars.parquet"
+        to_parquet(ROWS, dest)
+        back = from_parquet(str(dest))
+        assert [str(row["datetime"])[:10] for row in back] == ["2026-06-01", "2026-06-02"]
+        assert [row["volume"] for row in back] == [100, 200]
+
+    def test_columns_projection(self, tmp_path: Path) -> None:
+        """只要一列时不该把整张表拉进内存（断点续拉就走这条）。"""
+        from atst.output import from_parquet
+
+        dest = tmp_path / "bars.parquet"
+        to_parquet(ROWS, dest)
+        assert list(from_parquet(str(dest), columns=["datetime"])[0]) == ["datetime"]
+
+    def test_missing_file_raises_instead_of_returning_empty(self, tmp_path: Path) -> None:
+        """路径不存在要报错：静默返回 [] 会让"打错路径"看起来像"库里没数据"。"""
+        from atst.output import from_parquet
+
+        with pytest.raises(FileNotFoundError, match="不存在"):
+            from_parquet(str(tmp_path / "nope.parquet"))
+
+    def test_empty_table_reads_back_as_empty_list(self, tmp_path: Path) -> None:
+        """文件在但没数据 = ``[]``（与"文件不在"是两件事，见上一条）。"""
+        from atst.output import from_parquet
+
+        dest = tmp_path / "empty.parquet"
+        to_parquet([], dest, columns=["datetime"])
+        assert from_parquet(str(dest)) == []
+
+
 class TestDuckdbTableName:
     """表名校验前置（不依赖 duckdb 是否安装）。"""
 

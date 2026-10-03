@@ -15,6 +15,12 @@
 
 缺依赖时**显式报错**而非静默降级（见 :class:`~atst.errors.DependencyMissingError`）。
 
+读回
+----
+写出之外还有一个对称的读回入口 :func:`from_parquet`：``scripts/sync_daily_history.py``
+落下的 ``data/day/<类别>/<代码>.parquet`` 用它读回成 ``list[dict]``，
+"同步落盘 → 读回研究"这才是一条完整链路。
+
 v9 自 atst.sinks 更名，消除与 atst.sink（vipdoc .day 写回）的包名混淆。
 """
 
@@ -34,6 +40,7 @@ __all__ = [
     "write",
     "to_dataframe",
     "to_parquet",
+    "from_parquet",
     "to_csv",
     "to_duckdb",
     "parquet_writer",
@@ -119,6 +126,49 @@ def to_parquet(items: Sequence[Any], path: str, *, columns: Sequence[str] | None
             os.unlink(tmp_name)
         raise
     return path
+
+
+def from_parquet(path: str, *, columns: Sequence[str] | None = None) -> list[dict[str, Any]]:
+    """读回 Parquet 文件（:func:`to_parquet` 的对称面），返回 ``list[dict]``。
+
+    为什么要有读回这一面
+    --------------------
+    ``to_parquet`` 是单向漏斗时，"落盘"这条经典场景只完成了一半：``scripts/
+    sync_daily_history.py`` 把全市场日线写成 ``data/day/<类别>/<代码>.parquet``，
+    研究侧却得自己知道"用 pyarrow 读、日期列叫什么、怎么转成行字典"。这点知识
+    收进库里，写出与读回才是同一条契约。
+
+    Requires
+    --------
+    ``pyarrow``（``pip install 'atst[parquet]'``）；缺依赖抛
+    :class:`~atst.errors.DependencyMissingError`，**不**返回空列表——
+    "没装 pyarrow"和"文件里没有数据"是两件不同的事，混在一起会让人查错方向。
+
+    列类型
+    ------
+    ``to_parquet`` 是经 DataFrame 写的，``datetime`` / ``date`` 这类列名会被解析
+    成时间类型，读回来是 ``datetime.datetime``（不是原字符串）。按字符串比日期
+    的调用方（如按 ``YYYY-MM-DD`` 取断点）要自己归一一次。
+
+    Raises
+    ------
+    FileNotFoundError
+        路径不存在（不是"空结果"，是打错了路径）。
+    """
+    try:
+        import pyarrow.parquet as pq
+    except ImportError as exc:  # pragma: no cover
+        from ..errors import DependencyMissingError
+
+        raise DependencyMissingError(
+            "Parquet 读回需要 pyarrow: pip install 'atst[parquet]'", cause=exc
+        ) from exc
+
+    dest = Path(path)
+    if not dest.exists():
+        raise FileNotFoundError(f"Parquet 文件不存在: {path}")
+    table = pq.read_table(str(dest), columns=list(columns) if columns is not None else None)
+    return [dict(row) for row in table.to_pylist()]
 
 
 def to_csv(

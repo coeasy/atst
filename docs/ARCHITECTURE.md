@@ -112,8 +112,8 @@ Fail-closed 要点（`tests/streaming/` 锁）：worker 半死、启动失败、
 
 | 服务面 | 入口 | 实现要点 |
 |---|---|---|
-| CLI | `cli/`（31 子命令） | 只翻译为 `Client` 调用；`build_parser()` 是四面共用的参数契约。 |
-| HTTP | `integration/runtime_http.py`（`/v13/`，10 路由） | `create_runtime_app()` 绑定 `Client`；`wire_fields.py` 三面（CLI/HTTP/WS）入参白名单。 |
+| CLI | `cli/`（32 子命令） | 只翻译为 `Client` 调用；`build_parser()` 是四面共用的参数契约。 |
+| HTTP | `integration/runtime_http.py`（`/v13/`，12 路由） | `create_runtime_app()` 绑定 `Client`；`wire_fields.py` 三面（CLI/HTTP/WS）入参白名单。 |
 | WS | `integration/runtime_ws.py` + `runtime_ws_server.py` | `RuntimeJsonRpcHandler` 绑定 `Client`（非 raw runtime），内部读 `client.runtime.planner`；方法 `subscribe`/`unsubscribe`/`list`/`push`。 |
 | MCP | `integration/mcp/`（9 工具） | stdio MCP 面，同样只翻译为 `Client.call(<capability>, …)`。 |
 

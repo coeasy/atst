@@ -874,6 +874,123 @@ def _cmd_list(args: Any) -> int:
     return 0
 
 
+def _cmd_universe(args: Any) -> int:
+    """标的清单：``atst universe <class> [--list-class]``。
+
+    ``0x044D`` 死掉后（``atst list`` 实测 E3035）这里按类别给清单：代码表 →
+    新浪节点 → tdx 段表探测三级降级，每个类别各走各的降级链。
+    """
+    from ..universe import (
+        ASSET_CLASSES,
+        SINA_NODES,
+        class_of_directory,
+        list_universe,
+        universe_report,
+    )
+
+    if getattr(args, "list_class", False):
+        # 这张表是"清单场景"的自述：类别 → 从哪拿 → 落到哪。``--json`` 给机器读，
+        # 默认给眼睛读——两者出自同一份 ASSET_CLASSES，不各写一遍。
+        if getattr(args, "json", False):
+            print(
+                json.dumps(
+                    [
+                        {
+                            "kind": item.name,
+                            "label": item.label,
+                            "sina_node": item.sina_node,
+                            "segments": list(item.tdx_segments),
+                            "index_bit": item.index_bit,
+                            "directory": item.directory,
+                        }
+                        for item in ASSET_CLASSES
+                    ],
+                    ensure_ascii=False,
+                )
+            )
+            return 0
+        for item in ASSET_CLASSES:
+            node = item.sina_node or "（无节点，走段表探测）"
+            print(
+                f"{item.name:7s} {item.label}｜新浪节点={node}｜段={len(item.tdx_segments)}"
+                f"｜指数位={item.index_bit}｜目录={item.directory}"
+            )
+        print("\n新浪行情中心节点（实测口径）：")
+        for node, label in SINA_NODES:
+            print(f"  {node:8s} {label}")
+        return 0
+
+    kind = args.kind
+    if kind == "all":
+        kinds: tuple[str, ...] = tuple(item.name for item in ASSET_CLASSES)
+    else:
+        kinds = (kind,)
+    try:
+        if args.dry_run:
+            # probe=False 是 --dry-run 的全部意义：tdx 段表探测一次十几分钟，
+            # 让它跑就等于把"先看代价"变成了"先付代价"。
+            report = universe_report(
+                kinds,
+                source=args.source,
+                root=args.root,
+                limit=args.limit,
+                workers=args.workers,
+                probe=False,
+            )
+            if getattr(args, "json", False):
+                # ``--json`` 是这一支的输出格式，不是"另一支命令"的开关：--dry-run
+                # 下把它丢掉，等于让用户拿到一坨人读文本却以为拿到了 JSON。
+                print(json.dumps(report, ensure_ascii=False))
+                return 0
+            for row in report:
+                estimate = row.get("estimate")
+                if row.get("error"):
+                    tail = row["error"]
+                elif estimate:
+                    tail = f"约 {estimate} 候选待探测"
+                else:
+                    tail = f"{row['seconds']}s"
+                print(
+                    f"{row['kind']:7s} 源={row['source']:6s} 条数={row['count'] or '未知'}"
+                    f"（{tail}）｜新浪节点={row['sina_node']}｜段={row['segments']}"
+                )
+            return 0
+        rows = list_universe(
+            kind,
+            source=args.source,
+            root=args.root,
+            limit=args.limit,
+            workers=args.workers,
+        )
+    except (LookupError, KeyError) as exc:
+        print(f"错误：{exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(
+            json.dumps(
+                [{"code": r.code, "name": r.name, "kind": r.kind} for r in rows], ensure_ascii=False
+            )
+        )
+        return 0
+    print(f"# {kind} 共 {len(rows)} 条（源={args.source}）")
+    _print_rows(
+        [
+            {
+                "code": row.code,
+                "name": row.name,
+                "kind": row.kind,
+                # 目录走 class_of_directory（与 --list-class、HTTP 面同一份表）：
+                # 这里写 row.kind 是"抄了一遍当前恰好同名的事实"，改名时会漏。
+                "directory": class_of_directory(row.kind),
+            }
+            for row in rows[: args.show]
+        ]
+    )
+    if len(rows) > args.show:
+        print(f"...（其余 {len(rows) - args.show} 条用 --json 取全量）")
+    return 0
+
+
 def _cmd_quotes_snapshot(args: Any) -> int:
     """批量快照：``atst quotes-snapshot <symbols...>``（全失败 → exit 1）。"""
     last_errors: list[tuple[str, BaseException]] = []

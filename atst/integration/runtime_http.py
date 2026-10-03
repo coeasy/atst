@@ -222,6 +222,89 @@ def create_runtime_app(client: Client | None = None) -> Any:
     ) -> dict[str, Any]:
         return serialize_result(api.security_list(market=market, start=start, provider=provider))
 
+    @app.get("/v13/universe")
+    def universe_classes() -> dict[str, Any]:
+        """标的类别表——「按类别取清单」这张面的自述。
+
+        与 ``atst universe --list-class --json``（CLI 面）出自同一份
+        :data:`atst.universe.ASSET_CLASSES`，不各写一份。
+
+        这里**不是** capability：capability 表走 ``QuerySpec → QueryPlan → runtime``
+        那条行情读取链路（登记要动能力口径 + provider 显式声明），而"有哪些标的"
+        是工具方法，理由写在 :mod:`atst.universe` 的模块 docstring 里。
+        """
+        from ..universe import ASSET_CLASSES, NODE_TO_CLASSES, SINA_NODES
+
+        return {
+            "api": "v13",
+            "classes": [
+                {
+                    "kind": item.name,
+                    "label": item.label,
+                    "sina_node": item.sina_node,
+                    "segments": list(item.tdx_segments),
+                    "index_bit": item.index_bit,
+                    "directory": item.directory,
+                }
+                for item in ASSET_CLASSES
+            ],
+            "sina_nodes": [{"node": node, "label": label} for node, label in SINA_NODES],
+            "node_to_classes": {node: list(kinds) for node, kinds in NODE_TO_CLASSES.items()},
+        }
+
+    @app.get("/v13/universe/{kind}")
+    def universe(
+        kind: str,
+        root: str = "data",
+        limit: int | None = Query(None, ge=1),
+    ) -> dict[str, Any]:
+        """``GET /v13/universe/{kind}``：本地代码表里某一类（或 ``all``）的全部标的。
+
+        **这张面只读本地代码表**，``source`` 恒为 ``table``——这是刻意的：
+
+        * 新浪那一级是秒级的**外呼**，tdx 那一级是"枚举段 + 逐只探"的**分钟级**作业；
+          在 HTTP 请求里同步跑一分钟，等于把一个后台批任务塞进了请求路径（网关会被
+          占住，超时与重试语义也全乱）。要刷新清单就跑 ``scripts/sync_daily_history.py
+          --fetch-list``（盘后批任务），网关只负责把**已经落好的表**发出去。
+        * 副作用是这条路由**没有任何外呼**：给定 ``root`` 与 ``kind``，结果完全确定，
+          同参数重复调用与并发调用都得到同一份数据。
+
+        ``root`` 是代码表所在目录（默认 ``data``，即 ``data/universe.csv``）；表不存在
+        时返回 ``count: 0`` 并附一句 ``hint``，而不是报错——"还没跑过同步"是部署常态，
+        不是请求错误。
+        """
+        from pathlib import Path
+
+        from ..errors import ValidationError as _ValidationError
+        from ..universe import ASSET_CLASSES, class_of, from_table
+
+        try:
+            # 类别名只在这里判一次（``class_of`` 抛 KeyError，翻成 E1010）；这一层
+            # 不再自己抄一份合法名单，那会是第二份会过期的事实源。
+            kinds = (
+                tuple(item.name for item in ASSET_CLASSES)
+                if kind == "all"
+                else (class_of(kind).name,)
+            )
+        except KeyError as exc:
+            raise _ValidationError(str(exc), context={"phase": "universe"}) from exc
+        rows = [] if not root else [row for name in kinds for row in from_table(Path(root), name)]
+        if limit:
+            rows = rows[:limit]
+        payload: dict[str, Any] = {
+            "api": "v13",
+            "kind": kind,
+            "source": "table",
+            "count": len(rows),
+            "items": [{"code": row.code, "name": row.name, "kind": row.kind} for row in rows],
+        }
+        if not rows:
+            payload["hint"] = (
+                f"{root or '（root 为空）'}/universe.csv 里没有 {kind} 的标的；"
+                "先跑 python scripts/sync_daily_history.py --fetch-list 生成代码表"
+            )
+        return payload
+
     @app.get("/v13/runtime/health")
     def health() -> dict[str, Any]:
         rt = api.runtime

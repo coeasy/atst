@@ -9,6 +9,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.3.0] - 2026-10-03
+
+### Added
+
+- **`atst.universe`：「按类别取全部标的」的清单编排层**（`0x044D SECURITY_LIST`
+  离线后的替代路径）。三级降级源 **代码表 → 新浪节点 → tdx 段表探测**，覆盖七类：
+  `stock` / `bse` / `etf` / `lof` / `bond` / `index` / `bshare`。复用
+  `SinaSource.fetch_all`（分页 + 并发 + 令牌桶）而不重写 HTTP 层；不做成 capability
+  （不发行情请求、不走 `QuerySpec → QueryPlan` 那条链路）。公开面：`list_universe`
+  / `list_all_universe` / `universe_report` / `class_of` / `classify` / `from_table`
+  / `ASSET_CLASSES` / `TBD_SOURCES`。
+- **CLI `atst universe [kind]`**：`--list-class` / `--dry-run` / `--show N` / `--json`
+  / `--source auto|table|sina|tdx` / `--root` / `--limit` / `--workers`。
+- **HTTP `/v13/universe` 与 `/v13/universe/{kind}`**：类别表与某一类的全部标的。
+  这两支**只读本地代码表**、不提供 `source` 旋钮（新浪那一级是外呼、tdx 那一级是
+  分钟级批作业，塞进请求路径会占住网关）；表不存在时回 `200 + count: 0 + hint`。
+- **同步脚本 `--fetch-list`**：秒级把七类清单写进 `<root>/universe.csv`
+  （三列 `代码,类别,名称`）。
+- **同步脚本 `--doctor [--json]`**：不联网体检"清单 vs 落盘"的缺口 / 空文件 /
+  落伍 / 断点漂移；缺口与空文件退出码 `2`。
+- **`atst.output.from_parquet`**：`to_parquet` 的对称读回面（`list[dict]`）。
+  此前输出层 4 个写手、0 个读回入口，"同步落盘 → 读回研究"这条经典场景只完成了
+  一半——`data/day/<类别>/<代码>.parquet` 读回来还得自己知道 pyarrow 怎么用、
+  日期列叫什么。缺 pyarrow 抛 `DependencyMissingError`、路径不存在抛
+  `FileNotFoundError`（都不静默返回空列表）。
+
+### Fixed
+
+- `--fetch-list` 静默漏掉北交所：类别候选面原先取自脚本的扫描顺序表
+  （`_SCAN_ORDER` 无 `bse`），兜底分支永不触发。现锚定 `atst.universe.ASSET_CLASSES`。
+- `segment_candidates` 把 `sh600` 截成 `sh`、产出 `sh000…sh999`（`--dry-run`
+  从不真探，长期未暴露）。
+- 老格式单列代码表被整表当成同一类别交出；显式源拿空被静默返回空列表
+  （现抛 `LookupError`，报告层摊成表格一格）。
+- `--scan` 与 `--fetch-list` 落的代码表形状不一致（两列无表头 vs 三列有表头），
+  现共用同一个写手。
+- `atst universe --dry-run` 会真跑 tdx 探测（十几分钟），与"只看代价"自相矛盾。
+- `--dry-run --json` 被静默降级成人读文本。
+- `atst.universe` 包内孤儿私有符号（`_BY_SINA_NODE` / `_BJ_PREFIXES` / `_belongs` /
+  `lock_depth`）与幻影旋钮 `AssetClass.em_fs` 一并清掉；节点↔类别改为从类别表**推导**
+  （手抄的那份会在换节点后悄悄变旧）；新浪源改为整轮共用**一个**实例
+  （每个节点新建一个 = 同一进程里并存多份限流配额）。
+- **第 3 轮（发布前复查）**：
+  - `classify` 的北交所判据写成 `token[:3] == "bj"`，对任何真实代码恒为假
+    （`"bj920000"[:3]` 是 `"bj9"`）——bse 实际全靠段表里的 `bj920` 兜着，北交所
+    真开新段（430/830）那天会被静默判成 `stock` 写进 `day/stock/`。改
+    `startswith("bj")`。
+  - `classify` 里 `token[2:4] in ("00", "01")` 是**死分支**（`token[:3]` 为 `sh9`/`sz2`
+    时 `token[2]` 恒为 `9`/`2`，永不可能等于 `"00"`/`"01"`）；B 股本就由段表
+    （`sh900`/`sz200`）覆盖，删掉重抄的那份判据。
+  - `from_tdx_scan` 结果顺序是线程 `as_completed` 的**完成序**，同一份数据两次跑
+    可能出两份顺序（CLI 输出、快照判据、"两条链路结果应当一致"的比较都会偶发红）。
+    改为按候选顺序（段 × 流水号）出。
+  - `limit` 在"单类"与"全类别"两条路径上含义不同：`all` 那支对代码表/新浪拿到的行
+    根本不截（只有 tdx 探测接 `limit`），且 `limit=0` 被当成"不限"。现统一到
+    `_cap`，`limit=0` 就是"一条都不要"且不触碰任何取数源。
+  - 同步脚本自己又实现了一遍 `classify` / `classify_with_index` / `class_dir`
+    （遍历那张按 `_SCAN_ORDER` 建、**没有 bse** 的 `CLASS_SEGMENTS`）——同一事实两处
+    实现，`bj920000` 由此落到 `stock`。现只留转发口，判定锚定 `atst.universe`。
+  - `INDEX_PREFIXES` 写成 `CLASS_SEGMENTS[0][1]`，把"index 恰好排在扫描顺序第一位"
+    当成事实；改按类别名取（`_SEGMENTS_BY_CLASS["index"]`）。
+  - CLI `atst universe` 的 `directory` 列写 `row.kind`（抄了一遍"目录恰好同名"的
+    事实），改走 `class_of_directory`。
+  - HTTP `/v13/universe/{kind}` 的 docstring 写"可以放心缓存与并发"，被
+    `test_production_prose_never_claims_a_data_cache` 拦下——缓存层第 18 步已物理删除，
+    注释不许再替它说话（改述为"结果完全确定"，不动门禁）。
+  - `docs/ARCHITECTURE.md` 的 `cli/`（31 子命令）与 `/v13/`（10 路由）两处陈旧口径，
+    同步为 32 / 12。
+
 ## [1.0.0] - 2026-09-28
 
 ### Fixed（逻辑审查第 8 轮：真实 CI 首跑暴露的 CPython 3.10/3.13/3.14 缺陷 + 文档陈旧数字）
