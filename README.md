@@ -4,8 +4,8 @@
 >
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
-- 当前版本：`1.4.0`
-- 当前发布状态：**GitHub Release [`v1.4.0`](https://github.com/coeasy/atst/releases/tag/v1.4.0) 已发布**（canonical wheel + sdist，附 `SHA256SUMS.txt` 与 `RELEASE-METADATA.json`）；**本包不在 PyPI 上**——PyPI 上传是显式 opt-in（需仓库变量 `PUBLIC_RELEASE=true`）· [v1.0.0 发布说明](docs/releases/v1.0.0.md) · [v1.1.0 发布说明](docs/releases/v1.1.0.md) · [v1.2.0 发布说明](docs/releases/v1.2.0.md) · [v1.2.1 发布说明](docs/releases/v1.2.1.md) · [v1.2.2 发布说明](docs/releases/v1.2.2.md) · [v1.3.0 发布说明](docs/releases/v1.3.0.md) · [v1.4.0 发布说明](docs/releases/v1.4.0.md) · [CHANGELOG](CHANGELOG.md)
+- 当前版本：`1.4.1`
+- 当前发布状态：**GitHub Release [`v1.4.1`](https://github.com/coeasy/atst/releases/tag/v1.4.1) 已发布**（canonical wheel + sdist，附 `SHA256SUMS.txt` 与 `RELEASE-METADATA.json`）；**本包不在 PyPI 上**——PyPI 上传是显式 opt-in（需仓库变量 `PUBLIC_RELEASE=true`）· [v1.0.0 发布说明](docs/releases/v1.0.0.md) · [v1.1.0 发布说明](docs/releases/v1.1.0.md) · [v1.2.0 发布说明](docs/releases/v1.2.0.md) · [v1.2.1 发布说明](docs/releases/v1.2.1.md) · [v1.2.2 发布说明](docs/releases/v1.2.2.md) · [v1.3.0 发布说明](docs/releases/v1.3.0.md) · [v1.4.0 发布说明](docs/releases/v1.4.0.md) · [v1.4.1 发布说明](docs/releases/v1.4.1.md) · [CHANGELOG](CHANGELOG.md)
 
 ---
 
@@ -529,9 +529,9 @@ python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproje
 
 ## 路线图
 
-### 当前阶段：v1.4.0 稳定版
+### 当前阶段：v1.4.1 稳定版
 
-atst 已发布 `v1.4.0`（GitHub Release，不在 PyPI）。当前内核为单执行路径、零缓存、provider-first：
+atst 已发布 `v1.4.1`（GitHub Release，不在 PyPI）。当前内核为单执行路径、零缓存、provider-first：
 85 命令 / 61 精确解析器 / 5 协议族 / 14 Provider / 194 capability / 280 条精确绑定全部到位，并通过全量确定性门禁。
 
 | 里程碑 | 状态 |

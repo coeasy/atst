@@ -1,9 +1,8 @@
 # 第 3 轮: HTTP 面端到端贯通实测 (真实 ASGI, 离线安全项 + 网络项分开)
 """验证 FastAPI 应用全链路: 路由 -> 参数白名单 -> capability 派发 -> 错误信封。"""
+
 import sys
 import traceback
-
-import httpx
 
 failures = []
 
@@ -47,10 +46,16 @@ probe("GET /v13/runtime/health", lambda: get("/v13/runtime/health"))
 
 probe(
     "GET /v13/capabilities",
-    lambda: get("/v13/capabilities", check=lambda b: (
-        len(b["capabilities"]) >= 100 and len(b["providers"]) >= 5
-        or (_ for _ in ()).throw(AssertionError(f"caps={len(b['capabilities'])} providers={len(b['providers'])}"))
-    )),
+    lambda: get(
+        "/v13/capabilities",
+        check=lambda b: (
+            len(b["capabilities"]) >= 100
+            and len(b["providers"]) >= 5
+            or (_ for _ in ()).throw(
+                AssertionError(f"caps={len(b['capabilities'])} providers={len(b['providers'])}")
+            )
+        ),
+    ),
 )
 
 # 422 白名单: 未声明查询参数必须被拒
@@ -62,8 +67,11 @@ probe(
 # body 白名单: 未声明键必须被拒
 probe(
     "POST /v13/query/security_count 带 bogus 键 -> 422",
-    lambda: post("/v13/query/security_count", {"args": [], "kwargs": {"market": "0"}, "bogus": 1}, expect=422),
+    lambda: post(
+        "/v13/query/security_count", {"args": [], "kwargs": {"market": "0"}, "bogus": 1}, expect=422
+    ),
 )
+
 
 # 未知 capability -> 错误信封 4xx/5xx 且结构化
 def unknown_cap():
@@ -76,12 +84,13 @@ def unknown_cap():
 
 probe("POST 未知 capability -> 错误信封", unknown_cap)
 
+
 # ---------- 网络项 (失败标 NET 而非代码 FAIL) ----------
 def live_quotes():
     try:
         return get("/v13/quotes?symbols=sz000001")
-    except AssertionError as e:
-        raise SystemExit  # noqa: TRY002
+    except AssertionError:
+        raise SystemExit from None  # noqa: TRY002
 
 
 def live_quotes_safe():

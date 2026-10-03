@@ -303,6 +303,17 @@ class _ClientMixin:
             bars.extend(_row_to_bar(row) for row in fresh)
             if len(raw_rows) < page:
                 break  # 短页：历史耗尽（正常终止）
+            #: 光标必须按**整页实际返回数**推进，不能按去重后的 ``len(fresh)``。
+            #: 服务端返回的是「从 ``offset`` 起的连续块」，因此下一未读位置恒为
+            #: ``offset + len(raw_rows)``；重复行只说明锚点漂了，并不改变这条位置算术。
+            #:
+            #: 反面读法（别再按这个"修"回去）：按 ``len(fresh)`` 推进会少走，
+            #: 让光标**倒退重读**——某页漂移 10 行时，下一请求会落在尚未读走的位置
+            #: 之前，整页命中已见行 → ``fresh == 0`` → 被误判成漂移提前 break，
+            #: 本可取到的尾部反而丢了。"多发一页"只是浪费，不等于"更安全"。
+            #:
+            #: 终止性：``remaining`` 每轮按 ``len(fresh)`` 严格递减（≥1），叠加 3 条
+            #: break 判据，不存在死循环。
             offset += len(raw_rows)
             remaining -= len(fresh)
 
@@ -343,6 +354,15 @@ class _ClientMixin:
                     },
                 )
             record_warning(WarningCode.BARS_EMPTY_FIRST_PAGE, msg, stacklevel=_TPL_WARN_STACKLEVEL)
+        #: 出门前统一按时间**升序**：分页拼出来的原始序列是"锯齿"的——页内升序、
+        #: 页间倒退（每页都比上一页旧），所以 ``bars[0]`` 并非最早、``bars[-1]`` 并非
+        #: 最新。（线路实测 sz000001/16000 根：``bars[0]``=2023-06-15 而 ``bars[-1]``
+        #: =1993-02-16，两端都不是极值。）回归测试用的 ``_PagePool`` 恰好是页内降序，
+        #: 拼出来整体单调，把这个形状遮住了——所以此前既无判据也无文档。
+        #: 升序后契约唯一且可用：``bars[0]`` = 最早一根，``bars[-1]`` = 最新一根。
+        #: 稳定性保证同一时间戳的相对次序不变；``_emit`` 对 rows/tuple/dataframe
+        #: 三种出口都保留顺序。
+        bars.sort(key=lambda bar: bar.datetime)
         return _emit(bars, as_format)
 
     # ------------------------------------------------------------------ #

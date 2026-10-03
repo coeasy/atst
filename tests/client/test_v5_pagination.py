@@ -41,14 +41,19 @@ def _date_int(day_offset: int) -> int:
 
 
 def _bars_payload(n: int, *, start: int = 0, index: bool = False) -> bytes:
-    """合成 n 条 0x052D 日 K 记录，datetime 按请求 start 偏移（新→旧）。
+    """合成 n 条 0x052D 日 K 记录，**页内按时间升序**（与真实主站一致）。
+
+    线路实测的形状是「页内升序、页间倒退」：``start`` 越大 → 整页越旧，但同一页里
+    i 递增 → datetime 递增。旧 fake 用 ``- start - i``（页内降序）拼出来整体单调，
+    把真实的**锯齿序**遮住了——这也正是"bars 出口顺序"长期无判据的根因。改成
+    ``- start + i`` 之后，跨页拼接会复现锯齿，排序契约才真的被回归覆盖。
 
     差分链：每条 od=1000/cd=100/hd=50/ld=-50（数值自洽即可，测试只关心
     条数与 datetime 唯一性）。
     """
     recs: list[bytes] = []
     for i in range(n):
-        dt = _date_int(20000 - start - i)  # start 越大 datetime 越旧
+        dt = _date_int(20000 - start + i)  # start 越大 datetime 越旧；页内 i 递增 → 越新
         recs.append(
             struct.pack("<I", dt)
             + encode_leb128(1000)
@@ -263,6 +268,34 @@ class TestBarsPagination:
         with pytest.raises(TruncatedDataError):
             client.bars("sh600519", period="day", count=1600, strict=True)
 
+    def test_bars_are_returned_in_chronological_order(self) -> None:
+        """跨页拼接必须**升序**返回：分页原始形状是"页内升序、页间倒退"的锯齿。
+
+        线路实测 sz000001/16000 根：``bars[0]``=2023-06-15、``bars[-1]``=1993-02-16，
+        两端都不是极值——调用方按两端读数会读到完全反的结果。修在出口统一排序后
+        契约唯一：``bars[0]`` = 最早，``bars[-1]`` = 最新。
+        """
+        pool = _PagePool()
+        client = TdxClient(pool=pool)  # type: ignore[arg-type]
+        bars = client.bars("sh600519", period="day", count=1600)
+        dts = [b["datetime"] for b in bars]
+        assert dts == sorted(dts), "分页结果必须按 datetime 升序"
+        assert dts[0] == min(dts)
+        assert dts[-1] == max(dts)
+
+    def test_cursor_advances_by_full_page_under_partial_drift(self) -> None:
+        """部分重叠（锚点漂移）时光标按**整页实际返回数**推进，不按去重后的 ``fresh``。
+
+        次页回的是"偏移 10 行重放"的 800 根（10 根与首页重复 + 790 根新增），
+        因此第 3 次请求的 ``start`` 必须是 1600；若有人把它"修"成按 ``len(fresh)``
+        推进，这里会变成 1590 —— 那是光标倒退重读，会把尾部误判成漂移而丢数据。
+        """
+        pool = _PartialDriftPool()
+        client = TdxClient(pool=pool)  # type: ignore[arg-type]
+        bars = client.bars("sh600519", period="day", count=1610)
+        assert [r[0] for r in pool.requests] == [0, 800, 1600], pool.requests
+        assert len(bars) == 1590  # 800 + 790（10 根重复被去重吸收）
+
     def test_index_flag_passthrough(self) -> None:
         """index=True 走同一分页路径（尾部涨跌家数由解析器处理）。"""
         pool = _PagePool(index=True)
@@ -297,6 +330,26 @@ class _DriftPool:
             return _frame(cmd, _bars_payload(800, start=0))
         # 锚点漂移：第二页 datetime 与首页重叠（start 未生效）
         return _frame(cmd, _bars_payload(count, start=0))
+
+
+class _PartialDriftPool:
+    """盘中锚点漂移的**部分重叠**形状：次页回"偏移 10 行重放"的整页。
+
+    ``start=800`` 时回 ``payload(start=790)``：800 行里 10 行与首页重复、790 行是新
+    的（真实漂移很少整页重复，更多是错位几行）。用于锁死分页光标的推进语义。
+    """
+
+    def __init__(self) -> None:
+        self.requests: list[tuple[int, int]] = []
+
+    def request(self, cmd: int, body: bytes, timeout=None):  # noqa: ANN001, ARG002
+        _mkt, _code, _category, _one, start, count = struct.unpack_from("<H6sHHHH", body, 0)
+        self.requests.append((start, count))
+        if start == 0:
+            return _frame(cmd, _bars_payload(800, start=0))
+        if start == 800:
+            return _frame(cmd, _bars_payload(800, start=790))  # 10 行与首页重叠
+        return _frame(cmd, _bars_payload(0, start=start))  # 之后耗尽
 
 
 # --------------------------------------------------------------------------- #

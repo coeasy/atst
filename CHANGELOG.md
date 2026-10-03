@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.4.1] - 2026-10-04
+
+### Fixed
+
+- **`--full` 静默丢历史：`MAX_WINDOW` 8000 → 10000**。日线全历史的天花板来自
+  "最早上市日"，与请求根数无关。实网实测：`sh600601` **8602 根**（1990-12-19，
+  上交所首日）、`sz000001` **8464 根**（1991-04-03）——旧值 8000 会把这些老股
+  **静默截断约 1.9 年且无告警**。新值留 5.7 年余量、远低于分页地址夹；短页即停的
+  终止语义保证年轻标的请求数不变，只有真正超 8000 根的老股本多打那几页。
+- **`bars()` 返回契约改为按 `datetime` 升序**。分页原始形状是"页内升序、页间倒退"
+  的锯齿序，`bars[0]` 不是最早、`bars[-1]` 不是最新（实网 `sz000001`：两端都不是
+  极值）。统一在出口排序，四张面一致：`rows[0]`=最早、`rows[-1]`=最新。此前该契约
+  既无判据也无文档。
+
+### Changed
+
+- **同步脚本观测输出与限速深度优化**：进度行节流（终端回车覆盖 / 非终端按阈值平铺，
+  不再每只 `print+flush`，消除全市场约 87 秒空转）、明细收敛到 `--verbose`、
+  礼貌间隔移到提交侧、`run()` 收尾 `finally` 关连接池、`scan_universe` 的 `warnings`
+  抑制改局部、砍掉与连接池重复的 timeout-only 重试孤儿逻辑、当轮 SKIP 二次重投。
+- **北交所边界透明化**：`--doctor` 把 `bj*` 单列「协议不支持」（不再假报 348 个缺口）、
+  `--include-class bse` 打印显式告警、协议不支持标的的 SKIP 不再污染 `state.failed`。
+- **vipdoc 跨平台探测**：不再硬编码 `C:/new_tdx` / `D:/new_tdx`。
+- **接口文档补 K 线契约**：`docs/api/interfaces.md` 声明 `bars()` 升序返回与
+  `count` 为上限；`docs/cookbook/08_daily_history_sync.md` 更新全量口径并新增
+  「全市场全历史推荐运行流程」。
+
+### Tests
+
+- `tests/client/test_v5_pagination.py`：新增升序出口契约判据、分页光标整页推进判据；
+  测试桩 `_bars_payload` 由页内降序改为**页内升序**（与真实主站一致），复现锯齿序。
+- `tests/unit/test_sync_daily_history.py`：预算页数改按 `MAX_WINDOW / PAGE_BARS`
+  推导，并新增 `MAX_WINDOW >= 8602` 下限判据防回退。
+
 ## [1.4.0] - 2026-10-03
 
 ### Added

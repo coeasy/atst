@@ -30,7 +30,7 @@ from atst.client import TdxClient
 
 | 方法 | 签名 | 说明 |
 |------|------|------|
-| `bars` | `(symbol, *, period="day", count=320, start=0, market=None, index=False, as_format="dict", strict=False)` | K 线/分钟线；`count` > 800 时内部自动按 800 一页翻页 |
+| `bars` | `(symbol, *, period="day", count=320, start=0, market=None, index=False, as_format="dict", strict=False)` | K 线/分钟线；`count` > 800 时内部自动按 800 一页翻页。**返回按 `datetime` 升序**（`rows[0]` 最早、`rows[-1]` 最新，四张面一致）；`count` 是**上限**，标的上市时间不足时实际返回更少（短页即止，不补空行） |
 | `quotes` | `(symbols, *, as_format="dict")` | 实时行情快照（`0x0530` 逐只请求再汇总） |
 | `quotes_concurrent` | `(symbols, *, workers=8, as_format="dict")` | 并发批量行情 |
 | `security_count` | `(market=0)` | 证券数量 |
@@ -173,7 +173,7 @@ from atst import Client, AsyncClient
 
 | 方法 | 签名摘要 | 说明 |
 |------|----------|------|
-| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", strict=False, start_date="", end_date="")` | K 线；`strict=True` 时结果携带任何数据瑕疵即抛 `TruncatedDataError`；`start_date`/`end_date` 是闭区间日期（见本节「日期区间」）；`period=` 收哪些写法见本文 §6「K 线周期拼写」一表 |
+| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", strict=False, start_date="", end_date="")` | K 线；`strict=True` 时结果携带任何数据瑕疵即抛 `TruncatedDataError`；`start_date`/`end_date` 是闭区间日期（见本节「日期区间」）；`period=` 收哪些写法见本文 §6「K 线周期拼写」一表；**返回按 `datetime` 升序**（`rows[0]` 最早、`rows[-1]` 最新） |
 | `quotes` | `(symbols, *, provider=None, policy=None, currentness="live")` | 实时行情 |
 | `quotes_batch` | `(symbols, *, provider=None, currentness="live") -> BatchResult` | 逐 symbol 三态审计 |
 | `snapshot` | `(symbol, *, provider="tdx", currentness="live")` | 盘口快照 |

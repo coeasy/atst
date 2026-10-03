@@ -437,18 +437,23 @@ def test_scan_enumerates_every_code_in_a_segment(sync: ModuleType) -> None:
 
 
 def test_bar_budget_counts_requests_by_page_not_by_bar(sync: ModuleType) -> None:
-    """成本项是请求次数：每只全历史要 8000/800 = 10 页，不是 8000 次请求。"""
+    """成本项是请求次数：全历史按 ``ceil(MAX_WINDOW/PAGE_BARS)`` 页，不是根数次请求。"""
+    #: 全历史上限必须覆盖"最早上市日"的实测天花板：``sh600601`` = 8602 根
+    #: （1990-12-19，上交所首个交易日）。旧值 8000 会把这些老股静默截断约 1.9 年，
+    #: 这里钉死下限防止回退。
+    assert sync.MAX_WINDOW >= 8602
+
+    pages_full = -(-sync.MAX_WINDOW // sync.PAGE_BARS)  # 上取整，避免依赖 math
     bars_full, requests_full = sync._bar_budget(28, full=True, lookback=320)
-    assert (bars_full, requests_full) == (28 * sync.MAX_WINDOW, 28 * 10)
+    assert (bars_full, requests_full) == (28 * sync.MAX_WINDOW, 28 * pages_full)
 
     bars_inc, requests_inc = sync._bar_budget(8385, full=False, lookback=320)
     assert bars_inc == 8385 * sync.BASELINE_WINDOW
     assert requests_inc == 8385  # 单页就够，一次请求一支
 
-    #: 全市场铺底 → 全市场 --full，请求数涨一个数量级（8385 → 83850），
-    #: 这个落差得让用户在开跑前就看到，而不是跑完才发现。
+    #: 全市场铺底 → 全市场 --full，请求数涨一个数量级，这个落差得让用户在开跑前就看到。
     _, wide_full = sync._bar_budget(8385, full=True, lookback=320)
-    assert wide_full == 8385 * 10
+    assert wide_full == 8385 * pages_full
     assert wide_full > requests_inc * 9
 
 
