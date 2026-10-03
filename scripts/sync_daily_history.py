@@ -2,25 +2,42 @@
 # Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
-"""用 TDX 接口把 A 股日线同步到本地目录，**零参数即可直接跑**。
-
-::
+"""用 TDX 接口把全市场日线同步到本地目录，**零参数即可直接跑**。::
 
     python scripts/sync_daily_history.py
 
-上面这一行就是全部用法：默认把日线写进 ``data/day/``、状态写 ``data/state.json``、
-代码表写 ``data/universe.csv``，默认同步内置宇宙（20 只龙头 + 8 个宽基指数）。
+上面这一行就是全部用法：默认把日线写进 ``data/day/<类别>/``、状态写
+``data/state.json``、代码表写 ``data/universe.csv``，默认同步内置宇宙。
 不是"示例，需自行改路径"——是拷过去就能每天盘后跑。
+
+**标的类别**（不是"只同步 A 股股票"）：代码段决定类别，类别决定落盘目录、
+决定 ``0x052D`` 走不走指数位。实测过每个段（见 :data:`CLASS_SEGMENTS`）：
+
+=========  ==========================================  ============
+类别        代码段                                      落盘目录
+=========  ==========================================  ============
+``index``  sh000* / sz399*                             ``index/``
+``etf``    沪 51x/56x/58x、深 158x/159x                ``etf/``
+``lof``    沪 501/502、深 160-165                      ``lof/``
+``bond``   沪 110/111/113/118、深 121/123/127/131      ``bond/``
+``bshare`` 沪 900*、深 200*（B 股，按个股拉）           ``bshare/``
+``stock``  沪 600/601/603/605/688/689、深 000-003/300/301 ``stock/``
+=========  ==========================================  ============
+
+**全量 / 增量怎么选**：TDX 的 ``bars`` 只给"最近 N 根"，没有翻页游标，所以
+
+* ``--full`` = **全历史**：按 ``MAX_WINDOW`` 拉（8000 根上限，服务端单页 800
+  自动翻页），并把已有文件整体重写成长历史。铺底、换机器、校准口径用。
+* 默认（增量）= **最近 lookback 根 + 与磁盘合并**：盘后每天只需拿新增那几根，
+  拉回来的 320 根和本地已有的去重合并，历史不会随轮数漂。首次跑没有断点，
+  就按 ``--lookback`` 铺底（默认 320 根 ≈ 1.5 年），想要完整历史跑一次 ``--full``。
 
 设计要点（每一条都是被实战教训逼出来的，不是装饰）：
 
 1. **启动即跑**：默认 root 锚定仓库根的 ``data/``，不依赖当前工作目录；
-   universe 按 `本地 vipdoc → data/universe.csv → 内置默认宇宙` 三级兜底，
-   三级都没有时也不会空手而归——内置宇宙就是给"什么都没准备"这条路径用的。
-2. **指数位自动判定**：``0x052D`` 的 index 位搞反了主站会回一堆荒唐日期
-   （实测 ``sh000001`` 不走 index 位得到 ``5616-57-83``），所以 ``sh000*``/
-   ``sz399*`` 自动判为指数并走 ``bars(index=True)``；``--index/--no-index``
-   可整体覆盖。
+   universe 按 `本地 vipdoc → data/universe.csv → 内置默认宇宙` 三级兜底。
+2. **类别从代码段推出来**：``sh000*``/``sz399*`` 判为指数并走 ``bars(index=True)``；
+   走反了主站回的是 ``5616-57-83`` 这种荒唐日期，本地看极像网络抖动。
 3. **断点续拉**：``start`` 是 16-bit 分页偏移不是日期游标，续拉只能靠
    "本地那支文件的最后一根日期 + 多要一段回来合并"。见 :func:`_resume_bar_count`。
 4. **幂等落地**：先合并去重再整体重写到 ``.tmp`` 然后 ``os.replace`` 原子改名——
@@ -30,16 +47,19 @@
 6. **代码表可自产**：``0x044D SECURITY_LIST`` 已登记 offline，代码表不能从 tdx
    拿回来。``--scan`` 走"枚举代码段 + 探测主站回不回真实数据"，把全市场代码表
    落成本地 ``universe.csv``——不存在的代码主站回空首页，存在的回真实数据，
-   这个差别就是判定依据。
+   这个差别就是判定依据。再往里一步还要验日期键是真日历日期（见
+   :func:`scan_universe`），否则"回垃圾数据但不空"的假代码会被认成存在。
 
 用法::
 
     python scripts/sync_daily_history.py                      # 零参数：增量同步内置宇宙到 data/
-    python scripts/sync_daily_history.py --full               # 全量重拉（长历史）
+    python scripts/sync_daily_history.py --full               # 全历史重拉（铺底用）
     python scripts/sync_daily_history.py --symbols sh600519 sz000001
     python scripts/sync_daily_history.py --universe-file data/universe.csv
     python scripts/sync_daily_history.py --root data --limit 200
+    python scripts/sync_daily_history.py --list-class         # 看类别与段表
     python scripts/sync_daily_history.py --scan               # 探测全市场代码表
+    python scripts/sync_daily_history.py --scan --exclude-class etf lof bond
     python scripts/sync_daily_history.py --index              # 强制全部当指数拉
     python scripts/sync_daily_history.py --dry-run            # 只拉不落盘
 
@@ -115,29 +135,77 @@ DEFAULT_UNIVERSE: tuple[tuple[str, str], ...] = (
     ("sz399905", "中证500"),
 )
 
-#: 指数位自动判定的前缀。``sh000*``（上证系列指数）与 ``sz399*``（深证/中证
-#: 系列指数）走 ``bars(index=True)``，其余（含 ``sh900*`` B 股、``sz200*`` B 股）
-#: 走普通个股路径。写死这张表比"看开头两位是 sh 就当指数"安全得多。
-INDEX_PREFIXES: tuple[str, ...] = ("sh000", "sz399")
-
-#: ``--scan`` 默认枚举的代码段（每段的后三位 000-999 逐个探测）。
-SCAN_SEGMENTS: tuple[str, ...] = (
-    "sh600",
-    "sh601",
-    "sh603",
-    "sh605",
-    "sh688",
-    "sh689",
-    "sz000",
-    "sz001",
-    "sz002",
-    "sz003",
-    "sz300",
-    "sz301",
+#: **类别 → 该类别的代码段**（每段后三位 000-999 逐个探测）。这张表是实测的，
+#: 不是照着代码规则推的：113 个候选段逐个抽 30 个尾号探测，46 个有货、67 个是
+#: 空段（``sh606``-``sh620``、``sh500``/``sh505``、``sz150-157``、``sz370-373``
+#: 等等全是空的，留着只会让 ``--scan`` 每次白跑几十分钟）。抽样有盲区——
+#: B 股段 ``sh900``/``sz200`` 抽样 0 命中，但实测 ``sh900932``、``sz200011``
+#: 都真能拉到日线——所以有货的段一律保留，只删抽样确定为空的段。
+#:
+#: 顺序有意义：匹配到第一个就停，所以更"特殊"的段放前面。
+CLASS_SEGMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("index", ("sh000", "sz399")),
+    (
+        "etf",
+        (
+            "sh510",
+            "sh511",
+            "sh512",
+            "sh513",
+            "sh515",
+            "sh516",
+            "sh519",
+            "sh520",
+            "sh530",
+            "sh560",
+            "sh561",
+            "sh562",
+            "sh563",
+            "sh588",
+            "sh589",
+            "sz158",
+            "sz159",
+        ),
+    ),
+    ("lof", ("sh501", "sh502", "sz160", "sz161", "sz163", "sz164", "sz165")),
+    (
+        "bond",
+        ("sh110", "sh111", "sh113", "sh118", "sz121", "sz123", "sz127", "sz131"),
+    ),
+    ("bshare", ("sh900", "sz200")),
+    (
+        "stock",
+        (
+            "sh600",
+            "sh601",
+            "sh603",
+            "sh605",
+            "sh688",
+            "sh689",
+            "sz000",
+            "sz001",
+            "sz002",
+            "sz003",
+            "sz300",
+            "sz301",
+        ),
+    ),
 )
 
-#: 北交所段要单独开口（代码段是 43/83/87/92，量小但不少账户用得上）。
-BJ_SEGMENTS: tuple[str, ...] = ("bj430", "bj830", "bj870", "bj920")
+#: 默认扫哪些段 = 全类别。``--scan`` 用这张表，不必再单独维护一份。
+DEFAULT_SCAN_CLASSES: tuple[str, ...] = tuple(kind for kind, _ in CLASS_SEGMENTS)
+
+#: 协议层没打开的类别。北交所 ``bj*`` 实测直接被客户端拒
+#: （``[E3040] market=2 尚未验证；当前只允许 SZ/SH``），扫它 1000 个候选
+#: 一个都探不出来——与其让它假装是"空段"，不如显式记下来。
+UNSUPPORTED_CLASSES: dict[str, str] = {
+    "bse": "北交所 bj*：客户端实测 E3040（market=2 未验证，只允许 SZ/SH）",
+}
+
+#: 指数位自动判定的前缀。``sh000*``（上证系列指数）与 ``sz399*``（深证/中证
+#: 系列指数）走 ``bars(index=True)``；B 股（``sh900*``/``sz200*``）、ETF、LOF、
+#: 可转债都走普通个股路径。
+INDEX_PREFIXES: tuple[str, ...] = tuple(CLASS_SEGMENTS[0][1])
 
 #: 单只一次最多要多少根。协议给的分页上限是 0xFFFF，且 ``start + count > 0x10000``
 #: 直接抛 ParseError；800 是服务端单页上限，超了客户端自动翻页。
@@ -145,6 +213,10 @@ MAX_WINDOW = 8000
 
 #: 续拉时比"上次那根"多要的根数（多要一段，覆盖周末/停牌造成的错位）
 RESUME_OVERLAP = 30
+
+#: 首次铺底多少根（没有断点时）。320 根 ≈ 1.5 年日线，一天一根的话够用大半年；
+#: 要完整历史就跑 ``--full``。
+BASELINE_WINDOW = 320
 
 BAR_KEYS = ("datetime", "open", "high", "low", "close", "volume", "amount")
 
@@ -200,25 +272,53 @@ class State:
 
 
 # ---------------------------------------------------------------------------
+# 类别：从代码段推出来，再决定目录与 index 位
+# ---------------------------------------------------------------------------
+
+
+def classify(symbol: str) -> str:
+    """代码 → 类别。``sh600519`` → ``"stock"``、``sh510300`` → ``"etf"``。"""
+    token = symbol.strip().lower()
+    for kind, segments in CLASS_SEGMENTS:
+        if any(token.startswith(segment) for segment in segments):
+            return kind
+    return "stock"
+
+
+def classify_with_index(symbol: str) -> tuple[str, bool]:
+    """代码 → ``(类别, 是否走指数位)``。``bars(index=...)`` 的取数参数由此而来。"""
+    kind = classify(symbol)
+    return kind, kind == "index"
+
+
+def class_dir(kind: str) -> str:
+    """类别 → 落盘子目录名（与类别同名，见模块 docstring 的那张表）。"""
+    return kind
+
+
+# ---------------------------------------------------------------------------
 # universe：代码表从哪来
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class Target:
-    """一只要同步的标的：代码 + 是否走指数位 + 可选名字（只为打印好看）。"""
+    """一只要同步的标的：代码 + 类别 + 是否走指数位 + 可选名字。"""
 
     symbol: str
     index: bool = False
+    kind: str = "stock"
     name: str = ""
 
     @classmethod
-    def parse(cls, raw: str, *, force_index: bool | None = None) -> Target:
+    def parse(
+        cls, raw: str, *, force_index: bool | None = None, force_kind: str | None = None
+    ) -> Target:
         """把一个代码串归一成 :class:`Target`。
 
         允许 ``sh600519`` / ``600519`` / ``SH600519`` 三种写法；后者按国内
-        分段习惯补 ``sh``（6 开头）/ ``sz``。``sh000*``、``sz399*`` 自动判为
-        指数位，除非调用方显式给定 ``force_index``。
+        分段习惯补 ``sh``（6 开头）/ ``sz``。类别由代码段自动判定，``index``
+        位跟着类别走，除非调用方显式给定 ``force_index``。
         """
         token = raw.strip().lower()
         if token.startswith(("sh", "sz", "bj")) and token[2:].isdigit():
@@ -227,8 +327,9 @@ class Target:
             symbol = ("sh" if token.startswith("6") else "sz") + token
         else:
             symbol = token
-        index = symbol.startswith(INDEX_PREFIXES) if force_index is None else force_index
-        return cls(symbol=symbol, index=index)
+        kind = force_kind or classify(symbol)
+        index = (kind == "index") if force_index is None else force_index
+        return cls(symbol=symbol, index=index, kind=kind)
 
 
 def symbols_from_vipdoc(vipdoc: Path, markets: Sequence[str] = ("sh", "sz")) -> list[str]:
@@ -242,23 +343,28 @@ def symbols_from_vipdoc(vipdoc: Path, markets: Sequence[str] = ("sh", "sz")) -> 
     return sorted(out)
 
 
-def symbols_from_csv(path: Path) -> list[str]:
-    """自备清单（每行一个代码，允许带/不带 sh/sz 前缀，允许带列名）。"""
-    out: list[str] = []
+def symbols_from_csv(path: Path) -> list[Target]:
+    """自备清单：每行一个代码，允许带/不带 sh/sz 前缀，允许带列名。
+
+    第二列（若存在）是类别；只写一列时按 :func:`classify` 现判，所以 ``--scan``
+    产出的两列表和手搓的一列表都能吃。
+    """
+    out: list[Target] = []
     seen: set[str] = set()
     for line in path.read_text(encoding="utf-8").splitlines():
-        cell = line.strip().split(",")[0].strip()
-        token = cell.lower()
-        if not token or token in {"symbol", "code"}:
+        cells = [cell.strip() for cell in line.split(",")]
+        cell = cells[0].lower()
+        if not cell or cell in {"symbol", "code"}:
             continue
-        code = token if token.startswith(("sh", "sz", "bj")) and token[2:].isdigit() else ""
-        if not code and len(cell) == 6 and cell.isdigit():
-            code = ("sh" if cell[0] == "6" else "sz") + cell
+        code = cell if cell.startswith(("sh", "sz", "bj")) and cell[2:].isdigit() else ""
+        if not code and len(cells[0]) == 6 and cells[0].isdigit():
+            code = ("sh" if cells[0][0] == "6" else "sz") + cells[0]
         if not code or code in seen:
             continue
         seen.add(code)
-        out.append(code)
-    return sorted(out)
+        kind = cells[1].strip().lower() if len(cells) > 1 and cells[1].strip() else ""
+        out.append(Target.parse(code, force_kind=kind or None))
+    return sorted(out, key=lambda target: target.symbol)
 
 
 def iter_scan_codes(segments: Sequence[str]) -> Iterator[str]:
@@ -269,40 +375,75 @@ def iter_scan_codes(segments: Sequence[str]) -> Iterator[str]:
             yield f"{prefix}{tail:03d}"
 
 
+def iter_scan_plan(
+    segments_by_class: Sequence[tuple[str, Sequence[str]]],
+) -> list[tuple[str, str, bool]]:
+    """``--scan`` 的探测计划：``(代码, 类别, 是否走指数位)``。
+
+    指数段必须传 ``index=True`` 去探：拿个股位探指数，主站回的是 ``5616-57-83``
+    这类荒唐日期——**非空**，会被"非空即存在"的判据漏掉真指数，或反过来认进假代码。
+    """
+    plan: list[tuple[str, str, bool]] = []
+    for kind, segments in segments_by_class:
+        index_bit = kind == "index"
+        for code in iter_scan_codes(segments):
+            plan.append((code, kind, index_bit))
+    return plan
+
+
 def scan_universe(
     client: TdxClient,
-    segments: Sequence[str],
+    plan: Sequence[tuple[str, str, bool]],
     workers: int,
     timeout: float,
-) -> list[str]:
+    known: Iterable[str] = (),
+    attempts: int = 2,
+) -> dict[str, str]:
     """探测哪些代码主站真认：存在的回真实数据，不存在的回空首页。
 
-    空首页（``bars`` 声明 0 条）不是"历史耗尽"——耗尽只表现为短页，首页即空
-    意味着这个代码主站根本不认。所以拿"非空首页"当存在性判据，比拿 OHLC
-    合理性去猜干净得多（后者会被 ``sh999999`` 这类回垃圾日期的代码带歪）。
+    两层判据，缺一不可：
+
+    1. **非空首页**。空首页（``bars`` 声明 0 条）不是"历史耗尽"——耗尽只表现为
+       短页，首页即空意味着这个代码主站根本不认。
+    2. **日期键是真日历日期**。光靠"非空"不够：像 ``sh999999`` 这种主站会回
+       ``0080-26-13``、另一支回 ``8414-91-57``，**非空且长得像日期**。这东西
+       一旦进了代码表，后面每一轮同步都会为它消耗一次请求还注定失败。
+
+    ``attempts`` 是传输层重试次数——探错了不会写进代码表，但会白白漏掉一只。
     """
     warnings.filterwarnings("ignore")
-    codes = list(iter_scan_codes(segments))
-    found: list[str] = []
+    pending = [item for item in plan if item[0] not in set(known)]
+    found: dict[str, str] = {}
     lock = threading.Lock()
     done = 0
+
+    def probe(code: str, index_bit: bool) -> list[dict[str, Any]]:
+        last_exc: Exception | None = None
+        for _ in range(attempts):
+            try:
+                return list(client.bars(code, period="day", count=1, index=index_bit))
+            except Exception as exc:  # noqa: BLE001 - 传输层异常按"再试一次"处理
+                last_exc = exc
+                time.sleep(0.05 * attempts)
+        raise RuntimeError(str(last_exc) or type(last_exc).__name__)
+
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         futures = {
-            pool.submit(client.bars, code, period="day", count=2, index=False): code
-            for code in codes
+            pool.submit(probe, code, index_bit): (code, kind) for code, kind, index_bit in pending
         }
         for future in as_completed(futures):
             done += 1
             if done % 2000 == 0:
-                print(f"  探测 {done}/{len(codes)}…，已确认 {len(found)}", flush=True)
+                print(f"  探测 {done}/{len(pending)}…，已确认 {len(found)}", flush=True)
+            code, kind = futures[future]
             try:
                 rows = future.result()
-            except Exception:
-                continue  # 传输层异常按"不存在"处理（下一轮还会再探）
-            if rows and isinstance(rows[0], dict):
+            except Exception:  # noqa: BLE001 - 重试耗尽仍按"不存在"处理
+                continue
+            if rows and isinstance(rows[0], dict) and _date_key(rows[0]):
                 with lock:
-                    found.append(futures[future])
-    return sorted(found)
+                    found[code] = kind
+    return found
 
 
 # ---------------------------------------------------------------------------
@@ -439,13 +580,13 @@ def _resume_bar_count(
     """该支这次要多少根：续拉多要一段，全量就拉满窗口。
 
     ``state.last_date`` 优先，其次用磁盘上那支的最后日期——两条都取不到才按
-    ``lookback`` 从头起量。
+    ``lookback`` 起量（那是"首次铺底"的窗口，不是每轮的窗口）。
     """
     if full:
         return MAX_WINDOW
     last = state.last_date.get(symbol) or last_on_disk
     if not last:
-        return lookback
+        return max(lookback, BASELINE_WINDOW)
     return lookback + RESUME_OVERLAP
 
 
@@ -475,7 +616,7 @@ class Syncer:
         *,
         timeout: float = 10.0,
         slots_per_host: int = 4,
-        lookback: int = 320,
+        lookback: int = BASELINE_WINDOW,
         gap_sleep: float = 0.2,
         jitter: float = 0.1,
         full: bool = False,
@@ -490,18 +631,26 @@ class Syncer:
         self.full = full
         self.dry_run = dry_run
         self.out.mkdir(parents=True, exist_ok=True)
+        _ensure_class_dirs(self.out)
         self._client = TdxClient(timeout=timeout, slots_per_host=slots_per_host)
         self._lock = threading.Lock()
         self.rejected: dict[str, str] = {}
 
     # -- 单只 ----------------------------------------------------------
+    def _path_of(self, target: Target) -> Path:
+        """已落盘那支的路径：类别子目录优先，兼容未分类前写的扁平文件。"""
+        nested = self.out / class_dir(target.kind) / f"{target.symbol}.parquet"
+        if nested.exists():
+            return nested
+        flat = self.out / f"{target.symbol}.parquet"
+        if flat.exists():
+            return flat
+        return nested
+
     def sync_one(self, target: Target) -> Outcome:
+        path = self._path_of(target)
         count = _resume_bar_count(
-            self.state,
-            target.symbol,
-            self.full,
-            self.lookback,
-            _last_date_on_disk(self.out / f"{target.symbol}.parquet"),
+            self.state, target.symbol, self.full, self.lookback, _last_date_on_disk(path)
         )
         try:
             bars = self._client.bars(target.symbol, period="day", count=count, index=target.index)
@@ -528,7 +677,7 @@ class Syncer:
         # 稳定的长度（--full 跑出的长历史也保得住）。
         merged = _dedup_merge(bars)
         if not self.dry_run:
-            merged = _dedup_merge([*_existing_rows(self.out / f"{target.symbol}.parquet"), *merged])
+            merged = _dedup_merge([*_existing_rows(path), *merged])
         # 自检必须在"合并 + 排好序之后"做：--full 拉回来的是倒序（最新在前），
         # 在原始批次上校验只会撞出假的「日期非升序」。
         problems = _validate(merged)
@@ -540,7 +689,15 @@ class Syncer:
             return Outcome(target.symbol, "EMPTY")
         day = _date_key(merged[-1])
         if not self.dry_run:
-            _atomic_write_parquet(merged, self.out / f"{target.symbol}.parquet")
+            try:
+                _atomic_write_parquet(
+                    merged, self.out / class_dir(target.kind) / f"{target.symbol}.parquet"
+                )
+            except OSError as exc:
+                # 不更新断点：下一轮原样重试这一只。
+                return Outcome(
+                    target.symbol, "SKIP", detail=f"落盘失败 {type(exc).__name__}: {exc}"
+                )
         with self._lock:
             self.state.last_date[target.symbol] = day
             self.state.failed.pop(target.symbol, None)
@@ -549,8 +706,8 @@ class Syncer:
 
     # -- 全量 ----------------------------------------------------------
     def run(self, targets: Sequence[Target], workers: int = 4) -> dict[str, Any]:
-        tally: dict[str, Any] = {"OK": 0, "EMPTY": 0, "SKIP": 0, "REJECT": 0}
-        bars_total, days_total = 0, 0
+        tally: dict[str, Any] = {"OK": 0, "EMPTY": 0, "SKIP": 0, "REJECT": 0, "by_class": {}}
+        bars_total, days_total, latest_day = 0, 0, ""
         started = time.time()
         with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
             futures = {pool.submit(self.sync_one, t): t for t in targets}
@@ -560,6 +717,12 @@ class Syncer:
                 if outcome.status == "OK":
                     bars_total += outcome.rows
                     days_total += 1
+                    #: 数据停在哪天，是盘后第一眼要看的东西——拿"结果里的最大日期"
+                    #: 报（不去调 ``datetime.now()``：那玩意儿一沾就是时区坑）。
+                    if outcome.day and outcome.day > latest_day:
+                        latest_day = outcome.day
+                    kind = futures[future].kind
+                    tally["by_class"][kind] = tally["by_class"].get(kind, 0) + 1
                 elif outcome.status == "REJECT":
                     with self._lock:
                         self.state.rejected[outcome.symbol] = outcome.detail
@@ -578,11 +741,13 @@ class Syncer:
             self.state.bars = bars_total
             self.state.dump(self.state_path)
         tally["elapsed_s"] = round(time.time() - started, 1)
+        tally["latest_day"] = latest_day
         return tally
 
 
 def _atomic_write_parquet(rows: Sequence[dict[str, Any]], path: Path) -> None:
     """先落 ``.tmp`` 再原子改名；同时清掉可能存在的 csv 影子文件。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
     os.close(fd)
     tmp_path = Path(tmp)
@@ -591,27 +756,77 @@ def _atomic_write_parquet(rows: Sequence[dict[str, Any]], path: Path) -> None:
         # 所以必须显式 fmt="parquet"——让 write() 按扩展名推断恰好在这里会抛
         # ValueError（审计 §2-15 已经把那个静默语义拿掉了）。
         write(list(rows), str(tmp_path), fmt="parquet")
-        os.replace(tmp_path, path)
+        _replace_with_retry(tmp_path, path)
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
-    for sibling in (path.with_suffix(".csv"),):
-        if sibling.exists():
-            sibling.unlink()
+        # csv 影子必须在"无论成败"这条路上清：docstring 承诺过，但它原先挂在
+        # ``_replace_with_retry`` 的那个死分支下，一次也没执行过。
+        shadow = path.with_suffix(".csv")
+        if shadow.exists():
+            shadow.unlink()
 
 
-def resolve_universe(args: argparse.Namespace, root: Path) -> tuple[list[Target], str]:
+def _replace_with_retry(tmp_path: Path, path: Path, attempts: int = 3) -> None:
+    """覆盖同名文件时，Windows 上会间歇性 `PermissionError (WinError 5)`。
+
+    实测全市场重跑最后一只就吃了这个：目标文件刚被上一轮写过，这一轮替换它
+    时系统正锁着。重试两下基本都能过去——不是要掩盖问题，是**一只标的的落盘
+    失败不该让整轮全市场同步崩掉**，重试是它该有的降级路径。
+
+    只在 ``return``/``raise`` 两条路上收尾，末尾不再挂"清理 csv 影子"之类的
+    收尾块：那类块在这条控制流里永远等不到（曾经写错过一次，静默死代码）。
+    """
+    for attempt in range(attempts):
+        try:
+            os.replace(tmp_path, path)
+            return
+        except OSError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.2 * (attempt + 1))
+
+
+def _all_targets(force_index: bool | None = None) -> list[Target]:
+    return [Target.parse(symbol, force_index=force_index) for symbol, _ in DEFAULT_UNIVERSE]
+
+
+def _select_classes(
+    include: Sequence[str], exclude: Sequence[str]
+) -> list[tuple[str, tuple[str, ...]]]:
+    """按 ``--include-class``/``--exclude-class`` 裁 ``CLASS_SEGMENTS``。"""
+    picked = [
+        (kind, segments)
+        for kind, segments in CLASS_SEGMENTS
+        if (not include or kind in include) and kind not in exclude
+    ]
+    return picked
+
+
+def print_class_table(picked: Sequence[tuple[str, tuple[str, ...]]]) -> None:
+    """``--list-class``：把段表按类别摊开，附候选规模与落盘目录。"""
+    print(f"{'类别':<8} {'段数':>4} {'候选代码':>8}  目录 / 段")
+    for kind, segments in picked:
+        print(
+            f"{kind:<8} {len(segments):>4} {len(segments) * 1000:>8}  "
+            f"day/{class_dir(kind)}/  {' '.join(segments)}"
+        )
+    total = sum(len(segments) for _, segments in picked)
+    print(f"\n合计 {len(picked)} 个类别 / {total} 段 / {total * 1000} 个候选代码")
+
+    for kind, reason in UNSUPPORTED_CLASSES.items():
+        print(f"\n未纳入：{kind} —— {reason}")
+
+
+def resolve_universe(
+    args: argparse.Namespace, root: Path, picked: Sequence[tuple[str, tuple[str, ...]]]
+) -> tuple[list[Target], str]:
     """按优先级定宇宙，返回 ``(目标列表, 来源说明)``。
 
     优先级：显式 ``--symbols`` > ``--universe-file`` > 本地 vipdoc > ``root``
-    下缓存的 ``universe.csv`` > 内置默认宇宙。最后一级是"零参数可跑"的保证：
-    前面几级都落空时（没装通达信、没准备清单）也得有东西可拉。
+    下缓存的 ``universe.csv`` > 内置默认宇宙。最后一级是"零参数可跑"的保证。
     """
-    force_index = None
-    if args.index is True:
-        force_index = True
-    elif args.index is False:
-        force_index = False
+    force_index = args.index
 
     if args.symbols:
         targets = [Target.parse(s, force_index=force_index) for s in args.symbols]
@@ -620,8 +835,7 @@ def resolve_universe(args: argparse.Namespace, root: Path) -> tuple[list[Target]
     if args.universe_file:
         codes = symbols_from_csv(Path(args.universe_file))
         if codes:
-            targets = [Target.parse(c, force_index=force_index) for c in codes]
-            return targets, f"清单 {args.universe_file}（{len(targets)} 只）"
+            return codes, f"清单 {args.universe_file}（{len(codes)} 只）"
 
     for candidate in (args.vipdoc, Path("C:/new_tdx"), Path("D:/new_tdx")):
         if not candidate:
@@ -635,22 +849,34 @@ def resolve_universe(args: argparse.Namespace, root: Path) -> tuple[list[Target]
     if cached.exists():
         codes = symbols_from_csv(cached)
         if codes:
-            targets = [Target.parse(c, force_index=force_index) for c in codes]
-            return targets, f"缓存代码表 {cached}（{len(targets)} 只）"
+            kept = [t for t in codes if t.kind in {kind for kind, _ in picked}]
+            if kept:
+                return kept, f"缓存代码表 {cached}（{len(kept)} 只）"
 
-    targets = [Target.parse(s) for s, _ in DEFAULT_UNIVERSE]
+    # 内置宇宙也要过一遍类别裁剪——否则 `make sync --exclude-class stock`
+    # 会 sync 出一堆 --symbols 之外根本没被选中的股票。
+    allowed = {kind for kind, _ in picked} or {t.kind for t in _all_targets(force_index)}
+    targets = [t for t in _all_targets(force_index) if t.kind in allowed]
     return targets, f"内置默认宇宙（{len(targets)} 只）"
+
+
+def _dump_universe(root: Path, found: dict[str, str]) -> Path:
+    path = root / "universe.csv"
+    lines = [f"{symbol},{kind}" for symbol, kind in sorted(found.items())]
+    _atomic_write_text(path, "".join(f"{line}\n" for line in lines))
+    return path
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="用 TDX 接口把 A 股日线同步到本地目录（零参数即可直接跑）",
+        description="用 TDX 接口把全市场日线同步到本地目录（零参数即可直接跑）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "默认落盘：\n"
-            "  data/day/<代码>.parquet   每支日线（合并去重后的完整历史）\n"
-            "  data/state.json           断点与失败/被拦记录\n"
-            "  data/universe.csv         代码表（--scan 生成）\n"
+            "  data/day/<类别>/<代码>.parquet   每支日线（合并去重后的完整历史）\n"
+            "  data/state.json                  断点与失败/被拦记录\n"
+            "  data/universe.csv                代码表（--scan 生成，两列 代码,类别）\n"
+            "类别：stock / index / etf / lof / bond / bshare（见 --list-class）\n"
         ),
     )
     p.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="本地落盘根目录（默认 data/）")
@@ -664,29 +890,94 @@ def build_parser() -> argparse.ArgumentParser:
         "--index",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="强制/禁止走指数位（默认按 sh000*/sz399* 自动判定）",
+        help="强制/禁止走指数位（默认按类别自动判定）",
     )
-    p.add_argument("--full", action="store_true", help="全量重拉（默认按上次日期增量续拉）")
-    p.add_argument("--lookback", type=int, default=320, help="每只最少拉多少根日线")
+    p.add_argument("--full", action="store_true", help="全历史重拉（铺底 / 校准口径用）")
+    p.add_argument("--lookback", type=int, default=BASELINE_WINDOW, help="每只每轮拉多少根日线")
     p.add_argument("--limit", type=int, default=0, help="只同步前 N 只（0 表示全部）")
     p.add_argument("--workers", type=int, default=4, help="并发只数（实际瓶颈是 slots_per_host）")
     p.add_argument("--gap-sleep", type=float, default=0.2, help="每只之间的礼貌间隔秒数")
     p.add_argument("--dry-run", action="store_true", help="只拉取不落盘（验证连通性用）")
     p.add_argument("--timeout", type=float, default=10.0)
     p.add_argument(
+        "--include-class",
+        nargs="+",
+        default=[],
+        metavar="KIND",
+        help="只同步这些类别（默认全类别）",
+    )
+    p.add_argument(
+        "--exclude-class",
+        nargs="+",
+        default=[],
+        metavar="KIND",
+        help="不同步这些类别（例如 etf lof bond）",
+    )
+    p.add_argument(
         "--scan",
         action="store_true",
         help="只探测全市场代码表并写入 <root>/universe.csv（不落行情）",
     )
     p.add_argument(
-        "--scan-segment",
+        "--scan-class",
         nargs="+",
-        default=list(SCAN_SEGMENTS),
-        metavar="SEG",
-        help="--scan 要枚举的代码段（默认沪深全部主要段）",
+        default=list(DEFAULT_SCAN_CLASSES),
+        metavar="KIND",
+        help="--scan 要探测的类别（默认全类别）",
     )
-    p.add_argument("--scan-bj", action="store_true", help="--scan 时一并探测北交所段")
+    p.add_argument(
+        "--scan-refresh",
+        action="store_true",
+        help="--scan 时连已知代码也重探一遍（默认跳过，已入库的不重复探）",
+    )
+    p.add_argument(
+        "--list-class",
+        action="store_true",
+        help="打印类别 / 代码段 / 落盘目录 / 候选规模后退出",
+    )
     return p
+
+
+def _ensure_class_dirs(out: Path) -> None:
+    """预建六个类别目录，让 ``data/day/<类别>/`` 这个结构第一次跑之前就在。
+
+    为什么是这六个、而不是"边落盘边建"：断点续拉要读磁盘上已有的尾部日期，父目录
+    晚于第一支标的出现就得多一次目录判断；更实际的是文档里写了 ``data/day/stock/``
+    这种路径，目录提前存在才对得上写法。
+
+    类别目录名**不参与**架构门的"运行期目录"推导（推导只认 ``mkdir`` + 字面量路径
+    分量，这里是循环变量）——它们靠 ``DEFAULT_ROOT`` 声明被整棵 ``data/`` 树认下来。
+    别把这两条豁免机制混着读。
+    """
+    for name in ("stock", "index", "etf", "lof", "bond", "bshare"):
+        (out / name).mkdir(parents=True, exist_ok=True)
+
+
+def _dir_size(path: Path) -> int:
+    total = 0
+    for file in path.rglob("*.parquet"):
+        try:
+            total += file.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def _count_day_files(day_dir: Path) -> int:
+    """只数类别子目录里的 parquet——扁平层的那份是迁移前的孤儿，不该重复计数。"""
+    return sum(1 for child in day_dir.iterdir() if child.is_dir() for _ in child.rglob("*.parquet"))
+
+
+def _effective_gap(requested: float, targets: int) -> float:
+    """按规模折算礼貌间隔，别让"每只之间睡一下"变成全市场的瓶颈。
+
+    全市场 5200 只 × `(gap-sleep 0.2 + jitter 0.1)` ≈ **21 分钟纯在 sleep**——
+    比拉数据本身还久。200 只以内保持原值（小清单该慢慢来），规模上去了按比例
+    折算并压到 0.01s 下限；真要更礼貌就自己显式给 `--gap-sleep`。
+    """
+    if targets <= 200:
+        return requested
+    return max(0.01, requested * 200 / targets)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -694,27 +985,42 @@ def main(argv: list[str] | None = None) -> int:
     root: Path = args.root
     root.mkdir(parents=True, exist_ok=True)
     day_dir = root / "day"
-    day_dir.mkdir(parents=True, exist_ok=True)
+
+    picked = _select_classes(args.include_class, args.exclude_class)
+    if args.list_class:
+        print_class_table(picked)
+        return 0
 
     if args.scan:
-        segments = list(args.scan_segment)
-        if args.scan_bj:
-            segments = segments + list(BJ_SEGMENTS)
-        print(f"探测 {len(segments)} 个代码段（共 {len(segments) * 1000} 个候选代码）…")
+        segments_by_class = [
+            (kind, segments) for kind, segments in picked if kind in set(args.scan_class)
+        ]
+        if not segments_by_class:
+            print("没有可扫的类别（--include-class 与 --exclude-class 冲突）", file=sys.stderr)
+            return 2
+        plan = iter_scan_plan(segments_by_class)
+        known: set[str] = set()
+        if not args.scan_refresh and (root / "universe.csv").exists():
+            known = {target.symbol for target in symbols_from_csv(root / "universe.csv")}
+        todo = [item for item in plan if item[0] not in known]
+        print(
+            f"探测 {len(segments_by_class)} 个类别 / {len(plan)} 个候选代码"
+            f"（其中未入库 {len(todo)} 个）"
+        )
         # 探测是"纯探针"型流量，比拉行情轻得多，并发下限给到 8：段内 1000 个
         # 候选按 4 并发要跑十分钟往上，定时任务等不起。
         scan_workers = max(8, args.workers)
         client = TdxClient(timeout=args.timeout, slots_per_host=scan_workers)
-        found = scan_universe(client, segments, scan_workers, args.timeout)
-        out = root / "universe.csv"
-        _atomic_write_text(out, "".join(f"{line}\n" for line in sorted(found)))
+        found = scan_universe(client, plan, scan_workers, args.timeout, known=known)
+        found.update({symbol: kind for symbol, kind, _ in plan if symbol in known})
+        out = _dump_universe(root, found)
         print(f"确认存在 {len(found)} 只 → {out}")
         print(
             f"下一步：python scripts/sync_daily_history.py --root {root}（会读 {out} 做增量同步）"
         )
         return 0 if found else 2
 
-    targets, source = resolve_universe(args, root)
+    targets, source = resolve_universe(args, root, picked)
     if not targets:
         print(
             "找不到 universe：给 --symbols 列代码、--universe-file 备清单、"
@@ -724,35 +1030,46 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.limit:
         targets = targets[: args.limit]
+    by_kind: dict[str, int] = {}
+    for target in targets:
+        by_kind[target.kind] = by_kind.get(target.kind, 0) + 1
     kinds = sum(1 for t in targets if t.index)
-    print(
-        f"universe：{source}；root={root}；"
-        f"模式={'全量' if args.full else '增量续拉'}；个股 {len(targets) - kinds} 只 / 指数 {kinds} 只"
-    )
+    mode = "全历史" if args.full else f"最近 {args.lookback} 根 + 合并"
+    breakdown = " / ".join(f"{k} {v}" for k, v in sorted(by_kind.items()))
+    print(f"universe：{source}；root={root}；模式={mode}；{breakdown}；指数位 {kinds} 只")
 
+    gap = _effective_gap(args.gap_sleep, len(targets))
+    if gap != args.gap_sleep:
+        print(f"礼貌间隔按规模折算：{args.gap_sleep}s → {gap:.3f}s（{len(targets)} 只）")
     syncer = Syncer(
         day_dir,
         args.state if args.state else (root / "state.json"),
         timeout=args.timeout,
         slots_per_host=max(1, args.workers),
         lookback=args.lookback,
-        gap_sleep=args.gap_sleep,
+        gap_sleep=gap,
         full=args.full,
         dry_run=args.dry_run,
     )
     tally = syncer.run(targets, workers=args.workers)
+    if tally.get("latest_day"):
+        print(f"全市场最新交易日：{tally['latest_day']}")
     print(
         "\n汇总："
-        + json.dumps({k: v for k, v in tally.items() if k != "symbols"}, ensure_ascii=False)
+        + json.dumps({k: v for k, v in tally.items() if k != "by_class"}, ensure_ascii=False)
     )
+    if tally.get("by_class"):
+        print("按类别：" + json.dumps(tally["by_class"], ensure_ascii=False))
     if syncer.rejected:
         print(f"口径自检拦下 {len(syncer.rejected)} 只（未落盘）：")
         for sym, why in list(syncer.rejected.items())[:10]:
             print(f"  - {sym}: {why}")
     if not args.dry_run:
+        files = _count_day_files(day_dir)
+        size = _dir_size(day_dir)
         print(
-            f"落盘：{day_dir} 下 {len(list(day_dir.glob('*.parquet')))} 个 parquet"
-            f"；状态：{syncer.state_path}"
+            f"落盘：{day_dir} 下 {files} 个 parquet（{size / 1024 / 1024:.1f} MiB）；"
+            f"状态：{syncer.state_path}"
         )
     # 全空失败视为环境级（网络/主站不可达），不是本脚本缺陷
     return 0 if tally.get("OK") else 2

@@ -275,10 +275,42 @@ def _runtime_dir_names() -> frozenset[str]:
     return frozenset(names)
 
 
+#: 运行期输出根的声明形如 ``DEFAULT_ROOT = _REPO / "data"``（名字在引号里）。
+#: 抓这种声明而不是在门禁里写死 ``data``：脚本换个落盘根名，豁免跟着走。
+_RUNTIME_ROOT_DECL = re.compile(r"[A-Z][A-Z_]*ROOT\s*[:=][^\n]*?[\"']([\w.\-]+)[\"']")
+
+
+@functools.cache
+def _run_output_roots() -> frozenset[str]:
+    """脚本在仓库里**运行期自建**的输出根（``DEFAULT_ROOT`` 指的那一个）。
+
+    ``scripts/sync_daily_history.py`` 把全市场日线写进 ``data/day/<类别>/``，这些
+    文件和目录**不该进版本库**，所以干净 checkout 上它们不存在。文档里写
+    ``data/day/stock/`` 是在描述"跑完会有什么"，不是断言磁盘现状——光靠
+    :func:`_runtime_dir_names` 推导不出类别子目录（那些名字是循环变量），得再认一条
+    "根"，根下面的整棵树都算运行产物。
+    """
+    names: set[str] = set()
+    for path in sorted((ROOT / "scripts").glob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        names.update(_RUNTIME_ROOT_DECL.findall(text))
+    return frozenset(names)
+
+
+def _waived_by_runtime(token: str, runtime: frozenset[str]) -> bool:
+    """token 是否因"挂在运行期目录/输出根下"而豁免。
+
+    判据取"任一段命中"而不是"整条等于"：``data/day/stock/`` 这种**更完整的写法**
+    也吃得下，文档不用为了过门禁故意写短路径。
+    """
+    return any(part in runtime for part in token.split("/") if part)
+
+
 def _dead_path_findings() -> tuple[list[str], list[str]]:
     """返回 ``(违约清单, 被删除史或代码语义豁免的死路径)``。"""
     offenders: list[str] = []
     waived: list[str] = []
+    runtime = _runtime_dir_names() | _run_output_roots()
     for path in path_fact_docs():
         rel = path.relative_to(ROOT).as_posix()
         for block in logical_blocks(path.read_text(encoding="utf-8")):
@@ -289,7 +321,11 @@ def _dead_path_findings() -> tuple[list[str], list[str]]:
                 if any(marker in block for marker in _RETIRED_MARKERS):
                     waived.append(token)
                     continue
-                if token.endswith("/") and token.split("/")[-2] in _runtime_dir_names():
+                if token.endswith("/") and token.split("/")[-2] in runtime:
+                    waived.append(token)
+                    continue
+                # 运行产物（根 + 根下的整棵树）。
+                if _waived_by_runtime(token, runtime):
                     waived.append(token)
                     continue
                 offenders.append(f"{rel}: 把磁盘上不存在的 `{token}` 写成现行事实")
@@ -299,6 +335,31 @@ def _dead_path_findings() -> tuple[list[str], list[str]]:
 def test_fact_docs_do_not_assert_dead_repo_paths() -> None:
     offenders, _ = _dead_path_findings()
     assert offenders == [], "\n".join(offenders)
+
+
+def test_runtime_generated_dirs_are_waived_by_derivation() -> None:
+    """``data/`` 是同步脚本运行期自建的输出根，挂它下面的路径文档里可以写。
+
+    这份豁免是**推导**出来的（扫 ``scripts/`` 里的 ``DEFAULT_ROOT = ... / "data"``
+    声明），不是文档里抄的一份白名单——脚本换个落盘根名，这份豁免跟着走。判据必须
+    成立在干净 checkout 上（`data/` 整棵目录树都不入库、磁盘上不存在），否则门禁
+    只是在本机有没有跑过同步的运气上转。
+    """
+    roots = _run_output_roots()
+    assert roots == frozenset({"data"}), sorted(roots)
+    #: 干净 checkout 上 ``data/`` 整棵目录树都不存在（运行产物不入库），豁免必须
+    #: 来自"推导出来的根"，不能来自"本机磁盘上刚好有这个文件"。用一个根下**肯定
+    #: 不存在**的第三段来证明这一点，比拿现存的 ``stock/`` 当前提稳。
+    assert _waived_by_runtime("data/day/turbo/", roots)
+    assert not _path_exists("data/day/turbo/"), "这段断言的前提被改了"
+    assert _looks_like_repo_path("data/day/stock/"), "豁免只认长得像路径的东西"
+    assert _waived_by_runtime("data/day/stock/", roots)
+    #: 别宽到把代码路径也赦了：``atst/facade/`` 的豁免走删除史那条路。
+    assert not _waived_by_runtime("atst/facade/", roots)
+    #: 推导源在脚本里（不是门禁认得 ``data`` 这两个字母）：哪天 ``DEFAULT_ROOT``
+    #: 改了地方，这个断言会先叫出来。
+    script = ROOT / "scripts" / "sync_daily_history.py"
+    assert 'DEFAULT_ROOT = _REPO / "data"' in script.read_text(encoding="utf-8"), "用例自身过期"
 
 
 def test_the_slash_ruler_itself_sees_the_deleted_layers() -> None:

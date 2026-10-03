@@ -21,8 +21,9 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _ROOT / "scripts" / "sync_daily_history.py"
 
+
 #: 模块级导入会 add sys.path 并 import atst，重复加载会换来一堆告警，缓存住。
-@ pytest.fixture(scope="module")
+@pytest.fixture(scope="module")
 def sync() -> ModuleType:
     spec = importlib.util.spec_from_file_location("atst_sync_daily_history", _SCRIPT)
     assert spec is not None and spec.loader is not None
@@ -35,10 +36,18 @@ def sync() -> ModuleType:
     return module
 
 
-def _row(day: str, *, high: float = 10.0, low: float = 9.0, close: float = 9.5,
-         open_: float = 9.0) -> dict[str, object]:
-    return {"date": day, "datetime": f"{day} 15:00", "open": open_,
-            "high": high, "low": low, "close": close, "volume": 100}
+def _row(
+    day: str, *, high: float = 10.0, low: float = 9.0, close: float = 9.5, open_: float = 9.0
+) -> dict[str, object]:
+    return {
+        "date": day,
+        "datetime": f"{day} 15:00",
+        "open": open_,
+        "high": high,
+        "low": low,
+        "close": close,
+        "volume": 100,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +66,11 @@ def test_index_bit_is_derived_from_code_prefix(sync: ModuleType) -> None:
 
 def test_symbol_prefix_is_tolerated_and_normalized(sync: ModuleType) -> None:
     """三种写法（带/不带市场前缀、大小写）必须归一到同一个代码。"""
-    assert sync.Target.parse("sh600519") == sync.Target.parse("SH600519") == sync.Target.parse("600519")
+    assert (
+        sync.Target.parse("sh600519")
+        == sync.Target.parse("SH600519")
+        == sync.Target.parse("600519")
+    )
     assert sync.Target.parse("600519").symbol == "sh600519"
     # 6 开头补 sh，其余补 sz
     assert sync.Target.parse("000001").symbol == "sz000001"
@@ -65,14 +78,220 @@ def test_symbol_prefix_is_tolerated_and_normalized(sync: ModuleType) -> None:
 
 
 def test_index_flag_overrides_auto_detection(sync: ModuleType) -> None:
-    """--index / --no-index 是整体覆盖，不是"默认再判一次"。"""
+    """--index / --no-index 是整体覆盖，不是"默认再判一次"."""
     assert sync.Target.parse("sh600519", force_index=True).index is True
     assert sync.Target.parse("sh000001", force_index=False).index is False
 
 
 # ---------------------------------------------------------------------------
+# 类别：从代码段推出来，再决定目录与 index 位
+# ---------------------------------------------------------------------------
+
+
+def test_class_covers_every_asset_class_not_just_a_shares(sync: ModuleType) -> None:
+    """六类标的都要识别得到：股票/指数/ETF/LOF/可转债/B 股。
+
+    "全量"不等于"5000 只 A 股"——同一个代码段（sh51x）拿去拉 ETF 和拿去拉
+    股票是两回事，类别判错的后果是落盘目录错位、index 位反了主站回荒唐日期。
+    """
+    assert sync.classify("sh600519") == "stock"
+    assert sync.classify("sz300750") == "stock"
+    assert sync.classify("sh000001") == "index"
+    assert sync.classify("sz399006") == "index"
+    assert sync.classify("sh510300") == "etf"
+    assert sync.classify("sz159915") == "etf"
+    assert sync.classify("sh501018") == "lof"
+    assert sync.classify("sz160216") == "lof"
+    assert sync.classify("sh113050") == "bond"
+    assert sync.classify("sz127045") == "bond"
+    # B 股看着像"指数"（sh900 开头是 9xx）也像股票，实际按个股拉
+    assert sync.classify("sh900932") == "bshare"
+    assert sync.classify("sz200011") == "bshare"
+
+
+def test_index_bit_follows_the_class_not_the_market_prefix(sync: ModuleType) -> None:
+    """只有 index 类走指数位；B 股 / ETF / 转债全部走个股位。"""
+    for symbol in ("sh900932", "sh510300", "sz127045", "sh600519"):
+        assert sync.Target.parse(symbol).index is False, symbol
+    assert sync.Target.parse("sh000001").index is True
+    assert sync.Target.parse("sz399001").index is True
+
+
+def test_class_dir_is_one_directory_per_class(sync: ModuleType) -> None:
+    """每类一个目录，落盘才不会把股票和 ETF 混成 5000 个同名文件。"""
+    assert sync.class_dir("stock") == "stock"
+    assert sync.class_dir("index") == "index"
+    assert sync.class_dir("etf") == "etf"
+    assert sync.class_dir("bond") == "bond"
+    kinds = {kind for kind, _ in sync.CLASS_SEGMENTS}
+    assert kinds == {"stock", "index", "etf", "lof", "bond", "bshare"}
+    # 目录名必须 = 类别名，否则盘面看目录猜不出是哪一类
+    assert all(sync.class_dir(kind) == kind for kind in kinds)
+
+
+def test_every_scanned_segment_is_classifiable(sync: ModuleType) -> None:
+    """段表的每一段都得能判回自己的类别——否则扫出来的代码会落错目录。"""
+    for kind, segments in sync.CLASS_SEGMENTS:
+        for segment in segments:
+            assert sync.classify(f"{segment}123") == kind, f"{segment} 落到了别处"
+
+
+# ---------------------------------------------------------------------------
+# --scan：探测计划与两道判据
+# ---------------------------------------------------------------------------
+
+
+def test_scan_plan_sends_index_segments_with_the_index_bit(sync: ModuleType) -> None:
+    """指数段必须带 index=True 去探。
+
+    拿个股位探指数，主站回的是 `5616-57-83` 这种非空垃圾数据——"非空即存在"
+    的判据会把它当真指数漏掉，或者反过来认进一堆假代码。
+    """
+    plan = sync.iter_scan_plan([("index", ("sh000",)), ("stock", ("sh600",))])
+    assert ("sh000123", "index", True) in plan
+    assert ("sh600123", "stock", False) in plan
+    assert plan[0][0] == "sh000000"
+    assert len(plan) == 2000
+
+
+def test_scan_plan_matches_iter_scan_codes(sync: ModuleType) -> None:
+    """探测计划不能漏掉段尾：段内 000-999 一个都不能少。"""
+    plan = {code: index for code, kind, index in sync.iter_scan_plan([("etf", ("sh510",))])}
+    assert len(plan) == 1000
+    assert plan["sh510000"] is False
+    assert plan["sh510999"] is False
+
+
+def test_scan_exists_only_when_home_page_is_non_empty_and_dated(
+    sync: ModuleType, monkeypatch
+) -> None:
+    """存在性判据是两道：非空首页 + 日期键是真日历日期。
+
+    第二道不是装饰：`sh999999` 主站回 `0080-26-13`、另一支回 `8414-91-57`，
+    非空且长得像日期，只判"非空"就会被当成真代码写进代码表。
+    """
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def bars(self, code, period, count, index):
+            self.calls.append(code)
+            table = {
+                "sh600519": [{"date": "2026-09-30"}],
+                "sh999999": [{"date": "0080-26-13"}],  # 非空，但日期是假的
+                "sh600000": [],  # 空首页：主站不认
+            }
+            return table.get(code, [])
+
+    client = FakeClient()
+    plan = sync.iter_scan_plan([("stock", ("sh600",))])
+    plan.append(("sh999999", "stock", False))
+    plan.append(("sh600000", "stock", False))
+    found = sync.scan_universe(client, plan, workers=1, timeout=5)
+    assert "sh600519" in found
+    # 垃圾日期、空首页都不该进代码表
+    assert "sh999999" not in found
+    assert "sh600000" not in found
+    assert found == {"sh600519": "stock"}
+
+
+def test_scan_skips_known_symbols_and_retries_transport_errors(
+    sync: ModuleType, monkeypatch
+) -> None:
+    """重跑 --scan 不该把已入库的代码重探一遍（段级断点），但真探的要重试。"""
+    probed: list[str] = []
+
+    class FlakyClient:
+        def bars(self, code, period, count, index):
+            probed.append(code)
+            if code == "sh600123":
+                raise RuntimeError("connection reset")
+            return [{"date": "2026-09-30"}]
+
+    plan = sync.iter_scan_plan([("stock", ("sh600",))])
+    found = sync.scan_universe(FlakyClient(), plan, workers=1, timeout=5, known={"sh600000"})
+    # 撞上传输异常的那支被重试到 attempts 次，而不是一次失败就判"不存在"
+    assert probed.count("sh600123") == 2, "传输异常该重试而不是当成'不存在'"
+    assert "sh600123" not in found, "重试仍失败才该判为不存在"
+    # 已入库的那一支不该再被探（这就是重跑 --scan 秒回的原因）
+    assert "sh600000" not in probed
+    assert "sh600519" in found
+
+
+# ---------------------------------------------------------------------------
+# universe.csv：两列（代码, 类别）也要吃得下纯一列
+# ---------------------------------------------------------------------------
+
+
+def test_symbols_from_csv_reads_both_one_and_two_columns(sync: ModuleType, tmp_path: Path) -> None:
+    """手搓的一列表和 --scan 产出的两列表都得能当 universe 用。"""
+    one = tmp_path / "one.csv"
+    one.write_text("symbol\n600519\n000001\n", encoding="utf-8")
+    assert [t.symbol for t in sync.symbols_from_csv(one)] == ["sh600519", "sz000001"]
+
+    two = tmp_path / "two.csv"
+    two.write_text("sh510300,etf\nsh600519,stock\n", encoding="utf-8")
+    parsed = {t.symbol: t.kind for t in sync.symbols_from_csv(two)}
+    assert parsed == {"sh510300": "etf", "sh600519": "stock"}
+
+
+# ---------------------------------------------------------------------------
 # 续拉：断点不依赖 state.json
 # ---------------------------------------------------------------------------
+
+
+def test_gap_sleep_is_scaled_down_for_market_wide_runs(sync: ModuleType) -> None:
+    """全市场 5200 只 × gap 0.2s 是 17 分钟纯在 sleep——限速得按规模折算。
+
+    小清单照旧慢慢来；规模上去了折算下去，但压到 0.01s 下限（再小就不是
+    "礼貌间隔"而是空转了）。想更礼貌就显式给 --gap-sleep，这个折算只是别让
+    默认值把全市场同步变成 sitecopy。
+    """
+    assert sync._effective_gap(0.2, 50) == 0.2, "小清单不该被折算"
+    assert sync._effective_gap(0.2, 300) == pytest.approx(0.2 * 200 / 300, rel=1e-9)
+    assert sync._effective_gap(0.2, 5200) < 0.05
+    assert sync._effective_gap(0.2, 100000) == 0.01, "折算有下限"
+
+
+def test_day_file_count_skips_the_flat_layer(sync: ModuleType, tmp_path: Path) -> None:
+    """统计只数类别子目录：迁移前的扁平文件是孤儿，不能重复计数。"""
+    day = tmp_path / "day"
+    (day / "stock").mkdir(parents=True)
+    (day / "etf").mkdir()
+    (day / "stock" / "sh600519.parquet").write_bytes(b"x")
+    (day / "etf" / "sh510300.parquet").write_bytes(b"x")
+    (day / "sh600036.parquet").write_bytes(b"x")  # 迁移前的扁平孤儿
+    assert sync._count_day_files(day) == 2
+
+
+def test_replace_retries_when_windows_holds_the_target(
+    sync: ModuleType, monkeypatch, tmp_path
+) -> None:
+    """覆盖同名文件撞 `PermissionError (WinError 5)` 要重试，不是直接抛出去。
+
+    全市场重跑时实测最后一只就吃了这个（上一轮的产物正被系统锁着）。
+    单只落盘失败必须降级成 SKIP 让整轮继续，所以重试在这里是降级路径的一部分。
+    """
+    target = tmp_path / "sh600519.parquet"
+    target.write_text("old", encoding="utf-8")
+    calls = {"n": 0, "always_fail": False}
+
+    def flaky_replace(src: Path, dst: Path) -> None:
+        calls["n"] += 1
+        if calls["always_fail"] or calls["n"] < 3:
+            raise PermissionError(5, "拒绝访问")
+        dst.write_text("new", encoding="utf-8")
+
+    monkeypatch.setattr(sync.os, "replace", flaky_replace)
+    sync._replace_with_retry(tmp_path / "sh600519.parquet.tmp", target)
+    assert calls["n"] == 3, "该重试而不是抛出去"
+    assert target.read_text(encoding="utf-8") == "new"
+
+    # 重试耗尽：该抛，交给 sync_one 转成 SKIP
+    calls["always_fail"] = True
+    with pytest.raises(OSError):
+        sync._replace_with_retry(tmp_path / "sh600519.parquet.tmp", target)
 
 
 def test_resume_count_falls_back_to_the_date_on_disk(sync: ModuleType, tmp_path: Path) -> None:
@@ -90,10 +309,14 @@ def test_resume_count_falls_back_to_the_date_on_disk(sync: ModuleType, tmp_path:
     # 没有磁盘证据也没有 state 时才退回 lookback
     assert sync._resume_bar_count(empty_state, "sh600519", False, 320, "") == 320
     # --full 无视一切证据直接拉满窗口
-    assert sync._resume_bar_count(empty_state, "sh600519", True, 320, "2026-09-30") == sync.MAX_WINDOW
+    assert (
+        sync._resume_bar_count(empty_state, "sh600519", True, 320, "2026-09-30") == sync.MAX_WINDOW
+    )
 
 
-def test_last_date_on_disk_tolerates_missing_and_broken_files(sync: ModuleType, tmp_path: Path) -> None:
+def test_last_date_on_disk_tolerates_missing_and_broken_files(
+    sync: ModuleType, tmp_path: Path
+) -> None:
     """坏文件不该让整轮同步崩掉，按"没存过"处理。"""
     assert sync._last_date_on_disk(tmp_path / "nope.parquet") == ""
     broken = tmp_path / "broken.parquet"
@@ -136,6 +359,49 @@ def test_scan_enumerates_every_code_in_a_segment(sync: ModuleType) -> None:
 # ---------------------------------------------------------------------------
 # 默认宇宙
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# 落盘的收尾动作
+# ---------------------------------------------------------------------------
+
+
+def test_atomic_write_clears_the_stale_csv_shadow(sync: ModuleType, tmp_path: Path) -> None:
+    """parquet 落盘后顺手清掉同名 csv 影子。
+
+    这条曾经是**静默死代码**：清理挂在 ``_replace_with_retry`` 那个"循环正常结束"
+    的分支下，而那条路径要么 ``return`` 要么 ``raise``，永远走不到。所以搬进
+    ``_atomic_write_parquet`` 的 ``finally``——成败都清。
+    """
+    target = tmp_path / "sh600519.parquet"
+    shadow = tmp_path / "sh600519.csv"
+    shadow.write_text("老 csv", encoding="utf-8")
+    sync._atomic_write_parquet([_row("2026-09-30")], target)
+    assert target.exists()
+    assert not shadow.exists(), "csv 影子还挂在盘上"
+
+
+def test_run_tally_carries_the_latest_trading_day(sync: ModuleType, monkeypatch, tmp_path) -> None:
+    """汇总里带"全市场最新交易日"——盘后一眼看出数据停在哪天。
+
+    取的是**结果里的最大日期**，不碰 ``datetime.now()``：那个一沾就是时区坑
+    （本地 UTC+8 过、CI UTC 偏 8 小时的老教训），而"数据有多新"本该只由行情自己回答。
+    """
+    days = {"sh600519": "2026-09-29", "sz399001": "2026-09-30", "sh600036": "2026-09-28"}
+
+    def fake_sync_one(self, target: sync.Target) -> sync.Outcome:
+        return sync.Outcome(target.symbol, "OK", rows=10, day=days[target.symbol])
+
+    monkeypatch.setattr(sync.Syncer, "sync_one", fake_sync_one)
+    monkeypatch.setattr(sync.time, "sleep", lambda *_: None)
+
+    out = tmp_path / "day"
+    monkeypatch.setattr(sync, "TdxClient", lambda **_: None)
+    syncer = sync.Syncer(out, tmp_path / "state.json", dry_run=True, gap_sleep=0, jitter=0)
+    tally = syncer.run([sync.Target.parse(s) for s in days], workers=2)
+
+    assert tally["OK"] == 3
+    assert tally["latest_day"] == "2026-09-30"
 
 
 def test_default_universe_is_real_and_mixture_of_stocks_and_indices(sync: ModuleType) -> None:
