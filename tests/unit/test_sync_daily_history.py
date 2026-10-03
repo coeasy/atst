@@ -564,6 +564,53 @@ def test_run_tally_carries_the_latest_trading_day(sync: ModuleType, monkeypatch,
     assert tally["latest_day"] == "2026-09-30"
 
 
+def test_run_retries_a_transient_skip_within_the_same_run(
+    sync: ModuleType, monkeypatch, tmp_path
+) -> None:
+    """首轮 SKIP（主站单节点瞬时抖动）当轮二次重投成功 → 最终 OK、不残留 SKIP。
+
+    不必等下一轮 cron 才把瞬时失败捞回来；REJECT/EMPTY/协议不支持的不重投。
+    """
+    calls = {"n": 0}
+
+    def flaky_sync_one(self: sync.Syncer, target: sync.Target) -> sync.Outcome:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return sync.Outcome(target.symbol, "SKIP", detail="TdxError: 瞬时抖动")
+        return sync.Outcome(target.symbol, "OK", rows=5, day="2026-10-01")
+
+    monkeypatch.setattr(sync.Syncer, "sync_one", flaky_sync_one)
+    monkeypatch.setattr(sync.time, "sleep", lambda *_: None)
+    out = tmp_path / "day"
+    monkeypatch.setattr(sync, "TdxClient", lambda **_: None)
+    syncer = sync.Syncer(out, tmp_path / "state.json", gap_sleep=0, jitter=0)
+    tally = syncer.run([sync.Target.parse("sh600519")], workers=1)
+
+    assert tally["OK"] == 1, "二次重投把瞬时 SKIP 变成了 OK"
+    assert tally.get("SKIP", 0) == 0, "不该残留 SKIP 计数"
+    assert calls["n"] == 2, "确实发生了一次重投"
+
+
+def test_run_does_not_retry_an_unsupported_symbol(sync: ModuleType, monkeypatch, tmp_path) -> None:
+    """北交所 bj* 即便首轮 SKIP 也不当轮重投——协议层必败，重投纯浪费请求。"""
+    calls = {"n": 0}
+
+    def skip_sync_one(self: sync.Syncer, target: sync.Target) -> sync.Outcome:
+        calls["n"] += 1
+        return sync.Outcome(target.symbol, "SKIP", detail="TdxError: E3040")
+
+    monkeypatch.setattr(sync.Syncer, "sync_one", skip_sync_one)
+    monkeypatch.setattr(sync.time, "sleep", lambda *_: None)
+    out = tmp_path / "day"
+    monkeypatch.setattr(sync, "TdxClient", lambda **_: None)
+    syncer = sync.Syncer(out, tmp_path / "state.json", gap_sleep=0, jitter=0)
+    tally = syncer.run([sync.Target.parse("bj920000")], workers=1)
+
+    assert tally["SKIP"] == 1
+    assert calls["n"] == 1, "bj* 不该被二次重投"
+    assert "bj920000" not in syncer.state.failed, "协议不支持的不写进 state.failed"
+
+
 def test_default_universe_is_real_and_mixture_of_stocks_and_indices(sync: ModuleType) -> None:
     """内置宇宙是"零参数可跑"的最后一道兜底，别让它掺进主站认不出来的代码。"""
     targets = [sync.Target.parse(symbol) for symbol, _ in sync.DEFAULT_UNIVERSE]
@@ -744,6 +791,29 @@ def test_doctor_separates_stale_from_a_gap(
     out = capsys.readouterr().out
     assert "落伍：1" in out
     assert "sz300750" in out
+
+
+def test_doctor_treats_unsupported_classes_as_non_gap(
+    sync: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """北交所（协议层 E3040 取不到）在 universe.csv 里、磁盘上没有 → 不算缺口、退出码 0。
+
+    ``--fetch-list`` 会往 universe.csv 塞 348 只 bj，默认同步又静默剔除它们，
+    若 doctor 把它们当缺口，每次体检都会假报几百只缺口。它们应单列「协议不支持」。
+    """
+    root = tmp_path / "data"
+    (root / "day").mkdir(parents=True)
+    (root / "universe.csv").write_text(
+        "代码,类别\nsh600519,stock\nbj920000,bse\n", encoding="utf-8"
+    )
+    _write_day(sync, root / "day", "stock", "sh600519", ["2026-10-01"])
+    # bj920000 不在磁盘上——这正是默认同步后的真实状态。
+
+    assert sync.run_doctor(_doctor_args(sync), root) == 0
+    out = capsys.readouterr().out
+    assert "缺口：0" in out, "北交所缺文件不能是缺口"
+    assert "协议不支持：1" in out
+    assert "bj920000" in out
 
 
 def test_doctor_state_drift_is_visible_in_the_report(

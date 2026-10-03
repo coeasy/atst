@@ -99,7 +99,7 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from atst.client import TdxClient  # noqa: E402
-from atst.errors import TdxError, advice_for  # noqa: E402
+from atst.errors import TdxError  # noqa: E402
 from atst.output import write  # noqa: E402
 
 #: 默认落盘根目录。锚仓库根而不是 cwd：cwd 换一处就换一套数据，这种漂移在
@@ -401,7 +401,6 @@ def scan_universe(
 
     ``attempts`` 是传输层重试次数——探错了不会写进代码表，但会白白漏掉一只。
     """
-    warnings.filterwarnings("ignore")
     pending = [item for item in plan if item[0] not in set(known)]
     found: dict[str, str] = {}
     lock = threading.Lock()
@@ -417,22 +416,27 @@ def scan_universe(
                 time.sleep(0.05 * attempts)
         raise RuntimeError(str(last_exc) or type(last_exc).__name__)
 
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        futures = {
-            pool.submit(probe, code, index_bit): (code, kind) for code, kind, index_bit in pending
-        }
-        for future in as_completed(futures):
-            done += 1
-            if done % 2000 == 0:
-                print(f"  探测 {done}/{len(pending)}…，已确认 {len(found)}", flush=True)
-            code, kind = futures[future]
-            try:
-                rows = future.result()
-            except Exception:  # noqa: BLE001 - 重试耗尽仍按"不存在"处理
-                continue
-            if rows and isinstance(rows[0], dict) and _date_key(rows[0]):
-                with lock:
-                    found[code] = kind
+    with warnings.catch_warnings():
+        # 探测走的是 TDX 协议 + pyarrow 解码，会刷一堆第三方内部告警；只在这一段收住，
+        # 不再用全局 filterwarnings（那会把整个进程的告警等级都改掉，泄漏到别处）。
+        warnings.simplefilter("ignore")
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+            futures = {
+                pool.submit(probe, code, index_bit): (code, kind)
+                for code, kind, index_bit in pending
+            }
+            for future in as_completed(futures):
+                done += 1
+                if done % 2000 == 0:
+                    print(f"  探测 {done}/{len(pending)}…，已确认 {len(found)}", flush=True)
+                code, kind = futures[future]
+                try:
+                    rows = future.result()
+                except Exception:  # noqa: BLE001 - 重试耗尽仍按"不存在"处理
+                    continue
+                if rows and isinstance(rows[0], dict) and _date_key(rows[0]):
+                    with lock:
+                        found[code] = kind
     return found
 
 
@@ -533,7 +537,7 @@ def _read_rows(path: Path, fmt: str) -> list[dict[str, Any]]:
 
     if fmt == "parquet":
         try:
-            import pyarrow.parquet as pq  # type: ignore[import-not-found]
+            import pyarrow.parquet as pq
         except ImportError:
             return []
         table = pq.read_table(path)
@@ -552,7 +556,7 @@ def _last_date_on_disk(path: Path) -> str:
     if not path.exists():
         return ""
     try:
-        import pyarrow.parquet as pq  # type: ignore[import-not-found]
+        import pyarrow.parquet as pq
 
         column = pq.read_table(path, columns=["date"])["date"].to_pylist()
     except Exception:
@@ -573,7 +577,7 @@ def _count_rows(path: Path) -> int:
     if not path.exists():
         return 0
     try:
-        import pyarrow.parquet as pq  # type: ignore[import-not-found]
+        import pyarrow.parquet as pq
 
         return int(pq.read_metadata(path).num_rows)
     except Exception:  # noqa: BLE001 - 坏文件按"读不出内容"处理
@@ -603,8 +607,9 @@ def _bar_budget(n_targets: int, full: bool, lookback: int) -> tuple[int, int]:
     """这一轮要拿多少根、打多少次主站请求，返回 ``(根数, 请求数)``。
 
     请求数才是成本项：``bars`` 没有翻页游标，``count`` 超过 :data:`PAGE_BARS`
-    客户端就自己翻页。28 只 ``--full`` 是 280 次请求（几秒），8385 只 ``--full``
-    是 8 万+ 次——量级差三个数，光看"拉多少根"是感觉不出来的。
+    客户端就自己翻页。28 只 ``--full`` 是 280 次请求（几秒）；全市场 ``--full``
+    约 **8385 只（六类，``--scan`` 口径）/ 8733 只（含北交所，``--fetch-list`` 口径）**
+    是 8 万+ 次请求——量级差三个数，光看"拉多少根"是感觉不出来的。
     """
     per_symbol = MAX_WINDOW if full else max(lookback, BASELINE_WINDOW)
     pages = math.ceil(per_symbol / PAGE_BARS)
@@ -720,20 +725,14 @@ class Syncer:
     def sync_one(self, target: Target) -> Outcome:
         path = self._path_of(target)
         count = _resume_bar_count(self.full, self.lookback, _last_date_on_disk(path))
+        # 重试完全交给 ``TdxClient``（底层 ConnectionPool 按 RetryAdvice 自动重试 +
+        # 换主站 + 退避，max_retries 默认 3）。脚本层早年那套"只对 timeout 重试一次"
+        # 既和连接池重复，又一遇非超时错误就直接 SKIP，是不一致的逻辑；砍掉它，
+        # 这里只做"取不到就记 SKIP"这一件事，断链清晰、没有孤儿分支。
         try:
             bars = self._client.bars(target.symbol, period="day", count=count, index=target.index)
         except TdxError as exc:
-            advice = advice_for(exc)
-            if advice.retryable and "timeout" in str(exc).lower():
-                time.sleep(min(advice.backoff or 0.5, 3.0))
-                try:
-                    bars = self._client.bars(
-                        target.symbol, period="day", count=count, index=target.index
-                    )
-                except TdxError as exc2:
-                    return Outcome(target.symbol, "SKIP", detail=f"{type(exc2).__name__}: {exc2}")
-            else:
-                return Outcome(target.symbol, "SKIP", detail=f"{type(exc).__name__}: {exc}")
+            return Outcome(target.symbol, "SKIP", detail=f"{type(exc).__name__}: {exc}")
         except Exception as exc:  # 传输层原异常（内核不替换 Provider）
             return Outcome(target.symbol, "SKIP", detail=f"{type(exc).__name__}: {exc}")
 
@@ -778,36 +777,133 @@ class Syncer:
         return Outcome(target.symbol, "OK", rows=len(merged), day=day)
 
     # -- 全量 ----------------------------------------------------------
-    def run(self, targets: Sequence[Target], workers: int = 4) -> dict[str, Any]:
+    def run(
+        self, targets: Sequence[Target], workers: int = 4, verbose: bool = False
+    ) -> dict[str, Any]:
+        """把 ``targets`` 并发同步完，返回统计。
+
+        观测输出做了深度优化（之前每只都 ``print + flush`` 再 ``sleep`` 一次，
+        全市场 8733 只就是 8733 行刷屏 + 几十秒空转）：
+
+        * **进度行节流**：默认只在终端上用回车覆盖刷一行（``OK n / SKIP m …``），
+          非终端（cron 重定向到日志）则按阈值打平铺行，不污染日志；
+        * **明细只在 ``--verbose`` 时逐只打印**，让诊断信息不再淹没在刷屏里；
+        * **问题清单在结尾统一汇总**（SKIP / REJECT 预览），该修的一目了然；
+        * **礼貌间隔移到提交侧**：``--gap-sleep`` 夹在每次 ``submit`` 之间才有意义，
+          收集侧 sleep 只是空转——既保留"小清单慢慢来"、又不再拖全市场后腿；
+        * **收尾关掉连接池**（``finally``），不留孤儿连接 / 心跳线程。
+        """
         tally: dict[str, Any] = {"OK": 0, "EMPTY": 0, "SKIP": 0, "REJECT": 0, "by_class": {}}
         bars_total, days_total, latest_day = 0, 0, ""
         started = time.time()
-        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-            futures = {pool.submit(self.sync_one, t): t for t in targets}
-            for future in as_completed(futures):
-                outcome = future.result()
-                tally[outcome.status] = tally.get(outcome.status, 0) + 1
-                if outcome.status == "OK":
-                    bars_total += outcome.rows
-                    days_total += 1
-                    #: 数据停在哪天，是盘后第一眼要看的东西——拿"结果里的最大日期"
-                    #: 报（不去调 ``datetime.now()``：那玩意儿一沾就是时区坑）。
-                    if outcome.day and outcome.day > latest_day:
-                        latest_day = outcome.day
-                    kind = futures[future].kind
-                    tally["by_class"][kind] = tally["by_class"].get(kind, 0) + 1
-                elif outcome.status == "REJECT":
-                    with self._lock:
-                        self.state.rejected[outcome.symbol] = outcome.detail
-                else:
-                    with self._lock:
-                        self.state.failed[outcome.symbol] = outcome.detail or outcome.status
-                print(
-                    f"[{outcome.status:<6}] {outcome.symbol:<10} "
-                    f"{outcome.rows:>5} 行  末日 {outcome.day or '-'}  {outcome.detail[:60]}",
-                    flush=True,
-                )
-                time.sleep(self.gap_sleep + random.random() * self.jitter)
+        problems: list[tuple[str, str, str]] = []
+        total = len(targets)
+        progress_step = max(1, total // 50)
+        last_tick = time.monotonic()
+        completed = 0
+        try:
+            with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+                futures: dict[Any, Target] = {}
+                for target in targets:
+                    futures[pool.submit(self.sync_one, target)] = target
+                    # 礼貌间隔只在大到"真能限速"时才夹在提交之间。``self.gap_sleep`` 已是
+                    # ``main()`` 里按规模折算过的值（见 :func:`_effective_gap`：全市场被
+                    # 压到 0.01s 下限），所以默认全市场跑这里根本不进、毫无限速收益——
+                    # 真限速在连接池的 ``slots_per_host`` / ``SessionRateLimiter`` 那一层
+                    # （见 :mod:`atst.transport.pool`）。小清单或用户显式给大间隔时，
+                    # 这里才真正起作用。
+                    if self.gap_sleep >= 0.05:
+                        # 提交侧礼貌间隔 + 抖动：只在"大得真能限速"时用（``main()`` 已把
+                        # 全市场折算到 0.01，这一支默认不进），避免平白空转。抖动打散提交
+                        # 节奏，避免小清单下多线程同时撞主站（真实限速仍在连接池那一层）。
+                        time.sleep(self.gap_sleep + random.uniform(0, self.jitter))
+                for future in as_completed(futures):
+                    outcome = future.result()
+                    target = futures[future]
+                    completed += 1
+                    tally[outcome.status] = tally.get(outcome.status, 0) + 1
+                    if outcome.status == "OK":
+                        bars_total += outcome.rows
+                        days_total += 1
+                        #: 数据停在哪天，是盘后第一眼要看的东西——拿"结果里的最大日期"
+                        #: 报（不去调 ``datetime.now()``：那玩意儿一沾就是时区坑）。
+                        if outcome.day and outcome.day > latest_day:
+                            latest_day = outcome.day
+                        tally["by_class"][target.kind] = tally["by_class"].get(target.kind, 0) + 1
+                    else:
+                        problems.append((outcome.status, outcome.symbol, outcome.detail))
+                        if outcome.status == "REJECT":
+                            with self._lock:
+                                self.state.rejected[outcome.symbol] = outcome.detail
+                        elif target.kind not in UNSUPPORTED_CLASSES:
+                            # 协议层不支持（北交所 bj*，E3040）不是真失败——不写进
+                            # state.failed，否则它们会永远累积、还污染 doctor 的 failed 读数。
+                            with self._lock:
+                                self.state.failed[outcome.symbol] = outcome.detail or outcome.status
+                    if verbose:
+                        print(
+                            f"[{outcome.status:<6}] {outcome.symbol:<10} "
+                            f"{outcome.rows:>5} 行  末日 {outcome.day or '-'}  {outcome.detail[:60]}",
+                            flush=True,
+                        )
+                    else:
+                        now = time.monotonic()
+                        if completed % progress_step == 0 or now - last_tick >= 2.0:
+                            last_tick = now
+                            _print_progress(completed, total, tally, final=False)
+                # 当轮二次重投：首轮 SKIP 多半是主站单节点瞬时抖动 / 换主站延迟，
+                # 立刻再投一次能压低单次运行的 SKIP 率，不必等下一轮 cron。
+                # REJECT（数据坏）与 EMPTY（主站确无数据）不重投——前者必败、后者无需；
+                # 协议层不支持的 bj* 也不重投（重投必 SKIP，纯浪费请求）。
+                skip_syms = {s for st, s, _ in problems if st == "SKIP"}
+                re_targets = [
+                    t
+                    for t in targets
+                    if t.symbol in skip_syms and t.kind not in UNSUPPORTED_CLASSES
+                ]
+                if re_targets:
+                    # 先撤掉首轮的 SKIP 记账，再按二次结果重新记：避免同一只在
+                    # 结尾汇总里重复出现，且让计数回到真实终态。
+                    tally["SKIP"] = max(0, tally.get("SKIP", 0) - len(re_targets))
+                    problems = [p for p in problems if p[0] != "SKIP"]
+                    retry_futures = {pool.submit(self.sync_one, t): t for t in re_targets}
+                    for future in as_completed(retry_futures):
+                        outcome = future.result()
+                        target = retry_futures[future]
+                        completed += 1
+                        tally[outcome.status] = tally.get(outcome.status, 0) + 1
+                        if outcome.status == "OK":
+                            bars_total += outcome.rows
+                            days_total += 1
+                            if outcome.day and outcome.day > latest_day:
+                                latest_day = outcome.day
+                            tally["by_class"][target.kind] = (
+                                tally["by_class"].get(target.kind, 0) + 1
+                            )
+                        else:
+                            problems.append((outcome.status, outcome.symbol, outcome.detail))
+                            if outcome.status == "REJECT":
+                                with self._lock:
+                                    self.state.rejected[outcome.symbol] = outcome.detail
+                            elif target.kind not in UNSUPPORTED_CLASSES:
+                                with self._lock:
+                                    self.state.failed[outcome.symbol] = (
+                                        outcome.detail or outcome.status
+                                    )
+                        if verbose:
+                            print(
+                                f"[R][{outcome.status:<6}] {outcome.symbol:<10} "
+                                f"{outcome.rows:>5} 行  末日 {outcome.day or '-'}  {outcome.detail[:60]}",
+                                flush=True,
+                            )
+        finally:
+            # 收尾关连接池：否则池里的连接与后台心跳线程会一直挂着（即便 daemon
+            # 不会阻塞退出，也是该释放的孤儿资源）。测试里 client 是桩，未必有 close。
+            closer = getattr(self._client, "close", None)
+            if closer is not None:
+                closer()
+        if not verbose:
+            _print_progress(completed, total, tally, final=True)
         if not self.dry_run:
             self.state.last_run = time.strftime("%Y-%m-%d %H:%M:%S")
             self.state.symbols = days_total
@@ -815,6 +911,7 @@ class Syncer:
             self.state.dump(self.state_path)
         tally["elapsed_s"] = round(time.time() - started, 1)
         tally["latest_day"] = latest_day
+        self._problems = problems
         return tally
 
 
@@ -891,6 +988,23 @@ def print_class_table(picked: Sequence[tuple[str, tuple[str, ...]]]) -> None:
         print(f"\n未纳入：{kind} —— {reason}")
 
 
+def _default_vipdoc_candidates() -> tuple[Path, ...]:
+    """跨平台的通达信目录候选（可由 ``--vipdoc`` 显式覆盖）。
+
+    旧实现硬编码 ``C:/new_tdx`` / ``D:/new_tdx``，在非 Windows 上会生成一个
+    毫无意义的相对路径对象（``Path("C:/new_tdx")`` 在 POSIX 下被当普通相对路径）。
+    现在按 ``os.name`` 给候选：Windows 仍是那两块盘，非 Windows 走 Wine / 常见
+    挂载点约定。拿不到（绝大多数 CI / 服务器）就安静跳过，不影响三级兜底。
+    """
+    if os.name == "nt":
+        return (Path("C:/new_tdx"), Path("D:/new_tdx"))
+    return (
+        Path.home() / "new_tdx",
+        Path("/opt/new_tdx"),
+        Path.home() / ".wine" / "drive_c" / "new_tdx",
+    )
+
+
 def resolve_universe(
     args: argparse.Namespace, root: Path, picked: Sequence[tuple[str, tuple[str, ...]]]
 ) -> tuple[list[Target], str]:
@@ -910,7 +1024,7 @@ def resolve_universe(
         if codes:
             return codes, f"清单 {args.universe_file}（{len(codes)} 只）"
 
-    for candidate in (args.vipdoc, Path("C:/new_tdx"), Path("D:/new_tdx")):
+    for candidate in (args.vipdoc, *_default_vipdoc_candidates()):
         if not candidate:
             continue
         found = symbols_from_vipdoc(Path(candidate))
@@ -977,6 +1091,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workers", type=int, default=4, help="并发只数（实际瓶颈是 slots_per_host）")
     p.add_argument("--gap-sleep", type=float, default=0.2, help="每只之间的礼貌间隔秒数")
     p.add_argument("--dry-run", action="store_true", help="只拉取不落盘（验证连通性用）")
+    p.add_argument(
+        "--verbose",
+        action="store_true",
+        help="逐只打印每只的同步结果（默认只在结尾汇总 SKIP/REJECT，并用单行滚动进度）",
+    )
     p.add_argument("--timeout", type=float, default=10.0)
     p.add_argument(
         "--include-class",
@@ -1091,6 +1210,26 @@ def _effective_gap(requested: float, targets: int) -> float:
     if targets <= 200:
         return requested
     return max(0.01, requested * 200 / targets)
+
+
+def _print_progress(done: int, total: int, tally: dict[str, Any], *, final: bool = False) -> None:
+    """节流进度行：终端用回车覆盖，非终端（cron 日志）打平铺行。
+
+    全市场 8733 只若逐只 ``print`` 是 8733 行刷屏 + 几十秒空转——改成一行滚动。
+    非终端（``>> data/sync.log``）不写回车，否则日志里全是重叠的控制字符。
+    """
+    ok = tally.get("OK", 0)
+    empty = tally.get("EMPTY", 0)
+    skip = tally.get("SKIP", 0)
+    reject = tally.get("REJECT", 0)
+    line = f"进度 {done}/{total}  OK {ok}  空 {empty}  SKIP {skip}  REJECT {reject}"
+    if final:
+        print(line, flush=True)
+        return
+    if sys.stdout.isatty():
+        print("\r" + line, end="", flush=True)
+    elif done % max(1, total // 10) == 0 or done == total:
+        print(line, flush=True)
 
 
 #: 代码表列头（两列也能读——名称是可选的第三列，段表探测出来的标的没名字）
@@ -1238,6 +1377,10 @@ def run_doctor(args: Any, root: Path) -> int:
             latest = last
 
     missing = [r for r in rows if not r["file"]]
+    # 协议层不支持的类别（北交所 bj*）主站根本取不到——它们的"缺文件"是预期内，
+    # 不能算进缺口：否则 ``--fetch-list`` 带来的 bj 会让 doctor 假报几百只缺口。
+    real_missing = [r for r in missing if r["kind"] not in UNSUPPORTED_CLASSES]
+    unsupported = [r for r in missing if r["kind"] in UNSUPPORTED_CLASSES]
     empty = [r for r in rows if r["file"] and not r["rows"]]
     stale = [r for r in rows if r["last_date"] and latest and r["last_date"] < latest]
     drift = [
@@ -1248,14 +1391,15 @@ def run_doctor(args: Any, root: Path) -> int:
         if row["file"]:
             by_kind[row["kind"]] = by_kind.get(row["kind"], 0) + 1
 
-    report = {
+    report: dict[str, Any] = {
         "root": root.as_posix(),
         "universe": source,
         "expected": len(targets),
         "on_disk": len(targets) - len(missing),
         "by_kind": by_kind,
         "latest_day": latest,
-        "missing": [r["symbol"] for r in missing],
+        "missing": [r["symbol"] for r in real_missing],
+        "unsupported": [r["symbol"] for r in unsupported],
         "empty": [r["symbol"] for r in empty],
         "stale": [r["symbol"] for r in stale],
         "state_drift": [r["symbol"] for r in drift],
@@ -1277,6 +1421,12 @@ def run_doctor(args: Any, root: Path) -> int:
         for label, key in (("缺口", "missing"), ("空文件", "empty"), ("落伍", "stale")):
             items = report[key]
             print(f"  {label}：{len(items)}" + (f"  例：{' '.join(items[:8])}" if items else ""))
+        if report["unsupported"]:
+            print(
+                f"  协议不支持：{len(report['unsupported'])}"
+                f"  例：{' '.join(report['unsupported'][:8])}"
+                "（bj*，TDX E3040 取不到，非缺口，不计入退出码）"
+            )
         if report["state_drift"]:
             print(
                 f"  断点与磁盘不符：{len(report['state_drift'])}"
@@ -1284,7 +1434,7 @@ def run_doctor(args: Any, root: Path) -> int:
             )
         if state.rejected:
             print(f"  口径自检拦下：{len(state.rejected)}（见 state.json 的 rejected）")
-        if missing:
+        if real_missing:
             print("  下一步：python scripts/sync_daily_history.py --root " + root.as_posix())
             print("          （缺口会按代码表逐只重试；只补某一类加 --include-class）")
         if empty:
@@ -1292,7 +1442,7 @@ def run_doctor(args: Any, root: Path) -> int:
             # 铺底窗口重拉；但增量窗口不等于完整历史，要补回去得 --full。
             print("  下一步（空文件）：先重跑上面的增量命令；要补回完整历史加 --full")
 
-    return 2 if (missing or empty) else 0
+    return 2 if (real_missing or empty) else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1358,6 +1508,16 @@ def main(argv: list[str] | None = None) -> int:
             f"--limit：宇宙共 {universe_size} 只，这一轮只跑前 {len(targets)} 只"
             "（下面的预算按这个数算）"
         )
+    # 协议层不支持的类别（北交所 bj*，TDX 报 E3040）进得了宇宙、取不到数据：
+    # 本轮会全部 SKIP，且不计入缺口、不写进 state.failed。显式告警，避免用户误以为
+    # "加了 --include-class bse 就能同步北交所"。它们只能由非 TDX 源获取，脚本暂不支持。
+    unsupported = [t for t in targets if t.kind in UNSUPPORTED_CLASSES]
+    if unsupported:
+        print(
+            f"⚠ {len(unsupported)} 只协议层不支持（北交所 bj*，TDX E3040）：本轮会全部 SKIP，"
+            "且不算缺口、不写进 state.failed。它们只能由非 TDX 源获取，脚本暂不支持；"
+            "建议加 --exclude-class bse 省去这些必败请求。"
+        )
     for line in _plan_lines(targets, source, root, args.full, args.lookback, universe_size):
         print(line)
 
@@ -1374,7 +1534,7 @@ def main(argv: list[str] | None = None) -> int:
         full=args.full,
         dry_run=args.dry_run,
     )
-    tally = syncer.run(targets, workers=args.workers)
+    tally = syncer.run(targets, workers=args.workers, verbose=args.verbose)
     if tally.get("latest_day"):
         print(f"全市场最新交易日：{tally['latest_day']}")
     print(
@@ -1387,6 +1547,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"口径自检拦下 {len(syncer.rejected)} 只（未落盘）：")
         for sym, why in list(syncer.rejected.items())[:10]:
             print(f"  - {sym}: {why}")
+    if not args.verbose:
+        skips = [
+            (sym, detail)
+            for status, sym, detail in getattr(syncer, "_problems", [])
+            if status == "SKIP"
+        ]
+        if skips:
+            print(f"跳过/失败 {len(skips)} 只（未落盘，下轮按磁盘断点自动重试）：")
+            for sym, why in skips[:30]:
+                print(f"  - {sym}: {why[:80]}")
     if not args.dry_run:
         files = _count_day_files(day_dir)
         size = _dir_size(day_dir)
