@@ -292,8 +292,20 @@ df = pd.DataFrame(rows)
 
 日期列回来是 `datetime` 对象而不是原字符串——`to_parquet` 经 DataFrame 写，`date` /
 `datetime` 这类列名会被解析成时间类型；按 `YYYY-MM-DD` 比日期的调用方要自己归一一次
-（脚本侧的 `_last_date_on_disk` 就是这么做的）。CSV 读回用标准库即可，DuckDB 那侧用
-它自己的查询接口，所以读回面只补了 Parquet 这一支。
+（脚本侧的 `_last_date_on_disk` 就是这么做的）。
+
+CSV 那一侧的对称面是 `atst.output.from_csv`（零依赖）：导出给 Excel / 人工过目、
+加工之后读回程序。CSV 没有类型，读回全 `str`，不做隐式数值推断：
+
+```python
+from atst.output import to_csv, from_csv
+
+to_csv(rows, "watchlist.csv")            # utf-8-sig，Excel 双击直开
+back = from_csv("watchlist.csv")         # list[dict[str, str]]，带不带 BOM 都认
+codes = from_csv("watchlist.csv", columns=["code"])
+```
+
+DuckDB 那侧用它自己的查询接口，所以读回面是 Parquet 与 CSV 两支。
 
 ---
 
@@ -381,9 +393,14 @@ Windows 计划任务同理，指向仓库里的 `scripts/sync_daily_history.py`�
 - `--scan` 用的是"主站认不认这个代码"的判据，会得到主站口径的 universe：实测全 6 类  
   **8385 只**（stock 5223 / etf 1819 / index 554 / bond 356 / lof 355 / bshare 78），  
   含少量已退市但主站仍留历史的代码；要精确名单请自备 `--universe-file`。
-- 全市场默认 320 根铺底 + 增量，落盘约 **279 MiB / 8385 个 parquet**，一轮约 9 分钟；  
+- 全市场默认 320 根铺底 + 增量，落盘约 **290 MiB / 8733 个 parquet**（279 MiB 为
+  8385 只时的实测读数，按只数折算），一轮约 9 分钟；  
   `--full` 铺长历史会按 8000 根/只涨（单只 8000 根约 0.4 MiB，自己乘）。
 - 落盘是**追加合并**语义：只保留去重后的 `YYYY-MM-DD`，同一天重复覆盖。停牌日不会补空行。
-- 迁移到分类目录前写的扁平 `data/day/*.parquet` 仍会被读回来当断点；新一轮落盘会写进  
-  对应类别子目录，之后扁平那份就成了孤儿文件，可直接删。
+- 迁移到分类目录前写的扁平 `data/day/*.parquet` 仍会被读回来当断点；新一轮落盘写进  
+  对应类别子目录并**顺手收走扁平那份**（数据已合并，留着只是幽灵副本）。删不掉
+  只报外观问题，不碍同步。
+- 续拉窗口只信磁盘：文件缺失 / 0 行 / 坏文件都会从铺底窗口重拉，`state.json` 只是
+  `--doctor` 的对照副本、不参与取数决策——空文件跑一遍增量就能修回铺底窗口
+  （要补完整历史仍要 `--full`）。
 - 脚本直接运行时会把仓库根加进 `sys.path`，所以不要求先 `pip install -e .`。

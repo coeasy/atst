@@ -1,6 +1,6 @@
 # atst 快速开始
 
-本文对应当前 `1.3.0`；GitHub Release [`v1.3.0`](https://github.com/coeasy/atst/releases/tag/v1.3.0) 已发布（wheel + sdist 可下载），但本包**不在 PyPI 上**——上传是显式 opt-in，尚未执行。要求 Python 3.10 或更高版本。
+本文对应当前 `1.4.0`；GitHub Release [`v1.4.0`](https://github.com/coeasy/atst/releases/tag/v1.4.0) 已发布（wheel + sdist 可下载），但本包**不在 PyPI 上**——上传是显式 opt-in，尚未执行。要求 Python 3.10 或更高版本。
 
 ## 安装
 

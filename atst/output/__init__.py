@@ -17,9 +17,10 @@
 
 读回
 ----
-写出之外还有一个对称的读回入口 :func:`from_parquet`：``scripts/sync_daily_history.py``
-落下的 ``data/day/<类别>/<代码>.parquet`` 用它读回成 ``list[dict]``，
-"同步落盘 → 读回研究"这才是一条完整链路。
+写出之外还有两个对称的读回入口：:func:`from_parquet`（读
+``scripts/sync_daily_history.py`` 落下的 ``data/day/<类别>/<代码>.parquet``）
+与 :func:`from_csv`（读回人工过目/加工过的 CSV）。读回与写出是同一条契约
+的两面，"落盘 → 读回研究"这才是一条完整链路。
 
 v9 自 atst.sinks 更名，消除与 atst.sink（vipdoc .day 写回）的包名混淆。
 """
@@ -42,6 +43,7 @@ __all__ = [
     "to_parquet",
     "from_parquet",
     "to_csv",
+    "from_csv",
     "to_duckdb",
     "parquet_writer",
     "duckdb_writer",
@@ -210,6 +212,53 @@ def to_csv(
             os.unlink(tmp_name)
         raise
     return path
+
+
+def from_csv(path: str, *, columns: Sequence[str] | None = None) -> list[dict[str, str]]:
+    """读回 CSV 文件（:func:`to_csv` 的对称面），返回 ``list[dict[str, str]]``。
+
+    为什么要有读回这一面
+    --------------------
+    ``to_csv`` 单向时，"导出给 Excel / 人工过目"这条经典场景只完成了一半：
+    人工在 CSV 上补的批注、改的字段读不回程序，下游就长出"每家自己写一行
+    ``csv.DictReader``"的重复。收进库里，导出与导回是同一条契约的两面。
+
+    列类型
+    ------
+    CSV **没有类型**：所有值读回来都是 ``str``（与 ``csv.DictReader`` 语义
+    一致，不做隐式数值推断——``"0012"`` 变 ``12`` 是数据破坏，不是便利）。
+    要数值就显式转：``int(row["volume"])``。日期列不会被解析成时间对象，
+    这一点与 :func:`from_parquet`（经 DataFrame 写，``datetime`` 列读回是
+    时间对象）不同——按字符串比日期的调用方在 CSV 这边反而省事。
+
+    Parameters
+    ----------
+    path
+        CSV 文件路径（``to_csv`` 的产物，带不带 BOM 都认）。
+    columns
+        只要这些列（缺失的列在行字典里直接不出现，而非填 ``None``）；
+        ``None`` 表示全部列。
+
+    Raises
+    ------
+    FileNotFoundError
+        路径不存在（不是"空结果"，是打错了路径）。
+    """
+    dest = Path(path)
+    if not dest.exists():
+        raise FileNotFoundError(f"CSV 文件不存在: {path}")
+    wanted = list(columns) if columns is not None else None
+    with dest.open("r", encoding=_CSV_ENCODING, newline="") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            return []
+        rows: list[dict[str, str]] = []
+        for raw in reader:
+            row = {k: v for k, v in raw.items() if k is not None}
+            if wanted is not None:
+                row = {k: row[k] for k in wanted if k in row}
+            rows.append(row)
+    return rows
 
 
 def to_duckdb(

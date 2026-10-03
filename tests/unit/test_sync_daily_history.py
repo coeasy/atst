@@ -296,6 +296,37 @@ def test_day_file_count_skips_the_flat_layer(sync: ModuleType, tmp_path: Path) -
     assert sync._count_day_files(day) == 2
 
 
+def test_flat_legacy_file_is_retired_after_the_nested_write(
+    sync: ModuleType, monkeypatch, tmp_path: Path
+) -> None:
+    """读旧扁平文件 → 写类别目录 = 一次迁移：写成功后扁平那份要收走。
+
+    ``_path_of`` nested 优先，扁平文件在迁移成功后永远不会再被读——留着只是
+    幽灵副本（占磁盘、迷惑翻目录的人）。它的数据已经合并进 nested 那份。
+    """
+    out = tmp_path / "day"
+    flat = out / "sh600519.parquet"
+    sync.write([_row("2026-09-29")], str(flat), fmt="parquet")
+
+    class FakeClient:
+        def bars(self, symbol: str, period: str = "day", count: int = 0, index: bool = False):
+            return [_row("2026-09-30")]
+
+    monkeypatch.setattr(sync, "TdxClient", lambda **_: FakeClient())
+    monkeypatch.setattr(sync.time, "sleep", lambda *_: None)
+    syncer = sync.Syncer(out, tmp_path / "state.json", gap_sleep=0, jitter=0)
+
+    outcome = syncer.sync_one(sync.Target.parse("sh600519"))
+
+    assert outcome.status == "OK"
+    nested = out / "stock" / "sh600519.parquet"
+    assert nested.exists()
+    assert not flat.exists(), "扁平幽灵副本该收走"
+    # 合并证据：扁平里的 09-29 + 新拉的 09-30 都在 nested 那份里
+    assert sync._count_rows(nested) == 2
+    assert sync._last_date_on_disk(nested) == "2026-09-30"
+
+
 def test_replace_retries_when_windows_holds_the_target(
     sync: ModuleType, monkeypatch, tmp_path
 ) -> None:
@@ -333,16 +364,29 @@ def test_resume_count_falls_back_to_the_date_on_disk(sync: ModuleType, tmp_path:
         str(path),
         fmt="parquet",
     )
-    empty_state = sync.State()
 
     assert sync._last_date_on_disk(path) == "2026-09-30"
-    assert sync._resume_bar_count(empty_state, "sh600519", False, 320, "2026-09-30") == 320 + 30
-    # 没有磁盘证据也没有 state 时才退回 lookback
-    assert sync._resume_bar_count(empty_state, "sh600519", False, 320, "") == 320
+    assert sync._resume_bar_count(False, 320, "2026-09-30") == 320 + 30
+    # 没有磁盘证据时退回铺底窗口
+    assert sync._resume_bar_count(False, 320, "") == 320
     # --full 无视一切证据直接拉满窗口
-    assert (
-        sync._resume_bar_count(empty_state, "sh600519", True, 320, "2026-09-30") == sync.MAX_WINDOW
-    )
+    assert sync._resume_bar_count(True, 320, "2026-09-30") == sync.MAX_WINDOW
+
+
+def test_resume_count_only_trusts_the_disk(sync: ModuleType) -> None:
+    """磁盘是取数决策的唯一事实源，``state.last_date`` 不参与。
+
+    文件被清成 0 行（体检里的"空文件"）而 state 还记着旧日期时，若 state 兜底
+    就只会拉 ``lookback + RESUME_OVERLAP`` 的小窗口，历史窗口静默缩水。写盘
+    失败时断点不更新，state 只会比磁盘旧——砍掉它不丢任何真证据。
+    """
+    state = sync.State()
+    state.last_date["sh600519"] = "2026-09-30"
+
+    # 空文件（磁盘无证据）：必须退回铺底窗口，state 里那个日期不许兜底
+    assert sync._resume_bar_count(False, 320, "") == 320
+    # state 记得再多，磁盘有日期才走续拉窗口
+    assert sync._resume_bar_count(False, 320, "2026-09-30") == 320 + 30
 
 
 def test_last_date_on_disk_tolerates_missing_and_broken_files(

@@ -157,6 +157,59 @@ class TestParquetReadBack:
         assert from_parquet(str(dest)) == []
 
 
+class TestCsvReadBack:
+    """``from_csv``：``to_csv`` 的对称面（导出给人工 → 加工 → 读回程序）。"""
+
+    def test_round_trip_values_come_back_as_strings(self, tmp_path: Path) -> None:
+        """CSV 没有类型：``volume`` 回来是 ``"100"`` 不是 ``100``。
+
+        隐式数值推断会把 ``"0012"`` 变 ``12``——那是数据破坏，不是便利。
+        """
+        from atst.output import from_csv
+
+        dest = tmp_path / "bars.csv"
+        to_csv(ROWS, dest)
+        back = from_csv(str(dest))
+        assert back == [
+            {"datetime": "2026-06-01", "open": "10.0", "close": "11.0", "volume": "100"},
+            {"datetime": "2026-06-02", "open": "11.0", "close": "12.5", "volume": "200"},
+        ]
+
+    def test_bom_and_plain_files_both_read_back(self, tmp_path: Path) -> None:
+        from atst.output import from_csv
+
+        bom = tmp_path / "bom.csv"
+        plain = tmp_path / "plain.csv"
+        to_csv(ROWS, bom)
+        to_csv(ROWS, plain, bom=False)
+        assert from_csv(str(bom)) == from_csv(str(plain))
+
+    def test_columns_projection_skips_missing_columns(self, tmp_path: Path) -> None:
+        """``columns`` 只要其中存在的列；不存在的列不出现（而非填 ``None``）。"""
+        from atst.output import from_csv
+
+        dest = tmp_path / "cols.csv"
+        to_csv(ROWS, dest)
+        back = from_csv(str(dest), columns=["datetime", "volume", "nope"])
+        assert back == [
+            {"datetime": "2026-06-01", "volume": "100"},
+            {"datetime": "2026-06-02", "volume": "200"},
+        ]
+
+    def test_header_only_file_reads_back_as_empty_list(self, tmp_path: Path) -> None:
+        from atst.output import from_csv
+
+        dest = tmp_path / "header.csv"
+        to_csv([], dest)
+        assert from_csv(str(dest)) == []
+
+    def test_missing_file_raises_instead_of_returning_empty(self, tmp_path: Path) -> None:
+        from atst.output import from_csv
+
+        with pytest.raises(FileNotFoundError):
+            from_csv(str(tmp_path / "nope.csv"))
+
+
 class TestDuckdbTableName:
     """表名校验前置（不依赖 duckdb 是否安装）。"""
 

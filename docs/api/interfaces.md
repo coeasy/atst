@@ -1111,7 +1111,7 @@ from atst.output import write
 | DuckDB | `duckdb:<db 路径>@<表名>`，省略路径即内存库 | duckdb |
 | CSV | `path/file.csv`（`.csv` 后缀）| 无 |
 
-### 读回：`from_parquet`
+### 读回：`from_parquet` 与 `from_csv`
 
 落盘是这条链路的**前半段**。`scripts/sync_daily_history.py` 把全市场日线写成
 `data/day/<类别>/<代码>.parquet` 之后，要读回来做研究/回测就得知道 pyarrow 怎么用、
@@ -1131,10 +1131,26 @@ dates = from_parquet("data/day/stock/sh600519.parquet", columns=["date"])
 | 路径不存在 | 抛 `FileNotFoundError`（打错路径不该看起来像"库里没数据"） |
 | 未装 pyarrow | 抛 `DependencyMissingError`（与写出侧同一条契约，不静默降级） |
 
-`to_parquet` 是经 DataFrame 写的，`datetime` / `date` 这类列名会被解析成时间类型，
+`to_csv` 的对称面是 `from_csv`（零依赖，标准库 csv）：导出给 Excel / 人工过目、
+加工之后读回程序，同一条契约的两面。
+
+```python
+from atst.output import to_csv, from_csv
+
+to_csv(rows, "watchlist.csv")                       # utf-8-sig，Excel 双击直开
+back = from_csv("watchlist.csv")                    # list[dict[str, str]]，带不带 BOM 都认
+codes = from_csv("watchlist.csv", columns=["code"]) # 只取存在的列；缺列不出现（不填 None）
+```
+
+CSV **没有类型**：所有值读回来都是 `str`（与 `csv.DictReader` 语义一致，不做
+隐式数值推断——`"0012"` 变 `12` 是数据破坏不是便利），要数值就显式转。日期列
+不会被解析成时间对象，这点与 `from_parquet`（经 DataFrame 写，`datetime` 列读回
+是时间对象）不同——按 `YYYY-MM-DD` 比日期的调用方在 CSV 这边反而省事。
+
+`to_parquet` 经 DataFrame 写的，`datetime` / `date` 这类列名会被解析成时间类型，
 读回来是 `datetime.datetime` 而不是原字符串——按 `YYYY-MM-DD` 比日期的调用方要自己
-归一一次（脚本侧 `_last_date_on_disk` 就是这么做的）。CSV 读回用标准库即可，
-DuckDB 那侧用它自己的查询接口，因此读回面只补了 Parquet 这一支。
+归一一次（脚本侧 `_last_date_on_disk` 就是这么做的）。CSV 读回已由 `from_csv` 补上，
+DuckDB 那侧用它自己的查询接口，因此读回面是 Parquet 与 CSV 两支。
 
 ### 本地文件读取面（vipdoc 落地文件）
 

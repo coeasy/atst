@@ -74,6 +74,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import os
@@ -579,18 +580,21 @@ def _count_rows(path: Path) -> int:
         return 0
 
 
-def _resume_bar_count(
-    state: State, symbol: str, full: bool, lookback: int, last_on_disk: str = ""
-) -> int:
+def _resume_bar_count(full: bool, lookback: int, last_on_disk: str) -> int:
     """该支这次要多少根：续拉多要一段，全量就拉满窗口。
 
-    ``state.last_date`` 优先，其次用磁盘上那支的最后日期——两条都取不到才按
-    ``lookback`` 起量（那是"首次铺底"的窗口，不是每轮的窗口）。
+    只信磁盘：``last_on_disk`` 有日期 → 续拉窗口；没有（文件缺失 / 0 行 /
+    坏文件）→ 铺底窗口。``state.last_date`` **不参与**这个决策——它是磁盘的
+    对照副本（供 ``--doctor`` 摊开比对），不是第二事实源。若让它兜底，文件被
+    清成 0 行（体检里的"空文件"）而 state 还记着旧日期时，修复只拉
+    ``lookback + RESUME_OVERLAP`` 的小窗口，历史窗口静默缩水。写盘失败时
+    断点不更新，state 只会比磁盘旧，砍掉它不丢任何真证据。
+
+    铺底窗口补的是"最近一段"，不是完整历史——要补全历史仍要 ``--full``。
     """
     if full:
         return MAX_WINDOW
-    last = state.last_date.get(symbol) or last_on_disk
-    if not last:
+    if not last_on_disk:
         return max(lookback, BASELINE_WINDOW)
     return lookback + RESUME_OVERLAP
 
@@ -715,9 +719,7 @@ class Syncer:
 
     def sync_one(self, target: Target) -> Outcome:
         path = self._path_of(target)
-        count = _resume_bar_count(
-            self.state, target.symbol, self.full, self.lookback, _last_date_on_disk(path)
-        )
+        count = _resume_bar_count(self.full, self.lookback, _last_date_on_disk(path))
         try:
             bars = self._client.bars(target.symbol, period="day", count=count, index=target.index)
         except TdxError as exc:
@@ -755,15 +757,20 @@ class Syncer:
             return Outcome(target.symbol, "EMPTY")
         day = _date_key(merged[-1])
         if not self.dry_run:
+            nested = self.out / class_dir(target.kind) / f"{target.symbol}.parquet"
             try:
-                _atomic_write_parquet(
-                    merged, self.out / class_dir(target.kind) / f"{target.symbol}.parquet"
-                )
+                _atomic_write_parquet(merged, nested)
             except OSError as exc:
                 # 不更新断点：下一轮原样重试这一只。
                 return Outcome(
                     target.symbol, "SKIP", detail=f"落盘失败 {type(exc).__name__}: {exc}"
                 )
+            if path != nested and path.exists():
+                # 读旧扁平文件、写类别目录是一次迁移：数据已经合并进 nested，
+                # 留在原地的只是幽灵副本（``_path_of`` nested 优先，它永远不再
+                # 被读）——迁移到此收尾。删不掉也只是外观问题，不碍同步。
+                with contextlib.suppress(OSError):
+                    path.unlink()
         with self._lock:
             self.state.last_date[target.symbol] = day
             self.state.failed.pop(target.symbol, None)
@@ -1280,6 +1287,10 @@ def run_doctor(args: Any, root: Path) -> int:
         if missing:
             print("  下一步：python scripts/sync_daily_history.py --root " + root.as_posix())
             print("          （缺口会按代码表逐只重试；只补某一类加 --include-class）")
+        if empty:
+            # 空文件的修复走同一条增量命令：断点以磁盘为准，0 行会让这一只从
+            # 铺底窗口重拉；但增量窗口不等于完整历史，要补回去得 --full。
+            print("  下一步（空文件）：先重跑上面的增量命令；要补回完整历史加 --full")
 
     return 2 if (missing or empty) else 0
 

@@ -4,8 +4,8 @@
 >
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
-- 当前版本：`1.3.0`
-- 当前发布状态：**GitHub Release [`v1.3.0`](https://github.com/coeasy/atst/releases/tag/v1.3.0) 已发布**（canonical wheel + sdist，附 `SHA256SUMS.txt` 与 `RELEASE-METADATA.json`）；**本包不在 PyPI 上**——PyPI 上传是显式 opt-in（需仓库变量 `PUBLIC_RELEASE=true`）· [v1.0.0 发布说明](docs/releases/v1.0.0.md) · [v1.1.0 发布说明](docs/releases/v1.1.0.md) · [v1.2.0 发布说明](docs/releases/v1.2.0.md) · [v1.2.1 发布说明](docs/releases/v1.2.1.md) · [v1.2.2 发布说明](docs/releases/v1.2.2.md) · [v1.3.0 发布说明](docs/releases/v1.3.0.md) · [CHANGELOG](CHANGELOG.md)
+- 当前版本：`1.4.0`
+- 当前发布状态：**GitHub Release [`v1.4.0`](https://github.com/coeasy/atst/releases/tag/v1.4.0) 已发布**（canonical wheel + sdist，附 `SHA256SUMS.txt` 与 `RELEASE-METADATA.json`）；**本包不在 PyPI 上**——PyPI 上传是显式 opt-in（需仓库变量 `PUBLIC_RELEASE=true`）· [v1.0.0 发布说明](docs/releases/v1.0.0.md) · [v1.1.0 发布说明](docs/releases/v1.1.0.md) · [v1.2.0 发布说明](docs/releases/v1.2.0.md) · [v1.2.1 发布说明](docs/releases/v1.2.1.md) · [v1.2.2 发布说明](docs/releases/v1.2.2.md) · [v1.3.0 发布说明](docs/releases/v1.3.0.md) · [v1.4.0 发布说明](docs/releases/v1.4.0.md) · [CHANGELOG](CHANGELOG.md)
 
 ---
 
@@ -123,7 +123,7 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 
 | 特性 | 说明 |
 |---|---|
-| **数据出口（`atst/output/`）** | `write()` 认 4 种格式：DataFrame / Parquet / CSV / DuckDB；`Sink` 3 种格式（不含 CSV，CSV 只走 `write()` 或 `to_csv()`），全部原子写；`from_parquet()` 是与 `to_parquet()` 对称的读回面（落盘的 `data/day/<类别>/<代码>.parquet` 直接读成 `list[dict]`）|
+| **数据出口（`atst/output/`）** | `write()` 认 4 种格式：DataFrame / Parquet / CSV / DuckDB；`Sink` 3 种格式（不含 CSV，CSV 只走 `write()` 或 `to_csv()`），全部原子写；读回面对称补齐——`from_parquet()` 读落盘日线、`from_csv()` 读回人工加工过的 CSV（全 `str`，不隐式推断类型）|
 | **统一业务入口** | `Client` / `AsyncClient`（17 便捷方法 + `execute`/`typed`/`call` 通用面），永不隐式换源、永不缓存 |
 | **HTTP REST 网关** | 12 端点（capability 白名单 + TaskStore 钳制），只翻译为 `Client` 调用；另有 2 支**只读本地代码表**的清单端点（不发外呼）|
 | **WebSocket JSON-RPC** | 长连接实时推送 |
@@ -529,9 +529,9 @@ python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproje
 
 ## 路线图
 
-### 当前阶段：v1.3.0 稳定版
+### 当前阶段：v1.4.0 稳定版
 
-atst 已发布 `v1.3.0`（GitHub Release，不在 PyPI）。当前内核为单执行路径、零缓存、provider-first：
+atst 已发布 `v1.4.0`（GitHub Release，不在 PyPI）。当前内核为单执行路径、零缓存、provider-first：
 85 命令 / 61 精确解析器 / 5 协议族 / 14 Provider / 194 capability / 280 条精确绑定全部到位，并通过全量确定性门禁。
 
 | 里程碑 | 状态 |
@@ -581,6 +581,7 @@ atst 已发布 `v1.3.0`（GitHub Release，不在 PyPI）。当前内核为单�
 | [docs/releases/v1.2.1.md](docs/releases/v1.2.1.md) | v1.2.1 正式发布说明（本地安装实测收口：10 项缺口能力端点真机验证转 alive + cninfo 源断链修复） |
 | [docs/releases/v1.2.2.md](docs/releases/v1.2.2.md) | v1.2.2 正式发布说明（时区依赖机器本地时区的根因修复：时间戳与交易时段统一按市场时区 Asia/Shanghai） |
 | [docs/releases/v1.3.0.md](docs/releases/v1.3.0.md) | v1.3.0 正式发布说明（按类别取标的清单：`atst.universe` 三级降级源 + CLI/HTTP 两面 + 同步脚本 `--fetch-list` / `--doctor`） |
+| [docs/releases/v1.4.0.md](docs/releases/v1.4.0.md) | v1.4.0 正式发布说明（写读对称收口：`atst.output.from_csv` + 断点唯一事实源收敛到磁盘 + 扁平文件迁移收尾 + `--doctor` 空文件修复指引） |
 | [docs/archive/](docs/archive/README.md) | 历史计划、对标审计与设计快照（**都不是现行契约**）|
 
 ---
