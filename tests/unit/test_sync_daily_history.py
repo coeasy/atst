@@ -412,8 +412,13 @@ def test_rows_without_a_date_key_are_dropped(sync: ModuleType) -> None:
     assert len(merged) == 2
 
 
-def test_validate_rejects_unsorted_series_and_bad_ohlc(sync: ModuleType) -> None:
-    """自检要在合并排序之后才做：原始批次倒序不该被当成"日期非升序"。"""
+def test_validate_trusts_the_dedup_merge_contract(sync: ModuleType) -> None:
+    """_validate 只吃 _dedup_merge 的输出（键齐、升序），只查 OHLC 自洽与单位。
+
+    原始批次倒序（2026-01-06 在前）经 dedup 后已是升序——排序责任在 dedup，
+    validate 不重复查序（曾有的"日期非升序/取不出键"两分支在真实调用链上
+    不可达，已按孤儿逻辑移除）。
+    """
     assert sync._validate(sync._dedup_merge([_row("2026-01-06"), _row("2026-01-05")])) == []
 
     broken = sync._dedup_merge([_row("2026-01-05", high=9.0, low=10.0)])
@@ -421,6 +426,15 @@ def test_validate_rejects_unsorted_series_and_bad_ohlc(sync: ModuleType) -> None
 
     missing = sync._dedup_merge([{"date": "2026-01-05"}])
     assert any("缺 OHLC" in problem for problem in sync._validate(missing))
+
+
+def test_main_rejects_an_out_of_range_lookback(sync: ModuleType, capsys) -> None:
+    """--lookback 越界必须在入口拦下：客户端对 count 的硬上限是 0xFFFF。"""
+    for bad in ("0", "-5", "70000"):
+        rc = sync.main(["--root", str(Path(sync.__file__).parent), "--lookback", bad, "--doctor"])
+        assert rc == 2, f"--lookback {bad} 应被前置校验拦下"
+        err = capsys.readouterr().err
+        assert "1..65535" in err, f"--lookback {bad} 的报错要说明合法区间"
 
 
 def test_scan_enumerates_every_code_in_a_segment(sync: ModuleType) -> None:
@@ -594,6 +608,32 @@ def test_run_retries_a_transient_skip_within_the_same_run(
     assert tally["OK"] == 1, "二次重投把瞬时 SKIP 变成了 OK"
     assert tally.get("SKIP", 0) == 0, "不该残留 SKIP 计数"
     assert calls["n"] == 2, "确实发生了一次重投"
+    assert "sh600519" not in syncer.state.failed, (
+        "首轮 SKIP 写进 state.failed 的假失败，必须在重投成功后抹掉——"
+        "否则 state.json 永久留着'它失败过'的记录，--doctor 读数被污染"
+    )
+
+
+def test_run_retry_still_skip_keeps_the_terminal_tally(
+    sync: ModuleType, monkeypatch, tmp_path
+) -> None:
+    """重投仍失败 → 终态回到 SKIP 计数里，且 completed 不越界（进度行不会"30/28"）。"""
+    calls = {"n": 0}
+
+    def always_skip(self: sync.Syncer, target: sync.Target) -> sync.Outcome:
+        calls["n"] += 1
+        return sync.Outcome(target.symbol, "SKIP", detail="TdxError: 一直抖")
+
+    monkeypatch.setattr(sync.Syncer, "sync_one", always_skip)
+    monkeypatch.setattr(sync.time, "sleep", lambda *_: None)
+    out = tmp_path / "day"
+    monkeypatch.setattr(sync, "TdxClient", lambda **_: None)
+    syncer = sync.Syncer(out, tmp_path / "state.json", gap_sleep=0, jitter=0)
+    tally = syncer.run([sync.Target.parse("sh600519")], workers=1)
+
+    assert tally["SKIP"] == 1, "重投只替换终态，SKIP 恰好记一次"
+    assert calls["n"] == 2, "确实发生了一次重投"
+    assert syncer._problems and len(syncer._problems) == 1, "结尾问题清单不重复记账"
 
 
 def test_run_does_not_retry_an_unsupported_symbol(sync: ModuleType, monkeypatch, tmp_path) -> None:

@@ -264,7 +264,7 @@ python scripts/sync_daily_history.py --doctor
 | `--vipdoc`                            | 自动探测                | 本地通达信目录；默认跨平台自动探测（Windows `C:/new_tdx`、`D:/new_tdx`；其他系统 `~/new_tdx`、`/opt/new_tdx`、`~/.wine/drive_c/new_tdx`），从 `vipdoc/<mkt>/lday/*.day` 取代码表 |
 | `--index` / `--no-index`              | 自动                  | 强制/禁止走指数位（默认按类别自动判定）                     |
 | `--full`                              | 关                   | 全历史重拉（每只按 `MAX_WINDOW`）                  |
-| `--lookback`                          | `320`               | 每只每轮拉多少根日线                               |
+| `--lookback`                          | `320`               | 每只每轮拉多少根日线（**1..65535**，越界在入口直接拒绝——客户端对 count 的硬上限是协议分页地址空间 0xFFFF） |
 | `--limit`                             | `0`（全部）             | 只同步前 N 只，试水用                             |
 | `--include-class` / `--exclude-class` | 全类别                 | 按类别裁剪同步范围                                |
 | `--workers`                           | `4`                 | 并发只数；实际瓶颈是连接池 `slots_per_host`           |
@@ -450,6 +450,7 @@ Windows 计划任务同理，指向仓库里的 `scripts/sync_daily_history.py`�
 | `--scan` 之后零参数跑变慢                   | 正常：`universe.csv` 生效，跑的是全市场；加 `--limit N` 先试水                                                                |
 | `--scan` 跑一次要十几分钟                   | 正常：48000 个候选，实际约 22ms/个；已入库的代码会被跳过，重跑秒回                                                                      |
 | 北交所代码探不出来                           | 协议层未开放（E3040）：默认同步静默剔除、`--include-class bse` 会全部 SKIP（有告警）、`--doctor` 不算缺口（单列"协议不支持"）；脚本暂只支持 TDX 源，bj 需非 TDX 源 |
+| 个别 SKIP 但结尾汇总里没了                    | 正常：首轮 SKIP（主站瞬时抖动）会在当轮末尾自动重投一次；重投成功会把首轮写进 `state.json` 假失败的记录抹掉，SKIP/失败数只按**终态**记账 |
 
 ## 边界
 

@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.4.2] - 2026-10-04
+
+### Fixed
+
+- 同步脚本：当轮重投成功后清除 `state.json` 里首轮 SKIP 留下的假失败记录，
+  不再污染 `--doctor` 的 failed 读数。
+- 同步脚本：重投循环不再累计 completed，最终进度行不会出现越界读数（如"30/28"）。
+
+### Changed
+
+- 同步脚本：`--lookback` 前置校验合法区间 1..65535（客户端 count 硬上限），
+  越界入口直接拒绝，不再变成逐只 ValidationError 的 SKIP 风暴。
+- 同步脚本：`_validate` 移除两个不可达分支（输入契约是 `_dedup_merge` 的输出，
+  键齐且升序），排序责任收敛在 `_dedup_merge` 一处。
+
+### Docs
+
+- cookbook：`--lookback` 补合法区间；「常见坑」补当轮重投与 `state.failed`
+  清理语义。
+
 ## [1.4.1] - 2026-10-04
 
 ### Fixed

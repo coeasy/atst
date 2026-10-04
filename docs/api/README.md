@@ -1,6 +1,6 @@
 # API 参考
 
-当前 `1.4.1`；GitHub Release [`v1.4.1`](https://github.com/coeasy/atst/releases/tag/v1.4.1) 已发布，但本包**不在 PyPI 上** · [v1.0.0 发布说明](../releases/v1.0.0.md) · [v1.1.0 发布说明](../releases/v1.1.0.md) · [v1.2.0 发布说明](../releases/v1.2.0.md) · [v1.2.1 发布说明](../releases/v1.2.1.md) · [v1.2.2 发布说明](../releases/v1.2.2.md) · [v1.3.0 发布说明](../releases/v1.3.0.md) · [v1.4.0 发布说明](../releases/v1.4.0.md) · [v1.4.1 发布说明](../releases/v1.4.1.md)
+当前 `1.4.2`；GitHub Release [`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2) 已发布，但本包**不在 PyPI 上** · [v1.0.0 发布说明](../releases/v1.0.0.md) · [v1.1.0 发布说明](../releases/v1.1.0.md) · [v1.2.0 发布说明](../releases/v1.2.0.md) · [v1.2.1 发布说明](../releases/v1.2.1.md) · [v1.2.2 发布说明](../releases/v1.2.2.md) · [v1.3.0 发布说明](../releases/v1.3.0.md) · [v1.4.0 发布说明](../releases/v1.4.0.md) · [v1.4.1 发布说明](../releases/v1.4.1.md) · [v1.4.2 发布说明](../releases/v1.4.2.md)
 
 > 本页对应 v1.0.0 + **v13/v17 单一执行内核**。完整 docstring 驱动文档
 > 由 `pdoc`/`mkdocstrings` 生成；此处提供稳定入口和模块索引。

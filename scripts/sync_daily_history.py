@@ -506,17 +506,17 @@ def _dedup_merge(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _validate(rows: Sequence[dict[str, Any]]) -> list[str]:
-    """口径自检：返回问题清单（空清单表示合格）。"""
+    """口径自检：返回问题清单（空清单表示合格）。
+
+    输入契约：**必须是 :func:`_dedup_merge` 的输出**——键齐（无键行在去重时
+    已被丢弃）、升序（去重后已 sorted）。所以这里不查"取不出日期键"与
+    "日期非升序"：在真实调用链上它们不可达，查了也只是永远不触发的死分支。
+    本函数只对合并后的序列查 OHLC 自洽与 volume 单位。
+    """
     problems: list[str] = []
-    prev = ""
     for row in rows:
         day = _date_key(row)
-        if not day:
-            problems.append("有行取不出 YYYY-MM-DD 日期键")
-            continue
-        if day < prev:
-            problems.append(f"日期非升序 {prev} -> {day}")
-        prev = day
+        assert day, "_validate 的输入必须是 _dedup_merge 的输出（每行都有日期键）"
         try:
             high, low = float(row["high"]), float(row["low"])
             o, c = float(row["open"]), float(row["close"])
@@ -882,7 +882,9 @@ class Syncer:
                     for future in as_completed(retry_futures):
                         outcome = future.result()
                         target = retry_futures[future]
-                        completed += 1
+                        #: 重投只**替换**终态：completed 不再累加（否则最终进度行会
+                        #: 打出"30/28"这种越界读数），tally 按二次结果重新入账——
+                        #: 首轮那笔 SKIP 已在上面撤掉，这里补回真实终态。
                         tally[outcome.status] = tally.get(outcome.status, 0) + 1
                         if outcome.status == "OK":
                             bars_total += outcome.rows
@@ -892,6 +894,11 @@ class Syncer:
                             tally["by_class"][target.kind] = (
                                 tally["by_class"].get(target.kind, 0) + 1
                             )
+                            #: 首轮 SKIP 时这只已经被写进 state.failed；重投成功后
+                            #: 必须把那条假失败抹掉，否则 state.json 会永久留着
+                            #: "它失败过"的记录，--doctor 的 failed 读数被污染。
+                            with self._lock:
+                                self.state.failed.pop(outcome.symbol, None)
                         else:
                             problems.append((outcome.status, outcome.symbol, outcome.detail))
                             if outcome.status == "REJECT":
@@ -1459,6 +1466,15 @@ def run_doctor(args: Any, root: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    #: ``--lookback`` 边界前置校验：客户端对 ``count`` 的硬上限是 0xFFFF
+    #: （``start+count>0x10000`` 直接 ValidationError），0/负数则是无意义的空跑。
+    #: 不在这里拦，越界值会变成"逐只 ValidationError → 全员 SKIP"的静默风暴。
+    if not 1 <= args.lookback <= 0xFFFF:
+        print(
+            f"--lookback 必须在 1..65535 之间（协议分页地址空间上限），收到 {args.lookback}",
+            file=sys.stderr,
+        )
+        return 2
     root: Path = args.root
     root.mkdir(parents=True, exist_ok=True)
     day_dir = root / "day"
