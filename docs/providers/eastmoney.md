@@ -50,6 +50,7 @@ md.eastmoney.performance(symbol)
 md.eastmoney.longhu(...)
 md.eastmoney.margin(symbol)
 md.eastmoney.index_constituents(index)
+md.valuation_history("600519", count=120)
 md.eastmoney.fund.nav(...)
 md.eastmoney.fund.estimate(...)
 md.eastmoney.fund.list(...)
@@ -65,6 +66,14 @@ md.bars(symbol, provider="eastmoney")
 ```
 
 资金流、涨停池、异动、人气、两融、龙虎榜、公司资料等保持 Provider Direct API。
+
+个股历史估值由 capability `valuation_history` 提供（日频、按日期倒序，单次最多 500 行）：
+返回 Eastmoney Datacenter 原始字段，不对列名或缺列做静默填充。常见字段包括
+`TRADE_DATE`、`TOTAL_MARKET_CAP`、`NOTLIMITED_MARKETCAP_A`、`TOTAL_SHARES`、
+`FREE_SHARES_A`、`PE_TTM`、`PE_LAR`、`PB_MRQ`、`PS_TTM`、`PCF_OCF_TTM`；
+以实际返回行为准。该接口有历史市值、流通市值/股数和估值比率，不能保证股息率列；
+分红事件请另外读取 `dividend_history`，若计算历史股息率，应明确每股分红、除权日、
+价格和 as-of 规则。
 
 ## 4. Provider-specific Model
 

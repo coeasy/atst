@@ -46,6 +46,12 @@ md.bars(symbol, provider="sina")
 
 `suggest/boards/fund_flow/news` 优先 Direct API。
 
+新浪 `quotes()` 的 `hq_str` 快照不包含 PE/PB/市值字段；`all_market(node="hs_a")`
+使用另一个行情中心端点，返回 `per`、`pb`、`mktcap`、`nmc`、`turnoverratio`，其中
+`mktcap`/`nmc` 已换算为元。它适合一次获取全市场当日摘要，不是个股历史估值接口。
+需要历史 PE/PB/总市值/流通市值/股数时使用 `valuation_history`（Eastmoney）或
+百度 `baidu_valuation_history`（总市值与 PE/PB 等，但无流通股数序列）。
+
 ## 4. Referer / Rate
 
 新浪部分接口要求 Referer。该事实属于 Provider/Channel metadata，由 Provider runtime 统一装配。

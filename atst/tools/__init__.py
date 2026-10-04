@@ -3,21 +3,14 @@
 
 """工具集（§20：协议全覆盖 / 质量工具）。
 
-包含 spec/codegen 与 golden 样本采集等开发工具。
+Exports are loaded on demand so ``python -m atst.tools.spec_audit`` can execute
+the module once, without importing it as a side effect of package startup.
 """
 
-from .codegen import (  # noqa: F401
-    generate_command_entry,
-    generate_parser_code,
-    load_all_specs,
-    load_spec,
-)
-from .spec_audit import (  # noqa: F401
-    SpecAuditResult,
-    audit_all,
-    audit_spec,
-    coverage_summary,
-)
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
 
 __all__ = [
     "load_spec",
@@ -29,3 +22,29 @@ __all__ = [
     "audit_all",
     "coverage_summary",
 ]
+
+_EXPORT_MODULES = {
+    "load_spec": ".codegen",
+    "load_all_specs": ".codegen",
+    "generate_parser_code": ".codegen",
+    "generate_command_entry": ".codegen",
+    "SpecAuditResult": ".spec_audit",
+    "audit_spec": ".spec_audit",
+    "audit_all": ".spec_audit",
+    "coverage_summary": ".spec_audit",
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve the small public helper surface without eager submodule imports."""
+    try:
+        module_name = _EXPORT_MODULES[name]
+    except KeyError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+    value = getattr(import_module(module_name, __name__), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

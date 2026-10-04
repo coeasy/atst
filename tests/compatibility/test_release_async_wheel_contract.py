@@ -7,7 +7,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 
 def _smoke_job() -> str:
     workflow = (_ROOT / ".github" / "workflows" / "wheels.yml").read_text(encoding="utf-8")
-    return workflow.split("  smoke-install:", 1)[1].split("  publish-pypi:", 1)[0]
+    return workflow.split("  smoke-install:", 1)[1].split("  extras-install:", 1)[0]
 
 
 def test_release_matrix_smokes_async_circuit_hardening_from_installed_wheel() -> None:

@@ -89,6 +89,35 @@ class BaiduSessionMixin:
         finally:
             src.close()
 
+    @staticmethod
+    def baidu_valuation_history(
+        symbol: str,
+        *,
+        indicators: tuple[str, ...] = (
+            "总市值",
+            "市盈率(TTM)",
+            "市盈率(静)",
+            "市净率",
+            "市现率",
+        ),
+        period: str = "近一年",
+    ) -> dict[str, list[dict[str, Any]]]:
+        """批量取百度股市通历史估值序列（总市值、PE、PB、市现率）。
+
+        ``value`` 保留百度接口原生单位；百度端点不提供可在此确认的股息率、
+        流通股数或流通市值字段。一次请求一个指标，默认依次取五个序列。
+        """
+        from .baidu.adapters import BaiduSource
+
+        src = BaiduSource(client=_shared_http())
+        try:
+            return {
+                indicator: src.fetch_valuation_history(symbol, indicator=indicator, period=period)
+                for indicator in dict.fromkeys(indicators)
+            }
+        finally:
+            src.close()
+
     # -- 东财基金源（P0-1） ------------------------------------------------- #
     @staticmethod
     def fund_nav_history(

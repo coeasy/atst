@@ -484,65 +484,28 @@ def test_the_example_ruler_sees_a_removed_example(doc_text: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ⑨ 「真机口径」那一节必须点到每一支叶子命令的名
+# Current verification claims must avoid presenting a stale live probe as fact.
 # ---------------------------------------------------------------------------
 
-#: 标题按"含真机口径"找，不把它里面的数字写进锚点：36/37 这一格本轮正好量错过
-#: （37 行示例 = 36 支叶子），把会随口径变的数字当锚点等于给下一次改动埋一条假绿。
-_VERDICT_HEADING = re.compile(r"^### [^\n]*真机口径[^\n]*$", re.M)
+_VERIFICATION_HEADING = re.compile(r"^### 入口验证边界$", re.M)
 
 
-def verdict_section(text: str) -> str:
-    """「真机口径」那一节：从它的标题到下一个 `##` / `---` 之前。"""
-    matched = _VERDICT_HEADING.search(text)
+def verification_section(text: str) -> str:
+    matched = _VERIFICATION_HEADING.search(text)
     if matched is None:
-        raise AssertionError("文档里没有「真机口径」那一节，判据 ⑨ 失去对象")
+        raise AssertionError("文档缺少入口验证边界说明")
     tail = text[matched.end() :]
     cut = re.search(r"^(?:## |---$)", tail, re.M)
     return tail[: cut.start()] if cut else tail
 
 
-def section_leaves(section: str) -> set[str]:
-    """节内反引号片段点到的叶子命令：按**词首**匹配，不吃子串。
-
-    `minute` 不能因为 `minute-klines` 在场就算被点到——否则抹掉分时那一格，判据照样绿。
-    """
-    leaves = set(runtime_leaves())
-    found: set[str] = set()
-    for token in _TICKED.findall(section):
-        words = token.split()
-        if words[:1] == ["atst"]:
-            words = words[1:]
-        if not words:
-            continue
-        if words[0] in leaves:
-            found.add(words[0])
-        if len(words) > 1 and f"{words[0]} {words[1]}" in leaves:
-            found.add(f"{words[0]} {words[1]}")
-    return found
+def test_current_verification_boundary_distinguishes_offline_and_live(doc_text: str) -> None:
+    section = verification_section(doc_text)
+    for phrase in ("离线测试", "线上验证", "数据日期", "当前可用性承诺"):
+        assert phrase in section, f"入口验证边界缺少说明：{phrase}"
 
 
-def test_every_leaf_command_has_a_real_machine_verdict(doc_text: str) -> None:
-    runtime = set(runtime_leaves())
-    section = verdict_section(doc_text)
-    covered = section_leaves(section)
-    assert covered, "「真机口径」那一节里点不出任何命令名，判据 ⑨ 是瞎的"
-    assert covered <= runtime, f"那一节点了不存在的命令名：{sorted(covered - runtime)}"
-    assert sorted(runtime - covered) == [], (
-        f"这些叶子命令在「真机口径」那一节里没有口径：{sorted(runtime - covered)}"
-    )
-
-
-def test_the_verdict_ruler_sees_a_blanked_command_name(doc_text: str) -> None:
-    """正控：把 `server-test` 的名字从那一节抹干净，判据必须当场报它缺席。
-
-    这不是假想的形状。第 23 轮的普查脚本用 ``line.startswith("atst serve")`` 挑要跳过的
-    长驻服务，于是 ``atst server-test`` 跟着被吞，一行从没跑过的示例被写进"每一行都跑过"；
-    旧读数里 `server-test` 只在 ``--help`` 那一段露过面。那一节是覆盖率声明唯一的人质，
-    所以它必须逐名点齐。
-    """
-    section = verdict_section(doc_text)
-    named = section_leaves(section)
-    assert "server-test" in named, "基准读数里就没有 server-test，正控失去意义"
-    blinded = section.replace("server-test", "另一支命令")
-    assert section_leaves(blinded) == named - {"server-test"}, "抹掉名字却看不出来"
+def test_transient_scratch_probe_history_is_not_presented_as_current(doc_text: str) -> None:
+    section = verification_section(doc_text)
+    assert "scratch_v18" not in section
+    assert "37 支叶子" not in section

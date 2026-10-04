@@ -152,7 +152,7 @@ def test_source_host_audit_script_is_only_a_package_wrapper() -> None:
 
 def test_release_artifact_smoke_imports_host_audit_without_source_checkout() -> None:
     workflow = (_ROOT / ".github" / "workflows" / "wheels.yml").read_text(encoding="utf-8")
-    smoke = workflow.split("  smoke-install:", 1)[1].split("  publish-pypi:", 1)[0]
+    smoke = workflow.split("  smoke-install:", 1)[1].split("  extras-install:", 1)[0]
 
     assert "actions/checkout" not in smoke
     assert "from atst.tools.host_audit import AuditReport, audit_all" in smoke

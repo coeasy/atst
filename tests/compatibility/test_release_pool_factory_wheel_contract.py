@@ -15,7 +15,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 
 def test_release_wheel_smoke_requires_the_single_pool_config_seam() -> None:
     workflow = (_ROOT / ".github" / "workflows" / "wheels.yml").read_text(encoding="utf-8")
-    smoke = workflow.split("  smoke-install:", 1)[1].split("  publish-pypi:", 1)[0]
+    smoke = workflow.split("  smoke-install:", 1)[1].split("  extras-install:", 1)[0]
 
     assert "pool_settings_from_config" in smoke
     assert "from_config" in smoke, "smoke 不再守卫已删除的池工厂，门禁失效"

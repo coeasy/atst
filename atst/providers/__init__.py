@@ -567,7 +567,14 @@ PROVIDERS = ProviderRegistry(
                 ),
                 _c("minute", "minute", live=True),
                 _c("ticks", "trades", live=True),
-                _c("catalog", "baidu_kline", "baidu_minute", "baidu_quote", "baidu_ticks"),
+                _c(
+                    "catalog",
+                    "baidu_kline",
+                    "baidu_minute",
+                    "baidu_quote",
+                    "baidu_ticks",
+                    "baidu_valuation_history",
+                ),
             ),
         ),
         ProviderSpec(

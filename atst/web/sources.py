@@ -120,7 +120,7 @@ WENCAI = "wencai"
 STOCK_CHANGES = "stock_changes"
 #: 股吧个股人气榜（东财 emappdata stockrank，POST JSON）
 HOT_RANK = "hot_rank"
-#: 百度财经（finance.pae.baidu.com selfselect，日/周/月K + 分时 + 五档 + 逐笔 + 快照）
+#: 百度财经（行情 + 股市通估值历史）
 BAIDU = "baidu"
 #: 东财基金（天天基金：历史净值 / 实时估值 / 基金列表；数据型源，不参与行情降级）
 FUND = "fund"
@@ -440,11 +440,13 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
         volume_scale=1.0,  # 量额口径在解析层内联换算（与常规命名相反），此处 identity
         amount_scale=1.0,
         default_rate=3,
-        capabilities=("kline", "minute", "tick", "quote"),
+        capabilities=("kline", "minute", "tick", "quote", "valuation_history"),
         notes="仅 A 股（stockType=ab）。坑：K 线 kline.volume 实为成交额(元)、"
         "kline.amount 实为成交量(手)，解析层须交换映射（volume=amount×100, "
         "amount=volume）；分时 amount 为含'万'字符串，优先用 oriAmount(元)。"
-        "非官方接口，随时可能改版/下线；不提供 fund_flow（2026-05 起下线）。",
+        "股市通历史图表可取总市值、PE(TTM/静态)、PB、市现率；值保留源端单位，"
+        "不含股息率/流通股本历史。非官方接口，随时可能改版/下线；"
+        "不提供 fund_flow（2026-05 起下线）。",
     ),
     FUND: SourceSpec(
         name=FUND,

@@ -73,6 +73,7 @@ CAPABILITY_FACADE: dict[str, set[str]] = {
     "fund_list": {"fund_list"},
     "index_constituents": {"index_constituents"},
     "margin": {"margin"},
+    "valuation_history": {"valuation_history", "baidu_valuation_history"},
 }
 # 这些能力仅程序化访问（无专属 facade 方法），豁免 facade 覆盖断言
 EXEMPT_CAPABILITIES: set[str] = {"bond", "etf"}

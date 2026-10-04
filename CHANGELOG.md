@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.4.3] - 2026-10-04
+
+### Added
+
+- 百度股市通历史估值接口 `baidu_valuation_history`，可批量拉取总市值、PE(TTM/静态)、PB、
+  市现率序列，并接入 Provider catalog 与统一 QuerySpec 派发链。
+
+### Fixed
+
+- 百度 K 线请求数增加 1..10,000 前置限制；检测分页游标不前进，避免重复页空转。
+
+### Docs
+
+- 补充腾讯与新浪快照字段、百度估值历史、东财逐日估值接口的字段和单位边界说明。
+
 ## [1.4.2] - 2026-10-04
 
 ### Fixed

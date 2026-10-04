@@ -10,9 +10,11 @@
 from __future__ import annotations
 
 import json
+import math
 import time as _time
 from collections.abc import Sequence
 from typing import Any
+from urllib.parse import urlencode
 
 from ...domain.models import Bar, Level, MinutePoint, Quote, Tick
 from ...errors import SourceDeprecated, WebSourceError
@@ -30,6 +32,19 @@ __all__ = ["BaiduSource"]
 _KLINE_KTYPES: dict[str, int] = {"day": 1, "week": 2, "month": 3}
 #: 服务端单页根数上限
 _MAX_COUNT = 250
+_MAX_HISTORY_COUNT = 10_000
+_VALUATION_INDICATORS = frozenset({"总市值", "市盈率(TTM)", "市盈率(静)", "市净率", "市现率"})
+_VALUATION_PERIODS = frozenset({"近一年", "近三年", "近五年", "近十年", "全部"})
+
+
+def _validate_history_count(count: int) -> int:
+    if (
+        isinstance(count, bool)
+        or not isinstance(count, int)
+        or not 1 <= count <= _MAX_HISTORY_COUNT
+    ):
+        raise ValueError(f"count 必须在 1..{_MAX_HISTORY_COUNT} 之间")
+    return count
 
 
 def _ktype(period: str) -> int:
@@ -118,7 +133,12 @@ class BaiduSource(BaseWebSource):
         ]
         if group == "quotation_kline_ab":
             kt = _ktype(str(kwargs.get("period", "day")))
-            count = int(kwargs.get("count", 250))
+            count = kwargs.get("count", 250)
+            if isinstance(count, bool):
+                raise ValueError(f"count 必须在 1..{_MAX_HISTORY_COUNT} 之间")
+            if not isinstance(count, int):
+                count = int(count)
+            count = _validate_history_count(count)
             end = int(kwargs.get("end_time") or _time.time())
             params += [f"ktype={kt}", "all=0", f"count={count}", f"end_time={end}"]
         else:
@@ -163,6 +183,7 @@ class BaiduSource(BaseWebSource):
         -------
         旧→新排列的 ``list[Bar]``。指标 ma5/ma10/ma20 挂到 ``extra``。
         """
+        _validate_history_count(count)
         code = _pure_code(symbol)
         et = int(end_time or _time.time())
         raw: list[Bar] = []
@@ -178,8 +199,13 @@ class BaiduSource(BaseWebSource):
             page = self._parse_kline(self._get_json(url), code)
             if not page:
                 break
+            had_previous_page = bool(raw)
+            oldest = page[0].extra["_baidu_time"]
+            if had_previous_page and oldest >= et:
+                # 上游忽略游标或重复返回同页时及时停止，避免分页空转。
+                break
             raw.extend(page)
-            et = page[0].extra["_baidu_time"] - 1  # 最旧 bar 减 1 天向前翻页
+            et = oldest - 1  # 最旧 bar 减 1 秒向前翻页
             if len(page) < page_count:
                 break
         # 跨页整体排序（旧→新）并截断到 count
@@ -189,6 +215,63 @@ class BaiduSource(BaseWebSource):
         for b in bars:
             b.extra.pop("_baidu_time", None)
         return bars
+
+    def fetch_valuation_history(
+        self, symbol: str, *, indicator: str = "市盈率(TTM)", period: str = "近一年"
+    ) -> list[dict[str, Any]]:
+        """百度股市通估值历史，返回 ``[{date, value, indicator}]``（旧→新）。
+
+        市值、PE(TTM)/静态、PB、市现率由上游分别提供。百度没有该图表的统一
+        股息率或流通股本序列；数值保留上游原生单位，市值单位不做未经验证的换算。
+        """
+        code = _pure_code(symbol)
+        if indicator not in _VALUATION_INDICATORS:
+            raise ValueError(f"indicator 必须是 {sorted(_VALUATION_INDICATORS)}")
+        if period not in _VALUATION_PERIODS:
+            raise ValueError(f"period 必须是 {sorted(_VALUATION_PERIODS)}")
+        params = {
+            "openapi": "1",
+            "dspName": "iphone",
+            "tn": "tangram",
+            "client": "app",
+            "query": indicator,
+            "code": code,
+            "word": "",
+            "resource_id": "51171",
+            "market": "ab",
+            "tag": indicator,
+            "chart_select": period,
+            "industry_select": "",
+            "skip_industry": "1",
+            "finClientType": "pc",
+        }
+        payload = self._get_json("https://gushitong.baidu.com/opendata?" + urlencode(params))
+        try:
+            result = payload["Result"][0]["DisplayData"]["resultData"]["tplData"]["result"]
+            chart = result["chartInfo"][0]["body"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise SourceDeprecated(
+                "百度估值历史响应结构不符合预期",
+                context={"source": BAIDU, "symbol": code, "indicator": indicator},
+                cause=exc,
+            ) from exc
+        if not isinstance(chart, list):
+            raise SourceDeprecated(
+                "百度估值历史未返回数据序列",
+                context={"source": BAIDU, "symbol": code, "indicator": indicator},
+            )
+        out: list[dict[str, Any]] = []
+        for pair in chart:
+            if not isinstance(pair, (list, tuple)) or len(pair) < 2:
+                continue
+            try:
+                value = float(pair[1])
+            except (TypeError, ValueError):
+                value = None
+            if value is not None and not math.isfinite(value):
+                value = None
+            out.append({"date": str(pair[0]), "value": value, "indicator": indicator})
+        return sorted(out, key=lambda row: row["date"])
 
     def _parse_kline(self, payload: Any, code: str) -> list[Bar]:
         res = payload.get("Result") or []

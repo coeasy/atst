@@ -400,13 +400,19 @@ class GapsSessionMixin:
     # -- G-08 估值历史日频序列 -------------------------------------------- #
     @staticmethod
     def valuation_history(symbol: str, *, count: int = 120) -> list[dict[str, Any]]:
-        """估值历史序列（PE-TTM / PB / PS-TTM 日频，东财 ``RPT_VALUEANALYSIS_DET``，已验证）。
+        """估值历史序列（东财 ``RPT_VALUEANALYSIS_DET`` 日频原始行，已验证）。
 
         区别于快照式 ``stock_valuation``，本方法返回按交易日降序的多期序列
-        （PE_TTM / PB_MRQ / PS_TTM / PCF_OCF_TTM / 股息率等字段随报表给出）。
+        （PE_TTM / PE_LAR / PB_MRQ / PS_TTM / PCF_OCF_TTM 及市值、股本类列名随
+        上游报表返回；列集合由上游决定，股息率不能假设每行都有）。
+
+        count:
+            返回上限，范围为 1..500（单页硬上限）。
         """
         from ..domain.symbol import split_symbol
 
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 500:
+            raise ValueError("count 必须在 1..500 之间")
         _, code = split_symbol(symbol)
         return _eastmoney_rows(
             "RPT_VALUEANALYSIS_DET",

@@ -1,6 +1,6 @@
 # atst 架构（ARCHITECTURE）
 
-> 本文只描述**当前代码事实**（v1.0.0，v13/v17 单一执行内核）。演进历史与逐轮重构台账见
+> 本文只描述**当前代码事实**（v1.4.3 源码候选，v13/v17 单一执行内核）。演进历史与逐轮重构台账见
 > [`docs/archive/plans/`](archive/plans/)；历史方案（v1–v16）的 L1/L2 缓存、UnifiedQuoteAPI
 > 门面、五级降级路由、sources/sinks 层、v14 信封运行时、`execution/` DAG 与 `provider/`
 > 路由件均已物理删除，不再是事实。
@@ -31,7 +31,7 @@ CLI / HTTP / WS / MCP 服务面。同步交付物为 `atst` Python 包，**协�
 CLI / HTTP(runtime_http) / WS(runtime_ws) / MCP(integration/mcp)
         │  （四个服务面全部只翻译，委托 Client，禁止任何执行逻辑）
         ▼
-atst.Client / AsyncClient（client/api.py，唯一业务入口，194 capabilities）
+atst.Client / AsyncClient（client/api.py，唯一业务入口，195 capabilities）
         │  QuerySpec（query.py：capability + symbols + provider + currentness …）
         ▼
 UnifiedRuntime（runtime/kernel.py，唯一内核，零缓存）
@@ -92,7 +92,7 @@ providers/ 注册表（Provider / Channel / Capability 单一事实源）
 
 - **单 Plan 执行**：`QueryPlanner.compile` 产出单 Provider / 单 Channel 的 `QueryPlan`，
   `DirectProviderExecutor` 按 `DIRECT_BINDINGS`（`(provider, channel, capability) → executor 方法`，
-  运行时从注册表生成，251 条，其中 17 条走专用执行体如 `_tdx_quotes`/`_tdx_bars`/`_web_quotes`，
+  运行时从注册表生成，281 条，其中 17 条走专用执行体如 `_tdx_quotes`/`_tdx_bars`/`_web_quotes`，
   其余回落 `_migrated_capability`）精确派发。
 - **跨源回退**：`FallbackPolicy` + `ProviderOrchestrator` 是**唯一**跨 Provider 容错通道；
   禁止隐式跨 Provider fallback（`DataSourceRouter` 已退化为单 Provider 选择器）。

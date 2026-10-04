@@ -1,339 +1,82 @@
-# atst Provider 接口目录
+# Provider 目录
 
-> Status: v12 target contract  
-> Terminology: `docs/adr/ADR-013-provider-source-terminology.md`  
-> Registry target: `ProviderRegistry + ChannelRegistry + CapabilityRegistry`
+> 本页反映当前实现（2026-10-04）。唯一事实源是 [`PROVIDERS`](../../atst/providers/__init__.py)；
+> 下表只概括 Provider 与通道，不代表每个登记能力当前都能从远端成功取数。运行时状态以
+> `/v13/capabilities`、`Client.capability_statuses()` 和对应 Provider 页为准。
 
-## 1. 核心术语
+代码接口由 `ProviderRegistry` 持有不可变的 `ProviderSpec` / `ChannelSpec` 清单；本页不再描述
+旧版规划中的 `ChannelRegistry` 与 `CapabilityRegistry`，它们不是当前运行时对象。
 
-`atst` 只把“谁提供数据”建模成 **Provider**。
+## 当前架构
 
-- **Provider**：`tdx / tencent / sina / eastmoney / baidu / jsl / boc / iwencai`。
-- **source**：API/兼容语义中的 Provider selector，值就是 Provider ID，不是第二层对象。
-- **Channel**：Provider 内的数据通道/接口族。
-- **Capability**：用户要获取的业务数据能力。
-- **Market**：`cn_a / hk / us / future / fund / fx ...`。
-- **Endpoint/Host**：Provider + Channel 内部物理连接目标。
-
-推荐调用：
+请求统一经过 `Client` / `AsyncClient`、`QuerySpec`、`UnifiedRuntime` 与
+`DirectProviderExecutor`。一个 `QueryPlan` 绑定一个 Provider 和一个 Channel；
+TDX 主站之间的重试属于同一 Provider。跨 Provider 尝试必须显式使用
+`FallbackPolicy`，并由 `ProviderOrchestrator` 记录每次尝试及结果来源。
 
 ```python
-md.quotes(["sh600519"], provider="tdx")
+from atst import Client, QuerySpec
+
+with Client() as client:
+    result = client.execute(
+        QuerySpec.build(
+            "quotes",
+            symbols=["sh600519", "sz000001"],
+            provider="tencent",
+            currentness="live",
+        )
+    )
+    print(result.meta.provider, result.meta.channel, result.data)
 ```
 
-兼容调用：
+调用前可用 `client.capability_statuses()` 查询迁移能力状态；Provider/channel
+组合是否被规划器接受由当前 capability 目录校验。运行期远端是否可达仍取决于外部服务。
+
+## Provider 与通道
+
+| Provider | 当前登记通道 | 说明 |
+|---|---|---|
+| `tdx` | `quotation`, `extended`, `goods`, `f10`, `mac` | TDX 二进制协议。扩展市场、MAC 和 F10 的线上可用性有限，见 [TDX 状态](tdx.md)。 |
+| `local_vipdoc` | `vipdoc` | 本地通达信历史文件读取；不提供实时数据。 |
+| `tencent` | `quote`, `kline`, `minute_kline`, `minute`, `ticks`, `global`, `market_stat`, `board_rank`, `catalog` | 行情及市场辅助数据。 |
+| `sina` | `quote`, `history_kline`, `suggest`, `industry_board`, `board_list`, `board_member`, `fund_flow`, `news`, `catalog` | 行情、搜索、板块、资金流及新闻。 |
+| `eastmoney` | `quote`, `kline`, `trends`, `rank`, `fund_flow`, `limit_pool`, `stock_changes`, `northbound`, `hot_rank`, `corporate`, `longhu`, `margin`, `index_constituents`, `fund`, `derivatives`, `datacenter`, `news`, `research`, `options`, `catalog` | 覆盖面最广的 Web 数据 Provider；具体端点的限频、字段和鉴权不同。 |
+| `baidu` | `quote`, `kline`, `minute`, `ticks`, `catalog` | 行情及历史估值序列。 |
+| `jsl` | `bond` | 集思录可转债数据。 |
+| `boc` | `fx` | 中国银行外汇牌价。 |
+| `iwencai` | `screening` | 问财自然语言筛选。 |
+| `cninfo` | `catalog` | 巨潮资讯公告与互动问答。 |
+| `ths` | `catalog` | 同花顺主题、概念与热度类数据。 |
+| `wallstreet` | `catalog` | 华尔街见闻快讯。 |
+| `builtin` | `catalog` | 内置静态/基础能力。 |
+| `derived` | `catalog` | 明确登记的派生或聚合能力；不对应单个上游 Provider。 |
+
+注册并不等同于线上已验证：能力目录同时区分 operational/unavailable；TDX 命令账本还区分
+`online`、`offline`、`degraded`、`verified`。新 Provider 上线须同时提供真实 adapter、参数/输出契约、
+来源元数据、错误语义和离线固定样本；仅添加注册行不算贯通。
+
+## 多源容错
+
+默认请求不会跨 Provider 自动切换。只有业务语义兼容且调用方明确同意更换数据源时才应使用：
 
 ```python
-md.quotes(["sh600519"], source="tdx")
+from atst import Client, FallbackPolicy
+
+with Client() as client:
+    result = client.quotes("sh600519", policy=FallbackPolicy.build("tdx", "tencent"))
+    print(result.result.meta.provenance, result.attempts)
 ```
 
-两者最终都只解析成：
-
-```text
-provider_id = tdx
-```
-
-## 2. Provider 总览
-
-| Provider | 角色 | 主要 Channel | 典型特有数据 | 自动跨 Provider 替代 |
-|---|---|---|---|---|
-| `tdx` | primary live | quotation / extended / goods / f10 / mac / vipdoc | TDX 二进制行情、扩展市场、商品、F10、本地历史 | 禁止 |
-| `tencent` | auxiliary live | quote / kline / minute_kline / minute / ticks / global / market_stat / board_rank | 港美行情、逐笔、全球行情、大盘统计 | 禁止 |
-| `sina` | auxiliary live/info | quote / history_kline / suggest / boards / fund_flow / news | 联想、板块、新闻、资金流 | 禁止 |
-| `eastmoney` | auxiliary live/info | quote / kline / trends / rank / fund_flow / limit_pool / stock_changes / northbound / corporate / longhu / hot_rank / margin / index_constituents / fund | 资金流、涨跌停池、异动、人气、两融、龙虎榜、公司资料 | 禁止 |
-| `baidu` | auxiliary live | quote / kline / minute / ticks | 百度财经行情 | 禁止 |
-| `jsl` | auxiliary info | bond | 已验证的可转债数据；ETF 尚未注册为生产能力 | 禁止 |
-| `boc` | auxiliary info | fx | 外汇牌价 | 禁止 |
-| `iwencai` | auxiliary info | screening | 自然语言选股 | 禁止 |
-
-`vipdoc` 不再作为独立 Provider，而是：
-
-```text
-provider=tdx
-channel=vipdoc
-mode=local_historical
-```
-
-Golden Replay / Synthetic 只属于测试运行时。
-
-JSL 的 ETF 能力只有在存在独立真实 endpoint、adapter、schema 与真实样本门禁后才可重新注册；不得复用可转债 endpoint 冒充 ETF。
-
-## 3. Provider → Channel → Capability
-
-示例：
-
-```text
-Provider: tdx
-  Channel: quotation
-    Capabilities: quotes / bars / minute / trades / finance / capital_changes
-
-Provider: tencent
-  Channel: quote
-    Capability: quotes
-  Channel: kline
-    Capability: bars
-
-Provider: eastmoney
-  Channel: fund_flow
-    Capabilities: fund_flow / board_fund_flow
-```
-
-Provider 决定 provenance；Channel 决定具体接入族；Capability 决定业务语义。
-
-## 4. Public API
-
-### Unified API
-
-只覆盖跨 Provider 真正同语义的能力：
-
-```python
-md.quotes(symbols, provider="tdx")
-md.quotes(symbols, provider="tencent")
-md.bars(symbol, provider="tdx")
-md.bars(symbol, provider="eastmoney")
-```
-
-统一 API 不能因为某 Provider 失败而换另一个 Provider。
-
-### Direct Provider API
-
-```python
-md.tdx.quotation.quotes(...)
-md.tdx.goods.bars(...)
-md.tencent.ticks(...)
-md.sina.news(...)
-md.eastmoney.fund_flow(...)
-md.baidu.minute(...)
-md.jsl.bonds(...)
-md.boc.fx_rates(...)
-md.iwencai.screen(...)
-```
-
-Provider-specific 数据优先保留 Direct API 和独立 schema。
-
-## 5. TDX 的特殊规则
-
-TDX 内部允许：
-
-```text
-host failover
-endpoint failover
-registry-driven channel resolution
-```
-
-TDX 内部禁止被称为“跨源 fallback”。
-
-例如：
-
-```text
-tdx/quotation host A -> host B -> host C   # 合法
-```
-
-但：
-
-```text
-tdx/bars -> sina/bars                      # 禁止
-```
-
-## 6. Market 不属于 Provider
-
-以下旧式概念必须拆开：
-
-```text
-hk -> market=hk
-us -> market=us
-```
-
-例如：
-
-```text
-provider=tencent, channel=quote, market=hk
-provider=sina,    channel=quote, market=hk
-provider=tencent, channel=quote, market=us
-```
-
-## 7. kline/minute/ticks 不属于 Provider
-
-以下都是 Channel/Capability，不是 Provider：
-
-```text
-kline
-minute
-minute_kline
-ticks
-fund_flow
-news
-```
-
-因此旧 Web registry 最终需要从“混合 source registry”迁移为 Provider + Channel + Capability 三张事实表。
-
-## 8. Provider 文档模板
-
-每份 `docs/providers/<provider>.md` 必须包含：
-
-1. Provider ID（人类可读的名称与定位写在正文里——代码面的 `ProviderSpec` 只持有执行面
-   真会读到的字段，`display_name` / `role` 曾在那里写着却无人读取，已随 F-52 删除）；
-2. 支持 Market（市场归属只写在文档里：代码面的 `ChannelSpec` 曾逐 channel 写着 `markets`
-   却无任何读取点，市场正确性实际由 `Symbol.tdx_market` 对 HK/US fail-closed 兜住，`markets`
-   已随 F-54 删除）；
-3. Channel 列表；
-4. Capability 列表；
-5. Unified API；
-6. Direct API；
-7. Provider-specific model；
-8. canonical schema 映射；
-9. 单位归一；
-10. freshness evidence/profile；
-11. auth/referer/cookie；
-12. rate/batch limit；
-13. endpoint/host failover 规则；
-14. error contract；
-15. production/experimental/degraded 状态；
-16. tests/fixtures；
-17. benchmark cases；
-18. ProviderRegistry/ChannelRegistry/CapabilityRegistry entry。
-
-## 9. Registry 目标
-
-> **本节是 v12 的目标结构，不是当前代码的形状。** 代码面的注册表只持有"有人按它行动"的
-> 字段：`ProviderSpec = id / channels / default`，`ChannelSpec = id / capabilities / live /
-> local / periods`。下面清单里从未有读取点的条目（`role`、`markets`、`auth/rate policy`、
-> `production status`、`batch/rate/freshness constraints`）不进代码——其中 `display_name`/`role`
-> 与 `markets`/`notes` 曾真的躺在代码里，分别由 F-52、F-54 删除；`tests/providers/test_registry.py`
-> 的门禁负责让"再写一个没人读的字段"当场变红。
-
-### ProviderRegistry
-
-只保存 Provider 级事实：
-
-```text
-identity
-role
-markets
-auth/rate policy
-channels
-production status
-```
-
-### ChannelRegistry
-
-保存 Provider 内通道事实：
-
-```text
-provider
-channel
-protocol/endpoint group
-capabilities
-batch/rate/freshness constraints
-```
-
-### CapabilityRegistry
-
-保存业务能力事实：
-
-```text
-capability
-supported providers
-default provider
-canonical result schema
-freshness profile
-```
-
-## 10. Health 与 Registry 分离
-
-```text
-ProviderRegistry       = 静态事实
-ProviderHealthRegistry = 动态健康状态
-```
-
-TDX 某个 host 不健康只更新 Endpoint/Host health；不能把 `provider=tdx` 静态能力删掉。
-
-## 11. Freshness 与历史窗口
-
-Freshness 必须和查询语义绑定，不能只检查“字段非空”。
-
-### 当前行情 / current series
-
-统一实时查询遵守：
-
-```text
-direct selected Provider fetch
-+ real provenance
-+ parseable Provider tail timestamp（时间序列能力）
-+ gross-stale sanity guard
-+ integrity/schema check
-```
-
-`gross-stale sanity guard` 只是防止明显陈旧数据，不宣称自己是交易所日历。当前实现不会用估算交易日历把周末、春节、国庆等休市期的最新真实数据误判为 stale。
-
-### historical closed window
-
-显式历史窗口必须标记为：
-
-```text
-mode=historical_closed
-verified=true
-currentness_verified=false
-```
-
-历史数据可以是真实、可审计的数据，但不能满足要求“当前/最新”的 live contract，也不能把 `verified` 等同于 `verified_fresh`。
-
-### no result cache
-
-v17 运行期不做结果缓存：每一次公开查询都编译为一个 `QueryPlan` 并直接请求它绑定的 Provider，`provenance.cache_tier` 恒为 `null`。因此 Provider 侧的契约是：
-
-- 不得自带"命中即跳过上游"的语义——那是运行期缓存的职责，而运行期缓存已被物理删除；
-- 返回的 provenance 必须与当前 `QueryPlan` 的 Provider/Channel/Capability 完全一致，否则结果被拒（`ResultMeta.from_plan` 抛 `ValidationError`）；
-- replay/synthetic 或跨 Provider 的 payload 不能冒充当前 Provider 的真实数据；
-- 新鲜度只有 `currentness`（`auto`/`live`/`historical`/`business`）这一套口径：它是调用方的声明，运行期只对能判据的那一面（本地文件 channel 被要求当期口径）兑现，其余口径差异不产出 per-result 的 freshness 标签（`historical_closed`/`current_series` 这类模式名从未存在于代码，F-68 登记）；
-- 调用方要控制的是新鲜度**口径**（`currentness`）与执行**预算**（`deadline_ms`），不是过期容忍度
-  或部分放行——`options` 袋里只有 `atst.query.EXECUTED_OPTIONS` 的键会被执行面读取，
-  其余键（含 `atst.query.REJECTED_OPTIONS` 的策略键）在直连执行面上恒被当场拒绝。
-
-## 12. Error
-
-错误树只有一棵：`atst/errors.py`，不创建第二棵。
-
-v17 没有"选定 Provider 不可用"的统一异常类：F-68 裁决把 E7050 那个占位叶子连同声明一起删了（退役记录只在 `docs/errors.md` §一之二登记，本节不重复点名），"Provider 真实不可用"由下面的传输层原异常承担。新增 Provider 也不许再立一个统一的"不可用"类来替代真实失败原因。本文点名的错误名与 `atst/errors.py` 的树之间由 `tests/architecture/test_error_promises.py` 双向核对：树里的类被文档点名却无运行期站点是幻影异常，文档点名的名字不在树里是幻影名，两边都红。
-
-选定 Provider 无法满足请求时，用户实际拿到的是：
-
-```text
-能力不在该 Provider 的 channel 上 -> ValidationError(E1010, 422)
-命令 offline                  -> CommandOffline
-连接/超时/HTTP 层失败          -> ConnectionFailed / AllHostsUnreachable /
-                                ReadTimeout / WebSourceError / AntiSpiderBlocked
-当期口径无法证明（本地文件）    -> FreshnessViolation(E4060, 503)
-```
-
-任一异常的 context 统一带 `provider`/`channel`/`capability`（执行器负责补齐），例如：
-
-```json
-{
-  "provider": "tdx",
-  "channel": "quotation",
-  "capability": "bars"
-}
-```
-
-Provider-specific Direct API 已有 `TdxError` 必须原样保留并补齐 Provider/Channel context；adapter 意外抛出的原生异常统一进入 `InternalError(E9000)`，不得伪装成跨 Provider fallback 条件。
-
-## 13. CI 文档门禁
-
-```text
-ProviderRegistry -> docs/providers/<provider>.md exists
-provider doc -> ProviderRegistry entry exists
-ChannelRegistry -> documented channel exists
-CapabilityRegistry -> provider/channel mapping exists
-Direct API -> documented + callable
-provider/source alias -> same ProviderId
-no hk/us/kline/minute/ticks as Provider IDs
-vipdoc -> tdx/vipdoc only
-no result cache -> provenance.cache_tier is always null
-result provenance -> same Provider/Channel/Capability as the QueryPlan
-historical closed -> currentness_verified=false
-```
-
-## 14. 最终术语
-
-> **Provider 是正式实体；source 是用户语言/API 兼容名，指向同一个 Provider ID。Provider 下有 Channel，Channel 暴露 Capability，Endpoint/Host 只在 Provider + Channel 内部。**
+回退可能改变刷新频率、字段完整度和复权/时间口径；调用方应检查 provenance 与 warnings，
+不要把不同口径的结果无条件拼接。
+
+## Provider 详情
+
+- [TDX](tdx.md)
+- [Eastmoney](eastmoney.md)
+- [Sina](sina.md)
+- [Tencent](tencent.md)
+- [Baidu](baidu.md)
+- [JSL](jsl.md)
+- [BOC](boc.md)
+- [iWencai](iwencai.md)

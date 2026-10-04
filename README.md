@@ -4,8 +4,7 @@
 >
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
-- 当前版本：`1.4.2`
-- 当前发布状态：**GitHub Release [`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2) 已发布**（canonical wheel + sdist，附 `SHA256SUMS.txt` 与 `RELEASE-METADATA.json`）；**本包不在 PyPI 上**——PyPI 上传是显式 opt-in（需仓库变量 `PUBLIC_RELEASE=true`）· [v1.0.0 发布说明](docs/releases/v1.0.0.md) · [v1.1.0 发布说明](docs/releases/v1.1.0.md) · [v1.2.0 发布说明](docs/releases/v1.2.0.md) · [v1.2.1 发布说明](docs/releases/v1.2.1.md) · [v1.2.2 发布说明](docs/releases/v1.2.2.md) · [v1.3.0 发布说明](docs/releases/v1.3.0.md) · [v1.4.0 发布说明](docs/releases/v1.4.0.md) · [v1.4.1 发布说明](docs/releases/v1.4.1.md) · [v1.4.2 发布说明](docs/releases/v1.4.2.md) · [CHANGELOG](CHANGELOG.md)
+- 当前版本：`1.4.3`（源码候选；尚未打 tag）· 最新已发布 GitHub Release：[`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2) 已发布；本包**不在 PyPI**。Trusted Publisher 与 `pypi` 环境已配置，版本 tag 推送后工作流会执行 OIDC 上传。· [v1.0.0 发布说明](docs/releases/v1.0.0.md) · [v1.1.0 发布说明](docs/releases/v1.1.0.md) · [v1.2.0 发布说明](docs/releases/v1.2.0.md) · [v1.2.1 发布说明](docs/releases/v1.2.1.md) · [v1.2.2 发布说明](docs/releases/v1.2.2.md) · [v1.3.0 发布说明](docs/releases/v1.3.0.md) · [v1.4.0 发布说明](docs/releases/v1.4.0.md) · [v1.4.1 发布说明](docs/releases/v1.4.1.md) · [v1.4.2 发布说明](docs/releases/v1.4.2.md) · [v1.4.3 发布说明](docs/releases/v1.4.3.md) · [CHANGELOG](CHANGELOG.md)
 
 ---
 
@@ -20,7 +19,7 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | 痛点 | atst 的解法 |
 |---|---|
 | TDX 协议封闭、逆向工程门槛高 | 85 命令账本 + 61 精确解析器 + 三级分派 + YAML 协议规范 |
-| 单一数据源不可靠 | 14 个 Provider 注册表 + 194 capability 声明；**provider-first**：一次请求绑定一个 Provider，跨源只在显式 `FallbackPolicy` 下发生 |
+| 单一数据源不可靠 | 14 个 Provider 注册表 + 195 capability 声明；**provider-first**：一次请求绑定一个 Provider，跨源只在显式 `FallbackPolicy` 下发生 |
 | 数据来源不可追溯 | 每个结果携带 `Provenance`（provider/channel/capability/命令），溯源不符即抛，杜绝静默换源 |
 | 数据请求被隐式缓存污染 | 执行路径**零缓存**：每次请求直达绑定 Provider |
 | 同步/异步 API 分裂 | 签名镜像双客户端（`TdxClient` / `AsyncTdxClient`）+ 奇偶门禁 |
@@ -63,14 +62,14 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 ├─────────────────────────────────────────────────────────────────────┤
 │              UnifiedRuntime（唯一执行内核，零缓存）                     │
 │  QueryPlanner.compile → QueryPlan（单 Provider / 单 Channel）          │
-│  DirectProviderExecutor：DIRECT_BINDINGS 280 条精确绑定                │
+│  DirectProviderExecutor：DIRECT_BINDINGS 281 条精确绑定                │
 │  流式：StreamSpec/StreamPlanner → StatefulQuoteStream                 │
 ├─────────────────────────────────────────────────────────────────────┤
 │              catalog/（静态声明与一致性审计，无执行）                   │
 │  capability 目录 + 规划期签名校验（fail-closed）                        │
 │  Provider channel→adapter 绑定表 · Provider 隔离契约/守卫/审计          │
 ├─────────────────────────────────────────────────────────────────────┤
-│              providers/（14 Provider · 194 capability 唯一事实源）      │
+│              providers/（14 Provider · 195 capability 唯一事实源）      │
 │  tdx(85 命令) · tencent/sina/eastmoney/baidu/jsl/boc/iwencai(web 多源)│
 │  local_vipdoc(reader 本地二进制) · builtin · derived(显式聚合)          │
 ├─────────────────────────────────────────────────────────────────────┤
@@ -116,7 +115,7 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 |---|---|
 | **HTTP Web 45+ 源类** | 东财/新浪/腾讯/集思录/港股/中行等，`httpx` / `urllib` 双栈，31 模块；各家适配器按 Provider 归入 `web/<provider>/adapters.py`，跨 Provider 的域模块（资金流/龙虎榜/新闻/问财…）留 `web/` 包根 |
 | **本地 vipdoc 解析** | `reader/` 解析通达信本地 `.day` / `.min` / 板块 / 财务二进制文件 |
-| **Provider 注册表** | `providers/` 声明 14 Provider × 194 capability × channel，是唯一事实源；`catalog/provider_bindings.py` 声明 channel→adapter 绑定 |
+| **Provider 注册表** | `providers/` 声明 14 Provider × 195 capability × channel，是唯一事实源；`catalog/provider_bindings.py` 声明 channel→adapter 绑定 |
 | **流式订阅** | `Client.stream` → `StatefulQuoteStream`（轮询基类 QuoteStream/AsyncQuoteStream；engine 内核：ReconnectPolicy + BackpressureQueue + DeltaMerger + GapFiller + StreamEngine） |
 
 ### 输出与服务层
@@ -134,7 +133,7 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | 特性 | 说明 |
 |---|---|
 | **唯一内核** | `UnifiedRuntime`：`QuerySpec → QueryPlan → 绑定执行 → QueryResult`，零缓存、无请求合并 |
-| **精确绑定执行** | `DirectProviderExecutor` 按 `DIRECT_BINDINGS[(provider, channel, capability)]`（280 条）直调实现 |
+| **精确绑定执行** | `DirectProviderExecutor` 按 `DIRECT_BINDINGS[(provider, channel, capability)]`（281 条）直调实现 |
 | **规划期 fail-closed** | `catalog/capability.py::validate_call` 用**真实方法签名**绑定参数，参数错误在 I/O 前抛 |
 | **执行身份与溯源** | `runtime/identity.py` + `runtime/provenance.py`：结果 provenance 与计划身份不符即抛 |
 | **显式跨源编排** | `runtime/orchestration.py`：仅当调用方给出 `FallbackPolicy` 时按序尝试，逐次记入 `OrchestratedResult` |
@@ -262,7 +261,9 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 4. 流水线自动：构建 → 复现性校验 → 草稿 Release + 产物 → 发布。
    - PyPI 发布是**显式 opt-in**：仅当仓库变量 `PUBLIC_RELEASE=true` 时，
      `publish-pypi` 才用 OIDC trusted publishing 上传（重复版本会被
-     `scripts/check_pypi_release.py` 安全跳过）。默认不发布到 PyPI。
+     `scripts/check_pypi_release.py` 校验并安全跳过）。默认不发布到 PyPI。首次启用前，
+     还需在 PyPI 创建 pending Trusted Publisher；准确字段与 GitHub 环境配置见
+     [`docs/release-publishing.md`](docs/release-publishing.md)。
    - Docker 镜像同理，需 `PUBLIC_RELEASE=true` 且 `PUBLISH_DOCKER=true`。
 
 ### 运行前提：Actions 必须真的能把 job 跑起来
@@ -334,7 +335,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### 统一查询内核（`Client`，194 项 capability）
+### 统一查询内核（`Client`，195 项 capability）
 
 ```python
 from atst import Client, FallbackPolicy, QuerySpec
@@ -412,11 +413,11 @@ atst hosts audit --report /tmp/audit.json --markdown /tmp/audit.md
 atst/
 ├── client/         # api.py —— Client / AsyncClient 唯一业务入口（17 便捷方法 + execute/typed/call）
 │                   # core/sync/async_/factory —— TdxClient 传输层与共享纯协议 SSOT
-├── runtime/        # 唯一执行内核：kernel(零缓存)/executor(280 绑定)/orchestration(显式跨源)
+├── runtime/        # 唯一执行内核：kernel(零缓存)/executor(281 绑定)/orchestration(显式跨源)
 │                   #   /audit(启动三方对账)/identity/provenance(溯源守卫)
 ├── catalog/        # 静态声明与一致性审计：capability(目录+规划期签名校验)/provider_bindings
 │                   #   /provider_contract/provider_guard/*_audit —— 无执行、无选源
-├── providers/      # 14 Provider × 194 capability × channel 注册表（唯一事实源）
+├── providers/      # 14 Provider × 195 capability × channel 注册表（唯一事实源）
 ├── query.py        # QuerySpec/QueryPlan/QueryPlanner + 指纹
 ├── result.py       # QueryResult + ResultMeta + Provenance
 ├── batch.py        # BatchResult/BatchItem 三态批量契约
@@ -529,10 +530,10 @@ python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproje
 
 ## 路线图
 
-### 当前阶段：v1.4.2 稳定版
+### 当前阶段：v1.4.3 发布候选（未打 tag）
 
-atst 已发布 `v1.4.2`（GitHub Release，不在 PyPI）。当前内核为单执行路径、零缓存、provider-first：
-85 命令 / 61 精确解析器 / 5 协议族 / 14 Provider / 194 capability / 280 条精确绑定全部到位，并通过全量确定性门禁。
+GitHub 最新已发布版本是 `v1.4.2`；源码候选 `v1.4.3` 完成本地构建与回归后尚未打 tag。当前内核为单执行路径、零缓存、provider-first：
+85 命令 / 61 精确解析器 / 5 协议族 / 14 Provider / 195 capability / 281 条精确绑定。
 
 | 里程碑 | 状态 |
 |---|---|

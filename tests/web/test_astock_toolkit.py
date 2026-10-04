@@ -255,3 +255,30 @@ class TestFacadeMixin:
         assert len(mix.AstockToolkitMixin.holder_changes("300750")) == 1
         assert len(mix.AstockToolkitMixin.financial_abstract("600519")) == 1
         assert len(mix.AstockToolkitMixin.announcements(["600519"])) == 1
+
+
+class TestValuationHistoryBounds:
+    def test_count_rejects_invalid_values_before_request(self, monkeypatch: pytest.MonkeyPatch):
+        import atst.web._session_gaps as gaps
+
+        calls = []
+        monkeypatch.setattr(gaps, "_eastmoney_rows", lambda *args, **kwargs: calls.append(kwargs))
+        for count in (0, -1, 501, True):
+            with pytest.raises(ValueError, match="count"):
+                gaps.GapsSessionMixin.valuation_history("600519", count=count)
+        assert calls == []
+
+    def test_valid_count_is_forwarded(self, monkeypatch: pytest.MonkeyPatch):
+        import atst.web._session_gaps as gaps
+
+        calls = []
+
+        def fake_rows(report, **kwargs):
+            calls.append((report, kwargs))
+            return [{"TRADE_DATE": "2026-10-01"}]
+
+        monkeypatch.setattr(gaps, "_eastmoney_rows", fake_rows)
+        result = gaps.GapsSessionMixin.valuation_history("sh600519", count=250)
+        assert result == [{"TRADE_DATE": "2026-10-01"}]
+        assert calls[0][0] == "RPT_VALUEANALYSIS_DET"
+        assert calls[0][1]["size"] == 250

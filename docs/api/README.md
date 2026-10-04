@@ -1,6 +1,6 @@
 # API 参考
 
-当前 `1.4.2`；GitHub Release [`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2) 已发布，但本包**不在 PyPI 上** · [v1.0.0 发布说明](../releases/v1.0.0.md) · [v1.1.0 发布说明](../releases/v1.1.0.md) · [v1.2.0 发布说明](../releases/v1.2.0.md) · [v1.2.1 发布说明](../releases/v1.2.1.md) · [v1.2.2 发布说明](../releases/v1.2.2.md) · [v1.3.0 发布说明](../releases/v1.3.0.md) · [v1.4.0 发布说明](../releases/v1.4.0.md) · [v1.4.1 发布说明](../releases/v1.4.1.md) · [v1.4.2 发布说明](../releases/v1.4.2.md)
+当前 `1.4.3` 源码候选；最新已发布 GitHub Release 为 [`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2)，本包**不在 PyPI 上** · [v1.0.0 发布说明](../releases/v1.0.0.md) · [v1.1.0 发布说明](../releases/v1.1.0.md) · [v1.2.0 发布说明](../releases/v1.2.0.md) · [v1.2.1 发布说明](../releases/v1.2.1.md) · [v1.2.2 发布说明](../releases/v1.2.2.md) · [v1.3.0 发布说明](../releases/v1.3.0.md) · [v1.4.0 发布说明](../releases/v1.4.0.md) · [v1.4.1 发布说明](../releases/v1.4.1.md) · [v1.4.2 发布说明](../releases/v1.4.2.md) · [v1.4.3 发布说明](../releases/v1.4.3.md)
 
 > 本页对应 v1.0.0 + **v13/v17 单一执行内核**。完整 docstring 驱动文档
 > 由 `pdoc`/`mkdocstrings` 生成；此处提供稳定入口和模块索引。
@@ -33,7 +33,7 @@
 | `atst.catalog.capability` | capability 目录 + 规划期真实签名校验（`validate_call`）|
 | `atst.catalog.provider_bindings` | Provider `channel → adapter` 绑定表 |
 | `atst.catalog.provider_contract` / `provider_guard` / `*_audit` | Provider 隔离契约、运行时守卫与一致性审计 |
-| `atst.providers.PROVIDERS` | 14 Provider × 59 channel × 194 capability 唯一事实源；能力发现面只声明名字、不声明可用性，见 [interfaces.md](interfaces.md)「能力发现面」 |
+| `atst.providers.PROVIDERS` | 14 Provider × 59 channel × 195 capability 唯一事实源；能力发现面只声明名字、不声明可用性，见 [interfaces.md](interfaces.md)「能力发现面」 |
 
 ## 核心入口
 
@@ -91,7 +91,7 @@
 | `atst.web.tencent.adapters` | 腾讯系 HTTP 源（实时行情 / K 线 / 分钟线 / 分时 / 港股 / 美股）|
 | `atst.web.sina.adapters` | 新浪系 HTTP 源（实时行情 / 港股 / 历史 K 线 / 代码联想）|
 | `atst.web.eastmoney.adapters` | 东财系 HTTP 源（实时行情 / push2his 历史 K 线 / 融资融券 / 指数成分）|
-| `atst.web.baidu.adapters` | 百度财经 HTTP 源（日/周/月 K 线 / 分时 / 逐笔 / 五档）|
+| `atst.web.baidu.adapters` | 百度财经 HTTP 源（日/周/月 K 线 / 分时 / 逐笔 / 五档 / 历史估值）|
 | `atst.web.jsl.adapters` | 集思录 HTTP 源（可转债）|
 | `atst.web.boc.adapters` | 中行 HTTP 源（外汇牌价）|
 | `atst.web.fundflow` | 资金流 + 涨停池 + **盘中异动**（20 类异动枚举）+ 沪深港通 |

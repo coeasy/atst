@@ -105,6 +105,12 @@ Provider-specific raw model 可保留腾讯原始手/万元等字段，但必须
 
 `global / market_stat / board_rank` 等保留 Tencent-specific schema，不强制塞入 Quote.extra。
 
+A 股 `quote` 的 `Quote.extra` 还包含当日源快照指标：`pe`、`pb`、`turnover_rate`、
+`float_market_cap`、`total_market_cap`、`volume_ratio` 与涨跌停价。市值由源值“亿元”
+换成“元”；`pe` 的具体静态/滚动口径受上游字段定义影响，不能当作历史 TTM 序列。
+这些数据是当前快照，不含历史市值、流通股数或股息率；取历史估值走
+`valuation_history`（Eastmoney）或 `baidu_valuation_history`（百度，源端单位）。
+
 ## 9. Conformance
 
 验证 Provider identity、Market scope、单位、freshness、rate/batch limit、session reuse、no cross-provider attempts。

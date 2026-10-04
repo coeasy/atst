@@ -153,7 +153,7 @@ def test_release_builds_once_then_uses_shared_verifier_and_same_wheel_matrix() -
 
 def test_artifact_only_smoke_does_not_enable_setup_python_dependency_cache() -> None:
     workflow = _workflow("wheels.yml")
-    smoke = workflow.split("  smoke-install:", 1)[1].split("  publish-pypi:", 1)[0]
+    smoke = workflow.split("  smoke-install:", 1)[1].split("  extras-install:", 1)[0]
 
     assert "actions/checkout" not in smoke
     assert "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093" in smoke
@@ -163,19 +163,41 @@ def test_artifact_only_smoke_does_not_enable_setup_python_dependency_cache() -> 
 
 def test_release_publishes_once_only_after_draft_release_is_ready() -> None:
     workflow = _workflow("wheels.yml")
+    preflight = workflow.split("  pypi-preflight:", 1)[1].split("  publish-pypi:", 1)[0]
+    publish = workflow.split("  publish-pypi:", 1)[1].split("  verify-pypi:", 1)[0]
 
     assert (
         workflow.count("pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33") == 1
     )
-    assert "needs: [build-dist, prepare-release]" in workflow
-    assert "if: vars.PUBLIC_RELEASE == 'true'" in workflow
-    assert "environment: pypi" in workflow
-    assert "id-token: write" in workflow
+    assert "needs: [build-dist, prepare-release, pypi-preflight]" in publish
+    assert "needs.pypi-preflight.outputs.exists != 'true'" in publish
+    assert "environment: pypi" in publish
+    assert "id-token: write" in publish
+    assert "actions/checkout" not in publish
+    assert "scripts/check_pypi_release.py" in preflight
+    assert "github.event_name == 'push'" in preflight
+    assert "startsWith(github.ref, 'refs/tags/v')" in preflight
+    assert "id-token: write" not in preflight
+
+
+def test_pypi_oidc_job_only_downloads_and_publishes_prepared_artifacts() -> None:
+    workflow = _workflow("wheels.yml")
+    publish = workflow.split("  publish-pypi:", 1)[1].split("  verify-pypi:", 1)[0]
+    build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
+    verify = workflow.split("  verify-pypi:", 1)[1].split("  publish-docker:", 1)[0]
+
+    assert "name: pypi-dist" in build
+    assert "name: pypi-dist" in publish
+    assert "id-token: write" not in verify
+    assert "--require-existing" in verify
+    assert "python scripts/check_pypi_release.py" in verify
+    assert "actions/checkout" not in publish
+    assert "run:" not in publish
 
 
 def test_release_assets_are_attached_to_a_draft_before_publication() -> None:
     workflow = _workflow("wheels.yml")
-    release_assets = workflow.split("  prepare-release:", 1)[1].split("  publish-pypi:", 1)[0]
+    release_assets = workflow.split("  prepare-release:", 1)[1].split("  pypi-preflight:", 1)[0]
 
     assert "needs: [build-dist, smoke-install, extras-install, sdist-rebuild]" in release_assets
     assert "name: python-dist" in release_assets
@@ -203,7 +225,7 @@ def test_release_docker_reuses_artifact_only_after_pypi_succeeds() -> None:
     workflow = _workflow("wheels.yml")
     docker = workflow.split("  publish-docker:", 1)[1].split("  publish-release:", 1)[0]
 
-    assert "needs: [build-dist, prepare-release, publish-pypi]" in docker
+    assert "needs: [build-dist, prepare-release, verify-pypi]" in docker
     assert "vars.PUBLIC_RELEASE == 'true'" in docker
     assert "name: python-dist" in docker
     assert "path: release-dist" in docker
@@ -328,7 +350,10 @@ def test_release_is_public_only_after_external_surfaces_finish() -> None:
     workflow = _workflow("wheels.yml")
     publish = workflow.split("  publish-release:", 1)[1]
 
-    assert "needs: [build-dist, prepare-release, publish-pypi, publish-docker]" in publish
+    assert (
+        "[build-dist, prepare-release, pypi-preflight, publish-pypi, verify-pypi, publish-docker]"
+        in publish
+    )
     assert "always()" in publish
     assert "gh release edit" in publish
     assert "--draft=false" in publish
@@ -342,7 +367,7 @@ def test_release_retry_is_idempotent_and_hash_verified() -> None:
     assert "gh release download" in workflow
     assert "sha256sum -c SHA256SUMS.txt" in workflow
     assert "cmp dist/SHA256SUMS.txt published/SHA256SUMS.txt" in workflow
-    assert "steps.pypi-state.outputs.exists != 'true'" in workflow
+    assert "needs.pypi-preflight.outputs.exists != 'true'" in workflow
 
 
 def test_prerelease_detection_uses_pep440_not_tag_punctuation() -> None:
@@ -427,7 +452,7 @@ def test_publications_require_supply_chain_attestations() -> None:
 def test_release_metadata_is_stable_auditable_and_checked_on_retry() -> None:
     workflow = _workflow("wheels.yml")
     build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
-    prepare = workflow.split("  prepare-release:", 1)[1].split("  publish-pypi:", 1)[0]
+    prepare = workflow.split("  prepare-release:", 1)[1].split("  pypi-preflight:", 1)[0]
 
     assert "RELEASE-METADATA.json" in build
     assert '"repository": os.environ["GITHUB_REPOSITORY"]' in build
@@ -444,13 +469,13 @@ def test_release_metadata_is_stable_auditable_and_checked_on_retry() -> None:
 def test_release_requires_versioned_docs_and_post_publish_pypi_readback() -> None:
     workflow = _workflow("wheels.yml")
     build = workflow.split("  build-dist:", 1)[1].split("  smoke-install:", 1)[0]
-    pypi = workflow.split("  publish-pypi:", 1)[1].split("  publish-docker:", 1)[0]
+    verify = workflow.split("  verify-pypi:", 1)[1].split("  publish-docker:", 1)[0]
 
     assert 'Path(f"docs/releases/v{version}.md")' in build
     assert 'f"## [{version}]"' in build
-    assert "--require-existing" in pypi
-    assert "for attempt in 1 2 3 4 5" in pypi
-    assert "sleep $((attempt * 2))" in pypi
+    assert "--require-existing" in verify
+    assert "for attempt in 1 2 3 4 5" in verify
+    assert "sleep $((attempt * 2))" in verify
 
 
 def test_all_workflow_actions_are_immutable_sha_pinned() -> None:
@@ -477,13 +502,13 @@ def test_all_workflow_actions_are_immutable_sha_pinned() -> None:
 
 def test_published_github_release_can_be_promoted_idempotently_to_public_surfaces() -> None:
     workflow = _workflow("wheels.yml")
-    pypi = workflow.split("  publish-pypi:", 1)[1].split("  publish-docker:", 1)[0]
+    preflight = workflow.split("  pypi-preflight:", 1)[1].split("  publish-pypi:", 1)[0]
+    pypi = workflow.split("  publish-pypi:", 1)[1].split("  verify-pypi:", 1)[0]
     docker = workflow.split("  publish-docker:", 1)[1].split("  publish-release:", 1)[0]
 
-    assert "if: vars.PUBLIC_RELEASE == 'true'" in pypi
-    assert "already_published != 'true'" not in pypi
+    assert "vars.PUBLIC_RELEASE == 'true'" in preflight
     assert "needs.prepare-release.outputs.already_published != 'true'" not in docker
-    assert "steps.pypi-state.outputs.exists != 'true'" in pypi
+    assert "needs.pypi-preflight.outputs.exists != 'true'" in pypi
 
 
 def test_live_smoke_covers_operational_web_core_defaults() -> None:

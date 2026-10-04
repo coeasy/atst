@@ -147,6 +147,15 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 14
+      - name: Upload PyPI-only distributions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pypi-dist
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
 
   smoke-install:
     name: Install artifact (${{ matrix.os }}, Python ${{ matrix.python-version }})
@@ -290,16 +299,17 @@ jobs:
           gh release upload "$TAG_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
           echo "already_published=false" >> "$GITHUB_OUTPUT"
 
-  publish-pypi:
-    name: Publish canonical distributions to PyPI
-    needs: [build-dist, prepare-release]
-    if: vars.PUBLIC_RELEASE == 'true'
+  pypi-preflight:
+    name: Check PyPI state before requesting publish identity
+    needs: [build-dist]
+    if: >-
+      vars.PUBLIC_RELEASE == 'true' &&
+      github.event_name == 'push' &&
+      startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: pypi
-    permissions:
-      contents: read
-      id-token: write
+    outputs:
+      exists: ${{ steps.pypi-state.outputs.exists }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -315,15 +325,44 @@ jobs:
           --version "$RELEASE_VERSION"
           --dist dist
           --github-output "$GITHUB_OUTPUT"
-      - name: Remove non-distribution release metadata before PyPI upload
-        if: steps.pypi-state.outputs.exists != 'true'
-        shell: bash
-        run: rm dist/SHA256SUMS.txt dist/RELEASE-METADATA.json
+
+  publish-pypi:
+    name: Publish canonical distributions to PyPI
+    needs: [build-dist, prepare-release, pypi-preflight]
+    if: >-
+      vars.PUBLIC_RELEASE == 'true' &&
+      needs.pypi-preflight.outputs.exists != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: pypi-dist
+          path: dist
       - name: Publish once with trusted publishing
-        if: steps.pypi-state.outputs.exists != 'true'
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           attestations: true
+
+  verify-pypi:
+    name: Verify PyPI publication without publish identity
+    needs: [build-dist, pypi-preflight, publish-pypi]
+    if: >-
+      always() &&
+      vars.PUBLIC_RELEASE == 'true' &&
+      needs.pypi-preflight.result == 'success' &&
+      (needs.publish-pypi.result == 'success' || needs.publish-pypi.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: python-dist
+          path: dist
       - name: Verify final PyPI state
         env:
           RELEASE_VERSION: ${{ needs.build-dist.outputs.version }}
@@ -345,11 +384,11 @@ jobs:
 
   publish-docker:
     name: Publish Docker image to Docker Hub
-    needs: [build-dist, prepare-release, publish-pypi]
+    needs: [build-dist, prepare-release, verify-pypi]
     if: >-
       vars.PUBLIC_RELEASE == 'true' &&
       vars.PUBLISH_DOCKER == 'true' &&
-      needs.publish-pypi.result == 'success'
+      needs.verify-pypi.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -393,11 +432,14 @@ jobs:
 
   publish-release:
     name: Publish GitHub Release
-    needs: [build-dist, prepare-release, publish-pypi, publish-docker]
+    needs:
+      [build-dist, prepare-release, pypi-preflight, publish-pypi, verify-pypi, publish-docker]
     if: >-
       always() &&
       needs.prepare-release.result == 'success' &&
+      (needs.pypi-preflight.result == 'success' || needs.pypi-preflight.result == 'skipped') &&
       (needs.publish-pypi.result == 'success' || needs.publish-pypi.result == 'skipped') &&
+      (needs.verify-pypi.result == 'success' || needs.verify-pypi.result == 'skipped') &&
       (needs.publish-docker.result == 'success' || needs.publish-docker.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10

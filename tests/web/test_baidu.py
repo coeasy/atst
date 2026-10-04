@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -224,7 +225,7 @@ class TestRegistry:
     def test_source_registered(self):
         spec = get_source(BAIDU)
         assert spec.name == BAIDU
-        for cap in ("kline", "minute", "tick", "quote"):
+        for cap in ("kline", "minute", "tick", "quote", "valuation_history"):
             assert cap in spec.capabilities
         assert "fund_flow" not in spec.capabilities
 
@@ -232,6 +233,7 @@ class TestRegistry:
         assert BAIDU in list_sources(capability="kline")
         assert BAIDU in list_sources(capability="minute")
         assert BAIDU in list_sources(capability="tick")
+        assert BAIDU in list_sources(capability="valuation_history")
 
 
 # --------------------------------------------------------------------------- #
@@ -313,6 +315,25 @@ class TestKline:
         with pytest.raises(WebSourceError):
             _src(_kline_body()).fetch_kline("hk00700")
 
+    def test_count_is_bounded(self):
+        src = _src(_kline_body())
+        for count in (0, -1, 10_001, True):
+            with pytest.raises(ValueError, match="count"):
+                src.fetch_kline("600519", count=count)
+        with pytest.raises(ValueError, match="count"):
+            src.build_url(["600519"], count=True)
+        assert src.client.calls == []
+
+    def test_repeated_page_stops_pagination(self):
+        """If upstream ignores end_time, stop after detecting no cursor progress."""
+        page = _gen_kline(250, start_ts=1_800_000_000)
+        src = BaiduSource(max_retries=0)
+        src.client = FakeHttp(json.dumps(page).encode(), json.dumps(page).encode())
+        src.rate_limiter = RateLimiter()
+        bars = src.fetch_kline("600519", count=251)
+        assert len(src.client.calls) == 2
+        assert len(bars) == 250
+
 
 # --------------------------------------------------------------------------- #
 # 分时
@@ -349,6 +370,50 @@ class TestQuote:
         assert q.bid[0].price == pytest.approx(1298.71)
         assert q.bid[0].volume == 500_000  # 5000 手 → 股
         assert q.ask[0].price == pytest.approx(1299.19)
+
+
+class TestValuationHistory:
+    def test_parse_and_request_contract(self):
+        payload = {
+            "Result": [
+                {
+                    "DisplayData": {
+                        "resultData": {
+                            "tplData": {
+                                "result": {
+                                    "chartInfo": [
+                                        {"body": [["2026-01-02", "12.5"], ["2026-01-05", "13"]]}
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        }
+        src = _src(json.dumps(payload).encode())
+        rows = src.fetch_valuation_history("sh600519", indicator="市盈率(TTM)", period="近五年")
+        assert rows == [
+            {"date": "2026-01-02", "value": 12.5, "indicator": "市盈率(TTM)"},
+            {"date": "2026-01-05", "value": 13.0, "indicator": "市盈率(TTM)"},
+        ]
+        query = parse_qs(urlsplit(src.client.calls[0]).query)
+        assert query["code"] == ["600519"]
+        assert query["query"] == ["市盈率(TTM)"]
+        assert query["chart_select"] == ["近五年"]
+        assert query["resource_id"] == ["51171"]
+
+    def test_invalid_indicator_and_period_do_not_request(self):
+        src = _src(b"{}")
+        with pytest.raises(ValueError, match="indicator"):
+            src.fetch_valuation_history("600519", indicator="股息率")
+        with pytest.raises(ValueError, match="period"):
+            src.fetch_valuation_history("600519", period="近两年")
+        assert src.client.calls == []
+
+    def test_changed_response_shape_fails_explicitly(self):
+        with pytest.raises(SourceDeprecated, match="结构"):
+            _src(b'{"Result": []}').fetch_valuation_history("600519")
 
 
 # --------------------------------------------------------------------------- #
