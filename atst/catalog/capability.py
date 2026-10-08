@@ -23,6 +23,7 @@ __all__ = [
     "MigratedCapabilityBinding",
     "MIGRATED_BINDINGS",
     "MIGRATED_CAPABILITIES",
+    "COMPOSED_CAPABILITIES",
     "binding_for",
     "call_kwargs_for",
     "bindings_for_provider",
@@ -212,6 +213,9 @@ _EXPLICIT_BINDINGS: tuple[MigratedCapabilityBinding, ...] = (
         "adjusted_bars", "derived", "adjustment", "composed", "adjusted_bars"
     ),
     MigratedCapabilityBinding("sync_daily", "derived", "sync", "composed", "sync_daily"),
+    MigratedCapabilityBinding(
+        "daily_enriched", "derived", "enriched", "composed", "daily_enriched"
+    ),
     MigratedCapabilityBinding(
         "minute_web",
         "tencent",
@@ -450,6 +454,14 @@ def _build_bindings() -> tuple[MigratedCapabilityBinding, ...]:
 
 MIGRATED_BINDINGS = _build_bindings()
 MIGRATED_CAPABILITIES = frozenset(item.capability for item in MIGRATED_BINDINGS)
+
+#: 走 ``composed`` 执行体的能力（``adjusted_bars`` / ``daily_enriched`` / ``sync_daily``）。
+#: 它们**没有自己的传输层**：能力名里的 "provider" 指的是"取原始数据的那条腿"，不是
+#: "谁来执行"。``Client.call`` 因此把它归位进 ``options.kwargs`` 而不是当路由字段递交
+#: ——两者混用会让 ``provider=`` 在规划期就被判成"该 Provider 不支持这个能力"。
+COMPOSED_CAPABILITIES: frozenset[str] = frozenset(
+    item.capability for item in _EXPLICIT_BINDINGS if item.backend == "composed"
+)
 _BINDINGS_BY_KEY = MappingProxyType({item.key: item for item in MIGRATED_BINDINGS})
 _BINDINGS_BY_CAPABILITY = {
     capability: tuple(item for item in MIGRATED_BINDINGS if item.capability == capability)
@@ -672,6 +684,7 @@ def _validate_composed(
     required = {
         "adjusted_bars": 1,
         "sync_daily": 1,
+        "daily_enriched": 1,
     }[capability]
     if len(args) < required:
         raise TypeError(f"{capability} requires at least {required} positional argument(s)")
@@ -687,6 +700,7 @@ def _validate_composed(
             "event_source",
         },
         "sync_daily": {"root", "profile", "chunk", "max_windows"},
+        "daily_enriched": {"count", "start", "adjust", "provider", "event_source"},
     }[capability]
     unknown = sorted(set(kwargs) - allowed)
     if unknown:

@@ -186,7 +186,7 @@ from atst import Client, AsyncClient
 | `call` | `(capability, *args, provider=None, channel=None, currentness="business", **kwargs)` | 便捷通用入口 |
 | `execute_with_policy` | `(spec, *, policy: FallbackPolicy) -> OrchestratedResult` | 显式跨源编排 |
 | `typed` | `(query: CapabilityQuery, **kwargs) -> TypedQueryResult` | 冻结 dataclass 契约 → 强类型记录 |
-| `capabilities` | `() -> tuple[str, ...]` | 能力发现面：**只有名字、没有可用性**，195 项的构成与发不出去的那几个见下节「能力发现面：只有名字，没有可用性」 |
+| `capabilities` | `() -> tuple[str, ...]` | 能力发现面：**只有名字、没有可用性**，197 项的构成与发不出去的那几个见下节「能力发现面：只有名字，没有可用性」 |
 | `capability_statuses` | `() -> dict[str, str]` | 全部迁移能力的 `{name: status}` 真值表（`alive`/`degraded`/`offline`/`needs_verify`）；与只覆盖内核集的 `core_capability_statuses` 互补，状态取自 `catalog/capability.py` 的单一事实源 |
 | `core_capability_statuses` | `() -> dict[str, dict[str, Any]]` | **本实例内核**的能力可用性真值表：逐内核方法区分「任意 Provider 可用」与「默认路径可用」（未注入执行器时默认路径为不可用），据此判断某能力今天是否真的发得出去 |
 | `close` | `()` | 收尾**本实例自建**的内核（`runtime=` 传进来的那份不碰）。默认内核跨调用不持有连接，所以它关的是"借来的东西"这一格所有权，不是连接池——见下节 |
@@ -243,7 +243,7 @@ with Client() as c:
 ### 复权 K 线（`adjusted_bars`）
 
 `adjusted_bars` 是**组合能力**（`composed`）：原始 K 线走选定的行情 Provider，除权除息事件单独取，
-两份在 `atst/domain/adjust.py` 的 `AdjustEngine` 里合成因子。它是 190 个 catalog 迁移能力之一，因此
+两份在 `atst/domain/adjust.py` 的 `AdjustEngine` 里合成因子。它是 192 个 catalog 迁移能力之一，因此
 走**通用入口**而不是某张面的专属路由：
 
 ```python
@@ -265,7 +265,11 @@ with Client() as c:
 入参：`method`（`qfq` 前复权 / `hfq` 后复权 / `fixed` 定点，须配 `anchor_date` / `none` 不复权）、
 `period`（`day` / `week` / `month`——复权按日期定位因子，分钟级没有对应事件）、`count` / `start`
 （游标）、`provider`（原始 K 线来源，缺省 `tdx`；**没有** `vipdoc_root` 时走 Provider 在线取数）、
-`event_source`（缺省 `eastmoney`）。
+`event_source`（缺省 `eastmoney`）、`events`（自带事件集，见下）。
+
+**`events=` 的三种取值不是一回事**：不给（`None`）按 `event_source` 去取；给一张**空表** `[]` 就是
+"不调整"，内核**不会**替你去拉一份回来；给非空表则用它、完全跳过在线取数。表里的行可以是
+`CapitalChange` 模型、也可以是它的 dict 形状（列名同 `to_capital_changes`），两条路都过布局闸。
 
 **事件源为什么默认东财**：TDX `0x000F`（除权除息）的结构化记录布局还没有真机 golden 锁定，拿它当
 复权事件会得到错位的因子（`market` / `code` / 日期全乱）。`event_source="tdx"` 是显式 opt-in，且要过
@@ -276,24 +280,107 @@ with Client() as c:
 里**前一根 bar 的收盘**推出它，所以跨除权日的结果会计入派息；单根孤立 bar（没有前一根）退化为
 `1/(1+S+R)` 并记一条 `adjust_prev_close_missing` 告警。
 
+**窗口延伸（`hfq` / `fixed` 专有）**：后复权因子是 `∏ 1/k_d`，`d` 遍历**全部**事件日，包括窗口之前
+的那些，而每个 `k_d` 都要事件日的前收盘价。窗口盖不住最早事件时，早期因子只能走降级口径，于是
+**同一根 bar 在 `count=5` 与 `count=2000` 下复权结果不同**（不可复现的静默错）。因此 `hfq` / `fixed`
+会把取数窗口**按倍数向后延伸**（×4，硬顶 20000 根），直到盖住最早事件或触到历史尽头；返回给调用方
+的仍然只有它要的那 `count` 根。延伸取数失败时退回原窗口并记 `adjust_window_extend_failed`。
+`qfq` **不延伸**——它归一到最后一根，窗口前的常数因子在归一化时约掉。`daily_enriched` 的 `hfq`
+走同一条延伸逻辑（宽表是批量产物，同一根 bar 在不同批次的值必须一致）。
+
+### 宽表日线（`daily_enriched`）
+
+`daily_enriched` 是**组合能力**（`composed`）：日 K 线（可复权）+ 东财估值序列，按**交易日等值连接**
+拼成一行一交易日的宽表。拼装是纯函数（`atst/domain/enrich.py`），不碰网络，因此口径可以被单测直接钉住。
+
+```python
+from atst import Client
+
+with Client() as c:
+    rows = c.call("daily_enriched", "600519", count=120, adjust="hfq").data
+    # rows[0] is a dict  (24 columns)
+```
+
+| 面 | 调用形状 |
+|----|----------|
+| Python | `Client.call("daily_enriched", symbol, count=120, adjust="hfq")` 或 `Client.daily_enriched(...)` |
+| CLI | `atst daily-enriched sh600519 --adjust hfq --count 120` |
+| HTTP | `POST /v13/query/daily_enriched`，body `{"args":["600519"],"kwargs":{"adjust":"hfq","count":120}}` |
+| WS | `{"method":"query","params":{"capability":"daily_enriched","args":["600519"],"kwargs":{…}}}` |
+| MCP | `query_capability`，`arguments={"capability":"daily_enriched","args":["600519"],"kwargs":{…}}` |
+
+**24 列**（顺序即列契约，见 `ENRICHED_FIELDS`）：`date` `open` `high` `low` `close` `pre_close`
+`pct_chg` `amplitude` `volume` `amount` `turnover` `vol_ratio` `pe_ttm` `pb` `ps_ttm` `pcf_ocf_ttm`
+`total_share` `float_share` `total_mv` `float_mv` `name` `is_st` `is_st_source` `vol_ratio_basis`。
+
+入参：`count`（**单次上限 500**，见下）、`start`（游标）、`adjust`（`none` 缺省 / `qfq` / `hfq`——宽表是
+"一段区间"的产物，没有单一锚点，故不开放 `fixed`）、`provider`（原始日 K 线来源，缺省 `tdx`；
+`vipdoc_root` 配了就优先读本地文件）、`event_source`（除权除息事件来源，缺省 `eastmoney`，
+与 `adjusted_bars` 同款双旋钮——`provider` 管**未复权 K 线**从哪来，`event_source` 管**事件**从哪来）。
+
+**三条容易写错、写错也不报错的口径**（都写在 `atst/domain/enrich.py` 的模块 docstring 里，别处不得
+另立一份）：
+
+| 字段 | 口径 | 为什么必须标注 |
+|------|------|----------------|
+| `turnover` | `raw_volume / float_share × 100`。分子是**复权前**的成交量（股），分母是 `FREE_SHARES_A`（股） | 复权后的 `volume` 与历史流通股本不是同一尺度——`AdjustEngine` 把复权前的量留在 `bar.extra["raw_volume"]`，宽表读的是它 |
+| `vol_ratio` | `raw_volume_t / mean(raw_volume_{t-5..t-1})`，**日频近似** | 真实量比是盘中概念（需要分钟数据），所以每行 `vol_ratio_basis` 恒为 `daily_approx`，不冒充盘中量比 |
+| `is_st` | 简称**前缀**是否 `ST` / `*ST` / `SST` / `S*ST` | A 股没有免费的 `is_st` 历史基准日源，所以 `is_st_source` 恒为 `name_heuristic`；**拿不到简称时 `is_st` 是 `null` 而不是 `false`**（"不知道" ≠ "不是 ST"） |
+
+`pre_close` 取窗口**前一根** K 线（不是当日 `open`、也不是循环里的前一根）；`pct_chg` / `amplitude`
+以它为基准算百分数，`pre_close` 缺失或 ≤0 时两者都是 `null`（不拿 0 硬算）。估值按 `TRADE_DATE`
+**等值连接**，不做 as-of 前向填充——前向填充就是把昨天的估值当今天用。
+
+**无成交日一律 `null`，不报 `0`**：当日 0 成交时 `turnover` 与 `vol_ratio` 都是 `null`。零成交意味着
+这两个指标**没有定义**，报 `0.0` 会被读成"只有正常水平的 0%"；量比的分母窗口里出现停牌日同样作废。
+实测上游 TDX `bars` 在盘中未开盘时会回一根 `volume=0` 的**当日占位 bar**（`close` 沿用昨收），宽表会
+如实把它带出来——所以早盘跑宽表看到末行全 `null` 是上游形状，不是缺数。同理，**没有简称**时
+`is_st` 是 `null`、`is_st_source` 是 `unknown`。
+
+**`count` 为什么卡在 500**：估值序列（东财 `RPT_VALUEANALYSIS_DET`）单页上限就是 500 个交易日。
+超限**当场拒绝**（E1010）而不是静默截断——静默截断会让更早的行估值列全 `null`，调用方分不清
+"这只票那时没有估值"和"我没取到"。更长区间请用 `start` 分段。
+
+**`adjust="hfq"` 会向后延伸取数窗口**：后复权因子从史上第一个事件起累乘，窗口盖不住早期事件时
+那批事件拿不到前收盘价，因子会随 `count` 变化（同一根 bar 短窗口/长窗口两个值）。延伸用倍数增长，
+直到盖住最早事件或触到历史尽头；返回给调用方的仍只有它要的 `count` 行。延伸失败会记
+`adjust_window_extend_failed` 告警（`adjusted_bars` 同一套语义）。
+
+### 配股（`rights_issue`）
+
+`rights_issue` 是东财数据中心 `RPT_IPO_ALLOTMENT` 的直读能力：`ex_dividend_date`（除权日）、
+`rights_ratio_per_10`（每 10 股配股数）、`rights_price`（每股配股价）等。
+
+它必须单独存在，因为 `dividend_history`（`RPT_SHAREBONUS_DET`）虽名为"分红送**配**"，实测**一条配股
+都没有**。配股不进事件集，除权参考价 `(P−D+Pr·R)/(1+S+R)` 里的 `Pr·R` 就恒为 0，配股标的的复权因子
+系统性偏小。`adjusted_bars` / `daily_enriched` 的默认事件源因此是**两路合成**：
+`dividend_history` + `rights_issue`，按除权日**合成一天一条**（拆开会丢 `S·R` 交叉项）。
+
+```python
+c.call("rights_issue", "601398").data   # 工行 2010：0.45（10 配 0.45 股）/ 2.99 元 / 2010-11-24
+```
+
+绝大多数标的从未配股，服务端会回 `code=9201`（"返回数据为空"）——那是**正常回答**而不是故障，
+该源显式接受空集（`allow_empty=True`）。
+
 ### 能力发现面：只有名字，没有可用性
 
 ```python
 from atst import Client
 
-Client.capabilities()   # 195 项 capability 名，按字典序排好
+Client.capabilities()   # 197 项 capability 名，按字典序排好
 ```
 
 发现面有三处出口，交付的都是**纯名字**：
 
 | 出口 | 形状 | 状态字段 |
 |------|------|----------|
-| `Client.capabilities()` / `AsyncClient.capabilities()` | `tuple[str, ...]`，195 项 | 无 |
+| `Client.capabilities()` / `AsyncClient.capabilities()` | `tuple[str, ...]`，197 项 | 无 |
 | `GET /v13/capabilities` | `{"capabilities": [...], "providers": {provider: {channel: [...]}}}` | 无 |
 | WS `runtime.capabilities` | 同上，两份名单 | 无 |
 
-名单的构成是一个可复算的恒等式：195 = 7 个内核直绑能力 ∪ 190 个 catalog 迁移能力，并且与
-`PROVIDERS` 注册表（14 Provider × 59 channel）里出现过的能力名集合逐字相等。三处出口在形状上
+名单的构成是一个可复算的恒等式：197 = 7 个内核直绑能力 ∪ 192 个 catalog 迁移能力，并且与
+`PROVIDERS` 注册表（14 Provider × 60 channel）里出现过的能力名集合逐字相等。三处出口在形状上
 就没有放 `available`/`offline` 的位置——条目类型清一色是 `str`（F-66 裁决 (c)：发现面的形状
 不动，把这条口径写清）。于是**「名字在名单里」只承诺"这条能力有实现、参数契约可校验"，不承诺
 "调用会拿到数据"**。
@@ -323,7 +410,7 @@ request/parser 仍是 inferred 的结构化拦截挡在发包前。下表由
 | `volume_price` | `volume_price_dist` | `0x051A` | 账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
 
 这张表只覆盖 tdx 命令账本管得到的 25 个名字（7 个内核直绑 + 18 个 tdx 客户端族 catalog 绑定）；
-其余 170 个名字走 web 会话 / web adapter / channel adapter / composed 四类后端，不经过命令账本，
+其余 172 个名字走 web 会话 / web adapter / channel adapter / composed 四类后端，不经过命令账本，
 也就无从在这里判生死——它们的可用性由各自的 Provider 契约与 `tests/` 冒烟负责。一处显式登记的
 解析盲区是 `f10`：`f10_client` 的分派按 capability 分岔（`runtime/executor.py` 里 `f10` 走
 `client.download`、其余走 `client.catalog`），绑定表的 `method` 只是标签，所以这一格对不上实现；
@@ -869,7 +956,7 @@ HTTP 面这条路由**只读本地代码表**（`root` 默认 `data/`），不�
 `--doctor` 则不联网体检"清单 vs `data/day/` 的缺口 / 空文件 / 落伍 / 断点漂移"。
 详见 `docs/cookbook/08_daily_history_sync.md`。
 
-### CLI（32 子命令 / 37 个叶子命令）
+### CLI（33 子命令 / 38 个叶子命令）
 
 ```bash
 atst --help
@@ -894,13 +981,14 @@ atst --help
 
 | 命令 | 位置参数 | 旗标 | 落点 |
 |------|----------|------|------|
-| `adjusted-bars` | `symbol` | `--method` `--period` `--count` `--timeout` `--json` | 内核·rows |
+| `adjusted-bars` | `symbol` | `--method` `--period` `--count` `--start` `--provider` `--event-source` `--anchor-date` `--timeout` `--json` | 内核·rows |
 | `all-market` | — | `--node` `--source` `--page-size` `--max-pages` `--timeout` `--json` | 内核·rows |
 | `baidu` | `symbol` | `--kind` `--period` `--count` `--end-time` `--limit` `--timeout` `--json` | 内核·rows |
 | `bars` | `symbol` | `--provider` `--fallback` `--host` `--period` `--count` `--start` `--adjustment` `--start-date` `--end-date` `--currentness` `--strict` | 内核·typed |
 | `blocks` | `block_type` | `--count` `--timeout` `--json` | 直连传输层 |
 | `capabilities` | — | — | 元信息 |
 | `changes` | — | `--types` `--page` `--size` `--json` | 内核·rows |
+| `daily-enriched` | `symbol` | `--count` `--start` `--adjust` `--provider` `--event-source` `--timeout` `--json` | 内核·rows |
 | `f10` | `symbol` | `--file` `--timeout` `--json` | 直连传输层 |
 | `feedback stats` | — | `--json` | 反馈 |
 | `feedback submit` | — | `--message` `--endpoint` `--store-dir` | 反馈 |
@@ -933,12 +1021,12 @@ atst --help
 | `universe` | `kind` | `--source` `--root` `--limit` `--workers` `--show` `--list-class` `--dry-run` `--json` | 本地清单 |
 
 四条组命令（`feedback` / `fund` / `hosts` / `index`）必须给出叶子命令才能执行，所以上表的
-37 行 = 28 支单命令 + 9 支叶子命令。`--json` 只出现在 rows 与直连传输层那两支落点上：
+38 行 = 29 支单命令 + 9 支叶子命令。`--json` 只出现在 rows 与直连传输层那两支落点上：
 内核·typed 那九支**只发 JSON 信封，没有 `--json` 可关**。
 
-下面那 38 行是上表 37 支叶子命令各一条可直接照抄的示例（`f10` 有目录与正文两条）：示例里的每一个
+下面那 39 行是上表 38 支叶子命令各一条可直接照抄的示例（`f10` 有目录与正文两条）：示例里的每一个
 参数都会被真实 parser 解析（`test_every_documented_cli_example_parses`），
-`test_every_leaf_command_has_an_example` 再要求 37 支叶子一支不缺。
+`test_every_leaf_command_has_an_example` 再要求 38 支叶子一支不缺。
 
 ```bash
 atst version                                              # 包版本
@@ -965,6 +1053,7 @@ atst hot --page 1 --size 10                                # 股吧人气榜
 atst margin sh600519 --days 10                             # 融资融券明细
 atst sector-flow --board industry --sort main_net --limit 10    # 板块资金流
 atst adjusted-bars sh600519 --method qfq --count 100       # 复权 K 线
+atst daily-enriched sh600519 --adjust hfq --count 120      # 宽表日线（24 列：K 线 + 派生 + 估值 + 来源标注）
 atst all-market --node hs_a --source sina --max-pages 1    # 全市场行情摘要
 atst minute-klines sh600519 --period 5min --count 48       # 分钟 K 线
 atst baidu sh600519 --kind kline --period day --count 40   # 百度财经源

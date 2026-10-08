@@ -95,6 +95,8 @@ __all__ = [
     "EastmoneyForecastSource",
     "EastmoneyIpoSource",
     "VALID_REPORTS",
+    "EMPTY_RESULT_CODE",
+    "is_empty_result",
 ]
 
 #: 实测可用的 datacenter-web 报表名（写死前须重新抓包验证）
@@ -108,6 +110,18 @@ VALID_REPORTS: dict[str, str] = {
     "ipo": "RPTA_APP_IPOAPPLY",
     # 分红送配（2026-09-06 实测可用；字段较稀疏，金额单位以东财报表页为准）
     "dividend": "RPT_SHAREBONUS_DET",
+    # 配股（2026-10-07 实测可用）。报表名取自 akshare ``stock_pg_em`` 源码
+    # （data.eastmoney.com/xg/pg/），**不是按命名惯例猜的**——猜的
+    # RPT_ALLOTMENT_DET / RPT_SHARE_ALLOTMENT / RPT_RIGHTS_ISSUE_DET /
+    # RPT_SECURITY_ALLOTMENT 四个全部返回 9501（报表配置不存在）。
+    #
+    # 关键：``RPT_SHAREBONUS_DET`` 只覆盖分红送转，**一条配股都没有**（工行/中行/
+    # 招行/浦发/兴业 2010 年都做过配股，实测返回 0 条含"配"的方案）。配股必须走
+    # 这张独立报表，否则 ``CapitalChange.rights_*`` 恒为 0，配股标的除权价算错。
+    # 真机列名（sh601398，2010 年配股，与公开方案 10配0.45股@2.99元 对拍一致）：
+    # ``PLACING_RATIO``=0.45（每 10 股配股数）/ ``ISSUE_PRICE``=2.99（配股价）/
+    # ``EX_DIVIDEND_DATE``（除权日）/ ``EQUITY_RECORD_DATE``（股权登记日）。
+    "rights_issue": "RPT_IPO_ALLOTMENT",
     # ---- 治理 / 评级预测（2026-09-09 扩展，best-effort 映射）----
     # 董监高持股明细（内部人减持 / 套现排查）
     "executive_hold": "RPT_EXECUTIVE_HOLD_DETAILS",
@@ -145,6 +159,33 @@ VALID_REPORTS: dict[str, str] = {
     # （区别于 forecast=RPT_PUBLIC_OP_NEWPREDICT 新版结构化字段）
     "earnings_preview": "RPT_PUBLIC_OP_PREDICT",
 }
+
+#: datacenter-web 用这个 code 表示「该 filter 下没有记录」（``success=false`` +
+#: ``message=返回数据为空``）。配股一类**天然稀疏**的报表会正常命中它：绝大多数标的
+#: 从未配股，9201 是正常回答而不是故障——见
+#: :meth:`EastmoneyDataCenterSource._parse_rows_meta` 的 ``allow_empty``。
+EMPTY_RESULT_CODE = 9201
+
+
+def is_empty_result(payload: Any) -> bool:
+    """这次 datacenter-web 应答是不是「该 filter 下没有记录」（``code=9201``）。
+
+    单点判据，供所有需要 ``allow_empty`` 的解析器共用：三处各写一遍"9201 算不算空"
+    迟早会分叉（一处按 int 比、一处按 str 比），而分叉出来的那半边是静默的——
+    "没配过股"会变成一次故障，或者反过来，一次真故障被当成空集吞掉。
+    """
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            return False
+    if not isinstance(payload, Mapping):
+        return False
+    code = payload.get("code")
+    if isinstance(code, str) and code.strip().isdigit():
+        code = int(code.strip())
+    return not payload.get("success") and code == EMPTY_RESULT_CODE
+
 
 _HOSTS = (
     "https://datacenter-web.eastmoney.com",
@@ -239,6 +280,7 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
         report: str | None = None,
         all_pages: bool = False,
         max_pages: int = 50,
+        allow_empty: bool = False,
     ) -> list[dict[str, Any]]:
         """查询报表并返回原始行（列名即报表字段名）。
 
@@ -249,6 +291,9 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
         终止条件为「服务端报告页数取尽」「短页」或 ``max_pages`` 防御
         上限（耗尽仍满页时发 :class:`UserWarning`）。默认 ``False``
         保持旧的单页语义。
+
+        ``allow_empty``：见 :meth:`_parse_rows_meta`——稀疏报表查不到记录是
+        正常回答，不当故障抛。
         """
         if not all_pages:
             self.rate_limiter.acquire(self.source_name)
@@ -260,7 +305,7 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
                 size=size,
                 report=report,
             )
-            return self.parse_rows(self._get_json(query))
+            return self.parse_rows(self._get_json(query), allow_empty=allow_empty)
         return self._fetch_rows_all(
             filters=filters,
             sort_columns=sort_columns,
@@ -269,6 +314,7 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
             size=size,
             report=report,
             max_pages=max_pages,
+            allow_empty=allow_empty,
         )
 
     def _fetch_rows_all(
@@ -281,6 +327,7 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
         size: int,
         report: str | None,
         max_pages: int,
+        allow_empty: bool = False,
     ) -> list[dict[str, Any]]:
         """翻页拉全量（v5 PG3）：pages 元数据优先，短页/防御上限兜底。"""
         out: list[dict[str, Any]] = []
@@ -296,7 +343,7 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
                 size=size,
                 report=report,
             )
-            rows, meta = self._parse_rows_meta(self._get_json(query))
+            rows, meta = self._parse_rows_meta(self._get_json(query), allow_empty=allow_empty)
             out.extend(rows)
             if pages_total is None and meta.get("pages"):
                 try:
@@ -329,6 +376,7 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
         report: str | None = None,
         all_pages: bool = False,
         max_pages: int = 50,
+        allow_empty: bool = False,
     ) -> list[dict[str, Any]]:
         """按证券代码过滤查询（``filter=(COLUMN="600519")``）。"""
         from ..domain.symbol import split_symbol
@@ -343,14 +391,26 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
             report=report,
             all_pages=all_pages,
             max_pages=max_pages,
+            allow_empty=allow_empty,
         )
 
-    def parse_rows(self, payload: Any) -> list[dict[str, Any]]:
+    def parse_rows(self, payload: Any, *, allow_empty: bool = False) -> list[dict[str, Any]]:
         """校验 ``success`` 并取出 ``result.data``。"""
-        return self._parse_rows_meta(payload)[0]
+        return self._parse_rows_meta(payload, allow_empty=allow_empty)[0]
 
-    def _parse_rows_meta(self, payload: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        """校验 ``success`` 并取出 ``result.data`` 与分页元数据（v5 PG3）。"""
+    def _parse_rows_meta(
+        self,
+        payload: Any,
+        *,
+        allow_empty: bool = False,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """校验 ``success`` 并取出 ``result.data`` 与分页元数据（v5 PG3）。
+
+        ``allow_empty``：服务端用 ``code=9201 返回数据为空`` 表示"这个 filter 下没有
+        记录"。对配股一类**天然稀疏**的报表，绝大多数标的本来就没有记录，9201 是
+        正常回答而不是故障——把它一律当错误抛，会让"没配过股"变成一次调用失败。
+        开关是**显式**的：只有真的能接受空集的调用点才传 True，其余一律照旧抛。
+        """
         if isinstance(payload, str):
             try:
                 payload = json.loads(payload)
@@ -361,6 +421,8 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
                     cause=exc,
                 ) from exc
         if not payload.get("success"):
+            if allow_empty and is_empty_result(payload):
+                return [], {"pages": 0, "count": 0}
             raise WebSourceError(
                 f"报表查询失败: {payload.get('message')} (code={payload.get('code')})",
                 context={"source": CORPORATE, "report": self.report},

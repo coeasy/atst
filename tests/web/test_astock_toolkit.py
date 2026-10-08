@@ -14,6 +14,7 @@ from atst.web.astock_toolkit import (
     EastmoneyDividendSource,
     EastmoneyFinanceMainSource,
     EastmoneyHolderChangeSource,
+    EastmoneyRightsIssueSource,
     EastmoneyValuationSource,
 )
 from atst.web.base import HttpResponse
@@ -282,3 +283,76 @@ class TestValuationHistoryBounds:
         assert result == [{"TRADE_DATE": "2026-10-01"}]
         assert calls[0][0] == "RPT_VALUEANALYSIS_DET"
         assert calls[0][1]["size"] == 250
+
+
+RIGHTS_ISSUE = _j(
+    {
+        "success": True,
+        "result": {
+            "data": [
+                {
+                    "SECURITY_CODE": "601398",
+                    "SECURITY_NAME_ABBR": "工商银行",
+                    "EX_DIVIDEND_DATE": "2010-11-24",
+                    "EQUITY_RECORD_DATE": "2010-11-15",
+                    "PLACING_RATIO": 0.45,
+                    "ISSUE_PRICE": 2.99,
+                    "LISTING_DATE": "2010-11-30",
+                }
+            ],
+            "pages": 1,
+        },
+    }
+)
+
+#: 稀疏报表的"没有记录"应答：``success=false`` + ``code=9201``，不是故障。
+EMPTY_RESULT = _j({"success": False, "code": 9201, "message": "返回数据为空"})
+
+
+def _rights(*, empty: bool = False) -> EastmoneyRightsIssueSource:
+    body = EMPTY_RESULT if empty else RIGHTS_ISSUE
+    return EastmoneyRightsIssueSource(client=FakeHttpClient(RPT_IPO_ALLOTMENT=body))
+
+
+class TestRightsIssue:
+    """配股（``RPT_IPO_ALLOTMENT``）：分红表里没有的那一半事件。"""
+
+    def test_parses_real_columns(self) -> None:
+        rows = _rights().fetch_rights_issue("sh601398")
+        assert len(rows) == 1
+        r = rows[0]
+        assert r["code"] == "601398"
+        assert r["ex_dividend_date"] == "2010-11-24"
+        assert r["rights_ratio_per_10"] == pytest.approx(0.45)
+        assert r["rights_price"] == pytest.approx(2.99)
+
+    def test_empty_result_is_normal_for_a_sparse_report(self) -> None:
+        #: 绝大多数标的从未配股。若把 9201 当故障抛，"没配过股"就成了一次调用失败。
+        assert _rights(empty=True).fetch_rights_issue("sh600519") == []
+
+    def test_empty_result_still_raises_without_the_explicit_opt_in(self) -> None:
+        #: 开关是显式的：默认（不传 allow_empty）照旧抛，免得真故障被当空集吞掉。
+        from atst.web.corporate import EMPTY_RESULT_CODE, is_empty_result
+
+        payload = json.loads(EMPTY_RESULT)
+        assert payload["code"] == EMPTY_RESULT_CODE
+        assert is_empty_result(payload) is True
+        assert is_empty_result({"success": True, "result": {"data": []}}) is False
+        assert is_empty_result({"success": False, "code": 9501}) is False
+        assert is_empty_result("不是 JSON") is False
+
+    def test_code_may_arrive_as_string(self) -> None:
+        #: 上游有时把 code 发成字符串；判据不能只认 int。
+        from atst.web.corporate import is_empty_result
+
+        assert is_empty_result({"success": False, "code": "9201"}) is True
+
+
+class TestMarginEmptyOptIn:
+    """``EastmoneyMarginSource.parse_rows`` 接了 ``allow_empty`` 就必须真的用它。"""
+
+    def test_empty_payload_returns_no_rows(self) -> None:
+        from atst.web.eastmoney.adapters import EastmoneyMarginSource
+
+        src = EastmoneyMarginSource(client=FakeHttpClient())
+        assert src.parse_rows(json.loads(EMPTY_RESULT), allow_empty=True) == []

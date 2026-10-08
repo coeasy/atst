@@ -34,7 +34,7 @@ from ..base import (
 from ..base import (
     num_i as _i,
 )
-from ..corporate import EastmoneyDataCenterSource
+from ..corporate import EastmoneyDataCenterSource, is_empty_result
 from ..sources import EASTMONEY, INDEX_CONS, MARGIN
 
 __all__ = [
@@ -432,7 +432,13 @@ class EastmoneyMarginSource(EastmoneyDataCenterSource):
             ) from exc
         return self._normalize(payload)
 
-    def parse_rows(self, payload: Any) -> list[dict[str, Any]]:
+    def parse_rows(self, payload: Any, *, allow_empty: bool = False) -> list[dict[str, Any]]:
+        """本类的行形状与基类不同（融资融券要摊平 ``MARKET``/``SCODE`` 等列），
+        因此自己归一化。但 ``allow_empty`` 的**语义必须与基类一致**：接了这个开关
+        却不用，等于对调用方撒谎——"空结果不算故障"会在这一条源上悄悄失效。
+        """
+        if allow_empty and is_empty_result(payload):
+            return []
         return self._normalize(payload)
 
     def _normalize(self, payload: Any) -> list[dict[str, Any]]:

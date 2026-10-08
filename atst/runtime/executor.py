@@ -194,6 +194,32 @@ _ADJUSTABLE_PERIODS: frozenset[str] = frozenset({"day", "week", "month"})
 #: :func:`atst.domain.finance.reject_implausible_changes` 那道闸。
 _ADJUST_EVENT_SOURCES: frozenset[str] = frozenset({"eastmoney", "tdx"})
 
+#: 复权事件分页。``dividend_history`` 的 ``size`` 默认是 **20**，而长历史标的实有
+#: 更多（600519 实测 28 条）。过去 ``_adjusted_events`` 不传 size，早期除权事件被
+#: 静默截断——因子少乘一段却不报错，是这条链路里最危险的一类错。这里显式翻页到尽。
+_ADJUST_EVENT_PAGE_SIZE: int = 100
+#: 1000 条已是 A 股单只标的除权事件数的量级上界（1990 年至今每年最多 1~2 次），
+#: 触顶说明上游在异常翻页，宁可告警也不无限翻。
+_ADJUST_EVENT_MAX_PAGES: int = 10
+
+#: 后复权/定点复权的因子是从**史上第一个事件**起累乘的。若最早的事件早于 K 线窗口
+#: 起点，那批事件拿不到各自的前收盘价，只能走 ``1/(1+S+R)`` 的降级口径——因子于是
+#: **随请求的 ``count`` 变化**：同一根 bar 在短窗口和长窗口下复权结果不同。这既不可
+#: 复现，也是静默错（拿 short 窗口做回测，早期因子的偏差会被当成"真实价格"）。
+#: 这里把取数窗口向后延伸，直到盖住最早的事件或触到历史尽头。
+#: 增长用倍数（不是线性 +N 步进）是为了把请求数压在对数量级：320 → 1280 → 5120 → 20480。
+_ADJUST_WINDOW_GROWTH: int = 4
+#: 1990 年开市至今单只标的的日线根数量级上界（约 8600 个交易日），留一倍余量作硬顶。
+_ADJUST_HISTORY_MAX: int = 20_000
+
+#: ``daily_enriched`` 的复权方式。定点复权要 anchor_date，宽表是"一段区间"的产物，
+#: 没有单一锚点语义，因此只开放三种。
+_ENRICH_ADJUSTMENTS: frozenset[str] = frozenset({"none", "qfq", "hfq"})
+#: 估值序列（``RPT_VALUEANALYSIS_DET``）的单页硬上限：**500 个交易日**。
+#: 超过就得用 ``start`` 偏移分段取——静默截断会让老行的估值列变成 None，
+#: 调用方看不出那是"没有"还是"没取到"，所以这里直接拒绝。
+_ENRICH_MAX_COUNT: int = 500
+
 
 def _day_in_range(day: str, start_date: str, end_date: str) -> bool:
     """闭区间判定。``day`` 取不到时**保留**该行：裁不掉的行宁可留着让调用方看见，
@@ -659,32 +685,150 @@ class DirectProviderExecutor:
     ) -> list[Any]:
         """取复权事件。默认东财（已对拍），``tdx`` 需显式点名并过布局闸。"""
         from ..domain.finance import (
-            capital_changes_from_dividends,
             reject_implausible_changes,
             to_capital_changes,
         )
 
         if event_source == "eastmoney":
+            from ..diagnostics import WarningCode, record_warning
+            from ..domain.finance import capital_changes_from_dividends_and_rights
             from ..query import QueryPlanner, QuerySpec
 
-            rows = self.execute(
-                QueryPlanner().compile(
-                    QuerySpec.build(
-                        "dividend_history",
-                        symbols=symbol,
-                        provider="eastmoney",
-                        currentness="historical",
-                    )
+            def page_all(capability: str) -> list[Any]:
+                """翻页到尽。``dividend_history`` 的 ``size`` 默认只有 20，
+                长历史标的的早期事件会被静默截断（600519 实有 28 条）。"""
+                collected: list[Any] = []
+                for page in range(1, _ADJUST_EVENT_MAX_PAGES + 1):
+                    batch = self.execute(
+                        QueryPlanner().compile(
+                            QuerySpec.build(
+                                capability,
+                                symbols=symbol,
+                                provider="eastmoney",
+                                currentness="historical",
+                                options={
+                                    "args": [str(symbol)],
+                                    "kwargs": {
+                                        "page": page,
+                                        "size": _ADJUST_EVENT_PAGE_SIZE,
+                                    },
+                                },
+                            )
+                        )
+                    ).data
+                    batch = list(batch or [])
+                    collected.extend(batch)
+                    if len(batch) < _ADJUST_EVENT_PAGE_SIZE:
+                        return collected
+                #: 触顶不是"取完了"：最后一页仍是满页，说明还有没取到的事件。
+                record_warning(
+                    WarningCode.WEB_EASTMONEY_PAGE_LIMIT,
+                    f"{symbol} 的 {capability} 在 {_ADJUST_EVENT_MAX_PAGES} 页内未取尽"
+                    f"（每页 {_ADJUST_EVENT_PAGE_SIZE} 条）：已取 {len(collected)} 条，"
+                    "更早期事件可能缺失。",
+                    stacklevel=2,
                 )
-            ).data
-            return capital_changes_from_dividends(rows, code=str(symbol))
+                return collected
+
+            #: 两路合成：分红送转（RPT_SHAREBONUS_DET）+ 配股（RPT_IPO_ALLOTMENT）。
+            #: 配股不补，除权价公式里的 ``Pr·R`` 恒为 0，配股标的的因子系统性偏小。
+            return capital_changes_from_dividends_and_rights(
+                page_all("dividend_history"),
+                page_all("rights_issue"),
+                code=str(symbol),
+            )
+
+        from ..domain.models import CapitalChange
 
         with self._client_session(self._tdx_client(timeout)) as client:
             raw = list(client.capital_changes(symbol))
-        events = to_capital_changes(raw)
+        #: ``TdxClient.capital_changes`` 已经返回 :class:`CapitalChange` 模型（解析行在
+        #: 客户端里就转过了），而 :func:`to_capital_changes` 吃的是**解析行 dict**。
+        #: 过去这里无条件套一层转换，于是 ``event_source="tdx"`` 每次都炸在
+        #: ``row.get(...)`` 上、被兜成 E9000 InternalError——一条只对内部说得通的错，
+        #: 调用方根本读不出"这条路不通，换 eastmoney"。这里按类型分派，让错误回到
+        #: 它该在的地方：布局闸给出的 ValidationError。
+        events = list(raw) if raw and isinstance(raw[0], CapitalChange) else to_capital_changes(raw)
         #: 布局未锁定 → 错位记录不许进引擎（错位的复权比不复权危险得多）。
         reject_implausible_changes(events)
         return events
+
+    def _extend_window_to_events(
+        self,
+        bars: list[Any],
+        events: Sequence[Any],
+        *,
+        symbol: str,
+        period: str,
+        start: int,
+        target: int,
+        raw_provider: str,
+        timeout: float,
+    ) -> list[Any]:
+        """把 K 线窗口向后延伸，直到盖住最早的复权事件（或触到历史尽头）。
+
+        为什么必须有这一步：后复权因子是 ``∏ 1/k_d``，``d`` 遍历**全部**事件日——
+        包括窗口之前的那些。而每个 ``k_d`` 都需要该事件日的**前收盘价**，它只能从
+        该事件日之前那根 K 线拿到。窗口盖不住那些事件时，引擎只能走 ``1/(1+S+R)``
+        的降级口径，于是**同一根 bar 在 ``count=5`` 与 ``count=2000`` 下复权结果不同**：
+        实测某标的 hfq 因子 1.045 与 1.642 并存。这既不可复现，也是静默错——拿短窗口
+        做回测，早期因子的偏差会被当成真实价格。
+
+        延伸用**倍数增长**（``_ADJUST_WINDOW_GROWTH``）而非线性步进，把请求数压在
+        对数量级；一旦某次取回的根数不再增加，说明已经到历史尽头，就此收手——剩下的
+        事件真的没有更早的 K 线可依，引擎会照旧记 ``ADJUST_PREV_CLOSE_MISSING``。
+        ``_ADJUST_HISTORY_MAX`` 是防御上限：真到那儿说明上游在异常应答，不再无限翻。
+        """
+
+        def first_day(rows: Sequence[Any]) -> str:
+            if not rows:
+                return ""
+            return str(getattr(rows[0], "datetime", "") or "")[:10]
+
+        event_days = [str(getattr(ev, "date", "") or "")[:10] for ev in events]
+        event_days = [d for d in event_days if d]
+        if not event_days:
+            return bars
+        earliest_event = min(event_days)
+
+        def uncovered(rows: Sequence[Any]) -> bool:
+            day = first_day(rows)
+            return bool(day) and earliest_event < day
+
+        if not uncovered(bars):
+            return bars
+
+        grown = target
+        while grown < _ADJUST_HISTORY_MAX:
+            grown = min(grown * _ADJUST_WINDOW_GROWTH, _ADJUST_HISTORY_MAX)
+            try:
+                candidate = self._adjusted_raw_bars(
+                    symbol,
+                    period=period,
+                    count=grown,
+                    start=start,
+                    raw_provider=raw_provider,
+                    timeout=timeout,
+                )
+            except Exception as exc:  # noqa: BLE001 - 延伸失败退回原窗口，但要留话
+                #: 不能静默退回去：退回原窗口意味着早期事件拿不到前收盘价，因子会随
+                #: 请求的 ``count`` 漂移（同一根 bar 短窗口/长窗口两个值）。调用方看到
+                #: 的必须是"这次因子可能是漂移值"，而不是一个看着正常的数。
+                record_warning(
+                    WarningCode.ADJUST_WINDOW_EXTEND_FAILED,
+                    f"{symbol} 的复权窗口向后延伸取数失败（{type(exc).__name__}: {exc}）；"
+                    f"已退回最近 {len(bars)} 根。若最早事件（{earliest_event}）早于窗口起点，"
+                    "它的前收盘价取不到，早期因子会随 count 变化。",
+                    stacklevel=2,
+                )
+                return bars
+            #: 根数不再增加 = 历史取完了。再往下翻只是重复同一段。
+            if len(candidate) <= len(bars):
+                return candidate or bars
+            bars = list(candidate)
+            if not uncovered(bars):
+                break
+        return bars
 
     def _composed_call(
         self,
@@ -696,7 +840,7 @@ class DirectProviderExecutor:
         timeout: float,
     ) -> Any:
         if capability == "adjusted_bars":
-            from ..domain.adjust import AdjustEngine
+            from ..domain.adjust import AdjustEngine, AdjustMethod
             from ..domain.finance import to_capital_changes
             from ..domain.models import CapitalChange
 
@@ -723,26 +867,59 @@ class DirectProviderExecutor:
                     context={"period": period, "supported": sorted(_ADJUSTABLE_PERIODS)},
                 )
 
+            #: 多取一根（窗口**前**一根）再裁掉：复权引擎拿它当最早那批除权事件的
+            #: 「前收盘价」，否则每股现金红利被整项忽略（ADJUST_PREV_CLOSE_MISSING）。
+            #: 调用方看到的根数不变。
+            lead = 1 if count > 0 else 0
+            want = count + lead
             bars = self._adjusted_raw_bars(
                 symbol,
                 period=period,
-                count=count,
+                count=want,
                 start=start,
                 raw_provider=raw_provider,
                 timeout=timeout,
             )
 
-            if not events:
+            #: ``events`` 的三态必须分清：
+            #:
+            #: * ``None``（没给）→ 按 ``event_source`` 去取事件；
+            #: * ``[]``（显式给了空表）→ **就是不调整**，不要偷偷去拉一份回来。
+            #:   这里过去写的是 ``if not events:``，把 ``[]`` 和 ``None`` 混成一类，
+            #:   于是 "我把事件集清空了" 被静默换成 "我去东财拉一份"——同一句话两种
+            #:   结果，而且没有任何地方会说。
+            #: * 非空 → 用调用方给的事件集（``CapitalChange`` 或等价 dict 行）。
+            if events is None:
                 events = self._adjusted_events(symbol, event_source, timeout=timeout)
             event_list = list(events)
             if event_list and not isinstance(event_list[0], CapitalChange):
                 event_list = to_capital_changes(event_list)
-            return AdjustEngine().apply(
+
+            #: 后复权/定点复权要把**窗口之前**的事件也累乘进去，而那批事件需要各自的
+            #: 前收盘价。窗口盖不住它们时只能走降级口径，因子随 count 漂移（不可复现）。
+            #: 这里按倍数向后延伸取数窗口，直到盖住最早的事件或触到历史尽头；返回给
+            #: 调用方的仍然只有它要的那 ``count`` 根。
+            if method in (AdjustMethod.HFQ, AdjustMethod.FIXED) and event_list and bars:
+                bars = self._extend_window_to_events(
+                    bars,
+                    event_list,
+                    symbol=symbol,
+                    period=period,
+                    start=start,
+                    target=want,
+                    raw_provider=raw_provider,
+                    timeout=timeout,
+                )
+
+            adjusted = AdjustEngine().apply(
                 list(bars),
                 event_list,
                 method,
                 anchor_date=anchor_date,
             )
+            if count > 0 and len(adjusted) > count:
+                return adjusted[len(adjusted) - count :]
+            return adjusted
 
         if capability == "sync_daily":
             from ..sink import LocalDaySink
@@ -791,6 +968,90 @@ class DirectProviderExecutor:
                         "last_date": sink.last_date(normalized),
                     }
             return out
+
+        if capability == "daily_enriched":
+            from ..domain.enrich import enrich_daily_bars
+            from ..query import QueryPlanner, QuerySpec
+
+            symbol = str(args[0])
+            count = int(kwargs.pop("count", 250))
+            start = int(kwargs.pop("start", 0))
+            adjust = str(kwargs.pop("adjust", "none") or "none").strip().lower()
+            bar_provider = str(kwargs.pop("provider", "") or "").strip().lower() or "tdx"
+            #: 与 ``adjusted_bars`` 同款双旋钮：``provider`` 管未复权 K 线从哪来，
+            #: ``event_source`` 管除权除息事件从哪来。默认东财（已对拍）。
+            event_source = str(kwargs.pop("event_source", "") or "").strip().lower() or "eastmoney"
+            if event_source not in _ADJUST_EVENT_SOURCES:
+                raise ValidationError(
+                    "daily_enriched 不认识的 event_source",
+                    context={
+                        "event_source": event_source,
+                        "supported": sorted(_ADJUST_EVENT_SOURCES),
+                    },
+                )
+            if adjust not in _ENRICH_ADJUSTMENTS:
+                raise ValidationError(
+                    "daily_enriched 不认识的 adjust",
+                    context={"adjust": adjust, "supported": sorted(_ENRICH_ADJUSTMENTS)},
+                )
+            if count < 1:
+                raise ValidationError("daily_enriched 的 count 必须 >= 1", context={"count": count})
+            if count > _ENRICH_MAX_COUNT:
+                #: 不静默截断：老行的估值列会变成 None，调用方分不清"没有"和"没取到"。
+                raise ValidationError(
+                    "daily_enriched 单次最多覆盖估值序列的单页上限 "
+                    f"{_ENRICH_MAX_COUNT} 个交易日；更长的区间请用 start 偏移分段",
+                    context={"count": count, "limit": _ENRICH_MAX_COUNT},
+                )
+
+            #: 多取一根（窗口前一根）让首行也拿到真实 pre_close，算完裁掉。
+            lead = 1
+            want = count + lead
+            bars = self._adjusted_raw_bars(
+                symbol,
+                period="day",
+                count=want,
+                start=start,
+                raw_provider=bar_provider,
+                timeout=timeout,
+            )
+            if adjust != "none":
+                from ..domain.adjust import AdjustEngine, AdjustMethod
+
+                events = self._adjusted_events(symbol, event_source, timeout=timeout)
+                if adjust == AdjustMethod.HFQ and events and bars:
+                    #: 与 ``adjusted_bars`` 同一条理由：hfq 的因子从史上第一个事件起
+                    #: 累乘，窗口盖不住早期事件时因子会随 ``count`` 漂移。宽表是批量
+                    #: 产物，同一根 bar 在不同批次的值不一致会让下游对不上账。
+                    bars = self._extend_window_to_events(
+                        bars,
+                        events,
+                        symbol=symbol,
+                        period="day",
+                        start=start,
+                        target=want,
+                        raw_provider=bar_provider,
+                        timeout=timeout,
+                    )
+                bars = AdjustEngine().apply(list(bars), events, adjust)
+            valuation = self.execute(
+                QueryPlanner().compile(
+                    QuerySpec.build(
+                        "valuation_history",
+                        symbols=symbol,
+                        provider="eastmoney",
+                        currentness="historical",
+                        options={
+                            "args": [symbol],
+                            "kwargs": {"count": min(_ENRICH_MAX_COUNT, count + lead)},
+                        },
+                    )
+                )
+            ).data
+            rows = enrich_daily_bars(list(bars), list(valuation or []))
+            if len(rows) > count:
+                return rows[len(rows) - count :]
+            return rows
 
         raise ValidationError(
             "unknown composed capability",

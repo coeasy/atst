@@ -1,6 +1,6 @@
 # API 参考
 
-当前 `1.4.3` 源码候选；最新已发布 GitHub Release 为 [`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2)，本包**不在 PyPI 上** · [v1.0.0 发布说明](../releases/v1.0.0.md) · [v1.1.0 发布说明](../releases/v1.1.0.md) · [v1.2.0 发布说明](../releases/v1.2.0.md) · [v1.2.1 发布说明](../releases/v1.2.1.md) · [v1.2.2 发布说明](../releases/v1.2.2.md) · [v1.3.0 发布说明](../releases/v1.3.0.md) · [v1.4.0 发布说明](../releases/v1.4.0.md) · [v1.4.1 发布说明](../releases/v1.4.1.md) · [v1.4.2 发布说明](../releases/v1.4.2.md) · [v1.4.3 发布说明](../releases/v1.4.3.md)
+当前 `1.5.0` 源码候选；最新已发布 GitHub Release 为 [`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2)，本包**不在 PyPI 上** · [v1.0.0 发布说明](../releases/v1.0.0.md) · [v1.1.0 发布说明](../releases/v1.1.0.md) · [v1.2.0 发布说明](../releases/v1.2.0.md) · [v1.2.1 发布说明](../releases/v1.2.1.md) · [v1.2.2 发布说明](../releases/v1.2.2.md) · [v1.3.0 发布说明](../releases/v1.3.0.md) · [v1.4.0 发布说明](../releases/v1.4.0.md) · [v1.4.1 发布说明](../releases/v1.4.1.md) · [v1.4.2 发布说明](../releases/v1.4.2.md) · [v1.4.3 发布说明](../releases/v1.4.3.md) · [v1.5.0 发布说明](../releases/v1.5.0.md)
 
 > 本页对应 v1.0.0 + **v13/v17 单一执行内核**。完整 docstring 驱动文档
 > 由 `pdoc`/`mkdocstrings` 生成；此处提供稳定入口和模块索引。
@@ -33,7 +33,7 @@
 | `atst.catalog.capability` | capability 目录 + 规划期真实签名校验（`validate_call`）|
 | `atst.catalog.provider_bindings` | Provider `channel → adapter` 绑定表 |
 | `atst.catalog.provider_contract` / `provider_guard` / `*_audit` | Provider 隔离契约、运行时守卫与一致性审计 |
-| `atst.providers.PROVIDERS` | 14 Provider × 59 channel × 195 capability 唯一事实源；能力发现面只声明名字、不声明可用性，见 [interfaces.md](interfaces.md)「能力发现面」 |
+| `atst.providers.PROVIDERS` | 14 Provider × 60 channel × 197 capability 唯一事实源；能力发现面只声明名字、不声明可用性，见 [interfaces.md](interfaces.md)「能力发现面」 |
 
 ## 核心入口
 
@@ -123,7 +123,7 @@
 | `atst.integration.runtime_ws_server` | WS 服务宿主（`serve_runtime_ws`；一键拉起 `python -m atst.integration.runtime_ws_server`）|
 | `atst.integration.mcp` | MCP stdio 工具（9 项：`query_capability`/`get_bars`/`get_quote`/`get_quotes`/`get_snapshot`/`get_minute_today`/`get_trades`/`get_security_count`/`get_security_list`；一键拉起 `python -m atst.integration.mcp`，不需要 extra。复权 K 线走 query_capability 通用入口）|
 | `atst.integration.serialization` | `QueryResult → JSON-safe` 统一序列化 |
-| `atst.cli` | CLI 子命令（32 项；数据命令全部经 `Client`，6 个传输/诊断命令除外，见 `runtime_commands.py`）|
+| `atst.cli` | CLI 子命令（33 项；数据命令全部经 `Client`，6 个传输/诊断命令除外，见 `runtime_commands.py`）|
 
 ## 迁移指南
 

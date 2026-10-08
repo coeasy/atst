@@ -9,6 +9,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.5.0] - 2026-10-08
+
+### Added
+
+- **宽表日线 `daily_enriched`**（组合能力，24 列 = K 线 6 + 派生 6 + 估值 9 + 3 列来源标注），
+  一行一交易日，日 K 线（`none` / `qfq` / `hfq`）与东财逐日估值按**交易日等值连接**。
+  拼装是纯函数（`atst/domain/enrich.py`），四条易错口径写死在模块 docstring 里：
+  `pre_close` 取窗口**前一根**、`turnover` 的分母是 `FREE_SHARES_A`、`vol_ratio` 是**日频近似**
+  且带 `vol_ratio_basis`、`is_st` 是**名称前缀启发式**且带 `is_st_source`。`count` 卡在估值
+  单页上限 500，超限当场 E1010 而不是静默截断。四面（Python / CLI `daily-enriched` /
+  HTTP `POST /v13/query/daily_enriched` / WS `query` / MCP `query_capability`）全通。
+- **配股事件源 `rights_issue`**（东财 `RPT_IPO_ALLOTMENT`）：复权事件的 `Pr·R` 项此前恒为 0，
+  配股标的的因子系统性偏小。现在 `dividend_history`（`RPT_SHAREBONUS_DET`）与配股两路按
+  **除权日**合成一天一条，再进 `AdjustEngine`。
+- CLI `adjusted-bars` 补齐 `--start` / `--provider` / `--event-source` / `--anchor-date`；
+  新增子命令 `daily-enriched --count --start --adjust --provider --event-source`。
+- 新告警码 `adjust_window_extend_failed`。
+
+### Fixed
+
+- **组合能力的 `provider=` 是死参数**：`Client.adjusted_bars(..., provider="tdx")` 在规划期就被判成
+  "provider 'tdx' 不支持 capability 'adjusted_bars'"，而执行体里读 `kwargs["provider"]` 的那一行
+  永远读不到东西。现在 `Client.call` 对 `COMPOSED_CAPABILITIES` 把这个值归位到 `options.kwargs`
+  ——它在组合能力上的语义是"取**未复权原始 K 线**的那条腿"，不是"谁来执行"。
+- **后复权/定点复权因子随 `count` 漂移**（静默错，不可复现）：窗口盖不住早期事件时，那批事件拿不到
+  事件日前收盘价，引擎走 `1/(1+S+R)` 降级口径、现金红利被整项丢掉——实测同一根 bar 在
+  `count=5` 与 `count=2000` 下因子并存两个值（1.045 / 1.642）。现在 `hfq` / `fixed` 把取数窗口
+  按倍数（×4，硬顶 20000）向后延伸直到盖住最早事件；修后 `600519 / 601398 / 000001 / 600601`
+  在 `count=5 / 60 / 2000` 下因子完全一致（7.39106838 / 2.56716562 / 155.67349278 / 116.77316777）。
+  延伸取数失败不再静默退回，改记 `adjust_window_extend_failed`。
+- **前收盘价按"循环里的前一根"定位**：同一间隔内多个事件会共用同一个基准价。改为按**事件日**
+  `bisect_left` 定位。
+- **复权后的 `volume` 被拿去算换手率/量比**（尺度错配）：复权因子会缩放 `volume`，而历史流通股本
+  不会跟着变。`AdjustEngine.apply` 现在把复权前的量留在 `bar.extra["raw_volume"]`，宽表读它。
+- **`event_source="tdx"` 炸成 E9000**：`_adjusted_events` 对已经是 `CapitalChange` 模型的返回值
+  又套了一层 `to_capital_changes()`（它吃的是解析行 dict），每次都在 `row.get(...)` 上抛
+  `AttributeError`。改为按类型分派，错误回到它该在的地方——布局闸给出的 E1010，并提示改用
+  `event_source='eastmoney'`。
+- **`events=[]` 被当成"没给"**：显式清空事件集会被静默换成"去东财拉一份回来"。三态分清：
+  `None` 才去取，`[]` 就是不调整。
+- **`is_st` 在拿不到简称时返回 `False`**（"不知道"冒充"不是 ST"）：改为 `None`，`is_st_source`
+  记 `unknown`。
+- **无成交日的 `vol_ratio` 报 `0.0`**：零成交意味着量比没有定义，报 0 会被读成"只有正常水平的 0%"。
+  与 `turnover` 同口径改为 `null`。
+- **`EastmoneyMarginSource.parse_rows` 忽略 `allow_empty`**：稀疏报表（9201「返回数据为空」）
+  会被当成错误。
+- 复权窗口/估值取值显式分页到尽（`dividend_history` 的 `size` 默认只有 20，长历史标的的早期
+  事件会被静默截断；600519 实有 28 条）。
+
+### Docs
+
+- `docs/api/interfaces.md`：新增「宽表日线（daily_enriched）」「配股（rights_issue）」两节；
+  补 `events=` 三态语义、窗口延伸机制、无成交日 `null` 口径；CLI 表更新到 33 子命令 / 38 叶子命令。
+- `docs/FAQ.md`：把「复权因子在哪里」重写为**数据来源表**（事件源 vs 原始 K 线两半），
+  新增「能不能直接用 TDX 的复权因子／复权数据？」——实测注册表里与除权相关的命令只有 `0x000F`，
+  **没有**"复权因子/复权 K 线"命令，且 `sh600519` 真机回 250/250 条字段全部落在域外。
+- `docs/ARCHITECTURE.md`：补「组合能力（`composed`）」小节，讲清 `provider=` 在组合能力上的语义。
+- `docs/errors.md`：补 `adjust_window_extend_failed` 行，`web_eastmoney_page_limit` 补上复权分页触顶。
+- 归档：`docs/架构审计与优化方案_2026-10-04.md` → `docs/archive/plans/`。
+
 ## [1.4.3] - 2026-10-04
 
 ### Added

@@ -588,28 +588,91 @@ def _cmd_sector_flow(args: Any) -> int:
 
 
 def _cmd_adjusted_bars(args: Any) -> int:
-    """复权 K 线：``atst adjusted-bars <symbol> [--method qfq|hfq|fixed|none]``。"""
+    """复权 K 线：``atst adjusted-bars <symbol> [--method qfq|hfq|fixed|none]``。
+
+    ``--provider`` 选的是**未复权原始 K 线**从哪来，``--event-source`` 选的是除权除息
+    事件从哪来——两件事，别混。默认 ``eastmoney``（已对拍）；``tdx`` 走协议 ``0x000F``，
+    其记录布局尚未由真机 golden 锁定，实测会被布局闸当场拒成 E1010。
+
+    可选参数一律走 ``getattr`` + 默认值：处理器不应因调用方（内部复用、测试替身）少塞
+    一个可选字段就整条挂掉。默认值与 :mod:`atst.cli.parser` 的 argparse 默认逐字对齐，
+    由 ``tests/unit/test_cli_optional_defaults.py`` 钉住，防止两边漂移。
+    """
     from ..domain.models import to_dicts
 
+    method = getattr(args, "method", "qfq")
+    event_source = getattr(args, "event_source", "eastmoney")
+    kwargs: dict[str, Any] = {
+        "method": method,
+        "period": getattr(args, "period", "day"),
+        "count": getattr(args, "count", 320),
+        "start": getattr(args, "start", 0),
+        "provider": getattr(args, "provider", "tdx"),
+        "event_source": event_source,
+    }
+    anchor_date = getattr(args, "anchor_date", None)
+    if anchor_date:
+        kwargs["anchor_date"] = anchor_date
     try:
         with _ClientRows(**_client_kwargs(args)) as api:
-            data = to_dicts(
-                api.adjusted_bars(
-                    args.symbol,
-                    method=args.method,
-                    period=args.period,
-                    count=args.count,
-                )
-            )
+            data = to_dicts(api.adjusted_bars(args.symbol, **kwargs))
     except Exception as exc:  # noqa: BLE001 - 门面（local+tdx+web）异常统一出口
         print(f"错误：复权 K 线获取失败 —— {exc}", file=sys.stderr)
         return 2
     if args.json:
         print(json.dumps(data, ensure_ascii=False, default=str))
         return 0
-    print(f"# {args.symbol} {args.period} [{args.method}] 共 {len(data)} 根")
+    print(f"# {args.symbol} {kwargs['period']} [{method}] 事件源={event_source} 共 {len(data)} 根")
     _print_bars_table(data)
     return 0
+
+
+def _cmd_daily_enriched(args: Any) -> int:
+    """宽表日线：``atst daily-enriched <symbol> [--adjust none|qfq|hfq]``。
+
+    一行一交易日，24 列 = K 线 6 列 + 派生 6 列 + 估值 9 列 + 3 列来源标注。三条派生口径
+    （``turnover`` 的分母、``vol_ratio`` 是日频近似、``is_st`` 是名称启发式）在
+    :mod:`atst.domain.enrich` 里写死，这里只负责打印。
+
+    可选参数同样走 ``getattr`` + 默认值，默认与 :mod:`atst.cli.parser` 对齐。
+    """
+    adjust = getattr(args, "adjust", "none")
+    try:
+        with _ClientRows(**_client_kwargs(args)) as api:
+            rows = api.daily_enriched(
+                args.symbol,
+                count=getattr(args, "count", 250),
+                start=getattr(args, "start", 0),
+                adjust=adjust,
+                provider=getattr(args, "provider", "tdx"),
+                event_source=getattr(args, "event_source", "eastmoney"),
+            )
+    except Exception as exc:  # noqa: BLE001 - 门面异常统一出口
+        print(f"错误：宽表日线获取失败 —— {exc}", file=sys.stderr)
+        return 2
+    data = [dict(r) for r in rows]
+    if args.json:
+        print(json.dumps(data, ensure_ascii=False, default=str))
+        return 0
+    print(f"# {args.symbol} 宽表日线 [adjust={adjust}] 共 {len(data)} 行")
+    if not data:
+        return 0
+    headers = list(data[0].keys())
+    table = [[_cell(row.get(h)) for h in headers] for row in data]
+    _print_table(headers, table)
+    return 0
+
+
+def _cell(value: Any) -> Any:
+    """宽表格子渲染：``None`` 打 ``-``，浮点保留 4 位，其余原样。
+
+    ``None`` 在宽表里有确定含义（"这项没有值"），打空白会让人以为列错位。
+    """
+    if value is None:
+        return "-"
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    return value
 
 
 def _cmd_all_market(args: Any) -> int:

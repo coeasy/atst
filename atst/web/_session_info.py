@@ -505,6 +505,7 @@ class CorporateSessionMixin:
         "block_trade": "SECURITY_CODE",
         "unlock": "SECURITY_CODE",
         "dividend": "SECURITY_CODE",
+        "rights_issue": "SECURITY_CODE",  # 配股（按 SECURITY_CODE 过滤）
         "executive_hold": "SECURITY_CODE",
         "shareholder_change": "SECURITY_CODE",
         "org_profile": "SECURITY_CODE",

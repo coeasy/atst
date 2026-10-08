@@ -20,6 +20,7 @@ from .runtime_commands import (
     _cmd_baidu,
     _cmd_blocks,
     _cmd_changes,
+    _cmd_daily_enriched,
     _cmd_f10,
     _cmd_feedback,
     _cmd_fund,
@@ -286,9 +287,47 @@ def build_parser() -> argparse.ArgumentParser:
     ab_p.add_argument("--method", default="qfq")
     ab_p.add_argument("--period", default="day")
     ab_p.add_argument("--count", type=int, default=320)
+    ab_p.add_argument(
+        "--start",
+        type=int,
+        default=0,
+        help="从最新往回跳过的根数（与 --count 配合做分段）",
+    )
+    ab_p.add_argument(
+        "--provider",
+        default="tdx",
+        help="取**未复权**原始 K 线的 Provider（复权事件源另由 --event-source 决定）",
+    )
+    ab_p.add_argument(
+        "--event-source",
+        default="eastmoney",
+        choices=("eastmoney", "tdx"),
+        help="除权除息事件来源；tdx（0x000F）布局未锁定，会被当场拒绝",
+    )
+    ab_p.add_argument(
+        "--anchor-date",
+        default=None,
+        help="定点复权锚点（--method fixed 时必填，YYYY-MM-DD）",
+    )
     ab_p.add_argument("--timeout", type=float, default=None)
     ab_p.add_argument("--json", action="store_true")
     ab_p.set_defaults(func=_cmd_adjusted_bars)
+
+    de_p = sub.add_parser("daily-enriched", help="宽表日线（K 线 + 估值 + 派生列）")
+    de_p.add_argument("symbol")
+    de_p.add_argument("--count", type=int, default=250)
+    de_p.add_argument("--start", type=int, default=0)
+    de_p.add_argument("--adjust", default="none", choices=("none", "qfq", "hfq"))
+    de_p.add_argument("--provider", default="tdx")
+    de_p.add_argument(
+        "--event-source",
+        default="eastmoney",
+        choices=("eastmoney", "tdx"),
+        help="除权除息事件来源（--adjust 非 none 时才有意义）；tdx 布局未锁定，会被当场拒绝",
+    )
+    de_p.add_argument("--timeout", type=float, default=None)
+    de_p.add_argument("--json", action="store_true")
+    de_p.set_defaults(func=_cmd_daily_enriched)
 
     am_p = sub.add_parser("all-market", help="全市场行情摘要")
     am_p.add_argument("--node", default="hs_a")

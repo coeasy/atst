@@ -75,6 +75,9 @@ class WarningCode(str, Enum):
     FILE_DOWNLOAD_SHORT = "file_download_short"
     #: 复权事件缺前收盘价：每股现金红利被忽略，价格因子是近似值。
     ADJUST_PREV_CLOSE_MISSING = "adjust_prev_close_missing"
+    #: 复权窗口向后延伸取数失败，退回原窗口：早期事件的前收盘价取不到，后复权因子
+    #: 会随请求的 ``count`` 漂移（同一根 bar 短/长窗口两个值）。
+    ADJUST_WINDOW_EXTEND_FAILED = "adjust_window_extend_failed"
     #: 交易日历未覆盖该年：节假日按无节假日处理。
     CALENDAR_YEAR_UNCOVERED = "calendar_year_uncovered"
     #: 新浪全市场分页重试后仍缺页。

@@ -15,6 +15,7 @@ from typing import Any
 
 from ..batch import BatchResult
 from ..catalog.capability import (
+    COMPOSED_CAPABILITIES,
     MIGRATED_CAPABILITIES,
     default_provider_for,
     is_migrated_capability,
@@ -251,6 +252,17 @@ class Client:
                 context={"capability": cap},
             )
         selected = provider or default_provider_for(cap)
+        if provider and cap in COMPOSED_CAPABILITIES:
+            #: 组合能力（``adjusted_bars`` / ``daily_enriched`` / ``sync_daily``）没有自己的
+            #: 传输层：它名字里的 ``provider`` 指的是**取原始 K 线的那条腿**，不是"谁来执行"。
+            #: 过去这个值被当成路由字段递进 planner，于是
+            #: ``Client.adjusted_bars(..., provider="tdx")`` 在规划期就 E1010
+            #: （"provider 'tdx' 不支持 capability 'adjusted_bars'"）——而执行体里
+            #: ``_composed_call`` 读 ``kwargs["provider"]`` 的那一行永远读不到东西，
+            #: 变成一条谁都用不上的参数。这里把它归位到 ``options.kwargs``，执行体才拿得到。
+            #: 与之相对，``web_adapter`` 一类的 ``provider`` 仍然是路由字段，语义不变。
+            kwargs["provider"] = provider
+            selected = default_provider_for(cap)
         spec = QuerySpec.build(
             cap,
             provider=selected,

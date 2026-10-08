@@ -1,6 +1,6 @@
 # atst 快速开始
 
-本文对应当前 `1.4.3` 源码候选；GitHub 最新已发布 Release 为 [`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2)，v1.4.3 尚未打 tag。atst **不在 PyPI 上**；要求 Python 3.10 或更高版本。
+本文对应当前 `1.5.0` 源码候选；GitHub 最新已发布 Release 为 [`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2)，v1.4.3 与 v1.5.0 尚未打 tag。atst **不在 PyPI 上**；要求 Python 3.10 或更高版本。
 
 ## 安装
 
@@ -100,7 +100,7 @@ atst server-test          # 主站测速
 atst stream sh600519      # 流式订阅：默认保持 10 秒后自停，中途按 Ctrl+C 也可停
 ```
 
-### 6. 统一查询内核（`Client`，195 项 capability）
+### 6. 统一查询内核（`Client`，197 项 capability）
 
 `Client` 是唯一业务入口；它把每次请求编译为**单 Provider / 单 Channel** 的
 `QueryPlan`，零缓存直调绑定实现，并在结果里携带 provenance。

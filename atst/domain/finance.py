@@ -36,6 +36,7 @@ __all__ = [
     "map_finance_values",
     "to_capital_changes",
     "capital_changes_from_dividends",
+    "capital_changes_from_dividends_and_rights",
     "reject_implausible_changes",
 ]
 
@@ -170,9 +171,11 @@ def capital_changes_from_dividends(
     code: str = "",
     market: int = 0,
 ) -> list[CapitalChange]:
-    """把东财 ``dividend_history`` 行（:class:`EastmoneyDividendSource` 的形状）
+    """只要分红送转、不要配股时的入口（:func:`capital_changes_from_dividends_and_rights`
+    的 ``rights_rows=()`` 特例）。
 
-    转成 :class:`~atst.domain.models.CapitalChange`，供复权引擎消费。
+    **它就是那个合并且函数的薄壳**，自身不含任何比例映射逻辑——两条独立的实现迟早会
+    在"同日多行要不要并成一条"这类口径上分叉，而分叉出来的那半边不会有人发现。
 
     为什么需要第二条入口：``0x000F``（TDX 除权除息）的记录布局**至今没有真机 golden
     锁定**（``atst/protocol/parsers/std7709.py`` 标 ``待样本锁定``），实测解码出来的
@@ -181,37 +184,11 @@ def capital_changes_from_dividends(
     ``RPT_SHAREBONUS_DET`` 是已实测可用的源，字段名与语义都对拍过，因此它才是复权的
     **默认事件源**。
 
-    口径对齐（关键）：东财三项比例都是**每 10 股**，与 :class:`CapitalChange` 的
-    ``dividend`` / ``bonus_ratio`` 约定一致（复权引擎内部再除 10）。送股与转增都扩张
-    股本、在除权价公式里同处 ``S`` 的位置，故合并进 ``bonus_ratio``；配股在东财这张
-    表里没有对应列，置 0。
-
-    没有除权除息日（``ex_dividend_date``）的记录**丢弃**：复权因子必须挂在日历日上，
-    拿报告期（``report_date``）当事件日会把因子提前整整一个季度。
+    注意：本函数产出的 ``rights_ratio`` / ``rights_price`` 恒为 0——分红送转表里没有
+    配股列。要完整的除权除息事件集（配股标的的 ``Pr·R`` 项不能丢）请用
+    :func:`capital_changes_from_dividends_and_rights`。
     """
-    out: list[CapitalChange] = []
-    for row in rows:
-        date = _first_text(row, "ex_dividend_date", "EX_DIVIDEND_DATE")
-        if not date:
-            continue
-        bonus = _as_float(_first(row, "bonus_shares_per_10", "BONUS_RATIO"))
-        transfer = _as_float(_first(row, "transfer_shares_per_10", "IT_RATIO"))
-        cash = _as_float(_first(row, "cash_dividend_per_10", "PRETAX_BONUS_RMB"))
-        out.append(
-            CapitalChange(
-                code=str(row.get("code") or code),
-                market=market,
-                #: 1 = 除权除息：只有这一类参与价格因子计算（见 ``ADJUST_CATEGORIES``）
-                category=1,
-                category_name="除权除息",
-                date=_normalize_day(date),
-                dividend=cash,
-                rights_price=0.0,
-                bonus_ratio=bonus + transfer,
-                rights_ratio=0.0,
-            )
-        )
-    return out
+    return capital_changes_from_dividends_and_rights(rows, (), code=code, market=market)
 
 
 def reject_implausible_changes(events: Sequence[Any]) -> None:
@@ -254,6 +231,82 @@ def reject_implausible_changes(events: Sequence[Any]) -> None:
             "bad_count": len(bad),
         },
     )
+
+
+def capital_changes_from_dividends_and_rights(
+    dividend_rows: Iterable[Mapping[str, Any]],
+    rights_rows: Iterable[Mapping[str, Any]] = (),
+    *,
+    code: str = "",
+    market: int = 0,
+) -> list[CapitalChange]:
+    """把东财两路公司行动合成**每个除权日一条** :class:`CapitalChange`。
+
+    为什么不直接把配股表的结果 append 在分红表后面：除权参考价
+    ``P_ref = (P - D + Pr·R) / (1 + S + R)`` 是一个**整体**公式。同一天既有送转派息
+    又有配股时（``10送2配3派1`` 这类组合方案很常见），拆成两条事件各自算一次再连乘，
+
+        1/k = P(1+S)/(P-D) · P(1+R)/(P+Pr·R)
+
+    而正确值是 ``P(1+S+R)/(P-D+Pr·R)``——分母的交叉项 ``S·R`` 丢了，因子系统性偏大。
+    所以按 ``ex_dividend_date`` 归并，一天只产出一条事件。
+
+    两路来源的分工（实测，2026-10-07）：
+
+    * ``dividend_rows`` —— ``RPT_SHAREBONUS_DET``：送股 / 转增 / 派息；
+    * ``rights_rows`` —— ``RPT_IPO_ALLOTMENT``：配股比例与配股价。那张分红表
+      **一条配股都没有**（工行 / 中行 / 招行 / 浦发 / 兴业 2010 年集体配股，表里
+      0 条含"配"的方案），配股只能走独立报表。
+    """
+    merged: dict[str, dict[str, float]] = {}
+    codes: dict[str, str] = {}
+
+    def slot(day: str, row: Mapping[str, Any]) -> dict[str, float]:
+        rec = merged.setdefault(
+            day,
+            {"dividend": 0.0, "bonus": 0.0, "rights_ratio": 0.0, "rights_price": 0.0},
+        )
+        if not codes.get(day):
+            codes[day] = str(row.get("code") or code)
+        return rec
+
+    for row in dividend_rows:
+        date = _first_text(row, "ex_dividend_date", "EX_DIVIDEND_DATE")
+        if not date:
+            continue
+        rec = slot(_normalize_day(date), row)
+        rec["bonus"] += _as_float(_first(row, "bonus_shares_per_10", "BONUS_RATIO")) + _as_float(
+            _first(row, "transfer_shares_per_10", "IT_RATIO")
+        )
+        rec["dividend"] += _as_float(_first(row, "cash_dividend_per_10", "PRETAX_BONUS_RMB"))
+
+    for row in rights_rows:
+        date = _first_text(row, "ex_dividend_date", "EX_DIVIDEND_DATE")
+        if not date:
+            continue
+        rec = slot(_normalize_day(date), row)
+        rec["rights_ratio"] += _as_float(_first(row, "rights_ratio_per_10", "PLACING_RATIO"))
+        price = _as_float(_first(row, "rights_price", "ISSUE_PRICE"))
+        if price > 0:
+            rec["rights_price"] = price
+
+    out: list[CapitalChange] = []
+    for day in sorted(merged):
+        rec = merged[day]
+        out.append(
+            CapitalChange(
+                code=codes.get(day) or code,
+                market=market,
+                category=1,
+                category_name="除权除息",
+                date=day,
+                dividend=rec["dividend"],
+                rights_price=rec["rights_price"],
+                bonus_ratio=rec["bonus"],
+                rights_ratio=rec["rights_ratio"],
+            )
+        )
+    return out
 
 
 def _first(row: Mapping[str, Any], *names: str) -> Any:

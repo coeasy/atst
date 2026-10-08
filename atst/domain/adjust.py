@@ -39,6 +39,11 @@
 * 前复权:  后复权结果再除以**最后一根 bar** 的因子（归一化到最新口径）
 * 定点复权: 后复权结果除以 ``anchor_date`` 当日因子
 
+**复权后 bar 的 ``extra``**：``apply`` 给每根 bar 写入 ``adj_price_factor`` /
+``adj_volume_factor``（本根相对基准的因子）与 ``raw_volume``（**复权前**的成交量）。
+宽表算换手率、量比时必须读 ``raw_volume``——复权后的 ``volume`` 与历史流通股本是两个
+尺度，比值无意义（这个坑见 :func:`atst.domain.enrich.enrich_daily_bars`）。
+
 **缺前收盘价的降级口径**：bar 未携带 ``extra["prev_close"]`` 时，价格因子
 退化为 ``1/(1+S+R)``（只还原股本扩张，**忽略现金红利**）——现金红利会
 因此丢失，引擎把这条瑕疵记进结果侧的告警通道（:func:`atst.diagnostics.record_warning`，
@@ -53,6 +58,7 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date as _date
@@ -141,6 +147,7 @@ def compute_factors(
     factors: list[AdjustFactor] = []
 
     bar_dates = [_parse_date(b.datetime) for b in bars]
+    closes = [_as_positive_close(b) for b in bars]
 
     for i, bar in enumerate(bars):
         d = bar_dates[i]
@@ -148,10 +155,20 @@ def compute_factors(
         # （除权日当天开盘价已反映除权，故事件日及之后的 bar 乘以因子）
         while ev_idx < n_ev and ev_dates[ev_idx] <= d:
             ev = ev_list[ev_idx]
-            #: 前收盘价 = 上一根 bar 的收盘价（连续交易日的定义），K 线序列自己就有。
-            #: 这样现金红利能进价格因子，而不是每次都走"忽略派息"的降级口径。
-            prev_close = bars[i - 1].close if i > 0 else None
-            price_factor *= _price_adjust_ratio(ev, bar, fallback_prev_close=prev_close)
+            #: 前收盘价 = 该事件日**之前最后一根** bar 的收盘价（连续交易日的定义）。
+            #: 过去这里写的是 ``bars[i-1].close``——拿"循环当前位置的前一根"冒充"事件
+            #: 日的前一根"。两者只在「一个 bar 间隔内恰好只有一个事件」时相等：一旦
+            #: 同一间隔里挤了多个事件（长停牌后连续除权），或事件早于窗口首根 bar
+            #: （``i == 0``），除最早那个事件外全部拿到错误的基准价，而除权参考价
+            #: ``(P - D + Pr·R)/(1+S+R)`` 对 P 是敏感的——复权因子于是系统性偏大。
+            #: 这里按事件日做一次二分定位，每个事件都拿到它自己的前收盘。
+            prev_close = _prev_close_before(bar_dates, closes, ev_dates[ev_idx])
+            price_factor *= _price_adjust_ratio(
+                ev,
+                bar,
+                fallback_prev_close=prev_close,
+                event_before_window=ev_dates[ev_idx] < bar_dates[0],
+            )
             vol_factor *= _volume_adjust_ratio(ev)
             ev_idx += 1
         factors.append(
@@ -165,10 +182,45 @@ def compute_factors(
 _warned_missing_prev_close = False
 
 
+def _as_positive_close(bar: Bar) -> float:
+    """bar 收盘价的正值读数；缺失或 <= 0 一律记 0（不代表"有价格 0 元"）。
+
+    停牌日 / 数据源缺列时 ``close`` 可能是 ``None``。它不能当基准价用，但也不能
+    让二分定位因此失败——0 会被 :func:`_prev_close_before` 判为"不可用"，进而
+    走「忽略现金红利」的降级口径并告警，而不是静默拿 0 去除。
+    """
+    value = getattr(bar, "close", None)
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+    return number if number > 0 else 0.0
+
+
+def _prev_close_before(
+    bar_dates: Sequence[_date],
+    closes: Sequence[float],
+    event_date: _date,
+) -> float | None:
+    """事件日之前最后一根 bar 的收盘价；没有则 ``None``。
+
+    ``bisect_left`` 给出第一个 ``bar_date >= event_date`` 的下标，它前一位就是
+    严格早于事件日的那根。返回 ``None`` 意味着该事件早于序列起点——调用方无法
+    凭这段窗口还原它的基准价，只能走降级口径（:data:`WarningCode.ADJUST_PREV_CLOSE_MISSING`）。
+    """
+    idx = bisect_left(bar_dates, event_date)
+    if idx <= 0:
+        return None
+    value = closes[idx - 1]
+    return float(value) if value > 0 else None
+
+
 def _price_adjust_ratio(
     ev: CapitalChange,
     bar: Bar,
     fallback_prev_close: float | None = None,
+    *,
+    event_before_window: bool = False,
 ) -> float:
     """返回 :math:`1/k`（后复权方向的价格放大系数）。
 
@@ -221,10 +273,20 @@ def _price_adjust_ratio(
         # 去重只管 stderr（一次进程说一次），结果侧的瑕疵逐次都要记（F-45）。
         fresh = not _warned_missing_prev_close
         _warned_missing_prev_close = True
+        #: 两种「拿不到前收盘」的成因要分开说：早于窗口起点是**调用方能修**的
+        #: （加大 count），窗口内却取不到是**数据缺列**。混成一句，调用方就不知
+        #: 道该改参数还是该换源。前复权下这条对结果无影响（窗口前的事件给每根
+        #: bar 乘的是同一个常数，归一化时约掉），后复权会有 d/P 量级偏差。
+        cause = (
+            f"该事件早于本次 K 线窗口起点（{bar.datetime}），窗口内没有它的前一根 K 线"
+            "——加大 count 覆盖该事件即可拿到精确值"
+            if event_before_window
+            else "数据源未提供前收盘价，且窗口内该事件前没有可用收盘价"
+        )
         record_warning(
             WarningCode.ADJUST_PREV_CLOSE_MISSING,
             f"复权事件 {ev.date} 缺少前收盘价（bar.extra['prev_close']），"
-            f"每股现金红利 {d:.4f} 元被忽略：价格因子按 1/(1+S+R) 近似。"
+            f"每股现金红利 {d:.4f} 元被忽略：价格因子按 1/(1+S+R) 近似。{cause}。"
             "精确复权请提供前收盘价。",
             stacklevel=3,
             stderr=fresh,
@@ -330,6 +392,11 @@ class AdjustEngine:
             )
             new_bar.extra["adj_price_factor"] = round(rp, 8)
             new_bar.extra["adj_volume_factor"] = round(rv, 8)
+            #: 原始成交量留一份。**复权后的 ``volume`` 不能再拿来算换手率**：
+            #: 分子乘了 ``rv``、分母（流通股本）没乘，两者不同尺度，比值就废了。
+            #: 宽表（:mod:`atst.domain.enrich`）的 ``turnover`` / ``vol_ratio`` 因此
+            #: 必须读这一份。留整数原值而不是「除以 rv 反推」是为了不受取整误差影响。
+            new_bar.extra["raw_volume"] = int(bar.volume)
             out.append(new_bar)
         return out
 

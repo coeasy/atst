@@ -32,6 +32,7 @@ from .corporate import (
 
 __all__ = [
     "EastmoneyDividendSource",
+    "EastmoneyRightsIssueSource",
     "EastmoneyValuationSource",
     "EastmoneyHolderChangeSource",
     "EastmoneyFinanceMainSource",
@@ -130,6 +131,88 @@ class EastmoneyDividendSource(EastmoneyDataCenterSource):
             report=VALID_REPORTS["dividend"],
             sort_columns="EX_DIVIDEND_DATE",
             sort_types="-1",
+        )
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            rec: dict[str, Any] = {
+                "code": _s(r.get("SECURITY_CODE")),
+                "name": _s(r.get("SECURITY_NAME_ABBR") or r.get("SECURITY_NAME")),
+            }
+            for key, names in self.FIELD_MAP.items():
+                val = _pick(r, *names)
+                rec[key] = _num(val) if key in self._NUM_FIELDS else _s(val)
+            out.append(rec)
+        return out
+
+
+# --------------------------------------------------------------------------- #
+# 配股（RPT_IPO_ALLOTMENT，2026-10-07 实测可用）
+# --------------------------------------------------------------------------- #
+class EastmoneyRightsIssueSource(EastmoneyDataCenterSource):
+    """配股明细（东财 ``RPT_IPO_ALLOTMENT``）。
+
+    为什么必须独立成源：``RPT_SHAREBONUS_DET`` 名曰「分红送**配**」，实测却一条
+    配股记录都没有（工行 / 中行 / 招行 / 浦发 / 兴业 2010 年集体配股，表里 0 条）。
+    配股不进 :class:`~atst.domain.models.CapitalChange`，除权参考价
+    ``(P - D + Pr·R)/(1 + S + R)`` 里的 ``Pr·R`` 一项恒为 0，配股标的的复权因子
+    系统性偏小。
+
+    口径：``rights_ratio_per_10`` 是**每 10 股配股数**（与 :class:`CapitalChange`
+    约定一致，复权引擎内部再除 10），``rights_price`` 是每股配股价（元）。
+    对拍样本：``sh601398`` 2010 年 → ``PLACING_RATIO=0.45`` / ``ISSUE_PRICE=2.99``
+    / ``EX_DIVIDEND_DATE=2010-11-24``，与公开方案「10 配 0.45 股、配股价 2.99 元」一致。
+    """
+
+    JSON_LABEL = "配股"
+    FIELD_MAP: dict[str, tuple[str, ...]] = {
+        "ex_dividend_date": ("EX_DIVIDEND_DATE",),
+        "record_date": ("EQUITY_RECORD_DATE",),
+        "pay_start_date": ("PAY_START_DATE",),
+        "pay_end_date": ("PAY_END_DATE",),
+        "listing_date": ("LISTING_DATE",),
+        "notice_date": ("FIRST_NOTICE_DATE",),
+        "rights_ratio_per_10": ("PLACING_RATIO",),
+        "rights_price": ("ISSUE_PRICE",),
+        "issue_num": ("ISSUE_NUM",),
+        "total_shares_before": ("TOTAL_SHARES_BEFORE",),
+        "total_shares_after": ("TOTAL_SHARES_AFTER",),
+        "raise_funds": ("TOTAL_RAISE_FUNDS",),
+        "placing_name": ("CORRECODE_NAME_ABBR",),
+    }
+    _NUM_FIELDS = frozenset(
+        {
+            "rights_ratio_per_10",
+            "rights_price",
+            "issue_num",
+            "total_shares_before",
+            "total_shares_after",
+            "raise_funds",
+        }
+    )
+
+    def fetch_rights_issue(
+        self, symbol: str, *, page: int = 1, size: int = 50
+    ) -> list[dict[str, Any]]:
+        """配股历史（按除权日降序）。
+
+        Returns
+        -------
+        ``[{"code","name","ex_dividend_date","record_date","rights_ratio_per_10",
+        "rights_price", ...}, ...]``
+        """
+        rows = self.fetch_rows_by_code(
+            symbol,
+            column="SECURITY_CODE",
+            page=page,
+            size=size,
+            report=VALID_REPORTS["rights_issue"],
+            sort_columns="EX_DIVIDEND_DATE",
+            sort_types="-1",
+            #: 绝大多数标的从未配股，服务端回 9201「返回数据为空」——那是正常
+            #: 回答，不是故障。这里显式接受空集。
+            allow_empty=True,
         )
         out: list[dict[str, Any]] = []
         for r in rows:

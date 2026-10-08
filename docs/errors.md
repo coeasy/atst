@@ -90,12 +90,13 @@ CLI 每张面（序列化后是 `{"code", "message"}`），同时以 `UserWarnin
 | `security_list_page_limit` | `export_security_list` 在 `max_pages` 内未取尽（最后一页仍是满页），结果可能截断 | `atst/client/_mixin.py` |
 | `file_download_short` | 分块文件下载累计字节数小于服务端报告的 `total_len` | `atst/client/_mixin.py` |
 | `adjust_prev_close_missing` | 复权事件缺前收盘价：每股现金红利被忽略，价格因子是按 1/(1+S+R) 算的近似值 | `atst/domain/adjust.py` |
+| `adjust_window_extend_failed` | 复权窗口向后延伸取数失败（已退回原窗口）：若最早事件早于窗口起点，早期因子的前收盘价取不到，后复权因子会随请求的 `count` 漂移 | `atst/runtime/executor.py` |
 | `calendar_year_uncovered` | 交易日历未覆盖所请求的年份：该年节假日按"无节假日"处理 | `atst/domain/calendar.py` |
 | `web_sina_pages_missing` | 新浪全市场分页在重试与补拉之后仍缺页：拿到的是缺页结果，不是全市场 | `atst/web/sina/adapters.py` |
 | `web_tencent_pages_missing` | 腾讯全市场**代码枚举**阶段某页失败即停：返回的是被截断的代码表，全市场不完整（与 `web_tencent_batch_failed` 分属枚举 / 批量两个阶段） | `atst/web/tencent/adapters.py` |
 | `web_tencent_batch_failed` | 腾讯全市场单批重试后仍失败：结果不完整，缺的那批不会以空行占位 | `atst/web/tencent/adapters.py` |
 | `web_tencent_amount_all_zero` | 腾讯 K 线整批 `amount` 恒为 0（该源本周期不返回成交额字段），该字段不可用于计算 | `atst/web/_paginate.py` |
-| `web_eastmoney_page_limit` | 东财报表在 `max_pages` 内未取尽（最后一页仍满页），结果可能截断 | `atst/web/corporate.py` |
+| `web_eastmoney_page_limit` | 东财报表在 `max_pages` 内未取尽（最后一页仍满页），结果可能截断——含复权事件分页触顶 | `atst/web/corporate.py`、`atst/runtime/executor.py` |
 | `web_fund_sort_column_undeclared` | 基金排行请求的 `sort_column` 不在本包声明的常用列词表 `SORT_COLUMNS` 里：请求原样发出，服务端可能按自己的默认列返回 | `atst/web/fund_rank.py` |
 | `currentness_unproven` | 声明的 `currentness` 要求当期数据，而本次 channel 给不出可判据的证据（本地文件）；`strict=True` 时它不是告警而是失败 | `atst/runtime/freshness.py` |
 

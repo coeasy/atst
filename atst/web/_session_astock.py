@@ -19,6 +19,7 @@ from .astock_toolkit import (
     EastmoneyDividendSource,
     EastmoneyFinanceMainSource,
     EastmoneyHolderChangeSource,
+    EastmoneyRightsIssueSource,
     EastmoneyValuationSource,
 )
 
@@ -40,6 +41,24 @@ class AstockToolkitMixin:
         src = EastmoneyDividendSource(client=_shared_http())
         try:
             return src.fetch_dividend(symbol, page=page, size=size)
+        finally:
+            src.close()
+
+    # -- 配股 ------------------------------------------------------------ #
+    @staticmethod
+    def rights_issue(symbol: str, *, page: int = 1, size: int = 50) -> list[dict[str, Any]]:
+        """配股历史（东财 ``RPT_IPO_ALLOTMENT``，2026-10-07 实测可用）。
+
+        分红送转走 :meth:`dividend_history`（``RPT_SHAREBONUS_DET``），那张表
+        **不含配股**：配股比例与配股价只能从这里取，两者合起来才是完整的
+        除权除息事件集（复权 :meth:`adjusted_bars` 的默认事件源用得上）。
+
+        ``rights_ratio_per_10`` 为每 10 股配股数，``rights_price`` 为每股配股价（元），
+        ``ex_dividend_date`` 为除权日。
+        """
+        src = EastmoneyRightsIssueSource(client=_shared_http())
+        try:
+            return src.fetch_rights_issue(symbol, page=page, size=size)
         finally:
             src.close()
 

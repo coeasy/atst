@@ -332,10 +332,32 @@ class TestN5ClientSubcommands:
             def close(self) -> None:
                 return None
 
-            def adjusted_bars(self, symbol, *, method="qfq", period="day", count=320):
-                self.calls.append(
-                    ("adjusted_bars", (symbol,), dict(method=method, period=period, count=count))
+            def adjusted_bars(
+                self,
+                symbol,
+                *,
+                method="qfq",
+                period="day",
+                count=320,
+                start=0,
+                provider="tdx",
+                event_source="eastmoney",
+                anchor_date=None,
+            ):
+                # 门面签名照真实那一侧（``Client.adjusted_bars``）抄：``--provider`` 与
+                # ``--event-source`` 是两个独立旋钮，替身漏掉任一都会把 CLI 的透传钉成
+                # 事实错误（本文件顶部的 ``all_market`` 注释已踩过一次同样的坑）。
+                kw: dict[str, Any] = dict(
+                    method=method,
+                    period=period,
+                    count=count,
+                    start=start,
+                    provider=provider,
+                    event_source=event_source,
                 )
+                if anchor_date:
+                    kw["anchor_date"] = anchor_date
+                self.calls.append(("adjusted_bars", (symbol,), kw))
                 return [{"symbol": symbol, "method": method, "period": period, "count": count}]
 
             def all_market(self, *, node="hs_a", page_size=80, max_pages=None, provider=None):
@@ -381,6 +403,35 @@ class TestN5ClientSubcommands:
         assert FakeApi.calls[0][1] == ("sh600519",)
         assert FakeApi.calls[0][2]["method"] == "hfq"
         assert FakeApi.calls[0][2]["count"] == 100
+        # 两个独立旋钮必须原样透传（原始 K 线来源 vs 除权除息事件来源）。
+        assert FakeApi.calls[0][2]["provider"] == "tdx"
+        assert FakeApi.calls[0][2]["event_source"] == "eastmoney"
+        assert FakeApi.calls[0][2]["start"] == 0
+        assert "anchor_date" not in FakeApi.calls[0][2]
+
+    def test_adjusted_bars_provider_and_event_source_flags(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
+        FakeApi = self._patch_client(monkeypatch)
+        rc = cli.main(
+            [
+                "adjusted-bars",
+                "sh600519",
+                "--method",
+                "fixed",
+                "--anchor-date",
+                "2024-06-19",
+                "--provider",
+                "sina",
+                "--event-source",
+                "eastmoney",
+                "--json",
+            ]
+        )
+        assert rc == 0
+        kw = FakeApi.calls[0][2]
+        assert kw["method"] == "fixed"
+        assert kw["anchor_date"] == "2024-06-19"
+        assert kw["provider"] == "sina"
+        assert kw["event_source"] == "eastmoney"
 
     def test_all_market_defaults(self, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
         FakeApi = self._patch_client(monkeypatch)

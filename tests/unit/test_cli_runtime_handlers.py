@@ -919,7 +919,7 @@ class TestWebCapabilityHandlers:
         fake_client.data = [{"datetime": "2024-01-02", "open": 1.5, "close": 1.6, "volume": 10}]
         adjusted = _ns(symbol="sh600519", method="qfq", period="day", count=2, timeout=3.0)
         assert rc._cmd_adjusted_bars(_ns(**{**adjusted.__dict__, "json": False})) == 0
-        assert "# sh600519 day [qfq] 共 1 根" in capsys.readouterr().out
+        assert "# sh600519 day [qfq] 事件源=eastmoney 共 1 根" in capsys.readouterr().out
 
         minute = _ns(symbol="sh600519", period="5min", count=2, timeout=3.0, json=False)
         assert rc._cmd_minute_klines(minute) == 0

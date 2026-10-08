@@ -510,6 +510,7 @@ PROVIDERS = ProviderRegistry(
                     "stock_report_dates",
                     "ipo_review",
                     "dividend_history",
+                    "rights_issue",
                     "stock_valuation",
                     "holder_changes",
                     "financial_abstract",
@@ -753,6 +754,7 @@ PROVIDERS = ProviderRegistry(
                     "reports",
                     "research_reports",
                     "research_visits",
+                    "rights_issue",
                     "sector_flow",
                     "shareholder_changes",
                     "shareholders",
@@ -770,6 +772,7 @@ PROVIDERS = ProviderRegistry(
                 ),
                 _c("adjustment", "adjusted_bars"),
                 _c("sync", "sync_daily"),
+                _c("enriched", "daily_enriched"),
             ),
         ),
     )
