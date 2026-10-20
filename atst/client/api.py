@@ -8,25 +8,34 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from ..batch import BatchResult
+from ..batch import BatchItem, BatchResult
 from ..catalog.capability import (
     COMPOSED_CAPABILITIES,
     MIGRATED_CAPABILITIES,
     default_provider_for,
     is_migrated_capability,
 )
+from ..diagnostics import ResultWarning, WarningCode
+from ..domain.symbol import normalize_symbol
+from ..error_envelope import ErrorEnvelope, to_error_envelope
 from ..errors import ValidationError
 from ..providers import PROVIDERS, resolve_capability_provider
 from ..query import QuerySpec
 from ..result import QueryResult
+from ..runtime.autoselect import is_auto_provider, provider_health
 from ..runtime.executor import DEDICATED_CAPABILITIES as _CORE_CAPABILITIES
 from ..runtime.kernel import UnifiedRuntime
-from ..runtime.orchestration import FallbackPolicy, OrchestratedResult, ProviderOrchestrator
+from ..runtime.orchestration import (
+    AutoPolicy,
+    FallbackPolicy,
+    OrchestratedResult,
+    ProviderOrchestrator,
+)
 from ..stream_contract import StreamPlanner, StreamSpec
 from ..streaming.stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
 
@@ -59,8 +68,7 @@ def _reject_provider_with_policy(provider: str | None, policy: FallbackPolicy) -
     这里必须是 :class:`ValidationError`（E1010 / HTTP 422 / JSON-RPC -32602 / CLI 退出码 2），
     而不是原来那个裸 ``ValueError``：入参冲突的归类发生在**抛出点**，四面只是转述它，所以
     一次选错类型的 raise 会让四张面**一致地**把它说成 ``E9000`` 服务器故障、把调用方写错的
-    那两个键从消息里抹掉（实测四面同读数，见 ``docs/archive/plans/REFACTOR_PLAN_V18_RESTRUCTURE.md``
-    第 19 节）。四面各自加转换只会把这第七份抄件再抄四遍。
+    那两个键从消息里抹掉（实测四面同读数）。四面各自加转换只会把这第七份抄件再抄四遍。
     """
     if provider is None:
         return
@@ -153,6 +161,19 @@ class Client:
             }
         return values
 
+    def provider_health_status(self) -> dict[str, dict[str, Any]]:
+        """``provider="auto"`` 当前降级名单（观测面用）：``{provider: {code, age_s}}``。
+
+        只列**仍处 TTL 窗口内**的失败标记——与 ``auto`` 排序时用的是同一份名单
+        （:meth:`ProviderHealthStore.degraded` 顺手复位过期项），所以这个字段不会
+        报出一批"其实已经不算数"的 Provider。
+
+        ``age_s`` 是失败发生到现在的秒数，不是时间戳：``monotonic_ns`` 只在同一进程内
+        可比，贴到线上接口没有意义。健康反馈关闭（``auto_health_ttl=0``）时恒为空——
+        那时没有任何 Provider 会被降级，报一份名单等于凭空造出一个不存在的机制。
+        """
+        return provider_health().degraded(ttl_ns=self._auto_ttl_ns())
+
     @staticmethod
     def capability_statuses() -> dict[str, str]:
         """迁移能力状态映射（``{capability: status}``，G-16）。
@@ -166,7 +187,82 @@ class Client:
         return capability_statuses()
 
     def execute(self, spec: QuerySpec) -> QueryResult[Any]:
+        if self._wants_auto(spec):
+            return self._execute_auto(spec)
         return self.runtime.execute(spec)
+
+    # ------------------------------------------------------------------ #
+    # 显式自动选源（provider='auto' / core.default_provider='auto'）
+    # ------------------------------------------------------------------ #
+    def _wants_auto(self, spec: QuerySpec) -> bool:
+        """这次请求是否走自动选源。
+
+        两种显式形态：请求自己写了 ``provider='auto'``，或缺省 Provider 就是
+        ``auto``（``core.default_provider='auto'``）且本次没钉死 Provider。
+        钉死 Provider 的请求永远不进这里——provider-first 不变量不受影响。
+        """
+        if is_auto_provider(spec.provider):
+            return True
+        if spec.provider is None:
+            return is_auto_provider(self.runtime.planner.default_provider)
+        return False
+
+    def _auto_policy(self) -> AutoPolicy:
+        routing = getattr(self.runtime.config, "routing", None)
+        prefer = tuple(getattr(routing, "auto_providers", ()) or ())
+        return AutoPolicy.build(prefer=prefer)
+
+    def _auto_ttl_ns(self) -> int:
+        routing = getattr(self.runtime.config, "routing", None)
+        ttl = float(getattr(routing, "auto_health_ttl", 0.0) or 0.0)
+        return int(ttl * 1_000_000_000)
+
+    def _execute_auto(self, spec: QuerySpec) -> QueryResult[Any]:
+        """按能力面 + 运行时健康反馈逐跳执行，首次成功即返回。
+
+        与显式 ``FallbackPolicy`` 的关系：候选名单不是调用方手写的，而是每次
+        请求现排的；跨源之所以合法，是因为调用方显式选择了 ``auto``。每个结果
+        仍带 Provenance（``requested_provider='auto'`` + ``fallback``），跨源
+        出数时另记一条 ``auto_provider_fallback`` 告警——不静默换源。
+        """
+        #: 未配 vipdoc_root 时 local_vipdoc 排进来只会得到一次配置错误，没有
+        #: 第二次机会，因此不进候选。
+        exclude: frozenset[str] = frozenset({"local_vipdoc"})
+        if getattr(self.runtime.executor, "vipdoc_root", None):
+            exclude = frozenset()
+        planner_default = self.runtime.planner.default_provider
+        orchestrated = self.orchestrator.execute_auto(
+            spec,
+            policy=self._auto_policy(),
+            exclude=exclude,
+            ttl_ns=self._auto_ttl_ns(),
+            default=None if is_auto_provider(planner_default) else planner_default,
+        )
+        result = orchestrated.result
+        if len(orchestrated.attempts) > 1:
+            served = orchestrated.attempts[-1]
+            failed = [
+                f"{item.provider}({item.code or 'error'})"
+                for item in orchestrated.attempts
+                if item.status == "failed"
+            ]
+            result = replace(
+                result,
+                meta=replace(
+                    result.meta,
+                    warnings=result.meta.warnings
+                    + (
+                        ResultWarning(
+                            code=WarningCode.AUTO_PROVIDER_FALLBACK,
+                            message=(
+                                f"provider='auto'：候选 {failed} 失败，"
+                                f"实际由 {served.provider} 出数"
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        return result
 
     def _call_core(
         self,
@@ -329,12 +425,21 @@ class Client:
         provider: str | None = None,
         policy: FallbackPolicy | None = None,
         currentness: str = "live",
+        strict: bool = False,
     ) -> QueryResult[Any] | OrchestratedResult:
+        """实时行情快照。
+
+        ``strict=True``（仅 tdx 路径生效）：解析器自校验（哨兵 / 成交额值域）
+        发现字段漂移的标的直接失败，不返回"帧合法、值可疑"的行情——不存在代码
+        的 TDX 主站响应就长这样（回声匹配、载荷齐全、量能荒谬）。Web 源没有
+        同型自校验判据，该开关对它们是空操作。
+        """
         spec = QuerySpec.build(
             "quotes",
             symbols=symbols,
             provider=provider,
             currentness=currentness,
+            options={"strict": True} if strict else None,
         )
         if policy is not None:
             _reject_provider_with_policy(provider, policy)
@@ -348,11 +453,43 @@ class Client:
         provider: str | None = None,
         currentness: str = "live",
     ) -> BatchResult[QueryResult[Any]]:
-        return self.runtime.quotes_batch(
-            symbols,
+        """逐 symbol 三态审计的批量行情。
+
+        ``provider="auto"``（或 ``core.default_provider="auto"``）必须与
+        :meth:`quotes` 同语义：每只标的各自走完整候选链，而不是让内核把它解析成
+        "第一跳"后按单跳执行——那样同一个 ``auto`` 在单只与批量两条路上会给出
+        两种行为（批量那只失败时直接进 ``errors``，永远不会换源）。批次结构仍按
+        ``BatchItem`` / ``errors`` / ``requested`` 三件套给，逐项 provenance 各自
+        记录实际出数的 Provider。
+        """
+        spec = QuerySpec.build(
+            "quotes",
+            symbols=symbols,
             provider=provider,
             currentness=currentness,
         )
+        if not self._wants_auto(spec):
+            return self.runtime.quotes_batch(
+                symbols,
+                provider=provider,
+                currentness=currentness,
+            )
+        items: dict[str, BatchItem[QueryResult[Any]]] = {}
+        errors: dict[str, ErrorEnvelope] = {}
+        for raw_symbol in symbols:
+            symbol = normalize_symbol(raw_symbol)
+            if symbol in items:
+                continue
+            try:
+                result = self.execute(replace(spec, symbols=(symbol,)))
+            except Exception as exc:
+                items[symbol] = BatchItem("failed", error=exc)
+                errors[symbol] = to_error_envelope(exc)
+                continue
+            items[symbol] = (
+                BatchItem("missing") if not result.data else BatchItem("ok", value=result)
+            )
+        return BatchResult.build(items, errors=errors, requested=tuple(items))
 
     def bars(
         self,
@@ -368,6 +505,7 @@ class Client:
         strict: bool = False,
         start_date: str = "",
         end_date: str = "",
+        index: bool | None = None,
     ) -> QueryResult[Any] | OrchestratedResult:
         """K 线。``strict=True`` 时"结果带瑕疵"直接失败，而不是返回后靠调用方自查。
 
@@ -380,7 +518,17 @@ class Client:
         游标，所以区间是在取回的那一页上裁出来的——**那一页盖不住区间起点时会记一条
         ``bars_range_uncovered`` 告警**而不是假装完整，``strict=True`` 时它是一次失败。
         要更早的历史就加大 ``count``（或用 ``start`` 继续往回翻页）。
+
+        ``index``：``0x052D`` 的指数位，**缺省按代码段自动推断**（``sh000001`` /
+        ``sz399001`` 这类判指数）。指数 K 线每条记录尾部多 4 字节涨跌家数，这个位不开
+        整条记录流就错位（日期变成 ``10112-28-10``、成交量变成 1e40），所以正常情况下
+        不用管它；只有"按段表判错了"时才需要显式覆盖（例如某只代码段被重新划类）。
         """
+        options: dict[str, Any] = {}
+        if index is not None:
+            options["index"] = index
+        if strict:
+            options["strict"] = True
         spec = QuerySpec.build(
             "bars",
             symbols=symbol,
@@ -392,7 +540,7 @@ class Client:
             currentness=currentness,
             start_date=start_date,
             end_date=end_date,
-            options={"strict": True} if strict else None,
+            options=options or None,
         )
         if policy is not None:
             _reject_provider_with_policy(provider, policy)
@@ -549,6 +697,9 @@ class AsyncClient:
 
     def core_capability_statuses(self) -> dict[str, dict[str, Any]]:
         return self.client.core_capability_statuses()
+
+    def provider_health_status(self) -> dict[str, dict[str, Any]]:
+        return self.client.provider_health_status()
 
     @staticmethod
     def capability_statuses() -> dict[str, str]:

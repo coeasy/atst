@@ -1,7 +1,6 @@
 # 错误体系与 RetryAdvice 使用指南
 
-> 错误分类树定义于 `atst/errors.py`（E1-E9 九域，无语义重叠对——v8 审计结论，
-> 见 [ARCHITECTURE_AUDIT_v8.md](archive/plans/ARCHITECTURE_AUDIT_v8.md) §二）。
+> 错误分类树定义于 `atst/errors.py`（E1-E9 九域，无语义重叠对——按运行期现读校验）。
 > 类数不在本文抄录，也不给"当前是 N 个"的快照数字：一律以 `atst/errors.py` 现读
 > （`tests/errors/test_taxonomy.py` 把 `atst.errors.__all__` 与分类表双向核对，
 > `tests/architecture/test_error_promises.py` 把本文点名的类与错误树双向核对）。
@@ -43,22 +42,22 @@
 **本节是全仓唯一允许点名"不存在的错误类"的地方**——它的职责就是登记退役。其它对外文档
 （README、`docs/providers/*`、`docs/troubleshooting.md` 等）只许点名树里真实存在且有运行期
 站点的类，两侧都由 `tests/architecture/test_error_promises.py` 把守：文档点名的树内类必须
-有站点（否则是幻影异常），文档点名的非树成员必须是本节列出的退役名（否则是幻影名），
-而本节点名的类必须确实**不在**树里（否则这份登记表自己就在说谎）。
+有站点，文档点名的树外名字必须是本节列出的退役名，而本节点名的类必须确实**不在**树里
+（否则这份登记表自己就在说谎）。
 
 | 退役名 | code | 退役于 | 曾经为什么虚 |
 |---|---|---|---|
-| `UnknownCommand` | E3030 | 第 44 步（F-68 裁决 (a)） | 内核从不发送账本外的命令，未知/低置信样本走离线归档 |
-| `ChecksumMismatch` | E3050 | 第 44 步（F-68 裁决 (a)） | 协议与传输层没有任何校验和读取点 |
-| `SourceUnavailable` | E7050 | 第 44 步（F-68 裁决 (a)） | 唯一用武之地是已删除的 pre-v17 auto 兜底门面 |
-| `CompatibilityWarning` | —（`UserWarning`） | 第 44 步（F-68 裁决 (a)） | 从未发射过；兼容性判定走 `CompatibilityError` |
+| `UnknownCommand` | E3030 | v1.0.0 | 内核从不发送账本外的命令，未知/低置信样本走离线归档 |
+| `ChecksumMismatch` | E3050 | v1.0.0 | 协议与传输层没有任何校验和读取点 |
+| `SourceUnavailable` | E7050 | v1.0.0 | 唯一用武之地是已删除的 auto 兜底门面 |
+| `CompatibilityWarning` | —（`UserWarning`） | v1.0.0 | 从未发射过；兼容性判定走 `CompatibilityError` |
 
-按同一份判据取证时被**否掉**的第 5 个名额：`BackpressureOverflow`（E6030）。它的两个事实
-并存——`BackpressureQueue.put` 确实从不抛（丢最旧元素并计数），而"溢出"仍以
+`BackpressureOverflow`（E6030）留在树上、不进这张表，因为它确实有运行期站点：
+`BackpressureQueue.put` 从不抛（丢最旧元素并计数），而"溢出"仍以
 `BackpressureOverflow` 的形式**投递**给订阅方的 `on_error`（`atst/streaming/base.py`）。
-"从不抛"被误读成"信号不存在"，源头是门禁按类名后缀识别构造点、看不见投递口；修判据后
-豁免撤销，行为证据见 `tests/streaming/test_backpressure_delivery.py`（真起一轮订阅、队列
-容量 1、断言回调拿到 `code=E6030` 且 `advice.retryable` 为真）。
+"从不抛"不等于"信号不存在"——投递口就是它的兑现方式，行为证据见
+`tests/streaming/test_backpressure_delivery.py`（真起一轮订阅、队列容量 1、断言回调拿到
+`code=E6030` 且 `advice.retryable` 为真）。
 
 ## 一之三、同族里被"接线"而不是被删除的类
 
@@ -76,27 +75,30 @@ CLI 每张面（序列化后是 `{"code", "message"}`），同时以 `UserWarnin
 类别集合是封闭的：全仓只有 `atst/diagnostics.py::record_warning` 一个发射口，新增类别
 不在枚举里声明就在运行期 `TypeError`。下表与枚举由
 `tests/architecture/test_caveat_channel_gates.py` 双向核对——文档少一行等于该类别在文档里
-隐身，多一行等于幻影类别，"发射口"一列指错文件等于把一条判断记在了不产出它的模块头上。
+隐身，多一行等于文档在讲代码不会发生的类别，"发射口"一列指错文件等于把一条判断记在了
+不产出它的模块头上。
 
 | code | 什么时候会出现 | 发射口 |
 |---|---|---|
 | `bars_anchor_drift` | `bars` 分页中途锚点漂移而提前终止：实取根数少于请求根数，且不是"更早的历史已取完"（历史耗尽只表现为短页） | `atst/client/_mixin.py` |
 | `bars_empty_first_page` | `bars` 首页即空响应。判据取服务端当次声明数：声明 0 是该标的无此周期历史，声明 N 却回 0 个记录字节是空桩；两者都不是历史耗尽 | `atst/client/_mixin.py` |
-| `bars_range_uncovered` | 请求了 `start_date` 日期区间，但取回的那一页没有触及区间起点之前（协议只支持"从最新往回数 `count` 根"）：结果是区间的一段而不是全部。加大 `count` 或用 `start` 继续往回翻页 | `atst/runtime/executor.py` |
+| `bars_range_uncovered` | 请求了 `start_date` 日期区间，但取回的那一页没有触及区间起点之前（协议只支持"从最新往回数 `count` 根"）：结果是区间的一段而不是全部。**区间完全落在取回窗口之前时同样触发**（此时结果是空列表——必须是这一条告警，否则调用方无从分辨"这些日期没有行情"与"这一段根本没取回来"）；区间起点落在休市日、取回窗口已触及起点之前则不算截断。加大 `count` 或用 `start` 继续往回翻页 | `atst/runtime/executor.py` |
+| `index_minute_volume_nominal` | 指数**分钟线**的成交量是服务端名义值（恒等于成交额/100），不是真实成交股数。指数日线族的成交量按「手」下发、已由解析器折算成「股」；分钟族这个字段换算不出真实股数，于是原样返回并发这条告警——不伪造数值。指数要量请改用日线或换 Web 源 | `atst/protocol/parsers/_std7709_bars.py` |
 | `quotes_partial_failure` | 批量 `quotes` 只取回部分标的的行情：逐只失败被隔离，结果不完整。全部失败不走这条，而是抛 `AllHostsUnreachable` | `atst/runtime/executor.py` |
 | `decode_caveat` | 解码层对自己解出的这一页的判断：实收记录数少于声明数、字段布局哨兵异常、精确解析失败后降级为启发式 | `atst/client/_mixin.py` |
 | `field_out_of_domain` | 解出来的行里有字段落在库自己声明的取值域之外——`market` 既不是 TDX 二进制市场编号也不是 canonical token、`code` 不是非空可见 ASCII、日期字段不是 ISO 形状。与上一条的区别在发射者：`decode_caveat` 是解码层自认的瑕疵，这一条是出口处拿 `atst/domain/integrity.py` 的尺子重新量出来的。记录布局尚未经真机 golden 锁定的命令页内字节数对得上，解码层因此一个字都不记，值却已经错位 | `atst/client/_mixin.py` |
 | `security_list_empty_first_page` | `export_security_list` 首页即空响应，导出为空。空首页不代表该市场没有证券 | `atst/client/_mixin.py` |
 | `security_list_page_limit` | `export_security_list` 在 `max_pages` 内未取尽（最后一页仍是满页），结果可能截断 | `atst/client/_mixin.py` |
 | `file_download_short` | 分块文件下载累计字节数小于服务端报告的 `total_len` | `atst/client/_mixin.py` |
-| `adjust_prev_close_missing` | 复权事件缺前收盘价：每股现金红利被忽略，价格因子是按 1/(1+S+R) 算的近似值 | `atst/domain/adjust.py` |
+| `adjust_prev_close_missing` | 复权事件缺前收盘价：每股现金红利被忽略，价格因子是按 1+S+R 算的近似值 | `atst/domain/adjust.py` |
 | `adjust_window_extend_failed` | 复权窗口向后延伸取数失败（已退回原窗口）：若最早事件早于窗口起点，早期因子的前收盘价取不到，后复权因子会随请求的 `count` 漂移 | `atst/runtime/executor.py` |
+| `auto_provider_fallback` | `provider='auto'` 自动选源跨源出数：候选里排在前面的 Provider 失败后由后续候选接住（候选排序 = 能力面 + `routing.auto_providers` 偏好 + 健康反馈沉底）。结果带 `requested_provider='auto'` + `fallback` 的 Provenance——不是静默换源 | `atst/client/api.py` |
 | `calendar_year_uncovered` | 交易日历未覆盖所请求的年份：该年节假日按"无节假日"处理 | `atst/domain/calendar.py` |
 | `web_sina_pages_missing` | 新浪全市场分页在重试与补拉之后仍缺页：拿到的是缺页结果，不是全市场 | `atst/web/sina/adapters.py` |
 | `web_tencent_pages_missing` | 腾讯全市场**代码枚举**阶段某页失败即停：返回的是被截断的代码表，全市场不完整（与 `web_tencent_batch_failed` 分属枚举 / 批量两个阶段） | `atst/web/tencent/adapters.py` |
 | `web_tencent_batch_failed` | 腾讯全市场单批重试后仍失败：结果不完整，缺的那批不会以空行占位 | `atst/web/tencent/adapters.py` |
 | `web_tencent_amount_all_zero` | 腾讯 K 线整批 `amount` 恒为 0（该源本周期不返回成交额字段），该字段不可用于计算 | `atst/web/_paginate.py` |
-| `web_eastmoney_page_limit` | 东财报表在 `max_pages` 内未取尽（最后一页仍满页），结果可能截断——含复权事件分页触顶 | `atst/web/corporate.py`、`atst/runtime/executor.py` |
+| `web_eastmoney_page_limit` | 东财报表在 `max_pages` 内未取尽（最后一页仍满页），结果可能截断——含复权事件分页触顶 | `atst/web/corporate.py`、`atst/runtime/executor.py`、`atst/web/_session_gaps.py` |
 | `web_fund_sort_column_undeclared` | 基金排行请求的 `sort_column` 不在本包声明的常用列词表 `SORT_COLUMNS` 里：请求原样发出，服务端可能按自己的默认列返回 | `atst/web/fund_rank.py` |
 | `currentness_unproven` | 声明的 `currentness` 要求当期数据，而本次 channel 给不出可判据的证据（本地文件）；`strict=True` 时它不是告警而是失败 | `atst/runtime/freshness.py` |
 
@@ -113,47 +115,33 @@ CLI 每张面（序列化后是 `{"code", "message"}`），同时以 `UserWarnin
 | `fallback_to_web` | 历史兼容字段 | **无消费方**（见下） |
 | `note` | 人类可读建议 | `TdxError.to_dict()` 的 advice 字典（见下） |
 
-`backoff` 那一格的形状是第 25 轮补的：退避只兑现给"回到刚失败过的那台主站"，
-换到一台没试过的机器时上一轮的退避不再花调用方时间（旧形状下 8 台主站的一次
-失败请求要睡 127 秒，真机 159 秒——本文此前写"重试前退避秒数"，读者按字面
-理解会以为那是一次重试的成本）。上限是
-`atst/transport/pool.py::MAX_RETRY_BACKOFF_SECONDS`，与 web 面的
-`atst/web/_base_retry.py::MAX_BACKOFF_SECONDS` 同值（8 秒）。
+`backoff` 是"回到刚失败过的那台主站"的退避基准：换到一台没试过的机器时，上一轮的
+退避不再花调用方时间。上限是 `atst/transport/pool.py::MAX_RETRY_BACKOFF_SECONDS`，与
+web 面的 `atst/web/_base_retry.py::MAX_BACKOFF_SECONDS` 同值（8 秒）。
 
-`max_retries` 那一格此前写着"pool 重试上限"，第 25 轮按读取点核对是**假的**：
-连接池的尝试次数来自 `[core] max_retries`（`ConnectionPool.max_retries`）与
-主站数量，全仓对 `advice.max_retries` 的读取只有两处序列化——
-`TdxError.to_dict` 与反馈载荷 `atst/feedback/reporter.py`，它们把它当事实转述
-出去，没有人按它行动（台账 G39）。**第 28 轮按 D3 口径把它从声明面删掉了**：
-`RetryAdvice` 现在六个字段、`to_dict()` 六个键、反馈载荷两格。删而不接的理由是
-它只能收紧一个本来就权威的上界，接进池里等于给"尝试几次"造第二个真相源。要恢复
-这个字段，得先说清哪一类错误该比 `[core] max_retries` 更早收口，并让两张池真的
-按每类错误的建议值行动——判据 `test_advice_field_actors.py` 会先要求执行方出现，
-再允许文档写它有消费方（同文件 §二 的表与字段名单两向相等，删一格必须同时删一行）。
+表里没有 `max_retries` 字段：连接池的尝试次数来自 `[core] max_retries`
+（`ConnectionPool.max_retries`）与主站数量。`RetryAdvice` 六个字段、`to_dict()` 六个
+键、反馈载荷两格。它只能收紧一个本来就权威的上界，接进池里等于给"尝试几次"造第二个
+真相源。要加回这个字段，得先说清哪一类错误该比 `[core] max_retries` 更早收口，并让
+连接池真的按每类错误的建议值行动——判据 `tests/architecture/test_advice_field_actors.py`
+会先要求执行方出现，再允许文档写它有消费方（§二 的表与字段名单两向相等，删一格必须
+同时删一行）。
 
-`note` 那一格此前写着「各层日志」，第 26 轮按读取点核对是**假的**：包内没有任何
-logger 读它，而 `TdxError.to_dict()` 的 advice 字典当时恰好漏列本字段——也就是
-说文档承诺的出口在唯一的序列化点上并不存在。本文这轮把 `note` 补进 `to_dict()`
-的 advice 字典（`errors.py`），并把这一格改成按真实出口描述：`to_dict()` 现在
-六个字段全量输出；反馈上报载荷（`atst/feedback/reporter.py`）仍只带
-`retryable` / `backoff` 两格；HTTP / MCP 的错误信封按设计只暴露
-`retryable`，不带 advice 字典。新增的判据
-`tests/architecture/test_advice_field_actors.py` 钉住这条口径：每个 advice 字段
-要么有按它行动的执行方，要么在本文表格里显式写着无执行方，且 `to_dict()` 的键
-必须与字段名单逐一相等。
+`note` 没有运行期消费方：包内没有任何 logger 读它。它的唯一出口是序列化——
+`TdxError.to_dict()` 六个字段全量输出；反馈上报载荷（`atst/feedback/reporter.py`）
+仍只带 `retryable` / `backoff` 两格；HTTP / MCP 的错误信封按设计只暴露 `retryable`，
+不带 advice 字典。判据 `tests/architecture/test_advice_field_actors.py` 钉住这条口径：
+每个 advice 字段要么有按它行动的执行方，要么在本文表格里显式写着无执行方，且
+`to_dict()` 的键必须与字段名单逐一相等。
 
-最后两行是 v17 的实况：`sources` 路由已随单内核删除，全仓对这两个字段的唯一
-读点就是 `TdxError.to_dict` 自己把它们写进序列化字典（`errors.py` 里
-`advice` 字典那两行）。`atst/errors.py` 的模块 docstring 早已声明"仅为序列化
-兼容保留，新内核不消费"——本文此前把它们
-写成有消费方的路由开关，属于幻影字段（F-68 登记，与 F-43 同族）。
+最后两行是历史兼容字段：全仓对这两个字段的唯一读点就是 `TdxError.to_dict` 自己把它们
+写进序列化字典（`atst/errors.py` 里 `advice` 字典那两行），没有组件按它们行动——
+`atst/errors.py` 的模块 docstring 也声明"仅为序列化兼容保留，新内核不消费"。
 
 **核心设计**：故障转移策略由异常自带、不在传输层硬编码——新增一种错误
 只需在 `errors.py` 声明 `default_advice`，传输层自动获得正确行为
 （`transport/__init__.py` docstring、`ConnectionPool.request` 的失败分支消费
-`advice.retryable`——本文此处原先写的是 `pool.py:423` 这样的行号，第 25 核对
-HEAD 时它已经指错地方（真读取点在那时是 :594），行号会随任何一次上方编辑腐坏，
-因此改成按符号引用）。
+`advice.retryable`——这里按符号引用而不是写行号，行号会随任何一次上方编辑腐坏）。
 
 解析优先级：实例 `advice=` 参数 → `RETRY_ADVICE[type]`（`_register_all()`
 模块加载时全量注册）→ 类属性 `default_advice` → 全局默认（全 False）。
@@ -176,10 +164,8 @@ class MyDomainError(TdxError):
 
 ## 四、上层边界约定
 
-**没有"永不抛异常"的门面层**：`facade/api.py` 与「`query()` 把任何异常转
-`ApiResponse{success=False, ...}`、路由链失败时聚合 `context["route_errors"]`」是 v12 门面
-（`atst/facade/`）的形状，该目录已随单内核物理删除，`ApiResponse` 与 `route_errors` 在
-`atst/` 里都不存在——本节此前把它们写成了现行边界（F-67）。今天的边界事实：
+**没有"永不抛异常"的门面层**：本库不提供把领域异常转成 `success=False` 响应的封装层。
+今天的边界事实：
 
 - **业务入口**（`atst/client/api.py` 的 `Client`/`AsyncClient`）不吞异常：整个模块没有一处
   `except`，失败以 `TdxError` 家族原样抛给调用方，`code`/`advice`/`context` 随异常走。
@@ -196,13 +182,12 @@ class MyDomainError(TdxError):
 - **WS 与 MCP 两面的人读位置不对称（实测）**：两面都把信封挂在 JSON-RPC `error.data`，但
   `atst/integration/runtime_ws.py` 的 `error.message` 是通用 RPC 文案（理由句在
   `data.message`），而 `atst/integration/mcp/_server.py` 把 `envelope.message` 直接平铺进
-  `error.message`。写客户端时别照抄另一面的读法。WS 面**连协议层失败也挂同一个信封**（第 29
-  轮）：解析失败 / 非法请求 / 未知方法这三条过去只回裸 RPC code（`-32700`/`-32600`/`-32601`）
-  而没有 `error.data`，现在都由 `RuntimeJsonRpcHandler._protocol_error` 统一补上信封，
+  `error.message`。写客户端时别照抄另一面的读法。WS 面**连协议层失败也挂同一个信封**：
+  解析失败 / 非法请求 / 未知方法这三条（裸 RPC code `-32700`/`-32600`/`-32601`）都由
+  `RuntimeJsonRpcHandler._protocol_error` 统一补上信封，
   `context.phase == "ws_protocol"`、`fallback_allowed` 与 `provider_switch_allowed` 同样恒为
   `false`；解析失败那一格没有 `request_id` 可填（报文本身没解出来）。
 - **CLI**（`atst/cli/__init__.py::main`）捕获 `TdxError` 时向 stderr 打印一行
   `{"error": <envelope>}` JSON 并以退出码 **2** 结束；非领域异常同样走信封但退出码 **1**，
-  `KeyboardInterrupt` 保留原生语义返回 **130**。本节此前写的是"打印 `str(exc)`（含 `[code]`
-  前缀）"，那是已删除的旧 CLI 形状。
+  `KeyboardInterrupt` 保留原生语义返回 **130**。
 

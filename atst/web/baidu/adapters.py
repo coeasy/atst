@@ -122,9 +122,30 @@ class BaiduSource(BaseWebSource):
         return BAIDU
 
     def build_url(self, symbols: Sequence[str], **kwargs: Any) -> str:
-        """构造 URL（默认 quote 快照路径，供基类 :meth:`fetch` 使用）。"""
+        """构造 URL（``kind``/``group`` 双口径路由，供基类 :meth:`fetch` 使用）。
+
+        ``kind`` 是语义面（``quote`` / ``minute`` / ``ticks`` / ``kline``），
+        ``group`` 是上游分组参数：``kind`` 命中行情族时路由到
+        ``quotation_minute_ab``（快照、分时、逐笔在百度是同一个分组端点），
+        否则沿用旧的 K 线分组 ``quotation_kline_ab``；显式传 ``group`` 的
+        老路径（``fetch_kline`` / ``fetch_minute`` / ``fetch_ticks``）永远
+        以 ``group`` 为准，语义不变。
+
+        为什么必须按语义路由而不是复用默认分组：默认分组是 K 线，而基类
+        :meth:`~atst.web._base_core.BaseWebSource.fetch_quotes` 下发
+        ``kind="quote"`` —— 旧实现不看 ``kind``，于是 ``fetch_quotes()``
+        拿 K 线 URL 请求、按行情解析，调用方看到的是"成功返回"，帧合法但
+        内容错能力。现在 URL 构造与解析两侧同口径按 ``kind`` 路由。
+        """
         code = _pure_code(symbols[0])
-        group = str(kwargs.get("group", "quotation_kline_ab"))
+        kind = str(kwargs.get("kind") or "").strip().lower()
+        group = str(kwargs.get("group") or "").strip().lower()
+        if not group:
+            group = (
+                "quotation_minute_ab"
+                if kind in ("quote", "minute", "ticks")
+                else "quotation_kline_ab"
+            )
         params = [
             f"code={code}",
             "stockType=ab",
@@ -404,7 +425,6 @@ class BaiduSource(BaseWebSource):
         increase = _f(cur.get("increase"))
         q = Quote(
             code=str(basic.get("code") or code),
-            datetime=str(cur.get("time") or ""),
             price=price,
             last_close=round(price - increase, 4) if increase else 0.0,
             volume=_vol_to_shares(cur.get("totalVolume")),
@@ -414,6 +434,11 @@ class BaiduSource(BaseWebSource):
             "name": str(basic.get("name") or ""),
             "avg_price": _f(cur.get("avgPrice")),
             "pct_change": _f(str(cur.get("ratio")).rstrip("%")),
+            #: 行情时间：百度这一格是 unix 秒。原值进 extra，由
+            #: :func:`~atst.web.normalize.quote_datetime_from_extra` 渲染成
+            #: ``Quote.datetime``——旧实现把它 ``str()`` 后硬塞进 ``datetime``，
+            #: 契约字段里于是躺着 "1792395000"：既不是时间，也过了回填判据。
+            "time": cur.get("time"),
         }
         for lv in (res.get("buyinfos") or [])[:5]:
             if isinstance(lv, dict):

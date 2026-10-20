@@ -16,8 +16,8 @@ WS 名单有两种形状（``docs/api/README.md`` 的括号清单、``docs/api/i
 "门面层边界"正是被"只认点号形状"漏掉的。调用链之外的最后一格是**参数槽**：文档里写出的
 ``get_client("...")`` kind 必须与工厂注册表的键集合双向相等——幻影 kind 与漏写的真 kind
 都红。
-历史快照（``docs/archive/``、``docs/adr/``、``DESIGN.md``）记录的是当时
-语境，不参与门禁。
+``CHANGELOG.md`` 的往日条目记录的是当时语境，不参与门禁。历史快照目录（``docs/archive/``、
+``docs/adr/``、根 ``DESIGN.md``）已于 v1.5.1 物理删除，历史判据一律收进 CHANGELOG。
 """
 
 from __future__ import annotations
@@ -36,7 +36,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
-#: 参与门禁的活文档：仓库根说明 + docs/（排除归档与 ADR 历史语境）。
+#: 参与门禁的活文档：仓库根说明 + docs/。``archive``/``adr`` 已在 v1.5.1 删除，
+#: 留在排除表里是为了防止它们被建回来时悄悄逃过门禁。
 EXCLUDED_PARTS = {"archive", "adr", "node_modules", ".venv"}
 
 NON_EXPORTS = {"__version__", "configure", "get_config"}
@@ -249,8 +250,8 @@ def _looks_like_repo_path(token: str) -> bool:
 def _path_exists(token: str) -> bool:
     """相对仓库根 / ``atst/`` / ``docs/`` 任一处能落位，就算活路径。
 
-    文档里同一个东西有三种写法（``docs/providers/tdx.md``、``facade/api.py`` 指
-    ``atst/facade/api.py``、``archive/plans/…`` 指 ``docs/archive/plans/…``），
+    文档里同一个东西有三种写法（``docs/providers/tdx.md``、``charset/__init__.py`` 指
+    ``atst/charset/__init__.py``、``configuration.md`` 指 ``docs/configuration.md``），
     只按一种根匹配会虚报——探针虚报比漏报更难查（F-67/F-44 的同形教训）。
     """
     return any((root / token).exists() for root in (ROOT, ROOT / "atst", ROOT / "docs"))
@@ -1066,6 +1067,11 @@ _EXACT_CLAIMS: tuple[tuple[str, str, str, Callable[[], int]], ...] = (
     ("docs/ARCHITECTURE.md", "解析器数", r"、(\d+) 解析器", _protocol_parsers),
     ("docs/ARCHITECTURE.md", "配置段数", r"（(\d+) 段", _config_sections),
     ("docs/ARCHITECTURE.md", "根级模块白名单", r"根级白名单\s*(\d+)\s*项", _root_modules),
+    # 第 24 步：ARCHITECTURE 的「服务面」一表把 CLI 子命令数与 HTTP 路由数各写一遍，
+    # 却只登记了 capability/命令/解析器/配置段/根级模块五项——`hosts` 组加子命令时
+    # 这张表说 32、README 说 33，门禁全绿而读者照抄到的是旧数。
+    ("docs/ARCHITECTURE.md", "CLI 子命令数", r"（(\d+)\s*子命令", _cli_subcommands),
+    ("docs/ARCHITECTURE.md", "HTTP 路由数", r"，(\d+)\s*路由", _http_routes),
     ("README.md", "协议命令数", r"(\d+)\s*命令账本", _protocol_commands),
     ("README.md", "解析器数", r"(\d+)\s*精确解析器", _protocol_parsers),
     ("docs/api/README.md", "capability 数", r"(\d+)\s+capability", _capabilities),
@@ -1518,8 +1524,8 @@ def test_readme_tree_lists_every_top_level_module() -> None:
     assert on_disk <= listed, f"新增顶层模块未写进 README 结构树：{sorted(on_disk - listed)}"
 
 
-#: 审计文档不是用户会读的那一页：台账与变更日志里点名某个导出，不等于它有使用文档。
-#: （`docs/archive`、`docs/adr` 已由 :func:`active_docs` 排掉。）
+#: 审计文档不是用户会读的那一页：变更日志里点名某个导出，不等于它有使用文档。
+#: （历史目录 `docs/archive`、`docs/adr` 已于 v1.5.1 删除，无从排掉。）
 AUDIT_DOC_MARKS = ("REFACTOR", "CHANGELOG")
 
 
@@ -1972,11 +1978,13 @@ def _code_doc_citations() -> list[tuple[str, str]]:
 
 
 def test_code_cites_only_docs_paths_that_exist() -> None:
-    """代码把文档路径写进注释当证据出处，文档一归档这个出处就指空。
+    """代码把文档路径写进注释当证据出处，文档一移动这个出处就指空。
 
-    第 15 轮把 5 份对标文档移入 ``docs/archive/parity/`` 时，实测有 4 处这样的断指路牌
+    第 15 轮把 5 份对标文档移入归档时，实测有 4 处这样的断指路牌
     （``atst/web/limits.py`` 引 v5 计划、两处测试引已归档计划、一处引刚移动的对标件）——
-    文档侧的路径判据是"文档 → 磁盘"，从来没有人反向量过"代码 → 文档"。
+    文档侧的路径判据是"文档 → 磁盘"，从来没有人反向量过"代码 → 文档"。v1.5.1 删掉
+    ``docs/archive/`` 时又是同一形状：14 处代码/测试注释指过去，全部就地改写成不再依赖
+    那份文件才能成立的表述（留结论、去掉出处指针），而不是把文件捞回来。
     """
     cited = _code_doc_citations()
     assert len(cited) >= 25, f"只扫到 {len(cited)} 处代码里的 docs 引用，判据自身失明"
@@ -1991,7 +1999,7 @@ def test_the_docs_citation_ruler_sees_a_planted_dead_path() -> None:
 
     路径按运行期拼接，源码里不留下一条完整的死路径——否则本文件自己就是第一个违约者。
     """
-    dead = "docs/archive/parity/" + "no_such_plan.md"
+    dead = "docs/providers/" + "no_such_page.md"
     line = f"# 见 docs/quickstart.md 与 {dead} 两处的口径"
     assert _doc_citations_in(line) == ["docs/quickstart.md", dead]
     cited = _code_doc_citations()

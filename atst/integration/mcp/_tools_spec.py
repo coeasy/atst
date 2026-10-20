@@ -32,6 +32,17 @@ _PROVIDER = _str_prop(
 #: （:meth:`atst.runtime.orchestration.FallbackPolicy.from_wire`）。此前只有 MCP 没有它，
 #: 所以同一个「这家失败就换」的请求在三张面上能提、在面向模型的那张面上提不出来。
 _FALLBACK = _str_prop("Comma-separated ordered Provider list for cross-Provider fallback.")
+#: ``strict`` 旋钮：bars 与 quotes 共用同一份描述（四面同一条判据——
+#: ``tests/architecture/test_face_exposure_projection.py`` 要求一个旋钮要么四面都能推、
+#: 要么一面都不挂）。
+_STRICT = {
+    "type": "boolean",
+    "description": (
+        "Fail the call when the result carries any data-integrity "
+        "warning instead of returning it for the caller to self-check."
+    ),
+    "default": False,
+}
 
 TOOLS: list[ToolSpec] = [
     ToolSpec(
@@ -71,14 +82,7 @@ TOOLS: list[ToolSpec] = [
                 "currentness": _str_prop(
                     "Freshness contract: live / historical / business / auto."
                 ),
-                "strict": {
-                    "type": "boolean",
-                    "description": (
-                        "Fail the call when the result carries any data-integrity "
-                        "warning instead of returning it for the caller to self-check."
-                    ),
-                    "default": False,
-                },
+                "strict": _STRICT,
                 "start_date": _str_prop(
                     "Inclusive range start (YYYY-MM-DD). The wire protocol only walks "
                     "backwards by count, so the range is cut from the fetched page: if "
@@ -101,6 +105,7 @@ TOOLS: list[ToolSpec] = [
                 "symbol": _str_prop("Security symbol."),
                 "provider": _PROVIDER,
                 "fallback": _FALLBACK,
+                "strict": _STRICT,
             },
             "required": ["symbol"],
         },
@@ -116,6 +121,7 @@ TOOLS: list[ToolSpec] = [
                 "symbols": _list_of_strings("Security symbols."),
                 "provider": _PROVIDER,
                 "fallback": _FALLBACK,
+                "strict": _STRICT,
             },
             "required": ["symbols"],
         },

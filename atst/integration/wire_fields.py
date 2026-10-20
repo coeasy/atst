@@ -52,7 +52,7 @@ QUERY_BODY_FIELDS: Final[frozenset[str]] = frozenset(
 #: WS JSON-RPC 每个方法的 ``params`` 键。分母是 ``RuntimeJsonRpcHandler.METHODS``，
 #: 两个方向都不许有差（同一个测试文件把守）。
 WS_PARAMS_FIELDS: Final[dict[str, frozenset[str]]] = {
-    "quotes": frozenset({"symbols", "provider", "fallback"}),
+    "quotes": frozenset({"symbols", "provider", "fallback", "strict"}),
     "bars": frozenset(
         {
             "symbol",

@@ -3,7 +3,7 @@
 > Provider ID: `tdx`  
 > API compatibility selector: `source="tdx"`  
 > Role: `primary_live`  
-> Status: v12 target contract; protocol facts follow Command Ledger / golden evidence.
+> Status: active contract; protocol facts follow Command Ledger / golden evidence.
 
 ## 1. 定位
 
@@ -26,7 +26,7 @@ minute（0x0537 的 request/parser 仍为 inferred，结构化 API 在发包前�
 trades（0x0FC5 同上：tdx 面的当日逐笔没有可用结构化入口，逐笔改走 Web Provider）
 security_count
 security_list（0x044D 多主站实测无响应，已下线：发包前抛 CommandOffline）
-finance（字段口径未闭合，见 docs/archive/plans/REFACTOR_PLAN_V17_CLOSURE.md §0.3 F-37：结构与条数可用，逐字段语义不保证）
+finance（字段口径未闭合，F-37：结构与条数可用，逐字段语义不保证）
 capital_changes（同 finance，F-37）
 snapshot
 ```
@@ -164,7 +164,7 @@ age
 运行期没有证据证明文件已覆盖当期——`strict=True` 当场返回 `FreshnessViolation`，
 非严格模式把它作为 `currentness_unproven` 瑕疵随结果出发（不静默）。
 
-上面 freshness profile 清单里的 `age`/`received_at` 在 v17 运行期**没有对应字段、没有生产者、也没有读取者**（全仓 `received_at`/`age` 命中 0 处），`observed_at` 只有 `Provenance.observed_at_ns` 一个事实；因此除上述本地文件面之外，本仓不声称任何运行期年龄校验（剩余面登记为 F-68，等删除或占位裁决）。
+上面 freshness profile 清单里的 `age`/`received_at` 在运行期**没有对应字段、没有生产者、也没有读取者**（全仓 `received_at`/`age` 命中 0 处），`observed_at` 只有 `Provenance.observed_at_ns` 一个事实；因此除上述本地文件面之外，本仓不声称任何运行期年龄校验。
 
 `live` 打在非 live channel 上仍是规划期的输入错误（`ValidationError`/422），不改写成 503：请求本身不可满足，与结果是否新鲜无关。
 不得用缓存/Replay/Web 伪装 TDX 实时成功。

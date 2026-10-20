@@ -26,6 +26,7 @@ __all__ = [
     "CoreConfig",
     "HostsConfig",
     "RateLimitConfig",
+    "RoutingConfig",
     "WebConfig",
     "SecurityConfig",
     "Config",
@@ -97,9 +98,14 @@ class CoreConfig:
 
     def validate(self) -> None:
         from ..providers import PROVIDERS
+        from ..runtime.autoselect import AUTO_PROVIDER
 
         default_provider = _check_non_empty_str("core.default_provider", self.default_provider)
-        PROVIDERS.get(default_provider)
+        #: ``auto`` 是显式自动选源的策略名（见 :mod:`atst.runtime.autoselect`）：
+        #: 配成它之后，**未显式指定 provider 的每次请求**都按能力面 + 健康反馈
+        #: 自动选源。钉死 Provider 的调用不受影响。
+        if default_provider.strip().lower() != AUTO_PROVIDER:
+            PROVIDERS.get(default_provider)
         _check_range("core.timeout", self.timeout, 0.1, 300)
         _check_int_range("core.heartbeat_interval", self.heartbeat_interval, 0, 3600)
         _check_int_range("core.max_retries", self.max_retries, 0, 20)
@@ -196,6 +202,42 @@ class WebConfig:
 
 
 @dataclass
+class RoutingConfig:
+    """``provider='auto'`` 自动选源参数（provider-first 的显式自动模式）。
+
+    自动选源只在调用方显式写下 ``provider='auto'``（或
+    ``core.default_provider='auto'``）时生效；每个结果仍带 Provenance
+    （``requested_provider='auto'`` + ``fallback`` 标记），钉死 Provider 的
+    请求永远不经过这条路径。
+    """
+
+    #: 候选偏好顺序（能力面过滤后按此排序）。空 = 注册表登记顺序。
+    auto_providers: list[str] = field(default_factory=list)
+    #: 运行时健康反馈有效期（秒）：期内失败过的 Provider 排到队尾，
+    #: 过期自动复位。``0`` = 关闭健康反馈，纯静态排序。
+    auto_health_ttl: float = 90.0
+
+    def validate(self) -> None:
+        from ..providers import PROVIDERS
+        from ..runtime.autoselect import AUTO_PROVIDER
+
+        if not isinstance(self.auto_providers, list):
+            raise ValidationError(
+                f"routing.auto_providers 必须是 list，收到 {type(self.auto_providers).__name__}"
+            )
+        for provider in self.auto_providers:
+            if not isinstance(provider, str) or not provider.strip():
+                raise ValidationError(f"routing.auto_providers 含非字符串项 {provider!r}")
+            if provider.strip().lower() == AUTO_PROVIDER:
+                raise ValidationError(
+                    "routing.auto_providers 里不能再放 'auto'：它是策略名不是 Provider，"
+                    "嵌套自动没有语义"
+                )
+            PROVIDERS.get(provider)
+        _check_range("routing.auto_health_ttl", self.auto_health_ttl, 0, 86400)
+
+
+@dataclass
 class SecurityConfig:
     #: 标准族 TCP 连接是否包裹 TLS。默认关闭：主流 TDX 站点明文服务。
     use_tls: bool = False
@@ -222,6 +264,7 @@ class Config:
     core: CoreConfig = field(default_factory=CoreConfig)
     hosts: HostsConfig = field(default_factory=HostsConfig)
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
+    routing: RoutingConfig = field(default_factory=RoutingConfig)
     web: WebConfig = field(default_factory=WebConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
 
@@ -229,6 +272,7 @@ class Config:
         "core",
         "hosts",
         "rate_limit",
+        "routing",
         "web",
         "security",
     )
@@ -238,6 +282,7 @@ class Config:
             "core": CoreConfig,
             "hosts": HostsConfig,
             "rate_limit": RateLimitConfig,
+            "routing": RoutingConfig,
             "web": WebConfig,
             "security": SecurityConfig,
         }

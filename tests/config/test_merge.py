@@ -36,9 +36,22 @@ class TestConfigMerge:
         assert cfg.security.use_tls is False
 
     def test_schema_has_only_wired_sections(self):
-        """配置面即执行面清单：装饰段不得复活。"""
+        """配置面即执行面清单：装饰段不得复活。
 
-        assert Config._SUBCONFIGS == ("core", "hosts", "rate_limit", "web", "security")
+        ``routing`` 在名单里是因为它**真的被执行面读**：``UnifiedRuntime`` 把
+        ``routing.auto_providers`` / ``routing.auto_health_ttl`` 传给
+        ``QueryPlanner``（``auto_prefer`` / ``auto_ttl_ns``），
+        ``provider="auto"`` 的候选排序就吃这两个值。
+        """
+
+        assert Config._SUBCONFIGS == (
+            "core",
+            "hosts",
+            "rate_limit",
+            "routing",
+            "web",
+            "security",
+        )
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("ATST_CORE_TIMEOUT", "7")

@@ -25,7 +25,9 @@ with market_data() as md:
 
 `etf` **当前不属于生产 Provider Registry**。
 
-历史代码曾把 `etf` 与 `bond` 都映射到同一个 `JslSource`，但该 adapter 实际请求的是可转债 endpoint，并解析 `bond_id` / `bond_nm` 等可转债字段。继续把它声明为 ETF 会产生错误业务数据，因此 v12 按 fail-closed 原则移除了生产 ETF capability。
+`etf` 与 `bond` 不能共用同一个 `JslSource`：该 adapter 实际请求的是可转债 endpoint，
+解析的是 `bond_id` / `bond_nm` 等可转债字段，把它继续声明为 ETF 会产出错误业务数据。
+因此 ETF capability 按 fail-closed 原则不在生产 Registry 中。
 
 在真实 ETF endpoint、请求参数、解析 schema 和回归样本被验证并实现独立 adapter 之前：
 

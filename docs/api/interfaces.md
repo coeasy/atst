@@ -30,11 +30,11 @@ from atst.client import TdxClient
 
 | 方法 | 签名 | 说明 |
 |------|------|------|
-| `bars` | `(symbol, *, period="day", count=320, start=0, market=None, index=False, as_format="dict", strict=False)` | K 线/分钟线；`count` > 800 时内部自动按 800 一页翻页。**返回按 `datetime` 升序**（`rows[0]` 最早、`rows[-1]` 最新，四张面一致）；`count` 是**上限**，标的上市时间不足时实际返回更少（短页即止，不补空行） |
-| `quotes` | `(symbols, *, as_format="dict")` | 实时行情快照（`0x0530` 逐只请求再汇总） |
+| `bars` | `(symbol, *, period="day", count=320, start=0, market=None, index=None, as_format="dict", strict=False)` | K 线/分钟线；`count` > 800 时内部自动按 800 一页翻页。**返回按 `datetime` 升序**（`rows[0]` 最早、`rows[-1]` 最新，四张面一致）；`count` 是**上限**，标的上市时间不足时实际返回更少（短页即止，不补空行）；`index=` 缺省**按代码段自动推断**（与门面 `Client.bars` 同一份段表），因为指数 K 线每条记录尾部多 4 字节涨跌家数，这个位走反了整条记录流就错位——日期变成 `5243-00-00`、成交量变成 1e40，而第 1 条日期往往还对得上 |
+| `quotes` | `(symbols, *, as_format="dict", strict=False)` | 实时行情快照（`0x0530` 逐只请求再汇总）；`strict=True` 时解析器自校验漂移的标的进失败袋（`IntegrityViolation`），不返回可疑行情 |
 | `quotes_concurrent` | `(symbols, *, workers=8, as_format="dict")` | 并发批量行情 |
 | `security_count` | `(market=0)` | 证券数量 |
-| `finance_info` | `(symbol)` | 财务信息（结构与条数可用，**逐字段语义不保证**，见 F-37） |
+| `finance_info` | `(symbol)` | 财务信息（结构与条数可用，**逐字段语义不保证**） |
 | `capital_changes` | `(symbol)` | 除权除息 / 股本变迁（`0x000F`）：口径与 `finance_info` 同格——条数可用、字段语义不保证，越域行会带 `field_out_of_domain` 告警 |
 | `minute_today` | `(symbol)` | **已下线**（0x0537 request/parser 仍 inferred，发包前抛 `NotImplementedFeature`） |
 | `security_list` | `(market=0, start=0)` | 证券列表：**已下线**（0x044D 账本 offline，发包前抛 `CommandOffline`） |
@@ -68,8 +68,7 @@ from atst.client import AsyncTdxClient
 心跳与空闲回收在异步面**不是"构造即起跑"**：`AsyncConnectionPool` 只在第一次真正握住一条
 socket 时（`_get_conn_locked`）武装那条线程，`AsyncTdxClient.open()` 与 `async with pool`
 都不武装它；同步池则在构造器里就武装。两边因此"从什么时候开始回收空闲槽位"差这一刻。
-第 31 轮之前异步面**从未起跑过**——`heartbeat_interval` / `idle_timeout` 传进去也只是被存
-起来，是幻影旋钮；全包武装点唯一由 `tests/transport/test_async_sweeper_arm.py` 现扫核对。
+全包武装点唯一由 `tests/transport/test_async_sweeper_arm.py` 现扫核对。
 
 ### 多协议族客户端
 
@@ -107,10 +106,9 @@ from atst.protocol.commands import (
 | `by_status` | `(status, family=None)` | `list[Command]` | 按实测状态列全部行：`online` 74 / `offline` 9 / `degraded` 2。发包前的 fail-fast 读的是**单行的** `status`（`atst/client/core.py` 的 `_guard_offline` 走 `get_command`），本函数是"按状态列全部行"那一侧 |
 | `unknown_command_ids` | `(family=Family.STANDARD)` | `list[Command]` | 语义未经 golden 校正（`verified=False`）的行：默认族 32 条、全账本 78 条。**返回行而不是裸命令号**，「unknown」也不等于「命令不存在」 |
 
-F-65 裁决 (b) 删掉了两个查询函数，不留别名：`stats()`（按族聚合的计数字典，`atst/` 内
-零读取点，唯一的读者是它自己的测试）、`get_command_by_name()`（对 85 行做线性名字扫描，
-全包零调用、零测试）。名字 → 整行的需求由 `get_command(cmd(name), family)` 覆盖，用例
-逐行验证它给的是同一个对象，所以删除不削能力。
+账本查询面没有 `stats()` 与 `get_command_by_name()`：前者是按族聚合的计数字典，`atst/` 内
+零读取点、唯一读者是它自己的测试；后者对 85 行做线性名字扫描，全包零调用、零测试。
+名字 → 整行的需求由 `get_command(cmd(name), family)` 覆盖，用例逐行验证它给的是同一个对象。
 
 ### 工厂
 
@@ -151,9 +149,8 @@ with TradeClient() as c:                # 缺省 transport 是 SimTransport
 
 七个查询出口里六个是 `query(category)` 的具名包装，与 `QUERY_CATEGORY_*` 常量一一对应：
 `query_cash`、`query_stocks`、`query_orders`、`query_deals`、`query_cancelable`、
-`query_shareholders`。第 26 轮 F-113 给后三个补上调用侧证据——`tests/trade/test_client.py`
-现在既逐条断言各自的返回形状，也逐条断言"包装 == 按类别直查"；此前这三支能 import、
-有 docstring，全仓却没有任何一处按名调用过它们。
+`query_shareholders`。`tests/trade/test_client.py` 既逐条断言各自的返回形状，也逐条断言
+"包装 == 按类别直查"。
 
 **成交不在本库的范围内**：撮合发生在交易所，所以模拟券商不会自动把委托变成成交，只下过单时
 `query_deals()` 恒为 `[]`（空表在这里是"确实没有成交"，不是查不到）。要看到成交必须显式注入
@@ -173,8 +170,8 @@ from atst import Client, AsyncClient
 
 | 方法 | 签名摘要 | 说明 |
 |------|----------|------|
-| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", strict=False, start_date="", end_date="")` | K 线；`strict=True` 时结果携带任何数据瑕疵即抛 `TruncatedDataError`；`start_date`/`end_date` 是闭区间日期（见本节「日期区间」）；`period=` 收哪些写法见本文 §6「K 线周期拼写」一表；**返回按 `datetime` 升序**（`rows[0]` 最早、`rows[-1]` 最新） |
-| `quotes` | `(symbols, *, provider=None, policy=None, currentness="live")` | 实时行情 |
+| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", strict=False, start_date="", end_date="", index=None)` | K 线；`strict=True` 时结果携带任何数据瑕疵即抛 `TruncatedDataError`；`start_date`/`end_date` 是闭区间日期（见本节「日期区间」）；`period=` 收哪些写法见本文 §6「K 线周期拼写」一表；`index=` 是 `0x052D` 指数位，**缺省按代码段自动推断**（见本节「指数 K 线」）；**返回按 `datetime` 升序**（`rows[0]` 最早、`rows[-1]` 最新） |
+| `quotes` | `(symbols, *, provider=None, policy=None, currentness="live", strict=False)` | 实时行情。`strict=True`（仅 tdx 路径生效）时解析器自校验（哨兵失配 / 成交额越界）发现字段漂移的标的直接判失败（`IntegrityViolation`），不返回"帧合法、值可疑"的行情——实测不存在代码 `sh999999` 的主站响应，回声匹配、载荷齐全，量能却荒谬 |
 | `quotes_batch` | `(symbols, *, provider=None, currentness="live") -> BatchResult` | 逐 symbol 三态审计 |
 | `snapshot` | `(symbol, *, provider="tdx", currentness="live")` | 盘口快照 |
 | `minute` | `(symbol, *, provider="tdx", currentness="live")` | 当日分时（**默认 tdx 已下线**，抛 `NotImplementedFeature`；分时改用声明该能力的 Web Provider：`tencent` / `eastmoney` / `baidu`） |
@@ -186,18 +183,33 @@ from atst import Client, AsyncClient
 | `call` | `(capability, *args, provider=None, channel=None, currentness="business", **kwargs)` | 便捷通用入口 |
 | `execute_with_policy` | `(spec, *, policy: FallbackPolicy) -> OrchestratedResult` | 显式跨源编排 |
 | `typed` | `(query: CapabilityQuery, **kwargs) -> TypedQueryResult` | 冻结 dataclass 契约 → 强类型记录 |
-| `capabilities` | `() -> tuple[str, ...]` | 能力发现面：**只有名字、没有可用性**，197 项的构成与发不出去的那几个见下节「能力发现面：只有名字，没有可用性」 |
+| `capabilities` | `() -> tuple[str, ...]` | 能力发现面：**只有名字、没有可用性**，216 项的构成与发不出去的那几个见下节「能力发现面：只有名字，没有可用性」 |
 | `capability_statuses` | `() -> dict[str, str]` | 全部迁移能力的 `{name: status}` 真值表（`alive`/`degraded`/`offline`/`needs_verify`）；与只覆盖内核集的 `core_capability_statuses` 互补，状态取自 `catalog/capability.py` 的单一事实源 |
 | `core_capability_statuses` | `() -> dict[str, dict[str, Any]]` | **本实例内核**的能力可用性真值表：逐内核方法区分「任意 Provider 可用」与「默认路径可用」（未注入执行器时默认路径为不可用），据此判断某能力今天是否真的发得出去 |
+| `provider_health_status` | `() -> dict[str, dict[str, Any]]` | `provider="auto"` 的**降级名单**：`{provider: {code, age_s}}`，只列仍处 `[routing] auto_health_ttl` 窗口内的失败标记（读取时即复位过期项，与 `auto` 排序同一份）。与 `/v13/runtime/health` 的 `provider_health` 字段同源 |
 | `close` | `()` | 收尾**本实例自建**的内核（`runtime=` 传进来的那份不碰）。默认内核跨调用不持有连接，所以它关的是"借来的东西"这一格所有权，不是连接池——见下节 |
 
 `AsyncClient` 是同名异步镜像（`async with AsyncClient() as client: ...`）；
 传 `policy=` 时 `bars/quotes` 返回 `OrchestratedResult` 而非 `QueryResult`。
 
-**`close()` 到底释放什么**（第 31 轮实测，判据 `tests/runtime/test_close_chain_ownership.py`）：
-构造一个 `Client()` 之后进程的线程数增量为 0，它手里的执行器只有 `timeout` / `hosts` /
-`vipdoc_root` / `config` / `_bindings` 五个值，内置执行器甚至没有 `close()` 这个方法——每次
-取数都是现场构造家族客户端、`finally` 释放（第 31 轮 31-B4 让四条分支收成同一形状）。因此
+**`provider="auto"`：显式自动选源**（判据 `tests/runtime/test_auto_provider.py`）。它是一个
+**策略名**，不是 Provider——别名解析不适用于它。两种显式形态才生效：请求自己写
+`provider="auto"`，或 `core.default_provider="auto"` 且本次没钉死 Provider。候选顺序每次
+请求现算：能力面 operational 的 Provider → `[routing] auto_providers` 偏好 → 健康反馈沉底
+（期内失败过的排到队尾，`auto_health_ttl` 秒后自动复位）。跨源出数**不静默**：结果带
+`requested_provider="auto"` + `fallback` 的 Provenance，并附一条 `auto_provider_fallback`
+瑕疵；全部候选失败抛 `AllSourcesExhausted`。钉死 Provider 的请求永远不经过这条路径——
+provider-first 不变量不受影响。
+
+```python
+client.quotes("sh600519", provider="auto")      # 本次自动选源
+client.quotes("sh600519", provider="tencent")   # 钉死：不经过自动选源
+```
+
+**`close()` 到底释放什么**（判据 `tests/runtime/test_close_chain_ownership.py`）：构造一个
+`Client()` 之后进程的线程数增量为 0，它手里的执行器只有 `timeout` / `hosts` / `vipdoc_root` /
+`config` / `_bindings` 五个值，内置执行器甚至没有 `close()` 这个方法——每次取数都是现场构造
+家族客户端、`finally` 释放。因此
 `close()` 真正兑现的是两件事：**注入执行器**（自带池或外设的那份）的收尾口子，以及
 「谁造谁关」这条协议在 HTTP/WS/MCP 三张服务面上的统一落点。两件它**不**做的事：
 不关你传进来的 `runtime`，也**不停止由本客户端 `stream()` 出来并已 `start()` 的流**——那条
@@ -240,10 +252,54 @@ with Client() as c:
 `GET /v13/bars/600519?start_date=2026-01-01&end_date=2026-03-31`、WS `bars` 与 MCP `get_bars`
 的同名字段。
 
+### 指数 K 线（`index=` 与两条易错口径）
+
+指数与股票共用命令 `0x052D`，但**记录布局不同**：指数每条记录尾部多 4 字节
+（上涨家数 + 下跌家数）。这个差异由 `index=` 这个上下文位开关，`Client.bars` 缺省
+**按代码段自动推断**（`sh000001` / `sz399001` / `sh000300` 判指数，判据是
+`atst.universe.classify_with_index` 的段表——与 `atst universe` 同一份事实源），
+正常使用不需要传它；只有"段表把某只代码判错了"时才显式覆盖：
+
+```python
+with Client() as c:
+    rows = c.bars("sh000001", count=5).data          # 自动推断，带 up_count/down_count
+    rows = c.bars("sh000001", count=5, index=False)  # 显式关掉（见下方警告）
+```
+
+推断发生在**三层**，不是只有一层：门面 `Client.bars`、执行器（`bars` /
+`adjusted_bars` / `daily_enriched` 共用一个 K 线通路）、以及连接层
+`TdxClient.bars` / `AsyncTdxClient.bars`。直连连接层（绕过门面自己拿 `TdxClient`）
+同样自动推断——这一层曾经把缺省写死成 `False`，于是 `TdxClient.bars("sh000001")`
+直连调用必然错位，而门面那条路是好的，两类调用各有一半故障。
+
+**这个位不开会怎样**：解码器不消费那 4 字节，于是**下一条**记录的 `datetime` 从尾巴上
+开始读——整条记录流从此错位。实测 `Client().bars("sh000001")` 取 3 根时返回
+`10112-28-10` / `2026-10-08` / `428119-93-66`，成交量出现 1e40 量级。错位是混沌的
+（LEB128 变长，偶尔会自己对齐回来），所以"3 根里 1 根是对的"比整页全错更难发现。
+错位的行会被出口处的值域尺子逮住并发 `field_out_of_domain` 告警（见 `docs/errors.md`），
+`strict=True` 时直接失败。
+
+**成交量的单位也不同**（2026-10-13 实测，三家 cross-check）：
+
+| 周期族 | 指数原始成交量 | 股票原始成交量 |
+| --- | --- | --- |
+| 日线及以上（`day`/`week`/`month`/`season`/`year`） | 按「手」 | `day` 按「股」、其余按「手」 |
+| 分钟线（`1min`…`120min`） | **名义值**（恒等于成交额/100） | 按「股」 |
+
+解析器已把日线族的指数成交量折算成「股」——修正后 `sh000001` 的 `amount/volume`
+落在 15~17 元（沪市成交量加权均价的合理量级），修正前是 1549 元。分钟线那一格换不出
+真实成交股数（乘 100 只会得到成交额本身），于是原样返回并发
+`index_minute_volume_nominal` 告警；**指数要量请用日线**，或换 Web 源
+（新浪/腾讯的指数成交量是「股」，但腾讯的指数 `amount` 恒为 0）。
+
+**公司行为报表不覆盖指数**：东财 datacenter 报表按 6 位代码过滤、不带市场前缀，
+`sh000001`（上证指数）与 `sz000001`（平安银行）因此撞码。指数没有分红、配股、估值、
+股东户数、两融，这些能力对指数符号返回**空集**而不是撞码那只股票的数据。
+
 ### 复权 K 线（`adjusted_bars`）
 
 `adjusted_bars` 是**组合能力**（`composed`）：原始 K 线走选定的行情 Provider，除权除息事件单独取，
-两份在 `atst/domain/adjust.py` 的 `AdjustEngine` 里合成因子。它是 192 个 catalog 迁移能力之一，因此
+两份在 `atst/domain/adjust.py` 的 `AdjustEngine` 里合成因子。它是 211 个 catalog 迁移能力之一，因此
 走**通用入口**而不是某张面的专属路由：
 
 ```python
@@ -278,7 +334,7 @@ with Client() as c:
 
 **前收盘价**：复权因子的现金红利项需要前收盘价（`(P−D)/(1+S+R)` 那一支）。`AdjustEngine` 从复权序列
 里**前一根 bar 的收盘**推出它，所以跨除权日的结果会计入派息；单根孤立 bar（没有前一根）退化为
-`1/(1+S+R)` 并记一条 `adjust_prev_close_missing` 告警。
+`1+S+R`（后复权放大方向）并记一条 `adjust_prev_close_missing` 告警。
 
 **窗口延伸（`hfq` / `fixed` 专有）**：后复权因子是 `∏ 1/k_d`，`d` 遍历**全部**事件日，包括窗口之前
 的那些，而每个 `k_d` 都要事件日的前收盘价。窗口盖不住最早事件时，早期因子只能走降级口径，于是
@@ -363,33 +419,111 @@ c.call("rights_issue", "601398").data   # 工行 2010：0.45（10 配 0.45 股�
 绝大多数标的从未配股，服务端会回 `code=9201`（"返回数据为空"）——那是**正常回答**而不是故障，
 该源显式接受空集（`allow_empty=True`）。
 
+### 所属板块（`board_attribution`）
+
+`board_attribution` 读东财 datacenter 静态报表 `RPT_F10_CORETHEME_BOARDTYPE`（F10 核心题材
+「所属板块」），全量 31681 行 = 全市场个股 × 所属板块（行业 / 概念 / 地域 / 指数族）。
+它补的是**「个股 → 归属过哪些板块」**这个方向，且比 push2 的 `stock_boards` 更稳——
+后者走行情快照接口，受 push2 IP 级软限流影响；本能力是静态报表，没有那个面。
+
+三个过滤维度**互斥**，按 `symbol` → `board_code` → `board_name` 取第一道（查询期不校验
+「至少给一个」，请自己别传空）：
+
+| 入参 | 语义 | 实测 |
+|---|---|---|
+| `symbol` | 个股 → 它归属的**全部**板块，按 `BOARD_RANK` 升序（rank 1 = 主营板块） | `sh600519` → 28 个 |
+| `board_code` | 板块 → 成分。收 BK 码（`BK0896`）与 F10 数字码（`896`）两种形状 | `BK0896` → 41 只 |
+| `board_name` | 板块中文名，人用入口 | `白酒` → 41 只 |
+
+```python
+c.call("board_attribution", symbol="sh600519").data      # 28 个板块，rank 1 = 食品饮料
+c.call("board_attribution", board_code="BK0896").data    # 白酒板块 41 只成分
+```
+
+**这是当前快照，不是历史截面。** 报表里没有任何时间维度字段——`sortColumns=UPDATE_DATE` /
+`TRADE_DATE` 实测都回 `code=9501 排序列不存在`，`SELECTED_BOARD_REASON`（入选原因）里那些
+「2024年12月27日回复称…」是互动易 / 年报的**证据披露日**，不是加入板块日。东财 push2 的
+`fs=b:BKxxxx`（`em_board_members`）同样忽略 `date` / `beg` / `end` 参数，同花顺概念成分的
+ajax 要登录 cookie，i问财无 cookie 直接 403。**公开互联网没有历史板块成分接口**——要历史
+只能每日落盘当前快照后本地反推（与 `is_st` / `name` 历史快照同一模式）。
+
+指数按空集处理：这些报表按 6 位 `SECURITY_CODE` 过滤，`sh000001`（上证指数）会撞上
+`sz000001`（平安银行），入口走 `report_code_for` 守卫，一次 HTTP 都不发。
+
+字段即报表原始列名，不重命名、不补缺列：`SECUCODE` / `SECURITY_CODE` /
+`SECURITY_NAME_ABBR` / `BOARD_CODE` / `BOARD_NAME` / `BOARD_RANK` / `IS_PRECISE` /
+`NEW_BOARD_CODE`（BK 码，可回查 `em_board_members` 拉该板块当前成分）/
+`DERIVE_BOARD_CODE`（BI 码）/ `BOARD_TYPE` / `BOARD_LEVEL` / `BOARD_YIELD` /
+`SELECTED_BOARD_REASON`。后三格对多数行为空。
+
+### 2026-10-14 补齐的一批 datacenter 报表能力
+
+这一组都是东财 datacenter **静态报表**的具名入口（走 `corporate` 源，不吃 push2 的
+IP 级软限流）。报表名全部真机实拉验证过——不是按命名惯例猜的。共用的入参语义：
+`symbol` 按个股过滤（指数走 `report_code_for` 守卫返回空集）、`size` / `page`
+分页（服务端单页上限 500）、`all_pages=True` 翻页拉全量（`max_pages` 耗尽仍满页时
+发 `web_eastmoney_page_limit` 告警而不是静默截断）。
+
+**事件与股本**
+
+| 能力 | 报表 | 入参 | 口径与坑 |
+|---|---|---|---|
+| `suspension` | `RPT_CUSTOM_SUSPEND_DATA_INTERFACE` | **`date` 必填**（`YYYY-MM-DD`）、`market` | 维度是**交易日**不是个股——空 filter 服务端直接回 `9501 filter字段不能为空`；查某只股票的停牌史请拉多日后本地筛。实测 `2026-10-13`→17 条、`2024-04-26`→927 条 |
+| `goodwill` | `RPT_GOODWILL_STOCKDETAILS` | `symbol` | **稀疏报表**：多数公司没商誉，空集是正常回答（600519 实测 0 行，002739 实测 3 行） |
+| `goodwill_market` | `RPT_GOODWILL_MARKETSTATISTICS` | — | 市场级，按板块 × 报告期汇总，直接给商誉/净资产占比 |
+| `seo` | `RPT_SEO_DETAIL` | `symbol` | 增发/再融资。与 `rights_issue`（配股）合起来才是完整股本扩张事件集。**没有可用日期排序列**（`NOTICE_DATE` / `ISSUE_START_DATE` / `UPDATE_DATE` 实测均回 `9501`），用服务端默认顺序 |
+| `equity_structure` | `RPT_F10_EH_EQUITY` | `symbol` | 有限售/无限售/总股本及占比。算真实换手率要的**流通股本**在这张表里 |
+| `holder_num_detail` | `RPT_HOLDERNUM_DET` | `symbol` | 股东户数**明细**（按报告期）。`holder_num` 只给最新一期，看趋势走这张 |
+
+**资金与席位**
+
+| 能力 | 报表 | 入参 | 口径与坑 |
+|---|---|---|---|
+| `org_seat_trades` | `RPT_ORGANIZATION_TRADE_DETAILS` | `symbol` | 龙虎榜里的「机构专用」席位，判断是机构在买还是游资在炒 |
+| `connect_deals` | `RPT_MUTUAL_DEAL_HISTORY` | `mutual_type` | **南北双向都在这一张表**。实测编号语义：`001` 沪股通(北向)/`002` 沪市港股通(南向)/`003` 深股通(北向)/`004` 深市港股通(南向)/`005` 北向合计/`006` 南向合计。不传会混入反向数据 |
+| `southbound_ranks` | `RPT_MUTUAL_STOCK_HOLDRANKS` | `symbol`（**港股**） | **这是港股通（南向）**，不是北向：实测全量样本 `SECUCODE` 后缀 100% 是 `.HK`、`MUTUAL_TYPE` 只有 002/004。A 股代码查它恒空。看北向（外资持 A 股）用 `northbound_hold` |
+| `margin_daily` | `RPTA_WEB_MARGIN_DAILYTRADE` | — | 市场级两融每日汇总（融资/融券/两融余额），与 `margin`（个股明细）互补 |
+| `block_trade_stats` | `RPT_BLOCKTRADE_STA` | `symbol` | 已按个股 × 日聚合的大宗统计（含折溢价率），与 `block_trades`（逐笔明细）互补 |
+
+**宏观补齐**（全部市场级、按 `REPORT_DATE` 降序）
+
+| 能力 | 报表 | 实测期数 |
+|---|---|---|
+| `macro_money_supply` | `RPT_ECONOMY_CURRENCY_SUPPLY` | 225（M0/M1/M2 含同比环比） |
+| `macro_loan` | `RPT_ECONOMY_RMB_LOAN` | 225 |
+| `macro_retail` | `RPT_ECONOMY_TOTAL_RETAIL` | 209 |
+| `macro_asset_invest` | `RPT_ECONOMY_ASSET_INVEST` | 161 |
+| `macro_industrial` | `RPT_ECONOMY_INDUS_GROW` | 205 |
+| `macro_reserve_ratio` | `RPT_ECONOMY_DEPOSIT_RESERVE` | 58（大型/中小机构档） |
+| `macro_forex_reserve` | `RPT_ECONOMY_GOLD_CURRENCY` | 225（外汇 + 黄金储备） |
+
 ### 能力发现面：只有名字，没有可用性
 
 ```python
 from atst import Client
 
-Client.capabilities()   # 197 项 capability 名，按字典序排好
+Client.capabilities()   # 216 项 capability 名，按字典序排好
 ```
 
 发现面有三处出口，交付的都是**纯名字**：
 
 | 出口 | 形状 | 状态字段 |
 |------|------|----------|
-| `Client.capabilities()` / `AsyncClient.capabilities()` | `tuple[str, ...]`，197 项 | 无 |
+| `Client.capabilities()` / `AsyncClient.capabilities()` | `tuple[str, ...]`，216 项 | 无 |
 | `GET /v13/capabilities` | `{"capabilities": [...], "providers": {provider: {channel: [...]}}}` | 无 |
 | WS `runtime.capabilities` | 同上，两份名单 | 无 |
 
-名单的构成是一个可复算的恒等式：197 = 7 个内核直绑能力 ∪ 192 个 catalog 迁移能力，并且与
+名单的构成是一个可复算的恒等式：216 = 7 个内核直绑能力 ∪ 211 个 catalog 迁移能力，并且与
 `PROVIDERS` 注册表（14 Provider × 60 channel）里出现过的能力名集合逐字相等。三处出口在形状上
-就没有放 `available`/`offline` 的位置——条目类型清一色是 `str`（F-66 裁决 (c)：发现面的形状
-不动，把这条口径写清）。于是**「名字在名单里」只承诺"这条能力有实现、参数契约可校验"，不承诺
+就没有放 `available`/`offline` 的位置——条目类型清一色是 `str`（发现面只报名字，健康度
+走独立面）。于是**「名字在名单里」只承诺"这条能力有实现、参数契约可校验"，不承诺
 "调用会拿到数据"**。
 
 能力健康度因此走**独立面** `Client.capability_statuses()`（`AsyncClient` 同名静态方法）：
 返回 `{capability: status}`，取值 `alive` / `degraded` / `offline` / `needs_verify`。
 它的单一事实源是 `catalog/capability.py`：显式叠加（tdx 账本死名字标 `offline`、缺口补全能力标
 `needs_verify`）∪ 注册表 `ChannelSpec.unavailable_capabilities` 派生的 `offline`（一个能力只有
-**每个**归属 channel 都下线才判死）。`offline` 名字仍留在发现面（F-66(c) 不动形状），但调用方
+**每个**归属 channel 都下线才判死）。`offline` 名字仍留在发现面（形状不变），但调用方
 据 `capability_statuses()` 即可避开它们——这正是"名字 ≠ 可用性"那条口径的机器可读版本。
 
 tdx 这条链上有 8 个名字一调就必然失败：6 个名字踩在被账本判 `offline` 的命令上、2 个名字被
@@ -410,7 +544,7 @@ request/parser 仍是 inferred 的结构化拦截挡在发包前。下表由
 | `volume_price` | `volume_price_dist` | `0x051A` | 账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
 
 这张表只覆盖 tdx 命令账本管得到的 25 个名字（7 个内核直绑 + 18 个 tdx 客户端族 catalog 绑定）；
-其余 172 个名字走 web 会话 / web adapter / channel adapter / composed 四类后端，不经过命令账本，
+其余 191 个名字走 web 会话 / web adapter / channel adapter / composed 四类后端，不经过命令账本，
 也就无从在这里判生死——它们的可用性由各自的 Provider 契约与 `tests/` 冒烟负责。一处显式登记的
 解析盲区是 `f10`：`f10_client` 的分派按 capability 分岔（`runtime/executor.py` 里 `f10` 走
 `client.download`、其余走 `client.catalog`），绑定表的 `method` 只是标签，所以这一格对不上实现；
@@ -494,14 +628,12 @@ Provider，串行下发、无隐藏换源）。`BatchResult.items` 为 `{symbol:
 （`ErrorEnvelope` 映射）、`requested`、`partial`、`status_counts`、`success`、
 `failed`、`missing`。
 
-三样都由内核那条循环**当场喂满**（第 29 轮）：`errors[symbol]` 取自逐只失败的原异常
+三样都由内核那条循环**当场喂满**：`errors[symbol]` 取自逐只失败的原异常
 （`to_error_envelope`），`requested` 是本次去重后的符号元组（含失败与缺失的那些），
-`partial` 因此能表达"要了 3 只、只成 2 只"。此前那条循环只递 `items` 一样，于是
-`errors` 恒 `{}`、`requested` 恒 `()`、`partial` 恒 `False`——声明在 `BatchResult` 上、
-真源却不存在。
+`partial` 因此能表达"要了 3 只、只成 2 只"。
 
-> v13 的 `BatchSpec` 请求信封已在 v17 Phase 5 的可达性收口中**删除**（clean
-> break，无别名）：它从来没有生产消费者，批量展开事实只存在于内核那条循环里。
+> 请求侧没有 `BatchSpec` 这一层信封（无别名）：批量展开事实只存在于内核那条循环里，
+> 批量接口的形状由调用参数决定。
 
 ### CapabilityQuery 与 Domain Records
 
@@ -572,7 +704,7 @@ from atst.web.sources import KNOWN_SOURCES, SourceSpec   # 源名 → SourceSpec
 | `fund_flow` | 资金流（东财 ulist.np 实时 / fflow/kline 历史） | `fund_flow` | 主力=超大单+大单；占比字段 f184/f69/f75/f81/f87 为 ×100 整数 |
 | `limit_pool` | 涨停 / 跌停 / 炸板池（东财 push2ex） | `limit_pool` | date 为 YYYYMMDD；非交易日返回空池。本源输出为 dict 列表，解析层已按 1/1000 直接换算，不调用 normalize_quote |
 | `northbound` | 沪深港通资金（东财 kamt） | `fund_flow` / `northbound` | 金额单位为万元；status=3 表示已收盘 |
-| `corporate` | 基本面与公司行为（东财 datacenter-web 报表族） | `corporate` / `ipo` | F10/公告/研报/股东/大宗/解禁/业绩/IPO 申购日历；报表名错误返回 code=9501 |
+| `corporate` | 基本面与公司行为（东财 datacenter-web 报表族） | `corporate` / `ipo` | F10/公告/研报/股东/大宗/解禁/业绩/IPO 申购日历/所属板块/停复牌/商誉/增发/股本结构/股东户数明细/机构席位/沪深港通成交/港股通持股/两融每日/宏观（货币供应量·贷款·社零·固投·工业增加值·存准·外储）；报表名错误返回 code=9501 |
 | `longhu` | 龙虎榜每日个股榜（东财 datacenter-web RPT_DMSK_TS_STOCKNEW） | `longhu` | 主力净流入=超大单净+大单净(元)；TRADE_DATE 过滤须用完整'YYYY-MM-DD 00:00:00' 字面值，否则 9201 空数据；机构席位/营业部买卖子报表名已失效(9501)，本源仅取每日上榜个股汇总 |
 | `sina_fund_flow` | 新浪资金流历史（个股 ssl_qsfx_zjlrqs / 板块 ssl_bkzj_zjlrqs） | `fund_flow` / `history` | 净额(元)/换手率(%)等均为原生单位，normalizer 为 identity；必须带 page/num/sort 三参数，缺省会返回全历史(约 1MB)；板块代码用 SinaIndustryBoardSource 的 new_xxx 体系（旧 hangye_ZLxx 体系已停更，最新数据停留在 2020 年） |
 | `wencai` | i问财自然语言选股（www.iwencai.com load-data） | `wencai` | 自然语言选股（如“连板3板以上”）；hexin-v cookie 由调用方注入（参数 cookie= 或环境变量 ATST_WENCAI_COOKIE），atst 不依赖任何第三方 cookie 中继服务；缺 cookie 时在 fetch 阶段抛 WebSourceError（构造不拦截，便于罐头测试）；返回 title+rows zip 后的 list[dict] |
@@ -675,8 +807,7 @@ GET /v13/capabilities
 `atst.transport.pool.pool_settings_from_config`，所以 `[hosts] servers` / `[hosts]
 slots_per_host` / `[core] timeout` / `[core] max_retries` / `[core]
 heartbeat_interval` / `[rate_limit]` / `[security] use_tls` 在直连命令与主链路上是同一套
-读数；显式 `--host` / `--timeout` 只赢它自己那一格（第 31 轮 31-C4 之前，这里只手抄了
-`hosts` 与 `timeout` 两键，其余五个键在直连命令上当场蒸发）。六支直连命令一律用
+读数；显式 `--host` / `--timeout` 只赢它自己那一格。六支直连命令一律用
 `get_client(...)` 构造、再把客户端整体交进 `atst.cli._common.family_client` 那道保护区：
 客户端交进去时池与心跳线程已经起跑，块体无论正常返回还是抛错都 `close()` 一次。保护区只
 管释放、不管构造，为的是让 `with family_client(get_client("goods", …)) as c` 之后的 `c`
@@ -687,7 +818,7 @@ heartbeat_interval` / `[rate_limit]` / `[security] use_tls` 在直连命令与�
 不只执行器）。
 
 三张 wire 面（HTTP REST、WebSocket JSON-RPC、MCP stdio）对**未声明的请求字段**口径一致：
-一律当场拒绝，不存在「收下但无人读」的第三种下场（F-47 裁决 (a)，Phase 5 第 40 步落地，2026-09-19）。
+一律当场拒绝，不存在「收下但无人读」的第三种下场。
 白名单就是各面自己那份声明，不是第二份抄件——HTTP 查询串 = 路由签名本身，HTTP body 与 WS `params`
 = `atst/integration/wire_fields.py` 里的两份名单，MCP `arguments` = 该工具的 `inputSchema`
 （9 张 schema 都写着 `additionalProperties: false`，且这条声明被真实执行）。拒绝的落点是 HTTP
@@ -699,7 +830,7 @@ heartbeat_interval` / `[rate_limit]` / `[security] use_tls` 在直连命令与�
 > 返回 200 或 result，现在开始被拒。客户端追加的缓存穿透参数（`_=1700000000` 一类）同样会被拒——
 > 路由签名没声明它，它也就不改变任何行为。
 
-### 整数入参的六张面口径（第 25 轮 G34）
+### 整数入参的六张面口径
 
 `count` / `start` 这类整数请求字段过去在每张面上各治各的：WS 自己 `int()`（打错一个字符，
 服务端回 `-32603 / E9000`「内部错误」；`1.5` 被静默截成 `1` 并真的按截断值发出请求），MCP 用一个
@@ -716,7 +847,7 @@ retryable=True`，把调用方写错的数字登记成上游故障并建议换�
   （判据用 AST 扫源码钉住这一点）。库面那侧是 `atst/client/core.py::_require_int`，
   绑定处 `QuerySpec.normalized` 前另有真整数闸，其字段名单从 `dataclass` 的 `int` 注解现扫。
 
-各面的**边界仍然不同**，这是有意的，而且从本轮起每一张都真的按自己的声明执行（下表与代码现值
+各面的**边界仍然不同**，这是有意的，而且每一张都真的按自己的声明执行（下表与代码现值
 同源，逐格量自 `route.dependant` 与 `inputSchema`）：
 
 | 面 | 整数的边界来自 | 缺席 / `null` | 坏形状、越界的回答 |
@@ -727,9 +858,9 @@ retryable=True`，把调用方写错的数字登记成上游故障并建议换�
 | WS JSON-RPC `params` | 线层只治形状（`_int_param` 不设区间），区间交给上面的内核域闸 | 缺席与显式 `null` 都用声明缺省（`bars.count` 320、`start` 0、`trades.count` 0） | `-32602 / E1010` |
 | MCP `arguments` | **该工具自己的 `inputSchema`**：`get_bars.count` 1..2000（缺省 320）、`get_bars.start` 0..10000、`get_trades.start` 0..10000、`get_trades.count` 0..2000、`get_security_list.start` 0..10000 | 同 WS：`default` 即声明值 | `-32602 / E1010` |
 
-MCP 的 `count` 上限（2000）比 HTTP（10000）小，是给 LLM 上下文预算留的；两个数现在都是
-各自声明的真边界，不再由一份抄件决定。**协议事实仍是协议错误**，不因本轮归位：离线指令、
-未核验市场、脏字节、`split_symbol` 的 BJ 边界保留 `E2xxx`/`E3xxx`——那条分界线写在
+MCP 的 `count` 上限（2000）比 HTTP（10000）小，是给 LLM 上下文预算留的；两个数都是各自
+声明的真边界，不是同一份抄件。**协议事实仍是协议错误**：离线指令、未核验市场、脏字节、
+`split_symbol` 的 BJ 边界保留 `E2xxx`/`E3xxx`——那条分界线写在
 `atst/client/core.py::_require_int` 的 docstring 里。判据见
 `tests/architecture/test_wire_numeric_domain.py`（8 项：AST 禁自己转换、MCP 按 schema 边界拒并含
 "改 schema 数字断言跟着翻"的正控、HTTP 越界在 handler 前 422、内核整数格全表、分页上限四面同口径）。
@@ -760,19 +891,18 @@ app = create_runtime_app()          # FastAPI 实例，交由 uvicorn 承载
 `/openapi.json`、`/docs`、`/docs/oauth2-redirect`、`/redoc` 四支文档页与三份异常处理器，它们不发
 行情、也不受上面的未声明字段口径管辖。
 
-**三份服务面的 `Client` 所有权是同一口径**（第 26 轮补；在那之前 HTTP 面只是 `return app`，
-自己造的那份内核没有任何收尾入口）：
+**三份服务面的 `Client` 所有权是同一口径**：
 
 | 面 | 造出 `Client` 的一方 | 收尾的地方 |
 |----|--------------------|-----------|
-| HTTP `create_runtime_app(client=None)` | 不传时工厂按 `owns_client` 自己造一份 | `_lifespan` 把 `yield` 包进 `try`，在 `finally` 里按 `owns_client` 调 `api.close()`——写在 `yield` 之后不算收尾，生命周期体一抛错那两行就永远走不到（第 31 轮 31-C；判据 `tests/runtime/test_runtime_http_client_release.py`）|
+| HTTP `create_runtime_app(client=None)` | 不传时工厂按 `owns_client` 自己造一份 | `_lifespan` 把 `yield` 包进 `try`，在 `finally` 里按 `owns_client` 调 `api.close()`——写在 `yield` 之后不算收尾，生命周期体一抛错那两行就永远走不到（判据 `tests/runtime/test_runtime_http_client_release.py`）|
 | WS `serve_runtime_ws(handler=None)` | 不传时函数按 `owns_handler` 自己造，登记在 `server.atst_handler` | 宿主的 `finally` 调 `RuntimeJsonRpcHandler.close()`；`__main__` 入口即如此 |
 | MCP `MCPServer(client=None)` | 不传时构造器自己造（`_owns_client`）| `stop()` 幂等：`_stopped` 事件 + 关掉后置回 `_owns_client`，`shutdown` 与 `serve` 收尾抢着停也只关一次 |
 
 三处都遵守同一句话：**传进来的那份归调用方，本库不关**；只有自己造的那份才由自己收尾。
 这条收尾在默认内核上目前**不释放任何 socket 或线程**（§2「`close()` 到底释放什么」量过：
 `Client` 跨调用不持有连接，内置执行器连 `close()` 都没有），它兑现的是所有权协议与注入执行器
-的口子——第 31 轮之前本节把这条链写成"释放连接池"，那是一句没人量过的过头主张。
+的口子。
 
 `/v13/capabilities` 交付两份纯名字列表，没有状态字段：口径与那些发不出去的名字见
 §2「能力发现面：只有名字，没有可用性」。
@@ -787,16 +917,23 @@ from atst.integration.runtime_ws_server import serve_runtime_ws
 `query`、`runtime.capabilities`、`runtime.health`、`subscribe`、`unsubscribe`、`list`。
 
 `runtime.health` 与 HTTP `/v13/runtime/health` 同一读数：status 与 api 两面同值之外，
-`default_provider`、`direct_bindings`（执行绑定数）、`migrated_capabilities`、`core_unavailable`
-四个字段名与取值完全一致——运维判断「这条部署面铺开了多少直连绑定」不需要换口径。
+`default_provider`、`direct_bindings`（执行绑定数）、`migrated_capabilities`、`core_unavailable`、
+`provider_health` 五个字段名与取值完全一致——运维判断「这条部署面铺开了多少直连绑定」
+不需要换口径。
+
+`provider_health` 是 `provider="auto"` 的**降级名单**：`{provider: {code, age_s}}`，只列
+仍处 `[routing] auto_health_ttl` 窗口内的失败标记（其中 code 是那次失败的错误码，age_s 是
+距今秒数）。名单与 `provider="auto"` 排序时用的是同一份——过期项在读取时即复位，所以它不会
+报出一批"其实已经不算数"的 Provider。健康反馈关闭（`auto_health_ttl=0`）时恒为空 `{}`：那时
+没有任何 Provider 会被降级，报一份名单等于凭空造出一个不存在的机制。钉死 Provider 的请求不受
+这个名单影响，它只是 `provider="auto"` 的排序输入。
 
 监听地址与路径由 `RuntimeWsConfig` 决定，默认 127.0.0.1:8765 上的 `/v13/ws`；连到别的路径
 会被以 1008 状态码关闭（reason 为 "unsupported path"）。`serve_runtime_ws` 是协程，返回 websockets
-库的 server 对象；要一条命令拉起来就用它的包入口 `python -m atst.integration.runtime_ws_server`
-（第 23 轮补：在那之前这条命令只会静默导入后退出，什么都不监听）。它仍然没有 atst 子命令
+库的 server 对象；要一条命令拉起来就用它的包入口 `python -m atst.integration.runtime_ws_server`。它仍然没有 atst 子命令
 （§3 CLI 表那一格里没有它）。
 
-**并发与所有权**（第 26 轮补，两条都是宿主必须知道的）：
+**并发与所有权**（两条都是宿主必须知道的）：
 
 * 处理方法跑在**工作线程**上。`handle_message` 是同步函数（里面是真实 socket 取数 +
   `json.dumps()`），服务现在通过 `asyncio.to_thread` 调它，所以一个慢请求不会占住事件循环、
@@ -816,7 +953,7 @@ from atst.integration.runtime_ws_server import serve_runtime_ws
 
 ### WebSocket 实时订阅（subscribe / unsubscribe / list + push）
 
-第 31 轮补齐：WS 面此前只有 req/res，实时行情只能靠客户端轮询。现在本连接可以订阅一条
+WS 面除了 req/res 还有实时推送：本连接可以订阅一条
 进程内实时流，由服务端主动推送 `snapshot` / `tick` / `error` 帧，不用轮询。订阅表**每条连接私有**
 （`serve_runtime_ws` 为每条连接造一份 handler），两条连接不会串台；连接断开时本连接拥有的流被
 `stop_all_subscriptions` 收掉，不泄漏。
@@ -871,8 +1008,7 @@ from atst.integration.mcp import create_mcp_server, TOOLS
 `get_snapshot`、`get_minute_today`、`get_trades`、`get_security_count`、
 `get_security_list`。
 
-拉起方式是包入口（第 23 轮补；在那之前 `python -m atst.integration.mcp` 当场
-`No module named ...mcp.__main__`，能跑的只有私有模块 `...mcp._server`，而文档一处都没写）：
+拉起方式是包入口：
 
 ```bash
 python -m atst.integration.mcp
@@ -882,7 +1018,7 @@ MCP 客户端的配置就按这一条拼：`{"command": "python", "args": ["-m",
 这张面**不需要任何 extra**——`atst/integration/mcp/` 只 import 标准库（见 README「Optional
 Extras」那一节里被删掉的 `mcp` 假 extra）。它在 stdin/stdout 上说 JSON-RPC：`initialize` →
 初始化通知 → `tools/list` → `tools/call`，未声明的入参回 `-32602`，不认识的方法名回 `-32601`。
-这四格加两条反向口径在装好的包上逐条量过（`scratch_v18b22/probe23/mcp_ship23.log`，7 项全过）：
+这四格加两条反向口径在装好的包上逐条量过（7 项全过）：
 9 项工具全在 `tools/list` 里、`get_quote` 真回数据、塞进未声明的 `nope` 得 `-32602`、调不存在的
 工具名得的是 `isError=True` 的 **result**（MCP 把工具级失败放在 result 里，不塌成 JSON-RPC 错误）、
 `bogus/method` 得 `-32601`，而**不带 id 的通知不配得到任何回应**——这条最容易写反：把初始化通知当
@@ -1007,7 +1143,7 @@ atst --help
 | `minute-klines` | `symbol` | `--period` `--count` `--timeout` `--json` | 内核·rows |
 | `probe` | `cmd` | `--market` `--code` `--rate-limit` `--archive-dir` `--allow-trading-hours` `--timeout` `--json` | 直连传输层 |
 | `query` | `capability` | `--provider` `--channel` `--currentness` `--args` `--kwargs` | 内核·typed |
-| `quotes` | `symbols` | `--provider` `--fallback` `--host` | 内核·typed |
+| `quotes` | `symbols` | `--provider` `--fallback` `--host` `--strict` | 内核·typed |
 | `quotes-snapshot` | `symbols` | `--timeout` `--json` | 直连传输层 |
 | `sector-flow` | — | `--board` `--sort` `--limit` `--timeout` `--json` | 内核·rows |
 | `security-count` | — | `--provider` `--host` `--market` | 内核·typed |
@@ -1033,6 +1169,7 @@ atst version                                              # 包版本
 atst capabilities                                         # 内核能力名清单（只有名字，无可用性）
 atst query stock_changes --args '[[8201]]' --kwargs '{"size": 5}'   # 任意能力的通用入口
 atst quotes sh600519 sz000001                            # 实时行情
+atst quotes sh600519 --strict                            # 严格模式：自校验漂移的标的直接失败（仅 tdx）
 atst bars sh600519 --period day --count 80               # 日 K 线
 atst snapshot sh600519                                    # 规范快照
 atst minute sh600519 --provider tencent                     # 今日分时（tdx 面已下线，见下表）
@@ -1041,8 +1178,8 @@ atst security-count --market 0                             # 某市场的代码�
 atst security-list --market 0 --start 0                   # 分页代码表
 atst stream sh600519 --interval 3 --diff-only --seconds 30    # 流式订阅
 atst hosts audit --family quotation --timeout 3           # 主站巡检（5 族）
-atst hosts list                                            # 当前生效的主站池
-atst hosts scan                                            # 并发测速并写排名文件
+atst hosts list                                            # 当前生效的行情主站池（quotation 族）
+atst hosts scan                                            # 全候选池并发测速并写排名文件（quotation 族）
 atst server-test                                           # 主站连通性测速
 atst serve --bind 127.0.0.1 --port 8000                   # HTTP 网关（上面那 12 路由）
 atst feedback submit --message "这里写问题描述"            # 反馈上报
@@ -1136,8 +1273,7 @@ DuckDB 那侧用它自己的查询接口，因此读回面是 Parquet 与 CSV �
 网络协议之外，`atst` 还直接读通达信客户端的落地文件。这一族挂在包的顶层出口上，下表第一列
 **不是手抄名单**：它是 `atst._LAZY`（顶层惰性导入表）里落在 `atst.reader` 的那些名字，判据
 `test_reader_surface_table_matches_the_lazy_map` 把它与代码锁死，`test_every_root_export_is_named`
-再反向保证顶层 45 个名字没有一个在用户文档里查不到（第 25 轮第 2 遍登记：当时 `FinanceReader`
-是唯一一个"包上挂着、测试在用、文档一个字没提"的名字）。
+再反向保证顶层 45 个名字没有一个在用户文档里查不到。
 
 | 顶层名 | 读什么 | 典型入口 |
 |---|---|---|
@@ -1149,7 +1285,7 @@ DuckDB 那侧用它自己的查询接口，因此读回面是 Parquet 与 CSV �
 
 `read_day_file`、`read_min_file`、`resolve_vipdoc_path`、`Period`、`Market` 等名字只在
 `atst.reader` 模块面上，不经顶层导出（顶层这一族就上面 5 个）。档案词表本身的门禁见
-`tests/architecture/test_profile_vocabulary_gates.py`（第 17 轮 G12：一张没人查的词表比没有更坏）。
+`tests/architecture/test_profile_vocabulary_gates.py`。
 
 ---
 
@@ -1177,15 +1313,13 @@ with Client() as client:
 `atst stream sh600519` 走同一条路、同一个判据）。参数见 §2 的 `stream` 行。
 
 CLI 那一支的订阅窗口是 `--seconds`，**默认 10 秒**：起流后跑满这个时长就自停（要中途停按
-Ctrl+C，`stop()` 一定执行）。给 0 或负数在 CLI 门口就判死（`E1010` / 退出码 2）——过去它的
-默认值是 `0.0`，于是文档里 `atst stream sh600519` 这种照抄写法必然以"0.0s 内未收到任何行情"
-收场，窗口长度本身就没给过任何数据机会（第 24 轮 G33）。
+Ctrl+C，`stop()` 一定执行）。给 0 或负数在 CLI 门口就判死（`E1010` / 退出码 2）——窗口
+长度本身必须给数据一个机会。
 
 `interval` 只挡下界（`validate_subscription` 判 `<= 0`），**没有上界**，所以异步流的
 `stop()` 不能靠"等这一次睡眠走完"收口：`AsyncQuoteStream` 的四处睡眠腿都按
 `_STOP_POLL_SECONDS`（0.05 秒）轮询停机位，`stop()` 的上界因此是"在飞的那一次取数 + 0.05 秒"，
-与 `interval` 无关。第 31 轮之前写成裸 `asyncio.sleep`，`interval=3600` 能把一次停机拖成
-一个小时（判据 `tests/streaming/test_async_stop_wake.py`，同步孪生核对同一张睡眠腿表）。
+与 `interval` 无关（判据 `tests/streaming/test_async_stop_wake.py`，同步孪生核对同一张睡眠腿表）。
 
 ### StatefulQuoteStream / AsyncStatefulQuoteStream（生命周期对象）
 
@@ -1197,11 +1331,9 @@ from atst.streaming import AsyncStatefulQuoteStream, StatefulQuoteStream
 `state` 与 `failure_reason` 给出显式生命周期状态（`StreamState`）。
 
 两张面都支持上下文写法，进出各对应一次 `start()` / `stop()`：同步
-`with client.stream(...) as s:`，异步 `async with aclient.stream(...) as s:`。异步那半边
-是第 31 轮补上的——`AsyncQuoteStream` 此前没有 `__aenter__`/`__aexit__`，而同步孪生一直有，
-于是"同名异步镜像"在起止停这一格不同答案（判据
-`tests/streaming/test_stream_context_parity.py`，含块体抛错时照样收尾那一格）。块体抛错
-不会跳过收尾。
+`with client.stream(...) as s:`，异步 `async with aclient.stream(...) as s:`——同一套
+起止停在两张面上给同一个答案（判据 `tests/streaming/test_stream_context_parity.py`，
+含块体抛错时照样收尾那一格）。块体抛错不会跳过收尾。
 
 ### QuoteStream / AsyncQuoteStream（轮询基类）
 
@@ -1277,9 +1409,8 @@ cal.trading_days_between("2026-09-28", "2026-10-09")  # 同一区间的日期列
 `count_trading_days` 与 `trading_days_between` 是同一件事的两种出口（一个给计数、一个给日期），
 `start > end` 一律抛 `CalendarError` 而不是返回 0 或空表。三条读表口径：
 
-- **没有在线校准**。日历数据是仓库内置的静态表，本库不提供任何联网取数的入口。第 26 轮 F-110
-  删掉了曾挂在 `TradingCalendar` 上的 `update_from_web()`：它对每个调用方都只抛错，而 docstring
-  指向的"在线日历适配器"在本仓从未存在过。改数据只有 `set_holidays(year, days)` 与
+- **没有在线校准**。日历数据是仓库内置的静态表，本库不提供任何联网取数的入口，
+  `TradingCalendar` 也没有 `update_from_web()`。改数据只有 `set_holidays(year, days)` 与
   `add_holiday("YYYY-MM-DD")` 两条路，二者只改内存里的那个实例，进程重启即回落到内置表。
 - **估算年份必须读得出来**。2024/2025 是实采表，2026 是估算表（`ESTIMATED_YEARS` 现值即
   `{2026}`）。用 `is_estimated(d)` 判、用 `warnings_for(d)` 取那句校准提示；`set_holidays`
@@ -1307,16 +1438,15 @@ from atst.domain.integrity import tdx_market_ids  # 协议侧认得的市场 id�
 （`tick`/`1min`/`5min`/`15min`/`30min`/`60min`/`day`/`week`/`month`/`season`/`year`），
 公开别名 `PERIOD_ALIASES` 29 个，合起来 40 种写法。空白与大小写不敏感
 （`normalize_bar_period` 先 `strip().lower()` 再查别名），`"  5M "` 与 `"5min"` 同答案。
-内核、CLI、HTTP、WS、MCP 五张面吃同一份派生表，不再各抄一张——第 18 轮之前那五份手抄件
-互相分叉，量出 15 个"一面收、另一面拒"的拼写。别名解析只发生在公开入口：内核与会话面
-先 `normalize_bar_period` 再把规范拼写交所选源，而上游裸源只认规范拼写。
+内核、CLI、HTTP、WS、MCP 五张面吃同一份派生表，不各抄一张。别名解析只发生在公开入口：
+内核与会话面先 `normalize_bar_period` 再把规范拼写交所选源，而上游裸源只认规范拼写。
 
 ```python
 from atst.domain.period import CANONICAL_PERIODS, PERIOD_ALIASES, normalize_bar_period
 ```
 
-各面的实际接受集（第 19 轮离线实测，HEAD `2ae022b`）。"接受写法数"是这一入口能认下的
-拼写个数，"服务档"是它真能取回的规范周期档数——两者之差就是这一面派生出来的别名：
+各面的实际接受集（离线实测）。"接受写法数"是这一入口能认下的拼写个数，"服务档"是它真能
+取回的规范周期档数——两者之差就是这一面派生出来的别名：
 
 | 入口 | 服务档 | 接受写法数 | 不服时的行为 |
 |---|---|---|---|
@@ -1338,10 +1468,9 @@ from atst.domain.period import CANONICAL_PERIODS, PERIOD_ALIASES, normalize_bar_
   `[E1010]` 拒掉，写上 `provider="sina"` 才成立。
 - **`tick` 是规范档但不是 K 线档**：分笔走 `ticks` 能力，`Client.bars(period="tick")`
   同样报 `[E1010]`。
-- **"这一面不服务"必须显式报错，不许换个周期返回**。第 19 轮前新浪表里有
-  `"1min": 5` 这一格，把 1 分钟请求悄悄换成了 5 分钟线；百度表里有 `"1m": 3`，而域内
-  `1m` 是 1 分钟，即 1 分钟在百度面会被解成月线。两格都已删掉，换成了上面那一列的
-  `ValueError`。
+- **"这一面不服务"必须显式报错，不许换个周期返回**。历史上新浪表曾把 `1min` 映射到 5 分钟档
+  （把 1 分钟请求悄悄换成 5 分钟线），百度表曾把 `1m` 映射到月线（域内 `1m` 是 1 分钟）。
+  这两格歧义映射都已删掉，换成了上面那一列的 `ValueError`。
 
 ### 出口处的域尺子（`atst.domain.integrity`）
 
@@ -1394,10 +1523,10 @@ prober.total_failures  # 其中发送侧抛过异常的次数
 两个计数器是只读属性（`total_probes` / `total_failures`），口径要在读表时记住：它们只在
 `_enforce_rate()` 之后与发送异常处自增，因此**被盘中守卫拒掉的探测两个都不计数**（那种情况
 在发送之前就返回失败结果），dry-run（构造时不给 `client`）只计 `total_probes`。于是
-`total_failures <= total_probes <= probe_command 的调用次数`，两个都不等于调用次数。第 26 轮
-F-116 把这条口径写在这里：这两个名字此前用户文档一个字没提，`probe` 那支命令的报告也不打印它们，
-仓内唯一的读者是 `tests/protocol/test_f2_protocol_correctness.py` 里"未发出任何请求 ⇒
-`total_probes == 0`"那一条断言——它们是给人自己接监控用的库面计数，不是 CLI 输出的一部分。
+`total_failures <= total_probes <= probe_command 的调用次数`，两个都不等于调用次数。
+它们是给人自己接监控用的库面计数，不是 `probe` 命令输出的一部分——
+`tests/protocol/test_f2_protocol_correctness.py` 里"未发出任何请求 ⇒ `total_probes == 0`"
+那一条断言钉住这个口径。
 
 ### 协议规范工具
 
@@ -1419,25 +1548,24 @@ python scripts/audit_reachability.py --strict
 ## 8. 可观测性与反馈（Observability / Feedback）
 
 **这一族只有库面，而且是部署方自选的接入面**：CLI、HTTP 网关、WS、MCP 四张面都不挂载导出器，
-`atst serve` 起来之后不会有人来抓 `/metrics`，指标写入只发生在库内部那几处埋点。第 26 轮
-F-115 把整族写进接口文档，是因为四个导出器与指标门面此前只出现在模块 docstring 和 FAQ 里，
-`docs/api/` 一个字没提——能被 import 却读不到说明的对外面，正是 G37 那一串裁决的靶子。
+`atst serve` 起来之后不会有人来抓 `/metrics`，指标写入只发生在库内部那几处埋点。四个
+导出器与指标门面都在本节有说明——能被 import 的对外面必须在这里读得到。
 
 ### 指标门面（`atst.observability.metrics`）
 
 指标门面上的每一格都由模块级单例 `metrics` 持有，`render()` / `render_prometheus()` 出文本、
 `snapshot()` 出 dict。下表第一列与注册表现值双向锁死
 （`test_interfaces_metric_series_table_matches_the_registry`），第二列是类型与标签，第三列是
-**当前真的在写它的位置**——第三列的存在才是本轮的产物：只有"有人写"的读数才是测量值。
+**当前真的在写它的位置**——只有"有人写"的读数才是测量值。
 
 | 序列 | 类型（标签） | 写入方 |
 |---|---|---|
-| `atst_protocol_parse_total` | counter（tier / family / command） | 三层解析分派出口 `atst/protocol/registry.py`（F-118 接上，此前恒为空序列） |
+| `atst_protocol_parse_total` | counter（tier / family / command） | 三层解析分派出口 `atst/protocol/registry.py` |
 | `atst_protocol_parse_confidence` | histogram（family / command） | 同上，只记 L1/L2 两档 |
 | `atst_request_total` | counter（command / status） | 传输层两条路径（同步池 + 异步客户端） |
 | `atst_request_duration_seconds` | histogram（command） | 同上 |
 | `atst_stream_events_total` | counter（kind） | 流式背压丢弃钩子 `atst/streaming/engine.py` |
-| `atst_stream_reconnects_total` | counter | 断线恢复那一轮 tick（F-117 接上） |
+| `atst_stream_reconnects_total` | counter | 断线恢复那一轮 tick |
 | `atst_stream_backpressure` | gauge | 同上，取丢弃时的队列长度 |
 | `atst_errors_total` | counter（error_type） | 传输层两条路径的异常出口 |
 
@@ -1446,11 +1574,9 @@ F-115 把整族写进接口文档，是因为四个导出器与指标门面此�
 一次成功的请求变成失败。`instrument_client(client)` 给调用方自己的客户端套一层上报壳，
 不需要改业务代码。
 
-F-112 撤下了一格：`atst_active_connections`。它曾被注册、被 `/metrics` 渲染（HELP/TYPE 两行
-就是一次声称）、还被 statsd 的线格式示例当示范用过，可全仓没有任何连接生命周期事件写它。
-一根恒为初值的对外仪表会把"运行时没有活连接"说成实测值，而池里此刻可能正挂着好几条——
-按「宁跳不假绿」撤下仪表连同它的 setter。要这个数，得先在 transport 层补一条与 retire/drain
-同刻度的连接钩子（两条池路径都要），而不是先注册再等人喂。
+指标门面上没有 `atst_active_connections`：全仓没有任何连接生命周期事件写它，一根恒为初值的
+对外仪表会把"运行时没有活连接"说成实测值，而池里此刻可能正挂着好几条。要这个数，得先在
+transport 层补一条与 retire/drain 同刻度的连接钩子（两条池路径都要），而不是先注册再等人喂。
 
 ### 导出器
 
@@ -1467,7 +1593,7 @@ from atst.observability import PrometheusExporter, StatsdExporter, OtelExporter,
 
 三个导出器都只**读**指标门面（`extra_headers=` 除外，那是给 `/metrics` 响应加头的旋钮），
 反向接线一概没有：库不会替你起线程、不会替你落盘。线程与文件的生命周期归创建方，
-这一条由 `tests/architecture/test_resource_lifecycle_gates.py` 的 G41 判据盯住
+这一条由 `tests/architecture/test_resource_lifecycle_gates.py` 的判据盯住
 （`StatsdExporter.start_pushing` 在它的归属表里）。
 
 ### 反馈上报（`atst.feedback`）

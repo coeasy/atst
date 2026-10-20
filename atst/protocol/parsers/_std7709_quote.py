@@ -381,15 +381,19 @@ class RealtimeQuoteParser(BaseParser):
             except Exception:
                 # 末段若非纯 LEB128（如遗留的定长字段），原样保留剩余字节
 
-                extra["raw_tail_hex"] = reader.rest().hex()
+                extra["_raw_tail_hex"] = reader.rest().hex()
 
                 break
 
         if tail_ints:
-            extra["tail_leb128"] = tail_ints
+            extra["_tail_leb128"] = tail_ints
 
         if warnings:
-            extra["warnings"] = warnings
+            #: 漂移告警是**内部判据**（哨兵失配 / 成交额越界），不是行情契约字段：
+            #: 下划线前缀不进公开 dict 的扁平化出口（``Quote.to_dict`` 过滤），
+            #: 对象消费者仍可从 ``quote.extra["_warnings"]`` 读到；
+            #: ``TdxClient.quotes(strict=True)`` 则直接把它们变成失败。
+            extra["_warnings"] = warnings
 
         row["extra"] = extra
 

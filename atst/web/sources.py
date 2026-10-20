@@ -375,7 +375,7 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
         summary="基本面与公司行为（东财 datacenter-web 报表族）",
         default_rate=2,
         capabilities=("corporate", "ipo"),
-        notes="F10/公告/研报/股东/大宗/解禁/业绩/IPO 申购日历；报表名错误返回 code=9501",
+        notes="F10/公告/研报/股东/大宗/解禁/业绩/IPO 申购日历/所属板块/停复牌/商誉/增发/股本结构/股东户数明细/机构席位/沪深港通成交/港股通持股/两融每日/宏观（货币供应量·贷款·社零·固投·工业增加值·存准·外储）；报表名错误返回 code=9501",
     ),
     LHB: SourceSpec(
         name=LHB,

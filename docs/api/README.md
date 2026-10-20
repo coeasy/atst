@@ -1,16 +1,16 @@
 # API 参考
 
-当前 `1.5.0` 源码候选；最新已发布 GitHub Release 为 [`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2)，本包**不在 PyPI 上** · [v1.0.0 发布说明](../releases/v1.0.0.md) · [v1.1.0 发布说明](../releases/v1.1.0.md) · [v1.2.0 发布说明](../releases/v1.2.0.md) · [v1.2.1 发布说明](../releases/v1.2.1.md) · [v1.2.2 发布说明](../releases/v1.2.2.md) · [v1.3.0 发布说明](../releases/v1.3.0.md) · [v1.4.0 发布说明](../releases/v1.4.0.md) · [v1.4.1 发布说明](../releases/v1.4.1.md) · [v1.4.2 发布说明](../releases/v1.4.2.md) · [v1.4.3 发布说明](../releases/v1.4.3.md) · [v1.5.0 发布说明](../releases/v1.5.0.md)
+当前 `1.5.2` 源码候选；最新已发布 GitHub Release 为 [`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2)，本包**不在 PyPI 上** · [CHANGELOG](../../CHANGELOG.md) · [逐版本发布说明](../releases/v1.5.2.md)
 
-> 本页对应 v1.0.0 + **v13/v17 单一执行内核**。完整 docstring 驱动文档
+> 本页对应 `/v13/` 服务面与单一执行内核。完整 docstring 驱动文档
 > 由 `pdoc`/`mkdocstrings` 生成；此处提供稳定入口和模块索引。
 >
 > **Provider 契约**：每次请求绑定恰好一个 Provider/channel，禁止跨 Provider silent fallback。
 > 跨 Provider 容错只能经显式 `FallbackPolicy` + `ProviderOrchestrator`。
 > 数据请求**零缓存**。
 > 已删除且不再是事实的层（以目录形式记名，均已物理移除、无兼容别名，也都没有作为
-> legacy compatibility router 保留）：v12 门面 `atst/facade/`、
-> 降级路由 `atst/sources/`、全部缓存层、v14 信封运行时（`Runtime`/`RuntimeGateway`/
+> legacy compatibility router 保留）：门面 `atst/facade/`、
+> 降级路由 `atst/sources/`、全部缓存层、信封运行时（`Runtime`/`RuntimeGateway`/
 > `QueryRequest`/`QueryResponse` 及 `atst/execution/`、`atst/provider/`）。
 
 ## 统一内核层
@@ -33,7 +33,7 @@
 | `atst.catalog.capability` | capability 目录 + 规划期真实签名校验（`validate_call`）|
 | `atst.catalog.provider_bindings` | Provider `channel → adapter` 绑定表 |
 | `atst.catalog.provider_contract` / `provider_guard` / `*_audit` | Provider 隔离契约、运行时守卫与一致性审计 |
-| `atst.providers.PROVIDERS` | 14 Provider × 60 channel × 197 capability 唯一事实源；能力发现面只声明名字、不声明可用性，见 [interfaces.md](interfaces.md)「能力发现面」 |
+| `atst.providers.PROVIDERS` | 14 Provider × 60 channel × 216 capability 唯一事实源；能力发现面只声明名字、不声明可用性，见 [interfaces.md](interfaces.md)「能力发现面」 |
 
 ## 核心入口
 
@@ -128,6 +128,6 @@
 ## 迁移指南
 
 从 mootdx / easy_tdx / eltdx / easyquotation 迁移见 [docs/migration/](../migration/README.md)。
-（v1.0 时代的 `atst/compat/` 与 `atst/web/easyquotation.py` 兼容垫片已随 v1.2.0 清理移除，
-v1.2 时代的门面 `atst/facade/` 亦已随 v16 Phase 2 物理删除；
-迁移请使用 `atst.Client`（唯一业务入口）、协议层 `TdxClient`、或 `atst.web` 适配器。）
+（`atst/compat/`、`atst/web/easyquotation.py` 兼容垫片与 `atst/facade/` 门面均已物理删除，
+仓库里没有兼容别名；迁移请使用 `atst.Client`（唯一业务入口）、协议层 `TdxClient`、
+或 `atst.web` 适配器。）

@@ -26,6 +26,9 @@ __pycache__/
 
 # Tests, type/lint caches and coverage
 .pytest_cache/
+#: `pytest --basetemp=.pytest-baseline` 的落点（审计用的一次性目录）。不忽略时
+#: 它会以数百个 `test_*0/` 子目录的形式挂在 `git status` 里，每次都要人工分辨。
+.pytest-baseline/
 .mypy_cache/
 .ruff_cache/
 .hypothesis/

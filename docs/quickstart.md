@@ -1,6 +1,6 @@
 # atst 快速开始
 
-本文对应当前 `1.5.0` 源码候选；GitHub 最新已发布 Release 为 [`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2)，v1.4.3 与 v1.5.0 尚未打 tag。atst **不在 PyPI 上**；要求 Python 3.10 或更高版本。
+本文对应当前 `1.5.2` 源码候选；GitHub 最新已发布 Release 为 [`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2)，v1.4.3 / v1.5.0 / v1.5.1 / v1.5.2 尚未打 tag。atst **不在 PyPI 上**；要求 Python 3.10 或更高版本。
 
 ## 安装
 
@@ -100,7 +100,7 @@ atst server-test          # 主站测速
 atst stream sh600519      # 流式订阅：默认保持 10 秒后自停，中途按 Ctrl+C 也可停
 ```
 
-### 6. 统一查询内核（`Client`，197 项 capability）
+### 6. 统一查询内核（`Client`，216 项 capability）
 
 `Client` 是唯一业务入口；它把每次请求编译为**单 Provider / 单 Channel** 的
 `QueryPlan`，零缓存直调绑定实现，并在结果里携带 provenance。
@@ -144,8 +144,8 @@ print(orchestrated.result.meta.provider, [(a.provider, a.status) for a in orches
 
 ### Provider 绑定（禁止跨 Provider 静默降级）
 
-v13 clean break 之后，规划器只为每次请求选定**一个** Provider / channel，
-不存在按顺序逐层尝试的聚合路由器（`DataSourceRouter` 已随 v16 删除）：
+规划器只为每次请求选定**一个** Provider / channel，不存在按顺序逐层尝试的聚合
+路由器（`DataSourceRouter` 已物理删除）：
 
 - 每次请求绑定**恰好一个** Provider / channel，并由 `UnifiedRuntime` 零缓存直调该绑定；
 - TDX 失败**不会**自动改走 Web 源、本地 vipdoc、缓存或合成数据；provenance 与请求

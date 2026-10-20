@@ -70,7 +70,7 @@ class EastmoneySource(_EastmoneyJson):
     encoding = "utf-8"  # 东财 JSON 为 UTF-8（W10：fetch() 不再硬编码 gbk）
     FIELDS = (
         "f43,f44,f45,f46,f47,f48,f49,f50,f51,f52,f57,f58,f60,"
-        "f168,f169,f170,f171,f116,f117,f162,f167"
+        "f168,f169,f170,f171,f116,f117,f162,f167,f86"
     )
 
     @property
@@ -104,6 +104,11 @@ class EastmoneySource(_EastmoneyJson):
             last_close=_f(data.get("f60")),
             extra={
                 "name": data.get("f58", ""),
+                #: 行情时间（f86＝unix 秒）。原值进 extra，由
+                #: :func:`~atst.web.normalize.quote_datetime_from_extra` 渲染成
+                #: ``Quote.datetime``（市场时区字符串）——此前该字段从未被请求，
+                #: 东财经快照的 ``datetime`` 恒为 ``None``。
+                "time": data.get("f86"),
                 "turnover_rate": _f(data.get("f168")),
                 "change": _f(data.get("f169")) / 100,
                 "pct_change": _f(data.get("f170")) / 100,
@@ -397,15 +402,18 @@ class EastmoneyMarginSource(EastmoneyDataCenterSource):
         ----------
         symbol:
             A 股代码（``600519`` / ``sh600519``）；须为两融标的，
-            非标的返回空列表。
+            非标的返回空列表。**指数不在两融报表覆盖范围内**——按 6 位代码过滤会
+            与深市同码股票撞上（``sh000001`` 拿到平安银行的两融），故按空集处理。
         days:
             取最近 N 个交易日（``0`` = 全部，受 ``page``/``all_pages`` 约束）。
         page / size / all_pages / max_pages:
             分页参数（语义同 :meth:`EastmoneyDataCenterSource.fetch_rows`）。
         """
-        from ...domain.symbol import split_symbol
+        from ..corporate import report_code_for
 
-        _, code = split_symbol(symbol)
+        code = report_code_for(symbol)
+        if code is None:
+            return []
         rows = self.fetch_rows(
             filters=[f'scode="{code}"'],
             sort_columns="DATE",

@@ -523,6 +523,27 @@ class CorporateSessionMixin:
         "top_holders": "SECUCODE",  # 十大股东（按 SECUCODE 过滤，与 free_holders 一致）
         "unlock_stocks": "SECURITY_CODE",  # 解禁股票（按 SECURITY_CODE 过滤）
         "earnings_preview": "SECURITY_CODE",  # 业绩预告旧版（按 SECURITY_CODE 过滤）
+        # ---- 所属板块（2026-10-14）：F10 核心题材，按 SECURITY_CODE 过滤 ----
+        "board_attribution": "SECURITY_CODE",
+        # ---- 2026-10-14 批量补齐 ----
+        "suspension": "",  # 停复牌：维度是交易日 DATETIME，没有个股过滤键
+        "goodwill": "SECURITY_CODE",
+        "goodwill_market": "",  # 市场级（按板块汇总）
+        "seo": "SECURITY_CODE",
+        "equity_structure": "SECURITY_CODE",
+        "holder_num_detail": "SECURITY_CODE",
+        "org_seat_trades": "SECURITY_CODE",
+        "connect_deals": "",  # 市场级（按 MUTUAL_TYPE 过滤）
+        "southbound_ranks": "SECURITY_CODE",
+        "margin_daily": "",  # 市场级
+        "block_trade_stats": "SECURITY_CODE",
+        "macro_money_supply": "",
+        "macro_loan": "",
+        "macro_retail": "",
+        "macro_asset_invest": "",
+        "macro_industrial": "",
+        "macro_reserve_ratio": "",
+        "macro_forex_reserve": "",
     }
 
     @staticmethod

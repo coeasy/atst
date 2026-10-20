@@ -64,6 +64,7 @@ class _StubTdxClient:
         symbols: Any,
         *,
         as_format: str = "dict",  # noqa: ARG002 - 替身只产 canonical dict
+        strict: bool = False,  # noqa: ARG002 - strict 判据在客户端内，替身不透传
         _collect: list[tuple[str, BaseException]] | None = None,
     ) -> list[dict[str, Any]]:
         if _collect is None:

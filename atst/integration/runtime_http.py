@@ -152,6 +152,7 @@ def create_runtime_app(client: Client | None = None) -> Any:
         symbols: str = Query(..., min_length=1),
         provider: str | None = None,
         fallback: str | None = None,
+        strict: bool = False,
     ) -> dict[str, Any]:
         values = tuple(item.strip() for item in symbols.split(",") if item.strip())
         if not values:
@@ -162,6 +163,7 @@ def create_runtime_app(client: Client | None = None) -> Any:
                 provider=provider,
                 policy=FallbackPolicy.from_wire(fallback),
                 currentness="live",
+                strict=strict,
             )
         )
 
@@ -318,6 +320,9 @@ def create_runtime_app(client: Client | None = None) -> Any:
             "core_unavailable": sorted(
                 capability for capability, state in core.items() if not state["default_available"]
             ),
+            #: ``provider="auto"`` 的降级名单。没有它，运维看到 auto 挑了次优 Provider
+            #: 时无从知道"为什么"——健康反馈是个隐式机制，隐式机制必须可观测。
+            "provider_health": api.provider_health_status(),
         }
 
     return app

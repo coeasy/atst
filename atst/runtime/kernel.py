@@ -26,6 +26,7 @@ from ..error_envelope import ErrorEnvelope, to_error_envelope
 from ..query import QueryPlan, QueryPlanner, QuerySpec
 from ..result import QueryResult
 from .audit import audit_runtime
+from .autoselect import provider_health
 from .executor import DirectProviderExecutor
 from .identity import execution_identity_from_plan
 from .provenance import validate_runtime_provenance
@@ -55,10 +56,13 @@ class UnifiedRuntime:
         audit_runtime()
         cfg = (config if config is not None else get_config()).validate()
         self.config = cfg
+        routing = getattr(cfg, "routing", None)
         self.planner = QueryPlanner(
             default_provider=(
                 cfg.core.default_provider if default_provider is None else default_provider
-            )
+            ),
+            auto_prefer=tuple(getattr(routing, "auto_providers", ()) or ()),
+            auto_ttl_ns=int(float(getattr(routing, "auto_health_ttl", 0.0) or 0.0) * 1_000_000_000),
         )
         configured_hosts: Sequence[Any] | None = (
             list(cfg.hosts.servers) if cfg.hosts.servers else None
@@ -90,7 +94,14 @@ class UnifiedRuntime:
 
     def execute(self, spec: QuerySpec) -> QueryResult[Any]:
         plan = self.planner.compile(spec)
-        result = self.executor.execute(plan)
+        try:
+            result = self.executor.execute(plan)
+        except Exception as exc:
+            #: 真实请求的成败喂给健康存储：``auto`` 候选据此沉底/复位。
+            #: 只记 Provider 身份与错误码，不碰任何请求内容。
+            provider_health().record_failure(plan.provider, code=to_error_envelope(exc).code)
+            raise
+        provider_health().record_success(plan.provider)
         validate_runtime_provenance(execution_identity_from_plan(plan), result)
         return result
 

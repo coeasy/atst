@@ -451,3 +451,42 @@ class TestParseDispatch:
         src = _src(_kline_body())
         out = src.fetch(["600519"])
         assert isinstance(out, list) and out and isinstance(out[0], Bar)
+
+
+# --------------------------------------------------------------------------- #
+# kind / group 双口径 URL 路由（fetch_quotes 静默错能力回归）
+# --------------------------------------------------------------------------- #
+class TestUrlRouting:
+    def _group(self, url: str) -> str:
+        return parse_qs(urlsplit(url).query)["group"][0]
+
+    def test_fetch_quotes_requests_the_quotation_group(self):
+        """内核 quotes 直连路径的回归：fetch_quotes 必须打行情分组端点。
+
+        旧实现不看 ``kind``，默认分组是 K 线——URL 请求 K 线、按行情解析，
+        拿日线冒充五档快照（帧合法、内容错能力）。
+        """
+        src = _src(_minute_body())
+        quotes = src.fetch_quotes(["600519"])
+        assert len(quotes) == 1 and isinstance(quotes[0], Quote)
+        assert quotes[0].price == pytest.approx(1298.88)
+        assert self._group(src.client.calls[-1]) == "quotation_minute_ab"
+
+    def test_kind_minute_and_ticks_share_the_quotation_group(self):
+        src = _src(_minute_body())
+        src.fetch_minute("600519")
+        assert self._group(src.client.calls[-1]) == "quotation_minute_ab"
+        src.fetch_ticks("600519")
+        assert self._group(src.client.calls[-1]) == "quotation_minute_ab"
+
+    def test_legacy_group_kwarg_still_wins(self):
+        """显式 group 的老路径（fetch_kline/fetch_minute/fetch_ticks）语义不变。"""
+        src = _src(_minute_body())
+        src.fetch_kline("600519", count=5)
+        assert self._group(src.client.calls[-1]) == "quotation_kline_ab"
+
+    def test_generic_fetch_default_group_is_still_kline(self):
+        """不传 kind/group 时保持旧的 K 线默认：fetch 的多态出口按能力自选。"""
+        src = _src(_minute_body())
+        url = src.build_url(["600519"])
+        assert self._group(url) == "quotation_kline_ab"

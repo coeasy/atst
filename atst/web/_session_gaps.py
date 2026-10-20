@@ -1,8 +1,7 @@
 # Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
-"""缺口补全 Mixin（对标 5 个行情项目的真实差距，见
-``docs/archive/plans/atst_覆盖与补全方案_对比5项目.md`` 第 3 节 G-01~G-13）。
+"""缺口补全 Mixin（对标 5 个行情项目的真实差距，缺口编号 G-01~G-13）。
 
 设计纪律（与 :mod:`atst.web._session_p2` 完全一致）：
 
@@ -24,6 +23,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from ..diagnostics import WarningCode, record_warning
 from ._session_market import _shared_http
 
 __all__ = ["GapsSessionMixin"]
@@ -473,17 +473,29 @@ class GapsSessionMixin:
         （``shares`` 单位：万份，与东财行情页「最新份额」一致。）
         """
         rows: list[dict[str, str | float]] = []
-        # 全市场 ETF ~1400 只 > 单页 500：逐页拉全（fid=f12 升序保证稳定覆盖）
-        for page_no in (1, 2, 3, 4):
+        # 全市场 ETF ~1400 只 > 单页 500：逐页拉全（fid=f12 升序保证稳定覆盖）。
+        # 终止条件用**短页**而不是空页：只在拿到空页才停的话，最后一页只要
+        # 满页就还会多发 1~2 次注定空的请求；更糟的是写死 4 页——ETF 存量一过
+        # 2000 只就静默丢尾部且不告警。触顶时如实告警，别假装取全了。
+        page_size = 500
+        max_pages = 12  # 6000 只上限，当前存量 ~1400，留一倍余量
+        for page_no in range(1, max_pages + 1):
             page_rows = _em_clist_rows(
                 "b:MK0021,b:MK0022,b:MK0023,b:MK0024,b:MK0827",
                 "f12,f13,f14,f2,f3,f38",
                 page=page_no,
-                size=500,
+                size=page_size,
             )
-            if not page_rows:
-                break
             rows.extend(page_rows)
+            if len(page_rows) < page_size:
+                break  # 短页：取尽
+        else:
+            record_warning(
+                WarningCode.WEB_EASTMONEY_PAGE_LIMIT,
+                f"ETF 份额在 max_pages={max_pages} 页内未取尽"
+                f"（已取 {len(rows)} 行，最后一页仍满页），结果可能截断",
+                stacklevel=2,
+            )
         out: list[dict[str, Any]] = [
             {
                 "code": r.get("f12", ""),

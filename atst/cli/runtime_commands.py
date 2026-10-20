@@ -102,6 +102,7 @@ def cmd_quotes(args: Any) -> int:
                     args.symbols,
                     provider=args.provider,
                     policy=_policy(args.fallback),
+                    strict=args.strict,
                 )
             )
         )
@@ -274,11 +275,21 @@ def _cmd_hosts_audit(args: Any) -> int:
 
 
 def _cmd_hosts_scan(args: Any) -> int:
-    """``atst hosts scan``：并发测速内置候选池并写排名文件。"""
+    """``atst hosts scan``：并发测速**整个候选池**并写排名文件。
+
+    候选池 = 内置池 + ``ATST_HOSTS``（存在时替换内置池）。这里刻意**不**扫
+    ``resolve_hosts()`` 的 top-8：排名是证据，只扫当前前八会让掉出前八的主站永远
+    拿不到新证据、再也回不来（自我锁死）。``TdxClient.bestip()`` 是另一件事——
+    它刷新"我现在用的这个池"，而这条命令负责"重新发现谁最快"。
+
+    只覆盖 ``quotation``（STANDARD）族：排名文件本身也只记这一族。其余四族
+    （extended / mac / goods / f10）的巡检走 ``atst hosts audit --family``，
+    所以结论行必须写出族名——否则会被读成"全部主站都测过了"。
+    """
     from ..transport.hosts import resolve_hosts
     from ..transport.speedtest import speedtest_and_save
 
-    entries = resolve_hosts(None, family="quotation")
+    entries = resolve_hosts(None, family="quotation", use_ranking=False, max_hosts=64)
     results = speedtest_and_save(
         entries,
         family="quotation",
@@ -291,12 +302,19 @@ def _cmd_hosts_scan(args: Any) -> int:
         rows.append([f"{r.host}:{r.port}", "OK" if r.ok else "ERR", rtt, r.error or ""])
     _print_table(["host", "state", "rtt", "error"], rows)
     ok = sum(1 for r in results if r.ok)
-    print(f"\n{ok}/{len(results)} 主站可达，已写入 ~/.atst/server_ranking.json")
+    print(
+        f"\n{ok}/{len(results)} 主站可达，已写入 ~/.atst/server_ranking.json"
+        "（quotation 族；其余四族见 atst hosts audit --family）"
+    )
     return 0
 
 
 def _cmd_hosts_list(args: Any) -> int:
-    """``atst hosts list``：查看当前生效的主站池（含排名文件合并结果）。"""
+    """``atst hosts list``：查看当前生效的主站池（含排名文件合并结果）。
+
+    只列 ``quotation``（STANDARD）族——排名文件只记这一族，所以这里就是"行情主站"
+    的全貌。其余四族的候选池与巡检结论用 ``atst hosts audit --family``。
+    """
     from ..transport.hosts import resolve_hosts
 
     entries = resolve_hosts(None, family="quotation")
@@ -305,7 +323,7 @@ def _cmd_hosts_list(args: Any) -> int:
         rtt = f"{e.rtt_ms:.1f}ms" if e.rtt_ms is not None else "-"
         rows.append([e.key, e.family, rtt, "verified" if getattr(e, "verified", False) else ""])
     _print_table(["host", "family", "rtt", "verified"], rows)
-    print(f"\n共 {len(entries)} 台主站")
+    print(f"\n共 {len(entries)} 台主站（quotation 族；其余四族见 atst hosts audit --family）")
     return 0
 
 

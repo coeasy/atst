@@ -4,9 +4,8 @@
 零缓存查询与审计、批量三态、显式跨源、Typed Query 与 Domain Record、
 流式订阅、以及用 `KernelExecutor` 注入假执行体做离线测试。
 
-> 历史背景：本页曾描述 v14 Runtime 的 `create_runtime` / `RuntimeGateway` /
-> `QueryRequest` / `semantic_cache` 用法。那套信封运行时与全部缓存层已随
-> v16 Phase 2 物理删除，不存在兼容别名。
+> **没有信封运行时，也没有缓存层。** `Client` + `UnifiedRuntime` 是唯一的执行路径，
+> 不存在 `RuntimeGateway` / `QueryRequest` / `semantic_cache` 这一层，也没有任何兼容别名。
 
 ## 1. 单发查询与溯源审计
 

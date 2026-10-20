@@ -122,14 +122,28 @@ def _h_get_quote(client: Client, args: dict[str, Any]) -> dict[str, Any]:
     policy, provider = _policy_and_provider(
         args.get("fallback"), args.get("provider"), default_provider="tdx"
     )
-    return serialize_result(client.quotes(args["symbol"], provider=provider, policy=policy))
+    return serialize_result(
+        client.quotes(
+            args["symbol"],
+            provider=provider,
+            policy=policy,
+            strict=bool(args.get("strict", False)),
+        )
+    )
 
 
 def _h_get_quotes(client: Client, args: dict[str, Any]) -> dict[str, Any]:
     policy, provider = _policy_and_provider(
         args.get("fallback"), args.get("provider"), default_provider="tdx"
     )
-    return serialize_result(client.quotes(args["symbols"], provider=provider, policy=policy))
+    return serialize_result(
+        client.quotes(
+            args["symbols"],
+            provider=provider,
+            policy=policy,
+            strict=bool(args.get("strict", False)),
+        )
+    )
 
 
 def _h_get_snapshot(client: Client, args: dict[str, Any]) -> dict[str, Any]:

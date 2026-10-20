@@ -23,7 +23,24 @@ def test_seam_client_bars_accepts_index_ctx() -> None:
     )
     p = sig.parameters["index"]
     assert p.kind in (p.KEYWORD_ONLY, p.POSITIONAL_OR_KEYWORD)
-    assert p.default is False, "bars(index=) 默认必须 False（普通 K 线语义不变）"
+    # 缺省必须是 None（= 按代码段自动推断），不是 False：写死 False 正是本层的
+    # 历史缺陷形状，直连 TdxClient.bars("sh000001") 会整条记录流错位。
+    assert p.default is None, (
+        f"bars(index=) 默认必须是 None（自动推断），现值 {p.default!r}——写死 False "
+        "会让指数 K 线记录流错位（见 tests/protocol/test_index_bars_layout.py）"
+    )
+
+
+def test_seam_async_bars_index_default_matches_sync() -> None:
+    """S↔P 缝：异步侧同一判据。同步/异步共享 ``_t_bars`` 模板，但签名各自声明，
+    历史上就是异步侧漏改导致 ``AsyncTdxClient.bars("sh000001")`` 单独错位。"""
+    from atst.client import AsyncTdxClient
+
+    p = inspect.signature(AsyncTdxClient.bars).parameters["index"]
+    assert p.default is None, (
+        f"AsyncTdxClient.bars(index=) 默认必须是 None（与同步侧一致），现值 {p.default!r}"
+    )
+    assert p.kind in (p.KEYWORD_ONLY, p.POSITIONAL_OR_KEYWORD)
 
 
 def test_seam_symbol_split_shape_stable() -> None:

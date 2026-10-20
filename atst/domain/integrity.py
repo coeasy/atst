@@ -26,6 +26,7 @@ from .symbol import Market, Symbol
 
 __all__ = [
     "FIELD_CHECKERS",
+    "date_problem",
     "illegal_code",
     "illegal_market",
     "row_violations",
@@ -48,7 +49,20 @@ def tdx_market_ids() -> frozenset[int]:
 #: 宁可当场响，也不要静默变成一条永不触发的判据。
 _TDX_MARKET_IDS = tdx_market_ids()
 
-_DATE_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}")
+#: 「长得像日期」的串：只由数字、连字符、冒号、空格/``T`` 组成，且含一个
+#: 「年-月-日」形状的三段Run（年至少 3 位）。
+#:
+#: 判据刻意**不**锚定 ``^\d{4}-\d{2}-\d{2}``。旧判据只认 4 位年份开头，而记录错位
+#: 读出来的年份位数是不确定的——实测 ``sh000001`` 指数 K 线错位时产出
+#: ``10112-28-10`` / ``12930-34-20`` / ``103951-51-43``（5~6 位），只有
+#: ``1114-12-45`` 那一种年份恰好 4 位。于是旧尺子对同一批错位数据**有时响有时不响**
+#: （实测 ``sh000300`` 响、``sh000001`` 与 ``sz399001`` 不响），比没有尺子更坏：
+#: 调用方会以为"没告警就是没越域"。
+_DATEISH = re.compile(r"^\d[\d:\- T]*$")
+_DATERUN = re.compile(r"\d{3,}-\d{1,2}-\d{1,2}")
+
+#: 合法形状：``YYYY-MM-DD``，可选 ``HH:MM`` / ``HH:MM:SS``（空格或 ``T`` 分隔）。
+_DATE_EXACT = re.compile(r"^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$")
 
 #: 每一条 ``code`` 都必须是一串可见的 ASCII 代码：非空、无控制字节、无空白、无分隔符。
 #: 这里刻意不用 symbol 引擎判"是不是 A 股代码"，也不用"6 位"判——两个都会误伤：
@@ -56,6 +70,25 @@ _DATE_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}")
 #: （``rb2010``），把它们判成越域等于把噪声混进信号。而记录错位后剩下的形状
 #: （``519\x01`` 带着控制字节、空串）在这里一条也躲不过。
 _VISIBLE_CODE = re.compile(r"^[\x21-\x7e]+$")
+
+
+def date_problem(value: str) -> str | None:
+    """字符串"长得像日期"却不合法时给出理由；不像日期返回 ``None``。
+
+    只判形状与日历，不判业务含义（"这天开没开盘"是日历层的事）。
+    """
+    if not _DATEISH.match(value) or not _DATERUN.search(value):
+        return None
+    m = _DATE_EXACT.match(value)
+    if m is None:
+        return f"值 {value!r} 写成日期形状却不是 YYYY-MM-DD[ HH:MM]"
+    try:
+        date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    except ValueError as exc:
+        return f"值 {value!r} 不是真日历日（{exc}）"
+    if int(m.group(4) or 0) > 23 or int(m.group(5) or 0) > 59:
+        return f"值 {value!r} 的时分越界"
+    return None
 
 
 def illegal_market(value: Any) -> str | None:
@@ -97,10 +130,7 @@ def row_violations(value: Any, path: str = "row") -> list[str]:
         for index, sub in enumerate(value):
             out.extend(row_violations(sub, f"{path}[{index}]"))
     elif isinstance(value, str):
-        head = _DATE_PREFIX.match(value)
-        if head:
-            try:
-                date.fromisoformat(head.group(0))
-            except ValueError:
-                out.append(f"{path}: 值 {value!r} 写成日期形状却不是真日历日")
+        problem = date_problem(value)
+        if problem is not None:
+            out.append(f"{path}: {problem}")
     return out

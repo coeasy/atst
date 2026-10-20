@@ -37,10 +37,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "atst"
 DOCS = ROOT / "docs"
-LEDGER = "docs/archive/plans/REFACTOR_PLAN_V17_CLOSURE.md"
 
-#: 审计文档不是对外承诺：台账、变更日志与归档本来就负责讨论"未接线"这件事本身。
-AUDIT_DOC_PREFIXES = ("docs/REFACTOR", "CHANGELOG", "docs/archive")
+#: 审计文档不是对外承诺：变更日志本来就负责讨论"未接线"这件事本身。
+#: `docs/archive/`（历史计划与对标审计）与 `docs/adr/`（决策记录）已于 v1.5.1 物理删除，
+#: 历史语境只留在 CHANGELOG 的往日条目里，因此这里只需保留 CHANGELOG 一条豁免。
+AUDIT_DOC_PREFIXES = ("CHANGELOG",)
 #: 首页与安全说明也是对用户的口径，只是不在 ``docs/`` 下——第一版只扫 ``docs/``，
 #: 于是 README 里"错误树"那一行的对外声称整个在射程外。
 PROMISED_ROOT_DOCS = ("README.md", "SECURITY.md")
@@ -68,10 +69,9 @@ PROMISE_EXEMPTIONS: dict[str, tuple[str, str]] = {}
 ERROR_SECTION = re.compile(r"错误|异常|症状|排查|失败|Error|Exception", re.IGNORECASE)
 #: 候选名形状 = 至少两个词峰的 CamelCase。``E1010``/``422``/``provider``/``HTTP`` 都不在这个形状里。
 CAMEL_HUMP = re.compile(r"[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+")
-#: ADR 是决策快照，记录的是当时的术语判定，不是现行契约——与
-#: ``test_doc_code_consistency.py`` 对 ``archive``/``adr`` 的同一口径。
-#: 因此 F-68 删掉的 E7050 在 ADR-013 §11 里仍以原文留存，另加了"后续修订"作废说明。
-HISTORICAL_DOC_PREFIXES = AUDIT_DOC_PREFIXES + ("docs/adr",)
+#: ADR 是决策快照、归档是历史计划，二者记录的都是当时的判断，不是现行契约——
+#: 已于 v1.5.1 物理删除（`docs/adr/`、`docs/archive/`），历史判据改由 CHANGELOG 承载。
+HISTORICAL_DOC_PREFIXES = AUDIT_DOC_PREFIXES
 #: 唯一允许点名"已不存在的错误类"的小节：``docs/errors.md`` §一之二 退役登记。
 #: 它自己的诚实由 :meth:`TestRetirementRegister` 把守——登记的名字必须确实不在树里。
 RETIREMENT_HEADING = "一之二"
@@ -140,9 +140,8 @@ def _error_section_candidates() -> dict[str, set[str]]:
 
 #: 已知"看起来像类名但其实不是本仓类"的小节：key 是 ``文件::小节标题``，
 #: 必须与 :meth:`TestPhantomNameGate.test_section_exemptions_are_still_needed` 同时撤销。
-#: 第 15 轮（V18 R-15）清空：唯一的条目挂在 ``docs/archive/parity/tiantian_fund_extensions.md`` §六，
-#: 该文档连同另外 4 份现在时引用已删除 ``UnifiedQuoteAPI`` 门面的对标件一起移入
-#: ``docs/archive/parity/``，落在 :data:`HISTORICAL_DOC_PREFIXES` 射程之外。
+#: 第 15 轮（V18 R-15）清空：唯一的条目挂在已删除的对标文档 §六。v1.5.1 把
+#: ``docs/archive/`` 整目录物理删除（含那 5 份对标件），豁免条件自动消失，无需再登记。
 #: 与 :data:`PROMISE_EXEMPTIONS` 同形：空表不是判据失效，新条目只有在
 #: "确属第三方命名、所在文档仍在活文档射程内"时才允许进来。
 SECTION_NAME_EXEMPTIONS: dict[str, str] = {}
@@ -377,23 +376,24 @@ class TestPromiseGate:
         )
         assert phantoms == [], (
             "对外文档点名了这些错误类，运行期却没有任何站点（幻影异常）："
-            f"{phantoms}；要么接线，要么在 {LEDGER} 登记裁决后再进豁免表"
+            f"{phantoms}；要么接线，要么登记裁决后再进豁免表"
         )
 
     def test_exemptions_never_outlive_their_condition(self) -> None:
-        """豁免表不许变成第二个没人读的名单：已接线、或编号不再成立，都要撤销豁免。"""
+        """豁免表不许变成第二个没人读的名单：已经接线的条目必须撤销豁免。
+
+        v1.5.1 删掉了 ``docs/archive/``（含 V17 收尾台账），豁免条目的「finding 编号」
+        不再指向任何活文档，因此原来那把「编号是否还在台账里」的尺子随之失效——
+        判据收敛成唯一仍然成立的半边：**只要真出现投递站点，豁免必须撤销**。
+        """
         _, sites = _parents_and_sites()
-        ledger = (ROOT / LEDGER).read_text(encoding="utf-8")
-        stale_wired: list[str] = []
-        stale_finding: list[str] = []
-        for cls, (finding, _) in PROMISE_EXEMPTIONS.items():
+        stale_wired = [
+            cls
+            for cls in PROMISE_EXEMPTIONS
             #: 只看**自身**站点：豁免针对的是"这一类永远不会发生"，子类接线不算兑现。
-            if any(kind in ("raise", "raise-var", "delivered") for kind in sites.get(cls, [])):
-                stale_wired.append(cls)
-            if f"{finding} " not in ledger:
-                stale_finding.append(f"{cls}->{finding}")
+            if any(kind in ("raise", "raise-var", "delivered") for kind in sites.get(cls, []))
+        ]
         assert stale_wired == [], f"这些类已经接线，请撤销豁免：{sorted(stale_wired)}"
-        assert stale_finding == [], f"豁免挂的 finding 编号已不在台账里：{stale_finding}"
 
     def test_currentness_verifier_is_where_the_freshness_promise_lives(self) -> None:
         """F-44 (a) 的落点单独钉一次：承诺的判据不许搬去无人读的地方。"""

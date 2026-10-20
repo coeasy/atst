@@ -134,7 +134,11 @@ class Quote:
         d["bid"] = [asdict(x) for x in self.bid]
         d["ask"] = [asdict(x) for x in self.ask]
         if self.extra:
-            d.update(self.extra)
+            #: 下划线前缀是**内部字段**标记（协议原始留存 / 漂移判据等）：
+            #: 公开 dict 出口只扁平化契约字段，内部键留在 ``extra`` 里给对象消费者——
+            #: 否则 TDX 的原始解码残留（_hdr/_u4/_v2/tail_leb128/_warnings）
+            #: 会平铺进行情契约，DataFrame/CSV 的列名一起被污染。
+            d.update({k: v for k, v in self.extra.items() if not k.startswith("_")})
         return d
 
 

@@ -44,15 +44,12 @@ atst 是一个**通达信（TDX）行情数据通用协议库**，目标是：
 - 架构决策（ADR）：需 2/3 核心维护者批准
 - 治理变更：需 2/3 核心维护者批准
 
-### 3.2 决策记录（ADR）
+### 3.2 决策记录
 
-重大决策应记录在 `docs/adr/` 目录中，格式：
-
-```
-ADR-XXX: 决策标题
-状态: proposed / accepted / superseded
-日期: YYYY-MM-DD
-```
+重大决策（影响公开接口、协议口径或运行时语义的取舍）应在 `CHANGELOG.md` 对应版本条目中写明
+**做了什么**与**为什么**，需要长期引用的实现约束记入 `docs/ARCHITECTURE.md` 或
+`docs/configuration.md`。本仓库不再维护逐条决策台账目录，历史判据只保留在
+`CHANGELOG.md` 的往日条目里。
 
 ### 3.3 紧急修复
 
@@ -69,8 +66,7 @@ ADR-XXX: 决策标题
 ### 4.2 弃用策略
 
 - 弃用标记：用标准库告警 `warnings.warn(..., DeprecationWarning, stacklevel=2)`；本包不自带
-  `@deprecated` 装饰器（`atst/deprecation.py` 206 行在包内零消费者，V18 第 8 轮按 F-74/D3 删除；
-  `warnings.deprecated` 需 Python 3.13，而本包下限是 3.10，故不作为机制）
+  `@deprecated` 装饰器（`warnings.deprecated` 需 Python 3.13，而本包下限是 3.10，故不作为机制）
 - 保留周期：至少 2 个 minor 版本
 - 迁移指南：每个弃用功能需在 `docs/migration/` 中提供迁移指南
 

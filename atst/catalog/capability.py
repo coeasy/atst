@@ -94,6 +94,31 @@ _PROVIDER_OVERRIDES: dict[str, str] = {
     "em_boards": "eastmoney",
     "em_board_members": "eastmoney",
     "stock_boards": "eastmoney",
+    # 所属板块走东财 datacenter 静态报表（RPT_F10_CORETHEME_BOARDTYPE），
+    # 与 stock_boards 的 push2 slist 同向但不同源——provider 仍归 eastmoney。
+    "board_attribution": "eastmoney",
+    # ---- 2026-10-14 批量补齐：全部走东财 datacenter 静态报表 ----
+    # 停复牌（按交易日）/ 商誉（个股 + 市场）/ 增发 / 股本结构 / 股东户数明细 /
+    # 机构席位 / 沪深港通成交 / 北向持股排行 / 两融每日 / 大宗统计
+    "suspension": "eastmoney",
+    "goodwill": "eastmoney",
+    "goodwill_market": "eastmoney",
+    "seo": "eastmoney",
+    "equity_structure": "eastmoney",
+    "holder_num_detail": "eastmoney",
+    "org_seat_trades": "eastmoney",
+    "connect_deals": "eastmoney",
+    "southbound_ranks": "eastmoney",
+    "margin_daily": "eastmoney",
+    "block_trade_stats": "eastmoney",
+    # 宏观补齐：货币供应量 / 贷款 / 社零 / 固投 / 工业增加值 / 存准 / 外储
+    "macro_money_supply": "eastmoney",
+    "macro_loan": "eastmoney",
+    "macro_retail": "eastmoney",
+    "macro_asset_invest": "eastmoney",
+    "macro_industrial": "eastmoney",
+    "macro_reserve_ratio": "eastmoney",
+    "macro_forex_reserve": "eastmoney",
     "rates": "boc",
     "wencai": "iwencai",
     "index_list": "builtin",
@@ -499,6 +524,27 @@ MIGRATED_CAPABILITY_STATUS: dict[str, str] = {
     "macro_bond_yield": "alive",  # RPTA_WEB_TREASURYYIELD（中/美国债收益率）
     "macro_social_financing": "alive",  # data.mofcom.gov.cn 社融月度
     "macro_repo_rate": "alive",  # chinamoney frr/fdr CSV（回购定盘利率）
+    # 2026-10-14 真机实测出数（datacenter 静态报表，非 push2 限流面）
+    "board_attribution": "alive",  # RPT_F10_CORETHEME_BOARDTYPE（所属板块）
+    # 2026-10-14 批量补齐（全部真机实拉出数，报表名见 corporate.VALID_REPORTS）
+    "suspension": "alive",  # RPT_CUSTOM_SUSPEND_DATA_INTERFACE（停复牌，按交易日）
+    "goodwill": "alive",  # RPT_GOODWILL_STOCKDETAILS（个股商誉；稀疏，允许空集）
+    "goodwill_market": "alive",  # RPT_GOODWILL_MARKETSTATISTICS（市场商誉统计）
+    "seo": "alive",  # RPT_SEO_DETAIL（增发/再融资）
+    "equity_structure": "alive",  # RPT_F10_EH_EQUITY（股本结构）
+    "holder_num_detail": "alive",  # RPT_HOLDERNUM_DET（股东户数明细，按报告期）
+    "org_seat_trades": "alive",  # RPT_ORGANIZATION_TRADE_DETAILS（机构席位）
+    "connect_deals": "alive",  # RPT_MUTUAL_DEAL_HISTORY（沪深港通历史成交，南北双向）
+    "southbound_ranks": "alive",  # RPT_MUTUAL_STOCK_HOLDRANKS（港股通/南向持股排行）
+    "margin_daily": "alive",  # RPTA_WEB_MARGIN_DAILYTRADE（两融每日）
+    "block_trade_stats": "alive",  # RPT_BLOCKTRADE_STA（大宗交易统计）
+    "macro_money_supply": "alive",  # RPT_ECONOMY_CURRENCY_SUPPLY（M0/M1/M2）
+    "macro_loan": "alive",  # RPT_ECONOMY_RMB_LOAN
+    "macro_retail": "alive",  # RPT_ECONOMY_TOTAL_RETAIL
+    "macro_asset_invest": "alive",  # RPT_ECONOMY_ASSET_INVEST
+    "macro_industrial": "alive",  # RPT_ECONOMY_INDUS_GROW
+    "macro_reserve_ratio": "alive",  # RPT_ECONOMY_DEPOSIT_RESERVE（存款准备金率）
+    "macro_forex_reserve": "alive",  # RPT_ECONOMY_GOLD_CURRENCY（外汇/黄金储备）
     # -- 待校准（端点未找到公开真名或真机不可达，needs_verify）：
     "interactive_qa": "needs_verify",  # irm.cninfo.com.cn（沙箱不可达）
     "news_broadcast": "needs_verify",  # content-api.cctv.com（沙箱不可达）
@@ -691,6 +737,7 @@ def _validate_composed(
     allowed = {
         "adjusted_bars": {
             "method",
+            "adjustment",
             "period",
             "count",
             "start",

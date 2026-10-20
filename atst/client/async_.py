@@ -164,11 +164,13 @@ class AsyncTdxClient(_ClientMixin):
         count: int = 320,
         start: int = 0,
         market: int | None = None,
-        index: bool = False,
+        index: bool | None = None,
         as_format: OutputFormat = "dict",
         strict: bool = False,
     ) -> Any:
-        """异步 K 线 / 分钟线（参数与分页/截断语义见同步版 :meth:`TdxClient.bars`）。"""
+        """异步 K 线 / 分钟线。``index`` 缺省按代码段自动推断——指数 K 线每条记录尾部
+        多 4 字节涨跌家数，这个位走反了整条记录流就错位。参数与分页/截断语义见
+        同步版 :meth:`TdxClient.bars`。"""
         return await self._adrive(
             self._t_bars(
                 symbol,
@@ -187,10 +189,13 @@ class AsyncTdxClient(_ClientMixin):
         symbols: str | Sequence[str],
         *,
         as_format: OutputFormat = "dict",
+        strict: bool = False,
         _collect: list[tuple[str, BaseException]] | None = None,
     ) -> Any:
         """异步实时行情快照（参数与错误语义见同步版 :meth:`TdxClient.quotes`）。"""
-        return await self._adrive(self._t_quotes(symbols, as_format=as_format, _collect=_collect))
+        return await self._adrive(
+            self._t_quotes(symbols, as_format=as_format, strict=strict, _collect=_collect)
+        )
 
     async def quotes_concurrent(
         self,

@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-10-13T21:03:13+0800",
+  "family": "std7709",
+  "command": "0x0530",
+  "command_name": "UNKNOWN_0530",
+  "frame": {
+    "magic": "0x47444954",
+    "seq": 1,
+    "method": "0x530",
+    "zip_size": 0,
+    "unzip_size": 0,
+    "compressed": false,
+    "payload_len": 29
+  },
+  "result": {
+    "tier": "L2",
+    "confidence": 0.85,
+    "rows": 1,
+    "warnings": []
+  },
+  "candidate": {
+    "has_count_prefix": false,
+    "count": 1,
+    "record_size": 29,
+    "field_types": [
+      "u32",
+      "f32",
+      "u32",
+      "i32",
+      "i32",
+      "u32",
+      "zero_u32",
+      "bytes"
+    ],
+    "score": 0.85,
+    "notes": [
+      "按候选记录长度整除"
+    ]
+  },
+  "source": "self-captured"
+}

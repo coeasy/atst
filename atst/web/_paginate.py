@@ -34,13 +34,30 @@ __all__ = [
 
 
 def decode_kline_payload(text: str, *, msg: str, source: str) -> dict[str, Any]:
-    """把 K 线响应文本解码为 JSON dict；非 JSON 抛 :class:`SourceDeprecated`。"""
+    """把 K 线响应文本解码为 JSON dict；非 JSON 抛 :class:`SourceDeprecated`。
+
+    超限请求可能整体返回 JSON 裸 ``null``（实测腾讯 ``count=4000`` 即如此），
+    甚至被换成错误对象。旧实现直接返回 ``json.loads`` 的结果，调用方
+    ``payload.get(...)`` 在 ``None`` 上抛裸 ``AttributeError`` → 被执行器收口成
+    ``[E9000] 未处理异常``。这里把"不是 dict"也归为同一条可读的
+    :class:`SourceDeprecated`，让调用方看到的是"接口返回了非预期结构"。
+    """
     try:
-        return json.loads(text)
+        payload = json.loads(text)
     except json.JSONDecodeError as exc:
         raise SourceDeprecated(
             msg, context={"source": source, "sample": text[:200]}, cause=exc
         ) from exc
+    if not isinstance(payload, dict):
+        raise SourceDeprecated(
+            f"{msg}（返回不是 JSON 对象，疑似请求条数超限或接口改版）",
+            context={
+                "source": source,
+                "sample": text[:200],
+                "payload_type": type(payload).__name__,
+            },
+        )
+    return payload
 
 
 def market_vol_scale(symbol: str) -> float:

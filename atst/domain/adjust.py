@@ -45,10 +45,17 @@
 尺度，比值无意义（这个坑见 :func:`atst.domain.enrich.enrich_daily_bars`）。
 
 **缺前收盘价的降级口径**：bar 未携带 ``extra["prev_close"]`` 时，价格因子
-退化为 ``1/(1+S+R)``（只还原股本扩张，**忽略现金红利**）——现金红利会
+退化为 ``1+S+R``（只还原股本扩张，**忽略现金红利**）——现金红利会
 因此丢失，引擎把这条瑕疵记进结果侧的告警通道（:func:`atst.diagnostics.record_warning`，
 类别 ``ADJUST_PREV_CLOSE_MISSING``；见 :func:`_price_adjust_ratio`），stderr 只唠叨一次。
 需要精确复权请确保事件携带前收盘价。
+
+.. note::
+
+   方向别写反：本函数返回的是**后复权方向的放大系数**，所以是 ``1+S+R``
+   而不是它的倒数。10 送 10（``S=1``）除权后价格减半，要还原回除权前口径
+   就得乘 2。写成 ``1/(1+S+R)`` 等于把因子缩小成 0.5——那是价格缩水比例，
+   是前复权方向的量，不是本函数的值。
 
 事件类别过滤
 ------------
@@ -114,6 +121,18 @@ def _parse_date(s: str) -> _date:
         raise AdjustError(f"非法日期: {s!r}") from exc
 
 
+def _same_day(a: str, b: str) -> bool:
+    """两个日期串是否同一天（只比前 10 位，容忍 ``datetime`` 带时间后缀）。
+
+    解析失败一律判「不同天」——拿不到确定答案时退回二分定位的那一份前收盘，
+    而不是赌它是同一天。
+    """
+    try:
+        return _parse_date(a) == _parse_date(b)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def compute_factors(
     bars: Sequence[Bar],
     events: Iterable[CapitalChange],
@@ -125,12 +144,24 @@ def compute_factors(
     Parameters
     ----------
     bars:
-        按时间**升序**排列的不复权 K 线。
+        按时间**升序**排列的不复权 K 线。升序是硬契约而非建议：下面用
+        ``bisect_left`` 定位事件日的前收盘、QFQ 又拿 ``factors[-1]`` 做基准，
+        两者在降序序列上都静默取错值而**不报错**。所以这里显式校验而不是
+        默默忍受——Web 源偶发返回降序时，宁可 AdjustError 也不要一个长得
+        完全正常的错误因子。
     events:
         除权除息事件（0x000F / 本地 gbbq 文件）。
     """
     if not bars:
         return []
+
+    bar_dates = [_parse_date(b.datetime) for b in bars]
+    if bar_dates != sorted(bar_dates):
+        raise AdjustError(
+            "K 线必须按时间升序：复权的前收盘定位（bisect）与前复权基准"
+            "（最后一根因子）都依赖升序，降序会静默产出错误因子",
+            context={"first": bar_dates[0].isoformat(), "last": bar_dates[-1].isoformat()},
+        )
 
     # 事件按日期升序，且与 bar 对齐（日期解析移出内层循环：
     # 原实现每个 bar 都重复 _parse_date(ev.date)，事件多时 O(n×m) 白算）
@@ -146,7 +177,6 @@ def compute_factors(
     vol_factor = 1.0
     factors: list[AdjustFactor] = []
 
-    bar_dates = [_parse_date(b.datetime) for b in bars]
     closes = [_as_positive_close(b) for b in bars]
 
     for i, bar in enumerate(bars):
@@ -230,9 +260,9 @@ def _price_adjust_ratio(
     2. ``fallback_prev_close``——**上一根 bar 的收盘价**。连续交易日里"前收盘价"按
        定义就是上一交易日的收盘价，所以 K 线序列本身就能提供它。过去只用第 1 条，
        而 TDX / 东财的 K 线都不带这个字段，于是**每一次复权都在走降级口径**：现金
-       红利被整项忽略，价格因子退化成 ``1/(1+S+R)``。对 10 送 8 转 12 派 39.74 这种
+       红利被整项忽略，价格因子退化成 ``1+S+R``。对 10 送 8 转 12 派 39.74 这种
        事件，跌幅里属于派息的那部分被当成了股本扩张，因子偏大。
-    3. 都没有 → 退化为 ``1/(1+S+R)``，现金红利被忽略，误差 = D/P 量级。首次命中时发
+    3. 都没有 → 退化为 ``1+S+R``，现金红利被忽略，误差 = D/P 量级。首次命中时发
        一次性 :class:`UserWarning` 提示（docstring 契约与实际行为此前不一致，审计
        §3-7）。
     """
@@ -250,9 +280,20 @@ def _price_adjust_ratio(
         )
 
     # 前收盘：优先用 bar 的前收盘记录（extra 可能为 None，统一防御）
+    #
+    # 但这条优先只在「事件日 == 该 bar 的日期」时成立。``bar.extra["prev_close"]``
+    # 是**这根 bar 自己**的前收盘，也就是它上一根 K 线的收盘价；而循环里传进来的
+    # ``bar`` 是「所有 date <= 它」的事件共用的那根——同一个 bar 间隔里挤了多个
+    # 事件（长停牌后连续除权）时，除最后落地的那个外，其余事件的事件日都早于
+    # 这根 bar，于是拿到的是间隔**之后**的基准价，不是事件日之前最后一根。
+    # 这正是 docstring 里明令要避免的 ``bars[i-1].close`` 类错误，只是换了个入口
+    # 复现。当前 TDX / 东财 K 线都不带该字段所以暂不发作，一旦接入带 prev_close
+    # 的源就立刻生效——因此这里按日期判定，而不是等它发作。
     extra = getattr(bar, "extra", None) or {}
     prev_close = extra.get("prev_close")
     prev_close = float(prev_close) if prev_close else None
+    if prev_close is not None and not _same_day(ev.date, getattr(bar, "datetime", "")):
+        prev_close = None  # 事件不在本根 bar 当天，必须走二分定位的那一份
     if prev_close is None and fallback_prev_close and fallback_prev_close > 0:
         prev_close = float(fallback_prev_close)
 
@@ -286,7 +327,7 @@ def _price_adjust_ratio(
         record_warning(
             WarningCode.ADJUST_PREV_CLOSE_MISSING,
             f"复权事件 {ev.date} 缺少前收盘价（bar.extra['prev_close']），"
-            f"每股现金红利 {d:.4f} 元被忽略：价格因子按 1/(1+S+R) 近似。{cause}。"
+            f"每股现金红利 {d:.4f} 元被忽略：价格因子按 1+S+R 近似（后复权放大方向，不是它的倒数）。{cause}。"
             "精确复权请提供前收盘价。",
             stacklevel=3,
             stderr=fresh,

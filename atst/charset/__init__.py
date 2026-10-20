@@ -8,7 +8,7 @@
 ------
 :mod:`encoding` — 字符集自动探测（GBK/GB18030/Big5/UTF-8）与编解码工具。
 
-本包为 `docs/archive/GAP_ANALYSIS_v0.md`（档 A 项 A6）的落地模块，
+本包是字符集探测缺口（早期评估的档 A 项 A6）的落地模块，
 将字符集探测从 :mod:`atst.codec.primitive` 中解耦为独立模块，
 供上层按需引用而无需引入整个 codec 基础设施。
 """

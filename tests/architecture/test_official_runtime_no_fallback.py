@@ -147,9 +147,14 @@ def test_kernels_web_hop_uses_exactly_the_source_the_plan_named(
         def __init__(self, name: str) -> None:
             self._name = name
 
-        def fetch(self, symbols: list[str]) -> list[Any]:
+        def fetch_quotes(self, symbols: list[str]) -> list[Any]:
             hops.append((self._name, list(symbols)))
             return list(symbols)
+
+        def fetch(self, symbols: list[str]) -> list[Any]:  # noqa: ARG002
+            #: 内核的 quotes 一跳**必须**走 ``fetch_quotes``：``fetch`` 不传参时按子类
+            #: 默认出口解析，百度财经的默认分组是 K 线，曾合法返回 250 根日线冒充五档。
+            raise AssertionError("内核的 quotes 一跳不该走 fetch()（默认分组可能是 K 线）")
 
         def close(self) -> None:
             return None

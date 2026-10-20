@@ -187,13 +187,27 @@ class TestV13QueryHandlers:
         self, fake_client: type[FakeClient], capsys: pytest.CaptureFixture[str]
     ) -> None:
         fake_client.data = [{"code": "600000", "price": 10.0}]
-        args = _ns(symbols=["600000"], provider="tencent", fallback="tdx,eastmoney")
+        args = _ns(
+            symbols=["600000"],
+            provider="tencent",
+            fallback="tdx,eastmoney",
+            #: ``--strict``：quotes 专用入口也把这一格交给内核（此前只有 bars 能传）
+            strict=False,
+        )
         assert rc.cmd_quotes(args) == 0
         call_args, call_kwargs = _last(fake_client, "quotes")
         assert call_args == (["600000"],)
         assert call_kwargs["provider"] == "tencent"
         assert call_kwargs["policy"].providers == ("tdx", "eastmoney")
+        assert call_kwargs["strict"] is False
         assert json.loads(capsys.readouterr().out)["meta"]["capability"] == "quotes"
+
+    def test_quotes_forwards_strict(self, fake_client: type[FakeClient]) -> None:
+        fake_client.data = [{"code": "600000", "price": 10.0}]
+        args = _ns(symbols=["600000"], provider=None, fallback=None, strict=True)
+        assert rc.cmd_quotes(args) == 0
+        _, call_kwargs = _last(fake_client, "quotes")
+        assert call_kwargs["strict"] is True
 
     def test_bars_forwards_range(self, fake_client: type[FakeClient]) -> None:
         args = _ns(

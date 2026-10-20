@@ -44,6 +44,11 @@ md.quotes(symbols, provider="sina")
 md.bars(symbol, provider="sina")
 ```
 
+`bars` 走 `getKLineData` 端点：单次 `count` 实测 **1970 根封顶**（`datalen` 1971 起整体返回
+JSON 裸 `null`），超过 `SINA_KLINE_MAX`（`atst/web/limits.py`）的请求会被钳到上限并告警；
+该端点无日期游标、不能分段，需要更长历史请换 `eastmoney` / `tencent`。该端点只提供原始价，
+**不支持复权**（`adjust` 非空显式报错）。
+
 `suggest/boards/fund_flow/news` 优先 Direct API。
 
 新浪 `quotes()` 的 `hq_str` 快照不包含 PE/PB/市值字段；`all_market(node="hs_a")`

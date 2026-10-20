@@ -6,7 +6,7 @@
 
 核心运行时**零硬依赖**。按需安装 extras：
 
-> **当前安装路径**（G9，2026-09-22 实测）：本包不在 PyPI 上
+> **当前安装路径**（2026-09-22 实测）：本包不在 PyPI 上
 > （`https://pypi.org/pypi/atst/json` 回 404），所以下表这些写法要等上架后才能直接
 > 执行。现在请在本仓库根目录用 `pip install ".[extra]"`（把 `atst` 换成 `.`），
 > extras 的名字完全相同；README「安装」一节给的是同一口径。
@@ -23,10 +23,9 @@
 | MCP 工具服务 | 无需 extras：`atst/integration/mcp/` 是纯标准库的 JSON-RPC over stdio |
 | 全部 | `pip install "atst[all]"` |
 
-> **为什么 MCP 没有 extra**（第 23 轮实测）：全仓对 `mcp` / `pydantic` 两个第三方包的
-> 读取次数为 0（`atst/`、`scripts/`、`tests/` 一起按 `import` 普查，只有 `DESIGN.md`
-> 的一段示例代码提到 pydantic）。过去 `pyproject.toml` 里那两份 extra 是没人按它行动的
-> 声明，已经删除；照它装包只会多装两个用不上的包。
+> **为什么 MCP 没有 extra**：全仓对 `mcp` / `pydantic` 两个第三方包的
+> 读取次数为 0（`atst/`、`scripts/`、`tests/` 一起按 `import` 普查）。
+> `pyproject.toml` 里没有 MCP extra——照它装包只会多装两个用不上的包。
 
 ### Q: 支持 Python 3.9 吗？
 
@@ -47,8 +46,7 @@
   `RateLimitedLocal`
 - **不会**自动改走 HTTP Web 源：跨源的形状只有一种，调用方显式给
   `Client().quotes(symbols, policy=FallbackPolicy(providers=("tdx", "tencent")))`
-  （v16 删除了 `SourcesRouter` 那条自动降级链；`atst.web` 便捷入口的按序尝试是 web 层自己的事，
-  与内核无关）
+  （内核没有自动降级链；`atst.web` 便捷入口的按序尝试是 web 层自己的事，与内核无关）
 - 降低请求频率，避免高峰期大批量拉取
 
 ### Q: 实时行情一次能查几只股票？
@@ -97,7 +95,7 @@ with Client() as c:
 
 | 路 | 现状 |
 |----|------|
-| 协议 `0x000F` | **不可用**：记录布局未由真机 golden 锁定（F-37）。本轮实测 `sh600519` 回 250 条，**250/250 条字段落在域外**（`market=48`、`code='519\x01'`、`date=''`）。显式点名 `event_source="tdx"` 会被布局闸当场拒成 `E1010` 并告诉你改用 `eastmoney`；**不再**炸成 E9000 |
+| 协议 `0x000F` | **不可用**：记录布局未由真机 golden 锁定。实测 `sh600519` 回 250 条，**250/250 条字段落在域外**（`market=48`、`code='519\x01'`、`date=''`）。显式点名 `event_source="tdx"` 会被布局闸当场拒成 `E1010` 并告诉你改用 `eastmoney`，不会炸成 E9000 |
 | 本地 `T0002/hq_cache/gbbq` | 本仓库**没有实现**该文件的读取，本机也没有 TDX 安装可对拍。它的格式没有公开规范，按"不猜解析器"的纪律不做 |
 | 东财数据中心 | **这是默认路**，列名已逐字对拍（`BONUS_RATIO` / `IT_RATIO` / `PRETAX_BONUS_RMB` / `EX_DIVIDEND_DATE`，配股 `PLACING_RATIO` / `ISSUE_PRICE`） |
 

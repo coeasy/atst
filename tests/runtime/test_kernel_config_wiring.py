@@ -248,6 +248,11 @@ def test_web_route_also_gets_the_bounded_timeout(monkeypatch: pytest.MonkeyPatch
         def fetch(self, symbols: Any) -> list[Any]:  # noqa: ARG002
             return []
 
+        def fetch_quotes(self, symbols: Any) -> list[Any]:  # noqa: ARG002
+            #: quotes 一跳走 ``fetch_quotes``（显式 ``kind="quote"``），不走默认分组
+            #: 可能是 K 线的 ``fetch``。
+            return []
+
         def fetch_bars(self, symbol: str, **kwargs: Any) -> list[Any]:  # noqa: ARG002
             return []
 

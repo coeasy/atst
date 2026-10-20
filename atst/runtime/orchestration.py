@@ -13,10 +13,12 @@ from ..errors import AllSourcesExhausted, ValidationError
 from ..providers import PROVIDERS, resolve_provider
 from ..query import QuerySpec
 from ..result import QueryResult
+from .autoselect import AUTO_PROVIDER, auto_candidates, provider_health
 from .kernel import UnifiedRuntime
 
 __all__ = [
     "FallbackPolicy",
+    "AutoPolicy",
     "ProviderAttempt",
     "OrchestratedResult",
     "ProviderOrchestrator",
@@ -78,6 +80,37 @@ class FallbackPolicy:
                 },
             )
         return cls.build(*values)
+
+
+@dataclass(frozen=True, slots=True)
+class AutoPolicy:
+    """Explicit automatic Provider selection policy (``provider='auto'``).
+
+    Unlike :class:`FallbackPolicy` the candidate list is not hand-written: it
+    is derived per request from the capability surface plus runtime health
+    feedback (see :mod:`atst.runtime.autoselect`). The cross-Provider walk is
+    still *explicit* — it happens only because the caller asked for ``auto``,
+    and every result carries Provenance with ``requested_provider='auto'``
+    and the ``fallback`` flag naming the hop that actually served.
+    """
+
+    prefer: tuple[str, ...] = ()
+
+    @classmethod
+    def build(cls, *, prefer: tuple[str, ...] | list[str] = ()) -> AutoPolicy:
+        normalized: list[str] = []
+        for item in prefer:
+            key = str(item).strip().lower()
+            if not key:
+                continue
+            if key == AUTO_PROVIDER:
+                raise ValidationError(
+                    "auto policy 的 prefer 里不能再放 'auto'（策略名不是 Provider）",
+                    context={"prefer": list(prefer)},
+                )
+            if key not in normalized:
+                normalized.append(resolve_provider(provider=key))
+        return cls(prefer=tuple(normalized))
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +185,68 @@ class ProviderOrchestrator:
                 "providers": list(policy.providers),
                 "errors": [f"{item.provider}:{item.code}" for item in attempts],
                 "fallback": True,
+                "capability": spec.capability,
+            },
+        )
+
+    def execute_auto(
+        self,
+        spec: QuerySpec,
+        *,
+        policy: AutoPolicy,
+        exclude: frozenset[str] = frozenset(),
+        ttl_ns: int = 0,
+        default: str | None = None,
+    ) -> OrchestratedResult:
+        """Execute one semantic QuerySpec under an explicit ``auto`` policy.
+
+        Candidate order = operational providers for the capability, ranked by
+        ``policy.prefer`` then runtime health feedback
+        (:mod:`atst.runtime.autoselect`). Each attempt runs through the same
+        single-kernel path with a **concrete** Provider; the walk stops at the
+        first success. Every outcome feeds :class:`ProviderHealthStore`, so a
+        provider that just failed is deprioritised for the next auto request
+        in this process. Provenance names the hop that served
+        (``requested_provider='auto'`` + ``fallback``), never silently.
+        """
+        candidates = auto_candidates(
+            spec.capability, prefer=policy.prefer, exclude=exclude, ttl_ns=ttl_ns
+        )
+        if not candidates:
+            #: 没有 operational 候选时不抛：退回声明口径的缺省 Provider，让
+            #: 它自己的 fail-fast 异常（CommandOffline / "provider 不支持
+            #: capability"）保持可观测——自动选源不该把"这条路没有源"改写成
+            #: 另一种说法。
+            candidates = (resolve_provider(default=default or PROVIDERS.default_provider),)
+
+        attempts: list[ProviderAttempt] = []
+        base = replace(spec, provider=None)
+        for index, provider in enumerate(candidates):
+            attempt_spec = replace(base, provider=provider)
+            try:
+                result = self.runtime.execute(attempt_spec)
+            except Exception as exc:
+                code = to_error_envelope(exc).code
+                provider_health().record_failure(provider, code=code)
+                attempts.append(ProviderAttempt(provider, "failed", code))
+                continue
+            provider_health().record_success(provider)
+            attempts.append(ProviderAttempt(provider, "ok"))
+            return OrchestratedResult(
+                result=self._mark_fallback(
+                    result,
+                    requested_provider=AUTO_PROVIDER,
+                    fallback=index > 0,
+                ),
+                attempts=tuple(attempts),
+            )
+        raise AllSourcesExhausted(
+            "auto-selection exhausted every operational Provider",
+            context={
+                "providers": list(candidates),
+                "errors": [f"{item.provider}:{item.code}" for item in attempts],
+                "fallback": True,
+                "requested_provider": AUTO_PROVIDER,
                 "capability": spec.capability,
             },
         )

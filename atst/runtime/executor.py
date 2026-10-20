@@ -8,7 +8,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -231,6 +231,37 @@ def _day_in_range(day: str, start_date: str, end_date: str) -> bool:
     return not (end_date and day > end_date)
 
 
+#: 核心面数据契约为 **canonical dict 行**（``result.data[0]["price"]``，
+#: 见 docs/quickstart 与 docs/cookbook/07）的能力集。Web 适配器与本地 reader
+#: 产出领域模型（Quote/Bar），TDX 客户端产出 dict——同一个 ``Client.quotes``
+#: 因 Provider 不同而返回两种形状，调用方的 ``row["price"]`` / ``row.price``
+#: 只能二选一，另一半Provider上静默变 AttributeError/TypeError。内核出口按这张
+#: 表收口成一种：模型行经 ``to_dict()`` 扁平化，dict 行原样。领域模型仍是** typed
+#: 面**（``Client.typed()`` → ``records_from_data`` → Domain Record）的契约，
+#: 两个面各就各位，不再互相穿透。
+_DICT_ROW_CAPABILITIES: frozenset[str] = frozenset({"quotes", "bars"})
+
+
+def _canonical_rows(data: Any) -> Any:
+    """把行数据统一成 canonical dict 行（仅 ``_DICT_ROW_CAPABILITIES`` 内生效）。"""
+    if not isinstance(data, list):
+        #: 非行数据（如 ``security_count`` 的 int、``sync_daily`` 的汇总 dict）不碰。
+        return data
+    out: list[Any] = []
+    for row in data:
+        if isinstance(row, dict):
+            out.append(row)
+            continue
+        to_dict = getattr(row, "to_dict", None)
+        if callable(to_dict):
+            out.append(to_dict())
+        elif is_dataclass(row) and not isinstance(row, type):
+            out.append(asdict(row))
+        else:
+            out.append(row)
+    return out
+
+
 def _semantic_call_payload(plan: QueryPlan, meta: Any) -> tuple[list[Any], dict[str, Any]]:
     """把 QuerySpec 的语义字段绑定成实现自己的关键字入参。
 
@@ -336,6 +367,10 @@ class DirectProviderExecutor:
                 data = fn(plan)
                 #: 日期区间在取回的那一页上做过滤，并当场回答"这一页盖不盖得住区间"。
                 data = self._apply_bar_range(plan, data)
+                #: quotes/bars 的内核出口统一为 canonical dict 行：Provider 之间
+                #: 同一种能力只准有一种行形状（``_DICT_ROW_CAPABILITIES``）。
+                if plan.spec.capability in _DICT_ROW_CAPABILITIES:
+                    data = _canonical_rows(data)
             except TdxError as exc:
                 exc.context.setdefault("provider", plan.provider)
                 exc.context.setdefault("channel", plan.channel)
@@ -612,17 +647,23 @@ class DirectProviderExecutor:
             return ""
 
         kept = [row for row in data if _day_in_range(day_of(row), start_date, end_date)]
-        if start_date and kept:
-            days = [day for day in (day_of(r) for r in data) if day]
-            #: 判据是"这一页有没有取到区间起点**之前**的 bar"，不是"最早一根是否等于
-            #: 起点"——后者会把起点落在休市日上的正常请求误报成截断（2026-01-01 没有
-            #: bar，但 2025-12-31 有，区间就是完整的）。
+        days = [day for day in (day_of(r) for r in data) if day]
+        #: 判据是"这一页有没有取到区间起点**之前**的 bar"，不是"最早一根是否等于
+        #: 起点"——后者会把起点落在休市日上的正常请求误报成截断（2026-01-01 没有
+        #: bar，但 2025-12-31 有，区间就是完整的）。
+        #:
+        #: 这里**不能**再要求 ``kept`` 非空：区间完全落在取回窗口之前时（如
+        #: ``count=30`` 却要 1999 年那段），``kept`` 为空、``days`` 却是真日期，
+        #: 该页显然没触及区间起点——恰恰是最需要告警的一格。旧实现把告警挂在
+        #: ``kept`` 上，于是这种"空结果 + 零解释"的请求静默通过，调用方无从
+        #: 分辨"这些日期没有行情"与"这一段根本没取回来"。
+        if start_date and days:
             reached_before_start = any(day < start_date for day in days)
             if not reached_before_start:
                 record_warning(
                     WarningCode.BARS_RANGE_UNCOVERED,
                     f"请求区间自 {start_date} 起，但本次取回的 {len(data)} 根 K 线最早只到 "
-                    f"{min(days) if days else '（无日期）'}，没有触及区间起点之前："
+                    f"{min(days)}，没有触及区间起点之前："
                     "结果是区间的一段而不是全部。请加大 count 或用 start 偏移继续往回取。",
                     stacklevel=2,
                 )
@@ -696,8 +737,22 @@ class DirectProviderExecutor:
 
             def page_all(capability: str) -> list[Any]:
                 """翻页到尽。``dividend_history`` 的 ``size`` 默认只有 20，
-                长历史标的的早期事件会被静默截断（600519 实有 28 条）。"""
+                长历史标的的早期事件会被静默截断（600519 实有 28 条）。
+
+                逐行去重：``dividend_history`` 按 ``EX_DIVIDEND_DATE`` 降序排，
+                该列存在并列值，服务端分页边界并不稳定——同一条记录可能落在
+                相邻两页里都出现。下游 :func:`capital_changes_from_dividends_and_rights`
+                是按日 **累加** ``bonus`` / ``dividend`` 的，重复行会直接把
+                送转比例与派息金额翻倍，复权因子静默偏大且不报任何错。
+                """
                 collected: list[Any] = []
+
+                def fingerprint(row: Any) -> tuple[tuple[str, str], ...] | str:
+                    if isinstance(row, dict):
+                        return tuple(sorted((str(k), str(v)) for k, v in row.items()))
+                    return str(row)
+
+                seen: set[Any] = set()
                 for page in range(1, _ADJUST_EVENT_MAX_PAGES + 1):
                     batch = self.execute(
                         QueryPlanner().compile(
@@ -717,7 +772,12 @@ class DirectProviderExecutor:
                         )
                     ).data
                     batch = list(batch or [])
-                    collected.extend(batch)
+                    for row in batch:
+                        mark = fingerprint(row)
+                        if mark in seen:
+                            continue
+                        seen.add(mark)
+                        collected.append(row)
                     if len(batch) < _ADJUST_EVENT_PAGE_SIZE:
                         return collected
                 #: 触顶不是"取完了"：最后一页仍是满页，说明还有没取到的事件。
@@ -845,7 +905,19 @@ class DirectProviderExecutor:
             from ..domain.models import CapitalChange
 
             symbol = str(args[0])
-            method = str(kwargs.pop("method", "qfq"))
+            #: ``adjustment`` 是 ``method`` 的别名：``Client.bars`` 用
+            #: ``adjustment=``（被直接面拒之门外的那格），``daily_enriched`` 用
+            #: ``adjust=``，同一个"复权方式"概念三个拼法，调用方只能靠翻源码。
+            #: 两个都收，同时给出时以 ``method`` 为准（它名字更贴协议）。
+            if "method" in kwargs and "adjustment" in kwargs:
+                raise ValidationError(
+                    "adjusted_bars 同时给了 method 与 adjustment（同一个复权方式的两种拼法）：只留一个",
+                    context={
+                        "method": kwargs.get("method"),
+                        "adjustment": kwargs.get("adjustment"),
+                    },
+                )
+            method = str(kwargs.pop("method", kwargs.pop("adjustment", "qfq")))
             period = str(kwargs.pop("period", "day"))
             count = int(kwargs.pop("count", 320))
             start = int(kwargs.pop("start", 0))
@@ -1066,11 +1138,15 @@ class DirectProviderExecutor:
         于是"所有主机都连不上"在 wire 上的形状与"这只代码没有行情"完全相同
         （``data=[]`` + ``warnings=()`` + HTTP 200）。失败袋在此显式取走，
         整体与部分按 :meth:`_tdx_bars` 的同一条界线分家：连不上就抛，缺几只需报。
+
+        ``options['strict']``：逐只开启解析器自校验判据（哨兵 / 成交额值域），
+        发现字段漂移的标的计入失败而不是返回可疑行情。
         """
         symbols = list(plan.spec.symbols)
+        strict = bool(plan.spec.options.get("strict"))
         errors: list[tuple[str, BaseException]] = []
         with self._client_session(self._tdx_client(self._hop_timeout(plan))) as client:
-            rows = client.quotes(symbols, _collect=errors)
+            rows = client.quotes(symbols, strict=strict, _collect=errors)
         if errors and not rows:
             raise errors[0][1]
         if errors:
@@ -1097,7 +1173,35 @@ class DirectProviderExecutor:
                 period=plan.spec.period,
                 count=plan.spec.count,
                 start=plan.spec.start,
+                index=self._index_bit(plan),
             )
+
+    @staticmethod
+    def _index_bit(plan: QueryPlan) -> bool:
+        """``0x052D`` 的指数位：按代码段推断，``options["index"]`` 可显式覆盖。
+
+        指数 K 线的每条记录尾部多 4 字节（上涨/下跌家数），股票没有。这个位不开，
+        解码器就不消费那 4 字节，于是**下一条**记录的 ``datetime`` 从尾巴上开始读——
+        整条记录流从此错位：日期变成 ``10112-28-10`` / ``428119-93-66``，成交量变成
+        1e40 量级。错位还是混沌的（LEB128 变长，偶尔会自己对齐回来），实测
+        ``sh000001`` 取 3 根时"第 1、3 根全错、第 2 根恰好对"——比整页全错更难发现。
+
+        历史缺陷：这一位只能由调用方显式传，而门面 :meth:`Client.bars` 根本没有这个
+        形参，于是**通过主入口取指数日线必然错位**，且错得不响（除非值域尺子恰好抓到
+        那个日期）。:func:`atst.universe.classify_with_index` 早就按同一套段表判好了
+        这个位，却是全仓无人调用的孤儿逻辑——这里把它接上。
+        """
+        from ..universe import classify_with_index
+
+        explicit = plan.spec.options.get("index")
+        if explicit is None:
+            return classify_with_index(plan.spec.symbols[0])[1]
+        if not isinstance(explicit, bool):
+            raise ValidationError(
+                f"options['index'] 必须是 bool，收到 {type(explicit).__name__}",
+                context={"option": "index", "value_type": type(explicit).__name__},
+            )
+        return explicit
 
     def _tdx_snapshot(self, plan: QueryPlan) -> Any:
         with self._client_session(self._tdx_client(self._hop_timeout(plan))) as client:
@@ -1177,12 +1281,18 @@ class DirectProviderExecutor:
 
         刻意不复用公开便捷函数 `atst.web.get_quotes`——它在 `source` 缺省时会 new 一个
         `WebQuoteClient`，按 `web.enabled_sources` 顺序降级，而有序降级是内核禁止的形状。
+
+        走 :meth:`~atst.web._base_core.BaseWebSource.fetch_quotes` 而不是
+        :meth:`~atst.web._base_core.BaseWebSource.fetch`：后者不传参时按子类默认
+        出口解析，百度财经的默认分组是 K 线——`quotes(provider="baidu")` 曾合法
+        返回 250 根日线冒充五档快照（帧合法、内容错能力）。``fetch_quotes`` 显式
+        下发 ``kind="quote"``，URL 构造与解析两侧同口径路由到行情快照。
         """
         from ..web import create_source, normalize_symbol
 
         src = create_source(plan.provider, timeout=self._hop_timeout(plan))
         try:
-            return src.fetch([normalize_symbol(s) for s in plan.spec.symbols])
+            return src.fetch_quotes([normalize_symbol(s) for s in plan.spec.symbols])
         finally:
             src.close()
 

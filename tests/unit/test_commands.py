@@ -124,7 +124,7 @@ class TestLedgerQuerySurface:
 
 
 class TestLedgerCalibration:
-    """2026-09 账本校准批次（docs/archive/OPTIMIZATION_PLAN.md 批次 A2）。"""
+    """2026-09 账本校准批次（批次 A2）。"""
 
     @pytest.mark.parametrize("cmd", [0x052D, 0x0530, 0x0547])
     def test_golden_backed_commands_verified(self, cmd: int) -> None:

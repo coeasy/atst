@@ -50,11 +50,11 @@ REJECTED_OPTIONS: dict[str, str] = {
 }
 #: ``options`` 袋里唯一被直连执行面读取的键（``runtime/executor.py`` 的
 #: ``options.get("args")`` / ``options.get("kwargs")`` / ``options.get("market")`` /
-#: ``options.get("strict")``）。
+#: ``options.get("strict")`` / ``options.get("index")``）。
 #: 袋里的键从此只有两种下场：在这个名单里被执行面读取，或者在 ``normalized()`` 当场被拒。
 #: 名单与真实读取点的一致性由架构门禁 ``test_option_bag_keys_are_executed_or_rejected``
 #: 对 AST 扫描结果求差把守——在这里加一个执行面不读的键，门禁即红。
-EXECUTED_OPTIONS: frozenset[str] = frozenset({"args", "kwargs", "market", "strict"})
+EXECUTED_OPTIONS: frozenset[str] = frozenset({"args", "kwargs", "market", "strict", "index"})
 _CANONICAL_UNIFIED_CHANNELS: dict[tuple[str, str], str] = {
     ("tdx", "quotes"): "quotation",
     ("tdx", "bars"): "quotation",
@@ -603,7 +603,13 @@ class QueryPlan:
 class QueryPlanner:
     """Compile semantic requests into deterministic one-Provider plans."""
 
-    def __init__(self, *, default_provider: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        default_provider: str | None = None,
+        auto_prefer: Sequence[str] = (),
+        auto_ttl_ns: int = 0,
+    ) -> None:
         if default_provider is None:
             selected: str = PROVIDERS.default_provider
         else:
@@ -616,8 +622,54 @@ class QueryPlanner:
                     context={"default_provider": default_provider},
                 )
             selected = cleaned
-        PROVIDERS.get(selected)
+        #: ``auto`` 是显式自动选源的策略名（:mod:`atst.runtime.autoselect`）：
+        #: 配成缺省后，未指定 provider 的每次请求都走能力面 + 健康反馈选源。
+        #: 它不是一个 Provider，注册表查不到它是正常的。
+        from .runtime.autoselect import AUTO_PROVIDER
+
+        if selected.lower() != AUTO_PROVIDER:
+            PROVIDERS.get(selected)
         self.default_provider = resolve_provider(provider=selected)
+        #: 自动选源的候选偏好与健康反馈窗口（构造期取自配置；``auto`` 之外的
+        #: 路径不读它们，空值即关闭）。
+        self.auto_prefer = tuple(
+            str(item).strip().lower() for item in auto_prefer if str(item).strip()
+        )
+        self.auto_ttl_ns = int(auto_ttl_ns)
+
+    def _resolve_auto(self, spec: QuerySpec) -> QuerySpec:
+        """把 ``auto`` 解析成一个具体 Provider（静态选源，单跳执行）。
+
+        两种显式形态：请求写了 ``provider='auto'``，或缺省 Provider 就是
+        ``auto`` 且本次没钉死 Provider。跨源重试是 Client 侧显式编排的职责
+        （:meth:`atst.client.api.Client._execute_auto`）；内核只做静态一跳。
+        """
+        from .runtime.autoselect import (
+            is_auto_provider,
+            resolve_auto_provider,
+        )
+
+        if is_auto_provider(spec.provider):
+            return replace(
+                spec,
+                provider=resolve_auto_provider(
+                    spec.capability,
+                    prefer=self.auto_prefer,
+                    default=PROVIDERS.default_provider,
+                    ttl_ns=self.auto_ttl_ns,
+                ),
+            )
+        if spec.provider is None and is_auto_provider(self.default_provider):
+            return replace(
+                spec,
+                provider=resolve_auto_provider(
+                    spec.capability,
+                    prefer=self.auto_prefer,
+                    default=PROVIDERS.default_provider,
+                    ttl_ns=self.auto_ttl_ns,
+                ),
+            )
+        return spec
 
     @staticmethod
     def _canonical_unified_channel(spec: QuerySpec) -> str | None:
@@ -715,7 +767,7 @@ class QueryPlanner:
         validate_call(key[0], key[1], key[2], tuple(args), dict(kwargs))
 
     def compile(self, spec: QuerySpec) -> QueryPlan:
-        normalized = spec.normalized(default_provider=self.default_provider)
+        normalized = self._resolve_auto(spec).normalized(default_provider=self.default_provider)
         selected = self._select_channel(normalized)
         self._validate_migrated_call(normalized, selected)
         currentness = _parse_currentness(normalized.currentness)

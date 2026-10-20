@@ -36,7 +36,8 @@ Usage::
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Mapping
 from typing import Any, TypeVar
 
 #: A 股/港股时间戳一律按市场时区渲染。**单一事实源在** :mod:`atst.domain.calendar`
@@ -96,9 +97,61 @@ __all__ = [
     "normalize_price",
     "normalize_quote",
     "normalize_bar",
+    "quote_datetime_from_extra",
     "market_timestamp",
     "MARKET_TZ_NAME",
 ]
+
+
+# --------------------------------------------------------------------------- #
+# 行情时间回填
+# --------------------------------------------------------------------------- #
+#: 上游把行情时间拆在各式形状里；统一的落点只有 ``Quote.datetime`` 一个字段
+#: （契约 ``"YYYY-MM-DD HH:MM:SS"``，市场时区）。已知形状：
+#:
+#: * tencent：``extra["time"] = "20261019161457"``（14 位紧凑串）
+#: * sina：``extra["date"] + extra["time"]``（``"2026-10-19"`` + ``"16:14:57"``）
+#: * eastmoney：``extra["time"] = 1792397517``（unix 秒，``f86``）
+#: * baidu：``extra["time"]`` 只有时刻（无日期）——诚实留空，不拿时刻冒充完整时间
+_DIGITS_ONLY = re.compile(r"\D+")
+_HHMMSS = re.compile(r"\d{2}:\d{2}:\d{2}")
+_YYYYMMDD = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _compact_datetime(text: str) -> str:
+    """``20261019161457`` / ``20261019 091457`` → ``YYYY-MM-DD HH:MM:SS``。"""
+    digits = _DIGITS_ONLY.sub("", str(text))
+    if len(digits) != 14:
+        return ""
+    return (
+        f"{digits[:4]}-{digits[4:6]}-{digits[6:8]} {digits[8:10]}:{digits[10:12]}:{digits[12:14]}"
+    )
+
+
+def quote_datetime_from_extra(extra: Mapping[str, Any]) -> str:
+    """从 quote ``extra`` 的 date/time 字段拼出行情时间（市场时区字符串）。
+
+    拼不出**完整**日期＋时间就返回空串：调用方拿不到时间就诚实留空，
+    而不是把只有时刻的碎片或本地机器时钟冒充成行情时间。
+    """
+    raw_time = extra.get("time")
+    if isinstance(raw_time, bool):
+        return ""
+    if isinstance(raw_time, (int, float)):
+        # eastmoney f86：unix 秒
+        return market_timestamp(raw_time, unit="s")
+    time_text = str(raw_time or "").strip()
+    date_text = str(extra.get("date") or "").strip()
+    if date_text:
+        if _YYYYMMDD.fullmatch(date_text):
+            if _HHMMSS.fullmatch(time_text):
+                return f"{date_text} {time_text}"
+            hhmm = re.fullmatch(r"(\d{2}):(\d{2})", time_text)
+            if hhmm:
+                return f"{date_text} {hhmm.group(1)}:{hhmm.group(2)}:00"
+            return _compact_datetime(date_text + time_text)
+        return _compact_datetime(date_text + time_text)
+    return _compact_datetime(time_text)
 
 
 # --------------------------------------------------------------------------- #

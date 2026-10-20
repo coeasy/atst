@@ -57,6 +57,7 @@ class _FakeTdx:
         self._changes = changes or []
         self.closes = 0
         self.bar_calls: list[int] = []
+        self.index_bits: list[bool] = []
 
     def close(self) -> None:
         self.closes += 1
@@ -72,11 +73,13 @@ class _FakeTdx:
         period: str = "day",
         count: int = 320,
         start: int = 0,
+        index: bool | None = None,
         as_format: str = "dict",
     ) -> list[Bar]:
         end = max(0, len(self._bars) - start)
         begin = max(0, end - count)
         self.bar_calls.append(count)
+        self.index_bits.append(index or False)
         return self._bars[begin:end]
 
 
@@ -313,7 +316,7 @@ class TestHfqWindowCoverage:
     """后复权因子必须与请求的 ``count`` 无关。
 
     实测缺陷：window 盖不住早期事件时，那批事件拿不到前收盘价 → 引擎走
-    ``1/(1+S+R)`` 降级口径（忽略现金红利）→ **同一根 bar 在不同 count 下复权结果
+    ``1+S+R`` 降级口径（忽略现金红利）→ **同一根 bar 在不同 count 下复权结果
     不同**（某标的 hfq 因子 1.045 与 1.642 并存）。既不可复现，也是静默错。
     """
 

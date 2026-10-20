@@ -3,9 +3,8 @@
 目标：盘中持续监控自选股；主站不可用时按**你指定的**顺序改走 Web 源，
 且每次换源都可审计。
 
-> 历史背景：本页曾描述 `DataSourceRouter` 的 tdx → web → reader → cache →
-> synthetic 五级自动降级。该聚合路由与全部缓存层已随 v16 Phase 2 物理删除。
-> 现在**默认永不换源**；跨源只能由调用方显式给出 `FallbackPolicy`。
+> **内核没有聚合路由器，也没有缓存层。** 规划器每次请求只选定**一个** Provider /
+> channel，失败即抛，不会自动逐层尝试。要换源，请显式给出 `FallbackPolicy`。
 
 ## 要点
 

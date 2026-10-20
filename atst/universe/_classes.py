@@ -149,6 +149,12 @@ ASSET_CLASSES: Final[tuple[AssetClass, ...]] = (
             "sh513",
             "sh515",
             "sh516",
+            # sh517 / sh518 是段表漏掉的两段（2026-10-14 用天天基金清单交叉比对
+            # 发现）：sh518 里是黄金 ETF（518880 实测有报价 85.01），sh517 里是
+            # 沪港深系列 ETF（517000 等，32 只）。段表枚举不到就是永远扫不出来，
+            # 会变成一批"同步不到的孤基"，与 sz302 是同一类故障。
+            "sh517",
+            "sh518",
             "sh519",
             "sh520",
             "sh530",
@@ -172,9 +178,27 @@ ASSET_CLASSES: Final[tuple[AssetClass, ...]] = (
     ),
     AssetClass(
         name="bond",
-        label="可转债 / 可交换债（sh110-118 / sz121-131）",
+        label="可转债 / 可交换债（sh110-118 / sz123-128）",
         sina_node=None,
-        tdx_segments=("sh110", "sh111", "sh113", "sh118", "sz121", "sz123", "sz127", "sz131"),
+        # 段按可转债清单实测（2026-10-14 全量 1061 只，前 3 位计数）：
+        # 123(288) / 113(275) / 128(145) / 127(118) / 110(101) / 118(77) /
+        # 111(27) / 126(16) / 125(7)。其中 **sz128 段表原先漏了 145 只**——
+        # 128001 泰尔转债、128002 东华转债都在里头，漏段等于把深市最密的
+        # 一段转债判成 stock。sz121 / sz131 是历史段（当前清单 0 只），保留
+        # 不影响分类，删了反而会让老代码失忆。
+        tdx_segments=(
+            "sh110",
+            "sh111",
+            "sh113",
+            "sh118",
+            "sz121",
+            "sz123",
+            "sz125",
+            "sz126",
+            "sz127",
+            "sz128",
+            "sz131",
+        ),
         index_bit=False,
     ),
     AssetClass(
@@ -247,8 +271,24 @@ def classify(symbol: str) -> str:
     'index'
     >>> classify("bj920000")
     'bse'
+
+    入参先经 :func:`atst.domain.symbol.normalize_symbol` 归一化再判段——
+    否则非 canonical 写法（``000001.SH`` / ``sh.000001`` / ``sh 000001``）
+    匹配不上 ``sh000`` 这类段前缀，会**静默落进 `stock` 兜底**。后果不是
+    「分类不好看」而是守卫失效：``report_code_for("000001.SH")`` 会放行，
+    于是上证指数 `sh000001` 与平安银行 `sz000001` 在 6 位码上撞车，指数会
+    取到平安银行的分红/股东数据——这正是 ``corporate.py`` docstring 里
+    「收盘价 3797 变成 434924」那个坑，之前只对 canonical 写法生效。
+    直连 ``TdxClient.bars("sh.000001")`` 同样会按股票位发 0x052D，
+    整条 K 线记录流错位。
     """
     token = symbol.strip().lower()
+    try:
+        from ..domain.symbol import normalize_symbol
+
+        token = normalize_symbol(token)
+    except Exception:  # noqa: BLE001 - 归一化失败就退回原串判段，不做 fail-open
+        pass
     # ``bj`` 单独判前缀、不放进段表：北交所开新段（430/830 → 920）时这里是
     # "仍然是 bse"，放进段表就是"新段悄悄变成 stock"。判据必须是
     # ``startswith("bj")``——早先写成 ``token[:3] == "bj"``，对真实代码恒为假

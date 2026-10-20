@@ -254,6 +254,8 @@ class RuntimeJsonRpcHandler:
                     for capability, state in core.items()
                     if not state["default_available"]
                 ),
+                #: 与 HTTP 面 ``/v13/runtime/health`` 同一读数（同一份名单、同一个 TTL）。
+                "provider_health": self.client.provider_health_status(),
             }
         if method == "runtime.capabilities":
             return {
@@ -319,6 +321,7 @@ class RuntimeJsonRpcHandler:
                     provider=provider,
                     policy=self._policy(params),
                     currentness="live",
+                    strict=self._bool_param(method, "strict", params.get("strict", False)),
                 )
             )
         if method == "bars":

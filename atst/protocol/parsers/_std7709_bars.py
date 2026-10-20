@@ -17,6 +17,7 @@ from ...codec.primitive import (
     count_guard,
     decode_gbk,
 )
+from ...diagnostics import WarningCode, record_warning
 from ...errors import ParseError, ProtocolError
 from ..commands import Family
 from ..registry import TIER_L2, BaseParser, register_parser
@@ -135,6 +136,40 @@ class SecurityBarsParser(BaseParser):
             )
             else 1
         )
+
+        #: 指数：日线族的原始成交量在既有类别规则之外**还要再小 100 倍**。
+        #:
+        #: 实测（``sh000001``，``volume_unit="share"`` 禁用换算直取服务端原值）::
+        #:
+        #:     cat      amt/raw_volume    raw 的单位
+        #:     4 (日)      1549.27      手        ← ×100 后 15.49 元
+        #:     5/6/9/10/11 上面 ×100     手/100
+        #:
+        #: 1549 元不可能是全市场的成交量加权均价（沪市最贵的贵州茅台也就 1300 元，
+        #: 而它是 2300 只里的一只）；×100 后的 15.49 元与常识吻合。腾讯同一日给同量级
+        #: 值、新浪给的是 ×100 的值——三家 cross-check 一致。
+        #: 对照股票完全正常：cat 4 的 raw 按「股」（amt/raw = 1281 元 = 真实股价）、
+        #: cat 5+ 的 raw 按「手」，类别规则已经处理对了。所以这一条只对指数生效。
+        #: 指数修正是**独立于单位声明**的一条事实（指数日线族的原值在名义单位之外
+        #: 还要再小 100 倍），因此判据是「不是 share」而不是「是 auto」：
+        #: ``volume_unit="lot"`` 声明的是「原值单位是手」，它没有取消指数这条事实，
+        #: 原先 ``volume_unit == "auto"`` 的写法会让显式声明 lot 的调用方少乘 100
+        #: （指数日线族只拿到 1/100）。反过来 ``share`` 必须排除——它的语义是
+        #: 「直取服务端原值、不做任何换算」（探测器正是靠它读原值定标上面这张表），
+        #: 在这里再乘就把定标用的尺子本身改了。
+        if volume_unit != "share" and index_mode and category in DAYLIKE_CATEGORIES:
+            lot_factor *= SHARES_PER_LOT
+        elif volume_unit == "auto" and index_mode:
+            #: 分钟族是另一回事，不能跟着乘：原始 volume **恒等于 amount/100**
+            #: （每一根比值都精确是 100.00，而股票分钟线是该分钟的真实价）。它不是
+            #: 成交股数——乘 100 只会得到成交额本身。同日 5 分钟 bar 与新浪交叉：
+            #: amount 完全吻合、volume 差 6.49 倍，证实这个字段是名义值。
+            #: 处置是如实告警而不是伪造一个数：指数要量，请用日线。
+            record_warning(
+                WarningCode.INDEX_MINUTE_VOLUME_NOMINAL,
+                f"0x052D 指数分钟线（category={category}）的成交量是服务端名义值"
+                "（恒等于成交额/100），不是真实成交股数；指数要量请改用日线或换 Web 源",
+            )
 
         count = self.guarded_count(reader, ctx, 16)
 

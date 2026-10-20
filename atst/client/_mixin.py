@@ -44,6 +44,7 @@ from ..domain.finance import FINANCE_INFO_FIELDS, map_finance_values
 from ..domain.integrity import row_violations
 from ..domain.models import Bar, CapitalChange, Quote
 from ..errors import (
+    IntegrityViolation,
     ParseError,
     TdxError,
     TruncatedDataError,
@@ -233,7 +234,7 @@ class _ClientMixin:
         count: int,
         start: int,
         market: int | None,
-        index: bool,
+        index: bool | None,
         as_format: OutputFormat,
         strict: bool,
     ) -> Any:
@@ -242,8 +243,19 @@ class _ClientMixin:
         空桩首页与锚点漂移截断的判据就在本模板里：瑕疵逐条发 ``UserWarning``（经
         ``Client`` 内核时同时进 ``ResultMeta.warnings``），``strict=True`` 时同一条判据
         直接抛 :class:`TruncatedDataError` 而不是返回后靠调用方自查。
+
+        ``index`` 传 ``None`` 时按代码段自动推断（:func:`atst.universe.classify_with_index`）。
+        这不是可选的便利：指数 K 线每条记录尾部多 4 字节涨跌家数，这个位走反了**整条记录
+        流**就错位——日期变成 ``5243-00-00``、成交量变成 1e40，且第 1 条日期往往还对得上，
+        比整页全错更难发现。2026-10-13 实测：本模板曾把缺省写死 ``False``，于是
+        ``TdxClient.bars("sh000001")`` 直连调用必然错位（门面 :meth:`Client.bars` 与执行器
+        已经各自推断过一遍，唯独这一层没接上）。
         """
         _require_output_format(as_format)
+        if index is None:
+            from ..universe import classify_with_index
+
+            index = classify_with_index(symbol)[1]
         _require_bool("index", index)
         strict_mode = _require_bool("strict", strict)
         category = period_to_category(period)
@@ -373,9 +385,17 @@ class _ClientMixin:
         symbols: Any,
         *,
         as_format: OutputFormat,
+        strict: bool = False,
         _collect: list[tuple[str, BaseException]] | None,
     ) -> Any:
-        """实时行情快照（命令 ``0x0530``，逐只请求；坏标的隔离见 sync 壳）。"""
+        """实时行情快照（命令 ``0x0530``，逐只请求；坏标的隔离见 sync 壳）。
+
+        ``strict=True`` 时，解析器自带的完整性判据（哨兵失配 / 成交额越界，
+        落在 ``extra['_warnings']``）当场把这一只判为失败，而不是返回一份
+        "帧合法、值可疑"的数据让调用方自己猜——实测不存在代码 ``sh999999``
+        的主站响应就长这样：回声匹配、载荷齐全、量能荒谬，静默成功的形状
+        与真行情一模一样。
+        """
         _require_output_format(as_format)
         normalized_symbols = _normalize_symbols(symbols)
         out: list[Quote] = []
@@ -403,7 +423,22 @@ class _ClientMixin:
             if not result.rows:
                 errors.append((sym, ParseError(f"0x0530 无解析结果: {result.warnings}")))
                 continue
-            out.append(_row_to_quote(result.rows[0]))
+            row = result.rows[0]
+            if strict:
+                drift = list((row.get("extra") or {}).get("_warnings") or [])
+                if drift:
+                    errors.append(
+                        (
+                            sym,
+                            IntegrityViolation(
+                                f"quotes({sym!r}) strict：0x0530 自校验发现字段漂移，拒绝返回可疑行情。"
+                                + "；".join(drift),
+                                context={"symbol": sym, "drift": drift, "strict": True},
+                            ),
+                        )
+                    )
+                    continue
+            out.append(_row_to_quote(row))
         if _collect is None:
             self._set_last_errors(errors)
         return _emit(out, as_format)
@@ -427,7 +462,7 @@ class _ClientMixin:
     def _t_capital_changes(self, symbol: str) -> list[CapitalChange]:  # type: ignore[misc]
         """除权除息 / 股本变迁（命令 ``0x000F``）。
 
-        .. warning:: **字段口径未闭合（docs/archive/plans/REFACTOR_PLAN_V17_CLOSURE.md §0.3 F-37）**：2026-09-19 在
+        .. warning:: **字段口径未闭合（F-37）**：2026-09-19 在
            可达主站上实测本命令能回整批记录，但解出的 ``market``/``code``/``date`` 逐字段
            错位（如 ``market`` 读到 ASCII ``'0'``），且不带任何解码告警；离线 golden 只钉住
            长度与条数、不校验字段值，所以全绿门禁看不见它。当前口径是**条数可用、字段语义
@@ -445,9 +480,9 @@ class _ClientMixin:
     def _t_finance_info(self, symbol: str) -> dict[str, Any]:  # type: ignore[misc]
         """财务基础信息（命令 ``0x0010``，F1 语义化字段）。
 
-        .. warning:: 与 :meth:`capital_changes` 同一条未闭合口径（docs/archive/plans/REFACTOR_PLAN_V17_CLOSURE.md §0.3
-           F-37）：真机回包长度与 golden 同形，实测解出的 ``market``/``code``/``values``
-           却是空值/错位，且不触发解码告警 ⇒ 字段语义不保证，条数与结构可用。
+        .. warning:: 与 :meth:`capital_changes` 同一条未闭合口径（F-37）：真机回包长度与 golden 同形，
+           实测解出的 ``market``/``code``/``values`` 却是空值/错位，且不触发解码告警 ⇒
+           字段语义不保证，条数与结构可用。
         """
         mkt, code = split_symbol(symbol)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt)
@@ -830,9 +865,22 @@ class _ClientMixin:
     def _t_snapshot(self, symbol: str, *, as_format: OutputFormat) -> Any:
         """实时行情 + 当日日线，合成一份快照（表驱动降级在 router 层完成）。"""
         _require_output_format(as_format)
+        #: 指数位要跟着符号走：``count=1`` 时单条记录的字段偏移本身没错（尾巴在最后），
+        #: 所以这一条腿历史上"碰巧是对的"；但涨跌家数会被静默丢掉，而快照是给"这一只
+        #: 现在什么状态"用的，缺了涨跌家数的指数快照信息不全。统一按段表推断，
+        #: 与 :meth:`_t_bars` 的口径一致，不再依赖"只取一根所以没错位"这个巧合。
+        from ..universe import classify_with_index
+
         quote = yield _op_call("quotes", [symbol], as_format="dict")
         q = quote[0] if quote else None
-        day = yield _op_call("bars", symbol, period="day", count=1, as_format="dict")
+        day = yield _op_call(
+            "bars",
+            symbol,
+            period="day",
+            count=1,
+            as_format="dict",
+            index=classify_with_index(symbol)[1],
+        )
         d = day[0] if day else None
         snap = {
             "code": symbol,

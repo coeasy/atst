@@ -106,6 +106,7 @@ def _domain_record_cls() -> dict[str, type]:
         "industry_board": MarketDataRecord,
         "board_list": MarketDataRecord,
         "board_member": MarketDataRecord,
+        "board_attribution": SearchRecord,
         # Macro
         "fx_rates": MacroRecord,
         "global_quotes": MacroRecord,
@@ -661,7 +662,7 @@ class BoardListQuery(SearchQuery):
 
 @dataclass(frozen=True, slots=True)
 class BoardMemberQuery(SearchQuery):
-    """Kernel contract: sina ``fetch_members(node, *, page_size, max_pages)``。"""
+    """Kernel contract: sina ``fetch_members(node, *, page_size, max_pages)``."""
 
     capability: str = "board_member"
     node: str = ""
@@ -670,6 +671,27 @@ class BoardMemberQuery(SearchQuery):
         if not self.node.strip():
             raise ValidationError(
                 "board_member 查询必须提供 node", context={"capability": "board_member"}
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class BoardAttributionQuery(SearchQuery):
+    """Kernel contract: eastmoney ``board_attribution(symbol=, board_code=, board_name=)``。
+
+    三个过滤维度互斥，按 ``symbol`` → ``board_code`` → ``board_name`` 取第一道：
+    查询期就要求至少给一个，免得静默拉全量 31681 行。
+    """
+
+    capability: str = "board_attribution"
+    symbol: str = ""
+    board_code: str = ""
+    board_name: str = ""
+
+    def __post_init__(self) -> None:
+        if not (self.symbol.strip() or self.board_code.strip() or self.board_name.strip()):
+            raise ValidationError(
+                "board_attribution 查询必须提供 symbol / board_code / board_name 之一",
+                context={"capability": "board_attribution"},
             )
 
 

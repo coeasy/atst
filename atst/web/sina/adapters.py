@@ -29,6 +29,7 @@ from ...errors import SourceDeprecated, WebSourceError
 from ..base import BaseWebSource, normalize_symbol, to_sina_symbol
 from ..base import num_f as _f
 from ..base import num_i as _i
+from ..limits import SINA_KLINE_MAX
 from ..sources import HK, SINA, SUGGEST
 
 logger = logging.getLogger(__name__)
@@ -437,6 +438,18 @@ class SinaHistoryKlineSource(BaseWebSource):
             # P1 #13: 未知周期显式报错——静默回退 240（day）会把周/月请求
             # 偷换成日线数据，错误数据比报错更危险
             raise ValueError(f"未知 K 线周期 {period!r}；可选: {sorted(self.SCALES)}") from None
+        # 超限请求不是截断而是整体返回 null（JSON 裸 null）；旧实现把它直接当
+        # 数组迭代，`for r in None` 抛裸 TypeError 被执行器收口成 E9000——调用方
+        # 看不出是"请求超限"。单次钳到实测安全值并告警（该端点无日期游标、
+        # 无法分段），需要更长历史请换源。
+        if count > SINA_KLINE_MAX:
+            logger.warning(
+                "新浪 K 线 datalen=%d 超接口实测上限 %d，已钳制（该端点无法分段取全量，"
+                "需要更长历史请改用 source='eastmoney' 或 provider='tencent'）",
+                count,
+                SINA_KLINE_MAX,
+            )
+            count = SINA_KLINE_MAX
         self._check_deprecated()  # 深审 M13：下线检测前置（旧实现裸 get/post 绕过失败桶）
         url = self.build_url([sym], scale=scale, count=count)
         return self.parse_bars(
@@ -452,6 +465,20 @@ class SinaHistoryKlineSource(BaseWebSource):
                 context={"source": SINA, "sample": text[:120]},
                 cause=exc,
             ) from exc
+        if not isinstance(rows, list):
+            # 超限请求返回的是 JSON 裸 `null`（实测 datalen=1971+），也可能被
+            # 换成错误对象——二者都不是行数组。旧实现直接迭代 `rows`，null 时
+            # 抛裸 TypeError → E9000；这里按"接口已改版/超限"给一条可读的
+            # SourceDeprecated，而不是让调用方去猜 `NoneType` 是什么意思。
+            raise SourceDeprecated(
+                "新浪历史 K 线返回不是行数组（疑似请求条数超限或接口改版）",
+                context={
+                    "source": SINA,
+                    "sample": text[:120],
+                    "payload_type": type(rows).__name__,
+                    "hint": f"count 上限 {SINA_KLINE_MAX}，更长历史请改用 eastmoney/tencent",
+                },
+            )
         bars: list[Bar] = []
         for r in rows:
             if not isinstance(r, dict) or "day" not in r:

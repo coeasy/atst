@@ -73,7 +73,7 @@ uvx ruff@latest check atst tests scripts   # 与 CI 同版本更佳
      并逐项核对 README 宣称的数字。
    - **契约先行必须自带实现**：新增 capability / 绑定 / 公开符号的 PR，需在**同一提交**内
      带上生产消费者与守卫；不得"先声明后补线"，否则该符号会以孤儿形态进入公开面
-     （v17 F-9 的 `freshness/health/failure` 三件套即为此教训）。
+     （`freshness/health/failure` 三件套即为此教训）。
    - **不做跨 PR 的"先删后补"**：删除一个层与其消费者的迁移必须在同一 PR 内闭环，
      不留中间态（clean break 不引入别名）。
 

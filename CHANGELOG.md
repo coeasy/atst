@@ -9,6 +9,138 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.5.2] - 2026-10-19
+
+### Added
+
+- **`provider="auto"` 显式自动选源**（`atst/runtime/autoselect.py`）：候选顺序每次请求现算
+  ——能力面 operational 的 Provider → `[routing] auto_providers` 偏好 → 运行时健康反馈沉底
+  （`ProviderHealthStore` 只记真实请求成败，TTL 过后自动复位，不主动探测）。跨源出数不静默：
+  Provenance 带 `requested_provider="auto"` + `fallback`，并附一条 `auto_provider_fallback`
+  瑕疵；全部候选失败抛 `AllSourcesExhausted`。钉死 Provider 的请求永远不经过这条路径。
+  配置面新增 `[routing]` 段（`auto_providers` / `auto_health_ttl`），段数 5 → 6。
+  `quotes()` 与 `quotes_batch()` 同语义：批量不是"把 auto 解析成第一跳后按单跳执行"，
+  而是每只标的各走完整候选链（否则同一只失败时只会进 `errors`，永远不会换源）。
+- **`runtime.health` 新增 `provider_health`**：`{provider: {code, age_s}}`，只列仍处
+  `[routing] auto_health_ttl` 窗口内的失败标记（读取时即复位过期项，与 `auto` 排序同一份）。
+  HTTP `/v13/runtime/health` 与 WS `runtime.health` 同值。健康反馈是隐式机制，隐式机制
+  必须可观测——否则运维看到 `auto` 挑了次优 Provider 时无从知道"为什么"。
+- **`quotes(strict=True)`**：解析器自校验（哨兵失配 / 成交额越界）发现字段漂移的标的直接判
+  `IntegrityViolation`，不再返回"帧合法、值可疑"的行情。四面同名可用（Python / CLI `--strict`
+  / HTTP `/v13/quotes?strict=` / WS `params.strict` / MCP `get_quote(s)` 的 `strict`）。
+- **canonical dict 行契约**：`quotes` / `bars` 的行出口统一是 dict（`result.data[0]["price"]`），
+  与 quickstart / cookbook 的写法一致；Web 源不再返回 `Quote` / `Bar` 数据类让按文档取键的代码
+  撞 `TypeError`。域模型仍是 `Client.typed()` 的契约。
+- `Quote.datetime` 回填（`atst.web.normalize.quote_datetime_from_extra`）：tencent 14 位紧凑串 /
+  sina date+time / eastmoney `f86` / baidu unix 秒统一渲染成市场时区字符串；拼不出完整日期时间
+  就留空，不拿时刻碎片或本机时钟冒充行情时间。
+- `BaseWebSource.fetch_quotes()`：行情快照的唯一语义出口（显式下发 `kind="quote"`）。
+- 回归判据四组：`tests/runtime/test_auto_provider.py`、`tests/runtime/test_canonical_rows.py`、
+  `tests/client/test_quotes_strict_integrity.py`、`tests/web/test_quote_datetime.py`。
+- 回归判据两组：`tests/web/test_sina_kline_limit.py`（新浪 K 线 count 钳制 + 非数组载荷）、
+  `tests/runtime/test_bars_range.py`（`bars_range_uncovered` 在空结果区间下必须触发，
+  未来区间 / 完整覆盖区间不得误报）。
+
+### Fixed
+
+- **`quotes(provider="baidu")` 静默错能力**：内核 quotes 一跳走 `fetch()` 的默认出口，而百度财经
+  的默认分组是 K 线——URL 请求 K 线、按行情解析，合法返回 250 根日线冒充五档快照。现在
+  `_web_quotes` 走 `fetch_quotes()`，URL 构造与解析两侧同口径按 `kind` 路由。
+- **`atst hosts scan` 只扫当前前八台**：排名是证据，只扫 top-8 会让掉出前八的主站永远拿不到新
+  证据、再也回不来（自我锁死）。现在扫**整个候选池**（内置池 + `ATST_HOSTS`）；
+  `TdxClient.bestip()` 保持"刷新当前池"的语义。
+- 解析器内部标记（`_warnings` / `_tail_leb128` / `_raw_tail_hex`）泄漏进公开 dict：`Quote.to_dict()`
+  只扁平化非下划线键，DataFrame/CSV 列名不再被污染。
+- `adjusted_bars` 拒绝 `adjustment` 参数名（只认 `method`）：现在两者等价，同时给出即
+  `ValidationError`。
+- **新浪历史 K 线 `count` 超限静默崩成 `E9000`**：`quotes.sina.cn` 的 `getKLineData`
+  端点 `datalen` 实测 1970 根封顶（1971 起整体返回 JSON 裸 `null`，非数组）。旧实现把
+  `json.loads` 的结果直接当数组迭代，`for r in None` 抛裸 `TypeError`，被执行器收口成
+  `[E9000] 未处理异常`——调用方从错误里看不出"请求条数超限"。现在单次请求钳到
+  `SINA_KLINE_MAX`（`atst/web/limits.py`）并告警，`parse_bars` 对非数组载荷给出可读的
+  `SourceDeprecated`(E7030)。该端点无日期游标、无法分段，更长历史请换 `eastmoney`/`tencent`。
+- **日期区间完全落在取回窗口外时静默返回空、零告警**：`_apply_bar_range` 的
+  `bars_range_uncovered` 判据原来挂在"裁剪后结果非空"上，于是 `count=30` 却要 1999 年那段
+  时静默返回 `[]`——调用方无从分辨"这些日期没有行情"与"这一段根本没取回来"。现在判据改看
+  取回的 `days`（真日期）是否触及区间起点之前，空结果区间照常告警；未来区间与完整覆盖区间
+  仍不误报。
+- **腾讯 K 线族解码器对非 dict 载荷的守卫**：`decode_kline_payload`（fqkline/mkline 共用）
+  对超限返回的 JSON 裸 `null` / 错误对象不再让调用方 `.get` 抛裸 `AttributeError`，统一收成
+  可读的 `SourceDeprecated`。
+
+### Changed
+
+- `atst hosts list` / `hosts scan` 的 help 与结论行写明**只覆盖 quotation（STANDARD）族**
+  （排名文件也只记这一族），其余四族指向 `hosts audit` 的 `--family`。原来那句"共 N 台主站"
+  会被读成"全部主站都在这儿"。
+
+## [1.5.1] - 2026-10-13
+
+### Fixed
+
+- **指数日线实测不可用**（`Client().bars("sh000001")` 拿到 `10112-28-10` 这类日期 + 1e40 成交量）：
+  `0x052D` 的指数记录尾部多 4 字节涨跌家数，这个位不开整条记录流就错位。推断原来只在门面
+  `Client.bars` 与执行器两层生效，**连接层 `TdxClient.bars` / `AsyncTdxClient.bars` 把缺省
+  写死成 `False`**——直连连接层取指数必然错位，而门面那条路是好的，于是两类调用各有一半故障。
+  现在三层都缺省按代码段自动推断（同一份 `atst.universe.classify_with_index` 段表），
+  显式 `index=` 仍可覆盖。
+- **错位日期告警"有时响有时不响"**：旧值域尺子把年份锚定在 4 位（1900–2099），同批错位数据里
+  `sh000300` 响、`sh000001` 不响。日期判据改为按**真实日历**校验（`atst.domain.integrity.date_problem`，
+  真日历日校验含闰年），`10112-28-10` / `5243-00-00` / `8414-91-57` 一律报错；`row_violations`
+  路径也带出行内位置（`row[1].date:` / `row.bars[1].date:`）。
+- **东财报表按 6 位代码过滤与指数撞码**：`sh000001`（上证指数）与 `sz000001`（平安银行）是同一串
+  6 位码、只差市场位，指数会取到那只股票的数据。`atst/web/corporate.py::report_code_for()` 守卫，
+  指数符号返回空集而不是撞码数据。
+- **指数成交量单位**：日线族按「手」下发（比同类别股票规则再小 100 倍），解析器已折算到「股」，
+  与股票日线口径一致；分钟线的指数成交量是**名义值**（恒等于成交额/100），不再乘 100，
+  并发 `index_minute_volume_nominal` 告警提示该值不可与股票分钟线相比。
+- `TdxClient.bars` / `AsyncTdxClient.bars` 的 `index` 形参类型标注从 `bool = False` 改为
+  `bool | None = None`，与实现语义对齐。
+
+### Added
+
+- `atst.domain.integrity.date_problem`：字符串日期值域判据（含闰年与尾随 padding），
+  是"日期写成日期形状但根本不是日期"这类缺陷的唯一入口。
+- 永久回归测试四组共 188 例：`tests/protocol/test_index_bars_layout.py`（自建指数载荷，
+  因为 golden 库 530 份样本里零个指数样本）、`tests/runtime/test_index_bit_inference.py`、
+  `tests/domain/test_integrity.py`、`tests/web/test_report_code_guard.py`。
+- **标的 × 周期全矩阵测试** `tests/protocol/test_symbol_period_matrix.py`（230 例）：
+  以 `ASSET_CLASSES` 的 54 个代码段为横截面分母（`_segments()` 直接从段表取，段表改了
+  分母自动跟着变），端到端跑 53 段 × 3 个周期类别 = 159 格，每格都断言
+  market/code/category 编码、`date_problem` 为空、成交量单位、告警集合。
+  五节分别是：段表 SSOT 自洽 / 端到端解码矩阵 / 未验证 market 必须 fail-closed /
+  周期别名面 / 0x0530 实时行情的标的维度。另附 `test_bars_matrix_and_fail_closed_matrix_partition_the_segment_table`
+  断言「能解码的 53 段」与「必须拒绝的 1 段（北交所）」互斥且覆盖全表——
+  段表新增一段时这里会指名哪一段没人管。
+- 真实抓包 `PROTOCOL_SPEC/_sniffer/std7709/0530/`（2026-10-13，600519 的 29 字节
+  0x0530 响应）：确认响应回声市场字节是**标准编号**（sh600519 回声 `0x01`），
+  而反转只发生在请求体（`quote_request_market()`，深=1/沪=0）。
+- 成交量乘数的**复合**口径被首次明确钉住：指数标的在「手」族（5/30/60min）上是
+  `100 × 100 = 10000`，因为指数位与日周族两条规则各乘一次 `SHARES_PER_LOT`。
+  此前只有日线族的 100 倍被记录，指数分钟族的 ×10000 是本轮才发现的。
+
+### Known limitations
+
+- **北交所门面不切源**：`bars` 对 `bj920001` 这类符号在规划期放行、执行期抛
+  `ParseError`（E3040「当前只允许 SZ/SH」），`quotes` 则是隔离该标的、错误进
+  `_collect`——同一条标的能力失败形态不同，且门面 `Client.bars()` **不自动切换数据源**。
+  197 个已注册能力里对北交所的覆盖因此停留在「明确拒绝」而非「有数据」。
+  修复需要真机 golden 定标北交所的 market 字节，不按猜测改解析器。
+- **段外代码兜底成 stock**：不在 `ASSET_CLASSES` 段表内的代码（`sh604000`、
+  `sz100000`、`sh500000`、`sh999999`）被 `classify()` 归为 stock 并照常发请求，
+  服务端返回空或占位数据。属于「静默放行」，目前无守卫。
+- **`quotes()` 单批语义：解析期错误不隔离**：`_t_quotes` 里 `split_symbol` /
+  `build_realtime_quote_body` 与 `_op_req` 都在 `try` 内，但 `dispatch` 在 `try` 之外，
+  所以「构造失败」会淘汰单只，「解析失败」（回声不匹配 / 空载荷）**直接抛出并中断整批**。
+  并发版 `quotes_concurrent` 外层多包了一层 `except Exception`，同一批混坏标的
+  在那边能隔离——两侧语义不同是既有事实，已用
+  `test_single_batch_quotes_isolates_request_building_but_not_parsing` 钉住，未改生产代码。
+
+### Changed
+
+- `PROTOCOL_SPEC/7709/0x052D_SECURITY_BARS.yaml` 补记指数成交量单位、分钟线名义值口径、
+  `index_bit_alignment` 交叉校验，并标注 golden 样本中缺指数的事实。
+
 ## [1.5.0] - 2026-10-08
 
 ### Added

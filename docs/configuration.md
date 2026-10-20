@@ -3,8 +3,7 @@
 > 本文描述**当前生效**的配置面。口径只有一条：**配置面即执行面契约**——
 > 这里存在的每一个键都必须被单一内核读取并改变行为；写一个不改变任何行为的键，
 > 比不写更糟。因此本 Schema 只覆盖执行参数，且拼错的键立即报错。
-> 对应债务清偿记录：V17 Phase 6（F-13/F-16），决策见
-> [ADR-016](adr/ADR-016-config-surface-covers-execution-only.md)。
+> 键的完整性由 `tests/architecture/test_config_doc_contract.py` 按运行期真相源双向核对。
 
 ## 1. 配置如何进入执行链
 
@@ -56,14 +55,14 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 
 段内嵌套字典（如 `web.rate_limit`）按**深合并**：高优先级层的键胜出，未覆盖的键保留。
 
-## 3. 键清单（全部，共 5 段）
+## 3. 键清单（全部，共 6 段）
 
 ### `[core]` — Provider 选择与执行预算
 
 | 键 | 默认 | 取值范围 | 读取方 / 效果 |
 |---|---|---|---|
-| `default_provider` | `"tdx"` | 必须是 `PROVIDERS` 注册表已登记 id | `QueryPlanner`：查询未显式传 provider 时选谁 |
-| `timeout` | `5.0` | 0.1 – 300 | `DirectProviderExecutor` → `TdxClient` 请求超时（秒）。它是**一次读写的墙钟**，不是"两次收包之间的空档"：同步池与异步池在同一份声明上口径一致（第 31 轮之前同步面只有逐次空档超时，滴流对端能量不到它） |
+| `default_provider` | `"tdx"` | 必须是 `PROVIDERS` 注册表已登记 id，或策略名 `"auto"` | `QueryPlanner`：查询未显式传 provider 时选谁。写 `"auto"` = 每次请求按 `[routing]` 的候选排序现选一个 Provider（见下） |
+| `timeout` | `5.0` | 0.1 – 300 | `DirectProviderExecutor` → `TdxClient` 请求超时（秒）。它是**一次读写的墙钟**，不是"两次收包之间的空档"：同步池与异步池在同一份声明上口径一致 |
 | `heartbeat_interval` | `30` | 0 – 3600（`0` = 不启心跳） | 心跳 + 空闲槽位回收那一条线程的节奏（秒）。同步 `ConnectionPool` 在构造器里武装；异步 `AsyncConnectionPool` 在第一次握住真 socket 时武装（`_get_conn_locked`），构造与 `open()` 都不武装 |
 | `max_retries` | `3` | 0 – 20 | **同一 Provider 内** host/endpoint 的重试预算，不是切换 Provider 的次数 |
 | `vipdoc_root` | `None` | 非空字符串或 `None` | `local_vipdoc` Provider 与 `adjusted_bars`/`sync_daily` 的本地数据根目录；缺失时相关 capability 直接抛 `ValidationError` |
@@ -74,6 +73,33 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 |---|---|---|---|
 | `servers` | `[]` | `[["host", port], …]`，每项须能被 `atst.transport.hosts.parse_server` 解析 | 空 = 使用内置候选池；非空 = 只用这些主站 |
 | `slots_per_host` | `4` | 1 – 64 | 每台主站的 TCP 连接数（池大小 = hosts × slots_per_host） |
+
+**主站择优（best server IP）怎么选**——这一节回答"每次请求是不是自动挑最快的通达信服务器"：
+
+1. **候选来源**：内置候选池（STANDARD 族 20 台）＋ `ATST_HOSTS` 环境变量（存在时替换内置池）
+   ＋ `~/.atst/server_ranking.json` 持久化排名。显式 `hosts.servers` 非空时只用写下的那些，
+   排名文件只提供观测、**不会**扩大显式名单。
+2. **排序分**：`HostEntry.score`，每次排序现算——
+   `base = live_rtt_ms or rtt_ms or 1e6`，`score = min(1e9, base × 4^min(failures,8)) × (1 + 0.25·biz_failures)`。
+   `live_rtt_ms` 是真实请求的往返耗时（首选），`rtt_ms` 是测速探针的 RTT；两者都没有时是
+   哨兵 `1e6`（"未知"排在已知之后）。一次连接失败 ×4、两次 ×16……；连接通了但帧交换失败的
+   业务失败按 0.25 加权；上限 1e9（不溢出、也不再区分"更差"）。
+3. **取前 8 台**建池（`resolve_hosts(max_hosts=8)`），池内按分数排序选槽，轮询起点只影响同分
+   主站之间的先后，不会让差主站插到好主站前面。
+4. **排名文件只存测速证据**：`rtt_ms` / `connect_ms`，成功探针刷新、失败探针清除该主站的
+   stale 延迟；进程内的失败计数 / 熔断状态**不落盘**（运行时健康归连接池）。
+5. **什么时候刷新**：`atst hosts scan`（并发测速**整个候选池**并写排名——含已掉出前八的
+   主站，负责"重新发现谁最快"）、`TdxClient.bestip()` / `open(bestip=True)`（只刷新"当前
+   这个池"）、以及冷启动后连续 3 次建连失败触发的后台测速（`speedtest_threshold`）。
+   没有排名文件也能用：候选退回内置池顺序，首次请求照样成功。**这两条命令只覆盖 STANDARD
+   （quotation）族**——排名文件也只记这一族；extended / mac / goods / f10 四族的候选池与
+   巡检结论看 `atst hosts audit` 的 `--family`。
+6. **失败处理**：单次请求内跨主站重试（`max_attempts = max(max_retries+1, 主站数)`），
+   熔断 OPEN 的主站被跳过（冷却 30 秒后转 HALF_OPEN 放行一次探测，成功即复位）。
+
+判据：`tests/transport/test_host_ranking_provenance.py`、
+`tests/transport/test_ranking_probe_only_persistence.py`、
+`tests/transport/test_host_live_health_provenance.py`、`tests/transport/test_b4_circuit.py`。
 
 ### `[rate_limit]` — 本地请求限流（req/s，按交易状态分档）
 
@@ -100,7 +126,38 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 
 > `enabled_sources` **不是** TDX 失败后的 fallback 顺序。单一内核经 `QueryPlanner`
 > 直接选择 `tencent/sina/eastmoney/...` 的 Provider channel；跨源只允许显式
-> `FallbackPolicy`（见 `docs/ARCHITECTURE.md` §2）。
+> `FallbackPolicy` 或显式 `provider="auto"`（见 `[routing]` 与 `docs/ARCHITECTURE.md` §2）。
+
+### `[routing]` — `provider="auto"` 自动选源
+
+自动选源是**显式**模式：只有调用方写下 `provider="auto"`，或把
+`core.default_provider` 配成 `"auto"` 且本次没钉死 Provider，才会进入这条路径。
+钉死 Provider 的请求永远不经过它——provider-first 不变量不受影响。
+
+| 键 | 默认 | 取值范围 | 读取方 / 效果 |
+|---|---|---|---|
+| `auto_providers` | `[]` | Provider id 列表，**不得**含 `"auto"` | 候选偏好顺序：先按能力面过滤出 operational 的 Provider，再按本列表排序，未列出的按注册表登记顺序接在后面。空 = 纯登记序。拼错的 id 立即 `ValidationError`，不静默退回 |
+| `auto_health_ttl` | `90.0` | 0 – 86400（秒） | 运行时健康反馈有效期：期内失败过的 Provider 排到候选队尾（相对次序不变），过期自动复位；`0` = 关闭反馈，纯静态排序 |
+
+候选排序两级，都是**每次请求现算**：
+
+1. **静态能力面**——只收注册表里 operational 支持该 capability 的 Provider
+   （`quotes` 当前是 `tdx/tencent/sina/eastmoney/baidu`）；
+2. **运行时健康反馈**——`ProviderHealthStore` 只记真实请求的结果（成功清零、
+   失败记时 + 错误码），不主动探测：零额外请求成本，进程内有效、不落盘。
+
+跨源出数不静默：结果带 `requested_provider="auto"` + `fallback` 的 Provenance，
+并附一条 `auto_provider_fallback` 瑕疵（见 `docs/errors.md`）。全部候选失败时抛
+`AllSourcesExhausted`，而不是返回一份空结果。
+
+```toml
+[core]
+default_provider = "auto"
+
+[routing]
+auto_providers = ["tdx", "tencent"]   # 先 TDX，再腾讯
+auto_health_ttl = 90.0
+```
 
 ### `[security]` — 传输加密
 
@@ -122,7 +179,7 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 | `hosts` | 调用方 | 主站清单来自 `[hosts] servers`（空则内置候选池），但作为位置参数按次传入，不是池自己读配置 |
 | `family` | 公开 API | `get_client(family=...)` / `TdxClient(family=...)` 按次选择协议族 |
 | `connect_timeout` | 手工建池 | 建连超时与读写超时分离（默认 2s，故障转移时快速跳下一台） |
-| `heartbeat_cmd` | 手工建池 | 心跳探测用的命令号，缺省 `DEFAULT_HEARTBEAT_CMD = 0x0002`。该码**不在** 7709 账本内，而账本里的 `0x0004 HEARTBEAT` 本包没有默认发送方（只有 `atst probe 0x0004` 会显式发出）。2026-09-26 真机实测两条都答（0x0002 回 50 字节、0x0004 回 10 字节无结构载荷），探活只判通畅、不解析响应，故刻意保持 0x0002 不动（台账 F-20 已清偿；字节证据见 `PROTOCOL_SPEC/7709/0x0004_HEARTBEAT.yaml` 的 `measured` 块，对账判据见 `tests/protocol/test_heartbeat_claim_evidence.py`） |
+| `heartbeat_cmd` | 手工建池 | 心跳探测用的命令号，缺省 `DEFAULT_HEARTBEAT_CMD = 0x0002`。该码**不在** 7709 账本内，而账本里的 `0x0004 HEARTBEAT` 本包没有默认发送方（只有 `atst probe 0x0004` 会显式发出）。2026-09-26 真机实测两条都答（0x0002 回 50 字节、0x0004 回 10 字节无结构载荷），探活只判通畅、不解析响应，故刻意保持 0x0002 不动（字节证据见 `PROTOCOL_SPEC/7709/0x0004_HEARTBEAT.yaml` 的 `measured` 块，对账判据见 `tests/protocol/test_heartbeat_claim_evidence.py`） |
 | `spec` | 手工建池 | 帧头长度规格；缺省由 `codec/framing.py` 的单一 `FrameSpec` 推断 |
 | `keepalive` | 手工建池 | 是否发送 TCP keepalive |
 | `handshake` | 手工建池 | `None` 时按协议族推断（标准族/MAC 需要握手，扩展市场不需要） |
@@ -155,16 +212,15 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 
 `ATST_` 前缀是**保留命名空间**：库内代码从环境读取的每一个非 schema 变量都必须登记在
 `atst/config/loader.py` 的 `_RUNTIME_ENV_KEYS`，否则用户一旦设置它，strict 扫描就把整条
-配置加载判成拼写错误而 fail closed。`ATST_WENCAI_COOKIE` 曾漏登记：问财缺 cookie 时的
+配置加载判成拼写错误而 fail closed。历史上 `ATST_WENCAI_COOKIE` 曾漏登记：问财缺 cookie 时的
 错误消息让用户"设置 `ATST_WENCAI_COOKIE`"，而照做之后 `Client()` 直接抛
-`ConfigError`——按自己的指引修自己修不好的错（V17 第 43 步，F-69）。测试与工具用的开关
-因此**不得**占用该前缀。
+`ConfigError`——按自己的指引修自己修不好的错。测试与工具用的开关因此**不得**占用该前缀。
 
 ## 5. fail-closed：不认识的键一律报错
 
 | 场景 | 结果 |
 |---|---|
-| 未知配置段（`[cache]`） | `ValidationError: config 含未知配置段: ['cache']；可选: ['core', 'hosts', 'rate_limit', 'web', 'security']` |
+| 未知配置段（`[cache]`） | `ValidationError: config 含未知配置段: ['cache']；可选: ['core', 'hosts', 'rate_limit', 'routing', 'web', 'security']` |
 | 段内未知字段 | `ValidationError`，消息给出该段可选字段 |
 | 未知 `ATST_*` 变量 | `ConfigError: 无法识别环境变量 …` |
 | bool 位置写 `1`/`0` | `ValidationError: … 必须是 bool`（数值不算 bool） |
@@ -205,5 +261,5 @@ reset_config()                         # 清空单例：下一次 get_config() �
 | 写 `./atst.toml` ⇒ `Client()`/内核/传输层参数与文件一致 | `tests/runtime/test_kernel_config_wiring.py` |
 | `Config` 只有 5 段、阈值数字单源 | `tests/config/test_merge.py`、`tests/compatibility/test_local_gate_contract.py` |
 | 配置 → 池构造参数只有一个翻译点 | `tests/transport/test_pool_settings_from_config_contract.py` |
-| 限流字段名与 `SessionState` 对齐（幻影键名报错） | `tests/transport/test_ratelimit_contract.py` |
+| 限流字段名与 `SessionState` 对齐（不存在的键名报错） | `tests/transport/test_ratelimit_contract.py` |
 | strict 校验语义 | `tests/config/test_schema_semantics.py`、`tests/config/test_schema_strict_fields.py` |

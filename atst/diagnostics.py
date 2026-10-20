@@ -102,6 +102,14 @@ class WarningCode(str, Enum):
     #: 数 ``count`` 根"，区间起点比这更早时只能拿到区间的一段。这不静默：它记进
     #: ``warnings``，``strict=True`` 时直接失败。
     BARS_RANGE_UNCOVERED = "bars_range_uncovered"
+    #: 0x052D 指数**分钟线**的成交量是服务端名义值（恒等于成交额/100），不是真实成交
+    #: 股数。日线族的指数成交量按「手」下发、已由解析器折算；分钟族这个字段换算不出
+    #: 真实股数（乘 100 只会得到成交额本身），所以原样返回并发告警，不伪造数值。
+    INDEX_MINUTE_VOLUME_NOMINAL = "index_minute_volume_nominal"
+    #: ``provider='auto'`` 跨源出数：首个候选 Provider 失败，实际由后续候选出数。
+    #: 自动选源不是静默换源——这条随结果出发，与 Provenance 的
+    #: ``requested_provider='auto'`` + ``fallback`` 标记互为印证。
+    AUTO_PROVIDER_FALLBACK = "auto_provider_fallback"
 
 
 @dataclass(frozen=True, slots=True)

@@ -114,6 +114,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("quotes", help="query live quotes")
     p.add_argument("symbols", nargs="+")
     _provider_args(p, fallback=True)
+    p.add_argument(
+        "--strict",
+        action="store_true",
+        help="解析器自校验发现字段漂移的标的直接失败（仅 tdx 路径生效），不返回可疑行情",
+    )
     p.set_defaults(func=cmd_quotes)
 
     p = sub.add_parser("bars", help="query historical bars")
@@ -210,11 +215,18 @@ def build_parser() -> argparse.ArgumentParser:
     # ``hosts list`` / ``hosts scan`` are first-class operators of the same
     # subcommand group; dropping them from the parser (while their handlers
     # stayed in ``runtime_commands``) silently removed a supported surface.
-    list_p = hosts_sub.add_parser("list", help="查看当前生效的主站池")
+    # 两条都只覆盖 ``quotation``（STANDARD）族——排名文件也只记这一族。其余四族
+    # 的巡检走 ``hosts audit --family``；help 里必须写出来，否则 "共 N 台主站"
+    # 会被读成"全部主站"。
+    list_p = hosts_sub.add_parser(
+        "list", help="查看当前生效的主站池（quotation 族；其余四族见 hosts audit）"
+    )
     list_p.add_argument("--timeout", type=float, default=argparse.SUPPRESS)
     list_p.set_defaults(func=_cmd_hosts_list)
 
-    scan_p = hosts_sub.add_parser("scan", help="并发测速候选池并写入排名文件")
+    scan_p = hosts_sub.add_parser(
+        "scan", help="并发测速候选池并写入排名文件（quotation 族；其余四族见 hosts audit）"
+    )
     scan_p.add_argument("--timeout", type=float, default=argparse.SUPPRESS)
     scan_p.set_defaults(func=_cmd_hosts_scan)
 

@@ -257,7 +257,7 @@ class TdxClient(_ClientMixin):
         count: int = 320,
         start: int = 0,
         market: int | None = None,
-        index: bool = False,
+        index: bool | None = None,
         as_format: Literal["dict"] = "dict",
         strict: bool = False,
     ) -> list[dict[str, Any]]: ...
@@ -271,7 +271,7 @@ class TdxClient(_ClientMixin):
         count: int = 320,
         start: int = 0,
         market: int | None = None,
-        index: bool = False,
+        index: bool | None = None,
         as_format: Literal["tuple"],
         strict: bool = False,
     ) -> list[tuple[Any, ...]]: ...
@@ -285,7 +285,7 @@ class TdxClient(_ClientMixin):
         count: int = 320,
         start: int = 0,
         market: int | None = None,
-        index: bool = False,
+        index: bool | None = None,
         as_format: Literal["dataframe"],
         strict: bool = False,
     ) -> Any: ...
@@ -299,7 +299,7 @@ class TdxClient(_ClientMixin):
         count: int = 320,
         start: int = 0,
         market: int | None = None,
-        index: bool = False,
+        index: bool | None = None,
         as_format: str,
         strict: bool = False,
     ) -> Any: ...
@@ -312,10 +312,14 @@ class TdxClient(_ClientMixin):
         count: int = 320,
         start: int = 0,
         market: int | None = None,
-        index: bool = False,
+        index: bool | None = None,
         as_format: OutputFormat = "dict",
         strict: bool = False,
     ) -> Any:
+        """K 线。``index`` 缺省按代码段自动推断——指数 K 线每条记录尾部多 4 字节涨跌家数，
+        这个位走反了整条记录流就错位。语义与分页/截断判据见
+        :meth:`_ClientMixin._t_bars`（同步/异步共用）。
+        """
         return self._drive(
             self._t_bars(
                 symbol,
@@ -335,6 +339,7 @@ class TdxClient(_ClientMixin):
         symbols: str | Sequence[str],
         *,
         as_format: Literal["dict"] = "dict",
+        strict: bool = False,
         _collect: list[tuple[str, BaseException]] | None = None,
     ) -> list[dict[str, Any]]: ...
 
@@ -344,6 +349,7 @@ class TdxClient(_ClientMixin):
         symbols: str | Sequence[str],
         *,
         as_format: Literal["tuple"],
+        strict: bool = False,
         _collect: list[tuple[str, BaseException]] | None = None,
     ) -> list[tuple[Any, ...]]: ...
 
@@ -353,6 +359,7 @@ class TdxClient(_ClientMixin):
         symbols: str | Sequence[str],
         *,
         as_format: Literal["dataframe"],
+        strict: bool = False,
         _collect: list[tuple[str, BaseException]] | None = None,
     ) -> Any: ...
 
@@ -362,6 +369,7 @@ class TdxClient(_ClientMixin):
         symbols: str | Sequence[str],
         *,
         as_format: str,
+        strict: bool = False,
         _collect: list[tuple[str, BaseException]] | None = None,
     ) -> Any: ...
 
@@ -370,9 +378,18 @@ class TdxClient(_ClientMixin):
         symbols: str | Sequence[str],
         *,
         as_format: OutputFormat = "dict",
+        strict: bool = False,
         _collect: list[tuple[str, BaseException]] | None = None,
     ) -> Any:
-        return self._drive(self._t_quotes(symbols, as_format=as_format, _collect=_collect))
+        """实时行情（逐只 ``0x0530``）。
+
+        ``strict=True``：解析器自校验（哨兵 / 成交额值域）发现字段漂移的标的
+        直接计入失败，不返回"帧合法、值可疑"的行情——不存在代码的主站响应
+        就长这样（回声匹配、载荷齐全、量能荒谬）。
+        """
+        return self._drive(
+            self._t_quotes(symbols, as_format=as_format, strict=strict, _collect=_collect)
+        )
 
     @overload
     def quotes_concurrent(

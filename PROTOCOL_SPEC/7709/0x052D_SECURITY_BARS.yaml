@@ -152,6 +152,16 @@ response:
         For categories in VOLUME_LOT_CATEGORIES (5,6,9,10,11),
         server sends volume in lots (手). Parser multiplies by 100
         to convert to shares (股).
+
+        Index bars (index=True) — measured 2026-10-13:
+        - day-like categories (4,5,6,9,10,11): the server's raw value is
+          100x smaller than the stock rule for the same category, so the
+          parser applies the same ×100 to land on 股, keeping the index
+          consistent with the stock path;
+        - minute-like categories (0,1,2,3,7,8): the value is NOMINAL —
+          it always equals amount/100, it is NOT multiplied, and the
+          parser emits INDEX_MINUTE_VOLUME_NOMINAL so callers can see
+          the unit is not comparable to a stock minute bar.
     - name: "amount"
       type: "tdx_float"
       length: 4
@@ -164,13 +174,27 @@ response:
       length: 2
       description: "Number of advancing stocks (index-only)"
       nullable: true
-      notes: "Only present when index=True in parse context"
+      notes: |
+        Only present when index=True in parse context.
+
+        This is NOT an optional cosmetic field: on an index the server
+        always appends these 4 bytes. Leaving index off leaves them
+        unconsumed, so the NEXT record starts mid-tail and the whole
+        record stream drifts out of alignment (LEB128 is variable-length,
+        so it occasionally re-aligns by chance). The corruption looks
+        like dates such as 10112-28-10 and volumes near 1e40, while the
+        FIRST record's date often still reads correctly — a partial
+        read passes every spot check. See tests/protocol/
+        test_index_bars_layout.py, which builds the payload by hand
+        because the golden store holds zero index samples.
     - name: "down_count"
       type: "uint16"
       length: 2
       description: "Number of declining stocks (index-only)"
       nullable: true
-      notes: "Only present when index=True in parse context"
+      notes: |
+        Only present when index=True in parse context. See up_count for
+        why the index bit must be on.
 
   record_size: null
   min_record_size: 16
@@ -219,6 +243,14 @@ cross_checks:
     tolerance: "0.5x to 1.5x of OHLC range"
   - name: "base_consistency"
     description: "Base for next record = close_abs of current record"
+  - name: "index_bit_alignment"
+    description: |
+      On an index every record must end exactly where the next begins.
+      A wrong index bit shows up as dates that are not real calendar
+      days (10112-28-10, 5243-00-00) and as volumes off by orders of
+      magnitude. Check per row, never averaged — the first record's
+      date usually still decodes, so any aggregate check will pass.
+    tolerance: "0 — enforced by date_problem() on every row date"
 
 # =============================================================================
 # 参考
@@ -229,5 +261,12 @@ golden_samples:
   - "tests/golden/quotation/0x052d_security_bars_600000_cat5/20260831-125353/payload.bin"
   - "tests/golden/quotation/0x052d_security_bars_000001_cat4/20260831-125353/payload.bin"
   - "tests/golden/quotation/0x052d_security_bars_300750_cat4/20260831-125353/payload.bin"
+
+# ⚠️ golden_samples 里没有指数样本：14 组 market/code/category 组合全是股票
+# （market 0: 000001、300750；market 1: 600000）。指数 sh000001 与深市股票 000001
+# 是同一串 6 位码、只差市场位，库恰好只有后者。正因如此指数尾部 4 字节从没有
+# golden 兜底，错位缺陷潜伏了很久。指数口径改由测试自建载荷锁定：
+# tests/protocol/test_index_bars_layout.py（用 encode_leb128 手工合成）。
+golden_index_coverage: "none — see test_index_bars_layout.py"
 
 parser_reference: "tstdx/protocol/parsers/std7709.py::SecurityBarsParser"

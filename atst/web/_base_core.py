@@ -38,6 +38,9 @@ from .normalize import (
 from .normalize import (
     normalize_volume as _normalize_volume,
 )
+from .normalize import (
+    quote_datetime_from_extra,
+)
 from .sources import get_source
 
 __all__ = ["BaseWebSource"]
@@ -178,6 +181,22 @@ class BaseWebSource(_BaseRetryMixin):
 
         assert last_exc is not None
         raise last_exc
+
+    # -- 行情快照出口 -------------------------------------------------------- #
+    def fetch_quotes(self, symbols: Sequence[str]) -> list[Quote]:
+        """拉取**行情快照**（五档）：统一入口，绝不复用默认的 K 线语义。
+
+        :meth:`fetch` 的 ``parse(**kwargs)`` 多态出口允许子类按 ``kind``/``group``
+        选解析器——但**不传参时子类的默认出口不保证是行情**：百度财经的默认
+        group 就是 ``quotation_kline_ab``（日 K 线）。内核的 ``quotes`` 直连路径
+        曾直接调 :meth:`fetch`，于是 ``quotes(provider="baidu")`` 合法地返回
+        250 根日线冒充五档快照——帧合法、内容是另一个能力，静默错数。
+
+        本方法是「行情」这一语义的唯一出口：``kind="quote"`` 显式下发，
+        ``build_url``/``parse`` 两侧都按它路由；覆盖 :meth:`fetch` 的子类
+        （东财）自身即返回行情，默认实现复用其覆盖。
+        """
+        return self.fetch(symbols, kind="quote")
 
     # -- 自定义 fetch_* 复用：带容错的原始 GET/POST ----------------------- #
     def _request_http(
@@ -344,6 +363,12 @@ class BaseWebSource(_BaseRetryMixin):
         for k in ("limit_up", "limit_down", "avg_price"):
             if k in q.extra:
                 q.extra[k] = _normalize_price(src, q.extra[k])
+        # 行情时间回填：各源把时间拆在 extra 的 date/time 里（tencent 紧凑串 /
+        # sina 日期+时刻 / eastmoney unix 秒）。``Quote.datetime`` 是契约里唯一的
+        # 行情时间字段，此前全源恒为 ``None``——取得到就填，拼不出完整日期时间
+        # 就留空（不拿时刻冒充完整时间）。
+        if not q.datetime:
+            q.datetime = quote_datetime_from_extra(q.extra)
         return q
 
     def close(self) -> None:

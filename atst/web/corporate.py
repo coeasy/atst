@@ -97,7 +97,42 @@ __all__ = [
     "VALID_REPORTS",
     "EMPTY_RESULT_CODE",
     "is_empty_result",
+    "report_code_for",
 ]
+
+
+def report_code_for(symbol: str) -> str | None:
+    """东财 datacenter 报表族按 **6 位代码** 过滤，市场前缀在这里必然丢掉。
+
+    ``sh000001``（上证指数）与 ``sz000001``（平安银行）因此撞码。这些报表只覆盖
+    **有公司行为的 A 股标的**，而指数没有分红、配股、估值、股东户数、两融——继续查
+    下去只会把撞码那只股票的事实安到指数头上。实测（2026-10-13）::
+
+        dividend_history('sh000001') → 平安银行 20 条分红
+        margin('sh000001')          → 平安银行 20 条两融
+        holder_num('sh000001')      → 平安银行 1 条
+
+    于是 ``adjusted_bars('sh000001', 'hfq')`` 拿平安银行的分红给上证指数复权，
+    收盘价从 3797 变成 434924。判据取 :func:`atst.universe.classify_with_index`
+    的段表——与 ``0x052D`` 指数位同一份事实源，不另抄一套。
+
+    Returns
+    -------
+    ``str``
+        该标的在报表里的 6 位代码。
+    ``None``
+        该标的不在这些报表的覆盖范围内（指数）。调用方按**空集**处理——
+        这是事实陈述（指数没有公司行为），不是容错。
+    """
+    from ..universe import classify_with_index
+
+    if classify_with_index(symbol)[1]:
+        return None
+    from ..domain.symbol import split_symbol
+
+    _, code = split_symbol(symbol)
+    return code
+
 
 #: 实测可用的 datacenter-web 报表名（写死前须重新抓包验证）
 VALID_REPORTS: dict[str, str] = {
@@ -136,6 +171,74 @@ VALID_REPORTS: dict[str, str] = {
     "industry_index": "RPT_INDUSTRY_INDEX",
     # 概念指数成分（股票代码→概念映射）
     "concept_index": "RPT_CONCEPT_INDEX",
+    # ---- 所属板块（2026-10-14 实测可用）----
+    # F10 核心题材「所属板块」。全量 31681 行 = 全市场个股 × 所属板块
+    # （行业/概念/地域/指数族），`BOARD_RANK`=1 即该股的主营板块。
+    #
+    # **这是当前快照，不是历史截面**：报表没有任何时间维度字段——实测
+    # `sortColumns=UPDATE_DATE` / `TRADE_DATE` 均回 `code=9501 排序列不存在`，
+    # `SELECTED_BOARD_REASON`（入选原因）里那些「2024年12月27日回复称…」
+    # 是互动易/年报的**证据披露日**，不是加入板块日，不能拿来反推历史。
+    # 想要历史成分只能每日落盘快照后本地反推。
+    #
+    # `NEW_BOARD_CODE` 是 BK 代码（如 `BK0896`），可直接回查
+    # `em_board_members` 拉该板块当前成分，形成
+    # 「个股 → 所属板块 → 板块成分」的网络遍历。
+    #
+    # 按 6 位代码过滤：`sh000001`（上证指数）会撞上 `sz000001`（平安银行），
+    # 因此入口必须走 :func:`report_code_for` 的指数守卫。
+    "board_attribution": "RPT_F10_CORETHEME_BOARDTYPE",
+    # ---- 2026-10-14 批量补齐（全部真机实测：报表名取自 akshare 源码 grep，
+    # 可用性与过滤键逐张 datacenter 实拉验证，不是按命名惯例猜的）----
+    #
+    # 停复牌。**必须给 filter**（空 filter 服务端回 9501「filter字段不能为空」），
+    # 且维度是「交易日」不是个股：``(MARKET="全部")(DATETIME='2026-10-13')``
+    # 实测 17 条、``(DATETIME='2024-04-26')`` 实测 927 条。所以这个能力的入参
+    # 是 date 而不是 symbol——想查某只股票请拉全量后在本地筛。
+    "suspension": "RPT_CUSTOM_SUSPEND_DATA_INTERFACE",
+    # 商誉：个股明细。稀疏报表（多数公司没有商誉），600519 实测回
+    # ``code=9201 返回数据为空``，因此入口必须 ``allow_empty=True``。
+    "goodwill": "RPT_GOODWILL_STOCKDETAILS",
+    # 商誉：市场统计（按板块/报告期汇总，含减值状态）
+    "goodwill_market": "RPT_GOODWILL_MARKETSTATISTICS",
+    # 增发/SEO（配股之外的另一条股本扩张路径）。注意它没有可用的日期排序列：
+    # 实测 NOTICE_DATE / ISSUE_START_DATE / UPDATE_DATE 均回
+    # ``9501 排序列不存在``，因此**不指定排序**，用服务端默认顺序。
+    "seo": "RPT_SEO_DETAIL",
+    # 股本结构（有限售/无限售/总股本及占比，含变动原因）
+    "equity_structure": "RPT_F10_EH_EQUITY",
+    # 股东户数**明细**（按报告期）。区别于 holder_num=RPT_HOLDERNUMLATEST
+    # 只给最新一期——要趋势必须走这张。
+    "holder_num_detail": "RPT_HOLDERNUM_DET",
+    # 机构专用席位交易明细（龙虎榜里的"机构专用"席位）
+    "org_seat_trades": "RPT_ORGANIZATION_TRADE_DETAILS",
+    # 沪深港通历史成交。**南北双向都在这一张表里**：MUTUAL_TYPE 实测语义为
+    # 001 沪股通(北向 .SH) / 002 沪市港股通(南向 .HK) / 003 深股通(北向 .SZ) /
+    # 004 深市港股通(南向 .HK) / 005 北向合计 / 006 南向合计。
+    "connect_deals": "RPT_MUTUAL_DEAL_HISTORY",
+    # 港股通（**南向**）持股排行榜。实测全量 500 行样本里 SECUCODE 后缀 100%
+    # 是 .HK、MUTUAL_TYPE 只有 002/004（都是南向通道）——这张表**没有 A 股**，
+    # A 股代码查它恒为空集。北向（外资持 A 股）走 northbound_hold。
+    "southbound_ranks": "RPT_MUTUAL_STOCK_HOLDRANKS",
+    # 融资融券每日交易（市场级，含融资余额/融券余额/两融余额）
+    "margin_daily": "RPTA_WEB_MARGIN_DAILYTRADE",
+    # 大宗交易统计（区别于 block_trade=RPT_DATA_BLOCKTRADE 的明细）
+    "block_trade_stats": "RPT_BLOCKTRADE_STA",
+    # ---- 宏观补齐（2026-10-14，全部按 REPORT_DATE 排序）----
+    # 货币供应量 M0/M1/M2（含同比/环比）
+    "macro_money_supply": "RPT_ECONOMY_CURRENCY_SUPPLY",
+    # 人民币贷款（含同比/环比/累计）
+    "macro_loan": "RPT_ECONOMY_RMB_LOAN",
+    # 社会消费品零售总额
+    "macro_retail": "RPT_ECONOMY_TOTAL_RETAIL",
+    # 固定资产投资
+    "macro_asset_invest": "RPT_ECONOMY_ASSET_INVEST",
+    # 工业增加值
+    "macro_industrial": "RPT_ECONOMY_INDUS_GROW",
+    # 存款准备金率（大型/中小金融机构，变动前后）
+    "macro_reserve_ratio": "RPT_ECONOMY_DEPOSIT_RESERVE",
+    # 外汇储备 / 黄金储备
+    "macro_forex_reserve": "RPT_ECONOMY_GOLD_CURRENCY",
     # ---- 宏观经济（2026-09-11 扩展）----
     # CPI（全国/城镇/农村，含同比/环比/累计）
     "macro_cpi": "RPT_ECONOMY_CPI",
@@ -224,6 +327,12 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
     HOSTS = _HOSTS
     JSON_LABEL = "datacenter-web"
 
+    #: 服务端单页硬上限。``pageSize`` 超过这个值服务端仍按 500 返回，因此
+    #: **必须**让「每页实到行数」与翻页终止判据用同一个数——否则
+    #: ``size=1000`` 时每页只回 500 行，``500 < 1000`` 恒成立，循环在第 1 页
+    #: 后就 break，静默截断且连 WEB_EASTMONEY_PAGE_LIMIT 告警都不会发。
+    MAX_PAGE_SIZE = 500
+
     def __init__(self, report: str = "performance", **kwargs: Any) -> None:
         self.report = VALID_REPORTS.get(report, report)
         super().__init__(**kwargs)
@@ -256,7 +365,7 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
         parts = [
             f"reportName={report or self.report}",
             f"columns={columns or 'ALL'}",
-            f"pageSize={max(1, min(size, 500))}",
+            f"pageSize={max(1, min(size, self.MAX_PAGE_SIZE))}",
             f"pageNumber={max(1, page)}",
             "source=WEB",
             "client=WEB",
@@ -294,7 +403,19 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
 
         ``allow_empty``：见 :meth:`_parse_rows_meta`——稀疏报表查不到记录是
         正常回答，不当故障抛。
+
+        ``size`` 超过 :attr:`MAX_PAGE_SIZE` 时会被钳制并记一条告警：服务端
+        单页最多给 500 行，钳制后「每页实到行数」才等于翻页终止判据用的
+        ``size``，否则全量拉取会在第 1 页后误判短页而静默截断。
         """
+        eff_size = max(1, min(int(size), self.MAX_PAGE_SIZE))
+        if eff_size != size:
+            record_warning(
+                WarningCode.WEB_EASTMONEY_PAGE_LIMIT,
+                f"东财报表 size={size} 超过服务端单页上限"
+                f"{self.MAX_PAGE_SIZE}，已按 {eff_size} 拉取",
+                stacklevel=2,
+            )
         if not all_pages:
             self.rate_limiter.acquire(self.source_name)
             query = self._path(
@@ -302,7 +423,7 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
                 sort_columns=sort_columns,
                 sort_types=sort_types,
                 page=page,
-                size=size,
+                size=eff_size,
                 report=report,
             )
             return self.parse_rows(self._get_json(query), allow_empty=allow_empty)
@@ -311,7 +432,7 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
             sort_columns=sort_columns,
             sort_types=sort_types,
             page=page,
-            size=size,
+            size=eff_size,
             report=report,
             max_pages=max_pages,
             allow_empty=allow_empty,
@@ -378,10 +499,15 @@ class EastmoneyDataCenterSource(_EastmoneyJson):
         max_pages: int = 50,
         allow_empty: bool = False,
     ) -> list[dict[str, Any]]:
-        """按证券代码过滤查询（``filter=(COLUMN="600519")``）。"""
-        from ..domain.symbol import split_symbol
+        """按证券代码过滤查询（``filter=(COLUMN="600519")``）。
 
-        _, code = split_symbol(symbol)
+        代码由 :func:`report_code_for` 取——它同时挡掉指数与深市股票的撞码
+        （``sh000001`` / ``sz000001``），指数按空集处理而不是把平安银行的事实
+        安到上证指数头上。
+        """
+        code = report_code_for(symbol)
+        if code is None:
+            return []
         return self.fetch_rows(
             filters=[f'{column}="{code}"'],
             sort_columns=sort_columns,

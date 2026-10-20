@@ -2,7 +2,7 @@
 
 > **Status**: Active (v0.1.0)
 > **Created**: 2026-08-31
-> **Owner**: Tier A item A1, docs/archive/GAP\_ANALYSIS\_v0.md
+> **Owner**: Tier A item A1（协议全覆盖）
 
 ***
 
@@ -218,18 +218,3 @@ CI 门禁：`spec_audit` 任一检查失败则 pipeline 红灯。
 | `0x0FC5_TRADE_TODAY.yaml`     | `TRADE_TODAY` (0x0FC5)     | L2   | inferred |
 | `0x0FC6_TRADE_TODAY_ALT.yaml` | `TRADE_TODAY_ALT` (0x0FC6) | D    | inferred |
 | `0x044E_SECURITY_COUNT.yaml`  | `SECURITY_COUNT` (0x044E)  | L1   | stable   |
-
-***
-
-## 9. Relationship to DESIGN.md
-
-| DESIGN.md Section | PROTOCOL\_SPEC Correspondence        |
-| ----------------- | ------------------------------------ |
-| §4 协议全覆盖          | `PROTOCOL_SPEC/` 根目录                 |
-| §5 命令登记表          | `PROTOCOL_SPEC/<family>/*.yaml`      |
-| §6 报文层            | spec 的 `request` / `response` 部分     |
-| §16 Golden 样本     | spec 的 `golden_samples` 字段           |
-| §20 验收闭环          | `spec_audit.py` 检查矩阵                 |
-| §24 错误分类          | spec 的 `error_codes` 字段（见 SCHEMA.md） |
-| §33 Web 兼容        | spec 的 `web_mapping` 字段（见 SCHEMA.md） |
-

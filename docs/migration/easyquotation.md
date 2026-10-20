@@ -1,9 +1,8 @@
 # 从 easyquotation 迁移
 
-> **垫片状态**：早期版本提供过 `atst.web.easyquotation.use()` 兼容垫片，已在 v1.2.0
-> 清理批次中移除；v1.2 的门面 API（`atst.facade.*`）亦已随 v16 Phase 2 物理删除。
-> 迁移请直接使用 `Client`（唯一业务入口）或原生 Web 源，字段口径与 easyquotation
-> 兼容（见下）。
+> **垫片状态**：`atst/compat/` 兼容层、`atst.web.easyquotation.use()` 垫片、
+> `atst.facade.*` 门面均已物理删除，仓库里没有兼容别名。迁移请直接使用 `Client`
+> （唯一业务入口）或原生 Web 源，字段口径与 easyquotation 兼容（见下）。
 
 ## 迁移目标 API
 
