@@ -81,6 +81,15 @@ LEDGER: dict[tuple[str, str], tuple[str, str, int]] = {
         "复权能力可用的周期子集",
         1,
     ),
+    #: 日期区间裁剪需要区分"周期内部为空"的周期子集（一根 bar 覆盖多个交易日、
+    #: ``datetime`` 取周期末交易日的那几档）。与 ``_ADJUSTABLE_PERIODS`` 同族：成员
+    #: 全部取自 CANONICAL_PERIODS，只是把"每根 bar 就落在一个交易日"的档位划开，
+    #: 不是第二份周期词表。
+    ("atst/runtime/executor.py", "_COARSE_DAYLIKE_PERIODS"): (
+        "declared",
+        "按「周期末交易日」落 datetime 的粗周期子集",
+        1,
+    ),
     #: CLI ``--period`` 入口这一档白名单（不是"周期 → 上游参数"的映射，值都为 None；
     #: 裸数字别名由 ``_KLINE_PERIOD_ALIASES`` 解，那张表的键是数字、形状上不进这张账）。
     #: 它守的是"入口别把请求换成另一档"——所以按 ``declared`` 而不是 ``param`` 登记，

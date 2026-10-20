@@ -111,7 +111,7 @@ class TestDayBarReader:
     def test_decodes_uint32_prices_in_yuan_and_shares(self) -> None:
         reader = DayBarReader(auto_detect=False)
         (bar,) = reader.read_bytes(day_record())
-        assert bar.datetime == "2026-08-31"
+        assert bar.datetime == "2026-08-31 15:00"
         assert (bar.open, bar.high, bar.low, bar.close) == (10.5, 10.88, 10.4, 10.75)
         assert bar.volume == 20000
         assert bar.amount == pytest.approx(12345.5, abs=0.01)
@@ -138,8 +138,8 @@ class TestDayBarReader:
     @pytest.mark.parametrize(
         ("encoding", "payload", "expected"),
         [
-            (TimeEncoding.YYYYMMDD, day_record(20260831), "2026-08-31"),
-            (TimeEncoding.LC16, day_record(2048 * 22 + 831), "2026-08-31"),
+            (TimeEncoding.YYYYMMDD, day_record(20260831), "2026-08-31 15:00"),
+            (TimeEncoding.LC16, day_record(2048 * 22 + 831), "2026-08-31 15:00"),
             (
                 TimeEncoding.DATETIME32,
                 day_record((2026 << 20) | (8 << 16) | (31 << 11) | (9 << 6) | 30),
@@ -155,12 +155,12 @@ class TestDayBarReader:
     def test_yyyymmdd_falls_back_to_bitfield_when_out_of_range(self) -> None:
         raw = (2026 << 20) | (8 << 16) | (31 << 11) | (9 << 6) | 30
         (bar,) = DayBarReader(auto_detect=False).read_bytes(day_record(raw))
-        assert bar.datetime == "2026-08-31"
+        assert bar.datetime == "2026-08-31 15:00"
 
     def test_reads_many_records_in_order(self) -> None:
         payload = day_record(20260831) + day_record(20260901, close=1090)
         bars = DayBarReader(auto_detect=False).read_bytes(payload)
-        assert [b.datetime for b in bars] == ["2026-08-31", "2026-09-01"]
+        assert [b.datetime for b in bars] == ["2026-08-31 15:00", "2026-09-01 15:00"]
         assert bars[1].close == 10.9
 
     def test_strict_mode_rejects_a_partial_tail_record(self, tmp_path: Path) -> None:
@@ -221,7 +221,7 @@ class TestOutputShapes:
         path = write(tmp_path, "x.day", day_record() + day_record(20260901))
         reader = DayBarReader(auto_detect=False)
         dicts = reader.read(path, output="dict")
-        assert dicts[0]["datetime"] == "2026-08-31"
+        assert dicts[0]["datetime"] == "2026-08-31 15:00"
         assert dicts[0]["prev_close"] == 10.48  # extra 平铺
         assert isinstance(reader.read(path, output="tuple")[0], tuple)
         assert len(reader.read(path, output="model")) == 2

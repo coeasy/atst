@@ -1472,6 +1472,31 @@ from atst.domain.period import CANONICAL_PERIODS, PERIOD_ALIASES, normalize_bar_
   （把 1 分钟请求悄悄换成 5 分钟线），百度表曾把 `1m` 映射到月线（域内 `1m` 是 1 分钟）。
   这两格歧义映射都已删掉，换成了上面那一列的 `ValueError`。
 
+### K 线 `datetime` 形状口径（日线及以上一律「日期 15:00」）
+
+日线及以上周期**没有时间分量**，约定 `Bar.datetime` 指向**该周期的结束时刻**，
+六张面跨源同形状：`"2026-08-28 15:00"`。tdx 协议解析器本来就这么落值；Web 源
+（腾讯 / 新浪 / 东财 / 百度 / 东财衍生）与本地 vipdoc 日线读取器历史上各吐各的形状
+（裸日期 `"2026-08-28"`、紧凑 `"20260828"`），现已统一经
+`atst.domain.calendar.day_like_datetime` 归一：
+
+```python
+from atst.domain.calendar import day_like_datetime
+
+day_like_datetime("20260828")        # '2026-08-28 15:00'
+day_like_datetime("2026-08-28")      # '2026-08-28 15:00'
+day_like_datetime("2026-08-28 09:35")  # '2026-08-28 09:35'（已带时刻，原样放过）
+```
+
+口径要点：
+
+- 归一是**形状判据**（不依赖 `period` 参数）：裸日期补 `15:00`，已带时刻的分钟线
+  原样通过，因此同一条 fqkline 通路上的日线与分钟线各得其形状。
+- `day` / `week` / `month` / `season` / `year` 都指向**周期末交易日**的 15:00，不
+  是周期内起点。
+- 港股 / 美股日线同样补成 15:00（港股实际收盘 16:00）——这里统一的是**形状**，
+  不是逐市场的真实收盘时刻，别据此反推收盘时间。
+
 ### 出口处的域尺子（`atst.domain.integrity`）
 
 解码越域值在结果里看得见，靠的是这四个名字：

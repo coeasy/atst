@@ -102,10 +102,23 @@ class WarningCode(str, Enum):
     #: 数 ``count`` 根"，区间起点比这更早时只能拿到区间的一段。这不静默：它记进
     #: ``warnings``，``strict=True`` 时直接失败。
     BARS_RANGE_UNCOVERED = "bars_range_uncovered"
-    #: 0x052D 指数**分钟线**的成交量是服务端名义值（恒等于成交额/100），不是真实成交
-    #: 股数。日线族的指数成交量按「手」下发、已由解析器折算；分钟族这个字段换算不出
-    #: 真实股数（乘 100 只会得到成交额本身），所以原样返回并发告警，不伪造数值。
+    #: ``bars`` 的日期区间落在取回 K 线**跨度的内部**（区间两侧都有 bar）却一根都没命中，
+    #: 且周期是**粗周期**（``week``/``month``/``season``/``year``）。这些周期的 bar 以
+    #: 「周期末的那个交易日」为 ``datetime``（未走完的周期取最新交易日），窗口落在周期内部
+    #: 时按日期裁剪必然为空——结果不是"这些日期没有行情"，而是"这一段被周期本身吃掉了"。
+    #: 与 :data:`BARS_RANGE_UNCOVERED` 的分工：那条管"页没取到区间之前"，这条管"取到了、
+    #: 区间被夹在两段之间却命中不到"。
+    BARS_RANGE_INTERIOR_EMPTY = "bars_range_interior_empty"
+    #: 0x052D 指数**分钟线**的成交量是服务端名义值（按名义口径等于成交额/100），不是
+    #: 真实成交股数。日线族的指数成交量按「手」下发、已由解析器折算；分钟族这个字段换算
+    #: 不出真实股数（乘 100 只会得到成交额本身），所以原样返回并发告警，不伪造数值。
     INDEX_MINUTE_VOLUME_NOMINAL = "index_minute_volume_nominal"
+    #: 0x052D 指数**分钟线**的成交量与服务端名义口径（=成交额/100）差了一个数量级以上：
+    #: 2026-10 实测唯一偏离的形状是指数 60min 的当日首根（10:30），服务端下发的 volume
+    #: 比名义口径低约 97 倍，而同一时段由 15min/30min 聚合出的 amount 完全吻合。原始字节
+    #: 手工核对确认记录边界精确耗尽（解析器无错位），即**服务端自己下发的不一致值**。
+    #: 命中时与 :data:`INDEX_MINUTE_VOLUME_NOMINAL` 同时出发，提示该字段不可当可信成交量。
+    INDEX_MINUTE_VOLUME_INCONSISTENT = "index_minute_volume_inconsistent"
     #: ``provider='auto'`` 跨源出数：首个候选 Provider 失败，实际由后续候选出数。
     #: 自动选源不是静默换源——这条随结果出发，与 Provenance 的
     #: ``requested_provider='auto'`` + ``fallback`` 标记互为印证。

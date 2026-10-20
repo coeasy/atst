@@ -189,6 +189,13 @@ _SEMANTIC_CALL_FIELDS: tuple[str, ...] = ("symbols", "period", "count", "start",
 #: 有多根 bar、无法区分事件前后，因此不支持——宁可当场拒绝，也不返回看起来复过权的假数据。
 _ADJUSTABLE_PERIODS: frozenset[str] = frozenset({"day", "week", "month"})
 
+#: 粗日线周期：一根 bar 覆盖多个交易日，其 ``datetime`` 取**周期末的那个交易日**
+#: （未走完的周期取最新交易日）。带的后果是按日期裁剪一个"落在周期内部"的窗口时，
+#: 两侧都有 bar 却一根都不命中——这正是 :data:`~atst.diagnostics.WarningCode
+#: .BARS_RANGE_INTERIOR_EMPTY` 的判据范围。``day`` 刻意不在列：它的 bar 就是单个交易日，
+#: 窗口内部为空只可能是休市日，那属于"这些日期没有行情"，不该报。
+_COARSE_DAYLIKE_PERIODS: frozenset[str] = frozenset({"week", "month", "season", "year"})
+
 #: 复权事件的两个来源。**默认走东财**：``0x000F``（TDX 除权除息）的记录布局至今没有
 #: 真机 golden 锁定，用它复权只会得到错位因子；它是显式 opt-in，且要过
 #: :func:`atst.domain.finance.reject_implausible_changes` 那道闸。
@@ -665,6 +672,27 @@ class DirectProviderExecutor:
                     f"请求区间自 {start_date} 起，但本次取回的 {len(data)} 根 K 线最早只到 "
                     f"{min(days)}，没有触及区间起点之前："
                     "结果是区间的一段而不是全部。请加大 count 或用 start 偏移继续往回取。",
+                    stacklevel=2,
+                )
+            elif (
+                not kept
+                and plan.spec.period in _COARSE_DAYLIKE_PERIODS
+                and any(day > (end_date or start_date) for day in days)
+            ):
+                #: 页已触及区间之前（上一条不触发），区间两侧都有 bar，却一根都没命中。
+                #: 粗周期的 bar 以「周期末交易日」为 ``datetime``（未走完的周期取最新交易日），
+                #: 于是"落在周期内部"的窗口按日期裁剪必然为空。这与"这些日期没有行情"是
+                #: 两回事（上一条注释里的未来区间就是后者），必须说破——否则调用方拿到的是
+                #: 一个无从解释的空结果。实测形状：``year`` 周期取 2026-09 区间回空，
+                #: 因为 2026 年的 bar 挂着最新交易日 2026-10-20，而 2025 年及更早的 bar 都在
+                #: 区间起点之前。
+                record_warning(
+                    WarningCode.BARS_RANGE_INTERIOR_EMPTY,
+                    f"请求区间 {start_date}..{end_date or '最新'} 落在取回 K 线的内部"
+                    f"（最早 {min(days)} / 最晚 {max(days)}）却没有任何一根命中："
+                    f"{plan.spec.period} 周期的 bar 以「周期末交易日」为 datetime，"
+                    "区间落在该周期内部时按日期裁剪必然为空——请把区间对齐到周期边界"
+                    "（整周 / 整月 / 整季 / 整年），或改用 day 周期。",
                     stacklevel=2,
                 )
         return kept

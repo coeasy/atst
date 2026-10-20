@@ -252,6 +252,60 @@ def test_stock_minute_volume_is_not_warned(category: int) -> None:
     assert rows[0]["volume"] == int(round(VOLUME_RAW))
 
 
+# --------------------------------------------------------------------------- #
+# 3b. 名义口径的**事后核验**：服务端自己下发的不一致
+# --------------------------------------------------------------------------- #
+
+#: 成交量种子，与 ``AMOUNT_SEED`` 配出的 ``amt/vol = 8192``——比名义口径（100）
+#: 低约 82 倍，复现 2026-10 实测的指数 60min 当日首根形状（低约 97 倍）。
+VOLUME_SEED_INCONSISTENT = 0x48800000
+
+
+def _inconsistent_minute_payload() -> bytes:
+    raw_date = (2026 - 2004) * 2048 + 10 * 100 + 13
+    out = struct.pack("<HH", raw_date, 10 * 60 + 30)
+    out += b"".join(encode_leb128(v) for v in PRICE_DIFFS)
+    out += struct.pack("<I", VOLUME_SEED_INCONSISTENT) + struct.pack("<I", AMOUNT_SEED)
+    out += struct.pack("<HH", *TAILS[0])
+    return _payload([out])
+
+
+@pytest.mark.parametrize("category", sorted(MINUTELIKE_CATEGORIES))
+def test_index_minute_volume_far_below_nominal_is_reported(category: int) -> None:
+    """服务端下发的量比名义口径低一个数量级以上 → 如实报出，并与 nominal 那条并存。
+
+    这一条钉的是"服务端自己不一致"（解析器把 volume 与 amount 摆在一起量过才看得见），
+    与上面那条"这个字段是名义值"互补：一条说字段性质，一条说这一页的值连性质都对不上。
+    """
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        rows = _parse(_inconsistent_minute_payload(), category=category, index=True)
+    messages = [str(w.message) for w in caught]
+    assert any("index_minute_volume_inconsistent" in m for m in messages), messages
+    assert any(f"category={category}" in m for m in messages)
+    assert any("index_minute_volume_nominal" in m for m in messages)
+    assert rows[0]["volume"] == int(round(decode_tdx_float(VOLUME_SEED_INCONSISTENT))), (
+        "如实上报原值，不做任何'修正'"
+    )
+
+
+@pytest.mark.parametrize("category", sorted(MINUTELIKE_CATEGORIES))
+def test_index_minute_volume_not_far_below_nominal_is_silent(category: int) -> None:
+    """负控：默认载荷的 ``amt/vol=16``（比名义口径的量大 6.25 倍）不在判据侧，不报。"""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _parse(_minute_payload(), category=category, index=True)
+    assert not any("index_minute_volume_inconsistent" in str(w.message) for w in caught)
+
+
+def test_stock_minute_volume_never_reported_as_inconsistent() -> None:
+    """负控：这条只在指数位开时量（股票的分钟线量≈该分钟真实价，恒不触发）。"""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _parse(_inconsistent_minute_payload(), category=0, index=False)
+    assert not any("index_minute_volume_inconsistent" in str(w.message) for w in caught)
+
+
 @pytest.mark.filterwarnings("ignore::UserWarning")
 def test_index_minute_record_still_aligns() -> None:
     """分钟线的 datetime 是 uint16+uint16，指数位同样要开。"""

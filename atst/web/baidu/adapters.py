@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from typing import Any
 from urllib.parse import urlencode
 
+from ...domain.calendar import day_like_datetime
 from ...domain.models import Bar, Level, MinutePoint, Quote, Tick
 from ...errors import SourceDeprecated, WebSourceError
 from ..base import BaseWebSource
@@ -305,7 +306,8 @@ class BaiduSource(BaseWebSource):
                 continue
             out.append(
                 Bar(
-                    datetime=str(row.get("date", "")),
+                    # 百度上游给紧凑 ``20260828``，助手一并重排成「日期 15:00」
+                    datetime=day_like_datetime(row.get("date", "")),
                     open=_f(k.get("open")),
                     high=_f(k.get("high")),
                     low=_f(k.get("low")),

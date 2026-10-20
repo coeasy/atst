@@ -19,6 +19,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ..diagnostics import WarningCode, record_warning
+from ..domain.calendar import day_like_datetime
 from ..domain.models import Bar
 from ..errors import SourceDeprecated
 from .base import num_f as _f
@@ -97,7 +98,9 @@ def rows_to_bars(
             amount = _f(raw_amt) if isinstance(raw_amt, (int, float, str)) else 0.0
             bars.append(
                 Bar(
-                    datetime=str(r[0]),
+                    # fqkline 同一条路径既服务日/周/月线（裸日期）也服务分钟线（自带
+                    # 时刻）；形状判据只补裸日期那一支，分钟线原样通过
+                    datetime=day_like_datetime(r[0]),
                     open=_f(r[1]),
                     close=_f(r[2]),
                     high=_f(r[3]),
@@ -111,7 +114,7 @@ def rows_to_bars(
                 continue
             bars.append(
                 Bar(
-                    datetime=str(r[0]),
+                    datetime=day_like_datetime(r[0]),
                     open=_f(r[1]),
                     close=_f(r[2]),
                     high=_f(r[3]),

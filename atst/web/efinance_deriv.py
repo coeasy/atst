@@ -36,6 +36,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from ..domain.calendar import day_like_datetime
 from ..domain.models import Bar
 from ..errors import SourceDeprecated, WebSourceError
 from ._base_em import _EastmoneyJson
@@ -89,7 +90,7 @@ class _Push2Base(_EastmoneyJson):
             try:
                 bars.append(
                     Bar(
-                        datetime=parts[0],
+                        datetime=day_like_datetime(parts[0]),
                         open=num_f(parts[1]),
                         close=num_f(parts[2]),
                         high=num_f(parts[3]),

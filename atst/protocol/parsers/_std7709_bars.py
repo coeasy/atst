@@ -160,15 +160,20 @@ class SecurityBarsParser(BaseParser):
         if volume_unit != "share" and index_mode and category in DAYLIKE_CATEGORIES:
             lot_factor *= SHARES_PER_LOT
         elif volume_unit == "auto" and index_mode:
-            #: 分钟族是另一回事，不能跟着乘：原始 volume **恒等于 amount/100**
-            #: （每一根比值都精确是 100.00，而股票分钟线是该分钟的真实价）。它不是
-            #: 成交股数——乘 100 只会得到成交额本身。同日 5 分钟 bar 与新浪交叉：
-            #: amount 完全吻合、volume 差 6.49 倍，证实这个字段是名义值。
-            #: 处置是如实告警而不是伪造一个数：指数要量，请用日线。
+            #: 分钟族是另一回事，不能跟着乘：原始 volume 按服务端**名义口径**等于
+            #: amount/100（实测 1min/5min/15min/30min 每一根比值都精确是 100.00，而股票
+            #: 分钟线是该分钟的真实价）。它不是成交股数——乘 100 只会得到成交额本身。
+            #: 同日 5 分钟 bar 与新浪交叉：amount 完全吻合、volume 差 6.49 倍，证实这个
+            #: 字段是名义值。处置是如实告警而不是伪造一个数：指数要量，请用日线。
+            #:
+            #: 说「按名义口径」而不是「恒等于」是实测逼出来的：2026-10 实测指数 60min 的
+            #: 当日首根（10:30）服务端下发了一个比名义口径低约 97 倍的 volume，这条绝对
+            #: 断言本身就不成立（偏离由下面的事后核验单独报出）。
             record_warning(
                 WarningCode.INDEX_MINUTE_VOLUME_NOMINAL,
                 f"0x052D 指数分钟线（category={category}）的成交量是服务端名义值"
-                "（恒等于成交额/100），不是真实成交股数；指数要量请改用日线或换 Web 源",
+                "（按名义口径等于成交额/100），不是真实成交股数；"
+                "指数要量请改用日线或换 Web 源",
             )
 
         count = self.guarded_count(reader, ctx, 16)
@@ -227,6 +232,26 @@ class SecurityBarsParser(BaseParser):
                 row["down_count"] = reader.uint16()
 
             bars.append(row)
+
+        #: 名义口径的**事后核验**：与上面那条「这个字段是名义值」互补——那条说明字段性质，
+        #: 这条报告服务端自己下发的不一致。指数分钟族的 volume 按上面刻画应等于 amount/100；
+        #: 实测 1min/5min/15min/30min 精确吻合，唯一偏离的是指数 60min 当日首根（10:30，
+        #: 低约 97 倍）。判据只抓「低一个数量级以上」的一侧——正常行（比值 100）与股票行
+        #: （比值≈收盘价）都不触发，唯一的实采异常必然触发，所以它不会变成噪声。
+        if volume_unit == "auto" and index_mode and category in MINUTELIKE_CATEGORIES:
+            low = [
+                row for row in bars if row["amount"] > 0 and row["volume"] * 1000 < row["amount"]
+            ]
+            if low:
+                sample = low[0]
+                record_warning(
+                    WarningCode.INDEX_MINUTE_VOLUME_INCONSISTENT,
+                    f"0x052D 指数分钟线（category={category}）有 {len(low)} 根的成交量比"
+                    "服务端名义口径（= 成交额/100）低一个数量级以上"
+                    f"（例：{sample['datetime']} volume={sample['volume']} "
+                    f"amount={sample['amount']}）——这是服务端下发的不一致值"
+                    "（实测见 60min 当日首根），不是解码错位；该字段不可当作可信成交量",
+                )
 
         return bars
 

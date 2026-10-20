@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.5.3] - 2026-10-20
+
+### Added
+
+- **新诊断 `bars_range_interior_empty`**：`bars` 的日期区间落在取回 K 线跨度的**内部**
+  （两侧都有 bar）却一根都没命中，且周期是粗周期（`week`/`month`/`season`/`year`）时告警。
+  这些周期的 bar 以「周期末的那个交易日」为 `datetime`（未走完的周期取最新交易日），窗口落在
+  周期内部时按日期裁剪必然为空——实测形状是 `year` 周期取 2026-09 区间回空（2026 年的 bar
+  挂着最新交易日，2025 年及更早的 bar 都在区间起点之前）。与 `bars_range_uncovered` 分工明确：
+  那条管"页没取到区间之前"，这条管"取到了、区间被夹在两段之间却命中不到"。
+- **新诊断 `index_minute_volume_inconsistent`**：0x052D 指数**分钟线**的 `volume` 与服务端
+  名义口径（=成交额/100）差了一个数量级以上时告警。名义口径只在完整交易日成立：2026-10 实测
+  唯一偏离的形状是指数 60min 的当日首根，服务端下发的 `volume` 比名义口径低约 97 倍，而同一
+  时段由 15min/30min 聚合出的 `amount` 完全吻合；原始字节手工核对确认记录边界精确耗尽（解析器
+  无错位），即**服务端自己下发的不一致值**。命中时与 `index_minute_volume_nominal` 同时出发。
+- **`Bar.datetime` 的日线口径跨源统一**（`atst.domain.calendar.day_like_datetime`）：日线及以上
+  一律「日期 15:00」（周期结束时刻）。tdx 解析器本来就这么落值，腾讯 / 新浪 / 东财 / 百度 /
+  东财衍生五家 Web 源与本地 vipdoc 日线读取器历史上各吐各的形状（裸日期 `2026-08-28`、紧凑
+  `20260828`），现已全部经它归一。归一是**形状判据**（不依赖 `period` 参数），已带时刻的分钟线
+  原样通过。回归判据：`tests/domain/test_calendar.py::TestDayLikeDatetime`。
+- `docs/api/interfaces.md` 新增「K 线 `datetime` 形状口径」一节；`docs/errors.md` 台账补两行。
+
+### Fixed
+
+- 诊断文案 `index_minute_volume_nominal` 原写「恒等于成交额/100」——该等式只在完整交易日成立，
+  会被读成"首根对不上就是解码坏了"。改为「按名义口径等于」。
+
 ## [1.5.2] - 2026-10-19
 
 ### Added

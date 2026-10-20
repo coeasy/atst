@@ -88,7 +88,7 @@ class TestKlineParse:
         bars = EastmoneyFuturesSource._parse_klines({"data": {"klines": _KLINES}})
         assert len(bars) == 1
         b = bars[0]
-        assert b.datetime == "2021-08-17"
+        assert b.datetime == "2021-08-17 15:00"
         assert b.open == pytest.approx(755.0)
         assert b.close == pytest.approx(770.8)
         assert b.high == pytest.approx(776.0)

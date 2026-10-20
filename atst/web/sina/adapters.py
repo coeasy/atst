@@ -24,6 +24,7 @@ from typing import Any
 from urllib.parse import quote
 
 from ...diagnostics import WarningCode, record_warning
+from ...domain.calendar import day_like_datetime
 from ...domain.models import Bar, Level, Quote
 from ...errors import SourceDeprecated, WebSourceError
 from ..base import BaseWebSource, normalize_symbol, to_sina_symbol
@@ -485,7 +486,7 @@ class SinaHistoryKlineSource(BaseWebSource):
                 continue
             bars.append(
                 Bar(
-                    datetime=str(r.get("day", "")),
+                    datetime=day_like_datetime(r.get("day", "")),
                     open=_f(r.get("open")),
                     high=_f(r.get("high")),
                     low=_f(r.get("low")),

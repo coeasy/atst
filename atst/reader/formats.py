@@ -56,6 +56,7 @@ from pathlib import Path
 from typing import Any
 
 from ..codec.primitive import decode_gbk, detect_encoding, get_datetime_from_lc, minutes_to_hhmm
+from ..domain.calendar import day_like_datetime
 from ..domain.finance import GPCW_FIELD_NAMES
 from ..domain.models import Bar
 from ..errors import DataFileNotFound, FileFormatError, TruncatedRecordError
@@ -234,7 +235,8 @@ class DayBarReader(BaseFileReader):
             )
 
         return Bar(
-            datetime=self._decode_date(date_raw, p),
+            # DayBarReader 只读日线档：裸日期补「日期 15:00」（与 tdx 日线同口径）
+            datetime=day_like_datetime(self._decode_date(date_raw, p)),
             open=round(float(o), 4),
             high=round(float(h), 4),
             low=round(float(lo), 4),

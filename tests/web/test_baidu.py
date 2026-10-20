@@ -246,7 +246,7 @@ class TestKline:
         bars = src.fetch_kline("600519", count=5)
         assert len(bars) == 2
         b = bars[0]
-        assert b.datetime == "20260828"
+        assert b.datetime == "2026-08-28 15:00"  # 上游紧凑日期 → 日线口径
         assert b.open == 1289.0 and b.high == 1297.89 and b.low == 1288.0
         assert b.close == 1297.40
         # amount 字段 16126 手 → 股

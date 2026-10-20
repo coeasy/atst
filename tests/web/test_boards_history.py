@@ -312,7 +312,7 @@ class TestEastmoneyHistory:
         src.rate_limiter = RateLimiter()
         bars = src.fetch_bars("600519", period="day")
         assert len(bars) == 2
-        assert bars[0].datetime == "2026-08-31"
+        assert bars[0].datetime == "2026-08-31 15:00"
         assert bars[0].volume == 23248 * 100  # 手 → 股
         assert bars[0].amount == 3003033720.00
         assert bars[1].datetime == "2026-08-31 15:00"

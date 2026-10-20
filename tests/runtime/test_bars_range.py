@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from atst.diagnostics import WarningCode
+from atst.diagnostics import WarningCode, warning_sink
 from atst.domain.models import Bar
 from atst.query import QueryPlanner, QuerySpec
 from atst.runtime.executor import DirectProviderExecutor
@@ -38,11 +38,11 @@ def _bars(days: list[str]) -> list[Bar]:
     ]
 
 
-def _run(monkeypatch: pytest.MonkeyPatch, rows: list[Bar], **spec_kw):
+def _run(monkeypatch: pytest.MonkeyPatch, rows: list[Bar], period: str = "day", **spec_kw):
     source = _StubSource(rows)
     monkeypatch.setattr("atst.web.create_source", lambda *a, **k: source)
     plan = QueryPlanner().compile(
-        QuerySpec.build("bars", symbols="sh600519", provider="tencent", period="day", **spec_kw)
+        QuerySpec.build("bars", symbols="sh600519", provider="tencent", period=period, **spec_kw)
     )
     return DirectProviderExecutor(timeout=1.0).execute(plan), source
 
@@ -81,3 +81,68 @@ class TestBarsRangeUncovered:
 
         assert result.data == []
         assert result.meta.warnings == ()
+
+
+def _apply_range(rows: list[Bar], period: str, **spec_kw):
+    """直接量 ``_apply_bar_range`` 本身。
+
+    计划的 Provider 取 ``tdx`` 是为了让 ``year``/``season`` 过得了 Provider 周期门
+    （Web 的 ``kline`` 只服务 ``day``/``month``/``week``）——本判据本身与 Provider 无关，
+    量的只是"区间裁剪 + 盖不住时说话"这一段。
+    """
+    plan = QueryPlanner().compile(
+        QuerySpec.build("bars", symbols="sh600519", provider="tdx", period=period, **spec_kw)
+    )
+    with warning_sink() as collected:
+        out = DirectProviderExecutor(timeout=1.0)._apply_bar_range(plan, rows)
+    return out, collected
+
+
+class TestBarsRangeInteriorEmpty:
+    """粗周期的 bar 以「周期末交易日」为 datetime：窗口落在周期内部时必然裁空（2026-10 补）。"""
+
+    def test_year_window_inside_span_warns(self) -> None:
+        """实测形状：``year`` 取 2026-09 区间回空——2026 的 bar 挂着 2026-10-20，
+        更早的 bar 都在区间起点之前，两侧都有 bar 却一根都不命中。"""
+
+        rows = _bars(["2025-12-31", "2026-10-20"])
+        kept, collected = _apply_range(
+            rows, "year", count=30, start_date="2026-09-01", end_date="2026-09-30"
+        )
+
+        assert kept == []
+        assert [w.code for w in collected] == [WarningCode.BARS_RANGE_INTERIOR_EMPTY]
+
+    @pytest.mark.parametrize("period", ["week", "month", "season"])
+    def test_every_coarse_period_warns(self, period: str) -> None:
+        """周/月/季是同一形状，不是只给 year 开的口子。"""
+
+        rows = _bars(["2026-08-31", "2026-10-20"])
+        kept, collected = _apply_range(
+            rows, period, count=30, start_date="2026-09-01", end_date="2026-09-10"
+        )
+
+        assert kept == []
+        assert [w.code for w in collected] == [WarningCode.BARS_RANGE_INTERIOR_EMPTY]
+
+    def test_day_period_stays_silent(self) -> None:
+        """``day`` 的同一形状是休市日窗口（"这些日期没有行情"）——不得误报。"""
+
+        rows = _bars(["2026-09-05", "2026-10-08"])
+        kept, collected = _apply_range(
+            rows, "day", count=30, start_date="2026-09-30", end_date="2026-10-02"
+        )
+
+        assert kept == []
+        assert collected == []
+
+    def test_future_interval_for_year_stays_silent(self) -> None:
+        """粗周期的未来区间落在跨度之外（没有更晚的 bar），仍属"这些日期没有行情"。"""
+
+        rows = _bars(["2025-12-31", "2026-10-20"])
+        kept, collected = _apply_range(
+            rows, "year", count=30, start_date="2030-01-01", end_date="2030-12-31"
+        )
+
+        assert kept == []
+        assert collected == []

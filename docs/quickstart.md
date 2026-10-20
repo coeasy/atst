@@ -1,6 +1,6 @@
 # atst 快速开始
 
-本文对应当前 `1.5.2` 源码候选；GitHub 最新已发布 Release 为 [`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2)，v1.4.3 / v1.5.0 / v1.5.1 / v1.5.2 尚未打 tag。atst **不在 PyPI 上**；要求 Python 3.10 或更高版本。
+本文对应当前 `1.5.3` 源码候选；GitHub 最新已发布 Release 为 [`v1.4.2`](https://github.com/coeasy/atst/releases/tag/v1.4.2)，v1.4.3 / v1.5.0 / v1.5.1 / v1.5.2 / v1.5.3 尚未打 tag。atst **不在 PyPI 上**；要求 Python 3.10 或更高版本。
 
 ## 安装
 

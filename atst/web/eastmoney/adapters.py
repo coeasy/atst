@@ -19,6 +19,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from ...domain.calendar import day_like_datetime
 from ...domain.models import Bar, Quote
 from ...errors import SourceDeprecated, WebSourceError
 from ..base import (
@@ -319,9 +320,11 @@ class EastmoneyHistoryKlineSource(BaseWebSource):
             if len(parts) < 7:
                 continue
             # [date, open, close, high, low, volume, amount]
+            # 裸日期 → 「日期 15:00」（C 口径：日线及以上落周期结束时刻；分钟档
+            # 本行自带时刻，形状判据原样放过）
             bars.append(
                 Bar(
-                    datetime=parts[0],
+                    datetime=day_like_datetime(parts[0]),
                     open=_f(parts[1]),
                     close=_f(parts[2]),
                     high=_f(parts[3]),

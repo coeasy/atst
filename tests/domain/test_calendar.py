@@ -17,11 +17,39 @@ import pytest
 from atst.domain.calendar import (
     BUILTIN_CALENDARS,
     TradingCalendar,
+    day_like_datetime,
     get_calendar,
     is_trading_day,
 )
 
 pytestmark = pytest.mark.unit
+
+
+class TestDayLikeDatetime:
+    """日线及以上 ``Bar.datetime`` 的跨源形状口径（「日期 15:00」）。"""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("2026-08-28", "2026-08-28 15:00"),
+            ("20260828", "2026-08-28 15:00"),
+            (" 2026-08-28 ", "2026-08-28 15:00"),
+            # 已带时刻（分钟档）原样放过
+            ("2026-08-28 09:35", "2026-08-28 09:35"),
+            ("2026-08-28 15:00", "2026-08-28 15:00"),
+            # 未知形状/空值不臆造
+            ("", ""),
+            (None, ""),
+            ("not-a-date", "not-a-date"),
+        ],
+    )
+    def test_shape_normalisation(self, raw: object, expected: str) -> None:
+        assert day_like_datetime(raw) == expected
+
+    def test_market_close_is_not_inferred(self) -> None:
+        """港股收盘 16:00，但这里只统一形状：日线一律指向 15:00。"""
+
+        assert day_like_datetime("2026-08-28") == "2026-08-28 15:00"
 
 
 class TestUncoveredYears:

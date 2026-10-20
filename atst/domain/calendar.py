@@ -25,6 +25,7 @@
 
 from __future__ import annotations
 
+import re
 import threading
 from collections.abc import Iterable
 from datetime import date, datetime, timedelta
@@ -50,6 +51,7 @@ __all__ = [
     "to_market_tz",
     "market_now",
     "market_timestamp",
+    "day_like_datetime",
 ]
 
 #: A 股 / 港股的市场时区名。**凡是"把时刻当市场事实"的地方都必须用它**，
@@ -434,6 +436,32 @@ class TradingCalendar:
     # 这一处的原文漏了。现在告警只指两把真能校准的锁（`set_holidays` / `add_holiday`），
     # 占位方法按 D3 删除：等 W14b 真做在线校准时，连同实现一起回来，而不是留一个
     # 永远抛异常的入口教用户走死路。
+
+
+def day_like_datetime(value: Any) -> str:
+    """日线及以上周期的 ``Bar.datetime`` 归一：裸日期 → 「日期 15:00」。
+
+    口径（单一事实源）：tdx 解析器把日/周/月/季/年线落成 ``"YYYY-MM-DD 15:00"``
+    ——日线及以上无时间分量，约定指向**该周期的结束时刻**。历史上各 web 源与本地
+    日线读取器直接吐裸日期，同一份"日线"在不同源上形状不一，跨源比较 / 排序 / 去重
+    都得先猜形状。本函数按**形状**判据归一，不依赖 period 参数，因此天然放过已带
+    时刻的分钟线：
+
+    * ``"20260828"``（compact）→ ``"2026-08-28 15:00"``
+    * ``"2026-08-28"``（裸日期）→ ``"2026-08-28 15:00"``
+    * 已带时刻（``"2026-08-28 15:00"`` / ``"2026-08-28 09:35"``）或未知形状 → 原样返回
+
+    .. warning::
+       港股 / 美股日线同样补成 15:00，而港股实际收盘 16:00——这里统一的是**形状**
+       （"日线无时间分量，指向周期结束"），不是逐市场的真实收盘时刻；不要据此
+       反推某个市场的收盘时间。
+    """
+    s = str(value or "").strip()
+    if re.fullmatch(r"\d{8}", s):
+        s = f"{s[:4]}-{s[4:6]}-{s[6:]}"
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        return f"{s} 15:00"
+    return s
 
 
 def _to_date(d: date | str) -> date:
