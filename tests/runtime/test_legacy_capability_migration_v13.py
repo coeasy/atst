@@ -11,7 +11,7 @@ from atst.catalog.capability import (
     MIGRATED_CAPABILITIES,
     default_provider_for,
 )
-from atst.client.api import Client
+from atst.client.api import Client, _symbol_hint
 from atst.errors import ValidationError
 from atst.providers import PROVIDERS
 from atst.query import QueryPlanner, QuerySpec
@@ -188,6 +188,34 @@ def test_every_migrated_capability_has_a_deterministic_default_binding() -> None
         ]
         assert len(candidates) == 1
         assert candidates[0].key in direct
+
+
+def test_minute_klines_default_provider_follows_the_market() -> None:
+    """``minute_klines`` 的两条腿按市场分工，默认源必须跟着标的走。
+
+    腾讯 mkline 只服务 A 股（港股/美股传入返回 ``code=-1`` 空数据），港美这一档
+    只有东财 push2his。早先 ``_DEFAULT_PROVIDER`` 给 ``minute_klines`` 登记的是
+    ``"derived"``——该能力没有 derived 绑定，这一格被静默跳过，默认源落回硬编码
+    优先级表里排在 ``tencent`` 前面的 ``eastmoney``，于是 A 股也默认走东财：实测
+    东财三台 push2his 主机全断时 ``atst minute-klines 600519 --period 5min``
+    三连失败且不换源，而腾讯 mkline 同刻 200。
+    """
+
+    assert default_provider_for("minute_klines", "sh600519") == "tencent"
+    assert default_provider_for("minute_klines", "600519") == "tencent"
+    assert default_provider_for("minute_klines", "bj430047") == "tencent"
+    assert default_provider_for("minute_klines", "hk00700") == "eastmoney"
+    assert default_provider_for("minute_klines", "usAAPL") == "eastmoney"
+    #: 解析不了的符号退回与市场无关的那一档，不抛异常（原话由下游 validate_call 报）。
+    assert default_provider_for("minute_klines", "not-a-symbol") == "tencent"
+    #: 其它能力忽略 symbol：传与不传同一个答案。
+    assert default_provider_for("history", "hk00700") == default_provider_for("history")
+    assert default_provider_for("balance_sheet", "hk00700") == default_provider_for("balance_sheet")
+    #: HTTP / WS / MCP 面可以把 symbol 写在 kwargs 里，取提示的口子两种写法都要认。
+    assert _symbol_hint(("600519",), {}) == "600519"
+    assert _symbol_hint((), {"symbol": "hk00700"}) == "hk00700"
+    assert _symbol_hint((), {"symbols": ["usAAPL"]}) == "usAAPL"
+    assert _symbol_hint((), {}) is None
 
 
 def test_migrated_signature_validation_is_fail_closed_before_provider_io() -> None:

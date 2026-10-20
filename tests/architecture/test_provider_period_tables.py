@@ -90,8 +90,10 @@ LEDGER: dict[tuple[str, str], tuple[str, str, int]] = {
         "按「周期末交易日」落 datetime 的粗周期子集",
         1,
     ),
-    #: CLI ``--period`` 入口这一档白名单（不是"周期 → 上游参数"的映射，值都为 None；
-    #: 裸数字别名由 ``_KLINE_PERIOD_ALIASES`` 解，那张表的键是数字、形状上不进这张账）。
+    #: CLI ``--period`` 入口这一档白名单（不是"周期 → 上游参数"的映射，值都为 None）。
+    #: 别名由 ``atst.cli._common._kline_period_aliases`` 现从域内
+    #: :data:`~atst.domain.period.PERIOD_ALIASES` 派生（外加 CLI 特有的裸数字写法），
+    #: 那张派生表没有字面量周期键、形状上不进这张账——这正是第 18 轮要的形状。
     #: 它守的是"入口别把请求换成另一档"——所以按 ``declared`` 而不是 ``param`` 登记，
     #: 不受 G15 分钟尺约束（分钟尺量的是真的拿周期去换参数的那些表）。
     ("atst/cli/_common.py", "KLINE_PERIODS"): ("declared", "CLI --period 入口允许的服务档", 1),

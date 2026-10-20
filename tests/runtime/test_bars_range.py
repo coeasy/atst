@@ -32,10 +32,7 @@ class _StubSource:
 
 
 def _bars(days: list[str]) -> list[Bar]:
-    return [
-        Bar(datetime=day, open=1.0, high=2.0, low=0.5, close=1.5, volume=100)
-        for day in days
-    ]
+    return [Bar(datetime=day, open=1.0, high=2.0, low=0.5, close=1.5, volume=100) for day in days]
 
 
 def _run(monkeypatch: pytest.MonkeyPatch, rows: list[Bar], period: str = "day", **spec_kw):

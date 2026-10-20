@@ -62,6 +62,26 @@ def _json_contract(value: Any) -> Any:
     )
 
 
+def _symbol_hint(args: Sequence[Any], kwargs: Mapping[str, Any]) -> str | None:
+    """从 capability 的入参里取第一个符号串，供按市场分叉的默认源使用。
+
+    ``minute_klines`` / ``history`` 这类能力的第一个位置参数就是 symbol；HTTP / WS /
+    MCP 面也可以把 ``symbol`` 写在 ``kwargs`` 里（``{"kwargs": {"symbol": ...}}``），
+    两种写法必须给出同一个默认源。取不到（全市场能力、符号写成非字符串）返回
+    ``None``，默认源退回与符号无关的那一档。
+    """
+    for value in args:
+        if isinstance(value, str) and value.strip():
+            return value
+    for key in ("symbol", "symbols", "code"):
+        value = kwargs.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+        if isinstance(value, (list, tuple)) and value and isinstance(value[0], str):
+            return value[0]
+    return None
+
+
 def _reject_provider_with_policy(provider: str | None, policy: FallbackPolicy) -> None:
     """``provider`` 与 ``fallback`` 同时给出＝同时要求「只走这家」和「这家失败就换」。
 
@@ -347,7 +367,7 @@ class Client:
                 f"未知 capability {capability!r}",
                 context={"capability": cap},
             )
-        selected = provider or default_provider_for(cap)
+        selected = provider or default_provider_for(cap, _symbol_hint(args, kwargs))
         if provider and cap in COMPOSED_CAPABILITIES:
             #: 组合能力（``adjusted_bars`` / ``daily_enriched`` / ``sync_daily``）没有自己的
             #: 传输层：它名字里的 ``provider`` 指的是**取原始 K 线的那条腿**，不是"谁来执行"。

@@ -604,12 +604,32 @@ def capability_statuses() -> dict[str, str]:
     return {cap: capability_status(cap) for cap in sorted(MIGRATED_CAPABILITIES)}
 
 
+#: 能力 → 首选 Provider。**只能登记真有绑定的 provider id**：早先
+#: ``minute_klines`` 写的是 ``"derived"``（该能力没有 derived 绑定），于是这一格
+#: 被 ``any(item.provider == configured ...)`` 静默跳过，默认源落回下面的硬编码优先级
+#: 表——排在 ``tencent`` 前面的 ``eastmoney`` 胜出，与文档（A 股分钟 K 线走腾讯 mkline）
+#: 和 :data:`MIGRATED_BINDINGS` 里的登记顺序（tencent 在前）两边都不一致。
 _DEFAULT_PROVIDER = {
     "all_market": "derived",
     "hk_quotes": "derived",
     "history": "derived",
-    "minute_klines": "derived",
+    "minute_klines": "tencent",
 }
+
+#: ``minute_klines`` 的两条腿按市场分工：腾讯 mkline 只服务 A 股（港股/美股传入后
+#: 返回 ``code=-1`` 空数据），港美这一档只有东财 push2his。默认源若不分市场，
+#: 必然有一边的默认值是错的（且失败时不换源）。
+_MINUTE_KLINE_PROVIDER_BY_MARKET = {"hk": "eastmoney", "us": "eastmoney"}
+
+
+def _symbol_market(symbol: str) -> str:
+    """符号 → 市场（``sh``/``sz``/``bj``/``hk``/``us``）；解析不了返回空串。"""
+    try:
+        from ..domain.symbol import parse_symbol
+
+        return parse_symbol(symbol).market
+    except Exception:  # noqa: BLE001 - 非法符号留给下游 validate_call 报原话
+        return ""
 
 
 def binding_for(provider: str, channel: str, capability: str) -> MigratedCapabilityBinding:
@@ -621,11 +641,20 @@ def bindings_for_provider(provider: str) -> tuple[MigratedCapabilityBinding, ...
     return tuple(item for item in MIGRATED_BINDINGS if item.provider == pid)
 
 
-def default_provider_for(capability: str) -> str:
+def default_provider_for(capability: str, symbol: str | None = None) -> str:
+    """默认 Provider；``symbol`` 用于**按市场分叉**的能力（目前只有 ``minute_klines``）。
+
+    ``symbol`` 只影响 ``minute_klines``：A 股默认腾讯 mkline，港股/美股默认东财
+    push2his。其它能力忽略它——传与不传给出同一个答案。
+    """
     cap = str(capability).strip().lower()
     values = _BINDINGS_BY_CAPABILITY.get(cap)
     if not values:
         raise KeyError(capability)
+    if cap == "minute_klines" and symbol:
+        preferred = _MINUTE_KLINE_PROVIDER_BY_MARKET.get(_symbol_market(symbol), "tencent")
+        if any(item.provider == preferred for item in values):
+            return preferred
     configured = _DEFAULT_PROVIDER.get(cap)
     if configured and any(item.provider == configured for item in values):
         return configured

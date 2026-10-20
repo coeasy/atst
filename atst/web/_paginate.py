@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -69,6 +70,23 @@ def market_vol_scale(symbol: str) -> float:
     return 1.0 if symbol[:2].lower() in ("hk", "us") else 100.0
 
 
+#: 腾讯 mkline 的分钟戳是紧凑 12 位（``"202609291455"``），而 tdx / 新浪 / 东财
+#: 的分钟线都是 ``"YYYY-MM-DD HH:MM"``。形状不统一时跨源排序、去重与用户表格
+#: 都得先猜格式，故在行 → Bar 的唯一入口按形状展开。
+_COMPACT_MINUTE = re.compile(r"^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$")
+
+
+def _row_datetime(value: Any) -> str:
+    """行首时间列 → ``Bar.datetime``：紧凑分钟戳展开后再走日线归一口径。"""
+
+    text = str(value or "").strip()
+    match = _COMPACT_MINUTE.match(text)
+    if match:
+        year, month, day, hour, minute = match.groups()
+        text = f"{year}-{month}-{day} {hour}:{minute}"
+    return day_like_datetime(text)
+
+
 def rows_to_bars(
     rows: list[Any],
     *,
@@ -98,9 +116,9 @@ def rows_to_bars(
             amount = _f(raw_amt) if isinstance(raw_amt, (int, float, str)) else 0.0
             bars.append(
                 Bar(
-                    # fqkline 同一条路径既服务日/周/月线（裸日期）也服务分钟线（自带
-                    # 时刻）；形状判据只补裸日期那一支，分钟线原样通过
-                    datetime=day_like_datetime(r[0]),
+                    # fqkline 同一条路径既服务日/周/月线（裸日期）也服务分钟线（紧凑
+                    # 12 位分钟戳）；形状判据只做展开与补齐，不改周期语义
+                    datetime=_row_datetime(r[0]),
                     open=_f(r[1]),
                     close=_f(r[2]),
                     high=_f(r[3]),
@@ -114,7 +132,7 @@ def rows_to_bars(
                 continue
             bars.append(
                 Bar(
-                    datetime=day_like_datetime(r[0]),
+                    datetime=_row_datetime(r[0]),
                     open=_f(r[1]),
                     close=_f(r[2]),
                     high=_f(r[3]),

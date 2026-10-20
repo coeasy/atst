@@ -82,6 +82,11 @@ class TestMinuteKline:
         assert bars[0].volume == 123450  # 1234.5 手 → 股
         assert bars[1].volume == 45600
 
+    def test_compact_minute_stamp_is_expanded(self):
+        """mkline 的 12 位紧凑分钟戳 → ``YYYY-MM-DD HH:MM``，与 tdx/东财同形状。"""
+        bars = self._src().fetch_bars("600519", period="5min")
+        assert [b.datetime for b in bars] == ["2026-08-31 10:00", "2026-08-31 10:05"]
+
     def test_url_uses_mkline_path(self):
         """URL 路径为 /kline/mkline，周期同时在路径与参数。"""
         src = self._src()

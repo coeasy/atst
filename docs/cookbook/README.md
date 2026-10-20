@@ -23,7 +23,9 @@
 | `minute_klines` | 跨日分钟 **K 线**（Bar 序列）| tencent / eastmoney | 历史多日分钟 K 线 |
 
 一句话：**要 K 线用 `minute_klines`，要当日分时用 `minute`，要强制 HTTP 分时用 `minute_web`**；
-换源只能显式指定 `provider=` 或 `FallbackPolicy`，不会自动发生。
+换源只能显式指定 `provider=` 或 `FallbackPolicy`，不会自动发生。`minute_klines` 的**默认源按
+市场分叉**：A 股走腾讯 mkline，港股/美股走东财 push2his（腾讯 mkline 对港美返回 `code=-1`
+空数据），判定只看标的所属市场，不改变"失败不换源"的既有语义。
 
 ```python
 from atst import Client

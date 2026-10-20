@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.5.4] - 2026-10-20
+
+### Fixed
+
+- **`minute_klines` 的默认 Provider 选错**：`_DEFAULT_PROVIDER` 给它登记的是 `"derived"`，
+  而该能力没有 derived 绑定——这一格被静默跳过，默认源落回硬编码优先级表里排在 `tencent`
+  前面的 `eastmoney`。实测东财三台 push2his 主机全断时 `atst minute-klines 600519 --period
+  5min` 三连失败且不换源（`provider_switch_allowed=False`），同刻腾讯 mkline 正常。现在
+  默认源**按市场分叉**（`default_provider_for(capability, symbol)`）：A 股 tencent mkline，
+  港股/美股 eastmoney push2his（腾讯 mkline 对港美返回 `code=-1` 空数据）。
+- **CLI `--period` 与库面的别名分叉**：CLI 入口手抄了一份 `{"1","5","15","30","60","d","1d",
+  "1day"}`，于是 `atst minute-klines 600519 --period m5` 报「未知 K 线周期 'm5'」，而
+  `Client.bars(period="m5")` 可用。别名表现改为从 `atst.domain.period.PERIOD_ALIASES`
+  派生（`m5`/`5m`/`daily`/`1h` 等一律可解），裸数字便捷写法保留。
+- **腾讯 mkline 的分钟戳形状**：该接口返回紧凑 12 位 `"202609291455"`，与 tdx / 东财的
+  `"2026-09-29 14:55"` 不同，跨源排序与表格展示都得先猜格式。行 → `Bar` 的唯一入口
+  （`atst.web._paginate.rows_to_bars`）现在按形状展开成 `"2026-09-29 14:55"`。
+
+### 判据
+
+- `tests/runtime/test_legacy_capability_migration_v13.py::test_minute_klines_default_provider_follows_the_market`
+- `tests/architecture/test_period_vocabulary_gates.py::test_the_cli_face_accepts_the_same_spellings_as_the_library`
+  与 `::test_the_cli_alias_table_is_derived_from_the_domain_vocabulary`
+- `tests/web/test_adapters_ext.py::TestMinuteKline::test_compact_minute_stamp_is_expanded`
+
 ## [1.5.3] - 2026-10-20
 
 ### Added

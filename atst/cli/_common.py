@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any, Protocol, TypeVar
@@ -65,29 +66,41 @@ def _pct(q: Mapping[str, Any]) -> float:
 #: ``E9000 未处理异常``。于是周期口径在**入口**收一次：裸数字补上 ``min``，
 #: 真正不认识的在入口就报清楚可选值，不再让裸 ValueError 往下游穿。
 KLINE_PERIODS: tuple[str, ...] = ("1min", "5min", "15min", "30min", "60min", "day")
-_KLINE_PERIOD_ALIASES: dict[str, str] = {
-    "1": "1min",
-    "5": "5min",
-    "15": "15min",
-    "30": "30min",
-    "60": "60min",
-    "d": "day",
-    "1d": "day",
-    "1day": "day",
-}
+
+
+@functools.cache
+def _kline_period_aliases() -> dict[str, str]:
+    """别名表**从域内唯一词表派生**（与 ``_session_market`` / ``client.core`` 同一条裁决）。
+
+    差异只允许出现在"这一面服务哪几档"，不许出现在"用户怎么打字"。早先这里手抄了
+    一份 ``{"1","5","15","30","60","d","1d","1day"}``，于是 ``--period m5`` 被拒而
+    ``Client.bars(period="m5")`` 能取到数据——同一份库、同一个旋钮、两张面给不同答案。
+    裸数字是 CLI 这一面的便捷写法，单独补上（域词表里没有、也不该有）。
+
+    词表在函数体内延迟导入，守住本模块"模块级只 import 标准库"的约定：导入
+    ``atst.domain.period`` 会先执行 ``atst/__init__``，而它会把整个公开面拉起来。
+    """
+    from ..domain.period import PERIOD_ALIASES
+
+    aliases = {alias: canon for alias, canon in PERIOD_ALIASES.items() if canon in KLINE_PERIODS}
+    aliases.update({canon: canon for canon in KLINE_PERIODS})
+    aliases.update(
+        {canon.removesuffix("min"): canon for canon in KLINE_PERIODS if canon.endswith("min")}
+    )
+    return aliases
 
 
 def normalize_period(value: str) -> str:
     """把 CLI 传进来的周期归一化成适配器的口径；不认识的原样返回。
 
-    ``"5"`` → ``"5min"``、``"d"``/``"1d"``/``"1day"`` → ``"day"``；
+    ``"5"`` → ``"5min"``、``"d"``/``"1d"``/``"daily"`` → ``"day"``；
     ``"quarterly"`` 这类未知值原样返回，由调用方自己报错——这里不替调用方
     决定「该不该放行」。
     """
     token = str(value).strip()
     if token in KLINE_PERIODS:
         return token
-    return _KLINE_PERIOD_ALIASES.get(token.lower(), token)
+    return _kline_period_aliases().get(token.lower(), token)
 
 
 def validate_period(value: str) -> str:

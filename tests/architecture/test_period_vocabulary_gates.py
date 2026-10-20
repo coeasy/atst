@@ -62,8 +62,8 @@ FORMERLY_DIVERGENT = (
 )
 
 
-def _literal_alias_keys(node: ast.expr) -> set[str]:
-    """赋值右侧那些**手抄成字面量**的别名键——派生表应当一个都没有。"""
+def _literal_alias_keys(node: ast.AST) -> set[str]:
+    """表里那些**手抄成字面量**的别名键——派生表应当一个都没有。"""
 
     return {
         key.value
@@ -157,6 +157,58 @@ def test_the_web_face_accepts_exactly_its_servable_canonical_periods() -> None:
     assert set(_KLINE_SERVABLE) <= set(KlineSource.PERIODS), (
         "web 面声称服务的周期在 K 线源那里没有参数落点"
     )
+
+
+def test_the_cli_face_accepts_the_same_spellings_as_the_library() -> None:
+    """CLI ``--period`` 与 ``Client.bars(period=...)`` 必须接受同一批拼写。
+
+    第 20 轮实测：``Client.bars(period="m5")`` 能取到数据，而
+    ``atst minute-klines 600519 --period m5`` 报「未知 K 线周期 'm5'」——CLI 在
+    入口另抄了一份 ``{"1","5","15","30","60","d","1d","1day"}``。这一面服务不起的
+    档（week/month/season/year）仍可以拒绝，但拒绝理由只能是"这一面不服务"，
+    不能是"这串拼写我们不认识"。
+    """
+    from atst.cli._common import KLINE_PERIODS, normalize_period, validate_period
+
+    expected = {
+        **{alias: canon for alias, canon in PERIOD_ALIASES.items() if canon in KLINE_PERIODS},
+        **{canon: canon for canon in KLINE_PERIODS},
+    }
+    divergent = {
+        spelling: (canon, normalize_period(spelling))
+        for spelling, canon in expected.items()
+        if normalize_period(spelling) != canon
+    }
+    assert not divergent, f"CLI 与库面对同一拼写给出不同周期：{sorted(divergent.items())}"
+
+    #: CLI 特有的便捷写法：裸数字 = 对应分钟档。
+    for bare in ("1", "5", "15", "30", "60"):
+        assert validate_period(bare) == f"{bare}min"
+
+
+def test_the_cli_alias_table_is_derived_from_the_domain_vocabulary() -> None:
+    """AST 现读：CLI 别名表必须引用域内词表，手抄的别名键一回来就红。"""
+
+    tree = ast.parse((REPO_ROOT / "atst/cli/_common.py").read_text(encoding="utf-8"))
+    node = next(
+        item
+        for item in ast.walk(tree)
+        if isinstance(item, ast.FunctionDef) and item.name == "_kline_period_aliases"
+    )
+    assert any(
+        isinstance(item, ast.Name) and item.id == "PERIOD_ALIASES" for item in ast.walk(node)
+    ), "_kline_period_aliases 不再从 atst.domain.period.PERIOD_ALIASES 派生"
+    #: 只看 dict 的**键**：函数体里的 ``removesuffix("min")`` 也是常量，但它不是表键。
+    recopied = {
+        key.value
+        for item in ast.walk(node)
+        if isinstance(item, ast.Dict)
+        for key in item.keys
+        if isinstance(key, ast.Constant)
+        and isinstance(key.value, str)
+        and key.value in PERIOD_ALIASES
+    }
+    assert not recopied, f"CLI 别名表里出现了手抄的别名字面量键：{sorted(recopied)}"
 
 
 def test_minute_channel_routing_follows_the_canonical_minutes() -> None:
