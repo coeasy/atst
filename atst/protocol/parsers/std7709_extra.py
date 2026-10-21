@@ -18,10 +18,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...codec.primitive import PRICE_SCALE_QUOTES, decode_gbk
+from ...codec.primitive import PRICE_SCALE_QUOTES, BinaryReader, decode_gbk
 from ...errors import ParseError
 from ..commands import Family
 from ..registry import BaseParser, register_parser
+from ._std7709_common import SHARES_PER_LOT
 
 __all__ = [
     "SecurityListParser",
@@ -78,162 +79,239 @@ class SecurityListParser(BaseParser):
 
 
 # --------------------------------------------------------------------------- #
-# 0x0537 当日分时                                  ⚠️ 待样本锁定
+# 0x0537 当日分时                                  ✅ 2026-10-21 实测锁定
 # --------------------------------------------------------------------------- #
-@register_parser(0x0537, family=Family.STANDARD, name="MINUTE_TODAY", head=2, tier="L2")
+@register_parser(0x0537, family=Family.STANDARD, name="MINUTE_TODAY", head=2, tier="L1")
 class MinuteTodayParser(BaseParser):
-    """当日分时数据。
+    """当日分时数据（命令 ``0x0537``）。
 
-    响应（⚠️ 公开资料推断）：``<H count>`` 后跟 ``count`` 条记录，每条
-    ``<H 距开盘分钟><f4 价格><f4 均价><f4 成交量>``（14 字节）。
-    价格以 ``PRICE_SCALE_QUOTES`` 折算。
+    请求体（12 字节，✅ 2026-10-21 锁定）::
+
+        <H market><6s code><I 0>
+
+    **市场在前**。历史上本仓发的是 ``<6s code><H market><I 0>``（代码在前），
+    服务端按市场在前解读时前 2 字节读成 ASCII 码点（沪市 ``'6''6'`` = 0x3636
+    越域），上证直接回 4 字节空桩；深市靠服务端对残缺代码的宽容才碰巧有响应
+    ——能解出东西纯属侥幸，不能当契约（存档见
+    ``tests/golden/quotation/_archive_wrong_request/``）。
+
+    响应（✅ 2026-10-21 深/沪双市场实测锁定）::
+
+        <H num><2B 0>
+        num x { leb128 price_delta | leb128 avg_delta | leb128 volume }
+
+    * ``leb128`` 即 :meth:`BinaryReader.leb128`（7709 标准族价格差分编码，
+      首字节 ``[7]=续行 [6]=符号 [5..0]=数据``，续行 7 位/字节）。
+    * **价格 / 均价是「基准 + 增量」**：首条记录给绝对值，其后各条给
+      **相对首条的增量**（不是相对上一条）。价格单位 0.01 元，均价单位
+      0.0001 元。
+    * ``volume`` 是**绝对量**，单位为手（× ``SHARES_PER_LOT`` 得股数）。
+
+    实测判据（sh600000 / sz000001 各 240 条满日样本）：与同标的同日
+    ``0x052D`` 1 分钟 K 线**逐条对齐**——``price`` 与 K 线收盘价 240/240 相符、
+    ``volume`` 与 K 线成交量 240/240 相符、``avg_price`` 与 K 线累计量加权均价
+    239/240 相符（唯一不符的是首条：首条基准即绝对值，不做二次叠加）。
+    缓冲区按字节精确耗尽（1223/1223、1196/1196）。
+
+    .. note::
+       **与 pytdx 的分歧**（:pypi:`pytdx` ``GetMinuteTimeData``）值得记一笔：
+       它对 ``price_delta`` 做**逐笔累加**（``last_price += price_raw``），
+       且整个丢弃第二个字段。拿同一份真机载荷按它的写法复算，240 条里只有
+       2 条与 K 线收盘价相符（市场横盘时增量≈0，两种模型偶然重合）——累计模型
+       在这条命令上是错的，本解析器的「基准 + 增量」才是被 K 线证实的那一个。
+       同族的 ``0x0FC5`` 恰恰相反：那里累计模型是对的（见
+       :class:`TradeTodayParser`）。两条命令的差分语义不同，别互相套用。
     """
 
-    RECORD_SIZE = 14
+    #: 每条最短 = 3 个 1 字节 leb128
+    RECORD_SIZE = 3
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        # 深审 M28：价格字段为 float32（已是浮点价格，无需 price_scale 折算）；
-        # 旧实现读取 ctx["price_scale"] 后丢弃，属死代码
         count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
-        rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
-            minute = reader.uint16()
-            price = reader.float32()
-            avg = reader.float32()
-            volume = reader.float32()
-            hh, mm = divmod(minute, 60)
-            rows.append(
-                {
-                    "minute": minute,
-                    "time": f"{hh:02d}:{mm:02d}",
-                    "price": round(price, 4),
-                    "avg_price": round(avg, 4),
-                    "volume": int(volume),
-                }
-            )
-        return rows
+        reader.skip(2)  # <H num> 之后 2 个恒零字节（pytdx 同样 pos += 4）
+        return _decode_minute_records(reader, count)
+
+
+def _decode_minute_records(reader: BinaryReader, count: int) -> list[dict[str, Any]]:
+    """0x0537 / 0x0FB4 共用的分时记录解码（布局见 :class:`MinuteTodayParser`）。"""
+    rows: list[dict[str, Any]] = []
+    base_price = 0
+    base_avg = 0
+    for index in range(count):
+        price_delta = reader.leb128()
+        avg_delta = reader.leb128()
+        volume = reader.leb128()
+        if index == 0:
+            # 首条：两个价格字段给的是绝对值，不是相对基准的增量
+            base_price = price_delta
+            base_avg = avg_delta
+            price_units = price_delta
+            avg_units = avg_delta
+        else:
+            price_units = base_price + price_delta
+            avg_units = base_avg + avg_delta
+        rows.append(
+            {
+                "index": index,
+                "minute": _minute_label(index),
+                "time": _time_label(index),
+                "price": round(price_units / PRICE_SCALE_QUOTES, 4),
+                "avg_price": round(avg_units / _AVG_PRICE_SCALE, 4),
+                "volume": volume * SHARES_PER_LOT,
+            }
+        )
+    return rows
+
+
+def _minute_label(index: int) -> int:
+    """分时记录序号 → 当日分钟数（对齐 ``0x052D`` 1 分钟 K 线的 bar 标签）。
+
+    第 0..119 条对应 09:31..11:30（上午收 11:30），第 120..239 条对应
+    13:01..15:00（下午收 15:00）。标签取 bar **结束**分钟，与 K 线一致。
+    """
+    if index < _AM_RECORDS:
+        return 9 * 60 + 31 + index
+    return 13 * 60 + 1 + (index - _AM_RECORDS)
+
+
+def _time_label(index: int) -> str:
+    hh, mm = divmod(_minute_label(index), 60)
+    return f"{hh:02d}:{mm:02d}"
+
+
+#: 上午分时记录条数（09:31..11:30）
+_AM_RECORDS = 120
+#: 均价字段的单位：0.0001 元（实测标定，见 MinuteTodayParser 文档字符串）
+_AVG_PRICE_SCALE = 10000
 
 
 # --------------------------------------------------------------------------- #
-# 0x0FB4 历史分时                                  ⚠️ 待样本锁定
+# 0x0FC5 当日成交明细（逐笔）                      ✅ 2026-10-21 实测锁定
+# --------------------------------------------------------------------------- #
+@register_parser(0x0FC5, family=Family.STANDARD, name="TRADE_TODAY", head=2, tier="L1")
+class TradeTodayParser(BaseParser):
+    """当日逐笔成交（命令 ``0x0FC5``）。
+
+    请求体（12 字节，✅ 2026-10-21 锁定）::
+
+        <H market><6s code><H start><H count>
+
+    **市场在前**（与 :class:`MinuteTodayParser` 同源的旧 bug：本仓曾发
+    ``<6s code><H market><H start><H count>``，上证回 2 字节空桩）。
+    ``start`` 是**自最新一笔往回数的偏移**：``start=0`` 返回当日最后
+    ``count`` 笔，``start=count`` 继续往前翻（实测翻页边界不重不漏）。
+
+    响应（✅ 2026-10-21 深/沪双市场实测锁定）::
+
+        <H num>
+        num x { <H time_minutes> | leb128 price_delta | leb128 vol | leb128 num
+                | leb128 buyorsell | leb128 reserved }
+
+    * ``time_minutes`` 是**当日分钟数**（0 = 00:00，即该笔成交的真实时钟
+      分钟）；15:05..15:30 为盘后固定价格交易时段，属正常值域。
+    * ``price_delta`` 是**逐笔累加**的增量（与 0x0537 的「基准 + 增量」不同）：
+      ``price = Σ price_delta``，单位 0.01 元。
+    * ``vol`` 单位为手；``num`` 为该笔成交的委托单量；``buyorsell`` 为方向。
+    * ``reserved`` 实测样本恒为 0，仅消费不输出。
+
+    实测判据：
+
+    * 4 份存量 golden 样本（76/75/75/77 字节）与实采载荷（75/215 字节）
+      全部**按字节精确耗尽**；
+    * 末笔累加价与同时刻 ``0x0530`` 实时行情价一致（沪 9.66 / 深 11.41）；
+    * 全日逐笔（沪 4304 笔 / 深 4537 笔，09:15 开盘竞价至 15:20/15:30 盘后）
+      按分钟汇总后与同日 ``0x052D`` 1 分钟 K 线逐桶对账：**237/240 桶成交量
+      完全相等**，余下 3 桶全部是竞价并入——开盘竞价（09:25）与 09:30 连续
+      竞价之和恰好等于 09:31 桶、尾盘 14:59 的空桶加上收盘竞价（15:00）
+      恰好等于 15:00 桶、11:29 桶含 11:30:00 的收边那一笔；
+    * 连续竞价期间每一笔的价格都落在所属 K 线 bar 的 ``[low, high]`` 内
+      （100%；越界的全部是 14:57–15:00 收盘竞价期间的虚拟成交价，不属于
+      任何连续竞价 bar）。
+
+    .. note::
+       **逐笔时间与 K 线 bar 标签差一分钟**，这不是 bug：K 线 bar 标签取
+       **bar 结束分钟**（09:31 桶覆盖 09:30:00–09:30:59），而逐笔的
+       ``time_minutes`` 是该笔成交的**真实时钟分钟**。把逐笔按标签 m 汇总、
+       与 K 线标签 m+1 的桶对账即得上文的 237/240。开盘竞价成交（标签 09:25）
+       不属任何连续竞价分钟，被 K 线并进 09:31 桶。
+
+       ``buyorsell`` 观测到的取值为 0/1（连续竞价主买/主卖）、2（收盘竞价）、
+       5（盘后固定价格）、8（量恒 0 的哨兵记录）；0/1/2 之外的含义参考实现
+       （pytdx）同样不做解释，这里原样透传不猜。
+    """
+
+    #: 每条最短 = 2(时间) + 5 个 1 字节 leb128
+    RECORD_SIZE = 7
+
+    def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
+        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        return _decode_tick_records(reader, count)
+
+
+def _decode_tick_records(reader: BinaryReader, count: int) -> list[dict[str, Any]]:
+    """0x0FC5 / 0x0FC6 共用的逐笔记录解码（布局见 :class:`TradeTodayParser`）。"""
+    rows: list[dict[str, Any]] = []
+    last_price = 0
+    for _ in range(count):
+        minute = reader.uint16()
+        price_delta = reader.leb128()
+        volume = reader.leb128()
+        orders = reader.leb128()
+        buyorsell = reader.leb128()
+        reader.leb128()  # reserved：实测恒 0
+        last_price += price_delta
+        hh, mm = divmod(minute, 60)
+        rows.append(
+            {
+                "minute": minute,
+                "time": f"{hh:02d}:{mm:02d}",
+                "price": round(last_price / PRICE_SCALE_QUOTES, 4),
+                "volume": volume * SHARES_PER_LOT,
+                "orders": orders,
+                "direction": buyorsell,
+            }
+        )
+    return rows
+
+
+# --------------------------------------------------------------------------- #
+# 0x0FB4 历史分时                                  ⚠️ 布局同 0x0537，命令已停答
 # --------------------------------------------------------------------------- #
 @register_parser(0x0FB4, family=Family.STANDARD, name="MINUTE_HISTORY", head=2, tier="L2")
 class MinuteHistoryParser(BaseParser):
-    """指定日期历史分时（布局与 :class:`MinuteTodayParser` 相同）。"""
+    """指定日期历史分时（命令 ``0x0FB4``）。
 
-    RECORD_SIZE = 14
-
-    def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
-        rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
-            minute = reader.uint16()
-            price = reader.float32()
-            avg = reader.float32()
-            volume = reader.float32()
-            hh, mm = divmod(minute, 60)
-            rows.append(
-                {
-                    "minute": minute,
-                    "time": f"{hh:02d}:{mm:02d}",
-                    "price": round(price, 4),
-                    "avg_price": round(avg, 4),
-                    "volume": int(volume),
-                }
-            )
-        return rows
-
-
-# --------------------------------------------------------------------------- #
-# 0x0FC5 当日成交明细（逐笔）                      ⚠️ 待样本锁定
-# --------------------------------------------------------------------------- #
-@register_parser(0x0FC5, family=Family.STANDARD, name="TRADE_TODAY", head=2, tier="L2")
-class TradeTodayParser(BaseParser):
-    """当日逐笔成交。
-
-    ⚠️ 响应：``<H count>`` 后跟记录。每条记录**按 15 字节消费**：
-    ``<H 距开盘分钟><f4 价格><f4 成交量><f4 成交额><B 方向(0买1卖2中性)>``。
-
-    .. danger::
-       **15B 消费，布局未真机锁定**（P1e 三值矛盾收口，2026-09）：本记录
-       长度历史上三处矛盾——docstring 曾写 28B、``RECORD_SIZE`` 曾为 17B、
-       逐字段实际消费 15B。守卫门槛必须等于实际消费步长，故三者统一为
-       **15B**。golden 样本 ``0x0fc5_trade_today_600000``（count=10 /
-       body 74B）至今无法被 15B 整除，说明真实布局仍含未识别字段，
-       待真机样本定标后修正。
+    记录布局与 :class:`MinuteTodayParser` 相同（✅ 2026-10-21 按 0x0537 同族
+    实测结论同步），但**命令本身已停答**：账本登记 ``STATUS_OFFLINE``
+    （2026-09-06 三主站 × 多日期实测超时），客户端 fail-fast 抛
+    :class:`CommandOffline`，本解析器不承担在线举证责任。
     """
 
-    #: 守卫门槛 = 逐字段实际消费步长（P1e 收口：声明/守卫/消费三者一致）
-    RECORD_SIZE = 15
+    RECORD_SIZE = 3
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        # 深审 M28：价格字段为 float32（无需折算），price_scale 读取为死代码
         count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
-        rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
-            minute = reader.uint16()
-            price = reader.float32()
-            volume = reader.float32()
-            amount = reader.float32()
-            direction = reader.uint8()
-            hh, mm = divmod(minute, 60)
-            rows.append(
-                {
-                    "minute": minute,
-                    "time": f"{hh:02d}:{mm:02d}",
-                    "price": round(price, 4),
-                    "volume": int(volume),
-                    "amount": round(float(amount), 4),
-                    "direction": direction,
-                }
-            )
-        return rows
+        reader.skip(2)
+        return _decode_minute_records(reader, count)
 
 
 # --------------------------------------------------------------------------- #
-# 0x0FC6 当日成交明细（备用命令号）               ⚠️ 待样本锁定
+# 0x0FC6 当日成交明细（备用命令号）               ⚠️ 布局同 0x0FC5
 # --------------------------------------------------------------------------- #
 @register_parser(0x0FC6, family=Family.STANDARD, name="TRADE_TODAY_ALT", head=2, tier="L2")
 class TradeTodayAltParser(BaseParser):
-    """当日逐笔成交（备用命令号，布局与 0x0FC5 相同）。
+    """当日逐笔成交（备用命令号，布局与 :class:`TradeTodayParser` 相同）。
 
-    部分主站以 0x0FC6 应答当日成交；记录布局照 0x0FC5 推断
-    （``<H 距开盘分钟><f4 价格><f4 量><f4 额><B 方向>``，**15B 消费**，
-    布局未真机锁定——P1e 三值矛盾收口与 0x0FC5 一致）。
+    部分主站以 0x0FC6 应答当日成交；记录布局照 0x0FC5 的实测结论同步
+    （``<H time_minutes>`` + 5 个 leb128，价格逐笔累加）。该命令号无客户端
+    入口，只能经通用 ``request`` 口手工发包。
     """
 
-    #: 守卫门槛 = 逐字段实际消费步长（P1e 收口：声明/守卫/消费三者一致）
-    RECORD_SIZE = 15
+    RECORD_SIZE = 7
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
         count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
-        rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
-            minute = reader.uint16()
-            price = reader.float32()
-            volume = reader.float32()
-            amount = reader.float32()
-            direction = reader.uint8()
-            hh, mm = divmod(minute, 60)
-            rows.append(
-                {
-                    "minute": minute,
-                    "time": f"{hh:02d}:{mm:02d}",
-                    "price": round(price, 4),
-                    "volume": int(volume),
-                    "amount": round(float(amount), 4),
-                    "direction": direction,
-                }
-            )
-        return rows
+        return _decode_tick_records(reader, count)
 
 
 # --------------------------------------------------------------------------- #

@@ -17,10 +17,13 @@
    记录 = 1B 市场 + 6B 代码 + float32 数组。见 :data:`FINANCE_INFO_FIELDS`。
 
 .. warning::
-   ``FINANCE_INFO_FIELDS`` 为**尽力而为**映射：0x0010 字段顺序依赖主站
-   版本，公开资料与实测尚未以 golden 样本锁定（协议解析器标注 L2）。
-   字段序在部分主站可能偏移——取值时应结合业务常识校验，勿盲信单一
-   字段。gpcw 字段序相对稳定（多年未变），置信度更高。
+   ``FINANCE_INFO_FIELDS`` 为**尽力而为**映射：0x0010 字段顺序已按公开参考实现
+   （pytdx ``GetFinanceInfo`` / injoyai-tdx ``model_finance.go``）交叉锁定，并于
+   2026-10-21 在深/沪 8 只标的上真机对拍（总股本/流通股本/上市日期与公开财务
+   数据吻合）；但本仓 golden 样本仍是旧请求格式年代采集的，未重采前字段语义
+   **不保证**（F-37：记录条数、记录头与结构可用）。字段序在部分主站可能偏移——
+   取值时应结合业务常识校验，勿盲信单一字段。gpcw 字段序相对稳定（多年未变），
+   置信度更高。
 """
 
 from __future__ import annotations
@@ -76,37 +79,44 @@ GPCW_FIELD_NAMES: dict[int, str] = {
 
 
 # --------------------------------------------------------------------------- #
-# 0x0010 FINANCE_INFO 字段序（尽力而为，L2 待样本锁定）
+# 0x0010 FINANCE_INFO 字段序（pytdx/injoyai-tdx 交叉锁定，2026-10-21 真机对拍）
 # --------------------------------------------------------------------------- #
+#: 0x0010 记录 = ``<B market><6s code><f 流通股本><H 省份><H 行业>
+#: <I 更新日期><I 上市日期><30 × f>``。前 5 个类型化字段由解析器直接命名
+#: （``float_shares`` / ``province`` / ``industry`` / ``updated_date`` /
+#: ``ipo_date``），本表只管尾部 30 个 float32（单位：股本/资产类为「万股/万元」，
+#: 股东户数为户；与 gpcw 字段序不同源）。
 FINANCE_INFO_FIELDS: dict[int, str] = {
-    0: "float_shares",  # 流通股本
-    1: "total_shares",  # 总股本
-    2: "net_assets_per_share",  # 每股净资产
-    3: "capital_reserve_per_share",  # 每股公积金
-    4: "retained_earnings_per_share",  # 每股未分配利润
-    5: "eps",  # 每股收益
-    6: "profit_per_share",  # 每股利润
-    7: "operating_cashflow_per_share",  # 每股经营现金流
-    8: "operating_revenue",  # 主营收入
-    9: "operating_profit",  # 主营利润
-    10: "total_profit",  # 利润总额
-    11: "net_profit",  # 净利润
-    12: "retained_earnings",  # 未分配利润
-    13: "shareholder_count",  # 股东人数
-    14: "total_assets",  # 总资产
-    15: "current_assets",  # 流动资产
-    16: "fixed_assets",  # 固定资产
-    17: "total_liabilities",  # 总负债
-    18: "current_liabilities",  # 流动负债
-    19: "long_term_liabilities",  # 长期负债
-    20: "capital_reserve",  # 资本公积
-    21: "net_assets",  # 净资产
-    22: "cash",  # 货币资金
-    23: "notes_receivable",  # 应收票据
-    24: "inventory",  # 存货
-    25: "roe",  # 净资产收益率（%）
-    26: "operating_margin",  # 主营业务利润率（%）
-    # 索引 >= 27 的扩展字段因主站版本而异，按 f{n} 保留
+    0: "total_shares",  # 总股本（万股）
+    1: "state_shares",  # 国家股
+    2: "promoter_legal_shares",  # 发起人法人股
+    3: "legal_shares",  # 法人股
+    4: "b_shares",  # B 股
+    5: "h_shares",  # H 股
+    6: "employee_shares",  # 职工股
+    7: "total_assets",  # 总资产（万元）
+    8: "current_assets",  # 流动资产
+    9: "fixed_assets",  # 固定资产
+    10: "intangible_assets",  # 无形资产
+    11: "shareholder_count",  # 股东户数（户，不乘 10000）
+    12: "current_liabilities",  # 流动负债
+    13: "long_term_liabilities",  # 长期负债
+    14: "capital_reserve",  # 资本公积金
+    15: "net_assets",  # 净资产
+    16: "operating_revenue",  # 主营业务收入
+    17: "operating_profit",  # 主营业务利润
+    18: "accounts_receivable",  # 应收帐款
+    19: "business_profit",  # 营业利润
+    20: "investment_income",  # 投资收益
+    21: "operating_cash_flow",  # 经营现金流
+    22: "total_cash_flow",  # 总现金流
+    23: "inventory",  # 存货
+    24: "total_profit",  # 利润总额
+    25: "profit_after_tax",  # 税后利润
+    26: "net_profit",  # 净利润
+    27: "retained_earnings",  # 未分配利润
+    28: "net_assets_per_share",  # 每股净资产（pytdx 命名 baoliu1，实测取该值）
+    29: "reserved_2",  # 保留位2
 }
 
 

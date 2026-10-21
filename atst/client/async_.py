@@ -264,7 +264,7 @@ class AsyncTdxClient(_ClientMixin):
         return await self._adrive(self._t_finance_info(symbol))
 
     async def minute_today(self, symbol: str) -> list[Any]:
-        """当日分时数据（命令 ``0x0537``）。"""
+        """当日分时数据（命令 ``0x0537``，✅ L1 / verified；请求体市场在前）。"""
         return await self._adrive(self._t_minute_today(symbol))
 
     async def _req(self, cmd: int, body: bytes, *, timeout: float) -> ResponseFrame:
@@ -310,7 +310,7 @@ class AsyncTdxClient(_ClientMixin):
     async def trade_today(
         self, symbol: str, start: int = 0, count: int = 0
     ) -> list[dict[str, Any]]:
-        """当日逐笔成交（命令 ``0x0FC5``）。"""
+        """当日逐笔成交（命令 ``0x0FC5``，✅ L1 / verified；``start`` 自最新一笔往回数）。"""
         return await self._adrive(self._t_trade_today(symbol, start, count))
 
     async def block_quotes(self, block_type: int = 0, start: int = 0) -> list[dict[str, Any]]:

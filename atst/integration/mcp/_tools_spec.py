@@ -141,9 +141,9 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="get_minute_today",
         description=(
-            "Defaults to an operational web provider (currently tencent). Explicit tdx remains "
-            "unavailable because its 0x0537 request/parser is still inferred, so the structured "
-            "client refuses to send it (NotImplementedFeature)."
+            "Intraday minute series for one trading day. Defaults to an operational web provider "
+            "(currently tencent); explicit provider='tdx' is verified L1 (0x0537 leb128 "
+            "base-plus-delta, golden-locked 2026-10-22)."
         ),
         inputSchema={
             "type": "object",
@@ -156,9 +156,9 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="get_trades",
         description=(
-            "Defaults to an operational web provider (currently tencent). Explicit tdx remains "
-            "unavailable because its 0x0FC5 request/parser is still inferred, so the structured "
-            "client refuses to send it (NotImplementedFeature); baidu/tencent provide ticks."
+            "Tick-by-tick trades for one trading day. Defaults to an operational web provider "
+            "(currently tencent); explicit provider='tdx' is verified L1 (0x0FC5 leb128 with "
+            "cumulative price, golden-locked 2026-10-22); baidu/tencent also provide ticks."
         ),
         inputSchema={
             "type": "object",

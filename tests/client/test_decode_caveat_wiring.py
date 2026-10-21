@@ -33,6 +33,22 @@ _MAGIC = 0x0074CBB1
 #: 钳制，并留下一条判断——这是线路可复现的形状（0x052D 空桩即此族，见 F-60）。
 _CLAMP = struct.pack("<H", 300) + b"\x00" * 30
 
+#: 0x000F 两级结构（``<H blocks><块头 9B><num × 29B>``，2026-10-21 实测锁定）下的
+#: 钳制形状：1 个证券块声明 300 条，实际只够 1 条。块头与唯一一条记录都在取值域内
+#: （回声校验与值域尺子都保持安静）——这条判据要量的是钳制判断上 wire，不是别的告警。
+_CLAMP_CAPITAL = (
+    struct.pack("<H", 1)
+    + b"\x01"
+    + b"600000"
+    + struct.pack("<H", 300)
+    + b"\x01"
+    + b"600000"
+    + b"\x00"
+    + struct.pack("<I", 20240603)
+    + b"\x01"
+    + struct.pack("<ffff", 30.0, 0.0, 0.0, 0.0)
+)
+
 
 def _frame(cmd: int, payload: bytes) -> ResponseFrame:
     return ResponseFrame(
@@ -83,13 +99,14 @@ class TestDecodeCaveatWiring:
         assert len(rows) == 2
 
     def test_degradation_verdicts_reach_the_wire_too(self) -> None:
-        """L1 精确解析失败 → 降级启发式这一族判断同样在袋里：现在要看得见。
+        """钳制 / 截断 / 降级这一族判断同样在袋里：现在要看得见。
 
-        ``capital_changes``（0x000F）是 F-37 未闭合的那半边（字段布局错位）——这条
-        判据因此也是它的取证口：以前只能读 ``ParseResult.warnings``，现在公共 API
-        的调用方与 wire 上的 ``meta.warnings`` 都能读到。
+        ``capital_changes``（0x000F）是 F-37 未闭合的那半边——这条判据因此也是它的
+        取证口：以前只能读 ``ParseResult.warnings``，现在公共 API 的调用方与 wire 上的
+        ``meta.warnings`` 都能读到。载荷按 2026-10-21 锁定的两级结构搭建：块头与请求
+        一致（回声校验安静），块内声明 300 条而容量只够 1 条 → 钳制判断。
         """
-        client = TdxClient(pool=_TablePool({0x000F: _CLAMP}))  # type: ignore[arg-type]
+        client = TdxClient(pool=_TablePool({0x000F: _CLAMP_CAPITAL}))  # type: ignore[arg-type]
         with warning_sink() as caveats:
             client.capital_changes("sh600000")
         assert caveats, "0x000F 的畸形载荷不可能干净解析，一条判断都没有＝接线断了"
@@ -97,7 +114,7 @@ class TestDecodeCaveatWiring:
         assert all(
             item.message.startswith("capital_changes('sh600000') 0x000f 解码：") for item in caveats
         ), [item.message for item in caveats]
-        assert any("降级" in item.message for item in caveats), [item.message for item in caveats]
+        assert any("钳制" in item.message for item in caveats), [item.message for item in caveats]
 
     def test_caveat_blames_the_caller_not_the_library(self) -> None:
         """归属行必须是发起调用的那一行：``_op_call`` 嵌套多跳也不许留在库里。
@@ -131,7 +148,7 @@ class TestDecodeCaveatWiring:
             async def request(self, cmd, body, timeout=None):  # noqa: ANN001
                 return _TablePool.request(self, cmd, body, timeout)
 
-        client = AsyncTdxClient(pool=_AsyncTablePool({0x000F: _CLAMP}))  # type: ignore[arg-type]
+        client = AsyncTdxClient(pool=_AsyncTablePool({0x000F: _CLAMP_CAPITAL}))  # type: ignore[arg-type]
         with warning_sink() as caveats:
             asyncio.run(client.capital_changes("sh600000"))
         assert [item.code for item in caveats] == [WarningCode.DECODE_CAVEAT] * len(caveats)
@@ -151,22 +168,27 @@ def _marker_line() -> int:
 
 _GOLDEN_QUOTATION = Path(__file__).resolve().parents[1] / "golden" / "quotation"
 
+#: 2026-10-21 请求体顺序修正**之前**采集的实采样本（错请求的真实响应）——
+#: 「真实错位页」负控的来源。位于 golden 根下第 4 层，回放 glob（``*/*/*/meta.json``，
+#: 3 层）捡不到；修正后重采的干净样本在上一级各命令目录的 ``20261021-*`` 里。
+_ARCHIVE_WRONG_REQUEST = _GOLDEN_QUOTATION / "_archive_wrong_request"
 
-def _real_payload(sample_dir: str) -> tuple[int, bytes]:
-    """取该样本目录里第一份实采载荷。
+
+def _real_payload(rel: str) -> tuple[int, bytes]:
+    """取存档里指定的一份实采载荷（``<命令目录>/<时间戳>``）。
 
     只认 ``self-captured``：synthetic 副本的 payload 是解析器自己产出的形状，拿它当
     证据等于让被告给原告作证——这条越域告警的两端（该响的要响、不该响的不响）都必须
-    由真机样本说话。
+    由真机样本说话。错位负控因此取自修正前采集的存档样本：它们本身就是错请求的
+    真实响应，不是谁编出来的形状。
     """
     from atst.tools.golden_audit import ORIGIN_REAL, classify_origin
 
-    for meta_path in sorted((_GOLDEN_QUOTATION / sample_dir).glob("*/meta.json")):
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        if classify_origin(meta.get("source")) != ORIGIN_REAL:
-            continue
-        return int(meta["command"], 16), (meta_path.parent / "payload.bin").read_bytes()
-    raise AssertionError(f"{sample_dir} 里没有实采样本，本判据的正/负控都失去证据")
+    meta_path = _ARCHIVE_WRONG_REQUEST / rel / "meta.json"
+    assert meta_path.is_file(), f"存档样本不见了: {meta_path}"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert classify_origin(meta.get("source")) == ORIGIN_REAL, f"{rel} 不是实采样本"
+    return int(meta["command"], 16), (meta_path.parent / "payload.bin").read_bytes()
 
 
 @pytest.mark.unit
@@ -175,13 +197,19 @@ class TestDomainCaveatReachesTheWire:
 
     盘前一轮真机复现（2026-09-22 10:45）里 ``capital_changes``/``finance`` 回的是
     ``provenance.kind=DIRECT``、``warnings`` 为空的错值——形状与一条干净结果一字不差。
+
+    2026-10-21 请求体顺序修正后，这条负控的证据源换成了修正前的存档样本：新采样本
+    是干净的（块/记录头与请求逐一相符），而错位判据本身从「出口处的值域尺子」升级为
+    「解析器的回声校验」——响应记录头与请求上下文不符时当场留痕，不再依赖尺子事后量。
     """
 
     @pytest.mark.parametrize(
         ("sample_dir", "method"),
         [
-            ("0x000f_capital_changes_600000", "capital_changes"),
-            ("0x0010_finance_info_600000", "finance_info"),
+            #: 20260902-113153：解出 689 行错位记录 + 块头回声不符
+            ("0x000f_capital_changes_600000/20260902-113153", "capital_changes"),
+            #: 20260831-125354：解出 100 行（仅第 1 条是本人）+ 记录头回声不符
+            ("0x0010_finance_info_600000/20260831-125354", "finance_info"),
         ],
     )
     def test_a_real_misaligned_page_says_so_on_the_wire(self, sample_dir, method) -> None:
@@ -197,7 +225,8 @@ class TestDomainCaveatReachesTheWire:
         caveat = next(item for item in caveats if item.code is WarningCode.FIELD_OUT_OF_DOMAIN)
         assert f"0x{cmd:04x}" in caveat.message, caveat.message
         #: 例子要能定位：只有计数的告警等于把 250 行错值写成一句"有问题"。
-        assert "row[" in caveat.message, caveat.message
+        #: 回声校验的消息带请求侧 market/code 与响应记录头的实际值，错位形状一目了然。
+        assert "回声不符" in caveat.message and "!= 请求" in caveat.message, caveat.message
 
     #: 反向证据（"别给干净结果制造噪声"）分两处判：本文件既有的
     #: :meth:`TestDecodeCaveatWiring.test_clean_page_stays_silent` 钉住公共 API 一条告警

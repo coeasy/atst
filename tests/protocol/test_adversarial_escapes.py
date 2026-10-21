@@ -198,9 +198,19 @@ class TestCountClampT3:
         assert elapsed < 0.2, f"mac 全 0xFF 流解析耗时 {elapsed:.3f}s >= 0.2s"
 
     def test_capital_changes_short_tail_breaks_without_struct_error(self):
-        """ctx record_size 大于实际数据时：钳制 + 尾记录停止解析，无裸 struct.error。"""
+        """块内声明条数超过实际数据时：钳制 + 尾记录停止解析，无裸 struct.error。
+
+        载荷按 2026-10-21 实测锁定的两级结构搭建（``<H blocks><块头 9B><num 条 29B>``）。
+        """
         rec = b"\x01" + b"600000" + b"\x01" + b"\x00" * 21  # 29B
-        payload = struct.pack("<H", 3) + rec + b"\x02\xab\xcd"  # 声明 3 条，只有 1 条完整
+        payload = (
+            struct.pack("<H", 1)
+            + b"\x01"
+            + b"600000"
+            + struct.pack("<H", 3)
+            + rec
+            + b"\x02\xab\xcd"  # 声明 3 条，只有 1 条完整
+        )
         result = dispatch(_frame(0x000F, payload), record_size=29)
         assert len(result.rows) == 1
         assert result.rows[0]["code"] == "600000"

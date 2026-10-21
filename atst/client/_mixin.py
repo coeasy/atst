@@ -462,14 +462,36 @@ class _ClientMixin:
     def _t_capital_changes(self, symbol: str) -> list[CapitalChange]:  # type: ignore[misc]
         """除权除息 / 股本变迁（命令 ``0x000F``）。
 
-        .. warning:: **字段口径未闭合（F-37）**：2026-09-19 在
-           可达主站上实测本命令能回整批记录，但解出的 ``market``/``code``/``date`` 逐字段
-           错位（如 ``market`` 读到 ASCII ``'0'``），且不带任何解码告警；离线 golden 只钉住
-           长度与条数、不校验字段值，所以全绿门禁看不见它。当前口径是**条数可用、字段语义
-           不保证**；修它要新的真机布局判据，不按猜测改解析器。
+        请求体（9 字节，✅ 2026-10-21 实测修正）::
+
+            <H 1><B market><6s code>
+
+        即「固定前缀 ``01 00`` + 市场字节 + 6 字节代码」。**顺序反过来越界**：
+        2026-10-21 实测发现旧实现发的是 ``<6s code><H market>``（代码在前），
+        服务端按 ``market@2 / code@3:9`` 解读后整个记录头错位——解出的
+        ``market`` 恒为 ASCII ``'0'``（48）、``code`` 只剩半个代码，且不带任何
+        解码告警（F-37 的历史结论正来源于此：四份旧样本全是错请求采的）。
+        修正请求顺序后，深/沪多只标的重放，响应头 ``market(1)+code(6)`` 与请求
+        逐一相符，事件日期/类别全部落回合理域。
+
+        响应结构::
+
+            <H 1><B market><6s code><H num><num × 29B 记录>
+
+        每条 29 字节记录::
+
+            <B market><6s code><B 0><I date(YYYYMMDD)><B category><16B 分类数据>
+
+        .. warning::
+           ⚠️ **字段口径仍未由本仓 golden 锁定（F-37）**：记录布局已按公开参考
+           实现（pytdx / injoyai-tdx）与 2026-10-21 真机交叉验证，日期/类别/四元组
+           均已对上业务常识，但仓内 golden 样本仍是「错请求」年代采的，未重采前
+           字段语义**不保证**（条数与结构可用）。``category`` 语义表见
+           :attr:`CapitalChangesParser.CATEGORY`。
         """
         mkt, code = split_symbol(symbol)
-        body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt)
+        code6 = code.encode("ascii")[:6].ljust(6, b"\x00")
+        body = struct.pack("<HB6s", 1, mkt, code6)
         frame = yield _op_req(CMD["capital_changes"], body, timeout=self.timeout)
         result = _forward_decode_caveats(
             _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family),
@@ -478,14 +500,34 @@ class _ClientMixin:
         return [_row_to_capital(row) for row in result.rows]
 
     def _t_finance_info(self, symbol: str) -> dict[str, Any]:  # type: ignore[misc]
-        """财务基础信息（命令 ``0x0010``，F1 语义化字段）。
+        """财务基础信息（命令 ``0x0010``）。
 
-        .. warning:: 与 :meth:`capital_changes` 同一条未闭合口径（F-37）：真机回包长度与 golden 同形，
-           实测解出的 ``market``/``code``/``values`` 却是空值/错位，且不触发解码告警 ⇒
-           字段语义不保证，条数与结构可用。
+        请求体（9 字节，✅ 2026-10-21 实测修正）::
+
+            <H 1><B market><6s code>
+
+        即「固定前缀 ``01 00`` + 市场字节 + 6 字节代码」。**顺序反过就越界**：
+        旧实现发 ``<6s code><H market>``（代码在前），服务端按 ``market@2 /
+        code@3:9`` 解读后记录头整体错位——``market`` 读到 ASCII ``'0'``（48）、
+        ``code`` 只剩半个代码；前 2 字节被当成「请求条数」读成 0x3030，服务器
+        于是回 100 条记录（只有第 1 条是本人，其余 99 条是服务端缓冲残留）。
+        修正后请求 1 条即回 1 条干净记录（143 字节），响应头与请求逐一相符。
+
+        响应结构::
+
+            <H 1><B market><6s code>
+            <f 流通股本><H 省份><H 行业><I 更新日期><I 上市日期>
+            <30 × f 总股本…保留2>
+
+        .. warning::
+           ⚠️ **字段序按公开参考实现（pytdx / injoyai-tdx）交叉锁定，但本仓 golden
+           未重采（F-37）**：2026-10-21 深/沪 8 只标的重放，总股本/流通股本/上市
+           日期均与公开财务数据吻合；在重采 golden 前，字段语义**不保证**，
+           条数、记录头与结构可用。
         """
         mkt, code = split_symbol(symbol)
-        body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt)
+        code6 = code.encode("ascii")[:6].ljust(6, b"\x00")
+        body = struct.pack("<HB6s", 1, mkt, code6)
         frame = yield _op_req(CMD["finance_info"], body, timeout=self.timeout)
         result = _forward_decode_caveats(
             _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family),
@@ -496,19 +538,34 @@ class _ClientMixin:
         row = dict(result.rows[0])
         values = list(row.get("values", []) or [])
         out: dict[str, Any] = {"market": row.get("market", mkt), "code": row.get("code", code)}
+        # 类型化记录头（解析器已命名，非 values 尾部数组）
+        for key in ("float_shares", "province", "industry", "updated_date", "ipo_date"):
+            if row.get(key) is not None:
+                out[key] = row[key]
         out.update(map_finance_values(values, FINANCE_INFO_FIELDS))
         out["values"] = values
         return out
 
-    def _t_minute_today(self, symbol: str) -> list[Any]:  # type: ignore[misc]
-        """当日分时数据（命令 ``0x0537``）。
+    def _t_minute_today(self, symbol: str) -> list[Any]:  # type:ignore[misc]
+        """当日分时数据（命令 ``0x0537``，✅ L1 / verified）。
 
-        **本方法当前不发泡**：``0x0537`` 的 parser/request 仍是 inferred，
-        ``core._UNVERIFIED_STRUCTURED_BLOCK`` 在发包前抛 ``NotImplementedFeature``
-        （真机 golden 锁定前不通过结构化 API 发包，原始线路面仍可用）。
+        请求体（12 字节，✅ 双市场 golden 锁定）::
+
+            <H market><6s code><I 0>
+
+        **市场在前、代码在后**——与 ``0x0010``/``0x000F`` 同一个坑：历史上本方法发
+        的是 ``<6s code><H market><4 zeros>``（代码在前），服务端按
+        ``market@0 / code@2:8`` 解读后**沪市（market=1）直接回空桩**（4 字节
+        ``00 00 00 00``，声明 0 条），深市因为市场字节恰好落在代码位上而"碰巧"
+        有响应。修正后深/沪多只标的均回 240 条（满日）分时记录。
+
+        布局与交叉验证判据见
+        :class:`atst.protocol.parsers.std7709_extra.MinuteTodayParser`
+        （价格/均价「基准 + 增量」，与同日 0x052D 一分钟 K 线 240/240 对齐）。
         """
         mkt, code = split_symbol(symbol)
-        body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<H", mkt) + b"\x00" * 4
+        code6 = code.encode("ascii")[:6].ljust(6, b"\x00")
+        body = struct.pack("<H6sI", mkt, code6, 0)
         frame = yield _op_req(CMD["minute_today"], body, timeout=self.timeout)
         result = _forward_decode_caveats(
             _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family),
@@ -634,17 +691,25 @@ class _ClientMixin:
         return result.rows
 
     def _t_trade_today(self, symbol: str, start: int, count: int) -> Any:
-        """当日逐笔成交（命令 ``0x0FC5``）。
+        """当日逐笔成交（命令 ``0x0FC5``，✅ L1 / verified）。
 
-        与 ``minute_today`` 同一条拦截：request/parser 仍为 inferred，
-        ``core._UNVERIFIED_STRUCTURED_BLOCK`` 在发包前抛 ``NotImplementedFeature``。
+        请求体（12 字节，✅ 双市场 golden 锁定）::
+
+            <H market><6s code><H start><H count>
+
+        同样**市场在前**：旧实现 ``<6s code><H market><H start><H count>`` 让沪市
+        回 2 字节空桩（声明 0 条），深市"碰巧"有响应。修正后深/沪均正常返回
+        逐笔记录。``start`` 自最新一笔往回数（``0`` = 当日最后 ``count`` 笔），
+        逐笔累加价末条与实时行情价一致；全日逐笔按分钟汇总与同日 0x052D
+        一分钟 K 线逐桶对账 237/240（余下 3 桶为竞价并入，算术精确相符）。
+        布局与判据见
+        :class:`atst.protocol.parsers.std7709_extra.TradeTodayParser`。
         """
         mkt, code = split_symbol(symbol)
         offset = _require_int("start", start, minimum=0, maximum=0xFFFF)
         page_size = _require_int("count", count, minimum=0, maximum=0xFFFF)
-        body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack(
-            "<HHH", mkt, offset, page_size
-        )
+        code6 = code.encode("ascii")[:6].ljust(6, b"\x00")
+        body = struct.pack("<H6sHH", mkt, code6, offset, page_size)
         return (
             yield _op_call("request", CMD["trade_today"], body, ctx={"code": code, "market": mkt})
         )

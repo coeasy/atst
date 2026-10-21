@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import fields
+from pathlib import Path
 
 import pytest
 
@@ -14,6 +15,7 @@ from atst.protocol.commands import (
     COMMANDS,
     STATUS_OFFLINE,
     STATUS_ONLINE,
+    TIER_L1,
     Command,
     Family,
     by_family,
@@ -24,6 +26,9 @@ from atst.protocol.commands import (
 )
 
 pytestmark = pytest.mark.unit
+
+#: 仓库根（golden 样本定位用）
+ROOT = Path(__file__).resolve().parents[2]
 
 #: 账本形状。F-64 量过：``spec_file``/``request_fields``/``aliases`` 三个字段在 ``atst/``
 #: 里零读取点（``spec_file`` 唯一的同名命中属于 ``spec_audit.AuditResult``，另一个类），
@@ -90,10 +95,13 @@ class TestLedgerQuerySurface:
         """``unknown`` 的口径是"语义未经 golden 校正"，且返回的是行不是号（文档同口径）。
 
         2026-09-21（V18 第 9 轮）30 → 32：``0x000F``/``0x0010`` 的 ``verified`` 撤回后落进
-        这一格。这一数是"未经校正"的规模，只会长不会缩——账本诚实度的读数不许反向调小。
+        这一格。2026-10-21 32 → 30：``0x0537``/``0x0FC5`` 用正确请求体重采 golden 并通过
+        0x052D 交叉验证后升回 verified——这一数是"未经校正"的规模，**方向必须是证据换来的**：
+        往上长随时可以（新命令登记即 unknown），往下缩必须有 golden 证据落袋，
+        本测试文件里 :class:`TestLedgerCalibration` 那几条就是那道闸。
         """
         rows = unknown_command_ids()
-        assert len(rows) == 32
+        assert len(rows) == 30
         assert all(isinstance(c, Command) and not c.verified for c in rows)
         assert [c.cmd for c in rows] == sorted(c.cmd for c in rows)
         assert {c.cmd for c in rows} == {
@@ -143,13 +151,17 @@ class TestLedgerCalibration:
         c = get_command(cmd)
         assert c is not None and c.verified
 
-    @pytest.mark.parametrize("cmd", [0x0537, 0x0FC5, 0x000F, 0x0010])
+    @pytest.mark.parametrize("cmd", [0x000F, 0x0010])
     def test_inferred_commands_not_verified(self, cmd: int) -> None:
         """inferred（真实布局待 golden 锁定）的命令必须 verified=False（da655d5 校准）。
 
         ``0x000F``/``0x0010`` 于 V18 第 9 轮加入：F-37② 的裁决一向是"条数可用、
         字段语义不保证"，而账本那半边还写着已验证——两条命令的实采样本重放后
         分别有 1587/581 个字段值落在域外，写回 ``verified=True`` 即红。
+
+        ``0x0537``/``0x0FC5`` 曾同列此表，2026-10-21 移出：两条命令的请求体字节序
+        （市场在前）与 leb128 布局都由双市场 golden 样本 + 0x052D 交叉验证锁定，
+        升级判据见 :meth:`test_promoted_commands_carry_golden_evidence`。
         """
         c = get_command(cmd)
         assert c is not None and not c.verified
@@ -167,9 +179,32 @@ class TestLedgerCalibration:
             assert c is not None and c.status == STATUS_OFFLINE, hex(number)
 
     def test_degraded_facts_recorded(self) -> None:
-        """0x0537 沪市空布局事实 → degraded，但真实布局未由 golden 锁定，故 verified=False。"""
+        """0x0537 沪市空布局是**错请求**的产物，不是 degraded 事实。
+
+        2026-10-21：0x0537 的 ``degraded`` 登记源于沪市回 4 字节空桩——那正是
+        代码在前请求体的症状。修正请求体后沪/深双市场均回满日 240 条，该行升为
+        online + verified + L1，degraded 集合只剩 0x051B（有响应但布局未锁定）。
+        """
         c = get_command(0x0537)
-        assert c is not None and c.status == "degraded" and not c.verified
+        assert c is not None and c.status == STATUS_ONLINE and c.verified
+        assert get_command(0x051B) is not None and get_command(0x051B).status == "degraded"
+
+    @pytest.mark.parametrize("cmd", [0x0537, 0x0FC5])
+    def test_promoted_commands_carry_golden_evidence(self, cmd: int) -> None:
+        """升 verified 的两条命令，证据必须是**落袋的**：样本在、tier 与账本同步。"""
+        from atst.protocol.registry import PARSERS
+
+        row = get_command(cmd)
+        assert row is not None and row.verified is True
+        assert row.tier == TIER_L1, f"0x{cmd:04X} 账本 L1 而注册表 tier 不是 L1"
+        parser = PARSERS[(Family.STANDARD, cmd)]
+        assert getattr(parser, "TIER", None) == TIER_L1, (
+            f"0x{cmd:04X} 账本声称 L1，注册表却以 {getattr(parser, 'TIER', None)} 注册"
+        )
+        samples = sorted(
+            (ROOT / "tests" / "golden" / "quotation").glob(f"0x{cmd:04x}_*/2*/payload.bin")
+        )
+        assert samples, f"0x{cmd:04X} 声称 verified 却找不到 golden 样本"
 
     def test_default_status_online(self) -> None:
         assert get_command(0x0530).status == STATUS_ONLINE
@@ -198,12 +233,12 @@ class TestLedgerCalibration:
         而不是由一个只为测试存在的聚合器代读。
         """
         assert len(by_status(STATUS_OFFLINE)) == 9
-        assert len(by_status("degraded")) == 2
-        assert len(by_status(STATUS_ONLINE)) == len(COMMANDS) - 11
-        # 7 条 verified：0x0004/0x000d/0x044d/0x044e/0x052d/0x0530/0x0547
-        # （0x0537/0x0FC5 为 inferred，布局待 golden 锁定，不计入 verified；
-        #   0x000f/0x0010 于 V18 第 9 轮按 F-37② 撤回——实采样本重放后字段值仍落在域外）
-        assert sum(1 for c in by_family(Family.STANDARD) if c.verified) == 7
+        assert len(by_status("degraded")) == 1  # 只剩 0x051B（0x0537 已修复升级）
+        assert len(by_status(STATUS_ONLINE)) == len(COMMANDS) - 10
+        # 9 条 verified：0x0004/0x000d/0x044d/0x044e/0x052d/0x0530/0x0537/0x0547/0x0fc5
+        # （0x0537/0x0FC5 于 2026-10-21 升级——双市场 golden + 0x052D 交叉验证；
+        #   0x000f/0x0010 于 V18 第 9 轮按 F-37② 撤回，仍保持降级声称）
+        assert sum(1 for c in by_family(Family.STANDARD) if c.verified) == 9
 
     def test_facade_docstring_matches_client_commands(self) -> None:
         """防回归：client 注释命令号必须与实际请求一致（批次 A1）。

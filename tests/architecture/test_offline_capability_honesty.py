@@ -283,7 +283,7 @@ def test_a_template_that_cannot_send_says_so_where_the_caller_reads_it() -> None
                 contradictory.append(f"{name}: 未点出下线时抛的异常名")
 
     assert scanned, "没有任何模板被判定为发不出去——扫描自身失效（账本被清空？）"
-    assert len(scanned) >= 9, f"只扫到 {len(scanned)} 个下线面，少于账本推导的分母：{scanned}"
+    assert len(scanned) >= 7, f"只扫到 {len(scanned)} 个下线面，少于账本推导的分母：{scanned}"
     assert "_t_export_security_list" in scanned, (
         "_op_call 的传递闭包没跟上：export_security_list 自己不写 CMD[...]，"
         "只有经 security_list 才知道它也发不出去"
@@ -315,7 +315,7 @@ def test_the_business_entry_face_names_the_exception_it_always_raises() -> None:
         doc = ast.get_docstring(node) or ""
         if "CommandOffline" not in doc and "NotImplementedFeature" not in doc:
             silent.append(capability)
-    assert len(checked) >= 3, f"只扫到 {checked} 个注定失败的 Client 方法面，判据自身失效"
+    assert len(checked) >= 1, f"只扫到 {checked} 个注定失败的 Client 方法面，判据自身失效"
     assert silent == [], (
         f"这些 ``Client`` 方法一调就必然抛错，docstring 却没点出抛哪个异常：{silent}"
     )
@@ -384,7 +384,9 @@ def test_the_mcp_tool_list_marks_every_dead_tool() -> None:
     """MCP 工具描述是模型唯一的可见信息：发不出去的工具必须在描述里写明，别让人来试。
 
     两类失败要分措辞——账本判定的 offline 与"request/parser 仍是 inferred 故客户端不发"是
-    两回事，写成同一句话会让读的人以为等一等就好。
+    两回事，写成同一句话会让读的人以为等一等就好。2026-10-22 之后拦截集合已空
+    （`0x0537` / `0x0FC5` 升 L1），inferred 这一分支暂时没有活样本，但判据本身保留：
+    哪天再有命令退回 inferred，这条断言继续管它的措辞。
     """
     impl = {n.name: n for n in ast.walk(_tree(MCP_IMPL)) if isinstance(n, ast.FunctionDef)}
     dead: list[str] = []
@@ -408,7 +410,7 @@ def test_the_mcp_tool_list_marks_every_dead_tool() -> None:
                 f"MCP 工具 {tool.name}（调用 {reached}）因 inferred 拦截发不出去，"
                 "描述里没有写明不可用——注意这类不许写成 offline"
             )
-    assert len(dead) >= 3, f"只推导出 {dead} 注定失败的 MCP 工具，少于账本+拦截集的分母"
+    assert len(dead) >= 1, f"只推导出 {dead} 注定失败的 MCP 工具，少于账本+拦截集的分母"
 
 
 _INTERFACES = ROOT / "docs" / "api" / "interfaces.md"
@@ -656,7 +658,7 @@ def test_the_discovery_dead_name_table_is_derived_not_copied() -> None:
     出路那一列只许写注册表真的声明过的 Provider，"改走哪里"不许靠想象。
     """
     derived = dead_discovery_names()
-    assert len(derived) >= 8, (
+    assert len(derived) >= 6, (
         f"只推导出 {sorted(derived)} 个发不出去的发现名，少于账本+拦截集的分母"
     )
     rows = _markdown_rows(_discovery_section(), cells=5)
@@ -713,8 +715,14 @@ def test_the_discovery_face_claims_are_regenerated_from_runtime() -> None:
         ),
         (f"{len(PROVIDERS.ids())} Provider × {total_channels} channel", "注册表规模"),
         (
-            f"上有 {len(derived)} 个名字一调就必然失败：{len(offline_names)} 个名字踩在"
-            "被账本判 `offline` 的命令上、",
+            (
+                f"上有 {len(derived)} 个名字一调就必然失败：{len(offline_names)} 个名字踩在"
+                "被账本判 `offline` 的命令上、"
+                f"{len(derived) - len(offline_names)} 个名字被 request/parser 仍是 inferred 的"
+                "结构化拦截挡在发包前"
+            )
+            if len(derived) != len(offline_names)
+            else f"上有 {len(derived)} 个名字一调就必然失败，全部踩在被账本判 `offline` 的命令上",
             "死名字计数",
         ),
         (

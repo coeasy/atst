@@ -322,23 +322,40 @@ class SecurityBarsParser(BaseParser):
 class CapitalChangesParser(BaseParser):
     """除权除息（GBBQ）。
 
-    请求体：``<6s code><H market>``（✅ 实测）。
+    请求体（9 字节，✅ 2026-10-21 真机实测修正）::
+
+        <H 1><B market><6s code>
+
+    即「固定前缀 ``01 00`` + 市场字节 + 6 字节代码」。**顺序反过来越界**：
+    旧实现发 ``<6s code><H market>``（代码在前），服务端按 ``market@2 /
+    code@3:9`` 解读后整个记录结构错位——``market`` 读到 ASCII ``'0'``（48）、
+    ``code`` 只剩半个代码，且前 2 字节被当成「请求条数」读成 0x3030，服务器
+    于是回一大块缓冲残留（F-37 的历史结论正来源于此：四份旧样本全是错请求采的，
+    首部 ``uint16`` 与正文长度不整除、offset×步长全组合试解无一致解）。
+
+    响应结构（✅ 2026-10-21 深/沪多只标的重放）::
+
+        <H blocks><blocks × [<B market><6s code><H num><num × 29B 记录>]>
+
+    单条 29 字节记录::
+
+        <B market><6s code><B 0><I date(YYYYMMDD)><B category><16B 分类数据>
+
+    分类数据（16B）按 ``category`` 解读：``1``（除权除息）是四个 float32
+    （分红 / 配股价 / 送转股 / 配股比例）；其余类别是四组股本数（盘前流通 /
+    前总股本 / 盘后流通 / 后总股本，单位万股，float32）——2026-10-21 实测
+    茅台 2002-07-26「10 送 1」前后两组值恰好成 1.1 倍，确认是 float32 而非
+    TDX 自定义浮点。
 
     .. warning::
 
-       ⚠️ **记录布局未锁定**，本解析器产出的行只能按"条数"读，字段语义不保证
-       （F-37②；``_t_capital_changes`` 的口径注释与 ``docs/providers/tdx.md`` 同）。
+       ⚠️ **字段口径仍未由本仓 golden 锁定（F-37）**：记录布局已按公开参考
+       实现（pytdx ``GetXdXrInfo``）与 2026-10-21 真机交叉验证，日期/类别/四元组
+       均已对上业务常识，但仓内 golden 样本仍是「错请求」年代采的，未重采前
+       字段语义**不保证**（条数与结构可用）。
 
-       账本一度把它记成 ``tier=L1, verified=True``——那不是判断，是 ``register_parser``
-       的 ``tier`` 缺省值被当成了结论，V18 第 9 轮撤回（``tests/unit/test_golden.py``
-       的域内合法判据当场为它作证：4 份实采样本重放出 910 行、1587 个字段值落在域外，
-       ``market`` 读到 48/52/56 即 ASCII 数字、``code`` 读到 ``''``/``'001'``）。
-
-       为什么不顺手改成"看起来对"的定长结构：实采正文里确实反复出现 29 字节间隔的
-       日期串（单条正文最多 832 次相邻间隔为 29），但正文开头不是这里假设的
-       ``<市场><代码>``，首部的 ``uint16`` 也与正文长度不自洽（13705/250、26331/160
-       都不整除）；对 offset 0-39 × 步长 9-59 的全部组合逐一试解，没有一种能让半数
-       以上的行合法。缺布局判据时不猜（与 ``parsers/mac.py``「禁止盲改」同一口径）。
+       解析器对块头做**回声校验**：``code`` / ``market`` 与请求上下文不符时
+       发 ``field_out_of_domain`` 告警而不是静默返回脏数据。
     """
 
     CATEGORY = {
@@ -358,9 +375,9 @@ class CapitalChangesParser(BaseParser):
         14: "送认沽权证",
     }
 
-    #: 公开资料给出的定长记录大小（未验证）
+    #: 已验证记录长度：7B 头 + 1B + 4B 日期 + 1B 类别 + 16B 分类数据
 
-    LEGACY_RECORD_SIZE = 29
+    RECORD_SIZE = 29
 
     def parse_payload(self, reader: BinaryReader, **ctx: Any) -> list[dict[str, Any]]:
 
@@ -369,47 +386,84 @@ class CapitalChangesParser(BaseParser):
         if count == 0:
             return []
 
-        body = reader.rest()
-
-        size = int(ctx.get("record_size", 0) or 0)
-
-        if size <= 0:
-            size = len(body) // count if count else 0
-
-        if size < 9:
-            # 太短，无法解析；保留原始字节由 L2 兜底
-
-            raise ParseError(
-                f"除权除息记录长度异常: count={count}, body={len(body)}, size={size}",
-                context={"count": count, "body_len": len(body)},
-            )
-
-        # T3 钳制：ctx 指定的 record_size 大于实际 body 均分值时，
-        # 声明数可能远超剩余字节容纳上限
-        guarded = count_guard(count, size, len(body))
-
-        if guarded != count:
-            self.warn_ctx(
-                ctx,
-                f"count 失真已钳制：声明 {count} 条，"
-                f"按 {size}B/条 与 body={len(body)}B 只能容纳 {guarded} 条",
-            )
-            count = guarded
+        expect_code = str(ctx.get("code") or "").strip()
+        expect_market = ctx.get("market")
 
         rows: list[dict[str, Any]] = []
 
-        for i in range(count):
-            rec = body[i * size : (i + 1) * size]
-
-            if len(rec) < size:
-                # 尾记录短于声明步长（截断流）——直接调用 _decode 会产生
-                # 裸 struct.error/IndexError，这里停止解析并留痕
-                self.warn_ctx(ctx, f"第 {i} 条记录不完整（{len(rec)}/{size}B），已停止解析")
+        for block in range(count):
+            if reader.remaining < 9:
+                # 请求几条就回几块；块读不动即止（旧错请求回的缓冲残留也走这里）
+                self.warn_ctx(
+                    ctx,
+                    f"第 {block} 个证券块不足 9 字节（剩余 {reader.remaining}B），已停止解析",
+                )
                 break
 
-            rows.append(self._decode(rec, size))
+            market = reader.uint8()
+
+            code = decode_gbk(reader.bytes(6))
+
+            # --- 回声校验：块头必须与请求一致（错请求时代的错位形状） -------- #
+            self._check_echo(ctx, market, code, expect_market, expect_code)
+
+            num = reader.uint16()
+
+            if num == 0:
+                continue
+
+            size = int(ctx.get("record_size", 0) or 0) or self.RECORD_SIZE
+
+            if size < 9:
+                raise ParseError(
+                    f"除权除息记录长度异常: size={size}",
+                    context={"size": size},
+                )
+
+            guarded = count_guard(num, size, reader.remaining)
+
+            if guarded != num:
+                self.warn_ctx(
+                    ctx,
+                    f"count 失真已钳制：声明 {num} 条，"
+                    f"按 {size}B/条 与剩余 {reader.remaining}B 只能容纳 {guarded} 条",
+                )
+                num = guarded
+
+            for j in range(num):
+                if reader.remaining < size:
+                    self.warn_ctx(
+                        ctx,
+                        f"第 {block} 块第 {j} 条记录不完整"
+                        f"（剩余 {reader.remaining}B/{size}B），已停止解析",
+                    )
+                    break
+
+                rows.append(self._decode(reader.bytes(size), size))
 
         return rows
+
+    @staticmethod
+    def _check_echo(
+        ctx: dict[str, Any],
+        market: int,
+        code: str,
+        expect_market: Any,
+        expect_code: str,
+    ) -> None:
+        """块头回声与请求不符时留痕（旧错请求的形状：market=48 / 半个代码）。"""
+        problems: list[str] = []
+        if expect_code and code != expect_code:
+            problems.append(f"code={code!r} != 请求 {expect_code!r}")
+        if expect_market is not None and market != int(expect_market):
+            problems.append(f"market={market} != 请求 {int(expect_market)}")
+        if problems:
+            record_warning(
+                WarningCode.FIELD_OUT_OF_DOMAIN,
+                f"0x000f 块头回声不符（{'；'.join(problems)}）——"
+                "请求体的 market/code 顺序或字段布局可能已漂移，字段值不可信"
+                f"（块头 market={market} code={code!r}）",
+            )
 
     def _decode(self, rec: bytes, size: int) -> dict[str, Any]:
 
@@ -417,7 +471,7 @@ class CapitalChangesParser(BaseParser):
 
         code = decode_gbk(rec[1:7])
 
-        category = rec[7] if size > 7 else 0
+        category = rec[12] if size > 12 else 0
 
         row: dict[str, Any] = {
             "market": market,
@@ -426,20 +480,32 @@ class CapitalChangesParser(BaseParser):
             "category_name": self.CATEGORY.get(category, f"未知({category})"),
         }
 
-        if size >= 13:
-            (date_raw,) = struct.unpack_from("<I", rec, 9)
+        if size >= 12:
+            (date_raw,) = struct.unpack_from("<I", rec, 8)
 
             row["date"] = self._decode_date(date_raw)
 
-        if size >= 29:
-            fh_qty, pg_price, sg_qty, pg_qty = struct.unpack_from("<ffff", rec, 13)
+        if size >= self.RECORD_SIZE:
+            values = [round(v, 6) for v in struct.unpack_from("<ffff", rec, 13)]
 
-            row.update(
-                dividend=round(fh_qty, 6),
-                rights_price=round(pg_price, 6),
-                bonus_ratio=round(sg_qty, 6),
-                rights_ratio=round(pg_qty, 6),
-            )
+            row["values"] = values
+
+            if category == 1:
+                # 除权除息：分红 / 配股价 / 送转股 / 配股比例
+                row.update(
+                    dividend=values[0],
+                    rights_price=values[1],
+                    bonus_ratio=values[2],
+                    rights_ratio=values[3],
+                )
+            else:
+                # 其余类别是四组股本数（万股）：盘前流通 / 前总股本 / 盘后流通 / 后总股本
+                row.update(
+                    panqianliutong=values[0],
+                    qianzongguben=values[1],
+                    panhouliutong=values[2],
+                    houzongguben=values[3],
+                )
 
         return row
 
@@ -465,27 +531,41 @@ class CapitalChangesParser(BaseParser):
 class FinanceInfoParser(BaseParser):
     """财务基础信息。
 
+    请求体（9 字节，✅ 2026-10-21 真机实测修正）::
 
+        <H 1><B market><6s code>
 
-    请求体：``<6s code><H market>``（✅ 实测，响应约 14 KB）。
+    响应结构（✅ 2026-10-21 深/沪 8 只标的重放，记录头与请求逐一相符）::
 
+        <H count><count × 143B 记录>
 
+    单条 143 字节记录::
+
+        <B market><6s code>
+        <f 流通股本(万股)><H 省份码><H 行业码>
+        <I 更新日期(YYYYMMDD)><I 上市日期(YYYYMMDD)>
+        <30 × f 总股本(万股) … 保留2>
+
+    **为什么旧实现是错的**：它发的是 ``<6s code><H market>``（代码在前），
+    服务端按 ``market@2 / code@3:9`` 解读请求，于是记录头整体错位——
+    ``market`` 读到 ASCII ``'0'``（48）、``code`` 只剩半个代码；且前 2 字节被
+    当成「请求条数」读成 ``0x3030``，服务器回 100 条记录（仅第 1 条是本人，
+    其余是服务端缓冲残留，内容每次抓包都不同）。请求顺序修正后请求 1 条回 1 条。
 
     .. warning::
 
-       ⚠️ 响应是「若干条记录 + 每条若干字段」的双层结构，字段语义顺序
+       ⚠️ 字段序按公开参考实现（pytdx ``GetFinanceInfo`` / injoyai-tdx
+       ``model_finance.go``）交叉锁定，并与 2026-10-21 真机数值对拍（总股本 /
+       流通股本 / 上市日期均吻合）；本仓 golden 样本仍是「错请求」年代采的，
+       未重采前字段语义**不保证**（F-37），条数 / 记录头 / 结构可用。
 
-       依赖主站版本。本解析器先按**自适应记录长度**输出原始切片与
-
-       float32 数组，语义映射交由 ``domain.models`` 按 profile 处理。
-
-       账本一度写着 ``verified=True``，V18 第 9 轮按 F-37② 撤回：4 份实采样本重放出的
-
-       400 行里有 581 个字段值落在域外（``market`` 读到 48/56/93、``code`` 读到 ``''``），
-
-       与 :class:`CapitalChangesParser` 是同一格未闭合的布局判据。
-
+       解析器对记录头做**回声校验**：``code`` / ``market`` 与请求上下文不符时
+       发 ``field_out_of_domain`` 告警而不是静默返回脏数据。
     """
+
+    #: 已验证记录长度：7B 头 + 4+2+2+4+4 类型化字段 + 30×4B float32
+
+    RECORD_SIZE = 143
 
     def parse_payload(self, reader: BinaryReader, **ctx: Any) -> list[dict[str, Any]]:
 
@@ -501,7 +581,7 @@ class FinanceInfoParser(BaseParser):
         if size <= 0:
             size = len(body) // count if count else 0
 
-        if size < 8:
+        if size < self.RECORD_SIZE:
             raise ParseError(
                 f"财务信息记录长度异常: count={count}, body={len(body)}, size={size}",
                 context={"count": count, "body_len": len(body)},
@@ -518,6 +598,9 @@ class FinanceInfoParser(BaseParser):
             )
             count = guarded
 
+        expect_code = str(ctx.get("code") or "").strip()
+        expect_market = ctx.get("market")
+
         rows: list[dict[str, Any]] = []
 
         for i in range(count):
@@ -532,17 +615,54 @@ class FinanceInfoParser(BaseParser):
 
             code = decode_gbk(rec[1:7])
 
-            # 7 字节之后按 float32 数组展开（剩余长度非 4 倍数时截断）
+            # --- 回声校验：记录头必须与请求一致（错请求时代的错位形状） ------ #
+            self._check_echo(ctx, market, code, expect_market, expect_code)
 
-            tail = rec[7:]
+            # 7B 头之后：<fHHII> + 30 × float32
+            liutong, province, industry, updated, ipo = struct.unpack_from("<fHHII", rec, 7)
+
+            tail = rec[23:]
 
             n = len(tail) // 4
 
             values = [round(v, 6) for v in struct.unpack_from(f"<{n}f", tail, 0)] if n else []
 
-            rows.append({"market": market, "code": code, "values": values})
+            rows.append(
+                {
+                    "market": market,
+                    "code": code,
+                    "float_shares": round(float(liutong), 6),
+                    "province": int(province),
+                    "industry": int(industry),
+                    "updated_date": int(updated),
+                    "ipo_date": int(ipo),
+                    "values": values,
+                }
+            )
 
         return rows
+
+    @staticmethod
+    def _check_echo(
+        ctx: dict[str, Any],
+        market: int,
+        code: str,
+        expect_market: Any,
+        expect_code: str,
+    ) -> None:
+        """记录头回声与请求不符时留痕（旧错请求的形状：market=48 / 半个代码）。"""
+        problems: list[str] = []
+        if expect_code and code != expect_code:
+            problems.append(f"code={code!r} != 请求 {expect_code!r}")
+        if expect_market is not None and market != int(expect_market):
+            problems.append(f"market={market} != 请求 {int(expect_market)}")
+        if problems:
+            record_warning(
+                WarningCode.FIELD_OUT_OF_DOMAIN,
+                f"0x0010 记录头回声不符（{'；'.join(problems)}）——"
+                "请求体的 market/code 顺序或字段布局可能已漂移，字段值不可信"
+                f"（记录头 market={market} code={code!r}）",
+            )
 
 
 # --------------------------------------------------------------------------- #

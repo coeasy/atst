@@ -189,7 +189,7 @@ def _plan_core() -> list[CaptureSpec]:
         _simple(0x044E, struct.pack("<H", 1) + b"\x00" * 4, "market1", "上证证券数量", market=1),
         _simple(
             0x000F,
-            b"600000" + struct.pack("<H", 1),
+            struct.pack("<HB6s", 1, 1, b"600000"),
             "600000",
             "除权除息信息",
             market=1,
@@ -197,7 +197,7 @@ def _plan_core() -> list[CaptureSpec]:
         ),
         _simple(
             0x0010,
-            b"600000" + struct.pack("<H", 1),
+            struct.pack("<HB6s", 1, 1, b"600000"),
             "600000",
             "财务基础信息",
             market=1,
@@ -205,7 +205,7 @@ def _plan_core() -> list[CaptureSpec]:
         ),
         _simple(
             0x0537,
-            b"600000" + struct.pack("<H", 1) + b"\x00" * 4,
+            struct.pack("<H6sI", 1, b"600000", 0),
             "600000",
             "分时图数据",
             market=1,
@@ -222,7 +222,7 @@ def _plan_core() -> list[CaptureSpec]:
         # --- 深市变体（E8：消除 0x000F/0x0010/0x0537/0x0FC5 的 mkt 单边覆盖）--- #
         _simple(
             0x000F,
-            b"000001" + struct.pack("<H", 0),
+            struct.pack("<HB6s", 1, 0, b"000001"),
             "000001",
             "除权除息信息（深市）",
             market=0,
@@ -230,7 +230,7 @@ def _plan_core() -> list[CaptureSpec]:
         ),
         _simple(
             0x0010,
-            b"000001" + struct.pack("<H", 0),
+            struct.pack("<HB6s", 1, 0, b"000001"),
             "000001",
             "财务基础信息（深市）",
             market=0,
@@ -238,7 +238,7 @@ def _plan_core() -> list[CaptureSpec]:
         ),
         _simple(
             0x0537,
-            b"000001" + struct.pack("<H", 0) + b"\x00" * 4,
+            struct.pack("<H6sI", 0, b"000001", 0),
             "000001",
             "分时图数据（深市）",
             market=0,
@@ -589,11 +589,20 @@ def _infer_record_size(method: int, payload_len: int, ctx: dict[str, Any]) -> tu
     known: dict[int, tuple[int | None, str]] = {
         0x0530: (79, "实测 0x0530 单条实时快照 ≈ 79 字节"),
         0x052D: (None, "K 线记录大小随 category 变化，需解析器确认"),
-        0x0FC5: (None, "逐笔成交记录大小未知"),
-        0x0537: (None, "分时图记录大小未知"),
+        0x0FC5: (
+            None,
+            "逐笔成交为变长记录：<H time_minutes> + 5 个 leb128（2026-10-21 实测锁定，无固定字节数）",
+        ),
+        0x0537: (
+            None,
+            "分时为变长记录：3 个 leb128（价格/均价增量 + 成交量），无固定字节数（2026-10-21 实测锁定）",
+        ),
         0x044E: (None, "证券数量记录大小未知"),
-        0x000F: (None, "除权除息记录大小未知"),
-        0x0010: (None, "财务基础信息记录大小未知"),
+        0x000F: (
+            29,
+            "实测 0x000F 股本变迁记录 = 29B（7B 头 + 1B + 4B 日期 + 1B 类别 + 16B 分类数据）",
+        ),
+        0x0010: (143, "实测 0x0010 财务记录 = 143B（7B 头 + <fHHII> + 30×float32）"),
         0x053E: (None, "批量行情（已下线）记录大小未知"),
     }
 

@@ -3,24 +3,27 @@
 # =============================================================================
 # 命令号: 0x0FC5
 # 家族:  7709 标准协议族
-# 层级:  L2 (通用解析)
-# 状态:  inferred (布局来自公开资料推断，待 golden 锁定)
+# 层级:  L1 (精确解析，golden-verified)
+# 状态:  verified (2026-10-21 双市场 golden 锁定)
 #
-# 描述: 当日逐笔成交明细。每条记录包含时间、价格、成交量、成交额
-#       和买卖方向。
+# 描述: 当日逐笔成交明细。每条记录包含时间（当日分钟数）、价格（逐笔累加
+#       差分）、成交量、委托单数与买卖方向。
 # =============================================================================
 
 spec_id: "0x0fc5"
 name: "trade_today"
 family: "7709"
-version: "1.0"
+version: "2.0"
 description: "Today's trade details (tick-by-tick transactions)"
-status: "inferred"
+status: "verified"
 aliases: ["trade_detail", "tick_data"]
 
 # =============================================================================
-# 请求体
+# 请求体（12 字节，✅ golden-verified）
 # =============================================================================
+# **市场在前**（与 0x0537 同源的历史事故：代码在前时沪市回 2 字节空桩）。
+# `start` 是**自最新一笔往回数的偏移**：`start=0` 返回当日最后 `count` 笔，
+# `start=count` 继续往前翻；实测翻页边界不重不漏。
 request:
   length: 12
   fields:
@@ -28,7 +31,7 @@ request:
       offset: 0
       type: "uint16"
       length: 2
-      description: "Market ID (0=Shenzhen, 1=Shanghai)"
+      description: "Market ID (0=Shenzhen, 1=Shanghai) — must come first"
     - name: "code"
       offset: 2
       type: "string[6]"
@@ -39,7 +42,7 @@ request:
       offset: 8
       type: "uint16"
       length: 2
-      description: "Start index (0-based)"
+      description: "Backward offset from the newest tick (0 = newest page)"
     - name: "count"
       offset: 10
       type: "uint16"
@@ -47,70 +50,82 @@ request:
       description: "Number of records to request"
 
 # =============================================================================
-# 响应体（⚠️ 布局来自公开资料推断）
+# 响应体（✅ leb128 差分，2026-10-21 锁定）
 # =============================================================================
+# `<H num>` 后跟 num 条**变长**记录：2 字节时间 + 5 个 leb128。
+# leb128 与 0x0537 同一套编码（6 位前缀有符号），但**差分语义不同**：
+# 这里的价格是**逐笔累加**（`price = Σ price_delta`），不是「基准 + 增量」。
 response:
   header:
     - name: "record_count"
       type: "uint16"
       length: 2
-      description: "Number of trade records"
+      description: "Number of trade records in this page"
 
   fields:
-    - name: "minute"
+    - name: "time_minutes"
       offset: 0
       type: "uint16"
       length: 2
-      description: "Minutes since market open"
-      format: "minutes_from_open"
-      notes: "Converted to HH:MM by parser"
-    - name: "price"
+      description: "Minutes since midnight — the tick's true clock minute"
+      format: "minutes_from_midnight"
+      notes: "09:25 = opening auction; 15:05-15:30 = after-hours fixed-price session"
+    - name: "price_delta"
       offset: 2
-      type: "float32"
-      length: 4
-      description: "Transaction price"
-      unit: "yuan"
-    - name: "volume"
-      offset: 6
-      type: "float32"
-      length: 4
-      description: "Transaction volume"
-      unit: "share"
-    - name: "amount"
-      offset: 10
-      type: "float32"
-      length: 4
-      description: "Transaction amount (price × volume)"
-      unit: "yuan"
-    - name: "direction"
-      offset: 14
-      type: "uint8"
-      length: 1
-      description: "Trade direction flag"
-      values:
-        0: "buy (active buy)"
-        1: "sell (active sell)"
-        2: "neutral (aggregated)"
-      notes: "Some servers use 0=buy, 1=sell, 2=neutral"
+      type: "leb128"
+      length: null
+      description: "Cumulative-sum price delta (price = Σ price_delta)"
+      unit: "0.01 yuan"
+      format: "leb128_signed"
+    - name: "vol"
+      offset: null
+      type: "leb128"
+      length: null
+      description: "Volume of this tick"
+      unit: "lot (x100 = shares)"
+      format: "leb128_signed"
+    - name: "num"
+      offset: null
+      type: "leb128"
+      length: null
+      description: "Order count of this tick"
+      format: "leb128_signed"
+    - name: "buyorsell"
+      offset: null
+      type: "leb128"
+      length: null
+      description: "Direction flag; observed 0/1 (active buy/sell), 2 (closing auction), 5 (after-hours), 8 (zero-volume sentinel)"
+      format: "leb128_signed"
+    - name: "reserved"
+      offset: null
+      type: "leb128"
+      length: null
+      description: "Reserved; observed constant 0, consumed but not emitted"
+      format: "leb128_signed"
 
-  record_size: 15
-  encoding: "absolute"
+  record_size: null
+  encoding: "leb128-differential"
   notes: |
-    P1e 三值矛盾收口（2026-09，F2 批次）：本记录长度历史上三处矛盾——
-    本 spec 曾写 17B（归因"padding"）、解析器 RECORD_SIZE 曾为 17B、
-    逐字段实际消费 15B（2 minute + 4 price + 4 volume + 4 amount + 1 direction）。
-    守卫门槛必须等于实际消费步长，故解析器 RECORD_SIZE 与本 spec 统一为 15B
-    （见 tstdx/protocol/parsers/std7709_extra.py::TradeTodayParser）。
-    **15B 消费，布局未真机锁定**：golden 样本（count=10 / body 74B）至今
-    无法被 15B 整除，说明真实布局仍含未识别字段，待真机样本定标后修正；
-    在样本到位前禁止改回任何"padding"猜测。
+    记录为**变长**（2 字节时间 + 5 个 leb128）。历史坑：本 spec 曾写 15B / 17B
+    定长记录，golden 样本（count=10 / body 74-76B）无法被整除——真实布局含
+    leb128，定长猜测全部作废。
+
+    **价格是逐笔累加**（``last_price += price_delta``，与 pytdx 的
+    ``GetTransactionData`` 一致），与 0x0537 的「基准 + 增量」相反，别互相套用。
+
+    **时间口径**：``time_minutes`` 是该笔成交的**真实时钟分钟**，而 K 线 bar
+    标签取 bar 结束分钟——两者相差一分钟。逐笔按标签 m 汇总，对应 K 线标签
+    m+1 的桶。开盘竞价成交（标签 09:25）不属任何连续竞价分钟，被 K 线并进
+    09:31 桶；收盘竞价（14:57–15:00 期间的单、结论在 15:00）并进 15:00 桶。
 
 # =============================================================================
 # 上下文
 # =============================================================================
 context:
-  price_scale: 1
-  trading_hours: "09:30-11:30, 13:00-15:00"
+  price_scale: 100
+  volume_unit: "lot"
+  trading_hours: "09:30-11:30, 13:00-15:00 (+ after-hours 15:05-15:30)"
+  request_body_hex: "010036303030303000000a00"   # <H 1><6s "600000"><H 0><H 10>
 
 # =============================================================================
 # 相关命令
@@ -130,9 +145,29 @@ related_commands:
     family: "7709"
 
 # =============================================================================
+# 真机实测（verified 主张的证据格）
+# =============================================================================
+measured:
+  captured: "2026-10-22"
+  hosts_answered: "6/8"          # 另 2 台 TCP 连接超时，与命令语义无关
+  echo: "沪/深双市场均正常返回逐笔；缓冲区按字节精确耗尽"
+  body_length: 12
+  body_hex: "010036303030303000000a00"   # <H 1><6s "600000"><H 0><H 10>
+  cross_check: |
+    全日逐笔（sh600000 4304 笔 / sz000001 4537 笔，09:15 开盘竞价至
+    15:20 / 15:30 盘后）按分钟汇总，与同日 0x052D 一分钟 K 线逐桶对账：
+      * 成交量 237/240 桶完全相等；余下 3 桶全部是竞价并入，且算术精确——
+        09:25 竞价 + 09:30 连续 = 09:31 桶；14:59 空桶 + 15:00 收盘竞价
+        = 15:00 桶；11:29 桶含 11:30:00 的收边那一笔；
+      * 末笔累加价与同时刻 0x0530 实时行情价一致（沪 9.66 / 深 11.41）；
+      * 连续竞价期间每一笔价格都落在所属 K 线 bar 的 [low, high] 内（100%）；
+      * 4 份存量 golden 样本（76/75/75/77 字节）与实采载荷全部精确耗尽。
+
+# =============================================================================
 # 参考
 # =============================================================================
 golden_samples:
   - "tests/golden/quotation/0x0fc5_trade_today_600000/20260831-125354/payload.bin"
+  - "tests/golden/quotation/0x0fc5_trade_today_000001/20260902-124336/payload.bin"
 
 parser_reference: "tstdx/protocol/parsers/std7709_extra.py::TradeTodayParser"

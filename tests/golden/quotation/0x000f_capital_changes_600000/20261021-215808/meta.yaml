@@ -1,0 +1,37 @@
+schema: 2
+source: "self-captured"
+family: quotation
+command: 0xf
+command_name: CAPITAL_CHANGES
+tag: "600000"
+note: 除权除息信息
+host: "218.75.126.9:7709"
+local_host: "WIN-PM"
+market: 1
+code: "600000"
+captured_at: "2026-10-21T13:58:08.393211+00:00"
+elapsed_ms: 25.41
+request:
+  method: 0xf
+  body_hex: "010001363030303030"
+  body_len: 9
+response:
+  zip_size: 830
+  unzip_size: 2563
+  compressed: true
+  payload_len: 2563
+  sha256: 5d52b1b2b181be3c8880e3473a9dd4846ba60ba98c0394e1aa99b47b31022019
+record_size_hypothesis: 0
+record_count_hypothesis: 0
+compression:
+  codec: none
+  compressed_size: null
+parse_ctx:
+  market: 1
+  code: "600000"
+tool:
+  name: atst.tools.capture
+  version: 0.1.0
+legal:
+  ack: true
+  allow_trading_hours: false

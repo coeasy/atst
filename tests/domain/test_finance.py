@@ -47,9 +47,21 @@ class TestMapFinanceValues:
         assert out["total_shares"] == 1.0
 
     def test_finance_info_fields_distinct_names(self) -> None:
-        """0x0010 与 gpcw 字段序不同源（各自独立映射）。"""
-        assert FINANCE_INFO_FIELDS[0] == "float_shares"
+        """0x0010 与 gpcw 字段序不同源（各自独立映射）。
+
+        0x0010 的头部 5 个字段（流通股本/省份/行业/更新日期/上市日期）由解析器
+        直接命名，本表只管尾部 30 个 float32；gpcw 是 27+ 项的扁平序。两张表
+        长度与内容都不同——同名不同义的字段（如 ``total_assets``）在两侧的位置
+        也不同，映射时不许互相串表。
+        """
+        assert FINANCE_INFO_FIELDS[0] == "total_shares"
         assert GPCW_FIELD_NAMES[0] == "total_shares"
+        assert len(FINANCE_INFO_FIELDS) == 30
+        assert set(FINANCE_INFO_FIELDS.values()) != set(GPCW_FIELD_NAMES.values())
+        assert FINANCE_INFO_FIELDS != GPCW_FIELD_NAMES
+        #: 每股净资产在 gpcw 里排 22，在 0x0010 里排 28——两张表不是同一份拷贝。
+        assert GPCW_FIELD_NAMES[22] == "net_assets_per_share"
+        assert FINANCE_INFO_FIELDS[28] == "net_assets_per_share"
 
     def test_values_rounded_six(self) -> None:
         out = map_finance_values([1.0 / 3.0], GPCW_FIELD_NAMES)

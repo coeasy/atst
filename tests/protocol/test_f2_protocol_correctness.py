@@ -102,38 +102,67 @@ class TestP1aIndexTailConsumption:
 
 @pytest.mark.unit
 class TestP1eTradeTodayAlignment:
-    """P1e：0x0FC5/0x0FC6 三值矛盾收口——docstring/RECORD_SIZE/逐字段消费一致（15B）。"""
+    """P1e：0x0FC5/0x0FC6 布局收口——从 15B 定长猜测改成 leb128 变长（2026-10-21）。
+
+    历史：本类曾把记录钉成 15B 定长（``<H 分钟><f4 价格><f4 量><f4 额><B 方向>``），
+    而 golden 样本（count=10 / body 74-76B）根本不能被 15 整除——那版"收口"把
+    docstring / RECORD_SIZE / 逐字段消费 三方对齐到了一个**错的**形状上。真机实测
+    后记录是变长的：``<H time_minutes>`` + 5 个 leb128（价格差分逐笔累加），
+    ``RECORD_SIZE`` 退化为**最短记录**（2 + 5×1 = 7B）守卫门槛，不再等于消费步长。
+    """
 
     @staticmethod
-    def _record() -> bytes:
-        # <H 分钟><f4 价格><f4 量><f4 额><B 方向> = 15B
+    def _record(
+        minute: int = 535,
+        price_delta: int = 50,
+        vol: int = 20,
+        num: int = 3,
+        buyorsell: int = 1,
+        reserved: int = 0,
+    ) -> bytes:
+        # <H 分钟> + 5 个 leb128（价格/量/单数/方向/保留）
         return (
-            struct.pack("<H", 535)
-            + struct.pack("<f", 7.51)
-            + struct.pack("<f", 1200.0)
-            + struct.pack("<f", 9012.0)
-            + b"\x01"
+            struct.pack("<H", minute)
+            + encode_leb128(price_delta)
+            + encode_leb128(vol)
+            + encode_leb128(num)
+            + encode_leb128(buyorsell)
+            + encode_leb128(reserved)
         )
 
-    def test_record_size_equals_consumption(self):
-        assert TradeTodayParser.RECORD_SIZE == 15
-        assert TradeTodayAltParser.RECORD_SIZE == 15
-        # 消费步长自证：len(record) == RECORD_SIZE
-        assert len(self._record()) == TradeTodayParser.RECORD_SIZE
+    def test_record_size_is_the_minimum_guard_threshold(self):
+        # 最短记录 = 2(时间) + 5 个 1 字节 leb128；真实记录可以更长（续行）
+        assert TradeTodayParser.RECORD_SIZE == 7
+        assert TradeTodayAltParser.RECORD_SIZE == 7
+        assert len(self._record()) == 7
+        # 带续行的更长记录同样合法，且消耗字节数 > RECORD_SIZE
+        long_rec = self._record(price_delta=100000, vol=999999)
+        assert len(long_rec) > TradeTodayParser.RECORD_SIZE
 
     def test_0fc5_guard_threshold_is_consumption_step(self):
         rec = self._record()
         payload = struct.pack("<H", 2) + rec + rec
         result = dispatch(_frame(0x0FC5, payload))
-        # 0x0FC5 注册 tier="L2"（布局未锁定）；「L1 精确解析器确实执行」
-        # 以 meta.parser 与无降级告警判定
+        # 0x0FC5 现在注册 tier="L1"（2026-10-21 双市场 golden 锁定）
+        assert result.tier == "L1"
         assert result.meta.get("parser") == "TradeTodayParser"
         assert not any("L1 解析失败" in w for w in result.warnings), result.warnings
         assert len(result.rows) == 2
-        assert result.rows[0]["price"] == pytest.approx(7.51, abs=1e-4)
+        # 价格逐笔累加：50 + 50 = 100 → 1.00 元（不是「基准+增量」的 0.50）
+        assert result.rows[0]["price"] == pytest.approx(0.50, abs=1e-4)
+        assert result.rows[1]["price"] == pytest.approx(1.00, abs=1e-4)
+        assert result.rows[0]["volume"] == 20 * 100
         assert result.rows[1]["direction"] == 1
-        # 守卫门槛 = 实际消费步长 → 缓冲按字节精确耗尽
+        # 变长记录同样按字节精确耗尽
         assert result.meta["reader_meta"] == len(payload)
+
+    def test_0fc5_price_is_cumulative_not_base_delta(self):
+        """与 0x0537 的「基准 + 增量」相反：逐笔是累加。"""
+        payload = struct.pack("<H", 3) + b"".join(
+            self._record(minute=571 + i, price_delta=d) for i, d in enumerate((100, 5, -3))
+        )
+        result = dispatch(_frame(0x0FC5, payload))
+        assert [round(r["price"], 4) for r in result.rows] == [1.0, 1.05, 1.02]
 
     def test_0fc6_same_layout(self):
         rec = self._record()
@@ -150,24 +179,31 @@ class TestCapitalChangesShortTail:
     """0x000F 尾记录短于声明步长时停止解析（消除裸 struct.error）。"""
 
     def test_trailing_partial_record_breaks(self):
+        """块内声明条数超过实际数据时停止解析（消除裸 struct.error）。
+
+        载荷按 2026-10-21 实测锁定的两级结构搭建：``<H blocks><块头 9B><num 条记录>``。
+        收口前：rec 短于 size 时 rec[7]/struct.unpack_from 产生裸 IndexError/
+        struct.error 且整批解析崩溃；收口后：钳制到 1 条完整记录 + 告警。
+        """
         rec = b"\x01" + b"600000" + b"\x01" + b"\x00" * 21  # 29B 完整记录
-        payload = struct.pack("<H", 3) + rec + b"\x02\xab"  # 声明 3 条，尾部只有 2B
+        # 1 个证券块声明 3 条，实际只有 1 条完整 + 2B 残尾
+        payload = (
+            struct.pack("<H", 1) + b"\x01" + b"600000" + struct.pack("<H", 3) + rec + b"\x02\xab"
+        )
         result = dispatch(_frame(0x000F, payload), record_size=29)
-        # 收口前：rec 短于 size 时 rec[7]/struct.unpack_from 产生裸 IndexError/
-        # struct.error 且整批解析崩溃；收口后：钳制到 1 条完整记录 + 告警
         assert len(result.rows) == 1
         assert result.rows[0]["code"] == "600000"
         assert any("钳制" in w for w in result.warnings), result.warnings
         assert not any("L1 解析失败" in w for w in result.warnings), result.warnings
 
     def test_adaptive_size_still_parses_all(self):
-        # 无 ctx record_size 时按 body//count 均分，行为与收口前一致
+        # 无 ctx record_size 时按 RECORD_SIZE（29B）解析，两条完整记录全部解出
         rec = b"\x01" + b"600000" + b"\x01" + b"\x00" * 21
-        payload = struct.pack("<H", 2) + rec + rec
+        payload = struct.pack("<H", 1) + b"\x01" + b"600000" + struct.pack("<H", 2) + rec + rec
         result = dispatch(_frame(0x000F, payload))
         assert len(result.rows) == 2
         assert result.rows[1]["code"] == "600000"
-        # 该解析器经 body 切片消费（reader 只读 count 头），raw 必须完整保留
+        # raw 必须完整保留（dispatch 侧原文透传，与解析器消费方式无关）
         assert result.raw == payload
 
 

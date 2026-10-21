@@ -1,0 +1,37 @@
+schema: 2
+source: "self-captured"
+family: quotation
+command: 0x10
+command_name: FINANCE_INFO
+tag: "600000"
+note: 财务基础信息
+host: "218.75.126.9:7709"
+local_host: "WIN-PM"
+market: 1
+code: "600000"
+captured_at: "2026-10-21T13:58:08.425118+00:00"
+elapsed_ms: 25.54
+request:
+  method: 0x10
+  body_hex: "010001363030303030"
+  body_len: 9
+response:
+  zip_size: 145
+  unzip_size: 145
+  compressed: false
+  payload_len: 145
+  sha256: 7faea829a7ae9e36d11e3fe261762c8a01551036f79e5dd8ef33ba43205c99ca
+record_size_hypothesis: 0
+record_count_hypothesis: 0
+compression:
+  codec: none
+  compressed_size: null
+parse_ctx:
+  market: 1
+  code: "600000"
+tool:
+  name: atst.tools.capture
+  version: 0.1.0
+legal:
+  ack: true
+  allow_trading_hours: false

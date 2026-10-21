@@ -123,6 +123,44 @@ class TestScanAndAudit:
         (d / "meta.json").write_text("{}", encoding="utf-8")  # 无 payload.bin
         assert scan_corpus(corpus_root) == []
 
+    def test_scan_skips_wrong_request_archive(self, corpus_root: Path) -> None:
+        """病理存档不进分母：那些样本是用写反的请求体采的，语义不成立。
+
+        0x0537 / 0x0FC5 曾经把 ``<6s code><H market>`` 写反成 market 在后，服务器按
+        market-first 解析时把前两字节当 ASCII 码点读 → 沪市直接回空壳。目录留着当
+        病历，但审计一收它就会把"这条命令采过了"误报成覆盖率。
+        """
+        _sample(
+            corpus_root, "0x537", "MINUTE_TODAY", source="self-captured", market=1, code="600000"
+        )
+        archived = corpus_root / "_archive_wrong_request" / "0x537_minute_today_600000" / "t1"
+        archived.mkdir(parents=True)
+        (archived / "payload.bin").write_bytes(b"\x01" * 8)
+        (archived / "meta.json").write_text(
+            json.dumps(
+                {
+                    "schema": 2,
+                    "source": "self-captured",
+                    "family": "quotation",
+                    "command": "0x537",
+                    "command_name": "MINUTE_TODAY",
+                    "parse_ctx": {"market": 1, "code": "600000"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        rows = scan_corpus(corpus_root)
+        assert [r.command for r in rows] == ["0x537"], "存档样本被扫进了分母"
+        assert "_archive_wrong_request" not in rows[0].rel
+        assert audit(corpus_root)["summary"]["total"] == 1
+
+    def test_real_repo_archive_is_excluded(self) -> None:
+        """仓库里那份 22 目录的病历不许出现在现役扫描结果里。"""
+        rows = [r for r in scan_corpus() if "_archive_wrong_request" in r.rel]
+        assert rows == [], f"病历目录漏进了现役语料：{[r.rel for r in rows][:3]}"
+        # 同时证明现役语料里 0x0537 真的有样本（fresh golden），不是把整条命令扫没了
+        assert any(r.command == "0x537" for r in scan_corpus())
+
     def test_broken_meta_counts_unknown(self, corpus_root: Path) -> None:
         d = corpus_root / "0x530_x" / "t1"
         d.mkdir(parents=True)

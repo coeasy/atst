@@ -304,12 +304,14 @@ def _emit(items: Sequence[Any], as_format: OutputFormat):
 
 
 _OFFLINE_FALLBACK_OK: frozenset[int] = frozenset({CMD["quotes_snapshot"]})
-_UNVERIFIED_STRUCTURED_BLOCK: frozenset[int] = frozenset(
-    {
-        CMD["minute_today"],
-        CMD["trade_today"],
-    }
-)
+#: 结构化 API 发包前的「未验证布局」拦截表。
+#:
+#: 2026-10-21 深夜：``minute_today``(0x0537) 与 ``trade_today``(0x0FC5) 从这里
+#: 移出——两条命令的请求体字节序（市场在前）与 leb128 记录布局都已被双市场
+#: golden 样本 + 0x052D K 线交叉验证锁定（账本 ``verified=True`` / ``tier=L1``）。
+#: 本表现在为空；保留常量与分支，是为了让「下一条布局未锁定的结构化命令」仍然
+#: 有一个现成的拦截位，而不是等出事再新写一套。
+_UNVERIFIED_STRUCTURED_BLOCK: frozenset[int] = frozenset()
 
 
 def _guard_offline(cmd: int) -> None:

@@ -139,6 +139,15 @@ class TestBlockedCommandsSpeakTheirOwnLedgerLine:
         assert ei.value.context["summary"] == command.summary
 
     def test_blocked_denominators_are_not_empty(self) -> None:
-        """三把防盲保险之一：扫描自身失明（分母为 0）时必须自曝。"""
+        """三把防盲保险之一：扫描自身失明（分母为 0）时必须自曝。
+
+        2026-10-21：``_UNVERIFIED_STRUCTURED_BLOCK`` 清零——0x0537/0x0FC5 的
+        请求体字节序与 leb128 布局由双市场 golden 样本 + 0x052D 交叉验证锁定，
+        账本升 L1 / verified，结构化 API 不再拦。拦截表本身保留（空集），
+        「下一条布局未锁定的结构化命令」仍落在这个位子上；
+        ``test_structured_block_error_carries_its_summary`` 的参数化分母随 table
+        自动伸缩，表空时该组用例自然为空——这正是「没有 inferred 结构化命令」
+        的机器可读表达。
+        """
         assert len(_blocked_offline_cmds()) == 8
-        assert len(_UNVERIFIED_STRUCTURED_BLOCK) == 2
+        assert len(_UNVERIFIED_STRUCTURED_BLOCK) == 0

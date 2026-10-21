@@ -88,7 +88,7 @@ CLI 每张面（序列化后是 `{"code", "message"}`），同时以 `UserWarnin
 | `index_minute_volume_inconsistent` | 指数**分钟线**的成交量与服务端名义口径（= 成交额/100）差了一个数量级以上。2026-10 实测唯一偏离的形状是指数 `60min` 的当日首根（10:30）：服务端下发的 `volume` 比名义口径低约 97 倍，而同一时段由 `15min`/`30min` 聚合出的 `amount` 完全吻合；原始字节手工核对确认记录边界精确耗尽（解析器无错位），即这是服务端自己下发的不一致值。与 `index_minute_volume_nominal` 同时出发：那条说明"这个字段不是真实股数"，这条报告"这一页的值连服务端自己的名义口径都对不上" | `atst/protocol/parsers/_std7709_bars.py` |
 | `quotes_partial_failure` | 批量 `quotes` 只取回部分标的的行情：逐只失败被隔离，结果不完整。全部失败不走这条，而是抛 `AllHostsUnreachable` | `atst/runtime/executor.py` |
 | `decode_caveat` | 解码层对自己解出的这一页的判断：实收记录数少于声明数、字段布局哨兵异常、精确解析失败后降级为启发式 | `atst/client/_mixin.py` |
-| `field_out_of_domain` | 解出来的行里有字段落在库自己声明的取值域之外——`market` 既不是 TDX 二进制市场编号也不是 canonical token、`code` 不是非空可见 ASCII、日期字段不是 ISO 形状。与上一条的区别在发射者：`decode_caveat` 是解码层自认的瑕疵，这一条是出口处拿 `atst/domain/integrity.py` 的尺子重新量出来的。记录布局尚未经真机 golden 锁定的命令页内字节数对得上，解码层因此一个字都不记，值却已经错位 | `atst/client/_mixin.py` |
+| `field_out_of_domain` | 解出来的行里有字段落在库自己声明的取值域之外——`market` 既不是 TDX 二进制市场编号也不是 canonical token、`code` 不是非空可见 ASCII、日期字段不是 ISO 形状。与上一条的区别在发射者：`decode_caveat` 是解码层自认的瑕疵，这一条是出口处拿 `atst/domain/integrity.py` 的尺子重新量出来的。记录布局尚未经真机 golden 锁定的命令页内字节数对得上，解码层因此一个字都不记，值却已经错位。2026-10-21 起 0x0010/0x000F 的解析器还多一个发射点：**回声校验**——响应记录头（`market`+`code`）与请求上下文不符时当场留痕（旧错请求年代的形状正是 `market=48`/半个代码），而不是把对不上的记录静默交给调用方 | `atst/client/_mixin.py`、`atst/protocol/parsers/_std7709_bars.py` |
 | `security_list_empty_first_page` | `export_security_list` 首页即空响应，导出为空。空首页不代表该市场没有证券 | `atst/client/_mixin.py` |
 | `security_list_page_limit` | `export_security_list` 在 `max_pages` 内未取尽（最后一页仍是满页），结果可能截断 | `atst/client/_mixin.py` |
 | `file_download_short` | 分块文件下载累计字节数小于服务端报告的 `total_len` | `atst/client/_mixin.py` |

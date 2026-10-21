@@ -214,7 +214,7 @@ CI 门禁：`spec_audit` 任一检查失败则 pipeline 红灯。
 | `0x0004_HEARTBEAT.yaml`       | `HEARTBEAT` (0x0004)       | L2   | inferred |
 | `0x052D_SECURITY_BARS.yaml`   | `SECURITY_BARS` (0x052D)   | L1   | stable   |
 | `0x0530_REALTIME_QUOTE.yaml`  | `REALTIME_QUOTE` (0x0530)  | L1   | stable   |
-| `0x0537_MINUTE_TODAY.yaml`    | `MINUTE_TODAY` (0x0537)    | L2   | inferred |
-| `0x0FC5_TRADE_TODAY.yaml`     | `TRADE_TODAY` (0x0FC5)     | L2   | inferred |
+| `0x0537_MINUTE_TODAY.yaml`    | `MINUTE_TODAY` (0x0537)    | L1   | verified |
+| `0x0FC5_TRADE_TODAY.yaml`     | `TRADE_TODAY` (0x0FC5)     | L1   | verified |
 | `0x0FC6_TRADE_TODAY_ALT.yaml` | `TRADE_TODAY_ALT` (0x0FC6) | D    | inferred |
 | `0x044E_SECURITY_COUNT.yaml`  | `SECURITY_COUNT` (0x044E)  | L1   | stable   |

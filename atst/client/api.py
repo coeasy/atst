@@ -586,9 +586,10 @@ class Client:
         """当日分时。
 
         未指定 Provider 时由 Provider Registry 选择 operational provider（当前首选
-        ``tencent``）。显式指定 ``provider="tdx"`` 仍保持协议事实：TDX 的 ``0x0537``
-        request/parser 仍为 inferred，客户端在发包前抛 :class:`NotImplementedFeature`
-        （真机 golden 锁定前不通过结构化 API 发包）。可用 Web Provider 为 ``tencent`` /
+        ``tencent``）。显式指定 ``provider="tdx"`` 走 ``0x0537``：请求体
+        ``<H market><6s code><I 0>`` 与 leb128 差分布局已于 2026-10-21 由双市场
+        golden 样本锁定（账本 L1 / verified），价格「基准 + 增量」与同日 ``0x052D``
+        一分钟 K 线 240/240 对齐。也可用 Web Provider：``tencent`` /
         ``eastmoney`` / ``baidu``。一格 = 一次 HTTP 请求、一只代码；上游反爬时抛
         :class:`AntiSpiderBlocked` 或 :class:`WebSourceError`，不会返回空序列冒充成功。
         """
@@ -610,9 +611,12 @@ class Client:
         """当日逐笔成交。
 
         未指定 Provider 时由 Provider Registry 选择 operational provider（当前首选
-        ``tencent``）。显式 ``provider="tdx"`` 仍走 ``0x0FC5``，其 request/parser
-        仍为 inferred，发包前即抛 :class:`NotImplementedFeature`；可用 Web Provider
-        包括 ``tencent`` / ``baidu``。
+        ``tencent``）。显式指定 ``provider="tdx"`` 走 ``0x0FC5``：请求体
+        ``<H market><6s code><H start><H count>``（``start`` 自最新一笔往回数）
+        与 leb128 逐笔累加布局已于 2026-10-21 由双市场 golden 样本锁定（账本
+        L1 / verified），全日逐笔按分钟汇总与同日 ``0x052D`` 一分钟 K 线逐桶
+        对账 237/240（余下 3 桶为竞价并入）。Web Provider 为 ``tencent`` /
+        ``baidu``。
         """
         return self.runtime.trades(
             symbol,

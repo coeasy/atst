@@ -4,7 +4,7 @@
 >
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
-- 当前版本：`1.5.4`（已打 tag `v1.5.4` 并发布）· v1.4.3 / v1.5.0 / v1.5.1 / v1.5.2 / v1.5.3 为未打 tag 的源码候选 · 最新已发布 GitHub Release：[`v1.5.4`](https://github.com/coeasy/atst/releases/tag/v1.5.4)；本包**不在 PyPI**（Trusted Publisher 与 `pypi` 环境已配置，推送版本 tag 后工作流会执行 OIDC 上传）· [CHANGELOG](CHANGELOG.md) · [逐版本发布说明](docs/releases/v1.5.4.md)
+- 当前版本：`1.6.0`（已打 tag `v1.6.0` 并发布）· v1.4.3 / v1.5.0 / v1.5.1 / v1.5.2 / v1.5.3 / v1.5.4 为未打 tag 的源码候选 · 最新已发布 GitHub Release：[`v1.6.0`](https://github.com/coeasy/atst/releases/tag/v1.6.0)；本包**不在 PyPI**（Trusted Publisher 与 `pypi` 环境已配置，推送版本 tag 后工作流会执行 OIDC 上传）· [CHANGELOG](CHANGELOG.md) · [逐版本发布说明](docs/releases/v1.6.0.md)
 
 ---
 
@@ -530,9 +530,9 @@ python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproje
 
 ## 路线图
 
-### 当前阶段：v1.5.4（已发布）
+### 当前阶段：v1.6.0（已发布）
 
-GitHub 最新已发布版本是 `v1.5.4`（2026-10-20）；v1.4.3–v1.5.3 为未打 tag 的源码候选。当前内核为单执行路径、零缓存、provider-first：
+GitHub 最新已发布版本是 `v1.6.0`（2026-10-22）；v1.4.3–v1.5.4 为未打 tag 的源码候选。当前内核为单执行路径、零缓存、provider-first：
 85 命令 / 61 精确解析器 / 5 协议族 / 14 Provider / 216 capability / 303 条精确绑定。
 
 | 里程碑 | 状态 |
@@ -575,7 +575,7 @@ GitHub 最新已发布版本是 `v1.5.4`（2026-10-20）；v1.4.3–v1.5.3 为�
 | [docs/errors.md](docs/errors.md) | 错误体系与 RetryAdvice 使用指南 |
 | [PROTOCOL_SPEC/](PROTOCOL_SPEC/README.md) | 协议命令 YAML 规范 + codegen/spec_audit 闭环 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录（含 native 弃用时间线 v1.5.0/v1.6.0）|
-| [docs/releases/](docs/releases/v1.5.4.md) | 逐版本发布说明（`v1.0.0` → `v1.5.4`）|
+| [docs/releases/](docs/releases/v1.6.0.md) | 逐版本发布说明（`v1.0.0` → `v1.6.0`）|
 
 ---
 

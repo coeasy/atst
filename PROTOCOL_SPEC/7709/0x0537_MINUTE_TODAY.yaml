@@ -3,91 +3,126 @@
 # =============================================================================
 # 命令号: 0x0537
 # 家族:  7709 标准协议族
-# 层级:  L2 (通用解析)
-# 状态:  inferred (布局来自公开资料推断，待 golden 锁定)
+# 层级:  L1 (精确解析，golden-verified)
+# 状态:  verified (2026-10-21 双市场 golden 锁定)
 #
-# 描述: 当日分时数据（分钟级别）。每根分时记录包含距开盘分钟数、
-#       价格、均价和成交量。
+# 描述: 当日分时数据（分钟级别）。每根分时记录包含价格、均价和成交量，
+#       三者均为 7709 标准族的 6 位前缀有符号 leb128 差分编码。
 # =============================================================================
 
 spec_id: "0x0537"
 name: "minute_today"
 family: "7709"
-version: "1.0"
+version: "2.0"
 description: "Today's intraday minute-level data"
-status: "inferred"
+status: "verified"
 aliases: ["history_minute", "intraday_minute", "minute"]
 
 # =============================================================================
-# 请求体
+# 请求体（12 字节，✅ golden-verified）
 # =============================================================================
+# **市场在前**。历史事故：本仓曾发 `<6s code><H market><I 0>`（代码在前），
+# 服务端按下面的布局解读时，前 2 字节被读成 ASCII 码点——沪市 `'6''6'` = 0x3636
+# 越域，直接回 4 字节空桩（`num=0`）；深市 `'0''0'` = 0x3030 同样越域，只因
+# 服务端对残缺 code 的宽容才碰巧拿到 120 条数据。错请求样本存档在
+# `tests/golden/quotation/_archive_wrong_request/0x0537_*`（20 份，其中 19 份
+# 是空桩）。
 request:
-  length: 8
+  length: 12
   fields:
     - name: "market"
       offset: 0
       type: "uint16"
       length: 2
-      description: "Market ID (0=Shenzhen, 1=Shanghai)"
+      description: "Market ID (0=Shenzhen, 1=Shanghai) — must come first"
     - name: "code"
       offset: 2
       type: "string[6]"
       length: 6
       description: "Stock code (6 chars, null-padded)"
       format: "gbk"
+    - name: "reserved"
+      offset: 8
+      type: "uint32"
+      length: 4
+      description: "Reserved; observed constant 0"
+  notes: |
+    Body = `<H market><6s code><I 0>`（12 字节）。市场字节必须在最前。
 
 # =============================================================================
-# 响应体（⚠️ 布局来自公开资料推断）
+# 响应体（✅ leb128 差分，2026-10-21 锁定）
 # =============================================================================
+# `<H num>` + 2 个恒零字节，随后 num 条变长记录。每条三个字段都是
+# 6 位前缀有符号 leb128（首字节 `[7]=续行 [6]=符号 [5..0]=数据`，续行每字节
+# 7 位，位移 6/13/20…），即 `atst/codec/primitive.py::BinaryReader.leb128`。
+#
+# **价格与均价是「基准 + 增量」**：第 0 条给绝对值，其后各条给相对**第 0 条**
+# 的增量（不是相对上一条）。成交量是绝对量，单位为手。
 response:
   header:
     - name: "record_count"
       type: "uint16"
       length: 2
-      description: "Number of minute records"
-
-  fields:
-    - name: "minute"
-      offset: 0
+      description: "Number of minute records (240 = full trading day)"
+    - name: "reserved"
       type: "uint16"
       length: 2
-      description: "Minutes since market open (0-240)"
-      format: "minutes_from_open"
-      notes: "Converted to HH:MM by parser (0=09:30, 240=15:00)"
-    - name: "price"
-      offset: 2
-      type: "float32"
-      length: 4
-      description: "Current price at this minute"
-      unit: "yuan"
-    - name: "avg_price"
-      offset: 6
-      type: "float32"
-      length: 4
-      description: "Average price (VWAP) from open"
-      unit: "yuan"
-    - name: "volume"
-      offset: 10
-      type: "float32"
-      length: 4
-      description: "Trading volume at this minute"
-      unit: "share"
+      description: "Constant 0 (pytdx also skips 4 bytes total)"
 
-  record_size: 14
-  encoding: "absolute"
+  fields:
+    - name: "price_delta"
+      offset: 0
+      type: "leb128"
+      length: null
+      description: "Price delta; record 0 is absolute, records i>=1 are deltas from record 0"
+      unit: "0.01 yuan"
+      format: "leb128_signed"
+    - name: "avg_price_delta"
+      offset: null
+      type: "leb128"
+      length: null
+      description: "VWAP-from-open delta; same base+delta rule as price"
+      unit: "0.0001 yuan"
+      format: "leb128_signed"
+    - name: "volume"
+      offset: null
+      type: "leb128"
+      length: null
+      description: "Absolute volume of this minute"
+      unit: "lot (x100 = shares)"
+      format: "leb128_signed"
+
+  record_size: null
+  encoding: "leb128-differential"
   notes: |
-    Record layout is inferred from public documentation.
-    Price is absolute float32 (not LEB128 differential).
-    Volume is float32 (not tdx_float as in K-line).
-    Awaiting golden sample verification.
+    Record layout is **variable length** (3 leb128 fields per record). The old
+    "14-byte float32 record" shape in this file was inferred and is wrong:
+    real payloads do not divide by 14 and the float32 reading produces
+    nonsense prices.
+
+    **Delta semantics**（2026-10-21 用同日 0x052D 一分钟 K 线逐条对磅）：
+
+    * ``price[i] = f1[0] + f1[i]``（基准 + 增量），**不是**逐笔累加。
+      pytdx 的 ``GetMinuteTimeData`` 用的正是累加（``last_price += price_raw``），
+      拿真机载荷按它的写法复算，240 条里只有 2 条与 K 线收盘价相符——横盘时
+      增量约等于 0，两种模型偶然重合，别被那 2 条骗了。
+    * ``avg_price[i] = f2[0] + f2[i]``，单位 0.0001 元。
+    * ``volume`` 绝对量、单位为手（×100 得股数）。
+
+    **时间标签**：第 0..119 条 = 09:31..11:30，第 120..239 条 = 13:01..15:00。
+    标签取 bar **结束分钟**，与 0x052D 一分钟 K 线的 bar 标签同口径
+    （09:31 桶覆盖 09:30:00–09:30:59）。
 
 # =============================================================================
 # 上下文
 # =============================================================================
 context:
-  price_scale: 1
+  price_scale: 100
+  avg_price_scale: 10000
+  volume_unit: "lot"
   trading_hours: "09:30-11:30, 13:00-15:00"
-  total_minutes: 240
+  total_records: 240
+  request_body_hex: "010036303030303000000000"
 
 # =============================================================================
 # 相关命令
@@ -95,7 +130,7 @@ context:
 related_commands:
   - spec_id: "0x0FB4"
     name: "minute_history"
-    description: "Historical minute data for a specific date"
+    description: "Historical minute data for a specific date (same record layout; command offline)"
     family: "7709"
   - spec_id: "0x0FEB"
     name: "minute_recent"
@@ -103,9 +138,28 @@ related_commands:
     family: "7709"
 
 # =============================================================================
+# 真机实测（verified 主张的证据格）
+# =============================================================================
+measured:
+  captured: "2026-10-22"
+  hosts_answered: "6/8"          # 另 2 台 TCP 连接超时，与命令语义无关
+  echo: "沪/深双市场均回满日 240 条；缓冲区按字节精确耗尽"
+  body_length: 12
+  body_hex: "010036303030303000000000"   # <H 1><6s "600000"><I 0>
+  symbols:
+    - "sh600000: 240 records, 1196B payload"
+    - "sz000001: 240 records, 1223B payload"
+  cross_check: |
+    与同日 0x052D 一分钟 K 线（category=7）逐条对磅，两个市场各 240/240：
+      price      == K 线收盘价        240/240
+      volume     == K 线成交量        240/240
+      avg_price  == 累计量加权均价     239/240（第 0 条为绝对值，不做二次叠加）
+
+# =============================================================================
 # 参考
 # =============================================================================
 golden_samples:
-  - "tests/golden/quotation/0x0537_minute_today_600000/20260831-125354/payload.bin"
+  - "tests/golden/quotation/0x0537_minute_today_600000/20261022-000324/payload.bin"
+  - "tests/golden/quotation/0x0537_minute_today_000001/20261022-000324/payload.bin"
 
 parser_reference: "tstdx/protocol/parsers/std7709_extra.py::MinuteTodayParser"

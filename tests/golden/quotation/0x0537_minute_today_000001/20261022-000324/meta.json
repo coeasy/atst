@@ -1,0 +1,45 @@
+{
+  "schema": 2,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x537",
+  "command_name": "MINUTE_TODAY",
+  "tag": "000001",
+  "note": "分时图数据（深市，市场在前）",
+  "host": "218.75.126.9:7709",
+  "local_host": "WIN-PM",
+  "market": 0,
+  "code": "000001",
+  "captured_at": "2026-10-21T16:03:24.098579+00:00",
+  "elapsed_ms": 24.74,
+  "request": {
+    "method": "0x537",
+    "body_hex": "000030303030303100000000",
+    "body_len": 12
+  },
+  "response": {
+    "zip_size": 1031,
+    "unzip_size": 1223,
+    "compressed": true,
+    "payload_len": 1223,
+    "sha256": "a889877650f15596b1e86b9dedd5fb1b782264c77e48d48ee18b6d47bb0b47cb"
+  },
+  "record_size_hypothesis": 0,
+  "record_count_hypothesis": 0,
+  "compression": {
+    "codec": "none",
+    "compressed_size": null
+  },
+  "parse_ctx": {
+    "market": 0,
+    "code": "000001"
+  },
+  "tool": {
+    "name": "atst.tools.capture",
+    "version": "0.1.0"
+  },
+  "legal": {
+    "ack": true,
+    "allow_trading_hours": false
+  }
+}

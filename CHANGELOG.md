@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.6.0] - 2026-10-22
+
+### Fixed
+
+- **tdx 协议族「请求体字节序」病第三次发作：`0x0537` 当日分时与 `0x0FC5` 当日逐笔**。
+  TDX 标准族命令的请求体一律是 `<H market><6s code>…`（**市场在前**），而这两条发的是
+  `<6s code><H market>…`。服务端按市场在前解读时，请求体前 2 字节被当成代码字符读成 ASCII
+  码点而越域——**上证直接回 4 字节空桩**，深市只因服务端对残缺代码的宽容才碰巧有响应。
+  同一份病此前已在 `0x0010`（财务）与 `0x000F`（除权除息）上发作过一次（2026-10-21 修正）。
+  现在两条都发 12 字节 market-first 请求体，6/8 主站 × 双市场均回满日数据。
+- **`0x0537` / `0x0FC5` 的响应解析整体重写**。旧解析按定长记录猜，实际两条都是
+  **6 位前缀有符号 leb128 差分**：`0x0537` 是「基准 + 增量」（记录 0 绝对，其余相对记录 0），
+  `0x0FC5` 是**逐笔累加**（`Σ price_delta`）——两者模型相反，抄错一条整条记录流就错位。
+  与同日 `0x052D` 一分钟 K 线逐条对磅：`0x0537` 价格 240/240、成交量 240/240，
+  缓冲区按字节精确耗尽（1196B / 1223B，leftover=0）；`0x0FC5` 逐笔成交量按分钟汇总
+  237/240 完全相符，3 条例外是集合竞价折叠（09:25 + 09:30 = 09:31 桶，算术可验）。
+- **顺带纠正一处对 pytdx 的误判**：pytdx 的 `GetMinuteTimeData` 把 `0x0537` 当累加模型解，
+  实测只有 2/240 条与 K 线收盘价相符；本仓库的「基准 + 增量」239/240。已写进解析器与
+  PROTOCOL_SPEC，避免下游照抄。
+
+### Added
+
+- **`minute` / `trades` 的 tdx 源从「发包前即拦」变为 L1 可用**：`0x0537` / `0x0FC5`
+  双双升 `tier=L1, verified=True`，`core._UNVERIFIED_STRUCTURED_BLOCK` 清空，
+  两份 PROTOCOL_SPEC 改 `status: verified` 并补 `measured:` 证据块，重新采集双市场
+  golden 样本（`tests/golden/quotation/0x0537_minute_today_{600000,000001}/20261022-000324/`）。
+- **`golden_audit` 排除病理存档**：`scan_corpus` 跳过 `_archive_wrong_request/`
+  （22 个目录全是写反请求体采的空壳）。此前这些样本进分母，把「采过了」误报成覆盖率。
+- MCP 工具 `get_minute_today` / `get_trades` 的描述从 "unavailable / NotImplementedFeature"
+  改为 L1 可用口径。
+
+### 判据
+
+- `tests/protocol/test_f2_protocol_correctness.py::TestP1eTradeTodayAlignment`（leb128 布局 + 累加模型）
+- `tests/protocol/test_registry_spec_verification_alignment.py`（账本 L1 ⟷ 解析器 L1 ⟷ golden 存在）
+- `tests/unit/test_commands.py::test_promoted_commands_carry_golden_evidence`
+- `tests/unit/test_golden_audit.py::TestScanAndAudit::test_scan_skips_wrong_request_archive`
+- `tests/architecture/test_offline_capability_honesty.py::test_the_discovery_dead_name_table_is_derived_not_copied`
+  （死名字表 8 → 6，四个字段全部现推）
+- `tests/client/test_offline_failfast.py`（拦截集合为空）
+
 ## [1.5.4] - 2026-10-20
 
 ### Fixed

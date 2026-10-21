@@ -7,7 +7,7 @@
 
 ## 1. 定位
 
-TDX 是 atst 默认主 Provider。用户未显式指定 Provider 且 capability 在 TDX 上处于 operational 状态时，`default_provider=tdx`；如果 TDX 只声明了该能力但已被标记为 operationally unavailable（当前核心面为 `minute` / `trades` / `security_list`），Planner 只对“未点名 Provider”的请求选择 Registry 中的 operational provider。调用方显式指定 `provider="tdx"` 时绝不替换数据源，仍返回 TDX 自身的 fail-fast 协议异常。
+TDX 是 atst 默认主 Provider。用户未显式指定 Provider 且 capability 在 TDX 上处于 operational 状态时，`default_provider=tdx`；如果 TDX 只声明了该能力但已被标记为 operationally unavailable（当前核心面为 `security_list`），Planner 只对“未点名 Provider”的请求选择 Registry 中的 operational provider。调用方显式指定 `provider="tdx"` 时绝不替换数据源，仍返回 TDX 自身的 fail-fast 协议异常。
 
 TDX 内部允许在同一 Channel 的主站池/等价 endpoint 中容错，但不得因为 TDX 失败跨 Provider 到腾讯、新浪、东财。
 
@@ -22,8 +22,8 @@ Capabilities：
 ```text
 quotes
 bars
-minute（0x0537 的 request/parser 仍为 inferred，结构化 API 在发包前抛 NotImplementedFeature；分时改走 Web Provider）
-trades（0x0FC5 同上：tdx 面的当日逐笔没有可用结构化入口，逐笔改走 Web Provider）
+minute
+trades
 security_count
 security_list（0x044D 多主站实测无响应，已下线：发包前抛 CommandOffline）
 finance（字段口径未闭合，F-37：结构与条数可用，逐字段语义不保证）
@@ -128,12 +128,12 @@ tdx/bars -> tencent/bars
 md.quotes(symbols, provider="tdx")
 md.bars(symbol, provider="tdx")
 
-# minute/trades 的 TDX 结构化命令当前被 fail-fast 拦截；
-# 省略 provider 会从 Provider Registry 选择 operational provider（当前 tencent）。
+# 省略 provider 时从 Provider Registry 选择 operational provider（当前 tencent）。
+# minute/trades 的 tdx 面自 2026-10-22 起为 L1 可用，可显式钉死：
 md.minute(symbol)
 md.trades(symbol)
 
-# 如需固定 Web Provider，可显式指定：
+# 如需固定 Web Provider，也可显式指定：
 md.minute(symbol, provider="eastmoney")
 md.trades(symbol, provider="baidu")
 ```

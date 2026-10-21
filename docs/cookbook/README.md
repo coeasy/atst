@@ -31,7 +31,8 @@
 from atst import Client
 
 with Client() as client:
-    # 当日分时只能走 Web Provider：tdx 的 0x0537 仍是 inferred 命令，发包前即拦下。
+    # 当日分时默认走 Web Provider；tdx 的 0x0537 自 2026-10-22 起为 L1 可用，
+    # 想钉死 tdx 源就显式写 provider="tdx"。
     points = client.minute("000001", provider="tencent").data
     ticks = client.trades("000001", provider="tencent").data
 ```

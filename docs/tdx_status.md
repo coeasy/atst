@@ -29,11 +29,11 @@
 | bars 日/分钟 K 线 | 0x052D | ✅ | day/5min 均正常，分页正常 |
 | security_count 证券总数 | 0x044E | ✅ | 27904 |
 | snapshot 快照合成 | 组合面 | ✅ | **不是一条命令**：`quotes` + 当日 `bars(count=1)` 合成的字典。它不含盘口深度（§一之二） |
-| finance_info 财务 | 0x0010 | ⚠️ | 实采四份均回 14302 字节 / 100 行；**只有条数可采信**，逐字段语义未由 golden 锁定（账本 `verified=False`）。错位值现在会带一条 `field_out_of_domain` 告警随结果上 wire（告警类别表见 `docs/errors.md` §一之四） |
-| capital_changes 除权除息 | 0x000F | ⚠️ | 回 250 条；**只有条数可采信**，记录布局未锁定（`market`/`code`/`date` 三格实测落在域外，账本 `verified=False`）。同上，那条判断由出口处的值域尺子重新量出，不再只活在 `ParseResult.warnings` 袋里 |
+| finance_info 财务 | 0x0010 | ⚠️ | **请求体顺序 bug 已修**（2026-10-21）：旧实现发 `<6s code><H market>`（代码在前），服务端按 `market@2 / code@3:9` 解读后记录头整体错位——`market` 读到 ASCII `'0'`(48)、`code` 只剩半个，且前 2 字节（两个 ASCII `'0'`，即十进制 12336）被当成「请求条数」，服务器于是回 100 条缓冲残留（旧「四份样本 14302 字节」正来源于此）。现发 9 字节 `<H 1><B market><6s code>`，深/沪 8 只标的重放：响应头与请求逐一相符、143B 记录干净解出、流通股本/总股本/上市日期与公开财务数据吻合。字段序已按 pytdx `GetFinanceInfo` / injoyai-tdx 交叉锁定，但**本仓 golden 未重采**（F-37），逐字段语义仍标 `verified=False`。解析器对记录头做回声校验，不符即发 `field_out_of_domain` 告警 |
+| capital_changes 除权除息 | 0x000F | ⚠️ | **同一个请求体顺序 bug 已修**（2026-10-21）：修正后深/沪多只标的重放，茅台 45 条 / 平安 81 条记录全部解出，日期域 0 条畸形、类别分布合理（除权除息为主，最早回溯到平安 1990-03-01）。记录布局按 pytdx `GetXdXrInfo` 交叉验证：29B/条（`date@8`、`category@12`、16B 分类数据为 float32×4；茅台 2002-07-26 送配股前后两组股本数恰好成 1.1 倍）。**本仓 golden 未重采**（F-37），记录布局仍标 `verified=False`；块头回声不符同样发 `field_out_of_domain` 告警 |
 | quotes_snapshot 批量快照 | 0x054C | ⚠️ | 账本 offline（多主站实测已下线），但是 `_OFFLINE_FALLBACK_OK` 里唯一被放行的一条：客户端仍按 60 只/包发一次，批量解不出或降级 L3 时**本片回退逐只 0x0530**——同一 Provider 内的分片回退，不换源 |
-| minute_today 当日分时 | 0x0537 | ⛔ | 账本 `degraded`、request/parser 仍为 inferred：结构化 API 在**发包前**抛 `NotImplementedFeature`（`_UNVERIFIED_STRUCTURED_BLOCK`） |
-| trade_today 逐笔 | 0x0FC5 | ⛔ | 账本 `online` 但布局未锁定，与 0x0537 同族：发包前抛 `NotImplementedFeature`。同名能力在 `baidu`/`tencent` 上有出路（另一条 Query） |
+| minute_today 当日分时 | 0x0537 | ✅ | **请求体字节序 bug 已修**（2026-10-21）：旧实现发 `<6s code><H market><I 0>`（代码在前），服务端按市场在前解读时前 2 字节被当成代码字符读成 ASCII 码点而越域（沪市代码头两字节即 `'6''6'`）→ 上证回 4 字节空桩，深市靠服务端对残缺代码的宽容碰巧有响应。现发 12 字节 `<H market><6s code><I 0>`，6/8 主站 × 双市场均回满日 240 条。记录为 leb128 变长（`price_delta`/`avg_delta`/`vol`），价格与均价是**「基准 + 增量」**（pytdx 的累加写法在真机上只有 2/240 与 K 线相符，别抄）。与同日 0x052D 一分钟 K 线逐条对磅：价格 240/240、成交量 240/240；缓冲区按字节精确耗尽（1196/1223B）。账本 L1 / `verified=True` |
+| trade_today 逐笔 | 0x0FC5 | ✅ | **同一个请求体字节序 bug 已修**（2026-10-21，上证旧实现回 2 字节空桩）。`start` 自最新一笔往回数（`0` = 当日最后 `count` 笔），翻页边界不重不漏。记录为 leb128 变长，价格**逐笔累加**（与 0x0537 的「基准 + 增量」相反，与 pytdx 一致）。全日逐笔（沪 4304 / 深 4537 笔）按分钟汇总与同日 0x052D 一分钟 K 线逐桶对账 237/240，余下 3 桶全部是竞价并入且算术精确（09:25 开盘竞价 + 09:30 连续 = 09:31 桶等）；末笔累加价与 0x0530 实时价一致（沪 9.66 / 深 11.41）。`buyorsell` 观测值 0/1/2/5/8，参考实现同样不解释 0/1/2 之外的取值，原样透传。账本 L1 / `verified=True` |
 | security_list 代码表 | 0x044D | ⛔ | 命令已停答（6 台主站读取超时，2026-09-06 实测）；客户端 fail-fast，一调即抛 `CommandOffline`。**tdx 之外无人声明它**，要代码表得调用方自己另发 Query 或读本地 vipdoc 文件 |
 | minute_history 历史分时 | 0x0FB4 | ⛔ | 3 台主站 × 多日期超时；fail-fast 抛 `CommandOffline`。同名能力无出路；要分钟线只能改走 `minute_klines`（tencent / eastmoney 的 web 适配器，另一条 Query） |
 | block_quotes 板块行情 | 0x07E5 | ⛔ | 三主站实测无响应；fail-fast 抛 `CommandOffline`。今天没有任何自动换源（§五） |

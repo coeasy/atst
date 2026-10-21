@@ -34,13 +34,13 @@ from atst.client import TdxClient
 | `quotes` | `(symbols, *, as_format="dict", strict=False)` | 实时行情快照（`0x0530` 逐只请求再汇总）；`strict=True` 时解析器自校验漂移的标的进失败袋（`IntegrityViolation`），不返回可疑行情 |
 | `quotes_concurrent` | `(symbols, *, workers=8, as_format="dict")` | 并发批量行情 |
 | `security_count` | `(market=0)` | 证券数量 |
-| `finance_info` | `(symbol)` | 财务信息（结构与条数可用，**逐字段语义不保证**） |
-| `capital_changes` | `(symbol)` | 除权除息 / 股本变迁（`0x000F`）：口径与 `finance_info` 同格——条数可用、字段语义不保证，越域行会带 `field_out_of_domain` 告警 |
-| `minute_today` | `(symbol)` | **已下线**（0x0537 request/parser 仍 inferred，发包前抛 `NotImplementedFeature`） |
+| `finance_info` | `(symbol)` | 财务信息（结构与条数可用，**逐字段语义不保证**，F-37）。返回 143B 记录的类型化头（`float_shares`/`province`/`industry`/`updated_date`/`ipo_date`）+ 尾部 30 个 float32 的字段序映射（`FINANCE_INFO_FIELDS`）。请求体顺序 2026-10-21 修正，响应记录头与请求逐一相符 |
+| `capital_changes` | `(symbol)` | 除权除息 / 股本变迁（`0x000F`）：口径与 `finance_info` 同格——条数可用、字段语义不保证，越域行会带 `field_out_of_domain` 告警。请求体顺序 2026-10-21 修正，块头回声不符即告警 |
+| `minute_today` | `(symbol)` | 当日分时（`0x0537`）：**L1 精确解析**，2026-10-22 双市场 golden 锁定。请求体 `<H market><6s code><I 0>`（市场在前）；响应 leb128 差分，价格「基准+增量」（记录 0 绝对、其余相对记录 0），均价 `/10000`、价格 `/100`、成交量单位为手。**与 pytdx 的分歧**：pytdx 把 0x0537 当累加模型解，实测仅 2/240 条与 L1 的 0x052D 一分钟 K 线收盘价相符，本仓库模型 239/240 |
 | `security_list` | `(market=0, start=0)` | 证券列表：**已下线**（0x044D 账本 offline，发包前抛 `CommandOffline`） |
 | `export_security_list` | `(market=0, *, max_pages=100)` | 全市场代码表：**已下线**（随 `security_list`，抛 `CommandOffline`） |
 | `minute_history` | `(symbol, date)` | 历史分时：**已下线**（0x0FB4 账本 offline，抛 `CommandOffline`） |
-| `trade_today` | `(symbol, start=0, count=0)` | 当日逐笔：**已下线**（0x0FC5 inferred 拦截，抛 `NotImplementedFeature`） |
+| `trade_today` | `(symbol, start=0, count=0)` | 当日逐笔成交（`0x0FC5`）：**L1 精确解析**，2026-10-22 双市场 golden 锁定。请求体 `<H market><6s code><H start><H count>`（市场在前，`start` 是自最新一笔向前回溯的偏移）；响应 leb128 差分，**价格逐笔累加**（与 0x0537 的「基准+增量」相反），`buyorsell` 取值域 0/1/2/5/8 原样透传。tick 标签是真实时钟分钟、K 线 bar 标签是区间末分钟（错一分钟），逐笔成交量按分钟汇总与一分钟 K 线 237/240 完全相符，3 条例外是集合竞价折叠且算术可验 |
 | `block_quotes` | `(block_type=0, start=0)` | 板块行情：**已下线**（0x07E5 账本 offline，抛 `CommandOffline`） |
 | `file_download` | `(symbol, filename, *, offset=0, length=0, max_packets=500, strict=False)` | 文件下载 |
 | `auction_snapshot` | `(symbol)` | 集合竞价：**已下线**（0x056A 账本 offline，抛 `CommandOffline`） |
@@ -103,8 +103,8 @@ from atst.protocol.commands import (
 | `cmd` | `(name)` | `int` | 命令名 → 命令号。85 行的名字全局唯一，所以不需要族上下文；未登记名抛 `KeyError`，消息里带账本规模 |
 | `get_command` | `(cmd, family=Family.STANDARD)` | `Command \| None` | `(族, 号)` → 账本行；未登记号返回 `None`，照旧交 L2 通用解析 + L3 原始透传，不丢包 |
 | `by_family` | `(family)` | `Iterator[Command]` | 一族全部行，按命令号升序；未知族名得到空序列，不报错 |
-| `by_status` | `(status, family=None)` | `list[Command]` | 按实测状态列全部行：`online` 74 / `offline` 9 / `degraded` 2。发包前的 fail-fast 读的是**单行的** `status`（`atst/client/core.py` 的 `_guard_offline` 走 `get_command`），本函数是"按状态列全部行"那一侧 |
-| `unknown_command_ids` | `(family=Family.STANDARD)` | `list[Command]` | 语义未经 golden 校正（`verified=False`）的行：默认族 32 条、全账本 78 条。**返回行而不是裸命令号**，「unknown」也不等于「命令不存在」 |
+| `by_status` | `(status, family=None)` | `list[Command]` | 按实测状态列全部行：`online` 75 / `offline` 9 / `degraded` 1。发包前的 fail-fast 读的是**单行的** `status`（`atst/client/core.py` 的 `_guard_offline` 走 `get_command`），本函数是"按状态列全部行"那一侧 |
+| `unknown_command_ids` | `(family=Family.STANDARD)` | `list[Command]` | 语义未经 golden 校正（`verified=False`）的行：默认族 30 条、全账本 76 条。**返回行而不是裸命令号**，「unknown」也不等于「命令不存在」 |
 
 账本查询面没有 `stats()` 与 `get_command_by_name()`：前者是按族聚合的计数字典，`atst/` 内
 零读取点、唯一读者是它自己的测试；后者对 85 行做线性名字扫描，全包零调用、零测试。
@@ -174,8 +174,8 @@ from atst import Client, AsyncClient
 | `quotes` | `(symbols, *, provider=None, policy=None, currentness="live", strict=False)` | 实时行情。`strict=True`（仅 tdx 路径生效）时解析器自校验（哨兵失配 / 成交额越界）发现字段漂移的标的直接判失败（`IntegrityViolation`），不返回"帧合法、值可疑"的行情——实测不存在代码 `sh999999` 的主站响应，回声匹配、载荷齐全，量能却荒谬 |
 | `quotes_batch` | `(symbols, *, provider=None, currentness="live") -> BatchResult` | 逐 symbol 三态审计 |
 | `snapshot` | `(symbol, *, provider="tdx", currentness="live")` | 盘口快照 |
-| `minute` | `(symbol, *, provider="tdx", currentness="live")` | 当日分时（**默认 tdx 已下线**，抛 `NotImplementedFeature`；分时改用声明该能力的 Web Provider：`tencent` / `eastmoney` / `baidu`） |
-| `trades` | `(symbol, *, provider="tdx", start=0, count=0, currentness="live")` | 逐笔成交（**默认 tdx 已下线**，抛 `NotImplementedFeature`；Web 出路 `tencent` / `baidu` 按页取，写 `start` / `count` 会当场 `ValidationError` 而不是被丢掉） |
+| `minute` | `(symbol, *, provider="tdx", currentness="live")` | 当日分时。tdx 源（`0x0537`）**L1 精确解析**，2026-10-22 双市场 golden 锁定；另有 Web Provider：`tencent` / `eastmoney` / `baidu` |
+| `trades` | `(symbol, *, provider="tdx", start=0, count=0, currentness="live")` | 逐笔成交。tdx 源（`0x0FC5`）**L1 精确解析**，2026-10-22 双市场 golden 锁定；Web 出路 `tencent` / `baidu` 按页取，写 `start` / `count` 会当场 `ValidationError` 而不是被丢掉 |
 | `security_count` | `(*, market=0, provider="tdx", currentness="business")` | 证券数量 |
 | `security_list` | `(*, market=0, start=0, provider="tdx", currentness="business")` | 证券列表分页：**已下线**，总是抛 `CommandOffline` |
 | `stream` | `(symbols, *, provider="tdx", interval=1.0, diff_only=False, max_queue=1024, on_quote=None, on_error=None) -> StatefulQuoteStream` | 流式订阅 |
@@ -526,8 +526,7 @@ Client.capabilities()   # 216 项 capability 名，按字典序排好
 **每个**归属 channel 都下线才判死）。`offline` 名字仍留在发现面（形状不变），但调用方
 据 `capability_statuses()` 即可避开它们——这正是"名字 ≠ 可用性"那条口径的机器可读版本。
 
-tdx 这条链上有 8 个名字一调就必然失败：6 个名字踩在被账本判 `offline` 的命令上、2 个名字被
-request/parser 仍是 inferred 的结构化拦截挡在发包前。下表由
+tdx 这条链上有 6 个名字一调就必然失败，全部踩在被账本判 `offline` 的命令上。下表由
 `tests/architecture/test_offline_capability_honesty.py` 现推——名字集合、命令号、tdx 侧实现、
 出路 Provider 四个字段全部来自「命令账本 + `client/core.py` 的 `_UNVERIFIED_STRUCTURED_BLOCK` +
 `catalog/capability.py` 绑定表 + `_t_*` 调用图」，在这里手抄一份过期数字过不了门禁。
@@ -536,12 +535,15 @@ request/parser 仍是 inferred 的结构化拦截挡在发包前。下表由
 |--------|-----------|--------|---------------------------|----------------|
 | `auction` | `auction_snapshot` | `0x056A` | 账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
 | `block_quotes` | `block_quotes` | `0x07E5` | 账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
-| `minute` | `minute_today` | `0x0537` | request/parser 仍为 inferred，结构化 API 在发包前拦下，抛 `NotImplementedFeature` | `baidu`、`eastmoney`、`tencent` |
 | `minute_history` | `minute_history` | `0x0FB4` | 账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
 | `security_list` | `security_list` | `0x044D` | 账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
 | `security_list_all` | `export_security_list` | `0x044D` | 自己不写命令号，经 `security_list` 的分页调用由传递闭包判出；账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
-| `trades` | `trade_today` | `0x0FC5` | request/parser 仍为 inferred，结构化 API 在发包前拦下，抛 `NotImplementedFeature` | `baidu`、`tencent` |
 | `volume_price` | `volume_price_dist` | `0x051A` | 账本 offline（多主站实测无响应），抛 `CommandOffline` | 无——只有 tdx 声明它 |
+
+> `minute` / `trades` 曾经在这张表里（`0x0537` / `0x0FC5` 的 request/parser 还是 inferred，
+> 结构化 API 在发包前拦下）。2026-10-22 双市场 golden 锁定后两条命令升 L1、拦截集合清空，
+> 这两个名字因此从「必然失败」里除名——但 tdx 之外的出路（`baidu` / `eastmoney` / `tencent`）
+> 仍然在，Provider 面的选择没有变窄。
 
 这张表只覆盖 tdx 命令账本管得到的 25 个名字（7 个内核直绑 + 18 个 tdx 客户端族 catalog 绑定）；
 其余 191 个名字走 web 会话 / web adapter / channel adapter / composed 四类后端，不经过命令账本，
@@ -1516,8 +1518,12 @@ from atst.domain.integrity import (
 `row_violations(row)` 是客户端出口（`_forward_decode_caveats`）唯一的判据：一条记录里
 哪个字段落在库自己声明的域外，它就点名列出哪个字段，发 `field_out_of_domain` 告警并随
 `ResultMeta.warnings` 上五张面；`strict=True` 时同一条判据升级为 `TruncatedDataError`。
-它的用武之地是记录布局尚未由真机 golden 锁定的那两条命令（`0x000F` 资本变动 /
-`0x0010` 财务）——页内字节数对得上、解码层因此一个字都不记，而值已经错位。
+它盯的是**任何**解码漂移：2026-10-21 修复 0x000F/0x0010 请求体字节序并用正确请求体重采
+golden 之后，这两条命令的实采样本已全部解出取值域内的值（见
+`tests/unit/test_golden.py::test_the_ruler_stays_silent_on_every_other_captured_command`），
+尺子的战场换成两处：解析器的**回声校验**（响应记录头与请求上下文不符时当场留痕，
+`_std7709_bars.py` 两个 `_check_echo`）是第一道防线，这把尺子是第二道——错位页今天的
+负控样本是修正前采集的存档（`tests/golden/quotation/_archive_wrong_request/`）。
 域表本身（`FIELD_CHECKERS` 覆盖哪些字段、边界是多少）以模块现值为准，
 `tests/unit/test_golden.py` 用实采样本重放盯着它不许松口。
 

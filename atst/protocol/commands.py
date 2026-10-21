@@ -127,10 +127,9 @@ _STD: list[Command] = [
     _c(
         0x0537,
         "MINUTE_TODAY",
-        "当日分时数据（inferred；深市有响应但真实记录布局仍待 golden 锁定）",
-        tier=TIER_L2,
-        verified=False,
-        status=STATUS_DEGRADED,
+        "当日分时数据（✅ 2026-10-21 双市场 golden 锁定：leb128 差分，价格「基准+增量」）",
+        tier=TIER_L1,
+        verified=True,
     ),
     _c(
         0x0FB4,
@@ -185,9 +184,9 @@ _STD: list[Command] = [
     _c(
         0x0FC5,
         "TRADE_TODAY",
-        "当日成交明细（inferred；真实记录布局尚未由 golden 锁定）",
-        tier=TIER_L2,
-        verified=False,
+        "当日成交明细（✅ 2026-10-21 双市场 golden 锁定：leb128 差分，价格逐笔累加）",
+        tier=TIER_L1,
+        verified=True,
     ),
     _c(0x0FC6, "TRADE_TODAY_ALT", "当日成交明细（备用命令号）", tier=TIER_DECLARED),
     _c(0x0FB5, "TRADE_HISTORY", "历史成交明细", tier=TIER_DECLARED),

@@ -179,7 +179,13 @@ def test_measured_evidence_blocks_are_internally_consistent() -> None:
         assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(measured["captured"])), relative
         answered, _, total = str(measured["hosts_answered"]).partition("/")
         assert 0 < int(answered) <= int(total), relative
-    assert carriers == ["PROTOCOL_SPEC/7709/0x0004_HEARTBEAT.yaml"], carriers
+    # 2026-10-22 起新增两份：0x0537 / 0x0FC5 用双市场 golden + 0x052D 交叉验证
+    # 换来 verified 声称，证据格按同一套自洽规则写（见各自 spec 的 measured 块）。
+    assert carriers == [
+        "PROTOCOL_SPEC/7709/0x0004_HEARTBEAT.yaml",
+        "PROTOCOL_SPEC/7709/0x0537_MINUTE_TODAY.yaml",
+        "PROTOCOL_SPEC/7709/0x0FC5_TRADE_TODAY.yaml",
+    ], carriers
 
 
 def test_trade_plane_specs_are_audited_against_trade_anchors() -> None:

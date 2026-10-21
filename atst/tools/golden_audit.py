@@ -57,6 +57,7 @@ from typing import Any
 from ._console import setup_console
 
 __all__ = [
+    "ARCHIVE_DIR_NAMES",
     "ORIGIN_REAL",
     "ORIGIN_SYNTHETIC",
     "ORIGIN_UNKNOWN",
@@ -74,6 +75,11 @@ ORIGIN_UNKNOWN = "unknown"
 
 #: 默认语料根（与 capture / golden_expand / test_golden 共用的仓库内路径）
 DEFAULT_GOLDEN_ROOT = Path("tests/golden")
+
+#: 语料根下被排除的子目录名：这些样本是**用错误请求体采的**，留着当病理存档，
+#: 但它们的语义不成立，不许进审计分母（否则覆盖率/verified 统计会被空布局污染）。
+#: 现役样本在 ``DEFAULT_GOLDEN_ROOT`` 下与命令号同名的目录里。
+ARCHIVE_DIR_NAMES: frozenset[str] = frozenset({"_archive_wrong_request"})
 
 #: 维度门禁（--require-markets）适用的市场敏感命令
 MARKET_SENSITIVE: tuple[int, ...] = (0x044E, 0x052D, 0x0530)
@@ -218,13 +224,20 @@ def _to_int(raw: Any) -> int | None:
 
 
 def scan_corpus(root: Path | None = None) -> list[SampleInfo]:
-    """扫描语料根下全部样本（``**/meta.json``，要求同级 payload.bin 存在）。"""
+    """扫描语料根下全部样本（``**/meta.json``，要求同级 payload.bin 存在）。
+
+    ``ARCHIVE_DIR_NAMES`` 列出的目录整棵跳过：那里放的是**用错误请求体采的**病理样本
+    （request 字节序写反，服务器回空壳），语义不成立，进分母只会把覆盖率与 verified
+    统计污染成"采过了"。要复查病理请看目录里的 README。
+    """
     root = Path(root) if root is not None else DEFAULT_GOLDEN_ROOT
     if not root.exists():
         return []
     out: list[SampleInfo] = []
     for meta_path in sorted(root.rglob("meta.json")):
         sample_dir = meta_path.parent
+        if any(part in ARCHIVE_DIR_NAMES for part in sample_dir.parts):
+            continue
         payload_path = sample_dir / "payload.bin"
         if not payload_path.is_file():
             continue

@@ -322,10 +322,15 @@ def test_l1_verified_commands_replay_to_domain_legal_rows() -> None:
 # 第 6 条判据：尺子上了生产侧，误伤的代价就升级（G7 的反向证据）
 # ---------------------------------------------------------------------------
 
-#: 实采样本里今天唯一两条解出越域值的命令——G3 那两处未经真机 golden 锁定的布局
-#: (``0x000F`` 股本变迁、``0x0010`` 财务)。这个集合是第 14 轮量出来的（60 份实采样本
-#: 重放出 1667 行，越域行全部落在这两条命令上），不是先验名单。
-_DOMAIN_SUSPECT_COMMANDS = frozenset({0x000F, 0x0010})
+#: 实采样本里解出越域值的命令。第 14 轮量到时是 ``{0x000F, 0x0010}`` 两条
+#: （60 份实采样本重放出 1667 行，越域行全部落在这两条命令上）——那个集合不是先验
+#: 名单，是量出来的，而**测量会随事实变化**：2026-10-21 修复了 0x000F/0x0010 的
+#: 请求体字节序（旧实现发 ``<6s code><H market>``，服务端按 ``market@2 / code@3:9``
+#: 解读后记录头整体错位，回的是服务端缓冲残留），并用正确请求体重采了 golden 样本。
+#: 重测：两条命令的实采样本现在全部解出取值域内的值（0x000F 缓冲区按字节精确耗尽），
+#: 越域命令集合收敛为空。尺子本身的「没瞎」判据（对错位形状要响）在
+#: :func:`tests.unit.test_domain_integrity.test_the_ruler_fires_on_the_measured_misalignment_shapes`。
+_DOMAIN_SUSPECT_COMMANDS: frozenset[int] = frozenset()
 
 
 def test_the_ruler_stays_silent_on_every_other_captured_command() -> None:
@@ -334,7 +339,10 @@ def test_the_ruler_stays_silent_on_every_other_captured_command() -> None:
     第 9 轮它只量 ``L1∧verified`` 那三条命令，误伤面天然窄；第 14 轮把它接进
     ``_forward_decode_caveats`` 之后，一次假告警就等于把"这条结果不可信"写在一条好数据
     上——调用方很快会学会无视整条通道（F-13/F-16 那族反过来的形态）。所以这里把
-    "除嫌疑两条之外全部安静"钉成判据。
+    "全部安静"钉成判据。
+
+    2026-10-21 起这条判据比过去更强：越域集合收敛为空之后，被量的不再只是"别的命令"，
+    而是**每一条**有实采样本的命令——包括曾经全部越域的那两条。
     """
     rows_by_command: Counter[int] = Counter()
     offenders: Counter[int] = Counter()
@@ -356,9 +364,14 @@ def test_the_ruler_stays_silent_on_every_other_captured_command() -> None:
         f"0x{c:04X} 有 {offenders[c]} 行被点名（共 {rows_by_command[c]} 行）"
         for c in false_positives
     )
-    missing = sorted(_DOMAIN_SUSPECT_COMMANDS - set(rows_by_command))
-    assert missing == [], f"嫌疑命令的实采样本不见了：{[hex(c) for c in missing]}——G3 失去取证口"
-    for command in sorted(_DOMAIN_SUSPECT_COMMANDS):
-        assert offenders[command] > 0, (
-            f"0x{command:04X} 一行都没被点名，而它的布局仍是推断的：尺子瞎了或样本被换成了合成副本"
+    #: 0x000F/0x0010 的实采样本必须还在（重采后它们从"全部越域"变成"全部干净"，
+    #: 但取证口本身不许消失——样本不见了同样是这条判据失效）。
+    for command in (0x000F, 0x0010):
+        assert rows_by_command[command] > 0, (
+            f"0x{command:04X} 的实采样本不见了：请求体顺序修复后重采的样本应能解出取值域内的行"
         )
+    assert not offenders, (
+        "实采样本里又出现越域行："
+        + "；".join(f"0x{c:04X} 有 {offenders[c]} 行" for c in sorted(offenders))
+        + "——要么是新的解码漂移，要么是样本被换成了合成副本"
+    )
