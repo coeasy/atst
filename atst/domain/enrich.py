@@ -1,3 +1,6 @@
+# Copyright (c) 2026 atst contributors
+# Licensed under the MIT License
+
 """宽表日线：把「K 线 + 估值序列」拼成一行一交易日的宽表。
 
 为什么单独成模块：拼装规则里有**四条口径**是容易被写错、且错了不会报错的
