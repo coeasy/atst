@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [1.6.1] - 2026-10-30
+
+### Fixed
+
+- **K 线回来 0 根时不再沉默**。分页游标从最新往回数，历史耗尽只会表现为**短页**，
+  所以"0 根"永远需要一个解释；而此前只有 tdx 那条路解释了它（`bars_empty_first_page`，
+  判据要读服务端声明的记录数）。Web 源对不支持的标的/周期直接回空数组，一个字都不说——
+  实测 `bars("bj430047", provider="auto")` 落到腾讯后是 `ok` + 0 行 + **零告警**，与
+  "代码不存在""市场不支持"长得一模一样。新增 `bars_empty_result` 在执行器出口统一发射，
+  与后端无关；tdx 的空桩与整页丢弃两种情形不重复报（关系表 `EMPTY_EXPLAINED_CODES`）。
+- **不存在的代码不再返回乱码 K 线**。`bars("sh999999")` 此前请求 5 根回 5 根，日期是
+  `8047-92-78` / `334231-62-94`，只有一条 `field_out_of_domain` 告警，行照常交给调用方
+  ——下游会把它当真。现在一页里**超过半数**记录越域即整页丢弃并报 `bars_page_unusable`。
+  门槛取严格多数而不是"全部"：真实错位页的头一根常常恰好还对得上（实测就是 1 根干净 +
+  4 根越域），按"全部越域"判会漏网，按"有一根越域"判又会把局部瑕疵整页连坐。
+
+### Changed
+
+- `docs/providers/tdx.md` 新增「它是默认源，而且是唯一的默认源」一节，`docs/FAQ.md`
+  新增「取数与选源」两问：默认 Provider 的解析位置、港美/北交所边界、无跨源兜底、
+  `bars` 不做复权，以及"0 根到底是什么意思"的三条告警对照表。
+- `docs/api/interfaces.md` 的 `Client.bars` 一行补上默认源与空结果口径。
+
+### 判据
+
+- `tests/runtime/test_result_caveat_channel.py::TestEmptyBarsSaysSo`（4 条：发射、
+  不重复发射、`strict` 转失败、非空不误报）
+- `tests/unit/test_client_f1.py::TestUnusableBarsPage`（3 条：丢弃 + 命名、`strict` 失败、
+  一根脏不连坐整页）
+- `tests/protocol/test_index_bars_layout.py::test_public_bars_on_an_index_does_not_warn_where_it_once_did_not`
+  （改判：错位页现在返回 0 行并报 `bars_page_unusable`，而不是返回错位行）
+- `tests/architecture/test_caveat_channel_gates.py`（新增两个类别在 `docs/errors.md`
+  与代码里双向对齐）
+
 ## [1.6.0] - 2026-10-22
 
 ### Fixed

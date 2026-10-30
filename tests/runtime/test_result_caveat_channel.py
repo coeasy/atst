@@ -206,3 +206,56 @@ class TestWireReachesEveryFace:
         """任何一面自写出口字典，就是下一个漏掉 ``warnings`` 的地方。"""
         source = (ROOT / module).read_text(encoding="utf-8")
         assert "serialize_result" in source, f"{module} 不再经共享序列化出口"
+
+
+class TestEmptyBarsSaysSo:
+    """``bars`` 回来 0 根必须说破——空结果与"历史耗尽"不是同一件事。
+
+    历史耗尽只会表现为**短页**（分页游标从最新往回数，取到没有就短一页）。所以"0 根"
+    永远需要一个解释，而此前只有 tdx 那条路解释了它（``BARS_EMPTY_FIRST_PAGE`` 要读
+    服务端声明数）。Web 源对不支持的标的/周期直接回空数组，一个字都不说——实测
+    ``bars("bj430047", provider="auto")`` 落到腾讯后正是 ``ok`` + 0 行 + 零告警。
+    """
+
+    def test_a_provider_that_returns_zero_bars_is_not_silent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        executor = DirectProviderExecutor()
+        monkeypatch.setattr(executor, "_tdx_bars", lambda plan: [])
+        result = executor.execute(_plan("bars"))
+        assert result.data == []
+        codes = [item.code for item in result.meta.warnings]
+        assert codes == [WarningCode.BARS_EMPTY_RESULT], codes
+        message = result.meta.warnings[0].message
+        assert "sh600519" in message and "period='day'" in message
+        assert "不是历史耗尽" in message
+
+    def test_tdx_empty_stub_is_not_reported_twice(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """tdx 的空桩判据更具体（带服务端声明数），不要再补一条泛泛的"0 根"。"""
+
+        def _empty(plan: Any) -> list[Any]:
+            record_warning(WarningCode.BARS_EMPTY_FIRST_PAGE, "首页即空响应", stderr=False)
+            return []
+
+        executor = DirectProviderExecutor()
+        monkeypatch.setattr(executor, "_tdx_bars", _empty)
+        codes = [item.code for item in executor.execute(_plan("bars")).meta.warnings]
+        assert codes == [WarningCode.BARS_EMPTY_FIRST_PAGE], codes
+
+    def test_strict_turns_the_empty_result_into_a_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        executor = DirectProviderExecutor()
+        monkeypatch.setattr(executor, "_tdx_bars", lambda plan: [])
+        with pytest.raises(TruncatedDataError) as exc_info:
+            executor.execute(_plan("bars", strict=True))
+        assert "bars_empty_result" in exc_info.value.context["codes"]
+
+    def test_a_non_empty_page_carries_no_such_caveat(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        executor = DirectProviderExecutor()
+        monkeypatch.setattr(
+            executor,
+            "_tdx_bars",
+            lambda plan: [{"datetime": "2026-10-30 15:00", "close": 1.0, "volume": 1}],
+        )
+        assert executor.execute(_plan("bars")).meta.warnings == ()

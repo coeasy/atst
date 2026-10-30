@@ -15,12 +15,12 @@ from typing import Any
 
 from ..catalog.capability import binding_for, call_kwargs_for, implementation_for, validate_call
 from ..config import Config
-from ..diagnostics import WarningCode, record_warning, warning_sink
+from ..diagnostics import EMPTY_EXPLAINED_CODES, WarningCode, record_warning, warning_sink
 from ..domain.symbol import normalize_symbol
 from ..errors import InternalError, TdxError, TruncatedDataError, ValidationError
 from ..providers import PROVIDERS
 from ..query import QueryPlan
-from ..result import Provenance, QueryResult
+from ..result import Provenance, QueryResult, ResultWarning
 from .audit import audit_runtime
 from .freshness import verify_currentness
 
@@ -172,6 +172,34 @@ def _strict_requested(plan: QueryPlan) -> bool:
             context={"strict_type": type(strict).__name__},
         )
     return strict
+
+
+def _warn_empty_bars(plan: QueryPlan, collected: list[ResultWarning]) -> None:
+    """``bars`` 回来 0 根时必须说破——空结果与"历史耗尽"不是一回事。
+
+    历史耗尽只会表现为**短页**（请求 320 根、回来 87 根），因为分页游标是从最新往回
+    数的。所以"0 根"永远是一个需要解释的事实，而此前只有 tdx 那条路解释了它
+    （``BARS_EMPTY_FIRST_PAGE``，判据要读服务端声明的记录数）。其余后端——尤其 Web
+    源对不支持的标的/周期直接回空数组——一个字都不说，于是三种完全不同的处境在结果里
+    长得一模一样：``ok`` + 0 行 + 零告警。
+
+    实测两个形状（2026-10-30）：``bars("bj430047", provider="auto")`` 候选落到腾讯后
+    回空、``warnings == ()``；``bars("hk00700")`` 钉死 tdx 则是 ``SymbolError``——同一件
+    "取不到"的事，一个响一个不响。这条判据放在执行器出口，因此与后端无关，也不必让每个
+    Web 适配器各记一遍。
+
+    去重规则：tdx 已经发过 ``BARS_EMPTY_FIRST_PAGE`` 时不再补第二条——那条的信息更具体
+    （带服务端声明数），两条并排只会让读的人以为出了两个问题。
+    """
+    if any(item.code in EMPTY_EXPLAINED_CODES for item in collected):
+        return
+    symbol = plan.spec.symbols[0] if plan.spec.symbols else ""
+    record_warning(
+        WarningCode.BARS_EMPTY_RESULT,
+        f"bars({symbol!r}, period={plan.spec.period!r}) 由 {plan.provider}/{plan.channel} "
+        "返回 0 根：该源对这个标的+周期没有数据（代码不存在 / 市场不受支持 / 该周期不在"
+        "源的覆盖范围内），不是历史耗尽",
+    )
 
 
 #: 语义字段 → 实现形参的唯一改名表。``QuerySpec`` 用复数存"一批代码"，单次实现的
@@ -372,6 +400,11 @@ class DirectProviderExecutor:
             verify_currentness(plan, strict=strict)
             try:
                 data = fn(plan)
+                #: 空结果判据量的是 **Provider 原样返回的那一页**，因此必须先于日期区间
+                #: 裁剪——区间裁空有它自己的两条告警（``bars_range_uncovered`` /
+                #: ``bars_range_interior_empty``），在这里再报一次"0 根"就是重复记账。
+                if plan.spec.capability == "bars" and not data:
+                    _warn_empty_bars(plan, collected)
                 #: 日期区间在取回的那一页上做过滤，并当场回答"这一页盖不盖得住区间"。
                 data = self._apply_bar_range(plan, data)
                 #: quotes/bars 的内核出口统一为 canonical dict 行：Provider 之间

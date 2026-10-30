@@ -170,7 +170,7 @@ from atst import Client, AsyncClient
 
 | 方法 | 签名摘要 | 说明 |
 |------|----------|------|
-| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", strict=False, start_date="", end_date="", index=None)` | K 线；`strict=True` 时结果携带任何数据瑕疵即抛 `TruncatedDataError`；`start_date`/`end_date` 是闭区间日期（见本节「日期区间」）；`period=` 收哪些写法见本文 §6「K 线周期拼写」一表；`index=` 是 `0x052D` 指数位，**缺省按代码段自动推断**（见本节「指数 K 线」）；**返回按 `datetime` 升序**（`rows[0]` 最早、`rows[-1]` 最新） |
+| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", strict=False, start_date="", end_date="", index=None)` | K 线；`strict=True` 时结果携带任何数据瑕疵即抛 `TruncatedDataError`；`start_date`/`end_date` 是闭区间日期（见本节「日期区间」）；`period=` 收哪些写法见本文 §6「K 线周期拼写」一表；`index=` 是 `0x052D` 指数位，**缺省按代码段自动推断**（见本节「指数 K 线」）；**返回按 `datetime` 升序**（`rows[0]` 最早、`rows[-1]` 最新）；**默认 Provider 是 `tdx`**（`PROVIDERS.default_provider`，股票/指数/ETF/可转债通用；港美标的需显式 `provider="tencent"/"eastmoney"` 或 `provider="auto"`，北交所在 tdx 侧不可用）；回来 **0 根**时结果带 `bars_empty_result` 告警（tdx 的空桩走 `bars_empty_first_page`，带服务端声明数） |
 | `quotes` | `(symbols, *, provider=None, policy=None, currentness="live", strict=False)` | 实时行情。`strict=True`（仅 tdx 路径生效）时解析器自校验（哨兵失配 / 成交额越界）发现字段漂移的标的直接判失败（`IntegrityViolation`），不返回"帧合法、值可疑"的行情——实测不存在代码 `sh999999` 的主站响应，回声匹配、载荷齐全，量能却荒谬 |
 | `quotes_batch` | `(symbols, *, provider=None, currentness="live") -> BatchResult` | 逐 symbol 三态审计 |
 | `snapshot` | `(symbol, *, provider="tdx", currentness="live")` | 盘口快照 |

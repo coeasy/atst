@@ -275,6 +275,7 @@ class _ClientMixin:
         seen: set[str] = set()
         drifted = False  # 整页去重后零新增（锚点漂移），非正常历史耗尽
         empty_first_page = False  # 第一页就 0 条：不是耗尽，是空桩/无该标的数据
+        unusable_page = False  # 整页记录全部越域：不是脏数据，是这一页根本不属于该标的
         first_page_declared: int | None = None  # 首页服务端声明的记录数，用于分家二者
 
         while remaining > 0:
@@ -299,6 +300,20 @@ class _ClientMixin:
                 f"bars({symbol!r}) 分页解码",
             )
             raw_rows = result.rows  # 原始 dict 行（去重以 datetime 字符串为键）
+            offenders = sum(1 for row in raw_rows if row_violations(row))
+            if raw_rows and offenders * 2 > len(raw_rows):
+                #: **超过半数**越域：这一页不是该标的的记录，不是"有几根可疑"。门槛取
+                #: 严格多数而不是"全部"，是因为真实错位页的头一根常常恰好还对得上——
+                #: 实测 ``sh999999`` 请求 5 根回 5 根，第 1 根干净、后 4 根日期是
+                #: ``8047-92-78`` / ``334231-62-94``（指数位走反时也是"第 1 根对、其后
+                #: 整体错位"这同一个形状）。按"全部越域"判，这一页会漏网；按"有一根越域"
+                #: 判，又会把局部瑕疵整页连坐。
+                #:
+                #: 丢弃的理由：两种真实形状（代码不存在时主站回缓冲区里别的标的、记录
+                #: 布局错位）产出的行都不可用，而"空 + 一条专门告警"至少说的是实话；
+                #: 把乱码交给调用方，下游会把它当真。
+                unusable_page = True
+                break
             if not raw_rows:
                 # 次页空 = 历史耗尽（正常终止，真实耗尽只会表现为短页或空次页）；
                 # 首页空要按服务端**声明的记录数**分家：声明 0 才是"没有这段历史"，
@@ -366,6 +381,28 @@ class _ClientMixin:
                     },
                 )
             record_warning(WarningCode.BARS_EMPTY_FIRST_PAGE, msg, stacklevel=_TPL_WARN_STACKLEVEL)
+        elif unusable_page:
+            #: 与"空首页"分开报：空首页是服务端一个字节都没给，这里是给了一整页却不属于
+            #: 这个标的。两者的处置相同（都没有可用数据），但根因不同——前者查主站/标的
+            #: 是否有历史，后者查代码拼写与记录布局。
+            msg = (
+                f"bars({symbol!r}, period={period!r}, count={count}) 这一页 {offenders}/"
+                f"{len(raw_rows)} 根记录的字段落在库自己声明的取值域之外（日期解成 "
+                f"'8047-92-78' 这类非法日历日），已丢弃该页并返回 {len(bars)} 根：这一页不是"
+                f"该标的的记录——代码不存在时主站回的是缓冲区里别的标的，记录布局错位时"
+                f"也是同一个形状"
+            )
+            if strict_mode:
+                raise TruncatedDataError(
+                    msg,
+                    context={
+                        "symbol": symbol,
+                        "period": period,
+                        "returned": len(bars),
+                        "requested": count,
+                    },
+                )
+            record_warning(WarningCode.BARS_PAGE_UNUSABLE, msg, stacklevel=_TPL_WARN_STACKLEVEL)
         #: 出门前统一按时间**升序**：分页拼出来的原始序列是"锯齿"的——页内升序、
         #: 页间倒退（每页都比上一页旧），所以 ``bars[0]`` 并非最早、``bars[-1]`` 并非
         #: 最新。（线路实测 sz000001/16000 根：``bars[0]``=2023-06-15 而 ``bars[-1]``

@@ -53,6 +53,35 @@
 
 服务端约束：`0x0530` 一次只能查 1 只（多只超时不返回）。库内部自动逐只请求再汇总，调用方无感。
 
+## 取数与选源
+
+### Q: 不传 `provider` 时，K 线（`bars`）默认走哪个源？
+
+`tdx`，而且是**唯一**的默认源。`ProviderSpec(id="tdx", default=True)` 让
+`PROVIDERS.default_provider == "tdx"`，`core.default_provider` 的出厂值也是 `"tdx"`。缺省解析发生在
+`QuerySpec.normalized()`（`resolve_capability_provider("bars", None)`）：tdx 声明了 `bars`，且没把
+`bars` 标进 channel 的 `unavailable`，所以原样保留。注意别去看
+`catalog.capability.default_provider_for("bars")`——那张表只服务**迁移能力**（`minute_klines` 之类），
+对核心能力直接 `KeyError`。
+
+三条边界：港美标的（`hk00700` / `usAAPL`）在 tdx 侧抛 `SymbolError`（E4040），北交所抛 `E3040`
+（`market=2` 未验证），都要显式换源；tdx 主机全不可达时**不会**自动换源（provider-first 的硬承诺），
+要兜底得写 `provider="auto"` 或传 `FallbackPolicy`；tdx 的 `bars` 不做复权（`adjustment=` 当场
+`E1010`），复权走 `adjusted_bars`。
+
+### Q: `bars` 返回 0 根，是这只票没有历史，还是源不支持？
+
+看 `result.meta.warnings`——**0 根永远带一条解释**，因为历史耗尽只会表现为短页（分页游标从最新
+往回数，取到没有就短一页），所以"0 根"一定另有原因：
+
+| 告警 | 含义 |
+|---|---|
+| `bars_empty_first_page` | tdx 的空桩 / 该标的无此周期历史；消息里带服务端当次声明的记录数（声明 N 却回 0 字节 = 空桩） |
+| `bars_page_unusable` | 回来过一页，但超过半数的记录落在值域之外（日期解成 `8047-92-78` 这类），该页已被**丢弃** |
+| `bars_empty_result` | 其它后端（含 Web 源）返回 0 根：代码不存在 / 市场不支持 / 该周期不在源的覆盖范围内 |
+
+`strict=True` 时任意一条都直接变成 `TruncatedDataError`（E4050），不会悄悄返回空列表。
+
 ## 数据口径
 
 ### Q: 成交量单位是什么？

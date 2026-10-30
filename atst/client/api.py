@@ -529,6 +529,17 @@ class Client:
     ) -> QueryResult[Any] | OrchestratedResult:
         """K 线。``strict=True`` 时"结果带瑕疵"直接失败，而不是返回后靠调用方自查。
 
+        ``provider`` 缺省是 **``tdx``**（``PROVIDERS.default_provider``）：核心能力的缺省源
+        在 ``QuerySpec.normalized()`` 里解析，不走 ``catalog.capability`` 那张迁移能力表
+        （对 ``bars`` 调 ``default_provider_for`` 会 ``KeyError``，别被它误导）。tdx 只认
+        SZ/SH/BJ 三个二进制市场——港美标的要显式换源（``tencent`` / ``eastmoney`` /
+        ``auto``），北交所因 ``market=2`` 未验证在 tdx 侧不可用；缺省源也不会因为 tdx 主机
+        全挂而悄悄改由别的 Provider 出数。
+
+        回来 **0 根**不是"正常空结果"：分页游标从最新往回数，历史耗尽只会表现为短页，所以
+        0 根一定带一条告警（``bars_empty_result``；tdx 的空桩换成 ``bars_empty_first_page``，
+        带服务端声明的记录数）。``strict=True`` 时它是一次失败。
+
         执行器把一次查询里记录的全部数据完整性瑕疵装进
         :attr:`~atst.result.ResultMeta.warnings`（空桩首页、锚点漂移截断等）；
         ``strict`` 就是那份名单的开关，任何 Provider、任何瑕疵类别同一条判据。

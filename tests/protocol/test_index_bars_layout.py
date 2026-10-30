@@ -415,11 +415,14 @@ def test_public_bars_on_an_index_does_not_warn_where_it_once_did_not() -> None:
     client = TdxClient(pool=_FakePool({0x052D: _index_day_payload()}))  # type: ignore[arg-type]
     with warning_sink() as caveats:
         rows = client.bars("sh000001", period="day", count=3, index=False)
-    dates = [r["date"] for r in rows]
-    assert any(date_problem(d) is not None for d in dates), dates
+    #: 2026-10-30 起判据更强了一层：错位页不再把错位行交给调用方。这一页 2/3 根越域
+    #: （第 1 根恰好还对得上，正是"全部越域"门槛会漏掉的形状），于是整页被丢弃。
+    assert rows == [], f"错位页不该返回行：{[r['date'] for r in rows]}"
     offenders = [c for c in caveats if c.code is WarningCode.FIELD_OUT_OF_DOMAIN]
     assert offenders, f"错位日期上 wire 却没告警：{[c.message for c in caveats]}"
     assert "row[" in offenders[0].message, offenders[0].message
+    dropped = [c for c in caveats if c.code is WarningCode.BARS_PAGE_UNUSABLE]
+    assert dropped, f"整页丢弃了却没说：{[c.code for c in caveats]}"
 
 
 def test_public_bars_on_a_stock_is_untouched_by_the_fix() -> None:

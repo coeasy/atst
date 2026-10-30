@@ -37,6 +37,7 @@ from typing import Any
 
 __all__ = [
     "WarningCode",
+    "EMPTY_EXPLAINED_CODES",
     "ResultWarning",
     "current_warnings",
     "record_warning",
@@ -57,6 +58,19 @@ class WarningCode(str, Enum):
     #: ``bars`` 首页即空响应：判据取服务端当次声明数——0 是该标的无此周期历史，N>0 却回 0
     #: 个记录字节是空桩；两者都不是"更早的历史已取完"（那只会表现为短页）。
     BARS_EMPTY_FIRST_PAGE = "bars_empty_first_page"
+    #: ``bars`` 由某个 Provider 返回了 **0 根**，且这个空结果不是"历史耗尽"（耗尽只会
+    #: 表现为短页）。``BARS_EMPTY_FIRST_PAGE`` 只覆盖 tdx 的空桩判据（它要读服务端声明
+    #: 数），其余后端——尤其 Web 源对不支持的标的/周期直接回空数组——此前一字不说，
+    #: 于是"代码不存在""市场不支持""该源覆盖不到"三种完全不同的处境在结果里长得一模一样：
+    #: ``ok`` + 0 行 + 零告警。实测 ``bars("bj430047", provider="auto")`` 落到腾讯后正是
+    #: 这个形状。这条判据在执行器出口统一发射，与后端无关。
+    BARS_EMPTY_RESULT = "bars_empty_result"
+    #: ``bars`` 的一页记录里**超过半数**落在值域之外。这不是"有几个字段可疑"，而是这一页
+    #: 根本不是该标的的记录：代码不存在时主站回的是缓冲里的别的标的，记录布局错位时日期
+    #: 会解成 ``8047-92-78``。门槛取严格多数而非"全部"，是因为真实错位页的头一根常常恰好
+    #: 还对得上（实测 ``sh999999`` 是 1 根干净 + 4 根越域）。这些行已从结果里**丢弃**
+    #: （返回空 + 本条告警），因为把已知不可用的行交给调用方，比返回空更坏——下游会当真。
+    BARS_PAGE_UNUSABLE = "bars_page_unusable"
     #: 批量 ``quotes`` 只取回了部分标的的行情：逐只失败被隔离，结果不完整。
     #: 全部失败不走这条——那是一次 ``AllHostsUnreachable``，不是一袋瑕疵数据。
     QUOTES_PARTIAL_FAILURE = "quotes_partial_failure"
@@ -123,6 +137,22 @@ class WarningCode(str, Enum):
     #: 自动选源不是静默换源——这条随结果出发，与 Provenance 的
     #: ``requested_provider='auto'`` + ``fallback`` 标记互为印证。
     AUTO_PROVIDER_FALLBACK = "auto_provider_fallback"
+
+
+#: 已经解释过"为什么一根都没回来"的类别。执行器出口那条泛化的 ``bars_empty_result``
+#: 见到其中之一就**不再补一条**：
+#:
+#: * ``bars_empty_first_page``——tdx 的空桩，信息更具体（带服务端当次声明的记录数）；
+#: * ``bars_page_unusable``——回来过一页，但那一页不是该标的的记录，已被丢弃。
+#:
+#: 三条并排只会让读的人以为出了三个问题，而实际是同一件事的三段解释。
+#:
+#: 这张关系表放在类别定义旁边而不是写进发射点，是因为"哪些类别已经解释过同一件事"
+#: 属于类别之间的语义关系，不属于某一个发射点——发射点若各写一份，下一个新增的空结果
+#: 判据就会漏掉它。
+EMPTY_EXPLAINED_CODES: frozenset[WarningCode] = frozenset(
+    {WarningCode.BARS_EMPTY_FIRST_PAGE, WarningCode.BARS_PAGE_UNUSABLE}
+)
 
 
 @dataclass(frozen=True, slots=True)

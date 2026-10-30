@@ -237,6 +237,77 @@ class TestIndexBarsCtx:
         assert "index" in sync_params
 
 
+class TestUnusableBarsPage:
+    """一页里**超过半数**记录越域时丢弃该页，而不是把乱码当 K 线交给调用方。
+
+    实测形状（2026-10-30）：``bars("sh999999")`` 请求 5 根回 5 根，日期是
+    ``8047-92-78`` / ``334231-62-94``。此前只有一条 ``field_out_of_domain`` 告警，
+    行照常返回——下游会把它当真。空 + 一条专门告警至少说的是实话。
+    """
+
+    _GARBAGE = [
+        {
+            "datetime": "8047-92-78 15:00",
+            "date": "8047-92-78",
+            "open": 1.0,
+            "high": 1.0,
+            "low": 1.0,
+            "close": 1.0,
+            "volume": 1,
+            "amount": 1.0,
+        }
+        for _ in range(3)
+    ]
+
+    def _patch_dispatch(self, monkeypatch: pytest.MonkeyPatch, rows: list[dict]) -> None:
+        from atst.protocol.registry import TIER_L1, ParseResult
+
+        monkeypatch.setattr(
+            client_mod,
+            "dispatch",
+            lambda *a, **k: ParseResult(
+                command=0x052D,
+                name="SECURITY_BARS",
+                tier=TIER_L1,
+                confidence=1.0,
+                rows=[dict(row) for row in rows],
+            ),
+        )
+
+    def test_the_page_is_dropped_and_named(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from atst.diagnostics import WarningCode, warning_sink
+
+        self._patch_dispatch(monkeypatch, self._GARBAGE)
+        client = TdxClient(pool=_FakePool({0x052D: _bars_payload_index()}))
+        with warning_sink() as caveats:
+            bars = client.bars("sh999999", count=3, as_format="dict")
+        assert bars == [], "整页越域的行不该当数据返回"
+        codes = [item.code for item in caveats]
+        assert WarningCode.BARS_PAGE_UNUSABLE in codes, codes
+        caveat = next(item for item in caveats if item.code is WarningCode.BARS_PAGE_UNUSABLE)
+        assert "不是该标的的记录" in caveat.message
+
+    def test_strict_turns_it_into_a_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from atst.errors import TruncatedDataError
+
+        self._patch_dispatch(monkeypatch, self._GARBAGE)
+        client = TdxClient(pool=_FakePool({0x052D: _bars_payload_index()}))
+        with pytest.raises(TruncatedDataError, match="已丢弃该页"):
+            client.bars("sh999999", count=3, as_format="dict", strict=True)
+
+    def test_a_partly_dirty_page_still_returns_its_rows(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """判据只收"超过半数"：一根脏不该连坐整页——那是布局漂移的局部形状。"""
+        rows = [dict(self._GARBAGE[0]), {"datetime": "2026-10-30 15:00", "close": 1.0}]
+        self._patch_dispatch(monkeypatch, rows)
+        client = TdxClient(pool=_FakePool({0x052D: _bars_payload_index()}))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            bars = client.bars("sh600519", count=2, as_format="dict")
+        assert len(bars) == 2
+
+
 # --------------------------------------------------------------------------- #
 # P1：quotes_snapshot 分片 / export 截断告警 / _quote_body 防护
 # --------------------------------------------------------------------------- #

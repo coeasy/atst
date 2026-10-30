@@ -1,6 +1,6 @@
 # API 参考
 
-当前 `1.6.0`（已打 tag `v1.6.0` 并发布）；最新已发布 GitHub Release 为 [`v1.6.0`](https://github.com/coeasy/atst/releases/tag/v1.6.0)，本包**不在 PyPI 上** · [CHANGELOG](../../CHANGELOG.md) · [逐版本发布说明](../releases/v1.6.0.md)
+当前 `1.6.1`（已打 tag `v1.6.1` 并发布）；最新已发布 GitHub Release 为 [`v1.6.1`](https://github.com/coeasy/atst/releases/tag/v1.6.1)，本包**不在 PyPI 上** · [CHANGELOG](../../CHANGELOG.md) · [逐版本发布说明](../releases/v1.6.1.md)
 
 > 本页对应 `/v13/` 服务面与单一执行内核。完整 docstring 驱动文档
 > 由 `pdoc`/`mkdocstrings` 生成；此处提供稳定入口和模块索引。

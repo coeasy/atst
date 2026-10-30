@@ -534,7 +534,11 @@ def _validate(rows: Sequence[dict[str, Any]]) -> list[str]:
 
 def _existing_rows(path: Path) -> list[dict[str, Any]]:
     """读回本地已落盘的日线（parquet / csv 都认）。返回空表示"没存过"。"""
-    if not path.exists():
+    try:
+        if not path.exists():
+            return []
+    except OSError:
+        # 文件系统级损坏条目（实测 WinError 1392，连 stat 都失败）：按"没存过"，本轮重写覆盖
         return []
     fmt = "parquet" if path.suffix.lower() in {".parquet", ".pq"} else "csv"
     try:
@@ -565,7 +569,11 @@ def _last_date_on_disk(path: Path) -> str:
     副本：state 被误删、或换了 ``--root`` 之后 state 没跟过来，瓶颈不该退化成
     "从头再拉一遍最近 N 根"。这个读法只取 ``date`` 一列，几千行也很轻。
     """
-    if not path.exists():
+    try:
+        if not path.exists():
+            return ""
+    except OSError:
+        # 损坏条目：视作盘上没有断点，按铺底窗口重拉
         return ""
     try:
         import pyarrow.parquet as pq
@@ -586,7 +594,11 @@ def _count_rows(path: Path) -> int:
     体检要区分"文件在"和"文件里有数据"——空 parquet 是最像成功的那种失败。
     读不出来（坏文件、没装 pyarrow）就返回 0，让它在体检里跟空文件同样显眼。
     """
-    if not path.exists():
+    try:
+        if not path.exists():
+            return 0
+    except OSError:
+        # 损坏条目（WinError 1392）：与"读不出内容"同权
         return 0
     try:
         import pyarrow.parquet as pq
@@ -727,11 +739,15 @@ class Syncer:
     def _path_of(self, target: Target) -> Path:
         """已落盘那支的路径：类别子目录优先，兼容未分类前写的扁平文件。"""
         nested = self.out / class_dir(target.kind) / f"{target.symbol}.parquet"
-        if nested.exists():
-            return nested
-        flat = self.out / f"{target.symbol}.parquet"
-        if flat.exists():
-            return flat
+        try:
+            if nested.exists():
+                return nested
+            flat = self.out / f"{target.symbol}.parquet"
+            if flat.exists():
+                return flat
+        except OSError:
+            # 损坏条目（实测 WinError 1392，stat 都失败）：落到 nested，让重写覆盖它
+            pass
         return nested
 
     def sync_one(self, target: Target) -> Outcome:

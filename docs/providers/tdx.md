@@ -35,6 +35,26 @@ snapshot
 `core._UNVERIFIED_STRUCTURED_BLOCK` 与内核直绑表（`runtime/executor.py`）现推：判据是"这条链
 在客户端就发不出去"，所以**通的能力也不许被写成受限能力**。要改这一栏，先改账本状态或拦截集。
 
+## 它是默认源，而且是唯一的默认源
+
+未指定 `provider` 时，**核心能力由 tdx 出数**：`ProviderSpec(id="tdx", default=True)` 让
+`PROVIDERS.default_provider == "tdx"`，`CoreConfig.default_provider` 也是 `"tdx"`。这条缺省
+落在 `QuerySpec.normalized()` 里（`resolve_capability_provider("bars", None)` → `tdx`：tdx 声明了
+`bars`，且 `bars` 不在 channel 的 `unavailable` 集合里，于是原样保留），不需要显式点名。
+注意别被 `catalog.capability.default_provider_for("bars")` 误导——那张表只服务**迁移能力**
+（`minute_klines` 之类），对 `bars` 直接 `KeyError`。
+
+三条边界必须知道：
+
+1. **缺省源不按市场分叉。** 只有迁移能力 `minute_klines` 按市场分（A 股腾讯、港美东财）；
+   核心 `bars` 一律 tdx，于是 `bars("hk00700")` / `bars("usAAPL")` 当场 `SymbolError`（E4040），
+   `bars("bj430047")` 抛 `E3040`（`market=2` 未验证）。港美要显式换源，北交所在 tdx 侧无路可走。
+2. **没有跨源兜底。** tdx 主机全不可达就是失败，不会悄悄改由腾讯/东财出数——这是
+   provider-first 的硬承诺。要兜底得显式写 `provider="auto"`（候选按能力面排序，tdx 仍在首位）
+   或传 `FallbackPolicy`。
+3. **tdx 的 `bars` 不做复权。** `adjustment=` 在 `_tdx_bars` 里当场 `E1010`；复权走
+   `adjusted_bars`（`derived`，事件源默认东财，因为 `0x000F` 账本仍是 `verified=False`）。
+
 Direct API：
 
 ```python
