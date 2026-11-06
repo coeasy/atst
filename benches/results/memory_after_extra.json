@@ -1,0 +1,25 @@
+{
+  "mode": "synthetic",
+  "python": "3.12.13",
+  "timestamp": "2026-11-06 21:11:32",
+  "results": {
+    "market": {
+      "rows": 5400,
+      "elapsed_s": 0.6702,
+      "peak_kib": 7442.04,
+      "peak_mib": 7.27
+    },
+    "kline": {
+      "rows": 320000,
+      "elapsed_s": 3.7369,
+      "peak_kib": 80069.84,
+      "peak_mib": 78.19
+    },
+    "vipdoc": {
+      "rows": 80000,
+      "elapsed_s": 4.8167,
+      "peak_kib": 26842.68,
+      "peak_mib": 26.21
+    }
+  }
+}

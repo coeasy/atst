@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import struct
 from collections.abc import Iterator, Sequence
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -80,6 +81,15 @@ __all__ = [
     "read_min_file",
     "resolve_vipdoc_path",
 ]
+
+
+@lru_cache(maxsize=8192)
+def _day_datetime(year: int, month: int, day: int) -> str:
+    """日线时间字符串（同一批多标的日期高度重复，做有界驻留）。
+
+    只对**合法日期**分支登记；畸形日期回退路径不建条目，避免为唯一值反复付哈希成本。
+    """
+    return f"{year:04d}-{month:02d}-{day:02d} 15:00"
 
 
 class BaseFileReader:
@@ -153,7 +163,8 @@ class BaseFileReader:
             profile = profile.with_overrides(charset=self.encoding)
         return profile
 
-    def _iter_records(self, raw: bytes, size: int) -> Iterator[bytes]:
+    def _record_count(self, raw: bytes, size: int) -> int:
+        """校验尾部残缺记录并返回完整记录数（切片迭代与零拷贝解码共用这一口径）。"""
         n = len(raw)
         count = n // size
         remainder = n % size
@@ -162,6 +173,10 @@ class BaseFileReader:
             if self.strict:
                 raise TruncatedRecordError(msg, context={"size": n, "remainder": remainder})
             self.warnings.append(msg + "，已截断")
+        return count
+
+    def _iter_records(self, raw: bytes, size: int) -> Iterator[bytes]:
+        count = self._record_count(raw, size)
         for i in range(count):
             yield raw[i * size : (i + 1) * size]
 
@@ -192,59 +207,107 @@ class DayBarReader(BaseFileReader):
     def read(self, path: str | Path, *, output: str = "dict") -> Any:
         raw = self._read_file(path)
         profile = self._prepare(raw)
-        bars: list[Bar] = []
-        for rec in self._iter_records(raw, self.RECORD_SIZE):
-            bars.append(self._decode_record(rec, profile))
+        bars = self._decode_records(raw, profile)
         return self._output(bars, output)
 
     def read_bytes(self, raw: bytes, *, profile: DataProfile | None = None) -> list[Bar]:
         prof = profile or self._prepare(raw)
-        return [self._decode_record(r, prof) for r in self._iter_records(raw, self.RECORD_SIZE)]
+        return self._decode_records(raw, prof)
+
+    def _decode_records(self, raw: bytes, p: DataProfile) -> list[Bar]:
+        """按偏移原地解码（不为每条记录切出 32 字节临时 bytes）。"""
+        size = self.RECORD_SIZE
+        count = self._record_count(raw, size)
+        return [self._decode_record_at(raw, i * size, p) for i in range(count)]
 
     def _decode_record(self, rec: bytes, p: DataProfile) -> Bar:
         if len(rec) < self.RECORD_SIZE:
             raise FileFormatError(f"日线记录长度不足: {len(rec)} < {self.RECORD_SIZE}")
-        (date_raw,) = struct.unpack_from("<I", rec, 0)
+        return self._decode_record_at(rec, 0, p)
+
+    def _decode_record_at(self, raw: bytes, off: int, p: DataProfile) -> Bar:
+        (date_raw,) = struct.unpack_from("<I", raw, off)
         if p.price_encoding == PriceEncoding.FLOAT32:
-            o, h, lo, c = struct.unpack_from("<ffff", rec, 4)
-            amount_raw = struct.unpack_from("<f", rec, 20)[0]
+            o, h, lo, c = struct.unpack_from("<ffff", raw, off + 4)
+            amount_raw = struct.unpack_from("<f", raw, off + 20)[0]
         else:
-            o_raw, h_raw, lo_raw, c_raw = struct.unpack_from("<IIII", rec, 4)
+            o_raw, h_raw, lo_raw, c_raw = struct.unpack_from("<IIII", raw, off + 4)
             o, h, lo, c = (
                 o_raw / p.price_scale,
                 h_raw / p.price_scale,
                 lo_raw / p.price_scale,
                 c_raw / p.price_scale,
             )
-            amount_raw = struct.unpack_from("<f", rec, 20)[0]
-        (volume_raw,) = struct.unpack_from("<I", rec, 24)
-        (last_field,) = struct.unpack_from("<I", rec, 28)
+            amount_raw = struct.unpack_from("<f", raw, off + 20)[0]
+        (volume_raw,) = struct.unpack_from("<I", raw, off + 24)
+        (last_field,) = struct.unpack_from("<I", raw, off + 28)
 
         volume = p.to_volume(volume_raw)
         amount = p.to_amount(amount_raw)
+        # uint 编码且 scale ∈ {1,100,1000} 时，价格是至多 3 位小数的精确十进制，
+        # round(x, 4) 为恒等操作；跳过每记录 4 次 round（float32 噪声仍需收敛）。
+        exact = p.price_encoding != PriceEncoding.FLOAT32 and p.price_scale in (1, 100, 1000)
 
-        extra: dict[str, Any] = {}
         if p.extra_fields and "open_interest" in p.extra_fields:
-            extra["open_interest"] = int(last_field)
+            extra: tuple[Any, ...] = ("open_interest", int(last_field))
         else:
-            extra["prev_close"] = round(
+            prev_close = (
                 last_field / p.price_scale
                 if p.price_encoding != PriceEncoding.FLOAT32
-                else last_field,
-                4,
+                else last_field
+            )
+            #: 直接给出压平 tuple（Bar 内部格式），避免每行先建 dict 再拆开。
+            extra = ("prev_close", prev_close if exact else round(prev_close, 4))
+
+        if exact:
+            open_, high_, low_, close_ = o, h, lo, c
+        else:
+            open_, high_, low_, close_ = (
+                round(float(o), 4),
+                round(float(h), 4),
+                round(float(lo), 4),
+                round(float(c), 4),
             )
 
         return Bar(
             # DayBarReader 只读日线档：裸日期补「日期 15:00」（与 tdx 日线同口径）
-            datetime=day_like_datetime(self._decode_date(date_raw, p)),
-            open=round(float(o), 4),
-            high=round(float(h), 4),
-            low=round(float(lo), 4),
-            close=round(float(c), 4),
+            datetime=self._decode_datetime(date_raw, p),
+            open=open_,
+            high=high_,
+            low=low_,
+            close=close_,
             volume=int(volume),
             amount=round(float(amount), 2),
             extra=extra,
         )
+
+    @classmethod
+    def _decode_datetime(cls, raw: int, p: DataProfile) -> str:
+        """日线记录 → ``"YYYY-MM-DD 15:00"``。
+
+        ``YYYYMMDD`` 是 .day 的绝对主流编码，直接拼字符串即可；只有走位域 /
+        LC16 回退时才回到 :meth:`_decode_date` + :func:`day_like_datetime`。
+        """
+        if p.time_encoding == TimeEncoding.YYYYMMDD:
+            y, mo, d = raw // 10000, (raw // 100) % 100, raw % 100
+            if 1990 <= y <= 2100 and 1 <= mo <= 12 and 1 <= d <= 31:
+                return _day_datetime(y, mo, d)
+            # 与 _decode_date 的回退位域同一口径（此处内联，避免逐条走正则）
+            y = (raw >> 20) & 0xFFF
+            mo = (raw >> 16) & 0x0F
+            d = (raw >> 11) & 0x1F
+            return f"{y:04d}-{mo:02d}-{d:02d} 15:00"
+        if p.time_encoding == TimeEncoding.LC16:
+            y, mo, d = get_datetime_from_lc(raw & 0xFFFF)
+            return _day_datetime(y, mo, d)
+        if p.time_encoding == TimeEncoding.DATETIME32:
+            y = (raw >> 20) & 0xFFF
+            mo = (raw >> 16) & 0x0F
+            d = (raw >> 11) & 0x1F
+            hh = (raw >> 6) & 0x1F
+            mi = raw & 0x3F
+            return f"{y:04d}-{mo:02d}-{d:02d} {hh:02d}:{mi:02d}"
+        return day_like_datetime(cls._decode_date(raw, p))
 
     @staticmethod
     def _decode_date(raw: int, p: DataProfile) -> str:

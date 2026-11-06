@@ -1,0 +1,22 @@
+{
+  "mode": "synthetic",
+  "python": "3.12.13",
+  "timestamp": "2026-11-06 07:48:43",
+  "results": {
+    "parse_quotes": {
+      "rows": 1000,
+      "elapsed_s": 0.3907,
+      "rows_per_s": 2559.8
+    },
+    "parse_kline": {
+      "rows": 80000,
+      "elapsed_s": 0.6889,
+      "rows_per_s": 116127.9
+    },
+    "serialize": {
+      "rows": 5400,
+      "elapsed_s": 0.015,
+      "rows_per_s": 360909.5
+    }
+  }
+}
