@@ -6,9 +6,9 @@
 
 `.github/workflows/wheels.yml` 已包含 PyPI Trusted Publishing：推送符合规则的 `v*` tag 后，先运行完整发布门禁、构建并验证 wheel/sdist，再创建 GitHub draft release。2026-10-04 已完成 GitHub 仓库侧配置：`pypi` Environment 已创建，只允许匹配 `v*` 的标签部署；仓库 Actions variable `PUBLIC_RELEASE=true` 已启用。环境未设置 required reviewer，以保留 tag 发布后的自动流程。
 
-本次核查 PyPI JSON API：[`https://pypi.org/pypi/atst/json`](https://pypi.org/pypi/atst/json) 返回 404，当前没有 `atst` 项目版本可供安装。用户已确认 PyPI 账号侧 Trusted Publisher 设置完成；首次发布前应再核对其字段与下表完全一致。Pending publisher 允许首次 GitHub Actions 发布创建项目，但在成功发布前不会保留项目名；首次使用后会转为普通 publisher。
+本次核查 PyPI JSON API（2026-11-08）：[`https://pypi.org/pypi/atst/json`](https://pypi.org/pypi/atst/json) 返回项目 `atst`，最新版本 `1.6.1`（2026-10-30），已发布 `1.4.3` / `1.6.0` / `1.6.1`；`pip install atst` 可直接安装。项目已存在，Trusted Publisher 已是普通 publisher，不再是 pending publisher。下一次待发布为 `v2.0.0`（源码 `2.0.0`，尚未打 tag）。
 
-GitHub 仓库侧设置已通过登录后的仓库设置页面保存并回读确认。PyPI pending publisher 由用户确认已配置；本地无法读取 PyPI 账号设置，也不能在本地模拟 GitHub Actions OIDC 身份。下列信息作为后续复核清单。
+GitHub 仓库侧设置已通过登录后的仓库设置页面保存并回读确认。PyPI Trusted Publisher 已随 `1.6.1` 首次成功发布转为普通 publisher；本地无法读取 PyPI 账号设置，也不能在本地模拟 GitHub Actions OIDC 身份。下列信息作为后续复核清单。
 
 ## 1. PyPI Trusted Publisher（用户已配置）
 
@@ -22,7 +22,7 @@ GitHub 仓库侧设置已通过登录后的仓库设置页面保存并回读确�
 | Workflow filename | `wheels.yml` |
 | Environment name | `pypi` |
 
-由于项目尚不存在，这应是账号级 pending publisher，而不是给已有项目添加 publisher。Pending publisher 在首次成功发布前**不会保留项目名**；首次使用后会转为普通 publisher。
+由于项目已存在（1.6.1 已发布），这是给已有项目添加的普通 publisher，而不是账号级 pending publisher。
 
 参考：[PyPI：用 Trusted Publisher 创建项目](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)；[PyPI：添加 Trusted Publisher](https://docs.pypi.org/trusted-publishers/adding-a-publisher/)。
 
@@ -76,3 +76,19 @@ push vX.Y.Z
    ```
 
 `workflow_dispatch` 仅用于手动运行构建检查；GitHub Release 的创建/发布逻辑要求 tag push，因此它不替代正式 tag 发布。
+
+## 6. 待发布：v2.0.0 最小步骤
+
+当前仓库 `atst/_version.py` = `2.0.0`，CHANGELOG 与 `docs/releases/v2.0.0.md` 已就绪；
+`docs/releases/v2.0.0.md` 是 `wheels.yml` 的硬性检查项，缺失会让发布 job 直接失败。
+
+```bash
+python -m build
+python scripts/build_package.py --verify-only --dist-out dist
+twine check dist/*
+git tag v2.0.0
+git push origin v2.0.0
+```
+
+推送 tag 后按第 5 节检查四个 job；PyPI 出现 `2.0.0` 后，用仓库外干净环境复验
+`pip install atst==2.0.0`，确认 PyPI 页面不再显示过时的未发布声明。

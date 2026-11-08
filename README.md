@@ -4,7 +4,7 @@
 >
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
-- 当前版本：`2.0.0`（v2 架构重写，源码候选，未打 tag）· 上一已发布版本 [`v1.6.1`](https://github.com/coeasy/atst/releases/tag/v1.6.1)；本包**不在 PyPI**（Trusted Publisher 与 `pypi` 环境已配置，推送版本 tag 后工作流会执行 OIDC 上传）· [CHANGELOG](CHANGELOG.md) · [v1→v2 迁移指南](docs/migration/v2.md)
+- 当前版本：`2.0.0`（v2 架构重写，源码候选，尚未打 tag）· 已发布版本：PyPI 最新 **`1.6.1`**（`pip install atst`，2026-10-30）· [v1.6.1 Release](https://github.com/coeasy/atst/releases/tag/v1.6.1) · [CHANGELOG](https://github.com/coeasy/atst/blob/main/CHANGELOG.md) · [v1→v2 迁移指南](https://github.com/coeasy/atst/blob/main/docs/migration/v2.md)
 
 ---
 
@@ -155,7 +155,7 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 
 | 协议族 | 端口 | 覆盖范围 | 命令账本 | 精确解析器 | 通用/透传 |
 |---|---|---|---|---|---|
-| **7709 标准**（`quotation`） | 7709 | A 股行情（K 线/实时/证券计数；分时与逐笔在结构化面已下线，见 [`docs/providers/tdx.md`](docs/providers/tdx.md)） | 39 | 18 | 是 |
+| **7709 标准**（`quotation`） | 7709 | A 股行情（K 线/实时/证券计数；分时与逐笔在结构化面已下线，见 [`docs/providers/tdx.md`](https://github.com/coeasy/atst/blob/main/docs/providers/tdx.md)） | 39 | 18 | 是 |
 | **7727 扩展市场**（`ex_quotation`） | 7727 | 港股/美股/期货/外汇/期权 | 17 | 15 | 是 |
 | **MAC 专属**（`mac_quotation`） | 7709 | 板块/指数/概念/财务 | 16 | 16 | 是 |
 | **F10 资料**（`f10`） | 7709 | 公司概况/股东/财务/交易信息 | 2 | 1 | 是 |
@@ -188,24 +188,24 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 ## 安装
 
 ```bash
-pip install "atst[all]"             # ← 尚不可用：本包目前不在 PyPI 上（见下）
-pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-asyncio/hatchling）
+pip install atst                    # 核心包（PyPI 最新 1.6.1，零硬依赖）
+pip install "atst[all]"             # 全部可选能力（pandas/pyarrow/duckdb/httpx/fastapi/...）
+pip install -e ".[dev]"             # 开发体验（pytest/ruff/mypy/pytest-asyncio/hatchling）
 ```
 
-> **装包的实际口径**（实测）：`https://pypi.org/pypi/atst/json` 返回
-> `{"message": "Not Found"}`——PyPI 上没有 `atst` 这个名字，所以 `pip install atst`
-> 与上面第一行的 extras 安装今天都装不到东西。可用的安装路径只有两条：
+> **版本口径**（2026-11-08 实测）：`atst` **已发布到 PyPI**，最新版本为 `1.6.1`
+> （上传于 2026-10-30）。本仓库源码为 `2.0.0`，尚未打 tag；`pip install atst`
+> 当前装到 `1.6.1`，2.0.0 新增的零配置入口（`atst.history` 等）需要等 2.0.0
+> 发布后才能从 PyPI 安装。需要立即体验 2.0.0 时从源码安装：
 >
 > ```bash
 > git clone https://github.com/coeasy/atst.git && cd atst
-> pip install ".[all]"                       # 从源码
-> pip install "atst[all] @ file:///绝对路径/atst-<版本>-py3-none-any.whl"   # 从构建产物
-> python -m build                            # 产物在 dist/；make build 走同一套 canonical 校验
+> pip install ".[all]"                # 2.0.0 源码
+> python -m build                     # 产物在 dist/；make build 走同一套 canonical 校验
 > ```
 >
-> extras 的名字（`dataframe` / `parquet` / `duckdb` / `web` / `metrics` /
-> `server` / `tools` / `all`）是仓内 `pyproject.toml` 声明的那一套，从源码或
-> wheel 装时同样可用；本节只在真正上架 PyPI 后才需要改写。
+> extras 名称（`dataframe` / `parquet` / `duckdb` / `web` / `metrics` /
+> `server` / `tools` / `all`）与 `pyproject.toml` 一致，PyPI 安装与源码安装同样可用。
 
 > `[project.optional-dependencies].dev` 已声明，本地与 CI 使用同一
 > 门禁口径（覆盖率阈值只在 `pyproject.toml [tool.coverage.report] fail_under` 写一次，
@@ -260,7 +260,7 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
      `publish-pypi` 才用 OIDC trusted publishing 上传（重复版本会被
      `scripts/check_pypi_release.py` 校验并安全跳过）。默认不发布到 PyPI。首次启用前，
      还需在 PyPI 创建 pending Trusted Publisher；准确字段与 GitHub 环境配置见
-     [`docs/release-publishing.md`](docs/release-publishing.md)。
+     [`docs/release-publishing.md`](https://github.com/coeasy/atst/blob/main/docs/release-publishing.md)。
    - Docker 镜像同理，需 `PUBLIC_RELEASE=true` 且 `PUBLISH_DOCKER=true`。
 
 ### 运行前提：Actions 必须真的能把 job 跑起来
@@ -330,6 +330,28 @@ async def main():
 
 
 asyncio.run(main())
+```
+
+### 零配置最短路径（`atst.history` / `atst.quote`，2.0.0 起；PyPI 1.6.1 暂无此入口）
+
+```python
+import atst
+
+rows = atst.history("600519", count=80)      # 日线 → list[dict]
+row = atst.quote("600519")                   # 实时行情 → dict | None
+rows = atst.quotes(["600519", "000001"])     # 批量行情
+rows = atst.minute("600519")                 # 当日分时
+rows = atst.trades("600519", count=200)      # 逐笔成交
+```
+
+快捷函数默认 `provider="auto"`（候选顺序按能力面与健康反馈现算），只丢弃
+`meta`、不绕开路由/校验/告警；需要 provenance、跨源策略或严格拒收时直接换
+`Client`。能力检索用中文别名或 Provider 过滤：
+
+```bash
+atst capabilities --search 龙虎榜          # 只回能力名
+atst capabilities --describe longhu        # 状态 / Provider / Channel / 默认源
+atst capabilities --status offline         # 只看当前离线能力
 ```
 
 ### 统一查询内核（`Client`，217 项 capability）
@@ -557,21 +579,21 @@ python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproje
 
 | 文档 | 内容 |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | **现行架构**（分层/内核/契约/服务面，与代码同轮钉死）|
-| [docs/api/interfaces.md](docs/api/interfaces.md) | **项目接口文档**（全部公开接口面汇总）|
-| [docs/quickstart.md](docs/quickstart.md) | 快速入门 |
-| [docs/api/README.md](docs/api/README.md) | API 索引（内核/协议/传输/服务面/基础设施）|
-| [docs/configuration.md](docs/configuration.md) | 配置段、合并层与环境变量归一 |
-| [docs/cookbook/](docs/cookbook/README.md) | 场景示例（批量 K 线/显式跨源/离线 vipdoc/流式/Sinks/自定义命令/单内核）|
-| [docs/migration/](docs/migration/README.md) | 从 mootdx/easy_tdx/easyquotation 迁移 |
-| [docs/providers/](docs/providers/README.md) | 逐 Provider 能力与口径 |
-| [docs/tdx_status.md](docs/tdx_status.md) | TDX 全接口连通性矩阵（真机逐项实测口径）|
-| [docs/FAQ.md](docs/FAQ.md) | 常见问题 |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | 排障指南 |
-| [docs/errors.md](docs/errors.md) | 错误体系与 RetryAdvice 使用指南 |
-| [PROTOCOL_SPEC/](PROTOCOL_SPEC/README.md) | 协议命令 YAML 规范 + codegen/spec_audit 闭环 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录（含 native 弃用时间线 v1.5.0/v1.6.0）|
-| [docs/releases/](docs/releases/v1.6.1.md) | 逐版本发布说明（`v1.0.0` → `v1.6.1`）|
+| [docs/ARCHITECTURE.md](https://github.com/coeasy/atst/blob/main/docs/ARCHITECTURE.md) | **现行架构**（分层/内核/契约/服务面，与代码同轮钉死）|
+| [docs/api/interfaces.md](https://github.com/coeasy/atst/blob/main/docs/api/interfaces.md) | **项目接口文档**（全部公开接口面汇总）|
+| [docs/quickstart.md](https://github.com/coeasy/atst/blob/main/docs/quickstart.md) | 快速入门 |
+| [docs/api/README.md](https://github.com/coeasy/atst/blob/main/docs/api/README.md) | API 索引（内核/协议/传输/服务面/基础设施）|
+| [docs/configuration.md](https://github.com/coeasy/atst/blob/main/docs/configuration.md) | 配置段、合并层与环境变量归一 |
+| [docs/cookbook/](https://github.com/coeasy/atst/blob/main/docs/cookbook/README.md) | 场景示例（批量 K 线/显式跨源/离线 vipdoc/流式/Sinks/自定义命令/单内核）|
+| [docs/migration/](https://github.com/coeasy/atst/blob/main/docs/migration/README.md) | 从 mootdx/easy_tdx/easyquotation 迁移 |
+| [docs/providers/](https://github.com/coeasy/atst/blob/main/docs/providers/README.md) | 逐 Provider 能力与口径 |
+| [docs/tdx_status.md](https://github.com/coeasy/atst/blob/main/docs/tdx_status.md) | TDX 全接口连通性矩阵（真机逐项实测口径）|
+| [docs/FAQ.md](https://github.com/coeasy/atst/blob/main/docs/FAQ.md) | 常见问题 |
+| [docs/troubleshooting.md](https://github.com/coeasy/atst/blob/main/docs/troubleshooting.md) | 排障指南 |
+| [docs/errors.md](https://github.com/coeasy/atst/blob/main/docs/errors.md) | 错误体系与 RetryAdvice 使用指南 |
+| [PROTOCOL_SPEC/](https://github.com/coeasy/atst/blob/main/PROTOCOL_SPEC/README.md) | 协议命令 YAML 规范 + codegen/spec_audit 闭环 |
+| [CHANGELOG.md](https://github.com/coeasy/atst/blob/main/CHANGELOG.md) | 版本变更记录（含 native 弃用时间线 v1.5.0/v1.6.0）|
+| [docs/releases/](https://github.com/coeasy/atst/blob/main/docs/releases/v1.6.1.md) | 逐版本发布说明（`v1.0.0` → `v1.6.1`）|
 
 ---
 
@@ -579,13 +601,13 @@ python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproje
 
 欢迎贡献代码、文档、协议规范、主站候选、测试数据。请阅读：
 
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-- [GOVERNANCE.md](GOVERNANCE.md)
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- [SECURITY.md](SECURITY.md)
+- [CONTRIBUTING.md](https://github.com/coeasy/atst/blob/main/CONTRIBUTING.md)
+- [GOVERNANCE.md](https://github.com/coeasy/atst/blob/main/GOVERNANCE.md)
+- [CODE_OF_CONDUCT.md](https://github.com/coeasy/atst/blob/main/CODE_OF_CONDUCT.md)
+- [SECURITY.md](https://github.com/coeasy/atst/blob/main/SECURITY.md)
 
 ---
 
 ## 许可证
 
-MIT License - 详见 [LICENSE](LICENSE)
+MIT License - 详见 [LICENSE](https://github.com/coeasy/atst/blob/main/LICENSE)

@@ -52,6 +52,7 @@ Thumbs.db
 # Local workspace/session state
 .workbuddy/
 .workbuddy-ai/
+.trae/
 
 # Local data stores (Golden binary fixtures stay tracked under tests/golden)
 data/

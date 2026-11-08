@@ -1,6 +1,6 @@
 # API 参考
 
-当前 `2.0.0`（v2 架构重写，源码候选，未打 tag）；上一已发布 GitHub Release 为 [`v1.6.1`](https://github.com/coeasy/atst/releases/tag/v1.6.1)，本包**不在 PyPI 上** · [CHANGELOG](../../CHANGELOG.md) · [v1→v2 迁移指南](../migration/v2.md)
+当前 `2.0.0`（v2 架构重写，源码候选，尚未打 tag）；PyPI 最新已发布版本为 `1.6.1`（`pip install atst`，2026-10-30），对应 GitHub Release [`v1.6.1`](https://github.com/coeasy/atst/releases/tag/v1.6.1) · [CHANGELOG](../../CHANGELOG.md) · [v1→v2 迁移指南](../migration/v2.md)
 
 > 本页对应 `/v13/` 服务面与单一执行内核。完整 docstring 驱动文档
 > 由 `pdoc`/`mkdocstrings` 生成；此处提供稳定入口和模块索引。

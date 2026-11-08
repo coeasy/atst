@@ -7,42 +7,59 @@ import atst
 
 _ROOT = Path(__file__).resolve().parents[2]
 
-#: G9：任何一份读者会照着敲的文档都在名单上。判据的对象不是"提没提 PyPI"，
-#: 而是"有没有把一条装不通的命令写得像装得通"。
-_INSTALL_DOCS = (
+#: G9：任何一份读者会照着敲的当前文档都在名单上。判据的对象不是"提没提 PyPI"，
+#: 而是"页面上的安装路径与 PyPI 事实是否一致"。
+_CURRENT_INSTALL_DOCS = (
     "README.md",
     "docs/quickstart.md",
     "docs/api/README.md",
     "docs/FAQ.md",
-    "docs/releases/v1.0.0.md",
 )
 
 #: `pip install atst` / `pip install "atst[all]"` / `pip install --upgrade atst==1.0.0`
 #: 三种写法同一个形状；`-e ".[dev]"` 与 `".[all]"` 这种从源码装的写法不在其内。
 _PYPI_INSTALL = re.compile(r"pip install (?:--upgrade )?[\"']?atst")
 
-#: 页面上必须出现的口径声明（写明本包当前不在 PyPI 上，见各页 G9 段）。
-_UNPUBLISHED_MARKER = "不在 PyPI"
+#: 页面必须写明的当前事实（2026-11-08：PyPI 已发布 1.6.1）。
+_PUBLISHED_MARKER = "已发布"
+
+#: 已经过时的表述；出现在当前安装文档里就是误导。
+_STALE_MARKERS = ("不在 PyPI", '{"message": "Not Found"}', "PyPI 上没有")
 
 
-def test_no_user_doc_presents_an_unpublished_install_path_as_available() -> None:
-    """G9：`pip install atst` 在 PyPI 上没有对应物，文档不能把它写成可用指令。
+def test_current_install_docs_describe_the_published_package() -> None:
+    """G9：当前安装文档必须与 PyPI 事实同口径。
 
-    实测口径来自 ``reports/g9_pypi_probe.log``（2026-09-22）：
-    ``https://pypi.org/pypi/atst/json`` 与 ``/simple/atst/`` 均回 404。一条装不通
-    的命令与一条会给出错数的命令是同一类缺陷——差别只在于受害的是新读者。
-    真正关闭这一格的是发布动作；本判据保证的是『在发布之前，文档不再替它背书』。
+    2026-09-22 时 ``https://pypi.org/pypi/atst/json`` 回 404，判据要求文档写明
+    「不在 PyPI」；2026-11-08 实测项目已存在、最新 ``1.6.1``、``pip install atst``
+    可用，判据随事实翻到「已发布」，并禁止旧口径回流（判据与文档必须一起动）。
     """
-    scanned = 0
     offenders: list[str] = []
-    for relative in _INSTALL_DOCS:
+    for relative in _CURRENT_INSTALL_DOCS:
         text = (_ROOT / relative).read_text(encoding="utf-8")
-        scanned += 1
-        if _PYPI_INSTALL.search(text) and _UNPUBLISHED_MARKER not in text:
-            offenders.append(relative)
+        if _PUBLISHED_MARKER not in text:
+            offenders.append(f"{relative}: missing '已发布'")
+        for stale in _STALE_MARKERS:
+            if stale in text:
+                offenders.append(f"{relative}: stale marker {stale!r}")
 
-    assert scanned == len(_INSTALL_DOCS), "扫描数与名单不符，判据自身失明"
-    assert offenders == [], f"这些文档把未上架的安装路径写成可用：{offenders}"
+    assert offenders == [], f"当前安装文档与 PyPI 事实不一致：{offenders}"
+
+    readme = (_ROOT / "README.md").read_text(encoding="utf-8")
+    quickstart = (_ROOT / "docs" / "quickstart.md").read_text(encoding="utf-8")
+    for relative, text in (("README.md", readme), ("docs/quickstart.md", quickstart)):
+        assert _PYPI_INSTALL.search(text), f"{relative} 未给出可执行的 pip install atst"
+
+
+def test_readme_links_render_on_pypi() -> None:
+    """PyPI 不解析相对路径；README 里的相对链接在项目页会全部 404。"""
+
+    readme = (_ROOT / "README.md").read_text(encoding="utf-8")
+    links = re.findall(r"\]\(([^)]+)\)", readme)
+    relative = [
+        link for link in links if not link.startswith(("http://", "https://", "#", "mailto:"))
+    ]
+    assert relative == [], f"README 含 PyPI 页面无法解析的相对链接：{relative}"
 
 
 def test_v1_release_identity_is_preserved() -> None:
@@ -70,8 +87,8 @@ def test_v1_release_identity_is_preserved() -> None:
 def test_general_docs_report_the_actual_released_state() -> None:
     """三处读者入口对「发布到哪了」的口径必须与事实一致。
 
-    事实（2026-09-28）：GitHub Release `v1.0.0` 已发布、产物可下载；PyPI **仍未**发布
-    （上传是显式 opt-in）。所以三页都要**同时**出现「已发布」与「不在 PyPI」——
+    事实（2026-11-08）：PyPI 项目 `atst` 已存在，最新 `1.6.1`；GitHub Release `v1.6.1`
+    已发布。所以三页都要写明「已发布」，且**不得**再出现「不在 PyPI」——
     只写其一就是另一种形式的不如实。
     """
     readme = (_ROOT / "README.md").read_text(encoding="utf-8")
@@ -79,11 +96,11 @@ def test_general_docs_report_the_actual_released_state() -> None:
     api_index = (_ROOT / "docs" / "api" / "README.md").read_text(encoding="utf-8")
 
     assert f"当前版本：`{atst.__version__}`" in readme
-    assert "已发布" in readme and "不在 PyPI" in readme
+    assert "已发布" in readme and "不在 PyPI" not in readme
     assert f"当前 `{atst.__version__}`" in quickstart
-    assert "已发布" in quickstart and "不在 PyPI" in quickstart
+    assert "已发布" in quickstart and "不在 PyPI" not in quickstart
     assert f"当前 `{atst.__version__}`" in api_index
-    assert "已发布" in api_index and "不在 PyPI" in api_index
+    assert "已发布" in api_index and "不在 PyPI" not in api_index
 
 
 def test_current_docs_do_not_reintroduce_cross_provider_fallback_as_default() -> None:

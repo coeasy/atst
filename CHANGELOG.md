@@ -45,6 +45,11 @@ symbol 归一化）保持不变，变化集中在内部布局与声明方式。
 - **金样本采集计划**（`docs/golden_capture.md`）与 **六份 Provider 文档补齐**
   （`local_vipdoc` / `builtin` / `derived` / `cninfo` / `ths` / `wallstreet`），
   `docs/providers/` 覆盖 14/14。
+- **零配置快捷入口**：顶层 `atst.history` / `atst.quote` / `atst.quotes` / `atst.minute` /
+  `atst.trades`，默认 `provider="auto"`，返回 `list[dict]` / `dict`，内部仍走 `Client`。
+- **能力检索**：`atst.search_capabilities` / `atst.describe_capability` 与
+  `atst capabilities --search/--describe/--status/--provider`（发现面仍保持纯名字形状）。
+- `atst --version` 与 `atst version` 等价输出版本号。
 
 ### Performance
 
@@ -61,6 +66,15 @@ symbol 归一化）保持不变，变化集中在内部布局与声明方式。
   单次 compile：53.7 → 44.8 µs（-16%）。
 - **quotes_batch**：并行分支改用 `ThreadPoolExecutor.map`（自带按提交顺序回传），去掉一份
   futures 字典与逐键查找；`workers<=1` 时完全串行，逐项隔离语义不变。
+
+### Fixed
+
+- **新浪全市场计数不再静默截断**：`max_pages` 不足时按上游总数给出确定缺条数；节点空 /
+  计数不可用分别发 `web_sina_node_empty` / `web_sina_count_unavailable` /
+  `web_sina_market_count_mismatch`。
+- **`quotes` 空结果统一告警**：请求非空但一行未取回时发 `quotes_empty_result`，与
+  `quotes_partial_failure` 区分；`strict=True` 可拒收。
+- **`direct_adapter` 导入路径**随 `catalog/` → `providers/` 重排同步修正，11 条 `direct_adapter` 绑定离线解析全部通过。
 
 ### 判据
 
