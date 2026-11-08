@@ -61,6 +61,12 @@ Quick start（HTTP Web 源，无需 TDX 主站）::
 
     from atst.sources import get_quotes
     quotes = get_quotes(["sh600519", "sz000001"], source="tencent")
+
+Quick start（零配置，最短路径；内部仍委托 Client）::
+
+    import atst
+    rows = atst.history("600519")          # K 线 → list[dict]
+    row = atst.quote("600519")             # 实时行情 → dict | None
 """
 
 from __future__ import annotations
@@ -116,6 +122,15 @@ __all__ = [
     "load_config",
     "observability",
     "streaming",
+    # 零配置快捷入口（委托 Client，不构成第二套业务入口）。
+    "history",
+    "quote",
+    "quotes",
+    "minute",
+    "trades",
+    # 独立的能力检索/描述辅助（不改变三处发现面的纯名字形状）。
+    "search_capabilities",
+    "describe_capability",
 ]
 
 from . import codec, errors, protocol  # noqa: E402,F401
@@ -200,6 +215,13 @@ _LAZY: dict[str, tuple[str, str]] = {
     "load_config": ("atst.config", "load_config"),
     "observability": ("atst.observability", ""),
     "streaming": ("atst.streaming", ""),
+    "history": ("atst.client.quick", "history"),
+    "quote": ("atst.client.quick", "quote"),
+    "quotes": ("atst.client.quick", "quotes"),
+    "minute": ("atst.client.quick", "minute"),
+    "trades": ("atst.client.quick", "trades"),
+    "search_capabilities": ("atst.providers.discovery", "search_capabilities"),
+    "describe_capability": ("atst.providers.discovery", "describe_capability"),
 }
 
 

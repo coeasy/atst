@@ -526,6 +526,17 @@ Client.capabilities()   # 217 项 capability 名，按字典序排好
 **每个**归属 channel 都下线才判死）。`offline` 名字仍留在发现面（形状不变），但调用方
 据 `capability_statuses()` 即可避开它们——这正是"名字 ≠ 可用性"那条口径的机器可读版本。
 
+检索与描述走独立辅助 `atst.providers.discovery`，它**不是第四个发现面**：不发布新的名字集合，
+也不改上面三处出口的 `tuple[str, ...]` 形状。`search_capabilities("龙虎榜")` 支持中文别名与
+Provider 过滤，仍然只回名字；`describe_capability("longhu")` 才给出
+status / Provider / Channel / default_provider / 中文别名：
+
+```bash
+atst capabilities --search 龙虎榜          # {"capabilities": ["longhu", ...]}
+atst capabilities --describe longhu        # {"capability": {...}}
+atst capabilities --status offline         # 只回离线能力名
+```
+
 tdx 这条链上有 6 个名字一调就必然失败，全部踩在被账本判 `offline` 的命令上。下表由
 `tests/architecture/test_offline_capability_honesty.py` 现推——名字集合、命令号、tdx 侧实现、
 出路 Provider 四个字段全部来自「命令账本 + `client/core.py` 的 `_UNVERIFIED_STRUCTURED_BLOCK` +

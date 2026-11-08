@@ -58,7 +58,28 @@ def cmd_version(args: Any) -> int:
 
 
 def cmd_capabilities(args: Any) -> int:
-    del args
+    """列出 / 检索能力。默认输出保持纯名字形状；``--describe`` 才给健康度细节。"""
+    describe = getattr(args, "describe", None)
+    query = getattr(args, "query", "") or ""
+    status = getattr(args, "status", None)
+    provider = getattr(args, "provider", None)
+    if describe is not None:
+        from ..providers.discovery import describe_capability
+
+        _print({"capability": describe_capability(describe)})
+        return 0
+    if query or status is not None or provider is not None:
+        from ..providers.discovery import search_capabilities
+
+        limit = getattr(args, "limit", 50)
+        records = search_capabilities(
+            query,
+            status=status,
+            provider=provider,
+            limit=limit,
+        )
+        _print({"capabilities": [item["name"] for item in records]})
+        return 0
     _print({"capabilities": list(Client.capabilities())})
     return 0
 

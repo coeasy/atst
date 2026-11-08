@@ -24,6 +24,7 @@ from typing import Any
 
 import pytest
 
+import atst
 from atst.cli import main, runtime_commands
 from atst.cli._common import _client_kwargs, _transport_kwargs, _transport_timeout
 from atst.cli.parser import build_parser
@@ -442,6 +443,18 @@ def test_service_faces_never_build_a_stream_themselves() -> None:
         if _under(module, "atst.streaming") or _under(module, "atst.stream_contract")
     ]
     assert offenders == []
+
+
+def test_dash_version_reports_the_single_source_version(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`atst --version` 与 `atst version` 必须读同一个版本事实源。"""
+
+    with pytest.raises(SystemExit) as caught:
+        build_parser().parse_args(["--version"])
+
+    assert caught.value.code == 0
+    assert capsys.readouterr().out.strip() == atst.__version__
 
 
 def _under(module: str, prefix: str) -> bool:

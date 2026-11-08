@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 
+from .._version import __version__
 from ..protocol.commands import Family
 from .runtime_commands import (
     _cmd_adjusted_bars,
@@ -88,12 +89,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="atst", description="atst v13 Provider-first market-data client"
     )
+    parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("version", help="show package version")
     p.set_defaults(func=cmd_version)
 
-    p = sub.add_parser("capabilities", help="list migrated v13 business capabilities")
+    p = sub.add_parser("capabilities", help="list or search v13 business capabilities")
+    p.add_argument("--search", "-q", dest="query", default="", metavar="KEYWORD")
+    p.add_argument("--status", metavar="STATUS")
+    p.add_argument("--provider", metavar="PROVIDER")
+    p.add_argument("--describe", metavar="CAPABILITY")
+    p.add_argument("--limit", type=int, default=50)
     p.set_defaults(func=cmd_capabilities)
 
     p = sub.add_parser("query", help="execute any migrated v13 capability")
