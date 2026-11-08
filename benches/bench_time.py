@@ -107,7 +107,7 @@ def _synthetic_day_bytes(rows: int, *, seed: int = 1) -> bytes:
 def scenario_parse_quotes(synthetic: bool = True) -> dict[str, Any]:
     """新浪文本行情解析：原始 ``hq_str_*`` 文本 → list[Quote]。"""
     if synthetic:
-        from atst.web.sina.adapters import SinaSource
+        from atst.sources.sina.adapters import SinaSource
 
         text = _synthetic_sina_payload(1000)
         symbols = [f"sh{600000 + i:06d}" for i in range(1000)]
@@ -117,7 +117,7 @@ def scenario_parse_quotes(synthetic: bool = True) -> dict[str, Any]:
         finally:
             src.close()
     else:
-        from atst.web import create_source
+        from atst.sources import create_source
 
         src = create_source("sina")
         try:

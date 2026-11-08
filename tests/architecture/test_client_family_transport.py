@@ -78,16 +78,25 @@ from unittest.mock import patch
 import pytest
 
 import atst.client as client_face
-from atst.catalog.capability import MIGRATED_BINDINGS, implementation_for
 from atst.client import TdxClient
 from atst.config.schema import Config, CoreConfig, HostsConfig, RateLimitConfig, SecurityConfig
+from atst.providers import MIGRATED_BINDINGS
 from atst.query import QueryPlanner, QuerySpec
+from atst.runtime.capability_contract import implementation_for
 from atst.runtime.executor import DirectProviderExecutor
 from atst.transport.pool import pool_settings_from_config
 
-EXECUTOR_SOURCE = (
-    Path(__file__).resolve().parents[2] / "atst" / "runtime" / "executor.py"
-).read_text(encoding="utf-8")
+_RUNTIME_DIR = Path(__file__).resolve().parents[2] / "atst" / "runtime"
+#: W4 拆分后，家族客户端可能出现在任一执行体模块；判据必须覆盖整条执行面。
+EXECUTION_SOURCES = tuple(
+    path.read_text(encoding="utf-8")
+    for path in (
+        _RUNTIME_DIR / "executor.py",
+        _RUNTIME_DIR / "execute_capability.py",
+        _RUNTIME_DIR / "execute_channel.py",
+    )
+)
+EXECUTOR_SOURCE = EXECUTION_SOURCES[0]
 
 #: 第 5 件事的射程：整个运行期包，不只执行器。
 _PKG_ROOT = Path(__file__).resolve().parents[2] / "atst"
@@ -198,13 +207,14 @@ def _executor_family_classes() -> dict[str, type]:
     """
 
     imported: set[str] = set()
-    for node in ast.walk(ast.parse(EXECUTOR_SOURCE)):
-        if (
-            isinstance(node, ast.ImportFrom)
-            and node.level
-            and (node.module or "").endswith("client")
-        ):
-            imported.update(alias.name for alias in node.names)
+    for source in EXECUTION_SOURCES:
+        for node in ast.walk(ast.parse(source)):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.level
+                and (node.module or "").endswith("client")
+            ):
+                imported.update(alias.name for alias in node.names)
     found = {}
     for name in sorted(imported):
         obj = getattr(client_face, name, None)
@@ -421,12 +431,17 @@ def test_no_family_client_is_constructed_outside_the_pool_home() -> None:
     被调用者——否则 ``cls = {...}[backend]; cls(timeout=hop)`` 这种换皮写法能绕过纯名字判据。
     """
 
-    tree = ast.parse(EXECUTOR_SOURCE)
     families = set(_executor_family_classes())
+    assign_nodes: list[ast.Assign] = []
+    call_nodes: list[ast.Call] = []
+    for source in EXECUTION_SOURCES:
+        tree = ast.parse(source)
+        assign_nodes.extend(n for n in ast.walk(tree) if isinstance(n, ast.Assign))
+        call_nodes.extend(n for n in ast.walk(tree) if isinstance(n, ast.Call))
     #: 形如 ``x = FamilyName`` / ``x = FamilyName`` 作为字典值出现 的局部名字。
     aliased: set[str] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+    for node in assign_nodes:
+        if len(node.targets) != 1:
             continue
         target = node.targets[0]
         if not isinstance(target, ast.Name):
@@ -437,7 +452,7 @@ def test_no_family_client_is_constructed_outside_the_pool_home() -> None:
             aliased.add(target.id)
     direct = [
         node.func.id
-        for node in ast.walk(tree)
+        for node in call_nodes
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
         and node.func.id in (families | aliased)
@@ -515,7 +530,12 @@ def test_every_client_handoff_sits_behind_the_guarded_session() -> None:
     量的正是那个形状：``with`` 直接包构造出口就是红，不需要数分支怎么写。
     """
 
-    protected, bare = _client_handoffs(ast.parse(EXECUTOR_SOURCE))
+    protected: list[ast.With] = []
+    bare: list[ast.With] = []
+    for source in EXECUTION_SOURCES:
+        guarded, raw = _client_handoffs(ast.parse(source))
+        protected.extend(guarded)
+        bare.extend(raw)
     assert protected, "扫不到任何进保护区的交出点：这一判据自身失明"
     assert not bare, (
         f"{len(bare)} 处客户端交出没进保护区（行号 {sorted(n.lineno for n in bare)}）——"

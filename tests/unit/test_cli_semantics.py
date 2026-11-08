@@ -119,9 +119,11 @@ class TestChangesTypesParsing:
             def close(self) -> None:
                 pass
 
-            def stock_changes(self, types, *, page=1, size=30):  # type: ignore[no-untyped-def]
-                calls["types"] = tuple(types)
-                calls["size"] = size
+            def call(self, capability: str, *args: Any, **kwargs: Any) -> Any:
+                #: v2 起 ``Client`` 不再按能力名动态暴露方法。
+                assert capability == "stock_changes"
+                calls["types"] = tuple(args[0])
+                calls["size"] = kwargs["size"]
                 return argparse.Namespace(data=[{"code": "600000"}])
 
         monkeypatch.setattr("atst.client.api.Client", FakeClient)
@@ -332,6 +334,10 @@ class TestN5ClientSubcommands:
             def close(self) -> None:
                 return None
 
+            def call(self, capability: str, *args: Any, **kwargs: Any) -> Any:
+                #: v2 起 ``Client`` 不再按能力名动态暴露方法，rows 适配器统一走 ``call``。
+                return getattr(self, capability)(*args, **kwargs)
+
             def adjusted_bars(
                 self,
                 symbol,
@@ -494,6 +500,10 @@ class TestB0BaiduSubcommand:
             def close(self) -> None:
                 return None
 
+            def call(self, capability: str, *args: Any, **kwargs: Any) -> Any:
+                #: v2 起 ``Client`` 不再按能力名动态暴露方法，rows 适配器统一走 ``call``。
+                return getattr(self, capability)(*args, **kwargs)
+
             def baidu_kline(self, symbol, *, period="day", count=320, end_time=None):
                 self.calls.append(
                     ("baidu_kline", (symbol,), dict(period=period, count=count, end_time=end_time))
@@ -594,6 +604,10 @@ class TestP01FundSubcommand:
             def close(self) -> None:
                 return None
 
+            def call(self, capability: str, *args: Any, **kwargs: Any) -> Any:
+                #: v2 起 ``Client`` 不再按能力名动态暴露方法，rows 适配器统一走 ``call``。
+                return getattr(self, capability)(*args, **kwargs)
+
             def fund_nav_history(self, code, *, page_size=100, page_index=1):
                 self.calls.append(
                     ("fund_nav_history", (code,), dict(page_size=page_size, page_index=page_index))
@@ -671,6 +685,10 @@ class TestP02IndexSubcommand:
 
             def close(self) -> None:
                 return None
+
+            def call(self, capability: str, *args: Any, **kwargs: Any) -> Any:
+                #: v2 起 ``Client`` 不再按能力名动态暴露方法，rows 适配器统一走 ``call``。
+                return getattr(self, capability)(*args, **kwargs)
 
             def index_constituents(self, index):
                 self.calls.append(("index_constituents", (index,), {}))

@@ -6,14 +6,14 @@ from __future__ import annotations
 import pytest
 
 import atst
-from atst.catalog.capability import (
-    MIGRATED_BINDINGS,
-    MIGRATED_CAPABILITIES,
-    default_provider_for,
-)
 from atst.client.api import Client, _symbol_hint
 from atst.errors import ValidationError
-from atst.providers import PROVIDERS
+from atst.providers import (
+    MIGRATED_BINDINGS,
+    MIGRATED_CAPABILITIES,
+    PROVIDERS,
+    default_provider_for,
+)
 from atst.query import QueryPlanner, QuerySpec
 from atst.runtime.executor import (
     DIRECT_BINDINGS,

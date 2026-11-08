@@ -9,6 +9,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [2.0.0] - 2026-11-05
+
+架构重写版本（源码候选，未打 tag）。对外查询契约（路由 / 字段保留规则 / K 线时间语义 /
+symbol 归一化）保持不变，变化集中在内部布局与声明方式。
+
+### Changed
+
+- **Provider 注册表声明化**：`atst/providers/` 由每 Provider 一个声明模块（14 个）+ 一个聚合器
+  组成，废除反射式发现与三张覆盖表；`catalog/` 包取消，`ProviderSpec` / `CapabilityBinding`
+  移入 `providers/contract.py` 与 `providers/registry.py`。
+- **包布局重排**：`atst/web/` → `atst/sources/`，`atst/integration/` → `atst/server/`；
+  sources 内部按领域拆分（`_session_*` 会话族、`gaps`、`market`、`corporate`）。
+- **执行内核拆分**：`runtime/executor.py` 拆为 `bindings` / `execute_*` / `composed`；
+  `DIRECT_BINDINGS` 为 304 条精确绑定。
+- **Client 动态面收敛**：废除 `Client.__getattr__` 的任意转发，统一走 `call` 与显式方法；
+  四服务面（CLI / HTTP / WS / MCP）同步改翻译层。
+- **传输层正规化**：新增 `policy.py` 承载共享策略核，去除 `sys._getframe` 调用栈自省。
+- **trade 移出主包**：`atst/trade/` → `labs/trade/`，wheel 打包排除，`PROTOCOL_SPEC/TRADE`
+  随迁；主包不再承担交易应用层。
+- **文档生成制**：新增 `scripts/gen_docs.py` 与 `make docs-gen` / `make docs-check`，从注册表
+  与运行期事实生成 `docs/generated/` 四张表（Web 源、capability × provider 矩阵、四面接口、
+  TDX 命令账本）。投影型守卫合并为一条"生成物与工作区一致"。
+- 版本 `1.6.1` → `2.0.0`；迁移指南见 [docs/migration/v2.md](docs/migration/v2.md)。
+
+### Added
+
+- **交易日历在线校准**（`trading_calendar` capability，eastmoney）：按年从
+  `RPTA_WEB_TRADE_DATE`（`MARKETCODE=069001001`）拉取 A 股交易日并校准本地日历；手动覆盖
+  优先、失败回落带 `calendar_online_fallback` 告警，结果含 `freshness`（manual/online/
+  estimated/builtin）。上游换报表/换市场编码导致"只回半年"时按行数区间（200–280）拒收并回落，
+  不把缺失月份误判成休市。
+- **`quotes_batch` 并行批处理**（`config.core.batch_workers`）：按 worker 数并行、逐项隔离失败，
+  结果与串行逐格等价。
+- **金样本采集计划**（`docs/golden_capture.md`）与 **六份 Provider 文档补齐**
+  （`local_vipdoc` / `builtin` / `derived` / `cninfo` / `ths` / `wallstreet`），
+  `docs/providers/` 覆盖 14/14。
+
+### Performance
+
+- **K 线解码**：日线记录改为按偏移零拷贝解码（不再为每条记录切出 32 字节临时 `bytes`）；
+  `YYYYMMDD` / `LC16` / `DATETIME32` 三种时间编码直接内联构造 `"YYYY-MM-DD 15:00"`，不再逐条走
+  `_decode_date` + `day_like_datetime`（省掉每记录两次正则匹配）；uint 编码且 `price_scale ∈
+  {1,100,1000}` 时跳过恒等的 `round(x, 4)`。合成数据 8 万条：0.689s → 0.413s（-40%，
+  116k → 194k rows/s）。
+- **报价归一化**：归一化器无实例状态，改为按源复用单例（原实现每股 27 次调用每次 new 一个
+  对象）；`normalize_quote` 每只股票只取一次归一化器再逐字段调用，省掉 27 次注册表查找。
+  合成 1000 只：0.391s → 0.324s（-17%）。
+- **查询编译**：`QuerySpec.options` 的 JSON 解码结果按规范化串复用（有上界 2048），同一 spec
+  在 compile 内被读 5~6 次、批量取数时反复编译不再重复解析；对外仍返回新 dict。
+  单次 compile：53.7 → 44.8 µs（-16%）。
+- **quotes_batch**：并行分支改用 `ThreadPoolExecutor.map`（自带按提交顺序回传），去掉一份
+  futures 字典与逐键查找；`workers<=1` 时完全串行，逐项隔离语义不变。
+
+### 判据
+
+- `tests/runtime/test_batch_parallel.py`（串并行等价、并发证据、隔离失败、Async 编排）
+- `tests/sources/test_trading_calendar.py`（离线回落、手动优先、在线校准、复用、真机端点）
+- `tests/architecture/test_generated_docs.py`（生成物与工作区一致 + 跨进程确定性）
+- `tests/architecture/test_offline_capability_honesty.py` / `test_legacy_capability_migration_v13.py`
+  （新增 capability 后声明数 217、迁移 212 的口径对账）
+
 ## [1.6.1] - 2026-10-30
 
 ### Fixed
@@ -100,14 +161,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   派生（`m5`/`5m`/`daily`/`1h` 等一律可解），裸数字便捷写法保留。
 - **腾讯 mkline 的分钟戳形状**：该接口返回紧凑 12 位 `"202609291455"`，与 tdx / 东财的
   `"2026-09-29 14:55"` 不同，跨源排序与表格展示都得先猜格式。行 → `Bar` 的唯一入口
-  （`atst.web._paginate.rows_to_bars`）现在按形状展开成 `"2026-09-29 14:55"`。
+  （`atst.sources._paginate.rows_to_bars`）现在按形状展开成 `"2026-09-29 14:55"`。
 
 ### 判据
 
 - `tests/runtime/test_legacy_capability_migration_v13.py::test_minute_klines_default_provider_follows_the_market`
 - `tests/architecture/test_period_vocabulary_gates.py::test_the_cli_face_accepts_the_same_spellings_as_the_library`
   与 `::test_the_cli_alias_table_is_derived_from_the_domain_vocabulary`
-- `tests/web/test_adapters_ext.py::TestMinuteKline::test_compact_minute_stamp_is_expanded`
+- `tests/sources/test_adapters_ext.py::TestMinuteKline::test_compact_minute_stamp_is_expanded`
 
 ## [1.5.3] - 2026-10-20
 
@@ -158,13 +219,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **canonical dict 行契约**：`quotes` / `bars` 的行出口统一是 dict（`result.data[0]["price"]`），
   与 quickstart / cookbook 的写法一致；Web 源不再返回 `Quote` / `Bar` 数据类让按文档取键的代码
   撞 `TypeError`。域模型仍是 `Client.typed()` 的契约。
-- `Quote.datetime` 回填（`atst.web.normalize.quote_datetime_from_extra`）：tencent 14 位紧凑串 /
+- `Quote.datetime` 回填（`atst.sources.normalize.quote_datetime_from_extra`）：tencent 14 位紧凑串 /
   sina date+time / eastmoney `f86` / baidu unix 秒统一渲染成市场时区字符串；拼不出完整日期时间
   就留空，不拿时刻碎片或本机时钟冒充行情时间。
 - `BaseWebSource.fetch_quotes()`：行情快照的唯一语义出口（显式下发 `kind="quote"`）。
 - 回归判据四组：`tests/runtime/test_auto_provider.py`、`tests/runtime/test_canonical_rows.py`、
-  `tests/client/test_quotes_strict_integrity.py`、`tests/web/test_quote_datetime.py`。
-- 回归判据两组：`tests/web/test_sina_kline_limit.py`（新浪 K 线 count 钳制 + 非数组载荷）、
+  `tests/client/test_quotes_strict_integrity.py`、`tests/sources/test_quote_datetime.py`。
+- 回归判据两组：`tests/sources/test_sina_kline_limit.py`（新浪 K 线 count 钳制 + 非数组载荷）、
   `tests/runtime/test_bars_range.py`（`bars_range_uncovered` 在空结果区间下必须触发，
   未来区间 / 完整覆盖区间不得误报）。
 
@@ -184,7 +245,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   端点 `datalen` 实测 1970 根封顶（1971 起整体返回 JSON 裸 `null`，非数组）。旧实现把
   `json.loads` 的结果直接当数组迭代，`for r in None` 抛裸 `TypeError`，被执行器收口成
   `[E9000] 未处理异常`——调用方从错误里看不出"请求条数超限"。现在单次请求钳到
-  `SINA_KLINE_MAX`（`atst/web/limits.py`）并告警，`parse_bars` 对非数组载荷给出可读的
+  `SINA_KLINE_MAX`（`atst/sources/limits.py`）并告警，`parse_bars` 对非数组载荷给出可读的
   `SourceDeprecated`(E7030)。该端点无日期游标、无法分段，更长历史请换 `eastmoney`/`tencent`。
 - **日期区间完全落在取回窗口外时静默返回空、零告警**：`_apply_bar_range` 的
   `bars_range_uncovered` 判据原来挂在"裁剪后结果非空"上，于是 `count=30` 却要 1999 年那段
@@ -216,7 +277,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   真日历日校验含闰年），`10112-28-10` / `5243-00-00` / `8414-91-57` 一律报错；`row_violations`
   路径也带出行内位置（`row[1].date:` / `row.bars[1].date:`）。
 - **东财报表按 6 位代码过滤与指数撞码**：`sh000001`（上证指数）与 `sz000001`（平安银行）是同一串
-  6 位码、只差市场位，指数会取到那只股票的数据。`atst/web/corporate.py::report_code_for()` 守卫，
+  6 位码、只差市场位，指数会取到那只股票的数据。`atst/sources/corporate.py::report_code_for()` 守卫，
   指数符号返回空集而不是撞码数据。
 - **指数成交量单位**：日线族按「手」下发（比同类别股票规则再小 100 倍），解析器已折算到「股」，
   与股票日线口径一致；分钟线的指数成交量是**名义值**（恒等于成交额/100），不再乘 100，
@@ -230,7 +291,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   是"日期写成日期形状但根本不是日期"这类缺陷的唯一入口。
 - 永久回归测试四组共 188 例：`tests/protocol/test_index_bars_layout.py`（自建指数载荷，
   因为 golden 库 530 份样本里零个指数样本）、`tests/runtime/test_index_bit_inference.py`、
-  `tests/domain/test_integrity.py`、`tests/web/test_report_code_guard.py`。
+  `tests/domain/test_integrity.py`、`tests/sources/test_report_code_guard.py`。
 - **标的 × 周期全矩阵测试** `tests/protocol/test_symbol_period_matrix.py`（230 例）：
   以 `ASSET_CLASSES` 的 54 个代码段为横截面分母（`_segments()` 直接从段表取，段表改了
   分母自动跟着变），端到端跑 53 段 × 3 个周期类别 = 159 格，每格都断言
@@ -675,8 +736,8 @@ WS 实时订阅这条**此前断链**的链路（README/接口文档早已宣称
 - `_list_subscriptions` 对实时流状态形状容错：真实 `stream.state` 是 `StreamState` 枚举（取 `.value`），
   但也容忍裸字符串 / 缺属性，不再因状态形状差异把只读的 `list` 吞成 `E9000`。错误推送帧去掉顶层无
   意义的 `"code": None`，错误码以 `error.data.code` 为准（与其它三面同口径）。
-- 判据：`tests/integration/test_runtime_ws_streaming.py`（新，假流不触网，端到端验 subscribe→
-  snapshot 推送 / list / unsubscribe 生命周期 / 未知字段 `-32602`）；`tests/integration/
+- 判据：`tests/server/test_runtime_ws_streaming.py`（新，假流不触网，端到端验 subscribe→
+  snapshot 推送 / list / unsubscribe 生命周期 / 未知字段 `-32602`）；`tests/server/
   test_runtime_ws_server_transport.py` 相关传输判据；`tests/runtime/test_wire_declared_fields.py`
   样本补齐 `id/interval/diff_only/max_queue`；`wire_fields.WS_PARAMS_FIELDS` 新增三格白名单。
 
@@ -698,7 +759,7 @@ WS 实时订阅这条**此前断链**的链路（README/接口文档早已宣称
   adapters.py` 按 `_MAX_PAGES`/空批收口。四面均无真正不收敛循环。
 
 **收口读数**（本机 Windows + Python 3.12；第 1/2 轮全部修完之后的同一棵工作树）：`tests/architecture`
-全套门禁复绿、`tests/integration` WS 流式与传输判据全绿；新增/修改判据随上述条目落地；对外契约未变。
+全套门禁复绿、`tests/server` WS 流式与传输判据全绿；新增/修改判据随上述条目落地；对外契约未变。
 
 ### Fixed（逻辑审查第 4 轮：换三个新角度各查一遍 —— 资源生命周期 / 错误信封各面 / 四面入口保留键）
 
@@ -735,7 +796,7 @@ WS 实时订阅这条**此前断链**的链路（README/接口文档早已宣称
 - `runtime/kernel.py::quotes_batch` 过去只往 `BatchResult` 递 `items` 一样，于是 `errors` 恒 `{}`、
   `requested` 恒 `()`、`partial` 恒 `False`——三个成员在 `batch.py` 上声明齐全、真源却不存在。
   现逐只把失败原异常经 `to_error_envelope` 填进 `errors`，并用去重后的符号元组填 `requested`。
-- 判据：`tests/integration/test_error_envelope_boundaries_v12.py` 新增三格协议失败信封断言（RPC
+- 判据：`tests/server/test_error_envelope_boundaries_v12.py` 新增三格协议失败信封断言（RPC
   code、fail-closed 信封、`phase`、`request_id` 的有无）；`tests/runtime/test_runtime_batch_local_v12.py`
   新增 `requested`/`errors`/`partial` 三样齐备的判据。
 
@@ -759,8 +820,8 @@ WS 实时订阅这条**此前断链**的链路（README/接口文档早已宣称
   `docs/errors.md` §一之四 的类别表同步一行（漏一行会被 `test_caveat_channel_gates.py` 当场判红）。
 - 判据：`tests/runtime/test_wire_declared_fields.py` 新增四面同口径拒绝（HTTP 422 / WS `-32602` /
   MCP `-32602` / CLI E1010，并断言 HTTP 面在拒绝前一次都没把请求递给 `Client`）；
-  `tests/trade/test_trade_plane_vocabulary.py` 新增"撤单后成交被拒且账本不重复释放"（钱、仓、成交
-  记录三笔账）；`tests/web/test_web_sources.py` 新增枚举截断告警。
+  `tests/labs/trade/test_trade_plane_vocabulary.py` 新增"撤单后成交被拒且账本不重复释放"（钱、仓、成交
+  记录三笔账）；`tests/sources/test_web_sources.py` 新增枚举截断告警。
 - 文档：`docs/api/interfaces.md`（路由字段的归属与 `kwargs` 禁止区、`BatchResult` 三样真源、
   WS 协议层信封读法）、`docs/errors.md` §一之四 与 §四、`docs/REFACTOR_PLAN_V19_RESTRUCTURE.md`
   §4 P2-F。
@@ -871,7 +932,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   `web.enabled_sources` 顺序换源直到有一家成功——正是 `tests/architecture/test_official_runtime_no_fallback.py`
   三条判据禁止内核触碰的形状，而那三条判据读的是**字面量**（`WebQuoteClient(`、`web_session(`、
   import 名单），内核走 `get_quotes` 一个字面量都不触发。当场取证：把 `source=plan.provider` 这一行删掉，
-  三条既有判据全部照绿，`tests/architecture` + `tests/runtime` + `tests/web` 离线邻域整片只有新写的
+  三条既有判据全部照绿，`tests/architecture` + `tests/runtime` + `tests/sources` 离线邻域整片只有新写的
   行为判据红（`step48/m1_neighbors.log`）——"改道"在这套门禁下是静默的。
 - **新增行为判据** `test_kernels_web_hop_uses_exactly_the_source_the_plan_named`：把 `WebQuoteClient`
   换成"一被构造就抛"，再拿 `DIRECT_BINDINGS` 现推出的 4 家 web 报价 Provider（`baidu` / `eastmoney` /
@@ -1365,7 +1426,7 @@ formatted`、`mypy tstdx/` `Success: no issues found in 189 source files`、
   换成 30 个零字节 ⇒ `payload=180B rows=10`（首根 `2026-09-07 15:00`、`close=9.23`）。7 台可达主机各 2 轮全同向，
   golden 采集主机再交替 3 轮（累计 5 次），7/7 无一例外。
 - **根因是两处"✅ 实测"从未被实测**：`tstdx/protocol/handshake.py` 写着"服务端不校验内容，只校验长度"，证据点名的
-  `tests/integration/test_handshake.py`（及 `test_opaque_blob_tolerance`）与 `tests/golden/7709/_handshake/`
+  `tests/server/test_handshake.py`（及 `test_opaque_blob_tolerance`）与 `tests/golden/7709/_handshake/`
   **在仓库任何一次提交里都没有出现过**（`git log --all --diff-filter=A` 空）；同一文件另一句"三帧都得发"同样从未被测
   ——只发帧 1+2 时 7/7 主机照样回数据。而全仓对握手字节的测试数为 **0**（本步之前 `setup_frames` 在 `tests/` 里只命中
   `.pyc`）。默认值照那句假断言选了"原样重放抓包样本"，于是整族 K 线在真实主站上永远是空的。
@@ -2511,7 +2572,7 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   "6 个传输/诊断命令除外"。**没有为凑口径给这 6 条硬造内核路径**——诊断命令的意义正是绕开
   能力语义看原始协议。
 - **一个公开枚举的类数在 9 处写着错的值**：盘中异动 `CHANGE_TYPES` 有 **20** 项，
-  `tests/web/test_hot_rank.py` 也早已断言 `len(et) == 20`，可 `docs/api/README.md` 与
+  `tests/sources/test_hot_rank.py` 也早已断言 `len(et) == 20`，可 `docs/api/README.md` 与
   `tstdx/web/{fundflow,sources,_session_info}.py` 的 6 处 docstring/注释仍写"16 类"
   （枚举扩容时只动了测试那一侧）。数字全部改为 20，并新增
   `test_code_comments_about_change_types_match_the_enum` 扫 `tstdx/` 里所有含"异动"的行、
@@ -2618,7 +2679,7 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   吸筹/派发趋势），新增 `tstdx/web/_facade_mixin_p1.py`（当时的挂载点）；这 5 个能力
   现经 catalog 可调用（入口 `Client.call(<capability>, ...)`）：`esg_rating` /
   `esg_history` / `esg_ratings_all` / `chip_distribution` / `chip_distributions`；新增
-  `tests/web/test_p1_sources.py`（30 例全离线测试）。
+  `tests/sources/test_p1_sources.py`（30 例全离线测试）。
 
 - P13 数据源补全：新增 `tstdx/web/fin_report.py`（三大财务报表：资产负债表 / 利润表 /
   现金流量表，东财 datacenter-web `RPT_F10_FINANCE_GBALANCE/GINCOME/GCASHFLOW`，
@@ -2629,7 +2690,7 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   `balance_sheet` / `income_sheet` / `cash_flow` / `fin_report` /
   `executive_holds` / `shareholder_changes` / `org_profile` / `org_profiles` /
   `rating_forecast` / `rating_consensus`；新增
-  `tests/web/test_fundamental_sources.py`（37 例全离线测试）。
+  `tests/sources/test_fundamental_sources.py`（37 例全离线测试）。
 
 - Web 源对标 `Micro-sheep/efinance` 全量补齐：新增 `tstdx/web/efinance_fund.py`
   （天天基金移动端 7 类基金扩展数据）、`tstdx/web/efinance_deriv.py`
@@ -2663,9 +2724,9 @@ CI 上 originality / spec_audit / reachability 三项是硬门禁，本机实测
   `fund_manager_style` / `fund_companies` / `fund_company_archives` /
   `fund_company_funds` / `fund_company_scale` / `fund_company_base_info` /
   `fund_search` 共 18 个方法；新增 `docs/tiantian_fund_extensions.md`。
-- 新增测试：`tests/web/test_efinance_fund.py`（7）、`tests/web/test_efinance_deriv.py`（9）、
-  `tests/web/test_efinance_facade.py`（13）、`tests/web/test_astock_toolkit.py`（6）、
-  `tests/web/test_news.py`（10）、`tests/web/test_fund_v2.py`（50），共 95 例全离线测试。
+- 新增测试：`tests/sources/test_efinance_fund.py`（7）、`tests/sources/test_efinance_deriv.py`（9）、
+  `tests/sources/test_efinance_facade.py`（13）、`tests/sources/test_astock_toolkit.py`（6）、
+  `tests/sources/test_news.py`（10）、`tests/sources/test_fund_v2.py`（50），共 95 例全离线测试。
 - 新增文档：`docs/efinance_parity_gap_analysis.md`、`docs/astock_toolkit_parity.md`、
   `docs/niuniu_coverage_audit.md`。
 
@@ -2965,7 +3026,7 @@ v1.0.0 的**重新发布**：本库更名为 `atst`，包名 / 导入名 / 控�
     999999 均空结果，同码歧义无解）；smartbox 联想端点空响应；资金流
     `vapi/v1` 403。百度源现有能力（A 股 K线/分时/逐笔/五档）维持。
   * 新增 `tstdx/__main__.py`：`python -m tstdx` 与控制台脚本等价。
-  * 新增测试：`tests/web/test_margin.py`（罐头解析/days 截断/空标的/注册表）
+  * 新增测试：`tests/sources/test_margin.py`（罐头解析/days 截断/空标的/注册表）
     + fund 死接口用例 + session CM 用例；真实取数复验通过。
 
 - **收尾项（审计清单闭环）**：错误树梳理完成——44 类 E1-E9 九域体系经
@@ -3072,7 +3133,7 @@ v1.0.0 的**重新发布**：本库更名为 `atst`，包名 / 导入名 / 控�
   fund_estimate / fund_list` 门面 + CLI ``tstdx fund nav|estimate|list`` 子命令
   （`--page-size/--page-index` 翻页、`--json`）；补齐三方一致性门禁（`_ADAPTERS`
   注册 + `FundNormalizer` identity 显式登记 + `CAPABILITY_FACADE` 映射）；
-  新增 `tests/web/test_fund.py` 9 例 + `tests/facade/test_fund_api.py` 5 例 +
+  新增 `tests/sources/test_fund.py` 9 例 + `tests/facade/test_fund_api.py` 5 例 +
   `tests/unit/test_cli_semantics.py` `TestP01FundSubcommand` 6 例（离线 mock）。
 
 - **P0-2 指数成分股（G2，东财数据中心）**：新增 `tstdx/web/adapters_index.py`
@@ -3086,7 +3147,7 @@ v1.0.0 的**重新发布**：本库更名为 `atst`，包名 / 导入名 / 控�
   `UnifiedQuoteAPI.index_constituents` 门面 + CLI ``tstdx index constituents <code>``
   子命令（`--json`）；补齐三方一致性门禁（`_ADAPTERS` 注册 +
   `IndexConstituentsNormalizer` identity 显式登记 + `CAPABILITY_FACADE` 映射）；
-  新增 `tests/web/test_index.py` 14 例 + `tests/facade/test_index_api.py` 2 例 +
+  新增 `tests/sources/test_index.py` 14 例 + `tests/facade/test_index_api.py` 2 例 +
   `tests/unit/test_cli_semantics.py` `TestP02IndexSubcommand` 3 例（离线 mock）。
 
 - **B0 百度财经源收口**：`UnifiedQuoteAPI` 新增 `baidu_kline` / `baidu_minute`
@@ -3107,7 +3168,7 @@ v1.0.0 的**重新发布**：本库更名为 `atst`，包名 / 导入名 / 控�
   `TradingUnavailable`，绝不连真实券商通道）；新增 `PROTOCOL_SPEC/TRADE/`
   6 份 draft spec（`0x0001_LOGIN` / `0x0002_HEARTBEAT` / `0x0003_LOGOUT` /
   `0x0100_QUERY` / `0x1000_SEND_ORDER` / `0x1001_CANCEL_ORDER`）；
-  新增 `tests/trade/` 56 例（帧/口令/模拟器/客户端/红线）。
+  新增 `tests/labs/trade/` 56 例（帧/口令/模拟器/客户端/红线）。
 
 - **P1-2 运行时 bestip 测速热更新**：`ConnectionPool.update_hosts`
   （按新序重建主站池、复用既有连接、丢弃被移除主站，不重启不中断）+
@@ -3141,12 +3202,12 @@ v1.0.0 的**重新发布**：本库更名为 `atst`，包名 / 导入名 / 控�
   `adjusted_bars`、`block_quotes`、`all_market`、`board_list`、`board_members`、
   `security_list`、`minute_klines`、`f10_download`、`f10_catalog` 共 10 个
   JSON-RPC 方法（跨源方法走 `UnifiedQuoteAPI`，其余复用客户端），同一错误映射；
-  `tests/integration/test_ws_server_f4.py` 用 FakeClient/FakeFacade 覆盖。
+  `tests/server/test_ws_server_f4.py` 用 FakeClient/FakeFacade 覆盖。
 
 - **M5 urllib 连接复用**：`web/base.py` 新增 `StdlibPooledClient`——基于
   `http.client.HTTPConnection` 的零依赖 keep-alive 连接池（空闲超时 + 全池
   懒回收 + 线程安全），未装 httpx 时自动提升复用；新增
-  `tests/web/test_pooled_client.py`。
+  `tests/sources/test_pooled_client.py`。
 
 - **M7 响应体解码零拷贝**：`HttpResponse.json()` 直接 `json.loads(bytes)`
   跳过中间 str，大响应（全市场 / K 线）内存与耗时双降。
@@ -3315,7 +3376,7 @@ M1/M1b 架构决断落地（用户拍板）+ 低级批次 14 项具名全清 + L
 
 ### Added
 
-- **L5 socket 级冒烟**（`tests/integration/test_l5_smoke.py`）：HTTP 真实
+- **L5 socket 级冒烟**（`tests/server/test_l5_smoke.py`）：HTTP 真实
   loopback（uvicorn 真端口）、WS 双客户端并发订阅推送、MCP stdio 行协议往返。
 
 - 高危修复回归：`tests/protocol/test_sniffer_loop.py`（7）、
@@ -3553,8 +3614,8 @@ M1/M1b 架构决断落地（用户拍板）+ 低级批次 14 项具名全清 + L
   `GET /corporate_action/{symbol}`、`POST /query`。
 
 - **tests/**: `tests/facade/test_response.py`（21 用例）、
-  `tests/web/test_wencai.py`（13 用例，全罐头）、
-  `tests/web/test_search_symbols.py`（12 用例）；registry 一致性门禁扩展
+  `tests/sources/test_wencai.py`（13 用例，全罐头）、
+  `tests/sources/test_search_symbols.py`（12 用例）；registry 一致性门禁扩展
   `wencai` capability ↔ facade 方法映射。
 
 - **docs/archive/ABSORPTION\_ANALYSIS.md**: 上游接口吸收差距矩阵（能力对照 +
@@ -3620,7 +3681,7 @@ M1/M1b 架构决断落地（用户拍板）+ 低级批次 14 项具名全清 + L
   rc=102，无法离线确证——**本批不实现**（路线图标注「端点待重抓包验证」，
   不上线未经验证的接口）。
 
-- **tests/web/test\_stock\_boards.py**: 17 用例（slist 罐头解析 / secid /
+- **tests/sources/test\_stock\_boards.py**: 17 用例（slist 罐头解析 / secid /
   null 语义 / 过滤器 URL / facade 双入口 / live 结构冒烟）。
 
 ### Added（补全批次：盘中异动 / 股吧人气榜 + Golden 实采补录）
@@ -3653,7 +3714,7 @@ M1/M1b 架构决断落地（用户拍板）+ 低级批次 14 项具名全清 + L
   market\_gaps 元数据缺口完全消除。回放类数值断言测试改为锚定设计罐头
   （`_pinned_sample`），不再随补录漂移。
 
-- **tests/web/test\_hot\_rank.py**: 24 用例（异动罐头解析/枚举完整性/
+- **tests/sources/test\_hot\_rank.py**: 24 用例（异动罐头解析/枚举完整性/
   类型过滤与分页/POST 体形态/size 钳制/人气榜解析排序/live 冒烟）。
 
 ### 1.1.0 升级批次（docs/archive/OPTIMIZATION\_PLAN.md，合并两轮梳理的优化点）

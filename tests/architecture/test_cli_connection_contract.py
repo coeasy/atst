@@ -8,7 +8,7 @@ CLI 因此只有两种合法姿态：把用户显式说的转下去，或者保�
 第三种——解析了却不消费（幻影开关）、或自带字面默认值（遮蔽配置）——由本门禁挡住。
 最后一条守卫不限于连接参数：parser 声明的任何选项都必须被 handler（或三个助手）读到。
 另有三条结构性守卫：Web 数据命令须经 ``Client`` 执行，且服务面源码不得直接 import
-``atst.web``（F-29）、不得自建流（F-56，import ``atst.streaming`` /
+``atst.sources``（F-29）、不得自建流（F-56，import ``atst.streaming`` /
 ``atst.stream_contract`` 即为红）——服务面只翻译，执行入口只有内核一个。
 """
 
@@ -102,6 +102,13 @@ class _Recorder:
             return _query_result(self.data)
 
         return call
+
+    def call(self, capability: str, *args: Any, **kwargs: Any) -> Any:
+        #: v2 起 ``Client`` 不再按能力名动态暴露方法，``_ClientRows`` 统一走 ``call``；
+        #: 录制点因此落在能力名上，与旧面逐格等价。
+        del args, kwargs
+        self.calls.append(capability)
+        return _query_result(self.data)
 
 
 def _run(monkeypatch: pytest.MonkeyPatch, argv: list[str], *, data: Any = None) -> _Recorder:
@@ -409,14 +416,14 @@ def test_web_backed_command_calls_the_kernel_not_the_source(
 def test_service_faces_never_import_the_web_layer() -> None:
     """F-29 的结构性守卫：服务面只翻译不执行，数据入口只有 ``Client`` 一个。
 
-    逐命令断言只能看住已知命令；新增命令若直接 ``from ..web.session import …``
+    逐命令断言只能看住已知命令；新增命令若直接 ``from ..sources.session import …``
     就又开出第二条执行路径。此门禁扫描全部服务面源码（CLI / HTTP / WS / MCP），
     不看具体命令名，故对新增命令同样有效。
     """
     offenders = [
         f"{path}: import {module}"
         for path, module in _service_face_imports()
-        if _under(module, "atst.web")
+        if _under(module, "atst.sources")
     ]
     assert offenders == []
 
@@ -443,7 +450,7 @@ def _under(module: str, prefix: str) -> bool:
 
 def _service_face_imports() -> list[tuple[str, str]]:
     """四个服务面源码里的每一条 import 边，形如 ``(相对路径, 绝对模块名)``。"""
-    faces = (ROOT / "atst" / "cli", ROOT / "atst" / "integration")
+    faces = (ROOT / "atst" / "cli", ROOT / "atst" / "server")
     edges: list[tuple[str, str]] = []
     for face in faces:
         for path in sorted(face.rglob("*.py")):

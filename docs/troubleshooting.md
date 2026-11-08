@@ -45,7 +45,7 @@ from atst.errors import ConnectionFailed
   （`tencent/sina/eastmoney/baidu` 都是注册表里的 Provider id）
 - 显式跨源编排：`Client().quotes(symbols, policy=FallbackPolicy(...))` —— 这是
   唯一的跨源通道（见 `docs/ARCHITECTURE.md` §2）
-- 或独立使用 legacy Web 入口 `atst.web.WebQuoteClient`（需 `pip install "atst[web]"`）
+- 或独立使用 legacy Web 入口 `atst.sources.WebQuoteClient`（需 `pip install "atst[web]"`）
 
 ## 2. 协议/解析问题
 
@@ -94,7 +94,7 @@ result = dispatch(frame, family="quotation", min_confidence=0.7)  # 低于阈值
 - 每个源自带限速；限速本身不改变取数路径
 - 取数路径只有一条：经 `Client` 的查询由内核按 `(provider, channel)` 精确派发，
   指定哪个 Provider 就只走哪个 Provider，TDX 连不上不会把请求递给 Web 源，反之亦然
-  （ADR-015）。只有直接用 `atst.web` 的便捷入口时才有"按 `[web] enabled_sources`
+  （ADR-015）。只有直接用 `atst.sources` 的便捷入口时才有"按 `[web] enabled_sources`
   顺序逐个试"这条路径，它是 web 层自己的便利，不是内核的降级
 - 源回了为空或无法解析的响应会抛 `SourceDeprecated`（该源可能已改版）；本仓没有
   "连续失败计数到阈值就切换"这回事

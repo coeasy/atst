@@ -42,12 +42,12 @@ from atst.client.api import Client  # noqa: E402
 from atst.query import QueryPlan, QuerySpec  # noqa: E402
 from atst.result import Provenance, QueryResult, ResultMeta  # noqa: E402
 from atst.runtime.kernel import UnifiedRuntime  # noqa: E402
-from tests.architecture.test_cli_reference_table import (  # noqa: E402
+from tests.support.cli_docs import (  # noqa: E402
+    _cli_examples,
     _group_action,
     _subparsers,
     runtime_leaves,
 )
-from tests.architecture.test_doc_code_consistency import _cli_examples  # noqa: E402
 
 #: 落点里经过内核的两类：``Client`` / ``_ClientRows`` 构造点由 ``test_cli_reference_table``
 #: 的 ``_landing`` 现读处理器源码判定，这里只消费那份词汇表，不另抄一份名单。
@@ -306,7 +306,7 @@ def test_the_battery_never_touches_a_socket(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_a_planted_wrong_keyword_is_caught_by_the_real_reconciler() -> None:
     """三种形状各自都要红，否则判据一只是"恰好没坏"的观测。"""
-    from atst.catalog.capability import default_provider_for
+    from atst.providers import default_provider_for
     from atst.query import QueryPlanner
 
     planner = QueryPlanner()

@@ -159,11 +159,42 @@ market 场景扣掉 extra 后仍有约 57% 驻留在 `Quote.bid/ask` 的 `Level`
 
 追加后内存 KiB/条：market 2.201→1.378（对 baseline -41.7%）。
 
+### D7. 兼容层：恢复 dataclass 语义 + `extra` 恒为 `dict`
+
+外部用法要求 `dataclasses.is_dataclass(Bar)` 为真、`asdict` / `fields()` 可用，
+且 `isinstance(bar.extra, dict)` 为真。在不回退内存收益的前提下：
+
+- **dataclass 与手写 slots 可兼得**：`@dataclass(init=False, eq=False, repr=False)`
+  + 手写 `__slots__`，字段只写注解、`__init__` 自己实现（沿用原有参数与缺省值）。
+  `@dataclass(slots=True)` 与 `extra`/`bid`/`ask` 的 property 冲突，故不用它；
+  实测对象尺寸与 `slots=True` 相同（无 `__dict__`）。
+- **字段顺序即契约**：`fields(Bar)` = `BAR_FIELDS + ("extra",)`，
+  `fields(Quote)` = `QUOTE_FIELDS + ("extra",)`；`asdict` 的契约字段逐个等于
+  `to_dict`，`extra` 在 `asdict` 里是 dataclass 语义的嵌套键。
+- **`extra` 三态存储**：`None`（空）→ 扁平 `tuple`（非空、未访问）→ `dict`
+  （首次被当作 dict 使用后物化并回写槽位）。属性是 property：
+  getter 首次调用才物化，setter 仍然压平；`isinstance(extra, dict)` 恒真。
+  空态在构造、驻留、`to_dict` 全过程中零 dict 分配。
+- **写时以 dict 为准**：物化后 `bar.extra["k"] = v`、`pop`、`update`、`clear`
+  直接改那个 dict，`to_dict` / `asdict` / `==` 都以槽位现值为准。
+- **不改热路径**：`to_dict`、`turnover_rate`（`_extra_get`）继续直读槽位，
+  不触发物化，因此批量序列化/指标计算不多分配 dict。
+- **`jsonable` 顺序修正**：`Bar`/`Quote` 恢复 dataclass 后 `is_dataclass` 也为真，
+  `atst/server/serialization.py` 必须先判 `to_dict`，否则 HTTP/WS/MCP 出口会退化成
+  `asdict` 的 `extra` 嵌套形状（与 golden 不符）。
+- **适配器写法**：百度适配器 `q.extra = {...}` 改成 `q.extra.update({...})`
+  （同一新建对象上等价，且经 dict 视图写入；`q.extra = ...` 的 setter 语义仍保留）。
+
+兼容层后内存 KiB/条：market 1.383、kline 0.250、vipdoc 0.336（与无兼容层时
+1.378 / 0.250 / 0.336 持平，差异在测量噪声内）。
+
 ## 4. 文件改动清单
 
 | 文件 | 改动 |
 |---|---|
-| `atst/domain/models.py` | 新增 `_ExtraView`；`Bar` / `Quote` 改手写 slots 类 + `extra` property；`to_dict` 直读 `_extra`；新增有界 datetime 规范化缓存；`Quote.bid/ask` 改 `array('d')` 紧凑存储 + 惰性物化（D6） |
+| `atst/domain/models.py` | `Bar` / `Quote` 改 `@dataclass(init=False)` + 手写 slots；`extra` 三态存储（`None`/扁平 tuple/物化 dict）+ property；`to_dict` 直读 `_extra`；有界 datetime 规范化缓存；`Quote.bid/ask` 改 `array('d')` 紧凑存储 + 惰性物化（D6/D7） |
+| `atst/server/serialization.py` | `jsonable` 改为先判 `to_dict`，锁住扁平化出口（D7） |
+| `atst/sources/baidu/adapters.py` | `q.extra = {...}` 改 `q.extra.update({...})`，走 dict 视图写入（D7） |
 | `atst/reader/formats.py` | `DayBarReader._decode_datetime` 改走 `_day_datetime` 有界缓存 |
 | `tests/domain/test_models_extra_contract.py`（新增） | golden 序列化断言 + extra 读写语义 + 空 extra 不分配 + 对象尺寸回归 |
 | `tests/reader/test_formats.py` | 如受缓存影响则补日期缓存复用断言（不放宽原断言） |
@@ -192,9 +223,9 @@ market 场景扣掉 extra 后仍有约 57% 驻留在 `Quote.bid/ask` 的 `Level`
 
 | 风险 | 对策 |
 |---|---|
-| `bar.extra` 不再是 `dict`，有代码 `isinstance(extra, dict)` 或 `json.dumps(extra)` | 全仓已 grep：无 `isinstance(..., dict)` 依赖；序列化均走 `to_dict`；`_ExtraView.copy()` 返回真 dict |
-| `Bar`/`Quote` 不再是 dataclass，`asdict` 路径变化 | 全仓核查仅 `executor` / `server.serialization` 会触及，且都优先 `to_dict`；新增 golden 覆盖这四个面 |
-| 代理每次访问分配小对象（32~40 B，瞬时） | 热路径 `to_dict` / `to_turnover` 直读 `_extra`；代理仅在调用方主动读写 `extra` 时创建 |
+| `bar.extra` 不是 `dict`（`isinstance` / `json.dumps` 依赖） | D7 起 `extra` 恒为 `dict` 实例；空态只在首次作为 dict 使用时物化，`to_dict` 不触发 |
+| `Bar`/`Quote` 不再是 dataclass，`asdict` 路径变化 | D7 起恢复 dataclass；`server.serialization.jsonable` 先判 `to_dict`，避免退化成 `asdict` 的 `extra` 嵌套形状 |
+| 物化后的 dict 常驻（访问过的记录不再回到 tuple） | 只在首次当 dict 使用时发生；bench 的驻留路径不触发（kline/vipdoc 数值未变） |
 | 有界缓存未命中时停止增长后仍有重复字符串 | 只影响内存收益上限，不影响正确性；上限 4096/8192 防止泄漏 |
 | market 目标不达标 | 报告明示归因；如需达标按 D5 追加范围 |
 | `Quote.bid` 不再与构造入参 list 同一对象 | 仅在调用方构造后继续原地改写入参 list 时可见；已核查无此类用法（D6 语义边界） |

@@ -1,6 +1,6 @@
 # API 参考
 
-当前 `1.6.1`（已打 tag `v1.6.1` 并发布）；最新已发布 GitHub Release 为 [`v1.6.1`](https://github.com/coeasy/atst/releases/tag/v1.6.1)，本包**不在 PyPI 上** · [CHANGELOG](../../CHANGELOG.md) · [逐版本发布说明](../releases/v1.6.1.md)
+当前 `2.0.0`（v2 架构重写，源码候选，未打 tag）；上一已发布 GitHub Release 为 [`v1.6.1`](https://github.com/coeasy/atst/releases/tag/v1.6.1)，本包**不在 PyPI 上** · [CHANGELOG](../../CHANGELOG.md) · [v1→v2 迁移指南](../migration/v2.md)
 
 > 本页对应 `/v13/` 服务面与单一执行内核。完整 docstring 驱动文档
 > 由 `pdoc`/`mkdocstrings` 生成；此处提供稳定入口和模块索引。
@@ -30,10 +30,10 @@
 | `atst.typed_query.CapabilityQuery` | 类型化查询契约（60+ 契约，10 领域基类）+ `TypedQueryResult` |
 | `atst.domain.records` | Domain Record 族（9 类：Financial/Fund/Bond/News/Research/Option/MarketData/Search/Macro）|
 | `atst.stream_contract.StreamSpec` / `StreamPlanner` | 流式请求契约与规划 |
-| `atst.catalog.capability` | capability 目录 + 规划期真实签名校验（`validate_call`）|
-| `atst.catalog.provider_bindings` | Provider `channel → adapter` 绑定表 |
-| `atst.catalog.provider_contract` / `provider_guard` / `*_audit` | Provider 隔离契约、运行时守卫与一致性审计 |
-| `atst.providers.PROVIDERS` | 14 Provider × 60 channel × 216 capability 唯一事实源；能力发现面只声明名字、不声明可用性，见 [interfaces.md](interfaces.md)「能力发现面」 |
+| `atst.providers` | 14 Provider × 60 channel × 217 capability 唯一声明处：每 Provider 一个声明模块，聚合出 `PROVIDERS` / `MIGRATED_BINDINGS` / `resolve_channel_adapter`；能力发现面只声明名字、不声明可用性，见 [interfaces.md](interfaces.md)「能力发现面」 |
+| `atst.runtime.capability_contract` | 规划期真实签名校验（`validate_call`）|
+| `atst.runtime.capability_audit` / `provider_audit` / `provider_guard` | Provider 隔离契约守卫与一致性审计 |
+| `atst.providers.contract` | Provider 隔离契约（`ProviderIdentity` / `ProviderCapabilityContract` / `ProviderExecutionContract`）|
 
 ## 核心入口
 
@@ -43,7 +43,7 @@
 | `atst.client.AsyncTdxClient` | 异步镜像客户端 |
 | `atst.client.get_client(kind)` | 工厂：std/goods/ex/mac/f10 |
 | `atst.client.core` | 同步/异步共享的纯协议构造与校验 SSOT |
-| `atst.web.session.WebQuoteSession` | Web 源原生命名会话（异动/人气榜/问财/IPO…），精确 Provider 适配器，非聚合路由 |
+| `atst.sources.session.WebQuoteSession` | Web 源原生命名会话（异动/人气榜/问财/IPO…），精确 Provider 适配器，非聚合路由 |
 
 ## 协议层
 
@@ -88,19 +88,19 @@
 | 模块 | 说明 |
 |---|---|
 | `atst.providers` | Provider 注册表（14 Provider × channel），内核唯一可调用实现体 |
-| `atst.web.tencent.adapters` | 腾讯系 HTTP 源（实时行情 / K 线 / 分钟线 / 分时 / 港股 / 美股）|
-| `atst.web.sina.adapters` | 新浪系 HTTP 源（实时行情 / 港股 / 历史 K 线 / 代码联想）|
-| `atst.web.eastmoney.adapters` | 东财系 HTTP 源（实时行情 / push2his 历史 K 线 / 融资融券 / 指数成分）|
-| `atst.web.baidu.adapters` | 百度财经 HTTP 源（日/周/月 K 线 / 分时 / 逐笔 / 五档 / 历史估值）|
-| `atst.web.jsl.adapters` | 集思录 HTTP 源（可转债）|
-| `atst.web.boc.adapters` | 中行 HTTP 源（外汇牌价）|
-| `atst.web.fundflow` | 资金流 + 涨停池 + **盘中异动**（20 类异动枚举）+ 沪深港通 |
-| `atst.web.hot_rank` | **股吧个股人气榜**（emappdata POST JSON）|
-| `atst.web.wencai` | **i问财自然语言选股**（cookie 调用方持有）|
-| `atst.web.boards` | 个股所属板块 / 板块行情 |
-| `atst.web.corporate` | F10/业绩/IPO 申购日历（datacenter 报表族）|
-| `atst.web.adapters_fund` | 基金净值 / 估值 / 列表；**融资融券个股明细**见 `atst.web.eastmoney.adapters`（`margin` capability / `atst margin <symbol>`）|
-| `atst.web.normalize` | volume/amount 集中归一化 |
+| `atst.sources.tencent.adapters` | 腾讯系 HTTP 源（实时行情 / K 线 / 分钟线 / 分时 / 港股 / 美股）|
+| `atst.sources.sina.adapters` | 新浪系 HTTP 源（实时行情 / 港股 / 历史 K 线 / 代码联想）|
+| `atst.sources.eastmoney.adapters` | 东财系 HTTP 源（实时行情 / push2his 历史 K 线 / 融资融券 / 指数成分）|
+| `atst.sources.baidu.adapters` | 百度财经 HTTP 源（日/周/月 K 线 / 分时 / 逐笔 / 五档 / 历史估值）|
+| `atst.sources.jsl.adapters` | 集思录 HTTP 源（可转债）|
+| `atst.sources.boc.adapters` | 中行 HTTP 源（外汇牌价）|
+| `atst.sources.fundflow` | 资金流 + 涨停池 + **盘中异动**（20 类异动枚举）+ 沪深港通 |
+| `atst.sources.hot_rank` | **股吧个股人气榜**（emappdata POST JSON）|
+| `atst.sources.wencai` | **i问财自然语言选股**（cookie 调用方持有）|
+| `atst.sources.boards` | 个股所属板块 / 板块行情 |
+| `atst.sources.corporate` | F10/业绩/IPO 申购日历（datacenter 报表族）|
+| `atst.sources.adapters_fund` | 基金净值 / 估值 / 列表；**融资融券个股明细**见 `atst.sources.eastmoney.adapters`（`margin` capability / `atst margin <symbol>`）|
+| `atst.sources.normalize` | volume/amount 集中归一化 |
 | `atst.streaming.engine` | StreamEngine（重连/补数/背压）|
 | `atst.streaming.push` | PushChannel 0x0547 原始推送 |
 
@@ -118,16 +118,16 @@
 
 | 模块 | 说明 |
 |---|---|
-| `atst.integration.runtime_http` | FastAPI 网关工厂（12 路由：`/v13/quotes` `/v13/bars/{symbol}` `/v13/snapshot/{symbol}` `/v13/minute/{symbol}` `/v13/trades/{symbol}` `/v13/security/count` `/v13/security/list` `/v13/query/{capability}` `/v13/capabilities` `/v13/universe` `/v13/universe/{kind}` `/v13/runtime/health`）；复权 K 线走通用入口 POST `/v13/query/{capability}`（capability=adjusted_bars）|
-| `atst.integration.runtime_ws` | WebSocket JSON-RPC（13 方法：quotes/bars/snapshot/minute/trades/security.count/security.list/query/runtime.capabilities/runtime.health/subscribe/unsubscribe/list）；其中 `subscribe`/`unsubscribe`/`list` 为实时订阅控制面（配合服务端 `push` 推送帧），复权走 `query`（`capability=adjusted_bars`），见 `docs/api/interfaces.md`「WebSocket 实时订阅」|
-| `atst.integration.runtime_ws_server` | WS 服务宿主（`serve_runtime_ws`；一键拉起 `python -m atst.integration.runtime_ws_server`）|
-| `atst.integration.mcp` | MCP stdio 工具（9 项：`query_capability`/`get_bars`/`get_quote`/`get_quotes`/`get_snapshot`/`get_minute_today`/`get_trades`/`get_security_count`/`get_security_list`；一键拉起 `python -m atst.integration.mcp`，不需要 extra。复权 K 线走 query_capability 通用入口）|
-| `atst.integration.serialization` | `QueryResult → JSON-safe` 统一序列化 |
+| `atst.server.runtime_http` | FastAPI 网关工厂（12 路由：`/v13/quotes` `/v13/bars/{symbol}` `/v13/snapshot/{symbol}` `/v13/minute/{symbol}` `/v13/trades/{symbol}` `/v13/security/count` `/v13/security/list` `/v13/query/{capability}` `/v13/capabilities` `/v13/universe` `/v13/universe/{kind}` `/v13/runtime/health`）；复权 K 线走通用入口 POST `/v13/query/{capability}`（capability=adjusted_bars）|
+| `atst.server.runtime_ws` | WebSocket JSON-RPC（13 方法：quotes/bars/snapshot/minute/trades/security.count/security.list/query/runtime.capabilities/runtime.health/subscribe/unsubscribe/list）；其中 `subscribe`/`unsubscribe`/`list` 为实时订阅控制面（配合服务端 `push` 推送帧），复权走 `query`（`capability=adjusted_bars`），见 `docs/api/interfaces.md`「WebSocket 实时订阅」|
+| `atst.server.runtime_ws_server` | WS 服务宿主（`serve_runtime_ws`；一键拉起 `python -m atst.server.runtime_ws_server`）|
+| `atst.server.mcp` | MCP stdio 工具（9 项：`query_capability`/`get_bars`/`get_quote`/`get_quotes`/`get_snapshot`/`get_minute_today`/`get_trades`/`get_security_count`/`get_security_list`；一键拉起 `python -m atst.server.mcp`，不需要 extra。复权 K 线走 query_capability 通用入口）|
+| `atst.server.serialization` | `QueryResult → JSON-safe` 统一序列化 |
 | `atst.cli` | CLI 子命令（33 项；数据命令全部经 `Client`，6 个传输/诊断命令除外，见 `runtime_commands.py`）|
 
 ## 迁移指南
 
 从 mootdx / easy_tdx / eltdx / easyquotation 迁移见 [docs/migration/](../migration/README.md)。
-（`atst/compat/`、`atst/web/easyquotation.py` 兼容垫片与 `atst/facade/` 门面均已物理删除，
+（`atst/compat/`、`atst/sources/easyquotation.py` 兼容垫片与 `atst/facade/` 门面均已物理删除，
 仓库里没有兼容别名；迁移请使用 `atst.Client`（唯一业务入口）、协议层 `TdxClient`、
-或 `atst.web` 适配器。）
+或 `atst.sources` 适配器。）

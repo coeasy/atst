@@ -41,7 +41,7 @@ probe("tdx/index 上证指数", lambda: tdx_probe("index", symbol="999999", peri
 
 # ---------- Web 源核心能力 ----------
 def web_probe(source, method, *args, **kw):
-    from atst.web.session import web_session
+    from atst.sources.session import web_session
 
     s = web_session(source=source, timeout=8)
     try:

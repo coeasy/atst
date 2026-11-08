@@ -6,7 +6,7 @@
 > 结论先行：**7709 标准行情族核心命令全部打通**；扩展市场（7727）/MAC/F10
 > 内容分发为**环境级失效**（主机/命令停答），库内已有明确报错与替代路径。
 >
-> 入参面口径：`Client.quotes()` 只收 `symbols` / `provider` / `policy` / `currentness`，
+> 入参面口径：`Client.quotes()` 只收 `symbols` / `provider` / `policy` / `currentness` / `strict`，
 > 没有 `route` 这个形参——传 `route="web"` 在构造期即 `TypeError`。选数据源用
 > `provider=`；内核不替换 Provider，offline 命令一律以 `CommandOffline` 结束本次查询
 > （详见 §四、§五、§六）。
@@ -103,9 +103,10 @@ id → 规划期 `ValidationError`（E1010 / 422），context 带 `known_provide
 
 | 能力 | 现状 | 替代（调用方另发一条 Query） |
 |---|---|---|
-| `security_list`（0x044D 代码表） | 命令停答，fail-fast `CommandOffline` | 读本地 `vipdoc` 文件，或按市场直取行情 |
-| `block_quotes`（0x07E5 板块行情） | 命令停答，fail-fast `CommandOffline` | 无同名 web 能力；可用 `hot_rank`（人气榜）/ `quotes`（实时快照） |
-| `auction_snapshot`（0x056A 竞价） | 命令停答，fail-fast `CommandOffline` | `hot_rank` / `longhu`（龙虎榜）/ `quotes + snapshot` |
+| `security_list`（0x044D 代码表） | 命令停答，fail-fast `CommandOffline` | `atst.universe` 代码表 API（`Universe.codes()`，离线可读）或读本地 `vipdoc` 文件；行情侧可 `bars`（`provider="local_vipdoc"`） |
+| `minute_history`（0x0FB4 历史分时） | 命令停答，fail-fast `CommandOffline` | `minute_klines`（tencent / eastmoney 的 web 适配器） |
+| `block_quotes`（0x07E5 板块行情） | 命令停答，fail-fast `CommandOffline` | 无同名能力；web 侧用 `stock_boards` / `em_boards`（板块成员与行情）或 `sector_flow`（板块资金流） |
+| `auction_snapshot`（0x056A 竞价） | 命令停答，fail-fast `CommandOffline` | `hot_rank`（人气榜）/ `longhu`（龙虎榜）/ `quotes`（实时快照，无盘口深度） |
 | `volume_price_dist`（0x051A 量价分布） | 命令停答，fail-fast `CommandOffline` | `bars`（自算量价指标） |
 | `f10_catalog`（0x0001 栏目目录） | 布局未锁定，内容不可采信 | `dc_query`（dividend/performance/holder_num/ipo）/ `corporate_action` / `finance` |
 | `ex_market_list`（扩展市场目录） | 命令停答，fail-fast `CommandOffline` | 按市场直取行情：`hk_quotes`（港股）/ `us_quotes`（美股）/ `rates`（外汇）/ `dc_query`（期货期权） |

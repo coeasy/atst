@@ -256,9 +256,9 @@ def test_web_route_also_gets_the_bounded_timeout(monkeypatch: pytest.MonkeyPatch
         def fetch_bars(self, symbol: str, **kwargs: Any) -> list[Any]:  # noqa: ARG002
             return []
 
-    import atst.web
+    import atst.sources
 
-    monkeypatch.setattr(atst.web, "create_source", _FakeSource)
+    monkeypatch.setattr(atst.sources, "create_source", _FakeSource)
     executor = DirectProviderExecutor(timeout=30.0)
     executor._tencent_bars(_bars_plan(250))
     executor._web_quotes(_bars_plan(250))  # quotes 走同一预算读数
@@ -546,7 +546,7 @@ def test_security_list_all_is_not_a_second_pagination_implementation() -> None:
 
     import ast
 
-    from atst.catalog.capability import binding_for
+    from atst.providers import binding_for
 
     meta = binding_for("tdx", "quotation", "security_list_all")
     assert (meta.backend, meta.method) == ("tdx_client", "export_security_list")

@@ -48,6 +48,13 @@ def test_legacy_compat_namespaces_are_physically_removed() -> None:
     """v16 clean-break：`atst/runtime/gateway.py` 等信封层已删除，兼容层物理删除，只留 Client 一个业务入口。"""
     import importlib
 
-    for module in ("atst.facade", "atst.service", "atst.planned_service", "atst.sources"):
+    for module in (
+        "atst.facade",
+        "atst.service",
+        "atst.planned_service",
+        "atst.catalog",
+        "atst.web",
+        "atst.integration",
+    ):
         with pytest.raises(ModuleNotFoundError):
             importlib.import_module(module)

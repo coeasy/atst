@@ -152,7 +152,7 @@ SPAWN_OWNERSHIP: dict[str, tuple[str, str]] = {
         "self._speedtest_threads",
         "close",
     ),
-    "atst/web/sina/adapters.py::SinaSource.fetch_all": ("local:threads", "fetch_all"),
+    "atst/sources/sina/adapters.py::SinaSource.fetch_all": ("local:threads", "fetch_all"),
 }
 
 
@@ -292,9 +292,9 @@ def test_every_thread_spawn_is_wired_to_a_handle_and_a_reaper() -> None:
 
 #: 不带超时的 ``join``：键为 ``模块::类.方法``，值为"凭什么等得起"。双向一致。
 UNBOUNDED_JOIN_SITES: dict[str, str] = {
-    "atst/web/sina/adapters.py::SinaSource.fetch_all": (
+    "atst/sources/sina/adapters.py::SinaSource.fetch_all": (
         "这几条分页 worker 的寿命由**分页**而不是由网络决定：每轮要么 return，要么把 "
-        "``next_page`` 往前推，推到 ``max_pages`` 即退；单次 HTTP 又有 :mod:`atst.web` "
+        "``next_page`` 往前推，推到 ``max_pages`` 即退；单次 HTTP 又有 :mod:`atst.sources` "
         "自己的请求超时兜着。给它加 join 超时反而是假绿——超时会把没跑完的页当已跑完，"
         "把截断结果当全量交出去（``web_eastmoney_page_limit`` 那一族告警就是这么来的）。"
     ),

@@ -22,17 +22,17 @@ OFFICIAL_RUNTIME = [
     ROOT / "atst" / "query.py",
     ROOT / "atst" / "runtime" / "executor.py",
     ROOT / "atst" / "runtime" / "orchestration.py",
-    ROOT / "atst" / "catalog" / "provider_bindings.py",
-    ROOT / "atst" / "catalog" / "capability.py",
+    ROOT / "atst" / "providers" / "contract.py",
+    ROOT / "atst" / "runtime" / "capability_contract.py",
     ROOT / "atst" / "batch.py",
     ROOT / "atst" / "streaming" / "base.py",
     ROOT / "atst" / "providers" / "__init__.py",
-    ROOT / "atst" / "integration" / "__init__.py",
-    ROOT / "atst" / "integration" / "runtime_http.py",
-    ROOT / "atst" / "integration" / "runtime_ws.py",
-    ROOT / "atst" / "integration" / "runtime_ws_server.py",
-    ROOT / "atst" / "integration" / "serialization.py",
-    ROOT / "atst" / "integration" / "mcp" / "_server.py",
+    ROOT / "atst" / "server" / "__init__.py",
+    ROOT / "atst" / "server" / "runtime_http.py",
+    ROOT / "atst" / "server" / "runtime_ws.py",
+    ROOT / "atst" / "server" / "runtime_ws_server.py",
+    ROOT / "atst" / "server" / "serialization.py",
+    ROOT / "atst" / "server" / "mcp" / "_server.py",
     ROOT / "atst" / "cli" / "__init__.py",
     ROOT / "atst" / "cli" / "runtime_commands.py",
 ]
@@ -112,7 +112,7 @@ def test_official_runtime_has_no_cross_provider_fallback_literal() -> None:
 
 
 def test_official_runtime_never_calls_legacy_aggregate_web_client() -> None:
-    """Exact Provider adapters may live in atst.web; aggregate routing may not."""
+    """Exact Provider adapters may live in atst.sources; aggregate routing may not."""
     suspicious: list[str] = []
     for path in OFFICIAL_RUNTIME:
         text = path.read_text(encoding="utf-8")
@@ -128,13 +128,13 @@ def test_kernels_web_hop_uses_exactly_the_source_the_plan_named(
     """内核的 web 一跳必须恰好构造 `plan.provider` 一个源，且绝不碰有序降级客户端。
 
     上一条判据读的是字面量：`executor.py` 里没有 `WebQuoteClient(` 就通过。它看不见
-    改道——`atst.web.get_quotes` 这个公开便捷函数在 `source` 缺省时会 new 一个
+    改道——`atst.sources.get_quotes` 这个公开便捷函数在 `source` 缺省时会 new 一个
     `WebQuoteClient`，按 `web.enabled_sources` 顺序换源直到有一家成功，而调用它不需要
     任何被禁的字面量（第 48 步之前内核正是走这条路）。所以本判据用真实求值封住两条路：
     把那个多源客户端换成"一被构造就抛"，再拿 binding 表里每一个派发 `_web_quotes` 的
     Provider 各跑一跳，要求构造的源名 == `plan.provider`、符号归一化后原样送达。
     """
-    import atst.web
+    import atst.sources
     from atst.query import QueryPlanner, QuerySpec
     from atst.runtime.executor import DIRECT_BINDINGS, DirectProviderExecutor
 
@@ -162,8 +162,8 @@ def test_kernels_web_hop_uses_exactly_the_source_the_plan_named(
     def fake_create_source(name: str, **kwargs: Any) -> _RecordingSource:
         return _RecordingSource(name)
 
-    monkeypatch.setattr(atst.web, "WebQuoteClient", _never_a_fallback_chain)
-    monkeypatch.setattr(atst.web, "create_source", fake_create_source)
+    monkeypatch.setattr(atst.sources, "WebQuoteClient", _never_a_fallback_chain)
+    monkeypatch.setattr(atst.sources, "create_source", fake_create_source)
 
     web_quote_providers = sorted(
         {b.provider for b in DIRECT_BINDINGS if b.executor_name == "_web_quotes"}

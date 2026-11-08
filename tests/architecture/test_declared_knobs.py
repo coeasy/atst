@@ -208,7 +208,7 @@ def _lazy_singleton_defects(source: str) -> list[str]:
 
 @pytest.mark.parametrize(
     "rel",
-    ["atst/web/_session_market.py", "atst/web/_base_http.py", "atst/transport/sniff.py"],
+    ["atst/sources/_session_market.py", "atst/sources/_base_http.py", "atst/transport/sniff.py"],
 )
 def test_process_level_singletons_that_claim_thread_safety_are_locked(rel: str) -> None:
     source = (ROOT / rel).read_text(encoding="utf-8")
@@ -252,8 +252,8 @@ def test_shared_http_builds_exactly_one_client_under_concurrency() -> None:
     判据用 barrier 逼出交错：无锁实现下 N 个线程能同时穿过 ``if not _SHARED_HTTP``，
     barrier 凑齐 ⇒ 造出 N 个 client；持锁实现里后到的线程必须等，barrier 超时。
     """
-    from atst.web import _session_market
-    from atst.web import base as web_base
+    from atst.sources import _session_market
+    from atst.sources import base as web_base
 
     threads = 4
     barrier = threading.Barrier(threads)
@@ -509,7 +509,7 @@ getattr(args, "another_one", None)
 #: 与 ``tests/runtime/test_wire_declared_fields.py``（F-47）的分工：那一份管**反方向**——
 #: 请求里出现了未声明的字段必须当场被拒，并核对 body/params 白名单与分派读取点的差；
 #: 本格管"声明了的字段有没有真的被读"。两面合起来才是那句"要么被读走，要么被拒"。
-HTTP_MODULE = PKG / "integration" / "runtime_http.py"
+HTTP_MODULE = PKG / "server" / "runtime_http.py"
 _ROUTE_DECOS = ("app.get(", "app.post(", "app.put(", "app.delete(")
 #: 只有这些变量名上的字符串取值算"读了请求体的这个键"。理由与判据四相同：声明侧的
 #: ``_str_prop("...")`` 与 ``{"type": "string"}`` 都不是这种形状，注册无法自证为被读取。
@@ -605,7 +605,7 @@ def test_every_http_route_param_is_read_by_the_handler() -> None:
 
 def test_every_mcp_declared_property_is_read_by_its_handler() -> None:
     """MCP 的 ``inputSchema`` 既对外声明又是拒绝白名单：声明的属性必须真的进执行链路。"""
-    from atst.integration.mcp._tools_spec import TOOLS
+    from atst.server.mcp._tools_spec import TOOLS
 
     assert len(TOOLS) >= 5, f"MCP 工具清单只读到 {len(TOOLS)} 张，判据自身失明"
     declared = {t.name: set(t.inputSchema.get("properties", {})) for t in TOOLS}
@@ -643,7 +643,7 @@ def test_the_wire_ruler_sees_planted_unread_fields() -> None:
 #: **声明的形状必须落在解析器真的接受的值域里**。
 
 CLI_MODULE = PKG / "cli" / "parser.py"
-WS_MODULE = PKG / "integration" / "runtime_ws.py"
+WS_MODULE = PKG / "server" / "runtime_ws.py"
 #: 形状上就不该被解开的写法（与值域无关，所以市场表怎么长它们都还是死的）。
 _SHAPE_DEAD_MARKET_TEXTS = ("", " ", "00", "0x0", "sh1", "市场", "true", "-1", "+1", "1.0")
 
@@ -765,7 +765,7 @@ def _market_face_values() -> dict[str, object]:
 
 def _mcp_market_schemas() -> dict[str, str]:
     """MCP 面：每张工具的 ``inputSchema`` 里 ``market`` 声明的 JSON 类型。"""
-    from atst.integration.mcp._tools_spec import TOOLS
+    from atst.server.mcp._tools_spec import TOOLS
 
     out: dict[str, str] = {}
     for tool in TOOLS:

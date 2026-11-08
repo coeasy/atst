@@ -41,7 +41,7 @@ class _StubSource:
 
 def _patch_source(monkeypatch: pytest.MonkeyPatch, rows) -> _StubSource:
     source = _StubSource(rows)
-    monkeypatch.setattr("atst.web.create_source", lambda *a, **k: source)
+    monkeypatch.setattr("atst.sources.create_source", lambda *a, **k: source)
     return source
 
 
@@ -98,7 +98,7 @@ class TestQuotesExit:
                 return [Quote(code="sh600519", price=1.0)]
 
         source = Source([])
-        monkeypatch.setattr("atst.web.create_source", lambda *a, **k: source)
+        monkeypatch.setattr("atst.sources.create_source", lambda *a, **k: source)
         plan = QueryPlanner().compile(
             QuerySpec.build("quotes", symbols="sh600519", provider="baidu")
         )

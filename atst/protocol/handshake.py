@@ -35,7 +35,7 @@ TDX 服务端在 TCP 连接建立后，多数主站要求客户端**先发送握
 
 .. important::
    本文件此前两处断言"内容不影响服务端是否接受业务命令""只校验长度、不校验内容"，
-   并把它交给了一个不存在的证据：``tests/integration/test_handshake.py``
+   并把它交给了一个不存在的证据：``tests/server/test_handshake.py``
    （及其 ``test_opaque_blob_tolerance``）和 ``tests/golden/7709/_handshake/``
    在仓库任何一次提交里都没有出现过（F-59）。断言因此从未被测到，而默认值又照它
    选了"原样重放"，于是 F-37 的"主站只回 2 字节空桩"从头到尾是本端握手问题。

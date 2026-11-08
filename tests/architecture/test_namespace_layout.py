@@ -1,9 +1,10 @@
 """V17 Phase 3C guard: the flat root namespace stays flat-capped.
 
 Phase 3C re-rooted every non-contract module into its domain package
-(``client/``, ``runtime/``, ``catalog/``). Only the protocol-neutral contract
+(``client/``, ``runtime/``, ``providers/``). Only the protocol-neutral contract
 layer may sit at ``atst/`` root, and the old module paths must not come back
-as shims.
+as shims. v2 进一步把 ``atst/web`` → ``atst/sources``、``atst/integration`` →
+``atst/server``，并取消 ``atst/catalog``（声明进 ``providers``、校验进 ``runtime``）。
 """
 
 from __future__ import annotations
@@ -38,12 +39,22 @@ MOVED: dict[str, str] = {
     "atst.runtime_audit": "atst.runtime.audit",
     "atst.runtime_identity": "atst.runtime.identity",
     "atst.runtime_provenance": "atst.runtime.provenance",
-    "atst.capability_catalog": "atst.catalog.capability",
-    "atst.capability_audit": "atst.catalog.capability_audit",
-    "atst.provider_api": "atst.catalog.provider_bindings",
-    "atst.provider_contract": "atst.catalog.provider_contract",
-    "atst.provider_guard": "atst.catalog.provider_guard",
-    "atst.provider_audit": "atst.catalog.provider_audit",
+    "atst.capability_catalog": "atst.providers",
+    "atst.capability_audit": "atst.runtime.capability_audit",
+    "atst.provider_api": "atst.providers",
+    "atst.provider_contract": "atst.providers.contract",
+    "atst.provider_guard": "atst.runtime.provider_guard",
+    "atst.provider_audit": "atst.runtime.provider_audit",
+    # v2 W3：包重组（web → sources / integration → server）+ 取消 catalog。
+    "atst.catalog": "",
+    "atst.catalog.capability": "atst.providers",
+    "atst.catalog.provider_bindings": "atst.providers",
+    "atst.catalog.capability_audit": "atst.runtime.capability_audit",
+    "atst.catalog.provider_audit": "atst.runtime.provider_audit",
+    "atst.catalog.provider_guard": "atst.runtime.provider_guard",
+    "atst.catalog.provider_contract": "atst.providers.contract",
+    "atst.web": "atst.sources",
+    "atst.integration": "atst.server",
     "atst.freshness": "",
     "atst.health": "",
     "atst.failure": "",

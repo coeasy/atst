@@ -1,9 +1,9 @@
 # atst 架构（ARCHITECTURE）
 
-> 本文只描述**当前代码事实**（v1.5.4，`/v13/` 单一执行内核）。演进历史与变更原因见
-> [`CHANGELOG.md`](../CHANGELOG.md)；早期方案里的 L1/L2 缓存、UnifiedQuoteAPI 门面、
-> 五级降级路由、sources/sinks 层、信封运行时、`execution/` DAG 与 `provider/` 路由件
-> 均已物理删除，不再是事实。
+> 本文只描述**当前代码事实**（v2.0.0，`/v13/` 单一执行内核）。演进历史与变更原因见
+> [`CHANGELOG.md`](../CHANGELOG.md) 与 [`migration/v2.md`](migration/v2.md)；早期方案里的
+> L1/L2 缓存、UnifiedQuoteAPI 门面、五级降级路由、sources/sinks 层、信封运行时、
+> `execution/` DAG 与 `provider/` 路由件均已物理删除，不再是事实。
 
 ## 1. 项目定位
 
@@ -28,10 +28,10 @@ CLI / HTTP / WS / MCP 服务面。同步交付物为 `atst` Python 包，**协�
 ## 2. 唯一主执行链
 
 ```
-CLI / HTTP(runtime_http) / WS(runtime_ws) / MCP(integration/mcp)
+CLI / HTTP(runtime_http) / WS(runtime_ws) / MCP(server/mcp)
         │  （四个服务面全部只翻译，委托 Client，禁止任何执行逻辑）
         ▼
-atst.Client / AsyncClient（client/api.py，唯一业务入口，216 capabilities）
+atst.Client / AsyncClient（client/api.py，唯一业务入口，217 capabilities）
         │  QuerySpec（query.py：capability + symbols + provider + currentness …）
         ▼
 UnifiedRuntime（runtime/kernel.py，唯一内核，零缓存）
@@ -42,9 +42,9 @@ DirectProviderExecutor（runtime/executor.py）
         ▼
 providers/ 注册表（Provider / Channel / Capability 单一事实源）
    ├─ tdx        → protocol/ + client/ + transport/（85 命令、61 解析器、连接池）
-   ├─ tencent/sina/eastmoney/baidu/jsl/boc → web/<provider>/（45+ HTTP 源，按 Provider 归组）
+   ├─ tencent/sina/eastmoney/baidu/jsl/boc/cninfo/ths/wallstreet → sources/<provider>/（按 Provider 归组）
    ├─ local_vipdoc → reader/（本地 .day/.lc1/.lc5/.dat/gpcw 二进制）
-   ├─ iwencai    → web/ 问答式源
+   ├─ iwencai    → sources/ 问答式源
    ├─ builtin    → 内置聚合/常量
    └─ derived    → 显式聚合能力
         │  QueryResult（result.py：data + meta.provenance 溯源）
@@ -69,14 +69,14 @@ providers/ 注册表（Provider / Channel / Capability 单一事实源）
 | 层 | 模块 | 状态 / 实现要点 |
 |---|---|---|
 | 协议层（冻结） | `codec/`（帧/变长数/字符集）、`protocol/`（命令账本 + 三级解析 L1/L2/L3）、`transport/`（池/心跳/测速）、`client/`（`api.py` 唯一业务入口 `Client`/`AsyncClient` + `core.py` 共享纯协议 SSOT + `sync.py`/`async_.py` `TdxClient` + `factory.py` 按市场族造客户端的 `get_client`）、`charset/` | 独立完备。`COMMANDS` 账本 85 条、`PARSERS` 三级解析器 61 个；未知命令走 L3 原始透传。 |
-| 数据源层 | `providers/`（静态不可变注册表）、`web/`（六个 Provider 子包 `tencent`/`sina`/`eastmoney`/`baidu`/`jsl`/`boc` 各承载一家适配器，跨 Provider 的域模块留包根）、`reader/`、`profile/`（DataProfile 复权/周期口径） | 活。`ProviderSpec`/`ChannelSpec` 是 Provider/Channel/Capability 唯一事实源；`ChannelSpec.operationally_supports()` 按 `capabilities - unavailable_capabilities` 判「声明了但已下线」。 |
-| 契约层（无执行） | `query.py`、`result.py`、`batch.py`、`typed_query.py`、`stream_contract.py`、`errors.py`、`error_envelope.py`、`diagnostics.py`（运行期告警码与「未证实」登记簿）、`catalog/`（capability 目录与调用校验、Provider channel→adapter 绑定表、Provider 隔离契约/守卫/一致性审计） | 活。 |
-| 内核层 | `runtime/`（`kernel.py` 唯一内核、`executor.py` 精确绑定执行、`orchestration.py` 显式跨源编排、`autoselect.py` 显式自动选源（`provider="auto"`）的候选排序与运行时健康反馈、`audit.py` 启动三方对账、`identity.py`/`provenance.py` 执行身份与溯源守卫、`freshness.py` 当期性证据校验） | 活。`UnifiedRuntime` 是配置面唯一读者；`DIRECT_BINDINGS` 启动时由 `audit_runtime()` 三方对账。 |
+| 数据源层 | `providers/`（`__init__.py` 聚合 + `registry.py` 冻结词汇 + `contract.py` 隔离契约 + 14 个声明模块 `tdx.py`/`local_vipdoc.py`/`tencent.py`/`sina.py`/`eastmoney.py`/`baidu.py`/`jsl.py`/`boc.py`/`iwencai.py`/`cninfo.py`/`ths.py`/`wallstreet.py`/`builtin.py`/`derived.py`）、`sources/`（九个 Provider 子包 `tencent`/`sina`/`eastmoney`/`baidu`/`jsl`/`boc`/`cninfo`/`ths`/`wallstreet` 各承载一家适配器，跨 Provider 的域模块留包根）、`reader/`、`profile/`（DataProfile 复权/周期口径） | 活。`ProviderSpec`/`ChannelSpec` 是 Provider/Channel/Capability 唯一事实源；每 Provider 一个声明模块同时登记 channel→adapter 与 capability→实现绑定；`ChannelSpec.operationally_supports()` 按 `capabilities - unavailable_capabilities` 判「声明了但已下线」。 |
+| 契约层（无执行） | `query.py`、`result.py`、`batch.py`、`typed_query.py`、`stream_contract.py`、`errors.py`、`error_envelope.py`、`diagnostics.py`（运行期告警码与「未证实」登记簿）、`providers/`（声明）与 `runtime/`（校验）（capability 目录与调用校验、Provider channel→adapter 绑定表、Provider 隔离契约/守卫/一致性审计） | 活。 |
+| 内核层 | `runtime/`（`kernel.py` 唯一内核、`executor.py` 精确绑定执行、`orchestration.py` 显式跨源编排、`autoselect.py` 显式自动选源（`provider="auto"`）的候选排序与运行时健康反馈、`audit.py` 启动三方对账、`bindings.py` 绑定投影、`execute_capability.py`/`execute_channel.py`/`execute_composed.py`/`composed.py` 执行体、`capability_contract.py` 规划期签名校验、`capability_audit.py`/`provider_audit.py`/`provider_guard.py` 一致性与隔离审计、`identity.py`/`provenance.py` 执行身份与溯源守卫、`freshness.py` 当期性证据校验） | 活。`UnifiedRuntime` 是配置面唯一读者；`DIRECT_BINDINGS` 启动时由 `audit_runtime()` 三方对账。 |
 | 流式层 | `streaming/`（`base.py` 传输与订阅底座、`engine.py` 引擎、`state.py` 状态格、`stateful.py` `StatefulQuoteStream`/`AsyncStatefulQuoteStream`、`push.py` 推送面） | 活，入参契约在根级 `atst.stream_contract`。`StreamState` 五态：`CREATED`/`RUNNING`/`STOPPING`/`CLOSED`/`FAILED`。 |
-| 服务面层 | `cli/`、`integration/`（`runtime_http.py` HTTP 面、`runtime_ws.py` JSON-RPC 分派、`runtime_ws_server.py` WS 服务器、`serialization.py` 结果序列化、`wire_fields.py` 三面入参白名单、`integration/mcp/` MCP 面）、`output/`（DataFrame/Parquet/DuckDB）、`sink/` | 活，全部 Client-backed。`WS` 控制面：`subscribe`/`unsubscribe`/`list` + `push` 帧（snapshot/tick/error），订阅表**每连接私有**。 |
+| 服务面层 | `cli/`、`server/`（`runtime_http.py` HTTP 面、`runtime_ws.py` JSON-RPC 分派、`runtime_ws_server.py` WS 服务器、`serialization.py` 结果序列化、`wire_fields.py` 三面入参白名单、`server/mcp/` MCP 面）、`output/`（DataFrame/Parquet/DuckDB）、`sink/` | 活，全部 Client-backed。`WS` 控制面：`subscribe`/`unsubscribe`/`list` + `push` 帧（snapshot/tick/error），订阅表**每连接私有**。 |
 | 类型化糖衣 | `typed_query.py`（`CapabilityQuery` + Domain Record）、`domain/`（records/symbol/日历） | 全量接通：`Client.typed` / `AsyncClient.typed`，字段名与内核方法签名一一对应。 |
 | 基础设施 | `config/`（6 源合并 + 严格校验）、`observability/`（Prometheus 风格指标，零硬依赖）、`feedback/`（错误/用量上报） | 活。 |
-| 实验模块 | `trade/`（交易协议模拟器，纯内存模拟，不接入内核） | 独立实验面。 |
+| 实验模块 | `labs/trade/`（交易协议模拟器，纯内存模拟，不接入内核；打包排除） | 独立实验面。 |
 
 > 根级白名单 11 项（`__init__.py` / `_version.py` / `batch.py` / `diagnostics.py` /
 > `error_envelope.py` / `errors.py` / `query.py` / `result.py` / `stream_contract.py` /
@@ -92,13 +92,13 @@ providers/ 注册表（Provider / Channel / Capability 单一事实源）
 
 - **单 Plan 执行**：`QueryPlanner.compile` 产出单 Provider / 单 Channel 的 `QueryPlan`，
   `DirectProviderExecutor` 按 `DIRECT_BINDINGS`（`(provider, channel, capability) → executor 方法`，
-  运行时从注册表生成，284 条，其中 17 条走专用执行体如 `_tdx_quotes`/`_tdx_bars`/`_web_quotes`，
+  运行时从注册表生成，304 条；专用执行体覆盖 7 项能力（如 `_tdx_quotes`/`_tdx_bars`/`_web_quotes`），
   其余回落 `_migrated_capability`）精确派发。
 - **跨源回退**：`FallbackPolicy` + `ProviderOrchestrator` 是**唯一**跨 Provider 容错通道；
   禁止隐式跨 Provider fallback（`DataSourceRouter` 已退化为单 Provider 选择器）。
 - **组合能力（`composed`）**：`adjusted_bars` / `daily_enriched` / `sync_daily` 三者的数据由
   内核拼装，不对应任何单一上游。它们在注册表里挂在名义 Provider `derived`（`backend="composed"`，
-  由 `catalog/capability.py` 的 `COMPOSED_CAPABILITIES` 派生），因此 **`provider=` 参数的含义与
+  由 `providers/ 声明聚合 + runtime/capability_contract.py` 的 `COMPOSED_CAPABILITIES` 派生），因此 **`provider=` 参数的含义与
   其余能力不同**——它指的是"取**未复权原始 K 线**的那条腿"，不是"谁来执行"，`Client.call`
   会把这个值归位到 `options.kwargs` 而不是路由字段。复权事件另由 `event_source` 决定
   （缺省 `eastmoney`，即 `RPT_SHAREBONUS_DET` + `RPT_IPO_ALLOTMENT` 两路按除权日合成；
@@ -119,10 +119,10 @@ Fail-closed 要点（`tests/streaming/` 锁）：worker 半死、启动失败、
 
 | 服务面 | 入口 | 实现要点 |
 |---|---|---|
-| CLI | `cli/`（33 子命令） | 只翻译为 `Client` 调用；`build_parser()` 是四面共用的参数契约。 |
-| HTTP | `integration/runtime_http.py`（`/v13/`，12 路由） | `create_runtime_app()` 绑定 `Client`；`wire_fields.py` 三面（CLI/HTTP/WS）入参白名单。 |
-| WS | `integration/runtime_ws.py` + `runtime_ws_server.py` | `RuntimeJsonRpcHandler` 绑定 `Client`（非 raw runtime），内部读 `client.runtime.planner`；方法 `subscribe`/`unsubscribe`/`list`/`push`。 |
-| MCP | `integration/mcp/`（9 工具） | stdio MCP 面，同样只翻译为 `Client.call(<capability>, …)`。 |
+| CLI | `cli/`（38 叶子命令） | 只翻译为 `Client` 调用；`build_parser()` 是四面共用的参数契约。 |
+| HTTP | `server/runtime_http.py`（`/v13/`，12 路由） | `create_runtime_app()` 绑定 `Client`；`wire_fields.py` 三面（CLI/HTTP/WS）入参白名单。 |
+| WS | `server/runtime_ws.py` + `runtime_ws_server.py` | `RuntimeJsonRpcHandler` 绑定 `Client`（非 raw runtime），内部读 `client.runtime.planner`；方法 `subscribe`/`unsubscribe`/`list`/`push`。 |
+| MCP | `server/mcp/`（9 工具） | stdio MCP 面，同样只翻译为 `Client.call(<capability>, …)`。 |
 
 四面入口都经 `Client.call(<capability>, …)` / `Client.typed` 这一个业务入口；
 没有第二层门面（`UnifiedQuoteAPI` 已物理删除，不再是接口）。
@@ -144,7 +144,7 @@ Fail-closed 要点（`tests/streaming/` 锁）：worker 半死、启动失败、
 |---|---|
 | Provider / Channel / Capability | `atst/providers/__init__.py`（`PROVIDERS` 注册表） |
 | 可执行绑定 | `runtime/executor.py`（`DIRECT_BINDINGS`，启动时 `audit_runtime()` 三方对账） |
-| capability 语义 / 参数校验 | `query.py`（`QuerySpec`）+ `catalog/capability.py`（`validate_call`） |
+| capability 语义 / 参数校验 | `query.py`（`QuerySpec`）+ `providers/ 声明聚合 + runtime/capability_contract.py`（`validate_call`） |
 | 协议命令账本 | `protocol/` YAML 规范 + codegen + golden_audit |
 | 公开导出面 | `atst/__init__.py::__all__`（懒加载 `_LAZY`） |
 | 配置结构 | `atst.config.schema`（6 段，全部由内核读取；用户面 `docs/configuration.md`） |
@@ -152,10 +152,9 @@ Fail-closed 要点（`tests/streaming/` 锁）：worker 半死、启动失败、
 
 ## 9. 门禁与防回潮
 
-- **文档-代码一致性**（`tests/architecture/test_doc_code_consistency.py`）：活文档里的
-  `atst.*` 引用、`docs/...md` 引用、README 与 `docs/ARCHITECTURE.md`/`docs/api/` 宣称的规模数字
-  （命令账本 / 解析器 / 配置段 / 根级白名单 / 服务面方法数 / HTTP 源与契约下界）一律钉回运行期真相源；
-  历史判据（`CHANGELOG.md` 的往日条目）记录当时语境，不参与门禁。
+- **投影型文档生成制**（`scripts/gen_docs.py` + `tests/architecture/test_generated_docs.py`）：
+  Web 源登记表、capability × provider 矩阵、四张服务面、命令账本的数字与成员一律由运行时
+  现读现生成到 `docs/generated/`；守卫只判「生成物 == 重新生成的结果」（`make docs-check`）。
 - **单内核守卫**（`tests/architecture/test_single_kernel_guards.py`）：已删模块/符号不可再现、
   `atst.runtime.__all__` 仅内核、runtime 不再引用已删分层、`Client` 执行面类型为 `DirectProviderExecutor`。
 - **命名空间守卫**（`tests/architecture/test_namespace_layout.py`）：根级白名单 11 项、旧模块路径不可导入。

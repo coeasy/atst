@@ -99,6 +99,14 @@ class FakeClient:
         call.__name__ = name
         return call
 
+    def call(self, capability: str, *args: Any, **kwargs: Any) -> Any:
+        #: v2 起 ``Client`` 不再按能力名动态暴露方法，录制点落在 ``call`` 的第一个参数。
+        cls = type(self)
+        cls.calls.append((capability, args, kwargs))
+        if cls.error is not None:
+            raise cls.error
+        return _result(cls.data, capability=capability)
+
 
 @pytest.fixture()
 def fake_client(monkeypatch: pytest.MonkeyPatch) -> type[FakeClient]:
@@ -148,8 +156,8 @@ class TestV13QueryHandlers:
             currentness="live",
         )
         assert rc.cmd_query(args) == 0
-        call_args, call_kwargs = _last(fake_client, "call")
-        assert call_args == ("quote", "sh600519")
+        call_args, call_kwargs = _last(fake_client, "quote")
+        assert call_args == ("sh600519",)
         assert call_kwargs == {
             "provider": "tencent",
             "channel": "web_quote",

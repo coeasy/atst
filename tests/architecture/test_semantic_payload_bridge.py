@@ -24,7 +24,7 @@ QuerySpec 的语义字段派生出的入参，能不能绑定到它自己的实�
   ``[tencent-minute-minute]`` 红（报 ``missing a required argument: 'date'``）；
 - **M4** 把"无落脚点字段"的闸放宽成静默丢掉 → 幻影旋钮判据红；
 - **M5** 让批量代码静默取第一只 → 批量判据红；
-- **M6** 让 :func:`~atst.catalog.capability.implementation_for` 不认识 ``direct_adapter``
+- **M6** 让 :func:`~atst.providers.implementation_for` 不认识 ``direct_adapter``
   （即宿主类再被抄第二份的形状）→ 绑定与交叉核对判据红。
 
 """
@@ -36,10 +36,11 @@ from typing import Any
 
 import pytest
 
-from atst.catalog.capability import binding_for, implementation_for, validate_call
 from atst.client.api import _CORE_CAPABILITIES
 from atst.errors import ValidationError
+from atst.providers import binding_for
 from atst.query import QueryPlanner, QuerySpec
+from atst.runtime.capability_contract import implementation_for, validate_call
 from atst.runtime.executor import (
     _SEMANTIC_CALL_FIELDS,
     _SEMANTIC_FIELD_RENAMES,

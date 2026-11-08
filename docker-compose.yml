@@ -22,7 +22,7 @@ services:
     container_name: atst-dev
     ports:
       - "8000:8000"
-      # WS JSON-RPC 面是另一个进程：`python -m atst.integration.runtime_ws_server`
+      # WS JSON-RPC 面是另一个进程：`python -m atst.server.runtime_ws_server`
       # 默认监听 127.0.0.1:8765 上的 /v13/ws（`atst serve` 不启动 WS）。要在容器里
       # 暴露它，先把 RuntimeWsConfig 的 host 改成 0.0.0.0，再放行同一个端口号：
       # - "8765:8765"

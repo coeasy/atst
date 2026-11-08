@@ -21,13 +21,6 @@ atst.charset  # 字符集探测包公共 API（`detect_encoding`/`decode_bytes`/
 atst.charset.encoding  # 探测实现（`CANDIDATE_ENCODINGS`/`DEFAULT_PRIORITY`，即 GB18030/GBK/Big5/UTF-8 优先级表与置信度）：仅经 charset 包 __init__ 再导出，故与包同处链外；tests/unit/test_i18n_priority.py 锁定优先级语义
 
 # --- 交易协议研究族（P2-1，独立可选；红线：不连真实券商）---
-atst.trade  # 交易协议模拟器包：docs/api/README.md 记为可选子系统，tests/trade/ 5 支测试文件覆盖；因不参与行情主链路且接真实券商属范围红线，内核与 CLI 都不 import 它
-atst.trade.client  # `TradeClient`/`SocketTransport`/`normalize_code`：随 atst.trade 包 __init__ eager 导出，tests/trade/test_client.py 覆盖；`SocketTransport` 只对本地模拟器说话，接进生产链路是范围扩张而非接线
-atst.trade.constants  # 交易命令常量（`CMD_LOGIN`/`CMD_QUERY`/`CMD_SEND_ORDER`）：atst.tools.spec_audit 以**字符串模块名**经 importlib 解析它来做 TRADE 族账本对齐（AST 图看不见这种边），tests/test_spec_coverage.py 锁定该对齐
-atst.trade.frames  # 交易帧编解码（`build_request`/`parse_response`/`build_order_body`）：同 constants，被 spec_audit 动态解析为 TRADE 族 codec 锚点；tests/trade/test_frames.py 逐帧自对拍
-atst.trade.errors  # 交易域异常（`TradeError`/`TradeNotLoggedIn`/`TradeRejected`/`TradingUnavailable`）：只在 trade 族内部 raise，tests/trade/test_frames.py 与 tests/trade/test_simulator.py 直接 import 本模块断言其语义；行情链路不会碰到它们
-atst.trade.security  # 交易登录口令混淆（`obfuscate_password`/`deobfuscate_password`，洁净室占位实现）：tests/trade/test_security.py 覆盖；真实凭据路径按 ADR-007-010 明确排除在本项目范围外
-atst.trade.simulator  # 纯内存模拟券商（`TradeSimulator`/`SimTransport`/`Position`/`Order`/`Deal`）：tests/trade/test_simulator.py 覆盖，是 trade 族协议回路研究的载体，与运行时数据链路无关
 
 # --- 契约/守卫资产：由架构测试消费，生产链路零 import（登记评审后豁免）---
-atst.catalog.provider_contract  # Provider 隔离契约（`ProviderIdentity`/`ProviderCapabilityContract`/`ProviderExecutionContract`）：tests/provider_isolation/test_direct_provider_guard.py 与 tests/provider_isolation/test_provider_isolation_contract.py 消费，tests/architecture/test_namespace_layout.py 钉住它的迁移后位置；内核不 import 是"零依赖、可被任一 Provider 使用"的有意设计
+atst.providers.contract  # Provider 隔离契约（`ProviderIdentity`/`ProviderCapabilityContract`/`ProviderExecutionContract`）：tests/provider_isolation/test_direct_provider_guard.py 与 tests/provider_isolation/test_provider_isolation_contract.py 消费，tests/architecture/test_namespace_layout.py 钉住它的迁移后位置；内核不 import 是"零依赖、可被任一 Provider 使用"的有意设计

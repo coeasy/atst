@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 from array import array
-from collections.abc import Iterator, Mapping, MutableMapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -62,13 +62,14 @@ TICK_FIELDS = ("time", "price", "volume", "num", "buyorsell")
 #
 # 每条 Bar / Quote 都带一份扩展字段。常见情况是「没有扩展字段」（K 线）或只有
 # 一个 ``prev_close`` / ``open_interest``（vipdoc），为每对象分配 dict 的常数开销
-# 在大批量驻留时很可观。这里改用两种形态：
+# 在大批量驻留时很可观。这里分三层存放：
 #
 # * ``None``                       —— 空 extra，零底层存储；
-# * ``tuple``（扁平 k1,v1,k2,v2）  —— 保持插入顺序，比 dict 小得多。
+# * ``tuple``（扁平 k1,v1,k2,v2）  —— 保持插入顺序，比 dict 小得多；
+# * ``dict``                       —— 首次被当作 dict 使用时才物化，之后留在槽位里。
 #
-# 公开属性 ``extra`` 仍是可变映射（外部照旧 ``bar.extra["x"] = 1``、迭代、
-# ``in``、``.get``、``== {...}``），写入经视图重建 tuple 写回所有者。
+# 公开属性 ``extra`` 始终是 ``dict`` 实例（``isinstance(bar.extra, dict)`` 为真），
+# 但空态与「从未访问」态都不分配实体 dict；``to_dict`` 直读槽位，不触发物化。
 # --------------------------------------------------------------------------- #
 _DT_CACHE_MAX = 4096
 _DT_CACHE: dict[str, str] = {}
@@ -76,6 +77,9 @@ _DT_CACHE_FULL = False
 
 #: ``extra`` 的合法输入：映射 / 已压平的内部 tuple。
 ExtraInput = Mapping[str, Any] | tuple[Any, ...] | None
+
+#: ``extra`` 的内部存放形态：空 ``None`` / 扁平 tuple / 已物化的 dict。
+ExtraStorage = tuple[Any, ...] | dict[str, Any] | None
 
 
 def _canonical_datetime(value: str) -> str:
@@ -97,18 +101,17 @@ def _canonical_datetime(value: str) -> str:
     return value
 
 
-def _flatten_extra(extra: ExtraInput) -> tuple[Any, ...] | None:
-    """把 mapping / 视图压成扁平 tuple；空映射返回 ``None``。
+def _flatten_extra(extra: ExtraInput) -> ExtraStorage:
+    """把 mapping 压成扁平 tuple；空映射返回 ``None``。
 
     ``tuple`` 视为**已压平**的内部输入（解析热路径直接给出，避免每行构造 dict
-    后再拆开），因此这条分支必须排在最前。
+    后再拆开），这条分支必须排在最前。``dict`` 等映射一律压平——直接留着调用方
+    的 dict 会把每对象一个实体 dict 的常数开销带回来。
     """
     if not extra:
         return None
     if isinstance(extra, tuple):
         return extra
-    if isinstance(extra, _ExtraView):
-        return extra._owner._extra
     out: list[Any] = []
     for key, value in extra.items():
         out.append(key)
@@ -116,91 +119,25 @@ def _flatten_extra(extra: ExtraInput) -> tuple[Any, ...] | None:
     return tuple(out)
 
 
-def _extra_dict(flat: tuple[Any, ...] | None) -> dict[str, Any]:
-    if not flat:
+def _extra_dict(stored: ExtraStorage) -> dict[str, Any]:
+    """把槽位里的任一形态快照成普通 dict（不改动对象状态）。"""
+    if not stored:
         return {}
-    return {flat[i]: flat[i + 1] for i in range(0, len(flat), 2)}
+    if isinstance(stored, dict):
+        return dict(stored)
+    return {stored[i]: stored[i + 1] for i in range(0, len(stored), 2)}
 
 
-class _ExtraView(MutableMapping[str, Any]):
-    """绑定到 Bar / Quote 的可变映射视图（不持有独立存储）。
-
-    每次属性访问创建一个小对象（几十字节，瞬时），底层数据仍只存在对象槽位里；
-    序列化热路径直接读槽位，不经过本视图。
-    """
-
-    __slots__ = ("_owner",)
-
-    def __init__(self, owner: Any) -> None:
-        self._owner = owner
-
-    def __getitem__(self, key: str) -> Any:
-        flat = self._owner._extra
-        if flat:
-            for i in range(0, len(flat), 2):
-                if flat[i] == key:
-                    return flat[i + 1]
-        raise KeyError(key)
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        flat = self._owner._extra
-        if not flat:
-            self._owner._extra = (key, value)
-            return
-        for i in range(0, len(flat), 2):
-            if flat[i] == key:
-                self._owner._extra = (*flat[: i + 1], value, *flat[i + 2 :])
-                return
-        self._owner._extra = (*flat, key, value)
-
-    def __delitem__(self, key: str) -> None:
-        flat = self._owner._extra
-        if not flat:
-            raise KeyError(key)
-        kept: list[Any] = []
-        found = False
-        for i in range(0, len(flat), 2):
-            if flat[i] == key:
-                found = True
-                continue
-            kept.append(flat[i])
-            kept.append(flat[i + 1])
-        if not found:
-            raise KeyError(key)
-        self._owner._extra = tuple(kept) if kept else None
-
-    def __iter__(self) -> Iterator[str]:
-        flat = self._owner._extra
-        if not flat:
-            return iter(())
-        return iter(flat[0::2])
-
-    def __len__(self) -> int:
-        flat = self._owner._extra
-        return len(flat) // 2 if flat else 0
-
-    def __contains__(self, key: object) -> bool:
-        flat = self._owner._extra
-        if not flat:
-            return False
-        return any(flat[i] == key for i in range(0, len(flat), 2))
-
-    def __repr__(self) -> str:
-        return repr(dict(self))
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, Mapping):
-            return dict(self) == dict(other)
-        return NotImplemented
-
-    def __ne__(self, other: object) -> bool:
-        result = self.__eq__(other)
-        if result is NotImplemented:
-            return result
-        return not result
-
-    def copy(self) -> dict[str, Any]:
-        return dict(self)
+def _extra_get(stored: ExtraStorage, key: str, default: Any = None) -> Any:
+    """读单个扩展字段而不物化 dict（批量读属性时保持零分配）。"""
+    if not stored:
+        return default
+    if isinstance(stored, dict):
+        return stored.get(key, default)
+    for i in range(0, len(stored), 2):
+        if stored[i] == key:
+            return stored[i + 1]
+    return default
 
 
 @dataclass(slots=True)
@@ -211,11 +148,14 @@ class Level:
     volume: int = 0
 
 
+@dataclass(init=False, eq=False, repr=False)
 class Bar:
     """K 线 / 分钟线。
 
-    ``extra`` 是对外保留的扩展字段映射；内部以 ``tuple`` 扁平存储（空则 ``None``），
-    见模块顶部 ``_ExtraView`` 说明。
+    仍是 dataclass（``is_dataclass`` / ``fields`` / ``asdict`` 可用）；槽位由手写
+    ``__slots__`` 提供，不产生 ``__dict__``。``extra`` 空态存 ``None``、非空先以
+    扁平 ``tuple`` 存放，首次被当作 dict 使用时物化为 ``dict`` 并留在槽位里；
+    对外访问到的始终是 ``dict`` 实例。
     """
 
     __slots__ = (*BAR_FIELDS, "_extra")
@@ -227,7 +167,8 @@ class Bar:
     close: float
     volume: int
     amount: float
-    _extra: tuple[Any, ...] | None
+    #: 期货持仓量 / 期权希腊字母等扩展字段（对外恒为 dict）
+    extra: dict[str, Any]
 
     def __init__(
         self,
@@ -248,11 +189,16 @@ class Bar:
         self.close = close
         self.volume = volume
         self.amount = amount
-        self._extra = _flatten_extra(extra)
+        self._extra: ExtraStorage = _flatten_extra(extra)
 
-    @property
-    def extra(self) -> _ExtraView:
-        return _ExtraView(self)
+    @property  # type: ignore[no-redef]
+    def extra(self) -> dict[str, Any]:
+        stored = self._extra
+        if isinstance(stored, dict):
+            return stored
+        materialized = _extra_dict(stored)
+        self._extra = materialized
+        return materialized
 
     @extra.setter
     def extra(self, value: ExtraInput) -> None:
@@ -260,10 +206,13 @@ class Bar:
 
     def to_dict(self) -> dict[str, Any]:
         d = {k: getattr(self, k) for k in BAR_FIELDS}
-        flat = self._extra
-        if flat:
-            for i in range(0, len(flat), 2):
-                d[flat[i]] = flat[i + 1]
+        stored = self._extra
+        if stored:
+            if isinstance(stored, dict):
+                d.update(stored)
+            else:
+                for i in range(0, len(stored), 2):
+                    d[stored[i]] = stored[i + 1]
         return d
 
     def to_tuple(self) -> tuple:
@@ -278,7 +227,9 @@ class Bar:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Bar):
             return NotImplemented
-        return self.to_tuple() == other.to_tuple() and self.extra == other.extra
+        return self.to_tuple() == other.to_tuple() and _extra_dict(self._extra) == _extra_dict(
+            other._extra
+        )
 
     def __repr__(self) -> str:
         parts = [f"{k}={getattr(self, k)!r}" for k in BAR_FIELDS]
@@ -315,12 +266,14 @@ def _unpack_levels(flat: array | None) -> list[Level]:
     return [Level(flat[i], int(flat[i + 1])) for i in range(0, len(flat), 2)]
 
 
+@dataclass(init=False, eq=False, repr=False)
 class Quote:
     """实时行情快照（含五档）。
 
     ``bid`` / ``ask`` 内部以 ``array('d')`` 紧凑保存价格/量，首次访问时重建为
     ``list[Level]`` 并留在对象槽位里复用；未访问的对象不驻留 Level 实例（五档是
-    大批量行情的主要常数开销）。
+    大批量行情的主要常数开销）。``extra`` 与 :class:`Bar` 同构：空态 ``None``、
+    未访问态扁平 ``tuple``、对外恒为 ``dict``；类本身仍是 dataclass。
     """
 
     __slots__ = (
@@ -349,11 +302,9 @@ class Quote:
     low: float
     volume: int
     amount: float
-    _bid_raw: array | None
-    _ask_raw: array | None
-    _bid_list: list[Level] | None
-    _ask_list: list[Level] | None
-    _extra: tuple[Any, ...] | None
+    bid: list[Level]
+    ask: list[Level]
+    extra: dict[str, Any]
 
     def __init__(
         self,
@@ -380,13 +331,13 @@ class Quote:
         self.low = low
         self.volume = volume
         self.amount = amount
-        self._bid_raw = _pack_levels(bid)
-        self._ask_raw = _pack_levels(ask)
-        self._bid_list = None
-        self._ask_list = None
-        self._extra = _flatten_extra(extra)
+        self._bid_raw: array | None = _pack_levels(bid)
+        self._ask_raw: array | None = _pack_levels(ask)
+        self._bid_list: list[Level] | None = None
+        self._ask_list: list[Level] | None = None
+        self._extra: ExtraStorage = _flatten_extra(extra)
 
-    @property
+    @property  # type: ignore[no-redef]
     def bid(self) -> list[Level]:
         levels = self._bid_list
         if levels is None:
@@ -399,7 +350,7 @@ class Quote:
         self._bid_raw = _pack_levels(value)
         self._bid_list = None
 
-    @property
+    @property  # type: ignore[no-redef]
     def ask(self) -> list[Level]:
         levels = self._ask_list
         if levels is None:
@@ -412,9 +363,14 @@ class Quote:
         self._ask_raw = _pack_levels(value)
         self._ask_list = None
 
-    @property
-    def extra(self) -> _ExtraView:
-        return _ExtraView(self)
+    @property  # type: ignore[no-redef]
+    def extra(self) -> dict[str, Any]:
+        stored = self._extra
+        if isinstance(stored, dict):
+            return stored
+        materialized = _extra_dict(stored)
+        self._extra = materialized
+        return materialized
 
     @extra.setter
     def extra(self, value: ExtraInput) -> None:
@@ -431,7 +387,7 @@ class Quote:
     @property
     def turnover_rate(self) -> float:
         """换手率（%），需 extra 提供 float_shares（流通股本）。"""
-        shares = self.extra.get("float_shares")
+        shares = _extra_get(self._extra, "float_shares")
         if not shares:
             return 0.0
         return self.volume / float(shares) * 100
@@ -447,16 +403,21 @@ class Quote:
             d["ask"] = []
         else:
             d["ask"] = [asdict(x) for x in self.ask]
-        flat = self._extra
-        if flat:
+        stored = self._extra
+        if stored:
             #: 下划线前缀是**内部字段**标记（协议原始留存 / 漂移判据等）：
             #: 公开 dict 出口只扁平化契约字段，内部键留在 ``extra`` 里给对象消费者——
             #: 否则 TDX 的原始解码残留（_hdr/_u4/_v2/tail_leb128/_warnings）
             #: 会平铺进行情契约，DataFrame/CSV 的列名一起被污染。
-            for i in range(0, len(flat), 2):
-                key = flat[i]
-                if not key.startswith("_"):
-                    d[key] = flat[i + 1]
+            if isinstance(stored, dict):
+                for key, value in stored.items():
+                    if not key.startswith("_"):
+                        d[key] = value
+            else:
+                for i in range(0, len(stored), 2):
+                    key = stored[i]
+                    if not key.startswith("_"):
+                        d[key] = stored[i + 1]
         return d
 
     def __eq__(self, other: object) -> bool:
@@ -474,7 +435,7 @@ class Quote:
             and self.amount == other.amount
             and self.bid == other.bid
             and self.ask == other.ask
-            and self.extra == other.extra
+            and _extra_dict(self._extra) == _extra_dict(other._extra)
         )
 
     def __repr__(self) -> str:

@@ -71,7 +71,7 @@ def _drive(
     errors: list[tuple[str, BaseException]] = []
     gen = client._t_quotes(["sh600519"], as_format="dict", strict=strict, _collect=errors)
     op = next(gen)
-    assert op[0] == "req" and op[1] == CMD_REALTIME_QUOTE
+    assert op.cmd == CMD_REALTIME_QUOTE
     try:
         gen.send(object())  # dispatch 被替身接管，帧本体不透明即可
     except StopIteration as stop:  # 正常收尾：返回 _emit 的结果

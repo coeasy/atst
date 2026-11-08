@@ -10,11 +10,12 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import pytest
 
-from atst.domain.models import Bar, Level, Quote, to_dicts, to_tuples
+from atst.domain.models import BAR_FIELDS, QUOTE_FIELDS, Bar, Level, Quote, to_dicts, to_tuples
 
 
 def _assert_json_equal(actual: dict[str, Any], expected: dict[str, Any]) -> None:
@@ -219,7 +220,9 @@ class TestExtraMappingSemantics:
         assert dict(quote.extra) == {"a": 1, "b": 2, "c": 3}
         quote.extra.clear()
         assert quote.extra == {}
-        assert quote._extra is None
+        #: 首次访问已把槽位物化成 dict；清空后留下的空 dict 不改变出口与语义。
+        assert quote._extra == {}
+        assert "a" not in quote.to_dict()
 
     def test_equality_and_copy(self) -> None:
         bar = Bar(datetime="d", extra={"prev_close": 10.48})
@@ -309,3 +312,87 @@ class TestLazyOrderBook:
         quote = Quote(bid=[{"price": 1.0, "volume": 5}], ask=[{"price": 2.0, "volume": 6}])
         assert quote.to_dict()["bid"] == [{"price": 1.0, "volume": 5}]
         assert quote.to_dict()["ask"] == [{"price": 2.0, "volume": 6}]
+
+
+class TestDataclassCompat:
+    """``Bar`` / ``Quote`` 必须仍是 dataclass，且不产生 ``__dict__``。"""
+
+    def test_is_dataclass(self) -> None:
+        assert dataclasses.is_dataclass(Bar)
+        assert dataclasses.is_dataclass(Quote)
+        assert dataclasses.is_dataclass(Bar())
+
+    def test_fields_match_contract_order(self) -> None:
+        assert [f.name for f in dataclasses.fields(Bar)] == [*BAR_FIELDS, "extra"]
+        assert [f.name for f in dataclasses.fields(Quote)] == [*QUOTE_FIELDS, "extra"]
+
+    def test_asdict_usable_and_matches_to_dict(self) -> None:
+        bar = Bar(datetime="2026-01-02", close=1.5, extra={"prev_close": 1.4})
+        snapshot = dataclasses.asdict(bar)
+        assert snapshot["extra"] == {"prev_close": 1.4}
+        #: asdict 的契约字段与 to_dict 逐个一致；多出的 ``extra`` 包裹是 dataclass 语义。
+        plain = bar.to_dict()
+        assert {k: snapshot[k] for k in BAR_FIELDS} == {k: plain[k] for k in BAR_FIELDS}
+
+    def test_asdict_quote_levels_become_dicts(self) -> None:
+        quote = Quote(code="sh600519", bid=[Level(9.99, 1000)], extra={"a": 1})
+        snapshot = dataclasses.asdict(quote)
+        assert snapshot["bid"] == [{"price": 9.99, "volume": 1000}]
+        assert snapshot["extra"] == {"a": 1}
+
+    def test_no_instance_dict(self) -> None:
+        assert not hasattr(Bar(), "__dict__")
+        assert not hasattr(Quote(), "__dict__")
+
+
+class TestDictExtraMaterialization:
+    """`extra` 对外是 dict 实例；空态零分配，首次使用才物化。"""
+
+    def test_isinstance_dict_everywhere(self) -> None:
+        assert isinstance(Bar().extra, dict)
+        assert isinstance(Quote().extra, dict)
+        assert isinstance(Bar(extra={"a": 1}).extra, dict)
+        assert isinstance(Quote(extra={"a": 1}).extra, dict)
+
+    def test_empty_extra_holds_nothing_until_used(self) -> None:
+        bars = [Bar(datetime="2026-01-02") for _ in range(64)]
+        quotes = [Quote(code="sh600519") for _ in range(64)]
+        assert all(bar._extra is None for bar in bars)
+        assert all(quote._extra is None for quote in quotes)
+        #: 序列化直读槽位，不触发物化。
+        bars[0].to_dict()
+        quotes[0].to_dict()
+        assert bars[0]._extra is None
+        assert quotes[0]._extra is None
+        #: 首次被当作 dict 使用才物化，且之后返回同一个 dict。
+        first = bars[0].extra
+        assert first is bars[0].extra
+        assert isinstance(first, dict) and first == {}
+
+    def test_tuple_storage_survives_false_truthiness(self) -> None:
+        bar = Bar(extra=("a", 0))
+        assert bar._extra == ("a", 0)
+        assert bar.to_dict()["a"] == 0
+        assert bar.extra is bar.extra
+        assert bar._extra == {"a": 0}
+
+    def test_materialized_dict_is_authoritative(self) -> None:
+        quote = Quote(code="c", extra=("a", 1))
+        quote.extra["b"] = 2
+        assert quote.to_dict()["b"] == 2
+        assert dataclasses.asdict(quote)["extra"] == {"a": 1, "b": 2}
+        del quote.extra["a"]
+        assert "a" not in quote.to_dict()
+        quote.extra.update({"c": 3})
+        assert list(quote.extra.items()) == [("b", 2), ("c", 3)]
+
+    def test_reassign_resets_storage(self) -> None:
+        bar = Bar(extra={"a": 1})
+        assert isinstance(bar.extra, dict)
+        bar.extra = {"b": 2}
+        #: 赋值同样先压平存放，读回来再物化——不因为赋值多留一个实体 dict。
+        assert bar._extra == ("b", 2)
+        assert bar.extra == {"b": 2}
+        bar.extra = None
+        assert bar._extra is None
+        assert bar.extra == {}

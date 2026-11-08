@@ -24,10 +24,10 @@ import pytest
 
 from atst.diagnostics import ResultWarning, WarningCode, record_warning, warning_sink
 from atst.errors import TruncatedDataError, ValidationError
-from atst.integration.serialization import serialize_result
 from atst.query import QueryPlanner, QuerySpec
 from atst.result import Provenance, QueryResult, ResultMeta
 from atst.runtime.executor import DirectProviderExecutor
+from atst.server.serialization import serialize_result
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -196,9 +196,9 @@ class TestWireReachesEveryFace:
     @pytest.mark.parametrize(
         "module",
         [
-            "atst/integration/runtime_http.py",
-            "atst/integration/runtime_ws.py",
-            "atst/integration/mcp/_tools_impl.py",
+            "atst/server/runtime_http.py",
+            "atst/server/runtime_ws.py",
+            "atst/server/mcp/_tools_impl.py",
             "atst/cli/runtime_commands.py",
         ],
     )

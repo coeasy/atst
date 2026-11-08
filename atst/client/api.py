@@ -8,23 +8,25 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, is_dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ..batch import BatchItem, BatchResult
-from ..catalog.capability import (
-    COMPOSED_CAPABILITIES,
-    MIGRATED_CAPABILITIES,
-    default_provider_for,
-    is_migrated_capability,
-)
 from ..diagnostics import ResultWarning, WarningCode
 from ..domain.symbol import normalize_symbol
 from ..error_envelope import ErrorEnvelope, to_error_envelope
 from ..errors import ValidationError
-from ..providers import PROVIDERS, resolve_capability_provider
+from ..providers import (
+    COMPOSED_CAPABILITIES,
+    MIGRATED_CAPABILITIES,
+    PROVIDERS,
+    default_provider_for,
+    is_migrated_capability,
+    resolve_capability_provider,
+)
 from ..query import QuerySpec
 from ..result import QueryResult
 from ..runtime.autoselect import is_auto_provider, provider_health
@@ -198,11 +200,11 @@ class Client:
     def capability_statuses() -> dict[str, str]:
         """迁移能力状态映射（``{capability: status}``，G-16）。
 
-        ``status`` 取值见 :data:`atst.catalog.capability.CAPABILITY_STATUSES`；
+        ``status`` 取值见 :data:`atst.providers.CAPABILITY_STATUSES`；
         未显式标注的能力默认为 ``"alive"``。四面出口（CLI/HTTP/WS/MCP）据此
         渲染能力健康度，``offline`` 不进可用集。
         """
-        from ..catalog.capability import capability_statuses
+        from ..providers import capability_statuses
 
         return capability_statuses()
 
@@ -391,27 +393,6 @@ class Client:
         )
         return self.execute(spec)
 
-    def __getattr__(self, name: str) -> Any:
-        if is_migrated_capability(name):
-
-            def migrated(*args: Any, **kwargs: Any) -> QueryResult[Any]:
-                provider = kwargs.pop("provider", None)
-                channel = kwargs.pop("channel", None)
-                currentness = kwargs.pop("currentness", "business")
-                return self.call(
-                    name,
-                    *args,
-                    provider=provider,
-                    channel=channel,
-                    currentness=currentness,
-                    **kwargs,
-                )
-
-            migrated.__name__ = name
-            migrated.__qualname__ = f"Client.{name}"
-            return migrated
-        raise AttributeError(name)
-
     def execute_with_policy(
         self,
         spec: QuerySpec,
@@ -488,28 +469,54 @@ class Client:
             provider=provider,
             currentness=currentness,
         )
-        if not self._wants_auto(spec):
-            return self.runtime.quotes_batch(
-                symbols,
-                provider=provider,
-                currentness=currentness,
-            )
-        items: dict[str, BatchItem[QueryResult[Any]]] = {}
-        errors: dict[str, ErrorEnvelope] = {}
+        auto = self._wants_auto(spec)
+        unique: list[str] = []
+        seen: set[str] = set()
         for raw_symbol in symbols:
             symbol = normalize_symbol(raw_symbol)
-            if symbol in items:
+            if symbol in seen:
                 continue
-            try:
-                result = self.execute(replace(spec, symbols=(symbol,)))
-            except Exception as exc:
-                items[symbol] = BatchItem("failed", error=exc)
-                errors[symbol] = to_error_envelope(exc)
-                continue
-            items[symbol] = (
-                BatchItem("missing") if not result.data else BatchItem("ok", value=result)
+            seen.add(symbol)
+            unique.append(symbol)
+
+        def one(symbol: str) -> QueryResult[Any]:
+            if auto:
+                return self.execute(replace(spec, symbols=(symbol,)))
+            return cast(
+                QueryResult[Any], self.quotes(symbol, provider=provider, currentness=currentness)
             )
-        return BatchResult.build(items, errors=errors, requested=tuple(items))
+
+        def run(symbol: str) -> QueryResult[Any] | Exception:
+            """逐项审计：单只失败只落该项，不打断同批其余标的。"""
+            try:
+                return one(symbol)
+            except Exception as exc:  # noqa: BLE001 - 见 BatchItem 的三态契约
+                return exc
+
+        workers = self._batch_workers()
+        if workers > 1 and len(unique) > 1:
+            with ThreadPoolExecutor(max_workers=min(workers, len(unique))) as pool:
+                # map 自带按提交顺序回传，省掉一份 futures 字典与逐键查找。
+                outcomes = list(pool.map(run, unique))
+        else:
+            outcomes = [run(symbol) for symbol in unique]
+
+        items: dict[str, BatchItem[QueryResult[Any]]] = {}
+        errors: dict[str, ErrorEnvelope] = {}
+        for symbol, outcome in zip(unique, outcomes, strict=True):
+            if isinstance(outcome, Exception):
+                items[symbol] = BatchItem("failed", error=outcome)
+                errors[symbol] = to_error_envelope(outcome)
+            elif outcome.data:
+                items[symbol] = BatchItem("ok", value=outcome)
+            else:
+                items[symbol] = BatchItem("missing")
+        return BatchResult.build(items, errors=errors, requested=tuple(unique))
+
+    def _batch_workers(self) -> int:
+        """``core.batch_workers``：0（或缺失）表示串行，保持 v1 的逐只顺序。"""
+        core = getattr(self.runtime.config, "core", None)
+        return max(0, int(getattr(core, "batch_workers", 0) or 0))
 
     def bars(
         self,
@@ -753,21 +760,6 @@ class AsyncClient:
         **kwargs: Any,
     ) -> QueryResult[Any]:
         return await asyncio.to_thread(self.client.call, capability, *args, **kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        if is_migrated_capability(name):
-
-            async def migrated(*args: Any, **kwargs: Any) -> QueryResult[Any]:
-                return await asyncio.to_thread(
-                    getattr(self.client, name),
-                    *args,
-                    **kwargs,
-                )
-
-            migrated.__name__ = name
-            migrated.__qualname__ = f"AsyncClient.{name}"
-            return migrated
-        raise AttributeError(name)
 
     async def execute_with_policy(
         self,

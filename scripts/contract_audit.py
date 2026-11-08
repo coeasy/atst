@@ -69,7 +69,7 @@ def gateway_capabilities() -> set[str]:
     本就不必抄。旧名单的规模与重复比例记在重构方案里（那里有取证日志可回查），不写进散文——
     抄下来的计数没人能自查，写下的那一刻就开始腐烂。
     """
-    from atst.catalog.capability import MIGRATED_CAPABILITIES
+    from atst.providers import MIGRATED_CAPABILITIES
     from atst.runtime.executor import DIRECT_BINDINGS
 
     dedicated = {
@@ -216,7 +216,7 @@ def audit_semantic_ready() -> list[str]:
 
 def audit_typed_kernel_compilation() -> list[str]:
     """全部 Typed Query 可经 call_payload_from_typed + QueryPlanner 编译为 QueryPlan。"""
-    from atst.catalog.capability import default_provider_for
+    from atst.providers import default_provider_for
     from atst.query import QueryPlanner, QuerySpec
     from atst.typed_query import call_payload_from_typed
 

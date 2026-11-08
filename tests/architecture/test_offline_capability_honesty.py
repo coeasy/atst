@@ -36,21 +36,26 @@ import re
 from pathlib import Path
 
 import atst.client.core as client_core
-from atst.catalog.capability import MIGRATED_BINDINGS
 from atst.client.api import Client
 from atst.diagnostics import WarningCode
-from atst.integration.mcp._tools_spec import TOOLS
 from atst.protocol.commands import CMD, COMMANDS, STATUS_OFFLINE, TIER_L1, Family
-from atst.providers import PROVIDERS
+from atst.providers import MIGRATED_BINDINGS, PROVIDERS
 from atst.runtime.executor import DIRECT_BINDINGS
+from atst.server.mcp._tools_spec import TOOLS
 
 ROOT = Path(__file__).resolve().parents[2]
 MIXIN = ROOT / "atst" / "client" / "_mixin.py"
 EXECUTOR = ROOT / "atst" / "runtime" / "executor.py"
+#: W4 拆分后，tdx 通道执行体可能落在 executor / execute_channel / execute_capability。
+EXECUTION_FILES = (
+    ROOT / "atst" / "runtime" / "execute_channel.py",
+    ROOT / "atst" / "runtime" / "execute_capability.py",
+    EXECUTOR,
+)
 SYNC_CLIENT = ROOT / "atst" / "client" / "sync.py"
-MCP_IMPL = ROOT / "atst" / "integration" / "mcp" / "_tools_impl.py"
-HTTP_IMPL = ROOT / "atst" / "integration" / "runtime_http.py"
-WS_IMPL = ROOT / "atst" / "integration" / "runtime_ws.py"
+MCP_IMPL = ROOT / "atst" / "server" / "mcp" / "_tools_impl.py"
+HTTP_IMPL = ROOT / "atst" / "server" / "runtime_http.py"
+WS_IMPL = ROOT / "atst" / "server" / "runtime_ws.py"
 PROVIDER_DOC = ROOT / "docs" / "providers" / "tdx.md"
 
 #: 账本对 ``offline`` 这个状态自身的定义；面上的说明不许换成别的口径。
@@ -134,11 +139,11 @@ for _binding in DIRECT_BINDINGS:
         continue
     if _binding.provider != "tdx":
         continue
-    _executor_tree = _tree(EXECUTOR)
     _body = next(
         (
             n
-            for n in ast.walk(_executor_tree)
+            for path in EXECUTION_FILES
+            for n in ast.walk(_tree(path))
             if isinstance(n, ast.FunctionDef) and n.name == _binding.executor_name
         ),
         None,

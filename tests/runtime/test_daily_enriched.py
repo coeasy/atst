@@ -22,7 +22,7 @@ import pytest
 from atst.client.api import Client
 from atst.domain.models import Bar, CapitalChange
 from atst.errors import ValidationError
-from atst.runtime.executor import (
+from atst.runtime.composed import (
     _ADJUST_EVENT_MAX_PAGES,
     _ADJUST_EVENT_PAGE_SIZE,
     _ENRICH_MAX_COUNT,
@@ -504,7 +504,7 @@ class TestComposedProviderRouting:
     """
 
     def test_named_provider_reaches_the_raw_bar_leg(self) -> None:
-        from atst.catalog.capability import COMPOSED_CAPABILITIES
+        from atst.providers import COMPOSED_CAPABILITIES
 
         assert {"adjusted_bars", "daily_enriched", "sync_daily"} <= COMPOSED_CAPABILITIES
 

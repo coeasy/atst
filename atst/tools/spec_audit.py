@@ -7,11 +7,11 @@
 （不按 spec_id 去重，跨族同号命令不会被互相吃掉），自动探测的 draft 除外。
 
 1. **Ledger 检查**：命令号是否登记在该族自己的账本里？
-   行情族查 ``commands.py``；交易族查 ``atst/trade/constants.py``（常量值与
+   行情族查 ``commands.py``；交易族查 ``labs/trade/constants.py``（常量值与
    ``CMD_NAMES`` 都要对得上）。
 2. **Parser / 编解码检查**：行情数据命令须在 ``PARSERS`` 注册；**无载荷控制帧**
    须同时显式声明 ``response.parse: false`` 与空响应结构才判为免注册（判定源自
-   spec 内容，不是硬编码白名单）；交易族须在 ``atst/trade/frames.py`` 有该命令
+   spec 内容，不是硬编码白名单）；交易族须在 ``labs/trade/frames.py`` 有该命令
    的编解码锚点。
 3. **Golden 样本检查**：引用的 golden 样本文件是否存在于磁盘？
 4. **覆盖率统计**：``coverage_summary()`` 返回汇总数据，含 ``uncovered`` 明细。
@@ -108,11 +108,11 @@ def _family_to_constant(family: str) -> str | None:
     return mapping.get(family)
 
 
-#: 非行情族的实现锚点。交易命令的账本与帧编解码都在 ``atst.trade`` 自己的
+#: 非行情族的实现锚点。交易命令的账本与帧编解码都在 ``labs.trade`` 自己的
 #: 模块里（模拟器回路验证，``status: draft``），不走 ``commands.py`` / PARSERS。
 TRADE_FAMILY = "TRADE"
-_TRADE_LEDGER_MODULE = "atst.trade.constants"
-_TRADE_CODEC_MODULE = "atst.trade.frames"
+_TRADE_LEDGER_MODULE = "labs.trade.constants"
+_TRADE_CODEC_MODULE = "labs.trade.frames"
 #: 命令号 → (账本常量, 帧编解码入口)
 _TRADE_IMPLEMENTATION: dict[int, tuple[str, str]] = {
     0x0001: ("CMD_LOGIN", "build_login_body"),
@@ -158,7 +158,7 @@ def _trade_ledger_ok(cmd_int: int, name: str) -> str | None:
 
 
 def _trade_codec_ok(cmd_int: int) -> str | None:
-    """交易族帧编解码校验：``atst.trade.frames`` 里确有该命令的入口符号。"""
+    """交易族帧编解码校验：``labs.trade.frames`` 里确有该命令的入口符号。"""
     entry = _TRADE_IMPLEMENTATION.get(cmd_int)
     if entry is None:  # pragma: no cover - 账本校验已先报错
         return f"TRADE 族无命令号 0x{cmd_int:04X} 的编解码锚点"
@@ -235,7 +235,7 @@ def audit_spec(spec_path: str) -> SpecAuditResult:
     control_frame = family_str is not None and is_payloadless(spec)
 
     if family_str is None and family.upper() == TRADE_FAMILY:
-        # 交易族：账本与帧编解码都在 atst.trade 自己那一层
+        # 交易族：账本与帧编解码都在 labs.trade 自己那一层
         plane = "trade"
         ledger_err = _trade_ledger_ok(cmd_int, name)
         in_ledger = ledger_err is None
@@ -417,7 +417,7 @@ def coverage_summary(
     # 覆盖 = 命令号在其族的账本里登记，且实现证据齐备：
     # 行情数据命令 → PARSERS 注册；无载荷控制帧 → spec 显式声明 parse:false 且
     # 响应无记录结构；
-    # 交易族 → atst.trade.frames 的编解码锚点。
+    # 交易族 → labs.trade.frames 的编解码锚点。
     covered_specs = [r for r in results if r.covered]
     covered = len(covered_specs)
 

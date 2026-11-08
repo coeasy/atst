@@ -7,10 +7,10 @@ import pytest
 import atst
 from atst.client.api import AsyncClient, Client
 from atst.errors import ValidationError
-from atst.integration.mcp._tools_spec import TOOLS
 from atst.providers import PROVIDERS
 from atst.query import QuerySpec
 from atst.runtime.executor import DIRECT_BINDINGS, audit_direct_bindings
+from atst.server.mcp._tools_spec import TOOLS
 from atst.stream_contract import StreamPlanner, StreamSpec
 
 TIER_A = {
@@ -147,7 +147,7 @@ def test_binding_audit_fails_closed_instead_of_warning(
     """
     import warnings
 
-    from atst.runtime import executor as ex
+    from atst.runtime import bindings as ex
 
     target = next(
         item

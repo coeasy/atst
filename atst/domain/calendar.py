@@ -16,8 +16,12 @@
 内置表覆盖 2024–2026。其中 **2026 年为估算值**（``estimated=True``），
 国务院正式公布后需调用 :meth:`TradingCalendar.set_holidays` 更新
 （单日补充用 :meth:`TradingCalendar.add_holiday`）。
-**没有在线校准**：本模块不联网取日历，也不留一个"调用即抛"的占位方法
-（F-110 按 D3 删掉了这样的 ``update_from_web``）——估算年份的校准只有上面两条真能走通的路。
+
+本模块自身不联网；在线校准由 ``trading_calendar`` capability（``atst.sources`` 的
+东方财富交易日历接口）完成，并把结果写回 :meth:`TradingCalendar.calibrate`。
+``set_holidays()`` 是**手动显式覆盖**，优先级高于在线结果：已被手动覆盖的年份，
+在线校准直接跳过（不覆盖人工判断）。每年数据带 :meth:`TradingCalendar.freshness`
+标记（``manual`` / ``online`` / ``estimated`` / ``builtin``）。
 
 .. warning::
    ``estimated`` 数据仅用于离线降级，**不得**作为交易决策的唯一依据。
@@ -263,6 +267,8 @@ class TradingCalendar:
         # set_holidays() 覆盖过的年份：这些年份的内置估算数据已失效
         # （F-109 删除的 `_workdays` 曾经住在这里——见下方数据维护段的说明）
         self._overridden_years: set[int] = set()
+        # 在线校准（calibrate()）写回的年份；手动覆盖优先级更高
+        self._online_years: set[int] = set()
         # 已就「未覆盖年份」告警过的年份（once 语义，按实例去重）
         self._uncovered_warned: set[int] = set()
 
@@ -328,6 +334,50 @@ class TradingCalendar:
             self._holidays.update(self._extra_holidays)
             self._loaded_years.add(year)
             self._overridden_years.add(year)
+
+    def calibrate(self, year: int, days: Iterable[str]) -> bool:
+        """用**在线**结果校准某年的休市日；返回是否真的写入。
+
+        与 :meth:`set_holidays` 的分工是优先级：``set_holidays`` 是调用方的手动显式
+        覆盖，人工判断优先于任何在线结果，因此**已被手动覆盖的年份**这里直接返回
+        ``False``、一个字节都不改。两者都不是覆盖的年份按在线数据写入，并把该年
+        从 ``ESTIMATED_YEARS`` 的估算状态里摘出来（数据来源变成 ``online``）。
+
+        幂等：同一份在线数据重复写回不会残留旧假日（先按年份清掉再写入）。
+        """
+        with _CALENDAR_LOCK:
+            if year in self._overridden_years:
+                return False
+            self._holidays -= {d for d in self._holidays if d.year == year}
+            self._extra_holidays = {d for d in self._extra_holidays if d.year != year}
+            for s in days:
+                y, m, d = (int(x) for x in s.split("-"))
+                self._extra_holidays.add(date(y, m, d))
+            self._holidays.update(self._extra_holidays)
+            self._loaded_years.add(year)
+            self._online_years.add(year)
+            return True
+
+    def freshness(self, year: int | date | str) -> str:
+        """某年（或某日所属年份）的日历数据来源标记。
+
+        * ``manual``——``set_holidays()`` 手动覆盖过（优先级最高）；
+        * ``online``——``calibrate()`` 用在线交易日历写回过；
+        * ``estimated``——内置表里的估算年份（见 :data:`ESTIMATED_YEARS`）；
+        * ``builtin``——内置表的权威年份。
+
+        未知年份（内置表与两条写回路径都没覆盖）也报 ``estimated``：它按"无节假日"
+        处理并一次性告警，与估算年份同一档不可信度。
+        """
+        target = _to_date(year).year if isinstance(year, (date, str)) else int(year)
+        with _CALENDAR_LOCK:
+            if target in self._overridden_years:
+                return "manual"
+            if target in self._online_years:
+                return "online"
+            if target in ESTIMATED_YEARS or target not in BUILTIN_CALENDARS:
+                return "estimated"
+            return "builtin"
 
     def add_holiday(self, day: str) -> None:
         """追加单个休市日（``"YYYY-MM-DD"``），只影响内存中的日历。"""
@@ -412,11 +462,16 @@ class TradingCalendar:
     def is_estimated(self, d: date | str) -> bool:
         """该日期所在年份的日历是否为估算值。
 
-        :meth:`set_holidays` 覆盖过的年份视为权威数据 → False。
+        :meth:`set_holidays` 手动覆盖或 :meth:`calibrate` 在线校准过的年份视为
+        权威数据 → False。
         """
         year = _to_date(d).year
         with _CALENDAR_LOCK:
-            return year in ESTIMATED_YEARS and year not in self._overridden_years
+            return (
+                year in ESTIMATED_YEARS
+                and year not in self._overridden_years
+                and year not in self._online_years
+            )
 
     def warnings_for(self, d: date | str) -> list[str]:
         """该日期的数据质量告警（目前只有一类：所在年份为估算值）；权威数据返回空表。"""
@@ -428,7 +483,7 @@ class TradingCalendar:
 
     # F-110：这里曾有 `update_from_web(*args, **kwargs)`，签名收任意入参、体只有一句
     # ``raise NotImplementedError("…当前请用 set_holidays() 手动补充")``，docstring 还把
-    # 落点指向 :mod:`atst.web` 里**并不存在**的交易日历适配器（web 侧只有 `ipo_calendar`，
+    # 落点指向 :mod:`atst.sources` 里**并不存在**的交易日历适配器（web 侧只有 `ipo_calendar`，
     # 是另一件事）。它自己不算谎（模块 docstring 第 18-19 行老实写着"尚未实现"），
     # 谎在**上一条**：`warnings_for` 曾把 "或 update_from_web()" 写成校准办法，而
     # `warnings_for` 是有真实读者的一条对外告警（tests/i18n/test_calendar.py:115）——

@@ -118,7 +118,7 @@ def test_seam_async_client_method_parity() -> None:
 
 def test_seam_web_source_encoding_hook() -> None:
     """W 缝：BaseWebSource 声明按源编码（W10），且默认 gbk 向后兼容。"""
-    from atst.web.base import BaseWebSource
+    from atst.sources.base import BaseWebSource
 
     assert getattr(BaseWebSource, "encoding", None) == "gbk", (
         "BaseWebSource.encoding 类属性缺失或非默认 gbk（W10 契约）"
@@ -127,7 +127,7 @@ def test_seam_web_source_encoding_hook() -> None:
 
 def test_seam_ratelimit_process_bucket() -> None:
     """W5 缝：跨实例共享限流桶（进程级按源名注册）。"""
-    import atst.web._base_http as web_http
+    import atst.sources._base_http as web_http
 
     src = inspect.getsource(web_http)
     # 结构性弱断言：模块级注册表存在（实现命名不限；P10-3 自 base.py 拆至 _base_http）

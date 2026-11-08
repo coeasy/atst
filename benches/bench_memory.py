@@ -118,7 +118,7 @@ def scenario_market(synthetic: bool = True) -> dict[str, Any]:
     if synthetic:
         rows = _synthetic_market_quotes(5400)
     else:
-        from atst.web import create_source
+        from atst.sources import create_source
 
         src = create_source("sina")
         try:

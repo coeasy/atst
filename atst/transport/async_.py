@@ -60,11 +60,17 @@ from .hosts import (
     next_generation_host,
     validate_host_updates,
 )
-from .pool import (
+from .policy import (
     BIZ_FAILURE_WEIGHT,
     CIRCUIT_COOLDOWN_SECONDS,
     CIRCUIT_DEGRADED_AT,
     CIRCUIT_OPEN_AT,
+    circuit_allows,
+    rank_slots,
+    record_failure,
+    record_success,
+)
+from .pool import (
     _require_bool_option,
     _require_positive_frame_limit,
     _require_request_timeout,
@@ -76,6 +82,10 @@ __all__ = [
     "AsyncTcpConnection",
     "AsyncSlot",
     "AsyncConnectionPool",
+    "BIZ_FAILURE_WEIGHT",
+    "CIRCUIT_COOLDOWN_SECONDS",
+    "CIRCUIT_DEGRADED_AT",
+    "CIRCUIT_OPEN_AT",
 ]
 
 #: 传输域统一 logger（只获取，不配置 handler——配置交给宿主应用）。
@@ -642,7 +652,7 @@ class AsyncConnectionPool:
         start = self._rr % n
         self._rr = (self._rr + 1) % n
         ordered = self._slots[start:] + self._slots[:start]
-        return sorted(ordered, key=lambda s: s.host.score)
+        return rank_slots(ordered)
 
     async def _get_conn_locked(self, slot: AsyncSlot) -> AsyncTcpConnection:
         if slot.retired:
@@ -728,21 +738,11 @@ class AsyncConnectionPool:
     async def _circuit_allows(self, host: HostEntry) -> bool:
         """单次探测放行门禁：HALF_OPEN 同期只放一个探针。"""
         async with self._lock:
-            if host.circuit == "open":
-                if time.time() - host.circuit_opened_at < CIRCUIT_COOLDOWN_SECONDS:
-                    return False
-                if host.circuit_probe_inflight:
-                    return False
-                host.circuit = "half_open"
-                host.circuit_probe_inflight = True
+            was_open = host.circuit == "open"
+            allowed = circuit_allows(host, now=time.time())
+            if was_open and allowed:
                 _LOG.info("异步主站 %s 熔断冷却到期，转 HALF_OPEN 放行单次探测", host.key)
-                return True
-            if host.circuit == "half_open":
-                if host.circuit_probe_inflight:
-                    return False
-                host.circuit_probe_inflight = True
-                return True
-            return True
+            return allowed
 
     async def _select_allowed_slot(
         self, *, exclude_hosts: set[str] | None = None
@@ -780,21 +780,19 @@ class AsyncConnectionPool:
         if current:
             async with self._lock:
                 host = slot.host
-                was_half_open = host.circuit == "half_open" or host.circuit_probe_inflight
-                host.failures += 1
-                if not isinstance(exc, ConnectionFailed):
-                    host.biz_failures += 1
-                host.consec_weighted += (
-                    1.0 if isinstance(exc, ConnectionFailed) else BIZ_FAILURE_WEIGHT
+                opened = record_failure(
+                    host,
+                    exc,
+                    connection_level=isinstance(exc, ConnectionFailed),
+                    now=time.time(),
                 )
-                host.circuit_probe_inflight = False
-                if was_half_open or host.consec_weighted >= CIRCUIT_OPEN_AT:
-                    if host.circuit != "open" or host.circuit_opened_at == 0.0:
-                        host.circuit_opened_at = time.time()
-                    host.circuit = "open"
-                elif host.consec_weighted >= CIRCUIT_DEGRADED_AT:
-                    host.circuit = "degraded"
-                host.last_error = f"{type(exc).__name__}: {exc}"
+                if opened:
+                    _LOG.warning(
+                        "异步主站 %s 熔断 OPEN（连续失败加权 %.1f ≥ %.1f），后续请求将跳过",
+                        host.key,
+                        host.consec_weighted,
+                        CIRCUIT_OPEN_AT,
+                    )
         metrics.record_error(type(exc).__name__)
         await self._drop(slot, expected=conn)
 
@@ -809,18 +807,7 @@ class AsyncConnectionPool:
         if not await self._slot_is_current(slot, generation):
             return
         async with self._lock:
-            host = slot.host
-            host.failures = 0
-            host.biz_failures = 0
-            host.last_error = ""
-            host.last_ok = time.time()
-            if rtt_ms is not None:
-                host.live_rtt_ms = max(0.0, float(rtt_ms))
-                host.live_ok_at = host.last_ok
-            host.circuit = "healthy"
-            host.circuit_probe_inflight = False
-            host.consec_weighted = 0.0
-            host.circuit_opened_at = 0.0
+            record_success(slot.host, now=time.time(), rtt_ms=rtt_ms)
 
     # -- 请求 --------------------------------------------------------------- #
     def _ensure_open(self) -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from atst.query import QueryPlanner, QuerySpec
 from atst.runtime.executor import DirectProviderExecutor
-from atst.web.session import WebQuoteSession
+from atst.sources.session import WebQuoteSession
 
 
 def test_baidu_valuation_history_is_planned_and_dispatched(monkeypatch):

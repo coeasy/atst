@@ -60,9 +60,24 @@ from .hosts import (
     next_generation_host,
     validate_host_updates,
 )
+from .policy import (
+    BIZ_FAILURE_WEIGHT,
+    CIRCUIT_COOLDOWN_SECONDS,
+    CIRCUIT_DEGRADED_AT,
+    CIRCUIT_OPEN_AT,
+    circuit_allows,
+    rank_slots,
+    record_failure,
+    record_success,
+    select_allowed_slot,
+)
 from .ratelimit import SessionRateLimiter
 
 __all__ = [
+    "BIZ_FAILURE_WEIGHT",
+    "CIRCUIT_COOLDOWN_SECONDS",
+    "CIRCUIT_DEGRADED_AT",
+    "CIRCUIT_OPEN_AT",
     "Slot",
     "ConnectionPool",
     "PoolStats",
@@ -101,16 +116,9 @@ def pool_settings_from_config(cfg: Any) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-# B4 熔断状态机常量
+# B4 熔断状态机常量在 :mod:`atst.transport.policy`（同步/异步池唯一声明处）。
+# 这里只重导出，保持 ``atst.transport.pool.CIRCUIT_*`` 的既有 import 面。
 # --------------------------------------------------------------------------- #
-#: 连续失败加权值达到该值 → DEGRADED（仍发请求，仅记录）
-CIRCUIT_DEGRADED_AT = 3.0
-#: 连续失败加权值达到该值 → OPEN（请求直接跳过该主站，不再吃超时）
-CIRCUIT_OPEN_AT = 8.0
-#: OPEN 冷却时长（秒）；到期转 HALF_OPEN，放行单次探测
-CIRCUIT_COOLDOWN_SECONDS = 30.0
-#: 业务失败（连接成功但交换失败）的加权系数
-BIZ_FAILURE_WEIGHT = 0.5
 
 
 # --------------------------------------------------------------------------- #
@@ -145,7 +153,7 @@ def _require_request_timeout(value: Any) -> float | None:
     return timeout
 
 
-#: 换主站退避的单步上限（秒）——与 web 面 :data:`atst.web._base_retry.MAX_BACKOFF_SECONDS` 同值。
+#: 换主站退避的单步上限（秒）——与 web 面 :data:`atst.sources._base_retry.MAX_BACKOFF_SECONDS` 同值。
 #: 流式面的 :class:`~atst.streaming.engine.ReconnectPolicy` 不在此列：它等的是
 #: "服务回来"，上限 30 秒是那条链路的语义，不是这里要抄的口径。
 MAX_RETRY_BACKOFF_SECONDS = 8.0
@@ -357,7 +365,7 @@ class ConnectionPool:
             self._rr = (self._rr + 1) % n
             ordered = self._slots[start:] + self._slots[:start]
         # 同一主机内保持原顺序（槽位轮转），主机间按 score 稳定排序
-        return sorted(ordered, key=lambda s: s.host.score)
+        return rank_slots(ordered)
 
     def _get_conn_locked(self, slot: Slot) -> TcpConnection:
         """Return a connection while ``slot.lock`` is held."""
@@ -479,29 +487,19 @@ class ConnectionPool:
         if current:
             with self._lock:
                 host = slot.host
-                was_half_open = host.circuit == "half_open" or host.circuit_probe_inflight
-                host.failures += 1
-                # R2 业务级信号：连接成功但请求/响应交换失败 → 单独记数降权
-                if not isinstance(exc, ConnectionFailed):
-                    host.biz_failures += 1
-                # B4：HALF_OPEN 的任何失败都重开；其余状态按加权阈值推进。
-                host.consec_weighted += (
-                    1.0 if isinstance(exc, ConnectionFailed) else BIZ_FAILURE_WEIGHT
+                opened = record_failure(
+                    host,
+                    exc,
+                    connection_level=isinstance(exc, ConnectionFailed),
+                    now=time.time(),
                 )
-                host.circuit_probe_inflight = False
-                if was_half_open or host.consec_weighted >= CIRCUIT_OPEN_AT:
-                    if host.circuit != "open" or host.circuit_opened_at == 0.0:
-                        host.circuit_opened_at = time.time()
-                    host.circuit = "open"
+                if opened:
                     _LOG.warning(
                         "主站 %s 熔断 OPEN（连续失败加权 %.1f ≥ %.1f），后续请求将跳过",
                         host.key,
                         host.consec_weighted,
                         CIRCUIT_OPEN_AT,
                     )
-                elif host.consec_weighted >= CIRCUIT_DEGRADED_AT:
-                    host.circuit = "degraded"
-                host.last_error = f"{type(exc).__name__}: {exc}"
             _LOG.warning("槽位 %s 标记失败: %s", slot.key, exc)
             if self.on_host_down is not None:
                 with contextlib.suppress(Exception):
@@ -575,57 +573,24 @@ class ConnectionPool:
         if not self._slot_is_current(slot, generation):
             return
         with self._lock:
-            host = slot.host
-            host.failures = 0
-            host.biz_failures = 0
-            host.last_error = ""
-            host.last_ok = time.time()
-            if rtt_ms is not None:
-                host.live_rtt_ms = max(0.0, float(rtt_ms))
-                host.live_ok_at = host.last_ok
-            # B4：成功即复位熔断（含 HALF_OPEN 探测成功 → HEALTHY）
-            host.circuit = "healthy"
-            host.circuit_probe_inflight = False
-            host.consec_weighted = 0.0
-            host.circuit_opened_at = 0.0
+            record_success(slot.host, now=time.time(), rtt_ms=rtt_ms)
 
     def _circuit_allows(self, host: Any) -> bool:
-        """B4：判断主站是否放行本次请求。
-
-        * healthy / degraded：放行；
-        * open：冷却未到期 → 拦截；冷却到期 → 转 HALF_OPEN 并领取唯一探测令牌；
-        * half_open：已有探测时拦截其余请求，探测成功由
-          :meth:`_mark_success` 复位，失败立即重开。
-        """
+        """B4：判断主站是否放行本次请求（判据在 :mod:`atst.transport.policy`）。"""
         with self._lock:
-            if host.circuit == "open":
-                if time.time() - host.circuit_opened_at < CIRCUIT_COOLDOWN_SECONDS:
-                    return False
-                if host.circuit_probe_inflight:
-                    return False
-                host.circuit = "half_open"
-                host.circuit_probe_inflight = True
+            was_open = host.circuit == "open"
+            allowed = circuit_allows(host, now=time.time())
+            if was_open and allowed:
                 _LOG.info("主站 %s 熔断冷却到期，转 HALF_OPEN 放行单次探测", host.key)
-                return True
-            if host.circuit == "half_open":
-                if host.circuit_probe_inflight:
-                    return False
-                host.circuit_probe_inflight = True
-                return True
-            return True
+            return allowed
 
     def _select_allowed_slot(self, *, exclude_hosts: set[str] | None = None) -> Slot | None:
         """按选序逐个尝试领取唯一的熔断探测令牌。"""
-        slots = self._ordered_slots()
-        if exclude_hosts:
-            preferred = [slot for slot in slots if slot.host.key not in exclude_hosts]
-            candidates = preferred or slots
-        else:
-            candidates = slots
-        for candidate in candidates:
-            if self._circuit_allows(candidate.host):
-                return candidate
-        return None
+        return select_allowed_slot(
+            self._ordered_slots(),
+            allows=self._circuit_allows,
+            exclude_hosts=exclude_hosts,
+        )
 
     def _release_probe_token(self, slot: Slot, generation: int) -> None:
         """归还 HALF_OPEN 令牌，不伪造任何主站健康证据。"""

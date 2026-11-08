@@ -57,7 +57,7 @@ _RUNTIME_ENV_KEYS = frozenset(
         "ATST_FEEDBACK",
         "ATST_FEEDBACK_ENDPOINT",
         "ATST_FEEDBACK_STORE_DIR",
-        # ``atst.web.wencai`` 直接读它；不登记则用户照错误消息设置后整条配置链 fail closed。
+        # ``atst.sources.wencai`` 直接读它；不登记则用户照错误消息设置后整条配置链 fail closed。
         "ATST_WENCAI_COOKIE",
     }
 )

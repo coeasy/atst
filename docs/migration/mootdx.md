@@ -49,4 +49,4 @@ bars = read_day_file("C:/new_tdx/vipdoc/sh/lday/sh600036.day")
 
 - **异常体系**：mootdx 返回 `None`/抛裸异常；atst 抛 `TdxError` 树（40+ 类），每类带 `RetryAdvice`
 - **异步**：atst 有完整 `AsyncTdxClient` 镜像
-- **降级**：`TdxClient` 为 TDX 主站**直连**（无自动降级，主站不可达时抛 `TdxError`）；需要跨 Web 源容错请显式给出 `FallbackPolicy`（内核路径），或使用 `atst.web` 的多源会话；不存在自动多级降级链
+- **降级**：`TdxClient` 为 TDX 主站**直连**（无自动降级，主站不可达时抛 `TdxError`）；需要跨 Web 源容错请显式给出 `FallbackPolicy`（内核路径），或使用 `atst.sources` 的多源会话；不存在自动多级降级链

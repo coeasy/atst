@@ -95,6 +95,9 @@ class CoreConfig:
     max_retries: int = 3
     #: ``local_vipdoc`` Provider 与复权/同步类 capability 的本地数据根目录。
     vipdoc_root: str | None = None
+    #: ``quotes_batch`` 的并行度；``0`` 表示串行（与 v1 语义完全一致）。
+    #: 并行只发生在 Client 编排层，内核仍逐只串行、逐项 provenance。
+    batch_workers: int = 4
 
     def validate(self) -> None:
         from ..providers import PROVIDERS
@@ -109,6 +112,7 @@ class CoreConfig:
         _check_range("core.timeout", self.timeout, 0.1, 300)
         _check_int_range("core.heartbeat_interval", self.heartbeat_interval, 0, 3600)
         _check_int_range("core.max_retries", self.max_retries, 0, 20)
+        _check_int_range("core.batch_workers", self.batch_workers, 0, 64)
         if self.vipdoc_root is not None:
             _check_non_empty_str("core.vipdoc_root", self.vipdoc_root)
 
@@ -166,7 +170,7 @@ class RateLimitConfig:
 class WebConfig:
     """Legacy WebQuoteClient 兼容配置。
 
-    ``enabled_sources`` 是显式 legacy Web 客户端（:class:`atst.web.WebQuoteClient`）
+    ``enabled_sources`` 是显式 legacy Web 客户端（:class:`atst.sources.WebQuoteClient`）
     缺省时按序尝试的源列表，**不是** TDX 失败后的 fallback 顺序。单一内核经
     ``QueryPlanner`` 直接选择 ``tencent/sina/eastmoney/...`` 的 Provider channel。
     """
@@ -178,7 +182,7 @@ class WebConfig:
     rate_limit: dict[str, int] = field(default_factory=dict)
 
     def validate(self) -> None:
-        from ..web.sources import KNOWN_SOURCES
+        from ..sources.sources import KNOWN_SOURCES
 
         if not isinstance(self.enabled_sources, list):
             raise ValidationError(

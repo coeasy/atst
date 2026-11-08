@@ -29,12 +29,12 @@ HTTP/WS 两张面把它报成 E9000/500：一条过期的表项长得像内部�
 ⑤ 来源查表不许带默认值：``_SOURCE_FOR_PROVIDER`` 必须覆盖语义主里出现的每个 Provider。
 ⑥ web 源表与音量归一化器表双向闭合：``_get_normalizer`` 对没登记的源返回 identity，
    而 identity 就是「这列已经是 股 / 元」这个论断本身。
-⑦ （第 31 轮）``MigratedCapabilityBinding.factory`` 的三条承诺逐条量：带它的行恰是
+⑦ （第 31 轮）``CapabilityBinding.factory`` 的三条承诺逐条量：带它的行恰是
    ``web_adapter`` 那五行、每一行都解析得到一个类、整个包里读它的文件只有执行器那一个。
    此前字段上的注释写着"空值表示执行器走自己的兜底逻辑"，而执行器收到空值是**报错**——
    一句过期散文（G40 同族）。
 ⑧ （第 31 轮）``hk_quotes`` 的 Provider 注入规则只有一处：校验与执行都读
-   :func:`atst.catalog.capability.call_kwargs_for`，且驱动执行器能看见实现真的收到了
+   :func:`atst.providers.call_kwargs_for`，且驱动执行器能看见实现真的收到了
    ``provider=<绑定的 Provider>``。此前这条规则在 ``validate_call`` 与执行器各抄一遍，
    执行器那份还多一个 ``provider in {sina, tencent}`` 守卫——两处口径已经不同。
 
@@ -51,14 +51,14 @@ from typing import Any
 
 import pytest
 
-from atst.catalog import capability as cap
-from atst.catalog.capability import MIGRATED_BINDINGS, MigratedCapabilityBinding
-from atst.catalog.provider_bindings import resolve_channel_adapter
+import atst.providers as registry
 from atst.client import ExMarketClient, GoodsClient, MacClient, TdxClient
 from atst.errors import ValidationError
-from atst.web.normalize import _NORMALIZER_REGISTRY
-from atst.web.session import WebQuoteSession
-from atst.web.sources import SOURCES
+from atst.providers import MIGRATED_BINDINGS, CapabilityBinding, resolve_channel_adapter
+from atst.runtime import capability_contract as cap
+from atst.sources.normalize import _NORMALIZER_REGISTRY
+from atst.sources.session import WebQuoteSession
+from atst.sources.sources import SOURCES
 
 
 def _web_adapter_cls(binding: Any) -> Any:
@@ -97,7 +97,7 @@ TAG_EXEMPTIONS: dict[tuple[str, str, str], str] = {("tdx", "f10", "f10_catalog")
 
 
 def unresolved_method_rows(
-    bindings: tuple[MigratedCapabilityBinding, ...] = MIGRATED_BINDINGS,
+    bindings: tuple[CapabilityBinding, ...] = MIGRATED_BINDINGS,
 ) -> list[str]:
     """②：``method`` 取不到派发目标实现的行。"""
     return [
@@ -109,7 +109,7 @@ def unresolved_method_rows(
 
 
 def mislabeled_tag_rows(
-    bindings: tuple[MigratedCapabilityBinding, ...] = MIGRATED_BINDINGS,
+    bindings: tuple[CapabilityBinding, ...] = MIGRATED_BINDINGS,
 ) -> list[str]:
     """③：标签行不再复读 capability。"""
     return [
@@ -155,9 +155,9 @@ def test_a_stale_binding_is_a_contract_error_not_an_internal_fault(
     """
     victim = cap.binding_for("tdx", "quotation", "quotes_concurrent")
     stale = dataclasses.replace(victim, method="no_such_impl")
-    table = dict(cap._BINDINGS_BY_KEY)
+    table = dict(registry._BINDINGS_BY_KEY)
     table[stale.key] = stale
-    monkeypatch.setattr(cap, "_BINDINGS_BY_KEY", table)
+    monkeypatch.setattr(registry, "_BINDINGS_BY_KEY", table)
     with pytest.raises(ValidationError) as excinfo:
         cap.validate_call("tdx", "quotation", "quotes_concurrent", (["sh600519"],), {})
     assert excinfo.value.context.get("phase") == "binding_resolution", (
@@ -189,27 +189,27 @@ def test_the_rulers_see_a_planted_binding_drift() -> None:
 
 
 def test_the_web_source_vocabulary_has_no_default_route() -> None:
-    """⑤：语义主里的每个 Provider 都必须自己登记来源，查表不许带默认值。
+    """⑤：每条 ``web_session`` 绑定都必须显式登记来源，查表不许带默认值。
 
-    ``.get(provider, "sina")`` 那种写法会让一个新 Provider 的能力以别家的量纲单位上线；
-    同文件里 ``_discover_web_bindings`` 用的是严格下标，两处必须同一口径。
+    ``.get(provider, "sina")`` 那种写法会让一个新 Provider 的能力以别家的量纲单位上线。
     """
-    declared = {provider for provider, _ in cap._SEMANTIC_WEB_CHANNELS}
-    assert declared, "语义主家名单空了，⑤ 变成空判据"
-    assert declared <= set(cap._SOURCE_FOR_PROVIDER), (
-        f"语义主里出现了没登记来源的 Provider：{sorted(declared - set(cap._SOURCE_FOR_PROVIDER))}"
-    )
+    web = [binding for binding in MIGRATED_BINDINGS if binding.backend == "web_session"]
+    assert web, "web_session 绑定为空，⑤ 变成空判据"
+    missing = sorted(binding.key for binding in web if not binding.source)
+    assert not missing, f"这些 web_session 绑定没有登记 source：{missing}"
 
 
 def test_dropping_a_source_entry_is_loud(monkeypatch: pytest.MonkeyPatch) -> None:
-    """正控：删掉一个正在被使用的来源登记，构造绑定表时必须当场报错而不是退回默认值。"""
-    monkeypatch.setattr(
-        cap,
-        "_SOURCE_FOR_PROVIDER",
-        {k: v for k, v in cap._SOURCE_FOR_PROVIDER.items() if k != "eastmoney"},
+    """正控：删掉一个正在被使用的来源登记，聚合声明时必须当场报错而不是退回默认值。"""
+    victims = [b for b in registry.eastmoney.BINDINGS if b.backend == "web_session"]
+    assert victims
+    dropped = tuple(
+        dataclasses.replace(binding, source=None) if binding is victims[0] else binding
+        for binding in registry.eastmoney.BINDINGS
     )
+    monkeypatch.setattr(registry.eastmoney, "BINDINGS", dropped)
     with pytest.raises(KeyError) as excinfo:
-        cap._semantic_web_bindings()
+        registry._aggregate_bindings()
     assert excinfo.value.args[0] == "eastmoney", (
         f"缺来源时报的不是那个 Provider：{excinfo.value.args}"
     )
@@ -296,7 +296,7 @@ def factory_field_findings() -> list[str]:
             out.append(f"{binding.key} 的 factory 指向的不是类：{obj!r}")
     #: 读取点：整个包里只有执行器的 web_adapter 分支读它。
     readers = _factory_readers(root)
-    if readers != ["runtime/executor.py"]:
+    if readers != ["runtime/execute_capability.py"]:
         out.append(f"读 factory 的文件不是唯一那一个：{readers}")
     return out
 
@@ -330,7 +330,7 @@ def hk_quotes_provider_kwargs(provider: str) -> dict[str, Any]:
         def close(self) -> None:
             pass
 
-    with patch("atst.web.session.WebQuoteSession", _Session):
+    with patch("atst.sources.session.WebQuoteSession", _Session):
         DirectProviderExecutor()._migrated_capability(plan)
     return seen
 
@@ -379,6 +379,6 @@ def test_the_provider_injection_rule_has_one_home() -> None:
 
     package = Path(cap.__file__).resolve().parents[1]
     assert _provider_injection_sites(package / "runtime" / "executor.py") == 0, (
-        "执行器又自己抄了一遍 Provider 注入规则——改用 catalog.call_kwargs_for()"
+        "执行器又自己抄了一遍 Provider 注入规则——改用 runtime.capability_contract.call_kwargs_for()"
     )
-    assert _provider_injection_sites(Path(cap.__file__)) == 1, "目录层里这条规则不止一处了"
+    assert _provider_injection_sites(Path(cap.__file__)) == 1, "契约层里这条规则不止一处了"

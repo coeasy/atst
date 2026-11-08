@@ -45,7 +45,7 @@ metrics   = ["prometheus-client>=0.19"]
 # Canonical /v13 HTTP + /v13/ws transports. The asyncio.server API used by the
 # canonical WS transport is part of the modern websockets API.
 server    = ["fastapi>=0.110", "uvicorn>=0.27", "websockets>=13.0"]
-# MCP stdio 面是纯标准库的 JSON-RPC over stdio（``atst/integration/mcp/`` 不 import
+# MCP stdio 面是纯标准库的 JSON-RPC over stdio（``atst/server/mcp/`` 不 import
 # 任何第三方包），所以它**没有** extra：过去那份 ``mcp = ["mcp>=1.0"]`` 全仓 0 处读取。
 dev       = [
     "pytest>=8.0",
@@ -98,6 +98,7 @@ packages = ["atst"]
 [tool.hatch.build.targets.sdist]
 include = [
     "atst",
+    "labs",
     "PROTOCOL_SPEC",
     "tests",
     "README.md",
@@ -136,7 +137,7 @@ ignore = ["E501", "B008"]
 # Package __init__ modules intentionally define lazy/re-export API surfaces.
 "atst/cli/__init__.py" = ["F401"]
 "atst/client/__init__.py" = ["F401"]
-"atst/web/base.py" = ["F401"]
+"atst/sources/base.py" = ["F401"]
 
 [tool.mypy]
 python_version = "3.10"

@@ -130,8 +130,8 @@ def test_ruff_per_file_ignores_still_point_at_existing_paths() -> None:
     """每一条 lint 豁免必须落在磁盘上真实存在的路径上。
 
     豁免指向已删除的文件不是无害的冗余：它让那条规则对**下一个**占用该路径的文件
-    静默失效，而没人会想到去看一份不存在的对象的配置。`atst/integration/mcp_server.py`
-    就是 MCP 面迁进 `atst/integration/mcp/` 之后留下的死键。
+    静默失效，而没人会想到去看一份不存在的对象的配置。`atst/server/mcp_server.py`
+    就是 MCP 面迁进 `atst/server/mcp/` 之后留下的死键。
     """
     text = _pyproject()
     section = text.split("[tool.ruff.lint.per-file-ignores]", 1)

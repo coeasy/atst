@@ -4,7 +4,7 @@
 >
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
-- 当前版本：`1.6.1`（已打 tag `v1.6.1` 并发布）· v1.4.3 / v1.5.0 / v1.5.1 / v1.5.2 / v1.5.3 / v1.5.4 为未打 tag 的源码候选 · 最新已发布 GitHub Release：[`v1.6.1`](https://github.com/coeasy/atst/releases/tag/v1.6.1)；本包**不在 PyPI**（Trusted Publisher 与 `pypi` 环境已配置，推送版本 tag 后工作流会执行 OIDC 上传）· [CHANGELOG](CHANGELOG.md) · [逐版本发布说明](docs/releases/v1.6.1.md)
+- 当前版本：`2.0.0`（v2 架构重写，源码候选，未打 tag）· 上一已发布版本 [`v1.6.1`](https://github.com/coeasy/atst/releases/tag/v1.6.1)；本包**不在 PyPI**（Trusted Publisher 与 `pypi` 环境已配置，推送版本 tag 后工作流会执行 OIDC 上传）· [CHANGELOG](CHANGELOG.md) · [v1→v2 迁移指南](docs/migration/v2.md)
 
 ---
 
@@ -19,7 +19,7 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | 痛点 | atst 的解法 |
 |---|---|
 | TDX 协议封闭、逆向工程门槛高 | 85 命令账本 + 61 精确解析器 + 三级分派 + YAML 协议规范 |
-| 单一数据源不可靠 | 14 个 Provider 注册表 + 216 capability 声明；**provider-first**：一次请求绑定一个 Provider，跨源只在显式 `FallbackPolicy` 下发生 |
+| 单一数据源不可靠 | 14 个 Provider 注册表 + 217 capability 声明；**provider-first**：一次请求绑定一个 Provider，跨源只在显式 `FallbackPolicy` 下发生 |
 | 数据来源不可追溯 | 每个结果携带 `Provenance`（provider/channel/capability/命令），溯源不符即抛，杜绝静默换源 |
 | 数据请求被隐式缓存污染 | 执行路径**零缓存**：每次请求直达绑定 Provider |
 | 同步/异步 API 分裂 | 签名镜像双客户端（`TdxClient` / `AsyncTdxClient`）+ 奇偶门禁 |
@@ -62,15 +62,12 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 ├─────────────────────────────────────────────────────────────────────┤
 │              UnifiedRuntime（唯一执行内核，零缓存）                     │
 │  QueryPlanner.compile → QueryPlan（单 Provider / 单 Channel）          │
-│  DirectProviderExecutor：DIRECT_BINDINGS 303 条精确绑定                │
+│  DirectProviderExecutor：DIRECT_BINDINGS 304 条精确绑定                │
 │  流式：StreamSpec/StreamPlanner → StatefulQuoteStream                 │
 ├─────────────────────────────────────────────────────────────────────┤
-│              catalog/（静态声明与一致性审计，无执行）                   │
-│  capability 目录 + 规划期签名校验（fail-closed）                        │
-│  Provider channel→adapter 绑定表 · Provider 隔离契约/守卫/审计          │
-├─────────────────────────────────────────────────────────────────────┤
-│              providers/（14 Provider · 216 capability 唯一事实源）      │
-│  tdx(85 命令) · tencent/sina/eastmoney/baidu/jsl/boc/iwencai(web 多源)│
+│              providers/（14 Provider · 217 capability 唯一声明处）      │
+│  一 Provider 一声明模块：channel→adapter + capability→实现显式绑定      │
+│  tdx(85 命令) · tencent/sina/eastmoney/baidu/jsl/boc/iwencai(HTTP)    │
 │  local_vipdoc(reader 本地二进制) · builtin · derived(显式聚合)          │
 ├─────────────────────────────────────────────────────────────────────┤
 │                      协议核心层                                        │
@@ -113,9 +110,9 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 
 | 特性 | 说明 |
 |---|---|
-| **HTTP Web 45+ 源类** | 东财/新浪/腾讯/集思录/港股/中行等，`httpx` / `urllib` 双栈，31 模块；各家适配器按 Provider 归入 `web/<provider>/adapters.py`，跨 Provider 的域模块（资金流/龙虎榜/新闻/问财…）留 `web/` 包根 |
+| **HTTP Web 45+ 源类** | 东财/新浪/腾讯/集思录/港股/中行等，`httpx` / `urllib` 双栈，32 模块；各家适配器按 Provider 归入 `sources/<provider>/adapters.py`，跨 Provider 的域模块（资金流/龙虎榜/新闻/问财…）留 `sources/` 包根 |
 | **本地 vipdoc 解析** | `reader/` 解析通达信本地 `.day` / `.min` / 板块 / 财务二进制文件 |
-| **Provider 注册表** | `providers/` 声明 14 Provider × 216 capability × channel，是唯一事实源；`catalog/provider_bindings.py` 声明 channel→adapter 绑定 |
+| **Provider 注册表** | `providers/` 声明 14 Provider × 217 capability × channel，是唯一事实源；每 Provider 一个声明模块同时登记 channel→adapter 与 capability→实现绑定 |
 | **流式订阅** | `Client.stream` → `StatefulQuoteStream`（轮询基类 QuoteStream/AsyncQuoteStream；engine 内核：ReconnectPolicy + BackpressureQueue + DeltaMerger + GapFiller + StreamEngine） |
 
 ### 输出与服务层
@@ -133,11 +130,11 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | 特性 | 说明 |
 |---|---|
 | **唯一内核** | `UnifiedRuntime`：`QuerySpec → QueryPlan → 绑定执行 → QueryResult`，零缓存、无请求合并 |
-| **精确绑定执行** | `DirectProviderExecutor` 按 `DIRECT_BINDINGS[(provider, channel, capability)]`（303 条）直调实现 |
-| **规划期 fail-closed** | `catalog/capability.py::validate_call` 用**真实方法签名**绑定参数，参数错误在 I/O 前抛 |
+| **精确绑定执行** | `DirectProviderExecutor` 按 `DIRECT_BINDINGS[(provider, channel, capability)]`（304 条）直调实现 |
+| **规划期 fail-closed** | `runtime/capability_contract.py::validate_call` 用**真实方法签名**绑定参数，参数错误在 I/O 前抛 |
 | **执行身份与溯源** | `runtime/identity.py` + `runtime/provenance.py`：结果 provenance 与计划身份不符即抛 |
 | **显式跨源编排** | `runtime/orchestration.py`：仅当调用方给出 `FallbackPolicy` 时按序尝试，逐次记入 `OrchestratedResult` |
-| **启动三方对账** | `runtime/audit.py::audit_runtime`：registry / catalog / bindings 不一致即报错 |
+| **启动三方对账** | `runtime/audit.py::audit_runtime`：registry / 声明绑定 / 执行绑定不一致即报错 |
 | **60+ Typed Query 契约** | 10 领域基类 + 9 Domain Record 族，字段名与内核方法签名一一对应（`Client.typed`） |
 | **批量执行** | `Client.quotes_batch()` → `BatchResult`：逐 symbol 三态（ok/missing/failed）、保序、串行直连单一 Provider（无隐藏换源） |
 | **流式生命周期** | `StreamSpec`/`StreamPlanner` + `StatefulQuoteStream`（订阅/退订/状态查询） |
@@ -228,7 +225,7 @@ pip install -e ".[dev]"              # 开发体验（pytest/ruff/mypy/pytest-as
 | `dev`       | pytest/pytest-cov/pytest-asyncio/ruff/mypy/hatchling | 开发体验 |
 | `all`       | 以上非 dev 项的并集        | 完整功能           |
 
-> **MCP 工具服务不需要 extra**：`atst/integration/mcp/` 是纯标准库的
+> **MCP 工具服务不需要 extra**：`atst/server/mcp/` 是纯标准库的
 > JSON-RPC over stdio，全仓对 `pydantic` / `mcp` 两个包没有运行期依赖。
 
 ---
@@ -335,7 +332,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### 统一查询内核（`Client`，216 项 capability）
+### 统一查询内核（`Client`，217 项 capability）
 
 ```python
 from atst import Client, FallbackPolicy, QuerySpec
@@ -413,11 +410,11 @@ atst hosts audit --report /tmp/audit.json --markdown /tmp/audit.md
 atst/
 ├── client/         # api.py —— Client / AsyncClient 唯一业务入口（18 便捷方法 + execute/typed/call）
 │                   # core/sync/async_/factory —— TdxClient 传输层与共享纯协议 SSOT
-├── runtime/        # 唯一执行内核：kernel(零缓存)/executor(303 绑定)/orchestration(显式跨源)
+├── runtime/        # 唯一执行内核：kernel(零缓存)/executor(304 绑定)/orchestration(显式跨源)
 │                   #   /audit(启动三方对账)/identity/provenance(溯源守卫)
-├── catalog/        # 静态声明与一致性审计：capability(目录+规划期签名校验)/provider_bindings
-│                   #   /provider_contract/provider_guard/*_audit —— 无执行、无选源
-├── providers/      # 14 Provider × 216 capability × channel 注册表（唯一事实源）
+├── providers/      # 14 Provider × 217 capability × channel 唯一声明处
+│                   #   tdx/local_vipdoc/.../derived 各一模块；registry 只做聚合
+│                   #   能力→实现显式绑定（无反射）· channel→adapter · 契约/守卫
 ├── query.py        # QuerySpec/QueryPlan/QueryPlanner + 指纹
 ├── result.py       # QueryResult + ResultMeta + Provenance
 ├── batch.py        # BatchResult/BatchItem 三态批量契约
@@ -430,7 +427,7 @@ atst/
 ├── codec/          # framing(帧)/primitive(原语 + count_guard + zlib strict)
 ├── transport/      # base(RLock 租约)/async_/pool(4 槽)/ratelimit/speedtest/hosts/sniff
 ├── client/         # core.py(同步/异步共享纯协议 SSOT) + sync/async_/factory + 5 族客户端
-├── web/            # 45+ HTTP 源类（惰性导入）+ 域 Mixin 会话 + 共享分页器
+├── sources/        # 45+ HTTP 源类（惰性导入）+ 域 Mixin 会话 + 共享分页器
 │                   #   tencent/sina/eastmoney/baidu/jsl/boc 六包按 Provider 承载 adapters.py
 ├── reader/         # vipdoc 本地文件解析（day/min/板块/财务）
 ├── profile/        # 数据规格探测（帧/文件双探测器 + presets）
@@ -440,11 +437,10 @@ atst/
 ├── sink/           # LocalDaySink：写回 vipdoc .day 二进制
 ├── charset/        # 字符集自动探测（GBK/GB18030/Big5/UTF-8）
 ├── config/         # 6 源合并 + 严格校验 + env 归一
-├── integration/    # runtime_http(12 端点)/runtime_ws/runtime_ws_server/mcp(9 工具)/serialization
+├── server/         # runtime_http(12 端点)/runtime_ws/runtime_ws_server/mcp(9 工具)/serialization
 ├── observability/  # 指标注册表 + Prometheus/StatsD/OTLP 导出器 + start_exporter
 ├── feedback/       # 错误/用量上报 + 遥测 + 使用统计
 ├── tools/          # capture/spec_audit/codegen/golden_audit/golden_expand/check_originality
-├── trade/          # 交易协议模拟器（实验性可选模块：SimTransport 纯内存模拟，不接入内核）
 ├── __main__.py     # python -m atst 入口（与 atst 控制台脚本等价）
 ├── universe/      # 标的清单（按类别取全部标的：代码表/新浪节点/tdx 段表三级降级）
 └── cli/            # CLI 入口（33 子命令；数据命令全部经 Client，6 个传输/诊断命令除外，见 runtime_commands.py）
@@ -530,10 +526,10 @@ python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproje
 
 ## 路线图
 
-### 当前阶段：v1.6.1（已发布）
+### 当前阶段：v2.0.0（源码候选）
 
-GitHub 最新已发布版本是 `v1.6.1`（2026-10-30）；v1.4.3–v1.5.4 为未打 tag 的源码候选。当前内核为单执行路径、零缓存、provider-first：
-85 命令 / 61 精确解析器 / 5 协议族 / 14 Provider / 216 capability / 303 条精确绑定。
+`v2.0.0` 是架构重写版本（Provider 声明化、包布局重排、Client 动态面收敛、文档生成制）；上一已发布版本为 `v1.6.1`（2026-10-30）。当前内核为单执行路径、零缓存、provider-first：
+85 命令 / 61 精确解析器 / 5 协议族 / 14 Provider / 217 capability / 304 条精确绑定。
 
 | 里程碑 | 状态 |
 |---|---|

@@ -11,12 +11,12 @@ import pytest
 from atst.cli.parser import build_parser
 from atst.client.api import AsyncClient, Client
 from atst.errors import ValidationError
-from atst.integration.mcp._tools_impl import _h_get_minute_today, _h_get_trades
-from atst.integration.runtime_ws import RuntimeJsonRpcHandler
 from atst.providers import PROVIDERS, resolve_capability_provider
 from atst.query import QueryPlan, QueryPlanner, QuerySpec
 from atst.result import Provenance, QueryResult
 from atst.runtime.kernel import UnifiedRuntime
+from atst.server.mcp._tools_impl import _h_get_minute_today, _h_get_trades
+from atst.server.runtime_ws import RuntimeJsonRpcHandler
 
 
 class _RecordingExecutor:
@@ -122,7 +122,7 @@ def test_http_minute_and_trades_reach_client_operational_default() -> None:
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
-    from atst.integration.runtime_http import create_runtime_app
+    from atst.server.runtime_http import create_runtime_app
 
     client, executor = _client()
     app = create_runtime_app(client)
@@ -219,7 +219,7 @@ def test_http_health_reports_unavailable_core_capabilities() -> None:
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
-    from atst.integration.runtime_http import create_runtime_app
+    from atst.server.runtime_http import create_runtime_app
 
     client, _executor = _client()
     with TestClient(create_runtime_app(client)) as http:
@@ -262,7 +262,7 @@ def test_http_health_uses_effective_configured_default() -> None:
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
-    from atst.integration.runtime_http import create_runtime_app
+    from atst.server.runtime_http import create_runtime_app
 
     client, _executor = _client(default_provider="eastmoney")
     with TestClient(create_runtime_app(client)) as http:

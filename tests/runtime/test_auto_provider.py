@@ -433,8 +433,8 @@ class TestProviderHealthStatus:
         pytest.importorskip("fastapi")
         from fastapi.testclient import TestClient as _HttpClient
 
-        from atst.integration.runtime_http import create_runtime_app
-        from atst.integration.runtime_ws import RuntimeJsonRpcHandler
+        from atst.server.runtime_http import create_runtime_app
+        from atst.server.runtime_ws import RuntimeJsonRpcHandler
 
         #: 时钟钉死：两次读取的 ``age_s`` 才可能逐位相等（否则一次跨毫秒就抖）。
         monkeypatch.setattr(autoselect.time, "monotonic_ns", lambda: 1_000_000_000)

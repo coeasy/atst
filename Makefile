@@ -1,4 +1,4 @@
-.PHONY: help install pre-commit test test-live test-unit test-integration test-bridges test-golden test-slow lint lint-fix type-check clean gates sync audit-originality audit-golden audit-spec audit-reachability audit-adversarial audit-docs benchmark-smoke interface-probe host-audit build publish docker-build docker-run
+.PHONY: help install pre-commit test test-live test-unit test-integration test-bridges test-golden test-slow lint lint-fix type-check clean gates sync audit-originality audit-golden audit-spec audit-reachability audit-adversarial audit-docs docs-gen docs-check benchmark-smoke interface-probe host-audit build publish docker-build docker-run
 
 PYTHON ?= python
 PIP = $(PYTHON) -m pip
@@ -16,6 +16,8 @@ help:
 	@echo "  make type-check      mypy with the same CI flags"
 	@echo "  make test            Offline test suite with coverage >= 77"
 	@echo "  make gates           Run the deterministic PR merge-gate suite"
+	@echo "  make docs-gen        Regenerate projection docs under docs/generated/"
+	@echo "  make docs-check      Verify projection docs match the workspace"
 	@echo ""
 	@echo "Operational probes (not PR merge gates):"
 	@echo "  make test-live       Run network-marked tests"
@@ -86,6 +88,14 @@ audit-adversarial:
 audit-docs:
 	$(PYTHON) scripts/check_docs_links.py
 
+# 投影型文档（接口表 / Web 源登记表 / capability × provider 矩阵 / 命令账本）
+# 的真值只在运行时；`docs-gen` 是唯一写者，`docs-check` 只比对、不写盘。
+docs-gen:
+	$(PYTHON) scripts/gen_docs.py
+
+docs-check:
+	$(PYTHON) scripts/gen_docs.py --check
+
 benchmark-smoke:
 	$(PYTHON) scripts/run_benchmark_smoke.py
 
@@ -111,7 +121,7 @@ sync:
 # Every step must resolve on disk; tests/compatibility/test_local_gate_contract.py
 # enforces it. v16 Phase 2 deleted atst.native but left native-compat in this
 # chain pointing at the removed test file, so `make gates` failed for contributors.
-gates: lint type-check test test-bridges audit-golden audit-spec audit-adversarial audit-reachability audit-originality benchmark-smoke interface-probe audit-docs
+gates: lint type-check test test-bridges audit-golden audit-spec audit-adversarial audit-reachability audit-originality benchmark-smoke interface-probe audit-docs docs-check
 	@echo "ALL DETERMINISTIC GATES PASSED"
 
 build:

@@ -131,13 +131,13 @@ kind 显式抛 `ValueError`（消息里带合法值全集），既不做大小�
 
 ### 交易面（TradeClient，只有库面且仅模拟）
 
-`atst.trade` 是 0x1000 交易协议的独立面：帧编解码、密码混淆、查询类别词表和一台模拟券商
+`labs.trade` 是 0x1000 交易协议的独立面：帧编解码、密码混淆、查询类别词表和一台模拟券商
 都在库里，但**只有库面**——CLI 的 32 支子命令、HTTP 的 12 路由、WS 的 13 方法、MCP 的 9 工具
 都不挂它。这不是漏接线，是红线：本库不接真实券商，`SocketTransport.connect()` 一律抛
 `TradingUnavailable` `[E4030]`。
 
 ```python
-from atst.trade import TradeClient
+from labs.trade import TradeClient
 
 with TradeClient() as c:                # 缺省 transport 是 SimTransport
     c.login("100001", "123456")         # DEFAULT_ACCOUNTS 里的演示账密
@@ -149,7 +149,7 @@ with TradeClient() as c:                # 缺省 transport 是 SimTransport
 
 七个查询出口里六个是 `query(category)` 的具名包装，与 `QUERY_CATEGORY_*` 常量一一对应：
 `query_cash`、`query_stocks`、`query_orders`、`query_deals`、`query_cancelable`、
-`query_shareholders`。`tests/trade/test_client.py` 既逐条断言各自的返回形状，也逐条断言
+`query_shareholders`。`tests/labs/trade/test_client.py` 既逐条断言各自的返回形状，也逐条断言
 "包装 == 按类别直查"。
 
 **成交不在本库的范围内**：撮合发生在交易所，所以模拟券商不会自动把委托变成成交，只下过单时
@@ -184,7 +184,7 @@ from atst import Client, AsyncClient
 | `execute_with_policy` | `(spec, *, policy: FallbackPolicy) -> OrchestratedResult` | 显式跨源编排 |
 | `typed` | `(query: CapabilityQuery, **kwargs) -> TypedQueryResult` | 冻结 dataclass 契约 → 强类型记录 |
 | `capabilities` | `() -> tuple[str, ...]` | 能力发现面：**只有名字、没有可用性**，216 项的构成与发不出去的那几个见下节「能力发现面：只有名字，没有可用性」 |
-| `capability_statuses` | `() -> dict[str, str]` | 全部迁移能力的 `{name: status}` 真值表（`alive`/`degraded`/`offline`/`needs_verify`）；与只覆盖内核集的 `core_capability_statuses` 互补，状态取自 `catalog/capability.py` 的单一事实源 |
+| `capability_statuses` | `() -> dict[str, str]` | 全部迁移能力的 `{name: status}` 真值表（`alive`/`degraded`/`offline`/`needs_verify`）；与只覆盖内核集的 `core_capability_statuses` 互补，状态取自 `providers/ 声明聚合 + runtime/capability_contract.py` 的单一事实源 |
 | `core_capability_statuses` | `() -> dict[str, dict[str, Any]]` | **本实例内核**的能力可用性真值表：逐内核方法区分「任意 Provider 可用」与「默认路径可用」（未注入执行器时默认路径为不可用），据此判断某能力今天是否真的发得出去 |
 | `provider_health_status` | `() -> dict[str, dict[str, Any]]` | `provider="auto"` 的**降级名单**：`{provider: {code, age_s}}`，只列仍处 `[routing] auto_health_ttl` 窗口内的失败标记（读取时即复位过期项，与 `auto` 排序同一份）。与 `/v13/runtime/health` 的 `provider_health` 字段同源 |
 | `close` | `()` | 收尾**本实例自建**的内核（`runtime=` 传进来的那份不碰）。默认内核跨调用不持有连接，所以它关的是"借来的东西"这一格所有权，不是连接池——见下节 |
@@ -299,7 +299,7 @@ with Client() as c:
 ### 复权 K 线（`adjusted_bars`）
 
 `adjusted_bars` 是**组合能力**（`composed`）：原始 K 线走选定的行情 Provider，除权除息事件单独取，
-两份在 `atst/domain/adjust.py` 的 `AdjustEngine` 里合成因子。它是 211 个 catalog 迁移能力之一，因此
+两份在 `atst/domain/adjust.py` 的 `AdjustEngine` 里合成因子。它是 212 个 catalog 迁移能力之一，因此
 走**通用入口**而不是某张面的专属路由：
 
 ```python
@@ -312,7 +312,7 @@ with Client() as c:
 
 | 面 | 调用形状 |
 |----|----------|
-| Python | `Client.call("adjusted_bars", symbol, method="qfq", …)` 或 `Client.adjusted_bars(...)` |
+| Python | `Client.call("adjusted_bars", symbol, method="qfq", …)`（动态方法面已随 v2 删除） |
 | CLI | `atst adjusted-bars sh600519 --method qfq --count 100` |
 | HTTP | `POST /v13/query/adjusted_bars`，body `{"args":["600519"],"kwargs":{"method":"qfq","count":100}}` |
 | WS | `{"method":"query","params":{"capability":"adjusted_bars","args":["600519"],"kwargs":{…}}}` |
@@ -359,7 +359,7 @@ with Client() as c:
 
 | 面 | 调用形状 |
 |----|----------|
-| Python | `Client.call("daily_enriched", symbol, count=120, adjust="hfq")` 或 `Client.daily_enriched(...)` |
+| Python | `Client.call("daily_enriched", symbol, count=120, adjust="hfq")`（动态方法面已随 v2 删除） |
 | CLI | `atst daily-enriched sh600519 --adjust hfq --count 120` |
 | HTTP | `POST /v13/query/daily_enriched`，body `{"args":["600519"],"kwargs":{"adjust":"hfq","count":120}}` |
 | WS | `{"method":"query","params":{"capability":"daily_enriched","args":["600519"],"kwargs":{…}}}` |
@@ -502,18 +502,18 @@ IP 级软限流）。报表名全部真机实拉验证过——不是按命名�
 ```python
 from atst import Client
 
-Client.capabilities()   # 216 项 capability 名，按字典序排好
+Client.capabilities()   # 217 项 capability 名，按字典序排好
 ```
 
 发现面有三处出口，交付的都是**纯名字**：
 
 | 出口 | 形状 | 状态字段 |
 |------|------|----------|
-| `Client.capabilities()` / `AsyncClient.capabilities()` | `tuple[str, ...]`，216 项 | 无 |
+| `Client.capabilities()` / `AsyncClient.capabilities()` | `tuple[str, ...]`，217 项 | 无 |
 | `GET /v13/capabilities` | `{"capabilities": [...], "providers": {provider: {channel: [...]}}}` | 无 |
 | WS `runtime.capabilities` | 同上，两份名单 | 无 |
 
-名单的构成是一个可复算的恒等式：216 = 7 个内核直绑能力 ∪ 211 个 catalog 迁移能力，并且与
+名单的构成是一个可复算的恒等式：217 = 7 个内核直绑能力 ∪ 212 个 catalog 迁移能力，并且与
 `PROVIDERS` 注册表（14 Provider × 60 channel）里出现过的能力名集合逐字相等。三处出口在形状上
 就没有放 `available`/`offline` 的位置——条目类型清一色是 `str`（发现面只报名字，健康度
 走独立面）。于是**「名字在名单里」只承诺"这条能力有实现、参数契约可校验"，不承诺
@@ -521,7 +521,7 @@ Client.capabilities()   # 216 项 capability 名，按字典序排好
 
 能力健康度因此走**独立面** `Client.capability_statuses()`（`AsyncClient` 同名静态方法）：
 返回 `{capability: status}`，取值 `alive` / `degraded` / `offline` / `needs_verify`。
-它的单一事实源是 `catalog/capability.py`：显式叠加（tdx 账本死名字标 `offline`、缺口补全能力标
+它的单一事实源是 `providers/ 声明聚合 + runtime/capability_contract.py`：显式叠加（tdx 账本死名字标 `offline`、缺口补全能力标
 `needs_verify`）∪ 注册表 `ChannelSpec.unavailable_capabilities` 派生的 `offline`（一个能力只有
 **每个**归属 channel 都下线才判死）。`offline` 名字仍留在发现面（形状不变），但调用方
 据 `capability_statuses()` 即可避开它们——这正是"名字 ≠ 可用性"那条口径的机器可读版本。
@@ -529,7 +529,7 @@ Client.capabilities()   # 216 项 capability 名，按字典序排好
 tdx 这条链上有 6 个名字一调就必然失败，全部踩在被账本判 `offline` 的命令上。下表由
 `tests/architecture/test_offline_capability_honesty.py` 现推——名字集合、命令号、tdx 侧实现、
 出路 Provider 四个字段全部来自「命令账本 + `client/core.py` 的 `_UNVERIFIED_STRUCTURED_BLOCK` +
-`catalog/capability.py` 绑定表 + `_t_*` 调用图」，在这里手抄一份过期数字过不了门禁。
+`providers/ 声明聚合 + runtime/capability_contract.py` 绑定表 + `_t_*` 调用图」，在这里手抄一份过期数字过不了门禁。
 
 | 发现名 | tdx 侧实现 | 命令号 | 为什么发不出去 / 一调即抛 | tdx 之外的出路 |
 |--------|-----------|--------|---------------------------|----------------|
@@ -546,7 +546,7 @@ tdx 这条链上有 6 个名字一调就必然失败，全部踩在被账本判 
 > 仍然在，Provider 面的选择没有变窄。
 
 这张表只覆盖 tdx 命令账本管得到的 25 个名字（7 个内核直绑 + 18 个 tdx 客户端族 catalog 绑定）；
-其余 191 个名字走 web 会话 / web adapter / channel adapter / composed 四类后端，不经过命令账本，
+其余 192 个名字走 web 会话 / web adapter / channel adapter / composed 四类后端，不经过命令账本，
 也就无从在这里判生死——它们的可用性由各自的 Provider 契约与 `tests/` 冒烟负责。一处显式登记的
 解析盲区是 `f10`：`f10_client` 的分派按 capability 分岔（`runtime/executor.py` 里 `f10` 走
 `client.download`、其余走 `client.catalog`），绑定表的 `method` 只是标签，所以这一格对不上实现；
@@ -667,16 +667,16 @@ from atst import Provenance, ProvenanceKind                       # 结果溯源
 `fallback=True` 是另一件事：它只可能由显式 `FallbackPolicy` 走到
 `ProviderOrchestrator`（§ 上文）之后 `replace` 出来，与出处种类无关。
 
-### Web 源登记（`atst.web.sources.KNOWN_SOURCES`，34 个）
+### Web 源登记（`atst.sources.sources.KNOWN_SOURCES`，34 个）
 
 ```python
-from atst.web.sources import KNOWN_SOURCES, SourceSpec   # 源名 → SourceSpec
+from atst.sources.sources import KNOWN_SOURCES, SourceSpec   # 源名 → SourceSpec
 ```
 
 这一张表是内核之外那张 **HTTP 适配器命名面**的唯一读者可见登记。三个地方吃的源名以它为准：
 `docs/configuration.md` 的 `[web] enabled_sources` 与 `[web] rate_limit` 都要求键属于
 `KNOWN_SOURCES`（文档过去只写了这句约束、从没列出合法取值），`WebQuoteSession` 的方法按
-`summary` 那一列对应到源名，`atst.web.normalize` 按 `SourceSpec` 的三个 scale 字段换算单位。
+`summary` 那一列对应到源名，`atst.sources.normalize` 按 `SourceSpec` 的三个 scale 字段换算单位。
 
 「接口告诫」一列是 `SourceSpec.notes` 原文，逐格对齐，不做二次抄写：单位坑（哪些源要 ×100、
 哪些量是手/万元）、鉴权要求（Referer / cookie）、以及**已下线的端点**。下表与运行期登记表由
@@ -698,7 +698,7 @@ from atst.web.sources import KNOWN_SOURCES, SourceSpec   # 源名 → SourceSpec
 | `minute_kline` | 分钟 K 线（腾讯 ifzq.gtimg.cn mkline） | `kline` / `minute_kline` | 1/5/15/30/60 分钟 K 线，**仅 A 股**（港股/美股 mkline 返回空，直连会抛错）。港股/美股分钟 K 线走东财 push2his（EastmoneyHistoryKlineSource），WebQuoteSession.klines/minute_klines 已按市场自动路由。 |
 | `minute` | 当日分时（腾讯 web.ifzq.gtimg.cn minute/query） | `minute` | 当日 1 分钟分时（价格/均价/成交量）。接口累计量为「手」，解析层 MinuteSource 已 ×100 到股；量口径统一由解析层内联处理，normalizer 为 identity（不二次缩放）。 |
 | `suggest` | 证券代码联想搜索（新浪 smartbox） | `suggest` | 输入拼音/汉字/代码片段 → 候选证券列表 |
-| `ticks` | 逐笔成交明细（腾讯 stock.gtimg.cn detail） | `tick` | 每页条数以 atst.web.ticks.TICKS_PER_PAGE 为单一事实源（勿在此复写具体数字）；p 为页码（0 起）。量单位手、额单位元 |
+| `ticks` | 逐笔成交明细（腾讯 stock.gtimg.cn detail） | `tick` | 每页条数以 atst.sources.ticks.TICKS_PER_PAGE 为单一事实源（勿在此复写具体数字）；p 为页码（0 起）。量单位手、额单位元 |
 | `trends` | 当日分时成交（东财 push2his trends2） | `tick` / `minute` | 1 分钟粒度，含均价；iscr=0 不复权、ndays=1 当日 |
 | `global` | 外盘期货 / 外汇（腾讯 qt.gtimg.cn hf_ 前缀） | `quote` / `global` | 纽约原油/黄金、伦铜、布伦特原油等；字段为定长 14 列 |
 | `market_stat` | 大盘统计（腾讯 qt.gtimg.cn s_ 前缀） | `quote` / `stat` | s_sh000001 形式；返回点数、涨跌额、涨跌幅、成交量(手)、成交额(万元) |
@@ -757,7 +757,7 @@ from atst.web.sources import KNOWN_SOURCES, SourceSpec   # 源名 → SourceSpec
    （如 `885431`）→ 返回该板块的成分股（按 `block_code` 过滤）；传**股票代码**（如 `600519`）
    → 返回该股所属的所有板块（按 `code` 过滤）；**不传** → 全市场板块成分股，并按 `limit`
    截断（上游 `block_top` 忽略 `limit`，本地兜底）。此前传板块代码会返回空列表属断链，
-   已在 v1.1.0 修复，回归测试见 `tests/web/test_v6_new_sources.py`。
+   已在 v1.1.0 修复，回归测试见 `tests/sources/test_v6_new_sources.py`。
 
 ```python
 from atst import Client
@@ -822,7 +822,7 @@ heartbeat_interval` / `[rate_limit]` / `[security] use_tls` 在直连命令与�
 三张 wire 面（HTTP REST、WebSocket JSON-RPC、MCP stdio）对**未声明的请求字段**口径一致：
 一律当场拒绝，不存在「收下但无人读」的第三种下场。
 白名单就是各面自己那份声明，不是第二份抄件——HTTP 查询串 = 路由签名本身，HTTP body 与 WS `params`
-= `atst/integration/wire_fields.py` 里的两份名单，MCP `arguments` = 该工具的 `inputSchema`
+= `atst/server/wire_fields.py` 里的两份名单，MCP `arguments` = 该工具的 `inputSchema`
 （9 张 schema 都写着 `additionalProperties: false`，且这条声明被真实执行）。拒绝的落点是 HTTP
 `422`（`E1010` / `ValidationError`）与 JSON-RPC `-32602`；人读的那句话与机读侧的
 `context.unknown_fields` 都点名被拒的那个键。判据见 `tests/runtime/test_wire_declared_fields.py`
@@ -845,7 +845,7 @@ retryable=True`，把调用方写错的数字登记成上游故障并建议换�
   `-32602`（MCP 同）、`retryable=False`。既不替换成别的数，也不报成内部错误。
 * 真整数原样通过；纯数字串按整数解析（查询串与 JSON 都天然承载字符串）；`bool` / `float` /
   列表 / 非数字串一律拒——注意 `count=1.5` 现在是**拒**，不是截断。
-* 唯一实现是 `atst/integration/wire_fields.py::as_request_int`；两张机器面不再自己转换
+* 唯一实现是 `atst/server/wire_fields.py::as_request_int`；两张机器面不再自己转换
   （判据用 AST 扫源码钉住这一点）。库面那侧是 `atst/client/core.py::_require_int`，
   绑定处 `QuerySpec.normalized` 前另有真整数闸，其字段名单从 `dataclass` 的 `int` 注解现扫。
 
@@ -870,7 +870,7 @@ MCP 的 `count` 上限（2000）比 HTTP（10000）小，是给 LLM 上下文预
 ### HTTP REST 网关（12 路由）
 
 ```python
-from atst.integration.runtime_http import create_runtime_app
+from atst.server.runtime_http import create_runtime_app
 app = create_runtime_app()          # FastAPI 实例，交由 uvicorn 承载
 ```
 
@@ -912,7 +912,7 @@ app = create_runtime_app()          # FastAPI 实例，交由 uvicorn 承载
 ### WebSocket JSON-RPC（13 方法）
 
 ```python
-from atst.integration.runtime_ws_server import serve_runtime_ws
+from atst.server.runtime_ws_server import serve_runtime_ws
 ```
 
 方法：`quotes`、`bars`、`snapshot`、`minute`、`trades`、`security.count`、`security.list`、
@@ -932,7 +932,7 @@ from atst.integration.runtime_ws_server import serve_runtime_ws
 
 监听地址与路径由 `RuntimeWsConfig` 决定，默认 127.0.0.1:8765 上的 `/v13/ws`；连到别的路径
 会被以 1008 状态码关闭（reason 为 "unsupported path"）。`serve_runtime_ws` 是协程，返回 websockets
-库的 server 对象；要一条命令拉起来就用它的包入口 `python -m atst.integration.runtime_ws_server`。它仍然没有 atst 子命令
+库的 server 对象；要一条命令拉起来就用它的包入口 `python -m atst.server.runtime_ws_server`。它仍然没有 atst 子命令
 （§3 CLI 表那一格里没有它）。
 
 **并发与所有权**（两条都是宿主必须知道的）：
@@ -944,7 +944,7 @@ from atst.integration.runtime_ws_server import serve_runtime_ws
 * 谁负责收尾由**是否传入 handler** 决定。**传入**的那份归调用方，`serve_runtime_ws` 不碰它的
   生命周期；**不传**时函数自己造一份，并把它登记在返回对象的 `server.atst_handler` 上。那条
   `Client` 由 `RuntimeJsonRpcHandler.close()` 收尾，宿主停机时不调它就把这条所有权链断在
-  自己手里（`python -m atst.integration.runtime_ws_server` 这个入口就是在 finally
+  自己手里（`python -m atst.server.runtime_ws_server` 这个入口就是在 finally
   收尾块里做了这件事的）。它今天释放的是所有权而非连接池，见 §2「`close()` 到底释放什么」。
 
 `runtime.capabilities` 与 HTTP 同一份两份纯名字列表，同样**只有名字、没有可用性**
@@ -960,7 +960,7 @@ WS 面除了 req/res 还有实时推送：本连接可以订阅一条
 （`serve_runtime_ws` 为每条连接造一份 handler），两条连接不会串台；连接断开时本连接拥有的流被
 `stop_all_subscriptions` 收掉，不泄漏。
 
-控制方法（白名单字段见 `atst.integration.wire_fields.WS_PARAMS_FIELDS`）：
+控制方法（白名单字段见 `atst.server.wire_fields.WS_PARAMS_FIELDS`）：
 
 * `subscribe`：`{"symbols":[...], "provider":"tdx", "interval":1, "diff_only":false, "max_queue":1024}`。
   回 `{"subscription_id":"subN","status":"subscribed"}`；随后连接收到 `push` 帧：
@@ -980,7 +980,7 @@ WS 面除了 req/res 还有实时推送：本连接可以订阅一条
 ```python
 import asyncio, json
 from websockets.asyncio.client import connect
-from atst.integration.runtime_ws_server import RuntimeWsConfig, serve_runtime_ws
+from atst.server.runtime_ws_server import RuntimeWsConfig, serve_runtime_ws
 
 async def main() -> None:
     server = await serve_runtime_ws(config=RuntimeWsConfig(port=8765))
@@ -1003,7 +1003,7 @@ asyncio.run(main())
 ### MCP stdio（9 工具）
 
 ```python
-from atst.integration.mcp import create_mcp_server, TOOLS
+from atst.server.mcp import create_mcp_server, TOOLS
 ```
 
 工具：`query_capability`（通用入口）+ `get_bars`、`get_quote`、`get_quotes`、
@@ -1013,11 +1013,11 @@ from atst.integration.mcp import create_mcp_server, TOOLS
 拉起方式是包入口：
 
 ```bash
-python -m atst.integration.mcp
+python -m atst.server.mcp
 ```
 
-MCP 客户端的配置就按这一条拼：`{"command": "python", "args": ["-m", "atst.integration.mcp"]}`。
-这张面**不需要任何 extra**——`atst/integration/mcp/` 只 import 标准库（见 README「Optional
+MCP 客户端的配置就按这一条拼：`{"command": "python", "args": ["-m", "atst.server.mcp"]}`。
+这张面**不需要任何 extra**——`atst/server/mcp/` 只 import 标准库（见 README「Optional
 Extras」那一节里被删掉的 `mcp` 假 extra）。它在 stdin/stdout 上说 JSON-RPC：`initialize` →
 初始化通知 → `tools/list` → `tools/call`，未声明的入参回 `-32602`，不认识的方法名回 `-32601`。
 这四格加两条反向口径在装好的包上逐条量过（7 项全过）：

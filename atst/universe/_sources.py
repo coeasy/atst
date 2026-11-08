@@ -7,7 +7,7 @@
 不抛异常。理由：代码表是个"能用就行"的东西，为了一个源挂掉让整条命令崩掉
 不划算；正确的动作是换下一个源，最后一个源都拿不到才该报错。
 
-限流纪律：新浪这条走 :meth:`atst.web.sina.adapters.SinaSource.fetch_all`
+限流纪律：新浪这条走 :meth:`atst.sources.sina.adapters.SinaSource.fetch_all`
 （已内置令牌桶 + 并发分页 + 退避重试），**不**自己再发裸请求；tdx 那条走
 :class:`atst.client.TdxClient`，与同步脚本共用的同一套主站池。
 """
@@ -137,7 +137,7 @@ def from_sina_multi(
     "哪个节点该拆出哪几类"读 :data:`~atst.universe._classes.NODE_TO_CLASSES`
     （由类别表推导），本函数不自己手抄一张节点表——手抄的那份会在换节点后变旧。
     """
-    from atst.web import create_source  # 惰性：模块导入不该建连接
+    from atst.sources import create_source  # 惰性：模块导入不该建连接
 
     # 顺序必须确定：集合的迭代序会随哈希种子变，"同一份数据两次跑出不同顺序"会让
     # 输出、快照测试、以及"两条链路结果应当一致"的判据全部变成偶发红。

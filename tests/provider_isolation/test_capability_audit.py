@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from atst.catalog.capability_audit import CapabilityAuditError, audit_capability_bindings
+from atst.runtime.capability_audit import CapabilityAuditError, audit_capability_bindings
 
 
 def _declared() -> set[tuple[str, str, str]]:
@@ -44,7 +44,7 @@ def test_registry_declaration_matches_public_surface() -> None:
 
 
 def test_audit_rejects_empty_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
-    import atst.catalog.capability as capability_module
+    import atst.providers as capability_module
 
     monkeypatch.setattr(capability_module, "MIGRATED_BINDINGS", ())
 
@@ -68,7 +68,7 @@ def test_audit_has_teeth_on_both_directions(
     from types import SimpleNamespace
 
     import atst.runtime.executor as executor_module
-    from atst.catalog.capability import MIGRATED_BINDINGS
+    from atst.providers import MIGRATED_BINDINGS
 
     real = executor_module.DIRECT_BINDINGS
     keys = {binding.key for binding in real}

@@ -190,7 +190,7 @@ def constant_class_vocabulary(target: str, classes: tuple[str, ...]) -> Constant
     for path, tree in trees.items():
         rel = rel_of[path]
         defined[rel] = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
-        # 函数体内的 import 也算：atst/web/fundflow.py 就在函数里 `from ..domain.symbol import Market`，
+        # 函数体内的 import 也算：atst/sources/fundflow.py 就在函数里 `from ..domain.symbol import Market`，
         # 只摸模块级会把那处 ``Market.BJ`` 记成"解析不出"而不是"解析到别处"。
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):

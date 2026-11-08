@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from atst.catalog.provider_contract import (
+from atst.providers.contract import (
     ProviderExecutionContract,
     ProviderIdentity,
 )

@@ -103,7 +103,7 @@ class TestContractAutomation:
 
     def test_coverage_sources_agree_with_production_tables(self, ca) -> None:
         """派发面确实来自生产表，而不是脚本自己另算了一份。"""
-        from atst.catalog.capability import MIGRATED_CAPABILITIES
+        from atst.providers import MIGRATED_CAPABILITIES
         from atst.runtime.executor import DIRECT_BINDINGS
 
         gateway = ca.gateway_capabilities()

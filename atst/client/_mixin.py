@@ -33,8 +33,8 @@ from __future__ import annotations
 
 import logging
 import struct
-import sys
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 import atst.client as _client_pkg  # 包级符号经此转发（见 sync.py 说明）
@@ -89,7 +89,8 @@ OutputFormat = str  # "dict" | "tuple" | "dataframe"
 
 #: 模板内 ``warnings.warn`` 的 stacklevel：原实现（方法体直呼）为 2 =
 #: 调用方；模板化后调用链多出 2 帧（生成器帧 + drive 帧），故 +2。
-#: 只对**单跳**模板成立——嵌套 ``_op_call`` 的路径靠 :func:`_caller_stacklevel` 实测。
+#: 只对**单跳**模板成立——嵌套 ``_op_call`` 的路径由
+#: :meth:`_ClientMixin._warning_stackdepth` 按 :attr:`_ClientMixin._drive_depth` 推算。
 _TPL_WARN_STACKLEVEL = 4
 
 #: 一条越域告警最多带几条实例。910 行的错位页能产出上千条理由，全塞进 wire 等于
@@ -97,18 +98,39 @@ _TPL_WARN_STACKLEVEL = 4
 _DOMAIN_CAVEAT_SAMPLES = 3
 
 
-def _op_req(cmd: int, body: bytes, **kw: Any) -> tuple[str, int, bytes, dict[str, Any]]:
+def _op_req(cmd: int, body: bytes, **kw: Any) -> _ReqOp:
     """op：发送单命令帧（sync ``self._req`` / async ``await self._req``）。"""
-    return ("req", cmd, body, kw)
+    return _ReqOp(cmd=cmd, body=body, kwargs=kw)
 
 
-def _op_call(name: str, *args: Any, **kwargs: Any) -> tuple[str, str, tuple, dict]:
+def _op_call(name: str, *args: Any, **kwargs: Any) -> _CallOp:
     """op：调用本客户端另一方法（sync 直呼 / async ``await``），保持
     monkeypatch 可见性与拆分前一致。"""
-    return ("call", name, args, kwargs)
+    return _CallOp(name=name, args=args, kwargs=kwargs)
 
 
-def _forward_decode_caveats(result: ParseResult, label: str) -> ParseResult:
+@dataclass(frozen=True, slots=True)
+class _ReqOp:
+    """模板挂起的一跳传输请求；密封形状取代旧的裸 tuple（W6/D1-A）。"""
+
+    cmd: int
+    body: bytes
+    kwargs: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class _CallOp:
+    """模板挂起的一次同客户端方法调用（sync 直呼 / async ``await``）。"""
+
+    name: str
+    args: tuple[Any, ...] = ()
+    kwargs: dict[str, Any] = field(default_factory=dict)
+
+
+_TrampolineOp = _ReqOp | _CallOp
+
+
+def _forward_decode_caveats(result: ParseResult, label: str, *, stackdepth: int) -> ParseResult:
     """把"这一页数据有问题"的判断接进结果侧的告警通道——唯一的那个转发口。
 
     两路判断都从这里过，因为它们在 wire 上是同一个缺陷的两半：
@@ -124,7 +146,7 @@ def _forward_decode_caveats(result: ParseResult, label: str) -> ParseResult:
         record_warning(
             WarningCode.DECODE_CAVEAT,
             f"{label}：{caveat}",
-            stacklevel=_caller_stacklevel(),
+            stacklevel=stackdepth,
         )
     offenders = 0
     samples: list[str] = []
@@ -139,27 +161,17 @@ def _forward_decode_caveats(result: ParseResult, label: str) -> ParseResult:
             f"{label}：{offenders} 行的字段值落在库自己声明的取值域之外"
             f"（例：{'；'.join(samples)}）——这些字段不可当作可信输入；对记录布局尚未"
             "由真机 golden 锁定的命令（见命令账本的 tier/verified），这正是错位的形状",
-            stacklevel=_caller_stacklevel(),
+            stacklevel=stackdepth,
         )
     return result
 
 
-def _caller_stacklevel() -> int:
-    """取"离开 atst 向上的第一帧"在 ``record_warning`` 语义下的 stacklevel。
-
-    模板之间用 ``_op_call`` 互相调用，一次公共 API 可以嵌套好几层 trampoline
-    （实测 ``block_list`` → ``request`` → ``request_result`` 三跳）。固定常量只对
-    单跳成立，多跳会把告警的归属行留在库里——归属错位的告警等于把缺陷指给一个
-    没做错的人，所以这里按当前调用栈实测，而不是猜一个数。
-    """
-    frame = sys._getframe(1)  # 调用方：_forward_decode_caveats
-    depth = 0
-    while frame.f_globals.get("__name__", "").startswith("atst"):
-        depth += 1
-        if frame.f_back is None:
-            break
-        frame = frame.f_back
-    return depth + 1
+#: 单跳模板（public → ``_drive`` → ``_t_*`` → 转发口）在 ``record_warning`` 语义下
+#: 的栈深。嵌套一跳 ``_op_call`` 时，外层模板生成器处于挂起状态（不在栈上），只多出
+#: 「驱动器 + 公共方法」两帧；嵌套深度由 :attr:`_ClientMixin._drive_depth` 显式记账，
+#: 不再反查调用栈（W6/D1-A：告警归属改显式 ``stackdepth``）。
+_SINGLE_HOP_STACKDEPTH = 6
+_FRAMES_PER_NESTED_HOP = 2
 
 
 class _ClientMixin:
@@ -179,44 +191,65 @@ class _ClientMixin:
     last_errors: list[tuple[str, BaseException]]
     _req: Any
 
+    _drive_depth: int = 0
+
     # ------------------------------------------------------------------ #
     # trampoline 驱动器
     # ------------------------------------------------------------------ #
-    def _drive(self, gen: Any) -> Any:
-        """同步驱动：执行模板挂起的 op，直到模板 return。"""
-        try:
-            op = next(gen)
-            while True:
-                try:
-                    if op[0] == "req":
-                        out = self._req(op[1], op[2], **op[3])
-                    else:
-                        _, name, args, kwargs = op
-                        out = getattr(self, name)(*args, **kwargs)
-                except BaseException as exc:  # noqa: BLE001 - 原样在挂起点重入模板
-                    op = gen.throw(exc)
-                else:
-                    op = gen.send(out)
-        except StopIteration as stop:
-            return stop.value
+    def _forward(self, result: ParseResult, label: str) -> ParseResult:
+        """执行体重贴 :func:`_forward_decode_caveats` 的唯一入口：栈深显式记账。"""
+        return _forward_decode_caveats(
+            result,
+            label,
+            stackdepth=self._warning_stackdepth(),
+        )
 
-    async def _adrive(self, gen: Any) -> Any:
-        """异步驱动：逐条 ``await`` 模板挂起的 op（镜像 :meth:`_drive`）。"""
+    def _warning_stackdepth(self) -> int:
+        """``record_warning`` 语义下的调用方栈深（替代旧的运行期栈帧反查）。"""
+        nested = max(self._drive_depth - 1, 0)
+        return _SINGLE_HOP_STACKDEPTH + nested * _FRAMES_PER_NESTED_HOP
+
+    def _drive(self, gen: Generator[_TrampolineOp, Any, Any]) -> Any:
+        """同步驱动：执行模板挂起的 op，直到模板 return。"""
+        self._drive_depth = getattr(self, "_drive_depth", 0) + 1
         try:
-            op = next(gen)
-            while True:
-                try:
-                    if op[0] == "req":
-                        out = await self._req(op[1], op[2], **op[3])
+            try:
+                op = next(gen)
+                while True:
+                    try:
+                        if isinstance(op, _ReqOp):
+                            out = self._req(op.cmd, op.body, **op.kwargs)
+                        else:
+                            out = getattr(self, op.name)(*op.args, **op.kwargs)
+                    except BaseException as exc:  # noqa: BLE001 - 原样在挂起点重入模板
+                        op = gen.throw(exc)
                     else:
-                        _, name, args, kwargs = op
-                        out = await getattr(self, name)(*args, **kwargs)
-                except BaseException as exc:  # noqa: BLE001
-                    op = gen.throw(exc)
-                else:
-                    op = gen.send(out)
-        except StopIteration as stop:
-            return stop.value
+                        op = gen.send(out)
+            except StopIteration as stop:
+                return stop.value
+        finally:
+            self._drive_depth -= 1
+
+    async def _adrive(self, gen: Generator[_TrampolineOp, Any, Any]) -> Any:
+        """异步驱动：逐条 ``await`` 模板挂起的 op（镜像 :meth:`_drive`）。"""
+        self._drive_depth = getattr(self, "_drive_depth", 0) + 1
+        try:
+            try:
+                op = next(gen)
+                while True:
+                    try:
+                        if isinstance(op, _ReqOp):
+                            out = await self._req(op.cmd, op.body, **op.kwargs)
+                        else:
+                            out = await getattr(self, op.name)(*op.args, **op.kwargs)
+                    except BaseException as exc:  # noqa: BLE001
+                        op = gen.throw(exc)
+                    else:
+                        op = gen.send(out)
+            except StopIteration as stop:
+                return stop.value
+        finally:
+            self._drive_depth -= 1
 
     def _set_last_errors(self, errors: list[tuple[str, BaseException]]) -> None:
         """``last_errors`` 收尾钩子（sync：与并发路径互斥加锁，C3）。"""
@@ -295,7 +328,7 @@ class _ClientMixin:
             frame = yield _op_req(CMD["security_bars"], body, timeout=self.timeout)
             #: 逐页的解码判断（"声明 N 实收 M"）必须上 wire，转发口见
             #: :func:`_forward_decode_caveats`（F-51 的原始症状就长在这里）。
-            result = _forward_decode_caveats(
+            result = self._forward(
                 _client_pkg.dispatch(frame, category=category, family=self.family, index=index),
                 f"bars({symbol!r}) 分页解码",
             )
@@ -451,7 +484,7 @@ class _ClientMixin:
             except TdxError as exc:
                 errors.append((sym, exc))
                 continue
-            result = _forward_decode_caveats(
+            result = self._forward(
                 _client_pkg.dispatch(
                     frame, code=code, market=mkt, price_scale=100, family=self.family
                 ),
@@ -483,12 +516,12 @@ class _ClientMixin:
     # ------------------------------------------------------------------ #
     # 元数据类
     # ------------------------------------------------------------------ #
-    def _t_security_count(self, market: Any) -> int:  # type: ignore[misc]
+    def _t_security_count(self, market: Any) -> Generator[_TrampolineOp, Any, int]:
         """某市场的证券总数（命令 ``0x044E``）。"""
         market_id = _standard_market_id(market)
         body = struct.pack("<H", market_id) + b"\x00" * 4
         frame = yield _op_req(CMD["security_count"], body, timeout=self.timeout)
-        result = _forward_decode_caveats(
+        result = self._forward(
             _client_pkg.dispatch(frame, family=self.family),
             f"security_count(market={market_id}) {CMD['security_count']:#06x} 解码",
         )
@@ -496,7 +529,7 @@ class _ClientMixin:
             raise ParseError("0x044E 无解析结果", context={"market": market_id})
         return int(result.rows[0].get("count", 0))
 
-    def _t_capital_changes(self, symbol: str) -> list[CapitalChange]:  # type: ignore[misc]
+    def _t_capital_changes(self, symbol: str) -> Generator[_TrampolineOp, Any, list[CapitalChange]]:
         """除权除息 / 股本变迁（命令 ``0x000F``）。
 
         请求体（9 字节，✅ 2026-10-21 实测修正）::
@@ -530,13 +563,13 @@ class _ClientMixin:
         code6 = code.encode("ascii")[:6].ljust(6, b"\x00")
         body = struct.pack("<HB6s", 1, mkt, code6)
         frame = yield _op_req(CMD["capital_changes"], body, timeout=self.timeout)
-        result = _forward_decode_caveats(
+        result = self._forward(
             _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family),
             f"capital_changes({symbol!r}) {CMD['capital_changes']:#06x} 解码",
         )
         return [_row_to_capital(row) for row in result.rows]
 
-    def _t_finance_info(self, symbol: str) -> dict[str, Any]:  # type: ignore[misc]
+    def _t_finance_info(self, symbol: str) -> Generator[_TrampolineOp, Any, dict[str, Any]]:
         """财务基础信息（命令 ``0x0010``）。
 
         请求体（9 字节，✅ 2026-10-21 实测修正）::
@@ -566,7 +599,7 @@ class _ClientMixin:
         code6 = code.encode("ascii")[:6].ljust(6, b"\x00")
         body = struct.pack("<HB6s", 1, mkt, code6)
         frame = yield _op_req(CMD["finance_info"], body, timeout=self.timeout)
-        result = _forward_decode_caveats(
+        result = self._forward(
             _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family),
             f"finance_info({symbol!r}) {CMD['finance_info']:#06x} 解码",
         )
@@ -583,7 +616,7 @@ class _ClientMixin:
         out["values"] = values
         return out
 
-    def _t_minute_today(self, symbol: str) -> list[Any]:  # type:ignore[misc]
+    def _t_minute_today(self, symbol: str) -> Generator[_TrampolineOp, Any, list[Any]]:
         """当日分时数据（命令 ``0x0537``，✅ L1 / verified）。
 
         请求体（12 字节，✅ 双市场 golden 锁定）::
@@ -604,7 +637,7 @@ class _ClientMixin:
         code6 = code.encode("ascii")[:6].ljust(6, b"\x00")
         body = struct.pack("<H6sI", mkt, code6, 0)
         frame = yield _op_req(CMD["minute_today"], body, timeout=self.timeout)
-        result = _forward_decode_caveats(
+        result = self._forward(
             _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family),
             f"minute_today({symbol!r}) {CMD['minute_today']:#06x} 解码",
         )
@@ -642,7 +675,7 @@ class _ClientMixin:
         frame = yield _op_req(command, body, timeout=self.timeout)
         #: 这里是十几个公共方法（security_list / trade_today / block_* / goods_* /
         #: ex_* / f10 catalog …）共用的分派口：接一次，十几条面同时看得见解码判断。
-        return _forward_decode_caveats(
+        return self._forward(
             _client_pkg.dispatch(frame, family=self.family, **(dict(ctx) if ctx else {})),
             f"request({command:#06x}) 解码",
         )
@@ -721,7 +754,7 @@ class _ClientMixin:
         day = _require_yyyymmdd("date", date)
         body = code.encode("ascii")[:6].ljust(6, b"\x00") + struct.pack("<HI", mkt, day)
         frame = yield _op_req(CMD["minute_history"], body, timeout=self.timeout)
-        result = _forward_decode_caveats(
+        result = self._forward(
             _client_pkg.dispatch(frame, code=code, market=mkt, family=self.family),
             f"minute_history({symbol!r}, date={day}) {CMD['minute_history']:#06x} 解码",
         )
@@ -881,7 +914,7 @@ class _ClientMixin:
         # generic F10 request would silently discard the file chunk.  Parse it
         # through the canonical standard file-download parser for both clients.
         frame = yield _op_req(CMD["file_download"], body, timeout=self.timeout)
-        result = _forward_decode_caveats(
+        result = self._forward(
             _client_pkg.dispatch(frame, family=Family.STANDARD),
             f"file_download({code!r}, {filename!r}) {CMD['file_download']:#06x} 单包解码",
         )
@@ -935,7 +968,7 @@ class _ClientMixin:
                     mkt, code = split_symbol(sym)
                     body += struct.pack("<H", mkt) + code.encode("ascii")[:6].ljust(6, b"\x00")
                 frame = yield _op_req(CMD["quotes_snapshot"], body, timeout=self.timeout)
-                result = _forward_decode_caveats(
+                result = self._forward(
                     _client_pkg.dispatch(frame, family=self.family, price_scale=100),
                     f"quotes_snapshot {CMD['quotes_snapshot']:#06x} 解码",
                 )
@@ -1009,7 +1042,7 @@ class _ClientMixin:
             _bars_body(mkt, code, category, start, count),
             timeout=self.timeout,
         )
-        result = _forward_decode_caveats(
+        result = self._forward(
             _client_pkg.dispatch(frame, category=category, family=self.family),
             f"goods_bars({symbol!r}) {CMD['goods_bars']:#06x} 解码",
         )
@@ -1019,7 +1052,7 @@ class _ClientMixin:
         _require_output_format(as_format)
         mkt, code = split_symbol(symbol)
         frame = yield _op_req(CMD["goods_quote"], _quote_body(code, mkt), timeout=self.timeout)
-        result = _forward_decode_caveats(
+        result = self._forward(
             _client_pkg.dispatch(frame, code=code, market=mkt, price_scale=100, family=self.family),
             f"goods_quote({symbol!r}) {CMD['goods_quote']:#06x} 解码",
         )
@@ -1053,7 +1086,7 @@ class _ClientMixin:
             _bars_body(mkt, code, category, start, count),
             timeout=self.timeout,
         )
-        result = _forward_decode_caveats(
+        result = self._forward(
             _client_pkg.dispatch(frame, category=category, family=self.family),
             f"ex_bars({symbol!r}) {CMD['ex_instrument_bars']:#06x} 解码",
         )
@@ -1065,7 +1098,7 @@ class _ClientMixin:
         frame = yield _op_req(
             CMD["ex_instrument_quote"], _quote_body(code, mkt), timeout=self.timeout
         )
-        result = _forward_decode_caveats(
+        result = self._forward(
             _client_pkg.dispatch(frame, code=code, market=mkt, price_scale=100, family=self.family),
             f"ex_quote({symbol!r}) {CMD['ex_instrument_quote']:#06x} 解码",
         )
@@ -1107,7 +1140,7 @@ class _ClientMixin:
         frame = yield _op_req(
             CMD["mac_unified_quote"], _quote_body(code, mkt), timeout=self.timeout
         )
-        result = _forward_decode_caveats(
+        result = self._forward(
             _client_pkg.dispatch(frame, code=code, market=mkt, price_scale=100, family=self.family),
             f"mac_quote({symbol!r}) {CMD['mac_unified_quote']:#06x} 解码",
         )

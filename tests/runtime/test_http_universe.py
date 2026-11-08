@@ -28,7 +28,7 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from atst.client.api import Client  # noqa: E402
-from atst.integration.runtime_http import create_runtime_app  # noqa: E402
+from atst.server.runtime_http import create_runtime_app  # noqa: E402
 from atst.universe import ASSET_CLASSES  # noqa: E402
 from atst.universe._classes import NODE_TO_CLASSES, SINA_NODES  # noqa: E402
 

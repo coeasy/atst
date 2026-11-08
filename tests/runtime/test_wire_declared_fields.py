@@ -37,19 +37,19 @@ from typing import Any, get_args
 
 import pytest
 
-from atst.integration.mcp._common import ERR_INVALID_PARAMS
-from atst.integration.mcp._server import MCPServer
-from atst.integration.mcp._tools_spec import TOOLS
-from atst.integration.runtime_http import create_runtime_app
-from atst.integration.runtime_ws import RuntimeJsonRpcHandler
-from atst.integration.wire_fields import QUERY_BODY_FIELDS, WS_PARAMS_FIELDS
 from atst.query import QueryPlanner, QuerySpec
 from atst.result import Provenance, QueryResult
+from atst.server.mcp._common import ERR_INVALID_PARAMS
+from atst.server.mcp._server import MCPServer
+from atst.server.mcp._tools_spec import TOOLS
+from atst.server.runtime_http import create_runtime_app
+from atst.server.runtime_ws import RuntimeJsonRpcHandler
+from atst.server.wire_fields import QUERY_BODY_FIELDS, WS_PARAMS_FIELDS
 
 _ROOT = Path(__file__).resolve().parents[2]
 #: 本步的探针就是那个刚被删掉的旋钮：它在构造面已经会 ``TypeError``，wire 面必须同口径。
 UNKNOWN = "max_age"
-HTTP = "atst/integration/runtime_http.py"
+HTTP = "atst/server/runtime_http.py"
 
 
 def _tree_of(obj: Any) -> ast.Module:
@@ -227,7 +227,7 @@ def test_the_wire_field_lists_have_exactly_one_definition_site() -> None:
                 if isinstance(target, ast.Name) and target.id in owners:
                     owners[target.id].append(str(path.relative_to(_ROOT)))
     assert scanned >= 150, f"只扫到 {scanned} 个模块，判据自身失效"
-    expected = str(Path("atst") / "integration" / "wire_fields.py")
+    expected = str(Path("atst") / "server" / "wire_fields.py")
     copied = {name: sites for name, sites in owners.items() if sites != [expected]}
     assert copied == {}, f"这些名单出现了第二份定义点：{copied}"
 

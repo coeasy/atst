@@ -26,9 +26,9 @@ from .. import __version__
 from ..client import get_client
 from ..client.api import Client
 from ..errors import ValidationError
-from ..integration.serialization import jsonable, serialize_result
-from ..integration.wire_fields import reject_reserved_kwargs
 from ..runtime.orchestration import FallbackPolicy
+from ..server.serialization import jsonable, serialize_result
+from ..server.wire_fields import reject_reserved_kwargs
 from ._common import (
     _client_kwargs,
     _fmt,
@@ -348,10 +348,10 @@ def _cmd_serve(args: Any) -> int:
     """启动 HTTP 行情网关（``create_runtime_app`` 的那 10 支业务路由）。
 
     WebSocket JSON-RPC 不在这张面上：它由
-    :func:`atst.integration.runtime_ws_server.serve_runtime_ws` 单独托管。
+    :func:`atst.server.runtime_ws_server.serve_runtime_ws` 单独托管。
     ``--port 0`` 是合法值（OS 分配随机空闲端口），不得被 ``or 8000`` 短路。
     """
-    from ..integration.runtime_http import create_runtime_app
+    from ..server.runtime_http import create_runtime_app
 
     try:
         import uvicorn
@@ -474,7 +474,9 @@ class _ClientRows:
 
     def __getattr__(self, name: str) -> Any:
         def call(*args: Any, **kwargs: Any) -> Any:
-            result = getattr(self._client, name)(*args, **kwargs)
+            #: v2 起 ``Client`` 不再动态暴露 migrated capability（``dir(Client)``
+            #: 即真实 API 面），CLI 的 rows 适配器是唯一还按能力名转发的地方。
+            result = self._client.call(name, *args, **kwargs)
             return getattr(result, "data", result)
 
         call.__name__ = name

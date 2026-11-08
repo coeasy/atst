@@ -24,7 +24,7 @@
 添了两件此前没有的保险：
 
 1. **读取者白名单**：owner 名单里的 ``p`` 会同时命中别的类的 ``p.name``——实测
-   ``atst/trade/simulator.py`` 就给 `DataProfile.name` 记过一块不存在的水牌。于是只认
+   ``labs/trade/simulator.py`` 就给 `DataProfile.name` 记过一块不存在的水牌。于是只认
    白名单模块里的站点，而白名单每一条都必须在磁盘上存在：名单自身腐烂当场红。
 2. **``holders`` 持有点**：``self.profile.amount_unit`` 的链条塌到 ``self``，而
    ``self`` 按名单纪律不能进 owners——不补这一维就会把有人读的 `amount_unit` 量成孤儿。

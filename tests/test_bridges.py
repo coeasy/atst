@@ -240,8 +240,8 @@ class TestBridges:
         v16 收敛后不再逐能力开端点：长尾能力统一经 ``POST /v13/query/{capability}``
         寻址，端点数不随 capability 目录 1:1 膨胀。
         """
-        from atst.catalog.capability import MIGRATED_CAPABILITIES
-        from atst.integration.runtime_http import create_runtime_app
+        from atst.providers import MIGRATED_CAPABILITIES
+        from atst.server.runtime_http import create_runtime_app
 
         paths = {
             getattr(r, "path", "")
@@ -266,7 +266,7 @@ class TestBridges:
     # ---- 18: MCP 工具清单 ----
     def test_18_mcp_tools(self):
         """#18 MCP 工具清单：Tier-A 专用工具 + 通用 ``query_capability`` 入口。"""
-        from atst.integration.mcp import TOOLS, create_mcp_server
+        from atst.server.mcp import TOOLS, create_mcp_server
 
         names = {tool.name for tool in TOOLS}
         # v13 clean break：MCP 只暴露走 canonical Client runtime 的能力，
@@ -326,11 +326,11 @@ class TestBridges:
     # ---- 23: Web 7 Adapters ----
     def test_23_web_adapters(self):
         """#23 HTTP Web 源 7 Adapter 类存在。"""
-        from atst.web.boc.adapters import BocSource
-        from atst.web.eastmoney.adapters import EastmoneySource
-        from atst.web.jsl.adapters import JslSource
-        from atst.web.sina.adapters import SinaSource
-        from atst.web.tencent.adapters import HkSource, KlineSource, TencentSource
+        from atst.sources.boc.adapters import BocSource
+        from atst.sources.eastmoney.adapters import EastmoneySource
+        from atst.sources.jsl.adapters import JslSource
+        from atst.sources.sina.adapters import SinaSource
+        from atst.sources.tencent.adapters import HkSource, KlineSource, TencentSource
 
         adapters = [
             SinaSource,
@@ -348,7 +348,7 @@ class TestBridges:
     # ---- 24: normalize 模块 ----
     def test_24_normalize_module(self):
         """#24 normalize 模块存在。"""
-        from atst.web.normalize import (
+        from atst.sources.normalize import (
             normalize_amount,
             normalize_volume,
         )

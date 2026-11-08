@@ -85,7 +85,7 @@ print(result.meta.provider, result.meta.channel)
 ## 每源限流
 
 Web Provider 内置令牌桶限流（`atst/transport/ratelimit.py`，各源默认频率见
-`atst/web/base.py`），被反爬拦截（E7010）时该次尝试记为 `failed` 并继续下一个源。
+`atst/sources/base.py`），被反爬拦截（E7010）时该次尝试记为 `failed` 并继续下一个源。
 批量轮询建议自行控制节奏：
 
 ```python

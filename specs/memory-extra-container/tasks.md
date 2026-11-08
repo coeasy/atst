@@ -47,6 +47,19 @@
 - [x] 验证：`pytest tests/domain/test_models_extra_contract.py tests/sources tests/client tests/sink/test_local_day.py -q`（exit 0）。
 - [x] market KiB/条 2.201→1.378（对 baseline -41.7%），三项全部 ≥ -30%。
 
+## T8. 兼容层（见 spec D7）
+- [x] `Bar` / `Quote` 恢复 `@dataclass(init=False, eq=False, repr=False)` + 手写
+      `__slots__`（无 `__dict__`）；`is_dataclass` / `fields` / `asdict` 可用。
+- [x] `extra` 三态存储（`None` / 扁平 tuple / 物化 dict）+ property：
+      `isinstance(extra, dict)` 恒真；空态零 dict 分配，首次当 dict 用才物化。
+- [x] `to_dict` / `turnover_rate` 直读槽位，不因兼容层触发物化。
+- [x] `server/serialization.jsonable` 改为先判 `to_dict`，锁住扁平化出口。
+- [x] 百度适配器 `q.extra = {...}` → `q.extra.update({...})`。
+- [x] 测试：`TestDataclassCompat`（is_dataclass / fields 顺序 / asdict / 无 `__dict__`）、
+      `TestDictExtraMaterialization`（isinstance / 空态零分配 / 物化后与 dict 一致 / 重赋值）。
+- [x] 基准：`memory_after_compat.json`（1.383 / 0.250 / 0.336）、
+      `time_after_compat.json`（0.290 / 0.4174 / 0.0139）。
+
 ## T6. 文档与门禁
 - [x] `docs/`/`CHANGELOG` 无需同步（Unreleased 保持「暂无。」；`gen_docs --check` 通过）。
 - [x] `pytest -m "not network"`（exit 0，无 FAILED）

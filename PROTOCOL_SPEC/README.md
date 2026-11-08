@@ -86,7 +86,7 @@ PROTOCOL_SPEC/
 > 真机 golden 样本到位后逐个翻转 `stable` 并补 `golden_samples`。
 >
 > **TRADE 交易族**：帧布局为洁净室推断占位（**`status: draft`**），独立于
-> 行情族（8 字节帧头、价格以分、长度前缀 GBK 串），由 `atst/trade/`
+> 行情族（8 字节帧头、价格以分、长度前缀 GBK 串），由 `labs/trade/`
 > 模拟器回路验证；**红线**——绝不连接真实券商通道。真机抓包定标前
 > 不得将布局当作协议事实，相关命令也未登记入 `commands.py` 账本。
 

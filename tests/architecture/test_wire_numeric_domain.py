@@ -8,7 +8,7 @@ G34 有两半，这一份判据各钉一半：
     被兜底 ``except Exception`` 登记成 **E9000 内部错误**；MCP 那个已删除的整数钳位把坏值
     **静默换成**另一个数（``count="abc"``→320、``count=0``→1、``count=99999999``→夹到上限），
     于是工具自己的 ``inputSchema`` 成了一张没人按它行事的假告示。现在三面共用
-    :func:`atst.integration.wire_fields.as_request_int`，边界只有**声明**这一个来源。
+    :func:`atst.server.wire_fields.as_request_int`，边界只有**声明**这一个来源。
 
 (b) **谁付错数的代价**。最深的两道闸（``0xFFFF`` 单格上限与 ``start+count<=0x10000`` 分页
     地址空间）过去抛 :class:`~atst.errors.ParseError`，而它对外发布 **HTTP 502 +
@@ -33,21 +33,21 @@ from annotated_types import Ge, Le
 from atst.client import TdxClient
 from atst.error_envelope import to_error_envelope
 from atst.errors import ValidationError
-from atst.integration import wire_fields
-from atst.integration.mcp._server import MCPServer
-from atst.integration.mcp._tools_impl import _int_arg
-from atst.integration.mcp._tools_spec import _TOOLS_BY_NAME
-from atst.integration.runtime_ws import ERR_INTERNAL, ERR_INVALID_PARAMS, RuntimeJsonRpcHandler
 from atst.query import SPEC_INT_FIELDS, QuerySpec
+from atst.server import wire_fields
+from atst.server.mcp._server import MCPServer
+from atst.server.mcp._tools_impl import _int_arg
+from atst.server.mcp._tools_spec import _TOOLS_BY_NAME
+from atst.server.runtime_ws import ERR_INTERNAL, ERR_INVALID_PARAMS, RuntimeJsonRpcHandler
 
 ROOT = Path(__file__).resolve().parents[2]
 
 #: 三张服务面上把请求整数换算成内核参数的代码。第 24 轮之前的 ``int(params.get(...))``
 #: 与 MCP 的钳位都长在这些文件里。
 FACE_MODULES = (
-    "atst/integration/runtime_ws.py",
-    "atst/integration/runtime_http.py",
-    "atst/integration/mcp/_tools_impl.py",
+    "atst/server/runtime_ws.py",
+    "atst/server/runtime_http.py",
+    "atst/server/mcp/_tools_impl.py",
 )
 
 #: 每个"看起来像请求取值"的形状都算一次越权换算的嫌疑对象。
@@ -132,7 +132,7 @@ def _mcp_integer_props() -> dict[str, dict[str, dict[str, Any]]]:
 def _http_integer_query_params() -> list[tuple[str, str, int | None, int | None]]:
     """``(path, name, ge, le)``——分母是 FastAPI 路由自己的签名，不是文档抄件。"""
 
-    from atst.integration.runtime_http import create_runtime_app
+    from atst.server.runtime_http import create_runtime_app
 
     app = create_runtime_app(_client_stub())
     out: list[tuple[str, str, int | None, int | None]] = []
@@ -276,7 +276,7 @@ def test_http_declared_bounds_answer_422_before_any_handler_runs() -> None:
 
     from fastapi.testclient import TestClient
 
-    from atst.integration.runtime_http import create_runtime_app
+    from atst.server.runtime_http import create_runtime_app
 
     params = _http_integer_query_params()
     bounded = [row for row in params if row[2] is not None or row[3] is not None]

@@ -37,7 +37,7 @@ def _bars(days: list[str]) -> list[Bar]:
 
 def _run(monkeypatch: pytest.MonkeyPatch, rows: list[Bar], period: str = "day", **spec_kw):
     source = _StubSource(rows)
-    monkeypatch.setattr("atst.web.create_source", lambda *a, **k: source)
+    monkeypatch.setattr("atst.sources.create_source", lambda *a, **k: source)
     plan = QueryPlanner().compile(
         QuerySpec.build("bars", symbols="sh600519", provider="tencent", period=period, **spec_kw)
     )

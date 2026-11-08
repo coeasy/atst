@@ -58,7 +58,7 @@ ALLOW = ROOT / "scripts" / "_reach_allow.txt"
 #: 一条豁免记录至少要说清"谁消费它 + 为什么生产链路不 import 它"，短于此即视为无效理由。
 MIN_REASON_CHARS = 40
 
-#: 理由里"谁消费它"的可核验指针：形如 ``tests/trade/``、``docs/api/README.md``、
+#: 理由里"谁消费它"的可核验指针：形如 ``tests/labs/trade/``、``docs/api/README.md``、
 #: ``atst/profile/detect.py`` 的仓内路径。长度门槛只保证理由**像**一句话，
 #: 不保证它指向的东西还在——一条写着"tests/output/ 消费"而该目录已被改名的记录，
 #: 和没写理由等价（F-67 的同形教训：把已失效的证据读成绿，比缺证据更糟）。
@@ -91,7 +91,9 @@ def _consumer_pointers(reason: str) -> tuple[list[str], list[str]]:
 _SYMBOL_CLAIM = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)`")
 
 #: 全清单至少要点名这么多符号格，少了说明记号被人擦掉、判据已经失明。
-MIN_SYMBOL_CLAIMS = 30
+#: v2/W8 把交易模拟器整包移出 ``atst``（``labs/trade``，不再进入本审计的扫描根），
+#: 随之删掉 5 格 ``atst.trade.*`` 的符号声明；下限按剩余清单的真实格数同步。
+MIN_SYMBOL_CLAIMS = 25
 
 
 def _module_namespace(path: Path) -> set[str]:
@@ -152,7 +154,7 @@ def _claim_defects(
         claims = sorted(
             c
             for c in set(_SYMBOL_CLAIM.findall(records[module]))
-            # 反引号里的路径不是符号声明（`tests/trade/…py` 由指针那两格管）；
+            # 反引号里的路径不是符号声明（`tests/labs/trade/…py` 由指针那两格管）；
             # 带点号的格（`atst.profile.detect_profile`）是"别的模块的名字"，本格不判。
             if "/" not in c and "." not in c and not c.endswith((".py", ".md"))
         )
@@ -183,9 +185,9 @@ def _claim_defects(
 SEEDS = {
     "atst",
     "atst.cli",
-    "atst.integration.runtime_http",  # uvicorn 直挂 / atst serve
-    "atst.integration.runtime_ws_server",  # python -m atst.integration.runtime_ws_server
-    "atst.integration.mcp",  # python -m / stdio 客户端拉起
+    "atst.server.runtime_http",  # uvicorn 直挂 / atst serve
+    "atst.server.runtime_ws_server",  # python -m atst.server.runtime_ws_server
+    "atst.server.mcp",  # python -m / stdio 客户端拉起
 }
 
 
@@ -260,9 +262,9 @@ def _lazy_edges(init_path: Path, pkg: str) -> set[str]:
 
     两种写法都必须识别：``_LAZY = {...}``（Assign）与
     ``_LAZY: dict[str, str] = {...}``（AnnAssign）。只认前者会让根包与
-    ``atst.web`` 的惰性导出边整体消失，把纯惰性 façade 子模块误判成孤儿。
+    ``atst.sources`` 的惰性导出边整体消失，把纯惰性 façade 子模块误判成孤儿。
 
-    值可以是点号绝对路径（``"atst.batch"``、``("atst.web.session", "X")``），
+    值可以是点号绝对路径（``"atst.batch"``、``("atst.sources.session", "X")``），
     也可以是包内相对名（``"session"``，或带子包的 ``"jsl.adapters"``）；含 ``:``
     的 extras 目标取路径部分。
     """
@@ -371,7 +373,7 @@ def _entrypoints(modules: dict[str, Path]) -> set[str]:
 
     ``__main__.py`` 按**文件名**判定而不是抄一份模块名清单：``python -m <包>`` 找的就是
     这个文件名，写死的名单会在每加一个入口时静默漏掉它——第 23 轮给 MCP 面补
-    ``atst/integration/mcp/__main__.py`` 时，旧名单正会把新入口报成孤儿。
+    ``atst/server/mcp/__main__.py`` 时，旧名单正会把新入口报成孤儿。
     """
     named = {"atst.cli"}
     return {

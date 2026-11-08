@@ -205,8 +205,8 @@ def test_trade_plane_specs_are_audited_against_trade_anchors() -> None:
     for cmd in range(0x1002, 0x1010):  # 锚点表不得凭空多出无 spec 的命令号
         assert (cmd in _TRADE_IMPLEMENTATION) is False
     for const, codec in _TRADE_IMPLEMENTATION.values():
-        assert _attr_exists("atst.trade.constants", const)
-        assert _attr_exists("atst.trade.frames", codec)
+        assert _attr_exists("labs.trade.constants", const)
+        assert _attr_exists("labs.trade.frames", codec)
 
 
 def test_strict_still_demands_hundred_percent() -> None:

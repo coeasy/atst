@@ -17,7 +17,7 @@ def probe(name, fn):
 
 
 from atst import Client  # noqa: E402
-from atst.integration.runtime_http import create_runtime_app  # noqa: E402
+from atst.server.runtime_http import create_runtime_app  # noqa: E402
 
 client = Client(timeout=4)
 app = create_runtime_app(client)

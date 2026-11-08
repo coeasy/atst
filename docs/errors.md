@@ -88,22 +88,29 @@ CLI 每张面（序列化后是 `{"code", "message"}`），同时以 `UserWarnin
 | `bars_range_interior_empty` | `bars` 的日期区间落在取回 K 线**跨度的内部**（区间两侧都有 bar）却一根都没命中，且周期是粗周期（`week`/`month`/`season`/`year`）。这些周期的 bar 以「周期末交易日」为 `datetime`（未走完的周期取最新交易日），窗口落在周期内部时按日期裁剪必然为空——与 `bars_range_uncovered` 的分工是：那条管"页没取到区间之前"，这条管"取到了、区间被夹在两段之间却命中不到"。`day` 周期不走这条（窗口内部为空只可能是休市日）。修法是把区间对齐到周期边界或用 `day` 周期 | `atst/runtime/executor.py` |
 | `index_minute_volume_nominal` | 指数**分钟线**的成交量是服务端名义值（按名义口径等于成交额/100），不是真实成交股数。指数日线族的成交量按「手」下发、已由解析器折算成「股」；分钟族这个字段换算不出真实股数，于是原样返回并发这条告警——不伪造数值。指数要量请改用日线或换 Web 源 | `atst/protocol/parsers/_std7709_bars.py` |
 | `index_minute_volume_inconsistent` | 指数**分钟线**的成交量与服务端名义口径（= 成交额/100）差了一个数量级以上。2026-10 实测唯一偏离的形状是指数 `60min` 的当日首根（10:30）：服务端下发的 `volume` 比名义口径低约 97 倍，而同一时段由 `15min`/`30min` 聚合出的 `amount` 完全吻合；原始字节手工核对确认记录边界精确耗尽（解析器无错位），即这是服务端自己下发的不一致值。与 `index_minute_volume_nominal` 同时出发：那条说明"这个字段不是真实股数"，这条报告"这一页的值连服务端自己的名义口径都对不上" | `atst/protocol/parsers/_std7709_bars.py` |
-| `quotes_partial_failure` | 批量 `quotes` 只取回部分标的的行情：逐只失败被隔离，结果不完整。全部失败不走这条，而是抛 `AllHostsUnreachable` | `atst/runtime/executor.py` |
+| `quotes_partial_failure` | 批量 `quotes` 只取回部分标的的行情：逐只失败被隔离，结果不完整。全部失败不走这条，而是抛 `AllHostsUnreachable` | `atst/runtime/execute_channel.py` |
 | `decode_caveat` | 解码层对自己解出的这一页的判断：实收记录数少于声明数、字段布局哨兵异常、精确解析失败后降级为启发式 | `atst/client/_mixin.py` |
 | `field_out_of_domain` | 解出来的行里有字段落在库自己声明的取值域之外——`market` 既不是 TDX 二进制市场编号也不是 canonical token、`code` 不是非空可见 ASCII、日期字段不是 ISO 形状。与上一条的区别在发射者：`decode_caveat` 是解码层自认的瑕疵，这一条是出口处拿 `atst/domain/integrity.py` 的尺子重新量出来的。记录布局尚未经真机 golden 锁定的命令页内字节数对得上，解码层因此一个字都不记，值却已经错位。2026-10-21 起 0x0010/0x000F 的解析器还多一个发射点：**回声校验**——响应记录头（`market`+`code`）与请求上下文不符时当场留痕（旧错请求年代的形状正是 `market=48`/半个代码），而不是把对不上的记录静默交给调用方 | `atst/client/_mixin.py`、`atst/protocol/parsers/_std7709_bars.py` |
 | `security_list_empty_first_page` | `export_security_list` 首页即空响应，导出为空。空首页不代表该市场没有证券 | `atst/client/_mixin.py` |
 | `security_list_page_limit` | `export_security_list` 在 `max_pages` 内未取尽（最后一页仍是满页），结果可能截断 | `atst/client/_mixin.py` |
 | `file_download_short` | 分块文件下载累计字节数小于服务端报告的 `total_len` | `atst/client/_mixin.py` |
 | `adjust_prev_close_missing` | 复权事件缺前收盘价：每股现金红利被忽略，价格因子是按 1+S+R 算的近似值 | `atst/domain/adjust.py` |
-| `adjust_window_extend_failed` | 复权窗口向后延伸取数失败（已退回原窗口）：若最早事件早于窗口起点，早期因子的前收盘价取不到，后复权因子会随请求的 `count` 漂移 | `atst/runtime/executor.py` |
+| `adjust_window_extend_failed` | 复权窗口向后延伸取数失败（已退回原窗口）：若最早事件早于窗口起点，早期因子的前收盘价取不到，后复权因子会随请求的 `count` 漂移 | `atst/runtime/composed.py` |
 | `auto_provider_fallback` | `provider='auto'` 自动选源跨源出数：候选里排在前面的 Provider 失败后由后续候选接住（候选排序 = 能力面 + `routing.auto_providers` 偏好 + 健康反馈沉底）。结果带 `requested_provider='auto'` + `fallback` 的 Provenance——不是静默换源 | `atst/client/api.py` |
 | `calendar_year_uncovered` | 交易日历未覆盖所请求的年份：该年节假日按"无节假日"处理 | `atst/domain/calendar.py` |
-| `web_sina_pages_missing` | 新浪全市场分页在重试与补拉之后仍缺页：拿到的是缺页结果，不是全市场 | `atst/web/sina/adapters.py` |
-| `web_tencent_pages_missing` | 腾讯全市场**代码枚举**阶段某页失败即停：返回的是被截断的代码表，全市场不完整（与 `web_tencent_batch_failed` 分属枚举 / 批量两个阶段） | `atst/web/tencent/adapters.py` |
-| `web_tencent_batch_failed` | 腾讯全市场单批重试后仍失败：结果不完整，缺的那批不会以空行占位 | `atst/web/tencent/adapters.py` |
-| `web_tencent_amount_all_zero` | 腾讯 K 线整批 `amount` 恒为 0（该源本周期不返回成交额字段），该字段不可用于计算 | `atst/web/_paginate.py` |
-| `web_eastmoney_page_limit` | 东财报表在 `max_pages` 内未取尽（最后一页仍满页），结果可能截断——含复权事件分页触顶 | `atst/web/corporate.py`、`atst/runtime/executor.py`、`atst/web/_session_gaps.py` |
-| `web_fund_sort_column_undeclared` | 基金排行请求的 `sort_column` 不在本包声明的常用列词表 `SORT_COLUMNS` 里：请求原样发出，服务端可能按自己的默认列返回 | `atst/web/fund_rank.py` |
+| `calendar_online_fallback` | 在线交易日历校准失败（无网 / 上游异常），已回落到手动覆盖或内置表；结果行的 `freshness` 标记说明实际来源 | `atst/sources/_session_research.py` |
+| `web_sina_pages_missing` | 新浪全市场分页在重试与补拉之后仍缺页：拿到的是缺页结果，不是全市场 | `atst/sources/sina/adapters.py` |
+| `web_sina_page_size_clamped` | 新浪全市场 `page_size` 超出服务端单页上限 100（`num` 超 100 只回 100 行且不报错），已在调用侧钳制；结果仍按页聚合，但调用方应知道请求被改写 | `atst/sources/sina/adapters.py` |
+| `web_sina_market_field_missing` | 新浪全市场某页记录缺关键字段：缺 `symbol` 的行被丢弃，缺价量字段的行按 0 返回——结果不完整 | `atst/sources/sina/adapters.py` |
+| `web_sina_page_limit` | 新浪全市场在 `max_pages` 内未取尽：总数已知时给出确定结论（写明缺多少条）；计数不可用时退化为"最后一页仍为满页"的推断式告警 | `atst/sources/sina/adapters.py` |
+| `web_sina_count_unavailable` | 新浪全市场前置计数接口 `getHQNodeStockCount` 不可用（失败/非数字/结构异常）：已降级为分页探测，空结果无法区分"节点无标的"与"上游异常"，页数也无法由总数推导；能力本身不失败 | `atst/sources/sina/adapters.py` |
+| `web_sina_node_empty` | 新浪全市场节点确实没有标的（计数返回 0，或计数与首页同时为空数组，如 `bjs`）：这是可解释的空结果，不是错误，也不与上游异常同形 | `atst/sources/sina/adapters.py` |
+| `web_sina_market_count_mismatch` | 新浪全市场实际取到的条数与计数接口给出的总数不符（服务端少给或分页中途截断）：结果不完整，且能算出缺多少条 | `atst/sources/sina/adapters.py` |
+| `web_tencent_pages_missing` | 腾讯全市场**代码枚举**阶段某页失败即停：返回的是被截断的代码表，全市场不完整（与 `web_tencent_batch_failed` 分属枚举 / 批量两个阶段） | `atst/sources/tencent/adapters.py` |
+| `web_tencent_batch_failed` | 腾讯全市场单批重试后仍失败：结果不完整，缺的那批不会以空行占位 | `atst/sources/tencent/adapters.py` |
+| `web_tencent_amount_all_zero` | 腾讯 K 线整批 `amount` 恒为 0（该源本周期不返回成交额字段），该字段不可用于计算 | `atst/sources/_paginate.py` |
+| `web_eastmoney_page_limit` | 东财报表在 `max_pages` 内未取尽（最后一页仍满页），结果可能截断——含复权事件分页触顶 | `atst/sources/_corporate_financial.py`、`atst/runtime/composed.py`、`atst/sources/_session_research.py` |
+| `web_fund_sort_column_undeclared` | 基金排行请求的 `sort_column` 不在本包声明的常用列词表 `SORT_COLUMNS` 里：请求原样发出，服务端可能按自己的默认列返回 | `atst/sources/fund_rank.py` |
 | `currentness_unproven` | 声明的 `currentness` 要求当期数据，而本次 channel 给不出可判据的证据（本地文件）；`strict=True` 时它不是告警而是失败 | `atst/runtime/freshness.py` |
 
 ## 二、每个异常都带 RetryAdvice
@@ -121,7 +128,7 @@ CLI 每张面（序列化后是 `{"code", "message"}`），同时以 `UserWarnin
 
 `backoff` 是"回到刚失败过的那台主站"的退避基准：换到一台没试过的机器时，上一轮的
 退避不再花调用方时间。上限是 `atst/transport/pool.py::MAX_RETRY_BACKOFF_SECONDS`，与
-web 面的 `atst/web/_base_retry.py::MAX_BACKOFF_SECONDS` 同值（8 秒）。
+web 面的 `atst/sources/_base_retry.py::MAX_BACKOFF_SECONDS` 同值（8 秒）。
 
 表里没有 `max_retries` 字段：连接池的尝试次数来自 `[core] max_retries`
 （`ConnectionPool.max_retries`）与主站数量。`RetryAdvice` 六个字段、`to_dict()` 六个
@@ -179,13 +186,13 @@ class MyDomainError(TdxError):
   （`token`/`cookie`/`secret` 一类键不进正文，新增诊断字段默认可见）；并且 fail-closed：
   `fallback_allowed` 与 `provider_switch_allowed` 对外恒为 `false`。`error` 键是 `type` 的
   序列化别名。
-- **HTTP 面**（`atst/integration/runtime_http.py`）响应状态取 `envelope.http_status`
+- **HTTP 面**（`atst/server/runtime_http.py`）响应状态取 `envelope.http_status`
   （数值由异常类自带的 `http_status` 声明，经 `http_status_for()` 读出——注意它吃的是
   **异常实例**，喂 code 字符串会静默落到 500 默认值），响应体固定为 `{"error": <envelope>}`；
   框架自身的 4xx 也换成本信封、只保留框架状态码。
 - **WS 与 MCP 两面的人读位置不对称（实测）**：两面都把信封挂在 JSON-RPC `error.data`，但
-  `atst/integration/runtime_ws.py` 的 `error.message` 是通用 RPC 文案（理由句在
-  `data.message`），而 `atst/integration/mcp/_server.py` 把 `envelope.message` 直接平铺进
+  `atst/server/runtime_ws.py` 的 `error.message` 是通用 RPC 文案（理由句在
+  `data.message`），而 `atst/server/mcp/_server.py` 把 `envelope.message` 直接平铺进
   `error.message`。写客户端时别照抄另一面的读法。WS 面**连协议层失败也挂同一个信封**：
   解析失败 / 非法请求 / 未知方法这三条（裸 RPC code `-32700`/`-32600`/`-32601`）都由
   `RuntimeJsonRpcHandler._protocol_error` 统一补上信封，

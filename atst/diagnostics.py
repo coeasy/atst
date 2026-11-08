@@ -94,8 +94,27 @@ class WarningCode(str, Enum):
     ADJUST_WINDOW_EXTEND_FAILED = "adjust_window_extend_failed"
     #: 交易日历未覆盖该年：节假日按无节假日处理。
     CALENDAR_YEAR_UNCOVERED = "calendar_year_uncovered"
+    #: 在线交易日历校准失败（无网 / 上游异常），已回落到手动覆盖或内置表。
+    #: 回落本身是明确的降级，不是静默换源：结果行带 ``freshness`` 标记。
+    CALENDAR_ONLINE_FALLBACK = "calendar_online_fallback"
     #: 新浪全市场分页重试后仍缺页。
     WEB_SINA_PAGES_MISSING = "web_sina_pages_missing"
+    #: 新浪全市场 ``page_size`` 超出单页上限（实测 ``num`` 超 100 只回 100 行）而被钳制。
+    WEB_SINA_PAGE_SIZE_CLAMPED = "web_sina_page_size_clamped"
+    #: 新浪全市场某页记录缺关键字段：缺 ``symbol`` 的行被丢弃，缺价量字段的行按 0
+    #: 返回——结果不完整，调用方必须知道。
+    WEB_SINA_MARKET_FIELD_MISSING = "web_sina_market_field_missing"
+    #: 新浪全市场在 ``max_pages`` 内未取尽（最后一页仍为满页）。
+    WEB_SINA_PAGE_LIMIT = "web_sina_page_limit"
+    #: 新浪全市场前置计数接口（``getHQNodeStockCount``）不可用（失败 / 非数字 /
+    #: 结构异常），已降级为分页探测：空结果无法区分"节点无标的"与"上游异常"，
+    #: 页数也无法由总数推导。
+    WEB_SINA_COUNT_UNAVAILABLE = "web_sina_count_unavailable"
+    #: 新浪全市场节点确实没有标的（计数返回 0，或计数与首页同时为空数组）。
+    #: 与上游异常回空不同形：这是**可解释的空**，不是错误。
+    WEB_SINA_NODE_EMPTY = "web_sina_node_empty"
+    #: 新浪全市场实际取到的条数与计数接口给出的总数不符（缺条 / 服务端少给）。
+    WEB_SINA_MARKET_COUNT_MISMATCH = "web_sina_market_count_mismatch"
     #: 腾讯全市场**代码枚举**阶段某页失败即停：返回的是被截断的代码表，全市场不完整。
     #: 与 ``WEB_TENCENT_BATCH_FAILED`` 的分工是阶段不同——这条管"枚举出了多少只"，
     #: 那条管"枚举到的这批行情取回来没有"。

@@ -129,7 +129,7 @@ def _require_int(value: Any, name: str) -> int:
     :class:`int`，否则当场 :class:`ValidationError`（E1010 / 422 / -32602）。
 
     这里**不**做字符串转换：三张服务面已在各自的入口用
-    :func:`atst.integration.wire_fields.as_request_int` 完成传输形状的规整，库面调用方
+    :func:`atst.server.wire_fields.as_request_int` 完成传输形状的规整，库面调用方
     则应当直接传整数。绑定处替人猜一次，就多一处"看起来生效"的口径分歧。
     """
     if isinstance(value, bool) or not isinstance(value, int):
@@ -190,6 +190,11 @@ def _reject_core_channel_mismatch(
             "channel_switch_allowed": False,
         },
     )
+
+
+#: ``options_json`` 解码复用表：键是规范化 JSON 串（同一 spec 在 compile 内反复读取）。
+_OPTIONS_CACHE: dict[str, dict[str, Any]] = {}
+_OPTIONS_CACHE_LIMIT = 2048
 
 
 def _canonical_options(options: Mapping[str, Any] | None) -> str:
@@ -369,8 +374,16 @@ class QuerySpec:
 
     @property
     def options(self) -> dict[str, Any]:
-        value = json.loads(self.options_json or "{}")
-        return dict(value) if isinstance(value, dict) else {}
+        # 同一份 ``options_json`` 在 compile 内会被读 5~6 次（validate / fingerprint /
+        # 归一化回写），批量取数时同一 spec 也会反复编译；解析结果按 JSON 串复用，
+        # 对外仍返回新 dict，调用方照旧可以自由改写。复用表有上界，畸形输入不会撑爆内存。
+        cached = _OPTIONS_CACHE.get(self.options_json)
+        if cached is None:
+            value = json.loads(self.options_json or "{}")
+            cached = value if isinstance(value, dict) else {}
+            if len(_OPTIONS_CACHE) < _OPTIONS_CACHE_LIMIT:
+                _OPTIONS_CACHE[self.options_json] = cached
+        return dict(cached)
 
     def normalized(self, *, default_provider: str | None = None) -> QuerySpec:
         cap = _norm_text(self.capability)
@@ -457,7 +470,7 @@ class QuerySpec:
         # provider comes from the capability catalog.  Core capabilities
         # keep their original default (e.g. "tdx" for quotes/bars/minute).
         if _translated:
-            from .catalog.capability import default_provider_for as _dpf
+            from .providers import default_provider_for as _dpf
 
             try:
                 fb_default = _dpf(cap)
@@ -742,7 +755,8 @@ class QueryPlanner:
         :meth:`~atst.runtime.executor.DirectProviderExecutor._migrated_capability`.
         """
 
-        from .catalog.capability import binding_for, validate_call
+        from .providers import binding_for
+        from .runtime.capability_contract import validate_call
 
         options = spec.options
         if "args" not in options and "kwargs" not in options:

@@ -31,21 +31,20 @@
     profile        数据规格探测（帧 / 文件双探测器 + presets）
     sink           LocalDaySink：写回 vipdoc .day 二进制
     domain         数据模型 / 复权 / 日历 / 时区
-    providers      Provider / Channel / Capability 单一事实源
-    catalog        能力目录 + 规划期签名校验 + channel→adapter 绑定（无执行）
+    providers      Provider/Channel/Capability 唯一声明处（注册表 + 显式绑定）
     query          QuerySpec / QueryPlan / QueryFingerprint
     result         QueryResult / Provenance
     runtime        零缓存 provider-first 执行内核（UnifiedRuntime，唯一内核）
     streaming      流式订阅 + 显式生命周期状态机
-    web            HTTP Web 行情源（新浪/腾讯/东财/集思录/港股/中行）
+    sources        HTTP Web 行情源（新浪/腾讯/东财/集思录/港股/中行）
+    server         HTTP / WS / MCP 服务面（全部 Client-backed）
     output         DataFrame / Parquet / DuckDB 输出层
     observability  Prometheus 风格指标 / 埋点（零硬依赖）
     feedback       错误 / 用量上报 + 使用统计
     universe       标的清单（按类别取全部标的：代码表 / 新浪节点 / tdx 段表三级降级）
     tools          协议账本审计 / 代码生成 / 原创性检查
-    trade          交易协议模拟器（实验性：纯内存模拟，不接入内核）
     cli            命令行面（32 子命令，只翻译不执行）
-    integration    HTTP / WS / MCP 服务面（只翻译不执行）
+    server         HTTP / WS / MCP 服务面（只翻译不执行）
 
 Quick start（离线，读取本地通达信数据）::
 
@@ -60,7 +59,7 @@ Quick start（在线，TDX 协议）::
 
 Quick start（HTTP Web 源，无需 TDX 主站）::
 
-    from atst.web import get_quotes
+    from atst.sources import get_quotes
     quotes = get_quotes(["sh600519", "sz000001"], source="tencent")
 """
 

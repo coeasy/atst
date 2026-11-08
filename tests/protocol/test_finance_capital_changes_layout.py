@@ -73,10 +73,10 @@ def _drive_request(monkeypatch: pytest.MonkeyPatch, method: str, symbol: str) ->
     client = TdxClient(hosts=[["1.2.3.4", 7709]])
     gen = getattr(client, method)(symbol)
     op = next(gen)
-    assert op[0] == "req", f"{method} 第一个 op 不是请求：{op[0]!r}"
+    assert op.cmd, f"{method} 第一个 op 不是请求：{op!r}"
     with contextlib.suppress(StopIteration):
         gen.send(object())
-    return op[1], op[2]
+    return op.cmd, op.body
 
 
 class TestFinanceRequestShape:

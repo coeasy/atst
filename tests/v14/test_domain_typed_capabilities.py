@@ -13,9 +13,9 @@ from typing import Any
 
 import pytest
 
-from atst.catalog.capability import default_provider_for
 from atst.client.api import Client
 from atst.errors import ValidationError
+from atst.providers import default_provider_for
 from atst.query import QueryPlan, QueryPlanner, QuerySpec
 from atst.result import Provenance, QueryResult
 from atst.runtime import UnifiedRuntime

@@ -255,14 +255,14 @@ class _FakeSinaSource:
 
 @pytest.fixture()
 def fake_sina(monkeypatch: pytest.MonkeyPatch) -> _FakeSinaSource:
-    """把 atst.web.create_source 换成假源——``hs_a`` 包里混着 bj*。"""
+    """把 atst.sources.create_source 换成假源——``hs_a`` 包里混着 bj*。"""
     payload = [
         _Quote("sh600000", "浦发银行"),
         _Quote("bj920000", "XD安徽凤"),
         _Quote("sz300750", "宁德时代"),
     ]
     source = _FakeSinaSource(payload)
-    monkeypatch.setattr("atst.web.create_source", lambda *_: source, raising=True)
+    monkeypatch.setattr("atst.sources.create_source", lambda *_: source, raising=True)
     return source
 
 
@@ -285,7 +285,7 @@ def test_from_sina_multi_splits_the_shared_node_into_two_classes(
 def test_from_sina_multi_dedups(monkeypatch: pytest.MonkeyPatch) -> None:
     """同一个代码被两个类别同时命中时只留一条。"""
     monkeypatch.setattr(
-        "atst.web.create_source", lambda *_: _FakeSinaSource([_Quote("sh600000", "x")])
+        "atst.sources.create_source", lambda *_: _FakeSinaSource([_Quote("sh600000", "x")])
     )
     assert [item.code for item in from_sina_multi(("stock", "bse"))] == ["sh600000"]
 
@@ -456,7 +456,7 @@ def test_from_sina_multi_reuses_one_source_across_nodes(monkeypatch: pytest.Monk
         created.append(src)
         return src
 
-    monkeypatch.setattr("atst.web.create_source", _factory)
+    monkeypatch.setattr("atst.sources.create_source", _factory)
     rows = from_sina_multi(("stock", "bse", "bshare"))
     assert rows == []
     assert len(created) == 1, "按节点重建源会让同一进程里并存多个限流器"

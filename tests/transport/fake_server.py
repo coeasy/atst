@@ -90,6 +90,9 @@ class FakeTdxServer:
         self.close_on: set[int] = set()
         #: 正常响应后立即断连（制造「续帧中断」半包场景）
         self.close_after: set[int] = set()
+        #: 按命令号回放的 canned payload（端到端回放用）；未登记的命令仍走 Echo。
+        #: 帧头、seq 与长度由 server 负责，payload 由调用方按真实样本提供。
+        self.payloads: dict[int, bytes] = {}
         #: 置位后，心跳响应只回 16 字节头且 zip_size 为该值（不回 body）
         self.hb_zip_size: int | None = None
         self._accept = threading.Thread(target=self._accept_loop, daemon=True)
@@ -178,6 +181,9 @@ class FakeTdxServer:
                     continue
                 if method in self.delay:
                     time.sleep(self.delay[method])
+                if method in self.payloads:
+                    self._respond(sock, seq, method, self.payloads[method])
+                    continue
                 if method == MULTI_CMD:
                     count, record_size, chunk_size = struct.unpack("<III", body[:12])
                     self._respond_multi(sock, seq, count, record_size, chunk_size)

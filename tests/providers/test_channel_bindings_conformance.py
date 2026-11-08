@@ -4,27 +4,17 @@ import importlib
 
 import pytest
 
-from atst.catalog.provider_bindings import (
-    BaiduProviderAPI,
-    BocProviderAPI,
-    EastmoneyProviderAPI,
-    IwencaiProviderAPI,
-    JslProviderAPI,
-    SinaProviderAPI,
-    TencentProviderAPI,
-    resolve_channel_adapter,
-)
-from atst.errors import ValidationError
-from atst.providers import PROVIDERS
+import atst.providers as registry
+from atst.providers import PROVIDERS, resolve_channel_adapter
 
-WEB_PROVIDER_APIS = {
-    "tencent": TencentProviderAPI,
-    "sina": SinaProviderAPI,
-    "eastmoney": EastmoneyProviderAPI,
-    "baidu": BaiduProviderAPI,
-    "jsl": JslProviderAPI,
-    "boc": BocProviderAPI,
-    "iwencai": IwencaiProviderAPI,
+WEB_PROVIDER_MODULES = {
+    "tencent": registry.tencent,
+    "sina": registry.sina,
+    "eastmoney": registry.eastmoney,
+    "baidu": registry.baidu,
+    "jsl": registry.jsl,
+    "boc": registry.boc,
+    "iwencai": registry.iwencai,
 }
 
 
@@ -32,29 +22,29 @@ def _registry_channels(provider: str) -> set[str]:
     return {channel.id for channel in PROVIDERS.get(provider).channels}
 
 
-@pytest.mark.parametrize("provider,api_cls", WEB_PROVIDER_APIS.items())
-def test_channel_bindings_provider_id_matches_registry(provider: str, api_cls: type) -> None:
-    assert api_cls.provider_id == provider
+@pytest.mark.parametrize("provider,module", WEB_PROVIDER_MODULES.items())
+def test_channel_bindings_provider_id_matches_registry(provider: str, module) -> None:
+    assert module.SPEC.id == provider
     assert provider in PROVIDERS.ids()
 
 
-@pytest.mark.parametrize("provider,api_cls", WEB_PROVIDER_APIS.items())
-def test_all_registry_web_channels_have_channel_binding(provider: str, api_cls: type) -> None:
-    mapped = set(api_cls.CHANNELS) | set(api_cls.EXPLICIT_CHANNELS)
+@pytest.mark.parametrize("provider,module", WEB_PROVIDER_MODULES.items())
+def test_all_registry_web_channels_have_channel_binding(provider: str, module) -> None:
+    mapped = set(module.CHANNEL_ADAPTERS) | set(module.EXPLICIT_CHANNELS)
     assert mapped == _registry_channels(provider)
 
 
-@pytest.mark.parametrize("provider,api_cls", WEB_PROVIDER_APIS.items())
-def test_adapter_refs_import_without_instantiation(provider: str, api_cls: type) -> None:
-    for channel, (module_name, class_name) in api_cls.CHANNELS.items():
-        module = importlib.import_module(module_name)
-        adapter_cls = getattr(module, class_name)
+@pytest.mark.parametrize("provider,module", WEB_PROVIDER_MODULES.items())
+def test_adapter_refs_import_without_instantiation(provider: str, module) -> None:
+    for channel, (module_name, class_name) in module.CHANNEL_ADAPTERS.items():
+        loaded = importlib.import_module(module_name)
+        adapter_cls = getattr(loaded, class_name)
         assert isinstance(adapter_cls, type), (provider, channel, module_name, class_name)
 
 
 def test_jsl_etf_is_neither_a_registry_nor_a_bound_channel() -> None:
-    assert "etf" not in JslProviderAPI.CHANNELS
-    with pytest.raises(ValidationError) as caught:
+    assert "etf" not in registry.jsl.CHANNEL_ADAPTERS
+    with pytest.raises(Exception) as caught:
         resolve_channel_adapter("jsl", "etf")
     assert caught.value.context["provider"] == "jsl"
     assert caught.value.context["channel"] == "etf"

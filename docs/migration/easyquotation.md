@@ -1,6 +1,6 @@
 # 从 easyquotation 迁移
 
-> **垫片状态**：`atst/compat/` 兼容层、`atst.web.easyquotation.use()` 垫片、
+> **垫片状态**：`atst/compat/` 兼容层、`atst.sources.easyquotation.use()` 垫片、
 > `atst.facade.*` 门面均已物理删除，仓库里没有兼容别名。迁移请直接使用 `Client`
 > （唯一业务入口）或原生 Web 源，字段口径与 easyquotation 兼容（见下）。
 
@@ -26,7 +26,7 @@ print(out.result.meta.provider, [(a.provider, a.status) for a in out.attempts])
 ### Web 多源会话（`WebQuoteClient`）
 
 ```python
-from atst.web import WebQuoteClient
+from atst.sources import WebQuoteClient
 
 client = WebQuoteClient()
 quotes = client.quotes(["sh600519"])  # 东财/新浪/腾讯等多源互为备份
@@ -35,7 +35,7 @@ quotes = client.quotes(["sh600519"])  # 东财/新浪/腾讯等多源互为备�
 ### 单源直连（等价 easyquotation 的 use("sina")）
 
 ```python
-from atst.web import get_quotes, get_kline, create_source
+from atst.sources import get_quotes, get_kline, create_source
 
 quotes = get_quotes(["sh600519"], source="sina")  # 指定单源（sina|tencent|eastmoney|jsl|hk|boc）
 all_market = create_source("sina").fetch_all(node="hs_a")  # 新浪全市场

@@ -34,6 +34,7 @@ GATES_TO_CI_JOBS: dict[str, str] = {
     "benchmark-smoke": "benchmark-smoke",
     "interface-probe": "interface-surface",
     "audit-docs": "docs-links",
+    "docs-check": "docs-check",
 }
 
 #: workflow 里缩进两格的键就是作业键（步骤级键缩进更深，`on:`/`jobs:` 在零格）。

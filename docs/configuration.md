@@ -65,6 +65,7 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 | `timeout` | `5.0` | 0.1 – 300 | `DirectProviderExecutor` → `TdxClient` 请求超时（秒）。它是**一次读写的墙钟**，不是"两次收包之间的空档"：同步池与异步池在同一份声明上口径一致 |
 | `heartbeat_interval` | `30` | 0 – 3600（`0` = 不启心跳） | 心跳 + 空闲槽位回收那一条线程的节奏（秒）。同步 `ConnectionPool` 在构造器里武装；异步 `AsyncConnectionPool` 在第一次握住真 socket 时武装（`_get_conn_locked`），构造与 `open()` 都不武装 |
 | `max_retries` | `3` | 0 – 20 | **同一 Provider 内** host/endpoint 的重试预算，不是切换 Provider 的次数 |
+| `batch_workers` | `4` | 0 – 64（`0` = 串行） | `Client.quotes_batch` 的编排并行度；并行只发生在 Client 层，内核仍逐只串行、逐项 provenance |
 | `vipdoc_root` | `None` | 非空字符串或 `None` | `local_vipdoc` Provider 与 `adjusted_bars`/`sync_daily` 的本地数据根目录；缺失时相关 capability 直接抛 `ValidationError` |
 
 ### `[hosts]` — TDX 主站与连接槽位
@@ -119,7 +120,7 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 
 | 键 | 默认 | 读取方 / 效果 |
 |---|---|---|
-| `enabled_sources` | `["tencent", "sina", "eastmoney"]` | `WebQuoteClient` 缺省源顺序。每项须属于 `atst.web.sources.KNOWN_SOURCES` |
+| `enabled_sources` | `["tencent", "sina", "eastmoney"]` | `WebQuoteClient` 缺省源顺序。每项须属于 `atst.sources.sources.KNOWN_SOURCES` |
 | `timeout` | `5.0` | 0.5 – 120，HTTP 超时 |
 | `max_retries` | `2` | 0 – 10 |
 | `rate_limit` | `{}` | 按源名区分的 req/s；键须属于 `KNOWN_SOURCES`，值 1 – 1000；未列出的源沿用各适配器默认 |
@@ -208,7 +209,7 @@ auto_health_ttl = 90.0
 | `ATST_CONFIG_FILE` | `find_config_files` | 显式配置文件路径 |
 | `ATST_HOSTS` | `atst.transport.hosts` | 直接给主站列表（`host:port,host:port`） |
 | `ATST_FEEDBACK` / `ATST_FEEDBACK_ENDPOINT` / `ATST_FEEDBACK_STORE_DIR` | `atst.feedback` | 反馈数据的传输开关与落点 |
-| `ATST_WENCAI_COOKIE` | `atst.web.wencai` | i问财 `hexin-v` cookie（值写成 `v=<token>` 头）；本库不存储它 |
+| `ATST_WENCAI_COOKIE` | `atst.sources.wencai` | i问财 `hexin-v` cookie（值写成 `v=<token>` 头）；本库不存储它 |
 
 `ATST_` 前缀是**保留命名空间**：库内代码从环境读取的每一个非 schema 变量都必须登记在
 `atst/config/loader.py` 的 `_RUNTIME_ENV_KEYS`，否则用户一旦设置它，strict 扫描就把整条

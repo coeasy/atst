@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 
 from atst.errors import ValidationError
-from atst.integration.mcp._server import MCPServer
-from atst.integration.runtime_ws import RuntimeJsonRpcHandler
+from atst.server.mcp._server import MCPServer
+from atst.server.runtime_ws import RuntimeJsonRpcHandler
 
 
 class _FailingPlanner:

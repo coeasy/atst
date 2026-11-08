@@ -20,7 +20,7 @@
 | Prometheus 指标 | `pip install "atst[metrics]"` |
 | HTTP REST 网关 / WebSocket RPC | `pip install "atst[server]"` |
 | capture 工具链（时区 + zstd） | `pip install "atst[tools]"` |
-| MCP 工具服务 | 无需 extras：`atst/integration/mcp/` 是纯标准库的 JSON-RPC over stdio |
+| MCP 工具服务 | 无需 extras：`atst/server/mcp/` 是纯标准库的 JSON-RPC over stdio |
 | 全部 | `pip install "atst[all]"` |
 
 > **为什么 MCP 没有 extra**：全仓对 `mcp` / `pydantic` 两个第三方包的
@@ -46,7 +46,7 @@
   `RateLimitedLocal`
 - **不会**自动改走 HTTP Web 源：跨源的形状只有一种，调用方显式给
   `Client().quotes(symbols, policy=FallbackPolicy(providers=("tdx", "tencent")))`
-  （内核没有自动降级链；`atst.web` 便捷入口的按序尝试是 web 层自己的事，与内核无关）
+  （内核没有自动降级链；`atst.sources` 便捷入口的按序尝试是 web 层自己的事，与内核无关）
 - 降低请求频率，避免高峰期大批量拉取
 
 ### Q: 实时行情一次能查几只股票？
@@ -86,7 +86,7 @@
 
 ### Q: 成交量单位是什么？
 
-全局契约：**volume=股（shares）、amount=元（CNY）、price=元**。各 HTTP Web 源的原始口径（手/万元/百元）已由 `atst.web.normalize` 统一归一化。
+全局契约：**volume=股（shares）、amount=元（CNY）、price=元**。各 HTTP Web 源的原始口径（手/万元/百元）已由 `atst.sources.normalize` 统一归一化。
 
 ### Q: 时间戳是什么时区？
 
@@ -153,12 +153,12 @@ client = TdxClient()
 bars = client.bars("sh600036", period="day", count=100)
 
 # easyquotation 风格 → atst Web 源
-from atst.web import get_quotes
+from atst.sources import get_quotes
 
 quotes = get_quotes(["sh600519"], source="sina")
 ```
 
-> **垫片状态**：v1.0 时代的 `atst.compat.*` / `atst.web.easyquotation` 兼容垫片已随
+> **垫片状态**：v1.0 时代的 `atst.compat.*` / `atst.sources.easyquotation` 兼容垫片已随
 > v1.2.0 清理移除（与已删除的 `_async_bridge` 同类归并）。
 
 详见 [迁移指南](migration/README.md)。
@@ -192,7 +192,7 @@ docker run --rm atst atst --help
 # HTTP 行情网关（镜像的 CMD 是 --help，起服务要显式给命令）
 docker run -p 8000:8000 --rm atst atst serve --bind 0.0.0.0 --port 8000
 # 等价写法：把 app 直接交给 uvicorn（需 `pip install "atst[server]"`）
-docker run -p 8000:8000 --rm atst python -m uvicorn atst.integration.runtime_http:create_runtime_app --factory --host 0.0.0.0
+docker run -p 8000:8000 --rm atst python -m uvicorn atst.server.runtime_http:create_runtime_app --factory --host 0.0.0.0
 ```
 
 ### Q: 如何监控？

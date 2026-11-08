@@ -1,6 +1,6 @@
 # atst 快速开始
 
-本文对应当前 `1.6.1`（已打 tag `v1.6.1` 并发布）；GitHub 最新已发布 Release 为 [`v1.6.1`](https://github.com/coeasy/atst/releases/tag/v1.6.1)，v1.4.3 / v1.5.0 / v1.5.1 / v1.5.2 / v1.5.3 / v1.5.4 为未打 tag 的源码候选。atst **不在 PyPI 上**；要求 Python 3.10 或更高版本。
+本文对应当前 `2.0.0`（v2 架构重写，源码候选，未打 tag）；上一已发布 GitHub Release 为 [`v1.6.1`](https://github.com/coeasy/atst/releases/tag/v1.6.1)。atst **不在 PyPI 上**；要求 Python 3.10 或更高版本。v1→v2 的导入与路径迁移见 [迁移指南](migration/v2.md)。
 
 ## 安装
 

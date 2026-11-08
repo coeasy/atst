@@ -71,9 +71,9 @@ def test_deleted_module_files_are_gone_from_disk(module_name: str) -> None:
 #: F-11 是一次纯改名（clean-break，不留别名）：`facade` 命名指向的 ``UnifiedQuoteAPI``
 #: 门面已随 v16 Phase 2 删除，改名后任何旧路径复现都意味着有人重新引入了那层语义。
 WEB_MODULE_RENAMES: tuple[tuple[str, str], ...] = (
-    ("atst.web.facade", "atst.web.session"),
+    ("atst.sources.facade", "atst.sources.session"),
     *(
-        (f"atst.web._facade_mixin_{domain}", f"atst.web._session_{domain}")
+        (f"atst.sources._facade_mixin_{domain}", f"atst.sources._session_{domain}")
         for domain in (
             "astock",
             "baidu",
@@ -83,9 +83,10 @@ WEB_MODULE_RENAMES: tuple[tuple[str, str], ...] = (
             "info",
             "market",
             "news",
-            "p1",
-            "p2",
-            "p3",
+            "esg_chip",
+            "sector_macro",
+            "holders",
+            "research",
         )
     ),
 )
@@ -103,7 +104,7 @@ def test_renamed_web_modules_point_at_the_session_layout(old_module: str, new_mo
         else:
             assert path.exists(), f"缺少 {path}"
     module = importlib.import_module(new_module)
-    if new_module == "atst.web.session":
+    if new_module == "atst.sources.session":
         # 只有组合模块承载 WebQuoteSession；`_session_*` 是按域的方法分组。
         assert hasattr(module, "WebQuoteSession")
 
@@ -163,7 +164,7 @@ def test_kernel_is_the_only_execution_seam_of_client() -> None:
 #: 这类 Provider 名一旦出现在这两个函数体内，就说明"谁能被派发到"这条判断开始
 #: 在第二个地方被抄写——注册表与 canonical 表才是唯一事实源。
 _AUDITED_FUNCTIONS = ("_is_unified_reachable", "audit_direct_bindings")
-_EXECUTOR_SOURCE = ROOT / "atst" / "runtime" / "executor.py"
+_EXECUTOR_SOURCE = ROOT / "atst" / "runtime" / "bindings.py"
 
 
 def _string_constants_in(function_name: str) -> set[str]:

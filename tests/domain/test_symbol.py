@@ -75,7 +75,7 @@ class TestUsMarket:
         assert s.canonical == "usBRK.B"
 
     def test_us_via_tencent_helper(self):
-        from atst.web.base import to_tencent_symbol
+        from atst.sources.base import to_tencent_symbol
 
         assert to_tencent_symbol("usAAPL") == "usAAPL"
         assert to_tencent_symbol("hk00700") == "hk00700"

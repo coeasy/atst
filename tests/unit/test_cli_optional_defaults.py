@@ -44,13 +44,10 @@ class _RecordingApi:
     def close(self) -> None:
         return None
 
-    def adjusted_bars(self, symbol: str, **kw: Any) -> list[dict[str, Any]]:
-        type(self).calls.append(kw)
-        return [{"symbol": symbol}]
-
-    def daily_enriched(self, symbol: str, **kw: Any) -> list[dict[str, Any]]:
-        type(self).calls.append(kw)
-        return [{"symbol": symbol}]
+    def call(self, capability: str, *args: Any, **kw: Any) -> list[dict[str, Any]]:
+        #: v2 起 ``Client`` 不再按能力名动态暴露方法，rows 适配器统一走 ``call``。
+        type(self).calls.append({"capability": capability, **kw})
+        return [{"symbol": args[0] if args else kw.get("symbol")}]
 
 
 @pytest.fixture()

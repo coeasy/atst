@@ -69,7 +69,7 @@ def test_bridge_audit_installs_the_optional_face_it_exercises() -> None:
     """贯通审计必须装上它要验收的可选面。
 
     ``tests/test_bridges.py::test_17_http_server`` 验收
-    ``atst.integration.runtime_http.create_runtime_app()`` 的路由表，而 ``fastapi`` 是
+    ``atst.server.runtime_http.create_runtime_app()`` 的路由表，而 ``fastapi`` 是
     **惰性**导入的可选依赖（住在 ``server`` extra 里）：只装 ``.[dev]`` 时该用例以
     ``ModuleNotFoundError -> RuntimeError`` 直接失败。2026-09-28 的 CI 首跑就是这么红的
     （此前每一次运行都被 GitHub Actions 计费拦在"job 未启动"，这一格从未被真跑到）。

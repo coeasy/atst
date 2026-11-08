@@ -70,7 +70,7 @@ def test_runtime_http_validation_and_native_failures_use_envelopes() -> None:
     pytest.importorskip("httpx")
     from fastapi.testclient import TestClient
 
-    from atst.integration.runtime_http import create_runtime_app
+    from atst.server.runtime_http import create_runtime_app
 
     class Runtime:
         class Planner:

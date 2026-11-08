@@ -1,4 +1,4 @@
-from atst.catalog.provider_guard import (
+from atst.runtime.provider_guard import (
     ProviderExecutionIdentity,
     validate_execution_identity,
 )
