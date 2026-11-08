@@ -78,6 +78,23 @@ def _warn_empty_bars(plan: QueryPlan, collected: list[ResultWarning]) -> None:
     )
 
 
+def _warn_empty_quotes(plan: QueryPlan, collected: list[ResultWarning]) -> None:
+    """``quotes`` 一行都没取回来时必须说破。
+
+    ``QUOTES_PARTIAL_FAILURE`` 只在"取到一部分"时出发；全部为空的三种处境
+    （代码不存在 / 市场不受支持 / 该源覆盖不到）在结果里长得一模一样，不能沉默。
+    """
+    if any(item.code == WarningCode.QUOTES_PARTIAL_FAILURE for item in collected):
+        return
+    symbols = plan.spec.symbols
+    target = ",".join(symbols) if len(symbols) <= 3 else f"{len(symbols)} 只标的"
+    record_warning(
+        WarningCode.QUOTES_EMPTY_RESULT,
+        f"quotes({target}) 由 {plan.provider}/{plan.channel} 返回 0 行：该源对这些标的"
+        "都没有给出行情（代码不存在 / 市场不受支持 / 该源覆盖不到），不是部分缺失",
+    )
+
+
 _SEMANTIC_FIELD_RENAMES: Mapping[str, str] = MappingProxyType({"symbols": "symbol"})
 
 
@@ -215,6 +232,8 @@ class DirectProviderExecutor:
                 #: ``bars_range_interior_empty``），在这里再报一次"0 根"就是重复记账。
                 if plan.spec.capability == "bars" and not data:
                     _warn_empty_bars(plan, collected)
+                if plan.spec.capability == "quotes" and data is not None and not data:
+                    _warn_empty_quotes(plan, collected)
                 #: 日期区间在取回的那一页上做过滤，并当场回答"这一页盖不盖得住区间"。
                 data = self._apply_bar_range(plan, data)
                 #: quotes/bars 的内核出口统一为 canonical dict 行：Provider 之间

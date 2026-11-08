@@ -74,6 +74,12 @@ class WarningCode(str, Enum):
     #: 批量 ``quotes`` 只取回了部分标的的行情：逐只失败被隔离，结果不完整。
     #: 全部失败不走这条——那是一次 ``AllHostsUnreachable``，不是一袋瑕疵数据。
     QUOTES_PARTIAL_FAILURE = "quotes_partial_failure"
+    #: ``quotes`` 由某个 Provider 返回 **0 行**（请求本身非空）。与 ``bars`` 的空结果
+    #: 同形：Web 源对不认识的代码 / 不受支持的市场会直接回空数组，此前结果是
+    #: ``ok`` + 0 行 + 零告警，调用方无法区分"代码不存在""市场不受支持""该源覆盖不到"。
+    #: 这条判据在执行器出口统一发射，与后端无关； ``QUOTES_PARTIAL_FAILURE`` 管的是
+    #: "取到一部分"，这条管的是"一行都没取到"。
+    QUOTES_EMPTY_RESULT = "quotes_empty_result"
     #: 解码层对某一页的判断：实收记录数少于声明数、字段布局哨兵异常等。
     DECODE_CAVEAT = "decode_caveat"
     #: 解出来的行里，有字段落在库自己声明的取值域之外（市场编号、代码、日期形状）。

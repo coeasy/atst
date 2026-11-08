@@ -89,6 +89,7 @@ CLI 每张面（序列化后是 `{"code", "message"}`），同时以 `UserWarnin
 | `index_minute_volume_nominal` | 指数**分钟线**的成交量是服务端名义值（按名义口径等于成交额/100），不是真实成交股数。指数日线族的成交量按「手」下发、已由解析器折算成「股」；分钟族这个字段换算不出真实股数，于是原样返回并发这条告警——不伪造数值。指数要量请改用日线或换 Web 源 | `atst/protocol/parsers/_std7709_bars.py` |
 | `index_minute_volume_inconsistent` | 指数**分钟线**的成交量与服务端名义口径（= 成交额/100）差了一个数量级以上。2026-10 实测唯一偏离的形状是指数 `60min` 的当日首根（10:30）：服务端下发的 `volume` 比名义口径低约 97 倍，而同一时段由 `15min`/`30min` 聚合出的 `amount` 完全吻合；原始字节手工核对确认记录边界精确耗尽（解析器无错位），即这是服务端自己下发的不一致值。与 `index_minute_volume_nominal` 同时出发：那条说明"这个字段不是真实股数"，这条报告"这一页的值连服务端自己的名义口径都对不上" | `atst/protocol/parsers/_std7709_bars.py` |
 | `quotes_partial_failure` | 批量 `quotes` 只取回部分标的的行情：逐只失败被隔离，结果不完整。全部失败不走这条，而是抛 `AllHostsUnreachable` | `atst/runtime/execute_channel.py` |
+| `quotes_empty_result` | `quotes` 一行都没取回来（请求本身非空）：代码不存在 / 市场不受支持 / 该源覆盖不到三种处境不再同形为 `ok` + 0 行 + 零告警 | `atst/runtime/executor.py` |
 | `decode_caveat` | 解码层对自己解出的这一页的判断：实收记录数少于声明数、字段布局哨兵异常、精确解析失败后降级为启发式 | `atst/client/_mixin.py` |
 | `field_out_of_domain` | 解出来的行里有字段落在库自己声明的取值域之外——`market` 既不是 TDX 二进制市场编号也不是 canonical token、`code` 不是非空可见 ASCII、日期字段不是 ISO 形状。与上一条的区别在发射者：`decode_caveat` 是解码层自认的瑕疵，这一条是出口处拿 `atst/domain/integrity.py` 的尺子重新量出来的。记录布局尚未经真机 golden 锁定的命令页内字节数对得上，解码层因此一个字都不记，值却已经错位。2026-10-21 起 0x0010/0x000F 的解析器还多一个发射点：**回声校验**——响应记录头（`market`+`code`）与请求上下文不符时当场留痕（旧错请求年代的形状正是 `market=48`/半个代码），而不是把对不上的记录静默交给调用方 | `atst/client/_mixin.py`、`atst/protocol/parsers/_std7709_bars.py` |
 | `security_list_empty_first_page` | `export_security_list` 首页即空响应，导出为空。空首页不代表该市场没有证券 | `atst/client/_mixin.py` |

@@ -141,3 +141,22 @@ def test_single_symbol_total_failure_is_not_an_empty_success(stub: Any) -> None:
     stub(failures={"sh600519": AllHostsUnreachable("所有主机不可达")})
     with pytest.raises(AllHostsUnreachable):
         _executor().execute(_plan(symbols=["sh600519"]))
+
+
+def test_empty_quotes_carry_an_explicit_caveat(stub: Any) -> None:
+    """一行都没取回来：``ok + 0 行 + 零告警``不再与"代码不存在"同形。"""
+
+    stub(rows=[])
+    result = _executor().execute(_plan())
+
+    assert result.data == []
+    assert [item.code for item in result.meta.warnings] == [WarningCode.QUOTES_EMPTY_RESULT]
+    assert "sh600519" in result.meta.warnings[0].message
+
+
+def test_strict_rejects_an_empty_quotes_result(stub: Any) -> None:
+    stub(rows=[])
+    with pytest.raises(TruncatedDataError) as caught:
+        _executor().execute(_plan(options={"strict": True}))
+
+    assert caught.value.context["codes"] == ["quotes_empty_result"]
