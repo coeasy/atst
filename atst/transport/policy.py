@@ -1,3 +1,6 @@
+# Copyright (c) 2026 atst contributors
+# Licensed under the MIT License
+
 """传输策略核：同步池与异步池共享的纯策略逻辑（v2/W6 §2.5）。
 
 两池的差别只在 I/O 与并发外壳（线程锁 vs ``asyncio.Lock``）。熔断状态机、槽位选序、

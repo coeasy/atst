@@ -1,3 +1,6 @@
+# Copyright (c) 2026 atst contributors
+# Licensed under the MIT License
+
 """Exact Provider/Channel execution bindings for the canonical v13 runtime."""
 
 from __future__ import annotations
