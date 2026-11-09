@@ -61,5 +61,3 @@ jobs:
           path: reports/interface_matrix.json
           if-no-files-found: warn
           retention-days: 14
-          if-no-files-found: warn
-          retention-days: 14
