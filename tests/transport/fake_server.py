@@ -43,6 +43,9 @@ HB_CMD = 0x0002
 
 HANDSHAKE_METHODS = (0x000D, 0x0FDB)
 
+#: 监听 socket 的 accept 轮询上限：保证 close() 之后端口真的不再监听。
+_ACCEPT_POLL = 0.05
+
 
 def multi_body(count: int, record_size: int, chunk_size: int) -> bytes:
     """构造 MULTI_CMD 请求体。"""
@@ -79,6 +82,10 @@ class FakeTdxServer:
         self._lsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._lsock.bind(("127.0.0.1", 0))
         self._lsock.listen(64)
+        # accept 轮询间隔：Linux 上「另一个线程正阻塞在 accept() 时 close()」
+        # 不会立刻停止监听（被阻塞的 syscall 仍持有 socket 引用），已经 close 的
+        # 端口还能再收下一条连接。设上限时让 accept 线程能看见 ``_stopping`` 并退出。
+        self._lsock.settimeout(_ACCEPT_POLL)
         self.port: int = self._lsock.getsockname()[1]
         self.connections: list[ConnRecord] = []
         self._conn_lock = threading.Lock()
@@ -116,8 +123,13 @@ class FakeTdxServer:
         while not self._stopping:
             try:
                 sock, _addr = self._lsock.accept()
+            except TimeoutError:
+                continue
             except OSError:
                 return
+            # accept() 会继承监听 socket 上的超时；连接本身必须保持阻塞语义，
+            # 否则 _serve 的 recv 会按轮询间隔误判「客户端读完就走」。
+            sock.settimeout(None)
             record = ConnRecord()
             record.sock = sock
             with self._conn_lock:
@@ -213,6 +225,10 @@ class FakeTdxServer:
     # -- 生命周期 ------------------------------------------------------------ #
     def close(self) -> None:
         self._stopping = True
+        # 先等 accept 线程退出（它在 ``_ACCEPT_POLL`` 内看到标志），再关监听
+        # socket：否则 Linux 上被阻塞的 accept() 仍持有 socket 引用，端口还能
+        # 收下一条连接——"已关闭的主站"就不再等于"连不上"。
+        self._accept.join(timeout=1.0)
         with contextlib.suppress(OSError):
             self._lsock.close()
         with self._conn_lock:
