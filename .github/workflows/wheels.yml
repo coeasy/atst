@@ -294,7 +294,13 @@ jobs:
               exit 0
             fi
           else
-            gh release create "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --generate-notes --title "$TAG_NAME"
+            # 用仓库里的 docs/releases/v<version>.md 作为 release body，而不是
+            # --generate-notes：那份文件是 identity job 的硬性检查项（缺了发布直接失败），
+            # 里面是给人读的"为什么重要 / 升级步骤 / 验证方式"；--generate-notes 只产出
+            # 一行 compare 链接，等于把已经写好并被门禁要求的说明丢掉。
+            test -f "docs/releases/${TAG_NAME}.md"
+            gh release create "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+              --notes-file "docs/releases/${TAG_NAME}.md" --title "$TAG_NAME"
           fi
           gh release upload "$TAG_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
           echo "already_published=false" >> "$GITHUB_OUTPUT"

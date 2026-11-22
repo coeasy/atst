@@ -90,6 +90,8 @@ push vX.Y.Z
 1. 改 `atst/_version.py`（唯一事实源，`pyproject.toml` 走 `dynamic`，不要另写版本号）；
 2. 在 `CHANGELOG.md` 加 `## [x.y.z] - YYYY-MM-DD` 小节；
 3. 新建 `docs/releases/vx.y.z.md`——`wheels.yml` 的硬性检查项，缺了 job 直接失败；
+   它同时是 **GitHub Release 的正文**（workflow 用 `--notes-file` 读这份文件，不再用
+   `--generate-notes`），所以要按"给用户看"来写：为什么重要、升级步骤、验证方式；
 4. 提交并推送 `main`，确认提交已落到 `origin/main`（workflow 会校验 tag 提交是 main 的祖先）；
 5. `git tag vx.y.z && git push origin vx.y.z`。
 

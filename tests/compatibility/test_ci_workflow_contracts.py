@@ -533,3 +533,27 @@ def test_cross_platform_test_command_is_shell_neutral() -> None:
     assert "run: >-" in run_tests
     assert re.search(r"\\\s*\n", run_tests) is None
     assert "--cov=atst" in run_tests
+
+
+def test_release_body_comes_from_the_gated_release_note() -> None:
+    """发布正文必须用 `docs/releases/v<version>.md`，而不是 `--generate-notes`。
+
+    那份文件是 `release-source` job 的硬性检查项（缺了直接失败），里面写的是"为什么重要 /
+    升级步骤 / 验证方式"；`--generate-notes` 只产出一行 compare 链接，等于把已经写好、
+    而且已经被门禁要求存在的说明丢掉。v2.1.0 首次发布时就是这样丢的：release body 只剩
+    `**Full Changelog**: compare/v2.0.0...v2.1.0`。
+    """
+    workflow = _workflow("wheels.yml")
+    # 只看可执行行：注释里提到 `--generate-notes`（说明为什么不用它）不算用法。
+    code_lines = [line for line in workflow.splitlines() if not line.lstrip().startswith("#")]
+    code = "\n".join(code_lines)
+    assert "--notes-file" in code, "release body 未使用仓内发布说明"
+    assert "--generate-notes" not in code, (
+        "--notes-file 与 --generate-notes 互斥，二者同时出现会让 gh 报错或静默覆盖"
+    )
+    assert "docs/releases/${TAG_NAME}.md" in code, "notes-file 路径必须跟着 tag 走"
+    # 路径必须真的存在：tag 与 `_version.py` 一致，所以 v<version>.md 就是本次的文件。
+    version_file = (_ROOT / "atst" / "_version.py").read_text(encoding="utf-8")
+    version = re.search(r'__version__\s*=\s*"([^"]+)"', version_file)
+    assert version is not None
+    assert (_ROOT / "docs" / "releases" / f"v{version.group(1)}.md").is_file()
