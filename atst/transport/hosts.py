@@ -1,10 +1,10 @@
 # Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
-"""主站候选、selector 校验与 STANDARD V1 排名持久化。
+"""主站候选、selector 校验与 STANDARD 排名持久化（格式 V2，可读 V1）。
 
 物理 endpoint 可以被多个协议族复用，但 ``HostEntry.family`` 始终表示当前
-canonical family。V1 ranking 以 ``host:port`` 为 key，因此只允许持久化
+canonical family。ranking 以 ``host:port`` 为 key，因此只允许持久化
 STANDARD。持久化排名只能携带 probe/ranking 观测，不能扩大显式 selector、
 覆盖静态 identity，或注入当前进程的 live-health / half-open 探测状态。
 """
@@ -17,6 +17,7 @@ import json
 import math
 import os
 import tempfile
+import threading
 import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
@@ -30,12 +31,16 @@ __all__ = [
     "HostEntry",
     "DEFAULT_HOST_POOL",
     "POOL_BY_FAMILY",
+    "RankingFreshness",
     "RankingStore",
     "resolve_hosts",
     "parse_server",
 ]
 
-_RANKING_VERSION = 1
+_RANKING_VERSION = 2
+#: 能读的版本：V1 没有 ``observed_at``，按"观测时间未知"载入（不惩罚、不伪造），
+#: 下一次 save 自动升到 V2。直接拒读 V1 会让升级动作把用户已有排名静默清空。
+_RANKING_READABLE_VERSIONS = (1, 2)
 _VALID_FAMILIES = (Family.STANDARD, Family.EXTENDED, Family.MAC, Family.GOODS, Family.F10)
 _VALID_CIRCUITS = {"healthy", "degraded", "open", "half_open"}
 _MAX_RESOLVED_HOSTS = 64
@@ -51,9 +56,12 @@ class HostEntry:
     family: str = Family.STANDARD
     name: str = ""
     verified: bool = False
-    # Background/probe ranking observations; safe to persist in V1.
+    # Background/probe ranking observations; safe to persist (V2 payload).
     connect_ms: float | None = None
     rtt_ms: float | None = None
+    #: 这条 probe 观测的时间（epoch 秒）。排名 V2 起落盘：没有它就无法判断一条
+    #: 12ms 的记录是"刚测的"还是"三天前测的"，发现进来的主机也就没有保鲜依据。
+    observed_at: float | None = None
     # Current-process request/heartbeat health; never persisted.
     live_rtt_ms: float | None = None
     live_ok_at: float | None = None
@@ -95,7 +103,7 @@ class HostEntry:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> HostEntry:
-        # Persisted V1 data must not restore process-local health/probe locks.
+        # Persisted ranking data must not restore process-local health/probe locks.
         known = set(cls.__dataclass_fields__) - _EPHEMERAL_FIELDS
         entry = cls(**{key: value for key, value in data.items() if key in known})
         return _validated_entry(entry, source="ranking entry")
@@ -294,10 +302,14 @@ def _as_family(entries: Iterable[HostEntry], family: str) -> tuple[HostEntry, ..
 
 
 def _apply_ranked_observation(base: HostEntry, ranked: HostEntry) -> HostEntry:
-    """仅叠加持久化的 probe 观测（connect_ms / rtt_ms），保留 selector-owned
-    identity 与运行态健康字段。
+    """仅叠加持久化的 probe 观测（connect_ms / rtt_ms / observed_at），保留
+    selector-owned identity 与运行态健康字段。
 
     merged from _ranking_hardening：进程间不共享 circuit/failures 等 runtime 状态。
+
+    ``observed_at`` 必须一起搬：它是 probe 元数据（不是 runtime health），丢了就会出现
+    "有 rtt 但不知道多久以前测的"——``hosts list`` 的观测年龄变 ``-``，按年龄判过期
+    的调用方会把刚测过的池内主机当成从未观测。
     """
 
     if ranked.family != base.family or ranked.key != base.key:
@@ -305,17 +317,37 @@ def _apply_ranked_observation(base: HostEntry, ranked: HostEntry) -> HostEntry:
             "ranking observation identity mismatch: "
             f"base={base.key}/{base.family!r}, ranked={ranked.key}/{ranked.family!r}"
         )
-    return replace(base, connect_ms=ranked.connect_ms, rtt_ms=ranked.rtt_ms)
+    return replace(
+        base,
+        connect_ms=ranked.connect_ms,
+        rtt_ms=ranked.rtt_ms,
+        observed_at=ranked.observed_at,
+    )
 
 
+#: 前排为 2026-11-22 从本机通达信 connect.cfg 的 49 个行情主站里逐个发
+#: ``0x044E`` 实测回包验证过的候选（51/75 个 7709 端点完成握手 + 业务请求）。
+#: 老池仅 5/20 标准族、0/4 扩展族、0/2 MAC 族仍可达；前排换源后冷启动
+#: 首请求不再吃 2s 超时。历史条目保留作为回退梯队，不再标 verified。
 DEFAULT_HOST_POOL: tuple[HostEntry, ...] = (
-    _h("180.153.18.170", 7709, Family.STANDARD, "上海双线-3", verified=True),
-    _h("60.191.117.167", 7709, Family.STANDARD, "杭州-1", verified=True),
-    _h("115.238.90.165", 7709, Family.STANDARD, "杭州-2", verified=True),
-    _h("115.238.56.198", 7709, Family.STANDARD, "杭州-3", verified=True),
-    _h("218.75.126.9", 7709, Family.STANDARD, "长沙-1", verified=True),
-    _h("218.6.170.47", 7709, Family.STANDARD, "四川-1", verified=True),
-    _h("123.125.108.14", 7709, Family.STANDARD, "北京-2", verified=True),
+    # --- 2026-11-22 真机回包验证（0x044E），来自运行中的 TdxW.exe --- #
+    _h("159.75.29.111", 7709, Family.STANDARD, "广州双线主站1(2026-11)", verified=True),
+    _h("110.41.147.114", 7709, Family.STANDARD, "深圳双线主站1(2026-11)", verified=True),
+    _h("124.223.163.242", 7709, Family.STANDARD, "上海双线主站1(2026-11)", verified=True),
+    _h("122.51.120.217", 7709, Family.STANDARD, "上海双线主站2(2026-11)", verified=True),
+    _h("175.178.112.197", 7709, Family.STANDARD, "深圳双线主站4(2026-11)", verified=True),
+    _h("101.33.225.16", 7709, Family.STANDARD, "深圳双线主站3(2026-11)", verified=True),
+    _h("43.139.95.83", 7709, Family.STANDARD, "深圳双线主站6(2026-11)", verified=True),
+    _h("116.205.163.254", 7709, Family.STANDARD, "广州双线主站5(2026-11)", verified=True),
+    _h("124.71.187.122", 7709, Family.STANDARD, "上海双线主站14(2026-11)", verified=True),
+    # --- 历史梯队（2026-11-22 复测多数已不可达，保留作回退） --- #
+    _h("180.153.18.170", 7709, Family.STANDARD, "上海双线-3"),
+    _h("60.191.117.167", 7709, Family.STANDARD, "杭州-1"),
+    _h("115.238.90.165", 7709, Family.STANDARD, "杭州-2"),
+    _h("115.238.56.198", 7709, Family.STANDARD, "杭州-3"),
+    _h("218.75.126.9", 7709, Family.STANDARD, "长沙-1"),
+    _h("218.6.170.47", 7709, Family.STANDARD, "四川-1"),
+    _h("123.125.108.14", 7709, Family.STANDARD, "北京-2"),
     _h("119.147.212.81", 7709, Family.STANDARD, "深圳双线-1"),
     _h("218.108.98.244", 7709, Family.STANDARD, "深圳双线-2"),
     _h("218.108.47.69", 7709, Family.STANDARD, "深圳双线-3"),
@@ -454,12 +486,13 @@ def _require_max_hosts(max_hosts: Any) -> int:
 
 
 # --- Probe-only ranking persistence (merged from _ranking_hardening) ----- #
-# 持久化只允许 5 个字段：身份 (host/port/family) + probe 观测 (connect_ms/rtt_ms)。
-# runtime health（failures / circuit / biz_failures / last_ok / last_error /
-# consec_weighted / circuit_opened_at / verified / name / live_*）永不落盘——
-# 进程间不共享熔断状态；新进程应该从头开始健康观测。
+# 持久化只允许 6 个字段：身份 (host/port/family) + probe 观测
+# (connect_ms/rtt_ms/observed_at)。runtime health（failures / circuit /
+# biz_failures / last_ok / last_error / consec_weighted / circuit_opened_at /
+# verified / name / live_*）永不落盘——进程间不共享熔断状态；新进程应该从头开始
+# 健康观测。``observed_at`` 属于观测证据（"这条 RTT 是什么时候测的"），不是健康状态。
 
-_PERSISTED_FIELDS = frozenset({"host", "port", "family", "connect_ms", "rtt_ms"})
+_PERSISTED_FIELDS = frozenset({"host", "port", "family", "connect_ms", "rtt_ms", "observed_at"})
 _LEGACY_RUNTIME_FIELDS = frozenset(
     {
         "name",
@@ -487,6 +520,7 @@ def _probe_only_entry(entry: HostEntry) -> HostEntry:
         family=validated.family,
         connect_ms=validated.connect_ms,
         rtt_ms=validated.rtt_ms,
+        observed_at=validated.observed_at,
     )
 
 
@@ -498,6 +532,7 @@ def _probe_payload(entry: HostEntry) -> dict[str, Any]:
         "family": probe.family,
         "connect_ms": probe.connect_ms,
         "rtt_ms": probe.rtt_ms,
+        "observed_at": probe.observed_at,
     }
 
 
@@ -511,6 +546,11 @@ def _entry_from_legacy_payload(item: Mapping[str, Any]) -> HostEntry | None:
         return None
     if keys - _LEGACY_ALLOWED_FIELDS:
         return None
+    observed = item.get("observed_at")
+    if observed is not None and (
+        isinstance(observed, bool) or not isinstance(observed, (int, float))
+    ):
+        return None
     try:
         entry = HostEntry(
             host=item["host"],
@@ -518,6 +558,7 @@ def _entry_from_legacy_payload(item: Mapping[str, Any]) -> HostEntry | None:
             family=item["family"],
             connect_ms=item.get("connect_ms"),
             rtt_ms=item.get("rtt_ms"),
+            observed_at=None if observed is None else float(observed),
         )
         entry = _validated_entry(entry, source="ranking entry")
     except (KeyError, TypeError, ValueError, ConfigError):
@@ -544,13 +585,39 @@ def isolated_host_entry_snapshot(resolved: Sequence[HostEntry], *, limit: int) -
     return [replace(entry) for entry in resolved[:limit]]
 
 
+@dataclass(frozen=True, slots=True)
+class RankingFreshness:
+    """排名文件的"保鲜"读数：文件级更新时间 + 条目数 + 观测时间跨度。
+
+    只读视图，不参与排序。它存在的理由：排名条目没有过期语义，一个三天前测出的
+    12ms 与刚刚测出的 12ms 在 ``score`` 上完全一样；要判断"该不该重扫"，必须先能
+    看见最老的那条观测有多老。
+    """
+
+    updated: str = ""
+    entries: int = 0
+    oldest_observed: float | None = None
+    newest_observed: float | None = None
+
+    def age_seconds(self, *, now: float | None = None) -> float | None:
+        """最老一条观测距今多少秒；没有观测时间（V1 文件）时返回 ``None``。"""
+
+        if self.oldest_observed is None:
+            return None
+        return max(0.0, (time.time() if now is None else now) - self.oldest_observed)
+
+
 class RankingStore:
-    """STANDARD-only ``~/.atst/server_ranking.json`` V1 storage。"""
+    """STANDARD-only ``~/.atst/server_ranking.json`` 存储（写 V2，读 V1/V2）。"""
 
     VERSION = _RANKING_VERSION
 
     def __init__(self, path: str | os.PathLike[str] = "~/.atst/server_ranking.json") -> None:
         self.path = Path(os.path.expanduser(str(path)))
+        #: ``load→merge→save`` 是非原子的读-改-写：后台 probe 线程与 CLI/审计进程
+        #: 同时 update 时会各自读到同一份基线，后写者静默抹掉前写者的排名条目。
+        #: save() 自身的 temp+replace 只保证单份文件完整，不保证复合操作互斥。
+        self._lock = threading.RLock()
 
     def load(self) -> dict[str, HostEntry]:
         # --- merged from _ranking_hardening: probe-only provenance --- #
@@ -563,7 +630,11 @@ class RankingStore:
         if not isinstance(raw, Mapping):
             return {}
         version = raw.get("version")
-        if isinstance(version, bool) or not isinstance(version, int) or version != self.VERSION:
+        if (
+            isinstance(version, bool)
+            or not isinstance(version, int)
+            or version not in _RANKING_READABLE_VERSIONS
+        ):
             return {}
         raw_entries = raw.get("entries")
         if not isinstance(raw_entries, Mapping):
@@ -590,7 +661,7 @@ class RankingStore:
         if invalid:
             sample = invalid[0]
             raise ConfigError(
-                f"RankingStore V1 仅支持 STANDARD: entry={sample.key} family={sample.family!r}"
+                f"RankingStore 仅支持 STANDARD: entry={sample.key} family={sample.family!r}"
             )
         seen: set[str] = set()
         for entry in items:
@@ -638,6 +709,7 @@ class RankingStore:
 
         items = self._require_standard(entries)
         known = self.load()
+        now = time.time()
         for entry in items:
             if entry.rtt_ms is None:
                 # 失败 probe 清除该主机的 stale positive latency 条目
@@ -645,22 +717,50 @@ class RankingStore:
                     known.pop(entry.key, None)
                 continue
 
+            # 观测时间：调用方显式给了就用它（测试/回放），否则以本次 update 为准。
+            observed_at = entry.observed_at if entry.observed_at is not None else now
             previous = known.get(entry.key)
             if previous is None:
-                known[entry.key] = _probe_only_entry(entry)
+                fresh = _probe_only_entry(entry)
+                fresh.observed_at = observed_at
+                known[entry.key] = fresh
                 continue
             previous.rtt_ms = entry.rtt_ms
             if entry.connect_ms is not None:
                 previous.connect_ms = entry.connect_ms
+            previous.observed_at = observed_at
         return known
 
     def update(self, entries: Iterable[HostEntry]) -> None:
-        merged = self.merge(entries)
-        self.save(entry for entry in merged.values() if entry.family == Family.STANDARD)
+        # 整段 load→merge→save 在一把锁内完成：两个并发 probe 线程各自读到同一
+        # 基线、后写覆盖前写的丢更新，在这里被排除。RLock 允许 merge() 内部取锁。
+        with self._lock:
+            merged = self.merge(entries)
+            self.save(entry for entry in merged.values() if entry.family == Family.STANDARD)
 
     def clear(self) -> None:
-        with contextlib.suppress(FileNotFoundError):
+        with self._lock, contextlib.suppress(FileNotFoundError):
             self.path.unlink()
+
+    def freshness(self) -> RankingFreshness:
+        """读排名文件的保鲜读数；文件缺失/损坏时返回空读数（不抛）。"""
+
+        if not self.path.exists():
+            return RankingFreshness()
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except Exception:
+            return RankingFreshness()
+        if not isinstance(raw, Mapping):
+            return RankingFreshness()
+        entries = self.load()
+        stamps = [entry.observed_at for entry in entries.values() if entry.observed_at is not None]
+        return RankingFreshness(
+            updated=str(raw.get("updated", "")),
+            entries=len(entries),
+            oldest_observed=min(stamps) if stamps else None,
+            newest_observed=max(stamps) if stamps else None,
+        )
 
     def top(self, n: int = 5, family: str | None = None) -> list[HostEntry]:
         if isinstance(n, bool) or not isinstance(n, int) or n < 1:

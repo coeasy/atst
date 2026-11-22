@@ -27,6 +27,7 @@ from .runtime_commands import (
     _cmd_fund,
     _cmd_goods,
     _cmd_hosts_audit,
+    _cmd_hosts_discover,
     _cmd_hosts_list,
     _cmd_hosts_scan,
     _cmd_hot,
@@ -228,14 +229,48 @@ def build_parser() -> argparse.ArgumentParser:
     list_p = hosts_sub.add_parser(
         "list", help="查看当前生效的主站池（quotation 族；其余四族见 hosts audit）"
     )
-    list_p.add_argument("--timeout", type=float, default=argparse.SUPPRESS)
+    # 故意**不**给 ``list`` 加 ``--timeout``：这条命令只读排名文件、不建连，超时参数
+    # 没有任何可作用的对象。留一个被忽略的 flag 比不给更糟——用户会以为它在探活。
+    list_p.add_argument("--ranking-file", default="~/.atst/server_ranking.json")
     list_p.set_defaults(func=_cmd_hosts_list)
 
     scan_p = hosts_sub.add_parser(
         "scan", help="并发测速候选池并写入排名文件（quotation 族；其余四族见 hosts audit）"
     )
     scan_p.add_argument("--timeout", type=float, default=argparse.SUPPRESS)
+    # 候选池 = 内置池 ∪ 排名 extras，实测可达 70+ 台；并发度与采样次数必须可调，
+    # 否则弱网/CI 上只能吃 16 并发 × 1 次的默认值，跑不完就被当成"不可达"。
+    scan_p.add_argument("--workers", type=int, default=16, help="并发探测数（默认 16）")
+    scan_p.add_argument("--samples", type=int, default=1, help="每台采样次数，取最小值（默认 1）")
+    scan_p.add_argument("--ranking-file", default="~/.atst/server_ranking.json")
     scan_p.set_defaults(func=_cmd_hosts_scan)
+
+    discover_p = hosts_sub.add_parser(
+        "discover",
+        help="发现候选主站（本机 connect.cfg / 开源清单），实测通过后写排名（quotation 族）",
+    )
+    discover_p.add_argument(
+        "--source",
+        action="append",
+        default=[],
+        choices=("tdx-install", "gotdx", "mootdx", "pytdx", "file"),
+        help="候选来源；可多次指定；默认 tdx-install（本机安装的 connect.cfg）",
+    )
+    discover_p.add_argument("--path", default=None, help="connect.cfg 或候选文件路径")
+    discover_p.add_argument(
+        "--url", default=None, help="覆盖来源地址（--source file 时可直接给 URL）"
+    )
+    discover_p.add_argument("--family", default=Family.STANDARD, choices=_AUDIT_FAMILIES)
+    discover_p.add_argument("--timeout", type=float, default=2.0, help="单台探测超时（秒）")
+    discover_p.add_argument("--samples", type=int, default=1)
+    discover_p.add_argument("--workers", type=int, default=16)
+    discover_p.add_argument("--ranking-file", default="~/.atst/server_ranking.json")
+    discover_p.add_argument("--dry-run", action="store_true", help="实测但不写排名")
+    discover_p.add_argument("--no-verify", action="store_true", help="只列候选，不联网探测")
+    discover_p.add_argument("--report", default="./host_discover_report.json")
+    discover_p.add_argument("--json", action="store_true", help="以 JSON 输出报告")
+    discover_p.add_argument("--quiet", action="store_true")
+    discover_p.set_defaults(func=_cmd_hosts_discover)
 
     st_p = sub.add_parser("server-test", help="主站连通性测速")
     st_p.add_argument("--timeout", type=float, default=5.0)

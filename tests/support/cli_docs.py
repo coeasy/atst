@@ -94,7 +94,15 @@ def _landing(fn: Any) -> str:
         return "直连传输层"
     if {"FeedbackReporter", "UserStats"} & names:
         return "反馈"
-    if {"resolve_hosts", "speedtest", "speedtest_and_save", "host_audit_main"} & names:
+    if {
+        "resolve_hosts",
+        "speedtest",
+        "speedtest_and_save",
+        "host_audit_main",
+        # ``atst.transport.discover.discover``：主站发现（解析 connect.cfg / 开源清单
+        # → 复用 speedtest 实测 → 写排名）。落点与 scan/audit 同族，故并入这一格。
+        "discover",
+    } & names:
         return "传输·诊断"
     if {"list_universe", "universe_report", "asset_class_names"} & names:
         return "本地清单"

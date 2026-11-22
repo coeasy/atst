@@ -294,7 +294,10 @@ def test_standard_merge_persists_probe_only_and_resets_runtime_state(tmp_path: P
 
     raw = json.loads(path.read_text(encoding="utf-8"))
     persisted = raw["entries"]["1.2.3.4:7709"]
-    assert set(persisted) == {"host", "port", "family", "connect_ms", "rtt_ms"}
+    # V2 起多一个 probe 观测时间戳（"这条 RTT 什么时候测的"）；runtime health 仍不得落盘。
+    assert set(persisted) == {"host", "port", "family", "connect_ms", "rtt_ms", "observed_at"}
+    assert isinstance(persisted["observed_at"], float)
+    assert not {"failures", "circuit", "last_ok", "live_rtt_ms"} & set(persisted)
 
     entry = store.load()["1.2.3.4:7709"]
     assert entry.rtt_ms == 4.0
@@ -357,7 +360,7 @@ def test_legacy_v1_runtime_health_is_sanitized_without_losing_probe_latency(
 
     RankingStore(path).update([loaded])
     rewritten = json.loads(path.read_text(encoding="utf-8"))["entries"]["1.2.3.4:7709"]
-    assert set(rewritten) == {"host", "port", "family", "connect_ms", "rtt_ms"}
+    assert set(rewritten) == {"host", "port", "family", "connect_ms", "rtt_ms", "observed_at"}
 
 
 def test_explicit_host_entry_with_wrong_family_fails_closed() -> None:

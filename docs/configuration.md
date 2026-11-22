@@ -77,9 +77,9 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 
 **主站择优（best server IP）怎么选**——这一节回答"每次请求是不是自动挑最快的通达信服务器"：
 
-1. **候选来源**：内置候选池（STANDARD 族 20 台）＋ `ATST_HOSTS` 环境变量（存在时替换内置池）
-   ＋ `~/.atst/server_ranking.json` 持久化排名。显式 `hosts.servers` 非空时只用写下的那些，
-   排名文件只提供观测、**不会**扩大显式名单。
+1. **候选来源**：内置候选池（STANDARD 族 29 台：9 台 2026-11 真机 `0x044E` 回包验证 + 20 台历史梯队）
+   ＋ `ATST_HOSTS` 环境变量（存在时替换内置池）＋ `~/.atst/server_ranking.json` 持久化排名。
+   显式 `hosts.servers` 非空时只用写下的那些，排名文件只提供观测、**不会**扩大显式名单。
 2. **排序分**：`HostEntry.score`，每次排序现算——
    `base = live_rtt_ms or rtt_ms or 1e6`，`score = min(1e9, base × 4^min(failures,8)) × (1 + 0.25·biz_failures)`。
    `live_rtt_ms` 是真实请求的往返耗时（首选），`rtt_ms` 是测速探针的 RTT；两者都没有时是
@@ -87,20 +87,71 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
    业务失败按 0.25 加权；上限 1e9（不溢出、也不再区分"更差"）。
 3. **取前 8 台**建池（`resolve_hosts(max_hosts=8)`），池内按分数排序选槽，轮询起点只影响同分
    主站之间的先后，不会让差主站插到好主站前面。
-4. **排名文件只存测速证据**：`rtt_ms` / `connect_ms`，成功探针刷新、失败探针清除该主站的
-   stale 延迟；进程内的失败计数 / 熔断状态**不落盘**（运行时健康归连接池）。
+4. **排名文件只存测速证据**：`rtt_ms` / `connect_ms` / `observed_at`，成功探针刷新、失败探针
+   清除该主站的 stale 延迟；进程内的失败计数 / 熔断状态**不落盘**（运行时健康归连接池）。
+   `observed_at` 是排名格式 V2 加的（epoch 秒），没有它就无法区分"12ms 是刚测的还是三天前
+   测的"——发现进来的主机也就没有保鲜依据。V1 文件仍可读（`observed_at` 读成 `None`），
+   下一次写入自动升级为 V2，不需要手动迁移。
 5. **什么时候刷新**：`atst hosts scan`（并发测速**整个候选池**并写排名——含已掉出前八的
-   主站，负责"重新发现谁最快"）、`TdxClient.bestip()` / `open(bestip=True)`（只刷新"当前
-   这个池"）、以及冷启动后连续 3 次建连失败触发的后台测速（`speedtest_threshold`）。
-   没有排名文件也能用：候选退回内置池顺序，首次请求照样成功。**这两条命令只覆盖 STANDARD
-   （quotation）族**——排名文件也只记这一族；extended / mac / goods / f10 四族的候选池与
-   巡检结论看 `atst hosts audit` 的 `--family`。
+   主站和 `hosts discover` 采纳进来的 extras，负责"重新发现谁最快"）、`TdxClient.bestip()` /
+   `open(bestip=True)`（只刷新"当前这个池"）、以及冷启动后连续 3 次建连失败触发的后台测速
+   （`speedtest_threshold`）。没有排名文件也能用：候选退回内置池顺序，首次请求照样成功。
+   **这两条命令只覆盖 STANDARD（quotation）族**——排名文件也只记这一族；extended / mac /
+   goods / f10 四族的候选池与巡检结论看 `atst hosts audit` 的 `--family`。
 6. **失败处理**：单次请求内跨主站重试（`max_attempts = max(max_retries+1, 主站数)`），
    熔断 OPEN 的主站被跳过（冷却 30 秒后转 HALF_OPEN 放行一次探测，成功即复位）。
+7. **保鲜怎么读**：`atst hosts list` 打出每台的观测年龄和来源，并在文件里最老的一条超过
+   7 天时给出过期提示；程序内用 `RankingStore.freshness()` 取同一份读数
+   （`entries` / `oldest_observed` / `newest_observed` / `updated`，文件缺失或损坏时返回空读数
+   而不抛异常），用来决定"要不要现在扫一次"。
 
 判据：`tests/transport/test_host_ranking_provenance.py`、
+`tests/transport/test_ranking_freshness.py`、
 `tests/transport/test_ranking_probe_only_persistence.py`、
 `tests/transport/test_host_live_health_provenance.py`、`tests/transport/test_b4_circuit.py`。
+
+#### 扩充候选池：`atst hosts discover`（不升级版本）
+
+内置池编译进 wheel，只随版本变化；`hosts scan` 也只重排**已知**候选。要引入**新**成员，
+用 `hosts discover`——它把"取候选 → 实测 → 采纳"拆成三步，每步都能单独验证：
+
+| 来源 | `--source` | 取法 | 说明 |
+|---|---|---|---|
+| 本机通达信安装 | `tdx-install`（默认） | 扫盘符根 / `Program Files` 的直接子目录，再对名字像通达信/股票软件的目录下探一层，读 `connect.cfg` | 官方客户端配置，最权威；GBK 编码；文件里的 `Port=0`、空地址、重复条目逐条跳过，不整文件失败 |
+| gotdx | `gotdx` | 运行时拉 `hosts.go` | 2026 年的 Go 实现，实测存活率最高 |
+| mootdx | `mootdx` | 运行时拉 `consts.py` | 2024 年的 Python 表，与 gotdx 高度重合 |
+| pytdx | `pytdx` | 运行时拉 `hosts.py` | 2019 年冻结，命中率最低，但有券商/电信主机补充 |
+| 自有清单 | `file` | `--path` 或 `--url` | 支持 `.cfg` / JSON / Python 元组表 / Go 结构体表，按内容形状猜格式 |
+
+```bash
+atst hosts discover --no-verify                 # 只列候选，不联网
+atst hosts discover --source gotdx --dry-run    # 实测但不写排名
+atst hosts discover --source tdx-install        # 实测通过后写排名
+atst hosts discover --source gotdx --source pytdx   # 多来源合并去重（先出现者保留来源标签）
+```
+
+四条硬约束：
+
+1. **只认实测**。判定是"握手 + 心跳回包"，不是端口探活——TCP 可连但协议不应答的主机
+   （7727 扩展族全族就是例子）不算通过，不会被写进池子。
+2. **只写排名**。采纳走 `RankingStore`，因此仍然只覆盖 STANDARD（quotation）族；其他四族
+   实测完只出报告，不落盘。
+3. **候选按端口归族**。`connect.cfg` 同时带 7709 行情与 7727 扩展，解析时按端口归族，
+   `--family quotation` 不会把扩展主机记成"行情不可达"；80/443 的 Z80 端点走另一套传输，
+   直接丢弃。
+4. **不打包第三方清单**。三个开源地址是运行时默认值（`--url` 可覆盖），wheel 里不含任何
+   第三方清单内容；许可只覆盖代码，不覆盖数据，商用需自行评估服务条款。
+
+与另外两条命令的分工：`hosts scan` 重排已知候选（内置池 ∪ 排名 extras，含掉出前八的），
+`hosts audit --hosts-file` 把候选和内置池一起测（适合"这批候选 vs 现有池"对比），
+`hosts discover` 只测本次发现的候选（适合"这份清单今天还有几台能用"）。
+
+**采纳之后不是一劳永逸**：`discover` 只给主机一条"被采纳那一刻"的 RTT，掉线不会被淘汰。
+保鲜靠 `hosts scan`——它把排名里的 extras 一起重测，失败项走 `merge()` 的清除分支，
+所以一条 `scan` 同时完成"刷新 + 淘汰"。想定时保鲜就把它挂进 crontab / 计划任务
+（例如每天开盘前一次）；`hosts list` 的过期提示就是提醒这件事。
+
+判据：`tests/test_hosts_discover.py`、`tests/test_cli_hosts.py`。
 
 ### `[rate_limit]` — 本地请求限流（req/s，按交易状态分档）
 

@@ -275,8 +275,14 @@ class TestHostsHandlers:
     """hosts / server-test 薄壳：参数装配与表格输出。"""
 
     @staticmethod
-    def _entry(key: str, rtt_ms: float | None = 1.5) -> argparse.Namespace:
-        return argparse.Namespace(key=key, family="quotation", rtt_ms=rtt_ms, verified=True)
+    def _entry(
+        key: str, rtt_ms: float | None = 1.5, observed_at: float | None = None
+    ) -> argparse.Namespace:
+        # ``observed_at`` 是排名 V2 的字段：``hosts list`` 会拿它算观测年龄，
+        # 替身缺这个属性就不是"像 HostEntry 的东西"，会让表格渲染整段崩掉。
+        return argparse.Namespace(
+            key=key, family="quotation", rtt_ms=rtt_ms, observed_at=observed_at, verified=True
+        )
 
     @staticmethod
     def _probe_row(host: str, ok: bool) -> argparse.Namespace:
@@ -374,7 +380,7 @@ class TestHostsHandlers:
         assert "1/2 主站可达" in out and "refused" in out
 
     def test_hosts_list_prints_table(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path
     ) -> None:
         import atst.transport.hosts as hosts_mod
 
@@ -383,9 +389,45 @@ class TestHostsHandlers:
             "resolve_hosts",
             lambda *a, **kw: [self._entry("a"), self._entry("b", rtt_ms=None)],
         )
-        assert rc._cmd_hosts_list(_ns()) == 0
+        # 排名文件指向临时目录：默认值是本机真实文件，读它会让输出随机器漂移。
+        assert rc._cmd_hosts_list(_ns(ranking_file=str(tmp_path / "ranking.json"))) == 0
         out = capsys.readouterr().out
         assert "共 2 台主站" in out and "verified" in out and "-" in out
+        # 观测年龄与来源两列必须存在，否则"这条 12ms 是刚测的还是三天前测的"无从判断。
+        assert "观测" in out and "来源" in out
+        assert "排名文件：无" in out
+
+    def test_hosts_list_flags_stale_ranking_and_counts_discovered(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path
+    ) -> None:
+        """排名超过 7 天要给出过期提示；不在内置池的条目来源列标 ``discovered``。"""
+        import time
+
+        import atst.transport.hosts as hosts_mod
+        from atst.transport.hosts import HostEntry, RankingStore
+
+        ranking_file = tmp_path / "ranking.json"
+        stale = time.time() - 9 * 86400
+        RankingStore(str(ranking_file)).save(
+            [
+                HostEntry(
+                    host="192.0.2.10",
+                    port=7709,
+                    family="quotation",
+                    rtt_ms=9.0,
+                    observed_at=stale,
+                )
+            ]
+        )
+        monkeypatch.setattr(
+            hosts_mod,
+            "resolve_hosts",
+            lambda *a, **kw: [self._entry("192.0.2.10:7709", observed_at=stale)],
+        )
+        assert rc._cmd_hosts_list(_ns(ranking_file=str(ranking_file))) == 0
+        out = capsys.readouterr().out
+        assert "discovered" in out
+        assert "超过 7 天未刷新" in out
 
     def test_server_test_prints_table(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

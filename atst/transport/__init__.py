@@ -5,6 +5,7 @@
 
     atst.transport
      ├── hosts       主站候选池 + 排名持久化
+     ├── discover    候选发现（本机 connect.cfg / 开源清单 → 实测 → 采纳）
      ├── ratelimit   按交易状态分档的本地限流
      ├── base        同步 TcpConnection
      ├── pool        同步 ConnectionPool（槽位 / 故障转移 / 多帧合并）

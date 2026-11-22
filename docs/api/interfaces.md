@@ -1146,8 +1146,9 @@ atst --help
 | `fund nav` | `code` | `--page-size` `--page-index` `--timeout` `--json` | 内核·rows |
 | `goods` | `symbol` | `--kind` `--period` `--count` `--timeout` `--json` | 直连传输层 |
 | `hosts audit` | — | `--family` `--timeout` `--samples` `--workers` `--report` `--markdown` `--ranking-file` `--no-save-ranking` `--strict` `--quiet` | 传输·诊断 |
-| `hosts list` | — | `--timeout` | 传输·诊断 |
-| `hosts scan` | — | `--timeout` | 传输·诊断 |
+| `hosts discover` | — | `--source` `--path` `--url` `--family` `--timeout` `--samples` `--workers` `--ranking-file` `--dry-run` `--no-verify` `--report` `--json` `--quiet` | 传输·诊断 |
+| `hosts list` | — | `--ranking-file` | 传输·诊断 |
+| `hosts scan` | — | `--timeout` `--workers` `--samples` `--ranking-file` | 传输·诊断 |
 | `hot` | — | `--page` `--size` `--json` | 内核·rows |
 | `index constituents` | `code` | `--timeout` `--json` | 内核·rows |
 | `list` | `market` | `--start` `--count` `--timeout` `--json` | 直连传输层 |
@@ -1191,8 +1192,12 @@ atst security-count --market 0                             # 某市场的代码�
 atst security-list --market 0 --start 0                   # 分页代码表
 atst stream sh600519 --interval 3 --diff-only --seconds 30    # 流式订阅
 atst hosts audit --family quotation --timeout 3           # 主站巡检（5 族）
-atst hosts list                                            # 当前生效的行情主站池（quotation 族）
-atst hosts scan                                            # 全候选池并发测速并写排名文件（quotation 族）
+atst hosts discover --no-verify                            # 本机 connect.cfg 里发现多少候选（不联网）
+atst hosts discover --source gotdx --dry-run               # 开源清单发现 + 实测，不写排名
+atst hosts discover                                        # 本机候选实测通过后写排名（quotation 族）
+atst hosts list                                            # 当前生效的行情主站池（含观测年龄/来源/过期提示）
+atst hosts scan                                            # 全候选池（内置池 ∪ 排名 extras）并发测速并写排名
+atst hosts scan --ranking-file /tmp/r.json                 # 用独立排名文件做一次"干净"的重新发现
 atst server-test                                           # 主站连通性测速
 atst serve --bind 127.0.0.1 --port 8000                   # HTTP 网关（上面那 12 路由）
 atst feedback submit --message "这里写问题描述"            # 反馈上报
