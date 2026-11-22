@@ -369,12 +369,25 @@ def test_the_transport_leaves_are_the_ones_mypy_can_see() -> None:
     landings = {leaf: spec["landing"] for leaf, spec in runtime_leaves().items()}
     rows_leaves = sorted(leaf for leaf in landings if landings[leaf] == "内核·rows")
     assert rows_leaves, "没有 内核·rows 的叶子，前提①无从量起"
+    # 例外：adjusted_bars 在 P1-1 里被显式改写成 Client 一等公民方法（委托 call()，
+    # 不是新内核），这里不再是 __getattr__ 盲区。把它钉成白名单并要求方法体只转发
+    # call()，其余 rows 叶子仍受"无声明方法"的前提约束——射程收窄但不失效。
+    _EXPLICIT_ROWS_METHODS = frozenset({"adjusted-bars"})
     declared = [
-        leaf for leaf in rows_leaves if hasattr(Client, leaf.replace("-", "_").replace(" ", "_"))
+        leaf
+        for leaf in rows_leaves
+        if leaf not in _EXPLICIT_ROWS_METHODS
+        and hasattr(Client, leaf.replace("-", "_").replace(" ", "_"))
     ]
     assert not declared, (
         "这些 rows 叶子在 Client 上已有声明方法，__getattr__ 盲区前提已变，"
         f"本门禁的射程要重新判定：{declared}"
+    )
+    from atst import Client as _Client
+
+    adjusted_src = inspect.getsource(_Client.adjusted_bars)
+    assert "self.call(" in adjusted_src and "self.execute(" not in adjusted_src, (
+        "adjusted_bars 必须是只转发 call() 的一等公民方法，不得引入第二执行路径"
     )
 
     from atst.client import factory
