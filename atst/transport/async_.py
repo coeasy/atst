@@ -97,6 +97,10 @@ _RECV_CHUNK = 65536
 #: 没有它时，反复投递取消会把那段 ``shield`` 循环变成满速空转。
 _CLEANUP_SHIELD_TIMEOUT: float = 30.0
 
+#: 清理收尾等待的切片粒度（秒）：每次 ``asyncio.wait`` 最长等这么久，之后
+#: 回到循环顶部重算剩余 deadline，保证上界真的可执行（不是注释里的上界）。
+_CLEANUP_POLL_SECONDS: float = 0.05
+
 #: :meth:`AsyncTcpConnection.close` 等待传输收尾的墙钟上限（秒）。
 #:
 #: ``writer.wait_closed()`` 等的是 asyncio 协议的 ``connection_lost`` 回调，而 ``close()``
@@ -552,13 +556,17 @@ async def _await_cleanup_before_cancellation(cleanup_task: asyncio.Task) -> None
     cancelled = False
     deadline = time.monotonic() + _CLEANUP_SHIELD_TIMEOUT
     while not cleanup_task.done():
-        if time.monotonic() >= deadline:
+        left = deadline - time.monotonic()
+        if left <= 0:
             cleanup_task.cancel()
-            with contextlib.suppress(BaseException):
-                await asyncio.shield(cleanup_task)
+            # 与 AsyncQuoteStream.stop 同一条口径：用 asyncio.wait 而非
+            # wait_for(shield)——后者在任务忽略 cancel 时自己也会卡住。
+            await asyncio.wait({cleanup_task}, timeout=_CLEANUP_POLL_SECONDS)
             break
         try:
-            await asyncio.shield(cleanup_task)
+            # 每次等待按剩余 deadline 切片：裸 await shield 会卡死在不可取消的
+            # 清理任务上，永远回不到顶部的 deadline 检查。
+            await asyncio.wait({cleanup_task}, timeout=min(left, _CLEANUP_POLL_SECONDS))
         except asyncio.CancelledError:
             cancelled = True
             continue

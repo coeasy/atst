@@ -79,6 +79,14 @@ class _BoundedSymbolSet:
 # Type aliases
 # ---------------------------------------------------------------------------
 
+#: 行情回调：``(symbol, payload)``。``payload`` 是 Provider 的行情行，另可携带两个
+#: 元信息键（仅在确有其事时出现，不制造空占位）：
+#:
+#: * ``observed_at_ns`` —— 这一轮结果的观测时刻（``Provenance.observed_at_ns``）；
+#: * ``warnings`` —— 这一轮结果的数据完整性瑕疵，``[{"code", "message"}, …]``。
+#:
+#: 两者来自 :func:`_round_meta`，与请求-响应面的 ``meta`` 同一出处；行情字段永远优先，
+#: 元信息不会覆盖 Provider 真值。
 on_quote_t = Callable[[str, dict[str, Any]], None]
 on_error_t = Callable[[Exception], None]
 
@@ -190,6 +198,42 @@ def _quote_rows(result: Any) -> list[dict[str, Any]]:
     return rows
 
 
+def _round_meta(result: Any) -> dict[str, Any]:
+    """把一次轮询结果的 ``meta`` 折成随 payload 下发的两个字段。
+
+    请求-响应路径上每条结果都带 ``meta``（``provider`` / ``observed_at_ns`` /
+    ``warnings``），推送路径过去只传裸行情行，于是 ``RuntimeJsonRpcHandler._on_quote``
+    里读 ``data["observed_at_ns"]``、读 ``current_warnings()`` 的两段都永远拿不到值：
+    前者没有任何写入方，后者是 ``contextvars`` 的查询局部 sink，回调线程里本来就是空的。
+    两个「已声明但永不出现」的字段，等于把瑕疵与观测时刻在流式面上丢掉。
+
+    这里只放**确实有值**的字段：没有 provenance / 没有告警时返回空字典，payload 形状与
+    历史逐字节一致，不制造 ``warnings: []`` 这种「看起来查过」的假信号。
+    """
+
+    meta: dict[str, Any] = {}
+    result_meta = getattr(result, "meta", None)
+    #: ``QueryResult`` 的出处挂在 ``meta.provenance``；兼容把 provenance 直接挂在结果上的
+    #: 轻量替身（测试/外部 runtime），两种形状都读。
+    provenance = getattr(result_meta, "provenance", None) or getattr(result, "provenance", None)
+    observed = getattr(provenance, "observed_at_ns", None)
+    if isinstance(observed, int) and not isinstance(observed, bool) and observed > 0:
+        meta["observed_at_ns"] = observed
+    warnings = getattr(result_meta, "warnings", ()) or ()
+    if warnings:
+        rendered: list[dict[str, str]] = []
+        for item in warnings:
+            code = getattr(item, "code", "")
+            rendered.append(
+                {
+                    "code": str(getattr(code, "value", code)),
+                    "message": str(getattr(item, "message", "")),
+                }
+            )
+        meta["warnings"] = rendered
+    return meta
+
+
 def _resolve_payload(
     sub: Subscription,
     sym: str,
@@ -241,13 +285,30 @@ def _dispatch_round(
     subs: Sequence[Subscription],
     qmap: dict[str, dict[str, Any]],
     warned_bad_symbols: _BoundedSymbolSet,
+    meta: Mapping[str, Any] | None = None,
 ) -> None:
-    """Fan one fetched round out to every subscription (queue or direct callback)."""
+    """Fan one fetched round out to every subscription (queue or direct callback).
+
+    ``meta`` 是这一轮结果自带的观测信息（见 :func:`_round_meta`）：合并到**每个**
+    payload 的副本上，而不是写回 ``qmap`` 里的原始行——同一行会被多条订阅共享，
+    原地加键会让后一条订阅看到前一条的副作用，也会让 ``diff_only`` 的 delta 把
+    ``warnings`` 当成行情字段算进差异。
+    """
+
+    overlay = dict(meta or {})
+
+    def _payload(sub: Subscription, sym: str) -> dict[str, Any] | None:
+        payload = _resolve_payload(sub, sym, qmap, warned_bad_symbols)
+        if payload is None or not overlay:
+            return payload
+        # 行情字段优先：overlay 只补元信息，绝不覆盖 Provider 真值。
+        return {**overlay, **payload}
+
     for sub in subs:
         dropped_before = sub._dropped
         if sub._queue is not None:
             for sym in sub.symbols:
-                payload = _resolve_payload(sub, sym, qmap, warned_bad_symbols)
+                payload = _payload(sub, sym)
                 if payload is not None:
                     sub._queue.put((sym, payload))
             for queued_sym, queued_quote in sub._queue.drain():
@@ -267,7 +328,7 @@ def _dispatch_round(
                     )
         else:
             for sym in sub.symbols:
-                payload = _resolve_payload(sub, sym, qmap, warned_bad_symbols)
+                payload = _payload(sub, sym)
                 if payload is not None and sub.on_quote is not None:
                     with contextlib.suppress(Exception):
                         sub.on_quote(sym, payload)
@@ -447,7 +508,7 @@ class QuoteStream:
 
         # The 0x0530 echo carries the bare 6-digit code, so key by bare code.
         qmap = {str(row.get("code", "")): row for row in _quote_rows(result)}
-        _dispatch_round(subs, qmap, self._warned_bad_symbols)
+        _dispatch_round(subs, qmap, self._warned_bad_symbols, _round_meta(result))
         # Sleep for the fastest subscription only.
         self._stop.wait(min((sub.interval for sub in subs), default=1.0))
 
@@ -597,13 +658,20 @@ class AsyncQuoteStream:
         #: cancel + 收尾，保证 ``stop()`` 一定返回。
         deadline = time.monotonic() + _STOP_SHIELD_TIMEOUT
         while task is not None and not task.done():
-            if time.monotonic() >= deadline:
+            left = deadline - time.monotonic()
+            if left <= 0:
                 task.cancel()
-                with contextlib.suppress(BaseException):
-                    await asyncio.shield(task)
+                # cancel() 后仍给收尾一个有界窗口：asyncio.wait 只等到点或任务
+                # 完成，绝不 await 一个未完成的任务。不能用 wait_for(shield())——
+                # task 忽略 cancel 时 wait_for 自己也会卡住。
+                await asyncio.wait({task}, timeout=_STOP_POLL_SECONDS)
                 break
             try:
-                await asyncio.shield(task)
+                # 关键：每次等待都按剩余 deadline 切片。旧实现这里写裸
+                # ``await asyncio.shield(task)``，deadline 只在循环顶部检查，
+                # task 卡在不可取消的 to_thread 取数时永远回不到顶部——
+                # "30s 上界"只是注释，实际是无限等待。
+                await asyncio.wait({task}, timeout=min(left, _STOP_POLL_SECONDS))
             except asyncio.CancelledError:
                 cancelled = True
                 continue
@@ -659,7 +727,7 @@ class AsyncQuoteStream:
             return
 
         qmap = {str(row.get("code", "")): row for row in _quote_rows(result)}
-        _dispatch_round(subs, qmap, self._warned_bad_symbols)
+        _dispatch_round(subs, qmap, self._warned_bad_symbols, _round_meta(result))
         #: 只按最快的那条订阅打点；这一格必须是 stop 可唤醒的——``interval`` 没有上界
         #: （``validate_subscription`` 只挡 ``<= 0``），写成裸 sleep 就等于把停机时间交给
         #: 订阅参数，第 31 轮第 2 遍实测 ``interval=3600`` 时 ``stop()`` 顶穿 15 秒守卫。

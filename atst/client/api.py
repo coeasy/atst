@@ -528,6 +528,7 @@ class Client:
         count: int = 320,
         start: int = 0,
         adjustment: str = "",
+        adjust: str = "",
         currentness: str = "historical",
         strict: bool = False,
         start_date: str = "",
@@ -539,9 +540,10 @@ class Client:
         ``provider`` 缺省是 **``tdx``**（``PROVIDERS.default_provider``）：核心能力的缺省源
         在 ``QuerySpec.normalized()`` 里解析，不走 ``catalog.capability`` 那张迁移能力表
         （对 ``bars`` 调 ``default_provider_for`` 会 ``KeyError``，别被它误导）。tdx 只认
-        SZ/SH/BJ 三个二进制市场——港美标的要显式换源（``tencent`` / ``eastmoney`` /
-        ``auto``），北交所因 ``market=2`` 未验证在 tdx 侧不可用；缺省源也不会因为 tdx 主机
-        全挂而悄悄改由别的 Provider 出数。
+        SZ/SH/BJ 三个二进制市场；港美股代码在 provider 缺省时由 ``QuerySpec.normalized()``
+        按能力面自动路由到 operational Web 源（eastmoney/tencent，结果 provenance 显示真实
+        出数源），显式指定 provider 则完全尊重调用方选择。缺省源也不会因为 tdx 主机全挂而
+        悄悄改由别的 Provider 出数。
 
         回来 **0 根**不是"正常空结果"：分页游标从最新往回数，历史耗尽只会表现为短页，所以
         0 根一定带一条告警（``bars_empty_result``；tdx 的空桩换成 ``bars_empty_first_page``，
@@ -550,6 +552,13 @@ class Client:
         执行器把一次查询里记录的全部数据完整性瑕疵装进
         :attr:`~atst.result.ResultMeta.warnings`（空桩首页、锚点漂移截断等）；
         ``strict`` 就是那份名单的开关，任何 Provider、任何瑕疵类别同一条判据。
+
+        ``adjust`` 是 ``adjustment`` 的别名：canonical 的 ``adjustment`` 非空时胜出，
+        否则用 ``adjust`` 填充。推荐统一用 ``adjust``（与 ``adjusted_bars`` 的同名参数一致）。
+        **复权只有 Web 源支持**：缺省 Provider 是 ``tdx``，它会显式拒绝带复权的原始
+        ``bars``（E1010，不静默返回不复权数据）。要复权请显式指定
+        ``provider="eastmoney"`` / ``"tencent"``，或改用 :meth:`adjusted_bars`
+        （由本地除权事件自算，Provider 仍可走 tdx）。
 
         ``start_date`` / ``end_date``（``YYYY-MM-DD``，闭区间）给"取哪一段"一个比
         ``count``/``start`` 更自然的说法。协议侧只有"从最新往回数 ``count`` 根"这一种
@@ -575,6 +584,7 @@ class Client:
             count=count,
             start=start,
             adjustment=adjustment,
+            adjust=adjust,
             currentness=currentness,
             start_date=start_date,
             end_date=end_date,
@@ -710,6 +720,105 @@ class Client:
         )
         return stream
 
+    # -- 一等公民便捷方法（只翻译为 call()，不引入第二条执行路径）------------ #
+    # 这些能力此前只能经 execute/call/typed 到达，接口可发现性差。这里补的只是
+    # "命名 + 转发"，参数语义、provider 选择、provenance 全部沿用 call()，架构
+    # 守卫 tests/architecture/ 不因此出现新内核。
+
+    def adjusted_bars(
+        self,
+        symbol: str,
+        *,
+        adjust: str = "qfq",
+        method: str = "",
+        period: str = "day",
+        count: int = 320,
+        start: int = 0,
+        provider: str = "tdx",
+        event_source: str = "eastmoney",
+        **kwargs: Any,
+    ) -> QueryResult[Any]:
+        """复权 K 线（前/后/定点），一等公民入口；内部委托 ``call('adjusted_bars')``。
+
+        ``adjust`` 与 ``method`` 是同一复权方式的两种拼法，``method`` 非空时胜出；
+        二者都给不同值时以 ``method`` 为准（与内核 ``execute_composed`` 一致）。
+        """
+        chosen = method or adjust
+        return self.call(
+            "adjusted_bars",
+            symbol,
+            method=chosen,
+            period=period,
+            count=count,
+            start=start,
+            provider=provider,
+            event_source=event_source,
+            **kwargs,
+        )
+
+    def capital_changes(self, symbol: str, **kwargs: Any) -> QueryResult[Any]:
+        """除权除息 / 股本变迁（0x000F），一等公民入口。"""
+        return self.call("capital_changes", symbol, **kwargs)
+
+    def finance(self, symbol: str, **kwargs: Any) -> QueryResult[Any]:
+        """财务基础信息（0x0010），一等公民入口。"""
+        return self.call("finance", symbol, **kwargs)
+
+    def f10(self, symbol: str, filename: str = "", **kwargs: Any) -> QueryResult[Any]:
+        """F10 资料目录（TDX F10 协议族），一等公民入口。"""
+        return self.call("f10", symbol, filename=filename, **kwargs)
+
+    def ex_bars(self, code: str, **kwargs: Any) -> QueryResult[Any]:
+        """扩展市场（7727）K 线，一等公民入口。"""
+        return self.call("ex_bars", code, **kwargs)
+
+    def goods_bars(self, code: str, **kwargs: Any) -> QueryResult[Any]:
+        """商品市场（7727 goods）K 线，一等公民入口。"""
+        return self.call("goods_bars", code, **kwargs)
+
+    def mac_quotes(self, symbol: str, **kwargs: Any) -> QueryResult[Any]:
+        """MAC 专属族行情，一等公民入口。"""
+        return self.call("mac_quotes", symbol, **kwargs)
+
+    def local_finance(
+        self,
+        symbol: str,
+        *,
+        root: str | None = None,
+        fields_per_record: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """读本地 vipdoc ``gpcw*.dat`` 财务（离线，非查询内核路径）。
+
+        与 :meth:`finance`（TDX 0x0010 在线财务）不同，这里直接消费本地财务文件，
+        因此不返回 :class:`~atst.result.QueryResult`/provenance——它是纯本地文件读取，
+        不是一次 Provider 查询。返回 ``list[dict]``，字段见
+        :data:`atst.domain.finance.GPCW_FIELD_NAMES`。
+
+        ``root`` 省略时用本 Client 的 ``vipdoc_root``（构造参数）；都没有则显式报错，
+        不猜默认安装路径。gpcw 文件位于 ``<root>/<market>/gpcw*.dat``。
+        """
+        from ..domain.symbol import split_symbol
+        from ..errors import ValidationError
+        from ..reader import FinanceReader
+
+        base = root or getattr(self.runtime.executor, "vipdoc_root", None)
+        if not base:
+            raise ValidationError(
+                "local_finance 需要 root 或 Client(vipdoc_root=...)",
+                context={"symbol": symbol},
+            )
+        market, code = split_symbol(symbol)
+        if market not in {"sh", "sz", "bj"}:
+            raise ValidationError("local_finance 仅支持沪深北本地目录", context={"symbol": symbol})
+        from pathlib import Path
+
+        candidates = sorted(Path(base).glob(f"{market}/gpcw*.dat"))
+        if not candidates:
+            return []
+        reader = FinanceReader(fields_per_record=fields_per_record)
+        rows = reader.read_indicators(candidates[-1], output="dict")
+        return [dict(r, code=f"{market}{code}") for r in rows]
+
 
 class AsyncClient:
     """Async facade over the exact same v13 semantic/runtime contracts."""
@@ -833,3 +942,39 @@ class AsyncClient:
             on_error=on_error,
         )
         return stream
+
+    # -- 同步 facade 的一等公民方法镜像（全部 to_thread 转调，语义同源）-------- #
+    async def adjusted_bars(self, symbol: str, **kwargs: Any) -> Any:
+        return await asyncio.to_thread(self.client.adjusted_bars, symbol, **kwargs)
+
+    async def capital_changes(self, symbol: str, **kwargs: Any) -> Any:
+        return await asyncio.to_thread(self.client.capital_changes, symbol, **kwargs)
+
+    async def finance(self, symbol: str, **kwargs: Any) -> Any:
+        return await asyncio.to_thread(self.client.finance, symbol, **kwargs)
+
+    async def f10(self, symbol: str, filename: str = "", **kwargs: Any) -> Any:
+        return await asyncio.to_thread(self.client.f10, symbol, filename=filename, **kwargs)
+
+    async def ex_bars(self, code: str, **kwargs: Any) -> Any:
+        return await asyncio.to_thread(self.client.ex_bars, code, **kwargs)
+
+    async def goods_bars(self, code: str, **kwargs: Any) -> Any:
+        return await asyncio.to_thread(self.client.goods_bars, code, **kwargs)
+
+    async def mac_quotes(self, symbol: str, **kwargs: Any) -> Any:
+        return await asyncio.to_thread(self.client.mac_quotes, symbol, **kwargs)
+
+    async def local_finance(
+        self,
+        symbol: str,
+        *,
+        root: str | None = None,
+        fields_per_record: int | None = None,
+    ) -> Any:
+        return await asyncio.to_thread(
+            self.client.local_finance,
+            symbol,
+            root=root,
+            fields_per_record=fields_per_record,
+        )

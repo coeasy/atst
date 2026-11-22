@@ -45,6 +45,7 @@ from ..domain.integrity import row_violations
 from ..domain.models import Bar, CapitalChange, Quote
 from ..errors import (
     IntegrityViolation,
+    InternalError,
     ParseError,
     TdxError,
     TruncatedDataError,
@@ -173,6 +174,14 @@ def _forward_decode_caveats(result: ParseResult, label: str, *, stackdepth: int)
 _SINGLE_HOP_STACKDEPTH = 6
 _FRAMES_PER_NESTED_HOP = 2
 
+#: trampoline 的步数上界（每个 op = 一次 RPC 或一次状态操作）。
+#:
+#: 驱动器本身是 ``while True``：模板只要持续 ``yield`` 而条件永不收敛，这里就是一条
+#: **没有 I/O、没有超时、也不会被 socket 超时打断**的纯空转——协议侧的任何重试/分页
+#: 上界都管不到它。正常模板的步数是几十到几百（分页、批量），10 万步已远高于任何
+#: 合法调用；越界说明模板写出了不收敛的循环，按内部错误当场失败，而不是让调用方挂死。
+_MAX_TRAMPOLINE_STEPS = 100_000
+
 
 class _ClientMixin:
     """同步 / 异步客户端共享骨架（模板 + trampoline）。
@@ -215,7 +224,11 @@ class _ClientMixin:
         try:
             try:
                 op = next(gen)
+                steps = 0
                 while True:
+                    steps += 1
+                    if steps > _MAX_TRAMPOLINE_STEPS:
+                        raise self._trampoline_overrun(steps)
                     try:
                         if isinstance(op, _ReqOp):
                             out = self._req(op.cmd, op.body, **op.kwargs)
@@ -236,7 +249,11 @@ class _ClientMixin:
         try:
             try:
                 op = next(gen)
+                steps = 0
                 while True:
+                    steps += 1
+                    if steps > _MAX_TRAMPOLINE_STEPS:
+                        raise self._trampoline_overrun(steps)
                     try:
                         if isinstance(op, _ReqOp):
                             out = await self._req(op.cmd, op.body, **op.kwargs)
@@ -250,6 +267,18 @@ class _ClientMixin:
                 return stop.value
         finally:
             self._drive_depth -= 1
+
+    @staticmethod
+    def _trampoline_overrun(steps: int) -> InternalError:
+        """模板不收敛时唯一的失败口：把"挂死"变成一条可读的内部错误。"""
+        return InternalError(
+            f"客户端模板在 {steps} 步内未收敛（上限 {_MAX_TRAMPOLINE_STEPS}）",
+            context={
+                "phase": "client_template",
+                "steps": steps,
+                "max_steps": _MAX_TRAMPOLINE_STEPS,
+            },
+        )
 
     def _set_last_errors(self, errors: list[tuple[str, BaseException]]) -> None:
         """``last_errors`` 收尾钩子（sync：与并发路径互斥加锁，C3）。"""

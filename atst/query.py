@@ -55,6 +55,12 @@ REJECTED_OPTIONS: dict[str, str] = {
 #: 名单与真实读取点的一致性由架构门禁 ``test_option_bag_keys_are_executed_or_rejected``
 #: 对 AST 扫描结果求差把守——在这里加一个执行面不读的键，门禁即红。
 EXECUTED_OPTIONS: frozenset[str] = frozenset({"args", "kwargs", "market", "strict", "index"})
+
+#: 港美股等 TDX 二进制不可服务市场的 bars 缺省候选，按偏好排序。只收 Web Provider：
+#: eastmoney 支持 qfq/hfq 且返回成交额；tencent 成交额为 0（告警）。tdx/baidu/sina
+#: 在真机上对 hk/us 分别抛 E4040/E7000/E7030，不能作为缺省。
+_NON_TDX_BAR_PROVIDERS: tuple[str, ...] = ("eastmoney", "tencent")
+
 _CANONICAL_UNIFIED_CHANNELS: dict[tuple[str, str], str] = {
     ("tdx", "quotes"): "quotation",
     ("tdx", "bars"): "quotation",
@@ -323,6 +329,7 @@ class QuerySpec:
         count: int = 0,
         start: int = 0,
         adjustment: str = "",
+        adjust: str = "",
         start_date: str = "",
         end_date: str = "",
         allow_stale: bool = False,
@@ -350,6 +357,11 @@ class QuerySpec:
                     },
                 ) from exc
         current = _parse_currentness(currentness)
+        # ``adjust`` 是 ``adjustment`` 的别名（与 derived.adjusted_bars 的 method/adjustment
+        # 别名同义）：canonical 的 ``adjustment`` 非空时胜出，否则用 ``adjust`` 填充。
+        # 两者给了不同值且都非空时以 canonical 为准，不报错——避免出现第三种拼法后
+        # 又多出一套"两个都给就失败"的调用方负担。
+        effective_adjustment = adjustment or adjust
         # 构造期只保留"折叠进 options 袋"这一条通路：袋里的键要么被执行面消费，
         # 要么在 ``REJECTED_OPTIONS`` 里当场拒绝，不存在第三种"收下但没人读"。
         merged_options: dict[str, Any] = dict(options or {})
@@ -363,7 +375,7 @@ class QuerySpec:
             period=period,
             count=count,
             start=start,
-            adjustment=adjustment,
+            adjustment=effective_adjustment,
             start_date=_norm_text(start_date),
             end_date=_norm_text(end_date),
             currentness=current.value,
@@ -429,6 +441,19 @@ class QuerySpec:
             elif markets == {"us"}:
                 cap = "us_quotes"
                 _translated = True
+        # bars 的市场感知路由：TDX 二进制只认 SZ/SH/BJ，港美股代码在默认 tdx 上
+        # 会抛 E4040。与 quotes 的翻译不同，bars 仍保留 canonical capability
+        # （没有 hk_bars/us_bars），只把缺省 Provider 换成 operational 的 Web 源，
+        # 并把选择记在 options 里供 provenance/诊断读取——这不是静默换源：调用方
+        # 显式指定 provider 时本分支完全不介入，且结果 meta 会显示真实出数源。
+        _market_routed = False
+        if cap == "bars" and self.provider is None and symbols:
+            try:
+                bar_markets = {parse_symbol(s).market for s in symbols}
+            except Exception:
+                bar_markets = set()
+            if bar_markets and not bar_markets <= {"sh", "sz", "bj"}:
+                _market_routed = True
         if cap in {"quotes", "bars"} and not symbols:
             raise ValidationError(f"{cap} 至少需要一个 symbol", context={"capability": cap})
         if cap == "bars" and len(symbols) != 1:
@@ -476,6 +501,15 @@ class QuerySpec:
                 fb_default = _dpf(cap)
             except KeyError:
                 fb_default = default_provider or PROVIDERS.default_provider
+        elif _market_routed:
+            # 港美股 bars：从 operational 的 bars Provider 里按偏好挑一个 Web 源。
+            # tdx 虽在册但对 hk/us 会在执行期抛 E4040，故这里显式排除二进制族，
+            # 只选能服务该市场的 Web Provider（eastmoney/tencent 均已真机验证）。
+            available = {
+                p for p in PROVIDERS.available_providers(cap) if p in _NON_TDX_BAR_PROVIDERS
+            }
+            chosen = next((p for p in _NON_TDX_BAR_PROVIDERS if p in available), None)
+            fb_default = chosen or (default_provider or PROVIDERS.default_provider)
         else:
             fb_default = default_provider or PROVIDERS.default_provider
         selected = resolve_capability_provider(

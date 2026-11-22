@@ -11,9 +11,10 @@ from ...client.api import Client
 from ...errors import ValidationError
 from ...runtime.orchestration import FallbackPolicy
 from ..serialization import serialize_result
-from ..wire_fields import as_request_int, reject_reserved_kwargs
+from ..wire_fields import as_request_bool, as_request_int, reject_reserved_kwargs
 
 __all__ = [
+    "_h_capabilities",
     "_h_get_bars",
     "_h_get_quote",
     "_h_get_quotes",
@@ -51,6 +52,33 @@ def _int_arg(tool: str, field: str, value: Any) -> int:
         lo=prop.get("minimum"),
         hi=prop.get("maximum"),
     )
+
+
+def _h_capabilities(client: Client, args: dict[str, Any]) -> dict[str, Any]:
+    """能力发现：与 CLI ``capabilities`` / HTTP ``/v13/capabilities`` / WS
+    ``runtime.capabilities`` 同源同形（2026-11-22 补齐 MCP 缺口）。
+
+    此前 MCP 只靠 ``tools/list`` 暴露 9 个固定工具名，而 ``query_capability`` 声称能
+    执行"任意已迁移能力"——模型侧没有任何办法枚举那些能力的名字，形成四张服务面里
+    唯一一张找不到能力目录的断链。这里复用 :meth:`Client.capabilities` 与 Provider
+    Registry，形状与其它三面完全一致。
+    """
+    from ...providers import PROVIDERS
+
+    query = str(args.get("query", "") or "").strip().lower()
+    names = list(client.capabilities())
+    if query:
+        names = [name for name in names if query in name.lower()]
+    return {
+        "capabilities": names,
+        "providers": {
+            provider: {
+                channel.id: sorted(channel.capabilities)
+                for channel in PROVIDERS.get(provider).channels
+            }
+            for provider in PROVIDERS.ids()
+        },
+    }
 
 
 def _h_query_capability(client: Client, args: dict[str, Any]) -> dict[str, Any]:
@@ -111,7 +139,12 @@ def _h_get_bars(client: Client, args: dict[str, Any]) -> dict[str, Any]:
             start=_int_arg("get_bars", "start", args.get("start")),
             adjustment=str(args.get("adjustment", "")),
             currentness=str(args.get("currentness", "historical")),
-            strict=bool(args.get("strict", False)),
+            strict=as_request_bool(
+                face="mcp_arguments",
+                where="MCP tool arguments",
+                name="strict",
+                value=args.get("strict"),
+            ),
             start_date=str(args.get("start_date", "")),
             end_date=str(args.get("end_date", "")),
         )
@@ -127,7 +160,12 @@ def _h_get_quote(client: Client, args: dict[str, Any]) -> dict[str, Any]:
             args["symbol"],
             provider=provider,
             policy=policy,
-            strict=bool(args.get("strict", False)),
+            strict=as_request_bool(
+                face="mcp_arguments",
+                where="MCP tool arguments",
+                name="strict",
+                value=args.get("strict"),
+            ),
         )
     )
 
@@ -141,7 +179,12 @@ def _h_get_quotes(client: Client, args: dict[str, Any]) -> dict[str, Any]:
             args["symbols"],
             provider=provider,
             policy=policy,
-            strict=bool(args.get("strict", False)),
+            strict=as_request_bool(
+                face="mcp_arguments",
+                where="MCP tool arguments",
+                name="strict",
+                value=args.get("strict"),
+            ),
         )
     )
 

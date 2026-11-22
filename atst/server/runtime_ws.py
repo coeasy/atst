@@ -34,6 +34,7 @@ from .serialization import serialize_result
 from .wire_fields import (
     WS_PARAMS_FIELDS,
     as_request_bool,
+    as_request_float,
     as_request_int,
     reject_reserved_kwargs,
     reject_undeclared,
@@ -398,8 +399,15 @@ class RuntimeJsonRpcHandler:
             raise ValidationError("symbols is required")
         if isinstance(symbols, str):
             symbols = [symbols]
-        interval = float(self._int_param("subscribe", "interval", interval, 1) or 1)
-        diff_only = bool(diff_only) if diff_only is not None else False
+        interval = as_request_float(
+            face="ws_params",
+            where="WS subscribe params",
+            name="interval",
+            value=interval,
+            default=1.0,
+            lo=0.0,
+        )
+        diff_only = self._bool_param("subscribe", "diff_only", diff_only, False)
         max_queue = int(self._int_param("subscribe", "max_queue", max_queue, 1024) or 1024)
         if self._loop is None or self._send is None:
             # 无连接的上下文（门禁/单测）：只声明订阅 id，不起流。
@@ -502,16 +510,29 @@ class RuntimeJsonRpcHandler:
         #: 消费方因此拿不到"这条数据有瑕疵"的任何信号——与同一份声明直接冲突。形状对齐
         #: 请求-响应的 ``meta``，流式与一次性查询才不会因为入口不同而丢信息。
         meta: dict[str, Any] = {"provider": self._push_provider(symbol)}
-        warnings = self._drain_warnings()
+        #: 告警与观测时刻由流式层随 payload 带上来（``streaming.base._round_meta``）：
+        #: 回调跑在轮询线程里，``current_warnings()`` 的 ContextVar sink 在这里本来就是
+        #: 空的，过去那段读取因此永远返回 ``[]``，推送帧从来不带 ``warnings``。
+        #: ``_drain_warnings()`` 只保留给「调用方自己装了 sink」的同线程场景。
+        warnings = data.get("warnings") if isinstance(data, dict) else None
+        if not warnings:
+            warnings = self._drain_warnings()
         if warnings:
             meta["warnings"] = warnings
         observed = data.get("observed_at_ns") if isinstance(data, dict) else None
         if observed is not None:
             meta["observed_at_ns"] = observed
+        #: 元信息只出现在 ``meta`` 里：流式层把它并进 payload 是为了跨层携带，到了 wire
+        #: 上再留在 ``data`` 里就成了同一事实两处声明，消费方还得自己判断哪份为准。
+        payload = (
+            {key: value for key, value in data.items() if key not in {"warnings", "observed_at_ns"}}
+            if isinstance(data, dict)
+            else data
+        )
         frame = {
             "jsonrpc": JSONRPC_VERSION,
             "method": PUSH_METHOD,
-            "params": {"type": "snapshot", "code": symbol, "data": data, "meta": meta},
+            "params": {"type": "snapshot", "code": symbol, "data": payload, "meta": meta},
         }
         self._schedule_push(frame)
 

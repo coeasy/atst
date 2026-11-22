@@ -35,14 +35,6 @@ def _frame(method, meta, payload):
     )
 
 
-def _latest_sample(name: str):
-    cand = sorted(GOLDEN.glob(f"quotation/{name}/20*"), reverse=True)
-    assert cand, f"缺少 golden 样本: {name}"
-    meta = __import__("json").loads((cand[0] / "meta.json").read_text(encoding="utf-8"))
-    payload = (cand[0] / "payload.bin").read_bytes()
-    return meta, payload
-
-
 def _pinned_sample(name: str, ts: str):
     """取**固定时间戳**样本：数值断言类测试必须锁定设计时依据的罐头，
     不得随补录漂移到新实采样本（行情值每日变化）。"""
@@ -73,7 +65,8 @@ def test_period_to_category():
 def test_client_quote_conversion_from_golden():
     from atst.protocol.registry import dispatch
 
-    meta, payload = _latest_sample("0x0530_realtime_quote_600519")
+    # 锚定 2026-08-31 实采罐头：数值断言不得随每日补录的新行情样本漂移
+    meta, payload = _pinned_sample("0x0530_realtime_quote_600519", "20260831-133459")
     frame = _frame(0x0530, meta, payload)
     ctx = dict(meta["parse_ctx"])
     result = dispatch(frame, code=ctx["code"], market=ctx["market"], price_scale=100)

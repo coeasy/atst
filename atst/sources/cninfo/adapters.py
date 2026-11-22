@@ -50,6 +50,11 @@ _SEARCH_URL = "http://www.cninfo.com.cn/new/information/topSearch/query"
 #: 代码 → orgId 的进程内查表结果（orgId 不随时间变化，省掉每次公告查询前的一次联想请求）。
 #: 它只记 orgId 这一项元数据，**不存任何行情/公告结果**——复用的是「代码查 orgId」
 #: 这一步的往返，不是把响应留下来。
+#:
+#: 容量上界：全市场代码可枚举（数千只），但进程内表若无界增长，长驻服务里
+#: 每查一只新代码就多一条，永不回收。达到上界后按插入顺序淘汰最旧的一条——
+#: orgId 是稳定元数据，淘汰只意味着下次多一次联想请求，不影响正确性。
+_ORG_ID_CACHE_CAPACITY = 4096
 _ORG_ID_CACHE: dict[str, str] = {}
 
 
@@ -256,6 +261,8 @@ class CninfoSource(BaseWebSource):
                     f"巨潮未收录该代码的 orgId，无法按标的查公告：{code}",
                     context={"source": CNINFO, "symbol": symbol},
                 )
+            if len(_ORG_ID_CACHE) >= _ORG_ID_CACHE_CAPACITY:
+                _ORG_ID_CACHE.pop(next(iter(_ORG_ID_CACHE)))
             _ORG_ID_CACHE[code] = org_id
         return f"{code},{org_id}"
 

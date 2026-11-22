@@ -33,6 +33,7 @@ __all__ = [
     "QUERY_ROUTING_FIELDS",
     "WS_PARAMS_FIELDS",
     "as_request_bool",
+    "as_request_float",
     "as_request_int",
     "reject_reserved_kwargs",
     "reject_undeclared",
@@ -223,6 +224,64 @@ def as_request_bool(
             "face": face,
             "field": name,
             "received": repr(value),
+        },
+    )
+
+
+def as_request_float(
+    *,
+    face: str,
+    where: str,
+    name: str,
+    value: Any,
+    default: float,
+    lo: float | None = None,
+    hi: float | None = None,
+) -> float:
+    """浮点请求字段的唯一规整/拒绝口（与 :func:`as_request_int` 同一条口径）。
+
+    ``Client.stream(interval=1.5)`` 之类允许小数，但 WS 早期用整数口读 ``interval``：
+    ``1.5`` 被 ``as_request_int`` 当场拒成 E1010，CLI 与 Python 面却接受同一个值。
+    这里以同样的"缺席用 default、合法原样、坏值当场拒"口径补上浮点面，使四张服务面
+    对同一字段的接受范围一致。非有限值（NaN / inf）一律拒绝：它们会让订阅定时循环
+    失去节拍，与死循环同性质。
+    """
+    import math
+
+    if value is None:
+        parsed = float(default)
+    elif isinstance(value, bool):
+        raise _bad_float(face, where, name, value, lo, hi)
+    elif isinstance(value, (int, float)):
+        parsed = float(value)
+    elif isinstance(value, str):
+        try:
+            parsed = float(value.strip())
+        except ValueError:
+            raise _bad_float(face, where, name, value, lo, hi) from None
+    else:
+        raise _bad_float(face, where, name, value, lo, hi)
+    if not math.isfinite(parsed):
+        raise _bad_float(face, where, name, value, lo, hi)
+    if (lo is not None and parsed < lo) or (hi is not None and parsed > hi):
+        raise _bad_float(face, where, name, value, lo, hi)
+    return parsed
+
+
+def _bad_float(
+    face: str, where: str, name: str, value: Any, lo: float | None, hi: float | None
+) -> ValidationError:
+    bound = f"，允许区间 [{lo if lo is not None else '-∞'}, {hi if hi is not None else '+∞'}]"
+    return ValidationError(
+        f"{where} 的 {name}={value!r} 不是一个区间内的有限实数：当场拒绝，"
+        f"而不是替换成另一个数或当成内部错误{bound}",
+        context={
+            "phase": "wire_validation",
+            "face": face,
+            "field": name,
+            "received": repr(value),
+            "minimum": lo,
+            "maximum": hi,
         },
     )
 

@@ -412,6 +412,10 @@ def _mcp_sample(spec: dict[str, Any]) -> Any:
     kind = spec.get("type")
     if kind == "integer":
         return 1
+    if kind == "boolean":
+        # strict 等布尔格必须给真布尔：旧生成器把 boolean 落到末尾的 "tdx"，
+        # 在 bool() 真值规则下恰好"能过"，掩盖了类型不匹配的缺陷。
+        return False
     if kind == "array":
         return ["600519"] if spec.get("items") == {"type": "string"} else []
     if kind == "object":

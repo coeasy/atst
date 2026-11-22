@@ -45,6 +45,7 @@ __all__ = [
     "to_csv",
     "from_csv",
     "to_duckdb",
+    "query_parquet",
     "parquet_writer",
     "duckdb_writer",
 ]
@@ -305,6 +306,133 @@ def to_duckdb(
         if row is None:
             raise RuntimeError("DuckDB COUNT 查询未返回结果")
         return int(row[0])
+    finally:
+        con.close()
+
+
+#: DuckDB 会把 ``PRAGMA version`` 这类语句在解析阶段改写成 ``SELECT * FROM
+#: pragma_version()``，单看解析后的 StatementType 会误判成只读。故在解析前
+#: 先按**语句起始关键字**（不是全文子串，避免字面量误伤）挡掉这类命令。
+_SQL_NONSELECT_HEADS: tuple[str, ...] = (
+    "pragma ",
+    "copy ",
+    "attach ",
+    "detach ",
+    "install ",
+    "load ",
+)
+
+#: ``query_parquet`` 接受的只读语句类型。DuckDB 会把 ``WITH ... SELECT`` 一并
+#: 归为 ``StatementType.SELECT``，所以这里只需一个类型即可覆盖 CTE。
+#:
+#: 早先的实现用「前缀 + 写关键字子串」判定只读，有两个已实测的缺陷：
+#: 1. ``WHERE code = 'drop table'`` 这类**字符串字面量**含写关键字，被误拒；
+#: 2. ``SELECT 1; INSERT/**/INTO t VALUES(1)`` 用注释拆开关键字后绕过子串扫描，
+#:    多语句被 ``con.execute`` 接受。
+#: 现在改由 DuckDB 自身的语句解析器裁决：必须恰好一条语句且类型为 SELECT。
+_READ_STATEMENT_TYPE: str = "SELECT"
+
+
+def query_parquet(
+    root: str | Path,
+    sql: str,
+    *,
+    params: Sequence[Any] | None = None,
+    view: str = "bars",
+) -> list[dict[str, Any]]:
+    """对落盘 parquet 目录做**只读** SQL 查询，返回 dict 行列表。
+
+    这是 :func:`from_parquet`（单文件读回）的跨文件、跨标的补面：把
+    ``root`` 下所有 ``*.parquet``（默认 ``<root>/**/*.parquet``，覆盖
+    ``data/day/<类别>/<代码>.parquet`` 布局）注册为 DuckDB 视图 ``view``
+    （默认 ``bars``），再执行一条只读 SELECT / WITH。
+
+    Parameters
+    ----------
+    root:
+        parquet 根目录。常见取值 ``"data/day"``（本地落盘快照目录）。
+    sql:
+        只读 SQL，用 ``view`` 引用注册视图，例如
+        ``"SELECT code, date, close FROM bars WHERE code='sh600519' ORDER BY date DESC LIMIT 10"``。
+    params:
+        可选绑定参数（DuckDB ``?`` 占位），避免字符串拼接。
+    view:
+        注册视图名，须匹配表名白名单（防注入）。
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        每行一个 dict，键为 parquet 列名。
+
+    Raises
+    ------
+    DependencyMissingError
+        未安装 duckdb（``pip install 'atst[duckdb]'``）。
+    ValueError
+        SQL 不是只读语句、视图名非法、或目录不存在。
+
+    Notes
+    -----
+    * **只读是硬约束**：经 DuckDB 语句解析器确认恰好一条 SELECT 语句（含只读
+      CTE），字符串字面量里的关键字不会误触发，夹带的第二条写语句会被拒绝；
+      语句底层由 DuckDB 对 parquet 文件做投影/过滤下推，不在 Python 侧全量载入。
+    * **来源可追溯**：结果不含 provenance——本地 parquet 是 ``sync_daily_history``
+      的历史快照，不是实时行情；调用方不得把它当 live 数据。
+    * **零硬依赖**：duckdb 惰性导入，核心包无 duckdb 也能 import 本模块。
+    """
+    if not _TABLE_NAME_RE.match(view):
+        raise ValueError(
+            f"非法视图名 {view!r}（须匹配 ^[A-Za-z_][A-Za-z0-9_]*$，视图名会拼入 SQL）"
+        )
+    statement = str(sql).strip().rstrip(";").strip()
+    lowered_head = statement.lower()
+    for head in _SQL_NONSELECT_HEADS:
+        if lowered_head.startswith(head):
+            raise ValueError(f"只读查询不允许 {head.strip()!r} 语句，收到 {sql[:40]!r}")
+    root_path = Path(root)
+    if not root_path.exists():
+        raise ValueError(f"parquet 根目录不存在: {root_path}")
+
+    try:
+        import duckdb
+    except ImportError as exc:  # pragma: no cover
+        from ..errors import DependencyMissingError
+
+        raise DependencyMissingError(
+            "只读 parquet 查询需要 duckdb: pip install 'atst[duckdb]'", cause=exc
+        ) from exc
+
+    # 用解析器而非字符串扫描裁决只读：既避免字面量里的关键字误拒，也保证
+    # 恰好一条语句（多语句里夹带 INSERT/UPDATE 无法绕过）。空 SQL 直接拒绝。
+    try:
+        parsed = duckdb.extract_statements(statement)
+    except Exception as exc:
+        raise ValueError(f"SQL 解析失败: {exc}") from exc
+    kinds = [getattr(item.type, "name", str(item.type)).upper() for item in parsed]
+    if len(parsed) != 1 or kinds[0] != _READ_STATEMENT_TYPE:
+        raise ValueError(
+            f"只允许恰好一条只读 SELECT / WITH 语句，收到 {kinds or ['EMPTY']}；{sql[:40]!r}"
+        )
+    statement = parsed[0].query
+
+    # glob 用 DuckDB 侧展开：``union_by_name`` 容忍不同类别 parquet 的列差异
+    # （如指数无 amount_unit、个股有），缺列补 NULL 而不是让整个查询失败。
+    # 单引号必须转义：目录名里带 ``'``（如 ``O'Brien``）会把字面量提前截断，
+    # 轻则语法错误，重则让后半段被当成 SQL 执行——路径是调用方输入，不能直拼。
+    pattern = str(root_path / "**" / "*.parquet").replace("\\", "/").replace("'", "''")
+    # 空目录：DuckDB 的 read_parquet 遇到无匹配文件会抛 IOException。空结果集是
+    # 合法查询（与 SQL 语义一致），先探测再短路，避免把"没有数据"说成"查询失败"。
+    if not any(root_path.rglob("*.parquet")):
+        return []
+    con = duckdb.connect(":memory:")
+    try:
+        con.execute(
+            f"CREATE VIEW {view} AS "  # noqa: S608
+            f"SELECT * FROM read_parquet('{pattern}', union_by_name=true, filename=true)"  # noqa: S608
+        )
+        rows = con.execute(statement, params or []).fetchall()
+        columns = [d[0] for d in con.description] if con.description else []
+        return [dict(zip(columns, row, strict=False)) for row in rows]
     finally:
         con.close()
 

@@ -124,7 +124,11 @@ def test_mcp_only_exposes_promoted_canonical_capabilities() -> None:
     # 规范 manifest = Tier-A dedicated tools + 统一 query_capability 网关
     # （见 integration/mcp/_tools_spec.py 模块 docstring：每个 migrated capability
     # 都经由 query_capability 复用同一条 Client/QuerySpec 执行链）。
+    # 2026-11-22：补入 ``capabilities`` 发现工具——其余三张服务面都有能力目录，
+    # 唯独 MCP 的模型侧无法枚举 query_capability 可调用的 217 个名字。它是只读发现口，
+    # 仍走 Client.capabilities + Provider Registry，不引入第二条执行链。
     assert names == {
+        "capabilities",
         "get_bars",
         "get_quote",
         "get_quotes",

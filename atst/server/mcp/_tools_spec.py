@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from ._common import MAX_BARS_COUNT, MAX_PAGE, ToolSpec, _int_prop, _list_of_strings, _str_prop
 from ._tools_impl import (
+    _h_capabilities,
     _h_get_bars,
     _h_get_minute_today,
     _h_get_quote,
@@ -45,6 +46,24 @@ _STRICT = {
 }
 
 TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        name="capabilities",
+        description=(
+            "List all migrated capability names and their Providers/channels through the "
+            "canonical Client runtime. Same data as CLI `capabilities`, HTTP `/v13/capabilities` "
+            "and WS `runtime.capabilities`; call this before `query_capability` to discover names."
+        ),
+        inputSchema={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "query": _str_prop(
+                    "Optional case-insensitive substring filter over capability names."
+                )
+            },
+        },
+        handler=_h_capabilities,
+    ),
     ToolSpec(
         name="query_capability",
         description="Execute any migrated v13 business capability through the canonical Client runtime.",
