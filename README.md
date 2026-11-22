@@ -4,7 +4,7 @@
 >
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
-- 当前版本：`2.0.0`（v2 架构重写，源码候选，尚未打 tag）· 已发布版本：PyPI 最新 **`1.6.1`**（`pip install atst`，2026-10-30）· [v1.6.1 Release](https://github.com/coeasy/atst/releases/tag/v1.6.1) · [CHANGELOG](https://github.com/coeasy/atst/blob/main/CHANGELOG.md) · [v1→v2 迁移指南](https://github.com/coeasy/atst/blob/main/docs/migration/v2.md)
+- 当前版本：`2.1.0` · 已发布版本：PyPI 最新 **`2.1.0`**（`pip install atst`，2026-11-22）· [v2.1.0 Release](https://github.com/coeasy/atst/releases/tag/v2.1.0) · [CHANGELOG](https://github.com/coeasy/atst/blob/main/CHANGELOG.md) · [v1→v2 迁移指南](https://github.com/coeasy/atst/blob/main/docs/migration/v2.md)
 
 ---
 
@@ -188,19 +188,19 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 ## 安装
 
 ```bash
-pip install atst                    # 核心包（PyPI 最新 1.6.1，零硬依赖）
+pip install atst                    # 核心包（PyPI 最新 2.1.0，零硬依赖）
 pip install "atst[all]"             # 全部可选能力（pandas/pyarrow/duckdb/httpx/fastapi/...）
 pip install -e ".[dev]"             # 开发体验（pytest/ruff/mypy/pytest-asyncio/hatchling）
 ```
 
-> **版本口径**（2026-11-08 实测）：`atst` **已发布到 PyPI**，最新版本为 `1.6.1`
-> （上传于 2026-10-30）。本仓库源码为 `2.0.0`，尚未打 tag；`pip install atst`
-> 当前装到 `1.6.1`，2.0.0 新增的零配置入口（`atst.history` 等）需要等 2.0.0
-> 发布后才能从 PyPI 安装。需要立即体验 2.0.0 时从源码安装：
+> **版本口径**（2026-11-22 实测）：`atst` **已发布到 PyPI**，最新版本为 `2.1.0`
+> （上传于 2026-11-22），前一版本 `2.0.0`（2026-11-09）。`pip install atst` 直接装到
+> 最新版，零配置入口（`atst.history` / `atst.quote`）自 2.0.0 起已在 PyPI 包内。需要跟
+> 仓库源码时从源码安装：
 >
 > ```bash
 > git clone https://github.com/coeasy/atst.git && cd atst
-> pip install ".[all]"                # 2.0.0 源码
+> pip install ".[all]"                # 源码（2.1.0）
 > python -m build                     # 产物在 dist/；make build 走同一套 canonical 校验
 > ```
 >
@@ -332,7 +332,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### 零配置最短路径（`atst.history` / `atst.quote`，2.0.0 起；PyPI 1.6.1 暂无此入口）
+### 零配置最短路径（`atst.history` / `atst.quote`，2.0.0 起，PyPI 已含此入口）
 
 ```python
 import atst
@@ -548,9 +548,13 @@ python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproje
 
 ## 路线图
 
-### 当前阶段：v2.0.0（源码候选）
+### 当前阶段：v2.1.0（已发布）
 
-`v2.0.0` 是架构重写版本（Provider 声明化、包布局重排、Client 动态面收敛、文档生成制）；上一已发布版本为 `v1.6.1`（2026-10-30）。当前内核为单执行路径、零缓存、provider-first：
+`v2.1.0` 在 v2.0.0 的架构重写之上补上了主站候选池的**免升级运维闭环**：`atst hosts discover`
+从本机通达信 `connect.cfg` 与开源清单发现候选并实测采纳，排名文件升到 V2（带 `observed_at`
+观测时间），`hosts scan` 扫全池（含发现进来的 extras）并在同一轮淘汰不可达项，`hosts list`
+给出观测年龄与过期提示。v2.0.0（2026-11-09）为架构重写版本（Provider 声明化、包布局重排、
+Client 动态面收敛、文档生成制）。当前内核为单执行路径、零缓存、provider-first：
 85 命令 / 61 精确解析器 / 5 协议族 / 14 Provider / 217 capability / 304 条精确绑定。
 
 | 里程碑 | 状态 |

@@ -2,10 +2,10 @@
 
 # 四张服务面
 
-- CLI 叶子命令：38 条
+- CLI 叶子命令：39 条
 - HTTP 路由：12 条
 - WS / JSON-RPC 方法：13 个
-- MCP 工具：9 个
+- MCP 工具：10 个
 
 ## WS / JSON-RPC 方法
 
@@ -40,6 +40,7 @@
 
 ## MCP 工具
 
+- `capabilities`
 - `query_capability`
 - `get_bars`
 - `get_quote`

@@ -1,15 +1,15 @@
 # atst 快速开始
 
-本文对应当前 `2.0.0`（v2 架构重写，源码候选，尚未打 tag）；PyPI 最新已发布版本为 `1.6.1`（`pip install atst`，2026-10-30），对应 GitHub Release [`v1.6.1`](https://github.com/coeasy/atst/releases/tag/v1.6.1)。要求 Python 3.10 或更高版本。v1→v2 的导入与路径迁移见 [迁移指南](migration/v2.md)。
+本文对应当前 `2.1.0`（已发布）；PyPI 最新版本即 `2.1.0`（`pip install atst`，2026-11-22），对应 GitHub Release [`v2.1.0`](https://github.com/coeasy/atst/releases/tag/v2.1.0)。要求 Python 3.10 或更高版本。v1→v2 的导入与路径迁移见 [迁移指南](migration/v2.md)。
 
 ## 安装
 
 ```bash
-# 从 PyPI（当前线上 1.6.1）
+# 从 PyPI（当前线上 2.1.0）
 pip install atst
 pip install "atst[all]"
 
-# 从源码（2.0.0 候选）
+# 从源码（2.1.0）
 git clone https://github.com/coeasy/atst.git && cd atst
 pip install ".[all]"
 
@@ -17,8 +17,9 @@ pip install ".[all]"
 pip install -e ".[dev]"
 ```
 
-> **版本口径**（2026-11-08 实测）：PyPI 上已有 `atst`，最新 `1.6.1`（2026-10-30）。
-> 本仓库源码为 `2.0.0`，尚未打 tag；2.0.0 新增入口（如 `atst.history`）需从源码安装。
+> **版本口径**（2026-11-22 实测）：PyPI 上 `atst` 最新 `2.1.0`（2026-11-22），前一版本
+> `2.0.0`（2026-11-09）。零配置入口（`atst.history` 等）自 2.0.0 起已在 PyPI 包内，
+> 不需要从源码安装。
 > extras 名称（`[all]`、`[web]`、`[server]` …）在 PyPI 安装与源码安装下完全相同。
 
 ## 5 分钟上手

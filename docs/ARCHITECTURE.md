@@ -1,6 +1,6 @@
 # atst 架构（ARCHITECTURE）
 
-> 本文只描述**当前代码事实**（v2.0.0，`/v13/` 单一执行内核）。演进历史与变更原因见
+> 本文只描述**当前代码事实**（v2.1.0，`/v13/` 单一执行内核）。演进历史与变更原因见
 > [`CHANGELOG.md`](../CHANGELOG.md) 与 [`migration/v2.md`](migration/v2.md)；早期方案里的
 > L1/L2 缓存、UnifiedQuoteAPI 门面、五级降级路由、sources/sinks 层、信封运行时、
 > `execution/` DAG 与 `provider/` 路由件均已物理删除，不再是事实。

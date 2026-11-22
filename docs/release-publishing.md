@@ -1,12 +1,12 @@
 # PyPI 自动发布配置
 
-更新：2026-10-04
+更新：2026-11-22
 
 ## 当前状态
 
 `.github/workflows/wheels.yml` 已包含 PyPI Trusted Publishing：推送符合规则的 `v*` tag 后，先运行完整发布门禁、构建并验证 wheel/sdist，再创建 GitHub draft release。2026-10-04 已完成 GitHub 仓库侧配置：`pypi` Environment 已创建，只允许匹配 `v*` 的标签部署；仓库 Actions variable `PUBLIC_RELEASE=true` 已启用。环境未设置 required reviewer，以保留 tag 发布后的自动流程。
 
-本次核查 PyPI JSON API（2026-11-08）：[`https://pypi.org/pypi/atst/json`](https://pypi.org/pypi/atst/json) 返回项目 `atst`，最新版本 `1.6.1`（2026-10-30），已发布 `1.4.3` / `1.6.0` / `1.6.1`；`pip install atst` 可直接安装。项目已存在，Trusted Publisher 已是普通 publisher，不再是 pending publisher。下一次待发布为 `v2.0.0`（源码 `2.0.0`，尚未打 tag）。
+本次核查 PyPI JSON API（2026-11-22）：[`https://pypi.org/pypi/atst/json`](https://pypi.org/pypi/atst/json) 返回项目 `atst`，最新版本 `2.1.0`（2026-11-22），已发布 `1.4.3` / `1.6.0` / `1.6.1` / `2.0.0`（2026-11-09）/ `2.1.0`；`pip install atst` 可直接安装。Trusted Publisher 已是普通 publisher，`v2.0.0` 与 `v2.1.0` 两次 tag 发布均已由它完成，链路验证完毕。
 
 GitHub 仓库侧设置已通过登录后的仓库设置页面保存并回读确认。PyPI Trusted Publisher 已随 `1.6.1` 首次成功发布转为普通 publisher；本地无法读取 PyPI 账号设置，也不能在本地模拟 GitHub Actions OIDC 身份。下列信息作为后续复核清单。
 
@@ -77,18 +77,27 @@ push vX.Y.Z
 
 `workflow_dispatch` 仅用于手动运行构建检查；GitHub Release 的创建/发布逻辑要求 tag push，因此它不替代正式 tag 发布。
 
-## 6. 待发布：v2.0.0 最小步骤
+## 6. 已发布版本与下一次发布
 
-当前仓库 `atst/_version.py` = `2.0.0`，CHANGELOG 与 `docs/releases/v2.0.0.md` 已就绪；
-`docs/releases/v2.0.0.md` 是 `wheels.yml` 的硬性检查项，缺失会让发布 job 直接失败。
+| 版本 | tag | GitHub Release | PyPI |
+|---|---|---|---|
+| `1.6.1` | `v1.6.1` | 2026-10-30 | ✅ |
+| `2.0.0` | `v2.0.0` | 2026-11-09 | ✅ |
+| `2.1.0` | `v2.1.0` | 2026-11-22 | 本次发布（tag 推送后生效） |
+
+发布流水线是"推 tag 即发布"，本地不再需要手工 build/twine。下次发布的完整动作：
+
+1. 改 `atst/_version.py`（唯一事实源，`pyproject.toml` 走 `dynamic`，不要另写版本号）；
+2. 在 `CHANGELOG.md` 加 `## [x.y.z] - YYYY-MM-DD` 小节；
+3. 新建 `docs/releases/vx.y.z.md`——`wheels.yml` 的硬性检查项，缺了 job 直接失败；
+4. 提交并推送 `main`，确认提交已落到 `origin/main`（workflow 会校验 tag 提交是 main 的祖先）；
+5. `git tag vx.y.z && git push origin vx.y.z`。
 
 ```bash
-python -m build
-python scripts/build_package.py --verify-only --dist-out dist
-twine check dist/*
-git tag v2.0.0
-git push origin v2.0.0
+git tag vx.y.z
+git push origin vx.y.z
 ```
 
-推送 tag 后按第 5 节检查四个 job；PyPI 出现 `2.0.0` 后，用仓库外干净环境复验
-`pip install atst==2.0.0`，确认 PyPI 页面不再显示过时的未发布声明。
+推送 tag 后按第 5 节检查四个 job；PyPI 出现新版本后，用仓库外干净环境复验
+`pip install atst==x.y.z`。**注意**：`git tag` 的版本号必须与 `_version.py` 完全一致
+（`v` 前缀 + 版本号），否则 `release-source` job 的 identity 校验会直接失败。

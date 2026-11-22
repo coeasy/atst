@@ -9,6 +9,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [2.1.0] - 2026-11-22
+
+主站候选池的**免升级运维闭环**：不升版本也能扩充与保鲜候选池，并让"这条延迟证据有多老"
+第一次成为可见、可判断的事实。对外查询契约（路由 / 字段保留规则 / K 线时间语义 / symbol
+归一化）不变；排名文件格式升到 V2，但**可读 V1**，升级不丢已有排名。
+
+### Added
+
+- **`atst hosts discover`**：从本机通达信安装的 `connect.cfg`、gotdx / mootdx / pytdx 开源清单、
+  或自有文件（`.cfg` / JSON / Python 元组表 / Go 结构体表）取候选，实测通过后写进排名。
+  `--source` 可多次指定并合并去重，`--dry-run` / `--no-verify` / `--report` / `--json` 分层可控。
+  候选按端口归族（7709/7719 → 行情，7727/7615 → 扩展，80/443 的 Z80 端点丢弃），
+  `--family quotation` 不会把扩展主机误记成"行情不可达"。
+- **`RankingStore.freshness()` / `RankingFreshness`**：给出条目数、文件更新时间、最老/最新观测
+  时间与年龄；文件缺失或损坏返回空读数而不抛异常，供"该不该重扫"的自动化判断。
+- **`atst hosts scan --workers / --samples`**：候选池实测可达 70+ 台，并发度与采样次数不再写死。
+- **Client 便捷方法**：`adjusted_bars` / `capital_changes` / `finance` / `f10` / `ex_bars` /
+  `goods_bars` / `mac_quotes` / `local_finance`，与既有 `bars` / `quotes` 同一套 `QueryResult` 形状。
+- **`atst.output.query_parquet`**：对落盘 parquet 目录做只读 SQL（DuckDB 视图），只放行单条
+  SELECT/WITH，按 DuckDB 自身解析器裁决而不是关键字子串扫描。
+- **MCP `capabilities` 工具**：与 CLI `atst capabilities` 同源的发现面。
+
+### Changed
+
+- **排名文件格式 V2**：新增 `observed_at`（epoch 秒）。成功观测打时间戳、失败观测仍删条目；
+  V1 文件照旧可读（`observed_at` 读作 `None`，不伪造 now），下一次写入自动升级。
+- **`hosts scan` 扫全池**：候选 = 内置池 ∪ 排名 extras（`ATST_HOSTS` 存在时只扫覆盖名单），
+  失败项在同一轮被淘汰，一条命令同时完成"刷新 + 淘汰"。
+- **`hosts list` 增加保鲜视图**：观测年龄、来源（`discovered` = 不在内置池）、extras 计数，
+  最老观测超过 7 天时提示跑 `hosts scan`。
+- **`hosts list` 移除 `--timeout`**：该命令只读排名文件、不建连，保留一个被忽略的 flag 会让
+  用户误以为它在探活。
+- **流式面补齐元信息**：`on_quote` 的 payload 在确有其事时携带 `observed_at_ns` 与 `warnings`，
+  与请求-响应面的 `meta` 同源；无 provenance / 无告警时 payload 形状与历史逐字节一致。
+- **服务面标量宽容**：HTTP / WS / MCP 的数值参数接受 `"3"` 这类字符串标量并按声明类型转换，
+  非法值给出可定位的错误而不是 500。
+
+### Fixed
+
+- **`_apply_ranked_observation` 丢失 `observed_at`**：既在内置池又在排名文件里的主机会显示
+  "有 rtt 但观测年龄 `-`"。落盘、读数、展示三处各自都对，只有合并点悄悄把 V2 语义抹掉。
+- **`hosts scan` 被 `max_hosts=64` 截断**：候选超过 64 台时被截掉的恰好是从没测过、`score=1e6`
+  排最后的那批——最需要这次探测的反而扫不到。
+- **`discover` 的 `connect.cfg` 解析**：正则 `\s*` 跨行会把 `Port05=7709` 读成地址；官方文件是
+  CRLF，`$` 不吃 `\r` 导致整份文件解析出 0 条。改为 `[ \t]` + `\r?$`，`Port=0` / 空地址 / 重复
+  条目逐条跳过而不是整文件失败。
+- **`hosts discover` 把 7727 扩展主机当行情探测**：18 条伪 ERR 行，改为按端口归族后过滤。
+- **Client 蹦床递归无上界**：越界时抛 `InternalError` 而不是撞 Python 递归上限。
+- **传输层 cleanup 等待无界**：关闭时按上界等待，避免关停卡在僵死连接上。
+
 ## [2.0.0] - 2026-11-05
 
 架构重写版本（源码候选，未打 tag）。对外查询契约（路由 / 字段保留规则 / K 线时间语义 /
