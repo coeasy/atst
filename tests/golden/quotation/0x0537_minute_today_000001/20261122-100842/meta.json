@@ -1,0 +1,45 @@
+{
+  "schema": 2,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x537",
+  "command_name": "MINUTE_TODAY",
+  "tag": "000001",
+  "note": "分时图数据（深市）",
+  "host": "159.75.29.111:7709",
+  "local_host": "WIN-PM",
+  "market": 0,
+  "code": "000001",
+  "captured_at": "2026-11-22T02:08:42.868784+00:00",
+  "elapsed_ms": 32.56,
+  "request": {
+    "method": "0x537",
+    "body_hex": "000030303030303100000000",
+    "body_len": 12
+  },
+  "response": {
+    "zip_size": 1197,
+    "unzip_size": 1281,
+    "compressed": true,
+    "payload_len": 1281,
+    "sha256": "01d67f4cc5d88064e67a8e3556c49b50cc0da7a05ca3c32bc4ce3e1bdf241d8b"
+  },
+  "record_size_hypothesis": 0,
+  "record_count_hypothesis": 0,
+  "compression": {
+    "codec": "none",
+    "compressed_size": null
+  },
+  "parse_ctx": {
+    "market": 0,
+    "code": "000001"
+  },
+  "tool": {
+    "name": "atst.tools.capture",
+    "version": "0.1.0"
+  },
+  "legal": {
+    "ack": true,
+    "allow_trading_hours": false
+  }
+}

@@ -1,0 +1,36 @@
+schema: 2
+source: "self-captured"
+family: quotation
+command: 0x44e
+command_name: SECURITY_COUNT
+tag: market0
+note: 深证证券数量
+host: "159.75.29.111:7709"
+local_host: "WIN-PM"
+market: 0
+code: ""
+captured_at: "2026-11-22T02:08:42.548202+00:00"
+elapsed_ms: 32.36
+request:
+  method: 0x44e
+  body_hex: "000000000000"
+  body_len: 6
+response:
+  zip_size: 2
+  unzip_size: 2
+  compressed: false
+  payload_len: 2
+  sha256: 69054da85a138de0aaf7ef63bf32fc3c5577ae1316e659f3f137f12b7c652263
+record_size_hypothesis: 0
+record_count_hypothesis: 0
+compression:
+  codec: none
+  compressed_size: null
+parse_ctx:
+  market: 0
+tool:
+  name: atst.tools.capture
+  version: 0.1.0
+legal:
+  ack: true
+  allow_trading_hours: false

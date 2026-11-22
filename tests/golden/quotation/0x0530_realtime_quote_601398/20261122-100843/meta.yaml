@@ -1,0 +1,38 @@
+schema: 2
+source: "self-captured"
+family: quotation
+command: 0x530
+command_name: REALTIME_QUOTE
+tag: "601398"
+note: "601398 实时快照（market=1，请求字节已按反转语义换算）"
+host: "159.75.29.111:7709"
+local_host: "WIN-PM"
+market: 1
+code: "601398"
+captured_at: "2026-11-22T02:08:43.024464+00:00"
+elapsed_ms: 31.97
+request:
+  method: 0x530
+  body_hex: "0100363031333938"
+  body_len: 8
+response:
+  zip_size: 84
+  unzip_size: 84
+  compressed: false
+  payload_len: 84
+  sha256: 8cf4ecef47aaf6f23f14979e8878e483e003b981dc668729fc72ce882cbf589c
+record_size_hypothesis: 28
+record_count_hypothesis: 3
+compression:
+  codec: none
+  compressed_size: null
+parse_ctx:
+  code: "601398"
+  market: 1
+  price_scale: 100
+tool:
+  name: atst.tools.capture
+  version: 0.1.0
+legal:
+  ack: true
+  allow_trading_hours: false

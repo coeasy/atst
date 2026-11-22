@@ -1,0 +1,46 @@
+{
+  "schema": 2,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x530",
+  "command_name": "REALTIME_QUOTE",
+  "tag": "002415",
+  "note": "002415 实时快照（market=0，请求字节已按反转语义换算）",
+  "host": "159.75.29.111:7709",
+  "local_host": "WIN-PM",
+  "market": 0,
+  "code": "002415",
+  "captured_at": "2026-11-22T02:08:43.232403+00:00",
+  "elapsed_ms": 32.9,
+  "request": {
+    "method": "0x530",
+    "body_hex": "0101303032343135",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 72,
+    "unzip_size": 72,
+    "compressed": false,
+    "payload_len": 72,
+    "sha256": "807928d50641c074dede277f5efc06fc100fb0e5a955a893d6d9428ea91c1bb6"
+  },
+  "record_size_hypothesis": 8,
+  "record_count_hypothesis": 9,
+  "compression": {
+    "codec": "none",
+    "compressed_size": null
+  },
+  "parse_ctx": {
+    "code": "002415",
+    "market": 0,
+    "price_scale": 100
+  },
+  "tool": {
+    "name": "atst.tools.capture",
+    "version": "0.1.0"
+  },
+  "legal": {
+    "ack": true,
+    "allow_trading_hours": false
+  }
+}

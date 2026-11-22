@@ -1,0 +1,46 @@
+{
+  "schema": 2,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x52d",
+  "command_name": "SECURITY_BARS",
+  "tag": "600000_cat0",
+  "note": "600000 周期 0，10 根",
+  "host": "159.75.29.111:7709",
+  "local_host": "WIN-PM",
+  "market": 1,
+  "code": "600000",
+  "captured_at": "2026-11-22T02:08:41.918277+00:00",
+  "elapsed_ms": 32.24,
+  "request": {
+    "method": "0x52d",
+    "body_hex": "01003630303030300000010000000a0000000000000000000000",
+    "body_len": 26
+  },
+  "response": {
+    "zip_size": 166,
+    "unzip_size": 166,
+    "compressed": false,
+    "payload_len": 166,
+    "sha256": "7e42f7c817717cec7394128e89fd7492a576c660c18379fd6ce145f96bab1b65"
+  },
+  "record_size_hypothesis": 0,
+  "record_count_hypothesis": 0,
+  "compression": {
+    "codec": "none",
+    "compressed_size": null
+  },
+  "parse_ctx": {
+    "category": 0,
+    "market": 1,
+    "code": "600000"
+  },
+  "tool": {
+    "name": "atst.tools.capture",
+    "version": "0.1.0"
+  },
+  "legal": {
+    "ack": true,
+    "allow_trading_hours": false
+  }
+}

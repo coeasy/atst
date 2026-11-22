@@ -1,0 +1,38 @@
+schema: 2
+source: "self-captured"
+family: quotation
+command: 0x52d
+command_name: SECURITY_BARS
+tag: 600000_cat2
+note: 600000 周期 2，10 根
+host: "159.75.29.111:7709"
+local_host: "WIN-PM"
+market: 1
+code: "600000"
+captured_at: "2026-11-22T02:08:42.019121+00:00"
+elapsed_ms: 35.11
+request:
+  method: 0x52d
+  body_hex: 01003630303030300200010000000a0000000000000000000000
+  body_len: 26
+response:
+  zip_size: 172
+  unzip_size: 172
+  compressed: false
+  payload_len: 172
+  sha256: f311b40c131f272cd65d64d36cb9118107b18891916f39c2f4fd4598e0a916d2
+record_size_hypothesis: 4
+record_count_hypothesis: 43
+compression:
+  codec: none
+  compressed_size: null
+parse_ctx:
+  category: 2
+  market: 1
+  code: "600000"
+tool:
+  name: atst.tools.capture
+  version: 0.1.0
+legal:
+  ack: true
+  allow_trading_hours: false

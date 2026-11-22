@@ -1,0 +1,38 @@
+schema: 2
+source: "self-captured"
+family: quotation
+command: 0x530
+command_name: REALTIME_QUOTE
+tag: "000651"
+note: "000651 实时快照（market=0，请求字节已按反转语义换算）"
+host: "159.75.29.111:7709"
+local_host: "WIN-PM"
+market: 0
+code: "000651"
+captured_at: "2026-11-22T02:08:43.146476+00:00"
+elapsed_ms: 32.48
+request:
+  method: 0x530
+  body_hex: "0101303030363531"
+  body_len: 8
+response:
+  zip_size: 74
+  unzip_size: 74
+  compressed: false
+  payload_len: 74
+  sha256: d21a15951910aaf9d12f097dcf8a1008dae43855369de1ab8cc2a174b81a10cb
+record_size_hypothesis: 0
+record_count_hypothesis: 0
+compression:
+  codec: none
+  compressed_size: null
+parse_ctx:
+  code: "000651"
+  market: 0
+  price_scale: 100
+tool:
+  name: atst.tools.capture
+  version: 0.1.0
+legal:
+  ack: true
+  allow_trading_hours: false

@@ -1,0 +1,46 @@
+{
+  "schema": 2,
+  "source": "self-captured",
+  "family": "quotation",
+  "command": "0x530",
+  "command_name": "REALTIME_QUOTE",
+  "tag": "600000",
+  "note": "600000 实时快照（market=1，请求字节已按反转语义换算）",
+  "host": "159.75.29.111:7709",
+  "local_host": "WIN-PM",
+  "market": 1,
+  "code": "600000",
+  "captured_at": "2026-11-22T02:08:42.940182+00:00",
+  "elapsed_ms": 32.43,
+  "request": {
+    "method": "0x530",
+    "body_hex": "0100363030303030",
+    "body_len": 8
+  },
+  "response": {
+    "zip_size": 80,
+    "unzip_size": 80,
+    "compressed": false,
+    "payload_len": 80,
+    "sha256": "69003048a042054f56b7a8abd4aee666918df06d5a68cefad5e6fa2cfbca00e8"
+  },
+  "record_size_hypothesis": 16,
+  "record_count_hypothesis": 5,
+  "compression": {
+    "codec": "none",
+    "compressed_size": null
+  },
+  "parse_ctx": {
+    "code": "600000",
+    "market": 1,
+    "price_scale": 100
+  },
+  "tool": {
+    "name": "atst.tools.capture",
+    "version": "0.1.0"
+  },
+  "legal": {
+    "ack": true,
+    "allow_trading_hours": false
+  }
+}

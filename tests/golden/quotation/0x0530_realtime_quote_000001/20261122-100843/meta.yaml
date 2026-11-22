@@ -1,0 +1,38 @@
+schema: 2
+source: "self-captured"
+family: quotation
+command: 0x530
+command_name: REALTIME_QUOTE
+tag: "000001"
+note: "000001 实时快照（market=0，请求字节已按反转语义换算）"
+host: "159.75.29.111:7709"
+local_host: "WIN-PM"
+market: 0
+code: "000001"
+captured_at: "2026-11-22T02:08:43.060477+00:00"
+elapsed_ms: 32.61
+request:
+  method: 0x530
+  body_hex: "0101303030303031"
+  body_len: 8
+response:
+  zip_size: 84
+  unzip_size: 84
+  compressed: false
+  payload_len: 84
+  sha256: bce13907e664fd0ae3f78e21f549f20cb2fd0d64991d8961bc39429187ffea9e
+record_size_hypothesis: 28
+record_count_hypothesis: 3
+compression:
+  codec: none
+  compressed_size: null
+parse_ctx:
+  code: "000001"
+  market: 0
+  price_scale: 100
+tool:
+  name: atst.tools.capture
+  version: 0.1.0
+legal:
+  ack: true
+  allow_trading_hours: false
