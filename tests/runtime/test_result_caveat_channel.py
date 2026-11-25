@@ -199,7 +199,8 @@ class TestWireReachesEveryFace:
             "atst/server/runtime_http.py",
             "atst/server/runtime_ws.py",
             "atst/server/mcp/_tools_impl.py",
-            "atst/cli/runtime_commands.py",
+            # P2-3（F-5）：serialize_result 的 CLI 使用点在 cmds_kernel.py。
+            "atst/cli/cmds_kernel.py",
         ],
     )
     def test_every_exit_uses_the_shared_serializer(self, module: str) -> None:

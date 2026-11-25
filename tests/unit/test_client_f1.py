@@ -316,7 +316,8 @@ class TestQuotesSnapshotChunking:
         """>255 只不再 struct.error 绕过回退；每批 ≤80 分片请求。"""
         client = TdxClient(pool=_FakePool(fail_cmds=(0x054C,)))  # 0x054C 全部失败 → 逐只回退
         syms = [f"sh{600000 + i}" for i in range(300)]
-        out = client.quotes_snapshot(syms)
+        # T-5：0x054C 默认跳过；本用例专测旧批量分片路径，显式 opt-in。
+        out = client.quotes_snapshot(syms, try_offline_snapshot=True)
         cmds = [cmd for cmd, _ in client._pool.requests]
         assert cmds.count(0x054C) == 4  # 300 = 80+80+80+60
         body_lens = [body[0] for cmd, body in client._pool.requests if cmd == 0x054C]

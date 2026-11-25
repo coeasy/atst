@@ -32,6 +32,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ._scale import (
+    FEN_INT_TO_YUAN,
+    HAND_TO_SHARE,
+    MILLI_INT_TO_YUAN,
+    SHARES,
+    WAN_TO_YUAN,
+    YUAN,
+)
+
 __all__ = [
     "SourceSpec",
     "KNOWN_SOURCES",
@@ -143,13 +152,16 @@ class SourceSpec:
     name: str
     summary: str
     #: 价格原始值 → 元的换算系数（乘）
-    price_scale: float = 1.0
+    price_scale: float = YUAN
     #: 成交量原始值 → 股 的换算系数（乘）
-    volume_scale: float = 1.0
+    volume_scale: float = SHARES
     #: 成交额原始值 → 元 的换算系数（乘）
-    amount_scale: float = 1.0
+    amount_scale: float = YUAN
     #: 是否必须带 Referer（反爬）
     needs_referer: bool = False
+    #: Referer 取值（P1-8/S-5：进 SourceSpec，不再由基座对一切源硬编码新浪域）；
+    #: 空串且 needs_referer=True 时回落新浪默认（存量三家新浪系源行为不变）。
+    referer_url: str = ""
     #: 是否需要 cookie（如集思录）
     needs_cookie: bool = False
     #: 默认限流（req/s）
@@ -163,10 +175,11 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     SINA: SourceSpec(
         name=SINA,
         summary="新浪财经实时行情（hq.sinajs.cn；全市场走 Market_Center.getHQNodeData）",
-        price_scale=1.0,
-        volume_scale=1.0,  # 新浪 turnover 已是「股」
-        amount_scale=1.0,  # 元
+        price_scale=YUAN,
+        volume_scale=SHARES,  # 新浪 turnover 已是「股」
+        amount_scale=YUAN,  # 元
         needs_referer=True,  # 无 Referer 直接 403
+        referer_url="https://finance.sina.com.cn",
         default_rate=8,
         capabilities=("quote", "rank", "all_market"),
         notes="必须带 Referer: https://finance.sina.com.cn；无 Referer 返回 403。"
@@ -181,9 +194,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     TENCENT: SourceSpec(
         name=TENCENT,
         summary="腾讯财经实时行情（qt.gtimg.cn）",
-        price_scale=1.0,
-        volume_scale=100.0,  # 手 → 股
-        amount_scale=10_000.0,  # 万元 → 元
+        price_scale=YUAN,
+        volume_scale=HAND_TO_SHARE,  # 手 → 股
+        amount_scale=WAN_TO_YUAN,  # 万元 → 元
         needs_referer=False,
         default_rate=10,
         capabilities=("quote", "kline", "minute_kline", "minute", "all_market"),
@@ -192,9 +205,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     EASTMONEY: SourceSpec(
         name=EASTMONEY,
         summary="东方财富行情（push2.eastmoney.com）",
-        price_scale=1 / 100.0,  # f2 为 ×100 整数
-        volume_scale=100.0,  # 手 → 股
-        amount_scale=1.0,  # 元
+        price_scale=FEN_INT_TO_YUAN,  # f2 为 ×100 整数
+        volume_scale=HAND_TO_SHARE,  # 手 → 股
+        amount_scale=YUAN,  # 元
         needs_referer=False,
         default_rate=5,
         capabilities=("quote", "kline", "rank", "stock_boards"),
@@ -211,9 +224,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     HK: SourceSpec(
         name=HK,
         summary="港股实时行情（qt.gtimg.cn/q=hkXXXXX）",
-        price_scale=1.0,
-        volume_scale=1.0,
-        amount_scale=1.0,
+        price_scale=YUAN,
+        volume_scale=SHARES,
+        amount_scale=YUAN,
         default_rate=8,
         capabilities=("quote",),
         notes="港股通标的；成交量单位为股；价格/成交额以港元(HKD)计，"
@@ -222,10 +235,11 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     HK_SINA: SourceSpec(
         name=HK_SINA,
         summary="新浪港股实时行情（hq.sinajs.cn hk 前缀）",
-        price_scale=1.0,  # 港股价格直接为港元，无需缩放
-        volume_scale=1.0,  # 新浪港股成交量已是「股」
-        amount_scale=1.0,  # 成交额已是元(HKD)
+        price_scale=YUAN,  # 港股价格直接为港元，无需缩放
+        volume_scale=SHARES,  # 新浪港股成交量已是「股」
+        amount_scale=YUAN,  # 成交额已是元(HKD)
         needs_referer=True,  # 复用新浪源，需 Referer
+        referer_url="https://finance.sina.com.cn",
         default_rate=8,
         capabilities=("quote",),
         notes="SinaHkSource 为 SinaSource 子类，复用新浪港股 hq_str 解析；"
@@ -235,9 +249,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     US: SourceSpec(
         name=US,
         summary="美股实时行情（qt.gtimg.cn/q=usXXXXX）",
-        price_scale=1.0,
-        volume_scale=1.0,
-        amount_scale=1.0,
+        price_scale=YUAN,
+        volume_scale=SHARES,
+        amount_scale=YUAN,
         default_rate=8,
         capabilities=("quote",),
         notes="美股（NYSE/NASDAQ）；成交量单位为股；价格/成交额以美元(USD)计，"
@@ -246,9 +260,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     KLINE: SourceSpec(
         name=KLINE,
         summary="日 K 线（腾讯 ifzq.gtimg.cn / 东财 push2his）",
-        price_scale=1.0,
-        volume_scale=100.0,
-        amount_scale=1.0,
+        price_scale=YUAN,
+        volume_scale=HAND_TO_SHARE,
+        amount_scale=YUAN,
         default_rate=5,
         capabilities=("kline",),
         notes="日 K 线历史数据",
@@ -271,9 +285,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     MINUTE_KLINE: SourceSpec(
         name=MINUTE_KLINE,
         summary="分钟 K 线（腾讯 ifzq.gtimg.cn mkline）",
-        price_scale=1.0,
-        volume_scale=100.0,  # 手 → 股（A 股；港股/美股为股不缩放）
-        amount_scale=1.0,
+        price_scale=YUAN,
+        volume_scale=HAND_TO_SHARE,  # 手 → 股（A 股；港股/美股为股不缩放）
+        amount_scale=YUAN,
         default_rate=5,
         capabilities=("kline", "minute_kline"),
         notes="1/5/15/30/60 分钟 K 线，**仅 A 股**（港股/美股 mkline 返回空，"
@@ -283,9 +297,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     MINUTE: SourceSpec(
         name=MINUTE,
         summary="当日分时（腾讯 web.ifzq.gtimg.cn minute/query）",
-        price_scale=1.0,
-        volume_scale=100.0,  # 腾讯分时累计量返回「手」，解析层 ×100 到股
-        amount_scale=1.0,  # 额已为元
+        price_scale=YUAN,
+        volume_scale=HAND_TO_SHARE,  # 腾讯分时累计量返回「手」，解析层 ×100 到股
+        amount_scale=YUAN,  # 额已为元
         default_rate=5,
         capabilities=("minute",),
         notes="当日 1 分钟分时（价格/均价/成交量）。接口累计量为「手」，"
@@ -302,9 +316,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     TICKS: SourceSpec(
         name=TICKS,
         summary="逐笔成交明细（腾讯 stock.gtimg.cn detail）",
-        price_scale=1.0,
-        volume_scale=100.0,  # 手 → 股
-        amount_scale=1.0,  # 元
+        price_scale=YUAN,
+        volume_scale=HAND_TO_SHARE,  # 手 → 股
+        amount_scale=YUAN,  # 元
         default_rate=5,
         capabilities=("tick",),
         notes="每页条数以 atst.sources.ticks.TICKS_PER_PAGE 为单一事实源（勿在此复写具体数字）；p 为页码（0 起）。量单位手、额单位元",
@@ -312,9 +326,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     TRENDS: SourceSpec(
         name=TRENDS,
         summary="当日分时成交（东财 push2his trends2）",
-        price_scale=1.0,
-        volume_scale=100.0,  # 手 → 股
-        amount_scale=1.0,
+        price_scale=YUAN,
+        volume_scale=HAND_TO_SHARE,  # 手 → 股
+        amount_scale=YUAN,
         default_rate=5,
         capabilities=("tick", "minute"),
         notes="1 分钟粒度，含均价；iscr=0 不复权、ndays=1 当日",
@@ -322,9 +336,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     GLOBAL: SourceSpec(
         name=GLOBAL,
         summary="外盘期货 / 外汇（腾讯 qt.gtimg.cn hf_ 前缀）",
-        price_scale=1.0,
-        volume_scale=1.0,
-        amount_scale=1.0,
+        price_scale=YUAN,
+        volume_scale=SHARES,
+        amount_scale=YUAN,
         default_rate=5,
         capabilities=("quote", "global"),
         notes="纽约原油/黄金、伦铜、布伦特原油等；字段为定长 14 列",
@@ -332,9 +346,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     MARKET_STAT: SourceSpec(
         name=MARKET_STAT,
         summary="大盘统计（腾讯 qt.gtimg.cn s_ 前缀）",
-        price_scale=1.0,
-        volume_scale=100.0,  # 手 → 股
-        amount_scale=10_000.0,  # 万元 → 元
+        price_scale=YUAN,
+        volume_scale=HAND_TO_SHARE,  # 手 → 股
+        amount_scale=WAN_TO_YUAN,  # 万元 → 元
         default_rate=5,
         capabilities=("quote", "stat"),
         notes="s_sh000001 形式；返回点数、涨跌额、涨跌幅、成交量(手)、成交额(万元)",
@@ -342,9 +356,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     RANK: SourceSpec(
         name=RANK,
         summary="通用排行（东财 push2 clist）",
-        price_scale=1.0,
-        volume_scale=100.0,  # 手 → 股
-        amount_scale=1.0,
+        price_scale=YUAN,
+        volume_scale=HAND_TO_SHARE,  # 手 → 股
+        amount_scale=YUAN,
         default_rate=3,
         capabilities=("rank",),
         notes="fs 决定市场（m:0+t:6 深A 等），fid 决定排序字段；高频易断连",
@@ -352,9 +366,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     FUND_FLOW: SourceSpec(
         name=FUND_FLOW,
         summary="资金流（东财 ulist.np 实时 / fflow/kline 历史）",
-        price_scale=1.0,
-        volume_scale=1.0,
-        amount_scale=1.0,
+        price_scale=YUAN,
+        volume_scale=SHARES,
+        amount_scale=YUAN,
         default_rate=3,
         capabilities=("fund_flow",),
         notes="主力=超大单+大单；占比字段 f184/f69/f75/f81/f87 为 ×100 整数",
@@ -362,9 +376,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     LIMIT_POOL: SourceSpec(
         name=LIMIT_POOL,
         summary="涨停 / 跌停 / 炸板池（东财 push2ex）",
-        price_scale=1 / 1000.0,  # p 字段为 ×1000 整数（7220 → 7.22 元）
-        volume_scale=1.0,
-        amount_scale=1.0,
+        price_scale=MILLI_INT_TO_YUAN,  # p 字段为 ×1000 整数（7220 → 7.22 元）
+        volume_scale=SHARES,
+        amount_scale=YUAN,
         default_rate=3,
         capabilities=("limit_pool",),
         notes="date 为 YYYYMMDD；非交易日返回空池。本源输出为 dict 列表，"
@@ -387,9 +401,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     LHB: SourceSpec(
         name=LHB,
         summary="龙虎榜每日个股榜（东财 datacenter-web RPT_DMSK_TS_STOCKNEW）",
-        price_scale=1.0,
-        volume_scale=1.0,
-        amount_scale=1.0,
+        price_scale=YUAN,
+        volume_scale=SHARES,
+        amount_scale=YUAN,
         default_rate=2,
         capabilities=("longhu",),
         notes="主力净流入=超大单净+大单净(元)；TRADE_DATE 过滤须用完整"
@@ -399,10 +413,11 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     SINA_FUND_FLOW: SourceSpec(
         name=SINA_FUND_FLOW,
         summary="新浪资金流历史（个股 ssl_qsfx_zjlrqs / 板块 ssl_bkzj_zjlrqs）",
-        price_scale=1.0,
-        volume_scale=1.0,
-        amount_scale=1.0,  # 金额字段原生即为元，无需缩放
+        price_scale=YUAN,
+        volume_scale=SHARES,
+        amount_scale=YUAN,  # 金额字段原生即为元，无需缩放
         needs_referer=True,
+        referer_url="https://finance.sina.com.cn",
         default_rate=5,
         capabilities=("fund_flow", "history"),
         notes="净额(元)/换手率(%)等均为原生单位，normalizer 为 identity；"
@@ -443,9 +458,9 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
     BAIDU: SourceSpec(
         name=BAIDU,
         summary="百度财经（finance.pae.baidu.com selfselect）",
-        price_scale=1.0,
-        volume_scale=1.0,  # 量额口径在解析层内联换算（与常规命名相反），此处 identity
-        amount_scale=1.0,
+        price_scale=YUAN,
+        volume_scale=SHARES,  # 量额口径在解析层内联换算（与常规命名相反），此处 identity
+        amount_scale=YUAN,
         default_rate=3,
         capabilities=("kline", "minute", "tick", "quote", "valuation_history"),
         notes="仅 A 股（stockType=ab）。坑：K 线 kline.volume 实为成交额(元)、"
@@ -515,8 +530,15 @@ KNOWN_SOURCES: dict[str, SourceSpec] = {
 #: 注册表（含延迟构造的工厂）
 SOURCES: dict[str, SourceSpec] = dict(KNOWN_SOURCES)
 
-#: 默认降级顺序（可被配置覆盖，§33.6）
-DEFAULT_FALLBACK_ORDER: tuple[str, ...] = (TENCENT, SINA, EASTMONEY)
+#: 默认降级顺序（可被配置覆盖，§33.6）。
+#: P1-8：由 providers 偏好序派生（providers.preference_order 过滤出本表里
+#: 支持 quote 能力的源），删除手抄的第二本账；顺序从旧手抄的
+#: (tencent, sina, eastmoney) 变为偏好序 (eastmoney, sina, tencent, baidu)。
+from ..providers import preference_order  # noqa: E402  本表叶子模块，注册表后才需要
+
+DEFAULT_FALLBACK_ORDER: tuple[str, ...] = tuple(
+    name for name in preference_order() if name in SOURCES and "quote" in SOURCES[name].capabilities
+)
 
 
 def register_source(spec: SourceSpec) -> None:

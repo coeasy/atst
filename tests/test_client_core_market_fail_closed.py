@@ -23,7 +23,7 @@ import pytest
 
 from atst.client.core import _quote_body, split_symbol
 from atst.domain.symbol import to_tdx_market
-from atst.errors import NotImplementedFeature, ParseError
+from atst.errors import NotImplementedFeature, ValidationError
 from atst.protocol.parsers.std7709 import build_realtime_quote_body
 
 
@@ -53,7 +53,8 @@ def test_bj_symbol_market_is_not_silently_clamped_for_unverified_quote_families(
 
     assert domain_market == 2
     assert code == "430047"
-    with pytest.raises(ParseError) as exc_info:
+    # P0-4：错误归类从 ParseError 归位 ValidationError（E1010/不可重试）。
+    with pytest.raises(ValidationError) as exc_info:
         split_symbol("bj430047")
 
     assert exc_info.value.context["market"] == 2

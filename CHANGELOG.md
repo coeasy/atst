@@ -9,6 +9,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 暂无。
 
+## [2.2.0] - 2026-11-25（重构落地批次）
+
+重构方案（docs/REFACTOR_PLAN.md，2026-11-22 审查）的全量落地批次。分阶段清单与逐项落地状态见该方案 §7「落地状态」。
+
+### Added
+
+- **Provenance.upstream**（P1-4）：聚合 Provider（derived/builtin）的结果新增 `upstream` 字段，披露真实出数源（如 sina）——provider 身份作为信任边界的自述在聚合能力上恢复成立。
+- **`atst serve --ws`**（P2-3）：WS 服务面补上 CLI 入口，可与 HTTP 面同进程复用同一 Client。
+- **`heartbeat_cmd` 配置键**（P3）：心跳命令号纳入配置面（`core.heartbeat_cmd`），经 `pool_settings_from_config` 单点翻译。
+- **逐文件覆盖率地板闸**（P3）：`tests/compatibility/test_coverage_floor_contract.py`，从 `coverage.xml` 实测生成、防整模块裸奔回潮。
+- **StatefulQuoteStream 接 `max_attempts`**（P1-9）：重连预算耗尽落 `FAILED`，fail-closed 状态机在生产入口真正可达终态。
+- **`BaseParser.iter_fixed_records`**（P2-5）：定长记录循环样板（40+ 处）收进解析框架。
+- **环境变量 bool 兼容**（P3）：`ATST_RATE_LIMIT_STRICT=1` 等 0/1 写法按目标字段类型收下。
+- **TDX 板块指数报价**：`880xxx`/`881xxx` 归沪市命名空间，裸码可直接 `quotes`（2026-11-23 实测 `sh880001`/`sh881001` 有完整报价）；此前被北交所旧段 `"88"` 误判而 fail-closed。
+- **`quotes_snapshot(try_offline_snapshot=)`**：公开 opt-in；默认跳过已知下线的 0x054C，直接走逐只 0x0530。
+- **`scripts/gen_coverage_floors.py`**：逐文件覆盖率地板表的唯一生成器（键名与 `coverage.xml` 的 filename 对齐）。
+- **`atst/sources/_scale.py`**（P1-8 收口）：价格 / 成交量 / 成交额换算系数的唯一事实源。`SourceSpec`、`VolumeNormalizer`、解析层内联三处的裸字面量全部改为具名常量；`tests/sources/test_scale_single_source.py` 三重守卫（常量锚点 / 源码扫描 / 系数闭集），新增源无法自造系数。
+- **WS 订阅合流**（F-8）：等价订阅（同 loop、同 Client、同标的集、同 provider 与节奏）共享一条上游轮询，引用计数归零才停流；逐连接 fan-out，后加入者回放最近快照，单订阅者首帧语义不变。
+- **本地板块/行业配置只读 reader**：`atst.reader.BoardConfigReader` / `IndustryConfigReader` 解析官方客户端 `tdxbk.cfg`（58 条板块名表）/ `tdxhy.cfg`（5670 条股票→行业映射），模块面导出；不新增 Provider / capability，不做 GUI 抓取，不含成分股或行情。
+
+### Changed
+
+- **常驻连接池**（P1-1）：内核按族持有常驻家族客户端，一次 `quotes_batch` 不再每跳现造池 + 心跳线程；M6 空闲回收、熔断冷却与 bestip 代际热更新在主链路真实生效；同步池心跳改惰性起跑；`DirectProviderExecutor.close()` 统一收口。
+- **东财批量行情**（P0-1）：`EastmoneySource.fetch` 逐标的请求并聚合，多标的批量不再静默丢数据。
+- **连接池代际守卫**（P0-2）：`request()` 失败路径改传租约代际，`update_hosts` 后旧连接的迟到失败不再记到新主站头上（sync/async 同修）。
+- **reader 探测 strict 语义**（P0-3）：探测失败（`ProfileUndetectable`）在 strict 口径下上抛；解码层消费探测出的 `record_size`，与日线布局不一致即拒绝；gpcw 字段数不可判定报错而不是静默当单条。
+- **北交所 bars 缺省路由**（P0-4）：BJ 与港美股同待遇转 Web 源；直连 tdx 的 BJ 请求错误从可重试的 `ParseError`（E3040）归位为不可重试的 `ValidationError`（E1010）。
+- **WS 推送真丢帧**（P0-5）：溢出帧逐个 `cancel()`，慢客户端反压真实存在；传入 handler 时也逐连接克隆（P0-6），订阅表与推送出口不再串台。
+- **流式 stop 超时 fail-closed**（P0-7）：超时分支不再清句柄/关池（F-91/F-92 同型复活封堵），孤儿 worker 自行收尾；订阅 key 改单调序号，退订重订不再覆盖在跑订阅。
+- **协议 sniffer 默认关闭**（P0-8）：`ATST_PROTOCOL_SNIFF=1` 显式开启，归档根目录由 `ATST_PROTOCOL_SNIFF_DIR` 注入；生产分派热路径不再每响应同步落盘。
+- **启动审计闭环**（P0-9）：`audit_runtime()` 纳入 `audit_direct_bindings()` 与 executor 方法存在性校验；删除 tdx extended/goods/mac 通道上 5 个统一能力死声明（ex_/goods_/mac_ 前缀能力不受影响）。
+- **编排不吞参数错**（P0-10）：`ValidationError`/`FreshnessViolation` 不进候选循环，不再以 `AllSourcesExhausted` 掩盖真实错误。
+- **quotes_batch 收敛**（P0-11/P1-6）：单个非法符号只落一项；钉死 provider 的批量收敛为内核唯一实现（`workers` 并发下沉），Client 只保留 auto 逐只候选链编排。
+- **`.day` 补洞时序**（P0-12）：乱序补洞改为全文件合并重写，本地日线文件保持严格升序。
+- **探测合一**（P1-7）：字符集探测收敛为 `codec/primitive` 单一 SSOT（`charset/` 改薄封装）；两套 profile 六步探测器抽公共打分内核（`atst/profile/scoring.py`）。
+- **composed 上移单内核**（P1-3）：内层查询走 `UnifiedRuntime` 主链（健康反馈、溯源校验、预算继承），不再绕过内核各自重置 5s deadline。
+- **auto 语义修复**（P1-6）：`requested_provider='auto'` 保留进 provenance（与钉死 provider 可区分）；auto 候选的健康记账去重；`local_vipdoc` 排除口径由内核统一下沉。
+- **sources 账本收敛**（P1-8）：默认降级顺序改由 `providers.preference_order()` 派生（tencent,sina,eastmoney → eastmoney,sina,tencent,baidu）；Referer 进 `SourceSpec.referer_url`；词表同义映射入对账测试。
+- **`WebQuoteClient` 降级处置**（P1-5）：缺省单源 fail-fast，仅显式多源才降级并记 `WEB_FACADE_LEGACY_DEGRADE` 警告——跨源降级只保留内核 `FallbackPolicy` 一个出口。
+- **会话面瘦身**（P2-4）：19 个 Mixin 按域聚为 4 个域类；klines 分钟路由查 `MARKET_DEFAULT_CAPABILITIES`；新浪资金流迁入 `sources/sina/`。
+- **CLI 拆分**（P2-3）：`runtime_commands.py`（约 1300 行）按域拆四模块，`_cmd_*` 统一交 `main()` 错误信封出口。
+- **`_mixin.py` 拆分**（P2-2）：驱动器/标准族模板/扩展族模板分三文件；`_drive_depth` 改 `threading.local`。
+- **async 单一故事**（P1-2 方案 B）：文档与模块头明确 `AsyncClient`（to_thread）是唯一生产 async 面；`AsyncTdxClient`/`AsyncConnectionPool` 降级为 legacy 实验协议面，物理移除排在废弃周期（v2.3 候选）。
+- **四面入参校验收口**（P2-6）与流式校验收口 `StreamPlanner`；WS 业务失败顶层 message 与 MCP/HTTP 对齐。
+- **审计与批量拷贝**（R-6/P-14）：`audit_runtime()` 进程级记忆化；`BatchResult` 容器浅拷贝 + meta 深拷贝。
+- **typed query 载荷**（R-8）：保留全字段下发——按默认值裁剪会让 capability contract 判 `missing required argument`，默认值语义归 capability contract。
+- **quick 入口**（T-4）：复用进程级 Client，避免每次快捷调用重跑启动审计与现算路由。
+- **文档口径**：`docs/ARCHITECTURE.md` 绑定数 304→299；`docs/arch-review` 的 `query.py` 链接改 `query/spec.py`。
+- **非沪深缺省报价路由**（2026-11-24 真机）：`quotes()` 与 `bars()` 一样按 symbol market 选 live Web 源，港股 / 美股 / 北交所不再落到 `catalog` E1010 或 TDX 未验证 `market=2`；显式 `provider=` 不被重路由。
+- **北交所 bars 路由结论**（2026-11-25 真机）：带握手实测 `0x052D`，沪深代码返回 3 根日线、北交所代码在 market=0/2 与 430/833 码段均只回 `00 00`（count=0）；二进制 K 线不支持 BJ，继续走 Web 源。
+- **复权文档口径**（2026-11-25 真机核对）：接口文档补齐 `Client.adjusted_bars` / `capital_changes` 一等公民方法、`bars(adjust=...)` 别名与「自算复权 vs Web 服务端复权」对照；纠正 216→217、删除不存在的 `AdjustedBars` 等结果类型推荐；README 增加复权特性与示例。真机 hfq 因子 `7.39106838` 与 FAQ 一致。
+
+### Fixed
+
+- sink `local_day.sync()` 窗口内补洞 bar 破坏 `.day` 时间序（P0-12）。
+- `Sink("csv")` 与 `write(*.csv)` 能力不一致（P3）。
+- `BinaryWriter.uint8/16/32` 越界值掩码静默截断，改为与 Reader 对称的越界抛错（P3）。
+- `get_config()` 惰性单例无锁 check-then-act（P3）。
+- `_looks_like_uint16_date` 死代码移除；`git-cliff.toml` 与手写 CHANGELOG 双工具并存，删除死配置（P3）。
+- `test-bridges` 补 fastapi 探测提示；`all` extra 改自引用杜绝第二本手抄账（P3）。
+- **覆盖率地板闸空转**：`FLOORS` 键名与 `coverage.xml` 的 filename 形状不一致（`atst/cli/cli/parser.py` vs `cli/parser.py`），回归判据对每个文件都跳过。按实测重写 236 条键，新增键集双向判据。
+- **`macro_repo_rate` CSV 错位**：空段过滤破坏位置映射，缺列静默丢行、字段左移错位；改为保留位置槽并补回归。
+- **quotes_batch 坏符号语义**（P0-11）：状态由 `failed` 校正为 `not_attempted`，`requested` 不再包含未发包符号。
+- **调用方参数错污染 provider 健康**（P0-10 余项）：`ValidationError`/`FreshnessViolation` 不再记 provider 失败。
+- **腾讯行情 high/low 缺失**（S-6）返回 NaN（不再冒用现价）；新浪逐行容错（S-7）；`klines()` 尊重 `sources` 配置（S-9）；`risk_scan` 收窄异常并告警（S-4）；东财批量由只捕 `SourceDeprecated` 放宽到 `WebSourceError`（P0-1 余项）。
+- **探测计数竞态**（P-12）：`Prober` 计数与限速共用同一把锁。
+- **可达性白名单过期记录**：删除 3 条已可达的 `atst.profile*` 豁免，符号下限同步 25→16。
+- **集思录顶层非对象 JSON**（`jsl/adapters.py`）：`[]` / `42` / `null` 此前走 `.get()` 抛 `AttributeError`，被基座改写成通用解析失败，丢掉「源已改版 / 需 cookie」的 E7030 信号；现显式 `Mapping` 守卫并归 `SourceDeprecated`。
+- **P-4 tier 三处声明漂移**：注册时以命令账本为唯一权威覆盖解析器 `TIER`，账本中 49 行历史 `D` 更正为实际生效的 `L2`（全量解析器 dump 零差异）。
+- **P-6 握手裸 hex**：三帧改由 `FrameSpec` / `build_request` 生成，旧 magic 退为导入时逐字节相等断言，真机验证过的线路形状不再靠手抄常量维持。
+- **docker-compose 启动失败**：`ATST_LOG_LEVEL` / `ATST_CACHE_DIR` 是未注册的环境键（`config_from_env()` 直接 `ConfigError`）；同时修掉双服务抢占宿主 8000 端口、悬空卷与过时 `version` 字段。
+- **README 绑定数漂移**：四处 304 更正为现算的 299（85 命令 / 61 解析器 / 217 capability 本来正确），并加上下文锚定的现算判据。
+- **腾讯港美股 canonical 报价量纲**：统一 `quotes()` 路径曾对 HK/US 套用 A 股量纲（成交额 ×10^4、成交量 ×100），隐含均价落在当日高低区间之外；新增 `_parse_external_quote()` 让 canonical 与外部源共用原生布局，A 股路径不变。
+- **北交所盘前快照误判**：真机 live 测试不再把上游盘前 0 量额当作路由失败，币种按原生 CNY（快照未显式带 `currency`）处理。
+- **L2 启发式退化载荷假阳性**：全零 / 单字段 + 大片零字段的响应此前拿 0.85 分冒充 L2 表格（sniffer 语料 12 份中命中 9 份）；现按抽样字段整体降权回落 L3，字段多样的真实快照不被误伤。
+- **vipdoc 日线末字段误当 prev_close**（官方 TdxW.exe 真机）：个股尾字段 1284/1285 条恒为 `0x00010000`、指数尾字段远离当日收盘，与上一根收盘匹配率 0/1284；现仅接受与当日收盘同量级的值，其余置 `None`，由复权逻辑走既有上一根收盘回退。
+
+### Deprecated
+
+- `AsyncTdxClient` / `AsyncConnectionPool`（legacy 实验协议面）：生产 async 只有 `AsyncClient`；两套实现的物理移除进入废弃周期（v2.3 候选，breaking）。
+
 ## [2.1.0] - 2026-11-22
 
 主站候选池的**免升级运维闭环**：不升版本也能扩充与保鲜候选池，并让"这条延迟证据有多老"

@@ -2,6 +2,11 @@
 
 覆盖：纯 ASCII / GBK 中文 / GB18030 4字节 / Big5 繁体 /
 UTF-8 中文 / 空字节 / 无效字节回退 / BOM 检测。
+
+P1-7 探测合一：``atst.charset.encoding`` 自带的 UTF-8 优先独立探测已
+删除，现为 ``atst.codec.primitive``（GBK 优先，协议 SSOT）的委托薄
+封装；边界样本（纯 ASCII / 合法 UTF-8 中文 / BOM / 空串）的期望值
+随 SSOT 口径更新，不再是 UTF-8 优先时代的结论。
 """
 
 from __future__ import annotations
@@ -27,15 +32,22 @@ class TestEncodingDetection:
     """字符集探测测试。"""
 
     def test_pure_ascii(self):
-        """#1 纯 ASCII → utf-8。"""
-        assert detect_encoding(b"hello world 123") == "utf-8"
-        assert detect_encoding(b"ABC\n") == "utf-8"
+        """#1 纯 ASCII → gbk（P1-7：GBK 优先 SSOT，charset 版是委托）。"""
+        assert detect_encoding(b"hello world 123") == "gbk"
+        assert detect_encoding(b"ABC") == "gbk"
+        # 换行符不计入 primitive 的可打印比例（3/4=0.75 < 0.8 门槛）→
+        # 四候选全被筛掉，SSOT 回退 gb18030 兑底
+        assert detect_encoding(b"ABC\n") == "gb18030"
 
-    def test_ascii_with_high_bytes_not_ascii(self):
-        """#2 含高位字节但仍是 ASCII 兼容的 → utf-8。"""
-        # 仅低字节
+    def test_control_heavy_bytes_fallback(self):
+        """#2 控制字符占比过高的低字节流 → SSOT 回退 gb18030。
+
+        委托 primitive（GBK 优先 + 可打印比例 ≥ 0.8 粗筛）：
+        ``bytes(range(0, 128))`` 的控制字符把四个候选的可打印比例都压到
+        门槛之下，落回最宽超集兑底。
+        """
         data = bytes(range(0, 128))
-        assert detect_encoding(data) == "utf-8"
+        assert detect_encoding(data) == "gb18030"
 
     def test_gbk_chinese(self):
         """#3 GBK 中文 → gbk。"""
@@ -66,24 +78,31 @@ class TestEncodingDetection:
         assert enc in ("big5", "gbk")
 
     def test_utf8_chinese(self):
-        """#6 UTF-8 中文 → utf-8。"""
-        text = "你好世界"
-        data = text.encode("utf-8")
-        assert detect_encoding(data) == "utf-8"
-        enc, conf = detect_with_confidence(data)
-        assert enc == "utf-8"
-        assert conf >= 0.9
+        """#6 UTF-8 中文：GBK 无法整串解码的样本 → utf-8。
 
-    def test_empty_bytes(self):
-        """#7 空字节 → utf-8 (置信度 1.0)。"""
-        assert detect_encoding(b"") == "utf-8"
-        enc, conf = detect_with_confidence(b"")
+        P1-7 后 GBK 优先是 SSOT：能被 GBK 整串解码成可打印文本的
+        UTF-8 中文（如「你好世界」）判 gbk；本测试选 GBK 无法整串
+        解码的样本（「平安银行公告摘要」），验证 utf-8 分支可达。
+        """
+        assert detect_encoding("你好世界".encode()) == "gbk"
+        data = "平安银行公告摘要".encode()
+        enc, conf = detect_with_confidence(data)
         assert enc == "utf-8"
         assert conf == 1.0
 
+    def test_empty_bytes(self):
+        """#7 空字节 → gbk（置信度 1.0）。
+
+        P1-7 后空串对四个候选都可「解码」，GBK 居 SSOT 首位。
+        """
+        assert detect_encoding(b"") == "gbk"
+        enc, conf = detect_with_confidence(b"")
+        assert enc == "gbk"
+        assert conf == 1.0
+
     def test_all_nul_bytes(self):
-        """#8 全 NUL 字节 → utf-8。"""
-        assert detect_encoding(b"\x00\x00\x00\x00") == "utf-8"
+        """#8 全 NUL 字节 → gbk（SSOT 口径，\x00 计入可打印字符）。"""
+        assert detect_encoding(b"\x00\x00\x00\x00") == "gbk"
 
     def test_invalid_bytes_fallback(self):
         """#9 无效字节 → utf-8 回退。"""
@@ -95,18 +114,25 @@ class TestEncodingDetection:
         assert enc in CANDIDATE_ENCODINGS + ("utf-8",)
 
     def test_utf8_bom(self):
-        """#10 UTF-8 BOM → utf-8 (置信度 1.0)。"""
+        """#10 UTF-8 BOM → gbk（置信度 1.0）。
+
+        P1-7 后 SSOT 无 BOM 特判分支：EF BB / BF 68 是合法 GBK 对。
+        """
         data = b"\xef\xbb\xbfhello"
         enc, conf = detect_with_confidence(data)
-        assert enc == "utf-8"
+        assert enc == "gbk"
         assert conf == 1.0
 
     def test_utf16_le_bom(self):
-        """#11 UTF-16 LE BOM → utf-16。"""
+        """#11 UTF-16 LE BOM → gb18030（置信度 0.3）。
+
+        P1-7 后 SSOT 无 BOM 特判分支：GBK 在 trail 0x00 处失败，
+        逐候选失败后回退 gb18030 兑底（不可严格解码 → 置信 0.3）。
+        """
         data = b"\xff\xfeh\x00e\x00l\x00l\x00o\x00"
         enc, conf = detect_with_confidence(data)
-        assert enc == "utf-16"
-        assert conf == 1.0
+        assert enc == "gb18030"
+        assert conf == 0.3
 
     def test_decode_bytes_auto(self):
         """#12 decode_bytes 自动探测。"""

@@ -29,6 +29,38 @@ from ._std7709_common import (
     KlineCategory,
 )
 
+
+def _check_record_echo(
+    ctx: dict[str, Any],
+    market: int,
+    code: str,
+    expect_market: Any,
+    expect_code: str,
+    *,
+    command: str,
+    head_label: str,
+) -> None:
+    """记录/块头回声与请求不符时留痕（P2-5a：两份 ``_check_echo`` 拷贝收敛于此）。
+
+    0x000F 逐块、0x0010 逐条地校验「响应头 market/code 与请求上下文一致」，
+    不符即发 ``field_out_of_domain`` 诊断而不是静默返回脏数据（旧错请求的
+    形状：market=48 / 半个代码）。命令号文案与头部称谓（块头 / 记录头）由
+    调用方参数化，诊断文案与原两份拷贝逐字一致。
+    """
+    problems: list[str] = []
+    if expect_code and code != expect_code:
+        problems.append(f"code={code!r} != 请求 {expect_code!r}")
+    if expect_market is not None and market != int(expect_market):
+        problems.append(f"market={market} != 请求 {int(expect_market)}")
+    if problems:
+        record_warning(
+            WarningCode.FIELD_OUT_OF_DOMAIN,
+            f"{command} {head_label}回声不符（{'；'.join(problems)}）——"
+            "请求体的 market/code 顺序或字段布局可能已漂移，字段值不可信"
+            f"（{head_label} market={market} code={code!r}）",
+        )
+
+
 # 0x052D K 线                                      ✅ golden-verified
 
 # --------------------------------------------------------------------------- #
@@ -176,17 +208,14 @@ class SecurityBarsParser(BaseParser):
                 "指数要量请改用日线或换 Web 源",
             )
 
-        count = self.guarded_count(reader, ctx, 16)
+        _, records = self.iter_fixed_records(reader, ctx, 16)
 
         bars: list[dict[str, Any]] = []
 
         base = 0
 
-        for _i in range(count):
+        for _i in records:
             # 最小记录 = 4(dt) + 4(最短 leb128) + 8(vol+amt) = 16
-
-            if reader.remaining < 16:
-                break
 
             dt = self._read_datetime(reader, category)
 
@@ -405,7 +434,10 @@ class CapitalChangesParser(BaseParser):
             code = decode_gbk(reader.bytes(6))
 
             # --- 回声校验：块头必须与请求一致（错请求时代的错位形状） -------- #
-            self._check_echo(ctx, market, code, expect_market, expect_code)
+            # P2-5a：实现提为模块级 _check_record_echo（与 FinanceInfoParser 共享）
+            _check_record_echo(
+                ctx, market, code, expect_market, expect_code, command="0x000f", head_label="块头"
+            )
 
             num = reader.uint16()
 
@@ -442,28 +474,6 @@ class CapitalChangesParser(BaseParser):
                 rows.append(self._decode(reader.bytes(size), size))
 
         return rows
-
-    @staticmethod
-    def _check_echo(
-        ctx: dict[str, Any],
-        market: int,
-        code: str,
-        expect_market: Any,
-        expect_code: str,
-    ) -> None:
-        """块头回声与请求不符时留痕（旧错请求的形状：market=48 / 半个代码）。"""
-        problems: list[str] = []
-        if expect_code and code != expect_code:
-            problems.append(f"code={code!r} != 请求 {expect_code!r}")
-        if expect_market is not None and market != int(expect_market):
-            problems.append(f"market={market} != 请求 {int(expect_market)}")
-        if problems:
-            record_warning(
-                WarningCode.FIELD_OUT_OF_DOMAIN,
-                f"0x000f 块头回声不符（{'；'.join(problems)}）——"
-                "请求体的 market/code 顺序或字段布局可能已漂移，字段值不可信"
-                f"（块头 market={market} code={code!r}）",
-            )
 
     def _decode(self, rec: bytes, size: int) -> dict[str, Any]:
 
@@ -616,7 +626,10 @@ class FinanceInfoParser(BaseParser):
             code = decode_gbk(rec[1:7])
 
             # --- 回声校验：记录头必须与请求一致（错请求时代的错位形状） ------ #
-            self._check_echo(ctx, market, code, expect_market, expect_code)
+            # P2-5a：实现提为模块级 _check_record_echo（与 CapitalChangesParser 共享）
+            _check_record_echo(
+                ctx, market, code, expect_market, expect_code, command="0x0010", head_label="记录头"
+            )
 
             # 7B 头之后：<fHHII> + 30 × float32
             liutong, province, industry, updated, ipo = struct.unpack_from("<fHHII", rec, 7)
@@ -641,28 +654,6 @@ class FinanceInfoParser(BaseParser):
             )
 
         return rows
-
-    @staticmethod
-    def _check_echo(
-        ctx: dict[str, Any],
-        market: int,
-        code: str,
-        expect_market: Any,
-        expect_code: str,
-    ) -> None:
-        """记录头回声与请求不符时留痕（旧错请求的形状：market=48 / 半个代码）。"""
-        problems: list[str] = []
-        if expect_code and code != expect_code:
-            problems.append(f"code={code!r} != 请求 {expect_code!r}")
-        if expect_market is not None and market != int(expect_market):
-            problems.append(f"market={market} != 请求 {int(expect_market)}")
-        if problems:
-            record_warning(
-                WarningCode.FIELD_OUT_OF_DOMAIN,
-                f"0x0010 记录头回声不符（{'；'.join(problems)}）——"
-                "请求体的 market/code 顺序或字段布局可能已漂移，字段值不可信"
-                f"（记录头 market={market} code={code!r}）",
-            )
 
 
 # --------------------------------------------------------------------------- #

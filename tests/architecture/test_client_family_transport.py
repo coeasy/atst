@@ -26,9 +26,10 @@
    ``TdxClient`` 子类"的格子，**在构造处把那个类截住**，检查它实际收到了什么；
 2. 家族类在执行器里**只许被 :meth:`~atst.runtime.executor.DirectProviderExecutor._pool_client`
    一处构造**——本轮这条断链的形状就是"分支各自 new 一个"，所以除了量读数，还要量构造点数量；
-3. 每一格用完必须**恰好显式 ``close()`` 一次**，正常路径与实现抛错路径各量一遍——
-   收得对不对不看分支写法，看动作序列（第 31 轮 31-B 那一格 ``tdx_client`` 分支用 ``with``，
-   ``__enter__`` 落在 try 之外，构造出来的池和心跳线程在异常路径上没人收尾）。
+3. 每一格用完，家族客户端必须**恰好被 ``close()`` 一次**，正常路径与实现抛错路径各量
+   一遍——收得对不对不看分支写法，看动作序列。P1-1 之后 close 的责任人是
+   :meth:`DirectProviderExecutor.close`（常驻客户端逐跳不再关，由执行器收口时恰好关一次；
+   ``_drive`` 驱动后统一 ``executor.close()``）。
 4. 交出一个可关闭客户端的位置**只许待在唯一那道 :meth:`_client_session` 保护区里**（31-C3）。
    31-B4 那次只收了迁移分支三条，核心链路还留着九处 ``with self._tdx_client(...) as client:``——
    同一份文件对同一个风险给两种答案。这条量的是形状本身：``with`` 直接包住构造出口即红，
@@ -297,6 +298,9 @@ def _drive(
         pass
     finally:
         _Recorder.boom = False
+        #: P1-1：常驻客户端逐跳不再 close，收口责任在执行器自己的 ``close()``——
+        #: 驱动结束后统一收口，释放两格量到的就是这一次。
+        executor.close()
     return _Recorder.captured
 
 
@@ -373,10 +377,11 @@ def test_the_hop_timeout_still_wins_over_the_configured_one(
     ids=[f"{c[0]}-{c[1]}-{c[2]}" for c in _CELLS],
 )
 def test_every_family_client_is_released_exactly_once(cell: tuple[str, str, str, str]) -> None:
-    """释放口径①：正常路径上家族客户端**恰好**被显式 ``close()`` 一次。
+    """释放口径①：正常路径上家族客户端**恰好**被 ``close()`` 一次。
 
-    握着 ``hosts`` 与 ``config`` 构造出来的对象自带连接池和心跳线程，漏掉 close 就是漏掉
-    一条线程（G41 判据 5 数的是武装点，数不到这种"用完根本没人收"的格子）。写成 ``with``
+    P1-1：家族客户端是执行器的常驻资产，逐跳不再 close——收口责任在
+    :meth:`DirectProviderExecutor.close`（``_drive`` 驱动后统一调用）。握着 ``hosts`` 与
+    ``config`` 构造出来的对象自带连接池，漏掉收口就是漏掉一条心跳线程。写成 ``with``
     会先留下 ``enter``/``exit`` 两个动作，所以这一格同时钉住释放**次数**与释放**形状**：
     构造 → 调用 → close，中间不经过上下文协议。
     """
@@ -398,12 +403,11 @@ def test_every_family_client_is_released_exactly_once(cell: tuple[str, str, str,
 def test_a_raising_implementation_still_releases_the_client(
     cell: tuple[str, str, str, str],
 ) -> None:
-    """释放口径②：实现抛错时同样恰好一次 ``close()``——``finally`` 才给得起这个保证。
+    """释放口径②：实现抛错时同样恰好一次 ``close()``——收口不许被异常跳过。
 
-    这一格就是修复本身的动机：``with self._tdx_client(hop) as client`` 把构造与
-    ``__enter__`` 都留在 try 之外，而 :meth:`_pool_client` 交回来的对象**已经**带着池和心跳
-    线程；``__enter__`` 一抛就没有任何人 close 它。异常路径上有没有收尾，只有让实现真抛一次
-    才量得到。
+    P1-1 之后 ``_client_session`` 不再关常驻客户端（它们的收口在 ``executor.close()``），
+    实现抛错只淘汰这一次调用，客户端留给下一跳复用；驱动结束后的统一收口仍必须落到
+    它身上——异常路径上有没有收尾，只有让实现真抛一次才量得到。
     """
 
     events = _drive_events(cell, boom=True)

@@ -7,6 +7,12 @@
 每个 Record 与 ``atst.typed_query`` 中的 Typed Query 契约一一对应，
 并可通过 ``to_dict`` / ``from_dict`` 在 Runtime 边界做无损序列化。
 
+P2-5b：九个 Record 原本各手写一份近乎相同的 ``to_dict`` / ``from_dict``
+（``_clean_none`` + metrics 合并 + 键集过滤），现收敛进
+:class:`_SerializableRecord` 声明式基类——子类只声明标量字段集
+（字段名 + 类型转换 + 缺省值）与 metrics 键，序列化行为全部在基类，
+输出键序与键集与旧手写版逐字一致。
+
 单位约定（继承 :mod:`atst.domain.models`）::
 
     价格/金额    元（float）
@@ -17,10 +23,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol, TypeVar
+from typing import Any, ClassVar, Protocol, TypeVar
 
 _T = TypeVar("_T")
+_SelfT = TypeVar("_SelfT", bound="_SerializableRecord")
 
 
 class _RecordFactory(Protocol):
@@ -49,10 +57,79 @@ def _clean_none(values: dict[str, Any]) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
+# 标量字段转换器（from_dict 的键缺失缺省值由声明项自带）
+# --------------------------------------------------------------------------- #
+def _as_str(value: Any) -> Any:
+    return str(value)
+
+
+def _as_int(value: Any) -> Any:
+    return int(value or 0)
+
+
+def _as_float(value: Any) -> Any:
+    return float(value or 0.0)
+
+
+def _as_opt_float(value: Any) -> Any:
+    return float(value) if value is not None else None
+
+
+def _as_raw(value: Any) -> Any:
+    return value
+
+
+# --------------------------------------------------------------------------- #
+# 序列化基类（P2-5b）
+# --------------------------------------------------------------------------- #
+class _SerializableRecord:
+    """``to_dict`` / ``from_dict`` 同构样板的声明式基类。
+
+    子类以类属性声明契约，序列化行为全部收进本基类：
+
+    * ``_SCALARS``：标量字段集，``(字段名, 转换器, 缺省值)`` 三元组，按声明
+      顺序输出；缺省值供 ``from_dict`` 在键缺失时取用。
+    * ``_METRICS_FIELD``：扩展指标字典字段名（``None`` 表示无 metrics）——
+      ``to_dict`` 把它合并进标量之后，``from_dict`` 把剩余键全部收进它
+      （键集过滤语义与旧手写版一致）。
+    * ``_STRIP_FALSY``：除 ``None`` 外还要按 falsy 剥离的标量字段
+      （如 ``FundRecord.fund_type`` 的 0 不输出），保持输出键集不变。
+
+    注意 ``str`` 转换器对显式 ``None`` 值产 ``"None"``、对键缺失产 ``""``：
+    这是旧手写版 ``str(d.get(k, ""))`` 的既有行为，本基类原样保留。
+    """
+
+    __slots__ = ()
+
+    _SCALARS: ClassVar[tuple[tuple[str, Callable[[Any], Any], Any], ...]] = ()
+    _METRICS_FIELD: ClassVar[str | None] = None
+    _STRIP_FALSY: ClassVar[tuple[str, ...]] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        d = _clean_none({name: getattr(self, name) for name, _, _ in self._SCALARS})
+        for name in self._STRIP_FALSY:
+            if not d.get(name):
+                d.pop(name, None)
+        if self._METRICS_FIELD is not None:
+            d.update(getattr(self, self._METRICS_FIELD))
+        return d
+
+    @classmethod
+    def from_dict(cls: type[_SelfT], d: dict[str, Any]) -> _SelfT:
+        kwargs = {name: cast(d.get(name, default)) for name, cast, default in cls._SCALARS}
+        metrics_field = cls._METRICS_FIELD
+        if metrics_field is None:
+            return cls(**kwargs)
+        keys = {name for name, _, _ in cls._SCALARS} | {metrics_field}
+        kwargs[metrics_field] = {k: v for k, v in d.items() if k not in keys}
+        return cls(**kwargs)
+
+
+# --------------------------------------------------------------------------- #
 # Financial 财务
 # --------------------------------------------------------------------------- #
 @dataclass(slots=True)
-class FinancialRecord:
+class FinancialRecord(_SerializableRecord):
     """财务数据记录（balance_sheet / income_sheet / cash_flow 等）。"""
 
     code: str = ""
@@ -61,25 +138,15 @@ class FinancialRecord:
     #: 指标名 -> 数值/字符串
     metrics: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        d = _clean_none({"code": self.code, "report_date": self.report_date})
-        d.update(self.metrics)
-        return d
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> FinancialRecord:
-        return cls(
-            code=str(d.get("code", "")),
-            report_date=str(d.get("report_date", "")),
-            metrics={k: v for k, v in d.items() if k not in ("code", "report_date")},
-        )
+    _SCALARS = (("code", _as_str, ""), ("report_date", _as_str, ""))
+    _METRICS_FIELD = "metrics"
 
 
 # --------------------------------------------------------------------------- #
 # Fund 基金
 # --------------------------------------------------------------------------- #
 @dataclass(slots=True)
-class FundRecord:
+class FundRecord(_SerializableRecord):
     """基金基础信息 / 持仓 / 排名记录。"""
 
     code: str = ""
@@ -88,28 +155,17 @@ class FundRecord:
     fund_type: int = 0
     metrics: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        d = _clean_none({"code": self.code, "name": self.name})
-        if self.fund_type:
-            d["fund_type"] = self.fund_type
-        d.update(self.metrics)
-        return d
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> FundRecord:
-        return cls(
-            code=str(d.get("code", "")),
-            name=str(d.get("name", "")),
-            fund_type=int(d.get("fund_type", 0) or 0),
-            metrics={k: v for k, v in d.items() if k not in ("code", "name", "fund_type")},
-        )
+    _SCALARS = (("code", _as_str, ""), ("name", _as_str, ""), ("fund_type", _as_int, 0))
+    _METRICS_FIELD = "metrics"
+    #: 旧实现 ``if self.fund_type:`` —— fund_type 为 0 时不输出
+    _STRIP_FALSY = ("fund_type",)
 
 
 # --------------------------------------------------------------------------- #
 # Bond 债券
 # --------------------------------------------------------------------------- #
 @dataclass(slots=True)
-class BondRecord:
+class BondRecord(_SerializableRecord):
     """债券行情 / 成交记录。"""
 
     code: str = ""
@@ -120,35 +176,20 @@ class BondRecord:
     #: 成交收益率等扩展指标
     metrics: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        d = _clean_none(
-            {
-                "code": self.code,
-                "name": self.name,
-                "bond_type": self.bond_type,
-                "price": self.price,
-            }
-        )
-        d.update(self.metrics)
-        return d
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> BondRecord:
-        keys = {"code", "name", "bond_type", "price"}
-        return cls(
-            code=str(d.get("code", "")),
-            name=str(d.get("name", "")),
-            bond_type=str(d.get("bond_type", "")),
-            price=float(d.get("price", 0.0) or 0.0),
-            metrics={k: v for k, v in d.items() if k not in keys},
-        )
+    _SCALARS = (
+        ("code", _as_str, ""),
+        ("name", _as_str, ""),
+        ("bond_type", _as_str, ""),
+        ("price", _as_float, 0.0),
+    )
+    _METRICS_FIELD = "metrics"
 
 
 # --------------------------------------------------------------------------- #
 # News 新闻 / Research 研报
 # --------------------------------------------------------------------------- #
 @dataclass(slots=True)
-class NewsRecord:
+class NewsRecord(_SerializableRecord):
     """财经新闻记录。"""
 
     id: str = ""
@@ -162,26 +203,19 @@ class NewsRecord:
     #: 关联标的代码（如有）
     symbol: str = ""
 
-    def to_dict(self) -> dict[str, Any]:
-        return _clean_none(
-            {
-                "id": self.id,
-                "title": self.title,
-                "source": self.source,
-                "time": self.time,
-                "url": self.url,
-                "summary": self.summary,
-                "symbol": self.symbol,
-            }
-        )
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> NewsRecord:
-        return cls(**{k: str(d.get(k, "")) for k in cls.__dataclass_fields__})
+    _SCALARS = (
+        ("id", _as_str, ""),
+        ("title", _as_str, ""),
+        ("source", _as_str, ""),
+        ("time", _as_str, ""),
+        ("url", _as_str, ""),
+        ("summary", _as_str, ""),
+        ("symbol", _as_str, ""),
+    )
 
 
 @dataclass(slots=True)
-class ResearchRecord:
+class ResearchRecord(_SerializableRecord):
     """研报记录（research_reports / research_visits）。"""
 
     code: str = ""
@@ -198,39 +232,23 @@ class ResearchRecord:
     target_price: float | None = None
     summary: str = ""
 
-    def to_dict(self) -> dict[str, Any]:
-        return _clean_none(
-            {
-                "code": self.code,
-                "title": self.title,
-                "org": self.org,
-                "analyst": self.analyst,
-                "rating": self.rating,
-                "date": self.date,
-                "target_price": self.target_price,
-                "summary": self.summary,
-            }
-        )
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ResearchRecord:
-        return cls(
-            code=str(d.get("code", "")),
-            title=str(d.get("title", "")),
-            org=str(d.get("org", "")),
-            analyst=str(d.get("analyst", "")),
-            rating=str(d.get("rating", "")),
-            date=str(d.get("date", "")),
-            target_price=float(d["target_price"]) if d.get("target_price") is not None else None,
-            summary=str(d.get("summary", "")),
-        )
+    _SCALARS = (
+        ("code", _as_str, ""),
+        ("title", _as_str, ""),
+        ("org", _as_str, ""),
+        ("analyst", _as_str, ""),
+        ("rating", _as_str, ""),
+        ("date", _as_str, ""),
+        ("target_price", _as_opt_float, None),
+        ("summary", _as_str, ""),
+    )
 
 
 # --------------------------------------------------------------------------- #
 # Option 期权
 # --------------------------------------------------------------------------- #
 @dataclass(slots=True)
-class OptionRecord:
+class OptionRecord(_SerializableRecord):
     """期权快照 / 列表记录。"""
 
     code: str = ""
@@ -245,39 +263,22 @@ class OptionRecord:
     #: 希腊字母等扩展指标
     metrics: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        d = _clean_none(
-            {
-                "code": self.code,
-                "name": self.name,
-                "option_type": self.option_type,
-                "strike": self.strike,
-                "expiry": self.expiry,
-                "price": self.price,
-            }
-        )
-        d.update(self.metrics)
-        return d
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> OptionRecord:
-        keys = {"code", "name", "option_type", "strike", "expiry", "price"}
-        return cls(
-            code=str(d.get("code", "")),
-            name=str(d.get("name", "")),
-            option_type=str(d.get("option_type", "")),
-            strike=float(d.get("strike", 0.0) or 0.0),
-            expiry=str(d.get("expiry", "")),
-            price=float(d.get("price", 0.0) or 0.0),
-            metrics={k: v for k, v in d.items() if k not in keys},
-        )
+    _SCALARS = (
+        ("code", _as_str, ""),
+        ("name", _as_str, ""),
+        ("option_type", _as_str, ""),
+        ("strike", _as_float, 0.0),
+        ("expiry", _as_str, ""),
+        ("price", _as_float, 0.0),
+    )
+    _METRICS_FIELD = "metrics"
 
 
 # --------------------------------------------------------------------------- #
 # MarketData 行情衍生
 # --------------------------------------------------------------------------- #
 @dataclass(slots=True)
-class MarketDataRecord:
+class MarketDataRecord(_SerializableRecord):
     """行情衍生数据（hot_rank / limit_pool / northbound / margin ...）。"""
 
     #: 指标类型（hot_rank/limit_pool/northbound/...）
@@ -286,27 +287,15 @@ class MarketDataRecord:
     name: str = ""
     metrics: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        d = _clean_none({"kind": self.kind, "code": self.code, "name": self.name})
-        d.update(self.metrics)
-        return d
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> MarketDataRecord:
-        keys = {"kind", "code", "name"}
-        return cls(
-            kind=str(d.get("kind", "")),
-            code=str(d.get("code", "")),
-            name=str(d.get("name", "")),
-            metrics={k: v for k, v in d.items() if k not in keys},
-        )
+    _SCALARS = (("kind", _as_str, ""), ("code", _as_str, ""), ("name", _as_str, ""))
+    _METRICS_FIELD = "metrics"
 
 
 # --------------------------------------------------------------------------- #
 # Search 搜索 / Macro 宏观
 # --------------------------------------------------------------------------- #
 @dataclass(slots=True)
-class SearchRecord:
+class SearchRecord(_SerializableRecord):
     """搜索/选股结果（wencai / screening / suggest ...）。"""
 
     code: str = ""
@@ -315,24 +304,12 @@ class SearchRecord:
     summary: str = ""
     metrics: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        d = _clean_none({"code": self.code, "name": self.name, "summary": self.summary})
-        d.update(self.metrics)
-        return d
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> SearchRecord:
-        keys = {"code", "name", "summary"}
-        return cls(
-            code=str(d.get("code", "")),
-            name=str(d.get("name", "")),
-            summary=str(d.get("summary", "")),
-            metrics={k: v for k, v in d.items() if k not in keys},
-        )
+    _SCALARS = (("code", _as_str, ""), ("name", _as_str, ""), ("summary", _as_str, ""))
+    _METRICS_FIELD = "metrics"
 
 
 @dataclass(slots=True)
-class MacroRecord:
+class MacroRecord(_SerializableRecord):
     """宏观/全球数据（fx_rates / global_quotes ...）。"""
 
     #: 指标类型（fx_rates/index_quote/...）
@@ -343,23 +320,13 @@ class MacroRecord:
     value: Any = None
     metrics: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        d = _clean_none(
-            {"kind": self.kind, "key": self.key, "name": self.name, "value": self.value}
-        )
-        d.update(self.metrics)
-        return d
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> MacroRecord:
-        keys = {"kind", "key", "name", "value"}
-        return cls(
-            kind=str(d.get("kind", "")),
-            key=str(d.get("key", "")),
-            name=str(d.get("name", "")),
-            value=d.get("value"),
-            metrics={k: v for k, v in d.items() if k not in keys},
-        )
+    _SCALARS = (
+        ("kind", _as_str, ""),
+        ("key", _as_str, ""),
+        ("name", _as_str, ""),
+        ("value", _as_raw, None),
+    )
+    _METRICS_FIELD = "metrics"
 
 
 def as_record_list(items: list[dict[str, Any]], record_cls: type[_RecordFactory]) -> list[Any]:

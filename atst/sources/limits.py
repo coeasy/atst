@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 __all__ = [
+    "DEFAULT_MAX_PAGES",
     "SINA_KLINE_MAX",
     "SINA_MARKET_PAGE_MAX",
     "TENCENT_KLINE_MAX",
@@ -77,3 +78,14 @@ SINA_KLINE_MAX = 1970
 #: 把"服务端截断"误判成"短页=数据结束"，只拿到第一页就提前收工且不告警。故
 #: :meth:`atst.sources.sina.adapters.SinaSource.fetch_all` 在入口钳到本常量并告警。
 SINA_MARKET_PAGE_MAX = 100
+
+
+#: ``fetch_all`` 未显式给 ``max_pages`` 时的翻页硬上限（P2 #1：翻页终止不再
+#: 完全依赖服务端空页，防失控翻页）。
+#:
+#: P2-4c（F11）自 ``atst.sources.tencent.adapters`` 上移至此：这是「web 分页
+#: 防失控」语义而非腾讯专属——新浪 ``SinaSource.fetch_all`` 传 ``None`` 时同样
+#: 落到本值，旧实现跨 Provider 从 tencent.adapters 导入是耦合点。两家适配器
+#: 各自从本模块引用；``atst.sources.tencent.adapters.DEFAULT_MAX_PAGES`` 保留
+#: 同名 re-export 兼容既有 import 与文档引用。
+DEFAULT_MAX_PAGES = 100

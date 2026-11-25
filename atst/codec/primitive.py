@@ -240,13 +240,21 @@ class BinaryWriter:
         return self
 
     def uint8(self, v: int) -> BinaryWriter:
-        return self.pack("B", v & 0xFF)
+        # P3：越界值不再掩码静默截断——与 Reader 的越界抛错口径对称；
+        # 掩码会把“算错的 seq/长度”伪装成合法帧，错得更隐蔽。
+        if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= 0xFF:
+            raise ValueError(f"uint8 越界: {v!r}（合法 0..255）")
+        return self.pack("B", v)
 
     def uint16(self, v: int) -> BinaryWriter:
-        return self.pack("H", v & 0xFFFF)
+        if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= 0xFFFF:
+            raise ValueError(f"uint16 越界: {v!r}（合法 0..65535）")
+        return self.pack("H", v)
 
     def uint32(self, v: int) -> BinaryWriter:
-        return self.pack("I", v & 0xFFFFFFFF)
+        if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= 0xFFFFFFFF:
+            raise ValueError(f"uint32 越界: {v!r}（合法 0..4294967295）")
+        return self.pack("I", v)
 
     def int32(self, v: int) -> BinaryWriter:
         return self.pack("i", v)

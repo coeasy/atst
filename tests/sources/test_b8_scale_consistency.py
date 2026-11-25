@@ -1,8 +1,12 @@
 """B8 · 缩放口径三处一致性测试（spec ↔ normalizer ↔ 解析层锚点）。
 
-数据契约：价格=元、成交量=股、成交额=元。三个维护点：
-1. ``web/sources.py`` 的 ``SourceSpec.{price,volume,amount}_scale``；
-2. ``web/normalize.py`` 的各源 ``VolumeNormalizer`` 缩放系数；
+数据契约：价格=元、成交量=股、成交额=元。**系数值本身只有一个事实源**：
+:mod:`atst.sources._scale`（由 ``test_scale_single_source.py`` 守住）。三个
+维护点都只是**引用**它的常量，本文件管的是另一件事——同一个系数在三个
+层面上的落点是否一致：
+
+1. ``atst/sources/sources.py`` 的 ``SourceSpec.{price,volume,amount}_scale``；
+2. ``atst/sources/normalize.py`` 的各源 ``VolumeNormalizer`` 缩放系数；
 3. 解析层内联缩放（如腾讯 K 线按市场分支 ×100/×1）。
 
 本测试断言 1↔2 一致（已知例外显式列出），并用锚点用例钉住解析层

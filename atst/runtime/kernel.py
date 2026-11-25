@@ -23,6 +23,7 @@ from ..batch import BatchItem, BatchResult
 from ..config import Config, get_config
 from ..domain.symbol import normalize_symbol
 from ..error_envelope import ErrorEnvelope, to_error_envelope
+from ..errors import FreshnessViolation, ValidationError
 from ..query import QueryPlan, QueryPlanner, QuerySpec
 from ..result import QueryResult
 from .audit import audit_runtime
@@ -57,12 +58,16 @@ class UnifiedRuntime:
         cfg = (config if config is not None else get_config()).validate()
         self.config = cfg
         routing = getattr(cfg, "routing", None)
+        effective_vipdoc_root = cfg.core.vipdoc_root if vipdoc_root is None else vipdoc_root
         self.planner = QueryPlanner(
             default_provider=(
                 cfg.core.default_provider if default_provider is None else default_provider
             ),
             auto_prefer=tuple(getattr(routing, "auto_providers", ()) or ()),
             auto_ttl_ns=int(float(getattr(routing, "auto_health_ttl", 0.0) or 0.0) * 1_000_000_000),
+            # P1-6：没配本地数据根时 local_vipdoc 不进 auto 候选（排进来只会得到
+            # 一次配置错误），排除口径由内核统一下沉，Client 层不再单独特判。
+            auto_exclude=frozenset({"local_vipdoc"}) if not effective_vipdoc_root else frozenset(),
         )
         configured_hosts: Sequence[Any] | None = (
             list(cfg.hosts.servers) if cfg.hosts.servers else None
@@ -70,17 +75,24 @@ class UnifiedRuntime:
         self.executor: KernelExecutor = executor or DirectProviderExecutor(
             timeout=cfg.core.timeout if timeout is None else timeout,
             hosts=hosts if hosts is not None else configured_hosts,
-            vipdoc_root=(cfg.core.vipdoc_root if vipdoc_root is None else vipdoc_root),
+            vipdoc_root=effective_vipdoc_root,
             config=cfg,
         )
+        #: P1-3：把句柄回填给执行器，composed 内层查询才能走本内核主链
+        #: （健康反馈 + 溯源校验 + 预算继承）。外部注入的 KernelExecutor 没有这个
+        #: 接缝就不回填——内层查询退回裸执行器形状（与旧行为一致）。
+        attach = getattr(self.executor, "attach_runtime", None)
+        if callable(attach):
+            attach(self)
 
     def close(self) -> None:
         """把收尾递给执行器——**只有它自己定义了** ``close()`` 的时候。
 
-        内置的 ``DirectProviderExecutor`` 不定义这个方法：家族客户端不在它身上，每一跳
-        都是构造 → ``try`` → ``finally: client.close()``。所以默认内核上这里是一次空转，
-        它服务的是注入执行器（自带连接池、心跳线程或别的外设）那条口子。判据
-        ``tests/runtime/test_close_chain_ownership.py``。
+        P1-1 之后内置的 ``DirectProviderExecutor`` 也定义了 ``close()``：它按族持有常驻
+        家族客户端（连接池/心跳跨调用连续生效），内核 ``close()`` 会把它们统一收口。
+        构造期仍不起任何池或线程——池与心跳都在首次 tdx 跳才出现，从未发过 tdx 请求
+        的 ``close()`` 是一次空转。注入执行器（自带连接池、心跳线程或别的外设）那条
+        口子不变。判据 ``tests/runtime/test_close_chain_ownership.py``。
         """
         close = getattr(self.executor, "close", None)
         if callable(close):
@@ -96,6 +108,11 @@ class UnifiedRuntime:
         plan = self.planner.compile(spec)
         try:
             result = self.executor.execute(plan)
+        except (ValidationError, FreshnessViolation):
+            #: P0-10：参数错 / 当期性违例发生在任何 Provider I/O 之前，属于调用方
+            #: 的 4xx 语义（编排层同样原样上抛、不换源）。给 Provider 记失败会
+            #: 让一次与本源无关的请求污染 auto 健康排序，因此这里只透传不记账。
+            raise
         except Exception as exc:
             #: 真实请求的成败喂给健康存储：``auto`` 候选据此沉底/复位。
             #: 只记 Provider 身份与错误码，不碰任何请求内容。
@@ -127,11 +144,12 @@ class UnifiedRuntime:
         *,
         provider: str | None = None,
         currentness: str = "live",
+        workers: int = 0,
     ) -> BatchResult[QueryResult[Any]]:
         """Execute independently auditable quote requests without hidden fallback.
 
         ``items`` 与 ``errors`` 是同一批符号的两种视角：``items`` 逐项带状态
-        （``ok`` / ``missing`` / ``failed``），``errors`` 只给失败的符号挂上可越界的
+        （``ok`` / ``missing`` / ``failed`` / ``not_attempted``），``errors`` 只给失败的符号挂上可越界的
         :class:`~atst.error_envelope.ErrorEnvelope`；``requested`` 是归一、去重之后
         真正向 Provider 发出的那份名单。三者齐了，``partial`` / ``status_for`` /
         ``to_dict()`` 才有真源——此前这条生产路径只喂 ``items``，于是
@@ -139,26 +157,57 @@ class UnifiedRuntime:
         在一个确有符号失败的批次上仍然恒为 ``False``（``requested`` 还兼作
         ``errors ⊆ requested`` 那条不变量的一半）。
         """
+        # P1-6：先归一去重（P0-11 口径：坏符号只落一项），再逐只执行；
+        # ``workers > 1`` 时线程池并行——Client 批量编排的并发下沉到这里，
+        # 同一业务不再有 Client/kernel 两份实现。
+        unique: list[str] = []
+        seen: set[str] = set()
+        bad: dict[str, Exception] = {}
+        for raw_symbol in symbols:
+            try:
+                symbol = normalize_symbol(raw_symbol)
+            except Exception as exc:
+                bad.setdefault(str(raw_symbol), exc)
+                continue
+            if symbol in seen:
+                continue
+            seen.add(symbol)
+            unique.append(symbol)
+
+        def _one(symbol: str) -> QueryResult[Any]:
+            return self.quotes(symbol, provider=provider, currentness=currentness)
+
+        def _run(symbol: str) -> QueryResult[Any] | Exception:
+            try:
+                return _one(symbol)
+            except Exception as exc:  # noqa: BLE001 - 逐项三态契约
+                return exc
+
+        if workers > 1 and len(unique) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=min(workers, len(unique))) as pool:
+                outcomes = list(pool.map(_run, unique))
+        else:
+            outcomes = [_run(symbol) for symbol in unique]
+
         items: dict[str, BatchItem[QueryResult[Any]]] = {}
         errors: dict[str, ErrorEnvelope] = {}
-        for raw_symbol in symbols:
-            symbol = normalize_symbol(raw_symbol)
-            if symbol in items:
-                continue
-            try:
-                result = self.quotes(
-                    symbol,
-                    provider=provider,
-                    currentness=currentness,
+        for symbol, outcome in zip(unique, outcomes, strict=True):
+            if isinstance(outcome, Exception):
+                items[symbol] = BatchItem("failed", error=outcome)
+                errors[symbol] = to_error_envelope(outcome)
+            else:
+                items[symbol] = (
+                    BatchItem("missing") if not outcome.data else BatchItem("ok", value=outcome)
                 )
-            except Exception as exc:
-                items[symbol] = BatchItem("failed", error=exc)
-                errors[symbol] = to_error_envelope(exc)
-                continue
-            items[symbol] = (
-                BatchItem("missing") if not result.data else BatchItem("ok", value=result)
-            )
-        return BatchResult.build(items, errors=errors, requested=tuple(items))
+        for raw, err in bad.items():
+            #: P0-11：归一失败的符号从未发给 Provider，状态是 ``not_attempted``
+            #: 而不是 ``failed``。它也不属于 ``errors``（``errors`` 只记真正请求过
+            #: 且失败的符号，且必须 ⊆ ``requested``）；原始异常仍留在 item.error
+            #: 上，审计信息不丢。
+            items[raw] = BatchItem("not_attempted", error=err)
+        return BatchResult.build(items, errors=errors, requested=tuple(unique))
 
     def bars(
         self,

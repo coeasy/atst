@@ -56,11 +56,9 @@ class ExMarketListParser(BaseParser):
     RECORD_SIZE = 10
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             mid = reader.uint16()
             name = decode_gbk(reader.bytes(8))
             rows.append({"market_id": mid, "name": name})
@@ -83,11 +81,9 @@ class ExInstrumentListParser(BaseParser):
     RECORD_SIZE = 16
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             market = reader.uint16()
             code = decode_gbk(reader.bytes(6))
             name = decode_gbk(reader.bytes(8))
@@ -115,11 +111,9 @@ class ExInstrumentBarsParser(BaseParser):
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
         scale = int(ctx.get("price_scale", PRICE_SCALE_BARS))
-        count = self.guarded_count(reader, ctx, 28)
+        _, records = self.iter_fixed_records(reader, ctx, 28)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < 28:
-                break
+        for _ in records:
             # P1c：per-record absolute —— o 不跨记录累加（勿改成 0x052D 的 base 模式）
             dt = reader.uint32()
             o = reader.leb128()
@@ -204,11 +198,9 @@ class ExInstrumentTradeParser(BaseParser):
     RECORD_SIZE = 11
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             second = reader.uint16()
             price = reader.float32()
             volume = reader.tdx_float()
@@ -231,11 +223,9 @@ class ExInstrumentMinuteParser(BaseParser):
     RECORD_SIZE = 14
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             minute = reader.uint16()
             price = reader.float32()
             avg = reader.float32()
@@ -260,11 +250,9 @@ class ExInstrumentInfoParser(BaseParser):
     RECORD_SIZE = 32
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             rec = reader.bytes(self.RECORD_SIZE)
             rows.append(
                 {
@@ -294,12 +282,10 @@ class ExBatchQuoteParser(BaseParser):
     """
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, 8)
+        _, records = self.iter_fixed_records(reader, ctx, 8)
         single = ExInstrumentQuoteParser()
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < 8:
-                break
+        for _ in records:
             save = reader.pos
             try:
                 rows.extend(single.parse_payload(reader, **ctx))

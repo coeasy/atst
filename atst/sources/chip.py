@@ -51,6 +51,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from ._scale import DECIMAL_TO_PERCENT
 from .base import _EastmoneyJson
 from .base import num_f as _f
 from .sources import EASTMONEY
@@ -226,7 +227,7 @@ class EastmoneyChipDistributionSource(_EastmoneyJson):
             # 计算当日 accumulation_ratio
             accum_ratio = None
             if amount > 0:
-                accum_ratio = round((main_net + large_net) / amount * 100, 4)
+                accum_ratio = round((main_net + large_net) / amount * DECIMAL_TO_PERCENT, 4)
 
             daily.append(
                 {
@@ -253,12 +254,18 @@ class EastmoneyChipDistributionSource(_EastmoneyJson):
         # 汇总指标
         total_accum_ratio = None
         if total_amount > 0:
-            total_accum_ratio = round((total_main_net + total_large_net) / total_amount * 100, 4)
+            total_accum_ratio = round(
+                (total_main_net + total_large_net) / total_amount * DECIMAL_TO_PERCENT, 4
+            )
         total_main_ratio = (
-            round(total_main_net / total_amount * 100, 4) if total_amount > 0 else None
+            round(total_main_net / total_amount * DECIMAL_TO_PERCENT, 4)
+            if total_amount > 0
+            else None
         )
         total_super_large_ratio = (
-            round(total_super_large_net / total_amount * 100, 4) if total_amount > 0 else None
+            round(total_super_large_net / total_amount * DECIMAL_TO_PERCENT, 4)
+            if total_amount > 0
+            else None
         )
 
         # 趋势判定：对比最近 1/3 与最早 1/3 的 accumulation_ratio

@@ -56,6 +56,13 @@ def get_client(kind: str = "stock", **kwargs: Any) -> Any:
     抛 :class:`ValueError`。工厂不做大小写/空白归一化，也不静默回退到
     ``TdxClient``，避免拼写和配置错误被掩盖。
 
+    P1-10（B5）：``goods`` / ``ex`` / ``mac`` 三族的报价/K 线方法
+    （``goods_bars`` / ``goods_quote`` / ``ex_bars`` / ``ex_quote`` / ``mac_quote``）
+    是 **experimental**：请求布局尚未经真机 golden 验证，调用在发包前即抛
+    :class:`~atst.errors.NotImplementedFeature`（E9010，fail-fast 不走超时重试链）。
+    这三族当前可用的只有目录面方法（``goods_count`` / ``goods_list`` /
+    ``ex_market_*`` / ``ex_instrument_*`` / ``block_list`` / ``block_members``）。
+
     .. note:: 静态返回类型由上方 ``@overload`` 按 ``kind`` 字面量收窄。"""
     if not isinstance(kind, str):
         raise ValueError(f"get_client: kind 必须是字符串，收到 {type(kind).__name__}: {kind!r}")

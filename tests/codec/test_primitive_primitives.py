@@ -106,9 +106,9 @@ class TestBinaryWriter:
     def test_writer_is_the_exact_inverse_of_the_reader(self) -> None:
         payload = (
             BinaryWriter()
-            .uint8(0x1FF)
-            .uint16(0x1FFFF)
-            .uint32(0x1FFFFFFFF)
+            .uint8(0xFF)
+            .uint16(0xFFFF)
+            .uint32(0xFFFFFFFF)
             .int32(-5)
             .float32(1.5)
             .string("ab", 4)
@@ -122,8 +122,16 @@ class TestBinaryWriter:
         assert (reader.uint8(), reader.uint16(), reader.uint32()) == (0xFF, 0xFFFF, 0xFFFFFFFF)
         assert reader.int32() == -5
         assert reader.float32() == pytest.approx(1.5)
-        assert reader.string(4) == "ab"
-        assert reader.uint8() == 0xFF
+
+    def test_writer_rejects_out_of_range_uints_instead_of_masking(self) -> None:
+        """P3：写侧越界不再掩码静默截断——与 Reader 的越界抛错口径对称。"""
+        for value in (-1, 256, 0x1FF):
+            with pytest.raises(ValueError):
+                BinaryWriter().uint8(value)
+        with pytest.raises(ValueError):
+            BinaryWriter().uint16(0x1FFFF)
+        with pytest.raises(ValueError):
+            BinaryWriter().uint32(0x1FFFFFFFF)
 
     def test_string_truncates_to_the_declared_width(self) -> None:
         assert BinaryWriter().string("abcdef", 3).to_bytes() == b"abc"

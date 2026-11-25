@@ -317,6 +317,8 @@ class QuoteChannel:
         self._symbols = list(symbols)
         self._diff_only = diff_only
         self._merger = DeltaMerger()
+        #: F-2：显式记下硬上界，派发时按它逐条出队，队列深度始终有界可观测。
+        self._max_queue = max_queue
         self._bp = BackpressureQueue(maxsize=max_queue, on_drop=None)
         self._reconnect = reconnect or ReconnectPolicy()
         self._subs: list[Callable[[StreamEvent], None]] = []
@@ -419,9 +421,20 @@ class QuoteChannel:
             self._bp.put(
                 StreamEvent(kind="diff" if self._diff_only else "quote", key=sym, payload=payload)
             )
-        # 派发队列
-        for ev in self._bp.drain():
+        # 派发队列：逐条出队，而不是 ``drain()`` 一次性搬空。
+        # F-2：旧写法在同一条轮询线程上 put 完立刻 drain，队列深度永远归零，
+        # max_queue 在观测面上形同不存在。改成逐条 get() 后，队列在派发过程中
+        # 保持真实深度（qsize() 读得到），上界由 BackpressureQueue 的"满则丢最旧"
+        # 在任何时刻硬性成立：生产者再快也顶不破 max_queue。同步派发语义不变——
+        # tick() 返回时本轮已入队的事件都已交给订阅者。
+        dispatched = 0
+        hard_bound = max(1, self._max_queue) if self._max_queue > 0 else 1
+        while dispatched < hard_bound:
+            ev = self._bp.get()
+            if ev is None:
+                break
             self._dispatch(ev)
+            dispatched += 1
 
     def take_reconnect(self) -> bool:
         """R4：取出「刚断线恢复」标志（供引擎立即补拉一轮），取后复位。"""

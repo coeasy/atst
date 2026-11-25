@@ -19,6 +19,10 @@ TDX 服务端在 TCP 连接建立后，多数主站要求客户端**先发送握
 其中帧 1/2 的 ``body`` 是 1 字节的步骤号，帧头里 ``pkg_len = 1 + 2 = 3``。
 **帧 1+2 足以拿到数据**：只发这两帧，7/7 可达主机对 ``0x052D`` 一律回 180 字节 / 10 根。
 
+三帧现在统一由 :func:`atst.codec.framing.build_request` 经
+:class:`~atst.codec.framing.FrameSpec` 组装，seq 固定为抓包原值（不走自增序）；
+生成字节与下方旧裸 hex 钉子逐字节比对，任何 spec 漂移都会在导入时曝出来。
+
 帧 3 的 30 字节 body 是**产品标识块**。它不是取数据的必要条件，但它的**内容会改变
 服务端给不给业务数据**——所以既不能不校验长度，也不能"照抄抓包样本"：
 
@@ -53,6 +57,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
+from ..codec.framing import DEFAULT_7709_SPEC, build_request
 from .commands import Family
 
 __all__ = [
@@ -68,14 +73,41 @@ __all__ = [
 _PRODUCT_ID_BLOB: Final[bytes] = b"\x00" * 30
 assert len(_PRODUCT_ID_BLOB) == 30, "产品标识块必须为 30 字节"
 
-_MAGIC_STEP1: Final[bytes] = bytes.fromhex("0c0218930001030003000d0001")
-_MAGIC_STEP2: Final[bytes] = bytes.fromhex("0c0218940001030003000d0002")
+#: 三帧抓包原值（帧头 seq 字段为 uint32 LE）。握手重放必须复用这些值，
+#: 不能走 :func:`atst.codec.framing.build_request` 的自增 seq 缺省。
+_SEQ_STEP1: Final[int] = 0x00931802
+_SEQ_STEP2: Final[int] = 0x00941802
+_SEQ_STEP3: Final[int] = 0x00991803
 
-#: 帧 3 的 12 字节帧头（seq=0x00991803, pkg_len=0x20=32, method=0x0fdb）。
-#: 单独抽出以便 :func:`setup_frames` 能替换 body 而不重算帧头。
-_MAGIC_HEADER_3: Final[bytes] = bytes.fromhex("0c031899000120002000db0f")
+#: 旧裸 hex 字节钉子：生成值必须与它逐字节相等。握手帧内容是模块 docstring 的
+#: A/B 前提，spec 若改动到帧布局，这里在导入时即失败，绝不悄悄换线路字节。
+_PINNED_STEP1: Final[bytes] = bytes.fromhex("0c0218930001030003000d0001")
+_PINNED_STEP2: Final[bytes] = bytes.fromhex("0c0218940001030003000d0002")
+_PINNED_HEADER_3: Final[bytes] = bytes.fromhex("0c031899000120002000db0f")
 
-_MAGIC_STEP3: Final[bytes] = _MAGIC_HEADER_3 + _PRODUCT_ID_BLOB
+
+def _setup_frame(method: int, body: bytes, seq: int) -> bytes:
+    """经帧 spec 组装一帧握手请求（固定 seq，不消耗全局序号发生器）。"""
+    frame, _ = build_request(method, body, seq=seq, spec=DEFAULT_7709_SPEC)
+    return frame
+
+
+_MAGIC_STEP1: Final[bytes] = _setup_frame(0x000D, b"\x01", _SEQ_STEP1)
+_MAGIC_STEP2: Final[bytes] = _setup_frame(0x000D, b"\x02", _SEQ_STEP2)
+_MAGIC_STEP3: Final[bytes] = _setup_frame(0x0FDB, _PRODUCT_ID_BLOB, _SEQ_STEP3)
+
+#: 帧 3 的帧头：长度取自 spec（不再硬抄 12 字节），以便替换 body 时不重算帧头。
+_MAGIC_HEADER_3: Final[bytes] = _MAGIC_STEP3[: DEFAULT_7709_SPEC.req_header_size]
+
+assert _MAGIC_STEP1 == _PINNED_STEP1, (
+    f"握手帧 1 字节漂移: spec 生成 {_MAGIC_STEP1.hex()}，实测钉子 {_PINNED_STEP1.hex()}"
+)
+assert _MAGIC_STEP2 == _PINNED_STEP2, (
+    f"握手帧 2 字节漂移: spec 生成 {_MAGIC_STEP2.hex()}，实测钉子 {_PINNED_STEP2.hex()}"
+)
+assert _MAGIC_HEADER_3 == _PINNED_HEADER_3, (
+    f"握手帧 3 帧头字节漂移: spec 生成 {_MAGIC_HEADER_3.hex()}，实测钉子 {_PINNED_HEADER_3.hex()}"
+)
 
 
 @dataclass(frozen=True)

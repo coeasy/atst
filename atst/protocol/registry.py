@@ -123,6 +123,10 @@ def register_parser(
         命令号。
     family:
         协议族，见 :class:`~atst.protocol.commands.Family`。
+    tier:
+        **兼容回退值**：仅在 ``(family, msg_id)`` 没有账本行时生效。命令一旦在
+        :mod:`~atst.protocol.commands` 账本中登记，解析器的 ``TIER`` 一律取自账本行，
+        此处传什么都会被覆盖（P-4：账本是 tier 的唯一事实源）。
     head:
         响应 payload 中位于记录数组之前的固定头部字节数。
     need_zip:
@@ -139,7 +143,10 @@ def register_parser(
         cls.MSG_ID = msg_id
         cls.FAMILY = family
         cls.NAME = name or cls.__name__
-        cls.TIER = tier
+        # P-4：账本是 tier 的唯一事实源。装饰器 tier= 与 BaseParser.TIER 都只作
+        # 未登记命令的回退；登记命令一律用账本行的值，避免三处声明各自漂移。
+        command = get_command(msg_id, family)
+        cls.TIER = command.tier if command is not None else tier
         cls.HEAD = head
         cls.NEED_ZIP = need_zip
         cls.DESCRIPTION = description or cls.__doc__ or ""
@@ -193,6 +200,7 @@ class BaseParser:
     MSG_ID: int = 0
     FAMILY: str = Family.STANDARD
     NAME: str = "BASE"
+    #: 回退值：经 :func:`register_parser` 注册且有账本行时，此值被账本 tier 覆盖。
     TIER: str = TIER_L1
     #: 记录数组之前的固定头部字节数（通常是 ``uint16 count``）。
     #: **纯元信息**：框架不自动跳过，由各解析器自行读取，避免重复跳导致错位。
@@ -311,6 +319,35 @@ class BaseParser:
                 f"按剩余字节 {min_record_bytes}B/条 只能容纳 {count} 条",
             )
         return count
+
+    def iter_fixed_records(
+        self, reader: BinaryReader, ctx: dict[str, Any], record_size: int
+    ) -> tuple[int, Iterator[BinaryReader]]:
+        """定长记录循环的框架收敛（P2-5a）。
+
+        「``count = self.guarded_count(...)`` + ``for _ in range(count):`` +
+        ``if reader.remaining < size: break``」三件套曾在解析器模块里逐字重复
+        （arch-review protocol-reader M4）。本方法把它收进框架：
+
+        * 返回 ``(count, records)``。``count`` 是钳制后的声明数——个别解析器
+          循环结束后要做数量自洽校验（SecurityListParser / QuotesSnapshotParser）
+          仍需取用；``records`` 产出每条记录前的 reader，保证此刻
+          ``reader.remaining >= record_size``，循环体照旧用 ``reader`` 逐字段
+          解码（记录布局是类型化字段序列而非整段字节切片，故产出 reader
+          而不是 bytes）。
+        * 截断告警与 §2-17 自检语义不变：计数读取、越域钳制与状态盒登记
+          仍由 :meth:`guarded_count` 完成；循环因容量提前耗尽而 break 时，
+          :meth:`BaseParser.parse` 的「声明 N 实收 M」告警照常触发。
+        """
+        count = self.guarded_count(reader, ctx, record_size)
+
+        def _records() -> Iterator[BinaryReader]:
+            for _ in range(count):
+                if reader.remaining < record_size:
+                    break
+                yield reader
+
+        return count, _records()
 
 
 # --------------------------------------------------------------------------- #

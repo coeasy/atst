@@ -25,7 +25,9 @@ from typing import Any
 import pytest
 
 import atst
-from atst.cli import main, runtime_commands
+from atst.cli import cmds_kernel as kernel_cmds
+from atst.cli import cmds_market as market_cmds
+from atst.cli import main
 from atst.cli._common import _client_kwargs, _transport_kwargs, _transport_timeout
 from atst.cli.parser import build_parser
 from atst.config.schema import Config, CoreConfig, HostsConfig
@@ -58,6 +60,8 @@ def _query_result(data: Any = None) -> Any:
         cache_tier=None,
         fallback=False,
         requested_provider="tdx",
+        #: P1-4 给 Provenance 加了 upstream（仅聚合转手时下发），替身同步补位。
+        upstream=None,
     )
     values: dict[str, Any] = {
         "provider": "tdx",
@@ -115,8 +119,9 @@ class _Recorder:
 def _run(monkeypatch: pytest.MonkeyPatch, argv: list[str], *, data: Any = None) -> _Recorder:
     recorder = _Recorder()
     recorder.data = data
-    # ``cmd_*`` 用模块全局的 Client，``_ClientRows`` 在函数内从 api 模块取——两处都要换。
-    monkeypatch.setattr(runtime_commands, "Client", recorder.factory)
+    # ``cmd_*`` 用模块全局的 Client（P2-3 后绑定点在 cmds_kernel），
+    # ``_ClientRows`` 在函数内从 api 模块取——两处都要换。
+    monkeypatch.setattr(kernel_cmds, "Client", recorder.factory)
     monkeypatch.setattr("atst.client.api.Client", recorder.factory)
     args = build_parser().parse_args(argv)
     assert args.func(args) == 0
@@ -191,7 +196,7 @@ def test_raw_transport_command_reads_hosts_and_timeout_from_config(
 
     monkeypatch.setitem(factory._CLIENT_REGISTRY, "stock", _Raw)
     args = build_parser().parse_args(["blocks", "0"])
-    assert runtime_commands._cmd_blocks(args) == 0
+    assert market_cmds._cmd_blocks(args) == 0
     assert captured["hosts"] == [["10.0.0.1", 7709]]
     assert captured["timeout"] == 2.5
     assert set(captured) == set(pool_settings_from_config(cfg)) | {"hosts"}
@@ -229,7 +234,7 @@ def test_stream_forwards_provider_and_connection_args(monkeypatch: pytest.Monkey
             kwargs["on_quote"]("sh600519", {"price": 1.0, "last_close": 1.0, "volume": 1})
             return _Stream()
 
-    monkeypatch.setattr(runtime_commands, "Client", _StreamClient)
+    monkeypatch.setattr(kernel_cmds, "Client", _StreamClient)
     args = build_parser().parse_args(
         [
             "stream",
@@ -249,7 +254,7 @@ def test_stream_forwards_provider_and_connection_args(monkeypatch: pytest.Monkey
             "0.01",
         ]
     )
-    assert runtime_commands.cmd_stream(args) == 0
+    assert kernel_cmds.cmd_stream(args) == 0
 
     hosts = seen["client"]["hosts"]
     assert [(entry.host, entry.port) for entry in hosts] == [("127.0.0.1", 7709)]

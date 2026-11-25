@@ -66,6 +66,11 @@ class Provenance:
     cache_tier: str | None = None
     requested_provider: str | None = None
     fallback: bool = False
+    #: P1-4（provider 身份修复）：``web_session`` 后端执行时的真实出数源（如 ``sina``）。
+    #: ``provider`` 是路由事实（选了 derived），``upstream`` 是量纲/口径事实——聚合
+    #: Provider 的结果必须能读出数据到底是谁给的。None 表示没有聚合转手，
+    #: 出处与 provider 同源；wire 面在此情况下不下发该键（serialization.py）。
+    upstream: str | None = None
 
     def __post_init__(self) -> None:
         if not self.provider or not self.channel or not self.capability:
@@ -78,6 +83,8 @@ class Provenance:
             raise ValueError("fallback provenance requires requested_provider")
         if self.requested_provider is not None and not str(self.requested_provider).strip():
             raise ValueError("requested_provider must not be empty")
+        if self.upstream is not None and not str(self.upstream).strip():
+            raise ValueError("upstream must not be empty")
 
     @classmethod
     def direct(
@@ -85,6 +92,7 @@ class Provenance:
         plan: QueryPlan,
         *,
         observed_at_ns: int | None = None,
+        upstream: str | None = None,
     ) -> Provenance:
         return cls(
             provider=plan.provider,
@@ -92,8 +100,11 @@ class Provenance:
             capability=plan.spec.capability,
             kind=ProvenanceKind.DIRECT,
             observed_at_ns=time.time_ns() if observed_at_ns is None else int(observed_at_ns),
-            requested_provider=plan.provider,
+            # P1-6：plan.requested_provider 记录「调用方要的是 auto」；没有该
+            # 事实时（普通钉死 provider 的请求）与旧行为一致记 plan.provider。
+            requested_provider=plan.requested_provider or plan.provider,
             fallback=False,
+            upstream=upstream,
         )
 
 

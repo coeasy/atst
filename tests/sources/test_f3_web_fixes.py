@@ -484,7 +484,9 @@ class TestW6MinuteGuard:
             def close(self) -> None:
                 pass
 
-        client = WebQuoteClient(sources=["sina", "tencent"])
+        # P1-5：显式多源降级属 legacy 策略，构造时记 WEB_FACADE_LEGACY_DEGRADE 告警
+        with pytest.warns(UserWarning, match="FallbackPolicy"):
+            client = WebQuoteClient(sources=["sina", "tencent"])
         client._instances = {"sina": _Boom(), "tencent": _Ok()}
         with caplog.at_level("WARNING", logger="atst.sources"):
             quotes = client.quotes(["sh600519"])
@@ -879,6 +881,27 @@ class TestStructural:
         assert EastmoneyRankSource._get_json is _EastmoneyJson._get_json
         assert EastmoneyFundFlowSource._get_json is _EastmoneyJson._get_json
         assert EastmoneyTrendsSource._get_json is _EastmoneyJson._get_json
+
+    def test_transport_floor_secondary_consolidation(self):
+        """P1-8 F8/F9/F10：传输底座二次收口的结构性断言。"""
+        # F8：历史 K 线挂 _EastmoneyJson，主机序列走 _ordered_hosts（不再手写池）
+        assert issubclass(EastmoneyHistoryKlineSource, _EastmoneyJson)
+        # F9：4 份独立 _get_json 收口为 _json_fetch.fetch_json（模块级绑定）
+        import atst.sources.adapters_fund as _nav_mod
+        import atst.sources.baidu.adapters as _baidu_mod
+        import atst.sources.efinance_fund as _fund_mod
+        import atst.sources.esg as _esg_mod
+        import atst.sources.sina.adapters as _sina_mod
+        import atst.sources.tencent.adapters as _tencent_mod
+        from atst.sources._json_fetch import fetch_json as _fetch_json
+
+        for mod in (_baidu_mod, _fund_mod, _nav_mod, _esg_mod):
+            assert mod.fetch_json is _fetch_json
+        # F10：自写退避节奏不再出现（已收口到 _base_retry._backoff_delay）
+        import inspect
+
+        assert "0.5 * attempt" not in inspect.getsource(_sina_mod)
+        assert "time.sleep(0.5)" not in inspect.getsource(_tencent_mod)
 
     def test_datacenter_hosts_override(self):
         """datacenter 报表族覆盖为主机池（datacenter-web 优先）。"""

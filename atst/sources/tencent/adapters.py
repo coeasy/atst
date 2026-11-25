@@ -24,12 +24,14 @@ from typing import Any
 from ...diagnostics import WarningCode, record_warning
 from ...domain.models import Bar, Level, MinutePoint, Quote
 from ...errors import ReadTimeout, SourceDeprecated, WebSourceError
+from .._base_retry import _backoff_delay
 from .._paginate import (
     decode_kline_payload,
     fetch_bars_paged,
     rows_to_bars,
     warn_amount_all_zero,
 )
+from .._scale import HAND_TO_SHARE
 from ..base import (
     BaseWebSource,
     to_tencent_symbol,
@@ -40,10 +42,23 @@ from ..base import (
 from ..base import (
     num_i as _i,
 )
-from ..limits import TENCENT_KLINE_MAX
+from ..limits import DEFAULT_MAX_PAGES, TENCENT_KLINE_MAX
+from ..normalize import quote_datetime_from_extra
 from ..sources import HK, KLINE, MINUTE, MINUTE_KLINE, TENCENT, US
 
 logger = logging.getLogger(__name__)
+
+
+def _missing_price(code: str, field: str) -> float:
+    """高/低字段缺失时返回 NaN 并告警——不再用现价冒充真实最高/最低价。"""
+    record_warning(
+        WarningCode.DECODE_CAVEAT,
+        f"腾讯 {code} 响应缺 {field} 字段，已置 NaN（不再用现价冒充）；"
+        "下游不应把该字段当作真实最高/最低价",
+        stacklevel=3,
+    )
+    return float("nan")
+
 
 __all__ = [
     "TencentSource",
@@ -56,9 +71,9 @@ __all__ = [
     "DEFAULT_MAX_PAGES",
 ]
 
-#: ``fetch_all`` 未显式给 ``max_pages`` 时的硬上限（P2 #1）：
-#: 分页终止不再完全依赖服务端空页，防止失控翻页。
-DEFAULT_MAX_PAGES = 100
+# P2-4c（F11）：``DEFAULT_MAX_PAGES`` 上移至 :mod:`atst.sources.limits`——
+# web 分页防失控语义，新浪 ``fetch_all`` 同用；此处保留同名 re-export
+# 兼容既有 import 与文档引用。
 
 # --------------------------------------------------------------------------- #
 # 辅助函数
@@ -87,6 +102,43 @@ def _levels(
     return out
 
 
+def _parse_external_quote(raw_code: str, payload: str, currency: str) -> Quote:
+    """腾讯港股/美股单行原始解析（**不做** A 股 ×100/×10000）。
+
+    2026-11-24 本地真机实测：HK/US 的 ``[6]`` 已是股、``[37]`` 已是原生币种元，
+    复用 A 股 :class:`TencentSource` 的解析会把量 ×100、额 ×10000（腾讯控股
+    成交额从 101 亿港元被放大成 101 万亿）。两种布局共用本函数，避免再写一份。
+    """
+    f = payload.split("~")
+    if len(f) < 38:
+        raise WebSourceError(
+            f"腾讯外部市场响应字段不足: {len(f)} < 38",
+            context={"code": raw_code, "source": currency},
+        )
+    extra: dict[str, Any] = {"name": f[1], "currency": currency}
+    if len(f) > 30:
+        extra["time"] = f[30]
+    if len(f) > 32:
+        extra["pct_change"] = _f(f[32])
+    if len(f) > 38:
+        extra["turnover_rate"] = _f(f[38])
+    if len(f) > 39:
+        extra["pe"] = _f(f[39])
+    return Quote(
+        code=raw_code,
+        price=_f(f[3]),
+        last_close=_f(f[4]),
+        open=_f(f[5]),
+        volume=_i(f[6]),
+        high=_f(f[33]) if len(f) > 33 else _missing_price(raw_code, "high(f[33])"),
+        low=_f(f[34]) if len(f) > 34 else _missing_price(raw_code, "low(f[34])"),
+        amount=_f(f[37]) if len(f) > 37 else 0.0,
+        bid=[],
+        ask=[],
+        extra=extra,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # 腾讯：实时行情
 # --------------------------------------------------------------------------- #
@@ -110,6 +162,16 @@ class TencentSource(BaseWebSource):
         for match in pattern.finditer(text):
             raw_code, payload = match.group(1), match.group(2)
             if not payload:
+                continue
+            # canonical ``quotes`` 通道也可以收到 HK/US 代码（缺省市场路由 /
+            # 混合批次）。这里按外部市场布局解析并跳过 A 股缩放，否则量额会
+            # 分别被错乘 100 / 10000；走 HkSource/UsSource 时口径完全一致。
+            foreign = raw_code[:2].lower()
+            if foreign in {"hk", "us"}:
+                q = _parse_external_quote(raw_code, payload, "HKD" if foreign == "hk" else "USD")
+                if not q.datetime:
+                    q.datetime = quote_datetime_from_extra(q.extra)
+                quotes.append(q)
                 continue
             f = payload.split("~")
             if len(f) < 30:
@@ -145,8 +207,8 @@ class TencentSource(BaseWebSource):
                 last_close=_f(f[4]),
                 open=_f(f[5]),
                 volume=_i(f[6]),
-                high=_f(f[33]) if len(f) > 33 else _f(f[3]),
-                low=_f(f[34]) if len(f) > 34 else _f(f[3]),
+                high=_f(f[33]) if len(f) > 33 else _missing_price(raw_code, "high(f[33])"),
+                low=_f(f[34]) if len(f) > 34 else _missing_price(raw_code, "low(f[34])"),
                 amount=_f(f[37]) if len(f) > 37 else 0.0,
                 bid=_levels(f, 9, 5, vol_first=True),
                 ask=_levels(f, 19, 5, vol_first=True),
@@ -212,7 +274,9 @@ class TencentSource(BaseWebSource):
                 # A4：单批失败先记录，最后统一退避重试一次；全部失败才判不可用
                 failed_codes.extend(batch)
         if failed_codes:
-            time.sleep(0.5)  # 单次退避，避免瞬断/限流连锁
+            # P1-8/F10：单次退避收口到 _base_retry._backoff_delay
+            # （0.4~0.6s，均值同旧固定 0.5s）
+            time.sleep(_backoff_delay(0))
             retried_failed: list[str] = []
             for i in range(0, len(failed_codes), self.TENCENT_BATCH):
                 retry_batch = failed_codes[i : i + self.TENCENT_BATCH]
@@ -324,35 +388,9 @@ class TencentExternalSource(TencentSource):
             raw_code, payload = match.group(1), match.group(2)
             if not payload:
                 continue
-            f = payload.split("~")
-            if len(f) < 38:
-                raise WebSourceError(
-                    f"腾讯外部市场响应字段不足: {len(f)} < 38",
-                    context={"code": raw_code, "source": self.source_name},
-                )
-            extra: dict[str, Any] = {"name": f[1], "currency": self.CURRENCY}
-            if len(f) > 30:
-                extra["time"] = f[30]
-            if len(f) > 32:
-                extra["pct_change"] = _f(f[32])
-            if len(f) > 38:
-                extra["turnover_rate"] = _f(f[38])
-            if len(f) > 39:
-                extra["pe"] = _f(f[39])
-            q = Quote(
-                code=raw_code,
-                price=_f(f[3]),
-                last_close=_f(f[4]),
-                open=_f(f[5]),
-                volume=_i(f[6]),
-                high=_f(f[33]) if len(f) > 33 else _f(f[3]),
-                low=_f(f[34]) if len(f) > 34 else _f(f[3]),
-                amount=_f(f[37]) if len(f) > 37 else 0.0,
-                bid=[],
-                ask=[],
-                extra=extra,
+            quotes.append(
+                self.normalize_quote(_parse_external_quote(raw_code, payload, self.CURRENCY))
             )
-            quotes.append(self.normalize_quote(q))
         if not quotes:
             raise SourceDeprecated(
                 "腾讯外部市场返回空数据（接口可能已改版）",
@@ -716,7 +754,7 @@ class MinuteSource(BaseWebSource):
                 continue
             hhmm = parts[0]
             price = _f(parts[1])
-            cum_vol = _f(parts[2]) * 100.0  # 手 → 股
+            cum_vol = _f(parts[2]) * HAND_TO_SHARE  # 手 → 股
             cum_amt = _f(parts[3])  # 已是元
             out.append(
                 MinutePoint(

@@ -86,19 +86,25 @@ class _EastmoneyJson(BaseWebSource):
     encoding = "utf-8"  # 东财 JSON 全系 UTF-8（W10）
 
     # R3：进程级主机池黑名单（TTL 内优先绕过，跨实例共享）
-    def _ordered_hosts(self, host: str | None = None) -> Sequence[str]:
+    def _ordered_hosts(
+        self, host: str | None = None, *, pool: Sequence[str] | None = None
+    ) -> Sequence[str]:
         """按「黑名单过滤 → 原池」返回待尝试主机顺序（R3）。
 
         失败过的主机 TTL 内（默认 10 分钟）排到队尾，不再每次从 push2 首站
         起试；全部被拉黑时回退完整池（避免死路）。
+
+        P1-8/F8：``pool`` 允许 push2his 等派生主机池复用同一份黑名单排序，
+        替代散落的手写 host 循环池。
         """
         if host:
             return (host,)
+        hosts: Sequence[str] = self.HOSTS if pool is None else pool
         blacklisted = _em_blacklist_active()
         if not blacklisted:
-            return self.HOSTS
-        filtered = tuple(h for h in self.HOSTS if h not in blacklisted)
-        return filtered or self.HOSTS
+            return hosts
+        filtered = tuple(h for h in hosts if h not in blacklisted)
+        return filtered or hosts
 
     def _get_json(self, path_query: str, *, host: str | None = None) -> dict[str, Any]:
         """按 host 池顺序请求并解析 JSON（failover，计入失败桶）。"""

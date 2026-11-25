@@ -13,7 +13,8 @@
 from __future__ import annotations
 
 import datetime as _dt
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from ..domain.finance import to_capital_changes
@@ -23,7 +24,6 @@ from ..domain.symbol import to_tdx_market
 from ..errors import (
     CommandOffline,
     NotImplementedFeature,
-    ParseError,
     ValidationError,
 )
 from ..protocol.commands import CMD, STATUS_OFFLINE, get_command
@@ -36,6 +36,7 @@ __all__ = [
     "_emit",
     "_encode_gbk_field",
     "_guard_offline",
+    "_guard_unverified_family",
     "_normalize_symbols",
     "_quote_body",
     "_require_bool",
@@ -45,6 +46,8 @@ __all__ = [
     "_row_to_bar",
     "_row_to_capital",
     "_row_to_quote",
+    "ROW_CONVERTERS",
+    "RowConverter",
     "_standard_market_id",
     "period_to_category",
     "split_symbol",
@@ -192,7 +195,11 @@ def _standard_market_id(market: Any) -> int:
 def split_symbol(symbol: str) -> tuple[int, str]:
     market, code = to_tdx_market(symbol)
     if market not in (0, 1):
-        raise ParseError(
+        # P0-4：BJ（market=2）在 symbol-based 7709 请求上未验证——这是调用方
+        # 入参越界，不是服务器/协议故障：过去抛 ParseError（ProtocolError 子类，
+        # default_advice 可重试 + 建议换主站），错误归类连错两次（E3040/502）。
+        # 现在归位 ValidationError（E1010 / 422 / 不可重试），与第 25 轮 G34 同一口径。
+        raise ValidationError(
             f"symbol-based 7709 request 尚未验证 market={market}；当前只允许 SZ/SH",
             context={
                 "symbol": symbol,
@@ -288,6 +295,38 @@ def _row_to_capital(row: Mapping[str, Any]) -> CapitalChange:
     return to_capital_changes([row])[0]
 
 
+# --------------------------------------------------------------------------- #
+# 解析行 → 领域模型的显式转换器表（P2-5c，与 runtime/bindings.DIRECT_BINDINGS 同风格）
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True, slots=True)
+class RowConverter:
+    """一条「L1 解析行 ``dict`` → 领域模型」的显式转换器登记项。"""
+
+    #: 目标领域模型（表的身份键，同 DIRECT_BINDINGS 的 key 语义）
+    model: type[Any]
+    #: 转换函数本体（``atst.client`` 的 ``_row_to_*`` 名字保持可导入，
+    #: ``tests/domain/test_finance.py`` 与 client/_mixin 的既有调用点不变）
+    convert: Callable[[Mapping[str, Any]], Any]
+
+    @property
+    def key(self) -> type[Any]:
+        return self.model
+
+
+#: 解析器输出的 ``list[dict]`` 与领域模型之间全部手工转换都登记在这张表里：
+#: 新增转换面（例如 golden 锁定命令直接产出领域模型）只加一行登记项，
+#: 不再散落新的 ``_row_to_*`` 自由函数。
+ROW_CONVERTERS: tuple[RowConverter, ...] = (
+    RowConverter(Bar, _row_to_bar),
+    RowConverter(Quote, _row_to_quote),
+    RowConverter(CapitalChange, _row_to_capital),
+)
+
+_ROW_CONVERTERS_BY_MODEL: dict[type[Any], Callable[[Mapping[str, Any]], Any]] = {
+    item.key: item.convert for item in ROW_CONVERTERS
+}
+
+
 def _emit(items: Sequence[Any], as_format: OutputFormat):
     output_format = _require_output_format(as_format)
     if output_format == "dataframe":
@@ -312,6 +351,16 @@ _OFFLINE_FALLBACK_OK: frozenset[int] = frozenset({CMD["quotes_snapshot"]})
 #: 本表现在为空；保留常量与分支，是为了让「下一条布局未锁定的结构化命令」仍然
 #: 有一个现成的拦截位，而不是等出事再新写一套。
 _UNVERIFIED_STRUCTURED_BLOCK: frozenset[int] = frozenset()
+
+#: P1-10（B5）：Goods/Ex/Mac 报价族的「experimental」拦截表。
+#:
+#: ``_bars_body`` / ``_quote_body`` 无条件抛错，使这五个公开方法是"调用即炸"的死 API。
+#: 统一闸是 :func:`_guard_unverified_family`，摆在模板入口（符号解析之后、发包前）：
+#: 符号身份错误（SymbolError）仍优先于本闸——判据
+#: ``tests/client/test_inferred_request_fail_closed.py`` 钉了"身份先于布局"的次序。
+_UNVERIFIED_FAMILY_METHODS: frozenset[str] = frozenset(
+    {"goods_bars", "goods_quote", "ex_bars", "ex_quote", "mac_quote"}
+)
 
 
 def _guard_offline(cmd: int) -> None:
@@ -342,6 +391,29 @@ def _guard_offline(cmd: int) -> None:
                 "family": command.family,
             },
         )
+
+
+def _guard_unverified_family(method: str) -> None:
+    """P1-10（B5）：experimental 族方法在发包前的统一拦截（同 ``_guard_offline`` 形状）。
+
+    这五个方法的请求布局尚未经过真机 golden 验证：过去调用方要在方法体深处
+    （``_bars_body``/``_quote_body`` 抬头的一刻）才撞上 ``NotImplementedFeature``，
+    工厂却照常导出。现在闸提前到模板入口（符号解析之后、任何 I/O 之前）：
+    E9010 / HTTP 501 / 不可重试，context 里标 ``status="experimental"``。
+    """
+    if method not in _UNVERIFIED_FAMILY_METHODS:
+        return
+    raise NotImplementedFeature(
+        f"{method} 是 experimental 方法：请求布局尚未经过真机 golden 验证，"
+        "在布局锁定前不通过结构化 TdxClient API 发包；请改用 Web Provider 或 raw 传输面",
+        context={
+            "method": method,
+            "status": "experimental",
+            "commands": ["0x0104", "0x0105", "0x0202", "0x0203", "0x1301"],
+            "raw_transport_available": True,
+            "provider_switch_allowed": False,
+        },
+    )
 
 
 def _bars_body(market: int, code: str, category: int, start: int, count: int) -> bytes:

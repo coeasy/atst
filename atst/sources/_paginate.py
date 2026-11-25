@@ -23,6 +23,7 @@ from ..diagnostics import WarningCode, record_warning
 from ..domain.calendar import day_like_datetime
 from ..domain.models import Bar
 from ..errors import SourceDeprecated
+from ._scale import HAND_TO_SHARE, SHARES
 from .base import num_f as _f
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,7 @@ def market_vol_scale(symbol: str) -> float:
 
     港股 / 美股腾讯直接返回「股」，不缩放。
     """
-    return 1.0 if symbol[:2].lower() in ("hk", "us") else 100.0
+    return SHARES if symbol[:2].lower() in ("hk", "us") else HAND_TO_SHARE
 
 
 #: 腾讯 mkline 的分钟戳是紧凑 12 位（``"202609291455"``），而 tdx / 新浪 / 东财

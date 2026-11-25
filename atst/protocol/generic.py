@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import json
+import os
 import struct
 import threading
 import time
@@ -85,16 +86,8 @@ def _looks_like_date(value: int) -> bool:
     )
 
 
-def _looks_like_uint16_date(value: int) -> bool:
-    year = value // 2048 + 2004
-    month = (value % 2048) // 100
-    day = (value % 2048) % 100
-    return 2004 <= year <= 2100 and 1 <= month <= 12 and 1 <= day <= 31
-
-
-# 深审 L2 裁决：_looks_like_uint16_date 当前全库零调用点，但作为
-# _classify_chunk 的候选启发（uint16 日期打包：year-2004 存高位）在
-# L2 通用探测扩展时有价值，保留并标注；不参与 __all__ 导出。
+# P3：_looks_like_uint16_date 全库零调用死代码已移除；uint16 日期候选启发
+# 如需扩展 L2 探测再按账本流程重新引入。
 
 
 def _classify_chunk(chunk: bytes) -> str:
@@ -122,7 +115,13 @@ def _classify_chunk(chunk: bytes) -> str:
     return "bytes"
 
 
-def _score_candidate(payload: bytes, count: int, record_size: int, has_prefix: bool) -> float:
+def _score_candidate(
+    payload: bytes,
+    count: int,
+    record_size: int,
+    has_prefix: bool,
+    notes: list[str] | None = None,
+) -> float:
     if count <= 0 or record_size <= 0:
         return 0.0
     score = 0.0
@@ -143,12 +142,14 @@ def _score_candidate(payload: bytes, count: int, record_size: int, has_prefix: b
     # 4) 字段自洽性：抽样最多 20 条记录
     samples = min(count, 20)
     good = 0
+    sampled_types: list[str] = []
     for i in range(samples):
         off = (2 if has_prefix else 0) + i * record_size
         rec = payload[off : off + record_size]
         if len(rec) < record_size:
             break
         types = [_classify_chunk(rec[j : j + 4]) for j in range(0, min(record_size, 32), 4)]
+        sampled_types.extend(types)
         if any(t in ("datetime32", "u32", "u32?", "f32", "zero_u32") for t in types):
             good += 1
     if samples:
@@ -156,6 +157,17 @@ def _score_candidate(payload: bytes, count: int, record_size: int, has_prefix: b
         # 抽样记录中没有任何「金融类型」字段 → 疑似随机字节，重罚降权（回落 L3）
         if good == 0:
             score *= 0.4
+        # 退化记录：全零，或仅一种非零字段 + 大片零字段，此前会拿满 0.85
+        # 被误判为 L2（2026-11-25 对 sniffer 语料实测：06b9/000f/0200 均命中；
+        # 000f 还会把同一段载荷切成两条 16B 记录来骗过「count=1」特判）。
+        # 这类载荷没有可验证的表结构，宁可回落 L3 原始透传，不能伪造字段。
+        if sampled_types:
+            nonzero = {t for t in sampled_types if t not in ("zero_u32", "bytes")}
+            zero_ratio = sampled_types.count("zero_u32") / len(sampled_types)
+            if not nonzero or (zero_ratio >= 0.5 and len(nonzero) <= 1):
+                score *= 0.4
+                if notes is not None:
+                    notes.append("记录字段近乎全零，按低置信回落 L3")
     return round(min(score, 1.0), 4)
 
 
@@ -173,18 +185,20 @@ def infer_record_layout(payload: bytes) -> CandidateSpec:
         rest = body_len - 2
         if count > 0 and rest % count == 0:
             rs = rest // count
-            s = _score_candidate(payload, count, rs, True)
+            notes = ["uint16 记录数前缀自洽"]
+            s = _score_candidate(payload, count, rs, True, notes=notes)
             if s > best.score:
                 types = [_classify_chunk(payload[2 + j : 6 + j]) for j in range(0, min(rs, 32), 4)]
-                best = CandidateSpec(True, count, rs, types, s, notes=["uint16 记录数前缀自洽"])
+                best = CandidateSpec(True, count, rs, types, s, notes=notes)
     # 分支 B：无前缀，按候选记录长度整除
     for rs in CANDIDATE_RECORD_SIZES:
         if body_len % rs == 0:
             count = body_len // rs
-            s = _score_candidate(payload, count, rs, False) * 0.85  # 无前缀略降权
+            notes = ["按候选记录长度整除"]
+            s = _score_candidate(payload, count, rs, False, notes=notes) * 0.85  # 无前缀略降权
             if s > best.score:
                 types = [_classify_chunk(payload[j : j + 4]) for j in range(0, min(rs, 32), 4)]
-                best = CandidateSpec(False, count, rs, types, s, notes=["按候选记录长度整除"])
+                best = CandidateSpec(False, count, rs, types, s, notes=notes)
     return best
 
 
@@ -302,9 +316,20 @@ class ProtocolSniffer:
             └── DRAFT.yaml              自动生成的 spec 草案（人工补全）
     """
 
-    def __init__(self, root: str | Path = "PROTOCOL_SPEC/_sniffer", enabled: bool = True) -> None:
-        self.root = Path(root)
-        self.enabled = enabled
+    def __init__(self, root: str | Path | None = None, enabled: bool | None = None) -> None:
+        # P0-8：归档默认**关闭**。过去生产分派热路径上每个 L2/L3 响应都同步落盘
+        # （持全局锁 + 相对 cwd 写 PROTOCOL_SPEC/_sniffer），批量未知命令时是每响应
+        # 两次文件 IO。现在默认关，``ATST_PROTOCOL_SNIFF=1`` 显式开启；归档根目录用
+        # ``ATST_PROTOCOL_SNIFF_DIR`` 注入绝对路径，不再隐式依赖进程 cwd。
+        env_on = os.environ.get("ATST_PROTOCOL_SNIFF", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        self.enabled = env_on if enabled is None else bool(enabled)
+        env_root = os.environ.get("ATST_PROTOCOL_SNIFF_DIR", "").strip()
+        self.root = Path(root if root is not None else (env_root or "PROTOCOL_SPEC/_sniffer"))
 
     def archive(self, frame: ResponseFrame, result: ParseResult, family: str) -> Path | None:
         if not self.enabled or not frame.payload:
@@ -393,6 +418,7 @@ notes: |
 """
 
 
+#: 默认实例：enabled 由环境变量决定（默认关，见 :meth:`ProtocolSniffer.__init__`）。
 _default_sniffer = ProtocolSniffer()
 
 #: 归档落盘互斥锁（P#8：多线程 dispatch 并发归档时防交叉写）

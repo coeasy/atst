@@ -1,9 +1,12 @@
 # Copyright (c) 2026 atst contributors
 # Licensed under the MIT License
 
-"""Spec → Code 生成器（§4 / §20：协议全覆盖）。
+"""Spec → Code 脚手架生成器（P2-8：定位为脚手架，不是 D→L2 自动路径）。
 
-从 PROTOCOL_SPEC/*.yaml 生成：
+从 PROTOCOL_SPEC/*.yaml 生成解析器 stub 骨架，供人工在草稿区落地、评审后再进包。
+它**不是**「spec → L2 解析器」的自动落地路径：包内全部 L1 解析器均为手写，
+spec ↔ 实现漂移由 golden_audit 与测试拦截；本工具不参与「协议全覆盖」的
+运行时叙事，只降低手写起手的抄写成本。生成：
 
 1. **Parser 骨架代码**：BaseParser 子类 + ``parse_payload()`` 方法存根
 2. **Command ledger 条目**：commands.py 中的 ``_c(...)`` 行
@@ -17,7 +20,7 @@
 设计要点
 --------
 * **零依赖**：YAML 解析由 :mod:`atst.tools._yaml_min` 完成。
-* **安全**：生成的代码为存根（stub），不会覆盖已有解析器。
+* **安全**：产物是 stub 脚手架，不会覆盖已有解析器；进包必须经人工落地。
 * **Windows-safe**：使用 ``pathlib``，UTF-8 编码。
 """
 

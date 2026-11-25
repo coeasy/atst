@@ -5,7 +5,7 @@ import pytest
 from atst.client import TdxClient
 from atst.client.core import _standard_market_id, split_symbol
 from atst.domain.symbol import to_tdx_market
-from atst.errors import ParseError
+from atst.errors import ValidationError
 
 
 class _NoIoPool:
@@ -18,7 +18,9 @@ def test_domain_keeps_bj_identity_but_client_symbol_protocol_does_not_extrapolat
     assert _standard_market_id(2) == 2
     assert _standard_market_id("bj") == 2
 
-    with pytest.raises(ParseError, match="当前只允许 SZ/SH") as exc_info:
+    # P0-4：入参越界归位 ValidationError（E1010 / 不可重试），不再误报为
+    # 可重试的协议层故障。
+    with pytest.raises(ValidationError, match="当前只允许 SZ/SH") as exc_info:
         split_symbol("430047")
 
     assert exc_info.value.context["market"] == 2
@@ -38,5 +40,5 @@ def test_domain_keeps_bj_identity_but_client_symbol_protocol_does_not_extrapolat
 def test_symbol_based_bj_client_paths_fail_before_io(method: str, args: tuple[str, ...]) -> None:
     client = TdxClient(pool=_NoIoPool())
 
-    with pytest.raises(ParseError):
+    with pytest.raises(ValidationError):
         getattr(client, method)(*args)

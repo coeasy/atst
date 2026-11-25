@@ -91,6 +91,9 @@ class CoreConfig:
     default_provider: str = "tdx"
     timeout: float = 5.0
     heartbeat_interval: int = 30
+    #: 心跳命令号（TDX 0x0002；未登记进 7709 账本的探活命令）。P3：纳入配置面，
+    #: 否则 ``atst.toml`` 写了不生效，违背「配置面即执行面契约」。
+    heartbeat_cmd: int = 2
     #: 当前 Provider 内 host/endpoint 的重试预算；不是 Provider 切换次数。
     max_retries: int = 3
     #: ``local_vipdoc`` Provider 与复权/同步类 capability 的本地数据根目录。
@@ -111,6 +114,7 @@ class CoreConfig:
             PROVIDERS.get(default_provider)
         _check_range("core.timeout", self.timeout, 0.1, 300)
         _check_int_range("core.heartbeat_interval", self.heartbeat_interval, 0, 3600)
+        _check_int_range("core.heartbeat_cmd", self.heartbeat_cmd, 0, 0xFFFF)
         _check_int_range("core.max_retries", self.max_retries, 0, 20)
         _check_int_range("core.batch_workers", self.batch_workers, 0, 64)
         if self.vipdoc_root is not None:

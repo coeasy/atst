@@ -28,6 +28,7 @@ from typing import Any
 
 from ..errors import SourceDeprecated, WebSourceError
 from ._base_em import _EastmoneyJson
+from ._scale import CENT_INT_DIVISOR
 from .base import num_f, num_i
 
 __all__ = ["EastmoneyOptionsSource", "OPTIONS_MARKETS"]
@@ -133,16 +134,16 @@ class EastmoneyOptionsSource(_EastmoneyJson):
                     "code": code,
                     "name": _s(r.get("f14")),
                     "market": mkt,
-                    "change_pct": num_f(r.get("f3")) / 100.0,
-                    "price": num_f(r.get("f43")) / 100.0,
-                    "high": num_f(r.get("f44")) / 100.0,
-                    "low": num_f(r.get("f45")) / 100.0,
-                    "open": num_f(r.get("f46")) / 100.0,
+                    "change_pct": num_f(r.get("f3")) / CENT_INT_DIVISOR,
+                    "price": num_f(r.get("f43")) / CENT_INT_DIVISOR,
+                    "high": num_f(r.get("f44")) / CENT_INT_DIVISOR,
+                    "low": num_f(r.get("f45")) / CENT_INT_DIVISOR,
+                    "open": num_f(r.get("f46")) / CENT_INT_DIVISOR,
                     "volume": int(num_f(r.get("f47"))),
                     "amount": num_f(r.get("f48")),
-                    "pre_close": num_f(r.get("f60")) / 100.0,
-                    "open_pct": num_f(r.get("f105")) / 100.0,
-                    "close_pct": num_f(r.get("f104")) / 100.0,
+                    "pre_close": num_f(r.get("f60")) / CENT_INT_DIVISOR,
+                    "open_pct": num_f(r.get("f105")) / CENT_INT_DIVISOR,
+                    "close_pct": num_f(r.get("f104")) / CENT_INT_DIVISOR,
                 }
             )
         return out
@@ -180,14 +181,14 @@ class EastmoneyOptionsSource(_EastmoneyJson):
             "quote_id": secid,
             "code": _s(d.get("f12")),
             "name": _s(d.get("f14")),
-            "price": num_f(d.get("f43")) / 100.0,
-            "pre_close": num_f(d.get("f44")) / 100.0,
-            "open": num_f(d.get("f45")) / 100.0,
-            "high": num_f(d.get("f46")) / 100.0,
-            "low": num_f(d.get("f47")) / 100.0,
+            "price": num_f(d.get("f43")) / CENT_INT_DIVISOR,
+            "pre_close": num_f(d.get("f44")) / CENT_INT_DIVISOR,
+            "open": num_f(d.get("f45")) / CENT_INT_DIVISOR,
+            "high": num_f(d.get("f46")) / CENT_INT_DIVISOR,
+            "low": num_f(d.get("f47")) / CENT_INT_DIVISOR,
             "volume": int(num_f(d.get("f48"))),
             "amount": num_f(d.get("f48")),  # 期权快照 f48 即成交额
-            "change_pct": num_f(d.get("f301")) / 100.0,
+            "change_pct": num_f(d.get("f301")) / CENT_INT_DIVISOR,
             "option_type": option_type,
             "option_type_label": {1: "认购", 2: "认沽"}.get(option_type, ""),
             "option_price_raw": num_f(d.get("f301")),

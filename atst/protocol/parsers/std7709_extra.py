@@ -57,11 +57,9 @@ class SecurityListParser(BaseParser):
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
         record_size = int(ctx.get("record_size", self.DEFAULT_RECORD_SIZE))
-        count = self.guarded_count(reader, ctx, record_size)
+        count, records = self.iter_fixed_records(reader, ctx, record_size)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < record_size:
-                break
+        for _ in records:
             rec = reader.bytes(record_size)
             # ⚠️ 字段偏移为公开资料推断：market(2) + code(6) + name(8) + type(1) + ...
             market = int.from_bytes(rec[0:2], "little")
@@ -330,15 +328,13 @@ class QuotesSnapshotParser(BaseParser):
         from .std7709 import RealtimeQuoteParser
 
         scale = int(ctx.get("price_scale", PRICE_SCALE_QUOTES))
-        count = self.guarded_count(reader, ctx, 8)
+        count, records = self.iter_fixed_records(reader, ctx, 8)
         single = RealtimeQuoteParser()
         rows: list[dict[str, Any]] = []
         # count 已知时按单只 RealtimeQuoteParser 逐段解析；ctx 显式合并透传
         # （price_scale/strict_echo 以本层覆盖为准），保证告警缓冲等上下文连续
         inner_ctx = {**ctx, "price_scale": scale, "strict_echo": False}
-        for _ in range(count):
-            if reader.remaining < 8:
-                break
+        for _ in records:
             # 单只解析需要 market/code 上下文；这里尝试从首字节回声自取
             save_pos = reader.pos
             try:
@@ -425,11 +421,9 @@ class BlockQuotesParser(BaseParser):
     RECORD_SIZE = 22
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             code = decode_gbk(reader.bytes(6))
             pct = reader.float32()
             price = reader.float32()
@@ -461,11 +455,9 @@ class VolumePriceDistParser(BaseParser):
     PAIR_SIZE = 8
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.PAIR_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.PAIR_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.PAIR_SIZE:
-                break
+        for _ in records:
             price = reader.float32()
             volume = reader.tdx_float()
             rows.append({"price": round(price, 4), "volume": int(volume)})
@@ -486,11 +478,9 @@ class AuctionSnapshotParser(BaseParser):
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
         # 深审 M28：价格为 float32（无需折算），price_scale 读取为死代码
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             second = reader.uint16()
             price = reader.float32()
             volume = reader.tdx_float()
@@ -514,11 +504,9 @@ class IndexMomentumParser(BaseParser):
     RECORD_SIZE = 12
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             code = decode_gbk(reader.bytes(6))
             pct = reader.float32()
             _unk = reader.uint16()

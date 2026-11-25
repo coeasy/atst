@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from atst.errors import DataFileNotFound, TruncatedRecordError
+from atst.errors import DataFileNotFound, FileFormatError, TruncatedRecordError
 from atst.reader.formats import (
     BaseFileReader,
     BlockReader,
@@ -116,6 +116,16 @@ class TestDayBarReader:
         assert bar.volume == 20000
         assert bar.amount == pytest.approx(12345.5, abs=0.01)
         assert bar.extra == {"prev_close": 10.48}
+
+    def test_official_client_sentinel_trailing_field_is_not_prev_close(self) -> None:
+        """官方 TdxW.exe 个股文件的 0x00010000 哨兵不能冒充前收盘价。"""
+        (bar,) = DayBarReader(auto_detect=False).read_bytes(day_record(last=0x00010000))
+        assert bar.extra == {"prev_close": None}
+
+    def test_implausible_trailing_field_is_not_prev_close(self) -> None:
+        """指数文件里远离当日收盘的尾字段同样判废，交给 adjust 回退。"""
+        (bar,) = DayBarReader(auto_detect=False).read_bytes(day_record(last=25_167_389))
+        assert bar.extra == {"prev_close": None}
 
     def test_float32_profile_reads_prices_verbatim(self) -> None:
         profile = DataProfile(price_encoding=PriceEncoding.FLOAT32, price_scale=1)
@@ -321,10 +331,16 @@ class TestFinanceReader:
         (row,) = FinanceReader(fields_per_record=30).read(path, output="tuple")
         assert row == tuple(float(i) for i in range(30))
 
-    def test_irregular_size_is_read_as_a_single_record(self, tmp_path: Path) -> None:
+    def test_irregular_size_strict_raises_and_lenient_falls_back(self, tmp_path: Path) -> None:
+        # P0-3：不可判定布局在 strict（默认）下报错，而非静默当单条解码；
+        # 非 strict 口径保留单条回退并告警。
         path = write(tmp_path, "gpcw.dat", self.gpcw([float(i) for i in range(29)]))
-        (row,) = FinanceReader().read(path, output="tuple")
+        with pytest.raises(FileFormatError):
+            FinanceReader().read(path, output="tuple")
+        reader = FinanceReader(strict=False)
+        (row,) = reader.read(path, output="tuple")
         assert len(row) == 29
+        assert any("无法匹配任何已知字段布局" in warning for warning in reader.warnings)
 
     def test_indicators_are_named_and_dataframe_convertible(self, tmp_path: Path) -> None:
         payload = self.gpcw([1000.0] + [0.0] * 23 + [5.5, 1.2, 0.3, 2.1][:4] + [0.0] * 0)

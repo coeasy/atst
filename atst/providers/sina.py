@@ -47,7 +47,10 @@ CHANNEL_ADAPTERS: dict[str, tuple[str, str]] = {
     "board_list": ("atst.sources.boards", "SinaBoardListSource"),
     "board_member": ("atst.sources.boards", "SinaBoardMemberSource"),
     "catalog": ("atst.sources.session", "WebQuoteSession"),
-    "fund_flow": ("atst.sources.fundflow", "SinaFundFlowSource"),
+    "fund_flow": (
+        "atst.sources.sina.fundflow",
+        "SinaFundFlowSource",
+    ),  # P2-4 收尾：声明层直指迁移后新路径（旧路径 re-export 保留）
     "history_kline": ("atst.sources.sina.adapters", "SinaHistoryKlineSource"),
     "industry_board": ("atst.sources.boards", "SinaIndustryBoardSource"),
     "news": ("atst.sources.news", "SinaNewsSource"),

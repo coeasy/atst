@@ -24,7 +24,9 @@
 **生产文件档案**（本地 vipdoc 二进制，探测结果直接接
 ``DayBarReader/MinBarReader`` 主链路）；:mod:`atst.profile.detect` 是
 **网络帧档案**（对网络 payload / 未知归档字节做证据化探测，供协议
-发现与人工评审）。两者共享 :class:`DataProfile`，但互不调用。
+发现与人工评审）。两者共享 :class:`DataProfile` 与打分内核
+:mod:`atst.profile.scoring`（P1-7 探测合一：候选长度表/抽样/字段探
+针/日期三编码投票的 SSOT），但互不调用。
 
 探测失败（置信度 < 0.5）时抛 :class:`~atst.errors.ProfileUndetectable`，
 **绝不静默猜测**。
@@ -36,7 +38,7 @@ import struct
 from dataclasses import asdict, dataclass, replace
 from typing import Any
 
-from ..codec.primitive import detect_encoding, get_datetime_from_lc
+from ..codec.primitive import detect_encoding
 from ..errors import ProfileUndetectable
 
 __all__ = [
@@ -421,7 +423,9 @@ class ProfileDetector:
     每步给出 0~1 得分，加权后得总置信度。
     """
 
-    #: 常见记录长度
+    #: 常见记录长度。P1-7：SSOT 在 :mod:`atst.profile.scoring`，模块末尾
+    #: 重绑定为同一 tuple 对象防漂移；字面量仅为类创建期的占位（scoring
+    #: 的导入因循环导入顺序约束必须放在模块末尾）。
     RECORD_SIZES: tuple[int, ...] = (32, 29, 24, 16, 8, 4)
     #: 候选价格缩放
     PRICE_SCALES: tuple[int, ...] = (1, 100, 1000, 10000)
@@ -514,19 +518,14 @@ class ProfileDetector:
         if record_size < 8:
             return PriceEncoding.UINT32, 0.3
         samples = self._sample_records(raw, record_size)
-        float_like = 0
-        int_like = 0
-        for rec in samples:
-            for off in (4, 8, 12, 16):
-                if off + 4 > len(rec):
-                    continue
-                (u32,) = struct.unpack_from("<I", rec, off)
-                (f32,) = struct.unpack_from("<f", rec, off)
-                # float32 判定：值落在金融价格合理区间，且不是"整齐"的整数
-                if 0.01 < abs(f32) < 100_000:
-                    float_like += 1
-                elif 0 < u32 < 100_000_000:
-                    int_like += 1
+        # P1-7：解包/计数循环收敛到 scoring.probe_field_types；本入口的
+        # 合理性阈值口径（float32 判定用 abs + 开区间：值落在金融价格
+        # 合理区间，且不是"整齐"的整数）保留在此，作为注入谓词。
+        float_like, int_like, _probed = probe_field_types(
+            samples,
+            plausible_float32=lambda f32: 0.01 < abs(f32) < 100_000,
+            plausible_uint32=lambda u32: 0 < u32 < 100_000_000,
+        )
         total = float_like + int_like
         if total == 0:
             return PriceEncoding.UINT32, 0.3
@@ -666,27 +665,9 @@ class ProfileDetector:
 
     # ---- 步骤 5 ---------------------------------------------------------- #
     def _detect_time_encoding(self, raw: bytes, record_size: int) -> tuple[str, float]:
+        """三编码投票择优（P1-7：投票机械收敛到 scoring.vote_date_encodings）。"""
         samples = self._sample_records(raw, record_size)
-        ymd = lc16 = dt32 = 0
-        total = 0
-        for rec in samples:
-            if record_size >= 4:
-                (v32,) = struct.unpack_from("<I", rec, 0)
-                total += 1
-                y, m, d = v32 // 10000, (v32 // 100) % 100, v32 % 100
-                if 1990 <= y <= 2100 and 1 <= m <= 12 and 1 <= d <= 31:
-                    ymd += 1
-                # datetime32 位域
-                y2 = (v32 >> 20) & 0xFFF
-                m2 = (v32 >> 16) & 0x0F
-                d2 = (v32 >> 11) & 0x1F
-                if 1990 <= y2 <= 2100 and 1 <= m2 <= 12 and 1 <= d2 <= 31:
-                    dt32 += 1
-            if record_size >= 2:
-                (v16,) = struct.unpack_from("<H", rec, 0)
-                y3, m3, d3 = get_datetime_from_lc(v16)
-                if 2004 <= y3 <= 2100 and 1 <= m3 <= 12 and 1 <= d3 <= 31:
-                    lc16 += 1
+        ymd, dt32, lc16, total = vote_date_encodings(samples, record_size)
         if total == 0:
             return TimeEncoding.YYYYMMDD, 0.2
         scores = {
@@ -703,13 +684,8 @@ class ProfileDetector:
 
     # ---- 工具 ------------------------------------------------------------ #
     def _sample_records(self, raw: bytes, record_size: int) -> list[bytes]:
-        if record_size <= 0:
-            return []
-        count = len(raw) // record_size
-        if count == 0:
-            return []
-        step = max(1, count // self.sample_count)
-        return [raw[i * record_size : (i + 1) * record_size] for i in range(0, count, step)]
+        """等距抽样（P1-7：实现收敛到 :func:`atst.profile.scoring.sample_records`）。"""
+        return sample_records(raw, record_size, limit=self.sample_count)
 
 
 _DEFAULT_DETECTOR = ProfileDetector()
@@ -717,3 +693,23 @@ _DEFAULT_DETECTOR = ProfileDetector()
 
 def detect_profile(raw: bytes, hint: DataProfile | None = None) -> DataProfile:
     return _DEFAULT_DETECTOR.detect(raw, hint=hint)
+
+
+# --------------------------------------------------------------------------- #
+# P1-7 探测合一：打分内核统一引用
+# --------------------------------------------------------------------------- #
+# 此导入必须放在模块末尾（在全部公共名定义之后）：atst/profile/__init__
+# 首行即 ``from ..reader.profile import ...``，若把 scoring 导入放模块
+# 顶部，``import atst.reader.profile`` 会在本模块尚无任何定义时被
+# atst.profile.__init__ 反向引用而触发循环导入。
+from ..profile.scoring import (  # noqa: E402
+    RECORD_SIZES as _SSOT_RECORD_SIZES,
+)
+from ..profile.scoring import (  # noqa: E402
+    probe_field_types,
+    sample_records,
+    vote_date_encodings,
+)
+
+# 类属性重绑定为 SSOT 对象：候选记录长度表只在 scoring 一处定义
+ProfileDetector.RECORD_SIZES = _SSOT_RECORD_SIZES

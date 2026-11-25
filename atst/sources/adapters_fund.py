@@ -36,6 +36,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from ..errors import SourceDeprecated
+from ._json_fetch import fetch_json
 from .base import BaseWebSource
 from .sources import FUND
 
@@ -247,18 +248,11 @@ class FundSource(BaseWebSource):
 
     # -- 内部工具 ----------------------------------------------------------- #
     def _get_json(self, url: str) -> dict[str, Any]:
-        text = self._request_text(url, encoding="utf-8")
-        try:
-            payload = json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise SourceDeprecated(
-                "基金历史净值返回非 JSON",
-                context={"source": FUND, "sample": text[:200]},
-                cause=exc,
-            ) from exc
-        if not isinstance(payload, dict):
-            raise SourceDeprecated(
-                "基金历史净值响应非 JSON 对象",
-                context={"source": FUND, "sample": text[:200]},
-            )
-        return payload
+        """P1-8/F9：公共 JSON 取数器（hooks 注入渠道文案），行为与原实现一致。"""
+        return fetch_json(
+            self,
+            url,
+            send=lambda u: self._request_http(u),
+            label="基金历史净值",
+            non_json_msg="基金历史净值返回非 JSON",
+        )

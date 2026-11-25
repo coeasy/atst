@@ -45,6 +45,11 @@ from atst.server.mcp._tools_spec import TOOLS
 
 ROOT = Path(__file__).resolve().parents[2]
 MIXIN = ROOT / "atst" / "client" / "_mixin.py"
+#: P2-2 拆分后，``_t_*`` 模板与驱动器机制落在三个私有模块；扫描面随契约走，判据不变。
+TRAMPOLINE = ROOT / "atst" / "client" / "_trampoline.py"
+TPL_STANDARD = ROOT / "atst" / "client" / "_templates_standard.py"
+TPL_FAMILY = ROOT / "atst" / "client" / "_templates_family.py"
+TEMPLATE_FILES = (MIXIN, TRAMPOLINE, TPL_STANDARD, TPL_FAMILY)
 EXECUTOR = ROOT / "atst" / "runtime" / "executor.py"
 #: W4 拆分后，tdx 通道执行体可能落在 executor / execute_channel / execute_capability。
 EXECUTION_FILES = (
@@ -73,7 +78,8 @@ def _tree(path: Path) -> ast.Module:
 def _templates() -> dict[str, ast.FunctionDef]:
     return {
         node.name: node
-        for node in ast.walk(_tree(MIXIN))
+        for path in TEMPLATE_FILES
+        for node in ast.walk(_tree(path))
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
 
@@ -510,7 +516,8 @@ def test_an_unreachable_warning_stays_declared_as_such() -> None:
     """
     emitters = [
         node.name
-        for node in ast.walk(_tree(MIXIN))
+        for path in TEMPLATE_FILES
+        for node in ast.walk(_tree(path))
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and any(
             isinstance(sub, ast.Attribute)

@@ -43,6 +43,7 @@ from typing import Any
 
 from ..domain.models import MinutePoint, Tick
 from ..errors import SourceDeprecated
+from ._scale import HAND_TO_SHARE
 from .base import (
     BaseWebSource,
     _EastmoneyJson,
@@ -171,7 +172,7 @@ class TencentTickSource(BaseWebSource):
                 Tick(
                     time=cols[1].strip(),
                     price=_f(cols[2]),
-                    volume=int(round(_f(cols[4]) * 100)),  # 手 → 股
+                    volume=int(round(_f(cols[4]) * HAND_TO_SHARE)),  # 手 → 股
                     num=_i(cols[0]),
                     buyorsell=_DIRECTIONS.get(direction, 2),
                 )
@@ -250,7 +251,7 @@ class EastmoneyTrendsSource(_EastmoneyJson):
                     time=cols[0].strip(),
                     price=_f(cols[2]),  # 该分钟收盘价
                     avg_price=_f(cols[7]),  # 均价
-                    volume=int(round(_f(cols[5]) * 100)),  # 手 → 股
+                    volume=int(round(_f(cols[5]) * HAND_TO_SHARE)),  # 手 → 股
                     amount=_f(cols[6]),  # 元
                 )
             )

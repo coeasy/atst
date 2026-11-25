@@ -4,7 +4,7 @@
 >
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
-- 当前版本：`2.1.0` · 已发布版本：PyPI 最新 **`2.1.0`**（`pip install atst`，2026-11-22）· [v2.1.0 Release](https://github.com/coeasy/atst/releases/tag/v2.1.0) · [CHANGELOG](https://github.com/coeasy/atst/blob/main/CHANGELOG.md) · [v1→v2 迁移指南](https://github.com/coeasy/atst/blob/main/docs/migration/v2.md)
+- 当前版本：`2.2.0` · 已发布版本：PyPI 最新 **`2.1.0`**（`pip install atst`，2026-11-22）· [v2.2.0 Release](https://github.com/coeasy/atst/releases/tag/v2.2.0) · [CHANGELOG](https://github.com/coeasy/atst/blob/main/CHANGELOG.md) · [v1→v2 迁移指南](https://github.com/coeasy/atst/blob/main/docs/migration/v2.md)
 
 ---
 
@@ -24,7 +24,7 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | 数据请求被隐式缓存污染 | 执行路径**零缓存**：每次请求直达绑定 Provider |
 | 同步/异步 API 分裂 | 签名镜像双客户端（`TdxClient` / `AsyncTdxClient`）+ 奇偶门禁 |
 | 协议命令持续演进 | YAML 规范驱动 + codegen 自动生成 + golden_audit 三旗标防漂移 |
-| 主站可用性差 | 主站池治理 + 三级路由降级 + 后台测速排序 + 社区候选注入 |
+| 主站可用性差 | 主站池治理 + RankingStore 测速排序 + 后台测速 + 社区候选注入 |
 
 ### 谁在用
 
@@ -62,7 +62,7 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 ├─────────────────────────────────────────────────────────────────────┤
 │              UnifiedRuntime（唯一执行内核，零缓存）                     │
 │  QueryPlanner.compile → QueryPlan（单 Provider / 单 Channel）          │
-│  DirectProviderExecutor：DIRECT_BINDINGS 304 条精确绑定                │
+│  DirectProviderExecutor：DIRECT_BINDINGS 299 条精确绑定                │
 │  流式：StreamSpec/StreamPlanner → StatefulQuoteStream                 │
 ├─────────────────────────────────────────────────────────────────────┤
 │              providers/（14 Provider · 217 capability 唯一声明处）      │
@@ -104,14 +104,15 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 |---|---|
 | **同步/异步双 API** | `TdxClient` + `AsyncTdxClient`（签名镜像、奇偶门禁） |
 | **多协议族客户端** | GoodsClient / ExMarketClient / MacClient / F10Client |
-| **主站池治理** | `DEFAULT_HOST_POOL` / `POOL_BY_FAMILY` / `RankingStore` + 三级路由降级 + 社区候选注入 |
+| **主站池治理** | `DEFAULT_HOST_POOL` / `POOL_BY_FAMILY` / `RankingStore` 测速排序 + 社区候选注入 |
 
 ### 数据源层
 
 | 特性 | 说明 |
 |---|---|
 | **HTTP Web 45+ 源类** | 东财/新浪/腾讯/集思录/港股/中行等，`httpx` / `urllib` 双栈，32 模块；各家适配器按 Provider 归入 `sources/<provider>/adapters.py`，跨 Provider 的域模块（资金流/龙虎榜/新闻/问财…）留 `sources/` 包根 |
-| **本地 vipdoc 解析** | `reader/` 解析通达信本地 `.day` / `.min` / 板块 / 财务二进制文件 |
+| **本地 vipdoc 解析** | `reader/` 解析通达信本地 `.day` / `.lc1` / `.lc5` / 板块 / 财务二进制文件；`BoardConfigReader` / `IndustryConfigReader` 只读官方 `tdxbk.cfg`（板块名表）/ `tdxhy.cfg`（股票→行业映射），不抓 GUI、不含成分股或行情 |
+| **复权 K 线** | `Client.adjusted_bars()`：`qfq` / `hfq` / `fixed`，因子由 `domain/adjust.py` 用除权除息事件本地计算，不依赖服务端复权接口；Web 源也支持 `bars(..., adjust="qfq")` 的服务端复权（tdx 直接源 fail-closed），完整口径见 [接口文档](https://github.com/coeasy/atst/blob/main/docs/api/interfaces.md)「复权 K 线」 |
 | **Provider 注册表** | `providers/` 声明 14 Provider × 217 capability × channel，是唯一事实源；每 Provider 一个声明模块同时登记 channel→adapter 与 capability→实现绑定 |
 | **流式订阅** | `Client.stream` → `StatefulQuoteStream`（轮询基类 QuoteStream/AsyncQuoteStream；engine 内核：ReconnectPolicy + BackpressureQueue + DeltaMerger + GapFiller + StreamEngine） |
 
@@ -130,7 +131,7 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 | 特性 | 说明 |
 |---|---|
 | **唯一内核** | `UnifiedRuntime`：`QuerySpec → QueryPlan → 绑定执行 → QueryResult`，零缓存、无请求合并 |
-| **精确绑定执行** | `DirectProviderExecutor` 按 `DIRECT_BINDINGS[(provider, channel, capability)]`（304 条）直调实现 |
+| **精确绑定执行** | `DirectProviderExecutor` 按 `DIRECT_BINDINGS[(provider, channel, capability)]`（299 条）直调实现 |
 | **规划期 fail-closed** | `runtime/capability_contract.py::validate_call` 用**真实方法签名**绑定参数，参数错误在 I/O 前抛 |
 | **执行身份与溯源** | `runtime/identity.py` + `runtime/provenance.py`：结果 provenance 与计划身份不符即抛 |
 | **显式跨源编排** | `runtime/orchestration.py`：仅当调用方给出 `FallbackPolicy` 时按序尝试，逐次记入 `OrchestratedResult` |
@@ -188,19 +189,19 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 ## 安装
 
 ```bash
-pip install atst                    # 核心包（PyPI 最新 2.1.0，零硬依赖）
+pip install atst                    # 核心包（PyPI 此前最新 2.1.0，零硬依赖）
 pip install "atst[all]"             # 全部可选能力（pandas/pyarrow/duckdb/httpx/fastapi/...）
 pip install -e ".[dev]"             # 开发体验（pytest/ruff/mypy/pytest-asyncio/hatchling）
 ```
 
-> **版本口径**（2026-11-22 实测）：`atst` **已发布到 PyPI**，最新版本为 `2.1.0`
-> （上传于 2026-11-22），前一版本 `2.0.0`（2026-11-09）。`pip install atst` 直接装到
-> 最新版，零配置入口（`atst.history` / `atst.quote`）自 2.0.0 起已在 PyPI 包内。需要跟
-> 仓库源码时从源码安装：
+> **版本口径**（2026-11-25）：`atst` 当前版本 `2.2.0`，随 `v2.2.0` 标签发布 GitHub Release；
+> PyPI 发布由 CI 的 `PUBLIC_RELEASE` 仓库变量决定（此前 PyPI 最新 `2.1.0`，上传于
+> 2026-11-22，前一版本 `2.0.0`）。零配置入口（`atst.history` / `atst.quote`）自 2.0.0 起
+> 已在 PyPI 包内。需要跟仓库源码时从源码安装：
 >
 > ```bash
 > git clone https://github.com/coeasy/atst.git && cd atst
-> pip install ".[all]"                # 源码（2.1.0）
+> pip install ".[all]"                # 源码（2.2.0）
 > python -m build                     # 产物在 dist/；make build 走同一套 canonical 校验
 > ```
 >
@@ -382,8 +383,19 @@ batch = client.quotes_batch(["sh600519", "sz000001"])
 # 5) 跨源只在显式策略下发生（默认永不发生）
 orchestrated = client.quotes(["sh600519"], policy=FallbackPolicy(providers=("tdx", "tencent")))
 
+# 6) 复权 K 线：因子由除权事件本地计算，Provider 仍可走 tdx
+qfq = client.adjusted_bars("sh600519", adjust="qfq", count=120)
+hfq = client.adjusted_bars("sh600519", adjust="hfq", count=120)
+# 或走 Web 源的服务端复权：client.bars("sh600519", provider="tencent", adjust="qfq")
+
 client.close()
 ```
+
+> **复权口径速览**：`adjusted_bars` 是一等公民方法（也走 `call("adjusted_bars")`），
+> `qfq`/`hfq`/`fixed` 三种方式由 `domain/adjust.py` 按事件自算，默认事件源是东财数据中心；
+> `bars(..., adjust=...)` 走 eastmoney/tencent 的 Web 服务端复权，tdx 直接源会显式拒绝复权，
+> 不会静默返回未复权数据。事件源、窗口延伸与告警语义见
+> [接口文档](https://github.com/coeasy/atst/blob/main/docs/api/interfaces.md)「复权 K 线（`adjusted_bars`）」。
 
 ### 内核异步（`AsyncClient`，同一入口）
 
@@ -432,7 +444,7 @@ atst hosts audit --report /tmp/audit.json --markdown /tmp/audit.md
 atst/
 ├── client/         # api.py —— Client / AsyncClient 唯一业务入口（18 便捷方法 + execute/typed/call）
 │                   # core/sync/async_/factory —— TdxClient 传输层与共享纯协议 SSOT
-├── runtime/        # 唯一执行内核：kernel(零缓存)/executor(304 绑定)/orchestration(显式跨源)
+├── runtime/        # 唯一执行内核：kernel(零缓存)/executor(299 绑定)/orchestration(显式跨源)
 │                   #   /audit(启动三方对账)/identity/provenance(溯源守卫)
 ├── providers/      # 14 Provider × 217 capability × channel 唯一声明处
 │                   #   tdx/local_vipdoc/.../derived 各一模块；registry 只做聚合
@@ -495,7 +507,7 @@ QuerySpec(capability, provider=None|显式)
 ## 主站池治理与巡检
 
 主站池由 `DEFAULT_HOST_POOL` / `POOL_BY_FAMILY` 定义，运行时通过 `RankingStore`
-（`~/.atst/server_ranking.json`）落盘延迟样本并驱动三级路由降级。巡检工具：
+（`~/.atst/server_ranking.json`）落盘延迟样本并驱动主站排序。巡检工具：
 
 ```bash
 # 通过 CLI（推荐）
@@ -548,14 +560,15 @@ python -m pytest --cov=atst           # 覆盖率门禁（阈值单源：pyproje
 
 ## 路线图
 
-### 当前阶段：v2.1.0（已发布）
+### 当前阶段：v2.2.0（已发布）
 
-`v2.1.0` 在 v2.0.0 的架构重写之上补上了主站候选池的**免升级运维闭环**：`atst hosts discover`
-从本机通达信 `connect.cfg` 与开源清单发现候选并实测采纳，排名文件升到 V2（带 `observed_at`
-观测时间），`hosts scan` 扫全池（含发现进来的 extras）并在同一轮淘汰不可达项，`hosts list`
-给出观测年龄与过期提示。v2.0.0（2026-11-09）为架构重写版本（Provider 声明化、包布局重排、
+`v2.2.0`（2026-11-25）是重构方案（`docs/REFACTOR_PLAN.md`）的全量落地批次：常驻连接池、
+批量三态收敛、流式 fail-closed 生命周期、量纲系数单源化、WS 订阅合流、协议 tier 账本权威化，
+以及 2026-11-23/24/25 三轮真机实测暴露的修复（非沪深缺省报价路由、港美股量纲、北交所路由、
+官方客户端本地数据实证、复权文档口径收口）。`v2.1.0`（2026-11-22）补上了主站候选池的
+**免升级运维闭环**；`v2.0.0`（2026-11-09）为架构重写版本（Provider 声明化、包布局重排、
 Client 动态面收敛、文档生成制）。当前内核为单执行路径、零缓存、provider-first：
-85 命令 / 61 精确解析器 / 5 协议族 / 14 Provider / 217 capability / 304 条精确绑定。
+85 命令 / 61 精确解析器 / 5 协议族 / 14 Provider / 217 capability / 299 条精确绑定。
 
 | 里程碑 | 状态 |
 |---|---|

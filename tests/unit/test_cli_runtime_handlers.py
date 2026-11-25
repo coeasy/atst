@@ -1,6 +1,8 @@
 """CLI 处理器接线测试（v17 Phase 5 收口）。
 
-覆盖 :mod:`atst.cli.runtime_commands` 中此前无测试的分支：
+覆盖 :mod:`atst.cli` 命令处理器此前无测试的分支（P2-3 后实现按域住在
+``cmds_kernel`` / ``cmds_hosts`` / ``cmds_web`` / ``cmds_market``，
+``runtime_commands`` 只剩 re-export shim）：
 
 * ``cmd_*``：唯一业务入口 ``Client`` 的选择器透传（provider/channel/policy/currentness）
   与结果信封序列化，以及连接释放；
@@ -116,8 +118,9 @@ def fake_client(monkeypatch: pytest.MonkeyPatch) -> type[FakeClient]:
     FakeClient.instances = []
     FakeClient.data = []
     FakeClient.error = None
-    # 顶层命令在模块导入期绑定 Client；_ClientRows 在函数体内 import
-    monkeypatch.setattr(rc, "Client", FakeClient)
+    # 顶层命令在模块导入期绑定 Client（P2-3 后绑定点在 cmds_kernel）；
+    # _ClientRows 在函数体内 import
+    monkeypatch.setattr("atst.cli.cmds_kernel.Client", FakeClient)
     monkeypatch.setattr(client_api_mod, "Client", FakeClient)
     return FakeClient
 
@@ -173,8 +176,9 @@ class TestV13QueryHandlers:
         ("args_json", "kwargs_json", "message"),
         [
             ("not json", "{}", r"valid JSON"),
-            ('{"a": 1}', "{}", "JSON array"),
-            ("[]", "[1]", "JSON object"),
+            # P2-6/L1：形状文案收口到 parse_query_call 后与四面逐字一致。
+            ('{"a": 1}', "{}", "args must be an array"),
+            ("[]", "[1]", "kwargs must be an object"),
         ],
     )
     def test_query_rejects_bad_input(
@@ -491,13 +495,14 @@ class TestProbeHandler:
         monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "stock", client or FakeTdxSession)
         monkeypatch.setattr(prober_mod, "Prober", prober)
 
-    def test_illegal_cmd_number_exit_2(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_illegal_cmd_number_raises_validation_error(self) -> None:
+        """P2-3（M7）：解析失败抛 ValidationError（E1010），用法示例收进消息随信封给出。"""
         args = _ns(cmd="not-a-command", market=1, code="600519", rate_limit=1.0)
-        assert rc._cmd_probe(args) == 2
-        err = capsys.readouterr().err
-        assert "非法命令号" in err and "用法" in err
+        with pytest.raises(ValidationError, match=r"非法命令号.*用法"):
+            rc._cmd_probe(args)
 
-    def test_client_error_exit_2(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    def test_client_error_raises_tdx_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """P2-3（M7）：TdxError 原样上抛交 main() 信封出口（退出码仍 2）。"""
         import atst.client.factory as factory_mod
 
         def boom(*a: Any, **kw: Any) -> None:
@@ -513,8 +518,8 @@ class TestProbeHandler:
             allow_trading_hours=False,
             json=True,
         )
-        assert rc._cmd_probe(args) == 2
-        assert "no host reachable" in capsys.readouterr().err
+        with pytest.raises(TdxError, match="no host reachable"):
+            rc._cmd_probe(args)
 
     def test_ok_prints_text_then_json(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
         inits: list[dict[str, Any]] = []
@@ -689,8 +694,9 @@ class TestTransportHandlers:
             raise RuntimeError("socket down")
 
         monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "stock", boom)
-        assert rc._cmd_blocks(_ns(block_type=0, count=10, json=False)) == 2
-        assert "socket down" in capsys.readouterr().err
+        # P2-3（M7）：内核异常原样上抛交 main() 信封出口，不再就地 print+return 2。
+        with pytest.raises(RuntimeError, match="socket down"):
+            rc._cmd_blocks(_ns(block_type=0, count=10, json=False))
 
     def test_list_market_alias_and_table(
         self, fake_tdx: type[FakeTdxSession], capsys: pytest.CaptureFixture[str]
@@ -719,8 +725,8 @@ class TestTransportHandlers:
             raise RuntimeError("registry down")
 
         monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "stock", boom)
-        assert rc._cmd_list(_ns(market="1", start=0, count=10, json=False)) == 2
-        assert "registry down" in capsys.readouterr().err
+        with pytest.raises(RuntimeError, match="registry down"):
+            rc._cmd_list(_ns(market="1", start=0, count=10, json=False))
 
     def test_quotes_snapshot_table_output(
         self, fake_tdx: type[FakeTdxSession], capsys: pytest.CaptureFixture[str]
@@ -804,8 +810,8 @@ class TestTransportHandlers:
 
         monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "goods", boom)
         args = _ns(symbol="AU2412", kind="quote", period="day", count=10, json=False)
-        assert rc._cmd_goods(args) == 2
-        assert "goods offline" in capsys.readouterr().err
+        with pytest.raises(RuntimeError, match="goods offline"):
+            rc._cmd_goods(args)
 
     def test_f10_catalog_sections_and_empty(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -858,8 +864,8 @@ class TestTransportHandlers:
             raise RuntimeError("f10 unavailable")
 
         monkeypatch.setitem(factory_mod._CLIENT_REGISTRY, "f10", boom)
-        assert rc._cmd_f10(_ns(symbol="sh600519", file=None, json=False)) == 2
-        assert "f10 unavailable" in capsys.readouterr().err
+        with pytest.raises(RuntimeError, match="f10 unavailable"):
+            rc._cmd_f10(_ns(symbol="sh600519", file=None, json=False))
 
 
 class TestWebCapabilityHandlers:
@@ -889,8 +895,9 @@ class TestWebCapabilityHandlers:
         assert "当前无异动数据" in capsys.readouterr().out
 
         fake_client.error = RuntimeError("eastmoney blocked")
-        assert rc._cmd_changes(args) == 2
-        assert "eastmoney blocked" in capsys.readouterr().err
+        # P2-3（M7）：内核异常原样上抛交 main() 信封出口。
+        with pytest.raises(RuntimeError, match="eastmoney blocked"):
+            rc._cmd_changes(args)
 
     def test_hot_json_table_and_error(
         self, fake_client: type[FakeClient], capsys: pytest.CaptureFixture[str]
@@ -913,8 +920,8 @@ class TestWebCapabilityHandlers:
         assert "SH600000" in capsys.readouterr().out
 
         fake_client.error = RuntimeError("rank unavailable")
-        assert rc._cmd_hot(_ns(page=1, size=1, json=False)) == 2
-        assert "rank unavailable" in capsys.readouterr().err
+        with pytest.raises(RuntimeError, match="rank unavailable"):
+            rc._cmd_hot(_ns(page=1, size=1, json=False))
 
     def test_margin_json_table_empty_and_error(
         self, fake_client: type[FakeClient], capsys: pytest.CaptureFixture[str]
@@ -944,8 +951,8 @@ class TestWebCapabilityHandlers:
         assert "无融资融券数据" in capsys.readouterr().out
 
         fake_client.error = RuntimeError("margin down")
-        assert rc._cmd_margin(_ns(symbol="600000", days=5, timeout=3.0, json=True)) == 2
-        assert "margin down" in capsys.readouterr().err
+        with pytest.raises(RuntimeError, match="margin down"):
+            rc._cmd_margin(_ns(symbol="600000", days=5, timeout=3.0, json=True))
 
     def test_sector_flow_table_and_empty(
         self, fake_client: type[FakeClient], capsys: pytest.CaptureFixture[str]
@@ -976,8 +983,8 @@ class TestWebCapabilityHandlers:
         assert "无板块资金流数据" in capsys.readouterr().out
 
         fake_client.error = RuntimeError("flow down")
-        assert rc._cmd_sector_flow(args) == 2
-        assert "flow down" in capsys.readouterr().err
+        with pytest.raises(RuntimeError, match="flow down"):
+            rc._cmd_sector_flow(args)
 
     def test_bars_and_market_table_outputs(self, fake_client: type[FakeClient], capsys) -> None:  # type: ignore[no-untyped-def]
         fake_client.data = [{"datetime": "2024-01-02", "open": 1.5, "close": 1.6, "volume": 10}]
@@ -1048,15 +1055,17 @@ class TestWebCapabilityHandlers:
             timeout=3.0,
             json=False,
         )
-        assert rc._cmd_baidu(args) == 2
-        assert "百度财经 kline 获取失败" in capsys.readouterr().err
+        with pytest.raises(RuntimeError, match="baidu 403"):
+            rc._cmd_baidu(args)
 
     def test_fund_actions_and_guard(
         self, fake_client: type[FakeClient], capsys: pytest.CaptureFixture[str]
     ) -> None:
-        assert rc._cmd_fund(_ns(action="nav", code=None, timeout=3.0, json=False)) == 2
-        assert "需要 <code>" in capsys.readouterr().err
-        assert rc._cmd_fund(_ns(action="estimate", code="", timeout=3.0, json=False)) == 2
+        # P2-3（M7）：缺必填 code 抛 ValidationError（E1010 / 退出码 2 交 main）。
+        with pytest.raises(ValidationError, match="需要 <code>"):
+            rc._cmd_fund(_ns(action="nav", code=None, timeout=3.0, json=False))
+        with pytest.raises(ValidationError, match="需要 <code>"):
+            rc._cmd_fund(_ns(action="estimate", code="", timeout=3.0, json=False))
 
         fake_client.data = [{"nav_date": "2024-01-02", "nav": 1.23}]
         nav = _ns(action="nav", code="000001", page_size=20, page_index=1, timeout=3.0, json=False)
@@ -1082,14 +1091,14 @@ class TestWebCapabilityHandlers:
     def test_fund_error_exit_2(self, fake_client: type[FakeClient], capsys) -> None:  # type: ignore[no-untyped-def]
         fake_client.error = RuntimeError("fund down")
         listing = _ns(action="list", code=None, page_size=20, page_index=1, timeout=3.0, json=False)
-        assert rc._cmd_fund(listing) == 2
-        assert "基金 list 获取失败" in capsys.readouterr().err
+        with pytest.raises(RuntimeError, match="fund down"):
+            rc._cmd_fund(listing)
 
     def test_index_constituents_paths(
         self, fake_client: type[FakeClient], capsys: pytest.CaptureFixture[str]
     ) -> None:
-        assert rc._cmd_index(_ns(action="constituents", code="", timeout=3.0, json=False)) == 2
-        assert "index constituents 需要 <code>" in capsys.readouterr().err
+        with pytest.raises(ValidationError, match="需要 <code>"):
+            rc._cmd_index(_ns(action="constituents", code="", timeout=3.0, json=False))
 
         fake_client.data = [{"code": "600000", "name": "浦发银行"}]
         args = _ns(action="constituents", code="000300", timeout=3.0, json=False)
@@ -1103,8 +1112,8 @@ class TestWebCapabilityHandlers:
     def test_index_error_exit_2(self, fake_client: type[FakeClient], capsys) -> None:  # type: ignore[no-untyped-def]
         fake_client.error = RuntimeError("index down")
         args = _ns(action="constituents", code="000300", timeout=3.0, json=True)
-        assert rc._cmd_index(args) == 2
-        assert "指数成分获取失败" in capsys.readouterr().err
+        with pytest.raises(RuntimeError, match="index down"):
+            rc._cmd_index(args)
 
 
 class TestFeedbackHandler:
@@ -1142,6 +1151,83 @@ class TestFeedbackHandler:
         assert rc._cmd_feedback(_ns(feedback_command="stats", json=False)) == 0
         out = capsys.readouterr().out
         assert "total_commands" in out and "3" in out
+
+
+class TestServeWsFace:
+    """``atst serve --ws``（F-6/M8）：HTTP 与 WS 同一事件循环、同一 Client。"""
+
+    @staticmethod
+    def _install(monkeypatch: pytest.MonkeyPatch, created: dict[str, Any]) -> None:
+        import uvicorn as uvicorn_mod
+
+        class FakeServeClient:
+            def __init__(self, *a: Any, **kw: Any) -> None:
+                created["client"] = self
+
+            def close(self) -> None:
+                created["client_closed"] = True
+
+        def fake_create_runtime_app(client: Any = None) -> Any:
+            created["http_client"] = client
+            return object()
+
+        class FakeHandler:
+            def __init__(self, client: Any = None) -> None:
+                created["ws_client"] = client
+
+            def close(self) -> None:
+                created["handler_closed"] = True
+
+        class FakeWsServer:
+            async def __aenter__(self) -> FakeWsServer:
+                return self
+
+            async def __aexit__(self, *exc: Any) -> None:
+                return None
+
+        async def fake_serve_runtime_ws(*, handler: Any = None, config: Any = None) -> Any:
+            created["ws_config"] = config
+            created["ws_handler"] = handler
+            return FakeWsServer()
+
+        class FakeUvicornServer:
+            def __init__(self, config: Any) -> None:
+                created["uvicorn_config"] = config
+
+            async def serve(self) -> None:
+                return None
+
+        #: ``cmds_hosts`` 在模块头绑定 ``Client``（``from ..client.api import Client``），
+        #: 替身必须挂在那个绑定点上，而不是 api 模块的名字上。
+        monkeypatch.setattr("atst.cli.cmds_hosts.Client", FakeServeClient)
+        monkeypatch.setattr("atst.server.runtime_http.create_runtime_app", fake_create_runtime_app)
+        monkeypatch.setattr("atst.server.runtime_ws.RuntimeJsonRpcHandler", FakeHandler)
+        monkeypatch.setattr("atst.server.runtime_ws_server.serve_runtime_ws", fake_serve_runtime_ws)
+        monkeypatch.setattr(uvicorn_mod, "Server", FakeUvicornServer)
+        monkeypatch.setattr(
+            uvicorn_mod, "Config", lambda app, **kw: argparse.Namespace(app=app, **kw)
+        )
+
+    def test_ws_starts_both_faces_with_one_client(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        created: dict[str, Any] = {}
+        self._install(monkeypatch, created)
+        assert rc._cmd_serve(_ns(port=8000, bind=None, ws=True)) == 0
+        #: 两面拿到的是同一个 Client（M8：复用同一 Client）。
+        assert created["http_client"] is created["ws_client"] is created["client"]
+        assert created["ws_config"].host == "127.0.0.1"
+        assert created["ws_config"].port == 8765
+        assert created["uvicorn_config"].port == 8000
+        assert created["handler_closed"] is True
+        assert created["client_closed"] is True
+
+    def test_ws_port_zero_passthrough(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``--port 0`` 在 WS 模式同样透传（OS 随机端口是合法值）。"""
+        created: dict[str, Any] = {}
+        self._install(monkeypatch, created)
+        assert rc._cmd_serve(_ns(port=0, bind="0.0.0.0", ws=True)) == 0
+        assert created["uvicorn_config"].port == 0
+        assert created["uvicorn_config"].host == "0.0.0.0"
+        assert created["ws_config"].host == "0.0.0.0"
 
 
 class TestCmdNumberParsing:

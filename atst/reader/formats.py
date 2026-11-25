@@ -60,7 +60,12 @@ from ..codec.primitive import decode_gbk, detect_encoding, get_datetime_from_lc,
 from ..domain.calendar import day_like_datetime
 from ..domain.finance import GPCW_FIELD_NAMES
 from ..domain.models import Bar
-from ..errors import DataFileNotFound, FileFormatError, TruncatedRecordError
+from ..errors import (
+    DataFileNotFound,
+    FileFormatError,
+    ProfileUndetectable,
+    TruncatedRecordError,
+)
 from .profile import (
     BUILTIN_PROFILES,
     DataProfile,
@@ -157,7 +162,14 @@ class BaseFileReader:
                     self.warnings.append(
                         f"规格探测置信度偏低 ({detected.confidence:.2f})，建议显式指定 profile"
                     )
-            except Exception as exc:  # ProfileUndetectable
+            except ProfileUndetectable as exc:
+                # P0-3：探测失败（置信度不足）在 strict 口径下必须上抛——静默降级
+                # 默认档案会让错误 price_scale 静默产出 10 倍错价（reader/profile.py
+                # 自己写下的「探测失败绝不静默猜测」契约）。
+                if self.strict:
+                    raise
+                self.warnings.append(f"自动探测失败，使用默认档案: {exc}")
+            except Exception as exc:  # 探测器自身缺陷：降级并告警（fail-open 仅限此处）
                 self.warnings.append(f"自动探测失败，使用默认档案: {exc}")
         if self.encoding:
             profile = profile.with_overrides(charset=self.encoding)
@@ -215,8 +227,19 @@ class DayBarReader(BaseFileReader):
         return self._decode_records(raw, prof)
 
     def _decode_records(self, raw: bytes, p: DataProfile) -> list[Bar]:
-        """按偏移原地解码（不为每条记录切出 32 字节临时 bytes）。"""
-        size = self.RECORD_SIZE
+        """按偏移原地解码（不为每条记录切出 32 字节临时 bytes）。
+
+        P0-3：探测出的 ``record_size`` 以前被合并进 profile 却无人消费——解码层
+        永远按 32 切。与 32 不一致时 strict 口径拒绝、非 strict 告警后按日线布局
+        解码（日线解码器只认 32 字节布局，不盲从探测值错位解码）。
+        """
+        size = p.record_size or self.RECORD_SIZE
+        if size != self.RECORD_SIZE:
+            msg = f"探测出的记录大小 {size} 与日线布局 {self.RECORD_SIZE} 不一致"
+            if self.strict:
+                raise FileFormatError(msg, context={"record_size": size})
+            self.warnings.append(msg + "，按日线布局解码")
+            size = self.RECORD_SIZE
         count = self._record_count(raw, size)
         return [self._decode_record_at(raw, i * size, p) for i in range(count)]
 
@@ -256,8 +279,22 @@ class DayBarReader(BaseFileReader):
                 if p.price_encoding != PriceEncoding.FLOAT32
                 else last_field
             )
+            # 2026-11-25 官方 TdxW.exe 本地文件实证：个股末字段在 1284/1285 条里
+            # 恒为 0x00010000（按 ×100 读成 655.36），指数则出现 251673.89 这类
+            # 远离当日收盘（约 3464）的值——两者都不是前收盘价。此前直接 flatten
+            # 到 extra.prev_close 会让复权逻辑拿它当权威值。这里只认与当日收盘
+            # 同量级的值，否则置 None，由 adjust 走「上一根 bar 收盘」的既有回退。
+            if p.price_encoding != PriceEncoding.FLOAT32 and (
+                last_field == 0x00010000
+                or prev_close <= 0
+                or (c > 0 and not (0.5 <= prev_close / c <= 2.0))
+            ):
+                prev_close = None
             #: 直接给出压平 tuple（Bar 内部格式），避免每行先建 dict 再拆开。
-            extra = ("prev_close", prev_close if exact else round(prev_close, 4))
+            extra = (
+                "prev_close",
+                None if prev_close is None else (prev_close if exact else round(prev_close, 4)),
+            )
 
         if exact:
             open_, high_, low_, close_ = o, h, lo, c
@@ -547,10 +584,19 @@ class FinanceReader(BaseFileReader):
         return named
 
     def _detect_fields(self, n: int) -> int:
-        for c in self.FIELD_COUNTS:
-            if n % (c * 4) == 0 and n // (c * 4) >= 1:
-                return c
-        # 回退：假设单条记录
+        """P0-3：在整除候选里取最大字段数；不可判定时报错而不是静默当单条。
+
+        旧实现按候选升序取第一个整除者，30 字段 × 14 条（n=1680）同时是 112 的
+        倍数会被误判成 28 字段；尾部 ``n // 4`` 回退则把不可整除的文件整体当成
+        一条记录静默解码。
+        """
+        matches = [c for c in self.FIELD_COUNTS if n % (c * 4) == 0 and n // (c * 4) >= 1]
+        if matches:
+            return max(matches)
+        msg = f"gpcw 文件大小 {n} 字节无法匹配任何已知字段布局 {self.FIELD_COUNTS}"
+        if self.strict:
+            raise FileFormatError(msg, context={"bytes": n})
+        self.warnings.append(msg + "，按单条记录回退")
         return max(1, n // 4)
 
 

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from collections.abc import Mapping
 from dataclasses import fields
 from pathlib import Path
@@ -218,6 +219,22 @@ def _require_env_field(section: str, field_name: str, *, key: str) -> None:
         )
 
 
+_GLOBAL_CONFIG_LOCK = threading.Lock()
+
+
+def _field_accepts_bool(section: str, field_name: str) -> bool:
+    """P3：目标 schema 字段是 bool 时，环境变量 ``1``/``0`` 也按 bool 收下。"""
+    subconfig = getattr(DEFAULT_CONFIG, section)
+    for fld in fields(subconfig):
+        if fld.name != field_name:
+            continue
+        ftype = fld.type
+        if isinstance(ftype, str):
+            return ftype.strip().startswith("bool")
+        return ftype is bool
+    return False
+
+
 def config_from_env(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
     """把 schema 形 ``ATST_*`` 环境变量解析为严格嵌套配置字典。
 
@@ -239,7 +256,17 @@ def config_from_env(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
             )
         section, field_name = split
         _require_env_field(section, field_name, key=key)
-        out.setdefault(section, {})[field_name] = parse_env_value(raw)
+        value = parse_env_value(raw)
+        # P3：``ATST_RATE_LIMIT_STRICT=1`` 过去被解析成 int 1，bool 字段当场
+        # fail closed；用户照“0/1 开关”直觉设置即崩。bool 字段额外收下 1/0。
+        if (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and value in (0, 1)
+            and _field_accepts_bool(section, field_name)
+        ):
+            value = bool(value)
+        out.setdefault(section, {})[field_name] = value
     return out
 
 
@@ -303,9 +330,13 @@ def get_config() -> Config:
     这是执行链（``UnifiedRuntime`` / ``WebQuoteClient``）唯一的配置读取入口：
     文件与环境变量源只在进程内解析一次，解析失败立即抛出而不降级为默认值。
     """
+    # P3：check-then-act 加锁——两个线程并发首调时只加载一次，与本仓
+    # 「线程安全口径」自洽（良性竞态也是竞态）。
     global _global_config
     if _global_config is None:
-        _global_config = load_config()
+        with _GLOBAL_CONFIG_LOCK:
+            if _global_config is None:
+                _global_config = load_config()
     return _global_config
 
 

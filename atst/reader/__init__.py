@@ -26,6 +26,12 @@ from .profile import (  # noqa: F401
     detect_profile,
     get_profile,
 )
+from .tdx_config import (  # noqa: F401
+    BOARD_TYPE_NAMES,
+    MARKET_PREFIXES,
+    BoardConfigReader,
+    IndustryConfigReader,
+)
 
 __all__ = [
     "DataProfile",
@@ -47,4 +53,8 @@ __all__ = [
     "read_day_file",
     "read_min_file",
     "resolve_vipdoc_path",
+    "BoardConfigReader",
+    "IndustryConfigReader",
+    "BOARD_TYPE_NAMES",
+    "MARKET_PREFIXES",
 ]

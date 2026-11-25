@@ -11,10 +11,16 @@ AsyncF10 四个异步镜像子客户端。公开导入路径不变：仍从 :mod
     :class:`atst.client._mixin._ClientMixin` 模板；本文件仅保留 async 方法壳
     （公开签名、传输 seam ``async _req``）、生命周期与异步特有方法
     （``quotes_concurrent`` asyncio.Semaphore、``bestip`` executor 桥）。
-"""
+
+
+P1-2（方案 B）：本模块是 **legacy 实验协议面**——生产 async 只有
+``atst.AsyncClient``（to_thread 包装同步内核，见 docs/ARCHITECTURE.md §5）；
+内核与流式面零消费本模块，物理移除排在废弃周期（v2.3 候选）。
+废弃周期第一步已启用：实例化 ``AsyncTdxClient`` 会发 ``DeprecationWarning``。"""
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -64,6 +70,13 @@ class AsyncTdxClient(_ClientMixin):
         pool: Any | None = None,
         **pool_kwargs: Any,
     ) -> None:
+        # P1-2 废弃周期第一步：legacy 实验协议面（生产 async 用 AsyncClient，v2.3 计划移除）
+        warnings.warn(
+            "AsyncTdxClient 属 legacy 实验协议面：生产 async 请使用 "
+            "atst.AsyncClient（to_thread 包装同步内核）；本类计划在 v2.3 移除。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # --- merged from _pool_binding_hardening: fail closed on ambiguous pool binding ---
         _require_unambiguous_pool_binding(
             pool=pool,
@@ -356,9 +369,13 @@ class AsyncTdxClient(_ClientMixin):
         """量价分布 / 筹码分布（命令 ``0x051A``）。"""
         return await self._adrive(self._t_volume_price_dist(symbol))
 
-    async def quotes_snapshot(self, symbols: list[str]) -> Any:
+    async def quotes_snapshot(
+        self, symbols: list[str], *, try_offline_snapshot: bool = False
+    ) -> Any:
         """异步批量行情快照（分片与回退语义见同步版 :meth:`TdxClient.quotes_snapshot`）。"""
-        return await self._adrive(self._t_quotes_snapshot(symbols))
+        return await self._adrive(
+            self._t_quotes_snapshot(symbols, try_offline_snapshot=try_offline_snapshot)
+        )
 
     async def snapshot(self, symbol: str, *, as_format: OutputFormat = "dict") -> Any:
         """实时行情 + 当日日线，合成一份快照（表驱动降级在 router 层完成）。"""

@@ -57,6 +57,8 @@ providers/ 注册表（Provider / Channel / Capability 单一事实源）
 **核心不变量**（由 `tests/provider_isolation/`、`tests/runtime/`、`tests/streaming/` 锁定）：
 
 - **零缓存**：每次请求直达绑定 Provider，无结果/负/提升缓存，无请求合并。
+  `provider_health`（`runtime/autoselect.py`）是进程级 TTL 排序反馈——只记"谁刚
+  失败过"并把 auto 候选沉尾，不缓存任何查询结果，进程重启即失忆（P1-4 文档同步）。
 - **provider-first**：一个 Plan 永不私选第二 Provider；provenance 校验失败即抛。
 - **单内核**：执行只发生在 `UnifiedRuntime → DirectProviderExecutor`。
 - **配置面即执行面契约**：`Config` 里每个键都被内核读取并改变行为，配置 → 传输只有
@@ -92,7 +94,7 @@ providers/ 注册表（Provider / Channel / Capability 单一事实源）
 
 - **单 Plan 执行**：`QueryPlanner.compile` 产出单 Provider / 单 Channel 的 `QueryPlan`，
   `DirectProviderExecutor` 按 `DIRECT_BINDINGS`（`(provider, channel, capability) → executor 方法`，
-  运行时从注册表生成，304 条；专用执行体覆盖 7 项能力（如 `_tdx_quotes`/`_tdx_bars`/`_web_quotes`），
+  运行时从注册表生成，299 条；专用执行体覆盖 7 项能力（如 `_tdx_quotes`/`_tdx_bars`/`_web_quotes`），
   其余回落 `_migrated_capability`）精确派发。
 - **跨源回退**：`FallbackPolicy` + `ProviderOrchestrator` 是**唯一**跨 Provider 容错通道；
   禁止隐式跨 Provider fallback（`DataSourceRouter` 已退化为单 Provider 选择器）。
@@ -103,7 +105,22 @@ providers/ 注册表（Provider / Channel / Capability 单一事实源）
   会把这个值归位到 `options.kwargs` 而不是路由字段。复权事件另由 `event_source` 决定
   （缺省 `eastmoney`，即 `RPT_SHAREBONUS_DET` + `RPT_IPO_ALLOTMENT` 两路按除权日合成；
   `tdx` 走 `0x000F`，其记录布局未由真机 golden 锁定，会被布局闸当场拒成 E1010）。
+- **聚合 Provider 边界（P1-4）**：`builtin`（内置聚合/常量）与 `derived`（显式聚合能力）
+  的结果不是单一上游直出——真实出数源经 `Provenance.upstream` 披露（如 `provider=derived`
+  的某条腿实际由 eastmoney 出数，则 `upstream="eastmoney"`）。`provider=` 是路由事实，
+  `upstream=` 是量纲/口径事实；wire 面在无聚合转手时不下发该键（`atst/result.py`、
+  `server/serialization.py`）。
 - **当期性**：`currentness` 由 `runtime/freshness.py` 校验，不是只声明无人读的字段。
+
+## 5. 异步只有一个故事（P1-2 方案 B）
+
+生产 async 面**只有** `atst.AsyncClient`：它是同步内核的 `asyncio.to_thread` 包装，
+事件循环并发度受线程池封顶。`transport/async_.py` 的 `AsyncConnectionPool` /
+`client/async_.py` 的 `AsyncTdxClient` 是 **legacy 实验协议面**：真异步栈，但内核
+（`DirectProviderExecutor`）与流式面**零消费**，只供直连传输层的高级用法与 wheel
+冒烟契约使用。两条"async 故事"并存是历史漂移；物理移除 legacy 面是 breaking
+change（wheel 发布契约钉住其导出），排在废弃周期（v2.3 候选），此前文档一律以
+本节口径为准。
 
 ## 5. 流式订阅
 
@@ -145,7 +162,7 @@ Fail-closed 要点（`tests/streaming/` 锁）：worker 半死、启动失败、
 | Provider / Channel / Capability | `atst/providers/__init__.py`（`PROVIDERS` 注册表） |
 | 可执行绑定 | `runtime/executor.py`（`DIRECT_BINDINGS`，启动时 `audit_runtime()` 三方对账） |
 | capability 语义 / 参数校验 | `query.py`（`QuerySpec`）+ `providers/ 声明聚合 + runtime/capability_contract.py`（`validate_call`） |
-| 协议命令账本 | `protocol/` YAML 规范 + codegen + golden_audit |
+| 协议命令账本 | `protocol/` YAML 规范 + golden_audit（L1 解析器全部手写；`tools/codegen.py` 仅生成 stub 骨架供人工落地，不是 spec→L2 自动路径，与「协议全覆盖」叙事无关——P2-8） |
 | 公开导出面 | `atst/__init__.py::__all__`（懒加载 `_LAZY`） |
 | 配置结构 | `atst.config.schema`（6 段，全部由内核读取；用户面 `docs/configuration.md`） |
 | 配置 → 传输层参数 | `atst.transport.pool.pool_settings_from_config`（唯一翻译点） |

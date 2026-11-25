@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from atst.domain.models import Quote
-from atst.errors import AllSourcesExhausted, ValidationError
+from atst.errors import AllHostsUnreachable, AllSourcesExhausted, ValidationError
 from atst.query import QueryPlanner, QuerySpec
 from atst.result import Provenance, QueryResult
 from atst.runtime.orchestration import FallbackPolicy, ProviderOrchestrator
@@ -56,17 +56,19 @@ def test_orchestrator_first_provider_success_is_not_fallback() -> None:
 
 
 def test_orchestrator_fallback_is_explicit_and_auditable() -> None:
+    # P0-10：模拟「源不可用」用传输类异常；ValidationError（调用方参数错）不再
+    # 进候选循环，由下面的专项判据单独锁定。
     class Runtime:
         def execute(self, spec):
             if spec.provider == "tdx":
-                raise ValidationError("tdx unavailable", context={"provider": "tdx"})
+                raise AllHostsUnreachable("tdx unavailable", context={"provider": "tdx"})
             return _result(spec.provider)
 
     output = ProviderOrchestrator(Runtime()).quotes(
         "sh600519", policy=FallbackPolicy.build("tdx", "eastmoney")
     )
     assert [(item.provider, item.status, item.code) for item in output.attempts] == [
-        ("tdx", "failed", "E1010"),
+        ("tdx", "failed", "E2040"),
         ("eastmoney", "ok", None),
     ]
     assert output.result.meta.provider == "eastmoney"
@@ -75,6 +77,26 @@ def test_orchestrator_fallback_is_explicit_and_auditable() -> None:
 
     # 零缓存契约：回退结果不得被任何缓存层吞并，provenance 必须保留回退事实。
     assert output.result.meta.provenance.fallback is True
+
+
+def test_caller_parameter_error_is_not_retried_across_providers() -> None:
+    """P0-10：参数错（ValidationError）不换源——逐家重试只会把真实错误埋进
+    AllSourcesExhausted 的 errors 列表。"""
+
+    class Runtime:
+        def __init__(self) -> None:
+            self.called: list[str] = []
+
+        def execute(self, spec):
+            self.called.append(str(spec.provider))
+            raise ValidationError("bad symbol", context={"provider": spec.provider})
+
+    runtime = Runtime()
+    with pytest.raises(ValidationError):
+        ProviderOrchestrator(runtime).quotes(
+            "sh600519", policy=FallbackPolicy.build("tdx", "eastmoney")
+        )
+    assert runtime.called == ["tdx"]
 
 
 def test_orchestrator_all_failures_are_sanitized() -> None:

@@ -109,6 +109,7 @@ def pool_settings_from_config(cfg: Any) -> dict[str, Any]:
         "slots_per_host": cfg.hosts.slots_per_host,
         "timeout": cfg.core.timeout,
         "heartbeat_interval": cfg.core.heartbeat_interval,
+        "heartbeat_cmd": cfg.core.heartbeat_cmd,
         "max_retries": cfg.core.max_retries,
         "rate_limiter": SessionRateLimiter.from_config(cfg.rate_limit),
         "use_tls": cfg.security.use_tls,
@@ -350,9 +351,10 @@ class ConnectionPool:
         self.speedtest_threshold = max(1, int(speedtest_threshold))
         #: M6 空闲回收阈值（秒）；``<=0`` 表示不回收。
         self.idle_timeout = float(idle_timeout) if idle_timeout else 0.0
-        #: 回收线程与探活线程是同一条，启动条件覆盖两个 knob（见 F-88）。
-        if self.heartbeat_interval or self.idle_timeout > 0:
-            self._start_heartbeat()
+        #: P1-1（A3）：回收线程与探活线程是同一条，启动条件覆盖两个 knob（见 F-88）——
+        #: 但起跑点移到 :meth:`_get_conn_locked`（首次真正握住一条 socket 才武装，
+        #: 与异步池同一口径）。构造即起线程会让常驻化的家族客户端在「只构造不使用」
+        #: 的族上白养一条全表循环；没有连接就没有可回收的东西，也就没有起跑的理由。
 
     # -- 槽位选择 ----------------------------------------------------------- #
     def _ordered_slots(self) -> list[Slot]:
@@ -389,6 +391,22 @@ class ConnectionPool:
             slot.conn = conn
         if not slot.conn.connected:
             slot.conn.connect()
+        #: P1-1（A3）：心跳/回收线程惰性起跑——首次真正握住一条 socket 才武装，
+        #: 与异步池把 ``start_heartbeat()`` 放在 ``_get_conn_locked`` 是同一口径。
+        #: 双检锁防住"并发首跳各起一条循环"；两道门都读全两个 knob
+        #: （G41 判据五：把任一 knob 调成关闭值仍然关得掉整条线程，F-88）。
+        if (
+            self._hb is None
+            and not self._closed
+            and (self.heartbeat_interval or self.idle_timeout > 0)
+        ):
+            with self._lock:
+                if (
+                    self._hb is None
+                    and not self._closed
+                    and (self.heartbeat_interval or self.idle_timeout > 0)
+                ):
+                    self._start_heartbeat()
         slot.uses += 1
         return slot.conn
 
@@ -661,7 +679,16 @@ class ConnectionPool:
             except TdxError as exc:
                 last_exc = exc
                 self.stats.failures += 1
-                self._mark_failure(slot, exc, generation=slot.generation, conn=leased_conn)
+                # P0-2：失败归属必须用租约捕获的代际；租约没建立起来才回落槽位代际。
+                # 读 slot.generation 会让 update_hosts 后旧连接的迟到失败记到新主站头上。
+                self._mark_failure(
+                    slot,
+                    exc,
+                    generation=leased_generation
+                    if leased_generation is not None
+                    else slot.generation,
+                    conn=leased_conn,
+                )
                 advice = exc.advice
                 if attempt + 1 >= max_attempts or not advice.retryable:
                     break
@@ -675,7 +702,15 @@ class ConnectionPool:
                 continue
             except Exception as exc:
                 last_exc = exc
-                self._mark_failure(slot, exc, generation=slot.generation, conn=leased_conn)
+                # P0-2：与 TdxError 分支同一口径——优先租约代际，见上。
+                self._mark_failure(
+                    slot,
+                    exc,
+                    generation=leased_generation
+                    if leased_generation is not None
+                    else slot.generation,
+                    conn=leased_conn,
+                )
                 if attempt + 1 >= max_attempts:
                     break
                 self.stats.retries += 1
@@ -1034,10 +1069,20 @@ class ConnectionPool:
                         continue
                     failed: BaseException | None = None
                     rtt: float | None = None
-                    generation = slot.generation
+                    conn: TcpConnection | None = None
+                    generation: int | None = None
                     try:
                         with slot.lock:
                             conn = slot.conn
+                            # T-1/P0-2：代际必须和这次真正 ping 的连接在同一把
+                            # slot.lock 里一起捕获。旧实现在锁外先读 slot.generation，
+                            # update_hosts 可以在读完之后、拿到锁之前把同一槽位的
+                            # host/generation 重绑（:meth:`update_hosts` 795-799 仍复用
+                            # 旧连接），于是 ping 的是旧连接、失败却记到新代际主站头上。
+                            # 与请求路径的租约捕获（:meth:`request` 670-689）同一口径：
+                            # 锁内快照的代际若已被热更新顶掉，迟到失败会被
+                            # :meth:`_slot_is_current` 正确丢弃，而不是串到新主站。
+                            generation = slot.generation
                             if conn is None or not conn.connected:
                                 self._release_probe_token(slot, generation)
                                 continue
@@ -1050,12 +1095,16 @@ class ConnectionPool:
                             except Exception as exc:
                                 failed = exc
                     except BaseException:
-                        self._release_probe_token(slot, generation)
+                        # 连锁都没拿到时 generation 仍为 None：回落当前槽位代际。
+                        self._release_probe_token(
+                            slot, generation if generation is not None else slot.generation
+                        )
                         raise
+                    attributed = generation if generation is not None else slot.generation
                     if failed is not None:
-                        self._mark_failure(slot, failed, generation=generation, conn=conn)
+                        self._mark_failure(slot, failed, generation=attributed, conn=conn)
                     elif rtt is not None:
-                        self._mark_success(slot, generation=generation, rtt_ms=rtt)
+                        self._mark_success(slot, generation=attributed, rtt_ms=rtt)
 
         self._hb = threading.Thread(target=loop, name="atst-heartbeat", daemon=True)
         self._hb.start()

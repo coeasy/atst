@@ -61,17 +61,15 @@ SPEC = ProviderSpec(
         ),
         _c(
             "extended",
-            "bars",
             "ex_bars",
             "ex_instruments",
             "ex_market_list",
             "ex_quotes",
-            "quotes",
             live=True,
         ),
-        _c("goods", "bars", "goods_bars", "goods_quotes", "quotes", live=True),
+        _c("goods", "goods_bars", "goods_quotes", live=True),
         _c("f10", "f10", "f10_catalog"),
-        _c("mac", "mac_quotes", "quotes", live=True),
+        _c("mac", "mac_quotes", live=True),
     ),
 )
 

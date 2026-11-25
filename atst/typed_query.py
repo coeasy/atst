@@ -74,6 +74,10 @@ def _domain_record_cls() -> dict[str, type]:
         "bond_history_bill": BondRecord,
         "convertible_bond": BondRecord,
         # Futures
+        # R-8: no dedicated FuturesRecord exists in atst.domain.records, and that
+        # module is outside this fix's ownership. Until one is added there, these
+        # capabilities keep the legacy BondRecord mapping (wrong field semantics)
+        # rather than silencing typed normalization by returning None.
         "futures_kline": BondRecord,
         "futures_base_info": BondRecord,
         "futures_realtime": BondRecord,
@@ -164,7 +168,14 @@ def call_payload_from_typed(query: CapabilityQuery) -> dict[str, Any]:
     for item in fields(query):
         if item.name in _RESERVED_QUERY_FIELDS:
             continue
-        params[item.name] = getattr(query, item.name)
+        value = getattr(query, item.name)
+        # R-8：这里必须继续下发每个字段，包括值等于 dataclass 默认值的字段。
+        # capability contract 把 ``symbol`` / ``codes`` 这类参数声明为必填，而
+        # 它们在 dataclass 上又带有空默认值；按"只发非默认字段"裁剪会让内核
+        # 编译期判定为 missing required argument（v14 contract_audit 实测红），
+        # 也会让 provider 实现拿到与签名不匹配的 kwargs。默认值的语义由
+        # capability contract 决定，不在这一层做裁剪。
+        params[item.name] = value
     return params
 
 

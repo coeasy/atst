@@ -10,8 +10,8 @@ import json
 import pytest
 
 from atst.errors import TdxError
-from atst.sources.fundflow import SinaFundFlowSource
 from atst.sources.session import WebQuoteSession
+from atst.sources.sina.fundflow import SinaFundFlowSource
 
 pytestmark = pytest.mark.unit
 
@@ -70,6 +70,14 @@ def _src_with(monkeypatch: pytest.MonkeyPatch, payload: object) -> SinaFundFlowS
     text = payload if isinstance(payload, str) else json.dumps(payload)
     monkeypatch.setattr(src, "_request_text", lambda url, **kw: text)
     return src
+
+
+# -- P2-4c 兼容 ------------------------------------------------------------- #
+def test_legacy_reexport_kept() -> None:
+    """P2-4c（F14）：旧路径 ``atst.sources.fundflow`` 保留同名 re-export。"""
+    from atst.sources import fundflow as _legacy
+
+    assert _legacy.SinaFundFlowSource is SinaFundFlowSource
 
 
 # -- 个股 ------------------------------------------------------------------- #

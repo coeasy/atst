@@ -12,8 +12,14 @@ The handler owns two surfaces:
   in-process :class:`~atst.streaming.StatefulQuoteStream` onto the WebSocket connection so
   a client receives server-pushed ``snapshot`` / ``tick`` / ``error`` frames instead of
   polling. The push frames are emitted from the streaming worker through the connection's
-  ``send`` callback; subscription state is **per connection** (the server builds one
-  handler instance per connection), so two clients never share each other's streams.
+  ``send`` callback; subscription bookkeeping (which ``sub_id`` exists on which connection)
+  is **per connection** (the server builds one handler instance per connection), so two
+  clients never see each other's ``list`` / ``unsubscribe``.
+
+  What *is* shared is the upstream poll loop (F-8): connections watching the same symbols
+  through the same provider attach to one :class:`_SharedPoller` instead of each starting
+  its own loop. The poller owns the stream and fans each frame out to every subscriber's
+  own ``send``; delivery stays per-connection, and a dead connection only drops itself.
 """
 
 from __future__ import annotations
@@ -22,6 +28,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import threading
 from typing import Any
 
 from ..client.api import AsyncClient, Client
@@ -36,7 +43,7 @@ from .wire_fields import (
     as_request_bool,
     as_request_float,
     as_request_int,
-    reject_reserved_kwargs,
+    parse_query_call,
     reject_undeclared,
 )
 
@@ -60,6 +67,159 @@ ERR_INTERNAL = -32603
 
 #: 推送帧的方法名（与请求/响应方法区分，避免和 ``subscribe`` 等控制方法混淆）。
 PUSH_METHOD = "push"
+
+#: F-8：等价订阅共享同一条上游轮询的登记表。
+#:
+#: 键里带上 ``loop`` / ``Client`` 的 ``id``：两条连接只有在同一事件循环、同一份
+#: ``Client``（即同一套 runtime 配置）上才可能共享上游——跨 server / 跨循环的订阅
+#: 即使标的相同也各起一条，绝不把一条循环里的流借给另一条循环。
+#: 值在引用计数归零时摘除（见 :meth:`_SharedPoller.detach`），进程里不留条目。
+_POLLERS: dict[tuple[Any, ...], _SharedPoller] = {}
+_POLLERS_LOCK = threading.RLock()
+
+
+def _poller_key(
+    loop: asyncio.AbstractEventLoop,
+    client: Any,
+    symbols: Any,
+    provider: str,
+    interval: float,
+    diff_only: bool,
+    max_queue: int,
+) -> tuple[Any, ...]:
+    """共享键：``(loop, client, 排序后的标的, provider, 节奏参数)``。
+
+    节奏参数（``interval`` / ``diff_only`` / ``max_queue``）也进键，是刻意的：把
+    ``interval=5`` 的订阅挂到 ``interval=1`` 的轮询上会静默改掉它的节拍，那属于行为
+    变更而不是去重。同参数重复订阅（F-8 说的那个场景）才共享。
+    """
+    return (
+        id(loop),
+        id(client),
+        tuple(sorted(str(symbol) for symbol in symbols)),
+        provider,
+        float(interval),
+        bool(diff_only),
+        int(max_queue),
+    )
+
+
+class _SharedPoller:
+    """一条上游轮询，被所有等价订阅共享（F-8）。
+
+    流只建一次，回调指向本对象而不是某条连接——因此 poller 不持有连接对象，连接
+    断开不会把流带走；第二条连接订阅同一批标的只是往 ``subscribers`` 里加一格。
+    每帧逐条 fan-out：单条连接的投递失败只摘它自己（:meth:`drop`），同一 poller 上
+    其它连接的推送不受影响。
+    """
+
+    def __init__(
+        self,
+        key: tuple[Any, ...],
+        *,
+        client: Any,
+        loop: asyncio.AbstractEventLoop,
+        symbols: list[str],
+        provider: str,
+        interval: float,
+        diff_only: bool,
+        max_queue: int,
+    ) -> None:
+        self.key = key
+        #: 强引用 ``loop`` / ``client``：键里用的是它们的 ``id``，登记项还在时这两个
+        #: 对象就不会被回收，``id`` 也不会被新对象复用，不会把两条无关订阅撞进一格。
+        self.client = client
+        self.loop = loop
+        self.symbols = list(symbols)
+        self.provider = provider
+        self.interval = interval
+        self.diff_only = diff_only
+        self.max_queue = max_queue
+        self.stream: Any | None = None
+        #: ``(id(handler), sub_id)`` → ``(handler, sub_id)``。``sub_id`` 只在单条连接
+        #: 内唯一（``sub1`` / ``sub2``…），所以 handler 身份必须进键。
+        self.subscribers: dict[tuple[int, str], tuple[Any, str]] = {}
+        #: 最近一帧原始 payload（按标的）：后加入的连接 attach 时回放一次，免得
+        #: "第二条连接要等下一个轮询节拍才看到数据"——单订阅者的首帧语义因此保持。
+        self.last_data: dict[str, dict[str, Any]] = {}
+        #: 引用计数归零后置真；此后任何 attach 都不会再挂上来（fail-closed）。
+        self.closed = False
+
+    @property
+    def refcount(self) -> int:
+        with _POLLERS_LOCK:
+            return len(self.subscribers)
+
+    @property
+    def state(self) -> Any:
+        """给 ``list`` 用的流状态（与真实流同形状：枚举或裸字符串）。"""
+        stream = self.stream
+        return None if stream is None else getattr(stream, "state", None)
+
+    def attach(self, handler: Any, sub_id: str) -> bool:
+        """挂一个订阅者；poller 已收尾时返回 ``False``（调用方重建）。"""
+        with _POLLERS_LOCK:
+            if self.closed:
+                return False
+            self.subscribers[(id(handler), sub_id)] = (handler, sub_id)
+            return True
+
+    def detach(self, handler: Any, sub_id: str) -> Any | None:
+        """摘一个订阅者；返回"该停的流"仅当这是最后一个订阅者。
+
+        摘除与登记表删除在同一把锁内完成，因此引用计数归零后不会再有 attach 进来
+        （fail-closed）；返回的流由调用方 ``await stream.stop()`` 排空。
+        """
+        with _POLLERS_LOCK:
+            self.subscribers.pop((id(handler), sub_id), None)
+            if self.subscribers:
+                return None
+            self.closed = True
+            if _POLLERS.get(self.key) is self:
+                del _POLLERS[self.key]
+            return self.stream
+
+    def fan_out(self, symbol: str, data: dict[str, Any]) -> None:
+        """流式 worker 的回调：把一帧分发给每个订阅者，各自独立失败。"""
+        if isinstance(data, dict):
+            with _POLLERS_LOCK:
+                self.last_data[str(symbol)] = data
+        with _POLLERS_LOCK:
+            targets = list(self.subscribers.values())
+        for handler, sub_id in targets:
+            try:
+                handler._on_quote(symbol, data)
+            except Exception:  # pragma: no cover - 防御：回调本身不应抛
+                logger.exception("WS 订阅投递失败，摘除该订阅")
+                self.drop(handler, sub_id)
+
+    def fan_out_error(self, exc: Exception) -> None:
+        with _POLLERS_LOCK:
+            targets = list(self.subscribers.values())
+        for handler, sub_id in targets:
+            try:
+                handler._on_error(exc)
+            except Exception:  # pragma: no cover - 防御：回调本身不应抛
+                logger.exception("WS 错误帧投递失败，摘除该订阅")
+                self.drop(handler, sub_id)
+
+    def replay(self, handler: Any) -> None:
+        """新订阅者接入已在跑的 poller：先补一帧当前快照（没有就什么都不做）。"""
+        with _POLLERS_LOCK:
+            pending = [
+                (symbol, self.last_data[str(symbol)])
+                for symbol in self.symbols
+                if str(symbol) in self.last_data
+            ]
+        for symbol, data in pending:
+            with contextlib.suppress(Exception):
+                handler._on_quote(symbol, data)
+
+    def drop(self, handler: Any, sub_id: str) -> None:
+        """摘掉一条投递失败的订阅（只影响这一条连接上的这一格）。"""
+        stream = handler._forget_subscription(sub_id)
+        if stream is not None:
+            handler._spawn(handler._safe_stop(stream))
 
 
 class RuntimeJsonRpcHandler:
@@ -89,18 +249,28 @@ class RuntimeJsonRpcHandler:
         self._owns_client = client is None
         #: 每个连接一份：流式控制面需要把推送帧送到具体连接，而 ``serve_runtime_ws``
         #: 在调用方不传 handler 时为每条连接造一份 handler，所以这里的订阅表天然
-        #: 是连接私有的，不会跨连接串台。
+        #: 是连接私有的，不会跨连接串台。表里存的是 :class:`_SharedPoller`（F-8 后
+        #: 多条连接可以共享同一条上游轮询，但"谁订了什么"仍按连接记账）。
         self._loop: asyncio.AbstractEventLoop | None = None
         self._send: Any | None = None
         self._async_client: AsyncClient | None = None
         self._subs: dict[str, Any] = {}
         self._seq = 0
+        #: P1-9/M5：订阅表（``_subs`` / ``_sub_providers`` / ``_sub_symbols``）的访问
+        #: 统一纪律——变更与快照都过这把锁，且订阅/unsubscribe 变更经
+        #: ``run_coroutine_threadsafe`` 调度到 loop 线程执行。过去 ``handle_message``
+        #: 经 ``asyncio.to_thread`` 调度，unsubscribe/list 在 worker 线程直接读写这批
+        #: dict，而 ``_subscribe`` / ``_on_quote`` 在 loop 线程与流式 worker 线程碰同一批
+        #: 键，无锁并发下 list 迭代可能撞上并发变更（RuntimeError → E9000）。
+        self._subs_lock = threading.RLock()
         #: 已投出去、还没跑完的推送帧（:meth:`_schedule_push` 的背压窗口）。
         self._pending_pushes: list[Any] = []
         #: 标的 → 订阅时选中的 Provider（推送帧的 ``meta.provider`` 出处）。
         self._sub_providers: dict[str, str] = {}
         #: 订阅 id → 标的表（``list`` 面向消费方的对账口径，``_subscribe`` 登记）。
         self._sub_symbols: dict[str, list[str]] = {}
+        #: 本连接的发送口已经坏过一次：只摘一次订阅，不重复排空。
+        self._delivery_broken = False
 
     # ------------------------------------------------------------------
     # 连接生命周期（由 ``serve_runtime_ws`` 的每条连接调用一次）
@@ -121,28 +291,44 @@ class RuntimeJsonRpcHandler:
 
         每个流都带 ``timeout`` 上界（见 :class:`~atst.streaming.StatefulQuoteStream`），
         因此这里不会无限挂起——连接断开后最多等到流的排空超时即返回。
+
+        F-8 之后"停本连接的订阅"与"停上游轮询"不再等价：只有本连接是最后一个
+        订阅者时才由这里 ``stop`` 那条流；还有别的连接在听时，流继续跑，本连接
+        只是从 fan-out 名单里摘掉。
         """
-        streams = list(self._subs.values())
-        self._subs.clear()
-        self._sub_symbols.clear()
+        with self._subs_lock:
+            pollers = list(self._subs.items())
+            self._subs.clear()
+            self._sub_symbols.clear()
+            #: 没有活跃订阅时整表清空（与 ``_unsubscribe_locked`` 同一口径）。
+            self._sub_providers.clear()
+        streams: list[Any] = []
+        for sub_id, poller in pollers:
+            stream = poller.detach(self, sub_id)
+            if stream is not None:
+                streams.append(stream)
         for stream in streams:
             with contextlib.suppress(Exception):
                 await stream.stop()
 
-    def close(self) -> None:
-        """释放本处理器自建的 ``Client``，并尽量停掉残留的实时流。幂等。
+    async def close(self) -> None:
+        """释放本处理器自建的 ``Client``，并停掉残留的实时流。幂等。
 
-        过去 WS 面没有任何释放入口（第 26 轮 F-100）。这条链今天不释放 socket 与心跳
-        线程——``Client`` 跨调用不持有连接，内置执行器也没有 ``close()``（本轮实测，判据
-        ``tests/runtime/test_close_chain_ownership.py``）；它兑现的是"自造的才由自造者关"
-        这条所有权口径，以及注入执行器那条形同协议的口子。
+        P1-9/M4：改成协程、在 loop 线程内直接 ``await`` 收尾。旧实现是同步方法里
+        ``run_coroutine_threadsafe(...).result(timeout=5)``，而 ``__main__`` 宿主在
+        loop 线程的 ``finally`` 里调它——协程永远得不到调度，白等 5 秒后 TimeoutError
+        被 suppress，残留流并未被停。现在宿主 ``await handler.close()``，同一循环内
+        直接排空订阅；跨线程的调用方也可以 ``asyncio.run(handler.close())``。
+
+        这条链今天不释放 socket 与心跳线程——``Client`` 跨调用不持有连接，内置执行器
+        也没有 ``close()``（本轮实测，判据 ``tests/runtime/test_close_chain_ownership.py``）；
+        它兑现的是"自造的才由自造者关"这条所有权口径，以及注入执行器那条形同协议的口子。
         """
         if self._loop is not None and self._subs:
-            # 尽力而为：连接侧通常已经 stop_all_subscriptions，这里只是兜底。
+            # 同一 loop 内直接排空：stop_all_subscriptions 里每个 stream.stop 都有
+            # 有界排空（见其 docstring），不会把宿主停机挂在无界等待上。
             with contextlib.suppress(Exception):
-                asyncio.run_coroutine_threadsafe(self.stop_all_subscriptions(), self._loop).result(
-                    timeout=5
-                )
+                await self.stop_all_subscriptions()
         if self._owns_client:
             self._owns_client = False
             self.client.close()
@@ -191,8 +377,13 @@ class RuntimeJsonRpcHandler:
                 ensure_ascii=False,
             )
         except Exception as exc:
+            # P2-6/L4：业务失败的顶层 message 提为信封 message（与 MCP/HTTP 对齐——
+            # 过去顶层是通用文案 "request failed"，细节只在 ``error.data.message``，
+            # 同一失败三面人读位置不同）。协议层失败（parse/invalid request/方法不存在
+            # /invalid params）仍是通用 RPC 文案，理由在信封。
+            envelope = to_error_envelope(exc, request_id=str(request_id))
             return json.dumps(
-                self._error(request_id, ERR_INTERNAL, "request failed", exc), ensure_ascii=False
+                self._error(request_id, ERR_INTERNAL, envelope.message, exc), ensure_ascii=False
             )
         return json.dumps(
             {"jsonrpc": JSONRPC_VERSION, "id": request_id, "result": result},
@@ -270,19 +461,14 @@ class RuntimeJsonRpcHandler:
                 },
             }
         if method == "query":
-            capability = params.get("capability")
-            if not isinstance(capability, str) or not capability.strip():
-                raise ValidationError("capability is required")
-            args = params.get("args", [])
-            kwargs = params.get("kwargs", {})
-            if not isinstance(args, list):
-                raise ValidationError("args must be an array")
-            if not isinstance(kwargs, dict):
-                raise ValidationError("kwargs must be an object")
-            reject_reserved_kwargs(
+            # 这些 ``params.get`` 必须留在 ``_dispatch`` 体内（``test_wire_declared_fields``
+            # 的 AST 判据只扫这里）；形状校验本体收口到 :func:`parse_query_call`（P2-6/L1）。
+            capability, args, kwargs = parse_query_call(
                 face="ws_params",
                 where='WS method "query" 的 kwargs',
-                kwargs=kwargs,
+                capability=params.get("capability"),
+                args=params.get("args", []),
+                kwargs=params.get("kwargs", {}),
             )
             return serialize_result(
                 self.client.call(
@@ -424,34 +610,142 @@ class RuntimeJsonRpcHandler:
     ) -> str:
         if self._async_client is None:  # 防御：理论上 bind_connection 已建立
             self._async_client = AsyncClient(client=self.client)
-        stream = self._async_client.stream(
+        provider_key = str(provider) if provider else "tdx"
+        with self._subs_lock:
+            self._seq += 1
+            sub_id = f"sub{self._seq}"
+        key = _poller_key(
+            self._loop,  # type: ignore[arg-type]
+            self.client,
             symbols,
-            provider=provider,
-            interval=interval,
-            diff_only=diff_only,
-            max_queue=max_queue,
-            on_quote=self._on_quote,
-            on_error=self._on_error,
+            provider_key,
+            interval,
+            diff_only,
+            max_queue,
         )
-        await stream.start()
-        self._seq += 1
-        sub_id = f"sub{self._seq}"
-        self._subs[sub_id] = stream
-        #: 记住这条订阅用的 Provider：推送帧要把出处带上，否则消费方分不清这一帧
-        #: 是 TDX 还是别家（请求-响应路径的 ``meta.provider`` 是同一件事）。
-        for symbol in symbols:
-            self._sub_providers[str(symbol)] = str(provider) if provider else "tdx"
-        #: 订阅 → 标的表：``list`` 要把每条订阅订了什么暴露给消费方，否则客户端
-        #: 没法把标的对应到 ``sub_id``（退订/对账都无从下手）。
-        self._sub_symbols[sub_id] = list(symbols)
+        poller, created = self._acquire_poller(
+            key, symbols, provider_key, interval, diff_only, max_queue, sub_id
+        )
+        with self._subs_lock:
+            self._subs[sub_id] = poller
+            #: 记住这条订阅用的 Provider：推送帧要把出处带上，否则消费方分不清这一帧
+            #: 是 TDX 还是别家（请求-响应路径的 ``meta.provider`` 是同一件事）。
+            for symbol in symbols:
+                self._sub_providers[str(symbol)] = provider_key
+            #: 订阅 → 标的表：``list`` 要把每条订阅订了什么暴露给消费方，否则客户端
+            #: 没法把标的对应到 ``sub_id``（退订/对账都无从下手）。
+            self._sub_symbols[sub_id] = list(symbols)
+        if created:
+            # ``_acquire_poller`` 只在 created=True 时返回新建的 poller，且建时已把
+            # ``stream`` 赋好；这里显式取局部量只为让类型收窄（mypy）。
+            new_stream = poller.stream
+            assert new_stream is not None
+            try:
+                await new_stream.start()
+            except BaseException:
+                # 起流失败：这条订阅不能留在表里，否则退订/关连接会去停一条半死的流。
+                stream = self._forget_subscription(sub_id)
+                if stream is not None:
+                    await self._safe_stop(stream)
+                raise
+        else:
+            #: 后加入的连接拿一帧当前快照，与"新起一条流时的首帧"对齐；没有快照就
+            #: 等下一个轮询节拍，不伪造数据。
+            poller.replay(self)
         return sub_id
+
+    def _acquire_poller(
+        self,
+        key: tuple[Any, ...],
+        symbols: list[str],
+        provider: str,
+        interval: float,
+        diff_only: bool,
+        max_queue: int,
+        sub_id: str,
+    ) -> tuple[_SharedPoller, bool]:
+        """取（或建）同键的共享轮询，并在同一把锁里把本订阅挂上去。
+
+        "建流 + 登记 + 挂订阅者"必须原子：否则两个并发 subscribe 会各建一条流，
+        F-8 要修的重复轮询就还在。``closed`` 的登记项在 :meth:`_SharedPoller.detach`
+        里已被同一把锁摘掉，所以这里拿到的一定是活的；``attach`` 的返回值只是
+        fail-closed 兜底。
+        """
+        with _POLLERS_LOCK:
+            poller = _POLLERS.get(key)
+            if poller is not None and poller.attach(self, sub_id):
+                return poller, False
+            poller = _SharedPoller(
+                key,
+                client=self.client,
+                loop=self._loop,  # type: ignore[arg-type]
+                symbols=symbols,
+                provider=provider,
+                interval=interval,
+                diff_only=diff_only,
+                max_queue=max_queue,
+            )
+            #: 回调指向 poller 自己，而不是某条连接的 ``_on_quote``——流因此不持有
+            #: 任何连接对象，跨连接共享才是安全的。
+            async_client = self._async_client
+            assert async_client is not None  # _subscribe_from_params 已建好
+            poller.stream = async_client.stream(
+                list(symbols),
+                provider=provider,
+                interval=interval,
+                diff_only=diff_only,
+                max_queue=max_queue,
+                on_quote=poller.fan_out,
+                on_error=poller.fan_out_error,
+            )
+            _POLLERS[key] = poller
+            poller.attach(self, sub_id)
+            return poller, True
 
     def _unsubscribe_from_params(self, sub_id: Any) -> dict[str, Any]:
         if not isinstance(sub_id, str) or not sub_id:
             raise ValidationError("id is required")
-        found = sub_id in self._subs
-        if found:
-            stream = self._subs.pop(sub_id)
+        # P1-9/M5：订阅表变更统一到 loop 线程——这里只做入参校验，读写与停流都在
+        # loop 上执行（与 ``_subscribe_from_params`` 同一调度形状），不再在 worker
+        # 线程直接碰 ``_subs``。无连接上下文（门禁/单测）没有 loop 可调度，就地清理
+        # （与旧实现同口径：无 loop 时只摘表，不停流——没有连接就没有可停的 socket）。
+        if self._loop is None:
+            result = self._unsubscribe_locked(sub_id)
+            result.pop("_stream", None)
+            return result
+        return asyncio.run_coroutine_threadsafe(self._unsubscribe(sub_id), self._loop).result(
+            timeout=10
+        )
+
+    async def _unsubscribe(self, sub_id: str) -> dict[str, Any]:
+        """loop 线程上的退订：摘表 + 只在最后一个订阅者时停流。"""
+        result = self._unsubscribe_locked(sub_id)
+        stream = result.pop("_stream", None)
+        if stream is not None:
+            await self._safe_stop(stream)
+        return result
+
+    def _unsubscribe_locked(self, sub_id: str) -> dict[str, Any]:
+        with self._subs_lock:
+            found = sub_id in self._subs
+        #: 引用计数在 :meth:`_SharedPoller.detach` 里减；只有减到 0 才返回要停的流。
+        #: 重复退订时 ``found`` 为假、``detach`` 不执行，计数不会被多减一次。
+        stream = self._forget_subscription(sub_id) if found else None
+        return {
+            "status": "unsubscribed",
+            "id": sub_id,
+            "found": found,
+            "_stream": stream,
+        }
+
+    def _forget_subscription(self, sub_id: str) -> Any | None:
+        """把一条订阅从本连接的账上摘掉；返回"该停的流"仅当它是上游最后一个订阅者。
+
+        幂等：``sub_id`` 已不在表里时什么都不做、返回 ``None``。锁序固定为
+        ``_subs_lock`` → ``_POLLERS_LOCK``（后者只在 ``detach`` 内部短暂持有）。
+        """
+        with self._subs_lock:
+            poller = self._subs.pop(sub_id, None)
             self._sub_symbols.pop(sub_id, None)
             #: 出处表跟着订阅一起回收：没有活跃订阅时整表清空；表本身也有容量上限，
             #: 长期反复换标的不会把它撑成慢泄漏。
@@ -462,46 +756,48 @@ class RuntimeJsonRpcHandler:
                     : len(self._sub_providers) - MAX_TRACKED_SUB_PROVIDERS
                 ]:
                     del self._sub_providers[symbol]
-            if self._loop is not None:
-                asyncio.run_coroutine_threadsafe(self._safe_stop(stream), self._loop).result(
-                    timeout=10
-                )
-        return {"status": "unsubscribed", "id": sub_id, "found": found}
+        if poller is None:
+            return None
+        return poller.detach(self, sub_id)
 
     async def _safe_stop(self, stream: Any) -> None:
         with contextlib.suppress(Exception):
             await stream.stop()
 
     def _list_subscriptions(self) -> dict[str, Any]:
-        items = []
-        for sub_id, stream in self._subs.items():
-            # 真实 ``AsyncStatefulQuoteStream.state`` 是 ``StreamState`` 枚举（有 ``.value``），
-            # 但流式实现可能演进为其它形状（含裸字符串）。这里对两种形状都稳健：
-            # 枚举取 ``.value``，裸字符串/缺属性回退到原值或 ``"running"``，绝不因状态
-            # 形状差异把 ``list`` 这种只读调用吞成 E9000（第 31 轮判据暴露的脆弱点）。
-            state = getattr(stream, "state", None)
-            if state is None:
-                state_value: Any = "running"
-            else:
-                state_value = getattr(state, "value", state)
-            symbols = self._sub_symbols.get(sub_id, [])
-            item: dict[str, Any] = {
-                "id": sub_id,
-                "state": state_value,
-                #: 每条订阅的标的与出处 Provider：让消费方不依赖建立时的请求
-                #: 历史就能对账、退订（与 ``_sub_providers`` 同一出处口径）。
-                "symbols": list(symbols),
-            }
-            if symbols:
-                item["provider"] = self._sub_providers.get(symbols[0], "tdx")
-            items.append(item)
+        # P1-9/M5：快照在锁内取——``_subscribe``（loop 线程）与退订在同一把锁下变更，
+        # worker 线程的只读快照不再与变更竞速，list 迭代不会撞 RuntimeError。
+        with self._subs_lock:
+            items = []
+            for sub_id, stream in self._subs.items():
+                # 真实 ``AsyncStatefulQuoteStream.state`` 是 ``StreamState`` 枚举（有 ``.value``），
+                # 但流式实现可能演进为其它形状（含裸字符串）。这里对两种形状都稳健：
+                # 枚举取 ``.value``，裸字符串/缺属性回退到原值或 ``"running"``，绝不因状态
+                # 形状差异把 ``list`` 这种只读调用吞成 E9000（第 31 轮判据暴露的脆弱点）。
+                state = getattr(stream, "state", None)
+                if state is None:
+                    state_value: Any = "running"
+                else:
+                    state_value = getattr(state, "value", state)
+                symbols = self._sub_symbols.get(sub_id, [])
+                item: dict[str, Any] = {
+                    "id": sub_id,
+                    "state": state_value,
+                    #: 每条订阅的标的与出处 Provider：让消费方不依赖建立时的请求
+                    #: 历史就能对账、退订（与 ``_sub_providers`` 同一出处口径）。
+                    "symbols": list(symbols),
+                }
+                if symbols:
+                    item["provider"] = self._sub_providers.get(symbols[0], "tdx")
+                items.append(item)
         return {"subscriptions": items}
 
     def _on_quote(self, symbol: str, data: dict[str, Any]) -> None:
         """流式 worker 每轮轮询到快照时调用（同步回调）。
 
         推送帧通过 ``run_coroutine_threadsafe`` 调度到连接循环，不阻塞流式 worker；
-        单条 ``send`` 失败只记日志，不影响其它订阅。
+        单条 ``send`` 失败只摘本连接的订阅（见 :meth:`_on_delivery_failure`），
+        共享同一条上游轮询的其它连接照常收帧。
         """
         if self._loop is None or self._send is None:
             return
@@ -551,10 +847,46 @@ class RuntimeJsonRpcHandler:
     async def _emit(self, frame: dict[str, Any]) -> None:
         if self._send is None:
             return
-        await self._send(json.dumps(frame, ensure_ascii=False, default=str))
+        try:
+            await self._send(json.dumps(frame, ensure_ascii=False, default=str))
+        except Exception:
+            #: F-8：发送口坏了就只摘本连接。共享 poller 上还有别的订阅者，它们的
+            #: 投递各自独立；把异常咽下去而不是让它把 fan-out 带塌，也不是让整条
+            #: 上游轮询跟着停。
+            logger.warning("WS 推送发送失败，摘除本连接的全部订阅", exc_info=True)
+            self._on_delivery_failure()
+
+    def _on_delivery_failure(self) -> None:
+        """发送口已经坏了：把本连接的订阅全部摘掉（各自减引用计数），只做一次。
+
+        幂等由 ``_delivery_broken`` 与 ``stop_all_subscriptions`` 自己的空表判断共同
+        保证：并发的失败帧不会重复排空，也不会把同一条订阅减两次。
+        """
+        if self._delivery_broken:
+            return
+        self._delivery_broken = True
+        self._spawn(self.stop_all_subscriptions())
+
+    def _spawn(self, coro: Any) -> None:
+        """把收尾协程挂到连接循环上；循环已关就丢掉协程，不制造孤儿任务。
+
+        用 ``run_coroutine_threadsafe`` 而不是 ``loop.create_task``：fan-out 回调既可能
+        跑在 loop 线程（异步流），也可能跑在流式 worker 线程（同步流），后者直接
+        ``create_task`` 会抛 "no running event loop"。
+        """
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            coro.close()
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(coro, loop)
+        except RuntimeError:  # pragma: no cover - 循环正在关闭
+            coro.close()
 
     def _push_provider(self, symbol: str) -> str:
-        return self._sub_providers.get(str(symbol), "tdx")
+        # P1-9/M5：回调跑在流式 worker 线程上，出处表与订阅表同一把锁。
+        with self._subs_lock:
+            return self._sub_providers.get(str(symbol), "tdx")
 
     @staticmethod
     def _drain_warnings() -> list[dict[str, str]]:
@@ -590,7 +922,12 @@ class RuntimeJsonRpcHandler:
         pending.append(future)
         overflow = len(pending) - MAX_PENDING_PUSH_FRAMES
         if overflow > 0:
+            # P0-5：被丢弃的帧必须 cancel——只删引用的话，协程已在 loop 队列里，
+            # 帧照样发送、内存照样涨，"慢客户端反压"并不存在。
+            dropped = pending[:overflow]
             del pending[:overflow]
+            for item in dropped:
+                item.cancel()
             logger.warning(
                 "WS 推送积压超过 %d 帧，丢弃最旧的 %d 帧（慢客户端反压）",
                 MAX_PENDING_PUSH_FRAMES,

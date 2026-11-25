@@ -185,7 +185,8 @@ def test_the_documented_gate_denominators_are_computed_not_copied() -> None:
     assert gates_n == ci_n == map_n >= 10, (
         f"发布口径的三处计数不再同步：gates {gates_n}、CI 作业 {ci_n}、映射表 {map_n}"
     )
-    assert ci_test_matrix_cells() == 7, f"test 矩阵现算为 {ci_test_matrix_cells()} 格"
+    # P3：classifiers 宣称 OS Independent，test 矩阵补 macOS × 3.12 一格（7 → 8）。
+    assert ci_test_matrix_cells() == 8, f"test 矩阵现算为 {ci_test_matrix_cells()} 格"
     # check 格 = 作业数 - 1（test 按矩阵展开算一格）+ 矩阵格。这一行是恒等式而不是另一个
     # 抄来的分母：作业加一个、矩阵改一格，这里跟着现算值自己长，不再有人要手改一个 17。
     assert ci_check_cells() == ci_test_matrix_cells() + max(len(ci_job_keys()) - 1, 0), (

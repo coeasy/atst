@@ -48,6 +48,14 @@ class JslSource(BaseWebSource):
                 context={"source": JSL, "sample": text[:200]},
                 cause=exc,
             ) from exc
+        if not isinstance(payload, Mapping):
+            # 合法 JSON 但顶层不是对象（``[]`` / ``42`` / ``null``）：同样是
+            # 「源已改版或需要 cookie」的信号，必须归到 E7030 而不是让
+            # ``.get()`` 抛 AttributeError 后被基座改写成通用解析失败。
+            raise SourceDeprecated(
+                "集思录返回结构已变（顶层不是 JSON 对象，可能需要 cookie 或已改版）",
+                context={"source": JSL, "sample": text[:200]},
+            )
         rows = payload.get("rows") or payload.get("data") or []
         quotes: list[Quote] = []
         for row in rows:

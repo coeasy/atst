@@ -27,7 +27,7 @@ from atst.codec.framing import ResponseFrame  # noqa: E402
 from atst.codec.primitive import encode_leb128  # noqa: E402
 from atst.diagnostics import WarningCode, warning_sink  # noqa: E402
 from atst.domain.symbol import to_tdx_market  # noqa: E402
-from atst.errors import ParseError, TruncatedDataError  # noqa: E402
+from atst.errors import ParseError, TruncatedDataError, ValidationError  # noqa: E402
 
 _MAGIC = 0x0074CBB1
 
@@ -447,7 +447,10 @@ class TestBjMarketNumber:
         pool = _BodyCapture()
         client = TdxClient(pool=pool)  # type: ignore[arg-type]
 
-        with pytest.raises(ParseError) as exc_info:
+        # P0-4：错误归类从 ParseError 归位 ValidationError（E1010/不可重试），
+        # 拦截时机与上下文不变；统一 bars 的缺省路由改走 Web 源（见
+        # tests/query/test_bars_market_routing.py），直连 TdxClient 仍在闸前拦下。
+        with pytest.raises(ValidationError) as exc_info:
             client.bars("bj430047", period="day", count=3)
 
         assert exc_info.value.context["market"] == 2

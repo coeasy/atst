@@ -35,6 +35,7 @@ __all__ = [
     "as_request_bool",
     "as_request_float",
     "as_request_int",
+    "parse_query_call",
     "reject_reserved_kwargs",
     "reject_undeclared",
     "undeclared_fields",
@@ -141,6 +142,41 @@ def reject_reserved_kwargs(
             "reserved_fields": conflicting,
         },
     )
+
+
+def parse_query_call(
+    *,
+    face: str,
+    where: str,
+    capability: Any,
+    args: Any = None,
+    kwargs: Any = None,
+) -> tuple[str, list[Any], dict[str, Any]]:
+    """四面（HTTP / WS / MCP / CLI）query 入参校验的唯一收口（P2-6/L1）。
+
+    过去这段形状校验在四面各抄一遍，连错误文案都逐字相同——四份抄件改日必分叉。
+    这里只收口"一个 query 调用在 wire 上长什么样"：``capability`` 必须是非空字符串、
+    ``args`` 必须是数组、``kwargs`` 必须是对象、路由字段（:data:`QUERY_ROUTING_FIELDS`）
+    不许混进 ``kwargs``（:func:`reject_reserved_kwargs`）。各面特有的东西留在各面：
+    未声明字段由各面自己的 ``reject_undeclared`` 名单挡（名单不同源），路由字段取值与
+    ``currentness`` 归一由各面的调用表达式自己写。
+
+    ``face`` / ``where`` 透传给 :func:`reject_reserved_kwargs`，错误文案与机读 context
+    与四面各自抄写的旧版本逐字一致（"capability is required" / "args must be an array"
+    / "kwargs must be an object"）。
+    """
+    if not isinstance(capability, str) or not capability.strip():
+        raise ValidationError("capability is required")
+    if args is None:
+        args = []
+    if not isinstance(args, list):
+        raise ValidationError("args must be an array")
+    if kwargs is None:
+        kwargs = {}
+    if not isinstance(kwargs, dict):
+        raise ValidationError("kwargs must be an object")
+    reject_reserved_kwargs(face=face, where=where, kwargs=kwargs)
+    return capability, args, kwargs
 
 
 def as_request_int(

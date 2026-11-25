@@ -12,10 +12,12 @@ Quick start::
     quotes = get_quotes(["sh600519", "sz000001"], source="tencent")
     print(quotes[0].price, quotes[0].volume)   # 元 / 股（已归一化）
 
-或走 ``WebQuoteClient`` 的有序多源取数（顺序由调用方配置，属调用侧策略）::
+或走 ``WebQuoteClient``（P1-5：缺省单源 fail-fast，只取配置
+``web.enabled_sources`` 第一家；显式传多源 ``sources`` 列表才按序降级，
+属调用侧 legacy 策略——跨源容错已收归内核 ``FallbackPolicy``）::
 
     from atst.sources import WebQuoteClient
-    client = WebQuoteClient()          # 按配置的 enabled_sources 顺序
+    client = WebQuoteClient()          # 单源：web.enabled_sources 第一家
     quotes = client.quotes(["sh600519"])
 
 Web 会话面（原生命名）::
@@ -62,6 +64,7 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from ..diagnostics import WarningCode, record_warning
 from ..domain.models import Quote
 from ..errors import AllSourcesExhausted, TdxError, WebSourceError
 from .base import BaseWebSource, RateLimiter, build_client, normalize_symbol
@@ -371,13 +374,19 @@ def create_source(
 
 
 class WebQuoteClient:
-    """HTTP Web 行情统一客户端，按配置顺序在多个源之间降级（§33.6）。
+    """HTTP Web 行情门面（P1-5：缺省单源 fail-fast，显式多源才降级）。
+
+    缺省（``sources=None``）只取配置 ``web.enabled_sources`` 第一家（空则
+    ``DEFAULT_FALLBACK_ORDER`` 第一家），失败即抛，不做跨源降级——跨源容错
+    已收归内核 ``FallbackPolicy`` → ``ProviderOrchestrator`` 唯一通道。显式
+    传入多源 ``sources`` 列表时保留有序降级，属调用侧 legacy 策略，构造时记
+    一条 :data:`~atst.diagnostics.WarningCode.WEB_FACADE_LEGACY_DEGRADE` 告警。
 
     Parameters
     ----------
     sources:
-        降级顺序；None 时取配置 ``web.enabled_sources``，再兜底 DEFAULT_FALLBACK_ORDER。
-        ``timeout`` / ``max_retries`` / ``rates`` 同理取 ``web`` 段缺省值。
+        显式降级顺序（仅显式传参才降级）；None 时单源：取 ``web.enabled_sources``
+        第一家。``timeout`` / ``max_retries`` / ``rates`` 同理取 ``web`` 段缺省值。
     """
 
     def __init__(
@@ -393,9 +402,22 @@ class WebQuoteClient:
         from ..config import get_config
 
         cfg = get_config().web
-        self.sources = (
-            list(sources) if sources else list(cfg.enabled_sources or DEFAULT_FALLBACK_ORDER)
-        )
+        if sources is None:
+            # P1-5：缺省单源 fail-fast——只取配置第一家，不做跨源降级；跨源容错
+            # 已收归内核 FallbackPolicy（ProviderOrchestrator 唯一通道）。
+            enabled = list(cfg.enabled_sources or DEFAULT_FALLBACK_ORDER)
+            self.sources = [enabled[0]]
+        else:
+            self.sources = list(sources)
+            if len(self.sources) > 1:
+                # P1-5：显式多源降级是调用侧 legacy 策略，记一条 diagnostics 告警
+                # 说明降级正路在内核 FallbackPolicy，门面缺省已改单源 fail-fast。
+                record_warning(
+                    WarningCode.WEB_FACADE_LEGACY_DEGRADE,
+                    "WebQuoteClient 显式多源降级属调用侧 legacy 策略；跨源容错已"
+                    "收归内核 FallbackPolicy，新代码请改走 Client 的 fallback="
+                    "（ProviderOrchestrator）",
+                )
         self.headers = dict(headers or {})
         self.timeout = float(cfg.timeout if timeout is None else timeout)
         self.max_retries = int(cfg.max_retries if max_retries is None else max_retries)
@@ -417,7 +439,7 @@ class WebQuoteClient:
         return self._instances[name]
 
     def quotes(self, symbols: Sequence[str]) -> list[Quote]:
-        """按降级顺序尝试各源，返回第一个成功的完整结果。"""
+        """取报价：多源（显式构造）按序降级返回第一个成功结果；单源（缺省）失败即抛。"""
         symbols = [normalize_symbol(s) for s in symbols]
         self.errors.clear()
         for name in self.sources:
@@ -453,7 +475,15 @@ class WebQuoteClient:
     ) -> list[Any]:
         """日/周/月 K 线（当前仅腾讯 KlineSource 提供）。"""
         symbol = normalize_symbol(symbol)
-        for name in (*[s for s in self.sources if s == KLINE], KLINE):
+        # S-9/F20：只尝试调用方 sources 配置中声明的 KLINE 源，不再无条件追加
+        # KLINE——那会让 single-source fail-fast 的调用方被偷偷换到未配置的源。
+        names = [s for s in self.sources if s == KLINE]
+        if not names:
+            raise AllSourcesExhausted(
+                f"sources 配置 {list(self.sources)!r} 未包含 {KLINE!r}，无可用 K 线源",
+                context={"sources": list(self.sources)},
+            )
+        for name in names:
             try:
                 return self._instance(name).fetch_bars(  # type: ignore[attr-defined]
                     symbol, period=period, count=count, adjust=adjust
@@ -463,7 +493,7 @@ class WebQuoteClient:
                 continue
         raise AllSourcesExhausted(
             "无可用 K 线源",
-            context={"sources": self.sources},
+            context={"sources": list(self.sources)},
         )
 
     def close(self) -> None:
@@ -493,7 +523,8 @@ def get_quotes(
     symbols:
         ``["sh600519", "sz000001"]`` 或 ``["600519"]``（缺省市场按前缀推断）。
     source:
-        指定单一源；None 时按降级顺序自动选择。
+        指定单一源；None 时取配置 ``web.enabled_sources`` 第一家，单源 fail-fast
+        （P1-5：不再按序降级，跨源容错走内核 FallbackPolicy）。
     """
     if source:
         src = create_source(source, headers=headers, timeout=timeout, cookie=cookie)

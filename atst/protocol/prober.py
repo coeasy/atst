@@ -413,7 +413,10 @@ class Prober:
             )
 
         self._enforce_rate()
-        self._total_probes += 1
+        # P-12：计数与限速共用同一把锁。此前 `+= 1` 在锁外，并发探测会丢计数
+        # （读-改-写竞态）；计数本身不阻塞，放锁内代价可忽略。
+        with self._rate_lock:
+            self._total_probes += 1
 
         # 默认态：dry-run（无 client）或发送异常时也产出一致的结果对象
         raw = b""

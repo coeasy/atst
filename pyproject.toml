@@ -63,18 +63,9 @@ dev       = [
 ]
 # ``all`` 是上面每个 extra 的并集，逐条对应，不额外塞东西：过去这里多出的
 # ``pydantic`` / ``mcp`` 全仓 0 处读取，已经随 extra 一起删掉。
-all       = [
-    "pandas>=2.0",
-    "pyarrow>=14.0",
-    "duckdb>=0.10",
-    "httpx>=0.26",
-    "prometheus-client>=0.19",
-    "fastapi>=0.110",
-    "uvicorn>=0.27",
-    "websockets>=13.0",
-    "zstandard>=0.22",
-    "tzdata>=2024.1; sys_platform == 'win32'",
-]
+# ``all`` 改为自引用 extras（hatchling 支持）：过去这里手抄全部依赖清单，
+# 已经混入过 pydantic / mcp 两次死依赖。并集口径由 pip 解析，不再有第二本账。
+all       = ["atst[dataframe,parquet,duckdb,web,metrics,server,tools]"]
 
 [project.urls]
 Homepage      = "https://github.com/coeasy/atst"
@@ -178,7 +169,7 @@ branch = true
 # only from measured exact-head evidence in the CI environment, never lowered or
 # bypassed to make a refactor green.
 fail_under = 77
-skip_covered = true
+skip_covered = false
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",

@@ -358,6 +358,7 @@ class QuoteStream:
         timeout: float = 5.0,
         runtime: Any | None = None,
         provider: str | None = None,
+        max_attempts: int = 0,
     ) -> None:
         self._hosts = hosts
         self._timeout = timeout
@@ -370,11 +371,20 @@ class QuoteStream:
         self._subs: dict[str, Subscription] = {}
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        self._reconnect = ReconnectPolicy(base=1.0, cap=30.0)
+        #: P1-9/M3：重连预算由调用方给出（0 = 永不放弃，保持无状态基类的既有语义；
+        #: Stateful 门面给有限预算，耗尽即 fail-closed 落 FAILED）。
+        self._reconnect = ReconnectPolicy(base=1.0, cap=30.0, max_attempts=max_attempts)
         self._warned_bad_symbols = _BoundedSymbolSet()
+        #: P0-7/M1：订阅 key 用单调序号（``len(self._subs)`` 在退订后会静默覆盖
+        #: 在跑订阅）；``_hard_stop`` 在 stop 超时后 fail-closed，禁止孤儿 worker
+        #: 重建 runtime、也禁止超时后 ``start()`` 复活第二条 worker。
+        self._sub_seq = 0
+        self._hard_stop = False
 
     # -- runtime ---------------------------------------------------------- #
     def _get_runtime(self) -> Any:
+        if self._hard_stop:
+            raise SubscriptionError("stream already hard-stopped after a stop() timeout")
         if self._runtime is None:
             from ..runtime.kernel import UnifiedRuntime
 
@@ -399,7 +409,8 @@ class QuoteStream:
         values = validate_subscription(symbols, interval=interval, max_queue=max_queue)
         queue = BackpressureQueue(max_queue) if max_queue > 0 else None
         with self._lock:  # symmetric with ``unsubscribe``
-            key = f"sub{len(self._subs)}"
+            key = f"sub{self._sub_seq}"
+            self._sub_seq += 1
             sub = Subscription(
                 symbols=values,
                 interval=float(interval),
@@ -431,6 +442,8 @@ class QuoteStream:
     # -- lifecycle --------------------------------------------------------- #
     def start(self) -> QuoteStream:
         """Start the polling worker thread."""
+        if self._hard_stop:
+            raise SubscriptionError("stream already hard-stopped after a stop() timeout")
         if self._thread is not None and self._thread.is_alive():
             return self
         self._stop.clear()
@@ -453,7 +466,11 @@ class QuoteStream:
                 # release must NOT be skipped with it —— 那是这条流的连接池，跳过一次
                 # 超时停机就漏一整个池（第 26 轮 F-91）。关它反而替老线程收尾：在飞的
                 # poll 立刻抛错，被 ``_run`` 的异常分支吃掉后 ``_stop`` 已置位，线程自退。
+                # P0-7：超时分支同时 fail-closed——``_hard_stop`` 挡住孤儿线程下一轮
+                # ``_get_runtime()`` 重建池（旧实现关了池但句柄被重建，无人回收），
+                # 也挡住之后 ``start()`` 在 worker 未死时复活第二条 worker。
                 logger.warning("QuoteStream 轮询线程未在 %ss 内退出，等待其自行收尾", timeout)
+                self._hard_stop = True
                 self._close_owned_runtime()
                 return
         self._thread = None
@@ -484,6 +501,17 @@ class QuoteStream:
                 # Back off so a hard failure does not spin; ``Event.wait`` keeps
                 # ``stop()`` responsive while we sleep.
                 self._stop.wait(self._reconnect.next_delay())
+            #: P1-9/M3：两条失败路径（TdxError 在 ``_poll_once`` 内退避，其它异常在上面
+            #: 退避）都已把失败计入 :class:`ReconnectPolicy`，这里统一读预算——与
+            #: :meth:`StreamEngine._run` 同一形状：连续失败达到 ``max_attempts`` 即停
+            #: 轮询（Stateful 门面的 ``_run`` ``finally`` 随后落 FAILED）。
+            if self._reconnect.should_give_up():
+                logger.warning(
+                    "QuoteStream 连续失败 %s 次，达到 max_attempts=%s，停止轮询",
+                    self._reconnect.attempts,
+                    self._reconnect.max_attempts,
+                )
+                return
 
     def _poll_once(self) -> None:
         """One "fetch -> fan out -> backpressure -> callback" round."""
@@ -558,6 +586,7 @@ class AsyncQuoteStream:
         timeout: float = 5.0,
         runtime: Any | None = None,
         provider: str | None = None,
+        max_attempts: int = 0,
     ) -> None:
         self._hosts = hosts
         self._timeout = timeout
@@ -567,10 +596,16 @@ class AsyncQuoteStream:
         self._subs: dict[str, Subscription] = {}
         self._stop = threading.Event()
         self._task: asyncio.Task[None] | None = None
-        self._reconnect = ReconnectPolicy(base=1.0, cap=30.0)
+        #: P1-9/M3：与同步侧同一口径——重连预算由调用方给出（0 = 永不放弃）。
+        self._reconnect = ReconnectPolicy(base=1.0, cap=30.0, max_attempts=max_attempts)
         self._warned_bad_symbols = _BoundedSymbolSet()
+        #: P0-7/M1：与同步侧同一口径——单调订阅序号 + stop 超时后的 fail-closed 闸。
+        self._sub_seq = 0
+        self._hard_stop = False
 
     def _get_runtime(self) -> Any:
+        if self._hard_stop:
+            raise SubscriptionError("stream already hard-stopped after a stop() timeout")
         if self._runtime is None:
             from ..runtime.kernel import UnifiedRuntime
 
@@ -593,7 +628,8 @@ class AsyncQuoteStream:
     ) -> str:
         values = validate_subscription(symbols, interval=interval, max_queue=max_queue)
         queue = BackpressureQueue(max_queue) if max_queue > 0 else None
-        key = f"sub{len(self._subs)}"
+        key = f"sub{self._sub_seq}"
+        self._sub_seq += 1
         sub = Subscription(
             symbols=values,
             interval=float(interval),
@@ -623,6 +659,8 @@ class AsyncQuoteStream:
 
     async def start(self) -> AsyncQuoteStream:
         """Start the polling asyncio task."""
+        if self._hard_stop:
+            raise SubscriptionError("stream already hard-stopped after a stop() timeout")
         if self._task is not None and not self._task.done():
             return self
         self._stop.clear()
@@ -657,6 +695,7 @@ class AsyncQuoteStream:
         #: 超时），裸 ``while`` 会退化成"永不返回"或"满速空转"两种死形状。到点改为主动
         #: cancel + 收尾，保证 ``stop()`` 一定返回。
         deadline = time.monotonic() + _STOP_SHIELD_TIMEOUT
+        timed_out = False
         while task is not None and not task.done():
             left = deadline - time.monotonic()
             if left <= 0:
@@ -665,6 +704,7 @@ class AsyncQuoteStream:
                 # 完成，绝不 await 一个未完成的任务。不能用 wait_for(shield())——
                 # task 忽略 cancel 时 wait_for 自己也会卡住。
                 await asyncio.wait({task}, timeout=_STOP_POLL_SECONDS)
+                timed_out = not task.done()
                 break
             try:
                 # 关键：每次等待都按剩余 deadline 切片。旧实现这里写裸
@@ -675,10 +715,26 @@ class AsyncQuoteStream:
             except asyncio.CancelledError:
                 cancelled = True
                 continue
-        #: 句柄到这里才清空：上面的循环只在 worker 跑完之后才退出（取消不打断这段），
-        #: 所以"清句柄"与"worker 已死"是同一件事。
-        self._task = None
-        self._close_owned_runtime()
+        #: P0-7：收尾统一放在这里，不设提前 return。worker 超时仍未死时
+        #: （``timed_out``）fail-closed——不清 ``_task``、不关 runtime：worker 可能
+        #: 仍卡在不可取消的 ``to_thread`` 取数上，清句柄 + 关池正是 docstring 自称
+        #: 已修复的 F-91/F-92 同型复活（孤儿醒来后 ``_get_runtime()`` 会重建一份
+        #: 无人回收的池）。收尾交给 worker 自己：``_run`` 的 ``finally`` 在任务真正
+        #: 退出后关 owned runtime。
+        if not timed_out:
+            #: 句柄到这里才清空：上面的循环只在 worker 跑完之后才退出（取消不打断这段），
+            #: 所以"清句柄"与"worker 已死"是同一件事。
+            self._task = None
+            self._close_owned_runtime()
+        else:
+            #: P0-7（异步侧修复）：超时分支与同步 :meth:`QuoteStream.stop` 同一口径——
+            #: fail-closed 置位。它同时挡住两件事：① 仍卡在不可取消 ``to_thread`` 里的
+            #: 孤儿 worker 醒来后 ``_get_runtime()`` 重建一份无人回收的池；② 调用方
+            #: 随后 ``start()`` 在旧 worker 未死时再起第二条共享 ``_subs`` 的 worker。
+            #: ``_task`` 句柄**不清**（清了就等于声称 worker 已死）；此处也**不关**
+            #: runtime——worker 可能仍在用它，关池的收尾交给 :meth:`_run` 的 ``finally``
+            #: 在它真正退出时做。漏了这一格，异步超时就既不 fail-closed 也不关池。
+            self._hard_stop = True
         if cancelled:
             raise asyncio.CancelledError
 
@@ -697,15 +753,31 @@ class AsyncQuoteStream:
         await self.stop()
 
     async def _run(self) -> None:
-        while not self._stop.is_set():
-            try:
-                await self._poll_once()
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:  # noqa: BLE001 - never let the worker die silently
-                logger.exception("AsyncQuoteStream 轮询循环未预期异常（任务继续运行）")
-                self._dispatch_error(exc)
-                await _sleep_or_stop(self._stop, self._reconnect.next_delay())
+        try:
+            while not self._stop.is_set():
+                try:
+                    await self._poll_once()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - never let the worker die silently
+                    logger.exception("AsyncQuoteStream 轮询循环未预期异常（任务继续运行）")
+                    self._dispatch_error(exc)
+                    await _sleep_or_stop(self._stop, self._reconnect.next_delay())
+                #: P1-9/M3：与同步侧同一形状——两条失败路径都已计入
+                #: :class:`ReconnectPolicy`，预算耗尽即停 worker（Stateful 门面随后落
+                #: FAILED）。
+                if self._reconnect.should_give_up():
+                    logger.warning(
+                        "AsyncQuoteStream 连续失败 %s 次，达到 max_attempts=%s，停止轮询",
+                        self._reconnect.attempts,
+                        self._reconnect.max_attempts,
+                    )
+                    return
+        finally:
+            # P0-7：stop() 超时后的孤儿 worker 在这里真正退出时收尾 owned runtime——
+            # stop() 自己不动句柄（见 :meth:`stop` 超时分支）。
+            if self._hard_stop:
+                self._close_owned_runtime()
 
     async def _poll_once(self) -> None:
         subs = list(self._subs.values())

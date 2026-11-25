@@ -86,7 +86,9 @@ class BaseWebSource(_BaseRetryMixin):
 
         merged_headers = dict(headers or {})
         if spec.needs_referer and "Referer" not in merged_headers:
-            merged_headers["Referer"] = "https://finance.sina.com.cn"
+            # P1-8/S-5：Referer 取值进 SourceSpec.referer_url；空串回落新浪默认
+            # 仅为了存量兼容——新增非新浪源必须显式声明自己的 Referer。
+            merged_headers["Referer"] = spec.referer_url or "https://finance.sina.com.cn"
         if cookie:
             merged_headers["Cookie"] = cookie
         elif spec.needs_cookie:

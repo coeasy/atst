@@ -17,6 +17,47 @@ from ..query import QueryPlan
 from .capability_contract import binding_for, call_kwargs_for, validate_call
 
 
+def adapter_class_for(provider_id: str, capability: str) -> type:
+    """按绑定声明的 factory 字符串解析 web adapter 类（factory 字段的唯一读取口）。
+
+    P2-4(b)/F3：sources/_session_market 的按能力路由需要拿到 Provider 绑定的
+    adapter 类；读取点收在这里（AST 判据
+    ``tests/architecture/test_dispatch_targets.py::factory_field_findings`` 钉
+    「全包只有执行器的 web_adapter 分支读 factory」），会话层经本函数解析，
+    不再自己拆 factory 字符串。
+    """
+    from importlib import import_module
+
+    from ..errors import CompatibilityError
+    from ..providers import bindings_for_provider
+
+    for item in bindings_for_provider(provider_id):
+        if item.capability == capability and item.factory:
+            module_name, class_name = item.factory.split(":")
+            return getattr(import_module(module_name), class_name)
+    raise CompatibilityError(
+        f"providers 声明中 {provider_id!r} 未绑定能力 {capability!r} 的 web adapter factory；"
+        "路由以 providers 声明为准，不做静默回退",
+        context={"provider": provider_id, "capability": capability},
+    )
+
+
+def upstream_for(meta: Any) -> str:
+    """``web_session`` 后端的真实出数源（P1-4：provider 身份修复）。
+
+    ``provider`` 是路由事实（选了 derived），绑定表里的 ``source`` 才是量纲/口径
+    事实（数据其实是 sina 给的）。绑定缺 source 时回退 ``"sina"``，与执行分派
+    的同一处缺省一致；非 ``web_session`` 后端没有聚合转手，返回空串——调用方
+    以 ``or None`` 折成 ``Provenance.upstream=None``（出处与 provider 同源）。
+    执行（``WebQuoteSession`` 构造）与溯源（``executor.execute`` →
+    ``Provenance.upstream``）读同一份规则，不再各抄一遍。
+    """
+
+    if meta.backend != "web_session":
+        return ""
+    return str(getattr(meta, "source", "") or "sina")
+
+
 def _migrated_capability(executor, plan: QueryPlan) -> Any:
     meta = binding_for(plan.provider, plan.channel, plan.spec.capability)
     args, kwargs = executor._call_payload(plan, meta)
@@ -33,9 +74,7 @@ def _migrated_capability(executor, plan: QueryPlan) -> Any:
     if meta.backend == "web_session":
         from ..sources.session import WebQuoteSession
 
-        with executor._client_session(
-            WebQuoteSession(meta.source or "sina", timeout=hop)
-        ) as session:
+        with executor._client_session(WebQuoteSession(upstream_for(meta), timeout=hop)) as session:
             return getattr(session, meta.method)(
                 *args, **call_kwargs_for(meta, plan.provider, kwargs)
             )

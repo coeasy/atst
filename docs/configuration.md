@@ -3,7 +3,8 @@
 > 本文描述**当前生效**的配置面。口径只有一条：**配置面即执行面契约**——
 > 这里存在的每一个键都必须被单一内核读取并改变行为；写一个不改变任何行为的键，
 > 比不写更糟。因此本 Schema 只覆盖执行参数，且拼错的键立即报错。
-> 键的完整性由 `tests/architecture/test_config_doc_contract.py` 按运行期真相源双向核对。
+> 键的完整性由 `tests/compatibility/test_config_schema_doc_contract.py` 按运行期
+> schema 核对（schema 键必须全部出现在本文件 §3 的键清单里）。
 
 ## 1. 配置如何进入执行链
 
@@ -64,6 +65,7 @@ with Client(config=my_config) as c:  # 整份 Config 注入（跳过进程级单
 | `default_provider` | `"tdx"` | 必须是 `PROVIDERS` 注册表已登记 id，或策略名 `"auto"` | `QueryPlanner`：查询未显式传 provider 时选谁。写 `"auto"` = 每次请求按 `[routing]` 的候选排序现选一个 Provider（见下） |
 | `timeout` | `5.0` | 0.1 – 300 | `DirectProviderExecutor` → `TdxClient` 请求超时（秒）。它是**一次读写的墙钟**，不是"两次收包之间的空档"：同步池与异步池在同一份声明上口径一致 |
 | `heartbeat_interval` | `30` | 0 – 3600（`0` = 不启心跳） | 心跳 + 空闲槽位回收那一条线程的节奏（秒）。同步 `ConnectionPool` 在构造器里武装；异步 `AsyncConnectionPool` 在第一次握住真 socket 时武装（`_get_conn_locked`），构造与 `open()` 都不武装 |
+| `heartbeat_cmd` | `2` | 0 – 0xFFFF | 心跳探测命令号（`DEFAULT_HEARTBEAT_CMD = 0x0002`）。该码不在 7709 账本内，而账本里的 `0x0004 HEARTBEAT` 本包没有默认发送方（只有 `atst probe 0x0004` 显式发出）。2026-09-26 真机实测两条都答（0x0002 回 50 字节、0x0004 回 10 字节无结构载荷），探活只判通畅、不解析响应，故默认保持 0x0002（字节证据见 `PROTOCOL_SPEC/7709/0x0004_HEARTBEAT.yaml` 的 `measured` 块，对账判据见 `tests/protocol/test_heartbeat_claim_evidence.py`） |
 | `max_retries` | `3` | 0 – 20 | **同一 Provider 内** host/endpoint 的重试预算，不是切换 Provider 的次数 |
 | `batch_workers` | `4` | 0 – 64（`0` = 串行） | `Client.quotes_batch` 的编排并行度；并行只发生在 Client 层，内核仍逐只串行、逐项 provenance |
 | `vipdoc_root` | `None` | 非空字符串或 `None` | `local_vipdoc` Provider 与 `adjusted_bars`/`sync_daily` 的本地数据根目录；缺失时相关 capability 直接抛 `ValidationError` |
@@ -219,8 +221,8 @@ auto_health_ttl = 90.0
 
 ### 传输池参数：哪些**不**经配置面
 
-`ConnectionPool` 的构造参数共 17 个，配置面只翻译其中 6 个（`slots_per_host`、`timeout`、
-`heartbeat_interval`、`max_retries`、`rate_limit`（→ `rate_limiter`）、`use_tls`）。下表这 11 个
+`ConnectionPool` 的构造参数共 17 个，配置面只翻译其中 7 个（`slots_per_host`、`timeout`、
+`heartbeat_interval`、`heartbeat_cmd`、`max_retries`、`rate_limit`（→ `rate_limiter`）、`use_tls`）。下表这 10 个
 **没有配置键**，写进 TOML 也不会生效——它们要么由调用方按次决定，要么是刻意留给手工建池的调优口。
 名单（下表第一列）由 `tests/architecture/test_pool_knob_reachability.py` 与本表双向核对：签名里
 有、表里没有 ⇒ 红，表里有、签名里没有 ⇒ 红。"由谁给值"这一列只有 `family` 一行被现读核对（判据
@@ -231,7 +233,6 @@ auto_health_ttl = 90.0
 | `hosts` | 调用方 | 主站清单来自 `[hosts] servers`（空则内置候选池），但作为位置参数按次传入，不是池自己读配置 |
 | `family` | 公开 API | `get_client(family=...)` / `TdxClient(family=...)` 按次选择协议族 |
 | `connect_timeout` | 手工建池 | 建连超时与读写超时分离（默认 2s，故障转移时快速跳下一台） |
-| `heartbeat_cmd` | 手工建池 | 心跳探测用的命令号，缺省 `DEFAULT_HEARTBEAT_CMD = 0x0002`。该码**不在** 7709 账本内，而账本里的 `0x0004 HEARTBEAT` 本包没有默认发送方（只有 `atst probe 0x0004` 会显式发出）。2026-09-26 真机实测两条都答（0x0002 回 50 字节、0x0004 回 10 字节无结构载荷），探活只判通畅、不解析响应，故刻意保持 0x0002 不动（字节证据见 `PROTOCOL_SPEC/7709/0x0004_HEARTBEAT.yaml` 的 `measured` 块，对账判据见 `tests/protocol/test_heartbeat_claim_evidence.py`） |
 | `spec` | 手工建池 | 帧头长度规格；缺省由 `codec/framing.py` 的单一 `FrameSpec` 推断 |
 | `keepalive` | 手工建池 | 是否发送 TCP keepalive |
 | `handshake` | 手工建池 | `None` 时按协议族推断（标准族/MAC 需要握手，扩展市场不需要） |
@@ -240,9 +241,19 @@ auto_health_ttl = 90.0
 | `speedtest_threshold` | 手工建池 | 多少次失败后触发重测速 |
 | `idle_timeout` | 手工建池 | 空闲槽位回收秒数（默认 300s），下次使用惰性重建 |
 
-想改这 11 个参数，走 `TdxClient(...)` / `ConnectionPool(...)` 显式构造；把它们接进 `Config`
+想改这 10 个参数，走 `TdxClient(...)` / `ConnectionPool(...)` 显式构造；把它们接进 `Config`
 是一次对外契约扩张（会新增段与键、并让 `docs/ARCHITECTURE.md` §2 的"配置面即执行面契约"
 覆盖面变大），本方案不擅自做，登记为待决项。
+
+### 流式重连预算：没有配置键
+
+`max_attempts`（连续失败多少次后让流落 `FAILED`）**不是**配置键：schema 里没有 `[stream]`
+段，`Config` 也没有对应字段。当前唯一的调整方式是构造参数——
+`StatefulQuoteStream(..., max_attempts=N)` / `AsyncStatefulQuoteStream(..., max_attempts=N)`，
+默认 **30**（`atst/streaming/stateful.py` 的 `_DEFAULT_MAX_ATTEMPTS`；基类 `QuoteStream` /
+`ReconnectPolicy` 仍保留 `0` = 不放弃的旧语义）。`Client.stream()` 目前不转发该参数，
+要改预算就直接构造流对象。刻意不新增 `stream.max_attempts`：那会扩张公开配置面，
+属于对外 API 变更，本次不做。
 
 ## 4. 环境变量规则
 
@@ -309,9 +320,20 @@ reset_config()                         # 清空单例：下一次 get_config() �
 
 | 事实 | 测试 |
 |---|---|
-| 本文 §3 的键清单/默认值/取值范围、§4 的环境变量命名与专用变量表、§5 的报错消息，逐项对上 schema 与 loader | `tests/architecture/test_config_doc_contract.py` |
+| 本文 §3 的键清单覆盖 schema 全部键（6 段及其全部字段） | `tests/compatibility/test_config_schema_doc_contract.py` |
 | 写 `./atst.toml` ⇒ `Client()`/内核/传输层参数与文件一致 | `tests/runtime/test_kernel_config_wiring.py` |
-| `Config` 只有 5 段、阈值数字单源 | `tests/config/test_merge.py`、`tests/compatibility/test_local_gate_contract.py` |
+| `Config` 只有 6 段、阈值数字单源 | `tests/config/test_merge.py`、`tests/compatibility/test_local_gate_contract.py` |
 | 配置 → 池构造参数只有一个翻译点 | `tests/transport/test_pool_settings_from_config_contract.py` |
 | 限流字段名与 `SessionState` 对齐（不存在的键名报错） | `tests/transport/test_ratelimit_contract.py` |
 | strict 校验语义 | `tests/config/test_schema_semantics.py`、`tests/config/test_schema_strict_fields.py` |
+
+## 8. 外部契约未核实项（只记录，不作结论）
+
+- **OTLP JSON ↔ 官方 proto3 映射**：`atst/observability/otel_exporter.py` 按仓库内手写的
+  映射规则产出 OTLP-compatible JSON（int64 以字符串承载、`AnyValue` oneof、时间戳、直方图
+  桶等），但**尚未**与 OpenTelemetry 官方 proto 定义逐字段比对，也没有做过真实 OTLP HTTP
+  接收端往返验证。此结论只能在离线仓库内如实登记为**未核实**，不能推断"已兼容"。
+  要核实需要：(1) 取得官方 `opentelemetry-proto` 的 `common.proto` / `resource.proto` /
+  `metrics.proto` / `trace.proto` 并用 `protoc` 生成解码器；(2) 把导出器的 payload 解码成
+  官方消息（或 POST 到真实 collector 并核对落库结果）；(3) 对上述字段编码建立 golden
+  对账用例。以上任一步没有完成前，本文不给出兼容性结论。

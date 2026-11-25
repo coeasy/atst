@@ -60,12 +60,13 @@ atst 无 ESG 数据时，ESG 表现与治理分析只能依赖定性判断，本
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import quote
 
-from ..errors import ReadTimeout, SourceDeprecated, WebSourceError
+from ..errors import ReadTimeout, WebSourceError
+from ._base_http import HttpResponse
+from ._json_fetch import fetch_json
 from .base import BaseWebSource
 from .sources import SINA
 
@@ -99,7 +100,7 @@ def _s(value: Any) -> str:
 # 新浪 JSON 公共基类（单主机 GET + JSON 解析）
 # --------------------------------------------------------------------------- #
 class _SinaJson(BaseWebSource):
-    """新浪 JSON 接口公共基类：单主机 GET + ``resp.json()``。
+    """新浪 JSON 接口公共基类：单主机 GET + JSON 解析。
 
     与 :class:`_EastmoneyJson` 的区别：新浪为单主机（无主机池 failover），
     响应结构为 ``{result:{status,data}}``（非东财的 ``{data:{list}}``）。
@@ -111,43 +112,48 @@ class _SinaJson(BaseWebSource):
     encoding = "utf-8"
 
     def _get_json(self, path_query: str, *, host: str | None = None) -> dict[str, Any]:
-        """单主机 GET + JSON 解析（计入失败桶 / 下线检测）。"""
+        """单主机 GET + JSON 解析（计入失败桶 / 下线检测）。
+
+        P1-8/F9：解析与报错收口到 :func:`~atst.sources._json_fetch.fetch_json`；
+        传输保持单主机直连（不走重试内核），失败桶口径与文案原样保留。
+        """
         self._check_deprecated()
         hosts: Sequence[str] = self.HOSTS
         if not hosts:
             raise WebSourceError(f"{self.JSON_LABEL} 未配置主机")
         target = host or hosts[0]
-        url = f"{target}{path_query}"
-        try:
-            resp = self.client.get(url, headers=self.headers, timeout=self.timeout)
-        except (WebSourceError, ReadTimeout) as exc:
+
+        def _send(url: str) -> HttpResponse:
+            try:
+                return self.client.get(url, headers=self.headers, timeout=self.timeout)
+            except (WebSourceError, ReadTimeout) as exc:
+                self._record_failure()
+                raise WebSourceError(
+                    f"{self.JSON_LABEL}传输失败: {exc}",
+                    context={"source": self.source_name, "host": target},
+                    cause=exc,
+                ) from exc
+
+        def _status_error(resp: HttpResponse) -> Exception:
             self._record_failure()
-            raise WebSourceError(
-                f"{self.JSON_LABEL}传输失败: {exc}",
-                context={"source": self.source_name, "host": target},
-                cause=exc,
-            ) from exc
-        if not resp.ok:
-            self._record_failure()
-            raise WebSourceError(
+            return WebSourceError(
                 f"{self.JSON_LABEL}请求失败 HTTP {resp.status}",
                 context={"source": self.source_name, "host": target},
             )
-        try:
-            payload = resp.json()
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            self._record_failure(parse=True)
-            raise SourceDeprecated(
-                f"{self.JSON_LABEL}响应非 JSON",
-                context={
-                    "source": self.source_name,
-                    "host": target,
-                    "sample": resp.text(self.encoding)[:120],
-                },
-                cause=exc,
-            ) from exc
-        self._reset_failures()
-        return payload
+
+        return fetch_json(
+            self,
+            f"{target}{path_query}",
+            send=_send,
+            label=self.JSON_LABEL,
+            encoding=self.encoding,
+            require_dict=False,
+            error_context={"host": target},
+            status_error=_status_error,
+            record_parse_failure=True,
+            reset_on_success=True,
+            non_json_sample_len=120,
+        )
 
 
 # --------------------------------------------------------------------------- #

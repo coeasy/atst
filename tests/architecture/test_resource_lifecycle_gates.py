@@ -730,6 +730,11 @@ _SHUTDOWN_FUNCS = frozenset(
         #: 第 29 轮补入：``AsyncQuoteStream.stop()`` 此前是唯一"没人量"的停机等待
         #: （P2-F 的落点）。``stop`` 在包里只有两个异步定义，两个都在流式面。
         "stop",
+        #: P1-9/M4 补入：WS handler 的订阅排空。``close()``（也在这张名单里）直接
+        #: ``await self.stop_all_subscriptions()``——收口进停机图后，它体内那个
+        #: ``await stream.stop()`` 就落在上面 "stop" 那一格的既有核对里：每个流式
+        #: stop 都是有界排空（见 ``atst/streaming/base.py::AsyncQuoteStream.stop``）。
+        "stop_all_subscriptions",
     }
 )
 

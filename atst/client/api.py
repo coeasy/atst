@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, is_dataclass, replace
 from enum import Enum
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, cast
 
 from ..batch import BatchItem, BatchResult
@@ -42,6 +43,24 @@ from ..stream_contract import StreamPlanner, StreamSpec
 from ..streaming.stateful import AsyncStatefulQuoteStream, StatefulQuoteStream
 
 __all__ = ["Client", "AsyncClient"]
+
+#: P2-7（A5）：核心集 capability → ``Client`` 便捷方法名的显式映射。
+#:
+#: 与 ``runtime.bindings.DIRECT_BINDINGS`` 同风格：一张写死的表，缺格当场红。过去
+#: ``_call_core`` 用 ``getattr(type(self), capability)`` 把绑定藏在「方法名即表」里，
+#: 隐性契约是"新增核心能力必须在 Client 上长出同名方法"，闭合点只能在运行期撞上；
+#: 显式映射让这份契约可一眼核对，缺方法时报 clear 的 ValidationError（E1010）。
+_CORE_METHOD_BINDINGS: Mapping[str, str] = MappingProxyType(
+    {
+        "quotes": "quotes",
+        "bars": "bars",
+        "snapshot": "snapshot",
+        "minute": "minute",
+        "trades": "trades",
+        "security_count": "security_count",
+        "security_list": "security_list",
+    }
+)
 
 
 def _json_contract(value: Any) -> Any:
@@ -127,10 +146,13 @@ class Client:
     def close(self) -> None:
         """收尾本实例**自建**的内核；``runtime=`` 借来的那份归调用方。
 
-        它关不掉"连接池"，因为默认内核根本不跨调用持有连接（每次取数现场构造家族客户端、
-        ``finally`` 释放）。这条链今天兑现的是所有权口径与注入执行器的收尾口子，三张服务面
-        （HTTP lifespan、WS ``RuntimeJsonRpcHandler.close()``、MCP ``stop()``）都落在这里。
-        实测口径与判据见 ``tests/runtime/test_close_chain_ownership.py``。
+        P1-1 之后内核按族持有**常驻**家族客户端（连接池、心跳线程、bestip 代际热更新在
+        其上跨调用连续生效），``close()`` 经 ``UnifiedRuntime.close()`` →
+        ``DirectProviderExecutor.close()`` 把它们统一收口：清空按族常驻表、逐份关池并 join
+        心跳线程。构造期仍不起任何线程——池与心跳都在第一次 tdx 跳才出现，从未发过 tdx
+        请求的 ``close()`` 是一次空转。三张服务面（HTTP lifespan、WS
+        ``RuntimeJsonRpcHandler.close()``、MCP ``stop()``）都落在这里。实测口径与判据见
+        ``tests/runtime/test_close_chain_ownership.py``。
 
         关过一次就把所有权让出去（``_owns_runtime`` 置回 ``False``）：注入的执行器不必
         自己防重复释放，``with`` 出口和显式 ``close()`` 抢着关也只关一次——与 MCP
@@ -295,29 +317,31 @@ class Client:
         currentness: str,
         kwargs: dict[str, Any],
     ) -> QueryResult[Any]:
-        """核心集的分派不抄表：目标方法自己就是那份表。
+        """核心集的分派走显式映射表（P2-7，与 ``DIRECT_BINDINGS`` 同风格）。
 
         这里原本有七段 ``if capability == ...``，每段各自抄三件事——收几个位置参、
         ``provider`` 缺省是谁、``currentness`` 转不转。抄件的代价量得过：多给一个签名里没有的
         关键字（``call("snapshot", "600519", count=5)``）会穿过 ``**kwargs`` 撞到方法本体，抛出来的是
         裸 ``TypeError``，于是四张面**一致地**把调用方写错的键说成 E9000/HTTP 500；而整数代码只在
         写了 ``str(args[0])`` 的那一格侥幸能用，换任何一条路都是同一个裸 ``TypeError``。
-        现在绑定交给 :func:`inspect.signature`，缺省交给方法自己的签名，本段只留三件事：
-        核心集的闭合点、"入参不合签名"归 ``ValidationError``、以及 fallback 结果不许从这条路出来。
+        分派表是 :data:`_CORE_METHOD_BINDINGS`（capability → 方法名，写死可核对），缺省交给
+        方法自己的签名，本段只留三件事：核心集的闭合点、"入参不合签名"归 ``ValidationError``、
+        以及 fallback 结果不许从这条路出来。
         """
-        target = getattr(type(self), capability, None)
-        if not callable(target):
-            #: 闭合点。核心集由执行体表派生，派生结果长出一格而便捷方法面没有对应方法时，
-            #: 绝不能借邻格去跑——借用的下场是返回一份不相干的能力的结果。
+        method_name = _CORE_METHOD_BINDINGS.get(capability)
+        method = getattr(self, method_name, None) if method_name is not None else None
+        if not callable(method):
+            #: 闭合点。映射表里有格而方法面上没有（或表漏了格）：绝不能借邻格去跑——
+            #: 借用的下场是返回一份不相干的能力的结果。
             raise ValidationError(
-                f"capability {capability!r} 在核心集内但 Client 上没有对应方法",
+                f"capability {capability!r} 在核心集映射表内没有可调用的 Client 方法",
                 context={
                     "capability": capability,
+                    "mapped": sorted(_CORE_METHOD_BINDINGS),
                     "known_core": sorted(_CORE_CAPABILITIES),
                     "phase": "wire_validation",
                 },
             )
-        method = getattr(self, capability)
         forwarded = dict(kwargs)
         if provider is not None:
             forwarded["provider"] = provider
@@ -470,21 +494,37 @@ class Client:
             currentness=currentness,
         )
         auto = self._wants_auto(spec)
+        if not auto:
+            # P1-6：钉死 provider 的批量与非批量同走内核一份实现（并发经
+            # ``workers`` 下沉），Client 不再保留第二份逐只循环。
+            return cast(
+                BatchResult[QueryResult[Any]],
+                self.runtime.quotes_batch(
+                    list(symbols),
+                    provider=provider,
+                    currentness=currentness,
+                    workers=self._batch_workers(),
+                ),
+            )
+
         unique: list[str] = []
         seen: set[str] = set()
+        bad: dict[str, Exception] = {}
         for raw_symbol in symbols:
-            symbol = normalize_symbol(raw_symbol)
+            try:
+                symbol = normalize_symbol(raw_symbol)
+            except Exception as exc:
+                # P0-11：归一失败只落该符号一项，不打断同批其余标的。
+                bad.setdefault(str(raw_symbol), exc)
+                continue
             if symbol in seen:
                 continue
             seen.add(symbol)
             unique.append(symbol)
 
         def one(symbol: str) -> QueryResult[Any]:
-            if auto:
-                return self.execute(replace(spec, symbols=(symbol,)))
-            return cast(
-                QueryResult[Any], self.quotes(symbol, provider=provider, currentness=currentness)
-            )
+            # auto 必须逐只走完整候选链（见 docstring），这里保留 Client 编排。
+            return self.execute(replace(spec, symbols=(symbol,)))
 
         def run(symbol: str) -> QueryResult[Any] | Exception:
             """逐项审计：单只失败只落该项，不打断同批其余标的。"""
@@ -511,6 +551,10 @@ class Client:
                 items[symbol] = BatchItem("ok", value=outcome)
             else:
                 items[symbol] = BatchItem("missing")
+        for raw, err in bad.items():
+            # P0-11：归一失败的符号从未发给 Provider，记 not_attempted 而非 failed；
+            # 与内核 quotes_batch 同口径，不进 errors（errors ⊆ requested）。
+            items[raw] = BatchItem("not_attempted", error=err)
         return BatchResult.build(items, errors=errors, requested=tuple(unique))
 
     def _batch_workers(self) -> int:

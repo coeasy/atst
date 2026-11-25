@@ -33,6 +33,17 @@ def jsonable(value: Any) -> Any:
 def _query_result(result: Any) -> dict[str, Any]:
     meta = result.meta
     provenance = meta.provenance
+    provenance_fields = {
+        "kind": provenance.kind.value,
+        "observed_at_ns": provenance.observed_at_ns,
+        "cache_tier": provenance.cache_tier,
+        "fallback": provenance.fallback,
+        "requested_provider": provenance.requested_provider,
+    }
+    #: P1-4（provider 身份修复）：upstream 只在聚合转手时下发——与 provider 同源
+    #: 时保持旧 wire 形状（键缺失，而不是 null），已有消费者不必面对一个恒 None 的字段。
+    if provenance.upstream is not None:
+        provenance_fields["upstream"] = provenance.upstream
     return {
         "data": jsonable(result.data),
         "meta": {
@@ -40,13 +51,7 @@ def _query_result(result: Any) -> dict[str, Any]:
             "channel": meta.channel,
             "capability": meta.capability,
             "fingerprint": meta.fingerprint,
-            "provenance": {
-                "kind": provenance.kind.value,
-                "observed_at_ns": provenance.observed_at_ns,
-                "cache_tier": provenance.cache_tier,
-                "fallback": provenance.fallback,
-                "requested_provider": provenance.requested_provider,
-            },
+            "provenance": provenance_fields,
             # 结果侧的"这条数据有瑕疵"必须和请求侧的入参一样逐字段到达 wire：
             # 缺一个键，HTTP/WS/MCP 的调用方就永远只能靠翻服务端日志知道这件事。
             "warnings": [item.to_dict() for item in meta.warnings],

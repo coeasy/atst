@@ -11,7 +11,12 @@
 * 超时用 :func:`asyncio.wait_for`，不用 ``settimeout``。
 * 锁用 :class:`asyncio.Lock`。
 * 探活用 :class:`asyncio.Task` 而非线程。
-"""
+
+
+P1-2（方案 B）：本模块是 **legacy 实验协议面**——生产 async 只有
+``atst.AsyncClient``（to_thread 包装同步内核，见 docs/ARCHITECTURE.md §5）；
+内核与流式面零消费本模块，物理移除排在废弃周期（v2.3 候选）。
+废弃周期第一步已启用：实例化 ``AsyncConnectionPool`` 会发 ``DeprecationWarning``。"""
 
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ import contextlib
 import logging
 import ssl
 import time
+import warnings
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -603,6 +609,13 @@ class AsyncConnectionPool:
         handshake: bool | None = None,
         handshake_strict: bool = False,
     ) -> None:
+        # P1-2 废弃周期第一步：legacy 实验协议面（生产 async 用 AsyncClient，v2.3 计划移除）
+        warnings.warn(
+            "AsyncConnectionPool 属 legacy 实验协议面：生产 async 请使用 "
+            "atst.AsyncClient（to_thread 包装同步内核）；本类计划在 v2.3 移除。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # --- fail-closed contract validation (merged from hardening) --------- #
         # 1. hosts 归一化 + family 匹配 + 去重（pool 持有快照，隔离外部修改）
         self.hosts = canonical_family_hosts(hosts, family=family)
@@ -900,7 +913,13 @@ class AsyncConnectionPool:
                     await self._release_lease(slot, conn)
             except TdxError as exc:
                 last_exc = exc
-                await self._mark_failure(slot, exc, generation=slot.generation, conn=conn)
+                # P0-2：失败归属用租约代际；租约未建立（None）才回落槽位代际。
+                await self._mark_failure(
+                    slot,
+                    exc,
+                    generation=generation if generation is not None else slot.generation,
+                    conn=conn,
+                )
                 advice = exc.advice
                 if attempt + 1 >= max_attempts or not advice.retryable:
                     break
@@ -915,7 +934,13 @@ class AsyncConnectionPool:
                 raise
             except Exception as exc:
                 last_exc = exc
-                await self._mark_failure(slot, exc, generation=slot.generation, conn=conn)
+                # P0-2：与 TdxError 分支同一口径——优先租约代际，见上。
+                await self._mark_failure(
+                    slot,
+                    exc,
+                    generation=generation if generation is not None else slot.generation,
+                    conn=conn,
+                )
                 if attempt + 1 >= max_attempts:
                     break
                 pending_backoff = 0.05 * (attempt + 1)
@@ -1334,7 +1359,13 @@ class AsyncConnectionPool:
                     await self._release_probe_token(slot, slot.generation)
                     raise
                 except Exception as exc:
-                    await self._mark_failure(slot, exc, generation=slot.generation, conn=conn)
+                    # P0-2：ping 失败归属租约代际；租约未建立才回落槽位代际。
+                    await self._mark_failure(
+                        slot,
+                        exc,
+                        generation=generation if generation is not None else slot.generation,
+                        conn=conn,
+                    )
                 except BaseException:
                     await self._release_probe_token(slot, slot.generation)
                     raise

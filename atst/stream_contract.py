@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from .domain.symbol import normalize_symbol
 from .errors import ValidationError
 from .providers import PROVIDERS, resolve_provider
+from .streaming.base import validate_subscription
 
 __all__ = ["StreamSpec", "StreamPlan", "StreamPlanner"]
 
@@ -73,13 +74,16 @@ class StreamPlanner:
                 "v13 Stateful streaming 当前仅支持 quotes capability",
                 context={"capability": capability},
             )
-        symbols = tuple(normalize_symbol(item) for item in spec.symbols)
-        if not symbols:
-            raise ValidationError("stream symbols 不能为空")
-        if spec.interval <= 0:
-            raise ValidationError("stream interval 必须大于 0")
-        if spec.max_queue < 0:
-            raise ValidationError("stream max_queue 不能为负数")
+        # P2-6/L2：订阅形状校验（symbols 空 / interval / max_queue）收口到
+        # :func:`atst.streaming.base.validate_subscription` 这一份实现——基类
+        # ``subscribe`` 与门面 ``subscribe`` 的防御断言也调它，三处不再各抄一份，
+        # 错误类型统一为 :class:`SubscriptionError`（过去 compile 这份抛
+        # ``ValidationError``，同一坏入参经 ``Client.stream`` 与经 ``subscribe``
+        # 报不同类型）。
+        symbols_values = validate_subscription(
+            list(spec.symbols), interval=spec.interval, max_queue=spec.max_queue
+        )
+        symbols = tuple(normalize_symbol(item) for item in symbols_values)
 
         provider = resolve_provider(provider=spec.provider)
         # Current StatefulQuoteStream is backed by the TDX quotation transport.

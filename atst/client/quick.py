@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
@@ -26,10 +27,26 @@ Record = dict[str, Any]
 
 _AUTO = "auto"
 
+#: T-4：进程级共享 Client。每次快捷调用都 ``Client()`` 会重跑一遍 audit_runtime /
+#: \"默认 Provider 恰好连不上\" 的现算路由；而快捷入口从不给 Client 传 ``hosts`` /
+#: ``timeout``，所以只复用**默认构造**这一种情形最安全。需要自定义 hosts / timeout
+#: 的调用方请自己构造 ``Client``（本模块不提供相应 kwarg，也就没有按 kwargs 分桶
+#: 的必要）。初始化走双检锁，多线程首次并发调用也只会造一个实例。
+#: 生命周期：这份 Client **故意不随某次调用 close()**——它会让常驻连接池跨调用
+#: 复用，这正是快捷入口提速的来源；进程退出时由解释器收尾（与 Client 的所有权
+#: 口径一致）。测试仍可 monkeypatch ``_client`` 换成假实例。
+_client_lock = threading.Lock()
+_shared_client: Client | None = None
+
 
 def _client() -> Client:
-    """唯一构造点：测试可替换；业务方也可直接构造 ``Client`` 做同等调用。"""
-    return Client()
+    """唯一构造点：进程内懒加载、线程安全的共享 ``Client``；测试可替换。"""
+    global _shared_client
+    if _shared_client is None:
+        with _client_lock:
+            if _shared_client is None:
+                _shared_client = Client()
+    return _shared_client
 
 
 def _data(result: Any) -> Any:
@@ -77,21 +94,21 @@ def history(
     但发告警的通道没有关闭（``record_warning`` 仍会以 ``UserWarning`` 落到
     调用方进程）。需要严格拒收带瑕疵的结果时传 ``strict=True``。
     """
-    with _client() as client:
-        result = client.bars(
-            symbol,
-            provider=provider,
-            period=period,
-            count=count,
-            start=start,
-            adjustment=adjustment,
-            adjust=adjust,
-            currentness=currentness,
-            strict=strict,
-            start_date=start_date,
-            end_date=end_date,
-            index=index,
-        )
+    client = _client()
+    result = client.bars(
+        symbol,
+        provider=provider,
+        period=period,
+        count=count,
+        start=start,
+        adjustment=adjustment,
+        adjust=adjust,
+        currentness=currentness,
+        strict=strict,
+        start_date=start_date,
+        end_date=end_date,
+        index=index,
+    )
     return _records(_data(result))
 
 
@@ -103,13 +120,13 @@ def quotes(
     strict: bool = False,
 ) -> list[Record]:
     """批量实时行情（``atst.quotes(["600519", "000001"])``）。"""
-    with _client() as client:
-        result = client.quotes(
-            symbols,
-            provider=provider,
-            currentness=currentness,
-            strict=strict,
-        )
+    client = _client()
+    result = client.quotes(
+        symbols,
+        provider=provider,
+        currentness=currentness,
+        strict=strict,
+    )
     return _records(_data(result))
 
 
@@ -137,8 +154,8 @@ def minute(
     currentness: str = "live",
 ) -> list[Record]:
     """当日分时（``Client.minute`` 的行版本）。"""
-    with _client() as client:
-        result = client.minute(symbol, provider=provider, currentness=currentness)
+    client = _client()
+    result = client.minute(symbol, provider=provider, currentness=currentness)
     return _records(result.data)
 
 
@@ -151,12 +168,12 @@ def trades(
     currentness: str = "live",
 ) -> list[Record]:
     """逐笔成交（``Client.trades`` 的行版本）。"""
-    with _client() as client:
-        result = client.trades(
-            symbol,
-            provider=provider,
-            start=start,
-            count=count,
-            currentness=currentness,
-        )
+    client = _client()
+    result = client.trades(
+        symbol,
+        provider=provider,
+        start=start,
+        count=count,
+        currentness=currentness,
+    )
     return _records(result.data)

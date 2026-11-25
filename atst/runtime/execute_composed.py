@@ -171,7 +171,7 @@ def _composed_call(
 
     if capability == "daily_enriched":
         from ..domain.enrich import enrich_daily_bars
-        from ..query import QueryPlanner, QuerySpec
+        from ..query import QuerySpec
 
         symbol = str(args[0])
         count = int(kwargs.pop("count", 250))
@@ -234,18 +234,18 @@ def _composed_call(
                     timeout=timeout,
                 )
             bars = AdjustEngine().apply(list(bars), events, adjust)
-        valuation = executor.execute(
-            QueryPlanner().compile(
-                QuerySpec.build(
-                    "valuation_history",
-                    symbols=symbol,
-                    provider="eastmoney",
-                    currentness="historical",
-                    options={
-                        "args": [symbol],
-                        "kwargs": {"count": min(_ENRICH_MAX_COUNT, count + lead)},
-                    },
-                )
+        # P1-3：内层估值查询走主链（execute_subquery），预算继承外层剩余额度。
+        valuation = executor.execute_subquery(
+            QuerySpec.build(
+                "valuation_history",
+                symbols=symbol,
+                provider="eastmoney",
+                currentness="historical",
+                deadline_ms=max(1, int(timeout * 1000)),
+                options={
+                    "args": [symbol],
+                    "kwargs": {"count": min(_ENRICH_MAX_COUNT, count + lead)},
+                },
             )
         ).data
         rows = enrich_daily_bars(list(bars), list(valuation or []))

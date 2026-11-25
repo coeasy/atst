@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from ..error_envelope import to_error_envelope
-from ..errors import AllSourcesExhausted, ValidationError
+from ..errors import AllSourcesExhausted, FreshnessViolation, ValidationError
 from ..providers import PROVIDERS, resolve_provider
 from ..query import QuerySpec
 from ..result import QueryResult
@@ -166,6 +166,10 @@ class ProviderOrchestrator:
             attempt_spec = replace(base, provider=provider)
             try:
                 result = self.runtime.execute(attempt_spec)
+            except (ValidationError, FreshnessViolation):
+                # P0-10：调用方参数错 / 当期性违例是 4xx 语义，换源解决不了，
+                # 原样上抛而不是逐家重试后以 AllSourcesExhausted 掩盖真实错误。
+                raise
             except Exception as exc:
                 envelope = to_error_envelope(exc)
                 attempts.append(ProviderAttempt(provider, "failed", envelope.code))
@@ -221,16 +225,25 @@ class ProviderOrchestrator:
 
         attempts: list[ProviderAttempt] = []
         base = replace(spec, provider=None)
+        # P1-6：UnifiedRuntime.execute 已对每跳记账（成败都进 provider_health），
+        # 这里再记一遍就是同一失败写两次。只有测试注入的裸 runtime（没有记账
+        # 能力）才由编排层代记。
+        kernel_records = isinstance(self.runtime, UnifiedRuntime)
         for index, provider in enumerate(candidates):
             attempt_spec = replace(base, provider=provider)
             try:
                 result = self.runtime.execute(attempt_spec)
+            except (ValidationError, FreshnessViolation):
+                # P0-10：同 execute_policy——参数错/当期性违例不换源，直接上抛。
+                raise
             except Exception as exc:
                 code = to_error_envelope(exc).code
-                provider_health().record_failure(provider, code=code)
+                if not kernel_records:
+                    provider_health().record_failure(provider, code=code)
                 attempts.append(ProviderAttempt(provider, "failed", code))
                 continue
-            provider_health().record_success(provider)
+            if not kernel_records:
+                provider_health().record_success(provider)
             attempts.append(ProviderAttempt(provider, "ok"))
             return OrchestratedResult(
                 result=self._mark_fallback(

@@ -11,12 +11,58 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import copy
+import threading
 from dataclasses import dataclass
 from typing import Any
 
 from .runtime_ws import RuntimeJsonRpcHandler
 
 __all__ = ["RuntimeWsConfig", "serve_runtime_ws"]
+
+#: 真实基类，先存一份：``RuntimeJsonRpcHandler`` 这个名字在传输判据里会被替换成替身，
+#: 直接拿它做 ``isinstance`` 会在 monkeypatch 生效时抛 TypeError。
+_BASE_HANDLER = RuntimeJsonRpcHandler
+
+#: ``copy.copy`` 只复制引用，因此克隆自定义子类时必须把"属于单条连接"的可变状态
+#: 全换成新对象，否则两条连接仍共享 ``_send``（A 的推送打到 B 的 socket）和订阅表。
+_PER_CONNECTION_STATE: tuple[tuple[str, Any], ...] = (
+    ("_loop", lambda: None),
+    ("_send", lambda: None),
+    ("_async_client", lambda: None),
+    ("_subs", dict),
+    ("_seq", lambda: 0),
+    ("_subs_lock", threading.RLock),
+    ("_pending_pushes", list),
+    ("_sub_providers", dict),
+    ("_sub_symbols", dict),
+)
+
+
+def _clone_for_connection(rpc: Any) -> Any:
+    """造一份连接私有的 handler；无法安全克隆的鸭子类型 handler 按历史行为共享。"""
+    # 1) 内置 handler：新实例、共享调用方的 client（所有权仍归调用方 / 宿主）。
+    if type(rpc) is _BASE_HANDLER:
+        return RuntimeJsonRpcHandler(client=rpc.client)
+    # 2) 自定义类且构造签名兼容 ``client=``：让它自己的 __init__ 建全新连接态。
+    client = getattr(rpc, "client", None)
+    if client is not None:
+        try:
+            return type(rpc)(client=client)
+        except (TypeError, AttributeError):
+            pass
+    # 3) 内置类的子类（构造要额外参数）：浅拷贝 + 逐项换掉已知的连接私有状态。
+    if isinstance(rpc, _BASE_HANDLER):
+        clone = copy.copy(rpc)
+        for name, factory in _PER_CONNECTION_STATE:
+            if hasattr(clone, name):
+                setattr(clone, name, factory())
+        return clone
+    # 4) 完全任意的鸭子类型 handler（只承诺 handle_message 等接口）：我们不知道它
+    #    哪些字段是连接私有的，浅拷贝或改字段都可能把它的业务状态一起拆散。此处
+    #    按历史行为共享原实例——**约定此类 handler 自己不得把 _send 等连接态跨连接
+    #    复用**；有连接态的自定义处理器应继承 RuntimeJsonRpcHandler（走 2/3）。
+    return rpc
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,9 +103,10 @@ async def serve_runtime_ws(
             await websocket.close(code=1008, reason="unsupported path")
             return
         # 每条连接一份 handler：流式订阅表是连接私有的，不能让两条连接串台。
-        # 调用方显式传进来的那份仍被所有连接共用（单连接宿主场景），服务器自建的
-        # 才真正"每连接一份"——``server.atst_handler`` 的所有权口径不变。
-        conn_handler = rpc if handler is not None else RuntimeJsonRpcHandler(client=rpc.client)
+        # P0-6：传入 handler 的场景同样 per-connection 克隆（共享同一个 Client）——
+        # 过去共用同一实例时 bind_connection 互相覆盖 _send，A 连接的推送会打到
+        # B 的 socket。``server.atst_handler`` 的所有权口径不变（仍指向调用方那份）。
+        conn_handler = _clone_for_connection(rpc)
         # 替身 handler（传输判据用）未必有流式控制面，按能力绑定，避免 AttributeError。
         binder = getattr(conn_handler, "bind_connection", None)
         if binder is not None:
@@ -116,8 +163,12 @@ if __name__ == "__main__":  # pragma: no cover
         finally:
             owned = getattr(server, "atst_handler", None)
             if owned is not None:
-                with contextlib.suppress(Exception):
-                    owned.close()
+                # P1-9/M4：close() 已是协程——同一 loop 内直接 await，残留流真的被
+                # 排空，而不是旧同步实现里 run_coroutine_threadsafe 白等 5 秒后超时。
+                closed = owned.close()
+                if asyncio.iscoroutine(closed):
+                    with contextlib.suppress(Exception):
+                        await closed
 
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(_serve_forever())

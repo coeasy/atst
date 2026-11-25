@@ -1,9 +1,10 @@
-"""i18n/encoding 与 codec.primitive 优先级差异的口径锁定测试（审计 §2-21）。
+"""charset.encoding 与 codec.primitive 探测合一的口径锁定测试（P1-7）。
 
-生产链（reader/web）走 ``codec.primitive.detect_encoding``（GBK 优先）；
-``i18n.encoding`` 是独立基础设施（UTF-8 优先）。两个入口对边界样本
-（合法 UTF-8 的中文文本）结论相反——本测试把「优先级相反」这件事
-与模块文档字符串的双向指认一起锁死，防止未来被无声统一。
+P1-7 之前：``charset.encoding`` 自带一套 UTF-8 优先的独立探测，与生产
+链 ``codec.primitive``（GBK 优先）优先级相反（审计 H3）。P1-7 之后：
+charset 版是 primitive 的**委托薄封装**，不是第二实现——GBK 优先是
+全仓唯一探测优先级。本测试把「委托后两入口同口径」与模块文档字符串
+的委托声明一起锁死，防止第二套探测实现无声回归。
 """
 
 from __future__ import annotations
@@ -15,28 +16,34 @@ from atst.codec.primitive import detect_encoding as primitive_detect
 
 pytestmark = pytest.mark.unit
 
-#: 合法 UTF-8 中文（边界样本：GBK 无法整串解码，但探测优先级决定归属）
+#: 合法 UTF-8 中文（边界样本：GBK 无法整串解码，SSOT 落到 utf-8）
 _UTF8_CHINESE = "平安银行公告摘要".encode()
 
 
 class TestPriorityContract:
-    def test_module_docstring_declares_opposite_priority(self) -> None:
+    def test_module_docstring_declares_delegation(self) -> None:
         doc = i18n_enc.__doc__ or ""
-        assert "UTF-8 优先" in doc
         assert "GBK 优先" in doc
         assert "primitive" in doc
+        # P1-7 的核心声明：charset 版是委托不是第二实现
+        assert "委托" in doc and "不是第二套探测实现" in doc
 
-    def test_priorities_genuinely_differ_on_ascii_sample(self) -> None:
-        """纯 ASCII 边界样本上两个入口结论相反（i18n→utf-8，primitive→gbk）。
+    def test_charset_delegates_to_primitive_on_all_samples(self) -> None:
+        """两个入口对边界样本结论一致（P1-7 探测合一的验收口径）。"""
+        samples = {
+            "ascii": b"600519,10.00",
+            "gbk": "平安银行".encode("gbk"),
+            "utf8-chinese": _UTF8_CHINESE,
+            "empty": b"",
+            "bom": b"\xef\xbb\xbfhello",
+        }
+        for name, raw in samples.items():
+            assert i18n_enc.detect_encoding(raw) == primitive_detect(raw), name
 
-        这正是模块注释警告的口径差异：换入口就是换口径。
-        """
-        ascii_bytes = b"600519,10.00"
-        assert i18n_enc.detect_encoding(ascii_bytes) == "utf-8"
-        assert primitive_detect(ascii_bytes) == "gbk"
-
-    def test_i18n_detects_utf8_for_pure_utf8_chinese(self) -> None:
-        assert i18n_enc.detect_encoding(_UTF8_CHINESE) == "utf-8"
+    def test_pure_ascii_is_gbk_under_protocol_ssot(self) -> None:
+        """纯 ASCII 边界样本上两入口同判 gbk（旧 UTF-8 优先实现已删除）。"""
+        assert i18n_enc.detect_encoding(b"600519,10.00") == "gbk"
+        assert primitive_detect(b"600519,10.00") == "gbk"
 
     def test_gbk_bytes_decode_to_gbk_both(self) -> None:
         gbk_bytes = "平安银行".encode("gbk")

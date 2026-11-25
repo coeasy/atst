@@ -53,7 +53,7 @@ from atst.codec.primitive import decode_tdx_float, encode_leb128
 from atst.diagnostics import WarningCode, warning_sink
 from atst.domain.integrity import date_problem
 from atst.domain.period import CANONICAL_PERIODS, PERIOD_ALIASES
-from atst.errors import IntegrityViolation, ParseError, ValidationError
+from atst.errors import IntegrityViolation, ValidationError
 from atst.protocol.parsers._std7709_common import (
     DAYLIKE_CATEGORIES,
     MINUTELIKE_CATEGORIES,
@@ -321,14 +321,15 @@ def test_unverified_bj_market_fails_before_transport(symbol: str) -> None:
             raise AssertionError("未验证的北交所请求不得走到传输层")
 
     client = TdxClient(pool=_NoIo())  # type: ignore[arg-type]
-    with pytest.raises(ParseError, match="当前只允许 SZ/SH"):
+    # P0-4：错误归类从 ParseError 归位 ValidationError（不可重试），拦截时机不变。
+    with pytest.raises(ValidationError, match="当前只允许 SZ/SH"):
         client.bars(symbol, period="day", count=3)
 
 
 def test_bj_failure_cannot_be_made_legal_by_an_explicit_market_override() -> None:
     """显式传 ``market=2`` 不是绕过手段——同一道闸。"""
     client = TdxClient(pool=_MatrixPool())  # type: ignore[arg-type]
-    with pytest.raises(ParseError, match="当前只允许 SZ/SH"):
+    with pytest.raises(ValidationError, match="当前只允许 SZ/SH"):
         client.bars("bj920001", period="day", count=3, market=2)
 
 
@@ -346,7 +347,7 @@ def test_plan_stage_accepts_bj_but_execution_rejects_it() -> None:
     assert plan is not None
 
     client = TdxClient(pool=_MatrixPool())  # type: ignore[arg-type]
-    with pytest.raises(ParseError, match="market=2"):
+    with pytest.raises(ValidationError, match="market=2"):
         client.bars("bj920001", period="day", count=3)
 
 

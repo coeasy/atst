@@ -162,6 +162,11 @@ class WarningCode(str, Enum):
     #: 自动选源不是静默换源——这条随结果出发，与 Provenance 的
     #: ``requested_provider='auto'`` + ``fallback`` 标记互为印证。
     AUTO_PROVIDER_FALLBACK = "auto_provider_fallback"
+    #: 门面 ``WebQuoteClient`` 显式传多源列表才走的有序降级（P1-5）：这是调用侧
+    #: 显式 legacy 策略，不是缺省行为——缺省单源 fail-fast。跨源容错的正路是
+    #: 内核 ``FallbackPolicy`` → ``ProviderOrchestrator``；这条在显式多源构造时
+    #: 出发，提示新代码改走内核通道。
+    WEB_FACADE_LEGACY_DEGRADE = "web_facade_legacy_degrade"
 
 
 #: 已经解释过"为什么一根都没回来"的类别。执行器出口那条泛化的 ``bars_empty_result``

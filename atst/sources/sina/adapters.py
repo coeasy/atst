@@ -27,6 +27,7 @@ from ...diagnostics import WarningCode, record_warning
 from ...domain.calendar import day_like_datetime
 from ...domain.models import Bar, Level, Quote
 from ...errors import SourceDeprecated, WebSourceError
+from .._base_retry import _backoff_delay
 from ..base import BaseWebSource, normalize_symbol, to_sina_symbol
 from ..base import num_f as _f
 from ..base import num_i as _i
@@ -63,16 +64,26 @@ class SinaSource(BaseWebSource):
         quotes: list[Quote] = []
         # 形如: var hq_str_sh600519="...";
         pattern = re.compile(r'hq_str_([a-z0-9]+)="([^"]*)"')
-        for match in pattern.finditer(text):
+        matches = list(pattern.finditer(text))
+        empty_codes: list[str] = []  # 空 payload：源侧无此代码 / 停牌
+        short_codes: list[str] = []  # 字段不足：结构漂移的坏行
+        for match in matches:
             raw_code, payload = match.group(1), match.group(2)
             if not payload:
+                # "无此代码"逐条跳过，不与"接口整体下线"混为一谈。
+                empty_codes.append(raw_code)
                 continue
             f = payload.split(",")
             if len(f) < 32:
-                raise WebSourceError(
-                    f"新浪响应字段不足: {len(f)} < 32",
-                    context={"code": raw_code, "source": SINA},
+                # 单条字段不足不再抛异常毁掉整批：跳过该行并告警，
+                # 与 all_market 路径的缺字段行同口径（结果不完整但可用部分照常返回）。
+                short_codes.append(raw_code)
+                record_warning(
+                    WarningCode.WEB_SINA_MARKET_FIELD_MISSING,
+                    f"新浪响应字段不足: {len(f)} < 32，已跳过 {raw_code}；本批其余代码不受影响",
+                    stacklevel=2,
                 )
+                continue
             q = Quote(
                 code=raw_code,
                 price=_f(f[3]),
@@ -87,10 +98,32 @@ class SinaSource(BaseWebSource):
                 extra={"name": f[0], "date": f[30], "time": f[31]},
             )
             quotes.append(self.normalize_quote(q))
+        if empty_codes:
+            record_warning(
+                WarningCode.WEB_SINA_MARKET_FIELD_MISSING,
+                f"新浪 {empty_codes[:5]} 返回空报价（无此代码 / 停牌），已逐条跳过",
+                stacklevel=2,
+            )
         if not quotes:
+            # 区分三种"零结果"：无任何匹配 = 接口可能已改版；有匹配但全短行 =
+            # 结构漂移；有匹配但全空行 = 无此代码。reason 写进 context 供调用方分辨。
+            if short_codes:
+                reason = "short_rows"
+            elif empty_codes:
+                reason = "no_such_code"
+            else:
+                reason = "empty_response"
             raise SourceDeprecated(
-                "新浪返回空数据（接口可能已改版或需要 Referer）",
-                context={"source": SINA, "sample": text[:200]},
+                f"新浪返回的代码均无有效报价（reason={reason}，"
+                f"字段不足={short_codes[:5]}，空报价={empty_codes[:5]}）；"
+                "若请求的是有效代码则接口可能已改版或需要 Referer",
+                context={
+                    "source": SINA,
+                    "reason": reason,
+                    "sample": text[:200],
+                    "short_codes": short_codes[:5],
+                    "empty_codes": empty_codes[:5],
+                },
             )
         return quotes
 
@@ -170,8 +203,8 @@ class SinaSource(BaseWebSource):
         失败不重试；没有关闭开关（如需省这一次请求，直接改用 ``quotes()``
         批量查询自身代码表）。
         """
-        # 避免循环 import：DEFAULT_MAX_PAGES 定义在 tencent.adapters
-        from ..tencent.adapters import DEFAULT_MAX_PAGES
+        # P2-4c（F11）：常量已上移 limits——不再跨 Provider 从 tencent.adapters 导入
+        from ..limits import DEFAULT_MAX_PAGES
 
         effective_max_pages = DEFAULT_MAX_PAGES if max_pages is None else max(1, int(max_pages))
         workers = max(1, min(int(workers), 6))
@@ -335,7 +368,9 @@ class SinaSource(BaseWebSource):
             last_exc: WebSourceError | None = None
             for attempt in range(3):
                 if attempt:
-                    time.sleep(0.5 * attempt)
+                    # P1-8/F10：自写退避收口到 _base_retry._backoff_delay
+                    # （指数退避 + 抖动封顶，均值同旧 0.5s/1.0s 节奏）
+                    time.sleep(_backoff_delay(attempt - 1))
                 try:
                     return _fetch_rows(page)
                 except SourceDeprecated:

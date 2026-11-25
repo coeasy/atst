@@ -134,6 +134,8 @@ def test_executor_forwards_configured_pool_settings_to_the_client(
         "hosts": [["1.2.3.4", 7709]],
         "timeout": 4.0,
         "heartbeat_interval": cfg.core.heartbeat_interval,
+        # P3：heartbeat_cmd 纳入配置面（schema core.heartbeat_cmd → pool settings）。
+        "heartbeat_cmd": cfg.core.heartbeat_cmd,
         "max_retries": cfg.core.max_retries,
         "slots_per_host": 5,
         "use_tls": True,
@@ -334,7 +336,7 @@ _FIELD_EXEMPTIONS = {
 
 
 def _execution_face_reads() -> tuple[dict[str, set[str]], set[str]]:
-    """``QuerySpec`` 字段与 ``QueryPlan`` 字段在 ``atst/query.py`` **之外**的读取处。
+    """``QuerySpec`` 字段与 ``QueryPlan`` 字段在 ``atst/query/`` 包 **之外**的读取处。
 
     规划器自身的读取不算：它把值折进 plan/fingerprint 只是搬运，没人按这个值行动。
     """
@@ -350,7 +352,8 @@ def _execution_face_reads() -> tuple[dict[str, set[str]], set[str]]:
     spec_reads: dict[str, set[str]] = {name: set() for name in spec_fields}
     plan_reads: set[str] = set()
     for path in sorted((root / "atst").rglob("*.py")):
-        if path.name == "query.py":
+        # P2-1：atst/query/ 包（spec/planning/fingerprint）属契约面自身，不算执行面读取处。
+        if path.relative_to(root).as_posix().startswith("atst/query/"):
             continue  # 规划器把值折进 plan/fingerprint 不等于有人按它行动
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
@@ -375,7 +378,8 @@ def _spec_field_carriers() -> dict[str, set[str]]:
     import ast
 
     root = Path(__file__).resolve().parents[2]
-    tree = ast.parse((root / "atst" / "query.py").read_text(encoding="utf-8"))
+    # P2-1：QueryPlan 构造点在 atst/query/planning.py（原 query.py）。
+    tree = ast.parse((root / "atst" / "query" / "planning.py").read_text(encoding="utf-8"))
     construction = next(
         (
             node
@@ -386,7 +390,7 @@ def _spec_field_carriers() -> dict[str, set[str]]:
         ),
         None,
     )
-    assert construction is not None, "query.py 里找不到 QueryPlan(...) 构造，判据自身失效"
+    assert construction is not None, "planning.py 里找不到 QueryPlan(...) 构造，判据自身失效"
     carriers: dict[str, set[str]] = {}
     for keyword in construction.keywords:
         folded = {
@@ -445,8 +449,15 @@ def test_query_spec_field_exemptions_still_hold() -> None:
     import ast
 
     root = Path(__file__).resolve().parents[2]
-    tree = ast.parse((root / "atst" / "query.py").read_text(encoding="utf-8"))
+    # P2-1：options 袋在 spec.py、数据身份在 fingerprint.py（原 query.py）。
+    trees = [
+        ast.parse((root / "atst" / "query" / "spec.py").read_text(encoding="utf-8")),
+        ast.parse((root / "atst" / "query" / "fingerprint.py").read_text(encoding="utf-8")),
+    ]
     assert _FIELD_EXEMPTIONS, "豁免表为空，本用例失去意义"
+
+    #: P2-1：两个模块的顶层语句并成一个虚拟 module，扫描逻辑保持原样。
+    tree = ast.Module(body=[stmt for t in trees for stmt in t.body], type_ignores=[])
 
     def read_inside(target: str) -> set[str]:
         for node in ast.walk(tree):
@@ -458,7 +469,7 @@ def test_query_spec_field_exemptions_still_hold() -> None:
                     and isinstance(sub.value, ast.Name)
                     and sub.value.id in {"self", "spec"}
                 }
-        raise AssertionError(f"query.py 里找不到 {target}()，豁免前提已失效")
+        raise AssertionError(f"spec.py/fingerprint.py 里找不到 {target}()，豁免前提已失效")
 
     bag = read_inside("options")
     identity = read_inside("_payload")
@@ -508,7 +519,8 @@ def test_execution_budget_has_no_unexercised_member() -> None:
     root = Path(__file__).resolve().parents[2]
     reads: set[str] = set()
     for path in sorted((root / "atst").rglob("*.py")):
-        if path.name == "query.py":
+        # P2-1：atst/query/ 包（spec/planning/fingerprint）属契约面自身，不算执行面读取处。
+        if path.relative_to(root).as_posix().startswith("atst/query/"):
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):

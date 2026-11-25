@@ -343,6 +343,17 @@ def capability_statuses() -> dict[str, str]:
     return {cap: capability_status(cap) for cap in sorted(MIGRATED_CAPABILITIES)}
 
 
+def preference_order() -> tuple[str, ...]:
+    """全局 Provider 偏好序的唯一读数（P1-8）。
+
+    sources 层的默认降级顺序等下游顺序账本从它派生，不再各自手抄一份——
+    过去 ``(tencent, sina, eastmoney)`` 与这里 ``(eastmoney, sina, tencent,
+    ...)`` 是两本没人对账的账（顺序账本禁令见
+    ``tests/architecture/test_official_runtime_no_fallback.py``）。
+    """
+    return _DEFAULT_PREFERENCE
+
+
 #: 供文档生成与测试读取的只读视图。
 CHANNEL_ADAPTERS: Mapping[str, Mapping[str, tuple[str, str]]] = MappingProxyType(
     {module.SPEC.id: MappingProxyType(dict(module.CHANNEL_ADAPTERS)) for module in _DECLARATIONS}

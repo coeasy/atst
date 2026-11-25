@@ -634,20 +634,22 @@ def test_cli_list_class_prints_the_sina_reference_table(
         assert node in out
 
 
-def test_cli_rejects_an_unknown_kind_with_exit_2(capsys: pytest.CaptureFixture[str]) -> None:
-    """未知类别要报错退出，别静默当 stock。"""
+def test_cli_rejects_an_unknown_kind_with_validation_error() -> None:
+    """未知类别要报错退出，别静默当 stock（P2-3/M7：异常上抛交 main() 信封出口）。"""
     from atst.cli.runtime_commands import _cmd_universe
+    from atst.errors import ValidationError
 
-    assert _cmd_universe(_cli_args(kind="nope")) == 2
-    assert "未知标的类别" in capsys.readouterr().err
+    with pytest.raises(ValidationError, match="未知标的类别"):
+        _cmd_universe(_cli_args(kind="nope"))
 
 
-def test_cli_rejects_the_stale_cache_source_name(capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_rejects_the_stale_cache_source_name() -> None:
     """旧文档里的 ``--source cache`` 早改叫 ``table``；报错要说清新名字。"""
     from atst.cli.runtime_commands import _cmd_universe
+    from atst.errors import ValidationError
 
-    assert _cmd_universe(_cli_args(kind="stock", source="cache")) == 2
-    assert "table" in capsys.readouterr().err
+    with pytest.raises(ValidationError, match="table"):
+        _cmd_universe(_cli_args(kind="stock", source="cache"))
 
 
 def test_cli_dry_run_json_is_json(

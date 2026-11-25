@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import inspect
 import threading
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
@@ -114,6 +115,36 @@ def close_shared_http() -> bool:
 _shared_http = shared_http
 
 
+def _capability_adapter(
+    capability: str,
+    *,
+    provider: str | None = None,
+    symbol: str | None = None,
+) -> type[Any]:
+    """P2-4(b)/F3：按 providers 声明把能力路由到其绑定的 web adapter 类。
+
+    Provider 归属查 :func:`atst.providers.default_provider_for`——其中
+    ``MARKET_DEFAULT_CAPABILITIES`` 负责按市场分叉（``minute_klines`` 的
+    hk/us → eastmoney 由 eastmoney.py 声明、总默认 tencent 由 tencent.py 声明）；
+    适配器类取该绑定声明的 ``factory``（``模块路径:类名``）并在**调用时** getattr，
+    保留测试对 adapters 模块属性的注入 seam。会话层从此不手写「哪个市场用哪个类」。
+
+    Raises
+    ------
+    CompatibilityError
+        该 provider 在声明层没有绑定此能力的 web adapter factory——路由以
+        providers 声明为准，不做静默回退。
+    """
+    from ..providers import default_provider_for
+    from ..runtime.execute_capability import adapter_class_for
+
+    pid = provider if provider is not None else default_provider_for(capability, symbol)
+    # factory 字段的读取点收口在 runtime/execute_capability（AST 单读者判据），
+    # 会话层只做「能力 → provider」的路由，不再自己拆 factory 字符串。
+    # adapter_class_for 自身在未绑定时抛 CompatibilityError，故此处无需重复抛。
+    return adapter_class_for(pid, capability)
+
+
 class QuoteSessionMixin:
     """实时行情 / 港美股 / 全市场快照 / 大盘统计 / 指数 / 汇率。"""
 
@@ -145,11 +176,10 @@ class QuoteSessionMixin:
             )
         try:
             return self._c.fetch(symbols)
-        except Exception as exc:  # noqa: BLE001
-            from ..errors import TdxError
-
-            if isinstance(exc, TdxError):
-                raise
+        except OSError as exc:
+            # 只包传输类原始异常（断连 / 超时 / DNS 等）。TdxError 自身与
+            # ValueError/KeyError 等语义异常一律原样透传，不再把调用方的
+            # 编程错误伪装成"能力不兼容"（S-8/F19）。
             raise CompatibilityError(
                 f"底层源调用失败: {exc}", context={"source": self.source_name}, cause=exc
             ) from exc
@@ -227,7 +257,7 @@ class QuoteSessionMixin:
             每页条数（新浪上限 100——超限由适配器钳制并告警；腾讯上限 200）。
         max_pages:
             页数上限；``None`` **不是**"拉到底"——底层适配器把它取成
-            :data:`~atst.sources.tencent.adapters.DEFAULT_MAX_PAGES`（100 页）硬上限，
+            :data:`~atst.sources.limits.DEFAULT_MAX_PAGES`（100 页）硬上限，
             与显式传值同样受"防失控"钳制。要更大范围请显式给更大的 ``max_pages``。
         """
         if node.lower() in ("hk", "us", "hk_main", "us_main"):
@@ -317,8 +347,9 @@ class KlineSessionMixin:
     ) -> list[Bar]:
         """日 / 周 / 月 / 分钟 K 线，返回 ``list[Bar]``。
 
-        分钟周期（``m1``/``m5``/``m15``/``m30``/``m60``）：A 股走腾讯
-        mkline；港股 / 美股走东财 push2his（腾讯 mkline 不支持 hk/us）。
+        分钟周期（``m1``/``m5``/``m15``/``m30``/``m60``）按市场换源查 providers
+        声明（``MARKET_DEFAULT_CAPABILITIES``，P2-4b/F3）：A 股走腾讯 mkline，
+        港股 / 美股走东财 push2his（腾讯 mkline 不支持 hk/us）。
         日线及以上走腾讯 fqkline（hk/us 亦支持）。
 
         Parameters
@@ -336,27 +367,17 @@ class KlineSessionMixin:
             # 日线属于「帧合法但内容错误」级缺陷）
             raise ValueError(f"未知 K 线周期 {period!r}；可选: {sorted(KLINES_PERIOD_ALIASES)}")
         if p.endswith("min"):
-            from ..domain.symbol import parse_symbol
-
-            mkt = parse_symbol(symbol).market
-            # src 在三分支被赋不同源类型——显式 Any 化统一推断
-            src: Any
-            if mkt in ("hk", "us"):
-                from .eastmoney.adapters import EastmoneyHistoryKlineSource
-
-                src = EastmoneyHistoryKlineSource(client=_shared_http())
-                try:
-                    # 东财 push2his 是 hk/us 分钟 K 线唯一数据源：
-                    # 港股 secid=116.x 确定性映射；美股 105/106/107 逐个探测。
-                    return src.fetch_bars(symbol, period=p, count=count, adjust=adjust)
-                finally:
-                    src.close()
-            from .tencent.adapters import MinuteKlineSource
-
-            src = MinuteKlineSource(client=_shared_http())
+            # P2-4(b)/F3: 分钟 K 线按市场换源不再手写 if mkt in ("hk", "us")——
+            # 查 providers 声明（tencent.DEFAULT_CAPABILITIES 声明总默认 mkline，
+            # eastmoney.MARKET_DEFAULT_CAPABILITIES 声明 hk/us 分叉 push2his）。
+            src: Any = _capability_adapter("minute_klines", symbol=symbol)(client=_shared_http())
             try:
-                # A 股分钟 K 线走腾讯 mkline（量「手」×100 到股）。
-                return src.fetch_bars(symbol, period=p, count=count)
+                # 绑定声明不含参数元数据：按实现签名透传 adjust——东财 push2his
+                # 支持，腾讯 mkline 不支持；与旧硬编码的逐调用行为一致。
+                kwargs: dict[str, Any] = {"period": p, "count": count}
+                if "adjust" in inspect.signature(src.fetch_bars).parameters:
+                    kwargs["adjust"] = adjust
+                return src.fetch_bars(symbol, **kwargs)
             finally:
                 src.close()
 
@@ -401,21 +422,15 @@ class KlineSessionMixin:
         ----------
         source:
             ``"sina"``（``5min``/``15min``/``30min``/``60min``/``120min``/``day``/
-            ``1200min``）或 ``"eastmoney"``（``1min``–``day``，支持 adjust="" / "qfq" / "hfq"）。
+            ``1200min``）或 ``"eastmoney"``（``1min``–``day``，支持 adjust="" / "qfq" / "hfq"）；
+            其它取值在 providers 声明中无 ``history`` 绑定，显式报错（P2-4b/F3）。
         """
-        from .eastmoney.adapters import EastmoneyHistoryKlineSource
-        from .sina.adapters import SinaHistoryKlineSource
-
         period = normalize_bar_period(period)
-        src: Any
-        # 深审 M9：新浪只提供原始价——复权请求自动路由到东财源
-        if source == "eastmoney" or adjust not in ("", None):
-            src = EastmoneyHistoryKlineSource(client=_shared_http())
-            try:
-                return src.fetch_bars(symbol, period=period, count=count, adjust=adjust)
-            finally:
-                src.close()
-        src = SinaHistoryKlineSource(client=_shared_http())
+        # 深审 M9 + P2-4(b)/F3: 适配器类查 providers 绑定表（capability="history"
+        # 声明的 sina/eastmoney factory），不再手写类。复权回退保留 provider 级
+        # 决策：新浪绑定只服务原始价，复权请求落到东财绑定——行为与旧硬编码一致。
+        pid = "eastmoney" if source == "eastmoney" or adjust not in ("", None) else "sina"
+        src: Any = _capability_adapter("history", provider=pid)(client=_shared_http())
         try:
             return src.fetch_bars(symbol, period=period, count=count, adjust=adjust)
         finally:

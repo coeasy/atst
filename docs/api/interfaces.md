@@ -170,7 +170,7 @@ from atst import Client, AsyncClient
 
 | 方法 | 签名摘要 | 说明 |
 |------|----------|------|
-| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", currentness="historical", strict=False, start_date="", end_date="", index=None)` | K 线；`strict=True` 时结果携带任何数据瑕疵即抛 `TruncatedDataError`；`start_date`/`end_date` 是闭区间日期（见本节「日期区间」）；`period=` 收哪些写法见本文 §6「K 线周期拼写」一表；`index=` 是 `0x052D` 指数位，**缺省按代码段自动推断**（见本节「指数 K 线」）；**返回按 `datetime` 升序**（`rows[0]` 最早、`rows[-1]` 最新）；**默认 Provider 是 `tdx`**（`PROVIDERS.default_provider`，股票/指数/ETF/可转债通用；港美标的需显式 `provider="tencent"/"eastmoney"` 或 `provider="auto"`，北交所在 tdx 侧不可用）；回来 **0 根**时结果带 `bars_empty_result` 告警（tdx 的空桩走 `bars_empty_first_page`，带服务端声明数） |
+| `bars` | `(symbol, *, provider=None, policy=None, period="day", count=320, start=0, adjustment="", adjust="", currentness="historical", strict=False, start_date="", end_date="", index=None)` | K 线；`adjust=` 是 `adjustment=` 的别名（canonical 非空时胜出）；复权仅 Web 源支持，tdx 会 E1010 fail-closed；`strict=True` 时结果携带任何数据瑕疵即抛 `TruncatedDataError`；`start_date`/`end_date` 是闭区间日期（见本节「日期区间」）；`period=` 收哪些写法见本文 §6「K 线周期拼写」一表；`index=` 是 `0x052D` 指数位，**缺省按代码段自动推断**（见本节「指数 K 线」）；**返回按 `datetime` 升序**（`rows[0]` 最早、`rows[-1]` 最新）；**默认 Provider 是 `tdx`**（`PROVIDERS.default_provider`，股票/指数/ETF/可转债通用；港美标的需显式 `provider="tencent"/"eastmoney"` 或 `provider="auto"`，北交所在 tdx 侧不可用）；回来 **0 根**时结果带 `bars_empty_result` 告警（tdx 的空桩走 `bars_empty_first_page`，带服务端声明数） |
 | `quotes` | `(symbols, *, provider=None, policy=None, currentness="live", strict=False)` | 实时行情。`strict=True`（仅 tdx 路径生效）时解析器自校验（哨兵失配 / 成交额越界）发现字段漂移的标的直接判失败（`IntegrityViolation`），不返回"帧合法、值可疑"的行情——实测不存在代码 `sh999999` 的主站响应，回声匹配、载荷齐全，量能却荒谬 |
 | `quotes_batch` | `(symbols, *, provider=None, currentness="live") -> BatchResult` | 逐 symbol 三态审计 |
 | `snapshot` | `(symbol, *, provider="tdx", currentness="live")` | 盘口快照 |
@@ -178,12 +178,14 @@ from atst import Client, AsyncClient
 | `trades` | `(symbol, *, provider="tdx", start=0, count=0, currentness="live")` | 逐笔成交。tdx 源（`0x0FC5`）**L1 精确解析**，2026-10-22 双市场 golden 锁定；Web 出路 `tencent` / `baidu` 按页取，写 `start` / `count` 会当场 `ValidationError` 而不是被丢掉 |
 | `security_count` | `(*, market=0, provider="tdx", currentness="business")` | 证券数量 |
 | `security_list` | `(*, market=0, start=0, provider="tdx", currentness="business")` | 证券列表分页：**已下线**，总是抛 `CommandOffline` |
+| `adjusted_bars` | `(symbol, *, adjust="qfq", method="", period="day", count=320, start=0, provider="tdx", event_source="eastmoney", **kwargs)` | 复权 K 线一等公民方法：内部委托 `call("adjusted_bars")`，`method` 非空时胜过 `adjust`；完整口径见本节「复权 K 线（`adjusted_bars`）」 |
+| `capital_changes` | `(symbol, **kwargs)` | 除权除息 / 股本变迁（`0x000F`）一等公民方法，委托 `call("capital_changes")` |
 | `stream` | `(symbols, *, provider="tdx", interval=1.0, diff_only=False, max_queue=1024, on_quote=None, on_error=None) -> StatefulQuoteStream` | 流式订阅 |
 | `execute` | `(spec: QuerySpec) -> QueryResult` | 通用面：任何 capability 同一入口 |
 | `call` | `(capability, *args, provider=None, channel=None, currentness="business", **kwargs)` | 便捷通用入口 |
 | `execute_with_policy` | `(spec, *, policy: FallbackPolicy) -> OrchestratedResult` | 显式跨源编排 |
 | `typed` | `(query: CapabilityQuery, **kwargs) -> TypedQueryResult` | 冻结 dataclass 契约 → 强类型记录 |
-| `capabilities` | `() -> tuple[str, ...]` | 能力发现面：**只有名字、没有可用性**，216 项的构成与发不出去的那几个见下节「能力发现面：只有名字，没有可用性」 |
+| `capabilities` | `() -> tuple[str, ...]` | 能力发现面：**只有名字、没有可用性**，217 项的构成与发不出去的那几个见下节「能力发现面：只有名字，没有可用性」 |
 | `capability_statuses` | `() -> dict[str, str]` | 全部迁移能力的 `{name: status}` 真值表（`alive`/`degraded`/`offline`/`needs_verify`）；与只覆盖内核集的 `core_capability_statuses` 互补，状态取自 `providers/ 声明聚合 + runtime/capability_contract.py` 的单一事实源 |
 | `core_capability_statuses` | `() -> dict[str, dict[str, Any]]` | **本实例内核**的能力可用性真值表：逐内核方法区分「任意 Provider 可用」与「默认路径可用」（未注入执行器时默认路径为不可用），据此判断某能力今天是否真的发得出去 |
 | `provider_health_status` | `() -> dict[str, dict[str, Any]]` | `provider="auto"` 的**降级名单**：`{provider: {code, age_s}}`，只列仍处 `[routing] auto_health_ttl` 窗口内的失败标记（读取时即复位过期项，与 `auto` 排序同一份）。与 `/v13/runtime/health` 的 `provider_health` 字段同源 |
@@ -298,21 +300,24 @@ with Client() as c:
 
 ### 复权 K 线（`adjusted_bars`）
 
-`adjusted_bars` 是**组合能力**（`composed`）：原始 K 线走选定的行情 Provider，除权除息事件单独取，
-两份在 `atst/domain/adjust.py` 的 `AdjustEngine` 里合成因子。它是 212 个 catalog 迁移能力之一，因此
-走**通用入口**而不是某张面的专属路由：
+`adjusted_bars` 是**组合能力**（`derived` Provider / `composed` 后端）：原始 K 线走选定的行情 Provider，
+除权除息事件单独取，两份在 `atst/domain/adjust.py` 的 `AdjustEngine` 里合成因子。它是 217 项公开
+能力中的一项，既可走一等公民方法，也可走通用入口：
 
 ```python
 from atst import Client
 
 with Client() as c:
-    qfq = c.call("adjusted_bars", "600519", method="qfq", count=320).data
-    hfq = c.call("adjusted_bars", "600519", method="hfq", count=320).data
+    # 一等公民方法（adjust / method 是同一复权方式的两种拼法，method 优先）
+    qfq = c.adjusted_bars("sh600519", adjust="qfq", count=320).data
+    hfq = c.adjusted_bars("sh600519", adjust="hfq", count=320).data
+    # 同一能力的通用入口写法
+    same = c.call("adjusted_bars", "sh600519", method="qfq", count=320).data
 ```
 
 | 面 | 调用形状 |
 |----|----------|
-| Python | `Client.call("adjusted_bars", symbol, method="qfq", …)`（动态方法面已随 v2 删除） |
+| Python | `Client.adjusted_bars(symbol, adjust="qfq", …)` 或 `Client.call("adjusted_bars", symbol, method="qfq", …)` |
 | CLI | `atst adjusted-bars sh600519 --method qfq --count 100` |
 | HTTP | `POST /v13/query/adjusted_bars`，body `{"args":["600519"],"kwargs":{"method":"qfq","count":100}}` |
 | WS | `{"method":"query","params":{"capability":"adjusted_bars","args":["600519"],"kwargs":{…}}}` |
@@ -323,13 +328,26 @@ with Client() as c:
 （游标）、`provider`（原始 K 线来源，缺省 `tdx`；**没有** `vipdoc_root` 时走 Provider 在线取数）、
 `event_source`（缺省 `eastmoney`）、`events`（自带事件集，见下）。
 
+**库里有两条互不等价的复权路径**，选错会得到不同结果：
+
+| 路径 | 入口 | 因子从哪来 | 原始 K 线从哪来 | 关键约束 |
+|---|---|---|---|---|
+| 自算复权（推荐） | `Client.adjusted_bars()` / `call("adjusted_bars")` | `domain/adjust.py` 按事件本地算 | `provider=` 指定（可 `tdx` / 本地 vipdoc / Web） | 有 `event_source` / `events` 旋钮；支持 `hfq` / `fixed`；day/week/month |
+| Web 服务端复权 | `Client.bars(..., adjust="qfq")` | 服务端按 `fqt` 参数算（eastmoney / tencent） | 只能是对应 Web 源 | `provider="tdx"` 会 **E1010 fail-closed**，不会静默给未复权数据；Sina 源显式拒绝 |
+
+二者都合法，但不能混着比大小：自算路径的 `hfq` 因子会把历史价格放大到万元量级（贵州茅台实测
+`7.39106838`），Web 服务端 `qfq` 则是把历史价格压到当前口径。复用同一口径请固定同一条路径。
+
 **`events=` 的三种取值不是一回事**：不给（`None`）按 `event_source` 去取；给一张**空表** `[]` 就是
 "不调整"，内核**不会**替你去拉一份回来；给非空表则用它、完全跳过在线取数。表里的行可以是
 `CapitalChange` 模型、也可以是它的 dict 形状（列名同 `to_capital_changes`），两条路都过布局闸。
 
-**事件源为什么默认东财**：TDX `0x000F`（除权除息）的结构化记录布局还没有真机 golden 锁定，拿它当
-复权事件会得到错位的因子（`market` / `code` / 日期全乱）。`event_source="tdx"` 是显式 opt-in，且要过
-`atst.domain.finance.reject_implausible_changes` 那道闸。东财 `dividend_history` 的列名（`BONUS_RATIO`
+**事件源为什么默认东财**：TDX `0x000F`（除权除息）的请求体字节序在 2026-10-21 修过（旧实现代码在
+前、服务端按市场在前解读，整条记录头错位）；修正后的 9 字节请求体与记录布局由
+`tests/protocol/test_finance_capital_changes_layout.py` 用真机实测字节钉住，但命令账本仍标
+`verified=False`（字段口径的正式收口待治理裁决），仓库里也没有该命令的 golden 样本。因此它仍不是
+缺省事件源：`event_source="tdx"` 是显式 opt-in，且要过 `atst.domain.finance.reject_implausible_changes`
+那道闸（对干净数据放行、对越域值 E1010 拒收）。东财 `dividend_history` 的列名（`BONUS_RATIO`
 送股 / `IT_RATIO` 转增 / `PRETAX_BONUS_RMB` 每 10 股派息）已对拍。
 
 **前收盘价**：复权因子的现金红利项需要前收盘价（`(P−D)/(1+S+R)` 那一支）。`AdjustEngine` 从复权序列
@@ -359,7 +377,7 @@ with Client() as c:
 
 | 面 | 调用形状 |
 |----|----------|
-| Python | `Client.call("daily_enriched", symbol, count=120, adjust="hfq")`（动态方法面已随 v2 删除） |
+| Python | `Client.call("daily_enriched", symbol, count=120, adjust="hfq")`（该能力无一等公民方法，只走通用入口） |
 | CLI | `atst daily-enriched sh600519 --adjust hfq --count 120` |
 | HTTP | `POST /v13/query/daily_enriched`，body `{"args":["600519"],"kwargs":{"adjust":"hfq","count":120}}` |
 | WS | `{"method":"query","params":{"capability":"daily_enriched","args":["600519"],"kwargs":{…}}}` |

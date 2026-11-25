@@ -171,15 +171,17 @@ def kernel_examples() -> list[tuple[str, str, list[str], str, str]]:
 
 def run_through_seam(monkeypatch: pytest.MonkeyPatch, tokens: list[str]) -> dict[str, Any]:
     """在真实调用链上跑一行示例，返回留痕与异常。"""
-    import atst.cli.runtime_commands as rc
+    import atst.cli.cmds_kernel as kernel_cmds
+    import atst.cli.cmds_web as web_cmds
 
     recorder = _Recorder()
 
-    monkeypatch.setattr(rc, "Client", _SeamedClient)
+    # P2-3：``cmd_*`` 与 ``_ClientRows`` 分别住在 cmds_kernel / cmds_web，替身各挂各的模块。
+    monkeypatch.setattr(kernel_cmds, "Client", _SeamedClient)
     monkeypatch.setattr("atst.client.api.Client", _SeamedClient)
-    monkeypatch.setattr(rc, "_ClientRows", _rows_with_seam())
+    monkeypatch.setattr(web_cmds, "_ClientRows", _rows_with_seam())
     sleeps: list[float] = []
-    monkeypatch.setattr(rc.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr("time.sleep", lambda seconds: sleeps.append(seconds))
     monkeypatch.setattr(socket, "socket", _no_socket)
 
     from atst.cli.parser import build_parser
@@ -210,9 +212,9 @@ def run_through_seam(monkeypatch: pytest.MonkeyPatch, tokens: list[str]) -> dict
 
 def _rows_with_seam() -> type:
     """``_ClientRows`` 在自己内部 import ``Client``，所以给它同一个缝。"""
-    import atst.cli.runtime_commands as rc
+    import atst.cli.cmds_web as web_cmds
 
-    class Rows(rc._ClientRows):  # type: ignore[misc, valid-type,no-untyped-def]
+    class Rows(web_cmds._ClientRows):  # type: ignore[misc, valid-type,no-untyped-def]
         def __init__(self, *, timeout: float | None = None, hosts: Any = None) -> None:
             self._client = _SeamedClient(hosts=hosts, timeout=timeout)
 

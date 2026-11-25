@@ -6,6 +6,11 @@
 Tier-A keeps ergonomic dedicated tools.  Every migrated capability is also
 reachable through ``query_capability`` and therefore shares the same Client /
 QuerySpec / UnifiedRuntime execution chain.
+
+P2-6/L3：流式（subscribe/unsubscribe/list + push 推送帧）只在 WS 面提供
+（``serve_runtime_ws``）；MCP 面没有流式入口——MCP 工具是一次性请求-响应调用，
+没有可挂推送帧的持久连接。需要实时推送的 MCP 客户端请走 WS 面（或 CLI/Python 的
+``Client.stream``）。
 """
 
 from __future__ import annotations
@@ -51,7 +56,9 @@ TOOLS: list[ToolSpec] = [
         description=(
             "List all migrated capability names and their Providers/channels through the "
             "canonical Client runtime. Same data as CLI `capabilities`, HTTP `/v13/capabilities` "
-            "and WS `runtime.capabilities`; call this before `query_capability` to discover names."
+            "and WS `runtime.capabilities`; call this before `query_capability` to discover names. "
+            "Streaming (subscribe/unsubscribe/list plus server-pushed frames) is WebSocket-only: "
+            "this MCP surface has no stream entry point (P2-6/L3)."
         ),
         inputSchema={
             "type": "object",

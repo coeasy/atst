@@ -93,7 +93,9 @@ _SYMBOL_CLAIM = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*
 #: 全清单至少要点名这么多符号格，少了说明记号被人擦掉、判据已经失明。
 #: v2/W8 把交易模拟器整包移出 ``atst``（``labs/trade``，不再进入本审计的扫描根），
 #: 随之删掉 5 格 ``atst.trade.*`` 的符号声明；下限按剩余清单的真实格数同步。
-MIN_SYMBOL_CLAIMS = 25
+#: 2026-11-23：``atst.profile`` / ``atst.profile.detect`` / ``atst.profile.presets``
+#: 已从入口可达，三条豁免按"过期记录必须删"的判据移除，剩余 16 格符号。
+MIN_SYMBOL_CLAIMS = 16
 
 
 def _module_namespace(path: Path) -> set[str]:

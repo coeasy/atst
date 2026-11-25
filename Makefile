@@ -50,6 +50,7 @@ test-integration:
 	$(PYTEST) tests/unit/test_integration_offline.py -v --tb=short
 
 test-bridges:
+	@$(PYTHON) -c "import fastapi" 2>/dev/null || (echo "bridges 门禁需要 fastapi（CI 的 bridges 作业装的是 .[server]）；请先 pip install -e \".[server]\"" && exit 1)
 	$(PYTEST) tests/test_bridges.py -v --tb=short
 
 test-golden:

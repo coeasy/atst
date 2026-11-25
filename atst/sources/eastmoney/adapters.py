@@ -7,7 +7,8 @@
 和 ``atst.sources.adapters_index`` 拆分归组而来。继承链在本 provider 内闭合：
 
 - :class:`EastmoneySource` / :class:`EastmoneyHistoryKlineSource` 继承
-  :class:`~atst.sources.base._EastmoneyJson` 或 :class:`~atst.sources.base.BaseWebSource`
+  :class:`~atst.sources.base._EastmoneyJson`（P1-8/F8：历史 K 线自
+  ``BaseWebSource`` 改挂 _EastmoneyJson，复用 ``_ordered_hosts``）
 - :class:`EastmoneyMarginSource` / :class:`EastmoneyIndexConstituentsSource`
   继承 :class:`~atst.sources.corporate.EastmoneyDataCenterSource`
   （后者本身继承 ``_EastmoneyJson``，同属东财域）。
@@ -22,8 +23,8 @@ from typing import Any
 from ...domain.calendar import day_like_datetime
 from ...domain.models import Bar, Quote
 from ...errors import SourceDeprecated, WebSourceError
+from .._scale import CENT_INT_DIVISOR, HAND_TO_SHARE, SHARES
 from ..base import (
-    BaseWebSource,
     _EastmoneyJson,
     normalize_symbol,
     split_symbol,
@@ -79,15 +80,36 @@ class EastmoneySource(_EastmoneyJson):
         return EASTMONEY
 
     def fetch(self, symbols: Sequence[str], **kwargs: Any) -> list[Quote]:
-        """按主机池顺序拉取并解析行情（含限流 / 失败计数 / 黑名单）。"""
-        symbol = symbols[0] if symbols else ""
-        secid = to_eastmoney_secid(symbol)
-        path_query = (
-            f"/api/qt/stock/get?secid={secid}&fields={self.FIELDS}&_={int(kwargs.get('_t', 0))}"
-        )
-        self.rate_limiter.acquire(self.source_name)
-        payload = self._get_json(path_query)
-        return self._parse_payload(payload)
+        """按主机池顺序拉取并解析行情（含限流 / 失败计数 / 黑名单）。
+
+        P0-1：``/api/qt/stock/get`` 是单标的接口，过去这里只取 ``symbols[0]``，
+        多标的批量行情被静默丢数据。现在逐标的请求并聚合；单个标的返回空数据
+        只落失败名单，不拖垮同批其余标的；全军覆没时原样抛出首个失败。
+        """
+        requested = [str(item).strip() for item in symbols if str(item).strip()]
+        if not requested:
+            return []
+        results: list[Quote] = []
+        failures: list[Exception] = []
+        for symbol in requested:
+            try:
+                secid = to_eastmoney_secid(symbol)
+                path_query = (
+                    f"/api/qt/stock/get?secid={secid}&fields={self.FIELDS}"
+                    f"&_={int(kwargs.get('_t', 0))}"
+                )
+                self.rate_limiter.acquire(self.source_name)
+                payload = self._get_json(path_query)
+                results.extend(self._parse_payload(payload))
+            except WebSourceError as exc:
+                # P0-1：单个标的的取数/解析失败（含 SourceDeprecated 与瞬时
+                # HTTP 失败）只落失败名单；此前只捕 SourceDeprecated，一次
+                # WebSourceError 就会中断整批并丢弃已取回的结果。
+                failures.append(exc)
+                continue
+        if not results and failures:
+            raise failures[0]
+        return results
 
     def _parse_payload(self, payload: Mapping[str, Any]) -> list[Quote]:
         """把 ``/api/qt/stock/get`` 的 JSON payload 解析为 ``list[Quote]``。"""
@@ -111,12 +133,12 @@ class EastmoneySource(_EastmoneyJson):
                 #: 东财经快照的 ``datetime`` 恒为 ``None``。
                 "time": data.get("f86"),
                 "turnover_rate": _f(data.get("f168")),
-                "change": _f(data.get("f169")) / 100,
-                "pct_change": _f(data.get("f170")) / 100,
+                "change": _f(data.get("f169")) / CENT_INT_DIVISOR,
+                "pct_change": _f(data.get("f170")) / CENT_INT_DIVISOR,
                 "float_market_cap": _f(data.get("f116")),
                 "total_market_cap": _f(data.get("f117")),
-                "pe": _f(data.get("f162")) / 100,
-                "pb": _f(data.get("f167")) / 100,
+                "pe": _f(data.get("f162")) / CENT_INT_DIVISOR,
+                "pb": _f(data.get("f167")) / CENT_INT_DIVISOR,
                 #: 涨跌停价（V6 D15）：f51/f52 早就在 FIELDS 里请求，但没进 extra。
                 #: 单位与 f43/f44/f45/f46/f60 这一族价格格同源（本 payload 里
                 #: 只有 f169/f170/f162/f167 那类比率格才 /100），故不另做换算。
@@ -155,8 +177,13 @@ def eastmoney_secid_for_market(symbol: str) -> str | list[str]:
     return to_eastmoney_secid(symbol)
 
 
-class EastmoneyHistoryKlineSource(BaseWebSource):
+class EastmoneyHistoryKlineSource(_EastmoneyJson):
     """东财历史 K 线（push2his；含成交额，支持不复权/前/后复权）。
+
+    P1-8/F8：自 ``BaseWebSource`` 改挂 ``_EastmoneyJson``——主机序列收口到
+    :meth:`_EastmoneyJson._ordered_hosts`（R3 黑名单排序），不再手写
+    ``for host in self.HOSTS`` 循环池；单次取数仍走 ``_request_text(retries=0)``
+    （限流 / 403/429 分诊 / 失败桶语义不变）。
 
     支持 A 股 / 港股 / 美股：
 
@@ -245,8 +272,11 @@ class EastmoneyHistoryKlineSource(BaseWebSource):
         mkt = sym[:2].lower()
 
         last_exc: Exception | None = None
+        # P1-8/F8：主机序列改由 _EastmoneyJson._ordered_hosts 提供
+        # （R3 黑名单排序收口），不再手写 self.HOSTS 循环池。
+        hosts = self._ordered_hosts()
         for secid in candidates:
-            for host in self.HOSTS:
+            for host in hosts:
                 url = (
                     f"{host}/api/qt/stock/kline/get?secid={secid}"
                     f"&klt={klt}&fqt={fqt}&lmt={count}&end={end}"
@@ -277,7 +307,7 @@ class EastmoneyHistoryKlineSource(BaseWebSource):
                     # 单候选（A 股 / 港股）：空结果先换下一 host 复核，全部
                     # 主机皆空才定论（深审 M11：旧实现首个 host 空结果即返回
                     # []——主站被风控时的假 200 空响应会伪装成「无数据」）。
-                    if not bars and host != self.HOSTS[-1]:
+                    if not bars and host != hosts[-1]:
                         continue
                     if (
                         not bars
@@ -313,7 +343,7 @@ class EastmoneyHistoryKlineSource(BaseWebSource):
         rows = (payload.get("data") or {}).get("klines") or []
         # 量口径按市场：A 股「手」×100 到股；港股/美股已是「股」不缩放
         mkt = (symbol or "")[:2].lower() if symbol else ""
-        vol_scale = 1.0 if mkt in ("hk", "us") else 100.0
+        vol_scale = SHARES if mkt in ("hk", "us") else HAND_TO_SHARE
         bars: list[Bar] = []
         for row in rows:
             parts = str(row).split(",")

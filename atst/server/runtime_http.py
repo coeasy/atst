@@ -17,7 +17,7 @@ from ..providers import PROVIDERS
 from ..runtime.executor import DIRECT_BINDINGS
 from ..runtime.orchestration import FallbackPolicy
 from .serialization import serialize_result
-from .wire_fields import QUERY_BODY_FIELDS, reject_reserved_kwargs, reject_undeclared
+from .wire_fields import QUERY_BODY_FIELDS, parse_query_call, reject_undeclared
 
 __all__ = ["create_runtime_app"]
 
@@ -125,16 +125,13 @@ def create_runtime_app(client: Client | None = None) -> Any:
             declared=QUERY_BODY_FIELDS,
             received=payload.keys(),
         )
-        args = payload.get("args", [])
-        kwargs = payload.get("kwargs", {})
-        if not isinstance(args, list):
-            raise ValidationError("args must be an array")
-        if not isinstance(kwargs, dict):
-            raise ValidationError("kwargs must be an object")
-        reject_reserved_kwargs(
+        # P2-6/L1：query 入参形状校验收口到 parse_query_call（与 WS/MCP/CLI 同一函数）。
+        capability, args, kwargs = parse_query_call(
             face="http_body",
             where=f"POST /v13/query/{capability} 的 kwargs",
-            kwargs=kwargs,
+            capability=capability,
+            args=payload.get("args", []),
+            kwargs=payload.get("kwargs", {}),
         )
         return serialize_result(
             api.call(

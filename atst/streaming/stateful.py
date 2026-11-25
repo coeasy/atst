@@ -24,6 +24,12 @@ __all__ = ["StatefulQuoteStream", "AsyncStatefulQuoteStream", "StreamState"]
 
 _DEFAULT_QUEUE = 1024
 
+#: P1-9/M3：Stateful 门面的重连预算。基类默认 0（永不放弃，保持旧语义）；门面给
+#: 有限预算——生产入口（``Client.stream`` / WS 面都在这条链上）的永久失败流必须
+#: 真的落 FAILED，而不是永远 RUNNING 地重试下去。30 次连续失败配 base=1s/cap=30s
+#: 的指数退避，总量级在分钟级：足以跨过短暂抖动，不会把死配置拖成无限重连。
+_DEFAULT_MAX_ATTEMPTS = 30
+
 
 def _build_subscription(
     symbols: list[str],
@@ -56,10 +62,15 @@ def _build_subscription(
 class StatefulQuoteStream(QuoteStream):
     """Canonical synchronous stream with explicit one-shot lifecycle semantics."""
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self, *args: Any, max_attempts: int = _DEFAULT_MAX_ATTEMPTS, **kwargs: Any
+    ) -> None:
+        # P1-9/M3：接 :class:`ReconnectPolicy` 的预算——耗尽时基类 ``_run`` 停 worker，
+        # 这里的 ``_run`` ``finally`` 随后把状态机落 FAILED（原因里写明是预算耗尽）。
+        super().__init__(*args, max_attempts=max_attempts, **kwargs)
         self._lifecycle = StreamLifecycle()
-        self._subscription_seq = 0
+        # P1-9/M1：与基类 ``_sub_seq`` 同一口径的单调订阅序号（退订后不复用 key）。
+        self._sub_seq = 0
 
     @property
     def state(self) -> StreamState:
@@ -91,8 +102,8 @@ class StatefulQuoteStream(QuoteStream):
         )
         with self._lock:
             self._lifecycle.require_subscribable()
-            key = f"sub{self._subscription_seq}"
-            self._subscription_seq += 1
+            key = f"sub{self._sub_seq}"
+            self._sub_seq += 1
             self._subs[key] = sub
         return key
 
@@ -133,11 +144,17 @@ class StatefulQuoteStream(QuoteStream):
             raise
         finally:
             if self.state is StreamState.RUNNING:
-                reason = (
-                    f"worker raised {type(unexpected).__name__}"
-                    if unexpected is not None
-                    else "worker exited unexpectedly"
-                )
+                if unexpected is not None:
+                    reason = f"worker raised {type(unexpected).__name__}"
+                elif self._reconnect.should_give_up():
+                    # P1-9/M3：重连预算耗尽的正常退出路径——写清是预算耗尽，不是
+                    # "worker 悄悄死了"。
+                    reason = (
+                        f"reconnect budget exhausted after {self._reconnect.attempts} "
+                        f"consecutive failures (max_attempts={self._reconnect.max_attempts})"
+                    )
+                else:
+                    reason = "worker exited unexpectedly"
                 self._lifecycle.fail(reason)
                 self._stop.set()
 
@@ -145,10 +162,14 @@ class StatefulQuoteStream(QuoteStream):
 class AsyncStatefulQuoteStream(AsyncQuoteStream):
     """Canonical asyncio stream mirroring the synchronous lifecycle contract."""
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self, *args: Any, max_attempts: int = _DEFAULT_MAX_ATTEMPTS, **kwargs: Any
+    ) -> None:
+        # P1-9/M3：与同步门面同一预算口径。
+        super().__init__(*args, max_attempts=max_attempts, **kwargs)
         self._lifecycle = StreamLifecycle()
-        self._subscription_seq = 0
+        # P1-9/M1：与同步门面同一口径的单调订阅序号。
+        self._sub_seq = 0
 
     @property
     def state(self) -> StreamState:
@@ -178,8 +199,8 @@ class AsyncStatefulQuoteStream(AsyncQuoteStream):
             on_quote=on_quote,
             on_error=on_error,
         )
-        key = f"sub{self._subscription_seq}"
-        self._subscription_seq += 1
+        key = f"sub{self._sub_seq}"
+        self._sub_seq += 1
         self._subs[key] = sub
         return key
 
@@ -223,11 +244,16 @@ class AsyncStatefulQuoteStream(AsyncQuoteStream):
             raise
         finally:
             if self.state is StreamState.RUNNING:
-                reason = (
-                    f"worker raised {type(unexpected).__name__}"
-                    if unexpected is not None
-                    else "async worker exited unexpectedly"
-                )
+                if unexpected is not None:
+                    reason = f"worker raised {type(unexpected).__name__}"
+                elif self._reconnect.should_give_up():
+                    # P1-9/M3：重连预算耗尽的正常退出路径，与同步门面同一文案。
+                    reason = (
+                        f"reconnect budget exhausted after {self._reconnect.attempts} "
+                        f"consecutive failures (max_attempts={self._reconnect.max_attempts})"
+                    )
+                else:
+                    reason = "async worker exited unexpectedly"
                 self._lifecycle.fail(reason)
                 self._stop.set()
             #: 这里原本还有一格"``self._task.done()`` 且 STOPPING ⇒ ``_lifecycle.close()``"，

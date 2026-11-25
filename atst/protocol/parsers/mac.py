@@ -44,11 +44,9 @@ class MacBlockListParser(BaseParser):
     RECORD_SIZE = 10
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             name = decode_gbk(reader.bytes(8))
             bid = reader.uint16()
             rows.append({"name": name, "block_id": bid})
@@ -62,12 +60,8 @@ class MacBlockMembersParser(BaseParser):
     RECORD_SIZE = 6
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
-        return [
-            {"code": decode_gbk(reader.bytes(self.RECORD_SIZE))}
-            for _ in range(count)
-            if reader.remaining >= self.RECORD_SIZE
-        ]
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
+        return [{"code": decode_gbk(reader.bytes(self.RECORD_SIZE))} for _ in records]
 
 
 @register_parser(0x1300, family=Family.MAC, name="MAC_UNIFIED_BARS", head=2, tier="L2")
@@ -87,11 +81,9 @@ class MacUnifiedBarsParser(BaseParser):
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
         scale = int(ctx.get("price_scale", 1000))
-        count = self.guarded_count(reader, ctx, 28)
+        _, records = self.iter_fixed_records(reader, ctx, 28)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < 28:
-                break
+        for _ in records:
             # P1c：per-record absolute —— o 不跨记录累加（勿改成 0x052D 的 base 模式）
             dt = reader.uint32()
             o = reader.leb128()
@@ -156,11 +148,9 @@ class MacFundFlowParser(BaseParser):
     RECORD_SIZE = 14
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             code = decode_gbk(reader.bytes(6))
             main, retail = reader.unpack("ff", 8)
             rows.append({"code": code, "main_net": round(main, 2), "retail_net": round(retail, 2)})
@@ -174,11 +164,9 @@ class MacMainForceParser(BaseParser):
     RECORD_SIZE = 10
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             code = decode_gbk(reader.bytes(6))
             (net,) = reader.unpack("f", 4)
             rows.append({"code": code, "net_buy": round(net, 2)})
@@ -192,11 +180,9 @@ class MacAuctionParser(BaseParser):
     RECORD_SIZE = 10
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             second = reader.uint16()
             price = reader.float32()
             volume = reader.tdx_float()
@@ -211,11 +197,9 @@ class MacMultidayMinuteParser(BaseParser):
     RECORD_SIZE = 14
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             minute = reader.uint16()
             price = reader.float32()
             avg = reader.float32()
@@ -240,11 +224,9 @@ class MacBlockQuoteParser(BaseParser):
     RECORD_SIZE = 14
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             code = decode_gbk(reader.bytes(6))
             pct, price = reader.unpack("ff", 8)
             rows.append({"code": code, "pct_change": round(pct, 4), "price": round(price, 4)})
@@ -263,11 +245,9 @@ class MacRankParser(BaseParser):
     RECORD_SIZE = 12
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             code = decode_gbk(reader.bytes(6))
             pct = reader.float32()
             rank = reader.uint16()
@@ -282,11 +262,9 @@ class MacDdeParser(BaseParser):
     RECORD_SIZE = 18
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             code = decode_gbk(reader.bytes(6))
             ddx, ddy, ddz = reader.unpack("fff", 12)
             rows.append(
@@ -302,11 +280,9 @@ class MacChipParser(BaseParser):
     PAIR_SIZE = 8
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.PAIR_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.PAIR_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.PAIR_SIZE:
-                break
+        for _ in records:
             price = reader.float32()
             volume = reader.tdx_float()
             rows.append({"price": round(price, 4), "volume": int(volume)})
@@ -318,11 +294,9 @@ class MacNewsParser(BaseParser):
     """资讯：``<H count>`` + ``<8s time><8s title(gbk)><H len>`` + 正文片段。"""
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, 18)
+        _, records = self.iter_fixed_records(reader, ctx, 18)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < 18:
-                break
+        for _ in records:
             time = decode_gbk(reader.bytes(8))
             title = decode_gbk(reader.bytes(8))
             length = reader.uint16()

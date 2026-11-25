@@ -198,8 +198,18 @@ class LocalDaySink:
 
     # -- 写入 --------------------------------------------------------------- #
     def _append_bars(self, path: Path, existing: Sequence[Bar], new: Sequence[Bar]) -> None:
-        """把新增日线按升序追加到 ``.day`` 文件（保持 prev_close 链连续）。"""
+        """把新增日线按升序写入 ``.day`` 文件（保持 prev_close 链连续）。
+
+        P0-12：断点回退窗口可能同时带回「晚于本地末日期」和「早于本地末日期」的
+        补洞 bar。前者直接 ``ab`` 追加没问题；后者追加到文件尾会把 ``.day`` 的
+        时间序搅乱（reader 若假定升序即读错）。检测到乱序补洞时改为**全文件
+        合并重写**：existing 优先去重、按日期升序、prev_close 链整体重算。
+        """
         merged = sorted(new, key=lambda b: b.datetime)
+        last = existing[-1].datetime[:10] if existing else None
+        if last is not None and any(b.datetime[:10] <= last for b in merged):
+            self._rewrite_merged(path, existing, merged)
+            return
         prev_close: float | None = existing[-1].close if existing else None
         payload = bytearray()
         for bar in merged:
@@ -209,6 +219,28 @@ class LocalDaySink:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("ab") as f:
             f.write(payload)
+
+    def _rewrite_merged(self, path: Path, existing: Sequence[Bar], new: Sequence[Bar]) -> None:
+        """乱序补洞时的全文件重写：合并去重、升序、prev_close 链重算。"""
+        by_date: dict[str, Bar] = {}
+        for bar in existing:
+            if bar.datetime:
+                by_date.setdefault(bar.datetime[:10], bar)
+        for bar in new:
+            if bar.datetime:
+                by_date.setdefault(bar.datetime[:10], bar)
+        ordered = [by_date[d] for d in sorted(by_date)]
+        prev_close: float | None = None
+        payload = bytearray()
+        for bar in ordered:
+            pc = prev_close if prev_close is not None else bar.open
+            payload += self._encode_record(bar, prev_close=pc)
+            prev_close = bar.close
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        with tmp.open("wb") as f:
+            f.write(payload)
+        tmp.replace(path)
 
     # -- 编码（reader 解码的精确逆变换）------------------------------------- #
     def _encode_record(self, bar: Bar, *, prev_close: float) -> bytes:

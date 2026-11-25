@@ -31,10 +31,14 @@ enriched
 ## 3. Unified API
 
 ```python
-md.bars("sh600519", provider="derived", adjust="qfq")
-md.call("all_market", provider="derived", node="hs_a")
-md.call("sync_daily", provider="derived", ...)
-md.call("daily_enriched", provider="derived", ...)
+from atst import Client
+
+with Client() as c:
+    c.bars("sh600519", adjust="qfq", provider="eastmoney")  # 服务端复权走 Web 源
+    c.adjusted_bars("sh600519", adjust="qfq")                # 自算复权走 composed 能力
+    c.call("all_market", provider="derived", node="hs_a")
+    c.call("sync_daily", provider="derived", ...)
+    c.call("daily_enriched", provider="derived", ...)
 ```
 
 ## 4. Rate / Transport
@@ -55,8 +59,11 @@ md.call("daily_enriched", provider="derived", ...)
 
 ## 7. Provider-specific Model
 
-复权/同步/富集各有结果类型（`AdjustedBars` / `SyncReport` / `DailyEnriched`），
-不塞进 `Quote.extra`。
+复权/同步/富集没有独立的顶层结果类型：仓里并不存在 `AdjustedBars` / `SyncReport` /
+`DailyEnriched` 这三个名字。三种能力都经统一内核返回 `QueryResult`——`adjusted_bars` 的
+`data` 是 `list[Bar]`（每根 bar 的 `extra` 带 `adj_price_factor` / `adj_volume_factor` /
+`raw_volume`），`daily_enriched` 的 `data` 是逐日 dict 行（列契约 `ENRICHED_FIELDS`，24 列）。
+不塞进 `Quote.extra` 的口径不变，但不要按不存在的类名写代码。
 
 ## 8. Conformance
 

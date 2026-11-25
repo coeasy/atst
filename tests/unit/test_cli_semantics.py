@@ -169,7 +169,8 @@ class TestStreamExitCode:
 
     def test_zero_quotes_exits_1(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
         seen: dict[str, Any] = {}
-        monkeypatch.setattr("atst.cli.runtime_commands.Client", self._fake_client(seen, emit=False))
+        # P2-3：cmd_stream 的 Client 绑定点随拆分移到 cmds_kernel。
+        monkeypatch.setattr("atst.cli.cmds_kernel.Client", self._fake_client(seen, emit=False))
         rc = cli._cmd_stream(
             _ns(symbols=["600000"], interval=1.0, seconds=0.01, diff=False, max_queue=1024)
         )
@@ -180,7 +181,7 @@ class TestStreamExitCode:
 
     def test_data_received_exits_0(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:  # type: ignore[no-untyped-def]
         seen: dict[str, Any] = {}
-        monkeypatch.setattr("atst.cli.runtime_commands.Client", self._fake_client(seen, emit=True))
+        monkeypatch.setattr("atst.cli.cmds_kernel.Client", self._fake_client(seen, emit=True))
         rc = cli._cmd_stream(
             _ns(symbols=["600000"], interval=1.0, seconds=0.01, diff=False, max_queue=32)
         )

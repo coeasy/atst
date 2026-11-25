@@ -7,8 +7,9 @@
 :mod:`atst.reader.profile` 是**生产文件档案**（本地 vipdoc 二进制，
 ProfileDetector 六步探测直接接 ``DayBarReader/MinBarReader`` 主链路）；
 本模块是**网络帧档案**（对网络 payload / 未知归档字节做证据化探测，
-供协议发现与人工评审）。两者共享 :class:`DataProfile` 与候选长度表，
-但互不调用——不要把本模块的输出直接喂给 reader 主链路。
+供协议发现与人工评审）。两者共享 :class:`DataProfile` 与打分内核
+:mod:`atst.profile.scoring`（候选长度表/抽样/字段探针/日期投票的
+SSOT，P1-7 探测合一），但互不调用——不要把本模块的输出直接喂给 reader 主链路。
 
 本模块提供一个**证据化**的探测入口 :func:`detect`，与
 :class:`atst.reader.profile.ProfileDetector` 的差别：
@@ -30,19 +31,20 @@ ProfileDetector 六步探测直接接 ``DayBarReader/MinBarReader`` 主链路）
 3. **字段类型探针**：在每个候选长度下，抽样记录，在每个 4 字节偏移处
    并行测试 ``uint32`` / ``float32`` / ``tdx_float``，用
    :func:`atst.codec.primitive.decode_tdx_float` 判定成交量/成交额是否
-   落在合理区间。
+   落在合理区间。（探针机械收敛于 :mod:`atst.profile.scoring`，P1-7）
 4. **日期字段探测**：在偏移 0 / 2 / 4 尝试 ``yyyymmdd`` / ``lc16`` /
-   ``datetime32`` 三种时间编码，选合法样本比例最高者。
-5. **候选评分与排序**：把步骤 2–4 的分数加权（0.20 / 0.25 / 0.25 / 0.30），
-   取最高者为最终 :class:`DataProfile`。
+   ``datetime32`` 三种时间编码，选合法样本比例最高者。（投票机械同上）
+5. **候选评分与排序**：把步骤 2–4 的分数按模块常量 ``WEIGHT_MAGIC_LENGTH``
+   等四项加权（数值以代码常量为 SSOT，文档不手抄），取最高者为最终
+   :class:`DataProfile`。
 6. **置信度决策**：总置信度 ≥ 0.5 → 返回；< 0.5 →
    抛 :class:`~atst.errors.ProfileUndetectable`。
 
 依赖
 ----
 * :mod:`atst.reader.profile` —— 复用 :class:`DataProfile` 与其枚举；
-* :mod:`atst.codec.primitive` —— :func:`decode_tdx_float` 与
-  :func:`get_datetime_from_lc`；
+* :mod:`atst.codec.primitive` —— :func:`decode_tdx_float`（tdx_float 探针）；
+* :mod:`atst.profile.scoring` —— 共享打分内核（P1-7 探测合一）；
 * :mod:`atst.profile.presets` —— 先验市场/品种映射。
 """
 
@@ -52,11 +54,18 @@ import struct
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from ..codec.primitive import (
-    decode_tdx_float_at,
-    get_datetime_from_lc,
-)
+from ..codec.primitive import decode_tdx_float_at
 from ..errors import ProfileUndetectable
+from ..profile.scoring import (
+    FIELD_PROBE_OFFSETS,
+    RECORD_SIZES,
+    plausible_float32_price,
+    plausible_tdx_float,
+    plausible_u32_price,
+    probe_field_types,
+    sample_records,
+    vote_date_encodings,
+)
 from ..reader.profile import (
     BUILTIN_PROFILES,
     AssetClass,
@@ -78,11 +87,11 @@ __all__ = [
 #: 置信度阈值；低于此值抛 :class:`ProfileUndetectable`。
 CONFIDENCE_THRESHOLD: float = 0.5
 
-#: 常见记录长度候选（与 :class:`ProfileDetector.RECORD_SIZES` 一致）。
-_RECORD_SIZES: tuple[int, ...] = (32, 29, 24, 16, 8, 4)
-
-#: 抽样上限（避免大数据集拖慢探测）。
-_MAX_SAMPLES: int = 64
+#: 步骤加权（P1-7：文档不再手抄数字，一律引用本组常量）。
+WEIGHT_MAGIC_LENGTH: float = 0.20
+WEIGHT_RECORD_SIZE: float = 0.20
+WEIGHT_FIELD_TYPES: float = 0.25
+WEIGHT_DATE_DETECTION: float = 0.35
 
 
 # --------------------------------------------------------------------------- #
@@ -157,47 +166,8 @@ class DetectionResult:
 # --------------------------------------------------------------------------- #
 # 辅助
 # --------------------------------------------------------------------------- #
-def _plausible_u32_price(v: int) -> bool:
-    """uint32 价格是否落在合理区间（0.001–100000 元，×100 缩放）。"""
-    return 100 <= v <= 100_000_000
-
-
-def _plausible_float32_price(v: float) -> bool:
-    return 0.01 <= v <= 100_000
-
-
-def _plausible_tdx_float(v: float) -> bool:
-    """tdx_float 是否落在合理的成交量/成交额区间（股或元）。"""
-    return 0.0 < v < 1e12
-
-
-def _looks_like_yyyymmdd(v: int) -> bool:
-    if not isinstance(v, int) or v <= 0:
-        return False
-    y, m, d = v // 10000, (v // 100) % 100, v % 100
-    return 1990 <= y <= 2100 and 1 <= m <= 12 and 1 <= d <= 31
-
-
-def _looks_like_datetime32(v: int) -> bool:
-    y = (v >> 20) & 0xFFF
-    m = (v >> 16) & 0x0F
-    d = (v >> 11) & 0x1F
-    return 1990 <= y <= 2100 and 1 <= m <= 12 and 1 <= d <= 31
-
-
-def _looks_like_lc16(v: int) -> bool:
-    y, m, d = get_datetime_from_lc(v)
-    return 2004 <= y <= 2100 and 1 <= m <= 12 and 1 <= d <= 31
-
-
-def _sample_records(data: bytes, record_size: int, limit: int = _MAX_SAMPLES) -> list[bytes]:
-    if record_size <= 0:
-        return []
-    count = len(data) // record_size
-    if count == 0:
-        return []
-    step = max(1, count // limit)
-    return [data[i * record_size : (i + 1) * record_size] for i in range(0, count, step)]
+# P1-7：合理性谓词（plausible_*）、日期三编码判定（looks_like_*）与等距
+# 抽样（sample_records）收敛到 :mod:`atst.profile.scoring`，见顶部导入。
 
 
 # --------------------------------------------------------------------------- #
@@ -214,7 +184,7 @@ def _step1_magic_length(data: bytes) -> StepEvidence:
             details={"len": n, "too_short": True},
         )
     hits: list[int] = []
-    for rs in _RECORD_SIZES:
+    for rs in RECORD_SIZES:
         if n % rs == 0 and n // rs >= 1:
             hits.append(rs)
     score = min(1.0, len(hits) / 3.0) if hits else 0.1
@@ -238,7 +208,7 @@ def _step2_record_size_candidates(data: bytes) -> StepEvidence:
         )
     # 优先按常见长度命中
     scored: list[tuple[int, float]] = []
-    for rs in _RECORD_SIZES:
+    for rs in RECORD_SIZES:
         if n % rs == 0:
             # 32 是日线/分钟线最常见的记录长度
             weight = 1.0 if rs == 32 else 0.7 if rs in (29, 16, 8) else 0.5
@@ -274,7 +244,7 @@ def _step3_field_types(data: bytes, record_size: int) -> tuple[StepEvidence, str
             details={"encoding": PriceEncoding.UINT32, "reason": "record_too_small"},
         ), PriceEncoding.UINT32
 
-    samples = _sample_records(data, record_size)
+    samples = sample_records(data, record_size)
     if not samples:
         return StepEvidence(
             "field_types",
@@ -283,29 +253,24 @@ def _step3_field_types(data: bytes, record_size: int) -> tuple[StepEvidence, str
             details={"encoding": PriceEncoding.UINT32, "reason": "no_samples"},
         ), PriceEncoding.UINT32
 
-    float_like = 0
-    int_like = 0
-    tdx_float_like = 0
-    total = 0
     # 常见价格字段偏移（相对记录起点）
-    offsets = tuple(off for off in (4, 8, 12, 16) if off + 4 <= record_size)
-
+    offsets = tuple(off for off in FIELD_PROBE_OFFSETS if off + 4 <= record_size)
+    # P1-7：uint32/float32 的解包与计数循环收敛到 scoring.probe_field_types
+    float_like, int_like, total = probe_field_types(
+        samples,
+        plausible_float32=plausible_float32_price,
+        plausible_uint32=plausible_u32_price,
+        offsets=offsets,
+    )
+    # tdx_float 探针是本入口独有的字段类型（reader 探针不含），仍在本模块计数
+    tdx_float_like = 0
     for rec in samples:
         for off in offsets:
-            total += 1
-            if off + 4 > len(rec):
-                continue
-            (u32,) = struct.unpack_from("<I", rec, off)
-            (f32,) = struct.unpack_from("<f", rec, off)
             try:
                 tf, _ = decode_tdx_float_at(rec, off)
             except Exception:
                 tf = 0.0
-            if _plausible_float32_price(f32):
-                float_like += 1
-            elif _plausible_u32_price(u32):
-                int_like += 1
-            if _plausible_tdx_float(tf):
+            if plausible_tdx_float(tf):
                 tdx_float_like += 1
 
     if total == 0:
@@ -349,7 +314,7 @@ def _step4_date_detection(data: bytes, record_size: int) -> tuple[StepEvidence, 
             details={"encoding": TimeEncoding.YYYYMMDD},
         ), TimeEncoding.YYYYMMDD
 
-    samples = _sample_records(data, record_size)
+    samples = sample_records(data, record_size)
     if not samples:
         return StepEvidence(
             "date_detection",
@@ -358,25 +323,8 @@ def _step4_date_detection(data: bytes, record_size: int) -> tuple[StepEvidence, 
             details={"encoding": TimeEncoding.YYYYMMDD},
         ), TimeEncoding.YYYYMMDD
 
-    ymd_votes = 0
-    lc16_votes = 0
-    dt32_votes = 0
-    total = 0
-
-    for rec in samples:
-        # uint32 yyyymmdd @ offset 0
-        if record_size >= 4:
-            (v32,) = struct.unpack_from("<I", rec, 0)
-            total += 1
-            if _looks_like_yyyymmdd(v32):
-                ymd_votes += 1
-            if _looks_like_datetime32(v32):
-                dt32_votes += 1
-        # uint16 lc16 @ offset 0
-        if record_size >= 2:
-            (v16,) = struct.unpack_from("<H", rec, 0)
-            if _looks_like_lc16(v16):
-                lc16_votes += 1
+    # P1-7：三编码投票机械收敛到 scoring.vote_date_encodings
+    ymd_votes, dt32_votes, lc16_votes, total = vote_date_encodings(samples, record_size)
 
     if total == 0:
         return StepEvidence(
@@ -421,10 +369,10 @@ def _build_candidate_profile(
     """根据探测结果构造一个候选 :class:`DataProfile`。"""
     # 先按 period 推断 volume_unit 与 asset_class
     period = hint_period or Period.DAY
-    if period in (Period.M1, Period.M5, Period.M15, Period.M30, Period.M60, Period.TICK):
-        asset_class = AssetClass.STOCK
-    else:
-        asset_class = AssetClass.STOCK
+    # P-9 死分支修复：原 if/else 两分支同赋 ``AssetClass.STOCK``，是假分支。
+    # 探测层目前只能产出 STOCK（见 reader/profile.py ``AssetClass`` 的词表
+    # 说明）；要按周期改判品种，先得有品种探针，再恢复分支。
+    asset_class = AssetClass.STOCK
 
     # 尝试匹配 preset（若有 hint_market）：加权在 detect() 主循环内做
     # （对 presets 匹配成功者的首要记录长度候选 +0.1 置信度），
@@ -529,7 +477,7 @@ def _price_scale_sanity(
         or profile.price_encoding != PriceEncoding.UINT32
     ):
         return None, 1.0, ""
-    samples = _sample_records(data, record_size, limit=32)
+    samples = sample_records(data, record_size, limit=32)
     if not samples:
         return None, 1.0, ""
     values: list[int] = []
@@ -614,7 +562,7 @@ def detect(
     # 重复评估两遍（步骤 3/4 各算两次，分数互相污染）
     candidate_rs_list = list(dict.fromkeys(candidate_rs_list))
     if not candidate_rs_list:
-        candidate_rs_list = list(_RECORD_SIZES)
+        candidate_rs_list = list(RECORD_SIZES)
 
     # presets 先验（hint_market 命中预设 → 首要记录长度候选加权）
     preset_matched = _match_preset_name(hint_market) if hint_market is not None else ""
@@ -630,7 +578,10 @@ def detect(
         # 归一化分数（步骤 2 已有分数）
         rs_score = 1.0 if rs == top_rs else 0.6
         conf = round(
-            0.20 * ev1.score + 0.20 * rs_score + 0.25 * ev3.score + 0.35 * ev4.score,
+            WEIGHT_MAGIC_LENGTH * ev1.score
+            + WEIGHT_RECORD_SIZE * rs_score
+            + WEIGHT_FIELD_TYPES * ev3.score
+            + WEIGHT_DATE_DETECTION * ev4.score,
             4,
         )
         if preset_matched and rs == top_rs and conf >= CONFIDENCE_THRESHOLD * 0.6:
@@ -653,6 +604,12 @@ def detect(
             },
         }
         candidates.append(cand)
+        # P1-7/P-9：每个候选的探针证据无条件入链——此前 ev3/ev4 只在候选
+        # 刷新最优时 extend，落选候选的字段/日期探针证据丢失，审计链不完整。
+        evidence.extend([ev3, ev4])
+        evidence.append(
+            StepEvidence("scoring", f"候选 rs={rs} 综合置信度 {conf:.2f}", conf, details=cand)
+        )
         if conf > best_confidence:
             best_confidence = conf
             best_candidate = cand
@@ -663,15 +620,6 @@ def detect(
                 hint_market=hint_market,
                 hint_period=hint_period,
             )
-            # 把证据里带上本次的字段类型 + 日期步骤
-            evidence.extend([ev3, ev4])
-            ev3_copy = StepEvidence(
-                "scoring", f"候选 rs={rs} 综合置信度 {conf:.2f}", conf, details=cand
-            )
-            evidence.append(ev3_copy)
-
-    # 若没跑完两个候选（可能只有 1 个），把未跑的也补进证据
-    # （已在循环内扩展）
 
     if best_profile is None:
         # 极端兜底：构造一个空 profile

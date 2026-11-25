@@ -8,10 +8,9 @@ from __future__ import annotations
 from typing import Any
 
 from ...client.api import Client
-from ...errors import ValidationError
 from ...runtime.orchestration import FallbackPolicy
 from ..serialization import serialize_result
-from ..wire_fields import as_request_bool, as_request_int, reject_reserved_kwargs
+from ..wire_fields import as_request_bool, as_request_int, parse_query_call
 
 __all__ = [
     "_h_capabilities",
@@ -82,19 +81,13 @@ def _h_capabilities(client: Client, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _h_query_capability(client: Client, args: dict[str, Any]) -> dict[str, Any]:
-    capability = args.get("capability")
-    if not isinstance(capability, str) or not capability.strip():
-        raise ValidationError("capability is required")
-    call_args = args.get("args", [])
-    call_kwargs = args.get("kwargs", {})
-    if not isinstance(call_args, list):
-        raise ValidationError("args must be an array")
-    if not isinstance(call_kwargs, dict):
-        raise ValidationError("kwargs must be an object")
-    reject_reserved_kwargs(
+    # P2-6/L1：query 入参形状校验收口到 parse_query_call（与 HTTP/WS/CLI 同一函数）。
+    capability, call_args, call_kwargs = parse_query_call(
         face="mcp_arguments",
         where="MCP tool query_capability 的 kwargs",
-        kwargs=call_kwargs,
+        capability=args.get("capability"),
+        args=args.get("args", []),
+        kwargs=args.get("kwargs", {}),
     )
     return serialize_result(
         client.call(

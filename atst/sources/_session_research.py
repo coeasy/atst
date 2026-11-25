@@ -452,12 +452,14 @@ class ResearchSessionMixin:
             )
         rows: list[dict[str, Any]] = []
         for line in resp.text().splitlines():
-            parts = [p.strip() for p in line.split(",") if p.strip()]
-            # CSV 混有空列（akshare 同款 dropna(axis=1) 语义）：先剔除空段再映射
-            if len(parts) < 4 or not parts[0][:4].isdigit():
+            # 保留位置槽位：CSV 混有空列，过滤空段会让后续列整体左移，
+            # 例如 ``2026-09-30,,1.85,2.10`` 会被误读成 FR001=1.85。
+            # 空单元格转 None（原 ``dropna`` 语义由逐格 ``or None`` 承担）。
+            cells = [p.strip() or None for p in line.split(",")]
+            if len(cells) < 4 or not (cells[0] or "")[:4].isdigit():
                 continue  # 表头/空行
-            row: dict[str, Any] = {"date": parts[0]}
-            row.update({cols[i]: parts[i + 1] or None for i in range(len(cols))})
+            row: dict[str, Any] = {"date": cells[0]}
+            row.update({cols[i]: cells[i + 1] for i in range(len(cols))})
             rows.append(row)
         if not rows:
             raise WebSourceError("chinamoney 回购定盘利率返回为空 (source='chinamoney')")
@@ -670,9 +672,11 @@ class ResearchSessionMixin:
         （诉讼 / 违规处罚）待对应端点校准后追加。
         """
         from ..domain.symbol import split_symbol
+        from ..errors import WebSourceError
 
         _, code = split_symbol(symbol)
         items: list[dict[str, Any]] = []
+        failed: list[str] = []
         for kind, report, sort_col in (
             ("goodwill", "RPT_GOODWILL_STOCKDETAILS", "NOTICE_DATE"),
             ("pledge", "RPT_CSDC_LIST", "TRADE_DATE"),
@@ -686,9 +690,21 @@ class ResearchSessionMixin:
                     page=page,
                     size=size,
                 )
-            except Exception:  # noqa: BLE001 —— 单类雷点失败不拖垮整体扫描
+            except WebSourceError as exc:
+                # 单类雷点失败不拖垮整体扫描，但绝不静默：记下失败类别与原因，
+                # 循环结束后一次性随结果发出告警（调用方据此判断结果不完整）。
+                failed.append(f"{kind}({report}): {exc}")
                 rows = []
             items.extend({"kind": kind, **r} for r in rows)
+        if failed:
+            record_warning(
+                # 现有 WarningCode 中没有专门的"聚合查询部分子源失败"类别；
+                # QUOTES_PARTIAL_FAILURE 的语义（逐项失败被隔离、结果不完整）同形。
+                WarningCode.QUOTES_PARTIAL_FAILURE,
+                f"risk_scan({symbol}) 有 {len(failed)}/2 类雷点取数失败，结果不完整: "
+                + "; ".join(failed),
+                stacklevel=2,
+            )
         return items
 
     # -- G-13 指数估值 PE / 股息率 ---------------------------------------- #

@@ -68,7 +68,7 @@ def _adjusted_raw_bars(
     """
     from ..domain.models import Bar
     from ..domain.symbol import split_symbol
-    from ..query import QueryPlanner, QuerySpec
+    from ..query import QuerySpec
     from ..reader import DayBarReader
 
     if period == "day" and executor.vipdoc_root:
@@ -88,8 +88,10 @@ def _adjusted_raw_bars(
         count=count,
         start=start,
         currentness="historical",
+        # P1-3：预算继承——内层不再各自重置 5s deadline，吃外层剩余预算。
+        deadline_ms=max(1, int(timeout * 1000)),
     )
-    rows = executor.execute(QueryPlanner().compile(spec)).data
+    rows = executor.execute_subquery(spec).data
     return [row if isinstance(row, Bar) else Bar.from_dict(row) for row in rows]
 
 
@@ -103,7 +105,7 @@ def _adjusted_events(executor, symbol: str, event_source: str, *, timeout: float
     if event_source == "eastmoney":
         from ..diagnostics import WarningCode, record_warning
         from ..domain.finance import capital_changes_from_dividends_and_rights
-        from ..query import QueryPlanner, QuerySpec
+        from ..query import QuerySpec
 
         def page_all(capability: str) -> list[Any]:
             """翻页到尽。``dividend_history`` 的 ``size`` 默认只有 20，
@@ -124,21 +126,21 @@ def _adjusted_events(executor, symbol: str, event_source: str, *, timeout: float
 
             seen: set[Any] = set()
             for page in range(1, _ADJUST_EVENT_MAX_PAGES + 1):
-                batch = executor.execute(
-                    QueryPlanner().compile(
-                        QuerySpec.build(
-                            capability,
-                            symbols=symbol,
-                            provider="eastmoney",
-                            currentness="historical",
-                            options={
-                                "args": [str(symbol)],
-                                "kwargs": {
-                                    "page": page,
-                                    "size": _ADJUST_EVENT_PAGE_SIZE,
-                                },
+                # P1-3：内层查询走主链（execute_subquery），预算吃外层剩余额度。
+                batch = executor.execute_subquery(
+                    QuerySpec.build(
+                        capability,
+                        symbols=symbol,
+                        provider="eastmoney",
+                        currentness="historical",
+                        deadline_ms=max(1, int(timeout * 1000)),
+                        options={
+                            "args": [str(symbol)],
+                            "kwargs": {
+                                "page": page,
+                                "size": _ADJUST_EVENT_PAGE_SIZE,
                             },
-                        )
+                        },
                     )
                 ).data
                 batch = list(batch or [])

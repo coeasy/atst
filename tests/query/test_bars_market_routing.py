@@ -13,10 +13,17 @@ pytestmark = pytest.mark.unit
 
 
 def test_a_share_bars_default_stays_tdx() -> None:
-    """A 股与北交所仍走默认 tdx，路由分支不得改变主路径。"""
-    for symbol in ("sh600519", "sz000001", "bj430047"):
+    """沪深 A 股仍走默认 tdx，路由分支不得改变主路径。"""
+    for symbol in ("sh600519", "sz000001"):
         spec = QuerySpec.build("bars", symbols=symbol, count=2).normalized()
         assert spec.provider == "tdx"
+
+
+def test_bj_bars_routes_to_web_provider_like_hk_us() -> None:
+    """P0-4：北交所 bars 与港美股同待遇——tdx 二进制未验证，缺省转 Web 源。"""
+    spec = QuerySpec.build("bars", symbols="bj430047", count=2).normalized()
+    assert spec.provider in ("eastmoney", "tencent")
+    assert spec.provider != "tdx"
 
 
 @pytest.mark.parametrize("symbol", ["hk00700", "usAAPL"])

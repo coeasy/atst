@@ -49,9 +49,16 @@
     // 金额单位为**万元**；status=3 表示当日已收盘
 
 .. warning::
-   东财主站对高频 IP 有断连风控（``RemoteDisconnected``）。本模块全部适配器
-   继承 :class:`_EastmoneyJson`，按 ``HOSTS`` 顺序 failover
-   （push2 → 92.push2 → push2delay）。
+   东财主站对高频 IP 有断连风控（``RemoteDisconnected``）。走 push2 主机的东财
+   适配器继承 :class:`_EastmoneyJson`，按 ``HOSTS`` 顺序 failover
+   （push2 → 92.push2 → push2delay）；push2ex 端点（涨跌停池 / 盘中异动）
+   继承 :class:`BaseWebSource`。
+
+.. note::
+   P2-4c（F14）：新浪资金流历史源 ``SinaFundFlowSource`` 已按 Provider 归组迁至
+   :mod:`atst.sources.sina.fundflow`；本模块保留同名 re-export 兼容旧 import
+   （``providers/sina.py`` 的 ``fund_flow`` 绑定与 ``atst.sources`` 惰性导出表
+   仍经旧路径取类）。本模块现在只承载东财系适配器。
 """
 
 from __future__ import annotations
@@ -62,6 +69,7 @@ from typing import Any
 
 from ..domain.models import Quote
 from ..errors import SourceDeprecated
+from ._scale import MILLI_INT_DIVISOR
 from .base import (
     BaseWebSource,
     _EastmoneyJson,
@@ -73,12 +81,12 @@ from .base import (
 from .base import (
     num_i as _i,
 )
+from .sina.fundflow import SinaFundFlowSource  # P2-4c/F14：re-export 兼容旧 import
 from .sources import (
     FUND_FLOW,
     LIMIT_POOL,
     NORTHBOUND,
     RANK,
-    SINA_FUND_FLOW,
     STOCK_CHANGES,
 )
 
@@ -98,6 +106,13 @@ __all__ = [
 # --------------------------------------------------------------------------- #
 # 常量表
 # --------------------------------------------------------------------------- #
+#: 东财公开静态 ``ut`` token（2026-09 真实抓包；前端 JS 公开常量，非用户凭据）。
+#: push2ex 的涨跌停池 / 盘中异动端点使用本 token。
+_EM_PUSH2EX_UT = "7eea3edcaed734bea9cbfc24409ed989"
+#: 东财公开静态 ``ut`` token（同上来源 / 日期）；push2 ``kamt`` 沪深港通端点使用。
+#: 与 push2ex 的 token 不同，不能合并为单一常量，否则破坏取数行为。
+_EM_PUSH2_UT = "b2884a393a59ad64002292a3e90d46a5"
+
 #: 市场 / 板块过滤表达式（clist 的 ``fs`` 参数）
 MARKET_FILTERS: dict[str, str] = {
     "all_a": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",  # 沪深 A 股（默认）
@@ -520,7 +535,19 @@ class EastmoneyFundFlowSource(_EastmoneyJson):
 # 涨跌停 / 炸板池
 # --------------------------------------------------------------------------- #
 class EastmoneyLimitPoolSource(BaseWebSource):
-    """东财涨停 / 跌停 / 炸板池（push2ex 端点，无主机池容灾）。"""
+    """东财涨停 / 跌停 / 炸板池（push2ex 端点，无主机池容灾）。
+
+    S-10/F22 复核结论（保持 :class:`BaseWebSource`，不继承 :class:`_EastmoneyJson`）：
+    1. push2ex 的 ``getTopic{ZT|DT|ZB}Pool`` 仅部署在 ``push2ex.eastmoney.com``；
+       本仓登记的 push2 备站（92.push2 / push2delay）是**不同服务**，并不提供
+       push2ex 端点，把它们塞进 ``HOSTS`` 只会制造必败的假 failover。
+    2. ``_EastmoneyJson._get_json`` 直接调 ``client.get``，绕开
+       :meth:`~atst.sources._base_core.BaseWebSource._request_http` 的限流、
+       指数退避重试与 403/429 细分；切换会丢失现有容错语义。
+    3. :meth:`parse_pool` 公开接受 JSON 文本，已有调用方/测试直传文本串；
+       改成接 dict 会破坏该 seam。
+    因此维持现状：仍走 ``_request_text``（已含失败桶 / 下线检测 / 重试）。
+    """
 
     BASE = "https://push2ex.eastmoney.com"
     #: 池类型 → 中文名
@@ -544,7 +571,7 @@ class EastmoneyLimitPoolSource(BaseWebSource):
         ep = _POOL_ENDPOINTS.get(pool, _POOL_ENDPOINTS["zt"])
         return (
             f"{self.BASE}/getTopic{ep}"
-            f"?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt"
+            f"?ut={_EM_PUSH2EX_UT}&dpt=wz.ztzt"
             f"&Pageindex={max(page - 1, 0)}&pagesize={limit}&sort=fbt%3Aasc&date={date}"
         )
 
@@ -598,7 +625,7 @@ class EastmoneyLimitPoolSource(BaseWebSource):
                     "code": code,
                     "symbol": _symbol_from_market(code, mkt),
                     "name": _clean_name(r.get("n", "")),
-                    "price": _f(r.get("p")) / 1000.0,  # ×1000 整数 → 元
+                    "price": _f(r.get("p")) / MILLI_INT_DIVISOR,  # ×1000 整数 → 元
                     "change_pct": _f(r.get("zdp")),
                     "amount": _f(r.get("amount")),
                     "float_market_cap": _f(r.get("ltsz")),
@@ -686,7 +713,7 @@ class EastmoneyStockChangesSource(BaseWebSource):
         )
         return (
             f"{self.BASE}/getAllStockChanges?type={type_param}"
-            f"&ut=7eea3edcaed734bea9cbfc24409ed989"
+            f"&ut={_EM_PUSH2EX_UT}"
             f"&pageindex={max(page - 1, 0)}&pagesize={max(1, min(size, 500))}"
             f"&dpt=wzchanges"
         )
@@ -784,7 +811,7 @@ class EastmoneyNorthboundSource(_EastmoneyJson):
         return (
             "/api/qt/kamt/get?fields1=f1,f2,f3,f4"
             "&fields2=f51,f52,f53,f54,f55,f56"
-            "&ut=b2884a393a59ad64002292a3e90d46a5"
+            f"&ut={_EM_PUSH2_UT}"
         )
 
     def fetch_northbound(self) -> list[dict[str, Any]]:
@@ -819,184 +846,6 @@ class EastmoneyNorthboundSource(_EastmoneyJson):
 
 # --------------------------------------------------------------------------- #
 # 新浪资金流历史（S5）
-# --------------------------------------------------------------------------- #
-class SinaFundFlowSource(BaseWebSource):
-    """新浪资金流历史（个股 / 板块）——东财资金流的**交叉验证源**。
-
-    接口事实（2026-09-02 真实抓包验证，atst 自有实现）::
-
-        GET https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/
-            MoneyFlow.ssl_qsfx_zjlrqs?page=1&num=2&sort=opendate&asc=0&daima=sh600519
-        [{"opendate":"2026-09-01","trade":"1299.5000",
-          "changeratio":"-0.0000153903","turnover":"25.9163",
-          "netamount":"-308661986.4400","ratioamount":"-0.0733546",
-          "r0_net":"-115750054.9700","r0_ratio":"-0.02750840",
-          "r0x_ratio":"-90.0321","cnt_r0x_ratio":"-2",
-          "cate_ra":"0.0797202","cate_na":"1400012001.8600"}]
-
-    板块版本 ``MoneyFlow.ssl_bkzj_zjlrqs?...&bankuai=new_dzxx``：字段无
-    ``trade``/``changeratio``/``cate_ra``/``cate_na``，改以
-    ``avg_price``/``avg_changeratio`` 描述板块均价与涨跌。
-
-    .. warning::
-       必须显式传 ``page`` / ``num`` / ``sort`` 三个参数：实测只给 ``daima``
-       时接口**忽略分页、返回全历史**（约 1.1 MB）。
-
-    .. note::
-       板块代码用 :class:`~atst.sources.boards.SinaIndustryBoardSource` 的
-       ``new_xxx`` 体系（如 ``new_dzxx``）；旧 ``hangye_ZLxx`` 体系虽仍响应，
-       但数据已停更（最新停在 2020-06-30）。
-
-    .. note::
-       ``turnover`` 为新浪原始字段（页面表头写作「换手率」，但个股与板块量纲
-       明显不同，官方未公示口径），atst **原值透出**为 ``turnover_raw``，
-       不做推测换算。
-    """
-
-    _BASE = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
-    #: 个股资金流历史（daima=sh600519）
-    _STOCK_PATH = "MoneyFlow.ssl_qsfx_zjlrqs"
-    #: 板块资金流历史（bankuai=new_dzxx）
-    _BOARD_PATH = "MoneyFlow.ssl_bkzj_zjlrqs"
-
-    @property
-    def source_name(self) -> str:
-        return SINA_FUND_FLOW
-
-    def build_url(self, symbols: Sequence[str], **kwargs: Any) -> str:
-        symbol = symbols[0] if symbols else kwargs.get("symbol", "")
-        return self._url(
-            self._STOCK_PATH,
-            "daima",
-            symbol,
-            page=int(kwargs.get("page", 1)),
-            size=int(kwargs.get("size", 20)),
-        )
-
-    def parse(self, text: str, symbols: Sequence[str], **kwargs: Any) -> list[Quote]:
-        # 资金流是「按日的历史序列」，不是 Quote 快照，故不产出 Quote。
-        return []
-
-    # -- URL --------------------------------------------------------------- #
-    def _url(self, path: str, key: str, value: str, *, page: int, size: int) -> str:
-        return f"{self._BASE}{path}?page={page}&num={size}&sort=opendate&asc=0&{key}={value}"
-
-    def _fetch_rows(self, url: str) -> list[Mapping[str, Any]]:
-        text = self._request_text(url, encoding="gb18030")
-        text = text.strip()
-        if not text or text in ("null", "[]"):
-            return []
-        if text.startswith("{"):  # 新浪错误体 {"__ERROR":1,...}
-            raise SourceDeprecated(
-                f"新浪资金流接口报错: {text[:120]}",
-                context={"source": self.source_name, "url": url},
-            )
-        try:
-            rows = json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise SourceDeprecated(
-                "新浪资金流响应非 JSON",
-                context={"source": self.source_name, "url": url},
-                cause=exc,
-            ) from exc
-        return [r for r in (rows or []) if isinstance(r, Mapping)]
-
-    # -- 公开 API ---------------------------------------------------------- #
-    def fetch_stock_flow(
-        self,
-        symbol: str,
-        *,
-        page: int = 1,
-        size: int = 20,
-    ) -> list[dict[str, Any]]:
-        """个股资金流历史（按日倒序）。
-
-        Parameters
-        ----------
-        symbol:
-            支持 ``600519`` / ``sh600519`` / ``sh.600519`` 等书写变种。
-        size:
-            每页条数；``sort=opendate&asc=0`` 固定按日期倒序。
-
-        Returns
-        -------
-        ``[{"date","close","change_pct","turnover_raw","net_amount",
-        "net_ratio","super_large_net","super_large_ratio","r0x_ratio",
-        "r0x_days","industry_net","industry_ratio"}, ...]``
-
-        金额单位为**元**、比率单位为**百分数**（``-7.34`` 即 -7.34%）。
-        """
-        from ..domain.symbol import normalize_symbol
-
-        sym = normalize_symbol(symbol)
-        url = self._url(self._STOCK_PATH, "daima", sym, page=page, size=size)
-        return [self._stock_row(r) for r in self._fetch_rows(url)]
-
-    def fetch_board_flow(
-        self,
-        board_code: str,
-        *,
-        page: int = 1,
-        size: int = 20,
-    ) -> list[dict[str, Any]]:
-        """板块资金流历史（按日倒序）。
-
-        Parameters
-        ----------
-        board_code:
-            新浪行业板块代码（``new_dzxx``），取自
-            :class:`~atst.sources.boards.SinaIndustryBoardSource` 的 ``code`` 字段。
-
-        Returns
-        -------
-        ``[{"date","avg_price","avg_change_pct","turnover_raw","net_amount",
-        "net_ratio","super_large_net","super_large_ratio","r0x_ratio",
-        "r0x_days"}, ...]``
-
-        金额单位为**元**、比率单位为**百分数**。
-        """
-        url = self._url(self._BOARD_PATH, "bankuai", board_code, page=page, size=size)
-        return [self._board_row(r) for r in self._fetch_rows(url)]
-
-    # -- 行解析 ------------------------------------------------------------ #
-    @staticmethod
-    def _stock_row(r: Mapping[str, Any]) -> dict[str, Any]:
-        return {
-            "date": str(r.get("opendate") or ""),
-            "close": _f(r.get("trade")),
-            "change_pct": _pct(r.get("changeratio")),
-            "turnover_raw": _f(r.get("turnover")),
-            "net_amount": _f(r.get("netamount")),
-            "net_ratio": _pct(r.get("ratioamount")),
-            "super_large_net": _f(r.get("r0_net")),
-            "super_large_ratio": _pct(r.get("r0_ratio")),
-            "r0x_ratio": _f(r.get("r0x_ratio")),
-            "r0x_days": _i(r.get("cnt_r0x_ratio")),
-            "industry_net": _f(r.get("cate_na")),
-            "industry_ratio": _pct(r.get("cate_ra")),
-        }
-
-    @staticmethod
-    def _board_row(r: Mapping[str, Any]) -> dict[str, Any]:
-        return {
-            "date": str(r.get("opendate") or ""),
-            "avg_price": _f(r.get("avg_price")),
-            "avg_change_pct": _pct(r.get("avg_changeratio")),
-            "turnover_raw": _f(r.get("turnover")),
-            "net_amount": _f(r.get("netamount")),
-            "net_ratio": _pct(r.get("ratioamount")),
-            "super_large_net": _f(r.get("r0_net")),
-            "super_large_ratio": _pct(r.get("r0_ratio")),
-            "r0x_ratio": _f(r.get("r0x_ratio")),
-            "r0x_days": _i(r.get("cnt_r0x_ratio")),
-        }
-
-
-def _pct(value: Any) -> float:
-    """新浪 ``changeratio`` 族为**小数**（``-0.0000153903``）→ 百分数。"""
-    return round(_f(value) * 100.0, 6)
-
-
 # --------------------------------------------------------------------------- #
 # 工具
 # --------------------------------------------------------------------------- #

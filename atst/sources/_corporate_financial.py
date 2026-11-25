@@ -20,6 +20,7 @@ from ._corporate_common import (
     is_empty_result,
     report_code_for,
 )
+from ._scale import CENT_INT_DIVISOR, HAND_TO_SHARE
 from .base import _EastmoneyJson, to_eastmoney_secid
 from .base import num_f as _f
 from .sources import CORPORATE
@@ -342,22 +343,22 @@ class EastmoneyProfileSource(_EastmoneyJson):
         return {
             "code": _s(d.get("f57")),
             "name": _s(d.get("f58")),
-            "price": _f(d.get("f43")) / 100.0,
-            "last_close": _f(d.get("f60")) / 100.0,
-            "volume": int(round(_f(d.get("f47")) * 100)),  # 手 → 股
+            "price": _f(d.get("f43")) / CENT_INT_DIVISOR,
+            "last_close": _f(d.get("f60")) / CENT_INT_DIVISOR,
+            "volume": int(round(_f(d.get("f47")) * HAND_TO_SHARE)),  # 手 → 股
             "amount": _f(d.get("f48")),
-            "outer_volume": int(round(_f(d.get("f49")) * 100)),
+            "outer_volume": int(round(_f(d.get("f49")) * HAND_TO_SHARE)),
             "total_shares": _f(d.get("f84")),
             "float_shares": _f(d.get("f85")),
             "total_market_cap": _f(d.get("f116")),
             "float_market_cap": _f(d.get("f117")),
             "industry": _s(d.get("f127")),
             "board": _s(d.get("f128")),
-            "pe_dynamic": _f(d.get("f162")) / 100.0,
-            "pb": _f(d.get("f167")) / 100.0,
+            "pe_dynamic": _f(d.get("f162")) / CENT_INT_DIVISOR,
+            "pb": _f(d.get("f167")) / CENT_INT_DIVISOR,
             "roe": _f(d.get("f173")),
-            "high_52w": _f(d.get("f174")) / 100.0,
-            "low_52w": _f(d.get("f175")) / 100.0,
+            "high_52w": _f(d.get("f174")) / CENT_INT_DIVISOR,
+            "low_52w": _f(d.get("f175")) / CENT_INT_DIVISOR,
         }
 
     def parse(self, text: str, symbols: Sequence[str], **kwargs: Any) -> list[Any]:

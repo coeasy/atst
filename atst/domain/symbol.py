@@ -151,6 +151,12 @@ def _infer_market_from_code(code: str) -> str:
         if code in _SH_INDEX_BARE_CODES:
             return Market.SH
         return Market.SZ
+    # TDX 板块指数（880xxx / 881xxx）不是交易所证券，服务端在沪市命名空间
+    # 用标准 0x0530 返回（2026-11-23 实测 sh880001/sh881001 有完整报价）。
+    # 这两个前缀此前命中 _BJ_CODE_PREFIXES 的 "88" 被误判为北交所并 fail-closed，
+    # 导致裸代码无法查询板块指数；只放行 880/881，其余 88 段保持原判。
+    if len(code) == 6 and code[:3] in ("880", "881"):
+        return Market.SH
     for prefix in _BJ_CODE_PREFIXES:
         if code.startswith(prefix) and len(code) == 6:
             return Market.BJ

@@ -31,7 +31,7 @@ Usage::
     @register_normalizer("my_source")
     class MyNormalizer(VolumeNormalizer):
         volume_scale = 200.0
-        amount_scale = 1.0
+        amount_scale = YUAN
 """
 
 from __future__ import annotations
@@ -45,6 +45,7 @@ from typing import Any, TypeVar
 #: ``time.localtime()``，导致同一份 golden 样本在 CI（UTC）与本地（UTC+8）渲染出
 #: 差 8 小时的字符串——时区是市场事实，不该由机器本地时区决定。
 from ..domain.calendar import MARKET_TZ_NAME, market_timestamp
+from ._scale import FEN_INT_TO_YUAN, HAND_TO_SHARE, SHARES, WAN_TO_YUAN, YUAN
 from .sources import (
     BAIDU,
     BOC,
@@ -183,8 +184,8 @@ def register_normalizer(
 
         @register_normalizer("tencent")
         class TencentNormalizer(VolumeNormalizer):
-            volume_scale = 100.0
-            amount_scale = 10_000.0
+            volume_scale = HAND_TO_SHARE
+            amount_scale = WAN_TO_YUAN
     """
 
     def decorator(cls: type[_T]) -> type[_T]:
@@ -218,9 +219,9 @@ class VolumeNormalizer:
         Raw price → 元 (yuan) multiplier.
     """
 
-    volume_scale: float = 1.0
-    amount_scale: float = 1.0
-    price_scale: float = 1.0
+    volume_scale: float = SHARES
+    amount_scale: float = YUAN
+    price_scale: float = YUAN
 
     def normalize_volume(self, value: float) -> float:
         """Normalize a raw volume to 股 (shares)."""
@@ -250,9 +251,9 @@ class VolumeNormalizer:
 class SinaNormalizer(VolumeNormalizer):
     """新浪: volume = 股, amount = 元, price = 元 (identity)."""
 
-    volume_scale = 1.0
-    amount_scale = 1.0
-    price_scale = 1.0
+    volume_scale = SHARES
+    amount_scale = YUAN
+    price_scale = YUAN
 
 
 @register_normalizer(BAIDU)
@@ -261,9 +262,9 @@ class BaiduNormalizer(VolumeNormalizer):
     已把日K量统一为「股」、金额为「元」（与 atst 全局契约一致），
     此处 identity 防二次缩放。"""
 
-    volume_scale = 1.0
-    amount_scale = 1.0
-    price_scale = 1.0
+    volume_scale = SHARES
+    amount_scale = YUAN
+    price_scale = YUAN
 
 
 @register_normalizer(FUND)
@@ -271,9 +272,9 @@ class FundNormalizer(VolumeNormalizer):
     """东财基金: 数据型源（``list[dict]`` / ``dict``），不经行情归一化
     （净值/估值本身即为最终数值），此处 identity 显式登记防静默兜底。"""
 
-    volume_scale = 1.0
-    amount_scale = 1.0
-    price_scale = 1.0
+    volume_scale = SHARES
+    amount_scale = YUAN
+    price_scale = YUAN
 
 
 @register_normalizer(INDEX_CONS)
@@ -281,9 +282,9 @@ class IndexConstituentsNormalizer(VolumeNormalizer):
     """东财指数成分: 数据型源（``list[dict]``），成分权重/指标本身即为
     最终数值，不经行情归一化，此处 identity 显式登记防静默兜底。"""
 
-    volume_scale = 1.0
-    amount_scale = 1.0
-    price_scale = 1.0
+    volume_scale = SHARES
+    amount_scale = YUAN
+    price_scale = YUAN
 
 
 @register_normalizer(MARGIN)
@@ -291,45 +292,45 @@ class MarginNormalizer(VolumeNormalizer):
     """东财融资融券: 数据型源（``list[dict]``），两融金额/余量本身即为
     最终数值（元/股，量纲照抄），不经行情归一化，identity 显式登记。"""
 
-    volume_scale = 1.0
-    amount_scale = 1.0
-    price_scale = 1.0
+    volume_scale = SHARES
+    amount_scale = YUAN
+    price_scale = YUAN
 
 
 @register_normalizer(TENCENT)
 class TencentNormalizer(VolumeNormalizer):
     """腾讯: volume = 手 → 股 (×100), amount = 万元 → 元 (×10000)."""
 
-    volume_scale = 100.0
-    amount_scale = 10_000.0
-    price_scale = 1.0
+    volume_scale = HAND_TO_SHARE
+    amount_scale = WAN_TO_YUAN
+    price_scale = YUAN
 
 
 @register_normalizer(EASTMONEY)
 class EastmoneyNormalizer(VolumeNormalizer):
     """东方财富: volume = 手 → 股 (×100), amount = 元, price = ×100 int → 元 (/100)."""
 
-    volume_scale = 100.0
-    amount_scale = 1.0
-    price_scale = 1 / 100.0
+    volume_scale = HAND_TO_SHARE
+    amount_scale = YUAN
+    price_scale = FEN_INT_TO_YUAN
 
 
 @register_normalizer(JSL)
 class JslNormalizer(VolumeNormalizer):
     """集思录: identity."""
 
-    volume_scale = 1.0
-    amount_scale = 1.0
-    price_scale = 1.0
+    volume_scale = SHARES
+    amount_scale = YUAN
+    price_scale = YUAN
 
 
 @register_normalizer(HK)
 class HkNormalizer(VolumeNormalizer):
     """港股: identity."""
 
-    volume_scale = 1.0
-    amount_scale = 1.0
-    price_scale = 1.0
+    volume_scale = SHARES
+    amount_scale = YUAN
+    price_scale = YUAN
 
 
 @register_normalizer(KLINE)
@@ -344,9 +345,9 @@ class KlineNormalizer(VolumeNormalizer):
         错误 ×100。现对齐为 identity（与 MinuteKlineNormalizer 同模式）。
     """
 
-    volume_scale = 1.0
-    amount_scale = 1.0
-    price_scale = 1.0
+    volume_scale = SHARES
+    amount_scale = YUAN
+    price_scale = YUAN
 
 
 @register_normalizer(MINUTE_KLINE)
@@ -354,18 +355,18 @@ class MinuteKlineNormalizer(VolumeNormalizer):
     """分钟 K 线: 解析层 MinuteKlineSource.parse_bars 已按市场内联缩放
     （A 股手→股 ×100，港美股不缩放），此处 identity 防二次缩放。"""
 
-    volume_scale = 1.0
-    amount_scale = 1.0
-    price_scale = 1.0
+    volume_scale = SHARES
+    amount_scale = YUAN
+    price_scale = YUAN
 
 
 @register_normalizer(BOC)
 class BocNormalizer(VolumeNormalizer):
     """中行汇率: identity (no volume/amount/price semantics)."""
 
-    volume_scale = 1.0
-    amount_scale = 1.0
-    price_scale = 1.0
+    volume_scale = SHARES
+    amount_scale = YUAN
+    price_scale = YUAN
 
 
 @register_normalizer(RANK)
@@ -376,18 +377,18 @@ class RankNormalizer(VolumeNormalizer):
     成交额 f6 已是元——只有成交量 f5 仍是**手**。
     """
 
-    volume_scale = 100.0
-    amount_scale = 1.0
-    price_scale = 1.0
+    volume_scale = HAND_TO_SHARE
+    amount_scale = YUAN
+    price_scale = YUAN
 
 
 @register_normalizer(GLOBAL)
 class GlobalNormalizer(VolumeNormalizer):
     """外盘: identity——解析层已按合约口径直接换算并在 extra 标注单位。"""
 
-    volume_scale = 1.0
-    amount_scale = 1.0
-    price_scale = 1.0
+    volume_scale = SHARES
+    amount_scale = YUAN
+    price_scale = YUAN
 
 
 @register_normalizer(MARKET_STAT)
@@ -399,9 +400,9 @@ class MarketStatNormalizer(VolumeNormalizer):
     100.0 / amount_scale=10_000.0`` 对齐，避免「解析层与归一器双重缩放」。
     """
 
-    volume_scale = 100.0
-    amount_scale = 10_000.0
-    price_scale = 1.0
+    volume_scale = HAND_TO_SHARE
+    amount_scale = WAN_TO_YUAN
+    price_scale = YUAN
 
 
 # --------------------------------------------------------------------------- #

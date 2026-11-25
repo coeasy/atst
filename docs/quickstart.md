@@ -1,6 +1,6 @@
 # atst 快速开始
 
-本文对应当前 `2.1.0`（已发布）；PyPI 最新版本即 `2.1.0`（`pip install atst`，2026-11-22），对应 GitHub Release [`v2.1.0`](https://github.com/coeasy/atst/releases/tag/v2.1.0)。要求 Python 3.10 或更高版本。v1→v2 的导入与路径迁移见 [迁移指南](migration/v2.md)。
+本文对应当前 `2.2.0`（已发布）；随 `v2.2.0` 标签发布 GitHub Release [`v2.2.0`](https://github.com/coeasy/atst/releases/tag/v2.2.0)，PyPI 版本由 CI 的 `PUBLIC_RELEASE` 开关决定（此前最新 `2.1.0`，2026-11-22）。要求 Python 3.10 或更高版本。v1→v2 的导入与路径迁移见 [迁移指南](migration/v2.md)。
 
 ## 安装
 

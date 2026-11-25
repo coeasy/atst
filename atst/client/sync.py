@@ -560,8 +560,17 @@ class TdxClient(_ClientMixin):
     def volume_price_dist(self, symbol: str) -> list[dict[str, Any]]:
         return self._drive(self._t_volume_price_dist(symbol))
 
-    def quotes_snapshot(self, symbols: list[str]) -> list[dict[str, Any]]:
-        return self._drive(self._t_quotes_snapshot(symbols))
+    def quotes_snapshot(
+        self, symbols: list[str], *, try_offline_snapshot: bool = False
+    ) -> list[dict[str, Any]]:
+        """批量行情快照；``try_offline_snapshot=True`` 才先试已知下线的 0x054C。
+
+        T-5：默认 ``False``，直接走逐只 0x0530，不再每次白耗一次必失败的批量帧；
+        需要验证/探测 0x054C 时显式打开。
+        """
+        return self._drive(
+            self._t_quotes_snapshot(symbols, try_offline_snapshot=try_offline_snapshot)
+        )
 
     def snapshot(self, symbol: str, *, as_format: OutputFormat = "dict") -> Any:
         return self._drive(self._t_snapshot(symbol, as_format=as_format))

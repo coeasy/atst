@@ -40,6 +40,7 @@ from ..domain.calendar import day_like_datetime
 from ..domain.models import Bar
 from ..errors import SourceDeprecated, WebSourceError
 from ._base_em import _EastmoneyJson
+from ._scale import CENT_INT_DIVISOR
 from .base import num_f, num_i, to_eastmoney_secid
 
 __all__ = ["EastmoneyFuturesSource", "EastmoneyBondSource"]
@@ -198,13 +199,13 @@ class EastmoneyFuturesSource(_Push2Base):
             "quote_id": secid,
             "code": _s(d.get("f12")),
             "name": _s(d.get("f14")),
-            "price": num_f(d.get("f43")) / 100.0,
-            "pre_close": num_f(d.get("f44")) / 100.0,
-            "open": num_f(d.get("f45")) / 100.0,
-            "high": num_f(d.get("f46")) / 100.0,
-            "low": num_f(d.get("f47")) / 100.0,
+            "price": num_f(d.get("f43")) / CENT_INT_DIVISOR,
+            "pre_close": num_f(d.get("f44")) / CENT_INT_DIVISOR,
+            "open": num_f(d.get("f45")) / CENT_INT_DIVISOR,
+            "high": num_f(d.get("f46")) / CENT_INT_DIVISOR,
+            "low": num_f(d.get("f47")) / CENT_INT_DIVISOR,
             "volume": int(num_f(d.get("f48"))),
-            "change_pct": num_f(d.get("f170")) / 100.0,
+            "change_pct": num_f(d.get("f170")) / CENT_INT_DIVISOR,
         }
 
     # -- K 线 --------------------------------------------------------------- #
@@ -226,7 +227,9 @@ class EastmoneyFuturesSource(_Push2Base):
             "&fields1=f1,f2,f3,f4,f5&fields2=f51,f52,f53,f54,f55,f56,f57"
         )
         last_exc: Exception | None = None
-        for host in _PUSH2HIS_HOSTS:
+        # P1-8/F8：主机序列改由 _EastmoneyJson._ordered_hosts(pool=…) 提供
+        # （R3 黑名单排序收口），不再手写 _PUSH2HIS_HOSTS 循环池。
+        for host in self._ordered_hosts(pool=_PUSH2HIS_HOSTS):
             try:
                 payload = self._json(path, host=host)
             except (WebSourceError, SourceDeprecated) as exc:
@@ -303,13 +306,13 @@ class EastmoneyBondSource(_Push2Base):
                 {
                     "code": _s(d.get("f12")),
                     "name": _s(d.get("f14")),
-                    "price": num_f(d.get("f43")) / 100.0,
-                    "pre_close": num_f(d.get("f44")) / 100.0,
-                    "open": num_f(d.get("f45")) / 100.0,
-                    "high": num_f(d.get("f46")) / 100.0,
-                    "low": num_f(d.get("f47")) / 100.0,
+                    "price": num_f(d.get("f43")) / CENT_INT_DIVISOR,
+                    "pre_close": num_f(d.get("f44")) / CENT_INT_DIVISOR,
+                    "open": num_f(d.get("f45")) / CENT_INT_DIVISOR,
+                    "high": num_f(d.get("f46")) / CENT_INT_DIVISOR,
+                    "low": num_f(d.get("f47")) / CENT_INT_DIVISOR,
                     "volume": int(num_f(d.get("f48"))),
-                    "change_pct": num_f(d.get("f170")) / 100.0,
+                    "change_pct": num_f(d.get("f170")) / CENT_INT_DIVISOR,
                 }
             )
         return out
@@ -341,9 +344,9 @@ class EastmoneyBondSource(_Push2Base):
                     "code": code,
                     "name": _s(r.get("f14")),
                     "market": mkt,
-                    "change_pct": num_f(r.get("f3")) / 100.0,
-                    "pre_close": num_f(r.get("f104")) / 100.0,
-                    "price": num_f(r.get("f106")) / 100.0,
+                    "change_pct": num_f(r.get("f3")) / CENT_INT_DIVISOR,
+                    "pre_close": num_f(r.get("f104")) / CENT_INT_DIVISOR,
+                    "price": num_f(r.get("f106")) / CENT_INT_DIVISOR,
                 }
             )
         return out
@@ -366,7 +369,9 @@ class EastmoneyBondSource(_Push2Base):
             "&fields1=f1,f2,f3,f4,f5&fields2=f51,f52,f53,f54,f55,f56,f57"
         )
         last_exc: Exception | None = None
-        for host in _PUSH2HIS_HOSTS:
+        # P1-8/F8：主机序列改由 _EastmoneyJson._ordered_hosts(pool=…) 提供
+        # （R3 黑名单排序收口），不再手写 _PUSH2HIS_HOSTS 循环池。
+        for host in self._ordered_hosts(pool=_PUSH2HIS_HOSTS):
             try:
                 payload = self._json(path, host=host)
             except (WebSourceError, SourceDeprecated) as exc:

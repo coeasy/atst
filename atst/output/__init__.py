@@ -472,7 +472,13 @@ class Sink:
             if not self.table:
                 raise ValueError("DuckDB sink 需要 table 参数")
             return to_duckdb(items, self.table, database=self.database, columns=self.columns)
-        raise ValueError(f"未知 sink 格式: {self.fmt}（可选 dataframe/parquet/duckdb）")
+        if self.fmt == "csv":
+            # P3：write(*.csv) 支持 csv 而 Sink("csv") 报未知格式——同一能力两个
+            # 入口必须给同一个答案。
+            if not self.path:
+                raise ValueError("CSV sink 需要 path 参数")
+            return to_csv(items, self.path, columns=self.columns)
+        raise ValueError(f"未知 sink 格式: {self.fmt}（可选 dataframe/parquet/csv/duckdb）")
 
 
 #: 便捷别名

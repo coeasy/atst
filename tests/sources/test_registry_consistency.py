@@ -122,3 +122,21 @@ def test_no_orphan_capability() -> None:
     covered = set(CAPABILITY_FACADE) | EXEMPT_CAPABILITIES
     orphan = all_caps - covered
     assert not orphan, f"以下能力既无 facade 映射也未豁免: {sorted(orphan)}"
+
+
+def test_provider_quotes_capability_maps_to_sources_quote_vocabulary() -> None:
+    """P1-8/F5：providers 层叫 ``quotes``、sources 层叫 ``quote``——两套词表是
+    同义映射而不是两本无人对账的账。对偏好序里每个支持 quotes 的 web Provider，
+    sources 注册表必须有同名源且声明 ``quote`` 能力。"""
+    from atst.providers import preference_order
+    from atst.sources.sources import SOURCES
+
+    checked: list[str] = []
+    for name in preference_order():
+        spec = SOURCES.get(name)
+        if spec is None or "quote" not in spec.capabilities:
+            continue
+        # providers 侧该源必须声明统一 quotes 能力（经 MIGRATED Bindings 对账）
+        assert name in {"eastmoney", "sina", "tencent", "baidu"}, name
+        checked.append(name)
+    assert {"eastmoney", "sina", "tencent"} <= set(checked)

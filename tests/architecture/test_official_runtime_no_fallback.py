@@ -19,7 +19,11 @@ ROOT = Path(__file__).resolve().parents[2]
 OFFICIAL_RUNTIME = [
     ROOT / "atst" / "client" / "api.py",
     ROOT / "atst" / "runtime" / "kernel.py",
-    ROOT / "atst" / "query.py",
+    # P2-1：atst/query.py 拆为包，契约/规划/身份三模块同属 canonical runtime 面。
+    ROOT / "atst" / "query" / "__init__.py",
+    ROOT / "atst" / "query" / "spec.py",
+    ROOT / "atst" / "query" / "planning.py",
+    ROOT / "atst" / "query" / "fingerprint.py",
     ROOT / "atst" / "runtime" / "executor.py",
     ROOT / "atst" / "runtime" / "orchestration.py",
     ROOT / "atst" / "providers" / "contract.py",
@@ -312,7 +316,8 @@ def test_query_spec_store_only_fields_are_still_reached() -> None:
     ``options_json`` 是存储形态，执行面读的是解码后的 ``spec.options``；豁免它的前提
     是那条链仍在，属性一旦改名本门禁立刻红。
     """
-    source = (ROOT / "atst" / "query.py").read_text(encoding="utf-8")
+    # P2-1：options_json 的解码点在 atst/query/spec.py（原 query.py）。
+    source = (ROOT / "atst" / "query" / "spec.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     decoded = {
         node.attr
@@ -366,7 +371,8 @@ def test_option_bag_keys_are_executed_or_rejected() -> None:
 def _build_option_folds() -> tuple[set[str], set[str]]:
     """Keys ``QuerySpec.build`` folds into the bag, plus its ``allow_*`` parameters."""
 
-    tree = ast.parse((ROOT / "atst" / "query.py").read_text(encoding="utf-8"))
+    # P2-1：QuerySpec.build 在 atst/query/spec.py（原 query.py）。
+    tree = ast.parse((ROOT / "atst" / "query" / "spec.py").read_text(encoding="utf-8"))
     build = next(
         node
         for node in ast.walk(tree)
@@ -416,7 +422,8 @@ def _executed_option_keys() -> set[str]:
 
     keys: set[str] = set()
     for path in sorted((ROOT / "atst").rglob("*.py")):
-        if path.name == "query.py":
+        # P2-1：atst/query/ 包属契约面自身，不算执行面读取处。
+        if path.relative_to(ROOT).as_posix().startswith("atst/query/"):
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):

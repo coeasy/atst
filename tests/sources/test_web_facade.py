@@ -12,7 +12,8 @@ import json
 import pytest
 
 from atst.domain.models import Quote
-from atst.errors import CompatibilityError
+from atst.errors import AllSourcesExhausted, CompatibilityError
+from atst.sources import WebQuoteClient, get_quotes
 from atst.sources.base import HttpResponse, RateLimiter
 from atst.sources.session import (
     INDEX_SYMBOLS,
@@ -287,3 +288,93 @@ class TestSessionContextManager:
         with pytest.raises(RuntimeError), sess:
             raise RuntimeError("boom")
         assert closed == [True]
+
+
+# --------------------------------------------------------------------------- #
+# P1-5：门面降级契约（缺省单源 fail-fast，显式多源才降级）
+# --------------------------------------------------------------------------- #
+def _quotes_for(symbols):
+    """造一批契约内的 Quote（离线桩）。"""
+    return [
+        Quote(
+            code=s,
+            price=1.0,
+            last_close=1.0,
+            open=1.0,
+            high=1.0,
+            low=1.0,
+            volume=0,
+            amount=0.0,
+            extra={"name": "测试"},
+        )
+        for s in symbols
+    ]
+
+
+class _BoomSource:
+    """永远抛非 TdxError 的假源。"""
+
+    def fetch(self, symbols, **kwargs):  # noqa: ARG002
+        raise AttributeError("上游结构漂移")
+
+    def close(self) -> None:
+        pass
+
+
+@pytest.mark.unit
+class TestFacadeFallbackContract:
+    """WebQuoteClient 降级处置（P1-5）：显式多源才降级，缺省单源 fail-fast。"""
+
+    @staticmethod
+    def _expected_first_source() -> str:
+        from atst.config import get_config
+        from atst.sources.sources import DEFAULT_FALLBACK_ORDER
+
+        return (get_config().web.enabled_sources or list(DEFAULT_FALLBACK_ORDER))[0]
+
+    def test_default_construction_is_single_source(self):
+        """缺省构造只取 web.enabled_sources 第一家，不再是整条降级链。"""
+        client = WebQuoteClient()
+        assert client.sources == [self._expected_first_source()]
+
+    def test_default_single_source_fails_fast(self):
+        """缺省单源失败即抛 AllSourcesExhausted，不换第二家。"""
+        first = self._expected_first_source()
+        client = WebQuoteClient()
+        client._instances = {first: _BoomSource()}
+        with pytest.raises(AllSourcesExhausted):
+            client.quotes(["sh600519"])
+        assert [n for n, _ in client.errors] == [first]
+
+    def test_explicit_multi_source_degrades_with_warning(self):
+        """显式多源列表保留有序降级，构造时记 WEB_FACADE_LEGACY_DEGRADE 告警。"""
+        with pytest.warns(UserWarning, match="FallbackPolicy"):
+            client = WebQuoteClient(sources=["sina", "tencent"])
+        client._instances = {"sina": _BoomSource(), "tencent": _FakeFetch(["sh600519"])}
+        quotes = client.quotes(["sh600519"])
+        assert [q.code for q in quotes] == ["sh600519"]
+        assert [n for n, _ in client.errors] == ["sina"]
+
+    def test_explicit_single_source_does_not_warn(self):
+        """显式单源列表（len==1）不触发 legacy 降级告警。"""
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            client = WebQuoteClient(sources=["sina"])
+        assert client.sources == ["sina"]
+
+    def test_get_quotes_default_hits_first_enabled_source_only(self, monkeypatch):
+        """get_quotes(source=None) 单源 fail-fast：只构造配置第一家源。"""
+        import atst.sources as sources_pkg
+
+        created: list[str] = []
+
+        def fake_create_source(name, **kwargs):  # noqa: ARG002
+            created.append(name)
+            return _FakeFetch(["sh600519"])
+
+        monkeypatch.setattr(sources_pkg, "create_source", fake_create_source)
+        out = get_quotes(["sh600519"])
+        assert created == [self._expected_first_source()]
+        assert [q.code for q in out] == ["sh600519"]

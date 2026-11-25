@@ -81,6 +81,7 @@ def test_provenance_field_order_is_pinned() -> None:
         "cache_tier",
         "requested_provider",
         "fallback",
+        "upstream",
     ], f"出处形状（顺序敏感）变了：{names}"
 
 

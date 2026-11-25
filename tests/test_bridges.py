@@ -162,7 +162,8 @@ class TestBridges:
         from atst.charset.encoding import detect_encoding
 
         assert detect_encoding("你好".encode("gbk")) == "gbk"
-        assert detect_encoding(b"hello") == "utf-8"
+        # P1-7：charset 版委托 primitive（GBK 优先 SSOT），纯 ASCII 判 gbk
+        assert detect_encoding(b"hello") == "gbk"
 
     # ---- 10: 交易日历 ----
     def test_10_calendar(self):

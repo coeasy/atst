@@ -19,6 +19,8 @@ from urllib.parse import urlencode
 from ...domain.calendar import day_like_datetime
 from ...domain.models import Bar, Level, MinutePoint, Quote, Tick
 from ...errors import SourceDeprecated, WebSourceError
+from .._json_fetch import fetch_json
+from .._scale import HAND_TO_SHARE, WAN_TO_YUAN, YI_TO_YUAN
 from ..base import BaseWebSource
 from ..base import num_f as _f
 from ..sources import BAIDU
@@ -60,7 +62,7 @@ def _ktype(period: str) -> int:
 
 def _vol_to_shares(v: Any) -> int:
     """手 → 股。"""
-    return int(round(_f(v) * 100.0))
+    return int(round(_f(v) * HAND_TO_SHARE))
 
 
 def _parse_amount(v: Any, ori: Any) -> float:
@@ -77,9 +79,9 @@ def _parse_amount(v: Any, ori: Any) -> float:
         return 0.0
     try:
         if s.endswith("万"):
-            return float(s[:-1]) * 10_000.0
+            return float(s[:-1]) * WAN_TO_YUAN
         if s.endswith("亿"):
-            return float(s[:-1]) * 100_000_000.0
+            return float(s[:-1]) * YI_TO_YUAN
         return float(s)
     except ValueError:
         return 0.0
@@ -169,15 +171,15 @@ class BaiduSource(BaseWebSource):
 
     # -- 私有工具 --------------------------------------------------------- #
     def _get_json(self, url: str) -> Any:
-        text = self._request_text(url, encoding="utf-8")
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise SourceDeprecated(
-                "百度财经返回非 JSON",
-                context={"source": BAIDU, "sample": text[:200]},
-                cause=exc,
-            ) from exc
+        """P1-8/F9：公共 JSON 取数器（hooks 注入渠道文案），行为与原实现一致。"""
+        return fetch_json(
+            self,
+            url,
+            send=lambda u: self._request_http(u),
+            label="百度财经",
+            require_dict=False,
+            non_json_msg="百度财经返回非 JSON",
+        )
 
     # -- K 线 ------------------------------------------------------------- #
     def fetch_kline(

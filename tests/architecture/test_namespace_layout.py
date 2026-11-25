@@ -5,6 +5,8 @@ Phase 3C re-rooted every non-contract module into its domain package
 layer may sit at ``atst/`` root, and the old module paths must not come back
 as shims. v2 进一步把 ``atst/web`` → ``atst/sources``、``atst/integration`` →
 ``atst/server``，并取消 ``atst/catalog``（声明进 ``providers``、校验进 ``runtime``）。
+P2-1（2026-11-23）：``atst/query.py``（771 行）拆为 ``atst/query/`` 包
+（spec / planning / fingerprint），根白名单相应移除该条目。
 """
 
 from __future__ import annotations
@@ -20,7 +22,6 @@ ROOT_WHITELIST = {
     "__init__.py",
     "__main__.py",
     "_version.py",
-    "query.py",
     "result.py",
     "batch.py",
     "typed_query.py",

@@ -60,11 +60,9 @@ class GoodsListParser(BaseParser):
     RECORD_SIZE = 16
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             code = decode_gbk(reader.bytes(6))
             name = decode_gbk(reader.bytes(8))
             category = reader.uint16()
@@ -85,12 +83,10 @@ class GoodsBarsParser(BaseParser):
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
         scale = int(ctx.get("price_scale", PRICE_SCALE_BARS))
-        count = self.guarded_count(reader, ctx, 28)
+        _, records = self.iter_fixed_records(reader, ctx, 28)
         base = 0
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < 28:
-                break
+        for _ in records:
             dt = reader.uint32()
             open_diff = reader.leb128()
             close_diff = reader.leb128()
@@ -184,11 +180,9 @@ class GoodsTradeParser(BaseParser):
     RECORD_SIZE = 11
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             second = reader.uint16()
             price = reader.float32()
             volume = reader.tdx_float()
@@ -214,11 +208,9 @@ class GoodsMinuteParser(BaseParser):
     RECORD_SIZE = 14
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             minute = reader.uint16()
             price = reader.float32()
             avg = reader.float32()
@@ -246,11 +238,9 @@ class GoodsInfoParser(BaseParser):
     RECORD_SIZE = 32
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             rec = reader.bytes(self.RECORD_SIZE)
             rows.append(
                 {
@@ -274,11 +264,9 @@ class GoodsHoldingParser(BaseParser):
     RECORD_SIZE = 10
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             code = decode_gbk(reader.bytes(6))
             oi = reader.tdx_float()
             rows.append({"code": code, "open_interest": int(oi)})
@@ -295,11 +283,9 @@ class GoodsOptionGreeksParser(BaseParser):
     RECORD_SIZE = 26
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             code = decode_gbk(reader.bytes(6))
             delta, gamma, vega, theta, rho = reader.unpack("fffff", 20)
             rows.append(
@@ -325,11 +311,9 @@ class GoodsFxRateParser(BaseParser):
     RECORD_SIZE = 26
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             code = decode_gbk(reader.bytes(6))
             name = decode_gbk(reader.bytes(8))
             bid_cash, bid_transfer, ask = reader.unpack("fff", 12)
@@ -355,11 +339,9 @@ class GoodsCalendarParser(BaseParser):
     RECORD_SIZE = 10
 
     def parse_payload(self, reader, **ctx: Any) -> list[dict[str, Any]]:
-        count = self.guarded_count(reader, ctx, self.RECORD_SIZE)
+        _, records = self.iter_fixed_records(reader, ctx, self.RECORD_SIZE)
         rows: list[dict[str, Any]] = []
-        for _ in range(count):
-            if reader.remaining < self.RECORD_SIZE:
-                break
+        for _ in records:
             code = decode_gbk(reader.bytes(6))
             (expire,) = reader.unpack("I", 4)
             rows.append({"code": code, "expire_date": f"{expire:08d}"})

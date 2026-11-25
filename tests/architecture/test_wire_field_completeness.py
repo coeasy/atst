@@ -61,6 +61,9 @@ def _result() -> QueryResult[list[dict[str, Any]]]:
         cache_tier=None,
         requested_provider="tencent",
         fallback=False,
+        # P1-4：upstream 也是 provenance 的 wire 字段（聚合转手时下发），fixture
+        # 给非空值让「每个字段都到 wire」的判据真正量到它。
+        upstream="sina",
     )
     meta = ResultMeta(
         provider="tencent",

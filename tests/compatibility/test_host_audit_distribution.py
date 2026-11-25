@@ -134,7 +134,8 @@ def test_public_cli_host_audit_delegates_to_installed_package_module(
 
 
 def test_public_cli_source_has_no_repository_script_dependency() -> None:
-    source = (_ROOT / "atst" / "cli" / "runtime_commands.py").read_text(encoding="utf-8")
+    # P2-3（F-5）：hosts 命令实现按域拆进 cmds_hosts.py，源文本断言跟着走。
+    source = (_ROOT / "atst" / "cli" / "cmds_hosts.py").read_text(encoding="utf-8")
 
     assert "from ..tools.host_audit import main as host_audit_main" in source
     assert "scripts/audit_hosts.py" not in source

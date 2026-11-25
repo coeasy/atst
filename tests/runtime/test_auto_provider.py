@@ -23,7 +23,7 @@ import pytest
 from atst.client.api import Client
 from atst.config.schema import Config, RoutingConfig
 from atst.domain.models import Quote
-from atst.errors import AllSourcesExhausted, ValidationError
+from atst.errors import AllHostsUnreachable, AllSourcesExhausted, ValidationError
 from atst.providers import PROVIDERS
 from atst.query import QueryPlanner, QuerySpec
 from atst.result import Provenance, QueryResult
@@ -205,7 +205,8 @@ class TestExecuteAuto:
             def execute(self, spec):
                 seen.append(spec.provider)
                 if spec.provider == "tdx":
-                    raise ValidationError("tdx unavailable", context={"provider": "tdx"})
+                    # P0-10：源不可用用传输类异常模拟；参数错不再进候选循环。
+                    raise AllHostsUnreachable("tdx unavailable", context={"provider": "tdx"})
                 return _result(spec.provider)
 
         output = ProviderOrchestrator(Runtime()).execute_auto(
@@ -224,7 +225,9 @@ class TestExecuteAuto:
     def test_all_candidates_failing_is_one_explicit_error(self) -> None:
         class Runtime:
             def execute(self, spec):
-                raise ValidationError(f"{spec.provider} down", context={"provider": spec.provider})
+                raise AllHostsUnreachable(
+                    f"{spec.provider} down", context={"provider": spec.provider}
+                )
 
         with pytest.raises(AllSourcesExhausted) as caught:
             ProviderOrchestrator(Runtime()).execute_auto(
@@ -278,7 +281,8 @@ class _FailThenServe:
     def execute(self, plan: Any) -> QueryResult[Any]:
         self.plans.append((plan.provider, tuple(plan.spec.symbols)))
         if plan.provider == self.failing:
-            raise ValidationError(f"{plan.provider} down", context={"provider": plan.provider})
+            # P0-10：源不可用用传输类异常模拟。
+            raise AllHostsUnreachable(f"{plan.provider} down", context={"provider": plan.provider})
         return QueryResult.from_plan(
             [{"code": plan.spec.symbols[0], "price": 1.0}],
             plan=plan,
@@ -333,7 +337,8 @@ class TestClientAutoSurfaces:
             def execute(self, plan: Any) -> QueryResult[Any]:
                 if plan.spec.symbols[0] == "sz000001":
                     self.plans.append((plan.provider, tuple(plan.spec.symbols)))
-                    raise ValidationError("down", context={"provider": plan.provider})
+                    # P0-10：标的级失败也用传输类异常模拟（参数错不再进候选链）。
+                    raise AllHostsUnreachable("down", context={"provider": plan.provider})
                 return super().execute(plan)
 
         executor = _FailsOnlyForSz(failing="tdx")

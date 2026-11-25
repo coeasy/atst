@@ -7,17 +7,17 @@
 ``RuntimeJsonRpcHandler.close()``、MCP 的 ``stop()``）都把自己造的那份 ``Client`` 交给它收尾，
 用户文档于是把它写成"释放内核连接"、WS 的注释写成"连带它的连接池"。实测三条，都在本轮取证：
 
-* 构造一个 ``Client()`` 之后进程线程数增量为 **0**，它手里只有 ``_bindings`` / ``config`` /
-  ``hosts`` / ``timeout`` / ``vipdoc_root`` 五个值，没有任何跨调用连接；
-* 内置的 ``DirectProviderExecutor`` **没有** ``close()``：家族客户端不在它身上，每一跳都是
-  构造 → ``try`` → ``finally: client.close()``（第 31 轮 31-B4 起手、31-C3 收完：执行器里
-  现扫 13 处交接全在 :meth:`DirectProviderExecutor._client_session` 之后，判据
-  ``tests/architecture/test_client_family_transport.py`` 第 4 件事）；
+* 构造一个 ``Client()`` 之后进程线程数增量为 **0**，执行器手里只有配置读数加上一个
+  **空的**常驻族缓存（P1-1：池与心跳都在第一次 tdx 跳才出现），没有任何跨调用连接；
+* P1-1 之后内置的 ``DirectProviderExecutor`` 定义了 ``close()``：它按族持有常驻家族客户端
+  （连接池/心跳跨调用连续生效），``close()`` 统一收口——清空缓存、逐份关池（判据
+  ``tests/architecture/test_client_family_transport.py`` 的释放两格：常驻客户端由
+  ``executor.close()`` 恰好关一次，逐跳不再关）；
 * 注入的执行器只要定义了 ``close()``，``UnifiedRuntime.close()`` 就敲得到它。
 
-所以这条链在默认内核上是**空转**，它真正兑现的是两件别的东西：**谁造谁关**的所有权协议
-（借来的 runtime 不许被借走的人关掉），和注入执行器那条形同协议的口子。文档里"释放连接池"
-那句是过头主张，本轮改成如实口径；本文件把上面三条钉住，谁把口径改回去它就红。
+所以这条链真正兑现的是三件事：**谁造谁关**的所有权协议（借来的 runtime 不许被借走的人
+关掉）、注入执行器那条形同协议的口子，以及 P1-1 常驻池的统一收尾。本文件把这三条钉住，
+谁把口径改回去它就红。
 
 变异台账（G14 改前必须红；本轮合成一本
 ``Temp/mut31d_all.py``，候选树落锚、按字节回滚复核 sha256，该电池读数 **19 条 / BAD=0**，
@@ -81,17 +81,29 @@ def test_constructing_a_client_leaves_no_thread_behind() -> None:
     assert _new_threads(baseline) == []
 
 
-def test_the_default_executor_holds_nothing_between_calls() -> None:
-    """执行器实例字段只有配置读数，没有任何"下一次还要用"的连接。"""
+def test_the_default_executor_only_holds_the_resident_pool_cache_between_calls() -> None:
+    """P1-1：执行器实例字段 = 配置读数 + 常驻族缓存；首跳之前缓存为空。
+
+    旧判据（"执行器调用之间什么都不持有"）随常驻池契约同步：新增的状态只有
+    ``_tdx_clients``（按族缓存的常驻 TdxClient）与 ``_clients_lock``（并发首跳互斥）。
+    构造期缓存为空、不含任何连接；缓存填上之后由 ``executor.close()`` 统一收口。
+    """
     executor = UnifiedRuntime().executor
+    # P1-3：_runtime_ref 是内核回填给执行器的所有者句柄（composed 内层查询走
+    # 主链用），不是连接、不是缓存。
     assert {name for name in vars(executor) if not name.startswith("__")} == {
         "_bindings",
         "config",
         "hosts",
+        "_runtime_ref",
         "timeout",
         "vipdoc_root",
+        # P1-1：常驻族缓存与它的互斥锁。
+        "_tdx_clients",
+        "_clients_lock",
     }
-    assert not callable(getattr(executor, "close", None))
+    assert executor._tdx_clients == {}, "构造期不得持有任何常驻客户端"
+    assert callable(getattr(executor, "close", None))
 
 
 def test_close_reaches_an_injected_executor_that_owns_a_pool() -> None:

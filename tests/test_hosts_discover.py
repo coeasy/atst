@@ -285,8 +285,12 @@ class TestDiscoverCli:
                 str(tmp_path / "report.json"),
             ]
         )
+        # P2-3（M7）：_cmd_* 不再裸 print，错误统一走 main() 信封出口——退出码
+        # 语义不变（TdxError 家族 → 2），stderr 变为规范化 JSON 信封。
         assert code == 2
-        assert "发现失败" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert '"code": "E1000"' in err
+        assert "候选文件不存在" in err
 
     def test_empty_candidate_set_is_reported_as_such(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]

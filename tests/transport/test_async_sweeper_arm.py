@@ -58,10 +58,10 @@ from fake_server import ECHO_CMD, FakeTdxServer  # noqa: E402
 ARM_FUNCTIONS = frozenset({"_start_heartbeat", "start_heartbeat"})
 
 #: 每个起跑函数在包里**只允许**有一个调用点，而且必须住在池自己的类里：
-#: 同步池落在 ``__init__``（构造即持有槽位），异步池落在 ``_get_conn_locked``
-#: （第一次握住真 socket 时武装）。
+#: 异步池落在 ``_get_conn_locked``（第一次握住真 socket 时武装）；同步池 P1-1 之后
+#: 对齐同一口径——也落在 ``_get_conn_locked``，"构造即持有槽位就起循环"的旧门已拆。
 EXPECTED_ARM_SITES = {
-    "_start_heartbeat": {"atst/transport/pool.py::ConnectionPool.__init__"},
+    "_start_heartbeat": {"atst/transport/pool.py::ConnectionPool._get_conn_locked"},
     "start_heartbeat": {"atst/transport/async_.py::AsyncConnectionPool._get_conn_locked"},
 }
 
@@ -233,10 +233,11 @@ def test_planted_second_arm_site_is_caught() -> None:
 
 
 @pytest.mark.unit
-def test_sync_face_still_arms_in_its_constructor() -> None:
-    """同步孪生不得跟着搬走：它没有惰性建连，构造即持有槽位，``__init__`` 就是那唯一一处。
+def test_sync_face_arms_lazily_on_first_connection() -> None:
+    """同步孪生 P1-1 起对齐惰性口径：构造不起循环，首次握住真 socket 才武装。
 
-    这里量的是行为（线程真在跑），不是登记表自己等于自己。
+    这里量的是行为（线程真在跑），不是登记表自己等于自己：构造后 ``_hb is None``
+    （不白养一条全表循环），一次请求之后武装且唯一（重复请求不攒出第二条）。
     """
     with FakeTdxServer() as server:
         pool = ConnectionPool(
@@ -248,10 +249,15 @@ def test_sync_face_still_arms_in_its_constructor() -> None:
             handshake=False,
         )
         try:
-            assert pool._hb is not None and pool._hb.is_alive(), "同步面的起跑点被搬走了"
+            assert pool._hb is None, "构造即起循环的旧门又回来了"
+            pool.request(ECHO_CMD, b"\x07")
+            first = pool._hb
+            assert first is not None and first.is_alive(), "首连接没有武装回收循环"
+            pool.request(ECHO_CMD, b"\x08")
+            assert pool._hb is first, "重复请求攒出了第二条循环"
             source = (REPO_ROOT / "atst" / "transport" / "pool.py").read_text(encoding="utf-8")
             assert _arm_sites(source, "atst/transport/pool.py") == {
-                "_start_heartbeat": {"atst/transport/pool.py::ConnectionPool.__init__"}
-            }, "同步池的起跑点不再唯一落在构造里"
+                "_start_heartbeat": {"atst/transport/pool.py::ConnectionPool._get_conn_locked"}
+            }, "同步池的起跑点不再唯一落在首次建连处"
         finally:
             pool.close()

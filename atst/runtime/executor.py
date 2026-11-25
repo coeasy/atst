@@ -6,8 +6,9 @@
 from __future__ import annotations
 
 import inspect
+import threading
 from collections.abc import Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import asdict, is_dataclass
 from types import MappingProxyType
 from typing import Any
@@ -15,7 +16,7 @@ from typing import Any
 from ..config import Config
 from ..diagnostics import EMPTY_EXPLAINED_CODES, WarningCode, record_warning, warning_sink
 from ..errors import InternalError, TdxError, TruncatedDataError, ValidationError
-from ..query import QueryPlan
+from ..query import QueryPlan, QuerySpec
 from ..result import Provenance, QueryResult, ResultWarning
 from .audit import audit_runtime
 from .bindings import (
@@ -203,6 +204,33 @@ class DirectProviderExecutor:
         self.config = config
         audit_runtime()
         self._bindings = {item.key: item for item in DIRECT_BINDINGS}
+        #: P1-3：UnifiedRuntime 构造后把句柄交给执行器（attach_runtime），composed
+        #: 内层查询才有主链可走；测试直接注入的裸执行器保持 None（退回直执行）。
+        self._runtime_ref: Any = None
+        #: P1-1（A3）：按「家族客户端类（= 协议族）」常驻的 TdxClient（连接复用，不是结果缓存——零缓存原则指结果级）。
+        #: 常驻池让 M6 空闲回收、熔断冷却与 bestip 代际热更新在主链路上真正生效，
+        #: 而不是每跳现造用完即弃。常驻表的键是类对象本身：
+        #: Goods/Ex/Mac/F10 各自持有独立的族池；收口统一在 :meth:`close`。
+        self._tdx_clients: dict[type[Any], Any] = {}
+        self._clients_lock = threading.Lock()
+
+    def attach_runtime(self, runtime: Any) -> None:
+        """由 :class:`~atst.runtime.kernel.UnifiedRuntime` 在构造后回填自身句柄。"""
+        self._runtime_ref = runtime
+
+    def execute_subquery(self, spec: QuerySpec) -> QueryResult[Any]:
+        """composed 内层查询的唯一入口：走 UnifiedRuntime 主链，不走裸执行器。
+
+        过去 composed 三段组合的内层查询直连 ``self.execute(QueryPlanner().compile(...))``：
+        不进健康反馈、不经过溯源校验、每次新建 planner 丢掉配置缺省源、内层各自
+        重置 5s deadline。现在统一从这里走主链；只有测试注入的无句柄执行器才
+        退回旧的直执行形状。
+        """
+        if self._runtime_ref is not None:
+            return self._runtime_ref.execute(spec)
+        from ..query import QueryPlanner
+
+        return self.execute(QueryPlanner().compile(spec))
 
     def execute(self, plan: QueryPlan) -> QueryResult[Any]:
         key = (plan.provider, plan.channel, plan.spec.capability)
@@ -221,6 +249,19 @@ class DirectProviderExecutor:
             ) from exc
 
         fn = getattr(self, binding.executor_name)
+        #: P1-4（provider 身份修复）：``web_session`` 后端的真实出数源（如 sina）
+        #: 透传进 ``Provenance.upstream``——derived 这类聚合 Provider 的结果才能
+        #: 读出量纲属于哪家（架构报告 A3）。取数规则本体在 execute_capability
+        #: 的 ``upstream_for``，这里只按 DirectBinding 是否落到迁移执行体取数；
+        #: 专用执行体（tdx / web 专属源）没有聚合转手，保持 None。
+        upstream: str | None = None
+        if binding.executor_name == "_migrated_capability":
+            from ..providers import binding_for
+            from .execute_capability import upstream_for
+
+            with suppress(KeyError):
+                #: 绑定元数据缺失仍由 _migrated_capability 自己当场报，错误形状不变。
+                upstream = upstream_for(binding_for(*key)) or None
         #: 非法的 strict 必须在任何 I/O 之前拒绝，而不是等一次成功的查询再报错。
         strict = _strict_requested(plan)
         #: 一次查询一份告警收集器：Provider 侧记录的任何数据完整性瑕疵都在这个块里
@@ -282,7 +323,7 @@ class DirectProviderExecutor:
         return QueryResult.from_plan(
             data,
             plan=plan,
-            provenance=Provenance.direct(plan),
+            provenance=Provenance.direct(plan, upstream=upstream),
             warnings=caveats,
         )
 
@@ -299,47 +340,80 @@ class DirectProviderExecutor:
         return min(self.timeout, budget.remaining_s())
 
     def _pool_client(self, cls: Any, timeout: float) -> Any:
-        """``TdxClient`` 家族的唯一构造处：主站与传输旋钮同源。
+        """``TdxClient`` 家族的唯一构造处：主站与传输旋钮同源；按族常驻复用（P1-1）。
 
         执行器手里的 ``hosts`` 是本仓库唯一的「只碰调用方点名的主站」手段，``config`` 是
         ``[hosts] / [core] / [rate_limit] / [security]`` 翻译成传输层的唯一一份读数。两者都
         必须抵达家族里的**每一个**客户端：第 31 轮之前 F10 / 商品 / 扩展行情 / MAC 四条分支
         只传 ``timeout``，同一份配置在行情主链路生效、在那四条路上不存在（判据
         ``tests/architecture/test_client_family_transport.py``）。
+
+        P1-1（A3）：构造从「每跳现造」改为「按族取常驻客户端，首跳构造」。``timeout`` 只在构造
+        那一次生效（socket 超时随池定）；逐跳的 deadline 预算仍由 :meth:`_hop_timeout` 在
+        任何 I/O 之前强制（``ensure_remaining``）。同族并发首跳在锁内构造，只造一份。
         """
 
         from ..transport.pool import pool_settings_from_config
 
-        #: 主站选择已由内核解析完毕；配置在此只提供传输层构造参数，
-        #: 避免同一个键在两处解释。
-        settings = pool_settings_from_config(self.config)
-        settings["timeout"] = timeout
-        return cls(self.hosts, **settings)
+        with self._clients_lock:
+            client = self._tdx_clients.get(cls)
+            if client is None:
+                #: 主站选择已由内核解析完毕；配置在此只提供传输层构造参数，
+                #: 避免同一个键在两处解释。
+                settings = pool_settings_from_config(self.config)
+                settings["timeout"] = timeout
+                client = cls(self.hosts, **settings)
+                self._tdx_clients[cls] = client
+            return client
 
     def _tdx_client(self, timeout: float) -> Any:
+        """行情族常驻客户端（P1-1）：同一执行器上重复取同一份，不再每跳新建池。"""
         from ..client import TdxClient
 
         return self._pool_client(TdxClient, timeout)
 
+    def _owns_resident_client(self, client: Any) -> bool:
+        """这个客户端是不是执行器自己持有的常驻族池（P1-1）。"""
+        with self._clients_lock:
+            return any(client is item for item in self._tdx_clients.values())
+
+    def close(self) -> None:
+        """统一收口本执行器持有的常驻家族客户端（P1-1，幂等）。
+
+        ``UnifiedRuntime.close()`` 把收尾递给每个定义了 ``close()`` 的执行器，内置执行器
+        现在也在其中：清空按族常驻表后逐份 ``close()``（各自关池、join 心跳线程）。常驻表
+        已清空，重复调用是空转；从未发过 tdx 跳（常驻表为空）时同样无事可做——构造期
+        不起池、不起线程的口径不变。
+        """
+        with self._clients_lock:
+            clients = list(self._tdx_clients.values())
+            self._tdx_clients.clear()
+        for client in clients:
+            client.close()
+
     @contextmanager
     def _client_session(self, client: Any) -> Iterator[Any]:
-        """执行器交出可关闭对象时唯一那道保护区：块体怎么下场都 ``close()``。
+        """交出可关闭对象时唯一的收口闸：**非常驻**的块体怎么下场都 ``close()``。
 
         31-B4 把 ``with client`` 换成 try/finally 时只收了四条迁移分支，核心链路当时还留着
         九处 ``with self._tdx_client(...) as client:``——同一份文件对同一个风险给两种答案，
         本轮第 3 遍按族清点后一次收口（外加 ``web_session`` 那条本就在保护区里的分支，一并
         折进来，全执行器 13 处使用点只剩一种形状）。区别只在 ``__enter__`` 落在哪里：
-        ``_pool_client`` 交回来的对象**已经**带着连接池与心跳线程（同步池在 ``__init__``
-        起跑），``with client`` 还要再走一次 ``client.__enter__()``（即 ``open()``），而那一步
-        不归 try 管。今天 ``open()`` 在 ``bestip=False`` 下只 ``return self``，所以那九处并非
-        当场在漏；但一个叫"建连"的方法哪天真握手一次，九处就同时变成九个漏点。判据：
-        ``tests/architecture/test_client_family_transport.py`` 的结构尺——执行器里 ``with``
-        直接包 ``_tdx_client``/``_pool_client``/``WebQuoteSession`` 即为红，保护区只有这一处。
+        ``_pool_client`` 交回来的对象在 P1-1 之后**不再**自带起跑的心跳线程（同步池同样
+        改为首次握 socket 才武装），``with client`` 还要再走一次 ``client.__enter__()``
+        （即 ``open()``），而那一步不归 try 管。
+
+        P1-1（A3）之后语义收窄：登记在 :attr:`_tdx_clients` 常驻表里的**常驻**家族客户端不在
+        这里关——它们的收口归 :meth:`close` 统一做，逐跳关掉就退化回"用完即弃"，M6 回收
+        与熔断冷却继续失效。这里只关每一次现造的临时对象（``WebQuoteSession``）与测试
+        注入的替身。判据：``tests/architecture/test_client_family_transport.py`` 的释放
+        两格（常驻客户端由 ``executor.close()`` 恰好关一次）。
         """
         try:
             yield client
         finally:
-            client.close()
+            if not self._owns_resident_client(client):
+                client.close()
 
     @staticmethod
     def _call_payload(plan: QueryPlan, meta: Any) -> tuple[list[Any], dict[str, Any]]:

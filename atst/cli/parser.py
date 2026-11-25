@@ -5,8 +5,10 @@
 
 v15 Phase 3 consolidation: all command handlers (v13 Client-backed ``cmd_*``
 and legacy ``_cmd_*`` migrated from the former ``cmds_*.py`` modules) are
-imported from :mod:`atst.cli.runtime_commands` and wired here. Business
-routing is forbidden in the CLI; the CLI is a thin transport adapter.
+imported from :mod:`atst.cli.runtime_commands` and wired here. P2-3（F-5/M7）
+把实现按域拆进 ``atst/cli/cmds_*.py``，``runtime_commands`` 保留 re-export shim，
+本模块的既有 import 不变。Business routing is forbidden in the CLI; the CLI
+is a thin transport adapter.
 """
 
 from __future__ import annotations
@@ -276,9 +278,16 @@ def build_parser() -> argparse.ArgumentParser:
     st_p.add_argument("--timeout", type=float, default=5.0)
     st_p.set_defaults(func=_cmd_server_test)
 
-    serve_p = sub.add_parser("serve", help="启动 HTTP 行情网关")
+    serve_p = sub.add_parser("serve", help="启动 HTTP 行情网关（--ws 同时拉起 WS JSON-RPC 面）")
     serve_p.add_argument("--port", type=int, default=None)
     serve_p.add_argument("--bind", default=None)
+    # P2-3（F-6/M8）：WS 是四张交付面里唯一没有 CLI 入口的一张；--ws 让同一进程
+    # 同时拉起 HTTP 与 WS 两个面，两面对同一个 Client 取数。
+    serve_p.add_argument(
+        "--ws",
+        action="store_true",
+        help="同时拉起 WebSocket JSON-RPC 面（ws://<bind>:8765/v13/ws）；缺省仅 HTTP",
+    )
     serve_p.set_defaults(func=_cmd_serve)
 
     # --- feedback (migrated from cmds_hosts.py) ---

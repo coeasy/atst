@@ -62,7 +62,11 @@ class BatchResult(Generic[T]):
     def __post_init__(self) -> None:
         items = self.items
         if isinstance(items, Mapping):
-            object.__setattr__(self, "items", MappingProxyType(copy.deepcopy(dict(items))))
+            # P-14: BatchItem/ErrorEnvelope are frozen, so a shallow copy of the
+            # container plus the read-only proxy is enough for audit immutability.
+            # Deep-copying every value here duplicated whole result payloads on
+            # each construction. Only ``meta`` (free-form diagnostics) is deep.
+            object.__setattr__(self, "items", MappingProxyType(dict(items)))
         elif not isinstance(items, tuple):
             object.__setattr__(self, "items", tuple(items))
 
@@ -82,12 +86,9 @@ class BatchResult(Generic[T]):
             unexpected = sorted(set(errors) - set(requested))
             if unexpected:
                 raise ValueError(f"errors 包含未请求的 symbol: {unexpected}")
-        # 防御性拷贝：调用方后续修改传入的映射/上下文不得影响已产出的审计结果。
-        object.__setattr__(
-            self,
-            "errors",
-            MappingProxyType({key: copy.deepcopy(value) for key, value in errors.items()}),
-        )
+        # 防御性拷贝：容器做浅拷贝并用只读视图封住调用方后续改动；ErrorEnvelope
+        # 自身是 frozen dataclass，逐条 deepcopy 只会重复整批审计负载（P-14）。
+        object.__setattr__(self, "errors", MappingProxyType(dict(errors)))
         object.__setattr__(self, "meta", _safe_deepcopy(self.meta))
 
     @classmethod

@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -99,6 +98,13 @@ class _WebStub:
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     def __call__(self, plan: Any) -> Any:
+        # P1-3：内层查询走 UnifiedRuntime 主链后，溯源校验会检查 provenance——
+        # 桩返回值必须是带合法 Provenance 的 QueryResult，不再是裸 SimpleNamespace。
+        from atst.result import Provenance, QueryResult
+
+        def _wrap(rows: list[dict[str, Any]]) -> QueryResult[Any]:
+            return QueryResult.from_plan(rows, plan=plan, provenance=Provenance.direct(plan))
+
         cap = plan.spec.capability
         options = getattr(plan.spec, "options", None) or {}
         kwargs = dict(options.get("kwargs") or {})
@@ -106,18 +112,14 @@ class _WebStub:
         if cap == "dividend_history":
             page = int(kwargs.get("page", 1))
             idx = page - 1
-            return SimpleNamespace(
-                data=self.dividend_pages[idx] if idx < len(self.dividend_pages) else []
-            )
+            return _wrap(self.dividend_pages[idx] if idx < len(self.dividend_pages) else [])
         if cap == "rights_issue":
             page = int(kwargs.get("page", 1))
             idx = page - 1
-            return SimpleNamespace(
-                data=self.rights_pages[idx] if idx < len(self.rights_pages) else []
-            )
+            return _wrap(self.rights_pages[idx] if idx < len(self.rights_pages) else [])
         if cap == "valuation_history":
             count = int(kwargs.get("count", 500))
-            return SimpleNamespace(data=self.valuation[:count])
+            return _wrap(self.valuation[:count])
         raise AssertionError(f"未打桩的能力：{cap}")
 
 

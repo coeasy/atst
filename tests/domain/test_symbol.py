@@ -111,6 +111,18 @@ class TestInference:
         assert normalize_symbol("688981") == "sh688981"  # 68 → 科创板
         assert normalize_symbol("833171") == "bj833171"  # 83 → 北交所
 
+    def test_tdx_board_index_codes(self):
+        """TDX 板块指数 880xxx/881xxx 归沪市命名空间。
+
+        2026-11-23 实测：标准 0x0530 对 ``sh880001`` / ``sh881001`` 返回完整
+        报价；这两个前缀此前命中北交所旧段 "88" 被 fail-closed。只放行
+        880/881，其余 88 段保持北交所推断。
+        """
+        assert normalize_symbol("880001") == "sh880001"
+        assert normalize_symbol("881001") == "sh881001"
+        assert to_tdx_market("880001") == (1, "880001")
+        assert normalize_symbol("889001") == "bj889001"  # 非板块指数段仍归北交所
+
     def test_split_forms(self):
         assert split_symbol("600000.SH") == ("sh", "600000")
         assert to_prefix_dot("SH600000") == "sh.600000"
