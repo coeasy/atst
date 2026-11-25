@@ -4,7 +4,7 @@
 >
 > 类比 HTTP 世界的 `requests` 库：稳定、标准、可组合，专注协议层，不做应用层业务。
 
-- 当前版本：`2.2.0` · 已发布版本：PyPI 最新 **`2.1.0`**（`pip install atst`，2026-11-22）· [v2.2.0 Release](https://github.com/coeasy/atst/releases/tag/v2.2.0) · [CHANGELOG](https://github.com/coeasy/atst/blob/main/CHANGELOG.md) · [v1→v2 迁移指南](https://github.com/coeasy/atst/blob/main/docs/migration/v2.md)
+- 当前版本：`2.2.0` · 已发布版本：PyPI 最新 **`2.2.0`**（`pip install atst`，2026-11-25）· [v2.2.0 Release](https://github.com/coeasy/atst/releases/tag/v2.2.0) · [CHANGELOG](https://github.com/coeasy/atst/blob/main/CHANGELOG.md) · [v1→v2 迁移指南](https://github.com/coeasy/atst/blob/main/docs/migration/v2.md)
 
 ---
 
@@ -189,14 +189,14 @@ atst 是通达信（TDX）行情数据的**通用底层协议基础设施**。�
 ## 安装
 
 ```bash
-pip install atst                    # 核心包（PyPI 此前最新 2.1.0，零硬依赖）
+pip install atst                    # 核心包（PyPI 最新 2.2.0，零硬依赖）
 pip install "atst[all]"             # 全部可选能力（pandas/pyarrow/duckdb/httpx/fastapi/...）
 pip install -e ".[dev]"             # 开发体验（pytest/ruff/mypy/pytest-asyncio/hatchling）
 ```
 
 > **版本口径**（2026-11-25）：`atst` 当前版本 `2.2.0`，随 `v2.2.0` 标签发布 GitHub Release；
-> PyPI 发布由 CI 的 `PUBLIC_RELEASE` 仓库变量决定（此前 PyPI 最新 `2.1.0`，上传于
-> 2026-11-22，前一版本 `2.0.0`）。零配置入口（`atst.history` / `atst.quote`）自 2.0.0 起
+> PyPI 最新 `2.2.0`（上传于 2026-11-25，由 CI 的 `PUBLIC_RELEASE` 仓库变量控制），
+> 前一版本 `2.1.0`（2026-11-22）。零配置入口（`atst.history` / `atst.quote`）自 2.0.0 起
 > 已在 PyPI 包内。需要跟仓库源码时从源码安装：
 >
 > ```bash
