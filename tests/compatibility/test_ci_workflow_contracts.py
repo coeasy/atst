@@ -9,6 +9,12 @@ _ROOT = Path(__file__).resolve().parents[2]
 #: workflow 命令行里写死的仓内路径（与 Makefile 侧同一判定）。
 _REPO_PATH_TOKENS = re.compile(r"(?:tests|scripts|atst)/[A-Za-z0-9_/]+\.py")
 
+#: job 边界（YAML 顶层 `jobs:` 下的两级缩进键）。
+_WORKFLOW_JOB = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$", re.M)
+
+#: 只有 checkout 之后才存在于 runner 工作目录的仓内路径。
+_REPO_FILE_TOKEN = re.compile(r"(?:docs/|scripts/|tests/|atst/|\.github/|pyproject\.toml|Makefile)")
+
 
 def _workflow(name: str) -> str:
     return (_ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
@@ -557,3 +563,32 @@ def test_release_body_comes_from_the_gated_release_note() -> None:
     version = re.search(r'__version__\s*=\s*"([^"]+)"', version_file)
     assert version is not None
     assert (_ROOT / "docs" / "releases" / f"v{version.group(1)}.md").is_file()
+
+
+def test_jobs_reading_repo_files_check_out_the_source() -> None:
+    """用到仓内文件的 job 必须先 checkout，否则只在真发布时才炸。
+
+    v2.2.0 的 Run #24 就是活教材：`prepare-release` 只下载 artifact，没有 checkout；
+    上一条判据让它改用 `docs/releases/v2.2.0.md` 当发布正文后，`test -f` 在空工作目录
+    里秒败，PyPI / Docker / GitHub Release 全部级联跳过。Re-run 还会复用旧 SHA 的
+    workflow 文件，只能删 tag 重推重跑——代价远大于这里的一行判据。
+    """
+    offenders: list[str] = []
+    for path in sorted((_ROOT / ".github" / "workflows").glob("*.yml")):
+        parts = _WORKFLOW_JOB.split(path.read_text(encoding="utf-8"))
+        for index in range(1, len(parts), 2):
+            name, body = parts[index], parts[index + 1]
+            code = "\n".join(
+                line for line in body.splitlines() if not line.lstrip().startswith("#")
+            )
+            if _REPO_FILE_TOKEN.search(code) and "actions/checkout@" not in body:
+                offenders.append(f"{path.name}:{name}")
+
+    assert offenders == [], f"job 用到仓内文件却没有 checkout：{offenders}"
+
+    # 直接钉住事故 job：即便以后扫描口径收窄，这个 job 也不能再丢 checkout。
+    prepare = (
+        _workflow("wheels.yml").split("  prepare-release:", 1)[1].split("  pypi-preflight:", 1)[0]
+    )
+    assert "actions/checkout@" in prepare
+    assert "docs/releases/${TAG_NAME}.md" in prepare

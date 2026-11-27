@@ -103,6 +103,29 @@ def test_general_docs_report_the_actual_released_state() -> None:
     assert "已发布" in api_index and "不在 PyPI" not in api_index
 
 
+def test_current_docs_report_the_actual_pypi_version() -> None:
+    """读者入口说"PyPI 最新"时必须跟当前版本，不能停在上一版。
+
+    v2.2.0 上线后，README / quickstart / api README / FAQ / release-publishing 五份
+    当前口径的文档都还写着「最新 2.1.0」。这类句子不会让任何代码测试失败，却会让
+    `pip install atst` 的读者以为自己装错了版本；版本发布后必须随事实翻篇。
+    """
+    latest = re.compile(r"最新(?:版本)?\s*\*{0,2}`" + re.escape(atst.__version__) + r"`\*{0,2}")
+    offenders: list[str] = []
+    for relative in (
+        "README.md",
+        "docs/quickstart.md",
+        "docs/api/README.md",
+        "docs/FAQ.md",
+        "docs/release-publishing.md",
+    ):
+        text = (_ROOT / relative).read_text(encoding="utf-8")
+        if not latest.search(text):
+            offenders.append(relative)
+
+    assert offenders == [], f"当前文档没有报出 PyPI 最新版本 {atst.__version__}：{offenders}"
+
+
 def test_current_docs_do_not_reintroduce_cross_provider_fallback_as_default() -> None:
     quickstart = (_ROOT / "docs" / "quickstart.md").read_text(encoding="utf-8")
     api_index = (_ROOT / "docs" / "api" / "README.md").read_text(encoding="utf-8")

@@ -1,12 +1,14 @@
 # PyPI 自动发布配置
 
-更新：2026-11-22
+更新：2026-11-25
 
 ## 当前状态
 
 `.github/workflows/wheels.yml` 已包含 PyPI Trusted Publishing：推送符合规则的 `v*` tag 后，先运行完整发布门禁、构建并验证 wheel/sdist，再创建 GitHub draft release。2026-10-04 已完成 GitHub 仓库侧配置：`pypi` Environment 已创建，只允许匹配 `v*` 的标签部署；仓库 Actions variable `PUBLIC_RELEASE=true` 已启用。环境未设置 required reviewer，以保留 tag 发布后的自动流程。
 
-本次核查 PyPI JSON API（2026-11-22）：[`https://pypi.org/pypi/atst/json`](https://pypi.org/pypi/atst/json) 返回项目 `atst`，最新版本 `2.1.0`（2026-11-22），已发布 `1.4.3` / `1.6.0` / `1.6.1` / `2.0.0`（2026-11-09）/ `2.1.0`；`pip install atst` 可直接安装。Trusted Publisher 已是普通 publisher，`v2.0.0` 与 `v2.1.0` 两次 tag 发布均已由它完成，链路验证完毕。
+本次核查 PyPI JSON API（2026-11-25）：[`https://pypi.org/pypi/atst/json`](https://pypi.org/pypi/atst/json) 返回项目 `atst`，最新版本 `2.2.0`（2026-11-25），已发布 `1.4.3` / `1.6.0` / `1.6.1` / `2.0.0`（2026-11-09）/ `2.1.0`（2026-11-22）/ `2.2.0`；`pip install atst` 可直接安装。Trusted Publisher 已是普通 publisher，`v2.0.0` / `v2.1.0` / `v2.2.0` 三次 tag 发布均已由它完成，链路验证完毕。
+
+`v2.2.0` 首次发布触发的 Run #24 曾在 draft release 阶段失败：`prepare-release` job 当时没有 checkout，而发布正文改用了仓内的 `docs/releases/v2.2.0.md`，`test -f` 在空工作目录里直接失败，PyPI / Docker / GitHub Release 全部级联跳过。给该 job 加 checkout 后重推 tag，Run #25 全绿并完成发布。给任何 job 新增「读仓内文件」的步骤时，都要先确认它自带 checkout；CI 契约测试 `test_jobs_reading_repo_files_check_out_the_source` 已把这条判据钉住。
 
 GitHub 仓库侧设置已通过登录后的仓库设置页面保存并回读确认。PyPI Trusted Publisher 已随 `1.6.1` 首次成功发布转为普通 publisher；本地无法读取 PyPI 账号设置，也不能在本地模拟 GitHub Actions OIDC 身份。下列信息作为后续复核清单。
 

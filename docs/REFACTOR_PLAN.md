@@ -707,6 +707,22 @@ originality / benchmark / interface 43 OK / docs-links 76 files / docs-check）�
   钉住这些口径。
   校验：新增模块 97.96% line；全量确定性门禁见下方批次校验记录。
 
+### 2026-11-27 第九批：v2.2.0 发布后收口
+
+- **CI 事故回归判据**：v2.2.0 的 Release Run #24 在 `prepare-release` 失败——该 job
+  只下载 artifact、没有 checkout，而发布正文已改成读仓内 `docs/releases/v2.2.0.md`，
+  `test -f` 在空工作目录秒败并级联跳过 PyPI / Docker / GitHub Release。修复是给该 job
+  加 checkout（Run #25 全绿，PyPI 与 GitHub Release 均已上线）。新增
+  `test_jobs_reading_repo_files_check_out_the_source`：扫描全部 workflow 的 job，
+  只要可执行行引用 `docs/` / `scripts/` / `tests/` / `atst/` / `pyproject.toml` /
+  `Makefile` 就必须带 `actions/checkout@`，并单独钉住事故 job。
+- **发布后文档口径**：README / quickstart / api README 在 v2.2.0 上线当天已从「此前
+  最新 2.1.0」翻到 2.2.0；本批把遗漏的 FAQ 与 `docs/release-publishing.md` 也翻到
+  2.2.0（2026-11-25 实测），并在后者记录 Run #24 的成因与修复。新增
+  `test_current_docs_report_the_actual_pypi_version` 要求五份当前口径文档都报出
+  `atst.__version__` 为 PyPI 最新，防止版本发布后句子停在上一版。
+- 校验：37 项 CI workflow 契约 + release-history 契约全绿；全量门禁见下方批次校验记录。
+
 ### 延后项清单（下一批候选）
 
 1. **P1-2 物理删除 legacy async 栈**（DeprecationWarning 已启用；2026-11-24 已与用户确认
